@@ -1,0 +1,12 @@
+{
+    "private": true,
+    "scripts": {
+      "dev:frontend": "pnpm --filter @miniapp/frontend dev",
+      "dev:backend": "pnpm --filter @miniapp/backend dev",
+      "dev": "pnpm run --parallel dev:frontend dev:backend"
+    },
+    "engines": {
+      "node": ">=20",
+      "pnpm": ">=9"
+    }
+  }
