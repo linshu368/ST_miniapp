@@ -1,65 +1,50 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import type { HealthData } from '@miniapp/shared';
+import { useState } from 'react';
 import { useCharacters } from '@/hooks/use-characters';
+import { CharacterCard } from '@/components/character-card';
+import { CharacterDetailSheet } from '@/components/character-detail-sheet';
 
 export default function HomePage() {
-  const { characters, loading: charsLoading } = useCharacters();
-  const [health, setHealth] = useState<HealthData | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    fetch(`${apiUrl}/health`)
-      .then((res) => res.json())
-      .then((json) => {
-        if (json.success) {
-          setHealth(json.data);
-        } else {
-          setHealthError(json.error?.message || 'Unknown error');
-        }
-      })
-      .catch((err) => setHealthError(err.message));
-  }, []);
+  const { characters, loading } = useCharacters();
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
 
   return (
-    <main className="p-6 max-w-md mx-auto space-y-8">
-      <h1 className="text-2xl font-bold">MiniApp 框架验证</h1>
+    <main className="min-h-screen bg-black">
+      {/* 顶部标题栏 */}
+      <header className="sticky top-0 bg-black/80 backdrop-blur-sm border-b border-gray-800 px-4 py-3 z-40">
+        <h1 className="text-lg font-bold text-white">选择角色</h1>
+      </header>
 
-      {/* 检查项 1：shared 类型 + hook 模式 */}
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Mock 数据（via useCharacters hook）</h2>
-        {charsLoading ? (
-          <p className="text-gray-400">加载中...</p>
+      {/* 角色列表 */}
+      <div className="px-4 py-4 space-y-3">
+        {loading ? (
+          <div className="text-center text-gray-400 py-20">加载中...</div>
+        ) : characters.length === 0 ? (
+          <div className="text-center text-gray-400 py-20">暂无角色</div>
         ) : (
-          <ul className="space-y-2">
-            {characters.map((c) => (
-              <li key={c.id} className="bg-gray-800 rounded-lg p-3">
-                <p className="font-medium">{c.name}</p>
-                <p className="text-sm text-gray-400">{c.description}</p>
-              </li>
-            ))}
-          </ul>
+          characters.map((character) => (
+            <CharacterCard
+              key={character.id}
+              character={character}
+              onClick={setSelectedCharacterId}
+            />
+          ))
         )}
-      </section>
+      </div>
 
-      {/* 检查项 2：前后端通信 */}
-      <section>
-        <h2 className="text-lg font-semibold mb-2">后端 Health Check</h2>
-        {health ? (
-          <div className="bg-green-900 rounded-lg p-3">
-            <p>状态: {health.status}</p>
-            <p className="text-sm text-gray-400">{health.timestamp}</p>
-          </div>
-        ) : healthError ? (
-          <div className="bg-red-900 rounded-lg p-3">
-            <p>连接失败: {healthError}</p>
-          </div>
-        ) : (
-          <p className="text-gray-400">连接中...</p>
-        )}
-      </section>
+      {/* 角色详情底部弹出层 */}
+      {selectedCharacterId && (
+        <CharacterDetailSheet
+          characterId={selectedCharacterId}
+          onClose={() => setSelectedCharacterId(null)}
+          onStartChat={(id) => {
+            // 后续接入对话页路由
+            console.log('Start chat with:', id);
+            setSelectedCharacterId(null);
+          }}
+        />
+      )}
     </main>
   );
 }
