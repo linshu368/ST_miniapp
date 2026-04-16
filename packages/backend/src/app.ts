@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import { config } from './platform/config.js';
 import { ok } from '@miniapp/shared';
 import type { HealthData } from '@miniapp/shared';
+import { characterRoutes } from './features/character/character.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -50,6 +51,9 @@ export async function buildApp() {
       timestamp: new Date().toISOString(),
     });
   });
+
+  // ── 业务路由 ──
+  await app.register(characterRoutes, { prefix: '/api' });
 
   return app;
 }
