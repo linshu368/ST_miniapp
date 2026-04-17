@@ -1,6 +1,12 @@
 node_modules/
 .next/
 dist/
-.env
-.env.local
 .vercel
+
+# 本地环境变量（含密钥）—— 绝不提交
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+ops/git/.env

@@ -2,17 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import type { CharacterDetail } from '@miniapp/shared';
-import { mockCharacterDetails } from '@/lib/mock-data';
+import { fetchCharacterById } from '@/lib/api/characters';
 
 export function useCharacterDetail(id: string) {
   const [character, setCharacter] = useState<CharacterDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const detail = mockCharacterDetails[id] || null;
-    setCharacter(detail);
-    setLoading(false);
+    fetchCharacterById(id)
+      .then((data) => setCharacter(data.character))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, [id]);
 
-  return { character, loading, error: null };
+  return { character, loading, error };
 }

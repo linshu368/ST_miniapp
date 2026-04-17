@@ -3,13 +3,13 @@ export interface CharacterSummary {
     id: string;
     name: string;
     description: string;
-    avatar_url: string;
+    avatar: string;
     tags: string[];
   }
   
   // 详情页 / 对话页用的完整结构
   export interface CharacterDetail extends CharacterSummary {
-    greeting: string;
+    first_mes: string;
     creator_notes: string;
   }
   

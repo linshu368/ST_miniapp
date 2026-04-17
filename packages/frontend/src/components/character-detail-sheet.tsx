@@ -64,7 +64,7 @@ export function CharacterDetailSheet({
         {/* 开场白预览 */}
         <div className="bg-gray-800 rounded-xl p-4 mb-6">
           <p className="text-xs text-gray-500 mb-2">开场白</p>
-          <p className="text-gray-200 text-sm italic">"{character.greeting}"</p>
+          <p className="text-gray-200 text-sm italic">"{character.first_mes}"</p>
         </div>
 
         {/* 开始聊天按钮 */}
