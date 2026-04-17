@@ -40,16 +40,32 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
         run: |
-          bash ops/git/review.sh main ${{ steps.prompt-type.outputs.type }} > report.md 2>stderr.log
+          # 先确认 git 状态
+          echo "=== 当前 HEAD ===" >&2
+          git log --oneline -3 >&2
+          echo "=== 本地分支 ===" >&2
+          git branch -a >&2
+          echo "==================" >&2
 
-          # 如果脚本失败，打印错误日志
-          if [ $? -ne 0 ]; then
-            echo "❌ review.sh 执行失败:" >&2
-            cat stderr.log >&2
+          # 确保 main 分支可用（GitHub Actions checkout 可能只拉了 PR 的 ref）
+          git fetch origin main:main 2>/dev/null || true
+
+          # 运行 review，捕获退出码而不是直接退出
+          set +e
+          bash ops/git/review.sh main ${{ steps.prompt-type.outputs.type }} > report.md 2>stderr.log
+          EXIT_CODE=$?
+          set -e
+
+          # 无论成功失败都打印 stderr
+          echo "=== stderr 输出 ===" >&2
+          cat stderr.log >&2
+          echo "==================" >&2
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "❌ review.sh 退出码: $EXIT_CODE" >&2
             exit 1
           fi
 
-          # 把报告存到输出变量
           {
             echo 'report<<REPORT_EOF'
             cat report.md

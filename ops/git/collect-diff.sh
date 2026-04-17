@@ -1,10 +1,13 @@
 #!/bin/bash
-# ops/git/collect-diff.sh
-
 set -euo pipefail
 
 BASE_BRANCH="${1:-main}"
+
+# 兼容 GitHub Actions 的 detached HEAD
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$CURRENT_BRANCH" = "HEAD" ]; then
+  CURRENT_BRANCH="${GITHUB_HEAD_REF:-detached-HEAD}"
+fi
 
 # 统一排除规则，复用同一组 pathspec
 PATHSPEC=(
