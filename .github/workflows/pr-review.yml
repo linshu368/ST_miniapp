@@ -1,0 +1,67 @@
+# .github/workflows/pr-review.yml
+name: PR Review
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+    # opened = PR 刚创建时
+    # synchronize = PR 分支有新 push 时（PM 改了代码重新 push）
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 判断 Prompt 类型
+        id: prompt-type
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          if [[ "$BRANCH" == pm/* ]]; then
+            echo "type=frontend" >> $GITHUB_OUTPUT
+          else
+            echo "type=backend" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 生成审查报告
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+        run: |
+          bash ops/git/review.sh main ${{ steps.prompt-type.outputs.type }} > report.md 2>stderr.log
+
+          # 如果脚本失败，打印错误日志
+          if [ $? -ne 0 ]; then
+            echo "❌ review.sh 执行失败:" >&2
+            cat stderr.log >&2
+            exit 1
+          fi
+
+          # 把报告存到输出变量
+          {
+            echo 'report<<REPORT_EOF'
+            cat report.md
+            echo 'REPORT_EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: 发布报告到 PR 评论
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: ai-review
+          message: |
+            ${{ steps.review.outputs.report }}
+
+            ---
+            *🤖 自动生成 · `${{ github.head_ref }}` → `main` · ${{ github.event.pull_request.head.sha }}*
