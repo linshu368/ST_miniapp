@@ -8,6 +8,11 @@ on:
     # opened = PR 刚创建时
     # synchronize = PR 分支有新 push 时（PM 改了代码重新 push）
 
+# ─── 加权限 ───
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   review:
     runs-on: ubuntu-latest
