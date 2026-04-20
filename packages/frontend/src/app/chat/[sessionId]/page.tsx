@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -42,7 +42,8 @@ export default function ChatPage() {
 
   // "她回了"：当新出现一条 assistant 消息时，极轻触觉。
   // 首次进入页面的 greeting 不震——避免"打开即被震"的打扰。
-  const messages = session?.messages ?? [];
+  // 用 useMemo 稳定引用，避免 `?? []` 每次渲染都造出新数组触发 effect 白跑。
+  const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
   const lastAssistantIdRef = useRef<string | null>(null);
   const hasInitRef = useRef(false);
   useEffect(() => {
