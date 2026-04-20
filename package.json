@@ -1,12 +1,30 @@
 {
-    "private": true,
-    "scripts": {
-      "dev:frontend": "pnpm --filter @miniapp/frontend dev",
-      "dev:backend": "pnpm --filter @miniapp/backend dev",
-      "dev": "pnpm run --parallel dev:frontend dev:backend"
-    },
-    "engines": {
-      "node": ">=20",
-      "pnpm": ">=9"
-    }
+  "private": true,
+  "scripts": {
+    "dev:frontend": "pnpm --filter @miniapp/frontend dev",
+    "dev:backend": "pnpm --filter @miniapp/backend dev",
+    "dev": "pnpm run --parallel dev:frontend dev:backend",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "prettier --write"
+    ],
+    "*.{js,jsx,mjs,cjs,json,md,yml,yaml,css}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.3"
   }
+}
