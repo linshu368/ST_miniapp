@@ -1,1 +1,16 @@
 npx lint-staged
+
+# 仅当本次暂存涉及 frontend 源码时，跑一次 next lint，
+# 复现 Vercel CI 的严格校验（CI=true 会把 warning 视为 error）。
+# 用 diff --cached --name-only 拿到真实暂存列表，避免误拦无关提交。
+STAGED_FRONTEND=$(git diff --cached --name-only --diff-filter=ACMR -- 'packages/frontend/src/*.ts' 'packages/frontend/src/*.tsx' 'packages/frontend/src/**/*.ts' 'packages/frontend/src/**/*.tsx')
+
+if [ -n "$STAGED_FRONTEND" ]; then
+  echo "→ 检测到前端代码变更，跑 next lint 做 Vercel 同等校验…"
+  ( cd packages/frontend && CI=true npx --no-install next lint --dir src --max-warnings 0 ) || {
+    echo ""
+    echo "✗ next lint 未通过。上面的报错在 Vercel 上会导致构建失败，请先修复。"
+    echo "  （提示：想临时跳过，用 git commit --no-verify——但推到远端仍会在 CI 阶段失败。）"
+    exit 1
+  }
+fi
