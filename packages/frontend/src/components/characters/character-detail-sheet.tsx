@@ -218,7 +218,7 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
                 <SectionLabel>她的第一句话</SectionLabel>
                 <blockquote className="mt-2 rounded-xl border-l-2 border-primary/50 bg-background px-4 py-3">
                   <p className="line-clamp-3 text-[14px] italic leading-relaxed text-foreground/90">
-                    &quot;{character.greeting}&quot; {/* 避免 JSON 注入 */}
+                    &quot;{character.greeting}&quot;
                   </p>
                 </blockquote>
               </section>
