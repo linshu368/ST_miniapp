@@ -5,10 +5,7 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize]
-    # opened = PR 刚创建时
-    # synchronize = PR 分支有新 push 时（PM 改了代码重新 push）
 
-# ─── 加权限 ───
 permissions:
   pull-requests: write
   contents: read
@@ -16,6 +13,8 @@ permissions:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # hotfix 分支直接跳过，不触发审查
+    if: ${{ !startsWith(github.head_ref, 'hotfix') }}
 
     steps:
       - name: Checkout
@@ -32,10 +31,18 @@ jobs:
         id: prompt-type
         run: |
           BRANCH="${{ github.head_ref }}"
-          if [[ "$BRANCH" == pm/* ]]; then
+          echo "当前分支: $BRANCH" >&2
+
+          if [[ "$BRANCH" =~ ^pm ]]; then
             echo "type=frontend" >> $GITHUB_OUTPUT
-          else
+            echo "✅ PM 分支 → frontend prompt" >&2
+          elif [[ "$BRANCH" =~ ^dev ]]; then
             echo "type=backend" >> $GITHUB_OUTPUT
+            echo "✅ dev 分支 → backend prompt" >&2
+          else
+            echo "❌ 未识别的分支前缀: $BRANCH" >&2
+            echo "   规范的分支前缀: pm* | dev* | hotfix*" >&2
+            exit 1
           fi
 
       - name: 生成审查报告
@@ -45,23 +52,19 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
         run: |
-          # 先确认 git 状态
           echo "=== 当前 HEAD ===" >&2
           git log --oneline -3 >&2
           echo "=== 本地分支 ===" >&2
           git branch -a >&2
           echo "==================" >&2
 
-          # 确保 main 分支可用（GitHub Actions checkout 可能只拉了 PR 的 ref）
           git fetch origin main:main 2>/dev/null || true
 
-          # 运行 review，捕获退出码而不是直接退出
           set +e
           bash ops/git/review.sh main ${{ steps.prompt-type.outputs.type }} > report.md 2>stderr.log
           EXIT_CODE=$?
           set -e
 
-          # 无论成功失败都打印 stderr
           echo "=== stderr 输出 ===" >&2
           cat stderr.log >&2
           echo "==================" >&2
