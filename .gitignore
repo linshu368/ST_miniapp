@@ -4,7 +4,12 @@ dist/
 .env
 .env.local
 .vercel
+
 *.tsbuildinfo
 
 ops/git/.env
 .DS_Store
+
+
+
+

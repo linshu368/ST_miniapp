@@ -78,7 +78,7 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
         <p className="text-[10px] leading-none text-muted-foreground/60">
           by {character.author_name}
         </p>
-        <p className="line-clamp-2 text-[11px] leading-relaxed text-foreground/55">
+        <p className="line-clamp-2 text-[11px] leading-relaxed text-foreground/60">
           {character.description}
         </p>
       </div>
