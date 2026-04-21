@@ -29,20 +29,64 @@ jobs:
 
       - name: 判断 Prompt 类型
         id: prompt-type
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           BRANCH="${{ github.head_ref }}"
           echo "当前分支: $BRANCH" >&2
 
-          if [[ "$BRANCH" =~ ^pm ]]; then
-            echo "type=frontend" >> $GITHUB_OUTPUT
-            echo "✅ PM 分支 → frontend prompt" >&2
-          elif [[ "$BRANCH" =~ ^dev ]]; then
+          # 确保 main 分支可用
+          git fetch origin main:main 2>/dev/null || true
+
+          # ── 第零层：手动 override（优先级最高）──
+          # 从 PR 描述和 commit messages 中检测 [review:backend] 或 [review:frontend]
+          COMMIT_MESSAGES=$(git log main..HEAD --pretty=format:"%s %b" 2>/dev/null || echo "")
+          ALL_TEXT="${PR_BODY} ${COMMIT_MESSAGES}"
+
+          if echo "$ALL_TEXT" | grep -q '\[review:backend\]'; then
             echo "type=backend" >> $GITHUB_OUTPUT
-            echo "✅ dev 分支 → backend prompt" >&2
+            echo "✅ 手动 override [review:backend] → backend prompt" >&2
+            exit 0
+          fi
+
+          if echo "$ALL_TEXT" | grep -q '\[review:frontend\]'; then
+            echo "type=frontend" >> $GITHUB_OUTPUT
+            echo "✅ 手动 override [review:frontend] → frontend prompt" >&2
+            exit 0
+          fi
+
+          # ── 第一层：基于 diff 文件路径自动判定 ──
+          CHANGED_FILES=$(git diff main...HEAD --name-only)
+
+          echo "变更文件列表:" >&2
+          echo "$CHANGED_FILES" >&2
+          echo "---" >&2
+
+          HAS_BACKEND=false
+          HAS_FRONTEND=false
+
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            if [[ "$file" == packages/backend/* ]]; then
+              HAS_BACKEND=true
+            fi
+            if [[ "$file" == packages/frontend/* ]]; then
+              HAS_FRONTEND=true
+            fi
+          done <<< "$CHANGED_FILES"
+
+          # 规则 1: 出现 backend 文件 → 后端 prompt
+          if $HAS_BACKEND; then
+            echo "type=backend" >> $GITHUB_OUTPUT
+            echo "✅ 检测到 packages/backend/ 变更 → backend prompt" >&2
+          # 规则 2: 无 backend，有 frontend → 前端 prompt
+          elif $HAS_FRONTEND; then
+            echo "type=frontend" >> $GITHUB_OUTPUT
+            echo "✅ 检测到 packages/frontend/ 变更（无 backend）→ frontend prompt" >&2
+          # 规则 3: 仅 shared / 根配置 → 后端 prompt
           else
-            echo "❌ 未识别的分支前缀: $BRANCH" >&2
-            echo "   规范的分支前缀: pm* | dev* | hotfix*" >&2
-            exit 1
+            echo "type=backend" >> $GITHUB_OUTPUT
+            echo "✅ 仅 shared/根目录配置变更 → backend prompt" >&2
           fi
 
       - name: 生成审查报告
