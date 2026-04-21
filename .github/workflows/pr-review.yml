@@ -26,7 +26,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
+      # 新增三层判定规则：
+        #1. diff含packages/backend/文件 → 后端prompt
+        #2. diff仅含packages/frontend/文件（无backend）→ 前端prompt
+        #3. 仅shared/根配置变更 → 后端prompt
       - name: 判断 Prompt 类型
         id: prompt-type
         env:
