@@ -41,6 +41,7 @@ export async function buildApp() {
       callback(new Error('Not allowed by CORS'), false);
     },
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Init-Data'],
   });
 
   // ── 健康检查 ──
