@@ -6,7 +6,6 @@
 #   bash ops/git/review.sh main frontend      # 指定基准分支和 prompt 类型
 #   bash ops/git/review.sh main backend       # 使用后端 prompt
 
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -22,13 +21,6 @@ if [ -f "$ENV_FILE" ]; then
 else
   echo "⚠️  未找到 ${ENV_FILE}，将使用已有环境变量" >&2
 fi
-
-BASE_BRANCH="${1:-main}"
-PROMPT_TYPE="${2:-frontend}"
-
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 BASE_BRANCH="${1:-main}"
 PROMPT_TYPE="${2:-frontend}"    # frontend 或 backend
@@ -97,13 +89,18 @@ elif [[ "$API_URL" != *"/v1/messages"* && "$API_URL" != *"/chat/completions"* ]]
     API_URL="${API_URL%/}/v1/messages"
 fi
 
+# 创建临时文件来存储请求体，避免 "Argument list too long" 错误
+TMP_REQ=$(mktemp)
+# 确保脚本退出时自动删除临时文件
+trap 'rm -f "$TMP_REQ"' EXIT
+
 if [ $IS_OPENAI_FORMAT -eq 1 ]; then
   # OpenAI 兼容格式 (如 OpenRouter, 多数中转 API)
   # 优先使用环境变量 OPENAI_MODEL，未设置则使用默认值
   MODEL_NAME="${OPENAI_MODEL:-anthropic/claude-opus-4.6}"
   
-  # 把 System prompt 放到 messages 数组里
-  REQUEST_BODY=$(cat <<EOF
+  # 把 System prompt 放到 messages 数组里，并写入临时文件
+  cat <<EOF > "$TMP_REQ"
 {
   "model": "${MODEL_NAME}",
   "messages": [
@@ -118,13 +115,14 @@ if [ $IS_OPENAI_FORMAT -eq 1 ]; then
   ]
 }
 EOF
-)
+
 else
   # Anthropic 官方格式
   # 优先使用环境变量 ANTHROPIC_MODEL，未设置则使用默认值
   MODEL_NAME="${ANTHROPIC_MODEL:-claude-3-opus-20240229}"
   
-  REQUEST_BODY=$(cat <<EOF
+  # 写入临时文件
+  cat <<EOF > "$TMP_REQ"
 {
   "model": "${MODEL_NAME}",
   "max_tokens": 8192,
@@ -137,19 +135,19 @@ else
   ]
 }
 EOF
-)
 fi
 
 # ─── 5. 调用 API ───
 
 # 因为某些兼容代理API可能不支持 anthropic-version header 或者 x-api-key (它们用 Authorization: Bearer)，
 # 我们统一携带两者。
+# 注意这里使用 -d @"$TMP_REQ" 从文件中读取 payload
 RESPONSE_RAW=$(curl -s -w "\n%{http_code}" "$API_URL" \
   -H "Content-Type: application/json" \
   -H "x-api-key: ${ANTHROPIC_API_KEY}" \
   -H "Authorization: Bearer ${ANTHROPIC_API_KEY}" \
   -H "anthropic-version: 2023-06-01" \
-  -d "$REQUEST_BODY")
+  -d @"$TMP_REQ")
 
 HTTP_CODE=$(echo "$RESPONSE_RAW" | tail -n1)
 RESPONSE=$(echo "$RESPONSE_RAW" | sed '$d')
