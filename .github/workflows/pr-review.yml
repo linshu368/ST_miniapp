@@ -4,7 +4,7 @@ name: PR Review
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize]
+    types: [opened, ready_for_review, reopened]
 
 permissions:
   pull-requests: write
@@ -32,6 +32,7 @@ jobs:
       # 第一层：backend 文件 ≥ 3 → 铁证，直接后端 prompt
       # 第二层：backend 文件 1-2 个 → 看占比（≥25% 后端，<25% 前端 + 警告）
       # 第三层：无 backend 文件 → 有 frontend 走前端，否则走后端兜底
+
       - name: 判断 Prompt 类型
         id: prompt-type
         env:
@@ -185,4 +186,5 @@ jobs:
             ${{ steps.review.outputs.report }}
 
             ---
+
             *🤖 自动生成 · `${{ github.head_ref }}` → `main` · Prompt: `${{ steps.prompt-type.outputs.type }}` · ${{ github.event.pull_request.head.sha }}*
