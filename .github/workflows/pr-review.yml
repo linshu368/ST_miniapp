@@ -26,10 +26,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      # 新增三层判定规则：
-        #1. diff含packages/backend/文件 → 后端prompt
-        #2. diff仅含packages/frontend/文件（无backend）→ 前端prompt
-        #3. 仅shared/根配置变更 → 后端prompt
+
+      # 三层判定规则：
+      # 第零层：手动 override（PR 描述或 commit message 含 [review:backend] / [review:frontend]）
+      # 第一层：backend 文件 ≥ 3 → 铁证，直接后端 prompt
+      # 第二层：backend 文件 1-2 个 → 看占比（≥25% 后端，<25% 前端 + 警告）
+      # 第三层：无 backend 文件 → 有 frontend 走前端，否则走后端兜底
       - name: 判断 Prompt 类型
         id: prompt-type
         env:
@@ -38,58 +40,104 @@ jobs:
           BRANCH="${{ github.head_ref }}"
           echo "当前分支: $BRANCH" >&2
 
-          # 确保 main 分支可用
           git fetch origin main:main 2>/dev/null || true
 
-          # ── 第零层：手动 override（优先级最高）──
-          # 从 PR 描述和 commit messages 中检测 [review:backend] 或 [review:frontend]
+          # ━━━ 第零层：手动 override（优先级最高）━━━
           COMMIT_MESSAGES=$(git log main..HEAD --pretty=format:"%s %b" 2>/dev/null || echo "")
           ALL_TEXT="${PR_BODY} ${COMMIT_MESSAGES}"
 
           if echo "$ALL_TEXT" | grep -q '\[review:backend\]'; then
             echo "type=backend" >> $GITHUB_OUTPUT
+            echo "backend_warning=" >> $GITHUB_OUTPUT
             echo "✅ 手动 override [review:backend] → backend prompt" >&2
             exit 0
           fi
 
           if echo "$ALL_TEXT" | grep -q '\[review:frontend\]'; then
             echo "type=frontend" >> $GITHUB_OUTPUT
+            echo "backend_warning=" >> $GITHUB_OUTPUT
             echo "✅ 手动 override [review:frontend] → frontend prompt" >&2
             exit 0
           fi
 
-          # ── 第一层：基于 diff 文件路径自动判定 ──
+          # ━━━ 归类文件 ━━━
           CHANGED_FILES=$(git diff main...HEAD --name-only)
 
           echo "变更文件列表:" >&2
           echo "$CHANGED_FILES" >&2
           echo "---" >&2
 
-          HAS_BACKEND=false
-          HAS_FRONTEND=false
+          BACKEND_COUNT=0
+          FRONTEND_COUNT=0
+          BACKEND_FILE_LIST=""
 
           while IFS= read -r file; do
             [[ -z "$file" ]] && continue
             if [[ "$file" == packages/backend/* ]]; then
-              HAS_BACKEND=true
+              BACKEND_COUNT=$((BACKEND_COUNT + 1))
+              BACKEND_FILE_LIST="${BACKEND_FILE_LIST}- \`${file}\`\n"
             fi
             if [[ "$file" == packages/frontend/* ]]; then
-              HAS_FRONTEND=true
+              FRONTEND_COUNT=$((FRONTEND_COUNT + 1))
             fi
           done <<< "$CHANGED_FILES"
 
-          # 规则 1: 出现 backend 文件 → 后端 prompt
-          if $HAS_BACKEND; then
+          echo "Backend 文件数: $BACKEND_COUNT, Frontend 文件数: $FRONTEND_COUNT" >&2
+
+          # ━━━ 第一层：backend ≥ 3，铁证 → 后端 prompt ━━━
+          if [ "$BACKEND_COUNT" -ge 3 ]; then
             echo "type=backend" >> $GITHUB_OUTPUT
-            echo "✅ 检测到 packages/backend/ 变更 → backend prompt" >&2
-          # 规则 2: 无 backend，有 frontend → 前端 prompt
-          elif $HAS_FRONTEND; then
+            echo "backend_warning=" >> $GITHUB_OUTPUT
+            echo "✅ Backend 文件 ≥ 3（铁证）→ backend prompt" >&2
+            exit 0
+          fi
+
+          # ━━━ 第二层：backend 1-2 个 → 看占比 ━━━
+          if [ "$BACKEND_COUNT" -gt 0 ] && [ "$FRONTEND_COUNT" -gt 0 ]; then
+            TOTAL=$((BACKEND_COUNT + FRONTEND_COUNT))
+            # 用整数运算：ratio = BACKEND_COUNT * 100 / TOTAL
+            RATIO=$((BACKEND_COUNT * 100 / TOTAL))
+            echo "Backend 占比: ${RATIO}%" >&2
+
+            if [ "$RATIO" -ge 25 ]; then
+              echo "type=backend" >> $GITHUB_OUTPUT
+              echo "backend_warning=" >> $GITHUB_OUTPUT
+              echo "✅ Backend 占比 ≥ 25%（${RATIO}%）→ backend prompt" >&2
+            else
+              echo "type=frontend" >> $GITHUB_OUTPUT
+              # 把 backend 文件列表存入 warning，供报告模板使用
+              {
+                echo 'backend_warning<<WARNING_EOF'
+                echo ""
+                echo "⚠️ **本次变更涉及以下 backend 文件，请确认是否为误改：**"
+                echo ""
+                echo -e "$BACKEND_FILE_LIST"
+                echo ""
+                echo '如为有意改动，建议在 PR 描述中添加 `[review:backend]` 后重新推送触发审查。'
+                echo 'WARNING_EOF'
+              } >> $GITHUB_OUTPUT
+              echo "⚠️ Backend 占比 < 25%（${RATIO}%），疑似误改 → frontend prompt + 警告" >&2
+            fi
+            exit 0
+          fi
+
+          # backend 有文件但 frontend 没有 → 后端
+          if [ "$BACKEND_COUNT" -gt 0 ] && [ "$FRONTEND_COUNT" -eq 0 ]; then
+            echo "type=backend" >> $GITHUB_OUTPUT
+            echo "backend_warning=" >> $GITHUB_OUTPUT
+            echo "✅ 仅 backend（+ shared/infra）变更 → backend prompt" >&2
+            exit 0
+          fi
+
+          # ━━━ 第三层：无 backend 文件 ━━━
+          if [ "$FRONTEND_COUNT" -gt 0 ]; then
             echo "type=frontend" >> $GITHUB_OUTPUT
-            echo "✅ 检测到 packages/frontend/ 变更（无 backend）→ frontend prompt" >&2
-          # 规则 3: 仅 shared / 根配置 → 后端 prompt
+            echo "backend_warning=" >> $GITHUB_OUTPUT
+            echo "✅ 无 backend 变更，有 frontend → frontend prompt" >&2
           else
             echo "type=backend" >> $GITHUB_OUTPUT
-            echo "✅ 仅 shared/根目录配置变更 → backend prompt" >&2
+            echo "backend_warning=" >> $GITHUB_OUTPUT
+            echo "✅ 仅 shared/根目录配置变更 → backend prompt（兜底）" >&2
           fi
 
       - name: 生成审查报告
@@ -132,7 +180,9 @@ jobs:
         with:
           header: ai-review
           message: |
+            ${{ steps.prompt-type.outputs.backend_warning }}
+
             ${{ steps.review.outputs.report }}
 
             ---
-            *🤖 自动生成 · `${{ github.head_ref }}` → `main` · ${{ github.event.pull_request.head.sha }}*
+            *🤖 自动生成 · `${{ github.head_ref }}` → `main` · Prompt: `${{ steps.prompt-type.outputs.type }}` · ${{ github.event.pull_request.head.sha }}*
