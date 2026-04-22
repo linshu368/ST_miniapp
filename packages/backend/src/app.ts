@@ -3,6 +3,8 @@ import cors from '@fastify/cors';
 import { config } from './platform/config.js';
 import { ok } from '@miniapp/shared';
 import type { HealthData } from '@miniapp/shared';
+import characterRoutes from './routes/characters.js';
+import sessionRoutes from './routes/sessions.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -43,6 +45,10 @@ export async function buildApp() {
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Init-Data'],
   });
+
+  // ── 路由挂载 ──
+  await app.register(characterRoutes);
+  await app.register(sessionRoutes);
 
   // ── 健康检查 ──
   app.get('/health', async () => {
