@@ -126,13 +126,6 @@ export function useSessionsQuery() {
   return useQuery<GetSessionsData>({
     queryKey: sessionKeys.lists(),
     queryFn: async () => {
-      if (USE_MOCK) {
-        return {
-          sessions: [...mockState.sessions].sort(
-            (a, b) => +new Date(b.last_message_at) - +new Date(a.last_message_at)
-          ),
-        };
-      }
       return fetchSessions();
     },
   });
@@ -144,24 +137,12 @@ export function useSessionQuery(sessionId: string | undefined) {
     enabled: !!sessionId,
     queryFn: async () => {
       if (!sessionId) throw new Error('session id is required');
-      if (USE_MOCK) {
-        const messages = mockState.messagesBySession[sessionId] ?? [];
-        const summary = mockState.sessions.find((s) => s.id === sessionId);
-        const character_id = summary?.character_id ?? mockCharacters[0]?.id ?? 'char-001';
-        return {
-          session: {
-            id: sessionId,
-            character_id,
-            messages: [...messages],
-          },
-        };
-      }
       return fetchSessionDetail(sessionId);
     },
   });
 }
 
-/** 打开（或新建）某个角色的会话。mock 下：找到该角色的最近一个；没有则新建一条并写入角色的 greeting。 */
+/** 打开（或新建）某个角色的会话。 */
 export function useOpenSessionForCharacter() {
   const qc = useQueryClient();
 
@@ -203,7 +184,7 @@ export function useOpenSessionForCharacter() {
   });
 }
 
-/** 发送消息。乐观更新 user 消息；mock 下 1.5–3s 后落一条 assistant 回复。 */
+/** 发送消息。乐观更新 user 消息。 */
 export function useSendMessageMutation(sessionId: string) {
   const qc = useQueryClient();
 

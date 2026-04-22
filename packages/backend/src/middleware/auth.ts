@@ -21,6 +21,16 @@ export interface TelegramUser {
  * @returns 校验成功返回 TelegramUser 对象，失败抛出错误
  */
 export function verifyTelegramInitData(initDataStr: string): TelegramUser {
+  // 允许本地测试 Bypass
+  if (process.env.MOCK_AUTH === '1') {
+    try {
+      const urlParams = new URLSearchParams(initDataStr);
+      return JSON.parse(decodeURIComponent(urlParams.get('user')!)) as TelegramUser;
+    } catch (e) {
+      // ignore, fallback
+    }
+  }
+
   if (!config.telegramBotToken) {
     throw new Error('TELEGRAM_BOT_TOKEN is not configured');
   }
