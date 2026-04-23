@@ -1,0 +1,8 @@
+node_modules/
+.next/
+dist/
+.vercel/
+.turbo/
+pnpm-lock.yaml
+package-lock.json
+.husky/_

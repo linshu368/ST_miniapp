@@ -1,3 +1,106 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    /* 夜间情绪色板：带暖色偏移的深墨 + 珊瑚主色，服务"单手/低光/沉浸"场景 */
+    --background: 260 20% 6%;
+    --foreground: 30 15% 92%;
+    --card: 258 18% 10%;
+    --card-foreground: 30 15% 92%;
+    --popover: 258 18% 10%;
+    --popover-foreground: 30 15% 92%;
+    --primary: 12 75% 62%;
+    --primary-foreground: 260 30% 8%;
+    --secondary: 258 15% 16%;
+    --secondary-foreground: 30 10% 88%;
+    --muted: 258 14% 13%;
+    --muted-foreground: 258 10% 55%;
+    --accent: 340 65% 58%;
+    --accent-foreground: 30 15% 92%;
+    --destructive: 0 50% 48%;
+    --destructive-foreground: 30 15% 92%;
+    --border: 258 12% 18%;
+    --input: 258 12% 16%;
+    --ring: 12 75% 62%;
+    --radius: 0.875rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'kern', 'liga', 'calt';
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  /* 消息气泡入场：像一句轻声说话，从雾里浮出来 */
+  @keyframes whisper-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+      filter: blur(2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+  }
+  .animate-whisper-in {
+    animation: whisper-in 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+
+  /* 三点气息 indicator：低对比呼吸 */
+  @keyframes breath {
+    0%,
+    80%,
+    100% {
+      opacity: 0.25;
+      transform: translateY(0);
+    }
+    40% {
+      opacity: 0.75;
+      transform: translateY(-1px);
+    }
+  }
+  .animate-breath {
+    animation: breath 1.4s ease-in-out infinite both;
+  }
+}

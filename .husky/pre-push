@@ -1,0 +1,28 @@
+# 在 push 前提醒可能在 Vercel 上翻车的前端 lint 问题。
+# 设计原则：友好提醒，不阻断。Vercel 才是最终守门人。
+#
+# 仅当本地领先远端的提交涉及 frontend 源码时才跑，避免无关 push 浪费时间。
+# 若遇到问题，push 不会被拦住——只是在你眼皮底下打一次预警，让你自己判断要不要修。
+
+REMOTE_REF=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "")
+
+if [ -z "$REMOTE_REF" ]; then
+  # 新分支首次 push，没有 upstream，拿最近的所有改动
+  DIFF_RANGE="HEAD"
+else
+  DIFF_RANGE="$REMOTE_REF..HEAD"
+fi
+
+TOUCHED_FRONTEND=$(git diff --name-only "$DIFF_RANGE" -- 'packages/frontend/src/*.ts' 'packages/frontend/src/*.tsx' 'packages/frontend/src/**/*.ts' 'packages/frontend/src/**/*.tsx' 2>/dev/null)
+
+if [ -n "$TOUCHED_FRONTEND" ]; then
+  echo "[pre-push] 检测到前端代码改动，做一次 Vercel 同等 lint 预检…"
+  if ! ( cd packages/frontend && CI=true npx --no-install next lint --dir src --max-warnings 0 ) ; then
+    echo ""
+    echo "[pre-push] ⚠ 上面的问题在 Vercel 上会让构建失败。"
+    echo "           push 不会阻断，你可以继续推——但建议先修，省得 preview 挂掉。"
+    echo ""
+  fi
+fi
+
+exit 0

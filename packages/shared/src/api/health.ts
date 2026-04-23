@@ -1,4 +1,4 @@
 export interface HealthData {
-    status: string;
-    timestamp: string;
-  }
+  status: string;
+  timestamp: string;
+}
