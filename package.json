@@ -1,5 +1,6 @@
 {
   "private": true,
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev:frontend": "pnpm --filter @miniapp/frontend dev",
     "dev:backend": "pnpm --filter @miniapp/backend dev",
@@ -8,9 +9,7 @@
     "lint": "pnpm -r --if-present lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky",
-    "postinstall": "prisma generate",
-    "start": "tsx src/server.ts"
+    "prepare": "husky"
   },
   "engines": {
     "node": ">=20",
@@ -32,8 +31,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@prisma/engines",
+      "@prisma/client",
       "prisma",
-      "unrs-resolver"
+      "unrs-resolver",
+      "esbuild"
     ]
   }
 }
