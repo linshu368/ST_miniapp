@@ -13,14 +13,14 @@
 本 Prompt 的使用场景（必读）
 本 prompt 用于 "PM 分支进入开发阶段后的 push" 场景，也就是上线前的最后一道闸。
 触发规则（由 GitHub Actions 基于 diff 文件路径路由决定）
-PM 和开发共用同一条 pm/xxx-日期 分支，PR 也是同一个 PR（PM 建的那个）。路由规则如下：
+PM 和开发共用同一条 pm-xxx/feature-name-YYYYMMDD 分支，PR 也是同一个 PR（PM 建的那个）。路由规则如下：
 暂时无法在飞书文档外展示此内容
 因此，进入本 prompt 的 push 一定是开发阶段的 push。 无需判断作者身份，直接按开发视角处理即可。
-边界情况：PM 不应该动开发区域的文件。如果 PM 误动了开发区域，本 prompt 依然会被触发，此时输出的报告会把那些改动归为"开发区域改动"——这本身就是一个有用的警报，PM 和开发能立刻看出来有越界，不视为 bug。
+边界情况：除 `packages/shared/`（PM 允许起草草案）外，PM 不应动开发区域文件。如果 PM 误动了其他开发区域路径，本 prompt 依然会被触发，报告会把那些改动归为"开发区域改动"——这本身就是一个有用的警报，不视为 bug。
 典型链路
 
-1. 阶段一：PM 在 pm/xxx-日期 分支上用 mock 数据完成 UI 开发 → push → 建 PR（目标 main）→ diff 全在 PM 区域 → 走 PM 阶段 prompt。
-2. 阶段二：如果判为"需开发介入"，开发 checkout 同一条 pm/xxx-日期 分支 → 继续 commit（接真实 API、改 shared 类型、加 backend 接口等）→ push → diff 含开发区域文件 → 本 PR 评论区自动生成本 prompt 的报告（覆盖上一次的 PM 阶段报告）。
+1. 阶段一：PM 在 pm-xxx/feature-name-YYYYMMDD 分支上用 mock 数据完成 UI 开发 → push → 建 PR（目标 main）→ diff 全在 PM 区域 → 走 PM 阶段 prompt。
+2. 阶段二：如果判为"需开发介入"，开发 checkout 同一条 pm-xxx/feature-name-YYYYMMDD 分支 → 继续 commit（接真实 API、改 shared 类型、加 backend 接口等）→ push → diff 含开发区域文件 → 本 PR 评论区自动生成本 prompt 的报告（覆盖上一次的 PM 阶段报告）。
 3. 阶段三：本报告输出后，开发按报告内容对同一个 PR 做 squash and merge 到 main，上线。
    全流程只有一个 PR、一条分支。PM 阶段的 AI 报告和开发阶段的 AI 报告都在同一个 PR 的评论区里，按时间顺序排列，构成完整的阶段档案。开发阶段的 push 会触发新的 AI 报告覆盖评论，这是预期行为。
    本次 PR 的 diff 是 PM 改动 + 开发改动的合并结果（diff 基准是 main），两者在物理上无法通过作者信息区分（上游 pipeline 只提供时间戳和 commit message，不提供 author）。身份归属完全通过文件路径的区域划分推断，见下方规则。
@@ -35,16 +35,17 @@ PM 和开发共用同一条 pm/xxx-日期 分支，PR 也是同一个 PR（PM �
 区域划分规则（用于推断改动归属）
 PM 区域（默认视为 PM 改动）
 
-- packages/frontend/app/
-- packages/frontend/components/
-- packages/frontend/lib/mock-data.ts
-- packages/frontend/lib/mock-data/
+- packages/frontend/src/app/
+- packages/frontend/src/components/
+- packages/frontend/src/lib/mock-data/
+- packages/frontend/src/lib/telegram/（PM 常改）
+- packages/frontend/src/stores/、packages/frontend/src/hooks/（常为 UI 状态）
   开发区域（默认视为开发改动）
   除上述 PM 区域之外的所有路径，典型包括：
 - packages/backend/
-- packages/shared/
-- packages/frontend/lib/api/
-- packages/frontend/lib/（除 mock-data 外）
+- packages/shared/（注：PM 也可起草 shared/ 草案，开发在 PR review 裁决——因此 shared/ 的改动在本阶段被视作开发定稿，不把 PM 早期的 shared/ 提交当越界）
+- packages/frontend/src/lib/api/
+- packages/frontend/src/lib/（除 mock-data、telegram 外）
 - 各类配置文件、CI 脚本、依赖清单
   边界情况
   同一文件既在 PM 区域又被修改过多次（且能从 commit 时间线看出跨阶段改动），标注为 "边界模糊"，不强判归属，这一类很少，影响不大。
@@ -140,15 +141,15 @@ PM 当初提交的那个 PR 经过开发加工后变成了什么样，她需要�
 🟧 三、改动全貌（按区域分层呈现）
 本节给 PM 和开发共同看，帮助双方快速理解"这次 PR 里谁动了什么"。
 PM 区域改动
-packages/frontend/app/、components/、lib/mock-data\*
+`packages/frontend/src/app/`、`src/components/`、`src/lib/mock-data/`、`src/lib/telegram/`、`src/stores/`、`src/hooks/`
 逐条列出，每条一句话描述。若无，写"无"。
 这部分是 PM 阶段遗留下来的改动，开发理论上不该再动。如果开发区域的改动强迫 PM 区域被动更新（比如类型契约调整），在对应条目后标注"因开发侧调整连带修改"。
 开发区域改动
 按子区域分组。若某子区域无改动，跳过该子区域标题。
 
-- shared 类型层：...
+- shared 类型层（`packages/shared/src/api/`）：...
 - backend 接口层：...
-- frontend API 接入层（lib/api/）：...
+- frontend 数据层（`packages/frontend/src/lib/api/` 的 React Query hooks）：...
 - 基础设施 / 配置：...
   边界模糊改动
   同一文件被推断为 PM 与开发共同改动的，列在这里。只罗列不评判。若无，写"无"。

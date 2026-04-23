@@ -204,12 +204,20 @@ Bot 和 miniApp 共享同一个 Supabase 项目，通过表级别的划分隔离
 
 > 本项目已按此结构初始化，目录位于 `ST_miniapp/packages/{frontend,backend,shared}`。
 
-**工程纪律（不可谈判，对前后端同等约束）**：
+**工程纪律（不可谈判）**：
 
-- **任何前后端交互的数据形状（请求体、响应体、共享领域类型），必须先定义在 `packages/shared/` 中，才允许被任何一方消费。**
-- 后端不得在 `backend/` 内部私定对外数据形状而不同步到 `shared/`；前端不得在 `frontend/` 内部私定与 shared 并行的数据类型。任一方违反都会导致契约分叉。
-- 风险兜底在 **PR review 阶段**：开发在路径 B 的 review 中会交叉验证 shared 与 backend 实现是否一致；不一致则由开发与 PM 共同校准后再更新 `shared/`。
-- 推论：前端开发 AI 无需读 `packages/backend/` 源码；只读 `packages/shared/` 即可获得所有契约。shared 与 backend 的一致性由工程纪律 + review 流程共同保证，不由前端 AI 独立负责。
+- 任何前后端交互的数据形状必须先在 `packages/shared/` 定义，才允许被任何一方消费。
+- 前端不得在 `frontend/` 私定与 shared 并行的**业务类型**（纯 UI 状态如 `isExpanded`、`hoveredIndex` 除外）。
+
+**谁写 `shared/`**：
+
+- 功能发起人起草。本项目新功能多由 PM 发起，所以 PM 通常就是 `shared/` 契约的起草人——在分支里一次性提交 shared 类型 + mock + hook + 组件。
+- PM 写的是「草案」，开发在 PR review 是最终裁决者。默认目标是**一来回定稿**（开发直接在同一 PR 内修 shared）。
+- **复用优先**：类型已存在就直接消费，不要写并行版本；严重冲突时开发可打回 PM 重做（非默认但合法）。
+
+**反推测字段**：PM 在 `shared/` 新增的每个字段必须在本次 PR 的前端代码里被实际引用，没用到的不许写（防止「将来会用」污染契约）。
+
+**推论**：前端 AI 无需读 `packages/backend/`；只读 `packages/shared/` 即可获得所有契约。shared 与 backend 的一致性由 PR review 保证。
 
 ---
 
