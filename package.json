@@ -3,7 +3,9 @@
     "scripts": {
       "dev:frontend": "pnpm --filter @miniapp/frontend dev",
       "dev:backend": "pnpm --filter @miniapp/backend dev",
-      "dev": "pnpm run --parallel dev:frontend dev:backend"
+      "dev": "pnpm run --parallel dev:frontend dev:backend",
+      "postinstall": "prisma generate",
+      "start": "tsx src/server.ts"
     },
     "engines": {
       "node": ">=20",
