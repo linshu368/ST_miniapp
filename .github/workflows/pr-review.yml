@@ -4,7 +4,7 @@ name: PR Review
 on:
   pull_request:
     branches: [main]
-    types: [opened, ready_for_review, reopened]
+    types: [opened, synchronize, ready_for_review, reopened]
 
 permissions:
   pull-requests: write
@@ -259,5 +259,6 @@ jobs:
             ---
 
             *🤖 自动生成 · `${{ github.head_ref }}` → `main` · Prompt: `${{ steps.prompt-type.outputs.type }}` · ${{ github.event.pull_request.head.sha }}*
+
 
             ${{ steps.comment-meta.outputs.baseline_marker }}

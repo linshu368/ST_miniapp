@@ -1,21 +1,24 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { Providers } from './providers';
 
 export const metadata: Metadata = {
   title: 'MiniApp',
   description: 'AI Role-playing MiniApp',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh">
-      <body className="bg-black text-white min-h-screen">
-        {children}
+    <html lang="zh" className="dark">
+      <body className="min-h-screen bg-background text-foreground antialiased">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

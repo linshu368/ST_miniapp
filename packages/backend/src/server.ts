@@ -6,7 +6,7 @@ async function main() {
 
   await app.listen({
     port: config.port,
-    host: '0.0.0.0',  // Railway 要求绑 0.0.0.0
+    host: '0.0.0.0', // Railway 要求绑 0.0.0.0
   });
 
   console.log(`Backend running on port ${config.port}`);
