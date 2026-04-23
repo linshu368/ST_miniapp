@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { GetCharactersData, GetCharacterByIdData } from '@miniapp/shared';
 
 import { apiClient } from './client';
-import { mockCharacters, getMockCharacterDetail } from '@/lib/mock-data';
+import { mockCharacters, getMockCharacterDetail } from '@/lib/mock-data/characters';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
 async function fetchCharacters(): Promise<GetCharactersData> {
@@ -24,16 +24,12 @@ export const characterKeys = {
 
 // ==== React Query hooks（业务层唯一入口）====
 
-/** 是否使用 mock 数据（当后端未联调时 PM 本地使用）。
- *  切换方式：NEXT_PUBLIC_USE_MOCK=1 的时候启用。
- *  默认 false —— 开发接入后一律走真实接口。 */
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === '1';
 
 export function useCharactersQuery() {
   return useQuery<GetCharactersData>({
     queryKey: characterKeys.lists(),
     queryFn: async () => {
-      if (USE_MOCK) return { characters: mockCharacters };
       return fetchCharacters();
     },
   });
@@ -45,11 +41,6 @@ export function useCharacterQuery(id: string | undefined) {
     enabled: !!id,
     queryFn: async () => {
       if (!id) throw new Error('character id is required');
-      if (USE_MOCK) {
-        const character = getMockCharacterDetail(id);
-        if (!character) throw new Error(`mock character not found: ${id}`);
-        return { character };
-      }
       return fetchCharacterById(id);
     },
   });

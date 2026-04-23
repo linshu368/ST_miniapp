@@ -1,5 +1,6 @@
 {
   "private": true,
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev:frontend": "pnpm --filter @miniapp/frontend dev",
     "dev:backend": "pnpm --filter @miniapp/backend dev",
@@ -26,5 +27,14 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/engines",
+      "@prisma/client",
+      "prisma",
+      "unrs-resolver",
+      "esbuild"
+    ]
   }
 }

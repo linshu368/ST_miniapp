@@ -4,7 +4,7 @@ name: PR Review
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize]
+    types: [opened, synchronize, ready_for_review, reopened]
 
 permissions:
   pull-requests: write
@@ -26,70 +26,172 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      # 新增三层判定规则：
-      #1. diff含packages/backend/文件 → 后端prompt
-      #2. diff仅含packages/frontend/文件（无backend）→ 前端prompt
-      #3. 仅shared/根配置变更 → 后端prompt
+
+      # ━━━ 查找上次审查基线 ━━━
+      # 在 PR 评论中查找隐藏标记 <!-- review-baseline:SHA -->
+      # 如果找到且 SHA 有效，本次审查只采集增量 diff
+      - name: 查找上次审查基线
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "🔍 查找 PR 上已有的审查记录..." >&2
+
+          PREVIOUS_SHA=$(gh api \
+            "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --paginate 2>/dev/null \
+            | python3 -c "
+          import json, sys, re
+          try:
+              comments = json.load(sys.stdin)
+              for c in comments:
+                  m = re.search(r'<!-- review-baseline:([0-9a-f]{40}) -->', c.get('body', ''))
+                  if m:
+                      print(m.group(1))
+                      break
+          except:
+              pass
+          " 2>/dev/null || echo "")
+
+          if [ -n "$PREVIOUS_SHA" ]; then
+            # 验证 SHA 是否仍然有效（防止 force-push 后旧提交被 GC）
+            if git cat-file -t "$PREVIOUS_SHA" &>/dev/null; then
+              echo "sha=$PREVIOUS_SHA" >> $GITHUB_OUTPUT
+              echo "is_incremental=true" >> $GITHUB_OUTPUT
+              echo "📌 找到上次审查基线: ${PREVIOUS_SHA:0:7}" >&2
+            else
+              echo "sha=" >> $GITHUB_OUTPUT
+              echo "is_incremental=false" >> $GITHUB_OUTPUT
+              echo "⚠️ 上次审查 SHA (${PREVIOUS_SHA:0:7}) 已失效（可能已 force-push），回退到 main" >&2
+            fi
+          else
+            echo "sha=" >> $GITHUB_OUTPUT
+            echo "is_incremental=false" >> $GITHUB_OUTPUT
+            echo "📌 未找到上次审查记录，使用 main 作为基线" >&2
+          fi
+
+      # 三层判定规则（基于增量 diff 的文件变更）：
+      # 第零层：手动 override（PR 描述或 commit message 含 [review:backend] / [review:frontend]）
+      # 第一层：backend 文件 ≥ 3 → 铁证，直接后端 prompt
+      # 第二层：backend 文件 1-2 个 → 看占比（≥25% 后端，<25% 前端 + 警告）
+      # 第三层：无 backend 文件 → 有 frontend 走前端，否则走后端兜底
+
       - name: 判断 Prompt 类型
         id: prompt-type
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ steps.baseline.outputs.sha || 'main' }}
+          IS_INCREMENTAL: ${{ steps.baseline.outputs.is_incremental }}
         run: |
           BRANCH="${{ github.head_ref }}"
           echo "当前分支: $BRANCH" >&2
+          echo "审查基准: $BASE_REF" >&2
+          echo "增量模式: $IS_INCREMENTAL" >&2
 
-          # 确保 main 分支可用
           git fetch origin main:main 2>/dev/null || true
 
-          # ── 第零层：手动 override（优先级最高）──
-          # 从 PR 描述和 commit messages 中检测 [review:backend] 或 [review:frontend]
-          COMMIT_MESSAGES=$(git log main..HEAD --pretty=format:"%s %b" 2>/dev/null || echo "")
-          ALL_TEXT="${PR_BODY} ${COMMIT_MESSAGES}"
+          # ━━━ 第零层：手动 override（优先级最高）━━━
+          # 只看基线以来的 commit（增量审查时排除 PM 阶段的 commit message）
+          COMMIT_MESSAGES=$(git log ${BASE_REF}..HEAD --pretty=format:"%s %b" 2>/dev/null || echo "")
+
+          # 增量审查时只看 commit message，不看 PR body
+          # （避免 PM 在 PR 描述中写的 [review:frontend] 干扰后端审查）
+          if [ "$IS_INCREMENTAL" = "true" ]; then
+            ALL_TEXT="${COMMIT_MESSAGES}"
+          else
+            ALL_TEXT="${PR_BODY} ${COMMIT_MESSAGES}"
+          fi
 
           if echo "$ALL_TEXT" | grep -q '\[review:backend\]'; then
             echo "type=backend" >> $GITHUB_OUTPUT
+            echo "backend_warning=" >> $GITHUB_OUTPUT
             echo "✅ 手动 override [review:backend] → backend prompt" >&2
             exit 0
           fi
 
           if echo "$ALL_TEXT" | grep -q '\[review:frontend\]'; then
             echo "type=frontend" >> $GITHUB_OUTPUT
+            echo "backend_warning=" >> $GITHUB_OUTPUT
             echo "✅ 手动 override [review:frontend] → frontend prompt" >&2
             exit 0
           fi
 
-          # ── 第一层：基于 diff 文件路径自动判定 ──
-          CHANGED_FILES=$(git diff main...HEAD --name-only)
+          # ━━━ 归类文件（基于增量 diff）━━━
+          CHANGED_FILES=$(git diff ${BASE_REF}...HEAD --name-only)
 
           echo "变更文件列表:" >&2
           echo "$CHANGED_FILES" >&2
           echo "---" >&2
 
-          HAS_BACKEND=false
-          HAS_FRONTEND=false
+          BACKEND_COUNT=0
+          FRONTEND_COUNT=0
+          BACKEND_FILE_LIST=""
 
           while IFS= read -r file; do
             [[ -z "$file" ]] && continue
             if [[ "$file" == packages/backend/* ]]; then
-              HAS_BACKEND=true
+              BACKEND_COUNT=$((BACKEND_COUNT + 1))
+              BACKEND_FILE_LIST="${BACKEND_FILE_LIST}- \`${file}\`\n"
             fi
             if [[ "$file" == packages/frontend/* ]]; then
-              HAS_FRONTEND=true
+              FRONTEND_COUNT=$((FRONTEND_COUNT + 1))
             fi
           done <<< "$CHANGED_FILES"
 
-          # 规则 1: 出现 backend 文件 → 后端 prompt
-          if $HAS_BACKEND; then
+          echo "Backend 文件数: $BACKEND_COUNT, Frontend 文件数: $FRONTEND_COUNT" >&2
+
+          # ━━━ 第一层：backend ≥ 3，铁证 → 后端 prompt ━━━
+          if [ "$BACKEND_COUNT" -ge 3 ]; then
             echo "type=backend" >> $GITHUB_OUTPUT
-            echo "✅ 检测到 packages/backend/ 变更 → backend prompt" >&2
-          # 规则 2: 无 backend，有 frontend → 前端 prompt
-          elif $HAS_FRONTEND; then
+            echo "backend_warning=" >> $GITHUB_OUTPUT
+            echo "✅ Backend 文件 ≥ 3（铁证）→ backend prompt" >&2
+            exit 0
+          fi
+
+          # ━━━ 第二层：backend 1-2 个 → 看占比 ━━━
+          if [ "$BACKEND_COUNT" -gt 0 ] && [ "$FRONTEND_COUNT" -gt 0 ]; then
+            TOTAL=$((BACKEND_COUNT + FRONTEND_COUNT))
+            RATIO=$((BACKEND_COUNT * 100 / TOTAL))
+            echo "Backend 占比: ${RATIO}%" >&2
+
+            if [ "$RATIO" -ge 25 ]; then
+              echo "type=backend" >> $GITHUB_OUTPUT
+              echo "backend_warning=" >> $GITHUB_OUTPUT
+              echo "✅ Backend 占比 ≥ 25%（${RATIO}%）→ backend prompt" >&2
+            else
+              echo "type=frontend" >> $GITHUB_OUTPUT
+              {
+                echo 'backend_warning<<WARNING_EOF'
+                echo ""
+                echo "⚠️ **本次变更涉及以下 backend 文件，请确认是否为误改：**"
+                echo ""
+                echo -e "$BACKEND_FILE_LIST"
+                echo ""
+                echo '如为有意改动，建议在 PR 描述中添加 `[review:backend]` 后重新推送触发审查。'
+                echo 'WARNING_EOF'
+              } >> $GITHUB_OUTPUT
+              echo "⚠️ Backend 占比 < 25%（${RATIO}%），疑似误改 → frontend prompt + 警告" >&2
+            fi
+            exit 0
+          fi
+
+          # backend 有文件但 frontend 没有 → 后端
+          if [ "$BACKEND_COUNT" -gt 0 ] && [ "$FRONTEND_COUNT" -eq 0 ]; then
+            echo "type=backend" >> $GITHUB_OUTPUT
+            echo "backend_warning=" >> $GITHUB_OUTPUT
+            echo "✅ 仅 backend（+ shared/infra）变更 → backend prompt" >&2
+            exit 0
+          fi
+
+          # ━━━ 第三层：无 backend 文件 ━━━
+          if [ "$FRONTEND_COUNT" -gt 0 ]; then
             echo "type=frontend" >> $GITHUB_OUTPUT
-            echo "✅ 检测到 packages/frontend/ 变更（无 backend）→ frontend prompt" >&2
-          # 规则 3: 仅 shared / 根配置 → 后端 prompt
+            echo "backend_warning=" >> $GITHUB_OUTPUT
+            echo "✅ 无 backend 变更，有 frontend → frontend prompt" >&2
           else
             echo "type=backend" >> $GITHUB_OUTPUT
-            echo "✅ 仅 shared/根目录配置变更 → backend prompt" >&2
+            echo "backend_warning=" >> $GITHUB_OUTPUT
+            echo "✅ 仅 shared/根目录配置变更 → backend prompt（兜底）" >&2
           fi
 
       - name: 生成审查报告
@@ -98,17 +200,17 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          BASE_REF: ${{ steps.baseline.outputs.sha || 'main' }}
         run: |
           echo "=== 当前 HEAD ===" >&2
           git log --oneline -3 >&2
-          echo "=== 本地分支 ===" >&2
-          git branch -a >&2
+          echo "=== 审查基准: $BASE_REF ===" >&2
           echo "==================" >&2
 
           git fetch origin main:main 2>/dev/null || true
 
           set +e
-          bash ops/git/review.sh main ${{ steps.prompt-type.outputs.type }} > report.md 2>stderr.log
+          bash ops/git/review.sh "$BASE_REF" ${{ steps.prompt-type.outputs.type }} > report.md 2>stderr.log
           EXIT_CODE=$?
           set -e
 
@@ -127,12 +229,36 @@ jobs:
             echo 'REPORT_EOF'
           } >> $GITHUB_OUTPUT
 
+      # 准备评论的元信息：header（控制 sticky 行为）、badge（显示审查类型）、baseline marker
+      - name: 准备评论元信息
+        id: comment-meta
+        run: |
+          IS_INCREMENTAL="${{ steps.baseline.outputs.is_incremental }}"
+          if [ "$IS_INCREMENTAL" = "true" ]; then
+            BASELINE_SHA="${{ steps.baseline.outputs.sha }}"
+            echo "header=ai-review-incremental" >> $GITHUB_OUTPUT
+            echo "badge=🔄 **增量审查**（基线: \`${BASELINE_SHA:0:7}\`）" >> $GITHUB_OUTPUT
+            echo "baseline_marker=" >> $GITHUB_OUTPUT
+          else
+            echo "header=ai-review-initial" >> $GITHUB_OUTPUT
+            echo "badge=📋 **初始审查**" >> $GITHUB_OUTPUT
+            printf 'baseline_marker=<!-- review-baseline:%s -->\n' "${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: 发布报告到 PR 评论
         uses: marocchino/sticky-pull-request-comment@v2
         with:
-          header: ai-review
+          header: ${{ steps.comment-meta.outputs.header }}
           message: |
+            ${{ steps.comment-meta.outputs.badge }}
+
+            ${{ steps.prompt-type.outputs.backend_warning }}
+
             ${{ steps.review.outputs.report }}
 
             ---
-            *🤖 自动生成 · `${{ github.head_ref }}` → `main` · ${{ github.event.pull_request.head.sha }}*
+
+            *🤖 自动生成 · `${{ github.head_ref }}` → `main` · Prompt: `${{ steps.prompt-type.outputs.type }}` · ${{ github.event.pull_request.head.sha }}*
+
+
+            ${{ steps.comment-meta.outputs.baseline_marker }}

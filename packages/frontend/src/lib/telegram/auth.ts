@@ -6,6 +6,18 @@ import { retrieveRawInitData } from '@telegram-apps/sdk-react';
  *  在非 Telegram 环境或 SDK 未 init 时返回 undefined（不抛错）。
  */
 export function getRawInitData(): string | undefined {
+  if (process.env.NEXT_PUBLIC_USE_MOCK_INIT_DATA === '1') {
+    // Local testing mock data
+    // Contains a fake valid-looking user object, skipping signature hash verification is expected to fail on real backend
+    // unless the backend bypasses signature check or we provide a valid hash.
+    // For local dev without TG, we typically need the backend to accept mock auth.
+    return (
+      'query_id=mock_query_id&user=%7B%22id%22%3A123456789%2C%22first_name%22%3A%22Local%22%2C%22last_name%22%3A%22Dev%22%2C%22username%22%3A%22local_dev%22%2C%22language_code%22%3A%22en%22%2C%22is_premium%22%3Atrue%7D&auth_date=' +
+      Math.floor(Date.now() / 1000) +
+      '&hash=mock_hash'
+    );
+  }
+
   try {
     return retrieveRawInitData();
   } catch {
