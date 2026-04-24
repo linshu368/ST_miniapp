@@ -21,24 +21,14 @@ export interface TelegramUser {
  * @returns 校验成功返回 TelegramUser 对象，失败抛出错误
  */
 export function verifyTelegramInitData(initDataStr: string): TelegramUser {
-  // 允许开发环境 Bypass (本地 MOCK_AUTH 或 Railway DEV_AUTH_BYPASS)
-  if (process.env.MOCK_AUTH === '1' || process.env.DEV_AUTH_BYPASS === '1') {
+  // 仅在非 production 环境 + 显式开启时才 bypass
+  if (process.env.NODE_ENV !== 'production' && process.env.MOCK_AUTH === '1') {
     try {
       const urlParams = new URLSearchParams(initDataStr);
-      const userStr = urlParams.get('user');
-      if (userStr) {
-        return JSON.parse(decodeURIComponent(userStr)) as TelegramUser;
-      }
+      return JSON.parse(decodeURIComponent(urlParams.get('user')!)) as TelegramUser;
     } catch (e) {
-      // fallback
+      // ignore, fallback to normal verification
     }
-    // 如果没有有效的 user 字段，返回一个默认的测试用户
-    return {
-      id: 99999,
-      first_name: 'Dev',
-      last_name: 'User',
-      username: 'dev_bypass',
-    };
   }
 
   if (!config.telegramBotToken) {
