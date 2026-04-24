@@ -20,22 +20,27 @@ export async function buildApp() {
         return;
       }
 
-      // 所有 vercel.app 子域名放行（含 preview URL）
-      if (origin.endsWith('.vercel.app')) {
-        callback(null, true);
-        return;
-      }
-
-      // 精确匹配配置的前端域名
+      // 精确匹配配置的前端域名 (Prod & Dev)
       if (origin === config.frontendUrl) {
         callback(null, true);
         return;
       }
 
-      // 本地开发
-      if (origin.startsWith('http://localhost:')) {
-        callback(null, true);
-        return;
+      // 判断是否是开发或测试环境
+      const isDev = config.nodeEnv !== 'production' || process.env.DEV_AUTH_BYPASS === '1';
+
+      if (isDev) {
+        // 开发环境：所有 vercel.app 子域名放行（含 preview URL）
+        if (origin.endsWith('.vercel.app')) {
+          callback(null, true);
+          return;
+        }
+
+        // 开发环境：本地开发端口放行
+        if (origin.startsWith('http://localhost:')) {
+          callback(null, true);
+          return;
+        }
       }
 
       // 其他来源拒绝

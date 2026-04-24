@@ -21,13 +21,13 @@ export interface TelegramUser {
  * @returns 校验成功返回 TelegramUser 对象，失败抛出错误
  */
 export function verifyTelegramInitData(initDataStr: string): TelegramUser {
-  // 允许本地测试 Bypass
-  if (process.env.MOCK_AUTH === '1') {
+  // 仅在非 production 环境 + 显式开启时才 bypass
+  if (process.env.NODE_ENV !== 'production' && process.env.MOCK_AUTH === '1') {
     try {
       const urlParams = new URLSearchParams(initDataStr);
       return JSON.parse(decodeURIComponent(urlParams.get('user')!)) as TelegramUser;
     } catch (e) {
-      // ignore, fallback
+      // ignore, fallback to normal verification
     }
   }
 
@@ -93,6 +93,12 @@ export function verifyTelegramInitData(initDataStr: string): TelegramUser {
  */
 export async function requireTelegramAuth(request: FastifyRequest, reply: FastifyReply) {
   const initData = request.headers['x-init-data'];
+
+  // 如果处于 Bypass 模式，并且没有提供 initData，则自动放行并注入默认测试用户
+  if (process.env.DEV_AUTH_BYPASS === '1' && (!initData || typeof initData !== 'string')) {
+    request.user = { id: 99999, first_name: 'Dev', last_name: 'User', username: 'dev_bypass' };
+    return;
+  }
 
   if (!initData || typeof initData !== 'string') {
     return reply.status(401).send({
