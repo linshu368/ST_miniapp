@@ -70,7 +70,7 @@ ST_miniapp/
 
 - **PM 主要改 `packages/frontend/`**；允许也鼓励在 `packages/shared/src/` 起草契约草案（当新功能需要 `shared/` 里尚不存在的类型时）。
 - **PM 不改 `packages/backend/`**。
-- **Mock / 真实 API 切换**：由 `NEXT_PUBLIC_USE_MOCK` 环境变量控制，两套来源在 `packages/frontend/src/lib/api/` 的 React Query hook 内部分流，组件层永远只调用 `useXxxQuery` / `useXxxMutation`，不关心底层是 mock 还是真 API。
+- **Mock / 真实 API 切换**：按**模块粒度**，由 `packages/frontend/src/lib/api/mock-registry.ts` 的 `shouldUseMock('<module>')` 决定，在 React Query hook 内部分流。组件层永远只调用 `useXxxQuery` / `useXxxMutation`，不关心底层是 mock 还是真 API。`mock-registry.ts` 由 PM bootstrap 自动重算（真相源：本地 `packages/backend/src/` 当前 committed 的路由）；人工维护的是 `mock-registry.config.ts`（MODULE_CONFIG / forceMockReason）。`NEXT_PUBLIC_USE_MOCK=1` 保留为全局强制 mock 的应急开关。
 - **Mock 数据位置**：集中在 `packages/frontend/src/lib/mock-data/` **目录**下按模块拆子文件（`index.ts` 统一导出；`shared.ts` 跨模块共享类型；`characters.ts`、`chat.ts` 等按业务模块）。**不允许硬编码在组件/页面内**，**不允许出现在 `shared/`、`backend/` 或 `src/lib/api/` 以外泄漏到其他目录**。
 - **类型契约**：mock 数据的业务实体类型（含 `id`、`name` 等）必须引用自 `packages/shared/src/api/` 的类型定义；真实 API 接入时类型自动对齐。纯 UI 状态类型（`isExpanded` 等）留在 frontend 本地。
 - **真实 API 接入**：开发只需把对应 React Query hook 的 mock 分支替换成真实 `fetch` / SDK 调用，不动类型、不动组件结构。
@@ -167,7 +167,7 @@ mock 改动类型：[无 mock 改动 / 纯值改动]
 - `packages/shared/` 下**不应包含 mock 数据**——只能有类型定义和纯工具函数。PM 若在 `shared/` 里写了 mock 值（例如 `export const mockCharacters = [...]`），必须修。
 - `packages/backend/` 下**不应被 PM 修改**，更不应包含 mock 数据。
 - mock 数据不应硬编码在前端组件、页面、hooks、stores 内部。
-- mock 数据不应出现在 `packages/frontend/src/lib/api/` 的 React Query hook 里以「写死常量」形式存在（**例外**：hook 内部通过 `NEXT_PUBLIC_USE_MOCK` 环境变量切换到 `mock-data/` 导入的数据，这是有意设计，不算泄漏）。
+- mock 数据不应出现在 `packages/frontend/src/lib/api/` 的 React Query hook 里以「写死常量」形式存在（**例外**：hook 内部通过 `shouldUseMock('<module>')` 切换到 `mock-data/` 导入的数据，这是有意设计，不算泄漏）。
 
 **判断逻辑**
 
@@ -178,7 +178,7 @@ mock 数据和真实 API 路径必须物理隔离。后端开发接入数据时�
 - mock 数据进入 `shared/`：**必须修**
 - mock 数据进入 `backend/`（且 PM 同时改了 backend）：**必须修**
 - mock 数据硬编码在组件、页面、hooks、stores 里：**必须修**
-- mock 数据以写死常量形式混入 `src/lib/api/`（非 `USE_MOCK` 切换）：**必须修**
+- mock 数据以写死常量形式混入 `src/lib/api/`（非 `shouldUseMock()` 切换）：**必须修**
 - mock-data 目录内文件组织异常（例如所有 mock 全部塞进 `index.ts`、业务模块未拆分子文件）：**建议**
 
 **额外标注：Mock 数据改动类型**
@@ -379,7 +379,7 @@ interface CharacterDetail {
 
 - 当前 mock 数据来源：`packages/frontend/src/lib/mock-data/<module>.ts` 的具体变量名或函数名
 - 当前数据层 hook：`packages/frontend/src/lib/api/<module>.ts` 的 `useXxxQuery` / `useXxxMutation`
-- 替换后：在同一个 hook 内部把 `NEXT_PUBLIC_USE_MOCK !== '1'` 分支的实现改为真实 `fetch` / SDK 调用
+- 替换后：在同一个 hook 内部把 `shouldUseMock('<module>') === false` 分支的实现改为真实 `fetch` / SDK 调用；同时把 `mock-registry.config.ts` 里对应模块的 `forceMockReason` 清掉（若曾设），下次 PM bootstrap 会自动把该模块从 `MOCK_MODULES` 移除
 - 数据流向：`useXxxQuery` → 某个组件的消费 → 驱动哪个渲染逻辑
 
 如涉及多个接入点，每个接入点独立列出，不合并描述。

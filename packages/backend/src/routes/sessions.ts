@@ -19,6 +19,7 @@ import type {
 } from '@miniapp/shared';
 
 export default async function sessionRoutes(app: FastifyInstance) {
+  // @frontend-ready: true
   app.get('/api/sessions', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
@@ -50,6 +51,7 @@ export default async function sessionRoutes(app: FastifyInstance) {
     return reply.send(ok<GetSessionsData>({ sessions: sessionsSummary }));
   });
 
+  // @frontend-ready: true
   app.get('/api/sessions/:id', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     const { id } = request.params as { id: string };
@@ -92,6 +94,7 @@ export default async function sessionRoutes(app: FastifyInstance) {
     );
   });
 
+  // @frontend-ready: true
   app.post('/api/sessions/open', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     const { character_id } = request.body as PostOpenSessionRequest;
@@ -144,6 +147,7 @@ export default async function sessionRoutes(app: FastifyInstance) {
     return reply.send(ok<PostOpenSessionData>({ session_id: newSession.id }));
   });
 
+  // @frontend-ready: false — 响应改 SSE 流，shared 契约 PostMessageData 待更新为流式格式
   app.post(
     '/api/sessions/:id/messages',
     { preHandler: [requireTelegramAuth] },

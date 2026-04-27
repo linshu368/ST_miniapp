@@ -9,6 +9,7 @@ import type {
 } from '@miniapp/shared';
 
 export default async function characterRoutes(app: FastifyInstance) {
+  // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
     const characters = await prisma.character.findMany({
       orderBy: { created_at: 'desc' },
@@ -26,6 +27,7 @@ export default async function characterRoutes(app: FastifyInstance) {
     return reply.send(ok<GetCharactersData>({ characters: charactersSummary }));
   });
 
+  // @frontend-ready: true
   app.get('/api/characters/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 

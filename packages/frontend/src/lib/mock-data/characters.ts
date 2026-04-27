@@ -1,8 +1,16 @@
+// 🟢 后端替代状态：characters 模块可走真后端（routes 实现完整 + @frontend-ready: true）。
+//    本文件仅在 NEXT_PUBLIC_USE_MOCK=1 全局强制兜底、或作为 chat mock 的 character_id 锚点时使用。
+//
+// id 策略：被 chat mock session 引用的 3 个 character 的 id 引 DEV_SEED_CHARACTERS 常量
+//          （与 dev 后端真 UUID 对齐，保证 characters 切真后端时跨模块点击不 404）。
+//          其余仅作为本地 mock 展示，id 保持字面量、不会被真后端访问。
+
 import type { CharacterSummary, CharacterDetail } from '@miniapp/shared';
+import { DEV_SEED_CHARACTERS } from '@miniapp/shared';
 
 export const mockCharacters: CharacterSummary[] = [
   {
-    id: 'char-001',
+    id: DEV_SEED_CHARACTERS.heavyTaste, // 被 chat sess-001 引用
     name: '林枝',
     description:
       '床头的灯还亮着，她没关。她是那种习惯用沉默传递温度的人，不擅长主动，但只要你在，她就会把灯留着。',
@@ -20,7 +28,7 @@ export const mockCharacters: CharacterSummary[] = [
     author_name: 'jason',
   },
   {
-    id: 'char-003',
+    id: DEV_SEED_CHARACTERS.longdou, // 被 chat sess-003 引用
     name: '周屿',
     description:
       '桌上那封信写到一半，她没寄。她的情感总是比说出口的多一层，那封信写的是谁，她不说。',
@@ -29,7 +37,7 @@ export const mockCharacters: CharacterSummary[] = [
     author_name: 'jason',
   },
   {
-    id: 'char-004',
+    id: DEV_SEED_CHARACTERS.familySim, // 被 chat sess-002 引用
     name: '陆晞',
     description:
       '她说她睡不着，问你在不在。凌晨这个点最怕清醒，所以她总在深夜找人说话，不需要答案，只需要有人在线。',
@@ -61,7 +69,7 @@ const details: Record<
   string,
   Pick<CharacterDetail, 'greeting' | 'creator_notes' | 'chat_count'>
 > = {
-  'char-001': {
+  [DEV_SEED_CHARACTERS.heavyTaste]: {
     greeting:
       '这么晚了还没睡。……我也是。不知道为什么，今晚特别静，静到有点难受。你来了正好，陪我说说话吧，不用说什么正经的，随便聊聊就好。',
     creator_notes: '林枝是一个习惯用沉默传递温度的人。她不擅长主动，但只要你在，她就会把灯留着。',
@@ -73,13 +81,13 @@ const details: Record<
     creator_notes: '苏晚很少说"我关心你"，但她会记住你上次提过的每一件小事。',
     chat_count: 2187,
   },
-  'char-003': {
+  [DEV_SEED_CHARACTERS.longdou]: {
     greeting:
       '这封信我一直没写完。你来了，正好。不是非要你帮我写完，只是……有些话写着写着，就不知道该给谁了。你坐下来，我把开头念给你听。',
     creator_notes: '周屿的情感总是比她说出口的多一层。那封信写的是谁，她不说，但你可以猜。',
     chat_count: 1854,
   },
-  'char-004': {
+  [DEV_SEED_CHARACTERS.familySim]: {
     greeting:
       '你也睡不着？我就知道不只我一个人。凌晨这个点，刷什么都没意思，想找人说话又不知道从哪开口。那就别开口了，就这样待着，我在。',
     creator_notes: '陆晞最怕一个人清醒着，所以她总在深夜找人说话。不需要答案，只需要有人在线。',
@@ -113,7 +121,9 @@ export function getMockCharacterDetail(id: string): CharacterDetail | undefined 
 }
 
 // 兜底：老代码可能还在用这个单例，保留一次过渡
-export const mockCharacterDetail: CharacterDetail = getMockCharacterDetail('char-001') ?? {
+export const mockCharacterDetail: CharacterDetail = getMockCharacterDetail(
+  DEV_SEED_CHARACTERS.heavyTaste
+) ?? {
   ...mockCharacters[0]!,
   greeting: '……',
   personality_tags: [],

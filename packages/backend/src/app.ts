@@ -56,6 +56,7 @@ export async function buildApp() {
   await app.register(sessionRoutes);
 
   // ── 健康检查 ──
+  // @frontend-ready: true
   app.get('/health', async () => {
     return ok<HealthData>({
       status: 'ok',

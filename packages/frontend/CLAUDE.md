@@ -22,26 +22,33 @@
 
 ## 目录约定
 
-| 用途                        | 路径                                                      |
-| --------------------------- | --------------------------------------------------------- |
-| 路由                        | `src/app/`（Next.js App Router）                          |
-| shadcn/ui 组件              | `src/components/ui/`                                      |
-| 业务组件                    | `src/components/<模块>/`                                  |
-| 自定义 hooks                | `src/hooks/`                                              |
-| 跨组件状态（Zustand）       | `src/stores/`                                             |
-| 数据层（React Query hooks） | `src/lib/api/`，每个业务模块一个文件                      |
-| Telegram SDK 封装           | `src/lib/telegram/`                                       |
-| Mock 数据                   | `src/lib/mock-data/`，按模块拆子文件，`index.ts` 统一导出 |
-| 通用工具                    | `src/lib/utils.ts`（`cn()` 等）                           |
-| 示范模板                    | `src/components/examples/`                                |
+| 用途                        | 路径                                                                     |
+| --------------------------- | ------------------------------------------------------------------------ |
+| 路由                        | `src/app/`（Next.js App Router）                                         |
+| shadcn/ui 组件              | `src/components/ui/`                                                     |
+| 业务组件                    | `src/components/<模块>/`                                                 |
+| 自定义 hooks                | `src/hooks/`                                                             |
+| 跨组件状态（Zustand）       | `src/stores/`                                                            |
+| 数据层（React Query hooks） | `src/lib/api/`，每个业务模块一个文件                                     |
+| Mock registry（人工配置）   | `src/lib/api/mock-registry.config.ts`（MODULE_CONFIG / forceMockReason） |
+| Mock registry（自动生成）   | `src/lib/api/mock-registry.ts`（由 PM bootstrap 重算，勿手改）           |
+| Telegram SDK 封装           | `src/lib/telegram/`                                                      |
+| Mock 数据                   | `src/lib/mock-data/`，按模块拆子文件，`index.ts` 统一导出                |
+| 通用工具                    | `src/lib/utils.ts`（`cn()` 等）                                          |
+| 示范模板                    | `src/components/examples/`                                               |
 
 > 工作前必须**现场扫描** `src/`，以现场结构为准；上表用于判定**新增代码应放哪里**，不用于猜测**已有代码在哪里**。
 
-## Mock / 真实数据切换
+## Mock / 真实数据切换（按模块，自动同步）
 
-- `NEXT_PUBLIC_USE_MOCK=1` → query hooks 返回 mock 数据
-- 默认关闭 → 走真实接口
-- 业务组件**永远**只调用 `useXxxQuery`，不关心背后是 mock 还是真 API
+切换粒度不是全局开关，是按**模块**独立判定：
+
+- `src/lib/api/<module>.ts` 用 `shouldUseMock('<module>')`（来自 `mock-registry.ts`）分叉 mock / 真 API
+- **mock-registry.ts 由 PM bootstrap 自动重算**，真相源是本地 committed 的 `packages/backend/src/` 代码——dev 环境上跑的新东西不算数
+- 人工维护的是 `mock-registry.config.ts`（MODULE_CONFIG、forceMockReason）
+- `NEXT_PUBLIC_USE_MOCK=1` 仍保留为**全局强制 mock 的应急开关**（全部模块走 mock）
+
+业务组件**永远**只调用 `useXxxQuery`，不关心背后是 mock 还是真 API。
 
 ## AI 建议审查清单
 
