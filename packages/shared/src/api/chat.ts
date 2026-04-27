@@ -45,6 +45,12 @@ export interface PostMessageData {
   message: Message;
 }
 
+// POST /api/sessions/:id/messages 的 SSE event stream payload
+export interface StreamChunkData {
+  content?: string;
+  error?: string;
+}
+
 // POST /api/sessions/open 请求 / 响应
 // 语义：给定 character_id，返回该角色的最近 session；没有则创建新的
 export interface PostOpenSessionRequest {
