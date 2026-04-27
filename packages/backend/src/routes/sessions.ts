@@ -1,8 +1,12 @@
 import { FastifyInstance } from 'fastify';
+import { Readable } from 'stream';
 import { prisma } from '../lib/db.js';
 import { ok, fail } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
+import { channelRegistry } from '../ai/ChannelRegistry.js';
+import { ModelTier, resolveChannelId } from '../ai/domain/ModelStrategy.js';
+import type { OpenAIMessage } from '../ai/ports/IAIChannel.js';
 import type {
   GetSessionsData,
   GetSessionDetailData,
@@ -150,9 +154,15 @@ export default async function sessionRoutes(app: FastifyInstance) {
 
       const dbUser = await getOrCreateDbUser(request.user);
 
-      // Verify ownership
+      // Verify ownership and get full session with character and history
       const session = await prisma.appSession.findUnique({
         where: { id },
+        include: {
+          character: true,
+          app_messages: {
+            orderBy: { created_at: 'asc' },
+          },
+        },
       });
 
       if (!session) {
@@ -164,8 +174,9 @@ export default async function sessionRoutes(app: FastifyInstance) {
       }
 
       const now = new Date();
-      const newMessage = await prisma.$transaction(async (tx) => {
-        const msg = await tx.appMessage.create({
+      // 1. Save user message
+      await prisma.$transaction(async (tx) => {
+        await tx.appMessage.create({
           data: {
             session_id: id,
             role: 'user',
@@ -178,19 +189,78 @@ export default async function sessionRoutes(app: FastifyInstance) {
           where: { id },
           data: { last_message_at: now },
         });
-
-        return msg;
       });
 
-      const message: Message = {
-        id: newMessage.id,
-        session_id: newMessage.session_id,
-        role: newMessage.role as 'user' | 'assistant',
-        content: newMessage.content,
-        created_at: newMessage.created_at.toISOString(),
-      };
+      // 2. Prepare messages for AI
+      const aiMessages: OpenAIMessage[] = [];
 
-      return reply.send(ok<PostMessageData>({ message }));
+      // Build system prompt from character data
+      if (session.character) {
+        const systemParts = [
+          session.character.description,
+          session.character.personality,
+          session.character.scenario,
+          session.character.system_prompt,
+        ].filter(Boolean);
+
+        if (systemParts.length > 0) {
+          aiMessages.push({ role: 'system', content: systemParts.join('\n\n') });
+        }
+      }
+
+      // Add history
+      for (const msg of session.app_messages) {
+        aiMessages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+      }
+      // Add current user message
+      aiMessages.push({ role: 'user', content: content });
+
+      // 3. Get AI Channel
+      const channelId = await resolveChannelId(ModelTier.FREE);
+      const channel = await channelRegistry.getChannel(channelId);
+
+      if (!channel) {
+        return reply.status(500).send(fail('INTERNAL_ERROR', 'AI Channel not configured'));
+      }
+
+      // 4. Setup SSE response
+      reply.header('Content-Type', 'text/event-stream');
+      reply.header('Cache-Control', 'no-cache');
+      reply.header('Connection', 'keep-alive');
+
+      // Return an async generator to stream the response
+      return reply.send(
+        Readable.from(
+          (async function* () {
+            let fullAssistantReply = '';
+            try {
+              const stream = channel.streamGenerate(aiMessages);
+              for await (const chunk of stream) {
+                fullAssistantReply += chunk;
+                // Send chunk to client
+                yield `data: ${JSON.stringify({ content: chunk })}\n\n`;
+              }
+
+              // Stream finished
+              yield 'data: [DONE]\n\n';
+
+              // Save assistant message to DB
+              if (fullAssistantReply) {
+                await prisma.appMessage.create({
+                  data: {
+                    session_id: id,
+                    role: 'assistant',
+                    content: fullAssistantReply,
+                  },
+                });
+              }
+            } catch (error) {
+              console.error('AI Stream Error:', error);
+              yield `data: ${JSON.stringify({ error: 'Generation failed' })}\n\n`;
+            }
+          })()
+        )
+      );
     }
   );
 }

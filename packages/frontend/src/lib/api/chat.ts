@@ -13,7 +13,7 @@ import type {
   SessionSummary,
 } from '@miniapp/shared';
 
-import { apiClient } from './client';
+import { apiClient, apiStreamClient } from './client';
 import { mockAssistantReplies, mockMessagesBySession, mockSessions } from '@/lib/mock-data/chat';
 import { getMockCharacterDetail, mockCharacters } from '@/lib/mock-data/characters';
 
@@ -113,11 +113,29 @@ async function postOpenSession(body: PostOpenSessionRequest): Promise<PostOpenSe
   });
 }
 
-async function postMessage(sessionId: string, body: PostMessageRequest): Promise<PostMessageData> {
-  return apiClient<PostMessageData>(`/api/sessions/${sessionId}/messages`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+async function postMessage(
+  sessionId: string,
+  body: PostMessageRequest,
+  onChunk: (text: string) => void
+): Promise<PostMessageData> {
+  await apiStreamClient(
+    `/api/sessions/${sessionId}/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    onChunk
+  );
+  // Return a dummy message since the real one will be fetched when we invalidate the queries
+  return {
+    message: {
+      id: '',
+      session_id: sessionId,
+      role: 'user',
+      content: body.content,
+      created_at: new Date().toISOString(),
+    },
+  };
 }
 
 // ==== React Query hooks（业务层唯一入口）====
@@ -273,7 +291,55 @@ export function useSendMessageMutation(sessionId: string) {
 
         return { message: userMsg };
       }
-      return postMessage(sessionId, body);
+
+      // 真实请求：流式读取
+      const tempAssistantId = newId('temp-msg');
+      const tempAssistantMsg: Message = {
+        id: tempAssistantId,
+        session_id: sessionId,
+        role: 'assistant',
+        content: '',
+        created_at: new Date().toISOString(),
+      };
+
+      // 乐观：推入空的 assistant 消息
+      qc.setQueryData<GetSessionDetailData>(sessionKeys.detail(sessionId), (prev) =>
+        prev
+          ? {
+              session: {
+                ...prev.session,
+                messages: [...prev.session.messages, tempAssistantMsg],
+              },
+            }
+          : prev
+      );
+
+      setTyping(sessionId, true);
+
+      try {
+        const result = await postMessage(sessionId, body, (chunkText) => {
+          // 每次收到流式数据，更新缓存中临时 assistant 消息的内容
+          qc.setQueryData<GetSessionDetailData>(sessionKeys.detail(sessionId), (prev) => {
+            if (!prev) return prev;
+            return {
+              session: {
+                ...prev.session,
+                messages: prev.session.messages.map((m) =>
+                  m.id === tempAssistantId ? { ...m, content: chunkText } : m
+                ),
+              },
+            };
+          });
+        });
+        return result;
+      } finally {
+        setTyping(sessionId, false);
+      }
+    },
+    onSettled: () => {
+      // 无论成功还是失败，都重新拉取一次列表和详情，对齐真实 ID
+      void qc.invalidateQueries({ queryKey: sessionKeys.detail(sessionId) });
+      void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
     },
   });
 }
