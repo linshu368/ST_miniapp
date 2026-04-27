@@ -55,9 +55,20 @@ review 时这一行是重点检查项。确需拆成独立 PR（handler 改动�
 
 handler 的请求体 / 响应体类型全部引自 `packages/shared/`。shared 里没有的类型，**先在 shared 里定义、再写 handler**。
 
-### 5. 不得动 `packages/frontend/` 下任何文件
+### 5. `packages/frontend/` 主要由 PM 维护，Dev 因技术接入需要改前端完全允许
 
-`packages/shared/` 起草权双向（PM 也可起草，由 Dev 在 PR review 裁决）。其他前端目录完全不要动——包括 `packages/frontend/src/lib/api/` 下的 mock / 真后端分叉代码，那归 PM 维护（`shouldUseMock()` 分叉写在 PM 提的 PR 里）。如 Dev 发现 api hook 里真后端分支有 bug，在 PR 评论或群里提 PM，由 PM 改。
+前端的 **UX 设计、视觉、布局、文案、业务组件、页面**归 PM。Dev 不主导这些方向的改动——确需调整前先和 PM 对齐。
+
+但 **Dev 因技术接入需要改前端是正常协作,不算违规**,常见场景:
+
+- SSE / WebSocket / 新协议的 client 封装(例如 `lib/api/chat.ts` 接 SSE 流)
+- API client / fetch / axios 等基础封装(例如 `lib/api/client.ts` 鉴权 header 调整)
+- `shouldUseMock` 分叉逻辑里的真后端分支接入(mock 分支保留给 PM 维护)
+- `packages/shared/` 类型变化后前端引用点的对齐
+- Telegram SDK / 鉴权适配(例如 `lib/telegram/auth.ts` bypass 配合)
+- 前端 bug 修复(例如 PR review 时发现 typo / 边界条件遗漏)
+
+`packages/shared/` 起草权也是双向的(PM 也可起草,由 Dev 在 PR review 裁决)。
 
 ## Claude Code Dev 侧主动行为（命中条件时触发，Dev 不用记）
 
@@ -130,4 +141,5 @@ PM 的前端 mock 切换基于本地 `src/routes/` 和 `app.ts` 当前注册的�
 - ❌ 删或改 `dev-fixtures.ts` 已有的 UUID 常量
 - ❌ 删或改 `seed.ts` 中对应 UUID 的 upsert 语句
 - ❌ 在 backend 内部定义本该放在 shared 的对外类型
-- ❌ 动 `packages/frontend/` 下除 `packages/shared/` 起草外的任何文件（含 `src/lib/api/` 的 mock 分叉代码，归 PM）
+- ❌ 在没有技术接入需求的情况下主动改前端 UX（配色/布局/交互流/视觉风格/业务组件/页面/文案）——这些归 PM。技术性接入（SSE/API client/shared 类型对齐等）是允许的，见「Dev 提交前强制清单」第 5 条
+- ❌ 改 `packages/frontend/src/lib/mock-data/`（mock 数据归 PM 维护）

@@ -229,7 +229,7 @@ Mock-Registry Sync Diff（仅 PM 输出；无变更时写「无变更」）：
 2. **handler 从半成品变完工时，默认在同一个 PR 里把 `false` 改 `true`**。确需拆成独立 PR（例如 handler 改动过大、需分步 review），在 PR 描述里交代接下来哪个 PR 会把注释切到 `true`，避免悬空。
 3. **不得删除或修改已被前端 mock 引用的 seed UUID**（见「数据契约纪律」第 6 条）。
 4. **新增对外数据形状必须先在 `packages/shared/` 定义**。backend 内部私定对外类型即违规。
-5. **不得动 `packages/frontend/` 下任何文件**（`packages/shared/` 起草例外，作为契约草案交 PR review 裁决）。**注**：`packages/frontend/src/lib/api/` 下的 mock / 真后端分叉逻辑由 PM 维护（`shouldUseMock()` 分叉写在 PM 提的 PR 里），Dev 不必动。
+5. **`packages/frontend/` 主要由 PM 维护,Dev 因技术接入需要改前端完全允许**——例如 SSE / WebSocket client、API client 封装、`shouldUseMock` 分叉、shared 类型对齐、telegram 鉴权适配、bug 修复等,这些不算违规。原则:**Dev 不主导前端 UX 设计**(配色/布局/交互流/视觉风格的改动需先和 PM 对齐),技术性接入两边都可以动。
 
 ---
 
