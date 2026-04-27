@@ -147,7 +147,7 @@ export default async function sessionRoutes(app: FastifyInstance) {
     return reply.send(ok<PostOpenSessionData>({ session_id: newSession.id }));
   });
 
-  // @frontend-ready: false — 响应改 SSE 流，shared 契约 PostMessageData 待更新为流式格式
+  // @frontend-ready: true
   app.post(
     '/api/sessions/:id/messages',
     { preHandler: [requireTelegramAuth] },

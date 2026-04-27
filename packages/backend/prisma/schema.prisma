@@ -6,6 +6,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+  schemas   = ["public", "miniapp"]
 }
 
 model User {
@@ -26,6 +27,7 @@ model User {
   app_sessions          AppSession[]
 
   @@map("users")
+  @@schema("public")
 }
 
 model Message {
@@ -66,6 +68,7 @@ model Message {
   @@index([user_id, accept_at], map: "idx_messages_user_accept")
   @@index([user_id], map: "idx_messages_user_id")
   @@map("messages")
+  @@schema("public")
 }
 
 model bot_user_settings {
@@ -80,6 +83,8 @@ model bot_user_settings {
   created_at               DateTime @default(now()) @db.Timestamptz(6)
   updated_at               DateTime @default(now()) @db.Timestamptz(6)
   users                    User     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -103,20 +108,24 @@ model bot_users {
   pref_word_count          String    @default("300-500")
   pref_show_options        Boolean   @default(true)
   pref_custom_instructions String?
+
+  @@schema("public")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model botlinks {
-  id               BigInt           @id @default(autoincrement())
+  id               BigInt    @id @default(autoincrement())
   bot_link         String?
-  source_id        String?          @unique(map: "botlinks_short_code_key")
-  created_at       DateTime?        @default(now()) @db.Timestamptz(6)
+  source_id        String?   @unique(map: "botlinks_short_code_key")
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
   source_name      String?
-  start_time       DateTime?        @db.Date
-  end_time         DateTime?        @db.Date
+  start_time       DateTime? @db.Date
+  end_time         DateTime? @db.Date
   Purchase_amount  Int?
   Procurement_days Int?
-  traffic_clicks   traffic_clicks[]
+  // traffic_clicks   traffic_clicks[]
+
+  @@schema("public")
 }
 
 model chat_snapshots {
@@ -129,6 +138,7 @@ model chat_snapshots {
   round         Int?      @default(0)
 
   @@index([user_id], map: "idx_chat_snapshots_user_id")
+  @@schema("public")
 }
 
 model checkin_logs {
@@ -138,6 +148,7 @@ model checkin_logs {
   checked_in_at DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([user_id, checked_in_at(sort: Desc)], map: "idx_checkin_logs_user_time")
+  @@schema("public")
 }
 
 model miniapp_user_settings {
@@ -154,6 +165,8 @@ model miniapp_user_settings {
   created_at               DateTime @default(now()) @db.Timestamptz(6)
   updated_at               DateTime @default(now()) @db.Timestamptz(6)
   users                    User     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("miniapp")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -172,6 +185,7 @@ model payment_orders {
   @@index([created_at], map: "idx_payment_orders_created")
   @@index([payment_status], map: "idx_payment_orders_status")
   @@index([user_id], map: "idx_payment_orders_user_id")
+  @@schema("public")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -204,7 +218,10 @@ model role_data {
   published_at              DateTime? @db.Timestamp(6)
 
   @@index([role_id])
+  @@schema("public")
 }
+
+// ---- miniApp 业务表 ----
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model runtime_config {
@@ -214,82 +231,72 @@ model runtime_config {
   version     Int?      @default(1)
   updated_at  DateTime? @default(now()) @db.Timestamptz(6)
   text_value  String?
+
+  @@schema("public")
 }
-
-model traffic_clicks {
-  id         BigInt   @id @default(autoincrement())
-  stat_date  DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
-  source_id  String
-  clicks     Int      @default(0)
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @default(now()) @db.Timestamptz(6)
-  botlinks   botlinks @relation(fields: [source_id], references: [source_id], onDelete: NoAction, onUpdate: NoAction, map: "traffic_clicks_fk")
-
-  @@unique([stat_date, source_id], map: "traffic_clicks_uniq")
-  @@index([source_id, stat_date], map: "idx_tc_source_date")
-}
-
-// ---- miniApp 业务表 ----
 
 model Character {
   // ---- 主键 & 元数据 ----
-  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  spec                      String   @default("chara_card_v2")
-  spec_version              String   @default("2.0")
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  spec         String @default("chara_card_v2")
+  spec_version String @default("2.0")
 
   // ---- SillyTavern 标准字段 ----
   name                      String
-  description               String   @default("")
-  personality               String   @default("")
-  scenario                  String   @default("")
-  first_mes                 String   @default("")
-  mes_example               String   @default("")
-  creator_notes             String   @default("")
-  system_prompt             String   @default("")
-  post_history_instructions String   @default("")
-  alternate_greetings       Json     @default("[]")
-  tags                      Json     @default("[]")
-  creator                   String   @default("")
-  character_version         String   @default("")
-  extensions                Json     @default("{}")
+  description               String @default("")
+  personality               String @default("")
+  scenario                  String @default("")
+  first_mes                 String @default("")
+  mes_example               String @default("")
+  creator_notes             String @default("")
+  system_prompt             String @default("")
+  post_history_instructions String @default("")
+  alternate_greetings       Json   @default("[]")
+  tags                      Json   @default("[]")
+  creator                   String @default("")
+  character_version         String @default("")
+  extensions                Json   @default("{}")
   character_book            Json?
 
   // ---- miniApp 扩展字段 ----
-  avatar_url                String   @default("")
+  avatar_url String @default("")
 
   // ---- 时间戳 ----
-  created_at                DateTime @default(now()) @db.Timestamptz(6)
-  updated_at                DateTime @updatedAt
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt
 
-  app_sessions              AppSession[]
+  app_sessions AppSession[]
 
   @@map("characters")
+  @@schema("miniapp")
 }
 
 model AppSession {
-  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String        @db.Uuid
-  character_id    String?       @db.Uuid                    // ← 改为可选
-  last_message_at DateTime      @default(now()) @db.Timestamptz(6)
-  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String   @db.Uuid
+  character_id    String?  @db.Uuid // ← 改为可选
+  last_message_at DateTime @default(now()) @db.Timestamptz(6)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
 
-  user            User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  character       Character?    @relation(fields: [character_id], references: [id], onDelete: SetNull)  // ← Cascade 改为 SetNull
-  app_messages    AppMessage[]
+  user         User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  character    Character?   @relation(fields: [character_id], references: [id], onDelete: SetNull) // ← Cascade 改为 SetNull
+  app_messages AppMessage[]
 
   @@index([user_id, last_message_at(sort: Desc)])
   @@map("app_sessions")
+  @@schema("miniapp")
 }
 
 model AppMessage {
-  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  session_id String     @db.Uuid
-  role       String     // "user" or "assistant"
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  session_id String   @db.Uuid
+  role       String // "user" or "assistant"
   content    String
-  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
 
-  session    AppSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  session AppSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
 
   @@index([session_id, created_at(sort: Asc)])
   @@map("app_messages")
+  @@schema("miniapp")
 }

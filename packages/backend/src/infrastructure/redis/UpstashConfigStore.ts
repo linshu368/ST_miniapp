@@ -37,7 +37,7 @@ export class UpstashConfigStore {
       throw new Error('Upstash cmd requires at least one argument');
     }
 
-    const command = args[0].toLowerCase();
+    const command = args[0]!.toLowerCase();
     let url = '';
     let response: Response;
 
