@@ -77,14 +77,22 @@ export async function apiStreamClient(
           if (dataStr === '[DONE]') {
             return;
           }
+
+          let parsed;
           try {
-            const parsed = JSON.parse(dataStr);
-            if (parsed.content) {
-              fullContent += parsed.content;
-              onChunk(fullContent);
-            }
+            parsed = JSON.parse(dataStr);
           } catch (e) {
             console.warn('Failed to parse SSE chunk:', dataStr);
+            continue;
+          }
+
+          if (parsed.error) {
+            throw new Error(parsed.error);
+          }
+
+          if (parsed.content) {
+            fullContent += parsed.content;
+            onChunk(fullContent);
           }
         }
       }

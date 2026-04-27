@@ -316,6 +316,7 @@ export function useSendMessageMutation(sessionId: string) {
 
       setTyping(sessionId, true);
 
+      let hasError = false;
       try {
         const result = await postMessage(sessionId, body, (chunkText) => {
           // 每次收到流式数据，更新缓存中临时 assistant 消息的内容
@@ -332,13 +333,50 @@ export function useSendMessageMutation(sessionId: string) {
           });
         });
         return result;
+      } catch (err) {
+        hasError = true;
+        throw err;
       } finally {
         setTyping(sessionId, false);
+
+        // 检查临时 assistant 消息内容
+        qc.setQueryData<GetSessionDetailData>(sessionKeys.detail(sessionId), (prev) => {
+          if (!prev) return prev;
+          const msgs = prev.session.messages;
+          const tempMsg = msgs.find((m) => m.id === tempAssistantId);
+
+          if (tempMsg) {
+            if (!tempMsg.content) {
+              // 如果为空，则替换为兜底提示（如果原意是从缓存移除再在别处显示兜底提示，此处通过改变内容来实现兜底展示）
+              return {
+                session: {
+                  ...prev.session,
+                  messages: msgs.map((m) =>
+                    m.id === tempAssistantId ? { ...m, content: '请稍后重试' } : m
+                  ),
+                },
+              };
+            } else if (hasError) {
+              // 如果已有部分内容且报错，则追加兜底提示
+              return {
+                session: {
+                  ...prev.session,
+                  messages: msgs.map((m) =>
+                    m.id === tempAssistantId ? { ...m, content: `${m.content}\n\n[请稍后重试]` } : m
+                  ),
+                },
+              };
+            }
+          }
+          return prev;
+        });
       }
     },
-    onSettled: () => {
-      // 无论成功还是失败，都重新拉取一次列表和详情，对齐真实 ID
-      void qc.invalidateQueries({ queryKey: sessionKeys.detail(sessionId) });
+    onSettled: (data, error) => {
+      // 如果失败，保留本地缓存的兜底提示，不强制刷新详情
+      if (!error) {
+        void qc.invalidateQueries({ queryKey: sessionKeys.detail(sessionId) });
+      }
       void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
     },
   });
