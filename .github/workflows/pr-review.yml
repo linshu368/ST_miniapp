@@ -3,7 +3,7 @@ name: PR Review
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev] # ← 修改：新增 dev 作为触发目标
     types: [opened, synchronize, ready_for_review, reopened]
 
 permissions:
@@ -13,8 +13,8 @@ permissions:
 jobs:
   review:
     runs-on: ubuntu-latest
-    # hotfix 分支直接跳过，不触发审查
-    if: ${{ !startsWith(github.head_ref, 'hotfix') }}
+    # hotfix 分支直接跳过；dev→main 的晋升 PR 也跳过（代码已在合入 dev 时审过）
+    if: ${{ !startsWith(github.head_ref, 'hotfix') && github.head_ref != 'dev' }} # ← 修改
 
     steps:
       - name: Checkout
@@ -62,12 +62,12 @@ jobs:
             else
               echo "sha=" >> $GITHUB_OUTPUT
               echo "is_incremental=false" >> $GITHUB_OUTPUT
-              echo "⚠️ 上次审查 SHA (${PREVIOUS_SHA:0:7}) 已失效（可能已 force-push），回退到 main" >&2
+              echo "⚠️ 上次审查 SHA (${PREVIOUS_SHA:0:7}) 已失效（可能已 force-push），回退到 ${{ github.base_ref }}" >&2  # ← 修改
             fi
           else
             echo "sha=" >> $GITHUB_OUTPUT
             echo "is_incremental=false" >> $GITHUB_OUTPUT
-            echo "📌 未找到上次审查记录，使用 main 作为基线" >&2
+            echo "📌 未找到上次审查记录，使用 ${{ github.base_ref }} 作为基线" >&2  # ← 修改
           fi
 
       # 三层判定规则（基于增量 diff 的文件变更）：
@@ -80,7 +80,7 @@ jobs:
         id: prompt-type
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-          BASE_REF: ${{ steps.baseline.outputs.sha || 'main' }}
+          BASE_REF: ${{ steps.baseline.outputs.sha || github.base_ref }} # ← 修改
           IS_INCREMENTAL: ${{ steps.baseline.outputs.is_incremental }}
         run: |
           BRANCH="${{ github.head_ref }}"
@@ -88,7 +88,7 @@ jobs:
           echo "审查基准: $BASE_REF" >&2
           echo "增量模式: $IS_INCREMENTAL" >&2
 
-          git fetch origin main:main 2>/dev/null || true
+          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }} 2>/dev/null || true  # ← 修改
 
           # ━━━ 第零层：手动 override（优先级最高）━━━
           # 只看基线以来的 commit（增量审查时排除 PM 阶段的 commit message）
@@ -200,14 +200,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
-          BASE_REF: ${{ steps.baseline.outputs.sha || 'main' }}
+          BASE_REF: ${{ steps.baseline.outputs.sha || github.base_ref }} # ← 修改
         run: |
           echo "=== 当前 HEAD ===" >&2
           git log --oneline -3 >&2
           echo "=== 审查基准: $BASE_REF ===" >&2
           echo "==================" >&2
 
-          git fetch origin main:main 2>/dev/null || true
+          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }} 2>/dev/null || true  # ← 修改
 
           set +e
           bash ops/git/review.sh "$BASE_REF" ${{ steps.prompt-type.outputs.type }} > report.md 2>stderr.log
@@ -258,7 +258,7 @@ jobs:
 
             ---
 
-            *🤖 自动生成 · `${{ github.head_ref }}` → `main` · Prompt: `${{ steps.prompt-type.outputs.type }}` · ${{ github.event.pull_request.head.sha }}*
+            *🤖 自动生成 · `${{ github.head_ref }}` → `${{ github.base_ref }}` · Prompt: `${{ steps.prompt-type.outputs.type }}` · ${{ github.event.pull_request.head.sha }}*
 
 
             ${{ steps.comment-meta.outputs.baseline_marker }}
