@@ -12,8 +12,14 @@ const NAV_ITEMS = [
   { href: '/profile', label: '我的', Icon: User },
 ] as const;
 
+// 深层页面（支付流程、充值详情）隐藏底部导航，让主内容拿满可视高度
+const HIDDEN_PREFIXES = ['/profile/recharge'];
+
 export function BottomNav() {
   const pathname = usePathname();
+  if (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) {
+    return null;
+  }
 
   return (
     <nav
