@@ -50,9 +50,9 @@ monorepo 结构：`packages/{frontend,backend,shared}`，包管理器 pnpm。
 
 > **本步只在用户角色为 PM 时执行。开发角色跳过本步。**
 
-**目的**：PM 以本地 `packages/backend/` 的 committed 代码作为"已实现接口"的唯一真相源。不管 dev 环境 Railway 上是什么版本、开发有没有在上面跑新功能测试，前端的 mock-registry 只依据本地 main 分支能看到的代码来判定哪些模块可走真后端。这样保证 PM 分支跟开发 dev 环境即使有漂移也不会出错。
+**目的**：PM 以本地 `packages/backend/` 的 committed 代码作为"已实现接口"的唯一真相源。不管 dev 环境 Railway 上是什么版本、开发有没有在上面跑新功能测试，前端的 mock-registry 只依据本地 `dev` 分支能看到的代码来判定哪些模块可走真后端。这样保证 PM 分支跟开发 dev 环境即使有漂移也不会出错。
 
-**执行时机**：PM 身份确认后、Step 2a 结构扫描完成后，**在 Step 3 回复前**执行。每次新会话都执行一次——开发可能刚合了新 routes 到 main。
+**执行时机**：PM 身份确认后、Step 2a 结构扫描完成后，**在 Step 3 回复前**执行。每次新会话都执行一次——开发可能刚合了新 routes 到 `dev` 分支。
 
 **算法**（必须严格按此执行，不要发挥）：
 
@@ -80,7 +80,7 @@ monorepo 结构：`packages/{frontend,backend,shared}`，包管理器 pnpm。
 1. PM 在 `mock-registry.config.ts` 的 `MockModule` 联合类型和 `MODULE_CONFIG` 里加新模块（填 endpoints 即可，**不填 `forceMockReason`**——handler 完工性由 Dev 在路由注释里维护）。**提示**：起草新模块的 endpoints 路径前，在群里花 15 秒跟 Dev 对齐一下路径命名（例如 `/api/voice/tts` vs `/api/tts`），避免 PM 起草的路径和 Dev 后续实现的路径对不上导致 `mock-registry` 永远 MOCK
 2. PM 写对应 `src/lib/mock-data/<module>.ts` 和 `src/lib/api/<module>.ts`（后者用 `shouldUseMock('<module>')` 分叉）
 3. 下次会话 bootstrap Step 2c 自动扫 backend，发现新模块的 endpoints 不存在，标为 MOCK
-4. 后端实现后 merge 到 main，PM 下次会话 Step 2c 自动把该模块从 MOCK_MODULES 移除 → 切到真后端
+4. 后端实现后 merge 到 `dev`，PM 下次会话 Step 2c 自动把该模块从 MOCK_MODULES 移除 → 切到真后端
 
 **协议约束**：
 
@@ -158,9 +158,9 @@ Mock-Registry Sync Diff（仅 PM 输出；无变更时写「无变更」）：
 >
 > **心态**：PM 开发时看到的是 mock + 真后端按**模块动态混合**——某些模块走真后端、某些走 mock，这是 `@frontend-ready` 机制的预期产物，不是 bug 也不是需要修正的状态。PM 不用追求"全真"或"全 mock"，按 bootstrap 判定即可。真后端能用就用（更贴近用户场景），不能用时 mock 顶上（mock 已引真 UUID，切换无缝）。
 
-1. **拉最新 main 起功能分支**
+1. **拉最新 `dev` 起功能分支**
    ```bash
-   git checkout main
+   git checkout dev
    git pull
    git checkout -b pm-<代号>/<feature>-YYYYMMDD
    ```
@@ -233,12 +233,22 @@ Mock-Registry Sync Diff（仅 PM 输出；无变更时写「无变更」）：
 
 ---
 
-## 分支命名
+## 分支模型
+
+三分支结构：
 
 ```
-pm-xxx/feature-name-YYYYMMDD     ← PM 功能分支
-hotfix/xxx                       ← 线上紧急修复
-main                             ← 线上生产，受保护
+pm-xxx/feature-name-YYYYMMDD     ← PM 功能分支（前端 / shared 草案）
+dev-xxx/feature-name-YYYYMMDD    ← 后端 Dev 功能分支
+hotfix/xxx                       ← 线上紧急修复（紧急时直接 hotfix → main）
+dev                              ← 唯一真实分支，日常合并目标
+main                             ← 线上发版快照，由 Dev 在版本节点 fast-forward 同步，平时不直接动
 ```
 
-每个功能起新分支，合并后分支使命结束。
+工作流：
+
+- 所有功能(无论 PM 还是 Dev)从 `dev` 拉 feature 分支
+- 完成后 `git rebase dev`(或 `git merge dev`)把最新主线吃下来,解决冲突,再 merge / PR 到 `dev`
+- 多人并行时,**后提交者**承担 rebase 成本——如果你刚完工准备提,但发现 `dev` 在你工作期间又往前走了几步,你需要先把那几步 rebase 进自己分支再提
+- `main` 由 Dev 在版本节点(发版/打 tag)从 `dev` 同步过去,作为线上稳定快照。**Vercel Production 跟踪 `main`,Vercel Preview 跟踪所有 feature 分支**
+- 每个功能起新分支,合并后分支使命结束

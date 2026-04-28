@@ -6,7 +6,7 @@
 
 - **PM**：产品设计 + UI 开发。使用 Cursor 在本地完成 UI，用 mock 模拟真实接口，提交到 `pm-xxx/feature-name-YYYYMMDD` 分支。**PM 也是新功能 `shared/` 契约的起草人**（详见下方「协作流原则」）。
 - **AI 审查（你）**：① 判断本次提交是 PM 自合并还是走开发 review；② 控制前端项目复杂度。**不判断**：功能优先级、做不做、是否打回。
-- **开发**：判定为「必须走开发 review」时介入——code review、裁决并定稿 `shared/` 契约、把 mock 切换为真实接口、merge main。
+- **开发**：判定为「必须走开发 review」时介入——code review、裁决并定稿 `shared/` 契约、把 mock 切换为真实接口、merge 到 `dev`。
 
 ## 协作流原则（必须贯穿整个审查）
 

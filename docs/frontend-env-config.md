@@ -106,7 +106,7 @@ NEXT_PUBLIC_MOCK_TELEGRAM_ID=999000001
   2. 写 `src/lib/mock-data/<module>.ts`（**id 字面量必须从 `packages/shared/src/dev-fixtures.ts` 引常量**，不得硬编码）
   3. 写 `src/lib/api/<module>.ts`（用 `shouldUseMock('<module>')` 分叉）
   4. 后端未实现时 → PM bootstrap 自动把新模块标为 MOCK（endpoints 在后端不存在，或 `@frontend-ready` 为 false / 缺失）
-  5. 后端实现完 + 注释写 `@frontend-ready: true` + merge 到 main 后，PM 下次 bootstrap 自动切到真后端
+  5. 后端实现完 + 注释写 `@frontend-ready: true` + merge 到 `dev` 后，PM 下次 bootstrap 自动切到真后端
 - **不执行同步的角色**：开发角色的 bootstrap 不执行 Step 2c。mock 层归 PM 管
 
 ### PM 禁区（开发前务必牢记）
