@@ -172,7 +172,7 @@ import { useMainButton } from '@/lib/telegram/hooks';
 **配置要点**：
 
 - 每个 `pm-xxx/feature-name-YYYYMMDD` 分支自动生成独立的 preview URL
-- `main` 分支对应生产环境
+- `dev` 是日常合并的真实分支；`main` 对应线上生产环境（由 `dev` 在版本节点 fast-forward 同步）
 - 环境变量通过 Vercel dashboard 管理，**不要提交到 git**
 
 ### 4.2 后端部署：Railway（继续使用现有）
