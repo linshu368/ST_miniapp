@@ -1,16 +1,45 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronRight, Settings, Sparkles } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronRight, Pencil, Settings, Sparkles } from 'lucide-react';
 
 import { mockCurrentUser } from '@/lib/mock-data';
 import { useMockWalletCredits } from '@/lib/api/payment';
 import { formatNumber } from '@/lib/utils/payment';
+import { useUserProfileStore } from '@/stores/user-profile-store';
 
 export default function ProfilePage() {
   const user = mockCurrentUser;
   // 实时订阅 mock 钱包余额，聊天扣费 / 充值到账都会即时反映
   const credits = useMockWalletCredits();
+  const displayName = useUserProfileStore((s) => s.displayName);
+  const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing]);
+
+  const startEdit = () => {
+    setDraft(displayName);
+    setIsEditing(true);
+  };
+
+  const commit = () => {
+    setDisplayName(draft);
+    setIsEditing(false);
+  };
+
+  const cancel = () => {
+    setIsEditing(false);
+  };
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col px-5 pb-10 pt-[env(safe-area-inset-top)]">
@@ -39,13 +68,46 @@ export default function ProfilePage() {
         </Link>
       </header>
 
-      {/* 身份：页面重心；第二入口已合并进 pill，下方保持留白 */}
+      {/* 身份：页面重心；姓名可点击编辑 → 影响 chat 里的 {{user}} 宏 */}
       <section className="mt-10 flex flex-col items-center gap-3">
         <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 via-purple-500 to-blue-500 text-3xl font-black text-white">
-          {user.username.slice(0, 1).toUpperCase()}
+          {displayName.slice(0, 1).toUpperCase()}
         </div>
         <div className="text-center">
-          <div className="text-lg font-semibold">{user.username}</div>
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={draft}
+              maxLength={32}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commit();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  cancel();
+                }
+              }}
+              className="w-48 rounded-md border border-border bg-card px-3 py-1.5 text-center text-lg font-semibold focus:border-primary focus:outline-none"
+              aria-label="编辑显示名"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={startEdit}
+              className="group inline-flex items-center gap-1.5 text-lg font-semibold transition-colors hover:text-primary"
+              aria-label="编辑显示名"
+            >
+              <span>{displayName}</span>
+              <Pencil
+                className="h-3.5 w-3.5 text-muted-foreground/60 transition-colors group-hover:text-primary"
+                aria-hidden
+              />
+            </button>
+          )}
           <div className="mt-0.5 text-[11px] text-muted-foreground/70">ID · {user.tg_id}</div>
         </div>
       </section>

@@ -69,6 +69,188 @@
   }
 }
 
+/* ============================================================
+ * .mes-text — 助手消息渲染管线输出的 scoped 排版
+ *   作用域:仅匹配 MessageBubble 内部的 dangerouslySetInnerHTML 节点
+ *   原则:与暗色情绪色板协调,不引入新色板
+ *   非 layer:这些规则要赢过 reset.css 的 *,故走默认级联
+ * ============================================================ */
+/* ---- 4 轴文本色变量(参照 SillyTavern 主题系统:main / italics / quote / underline) ----
+ * 默认值放 :root,主题切换时由 theme-store 在 documentElement 上覆盖即可生效。
+ * 默认色与 Tailwind dark 色板对齐,确保未应用主题时也有合理表现。
+ */
+:root {
+  --mes-main: hsl(30 15% 92%);
+  --mes-italics: hsl(258 10% 55%);
+  --mes-quote: hsl(12 75% 62%);
+  --mes-underline: hsl(340 65% 58%);
+  /* 字号倍率,默认 1.0;由 font-scale-store 在 root 上覆盖 */
+  --mes-font-scale: 1;
+}
+
+.mes-text {
+  color: var(--mes-main);
+}
+
+.mes-text > :first-child {
+  margin-top: 0;
+}
+.mes-text > :last-child {
+  margin-bottom: 0;
+}
+
+/* 段距:手机 chat 比 web 长文紧。0.4em 在视觉换段上够,但不显得空 */
+.mes-text p {
+  margin: 0.4em 0;
+}
+
+.mes-text strong {
+  font-weight: 600;
+  color: var(--mes-main);
+}
+/* 动作/旁白:斜体 + 走 italics 色 */
+.mes-text em {
+  font-style: italic;
+  color: var(--mes-italics);
+}
+.mes-text u {
+  color: var(--mes-underline);
+  text-decoration: underline;
+  text-decoration-color: var(--mes-underline);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.mes-text s,
+.mes-text del {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+/* 对白:不斜体 + quote 色,与动作色拉开 */
+.mes-text q {
+  quotes: none;
+  font-style: normal;
+  color: var(--mes-quote);
+}
+
+.mes-text a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-decoration-color: hsl(var(--primary) / 0.4);
+  text-underline-offset: 2px;
+}
+.mes-text a:hover {
+  text-decoration-color: hsl(var(--primary));
+}
+
+.mes-text ul,
+.mes-text ol {
+  margin: 0.4em 0;
+  padding-left: 1.25em;
+}
+.mes-text ul {
+  list-style: disc;
+}
+.mes-text ol {
+  list-style: decimal;
+}
+.mes-text li {
+  margin: 0.15em 0;
+}
+.mes-text li > p {
+  margin: 0.15em 0;
+}
+
+.mes-text blockquote {
+  margin: 0.4em 0;
+  padding: 0.15em 0.75em;
+  border-left: 2px solid hsl(var(--accent) / 0.55);
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+.mes-text code {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 0.88em;
+  padding: 0.08em 0.32em;
+  border-radius: 4px;
+  background: hsl(var(--muted) / 0.6);
+}
+
+.mes-text pre {
+  margin: 0.5em 0;
+  padding: 0.6em 0.8em;
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.6);
+  overflow-x: auto;
+  line-height: 1.45;
+  font-size: 0.86em;
+}
+.mes-text pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.mes-text table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.92em;
+  display: block;
+  overflow-x: auto;
+}
+.mes-text th,
+.mes-text td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.32em 0.6em;
+  text-align: left;
+}
+.mes-text th {
+  background: hsl(var(--muted) / 0.5);
+  font-weight: 600;
+}
+
+.mes-text hr {
+  margin: 0.8em 0;
+  border: 0;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.mes-text img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* 标题——角色卡偶尔会用 #/##,消息里克制使用 */
+.mes-text h1,
+.mes-text h2,
+.mes-text h3,
+.mes-text h4,
+.mes-text h5,
+.mes-text h6 {
+  font-weight: 600;
+  margin: 0.6em 0 0.3em;
+  line-height: 1.3;
+}
+.mes-text h1 {
+  font-size: 1.3em;
+}
+.mes-text h2 {
+  font-size: 1.18em;
+}
+.mes-text h3 {
+  font-size: 1.08em;
+}
+.mes-text h4,
+.mes-text h5,
+.mes-text h6 {
+  font-size: 1em;
+}
+
 @layer utilities {
   /* 消息气泡入场：像一句轻声说话，从雾里浮出来 */
   @keyframes whisper-in {

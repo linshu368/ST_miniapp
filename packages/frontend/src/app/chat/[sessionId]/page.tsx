@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useAssistantTyping, useSendMessageMutation, useSessionQuery } from '@/lib/api/chat';
 import { useUIStore } from '@/stores/ui-store';
+import { useUserProfileStore } from '@/stores/user-profile-store';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram/hooks';
 import { hueShiftFromId } from '@/lib/utils/character-hue';
 import { useIdleDim } from '@/hooks/use-idle-dim';
@@ -30,6 +31,7 @@ export default function ChatPage() {
   const haptic = useHaptic();
 
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
+  const userDisplayName = useUserProfileStore((s) => s.displayName);
 
   // 夜间沉浸：30s 无操作暗化 chrome
   const isDim = useIdleDim(30_000);
@@ -165,7 +167,12 @@ export default function ChatPage() {
             她那边好像断线了。
           </p>
         ) : (
-          <MessageList messages={messages} isTyping={isTyping} />
+          <MessageList
+            messages={messages}
+            isTyping={isTyping}
+            charName={character?.name}
+            userName={userDisplayName}
+          />
         )}
       </section>
 
