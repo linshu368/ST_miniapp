@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "runMeta": {
-    "runAt": "2026-04-29T11:14:25.073Z",
+    "runAt": "2026-04-29T12:22:51.641Z",
     "engine": "sillytavern-original",
     "stVersion": "SillyTavern 1.17.0 'release' (aa50edcf4)",
     "userAgent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36",
@@ -402,7 +402,7 @@
         }
       },
       "output": {
-        "text": "rand_letters=d|rand_words=apple|roll_3d6=12|roll_short_d20=10|roll_with_mod=12",
+        "text": "rand_letters=e|rand_words=apple|roll_3d6=12|roll_short_d20=10|roll_with_mod=12",
         "meta": {
           "macrosUsed": ["random", "roll"],
           "warnings": [],

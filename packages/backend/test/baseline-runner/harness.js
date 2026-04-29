@@ -18,7 +18,8 @@
  * Conventions:
  *   - Cases are served from /baseline-runner/fixtures/<stepName>/cases/index.json + each entry.
  *   - Output is downloaded as sillytavern-original-<stepName>-YYYYMMDD-HHmm.json.
- *   - Determinism mocks (Math.random, moment.now) are managed by withDeterministicEnv().
+ *   - Determinism mocks (Math.random, crypto.getRandomValues, moment.now)
+ *     are managed by withDeterministicEnv().
  */
 
 import { seedrandom, moment } from '/lib.js';
@@ -130,6 +131,17 @@ export async function loadCases(stepName) {
 /**
  * Wraps fn() so that for its duration:
  *   - Math.random is replaced by a seeded generator (when seed provided).
+ *     This covers {{roll}} (droll uses Math.random) and any code path that
+ *     reads Math.random directly. It does NOT cover {{random}} — see below.
+ *   - crypto.getRandomValues returns all-zero bytes (when seed provided).
+ *     This is a defensive belt for any seedrandom call that hits its
+ *     autoseed() path (only reached when seed===null/undefined). It does
+ *     NOT pin {{random}}'s output — ST's random macro calls
+ *     seedrandom('added entropy.', { entropy: true }), which goes through
+ *     a closure-private entropy `pool` instead of autoseed(). See the long
+ *     explanation in installDeterministicRandomShim() inside
+ *     adapters/macros.js: {{random}}'s determinism is enforced at the
+ *     macro-handler level by the step-0 adapter, NOT here.
  *   - moment.now returns the fixed timestamp (when isoNow provided).
  *   - moment.locale is pinned to 'en' for stable {{date}}/{{weekday}} output.
  * Restores all of the above in finally(), even on exception.
@@ -143,11 +155,33 @@ export async function withDeterministicEnv({ seed, isoNow }, fn) {
   const origRandom = Math.random;
   const origMomentNow = moment.now;
   const origLocale = moment.locale();
+  const cryptoApi =
+    typeof globalThis !== 'undefined' && globalThis.crypto ? globalThis.crypto : null;
+  const origGetRandomValues =
+    cryptoApi && typeof cryptoApi.getRandomValues === 'function'
+      ? cryptoApi.getRandomValues.bind(cryptoApi)
+      : null;
+  let cryptoPatched = false;
 
   try {
     if (seed) {
-      // global:true replaces Math.random in place. droll uses Math.random internally.
+      // global:true replaces Math.random in place. droll uses Math.random
+      // internally, so this is what makes {{roll}} deterministic.
       seedrandom(seed, { global: true });
+
+      // Defensive zero-stub for crypto.getRandomValues. Only takes effect
+      // along seedrandom's autoseed() code path (seed===null), which neither
+      // {{random}} nor {{pick}} hit in practice — see the doc on
+      // installDeterministicRandomShim in adapters/macros.js.
+      if (cryptoApi && origGetRandomValues) {
+        cryptoApi.getRandomValues = (arr) => {
+          if (arr && typeof arr.length === 'number') {
+            for (let i = 0; i < arr.length; i++) arr[i] = 0;
+          }
+          return arr;
+        };
+        cryptoPatched = true;
+      }
     }
     if (isoNow) {
       const fixedMs = Date.parse(isoNow);
@@ -160,6 +194,9 @@ export async function withDeterministicEnv({ seed, isoNow }, fn) {
     Math.random = origRandom;
     moment.now = origMomentNow;
     moment.locale(origLocale);
+    if (cryptoPatched && cryptoApi && origGetRandomValues) {
+      cryptoApi.getRandomValues = origGetRandomValues;
+    }
   }
 }
 

@@ -34,6 +34,7 @@ import {
   setUserName,
 } from '/script.js';
 import { power_user } from '/scripts/power-user.js';
+import { seedrandom } from '/lib.js';
 import { MacroEngine } from '/scripts/macros/engine/MacroEngine.js';
 import { MacroEnvBuilder } from '/scripts/macros/engine/MacroEnvBuilder.js';
 import { MacroRegistry } from '/scripts/macros/engine/MacroRegistry.js';
@@ -146,6 +147,14 @@ async function runOneCase(caseObj) {
   const macrosUsed = new Set();
   const stopTracker = trackMacroUsage(macrosUsed);
 
+  // 5b) Replace {{random}}'s handler with a deterministic version for the
+  //     duration of this case. See installDeterministicRandomShim below for
+  //     why this is necessary — short version: ST's random uses
+  //     seedrandom('added entropy.', { entropy: true }) which reads from a
+  //     module-private entropy pool that drifts forever across the page
+  //     lifetime, defeating any seed/Math.random/crypto-level mock.
+  const restoreRandom = installDeterministicRandomShim(input.options?.seed ?? '');
+
   let env;
   let text = '';
   let warnings = [];
@@ -162,6 +171,7 @@ async function runOneCase(caseObj) {
     text = wrapped.result;
     warnings = wrapped.warnings.filter((w) => /macro/i.test(w));
   } finally {
+    restoreRandom();
     stopTracker();
     // Per-case rollback: pop the synthetic character and restore chid.
     // (A full restore of chat / chat_metadata / persona happens in
@@ -202,6 +212,99 @@ function trackMacroUsage(sink) {
   return () => {
     MacroRegistry.executeMacro = orig;
   };
+}
+
+/**
+ * Replaces the {{random}} macro handler with a deterministic, position-stable
+ * version for the duration of one case. Returns a restore() callback that
+ * puts the original handler back.
+ *
+ * Why this exists
+ * ---------------
+ * ST's {{random}} macro (public/scripts/macros/definitions/core-macros.js)
+ * resolves with:
+ *
+ *   const rng = seedrandom('added entropy.', { entropy: true });
+ *
+ * The seedrandom library has a module-level closure variable `pool` that:
+ *   - is XOR-mixed on EVERY seedrandom() call across the entire page
+ *     (line 80 of seedrandom.js: mixkey(tostring(arc4.S), pool)),
+ *   - is READ as part of the seed when entropy:true is passed
+ *     (line 50: flatten([seed, tostring(pool)], 3)),
+ *   - is initialized once at module load via mixkey(math.random(), pool)
+ *     where math.random() is the BROWSER's auto-seeded RNG at that instant.
+ *
+ * That pool is closure-private (no API to reset). Re-running the test suite
+ * in the same tab (or across tabs / page reloads) drifts {{random}}'s
+ * output because pool has been mutated by previous calls (ours, ST's, any
+ * extension's) AND starts from a fresh browser entropy on each page load.
+ *
+ * The harness-level mocks in withDeterministicEnv (Math.random override and
+ * crypto.getRandomValues all-zero stub) do NOT fix this:
+ *   - Math.random is not called by the random handler at all (output comes
+ *     from arc4 driven by seed+pool).
+ *   - crypto.getRandomValues is only used by seedrandom's autoseed() path,
+ *     which is reached only when seed===null. Here seed is 'added entropy.'
+ *     so autoseed is never invoked.
+ *
+ * Therefore the only viable mock surface is the macro handler itself.
+ *
+ * Determinism contract
+ * --------------------
+ * Seed = JSON.stringify([caseSeed, globalOffset, list]). This means:
+ *   - Same case + same macro position + same list contents → same output.
+ *   - Different position in the same case → different output (matches ST's
+ *     "re-rolled every time" semantics in spirit: each macro invocation
+ *     gets its own roll, just deterministic per-position).
+ *   - Different list contents → different output.
+ *
+ * The shim mirrors ST's `readSingleArgsRandomList` legacy split so the
+ * cases that use {{random:a::b::c}} (single-colon prefix) or comma-separated
+ * lists still parse the same way. None of the current 9 step-0 cases hit
+ * this path, but future cases might.
+ *
+ * miniAPP must implement the SAME shim in its test mode for the byte-exact
+ * baseline diff to be meaningful. See
+ * packages/backend/test/fixtures/macros/README.md for the contract.
+ *
+ * @param {string} caseSeed - The case-level seed (input.options.seed). Used
+ *     as the first dimension of the deterministic seed string. May be ''.
+ * @returns {() => void} restore - Restores the original handler.
+ */
+function installDeterministicRandomShim(caseSeed) {
+  const def = MacroRegistry.getMacro('random');
+  if (!def) return () => {};
+  const origHandler = def.handler;
+  def.handler = ({ list, globalOffset }) => {
+    if (list.length === 1) {
+      list = readSingleArgsRandomList(list[0]);
+    }
+    if (!list.length) return '';
+    const seedString = JSON.stringify([caseSeed ?? '', globalOffset, list]);
+    const rng = seedrandom(seedString);
+    return list[Math.floor(rng() * list.length)];
+  };
+  return () => {
+    def.handler = origHandler;
+  };
+}
+
+/**
+ * Mirrors ST's private readSingleArgsRandomList in core-macros.js. Used by
+ * the random shim so legacy single-arg syntax ({{random:a::b::c}} or
+ * {{random:a,b,c}}) is split the same way ST splits it.
+ *
+ * @param {string} listString
+ * @returns {string[]}
+ */
+function readSingleArgsRandomList(listString) {
+  if (listString.includes('::')) {
+    return listString.split('::').map((item) => item.trim());
+  }
+  return listString
+    .replace(/\\,/g, '##\uFFFDCOMMA\uFFFD##')
+    .split(',')
+    .map((item) => item.trim().replace(/##\uFFFDCOMMA\uFFFD##/g, ','));
 }
 
 /** Best-effort read of the current this_chid value. */

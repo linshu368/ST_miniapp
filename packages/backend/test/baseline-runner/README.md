@@ -66,9 +66,21 @@ For every case in `fixtures/macros/cases/index.json`:
 4. Sets `power_user.persona_description = case.character.persona ||
 case.user.personaDescription`.
 5. Wraps the call site so:
-   - `Math.random` is overridden by `seedrandom(case.options.seed, { global: true })`
-   - `moment.now` is overridden to return `Date.parse(case.options.now)`
-   - `moment.locale('en')` for stable `{{date}}/{{weekday}}`
+   - `Math.random` is overridden by `seedrandom(case.options.seed, { global: true })`.
+     This pins `{{roll}}` (droll uses `Math.random` internally) and any
+     other macro that touches `Math.random`.
+   - `{{random}}`'s handler is replaced (in `adapters/macros.js` via
+     `installDeterministicRandomShim`) with a position-stable variant
+     seeded by `[case.options.seed, globalOffset, list]`. This is required
+     because ST's random uses `seedrandom('added entropy.', { entropy: true })`,
+     which reads from a closure-private entropy `pool` that drifts across
+     the page lifetime regardless of `Math.random` / `crypto` mocks. See
+     the long comment on `installDeterministicRandomShim` for details.
+   - `crypto.getRandomValues` returns all-zero bytes — defensive belt for
+     seedrandom's `autoseed()` path; neither `{{random}}` nor `{{pick}}`
+     hit it in practice.
+   - `moment.now` is overridden to return `Date.parse(case.options.now)`.
+   - `moment.locale('en')` for stable `{{date}}/{{weekday}}`.
 6. Calls `MacroEnvBuilder.buildFromRawEnv(ctx)` then `MacroEngine.evaluate(template, env)`
    directly. This is exactly the path that `substituteParams()` takes when
    the experimental flag is on — calling them directly lets us snapshot
@@ -106,3 +118,11 @@ case.user.personaDescription`.
 - **Random / time results differ between captures**
   → Ensure `case.options.seed` and `case.options.now` are set. The harness
   can only mock determinism if the case asks for it.
+- **`{{random}}` output drifts even with `seed` set**
+  → Make sure `adapters/macros.js` is the latest version (it must contain
+  `installDeterministicRandomShim`). The harness's `Math.random` /
+  `crypto.getRandomValues` mocks alone do NOT pin `{{random}}` — ST's
+  random goes through seedrandom's closure-private entropy pool, which
+  is only fixable at the macro-handler level. Re-run
+  `scripts/sync-baseline-runner.mjs` and hard-refresh the browser tab
+  to bust the ESM cache.
