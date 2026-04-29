@@ -1,0 +1,34 @@
+{
+  "caseId": "macros-005-time-deterministic",
+  "description": "Time macros under fixed moment.now mock. Covers locale-independent (isodate / isotime / datetimeformat) and locale-dependent (date / weekday) variants. Plus a tz-fixed {{time::UTC+0}} and a deterministic {{timeDiff}}.",
+  "tags": ["time", "mock-now"],
+  "input": {
+    "template": "isodate={{isodate}}|isotime={{isotime}}|fmt_ymd={{datetimeformat::YYYY-MM-DD}}|fmt_hm={{datetimeformat::HH:mm}}|fmt_iso={{datetimeformat::YYYY-MM-DDTHH:mm:ssZ}}|date={{date}}|weekday={{weekday}}|time_utc0={{time::UTC+0}}|diff={{timeDiff::2026-04-29T10:00:00+08:00::2026-04-29T13:30:00+08:00}}",
+    "character": {
+      "name": "Alice"
+    },
+    "user": {
+      "name": "Bob"
+    },
+    "chat": {
+      "messages": []
+    },
+    "chatMetadata": {
+      "chatId": "fixture-chat-005",
+      "variables": {},
+      "pickRerollSeed": null
+    },
+    "settings": {
+      "mainApi": "openai",
+      "modelName": "gpt-4o-mini",
+      "maxPromptTokens": 4096,
+      "maxContextTokens": 8192,
+      "maxResponseTokens": 1024
+    },
+    "options": {
+      "replaceCharacterCard": true,
+      "dynamicMacros": {},
+      "now": "2026-04-29T12:00:00+08:00"
+    }
+  }
+}

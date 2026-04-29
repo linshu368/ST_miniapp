@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Stable index of macro engine baseline cases. The runner iterates this list in order. Once a caseId is in this file, it is FROZEN — never rename, renumber, or remove.",
+  "cases": [
+    "macros-001-basic-char-user.json",
+    "macros-002-character-card-fields.json",
+    "macros-003-if-else-nested.json",
+    "macros-004-variables-roundtrip.json",
+    "macros-005-time-deterministic.json",
+    "macros-006-random-roll-seeded.json",
+    "macros-007-pick-stable.json",
+    "macros-008-chat-history-tail.json",
+    "macros-009-real-character-card.json"
+  ]
+}

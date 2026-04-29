@@ -1,0 +1,33 @@
+{
+  "caseId": "macros-007-pick-stable",
+  "description": "{{pick}} is intrinsically deterministic — its seed = chatIdHash + contentHash + offset + pickRerollSeed. No Math.random mock needed; just pin chatId and pickRerollSeed.",
+  "tags": ["random", "deterministic", "pick"],
+  "input": {
+    "template": "p1={{pick::alpha::bravo::charlie::delta}}|p2={{pick::1::2::3::4::5}}|p3={{pick::red::green::blue}}|p1_again={{pick::alpha::bravo::charlie::delta}}",
+    "character": {
+      "name": "Alice"
+    },
+    "user": {
+      "name": "Bob"
+    },
+    "chat": {
+      "messages": []
+    },
+    "chatMetadata": {
+      "chatId": "fixture-chat-007-pick-stable",
+      "variables": {},
+      "pickRerollSeed": "fixture-pick-seed-007"
+    },
+    "settings": {
+      "mainApi": "openai",
+      "modelName": "gpt-4o-mini",
+      "maxPromptTokens": 4096,
+      "maxContextTokens": 8192,
+      "maxResponseTokens": 1024
+    },
+    "options": {
+      "replaceCharacterCard": true,
+      "dynamicMacros": {}
+    }
+  }
+}

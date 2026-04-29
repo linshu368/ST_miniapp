@@ -1,0 +1,46 @@
+{
+  "caseId": "macros-008-chat-history-tail",
+  "description": "chat-macros that read the tail of chat history: {{lastUserMessage}} / {{lastCharMessage}} / {{lastMessage}} / {{lastMessageId}}. Also tests that swipes are ignored (we only read the active mes).",
+  "tags": ["chat", "history"],
+  "input": {
+    "template": "id={{lastMessageId}}|last={{lastMessage}}|user_last={{lastUserMessage}}|char_last={{lastCharMessage}}",
+    "character": {
+      "name": "Alice"
+    },
+    "user": {
+      "name": "Bob"
+    },
+    "chat": {
+      "messages": [
+        { "name": "Bob", "isUser": true, "mes": "Hi Alice, what time does the library close?" },
+        {
+          "name": "Alice",
+          "isUser": false,
+          "mes": "We close at midnight, but I rarely leave on time."
+        },
+        {
+          "name": "Bob",
+          "isUser": true,
+          "mes": "Mind if I stay a bit longer to finish a chapter?"
+        },
+        { "name": "Alice", "isUser": false, "mes": "Of course. Just don't tell the night guard." }
+      ]
+    },
+    "chatMetadata": {
+      "chatId": "fixture-chat-008",
+      "variables": {},
+      "pickRerollSeed": null
+    },
+    "settings": {
+      "mainApi": "openai",
+      "modelName": "gpt-4o-mini",
+      "maxPromptTokens": 4096,
+      "maxContextTokens": 8192,
+      "maxResponseTokens": 1024
+    },
+    "options": {
+      "replaceCharacterCard": true,
+      "dynamicMacros": {}
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "caseId": "macros-002-character-card-fields",
+  "description": "All env-macros that read character card fields: description / personality / scenario / persona / mesExamplesRaw / charVersion.",
+  "tags": ["env", "character"],
+  "input": {
+    "template": "[Description]\n{{description}}\n\n[Personality]\n{{personality}}\n\n[Scenario]\n{{scenario}}\n\n[Persona]\n{{persona}}\n\n[Examples]\n{{mesExamplesRaw}}\n\n[Version]\n{{charVersion}}",
+    "character": {
+      "name": "Alice",
+      "description": "A curious librarian who always carries three books.",
+      "personality": "thoughtful, methodical, mildly sarcastic",
+      "scenario": "You meet Alice in the reference section of an old city library after closing hours.",
+      "persona": "Alice is a 28-year-old part-time librarian and full-time night-owl reader.",
+      "mesExample": "<START>\n{{user}}: What are you reading?\n{{char}}: A treatise on lost punctuation. Riveting, I assure you.\n<END>",
+      "version": "1.0.0"
+    },
+    "user": {
+      "name": "Bob"
+    },
+    "chat": {
+      "messages": []
+    },
+    "chatMetadata": {
+      "chatId": "fixture-chat-002",
+      "variables": {},
+      "pickRerollSeed": null
+    },
+    "settings": {
+      "mainApi": "openai",
+      "modelName": "gpt-4o-mini",
+      "maxPromptTokens": 4096,
+      "maxContextTokens": 8192,
+      "maxResponseTokens": 1024
+    },
+    "options": {
+      "replaceCharacterCard": true,
+      "dynamicMacros": {}
+    }
+  }
+}

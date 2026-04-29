@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://miniapp.local/schema/macros/baseline.schema.json",
+  "title": "MacroEngineBaseline",
+  "description": "Output JSON produced by running a list of MacroEngineCases through substituteParams. Used as ground truth (when engine='sillytavern-original') and as candidate (when engine='miniapp').",
+  "type": "object",
+  "required": ["schemaVersion", "runMeta", "results"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0",
+      "description": "Bumps when case/output shape changes incompatibly."
+    },
+    "runMeta": { "$ref": "#/definitions/RunMeta" },
+    "results": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/CaseResult" },
+      "description": "One entry per case, in the same order as the input case list."
+    }
+  },
+  "definitions": {
+    "RunMeta": {
+      "type": "object",
+      "required": ["runAt", "engine"],
+      "additionalProperties": true,
+      "properties": {
+        "runAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Wall-clock time when the runner started."
+        },
+        "engine": {
+          "type": "string",
+          "enum": ["sillytavern-original", "miniapp"],
+          "description": "Which engine produced this baseline."
+        },
+        "stVersion": {
+          "type": "string",
+          "description": "ST package version (window.SillyTavern context if available)."
+        },
+        "userAgent": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    },
+    "CaseResult": {
+      "type": "object",
+      "required": ["caseId", "input", "output"],
+      "additionalProperties": false,
+      "properties": {
+        "caseId": { "type": "string" },
+        "input": {
+          "description": "Verbatim copy of MacroEngineCase.input. Embedded so a baseline file is replayable on its own.",
+          "type": "object"
+        },
+        "output": { "$ref": "#/definitions/CaseOutput" }
+      }
+    },
+    "CaseOutput": {
+      "type": "object",
+      "required": ["text", "meta"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The string returned by substituteParams(). Primary diff target."
+        },
+        "meta": { "$ref": "#/definitions/CaseMeta" }
+      }
+    },
+    "CaseMeta": {
+      "type": "object",
+      "required": ["macrosUsed", "warnings", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "macrosUsed": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Sorted unique list of macro names that were actually invoked during evaluation. Captured by wrapping MacroEngine#resolveMacro."
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Lex/parse/runtime warnings collected from MacroDiagnostics during this case."
+        },
+        "envSnapshot": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "JSON-safe snapshot of MacroEnv after MacroEnvBuilder.buildFromRawEnv (functions stripped, character lazy getters resolved). Used to localize diff sources, not asserted bit-exactly."
+        },
+        "error": {
+          "type": ["string", "null"],
+          "description": "Non-null when the case threw before producing output."
+        }
+      }
+    }
+  }
+}

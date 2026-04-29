@@ -1,0 +1,33 @@
+{
+  "caseId": "macros-004-variables-roundtrip",
+  "description": "Variable family round-trip: setvar / addvar / getvar / incvar / decvar / hasvar. Validates evaluation order and side-effect ordering.",
+  "tags": ["variable"],
+  "input": {
+    "template": "init={{setvar::score::5}}|after_add3={{addvar::score::3}}{{getvar::score}}|inc={{incvar::score}}|dec={{decvar::score}}|has_score={{hasvar::score}}|has_missing={{hasvar::nope}}",
+    "character": {
+      "name": "Alice"
+    },
+    "user": {
+      "name": "Bob"
+    },
+    "chat": {
+      "messages": []
+    },
+    "chatMetadata": {
+      "chatId": "fixture-chat-004",
+      "variables": {},
+      "pickRerollSeed": null
+    },
+    "settings": {
+      "mainApi": "openai",
+      "modelName": "gpt-4o-mini",
+      "maxPromptTokens": 4096,
+      "maxContextTokens": 8192,
+      "maxResponseTokens": 1024
+    },
+    "options": {
+      "replaceCharacterCard": true,
+      "dynamicMacros": {}
+    }
+  }
+}

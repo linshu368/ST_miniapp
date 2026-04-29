@@ -1,0 +1,34 @@
+{
+  "caseId": "macros-006-random-roll-seeded",
+  "description": "Non-deterministic macros under seedrandom mock: {{random}} from a list, {{roll}} dice (full formula and shorthand). Math.random is globally replaced by seedrandom(seed) for the case duration.",
+  "tags": ["random", "mock-rng"],
+  "input": {
+    "template": "rand_letters={{random::a::b::c::d::e}}|rand_words={{random::apple::banana::cherry}}|roll_3d6={{roll::3d6}}|roll_short_d20={{roll::20}}|roll_with_mod={{roll::2d8+3}}",
+    "character": {
+      "name": "Alice"
+    },
+    "user": {
+      "name": "Bob"
+    },
+    "chat": {
+      "messages": []
+    },
+    "chatMetadata": {
+      "chatId": "fixture-chat-006",
+      "variables": {},
+      "pickRerollSeed": null
+    },
+    "settings": {
+      "mainApi": "openai",
+      "modelName": "gpt-4o-mini",
+      "maxPromptTokens": 4096,
+      "maxContextTokens": 8192,
+      "maxResponseTokens": 1024
+    },
+    "options": {
+      "replaceCharacterCard": true,
+      "dynamicMacros": {},
+      "seed": "step0-fixed-seed-001"
+    }
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://miniapp.local/schema/macros/case.schema.json",
+  "title": "MacroEngineCase",
+  "description": "A single fixed test case for the macro substitution engine (Step 0 baseline). Designed to be run identically against ST original (browser console runner) and miniAPP backend, expecting bit-exact output.",
+  "type": "object",
+  "required": ["caseId", "description", "input"],
+  "additionalProperties": false,
+  "properties": {
+    "caseId": {
+      "type": "string",
+      "description": "Stable unique ID. Format: 'macros-NNN-short-name' (e.g. 'macros-001-basic-char-user'). Once a case is checked in, its caseId is frozen for the project lifetime.",
+      "pattern": "^macros-\\d{3}-[a-z0-9-]+$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable summary of what this case tests."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Free-form tags for filtering: 'character', 'env', 'state', 'chat', 'time', 'variable', 'instruct', 'nested', 'realCharCard', 'edge', 'random', etc."
+    },
+    "input": { "$ref": "#/definitions/MacroEngineInput" }
+  },
+  "definitions": {
+    "MacroEngineInput": {
+      "type": "object",
+      "description": "Six-bucket input. Each sub-object owns one orthogonal concern; this layout is the contract between ST original and miniAPP migrated engine.",
+      "required": ["template", "character", "user", "chat", "chatMetadata", "settings", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "template": {
+          "type": "string",
+          "description": "The raw string passed to substituteParams(). May contain any {{macro}} or nested macro."
+        },
+        "character": { "$ref": "#/definitions/CharacterFields" },
+        "user": { "$ref": "#/definitions/UserFields" },
+        "chat": { "$ref": "#/definitions/ChatHistory" },
+        "chatMetadata": { "$ref": "#/definitions/ChatMetadata" },
+        "settings": { "$ref": "#/definitions/RuntimeSettings" },
+        "options": { "$ref": "#/definitions/MacroOptions" }
+      }
+    },
+    "CharacterFields": {
+      "type": "object",
+      "description": "Character card data. Drives MacroEnv.character.{description,personality,scenario,...}. All fields except 'name' default to empty string when absent.",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Maps to ST name2 / MacroEnv.names.char (unless overridden via options.name2Override)."
+        },
+        "description": { "type": "string" },
+        "personality": { "type": "string" },
+        "scenario": { "type": "string" },
+        "mesExample": {
+          "type": "string",
+          "description": "Maps to MacroEnv.character.mesExamplesRaw."
+        },
+        "firstMessage": { "type": "string" },
+        "alternateGreetings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "persona": {
+          "type": "string",
+          "description": "Character-level persona override. Falls back to user.personaDescription when empty."
+        },
+        "charPrompt": {
+          "type": "string",
+          "description": "Card-level system prompt override (data.system_prompt)."
+        },
+        "charInstruction": {
+          "type": "string",
+          "description": "Card-level post-history / jailbreak override (data.post_history_instructions)."
+        },
+        "charDepthPrompt": { "type": "string" },
+        "charCreatorNotes": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "UserFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Maps to ST name1 / MacroEnv.names.user (unless overridden via options.name1Override)."
+        },
+        "personaDescription": {
+          "type": "string",
+          "description": "User-level persona text used when no character-level persona is set."
+        }
+      }
+    },
+    "ChatHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messages"],
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ChatMessage" },
+          "description": "Conversation history in chronological order. Read by chat-macros (lastMessage, lastUserMessage, ...)."
+        }
+      }
+    },
+    "ChatMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "isUser", "mes"],
+      "properties": {
+        "name": { "type": "string" },
+        "isUser": { "type": "boolean" },
+        "mes": { "type": "string" },
+        "swipeId": { "type": "integer", "minimum": 0 },
+        "swipes": { "type": "array", "items": { "type": "string" } },
+        "extra": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ChatMetadata": {
+      "type": "object",
+      "description": "Mirrors ST's chat_metadata. Used by {{pick}} seed and {{getvar}}/{{setvar}}.",
+      "additionalProperties": true,
+      "properties": {
+        "chatId": {
+          "type": "string",
+          "description": "Stable chat identifier — feeds into {{pick}}'s seed via getStringHash."
+        },
+        "variables": {
+          "type": "object",
+          "description": "Per-chat scalar variables read by {{getvar}}/{{setvar}}/{{addvar}} family.",
+          "additionalProperties": { "type": ["string", "number", "boolean", "null"] }
+        },
+        "pickRerollSeed": {
+          "type": ["string", "null"],
+          "description": "Maps to chat_metadata.pick_reroll_seed. Part of {{pick}} seed."
+        }
+      }
+    },
+    "RuntimeSettings": {
+      "type": "object",
+      "description": "Application/preset state that macros read from outside MacroEnv.",
+      "additionalProperties": true,
+      "properties": {
+        "mainApi": {
+          "type": "string",
+          "enum": ["openai", "kobold", "textgenerationwebui", "novel"],
+          "description": "Maps to ST main_api. Currently only consumed by {{banned}} et al."
+        },
+        "modelName": {
+          "type": "string",
+          "description": "Maps to MacroEnv.system.model (return of getGeneratingModel())."
+        },
+        "maxPromptTokens": { "type": "integer", "minimum": 0 },
+        "maxContextTokens": { "type": "integer", "minimum": 0 },
+        "maxResponseTokens": { "type": "integer", "minimum": 0 },
+        "globalVariables": {
+          "type": "object",
+          "description": "Maps to extension_settings.variables.global. Read by {{getglobalvar}} family.",
+          "additionalProperties": { "type": ["string", "number", "boolean", "null"] }
+        },
+        "powerUser": {
+          "type": "object",
+          "description": "Subset of ST power_user actually read by macros (instruct/sysprompt/context).",
+          "additionalProperties": true
+        }
+      }
+    },
+    "MacroOptions": {
+      "type": "object",
+      "description": "Per-call options passed to substituteParams() AND determinism controls for non-deterministic macros.",
+      "additionalProperties": false,
+      "properties": {
+        "name1Override": { "type": ["string", "null"] },
+        "name2Override": { "type": ["string", "null"] },
+        "groupOverride": { "type": ["string", "null"] },
+        "original": {
+          "type": ["string", "null"],
+          "description": "One-shot value for {{original}}."
+        },
+        "replaceCharacterCard": { "type": "boolean", "default": true },
+        "dynamicMacros": {
+          "type": "object",
+          "description": "Additional macros visible only for this call. Keys are case-insensitive; values are strings.",
+          "additionalProperties": { "type": "string" }
+        },
+        "seed": {
+          "type": "string",
+          "description": "Deterministic seed for Math.random override during {{random}}/{{roll}} eval. Required when template touches non-deterministic macros."
+        },
+        "now": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp to mock moment.now(). Affects {{time/date/weekday/isotime/isodate/datetimeformat/idleDuration/timeDiff}}."
+        }
+      }
+    }
+  }
+}

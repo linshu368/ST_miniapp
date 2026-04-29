@@ -1,0 +1,35 @@
+{
+  "caseId": "macros-003-if-else-nested",
+  "description": "Control flow: {{if cond}}...{{else}}...{{/if}} with a nested {{getvar}} as condition. Validates delayed argument resolution and branch selection.",
+  "tags": ["control-flow", "variable", "nested"],
+  "input": {
+    "template": "{{if {{getvar::is_admin}}}}Greetings, admin {{user}}. {{char}} salutes.{{else}}Hi {{user}}, {{char}} waves casually.{{/if}}",
+    "character": {
+      "name": "Alice"
+    },
+    "user": {
+      "name": "Bob"
+    },
+    "chat": {
+      "messages": []
+    },
+    "chatMetadata": {
+      "chatId": "fixture-chat-003",
+      "variables": {
+        "is_admin": "1"
+      },
+      "pickRerollSeed": null
+    },
+    "settings": {
+      "mainApi": "openai",
+      "modelName": "gpt-4o-mini",
+      "maxPromptTokens": 4096,
+      "maxContextTokens": 8192,
+      "maxResponseTokens": 1024
+    },
+    "options": {
+      "replaceCharacterCard": true,
+      "dynamicMacros": {}
+    }
+  }
+}

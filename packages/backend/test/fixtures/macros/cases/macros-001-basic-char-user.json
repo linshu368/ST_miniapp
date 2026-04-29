@@ -1,0 +1,33 @@
+{
+  "caseId": "macros-001-basic-char-user",
+  "description": "Smoke test: {{user}} and {{char}} substitution. Most basic case — if this fails, nothing else can pass.",
+  "tags": ["env", "smoke"],
+  "input": {
+    "template": "Hello, I am {{user}} and I am talking to {{char}}.",
+    "character": {
+      "name": "Alice"
+    },
+    "user": {
+      "name": "Bob"
+    },
+    "chat": {
+      "messages": []
+    },
+    "chatMetadata": {
+      "chatId": "fixture-chat-001",
+      "variables": {},
+      "pickRerollSeed": null
+    },
+    "settings": {
+      "mainApi": "openai",
+      "modelName": "gpt-4o-mini",
+      "maxPromptTokens": 4096,
+      "maxContextTokens": 8192,
+      "maxResponseTokens": 1024
+    },
+    "options": {
+      "replaceCharacterCard": true,
+      "dynamicMacros": {}
+    }
+  }
+}
