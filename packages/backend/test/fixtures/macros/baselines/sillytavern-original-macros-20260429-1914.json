@@ -1,0 +1,712 @@
+{
+  "schemaVersion": "1.0",
+  "runMeta": {
+    "runAt": "2026-04-29T11:14:25.073Z",
+    "engine": "sillytavern-original",
+    "stVersion": "SillyTavern 1.17.0 'release' (aa50edcf4)",
+    "userAgent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36",
+    "notes": "Step 0 baseline: MacroEngine.evaluate over MacroEnvBuilder.buildFromRawEnv",
+    "stepName": "macros"
+  },
+  "results": [
+    {
+      "caseId": "macros-001-basic-char-user",
+      "input": {
+        "template": "Hello, I am {{user}} and I am talking to {{char}}.",
+        "character": {
+          "name": "Alice"
+        },
+        "user": {
+          "name": "Bob"
+        },
+        "chat": {
+          "messages": []
+        },
+        "chatMetadata": {
+          "chatId": "fixture-chat-001",
+          "variables": {},
+          "pickRerollSeed": null
+        },
+        "settings": {
+          "mainApi": "openai",
+          "modelName": "gpt-4o-mini",
+          "maxPromptTokens": 4096,
+          "maxContextTokens": 8192,
+          "maxResponseTokens": 1024
+        },
+        "options": {
+          "replaceCharacterCard": true,
+          "dynamicMacros": {}
+        }
+      },
+      "output": {
+        "text": "Hello, I am Bob and I am talking to Alice.",
+        "meta": {
+          "macrosUsed": ["char", "user"],
+          "warnings": [],
+          "envSnapshot": {
+            "names": {
+              "user": "Bob",
+              "char": "Alice",
+              "group": "Alice",
+              "groupNotMuted": "Alice",
+              "notChar": "Bob"
+            },
+            "character": {
+              "charPrompt": "",
+              "charInstruction": "",
+              "description": "",
+              "personality": "",
+              "scenario": "",
+              "persona": "",
+              "mesExamplesRaw": "",
+              "version": "",
+              "charDepthPrompt": "",
+              "creatorNotes": "",
+              "firstMessage": "",
+              "alternateGreetings": []
+            },
+            "system": {
+              "model": ""
+            },
+            "contentHash": 5112255087953153,
+            "dynamicMacroKeys": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "macros-002-character-card-fields",
+      "input": {
+        "template": "[Description]\n{{description}}\n\n[Personality]\n{{personality}}\n\n[Scenario]\n{{scenario}}\n\n[Persona]\n{{persona}}\n\n[Examples]\n{{mesExamplesRaw}}\n\n[Version]\n{{charVersion}}",
+        "character": {
+          "name": "Alice",
+          "description": "A curious librarian who always carries three books.",
+          "personality": "thoughtful, methodical, mildly sarcastic",
+          "scenario": "You meet Alice in the reference section of an old city library after closing hours.",
+          "persona": "Alice is a 28-year-old part-time librarian and full-time night-owl reader.",
+          "mesExample": "<START>\n{{user}}: What are you reading?\n{{char}}: A treatise on lost punctuation. Riveting, I assure you.\n<END>",
+          "version": "1.0.0"
+        },
+        "user": {
+          "name": "Bob"
+        },
+        "chat": {
+          "messages": []
+        },
+        "chatMetadata": {
+          "chatId": "fixture-chat-002",
+          "variables": {},
+          "pickRerollSeed": null
+        },
+        "settings": {
+          "mainApi": "openai",
+          "modelName": "gpt-4o-mini",
+          "maxPromptTokens": 4096,
+          "maxContextTokens": 8192,
+          "maxResponseTokens": 1024
+        },
+        "options": {
+          "replaceCharacterCard": true,
+          "dynamicMacros": {}
+        }
+      },
+      "output": {
+        "text": "[Description]\nA curious librarian who always carries three books.\n\n[Personality]\nthoughtful, methodical, mildly sarcastic\n\n[Scenario]\nYou meet Alice in the reference section of an old city library after closing hours.\n\n[Persona]\nAlice is a 28-year-old part-time librarian and full-time night-owl reader.\n\n[Examples]\n<START>\nBob: What are you reading?\nAlice: A treatise on lost punctuation. Riveting, I assure you.\n<END>\n\n[Version]\n1.0.0",
+        "meta": {
+          "macrosUsed": [
+            "char",
+            "charversion",
+            "description",
+            "mesexamplesraw",
+            "persona",
+            "personality",
+            "scenario",
+            "user"
+          ],
+          "warnings": [],
+          "envSnapshot": {
+            "names": {
+              "user": "Bob",
+              "char": "Alice",
+              "group": "Alice",
+              "groupNotMuted": "Alice",
+              "notChar": "Bob"
+            },
+            "character": {
+              "charPrompt": "",
+              "charInstruction": "",
+              "description": "A curious librarian who always carries three books.",
+              "personality": "thoughtful, methodical, mildly sarcastic",
+              "scenario": "You meet Alice in the reference section of an old city library after closing hours.",
+              "persona": "Alice is a 28-year-old part-time librarian and full-time night-owl reader.",
+              "mesExamplesRaw": "<START>\nBob: What are you reading?\nAlice: A treatise on lost punctuation. Riveting, I assure you.\n<END>",
+              "version": "1.0.0",
+              "charDepthPrompt": "",
+              "creatorNotes": "",
+              "firstMessage": "",
+              "alternateGreetings": []
+            },
+            "system": {
+              "model": ""
+            },
+            "contentHash": 5750403837290845,
+            "dynamicMacroKeys": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "macros-003-if-else-nested",
+      "input": {
+        "template": "{{if {{getvar::is_admin}}}}Greetings, admin {{user}}. {{char}} salutes.{{else}}Hi {{user}}, {{char}} waves casually.{{/if}}",
+        "character": {
+          "name": "Alice"
+        },
+        "user": {
+          "name": "Bob"
+        },
+        "chat": {
+          "messages": []
+        },
+        "chatMetadata": {
+          "chatId": "fixture-chat-003",
+          "variables": {
+            "is_admin": "1"
+          },
+          "pickRerollSeed": null
+        },
+        "settings": {
+          "mainApi": "openai",
+          "modelName": "gpt-4o-mini",
+          "maxPromptTokens": 4096,
+          "maxContextTokens": 8192,
+          "maxResponseTokens": 1024
+        },
+        "options": {
+          "replaceCharacterCard": true,
+          "dynamicMacros": {}
+        }
+      },
+      "output": {
+        "text": "Greetings, admin Bob. Alice salutes.",
+        "meta": {
+          "macrosUsed": ["char", "getvar", "if", "user"],
+          "warnings": [],
+          "envSnapshot": {
+            "names": {
+              "user": "Bob",
+              "char": "Alice",
+              "group": "Alice",
+              "groupNotMuted": "Alice",
+              "notChar": "Bob"
+            },
+            "character": {
+              "charPrompt": "",
+              "charInstruction": "",
+              "description": "",
+              "personality": "",
+              "scenario": "",
+              "persona": "",
+              "mesExamplesRaw": "",
+              "version": "",
+              "charDepthPrompt": "",
+              "creatorNotes": "",
+              "firstMessage": "",
+              "alternateGreetings": []
+            },
+            "system": {
+              "model": ""
+            },
+            "contentHash": 7220073002996709,
+            "dynamicMacroKeys": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "macros-004-variables-roundtrip",
+      "input": {
+        "template": "init={{setvar::score::5}}|after_add3={{addvar::score::3}}{{getvar::score}}|inc={{incvar::score}}|dec={{decvar::score}}|has_score={{hasvar::score}}|has_missing={{hasvar::nope}}",
+        "character": {
+          "name": "Alice"
+        },
+        "user": {
+          "name": "Bob"
+        },
+        "chat": {
+          "messages": []
+        },
+        "chatMetadata": {
+          "chatId": "fixture-chat-004",
+          "variables": {},
+          "pickRerollSeed": null
+        },
+        "settings": {
+          "mainApi": "openai",
+          "modelName": "gpt-4o-mini",
+          "maxPromptTokens": 4096,
+          "maxContextTokens": 8192,
+          "maxResponseTokens": 1024
+        },
+        "options": {
+          "replaceCharacterCard": true,
+          "dynamicMacros": {}
+        }
+      },
+      "output": {
+        "text": "init=|after_add3=8|inc=9|dec=8|has_score=true|has_missing=false",
+        "meta": {
+          "macrosUsed": ["addvar", "decvar", "getvar", "hasvar", "incvar", "setvar"],
+          "warnings": [],
+          "envSnapshot": {
+            "names": {
+              "user": "Bob",
+              "char": "Alice",
+              "group": "Alice",
+              "groupNotMuted": "Alice",
+              "notChar": "Bob"
+            },
+            "character": {
+              "charPrompt": "",
+              "charInstruction": "",
+              "description": "",
+              "personality": "",
+              "scenario": "",
+              "persona": "",
+              "mesExamplesRaw": "",
+              "version": "",
+              "charDepthPrompt": "",
+              "creatorNotes": "",
+              "firstMessage": "",
+              "alternateGreetings": []
+            },
+            "system": {
+              "model": ""
+            },
+            "contentHash": 7457279231646788,
+            "dynamicMacroKeys": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "macros-005-time-deterministic",
+      "input": {
+        "template": "isodate={{isodate}}|isotime={{isotime}}|fmt_ymd={{datetimeformat::YYYY-MM-DD}}|fmt_hm={{datetimeformat::HH:mm}}|fmt_iso={{datetimeformat::YYYY-MM-DDTHH:mm:ssZ}}|date={{date}}|weekday={{weekday}}|time_utc0={{time::UTC+0}}|diff={{timeDiff::2026-04-29T10:00:00+08:00::2026-04-29T13:30:00+08:00}}",
+        "character": {
+          "name": "Alice"
+        },
+        "user": {
+          "name": "Bob"
+        },
+        "chat": {
+          "messages": []
+        },
+        "chatMetadata": {
+          "chatId": "fixture-chat-005",
+          "variables": {},
+          "pickRerollSeed": null
+        },
+        "settings": {
+          "mainApi": "openai",
+          "modelName": "gpt-4o-mini",
+          "maxPromptTokens": 4096,
+          "maxContextTokens": 8192,
+          "maxResponseTokens": 1024
+        },
+        "options": {
+          "replaceCharacterCard": true,
+          "dynamicMacros": {},
+          "now": "2026-04-29T12:00:00+08:00"
+        }
+      },
+      "output": {
+        "text": "isodate=2026-04-29|isotime=12:00|fmt_ymd=2026-04-29|fmt_hm=12:00|fmt_iso=2026-04-29T12:00:00+08:00|date=April 29, 2026|weekday=Wednesday|time_utc0=4:00 AM|diff=4 hours ago",
+        "meta": {
+          "macrosUsed": [
+            "date",
+            "datetimeformat",
+            "isodate",
+            "isotime",
+            "time",
+            "timediff",
+            "weekday"
+          ],
+          "warnings": [],
+          "envSnapshot": {
+            "names": {
+              "user": "Bob",
+              "char": "Alice",
+              "group": "Alice",
+              "groupNotMuted": "Alice",
+              "notChar": "Bob"
+            },
+            "character": {
+              "charPrompt": "",
+              "charInstruction": "",
+              "description": "",
+              "personality": "",
+              "scenario": "",
+              "persona": "",
+              "mesExamplesRaw": "",
+              "version": "",
+              "charDepthPrompt": "",
+              "creatorNotes": "",
+              "firstMessage": "",
+              "alternateGreetings": []
+            },
+            "system": {
+              "model": ""
+            },
+            "contentHash": 3866378858194411,
+            "dynamicMacroKeys": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "macros-006-random-roll-seeded",
+      "input": {
+        "template": "rand_letters={{random::a::b::c::d::e}}|rand_words={{random::apple::banana::cherry}}|roll_3d6={{roll::3d6}}|roll_short_d20={{roll::20}}|roll_with_mod={{roll::2d8+3}}",
+        "character": {
+          "name": "Alice"
+        },
+        "user": {
+          "name": "Bob"
+        },
+        "chat": {
+          "messages": []
+        },
+        "chatMetadata": {
+          "chatId": "fixture-chat-006",
+          "variables": {},
+          "pickRerollSeed": null
+        },
+        "settings": {
+          "mainApi": "openai",
+          "modelName": "gpt-4o-mini",
+          "maxPromptTokens": 4096,
+          "maxContextTokens": 8192,
+          "maxResponseTokens": 1024
+        },
+        "options": {
+          "replaceCharacterCard": true,
+          "dynamicMacros": {},
+          "seed": "step0-fixed-seed-001"
+        }
+      },
+      "output": {
+        "text": "rand_letters=d|rand_words=apple|roll_3d6=12|roll_short_d20=10|roll_with_mod=12",
+        "meta": {
+          "macrosUsed": ["random", "roll"],
+          "warnings": [],
+          "envSnapshot": {
+            "names": {
+              "user": "Bob",
+              "char": "Alice",
+              "group": "Alice",
+              "groupNotMuted": "Alice",
+              "notChar": "Bob"
+            },
+            "character": {
+              "charPrompt": "",
+              "charInstruction": "",
+              "description": "",
+              "personality": "",
+              "scenario": "",
+              "persona": "",
+              "mesExamplesRaw": "",
+              "version": "",
+              "charDepthPrompt": "",
+              "creatorNotes": "",
+              "firstMessage": "",
+              "alternateGreetings": []
+            },
+            "system": {
+              "model": ""
+            },
+            "contentHash": 6873808826620401,
+            "dynamicMacroKeys": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "macros-007-pick-stable",
+      "input": {
+        "template": "p1={{pick::alpha::bravo::charlie::delta}}|p2={{pick::1::2::3::4::5}}|p3={{pick::red::green::blue}}|p1_again={{pick::alpha::bravo::charlie::delta}}",
+        "character": {
+          "name": "Alice"
+        },
+        "user": {
+          "name": "Bob"
+        },
+        "chat": {
+          "messages": []
+        },
+        "chatMetadata": {
+          "chatId": "fixture-chat-007-pick-stable",
+          "variables": {},
+          "pickRerollSeed": "fixture-pick-seed-007"
+        },
+        "settings": {
+          "mainApi": "openai",
+          "modelName": "gpt-4o-mini",
+          "maxPromptTokens": 4096,
+          "maxContextTokens": 8192,
+          "maxResponseTokens": 1024
+        },
+        "options": {
+          "replaceCharacterCard": true,
+          "dynamicMacros": {}
+        }
+      },
+      "output": {
+        "text": "p1=bravo|p2=1|p3=red|p1_again=delta",
+        "meta": {
+          "macrosUsed": ["pick"],
+          "warnings": [],
+          "envSnapshot": {
+            "names": {
+              "user": "Bob",
+              "char": "Alice",
+              "group": "Alice",
+              "groupNotMuted": "Alice",
+              "notChar": "Bob"
+            },
+            "character": {
+              "charPrompt": "",
+              "charInstruction": "",
+              "description": "",
+              "personality": "",
+              "scenario": "",
+              "persona": "",
+              "mesExamplesRaw": "",
+              "version": "",
+              "charDepthPrompt": "",
+              "creatorNotes": "",
+              "firstMessage": "",
+              "alternateGreetings": []
+            },
+            "system": {
+              "model": ""
+            },
+            "contentHash": 7965025486072644,
+            "dynamicMacroKeys": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "macros-008-chat-history-tail",
+      "input": {
+        "template": "id={{lastMessageId}}|last={{lastMessage}}|user_last={{lastUserMessage}}|char_last={{lastCharMessage}}",
+        "character": {
+          "name": "Alice"
+        },
+        "user": {
+          "name": "Bob"
+        },
+        "chat": {
+          "messages": [
+            {
+              "name": "Bob",
+              "isUser": true,
+              "mes": "Hi Alice, what time does the library close?"
+            },
+            {
+              "name": "Alice",
+              "isUser": false,
+              "mes": "We close at midnight, but I rarely leave on time."
+            },
+            {
+              "name": "Bob",
+              "isUser": true,
+              "mes": "Mind if I stay a bit longer to finish a chapter?"
+            },
+            {
+              "name": "Alice",
+              "isUser": false,
+              "mes": "Of course. Just don't tell the night guard."
+            }
+          ]
+        },
+        "chatMetadata": {
+          "chatId": "fixture-chat-008",
+          "variables": {},
+          "pickRerollSeed": null
+        },
+        "settings": {
+          "mainApi": "openai",
+          "modelName": "gpt-4o-mini",
+          "maxPromptTokens": 4096,
+          "maxContextTokens": 8192,
+          "maxResponseTokens": 1024
+        },
+        "options": {
+          "replaceCharacterCard": true,
+          "dynamicMacros": {}
+        }
+      },
+      "output": {
+        "text": "id=3|last=Of course. Just don't tell the night guard.|user_last=Mind if I stay a bit longer to finish a chapter?|char_last=Of course. Just don't tell the night guard.",
+        "meta": {
+          "macrosUsed": ["lastcharmessage", "lastmessage", "lastmessageid", "lastusermessage"],
+          "warnings": [],
+          "envSnapshot": {
+            "names": {
+              "user": "Bob",
+              "char": "Alice",
+              "group": "Alice",
+              "groupNotMuted": "Alice",
+              "notChar": "Bob"
+            },
+            "character": {
+              "charPrompt": "",
+              "charInstruction": "",
+              "description": "",
+              "personality": "",
+              "scenario": "",
+              "persona": "",
+              "mesExamplesRaw": "",
+              "version": "",
+              "charDepthPrompt": "",
+              "creatorNotes": "",
+              "firstMessage": "",
+              "alternateGreetings": []
+            },
+            "system": {
+              "model": ""
+            },
+            "contentHash": 4372596064803619,
+            "dynamicMacroKeys": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "macros-009-real-character-card",
+      "input": {
+        "template": "# 角色\n姓名: {{char}}\n描述: {{description}}\n性格: {{personality}}\n场景: {{scenario}}\n\n# 用户\n称呼: {{user}}\n用户简介: {{persona}}\n\n# 当前会话\n频道签到: {{pick::月光::夜雨::星屑::微风}}\n现在时间: {{datetimeformat::YYYY-MM-DD HH:mm}}\n上一条用户来电: {{lastUserMessage}}\n上一条{{char}}回应: {{lastCharMessage}}\n\n# 来访者状态\n{{if {{getvar::is_returning}}}}欢迎再次拨入,{{user}}。{{else}}很高兴第一次见到你,{{user}}。{{/if}}\n累计来电次数: {{getvar::call_count}}\n\n# 备注\n版本: {{charVersion}}",
+        "character": {
+          "name": "林清月",
+          "description": "知性温柔的深夜电台主持人,30 岁,主持节目《月光信箱》已七年。声音清澈、措辞讲究,擅长用比喻安慰陌生人。习惯一边喝热水一边读听众来信。",
+          "personality": "温柔,善于倾听,略带忧郁,富有诗意,从不主动追问,会在沉默处递出一句恰到好处的话",
+          "scenario": "凌晨两点,你睡不着,偶然调到 88.3 FM。她正读完一封听众来信,注意到你拨进的电话。",
+          "persona": "林清月。第一人称偏向\"我\",偶尔说\"咱们\",从不大声。",
+          "mesExample": "<START>\n{{user}}: 我最近老是睡不着。\n{{char}}: 失眠的人,通常都心里揣着一句没说出口的话。咱们慢慢来,不急。\n<END>",
+          "firstMessage": "晚安,我是清月。这里是《月光信箱》,凌晨两点的频率。深呼吸,有什么想说的,慢慢讲。",
+          "version": "v1.2.0"
+        },
+        "user": {
+          "name": "宋砚",
+          "personaDescription": "一个 26 岁的程序员,总是加班到深夜,习惯在睡前打开收音机寻找一点白噪声。"
+        },
+        "chat": {
+          "messages": [
+            {
+              "name": "林清月",
+              "isUser": false,
+              "mes": "晚安,我是清月。这里是《月光信箱》,凌晨两点的频率。深呼吸,有什么想说的,慢慢讲。"
+            },
+            {
+              "name": "宋砚",
+              "isUser": true,
+              "mes": "你好...其实我也不知道为什么打过来。今天加班到现在,脑子还是停不下来。"
+            },
+            {
+              "name": "林清月",
+              "isUser": false,
+              "mes": "脑子停不下来的时候,身体往往是先累的。咱们先把灯关一盏,就一盏。然后呢,你说说今天最让你皱眉的一件事。"
+            },
+            {
+              "name": "宋砚",
+              "isUser": true,
+              "mes": "嗯...就是觉得做的项目没什么意义,但又走不了。"
+            }
+          ]
+        },
+        "chatMetadata": {
+          "chatId": "fixture-real-charcard-009",
+          "variables": {
+            "is_returning": "1",
+            "call_count": "7"
+          },
+          "pickRerollSeed": "fixture-pick-seed-009"
+        },
+        "settings": {
+          "mainApi": "openai",
+          "modelName": "gpt-4o-mini",
+          "maxPromptTokens": 4096,
+          "maxContextTokens": 8192,
+          "maxResponseTokens": 1024
+        },
+        "options": {
+          "replaceCharacterCard": true,
+          "dynamicMacros": {},
+          "seed": "step0-fixed-seed-009",
+          "now": "2026-04-29T12:00:00+08:00"
+        }
+      },
+      "output": {
+        "text": "# 角色\n姓名: 林清月\n描述: 知性温柔的深夜电台主持人,30 岁,主持节目《月光信箱》已七年。声音清澈、措辞讲究,擅长用比喻安慰陌生人。习惯一边喝热水一边读听众来信。\n性格: 温柔,善于倾听,略带忧郁,富有诗意,从不主动追问,会在沉默处递出一句恰到好处的话\n场景: 凌晨两点,你睡不着,偶然调到 88.3 FM。她正读完一封听众来信,注意到你拨进的电话。\n\n# 用户\n称呼: 宋砚\n用户简介: 林清月。第一人称偏向\"我\",偶尔说\"咱们\",从不大声。\n\n# 当前会话\n频道签到: 月光\n现在时间: 2026-04-29 12:00\n上一条用户来电: 嗯...就是觉得做的项目没什么意义,但又走不了。\n上一条林清月回应: 脑子停不下来的时候,身体往往是先累的。咱们先把灯关一盏,就一盏。然后呢,你说说今天最让你皱眉的一件事。\n\n# 来访者状态\n欢迎再次拨入,宋砚。\n累计来电次数: 7\n\n# 备注\n版本: v1.2.0",
+        "meta": {
+          "macrosUsed": [
+            "char",
+            "charversion",
+            "datetimeformat",
+            "description",
+            "getvar",
+            "if",
+            "lastcharmessage",
+            "lastusermessage",
+            "persona",
+            "personality",
+            "pick",
+            "scenario",
+            "user"
+          ],
+          "warnings": [],
+          "envSnapshot": {
+            "names": {
+              "user": "宋砚",
+              "char": "林清月",
+              "group": "林清月",
+              "groupNotMuted": "林清月",
+              "notChar": "宋砚"
+            },
+            "character": {
+              "charPrompt": "",
+              "charInstruction": "",
+              "description": "知性温柔的深夜电台主持人,30 岁,主持节目《月光信箱》已七年。声音清澈、措辞讲究,擅长用比喻安慰陌生人。习惯一边喝热水一边读听众来信。",
+              "personality": "温柔,善于倾听,略带忧郁,富有诗意,从不主动追问,会在沉默处递出一句恰到好处的话",
+              "scenario": "凌晨两点,你睡不着,偶然调到 88.3 FM。她正读完一封听众来信,注意到你拨进的电话。",
+              "persona": "林清月。第一人称偏向\"我\",偶尔说\"咱们\",从不大声。",
+              "mesExamplesRaw": "<START>\n宋砚: 我最近老是睡不着。\n林清月: 失眠的人,通常都心里揣着一句没说出口的话。咱们慢慢来,不急。\n<END>",
+              "version": "v1.2.0",
+              "charDepthPrompt": "",
+              "creatorNotes": "",
+              "firstMessage": "晚安,我是清月。这里是《月光信箱》,凌晨两点的频率。深呼吸,有什么想说的,慢慢讲。",
+              "alternateGreetings": []
+            },
+            "system": {
+              "model": ""
+            },
+            "contentHash": 2879924595648584,
+            "dynamicMacroKeys": []
+          },
+          "error": null
+        }
+      }
+    }
+  ]
+}

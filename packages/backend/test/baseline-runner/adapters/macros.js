@@ -23,7 +23,16 @@
  */
 
 import { runStep, withDeterministicEnv, captureConsole, snapshotJsonSafe } from '../harness.js';
-import { chat, chat_metadata, characters, setCharacterId } from '/script.js';
+import {
+  chat,
+  chat_metadata,
+  characters,
+  name1,
+  name2,
+  setCharacterId,
+  setCharacterName,
+  setUserName,
+} from '/script.js';
 import { power_user } from '/scripts/power-user.js';
 import { MacroEngine } from '/scripts/macros/engine/MacroEngine.js';
 import { MacroEnvBuilder } from '/scripts/macros/engine/MacroEnvBuilder.js';
@@ -51,6 +60,9 @@ function setupGlobalState() {
   GLOBAL_BACKUP.chatMetadata = { ...chat_metadata };
   GLOBAL_BACKUP.characters = [...characters];
   GLOBAL_BACKUP.thisChidValue = readThisChid();
+  // name1 / name2 are live ESM bindings — read once for restore.
+  GLOBAL_BACKUP.name1 = name1;
+  GLOBAL_BACKUP.name2 = name2;
 
   // The new MacroEngine path is gated behind this flag in production
   // (substituteParams checks it). We're calling the engine directly so this
@@ -67,6 +79,10 @@ function restoreGlobalState() {
   resetObjectInPlace(chat_metadata, GLOBAL_BACKUP.chatMetadata ?? {});
   resetArrayInPlace(characters, GLOBAL_BACKUP.characters ?? []);
   setCharacterId(GLOBAL_BACKUP.thisChidValue);
+  // Restore name1 / name2 globals last so the debounced saveSettings (queued
+  // by per-case setUserName calls) ultimately persists the original value.
+  setUserName(GLOBAL_BACKUP.name1, { toastPersonaNameChange: false });
+  setCharacterName(GLOBAL_BACKUP.name2);
 }
 
 // ─── Per-case execution ─────────────────────────────────────────────────────
@@ -87,6 +103,16 @@ async function runOneCase(caseObj) {
   characters.push(synthChar);
   const prevChid = readThisChid();
   setCharacterId(syntheticChid);
+
+  // 1b) Align ST globals name1 / name2 with this case so that any nested
+  //     substituteParams call inside getCharacterCardFieldsLazy (e.g. via
+  //     baseChatReplace) sees the correct names. Without this, fields like
+  //     {{mesExamplesRaw}} would secondary-substitute {{user}}/{{char}} in
+  //     the example dialog using ST defaults ("User" / "SillyTavern System").
+  const caseUserName = input.options?.name1Override ?? input.user?.name ?? '';
+  const caseCharName = input.options?.name2Override ?? input.character?.name ?? '';
+  setUserName(caseUserName, { toastPersonaNameChange: false });
+  setCharacterName(caseCharName);
 
   // 2) Reset chat[] and chat_metadata to per-case values.
   resetArrayInPlace(chat, caseChatToStChat(input.chat?.messages ?? []));
