@@ -1,0 +1,19 @@
+{
+  "extends": "../../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../../dist/prompt-engine/macros",
+    "noEmit": true,
+    "types": ["node"],
+    // Engine subtree: stricter than the main pipeline. Treat .js+JSDoc
+    // as if it were .ts so we catch mismatches between the runtime
+    // shim and the macro engine without rewriting 5k+ lines of JS.
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true
+  },
+  "include": ["./**/*.js"],
+  "exclude": []
+}

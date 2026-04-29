@@ -1,0 +1,8 @@
+# miniAPP candidate baselines are build artifacts produced by
+# `pnpm --filter @miniapp/backend macros:baseline`. They're
+# deterministic from the input cases, so committing them just
+# pollutes PR diffs every time someone re-runs the runner.
+#
+# The ST ground-truth baseline (`sillytavern-original-macros-*.json`)
+# IS committed — it's the immutable truth Step 0 diffs against.
+miniapp-macros-*.json
