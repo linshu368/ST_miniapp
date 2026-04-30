@@ -1,9 +1,10 @@
 /**
  * runtime/utils.js
  *
- * Subset of `public/scripts/utils.js` used by the macro engine. Direct
- * 1:1 port (function bodies are byte-identical to ST 1.17.0); only
- * imports change. We don't need DOM or jQuery utilities here.
+ * Subset of `public/scripts/utils.js` used by the macro engine and the
+ * Step 1 instruct subtree. Direct 1:1 port (function bodies are
+ * byte-identical to ST 1.17.0); only imports change. We don't need
+ * DOM or jQuery utilities here.
  *
  * Functions ported:
  *   - getStringHash      (used by MacroEnvBuilder + {{pick}})
@@ -11,6 +12,8 @@
  *   - isTrueBoolean      (used by MacroRegistry)
  *   - escapeRegex        (kept for parity even though Step 0 doesn't hit it)
  *   - timestampToMoment  (used by {{idleDuration}})
+ *   - onlyUnique         (Step 1: getInstructStoppingSequences dedup)
+ *   - regexFromString    (Step 1: instruct preset activation_regex parse)
  */
 
 import { moment } from './lib.js';
@@ -64,6 +67,59 @@ export function isFalseBoolean(arg) {
  */
 export function escapeRegex(string) {
   return string.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+/**
+ * Determines if a value is unique in an array. 1:1 port of ST
+ * utils.js:308 — used by getInstructStoppingSequences to dedup
+ * sequences before turning them into stop strings.
+ *
+ * @template T
+ * @param {T} value Current value.
+ * @param {number} index Current index.
+ * @param {T[]} array The array being processed.
+ * @returns {boolean} True if the value is unique, false otherwise.
+ */
+export function onlyUnique(value, index, array) {
+  return array.indexOf(value) === index;
+}
+
+/**
+ * Instantiates a regular expression from a string. 1:1 port of ST
+ * utils.js:1388 — used by autoSelectInstructPreset's
+ * `activation_regex` parsing. miniAPP doesn't auto-select presets via
+ * this code path (selection is API-driven), but the function is part
+ * of the InstructSettings semantics so we keep parity.
+ *
+ * @copyright Originally from: https://github.com/IonicaBizau/regex-parser.js/blob/master/lib/index.js
+ * @param {string} input The input string.
+ * @returns {RegExp|undefined} The regular expression instance, or
+ *   undefined if the input couldn't be parsed.
+ */
+export function regexFromString(input) {
+  try {
+    // Parse input
+    const m = input.match(/(\/?)(.+)\1([a-z]*)/i);
+    if (!m) return undefined;
+
+    // capture-group 2 is `(.+)` so it is always present when `m`
+    // matched; the explicit fallback to '' is only there to satisfy
+    // `noUncheckedIndexedAccess`. capture-group 3 is `([a-z]*)` which
+    // CAN be the empty string but never undefined post-match — same
+    // story for the fallback.
+    const pattern = m[2] ?? '';
+    const flags = m[3] ?? '';
+
+    // Invalid flags
+    if (flags && !/^(?!.*?(.).*?\1)[gmixXsuUAJ]+$/.test(flags)) {
+      return RegExp(input);
+    }
+
+    // Create the regular expression
+    return new RegExp(pattern, flags);
+  } catch {
+    return undefined;
+  }
 }
 
 const dateCache = new Map();

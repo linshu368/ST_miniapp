@@ -273,9 +273,107 @@ export function parseMesExamples(_examplesStr, _isInstruct) {
 // ─── ctx mutators (called by the TS façade) ─────────────────────────────────
 
 /**
- * Default skeleton for power_user. Only the fields read by the macro
- * engine in Step 0 are listed. Callers may override via
- * setRuntimeCtx({ power_user: ... }).
+ * Default skeleton for an InstructSettings object.
+ *
+ * Step 1 widens the surface from `{ enabled: false }` to the full
+ * field set so any `power_user.instruct.<field>` access in ported
+ * instruct-mode code returns a sensibly-typed value instead of
+ * `undefined` (which would, e.g., break `.replace(/{{name}}/, ...)`).
+ *
+ * IMPORTANT — Step 0 byte-equal invariant:
+ *   - `enabled` MUST stay `false` here. The Step 0 baseline runs
+ *     under "instruct disabled" semantics; flipping this would change
+ *     `getInstructMacros` paths once that's registered.
+ *   - All other defaults are pure shape padding. They are visible only
+ *     when a caller fails to pass `customInstruct` AND fails to set
+ *     `power_user.instruct.*` via setRuntimeCtx — neither of which
+ *     happens in any Step 0 fixture (every fixture either patches
+ *     power_user explicitly or never touches instruct).
+ *   - `setRuntimeCtx({ power_user: { instruct: {...} } })` does a
+ *     SHALLOW merge at the top level, so a caller-supplied `instruct`
+ *     object fully REPLACES this skeleton. We rely on that to keep
+ *     the contract "what you pass is what you get".
+ *
+ * Default values mirror what `migrateInstructModeSettings` in
+ * `instruct-mode.js:71` would backfill onto a freshly imported
+ * legacy preset, with two deviations:
+ *   - `names_behavior: 'none'` instead of `'force'` (we want a default
+ *     skeleton to read as "nothing is enabled"; ST's `'force'` default
+ *     is a migration bias for legacy presets, not a true neutral).
+ *   - `sequences_as_stop_strings: true` matches ST's migration default.
+ */
+function createDefaultInstruct() {
+  return {
+    enabled: false,
+    wrap: false,
+    macro: false,
+    names_behavior: 'none',
+    input_sequence: '',
+    input_suffix: '',
+    output_sequence: '',
+    output_suffix: '',
+    system_sequence: '',
+    system_suffix: '',
+    last_system_sequence: '',
+    first_input_sequence: '',
+    last_input_sequence: '',
+    first_output_sequence: '',
+    last_output_sequence: '',
+    stop_sequence: '',
+    story_string_prefix: '',
+    story_string_suffix: '',
+    user_alignment_message: '',
+    system_same_as_user: false,
+    sequences_as_stop_strings: true,
+    activation_regex: '',
+    bind_to_context: false,
+    skip_examples: false,
+  };
+}
+
+/**
+ * Default skeleton for a ContextSettings object. Mirrors the
+ * `power_user.context.*` fields read by Step 1 instruct functions
+ * and `getInstructStoppingSequences`. story_string_position defaults
+ * to 0 (= extension_prompt_types.IN_PROMPT) which is ST's own default
+ * for a freshly-loaded chat with no preset.
+ */
+function createDefaultContext() {
+  return {
+    preset: '',
+    story_string_position: 0,
+    chat_start: '',
+    example_separator: '',
+    use_stop_strings: false,
+  };
+}
+
+/**
+ * Default skeleton for a SyspromptSettings object. Step 1's
+ * `getInstructMacros` reads `sysprompt.enabled` and `sysprompt.content`
+ * to decide whether the {{systemPrompt}} family of macros emits
+ * anything. Step 0 only reads `enabled` (always false here).
+ */
+function createDefaultSysprompt() {
+  return {
+    enabled: false,
+    content: '',
+  };
+}
+
+/**
+ * Default skeleton for power_user. Step 0 only reads
+ * `persona_description`, `experimental_macro_engine`,
+ * `prefer_character_*`, `collapse_newlines`,
+ * `instruct.enabled`, `sysprompt.enabled`, `context.example_separator`;
+ * the wider Step 1 surface (full instruct, context, sysprompt field
+ * sets) is documented in the per-section helpers above and never read
+ * on Step 0 baseline paths.
+ *
+ * Callers override via setRuntimeCtx({ power_user: ... }). The merge
+ * is SHALLOW at the top level: a caller-supplied `instruct` object
+ * fully replaces the skeleton's `instruct`, ditto `context` and
+ * `sysprompt` — there's no per-field deep merge.
  */
 function createDefaultPowerUser() {
   return {
@@ -284,9 +382,9 @@ function createDefaultPowerUser() {
     prefer_character_prompt: false,
     prefer_character_jailbreak: false,
     collapse_newlines: false,
-    instruct: { enabled: false },
-    sysprompt: { enabled: false },
-    context: { example_separator: '' },
+    instruct: createDefaultInstruct(),
+    sysprompt: createDefaultSysprompt(),
+    context: createDefaultContext(),
   };
 }
 
