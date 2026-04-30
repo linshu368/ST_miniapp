@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://miniapp.local/schema/instruct/baseline.schema.json",
+  "title": "InstructBaseline",
+  "description": "Output JSON produced by running a list of InstructCases through the 7 instruct.ts façade entries. Used as ground truth (engine='sillytavern-original') 与 candidate (engine='miniapp')。与 macros baseline 同构，仅 stepName / output.value 多态形式有差。",
+  "type": "object",
+  "required": ["schemaVersion", "runMeta", "results"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "runMeta": { "$ref": "#/definitions/RunMeta" },
+    "results": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/CaseResult" }
+    }
+  },
+  "definitions": {
+    "RunMeta": {
+      "type": "object",
+      "required": ["runAt", "engine"],
+      "additionalProperties": true,
+      "properties": {
+        "runAt": { "type": "string", "format": "date-time" },
+        "engine": { "type": "string", "enum": ["sillytavern-original", "miniapp"] },
+        "stVersion": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "notes": { "type": "string" },
+        "stepName": { "const": "instruct" }
+      }
+    },
+    "CaseResult": {
+      "type": "object",
+      "required": ["caseId", "target", "input", "output"],
+      "additionalProperties": false,
+      "properties": {
+        "caseId": { "type": "string" },
+        "target": {
+          "type": "string",
+          "enum": [
+            "formatInstructChat",
+            "formatInstructStoryString",
+            "formatInstructExamples",
+            "formatInstructPrompt",
+            "formatInstructSystemPrompt",
+            "getInstructStoppingSequences",
+            "getInstructMacros"
+          ]
+        },
+        "input": {
+          "type": "object",
+          "description": "Verbatim copy of InstructCase.input。复制进 baseline 让该文件可独立 replay。"
+        },
+        "output": { "$ref": "#/definitions/CaseOutput" }
+      }
+    },
+    "CaseOutput": {
+      "type": "object",
+      "required": ["type", "value", "meta"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["string", "string[]", "macro-array"] },
+        "value": {
+          "description": "Diff target。type=string 时是 string；type=string[] 时是 string[]（顺序敏感）；type=macro-array 时是 NormalizedMacro[]。",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "array", "items": { "$ref": "#/definitions/NormalizedMacro" } }
+          ]
+        },
+        "meta": { "$ref": "#/definitions/CaseMeta" }
+      }
+    },
+    "NormalizedMacro": {
+      "type": "object",
+      "required": ["regexSource", "regexFlags", "replacement"],
+      "additionalProperties": false,
+      "properties": {
+        "regexSource": { "type": "string" },
+        "regexFlags": { "type": "string" },
+        "replacement": { "type": "string" }
+      }
+    },
+    "CaseMeta": {
+      "type": "object",
+      "required": ["warnings", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Lex/parse 期间从 console.warn / console.error 抓到、内容含 'instruct'/'macro' 的告警字符串。"
+        },
+        "error": {
+          "type": ["string", "null"],
+          "description": "case 抛异常时记录 stack；正常路径为 null"
+        }
+      }
+    }
+  }
+}

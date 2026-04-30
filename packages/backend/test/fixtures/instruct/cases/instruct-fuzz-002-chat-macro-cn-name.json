@@ -1,0 +1,60 @@
+{
+  "caseId": "instruct-fuzz-002-chat-macro-cn-name",
+  "description": "macro=true + 中文 user 名 + name1Override 经 substituteParams 替换 {{user}}/{{name}}。验证中文不被 ascii 路径误编码。",
+  "tags": ["fuzz", "chat", "macro", "cjk"],
+  "target": "formatInstructChat",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": false,
+      "macro": true,
+      "names_behavior": "none",
+      "input_sequence": "<{{user}}/{{name}}> ",
+      "input_suffix": " </{{user}}>",
+      "output_sequence": "<{{char}}> ",
+      "output_suffix": " </{{char}}>",
+      "system_sequence": "",
+      "system_suffix": "",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "",
+      "stop_sequence": "",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "fuzz",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "",
+      "use_stop_strings": false
+    },
+    "sysprompt": {
+      "enabled": false,
+      "content": ""
+    },
+    "ctx": {
+      "name1": "宋砚",
+      "name2": "凌雪",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "name": "宋砚",
+      "mes": "今天怎么样？",
+      "isUser": true,
+      "isNarrator": false,
+      "forceAvatar": "",
+      "forceOutputSequence": null
+    }
+  }
+}

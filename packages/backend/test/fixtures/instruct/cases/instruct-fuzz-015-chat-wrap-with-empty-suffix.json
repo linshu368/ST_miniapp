@@ -1,0 +1,60 @@
+{
+  "caseId": "instruct-fuzz-015-chat-wrap-with-empty-suffix",
+  "description": "wrap=true + suffix 为空 → ST line 446-448 把 suffix 强制成 \\n。验证「wrap-fallback suffix」自动注入。",
+  "tags": ["fuzz", "chat", "wrap-fallback"],
+  "target": "formatInstructChat",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": true,
+      "macro": false,
+      "names_behavior": "none",
+      "input_sequence": "[U] ",
+      "input_suffix": "",
+      "output_sequence": "[A] ",
+      "output_suffix": "",
+      "system_sequence": "",
+      "system_suffix": "",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "",
+      "stop_sequence": "",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "fuzz",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "",
+      "use_stop_strings": false
+    },
+    "sysprompt": {
+      "enabled": false,
+      "content": ""
+    },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "name": "Alice",
+      "mes": "reply",
+      "isUser": false,
+      "isNarrator": false,
+      "forceAvatar": "",
+      "forceOutputSequence": null
+    }
+  }
+}

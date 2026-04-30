@@ -301,10 +301,16 @@ async function runOneSafe(caseObj, runOneCase) {
     return {
       text: out.text,
       meta: {
+        // Pass-through：保留 adapter 提供的所有 meta 字段，让不同 step 的
+        // adapter 可以塞自己需要的字段（如 instruct 的 outputType /
+        // outputValue），而不是被 harness 过滤掉。
+        ...out.meta,
+        // 对 macros 时代的 4 个字段做兜底，保证 macros baseline 向后兼容：
+        // adapter 没设这些时给默认值；adapter 设了就走 spread 后保留。
         macrosUsed: Array.isArray(out.meta.macrosUsed) ? out.meta.macrosUsed : [],
         warnings: Array.isArray(out.meta.warnings) ? out.meta.warnings : [],
         envSnapshot: out.meta.envSnapshot ?? {},
-        error: null,
+        error: out.meta.error ?? null,
       },
     };
   } catch (e) {

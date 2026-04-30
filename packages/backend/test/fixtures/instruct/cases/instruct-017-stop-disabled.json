@@ -1,0 +1,52 @@
+{
+  "caseId": "instruct-017-stop-disabled",
+  "description": "instruct.enabled=false 时，customInstruct 仍非 null（按 ST line 329：`if (customInstruct ?? instruct.enabled)`，customInstruct 走真值判定，customInstruct 本身 truthy 即进入分支）。useStopStrings=false 也短路，第二段 chat_start/example_separator 都不加。这条用例锁定「customInstruct 非 null 但其 enabled=false」边界。",
+  "tags": ["stop", "disabled"],
+  "target": "getInstructStoppingSequences",
+  "input": {
+    "instruct": {
+      "enabled": false,
+      "wrap": false,
+      "macro": false,
+      "names_behavior": "none",
+      "input_sequence": "",
+      "input_suffix": "",
+      "output_sequence": "",
+      "output_suffix": "",
+      "system_sequence": "",
+      "system_suffix": "",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "",
+      "stop_sequence": "",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "blank",
+      "story_string_position": 0,
+      "chat_start": "<<START>>",
+      "example_separator": "***",
+      "use_stop_strings": false
+    },
+    "sysprompt": { "enabled": false, "content": "" },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "useStopStrings": false
+    }
+  }
+}

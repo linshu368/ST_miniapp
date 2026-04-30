@@ -1,0 +1,56 @@
+{
+  "caseId": "instruct-019-macros-all",
+  "description": "getInstructMacros 19 条全跑：所有 instruct.* 字段都给独特字面量；sysprompt.enabled=true + content 非空；preferCharacterPrompt=true + charPrompt 非空 → systemPrompt 走 charPrompt 分支；defaultSystemPrompt|instructSystem|instructSystemPrompt 三别名走 sysprompt.content。注意 instruct.enabled 与 sysprompt.enabled 都为 true 才能让所有 enabled=true 路径生效。adapter 层会 normalize 成 NormalizedMacro[] 落 baseline。",
+  "tags": ["macros", "full-table"],
+  "target": "getInstructMacros",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": false,
+      "macro": false,
+      "names_behavior": "none",
+      "input_sequence": "INPUT_SEQ",
+      "input_suffix": "INPUT_SFX",
+      "output_sequence": "OUTPUT_SEQ",
+      "output_suffix": "OUTPUT_SFX",
+      "system_sequence": "SYSTEM_SEQ",
+      "system_suffix": "SYSTEM_SFX",
+      "last_system_sequence": "LAST_SYS_SEQ",
+      "first_input_sequence": "FIRST_INPUT_SEQ",
+      "last_input_sequence": "LAST_INPUT_SEQ",
+      "first_output_sequence": "FIRST_OUTPUT_SEQ",
+      "last_output_sequence": "LAST_OUTPUT_SEQ",
+      "stop_sequence": "STOP_SEQ",
+      "story_string_prefix": "STORY_PREFIX",
+      "story_string_suffix": "STORY_SUFFIX",
+      "user_alignment_message": "USER_ALIGN_MSG",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "Macros-full",
+      "story_string_position": 0,
+      "chat_start": "CHAT_START_VAL",
+      "example_separator": "EX_SEP_VAL",
+      "use_stop_strings": false
+    },
+    "sysprompt": {
+      "enabled": true,
+      "content": "DEFAULT_SYSPROMPT_CONTENT"
+    },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "preferCharacterPrompt": true,
+      "charPrompt": "CHAR_PROMPT_VAL"
+    }
+  }
+}

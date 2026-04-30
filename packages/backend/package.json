@@ -13,7 +13,10 @@
     "test:watch": "vitest",
     "macros:baseline": "tsx scripts/run-miniapp-baseline.mjs",
     "macros:diff": "node scripts/diff-baselines.mjs",
-    "macros:verify": "tsx scripts/run-miniapp-baseline.mjs && node scripts/diff-baselines.mjs"
+    "macros:verify": "tsx scripts/run-miniapp-baseline.mjs && node scripts/diff-baselines.mjs",
+    "instruct:baseline": "tsx scripts/run-miniapp-instruct-baseline.mjs",
+    "instruct:diff": "node scripts/diff-instruct-baselines.mjs",
+    "instruct:verify": "tsx scripts/run-miniapp-instruct-baseline.mjs && node scripts/diff-instruct-baselines.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

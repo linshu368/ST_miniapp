@@ -1,0 +1,59 @@
+{
+  "caseId": "instruct-fuzz-013-prompt-empty-name-no-include",
+  "description": "name=\"\" + names_behavior=always → includeNames 退化（ST line 595 取 `name && (...)`，name 为 falsy 时整体 false）。验证「空 name 强制不加 names」边界。",
+  "tags": ["fuzz", "prompt", "empty-name"],
+  "target": "formatInstructPrompt",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": true,
+      "macro": false,
+      "names_behavior": "always",
+      "input_sequence": "[INST] ",
+      "input_suffix": " [/INST]",
+      "output_sequence": "[OUT] ",
+      "output_suffix": "</s>",
+      "system_sequence": "",
+      "system_suffix": "",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "",
+      "stop_sequence": "",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "fuzz",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "",
+      "use_stop_strings": false
+    },
+    "sysprompt": {
+      "enabled": false,
+      "content": ""
+    },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "name": "",
+      "isImpersonate": false,
+      "promptBias": "",
+      "isQuiet": false,
+      "isQuietToLoud": false
+    }
+  }
+}

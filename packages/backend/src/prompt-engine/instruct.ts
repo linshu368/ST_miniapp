@@ -37,6 +37,7 @@ import {
   names_behavior_types,
   force_output_sequence,
 } from './instruct/instruct-mode.js';
+import { substituteParams as substituteParamsCore } from './substituteParams.js';
 
 import type { SubstituteCtx, SubstituteOptions } from './substituteParams.js';
 
@@ -183,7 +184,8 @@ function buildHostPatch(
   instruct: InstructSettings,
   context: ContextSettings,
   sysprompt: SyspromptSettings,
-  recursive: (s: string, opts?: SubstituteOptions) => string
+  recursive: (s: string, opts?: SubstituteOptions) => string,
+  extraPowerUser: Record<string, unknown> = {}
 ): Record<string, unknown> {
   return {
     name1: ctx.name1 ?? '',
@@ -191,10 +193,15 @@ function buildHostPatch(
     selected_group: ctx.selectedGroup ?? null,
     groups: ctx.groups ?? [],
     characters: ctx.characters ?? [],
+    // power_user 整体替换：caller 传入的 instruct/context/sysprompt 子对象
+    // 是骨架；extraPowerUser 用来塞顶层字段（getInstructMacros 路径要求
+    // prefer_character_prompt 设到顶层；ST `instruct-mode.js:755` 直接读
+    // power_user.prefer_character_prompt）。
     power_user: {
       instruct,
       context,
       sysprompt,
+      ...extraPowerUser,
     },
     substituteParams: ctx.substituteParams ?? recursive,
   };
@@ -209,11 +216,32 @@ function withCtx<T>(
   instruct: InstructSettings,
   context: ContextSettings,
   sysprompt: SyspromptSettings,
-  fn: () => T
+  fn: () => T,
+  extraPowerUser: Record<string, unknown> = {}
 ): T {
   ensureInitialized();
-  const recursive = ctx.substituteParams ?? ((s: string) => s);
-  const hostPatch = buildHostPatch(ctx, instruct, context, sysprompt, recursive);
+  // 默认递归回调：调真 substituteParams.ts 门面（不是 identity stub）。
+  // instruct-mode.js 的 macro=true 分支会走这条路把 sequence 里的
+  // {{user}}/{{char}}/{{name}} 等宏展开。我们组一个最小 SubstituteCtx，
+  // 只填 instruct 实际需要展开的 name/character/group 字段——其它字段
+  // 走 substituteParams.ts 默认。注意：嵌套调用 substituteParams 时它
+  // 自己会再次 setRuntimeCtx + resetRuntimeCtx，与本层 withCtx 形成
+  // snapshot 栈，相互独立，不会污染。
+  const recursive =
+    ctx.substituteParams ??
+    ((s: string, opts: SubstituteOptions = {}) =>
+      substituteParamsCore(
+        s,
+        {
+          name1: ctx.name1,
+          name2: ctx.name2,
+          characters: ctx.characters ?? [],
+          groups: ctx.groups ?? [],
+          selectedGroup: ctx.selectedGroup ?? null,
+        },
+        opts
+      ));
+  const hostPatch = buildHostPatch(ctx, instruct, context, sysprompt, recursive, extraPowerUser);
   const hostSnapshot = setRuntimeCtx(hostPatch);
   const prevGlobalStore = setGlobalStore({});
   try {
@@ -383,13 +411,17 @@ export function getInstructMacros(args: {
   charPrompt?: string;
   ctx: InstructCtx;
 }): Array<{ regex: RegExp; replace: () => string }> {
-  return withCtx(args.ctx, args.instruct, args.context, args.sysprompt, () => {
-    // ST 原版还要 prefer_character_prompt（power_user 顶层），由 ctx 间接传递。
-    // 这里我们临时把它塞进 power_user 的浅顶层；下一行 _getInstructMacros 会读到。
-    // 不通过 setRuntimeCtx 是因为 prefer_character_prompt 不在 power_user
-    // 的「nested 替换块」里，host.js 默认值是 false，浅顶层我们手工设。
-    return _getInstructMacros({ charPrompt: args.charPrompt ?? '' });
-  });
+  // ST `instruct-mode.js:755` 直接读 power_user.prefer_character_prompt
+  // 决定 systemPrompt 走 charPrompt 还是 sysprompt.content。withCtx 的
+  // extraPowerUser 参数会把它合进 host.power_user 顶层。
+  return withCtx(
+    args.ctx,
+    args.instruct,
+    args.context,
+    args.sysprompt,
+    () => _getInstructMacros({ charPrompt: args.charPrompt ?? '' }),
+    { prefer_character_prompt: !!args.preferCharacterPrompt }
+  );
 }
 
 /**

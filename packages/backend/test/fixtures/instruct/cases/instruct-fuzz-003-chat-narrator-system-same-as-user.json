@@ -1,0 +1,60 @@
+{
+  "caseId": "instruct-fuzz-003-chat-narrator-system-same-as-user",
+  "description": "isNarrator=true + system_same_as_user=true → narrator 走 input_sequence/input_suffix。验证 ST line 397 / 425 二个分支同时切换。",
+  "tags": ["fuzz", "chat", "narrator", "system_same_as_user"],
+  "target": "formatInstructChat",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": true,
+      "macro": false,
+      "names_behavior": "always",
+      "input_sequence": "[INST] ",
+      "input_suffix": " [/INST]",
+      "output_sequence": "",
+      "output_suffix": "</s>",
+      "system_sequence": "<<NEVER-USED-SYS>>",
+      "system_suffix": "<<NEVER-USED-SYS-SFX>>",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "",
+      "stop_sequence": "",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": true,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "fuzz",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "",
+      "use_stop_strings": false
+    },
+    "sysprompt": {
+      "enabled": false,
+      "content": ""
+    },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "name": "System",
+      "mes": "narrator line",
+      "isUser": false,
+      "isNarrator": true,
+      "forceAvatar": "",
+      "forceOutputSequence": null
+    }
+  }
+}

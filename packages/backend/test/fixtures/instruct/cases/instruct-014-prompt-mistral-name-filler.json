@@ -1,0 +1,56 @@
+{
+  "caseId": "instruct-014-prompt-mistral-name-filler",
+  "description": "Mistral hack：includeNames=true + sequence===last_output_sequence + output_sequence 末尾有空格 + last_output_sequence 末尾无空格 → nameFiller = output_sequence.slice(-1)，被 inject 进 output。这是 ST line 622-631 特意处理的 Mistral 怪癖。",
+  "tags": ["prompt", "mistral", "edge", "name-filler"],
+  "target": "formatInstructPrompt",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": false,
+      "macro": false,
+      "names_behavior": "always",
+      "input_sequence": "[INST] ",
+      "input_suffix": " [/INST]",
+      "output_sequence": "[OUT] ",
+      "output_suffix": "</s>",
+      "system_sequence": "[SYS] ",
+      "system_suffix": "</s>",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "[LAST_OUT]",
+      "stop_sequence": "</s>",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "Mistral-style",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "",
+      "use_stop_strings": false
+    },
+    "sysprompt": { "enabled": false, "content": "" },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "name": "Alice",
+      "isImpersonate": false,
+      "promptBias": "",
+      "isQuiet": false,
+      "isQuietToLoud": false
+    }
+  }
+}

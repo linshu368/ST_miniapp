@@ -1,0 +1,57 @@
+{
+  "caseId": "instruct-003-chat-force-first-output",
+  "description": "AI 消息 + forceOutputSequence=FIRST(1)，验证 first_output_sequence 优先生效；同时 first_output_sequence 留空时回落 output_sequence。本 case 给 first_output_sequence 一个明确不同的值，确认走的是 FIRST 分支。",
+  "tags": ["chat", "force-output", "first"],
+  "target": "formatInstructChat",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": true,
+      "macro": false,
+      "names_behavior": "none",
+      "input_sequence": "<|im_start|>user\n",
+      "input_suffix": "<|im_end|>",
+      "output_sequence": "<|im_start|>assistant\n",
+      "output_suffix": "<|im_end|>",
+      "system_sequence": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "<|im_start|>assistant_first\n",
+      "last_output_sequence": "<|im_start|>assistant_last\n",
+      "stop_sequence": "<|im_end|>",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "ChatML",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "",
+      "use_stop_strings": false
+    },
+    "sysprompt": { "enabled": false, "content": "" },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "name": "Alice",
+      "mes": "Greetings, traveler.",
+      "isUser": false,
+      "isNarrator": false,
+      "forceAvatar": "",
+      "forceOutputSequence": 1
+    }
+  }
+}

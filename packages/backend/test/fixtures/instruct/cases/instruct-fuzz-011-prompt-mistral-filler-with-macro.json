@@ -1,0 +1,59 @@
+{
+  "caseId": "instruct-fuzz-011-prompt-mistral-filler-with-macro",
+  "description": "Mistral name filler 边界（output_sequence 末尾空格 + last_output_sequence 不带空格 + includeNames=true）+ macro=true。验证 nameFiller 在 substituteParams 之前/之后的次序。",
+  "tags": ["fuzz", "prompt", "mistral", "macro"],
+  "target": "formatInstructPrompt",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": false,
+      "macro": true,
+      "names_behavior": "always",
+      "input_sequence": "[INST]{{user}} ",
+      "input_suffix": " [/INST]",
+      "output_sequence": "[OUT]{{char}} ",
+      "output_suffix": "</s>",
+      "system_sequence": "",
+      "system_suffix": "",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "[LAST_OUT]{{char}}",
+      "stop_sequence": "",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "fuzz",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "",
+      "use_stop_strings": false
+    },
+    "sysprompt": {
+      "enabled": false,
+      "content": ""
+    },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "name": "Alice",
+      "isImpersonate": false,
+      "promptBias": "",
+      "isQuiet": false,
+      "isQuietToLoud": false
+    }
+  }
+}

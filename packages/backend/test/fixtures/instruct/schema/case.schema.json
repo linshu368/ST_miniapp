@@ -1,0 +1,294 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://miniapp.local/schema/instruct/case.schema.json",
+  "title": "InstructCase",
+  "description": "Step 1 baseline 单测 case schema。所有 case 入参分两层：(a) 公共 ctx 区（instruct/context/sysprompt/ctx）每个 case 都必填全集；(b) per-target args 区由 target 字段 discriminate，oneOf 强约束。output 也是多态，由 type 字段标识 string / string[] / macro-array 三种返回值形态。",
+  "type": "object",
+  "required": ["caseId", "description", "target", "input"],
+  "additionalProperties": false,
+  "properties": {
+    "caseId": {
+      "type": "string",
+      "description": "稳定唯一 ID。格式 'instruct-NNN-short-name' 或 'instruct-fuzz-NNN-short-name'。一旦提交，永不重命名。",
+      "pattern": "^instruct-(fuzz-)?\\d{3}-[a-z0-9-]+$"
+    },
+    "description": { "type": "string" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "自由标签：'chat'/'story'/'examples'/'prompt'/'stop'/'macros'/'system'/'fuzz'/'mistral'/'edge'/'smoke' 等"
+    },
+    "target": {
+      "type": "string",
+      "enum": [
+        "formatInstructChat",
+        "formatInstructStoryString",
+        "formatInstructExamples",
+        "formatInstructPrompt",
+        "formatInstructSystemPrompt",
+        "getInstructStoppingSequences",
+        "getInstructMacros"
+      ],
+      "description": "调用哪个 instruct.ts 门面函数。决定 input.args 的形状以及 baseline output.type。"
+    },
+    "input": { "$ref": "#/definitions/Input" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "target": { "const": "formatInstructChat" } } },
+      "then": {
+        "properties": {
+          "input": { "properties": { "args": { "$ref": "#/definitions/ChatArgs" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "target": { "const": "formatInstructStoryString" } } },
+      "then": {
+        "properties": {
+          "input": { "properties": { "args": { "$ref": "#/definitions/StoryStringArgs" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "target": { "const": "formatInstructExamples" } } },
+      "then": {
+        "properties": {
+          "input": { "properties": { "args": { "$ref": "#/definitions/ExamplesArgs" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "target": { "const": "formatInstructPrompt" } } },
+      "then": {
+        "properties": {
+          "input": { "properties": { "args": { "$ref": "#/definitions/PromptArgs" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "target": { "const": "formatInstructSystemPrompt" } } },
+      "then": {
+        "properties": {
+          "input": { "properties": { "args": { "$ref": "#/definitions/SystemPromptArgs" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "target": { "const": "getInstructStoppingSequences" } } },
+      "then": {
+        "properties": {
+          "input": { "properties": { "args": { "$ref": "#/definitions/StopSequencesArgs" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "target": { "const": "getInstructMacros" } } },
+      "then": {
+        "properties": {
+          "input": { "properties": { "args": { "$ref": "#/definitions/MacrosArgs" } } }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "Input": {
+      "type": "object",
+      "description": "三层结构：① ctx 区（instruct/context/sysprompt/ctx）固定且每 case 必填全集，便于 diff 对齐；② args 区按 target discriminate，由顶层 allOf if/then 强约束；③ 不放任何隐式默认，所有字段 explicit。",
+      "required": ["instruct", "context", "sysprompt", "ctx", "args"],
+      "additionalProperties": false,
+      "properties": {
+        "instruct": { "$ref": "#/definitions/InstructSettings" },
+        "context": { "$ref": "#/definitions/ContextSettings" },
+        "sysprompt": { "$ref": "#/definitions/SyspromptSettings" },
+        "ctx": { "$ref": "#/definitions/InstructCtx" },
+        "args": {
+          "type": "object",
+          "description": "Per-target 入参。具体字段由 case 顶层的 target 决定，allOf 在外层强约束。"
+        }
+      }
+    },
+    "InstructSettings": {
+      "type": "object",
+      "description": "ST power_user.instruct 全 25 字段。每 case 必须全部 explicit 写出，没有 schema-level 默认——避免「输出依赖 schema 默认值」这种隐性耦合。",
+      "required": [
+        "enabled",
+        "wrap",
+        "macro",
+        "names_behavior",
+        "input_sequence",
+        "input_suffix",
+        "output_sequence",
+        "output_suffix",
+        "system_sequence",
+        "system_suffix",
+        "last_system_sequence",
+        "first_input_sequence",
+        "last_input_sequence",
+        "first_output_sequence",
+        "last_output_sequence",
+        "stop_sequence",
+        "story_string_prefix",
+        "story_string_suffix",
+        "user_alignment_message",
+        "system_same_as_user",
+        "sequences_as_stop_strings",
+        "activation_regex",
+        "bind_to_context",
+        "skip_examples"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "wrap": { "type": "boolean" },
+        "macro": { "type": "boolean" },
+        "names_behavior": { "type": "string", "enum": ["none", "force", "always"] },
+        "input_sequence": { "type": "string" },
+        "input_suffix": { "type": "string" },
+        "output_sequence": { "type": "string" },
+        "output_suffix": { "type": "string" },
+        "system_sequence": { "type": "string" },
+        "system_suffix": { "type": "string" },
+        "last_system_sequence": { "type": "string" },
+        "first_input_sequence": { "type": "string" },
+        "last_input_sequence": { "type": "string" },
+        "first_output_sequence": { "type": "string" },
+        "last_output_sequence": { "type": "string" },
+        "stop_sequence": { "type": "string" },
+        "story_string_prefix": { "type": "string" },
+        "story_string_suffix": { "type": "string" },
+        "user_alignment_message": { "type": "string" },
+        "system_same_as_user": { "type": "boolean" },
+        "sequences_as_stop_strings": { "type": "boolean" },
+        "activation_regex": { "type": "string" },
+        "bind_to_context": { "type": "boolean" },
+        "skip_examples": { "type": "boolean" }
+      }
+    },
+    "ContextSettings": {
+      "type": "object",
+      "description": "ST power_user.context 全 5 字段。",
+      "required": [
+        "preset",
+        "story_string_position",
+        "chat_start",
+        "example_separator",
+        "use_stop_strings"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "preset": { "type": "string" },
+        "story_string_position": {
+          "type": "integer",
+          "enum": [-1, 0, 1, 2],
+          "description": "extension_prompt_types: NONE=-1, IN_PROMPT=0, IN_CHAT=1, BEFORE_PROMPT=2"
+        },
+        "chat_start": { "type": "string" },
+        "example_separator": { "type": "string" },
+        "use_stop_strings": { "type": "boolean" }
+      }
+    },
+    "SyspromptSettings": {
+      "type": "object",
+      "description": "ST power_user.sysprompt 子集。getInstructMacros 会读 enabled/content。",
+      "required": ["enabled", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "content": { "type": "string" }
+      }
+    },
+    "InstructCtx": {
+      "type": "object",
+      "description": "运行时 ctx：name1/name2/group 状态。",
+      "required": ["name1", "name2", "selectedGroup", "groups", "characters"],
+      "additionalProperties": false,
+      "properties": {
+        "name1": { "type": "string", "description": "user 名 → {{user}}" },
+        "name2": { "type": "string", "description": "character 名 → {{char}}" },
+        "selectedGroup": { "type": ["string", "null"] },
+        "groups": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true },
+          "description": "Step 1 默认空数组，group chat 进 Step 2/3 再填"
+        },
+        "characters": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true },
+          "description": "Step 1 默认空数组"
+        }
+      }
+    },
+    "ChatArgs": {
+      "type": "object",
+      "required": ["name", "mes", "isUser", "isNarrator"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "当前消息发送者" },
+        "mes": { "type": "string", "description": "消息正文" },
+        "isUser": { "type": "boolean" },
+        "isNarrator": { "type": "boolean" },
+        "forceAvatar": { "type": "string", "default": "" },
+        "forceOutputSequence": {
+          "type": ["integer", "null"],
+          "enum": [null, 1, 2],
+          "description": "ForceOutputSequence: null=不强制 / 1=FIRST / 2=LAST"
+        }
+      }
+    },
+    "StoryStringArgs": {
+      "type": "object",
+      "required": ["storyString"],
+      "additionalProperties": false,
+      "properties": {
+        "storyString": { "type": "string" }
+      }
+    },
+    "ExamplesArgs": {
+      "type": "object",
+      "required": ["mesExamplesArray"],
+      "additionalProperties": false,
+      "properties": {
+        "mesExamplesArray": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "PromptArgs": {
+      "type": "object",
+      "required": ["name", "isImpersonate"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "isImpersonate": { "type": "boolean" },
+        "promptBias": { "type": "string", "default": "" },
+        "isQuiet": { "type": "boolean", "default": false },
+        "isQuietToLoud": { "type": "boolean", "default": false }
+      }
+    },
+    "SystemPromptArgs": {
+      "type": "object",
+      "required": ["systemPrompt"],
+      "additionalProperties": false,
+      "properties": {
+        "systemPrompt": { "type": "string" }
+      }
+    },
+    "StopSequencesArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "useStopStrings": {
+          "type": ["boolean", "null"],
+          "description": "null=回落到 power_user.context.use_stop_strings；true/false=显式覆盖"
+        }
+      }
+    },
+    "MacrosArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preferCharacterPrompt": { "type": "boolean", "default": false },
+        "charPrompt": { "type": "string", "default": "" }
+      }
+    }
+  }
+}

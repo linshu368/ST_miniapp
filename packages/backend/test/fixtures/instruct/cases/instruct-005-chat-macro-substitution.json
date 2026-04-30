@@ -1,0 +1,57 @@
+{
+  "caseId": "instruct-005-chat-macro-substitution",
+  "description": "macro=true 时 prefix/suffix 会过 substituteParams，{{user}}/{{char}}/{{name}} 都被替换。验证嵌套 macros 引擎调用。本 case 故意把 input_sequence 写成含 {{user}}/{{name}} 的模板，看输出里是不是被换成 ctx.name1 / args.name。",
+  "tags": ["chat", "macro", "nested"],
+  "target": "formatInstructChat",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": false,
+      "macro": true,
+      "names_behavior": "none",
+      "input_sequence": "<|{{user}}/{{name}}|> ",
+      "input_suffix": " <|/{{user}}|>",
+      "output_sequence": "<|{{char}}|> ",
+      "output_suffix": " <|/{{char}}|>",
+      "system_sequence": "<|sys|> ",
+      "system_suffix": " <|/sys|>",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "",
+      "stop_sequence": "",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "Custom-macro",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "",
+      "use_stop_strings": false
+    },
+    "sysprompt": { "enabled": false, "content": "" },
+    "ctx": {
+      "name1": "宋砚",
+      "name2": "Lyra",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "name": "宋砚",
+      "mes": "你好",
+      "isUser": true,
+      "isNarrator": false,
+      "forceAvatar": "",
+      "forceOutputSequence": null
+    }
+  }
+}

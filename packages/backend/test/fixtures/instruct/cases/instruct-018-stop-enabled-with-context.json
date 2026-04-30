@@ -1,0 +1,52 @@
+{
+  "caseId": "instruct-018-stop-enabled-with-context",
+  "description": "完整开启路径：sequences_as_stop_strings=true → 6 类 sequence 全部加入；useStopStrings=true → chat_start/example_separator 也加入；wrap=true → 每条 stop 前再插 \\n；input/output_sequence 含 {{name}} → 被 name1/name2 替换；macro=true → substituteParams 跑一遍。这条用例覆盖 getInstructStoppingSequences 几乎所有分支。",
+  "tags": ["stop", "enabled", "wrap", "macro", "context-stops"],
+  "target": "getInstructStoppingSequences",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": true,
+      "macro": true,
+      "names_behavior": "always",
+      "input_sequence": "<|user-{{name}}|>\n",
+      "input_suffix": "</s>",
+      "output_sequence": "<|asst-{{name}}|>\n",
+      "output_suffix": "</s>",
+      "system_sequence": "<|sys-{{name}}|>\n",
+      "system_suffix": "</s>",
+      "last_system_sequence": "<|last-sys-{{name}}|>\n",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "<|first-asst|>\n",
+      "last_output_sequence": "<|last-asst|>\n",
+      "stop_sequence": "<|EOM|>",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "Stops-all-on",
+      "story_string_position": 0,
+      "chat_start": "<<CHAT-START>>",
+      "example_separator": "<<EX-SEP>>",
+      "use_stop_strings": true
+    },
+    "sysprompt": { "enabled": false, "content": "" },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "useStopStrings": null
+    }
+  }
+}

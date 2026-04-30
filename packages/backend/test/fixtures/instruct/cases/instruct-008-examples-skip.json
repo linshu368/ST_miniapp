@@ -1,0 +1,55 @@
+{
+  "caseId": "instruct-008-examples-skip",
+  "description": "skip_examples=true → 走短路：每个 mes_example 块的 `<START>\\n` 被替换成 blockHeading（example_separator + \\n），其它内容原样保留。",
+  "tags": ["examples", "skip"],
+  "target": "formatInstructExamples",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": true,
+      "macro": false,
+      "names_behavior": "none",
+      "input_sequence": "[INST] ",
+      "input_suffix": " [/INST]",
+      "output_sequence": "",
+      "output_suffix": "</s>",
+      "system_sequence": "<<SYS>>\n",
+      "system_suffix": "\n<</SYS>>",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "",
+      "stop_sequence": "</s>",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": true
+    },
+    "context": {
+      "preset": "Llama2-skip",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "***",
+      "use_stop_strings": false
+    },
+    "sysprompt": { "enabled": false, "content": "" },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "mesExamplesArray": [
+        "<START>\nBob: Hi Alice.\nAlice: Hello Bob, how are you?",
+        "<START>\nBob: What is the weather?\nAlice: It is sunny."
+      ]
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "caseId": "instruct-010-examples-empty-block-fallback",
+  "description": "mes_example 块解析后 blockExamples 为空（首行被 skip 后没有匹配 user/bot 段）→ 触发 ST 原版 line 575-577 的 fallback：`if (formattedExamples.length === 0) return mesExamplesArray.map(...)`，相当于回退到 skip 路径的 blockHeading 替换。验证 ST 这条「空块兜底」边界。",
+  "tags": ["examples", "empty-block", "fallback"],
+  "target": "formatInstructExamples",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": true,
+      "macro": false,
+      "names_behavior": "none",
+      "input_sequence": "[INST] ",
+      "input_suffix": " [/INST]",
+      "output_sequence": "",
+      "output_suffix": "</s>",
+      "system_sequence": "<<SYS>>\n",
+      "system_suffix": "\n<</SYS>>",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "",
+      "stop_sequence": "</s>",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "Llama2-fallback",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "<<EX>>",
+      "use_stop_strings": false
+    },
+    "sysprompt": { "enabled": false, "content": "" },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "mesExamplesArray": [
+        "<START>\nThis is a stray narration line that nobody starts with Bob: or Alice:."
+      ]
+    }
+  }
+}

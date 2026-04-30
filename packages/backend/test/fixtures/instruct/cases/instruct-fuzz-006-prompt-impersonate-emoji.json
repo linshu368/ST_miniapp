@@ -1,0 +1,59 @@
+{
+  "caseId": "instruct-fuzz-006-prompt-impersonate-emoji",
+  "description": "isImpersonate=true + emoji input_sequence。验证 impersonate 路径下 emoji prefix 不被截。",
+  "tags": ["fuzz", "prompt", "impersonate", "emoji"],
+  "target": "formatInstructPrompt",
+  "input": {
+    "instruct": {
+      "enabled": true,
+      "wrap": true,
+      "macro": false,
+      "names_behavior": "always",
+      "input_sequence": "🟢user🟢\n",
+      "input_suffix": "<|end|>",
+      "output_sequence": "🔵asst🔵\n",
+      "output_suffix": "<|end|>",
+      "system_sequence": "",
+      "system_suffix": "",
+      "last_system_sequence": "",
+      "first_input_sequence": "",
+      "last_input_sequence": "",
+      "first_output_sequence": "",
+      "last_output_sequence": "",
+      "stop_sequence": "",
+      "story_string_prefix": "",
+      "story_string_suffix": "",
+      "user_alignment_message": "",
+      "system_same_as_user": false,
+      "sequences_as_stop_strings": true,
+      "activation_regex": "",
+      "bind_to_context": false,
+      "skip_examples": false
+    },
+    "context": {
+      "preset": "fuzz",
+      "story_string_position": 0,
+      "chat_start": "",
+      "example_separator": "",
+      "use_stop_strings": false
+    },
+    "sysprompt": {
+      "enabled": false,
+      "content": ""
+    },
+    "ctx": {
+      "name1": "Bob",
+      "name2": "Alice",
+      "selectedGroup": null,
+      "groups": [],
+      "characters": []
+    },
+    "args": {
+      "name": "Bob",
+      "isImpersonate": true,
+      "promptBias": "",
+      "isQuiet": false,
+      "isQuietToLoud": false
+    }
+  }
+}
