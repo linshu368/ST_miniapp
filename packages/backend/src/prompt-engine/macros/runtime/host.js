@@ -110,11 +110,53 @@ export function getUserInput() {
 }
 
 /**
+ * 公共 substituteParams wrapper。Step 1 instruct 子树（以及未来
+ * Step 2/3）都通过这条路径调用 macro 引擎，而不是直接 import TS
+ * 门面 `../substituteParams.ts`——因为 instruct/* 是纯 .js + JSDoc
+ * 子树，跨向 .ts 文件 import 会破坏「engine 子树自给自足」的剪线
+ * 不变量。门面 façade 在调用入口处通过 `setRuntimeCtx({ substituteParams })`
+ * 把递归回调注入到 _hostFns，下面这个 wrapper 就能拿到 live binding。
+ *
+ * 与 ST 原版 `import { substituteParams } from '../script.js'` 的
+ * 行为完全等价。
+ *
+ * @param {string} content
+ * @param {object} [opts]
+ * @returns {string}
+ */
+export function substituteParams(content, opts) {
+  return _hostFns.substituteParams(content, opts);
+}
+
+/**
  * Backend has no DOM, so {{isMobile}} is always false.
  * @returns {boolean}
  */
 export function isMobile() {
   return false;
+}
+
+/**
+ * 1:1 移植自 `public/scripts/group-chats.js:337 getGroupNames`。
+ * 当未选中 group（selected_group 为 null/空）时返回 `[]`，否则
+ * 在 groups 数组里查 id 匹配项，把 members（avatar 列表）映射回
+ * characters 里的 name 字段。
+ *
+ * Step 1 instruct 子树的 parseExampleIntoIndividual 用这个判定
+ * group-chat example 块里的 bot 名字前缀。Step 0 baseline 不会
+ * 路过这里（selected_group 始终为 null），但保留 ST 完整行为，
+ * Step 2/3 接入 group chat 时无需再改。
+ *
+ * @returns {string[]} group 成员的 character.name 列表
+ */
+export function getGroupNames() {
+  if (!selected_group) {
+    return [];
+  }
+  const groupMembers = groups.find((x) => x.id == selected_group)?.members;
+  return Array.isArray(groupMembers)
+    ? groupMembers.map((x) => characters.find((y) => y.avatar === x)?.name).filter((x) => x)
+    : [];
 }
 
 // ─── Character card lazy fields ─────────────────────────────────────────────

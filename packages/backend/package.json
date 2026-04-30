@@ -8,6 +8,9 @@
     "start": "npx prisma generate && tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:macros": "tsc --noEmit -p src/prompt-engine/macros/tsconfig.json",
+    "typecheck:instruct": "tsc --noEmit -p src/prompt-engine/instruct/tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "macros:baseline": "tsx scripts/run-miniapp-baseline.mjs",
     "macros:diff": "node scripts/diff-baselines.mjs",
     "macros:verify": "tsx scripts/run-miniapp-baseline.mjs && node scripts/diff-baselines.mjs"
@@ -26,8 +29,10 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/seedrandom": "^3.0.8",
+    "@vitest/coverage-v8": "^4.1.5",
     "prisma": "^6.19.3",
     "tsx": "^4.19.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.5"
   }
 }

@@ -1,0 +1,26 @@
+{
+  "extends": "../../../../../tsconfig.base.json",
+  "compilerOptions": {
+    // 注意：rootDir 不设为 "."，因为 instruct 子树通过
+    //   import { ... } from '../macros/runtime/host.js'
+    // 把 macros 子树的 .js 拉进 program。设了 rootDir 会触发 TS6059。
+    // 让 TS 用默认的「最长公共祖先」即可——本质上就是 ../。
+    "rootDir": "../",
+    "outDir": "../../../dist/prompt-engine/instruct",
+    "noEmit": true,
+    "types": ["node"],
+    // Instruct 子树跟 macros 子树同档：把 .js + JSDoc 当 .ts 严格检查。
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true
+  },
+  // 只把 instruct/*.js 算作本 tsconfig 的「源文件」。被 import 进来的
+  // macros/** 仍会被 TS 纳入 program 类型检查（这是 program 行为，
+  // 不受 include 控制），所以 typecheck:instruct 会同时复检 macros
+  // 子树。复检产生的预存错误已在 typecheck:macros 那里被容忍——本
+  // tsconfig 不重复修复它们。
+  "include": ["./**/*.js"],
+  "exclude": []
+}
