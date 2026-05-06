@@ -69,6 +69,24 @@
   }
 }
 
+/* 流星 shimmer 动画:用于许愿池入口按钮的轻盈"划过"动效 */
+@keyframes meteor-shimmer {
+  0% {
+    transform: translateX(-60%) skewX(-12deg);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateX(260%) skewX(-12deg);
+    opacity: 0;
+  }
+}
+
 /* ============================================================
  * .mes-text — 助手消息渲染管线输出的 scoped 排版
  *   作用域:仅匹配 MessageBubble 内部的 dangerouslySetInnerHTML 节点

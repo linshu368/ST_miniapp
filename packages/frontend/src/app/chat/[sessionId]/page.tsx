@@ -76,8 +76,47 @@ export default function ChatPage() {
 
   const hasAvatar = !!character?.avatar_url;
 
+  // 双边缘滑动返回大厅:左边缘右滑 / 右边缘左滑均触发(任一向屏幕内方向 dx>64,
+  // 且横向主导)。不 preventDefault,避免和 MessageList 滚动 / Composer 打架。
+  const edgeSwipeStart = useRef<{ x: number; y: number; from: 'left' | 'right' } | null>(null);
+  const handleEdgeTouchStart = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) {
+      edgeSwipeStart.current = null;
+      return;
+    }
+    const w = window.innerWidth;
+    if (t.clientX < 20) {
+      edgeSwipeStart.current = { x: t.clientX, y: t.clientY, from: 'left' };
+    } else if (t.clientX > w - 20) {
+      edgeSwipeStart.current = { x: t.clientX, y: t.clientY, from: 'right' };
+    } else {
+      edgeSwipeStart.current = null;
+    }
+  }, []);
+  const handleEdgeTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      const start = edgeSwipeStart.current;
+      edgeSwipeStart.current = null;
+      if (!start) return;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      if (Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+      const triggered = (start.from === 'left' && dx > 64) || (start.from === 'right' && dx < -64);
+      if (triggered) onBack();
+    },
+    [onBack]
+  );
+
   return (
-    <main className="flex h-[100dvh] flex-col" style={hueVar}>
+    <main
+      className="flex h-[100dvh] flex-col"
+      style={hueVar}
+      onTouchStart={handleEdgeTouchStart}
+      onTouchEnd={handleEdgeTouchEnd}
+    >
       {/* 顶栏：头像 + 名字 + typing 副文本；渐变融入背景而非硬分界 */}
       <header
         className={cn(
@@ -89,11 +128,13 @@ export default function ChatPage() {
       >
         <button
           type="button"
-          onClick={onBack}
-          aria-label="返回角色列表"
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+          onClick={toggleSidebar}
+          aria-label="打开历史会话"
+          className="-ml-1.5 grid h-11 w-11 shrink-0 place-items-center"
         >
-          <BackIcon />
+          <span className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground">
+            <DotsIcon />
+          </span>
         </button>
 
         {/* 头像 + 名字 + 状态 */}
@@ -145,11 +186,13 @@ export default function ChatPage() {
 
         <button
           type="button"
-          onClick={toggleSidebar}
-          aria-label="打开历史会话"
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+          onClick={onBack}
+          aria-label="返回角色列表"
+          className="-mr-1.5 grid h-11 w-11 shrink-0 place-items-center"
         >
-          <DotsIcon />
+          <span className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground">
+            <HomeIcon />
+          </span>
         </button>
       </header>
 
@@ -189,7 +232,7 @@ export default function ChatPage() {
   );
 }
 
-function BackIcon() {
+function HomeIcon() {
   return (
     <svg
       width="18"
@@ -202,8 +245,8 @@ function BackIcon() {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M19 12H5" />
-      <path d="M12 19l-7-7 7-7" />
+      <path d="M3 11l9-8 9 8" />
+      <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" />
     </svg>
   );
 }
