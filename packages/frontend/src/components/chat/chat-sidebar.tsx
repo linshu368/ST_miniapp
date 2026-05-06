@@ -48,7 +48,7 @@ export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
   const open = useUIStore((s) => s.sidebarOpen);
   const setOpen = useUIStore((s) => s.setSidebarOpen);
   const { data } = useSessionsQuery();
-  const rawSessions = data?.sessions ?? [];
+  const rawSessions = useMemo(() => data?.sessions ?? [], [data?.sessions]);
 
   const updateSession = useUpdateSessionMutation();
   const deleteSession = useDeleteSessionMutation();

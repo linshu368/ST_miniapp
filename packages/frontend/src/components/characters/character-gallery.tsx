@@ -35,7 +35,7 @@ export function CharacterGallery() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
-  const characters = data?.characters ?? [];
+  const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return characters;
