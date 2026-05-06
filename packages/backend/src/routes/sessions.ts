@@ -220,7 +220,7 @@ export default async function sessionRoutes(app: FastifyInstance) {
       aiMessages.push({ role: 'user', content: content });
 
       // 3. Get AI Channel
-      const channelId = await resolveChannelId(ModelTier.FREE);
+      const channelId = await resolveChannelId(ModelTier.TIER_1);
       const channel = await channelRegistry.getChannel(channelId);
 
       if (!channel) {
