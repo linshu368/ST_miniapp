@@ -270,7 +270,7 @@ model AppSession {
   is_pinned       Boolean      @default(false)
   is_deleted      Boolean      @default(false)
   app_messages    AppMessage[]
-  character       Character?   @relation(fields: [character_id], references: [id])
+  character       Character?   @relation(fields: [character_id], references: [id], onDelete: SetNull)
   user            User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, last_message_at(sort: Desc)])
