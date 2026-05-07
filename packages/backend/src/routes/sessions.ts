@@ -14,6 +14,9 @@ import type {
   PostMessageData,
   PostOpenSessionRequest,
   PostOpenSessionData,
+  PatchSessionRequest,
+  PatchSessionData,
+  DeleteSessionData,
   SessionSummary,
   Message,
 } from '@miniapp/shared';
@@ -26,11 +29,12 @@ export default async function sessionRoutes(app: FastifyInstance) {
     const dbUser = await getOrCreateDbUser(request.user);
 
     const sessions = await prisma.appSession.findMany({
-      where: { user_id: dbUser.id },
+      where: { user_id: dbUser.id, is_deleted: false },
       orderBy: { last_message_at: 'desc' },
       include: {
         character: true,
         app_messages: {
+          where: { is_deleted: false },
           orderBy: { created_at: 'desc' },
           take: 1,
         },
@@ -45,6 +49,8 @@ export default async function sessionRoutes(app: FastifyInstance) {
         character_name: s.character?.name || 'Unknown',
         last_message_preview: lastMessage ? lastMessage.content : '',
         last_message_at: s.last_message_at.toISOString(),
+        is_pinned: s.is_pinned,
+        custom_name: s.custom_name || undefined,
       };
     });
 
@@ -62,12 +68,13 @@ export default async function sessionRoutes(app: FastifyInstance) {
       where: { id },
       include: {
         app_messages: {
+          where: { is_deleted: false },
           orderBy: { created_at: 'asc' },
         },
       },
     });
 
-    if (!session) {
+    if (!session || session.is_deleted) {
       return reply.status(404).send(fail('NOT_FOUND', 'Session not found'));
     }
 
@@ -95,24 +102,99 @@ export default async function sessionRoutes(app: FastifyInstance) {
   });
 
   // @frontend-ready: true
+  app.patch('/api/sessions/:id', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
+    if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+    const { id } = request.params as { id: string };
+    const { custom_name, is_pinned } = request.body as PatchSessionRequest;
+
+    const dbUser = await getOrCreateDbUser(request.user);
+
+    const session = await prisma.appSession.findUnique({
+      where: { id },
+    });
+
+    if (!session || session.is_deleted) {
+      return reply.status(404).send(fail('NOT_FOUND', 'Session not found'));
+    }
+
+    if (session.user_id !== dbUser.id) {
+      return reply.status(403).send(fail('FORBIDDEN', 'Access denied'));
+    }
+
+    const updateData: any = {};
+    if (is_pinned !== undefined) {
+      updateData.is_pinned = is_pinned;
+    }
+    if (custom_name !== undefined) {
+      updateData.custom_name = custom_name === '' ? null : custom_name;
+    }
+
+    const updatedSession = await prisma.appSession.update({
+      where: { id },
+      data: updateData,
+      include: {
+        character: true,
+        app_messages: {
+          where: { is_deleted: false },
+          orderBy: { created_at: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    const lastMessage = updatedSession.app_messages[0];
+    const summary: SessionSummary = {
+      id: updatedSession.id,
+      character_id: updatedSession.character_id || '',
+      character_name: updatedSession.character?.name || 'Unknown',
+      last_message_preview: lastMessage ? lastMessage.content : '',
+      last_message_at: updatedSession.last_message_at.toISOString(),
+      is_pinned: updatedSession.is_pinned,
+      custom_name: updatedSession.custom_name || undefined,
+    };
+
+    return reply.send(ok<PatchSessionData>({ session: summary }));
+  });
+
+  // @frontend-ready: true
+  app.delete('/api/sessions/:id', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
+    if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+    const { id } = request.params as { id: string };
+
+    const dbUser = await getOrCreateDbUser(request.user);
+
+    const session = await prisma.appSession.findUnique({
+      where: { id },
+    });
+
+    if (!session || session.is_deleted) {
+      return reply.status(404).send(fail('NOT_FOUND', 'Session not found'));
+    }
+
+    if (session.user_id !== dbUser.id) {
+      return reply.status(403).send(fail('FORBIDDEN', 'Access denied'));
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.appSession.update({
+        where: { id },
+        data: { is_deleted: true },
+      });
+      await tx.appMessage.updateMany({
+        where: { session_id: id },
+        data: { is_deleted: true },
+      });
+    });
+
+    return reply.send(ok<DeleteSessionData>({ session_id: id }));
+  });
+
+  // @frontend-ready: true
   app.post('/api/sessions/open', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     const { character_id } = request.body as PostOpenSessionRequest;
 
     const dbUser = await getOrCreateDbUser(request.user);
-
-    // Find existing session
-    const existingSession = await prisma.appSession.findFirst({
-      where: {
-        user_id: dbUser.id,
-        character_id: character_id,
-      },
-      orderBy: { last_message_at: 'desc' },
-    });
-
-    if (existingSession) {
-      return reply.send(ok<PostOpenSessionData>({ session_id: existingSession.id }));
-    }
 
     // Find character to get greeting
     const character = await prisma.character.findUnique({
@@ -164,12 +246,13 @@ export default async function sessionRoutes(app: FastifyInstance) {
         include: {
           character: true,
           app_messages: {
+            where: { is_deleted: false },
             orderBy: { created_at: 'asc' },
           },
         },
       });
 
-      if (!session) {
+      if (!session || session.is_deleted) {
         return reply.status(404).send(fail('NOT_FOUND', 'Session not found'));
       }
 

@@ -6,7 +6,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-  schemas   = ["public", "miniapp"]
+  schemas   = ["miniapp", "public"]
 }
 
 model User {
@@ -22,9 +22,9 @@ model User {
   last_checkin_at       DateTime?              @db.Timestamptz(6)
   created_at            DateTime               @default(now()) @db.Timestamptz(6)
   updated_at            DateTime               @default(now()) @db.Timestamptz(6)
-  bot_user_settings     bot_user_settings?
-  miniapp_user_settings miniapp_user_settings?
   app_sessions          AppSession[]
+  miniapp_user_settings miniapp_user_settings?
+  bot_user_settings     bot_user_settings?
 
   @@map("users")
   @@schema("public")
@@ -123,7 +123,6 @@ model botlinks {
   end_time         DateTime? @db.Date
   Purchase_amount  Int?
   Procurement_days Int?
-  // traffic_clicks   traffic_clicks[]
 
   @@schema("public")
 }
@@ -221,8 +220,6 @@ model role_data {
   @@schema("public")
 }
 
-// ---- miniApp 业务表 ----
-
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model runtime_config {
   key         String    @id
@@ -236,51 +233,45 @@ model runtime_config {
 }
 
 model Character {
-  // ---- 主键 & 元数据 ----
-  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  spec         String @default("chara_card_v2")
-  spec_version String @default("2.0")
-
-  // ---- SillyTavern 标准字段 ----
+  id                        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                      String
-  description               String @default("")
-  personality               String @default("")
-  scenario                  String @default("")
-  first_mes                 String @default("")
-  mes_example               String @default("")
-  creator_notes             String @default("")
-  system_prompt             String @default("")
-  post_history_instructions String @default("")
-  alternate_greetings       Json   @default("[]")
-  tags                      Json   @default("[]")
-  creator                   String @default("")
-  character_version         String @default("")
-  extensions                Json   @default("{}")
+  description               String       @default("")
+  avatar_url                String       @default("")
+  creator_notes             String       @default("")
+  created_at                DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime     @updatedAt
+  alternate_greetings       Json         @default("[]")
   character_book            Json?
-
-  // ---- miniApp 扩展字段 ----
-  avatar_url String @default("")
-
-  // ---- 时间戳 ----
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @updatedAt
-
-  app_sessions AppSession[]
+  character_version         String       @default("")
+  creator                   String       @default("")
+  extensions                Json         @default("{}")
+  first_mes                 String       @default("")
+  mes_example               String       @default("")
+  personality               String       @default("")
+  post_history_instructions String       @default("")
+  scenario                  String       @default("")
+  spec                      String       @default("chara_card_v2")
+  spec_version              String       @default("2.0")
+  system_prompt             String       @default("")
+  tags                      Json         @default("[]")
+  app_sessions              AppSession[]
 
   @@map("characters")
   @@schema("miniapp")
 }
 
 model AppSession {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String   @db.Uuid
-  character_id    String?  @db.Uuid // ← 改为可选
-  last_message_at DateTime @default(now()) @db.Timestamptz(6)
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
-
-  user         User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  character    Character?   @relation(fields: [character_id], references: [id], onDelete: SetNull) // ← Cascade 改为 SetNull
-  app_messages AppMessage[]
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String       @db.Uuid
+  character_id    String?      @db.Uuid
+  last_message_at DateTime     @default(now()) @db.Timestamptz(6)
+  created_at      DateTime     @default(now()) @db.Timestamptz(6)
+  custom_name     String?
+  is_pinned       Boolean      @default(false)
+  is_deleted      Boolean      @default(false)
+  app_messages    AppMessage[]
+  character       Character?   @relation(fields: [character_id], references: [id])
+  user            User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, last_message_at(sort: Desc)])
   @@map("app_sessions")
@@ -288,15 +279,40 @@ model AppSession {
 }
 
 model AppMessage {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  session_id String   @db.Uuid
-  role       String // "user" or "assistant"
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  session_id String     @db.Uuid
+  role       String
   content    String
-  created_at DateTime @default(now()) @db.Timestamptz(6)
+  is_deleted Boolean    @default(false)
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  session    AppSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
 
-  session AppSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
-
-  @@index([session_id, created_at(sort: Asc)])
+  @@index([session_id, created_at])
   @@map("app_messages")
   @@schema("miniapp")
+}
+
+model MiniappRuntimeConfig {
+  key         String   @id
+  value       Json?
+  description String?
+  version     Int?     @default(1)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+  text_value  String?
+
+  @@map("runtime_config")
+  @@schema("miniapp")
+}
+
+model traffic_clicks {
+  id         BigInt   @id @default(autoincrement())
+  stat_date  DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  source_id  String
+  clicks     Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([stat_date, source_id], map: "traffic_clicks_uniq")
+  @@index([source_id, stat_date], map: "idx_tc_source_date")
+  @@schema("public")
 }

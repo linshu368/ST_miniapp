@@ -10,6 +10,9 @@ dist/
 ops/git/.env
 .DS_Store
 
+# Prisma schema 本地备份,不入库
+*.prisma.bak
+
 
 
 

@@ -1,0 +1,40 @@
+// SillyTavern 风格的 LLM 输出文本渲染管线(简化版)
+// 输入:LLM 原始文本(可含 markdown / 引号 / {{user}} / {{char}} / <style> 等)
+// 输出:可安全注入 dangerouslySetInnerHTML 的 HTML 字符串
+
+import { getConverter } from './converter';
+import { substituteMacros, type MacroContext } from './macros';
+import { wrapQuotes } from './quote-wrap';
+import { sanitizeHtml } from './sanitize';
+import { decodeStyleTags, encodeStyleTags } from './style-tags';
+
+export interface FormatMessageOptions extends MacroContext {
+  text: string;
+}
+
+export function formatMessageContent(opts: FormatMessageOptions): string {
+  let mes = opts.text;
+  if (!mes) return '';
+
+  mes = substituteMacros(mes, { charName: opts.charName, userName: opts.userName });
+  mes = wrapQuotes(mes);
+
+  // 数学公式占位(KaTeX 未启用,但保留 ST 的 \begin{align*} → $$ 兼容)
+  mes = mes.replaceAll('\\begin{align*}', '$$');
+  mes = mes.replaceAll('\\end{align*}', '$$');
+
+  mes = getConverter().makeHtml(mes);
+
+  // 代码块内换行保护(showdown 会把 <br> 注入,Firefox 在代码块中渲染为双换行)
+  mes = mes.replace(/<code(.*?)>[\s\S]*?<\/code>/g, (m) => m.replace(/\n/gm, '\u0000'));
+  mes = mes.replace(/\u0000/g, '\n');
+  mes = mes.trim();
+
+  mes = mes.replace(/<code(.*?)>[\s\S]*?<\/code>/g, (m) => m.replace(/&amp;/g, '&'));
+
+  mes = encodeStyleTags(mes);
+  mes = sanitizeHtml(mes);
+  mes = decodeStyleTags(mes, { prefix: '.mes-text ' });
+
+  return mes;
+}
