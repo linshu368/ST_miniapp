@@ -9,7 +9,9 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
 
   const initData = getRawInitData();
   const headers = new Headers(options?.headers);
-  headers.set('Content-Type', 'application/json');
+  if (options?.body) {
+    headers.set('Content-Type', 'application/json');
+  }
   if (initData) headers.set(INIT_DATA_HEADER, initData);
 
   const res = await fetch(url, { ...options, headers });
@@ -40,7 +42,9 @@ export async function apiStreamClient(
 
   const initData = getRawInitData();
   const headers = new Headers(options?.headers);
-  headers.set('Content-Type', 'application/json');
+  if (options?.body) {
+    headers.set('Content-Type', 'application/json');
+  }
   if (initData) headers.set(INIT_DATA_HEADER, initData);
 
   const res = await fetch(url, { ...options, headers });

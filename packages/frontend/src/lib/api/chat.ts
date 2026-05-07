@@ -3,9 +3,12 @@
 import { useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  DeleteSessionData,
   GetSessionsData,
   GetSessionDetailData,
   Message,
+  PatchSessionData,
+  PatchSessionRequest,
   PostMessageData,
   PostMessageRequest,
   PostOpenSessionData,
@@ -160,19 +163,13 @@ export function useSessionQuery(sessionId: string | undefined) {
   });
 }
 
-/** 打开（或新建）某个角色的会话。 */
+/** 为某个角色新建一个 session(永远新建,不复用现存 session)。 */
 export function useOpenSessionForCharacter() {
   const qc = useQueryClient();
 
   return useMutation<PostOpenSessionData, Error, PostOpenSessionRequest>({
     mutationFn: async (body) => {
       if (USE_MOCK) {
-        const existing = mockState.sessions
-          .filter((s) => s.character_id === body.character_id)
-          .sort((a, b) => +new Date(b.last_message_at) - +new Date(a.last_message_at))[0];
-        if (existing) {
-          return { session_id: existing.id };
-        }
         const detail = getMockCharacterDetail(body.character_id);
         const sessionId = newId('sess');
         const now = new Date().toISOString();
@@ -377,6 +374,119 @@ export function useSendMessageMutation(sessionId: string) {
       if (!error) {
         void qc.invalidateQueries({ queryKey: sessionKeys.detail(sessionId) });
       }
+      void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
+    },
+  });
+}
+
+// ==== Session 修改 / 删除 mutations ====
+// 注:真后端 PATCH /api/sessions/:id 和 DELETE /api/sessions/:id 暂未实现。
+// 这里走前端 React Query cache 乐观更新 + USE_MOCK 时同步 mockState。
+// 后端就绪后改 mutationFn 调真接口 + onSuccess invalidate 即可。
+
+export function useUpdateSessionMutation() {
+  const qc = useQueryClient();
+  return useMutation<
+    PatchSessionData,
+    Error,
+    { sessionId: string; patch: PatchSessionRequest },
+    { previousSessions: GetSessionsData | undefined }
+  >({
+    onMutate: async ({ sessionId, patch }) => {
+      await qc.cancelQueries({ queryKey: sessionKeys.lists() });
+      const previousSessions = qc.getQueryData<GetSessionsData>(sessionKeys.lists());
+
+      qc.setQueryData<GetSessionsData>(sessionKeys.lists(), (prev) => {
+        if (!prev) return prev;
+        return {
+          sessions: prev.sessions.map((s) => {
+            if (s.id !== sessionId) return s;
+            return {
+              ...s,
+              ...(patch.is_pinned !== undefined ? { is_pinned: patch.is_pinned } : {}),
+              ...(patch.custom_name !== undefined
+                ? patch.custom_name
+                  ? { custom_name: patch.custom_name }
+                  : { custom_name: undefined }
+                : {}),
+            };
+          }),
+        };
+      });
+
+      if (USE_MOCK) {
+        const updatedSession = qc
+          .getQueryData<GetSessionsData>(sessionKeys.lists())
+          ?.sessions.find((s) => s.id === sessionId);
+        if (updatedSession) {
+          mockState.sessions = mockState.sessions.map((s) =>
+            s.id === sessionId ? updatedSession : s
+          );
+        }
+      }
+
+      return { previousSessions };
+    },
+    mutationFn: async ({ sessionId, patch }) => {
+      if (USE_MOCK) {
+        const session = mockState.sessions.find((s) => s.id === sessionId);
+        if (!session) throw new Error('session not found');
+        return { session };
+      }
+      return apiClient<PatchSessionData>(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousSessions) {
+        qc.setQueryData(sessionKeys.lists(), context.previousSessions);
+      }
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
+    },
+  });
+}
+
+export function useDeleteSessionMutation() {
+  const qc = useQueryClient();
+  return useMutation<
+    DeleteSessionData,
+    Error,
+    { sessionId: string },
+    { previousSessions: GetSessionsData | undefined }
+  >({
+    onMutate: async ({ sessionId }) => {
+      await qc.cancelQueries({ queryKey: sessionKeys.lists() });
+      const previousSessions = qc.getQueryData<GetSessionsData>(sessionKeys.lists());
+
+      qc.setQueryData<GetSessionsData>(sessionKeys.lists(), (prev) => {
+        if (!prev) return prev;
+        return { sessions: prev.sessions.filter((s) => s.id !== sessionId) };
+      });
+
+      if (USE_MOCK) {
+        mockState.sessions = mockState.sessions.filter((s) => s.id !== sessionId);
+        delete mockState.messagesBySession[sessionId];
+      }
+
+      return { previousSessions };
+    },
+    mutationFn: async ({ sessionId }) => {
+      if (USE_MOCK) {
+        return { session_id: sessionId };
+      }
+      return apiClient<DeleteSessionData>(`/api/sessions/${sessionId}`, {
+        method: 'DELETE',
+      });
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousSessions) {
+        qc.setQueryData(sessionKeys.lists(), context.previousSessions);
+      }
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
     },
   });

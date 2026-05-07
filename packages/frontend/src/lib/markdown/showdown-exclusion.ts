@@ -1,0 +1,28 @@
+// Showdown extension: 用户配置的"非 markdown 字符串"在分隔时不被解析(dinkus)
+// 简化自 SillyTavern public/scripts/showdown-exclusion.js
+// ST 原版从 power_user.markdown_escape_strings 取配置;本项目无 power_user,改为直接接收字符串数组
+import type { ShowdownExtension } from 'showdown';
+
+export function markdownExclusionExt(escapeStrings: string[] = []): ShowdownExtension[] {
+  if (escapeStrings.length === 0) return [];
+  const escapedExclusions = escapeStrings
+    .filter((s) => s.length > 0)
+    .map(
+      (s) =>
+        `(${s
+          .split('')
+          .map((char) => `\\${char}`)
+          .join('')})`
+    );
+  if (escapedExclusions.length === 0) return [];
+  const replaceRegex = new RegExp(`^(${escapedExclusions.join('|')})\n`, 'gm');
+  return [
+    {
+      type: 'lang',
+      filter: (text: string) =>
+        text.replace(replaceRegex, (match: string) =>
+          match.replace(replaceRegex, `\u0000${match} \n`)
+        ),
+    },
+  ];
+}

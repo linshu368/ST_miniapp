@@ -9,5 +9,5 @@ export enum ModelTier {
 
 export async function resolveChannelId(tier: ModelTier): Promise<string> {
   const config = await runtimeConfigService.getAiConfigSource();
-  return config.tier_mapping?.[tier] || 'channel_1';
+  return config.tier_mapping?.[tier] || 'channel_default';
 }

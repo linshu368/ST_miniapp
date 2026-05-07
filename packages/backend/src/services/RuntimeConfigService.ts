@@ -30,7 +30,7 @@ export class RuntimeConfigService {
     }
 
     // 3. Check L3 Database (Supabase)
-    const dbRow = await prisma.runtime_config.findUnique({
+    const dbRow = await prisma.miniappRuntimeConfig.findUnique({
       where: { key: 'ai_config_source' },
     });
 
@@ -61,8 +61,10 @@ export class RuntimeConfigService {
 
     return {
       tier_mapping: {
-        free: 'channel_default',
-        vip: 'channel_default',
+        tier_1: 'channel_default',
+        tier_2: 'channel_default',
+        tier_3: 'channel_default',
+        tier_4: 'channel_default',
       },
       channels: {
         channel_default: [
