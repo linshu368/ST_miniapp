@@ -386,15 +386,22 @@ export function useSendMessageMutation(sessionId: string) {
 
 export function useUpdateSessionMutation() {
   const qc = useQueryClient();
-  return useMutation<PatchSessionData, Error, { sessionId: string; patch: PatchSessionRequest }>({
-    mutationFn: async ({ sessionId, patch }) => {
-      let updated: SessionSummary | undefined;
+  return useMutation<
+    PatchSessionData,
+    Error,
+    { sessionId: string; patch: PatchSessionRequest },
+    { previousSessions: GetSessionsData | undefined }
+  >({
+    onMutate: async ({ sessionId, patch }) => {
+      await qc.cancelQueries({ queryKey: sessionKeys.lists() });
+      const previousSessions = qc.getQueryData<GetSessionsData>(sessionKeys.lists());
+
       qc.setQueryData<GetSessionsData>(sessionKeys.lists(), (prev) => {
         if (!prev) return prev;
         return {
           sessions: prev.sessions.map((s) => {
             if (s.id !== sessionId) return s;
-            const next: SessionSummary = {
+            return {
               ...s,
               ...(patch.is_pinned !== undefined ? { is_pinned: patch.is_pinned } : {}),
               ...(patch.custom_name !== undefined
@@ -403,35 +410,84 @@ export function useUpdateSessionMutation() {
                   : { custom_name: undefined }
                 : {}),
             };
-            updated = next;
-            return next;
           }),
         };
       });
+
       if (USE_MOCK) {
-        mockState.sessions = mockState.sessions.map((s) =>
-          s.id === sessionId && updated ? updated : s
-        );
+        const updatedSession = qc
+          .getQueryData<GetSessionsData>(sessionKeys.lists())
+          ?.sessions.find((s) => s.id === sessionId);
+        if (updatedSession) {
+          mockState.sessions = mockState.sessions.map((s) =>
+            s.id === sessionId ? updatedSession : s
+          );
+        }
       }
-      if (!updated) throw new Error('session not found');
-      return { session: updated };
+
+      return { previousSessions };
+    },
+    mutationFn: async ({ sessionId, patch }) => {
+      if (USE_MOCK) {
+        const session = mockState.sessions.find((s) => s.id === sessionId);
+        if (!session) throw new Error('session not found');
+        return { session };
+      }
+      return apiClient<PatchSessionData>(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousSessions) {
+        qc.setQueryData(sessionKeys.lists(), context.previousSessions);
+      }
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
     },
   });
 }
 
 export function useDeleteSessionMutation() {
   const qc = useQueryClient();
-  return useMutation<DeleteSessionData, Error, { sessionId: string }>({
-    mutationFn: async ({ sessionId }) => {
+  return useMutation<
+    DeleteSessionData,
+    Error,
+    { sessionId: string },
+    { previousSessions: GetSessionsData | undefined }
+  >({
+    onMutate: async ({ sessionId }) => {
+      await qc.cancelQueries({ queryKey: sessionKeys.lists() });
+      const previousSessions = qc.getQueryData<GetSessionsData>(sessionKeys.lists());
+
       qc.setQueryData<GetSessionsData>(sessionKeys.lists(), (prev) => {
         if (!prev) return prev;
         return { sessions: prev.sessions.filter((s) => s.id !== sessionId) };
       });
+
       if (USE_MOCK) {
         mockState.sessions = mockState.sessions.filter((s) => s.id !== sessionId);
         delete mockState.messagesBySession[sessionId];
       }
-      return { session_id: sessionId };
+
+      return { previousSessions };
+    },
+    mutationFn: async ({ sessionId }) => {
+      if (USE_MOCK) {
+        return { session_id: sessionId };
+      }
+      return apiClient<DeleteSessionData>(`/api/sessions/${sessionId}`, {
+        method: 'DELETE',
+      });
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousSessions) {
+        qc.setQueryData(sessionKeys.lists(), context.previousSessions);
+      }
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
     },
   });
 }

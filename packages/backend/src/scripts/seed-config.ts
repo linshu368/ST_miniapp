@@ -8,8 +8,10 @@ const prisma = new PrismaClient();
 
 const initialConfig = {
   tier_mapping: {
-    free: 'channel_default',
-    vip: 'channel_default',
+    tier_1: 'channel_default',
+    tier_2: 'channel_default',
+    tier_3: 'channel_default',
+    tier_4: 'channel_default',
   },
   channels: {
     channel_default: [
@@ -29,7 +31,7 @@ async function main() {
 
   // Create table if it doesn't exist to bypass `prisma db push` issues with other tables
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS public.runtime_config (
+    CREATE TABLE IF NOT EXISTS miniapp.runtime_config (
       key TEXT PRIMARY KEY,
       value JSONB,
       description TEXT,
@@ -39,7 +41,7 @@ async function main() {
     );
   `);
 
-  const result = await prisma.runtime_config.upsert({
+  const result = await prisma.miniappRuntimeConfig.upsert({
     where: { key: 'ai_config_source' },
     update: {
       value: initialConfig,
