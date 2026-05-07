@@ -3,7 +3,7 @@ name: PR Review
 
 on:
   pull_request:
-    branches: [main, dev] # ← 修改：新增 dev 作为触发目标
+    branches: [main, dev]
     types: [opened, synchronize, ready_for_review, reopened]
 
 permissions:
@@ -14,7 +14,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     # hotfix 分支直接跳过；dev→main 的晋升 PR 也跳过（代码已在合入 dev 时审过）
-    if: ${{ !startsWith(github.head_ref, 'hotfix') && github.head_ref != 'dev' }} # ← 修改
+    if: ${{ !startsWith(github.head_ref, 'hotfix') && github.head_ref != 'dev' }}
 
     steps:
       - name: Checkout
@@ -27,50 +27,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      # ━━━ 查找上次审查基线 ━━━
-      # 在 PR 评论中查找隐藏标记 <!-- review-baseline:SHA -->
-      # 如果找到且 SHA 有效，本次审查只采集增量 diff
-      - name: 查找上次审查基线
-        id: baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "🔍 查找 PR 上已有的审查记录..." >&2
-
-          PREVIOUS_SHA=$(gh api \
-            "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
-            --paginate 2>/dev/null \
-            | python3 -c "
-          import json, sys, re
-          try:
-              comments = json.load(sys.stdin)
-              for c in comments:
-                  m = re.search(r'<!-- review-baseline:([0-9a-f]{40}) -->', c.get('body', ''))
-                  if m:
-                      print(m.group(1))
-                      break
-          except:
-              pass
-          " 2>/dev/null || echo "")
-
-          if [ -n "$PREVIOUS_SHA" ]; then
-            # 验证 SHA 是否仍然有效（防止 force-push 后旧提交被 GC）
-            if git cat-file -t "$PREVIOUS_SHA" &>/dev/null; then
-              echo "sha=$PREVIOUS_SHA" >> $GITHUB_OUTPUT
-              echo "is_incremental=true" >> $GITHUB_OUTPUT
-              echo "📌 找到上次审查基线: ${PREVIOUS_SHA:0:7}" >&2
-            else
-              echo "sha=" >> $GITHUB_OUTPUT
-              echo "is_incremental=false" >> $GITHUB_OUTPUT
-              echo "⚠️ 上次审查 SHA (${PREVIOUS_SHA:0:7}) 已失效（可能已 force-push），回退到 ${{ github.base_ref }}" >&2  # ← 修改
-            fi
-          else
-            echo "sha=" >> $GITHUB_OUTPUT
-            echo "is_incremental=false" >> $GITHUB_OUTPUT
-            echo "📌 未找到上次审查记录，使用 ${{ github.base_ref }} 作为基线" >&2  # ← 修改
-          fi
-
-      # 三层判定规则（基于增量 diff 的文件变更）：
+      # 三层判定规则（基于全量 diff 的文件变更）：
       # 第零层：手动 override（PR 描述或 commit message 含 [review:backend] / [review:frontend]）
       # 第一层：backend 文件 ≥ 3 → 铁证，直接后端 prompt
       # 第二层：backend 文件 1-2 个 → 看占比（≥25% 后端，<25% 前端 + 警告）
@@ -80,27 +37,17 @@ jobs:
         id: prompt-type
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-          BASE_REF: ${{ steps.baseline.outputs.sha || github.base_ref }} # ← 修改
-          IS_INCREMENTAL: ${{ steps.baseline.outputs.is_incremental }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           BRANCH="${{ github.head_ref }}"
           echo "当前分支: $BRANCH" >&2
           echo "审查基准: $BASE_REF" >&2
-          echo "增量模式: $IS_INCREMENTAL" >&2
 
-          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }} 2>/dev/null || true  # ← 修改
+          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }} 2>/dev/null || true
 
           # ━━━ 第零层：手动 override（优先级最高）━━━
-          # 只看基线以来的 commit（增量审查时排除 PM 阶段的 commit message）
           COMMIT_MESSAGES=$(git log ${BASE_REF}..HEAD --pretty=format:"%s %b" 2>/dev/null || echo "")
-
-          # 增量审查时只看 commit message，不看 PR body
-          # （避免 PM 在 PR 描述中写的 [review:frontend] 干扰后端审查）
-          if [ "$IS_INCREMENTAL" = "true" ]; then
-            ALL_TEXT="${COMMIT_MESSAGES}"
-          else
-            ALL_TEXT="${PR_BODY} ${COMMIT_MESSAGES}"
-          fi
+          ALL_TEXT="${PR_BODY} ${COMMIT_MESSAGES}"
 
           if echo "$ALL_TEXT" | grep -q '\[review:backend\]'; then
             echo "type=backend" >> $GITHUB_OUTPUT
@@ -116,7 +63,7 @@ jobs:
             exit 0
           fi
 
-          # ━━━ 归类文件（基于增量 diff）━━━
+          # ━━━ 归类文件（基于全量 diff）━━━
           CHANGED_FILES=$(git diff ${BASE_REF}...HEAD --name-only)
 
           echo "变更文件列表:" >&2
@@ -200,14 +147,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
-          BASE_REF: ${{ steps.baseline.outputs.sha || github.base_ref }} # ← 修改
+          BASE_REF: ${{ github.base_ref }}
         run: |
           echo "=== 当前 HEAD ===" >&2
           git log --oneline -3 >&2
           echo "=== 审查基准: $BASE_REF ===" >&2
           echo "==================" >&2
 
-          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }} 2>/dev/null || true  # ← 修改
+          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }} 2>/dev/null || true
 
           set +e
           bash ops/git/review.sh "$BASE_REF" ${{ steps.prompt-type.outputs.type }} > report.md 2>stderr.log
@@ -229,21 +176,11 @@ jobs:
             echo 'REPORT_EOF'
           } >> $GITHUB_OUTPUT
 
-      # 准备评论的元信息：header（控制 sticky 行为）、badge（显示审查类型）、baseline marker
       - name: 准备评论元信息
         id: comment-meta
         run: |
-          IS_INCREMENTAL="${{ steps.baseline.outputs.is_incremental }}"
-          if [ "$IS_INCREMENTAL" = "true" ]; then
-            BASELINE_SHA="${{ steps.baseline.outputs.sha }}"
-            echo "header=ai-review-incremental" >> $GITHUB_OUTPUT
-            echo "badge=🔄 **增量审查**（基线: \`${BASELINE_SHA:0:7}\`）" >> $GITHUB_OUTPUT
-            echo "baseline_marker=" >> $GITHUB_OUTPUT
-          else
-            echo "header=ai-review-initial" >> $GITHUB_OUTPUT
-            echo "badge=📋 **初始审查**" >> $GITHUB_OUTPUT
-            printf 'baseline_marker=<!-- review-baseline:%s -->\n' "${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
-          fi
+          echo "header=ai-review-full" >> $GITHUB_OUTPUT
+          echo "badge=📋 **全量代码审查**（基准: \`${{ github.base_ref }}\`）" >> $GITHUB_OUTPUT
 
       - name: 发布报告到 PR 评论
         uses: marocchino/sticky-pull-request-comment@v2
@@ -259,6 +196,3 @@ jobs:
             ---
 
             *🤖 自动生成 · `${{ github.head_ref }}` → `${{ github.base_ref }}` · Prompt: `${{ steps.prompt-type.outputs.type }}` · ${{ github.event.pull_request.head.sha }}*
-
-
-            ${{ steps.comment-meta.outputs.baseline_marker }}

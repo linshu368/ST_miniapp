@@ -13,14 +13,9 @@ import type {
   PostMessageRequest,
   PostOpenSessionData,
   PostOpenSessionRequest,
-  SessionSummary,
 } from '@miniapp/shared';
 
 import { apiClient, apiStreamClient } from './client';
-import { mockAssistantReplies, mockMessagesBySession, mockSessions } from '@/lib/mock-data/chat';
-import { getMockCharacterDetail, mockCharacters } from '@/lib/mock-data/characters';
-
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === '1';
 
 // ==== Query Keys ====
 export const sessionKeys = {
@@ -29,41 +24,8 @@ export const sessionKeys = {
   detail: (id: string) => [...sessionKeys.all, 'detail', id] as const,
 };
 
-// ==== Mock 端内存状态 ====
-// 维持在模块作用域，SPA 运行期持久；刷新会重置（可接受）
-type MockState = {
-  sessions: SessionSummary[];
-  messagesBySession: Record<string, Message[]>;
-};
-
-const mockState: MockState = {
-  sessions: [...mockSessions],
-  messagesBySession: Object.fromEntries(
-    Object.entries(mockMessagesBySession).map(([k, v]) => [k, [...v]])
-  ),
-};
-
-function truncatePreview(content: string, max = 24): string {
-  const one = content.replace(/\s+/g, ' ').trim();
-  if (one.length <= max) return one;
-  return one.slice(0, max) + '…';
-}
-
-function pickReply(): string {
-  const pool = mockAssistantReplies;
-  const fallback = '嗯。';
-  if (pool.length === 0) return fallback;
-  const idx = Math.floor(Math.random() * pool.length);
-  return pool[idx] ?? fallback;
-}
-
-function randomDelayMs(): number {
-  // 1.5s – 3s 随机延迟，呼应"她在"的呼吸节奏
-  return 1500 + Math.random() * 1500;
-}
-
 // ==== "她在打字" 订阅 ====
-// 独立于 mutation 生命周期：mock 下 user 消息已落，assistant 还在延迟中
+// 流式 chunk 抵达前需要 indicator；与 mutation 生命周期解耦
 // 每次变更生成新的 ReadonlySet 快照，useSyncExternalStore 才能正确判定引用变化
 const typingListeners = new Set<() => void>();
 let typingSnapshot: ReadonlySet<string> = new Set();
@@ -169,28 +131,6 @@ export function useOpenSessionForCharacter() {
 
   return useMutation<PostOpenSessionData, Error, PostOpenSessionRequest>({
     mutationFn: async (body) => {
-      if (USE_MOCK) {
-        const detail = getMockCharacterDetail(body.character_id);
-        const sessionId = newId('sess');
-        const now = new Date().toISOString();
-        const greeting = detail?.greeting ?? '……';
-        const firstMessage: Message = {
-          id: newId('msg'),
-          session_id: sessionId,
-          role: 'assistant',
-          content: greeting,
-          created_at: now,
-        };
-        mockState.messagesBySession[sessionId] = [firstMessage];
-        mockState.sessions.unshift({
-          id: sessionId,
-          character_id: body.character_id,
-          character_name: detail?.name ?? '',
-          last_message_preview: truncatePreview(greeting),
-          last_message_at: now,
-        });
-        return { session_id: sessionId };
-      }
       return postOpenSession(body);
     },
     onSuccess: () => {
@@ -226,70 +166,7 @@ export function useSendMessageMutation(sessionId: string) {
           : prev
       );
 
-      if (USE_MOCK) {
-        mockState.messagesBySession[sessionId] = [
-          ...(mockState.messagesBySession[sessionId] ?? []),
-          userMsg,
-        ];
-        // 更新 session 摘要
-        mockState.sessions = mockState.sessions.map((s) =>
-          s.id === sessionId
-            ? {
-                ...s,
-                last_message_preview: truncatePreview(body.content),
-                last_message_at: now,
-              }
-            : s
-        );
-        void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
-
-        // 标记"她在打字"
-        setTyping(sessionId, true);
-
-        // 异步 mock 回复：1.5–3s 后落下
-        setTimeout(() => {
-          const replyContent = pickReply();
-          const replyNow = new Date().toISOString();
-          const reply: Message = {
-            id: newId('msg'),
-            session_id: sessionId,
-            role: 'assistant',
-            content: replyContent,
-            created_at: replyNow,
-          };
-          mockState.messagesBySession[sessionId] = [
-            ...(mockState.messagesBySession[sessionId] ?? []),
-            reply,
-          ];
-          mockState.sessions = mockState.sessions.map((s) =>
-            s.id === sessionId
-              ? {
-                  ...s,
-                  last_message_preview: truncatePreview(replyContent),
-                  last_message_at: replyNow,
-                }
-              : s
-          );
-          qc.setQueryData<GetSessionDetailData>(sessionKeys.detail(sessionId), (prev) =>
-            prev
-              ? {
-                  session: {
-                    ...prev.session,
-                    messages: [...prev.session.messages, reply],
-                  },
-                }
-              : prev
-          );
-          void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
-
-          // 打字结束
-          setTyping(sessionId, false);
-        }, randomDelayMs());
-
-        return { message: userMsg };
-      }
-
-      // 真实请求：流式读取
+      // 流式读取 assistant 回复
       const tempAssistantId = newId('temp-msg');
       const tempAssistantMsg: Message = {
         id: tempAssistantId,
@@ -380,9 +257,7 @@ export function useSendMessageMutation(sessionId: string) {
 }
 
 // ==== Session 修改 / 删除 mutations ====
-// 注:真后端 PATCH /api/sessions/:id 和 DELETE /api/sessions/:id 暂未实现。
-// 这里走前端 React Query cache 乐观更新 + USE_MOCK 时同步 mockState。
-// 后端就绪后改 mutationFn 调真接口 + onSuccess invalidate 即可。
+// 乐观更新 list 缓存 + 调真后端；失败回滚到 onMutate 之前的快照。
 
 export function useUpdateSessionMutation() {
   const qc = useQueryClient();
@@ -414,25 +289,9 @@ export function useUpdateSessionMutation() {
         };
       });
 
-      if (USE_MOCK) {
-        const updatedSession = qc
-          .getQueryData<GetSessionsData>(sessionKeys.lists())
-          ?.sessions.find((s) => s.id === sessionId);
-        if (updatedSession) {
-          mockState.sessions = mockState.sessions.map((s) =>
-            s.id === sessionId ? updatedSession : s
-          );
-        }
-      }
-
       return { previousSessions };
     },
     mutationFn: async ({ sessionId, patch }) => {
-      if (USE_MOCK) {
-        const session = mockState.sessions.find((s) => s.id === sessionId);
-        if (!session) throw new Error('session not found');
-        return { session };
-      }
       return apiClient<PatchSessionData>(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
         body: JSON.stringify(patch),
@@ -466,17 +325,9 @@ export function useDeleteSessionMutation() {
         return { sessions: prev.sessions.filter((s) => s.id !== sessionId) };
       });
 
-      if (USE_MOCK) {
-        mockState.sessions = mockState.sessions.filter((s) => s.id !== sessionId);
-        delete mockState.messagesBySession[sessionId];
-      }
-
       return { previousSessions };
     },
     mutationFn: async ({ sessionId }) => {
-      if (USE_MOCK) {
-        return { session_id: sessionId };
-      }
       return apiClient<DeleteSessionData>(`/api/sessions/${sessionId}`, {
         method: 'DELETE',
       });
