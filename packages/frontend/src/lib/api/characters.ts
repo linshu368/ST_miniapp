@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 import type { GetCharactersData, GetCharacterByIdData } from '@miniapp/shared';
 
 import { apiClient } from './client';
-import { mockCharacters, getMockCharacterDetail } from '@/lib/mock-data/characters';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
 async function fetchCharacters(): Promise<GetCharactersData> {
@@ -23,8 +22,6 @@ export const characterKeys = {
 };
 
 // ==== React Query hooks（业务层唯一入口）====
-
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === '1';
 
 export function useCharactersQuery() {
   return useQuery<GetCharactersData>({
