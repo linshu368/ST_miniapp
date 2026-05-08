@@ -9,9 +9,11 @@ import { TypingIndicator } from './typing-indicator';
 interface MessageListProps {
   messages: Message[];
   isTyping: boolean;
+  charName?: string;
+  userName?: string;
 }
 
-export function MessageList({ messages, isTyping }: MessageListProps) {
+export function MessageList({ messages, isTyping, charName, userName }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,9 +22,9 @@ export function MessageList({ messages, isTyping }: MessageListProps) {
   }, [messages.length, isTyping]);
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6">
+    <div className="flex flex-col gap-4 px-4 py-5">
       {messages.map((m) => (
-        <MessageBubble key={m.id} message={m} />
+        <MessageBubble key={m.id} message={m} charName={charName} userName={userName} />
       ))}
       {isTyping && <TypingIndicator />}
       <div ref={endRef} />

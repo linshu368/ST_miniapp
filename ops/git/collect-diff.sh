@@ -9,13 +9,6 @@ if [ "$CURRENT_BRANCH" = "HEAD" ]; then
   CURRENT_BRANCH="${GITHUB_HEAD_REF:-detached-HEAD}"
 fi
 
-# 显示友好的基准名称
-if [[ "$BASE_BRANCH" =~ ^[0-9a-f]{40}$ ]]; then
-  BASE_DISPLAY="${BASE_BRANCH:0:7}（上次审查基线）"
-else
-  BASE_DISPLAY="$BASE_BRANCH"
-fi
-
 # 统一排除规则，复用同一组 pathspec
 PATHSPEC=(
   -- .
@@ -30,7 +23,7 @@ PATHSPEC=(
 echo "## Diff 元信息"
 echo ""
 echo "- 当前分支: \`${CURRENT_BRANCH}\`"
-echo "- 对比基准: \`${BASE_DISPLAY}\`"
+echo "- 对比基准: \`${BASE_BRANCH}\`"
 echo "- 生成时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo ""
 

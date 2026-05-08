@@ -2,3 +2,4 @@
 export * from './shared';
 export * from './characters';
 export * from './chat';
+export * from './payment';

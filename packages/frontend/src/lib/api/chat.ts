@@ -3,21 +3,19 @@
 import { useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  DeleteSessionData,
   GetSessionsData,
   GetSessionDetailData,
   Message,
+  PatchSessionData,
+  PatchSessionRequest,
   PostMessageData,
   PostMessageRequest,
   PostOpenSessionData,
   PostOpenSessionRequest,
-  SessionSummary,
 } from '@miniapp/shared';
 
 import { apiClient, apiStreamClient } from './client';
-import { mockAssistantReplies, mockMessagesBySession, mockSessions } from '@/lib/mock-data/chat';
-import { getMockCharacterDetail, mockCharacters } from '@/lib/mock-data/characters';
-
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === '1';
 
 // ==== Query Keys ====
 export const sessionKeys = {
@@ -26,41 +24,8 @@ export const sessionKeys = {
   detail: (id: string) => [...sessionKeys.all, 'detail', id] as const,
 };
 
-// ==== Mock 端内存状态 ====
-// 维持在模块作用域，SPA 运行期持久；刷新会重置（可接受）
-type MockState = {
-  sessions: SessionSummary[];
-  messagesBySession: Record<string, Message[]>;
-};
-
-const mockState: MockState = {
-  sessions: [...mockSessions],
-  messagesBySession: Object.fromEntries(
-    Object.entries(mockMessagesBySession).map(([k, v]) => [k, [...v]])
-  ),
-};
-
-function truncatePreview(content: string, max = 24): string {
-  const one = content.replace(/\s+/g, ' ').trim();
-  if (one.length <= max) return one;
-  return one.slice(0, max) + '…';
-}
-
-function pickReply(): string {
-  const pool = mockAssistantReplies;
-  const fallback = '嗯。';
-  if (pool.length === 0) return fallback;
-  const idx = Math.floor(Math.random() * pool.length);
-  return pool[idx] ?? fallback;
-}
-
-function randomDelayMs(): number {
-  // 1.5s – 3s 随机延迟，呼应"她在"的呼吸节奏
-  return 1500 + Math.random() * 1500;
-}
-
 // ==== "她在打字" 订阅 ====
-// 独立于 mutation 生命周期：mock 下 user 消息已落，assistant 还在延迟中
+// 流式 chunk 抵达前需要 indicator；与 mutation 生命周期解耦
 // 每次变更生成新的 ReadonlySet 快照，useSyncExternalStore 才能正确判定引用变化
 const typingListeners = new Set<() => void>();
 let typingSnapshot: ReadonlySet<string> = new Set();
@@ -160,40 +125,12 @@ export function useSessionQuery(sessionId: string | undefined) {
   });
 }
 
-/** 打开（或新建）某个角色的会话。 */
+/** 为某个角色新建一个 session(永远新建,不复用现存 session)。 */
 export function useOpenSessionForCharacter() {
   const qc = useQueryClient();
 
   return useMutation<PostOpenSessionData, Error, PostOpenSessionRequest>({
     mutationFn: async (body) => {
-      if (USE_MOCK) {
-        const existing = mockState.sessions
-          .filter((s) => s.character_id === body.character_id)
-          .sort((a, b) => +new Date(b.last_message_at) - +new Date(a.last_message_at))[0];
-        if (existing) {
-          return { session_id: existing.id };
-        }
-        const detail = getMockCharacterDetail(body.character_id);
-        const sessionId = newId('sess');
-        const now = new Date().toISOString();
-        const greeting = detail?.greeting ?? '……';
-        const firstMessage: Message = {
-          id: newId('msg'),
-          session_id: sessionId,
-          role: 'assistant',
-          content: greeting,
-          created_at: now,
-        };
-        mockState.messagesBySession[sessionId] = [firstMessage];
-        mockState.sessions.unshift({
-          id: sessionId,
-          character_id: body.character_id,
-          character_name: detail?.name ?? '',
-          last_message_preview: truncatePreview(greeting),
-          last_message_at: now,
-        });
-        return { session_id: sessionId };
-      }
       return postOpenSession(body);
     },
     onSuccess: () => {
@@ -229,70 +166,7 @@ export function useSendMessageMutation(sessionId: string) {
           : prev
       );
 
-      if (USE_MOCK) {
-        mockState.messagesBySession[sessionId] = [
-          ...(mockState.messagesBySession[sessionId] ?? []),
-          userMsg,
-        ];
-        // 更新 session 摘要
-        mockState.sessions = mockState.sessions.map((s) =>
-          s.id === sessionId
-            ? {
-                ...s,
-                last_message_preview: truncatePreview(body.content),
-                last_message_at: now,
-              }
-            : s
-        );
-        void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
-
-        // 标记"她在打字"
-        setTyping(sessionId, true);
-
-        // 异步 mock 回复：1.5–3s 后落下
-        setTimeout(() => {
-          const replyContent = pickReply();
-          const replyNow = new Date().toISOString();
-          const reply: Message = {
-            id: newId('msg'),
-            session_id: sessionId,
-            role: 'assistant',
-            content: replyContent,
-            created_at: replyNow,
-          };
-          mockState.messagesBySession[sessionId] = [
-            ...(mockState.messagesBySession[sessionId] ?? []),
-            reply,
-          ];
-          mockState.sessions = mockState.sessions.map((s) =>
-            s.id === sessionId
-              ? {
-                  ...s,
-                  last_message_preview: truncatePreview(replyContent),
-                  last_message_at: replyNow,
-                }
-              : s
-          );
-          qc.setQueryData<GetSessionDetailData>(sessionKeys.detail(sessionId), (prev) =>
-            prev
-              ? {
-                  session: {
-                    ...prev.session,
-                    messages: [...prev.session.messages, reply],
-                  },
-                }
-              : prev
-          );
-          void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
-
-          // 打字结束
-          setTyping(sessionId, false);
-        }, randomDelayMs());
-
-        return { message: userMsg };
-      }
-
-      // 真实请求：流式读取
+      // 流式读取 assistant 回复
       const tempAssistantId = newId('temp-msg');
       const tempAssistantMsg: Message = {
         id: tempAssistantId,
@@ -377,6 +251,93 @@ export function useSendMessageMutation(sessionId: string) {
       if (!error) {
         void qc.invalidateQueries({ queryKey: sessionKeys.detail(sessionId) });
       }
+      void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
+    },
+  });
+}
+
+// ==== Session 修改 / 删除 mutations ====
+// 乐观更新 list 缓存 + 调真后端；失败回滚到 onMutate 之前的快照。
+
+export function useUpdateSessionMutation() {
+  const qc = useQueryClient();
+  return useMutation<
+    PatchSessionData,
+    Error,
+    { sessionId: string; patch: PatchSessionRequest },
+    { previousSessions: GetSessionsData | undefined }
+  >({
+    onMutate: async ({ sessionId, patch }) => {
+      await qc.cancelQueries({ queryKey: sessionKeys.lists() });
+      const previousSessions = qc.getQueryData<GetSessionsData>(sessionKeys.lists());
+
+      qc.setQueryData<GetSessionsData>(sessionKeys.lists(), (prev) => {
+        if (!prev) return prev;
+        return {
+          sessions: prev.sessions.map((s) => {
+            if (s.id !== sessionId) return s;
+            return {
+              ...s,
+              ...(patch.is_pinned !== undefined ? { is_pinned: patch.is_pinned } : {}),
+              ...(patch.custom_name !== undefined
+                ? patch.custom_name
+                  ? { custom_name: patch.custom_name }
+                  : { custom_name: undefined }
+                : {}),
+            };
+          }),
+        };
+      });
+
+      return { previousSessions };
+    },
+    mutationFn: async ({ sessionId, patch }) => {
+      return apiClient<PatchSessionData>(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousSessions) {
+        qc.setQueryData(sessionKeys.lists(), context.previousSessions);
+      }
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
+    },
+  });
+}
+
+export function useDeleteSessionMutation() {
+  const qc = useQueryClient();
+  return useMutation<
+    DeleteSessionData,
+    Error,
+    { sessionId: string },
+    { previousSessions: GetSessionsData | undefined }
+  >({
+    onMutate: async ({ sessionId }) => {
+      await qc.cancelQueries({ queryKey: sessionKeys.lists() });
+      const previousSessions = qc.getQueryData<GetSessionsData>(sessionKeys.lists());
+
+      qc.setQueryData<GetSessionsData>(sessionKeys.lists(), (prev) => {
+        if (!prev) return prev;
+        return { sessions: prev.sessions.filter((s) => s.id !== sessionId) };
+      });
+
+      return { previousSessions };
+    },
+    mutationFn: async ({ sessionId }) => {
+      return apiClient<DeleteSessionData>(`/api/sessions/${sessionId}`, {
+        method: 'DELETE',
+      });
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousSessions) {
+        qc.setQueryData(sessionKeys.lists(), context.previousSessions);
+      }
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
     },
   });

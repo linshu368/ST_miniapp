@@ -31,6 +31,8 @@ export const MODULE_CONFIG: Record<MockModule, ModuleConfig> = {
       'GET /api/sessions/:id',
       'POST /api/sessions/open',
       'POST /api/sessions/:id/messages',
+      'PATCH /api/sessions/:id',
+      'DELETE /api/sessions/:id',
     ],
     // forceMockReason 默认不填——handler 完工性由 Dev 在路由上的 @frontend-ready 注释维护
   },

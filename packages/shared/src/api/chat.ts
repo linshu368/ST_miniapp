@@ -18,6 +18,8 @@ export interface SessionSummary {
   character_name: string;
   last_message_preview: string;
   last_message_at: string; // ISO 8601
+  is_pinned?: boolean; // 置顶。true 时排到列表顶部,在置顶组内按 last_message_at 倒序
+  custom_name?: string; // 用户自定义名(改名后非空)。前端展示优先 custom_name → character_name
 }
 
 // 对话页用的完整结构
@@ -52,10 +54,25 @@ export interface StreamChunkData {
 }
 
 // POST /api/sessions/open 请求 / 响应
-// 语义：给定 character_id，返回该角色的最近 session；没有则创建新的
+// 语义：给定 character_id，永远为其创建一个新 session(不复用现存 session)。
+// 用户从大厅角色卡进入 = 想开始一段新对话；要继续旧对话走侧边栏。
 export interface PostOpenSessionRequest {
   character_id: string;
 }
 export interface PostOpenSessionData {
+  session_id: string;
+}
+
+// PATCH /api/sessions/:id
+export interface PatchSessionRequest {
+  custom_name?: string; // 传空字符串 "" 视为清除自定义名
+  is_pinned?: boolean; // true/false 切换置顶
+}
+export interface PatchSessionData {
+  session: SessionSummary;
+}
+
+// DELETE /api/sessions/:id
+export interface DeleteSessionData {
   session_id: string;
 }

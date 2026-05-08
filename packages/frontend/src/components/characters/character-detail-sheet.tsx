@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
+import { Hash, PenLine, Quote, X } from 'lucide-react';
 
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useOpenSessionForCharacter } from '@/lib/api/chat';
@@ -12,9 +13,10 @@ import { characterRoomGradient } from '@/lib/utils/character-hue';
 const DISMISS_THRESHOLD_Y = 80; // 下滑超过 80px 即关闭
 const DISMISS_THRESHOLD_X = 60; // 右滑超过 60px（且主方向为横向）即关闭
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
   return (
-    <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/60">
+    <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/60">
+      {icon}
       {children}
     </p>
   );
@@ -165,6 +167,15 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
               <div className="h-full w-full" style={{ background: gradient }} />
             )}
             <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-card via-card/60 to-transparent" />
+            {/* 右上角关闭按钮 */}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="关闭"
+              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/90 backdrop-blur-md transition-colors active:bg-black/60"
+            >
+              <X className="h-4 w-4" />
+            </button>
             {!isLoading && character && (
               <div className="absolute inset-x-0 bottom-0 px-5 pb-4">
                 <h2 className="text-[24px] font-semibold leading-tight text-foreground">
@@ -193,12 +204,12 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
             <div className="flex flex-col gap-6 px-5 pt-5">
               {character.personality_tags.length > 0 && (
                 <section>
-                  <SectionLabel>标签</SectionLabel>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <SectionLabel icon={<Hash className="h-3 w-3" />}>标签</SectionLabel>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
                     {character.personality_tags.map((pt) => (
                       <span
                         key={pt}
-                        className="rounded-full bg-secondary px-3 py-1 text-[12px] text-secondary-foreground"
+                        className="rounded-full border border-border/50 bg-secondary/40 px-2.5 py-0.5 text-[12px] text-secondary-foreground/80"
                       >
                         {pt}
                       </span>
@@ -208,16 +219,23 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
               )}
 
               <section>
-                <SectionLabel>作者说</SectionLabel>
-                <p className="mt-2 text-[14px] leading-relaxed text-foreground/80">
-                  {[character.description, character.creator_notes].filter(Boolean).join('　')}
-                </p>
+                <SectionLabel icon={<PenLine className="h-3 w-3" />}>作者说</SectionLabel>
+                <div className="mt-2 rounded-xl border border-border/40 bg-background/70 px-4 py-3 shadow-sm">
+                  <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-foreground/80">
+                    {(() => {
+                      const full = [character.description, character.creator_notes]
+                        .filter(Boolean)
+                        .join('\n\n');
+                      return full.length > 220 ? full.slice(0, 220) + '…' : full;
+                    })()}
+                  </div>
+                </div>
               </section>
 
               <section>
-                <SectionLabel>她的第一句话</SectionLabel>
-                <blockquote className="mt-2 rounded-xl border-l-2 border-primary/50 bg-background px-4 py-3">
-                  <p className="line-clamp-3 text-[14px] italic leading-relaxed text-foreground/90">
+                <SectionLabel icon={<Quote className="h-3 w-3" />}>开场白</SectionLabel>
+                <blockquote className="mt-2 rounded-xl border border-border/40 border-l-2 border-l-primary/60 bg-background/70 px-4 py-3 shadow-sm">
+                  <p className="line-clamp-[15] whitespace-pre-wrap text-[13px] italic leading-snug text-foreground/90">
                     &quot;{character.greeting}&quot;
                   </p>
                 </blockquote>
@@ -225,6 +243,13 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
             </div>
           ) : null}
         </div>
+
+        {/* 滚动末端 → CTA 渐变过渡:在 CTA 上方叠一层 fade,缓解被切断感 */}
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-[64px] h-5 bg-gradient-to-t from-card to-transparent"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom) + 64px)' }}
+          aria-hidden="true"
+        />
 
         {/* 固定底部 CTA */}
         <div
