@@ -129,7 +129,7 @@ export function useSessionQuery(sessionId: string | undefined) {
 export function useOpenSessionForCharacter() {
   const qc = useQueryClient();
 
-  return useMutation<PostOpenSessionData, Error, PostOpenSessionRequest>({
+  return useMutation<PostOpenSessionData, Error, PostOpenSessionRequest, PostOpenSessionData>({
     mutationFn: async (body) => {
       return postOpenSession(body);
     },

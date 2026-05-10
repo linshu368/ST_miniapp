@@ -237,6 +237,72 @@
   border-top: 1px solid hsl(var(--border));
 }
 
+/* ── Chat: Cinematic Noir（仅 .chat-noir 作用域）────────────────── */
+.chat-noir {
+  --noir-ink: #f2f3f5;
+  --noir-muted: rgba(242, 243, 245, 0.55);
+  --noir-faint: rgba(242, 243, 245, 0.32);
+  --noir-card: rgba(255, 255, 255, 0.04);
+  --noir-border: rgba(255, 255, 255, 0.08);
+  --noir-narration: rgba(242, 243, 245, 0.32);
+  --noir-dialogue: rgba(255, 255, 255, 0.78);
+}
+
+.chat-noir .mes-text {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--noir-narration);
+}
+
+.chat-noir .mes-text q {
+  color: var(--noir-dialogue);
+  font-style: normal;
+}
+
+.chat-noir .mes-text em,
+.chat-noir .mes-text i {
+  color: var(--noir-narration);
+  font-style: normal;
+}
+
+.chat-noir .mes-text strong {
+  font-weight: 600;
+  color: rgba(242, 243, 245, 0.42);
+}
+
+.chat-noir .mes-text a {
+  color: rgba(167, 196, 242, 0.85);
+  text-decoration-color: rgba(167, 196, 242, 0.35);
+}
+
+.chat-noir .mes-text a:hover {
+  text-decoration-color: rgba(167, 196, 242, 0.7);
+}
+
+.chat-noir .mes-text blockquote {
+  border-left-color: rgba(255, 255, 255, 0.12);
+  color: var(--noir-narration);
+  font-style: normal;
+}
+
+.chat-noir .mes-text code {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(242, 243, 245, 0.75);
+}
+
+.chat-noir .mes-text pre {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.chat-noir .mes-text th,
+.chat-noir .mes-text td {
+  border-color: var(--noir-border);
+}
+
+.chat-noir .mes-text hr {
+  border-top-color: var(--noir-border);
+}
+
 .mes-text img {
   max-width: 100%;
   height: auto;

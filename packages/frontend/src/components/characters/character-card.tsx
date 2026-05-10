@@ -7,11 +7,11 @@ import { characterRoomGradient } from '@/lib/utils/character-hue';
 
 interface CharacterCardProps {
   character: CharacterSummary;
-  onSelect: (id: string) => void;
+  onStartChat: (id: string) => void;
   disabled?: boolean;
 }
 
-export function CharacterCard({ character, onSelect, disabled }: CharacterCardProps) {
+export function CharacterCard({ character, onStartChat, disabled }: CharacterCardProps) {
   const gradient = characterRoomGradient(character.id);
   const hasAvatar = !!character.avatar_url;
 
@@ -19,13 +19,13 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
     <button
       type="button"
       disabled={disabled}
-      onClick={() => onSelect(character.id)}
+      onClick={() => onStartChat(character.id)}
       className={cn(
         'group flex w-full flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left shadow-sm',
         'transition-transform duration-200 ease-out active:scale-[0.995]',
         'disabled:opacity-60'
       )}
-      aria-label={`查看 ${character.name} 的详情`}
+      aria-label={`进入与 ${character.name} 的对话`}
     >
       {/* 图片区：3:4 + 渐变叠层 + 名字 */}
       <div className="relative aspect-[3/4] w-full overflow-hidden">

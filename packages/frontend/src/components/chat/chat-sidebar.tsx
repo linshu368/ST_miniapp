@@ -185,8 +185,13 @@ export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
   if (!mounted || typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="历史对话">
-      {/* 右侧遮罩：点击 or 左滑都关闭。淡入比面板略慢,层次更明确 */}
+    <div
+      className="fixed inset-0 z-50 flex justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="历史对话"
+    >
+      {/* 全屏遮罩：点击 or 左滑都关闭（与聊天主列 max-w-md 无关，两侧空白也可点） */}
       <div
         className="absolute inset-0 bg-black/50 transition-opacity duration-500"
         style={{ opacity: visible ? 1 : 0 }}
@@ -197,67 +202,47 @@ export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
         onTouchEnd={handleTouchEnd}
       />
 
-      {/* 侧边栏面板：从左侧滑入 */}
-      <div
-        className="absolute inset-y-0 left-0 flex w-[72vw] max-w-[280px] flex-col border-r border-border/60 bg-card shadow-2xl"
-        style={{
-          transform: visible ? `translateX(${dragX}px)` : 'translateX(-100%)',
-          transition: isDragging ? 'none' : 'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
-          // pan-y:允许垂直滚动 native 行为(鼠标滚轮 / 触摸下滑),
-          // 只禁用横向 native 行为(我们的左滑关闭由 touchMove 接管)
-          touchAction: 'pan-y',
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
+      {/* 与聊天页同宽的栏：侧栏从该栏左缘滑入，宽屏上与主界面对齐 */}
+      <div className="pointer-events-none relative h-full w-full max-w-md">
+        {/* 侧边栏面板：从左侧滑入 */}
         <div
-          className="mx-3 h-px bg-border/60"
-          style={{ marginTop: 'calc(env(safe-area-inset-top) + 1rem)' }}
-        />
-
-        <nav
-          aria-label="历史会话"
-          className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 py-2"
-          // 恢复内容区纵向滚动
-          style={{ touchAction: 'auto' }}
+          className="pointer-events-auto absolute inset-y-0 left-0 flex w-[72vw] max-w-[280px] flex-col border-r border-border/60 bg-card shadow-2xl"
+          style={{
+            transform: visible ? `translateX(${dragX}px)` : 'translateX(-100%)',
+            transition: isDragging ? 'none' : 'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
+            // pan-y:允许垂直滚动 native 行为(鼠标滚轮 / 触摸下滑),
+            // 只禁用横向 native 行为(我们的左滑关闭由 touchMove 接管)
+            touchAction: 'pan-y',
+          }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
-          {pinned.length === 0 && recent.length === 0 ? (
-            <p className="px-4 py-8 text-[13px] text-muted-foreground/80">还没有过对话。</p>
-          ) : (
-            <>
-              {/* 置顶组始终显示,即使为空 — 作为发现性 hint,暗示存在置顶能力 */}
-              <GroupHeader
-                label="置顶"
-                count={pinned.length}
-                expanded={pinnedExpanded}
-                onToggle={togglePinned}
-              />
-              {pinnedExpanded &&
-                (pinned.length > 0 ? (
-                  pinned.map((s) => (
-                    <SessionRow
-                      key={s.id}
-                      session={s}
-                      active={s.id === currentSessionId}
-                      onSelect={goSession}
-                      onOpenMenu={handleOpenMenu}
-                    />
-                  ))
-                ) : (
-                  <p className="px-3 py-2 text-[12px] text-muted-foreground/60">长按对话可置顶</p>
-                ))}
+          <div
+            className="mx-3 h-px bg-border/60"
+            style={{ marginTop: 'calc(env(safe-area-inset-top) + 1rem)' }}
+          />
 
-              {recent.length > 0 && (
-                <>
-                  <GroupHeader
-                    label="最近"
-                    count={recent.length}
-                    expanded={recentExpanded}
-                    onToggle={toggleRecent}
-                  />
-                  {recentExpanded &&
-                    recent.map((s) => (
+          <nav
+            aria-label="历史会话"
+            className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 py-2"
+            // 恢复内容区纵向滚动
+            style={{ touchAction: 'auto' }}
+          >
+            {pinned.length === 0 && recent.length === 0 ? (
+              <p className="px-4 py-8 text-[13px] text-muted-foreground/80">还没有过对话。</p>
+            ) : (
+              <>
+                {/* 置顶组始终显示,即使为空 — 作为发现性 hint,暗示存在置顶能力 */}
+                <GroupHeader
+                  label="置顶"
+                  count={pinned.length}
+                  expanded={pinnedExpanded}
+                  onToggle={togglePinned}
+                />
+                {pinnedExpanded &&
+                  (pinned.length > 0 ? (
+                    pinned.map((s) => (
                       <SessionRow
                         key={s.id}
                         session={s}
@@ -265,12 +250,35 @@ export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
                         onSelect={goSession}
                         onOpenMenu={handleOpenMenu}
                       />
-                    ))}
-                </>
-              )}
-            </>
-          )}
-        </nav>
+                    ))
+                  ) : (
+                    <p className="px-3 py-2 text-[12px] text-muted-foreground/60">长按对话可置顶</p>
+                  ))}
+
+                {recent.length > 0 && (
+                  <>
+                    <GroupHeader
+                      label="最近"
+                      count={recent.length}
+                      expanded={recentExpanded}
+                      onToggle={toggleRecent}
+                    />
+                    {recentExpanded &&
+                      recent.map((s) => (
+                        <SessionRow
+                          key={s.id}
+                          session={s}
+                          active={s.id === currentSessionId}
+                          onSelect={goSession}
+                          onOpenMenu={handleOpenMenu}
+                        />
+                      ))}
+                  </>
+                )}
+              </>
+            )}
+          </nav>
+        </div>
       </div>
 
       <SessionRowMenu

@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Search, Sparkles, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 import { useCharactersQuery } from '@/lib/api/characters';
+import { useOpenSessionForCharacter } from '@/lib/api/chat';
 
 import { CharacterCard } from './character-card';
-import { CharacterDetailSheet } from './character-detail-sheet';
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -31,8 +32,9 @@ function scoreMatch(
 }
 
 export function CharacterGallery() {
+  const router = useRouter();
   const { data, isLoading, isError } = useCharactersQuery();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const openSession = useOpenSessionForCharacter();
   const [query, setQuery] = useState('');
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
@@ -45,6 +47,18 @@ export function CharacterGallery() {
       .sort((a, b) => b.s - a.s)
       .map(({ c }) => c);
   }, [characters, query]);
+
+  // 点击卡片主体 → 直接开 session 进 chat
+  const handleStartChat = useCallback(
+    (id: string) => {
+      if (openSession.isPending) return;
+      openSession.mutate(
+        { character_id: id },
+        { onSuccess: ({ session_id }) => router.push(`/chat/${session_id}`) }
+      );
+    },
+    [openSession, router]
+  );
 
   // 搜索框单独抽出,在 loading / 空态下也保持挂载,避免输入时焦点跳掉
   const searchBar = (
@@ -143,11 +157,10 @@ export function CharacterGallery() {
       ) : (
         <div className="grid grid-cols-2 gap-3 px-4 pb-10 pt-2">
           {filtered.map((c) => (
-            <CharacterCard key={c.id} character={c} onSelect={setSelectedId} />
+            <CharacterCard key={c.id} character={c} onStartChat={handleStartChat} />
           ))}
         </div>
       )}
-      <CharacterDetailSheet characterId={selectedId} onClose={() => setSelectedId(null)} />
     </>
   );
 }

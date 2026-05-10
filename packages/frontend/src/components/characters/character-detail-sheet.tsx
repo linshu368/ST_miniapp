@@ -8,6 +8,7 @@ import { Hash, PenLine, Quote, X } from 'lucide-react';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useOpenSessionForCharacter } from '@/lib/api/chat';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
+import { CharacterAvatar } from './character-avatar';
 
 // ─── 手势常量 ────────────────────────────────────────────────
 const DISMISS_THRESHOLD_Y = 80; // 下滑超过 80px 即关闭

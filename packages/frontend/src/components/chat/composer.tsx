@@ -7,7 +7,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 
 import { cn } from '@/lib/utils';
 
-// 送出的消息只要非空即可（trim 后），不做更多校验——克制
 const schema = z.object({
   content: z.string().trim().min(1, '说点什么'),
 });
@@ -17,11 +16,18 @@ type FormValues = z.infer<typeof schema>;
 interface ComposerProps {
   onSend: (content: string) => void;
   disabled?: boolean;
-  /** 她正在打字时，输入框给一个轻微气息提示 */
   isAssistantTyping?: boolean;
+  variant?: 'default' | 'noir';
 }
 
-export function Composer({ onSend, disabled, isAssistantTyping }: ComposerProps) {
+export function Composer({
+  onSend,
+  disabled,
+  isAssistantTyping,
+  variant = 'default',
+}: ComposerProps) {
+  const isNoir = variant === 'noir';
+
   const {
     register,
     handleSubmit,
@@ -37,7 +43,6 @@ export function Composer({ onSend, disabled, isAssistantTyping }: ComposerProps)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { ref: rhfRef, ...contentProps } = register('content');
 
-  // 自适应高度：最大 5 行左右
   const content = watch('content');
   useEffect(() => {
     const el = textareaRef.current;
@@ -53,7 +58,6 @@ export function Composer({ onSend, disabled, isAssistantTyping }: ComposerProps)
   });
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter 发送，Shift+Enter 换行
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void submit();
@@ -61,6 +65,68 @@ export function Composer({ onSend, disabled, isAssistantTyping }: ComposerProps)
   };
 
   const canSend = isValid && !disabled;
+
+  if (isNoir) {
+    return (
+      <form
+        onSubmit={submit}
+        className="flex items-center gap-2 border-t border-[rgba(255,255,255,0.08)] bg-[rgba(11,13,17,0.85)] px-3 pb-[calc(30px+env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-[12px]"
+      >
+        <div className="flex min-h-[38px] flex-1 items-center rounded-[19px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 py-1">
+          <textarea
+            {...contentProps}
+            ref={(el) => {
+              rhfRef(el);
+              textareaRef.current = el;
+            }}
+            rows={1}
+            onKeyDown={onKeyDown}
+            placeholder="……"
+            className={cn(
+              'min-h-[38px] flex-1 resize-none bg-transparent py-2 text-[12.5px] leading-normal',
+              'text-[rgba(242,243,245,0.55)] placeholder:text-[rgba(242,243,245,0.28)]',
+              'focus:outline-none'
+            )}
+            aria-label="输入消息"
+          />
+          {isAssistantTyping && (
+            <span
+              className="mb-0.5 inline-block h-1.5 w-1.5 shrink-0 animate-breath rounded-full bg-[rgba(242,243,245,0.45)]"
+              aria-label="她正在打字"
+            />
+          )}
+        </div>
+
+        <button
+          type="submit"
+          disabled={!canSend}
+          aria-label="发送"
+          aria-disabled={!canSend}
+          className={cn(
+            'grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full transition-all duration-200',
+            /* 避免浏览器对 disabled 按钮的默认 opacity 与我们的样式叠乘成「全黑」 */
+            'disabled:cursor-not-allowed disabled:opacity-100',
+            canSend && 'active:scale-[0.97]'
+          )}
+          style={
+            canSend
+              ? {
+                  background: '#FFFFFF',
+                  boxShadow: '0 0 20px -6px #FFFFFF',
+                  border: 'none',
+                }
+              : {
+                  background: 'rgba(255,255,255,0.12)',
+                  border: '1px solid rgba(255,255,255,0.22)',
+                  boxShadow: 'none',
+                }
+          }
+        >
+          <SendIcon className={canSend ? 'text-[#0B0D11]' : 'text-[rgba(242,243,245,0.5)]'} />
+        </button>
+      </form>
+    );
+  }
 
   return (
     <form
@@ -118,7 +184,7 @@ export function Composer({ onSend, disabled, isAssistantTyping }: ComposerProps)
   );
 }
 
-function SendIcon() {
+function SendIcon({ className }: { className?: string }) {
   return (
     <svg
       width="16"
@@ -126,6 +192,7 @@ function SendIcon() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
+      className={className}
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
