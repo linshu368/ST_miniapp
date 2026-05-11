@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:macros": "tsc --noEmit -p src/prompt-engine/macros/tsconfig.json",
     "typecheck:instruct": "tsc --noEmit -p src/prompt-engine/instruct/tsconfig.json",
+    "typecheck:wi": "tsc --noEmit -p src/prompt-engine/world-info/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "macros:baseline": "tsx scripts/run-miniapp-baseline.mjs",
