@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import { cn } from '@/lib/utils';
+import { GridMenu } from './grid-menu';
 
 const schema = z.object({
   content: z.string().trim().min(1, '说点什么'),
@@ -18,7 +19,7 @@ interface ComposerProps {
   disabled?: boolean;
   isAssistantTyping?: boolean;
   variant?: 'default' | 'noir';
-  /** noir 模式下显示在 placeholder 里的角色名，如 "Nico" */
+  /** noir 模式下传给左侧菜单等；输入框占位保持空白 */
   charName?: string;
   /** noir 模式下替换左侧按钮的插槽，默认隐藏 */
   leftSlot?: ReactNode;
@@ -34,7 +35,8 @@ export function Composer({
 }: ComposerProps) {
   const isNoir = variant === 'noir';
 
-  const noirPlaceholder = charName ? `消息 ${charName}` : '';
+  const noirPlaceholder = '';
+  const defaultPlaceholder = '……';
 
   const {
     register,
@@ -78,19 +80,11 @@ export function Composer({
     return (
       <form
         onSubmit={submit}
-        className="flex items-center gap-2 border-t border-[rgba(255,255,255,0.08)] bg-[rgba(11,13,17,0.85)] px-3 pb-[calc(30px+env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-[12px]"
+        className="flex w-full min-w-0 shrink-0 items-center gap-2 border-t border-white/8 bg-transparent px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
       >
-        {leftSlot ?? (
-          <button
-            type="button"
-            aria-label="菜单"
-            className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[14px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.08)] backdrop-blur-sm"
-          >
-            <GridIcon />
-          </button>
-        )}
+        {leftSlot ?? <GridMenu charName={charName} />}
 
-        <div className="flex min-h-[38px] flex-1 items-center rounded-[19px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 py-1">
+        <div className="flex min-h-[40px] min-w-0 flex-1 items-center rounded-2xl border border-white/10 bg-[#1e2330] px-3 py-2.5">
           <textarea
             {...contentProps}
             ref={(el) => {
@@ -101,15 +95,15 @@ export function Composer({
             onKeyDown={onKeyDown}
             placeholder={noirPlaceholder}
             className={cn(
-              'min-h-[38px] flex-1 resize-none bg-transparent py-2 text-[12.5px] leading-normal',
-              'text-[rgba(242,243,245,0.55)] placeholder:text-[rgba(242,243,245,0.28)]',
+              'min-h-[24px] flex-1 resize-none bg-transparent text-sm font-normal leading-normal',
+              'text-white/90 placeholder:text-white/35',
               'focus:outline-none'
             )}
             aria-label="输入消息"
           />
           {isAssistantTyping && (
             <span
-              className="mb-0.5 inline-block h-1.5 w-1.5 shrink-0 animate-breath rounded-full bg-[rgba(242,243,245,0.45)]"
+              className="mb-0.5 inline-block h-1.5 w-1.5 shrink-0 animate-breath rounded-full bg-[#8a9bb0]/55"
               aria-label="她正在打字"
             />
           )}
@@ -121,26 +115,13 @@ export function Composer({
           aria-label="发送"
           aria-disabled={!canSend}
           className={cn(
-            'grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full transition-all duration-200',
-            /* 避免浏览器对 disabled 按钮的默认 opacity 与我们的样式叠乘成「全黑」 */
-            'disabled:cursor-not-allowed disabled:opacity-100',
-            canSend && 'active:scale-[0.97]'
-          )}
-          style={
+            'flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center bg-transparent p-2 transition-colors duration-200',
             canSend
-              ? {
-                  background: '#FFFFFF',
-                  boxShadow: '0 0 20px -6px #FFFFFF',
-                  border: 'none',
-                }
-              : {
-                  background: 'rgba(255,255,255,0.12)',
-                  border: '1px solid rgba(255,255,255,0.22)',
-                  boxShadow: 'none',
-                }
-          }
+              ? 'text-white hover:text-white/80 active:scale-[0.96]'
+              : 'cursor-not-allowed text-[#8a9bb0]'
+          )}
         >
-          <SendIcon className={canSend ? 'text-[#0B0D11]' : 'text-[rgba(242,243,245,0.5)]'} />
+          <SendIconFilled className="h-[22px] w-[22px] -rotate-[32deg]" />
         </button>
       </form>
     );
@@ -149,9 +130,9 @@ export function Composer({
   return (
     <form
       onSubmit={submit}
-      className="flex items-end gap-2 bg-background/80 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_32px_-20px_rgba(0,0,0,0.6)] backdrop-blur-md"
+      className="flex w-full min-w-0 shrink-0 items-end gap-2 bg-background/80 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_32px_-20px_rgba(0,0,0,0.6)] backdrop-blur-md"
     >
-      <div className="flex flex-1 items-end gap-1.5 rounded-[22px] bg-secondary/50 px-3 py-1.5 ring-1 ring-inset ring-border/40 transition-colors focus-within:ring-[hsl(var(--char-hue,var(--primary))_/_0.35)]">
+      <div className="flex min-w-0 flex-1 items-end gap-1.5 rounded-[22px] bg-secondary/50 px-3 py-1.5 ring-1 ring-inset ring-border/40 transition-colors focus-within:ring-[hsl(var(--char-hue,var(--primary))_/_0.35)]">
         <textarea
           {...contentProps}
           ref={(el) => {
@@ -160,10 +141,10 @@ export function Composer({
           }}
           rows={1}
           onKeyDown={onKeyDown}
-          placeholder={noirPlaceholder}
+          placeholder={defaultPlaceholder}
           className={cn(
-            'flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-relaxed',
-            'text-foreground placeholder:text-muted-foreground/50',
+            'flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed',
+            'text-foreground placeholder:text-muted-foreground/60',
             'focus:outline-none'
           )}
           aria-label="输入消息"
@@ -202,16 +183,22 @@ export function Composer({
   );
 }
 
+function SendIconFilled({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={cn(className)} aria-hidden="true">
+      <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+    </svg>
+  );
+}
+
 function SendIcon({ className }: { className?: string }) {
   return (
     <svg
-      width="16"
-      height="16"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      className={className}
-      strokeWidth="2"
+      className={cn('h-5 w-5', className)}
+      strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

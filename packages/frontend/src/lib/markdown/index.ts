@@ -12,29 +12,68 @@ export interface FormatMessageOptions extends MacroContext {
   text: string;
 }
 
+/** 宏已替换后的片段 → HTML（供对白/旁白分段复用） */
+function runMarkdownPipeline(mes: string): string {
+  let m = mes;
+  m = wrapQuotes(m);
+
+  m = m.replaceAll('\\begin{align*}', '$$');
+  m = m.replaceAll('\\end{align*}', '$$');
+
+  m = getConverter().makeHtml(m);
+
+  m = m.replace(/<code(.*?)>[\s\S]*?<\/code>/g, (block) => block.replace(/\n/gm, '\u0000'));
+  m = m.replace(/\u0000/g, '\n');
+  m = m.trim();
+
+  m = m.replace(/<code(.*?)>[\s\S]*?<\/code>/g, (block) => block.replace(/&amp;/g, '&'));
+
+  m = encodeStyleTags(m);
+  m = sanitizeHtml(m);
+  m = decodeStyleTags(m, { prefix: '.mes-text ' });
+
+  return m;
+}
+
 export function formatMessageContent(opts: FormatMessageOptions): string {
   let mes = opts.text;
   if (!mes) return '';
 
   mes = substituteMacros(mes, { charName: opts.charName, userName: opts.userName });
-  mes = wrapQuotes(mes);
+  return runMarkdownPipeline(mes);
+}
 
-  // 数学公式占位(KaTeX 未启用,但保留 ST 的 \begin{align*} → $$ 兼容)
-  mes = mes.replaceAll('\\begin{align*}', '$$');
-  mes = mes.replaceAll('\\end{align*}', '$$');
+/**
+ * 聊天 noir：按半角括号 (...) 切旁白（弱 + 斜体）与对白（亮）。
+ * 只做最外层非贪婪匹配；不配对的括号按普通正文。
+ */
+export function formatMessageContentNoirAssistant(opts: FormatMessageOptions): string {
+  let mes = opts.text;
+  if (!mes) return '';
 
-  mes = getConverter().makeHtml(mes);
+  mes = substituteMacros(mes, { charName: opts.charName, userName: opts.userName });
 
-  // 代码块内换行保护(showdown 会把 <br> 注入,Firefox 在代码块中渲染为双换行)
-  mes = mes.replace(/<code(.*?)>[\s\S]*?<\/code>/g, (m) => m.replace(/\n/gm, '\u0000'));
-  mes = mes.replace(/\u0000/g, '\n');
-  mes = mes.trim();
+  const re = /\(([\s\S]*?)\)/g;
+  const parts: string[] = [];
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
 
-  mes = mes.replace(/<code(.*?)>[\s\S]*?<\/code>/g, (m) => m.replace(/&amp;/g, '&'));
+  while ((m = re.exec(mes)) !== null) {
+    if (m.index > lastIndex) {
+      const chunk = mes.slice(lastIndex, m.index);
+      parts.push(`<span class="mes-dialogue">${runMarkdownPipeline(chunk)}</span>`);
+    }
+    parts.push(`<span class="mes-narr">${runMarkdownPipeline(m[1] ?? '')}</span>`);
+    lastIndex = m.index + m[0].length;
+  }
 
-  mes = encodeStyleTags(mes);
-  mes = sanitizeHtml(mes);
-  mes = decodeStyleTags(mes, { prefix: '.mes-text ' });
+  if (lastIndex === 0 && parts.length === 0) {
+    return `<span class="mes-dialogue">${runMarkdownPipeline(mes)}</span>`;
+  }
 
-  return mes;
+  if (lastIndex < mes.length) {
+    parts.push(`<span class="mes-dialogue">${runMarkdownPipeline(mes.slice(lastIndex))}</span>`);
+  }
+
+  return parts.join('');
 }

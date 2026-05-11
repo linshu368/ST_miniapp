@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { Home, MoreHorizontal } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -9,13 +10,13 @@ import { useUIStore } from '@/stores/ui-store';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram/hooks';
 
+import { hueShiftFromId } from '@/lib/utils/character-hue';
+
 import { ChatCharacterProfile } from '@/components/chat/chat-character-profile';
 import { ChatSidebar } from '@/components/chat/chat-sidebar';
 import { Composer } from '@/components/chat/composer';
 import { GridMenu } from '@/components/chat/grid-menu';
 import { MessageList } from '@/components/chat/message-list';
-
-const NOIR_BG = 'radial-gradient(120% 60% at 50% 0%, #16191F 0%, #0B0D11 55%)';
 
 export default function ChatPage() {
   const params = useParams<{ sessionId: string }>();
@@ -40,6 +41,14 @@ export default function ChatPage() {
   useTelegramBackButton(onBack);
 
   const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
+
+  const hueVar = useMemo(
+    () =>
+      ({
+        '--char-hue': character?.id ? hueShiftFromId(character.id) : 12,
+      }) as CSSProperties,
+    [character?.id]
+  );
   const lastAssistantIdRef = useRef<string | null>(null);
   const hasInitRef = useRef(false);
   useEffect(() => {
@@ -97,40 +106,29 @@ export default function ChatPage() {
 
   return (
     <main
-      className="chat-noir mx-auto flex h-[100dvh] w-full max-w-md flex-col font-sans text-[#F2F3F5]"
-      style={{ background: NOIR_BG }}
+      className="chat-noir mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden font-sans text-foreground"
+      style={{
+        ...hueVar,
+        background: 'radial-gradient(ellipse at 50% 30%, #1e2a3a 0%, #0d0f14 70%)',
+      }}
       onTouchStart={handleEdgeTouchStart}
       onTouchEnd={handleEdgeTouchEnd}
     >
-      <header className="grid w-full shrink-0 grid-cols-[40px_1fr_40px] items-center px-6 pb-5 pt-[calc(env(safe-area-inset-top)+20px)]">
+      <header className="grid w-full shrink-0 grid-cols-[40px_1fr_40px] items-center border-b border-white/8 bg-black/20 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={toggleSidebar}
           aria-label="打开历史会话"
-          className="flex h-10 w-10 items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0B0D11]"
+          className="flex h-10 w-10 items-center justify-center text-[#8a9bb0] outline-none transition-colors hover:text-white/70 focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-0"
         >
-          <span className="flex flex-col gap-1" aria-hidden>
-            <span className="h-1 w-1 rounded-full bg-[rgba(242,243,245,0.32)]" />
-            <span className="h-1 w-1 rounded-full bg-[rgba(242,243,245,0.32)]" />
-            <span className="h-1 w-1 rounded-full bg-[rgba(242,243,245,0.32)]" />
-          </span>
+          <MoreHorizontal className="h-5 w-5" strokeWidth={1.5} aria-hidden />
         </button>
 
         <div className="flex min-h-[40px] min-w-0 items-center justify-center px-1 text-center">
           {isTyping ? (
-            <p
-              className="truncate font-light text-[14px] text-[rgba(242,243,245,0.4)]"
-              style={{ letterSpacing: '2px' }}
-            >
-              正在回你
-            </p>
+            <h1 className="truncate text-sm font-semibold tracking-wider text-white">正在回你</h1>
           ) : (
-            <p
-              className="font-light text-[14px] text-[rgba(242,243,245,0.4)]"
-              style={{ letterSpacing: '2px' }}
-            >
-              在。
-            </p>
+            <h1 className="text-sm font-semibold tracking-wider text-white">在。</h1>
           )}
         </div>
 
@@ -138,27 +136,23 @@ export default function ChatPage() {
           type="button"
           onClick={onBack}
           aria-label="返回角色列表"
-          className="flex h-10 w-10 items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0B0D11]"
+          className="flex h-10 w-10 items-center justify-center text-[#8a9bb0] outline-none transition-colors hover:text-white/70 focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-0"
         >
-          <span className="flex h-5 w-5 items-center justify-center rounded-[4px] border-[1.3px] border-[rgba(242,243,245,0.3)] text-[rgba(242,243,245,0.85)]">
-            <HomeIcon />
-          </span>
+          <Home className="h-5 w-5" strokeWidth={1.5} aria-hidden />
         </button>
       </header>
 
       <section className="min-h-0 flex-1 overflow-y-auto">
         {sessionQ.isLoading && messages.length === 0 ? (
-          <div className="px-4 py-10">
+          <div className="px-6 py-10">
             <div className="mx-auto flex w-24 items-center justify-center gap-1.5 py-4">
-              <span className="h-1.5 w-1.5 animate-breath rounded-full bg-[rgba(242,243,245,0.35)] [animation-delay:-0.32s]" />
-              <span className="h-1.5 w-1.5 animate-breath rounded-full bg-[rgba(242,243,245,0.35)] [animation-delay:-0.16s]" />
-              <span className="h-1.5 w-1.5 animate-breath rounded-full bg-[rgba(242,243,245,0.35)]" />
+              <span className="h-1.5 w-1.5 animate-breath rounded-full bg-muted-foreground/35 [animation-delay:-0.32s]" />
+              <span className="h-1.5 w-1.5 animate-breath rounded-full bg-muted-foreground/35 [animation-delay:-0.16s]" />
+              <span className="h-1.5 w-1.5 animate-breath rounded-full bg-muted-foreground/35" />
             </div>
           </div>
         ) : sessionQ.isError ? (
-          <p className="px-4 py-10 text-center text-[13px] text-[rgba(242,243,245,0.55)]">
-            她那边好像断线了。
-          </p>
+          <p className="px-6 py-10 text-center text-sm text-muted-foreground">她那边好像断线了。</p>
         ) : (
           <>
             <ChatCharacterProfile
@@ -178,35 +172,18 @@ export default function ChatPage() {
         )}
       </section>
 
-      <Composer
-        onSend={handleSend}
-        disabled={!session || sendMessage.isPending || isTyping}
-        isAssistantTyping={isTyping}
-        variant="noir"
-        charName={character?.name}
-        leftSlot={<GridMenu charName={character?.name} />}
-      />
+      <div className="w-full shrink-0">
+        <Composer
+          onSend={handleSend}
+          disabled={!session || sendMessage.isPending || isTyping}
+          isAssistantTyping={isTyping}
+          variant="noir"
+          charName={character?.name}
+          leftSlot={<GridMenu charName={character?.name} />}
+        />
+      </div>
 
       <ChatSidebar currentSessionId={sessionId} />
     </main>
-  );
-}
-
-function HomeIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3 11l9-8 9 8" />
-      <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" />
-    </svg>
   );
 }

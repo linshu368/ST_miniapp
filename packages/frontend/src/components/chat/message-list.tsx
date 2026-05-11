@@ -28,12 +28,11 @@ export function MessageList({
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // 新消息或她开始打字时滚到底
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length, isTyping]);
 
   return (
-    <div className="flex flex-col gap-4 px-4 pb-5 pt-3">
+    <div className="flex flex-col space-y-6 px-6 py-4">
       {messages.map((m) => (
         <MessageBubble
           key={m.id}
