@@ -1,0 +1,2426 @@
+{
+  "schemaVersion": "1.0",
+  "runMeta": {
+    "runAt": "2026-05-08T08:32:27.563Z",
+    "engine": "miniapp",
+    "stVersion": "@miniapp/backend@0.0.1",
+    "userAgent": "Node.js v22.20.0",
+    "notes": "Step 1.8 candidate: miniAPP-ported instruct.ts façade over instruct-mode.js cut-line port",
+    "stepName": "instruct"
+  },
+  "results": [
+    {
+      "caseId": "instruct-001-chat-user-basic",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "",
+          "output_suffix": "</s>",
+          "system_sequence": "<<SYS>>\n",
+          "system_suffix": "\n<</SYS>>\n\n",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Llama2",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Bob",
+          "mes": "Hello",
+          "isUser": true,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "[INST] \nHello [/INST]",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "[INST] \nHello [/INST]",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-002-chat-narrator",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "",
+          "output_suffix": "</s>",
+          "system_sequence": "<<SYS>>\n",
+          "system_suffix": "\n<</SYS>>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Llama2",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "System",
+          "mes": "It is a dark and stormy night.",
+          "isUser": false,
+          "isNarrator": true,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "<<SYS>>\n\nIt is a dark and stormy night.\n<</SYS>>",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<<SYS>>\n\nIt is a dark and stormy night.\n<</SYS>>",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-003-chat-force-first-output",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "<|im_start|>user\n",
+          "input_suffix": "<|im_end|>",
+          "output_sequence": "<|im_start|>assistant\n",
+          "output_suffix": "<|im_end|>",
+          "system_sequence": "<|im_start|>system\n",
+          "system_suffix": "<|im_end|>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "<|im_start|>assistant_first\n",
+          "last_output_sequence": "<|im_start|>assistant_last\n",
+          "stop_sequence": "<|im_end|>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "ChatML",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "mes": "Greetings, traveler.",
+          "isUser": false,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": 1
+        }
+      },
+      "output": {
+        "text": "<|im_start|>assistant_first\n\nGreetings, traveler.<|im_end|>",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|im_start|>assistant_first\n\nGreetings, traveler.<|im_end|>",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-004-chat-names-always",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "<|user|>\n",
+          "input_suffix": "</s>\n",
+          "output_sequence": "<|assistant|>\n",
+          "output_suffix": "</s>\n",
+          "system_sequence": "<|system|>\n",
+          "system_suffix": "</s>\n",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Pythia",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Bob",
+          "mes": "How are you doing today?",
+          "isUser": true,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "<|user|>\n\nBob: How are you doing today?</s>\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|user|>\n\nBob: How are you doing today?</s>\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-005-chat-macro-substitution",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": false,
+          "macro": true,
+          "names_behavior": "none",
+          "input_sequence": "<|{{user}}/{{name}}|> ",
+          "input_suffix": " <|/{{user}}|>",
+          "output_sequence": "<|{{char}}|> ",
+          "output_suffix": " <|/{{char}}|>",
+          "system_sequence": "<|sys|> ",
+          "system_suffix": " <|/sys|>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Custom-macro",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "宋砚",
+          "name2": "Lyra",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "宋砚",
+          "mes": "你好",
+          "isUser": true,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "<|宋砚/宋砚|> 你好 <|/宋砚|>",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|宋砚/宋砚|> 你好 <|/宋砚|>",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-006-story-in-prompt",
+      "target": "formatInstructStoryString",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "",
+          "output_suffix": "</s>",
+          "system_sequence": "<<SYS>>\n",
+          "system_suffix": "\n<</SYS>>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "<|{{name}}-story-begin|>",
+          "story_string_suffix": "<|story-end|>",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Llama2-with-story",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "storyString": "Alice is a curious researcher.\nShe lives in a forest cabin."
+        }
+      },
+      "output": {
+        "text": "<|System-story-begin|>\nAlice is a curious researcher.\nShe lives in a forest cabin.<|story-end|>",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|System-story-begin|>\nAlice is a curious researcher.\nShe lives in a forest cabin.<|story-end|>",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-007-story-in-chat",
+      "target": "formatInstructStoryString",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "",
+          "output_suffix": "</s>",
+          "system_sequence": "<<SYS>>\n",
+          "system_suffix": "\n<</SYS>>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "<|story-begin|>",
+          "story_string_suffix": "<|story-end|>",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Llama2-in-chat",
+          "story_string_position": 1,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "storyString": "Alice is a curious researcher.\nShe lives in a forest cabin."
+        }
+      },
+      "output": {
+        "text": "Alice is a curious researcher.\nShe lives in a forest cabin.",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "Alice is a curious researcher.\nShe lives in a forest cabin.",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-008-examples-skip",
+      "target": "formatInstructExamples",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "",
+          "output_suffix": "</s>",
+          "system_sequence": "<<SYS>>\n",
+          "system_suffix": "\n<</SYS>>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": true
+        },
+        "context": {
+          "preset": "Llama2-skip",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "***",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "mesExamplesArray": [
+            "<START>\nBob: Hi Alice.\nAlice: Hello Bob, how are you?",
+            "<START>\nBob: What is the weather?\nAlice: It is sunny."
+          ]
+        }
+      },
+      "output": {
+        "text": "",
+        "meta": {
+          "outputType": "string[]",
+          "outputValue": [
+            "***\nBob: Hi Alice.\nAlice: Hello Bob, how are you?",
+            "***\nBob: What is the weather?\nAlice: It is sunny."
+          ],
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-009-examples-formatted",
+      "target": "formatInstructExamples",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "force",
+          "input_sequence": "<|user|>\n",
+          "input_suffix": "</s>",
+          "output_sequence": "<|assistant|>\n",
+          "output_suffix": "</s>",
+          "system_sequence": "<|system|>\n",
+          "system_suffix": "</s>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Pythia-examples",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "[[Examples]]",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "mesExamplesArray": [
+            "<START>\nBob: Hi Alice.\nAlice: Hello Bob, how are you?\nBob: I am well.\nAlice: Glad to hear it!"
+          ]
+        }
+      },
+      "output": {
+        "text": "",
+        "meta": {
+          "outputType": "string[]",
+          "outputValue": [
+            "[[Examples]]\n",
+            "<|user|>\n\nBob: Hi Alice.</s>",
+            "<|assistant|>\n\nHello Bob, how are you?</s>",
+            "<|user|>\n\nBob: I am well.</s>",
+            "<|assistant|>\n\nGlad to hear it!</s>"
+          ],
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-010-examples-empty-block-fallback",
+      "target": "formatInstructExamples",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "",
+          "output_suffix": "</s>",
+          "system_sequence": "<<SYS>>\n",
+          "system_suffix": "\n<</SYS>>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Llama2-fallback",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "<<EX>>",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "mesExamplesArray": [
+            "<START>\nThis is a stray narration line that nobody starts with Bob: or Alice:."
+          ]
+        }
+      },
+      "output": {
+        "text": "",
+        "meta": {
+          "outputType": "string[]",
+          "outputValue": [
+            "<<EX>>\nThis is a stray narration line that nobody starts with Bob: or Alice:."
+          ],
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-011-prompt-impersonate",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "<|user|>\n",
+          "input_suffix": "</s>",
+          "output_sequence": "<|assistant|>\n",
+          "output_suffix": "</s>",
+          "system_sequence": "<|system|>\n",
+          "system_suffix": "</s>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Pythia-impersonate",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Bob",
+          "isImpersonate": true,
+          "promptBias": "",
+          "isQuiet": false,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "\n<|user|>\n\nBob:",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "\n<|user|>\n\nBob:",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-012-prompt-quiet",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "<|user|>\n",
+          "input_suffix": "</s>",
+          "output_sequence": "<|assistant|>\n",
+          "output_suffix": "</s>",
+          "system_sequence": "<|system|>\n",
+          "system_suffix": "</s>",
+          "last_system_sequence": "<|quiet-sys|>\n",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Pythia-quiet",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "",
+          "isQuiet": true,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "<|quiet-sys|>\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|quiet-sys|>\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-013-prompt-quiet-to-loud",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "<|user|>\n",
+          "input_suffix": "</s>",
+          "output_sequence": "<|assistant|>\n",
+          "output_suffix": "</s>",
+          "system_sequence": "<|system|>\n",
+          "system_suffix": "</s>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "<|assistant-final|>\n",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Pythia-quiet-loud",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "",
+          "isQuiet": true,
+          "isQuietToLoud": true
+        }
+      },
+      "output": {
+        "text": "<|assistant-final|>\n\nAlice:",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|assistant-final|>\n\nAlice:",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-014-prompt-mistral-name-filler",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": false,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "[OUT] ",
+          "output_suffix": "</s>",
+          "system_sequence": "[SYS] ",
+          "system_suffix": "</s>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "[LAST_OUT]",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Mistral-style",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "",
+          "isQuiet": false,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "[LAST_OUT] Alice:",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "[LAST_OUT] Alice:",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-015-prompt-with-bias",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "[OUT] ",
+          "output_suffix": "</s>",
+          "system_sequence": "[SYS] ",
+          "system_suffix": "</s>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Llama2-bias",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "   \nbe enthusiastic",
+          "isQuiet": false,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "\n[OUT] \nbe enthusiastic\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "\n[OUT] \nbe enthusiastic\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-016-system-prompt-identity",
+      "target": "formatInstructSystemPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "",
+          "output_suffix": "</s>",
+          "system_sequence": "<<SYS>>\n",
+          "system_suffix": "\n<</SYS>>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "</s>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Llama2",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": true,
+          "content": "You are a helpful AI."
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "systemPrompt": "You are a helpful AI.\nFollow these rules: 1) ... 2) ..."
+        }
+      },
+      "output": {
+        "text": "You are a helpful AI.\nFollow these rules: 1) ... 2) ...",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "You are a helpful AI.\nFollow these rules: 1) ... 2) ...",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-017-stop-disabled",
+      "target": "getInstructStoppingSequences",
+      "input": {
+        "instruct": {
+          "enabled": false,
+          "wrap": false,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "",
+          "input_suffix": "",
+          "output_sequence": "",
+          "output_suffix": "",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "blank",
+          "story_string_position": 0,
+          "chat_start": "<<START>>",
+          "example_separator": "***",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "useStopStrings": false
+        }
+      },
+      "output": {
+        "text": "",
+        "meta": {
+          "outputType": "string[]",
+          "outputValue": [],
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-018-stop-enabled-with-context",
+      "target": "getInstructStoppingSequences",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": true,
+          "names_behavior": "always",
+          "input_sequence": "<|user-{{name}}|>\n",
+          "input_suffix": "</s>",
+          "output_sequence": "<|asst-{{name}}|>\n",
+          "output_suffix": "</s>",
+          "system_sequence": "<|sys-{{name}}|>\n",
+          "system_suffix": "</s>",
+          "last_system_sequence": "<|last-sys-{{name}}|>\n",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "<|first-asst|>\n",
+          "last_output_sequence": "<|last-asst|>\n",
+          "stop_sequence": "<|EOM|>",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Stops-all-on",
+          "story_string_position": 0,
+          "chat_start": "<<CHAT-START>>",
+          "example_separator": "<<EX-SEP>>",
+          "use_stop_strings": true
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "useStopStrings": null
+        }
+      },
+      "output": {
+        "text": "",
+        "meta": {
+          "outputType": "string[]",
+          "outputValue": [
+            "\n<|EOM|>",
+            "\n<|user-Bob|>",
+            "\n<|asst-Alice|>",
+            "\n<|first-asst|>",
+            "\n<|last-asst|>",
+            "\n<|sys-System|>",
+            "\n<|last-sys-System|>",
+            "\n<<CHAT-START>>",
+            "\n<<EX-SEP>>"
+          ],
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-019-macros-all",
+      "target": "getInstructMacros",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": false,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "INPUT_SEQ",
+          "input_suffix": "INPUT_SFX",
+          "output_sequence": "OUTPUT_SEQ",
+          "output_suffix": "OUTPUT_SFX",
+          "system_sequence": "SYSTEM_SEQ",
+          "system_suffix": "SYSTEM_SFX",
+          "last_system_sequence": "LAST_SYS_SEQ",
+          "first_input_sequence": "FIRST_INPUT_SEQ",
+          "last_input_sequence": "LAST_INPUT_SEQ",
+          "first_output_sequence": "FIRST_OUTPUT_SEQ",
+          "last_output_sequence": "LAST_OUTPUT_SEQ",
+          "stop_sequence": "STOP_SEQ",
+          "story_string_prefix": "STORY_PREFIX",
+          "story_string_suffix": "STORY_SUFFIX",
+          "user_alignment_message": "USER_ALIGN_MSG",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "Macros-full",
+          "story_string_position": 0,
+          "chat_start": "CHAT_START_VAL",
+          "example_separator": "EX_SEP_VAL",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": true,
+          "content": "DEFAULT_SYSPROMPT_CONTENT"
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "preferCharacterPrompt": true,
+          "charPrompt": "CHAR_PROMPT_VAL"
+        }
+      },
+      "output": {
+        "text": "",
+        "meta": {
+          "outputType": "macro-array",
+          "outputValue": [
+            {
+              "regexSource": "{{(instructStoryStringPrefix)}}",
+              "regexFlags": "gi",
+              "replacement": "STORY_PREFIX"
+            },
+            {
+              "regexSource": "{{(instructStoryStringSuffix)}}",
+              "regexFlags": "gi",
+              "replacement": "STORY_SUFFIX"
+            },
+            {
+              "regexSource": "{{(instructInput|instructUserPrefix)}}",
+              "regexFlags": "gi",
+              "replacement": "INPUT_SEQ"
+            },
+            {
+              "regexSource": "{{(instructUserSuffix)}}",
+              "regexFlags": "gi",
+              "replacement": "INPUT_SFX"
+            },
+            {
+              "regexSource": "{{(instructOutput|instructAssistantPrefix)}}",
+              "regexFlags": "gi",
+              "replacement": "OUTPUT_SEQ"
+            },
+            {
+              "regexSource": "{{(instructSeparator|instructAssistantSuffix)}}",
+              "regexFlags": "gi",
+              "replacement": "OUTPUT_SFX"
+            },
+            {
+              "regexSource": "{{(instructSystemPrefix)}}",
+              "regexFlags": "gi",
+              "replacement": "SYSTEM_SEQ"
+            },
+            {
+              "regexSource": "{{(instructSystemSuffix)}}",
+              "regexFlags": "gi",
+              "replacement": "SYSTEM_SFX"
+            },
+            {
+              "regexSource": "{{(instructFirstOutput|instructFirstAssistantPrefix)}}",
+              "regexFlags": "gi",
+              "replacement": "FIRST_OUTPUT_SEQ"
+            },
+            {
+              "regexSource": "{{(instructLastOutput|instructLastAssistantPrefix)}}",
+              "regexFlags": "gi",
+              "replacement": "LAST_OUTPUT_SEQ"
+            },
+            {
+              "regexSource": "{{(instructStop)}}",
+              "regexFlags": "gi",
+              "replacement": "STOP_SEQ"
+            },
+            {
+              "regexSource": "{{(instructUserFiller)}}",
+              "regexFlags": "gi",
+              "replacement": "USER_ALIGN_MSG"
+            },
+            {
+              "regexSource": "{{(instructSystemInstructionPrefix)}}",
+              "regexFlags": "gi",
+              "replacement": "LAST_SYS_SEQ"
+            },
+            {
+              "regexSource": "{{(instructFirstInput|instructFirstUserPrefix)}}",
+              "regexFlags": "gi",
+              "replacement": "FIRST_INPUT_SEQ"
+            },
+            {
+              "regexSource": "{{(instructLastInput|instructLastUserPrefix)}}",
+              "regexFlags": "gi",
+              "replacement": "LAST_INPUT_SEQ"
+            },
+            {
+              "regexSource": "{{(systemPrompt)}}",
+              "regexFlags": "gi",
+              "replacement": "CHAR_PROMPT_VAL"
+            },
+            {
+              "regexSource": "{{(defaultSystemPrompt|instructSystem|instructSystemPrompt)}}",
+              "regexFlags": "gi",
+              "replacement": "DEFAULT_SYSPROMPT_CONTENT"
+            },
+            {
+              "regexSource": "{{(chatSeparator)}}",
+              "regexFlags": "gi",
+              "replacement": "EX_SEP_VAL"
+            },
+            {
+              "regexSource": "{{(chatStart)}}",
+              "regexFlags": "gi",
+              "replacement": "CHAT_START_VAL"
+            }
+          ],
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-001-chat-emoji-sequences",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "🟢 ",
+          "input_suffix": " ❌",
+          "output_sequence": "🔵 ",
+          "output_suffix": " ✅",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Bob",
+          "mes": "hi",
+          "isUser": true,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "🟢 \nhi ❌",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "🟢 \nhi ❌",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-002-chat-macro-cn-name",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": false,
+          "macro": true,
+          "names_behavior": "none",
+          "input_sequence": "<{{user}}/{{name}}> ",
+          "input_suffix": " </{{user}}>",
+          "output_sequence": "<{{char}}> ",
+          "output_suffix": " </{{char}}>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "宋砚",
+          "name2": "凌雪",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "宋砚",
+          "mes": "今天怎么样？",
+          "isUser": true,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "<宋砚/宋砚> 今天怎么样？ </宋砚>",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<宋砚/宋砚> 今天怎么样？ </宋砚>",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-003-chat-narrator-system-same-as-user",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "",
+          "output_suffix": "</s>",
+          "system_sequence": "<<NEVER-USED-SYS>>",
+          "system_suffix": "<<NEVER-USED-SYS-SFX>>",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": true,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "System",
+          "mes": "narrator line",
+          "isUser": false,
+          "isNarrator": true,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "[INST] \nnarrator line [/INST]",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "[INST] \nnarrator line [/INST]",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-004-chat-force-last-output",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "<|user|>\n",
+          "input_suffix": "<|end|>",
+          "output_sequence": "<|asst|>\n",
+          "output_suffix": "<|end|>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "<|asst-final|>\n",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "mes": "final reply",
+          "isUser": false,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": 2
+        }
+      },
+      "output": {
+        "text": "<|asst-final|>\n\nfinal reply<|end|>",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|asst-final|>\n\nfinal reply<|end|>",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-005-chat-backslash-quotes-in-seq",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": false,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "\\\"u\\\": ",
+          "input_suffix": "\\n",
+          "output_sequence": "\\\"a\\\": ",
+          "output_suffix": "\\n",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Bob",
+          "mes": "hello \"world\" \\path",
+          "isUser": true,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "\\\"u\\\": hello \"world\" \\path\\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "\\\"u\\\": hello \"world\" \\path\\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-006-prompt-impersonate-emoji",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "🟢user🟢\n",
+          "input_suffix": "<|end|>",
+          "output_sequence": "🔵asst🔵\n",
+          "output_suffix": "<|end|>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Bob",
+          "isImpersonate": true,
+          "promptBias": "",
+          "isQuiet": false,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "\n🟢user🟢\n\nBob:",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "\n🟢user🟢\n\nBob:",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-007-prompt-macro-in-sequence",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": false,
+          "macro": true,
+          "names_behavior": "none",
+          "input_sequence": "<U:{{user}}>\n",
+          "input_suffix": "</U:{{user}}>",
+          "output_sequence": "<C:{{char}}/N:{{name}}>\n",
+          "output_suffix": "</C:{{char}}>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "<C:{{char}}-LAST/N:{{name}}>\n",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "",
+          "isQuiet": false,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "<C:Alice-LAST/N:Alice>\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<C:Alice-LAST/N:Alice>\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-008-prompt-quiet-fallback-output",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "<|u|>\n",
+          "input_suffix": "<|end|>",
+          "output_sequence": "<|a|>\n",
+          "output_suffix": "<|end|>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "",
+          "isQuiet": true,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "<|a|>\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|a|>\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-009-prompt-quiet-to-loud-fallback",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "<|u|>\n",
+          "input_suffix": "<|end|>",
+          "output_sequence": "<|a|>\n",
+          "output_suffix": "<|end|>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "",
+          "isQuiet": true,
+          "isQuietToLoud": true
+        }
+      },
+      "output": {
+        "text": "<|a|>\n\nAlice:",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|a|>\n\nAlice:",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-010-prompt-long-bias-with-newlines",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "[OUT] ",
+          "output_suffix": "</s>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "\n\t  be cinematic\nuse vivid imagery\nstay in character",
+          "isQuiet": false,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "\n[OUT] \nbe cinematic\nuse vivid imagery\nstay in character\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "\n[OUT] \nbe cinematic\nuse vivid imagery\nstay in character\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-011-prompt-mistral-filler-with-macro",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": false,
+          "macro": true,
+          "names_behavior": "always",
+          "input_sequence": "[INST]{{user}} ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "[OUT]{{char}} ",
+          "output_suffix": "</s>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "[LAST_OUT]{{char}}",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "",
+          "isQuiet": false,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "[LAST_OUT]Alice Alice:",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "[LAST_OUT]Alice Alice:",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-012-prompt-multiline-sequence",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "<|user|>\n\t<sub-tag>\n",
+          "input_suffix": "\n</sub-tag>\n<|end|>",
+          "output_sequence": "<|asst|>\n\t<asst-sub>\n",
+          "output_suffix": "\n</asst-sub>\n<|end|>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "isImpersonate": false,
+          "promptBias": "",
+          "isQuiet": false,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "\n<|asst|>\n\t<asst-sub>\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "\n<|asst|>\n\t<asst-sub>\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-013-prompt-empty-name-no-include",
+      "target": "formatInstructPrompt",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "[INST] ",
+          "input_suffix": " [/INST]",
+          "output_sequence": "[OUT] ",
+          "output_suffix": "</s>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "",
+          "isImpersonate": false,
+          "promptBias": "",
+          "isQuiet": false,
+          "isQuietToLoud": false
+        }
+      },
+      "output": {
+        "text": "\n[OUT]\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "\n[OUT]\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-014-chat-empty-mes",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "always",
+          "input_sequence": "<|u|>\n",
+          "input_suffix": "<|end|>",
+          "output_sequence": "<|a|>\n",
+          "output_suffix": "<|end|>",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Bob",
+          "mes": "",
+          "isUser": true,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "<|u|>\n\nBob: <|end|>",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "<|u|>\n\nBob: <|end|>",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    },
+    {
+      "caseId": "instruct-fuzz-015-chat-wrap-with-empty-suffix",
+      "target": "formatInstructChat",
+      "input": {
+        "instruct": {
+          "enabled": true,
+          "wrap": true,
+          "macro": false,
+          "names_behavior": "none",
+          "input_sequence": "[U] ",
+          "input_suffix": "",
+          "output_sequence": "[A] ",
+          "output_suffix": "",
+          "system_sequence": "",
+          "system_suffix": "",
+          "last_system_sequence": "",
+          "first_input_sequence": "",
+          "last_input_sequence": "",
+          "first_output_sequence": "",
+          "last_output_sequence": "",
+          "stop_sequence": "",
+          "story_string_prefix": "",
+          "story_string_suffix": "",
+          "user_alignment_message": "",
+          "system_same_as_user": false,
+          "sequences_as_stop_strings": true,
+          "activation_regex": "",
+          "bind_to_context": false,
+          "skip_examples": false
+        },
+        "context": {
+          "preset": "fuzz",
+          "story_string_position": 0,
+          "chat_start": "",
+          "example_separator": "",
+          "use_stop_strings": false
+        },
+        "sysprompt": {
+          "enabled": false,
+          "content": ""
+        },
+        "ctx": {
+          "name1": "Bob",
+          "name2": "Alice",
+          "selectedGroup": null,
+          "groups": [],
+          "characters": []
+        },
+        "args": {
+          "name": "Alice",
+          "mes": "reply",
+          "isUser": false,
+          "isNarrator": false,
+          "forceAvatar": "",
+          "forceOutputSequence": null
+        }
+      },
+      "output": {
+        "text": "[A] \nreply\n",
+        "meta": {
+          "outputType": "string",
+          "outputValue": "[A] \nreply\n",
+          "macrosUsed": [],
+          "warnings": [],
+          "envSnapshot": {},
+          "error": null
+        }
+      }
+    }
+  ]
+}
