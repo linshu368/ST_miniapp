@@ -12,6 +12,7 @@ import { useHaptic, useTelegramBackButton } from '@/lib/telegram/hooks';
 import { ChatCharacterProfile } from '@/components/chat/chat-character-profile';
 import { ChatSidebar } from '@/components/chat/chat-sidebar';
 import { Composer } from '@/components/chat/composer';
+import { GridMenu } from '@/components/chat/grid-menu';
 import { MessageList } from '@/components/chat/message-list';
 
 const NOIR_BG = 'radial-gradient(120% 60% at 50% 0%, #16191F 0%, #0B0D11 55%)';
@@ -182,6 +183,8 @@ export default function ChatPage() {
         disabled={!session || sendMessage.isPending || isTyping}
         isAssistantTyping={isTyping}
         variant="noir"
+        charName={character?.name}
+        leftSlot={<GridMenu charName={character?.name} />}
       />
 
       <ChatSidebar currentSessionId={sessionId} />

@@ -3,7 +3,7 @@
 // 要临时全局强制 mock → .env.local 设 NEXT_PUBLIC_USE_MOCK=1。
 //
 // ── Sync 快照 ───────────────────────────────────────────────
-// 最近一次同步：2026-05-09
+// 最近一次同步：2026-05-10
 //
 // Backend 路由扫描结果（含 @frontend-ready 注释状态）：
 //   ✅ GET    /api/sessions                       @frontend-ready: true    (routes/sessions.ts)

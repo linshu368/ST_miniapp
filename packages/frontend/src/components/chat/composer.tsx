@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -18,6 +18,10 @@ interface ComposerProps {
   disabled?: boolean;
   isAssistantTyping?: boolean;
   variant?: 'default' | 'noir';
+  /** noir 模式下显示在 placeholder 里的角色名，如 "Nico" */
+  charName?: string;
+  /** noir 模式下替换左侧按钮的插槽，默认隐藏 */
+  leftSlot?: ReactNode;
 }
 
 export function Composer({
@@ -25,8 +29,12 @@ export function Composer({
   disabled,
   isAssistantTyping,
   variant = 'default',
+  charName,
+  leftSlot,
 }: ComposerProps) {
   const isNoir = variant === 'noir';
+
+  const noirPlaceholder = charName ? `消息 ${charName}` : '';
 
   const {
     register,
@@ -72,6 +80,16 @@ export function Composer({
         onSubmit={submit}
         className="flex items-center gap-2 border-t border-[rgba(255,255,255,0.08)] bg-[rgba(11,13,17,0.85)] px-3 pb-[calc(30px+env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-[12px]"
       >
+        {leftSlot ?? (
+          <button
+            type="button"
+            aria-label="菜单"
+            className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[14px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.08)] backdrop-blur-sm"
+          >
+            <GridIcon />
+          </button>
+        )}
+
         <div className="flex min-h-[38px] flex-1 items-center rounded-[19px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 py-1">
           <textarea
             {...contentProps}
@@ -81,7 +99,7 @@ export function Composer({
             }}
             rows={1}
             onKeyDown={onKeyDown}
-            placeholder="……"
+            placeholder={noirPlaceholder}
             className={cn(
               'min-h-[38px] flex-1 resize-none bg-transparent py-2 text-[12.5px] leading-normal',
               'text-[rgba(242,243,245,0.55)] placeholder:text-[rgba(242,243,245,0.28)]',
@@ -142,7 +160,7 @@ export function Composer({
           }}
           rows={1}
           onKeyDown={onKeyDown}
-          placeholder="……"
+          placeholder={noirPlaceholder}
           className={cn(
             'flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-relaxed',
             'text-foreground placeholder:text-muted-foreground/50',
