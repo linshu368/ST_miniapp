@@ -8,15 +8,23 @@ import { create } from 'zustand';
 interface UIState {
   selectedCharacterId: string | undefined;
   sidebarOpen: boolean;
+  sidebarDragX: number; // 侧栏拖拽偏移量
+  isSidebarDragging: boolean;
   setSelectedCharacterId: (id: string | undefined) => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+  setSidebarDragX: (x: number) => void;
+  setIsSidebarDragging: (dragging: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   selectedCharacterId: undefined,
   sidebarOpen: false,
+  sidebarDragX: 0,
+  isSidebarDragging: false,
   setSelectedCharacterId: (id) => set({ selectedCharacterId: id }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setSidebarDragX: (x) => set({ sidebarDragX: x }),
+  setIsSidebarDragging: (dragging) => set({ isSidebarDragging: dragging }),
 }));

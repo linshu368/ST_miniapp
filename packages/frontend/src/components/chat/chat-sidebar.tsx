@@ -36,17 +36,20 @@ const writeExpanded = (key: string, value: boolean): void => {
   }
 };
 
-// 左滑超过这个距离触发关闭
+// 右滑超过这个距离触发关闭（抽屉在右侧时，右滑收起）
 const DISMISS_THRESHOLD = 64;
 
 interface ChatSidebarProps {
   currentSessionId?: string;
+  /** 外部传入的拖拽偏移量（来自聊天页触摸滑动） */
+  externalDragX?: number;
 }
 
-export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
+export function ChatSidebar({ currentSessionId, externalDragX }: ChatSidebarProps) {
   const router = useRouter();
   const open = useUIStore((s) => s.sidebarOpen);
   const setOpen = useUIStore((s) => s.setSidebarOpen);
+  const isExternalDragging = useUIStore((s) => s.isSidebarDragging);
   const { data } = useSessionsQuery();
   const rawSessions = useMemo(() => data?.sessions ?? [], [data?.sessions]);
 
@@ -140,8 +143,10 @@ export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
 
+  const isExternalDragActive = isExternalDragging && (externalDragX ?? 0) > 0;
+
   useEffect(() => {
-    if (open) {
+    if (open || isExternalDragActive) {
       setMounted(true);
       const raf = requestAnimationFrame(() => setVisible(true));
       return () => cancelAnimationFrame(raf);
@@ -150,9 +155,9 @@ export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
       const t = setTimeout(() => setMounted(false), 450);
       return () => clearTimeout(t);
     }
-  }, [open]);
+  }, [open, isExternalDragActive]);
 
-  // ── 拖拽状态（只追踪左滑，dragX ≤ 0）──────────────────────
+  // ── 拖拽状态（右抽屉：右滑关闭，dragX ≥ 0）────────────────
   const [dragX, setDragX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const touchStart = useRef({ x: 0, y: 0 });
@@ -165,16 +170,16 @@ export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     const dx = e.touches[0]!.clientX - touchStart.current.x;
     const dy = e.touches[0]!.clientY - touchStart.current.y;
-    // 只处理「左滑为主方向」的手势
-    if (dx < 0 && Math.abs(dx) > Math.abs(dy)) {
+    // 右抽屉：以右滑为主方向时跟手关闭
+    if (dx > 0 && Math.abs(dx) > Math.abs(dy)) {
       e.preventDefault();
-      setDragX(Math.min(0, dx)); // 不允许右滑超出原位置
+      setDragX(Math.max(0, dx));
     }
   }, []);
 
   const handleTouchEnd = useCallback(() => {
     setIsDragging(false);
-    if (Math.abs(dragX) > DISMISS_THRESHOLD) {
+    if (dragX > DISMISS_THRESHOLD) {
       setDragX(0);
       setOpen(false);
     } else {
@@ -191,10 +196,16 @@ export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
       aria-modal="true"
       aria-label="历史对话"
     >
-      {/* 全屏遮罩：点击 or 左滑都关闭（与聊天主列 max-w-md 无关，两侧空白也可点） */}
+      {/* 全屏遮罩：点击或右滑关闭（与聊天主列 max-w-md 无关，两侧空白也可点） */}
       <div
         className="absolute inset-0 bg-black/50 transition-opacity duration-500"
-        style={{ opacity: visible ? 1 : 0 }}
+        style={{
+          opacity: isExternalDragActive
+            ? Math.min(0.5, ((externalDragX ?? 0) / 280) * 0.5)
+            : visible
+              ? 1
+              : 0,
+        }}
         aria-hidden="true"
         onClick={() => setOpen(false)}
         onTouchStart={handleTouchStart}
@@ -202,16 +213,26 @@ export function ChatSidebar({ currentSessionId }: ChatSidebarProps) {
         onTouchEnd={handleTouchEnd}
       />
 
-      {/* 与聊天页同宽的栏：侧栏从该栏左缘滑入，宽屏上与主界面对齐 */}
+      {/* 与聊天页同宽的栏：侧栏从该栏右缘滑入，宽屏上与主界面对齐 */}
       <div className="pointer-events-none relative h-full w-full max-w-md">
-        {/* 侧边栏面板：从左侧滑入 */}
+        {/* 侧边栏面板：从右侧滑入 */}
         <div
-          className="pointer-events-auto absolute inset-y-0 left-0 flex w-[72vw] max-w-[280px] flex-col border-r border-border/60 bg-card shadow-2xl"
+          className="pointer-events-auto absolute inset-y-0 right-0 flex w-[72vw] max-w-[280px] flex-col border-l border-border/60 bg-card shadow-2xl"
           style={{
-            transform: visible ? `translateX(${dragX}px)` : 'translateX(-100%)',
-            transition: isDragging ? 'none' : 'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
+            // 外部拖拽时：dragX 是滑动距离，sidebarWidth - dragX = 侧栏需要偏移的剩余距离
+            // 打开时：用内部 dragX（右滑关闭）
+            // 未打开且无外部拖拽：隐藏在右侧
+            transform: isExternalDragActive
+              ? `translateX(${Math.min(typeof window !== 'undefined' ? window.innerWidth * 0.72 : 280, 280) - (externalDragX ?? 0)}px)`
+              : visible
+                ? `translateX(${dragX}px)`
+                : 'translateX(100%)',
+            transition:
+              isDragging || isExternalDragActive
+                ? 'none'
+                : 'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
             // pan-y:允许垂直滚动 native 行为(鼠标滚轮 / 触摸下滑),
-            // 只禁用横向 native 行为(我们的左滑关闭由 touchMove 接管)
+            // 只禁用横向 native 行为(我们的右滑关闭由 touchMove 接管)
             touchAction: 'pan-y',
           }}
           onTouchStart={handleTouchStart}

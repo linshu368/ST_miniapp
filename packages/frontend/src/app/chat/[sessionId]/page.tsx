@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react';
-import { Home, MoreHorizontal } from 'lucide-react';
+import { Home as HomeIcon, MoreHorizontal as DotsIcon } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -18,6 +18,9 @@ import { Composer } from '@/components/chat/composer';
 import { GridMenu } from '@/components/chat/grid-menu';
 import { MessageList } from '@/components/chat/message-list';
 
+/** 与 `app/layout.tsx` 根内容区 `max-w-[390px]` 一致：边缘手势要贴着「聊天列」而非整屏最外缘 */
+const APP_COLUMN_MAX_PX = 390;
+
 export default function ChatPage() {
   const params = useParams<{ sessionId: string }>();
   const sessionId = params.sessionId;
@@ -33,6 +36,11 @@ export default function ChatPage() {
   const haptic = useHaptic();
 
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
+  const sidebarDragX = useUIStore((s) => s.sidebarDragX);
+  const isSidebarDragging = useUIStore((s) => s.isSidebarDragging);
+  const setSidebarDragX = useUIStore((s) => s.setSidebarDragX);
+  const setIsSidebarDragging = useUIStore((s) => s.setIsSidebarDragging);
   const userDisplayName = useUserProfileStore((s) => s.displayName);
 
   const onBack = useCallback(() => {
@@ -72,56 +80,207 @@ export default function ChatPage() {
     [sendMessage]
   );
 
-  const edgeSwipeStart = useRef<{ x: number; y: number; from: 'left' | 'right' } | null>(null);
-  const handleEdgeTouchStart = useCallback((e: React.TouchEvent) => {
-    const t = e.touches[0];
-    if (!t) {
-      edgeSwipeStart.current = null;
-      return;
+  // 边缘横滑：用触摸带 + identifier 匹配。
+  // - touchstart 必须用 changedTouches（新按下的一根），不能用 touches[0]（多指时可能是另一根）。
+  // - touchend 必须在 changedTouches 里找同一 identifier；Telegram/WebView 里纯 window 监听在屏幕最边缘也常收不到触摸。
+  const onBackRef = useRef(onBack);
+  const setSidebarOpenRef = useRef(setSidebarOpen);
+  const setSidebarDragXRef = useRef(setSidebarDragX);
+  const setIsSidebarDraggingRef = useRef(setIsSidebarDragging);
+  onBackRef.current = onBack;
+  setSidebarOpenRef.current = setSidebarOpen;
+  setSidebarDragXRef.current = setSidebarDragX;
+  setIsSidebarDraggingRef.current = setIsSidebarDragging;
+
+  const edgeSwipeRef = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    from: 'left' | 'right';
+    viewportWidth: number;
+  } | null>(null);
+
+  const edgeStripVerticalStyle = useMemo(
+    () =>
+      ({
+        top: 'calc(env(safe-area-inset-top) + 56px)',
+        bottom: 'calc(env(safe-area-inset-bottom) + 100px)',
+        touchAction: 'none',
+      }) as const,
+    []
+  );
+
+  const edgeStripSideStyleLeft = useMemo(
+    () =>
+      ({
+        ...edgeStripVerticalStyle,
+        left: `max(0px, calc((100vw - ${APP_COLUMN_MAX_PX}px) / 2))`,
+        width: '50vw',
+      }) as const,
+    [edgeStripVerticalStyle]
+  );
+
+  const edgeStripSideStyleRight = useMemo(
+    () =>
+      ({
+        ...edgeStripVerticalStyle,
+        right: `max(0px, calc((100vw - ${APP_COLUMN_MAX_PX}px) / 2))`,
+        width: '50vw',
+      }) as const,
+    [edgeStripVerticalStyle]
+  );
+
+  const EDGE_ZONE = 60; // 只响应从屏幕边缘 60px 内开始的滑动
+  const DISMISS_THRESHOLD = 48; // 最小滑动距离
+
+  const handleEdgeStripStart = useCallback((from: 'left' | 'right', e: React.TouchEvent) => {
+    const t = e.changedTouches[0];
+    if (!t) return;
+
+    // 检查触摸起始位置是否真的在屏幕边缘
+    const screenW = window.innerWidth;
+    if (from === 'right' && t.clientX < screenW - EDGE_ZONE) return;
+    if (from === 'left' && t.clientX > EDGE_ZONE) return;
+
+    edgeSwipeRef.current = {
+      id: t.identifier,
+      x: t.clientX,
+      y: t.clientY,
+      from,
+      viewportWidth: screenW,
+    };
+    setIsSidebarDraggingRef.current(true);
+  }, []);
+
+  const handleMainTouchMove = useCallback((e: React.TouchEvent) => {
+    const start = edgeSwipeRef.current;
+    if (!start) return;
+
+    // 找到对应的触摸点
+    let t: React.Touch | undefined;
+    for (let i = 0; i < e.touches.length; i++) {
+      const c = e.touches.item(i);
+      if (c?.identifier === start.id) {
+        t = c;
+        break;
+      }
     }
-    const w = window.innerWidth;
-    if (t.clientX < 20) {
-      edgeSwipeStart.current = { x: t.clientX, y: t.clientY, from: 'left' };
-    } else if (t.clientX > w - 20) {
-      edgeSwipeStart.current = { x: t.clientX, y: t.clientY, from: 'right' };
-    } else {
-      edgeSwipeStart.current = null;
+    if (!t) return;
+
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+
+    // 只处理水平滑动（忽略垂直滑动）
+    if (Math.abs(dx) <= Math.abs(dy) * 1.15) return;
+
+    if (start.from === 'right' && dx < 0) {
+      // 右边缘左滑：计算侧栏偏移量
+      // 侧栏宽度是 72vw，最大 280px
+      const sidebarWidth = Math.min(start.viewportWidth * 0.72, 280);
+      // 滑动距离映射到侧栏位移（从 translateX(100%) 到 translateX(0)）
+      const dragX = Math.max(0, Math.min(sidebarWidth, Math.abs(dx)));
+      setSidebarDragXRef.current(dragX);
+      e.preventDefault();
+    } else if (start.from === 'left' && dx > 0) {
+      // 左边缘右滑：直接触发返回（不需要跟手）
+      if (dx > DISMISS_THRESHOLD) {
+        edgeSwipeRef.current = null;
+        setIsSidebarDraggingRef.current(false);
+        setSidebarDragXRef.current(0);
+        onBackRef.current();
+      }
     }
   }, []);
-  const handleEdgeTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      const start = edgeSwipeStart.current;
-      edgeSwipeStart.current = null;
-      if (!start) return;
-      const t = e.changedTouches[0];
-      if (!t) return;
+
+  const handleMainTouchEnd = useCallback((e: React.TouchEvent) => {
+    const start = edgeSwipeRef.current;
+    if (!start) return;
+
+    // 找到对应的触摸点
+    let t: React.Touch | undefined;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const c = e.changedTouches.item(i);
+      if (c?.identifier === start.id) {
+        t = c;
+        break;
+      }
+    }
+    if (!t) {
+      edgeSwipeRef.current = null;
+      setIsSidebarDraggingRef.current(false);
+      setSidebarDragXRef.current(0);
+      return;
+    }
+
+    edgeSwipeRef.current = null;
+    setIsSidebarDraggingRef.current(false);
+
+    if (start.from === 'right') {
+      const sidebarWidth = Math.min(start.viewportWidth * 0.72, 280);
       const dx = t.clientX - start.x;
-      const dy = t.clientY - start.y;
-      if (Math.abs(dx) <= Math.abs(dy) * 1.5) return;
-      const triggered = (start.from === 'left' && dx > 64) || (start.from === 'right' && dx < -64);
-      if (triggered) onBack();
-    },
-    [onBack]
-  );
+
+      // 如果滑动超过侧栏宽度的 40%，打开侧栏
+      if (Math.abs(dx) > sidebarWidth * 0.4) {
+        setSidebarDragXRef.current(0);
+        setSidebarOpenRef.current(true);
+      } else {
+        // 否则回弹
+        setSidebarDragXRef.current(0);
+      }
+    } else {
+      setSidebarDragXRef.current(0);
+    }
+  }, []);
+
+  const handleMainTouchCancel = useCallback((e: React.TouchEvent) => {
+    const start = edgeSwipeRef.current;
+    if (!start) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const c = e.changedTouches.item(i);
+      if (c?.identifier === start.id) {
+        edgeSwipeRef.current = null;
+        setIsSidebarDraggingRef.current(false);
+        setSidebarDragXRef.current(0);
+        return;
+      }
+    }
+  }, []);
 
   return (
     <main
-      className="chat-noir mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden font-sans text-foreground"
+      className="chat-noir relative mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden font-sans text-foreground"
       style={{
         ...hueVar,
         background: 'radial-gradient(ellipse at 50% 30%, #1e2a3a 0%, #0d0f14 70%)',
       }}
-      onTouchStart={handleEdgeTouchStart}
-      onTouchEnd={handleEdgeTouchEnd}
+      onTouchMove={handleMainTouchMove}
+      onTouchEnd={handleMainTouchEnd}
+      onTouchCancel={handleMainTouchCancel}
     >
-      <header className="grid w-full shrink-0 grid-cols-[40px_1fr_40px] items-center border-b border-white/8 bg-black/20 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
+      {/* 触摸带对齐居中聊天列（layout max-w-[390px]），而非视口 left:0/right:0；宽屏上从列右缘左划才能命中 */}
+      <div
+        aria-hidden
+        className="pointer-events-auto fixed z-[25] touch-none"
+        style={edgeStripSideStyleLeft}
+        onTouchStart={(e) => handleEdgeStripStart('left', e)}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-auto fixed z-[25] touch-none"
+        style={edgeStripSideStyleRight}
+        onTouchStart={(e) => handleEdgeStripStart('right', e)}
+      />
+
+      <header className="relative z-30 grid w-full shrink-0 grid-cols-[auto_1fr_auto] items-center border-b border-white/8 bg-black/20 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
         <button
           type="button"
-          onClick={toggleSidebar}
-          aria-label="打开历史会话"
-          className="flex h-10 w-10 items-center justify-center text-[#8a9bb0] outline-none transition-colors hover:text-white/70 focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-0"
+          onClick={onBack}
+          aria-label="返回角色列表"
+          className="-ml-1.5 grid h-11 w-11 shrink-0 place-items-center"
         >
-          <MoreHorizontal className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+          <span className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground">
+            <HomeIcon className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+          </span>
         </button>
 
         <div className="flex min-h-[40px] min-w-0 items-center justify-center px-1 text-center">
@@ -134,11 +293,13 @@ export default function ChatPage() {
 
         <button
           type="button"
-          onClick={onBack}
-          aria-label="返回角色列表"
-          className="flex h-10 w-10 items-center justify-center text-[#8a9bb0] outline-none transition-colors hover:text-white/70 focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-0"
+          onClick={toggleSidebar}
+          aria-label="打开历史会话"
+          className="-mr-1.5 grid h-11 w-11 shrink-0 place-items-center"
         >
-          <Home className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+          <span className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground">
+            <DotsIcon className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+          </span>
         </button>
       </header>
 
@@ -183,7 +344,10 @@ export default function ChatPage() {
         />
       </div>
 
-      <ChatSidebar currentSessionId={sessionId} />
+      <ChatSidebar
+        currentSessionId={sessionId}
+        externalDragX={isSidebarDragging ? sidebarDragX : undefined}
+      />
     </main>
   );
 }
