@@ -3,17 +3,17 @@
 // 要临时全局强制 mock → .env.local 设 NEXT_PUBLIC_USE_MOCK=1。
 //
 // ── Sync 快照 ───────────────────────────────────────────────
-// 最近一次同步：2026-05-13
+// 最近一次同步：2026-05-15
 //
 // Backend 路由扫描结果（含 @frontend-ready 注释状态）：
+//   ✅ GET    /api/characters                     @frontend-ready: true    (routes/characters.ts)
+//   ✅ GET    /api/characters/:id                 @frontend-ready: true    (routes/characters.ts)
 //   ✅ GET    /api/sessions                       @frontend-ready: true    (routes/sessions.ts)
 //   ✅ GET    /api/sessions/:id                   @frontend-ready: true    (routes/sessions.ts)
 //   ✅ POST   /api/sessions/open                  @frontend-ready: true    (routes/sessions.ts)
 //   ✅ POST   /api/sessions/:id/messages          @frontend-ready: true    (routes/sessions.ts, SSE)
 //   ✅ PATCH  /api/sessions/:id                   @frontend-ready: true    (routes/sessions.ts)
 //   ✅ DELETE /api/sessions/:id                   @frontend-ready: true    (routes/sessions.ts)
-//   ✅ GET    /api/characters                     @frontend-ready: true    (routes/characters.ts)
-//   ✅ GET    /api/characters/:id                 @frontend-ready: true    (routes/characters.ts)
 //   ✅ GET    /health                             @frontend-ready: true    (app.ts)
 //
 // 逐模块解析：

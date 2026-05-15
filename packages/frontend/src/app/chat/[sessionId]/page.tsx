@@ -105,6 +105,7 @@ export default function ChatPage() {
       ({
         top: 'calc(env(safe-area-inset-top) + 56px)',
         bottom: 'calc(env(safe-area-inset-bottom) + 100px)',
+        width: '24px',
         touchAction: 'none',
       }) as const,
     []
@@ -115,7 +116,6 @@ export default function ChatPage() {
       ({
         ...edgeStripVerticalStyle,
         left: `max(0px, calc((100vw - ${APP_COLUMN_MAX_PX}px) / 2))`,
-        width: '50vw',
       }) as const,
     [edgeStripVerticalStyle]
   );
@@ -125,7 +125,6 @@ export default function ChatPage() {
       ({
         ...edgeStripVerticalStyle,
         right: `max(0px, calc((100vw - ${APP_COLUMN_MAX_PX}px) / 2))`,
-        width: '50vw',
       }) as const,
     [edgeStripVerticalStyle]
   );
