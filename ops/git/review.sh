@@ -138,6 +138,28 @@ else
 EOF
 fi
 
+# ─── 4.5 持久化 LLM 输入（可选）───
+# 本地: REVIEW_ARTIFACT_DIR=/tmp/review-debug bash ops/git/review.sh
+# GHA:  workflow 设置 REVIEW_ARTIFACT_DIR 后 upload-artifact 上传
+
+if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
+  mkdir -p "$REVIEW_ARTIFACT_DIR"
+  cp "$TMP_ARCH" "$REVIEW_ARTIFACT_DIR/architecture.md"
+  cp "$TMP_SRC" "$REVIEW_ARTIFACT_DIR/src-code.txt"
+  cp "$TMP_DIFF" "$REVIEW_ARTIFACT_DIR/git-diff.txt"
+  cp "$TMP_PROMPT" "$REVIEW_ARTIFACT_DIR/system-prompt.md"
+  cp "$TMP_REQ" "$REVIEW_ARTIFACT_DIR/api-request.json"
+  printf '%s\n' "$USER_MESSAGE" > "$REVIEW_ARTIFACT_DIR/user-message.txt"
+  {
+    echo "base_branch=${BASE_BRANCH}"
+    echo "model=${MODEL_NAME}"
+    echo "api_url=${API_URL}"
+    echo "format=$([ "$IS_OPENAI_FORMAT" -eq 1 ] && echo openai || echo anthropic)"
+    echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$REVIEW_ARTIFACT_DIR/meta.txt"
+  echo "💾 LLM 输入已保存到: ${REVIEW_ARTIFACT_DIR}" >&2
+fi
+
 # ─── 5. 调用 API ───
 
 RESPONSE_RAW=$(curl -s -w "\n%{http_code}" "$API_URL" \
@@ -171,6 +193,9 @@ except:
 if [ -n "$ERROR_TYPE" ] && [ "$ERROR_TYPE" != "" ]; then
   echo "❌ API 返回错误 (HTTP 状态码: $HTTP_CODE):" >&2
   echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE" >&2
+  if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
+    printf '%s' "$RESPONSE" > "$REVIEW_ARTIFACT_DIR/api-response-error.json"
+  fi
 
   if [ "$HTTP_CODE" = "403" ]; then
     echo "💡 提示: 403 Forbidden 错误通常是因为：" >&2
@@ -186,7 +211,14 @@ fi
 if [ "$HTTP_CODE" != "200" ]; then
   echo "❌ 请求失败，HTTP 状态码不是 200 (当前为: $HTTP_CODE)" >&2
   echo "$RESPONSE" >&2
+  if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
+    printf '%s' "$RESPONSE" > "$REVIEW_ARTIFACT_DIR/api-response-error.json"
+  fi
   exit 1
+fi
+
+if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
+  printf '%s' "$RESPONSE" > "$REVIEW_ARTIFACT_DIR/api-response.json"
 fi
 
 echo "$RESPONSE" | python3 -c "

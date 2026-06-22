@@ -34,6 +34,7 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           BASE_REF: ${{ github.base_ref }}
+          REVIEW_ARTIFACT_DIR: review-artifacts
         run: |
           echo "=== 当前 HEAD ===" >&2
           git log --oneline -3 >&2
@@ -61,6 +62,15 @@ jobs:
             cat report.md
             echo 'REPORT_EOF'
           } >> $GITHUB_OUTPUT
+
+      - name: 上传 LLM 输入 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-input-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: review-artifacts/
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: 准备评论元信息
         id: comment-meta
