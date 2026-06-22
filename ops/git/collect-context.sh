@@ -1,12 +1,12 @@
 #!/bin/bash
-# scripts/collect-context.sh
-# 采集三包 src 代码 + package.json，输出结构化文本供 LLM 消费
-# 用法: bash scripts/collect-context.sh > context.txt
+# ops/git/collect-context.sh
+# 采集四包 src 代码 + package.json，输出结构化文本供 LLM 消费
+# 用法: bash ops/git/collect-context.sh > context.txt
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-PACKAGES=("shared" "backend" "frontend")
+PACKAGES=("shared" "backend" "frontend" "sync-engine")
 
 # ─── 辅助函数 ───
 

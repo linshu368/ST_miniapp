@@ -1,0 +1,76 @@
+/**
+ * sync-engine / lib / st-fs.ts
+ *
+ * ST 文件系统路径工具。
+ * 按 handle 定位 data/<handle>/ 下的各子目录和文件。
+ * 所有路径计算集中在此，其他模块不直接拼路径。
+ */
+
+import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { config } from './config.js';
+
+/** 返回某用户的工作目录根：ST_DATA_PATH/<handle>/ */
+export function handleDir(handle: string): string {
+  return join(config.ST_DATA_PATH, handle);
+}
+
+/** data/<handle>/characters/ */
+export function charactersDir(handle: string): string {
+  return join(handleDir(handle), 'characters');
+}
+
+/** data/<handle>/OpenAI Settings/ */
+export function presetsDir(handle: string): string {
+  return join(handleDir(handle), 'OpenAI Settings');
+}
+
+/** data/<handle>/settings.json */
+export function settingsPath(handle: string): string {
+  return join(handleDir(handle), 'settings.json');
+}
+
+/** data/<handle>/secrets.json */
+export function secretsPath(handle: string): string {
+  return join(handleDir(handle), 'secrets.json');
+}
+
+/** 平台资产目录下某角色卡的源 PNG 路径：ST_PLATFORM_ASSETS_PATH/characters/platform_<id>.png */
+export function platformCharacterSrc(characterId: string): string {
+  return join(config.ST_PLATFORM_ASSETS_PATH, 'characters', `platform_${characterId}.png`);
+}
+
+/** data/<handle>/characters/platform_<id>.png */
+export function characterDst(handle: string, characterId: string): string {
+  return join(charactersDir(handle), `platform_${characterId}.png`);
+}
+
+/** data/<handle>/OpenAI Settings/platform_<id>.json */
+export function presetDst(handle: string, presetId: string): string {
+  return join(presetsDir(handle), `platform_${presetId}.json`);
+}
+
+/**
+ * 确保目录存在（recursive mkdir）。
+ * 幂等，目录已存在时不报错。
+ */
+export function ensureDir(dirPath: string): void {
+  if (!existsSync(dirPath)) {
+    mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+/**
+ * 扫描 ST_DATA_PATH 下所有 tg_<digits> 格式的用户目录，返回 handle 列表。
+ * 用于 watcher 启动时确定需要监听的用户范围。
+ */
+export function listHandles(): string[] {
+  const dataPath = config.ST_DATA_PATH;
+  if (!existsSync(dataPath)) return [];
+
+  return readdirSync(dataPath).filter((name) => {
+    // handle 格式：tg-<digits>（连字符，ST slugify 兼容格式）
+    if (!/^tg-\d+$/.test(name)) return false;
+    return statSync(join(dataPath, name)).isDirectory();
+  });
+}

@@ -12,6 +12,7 @@
     "@fastify/cors": "^10.0.0",
     "@miniapp/shared": "workspace:*",
     "@prisma/client": "^6.19.3",
+    "@supabase/supabase-js": "^2.107.0",
     "dotenv": "^16.4.0",
     "fastify": "^5.2.0"
   },
