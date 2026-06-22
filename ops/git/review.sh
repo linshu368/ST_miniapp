@@ -56,13 +56,15 @@ TMP_ARCH=$(mktemp)
 TMP_SRC=$(mktemp)
 TMP_DIFF=$(mktemp)
 TMP_PROMPT=$(mktemp)
-trap 'rm -f "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT" "$TMP_REQ"' EXIT
+TMP_REQ=""
+trap 'rm -f "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT"; [ -n "$TMP_REQ" ] && rm -f "$TMP_REQ"' EXIT
 
 printf '%s' "$ARCHITECTURE_DOC" > "$TMP_ARCH"
 printf '%s' "$SRC_CODE" > "$TMP_SRC"
 printf '%s' "$GIT_DIFF" > "$TMP_DIFF"
 
-python3 <<'PY' "$PROMPT_FILE" "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT"
+# 必须用 python3 - ：若写成 python3 <<'PY' "$PROMPT_FILE"，Python 会把 PROMPT_FILE 当脚本执行
+python3 - "$PROMPT_FILE" "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT" <<'PY'
 import sys
 
 prompt_file, arch_file, src_file, diff_file, out_file = sys.argv[1:6]
