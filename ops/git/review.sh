@@ -63,33 +63,8 @@ printf '%s' "$ARCHITECTURE_DOC" > "$TMP_ARCH"
 printf '%s' "$SRC_CODE" > "$TMP_SRC"
 printf '%s' "$GIT_DIFF" > "$TMP_DIFF"
 
-# 必须用 python3 - ：若写成 python3 <<'PY' "$PROMPT_FILE"，Python 会把 PROMPT_FILE 当脚本执行
-python3 - "$PROMPT_FILE" "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT" <<'PY'
-import sys
-
-prompt_file, arch_file, src_file, diff_file, out_file = sys.argv[1:6]
-
-template = open(prompt_file, encoding="utf-8").read()
-architecture_doc = open(arch_file, encoding="utf-8").read()
-src_code = open(src_file, encoding="utf-8").read()
-git_diff = open(diff_file, encoding="utf-8").read()
-
-filled = template.replace("{architecture_doc}", architecture_doc)
-filled = filled.replace("{src_code}", src_code)
-filled = filled.replace("{git_diff}", git_diff)
-
-missing = [name for name, token in [
-    ("architecture_doc", "{architecture_doc}"),
-    ("src_code", "{src_code}"),
-    ("git_diff", "{git_diff}"),
-] if token in filled]
-
-if missing:
-    print(f"❌ prompt 占位符未替换: {', '.join(missing)}", file=sys.stderr)
-    sys.exit(1)
-
-open(out_file, "w", encoding="utf-8").write(filled)
-PY
+python3 "$SCRIPT_DIR/fill-prompt.py" \
+  "$PROMPT_FILE" "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT"
 
 SYSTEM_PROMPT=$(cat "$TMP_PROMPT")
 USER_MESSAGE="开始"
