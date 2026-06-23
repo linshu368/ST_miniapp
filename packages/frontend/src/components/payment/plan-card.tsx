@@ -3,6 +3,7 @@
 import { Crown, Sparkles, Star, Zap, type LucideIcon } from 'lucide-react';
 import type { PaymentPlan, PaymentPlanVariant } from '@miniapp/shared';
 
+import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { bonusPercent, formatNumber, formatYuan, formatYuanShort } from '@/lib/utils/payment';
 
@@ -100,19 +101,26 @@ export function PlanCard({ plan, selected, onSelect }: PlanCardProps) {
   })();
 
   return (
-    <button
-      type="button"
+    <Card
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(plan.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(plan.id);
+        }
+      }}
       aria-pressed={selected}
       className={cn(
-        'group relative w-full overflow-hidden rounded-xl p-3 text-left transition-colors',
+        'group relative w-full overflow-hidden rounded-xl text-left transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         style.container,
-        selected && 'ring-2 ring-offset-2 ring-offset-[#0A0A0A] ring-pink-400/80'
+        selected && 'ring-2 ring-offset-2 ring-offset-[#0A0A0A] ring-pink-400/80 border-transparent'
       )}
     >
       {plan.badge_text ? <span className={style.badgeClass}>{plan.badge_text}</span> : null}
 
-      <div className="relative z-10 flex items-start justify-between gap-3">
+      <CardContent className="p-3 relative z-10 flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div
             className={cn(
@@ -180,7 +188,7 @@ export function PlanCard({ plan, selected, onSelect }: PlanCardProps) {
             ¥{formatYuanShort(plan.price_cents)}
           </div>
         </div>
-      </div>
-    </button>
+      </CardContent>
+    </Card>
   );
 }

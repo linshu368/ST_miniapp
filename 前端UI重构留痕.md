@@ -233,11 +233,12 @@ import { Button } from '@/components/ui/button';
 **原状态**：
 
 - 余额不足弹窗的容器为裸 `<div>` 加 border、bg 手写样式。
+- 没有焦点管理，点击背景无法关闭，无 ESC 关闭支持。
 - 取消和充值按钮均为裸 `<button>` 加手写 flex 布局和颜色。
 
 **本次改造**：
 
-- 容器改为 `<Card className="...rounded-3xl border-sky-400/20 bg-slate-950/95 ...">` + `<CardContent className="p-5">`，视觉效果不变，语义化和复用性提升。
+- 整体容器改为使用 `<Dialog>` + `<DialogContent>`。通过 Radix UI 获得原生弹窗支持、焦点管理、键盘 ESC 关闭。
 - 取消按钮：改为 `<Button variant="outline" className="... border-slate-700 bg-slate-900 ...">`。
 - 充值按钮：改为 `<Button className="... bg-gradient-to-r from-sky-500 to-indigo-500 ...">`。
 
@@ -247,7 +248,13 @@ import { Button } from '@/components/ui/button';
 
 ```tsx
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 ```
 
 ---
@@ -309,6 +316,6 @@ pnpm --filter @miniapp/frontend lint
 
 ## 7. 后续计划
 
-- 后续可继续将 `plan-card.tsx` 的卡片容器迁移到 `<Card>`，并在 variant 中维护不同套餐的视觉差异。
-- `Dialog` 组件已引入但尚未使用；可考虑将"余额不足弹窗"进一步升级为 `<Dialog>`，获得更好的无障碍焦点管理和 ESC 关闭支持。
+- `plan-card.tsx` 的卡片容器已迁移到 `<Card>`，变体视觉差异维护逻辑继续生效。
+- `Dialog` 组件已在"余额不足弹窗"中使用，获得了更好的无障碍焦点管理和 ESC 关闭支持。
 - 提 PR 到 `dev` 后，Vercel preview 部署将自动触发，可在预览链接上进行手动验收。
