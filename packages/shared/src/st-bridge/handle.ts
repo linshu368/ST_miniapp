@@ -28,7 +28,7 @@ export function deriveStHandle(tgId: string): string {
 
 /**
  * 从 ST handle 中提取原始 tg_id。
- * 如果 handle 不符合 tg_<digits> 格式，返回 null。
+ * 如果 handle 不符合 tg-<digits> 格式，返回 null。
  */
 export function parseTgIdFromHandle(handle: string): string | null {
   if (!handle || !handle.startsWith(ST_HANDLE_PREFIX)) {
