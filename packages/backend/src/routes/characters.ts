@@ -33,11 +33,6 @@ export default async function characterRoutes(app: FastifyInstance) {
 
     const character = await prisma.character.findUnique({
       where: { id },
-      include: {
-        _count: {
-          select: { app_sessions: true },
-        },
-      },
     });
 
     if (!character) {
@@ -53,7 +48,6 @@ export default async function characterRoutes(app: FastifyInstance) {
       author_name: character.creator,
       greeting: character.first_mes,
       creator_notes: character.creator_notes,
-      chat_count: character._count.app_sessions,
     };
 
     return reply.send(ok<GetCharacterByIdData>({ character: characterDetail }));
