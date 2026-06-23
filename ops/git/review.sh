@@ -8,7 +8,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+TRUSTED_REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REVIEW_REPO_ROOT="${REVIEW_REPO_ROOT:-$TRUSTED_REPO_ROOT}"
+REVIEW_REPO_ROOT="$(cd "$REVIEW_REPO_ROOT" && pwd)"
 
 # ─── 加载本地环境变量 ───
 ENV_FILE="${SCRIPT_DIR}/.env"
@@ -27,7 +29,7 @@ BASE_BRANCH="${1:-main}"
 
 PROMPT_DIR="${SCRIPT_DIR}/prompts"
 PROMPT_FILE="${PROMPT_DIR}/diff_review.md"
-ARCHITECTURE_FILE="${REPO_ROOT}/docs/ARCHITECTURE.md"
+ARCHITECTURE_FILE="${TRUSTED_REPO_ROOT}/docs/ARCHITECTURE.md"
 
 if [ ! -f "$PROMPT_FILE" ]; then
   echo "❌ 找不到 prompt 文件: ${PROMPT_FILE}" >&2
@@ -45,10 +47,10 @@ echo "📐 采集架构文档..." >&2
 ARCHITECTURE_DOC=$(cat "$ARCHITECTURE_FILE")
 
 echo "📦 采集代码上下文..." >&2
-SRC_CODE=$("$SCRIPT_DIR/collect-context.sh")
+SRC_CODE=$(REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-context.sh")
 
 echo "📝 采集 git diff (对比 ${BASE_BRANCH})..." >&2
-GIT_DIFF=$("$SCRIPT_DIR/collect-diff.sh" "$BASE_BRANCH")
+GIT_DIFF=$(REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-diff.sh" "$BASE_BRANCH")
 
 # ─── 3. 占位符替换，组装完整 prompt ───
 

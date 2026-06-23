@@ -5,7 +5,9 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+DEFAULT_REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="${REVIEW_REPO_ROOT:-$DEFAULT_REPO_ROOT}"
+REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 PACKAGES=("shared" "backend" "frontend" "sync-engine")
 
 # ─── 辅助函数 ───

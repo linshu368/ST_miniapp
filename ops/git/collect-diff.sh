@@ -2,6 +2,10 @@
 set -euo pipefail
 
 BASE_BRANCH="${1:-main}"
+DEFAULT_REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="${REVIEW_REPO_ROOT:-$DEFAULT_REPO_ROOT}"
+REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
+cd "$REPO_ROOT"
 
 # 兼容 GitHub Actions 的 detached HEAD
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
