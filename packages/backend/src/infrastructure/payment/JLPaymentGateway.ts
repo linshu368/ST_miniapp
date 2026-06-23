@@ -52,7 +52,7 @@ export class JLPaymentGateway {
   }
 
   verifyNotifySign(notifyData: PaymentNotifyData): boolean {
-    if (!notifyData.sign) return false;
+    if (!notifyData.sign || !this.merchantKey) return false;
 
     const { sign, ...params } = notifyData;
     return sign === this.sign(params);
