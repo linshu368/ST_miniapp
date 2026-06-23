@@ -61,7 +61,7 @@ export function ensureDir(dirPath: string): void {
 }
 
 /**
- * 扫描 ST_DATA_PATH 下所有 tg_<digits> 格式的用户目录，返回 handle 列表。
+ * 扫描 ST_DATA_PATH 下所有 tg-<digits> 或历史 tg_<digits> 格式的用户目录，返回 handle 列表。
  * 用于 watcher 启动时确定需要监听的用户范围。
  */
 export function listHandles(): string[] {
@@ -69,8 +69,8 @@ export function listHandles(): string[] {
   if (!existsSync(dataPath)) return [];
 
   return readdirSync(dataPath).filter((name) => {
-    // handle 格式：tg-<digits>（连字符，ST slugify 兼容格式）
-    if (!/^tg-\d+$/.test(name)) return false;
+    // 新用户使用 tg-；历史目录可能仍是 tg_，watcher 需要继续扫描。
+    if (!/^tg[-_]\d+$/.test(name)) return false;
     return statSync(join(dataPath, name)).isDirectory();
   });
 }

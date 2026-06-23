@@ -44,6 +44,10 @@ describe('parseTgIdFromHandle', () => {
     expect(parseTgIdFromHandle('tg-672913845')).toBe('672913845');
   });
 
+  it('should extract tg_id from legacy underscore handle', () => {
+    expect(parseTgIdFromHandle('tg_672913845')).toBe('672913845');
+  });
+
   it('should return null for non-bridge handle', () => {
     expect(parseTgIdFromHandle('default-user')).toBeNull();
   });
@@ -64,6 +68,10 @@ describe('parseTgIdFromHandle', () => {
 describe('isStBridgeHandle', () => {
   it('should return true for valid bridge handle', () => {
     expect(isStBridgeHandle('tg-672913845')).toBe(true);
+  });
+
+  it('should return true for legacy underscore bridge handle', () => {
+    expect(isStBridgeHandle('tg_672913845')).toBe(true);
   });
 
   it('should return false for ST default user', () => {

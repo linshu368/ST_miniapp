@@ -1,4 +1,5 @@
 const ST_HANDLE_PREFIX = 'tg-';
+const LEGACY_ST_HANDLE_PREFIX = 'tg_';
 
 /**
  * 从 Telegram 数字 ID 确定性派生 ST 用户 handle。
@@ -28,14 +29,22 @@ export function deriveStHandle(tgId: string): string {
 
 /**
  * 从 ST handle 中提取原始 tg_id。
- * 如果 handle 不符合 tg-<digits> 格式，返回 null。
+ * 如果 handle 不符合 tg-<digits> 或历史 tg_<digits> 格式，返回 null。
  */
 export function parseTgIdFromHandle(handle: string): string | null {
-  if (!handle || !handle.startsWith(ST_HANDLE_PREFIX)) {
+  if (!handle) {
     return null;
   }
 
-  const tgId = handle.slice(ST_HANDLE_PREFIX.length);
+  const prefix = handle.startsWith(ST_HANDLE_PREFIX)
+    ? ST_HANDLE_PREFIX
+    : handle.startsWith(LEGACY_ST_HANDLE_PREFIX)
+      ? LEGACY_ST_HANDLE_PREFIX
+      : null;
+
+  if (!prefix) return null;
+
+  const tgId = handle.slice(prefix.length);
   if (!/^\d+$/.test(tgId)) {
     return null;
   }
