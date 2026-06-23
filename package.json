@@ -7,12 +7,13 @@
     "dev": "pnpm run --parallel dev:frontend dev:backend",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r --if-present lint",
+    "lint:imports": "eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}'",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"
   },
   "engines": {
-    "node": ">=20",
+    "node": ">=22",
     "pnpm": ">=9"
   },
   "lint-staged": {
@@ -24,6 +25,9 @@
     ]
   },
   "devDependencies": {
+    "@typescript-eslint/parser": "^8.62.0",
+    "eslint": "^8.57.1",
+    "eslint-plugin-import": "^2.32.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.3"

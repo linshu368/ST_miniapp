@@ -18,6 +18,12 @@ docs/github-secrets-setup.md
 支付开发留痕.md
 supabase/.temp/
 
+# vendor — ST 依赖和构建产物不入库
+vendor/sillytavern/node_modules/
+vendor/sillytavern/.env
+vendor/sillytavern/config.yaml
+vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/
+
 
 
 
