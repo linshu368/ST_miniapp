@@ -1,7 +1,6 @@
 // API 契约
 export * from './api/envelope';
 export * from './api/characters';
-export * from './api/chat';
 export * from './api/health';
 export * from './api/payment';
 export * from './api/settings';

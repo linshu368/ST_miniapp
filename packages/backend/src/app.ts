@@ -4,7 +4,6 @@ import { config } from './platform/config.js';
 import { ok } from '@miniapp/shared';
 import type { HealthData } from '@miniapp/shared';
 import characterRoutes from './routes/characters.js';
-import sessionRoutes from './routes/sessions.js';
 import bridgeRoutes from './routes/bridge.js';
 import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
@@ -58,7 +57,6 @@ export async function buildApp() {
 
   // ── 路由挂载 ──
   await app.register(characterRoutes);
-  await app.register(sessionRoutes);
   await app.register(bridgeRoutes);
   await app.register(paymentRoutes);
   await app.register(walletRoutes);
