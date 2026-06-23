@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ShieldCheck } from 'lucide-react';
 import type { PaymentType } from '@miniapp/shared';
@@ -14,6 +14,14 @@ import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
 
 export default function RechargePage() {
+  return (
+    <Suspense fallback={<RechargePageSkeleton />}>
+      <RechargePageContent />
+    </Suspense>
+  );
+}
+
+function RechargePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { whisper, impact, notification } = useHaptic();
@@ -163,6 +171,26 @@ export default function RechargePage() {
                 : '请选择套餐'}
           </button>
         </div>
+      </div>
+    </main>
+  );
+}
+
+function RechargePageSkeleton() {
+  return (
+    <main className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white">
+      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
+      <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+        <div className="h-8 w-8 rounded-full bg-slate-900" />
+        <div className="h-5 w-24 rounded bg-slate-900" />
+      </header>
+      <div className="flex flex-1 flex-col gap-3 px-4 py-8">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-[68px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/40"
+          />
+        ))}
       </div>
     </main>
   );
