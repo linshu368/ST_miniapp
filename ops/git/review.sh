@@ -8,7 +8,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+TRUSTED_REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REVIEW_REPO_ROOT="${REVIEW_REPO_ROOT:-$TRUSTED_REPO_ROOT}"
+REVIEW_REPO_ROOT="$(cd "$REVIEW_REPO_ROOT" && pwd)"
 
 # ─── 加载本地环境变量 ───
 ENV_FILE="${SCRIPT_DIR}/.env"
@@ -27,7 +29,7 @@ BASE_BRANCH="${1:-main}"
 
 PROMPT_DIR="${SCRIPT_DIR}/prompts"
 PROMPT_FILE="${PROMPT_DIR}/diff_review.md"
-ARCHITECTURE_FILE="${REPO_ROOT}/docs/ARCHITECTURE.md"
+ARCHITECTURE_FILE="${TRUSTED_REPO_ROOT}/docs/ARCHITECTURE.md"
 
 if [ ! -f "$PROMPT_FILE" ]; then
   echo "❌ 找不到 prompt 文件: ${PROMPT_FILE}" >&2
@@ -45,10 +47,10 @@ echo "📐 采集架构文档..." >&2
 ARCHITECTURE_DOC=$(cat "$ARCHITECTURE_FILE")
 
 echo "📦 采集代码上下文..." >&2
-SRC_CODE=$("$SCRIPT_DIR/collect-context.sh")
+SRC_CODE=$(REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-context.sh")
 
 echo "📝 采集 git diff (对比 ${BASE_BRANCH})..." >&2
-GIT_DIFF=$("$SCRIPT_DIR/collect-diff.sh" "$BASE_BRANCH")
+GIT_DIFF=$(REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-diff.sh" "$BASE_BRANCH")
 
 # ─── 3. 占位符替换，组装完整 prompt ───
 
@@ -138,6 +140,28 @@ else
 EOF
 fi
 
+# ─── 4.5 持久化 LLM 输入（可选）───
+# 本地: REVIEW_ARTIFACT_DIR=/tmp/review-debug bash ops/git/review.sh
+# GHA:  workflow 设置 REVIEW_ARTIFACT_DIR 后 upload-artifact 上传
+
+if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
+  mkdir -p "$REVIEW_ARTIFACT_DIR"
+  cp "$TMP_ARCH" "$REVIEW_ARTIFACT_DIR/architecture.md"
+  cp "$TMP_SRC" "$REVIEW_ARTIFACT_DIR/src-code.txt"
+  cp "$TMP_DIFF" "$REVIEW_ARTIFACT_DIR/git-diff.txt"
+  cp "$TMP_PROMPT" "$REVIEW_ARTIFACT_DIR/system-prompt.md"
+  cp "$TMP_REQ" "$REVIEW_ARTIFACT_DIR/api-request.json"
+  printf '%s\n' "$USER_MESSAGE" > "$REVIEW_ARTIFACT_DIR/user-message.txt"
+  {
+    echo "base_branch=${BASE_BRANCH}"
+    echo "model=${MODEL_NAME}"
+    echo "api_url=${API_URL}"
+    echo "format=$([ "$IS_OPENAI_FORMAT" -eq 1 ] && echo openai || echo anthropic)"
+    echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$REVIEW_ARTIFACT_DIR/meta.txt"
+  echo "💾 LLM 输入已保存到: ${REVIEW_ARTIFACT_DIR}" >&2
+fi
+
 # ─── 5. 调用 API ───
 
 RESPONSE_RAW=$(curl -s -w "\n%{http_code}" "$API_URL" \
@@ -171,6 +195,9 @@ except:
 if [ -n "$ERROR_TYPE" ] && [ "$ERROR_TYPE" != "" ]; then
   echo "❌ API 返回错误 (HTTP 状态码: $HTTP_CODE):" >&2
   echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE" >&2
+  if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
+    printf '%s' "$RESPONSE" > "$REVIEW_ARTIFACT_DIR/api-response-error.json"
+  fi
 
   if [ "$HTTP_CODE" = "403" ]; then
     echo "💡 提示: 403 Forbidden 错误通常是因为：" >&2
@@ -186,7 +213,14 @@ fi
 if [ "$HTTP_CODE" != "200" ]; then
   echo "❌ 请求失败，HTTP 状态码不是 200 (当前为: $HTTP_CODE)" >&2
   echo "$RESPONSE" >&2
+  if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
+    printf '%s' "$RESPONSE" > "$REVIEW_ARTIFACT_DIR/api-response-error.json"
+  fi
   exit 1
+fi
+
+if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
+  printf '%s' "$RESPONSE" > "$REVIEW_ARTIFACT_DIR/api-response.json"
 fi
 
 echo "$RESPONSE" | python3 -c "

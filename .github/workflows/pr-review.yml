@@ -2,25 +2,36 @@
 name: PR Review
 
 on:
-  pull_request:
+  pull_request_target:
     branches: [main, dev]
     types: [opened, synchronize, ready_for_review, reopened]
 
 permissions:
   pull-requests: write
   contents: read
+  actions: write
 
 jobs:
   review:
     runs-on: ubuntu-latest
     # hotfix 分支直接跳过；dev→main 的晋升 PR 也跳过（代码已在合入 dev 时审过）
-    if: ${{ !startsWith(github.head_ref, 'hotfix') && github.head_ref != 'dev' }}
+    if: ${{ !startsWith(github.event.pull_request.head.ref, 'hotfix') && github.event.pull_request.head.ref != 'dev' }}
 
     steps:
-      - name: Checkout
+      - name: Checkout trusted review tools
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
+
+      - name: Checkout PR code as data
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr-worktree
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -34,13 +45,18 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           BASE_REF: ${{ github.base_ref }}
+          REVIEW_ARTIFACT_DIR: review-artifacts
+          REVIEW_REPO_ROOT: pr-worktree
         run: |
           echo "=== 当前 HEAD ===" >&2
-          git log --oneline -3 >&2
+          git -C "$REVIEW_REPO_ROOT" log --oneline -3 >&2
           echo "=== 审查基准: $BASE_REF ===" >&2
           echo "==================" >&2
 
-          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }} 2>/dev/null || true
+          git -C "$REVIEW_REPO_ROOT" remote add base "https://github.com/${{ github.repository }}.git" 2>/dev/null || true
+          git -C "$REVIEW_REPO_ROOT" fetch --no-tags base "$BASE_REF:$BASE_REF" 2>/dev/null \
+            || git -C "$REVIEW_REPO_ROOT" fetch --no-tags origin "$BASE_REF:$BASE_REF" 2>/dev/null \
+            || true
 
           set +e
           bash ops/git/review.sh "$BASE_REF" > report.md 2>stderr.log
@@ -61,6 +77,15 @@ jobs:
             cat report.md
             echo 'REPORT_EOF'
           } >> $GITHUB_OUTPUT
+
+      - name: 上传 LLM 输入 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-input-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: review-artifacts/
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: 准备评论元信息
         id: comment-meta
