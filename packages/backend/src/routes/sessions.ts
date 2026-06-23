@@ -268,27 +268,29 @@ export default async function sessionRoutes(app: FastifyInstance) {
       }
 
       // Get AI Channel before charging; missing channel should never consume credits.
-      const channelId = await resolveChannelId(ModelTier.TIER_1);
+      const modelTier = ModelTier.TIER_1;
+      const channelId = await resolveChannelId(modelTier);
       const channel = await channelRegistry.getChannel(channelId);
 
       if (!channel) {
         return reply.status(500).send(fail('INTERNAL_ERROR', 'AI Channel not configured'));
       }
 
-      let charged = false;
-      const messageCreditCost = await getChatMessageCreditCost();
+      let chargeReserved = false;
+      const messageCreditCost = await getChatMessageCreditCost(modelTier);
       try {
-        const result = await wallets.chargeChatMessage({
+        const result = await wallets.reserveChatMessage({
           userId: dbUser.id,
           sessionId: id,
           clientMessageId,
           amount: messageCreditCost,
         });
-        if (result.alreadyCharged) {
+        if (result.alreadyReserved) {
           return reply.status(409).send(fail('DUPLICATE_MESSAGE', '消息已处理，请勿重复发送'));
         }
-        // cost=0 is a free-chat mode, but the RPC still reserves client_message_id for idempotency.
-        charged = true;
+        // The reservation enforces idempotency and checks balance, but actual debit happens
+        // only after assistant content is delivered.
+        chargeReserved = true;
       } catch (error) {
         request.log.warn(
           { err: error, userId: dbUser.id, cost: messageCreditCost },
@@ -316,7 +318,7 @@ export default async function sessionRoutes(app: FastifyInstance) {
           });
         });
       } catch (error) {
-        if (charged) {
+        if (chargeReserved) {
           await refundChatChargeSafely(
             wallets,
             dbUser.id,
@@ -363,12 +365,31 @@ export default async function sessionRoutes(app: FastifyInstance) {
         Readable.from(
           (async function* () {
             let fullAssistantReply = '';
+            let chargeFinalized = false;
             try {
               const stream = channel.streamGenerate(aiMessages);
               for await (const chunk of stream) {
                 fullAssistantReply += chunk;
                 // Send chunk to client
                 yield `data: ${JSON.stringify({ content: chunk })}\n\n`;
+              }
+
+              if (fullAssistantReply.trim().length > 0) {
+                await wallets.finalizeChatMessageCharge({
+                  userId: dbUser.id,
+                  sessionId: id,
+                  clientMessageId,
+                });
+                chargeFinalized = true;
+              } else if (chargeReserved) {
+                await refundChatChargeSafely(
+                  wallets,
+                  dbUser.id,
+                  id,
+                  clientMessageId,
+                  'no_assistant_content',
+                  request.log
+                );
               }
 
               // Stream finished
@@ -387,7 +408,27 @@ export default async function sessionRoutes(app: FastifyInstance) {
             } catch (error) {
               console.error('AI Stream Error:', error);
               const deliveredChars = fullAssistantReply.trim().length;
-              if (charged && deliveredChars <= REFUND_MAX_PARTIAL_REPLY_CHARS) {
+              if (
+                chargeReserved &&
+                !chargeFinalized &&
+                deliveredChars > REFUND_MAX_PARTIAL_REPLY_CHARS
+              ) {
+                try {
+                  await wallets.finalizeChatMessageCharge({
+                    userId: dbUser.id,
+                    sessionId: id,
+                    clientMessageId,
+                  });
+                  chargeFinalized = true;
+                } catch (finalizeError) {
+                  request.log.error(
+                    { err: finalizeError, sessionId: id, clientMessageId, deliveredChars },
+                    'Finalize chat charge failed after assistant content was delivered'
+                  );
+                }
+              }
+
+              if (chargeReserved && !chargeFinalized) {
                 await refundChatChargeSafely(
                   wallets,
                   dbUser.id,
@@ -396,7 +437,16 @@ export default async function sessionRoutes(app: FastifyInstance) {
                   'ai_generation_failed',
                   request.log
                 );
-              } else if (charged) {
+              } else if (chargeFinalized && deliveredChars <= REFUND_MAX_PARTIAL_REPLY_CHARS) {
+                await refundChatChargeSafely(
+                  wallets,
+                  dbUser.id,
+                  id,
+                  clientMessageId,
+                  'ai_generation_failed',
+                  request.log
+                );
+              } else if (chargeFinalized) {
                 request.log.warn(
                   { sessionId: id, clientMessageId, deliveredChars },
                   'Skip refund because assistant reply was partially delivered'

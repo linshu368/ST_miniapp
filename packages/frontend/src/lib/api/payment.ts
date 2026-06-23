@@ -10,12 +10,14 @@ import {
 import type {
   CreatePaymentOrderData,
   CreatePaymentOrderRequest,
+  GetDailyCheckinData,
   GetPaymentOrderData,
   GetPaymentOrdersData,
   GetPaymentOrdersQuery,
   GetPaymentPlansData,
   GetWalletBalanceData,
   PaymentOrderStatus,
+  PostDailyCheckinData,
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
@@ -29,6 +31,7 @@ export const paymentKeys = {
     [...paymentKeys.orders(), 'list', status] as const,
   order: (id: string) => [...paymentKeys.orders(), 'detail', id] as const,
   wallet: () => [...paymentKeys.all, 'wallet'] as const,
+  checkin: () => [...paymentKeys.wallet(), 'checkin'] as const,
 };
 
 // ==== 纯 fetch 函数（私有）====
@@ -59,6 +62,16 @@ async function postCreateOrder(body: CreatePaymentOrderRequest): Promise<CreateP
 
 async function fetchWalletBalance(): Promise<GetWalletBalanceData> {
   return apiClient<GetWalletBalanceData>('/api/wallet/balance');
+}
+
+async function fetchDailyCheckin(): Promise<GetDailyCheckinData> {
+  return apiClient<GetDailyCheckinData>('/api/wallet/checkin');
+}
+
+async function postDailyCheckin(): Promise<PostDailyCheckinData> {
+  return apiClient<PostDailyCheckinData>('/api/wallet/checkin', {
+    method: 'POST',
+  });
 }
 
 // ==== React Query hooks（业务层唯一入口）====
@@ -116,6 +129,25 @@ export function useWalletBalanceQuery() {
 export function useWalletCredits(): number {
   const { data } = useWalletBalanceQuery();
   return data?.credits ?? 0;
+}
+
+export function useDailyCheckinQuery() {
+  return useQuery<GetDailyCheckinData>({
+    queryKey: paymentKeys.checkin(),
+    queryFn: fetchDailyCheckin,
+    staleTime: 30_000,
+  });
+}
+
+export function useDailyCheckinMutation() {
+  const qc = useQueryClient();
+  return useMutation<PostDailyCheckinData, Error>({
+    mutationFn: postDailyCheckin,
+    onSuccess: (data) => {
+      qc.setQueryData<GetWalletBalanceData>(paymentKeys.wallet(), data.wallet);
+      void qc.invalidateQueries({ queryKey: paymentKeys.checkin() });
+    },
+  });
 }
 
 /** 流水列表：游标分页无限滚动 */

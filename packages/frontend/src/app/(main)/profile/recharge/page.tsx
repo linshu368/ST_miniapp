@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ShieldCheck } from 'lucide-react';
 import type { PaymentType } from '@miniapp/shared';
 
@@ -15,6 +15,7 @@ const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
 
 export default function RechargePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { whisper, impact, notification } = useHaptic();
 
   const goBack = useCallback(() => router.back(), [router]);
@@ -27,6 +28,8 @@ export default function RechargePage() {
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
 
   const plans = data?.plans ?? [];
+  const reason = searchParams.get('reason');
+  const isInsufficientCredits = reason === 'insufficient_credits';
   const selectedPlan = useMemo(
     () => (data?.plans ?? []).find((p) => p.id === selectedPlanId) ?? null,
     [data, selectedPlanId]
@@ -76,7 +79,11 @@ export default function RechargePage() {
       <div className="flex flex-1 flex-col justify-between px-4 py-4">
         <section className="px-1">
           <p className="text-sm font-medium text-slate-200">为每段相遇点一盏星光</p>
-          <p className="mt-1 text-[11px] text-pink-300/80">限时福利进行中 · 本轮单价历史最低</p>
+          <p className="mt-1 text-[11px] text-pink-300/80">
+            {isInsufficientCredits
+              ? '余额不足，补充星尘后即可继续对话'
+              : '限时福利进行中 · 本轮单价历史最低'}
+          </p>
         </section>
 
         <section className="flex flex-col gap-3 py-4">

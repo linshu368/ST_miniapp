@@ -15,8 +15,23 @@ interface MiniappWalletRow {
 
 interface WalletRpcResult {
   wallet?: MiniappWalletRow;
-  charge_status?: 'charged' | 'already_charged';
+  checkin?: DailyCheckinRpcData;
+  charge_status?: 'reserved' | 'charged' | 'already_reserved' | 'already_charged';
   refund_status?: 'refunded' | 'already_refunded';
+}
+
+interface DailyCheckinRpcData {
+  claimed_at: string;
+  next_claim_at: string;
+  reward_credits: number;
+  wallet_ledger_id?: string;
+}
+
+export interface DailyCheckinStatus {
+  can_claim: boolean;
+  last_claimed_at: string | null;
+  next_claim_at: string | null;
+  reward_credits: number;
 }
 
 export class MiniappWalletRepository {
@@ -93,6 +108,58 @@ export class MiniappWalletRepository {
     };
   }
 
+  async reserveChatMessage(input: {
+    userId: string;
+    sessionId: string;
+    clientMessageId: string;
+    amount: number;
+  }): Promise<{ wallet: MiniappWalletRow; alreadyReserved: boolean }> {
+    const { data, error } = await this.db.rpc('reserve_chat_message', {
+      p_user_id: input.userId,
+      p_session_id: input.sessionId,
+      p_client_message_id: input.clientMessageId,
+      p_amount: input.amount,
+    });
+
+    if (error) {
+      throw new Error(`预留聊天消息扣费失败：${error.message}`);
+    }
+
+    const result = data as WalletRpcResult;
+    if (!result.wallet) {
+      throw new Error('预留聊天消息扣费失败：返回结果缺少钱包信息');
+    }
+
+    return {
+      wallet: result.wallet,
+      alreadyReserved:
+        result.charge_status === 'already_reserved' || result.charge_status === 'already_charged',
+    };
+  }
+
+  async finalizeChatMessageCharge(input: {
+    userId: string;
+    sessionId: string;
+    clientMessageId: string;
+  }): Promise<MiniappWalletRow> {
+    const { data, error } = await this.db.rpc('finalize_chat_message_charge', {
+      p_user_id: input.userId,
+      p_session_id: input.sessionId,
+      p_client_message_id: input.clientMessageId,
+    });
+
+    if (error) {
+      throw new Error(`确认聊天消息扣费失败：${error.message}`);
+    }
+
+    const result = data as WalletRpcResult;
+    if (!result.wallet) {
+      throw new Error('确认聊天消息扣费失败：返回结果缺少钱包信息');
+    }
+
+    return result.wallet;
+  }
+
   async refundChatMessage(input: {
     userId: string;
     sessionId: string;
@@ -113,6 +180,67 @@ export class MiniappWalletRepository {
     const result = data as WalletRpcResult;
     return result.wallet ?? null;
   }
+
+  async getDailyCheckinStatus(userId: string): Promise<DailyCheckinStatus> {
+    const { data: configRow, error: configError } = await this.db
+      .from('runtime_config')
+      .select('value, text_value')
+      .eq('key', 'miniapp_daily_checkin_bonus_credits')
+      .maybeSingle();
+
+    if (configError) {
+      throw new Error(`查询签到配置失败：${configError.message}`);
+    }
+
+    const rewardCredits = parsePositiveInteger(configRow?.value ?? configRow?.text_value, 10);
+
+    const { data, error } = await this.db
+      .from('daily_checkins')
+      .select('claimed_at')
+      .eq('user_id', userId)
+      .order('claimed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`查询签到状态失败：${error.message}`);
+    }
+
+    const lastClaimedAt = (data as { claimed_at?: string } | null)?.claimed_at ?? null;
+    const nextClaimAt = lastClaimedAt
+      ? new Date(new Date(lastClaimedAt).getTime() + 24 * 60 * 60 * 1000).toISOString()
+      : null;
+
+    return {
+      can_claim: !nextClaimAt || Date.now() >= new Date(nextClaimAt).getTime(),
+      last_claimed_at: lastClaimedAt,
+      next_claim_at: nextClaimAt,
+      reward_credits: rewardCredits,
+    };
+  }
+
+  async claimDailyCheckin(userId: string): Promise<{
+    wallet: MiniappWalletRow;
+    checkin: DailyCheckinRpcData;
+  }> {
+    const { data, error } = await this.db.rpc('claim_daily_checkin', {
+      p_user_id: userId,
+    });
+
+    if (error) {
+      throw new Error(`领取签到奖励失败：${error.message}`);
+    }
+
+    const result = data as WalletRpcResult;
+    if (!result.wallet || !result.checkin) {
+      throw new Error('领取签到奖励失败：返回结果缺少钱包或签到信息');
+    }
+
+    return {
+      wallet: result.wallet,
+      checkin: result.checkin,
+    };
+  }
 }
 
 export function toWalletBalance(row: MiniappWalletRow): GetWalletBalanceData {
@@ -126,4 +254,10 @@ export function toWalletBalance(row: MiniappWalletRow): GetWalletBalanceData {
     last_paid_at: row.last_paid_at,
     total_paid_amount: String(row.total_paid_amount ?? '0.00'),
   };
+}
+
+function parsePositiveInteger(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
 }
