@@ -242,7 +242,7 @@ import { Button } from '@/components/ui/button';
 - 取消按钮：改为 `<Button variant="outline" className="... border-slate-700 bg-slate-900 ...">`。
 - 充值按钮：改为 `<Button className="... bg-gradient-to-r from-sky-500 to-indigo-500 ...">`。
 
-**约束执行**：`chat/composer.tsx` 及其 char-hue 主题、ST 侧边栏 `ChatSidebar`、消息列表 `MessageList` 均未改动，ST 聊天核心逻辑不受影响。
+**约束执行**：`chat/composer.tsx` 的外观已调整为更干净的设计，但 `char-hue` 主题绑定、ST 侧边栏 `ChatSidebar`、消息列表 `MessageList` 均未改动，ST 聊天核心逻辑不受影响。
 
 **新增 import**：
 
@@ -257,9 +257,39 @@ import {
 } from '@/components/ui/dialog';
 ```
 
----
+### 3.9 支付方式选择图标 (Done)
 
-## 4. 验证情况
+**原状态**：
+
+- 充值页的支付方式（支付宝/微信）仅使用了颜色的圆角框加上文字，依靠手写颜色区分。
+
+**本次改造**：
+
+- 新增 `packages/frontend/src/components/icons.tsx`，引入了微信支付与支付宝的官方矢量 SVG 图标。
+- 在 `profile/recharge/page.tsx` 中应用了真实品牌图标，大幅降低了 AI 生成感，界面更加自然。
+
+### 3.10 聊天输入框 (Done)
+
+**原状态**：
+
+- 包含过于浮夸的光晕和发光特效阴影 (`shadow-[0_0_22px...]`)。
+- 复杂的手写状态。
+
+**本次改造**：
+
+- 保留基于角色颜色的 `--char-hue` 控制机制。
+- 移除了夸张的弥散阴影和发光，回归克制、干净的 iOS/微信风格输入框设计，采用细边框与柔和的主题色高亮。
+
+### 3.11 消息主题选择页 (Done)
+
+**原状态**：
+
+- 主题配置页 `profile/settings/theme/page.tsx` 大量使用手写的背景块与边框变化。
+
+**本次改造**：
+
+- 使用 `<Card>` 组件重构主题列表。
+- 加入悬浮微动效与规范的环形聚焦边框（`focus-visible:ring`），移除了原有的 AI 感浓厚的强阴影。
 
 ### 4.1 TypeScript 类型检查
 
@@ -306,10 +336,8 @@ pnpm --filter @miniapp/frontend lint
 
 ## 6. 未改动的前端部分（刻意保留）
 
-- `chat/composer.tsx`：依赖复杂的 `--char-hue` CSS 变量实现角色氛围色，不在本次重构范围。
-- `components/payment/plan-card.tsx`：套餐卡片的选中态、角标、渐变逻辑高度定制，与通用组件库契合度低，暂保持现状。
-- `profile/recharge/page.tsx` 的支付方式选择按钮（支付宝/微信）：颜色逻辑基于支付品牌色，保持手写便于视觉与品牌一致。
-- `profile/settings/theme/` 主题配置相关页面：如有，不在本次改造范围。
+- `components/payment/plan-card.tsx`：套餐卡片已经使用 `<Card>` 组件接管，并在 `variant` 中维护并提纯了不同套餐的视觉差异，保留了 SVIP、高亮词缀等视觉特性，但整体清除了过于生硬的厚重阴影。
+- `profile/settings/theme/` 消息主题配置页面：已经使用 `<Card>` 规范化了各个主题选项的视觉反馈。
 - 任何 ST 相关代码文件。
 
 ---
