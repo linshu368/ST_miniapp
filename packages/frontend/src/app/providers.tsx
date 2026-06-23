@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { getQueryClient } from '@/lib/api/query-client';
+import { useUserSettingsQuery } from '@/lib/api/settings';
 import { initTelegramSdk } from '@/lib/telegram/init';
 import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useThemeStore } from '@/stores/theme-store';
@@ -12,6 +13,7 @@ import { useUserProfileStore } from '@/stores/user-profile-store';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
+  const [telegramReady, setTelegramReady] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
   const hydrateTheme = useThemeStore((s) => s.hydrate);
   const hydrateFontScale = useFontScaleStore((s) => s.hydrate);
@@ -25,12 +27,27 @@ export function Providers({ children }: { children: React.ReactNode }) {
     hydrateTheme();
     // 应用持久化的消息字号倍率
     hydrateFontScale();
+    setTelegramReady(true);
   }, [hydrateUserProfile, hydrateTheme, hydrateFontScale]);
 
   return (
     <QueryClientProvider client={queryClient}>
+      {telegramReady ? <UserSettingsHydrator /> : null}
       {children}
       {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );
+}
+
+function UserSettingsHydrator() {
+  const applyServerDisplayName = useUserProfileStore((s) => s.applyServerDisplayName);
+  const { data } = useUserSettingsQuery();
+
+  useEffect(() => {
+    if (data) {
+      applyServerDisplayName(data.settings.display_name);
+    }
+  }, [applyServerDisplayName, data]);
+
+  return null;
 }

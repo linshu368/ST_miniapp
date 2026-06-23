@@ -4,9 +4,12 @@ export * from './api/characters';
 export * from './api/chat';
 export * from './api/health';
 export * from './api/payment';
+export * from './api/settings';
+export * from './api/wallet';
+export * from './config/database';
 
 // ST Bridge（身份映射、配置清单等）
 export * from './st-bridge';
 
-// dev 环境 fixtures（前端 mock 引用的真 UUID 常量）
+// dev 环境 fixtures
 export * from './dev-fixtures';

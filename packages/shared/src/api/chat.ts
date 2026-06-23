@@ -42,6 +42,8 @@ export interface GetSessionDetailData {
 // POST /api/sessions/:id/messages 的请求 / 响应
 export interface PostMessageRequest {
   content: string;
+  /** 客户端生成的消息幂等键，网络重试时保持不变可避免重复扣费 */
+  client_message_id?: string;
 }
 export interface PostMessageData {
   message: Message;

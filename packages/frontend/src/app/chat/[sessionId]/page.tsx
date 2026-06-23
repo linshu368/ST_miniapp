@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -29,6 +29,7 @@ export default function ChatPage() {
   const sendMessage = useSendMessageMutation(sessionId);
   const isTyping = useAssistantTyping(sessionId);
   const haptic = useHaptic();
+  const [showRechargePrompt, setShowRechargePrompt] = useState(false);
 
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const userDisplayName = useUserProfileStore((s) => s.displayName);
@@ -69,7 +70,16 @@ export default function ChatPage() {
   const handleSend = useCallback(
     (content: string) => {
       // 发送不震动——她才是主角，你说出去的话不需要自己确认
-      sendMessage.mutate({ content });
+      sendMessage.mutate(
+        { content, client_message_id: newId('client-msg') },
+        {
+          onError: (error) => {
+            if (error.message.includes('402')) {
+              setShowRechargePrompt(true);
+            }
+          },
+        }
+      );
     },
     [sendMessage]
   );
@@ -227,9 +237,46 @@ export default function ChatPage() {
         />
       </div>
 
+      {showRechargePrompt ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] backdrop-blur-sm sm:items-center sm:pb-4">
+          <div className="w-full max-w-sm rounded-3xl border border-sky-400/20 bg-slate-950/95 p-5 shadow-2xl shadow-sky-950/40">
+            <div className="text-center">
+              <p className="text-xs font-medium text-sky-300">星尘不足</p>
+              <h2 className="mt-1 text-lg font-black text-white">需要补充星尘才能继续对话</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                当前余额不足以完成本次模型调用。你可以去星尘商店充值，也可以先取消返回聊天。
+              </p>
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowRechargePrompt(false)}
+                className="h-11 flex-1 rounded-xl border border-slate-700 bg-slate-900 text-sm font-semibold text-slate-300"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/profile/recharge?reason=insufficient_credits')}
+                className="h-11 flex-1 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 text-sm font-bold text-white shadow-lg shadow-sky-500/25"
+              >
+                去充值
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ChatSidebar currentSessionId={sessionId} />
     </main>
   );
+}
+
+function newId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function HomeIcon() {

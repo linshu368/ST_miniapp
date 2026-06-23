@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "npx prisma generate && tsx src/server.ts",
+    "payment:expire-orders": "tsx src/scripts/expire-payment-orders.ts",
+    "payment:fake-webhook": "tsx src/scripts/fake-payment-webhook.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

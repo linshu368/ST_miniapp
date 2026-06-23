@@ -6,6 +6,8 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { channelRegistry } from '../ai/ChannelRegistry.js';
 import { ModelTier, resolveChannelId } from '../ai/domain/ModelStrategy.js';
+import { getChatMessageCreditCost } from '../features/chat/domain/billingRules.js';
+import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import type { OpenAIMessage } from '../ai/ports/IAIChannel.js';
 import type {
   GetSessionsData,
@@ -21,7 +23,11 @@ import type {
   Message,
 } from '@miniapp/shared';
 
+const REFUND_MAX_PARTIAL_REPLY_CHARS = 10;
+
 export default async function sessionRoutes(app: FastifyInstance) {
+  const wallets = new MiniappWalletRepository();
+
   // @frontend-ready: true
   app.get('/api/sessions', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
@@ -236,7 +242,8 @@ export default async function sessionRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const { id } = request.params as { id: string };
-      const { content } = request.body as PostMessageRequest;
+      const { content, client_message_id } = request.body as PostMessageRequest;
+      const clientMessageId = normalizeClientMessageId(client_message_id);
 
       const dbUser = await getOrCreateDbUser(request.user);
 
@@ -260,23 +267,69 @@ export default async function sessionRoutes(app: FastifyInstance) {
         return reply.status(403).send(fail('FORBIDDEN', 'Access denied'));
       }
 
+      // Get AI Channel before charging; missing channel should never consume credits.
+      const modelTier = ModelTier.TIER_1;
+      const channelId = await resolveChannelId(modelTier);
+      const channel = await channelRegistry.getChannel(channelId);
+
+      if (!channel) {
+        return reply.status(500).send(fail('INTERNAL_ERROR', 'AI Channel not configured'));
+      }
+
+      let chargeReserved = false;
+      const messageCreditCost = await getChatMessageCreditCost(modelTier);
+      try {
+        const result = await wallets.reserveChatMessage({
+          userId: dbUser.id,
+          sessionId: id,
+          clientMessageId,
+          amount: messageCreditCost,
+        });
+        if (result.alreadyReserved) {
+          return reply.status(409).send(fail('DUPLICATE_MESSAGE', '消息已处理，请勿重复发送'));
+        }
+        // The reservation enforces idempotency and checks balance, but actual debit happens
+        // only after assistant content is delivered.
+        chargeReserved = true;
+      } catch (error) {
+        request.log.warn(
+          { err: error, userId: dbUser.id, cost: messageCreditCost },
+          'MiniApp wallet credits insufficient'
+        );
+        return reply.status(402).send(fail('INSUFFICIENT_CREDITS', '星尘余额不足，请先充值'));
+      }
+
       const now = new Date();
       // 1. Save user message
-      await prisma.$transaction(async (tx) => {
-        await tx.appMessage.create({
-          data: {
-            session_id: id,
-            role: 'user',
-            content: content,
-            created_at: now,
-          },
-        });
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.appMessage.create({
+            data: {
+              session_id: id,
+              role: 'user',
+              content: content,
+              created_at: now,
+            },
+          });
 
-        await tx.appSession.update({
-          where: { id },
-          data: { last_message_at: now },
+          await tx.appSession.update({
+            where: { id },
+            data: { last_message_at: now },
+          });
         });
-      });
+      } catch (error) {
+        if (chargeReserved) {
+          await refundChatChargeSafely(
+            wallets,
+            dbUser.id,
+            id,
+            clientMessageId,
+            'message_persist_failed',
+            request.log
+          );
+        }
+        throw error;
+      }
 
       // 2. Prepare messages for AI
       const aiMessages: OpenAIMessage[] = [];
@@ -302,14 +355,6 @@ export default async function sessionRoutes(app: FastifyInstance) {
       // Add current user message
       aiMessages.push({ role: 'user', content: content });
 
-      // 3. Get AI Channel
-      const channelId = await resolveChannelId(ModelTier.TIER_1);
-      const channel = await channelRegistry.getChannel(channelId);
-
-      if (!channel) {
-        return reply.status(500).send(fail('INTERNAL_ERROR', 'AI Channel not configured'));
-      }
-
       // 4. Setup SSE response
       reply.header('Content-Type', 'text/event-stream');
       reply.header('Cache-Control', 'no-cache');
@@ -320,12 +365,31 @@ export default async function sessionRoutes(app: FastifyInstance) {
         Readable.from(
           (async function* () {
             let fullAssistantReply = '';
+            let chargeFinalized = false;
             try {
               const stream = channel.streamGenerate(aiMessages);
               for await (const chunk of stream) {
                 fullAssistantReply += chunk;
                 // Send chunk to client
                 yield `data: ${JSON.stringify({ content: chunk })}\n\n`;
+              }
+
+              if (fullAssistantReply.trim().length > 0) {
+                await wallets.finalizeChatMessageCharge({
+                  userId: dbUser.id,
+                  sessionId: id,
+                  clientMessageId,
+                });
+                chargeFinalized = true;
+              } else if (chargeReserved) {
+                await refundChatChargeSafely(
+                  wallets,
+                  dbUser.id,
+                  id,
+                  clientMessageId,
+                  'no_assistant_content',
+                  request.log
+                );
               }
 
               // Stream finished
@@ -343,6 +407,51 @@ export default async function sessionRoutes(app: FastifyInstance) {
               }
             } catch (error) {
               console.error('AI Stream Error:', error);
+              const deliveredChars = fullAssistantReply.trim().length;
+              if (
+                chargeReserved &&
+                !chargeFinalized &&
+                deliveredChars > REFUND_MAX_PARTIAL_REPLY_CHARS
+              ) {
+                try {
+                  await wallets.finalizeChatMessageCharge({
+                    userId: dbUser.id,
+                    sessionId: id,
+                    clientMessageId,
+                  });
+                  chargeFinalized = true;
+                } catch (finalizeError) {
+                  request.log.error(
+                    { err: finalizeError, sessionId: id, clientMessageId, deliveredChars },
+                    'Finalize chat charge failed after assistant content was delivered'
+                  );
+                }
+              }
+
+              if (chargeReserved && !chargeFinalized) {
+                await refundChatChargeSafely(
+                  wallets,
+                  dbUser.id,
+                  id,
+                  clientMessageId,
+                  'ai_generation_failed',
+                  request.log
+                );
+              } else if (chargeFinalized && deliveredChars <= REFUND_MAX_PARTIAL_REPLY_CHARS) {
+                await refundChatChargeSafely(
+                  wallets,
+                  dbUser.id,
+                  id,
+                  clientMessageId,
+                  'ai_generation_failed',
+                  request.log
+                );
+              } else if (chargeFinalized) {
+                request.log.warn(
+                  { sessionId: id, clientMessageId, deliveredChars },
+                  'Skip refund because assistant reply was partially delivered'
+                );
+              }
               yield `data: ${JSON.stringify({ error: 'Generation failed' })}\n\n`;
             }
           })()
@@ -350,4 +459,34 @@ export default async function sessionRoutes(app: FastifyInstance) {
       );
     }
   );
+}
+
+function normalizeClientMessageId(value: unknown): string {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim().slice(0, 128);
+  }
+  return `server-msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function refundChatChargeSafely(
+  wallets: MiniappWalletRepository,
+  userId: string,
+  sessionId: string,
+  clientMessageId: string,
+  reason: string,
+  log: { warn: (obj: unknown, msg: string) => void }
+) {
+  try {
+    await wallets.refundChatMessage({
+      userId,
+      sessionId,
+      clientMessageId,
+      reason,
+    });
+  } catch (error) {
+    log.warn(
+      { err: error, userId, sessionId, clientMessageId, reason },
+      'Refund chat charge failed'
+    );
+  }
 }

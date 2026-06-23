@@ -7,12 +7,27 @@
  */
 
 import 'dotenv/config';
+import {
+  DEFAULT_PROD_SUPABASE_PROJECT_REF,
+  DEFAULT_TEST_SUPABASE_PROJECT_REF,
+  createDatabaseConfig,
+} from '@miniapp/shared';
 import { z } from 'zod';
+
+createDatabaseConfig({
+  env: process.env,
+  variableNames: ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_PROJECT_REF'],
+});
 
 const ConfigSchema = z.object({
   // Supabase
   SUPABASE_URL: z.string().url('SUPABASE_URL 必须是合法 URL'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(10, 'SUPABASE_SERVICE_ROLE_KEY 不能为空'),
+  DATABASE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  SUPABASE_PROJECT_REF: z.string().optional(),
+  PROD_SUPABASE_PROJECT_REF: z.string().default(DEFAULT_PROD_SUPABASE_PROJECT_REF),
+  TEST_SUPABASE_PROJECT_REF: z.string().default(DEFAULT_TEST_SUPABASE_PROJECT_REF),
+  ALLOW_PROD_DATABASE: z.string().optional(),
 
   // ST 文件系统
   ST_DATA_PATH: z.string().min(1, 'ST_DATA_PATH 不能为空'),

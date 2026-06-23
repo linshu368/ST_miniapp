@@ -1,20 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Pencil, Settings, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronRight, Gift, Pencil, Settings, Sparkles } from 'lucide-react';
 
-import { mockCurrentUser } from '@/lib/mock-data';
-import { useMockWalletCredits } from '@/lib/api/payment';
+import { useDailyCheckinMutation, useDailyCheckinQuery, useWalletCredits } from '@/lib/api/payment';
+import { usePatchUserSettingsMutation } from '@/lib/api/settings';
+import { getRawInitData } from '@/lib/telegram/auth';
 import { formatNumber } from '@/lib/utils/payment';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
 export default function ProfilePage() {
-  const user = mockCurrentUser;
-  // 实时订阅 mock 钱包余额，聊天扣费 / 充值到账都会即时反映
-  const credits = useMockWalletCredits();
+  const telegramUserId = useMemo(readTelegramUserId, []);
+  const credits = useWalletCredits();
   const displayName = useUserProfileStore((s) => s.displayName);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
+  const patchSettings = usePatchUserSettingsMutation();
+  const checkinQ = useDailyCheckinQuery();
+  const checkin = checkinQ.data?.checkin;
+  const claimCheckin = useDailyCheckinMutation();
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -33,7 +37,9 @@ export default function ProfilePage() {
   };
 
   const commit = () => {
-    setDisplayName(draft);
+    const next = draft.trim();
+    setDisplayName(next);
+    patchSettings.mutate({ display_name: next || null });
     setIsEditing(false);
   };
 
@@ -108,9 +114,73 @@ export default function ProfilePage() {
               />
             </button>
           )}
-          <div className="mt-0.5 text-[11px] text-muted-foreground/70">ID · {user.tg_id}</div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground/70">
+            ID · {telegramUserId ?? '未连接 Telegram'}
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-3xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-card to-indigo-500/10 p-4 shadow-[0_18px_60px_-40px_rgba(56,189,248,0.7)]">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-300">
+            <Gift className="h-5 w-5" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-foreground">每日签到</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  奖励进入赠送星尘，聊天扣费时自动抵扣
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={!checkin?.can_claim || claimCheckin.isPending}
+                onClick={() => claimCheckin.mutate()}
+                className="h-9 shrink-0 rounded-full bg-sky-500 px-3 text-xs font-bold text-white shadow-lg shadow-sky-500/20 disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
+              >
+                {claimCheckin.isPending
+                  ? '领取中'
+                  : checkin?.can_claim
+                    ? `领 ${checkin.reward_credits}`
+                    : '已签到'}
+              </button>
+            </div>
+            {!checkin?.can_claim && checkin?.next_claim_at ? (
+              <p className="mt-3 text-[11px] text-muted-foreground/80">
+                下次可领：{formatDateTime(checkin.next_claim_at)}
+              </p>
+            ) : (
+              <p className="mt-3 text-[11px] text-sky-300/80">
+                每 24 小时可领取一次，数量由运营配置调整。
+              </p>
+            )}
+          </div>
         </div>
       </section>
     </main>
   );
+}
+
+function readTelegramUserId(): string | null {
+  const initData = getRawInitData();
+  if (!initData) return null;
+
+  try {
+    const user = new URLSearchParams(initData).get('user');
+    if (!user) return null;
+    const parsed = JSON.parse(user) as { id?: number | string };
+    return parsed.id !== undefined ? String(parsed.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
 }

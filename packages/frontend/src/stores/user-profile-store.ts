@@ -19,6 +19,8 @@ interface UserProfileState {
   hydrate: () => void;
   /** 用户在 profile 页改名时调用。空字符串 → 清除自定义,回退到 telegram 默认 */
   setDisplayName: (next: string) => void;
+  /** 服务端 settings 返回后调用。null 表示继续使用本地/Telegram fallback */
+  applyServerDisplayName: (next: string | null) => void;
 }
 
 function readOverride(): string | undefined {
@@ -66,5 +68,16 @@ export const useUserProfileStore = create<UserProfileState>((set) => ({
       writeOverride(trimmed);
       set({ displayName: trimmed, hasCustomName: true });
     }
+  },
+  applyServerDisplayName: (next) => {
+    const normalized = next?.trim();
+    if (normalized) {
+      writeOverride(normalized);
+      set({ displayName: normalized, hasCustomName: true });
+      return;
+    }
+
+    const fallback = readOverride() ?? getTelegramDefaultDisplayName();
+    set({ displayName: fallback, hasCustomName: !!readOverride() });
   },
 }));

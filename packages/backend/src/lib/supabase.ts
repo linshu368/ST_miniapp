@@ -7,14 +7,15 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { config } from '../platform/config.js';
 
 let _client: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient {
   if (_client) return _client;
 
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = config.supabase.url;
+  const key = config.supabase.serviceRoleKey;
 
   if (!url || !key) {
     throw new Error(

@@ -3,19 +3,19 @@ import { deriveStHandle, parseTgIdFromHandle, isStBridgeHandle } from '../st-bri
 
 describe('deriveStHandle', () => {
   it('should derive handle from numeric tg_id', () => {
-    expect(deriveStHandle('672913845')).toBe('tg_672913845');
+    expect(deriveStHandle('672913845')).toBe('tg-672913845');
   });
 
   it('should handle very large tg_id', () => {
-    expect(deriveStHandle('9999999999999')).toBe('tg_9999999999999');
+    expect(deriveStHandle('9999999999999')).toBe('tg-9999999999999');
   });
 
   it('should handle single digit tg_id', () => {
-    expect(deriveStHandle('1')).toBe('tg_1');
+    expect(deriveStHandle('1')).toBe('tg-1');
   });
 
   it('should trim whitespace', () => {
-    expect(deriveStHandle(' 672913845 ')).toBe('tg_672913845');
+    expect(deriveStHandle(' 672913845 ')).toBe('tg-672913845');
   });
 
   it('should throw on empty string', () => {
@@ -41,6 +41,10 @@ describe('deriveStHandle', () => {
 
 describe('parseTgIdFromHandle', () => {
   it('should extract tg_id from valid handle', () => {
+    expect(parseTgIdFromHandle('tg-672913845')).toBe('672913845');
+  });
+
+  it('should extract tg_id from legacy underscore handle', () => {
     expect(parseTgIdFromHandle('tg_672913845')).toBe('672913845');
   });
 
@@ -52,17 +56,21 @@ describe('parseTgIdFromHandle', () => {
     expect(parseTgIdFromHandle('')).toBeNull();
   });
 
-  it('should return null for tg_ prefix with non-numeric suffix', () => {
-    expect(parseTgIdFromHandle('tg_abc')).toBeNull();
+  it('should return null for tg- prefix with non-numeric suffix', () => {
+    expect(parseTgIdFromHandle('tg-abc')).toBeNull();
   });
 
   it('should return null for bare prefix', () => {
-    expect(parseTgIdFromHandle('tg_')).toBeNull();
+    expect(parseTgIdFromHandle('tg-')).toBeNull();
   });
 });
 
 describe('isStBridgeHandle', () => {
   it('should return true for valid bridge handle', () => {
+    expect(isStBridgeHandle('tg-672913845')).toBe(true);
+  });
+
+  it('should return true for legacy underscore bridge handle', () => {
     expect(isStBridgeHandle('tg_672913845')).toBe(true);
   });
 

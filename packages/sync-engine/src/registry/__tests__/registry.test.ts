@@ -42,7 +42,7 @@ function makeRegistry(entries: SyncEntry[]): SyncRegistry {
 describe('正向：加载真实 registry.yaml', () => {
   it('应成功加载，返回 4 条规则', () => {
     const registry = loadRegistry(REGISTRY_PATH);
-    expect(registry.version).toBe(1);
+    expect(registry.version).toBe(2);
     expect(registry.entries).toHaveLength(4);
   });
 

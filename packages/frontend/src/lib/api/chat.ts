@@ -16,6 +16,7 @@ import type {
 } from '@miniapp/shared';
 
 import { apiClient, apiStreamClient } from './client';
+import { paymentKeys } from './payment';
 
 // ==== Query Keys ====
 export const sessionKeys = {
@@ -209,6 +210,20 @@ export function useSendMessageMutation(sessionId: string) {
         return result;
       } catch (err) {
         hasError = true;
+        if (err instanceof Error && (err.message.includes('402') || err.message.includes('409'))) {
+          qc.setQueryData<GetSessionDetailData>(sessionKeys.detail(sessionId), (prev) =>
+            prev
+              ? {
+                  session: {
+                    ...prev.session,
+                    messages: prev.session.messages.filter(
+                      (m) => m.id !== userMsg.id && m.id !== tempAssistantId
+                    ),
+                  },
+                }
+              : prev
+          );
+        }
         throw err;
       } finally {
         setTyping(sessionId, false);
@@ -251,6 +266,7 @@ export function useSendMessageMutation(sessionId: string) {
       if (!error) {
         void qc.invalidateQueries({ queryKey: sessionKeys.detail(sessionId) });
       }
+      void qc.invalidateQueries({ queryKey: paymentKeys.wallet() });
       void qc.invalidateQueries({ queryKey: sessionKeys.lists() });
     },
   });
