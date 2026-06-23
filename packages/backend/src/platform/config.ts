@@ -1,119 +1,18 @@
 import 'dotenv/config';
-
-type DatabaseEnvironment = 'development' | 'test' | 'production';
-type DatabaseTarget = 'test' | 'production';
-
-const DEFAULT_PROD_SUPABASE_PROJECT_REF = 'wbtsfzozlmurljvglhpn';
-const DEFAULT_TEST_SUPABASE_PROJECT_REF = 'qekxjxpznjvoccvmgozk';
-
-function normalizeDatabaseEnvironment(value: string | undefined): DatabaseEnvironment {
-  if (value === 'production' || value === 'test' || value === 'development') {
-    return value;
-  }
-  if (
-    process.env.RAILWAY_ENVIRONMENT === 'production' ||
-    process.env.RAILWAY_ENVIRONMENT_NAME === 'production'
-  ) {
-    return 'production';
-  }
-  return process.env.NODE_ENV === 'production' ? 'production' : 'development';
-}
-
-function extractSupabaseProjectRef(value: string | undefined): string | null {
-  if (!value) return null;
-
-  const patterns = [
-    /https?:\/\/([a-z0-9]{20})\.supabase\.co/i,
-    /db\.([a-z0-9]{20})\.supabase\.co/i,
-    /postgres(?:ql)?:\/\/[^@/]*postgres\.([a-z0-9]{20})[:@]/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = value.match(pattern);
-    if (match?.[1]) return match[1];
-  }
-
-  return null;
-}
+import { createDatabaseConfig } from '@miniapp/shared';
 
 const nodeEnv = process.env.NODE_ENV || 'development';
-const databaseEnv = normalizeDatabaseEnvironment(process.env.DATABASE_ENV);
-const prodSupabaseProjectRef =
-  process.env.PROD_SUPABASE_PROJECT_REF || DEFAULT_PROD_SUPABASE_PROJECT_REF;
-const testSupabaseProjectRef =
-  process.env.TEST_SUPABASE_PROJECT_REF || DEFAULT_TEST_SUPABASE_PROJECT_REF;
-const databaseTarget: DatabaseTarget = databaseEnv === 'production' ? 'production' : 'test';
-
-function applyDatabaseTargetEnvironment(): void {
-  const prefix = databaseTarget === 'production' ? 'PROD' : 'TEST';
-  const selectedProjectRef =
-    databaseTarget === 'production' ? prodSupabaseProjectRef : testSupabaseProjectRef;
-
-  const variableNames = [
+const databaseConfig = createDatabaseConfig({
+  env: process.env,
+  nodeEnv,
+  variableNames: [
     'DATABASE_URL',
     'DIRECT_URL',
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',
     'SUPABASE_PROJECT_REF',
-  ] as const;
-
-  for (const name of variableNames) {
-    const selectedValue = process.env[`${prefix}_${name}`];
-    if (selectedValue) {
-      process.env[name] = selectedValue;
-    }
-  }
-
-  process.env.DATABASE_ENV = databaseEnv;
-  process.env.SUPABASE_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || selectedProjectRef;
-}
-
-applyDatabaseTargetEnvironment();
-
-const detectedSupabaseProjectRefs = [
-  process.env.SUPABASE_PROJECT_REF || null,
-  extractSupabaseProjectRef(process.env.SUPABASE_URL),
-  extractSupabaseProjectRef(process.env.DATABASE_URL),
-  extractSupabaseProjectRef(process.env.DIRECT_URL),
-].filter((value): value is string => Boolean(value));
-const uniqueSupabaseProjectRefs = Array.from(new Set(detectedSupabaseProjectRefs));
-const configuredSupabaseProjectRef = uniqueSupabaseProjectRefs[0] || null;
-
-function assertDatabaseIsolation(): void {
-  if (uniqueSupabaseProjectRefs.length === 0) return;
-
-  if (uniqueSupabaseProjectRefs.length > 1) {
-    throw new Error(`Supabase 配置中出现多个 project ref：${uniqueSupabaseProjectRefs.join(', ')}`);
-  }
-
-  if (databaseEnv === 'test' && configuredSupabaseProjectRef !== testSupabaseProjectRef) {
-    throw new Error(
-      `DATABASE_ENV=test 必须连接测试 Supabase 项目 ${testSupabaseProjectRef}，当前为 ${configuredSupabaseProjectRef}`
-    );
-  }
-
-  if (databaseEnv === 'production' && configuredSupabaseProjectRef !== prodSupabaseProjectRef) {
-    throw new Error(
-      `DATABASE_ENV=production 必须连接生产 Supabase 项目 ${prodSupabaseProjectRef}，当前为 ${configuredSupabaseProjectRef}`
-    );
-  }
-
-  if (
-    databaseEnv !== 'production' &&
-    configuredSupabaseProjectRef === prodSupabaseProjectRef &&
-    process.env.ALLOW_PROD_DATABASE !== '1'
-  ) {
-    throw new Error(
-      '非 production 环境禁止连接生产 Supabase 项目。若确需临时操作，必须显式设置 ALLOW_PROD_DATABASE=1'
-    );
-  }
-
-  if (nodeEnv === 'production' && databaseEnv !== 'production') {
-    throw new Error('NODE_ENV=production 时 DATABASE_ENV 必须为 production');
-  }
-}
-
-assertDatabaseIsolation();
+  ],
+});
 
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
@@ -123,11 +22,11 @@ export const config = {
 
   // ── 数据库环境隔离 ────────────────────────────────────────────────────────
   database: {
-    environment: databaseEnv,
-    projectRef: configuredSupabaseProjectRef,
-    prodProjectRef: prodSupabaseProjectRef,
-    testProjectRef: testSupabaseProjectRef,
-    target: databaseTarget,
+    environment: databaseConfig.environment,
+    projectRef: databaseConfig.projectRef,
+    prodProjectRef: databaseConfig.prodProjectRef,
+    testProjectRef: databaseConfig.testProjectRef,
+    target: databaseConfig.target,
   },
 
   // ── Supabase ───────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ export * from './api/health';
 export * from './api/payment';
 export * from './api/settings';
 export * from './api/wallet';
+export * from './config/database';
 
 // ST Bridge（身份映射、配置清单等）
 export * from './st-bridge';
