@@ -13,7 +13,8 @@ export interface CharacterRow {
   id: string;
   name: string;
   is_default: boolean;
-  enabled: boolean;
+  is_published: boolean;
+  is_active: boolean;
   sort_order: number;
   // chara_card_v3 字段（provisioner 不需要全部，按需取）
   description: string | null;
@@ -68,7 +69,7 @@ export interface ApiConfigRow {
 export interface ProvisionData {
   /** 用户 st_handle，从 users 表读取 */
   stHandle: string;
-  /** 分区 A：enabled 的平台角色卡列表（按 sort_order 排序） */
+  /** 分区 A：已发布且可用的平台角色卡列表（按 sort_order 排序） */
   characters: CharacterRow[];
   /** 分区 A：enabled 的平台预设列表 */
   presets: PresetRow[];
@@ -103,7 +104,8 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
       schemaClient('miniapp')
         .from('characters')
         .select('*')
-        .eq('enabled', true)
+        .eq('is_published', true)
+        .eq('is_active', true)
         .order('sort_order', { ascending: true }),
       schemaClient('st_platform')
         .from('platform_presets')

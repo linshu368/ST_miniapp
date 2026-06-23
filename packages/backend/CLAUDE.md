@@ -8,7 +8,7 @@
 
 - **框架**：Fastify 5。
 - **语言**：TypeScript 严格模式。**禁止 `any`**。
-- **运行时**：Node.js 20.x，使用 tsx 执行。
+- **运行时**：Node.js 22.x，使用 tsx 执行。
 - **数据契约**：所有前后端共享的数据形状必须定义在 `packages/shared/`，后端不得在 `backend/` 内部私定对外数据形状。
 - **数据库**：Supabase PostgreSQL，与 Bot 共享。
 - **环境变量**：不要提交到 git，走部署平台（Railway）管理。
@@ -25,8 +25,8 @@
 // @frontend-ready: true
 app.get('/api/characters', async (req, reply) => { ... })
 
-// @frontend-ready: false — LLM 调用未接入
-app.post('/api/sessions/:id/messages', async (req, reply) => { ... })
+// @frontend-ready: false — 计费逻辑 stub
+app.post('/api/payment/orders', async (req, reply) => { ... })
 ```
 
 **判断 true / false 的标准**（存在灰色地带时就近决定，但要前后一致）：
@@ -61,7 +61,6 @@ handler 的请求体 / 响应体类型全部引自 `packages/shared/`。shared �
 
 但 **Dev 因技术接入需要改前端是正常协作,不算违规**,常见场景:
 
-- SSE / WebSocket / 新协议的 client 封装(例如 `lib/api/chat.ts` 接 SSE 流)
 - API client / fetch / axios 等基础封装(例如 `lib/api/client.ts` 鉴权 header 调整)
 - `lib/api/` 里的真实后端请求接入
 - `packages/shared/` 类型变化后前端引用点的对齐
@@ -92,7 +91,7 @@ Dev 是技术角色，硬规则上面已经写清楚，这里只列**两个最�
 - **Claude 行为**：扫本次改过的文件里所有标 `@frontend-ready: false` 的路由，列出清单让你确认
   > "你本次改过 `routes/xxx.ts`。该文件里目前还有以下 `@frontend-ready: false` 的路由：
   >
-  > - `POST /api/sessions/:id/messages` — LLM 调用未接入
+  > - `POST /api/payment/orders` — 计费逻辑 stub
   > - `POST /api/other/endpoint` — 计费逻辑 stub
   >
   > 其中有哪些本次已经完工、要切成 `true`?"

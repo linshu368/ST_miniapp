@@ -52,7 +52,7 @@ entries:
     order: 10
     enabled: true
     notes: >
-      同步引擎从 miniapp.characters 取 enabled=true 的行，
+      同步引擎从 miniapp.characters 取 is_published=true 且 is_active=true 的行，
       将 chara_card_v3 JSON 重新打包为 PNG（嵌入 chara 元数据），
       落盘到 data/<handle>/characters/platform_<id>.png。
       is_default=true 的卡在投影阶段作为 character_ref 失效兜底卡使用。

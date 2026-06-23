@@ -7,19 +7,21 @@
 -- 决策依据：
 --   - DECISIONS.md D003：复用 miniapp.characters 作为分区 A 角色卡池
 --   - DECISIONS.md D010：保留在 miniapp schema（跨 schema FK 由 PG 原生支持）
---   - 新方案设计文档第 95 行：是否上下架（enabled）+ is_default + 排序
+--   - 新方案设计文档第 95 行：是否上架（is_published）+ 是否可用（is_active）+ is_default + 排序
 --
 -- 字段语义：
 --   - is_default：阶段一新用户初始化时的默认激活卡（写入 user_st_settings.settings_jsonb.active_character）
---   - enabled：是否上架（同步引擎只下发 enabled=true 的卡）
+--   - is_published：是否上架（大厅与同步引擎只下发 is_published=true 且 is_active=true 的卡）
+--   - is_active：是否可用（停用后老用户已物化卡不可继续使用）
 --   - sort_order：大厅展示顺序（数字越小越靠前）
 --
 -- 幂等性：ADD COLUMN IF NOT EXISTS（PG 9.6+ 原生支持）
 
 ALTER TABLE miniapp.characters
-  ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS enabled    BOOLEAN NOT NULL DEFAULT true,
-  ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS is_default   BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS is_active    BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS sort_order   INTEGER NOT NULL DEFAULT 0;
 
 -- 表注释（三标签视图，供同步引擎反向校验配置清单）
 COMMENT ON TABLE miniapp.characters IS
@@ -29,8 +31,10 @@ COMMENT ON TABLE miniapp.characters IS
 
 COMMENT ON COLUMN miniapp.characters.is_default IS
   '新用户初始化时是否自动激活此卡（user_st_settings.settings_jsonb.active_character 取此卡的 platform_<id>）';
-COMMENT ON COLUMN miniapp.characters.enabled IS
-  '是否上架。同步引擎只下发 enabled=true 的卡。下架不删数据，便于回溯';
+COMMENT ON COLUMN miniapp.characters.is_published IS
+  '是否上架。大厅与同步引擎只下发 is_published=true 且 is_active=true 的卡';
+COMMENT ON COLUMN miniapp.characters.is_active IS
+  '是否可用。停用后老用户已物化卡不可继续使用';
 COMMENT ON COLUMN miniapp.characters.sort_order IS
   '大厅展示顺序，数字越小越靠前。同 sort_order 时按 created_at 兜底';
 
@@ -40,7 +44,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_characters_one_default
   ON miniapp.characters((1))
   WHERE is_default = true;
 
--- 索引：大厅按 enabled + sort_order 列表查询
-CREATE INDEX IF NOT EXISTS idx_characters_enabled_sort
-  ON miniapp.characters(enabled, sort_order)
-  WHERE enabled = true;
+-- 索引：大厅按 is_published + is_active + sort_order 列表查询
+CREATE INDEX IF NOT EXISTS idx_characters_published_active_sort
+  ON miniapp.characters(is_published, is_active, sort_order)
+  WHERE is_published = true AND is_active = true;

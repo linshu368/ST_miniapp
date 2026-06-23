@@ -17,8 +17,6 @@ export interface CharacterDetail extends CharacterSummary {
   greeting: string;
   /** 创作者写给读者的补充说明（可为空） */
   creator_notes: string;
-  /** 累计对话次数，用于社交证明 */
-  chat_count?: number;
 }
 
 // GET /api/characters 的响应体
