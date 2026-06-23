@@ -277,25 +277,24 @@ export default async function sessionRoutes(app: FastifyInstance) {
 
       let charged = false;
       const messageCreditCost = await getChatMessageCreditCost();
-      if (messageCreditCost > 0) {
-        try {
-          const result = await wallets.chargeChatMessage({
-            userId: dbUser.id,
-            sessionId: id,
-            clientMessageId,
-            amount: messageCreditCost,
-          });
-          if (result.alreadyCharged) {
-            return reply.status(409).send(fail('DUPLICATE_MESSAGE', '消息已处理，请勿重复发送'));
-          }
-          charged = true;
-        } catch (error) {
-          request.log.warn(
-            { err: error, userId: dbUser.id, cost: messageCreditCost },
-            'MiniApp wallet credits insufficient'
-          );
-          return reply.status(402).send(fail('INSUFFICIENT_CREDITS', '星尘余额不足，请先充值'));
+      try {
+        const result = await wallets.chargeChatMessage({
+          userId: dbUser.id,
+          sessionId: id,
+          clientMessageId,
+          amount: messageCreditCost,
+        });
+        if (result.alreadyCharged) {
+          return reply.status(409).send(fail('DUPLICATE_MESSAGE', '消息已处理，请勿重复发送'));
         }
+        // cost=0 is a free-chat mode, but the RPC still reserves client_message_id for idempotency.
+        charged = true;
+      } catch (error) {
+        request.log.warn(
+          { err: error, userId: dbUser.id, cost: messageCreditCost },
+          'MiniApp wallet credits insufficient'
+        );
+        return reply.status(402).send(fail('INSUFFICIENT_CREDITS', '星尘余额不足，请先充值'));
       }
 
       const now = new Date();

@@ -43,6 +43,7 @@
    - `packages/shared/migrations/015_miniapp_settings_wallet_ops.sql`
    - `packages/shared/migrations/016_miniapp_wallet_ledger_chat_idempotency.sql`
    - `packages/shared/migrations/017_miniapp_wallet_payment_summary.sql`
+   - `packages/shared/migrations/018_miniapp_free_chat_idempotency.sql`
 5. 如选择 `production`，必须在 `confirm_production` 填入 `RUN_PRODUCTION_MIGRATION`
 
 Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 `qekxjxpznjvoccvmgozk`，`production` 只能连接 `wbtsfzozlmurljvglhpn`。
@@ -75,6 +76,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 015_miniapp_settings_wallet_ops.sql # MiniApp 独立设置、钱包扣费与订单过期函数
 016_miniapp_wallet_ledger_chat_idempotency.sql # 钱包流水、聊天扣费幂等与退款
 017_miniapp_wallet_payment_summary.sql # 钱包首次/最近付费、累计金额和总积分汇总字段
+018_miniapp_free_chat_idempotency.sql # 免费聊天模式下保留 client_message_id 幂等
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

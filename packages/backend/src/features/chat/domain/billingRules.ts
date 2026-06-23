@@ -22,6 +22,7 @@ export async function getChatMessageCreditCost(): Promise<number> {
 
 function parseCreditCost(value: unknown): number | null {
   const parsed = typeof value === 'number' ? value : Number(value);
+  // 0 means free-chat mode; request idempotency is still enforced by chat_message_charges.
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return Math.floor(parsed);
 }
