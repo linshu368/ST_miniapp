@@ -69,7 +69,7 @@ export default function ChatPage() {
   const handleSend = useCallback(
     (content: string) => {
       // 发送不震动——她才是主角，你说出去的话不需要自己确认
-      sendMessage.mutate({ content });
+      sendMessage.mutate({ content, client_message_id: newId('client-msg') });
     },
     [sendMessage]
   );
@@ -230,6 +230,13 @@ export default function ChatPage() {
       <ChatSidebar currentSessionId={sessionId} />
     </main>
   );
+}
+
+function newId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function HomeIcon() {

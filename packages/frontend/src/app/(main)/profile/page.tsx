@@ -1,20 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Pencil, Settings, Sparkles } from 'lucide-react';
 
-import { mockCurrentUser } from '@/lib/mock-data';
-import { useMockWalletCredits } from '@/lib/api/payment';
+import { useWalletCredits } from '@/lib/api/payment';
+import { usePatchUserSettingsMutation } from '@/lib/api/settings';
+import { getRawInitData } from '@/lib/telegram/auth';
 import { formatNumber } from '@/lib/utils/payment';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
 export default function ProfilePage() {
-  const user = mockCurrentUser;
-  // 实时订阅 mock 钱包余额，聊天扣费 / 充值到账都会即时反映
-  const credits = useMockWalletCredits();
+  const telegramUserId = useMemo(readTelegramUserId, []);
+  const credits = useWalletCredits();
   const displayName = useUserProfileStore((s) => s.displayName);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
+  const patchSettings = usePatchUserSettingsMutation();
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -33,7 +34,9 @@ export default function ProfilePage() {
   };
 
   const commit = () => {
-    setDisplayName(draft);
+    const next = draft.trim();
+    setDisplayName(next);
+    patchSettings.mutate({ display_name: next || null });
     setIsEditing(false);
   };
 
@@ -108,9 +111,25 @@ export default function ProfilePage() {
               />
             </button>
           )}
-          <div className="mt-0.5 text-[11px] text-muted-foreground/70">ID · {user.tg_id}</div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground/70">
+            ID · {telegramUserId ?? '未连接 Telegram'}
+          </div>
         </div>
       </section>
     </main>
   );
+}
+
+function readTelegramUserId(): string | null {
+  const initData = getRawInitData();
+  if (!initData) return null;
+
+  try {
+    const user = new URLSearchParams(initData).get('user');
+    if (!user) return null;
+    const parsed = JSON.parse(user) as { id?: number | string };
+    return parsed.id !== undefined ? String(parsed.id) : null;
+  } catch {
+    return null;
+  }
 }

@@ -6,6 +6,8 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { channelRegistry } from '../ai/ChannelRegistry.js';
 import { ModelTier, resolveChannelId } from '../ai/domain/ModelStrategy.js';
+import { getChatMessageCreditCost } from '../features/chat/domain/billingRules.js';
+import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import type { OpenAIMessage } from '../ai/ports/IAIChannel.js';
 import type {
   GetSessionsData,
@@ -22,6 +24,8 @@ import type {
 } from '@miniapp/shared';
 
 export default async function sessionRoutes(app: FastifyInstance) {
+  const wallets = new MiniappWalletRepository();
+
   // @frontend-ready: true
   app.get('/api/sessions', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
@@ -236,7 +240,8 @@ export default async function sessionRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const { id } = request.params as { id: string };
-      const { content } = request.body as PostMessageRequest;
+      const { content, client_message_id } = request.body as PostMessageRequest;
+      const clientMessageId = normalizeClientMessageId(client_message_id);
 
       const dbUser = await getOrCreateDbUser(request.user);
 
@@ -260,23 +265,68 @@ export default async function sessionRoutes(app: FastifyInstance) {
         return reply.status(403).send(fail('FORBIDDEN', 'Access denied'));
       }
 
+      // Get AI Channel before charging; missing channel should never consume credits.
+      const channelId = await resolveChannelId(ModelTier.TIER_1);
+      const channel = await channelRegistry.getChannel(channelId);
+
+      if (!channel) {
+        return reply.status(500).send(fail('INTERNAL_ERROR', 'AI Channel not configured'));
+      }
+
+      let charged = false;
+      const messageCreditCost = await getChatMessageCreditCost();
+      if (messageCreditCost > 0) {
+        try {
+          const result = await wallets.chargeChatMessage({
+            userId: dbUser.id,
+            sessionId: id,
+            clientMessageId,
+            amount: messageCreditCost,
+          });
+          if (result.alreadyCharged) {
+            return reply.status(409).send(fail('DUPLICATE_MESSAGE', '消息已处理，请勿重复发送'));
+          }
+          charged = true;
+        } catch (error) {
+          request.log.warn(
+            { err: error, userId: dbUser.id, cost: messageCreditCost },
+            'MiniApp wallet credits insufficient'
+          );
+          return reply.status(402).send(fail('INSUFFICIENT_CREDITS', '星尘余额不足，请先充值'));
+        }
+      }
+
       const now = new Date();
       // 1. Save user message
-      await prisma.$transaction(async (tx) => {
-        await tx.appMessage.create({
-          data: {
-            session_id: id,
-            role: 'user',
-            content: content,
-            created_at: now,
-          },
-        });
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.appMessage.create({
+            data: {
+              session_id: id,
+              role: 'user',
+              content: content,
+              created_at: now,
+            },
+          });
 
-        await tx.appSession.update({
-          where: { id },
-          data: { last_message_at: now },
+          await tx.appSession.update({
+            where: { id },
+            data: { last_message_at: now },
+          });
         });
-      });
+      } catch (error) {
+        if (charged) {
+          await refundChatChargeSafely(
+            wallets,
+            dbUser.id,
+            id,
+            clientMessageId,
+            'message_persist_failed',
+            request.log
+          );
+        }
+        throw error;
+      }
 
       // 2. Prepare messages for AI
       const aiMessages: OpenAIMessage[] = [];
@@ -301,14 +351,6 @@ export default async function sessionRoutes(app: FastifyInstance) {
       }
       // Add current user message
       aiMessages.push({ role: 'user', content: content });
-
-      // 3. Get AI Channel
-      const channelId = await resolveChannelId(ModelTier.TIER_1);
-      const channel = await channelRegistry.getChannel(channelId);
-
-      if (!channel) {
-        return reply.status(500).send(fail('INTERNAL_ERROR', 'AI Channel not configured'));
-      }
 
       // 4. Setup SSE response
       reply.header('Content-Type', 'text/event-stream');
@@ -343,6 +385,16 @@ export default async function sessionRoutes(app: FastifyInstance) {
               }
             } catch (error) {
               console.error('AI Stream Error:', error);
+              if (charged) {
+                await refundChatChargeSafely(
+                  wallets,
+                  dbUser.id,
+                  id,
+                  clientMessageId,
+                  'ai_generation_failed',
+                  request.log
+                );
+              }
               yield `data: ${JSON.stringify({ error: 'Generation failed' })}\n\n`;
             }
           })()
@@ -350,4 +402,34 @@ export default async function sessionRoutes(app: FastifyInstance) {
       );
     }
   );
+}
+
+function normalizeClientMessageId(value: unknown): string {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim().slice(0, 128);
+  }
+  return `server-msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function refundChatChargeSafely(
+  wallets: MiniappWalletRepository,
+  userId: string,
+  sessionId: string,
+  clientMessageId: string,
+  reason: string,
+  log: { warn: (obj: unknown, msg: string) => void }
+) {
+  try {
+    await wallets.refundChatMessage({
+      userId,
+      sessionId,
+      clientMessageId,
+      reason,
+    });
+  } catch (error) {
+    log.warn(
+      { err: error, userId, sessionId, clientMessageId, reason },
+      'Refund chat charge failed'
+    );
+  }
 }

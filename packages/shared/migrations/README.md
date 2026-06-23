@@ -18,7 +18,34 @@
 
 ## 使用方式
 
-阶段一采用原生 SQL 手动迁移（详见 D004），在 Supabase Studio SQL Editor 中按文件名数字前缀**逐个执行**，Schema 稳定后切换到 Prisma migrate。
+阶段一采用原生 SQL 迁移（详见 D004），Schema 稳定后切换到 Prisma migrate。当前仓库提供两种执行方式：
+
+- **GitHub Actions**：使用 `.github/workflows/db-migrate.yml` 手动触发执行指定 SQL 文件，推荐用于测试分支和受控生产变更。
+- **Supabase Studio**：在 SQL Editor 中按文件名数字前缀逐个执行，作为 CLI/CI 无法连接数据库时的备用方式。
+
+### GitHub Actions 执行
+
+在仓库 Secrets 中配置：
+
+| Secret                  | 用途                                                               |
+| ----------------------- | ------------------------------------------------------------------ |
+| `SUPABASE_ACCESS_TOKEN` | Supabase Management API token，供 Supabase CLI 使用                |
+| `TEST_DATABASE_URL`     | `test` 分支 Postgres 连接串，必须包含 `qekxjxpznjvoccvmgozk`       |
+| `PROD_DATABASE_URL`     | `production` 主库 Postgres 连接串，必须包含 `wbtsfzozlmurljvglhpn` |
+
+执行路径：
+
+1. GitHub → Actions → `Database Migration`
+2. 点击 `Run workflow`
+3. 选择 `environment`
+4. 填写 `migration_file`，例如：
+   - `packages/shared/migrations/014_miniapp_payment_wallet.sql`
+   - `packages/shared/migrations/015_miniapp_settings_wallet_ops.sql`
+   - `packages/shared/migrations/016_miniapp_wallet_ledger_chat_idempotency.sql`
+   - `packages/shared/migrations/017_miniapp_wallet_payment_summary.sql`
+5. 如选择 `production`，必须在 `confirm_production` 填入 `RUN_PRODUCTION_MIGRATION`
+
+Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 `qekxjxpznjvoccvmgozk`，`production` 只能连接 `wbtsfzozlmurljvglhpn`。
 
 ### 全新部署（首次跑）
 
@@ -42,6 +69,12 @@
 
 # 里程碑 B（D6）：任务队列
 012_sync_tasks.sql                 # CREATE st_infra.sync_tasks（含独立 RLS）
+
+# MiniApp 支付/钱包/设置
+014_miniapp_payment_wallet.sql     # MiniApp 独立支付订单与钱包
+015_miniapp_settings_wallet_ops.sql # MiniApp 独立设置、钱包扣费与订单过期函数
+016_miniapp_wallet_ledger_chat_idempotency.sql # 钱包流水、聊天扣费幂等与退款
+017_miniapp_wallet_payment_summary.sql # 钱包首次/最近付费、累计金额和总积分汇总字段
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

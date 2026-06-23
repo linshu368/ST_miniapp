@@ -9,10 +9,66 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+const DEFAULT_PROD_SUPABASE_PROJECT_REF = 'wbtsfzozlmurljvglhpn';
+const DEFAULT_TEST_SUPABASE_PROJECT_REF = 'qekxjxpznjvoccvmgozk';
+const DATABASE_ENV_VALUES = ['development', 'test', 'production'] as const;
+type DatabaseEnvironment = (typeof DATABASE_ENV_VALUES)[number];
+type DatabaseTarget = 'test' | 'production';
+
+function extractSupabaseProjectRef(value: string | undefined): string | null {
+  if (!value) return null;
+  const match = value.match(/https?:\/\/([a-z0-9]{20})\.supabase\.co/i);
+  return match?.[1] ?? null;
+}
+
+function normalizeDatabaseEnvironment(value: string | undefined): DatabaseEnvironment {
+  if (DATABASE_ENV_VALUES.includes(value as DatabaseEnvironment)) {
+    return value as DatabaseEnvironment;
+  }
+  if (
+    process.env.RAILWAY_ENVIRONMENT === 'production' ||
+    process.env.RAILWAY_ENVIRONMENT_NAME === 'production'
+  ) {
+    return 'production';
+  }
+  return process.env.NODE_ENV === 'production' ? 'production' : 'development';
+}
+
+function applyDatabaseTargetEnvironment(): void {
+  const databaseEnv = normalizeDatabaseEnvironment(process.env.DATABASE_ENV);
+  const prodProjectRef = process.env.PROD_SUPABASE_PROJECT_REF || DEFAULT_PROD_SUPABASE_PROJECT_REF;
+  const testProjectRef = process.env.TEST_SUPABASE_PROJECT_REF || DEFAULT_TEST_SUPABASE_PROJECT_REF;
+  const databaseTarget: DatabaseTarget = databaseEnv === 'production' ? 'production' : 'test';
+  const prefix = databaseTarget === 'production' ? 'PROD' : 'TEST';
+
+  for (const name of [
+    'SUPABASE_URL',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_PROJECT_REF',
+  ] as const) {
+    const selectedValue = process.env[`${prefix}_${name}`];
+    if (selectedValue) {
+      process.env[name] = selectedValue;
+    }
+  }
+
+  process.env.DATABASE_ENV = databaseEnv;
+  process.env.SUPABASE_PROJECT_REF =
+    process.env.SUPABASE_PROJECT_REF ||
+    (databaseTarget === 'production' ? prodProjectRef : testProjectRef);
+}
+
+applyDatabaseTargetEnvironment();
+
 const ConfigSchema = z.object({
   // Supabase
   SUPABASE_URL: z.string().url('SUPABASE_URL 必须是合法 URL'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(10, 'SUPABASE_SERVICE_ROLE_KEY 不能为空'),
+  DATABASE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  SUPABASE_PROJECT_REF: z.string().optional(),
+  PROD_SUPABASE_PROJECT_REF: z.string().default(DEFAULT_PROD_SUPABASE_PROJECT_REF),
+  TEST_SUPABASE_PROJECT_REF: z.string().default(DEFAULT_TEST_SUPABASE_PROJECT_REF),
+  ALLOW_PROD_DATABASE: z.string().optional(),
 
   // ST 文件系统
   ST_DATA_PATH: z.string().min(1, 'ST_DATA_PATH 不能为空'),
@@ -64,7 +120,41 @@ export function loadConfig(): Config {
     throw new Error(`环境变量配置校验失败：\n${details}\n\n请检查 .env 文件是否存在且已正确填写。`);
   }
 
-  _config = result.data;
+  const data = result.data;
+  const projectRefs = [
+    data.SUPABASE_PROJECT_REF,
+    extractSupabaseProjectRef(data.SUPABASE_URL),
+  ].filter((value): value is string => Boolean(value));
+  const uniqueProjectRefs = Array.from(new Set(projectRefs));
+  const projectRef = uniqueProjectRefs[0] || null;
+
+  if (uniqueProjectRefs.length > 1) {
+    throw new Error(`Supabase 配置中出现多个 project ref：${uniqueProjectRefs.join(', ')}`);
+  }
+
+  if (data.DATABASE_ENV === 'test' && projectRef !== data.TEST_SUPABASE_PROJECT_REF) {
+    throw new Error(
+      `DATABASE_ENV=test 必须连接测试 Supabase 项目 ${data.TEST_SUPABASE_PROJECT_REF}，当前为 ${projectRef ?? 'unknown'}`
+    );
+  }
+
+  if (data.DATABASE_ENV === 'production' && projectRef !== data.PROD_SUPABASE_PROJECT_REF) {
+    throw new Error(
+      `DATABASE_ENV=production 必须连接生产 Supabase 项目 ${data.PROD_SUPABASE_PROJECT_REF}，当前为 ${projectRef ?? 'unknown'}`
+    );
+  }
+
+  if (
+    data.DATABASE_ENV !== 'production' &&
+    projectRef === data.PROD_SUPABASE_PROJECT_REF &&
+    data.ALLOW_PROD_DATABASE !== '1'
+  ) {
+    throw new Error(
+      '非 production 环境禁止连接生产 Supabase 项目。若确需临时操作，必须显式设置 ALLOW_PROD_DATABASE=1'
+    );
+  }
+
+  _config = data;
   return _config;
 }
 

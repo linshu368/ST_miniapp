@@ -6,6 +6,9 @@ import type { HealthData } from '@miniapp/shared';
 import characterRoutes from './routes/characters.js';
 import sessionRoutes from './routes/sessions.js';
 import bridgeRoutes from './routes/bridge.js';
+import paymentRoutes from './routes/payment.js';
+import walletRoutes from './routes/wallet.js';
+import settingsRoutes from './routes/settings.js';
 import { stProxyHandler } from './middleware/stProxy.js';
 
 export async function buildApp() {
@@ -57,6 +60,9 @@ export async function buildApp() {
   await app.register(characterRoutes);
   await app.register(sessionRoutes);
   await app.register(bridgeRoutes);
+  await app.register(paymentRoutes);
+  await app.register(walletRoutes);
+  await app.register(settingsRoutes);
 
   // ── ST 反向代理：/api/bridge/st/* → ST 原生服务 ──
   // 注意：使用 addContentTypeParser 允许透传任意 Content-Type 的 raw body
