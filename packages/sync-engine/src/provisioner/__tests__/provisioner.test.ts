@@ -34,6 +34,7 @@ vi.mock('../writer.js', () => ({
   writeCharacters: vi.fn(() => ({ written: [], skipped: [], missing: [] })),
   writePresets: vi.fn(() => ({ written: [], skipped: [] })),
   writeSettings: vi.fn(),
+  writeSecrets: vi.fn(),
 }));
 
 vi.mock('../st-user.js', () => ({
