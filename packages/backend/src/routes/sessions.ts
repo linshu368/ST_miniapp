@@ -23,6 +23,8 @@ import type {
   Message,
 } from '@miniapp/shared';
 
+const REFUND_MAX_PARTIAL_REPLY_CHARS = 10;
+
 export default async function sessionRoutes(app: FastifyInstance) {
   const wallets = new MiniappWalletRepository();
 
@@ -385,7 +387,8 @@ export default async function sessionRoutes(app: FastifyInstance) {
               }
             } catch (error) {
               console.error('AI Stream Error:', error);
-              if (charged) {
+              const deliveredChars = fullAssistantReply.trim().length;
+              if (charged && deliveredChars <= REFUND_MAX_PARTIAL_REPLY_CHARS) {
                 await refundChatChargeSafely(
                   wallets,
                   dbUser.id,
@@ -393,6 +396,11 @@ export default async function sessionRoutes(app: FastifyInstance) {
                   clientMessageId,
                   'ai_generation_failed',
                   request.log
+                );
+              } else if (charged) {
+                request.log.warn(
+                  { sessionId: id, clientMessageId, deliveredChars },
+                  'Skip refund because assistant reply was partially delivered'
                 );
               }
               yield `data: ${JSON.stringify({ error: 'Generation failed' })}\n\n`;
