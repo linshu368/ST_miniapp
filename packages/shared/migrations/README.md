@@ -30,7 +30,7 @@
 | Secret                  | 用途                                                               |
 | ----------------------- | ------------------------------------------------------------------ |
 | `SUPABASE_ACCESS_TOKEN` | Supabase Management API token，供 Supabase CLI 使用                |
-| `TEST_DATABASE_URL`     | `test` 分支 Postgres 连接串，必须包含 `qekxjxpznjvoccvmgozk`       |
+| `TEST_DATABASE_URL`     | `testdb` 分支 Postgres 连接串，必须包含 `zoqelpfhurwehlvypryl`     |
 | `PROD_DATABASE_URL`     | `production` 主库 Postgres 连接串，必须包含 `wbtsfzozlmurljvglhpn` |
 
 执行路径：
@@ -47,7 +47,7 @@
    - `packages/shared/migrations/019_miniapp_billing_checkin.sql`
 5. 如选择 `production`，必须在 `confirm_production` 填入 `RUN_PRODUCTION_MIGRATION`
 
-Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 `qekxjxpznjvoccvmgozk`，`production` 只能连接 `wbtsfzozlmurljvglhpn`。
+Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 `zoqelpfhurwehlvypryl`，`production` 只能连接 `wbtsfzozlmurljvglhpn`。
 
 ### 全新部署（首次跑）
 

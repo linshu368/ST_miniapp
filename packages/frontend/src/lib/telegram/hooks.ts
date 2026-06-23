@@ -96,3 +96,27 @@ export function useHaptic(): {
 
   return { whisper, impact, selection, notification };
 }
+
+type TelegramWindow = Window & {
+  Telegram?: {
+    WebApp?: {
+      openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
+    };
+  };
+};
+
+export function openExternalUrl(url: string): void {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const webApp = (window as TelegramWindow).Telegram?.WebApp;
+    if (webApp?.openLink) {
+      webApp.openLink(url, { try_instant_view: false });
+      return;
+    }
+  } catch {
+    // 旧版客户端或非 Telegram 环境下走浏览器兜底。
+  }
+
+  window.location.assign(url);
+}

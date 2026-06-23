@@ -4,6 +4,11 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Gift, Pencil, Settings, Sparkles } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
+
 import { useDailyCheckinMutation, useDailyCheckinQuery, useWalletCredits } from '@/lib/api/payment';
 import { usePatchUserSettingsMutation } from '@/lib/api/settings';
 import { getRawInitData } from '@/lib/telegram/auth';
@@ -65,23 +70,28 @@ export default function ProfilePage() {
           <span className="text-foreground/85">星尘商店</span>
           <ChevronRight className="h-3.5 w-3.5 text-sky-300/80" aria-hidden />
         </Link>
-        <Link
-          href="/profile/settings"
-          aria-label="设置"
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-card hover:text-foreground"
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="rounded-full text-muted-foreground hover:bg-card hover:text-foreground"
         >
-          <Settings className="h-5 w-5" aria-hidden />
-        </Link>
+          <Link href="/profile/settings" aria-label="设置">
+            <Settings className="h-5 w-5" aria-hidden />
+          </Link>
+        </Button>
       </header>
 
       {/* 身份：页面重心；姓名可点击编辑 → 影响 chat 里的 {{user}} 宏 */}
       <section className="mt-10 flex flex-col items-center gap-3">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 via-purple-500 to-blue-500 text-3xl font-black text-white">
-          {displayName.slice(0, 1).toUpperCase()}
-        </div>
+        <Avatar className="h-20 w-20 ring-2 ring-primary/10 ring-offset-2 ring-offset-background">
+          <AvatarFallback className="bg-gradient-to-br from-pink-500 via-purple-500 to-blue-500 text-3xl font-black text-white">
+            {displayName.slice(0, 1).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
         <div className="text-center">
           {isEditing ? (
-            <input
+            <Input
               ref={inputRef}
               type="text"
               value={draft}
@@ -97,22 +107,23 @@ export default function ProfilePage() {
                   cancel();
                 }
               }}
-              className="w-48 rounded-md border border-border bg-card px-3 py-1.5 text-center text-lg font-semibold focus:border-primary focus:outline-none"
+              className="h-9 w-48 text-center text-lg font-semibold"
               aria-label="编辑显示名"
             />
           ) : (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={startEdit}
-              className="group inline-flex items-center gap-1.5 text-lg font-semibold transition-colors hover:text-primary"
+              className="group inline-flex h-auto items-center gap-1.5 px-2 py-1 text-lg font-semibold transition-colors hover:text-primary hover:bg-transparent"
               aria-label="编辑显示名"
             >
               <span>{displayName}</span>
               <Pencil
-                className="h-3.5 w-3.5 text-muted-foreground/60 transition-colors group-hover:text-primary"
+                className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-primary"
                 aria-hidden
               />
-            </button>
+            </Button>
           )}
           <div className="mt-0.5 text-[11px] text-muted-foreground/70">
             ID · {telegramUserId ?? '未连接 Telegram'}
@@ -120,44 +131,45 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      <section className="mt-8 rounded-3xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-card to-indigo-500/10 p-4 shadow-[0_18px_60px_-40px_rgba(56,189,248,0.7)]">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-300">
-            <Gift className="h-5 w-5" aria-hidden />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-bold text-foreground">每日签到</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  奖励进入赠送星尘，聊天扣费时自动抵扣
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={!checkin?.can_claim || claimCheckin.isPending}
-                onClick={() => claimCheckin.mutate()}
-                className="h-9 shrink-0 rounded-full bg-sky-500 px-3 text-xs font-bold text-white shadow-lg shadow-sky-500/20 disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
-              >
-                {claimCheckin.isPending
-                  ? '领取中'
-                  : checkin?.can_claim
-                    ? `领 ${checkin.reward_credits}`
-                    : '已签到'}
-              </button>
+      <Card className="mt-8 overflow-hidden border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-card to-indigo-500/10 shadow-[0_18px_60px_-40px_rgba(56,189,248,0.7)] rounded-3xl">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-500 dark:text-sky-300">
+              <Gift className="h-5 w-5" aria-hidden />
             </div>
-            {!checkin?.can_claim && checkin?.next_claim_at ? (
-              <p className="mt-3 text-[11px] text-muted-foreground/80">
-                下次可领：{formatDateTime(checkin.next_claim_at)}
-              </p>
-            ) : (
-              <p className="mt-3 text-[11px] text-sky-300/80">
-                每 24 小时可领取一次，数量由运营配置调整。
-              </p>
-            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">每日签到</h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    奖励进入赠送星尘，聊天扣费时自动抵扣
+                  </p>
+                </div>
+                <Button
+                  disabled={!checkin?.can_claim || claimCheckin.isPending}
+                  onClick={() => claimCheckin.mutate()}
+                  className="h-9 shrink-0 rounded-full bg-sky-500 text-xs font-bold text-white hover:bg-sky-600 shadow-lg shadow-sky-500/20"
+                >
+                  {claimCheckin.isPending
+                    ? '领取中'
+                    : checkin?.can_claim
+                      ? `领 ${checkin.reward_credits}`
+                      : '已签到'}
+                </Button>
+              </div>
+              {!checkin?.can_claim && checkin?.next_claim_at ? (
+                <p className="mt-3 text-[11px] text-muted-foreground/80">
+                  下次可领：{formatDateTime(checkin.next_claim_at)}
+                </p>
+              ) : (
+                <p className="mt-3 text-[11px] text-sky-600 dark:text-sky-300/80">
+                  每 24 小时可领取一次，数量由运营配置调整。
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
     </main>
   );
 }

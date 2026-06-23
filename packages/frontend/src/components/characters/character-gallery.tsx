@@ -3,6 +3,9 @@
 import { useMemo, useState } from 'react';
 import { Search, Sparkles, X } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
 import { useCharactersQuery } from '@/lib/api/characters';
 
 import { CharacterCard } from './character-card';
@@ -54,23 +57,24 @@ export function CharacterGallery() {
           className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60"
           aria-hidden="true"
         />
-        <input
+        <Input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索角色、标签或作者"
-          className="w-full rounded-full border border-border/50 bg-card/60 py-2 pl-9 pr-9 text-[14px] text-foreground placeholder:text-muted-foreground/55 outline-none transition-colors focus:border-border"
+          className="h-10 rounded-full pl-9 pr-9"
           aria-label="搜索角色"
         />
         {query && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setQuery('')}
             aria-label="清空搜索"
-            className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground/60 hover:bg-secondary hover:text-foreground"
+            className="absolute right-1 top-1 h-8 w-8 rounded-full text-muted-foreground/60 hover:text-foreground"
           >
-            <X className="h-3.5 w-3.5" />
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
         )}
       </div>
     </div>
@@ -115,27 +119,16 @@ export function CharacterGallery() {
           <p className="text-center text-[13px] text-muted-foreground/80">
             没有匹配「{query}」的角色
           </p>
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={() => {
               // TODO: 角色卡许愿池入口,功能待开发
             }}
-            className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-indigo-300/30 bg-indigo-400/10 px-5 py-2.5 text-[13px] font-medium text-indigo-200/90 shadow-[0_0_28px_-8px_rgba(165,180,252,0.55)] transition-all hover:bg-indigo-400/20 hover:text-indigo-100 hover:shadow-[0_0_36px_-6px_rgba(165,180,252,0.7)] active:scale-[0.98]"
+            className="group relative overflow-hidden rounded-full border-indigo-300/30 bg-indigo-400/10 px-5 h-10 text-[13px] text-indigo-200/90 hover:bg-indigo-400/20 hover:text-indigo-100 border-0"
           >
-            {/* 星空辉光 */}
-            <span
-              className="pointer-events-none absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-indigo-500/15 via-violet-400/15 to-indigo-500/15 blur-md"
-              aria-hidden="true"
-            />
-            {/* 流星划过(每 5s 一次,慢、克制、不刺眼) */}
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-indigo-200/40 to-transparent"
-              style={{ animation: 'meteor-shimmer 5s ease-in-out infinite' }}
-            />
-            <Sparkles className="h-4 w-4 transition-transform group-hover:rotate-12" />
+            <Sparkles className="h-4 w-4 mr-2 transition-transform group-hover:rotate-12" />
             <span>没找到想要的?去许愿池</span>
-          </button>
+          </Button>
           <p className="text-center text-[11px] text-muted-foreground/55">
             告诉我们你想要的角色,创作者会为你做出来
           </p>

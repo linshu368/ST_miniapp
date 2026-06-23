@@ -14,6 +14,8 @@ import {
 import type { PaymentOrder, PaymentOrderStatus } from '@miniapp/shared';
 
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { usePaymentOrdersInfiniteQuery } from '@/lib/api/payment';
 import {
@@ -70,14 +72,15 @@ export default function OrdersPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background">
       <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-3 backdrop-blur-md">
-        <button
-          type="button"
-          aria-label="返回"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={goBack}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+          className="rounded-full text-muted-foreground hover:text-foreground"
+          aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
-        </button>
+        </Button>
         <h1 className="text-base font-semibold">我的订单</h1>
       </header>
 
@@ -89,24 +92,21 @@ export default function OrdersPage() {
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
-            <button
+            <Button
               key={t.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
+              variant={active ? 'default' : 'ghost'}
+              size="sm"
               onClick={() => {
                 whisper();
                 setTab(t.key);
               }}
               className={cn(
-                'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
-                active
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                'rounded-full px-4 h-8 text-xs font-medium transition-colors',
+                active ? '' : 'text-muted-foreground hover:text-foreground'
               )}
             >
               {t.label}
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -291,13 +291,13 @@ function OrderDetail({ order, onClose }: { order: PaymentOrder; onClose: () => v
         ) : null}
       </div>
 
-      <button
-        type="button"
+      <Button
+        variant="secondary"
         onClick={onClose}
-        className="mt-2 flex h-11 items-center justify-center rounded-xl bg-secondary text-sm font-medium text-secondary-foreground"
+        className="mt-4 h-11 w-full rounded-xl text-sm font-medium"
       >
         关闭
-      </button>
+      </Button>
     </div>
   );
 }

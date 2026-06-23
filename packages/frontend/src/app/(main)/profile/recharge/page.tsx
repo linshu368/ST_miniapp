@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ShieldCheck } from 'lucide-react';
 import type { PaymentType } from '@miniapp/shared';
 
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+
 import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
@@ -71,14 +74,15 @@ function RechargePageContent() {
       <div className="h-1 w-full shrink-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
 
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
-        <button
-          type="button"
-          aria-label="返回"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={goBack}
-          className="-ml-2 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:text-white"
+          className="-ml-2 rounded-full text-slate-400 hover:text-white"
+          aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
-        </button>
+        </Button>
         <h1 className="text-lg font-black tracking-wide">星尘商店</h1>
       </header>
 
@@ -97,9 +101,9 @@ function RechargePageContent() {
         <section className="flex flex-col gap-3 py-4">
           {isLoading && plans.length === 0
             ? Array.from({ length: 4 }).map((_, i) => (
-                <div
+                <Skeleton
                   key={i}
-                  className="h-[68px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/40"
+                  className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
                 />
               ))
             : plans.map((plan) => (
@@ -153,14 +157,13 @@ function RechargePageContent() {
               );
             })}
           </div>
-          <button
-            type="button"
+          <Button
             disabled={!selectedPlan || createOrder.isPending}
             onClick={handleSubmit}
             className={cn(
-              'flex h-10 flex-1 items-center justify-center gap-1 rounded-xl text-sm font-bold transition-all',
+              'flex-1 h-10 rounded-xl font-bold transition-all',
               selectedPlan && !createOrder.isPending
-                ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md shadow-pink-500/30'
+                ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:opacity-90 shadow-md shadow-pink-500/30 border-0'
                 : 'bg-slate-800 text-slate-500'
             )}
           >
@@ -169,7 +172,7 @@ function RechargePageContent() {
               : selectedPlan
                 ? `立即支付 ¥${formatYuanShort(selectedPlan.price_cents)}`
                 : '请选择套餐'}
-          </button>
+          </Button>
         </div>
       </div>
     </main>
@@ -181,14 +184,14 @@ function RechargePageSkeleton() {
     <main className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white">
       <div className="h-1 w-full shrink-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
-        <div className="h-8 w-8 rounded-full bg-slate-900" />
-        <div className="h-5 w-24 rounded bg-slate-900" />
+        <Skeleton className="h-8 w-8 rounded-full bg-slate-900" />
+        <Skeleton className="h-5 w-24 rounded bg-slate-900" />
       </header>
       <div className="flex flex-1 flex-col gap-3 px-4 py-8">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div
+          <Skeleton
             key={i}
-            className="h-[68px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/40"
+            className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
           />
         ))}
       </div>

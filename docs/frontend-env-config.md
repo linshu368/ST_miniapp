@@ -19,9 +19,9 @@
 | 用途 | Supabase branch | project ref            |
 | ---- | --------------- | ---------------------- |
 | 生产 | `main`          | `wbtsfzozlmurljvglhpn` |
-| 测试 | `test`          | `qekxjxpznjvoccvmgozk` |
+| 测试 | `testdb`        | `zoqelpfhurwehlvypryl` |
 
-后端和 sync-engine 都必须配置 `DATABASE_ENV`，并分别准备 `TEST_*` / `PROD_*` 数据库变量组。启动时会按当前环境自动选择对应变量组：`DATABASE_ENV=test` 或 `development` 使用 `qekxjxpznjvoccvmgozk`；`DATABASE_ENV=production` 使用 `wbtsfzozlmurljvglhpn`。如果实际解析出的 project ref 与目标环境不一致，服务会在启动阶段失败。非 production 环境默认禁止连接生产 project ref，除非临时人工操作显式设置 `ALLOW_PROD_DATABASE=1`。
+后端和 sync-engine 都必须配置 `DATABASE_ENV`，并分别准备 `TEST_*` / `PROD_*` 数据库变量组。启动时会按当前环境自动选择对应变量组：`DATABASE_ENV=test` 或 `development` 使用 `zoqelpfhurwehlvypryl`；`DATABASE_ENV=production` 使用 `wbtsfzozlmurljvglhpn`。如果实际解析出的 project ref 与目标环境不一致，服务会在启动阶段失败。非 production 环境默认禁止连接生产 project ref，除非临时人工操作显式设置 `ALLOW_PROD_DATABASE=1`。
 
 ---
 

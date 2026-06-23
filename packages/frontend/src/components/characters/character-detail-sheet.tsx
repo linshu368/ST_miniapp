@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Hash, PenLine, Quote, X } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
+
 import { useCharacterQuery } from '@/lib/api/characters';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
@@ -156,14 +158,15 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
             )}
             <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-card via-card/60 to-transparent" />
             {/* 右上角关闭按钮 */}
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={onClose}
               aria-label="关闭"
-              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/90 backdrop-blur-md transition-colors active:bg-black/60"
+              className="absolute right-3 top-3 h-8 w-8 rounded-full bg-black/40 text-white/90 backdrop-blur-md hover:bg-black/60"
             >
               <X className="h-4 w-4" />
-            </button>
+            </Button>
             {!isLoading && character && (
               <div className="absolute inset-x-0 bottom-0 px-5 pb-4">
                 <h2 className="text-[24px] font-semibold leading-tight text-foreground">
