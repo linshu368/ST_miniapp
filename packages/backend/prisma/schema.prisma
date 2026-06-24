@@ -254,9 +254,9 @@ model Character {
   system_prompt             String       @default("")
   tags                      Json         @default("[]")
   is_default                Boolean      @default(false)
-  is_published              Boolean      @default(true)
-  is_active                 Boolean      @default(true)
+  enabled                   Boolean      @default(true)
   sort_order                Int          @default(0)
+  app_sessions              AppSession[]
 
   @@map("characters")
   @@schema("miniapp")
