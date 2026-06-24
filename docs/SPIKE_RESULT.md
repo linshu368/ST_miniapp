@@ -210,22 +210,19 @@ await ctx.openCharacterChat(chats[0].file_name.replace('.jsonl', ''));
 
 ### ST 实际行为
 
-**不存在 `chats_loaded` 事件。** 但有以下替代信号：
+**不支持直接查询"跨角色的全部历史聊天"。**
 
-| 事件常量       | 实际字符串          | 触发时机                                           |
-| -------------- | ------------------- | -------------------------------------------------- |
-| `CHAT_CHANGED` | `'chat_id_changed'` | 每次 chat 切换完成后（含角色切换导致的 chat 加载） |
-| `CHAT_LOADED`  | `'chatLoaded'`      | chat 加载完成（含首次加载）                        |
-| `CHAT_CREATED` | `'chat_created'`    | 新建 chat 时                                       |
-| `CHAT_DELETED` | `'chat_deleted'`    | 删除 chat 后                                       |
-| `CHAT_RENAMED` | `'chat_renamed'`    | 重命名 chat 后                                     |
+主要依据
 
-关键事件详情：
+1. **源码审查 (`vendor/sillytavern/src/endpoints/chats.js` / `characters.js`)：**
+   - ST 内部 API 提供了一个 `/api/chats/recent` 端点。通过阅读该端点源码，它会遍历所有的角色目录 (`request.user.directories.characters` 下寻找 png) 并加载对应的聊天文件，将所有的聊天合并起来根据 `mtimeMs` (修改时间) 进行排序并限制返回数量 (`request.body.max`)。因此它只能返回 **最近的N条聊天**，而不能“列出全部”。
+   - ST 的 `/api/characters/chats` 端点只能接受一个 `avatar_url` 参数，然后读取 `request.user.directories.chats` 下对应这个角色的子目录中的所有 `.jsonl` 文件，并返回该角色下的聊天列表。因此它是 **单角色的**。
+   - `/api/chats/search` 也是针对指定的 `avatar_url` 或者 `group_id` 进行搜索，不支持无角色限定的全局搜索。
+   - 没有找到例如 `/api/chats/all` 等用于无差别获取全部聊天文件的接口。
 
-- **`CHAT_CHANGED`**（`script.js` 多处 emit）：参数为 `chatId` 字符串。每次 chat 切换必然触发。
-- **`CHAT_LOADED`**（`'chatLoaded'`）：`getChat()` 完成后 emit，包含已加载的 chat 内容。
-
-**chat 列表本身没有专门的"列表已加载"事件**。chat 列表是通过 REST API `/api/characters/chats` 按需拉取的，ST 前端调用 `displayPastChats()` 渲染但不 emit 事件。
+2. **存储结构限制：**
+   - 单人聊天存储在 `data/{user}/chats/{characterName}/` 目录下。
+   - 由于这种基于子目录分类的设计，如果要列出“全部聊天”，就必须像 `/api/chats/recent` 一样遍历所有的子目录，但现有 API 中只有 recent 做了这个操作且会做 `slice(0, max)` 截断。
 
 ### 选定方案
 
