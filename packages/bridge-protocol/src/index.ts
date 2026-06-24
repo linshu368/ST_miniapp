@@ -6,3 +6,5 @@ export * from './mirror-state.js';
 export * from './limits.js';
 export * from './actions/index.js';
 export * from './events/index.js';
+export * from './parser.js';
+export * from './bridge-error.js';

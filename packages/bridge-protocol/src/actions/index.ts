@@ -1,11 +1,9 @@
-// TODO: 阶段 3 补完 — 等 SPIKE 完成后定义 action 清单
-
-import type { z } from 'zod';
-import type { HandshakePhase } from '../handshake.js';
-
-export interface ActionMeta {
-  payloadSchema: z.ZodType;
-  resultSchema: z.ZodType;
-  requiredPhase: HandshakePhase;
-  waitable: boolean;
-}
+export type { ActionMeta } from './types.js';
+export * from './select-character.js';
+export * from './open-chat.js';
+export * from './new-chat.js';
+export * from './rename-chat.js';
+export * from './delete-chat.js';
+export * from './change-model.js';
+export * from './get-ready-state.js';
+export * from './registry.js';

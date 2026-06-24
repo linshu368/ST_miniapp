@@ -12,7 +12,7 @@ export const GenerationPhaseSchema = z.enum([
 
 export type STMirrorState = {
   userId: string;
-  currentCharacterId: string | null;
+  currentCharacterId: number | null;
   currentChatId: string | null;
   currentPresetName: string | null;
   generationPhase: GenerationPhase;
@@ -22,7 +22,7 @@ export type STMirrorState = {
 
 export const STMirrorStateSchema = z.object({
   userId: z.string(),
-  currentCharacterId: z.string().nullable(),
+  currentCharacterId: z.number().nullable(),
   currentChatId: z.string().nullable(),
   currentPresetName: z.string().nullable(),
   generationPhase: GenerationPhaseSchema,

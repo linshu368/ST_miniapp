@@ -1,7 +1,15 @@
-// TODO: 阶段 3 补完 — 等 SPIKE 完成后定义 event 清单
-
-import type { z } from 'zod';
-
-export interface EventMeta {
-  payloadSchema: z.ZodType;
-}
+export type { EventMeta } from './types.js';
+export * from './app-ready.js';
+export * from './character-changed.js';
+export * from './chat-changed.js';
+export * from './chat-created.js';
+export * from './chat-deleted.js';
+export * from './chat-renamed.js';
+export * from './generation-started.js';
+export * from './generation-streaming.js';
+export * from './generation-completed.js';
+export * from './generation-stopped.js';
+export * from './generation-ended.js';
+export * from './model-changed.js';
+export * from './settings-updated.js';
+export * from './registry.js';
