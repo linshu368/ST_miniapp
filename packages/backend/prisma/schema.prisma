@@ -256,7 +256,6 @@ model Character {
   is_default                Boolean      @default(false)
   enabled                   Boolean      @default(true)
   sort_order                Int          @default(0)
-  app_sessions              AppSession[]
 
   @@map("characters")
   @@schema("miniapp")

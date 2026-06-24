@@ -100,15 +100,15 @@
 │ ├─ miniapp._ 平台业务(characters / runtime_config / │
 │ │ miniapp_user_settings) │
 │ ├─ st_platform._ 全平台 ST 资源(settings 平台段 / presets / API 配置)│
-│ ├─ st_users._ 用户私有 ST 镜像(settings 用户段 / │
-│ │ user_st_chats) │
-│ └─ st_infra._ 同步任务(sync_tasks) │
+│ ├─ st*users.* 用户私有 ST 镜像(settings 用户段 / │
+│ │ user*st_chats) │
+│ └─ st_infra.* 同步任务(sync_tasks) │
 │ │
 │ Storage: │
 │ └─ characters/ 角色卡 PNG (运营手工上传) │
 │ │
 │ Realtime: │
-│ └─ is_published 翻转事件 → sync-engine 订阅 │
+│ └─ enabled 翻转事件 → sync-engine 订阅 │
 └──────────────────────────────────────────────────────────────────────┘
 
 ## 3. 链路编号定义
@@ -261,7 +261,7 @@ diff 同时包含 A 和 B 范围。建议拆分独立提交。
 
 - `POST /api/bridge/st-session` — 鉴权桥（TG InitData → ST cookie）
 - `ALL /api/bridge/st/*` — ST 反向代理（透明转发到 :8000）
-- `GET /api/characters` / `:id` — 大厅角色卡（Prisma `miniapp.characters`，过滤 `is_published=true AND is_active=true`）
+- `GET /api/characters` / `:id` — 大厅角色卡（Prisma `miniapp.characters`，过滤 `enabled=true`）
 - `POST /api/platform/llm-proxy/v1/*` — LLM 代理网关（OpenAI 兼容 + SSE 透传，由 `ai/ChannelRegistry` 改造）
 - `GET /api/platform/provision-status/:userId` — provision 状态查询（代理 sync-engine）
 - 历史侧边栏数据源（具体路径阶段二实现时定）— 读 db-types 查 `st_users.user_st_chats`
@@ -302,8 +302,7 @@ diff 同时包含 A 和 B 范围。建议拆分独立提交。
 
 ### 10.1 角色卡字段语义（P0 已归档）
 
-- `is_published`：上架状态，控制大厅展示和新用户 provision
-- `is_active`：可用状态，控制老用户已物化卡是否可继续使用
+- `enabled`：是否上架，控制大厅展示和新用户 provision
 - `is_default`：新用户初始化时是否自动激活此卡
 - `sort_order`：大厅展示顺序
 
