@@ -45,9 +45,12 @@
    - `packages/shared/migrations/017_miniapp_wallet_payment_summary.sql`
    - `packages/shared/migrations/018_miniapp_free_chat_idempotency.sql`
    - `packages/shared/migrations/019_miniapp_billing_checkin.sql`
+   - `packages/shared/migrations/020_drop_legacy_app_chat_tables.sql`
 5. 如选择 `production`，必须在 `confirm_production` 填入 `RUN_PRODUCTION_MIGRATION`
 
 Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 `qekxjxpznjvoccvmgozk`，`production` 只能连接 `wbtsfzozlmurljvglhpn`。
+
+> 当前部署流程不会在应用启动时自动执行 SQL migration；`packages/backend` 的 `start` 仅执行 `prisma generate` 后启动服务。上线数据库变更时必须手动触发上述 `Database Migration` workflow，逐个指定 `packages/shared/migrations/*.sql` 文件。
 
 ### 全新部署（首次跑）
 
@@ -79,6 +82,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 017_miniapp_wallet_payment_summary.sql # 钱包首次/最近付费、累计金额和总积分汇总字段
 018_miniapp_free_chat_idempotency.sql # 免费聊天模式下保留 client_message_id 幂等
 019_miniapp_billing_checkin.sql # 模型档次扣费字典、内容返回后扣费、每日签到 bonus
+020_drop_legacy_app_chat_tables.sql # 删除阶段一遗留 miniapp.app_sessions / app_messages
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

@@ -12,21 +12,20 @@ export default async function characterRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
     const characters = await prisma.character.findMany({
-      where: {
-        is_published: true,
-        is_active: true,
-      },
+      where: { enabled: true },
       orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
     });
 
-    const charactersSummary: CharacterSummary[] = characters.map((c) => ({
-      id: c.id,
-      name: c.name,
-      description: c.description,
-      avatar_url: c.avatar_url,
-      personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
-      author_name: c.creator,
-    }));
+    const charactersSummary: CharacterSummary[] = characters.map(
+      (c: (typeof characters)[number]) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        avatar_url: c.avatar_url,
+        personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
+        author_name: c.creator,
+      })
+    );
 
     return reply.send(ok<GetCharactersData>({ characters: charactersSummary }));
   });
@@ -36,11 +35,7 @@ export default async function characterRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
 
     const character = await prisma.character.findFirst({
-      where: {
-        id,
-        is_published: true,
-        is_active: true,
-      },
+      where: { id, enabled: true },
     });
 
     if (!character) {
