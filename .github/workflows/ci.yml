@@ -62,7 +62,7 @@ jobs:
         run: pnpm lint
 
       - name: Lint cross-package imports
-        run: npx eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --ignore-pattern '**/__tests__/eslint-import-guard.ts'
+        run: npx eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --ignore-pattern '**/__tests__/eslint-import-guard.ts' --no-inline-config
 
       - name: Build bridge-protocol
         run: pnpm --filter @miniapp/bridge-protocol build
