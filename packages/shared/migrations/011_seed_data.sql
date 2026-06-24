@@ -33,7 +33,7 @@ INSERT INTO miniapp.characters (
   creator_notes, system_prompt, post_history_instructions,
   alternate_greetings, tags, character_book, extensions,
   creator, character_version, spec, spec_version, avatar_url,
-  is_default, enabled, sort_order,
+  is_default, is_published, is_active, sort_order,
   created_at, updated_at
 ) VALUES (
   '11111111-1111-4111-8111-000000000001',
@@ -79,7 +79,8 @@ INSERT INTO miniapp.characters (
   spec = EXCLUDED.spec,
   spec_version = EXCLUDED.spec_version,
   is_default = EXCLUDED.is_default,
-  enabled = EXCLUDED.enabled,
+  is_published = EXCLUDED.is_published,
+  is_active = EXCLUDED.is_active,
   sort_order = EXCLUDED.sort_order,
   updated_at = now();
 
@@ -88,7 +89,7 @@ INSERT INTO miniapp.characters (
   creator_notes, system_prompt, post_history_instructions,
   alternate_greetings, tags, character_book, extensions,
   creator, character_version, spec, spec_version, avatar_url,
-  is_default, enabled, sort_order,
+  is_default, is_published, is_active, sort_order,
   created_at, updated_at
 ) VALUES (
   '11111111-1111-4111-8111-000000000002',
@@ -171,7 +172,8 @@ aspirations: |
   spec = EXCLUDED.spec,
   spec_version = EXCLUDED.spec_version,
   is_default = EXCLUDED.is_default,
-  enabled = EXCLUDED.enabled,
+  is_published = EXCLUDED.is_published,
+  is_active = EXCLUDED.is_active,
   sort_order = EXCLUDED.sort_order,
   updated_at = now();
 
@@ -180,7 +182,7 @@ INSERT INTO miniapp.characters (
   creator_notes, system_prompt, post_history_instructions,
   alternate_greetings, tags, character_book, extensions,
   creator, character_version, spec, spec_version, avatar_url,
-  is_default, enabled, sort_order,
+  is_default, is_published, is_active, sort_order,
   created_at, updated_at
 ) VALUES (
   '11111111-1111-4111-8111-000000000003',
@@ -431,7 +433,8 @@ $miniapp_seed$,
   spec = EXCLUDED.spec,
   spec_version = EXCLUDED.spec_version,
   is_default = EXCLUDED.is_default,
-  enabled = EXCLUDED.enabled,
+  is_published = EXCLUDED.is_published,
+  is_active = EXCLUDED.is_active,
   sort_order = EXCLUDED.sort_order,
   updated_at = now();
 

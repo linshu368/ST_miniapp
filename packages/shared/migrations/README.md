@@ -58,7 +58,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 
 # 里程碑 A（D2 + D014）：建三个 schema + 6 张同步表
 003_create_st_schemas.sql          # CREATE SCHEMA st_platform / st_users / st_infra（D014）
-004_characters_add_sync_fields.sql # ALTER miniapp.characters 加 is_default/enabled/sort_order
+004_characters_add_sync_fields.sql # ALTER miniapp.characters 加 is_default/is_published/is_active/sort_order
 005_platform_settings.sql          # CREATE st_platform.platform_settings（A 类配置型，append-only）
 006_platform_presets.sql           # CREATE st_platform.platform_presets（A 类资产型）
 007_platform_api_configs.sql       # CREATE st_platform.platform_api_configs（A 类资产型 + 凭证）
@@ -229,7 +229,8 @@ DROP SCHEMA IF EXISTS st_platform CASCADE;
 
 -- 回滚 miniapp.characters 同步字段
 ALTER TABLE miniapp.characters DROP COLUMN IF EXISTS is_default;
-ALTER TABLE miniapp.characters DROP COLUMN IF EXISTS enabled;
+ALTER TABLE miniapp.characters DROP COLUMN IF EXISTS is_published;
+ALTER TABLE miniapp.characters DROP COLUMN IF EXISTS is_active;
 ALTER TABLE miniapp.characters DROP COLUMN IF EXISTS sort_order;
 
 -- 回滚 001/002（如果连身份字段也要回滚）

@@ -22,7 +22,6 @@ model User {
   last_checkin_at       DateTime?              @db.Timestamptz(6)
   created_at            DateTime               @default(now()) @db.Timestamptz(6)
   updated_at            DateTime               @default(now()) @db.Timestamptz(6)
-  app_sessions          AppSession[]
   miniapp_user_settings miniapp_user_settings?
   bot_user_settings     bot_user_settings?
 
@@ -254,41 +253,12 @@ model Character {
   spec_version              String       @default("2.0")
   system_prompt             String       @default("")
   tags                      Json         @default("[]")
-  app_sessions              AppSession[]
+  is_default                Boolean      @default(false)
+  is_published              Boolean      @default(true)
+  is_active                 Boolean      @default(true)
+  sort_order                Int          @default(0)
 
   @@map("characters")
-  @@schema("miniapp")
-}
-
-model AppSession {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String       @db.Uuid
-  character_id    String?      @db.Uuid
-  last_message_at DateTime     @default(now()) @db.Timestamptz(6)
-  created_at      DateTime     @default(now()) @db.Timestamptz(6)
-  custom_name     String?
-  is_pinned       Boolean      @default(false)
-  is_deleted      Boolean      @default(false)
-  app_messages    AppMessage[]
-  character       Character?   @relation(fields: [character_id], references: [id], onDelete: SetNull)
-  user            User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
-  @@index([user_id, last_message_at(sort: Desc)])
-  @@map("app_sessions")
-  @@schema("miniapp")
-}
-
-model AppMessage {
-  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  session_id String     @db.Uuid
-  role       String
-  content    String
-  is_deleted Boolean    @default(false)
-  created_at DateTime   @default(now()) @db.Timestamptz(6)
-  session    AppSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
-
-  @@index([session_id, created_at])
-  @@map("app_messages")
   @@schema("miniapp")
 }
 

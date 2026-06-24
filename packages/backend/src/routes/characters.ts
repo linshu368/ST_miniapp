@@ -12,7 +12,11 @@ export default async function characterRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
     const characters = await prisma.character.findMany({
-      orderBy: { created_at: 'desc' },
+      where: {
+        is_published: true,
+        is_active: true,
+      },
+      orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
     });
 
     const charactersSummary: CharacterSummary[] = characters.map((c) => ({

@@ -28,6 +28,10 @@ const DEFAULT_VARIABLE_NAMES = [
   'SUPABASE_PROJECT_REF',
 ] as const;
 
+function isExplicitlyEnabled(value: string | undefined): boolean {
+  return value === 'true' || value === '1';
+}
+
 export function normalizeDatabaseEnvironment(
   value: string | undefined,
   env: Env
@@ -60,7 +64,6 @@ export function extractSupabaseProjectRef(value: string | undefined): string | n
 
 export function createDatabaseConfig({
   env,
-  nodeEnv = env.NODE_ENV || 'development',
   variableNames = DEFAULT_VARIABLE_NAMES,
 }: DatabaseConfigOptions): DatabaseRuntimeConfig {
   const environment = normalizeDatabaseEnvironment(env.DATABASE_ENV, env);
@@ -89,12 +92,11 @@ export function createDatabaseConfig({
 
   assertDatabaseIsolation({
     environment,
-    nodeEnv,
     projectRef,
     uniqueRefs,
     prodProjectRef,
     testProjectRef,
-    allowProdDatabase: env.ALLOW_PROD_DATABASE === '1',
+    allowProdDatabase: isExplicitlyEnabled(env.ALLOW_PROD_DATABASE),
   });
 
   return {
@@ -108,7 +110,6 @@ export function createDatabaseConfig({
 
 function assertDatabaseIsolation({
   environment,
-  nodeEnv,
   projectRef,
   uniqueRefs,
   prodProjectRef,
@@ -116,7 +117,6 @@ function assertDatabaseIsolation({
   allowProdDatabase,
 }: {
   environment: DatabaseEnvironment;
-  nodeEnv: string;
   projectRef: string | null;
   uniqueRefs: string[];
   prodProjectRef: string;
@@ -145,11 +145,7 @@ function assertDatabaseIsolation({
 
   if (environment !== 'production' && projectRef === prodProjectRef && !allowProdDatabase) {
     throw new Error(
-      '非 production 环境禁止连接生产 Supabase 项目。若确需临时操作，必须显式设置 ALLOW_PROD_DATABASE=1'
+      '非 production 环境禁止连接生产 Supabase 项目。若确需临时操作，必须显式设置 ALLOW_PROD_DATABASE=true'
     );
-  }
-
-  if (nodeEnv === 'production' && environment !== 'production') {
-    throw new Error('NODE_ENV=production 时 DATABASE_ENV 必须为 production');
   }
 }

@@ -11,7 +11,7 @@
  *   - 全量 settings：default-user/settings.json
  *
  * 种子内容（D014 三 schema 切分后）：
- *   - miniapp.characters：3 张种子卡（第一张 is_default=true, enabled=true, sort_order=0..2）
+ *   - miniapp.characters：3 张种子卡（第一张 is_default=true, is_published=true, is_active=true, sort_order=0..2）
  *   - st_platform.platform_presets：1 行默认预设
  *   - st_platform.platform_api_configs：1 行（OpenRouter / Claude，is_default=true，api_key 占位 "REPLACE_ME"）
  *   - st_platform.platform_settings：第一行 platform_version=1，含全量 settings_jsonb 和 writable_paths
@@ -185,7 +185,7 @@ function sqlJsonArray(value: unknown): string {
 // ─── 角色卡 INSERT ────────────────────────────────────────────────────────────
 // 注意：miniapp.characters.updated_at 是 NOT NULL 且无 DB 默认值
 //       Prisma 用 @updatedAt 在 client 端注入，但纯 SQL INSERT 必须显式提供
-// 同步字段（004 引入）：is_default / enabled / sort_order
+// 同步字段（004 引入）：is_default / is_published / is_active / sort_order
 
 function buildCharacterInsert(
   uuid: string,
@@ -200,7 +200,7 @@ INSERT INTO miniapp.characters (
   creator_notes, system_prompt, post_history_instructions,
   alternate_greetings, tags, character_book, extensions,
   creator, character_version, spec, spec_version, avatar_url,
-  is_default, enabled, sort_order,
+  is_default, is_published, is_active, sort_order,
   created_at, updated_at
 ) VALUES (
   '${uuid}',
@@ -224,6 +224,7 @@ INSERT INTO miniapp.characters (
   '',
   ${isDefault ? 'TRUE' : 'FALSE'},
   TRUE,
+  TRUE,
   ${sortOrder},
   now(),
   now()
@@ -246,7 +247,8 @@ INSERT INTO miniapp.characters (
   spec = EXCLUDED.spec,
   spec_version = EXCLUDED.spec_version,
   is_default = EXCLUDED.is_default,
-  enabled = EXCLUDED.enabled,
+  is_published = EXCLUDED.is_published,
+  is_active = EXCLUDED.is_active,
   sort_order = EXCLUDED.sort_order,
   updated_at = now();
 `.trim();
