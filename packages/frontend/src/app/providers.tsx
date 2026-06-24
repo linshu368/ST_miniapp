@@ -10,6 +10,8 @@ import { initTelegramSdk } from '@/lib/telegram/init';
 import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUserProfileStore } from '@/stores/user-profile-store';
+import { BridgeProvider } from '@/components/bridge/bridge-provider';
+import { STIframe } from '@/components/bridge/st-iframe';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
@@ -33,7 +35,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {telegramReady ? <UserSettingsHydrator /> : null}
-      {children}
+      <BridgeProvider>
+        {children}
+        <STIframe />
+      </BridgeProvider>
       {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );
