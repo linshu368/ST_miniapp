@@ -3,6 +3,8 @@
 import { useRef, useEffect } from 'react';
 import { useBridgeContext } from './bridge-provider';
 
+const ST_IFRAME_URL = '/tavern/';
+
 export function STIframe() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { registerIframe, isVisible } = useBridgeContext();
@@ -16,7 +18,7 @@ export function STIframe() {
   return (
     <iframe
       ref={iframeRef}
-      src="/tavern/"
+      src={ST_IFRAME_URL}
       className={
         isVisible
           ? 'fixed inset-0 z-10 w-full h-full'

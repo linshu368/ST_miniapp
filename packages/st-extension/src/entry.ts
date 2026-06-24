@@ -16,7 +16,7 @@ declare const __BUILD_ID__: string;
 declare const __ST_COMMIT__: string;
 
 function init(): void {
-  const server = createBridgeServer('*'); // parentOrigin — MVP uses '*', tighten later
+  const server = createBridgeServer('*');
   server.start();
 
   // Register action handlers
