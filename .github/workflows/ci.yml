@@ -25,12 +25,12 @@ jobs:
       NEXT_PUBLIC_API_URL: http://localhost:3001
       NEXT_PUBLIC_USE_MOCK_INIT_DATA: '0'
       DATABASE_ENV: test
-      TEST_SUPABASE_PROJECT_REF: zoqelpfhurwehlvypryl
+      TEST_SUPABASE_PROJECT_REF: qekxjxpznjvoccvmgozk
       PROD_SUPABASE_PROJECT_REF: wbtsfzozlmurljvglhpn
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
-      SUPABASE_PROJECT_REF: zoqelpfhurwehlvypryl
-      SUPABASE_URL: https://zoqelpfhurwehlvypryl.supabase.co
+      SUPABASE_PROJECT_REF: qekxjxpznjvoccvmgozk
+      SUPABASE_URL: https://qekxjxpznjvoccvmgozk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
 
     steps:

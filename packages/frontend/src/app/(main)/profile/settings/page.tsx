@@ -78,53 +78,55 @@ export default function SettingsPage() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background">
-      <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-3 backdrop-blur-md">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-[#080014] text-white">
+      <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-white/5 bg-[#080014]/80 px-3 py-3 backdrop-blur-xl pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <Button
           variant="ghost"
           size="icon"
           onClick={goBack}
-          className="rounded-full text-muted-foreground hover:text-foreground"
+          className="rounded-full text-white/60 hover:text-white hover:bg-white/10"
           aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
         </Button>
-        <h1 className="text-base font-semibold">设置</h1>
+        <h1 className="text-base font-bold tracking-wide">设置</h1>
       </header>
 
-      <section className="flex flex-1 flex-col gap-4 px-3 py-4">
-        {/* 行内控件:字号倍率(无障碍偏好,与主题正交) */}
-        <Card className="rounded-2xl border-border/60 bg-card/40 shadow-none">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary/60 text-muted-foreground">
-                <Type className="h-4 w-4" aria-hidden />
+      <section className="flex flex-1 flex-col gap-4 px-4 py-5 relative z-10">
+        <div className="absolute top-0 left-0 right-0 h-40 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-transparent to-transparent pointer-events-none" />
+
+        {/* 行内控件:字号倍率 */}
+        <Card className="rounded-[24px] border border-white/10 bg-white/[0.03] shadow-none backdrop-blur-md relative overflow-hidden">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-4">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400">
+                <Type className="h-5 w-5" aria-hidden />
               </span>
               <span className="flex flex-1 flex-col">
-                <span className="text-[15px] font-medium text-foreground">字号大小</span>
-                <span className="mt-0.5 text-[11px] text-muted-foreground/70">
-                  仅影响 chat 消息文本
+                <span className="text-[15px] font-bold text-white tracking-wide">字号大小</span>
+                <span className="mt-0.5 text-[11px] text-white/40 font-medium">
+                  仅影响聊天消息文本
                 </span>
               </span>
             </div>
             <div
               role="radiogroup"
               aria-label="字号大小"
-              className="mt-4 flex gap-1.5 rounded-xl bg-secondary/40 p-1"
+              className="mt-5 flex gap-2 rounded-xl bg-white/5 p-1 border border-white/5"
             >
               {FONT_SCALE_OPTIONS.map((opt) => {
                 const active = opt.id === fontScale;
                 return (
                   <Button
                     key={opt.id}
-                    variant={active ? 'default' : 'ghost'}
+                    variant="ghost"
                     size="sm"
                     onClick={() => setFontScale(opt.id)}
                     className={cn(
-                      'flex-1 rounded-lg transition-colors h-auto py-1.5',
+                      'flex-1 rounded-[10px] transition-all duration-300 h-auto py-2 border-0',
                       active
-                        ? 'bg-background text-foreground shadow-sm hover:bg-background'
-                        : 'text-muted-foreground'
+                        ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-600'
+                        : 'text-white/50 hover:text-white hover:bg-white/5'
                     )}
                     style={{ fontSize: `calc(13px * ${opt.multiplier})` }}
                   >
@@ -136,38 +138,39 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/60 bg-card/40 shadow-none">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary/60 text-muted-foreground">
-                <Type className="h-4 w-4" aria-hidden />
+        {/* 回复长度 */}
+        <Card className="rounded-[24px] border border-white/10 bg-white/[0.03] shadow-none backdrop-blur-md relative overflow-hidden">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-4">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400">
+                <Type className="h-5 w-5" aria-hidden />
               </span>
               <span className="flex flex-1 flex-col">
-                <span className="text-[15px] font-medium text-foreground">回复长度</span>
-                <span className="mt-0.5 text-[11px] text-muted-foreground/70">
-                  同步到 MiniApp 后端设置
+                <span className="text-[15px] font-bold text-white tracking-wide">回复长度</span>
+                <span className="mt-0.5 text-[11px] text-white/40 font-medium">
+                  云端同步，跨设备生效
                 </span>
               </span>
             </div>
             <div
               role="radiogroup"
               aria-label="回复长度"
-              className="mt-4 grid grid-cols-4 gap-1.5 rounded-xl bg-secondary/40 p-1"
+              className="mt-5 grid grid-cols-4 gap-2 rounded-xl bg-white/5 p-1 border border-white/5"
             >
               {WORD_COUNT_OPTIONS.map((opt) => {
                 const active = opt.value === settings?.pref_word_count;
                 return (
                   <Button
                     key={opt.value}
-                    variant={active ? 'default' : 'ghost'}
+                    variant="ghost"
                     size="sm"
                     disabled={patchSettings.isPending}
                     onClick={() => updateWordCount(opt.value)}
                     className={cn(
-                      'rounded-lg h-auto py-1.5 text-[12px] font-medium transition-colors',
+                      'rounded-[10px] h-auto py-2 text-[12px] font-bold transition-all duration-300 border-0',
                       active
-                        ? 'bg-background text-foreground shadow-sm hover:bg-background'
-                        : 'text-muted-foreground'
+                        ? 'bg-amber-500 text-[#080014] shadow-lg shadow-amber-500/20 hover:bg-amber-600'
+                        : 'text-white/50 hover:text-white hover:bg-white/5'
                     )}
                   >
                     {opt.label}
@@ -178,46 +181,49 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/60 bg-card/40 shadow-none">
-          <CardContent className="p-4 flex items-center justify-between gap-3">
+        {/* 开关选项 */}
+        <Card className="rounded-[24px] border border-white/10 bg-white/[0.03] shadow-none backdrop-blur-md">
+          <CardContent className="p-5 flex items-center justify-between gap-4">
             <span className="flex flex-col">
-              <span className="text-[15px] font-medium text-foreground">显示选项提示</span>
-              <span className="mt-0.5 text-[11px] text-muted-foreground/70">
-                控制回复中是否倾向给出选择项
+              <span className="text-[15px] font-bold text-white tracking-wide">显示选项提示</span>
+              <span className="mt-0.5 text-[11px] text-white/40 font-medium">
+                控制 AI 回复中是否倾向给出建议选项
               </span>
             </span>
             <Switch
               checked={settings?.pref_show_options ?? true}
               disabled={patchSettings.isPending}
               onCheckedChange={(checked) => updateShowOptions(checked)}
+              className="data-[state=checked]:bg-emerald-500"
             />
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/60 bg-card/40 shadow-none">
-          <CardContent className="p-4">
+        {/* 自定义指令 */}
+        <Card className="rounded-[24px] border border-white/10 bg-white/[0.03] shadow-none backdrop-blur-md">
+          <CardContent className="p-5">
             <label className="flex flex-col gap-2">
-              <span className="text-[15px] font-medium text-foreground">自定义指令</span>
-              <span className="text-[11px] text-muted-foreground/70">
-                会保存到 MiniApp 设置表，不写入 ST settings。
+              <span className="text-[15px] font-bold text-white tracking-wide">自定义指令</span>
+              <span className="text-[11px] text-white/40 font-medium leading-relaxed">
+                这些指令将在每次对话时发给模型，定制你的专属 AI 体验。
               </span>
               <Textarea
                 value={customInstructions}
                 onChange={(e) => setCustomInstructions(e.target.value)}
                 rows={4}
                 maxLength={2000}
-                placeholder="例如：回复更温柔一些，少用复杂术语。"
-                className="mt-2 resize-none rounded-xl bg-background/70 px-3 py-2 text-sm transition-colors"
+                placeholder="例如：回复更温柔一些，少用复杂术语..."
+                className="mt-3 resize-none rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-white placeholder:text-white/20 focus-visible:ring-indigo-500/50 transition-all"
               />
             </label>
             <div className="mt-4 flex items-center justify-between">
-              <span className="text-[11px] text-muted-foreground/70">
-                {customInstructions.length}/2000
+              <span className="text-[11px] text-white/30 font-medium tracking-wider">
+                {customInstructions.length} / 2000
               </span>
               <Button
                 disabled={patchSettings.isPending}
                 onClick={saveCustomInstructions}
-                className="rounded-full px-5 h-8 text-xs font-medium"
+                className="rounded-full px-6 h-9 text-xs font-bold bg-white/10 text-white hover:bg-white/20 border-0 transition-colors"
               >
                 保存
               </Button>
@@ -226,29 +232,34 @@ export default function SettingsPage() {
         </Card>
 
         {/* 跳转行 */}
-        <ul className="overflow-hidden rounded-2xl border border-border/60 bg-card/40">
+        <ul className="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.03] backdrop-blur-md mt-2">
           {NAV_ROWS.map((row, idx) => {
             const Icon = row.icon;
             return (
               <li key={row.href}>
                 <Link
                   href={row.href}
-                  className={`flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-secondary/40 ${
-                    idx > 0 ? 'border-t border-border/40' : ''
+                  className={`flex items-center gap-4 px-5 py-4 transition-colors hover:bg-white/5 group ${
+                    idx > 0 ? 'border-t border-white/5' : ''
                   }`}
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary/60 text-muted-foreground">
-                    <Icon className="h-4 w-4" aria-hidden />
+                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-white/60 group-hover:bg-white/10 group-hover:text-white transition-colors">
+                    <Icon className="h-5 w-5" aria-hidden />
                   </span>
                   <span className="flex flex-1 flex-col">
-                    <span className="text-[15px] font-medium text-foreground">{row.label}</span>
+                    <span className="text-[15px] font-bold text-white tracking-wide">
+                      {row.label}
+                    </span>
                     {row.hint ? (
-                      <span className="mt-0.5 text-[11px] text-muted-foreground/70">
+                      <span className="mt-0.5 text-[11px] text-white/40 font-medium">
                         {row.hint}
                       </span>
                     ) : null}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground/60" aria-hidden />
+                  <ChevronRight
+                    className="h-4 w-4 text-white/20 group-hover:text-white/60 transition-colors"
+                    aria-hidden
+                  />
                 </Link>
               </li>
             );

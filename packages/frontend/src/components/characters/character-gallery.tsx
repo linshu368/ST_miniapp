@@ -54,7 +54,7 @@ export function CharacterGallery() {
     <div className="px-4 pb-2 pt-2">
       <div className="relative">
         <Search
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60"
+          className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
           aria-hidden="true"
         />
         <Input
@@ -62,7 +62,7 @@ export function CharacterGallery() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索角色、标签或作者"
-          className="h-10 rounded-full pl-9 pr-9"
+          className="h-10 rounded-full pl-10 pr-10 border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:ring-indigo-500/50 focus-visible:bg-white/10 transition-all"
           aria-label="搜索角色"
         />
         {query && (
@@ -71,7 +71,7 @@ export function CharacterGallery() {
             size="icon"
             onClick={() => setQuery('')}
             aria-label="清空搜索"
-            className="absolute right-1 top-1 h-8 w-8 rounded-full text-muted-foreground/60 hover:text-foreground"
+            className="absolute right-1 top-1 h-8 w-8 rounded-full text-white/40 hover:text-white hover:bg-white/10"
           >
             <X className="h-4 w-4" />
           </Button>
@@ -86,7 +86,10 @@ export function CharacterGallery() {
         {searchBar}
         <div className="grid grid-cols-2 gap-3 px-4 py-6" aria-label="加载中">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="aspect-[3/4] w-full animate-breath rounded-xl bg-card" />
+            <div
+              key={i}
+              className="aspect-[3/4] w-full animate-breath rounded-[16px] bg-white/5 border border-white/5"
+            />
           ))}
         </div>
       </>
@@ -97,7 +100,9 @@ export function CharacterGallery() {
     return (
       <>
         {searchBar}
-        <p className="px-4 py-8 text-[13px] text-muted-foreground">门好像被风合上了。稍后再来。</p>
+        <p className="px-4 py-8 text-[13px] text-white/50 text-center">
+          门好像被风合上了。稍后再来。
+        </p>
       </>
     );
   }
@@ -106,7 +111,9 @@ export function CharacterGallery() {
     return (
       <>
         {searchBar}
-        <p className="px-4 py-8 text-[13px] text-muted-foreground/80">房间都空着。</p>
+        <p className="px-4 py-8 text-[13px] text-white/50 text-center">
+          空旷的空间，还没有角色到达。
+        </p>
       </>
     );
   }
@@ -116,21 +123,19 @@ export function CharacterGallery() {
       {searchBar}
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center gap-3 px-4 py-10">
-          <p className="text-center text-[13px] text-muted-foreground/80">
-            没有匹配「{query}」的角色
-          </p>
+          <p className="text-center text-[13px] text-white/50">没有匹配「{query}」的角色</p>
           <Button
             variant="outline"
             onClick={() => {
               // TODO: 角色卡许愿池入口,功能待开发
             }}
-            className="group relative overflow-hidden rounded-full border-indigo-300/30 bg-indigo-400/10 px-5 h-10 text-[13px] text-indigo-200/90 hover:bg-indigo-400/20 hover:text-indigo-100 border-0"
+            className="group relative overflow-hidden rounded-full border border-indigo-500/30 bg-indigo-500/10 px-5 h-10 text-[13px] font-medium text-indigo-300 hover:bg-indigo-500/20 hover:text-indigo-200 transition-all shadow-[0_0_15px_rgba(99,102,241,0.1)]"
           >
-            <Sparkles className="h-4 w-4 mr-2 transition-transform group-hover:rotate-12" />
-            <span>没找到想要的?去许愿池</span>
+            <Sparkles className="h-4 w-4 mr-2 text-indigo-400 transition-transform group-hover:rotate-12" />
+            <span>没找到想要的？去许愿池</span>
           </Button>
-          <p className="text-center text-[11px] text-muted-foreground/55">
-            告诉我们你想要的角色,创作者会为你做出来
+          <p className="text-center text-[11px] text-white/40">
+            告诉我们你想要的角色，创作者会为你做出来
           </p>
         </div>
       ) : (

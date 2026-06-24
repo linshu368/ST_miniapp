@@ -28,48 +28,48 @@ type VariantStyle = {
 const VARIANT_STYLES: Record<PaymentPlanVariant, VariantStyle> = {
   entry: {
     Icon: Star,
-    container: 'bg-slate-900/30 border border-slate-800/80 opacity-80',
-    iconWrap: 'bg-slate-800 text-slate-500',
-    creditsText: 'text-slate-300',
-    priceText: 'text-slate-400/80',
+    container: 'bg-white/5 border border-white/10 backdrop-blur-md',
+    iconWrap: 'bg-white/10 text-white/60',
+    creditsText: 'text-white/90',
+    priceText: 'text-white/80',
     badgeClass: '',
     highlightKind: 'plain',
-    highlightColor: 'text-slate-400',
+    highlightColor: 'text-white/50',
   },
   standard: {
     Icon: Zap,
     container:
-      'bg-slate-900/70 border border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.15)]',
-    iconWrap: 'bg-purple-500/20 text-purple-400 border border-purple-500/20',
+      'bg-indigo-900/20 border border-indigo-500/30 backdrop-blur-md shadow-[0_0_15px_rgba(99,102,241,0.1)]',
+    iconWrap: 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/20',
     creditsText: 'text-white',
-    priceText: 'text-purple-200/90',
+    priceText: 'text-indigo-300',
     badgeClass:
-      'absolute top-0 right-0 bg-purple-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-md z-10',
+      'absolute top-0 right-0 bg-indigo-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-xl z-10',
     highlightKind: 'plain',
-    highlightColor: 'text-purple-300',
+    highlightColor: 'text-indigo-300',
   },
   recommended: {
     Icon: Sparkles,
     container:
-      'bg-slate-900 border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3),inset_0_0_14px_rgba(236,72,153,0.08)]',
-    iconWrap: 'bg-pink-500 text-white shadow-md shadow-pink-500/40',
-    creditsText: 'text-white',
-    priceText: 'text-pink-200/90',
+      'bg-white/10 border border-amber-500/50 backdrop-blur-xl shadow-[0_0_20px_rgba(245,158,11,0.15),inset_0_0_15px_rgba(245,158,11,0.05)]',
+    iconWrap: 'bg-amber-500 text-[#080014] shadow-md shadow-amber-500/40',
+    creditsText: 'text-transparent bg-clip-text bg-gradient-to-b from-white to-amber-200',
+    priceText: 'text-amber-400',
     badgeClass:
-      'absolute top-0 right-0 bg-gradient-to-r from-pink-600 to-purple-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-md z-10',
+      'absolute top-0 right-0 bg-gradient-to-r from-amber-400 to-amber-600 text-[#080014] text-[9px] font-bold px-2 py-0.5 rounded-bl-xl z-10',
     highlightKind: 'plain',
-    highlightColor: 'text-pink-400',
+    highlightColor: 'text-amber-400',
   },
   premium: {
     Icon: Crown,
     container:
-      'border border-yellow-500/60 bg-yellow-900/15 shadow-[0_0_18px_rgba(234,179,8,0.2)] bg-[linear-gradient(135deg,rgba(234,179,8,0.12)_0%,rgba(0,0,0,0)_100%)]',
+      'bg-[linear-gradient(135deg,rgba(244,114,182,0.15)_0%,rgba(168,85,247,0.15)_100%)] border border-fuchsia-500/40 backdrop-blur-md shadow-[0_0_20px_rgba(217,70,239,0.15)]',
     iconWrap:
-      'bg-gradient-to-br from-yellow-300 to-yellow-600 text-black shadow-md shadow-yellow-500/40',
-    creditsText: 'text-transparent bg-clip-text bg-[linear-gradient(to_bottom,#ffffff,#fde047)]',
-    priceText: 'text-yellow-400/90',
+      'bg-gradient-to-br from-fuchsia-400 to-purple-600 text-white shadow-md shadow-fuchsia-500/40',
+    creditsText: 'text-transparent bg-clip-text bg-gradient-to-b from-white to-fuchsia-200',
+    priceText: 'text-fuchsia-300',
     badgeClass:
-      'absolute top-0 right-0 bg-gradient-to-bl from-yellow-300 via-yellow-500 to-yellow-600 text-black text-[9px] font-black px-1.5 py-0.5 rounded-bl-md z-10',
+      'absolute top-0 right-0 bg-gradient-to-bl from-fuchsia-400 via-purple-500 to-indigo-600 text-white text-[9px] font-black px-2 py-0.5 rounded-bl-xl z-10',
     highlightKind: 'pill-red',
     highlightColor: '',
   },
@@ -113,9 +113,10 @@ export function PlanCard({ plan, selected, onSelect }: PlanCardProps) {
       }}
       aria-pressed={selected}
       className={cn(
-        'group relative w-full overflow-hidden rounded-xl text-left transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        'group relative w-full overflow-hidden rounded-[20px] text-left transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080014]',
         style.container,
-        selected && 'ring-2 ring-offset-2 ring-offset-[#0A0A0A] ring-pink-400/80 border-transparent'
+        selected &&
+          'ring-2 ring-offset-2 ring-offset-[#080014] ring-amber-400 border-transparent shadow-[0_0_30px_rgba(245,158,11,0.2)]'
       )}
     >
       {plan.badge_text ? <span className={style.badgeClass}>{plan.badge_text}</span> : null}
@@ -145,14 +146,14 @@ export function PlanCard({ plan, selected, onSelect }: PlanCardProps) {
 
             {/* Line 2: 高亮文案（如有） */}
             {plan.highlight_text ? (
-              <div className="mt-1 flex items-center gap-1">
+              <div className="mt-1 flex items-center gap-1.5">
                 {style.highlightKind === 'pill-red' ? (
                   <>
-                    <span className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-black text-white shadow-sm shadow-red-500/50">
+                    <span className="rounded-[4px] bg-gradient-to-r from-fuchsia-600 to-purple-600 px-1.5 py-0.5 text-[10px] font-black text-white shadow-sm">
                       {plan.highlight_text}
                     </span>
                     {percent > 0 ? (
-                      <span className="rounded border border-yellow-500/50 bg-yellow-500/10 px-1 text-[9px] font-bold text-yellow-300">
+                      <span className="rounded-[4px] bg-fuchsia-500/20 px-1.5 py-0.5 text-[10px] font-bold text-fuchsia-300">
                         多送 {percent}%
                       </span>
                     ) : null}

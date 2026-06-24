@@ -53,28 +53,31 @@ export default function ProfilePage() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col px-5 pb-10 pt-[env(safe-area-inset-top)]">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-[#080014] pb-10 pt-[env(safe-area-inset-top)] relative">
+      {/* 顶部空间感 Banner */}
+      <div className="absolute top-0 left-0 right-0 h-48 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/40 via-purple-900/10 to-transparent pointer-events-none" />
+
       {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=设置 */}
-      <header className="flex items-center justify-between py-3">
+      <header className="flex items-center justify-between px-5 py-3 relative z-10">
         <Link
           href="/profile/recharge"
           aria-label={`当前星尘 ${credits}，前往星尘商店`}
-          className="animate-stardust-pulse inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-gradient-to-r from-sky-500/10 via-card/60 to-indigo-500/10 px-3.5 py-2 text-sm transition-colors duration-300 hover:border-sky-400/60 hover:[animation-play-state:paused] hover:shadow-[0_0_26px_-4px_rgba(56,189,248,0.7),inset_0_0_16px_-3px_rgba(56,189,248,0.4)]"
+          className="group inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-4 py-2 text-sm transition-all duration-300 hover:bg-white/10 hover:border-white/20"
         >
           <Sparkles
-            className="h-4 w-4 text-sky-300 drop-shadow-[0_0_4px_rgba(56,189,248,0.7)]"
+            className="h-4 w-4 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.8)] transition-transform group-hover:scale-110"
             aria-hidden
           />
-          <span className="font-semibold tabular-nums">{formatNumber(credits)}</span>
-          <span className="text-muted-foreground/50">·</span>
-          <span className="text-foreground/85">星尘商店</span>
-          <ChevronRight className="h-3.5 w-3.5 text-sky-300/80" aria-hidden />
+          <span className="font-bold tracking-tight text-white">{formatNumber(credits)}</span>
+          <span className="text-white/30">·</span>
+          <span className="text-white/80 font-medium">星尘商店</span>
+          <ChevronRight className="h-3.5 w-3.5 text-white/50" aria-hidden />
         </Link>
         <Button
           asChild
           variant="ghost"
           size="icon"
-          className="rounded-full text-muted-foreground hover:bg-card hover:text-foreground"
+          className="rounded-full text-white/60 hover:bg-white/10 hover:text-white transition-colors"
         >
           <Link href="/profile/settings" aria-label="设置">
             <Settings className="h-5 w-5" aria-hidden />
@@ -82,10 +85,10 @@ export default function ProfilePage() {
         </Button>
       </header>
 
-      {/* 身份：页面重心；姓名可点击编辑 → 影响 chat 里的 {{user}} 宏 */}
-      <section className="mt-10 flex flex-col items-center gap-3">
-        <Avatar className="h-20 w-20 ring-2 ring-primary/10 ring-offset-2 ring-offset-background">
-          <AvatarFallback className="bg-gradient-to-br from-pink-500 via-purple-500 to-blue-500 text-3xl font-black text-white">
+      {/* 身份：页面重心；姓名可点击编辑 */}
+      <section className="mt-8 flex flex-col items-center gap-4 px-5 relative z-10">
+        <Avatar className="h-24 w-24 ring-4 ring-white/10 ring-offset-4 ring-offset-[#080014] shadow-2xl">
+          <AvatarFallback className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-3xl font-black text-white">
             {displayName.slice(0, 1).toUpperCase()}
           </AvatarFallback>
         </Avatar>
@@ -107,7 +110,7 @@ export default function ProfilePage() {
                   cancel();
                 }
               }}
-              className="h-9 w-48 text-center text-lg font-semibold"
+              className="h-10 w-56 text-center text-xl font-bold bg-white/5 border-white/20 text-white focus-visible:ring-indigo-500"
               aria-label="编辑显示名"
             />
           ) : (
@@ -115,61 +118,77 @@ export default function ProfilePage() {
               variant="ghost"
               size="sm"
               onClick={startEdit}
-              className="group inline-flex h-auto items-center gap-1.5 px-2 py-1 text-lg font-semibold transition-colors hover:text-primary hover:bg-transparent"
+              className="group inline-flex h-auto items-center gap-1.5 px-3 py-1.5 text-xl font-bold text-white transition-all hover:bg-white/10 rounded-xl"
               aria-label="编辑显示名"
             >
               <span>{displayName}</span>
               <Pencil
-                className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-primary"
+                className="h-4 w-4 text-white/40 transition-colors group-hover:text-white/90"
                 aria-hidden
               />
             </Button>
           )}
-          <div className="mt-0.5 text-[11px] text-muted-foreground/70">
-            ID · {telegramUserId ?? '未连接 Telegram'}
+          <div className="mt-1 text-xs font-medium text-white/40 tracking-wider uppercase">
+            ID · {telegramUserId ?? '未连接'}
           </div>
         </div>
       </section>
 
-      <Card className="mt-8 overflow-hidden border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-card to-indigo-500/10 shadow-[0_18px_60px_-40px_rgba(56,189,248,0.7)] rounded-3xl">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-500 dark:text-sky-300">
-              <Gift className="h-5 w-5" aria-hidden />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-bold text-foreground">每日签到</h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    奖励进入赠送星尘，聊天扣费时自动抵扣
-                  </p>
-                </div>
-                <Button
-                  disabled={!checkin?.can_claim || claimCheckin.isPending}
-                  onClick={() => claimCheckin.mutate()}
-                  className="h-9 shrink-0 rounded-full bg-sky-500 text-xs font-bold text-white hover:bg-sky-600 shadow-lg shadow-sky-500/20"
-                >
-                  {claimCheckin.isPending
-                    ? '领取中'
-                    : checkin?.can_claim
-                      ? `领 ${checkin.reward_credits}`
-                      : '已签到'}
-                </Button>
+      {/* 核心功能资产区 */}
+      <section className="mt-12 px-5 flex flex-col gap-4 relative z-10">
+        {/* 余额大卡片 */}
+        <div className="relative overflow-hidden rounded-[24px] border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
+          <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-white/60">我的星尘</p>
+              <div className="mt-1 flex items-baseline gap-1">
+                <span className="text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-amber-200">
+                  {formatNumber(credits)}
+                </span>
               </div>
-              {!checkin?.can_claim && checkin?.next_claim_at ? (
-                <p className="mt-3 text-[11px] text-muted-foreground/80">
-                  下次可领：{formatDateTime(checkin.next_claim_at)}
-                </p>
-              ) : (
-                <p className="mt-3 text-[11px] text-sky-600 dark:text-sky-300/80">
-                  每 24 小时可领取一次，数量由运营配置调整。
-                </p>
-              )}
             </div>
+            <Link
+              href="/profile/recharge"
+              className="flex h-10 items-center justify-center rounded-full bg-gradient-to-r from-amber-400 to-amber-600 px-6 text-sm font-bold text-[#080014] shadow-lg shadow-amber-500/20 transition-transform active:scale-95"
+            >
+              去充值
+            </Link>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* 每日签到 */}
+        <Card className="overflow-hidden border-white/10 bg-white/[0.03] shadow-none rounded-[24px] backdrop-blur-md">
+          <CardContent className="p-5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400">
+                <Gift className="h-6 w-6" aria-hidden />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white">每日签到</h2>
+                {!checkin?.can_claim && checkin?.next_claim_at ? (
+                  <p className="mt-0.5 text-xs text-white/50">
+                    下次可领：{formatDateTime(checkin.next_claim_at)}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-xs text-indigo-300/80">免费领取星尘，聊天可抵扣</p>
+                )}
+              </div>
+            </div>
+            <Button
+              disabled={!checkin?.can_claim || claimCheckin.isPending}
+              onClick={() => claimCheckin.mutate()}
+              className="h-10 rounded-full bg-indigo-500 text-sm font-bold text-white hover:bg-indigo-600 shadow-md shadow-indigo-500/20 disabled:bg-white/10 disabled:text-white/40 border-0"
+            >
+              {claimCheckin.isPending
+                ? '领取中'
+                : checkin?.can_claim
+                  ? `领 ${checkin.reward_credits}`
+                  : '已签到'}
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
     </main>
   );
 }

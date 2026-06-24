@@ -21,8 +21,8 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
       disabled={disabled}
       onClick={() => onSelect(character.id)}
       className={cn(
-        'group flex w-full flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left shadow-sm',
-        'transition-transform duration-200 ease-out active:scale-[0.995]',
+        'group flex w-full flex-col overflow-hidden rounded-[16px] border border-white/10 bg-white/5 text-left shadow-lg',
+        'transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/20 hover:border-white/20 active:scale-95',
         'disabled:opacity-60'
       )}
       aria-label={`查看 ${character.name} 的详情`}
@@ -74,11 +74,11 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
       </div>
 
       {/* 信息区：作者 + 描述最多两行省略 */}
-      <div className="flex flex-col gap-1 px-3 py-2.5">
-        <p className="text-[10px] leading-none text-muted-foreground/60">
+      <div className="flex flex-col gap-1.5 px-3 py-3">
+        <p className="text-[10px] font-medium tracking-wide leading-none text-indigo-300/80">
           by {character.author_name}
         </p>
-        <p className="line-clamp-2 text-[11px] leading-relaxed text-foreground/60">
+        <p className="line-clamp-2 text-[11px] leading-relaxed text-white/60">
           {character.description}
         </p>
       </div>
