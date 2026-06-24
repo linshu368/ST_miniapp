@@ -8,15 +8,19 @@ import { create } from 'zustand';
 interface UIState {
   selectedCharacterId: string | undefined;
   sidebarOpen: boolean;
+  activeCharacterAvatar: string | null;
   setSelectedCharacterId: (id: string | undefined) => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+  setActiveCharacterAvatar: (avatar: string | null) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   selectedCharacterId: undefined,
   sidebarOpen: false,
+  activeCharacterAvatar: null,
   setSelectedCharacterId: (id) => set({ selectedCharacterId: id }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setActiveCharacterAvatar: (avatar) => set({ activeCharacterAvatar: avatar }),
 }));

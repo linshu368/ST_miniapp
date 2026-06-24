@@ -39,6 +39,12 @@ export function initHandshake(server: BridgeServer, opts: HandshakeOptions): voi
   server.sendHandshake('handshake', meta);
 
   ctx.eventSource.on(ctx.eventTypes.APP_READY, () => {
+    if (!boundUserId) {
+      const retryUserId = ctx.accountStorage?.currentUser?.id ?? null;
+      if (retryUserId) {
+        setBoundUserId(retryUserId);
+      }
+    }
     server.setCurrentPhase('ready');
     server.sendHandshake('ready');
   });

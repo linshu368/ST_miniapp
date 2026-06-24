@@ -48,13 +48,6 @@ export function handleHandshakeMessage(opts: HandleHandshakeOptions): void {
       );
     }
 
-    if (meta.boundUserId == null) {
-      throw new BridgeError(
-        'BRIDGE_HANDSHAKE_USER_MISSING',
-        'ST extension did not report a bound userId'
-      );
-    }
-
     if (expectedUserId != null && meta.boundUserId !== expectedUserId) {
       throw new BridgeError(
         'BRIDGE_HANDSHAKE_USER_MISMATCH',
