@@ -79,6 +79,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 017_miniapp_wallet_payment_summary.sql # 钱包首次/最近付费、累计金额和总积分汇总字段
 018_miniapp_free_chat_idempotency.sql # 免费聊天模式下保留 client_message_id 幂等
 019_miniapp_billing_checkin.sql # 模型档次扣费字典、内容返回后扣费、每日签到 bonus
+020_miniapp_wish_roles.sql # Telegram Bot 角色许愿、24h 限流、许愿奖励
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
