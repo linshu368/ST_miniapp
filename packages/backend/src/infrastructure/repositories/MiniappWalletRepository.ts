@@ -16,8 +16,11 @@ interface MiniappWalletRow {
 interface WalletRpcResult {
   wallet?: MiniappWalletRow;
   checkin?: DailyCheckinRpcData;
-  charge_status?: 'reserved' | 'charged' | 'already_reserved' | 'already_charged';
-  refund_status?: 'refunded' | 'already_refunded';
+  /*
+   * Temporarily disabled with chat billing methods below.
+   * charge_status?: 'reserved' | 'charged' | 'already_reserved' | 'already_charged';
+   * refund_status?: 'refunded' | 'already_refunded';
+   */
 }
 
 interface DailyCheckinRpcData {
@@ -80,106 +83,114 @@ export class MiniappWalletRepository {
     return data as MiniappWalletRow;
   }
 
-  async chargeChatMessage(input: {
-    userId: string;
-    sessionId: string;
-    clientMessageId: string;
-    amount: number;
-  }): Promise<{ wallet: MiniappWalletRow; alreadyCharged: boolean }> {
-    const { data, error } = await this.db.rpc('charge_chat_message', {
-      p_user_id: input.userId,
-      p_session_id: input.sessionId,
-      p_client_message_id: input.clientMessageId,
-      p_amount: input.amount,
-    });
-
-    if (error) {
-      throw new Error(`扣除聊天消息费用失败：${error.message}`);
-    }
-
-    const result = data as WalletRpcResult;
-    if (!result.wallet) {
-      throw new Error('扣除聊天消息费用失败：返回结果缺少钱包信息');
-    }
-
-    return {
-      wallet: result.wallet,
-      alreadyCharged: result.charge_status === 'already_charged',
-    };
-  }
-
-  async reserveChatMessage(input: {
-    userId: string;
-    sessionId: string;
-    clientMessageId: string;
-    amount: number;
-  }): Promise<{ wallet: MiniappWalletRow; alreadyReserved: boolean }> {
-    const { data, error } = await this.db.rpc('reserve_chat_message', {
-      p_user_id: input.userId,
-      p_session_id: input.sessionId,
-      p_client_message_id: input.clientMessageId,
-      p_amount: input.amount,
-    });
-
-    if (error) {
-      throw new Error(`预留聊天消息扣费失败：${error.message}`);
-    }
-
-    const result = data as WalletRpcResult;
-    if (!result.wallet) {
-      throw new Error('预留聊天消息扣费失败：返回结果缺少钱包信息');
-    }
-
-    return {
-      wallet: result.wallet,
-      alreadyReserved:
-        result.charge_status === 'already_reserved' || result.charge_status === 'already_charged',
-    };
-  }
-
-  async finalizeChatMessageCharge(input: {
-    userId: string;
-    sessionId: string;
-    clientMessageId: string;
-  }): Promise<MiniappWalletRow> {
-    const { data, error } = await this.db.rpc('finalize_chat_message_charge', {
-      p_user_id: input.userId,
-      p_session_id: input.sessionId,
-      p_client_message_id: input.clientMessageId,
-    });
-
-    if (error) {
-      throw new Error(`确认聊天消息扣费失败：${error.message}`);
-    }
-
-    const result = data as WalletRpcResult;
-    if (!result.wallet) {
-      throw new Error('确认聊天消息扣费失败：返回结果缺少钱包信息');
-    }
-
-    return result.wallet;
-  }
-
-  async refundChatMessage(input: {
-    userId: string;
-    sessionId: string;
-    clientMessageId: string;
-    reason: string;
-  }): Promise<MiniappWalletRow | null> {
-    const { data, error } = await this.db.rpc('refund_chat_message_charge', {
-      p_user_id: input.userId,
-      p_session_id: input.sessionId,
-      p_client_message_id: input.clientMessageId,
-      p_reason: input.reason,
-    });
-
-    if (error) {
-      throw new Error(`退回聊天消息费用失败：${error.message}`);
-    }
-
-    const result = data as WalletRpcResult;
-    return result.wallet ?? null;
-  }
+  /*
+   * Temporarily disabled.
+   *
+   * These methods target the old/self-hosted chat billing path. Payment, wallet
+   * balance, recharge, and check-in code stay active; chat debit/refund will be
+   * re-enabled only after the real message pipeline is selected.
+   *
+   * async chargeChatMessage(input: {
+   *   userId: string;
+   *   sessionId: string;
+   *   clientMessageId: string;
+   *   amount: number;
+   * }): Promise<{ wallet: MiniappWalletRow; alreadyCharged: boolean }> {
+   *   const { data, error } = await this.db.rpc('charge_chat_message', {
+   *     p_user_id: input.userId,
+   *     p_session_id: input.sessionId,
+   *     p_client_message_id: input.clientMessageId,
+   *     p_amount: input.amount,
+   *   });
+   *
+   *   if (error) {
+   *     throw new Error(`扣除聊天消息费用失败：${error.message}`);
+   *   }
+   *
+   *   const result = data as WalletRpcResult;
+   *   if (!result.wallet) {
+   *     throw new Error('扣除聊天消息费用失败：返回结果缺少钱包信息');
+   *   }
+   *
+   *   return {
+   *     wallet: result.wallet,
+   *     alreadyCharged: result.charge_status === 'already_charged',
+   *   };
+   * }
+   *
+   * async reserveChatMessage(input: {
+   *   userId: string;
+   *   sessionId: string;
+   *   clientMessageId: string;
+   *   amount: number;
+   * }): Promise<{ wallet: MiniappWalletRow; alreadyReserved: boolean }> {
+   *   const { data, error } = await this.db.rpc('reserve_chat_message', {
+   *     p_user_id: input.userId,
+   *     p_session_id: input.sessionId,
+   *     p_client_message_id: input.clientMessageId,
+   *     p_amount: input.amount,
+   *   });
+   *
+   *   if (error) {
+   *     throw new Error(`预留聊天消息扣费失败：${error.message}`);
+   *   }
+   *
+   *   const result = data as WalletRpcResult;
+   *   if (!result.wallet) {
+   *     throw new Error('预留聊天消息扣费失败：返回结果缺少钱包信息');
+   *   }
+   *
+   *   return {
+   *     wallet: result.wallet,
+   *     alreadyReserved:
+   *       result.charge_status === 'already_reserved' || result.charge_status === 'already_charged',
+   *   };
+   * }
+   *
+   * async finalizeChatMessageCharge(input: {
+   *   userId: string;
+   *   sessionId: string;
+   *   clientMessageId: string;
+   * }): Promise<MiniappWalletRow> {
+   *   const { data, error } = await this.db.rpc('finalize_chat_message_charge', {
+   *     p_user_id: input.userId,
+   *     p_session_id: input.sessionId,
+   *     p_client_message_id: input.clientMessageId,
+   *   });
+   *
+   *   if (error) {
+   *     throw new Error(`确认聊天消息扣费失败：${error.message}`);
+   *   }
+   *
+   *   const result = data as WalletRpcResult;
+   *   if (!result.wallet) {
+   *     throw new Error('确认聊天消息扣费失败：返回结果缺少钱包信息');
+   *   }
+   *
+   *   return result.wallet;
+   * }
+   *
+   * async refundChatMessage(input: {
+   *   userId: string;
+   *   sessionId: string;
+   *   clientMessageId: string;
+   *   reason: string;
+   * }): Promise<MiniappWalletRow | null> {
+   *   const { data, error } = await this.db.rpc('refund_chat_message_charge', {
+   *     p_user_id: input.userId,
+   *     p_session_id: input.sessionId,
+   *     p_client_message_id: input.clientMessageId,
+   *     p_reason: input.reason,
+   *   });
+   *
+   *   if (error) {
+   *     throw new Error(`退回聊天消息费用失败：${error.message}`);
+   *   }
+   *
+   *   const result = data as WalletRpcResult;
+   *   return result.wallet ?? null;
+   * }
+   */
 
   async getDailyCheckinStatus(userId: string): Promise<DailyCheckinStatus> {
     const { data: configRow, error: configError } = await this.db

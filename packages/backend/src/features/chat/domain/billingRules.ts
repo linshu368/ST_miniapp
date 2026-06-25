@@ -1,3 +1,10 @@
+/*
+ * Temporarily disabled.
+ *
+ * Chat billing is not wired into the active dev chat path after the self-hosted
+ * chat route was removed. Keep this code for future reference, but do not expose
+ * executable chat charge configuration until the real message pipeline is chosen.
+ *
 import { getSupabaseClient } from '../../../lib/supabase.js';
 import { ModelTier } from '../../../ai/domain/ModelStrategy.js';
 
@@ -69,3 +76,4 @@ function safeJsonParse(value: string): unknown {
     return null;
   }
 }
+ */
