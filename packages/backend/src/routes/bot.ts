@@ -6,6 +6,7 @@ import { MiniappWishRoleRepository } from '../infrastructure/repositories/Miniap
 
 const WISH_ENTRY_BUTTON = '✨ 我想要的角色';
 const WISH_DONE_BUTTON = '💖 就这样吧';
+const WISH_COMMAND = '/wish';
 const MIN_WISH_LENGTH = 8;
 const TEST_WISH_REWARD_CREDITS = 1;
 
@@ -79,7 +80,7 @@ async function handleMessage(message: TelegramMessage, wishes: MiniappWishRoleRe
     return;
   }
 
-  if (text === WISH_ENTRY_BUTTON) {
+  if (text === WISH_ENTRY_BUTTON || text === WISH_COMMAND) {
     await closeAwaitingExtraIfAny(wishes, dbUser.id, tgUser.id);
     await wishes.startSession({ telegramUserId: tgUser.id, dbUserId: dbUser.id });
     await sendMessage({
