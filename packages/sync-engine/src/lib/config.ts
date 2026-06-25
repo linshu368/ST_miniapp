@@ -51,14 +51,14 @@ const ConfigSchema = z.object({
       return n;
     }),
 
-  // Bridge API 内网端口（供 backend 调用 provision，默认 9091，0 = 禁用）
-  BRIDGE_API_PORT: z
+  // Provision API 内网端口（供 backend 调用 provision，默认 9091，0 = 禁用）
+  PROVISION_API_PORT: z
     .string()
     .default('9091')
     .transform((v) => {
       const n = parseInt(v, 10);
       if (isNaN(n) || n < 0 || n > 65535) {
-        throw new Error('BRIDGE_API_PORT 必须是 0-65535 的整数');
+        throw new Error('PROVISION_API_PORT 必须是 0-65535 的整数');
       }
       return n;
     }),

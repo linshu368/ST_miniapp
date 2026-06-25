@@ -46,7 +46,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -60,6 +60,15 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Lint cross-package imports
+        run: npx eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --ignore-pattern '**/__tests__/eslint-import-guard.ts' --no-inline-config
+
+      - name: Build bridge-protocol
+        run: pnpm --filter @miniapp/bridge-protocol build
+
+      - name: Build st-extension
+        run: pnpm --filter @miniapp/st-extension build
 
       - name: Test shared package
         run: pnpm --filter @miniapp/shared test
