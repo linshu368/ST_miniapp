@@ -1,8 +1,9 @@
 'use client';
 
 import { Suspense, useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronLeft, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, Receipt, ShieldCheck } from 'lucide-react';
 import type { PaymentType } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
@@ -91,7 +92,16 @@ function RechargePageContent() {
           小屏紧凑、大屏自然呼吸 */}
       <div className="flex flex-1 flex-col justify-between px-4 py-4">
         <section className="px-1">
-          <p className="text-sm font-medium text-slate-200">为每段相遇点一盏星光</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-slate-200">为每段相遇点一盏星光</p>
+            <Link
+              href="/profile/orders"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Receipt className="h-3.5 w-3.5" aria-hidden />
+              我的订单
+            </Link>
+          </div>
           <p className="mt-1 text-[11px] text-pink-300/80">
             {isInsufficientCredits
               ? '余额不足，补充星尘后即可继续对话'

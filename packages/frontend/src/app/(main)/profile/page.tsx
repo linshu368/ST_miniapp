@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Gift, Pencil, Settings, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 
@@ -57,7 +56,7 @@ export default function ProfilePage() {
       {/* 顶部空间感 Banner */}
       <div className="absolute top-0 left-0 right-0 h-48 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/40 via-purple-900/10 to-transparent pointer-events-none" />
 
-      {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=设置 */}
+      {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=签到 + 设置 */}
       <header className="flex items-center justify-between px-5 py-3 relative z-10">
         <Link
           href="/profile/recharge"
@@ -73,16 +72,32 @@ export default function ProfilePage() {
           <span className="text-white/80 font-medium">星尘商店</span>
           <ChevronRight className="h-3.5 w-3.5 text-white/50" aria-hidden />
         </Link>
-        <Button
-          asChild
-          variant="ghost"
-          size="icon"
-          className="rounded-full text-white/60 hover:bg-white/10 hover:text-white transition-colors"
-        >
-          <Link href="/profile/settings" aria-label="设置">
-            <Settings className="h-5 w-5" aria-hidden />
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            disabled={!checkin?.can_claim || claimCheckin.isPending}
+            onClick={() => claimCheckin.mutate()}
+            size="sm"
+            className="h-9 rounded-full border border-indigo-300/20 bg-indigo-400/15 px-3 text-xs font-bold text-indigo-100 shadow-none hover:bg-indigo-400/25 disabled:border-white/10 disabled:bg-white/5 disabled:text-white/35"
+            aria-label="每日签到"
+          >
+            <Gift className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+            {claimCheckin.isPending
+              ? '领取中'
+              : checkin?.can_claim
+                ? `签到 +${checkin.reward_credits}`
+                : '已签到'}
+          </Button>
+          <Button
+            asChild
+            variant="ghost"
+            size="icon"
+            className="rounded-full text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <Link href="/profile/settings" aria-label="设置">
+              <Settings className="h-5 w-5" aria-hidden />
+            </Link>
+          </Button>
+        </div>
       </header>
 
       {/* 身份：页面重心；姓名可点击编辑 */}
@@ -133,62 +148,6 @@ export default function ProfilePage() {
           </div>
         </div>
       </section>
-
-      {/* 核心功能资产区 */}
-      <section className="mt-12 px-5 flex flex-col gap-4 relative z-10">
-        {/* 余额大卡片 */}
-        <div className="relative overflow-hidden rounded-[24px] border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
-          <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-white/60">我的星尘</p>
-              <div className="mt-1 flex items-baseline gap-1">
-                <span className="text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-amber-200">
-                  {formatNumber(credits)}
-                </span>
-              </div>
-            </div>
-            <Link
-              href="/profile/recharge"
-              className="flex h-10 items-center justify-center rounded-full bg-gradient-to-r from-amber-400 to-amber-600 px-6 text-sm font-bold text-[#080014] shadow-lg shadow-amber-500/20 transition-transform active:scale-95"
-            >
-              去充值
-            </Link>
-          </div>
-        </div>
-
-        {/* 每日签到 */}
-        <Card className="overflow-hidden border-white/10 bg-white/[0.03] shadow-none rounded-[24px] backdrop-blur-md">
-          <CardContent className="p-5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400">
-                <Gift className="h-6 w-6" aria-hidden />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-white">每日签到</h2>
-                {!checkin?.can_claim && checkin?.next_claim_at ? (
-                  <p className="mt-0.5 text-xs text-white/50">
-                    下次可领：{formatDateTime(checkin.next_claim_at)}
-                  </p>
-                ) : (
-                  <p className="mt-0.5 text-xs text-indigo-300/80">免费领取星尘，聊天可抵扣</p>
-                )}
-              </div>
-            </div>
-            <Button
-              disabled={!checkin?.can_claim || claimCheckin.isPending}
-              onClick={() => claimCheckin.mutate()}
-              className="h-10 rounded-full bg-indigo-500 text-sm font-bold text-white hover:bg-indigo-600 shadow-md shadow-indigo-500/20 disabled:bg-white/10 disabled:text-white/40 border-0"
-            >
-              {claimCheckin.isPending
-                ? '领取中'
-                : checkin?.can_claim
-                  ? `领 ${checkin.reward_credits}`
-                  : '已签到'}
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
     </main>
   );
 }
@@ -205,13 +164,4 @@ function readTelegramUserId(): string | null {
   } catch {
     return null;
   }
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
 }
