@@ -22,6 +22,7 @@ import { getSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
 import { ok, fail } from '@miniapp/shared';
 import { deriveStHandle } from '@miniapp/shared';
+import { cacheStCookie } from '../lib/st-cookie.js';
 
 // ─── 密码派生（与 sync-engine/provisioner/st-user.ts 保持一致） ──────────────
 
@@ -182,7 +183,8 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           log(`[bridge]   阶段 3/3：force 覆盖写平台文件`);
           await triggerProvisionSync(dbUser.id, log, true);
 
-          // ── 4. 返回 cookie（阶段 2 登录时已获取）──────────────────────
+          // ── 4. 缓存 cookie + 返回 ──────────────────────────────────
+          await cacheStCookie(dbUser.id, stCookieInit);
           return reply.send(
             ok({
               st_url: '/api/bridge/st',
@@ -198,11 +200,12 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         // ── 4. 登录 ST，获取 session cookie（老用户路径）───────────────
         const stCookie = await loginToSt(stHandle);
 
-        // ── 5. 返回结果 ───────────────────────────────────────────────────
+        // ── 5. 缓存 cookie + 返回结果 ──────────────────────────────────
+        await cacheStCookie(dbUser.id, stCookie);
         return reply.send(
           ok({
-            st_url: '/api/bridge/st', // 反向代理前缀，前端 iframe src 指向此处
-            st_cookie: stCookie, // 调试用；代理模式下前端无需手动设置
+            st_url: '/api/bridge/st',
+            st_cookie: stCookie,
             is_new_user: isNewUser,
           })
         );
