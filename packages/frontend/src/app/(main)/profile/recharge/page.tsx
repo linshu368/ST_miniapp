@@ -72,7 +72,10 @@ function RechargePageContent() {
   }, [selectedPlan, createOrder, paymentType, router, impact, notification]);
 
   return (
-    <main className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white">
+    <main
+      data-app-shell="recharge"
+      className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white"
+    >
       <div className="h-1 w-full shrink-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
 
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">

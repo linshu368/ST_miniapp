@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Gift, Pencil, Settings, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 
 import { useDailyCheckinMutation, useDailyCheckinQuery, useWalletCredits } from '@/lib/api/payment';
@@ -18,6 +18,7 @@ export default function ProfilePage() {
   const telegramUserId = useMemo(readTelegramUserId, []);
   const credits = useWalletCredits();
   const displayName = useUserProfileStore((s) => s.displayName);
+  const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
   const patchSettings = usePatchUserSettingsMutation();
   const checkinQ = useDailyCheckinQuery();
@@ -52,7 +53,10 @@ export default function ProfilePage() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-[#080014] pb-10 pt-[env(safe-area-inset-top)] relative">
+    <main
+      data-app-shell="profile"
+      className="mx-auto flex min-h-screen max-w-md flex-col bg-[#080014] pb-10 pt-[env(safe-area-inset-top)] relative"
+    >
       {/* 顶部空间感 Banner */}
       <div className="absolute top-0 left-0 right-0 h-48 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/40 via-purple-900/10 to-transparent pointer-events-none" />
 
@@ -103,6 +107,7 @@ export default function ProfilePage() {
       {/* 身份：页面重心；姓名可点击编辑 */}
       <section className="mt-8 flex flex-col items-center gap-4 px-5 relative z-10">
         <Avatar className="h-24 w-24 ring-4 ring-white/10 ring-offset-4 ring-offset-[#080014] shadow-2xl">
+          {photoUrl ? <AvatarImage src={photoUrl} alt={displayName} /> : null}
           <AvatarFallback className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-3xl font-black text-white">
             {displayName.slice(0, 1).toUpperCase()}
           </AvatarFallback>

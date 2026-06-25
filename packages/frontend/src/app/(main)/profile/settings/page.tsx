@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Palette, Type } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Moon, Palette, Sun, Type } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PreferredWordCount } from '@miniapp/shared';
 
@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { usePatchUserSettingsMutation, useUserSettingsQuery } from '@/lib/api/settings';
 import { useTelegramBackButton } from '@/lib/telegram';
+import { useAppearanceStore } from '@/stores/appearance-store';
 import { FONT_SCALE_OPTIONS, useFontScaleStore } from '@/stores/font-scale-store';
 import { cn } from '@/lib/utils';
 
@@ -48,6 +49,8 @@ export default function SettingsPage() {
 
   const fontScale = useFontScaleStore((s) => s.scale);
   const setFontScale = useFontScaleStore((s) => s.setScale);
+  const appearanceMode = useAppearanceStore((s) => s.mode);
+  const toggleAppearanceMode = useAppearanceStore((s) => s.toggleMode);
   const settingsQuery = useUserSettingsQuery();
   const patchSettings = usePatchUserSettingsMutation();
   const settings = settingsQuery.data?.settings;
@@ -72,7 +75,10 @@ export default function SettingsPage() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-[#080014] text-white">
+    <main
+      data-app-shell="settings"
+      className="mx-auto flex min-h-screen max-w-md flex-col bg-[#080014] text-white"
+    >
       <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-white/5 bg-[#080014]/80 px-3 py-3 backdrop-blur-xl pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <Button
           variant="ghost"
@@ -88,6 +94,35 @@ export default function SettingsPage() {
 
       <section className="flex flex-1 flex-col gap-4 px-4 py-5 relative z-10">
         <div className="absolute top-0 left-0 right-0 h-40 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-transparent to-transparent pointer-events-none" />
+
+        {/* 全局外观 */}
+        <Card className="rounded-[24px] border border-white/10 bg-white/[0.03] shadow-none backdrop-blur-md">
+          <CardContent className="p-5 flex items-center justify-between gap-4">
+            <span className="flex items-center gap-4">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-white/70">
+                {appearanceMode === 'dark' ? (
+                  <Moon className="h-5 w-5" aria-hidden />
+                ) : (
+                  <Sun className="h-5 w-5" aria-hidden />
+                )}
+              </span>
+              <span className="flex flex-col">
+                <span className="text-[15px] font-bold text-white tracking-wide">外观模式</span>
+                <span className="mt-0.5 text-[11px] text-white/40 font-medium">
+                  当前为{appearanceMode === 'dark' ? '暗色' : '亮色'}模式
+                </span>
+              </span>
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleAppearanceMode}
+              className="rounded-full bg-white/10 px-4 text-xs font-bold text-white hover:bg-white/20"
+            >
+              切换为{appearanceMode === 'dark' ? '亮色' : '暗色'}
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* 行内控件:字号倍率 */}
         <Card className="rounded-[24px] border border-white/10 bg-white/[0.03] shadow-none backdrop-blur-md relative overflow-hidden">
