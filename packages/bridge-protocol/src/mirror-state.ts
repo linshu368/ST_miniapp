@@ -15,6 +15,7 @@ export type STMirrorState = {
   currentCharacterId: number | null;
   currentChatId: string | null;
   currentPresetName: string | null;
+  currentModel: string | null;
   generationPhase: GenerationPhase;
   messageCount: number;
   lastUpdatedAt: number;
@@ -25,6 +26,7 @@ export const STMirrorStateSchema = z.object({
   currentCharacterId: z.number().nullable(),
   currentChatId: z.string().nullable(),
   currentPresetName: z.string().nullable(),
+  currentModel: z.string().nullable(),
   generationPhase: GenerationPhaseSchema,
   messageCount: z.number(),
   lastUpdatedAt: z.number(),

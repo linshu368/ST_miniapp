@@ -11,6 +11,7 @@ const initialState: STMirrorState = {
   currentCharacterId: null,
   currentChatId: null,
   currentPresetName: null,
+  currentModel: null,
   generationPhase: 'idle',
   messageCount: 0,
   lastUpdatedAt: 0,

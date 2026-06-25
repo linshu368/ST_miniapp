@@ -23,6 +23,7 @@ export function buildMirrorState(): STMirrorState {
     currentCharacterId: ctx.characterId ?? null,
     currentChatId: ctx.getCurrentChatId() ?? null,
     currentPresetName: ctx.getPresetManager()?.getSelectedPresetName() ?? null,
+    currentModel: ctx.getChatCompletionModel?.() ?? null,
     generationPhase: _generationPhase,
     messageCount: ctx.chat?.length ?? 0,
     lastUpdatedAt: Date.now(),
