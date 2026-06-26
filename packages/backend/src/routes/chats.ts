@@ -18,12 +18,18 @@ import { prisma } from '../lib/db.js';
 
 interface STRecentChatEntry {
   file_name: string;
-  file_size: number;
-  mes: number;
-  last_mes: string;
+  file_size: number | string;
+  /** 最后一条消息的预览文本（ST getChatInfo 的 mes 字段） */
+  mes?: string;
+  /** 最后消息时间戳 */
+  last_mes?: string;
+  /** 消息条数 */
   chat_items?: number;
   group_id?: string;
   character_name?: string;
+  /** ST /api/chats/recent 角色头像字段名是 avatar（来自 getChatInfo 的 additionalData） */
+  avatar?: string;
+  /** 兼容旧字段名 */
   character_avatar?: string;
 }
 
@@ -58,13 +64,15 @@ export default async function chatsRoutes(app: FastifyInstance) {
 
       const avatarSet = new Set<string>();
       for (const entry of rawEntries) {
-        if (entry.character_avatar) avatarSet.add(entry.character_avatar);
+        const avatar = entry.avatar ?? entry.character_avatar;
+        if (avatar) avatarSet.add(avatar);
       }
 
       const avatarToCharacter = await buildAvatarMap(Array.from(avatarSet));
 
       const items: UserChatListItem[] = rawEntries.map((entry) => {
-        const avatar = entry.character_avatar ?? '';
+        // ST /api/chats/recent 把角色头像放在 avatar 字段（getChatInfo additionalData）。
+        const avatar = entry.avatar ?? entry.character_avatar ?? '';
         const mapped = avatarToCharacter.get(avatar);
 
         return {
@@ -73,10 +81,12 @@ export default async function chatsRoutes(app: FastifyInstance) {
           characterName: mapped?.name ?? entry.character_name ?? '',
           characterId: mapped?.id ?? null,
           isGroup: Boolean(entry.group_id),
-          lastMessage: entry.last_mes ?? '',
-          lastMessageAt: extractTimestamp(entry.file_name) ?? '',
-          messageCount: entry.mes ?? 0,
-          fileSize: entry.file_size ?? 0,
+          // mes 是最后一条消息预览文本；last_mes 是时间戳（此前误用为预览）。
+          lastMessage: entry.mes ?? '',
+          lastMessageAt: extractTimestamp(entry.file_name) || (entry.last_mes ?? ''),
+          // chat_items 是消息条数；此前误用 mes（文本）。
+          messageCount: entry.chat_items ?? 0,
+          fileSize: typeof entry.file_size === 'number' ? entry.file_size : 0,
         };
       });
 

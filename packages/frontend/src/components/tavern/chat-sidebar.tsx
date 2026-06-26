@@ -46,10 +46,10 @@ export function ChatSidebar() {
     }
   }
 
-  async function handleOpenChat(fileName: string) {
+  async function handleOpenChat(fileName: string, avatar: string) {
     if (!bridgeReady) return;
     try {
-      await platformAction('openChat', { fileName });
+      await platformAction('openChat', { fileName, avatar });
       setOpen(false);
     } catch (err) {
       console.error('[ChatSidebar] openChat failed:', err);
@@ -65,12 +65,12 @@ export function ChatSidebar() {
     }
   }
 
-  async function handleRenameChat(oldFileName: string) {
+  async function handleRenameChat(oldFileName: string, avatar: string) {
     if (!bridgeReady) return;
     const newName = prompt('新名称：');
     if (!newName?.trim()) return;
     try {
-      await platformAction('renameChat', { oldFileName, newName: newName.trim() });
+      await platformAction('renameChat', { oldFileName, newName: newName.trim(), avatar });
     } catch (err) {
       console.error('[ChatSidebar] renameChat failed:', err);
     }
@@ -118,7 +118,7 @@ export function ChatSidebar() {
                   'group flex items-start gap-2 px-4 py-2.5 cursor-pointer transition-colors',
                   isActive ? 'bg-accent/60' : 'hover:bg-accent/30'
                 )}
-                onClick={() => handleOpenChat(item.fileName)}
+                onClick={() => handleOpenChat(item.fileName, item.characterAvatar)}
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-medium truncate">
@@ -134,7 +134,7 @@ export function ChatSidebar() {
                     disabled={!bridgeReady}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleRenameChat(item.fileName);
+                      handleRenameChat(item.fileName, item.characterAvatar);
                     }}
                     className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40"
                   >
