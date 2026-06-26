@@ -4,7 +4,11 @@
   "scripts": {
     "dev:frontend": "pnpm --filter @miniapp/frontend dev",
     "dev:backend": "pnpm --filter @miniapp/backend dev",
+    "dev:provision": "pnpm --filter @miniapp/sync-engine start:provision",
+    "dev:watcher": "pnpm --filter @miniapp/sync-engine watch",
+    "dev:st": "cd vendor/sillytavern && node server.js",
     "dev": "pnpm run --parallel dev:frontend dev:backend",
+    "dev:all": "concurrently -n st,prov,watch,be,fe -c blue,magenta,yellow,green,cyan \"pnpm dev:st\" \"pnpm dev:provision\" \"pnpm dev:watcher\" \"pnpm dev:backend\" \"pnpm dev:frontend\"",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r --if-present lint",
     "lint:imports": "eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --ignore-pattern '**/__tests__/eslint-import-guard.ts' --no-inline-config",
@@ -26,6 +30,7 @@
   },
   "devDependencies": {
     "@typescript-eslint/parser": "^8.62.0",
+    "concurrently": "^10.0.3",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
     "husky": "^9.1.7",
