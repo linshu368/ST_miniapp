@@ -40,9 +40,14 @@ function deriveUserPassword(handle: string): string {
 
 async function loginToSt(handle: string): Promise<string> {
   const password = deriveUserPassword(handle);
+  const csrf = await fetchCsrfToken();
   const res = await fetch(`${config.stBaseUrl}/api/users/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: csrf.cookie,
+      'X-CSRF-Token': csrf.token,
+    },
     body: JSON.stringify({ handle, password }),
   });
 
@@ -54,7 +59,7 @@ async function loginToSt(handle: string): Promise<string> {
   // ST 使用 cookie-session，同时下发 session + session.sig 两个 cookie
   // 必须同时携带两个，ST 才能通过签名校验（否则 403）
   // getSetCookie() 返回所有 Set-Cookie 行的数组（Node 18+）
-  const allCookies = res.headers.getSetCookie?.() ?? [];
+  const allCookies = [...csrf.setCookies, ...(res.headers.getSetCookie?.() ?? [])];
   if (allCookies.length === 0) {
     // 降级：尝试 get('set-cookie')
     const fallback = res.headers.get('set-cookie');
@@ -62,15 +67,57 @@ async function loginToSt(handle: string): Promise<string> {
     allCookies.push(fallback);
   }
 
-  const cookiePart = allCookies
-    .map((c) => c.split(';')[0]?.trim())
-    .filter(Boolean)
-    .join('; ');
+  const cookiePart = mergeCookieHeader(undefined, allCookies);
 
   if (!cookiePart) {
     throw new Error('Set-Cookie 格式异常，无法提取 cookie 值');
   }
   return cookiePart;
+}
+
+async function fetchCsrfToken(): Promise<{ token: string; cookie: string; setCookies: string[] }> {
+  const res = await fetch(`${config.stBaseUrl}/csrf-token`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`ST CSRF token 获取失败（${res.status}）：${text}`);
+  }
+
+  const body = (await res.json()) as { token?: string };
+  if (!body.token) {
+    throw new Error('ST CSRF token 响应中缺少 token');
+  }
+
+  const setCookies = res.headers.getSetCookie?.() ?? [];
+  const fallback = res.headers.get('set-cookie');
+  if (setCookies.length === 0 && fallback) setCookies.push(fallback);
+
+  return {
+    token: body.token,
+    cookie: mergeCookieHeader(undefined, setCookies),
+    setCookies,
+  };
+}
+
+function mergeCookieHeader(existing: string | undefined, setCookies: string[]): string {
+  const parts = new Map<string, string>();
+
+  for (const part of existing?.split(';') ?? []) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    parts.set(trimmed.slice(0, eq), trimmed);
+  }
+
+  for (const setCookie of setCookies) {
+    const cookiePart = setCookie.split(';')[0]?.trim();
+    if (!cookiePart) continue;
+    const eq = cookiePart.indexOf('=');
+    if (eq <= 0) continue;
+    parts.set(cookiePart.slice(0, eq), cookiePart);
+  }
+
+  return Array.from(parts.values()).join('; ');
 }
 
 // ─── 同步触发 provision（新用户首次登录，等待 ST 账号创建完成） ──────────────

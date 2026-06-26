@@ -10,6 +10,7 @@ import { config } from '../platform/config.js';
 
 const COOKIE_TTL_SECONDS = 86400; // 24h
 const NAMESPACE = 'st_cookie';
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 // ─── Upstash REST helpers ────────────────────────────────────────────────────
 
@@ -73,9 +74,14 @@ function deriveUserPassword(handle: string): string {
 
 async function loginToStInternal(handle: string): Promise<string> {
   const password = deriveUserPassword(handle);
+  const csrf = await fetchCsrfToken();
   const res = await fetch(`${config.stBaseUrl}/api/users/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: csrf.cookie,
+      'X-CSRF-Token': csrf.token,
+    },
     body: JSON.stringify({ handle, password }),
   });
 
@@ -84,17 +90,14 @@ async function loginToStInternal(handle: string): Promise<string> {
     throw new Error(`ST login failed (${res.status}): ${text}`);
   }
 
-  const allCookies = res.headers.getSetCookie?.() ?? [];
+  const allCookies = [...csrf.setCookies, ...(res.headers.getSetCookie?.() ?? [])];
   if (allCookies.length === 0) {
     const fallback = res.headers.get('set-cookie');
     if (!fallback) throw new Error('ST login response missing Set-Cookie');
     allCookies.push(fallback);
   }
 
-  return allCookies
-    .map((c) => c.split(';')[0]?.trim())
-    .filter(Boolean)
-    .join('; ');
+  return mergeCookies(allCookies);
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -147,11 +150,20 @@ export async function fetchWithStCookie<T>(
 
 async function fetchSt(path: string, cookie: string, init: RequestInit): Promise<Response> {
   const url = `${config.stBaseUrl}${path}`;
+  const method = (init.method ?? 'GET').toUpperCase();
+  let requestCookie = cookie;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    Cookie: cookie,
     ...(init.headers as Record<string, string> | undefined),
   };
+
+  if (UNSAFE_METHODS.has(method) && !headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
+    const csrf = await fetchCsrfToken(cookie);
+    requestCookie = csrf.cookie;
+    headers['X-CSRF-Token'] = csrf.token;
+  }
+
+  headers.Cookie = requestCookie;
   return fetch(url, { ...init, headers });
 }
 
@@ -159,4 +171,59 @@ async function refreshStCookie(userId: string, stHandle: string): Promise<string
   const cookie = await loginToStInternal(stHandle);
   await cacheStCookie(userId, cookie);
   return cookie;
+}
+
+async function fetchCsrfToken(cookie?: string): Promise<{
+  token: string;
+  cookie: string;
+  setCookies: string[];
+}> {
+  const res = await fetch(`${config.stBaseUrl}/csrf-token`, {
+    headers: cookie ? { Cookie: cookie } : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`ST CSRF token failed (${res.status}): ${text}`);
+  }
+
+  const body = (await res.json()) as { token?: string };
+  if (!body.token) {
+    throw new Error('ST CSRF token response missing token');
+  }
+
+  const setCookies = res.headers.getSetCookie?.() ?? [];
+  const fallback = res.headers.get('set-cookie');
+  if (setCookies.length === 0 && fallback) setCookies.push(fallback);
+
+  return {
+    token: body.token,
+    cookie: mergeCookieHeader(cookie, setCookies),
+    setCookies,
+  };
+}
+
+function mergeCookies(setCookies: string[]): string {
+  return mergeCookieHeader(undefined, setCookies);
+}
+
+function mergeCookieHeader(existing: string | undefined, setCookies: string[]): string {
+  const parts = new Map<string, string>();
+
+  for (const part of existing?.split(';') ?? []) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    parts.set(trimmed.slice(0, eq), trimmed);
+  }
+
+  for (const setCookie of setCookies) {
+    const cookiePart = setCookie.split(';')[0]?.trim();
+    if (!cookiePart) continue;
+    const eq = cookiePart.indexOf('=');
+    if (eq <= 0) continue;
+    parts.set(cookiePart.slice(0, eq), cookiePart);
+  }
+
+  return Array.from(parts.values()).join('; ');
 }
