@@ -6,6 +6,9 @@
  */
 
 import { getSupabaseClient, schemaClient } from '../lib/supabase.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { config } from '../lib/config.js';
 
 // ─── 数据类型定义 ──────────────────────────────────────────────────────────────
 
@@ -141,23 +144,19 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     throw new FetchError('拉取平台角色卡失败', charactersResult.error);
   }
 
-  // 校验 presets
-  if (presetsResult.error) {
-    throw new FetchError('拉取平台预设失败', presetsResult.error);
-  }
+  // 预设缺失不阻断主链路：角色卡、settings、secrets 仍可完成下发并支持对话。
+  const presets = presetsResult.error ? [] : ((presetsResult.data ?? []) as PresetRow[]);
 
-  // 校验 platform_settings
-  if (platformSettingsResult.error || !platformSettingsResult.data) {
-    throw new FetchError(
-      '拉取平台 settings 失败（platform_settings 表可能为空，请先执行种子数据迁移）',
-      platformSettingsResult.error
-    );
-  }
+  const platformSettings =
+    platformSettingsResult.error || !platformSettingsResult.data
+      ? loadLocalPlatformSettings(stHandle)
+      : (platformSettingsResult.data as PlatformSettingsRow);
 
   // 校验 api_config（允许为空：未配置则跳过 secrets.json 写入，不中断 provision）
-  if (apiConfigResult.error) {
-    throw new FetchError('拉取平台 API 配置失败', apiConfigResult.error);
-  }
+  const apiConfig =
+    apiConfigResult.error || !apiConfigResult.data
+      ? createLocalApiConfig()
+      : (apiConfigResult.data as ApiConfigRow);
 
   // 拉取该用户的最新 B 类 settings（允许为空）
   const userSettingsResult = await schemaClient('st_users')
@@ -168,16 +167,57 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     .limit(1)
     .maybeSingle();
 
-  if (userSettingsResult.error) {
-    throw new FetchError('拉取用户 settings 镜像失败', userSettingsResult.error);
-  }
+  const userSettings = userSettingsResult.error
+    ? null
+    : ((userSettingsResult.data as UserSettingsRow | null) ?? null);
 
   return {
     stHandle,
     characters: (charactersResult.data ?? []) as CharacterRow[],
-    presets: (presetsResult.data ?? []) as PresetRow[],
-    platformSettings: platformSettingsResult.data as PlatformSettingsRow,
-    apiConfig: (apiConfigResult.data as ApiConfigRow | null) ?? null,
-    userSettings: (userSettingsResult.data as UserSettingsRow | null) ?? null,
+    presets,
+    platformSettings,
+    apiConfig,
+    userSettings,
+  };
+}
+
+function loadLocalPlatformSettings(stHandle: string): PlatformSettingsRow {
+  const settings =
+    readSettingsJson(join(config.ST_DATA_PATH, stHandle, 'settings.json')) ??
+    readSettingsJson(join(config.ST_DATA_PATH, 'default-user', 'settings.json')) ??
+    createMinimalSettings();
+
+  return {
+    platform_version: 0,
+    settings_jsonb: settings,
+    writable_paths: [],
+  };
+}
+
+function readSettingsJson(path: string): Record<string, unknown> | null {
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+}
+
+function createMinimalSettings(): Record<string, unknown> {
+  return {
+    chat_completion_source: 'custom',
+    oai_settings: {
+      chat_completion_source: 'custom',
+      custom_url: 'http://localhost:3001/api/platform/llm-proxy/v1',
+      custom_model: 'google/gemini-2.5-flash',
+      bypass_status_check: false,
+    },
+  };
+}
+
+function createLocalApiConfig(): ApiConfigRow {
+  return {
+    id: 'local-platform-token',
+    is_default: true,
+    config_payload: {
+      provider: 'custom',
+      api_key: 'platform-token-placeholder',
+    },
   };
 }

@@ -4,39 +4,35 @@
  * LLM 代理网关：/api/platform/llm-proxy/v1/*
  *
  * ST 配置 LLM endpoint 指向此路由。职责：
- *   1. 接收 ST 发出的 OpenAI 兼容请求
- *   2. 注入平台持有的真实 API key
- *   3. 转发到上游 LLM provider（SSE 流式透传）
- *   4. 不承担消息双写
- *
- * 鉴权：通过 LLM_PROXY_SECRET 共享密钥校验，调用方须在
- *       Authorization: Bearer <secret> 中携带。未配置密钥时拒绝所有请求。
+ *   1. JWT platformToken 验签 → 提取 userId
+ *   2. 从 body.model derive tier → 查配置表得扣费额度
+ *   3. 余额预检（不足 → 402）
+ *   4. 注入平台真实 API key，转发上游（默认 OpenRouter）
+ *   5. SSE 流式透传；流正常结束后实际扣费
+ *   6. 上游 5xx / 流中断 → 不扣费
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { Readable } from 'node:stream';
-import { timingSafeEqual } from 'node:crypto';
+import { Readable, Transform } from 'node:stream';
+import { verifyPlatformToken } from '../lib/llm-token.js';
+import { getModelTier } from '../platform/model-tiers.js';
+import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 
 const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
 const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
-const LLM_PROXY_SECRET = process.env.LLM_PROXY_SECRET || '';
 
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
-}
+const STRIP_HEADERS = new Set([
+  'transfer-encoding',
+  'connection',
+  'content-encoding',
+  'content-length',
+]);
 
-async function requireProxySecret(request: FastifyRequest, reply: FastifyReply) {
-  if (!LLM_PROXY_SECRET) {
-    request.log.warn('[llm-proxy] LLM_PROXY_SECRET not configured, rejecting request');
-    return reply.status(403).send({
-      error: {
-        message: 'LLM proxy not available: missing proxy secret configuration',
-        type: 'configuration_error',
-      },
-    });
-  }
+const wallets = new MiniappWalletRepository();
 
+// ─── JWT 验签中间件 ────────────────────────────────────────────────────────────
+
+async function requirePlatformToken(request: FastifyRequest, reply: FastifyReply) {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.status(401).send({
@@ -48,22 +44,29 @@ async function requireProxySecret(request: FastifyRequest, reply: FastifyReply) 
   }
 
   const token = authHeader.slice(7);
-  if (!safeEqual(token, LLM_PROXY_SECRET)) {
-    request.log.warn('[llm-proxy] invalid proxy secret');
+  const userId = verifyPlatformToken(token);
+  if (!userId) {
+    request.log.warn('[llm-proxy] invalid platformToken');
     return reply.status(403).send({
       error: {
-        message: 'Invalid proxy secret',
+        message: 'Invalid or expired platform token',
         type: 'auth_error',
       },
     });
   }
+
+  (request as FastifyRequest & { platformUserId: string }).platformUserId = userId;
 }
+
+// ─── 路由注册 ──────────────────────────────────────────────────────────────────
 
 export default async function llmProxyRoutes(app: FastifyInstance) {
   app.all(
     '/api/platform/llm-proxy/v1/*',
-    { preHandler: [requireProxySecret] },
+    { preHandler: [requirePlatformToken] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as FastifyRequest & { platformUserId: string }).platformUserId;
+
       if (!LLM_API_KEY) {
         return reply.status(503).send({
           error: {
@@ -73,6 +76,52 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         });
       }
 
+      // ── 解析 model 并查配置表 ────────────────────────────────────────────
+      let modelName = '';
+      let deductionRate = 0;
+      const isChatCompletion =
+        request.method !== 'GET' &&
+        request.method !== 'HEAD' &&
+        request.body &&
+        typeof request.body === 'object';
+
+      if (isChatCompletion) {
+        modelName = ((request.body as Record<string, unknown>).model as string) || '';
+      }
+
+      if (modelName) {
+        const tierConfig = getModelTier(modelName);
+        deductionRate = tierConfig.deductionRate;
+      }
+
+      // ── 余额预检（R5：不足 → 402，不发起上游调用）──────────────────────
+      if (deductionRate > 0) {
+        try {
+          const wallet = await wallets.getOrCreate(userId);
+          const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
+          if (balance < deductionRate) {
+            request.log.info(
+              { userId, balance, required: deductionRate, model: modelName },
+              '[llm-proxy] insufficient balance'
+            );
+            return reply.status(402).send({
+              error: {
+                message: `Insufficient credits: have ${balance}, need ${deductionRate}`,
+                type: 'insufficient_balance',
+                credits_required: deductionRate,
+                credits_available: balance,
+              },
+            });
+          }
+        } catch (err) {
+          request.log.error({ err: String(err), userId }, '[llm-proxy] wallet check failed');
+          return reply.status(500).send({
+            error: { message: 'Failed to check wallet balance', type: 'internal_error' },
+          });
+        }
+      }
+
+      // ── 构造上游请求 ──────────────────────────────────────────────────────
       const subPath = request.url.replace(/^\/api\/platform\/llm-proxy\/v1/, '') || '/';
       const targetUrl = `${LLM_UPSTREAM_URL}${subPath}`;
 
@@ -109,29 +158,101 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         });
       }
 
-      reply.status(upstreamRes.status);
+      // 上游非 2xx → 不扣费，直接透传
+      if (!upstreamRes.ok) {
+        reply.status(upstreamRes.status);
+        upstreamRes.headers.forEach((value, key) => {
+          if (!STRIP_HEADERS.has(key.toLowerCase())) {
+            reply.header(key, value);
+          }
+        });
+        if (upstreamRes.body) {
+          const nodeStream = Readable.fromWeb(
+            upstreamRes.body as import('stream/web').ReadableStream
+          );
+          return reply.send(nodeStream);
+        }
+        return reply.send(await upstreamRes.text());
+      }
 
-      const STRIP_HEADERS = new Set([
-        'transfer-encoding',
-        'connection',
-        'content-encoding',
-        'content-length',
-      ]);
+      // ── 透传响应头 ────────────────────────────────────────────────────────
+      reply.status(upstreamRes.status);
       upstreamRes.headers.forEach((value, key) => {
         if (!STRIP_HEADERS.has(key.toLowerCase())) {
           reply.header(key, value);
         }
       });
 
-      if (upstreamRes.body) {
-        const nodeStream = Readable.fromWeb(
-          upstreamRes.body as import('stream/web').ReadableStream
-        );
-        return reply.send(nodeStream);
+      // ── 判断是否 SSE 流式 ─────────────────────────────────────────────────
+      const contentType = upstreamRes.headers.get('content-type') || '';
+      const isSSE = contentType.includes('text/event-stream');
+
+      if (!upstreamRes.body) {
+        // 无 body 非流式，成功即扣费
+        if (deductionRate > 0) {
+          deductAfterSuccess(userId, deductionRate, modelName, request);
+        }
+        return reply.send('');
       }
 
-      const text = await upstreamRes.text();
-      return reply.send(text);
+      if (isSSE && deductionRate > 0) {
+        // SSE 流式：拦截 [DONE] 标记，流正常结束后扣费
+        const upstreamNodeStream = Readable.fromWeb(
+          upstreamRes.body as import('stream/web').ReadableStream
+        );
+
+        let streamCompleted = false;
+        const deductionTap = new Transform({
+          transform(chunk, _encoding, callback) {
+            const text = chunk.toString();
+            if (text.includes('data: [DONE]')) {
+              streamCompleted = true;
+            }
+            callback(null, chunk);
+          },
+          flush(callback) {
+            if (streamCompleted) {
+              deductAfterSuccess(userId, deductionRate, modelName, request);
+            } else {
+              request.log.warn(
+                { userId, model: modelName },
+                '[llm-proxy] stream ended without [DONE], skipping deduction'
+              );
+            }
+            callback();
+          },
+        });
+
+        return reply.send(upstreamNodeStream.pipe(deductionTap));
+      }
+
+      // 非 SSE 响应但有 body（如非流式 chat completion）
+      const nodeStream = Readable.fromWeb(upstreamRes.body as import('stream/web').ReadableStream);
+      if (deductionRate > 0) {
+        deductAfterSuccess(userId, deductionRate, modelName, request);
+      }
+      return reply.send(nodeStream);
     }
   );
+}
+
+// ─── 扣费（fire-and-forget，不阻塞响应）──────────────────────────────────────
+
+function deductAfterSuccess(
+  userId: string,
+  amount: number,
+  model: string,
+  request: FastifyRequest
+): void {
+  wallets
+    .deduct(userId, amount)
+    .then(() => {
+      request.log.info({ userId, amount, model }, '[llm-proxy] deduction success');
+    })
+    .catch((err) => {
+      request.log.error(
+        { err: String(err), userId, amount, model },
+        '[llm-proxy] deduction failed'
+      );
+    });
 }

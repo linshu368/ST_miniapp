@@ -11,6 +11,7 @@
 
 import { get as lodashGet, set as lodashSet, cloneDeep } from 'lodash-es';
 import type { CharacterRow, PlatformSettingsRow, UserSettingsRow } from './fetcher.js';
+import { config } from '../lib/config.js';
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,18 @@ export function mergeSettings(
       if (fallback) lodashSet(merged, path, fallback);
     }
   }
+
+  // 强制覆写 LLM endpoint 为平台代理网关地址，确保 ST 的 LLM 调用经 backend 代理（注入 key + 计费）。
+  // 地址来自环境变量（本地默认 backend dev；prod/staging 覆盖为对外可达 URL），不依赖 DB 内容。
+  lodashSet(merged, 'oai_settings.reverse_proxy', config.LLM_PROXY_URL);
+  lodashSet(merged, 'oai_settings.custom_url', config.LLM_PROXY_URL);
+
+  // 强制设置上下文上限：默认模板的 openai_max_context=4095 过小，大角色卡（人设 + 内置正则）
+  // 组装后的提示词极易超限，触发「必要的提示词超过了上下文大小」并截断历史。
+  // 平台模型（gemini-2.5-flash ~1M / claude-sonnet-4 ~200K）远大于此，统一抬到 32K 兼顾体验与成本。
+  // max_context_unlocked=true 解除 UI 预设档位限制，使该值生效。
+  lodashSet(merged, 'oai_settings.openai_max_context', 32768);
+  lodashSet(merged, 'oai_settings.max_context_unlocked', true);
 
   return { settings: merged, hadInvalidRef, invalidRefValue };
 }

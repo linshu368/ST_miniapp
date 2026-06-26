@@ -1,9 +1,10 @@
 'use client';
 
 import { createContext, useContext, useRef, useCallback, useMemo, useEffect } from 'react';
-import { BridgeClient, setBridgeClient } from '@/lib/bridge';
+import { BridgeClient, setBridgeClient, getBridgeClientOrNull } from '@/lib/bridge';
 import type { BridgeClientOptions } from '@/lib/bridge';
 import { usePathname } from 'next/navigation';
+import { useSTMirrorStore } from '@/stores/st-mirror';
 
 type BridgeContextValue = {
   client: BridgeClient;
@@ -18,16 +19,33 @@ export function BridgeProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isVisible = pathname.startsWith('/tavern/');
 
-  const client = useMemo(() => {
-    const opts: BridgeClientOptions = { totalTimeout: 60_000 };
-    return new BridgeClient(() => iframeRef.current, opts);
-  }, []);
+  // StrictMode(dev) 会双调用 useMemo 工厂，若在工厂内 setBridgeClient 会产生两个实例
+  // 都写入模块单例，导致 hooks 观察到的实例与被 start() 的实例错配（bridgeStatus 永停 idle）。
+  // 工厂只负责构造；注册放到渲染体内（幂等，且早于子组件 effect 调 getBridgeClient），
+  // 且永远只注册 React 保留的这个 client 实例。
+  const client = useMemo(
+    () =>
+      new BridgeClient(() => iframeRef.current, { totalTimeout: 60_000 } as BridgeClientOptions),
+    []
+  );
+
+  if (getBridgeClientOrNull() !== client) {
+    setBridgeClient(client);
+  }
 
   useEffect(() => {
-    setBridgeClient(client);
     return () => {
       client.stop();
     };
+  }, [client]);
+
+  // 把 bridge 的 ST 镜像状态（pong）同步进 mirror store，
+  // 供 useSTMirror 消费（模型档位高亮 / 历史当前对话高亮）。
+  useEffect(() => {
+    const unsub = client.onPong((state) => {
+      useSTMirrorStore.getState().updatePartial(state);
+    });
+    return unsub;
   }, [client]);
 
   const registerIframe = useCallback(

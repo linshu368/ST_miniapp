@@ -10,19 +10,28 @@ datasource db {
 }
 
 model User {
-  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tg_id                 String                 @unique(map: "users_tg_id_uniq")
-  bonus_credits         Int                    @default(660)
-  main_credits          Int?                   @default(0)
-  total_credits         Int?                   @default(dbgenerated("(main_credits + bonus_credits)"))
-  first_paid_at         DateTime?              @db.Timestamptz(6)
-  last_paid_at          DateTime?              @db.Timestamptz(6)
-  total_paid_amount     Decimal                @default(0) @db.Decimal(12, 2)
+  id                    String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tg_id                 String                   @unique(map: "users_tg_id_uniq")
+  bonus_credits         Int                      @default(660)
+  main_credits          Int?                     @default(0)
+  total_credits         Int?                     @default(dbgenerated("(main_credits + bonus_credits)"))
+  first_paid_at         DateTime?                @db.Timestamptz(6)
+  last_paid_at          DateTime?                @db.Timestamptz(6)
+  total_paid_amount     Decimal                  @default(0) @db.Decimal(12, 2)
   source_id             String?
-  last_checkin_at       DateTime?              @db.Timestamptz(6)
-  created_at            DateTime               @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime               @default(now()) @db.Timestamptz(6)
+  last_checkin_at       DateTime?                @db.Timestamptz(6)
+  created_at            DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime                 @default(now()) @db.Timestamptz(6)
+  st_handle             String?                  @unique
+  st_initialized_at     DateTime?                @db.Timestamptz(6)
+  chat_message_charges  chat_message_charges[]
+  daily_checkins        daily_checkins[]
   miniapp_user_settings miniapp_user_settings?
+  payment_orders        miniapp_payment_orders[]
+  user_wallets          user_wallets?
+  wallet_ledger         wallet_ledger[]
+  wish_role_sessions    wish_role_sessions[]
+  wish_roles            wish_roles[]
   bot_user_settings     bot_user_settings?
 
   @@map("users")
@@ -232,30 +241,32 @@ model runtime_config {
 }
 
 model Character {
-  id                        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                      String
-  description               String       @default("")
-  avatar_url                String       @default("")
-  creator_notes             String       @default("")
-  created_at                DateTime     @default(now()) @db.Timestamptz(6)
-  updated_at                DateTime     @updatedAt
-  alternate_greetings       Json         @default("[]")
+  description               String   @default("")
+  avatar_url                String   @default("")
+  creator_notes             String   @default("")
+  created_at                DateTime @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime @updatedAt
+  alternate_greetings       Json     @default("[]")
   character_book            Json?
-  character_version         String       @default("")
-  creator                   String       @default("")
-  extensions                Json         @default("{}")
-  first_mes                 String       @default("")
-  mes_example               String       @default("")
-  personality               String       @default("")
-  post_history_instructions String       @default("")
-  scenario                  String       @default("")
-  spec                      String       @default("chara_card_v2")
-  spec_version              String       @default("2.0")
-  system_prompt             String       @default("")
-  tags                      Json         @default("[]")
-  is_default                Boolean      @default(false)
-  enabled                   Boolean      @default(true)
-  sort_order                Int          @default(0)
+  character_version         String   @default("")
+  creator                   String   @default("")
+  extensions                Json     @default("{}")
+  first_mes                 String   @default("")
+  mes_example               String   @default("")
+  personality               String   @default("")
+  post_history_instructions String   @default("")
+  scenario                  String   @default("")
+  spec                      String   @default("chara_card_v2")
+  spec_version              String   @default("2.0")
+  system_prompt             String   @default("")
+  tags                      Json     @default("[]")
+  is_default                Boolean  @default(false)
+  enabled                   Boolean  @default(true)
+  sort_order                Int      @default(0)
+  is_published              Boolean  @default(true)
+  is_active                 Boolean  @default(true)
 
   @@map("characters")
   @@schema("miniapp")
@@ -284,4 +295,142 @@ model traffic_clicks {
   @@unique([stat_date, source_id], map: "traffic_clicks_uniq")
   @@index([source_id, stat_date], map: "idx_tc_source_date")
   @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model chat_message_charges {
+  user_id                                                            String         @db.Uuid
+  session_id                                                         String         @db.Uuid
+  client_message_id                                                  String
+  amount                                                             Int
+  status                                                             String
+  wallet_ledger_id                                                   String?        @db.Uuid
+  refund_ledger_id                                                   String?        @db.Uuid
+  created_at                                                         DateTime       @default(now()) @db.Timestamptz(6)
+  refunded_at                                                        DateTime?      @db.Timestamptz(6)
+  wallet_ledger_chat_message_charges_refund_ledger_idTowallet_ledger wallet_ledger? @relation("chat_message_charges_refund_ledger_idTowallet_ledger", fields: [refund_ledger_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                                                              User           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  wallet_ledger_chat_message_charges_wallet_ledger_idTowallet_ledger wallet_ledger? @relation("chat_message_charges_wallet_ledger_idTowallet_ledger", fields: [wallet_ledger_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([user_id, session_id, client_message_id])
+  @@index([session_id, created_at(sort: Desc)], map: "idx_miniapp_chat_charges_session")
+  @@schema("miniapp")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model daily_checkins {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id        String   @db.Uuid
+  reward_credits Int
+  claimed_at     DateTime @default(now()) @db.Timestamptz(6)
+  users          User     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, claimed_at(sort: Desc)], map: "idx_miniapp_daily_checkins_user_claimed")
+  @@schema("miniapp")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model miniapp_payment_orders {
+  id                      String    @id
+  user_id                 String    @db.Uuid
+  status                  String    @default("pending")
+  payment_type            String
+  amount_cents            Int
+  credits_amount          Int
+  bonus_credits           Int       @default(0)
+  provider_transaction_id String?
+  credits_added           Boolean   @default(false)
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at              DateTime  @db.Timestamptz(6)
+  paid_at                 DateTime? @db.Timestamptz(6)
+  users                   User      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status], map: "idx_miniapp_payment_orders_status")
+  @@index([user_id, created_at(sort: Desc)], map: "idx_miniapp_payment_orders_user_created")
+  @@map("payment_orders")
+  @@schema("miniapp")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model user_wallets {
+  user_id           String    @id @db.Uuid
+  main_credits      Int       @default(0)
+  bonus_credits     Int       @default(0)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @default(now()) @db.Timestamptz(6)
+  first_paid_at     DateTime? @db.Timestamptz(6)
+  last_paid_at      DateTime? @db.Timestamptz(6)
+  total_paid_amount Decimal   @default(0) @db.Decimal(12, 2)
+  total_credits     Int?      @default(dbgenerated("(main_credits + bonus_credits)"))
+  users             User      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("miniapp")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model wallet_ledger {
+  id                                                                        String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                                                                   String                 @db.Uuid
+  entry_type                                                                String
+  amount                                                                    Int
+  main_delta                                                                Int                    @default(0)
+  bonus_delta                                                               Int                    @default(0)
+  balance_main                                                              Int
+  balance_bonus                                                             Int
+  reference_type                                                            String?
+  reference_id                                                              String?
+  metadata                                                                  Json                   @default("{}")
+  created_at                                                                DateTime               @default(now()) @db.Timestamptz(6)
+  chat_message_charges_chat_message_charges_refund_ledger_idTowallet_ledger chat_message_charges[] @relation("chat_message_charges_refund_ledger_idTowallet_ledger")
+  chat_message_charges_chat_message_charges_wallet_ledger_idTowallet_ledger chat_message_charges[] @relation("chat_message_charges_wallet_ledger_idTowallet_ledger")
+  users                                                                     User                   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([reference_type, reference_id], map: "idx_miniapp_wallet_ledger_reference")
+  @@index([user_id, created_at(sort: Desc)], map: "idx_miniapp_wallet_ledger_user_created")
+  @@schema("miniapp")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model wish_role_sessions {
+  user_id    BigInt   @id
+  db_user_id String?  @db.Uuid
+  state      String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      User?    @relation(fields: [db_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("miniapp")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model wish_roles {
+  id                          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                     BigInt
+  db_user_id                  String?   @db.Uuid
+  wish_text                   String
+  extra_text                  String?
+  total_paid_amount_at_submit Decimal   @default(0) @db.Decimal(12, 2)
+  reward_credits              Int       @default(1)
+  status                      String    @default("awaiting_extra")
+  created_at                  DateTime  @default(now()) @db.Timestamptz(6)
+  closed_at                   DateTime? @db.Timestamptz(6)
+  users                       User?     @relation(fields: [db_user_id], references: [id], onUpdate: NoAction)
+
+  @@index([status, created_at(sort: Desc)], map: "idx_miniapp_wish_roles_status_created")
+  @@index([user_id, created_at(sort: Desc)], map: "idx_miniapp_wish_roles_user_created")
+  @@schema("miniapp")
 }
