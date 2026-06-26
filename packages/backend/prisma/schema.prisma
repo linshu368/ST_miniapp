@@ -246,8 +246,8 @@ model Character {
   description               String   @default("")
   avatar_url                String   @default("")
   creator_notes             String   @default("")
-  created_at                DateTime @default(now()) @db.Timestamptz(6)
-  updated_at                DateTime @updatedAt
+  created_at                DateTime @default(dbgenerated("timezone('Asia/Shanghai'::text, now())")) @db.Timestamp(6)
+  updated_at                DateTime @default(dbgenerated("timezone('Asia/Shanghai'::text, now())")) @db.Timestamp(6)
   alternate_greetings       Json     @default("[]")
   character_book            Json?
   character_version         String   @default("")
@@ -262,6 +262,7 @@ model Character {
   spec_version              String   @default("2.0")
   system_prompt             String   @default("")
   tags                      Json     @default("[]")
+  raw_card                  Json?
   enabled                   Boolean  @default(true)
   sort_order                Int      @default(0)
 

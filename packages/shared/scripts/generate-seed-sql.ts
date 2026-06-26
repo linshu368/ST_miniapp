@@ -164,7 +164,7 @@ INSERT INTO miniapp.characters (
   creator_notes, system_prompt, post_history_instructions,
   alternate_greetings, tags, character_book, extensions,
   creator, character_version, spec, spec_version, avatar_url,
-  enabled, sort_order,
+  raw_card, enabled, sort_order,
   created_at, updated_at
 ) VALUES (
   '${uuid}',
@@ -186,10 +186,11 @@ INSERT INTO miniapp.characters (
   ${sqlString(card.spec ?? 'chara_card_v3')},
   ${sqlString(card.spec_version ?? '3.0')},
   '',
+  ${sqlJson(card)},
   TRUE,
   ${sortOrder},
-  now(),
-  now()
+  timezone('Asia/Shanghai', now()),
+  timezone('Asia/Shanghai', now())
 ) ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,
@@ -208,8 +209,9 @@ INSERT INTO miniapp.characters (
   character_version = EXCLUDED.character_version,
   spec = EXCLUDED.spec,
   spec_version = EXCLUDED.spec_version,
+  raw_card = EXCLUDED.raw_card,
   sort_order = EXCLUDED.sort_order,
-  updated_at = now();
+  updated_at = timezone('Asia/Shanghai', now());
 `.trim();
 }
 
