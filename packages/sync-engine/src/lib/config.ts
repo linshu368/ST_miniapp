@@ -31,8 +31,6 @@ const ConfigSchema = z.object({
 
   // ST 文件系统
   ST_DATA_PATH: z.string().min(1, 'ST_DATA_PATH 不能为空'),
-  /** @deprecated 角色卡 PNG 已迁至 Supabase Storage，此变量仅为平滑迁移保留 */
-  ST_PLATFORM_ASSETS_PATH: z.string().default(''),
 
   // Supabase Storage bucket（角色卡 PNG 存储）
   CHARACTER_STORAGE_BUCKET: z.string().default('character-assets'),

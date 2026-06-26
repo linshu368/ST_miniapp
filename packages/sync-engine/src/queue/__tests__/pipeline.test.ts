@@ -21,7 +21,6 @@ vi.mock('../../lib/config.js', () => ({
     SUPABASE_URL: 'https://mock.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'mock-key',
     ST_DATA_PATH: '/mock',
-    ST_PLATFORM_ASSETS_PATH: '/mock',
     ST_BASE_URL: 'http://localhost:8000',
     ST_ADMIN_USERNAME: 'admin',
     ST_ADMIN_PASSWORD: 'pass',

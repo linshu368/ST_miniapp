@@ -50,7 +50,6 @@ vi.mock('../st-user.js', () => ({
 vi.mock('../../lib/config.js', () => ({
   config: {
     ST_DATA_PATH: '/mock-st-data',
-    ST_PLATFORM_ASSETS_PATH: '',
     CHARACTER_STORAGE_BUCKET: 'character-assets',
     SUPABASE_URL: 'https://mock.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'mock-service-role-key',
