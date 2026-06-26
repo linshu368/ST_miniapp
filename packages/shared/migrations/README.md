@@ -48,6 +48,7 @@
    - `packages/shared/migrations/020_drop_legacy_app_chat_tables.sql`
    - `packages/shared/migrations/021_miniapp_wish_roles.sql`
    - `packages/shared/migrations/022_remove_credit_deduction.sql`
+   - `packages/shared/migrations/023_move_wishes_to_miniapp.sql`
 5. 如选择 `production`，必须在 `confirm_production` 填入 `RUN_PRODUCTION_MIGRATION`
 
 Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 `qekxjxpznjvoccvmgozk`，`production` 只能连接 `wbtsfzozlmurljvglhpn`。
@@ -85,8 +86,9 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 018_miniapp_free_chat_idempotency.sql # 移除扣费后保留的 no-op 迁移占位
 019_miniapp_billing_checkin.sql # 每日签到 bonus
 020_drop_legacy_app_chat_tables.sql # 删除阶段一遗留 miniapp.app_sessions / app_messages
-021_miniapp_wish_roles.sql # Telegram Bot 角色许愿、24h 限流、许愿奖励
+021_miniapp_wish_roles.sql # MiniApp 角色许愿、24h 限流、许愿奖励
 022_remove_credit_deduction.sql # 清理已执行环境中的积分扣费表、函数和配置
+023_move_wishes_to_miniapp.sql # 删除旧 Bot 许愿会话表，许愿池改为 MiniApp 页面
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

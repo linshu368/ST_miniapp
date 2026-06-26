@@ -8,7 +8,7 @@ import bridgeRoutes from './routes/bridge.js';
 import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
 import settingsRoutes from './routes/settings.js';
-import botRoutes from './routes/bot.js';
+import wishRoutes from './routes/wishes.js';
 import { stProxyHandler } from './middleware/stProxy.js';
 import llmProxyRoutes from './routes/llm-proxy.js';
 
@@ -63,7 +63,7 @@ export async function buildApp() {
   await app.register(paymentRoutes);
   await app.register(walletRoutes);
   await app.register(settingsRoutes);
-  await app.register(botRoutes);
+  await app.register(wishRoutes);
   await app.register(llmProxyRoutes);
 
   // ── ST 反向代理：/api/bridge/st/* → ST 原生服务 ──

@@ -1,13 +1,5 @@
 import { getSupabaseClient } from '../../lib/supabase.js';
 
-export interface WishRoleSession {
-  user_id: number;
-  db_user_id: string;
-  state: 'awaiting_wish';
-  created_at: string;
-  updated_at: string;
-}
-
 export interface WishRole {
   id: string;
   user_id: number;
@@ -28,47 +20,6 @@ interface CreateWishRoleResult {
 
 export class MiniappWishRoleRepository {
   private readonly db = getSupabaseClient().schema('miniapp');
-
-  async startSession(input: { telegramUserId: number; dbUserId: string }): Promise<void> {
-    const { error } = await this.db.from('wish_role_sessions').upsert(
-      {
-        user_id: input.telegramUserId,
-        db_user_id: input.dbUserId,
-        state: 'awaiting_wish',
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' }
-    );
-
-    if (error) {
-      throw new Error(`创建角色许愿会话失败：${error.message}`);
-    }
-  }
-
-  async getSession(telegramUserId: number): Promise<WishRoleSession | null> {
-    const { data, error } = await this.db
-      .from('wish_role_sessions')
-      .select('*')
-      .eq('user_id', telegramUserId)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(`查询角色许愿会话失败：${error.message}`);
-    }
-
-    return (data as WishRoleSession | null) ?? null;
-  }
-
-  async clearSession(telegramUserId: number): Promise<void> {
-    const { error } = await this.db
-      .from('wish_role_sessions')
-      .delete()
-      .eq('user_id', telegramUserId);
-
-    if (error) {
-      throw new Error(`清理角色许愿会话失败：${error.message}`);
-    }
-  }
 
   async createWish(input: {
     dbUserId: string;
@@ -93,27 +44,6 @@ export class MiniappWishRoleRepository {
     }
 
     return result.wish;
-  }
-
-  async findLatestAwaitingExtra(input: {
-    dbUserId: string;
-    telegramUserId: number;
-  }): Promise<WishRole | null> {
-    const { data, error } = await this.db
-      .from('wish_roles')
-      .select('*')
-      .eq('user_id', input.telegramUserId)
-      .eq('db_user_id', input.dbUserId)
-      .eq('status', 'awaiting_extra')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(`查询待补充角色许愿失败：${error.message}`);
-    }
-
-    return (data as WishRole | null) ?? null;
   }
 
   async completeWish(input: {

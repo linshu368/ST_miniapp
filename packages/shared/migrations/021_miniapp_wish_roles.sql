@@ -1,5 +1,5 @@
 -- 020: MiniApp role wish collection.
--- - Store private role wishes submitted from the Telegram bot.
+-- - Store private role wishes submitted from the MiniApp.
 -- - Reward the first valid wish step with a small bonus credit.
 -- - Limit each Telegram user to one rewarded wish every 24 hours.
 
@@ -33,18 +33,6 @@ CREATE INDEX IF NOT EXISTS idx_miniapp_wish_roles_status_created
 ALTER TABLE miniapp.wish_roles ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON miniapp.wish_roles FROM anon, authenticated;
 GRANT ALL ON miniapp.wish_roles TO service_role, postgres;
-
-CREATE TABLE IF NOT EXISTS miniapp.wish_role_sessions (
-  user_id    BIGINT PRIMARY KEY,
-  db_user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-  state      TEXT NOT NULL CHECK (state IN ('awaiting_wish')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-ALTER TABLE miniapp.wish_role_sessions ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON miniapp.wish_role_sessions FROM anon, authenticated;
-GRANT ALL ON miniapp.wish_role_sessions TO service_role, postgres;
 
 CREATE OR REPLACE FUNCTION miniapp.create_wish_role(
   p_db_user_id UUID,
@@ -204,6 +192,3 @@ GRANT EXECUTE ON FUNCTION miniapp.complete_wish_role(UUID, BIGINT, UUID, TEXT) T
 
 COMMENT ON TABLE miniapp.wish_roles IS
   'MiniApp 私密角色许愿记录，供运营用 SQL 查询消费。';
-
-COMMENT ON TABLE miniapp.wish_role_sessions IS
-  'Telegram Bot 角色许愿轻量状态表，用于等待用户输入第一步许愿内容。';
