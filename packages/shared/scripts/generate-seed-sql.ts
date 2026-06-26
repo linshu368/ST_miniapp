@@ -26,6 +26,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { CharaCardData } from '../src/png-parser.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,31 +53,9 @@ const SEED_PLATFORM_SETTINGS_UUID = '44444444-4444-4444-8444-000000000001';
 // 系统兜底卡（character_ref 失效时的回退值，用户感知不到）
 const FALLBACK_CHARACTER_NAME = '第七开发部';
 
-interface CharaCardV3Data {
-  spec: 'chara_card_v3';
-  spec_version: string;
-  data: {
-    name: string;
-    description?: string;
-    personality?: string;
-    scenario?: string;
-    first_mes?: string;
-    mes_example?: string;
-    creator_notes?: string;
-    system_prompt?: string;
-    post_history_instructions?: string;
-    alternate_greetings?: string[];
-    tags?: string[];
-    creator?: string;
-    character_version?: string;
-    extensions?: Record<string, unknown>;
-    character_book?: Record<string, unknown>;
-  };
-}
-
 // ─── PNG chara card 解析 ─────────────────────────────────────────────────────
 
-function extractCharaCardFromPng(pngPath: string): CharaCardV3Data {
+function extractCharaCardFromPng(pngPath: string): CharaCardData {
   const buf = fs.readFileSync(pngPath);
   if (buf.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') {
     throw new Error(`Not a valid PNG: ${pngPath}`);
@@ -100,7 +79,6 @@ function extractCharaCardFromPng(pngPath: string): CharaCardV3Data {
       const key = data.subarray(0, nul).toString('utf-8');
       const value = data.subarray(nul + 1).toString('utf-8');
 
-      // 优先级：ccv3 > chara
       if (key === 'ccv3') {
         bestPayload = value;
         bestKey = key;
@@ -120,7 +98,7 @@ function extractCharaCardFromPng(pngPath: string): CharaCardV3Data {
   }
 
   const decoded = Buffer.from(bestPayload, 'base64').toString('utf-8');
-  const json = JSON.parse(decoded) as CharaCardV3Data;
+  const json = JSON.parse(decoded) as CharaCardData;
 
   if (!json.data || !json.data.name) {
     throw new Error(`Invalid chara card structure in ${pngPath} (key=${bestKey})`);
@@ -178,7 +156,7 @@ function sqlJsonArray(value: unknown): string {
 // 注意：miniapp.characters.updated_at 是 NOT NULL 且无 DB 默认值
 //       Prisma 用 @updatedAt 在 client 端注入，但纯 SQL INSERT 必须显式提供
 
-function buildCharacterInsert(uuid: string, card: CharaCardV3Data, sortOrder: number): string {
+function buildCharacterInsert(uuid: string, card: CharaCardData, sortOrder: number): string {
   const d = card.data;
   return `
 INSERT INTO miniapp.characters (
