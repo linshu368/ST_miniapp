@@ -35,9 +35,20 @@ export function secretsPath(handle: string): string {
   return join(handleDir(handle), 'secrets.json');
 }
 
-/** 平台资产目录下某角色卡的源 PNG 路径：ST_PLATFORM_ASSETS_PATH/characters/platform_<id>.png */
+/**
+ * @deprecated 角色卡 PNG 已迁至 Supabase Storage，不再从本地目录读取。
+ * 保留仅为平滑迁移期间 fallback 使用。
+ */
 export function platformCharacterSrc(characterId: string): string {
   return join(config.ST_PLATFORM_ASSETS_PATH, 'characters', `platform_${characterId}.png`);
+}
+
+/**
+ * Supabase Storage 中角色卡 PNG 的对象路径。
+ * 完整 URL = SUPABASE_URL/storage/v1/object/public/<bucket>/<path>
+ */
+export function characterStoragePath(characterId: string): string {
+  return `characters/platform_${characterId}.png`;
 }
 
 /** data/<handle>/characters/platform_<id>.png */

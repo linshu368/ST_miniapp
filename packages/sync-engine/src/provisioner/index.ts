@@ -14,6 +14,7 @@
  */
 
 import { getSupabaseClient } from '../lib/supabase.js';
+import { config } from '../lib/config.js';
 import { fetchProvisionData } from './fetcher.js';
 import { mergeSettings } from './merger.js';
 import { writeCharacters, writePresets, writeSettings, writeSecrets } from './writer.js';
@@ -109,7 +110,7 @@ export async function provision(
   log('[provision] 步骤 3/5：下发角色卡 PNG（order=10）...');
   let charResult;
   try {
-    charResult = writeCharacters(stHandle, characters, force);
+    charResult = await writeCharacters(stHandle, characters, force);
   } catch (err) {
     throw new ProvisionError(`写入角色卡失败：${err}`, err);
   }
@@ -118,7 +119,9 @@ export async function provision(
   );
   if (charResult.missing.length > 0) {
     log(`[provision]   ⚠️  缺失的角色卡 id：${charResult.missing.join(', ')}`);
-    log(`[provision]      请确认 ST_PLATFORM_ASSETS_PATH 目录中包含对应的 platform_<id>.png 文件`);
+    log(
+      `[provision]      请确认 Storage bucket「${config.CHARACTER_STORAGE_BUCKET}」中包含对应的 PNG 文件`
+    );
   }
 
   // ── 4. order=20：写预设 JSON（资产层）─────────────────────────────────────

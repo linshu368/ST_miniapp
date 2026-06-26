@@ -31,7 +31,7 @@ vi.mock('../fetcher.js', () => ({
 }));
 
 vi.mock('../writer.js', () => ({
-  writeCharacters: vi.fn(() => ({ written: [], skipped: [], missing: [] })),
+  writeCharacters: vi.fn(async () => ({ written: [], skipped: [], missing: [] })),
   writePresets: vi.fn(() => ({ written: [], skipped: [] })),
   writeSettings: vi.fn(),
   writeSecrets: vi.fn(),
@@ -50,7 +50,8 @@ vi.mock('../st-user.js', () => ({
 vi.mock('../../lib/config.js', () => ({
   config: {
     ST_DATA_PATH: '/mock-st-data',
-    ST_PLATFORM_ASSETS_PATH: '/mock-assets',
+    ST_PLATFORM_ASSETS_PATH: '',
+    CHARACTER_STORAGE_BUCKET: 'character-assets',
     SUPABASE_URL: 'https://mock.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'mock-service-role-key',
     ST_BASE_URL: 'http://localhost:8000',
@@ -142,7 +143,7 @@ describe('provision()', () => {
     vi.clearAllMocks();
     // 默认成功 mock
     mockedFetch.mockResolvedValue(makeProvisionData());
-    mockedWriteChars.mockReturnValue({ written: [CHAR_UUID], skipped: [], missing: [] });
+    mockedWriteChars.mockResolvedValue({ written: [CHAR_UUID], skipped: [], missing: [] });
     mockedWritePresets.mockReturnValue({ written: [PRESET_UUID], skipped: [] });
     mockedWriteSettings.mockReturnValue(undefined);
     mockedEnsureUser.mockResolvedValue({ created: true });
@@ -217,7 +218,7 @@ describe('provision()', () => {
 
   // ── 场景 4：角色卡全部缺失（missing） ────────────────────────────────────
   it('角色卡 PNG 全部缺失时：charactersMissing > 0，但不抛错（流程继续）', async () => {
-    mockedWriteChars.mockReturnValue({ written: [], skipped: [], missing: [CHAR_UUID] });
+    mockedWriteChars.mockResolvedValue({ written: [], skipped: [], missing: [CHAR_UUID] });
 
     const result = await provision(USER_ID, { log: () => {} });
 
@@ -238,7 +239,7 @@ describe('provision()', () => {
     };
     mockedFetch.mockResolvedValue(makeProvisionData(userSettings));
     // writer 返回：只写入了 CHAR_UUID，不包含 MISSING_UUID
-    mockedWriteChars.mockReturnValue({ written: [CHAR_UUID], skipped: [], missing: [] });
+    mockedWriteChars.mockResolvedValue({ written: [CHAR_UUID], skipped: [], missing: [] });
 
     const result = await provision(USER_ID, { log: () => {} });
 
