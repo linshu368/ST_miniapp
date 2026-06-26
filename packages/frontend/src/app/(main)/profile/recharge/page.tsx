@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { ChevronLeft, Receipt, ShieldCheck } from 'lucide-react';
 import type { PaymentType } from '@miniapp/shared';
 
@@ -28,7 +28,6 @@ export default function RechargePage() {
 
 function RechargePageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { whisper, impact, notification } = useHaptic();
 
   const goBack = useCallback(() => router.back(), [router]);
@@ -41,8 +40,6 @@ function RechargePageContent() {
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
 
   const plans = data?.plans ?? [];
-  const reason = searchParams.get('reason');
-  const isInsufficientCredits = reason === 'insufficient_credits';
   const selectedPlan = useMemo(
     () => (data?.plans ?? []).find((p) => p.id === selectedPlanId) ?? null,
     [data, selectedPlanId]
@@ -105,11 +102,7 @@ function RechargePageContent() {
               我的订单
             </Link>
           </div>
-          <p className="mt-1 text-[11px] text-pink-300/80">
-            {isInsufficientCredits
-              ? '余额不足，补充星尘后即可继续对话'
-              : '限时福利进行中 · 本轮单价历史最低'}
-          </p>
+          <p className="mt-1 text-[11px] text-pink-300/80">限时福利进行中 · 本轮单价历史最低</p>
         </section>
 
         <section className="flex flex-col gap-3 py-4">

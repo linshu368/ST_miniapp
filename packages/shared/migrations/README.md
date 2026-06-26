@@ -47,6 +47,7 @@
    - `packages/shared/migrations/019_miniapp_billing_checkin.sql`
    - `packages/shared/migrations/020_drop_legacy_app_chat_tables.sql`
    - `packages/shared/migrations/021_miniapp_wish_roles.sql`
+   - `packages/shared/migrations/022_remove_credit_deduction.sql`
 5. 如选择 `production`，必须在 `confirm_production` 填入 `RUN_PRODUCTION_MIGRATION`
 
 Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 `qekxjxpznjvoccvmgozk`，`production` 只能连接 `wbtsfzozlmurljvglhpn`。
@@ -78,13 +79,14 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 
 # MiniApp 支付/钱包/设置
 014_miniapp_payment_wallet.sql     # MiniApp 独立支付订单与钱包
-015_miniapp_settings_wallet_ops.sql # MiniApp 独立设置、钱包扣费与订单过期函数
-016_miniapp_wallet_ledger_chat_idempotency.sql # 钱包流水、聊天扣费幂等与退款
+015_miniapp_settings_wallet_ops.sql # MiniApp 独立设置与订单过期函数
+016_miniapp_wallet_ledger_chat_idempotency.sql # 钱包流水与充值审计
 017_miniapp_wallet_payment_summary.sql # 钱包首次/最近付费、累计金额和总积分汇总字段
-018_miniapp_free_chat_idempotency.sql # 免费聊天模式下保留 client_message_id 幂等
-019_miniapp_billing_checkin.sql # 模型档次扣费字典、内容返回后扣费、每日签到 bonus
+018_miniapp_free_chat_idempotency.sql # 移除扣费后保留的 no-op 迁移占位
+019_miniapp_billing_checkin.sql # 每日签到 bonus
 020_drop_legacy_app_chat_tables.sql # 删除阶段一遗留 miniapp.app_sessions / app_messages
 021_miniapp_wish_roles.sql # Telegram Bot 角色许愿、24h 限流、许愿奖励
+022_remove_credit_deduction.sql # 清理已执行环境中的积分扣费表、函数和配置
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
