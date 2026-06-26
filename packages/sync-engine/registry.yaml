@@ -29,8 +29,8 @@ entries:
   # 触发时机：init（新用户首次初始化）+ session_start（登录时重建工作目录）
   # 执行顺序：10，资产层最优先，确保后续 settings.json 中的 active_character 指针可解析
   # 种子数据：011_seed_data.sql 中 3 张卡（第七开发部 / 莫池来 / 贺商寒）
-  #   - is_enabled=true 的卡才下发
-  #   - is_default=true 的卡（第七开发部）是 character_ref 失效时的兜底卡（决策 8）
+  #   - enabled=true 的卡才下发
+  #   - 系统兜底卡由 runtime_config.system_fallback_character_id 配置（character_ref 失效时的回退值）
   # 落盘命名：platform_<uuid>.png（决策 4 稳定命名，让 settings 指针跨设备语义一致）
   - id: platform_characters_down
     label: '平台角色卡库下发到 ST characters 目录'
@@ -52,10 +52,10 @@ entries:
     order: 10
     enabled: true
     notes: >
-      同步引擎从 miniapp.characters 取 is_published=true 且 is_active=true 的行，
-      将 chara_card_v3 JSON 重新打包为 PNG（嵌入 chara 元数据），
+      同步引擎从 miniapp.characters 取 enabled=true 的行，
+      将 PNG 从 Storage 或本地平台资产目录下载，
       落盘到 data/<handle>/characters/platform_<id>.png。
-      is_default=true 的卡在投影阶段作为 character_ref 失效兜底卡使用。
+      系统兜底卡由 runtime_config.system_fallback_character_id 配置。
 
   # ────────────────────────────────────────────────────────────────────────────
   # [A 类 · 资产型 · order=20] 平台预设库 → ST OpenAI Settings 目录
@@ -128,8 +128,9 @@ entries:
         - { path: active_character, transform: character_ref }
         - { path: oai_settings.prompts, transform: passthrough }
       投影阶段的 character_ref 校验：
-        若 B 表中 active_character 指向不存在的资产，回退到 miniapp.characters
-        中 is_default=true 的卡，并在投影元数据中记录 had_invalid_ref=true。
+        若 B 表中 active_character 指向不存在的资产，回退到
+        runtime_config.system_fallback_character_id 指定的系统兜底卡，
+        并在投影元数据中记录 had_invalid_ref=true。
 
   # ────────────────────────────────────────────────────────────────────────────
   # [B 类 · 配置型 · order=999] ST settings.json 变更 → user_st_settings 镜像

@@ -262,11 +262,8 @@ model Character {
   spec_version              String   @default("2.0")
   system_prompt             String   @default("")
   tags                      Json     @default("[]")
-  is_default                Boolean  @default(false)
   enabled                   Boolean  @default(true)
   sort_order                Int      @default(0)
-  is_published              Boolean  @default(true)
-  is_active                 Boolean  @default(true)
 
   @@map("characters")
   @@schema("miniapp")

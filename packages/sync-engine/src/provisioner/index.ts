@@ -71,7 +71,15 @@ export async function provision(
   } catch (err) {
     throw new ProvisionError(`拉取数据失败：${err}`, err);
   }
-  const { stHandle, characters, presets, platformSettings, apiConfig, userSettings } = data;
+  const {
+    stHandle,
+    characters,
+    presets,
+    platformSettings,
+    apiConfig,
+    userSettings,
+    systemFallbackCharacterId,
+  } = data;
 
   log(
     `[provision]   handle=${stHandle}, 角色卡=${characters.length} 张, 预设=${presets.length} 条`
@@ -144,17 +152,23 @@ export async function provision(
     ...charResult.written,
     ...charResult.skipped, // 跳过的文件已存在，也视为可用
   ];
-  const defaultChar = characters.find((c) => c.is_default);
 
   let merged;
   try {
-    merged = mergeSettings(platformSettings, userSettings, availableCharIds, defaultChar);
+    merged = mergeSettings(
+      platformSettings,
+      userSettings,
+      availableCharIds,
+      systemFallbackCharacterId ?? undefined
+    );
   } catch (err) {
     throw new ProvisionError(`merge settings 失败：${err}`, err);
   }
 
   if (merged.hadInvalidRef) {
-    log(`[provision]   ⚠️  character_ref 失效（原值='${merged.invalidRefValue}'），已回退到默认卡`);
+    log(
+      `[provision]   ⚠️  character_ref 失效（原值='${merged.invalidRefValue}'），已回退到系统兜底卡`
+    );
   }
 
   try {

@@ -16,7 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest';
 import type { ProvisionData } from '../fetcher.js';
-import type { CharacterRow, PlatformSettingsRow, UserSettingsRow } from '../fetcher.js';
+import type { PlatformSettingsRow, UserSettingsRow } from '../fetcher.js';
 
 // ─── Mock 声明（必须在 import 之前） ──────────────────────────────────────────
 
@@ -47,6 +47,21 @@ vi.mock('../st-user.js', () => ({
   },
 }));
 
+vi.mock('../../lib/config.js', () => ({
+  config: {
+    ST_DATA_PATH: '/mock-st-data',
+    ST_PLATFORM_ASSETS_PATH: '/mock-assets',
+    SUPABASE_URL: 'https://mock.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'mock-service-role-key',
+    ST_BASE_URL: 'http://localhost:8000',
+    ST_ADMIN_USERNAME: 'admin',
+    ST_ADMIN_PASSWORD: 'mock-admin-password',
+    ST_USER_PASSWORD_SECRET: 'mock-secret-at-least-16',
+    LLM_PROXY_URL: 'http://localhost:3001/api/platform/llm-proxy/v1',
+  },
+  loadConfig: vi.fn(),
+}));
+
 vi.mock('../../lib/supabase.js', () => ({
   getSupabaseClient: vi.fn(() => ({
     from: vi.fn(() => ({
@@ -68,12 +83,10 @@ const CHAR_UUID = '11111111-1111-4111-8111-000000000001';
 const PRESET_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const USER_ID = 'user-0000-0000-0000-000000000001';
 
-const mockChar: CharacterRow = {
+const mockChar = {
   id: CHAR_UUID,
   name: '第七开发部',
-  is_default: true,
-  is_published: true,
-  is_active: true,
+  enabled: true,
   sort_order: 0,
   description: null,
   personality: null,
@@ -111,8 +124,9 @@ function makeProvisionData(userSettings: UserSettingsRow | null = null): Provisi
     characters: [mockChar],
     presets: [{ id: PRESET_UUID, display_name: 'Default', preset_payload: {}, is_default: true }],
     platformSettings: mockPlatformSettings,
-    apiConfig: null, // 测试场景不涉及 secrets.json 写入，传 null 跳过
+    apiConfig: null,
     userSettings,
+    systemFallbackCharacterId: CHAR_UUID,
   };
 }
 
