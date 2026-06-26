@@ -6,7 +6,7 @@
  */
 
 import { copyFileSync, writeFileSync, existsSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import {
   charactersDir,
   presetsDir,
@@ -19,6 +19,7 @@ import {
 } from '../lib/st-fs.js';
 import type { CharacterRow, PresetRow, ApiConfigRow } from './fetcher.js';
 import type { MergedSettings } from './merger.js';
+import { config } from '../lib/config.js';
 
 // ─── 写入结果类型 ──────────────────────────────────────────────────────────────
 export interface WriteCharactersResult {
@@ -131,25 +132,26 @@ export function writeSettings(handle: string, mergedSettings: MergedSettings): v
  *
  * config_payload.provider 决定 key 名，如 "openrouter" → "api_key_openrouter"。
  */
-export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null): void {
+export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null, userId: string): void {
   if (!apiConfig) {
     // 未配置 API Key，跳过写入（不报错，provisioner 日志会标注）
     return;
   }
 
-  const { provider, api_key } = apiConfig.config_payload;
+  const { provider } = apiConfig.config_payload;
 
-  if (!provider || !api_key) {
+  if (!provider) {
     // config_payload 字段不完整，跳过（避免写入无效 secrets）
     return;
   }
 
   const secretKey = `api_key_${provider}`;
+  const platformToken = signPlatformToken(userId);
   const secrets = {
     [secretKey]: [
       {
         id: randomUUID(),
-        value: api_key,
+        value: platformToken,
         label: new Date().toLocaleString('en-US', {
           month: '2-digit',
           day: '2-digit',
@@ -165,4 +167,23 @@ export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null): vo
 
   const dst = secretsPath(handle);
   writeFileSync(dst, JSON.stringify(secrets, null, 2), 'utf-8');
+}
+
+function signPlatformToken(userId: string): string {
+  const secret = config.LLM_PROXY_TOKEN_SECRET || config.ST_USER_PASSWORD_SECRET;
+  if (!secret) {
+    throw new Error('LLM_PROXY_TOKEN_SECRET 未配置，无法签发 platformToken');
+  }
+
+  const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payload = base64UrlEncode(
+    JSON.stringify({ userId, iat: Math.floor(Date.now() / 1000), ver: 1 })
+  );
+  const signature = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
+
+  return `${header}.${payload}.${signature}`;
+}
+
+function base64UrlEncode(data: string): string {
+  return Buffer.from(data, 'utf-8').toString('base64url');
 }

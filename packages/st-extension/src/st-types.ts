@@ -32,11 +32,18 @@ export interface STChatCompletionSettings {
   [key: string]: unknown;
 }
 
+export interface STExtensionSettings {
+  /** 已被允许使用内置正则的角色 avatar 文件名列表（regex 扩展维护） */
+  character_allowed_regex?: string[];
+  [key: string]: unknown;
+}
+
 export interface STContext {
   characters: STCharacter[];
   characterId: number | undefined;
   chat: unknown[] | undefined;
   chatCompletionSettings: STChatCompletionSettings;
+  extensionSettings: STExtensionSettings;
   eventSource: STEventSource;
   eventTypes: STEventTypes;
   accountStorage?: STAccountStorage | null;

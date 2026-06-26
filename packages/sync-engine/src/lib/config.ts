@@ -38,6 +38,11 @@ const ConfigSchema = z.object({
   ST_ADMIN_USERNAME: z.string().min(1).default('admin'),
   ST_ADMIN_PASSWORD: z.string().min(1, 'ST_ADMIN_PASSWORD 不能为空'),
   ST_USER_PASSWORD_SECRET: z.string().min(16, 'ST_USER_PASSWORD_SECRET 至少 16 位'),
+  LLM_PROXY_TOKEN_SECRET: z.string().optional(),
+
+  // ST LLM endpoint 指向平台代理网关的可达地址（写入 settings.json）。
+  // 本地默认 backend dev 地址；prod/staging 通过环境变量覆盖为对外可达 URL。
+  LLM_PROXY_URL: z.string().url().default('http://localhost:3001/api/platform/llm-proxy/v1'),
 
   // 健康监控（默认 9090，0 = 禁用）
   HEALTH_PORT: z

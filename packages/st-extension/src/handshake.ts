@@ -47,5 +47,11 @@ export function initHandshake(server: BridgeServer, opts: HandshakeOptions): voi
     }
     server.setCurrentPhase('ready');
     server.sendHandshake('ready');
+
+    // 静默触发自动进行 ST LLM API 状态连接
+    setTimeout(() => {
+      const btn = document.getElementById('api_button_openai');
+      if (btn) btn.click();
+    }, 500);
   });
 }

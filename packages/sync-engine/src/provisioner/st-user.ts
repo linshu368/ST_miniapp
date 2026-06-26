@@ -37,9 +37,14 @@ export function deriveUserPassword(handle: string): string {
  */
 async function getAdminSessionCookie(): Promise<string> {
   const url = `${config.ST_BASE_URL}/api/users/login`;
+  const csrf = await fetchCsrfToken();
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: csrf.cookie,
+      'X-CSRF-Token': csrf.token,
+    },
     body: JSON.stringify({
       handle: config.ST_ADMIN_USERNAME,
       password: config.ST_ADMIN_PASSWORD,
@@ -52,19 +57,18 @@ async function getAdminSessionCookie(): Promise<string> {
   }
 
   // ST 通过 Set-Cookie 传 connect.sid
-  const setCookie = res.headers.get('set-cookie');
-  if (!setCookie) {
+  const responseCookies = res.headers.getSetCookie?.() ?? [];
+  const fallback = res.headers.get('set-cookie');
+  if (responseCookies.length === 0 && fallback) responseCookies.push(fallback);
+  const allCookies = [...csrf.setCookies, ...responseCookies];
+  if (allCookies.length === 0) {
     throw new StUserError('ST 管理员登录响应中未包含 Set-Cookie，无法建立 session');
   }
 
   // ST 使用 cookie-session，会同时下发 session + session.sig 两个 cookie
   // 必须同时携带两个 cookie，ST 才能通过签名校验，否则返回 403
   // 使用 getSetCookie() 获取所有 Set-Cookie 行，提取各自的 name=value 部分后合并
-  const allCookies = res.headers.getSetCookie?.() ?? [setCookie];
-  const cookieValue = allCookies
-    .map((c) => c.split(';')[0]?.trim())
-    .filter(Boolean)
-    .join('; ');
+  const cookieValue = mergeCookieHeader(undefined, allCookies);
   if (!cookieValue) {
     throw new StUserError('Set-Cookie 格式异常，无法提取 cookie 值');
   }
@@ -101,11 +105,14 @@ export async function ensureStUser(opts: CreateUserOptions): Promise<CreateUserR
   }
 
   const url = `${config.ST_BASE_URL}/api/users/create`;
+  const csrf = await fetchCsrfToken(adminCookie);
+  adminCookie = csrf.cookie;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Cookie: adminCookie,
+      'X-CSRF-Token': csrf.token,
     },
     body: JSON.stringify({
       handle,
@@ -137,4 +144,55 @@ export class StUserError extends Error {
     super(message);
     this.name = 'StUserError';
   }
+}
+
+async function fetchCsrfToken(cookie?: string): Promise<{
+  token: string;
+  cookie: string;
+  setCookies: string[];
+}> {
+  const res = await fetch(`${config.ST_BASE_URL}/csrf-token`, {
+    headers: cookie ? { Cookie: cookie } : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new StUserError(`ST CSRF token 获取失败（${res.status}）：${text}`);
+  }
+
+  const body = (await res.json()) as { token?: string };
+  if (!body.token) {
+    throw new StUserError('ST CSRF token 响应中缺少 token');
+  }
+
+  const setCookies = res.headers.getSetCookie?.() ?? [];
+  const fallback = res.headers.get('set-cookie');
+  if (setCookies.length === 0 && fallback) setCookies.push(fallback);
+
+  return {
+    token: body.token,
+    cookie: mergeCookieHeader(cookie, setCookies),
+    setCookies,
+  };
+}
+
+function mergeCookieHeader(existing: string | undefined, setCookies: string[]): string {
+  const parts = new Map<string, string>();
+
+  for (const part of existing?.split(';') ?? []) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    parts.set(trimmed.slice(0, eq), trimmed);
+  }
+
+  for (const setCookie of setCookies) {
+    const cookiePart = setCookie.split(';')[0]?.trim();
+    if (!cookiePart) continue;
+    const eq = cookiePart.indexOf('=');
+    if (eq <= 0) continue;
+    parts.set(cookiePart.slice(0, eq), cookiePart);
+  }
+
+  return Array.from(parts.values()).join('; ');
 }

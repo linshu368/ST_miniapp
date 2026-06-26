@@ -65,6 +65,11 @@ export class MiniappWalletRepository {
     return (data as MiniappWalletRow | null) ?? null;
   }
 
+  async deduct(userId: string, _amount: number): Promise<MiniappWalletRow> {
+    // Credit deduction is disabled; keep this compatibility method for upstream callers.
+    return this.getOrCreate(userId);
+  }
+
   async getDailyCheckinStatus(userId: string): Promise<DailyCheckinStatus> {
     const { data: configRow, error: configError } = await this.db
       .from('runtime_config')

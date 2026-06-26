@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Search, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -9,7 +10,6 @@ import { Input } from '@/components/ui/input';
 import { useCharactersQuery } from '@/lib/api/characters';
 
 import { CharacterCard } from './character-card';
-import { CharacterDetailSheet } from './character-detail-sheet';
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -34,8 +34,8 @@ function scoreMatch(
 }
 
 export function CharacterGallery() {
+  const router = useRouter();
   const { data, isLoading, isError } = useCharactersQuery();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
@@ -141,11 +141,17 @@ export function CharacterGallery() {
       ) : (
         <div className="grid grid-cols-2 gap-3 px-4 pb-10 pt-2">
           {filtered.map((c) => (
-            <CharacterCard key={c.id} character={c} onSelect={setSelectedId} />
+            <CharacterCard
+              key={c.id}
+              character={c}
+              onSelect={() => {
+                // 按照当前架构要求，不需要详情页，直接跳转到对话页
+                router.push(`/tavern/${c.id}`);
+              }}
+            />
           ))}
         </div>
       )}
-      <CharacterDetailSheet characterId={selectedId} onClose={() => setSelectedId(null)} />
     </>
   );
 }

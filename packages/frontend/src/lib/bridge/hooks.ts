@@ -1,18 +1,22 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { EventName, EventPayloadMap, STMirrorState } from '@miniapp/bridge-protocol';
 import type { BridgeStatus } from './state-machine';
-import { getBridgeClient } from './singleton';
+import { getBridgeClient, getBridgeClientOrNull } from './singleton';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 
 export function useBridgeStatus(): BridgeStatus {
   const subscribe = useRef((onStoreChange: () => void) => {
-    const client = getBridgeClient();
+    const client = getBridgeClientOrNull();
+    if (!client) {
+      window.addEventListener('miniapp:bridge-client-ready', onStoreChange);
+      return () => window.removeEventListener('miniapp:bridge-client-ready', onStoreChange);
+    }
     return client.onStatusChange(onStoreChange);
   }).current;
 
   const getSnapshot = useRef(() => {
-    const client = getBridgeClient();
-    return client.getStatus();
+    const client = getBridgeClientOrNull();
+    return client?.getStatus() ?? 'idle';
   }).current;
 
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
