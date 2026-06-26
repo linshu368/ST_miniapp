@@ -2,20 +2,21 @@
 
 import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { platformAction } from '@/lib/bridge';
+import { platformAction, useBridgeStatus } from '@/lib/bridge';
 import { ModelTierSwitcher } from '@/components/tavern/model-tier-switcher';
 import { ChatSidebar } from '@/components/tavern/chat-sidebar';
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
+  const bridgeStatus = useBridgeStatus();
 
   useEffect(() => {
-    if (!characterId) return;
+    if (!characterId || bridgeStatus !== 'ready') return;
     const avatar = `platform_${characterId}.png`;
     platformAction('selectCharacter', { avatar }).catch((err) => {
       console.error('[TavernChatPage] selectCharacter failed:', err);
     });
-  }, [characterId]);
+  }, [bridgeStatus, characterId]);
 
   return (
     <div className="relative w-full h-full">

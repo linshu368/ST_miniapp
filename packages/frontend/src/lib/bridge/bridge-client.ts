@@ -52,8 +52,11 @@ export class BridgeClient {
   private readonly eventListeners = new Map<EventName, Set<EventCallback>>();
 
   private totalTimer: ReturnType<typeof setTimeout> | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private started = false;
+
+  private static readonly PING_INTERVAL_MS = 2500;
 
   constructor(iframeRef: () => HTMLIFrameElement | null, options?: BridgeClientOptions) {
     this.iframeRef = iframeRef;
@@ -96,6 +99,7 @@ export class BridgeClient {
       this.totalTimer = null;
     }
 
+    this.stopPingLoop();
     this.rejectAllPending('Bridge client stopped');
     this.buffer.clear();
     this.stateMachine.reset();
@@ -275,9 +279,14 @@ export class BridgeClient {
         sendBuffered: (requests) => this.flushBufferedRequests(requests),
       });
 
-      if (msg.phase === 'ready' && this.totalTimer) {
-        clearTimeout(this.totalTimer);
-        this.totalTimer = null;
+      if (msg.phase === 'ready') {
+        if (this.totalTimer) {
+          clearTimeout(this.totalTimer);
+          this.totalTimer = null;
+        }
+        // 连接就绪后开始周期性 ping，拉取 ST 镜像状态（currentModel/currentChatId 等），
+        // 供前端 mirror store 同步（档位高亮 / 当前对话高亮）。
+        this.startPingLoop();
       }
     } catch (e) {
       this.disconnect(e instanceof Error ? e.message : 'Handshake failed');
@@ -314,7 +323,35 @@ export class BridgeClient {
     }
   }
 
+  private startPingLoop(): void {
+    if (this.pingTimer) return;
+    this.sendPing();
+    this.pingTimer = setInterval(() => this.sendPing(), BridgeClient.PING_INTERVAL_MS);
+  }
+
+  private stopPingLoop(): void {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  private sendPing(): void {
+    const iframe = this.iframeRef();
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      {
+        channel: BRIDGE_CHANNEL,
+        protocolVersion: PROTOCOL_VERSION,
+        type: 'ping' as const,
+        timestamp: Date.now(),
+      },
+      '*'
+    );
+  }
+
   private disconnect(reason: string): void {
+    this.stopPingLoop();
     this.stateMachine.transition({ type: 'DISCONNECT', reason });
     this.rejectAllPending(reason);
     this.buffer.clear();
