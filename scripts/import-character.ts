@@ -5,23 +5,13 @@
  * 将一张酒馆角色卡 PNG 上传到 Supabase Storage 并写入 miniapp.characters 表。
  *
  * 用法：
- *   pnpm import-character <png-path> [options]
- *
- * 选项：
- *   --name <name>           覆盖 PNG 内嵌的角色名
- *   --sort-order <n>        大厅展示顺序（默认 0）
- *   --set-as-fallback       将此卡设为系统兜底卡（角色引用失效时的回退值，
- *                           不是"用户默认进入的角色"。该配置用户感知不到。）
- *   --env <path>            指定 .env 文件路径（默认 packages/sync-engine/.env）
- *   --help                  显示帮助信息
- *
- * 需要的环境变量：
- *   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY（从 .env 文件读取）
+ *   pnpm import-character <png-path> -- [options]
  *
  * 示例：
- *   pnpm import-character ./角色卡.png
- *   pnpm import-character ./角色卡.png --set-as-fallback --sort-order 1
- *   pnpm import-character ./角色卡.png --name "自定义名字"
+ *   pnpm import-character ./角色卡.png -- --env scripts/.env.test
+ *   pnpm import-character ./角色卡.png -- --env scripts/.env.prod --sort-order 1
+ *
+ * 完整文档见 docs/角色卡上架操作手册.md
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -134,8 +124,9 @@ function printHelp(): void {
 
 示例：
   pnpm import-character ./角色卡.png
-  pnpm import-character ./角色卡.png -- --set-as-fallback --sort-order 1
-  pnpm import-character ./角色卡.png -- --name "自定义名字"
+  pnpm import-character ./角色卡.png -- --sort-order 1
+  pnpm import-character ./角色卡.png -- --set-as-fallback
+  pnpm import-character ./角色卡.png -- --name "自定义名字" --sort-order 2
 `.trim()
   );
 }
@@ -169,6 +160,8 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (arg === '--env') {
       envPath = args[++i] ?? '';
       if (!envPath) fatal('--env 需要一个路径参数');
+    } else if (arg === '--') {
+      continue;
     } else if (arg.startsWith('-')) {
       fatal(`未知选项：${arg}（使用 --help 查看用法）`);
     } else {
@@ -182,6 +175,13 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
+
+function beijingTimestamp(date = new Date()): string {
+  return new Date(date.getTime() + 8 * 60 * 60 * 1000)
+    .toISOString()
+    .replace('T', ' ')
+    .replace('Z', '');
+}
 
 function fatal(msg: string): never {
   console.error(`\n❌ 错误：${msg}\n`);
@@ -229,6 +229,7 @@ async function main() {
 
   // 3. 生成 UUID
   const uuid = randomUUID();
+  const now = beijingTimestamp();
   const storagePath = `characters/platform_${uuid}.png`;
   console.log(`\n🆔 UUID：${uuid}`);
 
@@ -277,6 +278,9 @@ async function main() {
     avatar_url: '',
     enabled: true,
     sort_order: cli.sortOrder,
+    raw_card: card,
+    created_at: now,
+    updated_at: now,
   });
 
   if (insertError) {
