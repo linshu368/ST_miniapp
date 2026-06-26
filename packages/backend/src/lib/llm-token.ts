@@ -11,7 +11,9 @@
 
 import { createHmac } from 'node:crypto';
 
-const LLM_PROXY_TOKEN_SECRET = process.env.LLM_PROXY_TOKEN_SECRET || '';
+function getTokenSecret(): string {
+  return process.env.LLM_PROXY_TOKEN_SECRET || process.env.ST_USER_PASSWORD_SECRET || '';
+}
 
 interface PlatformTokenPayload {
   userId: string;
@@ -37,14 +39,15 @@ function hmacSign(input: string, secret: string): string {
  * 仅 backend 进程调用（internal endpoint / bridge 首登流程）。
  */
 export function signPlatformToken(userId: string): string {
-  if (!LLM_PROXY_TOKEN_SECRET) {
+  const secret = getTokenSecret();
+  if (!secret) {
     throw new Error('LLM_PROXY_TOKEN_SECRET 未配置，无法签发 platformToken');
   }
 
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload: PlatformTokenPayload = { userId, iat: Math.floor(Date.now() / 1000), ver: 1 };
   const payloadB64 = base64UrlEncode(JSON.stringify(payload));
-  const signature = hmacSign(`${header}.${payloadB64}`, LLM_PROXY_TOKEN_SECRET);
+  const signature = hmacSign(`${header}.${payloadB64}`, secret);
 
   return `${header}.${payloadB64}.${signature}`;
 }
@@ -54,13 +57,14 @@ export function signPlatformToken(userId: string): string {
  * 签名不匹配或格式异常时返回 null（不抛异常，由调用方决定返回码）。
  */
 export function verifyPlatformToken(token: string): string | null {
-  if (!LLM_PROXY_TOKEN_SECRET) return null;
+  const secret = getTokenSecret();
+  if (!secret) return null;
 
   const parts = token.split('.');
   if (parts.length !== 3) return null;
 
   const [header, payloadB64, signature] = parts as [string, string, string];
-  const expectedSig = hmacSign(`${header}.${payloadB64}`, LLM_PROXY_TOKEN_SECRET);
+  const expectedSig = hmacSign(`${header}.${payloadB64}`, secret);
 
   if (signature.length !== expectedSig.length) return null;
   const sigBuf = Buffer.from(signature, 'base64url');

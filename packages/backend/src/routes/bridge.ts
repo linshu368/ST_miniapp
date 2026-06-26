@@ -138,24 +138,6 @@ async function triggerProvisionSync(
   log(`[bridge] 新用户同步 provision 完成（userId=${userId}）`);
 }
 
-// ─── 异步触发 provision（老用户再次登录，不阻塞登录流程） ────────────────────
-
-function triggerProvisionAsync(userId: string, log: (msg: string) => void): void {
-  fetch(`${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}`, {
-    method: 'POST',
-  })
-    .then((res) => {
-      if (res.ok) {
-        log(`[bridge] provision 已触发（userId=${userId}，状态=${res.status}）`);
-      } else {
-        log(`[bridge] provision 触发失败（userId=${userId}，状态=${res.status}）`);
-      }
-    })
-    .catch((err) => {
-      log(`[bridge] provision 触发异常（userId=${userId}）：${err}`);
-    });
-}
-
 // ─── 路由注册 ─────────────────────────────────────────────────────────────────
 
 export default async function bridgeRoutes(app: FastifyInstance) {
@@ -241,7 +223,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           );
         } else {
           log(`[bridge] 已初始化用户再次登录（handle=${stHandle}）`);
-          triggerProvisionAsync(dbUser.id, log);
+          await triggerProvisionSync(dbUser.id, log, true);
         }
 
         // ── 4. 登录 ST，获取 session cookie（老用户路径）───────────────

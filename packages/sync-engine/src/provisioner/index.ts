@@ -126,7 +126,7 @@ export async function provision(
   // ── 4.5 order=30：写 secrets.json（API Key，资产层）────────────────────────
   log('[provision] 步骤 4.5/5：写入 secrets.json（order=30）...');
   try {
-    writeSecrets(stHandle, apiConfig);
+    writeSecrets(stHandle, apiConfig, userId);
     if (apiConfig) {
       log(`[provision]   secrets.json 写入完成（provider=${apiConfig.config_payload.provider}）`);
     } else {
