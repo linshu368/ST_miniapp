@@ -20,6 +20,7 @@ import type { PlatformSettingsRow, UserSettingsRow } from '../fetcher.js';
 
 const CHAR_UUID_FALLBACK = '11111111-1111-4111-8111-000000000001';
 const CHAR_UUID_SECOND = '22222222-2222-4222-8222-000000000002';
+const LLM_PROXY_URL = 'http://localhost:3001/api/platform/llm-proxy/v1';
 
 const makePlatformSettings = (
   overrides: Partial<PlatformSettingsRow> = {}
@@ -48,6 +49,20 @@ const makeUserSettings = (overrides: Partial<UserSettingsRow> = {}): UserSetting
   ...overrides,
 });
 
+const mergeSettingsForTest = (
+  platformSettings: PlatformSettingsRow,
+  userSettings: UserSettingsRow | null,
+  availableCharIds: string[],
+  fallbackCharacterId: string | undefined
+) =>
+  mergeSettings(
+    platformSettings,
+    userSettings,
+    availableCharIds,
+    fallbackCharacterId,
+    LLM_PROXY_URL
+  );
+
 // ─── 测试套件 ──────────────────────────────────────────────────────────────────
 
 describe('mergeSettings', () => {
@@ -56,7 +71,7 @@ describe('mergeSettings', () => {
     const platform = makePlatformSettings();
     const availableIds = [CHAR_UUID_FALLBACK];
 
-    const result = mergeSettings(platform, null, availableIds, CHAR_UUID_FALLBACK);
+    const result = mergeSettingsForTest(platform, null, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(false);
     expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
@@ -81,7 +96,7 @@ describe('mergeSettings', () => {
     });
     const availableIds = [CHAR_UUID_FALLBACK];
 
-    const result = mergeSettings(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.settings['oai_settings.prompts']).toEqual([{ enabled: false, custom: true }]);
     expect(result.settings['theme']).toBe('dark');
@@ -100,7 +115,7 @@ describe('mergeSettings', () => {
     });
     const availableIds = [CHAR_UUID_FALLBACK];
 
-    const result = mergeSettings(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.settings['fontSize']).toBe(14);
     expect(result.settings['secretField']).toBeUndefined();
@@ -116,7 +131,7 @@ describe('mergeSettings', () => {
     });
     const availableIds = [CHAR_UUID_FALLBACK, CHAR_UUID_SECOND];
 
-    const result = mergeSettings(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(false);
     expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_SECOND}.png`);
@@ -133,7 +148,7 @@ describe('mergeSettings', () => {
     });
     const availableIds = [CHAR_UUID_FALLBACK];
 
-    const result = mergeSettings(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(true);
     expect(result.invalidRefValue).toBe(`platform_${MISSING_UUID}.png`);
@@ -148,7 +163,7 @@ describe('mergeSettings', () => {
       settings_jsonb: { active_character: `platform_${MISSING_UUID}.png` },
     });
 
-    const result = mergeSettings(platform, userSettings, [], undefined);
+    const result = mergeSettingsForTest(platform, userSettings, [], undefined);
 
     expect(result.hadInvalidRef).toBe(true);
     expect(result.settings['active_character']).toBe(`platform_${MISSING_UUID}.png`);
@@ -164,7 +179,7 @@ describe('mergeSettings', () => {
     });
     const availableIds = [CHAR_UUID_FALLBACK];
 
-    const result = mergeSettings(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(true);
     expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
@@ -180,7 +195,7 @@ describe('mergeSettings', () => {
       },
     });
 
-    mergeSettings(
+    mergeSettingsForTest(
       platform,
       userSettings,
       [CHAR_UUID_FALLBACK, CHAR_UUID_SECOND],

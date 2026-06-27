@@ -11,7 +11,6 @@
 
 import { get as lodashGet, set as lodashSet, cloneDeep } from 'lodash-es';
 import type { PlatformSettingsRow, UserSettingsRow } from './fetcher.js';
-import { config } from '../lib/config.js';
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────────
 
@@ -34,12 +33,14 @@ export interface MergedSettings {
  * @param userSettings           - 分区 B 该用户最新行（null 表示新用户，完全用 A 默认值）
  * @param availableCharIds       - 本次已下发的角色卡 id 列表（用于 character_ref 校验）
  * @param fallbackCharacterId    - 系统兜底卡 ID（character_ref 失效时的回退值，来自 runtime_config）
+ * @param llmProxyUrl            - 写入 ST settings 的平台 LLM 代理地址
  */
 export function mergeSettings(
   platformSettings: PlatformSettingsRow,
   userSettings: UserSettingsRow | null,
   availableCharIds: string[],
-  fallbackCharacterId: string | undefined
+  fallbackCharacterId: string | undefined,
+  llmProxyUrl: string
 ): MergedSettings {
   // 深拷贝 A 作为 base（绝不修改原始对象）
   const merged = cloneDeep(platformSettings.settings_jsonb) as Record<string, unknown>;
@@ -88,9 +89,9 @@ export function mergeSettings(
   }
 
   // 强制覆写 LLM endpoint 为平台代理网关地址，确保 ST 的 LLM 调用经 backend 代理（注入 key + 计费）。
-  // 地址来自环境变量（本地默认 backend dev；prod/staging 覆盖为对外可达 URL），不依赖 DB 内容。
-  lodashSet(merged, 'oai_settings.reverse_proxy', config.LLM_PROXY_URL);
-  lodashSet(merged, 'oai_settings.custom_url', config.LLM_PROXY_URL);
+  // 地址由调用方从配置层传入，避免 merge 纯函数直接依赖全局环境变量。
+  lodashSet(merged, 'oai_settings.reverse_proxy', llmProxyUrl);
+  lodashSet(merged, 'oai_settings.custom_url', llmProxyUrl);
 
   // 强制设置上下文上限：默认模板的 openai_max_context=4095 过小，大角色卡（人设 + 内置正则）
   // 组装后的提示词极易超限，触发「必要的提示词超过了上下文大小」并截断历史。

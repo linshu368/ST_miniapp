@@ -162,7 +162,8 @@ export async function provision(
       platformSettings,
       userSettings,
       availableCharIds,
-      systemFallbackCharacterId ?? undefined
+      systemFallbackCharacterId ?? undefined,
+      config.LLM_PROXY_URL
     );
   } catch (err) {
     throw new ProvisionError(`merge settings 失败：${err}`, err);
