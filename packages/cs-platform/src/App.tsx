@@ -53,8 +53,7 @@ type Membership = 'active' | 'chatted_left';
 
 export default function App() {
   const qc = useQueryClient();
-  const [token, setToken] = useState(getCsAdminToken());
-  const [operatorId, setOperator] = useState(getCsOperatorId());
+  const [authToken, setAuthToken] = useState(getCsAdminToken());
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<{
     user: CsUserData;
@@ -64,9 +63,9 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
 
   const personasQuery = useQuery({
-    queryKey: ['cs', 'personas', token],
+    queryKey: ['cs', 'personas', authToken],
     queryFn: csApi.personas,
-    enabled: !!token,
+    enabled: !!authToken,
   });
   const personas = personasQuery.data?.personas ?? [];
   const selectedPersona =
@@ -100,14 +99,27 @@ export default function App() {
     onError: (error) => setToast(error instanceof Error ? error.message : '刷新失败'),
   });
 
-  const saveAuth = () => {
-    setCsAdminToken(token.trim());
-    setCsOperatorId(operatorId.trim() || 'cs-operator');
-    void qc.invalidateQueries({ queryKey: ['cs'] });
+  const handleLogout = () => {
+    setCsAdminToken('');
+    setAuthToken('');
+    setSelectedPersonaId(null);
+    setSelectedUser(null);
+    qc.removeQueries({ queryKey: ['cs'] });
   };
 
   const activeUsers = usersQuery.data?.active ?? [];
   const chattedLeftUsers = usersQuery.data?.chatted_left ?? [];
+
+  if (!authToken) {
+    return (
+      <LoginPage
+        onLogin={(nextToken) => {
+          setAuthToken(nextToken);
+          void qc.invalidateQueries({ queryKey: ['cs'] });
+        }}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -122,17 +134,13 @@ export default function App() {
           </button>
         </header>
 
-        <section className="auth-card">
-          <label>Admin Token</label>
-          <input
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            placeholder="x-cs-admin-token"
-          />
-          <label>Operator</label>
-          <input value={operatorId} onChange={(event) => setOperator(event.target.value)} />
-          <button className="primary-button" onClick={saveAuth}>
-            保存登录
+        <section className="workspace-account">
+          <span>
+            <strong>{getCsOperatorId()}</strong>
+            <small>已连接 CS 后台</small>
+          </span>
+          <button className="ghost-button" onClick={handleLogout}>
+            退出
           </button>
         </section>
 
@@ -207,9 +215,7 @@ export default function App() {
             />
           </>
         ) : (
-          <EmptyState
-            text={token ? '暂无画像簇，先新建一个。' : '先填写 Admin Token 并保存登录。'}
-          />
+          <EmptyState text="暂无画像簇，先新建一个。" />
         )}
       </main>
 
@@ -254,6 +260,87 @@ export default function App() {
         </button>
       )}
     </div>
+  );
+}
+
+function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
+  const [token, setToken] = useState(getCsAdminToken());
+  const [operatorId, setOperatorId] = useState(getCsOperatorId());
+  const [error, setError] = useState<string | null>(null);
+
+  const loginMutation = useMutation({
+    mutationFn: async () => {
+      const normalizedToken = token.trim();
+      const normalizedOperatorId = operatorId.trim() || 'cs-operator';
+      if (!normalizedToken) throw new Error('请输入 Admin Token');
+
+      setCsAdminToken(normalizedToken);
+      setCsOperatorId(normalizedOperatorId);
+      await csApi.personas();
+      return normalizedToken;
+    },
+    onSuccess: (normalizedToken) => {
+      setError(null);
+      onLogin(normalizedToken);
+    },
+    onError: (loginError) => {
+      setCsAdminToken('');
+      setError(loginError instanceof Error ? loginError.message : '登录失败，请检查 Token');
+    },
+  });
+
+  return (
+    <main className="login-page">
+      <section className="login-hero">
+        <p className="eyebrow">CS Platform</p>
+        <h1>内部用户回访工作台</h1>
+        <p>
+          统一管理 SQL 用户分层、Telegram 1V1 回访 SOP、消息记录和 .xlsx
+          导出。请先完成内部身份校验。
+        </p>
+        <div className="login-metrics">
+          <span>
+            <strong>SQL</strong>
+            <small>实时画像簇</small>
+          </span>
+          <span>
+            <strong>1V1</strong>
+            <small>Telegram 回访</small>
+          </span>
+          <span>
+            <strong>XLSX</strong>
+            <small>审计导出</small>
+          </span>
+        </div>
+      </section>
+
+      <section className="login-card">
+        <p className="eyebrow">Secure Sign In</p>
+        <h2>登录 CS 后台</h2>
+        <label>Admin Token</label>
+        <input
+          value={token}
+          onChange={(event) => setToken(event.target.value)}
+          placeholder="输入 X-CS-Admin-Token"
+          type="password"
+          autoFocus
+        />
+        <label>Operator ID</label>
+        <input
+          value={operatorId}
+          onChange={(event) => setOperatorId(event.target.value)}
+          placeholder="例如 cs-operator"
+        />
+        {error && <p className="login-error">{error}</p>}
+        <button
+          className="primary-button"
+          onClick={() => loginMutation.mutate()}
+          disabled={loginMutation.isPending}
+        >
+          {loginMutation.isPending ? '校验中...' : '进入工作台'}
+        </button>
+      </section>
+    </main>
   );
 }
 
