@@ -5,6 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ShieldCheck } from 'lucide-react';
 import type { PaymentType } from '@miniapp/shared';
 
+import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+
 import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
@@ -71,14 +75,15 @@ function RechargePageContent() {
       <div className="h-1 w-full shrink-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
 
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
-        <button
-          type="button"
-          aria-label="返回"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={goBack}
-          className="-ml-2 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:text-white"
+          className="-ml-2 rounded-full text-slate-400 hover:text-white"
+          aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
-        </button>
+        </Button>
         <h1 className="text-lg font-black tracking-wide">星尘商店</h1>
       </header>
 
@@ -97,9 +102,9 @@ function RechargePageContent() {
         <section className="flex flex-col gap-3 py-4">
           {isLoading && plans.length === 0
             ? Array.from({ length: 4 }).map((_, i) => (
-                <div
+                <Skeleton
                   key={i}
-                  className="h-[68px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/40"
+                  className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
                 />
               ))
             : plans.map((plan) => (
@@ -125,10 +130,13 @@ function RechargePageContent() {
         className="shrink-0 border-t border-slate-800 bg-[#0A0A0A]/95 backdrop-blur-md"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="flex items-center gap-2 px-4 py-3">
-          <div role="radiogroup" aria-label="支付方式" className="flex shrink-0 gap-1.5">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div role="radiogroup" aria-label="支付方式" className="flex shrink-0 gap-2">
             {PAYMENT_TYPES.map((t) => {
               const active = paymentType === t;
+              const isAlipay = t === 'alipay';
+              const Icon = isAlipay ? AlipayIcon : WeChatPayIcon;
+
               return (
                 <button
                   key={t}
@@ -140,27 +148,27 @@ function RechargePageContent() {
                     setPaymentType(t);
                   }}
                   className={cn(
-                    'rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors',
+                    'flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all',
                     active
-                      ? t === 'alipay'
-                        ? 'border-blue-500 bg-blue-500/15 text-blue-300'
-                        : 'border-green-500 bg-green-500/15 text-green-300'
-                      : 'border-slate-700 bg-slate-900/50 text-slate-400'
+                      ? isAlipay
+                        ? 'border-blue-500 bg-blue-500/15 text-blue-400'
+                        : 'border-[#09B83E] bg-[#09B83E]/15 text-[#09B83E]'
+                      : 'border-slate-700 bg-slate-900/50 text-slate-400 hover:bg-slate-800'
                   )}
                 >
+                  <Icon className="h-4 w-4" aria-hidden />
                   {paymentTypeLabel(t)}
                 </button>
               );
             })}
           </div>
-          <button
-            type="button"
+          <Button
             disabled={!selectedPlan || createOrder.isPending}
             onClick={handleSubmit}
             className={cn(
-              'flex h-10 flex-1 items-center justify-center gap-1 rounded-xl text-sm font-bold transition-all',
+              'flex-1 h-10 rounded-xl font-bold transition-all',
               selectedPlan && !createOrder.isPending
-                ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md shadow-pink-500/30'
+                ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:opacity-90 shadow-md shadow-pink-500/30 border-0'
                 : 'bg-slate-800 text-slate-500'
             )}
           >
@@ -169,7 +177,7 @@ function RechargePageContent() {
               : selectedPlan
                 ? `立即支付 ¥${formatYuanShort(selectedPlan.price_cents)}`
                 : '请选择套餐'}
-          </button>
+          </Button>
         </div>
       </div>
     </main>
@@ -181,14 +189,14 @@ function RechargePageSkeleton() {
     <main className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white">
       <div className="h-1 w-full shrink-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
-        <div className="h-8 w-8 rounded-full bg-slate-900" />
-        <div className="h-5 w-24 rounded bg-slate-900" />
+        <Skeleton className="h-8 w-8 rounded-full bg-slate-900" />
+        <Skeleton className="h-5 w-24 rounded bg-slate-900" />
       </header>
       <div className="flex flex-1 flex-col gap-3 px-4 py-8">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div
+          <Skeleton
             key={i}
-            className="h-[68px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/40"
+            className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
           />
         ))}
       </div>

@@ -14,6 +14,8 @@ import {
 import type { PaymentOrder, PaymentOrderStatus } from '@miniapp/shared';
 
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { usePaymentOrdersInfiniteQuery } from '@/lib/api/payment';
 import {
@@ -68,52 +70,52 @@ export default function OrdersPage() {
   }, [query]);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background">
-      <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-3 backdrop-blur-md">
-        <button
-          type="button"
-          aria-label="返回"
+    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-[#080014] text-white">
+      <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-white/5 bg-[#080014]/80 px-3 py-3 backdrop-blur-xl pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={goBack}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+          className="rounded-full text-white/60 hover:text-white hover:bg-white/10"
+          aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
-        </button>
-        <h1 className="text-base font-semibold">我的订单</h1>
+        </Button>
+        <h1 className="text-base font-bold tracking-wide">我的订单</h1>
       </header>
 
       <div
         role="tablist"
         aria-label="订单筛选"
-        className="flex gap-1 border-b border-border/60 px-3 py-2"
+        className="flex gap-2 border-b border-white/5 px-4 py-3 bg-[#080014]/60 backdrop-blur-md"
       >
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
-            <button
+            <Button
               key={t.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 whisper();
                 setTab(t.key);
               }}
               className={cn(
-                'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                'rounded-full px-4 h-8 text-xs font-semibold transition-all',
                 active
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-white/10 text-white'
+                  : 'bg-transparent text-white/40 hover:text-white hover:bg-white/5'
               )}
             >
               {t.label}
-            </button>
+            </Button>
           );
         })}
       </div>
 
-      <section className="flex flex-1 flex-col gap-2 px-3 py-3">
+      <section className="flex flex-1 flex-col gap-3 px-4 py-4">
         {query.isLoading && items.length === 0 ? (
-          <div className="flex items-center justify-center py-16 text-muted-foreground">
+          <div className="flex items-center justify-center py-16 text-white/40">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> 加载中
           </div>
         ) : items.length === 0 ? (
@@ -134,16 +136,21 @@ export default function OrdersPage() {
         <div ref={sentinelRef} aria-hidden className="h-4" />
 
         {query.isFetchingNextPage ? (
-          <div className="flex items-center justify-center py-4 text-xs text-muted-foreground">
+          <div className="flex items-center justify-center py-4 text-xs text-white/40">
             <Loader2 className="mr-2 h-3 w-3 animate-spin" aria-hidden /> 加载更多
           </div>
         ) : !query.hasNextPage && items.length > 0 ? (
-          <div className="py-4 text-center text-xs text-muted-foreground">到底了</div>
+          <div className="py-4 text-center text-xs text-white/20 font-medium tracking-widest">
+            NO MORE
+          </div>
         ) : null}
       </section>
 
       <Sheet open={openOrder !== null} onOpenChange={(open) => !open && setOpenOrder(null)}>
-        <SheetContent side="bottom" className="max-w-md rounded-t-2xl border-t p-0">
+        <SheetContent
+          side="bottom"
+          className="max-w-md rounded-t-[24px] border-t border-white/10 bg-[#120a1f] p-0 shadow-2xl"
+        >
           {openOrder ? <OrderDetail order={openOrder} onClose={() => setOpenOrder(null)} /> : null}
         </SheetContent>
       </Sheet>
@@ -159,11 +166,13 @@ function EmptyState({ tab }: { tab: TabKey }) {
         ? '暂无待支付的订单'
         : tab === 'expired'
           ? '暂无已过期的订单'
-          : '暂无订单';
+          : '这里空空如也';
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center text-muted-foreground">
-      <Clock className="h-10 w-10 opacity-50" aria-hidden />
-      <p className="text-sm">{text}</p>
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center text-white/30">
+      <div className="rounded-full bg-white/5 p-4 mb-2">
+        <Clock className="h-8 w-8 opacity-50" aria-hidden />
+      </div>
+      <p className="text-[13px] font-medium tracking-wide">{text}</p>
     </div>
   );
 }
@@ -175,28 +184,40 @@ function OrderRow({ order, onOpen }: { order: PaymentOrder; onOpen: () => void }
     <button
       type="button"
       onClick={onOpen}
-      className="group flex items-center justify-between rounded-2xl border border-border/60 bg-card/60 p-4 text-left transition-colors hover:bg-card"
+      className="group flex items-center justify-between rounded-[20px] border border-white/5 bg-white/[0.03] p-4 text-left transition-all hover:bg-white/[0.06]"
     >
-      <div className="flex items-center gap-3">
-        <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', tone)}>
+      <div className="flex items-center gap-4">
+        <div
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/5',
+            tone
+          )}
+        >
           <Icon className="h-5 w-5" aria-hidden />
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold">¥ {formatYuanShort(order.amount_cents)}</span>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-[15px] font-bold text-white tracking-tight">
+              ¥ {formatYuanShort(order.amount_cents)}
+            </span>
+            <span
+              className={cn(
+                'text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-white/5',
+                tone.replace('text-', 'bg-').replace('/15', '/10')
+              )}
+            >
               {orderStatusLabel(order.status)}
             </span>
           </div>
-          <div className="mt-0.5 text-xs text-muted-foreground">
+          <div className="mt-1 text-xs text-white/60">
             {paymentTypeLabel(order.payment_type)} · {formatNumber(total)} 星尘
           </div>
-          <div className="mt-0.5 text-[10px] text-muted-foreground/80">
+          <div className="mt-0.5 text-[10px] text-white/30 font-medium uppercase tracking-wider">
             {formatDateTime(order.created_at)}
           </div>
         </div>
       </div>
-      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+      <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/60 transition-colors" />
     </button>
   );
 }
@@ -204,13 +225,13 @@ function OrderRow({ order, onOpen }: { order: PaymentOrder; onOpen: () => void }
 function statusVisual(status: PaymentOrderStatus) {
   switch (status) {
     case 'completed':
-      return { Icon: CheckCircle2, tone: 'bg-green-500/15 text-green-400' };
+      return { Icon: CheckCircle2, tone: 'text-emerald-400' };
     case 'pending':
-      return { Icon: Clock, tone: 'bg-amber-500/15 text-amber-400' };
+      return { Icon: Clock, tone: 'text-amber-400' };
     case 'expired':
-      return { Icon: XCircle, tone: 'bg-muted text-muted-foreground' };
+      return { Icon: XCircle, tone: 'text-white/40' };
     case 'failed':
-      return { Icon: XCircle, tone: 'bg-destructive/15 text-destructive' };
+      return { Icon: XCircle, tone: 'text-rose-400' };
   }
 }
 
@@ -228,41 +249,47 @@ function OrderDetail({ order, onClose }: { order: PaymentOrder; onClose: () => v
   }, []);
 
   return (
-    <div className="flex flex-col gap-4 p-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-      <div aria-hidden className="mx-auto h-1 w-10 rounded-full bg-border" />
+    <div className="flex flex-col gap-5 p-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] text-white">
+      <div aria-hidden className="mx-auto h-1 w-12 rounded-full bg-white/10 mb-2" />
 
       <div className="flex items-center justify-between">
-        <SheetTitle className="text-base font-semibold">订单明细</SheetTitle>
+        <SheetTitle className="text-lg font-bold text-white">订单明细</SheetTitle>
         <span
           className={cn(
-            'rounded-full px-2 py-0.5 text-[10px] font-semibold',
-            order.status === 'completed' && 'bg-green-500/15 text-green-400',
-            order.status === 'pending' && 'bg-amber-500/15 text-amber-400',
-            order.status === 'expired' && 'bg-muted text-muted-foreground',
-            order.status === 'failed' && 'bg-destructive/15 text-destructive'
+            'rounded-full px-3 py-1 text-[11px] font-bold border border-white/5',
+            order.status === 'completed' && 'bg-emerald-500/10 text-emerald-400',
+            order.status === 'pending' && 'bg-amber-500/10 text-amber-400',
+            order.status === 'expired' && 'bg-white/5 text-white/40',
+            order.status === 'failed' && 'bg-rose-500/10 text-rose-400'
           )}
         >
           {orderStatusLabel(order.status)}
         </span>
       </div>
 
-      <div className="flex items-baseline gap-1">
-        <span className="text-3xl font-black">¥{formatYuanShort(order.amount_cents)}</span>
-        <span className="text-xs text-muted-foreground">
+      <div className="flex items-baseline gap-1 mt-2 mb-2">
+        <span className="text-[40px] font-black tracking-tighter">
+          ¥{formatYuanShort(order.amount_cents)}
+        </span>
+        <span className="text-[13px] font-medium text-white/50 ml-1">
           {paymentTypeLabel(order.payment_type)}
         </span>
       </div>
 
-      <div className="divide-y divide-border/60 rounded-xl border border-border/60 bg-card/60">
+      <div className="divide-y divide-white/5 rounded-[20px] border border-white/10 bg-white/[0.02]">
         <DetailRow label="主积分" value={`${formatNumber(order.credits_amount)} 星尘`} />
         {order.bonus_credits > 0 ? (
           <DetailRow
             label="赠送积分"
             value={`+${formatNumber(order.bonus_credits)} 星尘`}
-            valueClass="text-pink-400"
+            valueClass="text-fuchsia-400"
           />
         ) : null}
-        <DetailRow label="合计到账" value={`${formatNumber(total)} 星尘`} valueClass="font-bold" />
+        <DetailRow
+          label="合计到账"
+          value={`${formatNumber(total)} 星尘`}
+          valueClass="font-bold text-amber-300"
+        />
         <DetailRow label="创建时间" value={formatDateTime(order.created_at)} />
         {order.paid_at ? (
           <DetailRow label="支付时间" value={formatDateTime(order.paid_at)} />
@@ -291,13 +318,13 @@ function OrderDetail({ order, onClose }: { order: PaymentOrder; onClose: () => v
         ) : null}
       </div>
 
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={onClose}
-        className="mt-2 flex h-11 items-center justify-center rounded-xl bg-secondary text-sm font-medium text-secondary-foreground"
+        className="mt-4 h-12 w-full rounded-2xl bg-white/5 text-[15px] font-bold text-white hover:bg-white/10 border border-white/5"
       >
         关闭
-      </button>
+      </Button>
     </div>
   );
 }
@@ -312,9 +339,9 @@ function DetailRow({
   valueClass?: string;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3">
-      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
-      <span className={cn('min-w-0 break-all text-right text-sm', valueClass)}>{value}</span>
+    <div className="flex items-center justify-between gap-4 px-5 py-3.5">
+      <span className="shrink-0 text-[13px] text-white/50 font-medium">{label}</span>
+      <span className={cn('min-w-0 break-all text-right text-[14px]', valueClass)}>{value}</span>
     </div>
   );
 }
@@ -332,11 +359,11 @@ function CopyableText({
     <button
       type="button"
       onClick={onCopy}
-      className="inline-flex items-center gap-1 break-all text-right font-mono text-[11px] text-muted-foreground hover:text-foreground"
+      className="inline-flex items-center gap-1.5 break-all text-right font-mono text-[11px] tracking-wider text-white/50 hover:text-white/80 transition-colors"
     >
       <span>{value}</span>
       <Copy className="h-3 w-3 shrink-0" aria-hidden />
-      {copied ? <span className="text-[10px] text-green-400">已复制</span> : null}
+      {copied ? <span className="text-[10px] text-emerald-400 font-bold ml-1">已复制</span> : null}
     </button>
   );
 }

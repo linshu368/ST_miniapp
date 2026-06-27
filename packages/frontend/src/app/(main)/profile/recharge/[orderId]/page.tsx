@@ -5,6 +5,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, ChevronLeft, Clock, Loader2, XCircle } from 'lucide-react';
 import type { PaymentOrder } from '@miniapp/shared';
 
+import { Button } from '@/components/ui/button';
+
 import { cn } from '@/lib/utils';
 import { usePaymentOrderQuery } from '@/lib/api/payment';
 import {
@@ -14,7 +16,7 @@ import {
   paymentTypeLabel,
   remainingSeconds,
 } from '@/lib/utils/payment';
-import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import { openExternalUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
 export default function PaymentPendingPage() {
   const params = useParams<{ orderId: string }>();
@@ -31,12 +33,19 @@ export default function PaymentPendingPage() {
 
   const { notification } = useHaptic();
   const [congratsFired, setCongratsFired] = useState(false);
+  const [payUrlOpened, setPayUrlOpened] = useState(false);
   useEffect(() => {
     if (order?.status === 'completed' && !congratsFired) {
       notification('success');
       setCongratsFired(true);
     }
   }, [order?.status, congratsFired, notification]);
+
+  useEffect(() => {
+    if (!payUrl || payUrlOpened || order?.status !== 'pending') return;
+    setPayUrlOpened(true);
+    openExternalUrl(payUrl);
+  }, [order?.status, payUrl, payUrlOpened]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -68,14 +77,15 @@ export default function PaymentPendingPage() {
   return (
     <Screen>
       <div className="flex items-center px-5 pt-4">
-        <button
-          type="button"
-          aria-label="返回"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={goBack}
-          className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:text-white"
+          className="-ml-2 rounded-full text-slate-400 hover:text-white"
+          aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
-        </button>
+        </Button>
       </div>
 
       <div className="flex flex-1 flex-col px-5 pb-10 pt-4">
@@ -118,13 +128,13 @@ function ErrorView({ onBack, message }: { onBack: () => void; message: string })
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-10 text-center">
       <XCircle className="h-12 w-12 text-red-400" aria-hidden />
       <div className="text-sm text-slate-300">{message}</div>
-      <button
-        type="button"
+      <Button
+        variant="outline"
         onClick={onBack}
-        className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900"
+        className="px-6 border-slate-700 text-slate-300 hover:bg-slate-900"
       >
         返回
-      </button>
+      </Button>
     </div>
   );
 }
@@ -177,14 +187,12 @@ function PendingView({
       </div>
 
       {payUrl ? (
-        <a
-          href={payUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white shadow-lg shadow-pink-500/40"
+        <Button
+          onClick={() => openExternalUrl(payUrl)}
+          className="h-12 w-full rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white shadow-lg shadow-pink-500/40 hover:opacity-90 border-0"
         >
-          打开支付页
-        </a>
+          重新打开支付页
+        </Button>
       ) : null}
 
       <div className="text-center text-[11px] text-slate-500">
@@ -253,20 +261,19 @@ function CompletedView({
       </div>
 
       <div className="mt-auto flex w-full gap-3 pt-6">
-        <button
-          type="button"
+        <Button
+          variant="outline"
           onClick={onOrders}
-          className="flex h-11 flex-1 items-center justify-center rounded-xl border border-slate-700 text-sm font-medium text-slate-300 hover:bg-slate-900"
+          className="flex-1 h-11 rounded-xl border-slate-700 text-slate-300 hover:bg-slate-900"
         >
           查看订单
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           onClick={onHome}
-          className="flex h-11 flex-1 items-center justify-center rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 text-sm font-bold text-white shadow-lg shadow-pink-500/30"
+          className="flex-1 h-11 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white shadow-lg shadow-pink-500/30 hover:opacity-90 border-0"
         >
           继续探索
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -293,13 +300,12 @@ function TerminalView({ order, onRetry }: { order: PaymentOrder; onRetry: () => 
           value={<span className="font-mono text-[11px] text-slate-400">{order.id}</span>}
         />
       </div>
-      <button
-        type="button"
+      <Button
         onClick={onRetry}
-        className="flex h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 text-sm font-bold text-white shadow-lg shadow-pink-500/30"
+        className="h-11 w-full rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white shadow-lg shadow-pink-500/30 hover:opacity-90 border-0"
       >
         重新下单
-      </button>
+      </Button>
     </div>
   );
 }
