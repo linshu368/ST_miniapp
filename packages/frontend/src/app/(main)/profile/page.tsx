@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Gift, Pencil, Settings, Sparkles } from 'lucide-react';
+import { ChevronRight, Gift, Pencil, Settings, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -27,6 +27,7 @@ export default function ProfilePage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [checkinToast, setCheckinToast] = useState<{ reward: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -35,6 +36,12 @@ export default function ProfilePage() {
       inputRef.current?.select();
     }
   }, [isEditing]);
+
+  useEffect(() => {
+    if (!checkinToast) return;
+    const timer = window.setTimeout(() => setCheckinToast(null), 1500);
+    return () => window.clearTimeout(timer);
+  }, [checkinToast]);
 
   const startEdit = () => {
     setDraft(displayName);
@@ -79,7 +86,11 @@ export default function ProfilePage() {
         <div className="flex items-center gap-2">
           <Button
             disabled={!checkin?.can_claim || claimCheckin.isPending}
-            onClick={() => claimCheckin.mutate()}
+            onClick={() =>
+              claimCheckin.mutate(undefined, {
+                onSuccess: (data) => setCheckinToast({ reward: data.checkin.reward_credits }),
+              })
+            }
             size="sm"
             className="h-9 rounded-full border border-indigo-300/20 bg-indigo-400/15 px-3 text-xs font-bold text-indigo-100 shadow-none hover:bg-indigo-400/25 disabled:border-white/10 disabled:bg-white/5 disabled:text-white/35"
             aria-label="每日签到"
@@ -103,6 +114,38 @@ export default function ProfilePage() {
           </Button>
         </div>
       </header>
+
+      {checkinToast && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/15 px-5 pt-20 backdrop-blur-md">
+          <div
+            role="status"
+            aria-live="polite"
+            className="relative w-full max-w-[320px] overflow-hidden rounded-[28px] border border-white/18 bg-white/[0.08] px-6 py-5 text-center shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/10"
+          >
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(129,140,248,0.36),transparent_58%)]" />
+            <button
+              type="button"
+              onClick={() => setCheckinToast(null)}
+              className="absolute right-3 top-3 z-10 rounded-full bg-white/10 p-1.5 text-white/70 transition hover:bg-white/20 hover:text-white"
+              aria-label="关闭签到提示"
+            >
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+            <div className="relative">
+              <p className="text-xs font-semibold tracking-[0.22em] text-indigo-100/70">
+                DAILY CHECK-IN
+              </p>
+              <div className="mx-auto mt-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-indigo-200/20 bg-indigo-300/15 text-indigo-100 shadow-[0_0_40px_rgba(99,102,241,0.28)]">
+                <Gift className="h-6 w-6" aria-hidden />
+              </div>
+              <h2 className="mt-4 text-xl font-black tracking-tight text-white">签到成功</h2>
+              <p className="mt-2 text-sm font-medium text-white/72">
+                星尘 +{checkinToast.reward} 已到账，明天继续来领取。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 身份：页面重心；姓名可点击编辑 */}
       <section className="mt-8 flex flex-col items-center gap-4 px-5 relative z-10">
