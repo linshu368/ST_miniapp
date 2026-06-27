@@ -14,6 +14,7 @@
  */
 
 import { getSupabaseClient } from '../lib/supabase.js';
+import { config } from '../lib/config.js';
 import { fetchProvisionData } from './fetcher.js';
 import { mergeSettings } from './merger.js';
 import { writeCharacters, writePresets, writeSettings, writeSecrets } from './writer.js';
@@ -71,7 +72,15 @@ export async function provision(
   } catch (err) {
     throw new ProvisionError(`拉取数据失败：${err}`, err);
   }
-  const { stHandle, characters, presets, platformSettings, apiConfig, userSettings } = data;
+  const {
+    stHandle,
+    characters,
+    presets,
+    platformSettings,
+    apiConfig,
+    userSettings,
+    systemFallbackCharacterId,
+  } = data;
 
   log(
     `[provision]   handle=${stHandle}, 角色卡=${characters.length} 张, 预设=${presets.length} 条`
@@ -101,7 +110,7 @@ export async function provision(
   log('[provision] 步骤 3/5：下发角色卡 PNG（order=10）...');
   let charResult;
   try {
-    charResult = writeCharacters(stHandle, characters, force);
+    charResult = await writeCharacters(stHandle, characters, force);
   } catch (err) {
     throw new ProvisionError(`写入角色卡失败：${err}`, err);
   }
@@ -110,7 +119,9 @@ export async function provision(
   );
   if (charResult.missing.length > 0) {
     log(`[provision]   ⚠️  缺失的角色卡 id：${charResult.missing.join(', ')}`);
-    log(`[provision]      请确认 ST_PLATFORM_ASSETS_PATH 目录中包含对应的 platform_<id>.png 文件`);
+    log(
+      `[provision]      请确认 Storage bucket「${config.CHARACTER_STORAGE_BUCKET}」中包含对应的 PNG 文件`
+    );
   }
 
   // ── 4. order=20：写预设 JSON（资产层）─────────────────────────────────────
@@ -144,17 +155,24 @@ export async function provision(
     ...charResult.written,
     ...charResult.skipped, // 跳过的文件已存在，也视为可用
   ];
-  const defaultChar = characters.find((c) => c.is_default);
 
   let merged;
   try {
-    merged = mergeSettings(platformSettings, userSettings, availableCharIds, defaultChar);
+    merged = mergeSettings(
+      platformSettings,
+      userSettings,
+      availableCharIds,
+      systemFallbackCharacterId ?? undefined,
+      config.LLM_PROXY_URL
+    );
   } catch (err) {
     throw new ProvisionError(`merge settings 失败：${err}`, err);
   }
 
   if (merged.hadInvalidRef) {
-    log(`[provision]   ⚠️  character_ref 失效（原值='${merged.invalidRefValue}'），已回退到默认卡`);
+    log(
+      `[provision]   ⚠️  character_ref 失效（原值='${merged.invalidRefValue}'），已回退到系统兜底卡`
+    );
   }
 
   try {

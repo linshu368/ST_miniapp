@@ -278,19 +278,19 @@ diff 同时包含 A 和 B 范围，建议拆分独立提交。
 
 ## 8. 数据真相归属
 
-| 数据类型                  | 权威源                                            | 镜像                        | 备注                                              |
-| ------------------------- | ------------------------------------------------- | --------------------------- | ------------------------------------------------- |
-| 用户身份                  | `public.users`（Prisma + Supabase 混用）          | —                           | TG 身份 + `st_handle` + `st_initialized_at`       |
-| 角色卡 PNG                | Supabase Storage / 平台资产目录                   | —                           | provision 拉取下发 ST（`platform_<id>.png`）      |
-| 角色卡元数据              | `miniapp.characters`（Prisma）                    | —                           | backend 读取渲染大厅                              |
-| 预设                      | `st_platform.platform_presets`                    | —                           | provision order=20 下发                           |
-| API key                   | `st_platform.platform_api_configs`（is_default）  | —                           | provision order=30 写 `secrets.json`              |
-| 平台管控 settings 段      | `st_platform.platform_settings`                   | —                           | provision order=100 merge 后写 settings.json      |
-| 用户 settings 用户段      | ST 文件系统 settings.json（白名单子集）           | `st_users.user_st_settings` | watcher 回流（append-only + content_hash 去重）✅ |
-| 用户聊天记录              | ST 文件系统 chats/                                | `st_users.user_st_chats`    | ⏳ 回流未实现（占位）                             |
-| 平台壳用户配置（UI 偏好） | `miniapp.miniapp_user_settings`（Prisma）         | —                           | `/api/users/settings`，与 ST 无关                 |
-| 钱包 / 支付订单           | `miniapp.*`（wallet / payment_orders，Prisma）    | —                           | 阶段一业务，仍在运行                              |
-| 平台运行时配置            | `miniapp.runtime_config`（Prisma）+ Upstash Redis | —                           | feature flag 等                                   |
+| 数据类型                  | 权威源                                            | 镜像                        | 备注                                                  |
+| ------------------------- | ------------------------------------------------- | --------------------------- | ----------------------------------------------------- |
+| 用户身份                  | `public.users`（Prisma + Supabase 混用）          | —                           | TG 身份 + `st_handle` + `st_initialized_at`           |
+| 角色卡 PNG                | Supabase Storage `character-assets` bucket        | —                           | provision 从 Storage 下载到 ST（`platform_<id>.png`） |
+| 角色卡元数据              | `miniapp.characters`（Prisma）                    | —                           | backend 读取渲染大厅                                  |
+| 预设                      | `st_platform.platform_presets`                    | —                           | provision order=20 下发                               |
+| API key                   | `st_platform.platform_api_configs`（is_default）  | —                           | provision order=30 写 `secrets.json`                  |
+| 平台管控 settings 段      | `st_platform.platform_settings`                   | —                           | provision order=100 merge 后写 settings.json          |
+| 用户 settings 用户段      | ST 文件系统 settings.json（白名单子集）           | `st_users.user_st_settings` | watcher 回流（append-only + content_hash 去重）✅     |
+| 用户聊天记录              | ST 文件系统 chats/                                | `st_users.user_st_chats`    | ⏳ 回流未实现（占位）                                 |
+| 平台壳用户配置（UI 偏好） | `miniapp.miniapp_user_settings`（Prisma）         | —                           | `/api/users/settings`，与 ST 无关                     |
+| 钱包 / 支付订单           | `miniapp.*`（wallet / payment_orders，Prisma）    | —                           | 阶段一业务，仍在运行                                  |
+| 平台运行时配置            | `miniapp.runtime_config`（Prisma）+ Upstash Redis | —                           | feature flag、`system_fallback_character_id` 等       |
 
 **Prisma vs db-types 边界（设计）**：Prisma 管理 `miniapp.*` + `public.*`；db-types 管理 `st_platform.*` / `st_users.*` / `st_infra.*`。
 【实测】sync-engine 暂用 supabase-js 的 `.schema(...)` 字符串查询访问同步层，db-types 尚未实际接入。
@@ -367,25 +367,27 @@ diff 同时包含 A 和 B 范围，建议拆分独立提交。
 
 ### 12.1 角色卡字段语义
 
-- `enabled`：是否上架（控制大厅展示 + 新用户 provision）
-- `is_default`：新用户初始化时是否自动激活（也是 `character_ref` 失效兜底卡）
-- `sort_order`：大厅展示顺序
+- `enabled`：是否上架（控制大厅展示 + provision 下发，唯一的上下架开关）
+- `sort_order`：大厅展示顺序（数字越小越靠前）
+- ~~`is_default`~~：**已删除**。系统兜底卡（`character_ref` 失效时的回退值）改由 `miniapp.runtime_config` 表的 `system_fallback_character_id` 配置。注意：这不是"用户默认角色"，用户进大厅主动选角色，感知不到此配置。
+- ~~`is_published` / `is_active`~~：**已删除**。与 `enabled` 语义重复，统一使用 `enabled`。
 
 ### 12.2 环境变量
 
-| 前缀 / 关键变量                                                | 用途                                               |
-| -------------------------------------------------------------- | -------------------------------------------------- |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `*_PROJECT_REF` | Supabase 连接与环境隔离                            |
-| `DATABASE_URL` / `DIRECT_URL`                                  | Prisma（backend）                                  |
-| `ST_BASE_URL`                                                  | ST 服务地址（backend 登录 + 反代；sync-engine）    |
-| `ST_PROVISION_URL`                                             | backend → sync-engine provision-api 地址           |
-| `ST_USER_PASSWORD_SECRET`                                      | 用户密码派生密钥（backend / sync-engine 必须一致） |
-| `ST_DATA_PATH` / `ST_PLATFORM_ASSETS_PATH`                     | sync-engine 文件系统路径                           |
-| `HEALTH_PORT`(9090) / `PROVISION_API_PORT`(9091)               | sync-engine 端口                                   |
-| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                             | LLM 上游网关                                       |
-| `PAYMENT_*`                                                    | 支付网关                                           |
-| `TELEGRAM_BOT_TOKEN`                                           | TG InitData 签名校验                               |
-| `FRONTEND_URL` / `DEV_AUTH_BYPASS`                             | CORS / 开发放行                                    |
+| 前缀 / 关键变量                                                | 用途                                                           |
+| -------------------------------------------------------------- | -------------------------------------------------------------- |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `*_PROJECT_REF` | Supabase 连接与环境隔离                                        |
+| `DATABASE_URL` / `DIRECT_URL`                                  | Prisma（backend）                                              |
+| `ST_BASE_URL`                                                  | ST 服务地址（backend 登录 + 反代；sync-engine）                |
+| `ST_PROVISION_URL`                                             | backend → sync-engine provision-api 地址                       |
+| `ST_USER_PASSWORD_SECRET`                                      | 用户密码派生密钥（backend / sync-engine 必须一致）             |
+| `ST_DATA_PATH`                                                 | sync-engine ST 文件系统路径                                    |
+| `CHARACTER_STORAGE_BUCKET`                                     | Supabase Storage bucket（角色卡 PNG，默认 `character-assets`） |
+| `HEALTH_PORT`(9090) / `PROVISION_API_PORT`(9091)               | sync-engine 端口                                               |
+| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                             | LLM 上游网关                                                   |
+| `PAYMENT_*`                                                    | 支付网关                                                       |
+| `TELEGRAM_BOT_TOKEN`                                           | TG InitData 签名校验                                           |
+| `FRONTEND_URL` / `DEV_AUTH_BYPASS`                             | CORS / 开发放行                                                |
 
 ### 12.3 settings.json 分段
 

@@ -113,7 +113,7 @@ export function ChatSidebar() {
             const isActive = currentChatId === item.fileName;
             return (
               <div
-                key={item.fileName}
+                key={`${item.characterAvatar}/${item.fileName}`}
                 className={cn(
                   'group flex items-start gap-2 px-4 py-2.5 cursor-pointer transition-colors',
                   isActive ? 'bg-accent/60' : 'hover:bg-accent/30'

@@ -16,7 +16,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../lib/config.js', () => ({
   config: {
     ST_DATA_PATH: '/mock',
-    ST_PLATFORM_ASSETS_PATH: '/mock',
     SUPABASE_URL: 'https://mock.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'mock-key',
     ST_BASE_URL: 'http://localhost:8000',
