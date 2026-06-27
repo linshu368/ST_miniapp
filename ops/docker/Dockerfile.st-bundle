@@ -1,0 +1,147 @@
+# syntax=docker/dockerfile:1
+
+# =============================================================================
+# st-bundle: SillyTavern + provision-api + watcher in a single container,
+# orchestrated by s6-overlay v3 (three longrun services).
+#
+# Decisions (hard constraints, see P1-2 deploy prompt M1):
+#   - base: node:20-bookworm-slim (glibc + s6 first-class support; matches .nvmrc=20)
+#   - multi-stage: builder-ext (st-extension) / builder-deps (sync-engine) / runtime
+#   - dependencies installed inside the image (cross-platform safety)
+#   - production config.yaml copied at build time (config-as-code)
+#   - HEALTHCHECK probes ST(8000) + provision-api(9091); watcher(9090) health is
+#     validated in M4 integration (watcher only stays up once real tg- users exist).
+# =============================================================================
+
+# ========== Stage 1: build st-extension ==========
+FROM node:20-bookworm-slim AS builder-ext
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+
+WORKDIR /build
+# workspace 元信息 + 构建 st-extension 需要的包源码
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/st-extension     packages/st-extension
+COPY packages/bridge-protocol  packages/bridge-protocol
+COPY packages/shared           packages/shared
+# vendor 也需要：postbuild.ts 把产物拷到 vendor/.../third-party/miniapp-bridge/
+COPY vendor/sillytavern        vendor/sillytavern
+
+RUN pnpm install --frozen-lockfile --filter @miniapp/st-extension...
+RUN pnpm --filter @miniapp/st-extension build
+
+# 构建期断言：扩展产物落到 vendor 目录（核验 2 实测路径）
+RUN test -d /build/vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/entry.global.js \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/manifest.json
+
+# Install ST's OWN production dependencies inside the image (cross-platform safety),
+# mirroring vendor/sillytavern/Dockerfile: `npm ci --omit=dev` then precompile public libs.
+# (.dockerignore strips host node_modules from the build context, so ST has no deps until
+#  this step; without it server.js fails with "Cannot find module 'express'".)
+WORKDIR /build/vendor/sillytavern
+RUN npm ci --no-audit --no-fund --loglevel=error --no-progress --omit=dev --ignore-scripts \
+ && node ./docker/build-lib.js \
+ && npm cache clean --force
+RUN test -d /build/vendor/sillytavern/node_modules/express
+WORKDIR /build
+
+# ========== Stage 2: install sync-engine deps ==========
+FROM node:20-bookworm-slim AS builder-deps
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+
+WORKDIR /build
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/sync-engine     packages/sync-engine
+COPY packages/shared          packages/shared
+COPY packages/bridge-protocol packages/bridge-protocol
+COPY packages/db-types        packages/db-types
+
+# 核验 1：tsx 在 sync-engine 的 devDependencies，因此 install 不能带 --prod，
+# 也不能 prune --prod，否则运行时 tsx not found。
+RUN pnpm install --frozen-lockfile --filter @miniapp/sync-engine...
+
+# 构建期断言：tsx 可执行入口存在
+RUN test -f /build/packages/sync-engine/node_modules/tsx/dist/cli.mjs
+
+# ========== Stage 3: runtime ==========
+FROM node:20-bookworm-slim
+
+# --- 系统依赖 ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates xz-utils tini \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- s6-overlay v3 ---
+ARG S6_OVERLAY_VERSION=3.2.0.0
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64)  S6_ARCH=x86_64  ;; \
+      arm64)  S6_ARCH=aarch64 ;; \
+      *) echo "unsupported arch: ${TARGETARCH}"; exit 1 ;; \
+    esac; \
+    curl -fSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" \
+      | tar -C / -Jxpf -; \
+    curl -fSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" \
+      | tar -C / -Jxpf -
+
+# s6 行为配置
+ENV S6_KEEP_ENV=1 \
+    S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
+    S6_CMD_WAIT_FOR_SERVICES_MAXTIME=60000
+
+# --- ST runtime behavior ---
+# NODE_ENV=production mirrors the vendor SillyTavern Dockerfile.
+ENV NODE_ENV=production
+# The 6 prescribed config overrides set listen=true + whitelistMode=false, which trips
+# ST's security guard (verifySecuritySettings) when the default admin user has no password:
+# ST refuses to start unless basicAuth/whitelist is on OR securityOverride is set. In this
+# deploy the ST port (8000) is never publicly exposed — it sits behind the platform proxy /
+# private network (M3/M4), so we acknowledge the exposed-listen posture via env override.
+# Set via env (ST reads SILLYTAVERN_* before config.yaml) so config.production.yaml stays at
+# exactly the 6 prescribed overrides. This is a behavior flag, NOT a secret.
+ENV SILLYTAVERN_SECURITYOVERRIDE=true
+
+# --- 应用文件 ---
+WORKDIR /home/node/app
+
+# ST 本体（含 builder-ext 注入的扩展）
+COPY --from=builder-ext /build/vendor/sillytavern /home/node/app
+
+# sync-engine 源码 + 其工作区依赖 + 根 node_modules（pnpm .pnpm store）
+# 注：pnpm 把依赖以相对符号链接 (../../../node_modules/.pnpm/...) 散落在
+# packages/*/node_modules 与根 node_modules 之间；保持同样的目录拓扑即可解析。
+# @miniapp/shared 是 sync-engine 唯一的工作区依赖 (packages/sync-engine/node_modules/@miniapp/shared -> ../../../shared)。
+COPY --from=builder-deps /build/packages/sync-engine /home/node/app/packages/sync-engine
+COPY --from=builder-deps /build/packages/shared       /home/node/app/packages/shared
+COPY --from=builder-deps /build/node_modules          /home/node/app/node_modules
+
+# 生产 config.yaml（server.js 默认读 ./config.yaml，相对 serverDirectory=/home/node/app）
+COPY ops/sillytavern/config.production.yaml /home/node/app/config.yaml
+
+# s6 service 定义
+COPY ops/s6 /etc/s6-overlay/s6-rc.d
+
+# --- 数据目录 + 权限 ---
+# node:20-bookworm-slim 自带 uid=1000 的 node 用户；ST 与 sync-engine 均以 node 运行。
+RUN mkdir -p /home/node/app/data /home/node/app/config \
+             /home/node/app/plugins /home/node/app/extensions /home/node/app/backups \
+             /home/node/app/public/scripts/extensions/third-party \
+ && chown -R node:node /home/node/app
+
+# --- 端口 + volume ---
+EXPOSE 8000 9091 9090
+VOLUME ["/home/node/app/data"]
+
+# --- Healthcheck（决策：探 ST + provision-api；watcher 9090 留 M4）---
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8000/ >/dev/null \
+   && curl -fsS http://127.0.0.1:9091/health >/dev/null \
+   || exit 1
+
+# s6-overlay 作为 PID 1
+ENTRYPOINT ["/init"]
