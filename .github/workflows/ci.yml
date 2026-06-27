@@ -78,3 +78,25 @@ jobs:
 
       - name: Build frontend
         run: pnpm --filter @miniapp/frontend build
+
+  docker-build-backend:
+    name: Backend Docker Build (amd64 native)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image (amd64, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ops/docker/Dockerfile.backend
+          platforms: linux/amd64
+          push: false
+          outputs: type=cacheonly
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
