@@ -12,6 +12,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import { config } from './config.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,9 +22,14 @@ let _client: AnyClient | null = null;
 
 export function getSupabaseClient(): AnyClient {
   if (_client) return _client;
+  // Node 20 has no native WebSocket global; @supabase/realtime-js eagerly resolves a
+  // WebSocket constructor inside createClient() and throws "Node.js 20 detected without
+  // native WebSocket support" unless we hand it an explicit transport. Mirror backend
+  // (packages/backend/src/lib/supabase.ts) by injecting the `ws` implementation.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _client = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { transport: WebSocket as never },
   }) as AnyClient;
   return _client;
 }
