@@ -18,7 +18,7 @@ import { createLogger } from '../lib/logger.js';
 
 const logger = createLogger('provision-api');
 
-const BIND_HOST = '127.0.0.1';
+const BIND_HOST = process.env.PROVISION_API_BIND_HOST ?? '127.0.0.1';
 
 export interface ProvisionApiOptions {
   port: number;
