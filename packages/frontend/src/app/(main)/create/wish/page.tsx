@@ -1,12 +1,16 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, Send, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { useCreateWishMutation, useCompleteWishMutation } from '@/lib/api/wishes';
+import {
+  useCreateWishMutation,
+  useCompleteWishMutation,
+  useWishStatusQuery,
+} from '@/lib/api/wishes';
 import { cn } from '@/lib/utils';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
@@ -30,6 +34,7 @@ const INITIAL_MESSAGES: Message[] = [
 
 export default function WishPage() {
   const router = useRouter();
+  const wishStatus = useWishStatusQuery();
   const createWish = useCreateWishMutation();
   const completeWish = useCompleteWishMutation();
   const { impact, notification } = useHaptic();
@@ -42,12 +47,45 @@ export default function WishPage() {
   const goBack = useCallback(() => router.push('/create'), [router]);
   useTelegramBackButton(goBack);
 
-  const isPending = createWish.isPending || completeWish.isPending;
+  const isPending = wishStatus.isLoading || createWish.isPending || completeWish.isPending;
   const placeholder = useMemo(() => {
+    if (wishStatus.isLoading) return '正在读取许愿状态...';
     if (step === 'wish') return '写下你想要的角色...';
     if (step === 'extra') return '补充关系、性格、故事背景等细节...';
     return '许愿已完成';
-  }, [step]);
+  }, [step, wishStatus.isLoading]);
+
+  useEffect(() => {
+    const latestWish = wishStatus.data?.latest_wish;
+    if (!latestWish) return;
+
+    setWishId(latestWish.id);
+
+    if (latestWish.status === 'awaiting_extra') {
+      setStep('extra');
+      setMessages([
+        ...INITIAL_MESSAGES,
+        { id: 'existing-wish', role: 'user', text: latestWish.wish_text },
+        {
+          id: 'resume-extra',
+          role: 'assistant',
+          text: '你今天已经许过愿了，这里可以继续补充细节；没有补充就点“就这样吧”。',
+        },
+      ]);
+      return;
+    }
+
+    setStep('done');
+    setMessages([
+      ...INITIAL_MESSAGES,
+      { id: 'existing-wish', role: 'user', text: latestWish.wish_text },
+      {
+        id: 'limit-reached',
+        role: 'assistant',
+        text: '你今天已经许过愿了，我们会认真看。明天再来许新的愿望吧。',
+      },
+    ]);
+  }, [wishStatus.data?.latest_wish]);
 
   const appendMessage = useCallback((message: Omit<Message, 'id'>) => {
     setMessages((current) => [

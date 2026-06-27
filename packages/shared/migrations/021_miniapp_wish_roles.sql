@@ -8,7 +8,7 @@ ALTER TABLE miniapp.wallet_ledger
 
 ALTER TABLE miniapp.wallet_ledger
   ADD CONSTRAINT wallet_ledger_entry_type_check
-  CHECK (entry_type IN ('recharge', 'adjustment', 'checkin_bonus', 'wish_reward'));
+  CHECK (entry_type IN ('recharge', 'chat_debit', 'refund', 'adjustment', 'checkin_bonus', 'wish_reward'));
 
 CREATE TABLE IF NOT EXISTS miniapp.wish_roles (
   id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

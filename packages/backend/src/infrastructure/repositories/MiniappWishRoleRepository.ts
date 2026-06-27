@@ -21,6 +21,27 @@ interface CreateWishRoleResult {
 export class MiniappWishRoleRepository {
   private readonly db = getSupabaseClient().schema('miniapp');
 
+  async findLatestWithinWindow(
+    telegramUserId: number,
+    windowHours: number
+  ): Promise<WishRole | null> {
+    const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
+    const { data, error } = await this.db
+      .from('wish_roles')
+      .select('*')
+      .eq('user_id', telegramUserId)
+      .gt('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`查询角色许愿状态失败：${error.message}`);
+    }
+
+    return (data as WishRole | null) ?? null;
+  }
+
   async createWish(input: {
     dbUserId: string;
     telegramUserId: number;

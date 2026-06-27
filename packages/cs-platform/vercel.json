@@ -1,0 +1,6 @@
+{
+  "framework": null,
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm --filter @miniapp/cs-platform build",
+  "outputDirectory": "packages/cs-platform/dist"
+}

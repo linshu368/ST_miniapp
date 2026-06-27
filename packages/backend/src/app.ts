@@ -9,6 +9,7 @@ import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
 import settingsRoutes from './routes/settings.js';
 import wishRoutes from './routes/wishes.js';
+import csPlatformRoutes from './routes/cs-platform.js';
 import { stProxyHandler } from './middleware/stProxy.js';
 import llmProxyRoutes from './routes/llm-proxy.js';
 import chatsRoutes from './routes/chats.js';
@@ -55,7 +56,13 @@ export async function buildApp() {
       callback(new Error('Not allowed by CORS'), false);
     },
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Init-Data'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Init-Data',
+      'X-CS-Admin-Token',
+      'X-CS-Operator-Id',
+    ],
   });
 
   // ── 路由挂载 ──
@@ -65,6 +72,7 @@ export async function buildApp() {
   await app.register(walletRoutes);
   await app.register(settingsRoutes);
   await app.register(wishRoutes);
+  await app.register(csPlatformRoutes);
   await app.register(llmProxyRoutes);
   await app.register(chatsRoutes);
 

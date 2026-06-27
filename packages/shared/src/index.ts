@@ -7,6 +7,7 @@ export * from './api/settings';
 export * from './api/wallet';
 export * from './api/chats';
 export * from './api/wishes';
+export * from './api/cs-platform';
 export * from './config/database';
 
 // ST Bridge（身份映射、配置清单等）

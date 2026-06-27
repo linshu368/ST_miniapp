@@ -5,6 +5,7 @@ import type {
   CompleteWishRoleRequest,
   CreateWishRoleData,
   CreateWishRoleRequest,
+  GetWishRoleStatusData,
   WishRoleData,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
@@ -16,9 +17,29 @@ import {
 
 const MIN_WISH_LENGTH = 8;
 const WISH_REWARD_CREDITS = 1;
+const WISH_LIMIT_HOURS = 24;
 
 export default async function wishRoutes(app: FastifyInstance) {
   const wishes = new MiniappWishRoleRepository();
+
+  app.get('/api/wishes/status', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
+    if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+
+    const latestWish = await wishes.findLatestWithinWindow(request.user.id, WISH_LIMIT_HOURS);
+    const nextAvailableAt = latestWish
+      ? new Date(
+          new Date(latestWish.created_at).getTime() + WISH_LIMIT_HOURS * 60 * 60 * 1000
+        ).toISOString()
+      : null;
+
+    return reply.send(
+      ok<GetWishRoleStatusData>({
+        can_submit: !latestWish,
+        latest_wish: latestWish ? toWishRoleData(latestWish) : null,
+        next_available_at: nextAvailableAt,
+      })
+    );
+  });
 
   app.post('/api/wishes', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
