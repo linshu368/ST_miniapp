@@ -9,6 +9,8 @@ import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
 import settingsRoutes from './routes/settings.js';
 import { stProxyHandler } from './middleware/stProxy.js';
+import llmProxyRoutes from './routes/llm-proxy.js';
+import chatsRoutes from './routes/chats.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -61,6 +63,8 @@ export async function buildApp() {
   await app.register(paymentRoutes);
   await app.register(walletRoutes);
   await app.register(settingsRoutes);
+  await app.register(llmProxyRoutes);
+  await app.register(chatsRoutes);
 
   // ── ST 反向代理：/api/bridge/st/* → ST 原生服务 ──
   // 注意：使用 addContentTypeParser 允许透传任意 Content-Type 的 raw body

@@ -22,6 +22,7 @@ import { getSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
 import { ok, fail } from '@miniapp/shared';
 import { deriveStHandle } from '@miniapp/shared';
+import { cacheStCookie } from '../lib/st-cookie.js';
 
 // ─── 密码派生（与 sync-engine/provisioner/st-user.ts 保持一致） ──────────────
 
@@ -39,9 +40,14 @@ function deriveUserPassword(handle: string): string {
 
 async function loginToSt(handle: string): Promise<string> {
   const password = deriveUserPassword(handle);
+  const csrf = await fetchCsrfToken();
   const res = await fetch(`${config.stBaseUrl}/api/users/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: csrf.cookie,
+      'X-CSRF-Token': csrf.token,
+    },
     body: JSON.stringify({ handle, password }),
   });
 
@@ -53,7 +59,7 @@ async function loginToSt(handle: string): Promise<string> {
   // ST 使用 cookie-session，同时下发 session + session.sig 两个 cookie
   // 必须同时携带两个，ST 才能通过签名校验（否则 403）
   // getSetCookie() 返回所有 Set-Cookie 行的数组（Node 18+）
-  const allCookies = res.headers.getSetCookie?.() ?? [];
+  const allCookies = [...csrf.setCookies, ...(res.headers.getSetCookie?.() ?? [])];
   if (allCookies.length === 0) {
     // 降级：尝试 get('set-cookie')
     const fallback = res.headers.get('set-cookie');
@@ -61,15 +67,57 @@ async function loginToSt(handle: string): Promise<string> {
     allCookies.push(fallback);
   }
 
-  const cookiePart = allCookies
-    .map((c) => c.split(';')[0]?.trim())
-    .filter(Boolean)
-    .join('; ');
+  const cookiePart = mergeCookieHeader(undefined, allCookies);
 
   if (!cookiePart) {
     throw new Error('Set-Cookie 格式异常，无法提取 cookie 值');
   }
   return cookiePart;
+}
+
+async function fetchCsrfToken(): Promise<{ token: string; cookie: string; setCookies: string[] }> {
+  const res = await fetch(`${config.stBaseUrl}/csrf-token`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`ST CSRF token 获取失败（${res.status}）：${text}`);
+  }
+
+  const body = (await res.json()) as { token?: string };
+  if (!body.token) {
+    throw new Error('ST CSRF token 响应中缺少 token');
+  }
+
+  const setCookies = res.headers.getSetCookie?.() ?? [];
+  const fallback = res.headers.get('set-cookie');
+  if (setCookies.length === 0 && fallback) setCookies.push(fallback);
+
+  return {
+    token: body.token,
+    cookie: mergeCookieHeader(undefined, setCookies),
+    setCookies,
+  };
+}
+
+function mergeCookieHeader(existing: string | undefined, setCookies: string[]): string {
+  const parts = new Map<string, string>();
+
+  for (const part of existing?.split(';') ?? []) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    parts.set(trimmed.slice(0, eq), trimmed);
+  }
+
+  for (const setCookie of setCookies) {
+    const cookiePart = setCookie.split(';')[0]?.trim();
+    if (!cookiePart) continue;
+    const eq = cookiePart.indexOf('=');
+    if (eq <= 0) continue;
+    parts.set(cookiePart.slice(0, eq), cookiePart);
+  }
+
+  return Array.from(parts.values()).join('; ');
 }
 
 // ─── 同步触发 provision（新用户首次登录，等待 ST 账号创建完成） ──────────────
@@ -88,24 +136,6 @@ async function triggerProvisionSync(
     throw new Error(`provision 失败（${res.status}）：${text}`);
   }
   log(`[bridge] 新用户同步 provision 完成（userId=${userId}）`);
-}
-
-// ─── 异步触发 provision（老用户再次登录，不阻塞登录流程） ────────────────────
-
-function triggerProvisionAsync(userId: string, log: (msg: string) => void): void {
-  fetch(`${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}`, {
-    method: 'POST',
-  })
-    .then((res) => {
-      if (res.ok) {
-        log(`[bridge] provision 已触发（userId=${userId}，状态=${res.status}）`);
-      } else {
-        log(`[bridge] provision 触发失败（userId=${userId}，状态=${res.status}）`);
-      }
-    })
-    .catch((err) => {
-      log(`[bridge] provision 触发异常（userId=${userId}）：${err}`);
-    });
 }
 
 // ─── 路由注册 ─────────────────────────────────────────────────────────────────
@@ -182,7 +212,8 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           log(`[bridge]   阶段 3/3：force 覆盖写平台文件`);
           await triggerProvisionSync(dbUser.id, log, true);
 
-          // ── 4. 返回 cookie（阶段 2 登录时已获取）──────────────────────
+          // ── 4. 缓存 cookie + 返回 ──────────────────────────────────
+          await cacheStCookie(dbUser.id, stCookieInit);
           return reply.send(
             ok({
               st_url: '/api/bridge/st',
@@ -192,17 +223,18 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           );
         } else {
           log(`[bridge] 已初始化用户再次登录（handle=${stHandle}）`);
-          triggerProvisionAsync(dbUser.id, log);
+          await triggerProvisionSync(dbUser.id, log, true);
         }
 
         // ── 4. 登录 ST，获取 session cookie（老用户路径）───────────────
         const stCookie = await loginToSt(stHandle);
 
-        // ── 5. 返回结果 ───────────────────────────────────────────────────
+        // ── 5. 缓存 cookie + 返回结果 ──────────────────────────────────
+        await cacheStCookie(dbUser.id, stCookie);
         return reply.send(
           ok({
-            st_url: '/api/bridge/st', // 反向代理前缀，前端 iframe src 指向此处
-            st_cookie: stCookie, // 调试用；代理模式下前端无需手动设置
+            st_url: '/api/bridge/st',
+            st_cookie: stCookie,
             is_new_user: isNewUser,
           })
         );

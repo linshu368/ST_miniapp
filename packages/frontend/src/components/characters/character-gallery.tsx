@@ -34,6 +34,7 @@ function scoreMatch(
 }
 
 export function CharacterGallery() {
+  const router = useRouter();
   const { data, isLoading, isError } = useCharactersQuery();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -141,11 +142,19 @@ export function CharacterGallery() {
       ) : (
         <div className="grid grid-cols-2 gap-3 px-4 pb-10 pt-2">
           {filtered.map((c) => (
-            <CharacterCard key={c.id} character={c} onSelect={setSelectedId} />
+            <CharacterCard
+              key={c.id}
+              character={c}
+              onSelect={() => {
+                // 按照当前架构要求，不需要详情页，直接跳转到对话页
+                router.push(`/tavern/${c.id}`);
+              }}
+            />
           ))}
         </div>
       )}
-      <CharacterDetailSheet characterId={selectedId} onClose={() => setSelectedId(null)} />
+      {/* 废弃：在本 MVP 联调阶段暂时不展示详情页，已直接执行 router.push */}
+      {/* <CharacterDetailSheet characterId={selectedId} onClose={() => setSelectedId(null)} /> */}
     </>
   );
 }

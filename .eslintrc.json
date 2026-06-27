@@ -1,0 +1,186 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["import"],
+  "overrides": [
+    {
+      "files": ["packages/frontend/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@miniapp/db-types", "@miniapp/db-types/*"],
+                "message": "frontend 禁止 import db-types（架构铁律 §4）"
+              },
+              {
+                "group": ["@miniapp/backend", "@miniapp/backend/*"],
+                "message": "应用包互不 import，跨进程走 HTTP（架构铁律 §3）"
+              },
+              {
+                "group": ["@miniapp/sync-engine", "@miniapp/sync-engine/*"],
+                "message": "应用包互不 import，跨进程走 HTTP（架构铁律 §3）"
+              },
+              {
+                "group": ["@miniapp/st-extension", "@miniapp/st-extension/*"],
+                "message": "应用包互不 import，跨进程走 postMessage（架构铁律 §3）"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/backend/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@miniapp/frontend", "@miniapp/frontend/*"],
+                "message": "应用包互不 import（架构铁律 §3）"
+              },
+              {
+                "group": ["@miniapp/sync-engine", "@miniapp/sync-engine/*"],
+                "message": "应用包互不 import，backend 通过 HTTP 调 sync-engine（架构铁律 §3）"
+              },
+              {
+                "group": ["@miniapp/st-extension", "@miniapp/st-extension/*"],
+                "message": "应用包互不 import（架构铁律 §3）"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/sync-engine/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@miniapp/frontend", "@miniapp/frontend/*"],
+                "message": "应用包互不 import（架构铁律 §3）"
+              },
+              {
+                "group": ["@miniapp/backend", "@miniapp/backend/*"],
+                "message": "应用包互不 import（架构铁律 §3）"
+              },
+              {
+                "group": ["@miniapp/st-extension", "@miniapp/st-extension/*"],
+                "message": "应用包互不 import（架构铁律 §3）"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/st-extension/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@miniapp/db-types", "@miniapp/db-types/*"],
+                "message": "st-extension 禁止 import db-types（架构铁律 §4）"
+              },
+              {
+                "group": ["@miniapp/frontend", "@miniapp/frontend/*"],
+                "message": "应用包互不 import（架构铁律 §3）"
+              },
+              {
+                "group": ["@miniapp/backend", "@miniapp/backend/*"],
+                "message": "应用包互不 import（架构铁律 §3）"
+              },
+              {
+                "group": ["@miniapp/sync-engine", "@miniapp/sync-engine/*"],
+                "message": "应用包互不 import（架构铁律 §3）"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/bridge-protocol/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@miniapp/frontend",
+                  "@miniapp/frontend/*",
+                  "@miniapp/backend",
+                  "@miniapp/backend/*",
+                  "@miniapp/sync-engine",
+                  "@miniapp/sync-engine/*",
+                  "@miniapp/st-extension",
+                  "@miniapp/st-extension/*"
+                ],
+                "message": "契约层包禁止 import 应用层包（架构铁律 §4.4）"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/db-types/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@miniapp/frontend",
+                  "@miniapp/frontend/*",
+                  "@miniapp/backend",
+                  "@miniapp/backend/*",
+                  "@miniapp/sync-engine",
+                  "@miniapp/sync-engine/*",
+                  "@miniapp/st-extension",
+                  "@miniapp/st-extension/*"
+                ],
+                "message": "契约层包禁止 import 应用层包（架构铁律 §4.4）"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/shared/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@miniapp/frontend",
+                  "@miniapp/frontend/*",
+                  "@miniapp/backend",
+                  "@miniapp/backend/*",
+                  "@miniapp/sync-engine",
+                  "@miniapp/sync-engine/*",
+                  "@miniapp/st-extension",
+                  "@miniapp/st-extension/*"
+                ],
+                "message": "契约层包禁止 import 应用层包（架构铁律 §4.4）"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

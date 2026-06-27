@@ -5,26 +5,28 @@
  * 不包含任何业务逻辑（merge / 校验等由 merger.ts 完成）。
  */
 
-import { copyFileSync, writeFileSync, existsSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { writeFileSync, existsSync } from 'node:fs';
+import { createHmac, randomUUID } from 'node:crypto';
 import {
   charactersDir,
   presetsDir,
   settingsPath,
   secretsPath,
-  platformCharacterSrc,
   characterDst,
+  characterStoragePath,
   presetDst,
   ensureDir,
 } from '../lib/st-fs.js';
+import { getSupabaseClient } from '../lib/supabase.js';
 import type { CharacterRow, PresetRow, ApiConfigRow } from './fetcher.js';
 import type { MergedSettings } from './merger.js';
+import { config } from '../lib/config.js';
 
 // ─── 写入结果类型 ──────────────────────────────────────────────────────────────
 export interface WriteCharactersResult {
-  written: string[]; // 实际写入的角色卡 id 列表
-  skipped: string[]; // 已存在且跳过的角色卡 id 列表（增量模式）
-  missing: string[]; // 平台资产目录中找不到源 PNG 的卡 id 列表
+  written: string[];
+  skipped: string[];
+  missing: string[];
 }
 
 export interface WritePresetsResult {
@@ -34,17 +36,17 @@ export interface WritePresetsResult {
 
 // ─── 写角色卡 PNG ─────────────────────────────────────────────────────────────
 /**
- * 从 platform-assets/characters/ 目录复制 PNG 到用户的 characters/ 目录。
+ * 从 Supabase Storage 下载角色卡 PNG 到用户的 characters/ 目录。
  *
- * @param handle  - ST 用户 handle
+ * @param handle     - ST 用户 handle
  * @param characters - 已拉取的平台角色卡列表
- * @param force   - true = 总是覆盖；false = 目标文件已存在则跳过（增量补全）
+ * @param force      - true = 总是覆盖；false = 目标文件已存在则跳过（懒下发）
  */
-export function writeCharacters(
+export async function writeCharacters(
   handle: string,
   characters: CharacterRow[],
   force: boolean
-): WriteCharactersResult {
+): Promise<WriteCharactersResult> {
   ensureDir(charactersDir(handle));
 
   const written: string[] = [];
@@ -52,21 +54,25 @@ export function writeCharacters(
   const missing: string[] = [];
 
   for (const char of characters) {
-    const src = platformCharacterSrc(char.id);
     const dst = characterDst(handle, char.id);
-
-    if (!existsSync(src)) {
-      // 平台资产目录缺失这张卡的 PNG
-      missing.push(char.id);
-      continue;
-    }
 
     if (!force && existsSync(dst)) {
       skipped.push(char.id);
       continue;
     }
 
-    copyFileSync(src, dst);
+    const storagePath = characterStoragePath(char.id);
+    const { data, error } = await getSupabaseClient()
+      .storage.from(config.CHARACTER_STORAGE_BUCKET)
+      .download(storagePath);
+
+    if (error || !data) {
+      missing.push(char.id);
+      continue;
+    }
+
+    const buffer = Buffer.from(await data.arrayBuffer());
+    writeFileSync(dst, buffer);
     written.push(char.id);
   }
 
@@ -131,25 +137,26 @@ export function writeSettings(handle: string, mergedSettings: MergedSettings): v
  *
  * config_payload.provider 决定 key 名，如 "openrouter" → "api_key_openrouter"。
  */
-export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null): void {
+export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null, userId: string): void {
   if (!apiConfig) {
     // 未配置 API Key，跳过写入（不报错，provisioner 日志会标注）
     return;
   }
 
-  const { provider, api_key } = apiConfig.config_payload;
+  const { provider } = apiConfig.config_payload;
 
-  if (!provider || !api_key) {
+  if (!provider) {
     // config_payload 字段不完整，跳过（避免写入无效 secrets）
     return;
   }
 
   const secretKey = `api_key_${provider}`;
+  const platformToken = signPlatformToken(userId);
   const secrets = {
     [secretKey]: [
       {
         id: randomUUID(),
-        value: api_key,
+        value: platformToken,
         label: new Date().toLocaleString('en-US', {
           month: '2-digit',
           day: '2-digit',
@@ -165,4 +172,23 @@ export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null): vo
 
   const dst = secretsPath(handle);
   writeFileSync(dst, JSON.stringify(secrets, null, 2), 'utf-8');
+}
+
+function signPlatformToken(userId: string): string {
+  const secret = config.LLM_PROXY_TOKEN_SECRET || config.ST_USER_PASSWORD_SECRET;
+  if (!secret) {
+    throw new Error('LLM_PROXY_TOKEN_SECRET 未配置，无法签发 platformToken');
+  }
+
+  const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payload = base64UrlEncode(
+    JSON.stringify({ userId, iat: Math.floor(Date.now() / 1000), ver: 1 })
+  );
+  const signature = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
+
+  return `${header}.${payload}.${signature}`;
+}
+
+function base64UrlEncode(data: string): string {
+  return Buffer.from(data, 'utf-8').toString('base64url');
 }

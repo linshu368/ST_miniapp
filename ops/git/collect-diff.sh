@@ -22,6 +22,8 @@ PATHSPEC=(
   ':(exclude)*.png' ':(exclude)*.jpg' ':(exclude)*.jpeg'
   ':(exclude)*.gif' ':(exclude)*.svg' ':(exclude)*.ico'
   ':(exclude)*.woff' ':(exclude)*.woff2' ':(exclude)*.ttf' ':(exclude)*.eot'
+  ':(exclude)docs/**'
+  ':(exclude)vendor/sillytavern/**'
 )
 
 echo "## Diff 元信息"

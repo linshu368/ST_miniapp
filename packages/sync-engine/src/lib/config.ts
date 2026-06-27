@@ -31,13 +31,20 @@ const ConfigSchema = z.object({
 
   // ST 文件系统
   ST_DATA_PATH: z.string().min(1, 'ST_DATA_PATH 不能为空'),
-  ST_PLATFORM_ASSETS_PATH: z.string().min(1, 'ST_PLATFORM_ASSETS_PATH 不能为空'),
+
+  // Supabase Storage bucket（角色卡 PNG 存储）
+  CHARACTER_STORAGE_BUCKET: z.string().default('character-assets'),
 
   // ST 服务
   ST_BASE_URL: z.string().url('ST_BASE_URL 必须是合法 URL'),
   ST_ADMIN_USERNAME: z.string().min(1).default('admin'),
   ST_ADMIN_PASSWORD: z.string().min(1, 'ST_ADMIN_PASSWORD 不能为空'),
   ST_USER_PASSWORD_SECRET: z.string().min(16, 'ST_USER_PASSWORD_SECRET 至少 16 位'),
+  LLM_PROXY_TOKEN_SECRET: z.string().optional(),
+
+  // ST LLM endpoint 指向平台代理网关的可达地址（写入 settings.json）。
+  // 本地默认 backend dev 地址；prod/staging 通过环境变量覆盖为对外可达 URL。
+  LLM_PROXY_URL: z.string().url().default('http://localhost:3001/api/platform/llm-proxy/v1'),
 
   // 健康监控（默认 9090，0 = 禁用）
   HEALTH_PORT: z
@@ -51,14 +58,14 @@ const ConfigSchema = z.object({
       return n;
     }),
 
-  // Bridge API 内网端口（供 backend 调用 provision，默认 9091，0 = 禁用）
-  BRIDGE_API_PORT: z
+  // Provision API 内网端口（供 backend 调用 provision，默认 9091，0 = 禁用）
+  PROVISION_API_PORT: z
     .string()
     .default('9091')
     .transform((v) => {
       const n = parseInt(v, 10);
       if (isNaN(n) || n < 0 || n > 65535) {
-        throw new Error('BRIDGE_API_PORT 必须是 0-65535 的整数');
+        throw new Error('PROVISION_API_PORT 必须是 0-65535 的整数');
       }
       return n;
     }),
