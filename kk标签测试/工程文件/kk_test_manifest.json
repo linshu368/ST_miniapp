@@ -1,0 +1,182 @@
+[
+  {
+    "name": "林清音",
+    "file": "林清音-旧世谍影.png",
+    "batch": 1,
+    "rank": 1,
+    "score": 124.61,
+    "front_tok": 7671,
+    "distill_len": 1263
+  },
+  {
+    "name": "小神官菲特的奇妙冒险～从摆脱小混混骚扰到弑神吧！",
+    "file": "小神官菲特的奇妙冒险～从摆脱小混混骚扰到弑神吧！.png",
+    "batch": 1,
+    "rank": 2,
+    "score": 120.08,
+    "front_tok": 8762,
+    "distill_len": 4387
+  },
+  {
+    "name": "罗克茜",
+    "file": "关于我身在异国和放荡的公车妹妹同居这件事.png",
+    "batch": 1,
+    "rank": 4,
+    "score": 115.24,
+    "front_tok": 5932,
+    "distill_len": 1342
+  },
+  {
+    "name": "玄荒界・魔道世界书 V1.0",
+    "file": "玄荒纪·寡妇魔教.png",
+    "batch": 1,
+    "rank": 6,
+    "score": 108.6,
+    "front_tok": 8284,
+    "distill_len": 3629
+  },
+  {
+    "name": "裂隙纪元",
+    "file": "裂隙纪元.png",
+    "batch": 1,
+    "rank": 7,
+    "score": 107.79,
+    "front_tok": 6077,
+    "distill_len": 1852
+  },
+  {
+    "name": "垃圾回收员G",
+    "file": "贩奴之城的垃圾回收员G.png",
+    "batch": 1,
+    "rank": 8,
+    "score": 104.4,
+    "front_tok": 9108,
+    "distill_len": 4175
+  },
+  {
+    "name": "我的搭档是前魔法少女",
+    "file": "我的搭档是前魔法少女.png",
+    "batch": 1,
+    "rank": 9,
+    "score": 103.56,
+    "front_tok": 10870,
+    "distill_len": 3490
+  },
+  {
+    "name": "三国",
+    "file": "三国.png",
+    "batch": 1,
+    "rank": 14,
+    "score": 100.8,
+    "front_tok": 5302,
+    "distill_len": 1799
+  },
+  {
+    "name": "深宫秋",
+    "file": "深宫秋.png",
+    "batch": 1,
+    "rank": 27,
+    "score": 93.99,
+    "front_tok": 15296,
+    "distill_len": 3048
+  },
+  {
+    "name": "正宫妻子是曾经夺走前妻的小三",
+    "file": "正宫妻子是曾经夺走前妻的黄毛.png",
+    "batch": 1,
+    "rank": 32,
+    "score": 93.5,
+    "front_tok": 13420,
+    "distill_len": 2600
+  },
+  {
+    "name": "艾克薇尔咏叹调",
+    "file": "艾克薇尔咏叹调.json",
+    "batch": 2,
+    "rank": 1,
+    "score": 120.2,
+    "front_tok": 12480,
+    "distill_len": 1985
+  },
+  {
+    "name": "电锯人",
+    "file": "电锯人1.png",
+    "batch": 2,
+    "rank": 7,
+    "score": 105.6,
+    "front_tok": 3211,
+    "distill_len": 2160
+  },
+  {
+    "name": "寄生后宫：我体内住满了少女",
+    "file": "寄生后宫：我的体内住满了美少女.png",
+    "batch": 2,
+    "rank": 6,
+    "score": 105.8,
+    "front_tok": 4597,
+    "distill_len": 2541
+  },
+  {
+    "name": "我的妹妹不可能是别人的飞机杯",
+    "file": "我的妹妹不可能是飞机杯.png",
+    "batch": 2,
+    "rank": 12,
+    "score": 103.0,
+    "front_tok": 14290,
+    "distill_len": 3793
+  },
+  {
+    "name": "踏月寻仙1.0",
+    "file": "沉浸式修真世界.png",
+    "batch": 2,
+    "rank": 19,
+    "score": 99.8,
+    "front_tok": 4980,
+    "distill_len": 1978
+  },
+  {
+    "name": "都市猎妈人——猎妈事务所的二次破处佚事集",
+    "file": "【都市猎妈人】全城的“二次处女”都需要我来破除！！.png",
+    "batch": 2,
+    "rank": 26,
+    "score": 98.0,
+    "front_tok": 6653,
+    "distill_len": 4271
+  },
+  {
+    "name": "Pokemon Pink",
+    "file": "Pokemon_Pink1_2.png",
+    "batch": 2,
+    "rank": 32,
+    "score": 96.6,
+    "front_tok": 4367,
+    "distill_len": 1556
+  },
+  {
+    "name": "蛊真人 v3.0",
+    "file": "v3.0-1.png",
+    "batch": 2,
+    "rank": 35,
+    "score": 96.0,
+    "front_tok": 7465,
+    "distill_len": 2367
+  },
+  {
+    "name": "红月灾变1.1",
+    "file": "【末世生存】红月灾变.png",
+    "batch": 2,
+    "rank": 15,
+    "score": 101.2,
+    "front_tok": 13818,
+    "distill_len": 4079
+  },
+  {
+    "name": "重返未来·1999",
+    "file": "重返未来1999.png",
+    "batch": 2,
+    "rank": 16,
+    "score": 101.0,
+    "front_tok": 10456,
+    "distill_len": 3097
+  }
+]

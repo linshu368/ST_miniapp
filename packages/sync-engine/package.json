@@ -8,6 +8,7 @@
     "provision": "tsx src/provisioner/run.ts",
     "watch": "tsx src/watcher/run.ts",
     "start:provision": "tsx src/provision-api/run.ts",
+    "import-character": "tsx ../../scripts/import-character.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
