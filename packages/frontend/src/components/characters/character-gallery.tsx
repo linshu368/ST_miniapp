@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Search, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
