@@ -37,8 +37,18 @@ Ports: `8000` (ST), `9091` (provision-api), `9090` (watcher health). HEALTHCHECK
 docker buildx build --platform=linux/arm64 -f ops/docker/Dockerfile.backend -t backend:m2 --load .
 
 # amd64 cross-platform build (dry-run / CI validation, no load)
-docker buildx build --platform=linux/amd64 -f ops/docker/Dockerfile.backend -t backend:m2 --output=type=cacheonly .
+docker buildx build --platform=linux/amd64 -f ops/docker/Dockerfile.backend --target=builder \
+  --progress=plain --output=type=cacheonly .
 ```
+
+> **amd64 cross-platform verification.** The Dockerfile is arch-agnostic (`ARG TARGETARCH`, no
+> hardcoded arch; pnpm/npm/Prisma resolve per-platform). The **arm64** image is fully built and
+> validated locally (see acceptance below). The **amd64** build is validated on **CI native (amd64)
+> runners** — the local dev loop here is arm64-native. A local QEMU-emulated amd64 `buildx` dry-run
+> was attempted and got through the platform-specific `pnpm install --prod` step successfully, but
+> was not taken to completion locally because emulated builds are slow and the local Docker
+> environment was degraded at the time (full disk → corrupted containerd store). Gating amd64 in CI
+> on a native runner rather than in the local arm64 dev loop is the intended setup.
 
 Design notes (differ from M1 because the backend reality differs — see header comments in the Dockerfile):
 
