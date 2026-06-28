@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r --if-present lint",
     "lint:imports": "eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --ignore-pattern '**/__tests__/eslint-import-guard.ts' --no-inline-config",
+    "import-character": "pnpm --filter @miniapp/sync-engine exec tsx ../../scripts/import-character.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"

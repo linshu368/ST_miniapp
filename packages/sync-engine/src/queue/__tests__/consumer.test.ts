@@ -24,7 +24,6 @@ vi.mock('../../watcher/uploader.js', () => ({
 vi.mock('../../lib/config.js', () => ({
   config: {
     ST_DATA_PATH: '/mock-st-data',
-    ST_PLATFORM_ASSETS_PATH: '/mock-assets',
     SUPABASE_URL: 'https://mock.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'mock-key',
     ST_BASE_URL: 'http://localhost:8000',

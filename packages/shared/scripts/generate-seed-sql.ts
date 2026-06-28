@@ -1,5 +1,5 @@
 /**
- * 阶段一种子数据生成器（新方案）
+ * generate-seed-sql.ts
  *
  * 用途：
  *   - 从 SillyTavern-latest/data/default-user 真实数据生成种子 SQL
@@ -10,20 +10,12 @@
  *   - 预设：OpenAI Settings/Default.json
  *   - 全量 settings：default-user/settings.json
  *
- * 种子内容（D014 三 schema 切分后）：
- *   - miniapp.characters：3 张种子卡（第一张 is_default=true, is_published=true, is_active=true, sort_order=0..2）
+ * 种子内容：
+ *   - miniapp.characters：3 张种子卡（enabled=true, sort_order=0..2）
+ *   - miniapp.runtime_config：system_fallback_character_id 指向兜底卡
  *   - st_platform.platform_presets：1 行默认预设
  *   - st_platform.platform_api_configs：1 行（OpenRouter / Claude，is_default=true，api_key 占位 "REPLACE_ME"）
  *   - st_platform.platform_settings：第一行 platform_version=1，含全量 settings_jsonb 和 writable_paths
- *
- * settings_jsonb 清洗（用户确认 Q5）：
- *   - active_character → "platform_<第一张卡 uuid>.png"
- *   - oai_settings.preset_settings_openai → "platform_<预设 uuid>"（预设落盘 platform_<id>.json，ST 引用名不带扩展名）
- *   - main_api 强制 = "openai"
- *
- * writable_paths（J1 已确认走整组路径）：
- *   - { path: "active_character", transform: "character_ref" }
- *   - { path: "oai_settings.prompts", transform: "passthrough" }
  *
  * 运行：
  *   cd packages/shared
@@ -34,6 +26,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { CharaCardData } from '../src/png-parser.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,34 +50,12 @@ const SEED_PRESET_UUID = '22222222-2222-4222-8222-000000000001';
 const SEED_API_CONFIG_UUID = '33333333-3333-4333-8333-000000000001';
 const SEED_PLATFORM_SETTINGS_UUID = '44444444-4444-4444-8444-000000000001';
 
-// 阶段一 is_default=true 的卡 = 第七开发部
-const DEFAULT_CHARACTER_NAME = '第七开发部';
-
-interface CharaCardV3Data {
-  spec: 'chara_card_v3';
-  spec_version: string;
-  data: {
-    name: string;
-    description?: string;
-    personality?: string;
-    scenario?: string;
-    first_mes?: string;
-    mes_example?: string;
-    creator_notes?: string;
-    system_prompt?: string;
-    post_history_instructions?: string;
-    alternate_greetings?: string[];
-    tags?: string[];
-    creator?: string;
-    character_version?: string;
-    extensions?: Record<string, unknown>;
-    character_book?: Record<string, unknown>;
-  };
-}
+// 系统兜底卡（character_ref 失效时的回退值，用户感知不到）
+const FALLBACK_CHARACTER_NAME = '第七开发部';
 
 // ─── PNG chara card 解析 ─────────────────────────────────────────────────────
 
-function extractCharaCardFromPng(pngPath: string): CharaCardV3Data {
+function extractCharaCardFromPng(pngPath: string): CharaCardData {
   const buf = fs.readFileSync(pngPath);
   if (buf.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') {
     throw new Error(`Not a valid PNG: ${pngPath}`);
@@ -108,7 +79,6 @@ function extractCharaCardFromPng(pngPath: string): CharaCardV3Data {
       const key = data.subarray(0, nul).toString('utf-8');
       const value = data.subarray(nul + 1).toString('utf-8');
 
-      // 优先级：ccv3 > chara
       if (key === 'ccv3') {
         bestPayload = value;
         bestKey = key;
@@ -128,7 +98,7 @@ function extractCharaCardFromPng(pngPath: string): CharaCardV3Data {
   }
 
   const decoded = Buffer.from(bestPayload, 'base64').toString('utf-8');
-  const json = JSON.parse(decoded) as CharaCardV3Data;
+  const json = JSON.parse(decoded) as CharaCardData;
 
   if (!json.data || !json.data.name) {
     throw new Error(`Invalid chara card structure in ${pngPath} (key=${bestKey})`);
@@ -185,14 +155,8 @@ function sqlJsonArray(value: unknown): string {
 // ─── 角色卡 INSERT ────────────────────────────────────────────────────────────
 // 注意：miniapp.characters.updated_at 是 NOT NULL 且无 DB 默认值
 //       Prisma 用 @updatedAt 在 client 端注入，但纯 SQL INSERT 必须显式提供
-// 同步字段（004 引入）：is_default / is_published / is_active / sort_order
 
-function buildCharacterInsert(
-  uuid: string,
-  card: CharaCardV3Data,
-  sortOrder: number,
-  isDefault: boolean
-): string {
+function buildCharacterInsert(uuid: string, card: CharaCardData, sortOrder: number): string {
   const d = card.data;
   return `
 INSERT INTO miniapp.characters (
@@ -200,7 +164,7 @@ INSERT INTO miniapp.characters (
   creator_notes, system_prompt, post_history_instructions,
   alternate_greetings, tags, character_book, extensions,
   creator, character_version, spec, spec_version, avatar_url,
-  is_default, is_published, is_active, sort_order,
+  raw_card, enabled, sort_order,
   created_at, updated_at
 ) VALUES (
   '${uuid}',
@@ -222,12 +186,11 @@ INSERT INTO miniapp.characters (
   ${sqlString(card.spec ?? 'chara_card_v3')},
   ${sqlString(card.spec_version ?? '3.0')},
   '',
-  ${isDefault ? 'TRUE' : 'FALSE'},
-  TRUE,
+  ${sqlJson(card)},
   TRUE,
   ${sortOrder},
-  now(),
-  now()
+  timezone('Asia/Shanghai', now()),
+  timezone('Asia/Shanghai', now())
 ) ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,
@@ -246,11 +209,9 @@ INSERT INTO miniapp.characters (
   character_version = EXCLUDED.character_version,
   spec = EXCLUDED.spec,
   spec_version = EXCLUDED.spec_version,
-  is_default = EXCLUDED.is_default,
-  is_published = EXCLUDED.is_published,
-  is_active = EXCLUDED.is_active,
+  raw_card = EXCLUDED.raw_card,
   sort_order = EXCLUDED.sort_order,
-  updated_at = now();
+  updated_at = timezone('Asia/Shanghai', now());
 `.trim();
 }
 
@@ -371,7 +332,7 @@ INSERT INTO st_platform.platform_settings (
 // ─── 主流程 ───────────────────────────────────────────────────────────────────
 
 function main() {
-  // 角色卡顺序：第七开发部（默认）→ 莫池来 → 贺商寒
+  // 角色卡顺序：第七开发部（兜底卡）→ 莫池来 → 贺商寒
   const characterOrder = [
     { name: '第七开发部', file: '第七开发部.png' },
     { name: '莫池来', file: '莫池来.png' },
@@ -384,11 +345,10 @@ function main() {
     const card = extractCharaCardFromPng(pngPath);
     const uuid = SEED_CHARACTER_UUIDS[name];
     if (!uuid) throw new Error(`Missing UUID mapping for ${name}`);
-    const isDefault = name === DEFAULT_CHARACTER_NAME;
     console.log(
-      `  ✓ character ${name} -> ${uuid} (sort=${idx}, default=${isDefault}, size=${JSON.stringify(card.data).length}B)`
+      `  ✓ character ${name} -> ${uuid} (sort=${idx}, size=${JSON.stringify(card.data).length}B)`
     );
-    characterInserts.push(buildCharacterInsert(uuid, card, idx, isDefault));
+    characterInserts.push(buildCharacterInsert(uuid, card, idx));
   });
 
   // 预设
@@ -407,10 +367,10 @@ function main() {
   const settingsPath = path.join(ST_ROOT, 'settings.json');
   const rawSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as Record<string, unknown>;
 
-  const defaultCharUuid = SEED_CHARACTER_UUIDS[DEFAULT_CHARACTER_NAME];
-  if (!defaultCharUuid) throw new Error('Default character UUID missing');
+  const fallbackCharUuid = SEED_CHARACTER_UUIDS[FALLBACK_CHARACTER_NAME];
+  if (!fallbackCharUuid) throw new Error('Fallback character UUID missing');
 
-  const cleanedSettings = cleanSettingsJsonb(rawSettings, defaultCharUuid, SEED_PRESET_UUID);
+  const cleanedSettings = cleanSettingsJsonb(rawSettings, fallbackCharUuid, SEED_PRESET_UUID);
 
   // 校验清洗结果
   console.log(`  ✓ settings cleaning:`);
@@ -444,6 +404,22 @@ function main() {
     contentHash
   );
 
+  // ─── 系统兜底卡 runtime_config 行 ──────────────────────────────────────────
+  const fallbackConfigInsert = `
+INSERT INTO miniapp.runtime_config (key, value, description, version, updated_at)
+VALUES (
+  'system_fallback_character_id',
+  ${sqlString(JSON.stringify(fallbackCharUuid))}::jsonb,
+  ${sqlString('系统兜底卡 UUID。当 active_character 引用失效（角色被下架/PNG 缺失）时的回退值。用户感知不到此配置。')},
+  1,
+  now()
+) ON CONFLICT (key) DO UPDATE SET
+  value = EXCLUDED.value,
+  description = EXCLUDED.description,
+  updated_at = now();
+`.trim();
+  console.log(`  ✓ runtime_config system_fallback_character_id -> ${fallbackCharUuid}`);
+
   // ─── 拼装 SQL ─────────────────────────────────────────────────────────────
 
   const header = `-- 011: 阶段一种子数据
@@ -457,13 +433,14 @@ function main() {
 --   - 预设            -> st_platform.platform_presets
 --   - API 配置        -> st_platform.platform_api_configs（api_key=REPLACE_ME 占位，部署时替换）
 --   - settings 全量   -> st_platform.platform_settings（platform_version=1，含 writable_paths 白名单）
+--   - 兜底卡配置      -> miniapp.runtime_config.system_fallback_character_id
 --
--- settings_jsonb 清洗（用户确认 Q5）：
---   - active_character                       -> "platform_<第一张卡 uuid>.png"
+-- settings_jsonb 清洗：
+--   - active_character                       -> "platform_<兜底卡 uuid>.png"
 --   - oai_settings.preset_settings_openai    -> "platform_<预设 uuid>"
 --   - main_api                                -> "openai"
 --
--- 白名单（writable_paths，J1 已确认走整组路径）：
+-- 白名单（writable_paths）：
 --   - { path: "active_character", transform: "character_ref" }
 --   - { path: "oai_settings.prompts", transform: "passthrough" }
 --
@@ -477,6 +454,9 @@ BEGIN;
 
 -- ─── 角色卡（3 张，分区 A 平台池，schema=miniapp） ──────────────────────────
 ${characterInserts.join('\n\n')}
+
+-- ─── 系统兜底卡配置（character_ref 失效时的回退值） ─────────────────────────
+${fallbackConfigInsert}
 
 -- ─── API 预设（1 个，分区 A 平台池，schema=st_platform） ───────────────────
 ${presetInsert}
@@ -496,6 +476,7 @@ COMMIT;
   }
   for (const block of [
     ...characterInserts,
+    fallbackConfigInsert,
     presetInsert,
     apiConfigInsert,
     platformSettingsInsert,

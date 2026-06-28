@@ -1,5 +1,7 @@
-# 角色卡数据流梳理（基于 2026-06-26 代码现状）
+# 角色卡数据流梳理（更新于 2026-06-26 PR4）
 
+> **概念澄清**：本项目不存在"用户默认角色"的概念。用户进大厅主动选角色进入对话。系统中的"兜底卡"（`system_fallback_character_id`）仅在 `settings.json` 中 `active_character` 引用失效时作为系统回退值，用户感知不到。
+>
 > 结论口径：本文件以当前代码为唯一真相。`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`、`docs/Schema划分设计.md`、`docs/DECISIONS_BUNDLE.md` 只作为参考；凡与运行时代码不一致，下面均单独标出。
 
 ## 1. 数据模型
@@ -51,36 +53,30 @@ model Character {
 
 关键字段语义：
 
-| 字段           | 当前代码语义                                                                                                 | 代码位置                                                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `id`           | 平台角色卡 UUID；ST 文件名使用 `platform_<id>.png`。                                                         | `packages/sync-engine/src/lib/st-fs.ts:38-45`                                                                                  |
-| `name`         | 大厅展示名；也来自 PNG 内嵌 chara 元数据。                                                                   | `packages/backend/src/routes/characters.ts:21-27`                                                                              |
-| `description`  | 大厅卡片描述、详情页“作者说”的一部分。                                                                       | `packages/backend/src/routes/characters.ts:23,48`                                                                              |
-| `avatar_url`   | 大厅图片 URL 原样返回给前端；代码不拼 Storage URL。seed 生成器当前写空字符串。                               | `packages/backend/src/routes/characters.ts:24,49`；`packages/shared/scripts/generate-seed-sql.ts:222-224`                      |
-| `creator`      | 返回为 `author_name`。                                                                                       | `packages/backend/src/routes/characters.ts:26,51`                                                                              |
-| `tags`         | 返回为 `personality_tags`，要求运行时是数组。                                                                | `packages/backend/src/routes/characters.ts:25,50`                                                                              |
-| `first_mes`    | 详情接口返回为 `greeting`。                                                                                  | `packages/backend/src/routes/characters.ts:52`                                                                                 |
-| `enabled`      | 当前前端大厅接口实际使用的上架过滤字段。                                                                     | `packages/backend/src/routes/characters.ts:14-16,37-39`                                                                        |
-| `is_published` | 当前 provision 实际使用的下发过滤字段之一。                                                                  | `packages/sync-engine/src/provisioner/fetcher.ts:107-112`                                                                      |
-| `is_active`    | 当前 provision 实际使用的下发过滤字段之一。                                                                  | `packages/sync-engine/src/provisioner/fetcher.ts:107-112`                                                                      |
-| `is_default`   | provision merge settings 时，`active_character` 失效后的兜底卡。数据库层还有“最多一张默认卡”的部分唯一索引。 | `packages/sync-engine/src/provisioner/index.ts:142-151`；`packages/shared/migrations/004_characters_add_sync_fields.sql:41-45` |
-| `sort_order`   | 大厅排序第一关键字；provision 下发排序唯一关键字。                                                           | `packages/backend/src/routes/characters.ts:14-17`；`packages/sync-engine/src/provisioner/fetcher.ts:107-112`                   |
+| 字段          | 当前代码语义                                                      | 代码位置                                                                     |
+| ------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `id`          | 平台角色卡 UUID；ST 文件名使用 `platform_<id>.png`。              | `sync-engine/src/lib/st-fs.ts`                                               |
+| `name`        | 大厅展示名；也来自 PNG 内嵌 chara 元数据。                        | `backend/src/routes/characters.ts`                                           |
+| `description` | 大厅卡片描述、详情页"作者说"的一部分。                            | `backend/src/routes/characters.ts`                                           |
+| `avatar_url`  | 大厅图片 URL 原样返回给前端。                                     | `backend/src/routes/characters.ts`                                           |
+| `creator`     | 返回为 `author_name`。                                            | `backend/src/routes/characters.ts`                                           |
+| `tags`        | 返回为 `personality_tags`，要求运行时是数组。                     | `backend/src/routes/characters.ts`                                           |
+| `first_mes`   | 详情接口返回为 `greeting`。                                       | `backend/src/routes/characters.ts`                                           |
+| `enabled`     | **唯一的上下架开关**。大厅展示 + provision 下发统一以此字段过滤。 | `backend/src/routes/characters.ts`；`sync-engine/src/provisioner/fetcher.ts` |
+| `sort_order`  | 大厅排序第一关键字；provision 下发排序唯一关键字。                | `backend/src/routes/characters.ts`；`sync-engine/src/provisioner/fetcher.ts` |
+
+已删除字段（migration 021 清理）：
+
+- ~~`is_published`~~、~~`is_active`~~：与 `enabled` 语义重复，已统一为 `enabled`。
+- ~~`is_default`~~：系统兜底卡改由 `miniapp.runtime_config.system_fallback_character_id` 配置（用户感知不到）。
 
 字段约束：
 
-```41:50:packages/shared/migrations/004_characters_add_sync_fields.sql
--- 业务约束：is_default = true 的卡全表最多 1 行（部分唯一索引）
-CREATE UNIQUE INDEX IF NOT EXISTS idx_characters_one_default
-  ON miniapp.characters((1))
-  WHERE is_default = true;
-
--- 索引：大厅按 is_published + is_active + sort_order 列表查询
-CREATE INDEX IF NOT EXISTS idx_characters_published_active_sort
-  ON miniapp.characters(is_published, is_active, sort_order)
-  WHERE is_published = true AND is_active = true;
+```sql
+CREATE INDEX idx_characters_enabled_sort
+  ON miniapp.characters(enabled, sort_order)
+  WHERE enabled = true;
 ```
-
-注意：索引注释说大厅应按 `is_published/is_active/sort_order`，但当前 backend 大厅接口仍按 `enabled=true` 查询，见第 1.3 节。
 
 #### `st_platform.platform_presets`
 
@@ -211,185 +207,26 @@ CREATE TABLE IF NOT EXISTS st_users.user_st_chats (
 
 ### 1.2 Storage 存储约定
 
-#### 当前代码现状：未发现 Supabase Storage SDK 读写
+角色卡 PNG 存储在 Supabase Storage 的 `character-assets` bucket（public）中：
 
-当前运行时代码没有 `storage.from(...)` / bucket 创建 / signed URL / upload 下载逻辑。角色卡 PNG 的 provision 真正来源是本地平台资产目录：
+- 路径规则：`characters/platform_<uuid>.png`
+- 上传方式：`scripts/import-character.ts` CLI 工具
+- 下载方式：provision 时 `writeCharacters()` 通过 `supabase.storage.from().download()` 拉取
+- bucket 需在 Supabase Dashboard 手动创建（test / main 分支各一个）
 
-```38:45:packages/sync-engine/src/lib/st-fs.ts
-/** 平台资产目录下某角色卡的源 PNG 路径：ST_PLATFORM_ASSETS_PATH/characters/platform_<id>.png */
-export function platformCharacterSrc(characterId: string): string {
-  return join(config.ST_PLATFORM_ASSETS_PATH, 'characters', `platform_${characterId}.png`);
-}
+代码位置：
 
-/** data/<handle>/characters/platform_<id>.png */
-export function characterDst(handle: string, characterId: string): string {
-```
+- Storage 对象路径计算：`packages/sync-engine/src/lib/st-fs.ts` → `characterStoragePath()`
+- Storage 下载 + 写盘：`packages/sync-engine/src/provisioner/writer.ts` → `writeCharacters()`
+- bucket 名称配置：`packages/sync-engine/src/lib/config.ts` → `CHARACTER_STORAGE_BUCKET`（默认 `character-assets`）
 
-sync-engine 启动配置要求这个本地路径存在：
+### 1.3 字段语义现状
 
-```32:34:packages/sync-engine/src/lib/config.ts
-// ST 文件系统
-ST_DATA_PATH: z.string().min(1, 'ST_DATA_PATH 不能为空'),
-ST_PLATFORM_ASSETS_PATH: z.string().min(1, 'ST_PLATFORM_ASSETS_PATH 不能为空'),
-```
+字段已对齐（migration 021 完成清理）：
 
-writer 的实际行为是复制本地文件：
-
-```36:44:packages/sync-engine/src/provisioner/writer.ts
-// ─── 写角色卡 PNG ─────────────────────────────────────────────────────────────
-/**
- * 从 platform-assets/characters/ 目录复制 PNG 到用户的 characters/ 目录。
- *
- * @param handle  - ST 用户 handle
- * @param characters - 已拉取的平台角色卡列表
- * @param force   - true = 总是覆盖；false = 目标文件已存在则跳过（增量补全）
- */
-```
-
-#### 文档/计划中的 Supabase Storage 约定：代码未实现
-
-设计文档里提过未来 Storage 路径，但当前代码未接入：
-
-```498:501:docs/DECISIONS.md
-2. **阶段二（未来）**：迁移到 Supabase Storage
-   - PNG 上传到 `st-platform-assets` bucket，路径 `characters/<id>.png`
-   - 同步引擎从 Storage 签名 URL 下载到 ST 本地（保留 ST 文件系统依赖，不改 ST 源码）
-   - chara_card_v3 元数据继续存 `miniapp.characters`，加一列 `storage_path` 指向 Storage 对象
-```
-
-当前 `miniapp.characters` 没有 `storage_path` 字段：
-
-```243:270:packages/backend/prisma/schema.prisma
-model Character {
-  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                      String
-  description               String   @default("")
-  avatar_url                String   @default("")
-  creator_notes             String   @default("")
-  created_at                DateTime @default(now()) @db.Timestamptz(6)
-  updated_at                DateTime @updatedAt
-  alternate_greetings       Json     @default("[]")
-  character_book            Json?
-  character_version         String   @default("")
-  creator                   String   @default("")
-  extensions                Json     @default("{}")
-  first_mes                 String   @default("")
-  mes_example               String   @default("")
-  personality               String   @default("")
-  post_history_instructions String   @default("")
-  scenario                  String   @default("")
-  spec                      String   @default("chara_card_v2")
-  spec_version              String   @default("2.0")
-  system_prompt             String   @default("")
-  tags                      Json     @default("[]")
-  is_default                Boolean  @default(false)
-  enabled                   Boolean  @default(true)
-  sort_order                Int      @default(0)
-  is_published              Boolean  @default(true)
-  is_active                 Boolean  @default(true)
-```
-
-#### 本地 `platform-assets/` 引用
-
-当前仓库里没有实际 `platform-assets/` 目录（glob 未找到），但代码和文档仍保留概念引用：
-
-- `packages/sync-engine/src/provisioner/writer.ts:38`：注释写“从 platform-assets/characters/ 目录复制 PNG”。
-- `packages/sync-engine/src/lib/config.ts:34`：`ST_PLATFORM_ASSETS_PATH` 仍是必填 env。
-- `packages/sync-engine/src/lib/st-fs.ts:38-40`：实际拼 `ST_PLATFORM_ASSETS_PATH/characters/platform_<id>.png`。
-- `packages/sync-engine/src/provisioner/index.ts:111-114`：缺 PNG 时日志提示检查 `ST_PLATFORM_ASSETS_PATH`。
-
-### 1.3 字段语义现状与文档差异
-
-当前字段实际情况：
-
-- `schema.prisma` 里同时存在 `enabled`、`is_published`、`is_active`、`is_default`、`sort_order`。
-- shared migration `004` 的意图是新增 `is_published/is_active`。
-- backend Prisma migration `20260623113000` 的意图是“如果存在 `enabled` 且不存在 `is_published`，把 `enabled` 重命名为 `is_published`”。
-- 但当前 Prisma schema 仍保留两套字段，且运行时代码两边使用不同字段。
-
-迁移意图：
-
-```20:24:packages/shared/migrations/004_characters_add_sync_fields.sql
-ALTER TABLE miniapp.characters
-  ADD COLUMN IF NOT EXISTS is_default   BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT true,
-  ADD COLUMN IF NOT EXISTS is_active    BOOLEAN NOT NULL DEFAULT true,
-  ADD COLUMN IF NOT EXISTS sort_order   INTEGER NOT NULL DEFAULT 0;
-```
-
-```11:35:packages/backend/prisma/migrations/20260623113000_phase0_drop_sessions_character_flags/migration.sql
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'miniapp'
-      AND table_name = 'characters'
-      AND column_name = 'enabled'
-  ) AND NOT EXISTS (
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'miniapp'
-      AND table_name = 'characters'
-      AND column_name = 'is_published'
-  ) THEN
-    ALTER TABLE miniapp.characters RENAME COLUMN enabled TO is_published;
-```
-
-大厅实际使用 `enabled`：
-
-```13:17:packages/backend/src/routes/characters.ts
-app.get('/api/characters', async (request, reply) => {
-  const characters = await prisma.character.findMany({
-    where: { enabled: true },
-    orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
-  });
-```
-
-provision 实际使用 `is_published + is_active`：
-
-```107:112:packages/sync-engine/src/provisioner/fetcher.ts
-schemaClient('miniapp')
-  .from('characters')
-  .select('*')
-  .eq('is_published', true)
-  .eq('is_active', true)
-  .order('sort_order', { ascending: true }),
-```
-
-文档差异：
-
-- `docs/ARCHITECTURE.md §12.1` 写 `enabled` 控制大厅展示 + 新用户 provision，但当前 provision 代码不用 `enabled`。
-
-```368:372:docs/ARCHITECTURE.md
-### 12.1 角色卡字段语义
-
-- `enabled`：是否上架（控制大厅展示 + 新用户 provision）
-- `is_default`：新用户初始化时是否自动激活（也是 `character_ref` 失效兜底卡）
-- `sort_order`：大厅展示顺序
-```
-
-- `packages/shared/migrations/004_characters_add_sync_fields.sql` 注释写“大厅与同步引擎只下发 `is_published=true` 且 `is_active=true`”，但大厅代码仍用 `enabled`。
-
-```32:39:packages/shared/migrations/004_characters_add_sync_fields.sql
-COMMENT ON COLUMN miniapp.characters.is_default IS
-  '新用户初始化时是否自动激活此卡（user_st_settings.settings_jsonb.active_character 取此卡的 platform_<id>）';
-COMMENT ON COLUMN miniapp.characters.is_published IS
-  '是否上架。大厅与同步引擎只下发 is_published=true 且 is_active=true 的卡';
-COMMENT ON COLUMN miniapp.characters.is_active IS
-  '是否可用。停用后老用户已物化卡不可继续使用';
-COMMENT ON COLUMN miniapp.characters.sort_order IS
-  '大厅展示顺序，数字越小越靠前。同 sort_order 时按 created_at 兜底';
-```
-
-- `packages/sync-engine/registry.yaml` 注释仍写 `is_enabled=true`，但实际字段是 `is_published/is_active`。
-
-```31:34:packages/sync-engine/registry.yaml
-# 种子数据：011_seed_data.sql 中 3 张卡（第七开发部 / 莫池来 / 贺商寒）
-#   - is_enabled=true 的卡才下发
-#   - is_default=true 的卡（第七开发部）是 character_ref 失效时的兜底卡（决策 8）
-# 落盘命名：platform_<uuid>.png（决策 4 稳定命名，让 settings 指针跨设备语义一致）
-```
+- `enabled` 是唯一的上下架开关，大厅和 provision 统一使用
+- ~~`is_published`~~、~~`is_active`~~、~~`is_default`~~ 已删除
+- 系统兜底卡由 `miniapp.runtime_config.system_fallback_character_id` 配置
 
 ## 2. 写入路径
 

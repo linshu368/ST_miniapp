@@ -15,11 +15,8 @@ import { config } from '../lib/config.js';
 export interface CharacterRow {
   id: string;
   name: string;
-  is_default: boolean;
-  is_published: boolean;
-  is_active: boolean;
+  enabled: boolean;
   sort_order: number;
-  // chara_card_v3 字段（provisioner 不需要全部，按需取）
   description: string | null;
   personality: string | null;
   scenario: string | null;
@@ -72,7 +69,7 @@ export interface ApiConfigRow {
 export interface ProvisionData {
   /** 用户 st_handle，从 users 表读取 */
   stHandle: string;
-  /** 分区 A：已发布且可用的平台角色卡列表（按 sort_order 排序） */
+  /** 分区 A：上架中的平台角色卡列表（enabled=true，按 sort_order 排序） */
   characters: CharacterRow[];
   /** 分区 A：enabled 的平台预设列表 */
   presets: PresetRow[];
@@ -82,6 +79,8 @@ export interface ProvisionData {
   apiConfig: ApiConfigRow | null;
   /** 分区 B：该用户最新的 settings 镜像（可能为 null，表示新用户）  */
   userSettings: UserSettingsRow | null;
+  /** 系统兜底卡 ID（character_ref 失效时的回退值），来自 runtime_config */
+  systemFallbackCharacterId: string | null;
 }
 
 // ─── 错误类型 ──────────────────────────────────────────────────────────────────
@@ -100,35 +99,45 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
   const db = getSupabaseClient();
 
   // 并行拉取所有数据（users 查询需要先拿到 handle 再查 user_st_settings）
-  const [userResult, charactersResult, presetsResult, platformSettingsResult, apiConfigResult] =
-    await Promise.all([
-      db.from('users').select('st_handle').eq('id', userId).single(),
-      // ⚠️ .schema() 必须在链首（Supabase JS v2 要求）
-      schemaClient('miniapp')
-        .from('characters')
-        .select('*')
-        .eq('is_published', true)
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true }),
-      schemaClient('st_platform')
-        .from('platform_presets')
-        .select('id, display_name, preset_payload, is_default')
-        .eq('enabled', true)
-        .order('sort_order', { ascending: true }),
-      schemaClient('st_platform')
-        .from('platform_settings')
-        .select('platform_version, settings_jsonb, writable_paths')
-        .order('platform_version', { ascending: false })
-        .limit(1)
-        .single(),
-      // 分区 A：平台 API 配置（is_default=true 唯一激活行，写 secrets.json 用）
-      schemaClient('st_platform')
-        .from('platform_api_configs')
-        .select('id, config_payload, is_default')
-        .eq('is_default', true)
-        .limit(1)
-        .maybeSingle(),
-    ]);
+  const [
+    userResult,
+    charactersResult,
+    presetsResult,
+    platformSettingsResult,
+    apiConfigResult,
+    fallbackConfigResult,
+  ] = await Promise.all([
+    db.from('users').select('st_handle').eq('id', userId).single(),
+    schemaClient('miniapp')
+      .from('characters')
+      .select('*')
+      .eq('enabled', true)
+      .order('sort_order', { ascending: true }),
+    schemaClient('st_platform')
+      .from('platform_presets')
+      .select('id, display_name, preset_payload, is_default')
+      .eq('enabled', true)
+      .order('sort_order', { ascending: true }),
+    schemaClient('st_platform')
+      .from('platform_settings')
+      .select('platform_version, settings_jsonb, writable_paths')
+      .order('platform_version', { ascending: false })
+      .limit(1)
+      .single(),
+    // 分区 A：平台 API 配置（is_default=true 唯一激活行，写 secrets.json 用）
+    schemaClient('st_platform')
+      .from('platform_api_configs')
+      .select('id, config_payload, is_default')
+      .eq('is_default', true)
+      .limit(1)
+      .maybeSingle(),
+    // 系统兜底卡 ID（character_ref 失效时的回退值）
+    schemaClient('miniapp')
+      .from('runtime_config')
+      .select('value')
+      .eq('key', 'system_fallback_character_id')
+      .maybeSingle(),
+  ]);
 
   // 校验 users
   if (userResult.error || !userResult.data?.st_handle) {
@@ -171,6 +180,13 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     ? null
     : ((userSettingsResult.data as UserSettingsRow | null) ?? null);
 
+  // 解析兜底卡 ID：runtime_config.value 是 JSONB，存储格式为 JSON 字符串 '"uuid"'
+  let systemFallbackCharacterId: string | null = null;
+  if (!fallbackConfigResult.error && fallbackConfigResult.data) {
+    const raw = (fallbackConfigResult.data as { value: unknown }).value;
+    systemFallbackCharacterId = typeof raw === 'string' ? raw : null;
+  }
+
   return {
     stHandle,
     characters: (charactersResult.data ?? []) as CharacterRow[],
@@ -178,6 +194,7 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     platformSettings,
     apiConfig,
     userSettings,
+    systemFallbackCharacterId,
   };
 }
 
