@@ -6,6 +6,7 @@ import { installTabsBaseGuard } from './patches/tabs-base-guard.js';
 import { installRegexAutoConfirm } from './patches/regex-autoconfirm.js';
 import { installWorldbookAutoImport } from './patches/worldbook-autoimport.js';
 import { installOaiSettingsGuard } from './patches/oai-settings-guard.js';
+import { installTavernHelperGuard } from './patches/tavern-helper-guard.js';
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -32,6 +33,10 @@ function init(): void {
   installWorldbookAutoImport();
   // 老用户 settings.json 可能仍为 openai_max_context=4095；APP_READY 时幂等校正为平台值。
   installOaiSettingsGuard();
+  // 第三方扩展「酒馆助手」TH-optimize 默认全开：maximize_preset_context_length 把上下文顶到 2M、
+  // force_recommended_worldbook_global_settings 静默改写全局 WI 设置。源头关闭这两项并兜底夹紧，
+  // 保持平台 32768 与既定设置权威（渲染器/角色脚本不动，见 patches/tavern-helper-guard.ts）。
+  installTavernHelperGuard();
 
   const server = createBridgeServer('*');
   server.start();
