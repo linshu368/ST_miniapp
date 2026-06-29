@@ -1,0 +1,40 @@
+# Dedicated ignore-file for ops/docker/Dockerfile.frontend.
+#
+# BuildKit prefers "<dockerfile-path>.dockerignore" over the repo-root ".dockerignore".
+# So this file FULLY REPLACES the root .dockerignore for the frontend build — the root
+# one (which strips packages/frontend for the M1 st-bundle image) is intentionally NOT
+# consulted here. Patterns below are relative to the build context root.
+
+# Host-installed deps / build caches — always re-installed/rebuilt inside the image.
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+
+# VCS / editor / logs / secrets.
+.git
+.github
+.vscode
+.idea
+*.log
+.env
+.env.*
+!.env.example
+
+# The frontend image only needs packages/frontend + its workspace deps
+# (@miniapp/shared, @miniapp/bridge-protocol).
+packages/backend
+packages/sync-engine
+packages/st-extension
+packages/db-types
+
+# Everything else is irrelevant to building + running the frontend.
+vendor
+docs
+ops
+scripts
+platform-assets
+Database
+*.md
+tmp-*

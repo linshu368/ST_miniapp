@@ -1,0 +1,93 @@
+# syntax=docker/dockerfile:1
+
+# =============================================================================
+# frontend: @miniapp/frontend — Next.js 14 (App Router), self-hosted container.
+#
+# Mode: Next.js standalone (next.config.mjs has `output: 'standalone'` +
+#   experimental.outputFileTracingRoot = repo root). `next build` emits a
+#   self-contained runtime at packages/frontend/.next/standalone (server.js +
+#   the minimal traced node_modules, including the @miniapp/shared /
+#   @miniapp/bridge-protocol workspace deps). The runner therefore needs neither
+#   pnpm nor a full node_modules — just `node packages/frontend/server.js`.
+#
+# Conventions inherited from ops/docker/Dockerfile.backend (M2):
+#   - node:20 base (matches .nvmrc=20), corepack pnpm@9.15.9 (root packageManager)
+#   - pnpm install --frozen-lockfile inside the image, deps never bind-mounted
+#   - multi-stage builder -> runner, runs as the base image's non-root `node` user
+#   - explicit image tags, never `latest`
+#
+# Base choice: node:20-alpine for BOTH stages. The standalone output is pure JS
+# (no native addons in the dependency closure — no sharp/prisma/etc.), so musl is
+# safe and there is zero glibc/musl mismatch between build and run. Alpine keeps
+# the runner small.
+# =============================================================================
+
+# Browser-facing API base. Baked at build time (Next inlines NEXT_PUBLIC_* into the
+# client bundle). Default empty => same-origin relative URLs (correct behind the
+# nginx single-domain gateway). Overridable via compose build arg.
+ARG NEXT_PUBLIC_API_URL=""
+
+# ========== Stage 1: builder (install dev+prod deps, run next build) ==========
+FROM node:20-alpine AS builder
+ARG NEXT_PUBLIC_API_URL
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+# libc6-compat: harmless shim some node tooling probes for on musl.
+RUN apk add --no-cache libc6-compat \
+ && corepack enable
+
+WORKDIR /build
+# Workspace metadata + only the packages in the frontend dependency closure
+# (frontend + its two workspace deps). Mirrors Dockerfile.backend's lockfile-hit
+# strategy: copy root manifests first so --frozen-lockfile resolves deterministically.
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/frontend         packages/frontend
+COPY packages/shared           packages/shared
+COPY packages/bridge-protocol  packages/bridge-protocol
+
+# Full install for the frontend closure (build needs devDeps: typescript, tailwind,
+# next, eslint-config-next). --ignore-scripts skips the root husky `prepare` hook
+# (husky is a root devDep absent from this trimmed context).
+RUN pnpm install --frozen-lockfile --filter @miniapp/frontend... --ignore-scripts
+
+# NEXT_PUBLIC_* must be present in the env at `next build` time to be inlined.
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm --filter @miniapp/frontend build
+
+# Build-time assertions: standalone runtime + static assets must exist.
+RUN test -f /build/packages/frontend/.next/standalone/packages/frontend/server.js \
+ && test -d /build/packages/frontend/.next/static
+
+# ========== Stage 2: runner ==========
+FROM node:20-alpine
+# tini -> proper PID 1 (signal forwarding so `docker compose down` stops fast).
+RUN apk add --no-cache tini
+
+ENV NODE_ENV=production
+# Next standalone server.js reads PORT + HOSTNAME. HOSTNAME=0.0.0.0 binds all
+# interfaces so nginx (separate container) can reach it; default 'localhost' would not.
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app
+
+# Standalone output preserves the monorepo path layout (outputFileTracingRoot = repo
+# root), so server.js lands at /app/packages/frontend/server.js with node_modules
+# hoisted at /app/node_modules. Static assets are NOT included by the tracer and must
+# be copied alongside the server. (No public/ dir exists in this app, so none copied.)
+COPY --from=builder --chown=node:node /build/packages/frontend/.next/standalone ./
+COPY --from=builder --chown=node:node /build/packages/frontend/.next/static ./packages/frontend/.next/static
+
+USER node
+
+EXPOSE 3000
+
+# Root page (route group (main)/page.tsx) serves 2xx; -L-style follow not needed since
+# it is a 200, but busybox wget follows redirects by default, so 3xx would also pass.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "packages/frontend/server.js"]
