@@ -1,6 +1,12 @@
 # syntax=docker/dockerfile:1
 
 # =============================================================================
+# ⚠️ 非生产镜像（方案 Y）。生产前端部署在 **Vercel**（对外域名绑 Vercel，前端作为
+#    边缘入口），**Railway 不部署此镜像**。本镜像仅用于本地 `docker compose` 全栈
+#    仿真（离线复现整套 MVP 流程）。CI 默认不构建它，仅在打 `staging-*` tag 时构建
+#    （见 .github/workflows/build-and-push.yml）。
+# =============================================================================
+#
 # frontend: @miniapp/frontend — Next.js 14 (App Router), self-hosted container.
 #
 # Mode: Next.js standalone (next.config.mjs has `output: 'standalone'` +

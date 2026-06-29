@@ -51,6 +51,8 @@ services:
     restart: unless-stopped
 
   # Next.js standalone runtime.
+  # ⚠️ 仅本地全栈仿真使用：生产前端部署在 Vercel（方案 Y，对外域名绑 Vercel），
+  #    Railway 不部署此镜像。此服务只为离线复现整套 MVP 流程而存在。
   frontend:
     build:
       context: .

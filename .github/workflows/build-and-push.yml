@@ -2,10 +2,14 @@
 # ST_miniAPP — M5: build & push the 4 service images to GHCR (multi-arch).
 #
 # Images (namespace = ghcr.io/<owner>/st-miniapp-<component>):
-#   - st-miniapp-frontend    ops/docker/Dockerfile.frontend   (context .)
+#   - st-miniapp-frontend    ops/docker/Dockerfile.frontend   (context .)   [staging only]
 #   - st-miniapp-backend     ops/docker/Dockerfile.backend    (context .)
 #   - st-miniapp-st-backend  ops/docker/Dockerfile.st-bundle  (context .)
 #   - st-miniapp-nginx       ops/nginx/Dockerfile             (context ops/nginx)
+#
+# 方案 Y：对外域名绑 Vercel，生产前端部署在 Vercel，Railway 不消费 frontend 镜像。
+# 因此 frontend 镜像**默认不构建**（避免无用 CI 时间与 GHCR 存储占用），仅在打
+# `staging-*` tag（本地/staging 全栈仿真需要时）才构建。其余三镜像照常每次构建。
 #
 # Platforms: linux/amd64,linux/arm64 (arm64 wanted for native Apple-silicon dev).
 # Auth: built-in GITHUB_TOKEN (no operator PAT required); needs packages: write,
@@ -24,6 +28,9 @@ on:
     branches:
       - dev
       - 'dev_stage5_*'
+    # frontend 镜像仅在 staging-* tag 上构建（见下方矩阵步骤的 if 条件）。
+    tags:
+      - 'staging-*'
   workflow_dispatch: {}
 
 permissions:
@@ -93,6 +100,8 @@ jobs:
             type=raw,value=${{ github.ref_name }}-latest
 
       - name: Build and push (linux/amd64,linux/arm64)
+        # 方案 Y：frontend 镜像仅在 staging-* tag 构建；其余三镜像每次构建。
+        if: ${{ matrix.name != 'frontend' || startsWith(github.ref, 'refs/tags/staging-') }}
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -131,12 +140,19 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Inspect each image's manifest list
+        env:
+          # frontend 只在 staging-* tag 构建，因此只有此时才纳入校验（方案 Y）。
+          IS_STAGING_TAG: ${{ startsWith(github.ref, 'refs/tags/staging-') }}
         run: |
           set -euo pipefail
           owner='${{ github.repository_owner }}'
           tag='${{ github.ref_name }}-latest'
           fail=0
-          for name in frontend backend st-backend nginx; do
+          names="backend st-backend nginx"
+          if [ "${IS_STAGING_TAG}" = "true" ]; then
+            names="frontend ${names}"
+          fi
+          for name in ${names}; do
             image="${REGISTRY}/${owner}/st-miniapp-${name}:${tag}"
             echo "::group::imagetools inspect ${image}"
             docker buildx imagetools inspect "${image}"
