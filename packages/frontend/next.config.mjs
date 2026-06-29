@@ -30,6 +30,8 @@ const ST_ROOT_PREFIXES = [
 ];
 // ST top-level root files (ops/nginx/nginx.conf Layer 3, exact matches).
 const ST_ROOT_FILES = [
+  'csrf-token',
+  'version',
   'favicon.ico',
   'manifest.json',
   'style.css',

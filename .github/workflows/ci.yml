@@ -79,9 +79,22 @@ jobs:
       - name: Build frontend
         run: pnpm --filter @miniapp/frontend build
 
-  docker-build-backend:
-    name: Backend Docker Build (amd64 native)
+  docker-build:
+    name: Docker Build PR (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: .
+            file: ops/docker/Dockerfile.backend
+          - name: st-backend
+            context: .
+            file: ops/docker/Dockerfile.st-bundle
+          - name: nginx
+            context: ops/nginx
+            file: ops/nginx/Dockerfile
 
     steps:
       - name: Checkout
@@ -90,13 +103,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build backend image (amd64, no push)
+      - name: Build image (amd64, no push)
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ops/docker/Dockerfile.backend
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           platforms: linux/amd64
           push: false
           outputs: type=cacheonly
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
