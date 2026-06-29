@@ -7,6 +7,24 @@ installs, `ARG TARGETARCH` for buildx cross-platform builds, and run as the non-
 Each image has its own ignore-file next to its Dockerfile (BuildKit prefers
 `<dockerfile>.dockerignore` over the repo-root `.dockerignore`), so the builds don't interfere.
 
+## 镜像清单（方案 Y：生产 vs 本地仿真）
+
+> 对外域名绑 **Vercel**，前端作为边缘入口；Railway 只跑 `backend` / `st-bundle` / `nginx`
+> 三个服务（拓扑见 [`railway/README.md`](./railway/README.md)）。
+
+| 镜像                                 | Dockerfile                        | 生产部署在                               | CI 构建                            |
+| ------------------------------------ | --------------------------------- | ---------------------------------------- | ---------------------------------- |
+| `st-miniapp-backend`                 | `ops/docker/Dockerfile.backend`   | **Railway**                              | 每次推送                           |
+| `st-miniapp-st-backend`（st-bundle） | `ops/docker/Dockerfile.st-bundle` | **Railway**                              | 每次推送                           |
+| `st-miniapp-nginx`                   | `ops/nginx/Dockerfile`            | **Railway**（envsubst 模板，仅内部分发） | 每次推送                           |
+| `st-miniapp-frontend`                | `ops/docker/Dockerfile.frontend`  | **❌ 非生产** — 生产在 **Vercel**        | **默认不构建**，仅 `staging-*` tag |
+
+- **frontend 镜像非生产**：仅用于本地 `docker compose` 全栈仿真。生产前端在 Vercel，
+  Railway 不部署它。CI（`.github/workflows/build-and-push.yml`）默认不构建该镜像，
+  只有在打 `staging-*` tag 时才构建，避免无用 CI 时间与 GHCR 存储占用。
+- nginx 生产配置为 envsubst 模板（前端在 Vercel，网关仅做 ST/backend 内部分发）；
+  本地 compose 用 `ops/nginx/nginx.local.conf`（含前端兜底）。详见 [`nginx/README.md`](./nginx/README.md)。
+
 ---
 
 ## st-bundle (M1)
