@@ -1,0 +1,102 @@
+# =============================================================================
+# ST_miniAPP — local/staging orchestration (M4).
+#
+# Topology (single bridge network app-net; nginx is the ONLY host-exposed service):
+#
+#   host:8080 ──> nginx:80 ──┬─> frontend:3000   (Next.js standalone)
+#                            ├─> backend:3001    (Fastify platform API)
+#                            ├─> st-backend:8000 (SillyTavern)
+#                            └─> st-backend:9091  (provision-api)
+#                            (st-backend:9090 watcher-health stays internal; nginx
+#                             never proxies it and it is not published to host)
+#
+# Routing is owned by ops/nginx/nginx.conf (frozen in M3). Service hostnames match
+# the upstream names declared there: frontend / backend / st-backend.
+#
+# Secrets: every service reads .env.compose (cp .env.compose.example .env.compose).
+# Only placeholders ship in the repo; real values are operator-supplied.
+# =============================================================================
+
+services:
+  # SillyTavern + provision-api + watcher (s6-managed). Stateful: ST writes user
+  # data under /home/node/app/data (the image's VOLUME) — persisted via st-data.
+  st-backend:
+    build:
+      context: .
+      dockerfile: ops/docker/Dockerfile.st-bundle
+    image: st-miniapp/st-backend:m4
+    env_file: .env.compose
+    # provision-api defaults to binding 127.0.0.1 (loopback). nginx lives in a
+    # separate container, so it must bind 0.0.0.0 to be reachable on :9091.
+    environment:
+      PROVISION_API_BIND_HOST: 0.0.0.0
+    volumes:
+      - st-mongo-data:/home/node/app/data
+    networks:
+      - app-net
+    restart: unless-stopped
+
+  # Fastify platform API. No startup dependency on st-backend (server.ts only
+  # registers routes; ST/provision are called lazily at request time via config),
+  # so it is NOT gated on st-backend health — this parallelizes boot and keeps the
+  # all-healthy window inside the 2-minute budget. nginx still waits for all three.
+  backend:
+    build:
+      context: .
+      dockerfile: ops/docker/Dockerfile.backend
+    image: st-miniapp/backend:m4
+    env_file: .env.compose
+    networks:
+      - app-net
+    restart: unless-stopped
+
+  # Next.js standalone runtime.
+  frontend:
+    build:
+      context: .
+      dockerfile: ops/docker/Dockerfile.frontend
+      args:
+        # Baked into the client bundle at build time. Empty => same-origin relative
+        # URLs, correct behind the nginx gateway.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    image: st-miniapp/frontend:m4
+    env_file: .env.compose
+    networks:
+      - app-net
+    restart: unless-stopped
+
+  # Single-domain reverse-proxy gateway. The ONLY service mapped to a host port.
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - '8080:80'
+    volumes:
+      - ./ops/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+      st-backend:
+        condition: service_healthy
+    # Probe the in-conf `location = /nginx-health` (returns 200). Gives `ps` a
+    # (healthy) status for the gateway too.
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1/nginx-health']
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    networks:
+      - app-net
+    restart: unless-stopped
+
+networks:
+  app-net:
+    driver: bridge
+
+volumes:
+  # ST persistent data. NOTE: despite the name there is no MongoDB in st-bundle
+  # (full-repo grep finds no mongod/dbPath/27017); ST persists to its own data dir.
+  # The name is kept per the M4 spec; the mount target is the image's real VOLUME.
+  st-mongo-data:
