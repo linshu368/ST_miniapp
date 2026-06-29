@@ -1,10 +1,24 @@
-# ops/nginx — 单域名反向代理网关（M3）
+# ops/nginx — 反向代理网关
 
-把 **frontend / backend / provision-api / ST 主体** 统一收口在一个域名 + 端口（80）下。
-M3 仅交付配置与镜像，**不与 M2 容器真实联调**；upstream 用 docker network hostname 占位，M4 编排时串接。
+> **两份配置（方案 Y）**：对外域名绑 Vercel，前端在边缘；Railway nginx 退化为
+> 仅做 ST 与 backend 的内部分发。两种运行形态各用一份配置：
+>
+> | 文件                                     | 用途                    | 上游                                                                       | `location /` | `/provision-api/`                          |
+> | ---------------------------------------- | ----------------------- | -------------------------------------------------------------------------- | ------------ | ------------------------------------------ |
+> | [`nginx.conf`](./nginx.conf)             | **生产（Railway）模板** | `backend` + `st`（envsubst 占位 `${BACKEND_UPSTREAM}` / `${ST_UPSTREAM}`） | `return 404` | 已删除（backend 走 Railway 内网直连 9091） |
+> | [`nginx.local.conf`](./nginx.local.conf) | **本地全栈仿真**        | `frontend` + `backend` + `st` + `provision`                                | → frontend   | 暴露（仅本地）                             |
+>
+> - 生产镜像由 [`Dockerfile`](./Dockerfile) 构建：把 `nginx.conf` 当作 envsubst 模板，
+>   容器启动时由 nginx 官方 entrypoint 注入 `BACKEND_UPSTREAM` / `ST_UPSTREAM`
+>   （取值见 [`../env/nginx.env.production.example`](../env/nginx.env.production.example)）。
+> - 本地 `docker-compose.yml` 直接 bind-mount `nginx.local.conf`（不消费生产模板）。
+> - 下方的「location 路由表（定稿）」描述的是 **`nginx.local.conf`**（含前端兜底）；
+>   生产 `nginx.conf` 在此基础上**删除**了 frontend 上游、`= /api/init-st-session`、
+>   `~ /tavern/<UUID>`（这三者方案 Y 下由 Vercel 直接处理）、`/provision-api/` 暴露与
+>   `location /` 兜底（改 404），并新增 Vercel 转发头透传（见末尾「方案 Y 差异」）。
 
 - 基础镜像：`nginx:1.27-alpine`
-- 监听：`80`（不开 SSL；TLS 终结留给外层 / M4 之后）
+- 监听：`80`（不开 SSL；TLS 由 Railway / Vercel 边缘终结）
 - 路由真相依据：[`docs/P1-2_CLOUD_DEPLOY_PROMPT.md`](../../docs/P1-2_CLOUD_DEPLOY_PROMPT.md)（附录 A 单层枚举表）
 
 ## upstream / 端口约定
@@ -63,25 +77,42 @@ M3 仅交付配置与镜像，**不与 M2 容器真实联调**；upstream 用 do
 
 ## 安全说明 ⚠️
 
-- **provision-api 无鉴权**，设计上仅供 backend 经内网（`*.railway.internal:9091`）调用，且源码默认绑 `127.0.0.1`（M4 容器内须注入 `PROVISION_API_BIND_HOST=0.0.0.0` 才可跨服务访问）。
-- `/provision-api/` location 按任务路由表保留，但**公网暴露有风险**。生产建议：仅在受控内网开放，或在该 location 加 `allow`/`deny` 网段白名单、或直接删除此 location（backend 走内网直连不依赖网关）。
+- **provision-api 无鉴权**，设计上仅供 backend 经内网（`*.railway.internal:9091`）调用，且源码默认绑 `127.0.0.1`（容器内须注入 `PROVISION_API_BIND_HOST=0.0.0.0` 才可跨服务访问）。
+- **生产 `nginx.conf` 已彻底删除 `/provision-api/` location**：backend 在 Railway 内网用 `ST_PROVISION_URL=http://<st-bundle>.railway.internal:9091` 直连，不经过网关，公网无任何 provision 入口。
+- `nginx.local.conf` 仍保留 `/provision-api/`，仅供本地仿真，不公网暴露。
+
+## 方案 Y 差异（生产 vs 本地）
+
+生产 `nginx.conf` 相对 `nginx.local.conf`：
+
+- **删除 frontend 上游与 `location /` 兜底**（改 `return 404`）——前端在 Vercel。
+- **删除 `= /api/init-st-session` 与 `~ /tavern/<UUID>`**——这两条原本指向 frontend，方案 Y 下由 Vercel 直接处理，不会转发到本网关。
+- **删除 `/provision-api/` 暴露**（见安全说明）。
+- **upstream 改 envsubst 占位** `${BACKEND_UPSTREAM}` / `${ST_UPSTREAM}`，启动时注入。
+- **新增 Vercel 转发头透传**：请求经 Vercel rewrites 进来，已带原始 `X-Forwarded-Proto` / `X-Forwarded-Host`（对外域名）；用 `map` 在非空时原样透传，否则回退 `$scheme` / `$host`。`X-Forwarded-For` 用 `$proxy_add_x_forwarded_for` 追加。
 
 ## 启动 / 验证
 
 ```bash
-# 1) 语法校验（仅挂载 nginx.conf，自包含）
-docker run --rm \
-  -v "$(pwd)/ops/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
-  nginx:1.27-alpine nginx -t
+# ── 本地仿真配置（nginx.local.conf）──────────────────────────────────────
+# 语法校验：upstream 用 docker hostname，nginx -t 会因无法解析而报错，
+# 故仅在 compose network 内（docker compose up）由 nginx 实际加载验证。
 
-# 2) 构建网关镜像
+# ── 生产模板（nginx.conf）────────────────────────────────────────────────
+# 1) 构建生产网关镜像（envsubst 模板化，无 build 期 nginx -t）
 docker build -t st-miniapp-nginx:dev ops/nginx
+
+# 2) 启动时模板化 + 语法校验（用可解析的 IP 占位上游，验证 envsubst + 语法）
+docker run --rm \
+  -e BACKEND_UPSTREAM=127.0.0.1:3001 \
+  -e ST_UPSTREAM=127.0.0.1:8000 \
+  st-miniapp-nginx:dev nginx -t
 
 # 3) 跨平台构建 dry-run（amd64 + arm64，不落地产物）
 docker buildx build --platform linux/amd64,linux/arm64 \
   --output type=cacheonly ops/nginx
 
-# 4) frontend standalone 产物（M4 容器化复用）
+# 4) frontend standalone 产物（本地/staging 仿真镜像复用；生产在 Vercel）
 cd packages/frontend && pnpm build
 ls .next/standalone .next/static
 ```

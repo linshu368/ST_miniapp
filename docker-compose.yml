@@ -72,12 +72,16 @@ services:
     restart: unless-stopped
 
   # Single-domain reverse-proxy gateway. The ONLY service mapped to a host port.
+  # ⚠️ 本地仿真专用配置：bind-mount ops/nginx/nginx.local.conf（含 frontend 上游、
+  #    location / 兜底与 /provision-api/ 暴露）。生产用的是 ops/nginx/nginx.conf
+  #    模板（仅 ST/backend 内部分发，前端在 Vercel），由 ops/nginx/Dockerfile 经
+  #    envsubst 在 Railway 启动时生成——本地 compose 不消费它。
   nginx:
     image: nginx:1.27-alpine
     ports:
       - '8080:80'
     volumes:
-      - ./ops/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ops/nginx/nginx.local.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       backend:
         condition: service_healthy
