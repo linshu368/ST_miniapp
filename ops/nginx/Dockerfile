@@ -8,8 +8,12 @@ FROM nginx:1.27-alpine
 RUN rm -f /etc/nginx/conf.d/default.conf
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# 构建期自检配置语法（amd64 上构建时可执行；交叉构建 arm64 由 QEMU 执行）。
-RUN nginx -t
+# NOTE: no build-time `nginx -t` here. nginx.conf (frozen in M3) declares upstreams
+# by Docker-network hostname (frontend / backend / st-backend), and `nginx -t`
+# resolves those names at config-test time — they only exist at runtime inside the
+# compose network, so a standalone image build would fail with
+# "host not found in upstream". The config is exercised at container start
+# (`nginx -g daemon off;`) and by the /nginx-health HEALTHCHECK below.
 
 EXPOSE 80
 
