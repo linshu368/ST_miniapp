@@ -96,6 +96,22 @@
 
 ---
 
+## 7. worldbook-autoimport（进入对话弹「是否导入角色内置世界书」确认框）
+
+- **文件**：`src/patches/worldbook-autoimport.ts`
+- **现象**：点角色卡进入对话时，先弹「This character has an embedded World/Lorebook. Would you like to import it now?」**阻塞式**确认框，需手动点「Yes」才进入发消息环节。用户不应感知此弹窗。
+- **根因**：`script.js` 的 `getChatResult()` 内 `select_selected_character(chid)` → `world-info.js` 的 `checkEmbeddedWorld(chid)`：当角色含 `data.character_book`、`accountStorage` 无 `AlertWI_<avatar>` 标记、该书未链接（`extensions.world` 不在 `world_names`）、且 `power_user.world_import_dialog === true`（默认）时，`callGenericPopup(..., POPUP_TYPE.CONFIRM, { okButton: 'Yes' })` 弹阻塞框；点「Yes」→ `importEmbeddedWorldInfo(true)`（转换 + 落盘 + 链接）。
+- **关键时机**：弹窗在 `getChatResult` 的 `select_selected_character`（早）触发，**早于** `eventSource.emit(CHAT_CHANGED)`（晚）。故无法照搬补丁 #3 的 `makeFirst(CHAT_CHANGED)` 拦截——会来得太晚。
+- **修复（三道防线，等价于自动点「Yes」）**：
+  1. **去阻塞**：`init` + `APP_READY` 置 `power_user.world_import_dialog = false`（经 `getContext().powerUserSettings`），把阻塞 CONFIRM 降级为非阻塞 toastr。因弹窗早于任何可监听事件，必须提前关开关保证绝不卡住用户；仅运行时内存覆写，不 `saveSettingsDebounced` 写回。
+  2. **去 toastr**：`APP_READY` 为已加载且含 `character_book` 的角色预置 `accountStorage` 的 `AlertWI_<avatar>='true'`，使 `checkEmbeddedWorld` 连 info toastr 也不弹。
+  3. **真导入**：`CHAT_CHANGED`（+ `init` 兜底一次）为当前角色静默导入——复刻 `importEmbeddedWorldInfo` 核心（`convertCharacterBook` + `saveWorldInfo(immediately)` + `updateWorldInfoList` + `writeExtensionField(chid,'world',bookName)`），但去掉其 UI 副作用（原函数 `trigger #WIDrawerIcon` 弹世界书面板 + success toastr）。用 `writeExtensionField` 直接写 `data.extensions.world`（内存 + json_data + 服务端 merge-attributes），不依赖角色编辑面板 DOM。
+- **幂等与长期干净**：导入处先查 `getWorldInfoNames()`/`extensions.world`，已落盘且已链接则跳过；首次导入并链接后，后续进入因 `extensions.world` 已在 `world_names` 中，`checkEmbeddedWorld` 内层条件为 false → 天然不再弹窗/toastr。
+- **为什么忠实于「Yes」而非仅消弹窗**：`getCharacterLore()` 生成时只读 `extensions.world` 与 `charLore`，**不**直接读未导入的 `character_book`；若仅消弹窗不导入，角色内置世界书对生成完全无效。故与补丁 #3「自动启用正则」一致，选择真导入以保留作者设定。
+- **已知未覆盖 / 备选**：更彻底的根治是在 `sync-engine` provision（`merger.ts`）阶段就转换落盘 + 写 `extensions.world`，使 `world_names` 天然含它、弹窗根因消失（无需前端补丁，但需对存量用户重新 provision）。当前与现有补丁体系一致，先走 st-extension 侧。
+
+---
+
 ## 维护提示
 
 - 改动 `st-extension` 后需 `pnpm --filter @miniapp/st-extension build`（产物自动拷贝进 `vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/`），浏览器**硬刷新**生效。

@@ -4,6 +4,7 @@ import { registerForwarders } from './forwarders/index.js';
 import { installAutocompleteGuard } from './patches/autocomplete-guard.js';
 import { installTabsBaseGuard } from './patches/tabs-base-guard.js';
 import { installRegexAutoConfirm } from './patches/regex-autoconfirm.js';
+import { installWorldbookAutoImport } from './patches/worldbook-autoimport.js';
 import { installOaiSettingsGuard } from './patches/oai-settings-guard.js';
 import {
   handleSelectCharacter,
@@ -27,6 +28,8 @@ function init(): void {
   installTabsBaseGuard();
   // 进入对话时「是否启用角色内置正则」确认弹窗：平台角色均可信，自动按「确定」启用，用户无感。
   installRegexAutoConfirm();
+  // 进入对话时「是否导入角色内置世界书」确认弹窗：平台角色均可信，自动按「Yes」静默导入并链接，用户无感。
+  installWorldbookAutoImport();
   // 老用户 settings.json 可能仍为 openai_max_context=4095；APP_READY 时幂等校正为平台值。
   installOaiSettingsGuard();
 

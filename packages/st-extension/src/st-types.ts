@@ -10,6 +10,11 @@
 export interface STCharacter {
   avatar: string;
   name: string;
+  data?: {
+    character_book?: STCharacterBook;
+    extensions?: { world?: string; [key: string]: unknown };
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -25,6 +30,22 @@ export interface STPresetManager {
 
 export interface STAccountStorage {
   currentUser?: { id: string } | null;
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** power_user 设置子集（仅本扩展用到的字段） */
+export interface STPowerUserSettings {
+  /** 是否对含内置世界书的角色弹「阻塞式」导入确认框（默认 true） */
+  world_import_dialog?: boolean;
+  [key: string]: unknown;
+}
+
+/** 角色卡内置世界书（character card spec v2 的 character_book） */
+export interface STCharacterBook {
+  name?: string;
+  entries: unknown[];
+  [key: string]: unknown;
 }
 
 export interface STChatCompletionSettings {
@@ -44,6 +65,7 @@ export interface STContext {
   chat: unknown[] | undefined;
   chatCompletionSettings: STChatCompletionSettings;
   extensionSettings: STExtensionSettings;
+  powerUserSettings: STPowerUserSettings;
   eventSource: STEventSource;
   eventTypes: STEventTypes;
   accountStorage?: STAccountStorage | null;
@@ -57,6 +79,13 @@ export interface STContext {
   openCharacterChat(fileName: string): Promise<void>;
   renameChat(oldFileName: string, newName: string): Promise<void>;
   executeSlashCommandsWithOptions(command: string): Promise<unknown>;
+
+  /** 角色内置世界书相关（见 vendor scripts/world-info.js / extensions.js） */
+  convertCharacterBook(book: STCharacterBook): unknown;
+  saveWorldInfo(name: string, data: unknown, immediately?: boolean): Promise<void>;
+  updateWorldInfoList(): Promise<void>;
+  getWorldInfoNames(): string[];
+  writeExtensionField(characterId: number | string, key: string, value: unknown): Promise<void>;
 }
 
 export interface STEventTypes {
