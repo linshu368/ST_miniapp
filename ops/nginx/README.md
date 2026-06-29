@@ -21,6 +21,25 @@
 - 监听：`80`（不开 SSL；TLS 由 Railway / Vercel 边缘终结）
 - 路由真相依据：[`docs/P1-2_CLOUD_DEPLOY_PROMPT.md`](../../docs/P1-2_CLOUD_DEPLOY_PROMPT.md)（附录 A 单层枚举表）
 
+## 两份 conf 差异点清单（逐项）
+
+> ⚠️ **改一份时务必检查另一份是否需要同步。** 大多数路由规则（ST 静态资源枚举、
+> `/api/*` 消歧、SSE 关缓冲/超时、`client_max_body_size`、gzip 等）两份**必须保持一致**；
+> 只有下表列出的条目是**有意不同**的。改动「共有规则」时两份都要改；改动「差异条目」时
+> 确认是否只该改其中一份。
+
+| 维度                                           | `nginx.conf`（生产，Railway）                          | `nginx.local.conf`（本地 compose）        | 为何不同                                                   |
+| ---------------------------------------------- | ------------------------------------------------------ | ----------------------------------------- | ---------------------------------------------------------- |
+| upstream `frontend`                            | ❌ 无                                                  | ✅ `frontend:3000`                        | 生产前端在 Vercel，网关不代理前端                          |
+| upstream `backend` / `st`                      | envsubst 占位 `${BACKEND_UPSTREAM}` / `${ST_UPSTREAM}` | 硬编码 `backend:3001` / `st-backend:8000` | 生产用 Railway 内网名（启动注入）；本地用 compose hostname |
+| upstream `provision`                           | ❌ 无                                                  | ✅ `st-backend:9091`                      | 生产 backend 走内网直连 provision，不经网关                |
+| `= /api/init-st-session`                       | ❌ 无（Vercel 直接处理）                               | ✅ → frontend                             | 生产该前端 route handler 在 Vercel                         |
+| `~ /tavern/<UUID>`                             | ❌ 无（Vercel 直接处理）                               | ✅ → frontend                             | 生产对话页由 Vercel 渲染                                   |
+| `^~ /provision-api/`                           | ❌ 无                                                  | ✅ → provision（剥前缀）                  | 生产不暴露 provision                                       |
+| `location /` 兜底                              | `return 404`                                           | → frontend                                | 生产前端在 Vercel，网关收到 `/` 即异常                     |
+| Vercel 转发头透传（`map $http_x_forwarded_*`） | ✅ 有（非空时透传 `X-Forwarded-Proto/Host`）           | ❌ 无（本地直接 `$scheme`/`$host`）       | 生产请求经 Vercel 进来，需保留原始对外协议/域名            |
+| **以上之外的所有规则**                         | **两份一致（共有）**                                   | **两份一致（共有）**                      | ST 资产枚举 / `/api/*` 消歧 / SSE / body size / gzip 等    |
+
 ## upstream / 端口约定
 
 | upstream（hostname） | 端口 | 进程                                            | 来源                                                                                                                                                    |
