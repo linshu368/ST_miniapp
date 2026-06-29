@@ -40,7 +40,9 @@ WORKDIR /build
 # Workspace metadata + only the packages in the frontend dependency closure
 # (frontend + its two workspace deps). Mirrors Dockerfile.backend's lockfile-hit
 # strategy: copy root manifests first so --frozen-lockfile resolves deterministically.
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+# tsconfig.base.json: packages/frontend/tsconfig.json (read by `next build`) extends
+# ../../tsconfig.base.json, so the repo-root base config must be present.
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/frontend         packages/frontend
 COPY packages/shared           packages/shared
 COPY packages/bridge-protocol  packages/bridge-protocol

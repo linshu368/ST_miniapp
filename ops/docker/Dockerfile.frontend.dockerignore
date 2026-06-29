@@ -18,9 +18,11 @@ node_modules
 .vscode
 .idea
 *.log
-.env
-.env.*
-!.env.example
+# Exclude ALL .env files at any depth (e.g. packages/frontend/.env.local), which would
+# otherwise leak dev-only NEXT_PUBLIC_* / ST_LOCAL_URL into the prod build and override
+# the NEXT_PUBLIC_API_URL build arg. NEXT_PUBLIC_* are supplied via the build arg only.
+**/.env
+**/.env.*
 
 # The frontend image only needs packages/frontend + its workspace deps
 # (@miniapp/shared, @miniapp/bridge-protocol).

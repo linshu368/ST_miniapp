@@ -61,6 +61,12 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     image: st-miniapp/frontend:m4
     env_file: .env.compose
+    # The shared env_file carries PORT=3001 (backend's port); re-assert 3000 here so the
+    # Next standalone server (reads $PORT) listens where the healthcheck/nginx expect it.
+    # `environment` takes precedence over `env_file`.
+    environment:
+      PORT: '3000'
+      HOSTNAME: 0.0.0.0
     networks:
       - app-net
     restart: unless-stopped
