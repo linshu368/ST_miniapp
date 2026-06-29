@@ -1,10 +1,12 @@
 # ST_miniAPP 架构说明
 
-> 本文档基于对 `packages/` 下核心源码的实测梳理，反映 **阶段 0～3 完成后** 的实际架构。
+> 本文档基于对 `packages/` 下核心源码的实测梳理（2026-06-29 复扫更新），反映 **阶段 0～3 + MVP 收尾（阶段 4）完成后** 的实际架构。
 > 阶段 0：清场（删除阶段一遗留 + schema 迁移）｜阶段 1：基础设施落位（vendoring + 包脚手架）｜
-> 阶段 2：SPIKE（vendor 内验证 ST 内部 API）｜阶段 3：bridge 完整化（actions/events 补完 + frontend lib/bridge + iframe 宿主）。
+> 阶段 2：SPIKE（vendor 内验证 ST 内部 API）｜阶段 3：bridge 完整化（actions/events 补完 + frontend lib/bridge + iframe 宿主）｜
+> 阶段 4（MVP 收尾）：历史聊天反代（`routes/chats.ts`）+ LLM 网关 per-user JWT 计费 + 模型档位切换 + 角色卡 Supabase Storage 下发 + st-extension 兼容补丁。
 >
 > 文中凡涉及"计划 vs 实测"差异处，均以 **【实测】** / **【占位】** / **【未接线】** 标注。
+> MVP 6 项功能已于本地 UI 冒烟全通过（见 `MVP_ACTION_PLAN.md` §2）。
 
 ---
 
@@ -69,9 +71,11 @@
 │ ├─ ST 反代 /api/bridge/st/*   ├──►│ ├─ 角色卡 / 聊天 / 预设 / 世界书 │
 │ ├─ 业务 /api/characters       │   │ ├─ LLM 调用(endpoint 指向网关)  │
 │ ├─ 业务 /api/users/settings   │   │ └─ 文件系统持久化               │
-│ ├─ 支付 /api/payment·/wallet  │   └─────────────┬──────────────────┘
-│ └─ LLM 网关                   │                 │ 文件系统读写
-│    /api/platform/llm-proxy/v1 │                 ▼
+│ ├─ 历史 /api/users/chats      │   └─────────────┬──────────────────┘
+│ │   (反代 ST /api/chats/recent)│                │ 文件系统读写
+│ ├─ 支付 /api/payment·/wallet  │                 ▼
+│ └─ LLM 网关(JWT验签+按tier计费)│
+│    /api/platform/llm-proxy/v1 │
 └──┬──────────────┬─────────────┘   ┌────────────────────────────────┐
    │ Prisma       │ HTTP            │ ST data 目录 data/<st_handle>/  │
    │ (miniapp.*   │ (provision)     │ ├─ chats/                       │
@@ -126,12 +130,12 @@
 
 ### 4.1 契约层（纯类型 / 协议）
 
-| 包                | 职责                                                                                                                                                              | 消费者                                   | 状态                                   |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------- |
-| `bridge-protocol` | postMessage 完整契约：envelope / 三段握手 / 错误码 / mirror state / 7 actions / 13 events / parser / BridgeError                                                  | `frontend`, `st-extension`               | ✅ **完整落地**                        |
-| `shared`          | 跨包常量与纯工具：`deriveStHandle`、`createDatabaseConfig`、REST API 类型（`api/*`）、`ok/fail` envelope、dev-fixtures；含 `migrations/`（Supabase SQL，001~020） | 所有包                                   | ✅ 已建（同时承担 REST 契约职责）      |
-| `db-types`        | Supabase 同步层 schema 镜像（机器生成 `generated.ts` + `tables.ts`）                                                                                              | （计划：backend 同步场景 / sync-engine） | ⚠️ **已生成、未接线**                  |
-| `api-contract`    | 计划中的独立 REST 契约包                                                                                                                                          | —                                        | ❌ **未创建**（职责暂留 `shared/api`） |
+| 包                | 职责                                                                                                                                                                                        | 消费者                                   | 状态                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------- |
+| `bridge-protocol` | postMessage 完整契约：envelope / 三段握手 / 错误码 / mirror state / 7 actions / 13 events / parser / BridgeError                                                                            | `frontend`, `st-extension`               | ✅ **完整落地**                        |
+| `shared`          | 跨包常量与纯工具：`deriveStHandle`、`createDatabaseConfig`、REST API 类型（`api/*`，含 `chats`）、`ok/fail` envelope、`png-parser`、dev-fixtures；含 `migrations/`（Supabase SQL，001~022） | 所有包                                   | ✅ 已建（同时承担 REST 契约职责）      |
+| `db-types`        | Supabase 同步层 schema 镜像（机器生成 `generated.ts` + `tables.ts`）                                                                                                                        | （计划：backend 同步场景 / sync-engine） | ⚠️ **已生成、未接线**                  |
+| `api-contract`    | 计划中的独立 REST 契约包                                                                                                                                                                    | —                                        | ❌ **未创建**（职责暂留 `shared/api`） |
 
 ### 4.2 应用层（运行时）
 
@@ -206,6 +210,9 @@ ST 端 (st-extension)                         壳端 (BridgeClient)
 `selectCharacter` / `openChat` / `newChat` / `renameChat` / `deleteChat` / `changeModel` / `getReadyState`。
 每个 action 在 `actions/<name>.ts` 定义 `ActionMeta { name, payloadSchema, resultSchema, requiredPhase, waitable }`，统一汇入 `actionRegistry`。ST 端 `bridge-server` 收到 `request` 后：校验信封 → 校验 phase → zod 校验 payload → 查 handler → 执行 → 回 `response`。
 
+- **【实测】跨角色历史聊天**：`openChat` / `renameChat` 的 payload 含可选 `avatar`（目标聊天所属角色 PNG 文件名）。因 ST 的 `openCharacterChat` / `renameChat` 仅作用于当前 `this_chid`，历史列表是跨角色聚合，故 handler 在 `avatar` 与当前角色不同时先 `selectCharacterById` 再 open/rename（见 `st-extension/handlers/open-chat.ts`、`rename-chat.ts`）。
+- **【实测】changeModel 写 custom_model**：平台 ST 固定 `chat_completion_source='custom'`，`changeModel` handler 写 `oai_settings.custom_model` + 手动 emit `CHATCOMPLETION_MODEL_CHANGED`（详见 `docs/st-extension-patches.md` §6）。
+
 ### 5.4 Events（ST → 壳，13 个）
 
 `app:ready`、`character:changed`、`chat:changed`、`chat:created`、`chat:deleted`、`chat:renamed`、`generation:started`、`generation:streaming`、`generation:completed`、`generation:stopped`、`generation:ended`、`model:changed`、`settings:updated`。
@@ -213,8 +220,10 @@ ST 端 `forwarders/` 把 ST `eventSource` 内部事件转译为 bridge event；�
 
 ### 5.5 Mirror State（pong 携带）
 
-`STMirrorState = { userId, currentCharacterId, currentChatId, currentPresetName, generationPhase, messageCount, lastUpdatedAt }`。
+`STMirrorState = { userId, currentCharacterId, currentChatId, currentPresetName, currentModel, generationPhase, messageCount, lastUpdatedAt }`。
 壳端 `ping`，ST 端 `pong` 回完整快照（`buildMirrorState()` 从 `SillyTavern.getContext()` 读取），壳端经 `onPong` 写入 `stores/st-mirror`（zustand），组件用 `useSTMirror(selector)` 订阅。
+
+- 【实测】握手 `ready` 后 `BridgeClient` 启动 **2.5s ping 轮询**（`PING_INTERVAL_MS=2500`），`bridge-provider.tsx` 用 `onPong` 把 mirror 同步进 store——这是模型档位高亮（`currentModel`）与历史当前对话高亮（`currentChatId`）的数据来源（详见 `docs/st-extension-patches.md` §6 根因 2）。
 
 ### 5.6 错误码族（`errors.ts` / `BridgeError`）
 
@@ -226,22 +235,25 @@ ST 端 `forwarders/` 把 ST `eventSource` 内部事件转译为 bridge event；�
 
 ST 在本项目的定位 **不是纯渲染容器，而是业务执行引擎**。角色切换 / 会话管理 / 消息生成都发生在 ST 内部状态机里。平台壳 = UI 入口 + 通过 bridge 触发 ST 内部动作 + 维护镜像供查询。
 
-| 业务功能        | UI 入口                     | 业务执行                                                       | 持久化（写入真相）                             | 查询真相（镜像）                   |
-| --------------- | --------------------------- | -------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------- |
-| 大厅角色卡列表  | 自研                        | backend 读 `miniapp.characters`（Prisma，过滤 `enabled=true`） | Storage（PNG）+ `miniapp.characters`（元数据） | 同左                               |
-| 切换角色        | 自研（`/tavern/[id]` 触发） | bridge `selectCharacter` ② → ST 切 active_character            | ST 文件系统 ④                                  | `st_users.user_st_settings`        |
-| 切换 / 新建会话 | 自研侧边栏（规划中）        | bridge `openChat` / `newChat` ②                                | ST 文件系统 ④                                  | `st_users.user_st_chats`（⏳占位） |
-| 删除/重命名会话 | 自研侧边栏（规划中）        | bridge `deleteChat` / `renameChat` ②                           | ST 文件系统 ④                                  | `st_users.user_st_chats`（⏳占位） |
-| 模型切换        | 自研按钮                    | bridge `changeModel` ② → ST 改 settings                        | ST 文件系统 ④（settings.json）                 | `st_users.user_st_settings`        |
-| 消息生成        | ST iframe 内                | ST 自己（LLM endpoint 指向平台代理网关 ①）                     | ST 文件系统 ④（chat 文件）                     | `st_users.user_st_chats`（⏳占位） |
+| 业务功能        | UI 入口                             | 业务执行                                                       | 持久化（写入真相）                             | 查询真相（镜像）                                          |
+| --------------- | ----------------------------------- | -------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------- |
+| 大厅角色卡列表  | 自研                                | backend 读 `miniapp.characters`（Prisma，过滤 `enabled=true`） | Storage（PNG）+ `miniapp.characters`（元数据） | 同左                                                      |
+| 切换角色        | 自研（`/tavern/[id]` 触发）         | bridge `selectCharacter` ② → ST 切 active_character            | ST 文件系统 ④                                  | `st_users.user_st_settings`                               |
+| 切换 / 新建会话 | 自研侧边栏（`chat-sidebar.tsx` ✅） | bridge `openChat` / `newChat` ②                                | ST 文件系统 ④                                  | 列表反代 ST `/api/chats/recent`（`user_st_chats` ⏳占位） |
+| 删除/重命名会话 | 自研侧边栏（`chat-sidebar.tsx` ✅） | bridge `deleteChat` / `renameChat` ②                           | ST 文件系统 ④                                  | 列表反代 ST `/api/chats/recent`（`user_st_chats` ⏳占位） |
+| 模型切换        | 自研按钮                            | bridge `changeModel` ② → ST 改 settings                        | ST 文件系统 ④（settings.json）                 | `st_users.user_st_settings`                               |
+| 消息生成        | ST iframe 内                        | ST 自己（LLM endpoint 指向平台代理网关 ①）                     | ST 文件系统 ④（chat 文件）                     | `st_users.user_st_chats`（⏳占位）                        |
 
 **关键纪律**：
 
 - **业务真相归属**：运行时真相 = ST 文件系统；业务可查询真相 = Supabase 同步层镜像（`st_users.*`）。平台壳读镜像，不读 ST 文件系统。
-- **聊天记录回流 ⏳ 未实现**：watcher 当前 **仅** 回流 `settings.json` → `st_users.user_st_settings`（见 `watcher/uploader.ts`）。`user_st_chats` 表 + db-types 类型已就位，但 **registry.yaml 无 chats 规则、watcher 无 chat uploader**，属占位待补。
-- **LLM 代理网关**：`backend/src/routes/llm-proxy.ts` 是一个 **独立的 OpenAI 兼容反向代理 + SSE 透传**，注入平台 API key 后转发上游（默认 OpenRouter）。**不**承担消息双写。
-  - 【实测】当前 **未** 基于 `ai/ChannelRegistry` 实现；`src/ai/*`（ChannelRegistry / ModelStrategy / PipelineChannel）是阶段一遗留，与 LLM 网关无直接接线，待清理或重用。
-  - 【实测】当前 **未** 做 userId/JWT 验证（dev 直接透传），仅校验 API key 是否配置。
+- **历史聊天列表（MVP 已建）**：壳端读 backend `GET /api/users/chats`（`routes/chats.ts`），后者反代 ST `POST /api/chats/recent`（跨角色聚合 max=200），把 ST 的 `avatar`（`platform_<uuid>.png`）映射回 `miniapp.characters` 元数据。**这是 MVP 历史列表的真相源**（非 `st_users.user_st_chats` 镜像）。
+- **聊天记录回流 ⏳ 未实现**：watcher 当前 **仅** 回流 `settings.json` → `st_users.user_st_settings`（见 `watcher/uploader.ts`）。`user_st_chats` 表 + db-types 类型已就位，但 **registry.yaml 无 chats 规则、watcher 无 chat uploader**，属占位待补（MVP 用上面的反代列表已够用）。
+- **LLM 代理网关（MVP 已建 per-user 计费）**：`backend/src/routes/llm-proxy.ts` 是一个 **独立的 OpenAI 兼容反向代理 + SSE 透传**。当前实现：
+  - 【实测】**已做 JWT 验签**：`requirePlatformToken` 校验 `Authorization: Bearer <platformToken>`（HS256，`lib/llm-token.ts` 验签）→ 提取 `userId`。token 由 provision 时 `writer.ts` 写入每个用户 `secrets.json`（替代真实 API key）。
+  - 【实测】**已做 per-user 计费**：从 `body.model` 查 `platform/model-tiers.ts`（standard=10 / premium=15）得扣费额 → 余额预检不足回 `402` → SSE 流见 `data: [DONE]` 正常结束后 `MiniappWalletRepository.deduct()` 扣费（fire-and-forget）；上游非 2xx / 流中断不扣费。
+  - **不**承担消息双写。
+  - 【实测】`src/ai/*`（ChannelRegistry / ModelStrategy / PipelineChannel）是阶段一遗留，仅内部互相 import，**无任何 route/app 接线**，待清理。
 
 ---
 
@@ -265,7 +277,7 @@ ST 在本项目的定位 **不是纯渲染容器，而是业务执行引擎**。
 - `packages/st-extension`
 - `vendor/sillytavern/` 任何文件变更（含 `NOTICE.md` commit hash 更新；其他文件直接修改 → 触发架构铁律拦截）
 - `packages/frontend` 中 `lib/bridge/`、`components/bridge/`（`bridge-provider.tsx` / `st-iframe.tsx`）、`stores/st-mirror.ts`、`/tavern/*`
-- `packages/backend` 中鉴权桥、ST 反代、LLM 代理网关
+- `packages/backend` 中鉴权桥（`routes/bridge.ts`）、ST 反代（`middleware/stProxy.ts`）、历史聊天反代（`routes/chats.ts`，反代 ST `/api/chats/recent`）、LLM 代理网关（`routes/llm-proxy.ts`）
 - `packages/sync-engine` 中涉及 ST 文件系统格式（`provisioner/*`、`watcher/uploader.ts`、`lib/st-fs.ts`、`registry.yaml`）
 - `ops/nginx` 中 `/tavern/*` 或 `/api/*` 路由分发
 - 任何涉及 postMessage、链路 ② ③ ⑤ 的代码
@@ -278,19 +290,19 @@ diff 同时包含 A 和 B 范围，建议拆分独立提交。
 
 ## 8. 数据真相归属
 
-| 数据类型                  | 权威源                                            | 镜像                        | 备注                                                  |
-| ------------------------- | ------------------------------------------------- | --------------------------- | ----------------------------------------------------- |
-| 用户身份                  | `public.users`（Prisma + Supabase 混用）          | —                           | TG 身份 + `st_handle` + `st_initialized_at`           |
-| 角色卡 PNG                | Supabase Storage `character-assets` bucket        | —                           | provision 从 Storage 下载到 ST（`platform_<id>.png`） |
-| 角色卡元数据              | `miniapp.characters`（Prisma）                    | —                           | backend 读取渲染大厅                                  |
-| 预设                      | `st_platform.platform_presets`                    | —                           | provision order=20 下发                               |
-| API key                   | `st_platform.platform_api_configs`（is_default）  | —                           | provision order=30 写 `secrets.json`                  |
-| 平台管控 settings 段      | `st_platform.platform_settings`                   | —                           | provision order=100 merge 后写 settings.json          |
-| 用户 settings 用户段      | ST 文件系统 settings.json（白名单子集）           | `st_users.user_st_settings` | watcher 回流（append-only + content_hash 去重）✅     |
-| 用户聊天记录              | ST 文件系统 chats/                                | `st_users.user_st_chats`    | ⏳ 回流未实现（占位）                                 |
-| 平台壳用户配置（UI 偏好） | `miniapp.miniapp_user_settings`（Prisma）         | —                           | `/api/users/settings`，与 ST 无关                     |
-| 钱包 / 支付订单           | `miniapp.*`（wallet / payment_orders，Prisma）    | —                           | 阶段一业务，仍在运行                                  |
-| 平台运行时配置            | `miniapp.runtime_config`（Prisma）+ Upstash Redis | —                           | feature flag、`system_fallback_character_id` 等       |
+| 数据类型                  | 权威源                                            | 镜像                        | 备注                                                                                                          |
+| ------------------------- | ------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 用户身份                  | `public.users`（Prisma + Supabase 混用）          | —                           | TG 身份 + `st_handle` + `st_initialized_at`                                                                   |
+| 角色卡 PNG                | Supabase Storage `character-assets` bucket        | —                           | provision 从 Storage 下载到 ST（`platform_<id>.png`）                                                         |
+| 角色卡元数据              | `miniapp.characters`（Prisma）                    | —                           | backend 读取渲染大厅                                                                                          |
+| 预设                      | `st_platform.platform_presets`                    | —                           | provision order=20 下发                                                                                       |
+| API key                   | `st_platform.platform_api_configs`（is_default）  | —                           | provision order=30 写 `secrets.json`（写入 per-user JWT，非真实 key；真实 key 仅 backend `LLM_API_KEY` 持有） |
+| 平台管控 settings 段      | `st_platform.platform_settings`                   | —                           | provision order=100 merge 后写 settings.json                                                                  |
+| 用户 settings 用户段      | ST 文件系统 settings.json（白名单子集）           | `st_users.user_st_settings` | watcher 回流（append-only + content_hash 去重）✅                                                             |
+| 用户聊天记录              | ST 文件系统 chats/                                | `st_users.user_st_chats`    | ⏳ 回流未实现（占位）                                                                                         |
+| 平台壳用户配置（UI 偏好） | `miniapp.miniapp_user_settings`（Prisma）         | —                           | `/api/users/settings`，与 ST 无关                                                                             |
+| 钱包 / 支付订单           | `miniapp.*`（wallet / payment_orders，Prisma）    | —                           | 阶段一业务，仍在运行                                                                                          |
+| 平台运行时配置            | `miniapp.runtime_config`（Prisma）+ Upstash Redis | —                           | feature flag、`system_fallback_character_id` 等                                                               |
 
 **Prisma vs db-types 边界（设计）**：Prisma 管理 `miniapp.*` + `public.*`；db-types 管理 `st_platform.*` / `st_users.*` / `st_infra.*`。
 【实测】sync-engine 暂用 supabase-js 的 `.schema(...)` 字符串查询访问同步层，db-types 尚未实际接入。
@@ -308,10 +320,11 @@ diff 同时包含 A 和 B 范围，建议拆分独立提交。
 | `POST /api/bridge/st-session`           | **鉴权桥**：TG InitData → Supabase user(upsert) → 判断首登 → provision → ST `/api/users/login` 取 `connect.sid` → 返回 `{ st_url, st_cookie, is_new_user }`。新用户走 **三阶段 provision**（建账号 → 登录触发 ST content init → `force=true` 覆盖写平台文件）。 |
 | `ALL /api/bridge/st/*`                  | **ST 反向代理**（`middleware/stProxy.ts`）：路径重写到 `ST_BASE_URL`，cookie/header/流式响应透传，`redirect: manual`                                                                                                                                            |
 | `GET/PATCH /api/users/settings`         | 平台壳用户设置（`miniapp_user_settings`）                                                                                                                                                                                                                       |
+| `GET /api/users/chats`                  | **历史聊天列表**（`routes/chats.ts`）：反代 ST `POST /api/chats/recent`（cookie 走 Redis 缓存），跨角色聚合，`avatar`→`miniapp.characters` 元数据映射                                                                                                           |
 | `POST /api/payment/*` · `/api/wallet/*` | 支付（JLPayment 网关）+ 钱包账本（阶段一业务保留）                                                                                                                                                                                                              |
-| `ALL /api/platform/llm-proxy/v1/*`      | **LLM 代理网关**：注入平台 API key，转发上游（默认 OpenRouter），SSE 透传                                                                                                                                                                                       |
+| `ALL /api/platform/llm-proxy/v1/*`      | **LLM 代理网关**：JWT platformToken 验签（提取 userId）→ 按 `model-tiers` 计费额做 402 余额预检 → 注入平台真实 API key 转发上游（默认 OpenRouter）→ SSE 透传 + 流正常结束后 per-user 扣费                                                                       |
 
-> 计划中的 `GET /api/platform/provision-status/:userId` **未实现**；历史侧边栏数据源（读 `st_users.user_st_chats`）随 chat 回流一并待补。
+> 计划中的 `GET /api/platform/provision-status/:userId` **未实现**。历史侧边栏数据源 **MVP 走 `GET /api/users/chats` 反代 ST**（已建）；切到 `st_users.user_st_chats` 镜像随 chat 回流一并待补。
 
 ### 9.2 sync-engine provision-api（`provision-api/server.ts`, 127.0.0.1:9091）
 
@@ -339,9 +352,9 @@ diff 同时包含 A 和 B 范围，建议拆分独立提交。
 
 1. `fetchProvisionData` — 从 Supabase 拉取 handle / characters / presets / platformSettings / apiConfig / userSettings
 2. `ensureStUser` — 确保 ST 用户账号存在（ST API）
-3. order=10 `writeCharacters` — 写角色卡 PNG（`platform_<id>.png`）
+3. order=10 `writeCharacters` — **从 Supabase Storage 下载** 角色卡 PNG（bucket=`CHARACTER_STORAGE_BUCKET`，对象路径 `characters/platform_<id>.png`）落盘为 `platform_<id>.png`【实测：已无本地 `ST_PLATFORM_ASSETS_PATH` 路径，纯 Storage】
 4. order=20 `writePresets` — 写预设 JSON（`OpenAI Settings/platform_<id>.json`）
-5. order=30 `writeSecrets` — 写 `secrets.json`（默认 API 配置）
+5. order=30 `writeSecrets` — 写 `secrets.json`：**写入的不是真实 API key，而是 `signPlatformToken(userId)` 派生的 per-user JWT**（HS256，密钥 `LLM_PROXY_TOKEN_SECRET`），LLM 网关据此识别用户并计费
 6. order=100 `mergeSettings` + `writeSettings` — merge 平台段(A) + 用户段(B) → `settings.json`，并对 `character_ref` 做失效校验 + 默认卡兜底
 7. 更新 `users.st_initialized_at`
 
@@ -369,25 +382,29 @@ diff 同时包含 A 和 B 范围，建议拆分独立提交。
 
 - `enabled`：是否上架（控制大厅展示 + provision 下发，唯一的上下架开关）
 - `sort_order`：大厅展示顺序（数字越小越靠前）
-- ~~`is_default`~~：**已删除**。系统兜底卡（`character_ref` 失效时的回退值）改由 `miniapp.runtime_config` 表的 `system_fallback_character_id` 配置。注意：这不是"用户默认角色"，用户进大厅主动选角色，感知不到此配置。
-- ~~`is_published` / `is_active`~~：**已删除**。与 `enabled` 语义重复，统一使用 `enabled`。
+- ~~`is_default`~~：**已删除**（migrations 021/022）。系统兜底卡（`character_ref` 失效时的回退值）改由 `miniapp.runtime_config` 表的 `system_fallback_character_id` 配置。注意：这不是"用户默认角色"，用户进大厅主动选角色，感知不到此配置。
+- ~~`is_published` / `is_active`~~：**已删除**（migrations 021/022）。与 `enabled` 语义重复，统一使用 `enabled`。
+- `raw_card`（jsonb，migration 022 新增）：从角色卡 PNG 解析出的原始角色卡 JSON，无损保留生态扩展字段（解析器见 `shared/src/png-parser.ts`）。
+- `created_at` / `updated_at`：migration 022 起统一为北京时间墙上时间（`Asia/Shanghai`，不带时区）。
 
 ### 12.2 环境变量
 
-| 前缀 / 关键变量                                                | 用途                                                           |
-| -------------------------------------------------------------- | -------------------------------------------------------------- |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `*_PROJECT_REF` | Supabase 连接与环境隔离                                        |
-| `DATABASE_URL` / `DIRECT_URL`                                  | Prisma（backend）                                              |
-| `ST_BASE_URL`                                                  | ST 服务地址（backend 登录 + 反代；sync-engine）                |
-| `ST_PROVISION_URL`                                             | backend → sync-engine provision-api 地址                       |
-| `ST_USER_PASSWORD_SECRET`                                      | 用户密码派生密钥（backend / sync-engine 必须一致）             |
-| `ST_DATA_PATH`                                                 | sync-engine ST 文件系统路径                                    |
-| `CHARACTER_STORAGE_BUCKET`                                     | Supabase Storage bucket（角色卡 PNG，默认 `character-assets`） |
-| `HEALTH_PORT`(9090) / `PROVISION_API_PORT`(9091)               | sync-engine 端口                                               |
-| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                             | LLM 上游网关                                                   |
-| `PAYMENT_*`                                                    | 支付网关                                                       |
-| `TELEGRAM_BOT_TOKEN`                                           | TG InitData 签名校验                                           |
-| `FRONTEND_URL` / `DEV_AUTH_BYPASS`                             | CORS / 开发放行                                                |
+| 前缀 / 关键变量                                                | 用途                                                                                              |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `*_PROJECT_REF` | Supabase 连接与环境隔离                                                                           |
+| `DATABASE_URL` / `DIRECT_URL`                                  | Prisma（backend）                                                                                 |
+| `ST_BASE_URL`                                                  | ST 服务地址（backend 登录 + 反代；sync-engine）                                                   |
+| `ST_PROVISION_URL`                                             | backend → sync-engine provision-api 地址                                                          |
+| `ST_USER_PASSWORD_SECRET`                                      | 用户密码派生密钥（backend / sync-engine 必须一致）                                                |
+| `ST_DATA_PATH`                                                 | sync-engine ST 文件系统路径                                                                       |
+| `CHARACTER_STORAGE_BUCKET`                                     | Supabase Storage bucket（角色卡 PNG，默认 `character-assets`）                                    |
+| `HEALTH_PORT`(9090) / `PROVISION_API_PORT`(9091)               | sync-engine 端口                                                                                  |
+| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                             | LLM 上游网关（平台真实 key，仅 backend 持有）                                                     |
+| `LLM_PROXY_TOKEN_SECRET`                                       | per-user JWT 签发/验签密钥（backend 与 sync-engine 必须一致，缺省回退 `ST_USER_PASSWORD_SECRET`） |
+| `LLM_PROXY_URL`                                                | 写入 ST settings 的代理网关可达地址（sync-engine merger）                                         |
+| `PAYMENT_*`                                                    | 支付网关                                                                                          |
+| `TELEGRAM_BOT_TOKEN`                                           | TG InitData 签名校验                                                                              |
+| `FRONTEND_URL` / `DEV_AUTH_BYPASS`                             | CORS / 开发放行                                                                                   |
 
 ### 12.3 settings.json 分段
 
@@ -398,31 +415,35 @@ ST 原生不分段；由 sync-engine 的 `platform_settings.writable_paths` 白�
 
 ### 12.4 LLM 调用路径
 
-ST 的 LLM endpoint 配置（通过 provision 写入 settings/secrets）指向 `…/api/platform/llm-proxy/v1/`。网关职责：持平台真实 key、转发上游、SSE 流式透传。**不**承担消息双写。
+ST 的 LLM endpoint 配置（通过 provision 写入 settings 的 `oai_settings.custom_url`/`reverse_proxy` + secrets 的 per-user JWT）指向 `…/api/platform/llm-proxy/v1/`。网关职责：JWT 验签提取 userId、按 tier 计费（402 预检 + 流结束扣费）、持平台真实 key 转发上游、SSE 流式透传。**不**承担消息双写。
 
-> 待补：网关侧 userId/JWT 验证与按用户限流（当前 dev 透传）。
+> 【实测】JWT 验签 + per-user 按 tier 计费 **已实现**（`requirePlatformToken` + `model-tiers`）。待补：网关侧按用户限流、tiers 从 `runtime_config` 热更。
 
 ---
 
 ## 13. 阶段 0～3 完成度矩阵
 
-| 能力                                                           | 状态    | 位置                                                                         |
-| -------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------- |
-| 阶段 0 清场（删自研聊天表 + schema 迁移）                      | ✅      | `migrations/020_*`、`prisma/migrations/..._phase0_drop_sessions_*`           |
-| 阶段 1 vendoring + 包脚手架                                    | ✅      | `vendor/sillytavern`、7 个 `packages/*`                                      |
-| 阶段 2 SPIKE（ST 内部 API 验证）                               | ✅      | st-extension `forwarders/` + `mirror-state.ts`（`SillyTavern.getContext()`） |
-| 阶段 3 bridge-protocol（actions/events/握手/错误码）           | ✅      | `packages/bridge-protocol`                                                   |
-| 阶段 3 st-extension（server/handlers/forwarders/handshake）    | ✅      | `packages/st-extension`                                                      |
-| 阶段 3 frontend lib/bridge（client/状态机/buffer/hooks/store） | ✅      | `frontend/src/lib/bridge` + `stores/st-mirror.ts`                            |
-| 阶段 3 iframe 宿主（常驻挂载 + 可见性切换）                    | ✅      | `components/bridge/{bridge-provider,st-iframe}.tsx` + `providers.tsx`        |
-| 鉴权桥 + ST 反代 + provision 触发                              | ✅      | `backend/routes/bridge.ts` + `middleware/stProxy.ts`                         |
-| provision 下行（characters/presets/secrets/settings）          | ✅      | `sync-engine/provisioner`                                                    |
-| watcher 上行 settings 回流                                     | ✅      | `sync-engine/watcher` + `queue`                                              |
-| **聊天记录回流 `user_st_chats`**                               | ⏳ 占位 | 表/类型就位，registry+uploader 待补                                          |
-| **LLM 网关 userId 验证 / 按用户计费**                          | ⏳ 待补 | `routes/llm-proxy.ts`                                                        |
-| **db-types 实际接线**                                          | ⏳ 待补 | `packages/db-types`（已生成未消费）                                          |
-| **api-contract 独立包**                                        | ❌ 未建 | 职责暂留 `shared/api`                                                        |
-| **provision 状态查询 / flush**                                 | ❌ 未建 | provision-api 未实现对应端点                                                 |
-| **自研工具栏 / 侧边栏（对话页 UI）**                           | ⏳ 占位 | `/tavern/[characterId]/page.tsx`（含 TODO）                                  |
+| 能力                                                           | 状态    | 位置                                                                                             |
+| -------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
+| 阶段 0 清场（删自研聊天表 + schema 迁移）                      | ✅      | `migrations/020_*`、`prisma/migrations/..._phase0_drop_sessions_*`                               |
+| 阶段 1 vendoring + 包脚手架                                    | ✅      | `vendor/sillytavern`、7 个 `packages/*`                                                          |
+| 阶段 2 SPIKE（ST 内部 API 验证）                               | ✅      | st-extension `forwarders/` + `mirror-state.ts`（`SillyTavern.getContext()`）                     |
+| 阶段 3 bridge-protocol（actions/events/握手/错误码）           | ✅      | `packages/bridge-protocol`                                                                       |
+| 阶段 3 st-extension（server/handlers/forwarders/handshake）    | ✅      | `packages/st-extension`                                                                          |
+| 阶段 3 frontend lib/bridge（client/状态机/buffer/hooks/store） | ✅      | `frontend/src/lib/bridge` + `stores/st-mirror.ts`                                                |
+| 阶段 3 iframe 宿主（常驻挂载 + 可见性切换）                    | ✅      | `components/bridge/{bridge-provider,st-iframe}.tsx` + `providers.tsx`                            |
+| 鉴权桥 + ST 反代 + provision 触发                              | ✅      | `backend/routes/bridge.ts` + `middleware/stProxy.ts`                                             |
+| provision 下行（characters/presets/secrets/settings）          | ✅      | `sync-engine/provisioner`                                                                        |
+| watcher 上行 settings 回流                                     | ✅      | `sync-engine/watcher` + `queue`                                                                  |
+| 阶段 4 历史聊天列表（反代 ST recent）                          | ✅      | `backend/routes/chats.ts` + `frontend/components/tavern/chat-sidebar.tsx`                        |
+| 阶段 4 LLM 网关 JWT 验签 + per-user 按 tier 计费               | ✅      | `routes/llm-proxy.ts` + `lib/llm-token.ts` + `platform/model-tiers.ts` + `provisioner/writer.ts` |
+| 阶段 4 模型档位切换（标准 10 / 高级 15）                       | ✅      | `frontend/components/tavern/model-tier-switcher.tsx` + `st-extension/handlers/change-model.ts`   |
+| 阶段 4 角色卡从 Supabase Storage 下发                          | ✅      | `sync-engine/provisioner/writer.ts`（`CHARACTER_STORAGE_BUCKET`）                                |
+| 阶段 4 st-extension 兼容补丁（autocomplete/tabs/regex/oai）    | ✅      | `st-extension/src/patches/*`（见 `docs/st-extension-patches.md`）                                |
+| **聊天记录回流 `user_st_chats`**                               | ⏳ 占位 | 表/类型就位，registry+uploader 待补（MVP 用反代列表已够用）                                      |
+| **db-types 实际接线**                                          | ⏳ 待补 | `packages/db-types`（已生成未消费）                                                              |
+| **LLM 网关按用户限流 / model-tiers 热更**                      | ⏳ 待补 | tiers 仍硬编码于 `platform/model-tiers.ts`，计划迁 `runtime_config`                              |
+| **api-contract 独立包**                                        | ❌ 未建 | 职责暂留 `shared/api`                                                                            |
+| **provision 状态查询 / flush**                                 | ❌ 未建 | provision-api 未实现对应端点                                                                     |
 
 ---
