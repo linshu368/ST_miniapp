@@ -111,3 +111,47 @@ jobs:
           # 15-20 min), later builds reuse layers.
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # Proof that every published image is a real multi-arch manifest list
+  # (linux/amd64 + linux/arm64). Runs only after all 4 builds succeed; reads the
+  # packages back with the same built-in token.
+  verify-multiarch:
+    name: Verify multi-arch manifests
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Inspect each image's manifest list
+        run: |
+          set -euo pipefail
+          owner='${{ github.repository_owner }}'
+          tag='${{ github.ref_name }}-latest'
+          fail=0
+          for name in frontend backend st-backend nginx; do
+            image="${REGISTRY}/${owner}/st-miniapp-${name}:${tag}"
+            echo "::group::imagetools inspect ${image}"
+            docker buildx imagetools inspect "${image}"
+            echo "::endgroup::"
+            for plat in linux/amd64 linux/arm64; do
+              if docker buildx imagetools inspect "${image}" | grep -q "Platform:[[:space:]]*${plat}$"; then
+                echo "OK   ${name}: ${plat}"
+              else
+                echo "MISS ${name}: ${plat}"
+                fail=1
+              fi
+            done
+          done
+          if [ "${fail}" -ne 0 ]; then
+            echo "One or more images is missing a required platform." >&2
+            exit 1
+          fi
+          echo "All 4 images expose linux/amd64 + linux/arm64."
