@@ -69,6 +69,10 @@ function prodStRewrites() {
     // /api/platform/* → backend). Deliberately in afterFiles, NOT beforeFiles, so the
     // frontend's own concrete route handler /api/init-st-session (resolved in the
     // filesystem phase) wins and is never rewritten.
+    // ⚠️ 新增 app/api/* 路由前，须确认其路径不与 SillyTavern 原生 /api/* 冲突：
+    //    本兜底把所有未被前端 route handler 命中的 /api/* 转发到 ST 网关，新增的前端
+    //    API 路由只有在「文件系统阶段」先命中时才不会被这里劫持。命名与 ST 原生
+    //    /api/* 撞车会导致本应转发到 ST 的请求被前端拦截（或反之），排查困难。
     afterFiles: [{ source: '/api/:path*', destination: `${stProxyUrl}/api/:path*` }],
     fallback: [],
   };

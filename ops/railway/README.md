@@ -1,5 +1,26 @@
 # ops/railway — Railway 生产拓扑（方案 Y）
 
+> ## ⚠️ `.railway/railway.ts` 不会被 Railway 自动读取生效
+>
+> **它不像 `railway.json`。** `railway.json` / `railway.toml` 会在**每次部署时被 Railway
+> 自动读取**并合并进该服务的 build/deploy 设置；而 `.railway/railway.ts` 属于 Railway 的
+> **Infrastructure as Code（IaC）**，**只有在你用 Railway CLI 显式运行 `railway config plan`
+> / `railway config apply` 时才生效**，普通 push / 控制台部署**不会**自动读取它。
+>
+> 因此：**修改 `.railway/railway.ts` 不会自动同步到 Railway。** 你必须二选一：
+>
+> 1. 用 CLI 显式应用：`railway link` → `railway config plan`（看 diff）→ `railway config apply`；或
+> 2. 把它当作「配置文档 / 人工对照填表」，在 Railway 控制台**手动对齐**对应设置。
+>
+> 另注：IaC DSL 官方标注为 **experimental**；且**同一服务不能同时被 railway.json 与 IaC 管理**。
+> 本仓库不放任何 railway.json，仅以本 IaC 文件描述拓扑。
+>
+> 依据（Railway 官方文档）：
+>
+> - Config as Code（railway.json，按部署自动读取）：<https://docs.railway.com/config-as-code>
+> - Infrastructure as Code（`.railway/railway.ts`，需 CLI `config apply`）：<https://docs.railway.com/infrastructure-as-code>
+> - IaC reference：<https://docs.railway.com/infrastructure-as-code/reference>
+
 > 决议（不可推翻）：对外域名绑 **Vercel**，前端作为边缘入口；Vercel 通过 Next.js
 > rewrites 把 ST 相关路径与 `/api/*` 转发到 Railway nginx；Railway nginx 退化为
 > **仅做 ST 与 backend 的内部分发**。Railway 只跑三个服务，前端不在 Railway。
