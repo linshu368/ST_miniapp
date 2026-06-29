@@ -5,8 +5,9 @@
  * 暴露端点：POST /provision/:userId（异步）、POST /provision/:userId/sync（同步）
  *
  * 设计原则：
- *   - 仅绑定 127.0.0.1，外部不可直连
- *   - 无鉴权（同机内网调用，backend 与 sync-engine 同机部署）
+ *   - 默认绑定 127.0.0.1，可通过 PROVISION_API_BIND_HOST 环境变量覆盖
+ *     （容器化部署须设为 0.0.0.0，否则 backend 跨服务调不到）
+ *   - 无鉴权（仅供内网调用：本地同机，或 Railway 内网 backend → st-bundle）
  *   - provision() 异步触发：立即返回 202，后台跑完整流程
  *   - 幂等：重复调用安全（provision 内部判断已初始化则增量补全）
  */

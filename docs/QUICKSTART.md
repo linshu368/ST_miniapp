@@ -9,15 +9,15 @@
 - `pnpm install`（根目录）
 - `vendor/sillytavern` 首次需 `cd vendor/sillytavern && npm install`
 - 可访问的 Supabase test 分支（已应用 `packages/shared/migrations/001~020` + seed）
-- `platform-assets/` 内放好角色卡 PNG（命名 `platform_<characterId>.png`，与 `miniapp.characters.id` 对应）
+- 角色卡 PNG 上传到 Supabase Storage bucket `character-assets`，对象路径 `characters/platform_<characterId>.png`（`<characterId>` 与 `miniapp.characters.id` 对应）。provisioner 从 Storage 拉取下发，不再读本地 `platform-assets/`。
 
 ## 1. 环境变量
 
-| 包          | 文件                           | 关键变量                                                                                                                                                                                                                                        |
-| ----------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| backend     | `packages/backend/.env`        | `DATABASE_ENV=test`、`TEST_DATABASE_URL`/`TEST_DIRECT_URL`、`TEST_SUPABASE_*`、`ST_BASE_URL=http://localhost:8000`、`ST_PROVISION_URL=http://127.0.0.1:9091`、`ST_USER_PASSWORD_SECRET`、`LLM_API_KEY`、`LLM_PROXY_TOKEN_SECRET`、`MOCK_AUTH=1` |
-| sync-engine | `packages/sync-engine/.env`    | `DATABASE_ENV=test`、`TEST_SUPABASE_*`、`ST_DATA_PATH=<repo>/vendor/sillytavern/data`、`ST_PLATFORM_ASSETS_PATH=<repo>/platform-assets`、`ST_BASE_URL`、`ST_ADMIN_USERNAME`、`ST_ADMIN_PASSWORD`、`ST_USER_PASSWORD_SECRET`                     |
-| frontend    | `packages/frontend/.env.local` | `NEXT_PUBLIC_API_URL=http://localhost:3001`、`ST_LOCAL_URL=http://127.0.0.1:8000`、`NEXT_PUBLIC_USE_MOCK_INIT_DATA=1`、`NEXT_PUBLIC_MOCK_USER_ID=<test user id>`                                                                                |
+| 包          | 文件                           | 关键变量                                                                                                                                                                                                                                                          |
+| ----------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| backend     | `packages/backend/.env`        | `DATABASE_ENV=test`、`TEST_DATABASE_URL`/`TEST_DIRECT_URL`、`TEST_SUPABASE_*`、`ST_BASE_URL=http://localhost:8000`、`ST_PROVISION_URL=http://127.0.0.1:9091`、`ST_USER_PASSWORD_SECRET`、`LLM_API_KEY`、`LLM_PROXY_TOKEN_SECRET`、`MOCK_AUTH=1`                   |
+| sync-engine | `packages/sync-engine/.env`    | `DATABASE_ENV=test`、`TEST_SUPABASE_*`、`ST_DATA_PATH=<repo>/vendor/sillytavern/data`、`CHARACTER_STORAGE_BUCKET=character-assets`、`ST_BASE_URL`、`ST_ADMIN_USERNAME`、`ST_ADMIN_PASSWORD`、`ST_USER_PASSWORD_SECRET`、`LLM_PROXY_URL`、`LLM_PROXY_TOKEN_SECRET` |
+| frontend    | `packages/frontend/.env.local` | `NEXT_PUBLIC_API_URL=http://localhost:3001`、`ST_LOCAL_URL=http://127.0.0.1:8000`、`NEXT_PUBLIC_USE_MOCK_INIT_DATA=1`、`NEXT_PUBLIC_MOCK_USER_ID=<test user id>`                                                                                                  |
 
 一致性要求（否则鉴权/扣费链断）：
 
@@ -67,6 +67,6 @@ pnpm dev:all
 ## 5. 常见问题
 
 - 大厅空：检查 Supabase `miniapp.characters` 有数据且 `enabled=true`。
-- 切角色失败/无首句：检查 `platform-assets/platform_<id>.png` 存在且 provision 已下发到 `data/<handle>/characters/`。
+- 切角色失败/无首句：检查 Storage bucket `character-assets` 内 `characters/platform_<id>.png` 存在，且 provision 已下发到 `data/<handle>/characters/`。
 - 发消息不扣费/报 401：检查 ST `secrets.json` 写入的是 per-user JWT、`LLM_PROXY_TOKEN_SECRET` 两端一致、`platform_settings` 的 LLM endpoint 指向 `…/api/platform/llm-proxy/v1`。
 - ST 无 `tg_*` 用户目录：说明 provision 未成功，检查 ST 多用户开关与 admin 账号密码对齐。
