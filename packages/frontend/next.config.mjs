@@ -1,9 +1,78 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-// Dev: Next.js proxies ST paths so iframe is same-origin (avoids X-Frame-Options block).
-// Prod: nginx handles routing; ST_LOCAL_URL is unset → no rewrites.
+// Dev: Next.js proxies ST paths so the iframe is same-origin (avoids X-Frame-Options
+//   block). Enabled ONLY when ST_LOCAL_URL is set (local dev).
+// Prod (scheme Y): Vercel is the edge entry. ST-bound paths are rewritten to the
+//   Railway nginx gateway (ST_PUBLIC_PROXY_URL); nginx then dispatches ST vs backend.
+//   Enabled ONLY when ST_PUBLIC_PROXY_URL is set (Vercel env var).
+// The two are mutually exclusive by environment: local dev sets ST_LOCAL_URL only,
+// production (Vercel) sets ST_PUBLIC_PROXY_URL only. If both were set, prod wins.
 const stUrl = process.env.ST_LOCAL_URL;
+const stProxyUrl = process.env.ST_PUBLIC_PROXY_URL?.replace(/\/+$/, '');
+
+// ST static-asset + user-data root prefixes. ST's index.html declares <base href="/">,
+// so every ST asset is requested at the ROOT path (never under /tavern). These mirror
+// the ST-bound prefixes enumerated in ops/nginx/nginx.conf (Layer 3).
+const ST_ROOT_PREFIXES = [
+  'scripts',
+  'css',
+  'img',
+  'lib',
+  'locales',
+  'sounds',
+  'webfonts',
+  'backgrounds',
+  'characters',
+  'assets',
+  'user',
+  'thumbnail',
+];
+// ST top-level root files (ops/nginx/nginx.conf Layer 3, exact matches).
+const ST_ROOT_FILES = [
+  'favicon.ico',
+  'manifest.json',
+  'style.css',
+  'script.js',
+  'lib.js',
+  'robots.txt',
+  'login.html',
+  'st.ico',
+  'st-launcher.ico',
+];
+
+// Production rewrites forwarding ST traffic to the Railway nginx gateway.
+function prodStRewrites() {
+  return {
+    // beforeFiles: ST iframe entry + ST static/root assets. These never collide with
+    // Vercel's own pages, so forwarding them ahead of the filesystem lookup is safe and
+    // gives ST assets top priority.
+    beforeFiles: [
+      // ST iframe entry. EXACT only — /tavern/<UUID> is the Vercel dialog page
+      // (/tavern/[characterId]) and must NOT be forwarded.
+      { source: '/tavern', destination: `${stProxyUrl}/tavern` },
+      { source: '/tavern/', destination: `${stProxyUrl}/tavern/` },
+      // ST static + user-data root prefixes.
+      ...ST_ROOT_PREFIXES.map((p) => ({
+        source: `/${p}/:path*`,
+        destination: `${stProxyUrl}/${p}/:path*`,
+      })),
+      // /User Avatars/* — ST serves it URL-encoded (with the %20 space).
+      { source: '/User%20Avatars/:path*', destination: `${stProxyUrl}/User%20Avatars/:path*` },
+      // ST root files.
+      ...ST_ROOT_FILES.map((f) => ({
+        source: `/${f}`,
+        destination: `${stProxyUrl}/${f}`,
+      })),
+    ],
+    // afterFiles: catch-all /api/* → nginx (which splits ST-native vs backend, incl.
+    // /api/platform/* → backend). Deliberately in afterFiles, NOT beforeFiles, so the
+    // frontend's own concrete route handler /api/init-st-session (resolved in the
+    // filesystem phase) wins and is never rewritten.
+    afterFiles: [{ source: '/api/:path*', destination: `${stProxyUrl}/api/:path*` }],
+    fallback: [],
+  };
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -25,6 +94,9 @@ const nextConfig = {
     return config;
   },
   async rewrites() {
+    // Production (Vercel, scheme Y): forward ST paths to the Railway nginx gateway.
+    if (stProxyUrl) return prodStRewrites();
+    // Local dev: proxy everything ST needs to the local ST instance.
     if (!stUrl) return [];
     return {
       beforeFiles: [],
