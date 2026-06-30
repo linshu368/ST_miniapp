@@ -28,7 +28,7 @@
 
 - **`PROVISION_API_BIND_HOST=0.0.0.0`**（st-bundle）：不设则 provision-api 仅绑
   127.0.0.1，backend 跨服务调不到（provision 全失败）。
-- **内网服务名**：`backend.railway.internal` / `st-bundle.railway.internal`，改服务名要
-  同步改 nginx 的 `BACKEND_UPSTREAM`/`ST_UPSTREAM`、backend 的 `ST_BASE_URL`/
-  `ST_PROVISION_URL`、st-bundle 的 `LLM_PROXY_URL`。
+- **内网服务名**：`stminiapp.railway.internal`（backend，监听 8080）/
+  `st-bundle.railway.internal`，改服务名/端口要同步改 nginx 的 `BACKEND_UPSTREAM`/
+  `ST_UPSTREAM`、backend 的 `ST_BASE_URL`/`ST_PROVISION_URL`、st-bundle 的 `LLM_PROXY_URL`。
 - **密钥不入仓**：模板里全是占位/说明，真实密钥只在控制台注入。

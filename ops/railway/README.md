@@ -92,15 +92,16 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
 
 Railway 内网 DNS 形如 `<service>.railway.internal`，仅内网可达。本拓扑约定：
 
-| 引用方                   | 目标      | 地址                                                                           |
-| ------------------------ | --------- | ------------------------------------------------------------------------------ |
-| nginx upstream `backend` | backend   | `backend.railway.internal:3001`（envsubst 注入 `BACKEND_UPSTREAM`）            |
-| nginx upstream `st`      | st-bundle | `st-bundle.railway.internal:8000`（envsubst 注入 `ST_UPSTREAM`）               |
-| backend → ST             | st-bundle | `ST_BASE_URL=http://st-bundle.railway.internal:8000`                           |
-| backend → provision-api  | st-bundle | `ST_PROVISION_URL=http://st-bundle.railway.internal:9091`（**不经 nginx**）    |
-| st-bundle → LLM 代理     | backend   | `LLM_PROXY_URL=http://backend.railway.internal:3001/api/platform/llm-proxy/v1` |
+| 引用方                   | 目标      | 地址                                                                             |
+| ------------------------ | --------- | -------------------------------------------------------------------------------- |
+| nginx upstream `backend` | stminiapp | `stminiapp.railway.internal:8080`（envsubst 注入 `BACKEND_UPSTREAM`）            |
+| nginx upstream `st`      | st-bundle | `st-bundle.railway.internal:8000`（envsubst 注入 `ST_UPSTREAM`）                 |
+| backend → ST             | st-bundle | `ST_BASE_URL=http://st-bundle.railway.internal:8000`                             |
+| backend → provision-api  | st-bundle | `ST_PROVISION_URL=http://st-bundle.railway.internal:9091`（**不经 nginx**）      |
+| st-bundle → LLM 代理     | stminiapp | `LLM_PROXY_URL=http://stminiapp.railway.internal:8080/api/platform/llm-proxy/v1` |
 
-> 改服务名会同时影响 nginx 的 `BACKEND_UPSTREAM`/`ST_UPSTREAM` 与 backend 的
+> ⚠️ backend 的 Railway 服务名实际为 **`stminiapp`**（监听 **8080**，非 `backend`/3001）。
+> 改服务名/端口会同时影响 nginx 的 `BACKEND_UPSTREAM`/`ST_UPSTREAM` 与 backend 的
 > `ST_BASE_URL`/`ST_PROVISION_URL`、st-bundle 的 `LLM_PROXY_URL`，三处需一起改。
 
 ## 环境变量

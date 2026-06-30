@@ -25,8 +25,17 @@ RUN rm -f /etc/nginx/conf.d/default.conf
 COPY nginx.conf /etc/nginx/templates/nginx.conf.template
 ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
 
+# 必须开启：官方 entrypoint 的 15-local-resolvers.envsh 顶部有守卫
+#   [ "${NGINX_ENTRYPOINT_LOCAL_RESOLVERS:-}" ] || return 0
+# 不设此变量则不会从 /etc/resolv.conf 导出 $NGINX_LOCAL_RESOLVERS，导致
+# nginx.conf 里的 ${NGINX_LOCAL_RESOLVERS} 不被 envsubst 替换 → nginx 启动
+# 报 [emerg] host not found in resolver "${NGINX_LOCAL_RESOLVERS}"。
+# 开启后 Railway 内网解析为 [fd12::10]（IPv6），本地 compose 为 127.0.0.11。
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+
 # 占位默认值（务必在 Railway 控制台用真实内网服务名覆盖）。
-ENV BACKEND_UPSTREAM=backend.railway.internal:3001
+# backend 的 Railway 服务名为 `stminiapp`（监听 8080）；ST 为 `st-bundle`（8000）。
+ENV BACKEND_UPSTREAM=stminiapp.railway.internal:8080
 ENV ST_UPSTREAM=st-bundle.railway.internal:8000
 
 # NOTE: no build-time `nginx -t`. The config is templated + exercised at container

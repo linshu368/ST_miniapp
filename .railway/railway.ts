@@ -11,9 +11,13 @@
  *
  * 方案 Y 拓扑：对外域名绑 Vercel（前端在边缘，不在 Railway）。Railway 只跑三个服务：
  *
- *   Vercel rewrites ──▶ nginx (public)  ──┬─▶ backend  (st/backend 内部分发)
+ *   Vercel rewrites ──▶ nginx (public)  ──┬─▶ stminiapp (backend, st/backend 内部分发)
  *                                          └─▶ st-bundle (ST + provision-api + watcher)
- *   backend ──(Railway 内网)──▶ st-bundle:9091  (provision-api，不经过 nginx)
+ *   stminiapp ──(Railway 内网)──▶ st-bundle:9091  (provision-api，不经过 nginx)
+ *
+ * ⚠️ backend 服务在 Railway 控制台实际命名为 `stminiapp`（内网域名
+ *    stminiapp.railway.internal，监听 8080）。服务名仅决定内网 DNS，不与任何应用
+ *    代码耦合（代码只通过 env 读取地址/端口）。本文件已与该实际命名/端口对齐。
  *
  * ⚠️ 本文件**不创建项目**，只描述 desired state。首次需在 Railway 控制台建好 project +
  *    三个服务（名字必须与下方 service() 第一个参数逐字一致），再 `railway config plan` /
@@ -32,8 +36,11 @@ const TAG = process.env.IMAGE_TAG ?? 'dev-latest';
 const ghcr = (name: string) => image(`ghcr.io/${OWNER}/st-miniapp-${name}:${TAG}`);
 
 // Railway 内网 DNS：<service>.railway.internal。服务名须与 service() 名字一致。
-const BACKEND_HOST = 'backend.railway.internal';
+// backend 的 Railway 服务名为 `stminiapp`（非 `backend`），故内网域名如下。
+const BACKEND_HOST = 'stminiapp.railway.internal';
 const ST_HOST = 'st-bundle.railway.internal';
+// backend 监听端口（与 service stminiapp 的 PORT 及 nginx BACKEND_UPSTREAM 三处一致）。
+const BACKEND_PORT = '8080';
 
 export default defineRailway(() => {
   // ── st-bundle：SillyTavern + provision-api + watcher（s6 同容器，有状态）──────
@@ -62,7 +69,7 @@ export default defineRailway(() => {
       PROVISION_API_PORT: '9091',
       HEALTH_PORT: '9090',
       // ST 的 LLM endpoint → 平台代理（provision 写入 ST settings）。指向 backend 内网。
-      LLM_PROXY_URL: `http://${BACKEND_HOST}:3001/api/platform/llm-proxy/v1`,
+      LLM_PROXY_URL: `http://${BACKEND_HOST}:${BACKEND_PORT}/api/platform/llm-proxy/v1`,
       CHARACTER_STORAGE_BUCKET: 'character-assets',
       // 密钥（控制台注入，须与 backend 逐字一致）：
       //   ST_USER_PASSWORD_SECRET, LLM_PROXY_TOKEN_SECRET
@@ -72,14 +79,16 @@ export default defineRailway(() => {
     },
   });
 
-  // ── backend：Fastify 平台 API ────────────────────────────────────────────────
-  const backend = service('backend', {
+  // ── backend（Railway 服务名：stminiapp）：Fastify 平台 API ────────────────────
+  // 服务名为 `stminiapp`（内网 stminiapp.railway.internal），镜像产物仍是
+  // st-miniapp-backend；服务名不与应用代码耦合（代码仅通过 env 读取地址/端口）。
+  const stminiapp = service('stminiapp', {
     source: ghcr('backend'),
     healthcheck: '/health',
     healthcheckTimeout: 120,
     env: {
       NODE_ENV: 'production',
-      PORT: '3001',
+      PORT: BACKEND_PORT,
       DATABASE_ENV: 'production',
       // ST 接线（Railway 内网，不经过 nginx）。
       ST_BASE_URL: `http://${ST_HOST}:8000`,
@@ -103,12 +112,12 @@ export default defineRailway(() => {
     healthcheckTimeout: 60,
     env: {
       // envsubst 注入 upstream（见 ops/nginx/nginx.conf 模板）。
-      BACKEND_UPSTREAM: `${BACKEND_HOST}:3001`,
+      BACKEND_UPSTREAM: `${BACKEND_HOST}:${BACKEND_PORT}`,
       ST_UPSTREAM: `${ST_HOST}:8000`,
     },
   });
 
   return project('st-miniapp', {
-    resources: [nginx, backend, stBundle, stData],
+    resources: [nginx, stminiapp, stBundle, stData],
   });
 });
