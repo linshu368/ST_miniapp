@@ -7,6 +7,7 @@ import { installRegexAutoConfirm } from './patches/regex-autoconfirm.js';
 import { installWorldbookAutoImport } from './patches/worldbook-autoimport.js';
 import { installOaiSettingsGuard } from './patches/oai-settings-guard.js';
 import { installTavernHelperGuard } from './patches/tavern-helper-guard.js';
+import { installScriptPopupAutoCancel } from './patches/script-popup-autocancel.js';
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -35,8 +36,10 @@ function init(): void {
   installOaiSettingsGuard();
   // 第三方扩展「酒馆助手」TH-optimize 默认全开：maximize_preset_context_length 把上下文顶到 2M、
   // force_recommended_worldbook_global_settings 静默改写全局 WI 设置。源头关闭这两项并兜底夹紧，
-  // 保持平台 32768 与既定设置权威（渲染器/角色脚本不动，见 patches/tavern-helper-guard.ts）。
+  // 保持平台 32768 与既定设置权威（渲染器不动，角色脚本弹窗见 script-popup-autocancel）。
   installTavernHelperGuard();
+  // 酒馆助手「角色卡含嵌入式脚本，是否启用」Vue 弹窗：平台默认关闭角色脚本，自动按「取消」跳过。
+  installScriptPopupAutoCancel();
 
   const server = createBridgeServer('*');
   server.start();

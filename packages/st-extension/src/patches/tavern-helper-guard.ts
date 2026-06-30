@@ -36,9 +36,10 @@
  * 不处理（按决策 2，留作【待产品/负责人对齐项】，见 docs/st-extension-patches.md §8）：
  *   - **渲染器 Renderer**（「启用渲染器」全局开关）：把消息里的 ```html 渲染成富界面，是核心
  *     体验，**本身不调用大模型、不扣费**；默认常开，**不动**。
- *   - **角色脚本启用确认框**（其自有 Vue 弹窗，gate `script.enabled.characters`）：是否自动启用
- *     角色脚本、是否承担「渲染 iframe 内联脚本 / 角色脚本」自发起生成的额外成本 → 交产品对齐，
- *     本轮**不做** auto-confirm/auto-cancel，保留原生弹窗（仅验证用）。
+ *
+ * 已处理（由 script-popup-autocancel.ts 实现）：
+ *   - **角色脚本启用确认框**（其自有 Vue 弹窗，gate `script.enabled.characters`）：
+ *     产品已确认默认关闭角色脚本，通过 MutationObserver 自动点击「取消」跳过弹窗，用户无感。
  */
 
 import '../st-types.js';
