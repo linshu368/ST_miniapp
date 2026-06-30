@@ -49,7 +49,7 @@ function tryAutoCancel(node: Node): boolean {
 
   // Fallback: click the last button (取消 is always the trailing button)
   if (buttons.length >= 2) {
-    buttons[buttons.length - 1].click();
+    buttons[buttons.length - 1]!.click();
     return true;
   }
 
