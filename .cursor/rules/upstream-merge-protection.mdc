@@ -1,0 +1,12 @@
+---
+description: Protect upstream changes during merges and pulls
+alwaysApply: true
+---
+
+# Upstream Merge Protection
+
+- When pulling or merging upstream branches such as `origin/dev`, treat all upstream changes as read-only.
+- Do not rewrite, refactor, delete, or simplify upstream code just because it conflicts with local branch work.
+- During conflict resolution, preserve upstream behavior and adapt only the local branch changes unless the user explicitly says otherwise.
+- If upstream introduces logic that conflicts with a prior local decision, explain the conflict and ask before changing upstream behavior.
+- If a compatibility fix is needed, prefer a small follow-up change owned by the current branch rather than modifying unrelated upstream changes.

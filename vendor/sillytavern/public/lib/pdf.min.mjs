@@ -10205,14 +10205,12 @@ class WorkerTransport {
     const t = 'GetMetadata',
       e = this.#es.get(t);
     if (e) return e;
-    const i = this.messageHandler
-      .sendWithPromise(t, null)
-      .then((t) => ({
-        info: t[0],
-        metadata: t[1] ? new Metadata(t[1]) : null,
-        contentDispositionFilename: this._fullReader?.filename ?? null,
-        contentLength: this._fullReader?.contentLength ?? null,
-      }));
+    const i = this.messageHandler.sendWithPromise(t, null).then((t) => ({
+      info: t[0],
+      metadata: t[1] ? new Metadata(t[1]) : null,
+      contentDispositionFilename: this._fullReader?.filename ?? null,
+      contentLength: this._fullReader?.contentLength ?? null,
+    }));
     this.#es.set(t, i);
     return i;
   }

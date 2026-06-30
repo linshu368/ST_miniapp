@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input';
 import { useCharactersQuery } from '@/lib/api/characters';
 
 import { CharacterCard } from './character-card';
-import { CharacterDetailSheet } from './character-detail-sheet';
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -37,7 +36,6 @@ function scoreMatch(
 export function CharacterGallery() {
   const router = useRouter();
   const { data, isLoading, isError } = useCharactersQuery();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
@@ -154,8 +152,6 @@ export function CharacterGallery() {
           ))}
         </div>
       )}
-      {/* 废弃：在本 MVP 联调阶段暂时不展示详情页，已直接执行 router.push */}
-      {/* <CharacterDetailSheet characterId={selectedId} onClose={() => setSelectedId(null)} /> */}
     </>
   );
 }

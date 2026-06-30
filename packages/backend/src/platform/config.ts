@@ -19,6 +19,8 @@ export const config = {
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   nodeEnv,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  csAdminToken: process.env.CS_ADMIN_TOKEN || '',
+  csTelegramWebhookSecret: process.env.CS_TELEGRAM_WEBHOOK_SECRET || '',
 
   // ── 数据库环境隔离 ────────────────────────────────────────────────────────
   database: {

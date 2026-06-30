@@ -239,11 +239,9 @@ router.post('/delete', requireAdminMiddleware, async (request, response) => {
 
     if (request.body.handle === DEFAULT_USER.handle) {
       console.warn('Delete user failed: Cannot delete default user');
-      return response
-        .status(400)
-        .json({
-          error: 'Sorry, but the default user cannot be deleted. It is required as a fallback.',
-        });
+      return response.status(400).json({
+        error: 'Sorry, but the default user cannot be deleted. It is required as a fallback.',
+      });
     }
 
     await storage.removeItem(toKey(request.body.handle));

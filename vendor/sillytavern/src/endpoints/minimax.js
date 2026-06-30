@@ -38,11 +38,9 @@ router.post('/generate-voice', async (request, response) => {
     // Validate required parameters
     if (!text || !voiceId || !apiKey || !groupId) {
       console.warn('MiniMax TTS: Missing required parameters');
-      return response
-        .status(400)
-        .json({
-          error: 'Missing required parameters: text, voiceId, apiKey, and groupId are required',
-        });
+      return response.status(400).json({
+        error: 'Missing required parameters: text, voiceId, apiKey, and groupId are required',
+      });
     }
 
     const requestBody = {

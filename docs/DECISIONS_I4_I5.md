@@ -348,7 +348,7 @@ signature = HMAC-SHA256(header + '.' + payload, LLM_PROXY_TOKEN_SECRET)
 | sync-engine 写入逻辑              | `sync-engine/src/provisioner/write-secrets.ts`（已存在的 secrets 写入逻辑扩展） | 用 platformToken 替换原 `api_key_openai`（或对应 OpenRouter source 的字段）                                                           |
 | LLM proxy 验签                    | `backend/src/routes/llm-proxy.ts`                                               | 添加 JWT 验签中间件 → 提取 userId → 注入 `request.userId`                                                                             |
 | Proxy 真实 key 注入               | 同上                                                                            | 验签通过后将 `Authorization` 替换为 `LLM_UPSTREAM_API_KEY`                                                                            |
-|  |
+|                                   |
 
 ### A.1.7 风险与缓解
 

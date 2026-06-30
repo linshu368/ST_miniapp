@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 
-import { getTelegramDefaultDisplayName } from '@/lib/telegram/user';
+import { getTelegramDefaultDisplayName, getTelegramPhotoUrl } from '@/lib/telegram/user';
 
 // 用户在 chat 内的"显示名"——也就是 markdown 管线 {{user}} 宏要替换成的字符串。
 // 优先级:用户在 profile 页的自定义 > Telegram first_name/username > '你'
@@ -13,6 +13,8 @@ const STORAGE_KEY = 'st_miniapp_display_name';
 interface UserProfileState {
   /** 当前生效的显示名(已结合 localStorage 覆盖 + telegram 默认) */
   displayName: string;
+  /** Telegram 原始头像 URL。用户没有头像或客户端不返回时为空。 */
+  photoUrl?: string;
   /** 是否用户手动设置过(true=覆盖了默认,false=跟随 telegram 默认) */
   hasCustomName: boolean;
   /** 客户端首次进入页面时调用,从 telegram + localStorage 恢复状态 */
@@ -48,6 +50,7 @@ function writeOverride(value: string | undefined): void {
 
 export const useUserProfileStore = create<UserProfileState>((set) => ({
   displayName: '你',
+  photoUrl: undefined,
   hasCustomName: false,
   hydrate: () => {
     if (typeof window === 'undefined') return;
@@ -55,6 +58,7 @@ export const useUserProfileStore = create<UserProfileState>((set) => ({
     const fallback = getTelegramDefaultDisplayName();
     set({
       displayName: override ?? fallback,
+      photoUrl: getTelegramPhotoUrl(),
       hasCustomName: !!override,
     });
   },

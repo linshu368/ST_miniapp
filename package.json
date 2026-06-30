@@ -3,6 +3,7 @@
   "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev:frontend": "pnpm --filter @miniapp/frontend dev",
+    "dev:cs-platform": "pnpm --filter @miniapp/cs-platform dev",
     "dev:backend": "pnpm --filter @miniapp/backend dev",
     "dev:provision": "pnpm --filter @miniapp/sync-engine start:provision",
     "dev:watcher": "pnpm --filter @miniapp/sync-engine watch",
