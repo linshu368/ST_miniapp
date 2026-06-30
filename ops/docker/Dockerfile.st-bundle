@@ -135,7 +135,7 @@ RUN mkdir -p /home/node/app/data /home/node/app/config \
 
 # --- 端口 + volume ---
 EXPOSE 8000 9091 9090
-VOLUME ["/home/node/app/data"]
+
 
 # --- Healthcheck（决策：探 ST + provision-api；watcher 9090 留 M4）---
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
