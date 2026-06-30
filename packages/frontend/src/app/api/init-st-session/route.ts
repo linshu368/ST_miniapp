@@ -9,7 +9,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+// Scheme Y (Vercel edge): NEXT_PUBLIC_API_URL may be empty when client-side calls
+// go through same-origin Vercel rewrites. Fall back to the nginx gateway URL
+// (ST_PUBLIC_PROXY_URL) so this server-side route handler can still reach backend.
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_API_URL || process.env.ST_PUBLIC_PROXY_URL || 'http://localhost:3001';
 
 export async function POST(request: NextRequest) {
   const initData = request.headers.get('X-Init-Data') ?? '';
