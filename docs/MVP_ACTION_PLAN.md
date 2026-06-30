@@ -1,7 +1,7 @@
 # MVP 收尾行动路径
 
 > 目标：**先跑出一版可内测的产品，能正常体验 MVP 功能**。
-> 本文基于 2026-06-26 对主干代码的实测扫描 + 5 项方向性确认重排。
+> 本文基于 2026-06-26 对主干代码的实测扫描 + 5 项方向性确认重排；2026-06-29 复扫校准（P0 全完成；P1-1 provisioner 侧已从 Storage 拉取，仅剩资产上传 + 云端验证）。
 > 状态约定：✅ 已具备 ｜ 🔴 P0（阻塞可体验）｜ 🟡 P1（内测分发/上线）｜ ⚪ 技术债（上线后迭代）
 
 ---
@@ -88,16 +88,17 @@
 
 ## 3. P1 — 内测分发 / 上线
 
-### P1-1 🟡 Supabase Storage 角色卡集成
+### P1-1 🟡 Supabase Storage 角色卡集成（provisioner 侧已完成，剩资产上传 + 验证）
 
 - 资产来源（已确认）：酒馆生态角色卡 PNG（自带角色数据），由运营上传到 Supabase Storage。
-- 现状：provisioner `writeCharacters` 从本地 `ST_PLATFORM_ASSETS_PATH` 复制 PNG；仓库无 `platform-assets/`，Storage 未接。
-- 必做：provisioner 从 Supabase Storage 拉取 `platform_<uuid>.png` 下发到 ST 文件系统（对应阶段 5 Storage 迁移的最小子集）。本地调通阶段可暂用本地 PNG 占位。
+- 现状（2026-06-29 复扫）：**provisioner 已切到 Storage**。`provisioner/writer.ts:writeCharacters` 用 `getSupabaseClient().storage.from(CHARACTER_STORAGE_BUCKET).download('characters/platform_<id>.png')` 下发到 ST；`sync-engine/lib/config.ts` 仅保留 `CHARACTER_STORAGE_BUCKET`（默认 `character-assets`），**已无 `ST_PLATFORM_ASSETS_PATH` 本地路径**。
+- 剩余：①运营把角色卡 PNG 以 `characters/platform_<uuid>.png` 命名上传到 Storage bucket（与 `miniapp.characters.id` 对应）；②目标环境创建 bucket 并验证下载权限（service role）；③`writeCharacters` 已返回 `missing` 列表，provision 日志会标注缺失卡，据此核对资产是否齐备。
+- 注意：`docs/QUICKSTART.md` 仍引用 `ST_PLATFORM_ASSETS_PATH` / `platform-assets/`，与现状不符，待该文档同步更新。
 
 ### P1-2 🟡 云部署（5 单元 + 单域名 nginx）
 
 - 平台（已确认）：frontend → Vercel；backend / ST 原生 / sync-engine（provision-api + watcher）/ nginx → Railway。
-- 必做：`ops/nginx`（生产单域名分发 `/`→Vercel、`/tavern/*`+ST `/api/*`→ST、`/api/platform/*`→backend）、`ops/docker`（ST Dockerfile 含 st-extension 产物拷贝）、生产 env、目标 Supabase 应用 001–020 迁移 + seed、真实 TG WebView 入口联调。
+- 必做：`ops/nginx`（生产单域名分发 `/`→Vercel、`/tavern/*`+ST `/api/*`→ST、`/api/platform/*`→backend）、`ops/docker`（ST Dockerfile 含 st-extension 产物拷贝）、生产 env、目标 Supabase 应用 001–022 迁移 + seed、Storage `character-assets` bucket 创建并上传角色卡 PNG、真实 TG WebView 入口联调。
 
 ---
 
@@ -106,9 +107,9 @@
 - 聊天记录回流 `st_users.user_st_chats`（MVP 历史列表走反代 ST 已够用）
 - `db-types` 实际接线 / `api-contract` 独立拆包 / `backend/config.ts` 收敛为 zod 校验
 - provision 增量 / 状态查询 / flush、Realtime、settings 分段精细化
-- `characters` 表 `enabled` 与 `is_published`/`is_active` 字段语义统一
-- backend 与 sync-engine 重复的 JWT 签发 / ST 登录逻辑去重
-- `model-tiers` 硬编码迁入 `miniapp.runtime_config` 热更
+- ~~`characters` 表 `enabled` 与 `is_published`/`is_active` 字段语义统一~~ ✅ 已完成（migrations 021/022 删除冗余字段，统一 `enabled`；新增 `raw_card`）
+- backend 与 sync-engine 重复的 JWT 签发（`lib/llm-token.ts` vs `provisioner/writer.ts`）/ ST 登录逻辑去重
+- `model-tiers`（`backend/platform/model-tiers.ts`）硬编码迁入 `miniapp.runtime_config` 热更
 - `handshake.ts` 中 `#api_button_openai` 自动点击的脆弱 hack
 
 ---

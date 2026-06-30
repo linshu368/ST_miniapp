@@ -36,6 +36,20 @@ RUN test -d /build/vendor/sillytavern/public/scripts/extensions/third-party/mini
  && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/entry.global.js \
  && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/manifest.json
 
+# ---- 第三方扩展「酒馆助手」(JS-Slash-Runner, pin v4.8.7) ----
+# 受 git 跟踪的运行产物快照在 ops/st-extensions/，安装脚本幂等落地到 vendor 的 third-party
+# 目录（bundle/ → dist/，绕开本 .dockerignore 的 **/dist）。third-party 是产物/脚本安装，不入库。
+COPY scripts/install-st-extension.mjs scripts/install-st-extension.mjs
+COPY ops/st-extensions ops/st-extensions
+RUN node scripts/install-st-extension.mjs
+
+# 构建期断言：酒馆助手运行文件（含 lib/ 硬依赖）落到 vendor（仿 miniapp-bridge）
+RUN test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-Slash-Runner/manifest.json \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-Slash-Runner/dist/index.js \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-Slash-Runner/dist/index.css \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-Slash-Runner/lib/jsoneditor.js \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-Slash-Runner/lib/tailwindcss.min.js
+
 # Install ST's OWN production dependencies inside the image (cross-platform safety),
 # mirroring vendor/sillytavern/Dockerfile: `npm ci --omit=dev` then precompile public libs.
 # (.dockerignore strips host node_modules from the build context, so ST has no deps until

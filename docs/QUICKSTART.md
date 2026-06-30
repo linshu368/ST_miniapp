@@ -8,6 +8,11 @@
 - Node ≥ 22，pnpm ≥ 9
 - `pnpm install`（根目录）
 - `vendor/sillytavern` 首次需 `cd vendor/sillytavern && npm install`
+- 第三方扩展「酒馆助手」(JS-Slash-Runner) 安装：`pnpm st-ext:install`
+  （把 `ops/st-extensions/` 的 pin 快照幂等装进 `vendor/.../third-party/`；
+  `dev:all`/`dev:st` 已挂 `predev:st` 钩子自动执行，手动跑一次便于首次确认）。
+  改了 vendor 里的扩展后需**重启 ST 进程**（kill 8000 端口的 `dev:st` 再起）
+  并在浏览器**硬刷新**（Cmd+Shift+R）才生效。
 - 可访问的 Supabase test 分支（已应用 `packages/shared/migrations/001~020` + seed）
 - 角色卡 PNG 上传到 Supabase Storage bucket `character-assets`，对象路径 `characters/platform_<characterId>.png`（`<characterId>` 与 `miniapp.characters.id` 对应）。provisioner 从 Storage 拉取下发，不再读本地 `platform-assets/`。
 
@@ -51,6 +56,7 @@ pnpm dev:all
 > 单独启动：`pnpm dev:st` / `dev:provision` / `dev:watcher` / `dev:backend` / `dev:frontend`。
 > `dev:all` 各进程相互独立（不带 `-k`）；若某端口已被占用，先停掉残留进程，或改用对应的单独 `dev:*` 脚本补齐缺失进程。
 > 改 st-extension 后需 `pnpm --filter @miniapp/st-extension build`（产物自动拷进 vendor ST 扩展目录），并在浏览器刷新使新扩展生效。
+> 第三方扩展（酒馆助手）由 `pnpm st-ext:install` 安装（`predev:st` 自动跑）；改了快照或重装后同样需重启 ST 进程 + 浏览器硬刷新。
 > 改 `config.yaml`（如 `enableUserAccounts`）需重启 ST 进程；改 provisioner（merger 等）需重启 provision-api 进程。
 
 入口：浏览器开 `http://localhost:3000`。

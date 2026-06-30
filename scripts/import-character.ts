@@ -23,6 +23,8 @@ import { config as loadDotenv } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const PNG_SIGNATURE = Buffer.from('89504e470d0a1a0a', 'hex');
+const PNG_IEND_CHUNK = Buffer.from('0000000049454e44ae426082', 'hex');
 
 // ─── PNG chara card 解析（内联，避免 shared 包的 Node.js 依赖限制） ──────────
 
@@ -48,9 +50,47 @@ interface CharaCardData {
   };
 }
 
-function extractCharaCardFromPng(pngPath: string): CharaCardData {
-  const buf = readFileSync(pngPath);
-  if (buf.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') {
+interface NormalizedPng {
+  buffer: Buffer;
+  repairedMissingIend: boolean;
+}
+
+function normalizePngBuffer(buf: Buffer, pngPath: string): NormalizedPng {
+  if (buf.length < PNG_SIGNATURE.length || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) {
+    throw new Error(`Not a valid PNG: ${pngPath}`);
+  }
+
+  let p = 8;
+  while (p < buf.length) {
+    if (p + 8 > buf.length) {
+      throw new Error(`PNG chunk header is truncated in ${pngPath}`);
+    }
+
+    const len = buf.readUInt32BE(p);
+    const type = buf.subarray(p + 4, p + 8).toString('ascii');
+    const chunkEnd = p + 8 + len + 4;
+
+    if (chunkEnd > buf.length) {
+      throw new Error(`PNG chunk ${type} is truncated in ${pngPath}`);
+    }
+
+    if (type === 'IEND') {
+      if (len !== 0) {
+        throw new Error(`Invalid PNG IEND chunk length in ${pngPath}`);
+      }
+      return { buffer: buf, repairedMissingIend: false };
+    }
+
+    p = chunkEnd;
+  }
+
+  // Some upstream card exporters emit a valid final metadata chunk but forget the
+  // terminal IEND chunk. ST refuses those files, so normalize before uploading.
+  return { buffer: Buffer.concat([buf, PNG_IEND_CHUNK]), repairedMissingIend: true };
+}
+
+function extractCharaCardFromPngBuffer(buf: Buffer, pngPath: string): CharaCardData {
+  if (buf.length < PNG_SIGNATURE.length || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) {
     throw new Error(`Not a valid PNG: ${pngPath}`);
   }
 
@@ -59,31 +99,38 @@ function extractCharaCardFromPng(pngPath: string): CharaCardData {
   let bestKey: string | null = null;
 
   while (p < buf.length) {
+    if (p + 8 > buf.length) {
+      throw new Error(`PNG chunk header is truncated in ${pngPath}`);
+    }
+
     const len = buf.readUInt32BE(p);
-    p += 4;
-    const type = buf.subarray(p, p + 4).toString('ascii');
-    p += 4;
-    const data = buf.subarray(p, p + len);
-    p += len + 4;
+    const type = buf.subarray(p + 4, p + 8).toString('ascii');
+    const dataStart = p + 8;
+    const chunkEnd = dataStart + len + 4;
+    if (chunkEnd > buf.length) {
+      throw new Error(`PNG chunk ${type} is truncated in ${pngPath}`);
+    }
+    const data = buf.subarray(dataStart, dataStart + len);
 
     if (type === 'tEXt') {
       const nul = data.indexOf(0);
-      if (nul === -1) continue;
-      const key = data.subarray(0, nul).toString('utf-8');
-      const value = data.subarray(nul + 1).toString('utf-8');
+      if (nul !== -1) {
+        const key = data.subarray(0, nul).toString('utf-8');
+        const value = data.subarray(nul + 1).toString('utf-8');
 
-      if (key === 'ccv3') {
-        bestPayload = value;
-        bestKey = key;
-        break;
-      }
-      if (key === 'chara' && bestPayload === null) {
-        bestPayload = value;
-        bestKey = key;
+        if (key === 'ccv3') {
+          bestPayload = value;
+          bestKey = key;
+        }
+        if (key === 'chara' && bestPayload === null) {
+          bestPayload = value;
+          bestKey = key;
+        }
       }
     }
 
     if (type === 'IEND') break;
+    p = chunkEnd;
   }
 
   if (!bestPayload) {
@@ -328,9 +375,15 @@ async function importOneCharacter(params: {
   const { pngPath, name, sortOrder, setAsFallback, bucket, supabase, schemaClient } = params;
 
   console.log(`\n📦 解析 PNG 文件：${basename(pngPath)}`);
+  let pngBuffer: Buffer;
   let card: CharaCardData;
   try {
-    card = extractCharaCardFromPng(pngPath);
+    const normalized = normalizePngBuffer(readFileSync(pngPath), pngPath);
+    pngBuffer = normalized.buffer;
+    if (normalized.repairedMissingIend) {
+      console.warn('   ⚠️  PNG 缺少 IEND 结尾块，已在上传前自动修复');
+    }
+    card = extractCharaCardFromPngBuffer(pngBuffer, pngPath);
   } catch (err) {
     fatal(`PNG 解析失败：${err instanceof Error ? err.message : err}`);
   }
@@ -347,7 +400,6 @@ async function importOneCharacter(params: {
   console.log(`\n🆔 UUID：${uuid}`);
 
   console.log(`\n☁️  上传到 Storage：${bucket}/${storagePath}`);
-  const pngBuffer = readFileSync(pngPath);
   await uploadPngWithRetry({ supabase, bucket, storagePath, pngBuffer });
   console.log('   ✅ 上传成功');
 
