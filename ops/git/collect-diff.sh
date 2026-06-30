@@ -24,6 +24,8 @@ PATHSPEC=(
   ':(exclude)*.woff' ':(exclude)*.woff2' ':(exclude)*.ttf' ':(exclude)*.eot'
   ':(exclude)docs/**'
   ':(exclude)vendor/sillytavern/**'
+  ':(exclude)ops/st-extensions/JS-Slash-Runner/lib/**'
+  ':(exclude)ops/st-extensions/JS-Slash-Runner/bundle/**'
 )
 
 echo "## Diff 元信息"
