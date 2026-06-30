@@ -9,7 +9,9 @@ import { dirname, join } from 'node:path';
 // The two are mutually exclusive by environment: local dev sets ST_LOCAL_URL only,
 // production (Vercel) sets ST_PUBLIC_PROXY_URL only. If both were set, prod wins.
 const stUrl = process.env.ST_LOCAL_URL;
-const stProxyUrl = process.env.ST_PUBLIC_PROXY_URL?.replace(/\/+$/, '');
+const stProxyUrl = (
+  process.env.NEXT_PUBLIC_ST_PROXY_URL || process.env.ST_PUBLIC_PROXY_URL
+)?.replace(/\/+$/, '');
 
 // ST static-asset + user-data root prefixes. ST's index.html declares <base href="/">,
 // so every ST asset is requested at the ROOT path (never under /tavern). These mirror
