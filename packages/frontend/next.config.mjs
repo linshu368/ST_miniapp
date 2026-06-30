@@ -41,6 +41,9 @@ const ST_ROOT_FILES = [
   'lib.js',
   'robots.txt',
   'login.html',
+  // ST 多用户登录页：未认证时 ST 302 → /login（无 .html）。须随 ST 资源转发到网关，
+  // 否则 Vercel 当作自身页面 → 404（与 ops/nginx/nginx.conf 的 `location = /login` 对应）。
+  'login',
   'st.ico',
   'st-launcher.ico',
 ];
