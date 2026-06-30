@@ -100,6 +100,12 @@ export function mergeSettings(
   lodashSet(merged, 'oai_settings.openai_max_context', 32768);
   lodashSet(merged, 'oai_settings.max_context_unlocked', true);
 
+  // 关闭 ST 首次引导（persona 设定面板）：用户在 Telegram 内打开 miniapp 即视为已登录，
+  // 不应感知 ST 的 onboarding。ST 仅在 settings.firstRun 为真时调用 doOnboarding()
+  // （见 vendor/sillytavern/public/script.js）；新 provision 出来的用户默认 firstRun=true
+  // 会弹出「您的用户设定 / 用户设定名称」面板。强制写 false，彻底不弹（每次 force provision 重申）。
+  lodashSet(merged, 'firstRun', false);
+
   return { settings: merged, hadInvalidRef, invalidRefValue };
 }
 
