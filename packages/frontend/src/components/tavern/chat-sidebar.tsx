@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Menu, Plus, Trash2, Pencil, MessageSquare } from 'lucide-react';
+import { Ellipsis, Plus, Trash2, Pencil, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetTrigger, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { platformAction, useBridgeStatus, useSTEvent, useSTMirror } from '@/lib/bridge';
@@ -79,8 +79,11 @@ export function ChatSidebar() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <button className="rounded-full bg-black/40 backdrop-blur-sm p-2 text-white/80 hover:text-white transition-colors">
-          <Menu className="h-4 w-4" />
+        <button
+          className="rounded-full p-2 text-white/70 hover:text-white transition-colors"
+          aria-label="历史对话"
+        >
+          <Ellipsis className="h-5 w-5" />
         </button>
       </SheetTrigger>
       <SheetContent side="left" className="flex flex-col p-0">
