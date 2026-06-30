@@ -2,7 +2,8 @@ export type DatabaseEnvironment = 'development' | 'test' | 'production';
 export type DatabaseTarget = 'test' | 'production';
 
 export const DEFAULT_PROD_SUPABASE_PROJECT_REF = 'wbtsfzozlmurljvglhpn';
-export const DEFAULT_TEST_SUPABASE_PROJECT_REF = 'qekxjxpznjvoccvmgozk';
+// test 分支（dev / 本地）的默认 project ref。
+export const DEFAULT_TEST_SUPABASE_PROJECT_REF = 'zoqelpfhurwehlvypryl';
 
 type Env = Record<string, string | undefined>;
 
