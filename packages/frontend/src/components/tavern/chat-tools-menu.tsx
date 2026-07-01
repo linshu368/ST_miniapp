@@ -36,11 +36,11 @@ export function ChatToolsMenu() {
         </div>
       )}
 
-      {/* Tools trigger & Mask for ST native buttons */}
-      <div className="absolute bottom-0 left-0 z-20 flex h-[60px] w-[60px] items-center justify-center bg-[#1a1a2e] rounded-tr-xl border-t border-r border-white/5 shadow-[2px_0_15px_rgba(0,0,0,0.3)]">
+      {/* Tools trigger */}
+      <div className="absolute bottom-0 left-0 z-20 flex items-center justify-center p-2">
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/80 hover:bg-white/10 hover:text-white hover:shadow-md transition-all active:scale-95"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1a1a2e]/90 text-white/80 border border-white/10 shadow-lg hover:bg-[#1a1a2e] hover:text-white hover:shadow-xl transition-all active:scale-95"
           aria-label="工具菜单"
         >
           <SlidersHorizontal className="h-5 w-5" />
