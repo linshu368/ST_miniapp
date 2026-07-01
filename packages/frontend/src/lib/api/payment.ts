@@ -1,6 +1,5 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
 import {
   useInfiniteQuery,
   useMutation,
@@ -11,26 +10,17 @@ import {
 import type {
   CreatePaymentOrderData,
   CreatePaymentOrderRequest,
+  GetDailyCheckinData,
   GetPaymentOrderData,
   GetPaymentOrdersData,
   GetPaymentOrdersQuery,
   GetPaymentPlansData,
+  GetWalletBalanceData,
   PaymentOrderStatus,
+  PostDailyCheckinData,
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
-import { shouldUseMock } from './mock-registry';
-import {
-  mockCreateOrder,
-  mockGetOrder,
-  mockListOrders,
-  mockPaymentPlans,
-  mockPayUrl,
-  subscribeMockPayment,
-} from '@/lib/mock-data/payment';
-import { mockWallet } from '@/lib/mock-data/shared';
-
-const USE_MOCK = shouldUseMock('payment');
 
 // ==== Query Keys ====
 export const paymentKeys = {
@@ -40,6 +30,8 @@ export const paymentKeys = {
   ordersList: (status: PaymentOrderStatus | 'all') =>
     [...paymentKeys.orders(), 'list', status] as const,
   order: (id: string) => [...paymentKeys.orders(), 'detail', id] as const,
+  wallet: () => [...paymentKeys.all, 'wallet'] as const,
+  checkin: () => [...paymentKeys.wallet(), 'checkin'] as const,
 };
 
 // ==== 纯 fetch 函数（私有）====
@@ -68,17 +60,26 @@ async function postCreateOrder(body: CreatePaymentOrderRequest): Promise<CreateP
   });
 }
 
+async function fetchWalletBalance(): Promise<GetWalletBalanceData> {
+  return apiClient<GetWalletBalanceData>('/api/wallet/balance');
+}
+
+async function fetchDailyCheckin(): Promise<GetDailyCheckinData> {
+  return apiClient<GetDailyCheckinData>('/api/wallet/checkin');
+}
+
+async function postDailyCheckin(): Promise<PostDailyCheckinData> {
+  return apiClient<PostDailyCheckinData>('/api/wallet/checkin', {
+    method: 'POST',
+  });
+}
+
 // ==== React Query hooks（业务层唯一入口）====
 
 export function usePaymentPlansQuery() {
   return useQuery<GetPaymentPlansData>({
     queryKey: paymentKeys.plans(),
-    queryFn: async () => {
-      if (USE_MOCK) {
-        return { plans: mockPaymentPlans };
-      }
-      return fetchPlans();
-    },
+    queryFn: fetchPlans,
     // 套餐信息相对稳定，5 分钟内不重拉
     staleTime: 5 * 60 * 1000,
   });
@@ -88,13 +89,7 @@ export function usePaymentPlansQuery() {
 export function useCreatePaymentOrderMutation() {
   const qc = useQueryClient();
   return useMutation<CreatePaymentOrderData, Error, CreatePaymentOrderRequest>({
-    mutationFn: async (body) => {
-      if (USE_MOCK) {
-        const order = mockCreateOrder(body.plan_id, body.payment_type);
-        return { order, pay_url: mockPayUrl(order.id) };
-      }
-      return postCreateOrder(body);
-    },
+    mutationFn: postCreateOrder,
     onSuccess: (data) => {
       qc.setQueryData<GetPaymentOrderData>(paymentKeys.order(data.order.id), {
         order: data.order,
@@ -106,19 +101,11 @@ export function useCreatePaymentOrderMutation() {
 
 /** 订单详情 + 2s 轮询；pending 轮询、其它状态停 */
 export function usePaymentOrderQuery(orderId: string | undefined) {
-  // mock 模式下订阅内存状态机变更，自动重拉 cache（比单纯 refetchInterval 更贴真实 webhook 到达体验）
-  useSubscribeMockOrderChanges(orderId);
-
   return useQuery<GetPaymentOrderData>({
     queryKey: orderId ? paymentKeys.order(orderId) : paymentKeys.orders(),
     enabled: !!orderId,
     queryFn: async () => {
       if (!orderId) throw new Error('order id is required');
-      if (USE_MOCK) {
-        const order = mockGetOrder(orderId);
-        if (!order) throw new Error('order not found');
-        return { order };
-      }
       return fetchOrder(orderId);
     },
     refetchInterval: (query) => {
@@ -131,40 +118,36 @@ export function usePaymentOrderQuery(orderId: string | undefined) {
   });
 }
 
-function useSubscribeMockOrderChanges(orderId: string | undefined) {
-  const qc = useQueryClient();
-  useSyncExternalStore(
-    (listener) => {
-      if (!USE_MOCK || !orderId) return () => {};
-      return subscribeMockPayment(() => {
-        // mock 下订单从 pending 扭到 completed 时给 wallet 加分，
-        // 让余额从 recharge → profile/chat 贯通（真实环境由后端扣加）
-        const data = qc.getQueryData<GetPaymentOrderData>(paymentKeys.order(orderId));
-        const prevStatus = data?.order.status;
-        const next = mockGetOrder(orderId);
-        if (next && next.status === 'completed' && prevStatus !== 'completed') {
-          mockWallet.add(next.credits_amount + next.bonus_credits);
-        }
-        void qc.invalidateQueries({ queryKey: paymentKeys.order(orderId) });
-        void qc.invalidateQueries({ queryKey: paymentKeys.orders() });
-        listener();
-      });
-    },
-    () => 0,
-    () => 0
-  );
+export function useWalletBalanceQuery() {
+  return useQuery<GetWalletBalanceData>({
+    queryKey: paymentKeys.wallet(),
+    queryFn: fetchWalletBalance,
+    staleTime: 15_000,
+  });
 }
 
-/** 订阅 mock 钱包余额；真实环境接入后替换成 useCurrentUserQuery 之类 */
-export function useMockWalletCredits(): number {
-  return useSyncExternalStore(
-    (cb) => {
-      if (!USE_MOCK) return () => {};
-      return mockWallet.subscribe(cb);
+export function useWalletCredits(): number {
+  const { data } = useWalletBalanceQuery();
+  return data?.credits ?? 0;
+}
+
+export function useDailyCheckinQuery() {
+  return useQuery<GetDailyCheckinData>({
+    queryKey: paymentKeys.checkin(),
+    queryFn: fetchDailyCheckin,
+    staleTime: 30_000,
+  });
+}
+
+export function useDailyCheckinMutation() {
+  const qc = useQueryClient();
+  return useMutation<PostDailyCheckinData, Error>({
+    mutationFn: postDailyCheckin,
+    onSuccess: (data) => {
+      qc.setQueryData<GetWalletBalanceData>(paymentKeys.wallet(), data.wallet);
+      void qc.invalidateQueries({ queryKey: paymentKeys.checkin() });
     },
-    () => (USE_MOCK ? mockWallet.getCredits() : 0),
-    () => 0
-  );
+  });
 }
 
 /** 流水列表：游标分页无限滚动 */
@@ -187,13 +170,6 @@ export function usePaymentOrdersInfiniteQuery(
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
         ...(pageParam ? { cursor: pageParam } : {}),
       };
-      if (USE_MOCK) {
-        return mockListOrders(
-          statusFilter === 'all' ? undefined : statusFilter,
-          pageParam,
-          pageSize
-        );
-      }
       return fetchOrders(query);
     },
     getNextPageParam: (last) => last.next_cursor ?? undefined,

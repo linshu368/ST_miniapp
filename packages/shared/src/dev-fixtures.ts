@@ -1,14 +1,12 @@
 /**
  * dev 后端常驻 seed character UUID。
  *
- * 前端 mock 数据（mock-data/characters.ts、mock-data/chat.ts）引用这些常量，
- * 保证 mock 与真后端 id 空间一致——当某模块从 mock 切到真后端时，
- * 跨模块点击跳转不会 404。
+ * 本地、测试和文档中可引用这些常量，避免手写 seed 角色 UUID。
  *
  * 维护约定（见根 CLAUDE.md「数据契约纪律」第 6 条）：
  * - 这些 UUID 由 packages/backend/prisma/seed.ts 的幂等 upsert 保证在 dev 后端永远存在
  * - 不得删除或修改已存在的 UUID 值
- * - 新增时：Dev 在 seed.ts 加 upsert → 在此文件加常量 → PM 按需在 mock-data 中引用
+ * - 新增时：Dev 在 seed.ts 加 upsert → 在此文件加常量
  *
  * 名字用 camelCase 英文键，避免角色中文名变动影响 key。注释里备注 dev 后端当前对应的角色名便于查阅。
  */

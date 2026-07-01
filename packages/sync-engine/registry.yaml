@@ -1,0 +1,173 @@
+# sync-engine / registry.yaml
+#
+# 配置清单 v2 —— D014 三 schema 切分后版本（v1 → v2，schema 字段从 st 拆为 st_platform / st_users）
+#               覆盖 4 条核心同步规则。
+#
+# 设计原则（对应 Schema划分设计.md）：
+#   - 分区 A（partition: A）：Supabase 绝对真相，direction 只能是 down
+#   - 分区 B（partition: B）：ST 文件系统 runtime 真相源，direction 只能是 up
+#   - 下发顺序（决策 5）：asset + down 的 order < config + down 的 order
+#     确保配置层下发时（settings.json），资产指针已有对应文件就位
+#   - writable_paths 白名单由 platform_settings 表驱动，不在清单硬编码（已确认）
+#   - platform_api_configs 阶段一占位不消费，不入清单（已确认）
+#   - character_ref 校验在投影阶段（session_start）执行，写 B 表时不校验（已确认）
+#
+# Schema 归属（DECISIONS.md D014 后）：
+#   - 分区 A 三张表 → st_platform schema
+#   - 分区 B 两张表 → st_users schema
+#   - 同步任务队列 → st_infra schema（不入本清单，由 producer/consumer 直接引用）
+#   - miniapp.characters 仍在 miniapp（D003 复用决策不变）
+#
+# 验收命令：cd packages/sync-engine && pnpm registry
+
+version: 2
+
+entries:
+  # ────────────────────────────────────────────────────────────────────────────
+  # [A 类 · 资产型 · order=10] 平台角色卡库 → ST characters 目录
+  # ────────────────────────────────────────────────────────────────────────────
+  # 触发时机：init（新用户首次初始化）+ session_start（登录时重建工作目录）
+  # 执行顺序：10，资产层最优先，确保后续 settings.json 中的 active_character 指针可解析
+  # 种子数据：011_seed_data.sql 中 3 张卡（第七开发部 / 莫池来 / 贺商寒）
+  #   - enabled=true 的卡才下发
+  #   - 系统兜底卡由 runtime_config.system_fallback_character_id 配置（character_ref 失效时的回退值）
+  # 落盘命名：platform_<uuid>.png（决策 4 稳定命名，让 settings 指针跨设备语义一致）
+  - id: platform_characters_down
+    label: '平台角色卡库下发到 ST characters 目录'
+    partition: A
+    shape: asset
+    direction: down
+    st:
+      type: asset_file
+      directory: characters
+      naming: platform_uuid
+    supabase:
+      schema: miniapp
+      table: characters
+      column: '*'
+    triggers:
+      - init
+      - session_start
+    transform: passthrough
+    order: 10
+    enabled: true
+    notes: >
+      同步引擎从 miniapp.characters 取 enabled=true 的行，
+      将 PNG 从 Storage 或本地平台资产目录下载，
+      落盘到 data/<handle>/characters/platform_<id>.png。
+      系统兜底卡由 runtime_config.system_fallback_character_id 配置。
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # [A 类 · 资产型 · order=20] 平台预设库 → ST OpenAI Settings 目录
+  # ────────────────────────────────────────────────────────────────────────────
+  # 触发时机：init + session_start
+  # 执行顺序：20，资产层，仍先于配置层
+  # 种子数据：011_seed_data.sql 中 1 条预设（openrouter / claude-sonnet-4.5）
+  # 落盘命名：platform_<uuid>.json（ST 读预设时不含扩展名，
+  #   settings.json 中 oai_settings.preset_settings_openai = 'platform_<uuid>'）
+  - id: platform_presets_down
+    label: '平台 API 预设下发到 ST OpenAI Settings 目录'
+    partition: A
+    shape: asset
+    direction: down
+    st:
+      type: asset_file
+      directory: 'OpenAI Settings'
+      naming: platform_uuid
+    supabase:
+      schema: st_platform
+      table: platform_presets
+      column: preset_payload
+    triggers:
+      - init
+      - session_start
+    transform: passthrough
+    order: 20
+    enabled: true
+    notes: >
+      同步引擎从 st_platform.platform_presets 取所有行（阶段一只有 1 行 is_default=true），
+      将 preset_payload jsonb 序列化为 JSON 文件，
+      落盘到 data/<handle>/OpenAI Settings/platform_<id>.json。
+      settings.json 中的指针值 = 'platform_<uuid>'（不含 .json，ST 原生行为）。
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # [A 类 · 配置型 · order=100] 平台 settings 整块 → ST settings.json
+  # ────────────────────────────────────────────────────────────────────────────
+  # 触发时机：init + session_start
+  # 执行顺序：100，配置层，必须在所有资产层（order < 100）之后执行
+  #   理由（决策 5）：settings.json 中的 active_character / preset_settings_openai
+  #   是资产文件的指针，下发时资产必须已经就位，否则 ST 启动会报错或回退。
+  # 实际下发逻辑：merge(A_settings, B_settings) → 写 data/<handle>/settings.json
+  #   - A_settings：st_platform.platform_settings 取 max(platform_version) 的 settings_jsonb
+  #   - B_settings：st_users.user_st_settings 取该用户最新一行的 settings_jsonb（白名单子集）
+  #   - B 中存在的键覆盖 A 的默认值；B 已被 writable_paths 过滤，merge 无需再过滤
+  #   - character_ref 字段在此阶段做失效校验 + 兜底回退（决策 8）
+  - id: platform_settings_down
+    label: '平台 settings.json 投影下发（merge A + B 后写入 ST）'
+    partition: A
+    shape: config
+    direction: down
+    st:
+      type: json_field
+      file: settings.json
+      field_path: '*'
+    supabase:
+      schema: st_platform
+      table: platform_settings
+      column: settings_jsonb
+    triggers:
+      - init
+      - session_start
+    transform: passthrough
+    order: 100
+    enabled: true
+    notes: >
+      field_path='*' 表示整个文件，同步引擎覆盖写 data/<handle>/settings.json。
+      下发顺序强约束：此条目 order=100 > 所有 asset 条目 order（10, 20）。
+      白名单（writable_paths）从 platform_settings 最新行读取，包含：
+        - { path: active_character, transform: character_ref }
+        - { path: oai_settings.prompts, transform: passthrough }
+      投影阶段的 character_ref 校验：
+        若 B 表中 active_character 指向不存在的资产，回退到
+        runtime_config.system_fallback_character_id 指定的系统兜底卡，
+        并在投影元数据中记录 had_invalid_ref=true。
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # [B 类 · 配置型 · order=999] ST settings.json 变更 → user_st_settings 镜像
+  # ────────────────────────────────────────────────────────────────────────────
+  # 触发时机：watch（ST 文件变更，异步触发）
+  # 执行顺序：999（哨兵值），上行规则不参与下发排序
+  # 写入逻辑：
+  #   1. file watch 监听 data/<handle>/settings.json
+  #   2. 防抖 2~5s（决策 6）：合并窗口内多次保存
+  #   3. lodash.pick(settings, writable_paths) 过滤白名单子集（决策 1）
+  #      白名单从 st_platform.platform_settings 最新版本的 writable_paths 字段读取
+  #   4. canonical JSON 序列化（key 排序）后 sha256 计算 content_hash
+  #   5. 与该用户 B 表最新一行 hash 比对，相同则跳过（决策 6 幂等去重）
+  #   6. 写入 st_users.user_st_settings（append-only，新增一行）
+  # character_ref 校验时机：不在此步骤执行，在下次 session_start 投影阶段执行（决策 4）
+  - id: user_settings_up
+    label: '用户 settings.json 变更反向镜像到 user_st_settings'
+    partition: B
+    shape: config
+    direction: up
+    st:
+      type: json_field
+      file: settings.json
+      field_path: '*'
+    supabase:
+      schema: st_users
+      table: user_st_settings
+      column: settings_jsonb
+    triggers:
+      - watch
+    transform: passthrough
+    order: 999
+    enabled: true
+    notes: >
+      field_path='*' 表示 watch 整个文件。
+      实际入库的 settings_jsonb 是 lodash.pick 后的白名单子集，不是全量 settings。
+      transform=passthrough 指子集内容原样入库；
+      character_ref 的失效校验在投影阶段（session_start）做，不在 watch 写入时做。
+      order=999 为哨兵值，validator 会检查所有 direction=up 的条目 order >= 900，
+      确保上行规则不会被误排入下发队列。

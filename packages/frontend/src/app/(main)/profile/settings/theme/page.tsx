@@ -7,6 +7,8 @@ import { Check, ChevronLeft } from 'lucide-react';
 import { THEME_PRESETS } from '@/lib/themes/presets';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useThemeStore } from '@/stores/theme-store';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 export default function ThemePage() {
@@ -20,14 +22,15 @@ export default function ThemePage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background">
       <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-3 backdrop-blur-md">
-        <button
-          type="button"
-          aria-label="返回"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={goBack}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+          className="rounded-full text-muted-foreground hover:text-foreground"
+          aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
-        </button>
+        </Button>
         <h1 className="text-base font-semibold">消息主题</h1>
       </header>
 
@@ -37,29 +40,46 @@ export default function ThemePage() {
         样例同步预览,选哪个用哪个。
       </p>
 
-      <ul className="flex flex-1 flex-col gap-2 px-3 py-4">
+      <ul className="grid grid-cols-1 gap-3 px-3 py-4 sm:grid-cols-2">
         {THEME_PRESETS.map((theme) => {
           const active = theme.id === themeId;
           return (
             <li key={theme.id}>
-              <button
-                type="button"
+              <Card
+                role="button"
+                tabIndex={0}
                 onClick={() => setThemeId(theme.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setThemeId(theme.id);
+                  }
+                }}
                 className={cn(
-                  'flex w-full flex-col gap-2.5 rounded-2xl border bg-card/40 px-4 py-3.5 text-left transition-colors',
+                  'relative overflow-hidden rounded-2xl border transition-all duration-200 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 hover:-translate-y-0.5',
                   active
-                    ? 'border-primary/70 bg-primary/5'
-                    : 'border-border/60 hover:border-border hover:bg-secondary/30'
+                    ? 'border-primary/60 bg-primary/5 shadow-md shadow-primary/5'
+                    : 'border-border/40 bg-card/40 hover:border-border/80 hover:bg-secondary/20 hover:shadow-sm'
                 )}
                 aria-pressed={active}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-[15px] font-medium text-foreground">{theme.name}</span>
-                  {active && <Check className="h-4 w-4 text-primary" aria-hidden />}
-                </div>
-                <p className="text-[11px] text-muted-foreground/80">{theme.blurb}</p>
-                <ThemeSample palette={theme.palette} />
-              </button>
+                {active && (
+                  <div className="absolute right-0 top-0 rounded-bl-xl bg-primary/20 p-1.5">
+                    <Check className="h-3.5 w-3.5 text-primary" aria-hidden />
+                  </div>
+                )}
+                <CardContent className="flex w-full flex-col gap-3 px-4 py-4 text-left">
+                  <div>
+                    <span className="text-[15px] font-semibold tracking-tight text-foreground">
+                      {theme.name}
+                    </span>
+                    <p className="mt-1 text-[12px] text-muted-foreground/80 leading-tight">
+                      {theme.blurb}
+                    </p>
+                  </div>
+                  <ThemeSample palette={theme.palette} />
+                </CardContent>
+              </Card>
             </li>
           );
         })}
@@ -73,21 +93,22 @@ function ThemeSample({
 }: {
   palette: { main: string; italics: string; quote: string; underline: string };
 }) {
-  // 不走 .mes-text(避免被全局主题 var 影响),直接 inline color
   return (
-    <div className="rounded-lg border border-border/40 bg-background/60 px-3 py-2.5 text-[13px] leading-[1.55]">
-      <span style={{ color: palette.italics, fontStyle: 'italic' }}>她抬起头,</span>
-      <span style={{ color: palette.main }}>看着你,然后说,</span>
+    <div className="rounded-xl border border-border/30 bg-background/80 px-3.5 py-3 text-[13px] leading-relaxed shadow-sm inset-shadow-sm">
+      <span style={{ color: palette.italics, fontStyle: 'italic' }}>她抬起头，</span>
+      <span style={{ color: palette.main }}>看着你，然后说，</span>
       <span style={{ color: palette.quote }}>“你来了。”</span>
       <br />
-      <span style={{ color: palette.main }}>关键词:</span>
+      <span style={{ color: palette.main }}>关键词：</span>
       <span
         style={{
           color: palette.underline,
           textDecoration: 'underline',
           textDecorationColor: palette.underline,
-          textUnderlineOffset: 2,
+          textUnderlineOffset: 3,
+          textDecorationThickness: 1.5,
         }}
+        className="font-medium"
       >
         你
       </span>

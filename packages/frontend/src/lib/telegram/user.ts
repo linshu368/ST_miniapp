@@ -7,6 +7,7 @@ export interface TelegramUserInfo {
   firstName?: string;
   lastName?: string;
   username?: string;
+  photoUrl?: string;
 }
 
 /** 解析 raw initData(URL-encoded query string)中的 user 字段 */
@@ -21,12 +22,14 @@ export function parseTelegramUser(rawInitData: string | undefined): TelegramUser
       first_name?: string;
       last_name?: string;
       username?: string;
+      photo_url?: string;
     };
     return {
       id: user.id,
       firstName: user.first_name,
       lastName: user.last_name,
       username: user.username,
+      photoUrl: user.photo_url,
     };
   } catch {
     return {};
@@ -37,4 +40,9 @@ export function parseTelegramUser(rawInitData: string | undefined): TelegramUser
 export function getTelegramDefaultDisplayName(): string {
   const info = parseTelegramUser(getRawInitData());
   return info.firstName?.trim() || info.username?.trim() || '你';
+}
+
+/** 当前 Telegram 用户头像 URL。旧客户端或隐私设置下可能为空。 */
+export function getTelegramPhotoUrl(): string | undefined {
+  return parseTelegramUser(getRawInitData()).photoUrl?.trim() || undefined;
 }

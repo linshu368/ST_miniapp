@@ -1,0 +1,173 @@
+# =============================================================================
+# ST_miniAPP — M5: build & push the 4 service images to GHCR (multi-arch).
+#
+# Images (namespace = ghcr.io/<owner>/st-miniapp-<component>):
+#   - st-miniapp-frontend    ops/docker/Dockerfile.frontend   (context .)   [staging only]
+#   - st-miniapp-backend     ops/docker/Dockerfile.backend    (context .)
+#   - st-miniapp-st-backend  ops/docker/Dockerfile.st-bundle  (context .)
+#   - st-miniapp-nginx       ops/nginx/Dockerfile             (context ops/nginx)
+#
+# 方案 Y：对外域名绑 Vercel，生产前端部署在 Vercel，Railway 不消费 frontend 镜像。
+# 因此 frontend 镜像**默认不构建**（避免无用 CI 时间与 GHCR 存储占用），仅在打
+# `staging-*` tag（本地/staging 全栈仿真需要时）才构建。其余三镜像照常每次构建。
+#
+# Platforms: linux/amd64,linux/arm64 (arm64 wanted for native Apple-silicon dev).
+# Auth: built-in GITHUB_TOKEN (no operator PAT required); needs packages: write,
+#   which the permissions block below grants at workflow scope. Confirm the repo's
+#   Settings -> Actions -> General -> Workflow permissions is NOT restricted to
+#   read-only, otherwise the token cannot push packages.
+#
+# Tags per push (see docker/metadata-action below): at minimum
+#   - sha-<short>            immutable, traceable to the exact commit
+#   - <branch>-latest        moving pointer for the branch
+# =============================================================================
+name: Build and Push Images
+
+on:
+  push:
+    branches:
+      - dev
+      - 'dev_stage5_*'
+    # frontend 镜像仅在 staging-* tag 上构建（见下方矩阵步骤的 if 条件）。
+    tags:
+      - 'staging-*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-and-push-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    name: Build & Push ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One image's failure (e.g. arm64 native-addon issue) must not cancel the
+      # others — we want to see which images are healthy and which are not.
+      fail-fast: false
+      matrix:
+        include:
+          - name: frontend
+            context: .
+            file: ops/docker/Dockerfile.frontend
+            build_args: |
+              NEXT_PUBLIC_API_URL=
+          - name: backend
+            context: .
+            file: ops/docker/Dockerfile.backend
+            build_args: ''
+          - name: st-backend
+            context: .
+            file: ops/docker/Dockerfile.st-bundle
+            build_args: ''
+          - name: nginx
+            context: ops/nginx
+            file: ops/nginx/Dockerfile
+            build_args: ''
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # QEMU registers binfmt handlers so the amd64 runner can also build arm64.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/st-miniapp-${{ matrix.name }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=${{ github.ref_name }}-latest
+
+      - name: Build and push (linux/amd64,linux/arm64)
+        # 方案 Y：frontend 镜像仅在 staging-* tag 构建；其余三镜像每次构建。
+        if: ${{ matrix.name != 'frontend' || startsWith(github.ref, 'refs/tags/staging-') }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.build_args }}
+          # Keep the manifest list to exactly the two requested platform manifests
+          # (no provenance/sbom attestation entries) so `imagetools inspect` shows a
+          # clean amd64 + arm64 pair.
+          provenance: false
+          sbom: false
+          # Per-image GHA cache scope: first build is cold (multi-arch can take
+          # 15-20 min), later builds reuse layers.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # Proof that every published image is a real multi-arch manifest list
+  # (linux/amd64 + linux/arm64). Runs only after all 4 builds succeed; reads the
+  # packages back with the same built-in token.
+  verify-multiarch:
+    name: Verify multi-arch manifests
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Inspect each image's manifest list
+        env:
+          # frontend 只在 staging-* tag 构建，因此只有此时才纳入校验（方案 Y）。
+          IS_STAGING_TAG: ${{ startsWith(github.ref, 'refs/tags/staging-') }}
+        run: |
+          set -euo pipefail
+          owner='${{ github.repository_owner }}'
+          tag='${{ github.ref_name }}-latest'
+          fail=0
+          names="backend st-backend nginx"
+          if [ "${IS_STAGING_TAG}" = "true" ]; then
+            names="frontend ${names}"
+          fi
+          for name in ${names}; do
+            image="${REGISTRY}/${owner}/st-miniapp-${name}:${tag}"
+            echo "::group::imagetools inspect ${image}"
+            docker buildx imagetools inspect "${image}"
+            echo "::endgroup::"
+            for plat in linux/amd64 linux/arm64; do
+              if docker buildx imagetools inspect "${image}" | grep -q "Platform:[[:space:]]*${plat}$"; then
+                echo "OK   ${name}: ${plat}"
+              else
+                echo "MISS ${name}: ${plat}"
+                fail=1
+              fi
+            done
+          done
+          if [ "${fail}" -ne 0 ]; then
+            echo "One or more images is missing a required platform." >&2
+            exit 1
+          fi
+          echo "All 4 images expose linux/amd64 + linux/arm64."

@@ -2,6 +2,10 @@
 set -euo pipefail
 
 BASE_BRANCH="${1:-main}"
+DEFAULT_REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="${REVIEW_REPO_ROOT:-$DEFAULT_REPO_ROOT}"
+REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
+cd "$REPO_ROOT"
 
 # 兼容 GitHub Actions 的 detached HEAD
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
@@ -18,6 +22,10 @@ PATHSPEC=(
   ':(exclude)*.png' ':(exclude)*.jpg' ':(exclude)*.jpeg'
   ':(exclude)*.gif' ':(exclude)*.svg' ':(exclude)*.ico'
   ':(exclude)*.woff' ':(exclude)*.woff2' ':(exclude)*.ttf' ':(exclude)*.eot'
+  ':(exclude)docs/**'
+  ':(exclude)vendor/sillytavern/**'
+  ':(exclude)ops/st-extensions/JS-Slash-Runner/lib/**'
+  ':(exclude)ops/st-extensions/JS-Slash-Runner/bundle/**'
 )
 
 echo "## Diff 元信息"

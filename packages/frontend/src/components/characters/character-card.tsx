@@ -21,14 +21,14 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
       disabled={disabled}
       onClick={() => onSelect(character.id)}
       className={cn(
-        'group flex w-full flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left shadow-sm',
-        'transition-transform duration-200 ease-out active:scale-[0.995]',
+        'group flex h-full w-full flex-col overflow-hidden rounded-[16px] border border-white/10 bg-white/5 text-left shadow-lg',
+        'transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/20 hover:border-white/20 active:scale-95',
         'disabled:opacity-60'
       )}
       aria-label={`查看 ${character.name} 的详情`}
     >
-      {/* 图片区：3:4 + 渐变叠层 + 名字 */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden">
+      {/* 图片区：3:4 + 渐变叠层 + 名字 / 标签 */}
+      <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden">
         {hasAvatar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -43,27 +43,20 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
         {/* 渐变遮罩 */}
         <div
           aria-hidden="true"
-          className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/85 via-black/40 to-transparent"
+          className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/48 to-transparent"
         />
 
-        {/* 渐变层底部：名字独占一行 + 下方单行标签（溢出软淡出，不折行不堆叠） */}
-        <div className="absolute inset-x-0 bottom-0 flex flex-col gap-1.5 px-2.5 pb-2.5">
-          <h3 className="truncate px-0.5 text-[15px] font-semibold leading-tight text-white drop-shadow-sm">
+        <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
+          <h3 className="line-clamp-2 px-0.5 text-[15px] font-semibold leading-tight text-white drop-shadow-sm sm:text-base">
             {character.name}
           </h3>
 
           {character.personality_tags.length > 0 && (
-            <div
-              className="flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden"
-              style={{
-                maskImage: 'linear-gradient(to right, black 0, black 78%, transparent 100%)',
-                WebkitMaskImage: 'linear-gradient(to right, black 0, black 78%, transparent 100%)',
-              }}
-            >
-              {character.personality_tags.slice(0, 4).map((t) => (
+            <div className="flex max-h-[2.25rem] min-w-0 flex-wrap items-center gap-1 overflow-hidden">
+              {character.personality_tags.slice(0, 6).map((t) => (
                 <span
                   key={t}
-                  className="shrink-0 rounded-full bg-white/12 px-1.5 py-[2px] text-[10px] font-medium leading-none text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur-[2px]"
+                  className="max-w-[calc(50%-0.125rem)] truncate rounded-full bg-white/12 px-1.5 py-[3px] text-[10px] font-medium leading-none text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur-[2px] sm:max-w-full"
                 >
                   {t}
                 </span>
@@ -73,15 +66,7 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
         </div>
       </div>
 
-      {/* 信息区：作者 + 描述最多两行省略 */}
-      <div className="flex flex-col gap-1 px-3 py-2.5">
-        <p className="text-[10px] leading-none text-muted-foreground/60">
-          by {character.author_name}
-        </p>
-        <p className="line-clamp-2 text-[11px] leading-relaxed text-foreground/60">
-          {character.description}
-        </p>
-      </div>
+      {/* 作者和原始描述暂不展示，避免未清洗字段影响大厅视觉。 */}
     </button>
   );
 }

@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter } from 'next/navigation';
 import { Hash, PenLine, Quote, X } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
+
 import { useCharacterQuery } from '@/lib/api/characters';
-import { useOpenSessionForCharacter } from '@/lib/api/chat';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
 // ─── 手势常量 ────────────────────────────────────────────────
@@ -30,10 +30,8 @@ interface CharacterDetailSheetProps {
 
 // ─── 主组件 ──────────────────────────────────────────────────
 export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSheetProps) {
-  const router = useRouter();
   const { data, isLoading } = useCharacterQuery(characterId ?? undefined);
   const character = data?.character;
-  const openSession = useOpenSessionForCharacter();
 
   // ── 动画状态 ──────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
@@ -101,14 +99,6 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
     [onClose]
   );
 
-  const handleStart = () => {
-    if (!character || openSession.isPending) return;
-    openSession.mutate(
-      { character_id: character.id },
-      { onSuccess: ({ session_id }) => router.push(`/chat/${session_id}`) }
-    );
-  };
-
   if (!mounted || typeof document === 'undefined') return null;
 
   const gradient = characterRoomGradient(character?.id ?? 'fallback');
@@ -168,14 +158,15 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
             )}
             <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-card via-card/60 to-transparent" />
             {/* 右上角关闭按钮 */}
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={onClose}
               aria-label="关闭"
-              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/90 backdrop-blur-md transition-colors active:bg-black/60"
+              className="absolute right-3 top-3 h-8 w-8 rounded-full bg-black/40 text-white/90 backdrop-blur-md hover:bg-black/60"
             >
               <X className="h-4 w-4" />
-            </button>
+            </Button>
             {!isLoading && character && (
               <div className="absolute inset-x-0 bottom-0 px-5 pb-4">
                 <h2 className="text-[24px] font-semibold leading-tight text-foreground">
@@ -183,11 +174,6 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
                 </h2>
                 <p className="mt-0.5 text-[12px] text-muted-foreground">
                   by {character.author_name}
-                  {character.chat_count !== undefined && (
-                    <span className="ml-3 text-muted-foreground/60">
-                      {character.chat_count.toLocaleString()} 次对话
-                    </span>
-                  )}
                 </p>
               </div>
             )}
@@ -258,11 +244,10 @@ export function CharacterDetailSheet({ characterId, onClose }: CharacterDetailSh
         >
           <button
             type="button"
-            onClick={handleStart}
-            disabled={openSession.isPending || !character}
+            disabled
             className="flex w-full items-center justify-center rounded-xl bg-primary py-3.5 text-[15px] font-semibold text-primary-foreground shadow-lg transition-opacity disabled:opacity-50 active:opacity-80"
           >
-            {openSession.isPending ? '正在进入…' : '开始对话'}
+            聊天入口搭建中
           </button>
         </div>
       </div>

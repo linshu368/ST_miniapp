@@ -234,8 +234,8 @@ Bot 和 miniApp 共享同一个 Supabase 项目，通过表级别的划分隔离
 - 状态管理：组件内 `useState`，跨组件 Zustand，服务端数据 React Query
 - 表单用 React Hook Form + Zod
 - API 调用封装在 `lib/api/` 下的 React Query hooks
-- mock 数据集中在 `lib/mock-data/` **目录**下按模块拆子文件（`index.ts` 统一导出 / `shared.ts` 跨模块共享类型 / `characters.ts`、`chat.ts` 等按业务模块），**不允许硬编码在组件里**。业务代码只从 `@/lib/mock-data` 导入，感知不到物理拆分。
-- mock / 真 API 切换由 `lib/api/mock-registry.ts` 按**模块粒度**决定，文件由 PM bootstrap 自动重算（规则见根 `CLAUDE.md` Step 2c）；人工维护的是 `mock-registry.config.ts`。组件永远只调 `useXxxQuery / useXxxMutation`，不感知切换。
+- 前端不再保留业务 mock。新功能必须通过 shared 契约 + 真实后端 route + `lib/api/` React Query hook 接入。
+- 本地没有 Telegram 容器时，只使用 `NEXT_PUBLIC_USE_MOCK_INIT_DATA` 配合后端鉴权 bypass 解决身份问题，不用 mock 业务数据。
 - Telegram SDK 调用优先从 `lib/telegram/` 导入（非硬规则但推荐）
 
 ### 6.3 什么时候不相信 AI 的建议

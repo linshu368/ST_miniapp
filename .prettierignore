@@ -6,3 +6,6 @@ dist/
 pnpm-lock.yaml
 package-lock.json
 .husky/_
+# Faithful copy of vendor SillyTavern config.yaml (vendor baseline + 6 overrides);
+# keep byte-identical to vendor except the documented overrides — do not reformat.
+ops/sillytavern/config.production.yaml

@@ -8,7 +8,7 @@
 
 - **框架**：Fastify 5。
 - **语言**：TypeScript 严格模式。**禁止 `any`**。
-- **运行时**：Node.js 20.x，使用 tsx 执行。
+- **运行时**：Node.js 22.x，使用 tsx 执行。
 - **数据契约**：所有前后端共享的数据形状必须定义在 `packages/shared/`，后端不得在 `backend/` 内部私定对外数据形状。
 - **数据库**：Supabase PostgreSQL，与 Bot 共享。
 - **环境变量**：不要提交到 git，走部署平台（Railway）管理。
@@ -25,8 +25,8 @@
 // @frontend-ready: true
 app.get('/api/characters', async (req, reply) => { ... })
 
-// @frontend-ready: false — LLM 调用未接入
-app.post('/api/sessions/:id/messages', async (req, reply) => { ... })
+// @frontend-ready: false — 计费逻辑 stub
+app.post('/api/payment/orders', async (req, reply) => { ... })
 ```
 
 **判断 true / false 的标准**（存在灰色地带时就近决定，但要前后一致）：
@@ -61,9 +61,8 @@ handler 的请求体 / 响应体类型全部引自 `packages/shared/`。shared �
 
 但 **Dev 因技术接入需要改前端是正常协作,不算违规**,常见场景:
 
-- SSE / WebSocket / 新协议的 client 封装(例如 `lib/api/chat.ts` 接 SSE 流)
 - API client / fetch / axios 等基础封装(例如 `lib/api/client.ts` 鉴权 header 调整)
-- `shouldUseMock` 分叉逻辑里的真后端分支接入(mock 分支保留给 PM 维护)
+- `lib/api/` 里的真实后端请求接入
 - `packages/shared/` 类型变化后前端引用点的对齐
 - Telegram SDK / 鉴权适配(例如 `lib/telegram/auth.ts` bypass 配合)
 - 前端 bug 修复(例如 PR review 时发现 typo / 边界条件遗漏)
@@ -92,7 +91,7 @@ Dev 是技术角色，硬规则上面已经写清楚，这里只列**两个最�
 - **Claude 行为**：扫本次改过的文件里所有标 `@frontend-ready: false` 的路由，列出清单让你确认
   > "你本次改过 `routes/xxx.ts`。该文件里目前还有以下 `@frontend-ready: false` 的路由：
   >
-  > - `POST /api/sessions/:id/messages` — LLM 调用未接入
+  > - `POST /api/payment/orders` — 计费逻辑 stub
   > - `POST /api/other/endpoint` — 计费逻辑 stub
   >
   > 其中有哪些本次已经完工、要切成 `true`?"
@@ -106,13 +105,13 @@ Dev 是技术角色，硬规则上面已经写清楚，这里只列**两个最�
 #### D3. 删/改 seed UUID 前，Claude 先扫影响面让你二次确认
 
 - **触发条件**：Claude session 里检测到你要改动 `packages/shared/src/dev-fixtures.ts` 的 `DEV_SEED_*` 常量，或 `packages/backend/prisma/seed.ts` 里对应的 upsert
-- **Claude 行为**：扫前端 mock 对这个 UUID 的引用，列出受影响的文件和行号，告诉你后果
-  > "UUID `xxx-xxx-...` 被前端 mock 的 `mock-data/chat.ts:24`、`mock-data/characters.ts:15` 引用。删除或改 UUID 会导致这些 mock 数据在前端切真后端时 404。"
+- **Claude 行为**：扫前端、测试和文档对这个 UUID 的引用，列出受影响的文件和行号，告诉你后果
+  > "UUID `xxx-xxx-...` 被前端页面、测试或文档引用。删除或改 UUID 会导致对应入口找不到 seed 数据。"
 - **选项**：
-  - `确认要改/删，我已通知 PM 同步改 mock 数据`
+  - `确认要改/删，我已同步处理引用方`
   - `先别改，我撤销`
   - `只是重命名常量名（UUID 值不变）`
-- 目的：防止紧急 hotfix 或一时没想起来,误改了前端的硬依赖
+- 目的：防止紧急 hotfix 或一时没想起来，误改了前端、测试或文档里的硬依赖
 
 ## 与前端的边界
 
@@ -120,26 +119,23 @@ Dev 是技术角色，硬规则上面已经写清楚，这里只列**两个最�
 - 后端**必须关心** `packages/shared/` 里的类型契约，确保 API 响应与契约一致。
 - 新增 API 端点时，先在 `shared/` 定义请求/响应类型，再写实现，再写 `@frontend-ready` 注释。
 
-## Mock-Registry 自动同步（PM 侧机制，后端需要配合的部分）
+## 前端接真后端的配合要求
 
-PM 的前端 mock 切换基于本地 `src/routes/` 和 `app.ts` 当前注册的路由 **+ `@frontend-ready` 注释状态**——扫描规则见根 `CLAUDE.md` 的 Step 2c。
+前端不再保留业务 mock 和 `mock-registry` 切换。新增功能需要 shared 契约、后端真实 route、前端 `lib/api/` hook 同步落地。
 
 对后端开发的具体约束：
 
 1. **`app.get/post/put/delete/patch('路径', ...)` 的字面量路径必须和 `packages/shared/` 契约约定一致**（路径参数用 `:id` 命名惯例）。
-2. **每次注册路由必须带 `@frontend-ready` 注释**（见上面「Dev 提交前强制清单」第 1 条）。
-3. **handler 业务逻辑状态变化时必须更新 `@frontend-ready` 值**（见第 2 条）。
+2. **每次注册路由仍建议带 `@frontend-ready` 注释**，作为前后端联调状态说明。
+3. **handler 业务逻辑状态变化时同步更新 `@frontend-ready` 值**，避免前端误接半成品接口。
 
-满足这三条，PM 下次 bootstrap 会自动感知变化并切换前端 mock / 真后端，不需要线下通知。
+满足这三条，前端接入时可以直接判断接口是否已达到可联调状态。
 
 ## 永远不要做
 
 - ❌ 路由注册上方省略 `@frontend-ready` 注释（哪怕只是小改）
 - ❌ `@frontend-ready: false` 的 reason 只写 "wip" / "todo" 这类无信息词（需带业务含义）
-- ❌ 动 `packages/frontend/src/lib/api/mock-registry.ts`（自动生成文件）
-- ❌ 动 `packages/frontend/src/lib/api/mock-registry.config.ts`（PM 归属）
 - ❌ 删或改 `dev-fixtures.ts` 已有的 UUID 常量
 - ❌ 删或改 `seed.ts` 中对应 UUID 的 upsert 语句
 - ❌ 在 backend 内部定义本该放在 shared 的对外类型
 - ❌ 在没有技术接入需求的情况下主动改前端 UX（配色/布局/交互流/视觉风格/业务组件/页面/文案）——这些归 PM。技术性接入（SSE/API client/shared 类型对齐等）是允许的，见「Dev 提交前强制清单」第 5 条
-- ❌ 改 `packages/frontend/src/lib/mock-data/`（mock 数据归 PM 维护）

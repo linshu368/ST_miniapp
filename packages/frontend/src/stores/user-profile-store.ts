@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 
-import { getTelegramDefaultDisplayName } from '@/lib/telegram/user';
+import { getTelegramDefaultDisplayName, getTelegramPhotoUrl } from '@/lib/telegram/user';
 
 // 用户在 chat 内的"显示名"——也就是 markdown 管线 {{user}} 宏要替换成的字符串。
 // 优先级:用户在 profile 页的自定义 > Telegram first_name/username > '你'
@@ -13,12 +13,16 @@ const STORAGE_KEY = 'st_miniapp_display_name';
 interface UserProfileState {
   /** 当前生效的显示名(已结合 localStorage 覆盖 + telegram 默认) */
   displayName: string;
+  /** Telegram 原始头像 URL。用户没有头像或客户端不返回时为空。 */
+  photoUrl?: string;
   /** 是否用户手动设置过(true=覆盖了默认,false=跟随 telegram 默认) */
   hasCustomName: boolean;
   /** 客户端首次进入页面时调用,从 telegram + localStorage 恢复状态 */
   hydrate: () => void;
   /** 用户在 profile 页改名时调用。空字符串 → 清除自定义,回退到 telegram 默认 */
   setDisplayName: (next: string) => void;
+  /** 服务端 settings 返回后调用。null 表示继续使用本地/Telegram fallback */
+  applyServerDisplayName: (next: string | null) => void;
 }
 
 function readOverride(): string | undefined {
@@ -46,6 +50,7 @@ function writeOverride(value: string | undefined): void {
 
 export const useUserProfileStore = create<UserProfileState>((set) => ({
   displayName: '你',
+  photoUrl: undefined,
   hasCustomName: false,
   hydrate: () => {
     if (typeof window === 'undefined') return;
@@ -53,6 +58,7 @@ export const useUserProfileStore = create<UserProfileState>((set) => ({
     const fallback = getTelegramDefaultDisplayName();
     set({
       displayName: override ?? fallback,
+      photoUrl: getTelegramPhotoUrl(),
       hasCustomName: !!override,
     });
   },
@@ -66,5 +72,16 @@ export const useUserProfileStore = create<UserProfileState>((set) => ({
       writeOverride(trimmed);
       set({ displayName: trimmed, hasCustomName: true });
     }
+  },
+  applyServerDisplayName: (next) => {
+    const normalized = next?.trim();
+    if (normalized) {
+      writeOverride(normalized);
+      set({ displayName: normalized, hasCustomName: true });
+      return;
+    }
+
+    const fallback = readOverride() ?? getTelegramDefaultDisplayName();
+    set({ displayName: fallback, hasCustomName: !!readOverride() });
   },
 }));

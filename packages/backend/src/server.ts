@@ -6,10 +6,18 @@ async function main() {
 
   await app.listen({
     port: config.port,
-    host: '0.0.0.0', // Railway 要求绑 0.0.0.0
+    host: '::', // 同时接受 IPv6 和 IPv4
   });
 
   console.log(`Backend running on port ${config.port}`);
+
+  // Graceful shutdown: close Fastify (stop accepting + drain in-flight) then exit 0 on stop signals.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, async () => {
+      await app.close();
+      process.exit(0);
+    });
+  }
 }
 
 main().catch((err) => {

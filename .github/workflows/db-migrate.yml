@@ -1,0 +1,129 @@
+name: Database Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target database environment
+        type: choice
+        required: true
+        default: test
+        options:
+          - test
+          - production
+      migration_file:
+        description: SQL migration file under packages/shared/migrations
+        type: string
+        required: true
+        default: packages/shared/migrations/014_miniapp_payment_wallet.sql
+      confirm_production:
+        description: Type RUN_PRODUCTION_MIGRATION when environment is production
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-migration-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply SQL Migration
+    runs-on: ubuntu-latest
+
+    env:
+      TEST_PROJECT_REF: zoqelpfhurwehlvypryl
+      PROD_PROJECT_REF: wbtsfzozlmurljvglhpn
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+      PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v2
+        with:
+          version: latest
+          github-token: ${{ github.token }}
+
+      - name: Resolve target
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ inputs.environment }}" == "production" ]]; then
+            if [[ "${{ inputs.confirm_production }}" != "RUN_PRODUCTION_MIGRATION" ]]; then
+              echo "Production migration requires confirm_production=RUN_PRODUCTION_MIGRATION" >&2
+              exit 1
+            fi
+            project_ref="$PROD_PROJECT_REF"
+            db_url="$PROD_DATABASE_URL"
+          else
+            project_ref="$TEST_PROJECT_REF"
+            db_url="$TEST_DATABASE_URL"
+          fi
+
+          if [[ -z "${SUPABASE_ACCESS_TOKEN:-}" ]]; then
+            echo "Missing GitHub secret: SUPABASE_ACCESS_TOKEN" >&2
+            exit 1
+          fi
+
+          if [[ -z "$db_url" ]]; then
+            echo "Missing GitHub secret for selected environment database URL" >&2
+            exit 1
+          fi
+
+          if [[ "$db_url" != *"$project_ref"* ]]; then
+            echo "Database URL does not contain expected project ref: $project_ref" >&2
+            exit 1
+          fi
+
+          migration_file="${{ inputs.migration_file }}"
+          if [[ "$migration_file" != packages/shared/migrations/*.sql ]]; then
+            echo "migration_file must be under packages/shared/migrations and end with .sql" >&2
+            exit 1
+          fi
+
+          if [[ "$migration_file" == *".."* ]]; then
+            echo "migration_file must not contain path traversal" >&2
+            exit 1
+          fi
+
+          if [[ ! -f "$migration_file" ]]; then
+            echo "Migration file not found: $migration_file" >&2
+            exit 1
+          fi
+
+          echo "::add-mask::$db_url"
+          printf '%s' "$db_url" > "$RUNNER_TEMP/db_url"
+          echo "project_ref=$project_ref" >> "$GITHUB_OUTPUT"
+          echo "migration_file=$migration_file" >> "$GITHUB_OUTPUT"
+
+      - name: Apply migration
+        env:
+          MIGRATION_FILE: ${{ steps.target.outputs.migration_file }}
+        run: |
+          set -euo pipefail
+          DB_URL="$(<"$RUNNER_TEMP/db_url")"
+          echo "::add-mask::$DB_URL"
+          supabase db query --db-url "$DB_URL" --file "$MIGRATION_FILE"
+
+      - name: Cleanup database URL
+        if: always()
+        run: rm -f "$RUNNER_TEMP/db_url"
+
+      - name: Migration summary
+        run: |
+          {
+            echo "### Database migration completed"
+            echo ""
+            echo "- Environment: \`${{ inputs.environment }}\`"
+            echo "- Project ref: \`${{ steps.target.outputs.project_ref }}\`"
+            echo "- Migration file: \`${{ steps.target.outputs.migration_file }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

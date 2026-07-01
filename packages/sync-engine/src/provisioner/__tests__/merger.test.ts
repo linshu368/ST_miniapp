@@ -1,0 +1,242 @@
+/**
+ * merger.test.ts
+ *
+ * mergeSettings() 是纯函数（无 IO / 无网络），直接测试，无需 mock。
+ * 覆盖场景：
+ *   1. 新用户（B=null）→ 完全用 A 默认值
+ *   2. 老用户（B 有记录）→ 白名单键被 B 覆盖
+ *   3. B 中存在非白名单键 → 不被 merge 进结果
+ *   4. character_ref 有效 → 不触发兜底
+ *   5. character_ref 失效 → 触发兜底，回退到系统兜底卡
+ *   6. character_ref 失效 + 无兜底卡 → 不崩溃，hadInvalidRef=true
+ *   7. character_ref 格式不合法 → 触发兜底
+ */
+
+import { describe, it, expect } from 'vitest';
+import { mergeSettings } from '../merger.js';
+import type { PlatformSettingsRow, UserSettingsRow } from '../fetcher.js';
+
+// ─── 测试固件 ──────────────────────────────────────────────────────────────────
+
+const CHAR_UUID_FALLBACK = '11111111-1111-4111-8111-000000000001';
+const CHAR_UUID_SECOND = '22222222-2222-4222-8222-000000000002';
+const LLM_PROXY_URL = 'http://localhost:3001/api/platform/llm-proxy/v1';
+
+const makePlatformSettings = (
+  overrides: Partial<PlatformSettingsRow> = {}
+): PlatformSettingsRow => ({
+  platform_version: 1,
+  settings_jsonb: {
+    active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+    'oai_settings.prompts': [],
+    theme: 'dark',
+    fontSize: 14,
+  },
+  writable_paths: [
+    { path: 'active_character', transform: 'character_ref' },
+    { path: 'oai_settings.prompts', transform: 'passthrough' },
+  ],
+  ...overrides,
+});
+
+const makeUserSettings = (overrides: Partial<UserSettingsRow> = {}): UserSettingsRow => ({
+  user_revision: 1,
+  settings_jsonb: {
+    active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+    'oai_settings.prompts': [{ enabled: false }],
+  },
+  based_on_platform_version: 1,
+  ...overrides,
+});
+
+const mergeSettingsForTest = (
+  platformSettings: PlatformSettingsRow,
+  userSettings: UserSettingsRow | null,
+  availableCharIds: string[],
+  fallbackCharacterId: string | undefined
+) =>
+  mergeSettings(
+    platformSettings,
+    userSettings,
+    availableCharIds,
+    fallbackCharacterId,
+    LLM_PROXY_URL
+  );
+
+// ─── 测试套件 ──────────────────────────────────────────────────────────────────
+
+describe('mergeSettings', () => {
+  // ── 场景 1：新用户，B=null ──────────────────────────────────────────────────
+  it('新用户（B=null）应完全使用 A 默认值', () => {
+    const platform = makePlatformSettings();
+    const availableIds = [CHAR_UUID_FALLBACK];
+
+    const result = mergeSettingsForTest(platform, null, availableIds, CHAR_UUID_FALLBACK);
+
+    expect(result.hadInvalidRef).toBe(false);
+    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
+    expect(result.settings['theme']).toBe('dark');
+    expect(result.settings['fontSize']).toBe(14);
+  });
+
+  // ── 场景 2：老用户，白名单键被 B 覆盖 ────────────────────────────────────
+  it('老用户白名单字段（oai_settings.prompts）应被 B 的值覆盖', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [{ enabled: true }],
+        theme: 'dark',
+      },
+    });
+    const userSettings = makeUserSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [{ enabled: false, custom: true }],
+      },
+    });
+    const availableIds = [CHAR_UUID_FALLBACK];
+
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+
+    expect(result.settings['oai_settings.prompts']).toEqual([{ enabled: false, custom: true }]);
+    expect(result.settings['theme']).toBe('dark');
+  });
+
+  // ── 场景 3：B 中有非白名单键，不应被 merge ───────────────────────────────
+  it('B 中的非白名单键不应出现在 merge 结果中（已过滤）', () => {
+    const platform = makePlatformSettings();
+    const userSettings = makeUserSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [],
+        fontSize: 20,
+        secretField: 'hack',
+      },
+    });
+    const availableIds = [CHAR_UUID_FALLBACK];
+
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+
+    expect(result.settings['fontSize']).toBe(14);
+    expect(result.settings['secretField']).toBeUndefined();
+  });
+
+  // ── 场景 4：character_ref 有效，不触发兜底 ───────────────────────────────
+  it('character_ref 有效时 hadInvalidRef=false', () => {
+    const platform = makePlatformSettings();
+    const userSettings = makeUserSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_SECOND}.png`,
+      },
+    });
+    const availableIds = [CHAR_UUID_FALLBACK, CHAR_UUID_SECOND];
+
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+
+    expect(result.hadInvalidRef).toBe(false);
+    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_SECOND}.png`);
+  });
+
+  // ── 场景 5：character_ref 失效，回退到系统兜底卡 ─────────────────────────
+  it('character_ref 指向不存在的卡时应回退到系统兜底卡', () => {
+    const MISSING_UUID = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
+    const platform = makePlatformSettings();
+    const userSettings = makeUserSettings({
+      settings_jsonb: {
+        active_character: `platform_${MISSING_UUID}.png`,
+      },
+    });
+    const availableIds = [CHAR_UUID_FALLBACK];
+
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+
+    expect(result.hadInvalidRef).toBe(true);
+    expect(result.invalidRefValue).toBe(`platform_${MISSING_UUID}.png`);
+    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
+  });
+
+  // ── 场景 6：character_ref 失效 + 无兜底卡 ───────────────────────────────
+  it('character_ref 失效且无兜底卡时不崩溃，hadInvalidRef=true，字段保持失效值', () => {
+    const MISSING_UUID = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
+    const platform = makePlatformSettings();
+    const userSettings = makeUserSettings({
+      settings_jsonb: { active_character: `platform_${MISSING_UUID}.png` },
+    });
+
+    const result = mergeSettingsForTest(platform, userSettings, [], undefined);
+
+    expect(result.hadInvalidRef).toBe(true);
+    expect(result.settings['active_character']).toBe(`platform_${MISSING_UUID}.png`);
+  });
+
+  // ── 场景 7：character_ref 格式不合法 ────────────────────────────────────
+  it('active_character 不符合 platform_<uuid>.png 格式时应触发兜底', () => {
+    const platform = makePlatformSettings();
+    const userSettings = makeUserSettings({
+      settings_jsonb: {
+        active_character: '../../etc/passwd',
+      },
+    });
+    const availableIds = [CHAR_UUID_FALLBACK];
+
+    const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
+
+    expect(result.hadInvalidRef).toBe(true);
+    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
+  });
+
+  // ── 场景 9：强制平台 LLM 代理链路（main_api/custom 源/兜底模型）─────────
+  it('应强制 main_api=openai、custom 源与代理地址，custom_model 缺省时回退默认模型', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [],
+        main_api: 'koboldhorde',
+      },
+    });
+    const availableIds = [CHAR_UUID_FALLBACK];
+
+    const result = mergeSettingsForTest(platform, null, availableIds, CHAR_UUID_FALLBACK);
+    const oai = result.settings['oai_settings'] as Record<string, unknown>;
+
+    expect(result.settings['main_api']).toBe('openai');
+    expect(oai['chat_completion_source']).toBe('custom');
+    expect(oai['custom_url']).toBe(LLM_PROXY_URL);
+    expect(oai['custom_model']).toBe('google/gemini-2.5-flash');
+  });
+
+  it('已配置的 custom_model 不应被兜底默认值覆盖', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [],
+        oai_settings: { custom_model: 'anthropic/claude-sonnet-4' },
+      },
+    });
+
+    const result = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
+    const oai = result.settings['oai_settings'] as Record<string, unknown>;
+
+    expect(oai['custom_model']).toBe('anthropic/claude-sonnet-4');
+  });
+
+  // ── 场景 8：深拷贝，不修改原始对象 ──────────────────────────────────────
+  it('mergeSettings 不应修改传入的 platformSettings 对象', () => {
+    const platform = makePlatformSettings();
+    const originalValue = platform.settings_jsonb['active_character'];
+    const userSettings = makeUserSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_SECOND}.png`,
+      },
+    });
+
+    mergeSettingsForTest(
+      platform,
+      userSettings,
+      [CHAR_UUID_FALLBACK, CHAR_UUID_SECOND],
+      CHAR_UUID_FALLBACK
+    );
+
+    expect(platform.settings_jsonb['active_character']).toBe(originalValue);
+  });
+});
