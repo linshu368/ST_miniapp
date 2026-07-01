@@ -223,7 +223,14 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           );
         } else {
           log(`[bridge] 已初始化用户再次登录（handle=${stHandle}）`);
-          await triggerProvisionSync(dbUser.id, log, true);
+          // 老用户每次打开只做「轻量 provision」：force=false 会跳过已存在的角色卡 PNG
+          // 与预设（writeCharacters/writePresets 的 skip-if-exists），仅 settings.json /
+          // secrets.json 仍总是覆盖写（writer 里与 force 无关）。
+          // 原先 force=true 会在每次打开都重下 19 张角色卡 PNG，与 ST iframe 启动时并发
+          // 抢占同一容器的 CPU/IO，导致 ST 短暂拒绝连接、nginx 判上游临时下线、整批
+          // boot 脚本 502 → 对话页加载不出来（尤其 Telegram WebView）。改为 force=false
+          // 消除该尖峰，同时保持 settings/secrets 每次仍最新。
+          await triggerProvisionSync(dbUser.id, log, false);
         }
 
         // ── 4. 登录 ST，获取 session cookie（老用户路径）───────────────
