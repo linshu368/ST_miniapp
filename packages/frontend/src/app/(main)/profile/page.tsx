@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Gift, Pencil, Sparkles, X } from 'lucide-react';
+import { ChevronRight, Gift, Pencil, Settings, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -76,7 +76,7 @@ export default function ProfilePage() {
       {/* 顶部空间感 Banner */}
       <div className="absolute top-0 left-0 right-0 h-48 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/40 via-purple-900/10 to-transparent pointer-events-none" />
 
-      {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=签到 */}
+      {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=签到 + 设置占位 */}
       <header className="flex items-center justify-between px-5 py-3 relative z-10">
         <Link
           href="/profile/recharge"
@@ -106,6 +106,15 @@ export default function ProfilePage() {
               : checkin?.can_claim
                 ? `签到 +${checkin.reward_credits}`
                 : '已签到'}
+          </Button>
+          <Button
+            disabled
+            variant="ghost"
+            size="icon"
+            className="rounded-full text-white/30 opacity-60"
+            aria-label="设置暂未开放"
+          >
+            <Settings className="h-5 w-5" aria-hidden />
           </Button>
         </div>
       </header>
