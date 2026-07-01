@@ -7,6 +7,7 @@ import {
   type CreateCsPersonaRequest,
   type CsMessageData,
   type CsPersonaDataResponse,
+  type DeleteCsPersonaData,
   type GetCsAuditLogsData,
   type GetCsMessagesData,
   type GetCsPersonaUsersData,
@@ -81,6 +82,12 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
     });
 
     return reply.send(ok<CsPersonaDataResponse>({ persona }));
+  });
+
+  app.delete('/api/cs/personas/:id', { preHandler: [requireCsAdmin] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const persona = await repository.archivePersona(id, getOperator(request));
+    return reply.send(ok<DeleteCsPersonaData>({ persona }));
   });
 
   app.post(
@@ -317,7 +324,7 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
 
   app.post('/api/cs/telegram/webhook', async (request, reply) => {
     const secret = request.headers['x-cs-webhook-secret'];
-    if (config.csTelegramWebhookSecret && secret !== config.csTelegramWebhookSecret) {
+    if (!config.csTelegramWebhookSecret || secret !== config.csTelegramWebhookSecret) {
       return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     }
 

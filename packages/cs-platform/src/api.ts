@@ -2,6 +2,7 @@ import type {
   AdvanceCsSessionRequest,
   CreateCsPersonaRequest,
   CsPersonaDataResponse,
+  DeleteCsPersonaData,
   GetCsMessagesData,
   GetCsPersonaUsersData,
   GetCsPersonasData,
@@ -64,6 +65,10 @@ export const csApi = {
     apiClient<CsPersonaDataResponse>(`/api/cs/personas/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
+    }),
+  deletePersona: (id: string) =>
+    apiClient<DeleteCsPersonaData>(`/api/cs/personas/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     }),
   refreshPersona: (id: string) =>
     apiClient<RefreshCsPersonaData>(`/api/cs/personas/${encodeURIComponent(id)}/refresh`, {

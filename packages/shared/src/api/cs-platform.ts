@@ -117,6 +117,10 @@ export interface CsPersonaDataResponse {
   persona: CsPersonaData;
 }
 
+export interface DeleteCsPersonaData {
+  persona: CsPersonaData;
+}
+
 export interface RefreshCsPersonaData {
   persona: CsPersonaData;
   run_id: string;

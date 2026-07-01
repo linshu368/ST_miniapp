@@ -51,7 +51,7 @@ export function CharacterGallery() {
 
   // 搜索框单独抽出,在 loading / 空态下也保持挂载,避免输入时焦点跳掉
   const searchBar = (
-    <div className="px-4 pb-2 pt-2">
+    <div className="mx-auto w-full max-w-screen-xl px-4 pb-2 pt-2 sm:px-6 lg:px-8">
       <div className="relative">
         <Search
           className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
@@ -84,7 +84,10 @@ export function CharacterGallery() {
     return (
       <>
         {searchBar}
-        <div className="grid grid-cols-2 gap-3 px-4 py-6" aria-label="加载中">
+        <div
+          className="mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 py-6 sm:px-6 lg:px-8"
+          aria-label="加载中"
+        >
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
@@ -100,7 +103,7 @@ export function CharacterGallery() {
     return (
       <>
         {searchBar}
-        <p className="px-4 py-8 text-[13px] text-white/50 text-center">
+        <p className="mx-auto max-w-screen-xl px-4 py-8 text-center text-[13px] text-white/50 sm:px-6 lg:px-8">
           门好像被风合上了。稍后再来。
         </p>
       </>
@@ -111,7 +114,7 @@ export function CharacterGallery() {
     return (
       <>
         {searchBar}
-        <p className="px-4 py-8 text-[13px] text-white/50 text-center">
+        <p className="mx-auto max-w-screen-xl px-4 py-8 text-center text-[13px] text-white/50 sm:px-6 lg:px-8">
           空旷的空间，还没有角色到达。
         </p>
       </>
@@ -122,7 +125,7 @@ export function CharacterGallery() {
     <>
       {searchBar}
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 px-4 py-10">
+        <div className="mx-auto flex max-w-screen-xl flex-col items-center gap-3 px-4 py-10 sm:px-6 lg:px-8">
           <p className="text-center text-[13px] text-white/50">没有匹配「{query}」的角色</p>
           <Button
             variant="outline"
@@ -139,7 +142,7 @@ export function CharacterGallery() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 px-4 pb-10 pt-2">
+        <div className="mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 pb-10 pt-2 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] sm:gap-4 sm:px-6 lg:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] lg:px-8">
           {filtered.map((c) => (
             <CharacterCard
               key={c.id}

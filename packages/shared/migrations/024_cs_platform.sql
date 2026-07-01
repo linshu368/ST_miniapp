@@ -196,15 +196,37 @@ RETURNS VOID
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_sql TEXT := lower(trim(p_sql));
+  v_sql TEXT := trim(p_sql);
+  v_plan JSONB;
+  v_has_modify_node BOOLEAN := false;
 BEGIN
-  IF v_sql !~ '^select[[:space:]]' THEN
-    RAISE EXCEPTION 'persona sql must start with SELECT'
+  IF v_sql = '' THEN
+    RAISE EXCEPTION 'persona sql must not be empty'
       USING ERRCODE = '22023';
   END IF;
 
-  IF v_sql ~ '(;|\\binsert\\b|\\bupdate\\b|\\bdelete\\b|\\bdrop\\b|\\balter\\b|\\bcreate\\b|\\btruncate\\b|\\bgrant\\b|\\brevoke\\b|\\bcopy\\b|\\bdo\\b|\\bcall\\b)' THEN
-    RAISE EXCEPTION 'persona sql contains forbidden statement'
+  IF v_sql LIKE '%;%' THEN
+    RAISE EXCEPTION 'persona sql must contain exactly one statement'
+      USING ERRCODE = '22023';
+  END IF;
+
+  BEGIN
+    EXECUTE format('EXPLAIN (FORMAT JSON) %s', v_sql) INTO v_plan;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'persona sql validation failed: %', SQLERRM
+      USING ERRCODE = '22023';
+  END;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM jsonb_path_query(v_plan, '$.**') AS node(value)
+    WHERE value @> '{"Node Type":"ModifyTable"}'::jsonb
+       OR value->>'Operation' IN ('Insert', 'Update', 'Delete', 'Merge')
+  )
+  INTO v_has_modify_node;
+
+  IF v_has_modify_node THEN
+    RAISE EXCEPTION 'persona sql must be read-only SELECT'
       USING ERRCODE = '22023';
   END IF;
 END;

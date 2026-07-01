@@ -59,6 +59,15 @@ export default function ProfilePage() {
     setIsEditing(false);
   };
 
+  const claimDailyCheckin = async () => {
+    try {
+      const data = await claimCheckin.mutateAsync();
+      setCheckinToast({ reward: data.checkin.reward_credits });
+    } catch {
+      // Mutation state already carries the error; keep the click handler quiet.
+    }
+  };
+
   return (
     <main
       data-app-shell="profile"
@@ -86,11 +95,7 @@ export default function ProfilePage() {
         <div className="flex items-center gap-2">
           <Button
             disabled={!checkin?.can_claim || claimCheckin.isPending}
-            onClick={() =>
-              claimCheckin.mutate(undefined, {
-                onSuccess: (data) => setCheckinToast({ reward: data.checkin.reward_credits }),
-              })
-            }
+            onClick={() => void claimDailyCheckin()}
             size="sm"
             className="h-9 rounded-full border border-indigo-300/20 bg-indigo-400/15 px-3 text-xs font-bold text-indigo-100 shadow-none hover:bg-indigo-400/25 disabled:border-white/10 disabled:bg-white/5 disabled:text-white/35"
             aria-label="每日签到"
@@ -116,13 +121,13 @@ export default function ProfilePage() {
       </header>
 
       {checkinToast && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/15 px-5 pt-20 backdrop-blur-md">
+        <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+4.5rem)] z-[9999] flex justify-center px-5">
           <div
             role="status"
             aria-live="polite"
-            className="relative w-full max-w-[320px] overflow-hidden rounded-[28px] border border-white/18 bg-white/[0.08] px-6 py-5 text-center shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/10"
+            className="pointer-events-auto relative w-full max-w-[320px] overflow-hidden rounded-[24px] border border-white/18 bg-[#17102b]/75 px-5 py-4 text-left shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/10 backdrop-blur-xl"
           >
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(129,140,248,0.36),transparent_58%)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_0%,rgba(129,140,248,0.42),transparent_54%)]" />
             <button
               type="button"
               onClick={() => setCheckinToast(null)}
@@ -131,17 +136,19 @@ export default function ProfilePage() {
             >
               <X className="h-4 w-4" aria-hidden />
             </button>
-            <div className="relative">
-              <p className="text-xs font-semibold tracking-[0.22em] text-indigo-100/70">
-                DAILY CHECK-IN
-              </p>
-              <div className="mx-auto mt-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-indigo-200/20 bg-indigo-300/15 text-indigo-100 shadow-[0_0_40px_rgba(99,102,241,0.28)]">
+            <div className="relative flex items-center gap-3 pr-8">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-indigo-200/20 bg-indigo-300/15 text-indigo-100 shadow-[0_0_40px_rgba(99,102,241,0.28)]">
                 <Gift className="h-6 w-6" aria-hidden />
               </div>
-              <h2 className="mt-4 text-xl font-black tracking-tight text-white">签到成功</h2>
-              <p className="mt-2 text-sm font-medium text-white/72">
-                星尘 +{checkinToast.reward} 已到账，明天继续来领取。
-              </p>
+              <div>
+                <p className="text-[10px] font-semibold tracking-[0.22em] text-indigo-100/70">
+                  DAILY CHECK-IN
+                </p>
+                <h2 className="mt-1 text-base font-black tracking-tight text-white">签到成功</h2>
+                <p className="mt-1 text-sm font-medium text-white/72">
+                  星尘 +{checkinToast.reward} 已到账。
+                </p>
+              </div>
             </div>
           </div>
         </div>

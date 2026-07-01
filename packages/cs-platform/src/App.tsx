@@ -99,6 +99,25 @@ export default function App() {
     onError: (error) => setToast(error instanceof Error ? error.message : '刷新失败'),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (persona: CsPersonaData) => csApi.deletePersona(persona.id),
+    onSuccess: (data) => {
+      setToast(`已删除画像簇：${data.persona.name}`);
+      setSelectedPersonaId(null);
+      setSelectedUser(null);
+      void qc.invalidateQueries({ queryKey: ['cs'] });
+    },
+    onError: (error) => setToast(error instanceof Error ? error.message : '删除失败'),
+  });
+
+  const handleDeletePersona = (persona: CsPersonaData) => {
+    const confirmed = window.confirm(
+      `确认删除画像簇「${persona.name}」？\n\n删除后不会物理清除历史回访和审计记录，但该画像簇会从列表中隐藏。`
+    );
+    if (!confirmed) return;
+    deleteMutation.mutate(persona);
+  };
+
   const handleLogout = () => {
     setCsAdminToken('');
     setAuthToken('');
@@ -181,7 +200,7 @@ export default function App() {
                 <button
                   className="secondary-button"
                   onClick={() => refreshMutation.mutate(selectedPersona.id)}
-                  disabled={refreshMutation.isPending}
+                  disabled={refreshMutation.isPending || deleteMutation.isPending}
                 >
                   {refreshMutation.isPending ? '刷新中' : '刷新'}
                 </button>
@@ -194,6 +213,13 @@ export default function App() {
                   }
                 >
                   下载 .xlsx
+                </button>
+                <button
+                  className="danger-button"
+                  onClick={() => handleDeletePersona(selectedPersona)}
+                  disabled={deleteMutation.isPending || refreshMutation.isPending}
+                >
+                  {deleteMutation.isPending ? '删除中' : '删除'}
                 </button>
               </div>
             </header>
