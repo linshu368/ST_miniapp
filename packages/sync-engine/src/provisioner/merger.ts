@@ -93,6 +93,18 @@ export function mergeSettings(
   lodashSet(merged, 'oai_settings.reverse_proxy', llmProxyUrl);
   lodashSet(merged, 'oai_settings.custom_url', llmProxyUrl);
 
+  // 强制 ST 走「Chat Completion + custom 源」链路，否则生成会绕过平台代理（无回复、不计费）。
+  // - main_api 决定实际发起请求的顶层 API；默认模板常为 koboldhorde，会完全不碰上面的 custom_url。
+  // - 仅当 chat_completion_source='custom' 时，ST 才使用 oai_settings.custom_url 指向的 backend 代理；
+  //   openai 源会改用 reverse_proxy 并落到官方 OpenAI，openrouter 模型 id 也无法在官方端点识别。
+  // - custom_model 为空时 ST 无模型可发；回退到标准档默认模型（与 model-tiers/前端档位一致）。
+  //   用户经档位切换写入的 custom_model 已在上方按 writable_paths 合并，此处仅在缺省时兜底。
+  lodashSet(merged, 'main_api', 'openai');
+  lodashSet(merged, 'oai_settings.chat_completion_source', 'custom');
+  if (!lodashGet(merged, 'oai_settings.custom_model')) {
+    lodashSet(merged, 'oai_settings.custom_model', 'google/gemini-2.5-flash');
+  }
+
   // 强制设置上下文上限：默认模板的 openai_max_context=4095 过小，大角色卡（人设 + 内置正则）
   // 组装后的提示词极易超限，触发「必要的提示词超过了上下文大小」并截断历史。
   // 平台模型（gemini-2.5-flash ~1M / claude-sonnet-4 ~200K）远大于此，统一抬到 32K 兼顾体验与成本。
