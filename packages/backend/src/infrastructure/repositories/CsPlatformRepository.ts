@@ -120,6 +120,7 @@ export class CsPlatformRepository {
     sop?: CsSopStageData[];
     operatorId: string;
   }): Promise<CsPersonaData> {
+    await this.validatePersonaSql(input.sql);
     const rows = await prisma.$queryRawUnsafe<PersonaRow[]>(
       `INSERT INTO cs_platform.personas (slug, name, description, color, sql_text, opening_script, sop)
        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
@@ -151,6 +152,7 @@ export class CsPlatformRepository {
   ): Promise<CsPersonaData> {
     const current = await this.getPersona(personaId);
     if (!current) throw new Error('画像簇不存在');
+    if (input.sql) await this.validatePersonaSql(input.sql);
 
     const rows = await prisma.$queryRawUnsafe<PersonaRow[]>(
       `UPDATE cs_platform.personas
@@ -175,6 +177,21 @@ export class CsPlatformRepository {
     );
     const persona = expectOne(rows, '更新画像簇失败：数据库未返回记录');
     await this.log(input.operatorId, 'persona.update', personaId, null, {});
+    return toPersonaData(persona);
+  }
+
+  async archivePersona(personaId: string, operatorId: string): Promise<CsPersonaData> {
+    const rows = await prisma.$queryRawUnsafe<PersonaRow[]>(
+      `UPDATE cs_platform.personas
+       SET status = 'archived',
+           updated_at = now()
+       WHERE id = $1::uuid
+         AND status = 'active'
+       RETURNING *`,
+      personaId
+    );
+    const persona = expectOne(rows, '删除画像簇失败：画像簇不存在或已删除');
+    await this.log(operatorId, 'persona.archive', personaId, null, { name: persona.name });
     return toPersonaData(persona);
   }
 
@@ -512,6 +529,10 @@ export class CsPlatformRepository {
       userId
     );
     return expectOne(rows, '创建会话失败：数据库未返回记录');
+  }
+
+  private async validatePersonaSql(sql: string): Promise<void> {
+    await prisma.$executeRawUnsafe(`SELECT cs_platform.validate_persona_sql($1::text)`, sql);
   }
 }
 

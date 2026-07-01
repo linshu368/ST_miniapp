@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Palette, Receipt, Type } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Palette, Type } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PreferredWordCount } from '@miniapp/shared';
 
@@ -31,12 +31,6 @@ const NAV_ROWS: SettingsRow[] = [
     icon: Palette,
     label: '消息主题',
     hint: '调整对白 / 动作 / 主文颜色',
-  },
-  {
-    href: '/profile/orders',
-    icon: Receipt,
-    label: '我的订单',
-    hint: '查看充值订单状态',
   },
 ];
 

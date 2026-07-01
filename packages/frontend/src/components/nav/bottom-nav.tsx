@@ -24,10 +24,10 @@ export function BottomNav() {
   return (
     <nav
       aria-label="主导航"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/90 backdrop-blur-md"
+      className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#080014] via-[#080014]/92 to-[#080014]/0 pt-7 text-white"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">
+      <div className="mx-auto flex w-full max-w-md items-end justify-around gap-1 px-3 pb-2 pt-1 sm:max-w-xl">
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const active = pathname === href;
           return (
@@ -37,8 +37,8 @@ export function BottomNav() {
               aria-current={active ? 'page' : undefined}
               aria-label={label}
               className={cn(
-                'group flex flex-col items-center gap-0.5 rounded-xl px-8 py-1.5 transition-all duration-200',
-                active ? 'text-primary' : 'text-muted-foreground/70 hover:text-foreground'
+                'group flex min-w-0 flex-1 flex-col items-center gap-0.5 px-3 py-1.5 transition-all duration-200 sm:px-8',
+                active ? 'text-primary' : 'text-white/38 hover:text-white/75'
               )}
             >
               <Icon
@@ -47,13 +47,13 @@ export function BottomNav() {
                 aria-hidden="true"
                 className={cn(
                   'transition-transform duration-200',
-                  active && 'scale-[1.08] drop-shadow-[0_0_8px_hsl(var(--primary)/0.55)]'
+                  active && 'scale-[1.08] drop-shadow-[0_0_10px_hsl(var(--primary)/0.45)]'
                 )}
               />
               <span
                 className={cn(
                   'text-[10px] font-medium transition-opacity duration-200',
-                  active ? 'opacity-100' : 'opacity-0 group-hover:opacity-60'
+                  active ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'
                 )}
               >
                 {label}

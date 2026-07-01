@@ -397,6 +397,7 @@ async function importOneCharacter(params: {
   const uuid = randomUUID();
   const now = beijingTimestamp();
   const storagePath = `characters/platform_${uuid}.png`;
+  const avatarUrl = `${process.env['SUPABASE_URL']}/storage/v1/object/public/${bucket}/${storagePath}`;
   console.log(`\n🆔 UUID：${uuid}`);
 
   console.log(`\n☁️  上传到 Storage：${bucket}/${storagePath}`);
@@ -425,7 +426,7 @@ async function importOneCharacter(params: {
     character_version: d.character_version ?? '',
     spec: card.spec ?? 'chara_card_v2',
     spec_version: card.spec_version ?? '2.0',
-    avatar_url: '',
+    avatar_url: avatarUrl,
     enabled: true,
     sort_order: sortOrder,
     raw_card: card,
