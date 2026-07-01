@@ -185,6 +185,41 @@ describe('mergeSettings', () => {
     expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
   });
 
+  // ── 场景 9：强制平台 LLM 代理链路（main_api/custom 源/兜底模型）─────────
+  it('应强制 main_api=openai、custom 源与代理地址，custom_model 缺省时回退默认模型', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [],
+        main_api: 'koboldhorde',
+      },
+    });
+    const availableIds = [CHAR_UUID_FALLBACK];
+
+    const result = mergeSettingsForTest(platform, null, availableIds, CHAR_UUID_FALLBACK);
+    const oai = result.settings['oai_settings'] as Record<string, unknown>;
+
+    expect(result.settings['main_api']).toBe('openai');
+    expect(oai['chat_completion_source']).toBe('custom');
+    expect(oai['custom_url']).toBe(LLM_PROXY_URL);
+    expect(oai['custom_model']).toBe('google/gemini-2.5-flash');
+  });
+
+  it('已配置的 custom_model 不应被兜底默认值覆盖', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [],
+        oai_settings: { custom_model: 'anthropic/claude-sonnet-4' },
+      },
+    });
+
+    const result = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
+    const oai = result.settings['oai_settings'] as Record<string, unknown>;
+
+    expect(oai['custom_model']).toBe('anthropic/claude-sonnet-4');
+  });
+
   // ── 场景 8：深拷贝，不修改原始对象 ──────────────────────────────────────
   it('mergeSettings 不应修改传入的 platformSettings 对象', () => {
     const platform = makePlatformSettings();
