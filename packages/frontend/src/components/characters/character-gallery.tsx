@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Sparkles, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -125,20 +125,10 @@ export function CharacterGallery() {
     <>
       {searchBar}
       {filtered.length === 0 ? (
-        <div className="mx-auto flex max-w-screen-xl flex-col items-center gap-3 px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-screen-xl flex-col items-center gap-2 px-4 py-10 sm:px-6 lg:px-8">
           <p className="text-center text-[13px] text-white/50">没有匹配「{query}」的角色</p>
-          <Button
-            variant="outline"
-            onClick={() => {
-              router.push('/create/wish');
-            }}
-            className="group relative overflow-hidden rounded-full border border-indigo-500/30 bg-indigo-500/10 px-5 h-10 text-[13px] font-medium text-indigo-300 hover:bg-indigo-500/20 hover:text-indigo-200 transition-all shadow-[0_0_15px_rgba(99,102,241,0.1)]"
-          >
-            <Sparkles className="h-4 w-4 mr-2 text-indigo-400 transition-transform group-hover:rotate-12" />
-            <span>没找到想要的？去许愿池</span>
-          </Button>
           <p className="text-center text-[11px] text-white/40">
-            告诉我们你想要的角色，创作者会为你做出来
+            可以到「创作」页右上角的许愿池告诉我们你想要的角色。
           </p>
         </div>
       ) : (
