@@ -118,7 +118,37 @@ export function mergeSettings(
   // 会弹出「您的用户设定 / 用户设定名称」面板。强制写 false，彻底不弹（每次 force provision 重申）。
   lodashSet(merged, 'firstRun', false);
 
+  // 净化 accountStorage 中的抽屉「钉住/展开」状态：这些是运营端在完整 ST 里编辑预设时残留的
+  // 界面状态（见 vendor scripts/util/AccountStorage.js + RossAscends-mods.js），会被一并写进
+  // platform_settings 并下发给所有用户，导致「AI Response Configuration / 对话补全预设」抽屉
+  // (#left-nav-panel) 在聊天页被钉开、占满屏幕。平台不开放用户改预设，这些 UI 状态一律强制关闭。
+  sanitizeAccountStorageDrawerState(merged);
+
   return { settings: merged, hadInvalidRef, invalidRefValue };
+}
+
+/**
+ * ST 抽屉的「钉住(*LockOn)」与「展开(*Opened)」状态存于 settings.accountStorage。
+ * 强制清零这些 key，避免运营端残留状态把导航抽屉（左：AI 配置/预设，右：角色/预设面板，
+ * WI：世界书）在用户端钉开或自动展开。仅动这几个 UI 状态 key，其余 accountStorage 保留。
+ */
+function sanitizeAccountStorageDrawerState(merged: Record<string, unknown>): void {
+  const accountStorage = lodashGet(merged, 'accountStorage');
+  if (!accountStorage || typeof accountStorage !== 'object') return;
+
+  const drawerStateKeys = [
+    'LNavLockOn',
+    'NavLockOn',
+    'WINavLockOn',
+    'LNavOpened',
+    'NavOpened',
+    'WINavOpened',
+  ];
+
+  const store = accountStorage as Record<string, unknown>;
+  for (const key of drawerStateKeys) {
+    if (key in store) store[key] = 'false';
+  }
 }
 
 /** 构造兜底的 character_ref 值（platform_<fallback_uuid>.png） */

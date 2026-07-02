@@ -8,7 +8,7 @@ import { installWorldbookAutoImport } from './patches/worldbook-autoimport.js';
 import { installOaiSettingsGuard } from './patches/oai-settings-guard.js';
 import { installTavernHelperGuard } from './patches/tavern-helper-guard.js';
 import { installScriptPopupAutoCancel } from './patches/script-popup-autocancel.js';
-import { installNativeUiHide } from './patches/native-ui-hide.js';
+import { installNativeUiHide, installPresetUiHide } from './patches/native-ui-hide.js';
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -43,6 +43,8 @@ function init(): void {
   installScriptPopupAutoCancel();
   // 隐藏 ST 底部输入栏左侧原生按钮（#options_button / #extensionsMenuButton），由平台壳 ChatToolsMenu 替代。
   installNativeUiHide();
+  // 隐藏 ST 原生「AI Response Configuration / 对话补全预设」抽屉：平台不开放用户改预设，始终隐藏。
+  installPresetUiHide();
 
   const server = createBridgeServer('*');
   server.start();
