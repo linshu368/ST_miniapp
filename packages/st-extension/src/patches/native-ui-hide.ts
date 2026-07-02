@@ -23,3 +23,23 @@ export function installNativeUiHide(): void {
   ].join('\n');
   document.head.appendChild(style);
 }
+
+/**
+ * 隐藏 ST 原生「AI Response Configuration / 对话补全预设」抽屉。
+ *
+ * 平台不开放用户自主修改预设，该抽屉（顶栏图标 #leftNavDrawerIcon + 面板 #left-nav-panel，
+ * 含预设下拉 #settings_preset_openai、提示词管理 #completion_prompt_manager 等）必须始终隐藏。
+ *
+ * 用 display:none 而非移除 DOM：ST 内部预设加载仍依赖这些元素存在（仅读取，不需可见），
+ * 隐藏后不影响预设生效与 bridge 档位切换（changeModel 直写 oai_settings.custom_model，
+ * 不经该抽屉）。CSS 方案与时序无关，即使 accountStorage 残留 pin 状态把抽屉钉开，
+ * 面板整体不可见亦不占位，作为 merger 净化之外的兜底。
+ */
+export function installPresetUiHide(): void {
+  const style = document.createElement('style');
+  style.textContent = [
+    '#ai-config-button { display: none !important; }',
+    '#left-nav-panel { display: none !important; }',
+  ].join('\n');
+  document.head.appendChild(style);
+}
