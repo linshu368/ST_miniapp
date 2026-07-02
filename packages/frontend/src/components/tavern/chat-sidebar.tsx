@@ -52,8 +52,8 @@ export function ChatSidebar() {
   async function handleOpenChat(fileName: string, avatar: string) {
     if (!bridgeReady) return;
     try {
-      const result = await platformAction('openChat', { fileName, avatar });
-      useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
+      await platformAction('openChat', { fileName, avatar });
+      useSTMirrorStore.getState().updatePartial({ currentChatId: fileName });
       setOpen(false);
     } catch (err) {
       console.error('[ChatSidebar] openChat failed:', err);
@@ -74,15 +74,29 @@ export function ChatSidebar() {
     const newName = prompt('新名称：');
     if (!newName?.trim()) return;
     try {
-      const result = await platformAction('renameChat', {
+      const trimmed = newName.trim();
+      await platformAction('renameChat', {
         oldFileName,
-        newName: newName.trim(),
+        newName: trimmed,
         avatar,
       });
+
+      // Optimistic update: immediately reflect the new name in the store
+      const { items } = useChatListStore.getState();
+      const updatedItems = items.map((item) =>
+        item.fileName === oldFileName && item.characterAvatar === avatar
+          ? { ...item, fileName: trimmed }
+          : item
+      );
+      useChatListStore.setState({ items: updatedItems });
+
       const { currentChatId: activeChatId } = useSTMirrorStore.getState();
       if (activeChatId === oldFileName) {
-        useSTMirrorStore.getState().updatePartial({ currentChatId: result.newFileName });
+        useSTMirrorStore.getState().updatePartial({ currentChatId: trimmed });
       }
+
+      // Fallback: force refresh in case the event-based invalidate doesn't fire
+      invalidate();
     } catch (err) {
       console.error('[ChatSidebar] renameChat failed:', err);
     }

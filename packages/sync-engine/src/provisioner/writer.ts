@@ -143,14 +143,12 @@ export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null, use
     return;
   }
 
-  const { provider } = apiConfig.config_payload;
-
-  if (!provider) {
-    // config_payload 字段不完整，跳过（避免写入无效 secrets）
-    return;
-  }
-
-  const secretKey = `api_key_${provider}`;
+  // 平台在 merger.ts 恒定强制 oai_settings.chat_completion_source='custom'，而 ST 的 custom 源
+  // 固定读取密钥槽 api_key_custom（见 vendor scripts/secrets.js SECRET_KEYS.CUSTOM 与
+  // endpoints/backends/chat-completions.js 的 CUSTOM 分支）。因此 per-user JWT 必须写入
+  // api_key_custom，与 config_payload.provider（可能为 openrouter 等）无关；否则 custom 源取不到
+  // key，ST 发起请求时 Authorization 为空 → llm-proxy 返回 401「Missing or invalid Authorization header」。
+  const secretKey = 'api_key_custom';
   const platformToken = signPlatformToken(userId);
   const secrets = {
     [secretKey]: [
