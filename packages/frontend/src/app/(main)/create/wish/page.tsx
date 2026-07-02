@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, Send, Sparkles } from 'lucide-react';
 
@@ -55,13 +55,25 @@ export default function WishPage() {
 
   const [step, setStep] = useState<Step>('wish');
   const [input, setInput] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   const [wishId, setWishId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const autoClosedWishIdsRef = useRef<Set<string>>(new Set());
+  const messagesRef = useRef<HTMLElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const stepRef = useRef<Step>(step);
   const wishIdRef = useRef<string | null>(wishId);
 
   const isPending = wishStatus.isLoading || isCreatingWish || isCompletingWish;
+  const setInputValue = useCallback((value: string) => {
+    setInput(value);
+    const textarea = textareaRef.current;
+    if (textarea && textarea.value !== value) {
+      textarea.value = value;
+    }
+  }, []);
+
   const closePendingWish = useCallback(() => {
     if (!wishId || step !== 'extra' || isCompletingWish) return;
     completeWish({ id: wishId, body: {} });
@@ -83,6 +95,70 @@ export default function WishPage() {
     stepRef.current = step;
     wishIdRef.current = wishId;
   }, [step, wishId]);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+
+    const syncKeyboardInset = () => {
+      // 核心修复：Telegram WebApp 在 Android 弹起键盘时，会自动把 window.innerHeight 缩小
+      // 此时 viewportInset 算出来是 0，说明窗口本身已经避开了键盘。
+      // 我们不需要再自己叠加上移的 fallback（否则会把输入框顶到屏幕中间）。
+      // 只有当 visualViewport 的高度真的明显小于 window.innerHeight 时（如 Safari/iOS 行为），
+      // 我们才需要自己给底部加间距。
+      const viewportInset = viewport
+        ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+        : 0;
+
+      setKeyboardInset(viewportInset > 80 ? Math.round(viewportInset) : 0);
+    };
+
+    syncKeyboardInset();
+    viewport?.addEventListener('resize', syncKeyboardInset);
+    viewport?.addEventListener('scroll', syncKeyboardInset);
+    window.addEventListener('resize', syncKeyboardInset);
+    window.addEventListener('focusin', syncKeyboardInset);
+    window.addEventListener('focusout', syncKeyboardInset);
+
+    return () => {
+      viewport?.removeEventListener('resize', syncKeyboardInset);
+      viewport?.removeEventListener('scroll', syncKeyboardInset);
+      window.removeEventListener('resize', syncKeyboardInset);
+      window.removeEventListener('focusin', syncKeyboardInset);
+      window.removeEventListener('focusout', syncKeyboardInset);
+    };
+  }, []);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const syncInput = () => setInput(textarea.value);
+    const syncInputAfterNativeMutation = () => window.requestAnimationFrame(syncInput);
+
+    textarea.addEventListener('beforeinput', syncInputAfterNativeMutation);
+    textarea.addEventListener('input', syncInput);
+    textarea.addEventListener('compositionend', syncInput);
+    textarea.addEventListener('keyup', syncInput);
+
+    return () => {
+      textarea.removeEventListener('beforeinput', syncInputAfterNativeMutation);
+      textarea.removeEventListener('input', syncInput);
+      textarea.removeEventListener('compositionend', syncInput);
+      textarea.removeEventListener('keyup', syncInput);
+    };
+  }, []);
+
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    window.setTimeout(() => {
+      const container = messagesRef.current;
+      if (!container) return;
+      container.scrollTo({ top: container.scrollHeight, behavior });
+    }, 40);
+  }, []);
+
+  useEffect(() => {
+    scrollMessagesToBottom(keyboardInset > 0 || inputFocused ? 'auto' : 'smooth');
+  }, [inputFocused, keyboardInset, messages, scrollMessagesToBottom]);
 
   useEffect(() => {
     const completeCurrentWish = () => {
@@ -108,7 +184,7 @@ export default function WishPage() {
     }
 
     setWishId(latestWish.id);
-    setInput('');
+    setInputValue('');
     setStep('done');
     setMessages([
       ...INITIAL_MESSAGES,
@@ -127,7 +203,7 @@ export default function WishPage() {
       autoClosedWishIdsRef.current.add(latestWish.id);
       completeWish({ id: latestWish.id, body: {} });
     }
-  }, [completeWish, step, wishId, wishStatus.data?.latest_wish]);
+  }, [completeWish, setInputValue, step, wishId, wishStatus.data?.latest_wish]);
 
   const appendMessage = useCallback((message: Omit<Message, 'id'>) => {
     setMessages((current) => [
@@ -156,7 +232,7 @@ export default function WishPage() {
         }
 
         appendMessage({ role: 'user', text });
-        setInput('');
+        setInputValue('');
         const result = await createWishAsync({ wish_text: text });
         setWishId(result.wish.id);
         setStep('extra');
@@ -170,7 +246,7 @@ export default function WishPage() {
 
       if (step === 'extra' && wishId) {
         appendMessage({ role: 'user', text });
-        setInput('');
+        setInputValue('');
         await completeWishAsync({ id: wishId, body: { extra_text: text } });
         setStep('done');
         appendMessage({ role: 'assistant', text: FINISH_MESSAGE });
@@ -188,6 +264,7 @@ export default function WishPage() {
     input,
     isPending,
     notification,
+    setInputValue,
     step,
     wishId,
   ]);
@@ -209,7 +286,8 @@ export default function WishPage() {
   return (
     <main
       data-app-shell="wish"
-      className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white"
+      className="mx-auto flex min-h-[100svh] max-w-md flex-col overflow-hidden bg-[#0A0A0A] text-white"
+      style={{ '--wish-keyboard-inset': `${keyboardInset}px` } as CSSProperties}
     >
       <div className="h-1 w-full shrink-0 bg-gradient-to-r from-fuchsia-500 via-purple-500 to-amber-300" />
 
@@ -234,7 +312,10 @@ export default function WishPage() {
         </div>
       </header>
 
-      <section className="flex-1 space-y-3 overflow-y-auto px-4 py-5">
+      <section
+        ref={messagesRef}
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-[calc(7.5rem+env(safe-area-inset-bottom)+var(--wish-keyboard-inset,0px))] pt-5"
+      >
         {messages.map((message) => (
           <div
             key={message.id}
@@ -254,7 +335,7 @@ export default function WishPage() {
         ))}
       </section>
 
-      <footer className="shrink-0 border-t border-white/10 bg-[#0A0A0A]/95 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3 backdrop-blur">
+      <footer className="fixed inset-x-0 bottom-[var(--wish-keyboard-inset,0px)] z-50 mx-auto max-w-md border-t border-white/10 bg-[#0A0A0A]/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl transition-[bottom] duration-150">
         {step === 'extra' && (
           <Button
             type="button"
@@ -268,11 +349,23 @@ export default function WishPage() {
         )}
         <div className="flex items-end gap-2">
           <Textarea
-            value={input}
+            ref={textareaRef}
+            defaultValue=""
+            onInput={(event) => setInput((event.currentTarget as HTMLTextAreaElement).value)}
             onChange={(event) => setInput(event.target.value)}
+            onCompositionEnd={(event) => setInput(event.currentTarget.value)}
+            onFocus={() => {
+              setInputFocused(true);
+              // Focus 时自动滚到底部，不再强制给 fallbackInset
+              window.setTimeout(() => scrollMessagesToBottom('auto'), 80);
+            }}
+            onBlur={() => {
+              setInputFocused(false);
+              // 不要强行 setKeyboardInset(0)，依赖 visualViewport 自己的事件即可
+            }}
             placeholder={placeholder}
             disabled={step === 'done' || isPending}
-            className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border-white/10 bg-white/[0.06] text-sm text-white placeholder:text-slate-500"
+            className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border-white/10 bg-white/[0.08] text-[16px] leading-6 text-white caret-purple-200 shadow-inner shadow-black/20 outline-none placeholder:text-slate-500 selection:bg-purple-300/30 [-webkit-text-fill-color:#fff] [color-scheme:dark] focus-visible:ring-1 focus-visible:ring-purple-300/40 disabled:opacity-70"
           />
           <Button
             type="button"
