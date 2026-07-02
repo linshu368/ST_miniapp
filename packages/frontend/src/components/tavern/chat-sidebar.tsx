@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils';
 import { Sheet, SheetTrigger, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { platformAction, useBridgeStatus, useSTEvent, useSTMirror } from '@/lib/bridge';
 import { useChatListStore } from '@/stores/chat-list';
+import { useSTMirrorStore } from '@/stores/st-mirror';
+
+const AUTO_CHAT_NAME_RE = /\d{4}-\d{1,2}-\d{1,2}[@_]\d{1,2}h\d{1,2}m\d{1,2}s/;
 
 export function ChatSidebar() {
   const [open, setOpen] = useState(false);
@@ -49,7 +52,8 @@ export function ChatSidebar() {
   async function handleOpenChat(fileName: string, avatar: string) {
     if (!bridgeReady) return;
     try {
-      await platformAction('openChat', { fileName, avatar });
+      const result = await platformAction('openChat', { fileName, avatar });
+      useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
       setOpen(false);
     } catch (err) {
       console.error('[ChatSidebar] openChat failed:', err);
@@ -70,7 +74,15 @@ export function ChatSidebar() {
     const newName = prompt('新名称：');
     if (!newName?.trim()) return;
     try {
-      await platformAction('renameChat', { oldFileName, newName: newName.trim(), avatar });
+      const result = await platformAction('renameChat', {
+        oldFileName,
+        newName: newName.trim(),
+        avatar,
+      });
+      const { currentChatId: activeChatId } = useSTMirrorStore.getState();
+      if (activeChatId === oldFileName) {
+        useSTMirrorStore.getState().updatePartial({ currentChatId: result.newFileName });
+      }
     } catch (err) {
       console.error('[ChatSidebar] renameChat failed:', err);
     }
@@ -114,6 +126,15 @@ export function ChatSidebar() {
 
           {items.map((item) => {
             const isActive = currentChatId === item.fileName;
+            const isRenamed = !AUTO_CHAT_NAME_RE.test(item.fileName);
+            const primaryName = isRenamed ? item.fileName : item.characterName || item.fileName;
+            const secondaryText = isRenamed
+              ? `${item.characterName || ''} · ${item.lastMessage || '暂无消息'}`.replace(
+                  /^ · /,
+                  ''
+                )
+              : item.lastMessage || '暂无消息';
+
             return (
               <div
                 key={`${item.characterAvatar}/${item.fileName}`}
@@ -124,22 +145,20 @@ export function ChatSidebar() {
                 onClick={() => handleOpenChat(item.fileName, item.characterAvatar)}
               >
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium truncate">
-                    {item.characterName || item.fileName}
-                  </div>
+                  <div className="text-xs font-medium truncate">{primaryName}</div>
                   <div className="text-[11px] text-muted-foreground truncate mt-0.5">
-                    {item.lastMessage || '暂无消息'}
+                    {secondaryText}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <div className="flex items-center gap-0.5 shrink-0">
                   <button
                     disabled={!bridgeReady}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleRenameChat(item.fileName, item.characterAvatar);
                     }}
-                    className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40"
+                    className="rounded p-1 text-muted-foreground/60 hover:text-foreground hover:bg-accent disabled:opacity-40"
                   >
                     <Pencil className="h-3 w-3" />
                   </button>
@@ -149,7 +168,7 @@ export function ChatSidebar() {
                       e.stopPropagation();
                       handleDeleteChat(item.fileName, item.characterAvatar);
                     }}
-                    className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-40"
+                    className="rounded p-1 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 disabled:opacity-40"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>
