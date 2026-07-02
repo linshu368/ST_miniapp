@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { platformAction, useBridgeStatus } from '@/lib/bridge';
 import { ChatHeader } from '@/components/tavern/chat-header';
 import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
+import { useSTMirrorStore } from '@/stores/st-mirror';
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -13,9 +14,15 @@ export default function TavernChatPage() {
   useEffect(() => {
     if (!characterId || bridgeStatus !== 'ready') return;
     const avatar = `platform_${characterId}.png`;
-    platformAction('selectCharacter', { avatar }).catch((err) => {
-      console.error('[TavernChatPage] selectCharacter failed:', err);
-    });
+    platformAction('selectCharacter', { avatar })
+      .then((result) => {
+        if (result.chatId) {
+          useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
+        }
+      })
+      .catch((err) => {
+        console.error('[TavernChatPage] selectCharacter failed:', err);
+      });
   }, [bridgeStatus, characterId]);
 
   return (
