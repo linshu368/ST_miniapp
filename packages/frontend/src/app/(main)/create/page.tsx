@@ -7,7 +7,7 @@ export default function CreatePage() {
   return (
     <main
       data-app-shell="create"
-      className="mx-auto flex min-h-screen max-w-md flex-col bg-[#0A0A0A] px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] text-white"
+      className="mx-auto flex min-h-screen w-full max-w-screen-xl flex-col bg-[#0A0A0A] px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] text-white"
     >
       <header className="flex items-center justify-between">
         <div>
