@@ -22,6 +22,7 @@ import { getSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
 import { ok, fail } from '@miniapp/shared';
 import { deriveStHandle } from '@miniapp/shared';
+import type { EnsureStCharacterData } from '@miniapp/shared';
 import { cacheStCookie } from '../lib/st-cookie.js';
 
 // ─── 密码派生（与 sync-engine/provisioner/st-user.ts 保持一致） ──────────────
@@ -120,23 +121,48 @@ function mergeCookieHeader(existing: string | undefined, setCookies: string[]): 
   return Array.from(parts.values()).join('; ');
 }
 
-// ─── 同步触发 provision（新用户首次登录，等待 ST 账号创建完成） ──────────────
-
+// ─── 同步触发 provision（登录关键路径，等待配置下发完成） ────────────────────
+//
+// 懒下发策略：登录关键路径默认 cardsNone=true，即只下发配置（settings/secrets/
+// presets），不下发角色卡 PNG。角色卡改由前端进入 /tavern/<id> 时经
+// POST /api/bridge/st-character/:characterId 按需拉「当前打开的这张」。
+// 这样登录不再撞上全量卡下载尖峰（ST 扫目录/生成缩略图 + 网络下载）。
 async function triggerProvisionSync(
   userId: string,
   log: (msg: string) => void,
-  force = false
+  force = false,
+  cardsNone = true
 ): Promise<void> {
-  const forceQuery = force ? '?force=true' : '';
-  const url = `${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}/sync${forceQuery}`;
-  log(`[bridge] 新用户同步 provision 开始（userId=${userId}, force=${force}）`);
+  const params = new URLSearchParams();
+  if (force) params.set('force', 'true');
+  if (cardsNone) params.set('cards', 'none');
+  const query = params.toString();
+  const url = `${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}/sync${query ? `?${query}` : ''}`;
+  log(`[bridge] 同步 provision 开始（userId=${userId}, force=${force}, cardsNone=${cardsNone}）`);
   const res = await fetch(url, { method: 'POST' });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`provision 失败（${res.status}）：${text}`);
   }
-  log(`[bridge] 新用户同步 provision 完成（userId=${userId}）`);
+  log(`[bridge] 同步 provision 完成（userId=${userId}）`);
 }
+
+// ─── 单卡按需下发（进入对话页时确保当前卡落盘） ──────────────────────────────
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function ensureStCharacter(userId: string, characterId: string): Promise<StatusLiteral> {
+  const url = `${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}/character/${encodeURIComponent(characterId)}/sync`;
+  const res = await fetch(url, { method: 'POST' });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`ensure character 失败（${res.status}）：${text}`);
+  }
+  const body = (await res.json()) as { status?: StatusLiteral };
+  return body.status ?? 'missing';
+}
+
+type StatusLiteral = EnsureStCharacterData['status'];
 
 // ─── 路由注册 ─────────────────────────────────────────────────────────────────
 
@@ -247,6 +273,40 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         );
       } catch (err) {
         request.log.error({ err: String(err) }, '[bridge] st-session 失败');
+        return reply.status(500).send(fail('INTERNAL_ERROR', String(err)));
+      }
+    }
+  );
+
+  /**
+   * POST /api/bridge/st-character/:characterId
+   *
+   * 懒下发关键路径：前端进入 /tavern/<characterId> 时调用，确保「当前打开的这张卡」
+   * 已落到该用户的 ST 数据目录，随后前端才 selectCharacter。登录不再全量下发角色卡。
+   *
+   * Request headers: X-Init-Data: <TG initData string>
+   * Response: { success: true, data: { characterId, status: 'written'|'skipped'|'missing' } }
+   */
+  // @frontend-ready: true
+  app.post(
+    '/api/bridge/st-character/:characterId',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) {
+        return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      }
+
+      const { characterId } = request.params as { characterId: string };
+      if (!UUID_RE.test(characterId)) {
+        return reply.status(400).send(fail('INVALID_ARGUMENT', 'characterId 必须是 UUID'));
+      }
+
+      try {
+        const dbUser = await getOrCreateDbUser(request.user);
+        const status = await ensureStCharacter(dbUser.id, characterId);
+        return reply.send(ok<EnsureStCharacterData>({ characterId, status }));
+      } catch (err) {
+        request.log.error({ err: String(err) }, '[bridge] st-character 失败');
         return reply.status(500).send(fail('INTERNAL_ERROR', String(err)));
       }
     }

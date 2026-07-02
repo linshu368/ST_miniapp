@@ -15,18 +15,40 @@
 
 import { getSupabaseClient } from '../lib/supabase.js';
 import { config } from '../lib/config.js';
+import { listCharacterIds } from '../lib/st-fs.js';
 import { fetchProvisionData } from './fetcher.js';
 import { mergeSettings } from './merger.js';
-import { writeCharacters, writePresets, writeSettings, writeSecrets } from './writer.js';
+import {
+  writeCharacters,
+  writeCharacterById,
+  writePresets,
+  writeSettings,
+  writeSecrets,
+} from './writer.js';
+import type { WriteCharactersResult } from './writer.js';
 import { ensureStUser } from './st-user.js';
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────────
+
+/**
+ * 角色卡下发范围（懒下发策略）：
+ *   'all'（默认）  = 下发全部上架角色卡（CLI / 全量重投影语义，保持不变）
+ *   'none'         = 关键路径不下发任何角色卡（登录只做配置下发；卡走进对话页时按需拉）
+ *   { ids: [...] } = 只下发指定 id 的卡（子集下发）
+ */
+export type CharacterScope = 'all' | 'none' | { ids: string[] };
+
 export interface ProvisionOptions {
   /**
    * false（默认）= 增量补全：已存在的文件跳过
    * true         = 全量覆盖：强制重写所有文件
    */
   force?: boolean;
+  /**
+   * 角色卡下发范围，默认 'all'（保持 CLI / 历史行为）。
+   * 登录关键路径传 'none' 以消除全量卡下载尖峰。
+   */
+  characterScope?: CharacterScope;
   /** 日志回调，默认输出到 console.log */
   log?: (msg: string) => void;
 }
@@ -60,9 +82,15 @@ export async function provision(
   userId: string,
   options: ProvisionOptions = {}
 ): Promise<ProvisionResult> {
-  const { force = false, log = console.log } = options;
+  const { force = false, characterScope = 'all', log = console.log } = options;
 
-  log(`[provision] 开始 → userId=${userId}, force=${force}`);
+  const scopeLabel =
+    characterScope === 'all'
+      ? 'all'
+      : characterScope === 'none'
+        ? 'none'
+        : `ids[${characterScope.ids.length}]`;
+  log(`[provision] 开始 → userId=${userId}, force=${force}, characterScope=${scopeLabel}`);
 
   // ── 1. 拉取 Supabase 数据 ──────────────────────────────────────────────────
   log('[provision] 步骤 1/5：从 Supabase 拉取数据...');
@@ -106,11 +134,18 @@ export async function provision(
   // B 类有记录 = 曾经初始化过；force 模式下仍执行全量覆盖
   const alreadyInitialized = userSettings !== null;
 
-  // ── 3. order=10：写角色卡 PNG（资产层）─────────────────────────────────────
+  // ── 3. order=10：写角色卡 PNG（资产层，受 characterScope 控制）───────────────
   log('[provision] 步骤 3/5：下发角色卡 PNG（order=10）...');
-  let charResult;
+  let charResult: WriteCharactersResult;
   try {
-    charResult = await writeCharacters(stHandle, characters, force);
+    if (characterScope === 'none') {
+      // 关键路径：不下发任何角色卡（登录只做配置下发，消除全量下载尖峰）
+      charResult = { written: [], skipped: [], missing: [] };
+      log('[provision]   characterScope=none，跳过角色卡批量下发（走进对话页时按需拉取）');
+    } else {
+      const onlyIds = typeof characterScope === 'object' ? characterScope.ids : undefined;
+      charResult = await writeCharacters(stHandle, characters, force, onlyIds);
+    }
   } catch (err) {
     throw new ProvisionError(`写入角色卡失败：${err}`, err);
   }
@@ -150,11 +185,14 @@ export async function provision(
   // ── 5. order=100：merge settings + 写 settings.json（配置层）─────────────
   log('[provision] 步骤 5/5：合并 settings.json（order=100）...');
 
-  // 已下发的角色卡 id 列表（用于 character_ref 有效性校验）
-  const availableCharIds = [
-    ...charResult.written,
-    ...charResult.skipped, // 跳过的文件已存在，也视为可用
-  ];
+  // 可用角色卡 id 列表（用于 character_ref 有效性校验）。
+  //   scope='all'：本次 written+skipped 即等于磁盘全量，直接用（省一次 readdir）。
+  //   scope='none'/子集：本次可能一张都没写，必须以「磁盘真实存在」为准，否则
+  //                      character_ref 会被误判失效而回退。
+  const availableCharIds =
+    characterScope === 'all'
+      ? [...charResult.written, ...charResult.skipped]
+      : listCharacterIds(stHandle);
 
   let merged;
   try {
@@ -208,4 +246,46 @@ export async function provision(
 
   log(`[provision] ✅ 完成 → handle=${stHandle}`);
   return result;
+}
+
+// ─── 单卡按需下发（懒下发关键路径）──────────────────────────────────────────────
+
+export interface EnsureCharacterResult {
+  stHandle: string;
+  /** 'written' 新下发 | 'skipped' 已缓存 | 'missing' storage 无此卡 */
+  status: 'written' | 'skipped' | 'missing';
+}
+
+/**
+ * 只确保「当前打开的这一张」角色卡落盘，供前端进入 /tavern/<id> 时按需调用。
+ *
+ * 与 provision() 相比刻意做得极轻：只解析 handle + 下载/跳过单张 PNG，
+ * 不重跑 settings/secrets/presets merge，把关键路径延迟压到最低。
+ * 幂等：已存在则 skip。
+ */
+export async function ensureCharacterProvisioned(
+  userId: string,
+  characterId: string,
+  options: { log?: (msg: string) => void } = {}
+): Promise<EnsureCharacterResult> {
+  const { log = console.log } = options;
+
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .select('st_handle')
+    .eq('id', userId)
+    .single();
+
+  const stHandle = (data as { st_handle: string | null } | null)?.st_handle;
+  if (error || !stHandle) {
+    throw new ProvisionError(
+      `找不到用户 ${userId} 或 st_handle 未初始化（需先完成 st-session 登录）`,
+      error
+    );
+  }
+
+  const status = await writeCharacterById(stHandle, characterId, false);
+  log(`[ensure-character] handle=${stHandle}, id=${characterId} → ${status}`);
+
+  return { stHandle, status };
 }
