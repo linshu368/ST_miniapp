@@ -20,10 +20,10 @@ export function ChatToolsMenu() {
   }, [open]);
 
   return (
-    <div ref={containerRef} className="fixed bottom-0 left-0 z-20 flex flex-col items-start">
+    <div ref={containerRef} className="fixed bottom-0 left-0 z-20 flex items-end">
       {/* Popover card */}
       {open && (
-        <div className="mb-2 ml-2 w-56 rounded-2xl border border-white/10 bg-[#1a1a2e]/95 backdrop-blur-md p-3 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div className="absolute bottom-full left-0 mb-1.5 ml-0.5 w-56 rounded-2xl border border-white/10 bg-[#1a1a2e]/95 backdrop-blur-md p-3 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200">
           <div className="flex items-center gap-1.5 mb-2.5">
             <Sparkles className="h-3.5 w-3.5 text-purple-400" />
             <span className="text-xs font-medium text-white/90">模型切换</span>
@@ -36,16 +36,14 @@ export function ChatToolsMenu() {
         </div>
       )}
 
-      {/* Tools trigger */}
-      <div className="absolute bottom-0 left-0 z-20 flex items-center justify-center p-2">
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1a1a2e]/90 text-white/80 border border-white/10 shadow-lg hover:bg-[#1a1a2e] hover:text-white hover:shadow-xl transition-all active:scale-95"
-          aria-label="工具菜单"
-        >
-          <SlidersHorizontal className="h-5 w-5" />
-        </button>
-      </div>
+      {/* Tools trigger — visually flush with ST input bar */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center justify-center w-10 h-[38px] bg-[#1a1a2e]/95 backdrop-blur-md border border-white/10 border-r-0 text-white/70 hover:text-white hover:bg-[#1a1a2e] transition-colors active:scale-95"
+        aria-label="工具菜单"
+      >
+        <SlidersHorizontal className="h-[18px] w-[18px]" />
+      </button>
     </div>
   );
 }
