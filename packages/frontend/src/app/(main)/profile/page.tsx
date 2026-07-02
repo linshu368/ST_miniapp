@@ -71,7 +71,7 @@ export default function ProfilePage() {
   return (
     <main
       data-app-shell="profile"
-      className="mx-auto flex min-h-screen max-w-md flex-col bg-[#080014] pb-10 pt-[env(safe-area-inset-top)] relative"
+      className="mx-auto flex min-h-screen w-full max-w-screen-xl flex-col bg-[#080014] pb-10 pt-[env(safe-area-inset-top)] relative"
     >
       {/* 顶部空间感 Banner */}
       <div className="absolute top-0 left-0 right-0 h-48 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/40 via-purple-900/10 to-transparent pointer-events-none" />
