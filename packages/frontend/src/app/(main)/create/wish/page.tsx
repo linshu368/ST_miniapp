@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, Send, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  completeWishOnExit,
   useCreateWishMutation,
   useCompleteWishMutation,
   useWishStatusQuery,
@@ -28,53 +29,83 @@ const INITIAL_MESSAGES: Message[] = [
   {
     id: 'intro',
     role: 'assistant',
-    text: '欢迎来到许愿池。告诉我们你想要什么样的角色，一句话也可以，比如“温柔姐姐，会哄人睡觉”。你的许愿只会给运营看，不会公开展示。',
+    text: `💫 说说你想要什么样的角色？
+一句话就行，比如：
+- "霸道总裁但其实是社恐"
+- "温柔姐姐，会哄人睡觉"
+- "赛博朋克世界的酒吧老板娘"
+🔒 你的许愿完全私密，放心大胆说 👇每天只能许愿一次哦~`,
   },
 ];
+
+const TOO_SHORT_MESSAGE = '再多说几个字呀，不然我猜不到你想要什么样的～';
+const LIMIT_REACHED_MESSAGE = '你今天的许愿次数已经用完啦，明天再来～';
+const FINISH_MESSAGE = '✅ 记下了！我们会认真看每一条许愿～';
 
 export default function WishPage() {
   const router = useRouter();
   const wishStatus = useWishStatusQuery();
-  const createWish = useCreateWishMutation();
-  const completeWish = useCompleteWishMutation();
+  const { isPending: isCreatingWish, mutateAsync: createWishAsync } = useCreateWishMutation();
+  const {
+    isPending: isCompletingWish,
+    mutate: completeWish,
+    mutateAsync: completeWishAsync,
+  } = useCompleteWishMutation();
   const { impact, notification } = useHaptic();
 
   const [step, setStep] = useState<Step>('wish');
   const [input, setInput] = useState('');
   const [wishId, setWishId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const autoClosedWishIdsRef = useRef<Set<string>>(new Set());
+  const stepRef = useRef<Step>(step);
+  const wishIdRef = useRef<string | null>(wishId);
 
-  const goBack = useCallback(() => router.push('/create'), [router]);
+  const isPending = wishStatus.isLoading || isCreatingWish || isCompletingWish;
+  const closePendingWish = useCallback(() => {
+    if (!wishId || step !== 'extra' || isCompletingWish) return;
+    completeWish({ id: wishId, body: {} });
+  }, [completeWish, isCompletingWish, step, wishId]);
+  const goBack = useCallback(() => {
+    closePendingWish();
+    router.push('/create');
+  }, [closePendingWish, router]);
   useTelegramBackButton(goBack);
 
-  const isPending = wishStatus.isLoading || createWish.isPending || completeWish.isPending;
   const placeholder = useMemo(() => {
     if (wishStatus.isLoading) return '正在读取许愿状态...';
-    if (step === 'wish') return '写下你想要的角色...';
+    if (step === 'wish') return '一句话许愿...';
     if (step === 'extra') return '补充关系、性格、故事背景等细节...';
     return '许愿已完成';
   }, [step, wishStatus.isLoading]);
 
   useEffect(() => {
+    stepRef.current = step;
+    wishIdRef.current = wishId;
+  }, [step, wishId]);
+
+  useEffect(() => {
+    const completeCurrentWish = () => {
+      if (stepRef.current !== 'extra' || !wishIdRef.current) return;
+      completeWishOnExit(wishIdRef.current);
+    };
+
+    window.addEventListener('pagehide', completeCurrentWish);
+    return () => {
+      completeCurrentWish();
+      window.removeEventListener('pagehide', completeCurrentWish);
+    };
+  }, []);
+
+  useEffect(() => {
     const latestWish = wishStatus.data?.latest_wish;
     if (!latestWish) return;
-
-    setWishId(latestWish.id);
-
-    if (latestWish.status === 'awaiting_extra') {
-      setStep('extra');
-      setMessages([
-        ...INITIAL_MESSAGES,
-        { id: 'existing-wish', role: 'user', text: latestWish.wish_text },
-        {
-          id: 'resume-extra',
-          role: 'assistant',
-          text: '你今天已经许过愿了，这里可以继续补充细节；没有补充就点“就这样吧”。',
-        },
-      ]);
+    if (latestWish.status === 'awaiting_extra' && latestWish.id === wishId && step === 'extra') {
       return;
     }
 
+    setWishId(latestWish.id);
+    setInput('');
     setStep('done');
     setMessages([
       ...INITIAL_MESSAGES,
@@ -82,10 +113,18 @@ export default function WishPage() {
       {
         id: 'limit-reached',
         role: 'assistant',
-        text: '你今天已经许过愿了，我们会认真看。明天再来许新的愿望吧。',
+        text: LIMIT_REACHED_MESSAGE,
       },
     ]);
-  }, [wishStatus.data?.latest_wish]);
+
+    if (
+      latestWish.status === 'awaiting_extra' &&
+      !autoClosedWishIdsRef.current.has(latestWish.id)
+    ) {
+      autoClosedWishIdsRef.current.add(latestWish.id);
+      completeWish({ id: latestWish.id, body: {} });
+    }
+  }, [completeWish, step, wishId, wishStatus.data?.latest_wish]);
 
   const appendMessage = useCallback((message: Omit<Message, 'id'>) => {
     setMessages((current) => [
@@ -102,35 +141,36 @@ export default function WishPage() {
     if (!text || isPending || step === 'done') return;
 
     impact('light');
-    appendMessage({ role: 'user', text });
-    setInput('');
 
     try {
       if (step === 'wish') {
         if (Array.from(text).length <= MIN_WISH_LENGTH) {
           appendMessage({
             role: 'assistant',
-            text: '再多说几个字呀，不然我猜不到你想要什么样的。',
+            text: TOO_SHORT_MESSAGE,
           });
           return;
         }
 
-        const result = await createWish.mutateAsync({ wish_text: text });
+        appendMessage({ role: 'user', text });
+        setInput('');
+        const result = await createWishAsync({ wish_text: text });
         setWishId(result.wish.id);
         setStep('extra');
         appendMessage({
           role: 'assistant',
-          text:
-            `收到，奖励你 ${result.wish.reward_credits} 星尘。` +
-            '如果你还有更具体的想法，可以继续补充；没有的话点“就这样吧”。',
+          text: `✅ 收到！奖励你 ${result.wish.reward_credits} 星尘 ✨如果你还有更具体的想法，比如你和 ta 的关系、性格细节、故事背景，可以继续说～
+没有的话点下面就好 👇`,
         });
         return;
       }
 
       if (step === 'extra' && wishId) {
-        await completeWish.mutateAsync({ id: wishId, body: { extra_text: text } });
+        appendMessage({ role: 'user', text });
+        setInput('');
+        await completeWishAsync({ id: wishId, body: { extra_text: text } });
         setStep('done');
-        appendMessage({ role: 'assistant', text: '记下了，我们会认真看每一条许愿。' });
+        appendMessage({ role: 'assistant', text: FINISH_MESSAGE });
       }
     } catch (error) {
       notification('error');
@@ -139,8 +179,8 @@ export default function WishPage() {
     }
   }, [
     appendMessage,
-    completeWish,
-    createWish,
+    createWishAsync,
+    completeWishAsync,
     impact,
     input,
     isPending,
@@ -153,15 +193,15 @@ export default function WishPage() {
     if (!wishId || step !== 'extra' || isPending) return;
     impact('light');
     try {
-      await completeWish.mutateAsync({ id: wishId, body: {} });
+      await completeWishAsync({ id: wishId, body: {} });
       setStep('done');
-      appendMessage({ role: 'assistant', text: '记下了，我们会认真看每一条许愿。' });
+      appendMessage({ role: 'assistant', text: FINISH_MESSAGE });
     } catch (error) {
       notification('error');
       const message = error instanceof Error ? error.message : '许愿暂时保存失败';
       appendMessage({ role: 'assistant', text: message });
     }
-  }, [appendMessage, completeWish, impact, isPending, notification, step, wishId]);
+  }, [appendMessage, completeWishAsync, impact, isPending, notification, step, wishId]);
 
   return (
     <main
@@ -199,7 +239,7 @@ export default function WishPage() {
           >
             <div
               className={cn(
-                'max-w-[82%] rounded-3xl px-4 py-3 text-sm leading-6 shadow-lg',
+                'max-w-[82%] whitespace-pre-line rounded-3xl px-4 py-3 text-sm leading-6 shadow-lg',
                 message.role === 'user'
                   ? 'rounded-br-lg bg-white text-slate-950'
                   : 'rounded-bl-lg border border-white/10 bg-white/[0.06] text-slate-100'
@@ -220,7 +260,7 @@ export default function WishPage() {
             disabled={isPending}
             className="mb-2 h-8 rounded-full px-3 text-xs text-slate-300 hover:text-white"
           >
-            就这样吧
+            💖 就这样吧
           </Button>
         )}
         <div className="flex items-end gap-2">

@@ -130,12 +130,12 @@ export function CharacterGallery() {
           <Button
             variant="outline"
             onClick={() => {
-              // TODO: 角色卡许愿池入口,功能待开发
+              router.push('/create/wish');
             }}
             className="group relative overflow-hidden rounded-full border border-indigo-500/30 bg-indigo-500/10 px-5 h-10 text-[13px] font-medium text-indigo-300 hover:bg-indigo-500/20 hover:text-indigo-200 transition-all shadow-[0_0_15px_rgba(99,102,241,0.1)]"
           >
             <Sparkles className="h-4 w-4 mr-2 text-indigo-400 transition-transform group-hover:rotate-12" />
-            <span>没找到想要的？去许愿池</span>
+            <span>✨ 我想要的角色</span>
           </Button>
           <p className="text-center text-[11px] text-white/40">
             告诉我们你想要的角色，创作者会为你做出来

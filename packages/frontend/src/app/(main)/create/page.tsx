@@ -20,8 +20,7 @@ export default function CreatePage() {
           className="rounded-full bg-white text-slate-950 shadow-lg shadow-purple-500/20 hover:bg-purple-100"
         >
           <Link href="/create/wish">
-            <Sparkles className="h-4 w-4" aria-hidden />
-            许愿池
+            <Sparkles className="h-4 w-4" aria-hidden />✨ 我想要的角色
           </Link>
         </Button>
       </header>
@@ -30,7 +29,7 @@ export default function CreatePage() {
         <div className="rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-8 shadow-2xl shadow-black/30 backdrop-blur">
           <p className="text-[13px] font-medium text-slate-300">创作功能即将上线</p>
           <p className="mt-2 text-xs leading-5 text-slate-500">
-            想要什么角色，可以先进入许愿池告诉我们。
+            没找到想聊的类型？告诉我们你想要什么样的角色。
           </p>
         </div>
       </section>

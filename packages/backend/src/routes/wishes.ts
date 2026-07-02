@@ -47,7 +47,9 @@ export default async function wishRoutes(app: FastifyInstance) {
     const body = request.body as Partial<CreateWishRoleRequest>;
     const wishText = body.wish_text?.trim() ?? '';
     if (countChars(wishText) <= MIN_WISH_LENGTH) {
-      return reply.status(400).send(fail('WISH_TOO_SHORT', '许愿内容再多说几个字'));
+      return reply
+        .status(400)
+        .send(fail('WISH_TOO_SHORT', '再多说几个字呀，不然我猜不到你想要什么样的～'));
     }
 
     const dbUser = await getOrCreateDbUser(request.user);
@@ -64,7 +66,9 @@ export default async function wishRoutes(app: FastifyInstance) {
       const message = error instanceof Error ? error.message : 'Create wish failed';
       request.log.warn({ err: error, userId: dbUser.id }, 'Create wish failed');
       if (message.includes('wish limit reached')) {
-        return reply.status(409).send(fail('WISH_LIMIT_REACHED', '你今天已经许过愿了，明天再来'));
+        return reply
+          .status(409)
+          .send(fail('WISH_LIMIT_REACHED', '你今天的许愿次数已经用完啦，明天再来～'));
       }
       return reply.status(400).send(fail('WISH_CREATE_FAILED', '许愿暂时保存失败'));
     }

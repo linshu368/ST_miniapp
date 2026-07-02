@@ -10,6 +10,9 @@ import type {
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
+import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export const wishKeys = {
   all: ['wishes'] as const,
@@ -35,6 +38,21 @@ async function postCompleteWish(input: {
     method: 'POST',
     body: JSON.stringify(input.body),
   });
+}
+
+export function completeWishOnExit(id: string): void {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const initData = getRawInitData();
+  if (initData) headers[INIT_DATA_HEADER] = initData;
+
+  void fetch(`${API_URL}/api/wishes/${encodeURIComponent(id)}/complete`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+    keepalive: true,
+  }).catch(() => undefined);
 }
 
 export function useWishStatusQuery() {
