@@ -12,8 +12,8 @@ const NAV_ITEMS = [
   { href: '/profile', label: '我的', Icon: User },
 ] as const;
 
-// 深层页面（支付流程、充值详情）隐藏底部导航，让主内容拿满可视高度
-const HIDDEN_PREFIXES = ['/profile/recharge'];
+// 深层页面（支付流程、沉浸式输入页）隐藏底部导航，让主内容拿满可视高度
+const HIDDEN_PREFIXES = ['/profile/recharge', '/create/wish'];
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -22,12 +22,14 @@ export function BottomNav() {
   }
 
   return (
-    <nav
-      aria-label="主导航"
-      className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#080014] via-[#080014]/92 to-[#080014]/0 pt-7 text-white"
+    <div
+      className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 sm:bottom-6"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <div className="mx-auto flex w-full max-w-md items-end justify-around gap-1 px-3 pb-2 pt-1 sm:max-w-xl">
+      <nav
+        aria-label="主导航"
+        className="pointer-events-auto flex w-full max-w-[320px] items-center justify-around rounded-[2rem] border border-white/10 bg-[#130d26]/85 px-2 py-2 text-white shadow-[0_12px_36px_rgba(0,0,0,0.6)] backdrop-blur-xl"
+      >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const active = pathname === href;
           return (
@@ -37,23 +39,27 @@ export function BottomNav() {
               aria-current={active ? 'page' : undefined}
               aria-label={label}
               className={cn(
-                'group flex min-w-0 flex-1 flex-col items-center gap-0.5 px-3 py-1.5 transition-all duration-200 sm:px-8',
-                active ? 'text-primary' : 'text-white/38 hover:text-white/75'
+                'group flex flex-col items-center justify-center gap-1 rounded-full px-2 py-0.5 transition-all duration-300',
+                active ? 'text-primary' : 'text-white/50 hover:text-white/80'
               )}
             >
-              <Icon
-                size={24}
-                strokeWidth={active ? 2 : 1.5}
-                aria-hidden="true"
-                className={cn(
-                  'transition-transform duration-200',
-                  active && 'scale-[1.08] drop-shadow-[0_0_10px_hsl(var(--primary)/0.45)]'
-                )}
-              />
               <span
                 className={cn(
-                  'text-[10px] font-medium transition-opacity duration-200',
-                  active ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'
+                  'flex h-8 w-14 items-center justify-center rounded-full transition-all duration-300',
+                  active && 'bg-primary/20 shadow-[0_0_16px_hsl(var(--primary)/0.25)]'
+                )}
+              >
+                <Icon
+                  size={20}
+                  strokeWidth={active ? 2.5 : 2}
+                  aria-hidden="true"
+                  className={cn('transition-transform duration-300', active && 'scale-110')}
+                />
+              </span>
+              <span
+                className={cn(
+                  'text-[10px] font-bold leading-none tracking-wide transition-all duration-300',
+                  active ? 'scale-100 opacity-100' : 'scale-95 opacity-70 group-hover:opacity-100'
                 )}
               >
                 {label}
@@ -61,7 +67,7 @@ export function BottomNav() {
             </Link>
           );
         })}
-      </div>
-    </nav>
+      </nav>
+    </div>
   );
 }

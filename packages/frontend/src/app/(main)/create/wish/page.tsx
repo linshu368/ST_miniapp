@@ -100,7 +100,10 @@ export default function WishPage() {
   useEffect(() => {
     const latestWish = wishStatus.data?.latest_wish;
     if (!latestWish) return;
-    if (latestWish.status === 'awaiting_extra' && latestWish.id === wishId && step === 'extra') {
+
+    // Only hydrate an existing daily-limit state before this page starts a new local flow.
+    // Status refetches after create/complete should not overwrite the user's in-progress input.
+    if (step !== 'wish' || wishId) {
       return;
     }
 
