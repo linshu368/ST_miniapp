@@ -12,7 +12,7 @@ import type {
 import { apiClient } from './client';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://stminiapp-development.up.railway.app';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
 
 export const wishKeys = {
   all: ['wishes'] as const,

@@ -1,7 +1,7 @@
 import type { ApiResponse } from '@miniapp/shared';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://stminiapp-development.up.railway.app';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
 
 /** 统一的 HTTP 客户端。仅在 lib/api/ 内部使用；业务层必须走 React Query hook 包装。 */
 export async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
