@@ -39,8 +39,18 @@ const INITIAL_MESSAGES: Message[] = [
 ];
 
 const TOO_SHORT_MESSAGE = '再多说几个字呀，不然我猜不到你想要什么样的～';
-const LIMIT_REACHED_MESSAGE = '你今天的许愿次数已经用完啦，明天再来～';
 const FINISH_MESSAGE = '✅ 记下了！我们会认真看每一条许愿～';
+
+function restoreWishMessages(wish: { wish_text: string; extra_text?: string | null }): Message[] {
+  return [
+    ...INITIAL_MESSAGES,
+    { id: 'existing-wish', role: 'user', text: wish.wish_text },
+    ...(wish.extra_text
+      ? [{ id: 'existing-extra', role: 'user' as const, text: wish.extra_text }]
+      : []),
+    { id: 'existing-finish', role: 'assistant', text: FINISH_MESSAGE },
+  ];
+}
 
 export default function WishPage() {
   const router = useRouter();
@@ -88,7 +98,7 @@ export default function WishPage() {
     if (wishStatus.isLoading) return '正在读取许愿状态...';
     if (step === 'wish') return '一句话许愿...';
     if (step === 'extra') return '补充关系、性格、故事背景等细节...';
-    return '许愿已完成';
+    return '今天已许愿，明天再来～';
   }, [step, wishStatus.isLoading]);
 
   useEffect(() => {
@@ -186,15 +196,7 @@ export default function WishPage() {
     setWishId(latestWish.id);
     setInputValue('');
     setStep('done');
-    setMessages([
-      ...INITIAL_MESSAGES,
-      { id: 'existing-wish', role: 'user', text: latestWish.wish_text },
-      {
-        id: 'limit-reached',
-        role: 'assistant',
-        text: LIMIT_REACHED_MESSAGE,
-      },
-    ]);
+    setMessages(restoreWishMessages(latestWish));
 
     if (
       latestWish.status === 'awaiting_extra' &&
