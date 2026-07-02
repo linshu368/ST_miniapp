@@ -3,7 +3,8 @@
  *
  * 架构铁律：vendor/sillytavern 只读，ST 视觉定制从 extension 侧处理。
  *
- * 隐藏目标：#leftSendForm（含 #options_button 和 #extensionsMenuButton）。
+ * 隐藏目标：#leftSendForm（含 #options_button 和 #extensionsMenuButton）、
+ * #send_textarea placeholder 文字。
  *
  * 原因：平台壳已用自研 ChatToolsMenu 替代左下角原生按钮的功能（模型切换等），
  * 原生按钮暴露会造成视觉干扰。由于 textarea 高度随用户输入动态变化，
@@ -12,6 +13,9 @@
 
 export function installNativeUiHide(): void {
   const style = document.createElement('style');
-  style.textContent = `#leftSendForm { display: none !important; }`;
+  style.textContent = [
+    '#leftSendForm { display: none !important; }',
+    '#send_textarea::placeholder { color: transparent !important; }',
+  ].join('\n');
   document.head.appendChild(style);
 }
