@@ -9,15 +9,13 @@ const TIERS = [
     tier: 'standard' as const,
     modelName: 'google/gemini-2.5-flash',
     provider: 'openrouter',
-    label: '标准',
-    cost: 10,
+    label: '快餐模型',
   },
   {
     tier: 'premium' as const,
     modelName: 'anthropic/claude-sonnet-4',
     provider: 'openrouter',
-    label: '高级',
-    cost: 15,
+    label: '基础模型',
   },
 ] as const;
 
@@ -61,7 +59,6 @@ export function ModelTierSwitcher() {
             )}
           >
             {tier.label}
-            <span className="ml-1 opacity-60">{tier.cost}</span>
           </button>
         );
       })}
