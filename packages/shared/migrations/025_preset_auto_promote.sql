@@ -1,4 +1,4 @@
--- 025: 预设自动晋升触发器
+-- 025: 预设自动晋升触发器 + canonical JSON 序列化函数
 --
 -- 运营需求：在 st_platform.platform_presets 中 INSERT 一行 is_default=true 的预设时，
 -- 自动完成以下操作，无需手动维护 platform_settings 指针：
@@ -12,7 +12,8 @@
 --   - platform_presets 和 platform_settings 都是快照式 append-only
 --   - 指针更新 = 新增一行 platform_settings（platform_version + 1）
 --   - 旧默认预设 enabled=false 以避免新用户收到废弃的预设文件
---   - content_hash 由触发器在 PG 内计算（pgcrypto sha256）
+--   - content_hash 使用 canonical_jsonb() 计算，与 JS 侧 hash.ts 的
+--     canonicalize → JSON.stringify → sha256 产出完全一致的结果
 --
 -- 运营操作：只需执行一条 INSERT —
 --
@@ -23,6 +24,70 @@
 
 -- pgcrypto 用于 sha256（Supabase 默认已有，此处做幂等保护）
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ─── canonical JSON 序列化函数 ────────────────────────────────────────────────
+-- 等价于 JS 侧 sync-engine/src/lib/hash.ts 的 canonicalize → JSON.stringify：
+--   - 对象 key 按字典序（纯 alphabetical）排列
+--   - 紧凑格式：key:value 之间无空格，元素之间无空格
+--   - 数组保持原始顺序
+--   - 原始值使用 JSONB 原生 ::text（数字/布尔/null 格式与 JS JSON.stringify 一致）
+--
+-- PG 原生 jsonb::text 不适用的原因：
+--   1. 冒号后有空格 {"key": "val"} vs JS 的 {"key":"val"}
+--   2. key 排序规则是先按长度再按字典序，与 JS 的纯字典序不同
+
+CREATE OR REPLACE FUNCTION st_platform.canonical_jsonb(val JSONB)
+RETURNS TEXT
+LANGUAGE plpgsql IMMUTABLE
+AS $$
+DECLARE
+  t       TEXT;
+  parts   TEXT[] := '{}';
+  k       TEXT;
+  v       JSONB;
+  elem    JSONB;
+BEGIN
+  IF val IS NULL THEN
+    RETURN 'null';
+  END IF;
+
+  t := jsonb_typeof(val);
+
+  IF t = 'object' THEN
+    FOR k, v IN
+      SELECT kv.key, kv.value
+        FROM jsonb_each(val) AS kv
+       ORDER BY kv.key  -- 纯字典序，匹配 JS Object.keys().sort()
+    LOOP
+      parts := array_append(
+        parts,
+        to_jsonb(k)::text || ':' || st_platform.canonical_jsonb(v)
+      );
+    END LOOP;
+    RETURN '{' || array_to_string(parts, ',') || '}';
+  END IF;
+
+  IF t = 'array' THEN
+    FOR elem IN
+      SELECT ae.value FROM jsonb_array_elements(val) AS ae
+    LOOP
+      parts := array_append(parts, st_platform.canonical_jsonb(elem));
+    END LOOP;
+    RETURN '[' || array_to_string(parts, ',') || ']';
+  END IF;
+
+  -- string / number / boolean / null：JSONB ::text 的格式与 JSON.stringify 一致
+  -- string → '"hello"'（含引号和 JSON 转义）
+  -- number → '42' 或 '3.14'
+  -- boolean → 'true' / 'false'
+  -- null → 'null'
+  RETURN val::text;
+END;
+$$;
+
+COMMENT ON FUNCTION st_platform.canonical_jsonb(JSONB) IS
+  '将 JSONB 值序列化为与 JS JSON.stringify(canonicalize(obj)) 一致的紧凑 JSON 字符串。'
+  'key 按纯字典序排列，无多余空格。用于计算跨语言一致的 content_hash。';
 
 -- ─── 触发器函数 ──────────────────────────────────────────────────────────────────
 
@@ -73,16 +138,16 @@ BEGIN
   -- ④ 版本号 +1
   new_version := prev.platform_version + 1;
 
-  -- ⑤ 计算 content_hash（sha256）
-  --    输入与应用层 canonicalize 的键集相同（platform_version, settings_jsonb, writable_paths），
-  --    序列化方式为 PG jsonb::text（键天然去重），足以保证唯一性。
+  -- ⑤ 计算 content_hash —— 使用 canonical_jsonb() 确保与 JS 侧一致
   new_hash := encode(
     digest(
-      jsonb_build_object(
-        'platform_version', new_version,
-        'settings_jsonb',   new_jsonb,
-        'writable_paths',   prev.writable_paths
-      )::text,
+      st_platform.canonical_jsonb(
+        jsonb_build_object(
+          'platform_version', new_version,
+          'settings_jsonb',   new_jsonb,
+          'writable_paths',   prev.writable_paths
+        )
+      ),
       'sha256'
     ),
     'hex'
