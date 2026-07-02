@@ -7,6 +7,8 @@ import { useCharacterQuery } from '@/lib/api/characters';
 import { useSTMirror } from '@/lib/bridge';
 import { useChatListStore } from '@/stores/chat-list';
 
+const AUTO_CHAT_NAME_RE = /\d{4}-\d{1,2}-\d{1,2}[@_]\d{1,2}h\d{1,2}m\d{1,2}s/;
+
 export function ChatHeader() {
   const router = useRouter();
   const { characterId } = useParams<{ characterId: string }>();
@@ -17,7 +19,10 @@ export function ChatHeader() {
   const activeChatItem = currentChatId
     ? items.find((item) => item.fileName === currentChatId)
     : null;
-  const displayName = activeChatItem?.characterName || data?.character?.name || '';
+  const isRenamed = activeChatItem ? !AUTO_CHAT_NAME_RE.test(activeChatItem.fileName) : false;
+  const displayName = isRenamed
+    ? activeChatItem!.fileName
+    : activeChatItem?.characterName || data?.character?.name || '';
 
   return (
     <div className="fixed top-0 left-0 right-0 z-20 flex items-center justify-between px-3 h-12 bg-[#1a1a2e]/95 backdrop-blur-md pt-[env(safe-area-inset-top)]">
