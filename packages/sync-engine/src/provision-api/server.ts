@@ -13,7 +13,7 @@
  */
 
 import { createServer, type Server } from 'node:http';
-import { provision } from '../provisioner/index.js';
+import { provision, ensureCharacterProvisioned } from '../provisioner/index.js';
 import { loadConfig, config } from '../lib/config.js';
 import { createLogger } from '../lib/logger.js';
 
@@ -99,9 +99,39 @@ async function handleRequest(
     return;
   }
 
+  // POST /provision/:userId/character/:characterId/sync — 只确保单张角色卡落盘（懒下发）
+  // 供 Bridge 在用户进入 /tavern/<id> 时调用：关键路径只拉「当前打开的这张卡」。
+  const provisionCharMatch = url.match(/^\/provision\/([^/]+)\/character\/([^/?]+)\/sync(\?.*)?$/);
+  if (method === 'POST' && provisionCharMatch) {
+    const userId = provisionCharMatch[1] ?? '';
+    const characterId = provisionCharMatch[2] ?? '';
+    if (!userId || !characterId) {
+      jsonResponse(res, 400, { error: 'missing_param' });
+      return;
+    }
+
+    try {
+      const result = await ensureCharacterProvisioned(userId, characterId, {
+        log: (msg) => logger.info({ userId, characterId }, msg),
+      });
+      logger.info({ userId, characterId, status: result.status }, 'ensure character 完成');
+      jsonResponse(res, 200, {
+        status: result.status,
+        userId,
+        characterId,
+        stHandle: result.stHandle,
+      });
+    } catch (err) {
+      logger.error({ userId, characterId, err: String(err) }, 'ensure character 失败');
+      jsonResponse(res, 500, { error: 'ensure_character_failed', message: String(err) });
+    }
+    return;
+  }
+
   // POST /provision/:userId/sync — 同步（等待 provision 完成后返回 200）
   // 供 Bridge 新用户首次登录时使用：确保 ST 用户账号创建完毕后再尝试 ST 登录
-  // 支持 ?force=true 查询参数：新用户流程第二阶段（ST 初始化后覆盖写平台文件）
+  // 支持 ?force=true：新用户流程第二阶段（ST 初始化后覆盖写平台文件）
+  // 支持 ?cards=none：关键路径不下发角色卡（懒下发，卡走 /character 端点按需拉）
   const provisionSyncMatch = url.match(/^\/provision\/([^/]+)\/sync(\?.*)?$/);
   if (method === 'POST' && provisionSyncMatch) {
     const userId = provisionSyncMatch[1] ?? '';
@@ -110,14 +140,16 @@ async function handleRequest(
       return;
     }
 
-    // 解析 ?force=true 参数
+    // 解析查询参数：force / cards
     const queryStr = provisionSyncMatch[2] ?? '';
-    const forceParam = new URLSearchParams(queryStr.replace(/^\?/, '')).get('force');
-    const force = forceParam === 'true';
+    const query = new URLSearchParams(queryStr.replace(/^\?/, ''));
+    const force = query.get('force') === 'true';
+    const characterScope = query.get('cards') === 'none' ? 'none' : 'all';
 
     try {
       const result = await provision(userId, {
         force,
+        characterScope,
         log: (msg) => logger.info({ userId }, msg),
       });
       logger.info(

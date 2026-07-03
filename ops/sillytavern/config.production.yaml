@@ -18,7 +18,12 @@ listenAddress:
   ipv6: "[::]"
 protocol:
   ipv4: true
-  ipv6: false
+  # ipv6 必须为 true：Railway 私有网络是 IPv6，nginx 把 st-bundle.railway.internal
+  # 解析到 AAAA(IPv6) 地址来连 ST。若 ST 只监听 IPv4，nginx 的 IPv6 连接会 111
+  # (Connection refused)，靠 proxy_next_upstream 回落 IPv4 才成功——每次白撞一次 +
+  # "upstream temporarily disabled" 抖动，表现为 ST iframe 加载慢/Telegram 出不来。
+  # 开成 true 让 ST 双栈监听（listenAddress.ipv6 已是 [::]），IPv6 连接直接成功。
+  ipv6: true
 dnsPreferIPv6: false
 browserLaunch:
   enabled: true

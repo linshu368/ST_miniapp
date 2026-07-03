@@ -85,6 +85,8 @@ export interface STContext {
   accountStorage?: STAccountStorage | null;
 
   getCurrentChatId(): string | null;
+  /** 重新从服务端拉取角色列表并重建内存 characters 数组（见 vendor script.js getCharacters） */
+  getCharacters(): Promise<void>;
   getRequestHeaders(): Record<string, string>;
   getChatCompletionModel(): string;
   getPresetManager(): STPresetManager | null;
