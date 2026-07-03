@@ -10,11 +10,12 @@
  */
 
 import { get as lodashGet, set as lodashSet, cloneDeep } from 'lodash-es';
-import type { PlatformSettingsRow, UserSettingsRow } from './fetcher.js';
+import type { PlatformSettingsRow, UserSettingsRow, PresetRow } from './fetcher.js';
+import { applyActivePreset } from './preset-apply.js';
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────────
 
-/** merge 后的 settings，附带一个 debug 标记字段 */
+/** merge 后的 settings，附带一些 debug 标记字段 */
 export interface MergedSettings {
   /** 最终写入 settings.json 的内容 */
   settings: Record<string, unknown>;
@@ -22,6 +23,10 @@ export interface MergedSettings {
   hadInvalidRef: boolean;
   /** 如果触发了兜底，记录原来的失效值 */
   invalidRefValue?: string;
+  /** 是否把选中预设应用进了 oai_settings（false 表示指针缺失或预设未命中） */
+  presetApplied: boolean;
+  /** 本次应用的预设 id（presetApplied=true 时有值） */
+  appliedPresetId?: string;
 }
 
 /**
@@ -41,6 +46,7 @@ export interface PersonaInput {
  *
  * @param platformSettings       - 分区 A 最新版本
  * @param userSettings           - 分区 B 该用户最新行（null 表示新用户，完全用 A 默认值）
+ * @param presets                - 分区 A 已启用的预设列表（用于按指针把预设应用进 oai_settings）
  * @param availableCharIds       - 本次已下发的角色卡 id 列表（用于 character_ref 校验）
  * @param fallbackCharacterId    - 系统兜底卡 ID（character_ref 失效时的回退值，来自 runtime_config）
  * @param llmProxyUrl            - 写入 ST settings 的平台 LLM 代理地址
@@ -49,6 +55,7 @@ export interface PersonaInput {
 export function mergeSettings(
   platformSettings: PlatformSettingsRow,
   userSettings: UserSettingsRow | null,
+  presets: PresetRow[],
   availableCharIds: string[],
   fallbackCharacterId: string | undefined,
   llmProxyUrl: string,
@@ -56,6 +63,19 @@ export function mergeSettings(
 ): MergedSettings {
   // 深拷贝 A 作为 base（绝不修改原始对象）
   const merged = cloneDeep(platformSettings.settings_jsonb) as Record<string, unknown>;
+
+  // 依据 oai_settings.preset_settings_openai 指针把「当前选中预设」应用进 oai_settings。
+  // 必须在 B 白名单覆盖之前：预设先建立平台基线，用户在 writable_paths（如 oai_settings.prompts）
+  // 里的自定义仍能覆盖预设值，保持既有 writable_paths 契约。
+  // 025 触发器只换指针不写参数、ST 启动也不重新套用预设文件，故这一步是「换预设后参数生效」的关键。
+  let presetApplied = false;
+  let appliedPresetId: string | undefined;
+  const oaiForPreset = merged.oai_settings;
+  if (oaiForPreset && typeof oaiForPreset === 'object') {
+    const applyResult = applyActivePreset(oaiForPreset as Record<string, unknown>, presets);
+    presetApplied = applyResult.applied;
+    appliedPresetId = applyResult.presetId;
+  }
 
   // 如果有 B 类记录，按白名单覆盖
   if (userSettings) {
@@ -109,12 +129,12 @@ export function mergeSettings(
   // - main_api 决定实际发起请求的顶层 API；默认模板常为 koboldhorde，会完全不碰上面的 custom_url。
   // - 仅当 chat_completion_source='custom' 时，ST 才使用 oai_settings.custom_url 指向的 backend 代理；
   //   openai 源会改用 reverse_proxy 并落到官方 OpenAI，openrouter 模型 id 也无法在官方端点识别。
-  // - custom_model 为空时 ST 无模型可发；回退到标准档默认模型（与 model-tiers/前端档位一致）。
+  // - custom_model 为空时 ST 无模型可发；回退到平台当前默认模型（与前端档位一致）。
   //   用户经档位切换写入的 custom_model 已在上方按 writable_paths 合并，此处仅在缺省时兜底。
   lodashSet(merged, 'main_api', 'openai');
   lodashSet(merged, 'oai_settings.chat_completion_source', 'custom');
   if (!lodashGet(merged, 'oai_settings.custom_model')) {
-    lodashSet(merged, 'oai_settings.custom_model', 'google/gemini-2.5-flash');
+    lodashSet(merged, 'oai_settings.custom_model', 'google/gemini-3.1-flash-lite');
   }
 
   // 强制设置上下文上限：默认模板的 openai_max_context=4095 过小，大角色卡（人设 + 内置正则）
@@ -141,7 +161,7 @@ export function mergeSettings(
   // (#left-nav-panel) 在聊天页被钉开、占满屏幕。平台不开放用户改预设，这些 UI 状态一律强制关闭。
   sanitizeAccountStorageDrawerState(merged);
 
-  return { settings: merged, hadInvalidRef, invalidRefValue };
+  return { settings: merged, hadInvalidRef, invalidRefValue, presetApplied, appliedPresetId };
 }
 
 /**

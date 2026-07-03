@@ -215,6 +215,7 @@ export async function provision(
     merged = mergeSettings(
       platformSettings,
       userSettings,
+      presets,
       availableCharIds,
       systemFallbackCharacterId ?? undefined,
       config.LLM_PROXY_URL,
@@ -222,6 +223,14 @@ export async function provision(
     );
   } catch (err) {
     throw new ProvisionError(`merge settings 失败：${err}`, err);
+  }
+
+  if (merged.presetApplied) {
+    log(`[provision]   预设已应用进 oai_settings（presetId=${merged.appliedPresetId}）`);
+  } else {
+    log(
+      '[provision]   ⚠️  未应用预设到 oai_settings（指针缺失或预设未命中），沿用 platform_settings 原值'
+    );
   }
 
   if (merged.hadInvalidRef) {

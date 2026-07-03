@@ -18,10 +18,36 @@
 
 ## 使用方式
 
-阶段一采用原生 SQL 迁移（详见 D004），Schema 稳定后切换到 Prisma migrate。当前仓库提供两种执行方式：
+阶段一采用原生 SQL 迁移（详见 D004），Schema 稳定后切换到 Prisma migrate。当前仓库提供三种执行方式：
 
 - **GitHub Actions**：使用 `.github/workflows/db-migrate.yml` 手动触发执行指定 SQL 文件，推荐用于测试分支和受控生产变更。
+- **本地 Supabase CLI**：使用根目录 `pnpm supabase:*` 脚本执行本地服务、项目链接或指定 SQL 文件。
 - **Supabase Studio**：在 SQL Editor 中按文件名数字前缀逐个执行，作为 CLI/CI 无法连接数据库时的备用方式。
+
+### 本地 Supabase CLI
+
+仓库根目录已安装 `supabase` CLI，并保留 `packages/shared/migrations/*.sql` 作为 SQL 迁移源；不要把迁移文件复制到 `supabase/migrations` 形成两套来源。
+
+```bash
+pnpm supabase --version
+pnpm supabase:status
+pnpm supabase:start
+pnpm supabase:stop
+```
+
+链接远程项目时需要先登录 Supabase CLI（或设置 `SUPABASE_ACCESS_TOKEN`）：
+
+```bash
+pnpm supabase login
+pnpm supabase:link:test
+pnpm supabase:link:prod
+```
+
+本地或远程执行单个 SQL 文件时，沿用 CI 的 `db query --file` 方式：
+
+```bash
+pnpm supabase:db:query -- --db-url "$DATABASE_URL" --file packages/shared/migrations/025_preset_auto_promote.sql
+```
 
 ### GitHub Actions 执行
 
