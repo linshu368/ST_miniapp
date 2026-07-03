@@ -94,32 +94,32 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         deductionRate = tierConfig.deductionRate;
       }
 
-      // ── 余额预检（R5：不足 → 402，不发起上游调用）──────────────────────
-      if (deductionRate > 0) {
-        try {
-          const wallet = await wallets.getOrCreate(userId);
-          const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-          if (balance < deductionRate) {
-            request.log.info(
-              { userId, balance, required: deductionRate, model: modelName },
-              '[llm-proxy] insufficient balance'
-            );
-            return reply.status(402).send({
-              error: {
-                message: `Insufficient credits: have ${balance}, need ${deductionRate}`,
-                type: 'insufficient_balance',
-                credits_required: deductionRate,
-                credits_available: balance,
-              },
-            });
-          }
-        } catch (err) {
-          request.log.error({ err: String(err), userId }, '[llm-proxy] wallet check failed');
-          return reply.status(500).send({
-            error: { message: 'Failed to check wallet balance', type: 'internal_error' },
-          });
-        }
-      }
+      // ── 余额预检临时关闭：允许 0 积分用户正常发起 LLM 调用 ────────────────
+      // if (deductionRate > 0) {
+      //   try {
+      //     const wallet = await wallets.getOrCreate(userId);
+      //     const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
+      //     if (balance < deductionRate) {
+      //       request.log.info(
+      //         { userId, balance, required: deductionRate, model: modelName },
+      //         '[llm-proxy] insufficient balance'
+      //       );
+      //       return reply.status(402).send({
+      //         error: {
+      //           message: `Insufficient credits: have ${balance}, need ${deductionRate}`,
+      //           type: 'insufficient_balance',
+      //           credits_required: deductionRate,
+      //           credits_available: balance,
+      //         },
+      //       });
+      //     }
+      //   } catch (err) {
+      //     request.log.error({ err: String(err), userId }, '[llm-proxy] wallet check failed');
+      //     return reply.status(500).send({
+      //       error: { message: 'Failed to check wallet balance', type: 'internal_error' },
+      //     });
+      //   }
+      // }
 
       // ── 构造上游请求 ──────────────────────────────────────────────────────
       const subPath = request.url.replace(/^\/api\/platform\/llm-proxy\/v1/, '') || '/';
