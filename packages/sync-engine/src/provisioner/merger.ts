@@ -24,6 +24,16 @@ export interface MergedSettings {
   invalidRefValue?: string;
 }
 
+/**
+ * 用户 ST persona 注入参数（对话页/回复里显示的「用户名 + 头像」）。
+ *   name       - 显示名（TG 名字），为空则不注入、保留平台默认 persona
+ *   avatarFile - User Avatars/ 下已落盘的头像文件名，为空则沿用现有/默认头像文件
+ */
+export interface PersonaInput {
+  name: string | null;
+  avatarFile: string | null;
+}
+
 // ─── 主 merge 函数 ────────────────────────────────────────────────────────────
 /**
  * 将平台 settings（A）与用户 settings 镜像（B）合并，
@@ -34,13 +44,15 @@ export interface MergedSettings {
  * @param availableCharIds       - 本次已下发的角色卡 id 列表（用于 character_ref 校验）
  * @param fallbackCharacterId    - 系统兜底卡 ID（character_ref 失效时的回退值，来自 runtime_config）
  * @param llmProxyUrl            - 写入 ST settings 的平台 LLM 代理地址
+ * @param persona                - 用户 ST persona（TG 名字/头像），可选；name 为空则不注入
  */
 export function mergeSettings(
   platformSettings: PlatformSettingsRow,
   userSettings: UserSettingsRow | null,
   availableCharIds: string[],
   fallbackCharacterId: string | undefined,
-  llmProxyUrl: string
+  llmProxyUrl: string,
+  persona?: PersonaInput
 ): MergedSettings {
   // 深拷贝 A 作为 base（绝不修改原始对象）
   const merged = cloneDeep(platformSettings.settings_jsonb) as Record<string, unknown>;
@@ -118,6 +130,11 @@ export function mergeSettings(
   // 会弹出「您的用户设定 / 用户设定名称」面板。强制写 false，彻底不弹（每次 force provision 重申）。
   lodashSet(merged, 'firstRun', false);
 
+  // 注入用户自己的 TG persona（名字 + 头像）。平台种子里 name1/user_avatar/personas 写死了
+  // 运营 default-user 的 persona（如 user-default.png→"linshu"），若不覆盖则所有用户都显示同一名字。
+  // persona 段不在 writable_paths（属平台管控），每次 provision 覆盖写以对齐当前 TG 身份。
+  applyUserPersona(merged, persona);
+
   // 净化 accountStorage 中的抽屉「钉住/展开」状态：这些是运营端在完整 ST 里编辑预设时残留的
   // 界面状态（见 vendor scripts/util/AccountStorage.js + RossAscends-mods.js），会被一并写进
   // platform_settings 并下发给所有用户，导致「AI Response Configuration / 对话补全预设」抽屉
@@ -149,6 +166,30 @@ function sanitizeAccountStorageDrawerState(merged: Record<string, unknown>): voi
   for (const key of drawerStateKeys) {
     if (key in store) store[key] = 'false';
   }
+}
+
+/**
+ * 把用户 TG persona 注入 merged settings：
+ *   - name1                              → 对话/回复里显示的用户名
+ *   - user_avatar                        → 当前 persona 头像文件名
+ *   - power_user.personas                → { <avatar>: <name> }（整体替换，清掉运营残留如 linshu）
+ *   - power_user.persona_descriptions    → { <avatar>: { position, description } }
+ * name 为空则不动（保留平台默认 persona，例如浏览器 bypass 无 TG 身份时）。
+ */
+function applyUserPersona(merged: Record<string, unknown>, persona?: PersonaInput): void {
+  if (!persona || !persona.name) return;
+
+  const existingAvatar = lodashGet(merged, 'user_avatar');
+  const avatarFile =
+    persona.avatarFile ||
+    (typeof existingAvatar === 'string' && existingAvatar ? existingAvatar : 'user-default.png');
+
+  lodashSet(merged, 'name1', persona.name);
+  lodashSet(merged, 'user_avatar', avatarFile);
+  lodashSet(merged, 'power_user.personas', { [avatarFile]: persona.name });
+  lodashSet(merged, 'power_user.persona_descriptions', {
+    [avatarFile]: { position: 0, description: '' },
+  });
 }
 
 /** 构造兜底的 character_ref 值（platform_<fallback_uuid>.png） */
