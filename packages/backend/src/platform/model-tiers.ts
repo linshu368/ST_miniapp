@@ -15,15 +15,10 @@ export interface ModelTierConfig {
 }
 
 const MODEL_TIER_MAP: Record<string, ModelTierConfig> = {
-  'google/gemini-2.5-flash': {
+  'google/gemini-3.1-flash-lite': {
     tier: 'standard',
     deductionRate: 0,
-    displayName: 'Gemini 2.5 Flash',
-  },
-  'anthropic/claude-sonnet-4': {
-    tier: 'premium',
-    deductionRate: 0,
-    displayName: 'Claude Sonnet 4',
+    displayName: 'Gemini 3.1 Flash Lite',
   },
 };
 
