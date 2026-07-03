@@ -17,19 +17,19 @@ export interface ModelTierConfig {
 const MODEL_TIER_MAP: Record<string, ModelTierConfig> = {
   'google/gemini-2.5-flash': {
     tier: 'standard',
-    deductionRate: 10,
+    deductionRate: 0,
     displayName: 'Gemini 2.5 Flash',
   },
   'anthropic/claude-sonnet-4': {
     tier: 'premium',
-    deductionRate: 15,
+    deductionRate: 0,
     displayName: 'Claude Sonnet 4',
   },
 };
 
 const DEFAULT_TIER: ModelTierConfig = {
   tier: 'standard',
-  deductionRate: 10,
+  deductionRate: 0,
   displayName: 'Unknown Model',
 };
 
