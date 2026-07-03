@@ -170,7 +170,8 @@ function sanitizeAccountStorageDrawerState(merged: Record<string, unknown>): voi
 
 /**
  * 把用户 TG persona 注入 merged settings：
- *   - name1                              → 对话/回复里显示的用户名
+ *   - username                           → ST 启动时真正读取并注入 name1 的键（关键）
+ *   - name1                              → 对话/回复里显示的用户名（内存态，落盘键实为 username）
  *   - user_avatar                        → 当前 persona 头像文件名
  *   - power_user.personas                → { <avatar>: <name> }（整体替换，清掉运营残留如 linshu）
  *   - power_user.persona_descriptions    → { <avatar>: { position, description } }
@@ -184,6 +185,12 @@ function applyUserPersona(merged: Record<string, unknown>, persona?: PersonaInpu
     persona.avatarFile ||
     (typeof existingAvatar === 'string' && existingAvatar ? existingAvatar : 'user-default.png');
 
+  // ST 启动时是从 settings.username 读用户显示名注入内存 name1（见 vendor script.js
+  // getSettings: `if (settings.username) name1 = settings.username`），保存时又把 name1
+  // 写回 settings.username（saveSettings: `username: name1`）。settings.json 里的 name1
+  // 键根本不被 ST 读取——只写 name1 时 ST 仍用平台种子里的 username（"linshu"），
+  // 导致头像正确（user_avatar 是对的键）但名字恒为 linshu。必须写 username 这个真键。
+  lodashSet(merged, 'username', persona.name);
   lodashSet(merged, 'name1', persona.name);
   lodashSet(merged, 'user_avatar', avatarFile);
   lodashSet(merged, 'power_user.personas', { [avatarFile]: persona.name });
