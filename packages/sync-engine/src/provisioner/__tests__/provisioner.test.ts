@@ -127,6 +127,7 @@ function makeProvisionData(userSettings: UserSettingsRow | null = null): Provisi
     apiConfig: null,
     userSettings,
     systemFallbackCharacterId: CHAR_UUID,
+    userPersona: { name: null, avatarUrl: null },
   };
 }
 

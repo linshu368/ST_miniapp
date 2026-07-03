@@ -18,12 +18,15 @@ import { FastifyInstance } from 'fastify';
 import { createHmac } from 'node:crypto';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
+import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { getSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
 import { ok, fail } from '@miniapp/shared';
 import { deriveStHandle } from '@miniapp/shared';
 import type { EnsureStCharacterData } from '@miniapp/shared';
 import { cacheStCookie } from '../lib/st-cookie.js';
+
+const miniappUserSettings = new MiniappUserSettingsRepository();
 
 // ─── 密码派生（与 sync-engine/provisioner/st-user.ts 保持一致） ──────────────
 
@@ -198,6 +201,15 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         const dbUser = await getOrCreateDbUser(request.user);
         const tgIdStr = request.user.id.toString();
         const stHandle = deriveStHandle(tgIdStr);
+
+        // 落库 TG 身份（名字/头像）到 miniapp_user_settings，供 provision 注入 ST persona。
+        // 必须在 provision 前执行，否则 sync-engine 读不到当前用户的名字/头像（回退平台默认）。
+        // 非致命：失败仅记录警告，不阻断登录（persona 会退回平台默认）。
+        try {
+          await miniappUserSettings.getOrCreate(dbUser.id, request.user);
+        } catch (err) {
+          request.log.warn({ err: String(err) }, '[bridge] 落库 TG persona 失败（不阻断登录）');
+        }
 
         // ── 2. 读 st_initialized_at 判断是否首次登录 ───────────────────────
         const db = getSupabaseClient();
