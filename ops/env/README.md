@@ -13,6 +13,12 @@
 
 拓扑与服务创建步骤见 [`../railway/README.md`](../railway/README.md)。
 
+> ⚠️ **dev / production 服务名不同**：Railway 同一 project 禁止同名 service，`development`
+> 已占用 `nginx` / `st-bundle`，故 `production` 环境实际服务名为 **`nginx-pro` / `st-bundle-pro`**
+> （卷 `st-data-pro`），backend 两环境同名 **`stminiapp`**。因此 prod 的内网地址用
+> `st-bundle-pro.railway.internal`（backend 侧 `ST_BASE_URL` / `ST_PROVISION_URL`、nginx 侧
+> `ST_UPSTREAM` 都要指向它）。对照表见 [`../railway/README.md`](../railway/README.md#-环境与服务名对照dev-vs-production)。
+
 ## ⚠️ 跨服务逐字一致密钥
 
 以下两个密钥**必须 backend 与 st-bundle 两个服务完全相同**，否则鉴权 / 扣费链断：
