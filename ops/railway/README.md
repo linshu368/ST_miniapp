@@ -46,6 +46,42 @@
             backend ──(Railway 内网, 不经 nginx)──▶ st-bundle:9091 (provision-api)
 ```
 
+## ⚠️ 环境与服务名对照（dev vs production）
+
+Railway **同一 project 下不允许两个同名 service**。本仓库的 `gallant-insight`
+project 同时承载 `development` 与 `production` 两个环境，`development` 已先占用了
+`nginx` / `st-bundle` 这两个名字，因此 `production` 环境的对应服务只能改名加 `-pro`
+后缀。**backend 服务两个环境同名 `stminiapp`**（它在 dev 下未与其他服务重名）。
+
+| 角色             | development 服务名 | production 服务名   | 内网 DNS（prod）                                                                | 卷（prod）                             |
+| ---------------- | ------------------ | ------------------- | ------------------------------------------------------------------------------- | -------------------------------------- |
+| 网关 nginx       | `nginx`            | **`nginx-pro`**     | `nginx-pro.railway.internal`（对外公网：`nginx-pro-production.up.railway.app`） | —                                      |
+| ST + sync-engine | `st-bundle`        | **`st-bundle-pro`** | `st-bundle-pro.railway.internal`                                                | `st-data-pro`（`/home/node/app/data`） |
+| backend Fastify  | `stminiapp`        | `stminiapp`         | `stminiapp.railway.internal:8080`                                               | —                                      |
+
+因此 **production 环境**的跨服务地址与 dev 不同，配置时按下表取值（下文
+「内网服务名约定」表中的 `st-bundle.railway.internal` 在 prod 应替换为
+`st-bundle-pro.railway.internal`）：
+
+| 变量（所在服务）                 | production 取值                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| `ST_BASE_URL`（stminiapp）       | `http://st-bundle-pro.railway.internal:8000`                                               |
+| `ST_PROVISION_URL`（stminiapp）  | `http://st-bundle-pro.railway.internal:9091`                                               |
+| `ST_UPSTREAM`（nginx-pro）       | `st-bundle-pro.railway.internal:8000`                                                      |
+| `BACKEND_UPSTREAM`（nginx-pro）  | `stminiapp.railway.internal:8080`                                                          |
+| `LLM_PROXY_URL`（st-bundle-pro） | `http://stminiapp.railway.internal:8080/api/platform/llm-proxy/v1`（backend 同名，无需改） |
+| `PORT`（nginx-pro）              | `80`（Railway 据此路由公网域名到容器；缺失会 502）                                         |
+
+> nginx-pro 的构建源为仓库（分支 `main`），**Root Directory 必须设为 `ops/nginx`**
+> （其 Dockerfile 内 `COPY nginx.conf` 相对构建上下文；根目录留 `/` 会构建失败
+> `"/nginx.conf": not found`）。st-bundle-pro / stminiapp 用仓库根 + 各自 Dockerfile
+> 路径（`/ops/docker/Dockerfile.st-bundle`；stminiapp 走 Railpack）。
+
+> `.railway/railway.ts` 里的 `service('nginx'|'st-bundle', ...)` 名字对应 **dev**
+> 语义命名；prod 环境实际为 `-pro` 后缀。IaC 目前未在 prod 实际 apply（本仓库 CLI
+> 版本不支持 `config apply`），prod 三服务由控制台创建 + `railway variables --set`
+> 注入，故此命名差异不影响运行时。
+
 ## 配置进仓库：为什么是 `.railway/railway.ts` 而不是 `railway.json`
 
 Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只能写 `build` /
