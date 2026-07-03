@@ -89,6 +89,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 021_miniapp_wish_roles.sql # MiniApp 角色许愿、24h 限流、许愿奖励
 023_move_wishes_to_miniapp.sql # 删除旧 Bot 许愿会话表，许愿池改为 MiniApp 页面
 024_cs_platform.sql # 内部 CS Platform：SQL 用户分层、Telegram 1V1 回访 SOP、Excel 导出审计
+025_preset_auto_promote.sql # 预设自动晋升触发器 + canonical_jsonb 序列化函数
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
@@ -214,7 +215,11 @@ WHERE id = '33333333-3333-4333-8333-000000000001';
 
 ### platform_settings 后续版本
 
-阶段一种子只写 `platform_version = 1`。运营后续发布新版时：
+阶段一种子只写 `platform_version = 1`。
+
+**预设更新场景**（最常见）：运营无需手动操作 `platform_settings`，只需在 `platform_presets` 中 INSERT 一行 `is_default=true` 的新预设，触发器 `trg_preset_auto_promote`（025）会自动追加新版 `platform_settings`（详见下方「运营更新预设」章节）。
+
+**其他 settings 变更**（如开放新的 writable_paths、修改 main_api 等）：仍需手动 INSERT：
 
 ```sql
 -- platform_version 单调递增；content_hash 不能与历史重复
@@ -226,6 +231,87 @@ INSERT INTO st_platform.platform_settings (
 ```
 
 应用层负责计算 canonical content_hash（key 排序后 sha256），同 hash 会被 UNIQUE 约束拒绝。
+
+### 运营更新预设
+
+> **前置条件**：migration `025_preset_auto_promote.sql` 已执行。
+
+运营只需执行**一条 SQL**，触发器自动完成所有关联操作：
+
+```sql
+-- ═══════════════════════════════════════════════════════════════════════
+-- 运营更新预设：一条 INSERT 即可
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- 作用：向 platform_presets 插入一行新的默认预设。
+--       触发器 trg_preset_auto_promote 会自动完成以下操作：
+--         ① 将旧默认预设的 is_default 置为 false、enabled 置为 false
+--         ② 复制最新 platform_settings，将 preset 指针更新为新预设
+--         ③ platform_version 自动 +1
+--         ④ content_hash 自动计算
+--         ⑤ 插入新的 platform_settings 行
+--
+-- 下发时机：
+--   - 新用户：下次登录时 provision 自动下发新预设文件 + 新 settings 指针
+--   - 老用户：settings.json 每次登录都会刷新（指针生效），新预设文件因
+--             UUID 不同（文件不存在）也会被写入，无需 force
+
+INSERT INTO st_platform.platform_presets (display_name, preset_payload, is_default)
+VALUES (
+  '预设名称',                  -- 运营展示名（不影响落盘文件名）
+  '{
+    "完整的 ST OpenAI 预设 JSON，
+     从 SillyTavern 的 OpenAI Settings/*.json 中导出"
+  }'::jsonb,
+  true                         -- 标记为默认 → 触发自动晋升
+);
+```
+
+**执行后的验证查询**：
+
+```sql
+-- ① 检查当前默认预设（应只有一行 is_default=true）
+SELECT id, display_name, is_default, enabled, created_at
+  FROM st_platform.platform_presets
+ ORDER BY created_at DESC
+ LIMIT 5;
+
+-- ② 检查 platform_settings 最新版本（指针应指向新预设）
+SELECT platform_version,
+       settings_jsonb->'oai_settings'->>'preset_settings_openai' AS preset_pointer,
+       created_by, note, created_at
+  FROM st_platform.platform_settings
+ ORDER BY platform_version DESC
+ LIMIT 3;
+```
+
+**触发器内部流程（运营无需关心，仅供排障参考）**：
+
+```
+INSERT is_default=true
+  │
+  ├─ ① UPDATE platform_presets SET is_default=false, enabled=false WHERE is_default=true
+  │     → 旧默认预设降级并禁用（新用户不再收到旧预设文件）
+  │
+  ├─ ② SELECT latest platform_settings (max platform_version)
+  │     → 取最新一行 settings 快照作为基底
+  │
+  ├─ ③ jsonb_set(settings_jsonb, 'oai_settings.preset_settings_openai', 'platform_<新UUID>')
+  │     → 更新 settings 中的预设指针
+  │
+  ├─ ④ platform_version + 1, canonical_jsonb → sha256 → content_hash
+  │     → 版本递增 + 计算跨语言一致的 hash（使用 canonical_jsonb 函数）
+  │
+  └─ ⑤ INSERT INTO platform_settings (new version row)
+        → 追加新版 settings 行（append-only，不修改历史）
+```
+
+**注意事项**：
+
+- `is_default` 必须设为 `true`，否则触发器不会执行，预设只会作为普通行写入
+- `preset_payload` 必须是完整可用的 ST 预设 JSON，provision 会原样写入用户的 `OpenAI Settings/` 目录
+- 旧预设文件不会从已有用户的磁盘上删除（provision 无清理逻辑），但指针已切换，ST 不会再使用旧文件
+- 如需回滚到旧预设，不能直接 UPDATE（append-only），需 INSERT 一行新预设指向旧 payload
 
 ## 回滚
 

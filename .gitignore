@@ -1,4 +1,5 @@
 node_modules/
+.pnpm-store/
 .next/
 dist/
 .env
@@ -32,3 +33,4 @@ vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/
 
 
 kk标签测试/
+.env*

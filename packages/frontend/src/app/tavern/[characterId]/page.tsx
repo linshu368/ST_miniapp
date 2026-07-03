@@ -1,42 +1,54 @@
 'use client';
 
 import { useEffect } from 'react';
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { Home } from 'lucide-react';
 import { platformAction, useBridgeStatus } from '@/lib/bridge';
-import { ModelTierSwitcher } from '@/components/tavern/model-tier-switcher';
-import { ChatSidebar } from '@/components/tavern/chat-sidebar';
+import { useEnsureStCharacterMutation } from '@/lib/api/st-bridge';
+import { ChatHeader } from '@/components/tavern/chat-header';
+import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
+import { useSTMirrorStore } from '@/stores/st-mirror';
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const bridgeStatus = useBridgeStatus();
+  const { mutateAsync: ensureCharacter } = useEnsureStCharacterMutation();
 
   useEffect(() => {
     if (!characterId || bridgeStatus !== 'ready') return;
-    const avatar = `platform_${characterId}.png`;
-    platformAction('selectCharacter', { avatar }).catch((err) => {
-      console.error('[TavernChatPage] selectCharacter failed:', err);
-    });
-  }, [bridgeStatus, characterId]);
+
+    let cancelled = false;
+
+    // 懒下发：先确保「当前打开的这张卡」已落盘（登录不再全量下发），再切角色。
+    // ensure 失败不阻断：卡可能已缓存，交给 selectCharacter 的重载+重试兜底。
+    void (async () => {
+      try {
+        await ensureCharacter(characterId);
+      } catch (err) {
+        console.error('[TavernChatPage] ensureCharacter failed:', err);
+      }
+      if (cancelled) return;
+
+      const avatar = `platform_${characterId}.png`;
+      platformAction('selectCharacter', { avatar })
+        .then((result) => {
+          if (result.chatId) {
+            useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
+          }
+        })
+        .catch((err) => {
+          console.error('[TavernChatPage] selectCharacter failed:', err);
+        });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bridgeStatus, characterId, ensureCharacter]);
 
   return (
     <div className="relative w-full h-full">
-      {/* Toolbar — floats on top of iframe */}
-      <div className="absolute top-2 left-0 right-0 z-20 flex items-center justify-between px-3">
-        <div className="flex items-center gap-2">
-          <ChatSidebar />
-          <Link
-            href="/"
-            aria-label="返回大厅"
-            className="inline-flex h-8 items-center gap-1.5 rounded-full bg-black/40 px-3 text-xs font-medium text-white/80 backdrop-blur-sm transition-colors hover:text-white"
-          >
-            <Home className="h-4 w-4" aria-hidden />
-            <span>大厅</span>
-          </Link>
-        </div>
-        <ModelTierSwitcher />
-      </div>
+      <ChatHeader />
+      <ChatToolsMenu />
     </div>
   );
 }

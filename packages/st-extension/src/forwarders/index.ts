@@ -27,8 +27,11 @@ export function registerForwarders(server: BridgeServer): void {
     server.sendEvent('chat:deleted', { fileName });
   });
 
-  ctx.eventSource.on(et.CHAT_RENAMED, (oldFileName: string, newFileName: string) => {
-    server.sendEvent('chat:renamed', { oldFileName, newFileName });
+  ctx.eventSource.on(et.CHAT_RENAMED, (eventData: { oldFileName: string; newFileName: string }) => {
+    server.sendEvent('chat:renamed', {
+      oldFileName: eventData.oldFileName,
+      newFileName: eventData.newFileName,
+    });
   });
 
   // ── Generation events ──

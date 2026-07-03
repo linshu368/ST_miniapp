@@ -71,36 +71,38 @@ export default function ProfilePage() {
   return (
     <main
       data-app-shell="profile"
-      className="mx-auto flex min-h-screen max-w-md flex-col bg-[#080014] pb-10 pt-[env(safe-area-inset-top)] relative"
+      className="mx-auto flex min-h-screen w-full max-w-screen-xl flex-col bg-[#080014] pb-10 pt-[env(safe-area-inset-top)] relative"
     >
       {/* 顶部空间感 Banner */}
       <div className="absolute top-0 left-0 right-0 h-48 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/40 via-purple-900/10 to-transparent pointer-events-none" />
 
-      {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=签到 + 设置 */}
-      <header className="flex items-center justify-between px-5 py-3 relative z-10">
-        <Link
-          href="/profile/recharge"
-          aria-label={`当前星尘 ${credits}，前往星尘商店`}
-          className="group inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-4 py-2 text-sm transition-all duration-300 hover:bg-white/10 hover:border-white/20"
-        >
-          <Sparkles
-            className="h-4 w-4 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.8)] transition-transform group-hover:scale-110"
-            aria-hidden
-          />
-          <span className="font-bold tracking-tight text-white">{formatNumber(credits)}</span>
-          <span className="text-white/30">·</span>
-          <span className="text-white/80 font-medium">星尘商店</span>
-          <ChevronRight className="h-3.5 w-3.5 text-white/50" aria-hidden />
-        </Link>
-        <div className="flex items-center gap-2">
+      {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=签到 + 设置占位 */}
+      <header className="flex items-center justify-between gap-2 px-4 sm:px-5 py-3 relative z-10">
+        <div className="flex min-w-0 shrink-0 items-center">
+          <Link
+            href="/profile/recharge"
+            aria-label={`当前星尘 ${credits}，前往星尘商店`}
+            className="group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm transition-all duration-300 hover:bg-white/10 hover:border-white/20 whitespace-nowrap"
+          >
+            <Sparkles
+              className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.8)] transition-transform group-hover:scale-110"
+              aria-hidden
+            />
+            <span className="font-bold tracking-tight text-white">{formatNumber(credits)}</span>
+            <span className="text-white/30">·</span>
+            <span className="text-white/80 font-medium">星尘商店</span>
+            <ChevronRight className="h-3.5 w-3.5 text-white/50" aria-hidden />
+          </Link>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <Button
             disabled={!checkin?.can_claim || claimCheckin.isPending}
             onClick={() => void claimDailyCheckin()}
             size="sm"
-            className="h-9 rounded-full border border-indigo-300/20 bg-indigo-400/15 px-3 text-xs font-bold text-indigo-100 shadow-none hover:bg-indigo-400/25 disabled:border-white/10 disabled:bg-white/5 disabled:text-white/35"
+            className="h-8 sm:h-9 rounded-full border border-indigo-300/20 bg-indigo-400/15 px-2.5 sm:px-3 text-[11px] sm:text-xs font-bold text-indigo-100 shadow-none hover:bg-indigo-400/25 disabled:border-white/10 disabled:bg-white/5 disabled:text-white/35 whitespace-nowrap shrink-0"
             aria-label="每日签到"
           >
-            <Gift className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+            <Gift className="mr-1 sm:mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             {claimCheckin.isPending
               ? '领取中'
               : checkin?.can_claim
@@ -108,14 +110,13 @@ export default function ProfilePage() {
                 : '已签到'}
           </Button>
           <Button
-            asChild
+            disabled
             variant="ghost"
             size="icon"
-            className="rounded-full text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+            className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 rounded-full text-white/30 opacity-60"
+            aria-label="设置暂未开放"
           >
-            <Link href="/profile/settings" aria-label="设置">
-              <Settings className="h-5 w-5" aria-hidden />
-            </Link>
+            <Settings className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
           </Button>
         </div>
       </header>
