@@ -16,6 +16,8 @@ import {
   characterStoragePath,
   presetDst,
   ensureDir,
+  userAvatarsDir,
+  userAvatarDst,
 } from '../lib/st-fs.js';
 import { getSupabaseClient } from '../lib/supabase.js';
 import type { CharacterRow, PresetRow, ApiConfigRow } from './fetcher.js';
@@ -117,6 +119,40 @@ export async function writeCharacterById(
 
   writeFileSync(dst, Buffer.from(await data.arrayBuffer()));
   return 'written';
+}
+
+// ─── 写用户 persona 头像 ───────────────────────────────────────────────────────
+/**
+ * 确保用户的 TG 头像落到 data/<handle>/User Avatars/<handle>.png，供 ST persona 使用。
+ *
+ * 文件名用 `<handle>.png`（每用户稳定唯一）。返回可用于 settings.user_avatar 的文件名，
+ * 或 null（无头像源且本地也无缓存）。下载失败不抛错——persona 名字仍能注入，头像回退默认。
+ *
+ * @param handle    - ST 用户 handle
+ * @param avatarUrl - TG photo_url / 用户自定义头像 URL（可为空）
+ * @param force     - true = 总是重新下载覆盖；false = 本地已存在则复用
+ */
+export async function ensureUserAvatar(
+  handle: string,
+  avatarUrl: string | null,
+  force: boolean
+): Promise<string | null> {
+  const filename = `${handle}.png`;
+  const dst = userAvatarDst(handle, filename);
+
+  if (!force && existsSync(dst)) return filename;
+  if (!avatarUrl) return existsSync(dst) ? filename : null;
+
+  try {
+    const res = await fetch(avatarUrl);
+    if (!res.ok) return existsSync(dst) ? filename : null;
+    ensureDir(userAvatarsDir(handle));
+    writeFileSync(dst, Buffer.from(await res.arrayBuffer()));
+    return filename;
+  } catch {
+    // 网络失败不阻断 provision：有旧文件则复用，否则回退默认头像
+    return existsSync(dst) ? filename : null;
+  }
 }
 
 // ─── 写预设 JSON ───────────────────────────────────────────────────────────────

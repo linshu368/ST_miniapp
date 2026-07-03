@@ -66,6 +66,18 @@ export interface ApiConfigRow {
   is_default: boolean;
 }
 
+/**
+ * 用户 ST persona（对话页显示的「用户名 + 头像」）。
+ * 来源：miniapp.miniapp_user_settings（Bridge 登录时按 TG initData 落库）。
+ * name 为空表示无可用 TG 身份（如浏览器 bypass），此时保留平台默认 persona。
+ */
+export interface UserPersona {
+  /** 显示名：display_name || tg_first_name(+ tg_last_name) || tg_username */
+  name: string | null;
+  /** 头像源 URL：avatar_url（== TG photo_url 或用户自定义），可为空 */
+  avatarUrl: string | null;
+}
+
 export interface ProvisionData {
   /** 用户 st_handle，从 users 表读取 */
   stHandle: string;
@@ -81,6 +93,8 @@ export interface ProvisionData {
   userSettings: UserSettingsRow | null;
   /** 系统兜底卡 ID（character_ref 失效时的回退值），来自 runtime_config */
   systemFallbackCharacterId: string | null;
+  /** 用户 ST persona（TG 名字/头像），name 为空表示无可用身份 */
+  userPersona: UserPersona;
 }
 
 // ─── 错误类型 ──────────────────────────────────────────────────────────────────
@@ -180,6 +194,17 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     ? null
     : ((userSettingsResult.data as UserSettingsRow | null) ?? null);
 
+  // 拉取用户 persona（TG 名字/头像），来自 miniapp.miniapp_user_settings。
+  // 允许为空：无行 / 查询失败时 persona.name=null，merger 会保留平台默认 persona。
+  const personaResult = await schemaClient('miniapp')
+    .from('miniapp_user_settings')
+    .select('display_name, tg_first_name, tg_last_name, tg_username, avatar_url')
+    .eq('user_id', userId)
+    .maybeSingle();
+  const userPersona = resolveUserPersona(
+    personaResult.error ? null : (personaResult.data as PersonaSourceRow | null)
+  );
+
   // 解析兜底卡 ID：runtime_config.value 是 JSONB，存储格式为 JSON 字符串 '"uuid"'
   let systemFallbackCharacterId: string | null = null;
   if (!fallbackConfigResult.error && fallbackConfigResult.data) {
@@ -195,7 +220,40 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     apiConfig,
     userSettings,
     systemFallbackCharacterId,
+    userPersona,
   };
+}
+
+// ─── persona 解析 ─────────────────────────────────────────────────────────────
+
+interface PersonaSourceRow {
+  display_name: string | null;
+  tg_first_name: string | null;
+  tg_last_name: string | null;
+  tg_username: string | null;
+  avatar_url: string | null;
+}
+
+/**
+ * 从 miniapp_user_settings 行解析出 ST persona。
+ * 名字优先级：用户自定义 display_name > TG first(+last) > TG username。
+ * 全空则 name=null（保留平台默认 persona，不注入）。
+ */
+function resolveUserPersona(row: PersonaSourceRow | null): UserPersona {
+  if (!row) return { name: null, avatarUrl: null };
+
+  const display = row.display_name?.trim();
+  const fullName = [row.tg_first_name, row.tg_last_name]
+    .map((s) => s?.trim())
+    .filter((s): s is string => Boolean(s))
+    .join(' ')
+    .trim();
+  const username = row.tg_username?.trim();
+
+  const name = display || fullName || username || null;
+  const avatarUrl = row.avatar_url?.trim() || null;
+
+  return { name, avatarUrl };
 }
 
 function loadLocalPlatformSettings(stHandle: string): PlatformSettingsRow {
