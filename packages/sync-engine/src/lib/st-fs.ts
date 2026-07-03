@@ -64,6 +64,26 @@ export function ensureDir(dirPath: string): void {
 }
 
 /**
+ * 扫描某用户 characters/ 目录，返回已落盘的平台角色卡 id 列表
+ * （解析 platform_<id>.png 文件名，非平台卡忽略）。
+ *
+ * 用于 provision characterScope='none'/子集下发 时计算 availableCharIds，
+ * 使 settings merge 的 character_ref 校验/回退按「磁盘上真实存在的卡」进行，
+ * 而不是仅按本次写入结果（懒下发下本次可能一张都没写）。
+ */
+export function listCharacterIds(handle: string): string[] {
+  const dir = charactersDir(handle);
+  if (!existsSync(dir)) return [];
+
+  const ids: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const match = name.match(/^platform_(.+)\.png$/);
+    if (match?.[1]) ids.push(match[1]);
+  }
+  return ids;
+}
+
+/**
  * 扫描 ST_DATA_PATH 下所有 tg-<digits> 或历史 tg_<digits> 格式的用户目录，返回 handle 列表。
  * 用于 watcher 启动时确定需要监听的用户范围。
  */
