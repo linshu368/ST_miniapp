@@ -24,6 +24,8 @@ import type { CharacterRow, PresetRow, ApiConfigRow } from './fetcher.js';
 import type { MergedSettings } from './merger.js';
 import { config } from '../lib/config.js';
 
+export const DEFAULT_USER_AVATAR_FILENAME = '4d015fdd-7f82-482c-912d-466eaa826280.png';
+
 // ─── 写入结果类型 ──────────────────────────────────────────────────────────────
 export interface WriteCharactersResult {
   written: string[];
@@ -126,7 +128,7 @@ export async function writeCharacterById(
  * 确保用户的 TG 头像落到 data/<handle>/User Avatars/<handle>.png，供 ST persona 使用。
  *
  * 文件名用 `<handle>.png`（每用户稳定唯一）。返回可用于 settings.user_avatar 的文件名，
- * 或 null（无头像源且本地也无缓存）。下载失败不抛错——persona 名字仍能注入，头像回退默认。
+ * 无头像源时下载平台默认头像。下载失败不抛错——persona 名字仍能注入，头像回退默认。
  *
  * @param handle    - ST 用户 handle
  * @param avatarUrl - TG photo_url / 用户自定义头像 URL（可为空）
@@ -140,18 +142,38 @@ export async function ensureUserAvatar(
   const filename = `${handle}.png`;
   const dst = userAvatarDst(handle, filename);
 
-  if (!force && existsSync(dst)) return filename;
-  if (!avatarUrl) return existsSync(dst) ? filename : null;
+  if (avatarUrl) {
+    if (!force && existsSync(dst)) return filename;
+
+    try {
+      const res = await fetch(avatarUrl);
+      if (res.ok) {
+        ensureDir(userAvatarsDir(handle));
+        writeFileSync(dst, Buffer.from(await res.arrayBuffer()));
+        return filename;
+      }
+    } catch {
+      // 网络失败不阻断 provision：有旧文件则复用，否则回退默认头像
+    }
+
+    if (existsSync(dst)) return filename;
+  }
+
+  return await ensureDefaultUserAvatar(handle);
+}
+
+async function ensureDefaultUserAvatar(handle: string): Promise<string | null> {
+  const dst = userAvatarDst(handle, DEFAULT_USER_AVATAR_FILENAME);
+  if (existsSync(dst)) return DEFAULT_USER_AVATAR_FILENAME;
 
   try {
-    const res = await fetch(avatarUrl);
-    if (!res.ok) return existsSync(dst) ? filename : null;
+    const res = await fetch(config.DEFAULT_USER_AVATAR_URL);
+    if (!res.ok) return null;
     ensureDir(userAvatarsDir(handle));
     writeFileSync(dst, Buffer.from(await res.arrayBuffer()));
-    return filename;
+    return DEFAULT_USER_AVATAR_FILENAME;
   } catch {
-    // 网络失败不阻断 provision：有旧文件则复用，否则回退默认头像
-    return existsSync(dst) ? filename : null;
+    return null;
   }
 }
 

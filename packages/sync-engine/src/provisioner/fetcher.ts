@@ -69,7 +69,7 @@ export interface ApiConfigRow {
 /**
  * 用户 ST persona（对话页显示的「用户名 + 头像」）。
  * 来源：miniapp.miniapp_user_settings（Bridge 登录时按 TG initData 落库）。
- * name 为空表示无可用 TG 身份（如浏览器 bypass），此时保留平台默认 persona。
+ * 无可用 TG 身份时使用平台默认 persona。
  */
 export interface UserPersona {
   /** 显示名：display_name || tg_first_name(+ tg_last_name) || tg_username */
@@ -96,6 +96,8 @@ export interface ProvisionData {
   /** 用户 ST persona（TG 名字/头像），name 为空表示无可用身份 */
   userPersona: UserPersona;
 }
+
+export const DEFAULT_USER_PERSONA_NAME = '用户';
 
 // ─── 错误类型 ──────────────────────────────────────────────────────────────────
 export class FetchError extends Error {
@@ -237,10 +239,10 @@ interface PersonaSourceRow {
 /**
  * 从 miniapp_user_settings 行解析出 ST persona。
  * 名字优先级：用户自定义 display_name > TG first(+last) > TG username。
- * 全空则 name=null（保留平台默认 persona，不注入）。
+ * 全空则使用默认名，避免 ST 对话页显示运营侧默认 persona。
  */
 function resolveUserPersona(row: PersonaSourceRow | null): UserPersona {
-  if (!row) return { name: null, avatarUrl: null };
+  if (!row) return { name: DEFAULT_USER_PERSONA_NAME, avatarUrl: null };
 
   const display = row.display_name?.trim();
   const fullName = [row.tg_first_name, row.tg_last_name]
@@ -250,7 +252,7 @@ function resolveUserPersona(row: PersonaSourceRow | null): UserPersona {
     .trim();
   const username = row.tg_username?.trim();
 
-  const name = display || fullName || username || null;
+  const name = display || fullName || username || DEFAULT_USER_PERSONA_NAME;
   const avatarUrl = row.avatar_url?.trim() || null;
 
   return { name, avatarUrl };
