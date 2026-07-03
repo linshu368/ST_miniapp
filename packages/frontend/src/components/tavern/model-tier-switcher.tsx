@@ -7,13 +7,13 @@ import { useState } from 'react';
 const TIERS = [
   {
     tier: 'standard' as const,
-    modelName: 'google/gemini-2.5-flash',
+    modelName: 'google/gemini-3.1-flash-lite',
     provider: 'openrouter',
     label: '快餐模型',
   },
   {
     tier: 'premium' as const,
-    modelName: 'anthropic/claude-sonnet-4',
+    modelName: 'google/gemini-3.1-flash-lite',
     provider: 'openrouter',
     label: '基础模型',
   },
