@@ -41,11 +41,14 @@ export interface WritePresetsResult {
  * @param handle     - ST 用户 handle
  * @param characters - 已拉取的平台角色卡列表
  * @param force      - true = 总是覆盖；false = 目标文件已存在则跳过（懒下发）
+ * @param onlyIds    - 可选：只下发这些 id 的卡（子集下发，用于按需/懒下发）；
+ *                     不传 = 下发全部（保持原有全量语义）
  */
 export async function writeCharacters(
   handle: string,
   characters: CharacterRow[],
-  force: boolean
+  force: boolean,
+  onlyIds?: string[]
 ): Promise<WriteCharactersResult> {
   ensureDir(charactersDir(handle));
 
@@ -53,7 +56,9 @@ export async function writeCharacters(
   const skipped: string[] = [];
   const missing: string[] = [];
 
-  for (const char of characters) {
+  const targets = onlyIds ? characters.filter((c) => onlyIds.includes(c.id)) : characters;
+
+  for (const char of targets) {
     const dst = characterDst(handle, char.id);
 
     if (!force && existsSync(dst)) {
@@ -77,6 +82,41 @@ export async function writeCharacters(
   }
 
   return { written, skipped, missing };
+}
+
+// ─── 按 id 下发单张角色卡（懒下发关键路径）──────────────────────────────────────
+/**
+ * 只确保「一张」平台角色卡 PNG 落盘，供进入对话页时按需下发。
+ * 不依赖 CharacterRow（storage 路径与目标文件名都只由 characterId 决定），
+ * 因此无需先拉全量 characters 列表，关键路径尽量轻。
+ *
+ * @param handle      - ST 用户 handle
+ * @param characterId - 平台角色卡 id（UUID）
+ * @param force       - true = 总是覆盖；false = 已存在则跳过
+ * @returns 'written' | 'skipped' | 'missing'（storage 无此卡）
+ */
+export async function writeCharacterById(
+  handle: string,
+  characterId: string,
+  force: boolean
+): Promise<'written' | 'skipped' | 'missing'> {
+  ensureDir(charactersDir(handle));
+
+  const dst = characterDst(handle, characterId);
+  if (!force && existsSync(dst)) {
+    return 'skipped';
+  }
+
+  const { data, error } = await getSupabaseClient()
+    .storage.from(config.CHARACTER_STORAGE_BUCKET)
+    .download(characterStoragePath(characterId));
+
+  if (error || !data) {
+    return 'missing';
+  }
+
+  writeFileSync(dst, Buffer.from(await data.arrayBuffer()));
+  return 'written';
 }
 
 // ─── 写预设 JSON ───────────────────────────────────────────────────────────────
