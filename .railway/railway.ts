@@ -24,6 +24,13 @@
  *    `railway config apply`。密钥类变量在控制台/IaC secret 注入，**不写进本文件**。
  *    各服务完整变量见 ops/env/*.env.production.example。
  *
+ * ⚠️ dev 与 production 服务名不同（Railway 同一 project 禁止同名 service，dev 已占用
+ *    `nginx` / `st-bundle`）：下方 service('nginx') / service('st-bundle') 为 **dev** 命名；
+ *    **production 环境实际服务名为 `nginx-pro` / `st-bundle-pro`（卷 `st-data-pro`），
+ *    backend 两环境同名 `stminiapp`**。因此 prod 内网 DNS 为 `st-bundle-pro.railway.internal`。
+ *    本仓库 CLI 版本不支持 `config apply`，prod 三服务由控制台创建 + `railway variables --set`
+ *    注入，故此命名差异不影响运行时。详见 ops/railway/README.md「环境与服务名对照」。
+ *
  * 镜像 tag：通过环境变量注入（apply 时 `GHCR_OWNER=... IMAGE_TAG=sha-xxxxxxx railway ...`）。
  * ============================================================================
  */
