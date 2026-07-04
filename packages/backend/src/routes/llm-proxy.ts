@@ -17,6 +17,7 @@ import { Readable, Transform } from 'node:stream';
 import { verifyPlatformToken } from '../lib/llm-token.js';
 import { getModelTier } from '../platform/model-tiers.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
+import { saveChatHistory } from '../lib/chat-history-logger.js';
 
 const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
 const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -79,6 +80,9 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       // ── 解析 model 并查配置表 ────────────────────────────────────────────
       let modelName = '';
       let deductionRate = 0;
+      let chatMessages: unknown[] = [];
+      let userInput = '';
+
       const isChatCompletion =
         request.method !== 'GET' &&
         request.method !== 'HEAD' &&
@@ -86,7 +90,19 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         typeof request.body === 'object';
 
       if (isChatCompletion) {
-        modelName = ((request.body as Record<string, unknown>).model as string) || '';
+        const body = request.body as Record<string, unknown>;
+        modelName = (body.model as string) || '';
+
+        if (Array.isArray(body.messages)) {
+          chatMessages = body.messages;
+          for (let i = chatMessages.length - 1; i >= 0; i--) {
+            const msg = chatMessages[i] as { role?: string; content?: string };
+            if (msg.role === 'user' && msg.content) {
+              userInput = msg.content;
+              break;
+            }
+          }
+        }
       }
 
       if (modelName) {
@@ -158,8 +174,24 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         });
       }
 
-      // 上游非 2xx → 不扣费，直接透传
+      // 上游非 2xx → 不扣费，记录失败，直接透传
       if (!upstreamRes.ok) {
+        if (isChatCompletion && userInput) {
+          saveChatHistory(
+            {
+              user_id: userId,
+              model: modelName,
+              user_input: userInput,
+              assistant_reply: null,
+              history: chatMessages,
+              status: 'upstream_error',
+              upstream_status: upstreamRes.status,
+              deduction_rate: 0,
+            },
+            request.log
+          );
+        }
+
         reply.status(upstreamRes.status);
         upstreamRes.headers.forEach((value, key) => {
           if (!STRIP_HEADERS.has(key.toLowerCase())) {
@@ -188,48 +220,122 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       const isSSE = contentType.includes('text/event-stream');
 
       if (!upstreamRes.body) {
-        // 无 body 非流式，成功即扣费
         if (deductionRate > 0) {
           deductAfterSuccess(userId, deductionRate, modelName, request);
+        }
+        if (isChatCompletion && userInput) {
+          saveChatHistory(
+            {
+              user_id: userId,
+              model: modelName,
+              user_input: userInput,
+              assistant_reply: null,
+              history: chatMessages,
+              status: 'success',
+              deduction_rate: deductionRate,
+            },
+            request.log
+          );
         }
         return reply.send('');
       }
 
-      if (isSSE && deductionRate > 0) {
-        // SSE 流式：拦截 [DONE] 标记，流正常结束后扣费
+      if (isSSE) {
         const upstreamNodeStream = Readable.fromWeb(
           upstreamRes.body as import('stream/web').ReadableStream
         );
 
         let streamCompleted = false;
-        const deductionTap = new Transform({
+        const replyChunks: string[] = [];
+
+        const sseTap = new Transform({
           transform(chunk, _encoding, callback) {
             const text = chunk.toString();
             if (text.includes('data: [DONE]')) {
               streamCompleted = true;
             }
+
+            // 从 SSE data 行中提取 delta content 累积 assistant reply
+            const lines = text.split('\n');
+            for (const line of lines) {
+              if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+              try {
+                const json = JSON.parse(line.slice(6));
+                const delta = json?.choices?.[0]?.delta?.content;
+                if (typeof delta === 'string') {
+                  replyChunks.push(delta);
+                }
+              } catch {
+                // non-JSON data line, skip
+              }
+            }
+
             callback(null, chunk);
           },
           flush(callback) {
             if (streamCompleted) {
-              deductAfterSuccess(userId, deductionRate, modelName, request);
+              if (deductionRate > 0) {
+                deductAfterSuccess(userId, deductionRate, modelName, request);
+              }
+              if (isChatCompletion && userInput) {
+                saveChatHistory(
+                  {
+                    user_id: userId,
+                    model: modelName,
+                    user_input: userInput,
+                    assistant_reply: replyChunks.join(''),
+                    history: chatMessages,
+                    status: 'success',
+                    deduction_rate: deductionRate,
+                  },
+                  request.log
+                );
+              }
             } else {
               request.log.warn(
                 { userId, model: modelName },
                 '[llm-proxy] stream ended without [DONE], skipping deduction'
               );
+              if (isChatCompletion && userInput) {
+                saveChatHistory(
+                  {
+                    user_id: userId,
+                    model: modelName,
+                    user_input: userInput,
+                    assistant_reply: replyChunks.length > 0 ? replyChunks.join('') : null,
+                    history: chatMessages,
+                    status: 'stream_interrupted',
+                    deduction_rate: 0,
+                  },
+                  request.log
+                );
+              }
             }
             callback();
           },
         });
 
-        return reply.send(upstreamNodeStream.pipe(deductionTap));
+        return reply.send(upstreamNodeStream.pipe(sseTap));
       }
 
       // 非 SSE 响应但有 body（如非流式 chat completion）
       const nodeStream = Readable.fromWeb(upstreamRes.body as import('stream/web').ReadableStream);
       if (deductionRate > 0) {
         deductAfterSuccess(userId, deductionRate, modelName, request);
+      }
+      if (isChatCompletion && userInput) {
+        saveChatHistory(
+          {
+            user_id: userId,
+            model: modelName,
+            user_input: userInput,
+            assistant_reply: null,
+            history: chatMessages,
+            status: 'success',
+            deduction_rate: deductionRate,
+          },
+          request.log
+        );
       }
       return reply.send(nodeStream);
     }
