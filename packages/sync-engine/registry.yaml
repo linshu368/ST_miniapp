@@ -124,6 +124,13 @@ entries:
     notes: >
       field_path='*' 表示整个文件，同步引擎覆盖写 data/<handle>/settings.json。
       下发顺序强约束：此条目 order=100 > 所有 asset 条目 order（10, 20）。
+      预设应用（preset-apply.ts）：merge 时先按 oai_settings.preset_settings_openai
+        指针在 platform_presets 中找到对应预设，按 ST settingsToUpdate 映射把
+        preset_payload 应用进 oai_settings（复刻 ST onSettingsPresetChange）。
+        原因：platform_settings 的指针由 025 触发器更新，但触发器不写实际参数，
+        且 ST 启动 loadOpenAISettings 只读 oai_settings、不重新套用预设文件；
+        故必须在下发时应用，否则运营换预设后采样/prompts 参数不生效。
+        应用发生在 B 白名单覆盖之前，用户 writable_paths（如 oai_settings.prompts）仍可覆盖预设值。
       白名单（writable_paths）从 platform_settings 最新行读取，包含：
         - { path: active_character, transform: character_ref }
         - { path: oai_settings.prompts, transform: passthrough }

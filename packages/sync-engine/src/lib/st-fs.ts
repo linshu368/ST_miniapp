@@ -35,6 +35,16 @@ export function secretsPath(handle: string): string {
   return join(handleDir(handle), 'secrets.json');
 }
 
+/** data/<handle>/User Avatars/（ST persona 头像目录，URL 空格保留） */
+export function userAvatarsDir(handle: string): string {
+  return join(handleDir(handle), 'User Avatars');
+}
+
+/** data/<handle>/User Avatars/<filename> */
+export function userAvatarDst(handle: string, filename: string): string {
+  return join(userAvatarsDir(handle), filename);
+}
+
 /**
  * Supabase Storage 中角色卡 PNG 的对象路径。
  * 完整 URL = SUPABASE_URL/storage/v1/object/public/<bucket>/<path>

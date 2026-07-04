@@ -24,6 +24,7 @@ import {
   writePresets,
   writeSettings,
   writeSecrets,
+  ensureUserAvatar,
 } from './writer.js';
 import type { WriteCharactersResult } from './writer.js';
 import { ensureStUser } from './st-user.js';
@@ -108,6 +109,7 @@ export async function provision(
     apiConfig,
     userSettings,
     systemFallbackCharacterId,
+    userPersona,
   } = data;
 
   log(
@@ -194,17 +196,41 @@ export async function provision(
       ? [...charResult.written, ...charResult.skipped]
       : listCharacterIds(stHandle);
 
+  // persona 头像：有 TG 身份时确保头像落盘（force 时重新下载），拿到 settings.user_avatar 用的文件名。
+  let personaAvatarFile: string | null = null;
+  if (userPersona.name) {
+    try {
+      personaAvatarFile = await ensureUserAvatar(stHandle, userPersona.avatarUrl, force);
+    } catch (err) {
+      // 头像失败不阻断：名字仍会注入，头像回退默认
+      log(`[provision]   ⚠️  下载用户头像失败（回退默认）：${err}`);
+    }
+    log(
+      `[provision]   persona 注入：name="${userPersona.name}", avatar=${personaAvatarFile ?? '默认'}`
+    );
+  }
+
   let merged;
   try {
     merged = mergeSettings(
       platformSettings,
       userSettings,
+      presets,
       availableCharIds,
       systemFallbackCharacterId ?? undefined,
-      config.LLM_PROXY_URL
+      config.LLM_PROXY_URL,
+      userPersona.name ? { name: userPersona.name, avatarFile: personaAvatarFile } : undefined
     );
   } catch (err) {
     throw new ProvisionError(`merge settings 失败：${err}`, err);
+  }
+
+  if (merged.presetApplied) {
+    log(`[provision]   预设已应用进 oai_settings（presetId=${merged.appliedPresetId}）`);
+  } else {
+    log(
+      '[provision]   ⚠️  未应用预设到 oai_settings（指针缺失或预设未命中），沿用 platform_settings 原值'
+    );
   }
 
   if (merged.hadInvalidRef) {

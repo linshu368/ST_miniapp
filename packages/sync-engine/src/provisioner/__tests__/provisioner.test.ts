@@ -31,10 +31,12 @@ vi.mock('../fetcher.js', () => ({
 }));
 
 vi.mock('../writer.js', () => ({
+  DEFAULT_USER_AVATAR_FILENAME: '4d015fdd-7f82-482c-912d-466eaa826280.png',
   writeCharacters: vi.fn(async () => ({ written: [], skipped: [], missing: [] })),
   writePresets: vi.fn(() => ({ written: [], skipped: [] })),
   writeSettings: vi.fn(),
   writeSecrets: vi.fn(),
+  ensureUserAvatar: vi.fn(),
 }));
 
 vi.mock('../st-user.js', () => ({
@@ -127,6 +129,7 @@ function makeProvisionData(userSettings: UserSettingsRow | null = null): Provisi
     apiConfig: null,
     userSettings,
     systemFallbackCharacterId: CHAR_UUID,
+    userPersona: { name: '用户', avatarUrl: null },
   };
 }
 
@@ -136,6 +139,7 @@ describe('provision()', () => {
   const mockedWriteChars = writerMod.writeCharacters as unknown as MockInstance;
   const mockedWritePresets = writerMod.writePresets as unknown as MockInstance;
   const mockedWriteSettings = writerMod.writeSettings as unknown as MockInstance;
+  const mockedEnsureAvatar = writerMod.ensureUserAvatar as unknown as MockInstance;
   const mockedEnsureUser = stUserMod.ensureStUser as unknown as MockInstance;
 
   beforeEach(() => {
@@ -145,6 +149,7 @@ describe('provision()', () => {
     mockedWriteChars.mockResolvedValue({ written: [CHAR_UUID], skipped: [], missing: [] });
     mockedWritePresets.mockReturnValue({ written: [PRESET_UUID], skipped: [] });
     mockedWriteSettings.mockReturnValue(undefined);
+    mockedEnsureAvatar.mockResolvedValue('4d015fdd-7f82-482c-912d-466eaa826280.png');
     mockedEnsureUser.mockResolvedValue({ created: true });
   });
 
@@ -170,6 +175,26 @@ describe('provision()', () => {
     expect(mockedWriteChars).toHaveBeenCalledOnce();
     expect(mockedWritePresets).toHaveBeenCalledOnce();
     expect(mockedWriteSettings).toHaveBeenCalledOnce();
+  });
+
+  it('默认 persona：无 TG 名字/头像时注入默认名字和头像', async () => {
+    await provision(USER_ID, { log: () => {} });
+
+    expect(mockedEnsureAvatar).toHaveBeenCalledWith('tg_12345678', null, false);
+    const [, merged] = mockedWriteSettings.mock.calls[0] as [
+      string,
+      { settings: Record<string, unknown> },
+    ];
+
+    expect(merged.settings['username']).toBe('用户');
+    expect(merged.settings['name1']).toBe('用户');
+    expect(merged.settings['user_avatar']).toBe('4d015fdd-7f82-482c-912d-466eaa826280.png');
+    expect(merged.settings['power_user']).toEqual({
+      personas: { '4d015fdd-7f82-482c-912d-466eaa826280.png': '用户' },
+      persona_descriptions: {
+        '4d015fdd-7f82-482c-912d-466eaa826280.png': { position: 0, description: '' },
+      },
+    });
   });
 
   it('新用户正常路径：writeChars 以 force=false 调用', async () => {

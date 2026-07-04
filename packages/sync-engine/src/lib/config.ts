@@ -34,6 +34,12 @@ const ConfigSchema = z.object({
 
   // Supabase Storage bucket（角色卡 PNG 存储）
   CHARACTER_STORAGE_BUCKET: z.string().default('character-assets'),
+  DEFAULT_USER_AVATAR_URL: z
+    .string()
+    .url('DEFAULT_USER_AVATAR_URL 必须是合法 URL')
+    .default(
+      'https://zoqelpfhurwehlvypryl.supabase.co/storage/v1/object/public/miniapp-users/default_user_avatar/4d015fdd-7f82-482c-912d-466eaa826280.png'
+    ),
 
   // ST 服务
   ST_BASE_URL: z.string().url('ST_BASE_URL 必须是合法 URL'),

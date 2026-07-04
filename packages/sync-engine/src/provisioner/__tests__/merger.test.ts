@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { mergeSettings } from '../merger.js';
-import type { PlatformSettingsRow, UserSettingsRow } from '../fetcher.js';
+import type { PlatformSettingsRow, UserSettingsRow, PresetRow } from '../fetcher.js';
 
 // ─── 测试固件 ──────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,7 @@ const mergeSettingsForTest = (
   mergeSettings(
     platformSettings,
     userSettings,
+    [],
     availableCharIds,
     fallbackCharacterId,
     LLM_PROXY_URL
@@ -202,7 +203,7 @@ describe('mergeSettings', () => {
     expect(result.settings['main_api']).toBe('openai');
     expect(oai['chat_completion_source']).toBe('custom');
     expect(oai['custom_url']).toBe(LLM_PROXY_URL);
-    expect(oai['custom_model']).toBe('google/gemini-2.5-flash');
+    expect(oai['custom_model']).toBe('google/gemini-3.1-flash-lite');
   });
 
   it('已配置的 custom_model 不应被兜底默认值覆盖', () => {
@@ -218,6 +219,100 @@ describe('mergeSettings', () => {
     const oai = result.settings['oai_settings'] as Record<string, unknown>;
 
     expect(oai['custom_model']).toBe('anthropic/claude-sonnet-4');
+  });
+
+  // ── 场景 10：按指针应用预设到 oai_settings（B 方案核心）────────────────────
+  it('应按 oai_settings.preset_settings_openai 指针把预设参数应用进 oai_settings', () => {
+    const PRESET_ID = 'c9db5957-844e-4707-a9f8-c8a54eee5260';
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        oai_settings: {
+          preset_settings_openai: `platform_${PRESET_ID}`,
+          temp_openai: 0.84,
+          openai_max_tokens: 550,
+          prompts: [{ identifier: 'old' }],
+        },
+      },
+    });
+    const presets: PresetRow[] = [
+      {
+        id: PRESET_ID,
+        display_name: '0616',
+        is_default: true,
+        preset_payload: {
+          temperature: 1.24,
+          openai_max_tokens: 3000,
+          prompts: [{ identifier: 'main' }, { identifier: 'nsfw' }],
+        },
+      },
+    ];
+
+    const result = mergeSettings(
+      platform,
+      null,
+      presets,
+      [CHAR_UUID_FALLBACK],
+      CHAR_UUID_FALLBACK,
+      LLM_PROXY_URL
+    );
+    const oai = result.settings['oai_settings'] as Record<string, unknown>;
+
+    expect(result.presetApplied).toBe(true);
+    expect(result.appliedPresetId).toBe(PRESET_ID);
+    expect(oai['temp_openai']).toBe(1.24);
+    expect(oai['openai_max_tokens']).toBe(3000);
+    expect(oai['prompts']).toEqual([{ identifier: 'main' }, { identifier: 'nsfw' }]);
+  });
+
+  // ── 场景 11：预设先应用，B 白名单 oai_settings.prompts 仍覆盖预设 ──────────
+  it('B 的 writable_paths（oai_settings.prompts）应覆盖预设应用后的 prompts', () => {
+    const PRESET_ID = 'c9db5957-844e-4707-a9f8-c8a54eee5260';
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        oai_settings: {
+          preset_settings_openai: `platform_${PRESET_ID}`,
+          temp_openai: 0.84,
+          prompts: [{ identifier: 'old' }],
+        },
+      },
+      writable_paths: [
+        { path: 'active_character', transform: 'character_ref' },
+        { path: 'oai_settings.prompts', transform: 'passthrough' },
+      ],
+    });
+    const presets: PresetRow[] = [
+      {
+        id: PRESET_ID,
+        display_name: '0616',
+        is_default: true,
+        preset_payload: {
+          temperature: 1.24,
+          prompts: [{ identifier: 'preset' }],
+        },
+      },
+    ];
+    const userSettings = makeUserSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        oai_settings: { prompts: [{ identifier: 'user-custom' }] },
+      },
+    });
+
+    const result = mergeSettings(
+      platform,
+      userSettings,
+      presets,
+      [CHAR_UUID_FALLBACK],
+      CHAR_UUID_FALLBACK,
+      LLM_PROXY_URL
+    );
+    const oai = result.settings['oai_settings'] as Record<string, unknown>;
+
+    // 采样参数来自预设，但 prompts 被用户 B 覆盖
+    expect(oai['temp_openai']).toBe(1.24);
+    expect(oai['prompts']).toEqual([{ identifier: 'user-custom' }]);
   });
 
   // ── 场景 8：深拷贝，不修改原始对象 ──────────────────────────────────────
