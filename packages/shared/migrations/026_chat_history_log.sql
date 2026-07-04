@@ -45,6 +45,9 @@ CREATE INDEX idx_chat_history_user
 CREATE INDEX idx_chat_history_model
   ON miniapp.chat_history(model, created_at DESC);
 
+-- 授权 service_role 和 postgres 访问（miniapp schema 无 DEFAULT PRIVILEGES）
+GRANT ALL ON miniapp.chat_history TO service_role, postgres;
+
 COMMENT ON TABLE miniapp.chat_history IS
   '平台 LLM 交互日志。每次 llm-proxy 调用落一行，记录用户输入、完整上下文(history)和模型回复，'
   '用于运营监控、内容审计和用量分析。';
