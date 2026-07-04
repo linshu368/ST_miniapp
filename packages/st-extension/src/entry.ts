@@ -9,6 +9,7 @@ import { installOaiSettingsGuard } from './patches/oai-settings-guard.js';
 import { installTavernHelperGuard } from './patches/tavern-helper-guard.js';
 import { installScriptPopupAutoCancel } from './patches/script-popup-autocancel.js';
 import { installNativeUiHide, installPresetUiHide } from './patches/native-ui-hide.js';
+import { installLlmMetadataInject } from './patches/llm-metadata-inject.js';
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -45,6 +46,8 @@ function init(): void {
   installNativeUiHide();
   // 隐藏 ST 原生「AI Response Configuration / 对话补全预设」抽屉：平台不开放用户改预设，始终隐藏。
   installPresetUiHide();
+  // 每次 LLM 请求前注入 X-ST-Character-Id / X-ST-Preset-Id header，供 llm-proxy 落 chat_history。
+  installLlmMetadataInject();
 
   const server = createBridgeServer('*');
   server.start();

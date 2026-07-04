@@ -83,6 +83,9 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       let chatMessages: unknown[] = [];
       let userInput = '';
 
+      const characterId = (request.headers['x-st-character-id'] as string) || null;
+      const presetId = (request.headers['x-st-preset-id'] as string) || null;
+
       const isChatCompletion =
         request.method !== 'GET' &&
         request.method !== 'HEAD' &&
@@ -184,6 +187,8 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
               user_input: userInput,
               assistant_reply: null,
               history: chatMessages,
+              character_id: characterId,
+              preset_id: presetId,
               status: 'upstream_error',
               upstream_status: upstreamRes.status,
               deduction_rate: 0,
@@ -231,6 +236,8 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
               user_input: userInput,
               assistant_reply: null,
               history: chatMessages,
+              character_id: characterId,
+              preset_id: presetId,
               status: 'success',
               deduction_rate: deductionRate,
             },
@@ -285,6 +292,8 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                     user_input: userInput,
                     assistant_reply: replyChunks.join(''),
                     history: chatMessages,
+                    character_id: characterId,
+                    preset_id: presetId,
                     status: 'success',
                     deduction_rate: deductionRate,
                   },
@@ -304,6 +313,8 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                     user_input: userInput,
                     assistant_reply: replyChunks.length > 0 ? replyChunks.join('') : null,
                     history: chatMessages,
+                    character_id: characterId,
+                    preset_id: presetId,
                     status: 'stream_interrupted',
                     deduction_rate: 0,
                   },
@@ -331,6 +342,8 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             user_input: userInput,
             assistant_reply: null,
             history: chatMessages,
+            character_id: characterId,
+            preset_id: presetId,
             status: 'success',
             deduction_rate: deductionRate,
           },
