@@ -16,6 +16,13 @@
     "lint": "pnpm -r --if-present lint",
     "lint:imports": "eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --ignore-pattern '**/__tests__/eslint-import-guard.ts' --no-inline-config",
     "import-character": "pnpm --filter @miniapp/sync-engine exec tsx ../../scripts/import-character.ts",
+    "supabase": "supabase",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status",
+    "supabase:link:test": "supabase link --project-ref zoqelpfhurwehlvypryl",
+    "supabase:link:prod": "supabase link --project-ref wbtsfzozlmurljvglhpn",
+    "supabase:db:query": "supabase db query",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"
@@ -39,7 +46,8 @@
     "eslint-plugin-import": "^2.32.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
-    "prettier": "^3.8.3"
+    "prettier": "^3.8.3",
+    "supabase": "^2.109.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
