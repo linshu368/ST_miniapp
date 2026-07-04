@@ -38,11 +38,11 @@ CREATE TABLE IF NOT EXISTS miniapp.chat_history (
 );
 
 -- 按用户 + 时间倒序查询
-CREATE INDEX idx_chat_history_user
+CREATE INDEX IF NOT EXISTS idx_chat_history_user
   ON miniapp.chat_history(user_id, created_at DESC);
 
 -- 按模型统计
-CREATE INDEX idx_chat_history_model
+CREATE INDEX IF NOT EXISTS idx_chat_history_model
   ON miniapp.chat_history(model, created_at DESC);
 
 -- 授权 service_role 和 postgres 访问（miniapp schema 无 DEFAULT PRIVILEGES）
