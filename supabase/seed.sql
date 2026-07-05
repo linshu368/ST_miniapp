@@ -1,0 +1,2 @@
+-- Local Supabase seed file.
+-- Project SQL seeds currently live in packages/shared/migrations/011_seed_data.sql.

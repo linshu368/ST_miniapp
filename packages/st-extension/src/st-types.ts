@@ -115,6 +115,7 @@ export interface STEventTypes {
   STREAM_TOKEN_RECEIVED: string;
   MESSAGE_RECEIVED: string;
   CHATCOMPLETION_MODEL_CHANGED: string;
+  CHAT_COMPLETION_SETTINGS_READY: string;
   OAI_PRESET_CHANGED_AFTER: string;
   SETTINGS_UPDATED: string;
   APP_READY: string;
