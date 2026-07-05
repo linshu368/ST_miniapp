@@ -13,10 +13,11 @@ export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const bridgeStatus = useBridgeStatus();
   const { mutateAsync: ensureCharacter } = useEnsureStCharacterMutation();
-  // 开屏动画收场信号：角色切换流程结束（成功或失败都放行，失败由 ST 侧兜底重试）
+  // 开屏动画收场信号：只有角色切换成功后才放行，避免露出 ST 原生加载画面。
   const [chatReady, setChatReady] = useState(false);
 
   useEffect(() => {
+    setChatReady(false);
     if (!characterId || bridgeStatus !== 'ready') return;
 
     let cancelled = false;
@@ -37,12 +38,10 @@ export default function TavernChatPage() {
           if (result.chatId) {
             useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
           }
+          if (!cancelled) setChatReady(true);
         })
         .catch((err) => {
           console.error('[TavernChatPage] selectCharacter failed:', err);
-        })
-        .finally(() => {
-          if (!cancelled) setChatReady(true);
         });
     })();
 
@@ -55,7 +54,9 @@ export default function TavernChatPage() {
     <div className="relative w-full h-full">
       <ChatHeader />
       <ChatToolsMenu />
-      {characterId ? <ChatSplash characterId={characterId} ready={chatReady} /> : null}
+      {characterId ? (
+        <ChatSplash key={characterId} characterId={characterId} ready={chatReady} />
+      ) : null}
     </div>
   );
 }

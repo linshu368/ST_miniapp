@@ -7,8 +7,6 @@ import { hueShiftFromId } from '@/lib/utils/character-hue';
 
 /** 开屏至少停留时长：保证动画完整走完一轮，避免"闪一下就没" */
 const MIN_SHOW_MS = 2400;
-/** 失败兜底：即使桥接迟迟未 ready，也在此时限后放行，不能困住用户 */
-const MAX_SHOW_MS = 20_000;
 /** 退场动画时长，与 CSS splash-exit 保持一致 */
 const EXIT_MS = 720;
 
@@ -61,6 +59,7 @@ function buildStars(id: string, count: number): Star[] {
  * 全屏覆盖在 ST iframe（z-10）与 ChatHeader（z-20）之上，
  * 在桥接 ready + 角色切换完成（ready=true）且最短停留时间已到后，
  * 以"镜头推进"式的放大淡出收场，然后自行卸载。
+ * 如果 ST/桥接/角色切换没有完成，则持续展示本动画，不露出 ST 原生加载画面。
  */
 export function ChatSplash({ characterId, ready }: { characterId: string; ready: boolean }) {
   const { data } = useCharacterQuery(characterId);
@@ -71,13 +70,8 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
 
   useEffect(() => {
     const minTimer = setTimeout(() => setMinElapsed(true), MIN_SHOW_MS);
-    const failsafe = setTimeout(
-      () => setPhase((p) => (p === 'showing' ? 'exiting' : p)),
-      MAX_SHOW_MS
-    );
     return () => {
       clearTimeout(minTimer);
-      clearTimeout(failsafe);
     };
   }, []);
 
