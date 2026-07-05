@@ -10,6 +10,8 @@ import type {
 } from '@miniapp/shared';
 
 const CHARACTER_STORAGE_BUCKET = process.env.CHARACTER_STORAGE_BUCKET || 'character-assets';
+const PROD_SHUFFLE_WINDOW_MS = 6 * 60 * 60 * 1000;
+const TEST_SHUFFLE_WINDOW_MS = 5 * 60 * 1000;
 
 function resolveCharacterAvatarUrl(
   characterId: string,
@@ -23,6 +25,25 @@ function resolveCharacterAvatarUrl(
   return `${config.supabase.url}/storage/v1/object/public/${CHARACTER_STORAGE_BUCKET}/${storagePath}`;
 }
 
+function currentShuffleBucket(): number {
+  const windowMs =
+    config.database.environment === 'production' ? PROD_SHUFFLE_WINDOW_MS : TEST_SHUFFLE_WINDOW_MS;
+  return Math.floor(Date.now() / windowMs);
+}
+
+function seededHash(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function shuffleRank(characterId: string, bucket: number): number {
+  return seededHash(`${config.database.environment}:${bucket}:${characterId}`);
+}
+
 export default async function characterRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
@@ -31,7 +52,14 @@ export default async function characterRoutes(app: FastifyInstance) {
       orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
     });
 
-    const charactersSummary: CharacterSummary[] = characters.map(
+    const shuffleBucket = currentShuffleBucket();
+    const shuffledCharacters = [...characters].sort((a, b) => {
+      const rankDiff = shuffleRank(a.id, shuffleBucket) - shuffleRank(b.id, shuffleBucket);
+      if (rankDiff !== 0) return rankDiff;
+      return a.id.localeCompare(b.id);
+    });
+
+    const charactersSummary: CharacterSummary[] = shuffledCharacters.map(
       (c: (typeof characters)[number]) => ({
         id: c.id,
         name: c.name,

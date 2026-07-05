@@ -18,6 +18,7 @@ ops/git/.env
 
 # 含敏感值的本地文档和脚本配置，不入库
 docs/github-secrets-setup.md
+docs/database-schema-reference.md
 scripts/.env.*
 支付开发留痕.md
 supabase/.temp/
