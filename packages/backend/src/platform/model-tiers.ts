@@ -15,7 +15,7 @@ export interface ModelTierConfig {
 }
 
 const MODEL_TIER_MAP: Record<string, ModelTierConfig> = {
-  'google/gemini-3.1-flash-lite': {
+  'anthropic/claude-sonnet-4.5': {
     tier: 'standard',
     deductionRate: 0,
     displayName: 'Gemini 3.1 Flash Lite',

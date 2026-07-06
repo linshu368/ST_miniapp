@@ -282,7 +282,7 @@ function createMinimalSettings(): Record<string, unknown> {
     oai_settings: {
       chat_completion_source: 'custom',
       custom_url: 'http://localhost:3001/api/platform/llm-proxy/v1',
-      custom_model: 'google/gemini-3.1-flash-lite',
+      custom_model: 'anthropic/claude-sonnet-4.5',
       bypass_status_check: false,
     },
   };
