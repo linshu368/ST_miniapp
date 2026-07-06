@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS miniapp.chat_history (
   -- 实际使用的模型（来自 request body.model）
   model           TEXT NOT NULL,
 
-  -- 本轮用户输入（messages 数组中最后一条 role=user 的 content）
+  -- 本轮用户真实输入（原始文本）：
+  --   优先来自 st-extension 注入的 X-ST-User-Input header（ctx.chat 最后一条 is_user 原文，
+  --   不含预设/世界书/深度注入等组装内容）；header 缺失时回退为 messages 数组末尾
+  --   role=user 的 content（不准确，可能是预设注入的 post-history 指令）。
   user_input      TEXT NOT NULL,
 
   -- 模型返回的 assistant 回复完整文本
