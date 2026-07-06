@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { SlidersHorizontal, Sparkles, Lock } from 'lucide-react';
+import { SlidersHorizontal, Sparkles, Lock, MessageSquarePlus } from 'lucide-react';
 import { ModelTierSwitcher } from './model-tier-switcher';
+import { platformAction, useBridgeStatus } from '@/lib/bridge';
 
 export function ChatToolsMenu() {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const bridgeStatus = useBridgeStatus();
+  const bridgeReady = bridgeStatus === 'ready';
 
   useEffect(() => {
     if (!open) return;
@@ -18,6 +21,15 @@ export function ChatToolsMenu() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
+
+  async function handleNewChat() {
+    if (!bridgeReady) return;
+    try {
+      await platformAction('newChat', {});
+    } catch (err) {
+      console.error('[ChatToolsMenu] newChat failed:', err);
+    }
+  }
 
   return (
     <div ref={containerRef} className="fixed bottom-0 left-0 z-20 flex items-end">
@@ -36,14 +48,26 @@ export function ChatToolsMenu() {
         </div>
       )}
 
-      {/* Tools trigger — visually flush with ST input bar */}
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center justify-center w-10 h-[38px] bg-[#1a1a2e]/95 backdrop-blur-md border border-white/10 border-r-0 text-white/70 hover:text-white hover:bg-[#1a1a2e] transition-colors active:scale-95"
-        aria-label="工具菜单"
-      >
-        <SlidersHorizontal className="h-[18px] w-[18px]" />
-      </button>
+      <div className="flex items-center">
+        {/* 新增的【开启新对话】按钮 */}
+        <button
+          disabled={!bridgeReady}
+          onClick={handleNewChat}
+          className="flex items-center justify-center w-10 h-[38px] bg-[#1a1a2e]/95 backdrop-blur-md border border-white/10 border-r-0 text-white/70 hover:text-white hover:bg-[#1a1a2e] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="开启新对话"
+        >
+          <MessageSquarePlus className="h-[18px] w-[18px]" />
+        </button>
+
+        {/* Tools trigger — visually flush with ST input bar */}
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center justify-center w-10 h-[38px] bg-[#1a1a2e]/95 backdrop-blur-md border border-white/10 border-r-0 text-white/70 hover:text-white hover:bg-[#1a1a2e] transition-colors active:scale-95"
+          aria-label="工具菜单"
+        >
+          <SlidersHorizontal className="h-[18px] w-[18px]" />
+        </button>
+      </div>
     </div>
   );
 }
