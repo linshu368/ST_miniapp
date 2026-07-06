@@ -21,6 +21,7 @@ docs/github-secrets-setup.md
 docs/database-schema-reference.md
 scripts/.env.*
 支付开发留痕.md
+supabase.json
 supabase/.temp/
 
 # vendor — ST 依赖和构建产物不入库
