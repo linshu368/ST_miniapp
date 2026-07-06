@@ -33,7 +33,7 @@ export default function TavernChatPage() {
       if (cancelled) return;
 
       const avatar = `platform_${characterId}.png`;
-      platformAction('selectCharacter', { avatar })
+      platformAction('selectCharacter', { avatar, forceNewChat: true })
         .then((result) => {
           if (result.chatId) {
             useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
