@@ -123,7 +123,7 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     apiConfigResult,
     fallbackConfigResult,
   ] = await Promise.all([
-    db.from('users').select('st_handle').eq('id', userId).single(),
+    schemaClient('miniapp').from('users').select('st_handle').eq('id', userId).single(),
     schemaClient('miniapp')
       .from('characters')
       .select('*')

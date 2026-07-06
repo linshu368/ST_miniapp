@@ -25,21 +25,19 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
   void (async () => {
     try {
       const supabase = getSupabaseClient();
-      const { error } = await supabase
-        .schema('miniapp' as 'public')
-        .from('chat_history')
-        .insert({
-          user_id: entry.user_id,
-          model: entry.model,
-          user_input: entry.user_input,
-          assistant_reply: entry.assistant_reply,
-          history: entry.history,
-          character_id: entry.character_id ?? null,
-          preset_id: entry.preset_id ?? null,
-          status: entry.status,
-          upstream_status: entry.upstream_status ?? null,
-          deduction_rate: entry.deduction_rate,
-        });
+      const miniappDb = supabase.schema('miniapp' as 'public');
+      const { error } = await miniappDb.from('chat_history').insert({
+        user_id: entry.user_id,
+        model: entry.model,
+        user_input: entry.user_input,
+        assistant_reply: entry.assistant_reply,
+        history: entry.history,
+        character_id: entry.character_id ?? null,
+        preset_id: entry.preset_id ?? null,
+        status: entry.status,
+        upstream_status: entry.upstream_status ?? null,
+        deduction_rate: entry.deduction_rate,
+      });
 
       if (error) {
         log.error(
@@ -48,6 +46,18 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         );
       } else {
         log.info({ userId: entry.user_id, model: entry.model }, '[chat-history] saved');
+        if (entry.status === 'success') {
+          const { error: roundErr } = await miniappDb.rpc('increment_user_total_round', {
+            p_user_id: entry.user_id,
+            p_delta: 1,
+          });
+          if (roundErr) {
+            log.error(
+              { err: roundErr.message, userId: entry.user_id },
+              '[chat-history] increment total_round failed'
+            );
+          }
+        }
       }
     } catch (err: unknown) {
       log.error({ err: String(err), userId: entry.user_id }, '[chat-history] unexpected error');
