@@ -56,7 +56,7 @@ export default async function botRoutes(app: FastifyInstance) {
     const update = (request.body ?? {}) as TelegramWebhookUpdate;
     const text = update.message?.text?.trim() ?? '';
     const startPayload = parseStartPayload(text);
-    if (startPayload === null) {
+    if (startPayload === undefined) {
       return reply.send(ok({ ignored: true }));
     }
 
@@ -99,8 +99,8 @@ function normalizeNullableText(value: unknown, maxLength: number): string | null
   return trimmed.slice(0, maxLength);
 }
 
-function parseStartPayload(text: string): string | null {
+function parseStartPayload(text: string): string | null | undefined {
   const match = text.match(/^\/start(?:@\w+)?(?:\s+(.+))?$/i);
-  if (!match) return null;
+  if (!match) return undefined;
   return normalizeNullableText(match[1], 128);
 }

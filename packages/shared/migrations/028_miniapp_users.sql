@@ -44,6 +44,7 @@ COMMENT ON COLUMN miniapp.users.st_initialized_at IS
 DO $$
 DECLARE
   table_name TEXT;
+  existing_tables TEXT[] := ARRAY[]::TEXT[];
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
     'cs_platform.outreach_messages',
@@ -66,9 +67,13 @@ BEGIN
   ]
   LOOP
     IF to_regclass(table_name) IS NOT NULL THEN
-      EXECUTE format('TRUNCATE TABLE %s', table_name);
+      existing_tables := array_append(existing_tables, table_name);
     END IF;
   END LOOP;
+
+  IF array_length(existing_tables, 1) IS NOT NULL THEN
+    EXECUTE 'TRUNCATE TABLE ' || array_to_string(existing_tables, ', ') || ' CASCADE';
+  END IF;
 END;
 $$;
 
@@ -231,7 +236,7 @@ LEFT JOIN payment_summary p ON p.user_id = u.id
 LEFT JOIN message_activity m ON m.user_id = u.id;
 
 UPDATE cs_platform.personas
-SET rule_sql = replace(rule_sql, 'FROM public.users u', 'FROM miniapp.users u');
+SET sql_text = replace(sql_text, 'FROM public.users u', 'FROM miniapp.users u');
 
 UPDATE cs_platform.personas
-SET rule_sql = replace(rule_sql, 'u.created_at', 'u.miniapp_entered_at');
+SET sql_text = replace(sql_text, 'u.created_at', 'u.miniapp_entered_at');
