@@ -3,12 +3,12 @@
  *
  * POST /api/bridge/st-session
  *
- * 完整登录闭环：TG InitData → Supabase user → ST session cookie
+ * 完整登录闭环：TG InitData → MiniApp user → ST session cookie
  *
  * 调用链（按顺序）：
  *   1. requireTelegramAuth      — 校验 TG InitData 签名，提取 tg_user
- *   2. getOrCreateDbUser        — Prisma upsert + 写 st_handle 到 Supabase
- *   3. 读 users.st_initialized_at — 判断首次 / 再次登录
+ *   2. getOrCreateDbUser        — 创建 / 读取 miniapp.users
+ *   3. 读 miniapp.users.st_initialized_at — 判断首次 / 再次登录
  *   4. 首次 → 异步触发 provision  — HTTP POST sync-engine /provision/:userId
  *   5. ST 登录                  — POST ST /api/users/login，拿 connect.sid cookie
  *   6. 返回 { st_url, st_cookie } — 前端用于构造 iframe src 或代理请求
@@ -186,6 +186,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
    *     }
    *   }
    */
+  // @frontend-ready: true
   app.post(
     '/api/bridge/st-session',
     { preHandler: [requireTelegramAuth] },
@@ -212,7 +213,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         }
 
         // ── 2. 读 st_initialized_at 判断是否首次登录 ───────────────────────
-        const db = getSupabaseClient();
+        const db = getSupabaseClient().schema('miniapp');
         const { data: userData } = await db
           .from('users')
           .select('st_initialized_at')

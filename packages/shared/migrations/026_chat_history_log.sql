@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS miniapp.chat_history (
   -- 实际使用的模型（来自 request body.model）
   model           TEXT NOT NULL,
 
-  -- 本轮用户输入（messages 数组中最后一条 role=user 的 content）
+  -- 本轮用户真实输入（原始文本）：
+  --   优先来自 st-extension 注入的 X-ST-User-Input header（ctx.chat 最后一条 is_user 原文，
+  --   不含预设/世界书/深度注入等组装内容）；header 缺失时回退为 messages 数组末尾
+  --   role=user 的 content（不准确，可能是预设注入的 post-history 指令）。
   user_input      TEXT NOT NULL,
 
   -- 模型返回的 assistant 回复完整文本
@@ -38,11 +41,11 @@ CREATE TABLE IF NOT EXISTS miniapp.chat_history (
 );
 
 -- 按用户 + 时间倒序查询
-CREATE INDEX idx_chat_history_user
+CREATE INDEX IF NOT EXISTS idx_chat_history_user
   ON miniapp.chat_history(user_id, created_at DESC);
 
 -- 按模型统计
-CREATE INDEX idx_chat_history_model
+CREATE INDEX IF NOT EXISTS idx_chat_history_model
   ON miniapp.chat_history(model, created_at DESC);
 
 -- 授权 service_role 和 postgres 访问（miniapp schema 无 DEFAULT PRIVILEGES）

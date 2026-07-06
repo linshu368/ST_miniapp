@@ -2,7 +2,7 @@
  * backend / lib / supabase.ts
  *
  * Supabase service_role 客户端（绕过 RLS）。
- * 专用于 Bridge 侧需要直接读写 st_handle / st_initialized_at 的场景。
+ * 专用于 Bridge / 内部服务直接读写 miniapp.users 和 MiniApp 业务表的场景。
  * 普通业务查询仍走 Prisma（DATABASE_URL postgres 用户）。
  */
 

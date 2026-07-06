@@ -127,6 +127,7 @@ that feature is exercised.
 | `ST_USER_PASSWORD_SECRET`                          | ST feature               | `''`                                         | Secret to derive per-user ST passwords (must match sync-engine).                   |
 | `ST_PROVISION_URL`                                 | ST feature               | `http://127.0.0.1:9091`                      | sync-engine provision API URL.                                                     |
 | `TELEGRAM_BOT_TOKEN`                               | No                       | `''`                                         | Telegram bot token (init-data verification path).                                  |
+| `CS_TELEGRAM_BOT_TOKEN`                            | No                       | `TELEGRAM_BOT_TOKEN`                         | CS Platform outreach bot token; overrides the MiniApp bot for CS messages only.    |
 | `DEV_AUTH_BYPASS`                                  | Dev only                 | unset                                        | `=1` bypasses auth + relaxes CORS (non-prod).                                      |
 | `MOCK_AUTH`                                        | Dev only                 | unset                                        | `=1` mocks auth (non-prod only).                                                   |
 | `PAYMENT_ENABLED`                                  | No                       | `false`                                      | Enables the payment gateway (`=true`).                                             |

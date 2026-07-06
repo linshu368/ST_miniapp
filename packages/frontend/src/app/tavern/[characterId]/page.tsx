@@ -1,19 +1,23 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { platformAction, useBridgeStatus } from '@/lib/bridge';
 import { useEnsureStCharacterMutation } from '@/lib/api/st-bridge';
 import { ChatHeader } from '@/components/tavern/chat-header';
 import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
+import { ChatSplash } from '@/components/tavern/chat-splash';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const bridgeStatus = useBridgeStatus();
   const { mutateAsync: ensureCharacter } = useEnsureStCharacterMutation();
+  // 开屏动画收场信号：只有角色切换成功后才放行，避免露出 ST 原生加载画面。
+  const [chatReady, setChatReady] = useState(false);
 
   useEffect(() => {
+    setChatReady(false);
     if (!characterId || bridgeStatus !== 'ready') return;
 
     let cancelled = false;
@@ -34,6 +38,7 @@ export default function TavernChatPage() {
           if (result.chatId) {
             useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
           }
+          if (!cancelled) setChatReady(true);
         })
         .catch((err) => {
           console.error('[TavernChatPage] selectCharacter failed:', err);
@@ -49,6 +54,9 @@ export default function TavernChatPage() {
     <div className="relative w-full h-full">
       <ChatHeader />
       <ChatToolsMenu />
+      {characterId ? (
+        <ChatSplash key={characterId} characterId={characterId} ready={chatReady} />
+      ) : null}
     </div>
   );
 }

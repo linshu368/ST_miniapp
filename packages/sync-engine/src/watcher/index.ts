@@ -156,7 +156,11 @@ async function buildHandleUserMap(handles: string[]): Promise<Map<string, string
   const db = getSupabaseClient();
   const map = new Map<string, string>();
 
-  const { data, error } = await db.from('users').select('id, st_handle').in('st_handle', handles);
+  const { data, error } = await db
+    .schema('miniapp')
+    .from('users')
+    .select('id, st_handle')
+    .in('st_handle', handles);
 
   if (error) {
     throw new Error(`查询 users 表失败：${error.message}`);

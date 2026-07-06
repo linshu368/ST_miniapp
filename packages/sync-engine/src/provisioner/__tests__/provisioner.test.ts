@@ -66,6 +66,13 @@ vi.mock('../../lib/config.js', () => ({
 
 vi.mock('../../lib/supabase.js', () => ({
   getSupabaseClient: vi.fn(() => ({
+    schema: vi.fn(() => ({
+      from: vi.fn(() => ({
+        update: vi.fn(() => ({
+          eq: vi.fn(() => ({ error: null })),
+        })),
+      })),
+    })),
     from: vi.fn(() => ({
       update: vi.fn(() => ({
         eq: vi.fn(() => ({ error: null })),

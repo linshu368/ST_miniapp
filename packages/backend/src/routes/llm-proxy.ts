@@ -108,6 +108,22 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         }
       }
 
+      // 优先使用 st-extension 注入的原始用户输入（base64(UTF-8)）。
+      // messages 数组末尾的 role=user 往往是预设注入的 post-history 指令（防截断/越狱等），
+      // 且真实输入被模板前后缀包裹，故上面的提取只作 header 缺失时的回退。
+      const rawInputHeader = request.headers['x-st-user-input'];
+      if (typeof rawInputHeader === 'string' && rawInputHeader.length > 0) {
+        try {
+          const decoded = Buffer.from(rawInputHeader, 'base64').toString('utf8').trim();
+          if (decoded) userInput = decoded;
+        } catch (err) {
+          request.log.warn(
+            { err: String(err), userId },
+            '[llm-proxy] failed to decode x-st-user-input header, falling back to messages extraction'
+          );
+        }
+      }
+
       if (modelName) {
         const tierConfig = getModelTier(modelName);
         deductionRate = tierConfig.deductionRate;

@@ -48,40 +48,50 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
 
   app.post('/api/cs/personas', { preHandler: [requireCsAdmin] }, async (request, reply) => {
     const body = request.body as Partial<CreateCsPersonaRequest>;
-    if (!body.name?.trim() || !body.sql?.trim() || !body.opening_script?.trim()) {
+    const name = body.name?.trim();
+    const sql = body.sql?.trim();
+    const openingScript = body.opening_script?.trim();
+
+    if (!name || !sql || !openingScript) {
       return reply
         .status(400)
         .send(fail('INVALID_PERSONA', '画像名称、SQL 规则和开场话术不能为空'));
     }
 
-    const persona = await repository.createPersona({
-      name: body.name.trim(),
-      description: body.description?.trim(),
-      color: body.color,
-      sql: body.sql,
-      openingScript: body.opening_script,
-      sop: body.sop,
-      operatorId: getOperator(request),
-    });
+    const personaResult = await safeCsAction(reply, '创建画像簇失败', () =>
+      repository.createPersona({
+        name,
+        description: body.description?.trim(),
+        color: body.color,
+        sql,
+        openingScript,
+        sop: body.sop,
+        operatorId: getOperator(request),
+      })
+    );
+    if (!personaResult.ok) return personaResult.reply;
 
-    return reply.send(ok<CsPersonaDataResponse>({ persona }));
+    return reply.send(ok<CsPersonaDataResponse>({ persona: personaResult.data }));
   });
 
   app.patch('/api/cs/personas/:id', { preHandler: [requireCsAdmin] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as UpdateCsPersonaRequest;
-    const persona = await repository.updatePersona(id, {
-      name: body.name?.trim(),
-      description: body.description?.trim(),
-      color: body.color,
-      sql: body.sql,
-      openingScript: body.opening_script,
-      sop: body.sop,
-      status: body.status,
-      operatorId: getOperator(request),
-    });
+    const personaResult = await safeCsAction(reply, '更新画像簇失败', () =>
+      repository.updatePersona(id, {
+        name: body.name?.trim(),
+        description: body.description?.trim(),
+        color: body.color,
+        sql: body.sql,
+        openingScript: body.opening_script,
+        sop: body.sop,
+        status: body.status,
+        operatorId: getOperator(request),
+      })
+    );
+    if (!personaResult.ok) return personaResult.reply;
 
-    return reply.send(ok<CsPersonaDataResponse>({ persona }));
+    return reply.send(ok<CsPersonaDataResponse>({ persona: personaResult.data }));
   });
 
   app.delete('/api/cs/personas/:id', { preHandler: [requireCsAdmin] }, async (request, reply) => {
@@ -95,18 +105,22 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
     { preHandler: [requireCsAdmin] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
-      const result = await repository.refreshPersona(id, getOperator(request));
+      const refreshResult = await safeCsAction(reply, '刷新画像簇失败', () =>
+        repository.refreshPersona(id, getOperator(request))
+      );
+      if (!refreshResult.ok) return refreshResult.reply;
+
       const persona = await repository.getPersona(id);
       if (!persona) return reply.status(404).send(fail('PERSONA_NOT_FOUND', '画像簇不存在'));
 
       return reply.send(
         ok<RefreshCsPersonaData>({
           persona,
-          run_id: result.run_id,
-          active_count: result.active_count,
-          entered_count: result.entered_count,
-          chatted_left_count: result.chatted_left_count,
-          refreshed_at: result.refreshed_at,
+          run_id: refreshResult.data.run_id,
+          active_count: refreshResult.data.active_count,
+          entered_count: refreshResult.data.entered_count,
+          chatted_left_count: refreshResult.data.chatted_left_count,
+          refreshed_at: refreshResult.data.refreshed_at,
         })
       );
     }
@@ -382,16 +396,53 @@ function readOperator(request: FastifyRequest): string {
   return operator?.trim() || 'cs-operator';
 }
 
+async function safeCsAction<T>(
+  reply: FastifyReply,
+  fallbackMessage: string,
+  action: () => Promise<T>
+): Promise<{ ok: true; data: T } | { ok: false; reply: FastifyReply }> {
+  try {
+    return { ok: true, data: await action() };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : fallbackMessage;
+    const status = resolveCsErrorStatus(message);
+    return {
+      ok: false,
+      reply: reply.status(status).send(fail(resolveCsErrorCode(status), message)),
+    };
+  }
+}
+
+function resolveCsErrorStatus(message: string): number {
+  if (message.includes('不存在')) return 404;
+  if (message.includes('duplicate key') || message.includes('unique constraint')) return 409;
+  if (
+    message.includes('persona sql') ||
+    message.includes('SQL') ||
+    message.includes('validation')
+  ) {
+    return 400;
+  }
+  return 500;
+}
+
+function resolveCsErrorCode(status: number): string {
+  if (status === 400) return 'INVALID_PERSONA_SQL';
+  if (status === 404) return 'PERSONA_NOT_FOUND';
+  if (status === 409) return 'PERSONA_CONFLICT';
+  return 'CS_PLATFORM_ERROR';
+}
+
 async function sendTelegramMessage(
   telegramUserId: string,
   text: string
 ): Promise<{ ok: boolean; telegramMessageId?: string; error?: string }> {
-  if (!config.telegramBotToken) {
-    return { ok: false, error: 'TELEGRAM_BOT_TOKEN is not configured' };
+  if (!config.csTelegramBotToken) {
+    return { ok: false, error: 'CS_TELEGRAM_BOT_TOKEN is not configured' };
   }
 
   const response = await fetch(
-    `https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`,
+    `https://api.telegram.org/bot${config.csTelegramBotToken}/sendMessage`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
