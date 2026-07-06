@@ -134,7 +134,11 @@ export function mergeSettings(
   lodashSet(merged, 'main_api', 'openai');
   lodashSet(merged, 'oai_settings.chat_completion_source', 'custom');
   if (!lodashGet(merged, 'oai_settings.custom_model')) {
-    lodashSet(merged, 'oai_settings.custom_model', 'anthropic/claude-sonnet-4.5');
+    lodashSet(
+      merged,
+      'oai_settings.custom_model',
+      process.env.DEFAULT_LLM_MODEL || 'anthropic/claude-sonnet-4.5'
+    );
   }
 
   // 强制设置上下文上限：默认模板的 openai_max_context=4095 过小，大角色卡（人设 + 内置正则）

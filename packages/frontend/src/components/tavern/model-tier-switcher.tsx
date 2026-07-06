@@ -7,13 +7,13 @@ import { useState } from 'react';
 const TIERS = [
   {
     tier: 'standard' as const,
-    modelName: 'anthropic/claude-sonnet-4.5',
+    modelName: process.env.NEXT_PUBLIC_DEFAULT_LLM_MODEL || 'anthropic/claude-sonnet-4.5',
     provider: 'openrouter',
     label: '快餐模型',
   },
   {
     tier: 'premium' as const,
-    modelName: 'anthropic/claude-sonnet-4.5',
+    modelName: process.env.NEXT_PUBLIC_DEFAULT_LLM_MODEL || 'anthropic/claude-sonnet-4.5',
     provider: 'openrouter',
     label: '基础模型',
   },
