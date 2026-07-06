@@ -41,6 +41,21 @@ export function ChatToolsMenu() {
             <span className="text-xs font-medium text-white/90">模型切换</span>
           </div>
           <ModelTierSwitcher />
+
+          <div className="h-px bg-white/10 my-3" />
+
+          <button
+            disabled={!bridgeReady}
+            onClick={() => {
+              handleNewChat();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-white/80 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+            <span className="text-xs font-medium">开启新对话</span>
+          </button>
+
           <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-white/10 px-3 py-2">
             <Lock className="h-3 w-3 text-white/25" />
             <span className="text-[11px] text-white/25">更多功能即将开放</span>
@@ -48,26 +63,14 @@ export function ChatToolsMenu() {
         </div>
       )}
 
-      <div className="flex items-center">
-        {/* 新增的【开启新对话】按钮 */}
-        <button
-          disabled={!bridgeReady}
-          onClick={handleNewChat}
-          className="flex items-center justify-center w-10 h-[38px] bg-[#1a1a2e]/95 backdrop-blur-md border border-white/10 border-r-0 text-white/70 hover:text-white hover:bg-[#1a1a2e] transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="开启新对话"
-        >
-          <MessageSquarePlus className="h-[18px] w-[18px]" />
-        </button>
-
-        {/* Tools trigger — visually flush with ST input bar */}
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center justify-center w-10 h-[38px] bg-[#1a1a2e]/95 backdrop-blur-md border border-white/10 border-r-0 text-white/70 hover:text-white hover:bg-[#1a1a2e] transition-colors active:scale-95"
-          aria-label="工具菜单"
-        >
-          <SlidersHorizontal className="h-[18px] w-[18px]" />
-        </button>
-      </div>
+      {/* Tools trigger — visually flush with ST input bar */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center justify-center w-10 h-[38px] bg-[#1a1a2e]/95 backdrop-blur-md border border-white/10 border-r-0 text-white/70 hover:text-white hover:bg-[#1a1a2e] transition-colors active:scale-95"
+        aria-label="工具菜单"
+      >
+        <SlidersHorizontal className="h-[18px] w-[18px]" />
+      </button>
     </div>
   );
 }
