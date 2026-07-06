@@ -120,7 +120,8 @@ export class CsPlatformRepository {
     sop?: CsSopStageData[];
     operatorId: string;
   }): Promise<CsPersonaData> {
-    await this.validatePersonaSql(input.sql);
+    const normalizedSql = normalizePersonaSql(input.sql);
+    await this.validatePersonaSql(normalizedSql);
     const rows = await prisma.$queryRawUnsafe<PersonaRow[]>(
       `INSERT INTO cs_platform.personas (slug, name, description, color, sql_text, opening_script, sop)
        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
@@ -129,7 +130,7 @@ export class CsPlatformRepository {
       input.name,
       input.description ?? '',
       input.color ?? '#5BBD72',
-      input.sql,
+      normalizedSql,
       input.openingScript,
       JSON.stringify(input.sop?.length ? input.sop : DEFAULT_SOP)
     );
@@ -152,7 +153,8 @@ export class CsPlatformRepository {
   ): Promise<CsPersonaData> {
     const current = await this.getPersona(personaId);
     if (!current) throw new Error('画像簇不存在');
-    if (input.sql) await this.validatePersonaSql(input.sql);
+    const normalizedSql = input.sql ? normalizePersonaSql(input.sql) : undefined;
+    if (normalizedSql) await this.validatePersonaSql(normalizedSql);
 
     const rows = await prisma.$queryRawUnsafe<PersonaRow[]>(
       `UPDATE cs_platform.personas
@@ -170,7 +172,7 @@ export class CsPlatformRepository {
       input.name ?? current.name,
       input.description ?? current.description,
       input.color ?? current.color,
-      input.sql ?? current.sql,
+      normalizedSql ?? current.sql,
       input.openingScript ?? current.opening_script,
       JSON.stringify(input.sop ?? current.sop),
       input.status ?? current.status
@@ -533,7 +535,25 @@ export class CsPlatformRepository {
 
   private async validatePersonaSql(sql: string): Promise<void> {
     await prisma.$executeRawUnsafe(`SELECT cs_platform.validate_persona_sql($1::text)`, sql);
+    try {
+      await prisma.$queryRawUnsafe(
+        `SELECT q.user_id::uuid FROM (${sql}) AS q WHERE q.user_id IS NOT NULL LIMIT 0`
+      );
+    } catch {
+      throw new Error('SQL 规则必须 SELECT user_id，且 user_id 必须是 public.users.id UUID');
+    }
   }
+}
+
+/**
+ * 画像 SQL 只需要产出 user_id 集合，顶层 ORDER BY 对刷新结果无意义。
+ * 同时 PostgreSQL 会拒绝 `SELECT DISTINCT user_id ... ORDER BY <非 select 字段>`，
+ * 所以保存前剥离顶层排序，避免 refresh 时被数据库函数误伤。
+ */
+function normalizePersonaSql(sql: string): string {
+  const trimmed = sql.trim();
+  if (/\b(limit|offset|fetch)\b/i.test(trimmed)) return trimmed;
+  return trimmed.replace(/\s+order\s+by\s+[\s\S]*$/i, '').trim();
 }
 
 function toPersonaData(row: PersonaRow): CsPersonaData {
