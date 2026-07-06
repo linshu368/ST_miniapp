@@ -248,6 +248,7 @@ export async function provision(
 
   // ── 6. 更新 users.st_initialized_at ───────────────────────────────────────
   const { error: updateError } = await getSupabaseClient()
+    .schema('miniapp')
     .from('users')
     .update({ st_initialized_at: new Date().toISOString() })
     .eq('id', userId);
@@ -297,6 +298,7 @@ export async function ensureCharacterProvisioned(
   const { log = console.log } = options;
 
   const { data, error } = await getSupabaseClient()
+    .schema('miniapp')
     .from('users')
     .select('st_handle')
     .eq('id', userId)

@@ -51,7 +51,7 @@ interface SessionRow {
   updated_at: Date | string;
 }
 
-interface PublicUserRow {
+interface MiniappUserRow {
   id: string;
   tg_id: string;
 }
@@ -466,9 +466,9 @@ export class CsPlatformRepository {
     return toMessageData(expectOne(rows, '接收 Telegram 消息失败：数据库未返回记录'));
   }
 
-  async findUserByTelegramId(telegramUserId: string): Promise<PublicUserRow | null> {
-    const rows = await prisma.$queryRawUnsafe<PublicUserRow[]>(
-      `SELECT id, tg_id FROM public.users WHERE tg_id = $1 LIMIT 1`,
+  async findUserByTelegramId(telegramUserId: string): Promise<MiniappUserRow | null> {
+    const rows = await prisma.$queryRawUnsafe<MiniappUserRow[]>(
+      `SELECT id, tg_id FROM miniapp.users WHERE tg_id = $1 LIMIT 1`,
       telegramUserId
     );
     return rows[0] ?? null;
@@ -540,7 +540,7 @@ export class CsPlatformRepository {
         `SELECT q.user_id::uuid FROM (${sql}) AS q WHERE q.user_id IS NOT NULL LIMIT 0`
       );
     } catch {
-      throw new Error('SQL 规则必须 SELECT user_id，且 user_id 必须是 public.users.id UUID');
+      throw new Error('SQL 规则必须 SELECT user_id，且 user_id 必须是 miniapp.users.id UUID');
     }
   }
 }

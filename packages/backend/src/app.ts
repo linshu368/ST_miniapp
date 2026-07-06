@@ -13,6 +13,7 @@ import csPlatformRoutes from './routes/cs-platform.js';
 import { stProxyHandler } from './middleware/stProxy.js';
 import llmProxyRoutes from './routes/llm-proxy.js';
 import chatsRoutes from './routes/chats.js';
+import botRoutes from './routes/bot.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -62,6 +63,7 @@ export async function buildApp() {
       'X-Init-Data',
       'X-CS-Admin-Token',
       'X-CS-Operator-Id',
+      'X-Bot-Internal-Secret',
     ],
   });
 
@@ -75,6 +77,7 @@ export async function buildApp() {
   await app.register(csPlatformRoutes);
   await app.register(llmProxyRoutes);
   await app.register(chatsRoutes);
+  await app.register(botRoutes);
 
   // ── ST 反向代理：/api/bridge/st/* → ST 原生服务 ──
   // 注意：使用 addContentTypeParser 允许透传任意 Content-Type 的 raw body
