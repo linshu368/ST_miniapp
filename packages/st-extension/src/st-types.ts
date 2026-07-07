@@ -25,7 +25,11 @@ export interface STEventSource {
 }
 
 export interface STPresetManager {
+  /** 该预设管理器对应的 API id（chat completion 源为 'openai'，见 vendor preset-manager.js） */
+  apiId: string;
   getSelectedPresetName(): string | null;
+  /** 读取当前（或指定）预设 extensions 下某路径的值，如 regex_scripts（见 vendor preset-manager.js） */
+  readPresetExtensionField(options: { name?: string; path: string }): unknown;
 }
 
 export interface STAccountStorage {
@@ -71,8 +75,12 @@ export interface STTavernHelperSettings {
 }
 
 export interface STExtensionSettings {
+  /** 全局正则脚本列表（regex 扩展维护，见 vendor regex/engine.js SCRIPT_TYPES.GLOBAL） */
+  regex?: Array<Record<string, unknown>>;
   /** 已被允许使用内置正则的角色 avatar 文件名列表（regex 扩展维护） */
   character_allowed_regex?: string[];
+  /** 已被允许使用内置正则的预设：{ [apiId]: 预设名[] }（regex 扩展维护） */
+  preset_allowed_regex?: Record<string, string[]>;
   /** 酒馆助手设置（setting_field='tavern_helper'，见 JS-Slash-Runner src/type/settings.ts） */
   tavern_helper?: STTavernHelperSettings;
   [key: string]: unknown;

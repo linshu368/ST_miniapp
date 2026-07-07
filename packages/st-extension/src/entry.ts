@@ -4,13 +4,19 @@ import { registerForwarders } from './forwarders/index.js';
 import { installAutocompleteGuard } from './patches/autocomplete-guard.js';
 import { installTabsBaseGuard } from './patches/tabs-base-guard.js';
 import { installRegexAutoConfirm } from './patches/regex-autoconfirm.js';
+import { installPresetRegexAutoConfirm } from './patches/preset-regex-autoconfirm.js';
 import { installWorldbookAutoImport } from './patches/worldbook-autoimport.js';
 import { installOaiSettingsGuard } from './patches/oai-settings-guard.js';
 import { installTavernHelperGuard } from './patches/tavern-helper-guard.js';
 import { installScriptPopupAutoCancel } from './patches/script-popup-autocancel.js';
-import { installNativeUiHide, installPresetUiHide } from './patches/native-ui-hide.js';
+import {
+  installNativeUiHide,
+  installPresetUiHide,
+  installEmptyDetailsHide,
+} from './patches/native-ui-hide.js';
 import { installLlmMetadataInject } from './patches/llm-metadata-inject.js';
 import { installReasoningAutoParse } from './patches/reasoning-auto-parse.js';
+import { installGlobalRegexSafetyNet } from './patches/global-regex-safety-net.js';
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -33,6 +39,9 @@ function init(): void {
   installTabsBaseGuard();
   // 进入对话时「是否启用角色内置正则」确认弹窗：平台角色均可信，自动按「确定」启用，用户无感。
   installRegexAutoConfirm();
+  // 预设内置正则（如剥离 <thinking>/<disclaimer> 的清洗脚本）默认不生效：平台预设由服务端烘入、
+  // 不走 ST 下拉框切换，原生「是否启用预设正则」授权流程从不触发。自动授权当前预设，等价按「确定」。
+  installPresetRegexAutoConfirm();
   // 进入对话时「是否导入角色内置世界书」确认弹窗：平台角色均可信，自动按「Yes」静默导入并链接，用户无感。
   installWorldbookAutoImport();
   // 老用户 settings.json 可能仍为 openai_max_context=4095；APP_READY 时幂等校正为平台值。
@@ -47,10 +56,15 @@ function init(): void {
   installNativeUiHide();
   // 隐藏 ST 原生「AI Response Configuration / 对话补全预设」抽屉：平台不开放用户改预设，始终隐藏。
   installPresetUiHide();
+  // 部分卡 scoped 正则剥离 <UpdateVariable> 后残留空 <details> 壳（encode_tags=false 时渲染为空「详情」）。
+  installEmptyDetailsHide();
   // 每次 LLM 请求前注入 X-ST-Character-Id / X-ST-Preset-Id header，供 llm-proxy 落 chat_history。
   installLlmMetadataInject();
   // ST 内置推理解析器默认关闭，模型 <think> 思维链会直接暴露。强制开启作为全局安全网。
   installReasoningAutoParse();
+  // 平台级全局正则兜底：无论哪张卡、哪个预设，<thinking>/<think>/<disclaimer> 在展示层一律删除。
+  // 全局正则无需授权、恒定生效，弥补各卡/预设脚本漏配或授权失败的缝隙。
+  installGlobalRegexSafetyNet();
 
   const server = createBridgeServer('*');
   server.start();
