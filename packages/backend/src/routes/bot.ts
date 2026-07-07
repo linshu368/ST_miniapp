@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { ok, fail } from '@miniapp/shared';
 import { config } from '../platform/config.js';
 import { recordBotStart } from '../lib/user.js';
+import { CsPlatformRepository } from '../infrastructure/repositories/CsPlatformRepository.js';
 
 interface BotStartRequestBody {
   tg_id?: unknown;
@@ -10,6 +11,7 @@ interface BotStartRequestBody {
 
 interface TelegramWebhookUpdate {
   message?: {
+    message_id?: number;
     text?: string;
     from?: { id?: number };
     chat?: { id?: number };
@@ -17,6 +19,8 @@ interface TelegramWebhookUpdate {
 }
 
 export default async function botRoutes(app: FastifyInstance) {
+  const csRepository = new CsPlatformRepository();
+
   // @frontend-ready: false - internal bot endpoint
   app.post('/api/internal/bot/start', async (request, reply) => {
     const secret = request.headers['x-bot-internal-secret'];
@@ -56,13 +60,22 @@ export default async function botRoutes(app: FastifyInstance) {
     const update = (request.body ?? {}) as TelegramWebhookUpdate;
     const text = update.message?.text?.trim() ?? '';
     const startPayload = parseStartPayload(text);
-    if (startPayload === undefined) {
-      return reply.send(ok({ ignored: true }));
-    }
-
     const tgId = normalizeTelegramId(update.message?.from?.id ?? update.message?.chat?.id);
     if (!tgId) {
       return reply.send(ok({ ignored: true }));
+    }
+
+    if (startPayload === undefined) {
+      const message = text
+        ? await csRepository.receiveTelegramMessage({
+            telegramUserId: tgId,
+            content: text,
+            telegramMessageId: update.message?.message_id
+              ? String(update.message.message_id)
+              : undefined,
+          })
+        : null;
+      return reply.send(ok({ ignored: !message, cs_message_id: message?.id ?? null }));
     }
 
     try {
