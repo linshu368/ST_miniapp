@@ -75,6 +75,8 @@ export interface STTavernHelperSettings {
 }
 
 export interface STExtensionSettings {
+  /** 全局正则脚本列表（regex 扩展维护，见 vendor regex/engine.js SCRIPT_TYPES.GLOBAL） */
+  regex?: Array<Record<string, unknown>>;
   /** 已被允许使用内置正则的角色 avatar 文件名列表（regex 扩展维护） */
   character_allowed_regex?: string[];
   /** 已被允许使用内置正则的预设：{ [apiId]: 预设名[] }（regex 扩展维护） */

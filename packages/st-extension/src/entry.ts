@@ -12,6 +12,7 @@ import { installScriptPopupAutoCancel } from './patches/script-popup-autocancel.
 import { installNativeUiHide, installPresetUiHide } from './patches/native-ui-hide.js';
 import { installLlmMetadataInject } from './patches/llm-metadata-inject.js';
 import { installReasoningAutoParse } from './patches/reasoning-auto-parse.js';
+import { installGlobalRegexSafetyNet } from './patches/global-regex-safety-net.js';
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -55,6 +56,9 @@ function init(): void {
   installLlmMetadataInject();
   // ST 内置推理解析器默认关闭，模型 <think> 思维链会直接暴露。强制开启作为全局安全网。
   installReasoningAutoParse();
+  // 平台级全局正则兜底：无论哪张卡、哪个预设，<thinking>/<think>/<disclaimer> 在展示层一律删除。
+  // 全局正则无需授权、恒定生效，弥补各卡/预设脚本漏配或授权失败的缝隙。
+  installGlobalRegexSafetyNet();
 
   const server = createBridgeServer('*');
   server.start();
