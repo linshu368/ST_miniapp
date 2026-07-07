@@ -43,3 +43,17 @@ export function installPresetUiHide(): void {
   ].join('\n');
   document.head.appendChild(style);
 }
+
+/**
+ * 隐藏消息正文中的空 <details> 元素。
+ *
+ * 部分角色卡让模型用 `<details>` 包裹 `<UpdateVariable>` 等变量块，卡自带的
+ * scoped 正则在展示时剥离了内部 `<UpdateVariable>` 却保留了外层 `<details>`。
+ * `encode_tags=false` 时浏览器将空 `<details>` 渲染为带「详情」折叠标签的空区域。
+ * 此规则在渲染层隐藏"无子元素"的 `<details>`，不影响含有合法内容的折叠区域。
+ */
+export function installEmptyDetailsHide(): void {
+  const style = document.createElement('style');
+  style.textContent = '.mes_text details:not(:has(*)) { display: none !important; }';
+  document.head.appendChild(style);
+}

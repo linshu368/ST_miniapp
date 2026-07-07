@@ -9,7 +9,11 @@ import { installWorldbookAutoImport } from './patches/worldbook-autoimport.js';
 import { installOaiSettingsGuard } from './patches/oai-settings-guard.js';
 import { installTavernHelperGuard } from './patches/tavern-helper-guard.js';
 import { installScriptPopupAutoCancel } from './patches/script-popup-autocancel.js';
-import { installNativeUiHide, installPresetUiHide } from './patches/native-ui-hide.js';
+import {
+  installNativeUiHide,
+  installPresetUiHide,
+  installEmptyDetailsHide,
+} from './patches/native-ui-hide.js';
 import { installLlmMetadataInject } from './patches/llm-metadata-inject.js';
 import { installReasoningAutoParse } from './patches/reasoning-auto-parse.js';
 import { installGlobalRegexSafetyNet } from './patches/global-regex-safety-net.js';
@@ -52,6 +56,8 @@ function init(): void {
   installNativeUiHide();
   // 隐藏 ST 原生「AI Response Configuration / 对话补全预设」抽屉：平台不开放用户改预设，始终隐藏。
   installPresetUiHide();
+  // 部分卡 scoped 正则剥离 <UpdateVariable> 后残留空 <details> 壳（encode_tags=false 时渲染为空「详情」）。
+  installEmptyDetailsHide();
   // 每次 LLM 请求前注入 X-ST-Character-Id / X-ST-Preset-Id header，供 llm-proxy 落 chat_history。
   installLlmMetadataInject();
   // ST 内置推理解析器默认关闭，模型 <think> 思维链会直接暴露。强制开启作为全局安全网。
