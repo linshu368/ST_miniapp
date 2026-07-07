@@ -92,6 +92,8 @@ export interface STContext {
   getPresetManager(): STPresetManager | null;
   selectCharacterById(index: number, opts?: { switchMenu?: boolean }): Promise<void>;
   saveSettingsDebounced(): void;
+  /** 重新拉取并渲染当前对话（见 vendor script.js reloadCurrentChat） */
+  reloadCurrentChat(): Promise<void>;
   openCharacterChat(fileName: string): Promise<void>;
   renameChat(oldFileName: string, newName: string): Promise<void>;
   executeSlashCommandsWithOptions(command: string): Promise<unknown>;

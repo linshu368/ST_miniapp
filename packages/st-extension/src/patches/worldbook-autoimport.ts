@@ -97,6 +97,24 @@ async function importEmbeddedWorldForCurrentCharacter(): Promise<void> {
 }
 
 /**
+ * 供 handleSelectCharacter 在 selectCharacterById 之前调用，
+ * 为目标角色预设 AlertWI 标记 + 关闭阻塞弹窗开关。
+ * 覆盖「角色刚下发、不在 APP_READY 批量预设范围内」的场景，
+ * 避免 checkEmbeddedWorld 弹 toastr 或阻塞弹窗。
+ */
+export function preSuppressWorldbookAlert(avatar: string): void {
+  try {
+    disableBlockingImportDialog();
+    const storage = SillyTavern.getContext().accountStorage;
+    if (storage && avatar) {
+      storage.setItem(`AlertWI_${avatar}`, 'true');
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
  * 安装角色内置世界书「自动导入」补丁。
  * 见文件顶部三道防线说明。
  */

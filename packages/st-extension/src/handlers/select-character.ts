@@ -1,6 +1,8 @@
 import { BridgeError } from '@miniapp/bridge-protocol';
 import type { ActionPayloadMap, ActionResultMap } from '@miniapp/bridge-protocol';
 import '../st-types.js';
+import { preAllowCharacterRegex } from '../patches/regex-autoconfirm.js';
+import { preSuppressWorldbookAlert } from '../patches/worldbook-autoimport.js';
 
 type Payload = ActionPayloadMap['selectCharacter'];
 type Result = ActionResultMap['selectCharacter'];
@@ -26,6 +28,17 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
       'BRIDGE_EXEC_PRECONDITION_FAILED',
       `Character not found: ${payload.avatar}`
     );
+  }
+
+  // 在 selectCharacterById 之前预处理正则 & 世界书：
+  // selectCharacterById → getChatResult → printMessages 时 getRegexedString
+  // 会用 allowedOnly:true 检查 character_allowed_regex，提前写入才能让
+  // 首次渲染即应用 scoped regex（否则要等 CHAT_CHANGED + reloadCurrentChat）。
+  // 同时预设 AlertWI 标记，避免 checkEmbeddedWorld 弹 toastr / 阻塞弹窗。
+  const avatar = ctx.characters[index]?.avatar;
+  if (avatar) {
+    preAllowCharacterRegex(avatar);
+    preSuppressWorldbookAlert(avatar);
   }
 
   await ctx.selectCharacterById(index, { switchMenu: false });
