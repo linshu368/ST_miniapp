@@ -203,7 +203,7 @@ describe('mergeSettings', () => {
     expect(result.settings['main_api']).toBe('openai');
     expect(oai['chat_completion_source']).toBe('custom');
     expect(oai['custom_url']).toBe(LLM_PROXY_URL);
-    expect(oai['custom_model']).toBe('google/gemini-3.1-flash-lite');
+    expect(oai['custom_model']).toBe('anthropic/claude-sonnet-4.5');
   });
 
   it('已配置的 custom_model 不应被兜底默认值覆盖', () => {

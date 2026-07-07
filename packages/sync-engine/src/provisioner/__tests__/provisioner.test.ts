@@ -137,6 +137,7 @@ function makeProvisionData(userSettings: UserSettingsRow | null = null): Provisi
     userSettings,
     systemFallbackCharacterId: CHAR_UUID,
     userPersona: { name: '用户', avatarUrl: null },
+    defaultLlmModel: 'anthropic/claude-sonnet-4.5',
   };
 }
 

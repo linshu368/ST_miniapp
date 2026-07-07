@@ -1,0 +1,7 @@
+import type { CsSessionStatus } from '@miniapp/shared';
+import { SESSION_STATUS_META } from '../constants';
+
+export function SessionBadge({ status }: { status: CsSessionStatus }) {
+  const meta = SESSION_STATUS_META[status] ?? { label: status, tone: 'neutral' as const };
+  return <span className={`badge badge-${meta.tone}`}>{meta.label}</span>;
+}

@@ -5,7 +5,9 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { getQueryClient } from '@/lib/api/query-client';
+import { recordMiniappEntry } from '@/lib/api/growth';
 import { useUserSettingsQuery } from '@/lib/api/settings';
+import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
 import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useThemeStore } from '@/stores/theme-store';
@@ -38,6 +40,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {telegramReady ? <GrowthEntryReporter /> : null}
       {telegramReady ? <UserSettingsHydrator /> : null}
       {telegramReady ? (
         <BridgeProvider>
@@ -48,6 +51,26 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );
+}
+
+function GrowthEntryReporter() {
+  useEffect(() => {
+    const rawInitData = getRawInitData();
+    if (!rawInitData) return;
+
+    const sourceId = new URLSearchParams(rawInitData).get('start_param')?.trim();
+    if (!sourceId) return;
+
+    const key = `growth_entry_reported:${sourceId}`;
+    if (sessionStorage.getItem(key) === '1') return;
+    sessionStorage.setItem(key, '1');
+
+    recordMiniappEntry(sourceId).catch(() => {
+      sessionStorage.removeItem(key);
+    });
+  }, []);
+
+  return null;
 }
 
 function UserSettingsHydrator() {

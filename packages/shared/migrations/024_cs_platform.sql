@@ -44,14 +44,14 @@ CREATE TABLE IF NOT EXISTS cs_platform.persona_refresh_runs (
 CREATE TABLE IF NOT EXISTS cs_platform.persona_member_snapshots (
   run_id       UUID NOT NULL REFERENCES cs_platform.persona_refresh_runs(id) ON DELETE CASCADE,
   persona_id   UUID NOT NULL REFERENCES cs_platform.personas(id) ON DELETE CASCADE,
-  user_id      UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES miniapp.users(id) ON DELETE CASCADE,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (run_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS cs_platform.persona_member_state (
   persona_id         UUID NOT NULL REFERENCES cs_platform.personas(id) ON DELETE CASCADE,
-  user_id            UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id            UUID NOT NULL REFERENCES miniapp.users(id) ON DELETE CASCADE,
   membership_status  TEXT NOT NULL DEFAULT 'active'
                      CHECK (membership_status IN ('active', 'chatted_left')),
   first_seen_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS cs_platform.persona_member_state (
 
 CREATE TABLE IF NOT EXISTS cs_platform.outreach_sessions (
   persona_id            UUID NOT NULL REFERENCES cs_platform.personas(id) ON DELETE CASCADE,
-  user_id               UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id               UUID NOT NULL REFERENCES miniapp.users(id) ON DELETE CASCADE,
   status                TEXT NOT NULL DEFAULT 'not_started'
                         CHECK (status IN (
                           'not_started',
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS cs_platform.outreach_sessions (
 CREATE TABLE IF NOT EXISTS cs_platform.outreach_messages (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   persona_id           UUID NOT NULL REFERENCES cs_platform.personas(id) ON DELETE CASCADE,
-  user_id              UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id              UUID NOT NULL REFERENCES miniapp.users(id) ON DELETE CASCADE,
   telegram_user_id     TEXT NOT NULL,
   direction            TEXT NOT NULL CHECK (direction IN ('agent', 'user')),
   sop_stage            TEXT,
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS cs_platform.audit_logs (
   operator_id    TEXT NOT NULL,
   action         TEXT NOT NULL,
   persona_id     UUID REFERENCES cs_platform.personas(id) ON DELETE SET NULL,
-  user_id        UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  user_id        UUID REFERENCES miniapp.users(id) ON DELETE SET NULL,
   metadata       JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -157,12 +157,12 @@ SELECT
   u.tg_id AS telegram_user_id,
   COALESCE(NULLIF(s.display_name, ''), NULLIF(s.tg_username, ''), NULLIF(s.tg_first_name, ''), u.tg_id) AS display_name,
   s.tg_username AS username,
-  GREATEST(floor(extract(epoch FROM (now() - u.created_at)) / 86400)::INTEGER, 0) AS register_days,
-  COALESCE(w.total_paid_amount, u.total_paid_amount, 0)::NUMERIC(12, 2) AS total_paid_amount,
+  GREATEST(floor(extract(epoch FROM (now() - COALESCE(u.miniapp_entered_at, u.created_at))) / 86400)::INTEGER, 0) AS register_days,
+  COALESCE(w.total_paid_amount, 0)::NUMERIC(12, 2) AS total_paid_amount,
   COALESCE(p.paid_count, 0)::INTEGER AS paid_count,
-  COALESCE(s.total_round, 0)::BIGINT AS total_round,
-  COALESCE(m.last_message_at, s.updated_at, u.updated_at, u.created_at) AS last_active_at
-FROM public.users u
+  COALESCE(u.total_round, s.total_round, 0)::BIGINT AS total_round,
+  COALESCE(m.last_message_at, s.updated_at, u.updated_at, u.miniapp_entered_at, u.created_at) AS last_active_at
+FROM miniapp.users u
 LEFT JOIN miniapp.miniapp_user_settings s ON s.user_id = u.id
 LEFT JOIN miniapp.user_wallets w ON w.user_id = u.id
 LEFT JOIN payment_summary p ON p.user_id = u.id
@@ -405,10 +405,10 @@ INSERT INTO cs_platform.personas (
   '对话轮次大于 40 且使用产品超过 7 天',
   '#5BBD72',
   'SELECT u.id AS user_id
-FROM public.users u
+FROM miniapp.users u
 JOIN miniapp.miniapp_user_settings s ON s.user_id = u.id
 WHERE s.total_round > 40
-  AND u.created_at < now() - interval ''7 days''
+  AND u.miniapp_entered_at < now() - interval ''7 days''
 ORDER BY s.total_round DESC',
   'Hi~ 我是XX的运营客服，想花几分钟听听你的使用感受，方便吗？',
   '[
@@ -425,12 +425,12 @@ ORDER BY s.total_round DESC',
   '连续活跃≥7天后断了≥3天',
   '#E85D4A',
   'SELECT u.id AS user_id
-FROM public.users u
+FROM miniapp.users u
 JOIN miniapp.miniapp_user_settings s ON s.user_id = u.id
 WHERE s.total_round > 40
-  AND u.created_at < now() - interval ''7 days''
-  AND COALESCE(s.updated_at, u.updated_at, u.created_at) < now() - interval ''3 days''
-ORDER BY COALESCE(s.updated_at, u.updated_at, u.created_at) DESC',
+  AND u.miniapp_entered_at < now() - interval ''7 days''
+  AND COALESCE(s.updated_at, u.updated_at, u.miniapp_entered_at, u.created_at) < now() - interval ''3 days''
+ORDER BY COALESCE(s.updated_at, u.updated_at, u.miniapp_entered_at, u.created_at) DESC',
   'Hi~ 好几天没看到你，最近还好吗？是不是我们哪里没做好？',
   '[]'::jsonb
 ),
@@ -440,7 +440,7 @@ ORDER BY COALESCE(s.updated_at, u.updated_at, u.created_at) DESC',
   '首次付费后24小时内',
   '#E8A84A',
   'SELECT DISTINCT u.id AS user_id
-FROM public.users u
+FROM miniapp.users u
 JOIN miniapp.user_wallets w ON w.user_id = u.id
 WHERE w.first_paid_at > now() - interval ''24 hours''
 ORDER BY w.first_paid_at DESC',
@@ -453,12 +453,12 @@ ORDER BY w.first_paid_at DESC',
   '聊1-2轮后3-7天未回',
   '#4A90D9',
   'SELECT u.id AS user_id
-FROM public.users u
+FROM miniapp.users u
 JOIN miniapp.miniapp_user_settings s ON s.user_id = u.id
 WHERE s.total_round BETWEEN 1 AND 2
-  AND u.created_at BETWEEN now() - interval ''7 days'' AND now() - interval ''3 days''
-  AND COALESCE(s.updated_at, u.updated_at, u.created_at) < now() - interval ''3 days''
-ORDER BY u.created_at DESC',
+  AND u.miniapp_entered_at BETWEEN now() - interval ''7 days'' AND now() - interval ''3 days''
+  AND COALESCE(s.updated_at, u.updated_at, u.miniapp_entered_at, u.created_at) < now() - interval ''3 days''
+ORDER BY u.miniapp_entered_at DESC',
   'Hi~ 看到你之前试了一下我们的角色，是不是哪里不太对？还是没找到感兴趣的角色？',
   '[]'::jsonb
 )

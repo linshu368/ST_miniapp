@@ -7,6 +7,8 @@ import { hueShiftFromId } from '@/lib/utils/character-hue';
 
 /** 开屏至少停留时长：保证动画完整走完一轮，避免"闪一下就没" */
 const MIN_SHOW_MS = 2400;
+/** 首次进入 ST 可能较慢，超过该时长后展示安抚提示 */
+const SLOW_HINT_MS = 6500;
 /** 退场动画时长，与 CSS splash-exit 保持一致 */
 const EXIT_MS = 720;
 
@@ -67,11 +69,14 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
 
   const [phase, setPhase] = useState<Phase>('showing');
   const [minElapsed, setMinElapsed] = useState(false);
+  const [showSlowHint, setShowSlowHint] = useState(false);
 
   useEffect(() => {
     const minTimer = setTimeout(() => setMinElapsed(true), MIN_SHOW_MS);
+    const slowHintTimer = setTimeout(() => setShowSlowHint(true), SLOW_HINT_MS);
     return () => {
       clearTimeout(minTimer);
+      clearTimeout(slowHintTimer);
     };
   }, []);
 
@@ -239,6 +244,20 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
           </p>
         )}
       </div>
+
+      {showSlowHint && phase === 'showing' && (
+        <div
+          className="absolute bottom-[calc(env(safe-area-inset-bottom)+6.5rem)] mx-6 max-w-[20rem] rounded-2xl border border-white/10 bg-black/22 px-4 py-3 text-center shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl"
+          style={{ animation: 'splash-fade-up 0.7s ease-out both' }}
+        >
+          <p className="text-[12px] font-medium tracking-[0.2em] text-white/70">
+            第一次见面，需要多等几秒
+          </p>
+          <p className="mt-2 text-[12px] leading-relaxed text-white/42">
+            我们正在唤醒角色记忆和对话引擎。准备好后会自动进入，不用退出重试。
+          </p>
+        </div>
+      )}
 
       {/* 底部等待指示：三粒星尘跳动 */}
       <div

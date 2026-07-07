@@ -1,6 +1,9 @@
 import { BridgeError } from '@miniapp/bridge-protocol';
 import type { ActionPayloadMap, ActionResultMap } from '@miniapp/bridge-protocol';
 import '../st-types.js';
+import { preAllowCharacterRegex } from '../patches/regex-autoconfirm.js';
+import { preAllowPresetRegex } from '../patches/preset-regex-autoconfirm.js';
+import { preSuppressWorldbookAlert } from '../patches/worldbook-autoimport.js';
 
 type Payload = ActionPayloadMap['selectCharacter'];
 type Result = ActionResultMap['selectCharacter'];
@@ -28,7 +31,25 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
     );
   }
 
+  // 在 selectCharacterById 之前预处理正则 & 世界书：
+  // selectCharacterById → getChatResult → printMessages 时 getRegexedString
+  // 会用 allowedOnly:true 检查 character_allowed_regex / preset_allowed_regex，提前写入
+  // 才能让首次渲染即应用 scoped / preset regex（否则要等 CHAT_CHANGED + reloadCurrentChat）。
+  // 同时预设 AlertWI 标记，避免 checkEmbeddedWorld 弹 toastr / 阻塞弹窗。
+  const avatar = ctx.characters[index]?.avatar;
+  if (avatar) {
+    preAllowCharacterRegex(avatar);
+    preSuppressWorldbookAlert(avatar);
+  }
+  // 预设正则不依赖具体角色，独立预授权（当前选中预设含内置正则时才写入）。
+  preAllowPresetRegex();
+
   await ctx.selectCharacterById(index, { switchMenu: false });
+
+  if (payload.forceNewChat) {
+    await ctx.executeSlashCommandsWithOptions('/newchat');
+  }
+
   ctx.saveSettingsDebounced();
 
   return {

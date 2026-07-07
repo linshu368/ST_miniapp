@@ -95,6 +95,8 @@ export interface ProvisionData {
   systemFallbackCharacterId: string | null;
   /** 用户 ST persona（TG 名字/头像），name 为空表示无可用身份 */
   userPersona: UserPersona;
+  /** 默认 LLM 模型，来自 runtime_config.llm_model_tiers 中 isDefault=true 的项 */
+  defaultLlmModel: string | null;
 }
 
 export const DEFAULT_USER_PERSONA_NAME = '用户';
@@ -122,6 +124,7 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     platformSettingsResult,
     apiConfigResult,
     fallbackConfigResult,
+    llmModelTiersResult,
   ] = await Promise.all([
     schemaClient('miniapp').from('users').select('st_handle').eq('id', userId).single(),
     schemaClient('miniapp')
@@ -152,6 +155,12 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
       .from('runtime_config')
       .select('value')
       .eq('key', 'system_fallback_character_id')
+      .maybeSingle(),
+    // 默认模型配置
+    schemaClient('miniapp')
+      .from('runtime_config')
+      .select('value')
+      .eq('key', 'llm_model_tiers')
       .maybeSingle(),
   ]);
 
@@ -214,6 +223,18 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     systemFallbackCharacterId = typeof raw === 'string' ? raw : null;
   }
 
+  // 解析默认 LLM 模型
+  let defaultLlmModel: string | null = null;
+  if (!llmModelTiersResult.error && llmModelTiersResult.data) {
+    const raw = (llmModelTiersResult.data as { value: unknown }).value;
+    if (Array.isArray(raw)) {
+      const defaultTier = raw.find((t: any) => t.isDefault);
+      if (defaultTier && typeof defaultTier.modelName === 'string') {
+        defaultLlmModel = defaultTier.modelName;
+      }
+    }
+  }
+
   return {
     stHandle,
     characters: (charactersResult.data ?? []) as CharacterRow[],
@@ -223,6 +244,7 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     userSettings,
     systemFallbackCharacterId,
     userPersona,
+    defaultLlmModel,
   };
 }
 
@@ -282,7 +304,7 @@ function createMinimalSettings(): Record<string, unknown> {
     oai_settings: {
       chat_completion_source: 'custom',
       custom_url: 'http://localhost:3001/api/platform/llm-proxy/v1',
-      custom_model: 'google/gemini-3.1-flash-lite',
+      custom_model: 'anthropic/claude-sonnet-4.5',
       bypass_status_check: false,
     },
   };
