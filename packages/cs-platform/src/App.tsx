@@ -32,6 +32,7 @@ export default function App() {
     queryKey: ['cs', 'personas', authToken],
     queryFn: csApi.personas,
     enabled: !!authToken,
+    refetchInterval: module === 'outreach' ? 15_000 : false,
   });
   const personas = personasQuery.data?.personas ?? [];
   const selectedPersona =
@@ -41,19 +42,21 @@ export default function App() {
     queryKey: ['cs', 'users', selectedPersona?.id],
     queryFn: () => csApi.users(selectedPersona!.id),
     enabled: !!selectedPersona && module === 'outreach',
+    refetchInterval: selectedPersona && module === 'outreach' ? 10_000 : false,
   });
 
   const sessionQuery = useQuery({
     queryKey: ['cs', 'session', selectedPersona?.id, selectedUser?.user.user_id],
     queryFn: () => csApi.session(selectedPersona!.id, selectedUser!.user.user_id),
     enabled: !!selectedPersona && !!selectedUser && module === 'outreach',
+    refetchInterval: selectedPersona && selectedUser && module === 'outreach' ? 5_000 : false,
   });
 
   const messagesQuery = useQuery({
     queryKey: ['cs', 'messages', selectedPersona?.id, selectedUser?.user.user_id],
     queryFn: () => csApi.messages(selectedPersona!.id, selectedUser!.user.user_id),
     enabled: !!selectedPersona && !!selectedUser && module === 'outreach',
-    refetchInterval: selectedUser && module === 'outreach' ? 10_000 : false,
+    refetchInterval: selectedUser && module === 'outreach' ? 3_000 : false,
   });
 
   const refreshMutation = useMutation({
