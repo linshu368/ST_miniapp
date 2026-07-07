@@ -42,7 +42,14 @@ export function ChatToolsMenu() {
     <>
       {/* 透明遮罩，用于拦截点击事件以关闭弹窗，覆盖 iframe */}
       {open && (
-        <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
+        <div
+          className="fixed inset-0 z-[15]"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(false);
+          }}
+          aria-hidden="true"
+        />
       )}
       <div ref={containerRef} className="fixed bottom-0 left-0 z-20 flex items-end">
         {/* Popover card */}
