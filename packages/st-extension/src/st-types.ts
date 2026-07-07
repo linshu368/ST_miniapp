@@ -38,6 +38,11 @@ export interface STAccountStorage {
 export interface STPowerUserSettings {
   /** 是否对含内置世界书的角色弹「阻塞式」导入确认框（默认 true） */
   world_import_dialog?: boolean;
+  /** ST 内置推理解析器设置（scripts/reasoning.js） */
+  reasoning?: {
+    auto_parse?: boolean;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
