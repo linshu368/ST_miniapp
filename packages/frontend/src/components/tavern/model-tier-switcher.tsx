@@ -42,7 +42,7 @@ export function ModelTierSwitcher() {
   }
 
   return (
-    <div className="flex items-center gap-1 rounded-full bg-black/40 backdrop-blur-sm p-0.5">
+    <div className="flex flex-col gap-1">
       {tiers.map((tier: ModelTierConfig) => {
         const isActive = activeTier && tier.tier === activeTier.tier;
         return (
@@ -51,9 +51,11 @@ export function ModelTierSwitcher() {
             disabled={isDisabled}
             onClick={() => handleSwitch(tier)}
             className={cn(
-              'relative rounded-full px-3 py-1 text-xs font-medium transition-all',
+              'relative w-full flex items-center justify-start rounded-lg px-3 py-2 text-xs font-medium transition-all',
               'disabled:opacity-40 disabled:cursor-not-allowed',
-              isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/60 hover:text-white/80'
+              isActive
+                ? 'bg-white/20 text-white shadow-sm'
+                : 'text-white/60 hover:bg-white/10 hover:text-white/80'
             )}
           >
             {tier.label}
