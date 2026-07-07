@@ -3,32 +3,24 @@
 import { cn } from '@/lib/utils';
 import { platformAction, useBridgeStatus, useSTMirror } from '@/lib/bridge';
 import { useState } from 'react';
-
-const TIERS = [
-  {
-    tier: 'standard' as const,
-    modelName: process.env.NEXT_PUBLIC_DEFAULT_LLM_MODEL || 'anthropic/claude-sonnet-4.5',
-    provider: 'openrouter',
-    label: '快餐模型',
-  },
-  {
-    tier: 'premium' as const,
-    modelName: process.env.NEXT_PUBLIC_DEFAULT_LLM_MODEL || 'anthropic/claude-sonnet-4.5',
-    provider: 'openrouter',
-    label: '基础模型',
-  },
-] as const;
+import { useModelTiersQuery } from '@/lib/api/models';
+import type { ModelTierConfig } from '@miniapp/shared';
 
 export function ModelTierSwitcher() {
   const bridgeStatus = useBridgeStatus();
   const currentModel = useSTMirror((s) => s.currentModel);
   const [switching, setSwitching] = useState(false);
+  const { data, isLoading } = useModelTiersQuery();
 
-  const isDisabled = bridgeStatus !== 'ready' || switching;
+  const isDisabled = bridgeStatus !== 'ready' || switching || isLoading;
 
-  const activeTier = TIERS.find((t) => t.modelName === currentModel) ?? TIERS[0];
+  const tiers = data?.tiers || [];
+  const activeTier =
+    tiers.find((t: ModelTierConfig) => t.modelName === currentModel) ??
+    tiers.find((t: ModelTierConfig) => t.isDefault) ??
+    tiers[0];
 
-  async function handleSwitch(tier: (typeof TIERS)[number]) {
+  async function handleSwitch(tier: ModelTierConfig) {
     if (isDisabled || tier.modelName === currentModel) return;
     setSwitching(true);
     try {
@@ -43,10 +35,16 @@ export function ModelTierSwitcher() {
     }
   }
 
+  if (isLoading || tiers.length === 0) {
+    return (
+      <div className="flex items-center gap-1 rounded-full bg-black/40 backdrop-blur-sm p-0.5 h-[28px] w-[120px] animate-pulse" />
+    );
+  }
+
   return (
     <div className="flex items-center gap-1 rounded-full bg-black/40 backdrop-blur-sm p-0.5">
-      {TIERS.map((tier) => {
-        const isActive = tier.tier === activeTier.tier;
+      {tiers.map((tier: ModelTierConfig) => {
+        const isActive = activeTier && tier.tier === activeTier.tier;
         return (
           <button
             key={tier.tier}

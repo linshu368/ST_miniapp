@@ -59,7 +59,8 @@ export function mergeSettings(
   availableCharIds: string[],
   fallbackCharacterId: string | undefined,
   llmProxyUrl: string,
-  persona?: PersonaInput
+  persona?: PersonaInput,
+  defaultLlmModel?: string | null
 ): MergedSettings {
   // 深拷贝 A 作为 base（绝不修改原始对象）
   const merged = cloneDeep(platformSettings.settings_jsonb) as Record<string, unknown>;
@@ -137,7 +138,7 @@ export function mergeSettings(
     lodashSet(
       merged,
       'oai_settings.custom_model',
-      process.env.DEFAULT_LLM_MODEL || 'anthropic/claude-sonnet-4.5'
+      defaultLlmModel || 'anthropic/claude-sonnet-4.5'
     );
   }
 
