@@ -10,6 +10,7 @@ import walletRoutes from './routes/wallet.js';
 import settingsRoutes from './routes/settings.js';
 import wishRoutes from './routes/wishes.js';
 import csPlatformRoutes from './routes/cs-platform.js';
+import modelsRoutes from './routes/models.js';
 import { stProxyHandler } from './middleware/stProxy.js';
 import llmProxyRoutes from './routes/llm-proxy.js';
 import chatsRoutes from './routes/chats.js';
@@ -68,6 +69,7 @@ export async function buildApp() {
   await app.register(settingsRoutes);
   await app.register(wishRoutes);
   await app.register(csPlatformRoutes);
+  await app.register(modelsRoutes);
   await app.register(llmProxyRoutes);
   await app.register(chatsRoutes);
   await app.register(botRoutes);

@@ -42,6 +42,11 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   }
 
   await ctx.selectCharacterById(index, { switchMenu: false });
+
+  if (payload.forceNewChat) {
+    await ctx.executeSlashCommandsWithOptions('/newchat');
+  }
+
   ctx.saveSettingsDebounced();
 
   return {

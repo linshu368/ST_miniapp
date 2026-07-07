@@ -125,7 +125,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       }
 
       if (modelName) {
-        const tierConfig = getModelTier(modelName);
+        const tierConfig = await getModelTier(modelName);
         deductionRate = tierConfig.deductionRate;
       }
 

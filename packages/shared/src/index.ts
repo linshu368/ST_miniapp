@@ -9,6 +9,7 @@ export * from './api/st-session';
 export * from './api/wishes';
 export * from './api/cs-platform';
 export * from './api/growth';
+export * from './api/models';
 export * from './config/database';
 export * from './st-bridge';
 export * from './png-parser';
