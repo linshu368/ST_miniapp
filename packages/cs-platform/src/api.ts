@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AdvanceCsSessionRequest,
   CreateCsPersonaRequest,
   CsPersonaDataResponse,
@@ -14,9 +14,15 @@ import type {
   SnoozeCsSessionRequest,
   UpdateCsPersonaRequest,
   ApiResponse,
+  CreateGrowthChannelLinkData,
+  CreateGrowthChannelLinkRequest,
+  GetGrowthChannelLinksData,
 } from '@miniapp/shared';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const API_URL = (
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? 'https://stminiapp-production.up.railway.app' : 'http://localhost:3001')
+).replace(/\/$/, '');
 const TOKEN_KEY = 'cs_admin_token';
 const OPERATOR_KEY = 'cs_operator_id';
 
@@ -55,6 +61,12 @@ async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const csApi = {
+  growthLinks: () => apiClient<GetGrowthChannelLinksData>('/api/cs/growth/channel-links'),
+  createGrowthLink: (body: CreateGrowthChannelLinkRequest) =>
+    apiClient<CreateGrowthChannelLinkData>('/api/cs/growth/channel-links', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   personas: () => apiClient<GetCsPersonasData>('/api/cs/personas'),
   createPersona: (body: CreateCsPersonaRequest) =>
     apiClient<CsPersonaDataResponse>('/api/cs/personas', {
