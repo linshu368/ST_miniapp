@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useModelTiersQuery } from '@/lib/api/models';
 import type { ModelTierConfig } from '@miniapp/shared';
 import { Check } from 'lucide-react';
+import { useSTMirrorStore } from '@/stores/st-mirror';
 
 export function ModelTierSwitcher() {
   const bridgeStatus = useBridgeStatus();
@@ -23,7 +24,12 @@ export function ModelTierSwitcher() {
 
   async function handleSwitch(tier: ModelTierConfig) {
     if (isDisabled || tier.modelName === currentModel) return;
+
+    const previousModel = currentModel;
+    // 乐观更新 UI
+    useSTMirrorStore.getState().updatePartial({ currentModel: tier.modelName });
     setSwitching(true);
+
     try {
       await platformAction('changeModel', {
         provider: tier.provider,
@@ -31,6 +37,8 @@ export function ModelTierSwitcher() {
       });
     } catch (err) {
       console.error('[ModelTierSwitcher] changeModel failed:', err);
+      // 如果失败，回退到之前的模型
+      useSTMirrorStore.getState().updatePartial({ currentModel: previousModel });
     } finally {
       setSwitching(false);
     }
