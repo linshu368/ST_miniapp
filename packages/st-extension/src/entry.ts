@@ -10,6 +10,7 @@ import { installTavernHelperGuard } from './patches/tavern-helper-guard.js';
 import { installScriptPopupAutoCancel } from './patches/script-popup-autocancel.js';
 import { installNativeUiHide, installPresetUiHide } from './patches/native-ui-hide.js';
 import { installLlmMetadataInject } from './patches/llm-metadata-inject.js';
+import { installReasoningAutoParse } from './patches/reasoning-auto-parse.js';
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -48,6 +49,8 @@ function init(): void {
   installPresetUiHide();
   // 每次 LLM 请求前注入 X-ST-Character-Id / X-ST-Preset-Id header，供 llm-proxy 落 chat_history。
   installLlmMetadataInject();
+  // ST 内置推理解析器默认关闭，模型 <think> 思维链会直接暴露。强制开启作为全局安全网。
+  installReasoningAutoParse();
 
   const server = createBridgeServer('*');
   server.start();
