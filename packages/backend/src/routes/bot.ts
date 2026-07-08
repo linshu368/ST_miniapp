@@ -66,15 +66,20 @@ export default async function botRoutes(app: FastifyInstance) {
     }
 
     if (startPayload === undefined) {
-      const message = text
-        ? await csRepository.receiveTelegramMessage({
+      let message = null;
+      if (text) {
+        try {
+          message = await csRepository.receiveTelegramMessage({
             telegramUserId: tgId,
             content: text,
             telegramMessageId: update.message?.message_id
               ? String(update.message.message_id)
               : undefined,
-          })
-        : null;
+          });
+        } catch (error) {
+          request.log.error({ err: error }, '[bot] receiveTelegramMessage failed');
+        }
+      }
       return reply.send(ok({ ignored: !message, cs_message_id: message?.id ?? null }));
     }
 
