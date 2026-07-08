@@ -23,6 +23,7 @@ import { RequestBuffer } from './buffer';
 import type { BufferedRequest } from './buffer';
 import { createHandshakeState, handleHandshakeMessage } from './handshake';
 import type { HandshakeState } from './handshake';
+import { markTiming } from './iframe-timing'; // [iframe-timing] TEMP DEBUG
 
 export type BridgeClientOptions = {
   actionTimeout?: number;
@@ -87,6 +88,7 @@ export class BridgeClient {
     if (this.started) return;
     this.started = true;
 
+    markTiming('bridge_start'); // [iframe-timing] TEMP DEBUG
     this.stateMachine.transition({ type: 'IFRAME_LOAD_START' });
 
     this.messageHandler = (event: MessageEvent) => {
@@ -356,6 +358,8 @@ export class BridgeClient {
   }
 
   private handleHandshake(msg: HandshakeMessage): void {
+    // [iframe-timing] TEMP DEBUG: 记录两段握手到达时刻
+    markTiming(msg.phase === 'ready' ? 'st_ready' : 'st_handshake');
     try {
       handleHandshakeMessage({
         message: msg,
