@@ -23,7 +23,7 @@ import { RequestBuffer } from './buffer';
 import type { BufferedRequest } from './buffer';
 import { createHandshakeState, handleHandshakeMessage } from './handshake';
 import type { HandshakeState } from './handshake';
-import { markTiming } from './iframe-timing'; // [iframe-timing] TEMP DEBUG
+import { markTiming, markTimingAt } from './iframe-timing'; // [iframe-timing] TEMP DEBUG
 
 export type BridgeClientOptions = {
   actionTimeout?: number;
@@ -320,6 +320,14 @@ export class BridgeClient {
         break;
       case 'pong':
         this.handlePong(data as PongMessage);
+        break;
+      // [iframe-timing] TEMP DEBUG: ST iframe 端相位打点
+      case 'debug-timing':
+        markTimingAt(
+          data.name as string,
+          typeof data.t === 'number' ? data.t : Date.now(),
+          typeof data.info === 'string' ? data.info : undefined
+        );
         break;
     }
   }

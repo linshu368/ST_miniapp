@@ -17,6 +17,8 @@ import {
 import { installLlmMetadataInject } from './patches/llm-metadata-inject.js';
 import { installReasoningAutoParse } from './patches/reasoning-auto-parse.js';
 import { installGlobalRegexSafetyNet } from './patches/global-regex-safety-net.js';
+import { stTiming } from './debug-timing.js'; // [iframe-timing] TEMP DEBUG
+import { installBootTimingProbes } from './debug-boot-probes.js'; // [iframe-timing] TEMP DEBUG
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -32,6 +34,8 @@ declare const __BUILD_ID__: string;
 declare const __ST_COMMIT__: string;
 
 function init(): void {
+  stTiming('st_init_start'); // [iframe-timing] TEMP DEBUG
+  installBootTimingProbes(); // [iframe-timing] TEMP DEBUG: 订阅 ST boot 生命周期事件
   // 架构铁律：vendor 只读，ST resize 报错从 extension 侧修复（见 patches/autocomplete-guard）
   installAutocompleteGuard();
   // 架构铁律：vendor 只读，<base href="/"> + /tavern 子路径导致 jQuery UI Tabs 误把本地锚点
@@ -87,6 +91,8 @@ function init(): void {
   });
 
   registerForwarders(server);
+
+  stTiming('st_init_done'); // [iframe-timing] TEMP DEBUG
 }
 
 if (typeof window !== 'undefined') {
