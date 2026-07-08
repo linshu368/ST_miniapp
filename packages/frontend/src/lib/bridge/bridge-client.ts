@@ -28,6 +28,12 @@ export type BridgeClientOptions = {
   actionTimeout?: number;
   totalTimeout?: number;
   expectedUserId?: string | null;
+  /** 握手总超时后的最大自动重连次数（默认 3；0 = 关闭重连，回到旧的一次性终止行为） */
+  maxReconnectAttempts?: number;
+  /** 重连退避基数（默认 2000ms）：第 n 次退避 = base * 2^n → 2s / 4s / 8s */
+  reconnectBaseDelayMs?: number;
+  /** 重连 attempt 的握手超时（默认 30s，短于首次 totalTimeout；reload 命中 #1 缓存后握手应很快） */
+  reconnectHandshakeTimeout?: number;
 };
 
 type PendingRequest = {
@@ -43,6 +49,9 @@ export class BridgeClient {
   private readonly actionTimeout: number;
   private readonly totalTimeout: number;
   private readonly expectedUserId: string | null;
+  private readonly maxReconnectAttempts: number;
+  private readonly reconnectBaseDelayMs: number;
+  private readonly reconnectHandshakeTimeout: number;
 
   private readonly stateMachine: BridgeStateMachine;
   private readonly buffer: RequestBuffer;
@@ -53,6 +62,8 @@ export class BridgeClient {
 
   private totalTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private started = false;
 
@@ -63,6 +74,9 @@ export class BridgeClient {
     this.actionTimeout = options?.actionTimeout ?? HANDSHAKE_ACTION_TIMEOUT;
     this.totalTimeout = options?.totalTimeout ?? HANDSHAKE_TOTAL_TIMEOUT;
     this.expectedUserId = options?.expectedUserId ?? null;
+    this.maxReconnectAttempts = options?.maxReconnectAttempts ?? 3;
+    this.reconnectBaseDelayMs = options?.reconnectBaseDelayMs ?? 2000;
+    this.reconnectHandshakeTimeout = options?.reconnectHandshakeTimeout ?? 30_000;
 
     this.stateMachine = createStateMachine();
     this.buffer = new RequestBuffer();
@@ -80,9 +94,76 @@ export class BridgeClient {
     };
     window.addEventListener('message', this.messageHandler);
 
-    this.totalTimer = setTimeout(() => {
-      this.disconnect('Total handshake timeout');
-    }, this.totalTimeout);
+    this.armHandshakeTimer(this.totalTimeout);
+  }
+
+  /** 武装（或重置）握手超时定时器。超时回调走 handleHandshakeTimeout（重连 or 终止）。 */
+  private armHandshakeTimer(timeout: number): void {
+    if (this.totalTimer) clearTimeout(this.totalTimer);
+    this.totalTimer = setTimeout(() => this.handleHandshakeTimeout(), timeout);
+  }
+
+  /**
+   * 握手总超时处理（安全网 #2）：ST 冷启动/资源风暴导致握手未在超时内完成时触发。
+   * 只在 ready 之前可能触发（ready 时 totalTimer 已清 → 不会打断已就绪会话）。
+   * 还有重连额度 → 带退避重连（重载 iframe 让 ST 重新冷启动 + 重发握手）；
+   * 额度耗尽 → 终态 disconnect（停止重试，避免不可恢复场景如 cookie 失效时无限 reload）。
+   */
+  private handleHandshakeTimeout(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.disconnect(`Handshake timeout after ${this.reconnectAttempts} reconnect attempt(s)`);
+      return;
+    }
+    this.scheduleReconnect();
+  }
+
+  /** 安排一次带退避的重连：进入 disconnected（reject 死请求 + 清 buffer），退避后 performReconnect。 */
+  private scheduleReconnect(): void {
+    this.stopPingLoop();
+    this.stateMachine.transition({
+      type: 'DISCONNECT',
+      reason: 'Handshake timeout — scheduling reconnect',
+    });
+    this.rejectAllPending('Bridge reconnecting after handshake timeout');
+    this.buffer.clear();
+
+    // 第 n 次退避（0-based）= base * 2^n → 2s / 4s / 8s
+    const delay = this.reconnectBaseDelayMs * Math.pow(2, this.reconnectAttempts);
+    this.reconnectAttempts += 1;
+
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.performReconnect();
+    }, delay);
+  }
+
+  /**
+   * 执行一次重连：重置握手态 → 回到 loading + 武装（更短的）重连握手超时 → 重载 iframe。
+   * 重载用 src 重新赋值（origin 无关；即使 ST 内部已 302 到 /login 也会拉回 iframe 的原始
+   * src=/tavern/ 重试）。父窗口的 message 监听在 reload 后仍在，ST 重启会重发握手被收到。
+   */
+  private performReconnect(): void {
+    if (!this.started) return;
+
+    const iframe = this.iframeRef();
+    if (!iframe) {
+      this.disconnect('Reconnect aborted: iframe unavailable');
+      return;
+    }
+
+    // 重置握手协商结果，等待新一轮握手覆盖
+    this.handshakeState.supportedActions = [];
+    this.handshakeState.supportedEvents = [];
+    this.handshakeState.boundUserId = null;
+    this.handshakeState.meta = null;
+
+    this.stateMachine.transition({ type: 'IFRAME_LOAD_START' });
+    this.armHandshakeTimer(this.reconnectHandshakeTimeout);
+
+    // 重载 iframe（触发 ST 冷启动 + st-extension 重新 init 并重发握手）
+    const src = iframe.src;
+    iframe.src = src;
   }
 
   stop(): void {
@@ -98,6 +179,12 @@ export class BridgeClient {
       clearTimeout(this.totalTimer);
       this.totalTimer = null;
     }
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempts = 0;
 
     this.stopPingLoop();
     this.rejectAllPending('Bridge client stopped');
@@ -284,6 +371,12 @@ export class BridgeClient {
           clearTimeout(this.totalTimer);
           this.totalTimer = null;
         }
+        // 握手成功：清零重连计数并取消待执行的重连（安全网 #2）
+        this.reconnectAttempts = 0;
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
         // 连接就绪后开始周期性 ping，拉取 ST 镜像状态（currentModel/currentChatId 等），
         // 供前端 mirror store 同步（档位高亮 / 当前对话高亮）。
         this.startPingLoop();
@@ -352,6 +445,14 @@ export class BridgeClient {
 
   private disconnect(reason: string): void {
     this.stopPingLoop();
+    if (this.totalTimer) {
+      clearTimeout(this.totalTimer);
+      this.totalTimer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.stateMachine.transition({ type: 'DISCONNECT', reason });
     this.rejectAllPending(reason);
     this.buffer.clear();
