@@ -24,9 +24,16 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
 
 const marks = new Map<string, number>();
+const details = new Map<string, string>();
 
 export function markTiming(name: string): void {
   marks.set(name, Date.now());
+}
+
+/** ST iframe 端打点（携带 ST 侧 Date.now()，同设备同一时钟，可直接与父窗口相减）。 */
+export function markTimingAt(name: string, t: number, info?: string): void {
+  marks.set(name, t);
+  if (info) details.set(name, info);
 }
 
 /** 页面级打点在每次进入对话页时重置，保留 bridge 生命周期打点（可能早于本次进入）。 */
@@ -39,16 +46,24 @@ export function resetPageTiming(): void {
     'select_start',
     'select_end',
     'chat_ready',
+    // [iframe-timing] round2: selectCharacter ST 端子相位（每次进卡刷新）
+    'sel_start',
+    'sel_reload_done',
+    'sel_selectById_done',
+    'sel_newchat_done',
   ]) {
     marks.delete(k);
+    details.delete(k);
   }
 }
 
 export function flushIframeTiming(meta: Record<string, unknown>): void {
   const snapshot: Record<string, number> = {};
   for (const [k, v] of marks) snapshot[k] = v;
+  const detailSnapshot: Record<string, string> = {};
+  for (const [k, v] of details) detailSnapshot[k] = v;
 
-  const payload = { meta, marks: snapshot, ua: navigator.userAgent };
+  const payload = { meta, marks: snapshot, details: detailSnapshot, ua: navigator.userAgent };
 
   try {
     // eslint-disable-next-line no-console

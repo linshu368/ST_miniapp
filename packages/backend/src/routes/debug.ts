@@ -3,10 +3,10 @@
  *
  * POST /api/debug/iframe-timing
  *
- * 接收前端首屏加载相位打点（见 frontend/src/lib/bridge/iframe-timing.ts），
+ * 接收前端首屏加载相位打点（见 frontend/src/lib/bridge/iframe-timing.ts + ST 端 debug-timing），
  * 计算相位耗时并以 info 级别落 Railway 日志，供 `railway logs -s stminiapp` 拉取分析。
  *
- * 无鉴权：临时调试端点，只读打点、只写日志，不触碰业务数据。用完连同前端打点一并删除。
+ * 无鉴权：临时调试端点，只读打点、只写日志，不触碰业务数据。用完连同前端/ST 端打点一并删除。
  */
 
 import { FastifyInstance } from 'fastify';
@@ -15,18 +15,25 @@ import { ok } from '@miniapp/shared';
 type TimingBody = {
   meta?: Record<string, unknown>;
   marks?: Record<string, number>;
+  details?: Record<string, string>;
   ua?: string;
 };
 
 // 相邻相位定义：[标签, 起点 mark, 终点 mark]
 const PHASES: Array<[string, string, string]> = [
-  ['iframe_load(网络: index+同步资源)', 'bridge_start', 'iframe_onload'],
-  ['st_script_exec+ext_init(到握手)', 'iframe_onload', 'st_handshake'],
-  ['st_app_boot(握手→APP_READY, 峰值疑点)', 'st_handshake', 'st_ready'],
-  ['gate_wait(ready→page放行)', 'st_ready', 'gate_open'],
-  ['ensureCharacter(单卡下发)', 'ensure_start', 'ensure_end'],
-  ['selectCharacter(选角色+载入聊天)', 'select_start', 'select_end'],
-  ['select_end→chat_ready(呈现)', 'select_end', 'chat_ready'],
+  // 整体
+  ['点卡→呈现', 'page_mount', 'chat_ready'],
+  ['点卡→闸门(等ST_ready)', 'page_mount', 'gate_open'],
+  ['ensureCharacter', 'ensure_start', 'ensure_end'],
+  ['selectCharacter(总)', 'select_start', 'select_end'],
+  // selectCharacter 内部（ST 端）
+  ['  ├H1 找卡+getCharacters重载', 'sel_start', 'sel_reload_done'],
+  ['  ├H3 selectCharacterById', 'sel_reload_done', 'sel_selectById_done'],
+  ['  └H2 /newchat', 'sel_selectById_done', 'sel_newchat_done'],
+  // 冷启动（bridge 生命周期，绝对，仅首次有意义）
+  ['[冷]iframe_load(网络)', 'bridge_start', 'iframe_onload'],
+  ['[冷]st_script+ext_init', 'iframe_onload', 'st_handshake'],
+  ['[冷]st_app_boot(→APP_READY)', 'st_handshake', 'st_ready'],
 ];
 
 export default async function debugRoutes(app: FastifyInstance) {
@@ -34,10 +41,7 @@ export default async function debugRoutes(app: FastifyInstance) {
   app.post('/api/debug/iframe-timing', async (request, reply) => {
     const body = (request.body ?? {}) as TimingBody;
     const marks = body.marks ?? {};
-
-    const t0 = marks['page_mount'] ?? marks['bridge_start'];
-    const end = marks['chat_ready'];
-    const total = t0 != null && end != null ? end - t0 : null;
+    const details = body.details ?? {};
 
     const phaseLines = PHASES.map(([label, a, b]) => {
       const va = marks[a];
@@ -46,19 +50,16 @@ export default async function debugRoutes(app: FastifyInstance) {
       return `${label}=${d != null ? `${d}ms` : 'n/a'}`;
     });
 
-    // 关键复合区间：点卡→呈现，以及点卡→闸门打开（等 ST 冷启动那段）
-    const clickToReady = total;
-    const clickToGate =
-      marks['page_mount'] != null && marks['gate_open'] != null
-        ? marks['gate_open'] - marks['page_mount']
-        : null;
+    // 冷启动内部时间线：所有打点按时间排序，相对最早打点给偏移（含动态 ar:* 事件）
+    const sorted = Object.entries(marks).sort((x, y) => x[1] - y[1]);
+    const t0 = sorted.length > 0 ? sorted[0]![1] : 0;
+    const timeline = sorted.map(([k, v]) => `${k}@+${v - t0}ms`).join(' ');
 
     request.log.info(
-      `[iframe-timing] char=${String(body.meta?.characterId ?? '-')} ` +
-        `点卡→呈现=${clickToReady != null ? `${clickToReady}ms` : 'n/a'} ` +
-        `点卡→闸门=${clickToGate != null ? `${clickToGate}ms` : 'n/a'} | ` +
-        phaseLines.join(' ') +
-        ` | marks=${JSON.stringify(marks)}`
+      `[iframe-timing] char=${String(body.meta?.characterId ?? '-')} | ` +
+        phaseLines.join('  ') +
+        ` | details=${JSON.stringify(details)}` +
+        ` | timeline=${timeline}`
     );
 
     return reply.send(ok({ received: true }));

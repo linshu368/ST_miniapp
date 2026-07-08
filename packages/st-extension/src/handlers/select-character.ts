@@ -4,11 +4,13 @@ import '../st-types.js';
 import { preAllowCharacterRegex } from '../patches/regex-autoconfirm.js';
 import { preAllowPresetRegex } from '../patches/preset-regex-autoconfirm.js';
 import { preSuppressWorldbookAlert } from '../patches/worldbook-autoimport.js';
+import { stTiming } from '../debug-timing.js'; // [iframe-timing] TEMP DEBUG
 
 type Payload = ActionPayloadMap['selectCharacter'];
 type Result = ActionResultMap['selectCharacter'];
 
 export async function handleSelectCharacter(payload: Payload): Promise<Result> {
+  stTiming('sel_start'); // [iframe-timing] TEMP DEBUG
   const ctx = SillyTavern.getContext();
 
   let index = ctx.characters.findIndex((c) => c.avatar === payload.avatar);
@@ -16,13 +18,18 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   // 懒下发：目标卡可能刚由平台按需下发到磁盘，ST 内存角色列表尚未刷新。
   // 未命中时重载角色列表（getCharacters 会让服务端重扫目录）并有界重试，
   // 覆盖「PNG 刚落盘、列表未刷新」的竞态。
+  let reloadAttempts = 0; // [iframe-timing] TEMP DEBUG
+  const foundInMemory = index >= 0; // [iframe-timing] TEMP DEBUG
   if (index < 0) {
     for (let attempt = 0; attempt < 3 && index < 0; attempt++) {
+      reloadAttempts++;
       await ctx.getCharacters();
       index = ctx.characters.findIndex((c) => c.avatar === payload.avatar);
       if (index < 0) await delay(300);
     }
   }
+  // [iframe-timing] TEMP DEBUG: H1 —— 找卡 + getCharacters 重载耗时
+  stTiming('sel_reload_done', `foundInMemory=${foundInMemory},reloadAttempts=${reloadAttempts}`);
 
   if (index < 0) {
     throw new BridgeError(
@@ -45,10 +52,12 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   preAllowPresetRegex();
 
   await ctx.selectCharacterById(index, { switchMenu: false });
+  stTiming('sel_selectById_done'); // [iframe-timing] TEMP DEBUG: H3
 
   if (payload.forceNewChat) {
     await ctx.executeSlashCommandsWithOptions('/newchat');
   }
+  stTiming('sel_newchat_done', `forceNewChat=${!!payload.forceNewChat}`); // [iframe-timing] TEMP DEBUG: H2
 
   ctx.saveSettingsDebounced();
 
