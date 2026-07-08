@@ -5,7 +5,7 @@
  * 不包含任何业务逻辑（merge / 校验等由 merger.ts 完成）。
  */
 
-import { writeFileSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync, renameSync } from 'node:fs';
 import { createHmac, randomUUID } from 'node:crypto';
 import {
   charactersDir,
@@ -25,6 +25,20 @@ import type { MergedSettings } from './merger.js';
 import { config } from '../lib/config.js';
 
 export const DEFAULT_USER_AVATAR_FILENAME = '4d015fdd-7f82-482c-912d-466eaa826280.png';
+
+/**
+ * 原子写：先写同目录临时文件，再 rename 到目标路径。
+ *
+ * rename 在同一文件系统是原子操作，读者要么看到完整旧文件、要么看到完整新文件，
+ * 杜绝「部分读」。用于 settings.json / secrets.json 这类**总是覆盖写、且会被 ST
+ * 启动时读取**的配置文件——老用户「先放行、provision 后台异步刷新」时，后台写与
+ * ST 启动读可能并发，非原子的 writeFileSync 存在读到截断 JSON → 解析失败的竞态。
+ */
+function atomicWriteFileSync(dst: string, contents: string): void {
+  const tmp = `${dst}.tmp-${process.pid}-${randomUUID()}`;
+  writeFileSync(tmp, contents, 'utf-8');
+  renameSync(tmp, dst);
+}
 
 // ─── 写入结果类型 ──────────────────────────────────────────────────────────────
 export interface WriteCharactersResult {
@@ -217,7 +231,7 @@ export function writePresets(
  */
 export function writeSettings(handle: string, mergedSettings: MergedSettings): void {
   const dst = settingsPath(handle);
-  writeFileSync(dst, JSON.stringify(mergedSettings.settings, null, 2), 'utf-8');
+  atomicWriteFileSync(dst, JSON.stringify(mergedSettings.settings, null, 2));
 }
 
 // ─── 写 secrets.json ──────────────────────────────────────────────────────────
@@ -267,7 +281,7 @@ export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null, use
   };
 
   const dst = secretsPath(handle);
-  writeFileSync(dst, JSON.stringify(secrets, null, 2), 'utf-8');
+  atomicWriteFileSync(dst, JSON.stringify(secrets, null, 2));
 }
 
 function signPlatformToken(userId: string): string {

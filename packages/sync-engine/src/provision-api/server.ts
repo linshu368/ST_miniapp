@@ -64,7 +64,10 @@ async function handleRequest(
   const method = req.method ?? '';
 
   // POST /provision/:userId — 异步（立即返回 202，后台跑）
-  const provisionMatch = url.match(/^\/provision\/([^/]+)$/);
+  // 支持 ?force=true：全量覆盖；?cards=none：不下发角色卡（懒下发，卡走 /character 端点）
+  // 注意：正则用 [^/?]+ 只吃到 userId，query 单独解析；`/sync`、`/character` 等更深路径
+  // 因含 `/` 不会误命中此处，仍落到下方对应 handler（顺序与匹配二者共同保证）。
+  const provisionMatch = url.match(/^\/provision\/([^/?]+)(\?.*)?$/);
   if (method === 'POST' && provisionMatch) {
     const userId = provisionMatch[1] ?? '';
     if (!userId) {
@@ -72,12 +75,19 @@ async function handleRequest(
       return;
     }
 
+    // 解析查询参数：force / cards（与 /sync 端点语义一致）
+    const queryStr = provisionMatch[2] ?? '';
+    const query = new URLSearchParams(queryStr.replace(/^\?/, ''));
+    const force = query.get('force') === 'true';
+    const characterScope = query.get('cards') === 'none' ? 'none' : 'all';
+
     // 立即返回 202，后台异步跑 provision
     jsonResponse(res, 202, { status: 'accepted', userId });
 
     // 异步触发，不 await
     provision(userId, {
-      force: false,
+      force,
+      characterScope,
       log: (msg) => logger.info({ userId }, msg),
     })
       .then((result) => {
