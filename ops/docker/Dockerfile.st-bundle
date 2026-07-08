@@ -50,6 +50,13 @@ RUN test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-S
  && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-Slash-Runner/lib/jsoneditor.js \
  && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-Slash-Runner/lib/tailwindcss.min.js
 
+# 构建期断言：Moonlit Echoes 主题扩展运行文件落到 vendor
+RUN test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/manifest.json \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/index.js \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/extension.css \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/style.css \
+ && test -f "/build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/theme/Glimmer - by Rivelle.json"
+
 # Install ST's OWN production dependencies inside the image (cross-platform safety),
 # mirroring vendor/sillytavern/Dockerfile: `npm ci --omit=dev` then precompile public libs.
 # (.dockerignore strips host node_modules from the build context, so ST has no deps until
@@ -139,6 +146,9 @@ COPY ops/sillytavern/config.production.yaml /home/node/app/config.yaml
 
 # s6 service 定义
 COPY ops/s6 /etc/s6-overlay/s6-rc.d
+# Local `railway up` can upload CRLF line endings from Windows; s6 run scripts
+# must stay LF-only or the shebang becomes `/usr/bin/env bash\r`.
+RUN find /etc/s6-overlay/s6-rc.d -type f -exec sed -i 's/\r$//' {} \;
 
 # --- 数据目录 + 权限 ---
 # node:20-bookworm-slim 自带 uid=1000 的 node 用户；ST 与 sync-engine 均以 node 运行。
