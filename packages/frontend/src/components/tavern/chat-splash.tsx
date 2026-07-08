@@ -149,49 +149,65 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
         ))}
       </div>
 
-      {/* 人物海报：流光描边 + 呼吸光晕 + 斜向光扫 */}
-      <div
-        className="relative"
-        style={{ animation: 'splash-pop 0.95s cubic-bezier(0.22, 1, 0.36, 1) both' }}
-      >
+      <div className="relative flex flex-col items-center">
+        {showSlowHint && phase === 'showing' && (
+          <div
+            className="mb-5 w-[min(20rem,82vw)] rounded-2xl border border-white/10 bg-black/22 px-4 py-3 text-center shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl"
+            style={{ animation: 'splash-fade-up 0.7s ease-out both' }}
+          >
+            <p className="text-[12px] font-medium tracking-[0.2em] text-white/70">
+              第一次见面，需要多等几秒
+            </p>
+            <p className="mt-2 text-[12px] leading-relaxed text-white/42">
+              我们正在唤醒角色记忆和对话引擎。准备好后会自动进入，不用退出重试。
+            </p>
+          </div>
+        )}
+
+        {/* 人物海报：流光描边 + 呼吸光晕 + 斜向光扫 */}
         <div
-          className="pointer-events-none absolute -inset-8 rounded-[40px] blur-2xl"
-          style={{
-            background: `radial-gradient(circle, hsl(${hue} 85% 55% / 0.5), transparent 70%)`,
-            animation: 'splash-glow 3.2s ease-in-out infinite',
-          }}
-        />
-        <div
-          className="relative rounded-[26px] p-[1.5px]"
-          style={{
-            background: `linear-gradient(120deg, hsl(${hue} 90% 72% / 0.9), hsl(${(hue + 60) % 360} 85% 66% / 0.35), hsl(${hue} 90% 72% / 0.9))`,
-            backgroundSize: '200% 100%',
-            animation: 'splash-border-flow 3s linear infinite',
-          }}
+          className="relative"
+          style={{ animation: 'splash-pop 0.95s cubic-bezier(0.22, 1, 0.36, 1) both' }}
         >
-          <div className="relative aspect-[3/4] w-44 overflow-hidden rounded-[24.5px] sm:w-52">
-            {avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={avatarUrl}
-                alt=""
-                className="absolute inset-0 h-full w-full object-cover object-top"
-              />
-            ) : (
+          <div
+            className="pointer-events-none absolute -inset-8 rounded-[40px] blur-2xl"
+            style={{
+              background: `radial-gradient(circle, hsl(${hue} 85% 55% / 0.5), transparent 70%)`,
+              animation: 'splash-glow 3.2s ease-in-out infinite',
+            }}
+          />
+          <div
+            className="relative rounded-[26px] p-[1.5px]"
+            style={{
+              background: `linear-gradient(120deg, hsl(${hue} 90% 72% / 0.9), hsl(${(hue + 60) % 360} 85% 66% / 0.35), hsl(${hue} 90% 72% / 0.9))`,
+              backgroundSize: '200% 100%',
+              animation: 'splash-border-flow 3s linear infinite',
+            }}
+          >
+            <div className="relative aspect-[3/4] w-44 overflow-hidden rounded-[24.5px] sm:w-52">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  className="absolute inset-0 h-full w-full object-cover object-top"
+                />
+              ) : (
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: `radial-gradient(120% 80% at 70% 30%, hsl(${hue} 55% 30%), hsl(${hue - 20} 40% 10%) 72%)`,
+                  }}
+                />
+              )}
+              {/* 底部压暗，衬托描边光 */}
+              <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
+              {/* 斜向扫过的高光 */}
               <div
-                className="absolute inset-0"
-                style={{
-                  background: `radial-gradient(120% 80% at 70% 30%, hsl(${hue} 55% 30%), hsl(${hue - 20} 40% 10%) 72%)`,
-                }}
+                className="pointer-events-none absolute inset-y-[-20%] w-1/3 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                style={{ animation: 'splash-sheen 2.8s ease-in-out 0.6s infinite' }}
               />
-            )}
-            {/* 底部压暗，衬托描边光 */}
-            <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
-            {/* 斜向扫过的高光 */}
-            <div
-              className="pointer-events-none absolute inset-y-[-20%] w-1/3 bg-gradient-to-r from-transparent via-white/30 to-transparent"
-              style={{ animation: 'splash-sheen 2.8s ease-in-out 0.6s infinite' }}
-            />
+            </div>
           </div>
         </div>
       </div>
@@ -244,20 +260,6 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
           </p>
         )}
       </div>
-
-      {showSlowHint && phase === 'showing' && (
-        <div
-          className="absolute bottom-[calc(env(safe-area-inset-bottom)+6.5rem)] mx-6 max-w-[20rem] rounded-2xl border border-white/10 bg-black/22 px-4 py-3 text-center shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl"
-          style={{ animation: 'splash-fade-up 0.7s ease-out both' }}
-        >
-          <p className="text-[12px] font-medium tracking-[0.2em] text-white/70">
-            第一次见面，需要多等几秒
-          </p>
-          <p className="mt-2 text-[12px] leading-relaxed text-white/42">
-            我们正在唤醒角色记忆和对话引擎。准备好后会自动进入，不用退出重试。
-          </p>
-        </div>
-      )}
 
       {/* 底部等待指示：三粒星尘跳动 */}
       <div
