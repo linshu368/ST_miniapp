@@ -182,6 +182,12 @@ export function mergeSettings(
   // 放在 writable_paths 覆盖之后，用户段无法解禁。
   applyDisabledExtensions(merged);
 
+  // 关闭消息气泡 token 计数（iframe 加载耗时 P1-H2 瘦身）：vendor 默认即 false，
+  // 但平台种子 settings 从运营完整 ST 导出、可能带 true —— 开启时每条消息渲染都要
+  // 远程 /api/tokenizers/openai/count（custom 源无本地 tokenizer），把跨洲 RTT 串进
+  // 开场白渲染与对话关键路径。平台 UI 不展示该数字，强制关闭。
+  lodashSet(merged, 'power_user.message_token_count_enabled', false);
+
   // 关闭 ST 首次引导（persona 设定面板）：用户在 Telegram 内打开 miniapp 即视为已登录，
   // 不应感知 ST 的 onboarding。ST 仅在 settings.firstRun 为真时调用 doOnboarding()
   // （见 vendor/sillytavern/public/script.js）；新 provision 出来的用户默认 firstRun=true

@@ -202,6 +202,8 @@ describe('provision()', () => {
       persona_descriptions: {
         '4d015fdd-7f82-482c-912d-466eaa826280.png': { position: 0, description: '' },
       },
+      // merger 强制项（P1-H2 瘦身）：关闭消息气泡 token 计数
+      message_token_count_enabled: false,
     });
   });
 
