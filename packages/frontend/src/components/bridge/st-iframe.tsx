@@ -16,6 +16,7 @@ export function STIframe() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { registerIframe, isVisible } = useBridgeContext();
   const [sessionReady, setSessionReady] = useState(false);
+  const loadCountRef = useRef(0); // [iframe-timing] TEMP DEBUG: 区分首次加载与看门狗/超时重载
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +69,12 @@ export function STIframe() {
     <iframe
       ref={iframeRef}
       src={ST_IFRAME_URL}
-      onLoad={() => markTiming('iframe_onload')} // [iframe-timing] TEMP DEBUG
+      // [iframe-timing] TEMP DEBUG: iframe_onload 会被重载覆盖，额外按次打点还原每次 load 时刻
+      onLoad={() => {
+        loadCountRef.current += 1;
+        markTiming('iframe_onload');
+        markTiming(`iframe_onload_a${loadCountRef.current}`);
+      }}
       className={
         isVisible
           ? 'fixed inset-0 z-10 w-full h-full'

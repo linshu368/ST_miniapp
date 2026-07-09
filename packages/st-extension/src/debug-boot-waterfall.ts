@@ -26,10 +26,25 @@ const MAX_ENTRIES = 160;
 let longTaskBuffer: Array<{ start: number; dur: number }> = [];
 let longTaskObserver: PerformanceObserver | null = null;
 
+let bufferFull = false;
+
 export function installBootWaterfallProbe(): void {
   try {
+    // 资源条目缓冲区默认仅 250 条，ST boot 前 ~5s 即打满（pro 实测瀑布在 +4.7s 截断）。
+    // 扩展注入是最早可执行点（约 +5s），立刻扩容让此后的条目继续记录；
+    // 注入前已溢出丢失的条目无法找回，boot_nav 里带 bufFull/resCount 标记提示。
+    try {
+      performance.addEventListener('resourcetimingbufferfull', () => {
+        bufferFull = true;
+      });
+      performance.setResourceTimingBufferSize(2000);
+    } catch {
+      /* noop */
+    }
+
     // longtask 的 buffered 回放窗口有限，扩展 init 时立刻订阅（此刻已错过的早期
-    // 长任务靠 buffered:true 尽量找回；找不回的部分用瀑布空窗推断）
+    // 长任务靠 buffered:true 尽量找回；找不回的部分用瀑布空窗推断。
+    // 注意 iOS WebKit 不支持 longtask，此时 boot_longtask 恒为 (empty)，CPU 块只能靠瀑布空窗推断）
     try {
       longTaskObserver = new PerformanceObserver((list) => {
         for (const e of list.getEntries()) {
@@ -78,16 +93,19 @@ function harvestAndSend(): void {
     | undefined;
 
   // 1) 导航段：文档请求与解析里程碑（相对 timeOrigin，单位 ms）
-  const navInfo = nav
-    ? `timeOrigin=${Math.round(performance.timeOrigin)} respEnd=${Math.round(nav.responseEnd)} ` +
-      `domInteractive=${Math.round(nav.domInteractive)} DCL=${Math.round(nav.domContentLoadedEventEnd)} ` +
-      `loadEnd=${Math.round(nav.loadEventEnd)}`
-    : `timeOrigin=${Math.round(performance.timeOrigin)} nav=n/a`;
+  const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+
+  const navInfo =
+    (nav
+      ? `timeOrigin=${Math.round(performance.timeOrigin)} respEnd=${Math.round(nav.responseEnd)} ` +
+        `domInteractive=${Math.round(nav.domInteractive)} DCL=${Math.round(nav.domContentLoadedEventEnd)} ` +
+        `loadEnd=${Math.round(nav.loadEventEnd)}`
+      : `timeOrigin=${Math.round(performance.timeOrigin)} nav=n/a`) +
+    ` resCount=${resources.length} bufFull=${bufferFull ? 1 : 0}`;
   stTiming('boot_nav', navInfo);
 
   // 2) 资源瀑布：API 类全收，静态资源只收 >=50ms 的
-  const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-  const picked = resources
+  const filtered = resources
     .filter((e) => {
       const isApi =
         e.initiatorType === 'fetch' ||
@@ -97,15 +115,32 @@ function harvestAndSend(): void {
         e.name.includes('/version');
       return isApi || e.duration >= STATIC_MIN_DUR_MS;
     })
-    .sort((a, b) => a.startTime - b.startTime)
-    .slice(0, MAX_ENTRIES)
-    .map(
-      (e) =>
-        `${shortName(e.name)}@${Math.round(e.startTime)}+${Math.round(e.duration)}` +
-        (e.initiatorType === 'fetch' || e.initiatorType === 'xmlhttprequest'
-          ? ''
-          : `[${e.initiatorType}]`)
-    );
+    .sort((a, b) => a.startTime - b.startTime);
+
+  // 同名条目连发聚合（pro 实测 <audio> 触发 38 连发 message.mp3，占满条目额度）：
+  // 连续同名合并为 name@首start+末end xN
+  const picked: string[] = [];
+  let i = 0;
+  while (i < filtered.length && picked.length < MAX_ENTRIES) {
+    const e = filtered[i]!;
+    let j = i + 1;
+    while (j < filtered.length && filtered[j]!.name === e.name) j += 1;
+    const n = j - i;
+    const last = filtered[j - 1]!;
+    const tag =
+      e.initiatorType === 'fetch' || e.initiatorType === 'xmlhttprequest'
+        ? ''
+        : `[${e.initiatorType}]`;
+    if (n === 1) {
+      picked.push(
+        `${shortName(e.name)}@${Math.round(e.startTime)}+${Math.round(e.duration)}${tag}`
+      );
+    } else {
+      const end = Math.round(last.startTime + last.duration);
+      picked.push(`${shortName(e.name)}@${Math.round(e.startTime)}..${end}${tag}x${n}`);
+    }
+    i = j;
+  }
 
   sendChunked('boot_wf', picked);
 
