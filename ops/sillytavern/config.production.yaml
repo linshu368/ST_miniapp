@@ -127,7 +127,10 @@ thumbnails:
       - 96
       - 144
 performance:
-  lazyLoadCharacters: false
+  # 冷启动优化：boot 的 getCharacters 只拉浅层列表（name/avatar/chat 等元数据），
+  # 完整卡数据推迟到选中时由 ST 原生 unshallowCharacter 按需补拉。
+  # 配合 st-extension select-character 的单卡增量注入（避免懒下发新卡触发全量重扫）。
+  lazyLoadCharacters: true
   memoryCacheCapacity: 100mb
   useDiskCache: true
   requestCompression:

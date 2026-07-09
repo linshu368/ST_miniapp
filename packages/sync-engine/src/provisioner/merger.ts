@@ -13,6 +13,34 @@ import { get as lodashGet, set as lodashSet, cloneDeep } from 'lodash-es';
 import type { PlatformSettingsRow, UserSettingsRow, PresetRow } from './fetcher.js';
 import { applyActivePreset } from './preset-apply.js';
 
+/**
+ * 平台强制禁用的 ST 内置扩展（iframe 冷启动优化 P0-#1）。
+ *
+ * 背景：ST boot 时 activateExtensions 对每个扩展串行「下载+解析+init」，是冷启动
+ * st_handshake→SETTINGS_LOADED ~8s 峰值的主因（见 docs/iframe-cold-boot-optimization.md）。
+ * 这 10 个扩展 miniapp 完全用不到，经 disabledExtensions 禁用后 ST 在下载脚本前即跳过。
+ *
+ * 命名对齐 ST 服务端 /api/extensions/discover：内置扩展 = public/scripts/extensions/
+ * 下的目录名（第三方才带 third-party/ 前缀）。
+ *
+ * 依赖安全性（2026-07 核查）：14 个内置 + 2 个第三方扩展的 manifest 均无 dependencies
+ * 声明；核心代码唯一静态 import 的扩展是 regex（保留）；stable-diffusion / vectors 的
+ * generate_interceptor 在调用处有 typeof 防护，禁用后安全跳过。
+ * 保留：regex / memory / quick-reply / token-counter / miniapp-bridge / JS-Slash-Runner。
+ */
+export const PLATFORM_DISABLED_EXTENSIONS = [
+  'assets', // 资产管理（下载扩展/资源面板）
+  'attachments', // Data Bank 文件附件
+  'caption', // 图片描述
+  'connection-manager', // 多 API 连接配置切换（平台强制 custom 源，不用）
+  'expressions', // 角色立绘表情
+  'gallery', // 图片画廊
+  'stable-diffusion', // 图片生成
+  'translate', // 聊天翻译
+  'tts', // 语音合成
+  'vectors', // RAG 向量检索
+] as const;
+
 // ─── 类型定义 ─────────────────────────────────────────────────────────────────
 
 /** merge 后的 settings，附带一些 debug 标记字段 */
@@ -149,6 +177,17 @@ export function mergeSettings(
   lodashSet(merged, 'oai_settings.openai_max_context', 32768);
   lodashSet(merged, 'oai_settings.max_context_unlocked', true);
 
+  // 强制禁用平台用不到的 ST 内置扩展（冷启动优化）：与 platform_settings 种子里可能
+  // 已有的 disabledExtensions 取并集（去重），保证运营后续发布新版 settings 也不会丢。
+  // 放在 writable_paths 覆盖之后，用户段无法解禁。
+  applyDisabledExtensions(merged);
+
+  // 关闭消息气泡 token 计数（iframe 加载耗时 P1-H2 瘦身）：vendor 默认即 false，
+  // 但平台种子 settings 从运营完整 ST 导出、可能带 true —— 开启时每条消息渲染都要
+  // 远程 /api/tokenizers/openai/count（custom 源无本地 tokenizer），把跨洲 RTT 串进
+  // 开场白渲染与对话关键路径。平台 UI 不展示该数字，强制关闭。
+  lodashSet(merged, 'power_user.message_token_count_enabled', false);
+
   // 关闭 ST 首次引导（persona 设定面板）：用户在 Telegram 内打开 miniapp 即视为已登录，
   // 不应感知 ST 的 onboarding。ST 仅在 settings.firstRun 为真时调用 doOnboarding()
   // （见 vendor/sillytavern/public/script.js）；新 provision 出来的用户默认 firstRun=true
@@ -167,6 +206,19 @@ export function mergeSettings(
   sanitizeAccountStorageDrawerState(merged);
 
   return { settings: merged, hadInvalidRef, invalidRefValue, presetApplied, appliedPresetId };
+}
+
+/**
+ * 把 PLATFORM_DISABLED_EXTENSIONS 并入 settings.extension_settings.disabledExtensions。
+ * ST 前端 activateExtensions 读取该数组，命中的扩展在下载脚本前即跳过（不下载/不解析/不 init）。
+ */
+function applyDisabledExtensions(merged: Record<string, unknown>): void {
+  const existing = lodashGet(merged, 'extension_settings.disabledExtensions');
+  const existingList = Array.isArray(existing)
+    ? existing.filter((x): x is string => typeof x === 'string')
+    : [];
+  const union = [...new Set([...existingList, ...PLATFORM_DISABLED_EXTENSIONS])];
+  lodashSet(merged, 'extension_settings.disabledExtensions', union);
 }
 
 /**

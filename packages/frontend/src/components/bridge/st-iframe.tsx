@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { useBridgeContext } from './bridge-provider';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
+import { markTiming } from '@/lib/bridge/iframe-timing'; // [iframe-timing] TEMP DEBUG
 
 const ST_IFRAME_URL = '/tavern/';
 
@@ -67,6 +68,7 @@ export function STIframe() {
     <iframe
       ref={iframeRef}
       src={ST_IFRAME_URL}
+      onLoad={() => markTiming('iframe_onload')} // [iframe-timing] TEMP DEBUG
       className={
         isVisible
           ? 'fixed inset-0 z-10 w-full h-full'

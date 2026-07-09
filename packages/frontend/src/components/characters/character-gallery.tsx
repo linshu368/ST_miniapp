@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useCharactersQuery } from '@/lib/api/characters';
 
 import { CharacterCard } from './character-card';
+import { CharacterDetailSheet } from './character-detail-sheet';
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -37,6 +38,7 @@ export function CharacterGallery() {
   const router = useRouter();
   const { data, isLoading, isError } = useCharactersQuery();
   const [query, setQuery] = useState('');
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
   const filtered = useMemo(() => {
@@ -134,17 +136,19 @@ export function CharacterGallery() {
       ) : (
         <div className="mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 pb-10 pt-2 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] sm:gap-4 sm:px-6 lg:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] lg:px-8">
           {filtered.map((c) => (
-            <CharacterCard
-              key={c.id}
-              character={c}
-              onSelect={() => {
-                // 按照当前架构要求，不需要详情页，直接跳转到对话页
-                router.push(`/tavern/${c.id}`);
-              }}
-            />
+            <CharacterCard key={c.id} character={c} onSelect={() => setPreviewId(c.id)} />
           ))}
         </div>
       )}
+
+      <CharacterDetailSheet
+        characterId={previewId}
+        onClose={() => setPreviewId(null)}
+        onEnter={(id) => {
+          setPreviewId(null);
+          router.push(`/tavern/${id}`);
+        }}
+      />
     </>
   );
 }

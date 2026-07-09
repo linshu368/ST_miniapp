@@ -139,6 +139,9 @@ COPY ops/sillytavern/config.production.yaml /home/node/app/config.yaml
 
 # s6 service 定义
 COPY ops/s6 /etc/s6-overlay/s6-rc.d
+# Local `railway up` can upload CRLF line endings from Windows; s6 run scripts
+# must stay LF-only or the shebang becomes `/usr/bin/env bash\r`.
+RUN find /etc/s6-overlay/s6-rc.d -type f -exec sed -i 's/\r$//' {} \;
 
 # --- 数据目录 + 权限 ---
 # node:20-bookworm-slim 自带 uid=1000 的 node 用户；ST 与 sync-engine 均以 node 运行。

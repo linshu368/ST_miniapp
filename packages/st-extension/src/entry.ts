@@ -17,6 +17,9 @@ import {
 import { installLlmMetadataInject } from './patches/llm-metadata-inject.js';
 import { installReasoningAutoParse } from './patches/reasoning-auto-parse.js';
 import { installGlobalRegexSafetyNet } from './patches/global-regex-safety-net.js';
+import { installCharTokenCounterSuppress } from './patches/char-token-counter-suppress.js';
+import { stTiming } from './debug-timing.js'; // [iframe-timing] TEMP DEBUG
+import { installBootTimingProbes } from './debug-boot-probes.js'; // [iframe-timing] TEMP DEBUG
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -32,6 +35,8 @@ declare const __BUILD_ID__: string;
 declare const __ST_COMMIT__: string;
 
 function init(): void {
+  stTiming('st_init_start'); // [iframe-timing] TEMP DEBUG
+  installBootTimingProbes(); // [iframe-timing] TEMP DEBUG: 订阅 ST boot 生命周期事件
   // 架构铁律：vendor 只读，ST resize 报错从 extension 侧修复（见 patches/autocomplete-guard）
   installAutocompleteGuard();
   // 架构铁律：vendor 只读，<base href="/"> + /tavern 子路径导致 jQuery UI Tabs 误把本地锚点
@@ -65,6 +70,9 @@ function init(): void {
   // 平台级全局正则兜底：无论哪张卡、哪个预设，<thinking>/<think>/<disclaimer> 在展示层一律删除。
   // 全局正则无需授权、恒定生效，弥补各卡/预设脚本漏配或授权失败的缝隙。
   installGlobalRegexSafetyNet();
+  // 切角色关键路径上 ST 给隐藏的角色编辑面板逐字段远程算 token（~10 次串行 RTT），
+  // 移除 data-token-counter 属性使其零调用（见 patches/char-token-counter-suppress）。
+  installCharTokenCounterSuppress();
 
   const server = createBridgeServer('*');
   server.start();
@@ -87,6 +95,8 @@ function init(): void {
   });
 
   registerForwarders(server);
+
+  stTiming('st_init_done'); // [iframe-timing] TEMP DEBUG
 }
 
 if (typeof window !== 'undefined') {
