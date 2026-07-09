@@ -50,17 +50,35 @@ export default async function debugRoutes(app: FastifyInstance) {
       return `${label}=${d != null ? `${d}ms` : 'n/a'}`;
     });
 
+    // boot 瀑布/长任务收割数据（round-3 细粒度探针）单独成行，避免主行超长被日志截断。
+    // 瀑布偏移基准是 iframe 的 performance.timeOrigin（boot_nav 里携带），非 bridge_start。
+    const isWaterfallKey = (k: string) =>
+      k.startsWith('boot_wf') || k.startsWith('boot_longtask') || k === 'boot_nav';
+    const mainDetails: Record<string, string> = {};
+    const waterfallLines: Array<[string, string]> = [];
+    for (const [k, v] of Object.entries(details)) {
+      if (isWaterfallKey(k)) waterfallLines.push([k, v]);
+      else mainDetails[k] = v;
+    }
+
     // 冷启动内部时间线：所有打点按时间排序，相对最早打点给偏移（含动态 ar:* 事件）
-    const sorted = Object.entries(marks).sort((x, y) => x[1] - y[1]);
+    const sorted = Object.entries(marks)
+      .filter(([k]) => !isWaterfallKey(k))
+      .sort((x, y) => x[1] - y[1]);
     const t0 = sorted.length > 0 ? sorted[0]![1] : 0;
     const timeline = sorted.map(([k, v]) => `${k}@+${v - t0}ms`).join(' ');
 
+    const charId = String(body.meta?.characterId ?? '-');
     request.log.info(
-      `[iframe-timing] char=${String(body.meta?.characterId ?? '-')} | ` +
+      `[iframe-timing] char=${charId} | ` +
         phaseLines.join('  ') +
-        ` | details=${JSON.stringify(details)}` +
+        ` | details=${JSON.stringify(mainDetails)}` +
         ` | timeline=${timeline}`
     );
+    waterfallLines.sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [k, v] of waterfallLines) {
+      request.log.info(`[iframe-timing-wf] char=${charId} ${k}: ${v}`);
+    }
 
     return reply.send(ok({ received: true }));
   });
