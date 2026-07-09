@@ -248,3 +248,13 @@
     transform: translateY(-4px);
   }
 }
+
+/* 进度条内的流光：即使曲线进入 90% 后慢速蠕动，也保持“仍在推进”的视觉信号 */
+@keyframes splash-progress-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(22rem);
+  }
+}
