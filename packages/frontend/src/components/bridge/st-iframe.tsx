@@ -69,10 +69,18 @@ export function STIframe() {
       ref={iframeRef}
       src={ST_IFRAME_URL}
       onLoad={() => markTiming('iframe_onload')} // [iframe-timing] TEMP DEBUG
+      // 预热期的隐藏方式：必须保留「非零绘制面积」。
+      // 根因（见 docs/iframe-boot-stall-investigation.md）：旧写法 `w-0 h-0 opacity-0` 是 0×0、
+      // 零绘制面积，iOS/Telegram WebKit 会把「不产生像素的文档」判为后台文档并降级——节流定时器、
+      // 挂起网络请求投递。ST boot 前段 `fetch('/csrf-token')` 发出后，紧接着的 `fetch('/version')`
+      // 就因文档被判后台而永远投递不出去（nginx 收不到），boot 楔死、握手永不到达，直到超时重载。
+      // 修复：隐藏态改成真实绘制的 1×1px 图层（仍在渲染树 + 参与合成 → WebKit 视为「已渲染」，
+      // 不降级），再用极低不透明度 + pointer-events-none + 垫底 z-index 保证用户既看不到也点不到。
+      // `visibility:hidden` / `display:none` / 零尺寸都会移出绘制，等价于旧问题，故不可用。
       className={
         isVisible
           ? 'fixed inset-0 z-10 w-full h-full'
-          : 'fixed inset-0 w-0 h-0 opacity-0 pointer-events-none'
+          : 'fixed left-0 bottom-0 -z-10 w-px h-px opacity-[0.01] pointer-events-none'
       }
       title="SillyTavern"
     />
