@@ -20,6 +20,7 @@ import { installGlobalRegexSafetyNet } from './patches/global-regex-safety-net.j
 import { installCharTokenCounterSuppress } from './patches/char-token-counter-suppress.js';
 import { stTiming } from './debug-timing.js'; // [iframe-timing] TEMP DEBUG
 import { installBootTimingProbes } from './debug-boot-probes.js'; // [iframe-timing] TEMP DEBUG
+import { installBootWaterfallProbe } from './debug-boot-waterfall.js'; // [iframe-timing] TEMP DEBUG
 import {
   handleSelectCharacter,
   handleOpenChat,
@@ -37,6 +38,7 @@ declare const __ST_COMMIT__: string;
 function init(): void {
   stTiming('st_init_start'); // [iframe-timing] TEMP DEBUG
   installBootTimingProbes(); // [iframe-timing] TEMP DEBUG: 订阅 ST boot 生命周期事件
+  installBootWaterfallProbe(); // [iframe-timing] TEMP DEBUG: APP_READY 时收割资源瀑布+长任务
   // 架构铁律：vendor 只读，ST resize 报错从 extension 侧修复（见 patches/autocomplete-guard）
   installAutocompleteGuard();
   // 架构铁律：vendor 只读，<base href="/"> + /tavern 子路径导致 jQuery UI Tabs 误把本地锚点
