@@ -372,6 +372,23 @@ describe('mergeSettings', () => {
     expect(extSettings['disabledExtensions']).toEqual([...PLATFORM_DISABLED_EXTENSIONS]);
   });
 
+  // ── 场景 13：强制关闭消息 token 计数（P1-H2 瘦身）──────────────────────────
+  it('应强制 power_user.message_token_count_enabled=false（覆盖种子里的 true）', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [],
+        power_user: { message_token_count_enabled: true, personas: {} },
+      },
+    });
+
+    const result = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
+    const powerUser = result.settings['power_user'] as Record<string, unknown>;
+
+    expect(powerUser['message_token_count_enabled']).toBe(false);
+    expect(powerUser['personas']).toEqual({});
+  });
+
   // ── 场景 8：深拷贝，不修改原始对象 ──────────────────────────────────────
   it('mergeSettings 不应修改传入的 platformSettings 对象', () => {
     const platform = makePlatformSettings();
