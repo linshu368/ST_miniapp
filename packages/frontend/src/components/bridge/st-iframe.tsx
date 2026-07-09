@@ -16,6 +16,7 @@ export function STIframe() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { registerIframe, isVisible } = useBridgeContext();
   const [sessionReady, setSessionReady] = useState(false);
+  const loadCountRef = useRef(0); // [iframe-timing] TEMP DEBUG: 区分首次加载与看门狗/超时重载
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +69,12 @@ export function STIframe() {
     <iframe
       ref={iframeRef}
       src={ST_IFRAME_URL}
-      onLoad={() => markTiming('iframe_onload')} // [iframe-timing] TEMP DEBUG
+      // [iframe-timing] TEMP DEBUG: iframe_onload 会被重载覆盖，额外按次打点还原每次 load 时刻
+      onLoad={() => {
+        loadCountRef.current += 1;
+        markTiming('iframe_onload');
+        markTiming(`iframe_onload_a${loadCountRef.current}`);
+      }}
       // 预热期的隐藏方式：必须保留「非零绘制面积」。
       // 根因（见 docs/iframe-boot-stall-investigation.md）：旧写法 `w-0 h-0 opacity-0` 是 0×0、
       // 零绘制面积，iOS/Telegram WebKit 会把「不产生像素的文档」判为后台文档并降级——节流定时器、
