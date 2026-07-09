@@ -41,6 +41,13 @@ export type BridgeClientOptions = {
    * 不等 60s 握手总超时、立即走重连。默认 15s；0 = 关闭。
    */
   iframeLoadTimeout?: number;
+  /**
+   * 握手到达看门狗（安全网 #4）：start/重连后超过该时长仍未收到首段握手消息即走重连。
+   * 覆盖 load 看门狗防不住的停摆变体（pro 实测：静态资源 1s 内全到、load 已触发，
+   * 但 boot JS 在 /csrf-token 往返后连接挂死、后续 fetch 永久 pending → 握手永不到达）。
+   * 正常首段握手最迟 ~17s 到达（10 样本最差值），默认 30s；0 = 关闭。
+   */
+  handshakeArrivalTimeout?: number;
 };
 
 type PendingRequest = {
@@ -60,6 +67,7 @@ export class BridgeClient {
   private readonly reconnectBaseDelayMs: number;
   private readonly reconnectHandshakeTimeout: number;
   private readonly iframeLoadTimeout: number;
+  private readonly handshakeArrivalTimeout: number;
 
   private readonly stateMachine: BridgeStateMachine;
   private readonly buffer: RequestBuffer;
@@ -73,6 +81,7 @@ export class BridgeClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private iframeLoadTimer: ReturnType<typeof setTimeout> | null = null;
   private iframeLoadHandler: (() => void) | null = null;
+  private handshakeArrivalTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private started = false;
@@ -88,6 +97,7 @@ export class BridgeClient {
     this.reconnectBaseDelayMs = options?.reconnectBaseDelayMs ?? 2000;
     this.reconnectHandshakeTimeout = options?.reconnectHandshakeTimeout ?? 30_000;
     this.iframeLoadTimeout = options?.iframeLoadTimeout ?? 15_000;
+    this.handshakeArrivalTimeout = options?.handshakeArrivalTimeout ?? 30_000;
 
     this.stateMachine = createStateMachine();
     this.buffer = new RequestBuffer();
@@ -109,6 +119,30 @@ export class BridgeClient {
     this.armHandshakeTimer(this.totalTimeout);
     this.attachIframeLoadListener();
     this.armIframeLoadWatchdog();
+    this.armHandshakeArrivalWatchdog();
+  }
+
+  /**
+   * 握手到达看门狗（安全网 #4）：start/重连后 handshakeArrivalTimeout 内首段握手未到即重连。
+   * 与 load 看门狗互补：load 已触发但 boot JS 半途连接挂死（fetch 永久 pending）时，
+   * load 看门狗已解除、握手总超时要等满 60s，本看门狗把该变体压到 ~30s。
+   * 收到任意握手消息即解除（ready 阶段的慢由握手总超时兜底，不误伤正常慢 boot）。
+   */
+  private armHandshakeArrivalWatchdog(): void {
+    this.clearHandshakeArrivalWatchdog();
+    if (this.handshakeArrivalTimeout <= 0) return;
+    this.handshakeArrivalTimer = setTimeout(() => {
+      this.handshakeArrivalTimer = null;
+      markTiming('handshake_arrival_watchdog'); // [iframe-timing] TEMP DEBUG
+      this.handleHandshakeTimeout();
+    }, this.handshakeArrivalTimeout);
+  }
+
+  private clearHandshakeArrivalWatchdog(): void {
+    if (this.handshakeArrivalTimer) {
+      clearTimeout(this.handshakeArrivalTimer);
+      this.handshakeArrivalTimer = null;
+    }
   }
 
   /**
@@ -159,6 +193,8 @@ export class BridgeClient {
    * 额度耗尽 → 终态 disconnect（停止重试，避免不可恢复场景如 cookie 失效时无限 reload）。
    */
   private handleHandshakeTimeout(): void {
+    // 多个看门狗（load/握手到达/总超时）可能相继超时；已有重连排队时不重复调度
+    if (this.reconnectTimer) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.disconnect(`Handshake timeout after ${this.reconnectAttempts} reconnect attempt(s)`);
       return;
@@ -170,6 +206,7 @@ export class BridgeClient {
   private scheduleReconnect(): void {
     this.stopPingLoop();
     this.clearIframeLoadWatchdog();
+    this.clearHandshakeArrivalWatchdog();
     this.stateMachine.transition({
       type: 'DISCONNECT',
       reason: 'Handshake timeout — scheduling reconnect',
@@ -215,9 +252,10 @@ export class BridgeClient {
     const src = iframe.src;
     iframe.src = src;
 
-    // 重载后重新武装加载看门狗（load 监听器挂在同一 iframe 元素上，reload 后仍有效）
+    // 重载后重新武装加载/握手到达看门狗（load 监听器挂在同一 iframe 元素上，reload 后仍有效）
     this.attachIframeLoadListener();
     this.armIframeLoadWatchdog();
+    this.armHandshakeArrivalWatchdog();
   }
 
   stop(): void {
@@ -241,6 +279,7 @@ export class BridgeClient {
     this.reconnectAttempts = 0;
 
     this.clearIframeLoadWatchdog();
+    this.clearHandshakeArrivalWatchdog();
     this.detachIframeLoadListener();
     this.stopPingLoop();
     this.rejectAllPending('Bridge client stopped');
@@ -420,8 +459,9 @@ export class BridgeClient {
   }
 
   private handleHandshake(msg: HandshakeMessage): void {
-    // 握手已到 = ST 脚本在跑，加载必然未停摆；防御性解除看门狗（正常情况下 load 事件已先清掉）
+    // 握手已到 = ST 脚本在跑，加载必然未停摆；解除 load/握手到达两道看门狗
     this.clearIframeLoadWatchdog();
+    this.clearHandshakeArrivalWatchdog();
     // [iframe-timing] TEMP DEBUG: 记录两段握手到达时刻
     markTiming(msg.phase === 'ready' ? 'st_ready' : 'st_handshake');
     try {
@@ -514,6 +554,7 @@ export class BridgeClient {
   private disconnect(reason: string): void {
     this.stopPingLoop();
     this.clearIframeLoadWatchdog();
+    this.clearHandshakeArrivalWatchdog();
     if (this.totalTimer) {
       clearTimeout(this.totalTimer);
       this.totalTimer = null;
