@@ -153,7 +153,15 @@ export function CharacterGallery() {
         characterId={previewId}
         entering={enteringId !== null}
         onClose={() => {
-          if (!enteringId) setPreviewId(null);
+          if (enteringId) {
+            enteringRef.current = false;
+            setEnteringId(null);
+            setPreviewId(null);
+            // Next.js 的在途 router.push 无公开取消 API；原生返回大厅可可靠中止此次导航。
+            window.location.replace('/');
+            return;
+          }
+          setPreviewId(null);
         }}
         onEnter={(id) => {
           if (enteringRef.current) return;

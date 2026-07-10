@@ -258,3 +258,16 @@
     transform: translateX(22rem);
   }
 }
+
+/* 角色详情右下角按钮的等待进度，提示导航仍在持续推进 */
+@keyframes character-entry-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  50% {
+    transform: translateX(75%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
