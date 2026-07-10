@@ -111,7 +111,7 @@ export class BridgeClient {
     this.reconnectHandshakeTimeout = options?.reconnectHandshakeTimeout ?? 30_000;
     this.iframeLoadTimeout = options?.iframeLoadTimeout ?? 15_000;
     this.handshakeArrivalTimeout = options?.handshakeArrivalTimeout ?? 30_000;
-    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 18_000;
+    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 10_000;
 
     this.stateMachine = createStateMachine();
     this.buffer = new RequestBuffer();
