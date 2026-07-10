@@ -100,39 +100,67 @@ export default async function growthRoutes(app: FastifyInstance) {
     '/api/growth/miniapp-entry',
     { preHandler: [requireTelegramAuth] },
     async (request, reply) => {
-      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      console.log(`[Growth] miniapp-entry raw request body:`, request.body);
+      console.log(`[Growth] miniapp-entry raw init data header:`, request.headers['x-init-data']);
+
+      if (!request.user) {
+        console.log(`[Growth] miniapp-entry UNAUTHORIZED`);
+        return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      }
+
       const body = (request.body ?? {}) as Partial<RecordMiniappEntryRequest>;
       const sourceId = normalizeStartParam(
         body.source_id || body.start_param || readStartParam(request)
       );
 
+      console.log(
+        `[Growth] miniapp-entry called for user ${request.user.id}, sourceId: ${sourceId}, raw body:`,
+        body
+      );
+
       if (!sourceId) {
+        console.log(`[Growth] miniapp-entry no sourceId, returning`);
         return reply.send(ok<RecordMiniappEntryData>({ recorded: false, source_id: null }));
       }
 
-      const link = await getChannelLink(sourceId);
-      if (!link || link.status !== 'active') {
+      let trafficLink = null;
+      try {
+        trafficLink = await getTrafficBotlink(sourceId);
+      } catch (e) {
+        console.error(`[Growth] Error fetching traffic botlink:`, e);
+      }
+
+      console.log(`[Growth] miniapp-entry trafficLink found:`, !!trafficLink);
+
+      if (!trafficLink) {
+        console.log(`[Growth] miniapp-entry trafficLink not found, returning`);
         return reply.send(ok<RecordMiniappEntryData>({ recorded: false, source_id: sourceId }));
       }
 
-      const dbUser = await getOrCreateMiniappUserByTgId(request.user.id.toString(), sourceId, true);
+      // 传入 null 作为 sourceId，避免在创建用户时自动写入，从而可以在下面通过 UPDATE 的 affectedRows 判断是否为首次归因
+      const dbUser = await getOrCreateMiniappUserByTgId(request.user.id.toString(), null, true);
+
+      console.log(`[Growth] miniapp-entry dbUser.source_id:`, dbUser.source_id);
+
       if (!dbUser.source_id) {
-        await prisma.$executeRawUnsafe(
+        const affectedRows = await prisma.$executeRawUnsafe(
           `UPDATE miniapp.users SET source_id = $1, updated_at = now() WHERE id = $2::uuid AND source_id IS NULL`,
           sourceId,
           dbUser.id
         );
-      }
 
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO growth.miniapp_entries (source_id, user_id, telegram_user_id, start_param, user_agent)
-         VALUES ($1, $2::uuid, $3, $4, $5)`,
-        sourceId,
-        dbUser.id,
-        request.user.id.toString(),
-        sourceId,
-        request.headers['user-agent'] ?? null
-      );
+        console.log(`[Growth] miniapp-entry updated users affectedRows:`, affectedRows);
+
+        if (affectedRows > 0) {
+          // 仅在首次归因成功且属于新渠道表时，累加 miniapp_traffic.traffic_clicks
+          await prisma.$executeRawUnsafe(`SELECT miniapp_traffic.increment_click($1)`, sourceId);
+          console.log(`[Growth] miniapp-entry increment_click called for ${sourceId}`);
+        }
+      } else {
+        console.log(
+          `[Growth] miniapp-entry user already has source_id: ${dbUser.source_id}, skipping update`
+        );
+      }
 
       return reply.send(ok<RecordMiniappEntryData>({ recorded: true, source_id: sourceId }));
     }
@@ -194,6 +222,9 @@ function buildTrackingLink(request: FastifyRequest, sourceId: string): string {
 
 function normalizeStartParam(value: string | undefined): string | null {
   const normalized = value?.trim();
+  console.log(
+    `[Growth] normalizeStartParam input: '${value}', normalized: '${normalized}', matches RE: ${SOURCE_ID_RE.test(normalized || '')}`
+  );
   if (!normalized || !SOURCE_ID_RE.test(normalized)) return null;
   return normalized;
 }
@@ -229,4 +260,12 @@ function getOperator(request: FastifyRequest): string {
   const value = request.headers[OPERATOR_HEADER];
   const operator = Array.isArray(value) ? value[0] : value;
   return operator?.trim() || 'cs-operator';
+}
+
+async function getTrafficBotlink(sourceId: string) {
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT * FROM miniapp_traffic.botlinks WHERE source_id = $1 LIMIT 1`,
+    sourceId
+  );
+  return rows[0] || null;
 }
