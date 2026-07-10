@@ -16,10 +16,16 @@ interface CharacterDetailSheetProps {
   characterId: string | null;
   onClose: () => void;
   onEnter: (characterId: string) => void;
+  entering?: boolean;
 }
 
 // ─── 主组件 ──────────────────────────────────────────────────
-export function CharacterDetailSheet({ characterId, onClose, onEnter }: CharacterDetailSheetProps) {
+export function CharacterDetailSheet({
+  characterId,
+  onClose,
+  onEnter,
+  entering = false,
+}: CharacterDetailSheetProps) {
   const { data, isLoading } = useCharacterQuery(characterId ?? undefined);
   const character = data?.character;
 
@@ -49,22 +55,31 @@ export function CharacterDetailSheet({ characterId, onClose, onEnter }: Characte
   const touchStart = useRef({ x: 0, y: 0 });
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStart.current = { x: e.touches[0]!.clientX, y: e.touches[0]!.clientY };
-    setIsDragging(true);
-  }, []);
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (entering) return;
+      touchStart.current = { x: e.touches[0]!.clientX, y: e.touches[0]!.clientY };
+      setIsDragging(true);
+    },
+    [entering]
+  );
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    const dy = e.touches[0]!.clientY - touchStart.current.y;
-    const dx = e.touches[0]!.clientX - touchStart.current.x;
-    const scrollTop = scrollRef.current?.scrollTop ?? 0;
-    if (dy > 0 && Math.abs(dy) >= Math.abs(dx) && scrollTop === 0) {
-      setDragY(dy);
-    }
-  }, []);
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (entering) return;
+      const dy = e.touches[0]!.clientY - touchStart.current.y;
+      const dx = e.touches[0]!.clientX - touchStart.current.x;
+      const scrollTop = scrollRef.current?.scrollTop ?? 0;
+      if (dy > 0 && Math.abs(dy) >= Math.abs(dx) && scrollTop === 0) {
+        setDragY(dy);
+      }
+    },
+    [entering]
+  );
 
   const handleTouchEnd = useCallback(
     (e: React.TouchEvent) => {
+      if (entering) return;
       const dy = e.changedTouches[0]!.clientY - touchStart.current.y;
       setIsDragging(false);
       const scrollTop = scrollRef.current?.scrollTop ?? 0;
@@ -75,7 +90,7 @@ export function CharacterDetailSheet({ characterId, onClose, onEnter }: Characte
         setDragY(0);
       }
     },
-    [onClose]
+    [entering, onClose]
   );
 
   if (!mounted || typeof document === 'undefined') return null;
@@ -91,7 +106,7 @@ export function CharacterDetailSheet({ characterId, onClose, onEnter }: Characte
       <div
         className="absolute inset-0 bg-black/55 backdrop-blur-md transition-opacity duration-300"
         style={{ opacity: visible ? 1 : 0 }}
-        onClick={onClose}
+        onClick={entering ? undefined : onClose}
         aria-hidden="true"
       />
 
@@ -137,8 +152,9 @@ export function CharacterDetailSheet({ characterId, onClose, onEnter }: Characte
             <button
               type="button"
               onClick={onClose}
+              disabled={entering}
               aria-label="关闭"
-              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/90 backdrop-blur-md transition-colors hover:bg-black/60"
+              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/90 backdrop-blur-md transition-colors hover:bg-black/60 disabled:opacity-40"
             >
               <X className="h-4 w-4" />
             </button>
@@ -236,18 +252,19 @@ export function CharacterDetailSheet({ characterId, onClose, onEnter }: Characte
             <button
               type="button"
               onClick={onClose}
-              className="h-12 shrink-0 rounded-2xl border border-white/12 bg-white/5 px-5 text-[14px] font-medium text-white/70 transition-colors hover:bg-white/10 active:scale-[0.98]"
+              disabled={entering}
+              className="h-12 shrink-0 rounded-2xl border border-white/12 bg-white/5 px-5 text-[14px] font-medium text-white/70 transition-colors hover:bg-white/10 active:scale-[0.98] disabled:opacity-40"
             >
               先看看别的
             </button>
             <button
               type="button"
-              disabled={!character}
+              disabled={!character || entering}
               onClick={() => character && onEnter(character.id)}
               className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-2xl bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-[15px] font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all active:scale-[0.98] disabled:opacity-50"
             >
-              <Sparkles className="h-4 w-4" />
-              进入角色
+              <Sparkles className={`h-4 w-4 ${entering ? 'animate-spin' : ''}`} />
+              {entering ? '正在进入…' : '进入角色'}
             </button>
           </div>
         </div>

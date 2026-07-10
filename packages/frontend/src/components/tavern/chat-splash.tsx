@@ -1,16 +1,21 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { useCharacterQuery } from '@/lib/api/characters';
 import { hueShiftFromId } from '@/lib/utils/character-hue';
 
-/** 开屏至少停留时长：保证动画完整走完一轮，避免"闪一下就没" */
-const MIN_SHOW_MS = 2400;
+/** 快加载不打扰：500ms 内 ready 的场景不展示进度条 */
+const PROGRESS_REVEAL_MS = 500;
 /** 首次进入 ST 可能较慢，超过该时长后展示安抚提示 */
 const SLOW_HINT_MS = 6500;
+/** 长尾兜底：不让用户永远只看一条进度条 */
+const STALL_HINT_MS = 45000;
 /** 退场动画时长，与 CSS splash-exit 保持一致 */
 const EXIT_MS = 720;
+/** ready 后先拉满进度，再让整屏退场 */
+const READY_FILL_MS = 240;
 
 type Phase = 'showing' | 'exiting' | 'gone';
 
@@ -63,28 +68,57 @@ function buildStars(id: string, count: number): Star[] {
  * 以"镜头推进"式的放大淡出收场，然后自行卸载。
  * 如果 ST/桥接/角色切换没有完成，则持续展示本动画，不露出 ST 原生加载画面。
  */
-export function ChatSplash({ characterId, ready }: { characterId: string; ready: boolean }) {
+export function ChatSplash({
+  characterId,
+  ready,
+  error,
+  onRetry,
+}: {
+  characterId: string;
+  ready: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+}) {
+  const router = useRouter();
   const { data } = useCharacterQuery(characterId);
   const character = data?.character;
 
   const [phase, setPhase] = useState<Phase>('showing');
-  const [minElapsed, setMinElapsed] = useState(false);
+  const [progressVisible, setProgressVisible] = useState(false);
   const [showSlowHint, setShowSlowHint] = useState(false);
+  const [showStallHint, setShowStallHint] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [returning, setReturning] = useState(false);
 
   useEffect(() => {
-    const minTimer = setTimeout(() => setMinElapsed(true), MIN_SHOW_MS);
+    router.prefetch('/');
+  }, [router]);
+
+  useEffect(() => {
+    const startedAt = performance.now();
+    const revealTimer = setTimeout(() => setProgressVisible(true), PROGRESS_REVEAL_MS);
     const slowHintTimer = setTimeout(() => setShowSlowHint(true), SLOW_HINT_MS);
+    const stallHintTimer = setTimeout(() => setShowStallHint(true), STALL_HINT_MS);
+
+    // 进度仅作等待反馈，无需逐帧刷新；降低冷启动时主线程压力并避免影响按钮点击。
+    const progressTimer = window.setInterval(() => {
+      setProgress(calculateProgress(performance.now() - startedAt));
+    }, 200);
+
     return () => {
-      clearTimeout(minTimer);
+      clearInterval(progressTimer);
+      clearTimeout(revealTimer);
       clearTimeout(slowHintTimer);
+      clearTimeout(stallHintTimer);
     };
   }, []);
 
   useEffect(() => {
-    if (phase === 'showing' && ready && minElapsed) {
-      setPhase('exiting');
-    }
-  }, [phase, ready, minElapsed]);
+    if (phase !== 'showing' || !ready) return;
+    setProgress(100);
+    const timer = setTimeout(() => setPhase('exiting'), READY_FILL_MS);
+    return () => clearTimeout(timer);
+  }, [phase, ready]);
 
   useEffect(() => {
     if (phase !== 'exiting') return;
@@ -101,11 +135,24 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
   const description = character?.description?.trim() ?? '';
   const tags = (character?.personality_tags ?? []).slice(0, 3);
   const avatarUrl = character?.avatar_url || '';
+  const returnToLobby = () => {
+    if (returning) return;
+    setReturning(true);
+    router.replace('/');
+
+    // 极端情况下 ST 冷启动会长时间占用主线程，给客户端路由一个短窗口后用原生导航兜底。
+    window.setTimeout(() => {
+      if (window.location.pathname.startsWith('/tavern/')) {
+        window.location.replace('/');
+      }
+    }, 1200);
+  };
 
   return (
     <div
-      aria-hidden="true"
-      className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden"
+      aria-live="polite"
+      aria-busy={!ready}
+      className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden px-4 py-4"
       style={{
         background: `radial-gradient(150% 110% at 50% -10%, hsl(${hue} 62% 17%) 0%, hsl(${hue - 26} 48% 8%) 46%, #050309 100%)`,
         animation:
@@ -150,7 +197,7 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
       </div>
 
       <div className="relative flex flex-col items-center">
-        {showSlowHint && phase === 'showing' && (
+        {showSlowHint && !showStallHint && !error && phase === 'showing' && (
           <div
             className="mb-5 w-[min(20rem,82vw)] rounded-2xl border border-white/10 bg-black/22 px-4 py-3 text-center shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl"
             style={{ animation: 'splash-fade-up 0.7s ease-out both' }}
@@ -163,6 +210,63 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
             </p>
           </div>
         )}
+
+        <div
+          className={`mb-5 w-[min(20rem,82vw)] transition-all duration-500 ${
+            progressVisible ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0'
+          }`}
+        >
+          <div className="mb-2 flex items-center justify-between text-[10px] tracking-[0.22em] text-white/38">
+            <span>正在连接对话</span>
+            <span>{ready ? '100%' : progress >= 90 ? '正在完成' : `${Math.floor(progress)}%`}</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)]">
+            <div
+              className="relative h-full overflow-hidden rounded-full"
+              style={{
+                width: `${progress}%`,
+                background: `linear-gradient(90deg, hsl(${hue} 88% 72%), hsl(${(hue + 42) % 360} 88% 70%))`,
+                boxShadow: `0 0 14px hsl(${hue} 88% 70% / 0.55)`,
+                transition: ready ? `width ${READY_FILL_MS}ms ease-out` : 'width 180ms linear',
+              }}
+            >
+              <span
+                className="absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-white/50 to-transparent"
+                style={{ animation: 'splash-progress-shimmer 1.25s linear infinite' }}
+              />
+            </div>
+          </div>
+          {(showStallHint || error) && phase === 'showing' && (
+            <div
+              className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-center backdrop-blur-xl"
+              style={{ animation: 'splash-fade-up 0.5s ease-out both' }}
+            >
+              <p className="text-[12px] leading-relaxed text-white/48">
+                {error ?? '连接时间比预期更久。可以继续等待，或返回大厅重新进入。'}
+              </p>
+              <div className="mt-3 flex justify-center gap-2">
+                {error && onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    disabled={returning}
+                    className="min-h-10 rounded-full bg-white/15 px-5 py-2 text-[12px] font-medium text-white/85 transition-colors hover:bg-white/20 disabled:opacity-55"
+                  >
+                    重试
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={returnToLobby}
+                  disabled={returning}
+                  className="min-h-10 rounded-full border border-white/15 bg-white/8 px-5 py-2 text-[12px] font-medium text-white/72 backdrop-blur transition-colors hover:bg-white/14 disabled:opacity-55"
+                >
+                  {returning ? '正在返回…' : '返回大厅'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* 人物海报：流光描边 + 呼吸光晕 + 斜向光扫 */}
         <div
@@ -184,7 +288,10 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
               animation: 'splash-border-flow 3s linear infinite',
             }}
           >
-            <div className="relative aspect-[3/4] w-44 overflow-hidden rounded-[24.5px] sm:w-52">
+            <div
+              className="relative aspect-[3/4] overflow-hidden rounded-[24.5px]"
+              style={{ width: 'clamp(8rem, 24vh, 13rem)' }}
+            >
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -213,7 +320,7 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
       </div>
 
       {/* 名字 / 分隔线 / 标签 / 一句话描述：错峰入场 */}
-      <div className="relative mt-8 flex max-w-[82vw] flex-col items-center px-6 text-center">
+      <div className="relative mt-[clamp(1rem,3vh,2rem)] flex max-w-[82vw] flex-col items-center px-6 text-center">
         <h1
           className="text-[26px] font-semibold tracking-[0.18em] text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.5)] sm:text-3xl"
           style={{ animation: 'splash-fade-up 0.7s ease-out 0.35s both' }}
@@ -263,7 +370,7 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
 
       {/* 底部等待指示：三粒星尘跳动 */}
       <div
-        className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+3rem)] flex flex-col items-center gap-3"
+        className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+clamp(1rem,4vh,3rem))] flex flex-col items-center gap-3"
         style={{ animation: 'splash-fade-up 0.8s ease-out 1.1s both' }}
       >
         <div className="flex items-center gap-1.5">
@@ -283,4 +390,18 @@ export function ChatSplash({ characterId, ready }: { characterId: string; ready:
       </div>
     </div>
   );
+}
+
+function calculateProgress(elapsedMs: number): number {
+  if (elapsedMs <= 3000) {
+    return Math.min(70, (elapsedMs / 3000) * 70);
+  }
+
+  if (elapsedMs <= 10000) {
+    return 70 + ((elapsedMs - 3000) / 7000) * 20;
+  }
+
+  // 10s 之后极慢蠕动，永不到 100%，100% 只绑定真实 ready。
+  const creep = 5 * (1 - Math.exp(-(elapsedMs - 10000) / 20000));
+  return Math.min(95, 90 + creep);
 }
