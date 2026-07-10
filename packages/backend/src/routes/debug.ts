@@ -69,11 +69,22 @@ export default async function debugRoutes(app: FastifyInstance) {
     const timeline = sorted.map(([k, v]) => `${k}@+${v - t0}ms`).join(' ');
 
     const charId = String(body.meta?.characterId ?? '-');
+    // 平台分类（供按 iOS/Android/Desktop 分别统计停摆率）。plat 紧跟 char 放前部，
+    // 即使主行被日志截断也能保留；原始 ua 追加在行尾（best-effort）。
+    const ua = String(body.ua ?? '-');
+    const plat = /iPhone|iPad|iPod/i.test(ua)
+      ? 'iOS'
+      : /Android/i.test(ua)
+        ? 'Android'
+        : /Macintosh|Windows|Linux|X11/i.test(ua)
+          ? 'Desktop'
+          : 'other';
     request.log.info(
-      `[iframe-timing] char=${charId} | ` +
+      `[iframe-timing] char=${charId} plat=${plat} | ` +
         phaseLines.join('  ') +
         ` | details=${JSON.stringify(mainDetails)}` +
-        ` | timeline=${timeline}`
+        ` | timeline=${timeline}` +
+        ` | ua=${ua}`
     );
     waterfallLines.sort((a, b) => a[0].localeCompare(b[0]));
     for (const [k, v] of waterfallLines) {

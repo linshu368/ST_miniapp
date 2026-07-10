@@ -48,6 +48,12 @@ export function BridgeProvider({ children }: { children: React.ReactNode }) {
     return unsub;
   }, [client]);
 
+  // 点卡即检（安全网 #5）：进入 /tavern/ 时 iframe 转可见，通知 client——
+  // 若此刻仍未握手（很可能撞上隐藏预热期停摆），走比 30s 看门狗更早的重载（可见态重载才有效）。
+  useEffect(() => {
+    if (isVisible) client.onActivated();
+  }, [client, isVisible]);
+
   const registerIframe = useCallback(
     (el: HTMLIFrameElement) => {
       iframeRef.current = el;
