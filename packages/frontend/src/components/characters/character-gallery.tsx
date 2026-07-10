@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 
@@ -41,6 +41,11 @@ export function CharacterGallery() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
+
+  // 用户阅读角色详情时同步预取动态路由，减少点击进入后偶发等待路由资源的时间。
+  useEffect(() => {
+    if (previewId) router.prefetch(`/tavern/${previewId}`);
+  }, [previewId, router]);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
   const filtered = useMemo(() => {
@@ -157,8 +162,14 @@ export function CharacterGallery() {
             enteringRef.current = false;
             setEnteringId(null);
             setPreviewId(null);
-            // Next.js 的在途 router.push 无公开取消 API；原生返回大厅可可靠中止此次导航。
-            window.location.replace('/');
+            // 同路径 replace 可能不会压过在途 router.push。使用唯一 URL 触发完整导航，
+            // 同时保留 Telegram 注入的 hash，确保旧的角色导航被浏览器真正中止。
+            const lobbyUrl = new URL(window.location.href);
+            lobbyUrl.pathname = '/';
+            lobbyUrl.search = '';
+            lobbyUrl.searchParams.set('entry_cancelled', Date.now().toString());
+            window.stop();
+            window.location.replace(lobbyUrl.toString());
             return;
           }
           setPreviewId(null);
