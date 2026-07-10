@@ -149,16 +149,6 @@ export function mergeSettings(
     }
   }
 
-  // boot 尾段跳过「恢复上次聊天」（冷启动优化 round-4 #1）：active_character 有值时，
-  // ST boot 的 RA_autoloadchat（vendor RossAscends-mods.js）会在 APP_READY 之前串行执行
-  // 「找卡 → selectCharacterById → 载入上次聊天（chats/get + 世界书/正则联动）」，实测占
-  // boot 收尾 ~1.5-3s。平台进卡必然 forceNewChat、闸门开前 ST 原生界面完全不可见，boot 时
-  // 恢复上次聊天是纯浪费。删键而非置空串：空串仍会进 RA_autoloadchat 的查找分支并触发一次
-  // 多余的 settings 保存；键不存在则整段跳过。
-  // 须置于 writable_paths 覆盖之后（B 段用户回流值会写回该键）；仅影响写入 settings.json 的
-  // boot 快照，Supabase B 镜像仍保留用户真实 active_character，平台侧查询不受影响。
-  delete merged['active_character'];
-
   // 强制覆写 LLM endpoint 为平台代理网关地址，确保 ST 的 LLM 调用经 backend 代理（注入 key + 计费）。
   // 地址由调用方从配置层传入，避免 merge 纯函数直接依赖全局环境变量。
   lodashSet(merged, 'oai_settings.reverse_proxy', llmProxyUrl);

@@ -48,6 +48,13 @@ export type BridgeClientOptions = {
    * 正常首段握手最迟 ~17s 到达（10 样本最差值），默认 30s；0 = 关闭。
    */
   handshakeArrivalTimeout?: number;
+  /**
+   * 点卡即检重载阈值（安全网 #5）：用户点卡进入 /tavern/ 时 iframe 由隐藏转可见
+   * （重载只在可见态 100% 恢复）。若此刻仍未握手，则按「距本次 boot 起点的该时长」武装一枚更
+   * 激进的停摆重载——到点仍无握手即重载，不必干等 30s 握手到达看门狗；点卡时若已超阈值则立即重载。
+   * 默认 18s（> 正常最迟握手 ~17.5s，不误伤健康慢 boot）；0 = 关闭。
+   */
+  visibleStallReloadMs?: number;
 };
 
 type PendingRequest = {
@@ -68,6 +75,7 @@ export class BridgeClient {
   private readonly reconnectHandshakeTimeout: number;
   private readonly iframeLoadTimeout: number;
   private readonly handshakeArrivalTimeout: number;
+  private readonly visibleStallReloadMs: number;
 
   private readonly stateMachine: BridgeStateMachine;
   private readonly buffer: RequestBuffer;
@@ -82,9 +90,14 @@ export class BridgeClient {
   private iframeLoadTimer: ReturnType<typeof setTimeout> | null = null;
   private iframeLoadHandler: (() => void) | null = null;
   private handshakeArrivalTimer: ReturnType<typeof setTimeout> | null = null;
+  private clickStallTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private started = false;
+  /** 本次 boot 尝试（start 或 reconnect reload）起点，用于点卡即检的相对阈值计算 */
+  private bootAttemptStartedAt = 0;
+  /** 用户是否已点卡进入 /tavern/（iframe 转可见）；决定重连后是否也走激进的点卡即检阈值 */
+  private userWaiting = false;
 
   private static readonly PING_INTERVAL_MS = 2500;
 
@@ -98,6 +111,7 @@ export class BridgeClient {
     this.reconnectHandshakeTimeout = options?.reconnectHandshakeTimeout ?? 30_000;
     this.iframeLoadTimeout = options?.iframeLoadTimeout ?? 15_000;
     this.handshakeArrivalTimeout = options?.handshakeArrivalTimeout ?? 30_000;
+    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 18_000;
 
     this.stateMachine = createStateMachine();
     this.buffer = new RequestBuffer();
@@ -107,6 +121,7 @@ export class BridgeClient {
   start(): void {
     if (this.started) return;
     this.started = true;
+    this.bootAttemptStartedAt = Date.now();
 
     markTiming('bridge_start'); // [iframe-timing] TEMP DEBUG
     this.stateMachine.transition({ type: 'IFRAME_LOAD_START' });
@@ -142,6 +157,40 @@ export class BridgeClient {
     if (this.handshakeArrivalTimer) {
       clearTimeout(this.handshakeArrivalTimer);
       this.handshakeArrivalTimer = null;
+    }
+  }
+
+  /**
+   * 点卡即检（安全网 #5）：由壳端在用户进入 /tavern/（iframe 转可见）时调用。
+   * iframe 可见后重载才 100% 恢复（pro 实测：停摆发生在隐藏预热期，转可见并不能就地解楔，
+   * 只有重载才行）。因此这里在「仍未握手」时武装一枚比 30s 握手到达看门狗更早的停摆重载。
+   * 与握手到达看门狗并存、取更早者（handleHandshakeTimeout 用 reconnectTimer 去重，绝不更慢）；
+   * 阈值相对本次 boot 起点计（点卡时若已超阈值 → 立即重载）。收到任意握手即解除。
+   */
+  onActivated(): void {
+    if (!this.started) return;
+    this.userWaiting = true;
+    // 仅在「尚未收到首段握手」（loading）时介入；handshaked/ready/disconnected 皆无需
+    if (this.stateMachine.getStatus() !== 'loading') return;
+    this.armClickStallWatchdog();
+  }
+
+  private armClickStallWatchdog(): void {
+    this.clearClickStallWatchdog();
+    if (this.visibleStallReloadMs <= 0) return;
+    const elapsed = Date.now() - this.bootAttemptStartedAt;
+    const remaining = Math.max(0, this.visibleStallReloadMs - elapsed);
+    this.clickStallTimer = setTimeout(() => {
+      this.clickStallTimer = null;
+      markTiming('click_stall_reload'); // [iframe-timing] TEMP DEBUG
+      this.handleHandshakeTimeout();
+    }, remaining);
+  }
+
+  private clearClickStallWatchdog(): void {
+    if (this.clickStallTimer) {
+      clearTimeout(this.clickStallTimer);
+      this.clickStallTimer = null;
     }
   }
 
@@ -207,6 +256,7 @@ export class BridgeClient {
     this.stopPingLoop();
     this.clearIframeLoadWatchdog();
     this.clearHandshakeArrivalWatchdog();
+    this.clearClickStallWatchdog();
     this.stateMachine.transition({
       type: 'DISCONNECT',
       reason: 'Handshake timeout — scheduling reconnect',
@@ -246,6 +296,7 @@ export class BridgeClient {
     this.handshakeState.meta = null;
 
     this.stateMachine.transition({ type: 'IFRAME_LOAD_START' });
+    this.bootAttemptStartedAt = Date.now();
     this.armHandshakeTimer(this.reconnectHandshakeTimeout);
 
     // 重载 iframe（触发 ST 冷启动 + st-extension 重新 init 并重发握手）
@@ -256,6 +307,8 @@ export class BridgeClient {
     this.attachIframeLoadListener();
     this.armIframeLoadWatchdog();
     this.armHandshakeArrivalWatchdog();
+    // 若用户已在等待（点卡进过 /tavern/），本次重连也是可见态 → 同样走激进的点卡即检阈值
+    if (this.userWaiting) this.armClickStallWatchdog();
   }
 
   stop(): void {
@@ -277,9 +330,11 @@ export class BridgeClient {
       this.reconnectTimer = null;
     }
     this.reconnectAttempts = 0;
+    this.userWaiting = false;
 
     this.clearIframeLoadWatchdog();
     this.clearHandshakeArrivalWatchdog();
+    this.clearClickStallWatchdog();
     this.detachIframeLoadListener();
     this.stopPingLoop();
     this.rejectAllPending('Bridge client stopped');
@@ -459,9 +514,10 @@ export class BridgeClient {
   }
 
   private handleHandshake(msg: HandshakeMessage): void {
-    // 握手已到 = ST 脚本在跑，加载必然未停摆；解除 load/握手到达两道看门狗
+    // 握手已到 = ST 脚本在跑，加载必然未停摆；解除 load/握手到达/点卡即检三道看门狗
     this.clearIframeLoadWatchdog();
     this.clearHandshakeArrivalWatchdog();
+    this.clearClickStallWatchdog();
     // [iframe-timing] TEMP DEBUG: 记录两段握手到达时刻
     markTiming(msg.phase === 'ready' ? 'st_ready' : 'st_handshake');
     try {
@@ -555,6 +611,7 @@ export class BridgeClient {
     this.stopPingLoop();
     this.clearIframeLoadWatchdog();
     this.clearHandshakeArrivalWatchdog();
+    this.clearClickStallWatchdog();
     if (this.totalTimer) {
       clearTimeout(this.totalTimer);
       this.totalTimer = null;
