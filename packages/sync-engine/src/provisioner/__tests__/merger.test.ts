@@ -75,8 +75,7 @@ describe('mergeSettings', () => {
     const result = mergeSettingsForTest(platform, null, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(false);
-    // active_character 被 merger 从 boot 快照中删除（跳过恢复上次聊天），见场景 14
-    expect(result.settings['active_character']).toBeUndefined();
+    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
     expect(result.settings['theme']).toBe('dark');
     expect(result.settings['fontSize']).toBe(14);
   });
@@ -136,6 +135,7 @@ describe('mergeSettings', () => {
     const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(false);
+    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_SECOND}.png`);
   });
 
   // ── 场景 5：character_ref 失效，回退到系统兜底卡 ─────────────────────────
@@ -153,6 +153,7 @@ describe('mergeSettings', () => {
 
     expect(result.hadInvalidRef).toBe(true);
     expect(result.invalidRefValue).toBe(`platform_${MISSING_UUID}.png`);
+    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
   });
 
   // ── 场景 6：character_ref 失效 + 无兜底卡 ───────────────────────────────
@@ -166,6 +167,7 @@ describe('mergeSettings', () => {
     const result = mergeSettingsForTest(platform, userSettings, [], undefined);
 
     expect(result.hadInvalidRef).toBe(true);
+    expect(result.settings['active_character']).toBe(`platform_${MISSING_UUID}.png`);
   });
 
   // ── 场景 7：character_ref 格式不合法 ────────────────────────────────────
@@ -181,28 +183,7 @@ describe('mergeSettings', () => {
     const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(true);
-  });
-
-  // ── 场景 14：boot 快照删除 active_character（跳过恢复上次聊天）──────────────
-  it('无论 A/B 段是否有值，active_character 都不应出现在写盘结果中', () => {
-    const platform = makePlatformSettings();
-    const userSettings = makeUserSettings({
-      settings_jsonb: {
-        active_character: `platform_${CHAR_UUID_SECOND}.png`,
-      },
-    });
-
-    const withUser = mergeSettingsForTest(
-      platform,
-      userSettings,
-      [CHAR_UUID_FALLBACK, CHAR_UUID_SECOND],
-      CHAR_UUID_FALLBACK
-    );
-    const newUser = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
-
-    // 删键而非置空：键不存在时 ST boot 的 RA_autoloadchat 整段跳过（不恢复上次聊天）
-    expect('active_character' in withUser.settings).toBe(false);
-    expect('active_character' in newUser.settings).toBe(false);
+    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
   });
 
   // ── 场景 9：强制平台 LLM 代理链路（main_api/custom 源/兜底模型）─────────
