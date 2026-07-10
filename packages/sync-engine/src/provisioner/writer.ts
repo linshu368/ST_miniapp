@@ -5,9 +5,13 @@
  * 不包含任何业务逻辑（merge / 校验等由 merger.ts 完成）。
  */
 
-import { writeFileSync, existsSync, renameSync } from 'node:fs';
+import { copyFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 import { createHmac, randomUUID } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
+  backgroundDst,
+  backgroundsDir,
   charactersDir,
   presetsDir,
   settingsPath,
@@ -16,6 +20,8 @@ import {
   characterStoragePath,
   presetDst,
   ensureDir,
+  themeDst,
+  themesDir,
   userAvatarsDir,
   userAvatarDst,
 } from '../lib/st-fs.js';
@@ -25,6 +31,10 @@ import type { MergedSettings } from './merger.js';
 import { config } from '../lib/config.js';
 
 export const DEFAULT_USER_AVATAR_FILENAME = '4d015fdd-7f82-482c-912d-466eaa826280.png';
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+const PLATFORM_ASSETS_ROOT = resolve(REPO_ROOT, 'ops/st-platform-assets');
+const GLIMMER_THEME_FILENAME = 'Glimmer - by Rivelle.json';
+const MOONLIT_BACKGROUND_FILENAME = 'night-city-anime.jpg';
 
 /**
  * 原子写：先写同目录临时文件，再 rename 到目标路径。
@@ -48,6 +58,11 @@ export interface WriteCharactersResult {
 }
 
 export interface WritePresetsResult {
+  written: string[];
+  skipped: string[];
+}
+
+export interface WritePlatformAssetsResult {
   written: string[];
   skipped: string[];
 }
@@ -189,6 +204,47 @@ async function ensureDefaultUserAvatar(handle: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// ─── 写平台主题与背景 ─────────────────────────────────────────────────────────
+/**
+ * 把平台固定的 ST 视觉资产下发到每个独立用户目录。
+ *
+ * 不能只写 default-user：MiniApp 每个 Telegram 用户都使用 data/<handle>/，
+ * 且其 settings.json 由 provision 独立投影。
+ */
+export function writePlatformAssets(handle: string, force: boolean): WritePlatformAssetsResult {
+  const assets = [
+    {
+      source: resolve(PLATFORM_ASSETS_ROOT, 'themes', GLIMMER_THEME_FILENAME),
+      destination: themeDst(handle, GLIMMER_THEME_FILENAME),
+      directory: themesDir(handle),
+      label: `themes/${GLIMMER_THEME_FILENAME}`,
+    },
+    {
+      source: resolve(PLATFORM_ASSETS_ROOT, 'backgrounds', MOONLIT_BACKGROUND_FILENAME),
+      destination: backgroundDst(handle, MOONLIT_BACKGROUND_FILENAME),
+      directory: backgroundsDir(handle),
+      label: `backgrounds/${MOONLIT_BACKGROUND_FILENAME}`,
+    },
+  ];
+  const written: string[] = [];
+  const skipped: string[] = [];
+
+  for (const asset of assets) {
+    if (!existsSync(asset.source)) {
+      throw new Error(`平台 ST 资产不存在：${asset.source}`);
+    }
+    ensureDir(asset.directory);
+    if (!force && existsSync(asset.destination)) {
+      skipped.push(asset.label);
+      continue;
+    }
+    copyFileSync(asset.source, asset.destination);
+    written.push(asset.label);
+  }
+
+  return { written, skipped };
 }
 
 // ─── 写预设 JSON ───────────────────────────────────────────────────────────────

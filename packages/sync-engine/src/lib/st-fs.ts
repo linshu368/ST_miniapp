@@ -25,6 +25,16 @@ export function presetsDir(handle: string): string {
   return join(handleDir(handle), 'OpenAI Settings');
 }
 
+/** data/<handle>/themes/ */
+export function themesDir(handle: string): string {
+  return join(handleDir(handle), 'themes');
+}
+
+/** data/<handle>/backgrounds/ */
+export function backgroundsDir(handle: string): string {
+  return join(handleDir(handle), 'backgrounds');
+}
+
 /** data/<handle>/settings.json */
 export function settingsPath(handle: string): string {
   return join(handleDir(handle), 'settings.json');
@@ -61,6 +71,16 @@ export function characterDst(handle: string, characterId: string): string {
 /** data/<handle>/OpenAI Settings/platform_<id>.json */
 export function presetDst(handle: string, presetId: string): string {
   return join(presetsDir(handle), `platform_${presetId}.json`);
+}
+
+/** data/<handle>/themes/<filename> */
+export function themeDst(handle: string, filename: string): string {
+  return join(themesDir(handle), filename);
+}
+
+/** data/<handle>/backgrounds/<filename> */
+export function backgroundDst(handle: string, filename: string): string {
+  return join(backgroundsDir(handle), filename);
 }
 
 /**

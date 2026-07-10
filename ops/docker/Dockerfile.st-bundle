@@ -50,6 +50,13 @@ RUN test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-S
  && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-Slash-Runner/lib/jsoneditor.js \
  && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/JS-Slash-Runner/lib/tailwindcss.min.js
 
+# 构建期断言：Moonlit Echoes 完整扩展快照已安装。
+RUN test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/manifest.json \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/index.js \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/extension.css \
+ && test -f /build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/style.css \
+ && test -f "/build/vendor/sillytavern/public/scripts/extensions/third-party/MoonlitEchoesTheme/theme/Glimmer - by Rivelle.json"
+
 # Install ST's OWN production dependencies inside the image (cross-platform safety),
 # mirroring vendor/sillytavern/Dockerfile: `npm ci --omit=dev` then precompile public libs.
 # (.dockerignore strips host node_modules from the build context, so ST has no deps until
@@ -122,6 +129,9 @@ ENV SILLYTAVERN_SECURITYOVERRIDE=true
 
 # --- 应用文件 ---
 WORKDIR /home/node/app
+
+# provision 为每个 Telegram 用户下发的固定主题与背景资源。
+COPY ops/st-platform-assets /home/node/app/ops/st-platform-assets
 
 # ST 本体（含 builder-ext 注入的扩展）
 COPY --from=builder-ext /build/vendor/sillytavern /home/node/app

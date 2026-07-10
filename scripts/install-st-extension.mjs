@@ -38,6 +38,14 @@ const REQUIRED_FILES = {
     'lib/jsoneditor.js',
     'lib/tailwindcss.min.js',
   ],
+  MoonlitEchoesTheme: [
+    'manifest.json',
+    'index.js',
+    'extension.css',
+    'style.css',
+    'src/bootstrap/init-extension.js',
+    'theme/Glimmer - by Rivelle.json',
+  ],
 };
 
 function installOne(name) {
