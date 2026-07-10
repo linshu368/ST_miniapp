@@ -7,10 +7,20 @@ import { retrieveRawInitData } from '@telegram-apps/sdk-react';
  */
 export function getRawInitData(): string | undefined {
   try {
-    return retrieveRawInitData();
+    const data = retrieveRawInitData();
+    if (data) return data;
   } catch {
-    return undefined;
+    // ignore
   }
+
+  // Fallback for local development if MOCK_AUTH is used
+  if (typeof window !== 'undefined') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tgWebAppData = urlParams.get('tgWebAppData');
+    if (tgWebAppData) return tgWebAppData;
+  }
+
+  return undefined;
 }
 
 /** 统一放到 API 请求 header 的字段名。后端配套约定。 */
