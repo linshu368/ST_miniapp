@@ -7,6 +7,7 @@ import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { ChatHeader } from '@/components/tavern/chat-header';
 import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
 import { ChatSplash } from '@/components/tavern/chat-splash';
+import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 // [iframe-timing] TEMP DEBUG
 import { markTiming, resetPageTiming, flushIframeTiming } from '@/lib/bridge/iframe-timing';
@@ -15,7 +16,22 @@ export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const bridgeStatus = useBridgeStatus();
   // 开屏动画收场信号：只有角色切换成功后才放行，避免露出 ST 原生加载画面。
-  const [chatReady, setChatReady] = useState(false);
+  const [readyCharacterId, setReadyCharacterId] = useState<string | null>(null);
+  const [entryError, setEntryError] = useState<string | null>(null);
+  const [entryAttempt, setEntryAttempt] = useState(0);
+  const chatReady = readyCharacterId === characterId;
+
+  // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent(CHAT_INTERACTIVITY_EVENT, { detail: { interactive: chatReady } })
+    );
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent(CHAT_INTERACTIVITY_EVENT, { detail: { interactive: false } })
+      );
+    };
+  }, [chatReady]);
 
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
@@ -25,8 +41,9 @@ export default function TavernChatPage() {
   }, [characterId]);
 
   useEffect(() => {
-    setChatReady(false);
+    setReadyCharacterId(null);
     if (!characterId || bridgeStatus !== 'ready') return;
+    setEntryError(null);
 
     markTiming('gate_open'); // [iframe-timing] TEMP DEBUG
 
@@ -56,7 +73,7 @@ export default function TavernChatPage() {
             useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
           }
           if (!cancelled) {
-            setChatReady(true);
+            setReadyCharacterId(characterId);
             // [iframe-timing] TEMP DEBUG: 呈现时刻，flush 全部相位到后端日志
             markTiming('chat_ready');
             flushIframeTiming({ characterId, bridgeStatusAtGate: bridgeStatus });
@@ -64,20 +81,29 @@ export default function TavernChatPage() {
         })
         .catch((err) => {
           console.error('[TavernChatPage] selectCharacter failed:', err);
+          if (!cancelled) {
+            setEntryError('角色加载失败，请重试。');
+          }
         });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [bridgeStatus, characterId]);
+  }, [bridgeStatus, characterId, entryAttempt]);
 
   return (
     <div className="relative w-full h-full">
       <ChatHeader />
       <ChatToolsMenu />
       {characterId ? (
-        <ChatSplash key={characterId} characterId={characterId} ready={chatReady} />
+        <ChatSplash
+          key={`${characterId}:${entryAttempt}`}
+          characterId={characterId}
+          ready={chatReady}
+          error={entryError}
+          onRetry={() => setEntryAttempt((attempt) => attempt + 1)}
+        />
       ) : null}
     </div>
   );

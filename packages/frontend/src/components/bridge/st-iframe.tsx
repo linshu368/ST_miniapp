@@ -6,17 +6,38 @@ import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { markTiming } from '@/lib/bridge/iframe-timing'; // [iframe-timing] TEMP DEBUG
 
 const ST_IFRAME_URL = '/tavern/';
+export const CHAT_INTERACTIVITY_EVENT = 'miniapp:chat-interactivity';
 
 type StSessionResponse = {
   success: boolean;
   data: { st_url: string; st_cookie: string; is_new_user: boolean };
 };
 
+function isTextEntryElement(target: EventTarget | null): target is HTMLElement {
+  if (!target || typeof target !== 'object' || !('tagName' in target)) return false;
+  const element = target as HTMLElement;
+  return (
+    element.tagName === 'INPUT' ||
+    element.tagName === 'TEXTAREA' ||
+    element.isContentEditable === true
+  );
+}
+
 export function STIframe() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { registerIframe, isVisible } = useBridgeContext();
   const [sessionReady, setSessionReady] = useState(false);
+  const [chatInteractive, setChatInteractive] = useState(false);
   const loadCountRef = useRef(0); // [iframe-timing] TEMP DEBUG: 区分首次加载与看门狗/超时重载
+
+  useEffect(() => {
+    const handleInteractivity = (event: Event) => {
+      const detail = (event as CustomEvent<{ interactive?: boolean }>).detail;
+      setChatInteractive(detail?.interactive === true);
+    };
+    window.addEventListener(CHAT_INTERACTIVITY_EVENT, handleInteractivity);
+    return () => window.removeEventListener(CHAT_INTERACTIVITY_EVENT, handleInteractivity);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +83,52 @@ export function STIframe() {
       registerIframe(iframeRef.current);
     }
   }, [registerIframe, sessionReady]);
+
+  useEffect(() => {
+    if (!sessionReady || chatInteractive) return;
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    let guardedDocument: Document | null = null;
+    let focusHandler: ((event: FocusEvent) => void) | null = null;
+
+    const removeGuard = () => {
+      if (guardedDocument && focusHandler) {
+        guardedDocument.removeEventListener('focusin', focusHandler, true);
+      }
+      guardedDocument = null;
+      focusHandler = null;
+    };
+
+    const installGuard = () => {
+      removeGuard();
+      try {
+        const doc = iframe.contentDocument;
+        if (!doc) return;
+        guardedDocument = doc;
+        focusHandler = (event: FocusEvent) => {
+          if (isTextEntryElement(event.target)) {
+            event.target.blur();
+          }
+        };
+        doc.addEventListener('focusin', focusHandler, true);
+
+        const active = doc.activeElement;
+        if (isTextEntryElement(active)) {
+          active.blur();
+        }
+      } catch {
+        // /tavern/ 正常为同源；若部署代理配置异常变成跨域，则安全跳过焦点守卫。
+      }
+    };
+
+    installGuard();
+    iframe.addEventListener('load', installGuard);
+    return () => {
+      iframe.removeEventListener('load', installGuard);
+      removeGuard();
+    };
+  }, [chatInteractive, sessionReady]);
 
   if (!sessionReady) return null;
 

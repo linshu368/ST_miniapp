@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 
@@ -39,6 +39,8 @@ export function CharacterGallery() {
   const { data, isLoading, isError } = useCharactersQuery();
   const [query, setQuery] = useState('');
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [enteringId, setEnteringId] = useState<string | null>(null);
+  const enteringRef = useRef(false);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
   const filtered = useMemo(() => {
@@ -136,16 +138,27 @@ export function CharacterGallery() {
       ) : (
         <div className="mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 pb-10 pt-2 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] sm:gap-4 sm:px-6 lg:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] lg:px-8">
           {filtered.map((c) => (
-            <CharacterCard key={c.id} character={c} onSelect={() => setPreviewId(c.id)} />
+            <CharacterCard
+              key={c.id}
+              character={c}
+              onSelect={() => {
+                if (!enteringId) setPreviewId(c.id);
+              }}
+            />
           ))}
         </div>
       )}
 
       <CharacterDetailSheet
         characterId={previewId}
-        onClose={() => setPreviewId(null)}
+        entering={enteringId !== null}
+        onClose={() => {
+          if (!enteringId) setPreviewId(null);
+        }}
         onEnter={(id) => {
-          setPreviewId(null);
+          if (enteringRef.current) return;
+          enteringRef.current = true;
+          setEnteringId(id);
           router.push(`/tavern/${id}`);
         }}
       />
