@@ -18,6 +18,7 @@ import { installLlmMetadataInject } from './patches/llm-metadata-inject.js';
 import { installReasoningAutoParse } from './patches/reasoning-auto-parse.js';
 import { installGlobalRegexSafetyNet } from './patches/global-regex-safety-net.js';
 import { installCharTokenCounterSuppress } from './patches/char-token-counter-suppress.js';
+import { installWelcomeScreenSuppress } from './patches/welcome-screen-suppress.js';
 import { stTiming } from './debug-timing.js'; // [iframe-timing] TEMP DEBUG
 import { installBootTimingProbes } from './debug-boot-probes.js'; // [iframe-timing] TEMP DEBUG
 import { installBootWaterfallProbe } from './debug-boot-waterfall.js'; // [iframe-timing] TEMP DEBUG
@@ -75,6 +76,10 @@ function init(): void {
   // 切角色关键路径上 ST 给隐藏的角色编辑面板逐字段远程算 token（~10 次串行 RTT），
   // 移除 data-token-counter 属性使其零调用（见 patches/char-token-counter-suppress）。
   installCharTokenCounterSuppress();
+  // 摘除 ST 原生欢迎屏在 APP_READY 的渲染（冷启动优化）：平台冷启动期 iframe 隐藏、
+  // 点卡后 forceNewChat 覆盖，欢迎屏从不可见却在 boot 收尾串行拉 chats/recent + 渲染，
+  // 且延后 bridge ready 握手（见 patches/welcome-screen-suppress）。
+  installWelcomeScreenSuppress();
 
   const server = createBridgeServer('*');
   server.start();
