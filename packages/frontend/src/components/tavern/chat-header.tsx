@@ -45,22 +45,19 @@ export function ChatHeader() {
       style={{
         opacity: 1 - scrollProgress,
         transform: `translate3d(0, ${-18 * scrollProgress}px, 0)`,
-        background:
-          'linear-gradient(180deg, rgba(12, 11, 17, 0.9) 0%, rgba(18, 16, 27, 0.62) 62%, rgba(18, 16, 27, 0) 100%)',
-        backdropFilter: `blur(${Math.round(12 * (1 - scrollProgress))}px)`,
-        WebkitBackdropFilter: `blur(${Math.round(12 * (1 - scrollProgress))}px)`,
+        background: 'transparent',
       }}
     >
-      <div className="flex h-12 items-center">
+      <div className="flex h-10 items-center rounded-full border border-white/80 bg-white px-0.5 shadow-[0_6px_18px_rgba(0,0,0,0.28)]">
         <ChatSidebar />
         <ChatToolsMenu />
       </div>
-      <span className="min-w-0 truncate px-2 text-center text-[clamp(0.75rem,3.5vw,0.9rem)] font-medium text-white/90 pointer-events-none">
+      <span className="pointer-events-none min-w-0 truncate px-2 text-center text-[clamp(0.75rem,3.5vw,0.9rem)] font-medium text-white/90 drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]">
         {displayName}
       </span>
       <button
         onClick={() => router.push('/')}
-        className="flex size-10 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white active:scale-95"
+        className="flex size-10 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white text-[#181620] shadow-[0_6px_18px_rgba(0,0,0,0.28)] transition-colors hover:bg-white/90 hover:text-black active:scale-95"
         aria-label="返回大厅"
       >
         <Home className="h-5 w-5" />

@@ -26,3 +26,26 @@ export function initTelegramSdk(): void {
     // SDK 初始化失败不阻塞业务（如旧版 TG 客户端）
   }
 }
+
+/** 进入角色聊天时尽可能占满 Telegram 可用视口；旧客户端安全降级为 expand。 */
+export function requestTelegramChatFullscreen(): void {
+  if (typeof window === 'undefined') return;
+  initTelegramSdk();
+  try {
+    if (!isTMA()) return;
+    const webApp = (
+      window as typeof window & {
+        Telegram?: {
+          WebApp?: {
+            expand?: () => void;
+            requestFullscreen?: () => void;
+          };
+        };
+      }
+    ).Telegram?.WebApp;
+    webApp?.expand?.();
+    webApp?.requestFullscreen?.();
+  } catch {
+    // 非 Telegram 环境或旧客户端不阻断进入聊天。
+  }
+}

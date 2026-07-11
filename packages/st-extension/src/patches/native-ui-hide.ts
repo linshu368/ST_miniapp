@@ -29,9 +29,10 @@ export function installNativeUiHide(): void {
 }
 
 /**
- * 隐藏 ST 原生「AI Response Configuration / 对话补全预设」抽屉。
+ * 隐藏 ST 原生顶栏与「AI Response Configuration / 对话补全预设」抽屉。
  *
- * 平台不开放用户自主修改预设，该抽屉（顶栏图标 #leftNavDrawerIcon + 面板 #left-nav-panel，
+ * 平台聊天顶栏已完整接管导航与工具入口，ST 的 #top-settings-holder 在宿主顶栏淡出后
+ * 也不能重新露出；同时平台不开放用户自主修改预设，该抽屉（顶栏图标 #leftNavDrawerIcon + 面板 #left-nav-panel，
  * 含预设下拉 #settings_preset_openai、提示词管理 #completion_prompt_manager 等）必须始终隐藏。
  *
  * 用 display:none 而非移除 DOM：ST 内部预设加载仍依赖这些元素存在（仅读取，不需可见），
@@ -42,6 +43,8 @@ export function installNativeUiHide(): void {
 export function installPresetUiHide(): void {
   const style = document.createElement('style');
   style.textContent = [
+    '#top-bar { display: none !important; }',
+    '#top-settings-holder { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }',
     '#ai-config-button { display: none !important; }',
     '#left-nav-panel { display: none !important; }',
   ].join('\n');

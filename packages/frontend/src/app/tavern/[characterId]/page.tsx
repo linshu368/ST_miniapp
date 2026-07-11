@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { platformAction, useBridgeStatus } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
+import { requestTelegramChatFullscreen } from '@/lib/telegram/init';
 import { ChatHeader } from '@/components/tavern/chat-header';
 import { ChatSplash } from '@/components/tavern/chat-splash';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
@@ -19,6 +20,10 @@ export default function TavernChatPage() {
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
   const chatReady = readyCharacterId === characterId;
+
+  useEffect(() => {
+    requestTelegramChatFullscreen();
+  }, []);
 
   // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。
   useEffect(() => {

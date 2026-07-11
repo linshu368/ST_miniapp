@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 import { useCharactersQuery } from '@/lib/api/characters';
+import { requestTelegramChatFullscreen } from '@/lib/telegram/init';
 
 import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
@@ -256,6 +257,7 @@ export function CharacterGallery() {
           if (enteringRef.current) return;
           enteringRef.current = true;
           setEnteringId(id);
+          requestTelegramChatFullscreen();
           router.push(`/tavern/${id}`);
         }}
       />
