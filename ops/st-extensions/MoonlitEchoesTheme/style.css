@@ -4437,3 +4437,65 @@ html body[data-generating='true'] #mes_stop {
 html body #send_textarea::placeholder {
   color: rgba(255, 255, 255, 0.25) !important;
 }
+
+/* Remove the centered frosted pane; keep only message surfaces over the wallpaper. */
+html body.echostyle #sheld,
+html body.echostyle #sheld::before {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+
+html body.echostyle #chat {
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Avatar is visually contained by its own message bubble on every viewport. */
+html body.echostyle #chat .mes {
+  position: relative !important;
+}
+
+html body.echostyle #chat .mes .mesAvatarWrapper {
+  position: absolute !important;
+  top: 10px !important;
+  left: 10px !important;
+  right: auto !important;
+  z-index: 4 !important;
+  margin: 0 !important;
+}
+
+html body.echostyle #chat .mes .mes_block {
+  min-height: calc(var(--miniapp-avatar-size) + 20px) !important;
+  padding-left: calc(var(--miniapp-avatar-size) + 22px) !important;
+}
+
+html body.echostyle #chat .mes[is_user='true'] .mesAvatarWrapper {
+  left: auto !important;
+  right: 10px !important;
+}
+
+html body.echostyle #chat .mes[is_user='true'] .mes_block {
+  padding-right: calc(var(--miniapp-avatar-size) + 22px) !important;
+  padding-left: clamp(11px, 2.8vw, 16px) !important;
+}
+
+/* Desktop composer remains centered, preventing the right-side state button from clipping. */
+@media screen and (min-width: 1001px) {
+  html body #form_sheld {
+    left: auto !important;
+    right: auto !important;
+    width: min(100%, 900px) !important;
+    max-width: min(100%, 900px) !important;
+    margin: 0 auto !important;
+  }
+
+  html body #rightSendForm {
+    display: flex !important;
+    flex: 0 0 42px !important;
+    width: 42px !important;
+    overflow: visible !important;
+  }
+}
