@@ -8,20 +8,24 @@
  *
  * 原因：平台壳已用自研 ChatToolsMenu 替代左下角原生按钮的功能（模型切换等），
  * 原生按钮暴露会造成视觉干扰。但 ChatToolsMenu 位于宿主页面并覆盖在 ST iframe 上方，
- * 若直接 display:none 掉 #leftSendForm，#send_textarea 会扩到最左侧，用户输入文字被
- * 宿主按钮遮挡。因此把 #leftSendForm 改为与 ChatToolsMenu 等宽的占位块，并隐藏其内部按钮；
- * 同时去掉 textarea 左内边距，使文字从宿主按钮右侧开始落入。
+ * 工具按钮现已移动到宿主聊天顶栏，因此输入区不再需要预留左侧占位。保留原生 DOM，
+ * 但把容器压缩为 0 宽并隐藏内部按钮，让 textarea 使用完整可用宽度。
  */
 
 export function installNativeUiHide(): void {
   const style = document.createElement('style');
   style.textContent = [
-    '#leftSendForm { flex: 0 0 40px !important; width: 40px !important; min-width: 40px !important; padding-left: 0 !important; pointer-events: none !important; }',
+    '#leftSendForm { flex: 0 0 0 !important; width: 0 !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; pointer-events: none !important; }',
     '#leftSendForm > div { display: none !important; }',
-    '#send_textarea { padding-left: 0 !important; }',
-    '#send_textarea::placeholder { color: transparent !important; }',
+    '#send_textarea { min-width: 0 !important; padding-left: clamp(10px, 3vw, 16px) !important; }',
+    '#send_textarea::placeholder { color: rgba(243, 239, 247, 0.38) !important; opacity: 1 !important; }',
   ].join('\n');
   document.head.appendChild(style);
+
+  const textarea = document.getElementById('send_textarea');
+  if (textarea instanceof HTMLTextAreaElement) {
+    textarea.placeholder = '输入消息…';
+  }
 }
 
 /**
@@ -41,5 +45,19 @@ export function installPresetUiHide(): void {
     '#ai-config-button { display: none !important; }',
     '#left-nav-panel { display: none !important; }',
   ].join('\n');
+  document.head.appendChild(style);
+}
+
+/**
+ * 隐藏消息正文中的空 <details> 元素。
+ *
+ * 部分角色卡让模型用 `<details>` 包裹 `<UpdateVariable>` 等变量块，卡自带的
+ * scoped 正则在展示时剥离了内部 `<UpdateVariable>` 却保留了外层 `<details>`。
+ * `encode_tags=false` 时浏览器将空 `<details>` 渲染为带「详情」折叠标签的空区域。
+ * 此规则在渲染层隐藏"无子元素"的 `<details>`，不影响含有合法内容的折叠区域。
+ */
+export function installEmptyDetailsHide(): void {
+  const style = document.createElement('style');
+  style.textContent = '.mes_text details:not(:has(*)) { display: none !important; }';
   document.head.appendChild(style);
 }

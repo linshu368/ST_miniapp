@@ -3,12 +3,12 @@
  *
  * POST /api/bridge/st-session
  *
- * 完整登录闭环：TG InitData → Supabase user → ST session cookie
+ * 完整登录闭环：TG InitData → MiniApp user → ST session cookie
  *
  * 调用链（按顺序）：
  *   1. requireTelegramAuth      — 校验 TG InitData 签名，提取 tg_user
- *   2. getOrCreateDbUser        — Prisma upsert + 写 st_handle 到 Supabase
- *   3. 读 users.st_initialized_at — 判断首次 / 再次登录
+ *   2. getOrCreateDbUser        — 创建 / 读取 miniapp.users
+ *   3. 读 miniapp.users.st_initialized_at — 判断首次 / 再次登录
  *   4. 首次 → 异步触发 provision  — HTTP POST sync-engine /provision/:userId
  *   5. ST 登录                  — POST ST /api/users/login，拿 connect.sid cookie
  *   6. 返回 { st_url, st_cookie } — 前端用于构造 iframe src 或代理请求
@@ -150,6 +150,31 @@ async function triggerProvisionSync(
   log(`[bridge] 同步 provision 完成（userId=${userId}）`);
 }
 
+// ─── 异步触发 provision（老用户放行后台刷新，不阻塞关键路径） ──────────────────
+//
+// 调 provision-api 的异步端点 POST /provision/:userId（立即返回 202，sync-engine
+// 后台跑完整 provision）。老用户「先登录拿 cookie 立即放行」后用它刷新配置。
+// 必须带 cardsNone=true：provision() 默认 characterScope='all'，若不传 cards=none，
+// 后台会给懒下发用户补下全部角色卡，重新制造 CPU/IO 尖峰（与 ST 冷启动抢容器）。
+async function triggerProvisionAsync(
+  userId: string,
+  log: (msg: string) => void,
+  force = false,
+  cardsNone = true
+): Promise<void> {
+  const params = new URLSearchParams();
+  if (force) params.set('force', 'true');
+  if (cardsNone) params.set('cards', 'none');
+  const query = params.toString();
+  const url = `${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}${query ? `?${query}` : ''}`;
+  const res = await fetch(url, { method: 'POST' });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`async provision 触发失败（${res.status}）：${text}`);
+  }
+  log(`[bridge] 后台 provision 已触发（userId=${userId}, force=${force}, cardsNone=${cardsNone}）`);
+}
+
 // ─── 单卡按需下发（进入对话页时确保当前卡落盘） ──────────────────────────────
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -186,6 +211,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
    *     }
    *   }
    */
+  // @frontend-ready: true
   app.post(
     '/api/bridge/st-session',
     { preHandler: [requireTelegramAuth] },
@@ -212,7 +238,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         }
 
         // ── 2. 读 st_initialized_at 判断是否首次登录 ───────────────────────
-        const db = getSupabaseClient();
+        const db = getSupabaseClient().schema('miniapp');
         const { data: userData } = await db
           .from('users')
           .select('st_initialized_at')
@@ -260,29 +286,39 @@ export default async function bridgeRoutes(app: FastifyInstance) {
             })
           );
         } else {
-          log(`[bridge] 已初始化用户再次登录（handle=${stHandle}）`);
-          // 老用户每次打开只做「轻量 provision」：force=false 会跳过已存在的角色卡 PNG
-          // 与预设（writeCharacters/writePresets 的 skip-if-exists），仅 settings.json /
-          // secrets.json 仍总是覆盖写（writer 里与 force 无关）。
-          // 原先 force=true 会在每次打开都重下 19 张角色卡 PNG，与 ST iframe 启动时并发
-          // 抢占同一容器的 CPU/IO，导致 ST 短暂拒绝连接、nginx 判上游临时下线、整批
-          // boot 脚本 502 → 对话页加载不出来（尤其 Telegram WebView）。改为 force=false
-          // 消除该尖峰，同时保持 settings/secrets 每次仍最新。
-          await triggerProvisionSync(dbUser.id, log, false);
+          // 老/新分流放行（iframe 加载耗时优化 #3）：
+          // 老用户配置本已在盘（上次 provision 已写全套），先登录拿 cookie 立即放行，
+          // 让前端 iframe 尽早开始加载 ST（与 ST 冷启动并行），provision 改后台异步刷新。
+          //   - 依据 1：per-user JWT 永不过期（signPlatformToken 只写 iat 无 exp，
+          //             verifyPlatformToken 不校验过期）→ 盘上旧 secrets 仍有效，
+          //             首条消息不会撞过期凭证。
+          //   - 依据 2：force=false 下 settings/secrets 总是覆盖写、cards/presets
+          //             skip-if-exists；后台没跑完时 ST 用旧配置仍有效，最多稍旧，
+          //             下次打开生效（ST 本就不热重载 settings.json）。
+          //   - cards=none 懒下发保持不变（避免全量卡下载尖峰，见 triggerProvisionAsync）。
+          // 原实现是「await 同步 provision → 再登录 → 才放行」，把 provision 耗时串在
+          // 关键路径最前面；这里改为「登录拿 cookie 立即放行 + provision 后台异步」。
+          log(`[bridge] 已初始化用户再次登录（handle=${stHandle}），先放行 + 后台刷新配置`);
+
+          const stCookie = await loginToSt(stHandle);
+          await cacheStCookie(dbUser.id, stCookie);
+
+          // 后台异步刷新配置：不 await；触发失败仅告警（用户已用现有配置放行，不阻断）。
+          triggerProvisionAsync(dbUser.id, log).catch((err) => {
+            request.log.warn(
+              { err: String(err) },
+              '[bridge] 后台 provision 触发失败（不阻断放行）'
+            );
+          });
+
+          return reply.send(
+            ok({
+              st_url: '/api/bridge/st',
+              st_cookie: stCookie,
+              is_new_user: isNewUser,
+            })
+          );
         }
-
-        // ── 4. 登录 ST，获取 session cookie（老用户路径）───────────────
-        const stCookie = await loginToSt(stHandle);
-
-        // ── 5. 缓存 cookie + 返回结果 ──────────────────────────────────
-        await cacheStCookie(dbUser.id, stCookie);
-        return reply.send(
-          ok({
-            st_url: '/api/bridge/st',
-            st_cookie: stCookie,
-            is_new_user: isNewUser,
-          })
-        );
       } catch (err) {
         request.log.error({ err: String(err) }, '[bridge] st-session 失败');
         return reply.status(500).send(fail('INTERNAL_ERROR', String(err)));

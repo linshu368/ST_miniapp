@@ -23,6 +23,8 @@ interface UserProfileState {
   setDisplayName: (next: string) => void;
   /** 服务端 settings 返回后调用。null 表示继续使用本地/Telegram fallback */
   applyServerDisplayName: (next: string | null) => void;
+  /** 服务端已按 custom > Telegram > default 解析出的有效头像。 */
+  applyServerPhotoUrl: (next: string) => void;
 }
 
 function readOverride(): string | undefined {
@@ -83,5 +85,8 @@ export const useUserProfileStore = create<UserProfileState>((set) => ({
 
     const fallback = readOverride() ?? getTelegramDefaultDisplayName();
     set({ displayName: fallback, hasCustomName: !!readOverride() });
+  },
+  applyServerPhotoUrl: (next) => {
+    set({ photoUrl: next.trim() || getTelegramPhotoUrl() });
   },
 }));

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useCharactersQuery } from '@/lib/api/characters';
 
 import { CharacterCard } from './character-card';
+import { CharacterDetailSheet } from './character-detail-sheet';
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -37,6 +38,14 @@ export function CharacterGallery() {
   const router = useRouter();
   const { data, isLoading, isError } = useCharactersQuery();
   const [query, setQuery] = useState('');
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [enteringId, setEnteringId] = useState<string | null>(null);
+  const enteringRef = useRef(false);
+
+  // 用户阅读角色详情时同步预取动态路由，减少点击进入后偶发等待路由资源的时间。
+  useEffect(() => {
+    if (previewId) router.prefetch(`/tavern/${previewId}`);
+  }, [previewId, router]);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
   const filtered = useMemo(() => {
@@ -138,13 +147,36 @@ export function CharacterGallery() {
               key={c.id}
               character={c}
               onSelect={() => {
-                // 按照当前架构要求，不需要详情页，直接跳转到对话页
-                router.push(`/tavern/${c.id}`);
+                if (!enteringId) setPreviewId(c.id);
               }}
             />
           ))}
         </div>
       )}
+
+      <CharacterDetailSheet
+        characterId={previewId}
+        entering={enteringId !== null}
+        onClose={() => {
+          if (enteringId) {
+            enteringRef.current = false;
+            setEnteringId(null);
+            setPreviewId(null);
+            // 当前本来就在大厅，直接 replace('/') 可能被 Next.js 当成同路由而忽略。
+            // 唯一查询参数会启动一笔新的 SPA 导航，并让 App Router 放弃在途角色导航，
+            // 同时保留 query cache、Telegram SDK 与 bridge 连接。
+            router.replace(`/?entry_cancelled=${Date.now()}`);
+            return;
+          }
+          setPreviewId(null);
+        }}
+        onEnter={(id) => {
+          if (enteringRef.current) return;
+          enteringRef.current = true;
+          setEnteringId(id);
+          router.push(`/tavern/${id}`);
+        }}
+      />
     </>
   );
 }

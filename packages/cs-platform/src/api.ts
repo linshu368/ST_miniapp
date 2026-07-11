@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AdvanceCsSessionRequest,
   CreateCsPersonaRequest,
   CsPersonaDataResponse,
@@ -16,7 +16,10 @@ import type {
   ApiResponse,
 } from '@miniapp/shared';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const API_URL = (
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? 'https://stminiapp-production.up.railway.app' : 'http://localhost:3001')
+).replace(/\/$/, '');
 const TOKEN_KEY = 'cs_admin_token';
 const OPERATOR_KEY = 'cs_operator_id';
 

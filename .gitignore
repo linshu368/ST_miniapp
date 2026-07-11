@@ -18,8 +18,10 @@ ops/git/.env
 
 # 含敏感值的本地文档和脚本配置，不入库
 docs/github-secrets-setup.md
+docs/database-schema-reference.md
 scripts/.env.*
 支付开发留痕.md
+supabase.json
 supabase/.temp/
 
 # vendor — ST 依赖和构建产物不入库
@@ -28,6 +30,8 @@ vendor/sillytavern/.env
 vendor/sillytavern/config.yaml
 vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/
 
+# 本地接收的单机 ST 同步包；已适配后的资产进入 ops/ 与 sync-engine。
+SillyTavern-sync-package/
 
 
 

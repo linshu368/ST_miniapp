@@ -17,8 +17,12 @@ const databaseConfig = createDatabaseConfig({
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  csPlatformUrl: process.env.CS_PLATFORM_URL || 'https://st-cs-platform.vercel.app',
   nodeEnv,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
+  botInternalSecret: process.env.BOT_INTERNAL_SECRET || '',
+  csTelegramBotToken: process.env.CS_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '',
   csAdminToken: process.env.CS_ADMIN_TOKEN || '',
   csTelegramWebhookSecret: process.env.CS_TELEGRAM_WEBHOOK_SECRET || '',
 

@@ -855,10 +855,10 @@ async function firstLoadInit() {
   addDOMPurifyHooks();
   reloadMarkdownProcessor();
   applyBrowserFixes();
-  await getClientVersion();
-  await initSecrets();
-  await readSecretState();
-  await initLocales();
+  // [miniapp-patch] 冷启动并行化①：这 4 个调用互不依赖（initSecrets 仅绑事件无网络，
+  // getClientVersion/readSecretState/initLocales 为各自独立 fetch）。串行 4×RTT → 1×RTT。
+  // 全部在此 await 完成，行 862+ 消费者时序不变。见 docs/iframe-boot-firstloadinit-parallelization.md
+  await Promise.all([getClientVersion(), initSecrets(), readSecretState(), initLocales()]);
   initChatUtilities();
   initDefaultSlashCommands();
   initTextGenModels();
@@ -878,9 +878,10 @@ async function firstLoadInit() {
   initDynamicStyles();
   initTags();
   initBookmarks();
-  await getUserAvatars(true, user_avatar);
-  await getCharacters();
-  await getBackgrounds();
+  // [miniapp-patch] 冷启动并行化①：三个独立 fetch（avatars/characters/backgrounds），
+  // 写互不相交的全局，无交叉依赖。均在此 await 完成，后续 initBackgrounds(885)/initPersonas(887)
+  // 仍串行在其后，时序不变。见 docs/iframe-boot-firstloadinit-parallelization.md
+  await Promise.all([getUserAvatars(true, user_avatar), getCharacters(), getBackgrounds()]);
   await initTokenizers();
   initBackgrounds();
   initAuthorsNote();

@@ -5,9 +5,13 @@
  * 不包含任何业务逻辑（merge / 校验等由 merger.ts 完成）。
  */
 
-import { writeFileSync, existsSync } from 'node:fs';
-import { createHmac, randomUUID } from 'node:crypto';
+import { copyFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
+  backgroundDst,
+  backgroundsDir,
   charactersDir,
   presetsDir,
   settingsPath,
@@ -16,6 +20,8 @@ import {
   characterStoragePath,
   presetDst,
   ensureDir,
+  themeDst,
+  themesDir,
   userAvatarsDir,
   userAvatarDst,
 } from '../lib/st-fs.js';
@@ -25,6 +31,54 @@ import type { MergedSettings } from './merger.js';
 import { config } from '../lib/config.js';
 
 export const DEFAULT_USER_AVATAR_FILENAME = '4d015fdd-7f82-482c-912d-466eaa826280.png';
+const GLIMMER_THEME_FILENAME = 'Glimmer - by Rivelle.json';
+const MOONLIT_BACKGROUND_FILENAME = 'night-city-anime.jpg';
+
+/**
+ * 优先使用部署环境显式声明的资产目录。本地开发则从 cwd 与当前模块位置逐级向上
+ * 查找仓库中的 ops/st-platform-assets，不依赖源码位于 src/ 还是编译产物位于 dist/。
+ */
+function resolvePlatformAssetsRoot(): string {
+  if (config.PLATFORM_ASSETS_ROOT) {
+    return resolve(config.PLATFORM_ASSETS_ROOT);
+  }
+
+  const starts = [process.cwd(), dirname(fileURLToPath(import.meta.url))];
+  const checked = new Set<string>();
+
+  for (const start of starts) {
+    let current = resolve(start);
+    while (true) {
+      const candidate = resolve(current, 'ops/st-platform-assets');
+      if (!checked.has(candidate)) {
+        checked.add(candidate);
+        if (existsSync(candidate)) return candidate;
+      }
+
+      const parent = dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+
+  throw new Error(
+    `平台 ST 资产目录不存在；请设置 PLATFORM_ASSETS_ROOT。已检查：${[...checked].join(', ')}`
+  );
+}
+
+/**
+ * 原子写：先写同目录临时文件，再 rename 到目标路径。
+ *
+ * rename 在同一文件系统是原子操作，读者要么看到完整旧文件、要么看到完整新文件，
+ * 杜绝「部分读」。用于 settings.json / secrets.json 这类**总是覆盖写、且会被 ST
+ * 启动时读取**的配置文件——老用户「先放行、provision 后台异步刷新」时，后台写与
+ * ST 启动读可能并发，非原子的 writeFileSync 存在读到截断 JSON → 解析失败的竞态。
+ */
+function atomicWriteFileSync(dst: string, contents: string): void {
+  const tmp = `${dst}.tmp-${process.pid}-${randomUUID()}`;
+  writeFileSync(tmp, contents, 'utf-8');
+  renameSync(tmp, dst);
+}
 
 // ─── 写入结果类型 ──────────────────────────────────────────────────────────────
 export interface WriteCharactersResult {
@@ -34,6 +88,11 @@ export interface WriteCharactersResult {
 }
 
 export interface WritePresetsResult {
+  written: string[];
+  skipped: string[];
+}
+
+export interface WritePlatformAssetsResult {
   written: string[];
   skipped: string[];
 }
@@ -139,7 +198,11 @@ export async function ensureUserAvatar(
   avatarUrl: string | null,
   force: boolean
 ): Promise<string | null> {
-  const filename = `${handle}.png`;
+  // URL（平台上传 URL 含版本参数）变化时换文件名，避免 ST/浏览器继续命中旧头像缓存。
+  const sourceVersion = avatarUrl
+    ? createHash('sha256').update(avatarUrl).digest('hex').slice(0, 12)
+    : null;
+  const filename = sourceVersion ? `${handle}-${sourceVersion}.png` : `${handle}.png`;
   const dst = userAvatarDst(handle, filename);
 
   if (avatarUrl) {
@@ -175,6 +238,50 @@ async function ensureDefaultUserAvatar(handle: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// ─── 写平台主题与背景 ─────────────────────────────────────────────────────────
+/**
+ * 把平台固定的 ST 视觉资产下发到每个独立用户目录。
+ *
+ * 不能只写 default-user：MiniApp 每个 Telegram 用户都使用 data/<handle>/，
+ * 且其 settings.json 由 provision 独立投影。
+ */
+export function writePlatformAssets(handle: string, force: boolean): WritePlatformAssetsResult {
+  const platformAssetsRoot = resolvePlatformAssetsRoot();
+  const assets = [
+    {
+      source: resolve(platformAssetsRoot, 'themes', GLIMMER_THEME_FILENAME),
+      destination: themeDst(handle, GLIMMER_THEME_FILENAME),
+      directory: themesDir(handle),
+      label: `themes/${GLIMMER_THEME_FILENAME}`,
+    },
+    {
+      source: resolve(platformAssetsRoot, 'backgrounds', MOONLIT_BACKGROUND_FILENAME),
+      destination: backgroundDst(handle, MOONLIT_BACKGROUND_FILENAME),
+      directory: backgroundsDir(handle),
+      label: `backgrounds/${MOONLIT_BACKGROUND_FILENAME}`,
+    },
+  ];
+  const written: string[] = [];
+  const skipped: string[] = [];
+
+  for (const asset of assets) {
+    if (!existsSync(asset.source)) {
+      throw new Error(
+        `平台 ST 资产不存在：${asset.source}（PLATFORM_ASSETS_ROOT=${platformAssetsRoot}）`
+      );
+    }
+    ensureDir(asset.directory);
+    if (!force && existsSync(asset.destination)) {
+      skipped.push(asset.label);
+      continue;
+    }
+    copyFileSync(asset.source, asset.destination);
+    written.push(asset.label);
+  }
+
+  return { written, skipped };
 }
 
 // ─── 写预设 JSON ───────────────────────────────────────────────────────────────
@@ -217,7 +324,7 @@ export function writePresets(
  */
 export function writeSettings(handle: string, mergedSettings: MergedSettings): void {
   const dst = settingsPath(handle);
-  writeFileSync(dst, JSON.stringify(mergedSettings.settings, null, 2), 'utf-8');
+  atomicWriteFileSync(dst, JSON.stringify(mergedSettings.settings, null, 2));
 }
 
 // ─── 写 secrets.json ──────────────────────────────────────────────────────────
@@ -267,7 +374,7 @@ export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null, use
   };
 
   const dst = secretsPath(handle);
-  writeFileSync(dst, JSON.stringify(secrets, null, 2), 'utf-8');
+  atomicWriteFileSync(dst, JSON.stringify(secrets, null, 2));
 }
 
 function signPlatformToken(userId: string): string {

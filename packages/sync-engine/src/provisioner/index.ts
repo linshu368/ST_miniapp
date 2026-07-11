@@ -8,9 +8,10 @@
  *   1. 拉取数据（Supabase）
  *   2. 确保 ST 用户账号存在（ST API）
  *   3. order=10  写角色卡 PNG（资产层）
- *   4. order=20  写预设 JSON（资产层）
- *   5. order=100 merge + 写 settings.json（配置层）
- *   6. 更新 users.st_initialized_at
+ *   4. order=15  写平台主题与背景（资产层）
+ *   5. order=20  写预设 JSON（资产层）
+ *   6. order=100 merge + 写 settings.json（配置层）
+ *   7. 更新 users.st_initialized_at
  */
 
 import { getSupabaseClient } from '../lib/supabase.js';
@@ -21,6 +22,7 @@ import { mergeSettings } from './merger.js';
 import {
   writeCharacters,
   writeCharacterById,
+  writePlatformAssets,
   writePresets,
   writeSettings,
   writeSecrets,
@@ -161,6 +163,15 @@ export async function provision(
     );
   }
 
+  // ── 3.5 order=15：写平台主题与背景（资产层）───────────────────────────────
+  log('[provision] 步骤 3.5/5：下发 Moonlit 主题与背景...');
+  try {
+    const assetResult = writePlatformAssets(stHandle, force);
+    log(`[provision]   写入=${assetResult.written.length}, 跳过=${assetResult.skipped.length}`);
+  } catch (err) {
+    throw new ProvisionError(`写入平台主题/背景失败：${err}`, err);
+  }
+
   // ── 4. order=20：写预设 JSON（资产层）─────────────────────────────────────
   log('[provision] 步骤 4/5：下发预设文件（order=20）...');
   let presetResult;
@@ -219,7 +230,8 @@ export async function provision(
       availableCharIds,
       systemFallbackCharacterId ?? undefined,
       config.LLM_PROXY_URL,
-      userPersona.name ? { name: userPersona.name, avatarFile: personaAvatarFile } : undefined
+      userPersona.name ? { name: userPersona.name, avatarFile: personaAvatarFile } : undefined,
+      data.defaultLlmModel
     );
   } catch (err) {
     throw new ProvisionError(`merge settings 失败：${err}`, err);
@@ -248,6 +260,7 @@ export async function provision(
 
   // ── 6. 更新 users.st_initialized_at ───────────────────────────────────────
   const { error: updateError } = await getSupabaseClient()
+    .schema('miniapp')
     .from('users')
     .update({ st_initialized_at: new Date().toISOString() })
     .eq('id', userId);
@@ -297,6 +310,7 @@ export async function ensureCharacterProvisioned(
   const { log = console.log } = options;
 
   const { data, error } = await getSupabaseClient()
+    .schema('miniapp')
     .from('users')
     .select('st_handle')
     .eq('id', userId)

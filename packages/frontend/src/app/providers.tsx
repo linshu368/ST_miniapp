@@ -5,7 +5,9 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { getQueryClient } from '@/lib/api/query-client';
+import { recordMiniappEntry } from '@/lib/api/growth';
 import { useUserSettingsQuery } from '@/lib/api/settings';
+import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
 import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useThemeStore } from '@/stores/theme-store';
@@ -38,6 +40,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {telegramReady ? <GrowthEntryReporter /> : null}
       {telegramReady ? <UserSettingsHydrator /> : null}
       {telegramReady ? (
         <BridgeProvider>
@@ -50,15 +53,82 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 }
 
+function GrowthEntryReporter() {
+  useEffect(() => {
+    try {
+      const rawInitData = getRawInitData();
+      console.log('[Growth] rawInitData:', rawInitData);
+
+      // 即使没有 rawInitData，也可以尝试从 URL 中获取 startapp 参数 (本地开发环境)
+      let sourceId = '';
+      if (rawInitData) {
+        sourceId = new URLSearchParams(rawInitData).get('start_param')?.trim() || '';
+      }
+
+      if (!sourceId && typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        sourceId =
+          (
+            urlParams.get('startapp') ||
+            urlParams.get('start_param') ||
+            urlParams.get('tgWebAppStartParam')
+          )?.trim() || '';
+        console.log('[Growth] Extracted sourceId from URL:', sourceId);
+      }
+
+      console.log('[Growth] GrowthEntryReporter sourceId:', sourceId);
+
+      if (!sourceId) {
+        console.log('[Growth] No sourceId found, skipping report');
+        return;
+      }
+
+      const key = `growth_entry_reported:${sourceId}`;
+      try {
+        if (sessionStorage.getItem(key) === '1') {
+          console.log('[Growth] GrowthEntryReporter already reported in this session');
+          return;
+        }
+        sessionStorage.setItem(key, '1');
+      } catch (e) {
+        console.warn('[Growth] sessionStorage access failed:', e);
+      }
+
+      console.log(
+        '[Growth] GrowthEntryReporter calling recordMiniappEntry with sourceId:',
+        sourceId
+      );
+      recordMiniappEntry(sourceId)
+        .then((res) => {
+          console.log('[Growth] GrowthEntryReporter success:', res);
+        })
+        .catch((err) => {
+          console.error('[Growth] GrowthEntryReporter failed:', err);
+          try {
+            sessionStorage.removeItem(key);
+          } catch (e) {
+            // ignore
+          }
+        });
+    } catch (err) {
+      console.error('[Growth] Unhandled error in GrowthEntryReporter:', err);
+    }
+  }, []);
+
+  return null;
+}
+
 function UserSettingsHydrator() {
   const applyServerDisplayName = useUserProfileStore((s) => s.applyServerDisplayName);
+  const applyServerPhotoUrl = useUserProfileStore((s) => s.applyServerPhotoUrl);
   const { data } = useUserSettingsQuery();
 
   useEffect(() => {
     if (data) {
       applyServerDisplayName(data.settings.display_name);
+      applyServerPhotoUrl(data.settings.avatar_url);
     }
-  }, [applyServerDisplayName, data]);
+  }, [applyServerDisplayName, applyServerPhotoUrl, data]);
 
   return null;
 }

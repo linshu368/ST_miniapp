@@ -94,8 +94,14 @@ export function verifyTelegramInitData(initDataStr: string): TelegramUser {
 export async function requireTelegramAuth(request: FastifyRequest, reply: FastifyReply) {
   const initData = request.headers['x-init-data'];
 
+  console.log(
+    `[Auth] requireTelegramAuth called for ${request.url}, initData present:`,
+    !!initData
+  );
+
   // 如果处于 Bypass 模式，并且没有提供 initData，则自动放行并注入默认测试用户
   if (process.env.DEV_AUTH_BYPASS === '1' && (!initData || typeof initData !== 'string')) {
+    console.log(`[Auth] Using DEV_AUTH_BYPASS for request to ${request.url}`);
     request.user = { id: 99999, first_name: 'Dev', last_name: 'User', username: 'dev_bypass' };
     return;
   }

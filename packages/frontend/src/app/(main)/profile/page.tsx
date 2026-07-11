@@ -2,14 +2,28 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Gift, Pencil, Settings, Sparkles, X } from 'lucide-react';
+import {
+  ChevronRight,
+  Gift,
+  ImageUp,
+  Link as LinkIcon,
+  Pencil,
+  RotateCcw,
+  Settings,
+  Sparkles,
+  X,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 
 import { useDailyCheckinMutation, useDailyCheckinQuery, useWalletCredits } from '@/lib/api/payment';
-import { usePatchUserSettingsMutation } from '@/lib/api/settings';
+import {
+  usePatchUserSettingsMutation,
+  useSetUserAvatarMutation,
+  useUserSettingsQuery,
+} from '@/lib/api/settings';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { formatNumber } from '@/lib/utils/payment';
 import { useUserProfileStore } from '@/stores/user-profile-store';
@@ -20,7 +34,9 @@ export default function ProfilePage() {
   const displayName = useUserProfileStore((s) => s.displayName);
   const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
+  const userSettings = useUserSettingsQuery();
   const patchSettings = usePatchUserSettingsMutation();
+  const setAvatar = useSetUserAvatarMutation();
   const checkinQ = useDailyCheckinQuery();
   const checkin = checkinQ.data?.checkin;
   const claimCheckin = useDailyCheckinMutation();
@@ -28,7 +44,11 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [checkinToast, setCheckinToast] = useState<{ reward: number } | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const avatarMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isEditing) {
@@ -42,6 +62,22 @@ export default function ProfilePage() {
     const timer = window.setTimeout(() => setCheckinToast(null), 1500);
     return () => window.clearTimeout(timer);
   }, [checkinToast]);
+
+  useEffect(() => {
+    if (!avatarMenuOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!avatarMenuRef.current?.contains(event.target as Node)) setAvatarMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAvatarMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [avatarMenuOpen]);
 
   const startEdit = () => {
     setDraft(displayName);
@@ -65,6 +101,50 @@ export default function ProfilePage() {
       setCheckinToast({ reward: data.checkin.reward_credits });
     } catch {
       // Mutation state already carries the error; keep the click handler quiet.
+    }
+  };
+
+  const importAvatarFile = async (file: File | undefined) => {
+    if (!file) return;
+    setAvatarError(null);
+    try {
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+        throw new Error('仅支持 PNG、JPEG 或 WebP 图片');
+      }
+      if (file.size > 2 * 1024 * 1024) throw new Error('头像文件不能超过 2MB');
+      const dataBase64 = await readFileAsBase64(file);
+      await setAvatar.mutateAsync({
+        source: 'upload',
+        content_type: file.type,
+        data_base64: dataBase64,
+      });
+      setAvatarMenuOpen(false);
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : '头像上传失败');
+    } finally {
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+    }
+  };
+
+  const importAvatarUrl = async () => {
+    const url = window.prompt('粘贴 HTTPS 图片链接（PNG、JPEG 或 WebP，最大 2MB）');
+    if (!url?.trim()) return;
+    setAvatarError(null);
+    try {
+      await setAvatar.mutateAsync({ source: 'url', url: url.trim() });
+      setAvatarMenuOpen(false);
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : '头像导入失败');
+    }
+  };
+
+  const resetAvatar = async () => {
+    setAvatarError(null);
+    try {
+      await patchSettings.mutateAsync({ avatar_url: null });
+      setAvatarMenuOpen(false);
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : '恢复默认头像失败');
     }
   };
 
@@ -157,12 +237,92 @@ export default function ProfilePage() {
 
       {/* 身份：页面重心；姓名可点击编辑 */}
       <section className="mt-8 flex flex-col items-center gap-4 px-5 relative z-10">
-        <Avatar className="h-24 w-24 ring-4 ring-white/10 ring-offset-4 ring-offset-[#080014] shadow-2xl">
-          {photoUrl ? <AvatarImage src={photoUrl} alt={displayName} /> : null}
-          <AvatarFallback className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-3xl font-black text-white">
-            {displayName.slice(0, 1).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
+        <div ref={avatarMenuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setAvatarError(null);
+              setAvatarMenuOpen((open) => !open);
+            }}
+            aria-label="更换头像"
+            aria-expanded={avatarMenuOpen}
+            aria-haspopup="menu"
+            className="group relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-4 focus-visible:ring-offset-[#080014]"
+          >
+            <Avatar className="h-24 w-24 ring-4 ring-white/10 ring-offset-4 ring-offset-[#080014] shadow-2xl transition group-hover:brightness-90">
+              {photoUrl ? <AvatarImage src={photoUrl} alt={displayName} /> : null}
+              <AvatarFallback className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-3xl font-black text-white">
+                {displayName.slice(0, 1).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <span className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#080014] bg-indigo-500 text-white shadow-lg transition group-hover:bg-indigo-400">
+              <ImageUp className="h-3.5 w-3.5" aria-hidden />
+            </span>
+          </button>
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(event) => void importAvatarFile(event.target.files?.[0])}
+          />
+          {avatarMenuOpen ? (
+            <div
+              role="menu"
+              className="absolute left-1/2 top-[calc(100%+0.9rem)] z-30 w-max min-w-[220px] -translate-x-1/2 rounded-2xl border border-white/15 bg-[#17102b]/95 p-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.55)] ring-1 ring-white/5 backdrop-blur-xl"
+            >
+              <span className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-l border-t border-white/15 bg-[#17102b]" />
+              <div className="relative flex items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  role="menuitem"
+                  disabled={setAvatar.isPending}
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                >
+                  <ImageUp aria-hidden />
+                  上传图片
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  role="menuitem"
+                  disabled={setAvatar.isPending}
+                  onClick={() => void importAvatarUrl()}
+                  className="rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                >
+                  <LinkIcon aria-hidden />
+                  导入链接
+                </Button>
+              </div>
+              {userSettings.data?.settings.avatar_source === 'custom' ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  role="menuitem"
+                  disabled={patchSettings.isPending}
+                  onClick={() => void resetAvatar()}
+                  className="mt-1 w-full rounded-full text-white/60 hover:bg-white/10 hover:text-white"
+                >
+                  <RotateCcw aria-hidden />
+                  恢复跟随 Telegram
+                </Button>
+              ) : null}
+              {avatarError ? (
+                <p
+                  role="alert"
+                  className="mt-2 max-w-[240px] px-2 text-center text-xs text-rose-300"
+                >
+                  {avatarError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         <div className="text-center">
           {isEditing ? (
             <Input
@@ -206,6 +366,23 @@ export default function ProfilePage() {
       </section>
     </main>
   );
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('读取头像文件失败'));
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const separator = result.indexOf(',');
+      if (separator < 0) {
+        reject(new Error('读取头像文件失败'));
+        return;
+      }
+      resolve(result.slice(separator + 1));
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function readTelegramUserId(): string | null {

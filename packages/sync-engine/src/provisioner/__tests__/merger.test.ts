@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { mergeSettings } from '../merger.js';
+import { mergeSettings, PLATFORM_DISABLED_EXTENSIONS } from '../merger.js';
 import type { PlatformSettingsRow, UserSettingsRow, PresetRow } from '../fetcher.js';
 
 // ─── 测试固件 ──────────────────────────────────────────────────────────────────
@@ -203,7 +203,7 @@ describe('mergeSettings', () => {
     expect(result.settings['main_api']).toBe('openai');
     expect(oai['chat_completion_source']).toBe('custom');
     expect(oai['custom_url']).toBe(LLM_PROXY_URL);
-    expect(oai['custom_model']).toBe('google/gemini-3.1-flash-lite');
+    expect(oai['custom_model']).toBe('anthropic/claude-sonnet-4.5');
   });
 
   it('已配置的 custom_model 不应被兜底默认值覆盖', () => {
@@ -313,6 +313,80 @@ describe('mergeSettings', () => {
     // 采样参数来自预设，但 prompts 被用户 B 覆盖
     expect(oai['temp_openai']).toBe(1.24);
     expect(oai['prompts']).toEqual([{ identifier: 'user-custom' }]);
+  });
+
+  // ── 场景 12：强制禁用平台无用扩展（冷启动优化 P0-#1）───────────────────────
+  it('应把 PLATFORM_DISABLED_EXTENSIONS 写入 extension_settings.disabledExtensions', () => {
+    const platform = makePlatformSettings();
+
+    const result = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
+    const extSettings = result.settings['extension_settings'] as Record<string, unknown>;
+
+    expect(extSettings['disabledExtensions']).toEqual([...PLATFORM_DISABLED_EXTENSIONS]);
+  });
+
+  it('disabledExtensions 应与平台种子已有值取并集且去重', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [],
+        extension_settings: {
+          disabledExtensions: ['tts', 'third-party/some-legacy-ext'],
+          memory: { source: 'main' },
+        },
+      },
+    });
+
+    const result = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
+    const extSettings = result.settings['extension_settings'] as Record<string, unknown>;
+    const disabled = extSettings['disabledExtensions'] as string[];
+
+    // 种子里已有的保留（含第三方遗留项），新增项并入，tts 不重复
+    expect(disabled).toContain('third-party/some-legacy-ext');
+    for (const name of PLATFORM_DISABLED_EXTENSIONS) {
+      expect(disabled).toContain(name);
+    }
+    expect(disabled.filter((x) => x === 'tts')).toHaveLength(1);
+    // 其余 extension_settings 字段不受影响
+    expect(extSettings['memory']).toEqual({ source: 'main' });
+  });
+
+  it('用户 B 段不能解禁平台强制禁用的扩展（disabledExtensions 不在 writable_paths）', () => {
+    const platform = makePlatformSettings();
+    const userSettings = makeUserSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [],
+        extension_settings: { disabledExtensions: [] },
+      },
+    });
+
+    const result = mergeSettingsForTest(
+      platform,
+      userSettings,
+      [CHAR_UUID_FALLBACK],
+      CHAR_UUID_FALLBACK
+    );
+    const extSettings = result.settings['extension_settings'] as Record<string, unknown>;
+
+    expect(extSettings['disabledExtensions']).toEqual([...PLATFORM_DISABLED_EXTENSIONS]);
+  });
+
+  // ── 场景 13：强制关闭消息 token 计数（P1-H2 瘦身）──────────────────────────
+  it('应强制 power_user.message_token_count_enabled=false（覆盖种子里的 true）', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        'oai_settings.prompts': [],
+        power_user: { message_token_count_enabled: true, personas: {} },
+      },
+    });
+
+    const result = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
+    const powerUser = result.settings['power_user'] as Record<string, unknown>;
+
+    expect(powerUser['message_token_count_enabled']).toBe(false);
+    expect(powerUser['personas']).toEqual({});
   });
 
   // ── 场景 8：深拷贝，不修改原始对象 ──────────────────────────────────────

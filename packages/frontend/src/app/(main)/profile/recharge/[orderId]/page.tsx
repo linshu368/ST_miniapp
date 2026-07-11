@@ -90,7 +90,7 @@ export default function PaymentPendingPage() {
 
       <div className="flex flex-1 flex-col px-5 pb-10 pt-4">
         {order.status === 'pending' ? (
-          <PendingView order={order} remaining={remaining} payUrl={payUrl} />
+          <PendingView order={order} remaining={remaining} payUrl={payUrl} onBack={goBack} />
         ) : order.status === 'completed' ? (
           <CompletedView
             order={order}
@@ -98,7 +98,11 @@ export default function PaymentPendingPage() {
             onOrders={() => router.push('/profile/orders')}
           />
         ) : (
-          <TerminalView order={order} onRetry={() => router.push('/profile/recharge')} />
+          <TerminalView
+            order={order}
+            onRetry={() => router.push('/profile/recharge')}
+            onBack={goBack}
+          />
         )}
       </div>
     </Screen>
@@ -143,10 +147,12 @@ function PendingView({
   order,
   remaining,
   payUrl,
+  onBack,
 }: {
   order: PaymentOrder;
   remaining: number;
   payUrl: string | null;
+  onBack: () => void;
 }) {
   const total = order.credits_amount + order.bonus_credits;
   return (
@@ -194,6 +200,14 @@ function PendingView({
           重新打开支付页
         </Button>
       ) : null}
+
+      <Button
+        variant="outline"
+        onClick={onBack}
+        className="h-11 w-full rounded-xl border-slate-700 text-slate-300 hover:bg-slate-900"
+      >
+        暂不支付，返回星尘商店
+      </Button>
 
       <div className="text-center text-[11px] text-slate-500">
         支付完成后会自动跳转；若未自动跳转请稍候
@@ -279,7 +293,15 @@ function CompletedView({
   );
 }
 
-function TerminalView({ order, onRetry }: { order: PaymentOrder; onRetry: () => void }) {
+function TerminalView({
+  order,
+  onRetry,
+  onBack,
+}: {
+  order: PaymentOrder;
+  onRetry: () => void;
+  onBack: () => void;
+}) {
   const isExpired = order.status === 'expired';
   return (
     <div className="flex flex-1 flex-col items-center gap-6 pt-8">
@@ -305,6 +327,13 @@ function TerminalView({ order, onRetry }: { order: PaymentOrder; onRetry: () => 
         className="h-11 w-full rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white shadow-lg shadow-pink-500/30 hover:opacity-90 border-0"
       >
         重新下单
+      </Button>
+      <Button
+        variant="outline"
+        onClick={onBack}
+        className="h-11 w-full rounded-xl border-slate-700 text-slate-300 hover:bg-slate-900"
+      >
+        返回星尘商店
       </Button>
     </div>
   );
