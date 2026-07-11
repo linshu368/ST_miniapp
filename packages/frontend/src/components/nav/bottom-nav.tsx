@@ -28,7 +28,7 @@ export function BottomNav() {
     >
       <nav
         aria-label="主导航"
-        className="pointer-events-auto grid w-full max-w-[326px] grid-cols-3 gap-1 rounded-[1.75rem] border border-white/[0.09] bg-[linear-gradient(180deg,rgba(28,19,49,0.92),rgba(15,10,29,0.94))] p-1.5 text-white shadow-[0_18px_50px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl"
+        className="pointer-events-auto grid w-full max-w-[326px] grid-cols-3 gap-1 rounded-[1.65rem] border border-white/[0.08] bg-[#171027]/92 p-1.5 text-white shadow-[0_14px_38px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const active = href === '/' ? pathname === href : pathname?.startsWith(href);
@@ -41,7 +41,7 @@ export function BottomNav() {
               className={cn(
                 'group relative isolate flex h-[58px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-[1.3rem] px-2 transition-[color,background-color,box-shadow,transform] duration-300 ease-out active:scale-[0.97]',
                 active
-                  ? 'text-[#ffd8ce] ring-1 ring-inset ring-white/[0.13] shadow-[0_7px_20px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.11)]'
+                  ? 'bg-white/[0.075] text-[#ffe3dc] ring-1 ring-inset ring-white/[0.09]'
                   : 'text-white/45 hover:bg-white/[0.04] hover:text-white/75'
               )}
             >
@@ -49,32 +49,25 @@ export function BottomNav() {
                 <>
                   <span
                     aria-hidden
-                    className="absolute inset-0 -z-20 bg-[linear-gradient(145deg,rgba(255,255,255,0.095),rgba(239,111,84,0.14)_52%,rgba(184,76,127,0.11))]"
+                    className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),transparent_72%)]"
                   />
                   <span
                     aria-hidden
-                    className="absolute inset-x-4 bottom-[-12px] -z-10 h-8 rounded-full bg-primary/25 blur-xl"
-                  />
-                  <span
-                    aria-hidden
-                    className="absolute left-1/2 top-0 h-px w-10 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#ffd6c8]/65 to-transparent"
+                    className="absolute bottom-1.5 left-1/2 h-0.5 w-5 -translate-x-1/2 rounded-full bg-[#ef856d]"
                   />
                 </>
               ) : null}
               <span
                 className={cn(
-                  'relative flex h-7 w-10 items-center justify-center rounded-full transition-all duration-300',
-                  active ? 'bg-white/[0.07]' : 'group-hover:bg-white/[0.035]'
+                  'relative flex h-7 w-10 items-center justify-center transition-colors duration-300',
+                  !active && 'group-hover:text-white/80'
                 )}
               >
                 <Icon
                   size={19}
                   strokeWidth={active ? 2.5 : 2}
                   aria-hidden="true"
-                  className={cn(
-                    'transition-[transform,filter] duration-300',
-                    active && 'scale-105 drop-shadow-[0_2px_6px_rgba(255,170,145,0.28)]'
-                  )}
+                  className={cn('transition-transform duration-300', active && 'scale-105')}
                 />
               </span>
               <span
