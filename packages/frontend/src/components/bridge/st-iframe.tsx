@@ -13,6 +13,27 @@ type StSessionResponse = {
   data: { st_url: string; st_cookie: string; is_new_user: boolean };
 };
 
+async function requestStSession(): Promise<StSessionResponse> {
+  const headers: Record<string, string> = {};
+  const initData = getRawInitData();
+  if (initData) headers[INIT_DATA_HEADER] = initData;
+
+  const res = await fetch('/api/init-st-session', {
+    method: 'POST',
+    headers,
+  });
+
+  if (!res.ok) {
+    throw new Error(`init-st-session failed: ${res.status}`);
+  }
+
+  const json = (await res.json()) as StSessionResponse;
+  if (!json.success || !json.data?.st_cookie) {
+    throw new Error('st-session returned no cookie');
+  }
+  return json;
+}
+
 function isTextEntryElement(target: EventTarget | null): target is HTMLElement {
   if (!target || typeof target !== 'object' || !('tagName' in target)) return false;
   const element = target as HTMLElement;
@@ -29,6 +50,8 @@ export function STIframe() {
   const [sessionReady, setSessionReady] = useState(false);
   const [chatInteractive, setChatInteractive] = useState(false);
   const loadCountRef = useRef(0); // [iframe-timing] TEMP DEBUG: 区分首次加载与看门狗/超时重载
+  const sessionRecoveryRef = useRef(false);
+  const sessionRecoveryAttemptsRef = useRef(0);
 
   useEffect(() => {
     const handleInteractivity = (event: Event) => {
@@ -66,23 +89,7 @@ export function STIframe() {
 
     async function initSession() {
       try {
-        const headers: Record<string, string> = {};
-        const initData = getRawInitData();
-        if (initData) headers[INIT_DATA_HEADER] = initData;
-
-        const res = await fetch('/api/init-st-session', {
-          method: 'POST',
-          headers,
-        });
-
-        if (!res.ok) {
-          throw new Error(`init-st-session failed: ${res.status}`);
-        }
-
-        const json: StSessionResponse = await res.json();
-        if (!json.success || !json.data?.st_cookie) {
-          throw new Error('st-session returned no cookie');
-        }
+        const json = await requestStSession();
 
         if (cancelled) return;
 
@@ -164,6 +171,35 @@ export function STIframe() {
           loadCountRef.current += 1;
           markTiming('iframe_onload');
           markTiming(`iframe_onload_a${loadCountRef.current}`);
+
+          // ST 实例重启后，浏览器里仍可能残留旧签名 cookie，/tavern 会被重定向到
+          // /login。检测到登录页时主动重新获取 session 并重载 iframe，避免开屏永久等待。
+          const iframe = iframeRef.current;
+          if (!iframe || sessionRecoveryRef.current) return;
+          try {
+            if (!iframe.contentWindow?.location.pathname.startsWith('/login')) {
+              sessionRecoveryAttemptsRef.current = 0;
+              return;
+            }
+          } catch {
+            return;
+          }
+          if (sessionRecoveryAttemptsRef.current >= 2) return;
+
+          sessionRecoveryRef.current = true;
+          sessionRecoveryAttemptsRef.current += 1;
+          markTiming('st_session_recovery');
+          void requestStSession()
+            .then((json) => {
+              writeStCookies(json.data.st_cookie);
+              iframe.src = ST_IFRAME_URL;
+            })
+            .catch((err) => {
+              console.error('[STIframe] session recovery failed:', err);
+            })
+            .finally(() => {
+              sessionRecoveryRef.current = false;
+            });
         }}
         // 预热期隐藏方式：必须让 iframe「全尺寸真实渲染」，不能靠缩小/透明来藏。
         // 根因（见 docs/iframe-boot-stall-investigation.md）：iOS/Telegram WebKit 会把「不产生
