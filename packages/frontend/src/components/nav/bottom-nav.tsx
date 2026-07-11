@@ -28,10 +28,10 @@ export function BottomNav() {
     >
       <nav
         aria-label="主导航"
-        className="pointer-events-auto flex w-full max-w-[320px] items-center justify-around rounded-[2rem] border border-white/10 bg-[#130d26]/85 px-2 py-2 text-white shadow-[0_12px_36px_rgba(0,0,0,0.6)] backdrop-blur-xl"
+        className="pointer-events-auto grid w-full max-w-[326px] grid-cols-3 gap-1 rounded-[1.75rem] border border-white/[0.09] bg-[linear-gradient(180deg,rgba(28,19,49,0.92),rgba(15,10,29,0.94))] p-1.5 text-white shadow-[0_18px_50px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
-          const active = pathname === href;
+          const active = href === '/' ? pathname === href : pathname?.startsWith(href);
           return (
             <Link
               key={href}
@@ -39,27 +39,48 @@ export function BottomNav() {
               aria-current={active ? 'page' : undefined}
               aria-label={label}
               className={cn(
-                'group flex flex-col items-center justify-center gap-1 rounded-full px-2 py-0.5 transition-all duration-300',
-                active ? 'text-primary' : 'text-white/50 hover:text-white/80'
+                'group relative isolate flex h-[58px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-[1.3rem] px-2 transition-[color,background-color,box-shadow,transform] duration-300 ease-out active:scale-[0.97]',
+                active
+                  ? 'text-[#ffd8ce] ring-1 ring-inset ring-white/[0.13] shadow-[0_7px_20px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.11)]'
+                  : 'text-white/45 hover:bg-white/[0.04] hover:text-white/75'
               )}
             >
+              {active ? (
+                <>
+                  <span
+                    aria-hidden
+                    className="absolute inset-0 -z-20 bg-[linear-gradient(145deg,rgba(255,255,255,0.095),rgba(239,111,84,0.14)_52%,rgba(184,76,127,0.11))]"
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-4 bottom-[-12px] -z-10 h-8 rounded-full bg-primary/25 blur-xl"
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute left-1/2 top-0 h-px w-10 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#ffd6c8]/65 to-transparent"
+                  />
+                </>
+              ) : null}
               <span
                 className={cn(
-                  'flex h-8 w-14 items-center justify-center rounded-full transition-all duration-300',
-                  active && 'bg-primary/20 shadow-[0_0_16px_hsl(var(--primary)/0.25)]'
+                  'relative flex h-7 w-10 items-center justify-center rounded-full transition-all duration-300',
+                  active ? 'bg-white/[0.07]' : 'group-hover:bg-white/[0.035]'
                 )}
               >
                 <Icon
-                  size={20}
+                  size={19}
                   strokeWidth={active ? 2.5 : 2}
                   aria-hidden="true"
-                  className={cn('transition-transform duration-300', active && 'scale-110')}
+                  className={cn(
+                    'transition-[transform,filter] duration-300',
+                    active && 'scale-105 drop-shadow-[0_2px_6px_rgba(255,170,145,0.28)]'
+                  )}
                 />
               </span>
               <span
                 className={cn(
-                  'text-[10px] font-bold leading-none tracking-wide transition-all duration-300',
-                  active ? 'scale-100 opacity-100' : 'scale-95 opacity-70 group-hover:opacity-100'
+                  'text-[10px] font-semibold leading-none tracking-[0.08em] transition-all duration-300',
+                  active ? 'opacity-100' : 'opacity-75 group-hover:opacity-100'
                 )}
               >
                 {label}
