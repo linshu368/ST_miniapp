@@ -57,7 +57,7 @@ export function ChatHeader() {
       </span>
       <button
         onClick={() => router.push('/')}
-        className="flex size-10 shrink-0 items-center justify-center rounded-full border border-white/80 bg-transparent text-white transition-colors hover:bg-white/10 active:scale-95"
+        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-transparent text-white transition-colors hover:bg-white/10 active:scale-95"
         aria-label="返回大厅"
       >
         <Home className="h-5 w-5" />

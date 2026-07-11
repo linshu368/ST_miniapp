@@ -113,7 +113,7 @@ export function ChatToolsMenu() {
 
       <button
         onClick={() => setOpen((v) => !v)}
-        className="relative z-10 flex size-10 items-center justify-center rounded-full border border-white/80 bg-transparent text-white transition-colors hover:bg-white/10 active:scale-95"
+        className="relative z-10 flex size-10 items-center justify-center rounded-full bg-transparent text-white transition-colors hover:bg-white/10 active:scale-95"
         aria-label="工具菜单"
         aria-expanded={open}
       >

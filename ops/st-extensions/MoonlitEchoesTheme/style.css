@@ -4398,6 +4398,42 @@ html body #send_form:has(#send_textarea:focus-visible) {
   outline: 0 !important;
 }
 
+/* Send/stop are one control with two mutually exclusive states. */
+html body #rightSendForm {
+  gap: 0 !important;
+}
+
+html body #send_but,
+html body #mes_stop {
+  order: 2 !important;
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  color: #fff !important;
+  background: #3b9ee8 !important;
+  box-shadow: 0 6px 16px rgba(59, 158, 232, 0.3) !important;
+  opacity: 1 !important;
+}
+
+html body:not([data-generating='true']) #mes_stop {
+  display: none !important;
+}
+
+html body[data-generating='true'] #send_but {
+  display: none !important;
+}
+
+html body[data-generating='true'] #mes_stop {
+  display: inline-flex !important;
+}
+
 html body #send_textarea::placeholder {
   color: rgba(255, 255, 255, 0.25) !important;
 }
