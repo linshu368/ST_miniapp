@@ -4334,3 +4334,35 @@ body.echostyle #chat .swipeRightBlock {
     padding-block: 7px !important;
   }
 }
+
+/*
+ * Platform host owns the chat navigation. Collapse Moonlit/ST's reserved top bar
+ * after every theme rule so the iframe content reaches the true viewport top.
+ */
+html:root {
+  --topBarBlockSize: 0px !important;
+}
+
+html body #top-bar,
+html body #top-settings-holder {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+}
+
+html body #sheld {
+  top: 0 !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+}
+
+html body.echostyle #chat {
+  max-height: calc(100dvh - var(--bottomFormBlockSize)) !important;
+}
