@@ -40,6 +40,28 @@ export function STIframe() {
   }, []);
 
   useEffect(() => {
+    const viewport = window.visualViewport;
+    const updateViewportSize = () => {
+      const height = viewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty(
+        '--miniapp-visual-viewport-height',
+        `${Math.round(height)}px`
+      );
+    };
+
+    updateViewportSize();
+    viewport?.addEventListener('resize', updateViewportSize);
+    viewport?.addEventListener('scroll', updateViewportSize);
+    window.addEventListener('resize', updateViewportSize);
+    return () => {
+      viewport?.removeEventListener('resize', updateViewportSize);
+      viewport?.removeEventListener('scroll', updateViewportSize);
+      window.removeEventListener('resize', updateViewportSize);
+      document.documentElement.style.removeProperty('--miniapp-visual-viewport-height');
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function initSession() {
@@ -154,8 +176,8 @@ export function STIframe() {
         // transform 都会被判不可见，等价旧问题，一律不可用。
         className={
           isVisible
-            ? 'fixed inset-0 z-10 w-full h-full'
-            : 'fixed inset-0 z-[-20] w-full h-full pointer-events-none'
+            ? 'fixed left-0 top-0 z-10 h-[var(--miniapp-visual-viewport-height,100dvh)] max-h-[100dvh] w-full'
+            : 'fixed left-0 top-0 z-[-20] h-[var(--miniapp-visual-viewport-height,100dvh)] max-h-[100dvh] w-full pointer-events-none'
         }
         title="SillyTavern"
       />

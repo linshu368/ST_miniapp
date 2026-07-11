@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import { platformAction, useBridgeStatus } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { ChatHeader } from '@/components/tavern/chat-header';
-import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
 import { ChatSplash } from '@/components/tavern/chat-splash';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
@@ -93,9 +92,8 @@ export default function TavernChatPage() {
   }, [bridgeStatus, characterId, entryAttempt]);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative h-[var(--miniapp-visual-viewport-height,100dvh)] min-h-0 w-full overflow-hidden">
       <ChatHeader />
-      <ChatToolsMenu />
       {characterId ? (
         <ChatSplash
           key={`${characterId}:${entryAttempt}`}
