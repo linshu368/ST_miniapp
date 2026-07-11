@@ -43,8 +43,9 @@ export function installNativeUiHide(): void {
 export function installPresetUiHide(): void {
   const style = document.createElement('style');
   style.textContent = [
-    '#top-bar { display: none !important; }',
-    '#top-settings-holder { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }',
+    ':root { --topBarBlockSize: 0px !important; }',
+    '#top-bar { display: none !important; height: 0 !important; background: transparent !important; box-shadow: none !important; }',
+    '#top-settings-holder { display: none !important; height: 0 !important; background: transparent !important; pointer-events: none !important; }',
     '#ai-config-button { display: none !important; }',
     '#left-nav-panel { display: none !important; }',
   ].join('\n');
