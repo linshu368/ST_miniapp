@@ -4,16 +4,14 @@ import type { CsPersonaData, CsUserData } from '@miniapp/shared';
 import { csApi, getCsAdminToken, setCsAdminToken } from './api';
 import type { Membership } from './constants';
 import { LoginPage } from './components/LoginPage';
-import { PersonaSidebar, type AppModule } from './components/PersonaSidebar';
+import { PersonaSidebar } from './components/PersonaSidebar';
 import { UserListPanel } from './components/UserListPanel';
 import { ConversationPanel } from './components/ConversationPanel';
 import { PersonaModal } from './components/PersonaModal';
-import { GrowthPanel } from './components/GrowthPanel';
 
 export default function App() {
   const qc = useQueryClient();
   const [authToken, setAuthToken] = useState(getCsAdminToken());
-  const [module, setModule] = useState<AppModule>('outreach');
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<{
     user: CsUserData;
@@ -32,7 +30,7 @@ export default function App() {
     queryKey: ['cs', 'personas', authToken],
     queryFn: csApi.personas,
     enabled: !!authToken,
-    refetchInterval: module === 'outreach' ? 15_000 : false,
+    refetchInterval: 15_000,
   });
   const personas = personasQuery.data?.personas ?? [];
   const selectedPersona =
@@ -41,22 +39,22 @@ export default function App() {
   const usersQuery = useQuery({
     queryKey: ['cs', 'users', selectedPersona?.id],
     queryFn: () => csApi.users(selectedPersona!.id),
-    enabled: !!selectedPersona && module === 'outreach',
-    refetchInterval: selectedPersona && module === 'outreach' ? 10_000 : false,
+    enabled: !!selectedPersona,
+    refetchInterval: selectedPersona ? 10_000 : false,
   });
 
   const sessionQuery = useQuery({
     queryKey: ['cs', 'session', selectedPersona?.id, selectedUser?.user.user_id],
     queryFn: () => csApi.session(selectedPersona!.id, selectedUser!.user.user_id),
-    enabled: !!selectedPersona && !!selectedUser && module === 'outreach',
-    refetchInterval: selectedPersona && selectedUser && module === 'outreach' ? 5_000 : false,
+    enabled: !!selectedPersona && !!selectedUser,
+    refetchInterval: selectedPersona && selectedUser ? 5_000 : false,
   });
 
   const messagesQuery = useQuery({
     queryKey: ['cs', 'messages', selectedPersona?.id, selectedUser?.user.user_id],
     queryFn: () => csApi.messages(selectedPersona!.id, selectedUser!.user.user_id),
-    enabled: !!selectedPersona && !!selectedUser && module === 'outreach',
-    refetchInterval: selectedUser && module === 'outreach' ? 3_000 : false,
+    enabled: !!selectedPersona && !!selectedUser,
+    refetchInterval: selectedUser ? 3_000 : false,
   });
 
   const refreshMutation = useMutation({
@@ -120,15 +118,10 @@ export default function App() {
   return (
     <div className="app-shell">
       <PersonaSidebar
-        module={module}
         personas={personas}
         selectedId={selectedPersona?.id ?? null}
         isLoading={personasQuery.isLoading}
         errorMessage={personasQuery.isError ? String(personasQuery.error.message) : null}
-        onModuleChange={(nextModule) => {
-          setModule(nextModule);
-          setSelectedUser(null);
-        }}
         onSelect={(id) => {
           setSelectedPersonaId(id);
           setSelectedUser(null);
@@ -137,50 +130,44 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {module === 'growth' ? (
-        <GrowthPanel onToast={setToast} />
+      {selectedPersona ? (
+        <UserListPanel
+          persona={selectedPersona}
+          activeUsers={usersQuery.data?.active ?? []}
+          chattedLeftUsers={usersQuery.data?.chatted_left ?? []}
+          isLoading={usersQuery.isLoading}
+          selectedUserId={selectedUser?.user.user_id}
+          refreshPending={refreshMutation.isPending}
+          deletePending={deleteMutation.isPending}
+          onSelect={(user, membership) => setSelectedUser({ user, membership })}
+          onRefresh={() => refreshMutation.mutate(selectedPersona.id)}
+          onExport={() =>
+            csApi
+              .exportPersona(selectedPersona.id, selectedPersona.name)
+              .catch((error) => setToast(error.message))
+          }
+          onDelete={() => handleDeletePersona(selectedPersona)}
+        />
       ) : (
-        <>
-          {selectedPersona ? (
-            <UserListPanel
-              persona={selectedPersona}
-              activeUsers={usersQuery.data?.active ?? []}
-              chattedLeftUsers={usersQuery.data?.chatted_left ?? []}
-              isLoading={usersQuery.isLoading}
-              selectedUserId={selectedUser?.user.user_id}
-              refreshPending={refreshMutation.isPending}
-              deletePending={deleteMutation.isPending}
-              onSelect={(user, membership) => setSelectedUser({ user, membership })}
-              onRefresh={() => refreshMutation.mutate(selectedPersona.id)}
-              onExport={() =>
-                csApi
-                  .exportPersona(selectedPersona.id, selectedPersona.name)
-                  .catch((error) => setToast(error.message))
-              }
-              onDelete={() => handleDeletePersona(selectedPersona)}
-            />
-          ) : (
-            <section className="user-panel">
-              <EmptyState text="暂无画像簇，先在左侧新建一个。" />
-            </section>
-          )}
-
-          <div className="conversation-column">
-            {selectedPersona && selectedUser ? (
-              <ConversationPanel
-                persona={selectedPersona}
-                user={selectedUser.user}
-                messages={messagesQuery.data?.messages ?? []}
-                session={sessionQuery.data?.session ?? null}
-                onChanged={invalidateConversation}
-                onToast={setToast}
-              />
-            ) : (
-              <EmptyState text="从中间列表选择用户，开始 Telegram 1V1 回访" />
-            )}
-          </div>
-        </>
+        <section className="user-panel">
+          <EmptyState text="暂无画像簇，先在左侧新建一个。" />
+        </section>
       )}
+
+      <div className="conversation-column">
+        {selectedPersona && selectedUser ? (
+          <ConversationPanel
+            persona={selectedPersona}
+            user={selectedUser.user}
+            messages={messagesQuery.data?.messages ?? []}
+            session={sessionQuery.data?.session ?? null}
+            onChanged={invalidateConversation}
+            onToast={setToast}
+          />
+        ) : (
+          <EmptyState text="从中间列表选择用户，开始 Telegram 1V1 回访" />
+        )}
+      </div>
 
       {showPersonaModal && (
         <PersonaModal
@@ -188,7 +175,6 @@ export default function App() {
           onCreated={(persona) => {
             setShowPersonaModal(false);
             setSelectedPersonaId(persona.id);
-            setModule('outreach');
             setToast(`已创建画像簇：${persona.name}`);
             void qc.invalidateQueries({ queryKey: ['cs', 'personas'] });
           }}
