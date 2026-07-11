@@ -18,9 +18,14 @@ export function installNativeUiHide(): void {
     '#leftSendForm { flex: 0 0 0 !important; width: 0 !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; pointer-events: none !important; }',
     '#leftSendForm > div { display: none !important; }',
     '#send_textarea { min-width: 0 !important; padding-left: clamp(10px, 3vw, 16px) !important; }',
-    '#send_textarea::placeholder { color: transparent !important; }',
+    '#send_textarea::placeholder { color: rgba(243, 239, 247, 0.38) !important; opacity: 1 !important; }',
   ].join('\n');
   document.head.appendChild(style);
+
+  const textarea = document.getElementById('send_textarea');
+  if (textarea instanceof HTMLTextAreaElement) {
+    textarea.placeholder = '输入消息…';
+  }
 }
 
 /**
