@@ -4366,3 +4366,14 @@ html body #sheld {
 html body.echostyle #chat {
   max-height: calc(100dvh - var(--bottomFormBlockSize)) !important;
 }
+
+/* Override composer to match new floating controls */
+html body #send_form {
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: #181620 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+}
+
+html body #send_textarea::placeholder {
+  color: rgba(255, 255, 255, 0.25) !important;
+}

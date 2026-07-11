@@ -48,7 +48,7 @@ export function ChatHeader() {
         background: 'transparent',
       }}
     >
-      <div className="flex h-10 items-center bg-transparent px-0.5">
+      <div className="flex h-10 items-center gap-1.5 px-1">
         <ChatSidebar />
         <ChatToolsMenu />
       </div>
@@ -57,7 +57,7 @@ export function ChatHeader() {
       </span>
       <button
         onClick={() => router.push('/')}
-        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-transparent text-white transition-colors hover:bg-white/10 hover:text-white active:scale-95"
+        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white text-[#181620] shadow-[0_6px_18px_rgba(0,0,0,0.28)] transition-colors hover:bg-white/90 active:scale-95"
         aria-label="返回大厅"
       >
         <Home className="h-5 w-5" />
