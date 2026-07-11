@@ -3,7 +3,9 @@ Auto-generate tracking links for new channels.
 
 Supabase table setup SQL:
 
-    CREATE TABLE botlinks (
+    CREATE SCHEMA IF NOT EXISTS miniapp_traffic;
+
+    CREATE TABLE miniapp_traffic.botlinks (
         id BIGSERIAL PRIMARY KEY,
         source_name TEXT,
         bot_link TEXT,
@@ -38,6 +40,7 @@ SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 BOT_USERNAME = os.environ["BOT_USERNAME"].lstrip("@")
 MINIAPP_SHORT_NAME = os.environ.get("MINIAPP_SHORT_NAME", "app").strip("/") or "app"
 SCAN_INTERVAL = int(os.environ.get("SCAN_INTERVAL", "60"))
+TABLE_SCHEMA = os.environ.get("TABLE_SCHEMA", "miniapp_traffic").strip() or "miniapp_traffic"
 TABLE_NAME = os.environ.get("TABLE_NAME", "botlinks")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -51,9 +54,14 @@ def generate_short_code(length: int = 8) -> str:
     return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
+def botlinks_table():
+    """Create a fresh query builder explicitly scoped to the traffic schema."""
+    return supabase.schema(TABLE_SCHEMA).table(TABLE_NAME)
+
+
 def get_existing_source_ids() -> set[str]:
     result = (
-        supabase.table(TABLE_NAME)
+        botlinks_table()
         .select("source_id")
         .not_.is_("source_id", "null")
         .execute()
@@ -75,7 +83,7 @@ def build_miniapp_link(source_id: str) -> str:
 def scan_and_generate() -> int:
     """Find rows with source filled but bot_link blank, generate and backfill."""
     result = (
-        supabase.table(TABLE_NAME)
+        botlinks_table()
         .select("*")
         .not_.is_("source_name", "null")
         .or_("bot_link.is.null,bot_link.eq.")
@@ -98,7 +106,7 @@ def scan_and_generate() -> int:
         existing_ids.add(sid)
         link = build_miniapp_link(sid)
 
-        supabase.table(TABLE_NAME).update({
+        botlinks_table().update({
             "bot_link": link,
             "source_id": sid,
         }).eq("id", row["id"]).execute()
@@ -114,6 +122,7 @@ def main():
     logger.info(
         "Auto-generate service started | "
         f"miniapp: https://t.me/{BOT_USERNAME}/{MINIAPP_SHORT_NAME} | "
+        f"table: {TABLE_SCHEMA}.{TABLE_NAME} | "
         f"interval: {SCAN_INTERVAL}s"
     )
     while True:

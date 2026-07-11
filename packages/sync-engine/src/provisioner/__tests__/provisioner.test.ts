@@ -33,6 +33,7 @@ vi.mock('../fetcher.js', () => ({
 vi.mock('../writer.js', () => ({
   DEFAULT_USER_AVATAR_FILENAME: '4d015fdd-7f82-482c-912d-466eaa826280.png',
   writeCharacters: vi.fn(async () => ({ written: [], skipped: [], missing: [] })),
+  writePlatformAssets: vi.fn(() => ({ written: [], skipped: [] })),
   writePresets: vi.fn(() => ({ written: [], skipped: [] })),
   writeSettings: vi.fn(),
   writeSecrets: vi.fn(),
@@ -145,6 +146,7 @@ function makeProvisionData(userSettings: UserSettingsRow | null = null): Provisi
 describe('provision()', () => {
   const mockedFetch = fetcherMod.fetchProvisionData as unknown as MockInstance;
   const mockedWriteChars = writerMod.writeCharacters as unknown as MockInstance;
+  const mockedWritePlatformAssets = writerMod.writePlatformAssets as unknown as MockInstance;
   const mockedWritePresets = writerMod.writePresets as unknown as MockInstance;
   const mockedWriteSettings = writerMod.writeSettings as unknown as MockInstance;
   const mockedEnsureAvatar = writerMod.ensureUserAvatar as unknown as MockInstance;
@@ -155,6 +157,10 @@ describe('provision()', () => {
     // 默认成功 mock
     mockedFetch.mockResolvedValue(makeProvisionData());
     mockedWriteChars.mockResolvedValue({ written: [CHAR_UUID], skipped: [], missing: [] });
+    mockedWritePlatformAssets.mockReturnValue({
+      written: ['themes/Glimmer - by Rivelle.json', 'backgrounds/night-city-anime.jpg'],
+      skipped: [],
+    });
     mockedWritePresets.mockReturnValue({ written: [PRESET_UUID], skipped: [] });
     mockedWriteSettings.mockReturnValue(undefined);
     mockedEnsureAvatar.mockResolvedValue('4d015fdd-7f82-482c-912d-466eaa826280.png');
@@ -181,6 +187,7 @@ describe('provision()', () => {
 
     expect(mockedEnsureUser).toHaveBeenCalledOnce();
     expect(mockedWriteChars).toHaveBeenCalledOnce();
+    expect(mockedWritePlatformAssets).toHaveBeenCalledOnce();
     expect(mockedWritePresets).toHaveBeenCalledOnce();
     expect(mockedWriteSettings).toHaveBeenCalledOnce();
   });
@@ -198,6 +205,8 @@ describe('provision()', () => {
     expect(merged.settings['name1']).toBe('用户');
     expect(merged.settings['user_avatar']).toBe('4d015fdd-7f82-482c-912d-466eaa826280.png');
     expect(merged.settings['power_user']).toEqual({
+      chat_display: 3,
+      theme: 'Glimmer - by Rivelle',
       personas: { '4d015fdd-7f82-482c-912d-466eaa826280.png': '用户' },
       persona_descriptions: {
         '4d015fdd-7f82-482c-912d-466eaa826280.png': { position: 0, description: '' },

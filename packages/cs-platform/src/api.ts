@@ -14,9 +14,6 @@
   SnoozeCsSessionRequest,
   UpdateCsPersonaRequest,
   ApiResponse,
-  CreateGrowthChannelLinkData,
-  CreateGrowthChannelLinkRequest,
-  GetGrowthChannelLinksData,
 } from '@miniapp/shared';
 
 const API_URL = (
@@ -61,12 +58,6 @@ async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const csApi = {
-  growthLinks: () => apiClient<GetGrowthChannelLinksData>('/api/cs/growth/channel-links'),
-  createGrowthLink: (body: CreateGrowthChannelLinkRequest) =>
-    apiClient<CreateGrowthChannelLinkData>('/api/cs/growth/channel-links', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
   personas: () => apiClient<GetCsPersonasData>('/api/cs/personas'),
   createPersona: (body: CreateCsPersonaRequest) =>
     apiClient<CsPersonaDataResponse>('/api/cs/personas', {

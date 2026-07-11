@@ -8,6 +8,7 @@
 
 import 'dotenv/config';
 import {
+  DEFAULT_USER_AVATAR_URL,
   DEFAULT_PROD_SUPABASE_PROJECT_REF,
   DEFAULT_TEST_SUPABASE_PROJECT_REF,
   createDatabaseConfig,
@@ -31,15 +32,15 @@ const ConfigSchema = z.object({
 
   // ST 文件系统
   ST_DATA_PATH: z.string().min(1, 'ST_DATA_PATH 不能为空'),
+  // 固定主题/背景资产目录。容器必须显式配置，避免依赖源码或 dist 的层级。
+  PLATFORM_ASSETS_ROOT: z.string().min(1, 'PLATFORM_ASSETS_ROOT 不能为空').optional(),
 
   // Supabase Storage bucket（角色卡 PNG 存储）
   CHARACTER_STORAGE_BUCKET: z.string().default('character-assets'),
   DEFAULT_USER_AVATAR_URL: z
     .string()
     .url('DEFAULT_USER_AVATAR_URL 必须是合法 URL')
-    .default(
-      'https://zoqelpfhurwehlvypryl.supabase.co/storage/v1/object/public/miniapp-users/default_user_avatar/4d015fdd-7f82-482c-912d-466eaa826280.png'
-    ),
+    .default(DEFAULT_USER_AVATAR_URL),
 
   // ST 服务
   ST_BASE_URL: z.string().url('ST_BASE_URL 必须是合法 URL'),

@@ -181,6 +181,8 @@ model miniapp_user_settings {
   tg_last_name             String?
   display_name             String?
   avatar_url               String?
+  tg_avatar_url            String?
+  custom_avatar_url        String?
   total_round              BigInt      @default(0)
   pref_word_count          String      @default("300-500")
   pref_show_options        Boolean     @default(true)
