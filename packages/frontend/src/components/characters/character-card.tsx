@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { CharacterSummary } from '@miniapp/shared';
 
 import { cn } from '@/lib/utils';
@@ -9,11 +10,37 @@ interface CharacterCardProps {
   character: CharacterSummary;
   onSelect: (id: string) => void;
   disabled?: boolean;
+  priority?: boolean;
+  onImageSettled?: (id: string) => void;
 }
 
-export function CharacterCard({ character, onSelect, disabled }: CharacterCardProps) {
+export function lobbyImageUrl(source: string): string {
+  try {
+    const url = new URL(source);
+    const marker = '/storage/v1/object/public/';
+    if (!url.pathname.includes(marker)) return source;
+    url.pathname = url.pathname.replace(marker, '/storage/v1/render/image/public/');
+    url.searchParams.set('width', '360');
+    url.searchParams.set('height', '480');
+    url.searchParams.set('resize', 'cover');
+    url.searchParams.set('quality', '68');
+    return url.toString();
+  } catch {
+    return source;
+  }
+}
+
+export function CharacterCard({
+  character,
+  onSelect,
+  disabled,
+  priority = false,
+  onImageSettled,
+}: CharacterCardProps) {
   const gradient = characterRoomGradient(character.id);
   const hasAvatar = !!character.avatar_url;
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
   return (
     <button
@@ -29,16 +56,36 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
     >
       {/* 图片区：3:4 + 渐变叠层 + 名字 / 标签 */}
       <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden">
-        {hasAvatar ? (
+        <div
+          className={`absolute inset-0 transition-opacity duration-300 ${
+            imageLoaded ? 'opacity-0' : 'opacity-100'
+          }`}
+          aria-hidden="true"
+          style={{ background: gradient }}
+        />
+        {hasAvatar && !imageFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={character.avatar_url}
+            src={lobbyImageUrl(character.avatar_url)}
             alt={character.name}
-            className="absolute inset-0 h-full w-full object-cover object-top"
+            width={360}
+            height={480}
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
+            decoding="async"
+            onLoad={() => {
+              setImageLoaded(true);
+              onImageSettled?.(character.id);
+            }}
+            onError={() => {
+              setImageFailed(true);
+              onImageSettled?.(character.id);
+            }}
+            className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 ${
+              imageLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
           />
-        ) : (
-          <div className="absolute inset-0" aria-hidden="true" style={{ background: gradient }} />
-        )}
+        ) : null}
 
         {/* 渐变遮罩 */}
         <div

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 
@@ -9,8 +9,11 @@ import { Input } from '@/components/ui/input';
 
 import { useCharactersQuery } from '@/lib/api/characters';
 
-import { CharacterCard } from './character-card';
+import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
+
+const FIRST_SCREEN_IMAGE_COUNT = 6;
+const LOBBY_CRITICAL_READY_EVENT = 'miniapp:lobby-critical-ready';
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -41,6 +44,8 @@ export function CharacterGallery() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
+  const settledImageIdsRef = useRef(new Set<string>());
+  const criticalReadySentRef = useRef(false);
 
   // 用户阅读角色详情时同步预取动态路由，减少点击进入后偶发等待路由资源的时间。
   useEffect(() => {
@@ -48,6 +53,81 @@ export function CharacterGallery() {
   }, [previewId, router]);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
+  const firstScreenCharacters = useMemo(
+    () => characters.slice(0, FIRST_SCREEN_IMAGE_COUNT),
+    [characters]
+  );
+
+  const signalLobbyCriticalReady = useCallback(() => {
+    if (criticalReadySentRef.current) return;
+    criticalReadySentRef.current = true;
+    performance.mark('lobby_first_screen_images_ready');
+    document.documentElement.dataset.lobbyCriticalReady = 'true';
+    window.dispatchEvent(new Event(LOBBY_CRITICAL_READY_EVENT));
+  }, []);
+
+  const handleImageSettled = useCallback(
+    (id: string) => {
+      settledImageIdsRef.current.add(id);
+      if (
+        firstScreenCharacters.length > 0 &&
+        firstScreenCharacters.every(
+          (character) => !character.avatar_url || settledImageIdsRef.current.has(character.id)
+        )
+      ) {
+        signalLobbyCriticalReady();
+      }
+    },
+    [firstScreenCharacters, signalLobbyCriticalReady]
+  );
+
+  useEffect(() => {
+    if (characters.length === 0) return;
+    performance.mark('lobby_cards_visible');
+    settledImageIdsRef.current = new Set(
+      firstScreenCharacters
+        .filter((character) => !character.avatar_url)
+        .map((character) => character.id)
+    );
+
+    if (firstScreenCharacters.every((character) => !character.avatar_url)) {
+      signalLobbyCriticalReady();
+    }
+
+    const preloadLinks: HTMLLinkElement[] = [];
+    const connectedOrigins = new Set<string>();
+    for (const character of firstScreenCharacters) {
+      if (!character.avatar_url) continue;
+      const href = lobbyImageUrl(character.avatar_url);
+      try {
+        const origin = new URL(href).origin;
+        if (!connectedOrigins.has(origin)) {
+          connectedOrigins.add(origin);
+          const preconnect = document.createElement('link');
+          preconnect.rel = 'preconnect';
+          preconnect.href = origin;
+          preconnect.crossOrigin = 'anonymous';
+          document.head.append(preconnect);
+          preloadLinks.push(preconnect);
+        }
+      } catch {
+        // 相对 URL 无需额外 preconnect。
+      }
+      const preload = document.createElement('link');
+      preload.rel = 'preload';
+      preload.as = 'image';
+      preload.href = href;
+      preload.fetchPriority = 'high';
+      document.head.append(preload);
+      preloadLinks.push(preload);
+    }
+
+    const fallbackTimer = window.setTimeout(signalLobbyCriticalReady, 4_800);
+    return () => {
+      clearTimeout(fallbackTimer);
+      preloadLinks.forEach((link) => link.remove());
+    };
+  }, [characters.length, firstScreenCharacters, signalLobbyCriticalReady]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return characters;
@@ -142,10 +222,12 @@ export function CharacterGallery() {
         </div>
       ) : (
         <div className="mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 pb-10 pt-2 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] sm:gap-4 sm:px-6 lg:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] lg:px-8">
-          {filtered.map((c) => (
+          {filtered.map((c, index) => (
             <CharacterCard
               key={c.id}
               character={c}
+              priority={index < FIRST_SCREEN_IMAGE_COUNT}
+              onImageSettled={handleImageSettled}
               onSelect={() => {
                 if (!enteringId) setPreviewId(c.id);
               }}
