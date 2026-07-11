@@ -5,6 +5,8 @@ import type {
   GetUserSettingsData,
   PatchUserSettingsData,
   PatchUserSettingsRequest,
+  SetUserAvatarData,
+  SetUserAvatarRequest,
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
@@ -24,6 +26,13 @@ async function patchUserSettings(body: PatchUserSettingsRequest): Promise<PatchU
   });
 }
 
+async function setUserAvatar(body: SetUserAvatarRequest): Promise<SetUserAvatarData> {
+  return apiClient<SetUserAvatarData>('/api/users/avatar', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 export function useUserSettingsQuery() {
   return useQuery<GetUserSettingsData>({
     queryKey: userSettingsKeys.all,
@@ -36,6 +45,18 @@ export function usePatchUserSettingsMutation() {
   const qc = useQueryClient();
   return useMutation<PatchUserSettingsData, Error, PatchUserSettingsRequest>({
     mutationFn: patchUserSettings,
+    onSuccess: (data) => {
+      qc.setQueryData<GetUserSettingsData>(userSettingsKeys.all, {
+        settings: data.settings,
+      });
+    },
+  });
+}
+
+export function useSetUserAvatarMutation() {
+  const qc = useQueryClient();
+  return useMutation<SetUserAvatarData, Error, SetUserAvatarRequest>({
+    mutationFn: setUserAvatar,
     onSuccess: (data) => {
       qc.setQueryData<GetUserSettingsData>(userSettingsKeys.all, {
         settings: data.settings,

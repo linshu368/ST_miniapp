@@ -120,13 +120,15 @@ function GrowthEntryReporter() {
 
 function UserSettingsHydrator() {
   const applyServerDisplayName = useUserProfileStore((s) => s.applyServerDisplayName);
+  const applyServerPhotoUrl = useUserProfileStore((s) => s.applyServerPhotoUrl);
   const { data } = useUserSettingsQuery();
 
   useEffect(() => {
     if (data) {
       applyServerDisplayName(data.settings.display_name);
+      applyServerPhotoUrl(data.settings.avatar_url);
     }
-  }, [applyServerDisplayName, data]);
+  }, [applyServerDisplayName, applyServerPhotoUrl, data]);
 
   return null;
 }

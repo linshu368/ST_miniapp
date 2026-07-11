@@ -162,14 +162,10 @@ export function CharacterGallery() {
             enteringRef.current = false;
             setEnteringId(null);
             setPreviewId(null);
-            // 同路径 replace 可能不会压过在途 router.push。使用唯一 URL 触发完整导航，
-            // 同时保留 Telegram 注入的 hash，确保旧的角色导航被浏览器真正中止。
-            const lobbyUrl = new URL(window.location.href);
-            lobbyUrl.pathname = '/';
-            lobbyUrl.search = '';
-            lobbyUrl.searchParams.set('entry_cancelled', Date.now().toString());
-            window.stop();
-            window.location.replace(lobbyUrl.toString());
+            // 当前本来就在大厅，直接 replace('/') 可能被 Next.js 当成同路由而忽略。
+            // 唯一查询参数会启动一笔新的 SPA 导航，并让 App Router 放弃在途角色导航，
+            // 同时保留 query cache、Telegram SDK 与 bridge 连接。
+            router.replace(`/?entry_cancelled=${Date.now()}`);
             return;
           }
           setPreviewId(null);

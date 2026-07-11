@@ -1,5 +1,10 @@
 import { getSupabaseClient } from '../../lib/supabase.js';
-import type { PatchUserSettingsRequest, PreferredWordCount, UserSettings } from '@miniapp/shared';
+import {
+  DEFAULT_USER_AVATAR_URL,
+  type PatchUserSettingsRequest,
+  type PreferredWordCount,
+  type UserSettings,
+} from '@miniapp/shared';
 import type { TelegramUser } from '../../middleware/auth.js';
 
 const WORD_COUNT_OPTIONS: PreferredWordCount[] = ['100-300', '300-500', '500-800', '800+'];
@@ -11,6 +16,8 @@ interface MiniappUserSettingsRow {
   tg_last_name: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  tg_avatar_url: string | null;
+  custom_avatar_url: string | null;
   total_round: number;
   pref_word_count: PreferredWordCount;
   pref_show_options: boolean;
@@ -25,8 +32,7 @@ export class MiniappUserSettingsRepository {
   async getOrCreate(userId: string, tgUser: TelegramUser): Promise<MiniappUserSettingsRow> {
     const existing = await this.findByUserId(userId);
     if (existing) {
-      await this.refreshTelegramProfile(userId, tgUser);
-      return existing;
+      return await this.refreshTelegramProfile(userId, tgUser);
     }
 
     const { data, error } = await this.db
@@ -70,6 +76,26 @@ export class MiniappUserSettingsRepository {
     return data as MiniappUserSettingsRow;
   }
 
+  async setCustomAvatar(
+    userId: string,
+    tgUser: TelegramUser,
+    avatarUrl: string
+  ): Promise<MiniappUserSettingsRow> {
+    await this.getOrCreate(userId, tgUser);
+    const { data, error } = await this.db
+      .from('miniapp_user_settings')
+      .update({
+        ...this.telegramProfileFields(tgUser),
+        custom_avatar_url: avatarUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .select('*')
+      .single();
+    if (error) throw new Error(`更新用户头像失败：${error.message}`);
+    return data as MiniappUserSettingsRow;
+  }
+
   private async findByUserId(userId: string): Promise<MiniappUserSettingsRow | null> {
     const { data, error } = await this.db
       .from('miniapp_user_settings')
@@ -81,16 +107,22 @@ export class MiniappUserSettingsRepository {
     return (data as MiniappUserSettingsRow | null) ?? null;
   }
 
-  private async refreshTelegramProfile(userId: string, tgUser: TelegramUser): Promise<void> {
-    const { error } = await this.db
+  private async refreshTelegramProfile(
+    userId: string,
+    tgUser: TelegramUser
+  ): Promise<MiniappUserSettingsRow> {
+    const { data, error } = await this.db
       .from('miniapp_user_settings')
       .update({
         ...this.telegramProfileFields(tgUser),
         updated_at: new Date().toISOString(),
       })
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .select('*')
+      .single();
 
     if (error) throw new Error(`刷新 Telegram 用户信息失败：${error.message}`);
+    return data as MiniappUserSettingsRow;
   }
 
   private telegramProfileFields(tgUser: TelegramUser) {
@@ -98,18 +130,41 @@ export class MiniappUserSettingsRepository {
       tg_username: tgUser.username ?? null,
       tg_first_name: tgUser.first_name ?? null,
       tg_last_name: tgUser.last_name ?? null,
-      avatar_url: tgUser.photo_url ?? null,
+      tg_avatar_url: tgUser.photo_url ?? null,
     };
   }
 
-  private normalizePatch(patch: PatchUserSettingsRequest): PatchUserSettingsRequest {
-    const update: PatchUserSettingsRequest = {};
+  private normalizePatch(
+    patch: PatchUserSettingsRequest
+  ): Partial<
+    Pick<
+      MiniappUserSettingsRow,
+      | 'display_name'
+      | 'custom_avatar_url'
+      | 'pref_word_count'
+      | 'pref_show_options'
+      | 'pref_custom_instructions'
+    >
+  > {
+    const update: Partial<
+      Pick<
+        MiniappUserSettingsRow,
+        | 'display_name'
+        | 'custom_avatar_url'
+        | 'pref_word_count'
+        | 'pref_show_options'
+        | 'pref_custom_instructions'
+      >
+    > = {};
 
     if ('display_name' in patch) {
       update.display_name = normalizeNullableText(patch.display_name, 32);
     }
     if ('avatar_url' in patch) {
-      update.avatar_url = normalizeNullableText(patch.avatar_url, 512);
+      if (patch.avatar_url !== null) {
+        throw new Error('自定义头像必须通过头像导入接口设置');
+      }
+      update.custom_avatar_url = null;
     }
     if ('pref_word_count' in patch) {
       if (!WORD_COUNT_OPTIONS.includes(patch.pref_word_count as PreferredWordCount)) {
@@ -129,9 +184,12 @@ export class MiniappUserSettingsRepository {
 }
 
 export function toUserSettings(row: MiniappUserSettingsRow): UserSettings {
+  const customAvatar = row.custom_avatar_url?.trim();
+  const telegramAvatar = row.tg_avatar_url?.trim();
   return {
     display_name: row.display_name,
-    avatar_url: row.avatar_url,
+    avatar_url: customAvatar || telegramAvatar || DEFAULT_USER_AVATAR_URL,
+    avatar_source: customAvatar ? 'custom' : telegramAvatar ? 'telegram' : 'default',
     pref_word_count: row.pref_word_count,
     pref_show_options: row.pref_show_options,
     pref_custom_instructions: row.pref_custom_instructions,

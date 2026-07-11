@@ -132,6 +132,9 @@ WORKDIR /home/node/app
 
 # provision 为每个 Telegram 用户下发的固定主题与背景资源。
 COPY ops/st-platform-assets /home/node/app/ops/st-platform-assets
+ENV PLATFORM_ASSETS_ROOT=/home/node/app/ops/st-platform-assets
+RUN test -f "$PLATFORM_ASSETS_ROOT/themes/Glimmer - by Rivelle.json" \
+ && test -f "$PLATFORM_ASSETS_ROOT/backgrounds/night-city-anime.jpg"
 
 # ST 本体（含 builder-ext 注入的扩展）
 COPY --from=builder-ext /build/vendor/sillytavern /home/node/app
