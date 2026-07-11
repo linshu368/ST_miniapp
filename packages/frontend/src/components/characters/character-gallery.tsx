@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import { Search, X } from 'lucide-react';
+import { Search, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,6 +58,10 @@ export function CharacterGallery() {
   const firstScreenCharacters = useMemo(
     () => characters.slice(0, FIRST_SCREEN_IMAGE_COUNT),
     [characters]
+  );
+  const enteringCharacter = useMemo(
+    () => characters.find((character) => character.id === enteringId) ?? null,
+    [characters, enteringId]
   );
 
   const signalLobbyCriticalReady = useCallback(() => {
@@ -256,11 +261,37 @@ export function CharacterGallery() {
         onEnter={(id) => {
           if (enteringRef.current) return;
           enteringRef.current = true;
-          setEnteringId(id);
+          flushSync(() => setEnteringId(id));
           requestTelegramChatFullscreen();
-          router.push(`/tavern/${id}`);
+          window.requestAnimationFrame(() => router.push(`/tavern/${id}`));
         }}
       />
+      {enteringCharacter && (
+        <div
+          className="fixed inset-0 z-[70] flex flex-col items-center justify-center overflow-hidden bg-[#07050b] px-6 text-white"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          {enteringCharacter.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={lobbyImageUrl(enteringCharacter.avatar_url)}
+              alt=""
+              className="absolute inset-0 h-full w-full scale-105 object-cover object-top opacity-25 blur-xl"
+            />
+          ) : null}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(124,58,237,0.28),rgba(7,5,11,0.94)_58%)]" />
+          <div className="relative flex flex-col items-center">
+            <div className="flex size-16 items-center justify-center rounded-full border border-white/15 bg-white/10 shadow-[0_0_36px_rgba(168,85,247,0.28)] backdrop-blur-xl">
+              <Sparkles className="h-6 w-6 animate-pulse text-white" />
+            </div>
+            <p className="mt-5 text-sm font-semibold tracking-[0.18em]">正在进入角色</p>
+            <p className="mt-2 max-w-[18rem] truncate text-xs text-white/45">
+              {enteringCharacter.name}
+            </p>
+          </div>
+        </div>
+      )}
     </>
   );
 }

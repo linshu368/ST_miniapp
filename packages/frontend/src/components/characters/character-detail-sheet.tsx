@@ -38,6 +38,8 @@ export function CharacterDetailSheet({
     if (characterId) {
       setMounted(true);
       setGreetingOpen(false);
+      document.documentElement.dataset.chatIntent = 'true';
+      window.dispatchEvent(new Event('miniapp:chat-intent'));
       // 浮层期懒下发预取：用户读简介的时间掩盖单卡下发耗时（幂等，失败静默，
       // 对话页会 await 同一个 promise 并有 selectCharacter 侧兜底）。
       prefetchEnsureStCharacter(characterId).catch(() => {});

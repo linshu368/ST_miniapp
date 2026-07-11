@@ -66,14 +66,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
       performance.mark('st_prewarm_start');
       setBridgeRuntimeReady(true);
     };
-    if (document.documentElement.dataset.lobbyCriticalReady === 'true') {
+    if (
+      document.documentElement.dataset.lobbyCriticalReady === 'true' ||
+      document.documentElement.dataset.chatIntent === 'true'
+    ) {
       startBridge();
       return;
     }
     window.addEventListener(LOBBY_CRITICAL_READY_EVENT, startBridge, { once: true });
+    window.addEventListener('miniapp:chat-intent', startBridge, { once: true });
     const fallbackTimer = window.setTimeout(startBridge, 5_000);
     return () => {
       window.removeEventListener(LOBBY_CRITICAL_READY_EVENT, startBridge);
+      window.removeEventListener('miniapp:chat-intent', startBridge);
       clearTimeout(fallbackTimer);
     };
   }, [bridgeRuntimeReady, pathname]);
