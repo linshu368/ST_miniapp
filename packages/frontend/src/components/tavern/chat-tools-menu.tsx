@@ -52,7 +52,7 @@ export function ChatToolsMenu() {
       )}
 
       {open && (
-        <div className="absolute left-0 top-[calc(100%+0.4rem)] z-10 max-h-[min(24rem,calc(100dvh-4.25rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] w-[min(15rem,calc(100vw-1rem))] overflow-y-auto overflow-x-hidden rounded-2xl border border-white/10 bg-[#171525]/96 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="absolute left-0 top-[calc(100%+0.4rem)] z-10 max-h-[min(24rem,calc(100dvh-4.25rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] w-[min(15rem,calc(100vw-1rem))] overflow-y-auto overflow-x-hidden rounded-2xl border border-white/[0.08] bg-[#222031] p-3 shadow-[0_20px_60px_rgba(0,0,0,0.5)] animate-in fade-in slide-in-from-top-2 duration-200">
           <div
             className="flex w-[200%] transition-transform duration-300 ease-in-out"
             style={{ transform: menuState === 'main' ? 'translateX(0)' : 'translateX(-50%)' }}

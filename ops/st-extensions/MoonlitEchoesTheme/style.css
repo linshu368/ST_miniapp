@@ -3875,10 +3875,12 @@ body.echostyle #chat {
 }
 
 body.echostyle #chat .mes {
-  display: grid !important;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: end !important;
-  gap: clamp(6px, 1.5vw, 10px);
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-end !important;
+  flex-wrap: nowrap !important;
+  gap: clamp(4px, 1.2vw, 8px);
+  position: relative;
   width: 100%;
   margin: 0 !important;
   padding: 0 !important;
@@ -3886,6 +3888,12 @@ body.echostyle #chat .mes {
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
+}
+
+body.echostyle #chat .mes .for_checkbox,
+body.echostyle #chat .mes .del_checkbox {
+  order: 0;
+  flex: 0 0 auto !important;
 }
 
 body.echostyle #chat .mes::before,
@@ -3896,7 +3904,8 @@ body.echostyle #chat .mes .mes_text::before {
 }
 
 body.echostyle #chat .mes .mesAvatarWrapper {
-  grid-column: 1;
+  order: 1;
+  flex: 0 0 auto !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center;
@@ -3938,18 +3947,18 @@ body.echostyle #chat .mes .avatar img {
 }
 
 body.echostyle #chat .mes .mes_block {
-  grid-column: 2;
+  order: 3;
+  flex: 0 1 auto !important;
   position: relative;
-  display: block !important;
-  justify-self: start;
-  width: fit-content;
+  display: flex !important;
+  flex-direction: column;
   min-width: min(132px, 48vw);
-  max-width: min(92%, 820px);
+  max-width: min(84%, 820px);
   margin: 0 !important;
   padding: clamp(9px, 2.2vw, 13px) clamp(11px, 2.8vw, 16px) !important;
   transform: none !important;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
   border-radius: 18px 18px 18px 5px !important;
   background: var(--miniapp-bot-bubble) !important;
   box-shadow:
@@ -3962,19 +3971,10 @@ body.echostyle #chat .mes .mes_block {
 }
 
 body.echostyle #chat .mes[is_user='true'] {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-body.echostyle #chat .mes[is_user='true'] .mesAvatarWrapper {
-  grid-column: 2;
-  grid-row: 1;
+  flex-direction: row-reverse !important;
 }
 
 body.echostyle #chat .mes[is_user='true'] .mes_block {
-  grid-column: 1;
-  grid-row: 1;
-  justify-self: end;
-  max-width: min(82%, 680px);
   border-radius: 18px 18px 5px 18px !important;
   background: var(--miniapp-user-bubble) !important;
 }
@@ -4070,7 +4070,6 @@ body.echostyle #chat .mes .last_mes .mes_text {
   display: block;
   float: none !important;
   clear: none !important;
-  width: 100%;
   min-width: 0;
   min-height: 0 !important;
   max-width: 100%;
@@ -4173,6 +4172,18 @@ body.echostyle #chat .swipeRightBlock {
   z-index: 2;
   transform: scale(0.78);
   opacity: 0.55;
+  flex: 0 0 auto !important;
+  align-self: flex-end !important;
+  margin: 0 !important;
+  padding: 8px 4px !important;
+}
+
+body.echostyle #chat .swipe_left {
+  order: 2;
+}
+
+body.echostyle #chat .swipeRightBlock {
+  order: 4;
 }
 
 /* Responsive composer: full-width, touch friendly and safe-area aware. */
