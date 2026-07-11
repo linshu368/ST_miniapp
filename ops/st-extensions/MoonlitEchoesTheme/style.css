@@ -4365,13 +4365,37 @@ html body #sheld {
 
 html body.echostyle #chat {
   max-height: calc(100dvh - var(--bottomFormBlockSize)) !important;
+  padding-top: calc(3.25rem + env(safe-area-inset-top)) !important;
+  box-sizing: border-box !important;
 }
 
-/* Override composer to match new floating controls */
-html body #send_form {
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+/* Composer is an edge-to-edge bottom surface with no exposed outer gaps. */
+html body #form_sheld {
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100dvw !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 0 env(safe-area-inset-bottom) !important;
   background: #181620 !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+  box-sizing: border-box !important;
+}
+
+html body #send_form {
+  width: 100% !important;
+  margin: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  border-radius: 18px 18px 0 0 !important;
+  background: #181620 !important;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.32) !important;
+}
+
+html body #send_form:focus-within,
+html body #send_form:has(#send_textarea:focus-visible) {
+  border: 0 !important;
+  outline: 0 !important;
 }
 
 html body #send_textarea::placeholder {

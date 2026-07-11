@@ -103,9 +103,9 @@ export function CharacterDetailSheet({
         aria-hidden="true"
       />
 
-      {/* 手机端全屏铺满；较宽设备保留底部沉浸式卡片形态。 */}
+      {/* 手机端只占下半屏；图片区域仍贴合容器四边铺满。 */}
       <div
-        className="absolute inset-x-0 bottom-0 mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden border-0 bg-[#0f0b16]/95 shadow-[0_-20px_80px_rgba(0,0,0,0.55)] sm:h-[75dvh] sm:w-[calc(100vw-1.5rem)] sm:rounded-t-[30px] sm:border sm:border-white/10"
+        className="absolute inset-x-0 bottom-0 mx-auto flex h-[50dvh] w-full max-w-none flex-col overflow-hidden border-0 bg-[#0f0b16]/95 shadow-[0_-20px_80px_rgba(0,0,0,0.55)] sm:h-[65dvh] sm:w-[calc(100vw-1.5rem)] sm:max-w-[430px] sm:rounded-t-[30px] sm:border sm:border-white/10"
         style={{
           transform: visible ? `translateY(${dragY}px)` : 'translateY(100%)',
           transition: isDragging ? 'none' : 'transform 0.36s cubic-bezier(0.32, 0.72, 0, 1)',
@@ -123,7 +123,7 @@ export function CharacterDetailSheet({
         {/* 可滚动主体 */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ touchAction: 'auto' }}>
           {/* Hero 图 */}
-          <div className="relative h-[52dvh] min-h-[18rem] w-full shrink-0 overflow-hidden sm:h-auto sm:max-h-[42dvh] sm:aspect-[3/4]">
+          <div className="relative h-[28dvh] min-h-[12rem] w-full shrink-0 overflow-hidden sm:h-auto sm:max-h-[36dvh] sm:aspect-[3/4]">
             {isLoading ? (
               <div className="h-full w-full animate-pulse bg-white/5" />
             ) : hasAvatar ? (
