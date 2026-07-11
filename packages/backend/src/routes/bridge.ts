@@ -24,7 +24,7 @@ import { config } from '../platform/config.js';
 import { ok, fail } from '@miniapp/shared';
 import { deriveStHandle } from '@miniapp/shared';
 import type { EnsureStCharacterData } from '@miniapp/shared';
-import { cacheStCookie } from '../lib/st-cookie.js';
+import { cacheStCookie, getStCookie } from '../lib/st-cookie.js';
 
 const miniappUserSettings = new MiniappUserSettingsRepository();
 
@@ -300,8 +300,9 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           // 关键路径最前面；这里改为「登录拿 cookie 立即放行 + provision 后台异步」。
           log(`[bridge] 已初始化用户再次登录（handle=${stHandle}），先放行 + 后台刷新配置`);
 
-          const stCookie = await loginToSt(stHandle);
-          await cacheStCookie(dbUser.id, stCookie);
+          // 优先复用 24h 内仍有效的签名 session，避免每次重开 MiniApp 都串行执行
+          // csrf-token + users/login 两次 ST 往返；缓存未命中时 getStCookie 会自动登录并回填。
+          const stCookie = await getStCookie(dbUser.id, stHandle);
 
           // 后台异步刷新配置：不 await；触发失败仅告警（用户已用现有配置放行，不阻断）。
           triggerProvisionAsync(dbUser.id, log).catch((err) => {

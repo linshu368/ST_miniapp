@@ -52,7 +52,8 @@ export type BridgeClientOptions = {
    * 点卡即检重载阈值（安全网 #5）：用户点卡进入 /tavern/ 时 iframe 由隐藏转可见
    * （重载只在可见态 100% 恢复）。若此刻仍未握手，则按「距本次 boot 起点的该时长」武装一枚更
    * 激进的停摆重载——到点仍无握手即重载，不必干等 30s 握手到达看门狗；点卡时若已超阈值则立即重载。
-   * 默认 18s（> 正常最迟握手 ~17.5s，不误伤健康慢 boot）；0 = 关闭。
+   * 默认 26s（近期真机最慢健康握手约 24.5s）；每个 BridgeClient 最多触发一次，
+   * 避免重连后的健康慢启动再次被相同看门狗打断。0 = 关闭。
    */
   visibleStallReloadMs?: number;
 };
@@ -91,6 +92,7 @@ export class BridgeClient {
   private iframeLoadHandler: (() => void) | null = null;
   private handshakeArrivalTimer: ReturnType<typeof setTimeout> | null = null;
   private clickStallTimer: ReturnType<typeof setTimeout> | null = null;
+  private clickStallReloadUsed = false;
   private reconnectAttempts = 0;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private started = false;
@@ -111,7 +113,7 @@ export class BridgeClient {
     this.reconnectHandshakeTimeout = options?.reconnectHandshakeTimeout ?? 30_000;
     this.iframeLoadTimeout = options?.iframeLoadTimeout ?? 15_000;
     this.handshakeArrivalTimeout = options?.handshakeArrivalTimeout ?? 30_000;
-    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 10_000;
+    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 26_000;
 
     this.stateMachine = createStateMachine();
     this.buffer = new RequestBuffer();
@@ -177,11 +179,12 @@ export class BridgeClient {
 
   private armClickStallWatchdog(): void {
     this.clearClickStallWatchdog();
-    if (this.visibleStallReloadMs <= 0) return;
+    if (this.visibleStallReloadMs <= 0 || this.clickStallReloadUsed) return;
     const elapsed = Date.now() - this.bootAttemptStartedAt;
     const remaining = Math.max(0, this.visibleStallReloadMs - elapsed);
     this.clickStallTimer = setTimeout(() => {
       this.clickStallTimer = null;
+      this.clickStallReloadUsed = true;
       markTiming('click_stall_reload'); // [iframe-timing] TEMP DEBUG
       this.handleHandshakeTimeout();
     }, remaining);
