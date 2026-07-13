@@ -215,6 +215,7 @@ describe('provision()', () => {
       },
       // merger 强制项（P1-H2 瘦身）：关闭消息气泡 token 计数
       message_token_count_enabled: false,
+      auto_load_chat: false,
     });
   });
 

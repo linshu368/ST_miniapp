@@ -150,9 +150,11 @@ export function mergeSettings(
     }
   }
 
-  // 平台点卡始终 forceNewChat，boot 阶段恢复上次角色/群聊只会额外触发 chats/get、
-  // 世界书与正则渲染，随后又被新对话覆盖。放在用户白名单合并和引用校验之后强制清空，
-  // 既保留失效引用审计，又避免把 1.5~3s 的无效恢复串进 APP_READY 关键路径。
+  // ST 是否在 boot 恢复旧聊天真正由 auto_load_chat 门控。当前平台种子已为 false，
+  // 因此清空角色指针本身不是现阶段的耗时收益；这里仍由 merger 重申 false，防止未来
+  // 运营种子误开后把 chats/get、世界书与正则加载重新串进 APP_READY 关键路径。
+  // active_character/group 作为纵深防御在引用校验后清空，失效引用审计仍可正常产出。
+  lodashSet(merged, 'power_user.auto_load_chat', false);
   lodashSet(merged, 'active_character', null);
   lodashSet(merged, 'active_group', null);
 

@@ -390,6 +390,22 @@ describe('mergeSettings', () => {
     expect(powerUser['personas']).toEqual({});
   });
 
+  it('应强制关闭 ST boot 旧聊天自动恢复', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        power_user: { auto_load_chat: true },
+      },
+    });
+
+    const result = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
+    const powerUser = result.settings['power_user'] as Record<string, unknown>;
+
+    expect(powerUser['auto_load_chat']).toBe(false);
+    expect(result.settings['active_character']).toBeNull();
+    expect(result.settings['active_group']).toBeNull();
+  });
+
   // ── 场景 8：深拷贝，不修改原始对象 ──────────────────────────────────────
   it('mergeSettings 不应修改传入的 platformSettings 对象', () => {
     const platform = makePlatformSettings();
