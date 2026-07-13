@@ -68,14 +68,23 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   // 预设正则不依赖具体角色，独立预授权（当前选中预设含内置正则时才写入）。
   preAllowPresetRegex();
 
-  await ctx.selectCharacterById(index, { switchMenu: false });
+  await ctx.selectCharacterById(index, {
+    switchMenu: false,
+    // forceNewChat 路径无需先拉取、渲染旧聊天；doNewChat 会直接创建并加载新文件。
+    skipChatLoad: payload.forceNewChat,
+  });
   stTiming('sel_selectById_done'); // [iframe-timing] TEMP DEBUG: H3
   markSelectProbe('h3_done'); // [iframe-timing] TEMP DEBUG
 
   if (payload.forceNewChat) {
-    await ctx.executeSlashCommandsWithOptions('/newchat');
+    // 直接调用 ST 原生函数，跳过 slash 解析；平台不会恢复角色 chat 指针，
+    // 因此无需把本次临时文件名再次写回角色 PNG。
+    await ctx.doNewChat({ skipCharacterSave: true });
   }
-  stTiming('sel_newchat_done', `forceNewChat=${!!payload.forceNewChat}`); // [iframe-timing] TEMP DEBUG: H2
+  stTiming(
+    'sel_newchat_done',
+    `forceNewChat=${!!payload.forceNewChat},fastNewChat=${!!payload.forceNewChat}`
+  ); // [iframe-timing] TEMP DEBUG: H2
   stopSelectProbe(); // [iframe-timing] TEMP DEBUG: 收割点卡窗口瀑布/事件/长任务并上报
 
   ctx.saveSettingsDebounced();

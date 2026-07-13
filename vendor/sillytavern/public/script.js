@@ -996,9 +996,10 @@ export function resultCheckStatus() {
  * @param {number} id The ID of the character to switch to.
  * @param {object} [options] Options for the switch.
  * @param {boolean} [options.switchMenu=true] Whether to switch the right menu to the character edit menu if the character is already selected.
+ * @param {boolean} [options.skipChatLoad=false] Skip loading the character's previous chat when the caller will immediately create a new one.
  * @returns {Promise<void>} A promise that resolves when the character is switched.
  */
-export async function selectCharacterById(id, { switchMenu = true } = {}) {
+export async function selectCharacterById(id, { switchMenu = true, skipChatLoad = false } = {}) {
   if (characters[id] === undefined) {
     return;
   }
@@ -1027,7 +1028,13 @@ export async function selectCharacterById(id, { switchMenu = true } = {}) {
       selected_button = 'character_edit';
       setCharacterId(id);
       chat_metadata = {};
-      await getChat();
+      // [miniapp-patch] Platform card entry always creates a fresh chat. Loading and rendering
+      // the previous chat here only to clear it again adds a duplicate chats/get waterfall.
+      if (skipChatLoad) {
+        setCharacterName(characters[id].name);
+      } else {
+        await getChat();
+      }
     }
   } else {
     //if clicked on character that was already selected
@@ -11891,7 +11898,7 @@ async function importFromURL(items, files) {
   }
 }
 
-export async function doNewChat({ deleteCurrentChat = false } = {}) {
+export async function doNewChat({ deleteCurrentChat = false, skipCharacterSave = false } = {}) {
   //Make a new chat for selected character
   if ((!selected_group && this_chid == undefined) || menu_type == 'create') {
     return;
@@ -11918,7 +11925,12 @@ export async function doNewChat({ deleteCurrentChat = false } = {}) {
     characters[this_chid].chat = `${name2} - ${humanizedDateTime()}`;
     $('#selected_chat_pole').val(characters[this_chid].chat);
     await getChat();
-    await createOrEditCharacter(new CustomEvent('newChat'));
+    // [miniapp-patch] MiniApp owns navigation and always starts a new chat on card entry.
+    // The in-memory chat pointer is sufficient for the active session; persisting the same
+    // pointer back into the PNG adds a characters/edit round trip that is never restored.
+    if (!skipCharacterSave) {
+      await createOrEditCharacter(new CustomEvent('newChat'));
+    }
     if (deleteCurrentChat) await delChat(chat_file_for_del + '.jsonl');
   }
 }

@@ -27,7 +27,7 @@ import { applyActivePreset } from './preset-apply.js';
  * 依赖安全性（2026-07 核查）：14 个内置 + 2 个第三方扩展的 manifest 均无 dependencies
  * 声明；核心代码唯一静态 import 的扩展是 regex（保留）；stable-diffusion / vectors 的
  * generate_interceptor 在调用处有 typeof 防护，禁用后安全跳过。
- * 保留：regex / memory / quick-reply / token-counter / miniapp-bridge / JS-Slash-Runner。
+ * 保留：regex / quick-reply / miniapp-bridge / JS-Slash-Runner。
  */
 export const PLATFORM_DISABLED_EXTENSIONS = [
   'assets', // 资产管理（下载扩展/资源面板）
@@ -36,7 +36,9 @@ export const PLATFORM_DISABLED_EXTENSIONS = [
   'connection-manager', // 多 API 连接配置切换（平台强制 custom 源，不用）
   'expressions', // 角色立绘表情
   'gallery', // 图片画廊
+  'memory', // 自动摘要记忆（平台未启用，boot 仍会加载脚本/模板）
   'stable-diffusion', // 图片生成
+  'token-counter', // Token Counter 面板（平台不展示，且会触发额外 tokenizer 请求）
   'translate', // 聊天翻译
   'tts', // 语音合成
   'vectors', // RAG 向量检索

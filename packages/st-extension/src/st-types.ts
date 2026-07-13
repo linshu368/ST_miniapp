@@ -103,7 +103,11 @@ export interface STContext {
   getRequestHeaders(): Record<string, string>;
   getChatCompletionModel(): string;
   getPresetManager(): STPresetManager | null;
-  selectCharacterById(index: number, opts?: { switchMenu?: boolean }): Promise<void>;
+  selectCharacterById(
+    index: number,
+    opts?: { switchMenu?: boolean; skipChatLoad?: boolean }
+  ): Promise<void>;
+  doNewChat(opts?: { deleteCurrentChat?: boolean; skipCharacterSave?: boolean }): Promise<void>;
   saveSettingsDebounced(): void;
   /** 重新拉取并渲染当前对话（见 vendor script.js reloadCurrentChat） */
   reloadCurrentChat(): Promise<void>;
