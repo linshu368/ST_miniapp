@@ -4,9 +4,9 @@
 > 相比上一版（2026-06-29），本轮主要增量：
 > ① 部署切换为 **方案 Y**（Vercel 前端 + Railway nginx 内部网关 + st-bundle 单容器三进程）；
 > ② **iframe 冷启动优化专项**：角色卡懒下发、bridge 多层看门狗/自动重连、隐藏预热、开屏进度反馈、**首次受控修改 vendor**（firstLoadInit 并行化）；
-> ③ 新包 **`cs-platform`**（蜜镜AI运营平台：CS 回访工作台 + 渠道归因）+ backend 新路由组（bot / cs / growth / debug / models / wishes）；
+> ③ 新包 **`cs-platform`**（蜜镜AI运营平台：CS 回访工作台 + 渠道归因）+ backend 新路由组（bot / cs / growth / models / wishes）；
 > ④ 用户身份迁移至 **`miniapp.users`**（与旧 bot 的 `public.users` 隔离）；LLM 网关计费改由 `runtime_config` 驱动（当前扣费率 0、余额预检临时关闭）；
-> ⑤ shared migrations 编号推进至 **029**（新增 cs_platform / chat_history / miniapp.users / growth 等 schema）。
+> ⑤ shared migrations 编号推进至 **030**（新增 chat_history 的 user_character_round 轮次统计）。
 >
 > 文中凡涉及"计划 vs 实测"差异处，均以 **【实测】** / **【占位】** / **【未接线】** 标注。
 
@@ -89,8 +89,8 @@
 │ │  扣费率当前=0)            │ │ ┌───────┴────────┐ ┌───▼────────────┐  │
 │ ├ CS /api/cs/*             │ │ │进程2 provision- │ │进程3 watcher    │  │
 │ ├ 增长 /api/growth/*       ├─►│ │api (:9091,内网) │ │(queue+health    │  │
-│ ├ Bot /api/telegram/webhook│ │ └───────┬────────┘ │ :9090)          │  │
-│ └ 调试 /api/debug/* (临时)  │ │         │supabase-js└───┬────────────┘  │
+│ └ Bot /api/telegram/webhook│ │ └───────┬────────┘ │ :9090)          │  │
+│                            │ │         │supabase-js└───┬────────────┘  │
 └──┬──────────┬──────────────┘ └─────────┼───────────────┼───────────────┘
    │ Prisma   │ Supabase client          │               │
    ▼          ▼                          ▼               ▼
@@ -117,7 +117,7 @@
 | ---- | ---------------------------------- | ----------------------------------------------------------------------- | -------------------------------- |
 | ①    | frontend → backend (HTTP)          | 业务 REST：角色卡、用户设置、支付/钱包、许愿、模型档位、LLM 代理调用    | ✅ 已建                          |
 | ②    | frontend → ST iframe (postMessage) | bridge action：切角色（含单卡增量注入）/ 切 chat / 改模型 / 删除·重命名 | ✅ 已建                          |
-| ③    | ST iframe → frontend (postMessage) | bridge event / handshake / pong(mirror state) / debug-timing 埋点       | ✅ 已建                          |
+| ③    | ST iframe → frontend (postMessage) | bridge event / handshake / pong(mirror state)                           | ✅ 已建                          |
 | ④    | ST → 文件系统                      | ST 原生持久化（chat 文件、settings.json）；用户运行时真相写入路径       | ✅ 原生                          |
 | ⑤    | backend → sync-engine (HTTP)       | provision 触发（同步/异步/单卡懒下发），走 Railway 内网直连 :9091       | ✅ 已建                          |
 | ⑥    | sync-engine ⇆ Supabase + 文件系统  | provision 下行 + watcher 上行（settings 回流）                          | ✅ settings 已建 / ⏳ chats 占位 |
@@ -147,7 +147,7 @@
 | `frontend`     | 平台壳 Next.js（App Router）：大厅 / 我的 / 充值 / 许愿池 + `lib/bridge`（含 5 层看门狗）+ 常驻 ST iframe 宿主                                                                              | 3000            | Vercel                                                                                    |
 | `backend`      | Fastify：鉴权桥 + ST 反代 + 业务 REST + LLM 代理网关 + CS 工作台 API + 增长归因 + Telegram Bot webhook                                                                                      | 3001            | Railway（服务名 `stminiapp`，容器内 :8080）                                               |
 | `sync-engine`  | 双进程：`provision-api`（:9091，含单卡懒下发端点）+ `watcher`（chokidar + 队列 + health :9090）                                                                                             | 9091 / 9090     | Railway（**随 st-bundle 单容器**，s6-overlay 编排，不再是独立服务）                       |
-| `st-extension` | IIFE 注入 ST：bridge 服务端 + 7 handlers + 11 个事件转发 + **15 个 patches** + 临时 debug 探针                                                                                              | —（随 ST 加载） | 构建产物拷贝到 `vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/` |
+| `st-extension` | IIFE 注入 ST：bridge 服务端 + 7 handlers + 11 个事件转发 + **15 个 patches**                                                                                                                | —（随 ST 加载） | 构建产物拷贝到 `vendor/sillytavern/public/scripts/extensions/third-party/miniapp-bridge/` |
 | `cs-platform`  | **蜜镜AI运营平台**（内部）：CS 回访工作台（画像簇 / Telegram 1V1 SOP / Excel 导出）+ 渠道归因面板。React 18 + Vite，单页无路由（`useState` 切模块），只 fetch backend REST，不直连 Supabase | 3002            | Vercel（独立项目，默认 `https://st-cs-platform.vercel.app`）                              |
 
 ### 4.3 vendor / ops
@@ -229,7 +229,7 @@ ST 端 (st-extension)                         壳端 (BridgeClient)
 
 `ready` 后启动 **2.5s ping 轮询**，`onPong` 把 `STMirrorState` 写入 `stores/st-mirror`（zustand）——这是模型档位高亮与历史当前对话高亮的数据来源。
 
-【占位·临时】`lib/bridge/iframe-timing.ts` + st-extension 的 `debug-timing.ts` / `debug-boot-probes.ts` / `debug-boot-waterfall.ts` + backend `routes/debug.ts`（无鉴权 `POST /api/debug/iframe-timing`）构成冷启动埋点链路，均标注 TEMP DEBUG，问题收敛后应整体移除。
+【实测·已清理】冷启动全链路 debug 埋点（frontend `iframe-timing.ts`、st-extension `debug-*.ts`、backend `routes/debug.ts` 及全部调用点）已于 2026-07-13 整体移除。
 
 ### 5.4 Actions（壳 → ST，7 个）
 
@@ -281,7 +281,7 @@ ST 在本项目的定位 **不是纯渲染容器，而是业务执行引擎**。
   - 【实测】**计费当前实质关闭**：余额预检整段注释（允许 0 积分用户调用）；扣费逻辑保留但仅在 `deductionRate > 0` 时执行，而 tiers 默认扣费率为 **0**。
   - 【实测】**model-tiers 已改为 runtime_config 驱动**：从 `miniapp.runtime_config` 键 `llm_model_tiers` 读取（5 分钟内存缓存），代码内 fallback 两档模型（默认 `google/gemini-3.1-flash-lite`，备选 `anthropic/claude-sonnet-4.5`），不再硬编码 standard=10/premium=15。
   - 【实测】**新增 chat_history 落库**：SSE 正常结束/上游错误/流中断均 fire-and-forget 写 `miniapp.chat_history`（`lib/chat-history-logger.ts`，成功后 RPC 递增 `total_round`）。**不**承担消息双写（指 ST chat 文件）。
-  - 【实测】`src/ai/*`（ChannelRegistry / ModelStrategy / PipelineChannel）仍是阶段一遗留，**无任何 route/app 接线**，待清理（另有未接线的 `features/chat/domain/billingRules.ts`）。
+  - 【实测·已清理】阶段一遗留的 `src/ai/*`（ChannelRegistry / ModelStrategy / PipelineChannel）、`features/chat/domain/billingRules.ts`、`services/RuntimeConfigService.ts` 均无接线，已于 2026-07-13 删除。
 
 ---
 
@@ -365,7 +365,6 @@ CORS 允许 `FRONTEND_URL` + `CS_PLATFORM_URL`（非 prod 额外放行 `*.vercel
 | `POST /api/telegram/webhook`                   | Telegram webhook：`/start [payload]` → 归因；其他文本 → **CS 用户回复回流**（写 `cs_platform.outreach_messages`）                                                                                                                                                                             |
 | `/api/cs/*`（17 个端点）                       | **CS 工作台 API**（`X-CS-Admin-Token`）：画像簇 CRUD/refresh、簇内用户、回访 session（advance/snooze/skip）、消息收发/重试、XLSX 导出、审计日志、CS 专用 TG webhook                                                                                                                           |
 | `GET /api/cs/growth/channel-links` · `POST` 等 | **渠道归因**：渠道链接管理 + `GET /api/growth/click/:sourceId`（点击重定向）+ `POST /api/growth/miniapp-entry`（进入上报）                                                                                                                                                                    |
-| `POST /api/debug/iframe-timing`                | 【占位·临时】冷启动埋点收集（无鉴权，TEMP DEBUG，待专项收敛后移除）                                                                                                                                                                                                                           |
 
 ### 9.2 sync-engine provision-api（`provision-api/server.ts`, :9091，backend 内网直连，无鉴权）
 
@@ -485,7 +484,7 @@ ST 的 LLM endpoint 配置（provision 写入 `oai_settings.custom_url`/`reverse
 - **鲁棒层**：bridge 5 层看门狗 + 退避重连（§5.3）；隐藏预热改全尺寸真实渲染（禁 `display:none`/1×1px，防 WebKit 后台降级楔死）
 - **感知层**：ChatSplash 伪进度 + 阶段文案 + 长尾兜底（45s 返回大厅/重试）；焦点守卫防键盘抢焦
 - 实测基线（2026-07-09，round-3 后）：冷启动全长中位数 23.7s → **15.2s**
-- 【占位·临时】全链路埋点（iframe-timing / debug-boot-\* / routes/debug.ts）待专项收敛后移除
+- 全链路 debug 埋点（iframe-timing / debug-boot-\* / routes/debug.ts）已于 2026-07-13 整体移除；后续排查需重新临时接入
 
 ---
 
@@ -515,18 +514,18 @@ ST 的 LLM endpoint 配置（provision 写入 `oai_settings.custom_url`/`reverse
 
 ### 13.2 待补 / 占位 / 待清理
 
-| 项                                  | 状态    | 说明                                                                            |
-| ----------------------------------- | ------- | ------------------------------------------------------------------------------- |
-| **聊天记录回流 `user_st_chats`**    | ⏳ 占位 | 表/类型就位，registry 无规则、watcher 无 uploader（历史列表用反代已够用）       |
-| **LLM 计费恢复**                    | ⏳ 待启 | 余额预检注释关闭、扣费率 0；恢复=改 runtime_config + 解注释；网关按用户限流未做 |
-| **`character:changed` 事件转发**    | ⏳ 未接 | 协议已定义，st-extension forwarders 无实现                                      |
-| **db-types 实际接线**               | ⏳ 待补 | 已生成未消费；生成范围也未覆盖 cs_platform / growth / miniapp                   |
-| **冷启动 debug 埋点移除**           | ⏳ 待清 | `iframe-timing.ts`、`debug-boot-*.ts`、`routes/debug.ts`（无鉴权端点）          |
-| **backend `src/ai/*` 遗留清理**     | ⏳ 待清 | ChannelRegistry / PipelineChannel / billingRules 均未接线                       |
-| **backend env 收敛 zod 校验**       | ⏳ 待改 | `platform/config.ts` 仍宽松读取                                                 |
-| **migrations README 索引滞后**      | ⏳ 待补 | 正文只列到 024/025，026~029 未登记；021 编号重复（两个文件）                    |
-| **api-contract 独立包**             | ❌ 未建 | 职责暂留 `shared/api`                                                           |
-| **provision 状态查询 / flush 端点** | ❌ 未建 | provision-api 未实现                                                            |
-| **前端占位页**                      | ⏳ 占位 | `/create` 主功能、`/profile/settings` 主入口均为占位                            |
+| 项                                  | 状态    | 说明                                                                                          |
+| ----------------------------------- | ------- | --------------------------------------------------------------------------------------------- |
+| **聊天记录回流 `user_st_chats`**    | ⏳ 占位 | 表/类型就位，registry 无规则、watcher 无 uploader（历史列表用反代已够用）                     |
+| **LLM 计费恢复**                    | ⏳ 待启 | 余额预检注释关闭、扣费率 0；恢复=改 runtime_config + 解注释；网关按用户限流未做               |
+| **`character:changed` 事件转发**    | ⏳ 未接 | 协议已定义，st-extension forwarders 无实现                                                    |
+| **db-types 实际接线**               | ⏳ 待补 | 已生成未消费；生成范围也未覆盖 cs_platform / growth / miniapp                                 |
+| **冷启动 debug 埋点移除**           | ✅ 已清 | 2026-07-13：`iframe-timing.ts`、st-extension `debug-*.ts`、`routes/debug.ts` 及全部调用点删除 |
+| **backend `src/ai/*` 遗留清理**     | ✅ 已清 | 2026-07-13：`src/ai/*`、`features/chat/billingRules`、`services/RuntimeConfigService` 删除    |
+| **backend env 收敛 zod 校验**       | ⏳ 待改 | `platform/config.ts` 仍宽松读取                                                               |
+| **migrations README 索引滞后**      | ⏳ 待补 | 正文只列到 024/025，026~029 未登记；021 编号重复（两个文件）                                  |
+| **api-contract 独立包**             | ❌ 未建 | 职责暂留 `shared/api`                                                                         |
+| **provision 状态查询 / flush 端点** | ❌ 未建 | provision-api 未实现                                                                          |
+| **前端占位页**                      | ⏳ 占位 | `/create` 主功能、`/profile/settings` 主入口均为占位                                          |
 
 ---
