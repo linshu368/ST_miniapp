@@ -52,8 +52,14 @@ export default async function debugRoutes(app: FastifyInstance) {
 
     // boot 瀑布/长任务收割数据（round-3 细粒度探针）单独成行，避免主行超长被日志截断。
     // 瀑布偏移基准是 iframe 的 performance.timeOrigin（boot_nav 里携带），非 bridge_start。
+    // round-4 新增 sel_*：点卡窗口探针（瀑布/事件序列/长任务），偏移基准是 sel_start。
     const isWaterfallKey = (k: string) =>
-      k.startsWith('boot_wf') || k.startsWith('boot_longtask') || k === 'boot_nav';
+      k.startsWith('boot_wf') ||
+      k.startsWith('boot_longtask') ||
+      k === 'boot_nav' ||
+      k.startsWith('sel_wf') ||
+      k.startsWith('sel_longtask') ||
+      k === 'sel_evt';
     const mainDetails: Record<string, string> = {};
     const waterfallLines: Array<[string, string]> = [];
     for (const [k, v] of Object.entries(details)) {

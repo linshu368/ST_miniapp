@@ -72,7 +72,7 @@ export function installBootWaterfallProbe(): void {
   }
 }
 
-function shortName(url: string): string {
+export function shortName(url: string): string {
   let s = url;
   const origin = window.location.origin;
   if (s.startsWith(origin)) s = s.slice(origin.length);
@@ -159,7 +159,7 @@ function harvestAndSend(): void {
 }
 
 /** 把条目列表按 INFO_CHUNK_CHARS 切成 name_1 / name_2 … 多条 debug-timing 消息 */
-function sendChunked(name: string, items: string[]): void {
+export function sendChunked(name: string, items: string[]): void {
   if (items.length === 0) {
     stTiming(`${name}_1`, '(empty)');
     return;

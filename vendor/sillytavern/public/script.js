@@ -878,10 +878,12 @@ async function firstLoadInit() {
   initDynamicStyles();
   initTags();
   initBookmarks();
-  // [miniapp-patch] 冷启动并行化①：三个独立 fetch（avatars/characters/backgrounds），
-  // 写互不相交的全局，无交叉依赖。均在此 await 完成，后续 initBackgrounds(885)/initPersonas(887)
-  // 仍串行在其后，时序不变。见 docs/iframe-boot-firstloadinit-parallelization.md
-  await Promise.all([getUserAvatars(true, user_avatar), getCharacters(), getBackgrounds()]);
+  // [miniapp-patch] 冷启动并行化①：两个独立 fetch（avatars/characters），写互不相交的全局，
+  // 无交叉依赖。均在此 await 完成，后续 initBackgrounds(885)/initPersonas(887) 仍串行在其后，时序不变。
+  // ②Tier-2：跳过 getBackgrounds()——平台不展示 ST 背景（settings 固定 __transparent.png），
+  // /api/backgrounds/all 结果 boot 期无消费者；initBackgrounds 对空背景列表安全（核验见
+  // docs/iframe-boot-firstloadinit-parallelization.md §四.4），用户在背景面板操作时会按需重拉。
+  await Promise.all([getUserAvatars(true, user_avatar), getCharacters()]);
   await initTokenizers();
   initBackgrounds();
   initAuthorsNote();
