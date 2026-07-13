@@ -229,7 +229,7 @@ ST 端 (st-extension)                         壳端 (BridgeClient)
 
 `ready` 后启动 **2.5s ping 轮询**，`onPong` 把 `STMirrorState` 写入 `stores/st-mirror`（zustand）——这是模型档位高亮与历史当前对话高亮的数据来源。
 
-【实测·已清理】冷启动全链路 debug 埋点（frontend `iframe-timing.ts`、st-extension `debug-*.ts`、backend `routes/debug.ts` 及全部调用点）已于 2026-07-13 整体移除。
+【占位·临时】`lib/bridge/iframe-timing.ts` + st-extension 的 `debug-timing.ts` / `debug-boot-probes.ts` / `debug-boot-waterfall.ts` / `debug-select-probes.ts` + backend `routes/debug.ts`（无鉴权 `POST /api/debug/iframe-timing`）构成冷启动埋点链路，均标注 TEMP DEBUG。**停摆与耗时排查仍在进行，暂予保留**，问题收敛后再整体移除。
 
 ### 5.4 Actions（壳 → ST，7 个）
 
@@ -484,7 +484,7 @@ ST 的 LLM endpoint 配置（provision 写入 `oai_settings.custom_url`/`reverse
 - **鲁棒层**：bridge 5 层看门狗 + 退避重连（§5.3）；隐藏预热改全尺寸真实渲染（禁 `display:none`/1×1px，防 WebKit 后台降级楔死）
 - **感知层**：ChatSplash 伪进度 + 阶段文案 + 长尾兜底（45s 返回大厅/重试）；焦点守卫防键盘抢焦
 - 实测基线（2026-07-09，round-3 后）：冷启动全长中位数 23.7s → **15.2s**
-- 全链路 debug 埋点（iframe-timing / debug-boot-\* / routes/debug.ts）已于 2026-07-13 整体移除；后续排查需重新临时接入
+- 【占位·临时】全链路埋点（iframe-timing / debug-boot-\* / debug-select-probes / routes/debug.ts）**停摆排查期间保留**，待专项收敛后移除
 
 ---
 
@@ -514,18 +514,18 @@ ST 的 LLM endpoint 配置（provision 写入 `oai_settings.custom_url`/`reverse
 
 ### 13.2 待补 / 占位 / 待清理
 
-| 项                                  | 状态    | 说明                                                                                          |
-| ----------------------------------- | ------- | --------------------------------------------------------------------------------------------- |
-| **聊天记录回流 `user_st_chats`**    | ⏳ 占位 | 表/类型就位，registry 无规则、watcher 无 uploader（历史列表用反代已够用）                     |
-| **LLM 计费恢复**                    | ⏳ 待启 | 余额预检注释关闭、扣费率 0；恢复=改 runtime_config + 解注释；网关按用户限流未做               |
-| **`character:changed` 事件转发**    | ⏳ 未接 | 协议已定义，st-extension forwarders 无实现                                                    |
-| **db-types 实际接线**               | ⏳ 待补 | 已生成未消费；生成范围也未覆盖 cs_platform / growth / miniapp                                 |
-| **冷启动 debug 埋点移除**           | ✅ 已清 | 2026-07-13：`iframe-timing.ts`、st-extension `debug-*.ts`、`routes/debug.ts` 及全部调用点删除 |
-| **backend `src/ai/*` 遗留清理**     | ✅ 已清 | 2026-07-13：`src/ai/*`、`features/chat/billingRules`、`services/RuntimeConfigService` 删除    |
-| **backend env 收敛 zod 校验**       | ⏳ 待改 | `platform/config.ts` 仍宽松读取                                                               |
-| **migrations README 索引滞后**      | ⏳ 待补 | 正文只列到 024/025，026~029 未登记；021 编号重复（两个文件）                                  |
-| **api-contract 独立包**             | ❌ 未建 | 职责暂留 `shared/api`                                                                         |
-| **provision 状态查询 / flush 端点** | ❌ 未建 | provision-api 未实现                                                                          |
-| **前端占位页**                      | ⏳ 占位 | `/create` 主功能、`/profile/settings` 主入口均为占位                                          |
+| 项                                  | 状态    | 说明                                                                                           |
+| ----------------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| **聊天记录回流 `user_st_chats`**    | ⏳ 占位 | 表/类型就位，registry 无规则、watcher 无 uploader（历史列表用反代已够用）                      |
+| **LLM 计费恢复**                    | ⏳ 待启 | 余额预检注释关闭、扣费率 0；恢复=改 runtime_config + 解注释；网关按用户限流未做                |
+| **`character:changed` 事件转发**    | ⏳ 未接 | 协议已定义，st-extension forwarders 无实现                                                     |
+| **db-types 实际接线**               | ⏳ 待补 | 已生成未消费；生成范围也未覆盖 cs_platform / growth / miniapp                                  |
+| **冷启动 debug 埋点移除**           | ⏳ 待清 | `iframe-timing.ts`、st-extension `debug-*.ts`、`routes/debug.ts`（无鉴权端点）；停摆排查中暂留 |
+| **backend `src/ai/*` 遗留清理**     | ✅ 已清 | 2026-07-13：`src/ai/*`、`features/chat/billingRules`、`services/RuntimeConfigService` 删除     |
+| **backend env 收敛 zod 校验**       | ⏳ 待改 | `platform/config.ts` 仍宽松读取                                                                |
+| **migrations README 索引滞后**      | ⏳ 待补 | 正文只列到 024/025，026~029 未登记；021 编号重复（两个文件）                                   |
+| **api-contract 独立包**             | ❌ 未建 | 职责暂留 `shared/api`                                                                          |
+| **provision 状态查询 / flush 端点** | ❌ 未建 | provision-api 未实现                                                                           |
+| **前端占位页**                      | ⏳ 占位 | `/create` 主功能、`/profile/settings` 主入口均为占位                                           |
 
 ---

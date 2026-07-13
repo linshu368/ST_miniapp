@@ -46,8 +46,10 @@ fi
 echo "📐 采集架构文档..." >&2
 ARCHITECTURE_DOC=$(cat "$ARCHITECTURE_FILE")
 
-echo "📦 采集代码上下文..." >&2
-SRC_CODE=$(REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-context.sh")
+echo "📦 采集代码上下文（两档：常驻核心 + diff 触达模块）..." >&2
+TMP_CHANGED=$(mktemp)
+git -C "$REVIEW_REPO_ROOT" diff "${BASE_BRANCH}"...HEAD --name-only > "$TMP_CHANGED"
+SRC_CODE=$(REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-context.sh" "$TMP_CHANGED")
 
 echo "📝 采集 git diff (对比 ${BASE_BRANCH})..." >&2
 GIT_DIFF=$(REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-diff.sh" "$BASE_BRANCH")
@@ -59,7 +61,7 @@ TMP_SRC=$(mktemp)
 TMP_DIFF=$(mktemp)
 TMP_PROMPT=$(mktemp)
 TMP_REQ=""
-trap 'rm -f "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT"; [ -n "$TMP_REQ" ] && rm -f "$TMP_REQ"' EXIT
+trap 'rm -f "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT" "$TMP_CHANGED"; [ -n "$TMP_REQ" ] && rm -f "$TMP_REQ"' EXIT
 
 printf '%s' "$ARCHITECTURE_DOC" > "$TMP_ARCH"
 printf '%s' "$SRC_CODE" > "$TMP_SRC"
@@ -148,6 +150,7 @@ if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
   mkdir -p "$REVIEW_ARTIFACT_DIR"
   cp "$TMP_ARCH" "$REVIEW_ARTIFACT_DIR/architecture.md"
   cp "$TMP_SRC" "$REVIEW_ARTIFACT_DIR/src-code.txt"
+  cp "$TMP_CHANGED" "$REVIEW_ARTIFACT_DIR/changed-files.txt"
   cp "$TMP_DIFF" "$REVIEW_ARTIFACT_DIR/git-diff.txt"
   cp "$TMP_PROMPT" "$REVIEW_ARTIFACT_DIR/system-prompt.md"
   cp "$TMP_REQ" "$REVIEW_ARTIFACT_DIR/api-request.json"
