@@ -13,15 +13,30 @@ COMMENT ON COLUMN miniapp.chat_history.user_character_round IS
 -- 2. 创建触发器函数：自动计算当前轮次
 CREATE OR REPLACE FUNCTION miniapp.tf_set_user_character_round()
 RETURNS TRIGGER AS $$
+DECLARE
+  current_max INTEGER;
 BEGIN
   IF NEW.character_id IS NOT NULL THEN
-    NEW.user_character_round := (
-      SELECT COALESCE(MAX(user_character_round), 0) + 1
-      FROM miniapp.chat_history
-      WHERE user_id = NEW.user_id AND character_id = NEW.character_id
-    );
+    -- 先查一下这个用户和这个角色卡历史记录里，user_character_round 最大的值是多少
+    SELECT MAX(user_character_round) INTO current_max
+    FROM miniapp.chat_history
+    WHERE user_id = NEW.user_id AND character_id = NEW.character_id;
+    
+    -- 如果找到了，就 +1
+    IF current_max IS NOT NULL THEN
+      NEW.user_character_round := current_max + 1;
+    ELSE
+      -- 如果连一个带有轮次的记录都没有（极其罕见的 edge case，因为我们下面会全量回填，
+      -- 如果有的话可能是完全新的卡），那为了保险起见，我们干脆去查一下底表里到底有多少条这个组合的记录
+      -- 这也是一种兜底，保证即使前面的轮次字段全是 NULL，也能接上数量
+      NEW.user_character_round := (
+        SELECT COUNT(*) + 1
+        FROM miniapp.chat_history
+        WHERE user_id = NEW.user_id AND character_id = NEW.character_id
+      );
+    END IF;
   ELSE
-    -- 对于没有 character_id 的纯预设对话等情况，默认为 1
+    -- 对于没有 character_id 的纯预设对话等情况
     NEW.user_character_round := 1;
   END IF;
   RETURN NEW;
