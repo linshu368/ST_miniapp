@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Home } from 'lucide-react';
 import { ChatSidebar } from './chat-sidebar';
-import { ChatToolsMenu } from './chat-tools-menu';
 import { CHAT_SCROLL_EVENT } from '@/components/bridge/st-iframe';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useSTMirror } from '@/lib/bridge';
@@ -50,7 +49,6 @@ export function ChatHeader() {
     >
       <div className="flex h-10 items-center gap-1.5 px-1">
         <ChatSidebar />
-        <ChatToolsMenu />
       </div>
       <span className="pointer-events-none min-w-0 truncate px-2 text-center text-[clamp(0.75rem,3.5vw,0.9rem)] font-medium text-white/90 drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]">
         {displayName}

@@ -7,6 +7,7 @@ import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { requestTelegramChatFullscreen } from '@/lib/telegram/init';
 import { ChatHeader } from '@/components/tavern/chat-header';
 import { ChatSplash } from '@/components/tavern/chat-splash';
+import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 // [iframe-timing] TEMP DEBUG
@@ -99,6 +100,7 @@ export default function TavernChatPage() {
   return (
     <div className="relative h-[var(--miniapp-visual-viewport-height,100dvh)] min-h-0 w-full overflow-hidden">
       <ChatHeader />
+      <ChatToolsMenu />
       {characterId ? (
         <ChatSplash
           key={`${characterId}:${entryAttempt}`}

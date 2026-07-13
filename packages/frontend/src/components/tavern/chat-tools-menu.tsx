@@ -15,6 +15,42 @@ export function ChatToolsMenu() {
   const bridgeReady = bridgeStatus === 'ready';
 
   useEffect(() => {
+    let iframe: HTMLIFrameElement | null = null;
+    let composer: HTMLElement | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const reserveComposerSpace = () => {
+      const currentIframe = document.querySelector<HTMLIFrameElement>(
+        'iframe[title="SillyTavern"]'
+      );
+      if (currentIframe !== iframe) {
+        iframe?.removeEventListener('load', reserveComposerSpace);
+        iframe = currentIframe;
+        iframe?.addEventListener('load', reserveComposerSpace);
+      }
+
+      try {
+        composer = iframe?.contentDocument?.getElementById('send_form') ?? null;
+      } catch {
+        composer = null;
+      }
+
+      if (composer) {
+        composer.style.setProperty('padding-left', '50px', 'important');
+        return;
+      }
+      retryTimer = setTimeout(reserveComposerSpace, 250);
+    };
+
+    reserveComposerSpace();
+    return () => {
+      iframe?.removeEventListener('load', reserveComposerSpace);
+      if (retryTimer) clearTimeout(retryTimer);
+      composer?.style.removeProperty('padding-left');
+    };
+  }, []);
+
+  useEffect(() => {
     if (!open) {
       // 弹窗关闭时重置状态
       setTimeout(() => setMenuState('main'), 200);
@@ -39,7 +75,10 @@ export function ChatToolsMenu() {
   }
 
   return (
-    <div ref={containerRef} className="relative flex h-12 items-center">
+    <div
+      ref={containerRef}
+      className="fixed bottom-[env(safe-area-inset-bottom)] left-2 z-30 flex h-[50px] items-center"
+    >
       {open && (
         <div
           className="fixed inset-0 z-0"
@@ -52,7 +91,7 @@ export function ChatToolsMenu() {
       )}
 
       {open && (
-        <div className="absolute left-0 top-[calc(100%+0.4rem)] z-10 max-h-[min(24rem,calc(100dvh-4.25rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] w-[min(15rem,calc(100vw-1rem))] overflow-y-auto overflow-x-hidden rounded-2xl border border-white/[0.08] bg-[#222031] p-3 shadow-[0_20px_60px_rgba(0,0,0,0.5)] animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="absolute bottom-[calc(100%+0.4rem)] left-0 z-10 max-h-[min(24rem,calc(100dvh-4.25rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] w-[min(15rem,calc(100vw-1rem))] overflow-y-auto overflow-x-hidden rounded-2xl border border-white/[0.08] bg-[#222031] p-3 shadow-[0_20px_60px_rgba(0,0,0,0.5)] animate-in fade-in slide-in-from-bottom-2 duration-200">
           <div
             className="flex w-[200%] transition-transform duration-300 ease-in-out"
             style={{ transform: menuState === 'main' ? 'translateX(0)' : 'translateX(-50%)' }}
@@ -113,7 +152,7 @@ export function ChatToolsMenu() {
 
       <button
         onClick={() => setOpen((v) => !v)}
-        className="relative z-10 flex size-10 items-center justify-center rounded-full bg-transparent text-white transition-colors hover:bg-white/10 active:scale-95"
+        className="relative z-10 flex size-9 items-center justify-center rounded-full bg-transparent text-white/80 transition-colors hover:bg-white/10 hover:text-white active:scale-95"
         aria-label="工具菜单"
         aria-expanded={open}
       >
