@@ -213,9 +213,9 @@ export class CsPlatformRepository {
     const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT d.*,
               COALESCE(
-                NULLIF(s.custom_avatar_url, ''),
-                NULLIF(s.tg_avatar_url, ''),
-                NULLIF(s.avatar_url, '')
+                NULLIF(to_jsonb(s)->>'custom_avatar_url', ''),
+                NULLIF(to_jsonb(s)->>'tg_avatar_url', ''),
+                NULLIF(to_jsonb(s)->>'avatar_url', '')
               ) AS avatar_url
        FROM cs_platform.persona_users_detail d
        LEFT JOIN miniapp.miniapp_user_settings s ON s.user_id = d.user_id
