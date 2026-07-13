@@ -268,7 +268,13 @@ export class BridgeClient {
    */
   private handleHandshakeTimeout(reason: string): void {
     const status = this.stateMachine.getStatus();
-    if (status === 'ready' || status === 'idle' || status === 'disconnected') return;
+    if (
+      status === 'interactive' ||
+      status === 'ready' ||
+      status === 'idle' ||
+      status === 'disconnected'
+    )
+      return;
     // 多个看门狗（load/握手到达/总超时）可能相继超时；已有重连排队时不重复调度
     if (this.reconnectTimer) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
@@ -556,7 +562,13 @@ export class BridgeClient {
     this.clearHandshakeArrivalWatchdog();
     this.clearClickStallWatchdog();
     // [iframe-timing] TEMP DEBUG: 记录两段握手到达时刻
-    markTiming(msg.phase === 'ready' ? 'st_ready' : 'st_handshake');
+    markTiming(
+      msg.phase === 'ready'
+        ? 'st_ready'
+        : msg.phase === 'interactive'
+          ? 'st_interactive'
+          : 'st_handshake'
+    );
     try {
       handleHandshakeMessage({
         message: msg,
@@ -573,6 +585,20 @@ export class BridgeClient {
           this.totalTimer = null;
         }
         this.armReadyPhaseTimer();
+      }
+
+      if (msg.phase === 'interactive') {
+        if (this.totalTimer) {
+          clearTimeout(this.totalTimer);
+          this.totalTimer = null;
+        }
+        this.clearReadyPhaseTimer();
+        this.reconnectAttempts = 0;
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        this.startPingLoop();
       }
 
       if (msg.phase === 'ready') {

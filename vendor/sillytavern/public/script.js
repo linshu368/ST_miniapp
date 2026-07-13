@@ -809,6 +809,10 @@ export async function pingServer() {
   }
 }
 
+// [miniapp-patch] Query-gated critical boot path for the MiniApp iframe.
+const miniAppFastBoot =
+  new URLSearchParams(window.location.search).get('miniapp_fast_boot') === '1';
+
 //MARK: firstLoadInit
 async function firstLoadInit() {
   try {
@@ -883,7 +887,11 @@ async function firstLoadInit() {
   // ②Tier-2：跳过 getBackgrounds()——平台不展示 ST 背景（settings 固定 __transparent.png），
   // /api/backgrounds/all 结果 boot 期无消费者；initBackgrounds 对空背景列表安全（核验见
   // docs/iframe-boot-firstloadinit-parallelization.md §四.4），用户在背景面板操作时会按需重拉。
-  await Promise.all([getUserAvatars(true, user_avatar), getCharacters()]);
+  if (miniAppFastBoot) {
+    await getCharacters({ renderList: false, loadGroups: false });
+  } else {
+    await Promise.all([getUserAvatars(true, user_avatar), getCharacters()]);
+  }
   await initTokenizers();
   initBackgrounds();
   initAuthorsNote();
@@ -891,29 +899,73 @@ async function firstLoadInit() {
   await initSlashCommandAutoComplete();
   initMacroAutoComplete();
   initWorldInfo();
-  initHorde();
   initRossMods();
-  initStats();
   initCfg();
-  initLogprobs();
   initInputMarkdown();
-  initServerHistory();
-  initSettingsSearch();
-  initBulkEdit();
   initReasoning();
-  initWelcomeScreen();
-  await initScrapers();
   initCustomSelectedSamplers();
-  initDataMaid();
   initItemizedPrompts();
-  initAccessibility();
-  initSwipePicker();
-  addDebugFunctions();
-  doDailyExtensionUpdatesCheck();
+  if (miniAppFastBoot) {
+    // The parent may select a character as soon as settings, characters, tokenizers and world-info
+    // are ready. UI-only ST initialization continues below and APP_READY is still emitted normally.
+    window.dispatchEvent(new CustomEvent('miniapp:st-interactive'));
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => void getUserAvatars(true, user_avatar), { timeout: 1500 });
+    } else {
+      setTimeout(() => void getUserAvatars(true, user_avatar), 0);
+    }
+    // Yield immediately so the parent can receive the interactive handshake and enqueue the
+    // character selection before the remaining ST initialization work.
+    await delay(0);
+  }
+  if (!miniAppFastBoot) {
+    initHorde();
+    initStats();
+    initLogprobs();
+    initServerHistory();
+    initSettingsSearch();
+    initBulkEdit();
+    initWelcomeScreen();
+    await initScrapers();
+    initDataMaid();
+    initAccessibility();
+    initSwipePicker();
+    addDebugFunctions();
+    doDailyExtensionUpdatesCheck();
+  }
   await eventSource.emit(event_types.APP_INITIALIZED);
   await initLoaderHandle.hide();
   await fixViewport();
   await eventSource.emit(event_types.APP_READY);
+  if (miniAppFastBoot) {
+    scheduleMiniAppDeferredUiInit();
+  }
+}
+
+function scheduleMiniAppDeferredUiInit() {
+  const run = async () => {
+    initHorde();
+    initStats();
+    initLogprobs();
+    initServerHistory();
+    initSettingsSearch();
+    initBulkEdit();
+    initWelcomeScreen();
+    await initScrapers();
+    initDataMaid();
+    initAccessibility();
+    initSwipePicker();
+    addDebugFunctions();
+    doDailyExtensionUpdatesCheck();
+  };
+
+  const execute = () =>
+    void run().catch((error) => console.error('Deferred UI init failed', error));
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(execute, { timeout: 3000 });
+  } else {
+    setTimeout(execute, 0);
+  }
 }
 
 async function fixViewport() {
@@ -1452,7 +1504,7 @@ export function getCharacterSource(chId = this_chid) {
   return '';
 }
 
-export async function getCharacters() {
+export async function getCharacters({ renderList = true, loadGroups = true } = {}) {
   const response = await fetch('/api/characters/all', {
     method: 'POST',
     headers: getRequestHeaders(),
@@ -1488,8 +1540,12 @@ export async function getCharacters() {
       }
     }
 
-    await getGroups();
-    await printCharacters(true);
+    if (loadGroups) {
+      await getGroups();
+    }
+    if (renderList) {
+      await printCharacters(true);
+    }
   } else {
     console.error('Failed to fetch characters:', response.statusText);
     const errorData = await response.json();
@@ -11898,7 +11954,11 @@ async function importFromURL(items, files) {
   }
 }
 
-export async function doNewChat({ deleteCurrentChat = false, skipCharacterSave = false } = {}) {
+export async function doNewChat({
+  deleteCurrentChat = false,
+  skipCharacterSave = false,
+  skipChatFetch = false,
+} = {}) {
   //Make a new chat for selected character
   if ((!selected_group && this_chid == undefined) || menu_type == 'create') {
     return;
@@ -11924,7 +11984,15 @@ export async function doNewChat({ deleteCurrentChat = false, skipCharacterSave =
     chat_metadata = {};
     characters[this_chid].chat = `${name2} - ${humanizedDateTime()}`;
     $('#selected_chat_pole').val(characters[this_chid].chat);
-    await getChat();
+    if (skipChatFetch) {
+      // [miniapp-patch] The filename above is new by construction. Avoid fetching a chat file
+      // that cannot exist; initialize and persist the first message directly.
+      await unshallowCharacter(this_chid);
+      chat.splice(0, chat.length);
+      await getChatResult();
+    } else {
+      await getChat();
+    }
     // [miniapp-patch] MiniApp owns navigation and always starts a new chat on card entry.
     // The in-memory chat pointer is sufficient for the active session; persisting the same
     // pointer back into the PNG adds a characters/edit round trip that is never restored.

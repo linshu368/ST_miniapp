@@ -23,7 +23,10 @@ type TimingBody = {
 const PHASES: Array<[string, string, string]> = [
   // 整体
   ['点卡→呈现', 'page_mount', 'chat_ready'],
-  ['点卡→闸门(等ST_ready)', 'page_mount', 'gate_open'],
+  ['点卡→闸门(等ST_interactive)', 'page_mount', 'gate_open'],
+  ['预热启动延迟', 'app_shell_interactive', 'bridge_start'],
+  ['点卡→interactive', 'page_mount', 'st_interactive'],
+  ['interactive→呈现', 'st_interactive', 'chat_ready'],
   ['ensureCharacter', 'ensure_start', 'ensure_end'],
   ['selectCharacter(总)', 'select_start', 'select_end'],
   // selectCharacter 内部（ST 端）
@@ -33,6 +36,8 @@ const PHASES: Array<[string, string, string]> = [
   // 冷启动（bridge 生命周期，绝对，仅首次有意义）
   ['[冷]iframe_load(网络)', 'bridge_start', 'iframe_onload'],
   ['[冷]st_script+ext_init', 'iframe_onload', 'st_handshake'],
+  ['[冷]critical_boot(→interactive)', 'st_handshake', 'st_interactive'],
+  ['[冷]deferred_boot(→APP_READY)', 'st_interactive', 'st_ready'],
   ['[冷]st_app_boot(→APP_READY)', 'st_handshake', 'st_ready'],
 ];
 

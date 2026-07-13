@@ -79,7 +79,7 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   if (payload.forceNewChat) {
     // 直接调用 ST 原生函数，跳过 slash 解析；平台不会恢复角色 chat 指针，
     // 因此无需把本次临时文件名再次写回角色 PNG。
-    await ctx.doNewChat({ skipCharacterSave: true });
+    await ctx.doNewChat({ skipCharacterSave: true, skipChatFetch: true });
   }
   stTiming(
     'sel_newchat_done',

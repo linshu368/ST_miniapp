@@ -99,7 +99,7 @@ export interface STContext {
 
   getCurrentChatId(): string | null;
   /** 重新从服务端拉取角色列表并重建内存 characters 数组（见 vendor script.js getCharacters） */
-  getCharacters(): Promise<void>;
+  getCharacters(opts?: { renderList?: boolean; loadGroups?: boolean }): Promise<void>;
   getRequestHeaders(): Record<string, string>;
   getChatCompletionModel(): string;
   getPresetManager(): STPresetManager | null;
@@ -107,7 +107,11 @@ export interface STContext {
     index: number,
     opts?: { switchMenu?: boolean; skipChatLoad?: boolean }
   ): Promise<void>;
-  doNewChat(opts?: { deleteCurrentChat?: boolean; skipCharacterSave?: boolean }): Promise<void>;
+  doNewChat(opts?: {
+    deleteCurrentChat?: boolean;
+    skipCharacterSave?: boolean;
+    skipChatFetch?: boolean;
+  }): Promise<void>;
   saveSettingsDebounced(): void;
   /** 重新拉取并渲染当前对话（见 vendor script.js reloadCurrentChat） */
   reloadCurrentChat(): Promise<void>;

@@ -71,15 +71,15 @@ export function BridgeProvider({
       const client = new BridgeClient(() => iframeRef.current, {
         totalTimeout: 60_000,
         reconnectTotalTimeout: 60_000,
-        readyPhaseTimeout: 45_000,
-        iframeLoadTimeout: 45_000,
-        handshakeArrivalTimeout: 45_000,
-        visibleStallReloadMs: 45_000,
+        readyPhaseTimeout: 20_000,
+        iframeLoadTimeout: 20_000,
+        handshakeArrivalTimeout: 20_000,
+        visibleStallReloadMs: 12_000,
       } as BridgeClientOptions);
       clientRef.current = client;
       setBridgeClient(client);
       statusUnsubscribeRef.current = client.onStatusChange((status) => {
-        if (status === 'ready' && foregroundBootRef.current) {
+        if ((status === 'interactive' || status === 'ready') && foregroundBootRef.current) {
           markTiming('foreground_boot_end');
           foregroundBootRef.current = false;
           setForegroundBoot(false);

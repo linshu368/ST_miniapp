@@ -21,7 +21,6 @@ const STIframe = dynamic(
   () => import('@/components/bridge/st-iframe').then((module) => module.STIframe),
   { ssr: false }
 );
-const LOBBY_CRITICAL_READY_EVENT = 'miniapp:lobby-critical-ready';
 const FOREGROUND_BOOT_ENABLED = process.env.NEXT_PUBLIC_FOREGROUND_BOOT === '1';
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -49,40 +48,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
     hydrateFontScale();
     performance.mark('app_shell_interactive');
     document.documentElement.dataset.appShellInteractive = 'true';
+    performance.mark('st_prewarm_start');
+    setBridgeRuntimeReady(true);
   }, [hydrateUserProfile, hydrateAppearance, hydrateTheme, hydrateFontScale]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBackgroundTasksReady(true), 1_200);
     return () => clearTimeout(timer);
   }, []);
-
-  useEffect(() => {
-    if (pathname.startsWith('/tavern/')) {
-      setBridgeRuntimeReady(true);
-      return;
-    }
-    if (bridgeRuntimeReady) return;
-
-    const startBridge = () => {
-      performance.mark('st_prewarm_start');
-      setBridgeRuntimeReady(true);
-    };
-    if (
-      document.documentElement.dataset.lobbyCriticalReady === 'true' ||
-      document.documentElement.dataset.chatIntent === 'true'
-    ) {
-      startBridge();
-      return;
-    }
-    window.addEventListener(LOBBY_CRITICAL_READY_EVENT, startBridge, { once: true });
-    window.addEventListener('miniapp:chat-intent', startBridge, { once: true });
-    const fallbackTimer = window.setTimeout(startBridge, 5_000);
-    return () => {
-      window.removeEventListener(LOBBY_CRITICAL_READY_EVENT, startBridge);
-      window.removeEventListener('miniapp:chat-intent', startBridge);
-      clearTimeout(fallbackTimer);
-    };
-  }, [bridgeRuntimeReady, pathname]);
 
   return (
     <QueryClientProvider client={queryClient}>

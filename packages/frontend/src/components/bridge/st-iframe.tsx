@@ -6,7 +6,14 @@ import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { markTiming } from '@/lib/bridge/iframe-timing'; // [iframe-timing] TEMP DEBUG
 
 const ST_IFRAME_URL =
-  process.env.NEXT_PUBLIC_FOREGROUND_BOOT === '1' ? '/tavern/?miniapp_boot=1' : '/tavern/';
+  process.env.NEXT_PUBLIC_FOREGROUND_BOOT === '1'
+    ? '/tavern/?miniapp_boot=1&miniapp_fast_boot=1'
+    : '/tavern/?miniapp_fast_boot=1';
+const ST_PRELOADS = [
+  { href: '/style.css', rel: 'preload', as: 'style' },
+  { href: '/script.js', rel: 'modulepreload' },
+  { href: '/lib.js', rel: 'modulepreload' },
+] as const;
 export const CHAT_INTERACTIVITY_EVENT = 'miniapp:chat-interactivity';
 
 type StSessionResponse = {
@@ -53,6 +60,27 @@ export function STIframe() {
   const loadCountRef = useRef(0); // [iframe-timing] TEMP DEBUG: 区分首次加载与看门狗/超时重载
   const sessionRecoveryRef = useRef(false);
   const sessionRecoveryAttemptsRef = useRef(0);
+
+  useEffect(() => {
+    const links = ST_PRELOADS.map(({ href, rel, ...attributes }) => {
+      const existing = document.head.querySelector<HTMLLinkElement>(
+        `link[data-st-prewarm="${href}"]`
+      );
+      if (existing) return existing;
+
+      const link = document.createElement('link');
+      link.rel = rel;
+      link.href = href;
+      link.dataset.stPrewarm = href;
+      if ('as' in attributes && attributes.as) link.as = attributes.as;
+      document.head.appendChild(link);
+      return link;
+    });
+
+    return () => {
+      for (const link of links) link.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const handleInteractivity = (event: Event) => {

@@ -24,9 +24,10 @@ function dismissForegroundBootSplash(): void {
 }
 
 /**
- * Initialize two-phase handshake:
+ * Initialize three-phase handshake:
  * 1. Immediately send handshake(phase='handshake') with meta
- * 2. Listen for ST APP_READY event → send handshake(phase='ready')
+ * 2. Listen for MiniApp critical boot completion → send handshake(phase='interactive')
+ * 3. Listen for ST APP_READY event → send handshake(phase='ready')
  */
 export function initHandshake(server: BridgeServer, opts: HandshakeOptions): void {
   const ctx = SillyTavern.getContext();
@@ -48,6 +49,16 @@ export function initHandshake(server: BridgeServer, opts: HandshakeOptions): voi
   };
 
   server.sendHandshake('handshake', meta);
+
+  window.addEventListener(
+    'miniapp:st-interactive',
+    () => {
+      dismissForegroundBootSplash();
+      server.setCurrentPhase('interactive');
+      server.sendHandshake('interactive');
+    },
+    { once: true }
+  );
 
   ctx.eventSource.on(ctx.eventTypes.APP_READY, () => {
     dismissForegroundBootSplash();
