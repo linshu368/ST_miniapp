@@ -1,14 +1,28 @@
 'use client';
 
-import { createContext, useContext, useRef, useCallback, useMemo, useEffect } from 'react';
+import {
+  createContext,
+  useContext,
+  useRef,
+  useCallback,
+  useMemo,
+  useEffect,
+  useState,
+} from 'react';
 import { setBridgeClient } from '@/lib/bridge/singleton';
 import type { BridgeClient, BridgeClientOptions } from '@/lib/bridge/bridge-client';
+import { markTiming } from '@/lib/bridge/iframe-timing';
+import { isIOSLikeDevice } from '@/lib/platform';
 import { usePathname } from 'next/navigation';
 import { useSTMirrorStore } from '@/stores/st-mirror';
+
+const FOREGROUND_BOOT_ENABLED = process.env.NEXT_PUBLIC_FOREGROUND_BOOT === '1';
+const FOREGROUND_BOOT_TIMEOUT_MS = 25_000;
 
 type BridgeContextValue = {
   registerIframe: (el: HTMLIFrameElement) => void;
   isVisible: boolean;
+  isForegroundBoot: boolean;
 };
 
 const BridgeContext = createContext<BridgeContextValue | null>(null);
@@ -24,8 +38,30 @@ export function BridgeProvider({
   const clientRef = useRef<BridgeClient | null>(null);
   const clientPromiseRef = useRef<Promise<BridgeClient> | null>(null);
   const mirrorUnsubscribeRef = useRef<(() => void) | null>(null);
+  const statusUnsubscribeRef = useRef<(() => void) | null>(null);
+  const foregroundBootRef = useRef(false);
+  const [foregroundBoot, setForegroundBoot] = useState(false);
+  const [iframeRegistered, setIframeRegistered] = useState(false);
   const pathname = usePathname();
-  const isVisible = pathname.startsWith('/tavern/');
+  const routeVisible = pathname.startsWith('/tavern/');
+  const isVisible = routeVisible || foregroundBoot;
+
+  useEffect(() => {
+    if (!active || !FOREGROUND_BOOT_ENABLED || !isIOSLikeDevice()) return;
+    markTiming('foreground_boot_start');
+    foregroundBootRef.current = true;
+    setForegroundBoot(true);
+  }, [active]);
+
+  useEffect(() => {
+    if (!foregroundBoot) return;
+    const timer = window.setTimeout(() => {
+      markTiming('foreground_boot_timeout');
+      foregroundBootRef.current = false;
+      setForegroundBoot(false);
+    }, FOREGROUND_BOOT_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [foregroundBoot]);
 
   const ensureClient = useCallback((): Promise<BridgeClient> => {
     if (clientRef.current) return Promise.resolve(clientRef.current);
@@ -42,6 +78,13 @@ export function BridgeProvider({
       } as BridgeClientOptions);
       clientRef.current = client;
       setBridgeClient(client);
+      statusUnsubscribeRef.current = client.onStatusChange((status) => {
+        if (status === 'ready' && foregroundBootRef.current) {
+          markTiming('foreground_boot_end');
+          foregroundBootRef.current = false;
+          setForegroundBoot(false);
+        }
+      });
       mirrorUnsubscribeRef.current = client.onPong((state) => {
         useSTMirrorStore.getState().updatePartial(state);
       });
@@ -57,6 +100,7 @@ export function BridgeProvider({
 
   useEffect(() => {
     return () => {
+      statusUnsubscribeRef.current?.();
       mirrorUnsubscribeRef.current?.();
       clientRef.current?.stop();
     };
@@ -71,14 +115,36 @@ export function BridgeProvider({
   const registerIframe = useCallback(
     (el: HTMLIFrameElement) => {
       iframeRef.current = el;
+      setIframeRegistered(true);
       if (active) void ensureClient().then((client) => client.start());
     },
     [active, ensureClient]
   );
 
-  const value = useMemo(() => ({ registerIframe, isVisible }), [registerIframe, isVisible]);
+  const value = useMemo(
+    () => ({ registerIframe, isVisible, isForegroundBoot: foregroundBoot }),
+    [foregroundBoot, isVisible, registerIframe]
+  );
 
-  return <BridgeContext.Provider value={value}>{children}</BridgeContext.Provider>;
+  return (
+    <BridgeContext.Provider value={value}>
+      {children}
+      {foregroundBoot && !iframeRegistered ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-[#090611] text-white"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex size-16 items-center justify-center rounded-2xl bg-white/10 text-2xl font-semibold shadow-[0_0_48px_rgba(139,92,246,0.28)]">
+              蜜
+            </div>
+            <p className="text-sm font-medium tracking-[0.18em] text-white/80">正在准备聊天</p>
+          </div>
+        </div>
+      ) : null}
+    </BridgeContext.Provider>
+  );
 }
 
 export function useBridgeContext(): BridgeContextValue {

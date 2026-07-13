@@ -150,6 +150,12 @@ export function mergeSettings(
     }
   }
 
+  // 平台点卡始终 forceNewChat，boot 阶段恢复上次角色/群聊只会额外触发 chats/get、
+  // 世界书与正则渲染，随后又被新对话覆盖。放在用户白名单合并和引用校验之后强制清空，
+  // 既保留失效引用审计，又避免把 1.5~3s 的无效恢复串进 APP_READY 关键路径。
+  lodashSet(merged, 'active_character', null);
+  lodashSet(merged, 'active_group', null);
+
   // 强制覆写 LLM endpoint 为平台代理网关地址，确保 ST 的 LLM 调用经 backend 代理（注入 key + 计费）。
   // 地址由调用方从配置层传入，避免 merge 纯函数直接依赖全局环境变量。
   lodashSet(merged, 'oai_settings.reverse_proxy', llmProxyUrl);

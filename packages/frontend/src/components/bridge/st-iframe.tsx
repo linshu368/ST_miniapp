@@ -5,7 +5,8 @@ import { useBridgeContext } from './bridge-provider';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { markTiming } from '@/lib/bridge/iframe-timing'; // [iframe-timing] TEMP DEBUG
 
-const ST_IFRAME_URL = '/tavern/';
+const ST_IFRAME_URL =
+  process.env.NEXT_PUBLIC_FOREGROUND_BOOT === '1' ? '/tavern/?miniapp_boot=1' : '/tavern/';
 export const CHAT_INTERACTIVITY_EVENT = 'miniapp:chat-interactivity';
 
 type StSessionResponse = {
@@ -212,7 +213,7 @@ export function STIframe() {
         // transform 都会被判不可见，等价旧问题，一律不可用。
         className={
           isVisible
-            ? 'fixed left-0 top-0 z-10 h-[var(--miniapp-visual-viewport-height,100dvh)] max-h-[100dvh] w-full'
+            ? 'fixed left-0 top-0 z-10 h-[var(--miniapp-visual-viewport-height,100dvh)] max-h-[100dvh] w-full bg-[#090611]'
             : 'fixed left-0 top-0 z-[-20] h-[var(--miniapp-visual-viewport-height,100dvh)] max-h-[100dvh] w-full pointer-events-none'
         }
         title="SillyTavern"

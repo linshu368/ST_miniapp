@@ -203,6 +203,8 @@ describe('provision()', () => {
 
     expect(merged.settings['username']).toBe('用户');
     expect(merged.settings['name1']).toBe('用户');
+    expect(merged.settings['active_character']).toBeNull();
+    expect(merged.settings['active_group']).toBeNull();
     expect(merged.settings['user_avatar']).toBe('4d015fdd-7f82-482c-912d-466eaa826280.png');
     expect(merged.settings['power_user']).toEqual({
       chat_display: 3,

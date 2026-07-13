@@ -75,7 +75,8 @@ describe('mergeSettings', () => {
     const result = mergeSettingsForTest(platform, null, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(false);
-    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
+    expect(result.settings['active_character']).toBeNull();
+    expect(result.settings['active_group']).toBeNull();
     expect(result.settings['theme']).toBe('dark');
     expect(result.settings['fontSize']).toBe(14);
   });
@@ -135,7 +136,7 @@ describe('mergeSettings', () => {
     const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(false);
-    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_SECOND}.png`);
+    expect(result.settings['active_character']).toBeNull();
   });
 
   // ── 场景 5：character_ref 失效，回退到系统兜底卡 ─────────────────────────
@@ -153,7 +154,7 @@ describe('mergeSettings', () => {
 
     expect(result.hadInvalidRef).toBe(true);
     expect(result.invalidRefValue).toBe(`platform_${MISSING_UUID}.png`);
-    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
+    expect(result.settings['active_character']).toBeNull();
   });
 
   // ── 场景 6：character_ref 失效 + 无兜底卡 ───────────────────────────────
@@ -167,7 +168,7 @@ describe('mergeSettings', () => {
     const result = mergeSettingsForTest(platform, userSettings, [], undefined);
 
     expect(result.hadInvalidRef).toBe(true);
-    expect(result.settings['active_character']).toBe(`platform_${MISSING_UUID}.png`);
+    expect(result.settings['active_character']).toBeNull();
   });
 
   // ── 场景 7：character_ref 格式不合法 ────────────────────────────────────
@@ -183,7 +184,7 @@ describe('mergeSettings', () => {
     const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
     expect(result.hadInvalidRef).toBe(true);
-    expect(result.settings['active_character']).toBe(`platform_${CHAR_UUID_FALLBACK}.png`);
+    expect(result.settings['active_character']).toBeNull();
   });
 
   // ── 场景 9：强制平台 LLM 代理链路（main_api/custom 源/兜底模型）─────────

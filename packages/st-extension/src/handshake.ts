@@ -12,6 +12,17 @@ export interface HandshakeOptions {
   stCommit: string;
 }
 
+function dismissForegroundBootSplash(): void {
+  const splash = document.getElementById('miniapp-boot-splash');
+  if (!splash) return;
+
+  splash.classList.add('is-dismissing');
+  window.setTimeout(() => {
+    splash.remove();
+    document.documentElement.classList.remove('miniapp-foreground-boot');
+  }, 240);
+}
+
 /**
  * Initialize two-phase handshake:
  * 1. Immediately send handshake(phase='handshake') with meta
@@ -39,6 +50,7 @@ export function initHandshake(server: BridgeServer, opts: HandshakeOptions): voi
   server.sendHandshake('handshake', meta);
 
   ctx.eventSource.on(ctx.eventTypes.APP_READY, () => {
+    dismissForegroundBootSplash();
     if (!boundUserId) {
       const retryUserId = ctx.accountStorage?.currentUser?.id ?? null;
       if (retryUserId) {

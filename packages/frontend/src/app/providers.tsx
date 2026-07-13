@@ -22,12 +22,13 @@ const STIframe = dynamic(
   { ssr: false }
 );
 const LOBBY_CRITICAL_READY_EVENT = 'miniapp:lobby-critical-ready';
+const FOREGROUND_BOOT_ENABLED = process.env.NEXT_PUBLIC_FOREGROUND_BOOT === '1';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
   const pathname = usePathname();
-  const [bridgeRuntimeReady, setBridgeRuntimeReady] = useState(() =>
-    pathname.startsWith('/tavern/')
+  const [bridgeRuntimeReady, setBridgeRuntimeReady] = useState(
+    () => pathname.startsWith('/tavern/') || FOREGROUND_BOOT_ENABLED
   );
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
