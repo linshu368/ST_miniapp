@@ -732,7 +732,11 @@ async function activateExtensions() {
             console.log('Could not activate extension', name, err);
             extensionLoadErrors.add(t`Extension "${displayName}" failed to load: ${err}`);
           });
-        promises.push(activationPromise);
+        const isMiniAppBackgroundExtension =
+          miniAppFastBoot && name.endsWith('/MoonlitEchoesTheme');
+        if (!isMiniAppBackgroundExtension) {
+          promises.push(activationPromise);
+        }
         // [miniapp-patch] Critical extensions are independent in the MiniApp profile. Loading
         // them concurrently removes one network RTT per extension while the normal ST path
         // preserves upstream's strict serial activation order.
@@ -780,8 +784,11 @@ async function activateExtensions() {
     window.addEventListener(
       'miniapp:st-interactive',
       () => {
-        miniAppDeferredExtensionsReleased = true;
-        void activateExtensions();
+        // Keep optional extension downloads and update checks out of the character-entry window.
+        setTimeout(() => {
+          miniAppDeferredExtensionsReleased = true;
+          void activateExtensions();
+        }, 5000);
       },
       { once: true }
     );

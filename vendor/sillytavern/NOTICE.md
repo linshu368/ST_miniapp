@@ -21,5 +21,5 @@ Do NOT modify files in this directory directly. See ARCHITECTURE.md §1 for deta
 | public/script.js      | firstLoadInit 后段  | getUserAvatars/getCharacters 串行→Promise.all；移除 boot 期 getBackgrounds 调用（Tier-2） | 冷启动并行化①/②    | 同上                                                             |
 | public/script.js      | MiniApp fast boot   | query-gated 跳过角色列表/分组渲染，提前 interactive，并延迟 UI-only 初始化                | 提前聊天可交互闸门 | 移除 `miniapp_fast_boot` 分支                                    |
 | public/script.js      | 选角色/新对话路径   | forceNewChat 时跳过旧聊天加载、空文件读取与角色 PNG 指针回写                              | 消除重复 H3/H2 IO  | 移除 `skipChatLoad` / `skipChatFetch` / `skipCharacterSave` 分支 |
-| scripts/extensions.js | activateExtensions  | MiniApp fast boot 并行关键扩展，并将 Quick Reply / JS-Slash-Runner 延迟到 interactive 后  | 缩短握手前扩展解析 | 移除并行与 `miniapp:st-interactive` 延迟分支                     |
+| scripts/extensions.js | activateExtensions  | 并行关键扩展；Moonlit 后台完成；Quick Reply / JS-Slash-Runner 移出点卡窗口                | 缩短握手与选角竞争 | 移除并行与 `miniapp:st-interactive` 延迟分支                     |
 | scripts/st-context.js | extension context   | 向平台扩展暴露受控 `doNewChat` 原生调用                                                   | 跳过 slash 管线    | 移除 `doNewChat` context 导出                                    |

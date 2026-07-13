@@ -909,11 +909,8 @@ async function firstLoadInit() {
     // The parent may select a character as soon as settings, characters, tokenizers and world-info
     // are ready. UI-only ST initialization continues below and APP_READY is still emitted normally.
     window.dispatchEvent(new CustomEvent('miniapp:st-interactive'));
-    if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(() => void getUserAvatars(true, user_avatar), { timeout: 1500 });
-    } else {
-      setTimeout(() => void getUserAvatars(true, user_avatar), 0);
-    }
+    // Avoid competing with the immediate select/new-chat requests on the same connection.
+    setTimeout(() => void getUserAvatars(true, user_avatar), 5000);
     // Yield immediately so the parent can receive the interactive handshake and enqueue the
     // character selection before the remaining ST initialization work.
     await delay(0);
