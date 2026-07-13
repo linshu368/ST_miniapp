@@ -732,11 +732,9 @@ async function activateExtensions() {
             console.log('Could not activate extension', name, err);
             extensionLoadErrors.add(t`Extension "${displayName}" failed to load: ${err}`);
           });
-        const isMiniAppBackgroundExtension =
-          miniAppFastBoot && name.endsWith('/MoonlitEchoesTheme');
-        if (!isMiniAppBackgroundExtension) {
-          promises.push(activationPromise);
-        }
+        // Moonlit is visual-critical: addExtensionStyle already resolves only after its CSS loads.
+        // Keep it in the interactive gate so the native ST skin can never flash before the theme.
+        promises.push(activationPromise);
         // [miniapp-patch] Critical extensions are independent in the MiniApp profile. Loading
         // them concurrently removes one network RTT per extension while the normal ST path
         // preserves upstream's strict serial activation order.
