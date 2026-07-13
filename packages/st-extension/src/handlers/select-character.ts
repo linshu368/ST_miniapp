@@ -6,12 +6,15 @@ import { preAllowCharacterRegex } from '../patches/regex-autoconfirm.js';
 import { preAllowPresetRegex } from '../patches/preset-regex-autoconfirm.js';
 import { preSuppressWorldbookAlert } from '../patches/worldbook-autoimport.js';
 import { stTiming } from '../debug-timing.js'; // [iframe-timing] TEMP DEBUG
+// [iframe-timing] TEMP DEBUG: 点卡窗口细粒度探针（资源瀑布 + 事件序列 + 长任务）
+import { startSelectProbe, markSelectProbe, stopSelectProbe } from '../debug-select-probes.js';
 
 type Payload = ActionPayloadMap['selectCharacter'];
 type Result = ActionResultMap['selectCharacter'];
 
 export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   stTiming('sel_start'); // [iframe-timing] TEMP DEBUG
+  startSelectProbe(); // [iframe-timing] TEMP DEBUG
   const ctx = SillyTavern.getContext();
 
   let index = ctx.characters.findIndex((c) => c.avatar === payload.avatar);
@@ -43,6 +46,7 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
     'sel_reload_done',
     `foundInMemory=${foundInMemory},injected=${injected},reloadAttempts=${reloadAttempts}`
   );
+  markSelectProbe('h1_done'); // [iframe-timing] TEMP DEBUG
 
   if (index < 0) {
     throw new BridgeError(
@@ -66,11 +70,13 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
 
   await ctx.selectCharacterById(index, { switchMenu: false });
   stTiming('sel_selectById_done'); // [iframe-timing] TEMP DEBUG: H3
+  markSelectProbe('h3_done'); // [iframe-timing] TEMP DEBUG
 
   if (payload.forceNewChat) {
     await ctx.executeSlashCommandsWithOptions('/newchat');
   }
   stTiming('sel_newchat_done', `forceNewChat=${!!payload.forceNewChat}`); // [iframe-timing] TEMP DEBUG: H2
+  stopSelectProbe(); // [iframe-timing] TEMP DEBUG: 收割点卡窗口瀑布/事件/长任务并上报
 
   ctx.saveSettingsDebounced();
 

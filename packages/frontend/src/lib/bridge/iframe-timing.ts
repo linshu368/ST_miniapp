@@ -55,6 +55,13 @@ export function resetPageTiming(): void {
     marks.delete(k);
     details.delete(k);
   }
+  // [iframe-timing] round4: 点卡窗口探针数据（sel_wf_N/sel_evt/sel_longtask_N，N 不定长）按前缀清理
+  for (const k of [...marks.keys()]) {
+    if (k.startsWith('sel_wf') || k.startsWith('sel_longtask') || k === 'sel_evt') {
+      marks.delete(k);
+      details.delete(k);
+    }
+  }
 }
 
 export function flushIframeTiming(meta: Record<string, unknown>): void {
