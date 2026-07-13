@@ -7,7 +7,6 @@ import { markTiming } from '@/lib/bridge/iframe-timing'; // [iframe-timing] TEMP
 
 const ST_IFRAME_URL = '/tavern/';
 export const CHAT_INTERACTIVITY_EVENT = 'miniapp:chat-interactivity';
-export const CHAT_SCROLL_EVENT = 'miniapp:chat-scroll';
 
 type StSessionResponse = {
   success: boolean;
@@ -159,64 +158,6 @@ export function STIframe() {
       removeGuard();
     };
   }, [chatInteractive, sessionReady]);
-
-  useEffect(() => {
-    if (!sessionReady) return;
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-
-    let chatElement: HTMLElement | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let animationFrame: number | null = null;
-
-    const emitScrollProgress = () => {
-      if (!chatElement) return;
-      const progress = Math.min(1, Math.max(0, chatElement.scrollTop / 96));
-      window.dispatchEvent(new CustomEvent(CHAT_SCROLL_EVENT, { detail: { progress } }));
-    };
-
-    const handleScroll = () => {
-      if (animationFrame !== null) return;
-      animationFrame = window.requestAnimationFrame(() => {
-        animationFrame = null;
-        emitScrollProgress();
-      });
-    };
-
-    const detachChat = () => {
-      chatElement?.removeEventListener('scroll', handleScroll);
-      chatElement = null;
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-    };
-
-    const attachChat = () => {
-      detachChat();
-      try {
-        chatElement = iframe.contentDocument?.getElementById('chat') ?? null;
-      } catch {
-        chatElement = null;
-      }
-
-      if (!chatElement) {
-        retryTimer = setTimeout(attachChat, 250);
-        return;
-      }
-      chatElement.addEventListener('scroll', handleScroll, { passive: true });
-      emitScrollProgress();
-    };
-
-    attachChat();
-    iframe.addEventListener('load', attachChat);
-    return () => {
-      iframe.removeEventListener('load', attachChat);
-      detachChat();
-      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
-      window.dispatchEvent(new CustomEvent(CHAT_SCROLL_EVENT, { detail: { progress: 0 } }));
-    };
-  }, [sessionReady]);
 
   if (!sessionReady) return null;
 
