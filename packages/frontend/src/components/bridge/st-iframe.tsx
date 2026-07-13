@@ -5,13 +5,58 @@ import { useBridgeContext } from './bridge-provider';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { markTiming } from '@/lib/bridge/iframe-timing'; // [iframe-timing] TEMP DEBUG
 
-const ST_IFRAME_URL = '/tavern/';
+const ST_IFRAME_URL =
+  process.env.NEXT_PUBLIC_FOREGROUND_BOOT === '1'
+    ? '/tavern/?miniapp_boot=1&miniapp_fast_boot=1'
+    : '/tavern/?miniapp_fast_boot=1';
+const ST_PRELOADS = [
+  { href: '/style.css', rel: 'preload', as: 'style' },
+  { href: '/script.js', rel: 'modulepreload' },
+  { href: '/lib.js', rel: 'modulepreload' },
+] as const;
 export const CHAT_INTERACTIVITY_EVENT = 'miniapp:chat-interactivity';
 
 type StSessionResponse = {
   success: boolean;
   data: { st_url: string; st_cookie: string; is_new_user: boolean };
 };
+
+let stSessionRequest: Promise<StSessionResponse> | null = null;
+
+async function requestStSession(): Promise<StSessionResponse> {
+  if (stSessionRequest) return stSessionRequest;
+
+  stSessionRequest = fetchStSession().finally(() => {
+    stSessionRequest = null;
+  });
+  return stSessionRequest;
+}
+
+async function fetchStSession(): Promise<StSessionResponse> {
+  const headers: Record<string, string> = {};
+  const initData = getRawInitData();
+  if (initData) headers[INIT_DATA_HEADER] = initData;
+
+  const res = await fetch('/api/init-st-session', {
+    method: 'POST',
+    headers,
+  });
+
+  if (!res.ok) {
+    throw new Error(`init-st-session failed: ${res.status}`);
+  }
+
+  const json = (await res.json()) as StSessionResponse;
+  if (!json.success || !json.data?.st_cookie) {
+    throw new Error('st-session returned no cookie');
+  }
+  return json;
+}
+
+function hasStSessionCookie(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.cookie.split(';').some((part) => part.trim().startsWith('connect.sid='));
+}
 
 function isTextEntryElement(target: EventTarget | null): target is HTMLElement {
   if (!target || typeof target !== 'object' || !('tagName' in target)) return false;
@@ -26,9 +71,34 @@ function isTextEntryElement(target: EventTarget | null): target is HTMLElement {
 export function STIframe() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { registerIframe, isVisible } = useBridgeContext();
-  const [sessionReady, setSessionReady] = useState(false);
+  // The signed ST cookie is valid for 24 hours. Returning users can start the iframe immediately
+  // while its refresh runs in parallel; the existing login-page recovery handles a stale cookie.
+  const [sessionReady, setSessionReady] = useState(hasStSessionCookie);
   const [chatInteractive, setChatInteractive] = useState(false);
   const loadCountRef = useRef(0); // [iframe-timing] TEMP DEBUG: 区分首次加载与看门狗/超时重载
+  const sessionRecoveryRef = useRef(false);
+  const sessionRecoveryAttemptsRef = useRef(0);
+
+  useEffect(() => {
+    const links = ST_PRELOADS.map(({ href, rel, ...attributes }) => {
+      const existing = document.head.querySelector<HTMLLinkElement>(
+        `link[data-st-prewarm="${href}"]`
+      );
+      if (existing) return existing;
+
+      const link = document.createElement('link');
+      link.rel = rel;
+      link.href = href;
+      link.dataset.stPrewarm = href;
+      if ('as' in attributes && attributes.as) link.as = attributes.as;
+      document.head.appendChild(link);
+      return link;
+    });
+
+    return () => {
+      for (const link of links) link.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const handleInteractivity = (event: Event) => {
@@ -40,27 +110,35 @@ export function STIframe() {
   }, []);
 
   useEffect(() => {
+    const viewport = window.visualViewport;
+    const updateViewportSize = () => {
+      const height = viewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty(
+        '--miniapp-visual-viewport-height',
+        `${Math.round(height)}px`
+      );
+    };
+
+    updateViewportSize();
+    viewport?.addEventListener('resize', updateViewportSize);
+    viewport?.addEventListener('scroll', updateViewportSize);
+    window.addEventListener('resize', updateViewportSize);
+    return () => {
+      viewport?.removeEventListener('resize', updateViewportSize);
+      viewport?.removeEventListener('scroll', updateViewportSize);
+      window.removeEventListener('resize', updateViewportSize);
+      document.documentElement.style.removeProperty('--miniapp-visual-viewport-height');
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function initSession() {
       try {
-        const headers: Record<string, string> = {};
-        const initData = getRawInitData();
-        if (initData) headers[INIT_DATA_HEADER] = initData;
-
-        const res = await fetch('/api/init-st-session', {
-          method: 'POST',
-          headers,
-        });
-
-        if (!res.ok) {
-          throw new Error(`init-st-session failed: ${res.status}`);
-        }
-
-        const json: StSessionResponse = await res.json();
-        if (!json.success || !json.data?.st_cookie) {
-          throw new Error('st-session returned no cookie');
-        }
+        markTiming('st_session_start');
+        const json = await requestStSession();
+        markTiming('st_session_end');
 
         if (cancelled) return;
 
@@ -142,6 +220,35 @@ export function STIframe() {
           loadCountRef.current += 1;
           markTiming('iframe_onload');
           markTiming(`iframe_onload_a${loadCountRef.current}`);
+
+          // ST 实例重启后，浏览器里仍可能残留旧签名 cookie，/tavern 会被重定向到
+          // /login。检测到登录页时主动重新获取 session 并重载 iframe，避免开屏永久等待。
+          const iframe = iframeRef.current;
+          if (!iframe || sessionRecoveryRef.current) return;
+          try {
+            if (!iframe.contentWindow?.location.pathname.startsWith('/login')) {
+              sessionRecoveryAttemptsRef.current = 0;
+              return;
+            }
+          } catch {
+            return;
+          }
+          if (sessionRecoveryAttemptsRef.current >= 2) return;
+
+          sessionRecoveryRef.current = true;
+          sessionRecoveryAttemptsRef.current += 1;
+          markTiming('st_session_recovery');
+          void requestStSession()
+            .then((json) => {
+              writeStCookies(json.data.st_cookie);
+              iframe.src = ST_IFRAME_URL;
+            })
+            .catch((err) => {
+              console.error('[STIframe] session recovery failed:', err);
+            })
+            .finally(() => {
+              sessionRecoveryRef.current = false;
+            });
         }}
         // 预热期隐藏方式：必须让 iframe「全尺寸真实渲染」，不能靠缩小/透明来藏。
         // 根因（见 docs/iframe-boot-stall-investigation.md）：iOS/Telegram WebKit 会把「不产生
@@ -154,8 +261,8 @@ export function STIframe() {
         // transform 都会被判不可见，等价旧问题，一律不可用。
         className={
           isVisible
-            ? 'fixed inset-0 z-10 w-full h-full'
-            : 'fixed inset-0 z-[-20] w-full h-full pointer-events-none'
+            ? 'fixed left-0 top-0 z-10 h-[var(--miniapp-visual-viewport-height,100dvh)] max-h-[100dvh] w-full bg-[#090611]'
+            : 'fixed left-0 top-0 z-[-20] h-[var(--miniapp-visual-viewport-height,100dvh)] max-h-[100dvh] w-full pointer-events-none'
         }
         title="SillyTavern"
       />

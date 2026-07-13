@@ -29,7 +29,8 @@ export class RequestBuffer {
   flush(phase: HandshakePhase): BufferedRequest[] {
     const phaseOrder: Record<HandshakePhase, number> = {
       handshake: 0,
-      ready: 1,
+      interactive: 1,
+      ready: 2,
     };
     const currentLevel = phaseOrder[phase];
     const flushed: BufferedRequest[] = [];

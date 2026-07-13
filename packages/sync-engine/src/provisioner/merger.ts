@@ -27,7 +27,7 @@ import { applyActivePreset } from './preset-apply.js';
  * 依赖安全性（2026-07 核查）：14 个内置 + 2 个第三方扩展的 manifest 均无 dependencies
  * 声明；核心代码唯一静态 import 的扩展是 regex（保留）；stable-diffusion / vectors 的
  * generate_interceptor 在调用处有 typeof 防护，禁用后安全跳过。
- * 保留：regex / memory / quick-reply / token-counter / miniapp-bridge / JS-Slash-Runner。
+ * 保留：regex / quick-reply / miniapp-bridge / JS-Slash-Runner。
  */
 export const PLATFORM_DISABLED_EXTENSIONS = [
   'assets', // 资产管理（下载扩展/资源面板）
@@ -36,7 +36,9 @@ export const PLATFORM_DISABLED_EXTENSIONS = [
   'connection-manager', // 多 API 连接配置切换（平台强制 custom 源，不用）
   'expressions', // 角色立绘表情
   'gallery', // 图片画廊
+  'memory', // 自动摘要记忆（平台未启用，boot 仍会加载脚本/模板）
   'stable-diffusion', // 图片生成
+  'token-counter', // Token Counter 面板（平台不展示，且会触发额外 tokenizer 请求）
   'translate', // 聊天翻译
   'tts', // 语音合成
   'vectors', // RAG 向量检索
@@ -149,6 +151,14 @@ export function mergeSettings(
       if (fallback) lodashSet(merged, path, fallback);
     }
   }
+
+  // ST 是否在 boot 恢复旧聊天真正由 auto_load_chat 门控。当前平台种子已为 false，
+  // 因此清空角色指针本身不是现阶段的耗时收益；这里仍由 merger 重申 false，防止未来
+  // 运营种子误开后把 chats/get、世界书与正则加载重新串进 APP_READY 关键路径。
+  // active_character/group 作为纵深防御在引用校验后清空，失效引用审计仍可正常产出。
+  lodashSet(merged, 'power_user.auto_load_chat', false);
+  lodashSet(merged, 'active_character', null);
+  lodashSet(merged, 'active_group', null);
 
   // 强制覆写 LLM endpoint 为平台代理网关地址，确保 ST 的 LLM 调用经 backend 代理（注入 key + 计费）。
   // 地址由调用方从配置层传入，避免 merge 纯函数直接依赖全局环境变量。

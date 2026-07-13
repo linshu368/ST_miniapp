@@ -8,26 +8,31 @@
  *
  * 原因：平台壳已用自研 ChatToolsMenu 替代左下角原生按钮的功能（模型切换等），
  * 原生按钮暴露会造成视觉干扰。但 ChatToolsMenu 位于宿主页面并覆盖在 ST iframe 上方，
- * 若直接 display:none 掉 #leftSendForm，#send_textarea 会扩到最左侧，用户输入文字被
- * 宿主按钮遮挡。因此把 #leftSendForm 改为与 ChatToolsMenu 等宽的占位块，并隐藏其内部按钮；
- * 同时去掉 textarea 左内边距，使文字从宿主按钮右侧开始落入。
+ * 工具按钮现已移动到宿主聊天顶栏，因此输入区不再需要预留左侧占位。保留原生 DOM，
+ * 但把容器压缩为 0 宽并隐藏内部按钮，让 textarea 使用完整可用宽度。
  */
 
 export function installNativeUiHide(): void {
   const style = document.createElement('style');
   style.textContent = [
-    '#leftSendForm { flex: 0 0 40px !important; width: 40px !important; min-width: 40px !important; padding-left: 0 !important; pointer-events: none !important; }',
+    '#leftSendForm { flex: 0 0 0 !important; width: 0 !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; pointer-events: none !important; }',
     '#leftSendForm > div { display: none !important; }',
-    '#send_textarea { padding-left: 0 !important; }',
-    '#send_textarea::placeholder { color: transparent !important; }',
+    '#send_textarea { min-width: 0 !important; padding-left: clamp(10px, 3vw, 16px) !important; }',
+    '#send_textarea::placeholder { color: rgba(243, 239, 247, 0.38) !important; opacity: 1 !important; }',
   ].join('\n');
   document.head.appendChild(style);
+
+  const textarea = document.getElementById('send_textarea');
+  if (textarea instanceof HTMLTextAreaElement) {
+    textarea.placeholder = '输入消息…';
+  }
 }
 
 /**
- * 隐藏 ST 原生「AI Response Configuration / 对话补全预设」抽屉。
+ * 隐藏 ST 原生顶栏与「AI Response Configuration / 对话补全预设」抽屉。
  *
- * 平台不开放用户自主修改预设，该抽屉（顶栏图标 #leftNavDrawerIcon + 面板 #left-nav-panel，
+ * 平台聊天顶栏已完整接管导航与工具入口，ST 的 #top-settings-holder 在宿主顶栏淡出后
+ * 也不能重新露出；同时平台不开放用户自主修改预设，该抽屉（顶栏图标 #leftNavDrawerIcon + 面板 #left-nav-panel，
  * 含预设下拉 #settings_preset_openai、提示词管理 #completion_prompt_manager 等）必须始终隐藏。
  *
  * 用 display:none 而非移除 DOM：ST 内部预设加载仍依赖这些元素存在（仅读取，不需可见），
@@ -38,6 +43,9 @@ export function installNativeUiHide(): void {
 export function installPresetUiHide(): void {
   const style = document.createElement('style');
   style.textContent = [
+    ':root { --topBarBlockSize: 0px !important; }',
+    '#top-bar { display: none !important; height: 0 !important; background: transparent !important; box-shadow: none !important; }',
+    '#top-settings-holder { display: none !important; height: 0 !important; background: transparent !important; pointer-events: none !important; }',
     '#ai-config-button { display: none !important; }',
     '#left-nav-panel { display: none !important; }',
   ].join('\n');

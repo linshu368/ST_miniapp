@@ -15,6 +15,6 @@ export const selectCharacterMeta: ActionMeta = {
   name: 'selectCharacter',
   payloadSchema: SelectCharacterPayloadSchema,
   resultSchema: SelectCharacterResultSchema,
-  requiredPhase: 'ready',
+  requiredPhase: 'interactive',
   waitable: true,
 };

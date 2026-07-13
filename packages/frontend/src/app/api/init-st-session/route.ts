@@ -9,6 +9,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+// 只使用 Web Fetch API，可安全运行在 Vercel Edge。避免默认 Node Function 固定在 iad1，
+// 把「用户 → Vercel → Railway Singapore」的 session 初始化绕到美国。
+export const runtime = 'edge';
+
 // Scheme Y (Vercel edge): NEXT_PUBLIC_API_URL may be empty when client-side calls
 // go through same-origin Vercel rewrites. Fall back to the nginx gateway URL
 // (ST_PUBLIC_PROXY_URL) so this server-side route handler can still reach backend.

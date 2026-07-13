@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { platformAction, useBridgeStatus } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
+import { requestTelegramChatFullscreen } from '@/lib/telegram/init';
 import { ChatHeader } from '@/components/tavern/chat-header';
-import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
 import { ChatSplash } from '@/components/tavern/chat-splash';
+import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 // [iframe-timing] TEMP DEBUG
@@ -19,7 +20,12 @@ export default function TavernChatPage() {
   const [readyCharacterId, setReadyCharacterId] = useState<string | null>(null);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
+  const selectRunRef = useRef<string | null>(null);
   const chatReady = readyCharacterId === characterId;
+
+  useEffect(() => {
+    requestTelegramChatFullscreen();
+  }, []);
 
   // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。
   useEffect(() => {
@@ -36,18 +42,27 @@ export default function TavernChatPage() {
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
     if (!characterId) return;
+    setReadyCharacterId(null);
+    setEntryError(null);
+    selectRunRef.current = null;
     resetPageTiming();
     markTiming('page_mount');
-  }, [characterId]);
+    markTiming('ensure_start');
+    void prefetchEnsureStCharacter(characterId)
+      .catch((err) => {
+        console.error('[TavernChatPage] ensureCharacter failed:', err);
+      })
+      .finally(() => markTiming('ensure_end'));
+  }, [characterId, entryAttempt]);
 
   useEffect(() => {
-    setReadyCharacterId(null);
-    if (!characterId || bridgeStatus !== 'ready') return;
-    setEntryError(null);
+    if (!characterId || (bridgeStatus !== 'interactive' && bridgeStatus !== 'ready')) return;
 
     markTiming('gate_open'); // [iframe-timing] TEMP DEBUG
-
-    let cancelled = false;
+    if (bridgeStatus === 'interactive') markTiming('interactive_gate_open');
+    const runKey = `${characterId}:${entryAttempt}`;
+    if (selectRunRef.current === runKey) return;
+    selectRunRef.current = runKey;
 
     // 懒下发：先确保「当前打开的这张卡」已落盘（登录不再全量下发），再切角色。
     // 预览浮层打开时已预取（prefetchEnsureStCharacter 全会话共享 promise），
@@ -55,14 +70,11 @@ export default function TavernChatPage() {
     // ensure 失败不阻断：卡可能已缓存，交给 selectCharacter 的重载+重试兜底。
     void (async () => {
       try {
-        markTiming('ensure_start'); // [iframe-timing] TEMP DEBUG
         await prefetchEnsureStCharacter(characterId);
-        markTiming('ensure_end'); // [iframe-timing] TEMP DEBUG
       } catch (err) {
-        markTiming('ensure_end'); // [iframe-timing] TEMP DEBUG
         console.error('[TavernChatPage] ensureCharacter failed:', err);
       }
-      if (cancelled) return;
+      if (selectRunRef.current !== runKey) return;
 
       const avatar = `platform_${characterId}.png`;
       markTiming('select_start'); // [iframe-timing] TEMP DEBUG
@@ -72,7 +84,7 @@ export default function TavernChatPage() {
           if (result.chatId) {
             useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
           }
-          if (!cancelled) {
+          if (selectRunRef.current === runKey) {
             setReadyCharacterId(characterId);
             // [iframe-timing] TEMP DEBUG: 呈现时刻，flush 全部相位到后端日志
             markTiming('chat_ready');
@@ -81,19 +93,16 @@ export default function TavernChatPage() {
         })
         .catch((err) => {
           console.error('[TavernChatPage] selectCharacter failed:', err);
-          if (!cancelled) {
+          if (selectRunRef.current === runKey) {
+            selectRunRef.current = null;
             setEntryError('角色加载失败，请重试。');
           }
         });
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [bridgeStatus, characterId, entryAttempt]);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative h-[var(--miniapp-visual-viewport-height,100dvh)] min-h-0 w-full overflow-hidden">
       <ChatHeader />
       <ChatToolsMenu />
       {characterId ? (
