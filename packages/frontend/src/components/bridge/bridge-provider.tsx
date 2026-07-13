@@ -74,7 +74,9 @@ export function BridgeProvider({
         readyPhaseTimeout: 20_000,
         iframeLoadTimeout: 20_000,
         handshakeArrivalTimeout: 20_000,
-        visibleStallReloadMs: 12_000,
+        // 实测首轮冷缓存仍会持续推进到 12s 以后；过早重载会丢弃已下载资源并额外
+        // 增加约 10s。20s 只兜底真正停滞，正常 fast-boot 会在此前进入 interactive。
+        visibleStallReloadMs: 20_000,
       } as BridgeClientOptions);
       clientRef.current = client;
       setBridgeClient(client);

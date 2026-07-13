@@ -723,7 +723,7 @@ async function activateExtensions() {
         const promise = addExtensionLocale(name, manifest).finally(() =>
           Promise.all([addExtensionScript(name, manifest), addExtensionStyle(name, manifest)])
         );
-        await promise
+        const activationPromise = promise
           .then(() => {
             activeExtensions.add(name);
             return callExtensionHook(name, 'activate');
@@ -732,7 +732,13 @@ async function activateExtensions() {
             console.log('Could not activate extension', name, err);
             extensionLoadErrors.add(t`Extension "${displayName}" failed to load: ${err}`);
           });
-        promises.push(promise);
+        promises.push(activationPromise);
+        // [miniapp-patch] Critical extensions are independent in the MiniApp profile. Loading
+        // them concurrently removes one network RTT per extension while the normal ST path
+        // preserves upstream's strict serial activation order.
+        if (!miniAppFastBoot) {
+          await activationPromise;
+        }
       } catch (error) {
         console.error('Could not activate extension', name, error);
       }

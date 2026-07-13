@@ -11,6 +11,7 @@ import { recordMiniappEntry } from '@/lib/api/growth';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
+import { markTiming } from '@/lib/bridge/iframe-timing';
 import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUserProfileStore } from '@/stores/user-profile-store';
@@ -47,8 +48,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // 应用持久化的消息字号倍率
     hydrateFontScale();
     performance.mark('app_shell_interactive');
+    markTiming('app_shell_interactive');
     document.documentElement.dataset.appShellInteractive = 'true';
     performance.mark('st_prewarm_start');
+    markTiming('st_prewarm_start');
     setBridgeRuntimeReady(true);
   }, [hydrateUserProfile, hydrateAppearance, hydrateTheme, hydrateFontScale]);
 
