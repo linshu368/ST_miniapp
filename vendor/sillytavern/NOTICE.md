@@ -14,7 +14,7 @@ Do NOT modify files in this directory directly. See ARCHITECTURE.md §1 for deta
 本 vendored 副本含以下**受控**本地改动（例外于只读约束，经 ARCHITECTURE 铁律放开，仅限冷启动优化）。
 审计：`rg "\[miniapp-patch\]" vendor/sillytavern/`。
 
-| 文件             | 位置               | 改动                                                                      | 原因          | 回滚                                                    |
-| ---------------- | ------------------ | ------------------------------------------------------------------------- | ------------- | ------------------------------------------------------- |
-| public/script.js | firstLoadInit 前段 | getClientVersion/initSecrets/readSecretState/initLocales 串行→Promise.all | 冷启动并行化① | 见 docs/iframe-boot-firstloadinit-parallelization.md §6 |
-| public/script.js | firstLoadInit 后段 | getUserAvatars/getCharacters/getBackgrounds 串行→Promise.all              | 冷启动并行化① | 同上                                                    |
+| 文件             | 位置               | 改动                                                                                      | 原因            | 回滚                                                    |
+| ---------------- | ------------------ | ----------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------- |
+| public/script.js | firstLoadInit 前段 | getClientVersion/initSecrets/readSecretState/initLocales 串行→Promise.all                 | 冷启动并行化①   | 见 docs/iframe-boot-firstloadinit-parallelization.md §6 |
+| public/script.js | firstLoadInit 后段 | getUserAvatars/getCharacters 串行→Promise.all；移除 boot 期 getBackgrounds 调用（Tier-2） | 冷启动并行化①/② | 同上                                                    |
