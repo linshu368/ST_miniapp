@@ -1,8 +1,10 @@
 ﻿import type {
   AdvanceCsSessionRequest,
   CreateCsPersonaRequest,
+  CsTelegramReachabilityData,
   CsPersonaDataResponse,
   DeleteCsPersonaData,
+  GetCsAppChatData,
   GetCsMessagesData,
   GetCsPersonaUsersData,
   GetCsPersonasData,
@@ -79,6 +81,10 @@ export const csApi = {
     }),
   users: (id: string) =>
     apiClient<GetCsPersonaUsersData>(`/api/cs/personas/${encodeURIComponent(id)}/users`),
+  telegramReachability: (personaId: string, userId: string) =>
+    apiClient<CsTelegramReachabilityData>(
+      `/api/cs/personas/${encodeURIComponent(personaId)}/users/${encodeURIComponent(userId)}/telegram-reachability`
+    ),
   session: (personaId: string, userId: string) =>
     apiClient<GetCsSessionData>(
       `/api/cs/personas/${encodeURIComponent(personaId)}/users/${encodeURIComponent(userId)}/session`
@@ -86,6 +92,10 @@ export const csApi = {
   messages: (personaId: string, userId: string) =>
     apiClient<GetCsMessagesData>(
       `/api/cs/personas/${encodeURIComponent(personaId)}/users/${encodeURIComponent(userId)}/messages`
+    ),
+  appChat: (personaId: string, userId: string) =>
+    apiClient<GetCsAppChatData>(
+      `/api/cs/personas/${encodeURIComponent(personaId)}/users/${encodeURIComponent(userId)}/app-chat`
     ),
   sendMessage: (personaId: string, userId: string, body: SendCsMessageRequest) =>
     apiClient<SendCsMessageData>(

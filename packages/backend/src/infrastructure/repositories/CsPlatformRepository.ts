@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/db.js';
 import type {
   CsAuditLogData,
+  CsAppChatTurnData,
   CsMessageData,
   CsPersonaData,
   CsSendStatus,
@@ -210,9 +211,16 @@ export class CsPlatformRepository {
     personaId: string
   ): Promise<{ active: CsUserData[]; chatted_left: CsUserData[] }> {
     const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM cs_platform.persona_users_detail
-       WHERE persona_id = $1::uuid
-       ORDER BY last_active_at DESC NULLS LAST`,
+      `SELECT d.*,
+              COALESCE(
+                NULLIF(s.custom_avatar_url, ''),
+                NULLIF(s.tg_avatar_url, ''),
+                NULLIF(s.avatar_url, '')
+              ) AS avatar_url
+       FROM cs_platform.persona_users_detail d
+       LEFT JOIN miniapp.miniapp_user_settings s ON s.user_id = d.user_id
+       WHERE d.persona_id = $1::uuid
+       ORDER BY d.last_active_at DESC NULLS LAST`,
       personaId
     );
     const users = rows.map(toUserData);
@@ -320,6 +328,26 @@ export class CsPlatformRepository {
       userId
     );
     return rows.map(toMessageData);
+  }
+
+  async listAppChat(userId: string): Promise<CsAppChatTurnData[]> {
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT h.id,
+              h.user_id,
+              h.character_id,
+              c.name AS character_name,
+              h.user_input,
+              h.assistant_reply,
+              h.model,
+              h.status,
+              h.created_at
+       FROM miniapp.chat_history h
+       LEFT JOIN miniapp.characters c ON c.id = h.character_id
+       WHERE h.user_id = $1::uuid
+       ORDER BY h.created_at ASC`,
+      userId
+    );
+    return rows.map(toAppChatTurnData);
   }
 
   async createPendingAgentMessage(input: {
@@ -587,6 +615,7 @@ function toUserData(row: Record<string, unknown>): CsUserData {
     telegram_user_id: String(row.telegram_user_id),
     display_name: String(row.display_name ?? row.telegram_user_id ?? 'Unknown'),
     username: (row.username as string | null) ?? null,
+    avatar_url: (row.avatar_url as string | null) ?? null,
     register_days: Number(row.register_days ?? 0),
     total_paid_amount: String(row.total_paid_amount ?? '0.00'),
     paid_count: Number(row.paid_count ?? 0),
@@ -598,6 +627,22 @@ function toUserData(row: Record<string, unknown>): CsUserData {
     current_stage: (row.current_stage as string | null) ?? null,
     chatted_at: row.chatted_at ? toIso(row.chatted_at) : null,
     left_note: (row.left_note as string | null) ?? null,
+  };
+}
+
+function toAppChatTurnData(row: Record<string, unknown>): CsAppChatTurnData {
+  const status =
+    row.status === 'upstream_error' || row.status === 'stream_interrupted' ? row.status : 'success';
+  return {
+    id: String(row.id),
+    user_id: String(row.user_id),
+    character_id: (row.character_id as string | null) ?? null,
+    character_name: (row.character_name as string | null) ?? null,
+    user_input: String(row.user_input ?? ''),
+    assistant_reply: (row.assistant_reply as string | null) ?? null,
+    model: String(row.model ?? ''),
+    status,
+    created_at: toIso(row.created_at),
   };
 }
 

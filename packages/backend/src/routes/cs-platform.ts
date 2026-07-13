@@ -7,7 +7,9 @@ import {
   type CreateCsPersonaRequest,
   type CsMessageData,
   type CsPersonaDataResponse,
+  type CsTelegramReachabilityData,
   type DeleteCsPersonaData,
+  type GetCsAppChatData,
   type GetCsAuditLogsData,
   type GetCsMessagesData,
   type GetCsPersonaUsersData,
@@ -137,6 +139,21 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
   );
 
   app.get(
+    '/api/cs/personas/:id/users/:userId/telegram-reachability',
+    { preHandler: [requireCsAdmin] },
+    async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const users = await repository.listUsers(id);
+      const target = [...users.active, ...users.chatted_left].find(
+        (user) => user.user_id === userId
+      );
+      if (!target) return reply.status(404).send(fail('USER_NOT_FOUND', '画像簇中没有这个用户'));
+      const result = await checkTelegramReachability(target.telegram_user_id);
+      return reply.send(ok<CsTelegramReachabilityData>(result));
+    }
+  );
+
+  app.get(
     '/api/cs/personas/:id/users/:userId/session',
     { preHandler: [requireCsAdmin] },
     async (request, reply) => {
@@ -153,6 +170,18 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
       const { id, userId } = request.params as { id: string; userId: string };
       const messages = await repository.listMessages(id, userId);
       return reply.send(ok<GetCsMessagesData>({ messages }));
+    }
+  );
+
+  app.get(
+    '/api/cs/personas/:id/users/:userId/app-chat',
+    { preHandler: [requireCsAdmin] },
+    async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const persona = await repository.getPersona(id);
+      if (!persona) return reply.status(404).send(fail('PERSONA_NOT_FOUND', '画像簇不存在'));
+      const turns = await repository.listAppChat(userId);
+      return reply.send(ok<GetCsAppChatData>({ turns }));
     }
   );
 
@@ -196,7 +225,12 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
       });
       const session = await repository.getSession(id, userId);
 
-      return reply.status(sent.ok ? 200 : 502).send(ok<SendCsMessageData>({ message, session }));
+      if (!sent.ok) {
+        return reply
+          .status(502)
+          .send(fail('TELEGRAM_UNREACHABLE', sent.error ?? 'Telegram 消息发送失败'));
+      }
+      return reply.send(ok<SendCsMessageData>({ message, session }));
     }
   );
 
@@ -226,7 +260,12 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
         operatorId: getOperator(request),
       });
       const session = await repository.getSession(id, userId);
-      return reply.status(sent.ok ? 200 : 502).send(ok<SendCsMessageData>({ message, session }));
+      if (!sent.ok) {
+        return reply
+          .status(502)
+          .send(fail('TELEGRAM_UNREACHABLE', sent.error ?? 'Telegram 消息发送失败'));
+      }
+      return reply.send(ok<SendCsMessageData>({ message, session }));
     }
   );
 
@@ -457,7 +496,9 @@ async function sendTelegramMessage(
   if (!response.ok || !payload?.ok) {
     return {
       ok: false,
-      error: payload?.description ?? `Telegram API error: ${response.status}`,
+      error: normalizeTelegramSendError(
+        payload?.description ?? `Telegram API error: ${response.status}`
+      ),
     };
   }
 
@@ -465,4 +506,35 @@ async function sendTelegramMessage(
     ok: true,
     telegramMessageId: payload.result?.message_id ? String(payload.result.message_id) : undefined,
   };
+}
+
+async function checkTelegramReachability(
+  telegramUserId: string
+): Promise<CsTelegramReachabilityData> {
+  if (!config.csTelegramBotToken) {
+    return { reachable: false, reason: '当前环境未配置 Telegram Bot' };
+  }
+  const response = await fetch(
+    `https://api.telegram.org/bot${config.csTelegramBotToken}/getChat?chat_id=${encodeURIComponent(telegramUserId)}`
+  );
+  if (response.ok) return { reachable: true, reason: null };
+  const payload = (await response.json().catch(() => null)) as TelegramSendResponse | null;
+  return {
+    reachable: false,
+    reason: normalizeTelegramSendError(
+      payload?.description ?? `Telegram API error: ${response.status}`
+    ),
+  };
+}
+
+function normalizeTelegramSendError(description: string): string {
+  const normalized = description.toLowerCase();
+  if (
+    normalized.includes('chat not found') ||
+    normalized.includes('bot was blocked') ||
+    normalized.includes('user is deactivated')
+  ) {
+    return '用户未启动或已屏蔽当前环境的 Telegram Bot，暂时无法主动发送消息';
+  }
+  return description;
 }
