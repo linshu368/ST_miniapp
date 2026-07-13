@@ -210,7 +210,7 @@ import {
   initExtensions,
   loadExtensionSettings,
   runGenerationInterceptors,
-} from './scripts/extensions.js';
+} from './scripts/extensions.js?miniapp_v=20260713b';
 import {
   COMMENT_NAME_DEFAULT,
   CONNECT_API_MAP,

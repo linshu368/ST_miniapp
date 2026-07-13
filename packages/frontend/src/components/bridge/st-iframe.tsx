@@ -21,7 +21,18 @@ type StSessionResponse = {
   data: { st_url: string; st_cookie: string; is_new_user: boolean };
 };
 
+let stSessionRequest: Promise<StSessionResponse> | null = null;
+
 async function requestStSession(): Promise<StSessionResponse> {
+  if (stSessionRequest) return stSessionRequest;
+
+  stSessionRequest = fetchStSession().finally(() => {
+    stSessionRequest = null;
+  });
+  return stSessionRequest;
+}
+
+async function fetchStSession(): Promise<StSessionResponse> {
   const headers: Record<string, string> = {};
   const initData = getRawInitData();
   if (initData) headers[INIT_DATA_HEADER] = initData;
@@ -42,6 +53,11 @@ async function requestStSession(): Promise<StSessionResponse> {
   return json;
 }
 
+function hasStSessionCookie(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.cookie.split(';').some((part) => part.trim().startsWith('connect.sid='));
+}
+
 function isTextEntryElement(target: EventTarget | null): target is HTMLElement {
   if (!target || typeof target !== 'object' || !('tagName' in target)) return false;
   const element = target as HTMLElement;
@@ -55,7 +71,9 @@ function isTextEntryElement(target: EventTarget | null): target is HTMLElement {
 export function STIframe() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { registerIframe, isVisible } = useBridgeContext();
-  const [sessionReady, setSessionReady] = useState(false);
+  // The signed ST cookie is valid for 24 hours. Returning users can start the iframe immediately
+  // while its refresh runs in parallel; the existing login-page recovery handles a stale cookie.
+  const [sessionReady, setSessionReady] = useState(hasStSessionCookie);
   const [chatInteractive, setChatInteractive] = useState(false);
   const loadCountRef = useRef(0); // [iframe-timing] TEMP DEBUG: 区分首次加载与看门狗/超时重载
   const sessionRecoveryRef = useRef(false);
@@ -118,7 +136,9 @@ export function STIframe() {
 
     async function initSession() {
       try {
+        markTiming('st_session_start');
         const json = await requestStSession();
+        markTiming('st_session_end');
 
         if (cancelled) return;
 

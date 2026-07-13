@@ -16,7 +16,7 @@ Do NOT modify files in this directory directly. See ARCHITECTURE.md §1 for deta
 
 | 文件                  | 位置                | 改动                                                                                      | 原因               | 回滚                                                             |
 | --------------------- | ------------------- | ----------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------- |
-| public/index.html     | critical boot shell | query-gated iframe 内品牌开屏，APP_READY 后由平台扩展移除                                 | iOS 前台可见 boot  | 见 docs/iframe-foreground-boot-plan.md                           |
+| public/index.html     | critical boot shell | query-gated iframe 内品牌开屏；主模块使用补丁版本键绕过稳定文件名旧缓存                   | 前台 boot/补丁保鲜 | 见 docs/iframe-foreground-boot-plan.md                           |
 | public/script.js      | firstLoadInit 前段  | getClientVersion/initSecrets/readSecretState/initLocales 串行→Promise.all                 | 冷启动并行化①      | 见 docs/iframe-boot-firstloadinit-parallelization.md §6          |
 | public/script.js      | firstLoadInit 后段  | getUserAvatars/getCharacters 串行→Promise.all；移除 boot 期 getBackgrounds 调用（Tier-2） | 冷启动并行化①/②    | 同上                                                             |
 | public/script.js      | MiniApp fast boot   | query-gated 跳过角色列表/分组渲染，提前 interactive，并延迟 UI-only 初始化                | 提前聊天可交互闸门 | 移除 `miniapp_fast_boot` 分支                                    |
