@@ -79,7 +79,16 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   if (payload.forceNewChat) {
     // 直接调用 ST 原生函数，跳过 slash 解析；平台不会恢复角色 chat 指针，
     // 因此无需把本次临时文件名再次写回角色 PNG。
-    await ctx.doNewChat({ skipCharacterSave: true, skipChatFetch: true });
+    stTiming('sel_newchat_start'); // [iframe-timing] TEMP DEBUG
+    try {
+      await ctx.doNewChat({ skipCharacterSave: true, skipChatFetch: true });
+    } catch (error) {
+      // The Vivo failure happens before the first /api/characters/get request. Preserve the
+      // concrete ST exception in the parent timing payload before BridgeServer serializes it.
+      stTiming('sel_newchat_error', describeError(error)); // [iframe-timing] TEMP DEBUG
+      stopSelectProbe();
+      throw error;
+    }
   }
   stTiming(
     'sel_newchat_done',
@@ -97,6 +106,13 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    return `name=${error.name},message=${error.message},stack=${error.stack ?? ''}`.slice(0, 2000);
+  }
+  return `value=${String(error)}`.slice(0, 2000);
 }
 
 /**

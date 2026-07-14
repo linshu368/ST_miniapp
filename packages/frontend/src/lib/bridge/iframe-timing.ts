@@ -47,11 +47,14 @@ export function resetPageTiming(): void {
     'ensure_end',
     'select_start',
     'select_end',
+    'select_error',
     'chat_ready',
     // [iframe-timing] round2: selectCharacter ST 端子相位（每次进卡刷新）
     'sel_start',
     'sel_reload_done',
     'sel_selectById_done',
+    'sel_newchat_start',
+    'sel_newchat_error',
     'sel_newchat_done',
   ]) {
     marks.delete(k);
