@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/db.js';
 import { config } from '../platform/config.js';
-import { ok, fail } from '@miniapp/shared';
+import { ok, fail, isLobbyFeaturedCharacter, partitionLobbyCharacters } from '@miniapp/shared';
 import type {
   GetCharactersData,
   GetCharacterByIdData,
@@ -60,14 +60,16 @@ export default async function characterRoutes(app: FastifyInstance) {
       },
     });
 
+    const { featured, others } = partitionLobbyCharacters(characters);
     const shuffleBucket = currentShuffleBucket();
-    const shuffledCharacters = [...characters].sort((a, b) => {
+    const shuffledCharacters = [...others].sort((a, b) => {
       const rankDiff = shuffleRank(a.id, shuffleBucket) - shuffleRank(b.id, shuffleBucket);
       if (rankDiff !== 0) return rankDiff;
       return a.id.localeCompare(b.id);
     });
+    const orderedCharacters = [...featured, ...shuffledCharacters];
 
-    const charactersSummary: CharacterSummary[] = shuffledCharacters.map(
+    const charactersSummary: CharacterSummary[] = orderedCharacters.map(
       (c: (typeof characters)[number]) => ({
         id: c.id,
         name: c.name,
@@ -75,6 +77,7 @@ export default async function characterRoutes(app: FastifyInstance) {
         avatar_url: resolveCharacterAvatarUrl(c.id, c.avatar_url),
         personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
         author_name: c.creator,
+        is_featured: isLobbyFeaturedCharacter(c.id),
       })
     );
 
@@ -109,6 +112,7 @@ export default async function characterRoutes(app: FastifyInstance) {
       avatar_url: resolveCharacterAvatarUrl(character.id, character.avatar_url),
       personality_tags: Array.isArray(character.tags) ? (character.tags as string[]) : [],
       author_name: character.creator,
+      is_featured: isLobbyFeaturedCharacter(character.id),
       greeting: character.first_mes,
       creator_notes: character.creator_notes,
     };

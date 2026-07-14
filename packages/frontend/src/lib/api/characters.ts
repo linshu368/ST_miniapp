@@ -29,7 +29,7 @@ export const characterKeys = {
   detail: (id: string) => [...characterKeys.all, 'detail', id] as const,
 };
 
-const CHARACTER_CACHE_KEY = 'miniapp:lobby-characters:v1';
+const CHARACTER_CACHE_KEY = 'miniapp:lobby-characters:v2';
 const CHARACTER_CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 
 function readPersistedCharacters(): GetCharactersData | undefined {

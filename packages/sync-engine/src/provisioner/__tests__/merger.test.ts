@@ -373,7 +373,33 @@ describe('mergeSettings', () => {
     expect(extSettings['disabledExtensions']).toEqual([...PLATFORM_DISABLED_EXTENSIONS]);
   });
 
-  // ── 场景 13：强制关闭消息 token 计数（P1-H2 瘦身）──────────────────────────
+  // ── 场景 13：停止向新用户 Provision Moonlit ───────────────────────────────
+  it('新用户默认不写入 Moonlit 配置，存量标记用户继续保留', () => {
+    const platform = makePlatformSettings();
+    const fresh = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
+    const freshExtensions = fresh.settings['extension_settings'] as Record<string, unknown>;
+    expect(freshExtensions['SillyTavernMoonlitEchoesTheme']).toBeUndefined();
+
+    const grandfathered = mergeSettings(
+      platform,
+      null,
+      [],
+      [CHAR_UUID_FALLBACK],
+      CHAR_UUID_FALLBACK,
+      LLM_PROXY_URL,
+      undefined,
+      null,
+      { grandfatherMoonlit: true }
+    );
+    const extensions = grandfathered.settings['extension_settings'] as Record<string, unknown>;
+    expect(extensions['SillyTavernMoonlitEchoesTheme']).toMatchObject({ enabled: true });
+    expect(grandfathered.settings['power_user']).toMatchObject({
+      chat_display: 3,
+      theme: 'Glimmer - by Rivelle',
+    });
+  });
+
+  // ── 场景 14：强制关闭消息 token 计数（P1-H2 瘦身）──────────────────────────
   it('应强制 power_user.message_token_count_enabled=false（覆盖种子里的 true）', () => {
     const platform = makePlatformSettings({
       settings_jsonb: {

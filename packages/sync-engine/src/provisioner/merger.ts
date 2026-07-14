@@ -60,6 +60,11 @@ export interface MergedSettings {
   appliedPresetId?: string;
 }
 
+export interface MergeSettingsOptions {
+  /** 仅为磁盘上已经启用 Moonlit 的存量用户继续保留配置。 */
+  grandfatherMoonlit?: boolean;
+}
+
 /**
  * 用户 ST persona 注入参数（对话页/回复里显示的「用户名 + 头像」）。
  *   name       - 显示名（TG 名字），为空则不注入、保留平台默认 persona
@@ -91,7 +96,8 @@ export function mergeSettings(
   fallbackCharacterId: string | undefined,
   llmProxyUrl: string,
   persona?: PersonaInput,
-  defaultLlmModel?: string | null
+  defaultLlmModel?: string | null,
+  options: MergeSettingsOptions = {}
 ): MergedSettings {
   // 深拷贝 A 作为 base（绝不修改原始对象）
   const merged = cloneDeep(platformSettings.settings_jsonb) as Record<string, unknown>;
@@ -193,9 +199,10 @@ export function mergeSettings(
   // 放在 writable_paths 覆盖之后，用户段无法解禁。
   applyDisabledExtensions(merged);
 
-  // 平台统一启用 Moonlit + Glimmer + Echo。配置作为源码常量参与纯内存 merge，
-  // 视觉资产则由 writer 下发到每个 data/<handle>/，避免只修改 default-user。
-  applyMoonlitSettings(merged);
+  // 停止向新用户下发 Moonlit；磁盘上原本已启用的用户继续保留，避免普通刷新改变其界面。
+  if (options.grandfatherMoonlit) {
+    applyMoonlitSettings(merged);
+  }
 
   // 关闭消息气泡 token 计数（iframe 加载耗时 P1-H2 瘦身）：vendor 默认即 false，
   // 但平台种子 settings 从运营完整 ST 导出、可能带 true —— 开启时每条消息渲染都要

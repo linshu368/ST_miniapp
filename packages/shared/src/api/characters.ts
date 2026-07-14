@@ -9,6 +9,8 @@ export interface CharacterSummary {
   personality_tags: string[];
   /** 创作者展示名 */
   author_name: string;
+  /** 是否属于大厅固定前八角色 */
+  is_featured: boolean;
 }
 
 // 详情页 / 对话页用的完整结构
