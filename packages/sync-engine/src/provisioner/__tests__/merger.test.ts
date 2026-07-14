@@ -373,30 +373,29 @@ describe('mergeSettings', () => {
     expect(extSettings['disabledExtensions']).toEqual([...PLATFORM_DISABLED_EXTENSIONS]);
   });
 
-  // ── 场景 13：停止向新用户 Provision Moonlit ───────────────────────────────
-  it('新用户默认不写入 Moonlit 配置，存量标记用户继续保留', () => {
-    const platform = makePlatformSettings();
-    const fresh = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
-    const freshExtensions = fresh.settings['extension_settings'] as Record<string, unknown>;
-    expect(freshExtensions['SillyTavernMoonlitEchoesTheme']).toBeUndefined();
-
-    const grandfathered = mergeSettings(
-      platform,
-      null,
-      [],
-      [CHAR_UUID_FALLBACK],
-      CHAR_UUID_FALLBACK,
-      LLM_PROXY_URL,
-      undefined,
-      null,
-      { grandfatherMoonlit: true }
-    );
-    const extensions = grandfathered.settings['extension_settings'] as Record<string, unknown>;
-    expect(extensions['SillyTavernMoonlitEchoesTheme']).toMatchObject({ enabled: true });
-    expect(grandfathered.settings['power_user']).toMatchObject({
-      chat_display: 3,
-      theme: 'Glimmer - by Rivelle',
+  // ── 场景 13：全量下线 Moonlit ─────────────────────────────────────────────
+  it('应禁用 Moonlit 并清理平台种子中的主题残留', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        extension_settings: {
+          SillyTavernMoonlitEchoesTheme: { enabled: true },
+        },
+        power_user: {
+          chat_display: 3,
+          theme: 'Glimmer - by Rivelle',
+        },
+        background: { name: 'night-city-anime.jpg' },
+      },
     });
+    const result = mergeSettingsForTest(platform, null, [CHAR_UUID_FALLBACK], CHAR_UUID_FALLBACK);
+    const extensions = result.settings['extension_settings'] as Record<string, unknown>;
+    const powerUser = result.settings['power_user'] as Record<string, unknown>;
+
+    expect(extensions['disabledExtensions']).toContain('third-party/MoonlitEchoesTheme');
+    expect(extensions['SillyTavernMoonlitEchoesTheme']).toBeUndefined();
+    expect(powerUser['theme']).toBeUndefined();
+    expect(powerUser['chat_display']).toBe(0);
+    expect(result.settings['background']).toBeUndefined();
   });
 
   // ── 场景 14：强制关闭消息 token 计数（P1-H2 瘦身）──────────────────────────

@@ -192,7 +192,7 @@ export class MiniappWalletRepository {
       throw new Error(`查询签到配置失败：${configError.message}`);
     }
 
-    const rewardCredits = parsePositiveInteger(configRow?.value ?? configRow?.text_value, 10);
+    const rewardCredits = parsePositiveInteger(configRow?.value ?? configRow?.text_value, 60);
 
     const { data, error } = await this.db
       .from('daily_checkins')

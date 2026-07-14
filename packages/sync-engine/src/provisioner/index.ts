@@ -14,18 +14,14 @@
  *   7. 更新 users.st_initialized_at
  */
 
-import { existsSync, readFileSync } from 'node:fs';
-import { get as lodashGet } from 'lodash-es';
-
 import { getSupabaseClient } from '../lib/supabase.js';
 import { config } from '../lib/config.js';
-import { listCharacterIds, settingsPath } from '../lib/st-fs.js';
+import { listCharacterIds } from '../lib/st-fs.js';
 import { fetchProvisionData } from './fetcher.js';
 import { mergeSettings } from './merger.js';
 import {
   writeCharacters,
   writeCharacterById,
-  writePlatformAssets,
   writePresets,
   writeSettings,
   writeSecrets,
@@ -33,18 +29,6 @@ import {
 } from './writer.js';
 import type { WriteCharactersResult } from './writer.js';
 import { ensureStUser } from './st-user.js';
-
-function hadMoonlitEnabledOnDisk(handle: string): boolean {
-  const path = settingsPath(handle);
-  if (!existsSync(path)) return false;
-
-  try {
-    const settings = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
-    return lodashGet(settings, 'extension_settings.SillyTavernMoonlitEchoesTheme.enabled') === true;
-  } catch {
-    return false;
-  }
-}
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────────
 
@@ -152,7 +136,6 @@ export async function provision(
   // 检查是否已初始化（仅在非 force 模式下作为提示，不跳过后续步骤）
   // B 类有记录 = 曾经初始化过；force 模式下仍执行全量覆盖
   const alreadyInitialized = userSettings !== null;
-  const grandfatherMoonlit = hadMoonlitEnabledOnDisk(stHandle);
 
   // ── 3. order=10：写角色卡 PNG（资产层，受 characterScope 控制）───────────────
   log('[provision] 步骤 3/5：下发角色卡 PNG（order=10）...');
@@ -177,19 +160,6 @@ export async function provision(
     log(
       `[provision]      请确认 Storage bucket「${config.CHARACTER_STORAGE_BUCKET}」中包含对应的 PNG 文件`
     );
-  }
-
-  // ── 3.5 order=15：只为原本已启用 Moonlit 的存量用户补齐资产 ───────────────
-  if (grandfatherMoonlit) {
-    log('[provision] 步骤 3.5/5：保留存量用户 Moonlit 主题与背景...');
-    try {
-      const assetResult = writePlatformAssets(stHandle, force);
-      log(`[provision]   写入=${assetResult.written.length}, 跳过=${assetResult.skipped.length}`);
-    } catch (err) {
-      throw new ProvisionError(`写入平台主题/背景失败：${err}`, err);
-    }
-  } else {
-    log('[provision] 步骤 3.5/5：跳过 Moonlit（停止向新用户 Provision）');
   }
 
   // ── 4. order=20：写预设 JSON（资产层）─────────────────────────────────────
@@ -251,8 +221,7 @@ export async function provision(
       systemFallbackCharacterId ?? undefined,
       config.LLM_PROXY_URL,
       userPersona.name ? { name: userPersona.name, avatarFile: personaAvatarFile } : undefined,
-      data.defaultLlmModel,
-      { grandfatherMoonlit }
+      data.defaultLlmModel
     );
   } catch (err) {
     throw new ProvisionError(`merge settings 失败：${err}`, err);

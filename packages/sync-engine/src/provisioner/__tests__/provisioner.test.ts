@@ -20,11 +20,6 @@ import type { PlatformSettingsRow, UserSettingsRow } from '../fetcher.js';
 
 // ─── Mock 声明（必须在 import 之前） ──────────────────────────────────────────
 
-vi.mock('node:fs', () => ({
-  existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(),
-}));
-
 vi.mock('../fetcher.js', () => ({
   fetchProvisionData: vi.fn(),
   FetchError: class FetchError extends Error {
@@ -92,7 +87,6 @@ import { provision, ProvisionError } from '../index.js';
 import * as fetcherMod from '../fetcher.js';
 import * as writerMod from '../writer.js';
 import * as stUserMod from '../st-user.js';
-import * as fsMod from 'node:fs';
 
 // ─── 测试固件 ──────────────────────────────────────────────────────────────────
 const CHAR_UUID = '11111111-1111-4111-8111-000000000001';
@@ -157,8 +151,6 @@ describe('provision()', () => {
   const mockedWriteSettings = writerMod.writeSettings as unknown as MockInstance;
   const mockedEnsureAvatar = writerMod.ensureUserAvatar as unknown as MockInstance;
   const mockedEnsureUser = stUserMod.ensureStUser as unknown as MockInstance;
-  const mockedExistsSync = fsMod.existsSync as unknown as MockInstance;
-  const mockedReadFileSync = fsMod.readFileSync as unknown as MockInstance;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -173,7 +165,6 @@ describe('provision()', () => {
     mockedWriteSettings.mockReturnValue(undefined);
     mockedEnsureAvatar.mockResolvedValue('4d015fdd-7f82-482c-912d-466eaa826280.png');
     mockedEnsureUser.mockResolvedValue({ created: true });
-    mockedExistsSync.mockReturnValue(false);
   });
 
   // ── 场景 1：新用户正常路径 ────────────────────────────────────────────────
@@ -223,27 +214,6 @@ describe('provision()', () => {
       // merger 强制项（P1-H2 瘦身）：关闭消息气泡 token 计数
       message_token_count_enabled: false,
       auto_load_chat: false,
-    });
-  });
-
-  it('仅为磁盘上已启用 Moonlit 的存量用户继续下发主题', async () => {
-    mockedExistsSync.mockReturnValue(true);
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({
-        extension_settings: { SillyTavernMoonlitEchoesTheme: { enabled: true } },
-      })
-    );
-
-    await provision(USER_ID, { log: () => {} });
-
-    expect(mockedWritePlatformAssets).toHaveBeenCalledOnce();
-    const [, merged] = mockedWriteSettings.mock.calls[0] as [
-      string,
-      { settings: Record<string, unknown> },
-    ];
-    expect(merged.settings['power_user']).toMatchObject({
-      chat_display: 3,
-      theme: 'Glimmer - by Rivelle',
     });
   });
 

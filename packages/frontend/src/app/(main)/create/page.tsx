@@ -9,24 +9,24 @@ export default function CreatePage() {
       data-app-shell="create"
       className="mx-auto flex min-h-screen w-full max-w-screen-xl flex-col bg-[#0A0A0A] px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] text-white"
     >
-      <header className="flex items-center justify-between">
+      <header>
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-purple-300/70">Create</p>
           <h1 className="mt-1 text-2xl font-black tracking-tight">创作</h1>
         </div>
+      </header>
+
+      <section className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
         <Button
           asChild
-          size="sm"
-          className="rounded-full bg-white text-slate-950 shadow-lg shadow-purple-500/20 hover:bg-purple-100"
+          size="lg"
+          className="h-14 rounded-full border-0 bg-white px-10 text-base font-bold text-slate-950 shadow-none ring-0 hover:bg-purple-100 focus-visible:ring-0"
         >
           <Link href="/create/wish">
-            <Sparkles className="h-4 w-4" aria-hidden />
+            <Sparkles className="size-5" aria-hidden />
             许愿池
           </Link>
         </Button>
-      </header>
-
-      <section className="flex flex-1 flex-col items-center justify-center text-center">
         <div className="rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-8 shadow-2xl shadow-black/30 backdrop-blur">
           <p className="text-[13px] font-medium text-slate-300">创作功能即将上线</p>
           <p className="mt-2 text-xs leading-5 text-slate-500">
