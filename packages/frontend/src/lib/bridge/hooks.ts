@@ -6,12 +6,26 @@ import { useSTMirrorStore } from '@/stores/st-mirror';
 
 export function useBridgeStatus(): BridgeStatus {
   const subscribe = useRef((onStoreChange: () => void) => {
-    const client = getBridgeClientOrNull();
-    if (!client) {
-      window.addEventListener('miniapp:bridge-client-ready', onStoreChange);
-      return () => window.removeEventListener('miniapp:bridge-client-ready', onStoreChange);
-    }
-    return client.onStatusChange(onStoreChange);
+    let unsubscribeClient: (() => void) | null = null;
+
+    const subscribeClient = () => {
+      if (unsubscribeClient) return;
+      const client = getBridgeClientOrNull();
+      if (!client) return;
+
+      unsubscribeClient = client.onStatusChange(onStoreChange);
+      // setBridgeClient() fires before client.start(); re-read the current idle state now,
+      // then onStatusChange will deliver loading/interactive/ready transitions.
+      onStoreChange();
+    };
+
+    subscribeClient();
+    window.addEventListener('miniapp:bridge-client-ready', subscribeClient);
+
+    return () => {
+      window.removeEventListener('miniapp:bridge-client-ready', subscribeClient);
+      unsubscribeClient?.();
+    };
   }).current;
 
   const getSnapshot = useRef(() => {
