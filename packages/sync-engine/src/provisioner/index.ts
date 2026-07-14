@@ -22,7 +22,6 @@ import { mergeSettings } from './merger.js';
 import {
   writeCharacters,
   writeCharacterById,
-  writePlatformAssets,
   writePresets,
   writeSettings,
   writeSecrets,
@@ -161,15 +160,6 @@ export async function provision(
     log(
       `[provision]      请确认 Storage bucket「${config.CHARACTER_STORAGE_BUCKET}」中包含对应的 PNG 文件`
     );
-  }
-
-  // ── 3.5 order=15：写平台主题与背景（资产层）───────────────────────────────
-  log('[provision] 步骤 3.5/5：下发 Moonlit 主题与背景...');
-  try {
-    const assetResult = writePlatformAssets(stHandle, force);
-    log(`[provision]   写入=${assetResult.written.length}, 跳过=${assetResult.skipped.length}`);
-  } catch (err) {
-    throw new ProvisionError(`写入平台主题/背景失败：${err}`, err);
   }
 
   // ── 4. order=20：写预设 JSON（资产层）─────────────────────────────────────

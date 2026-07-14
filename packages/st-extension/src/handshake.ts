@@ -53,7 +53,6 @@ export function initHandshake(server: BridgeServer, opts: HandshakeOptions): voi
   window.addEventListener(
     'miniapp:st-interactive',
     () => {
-      dismissForegroundBootSplash();
       server.setCurrentPhase('interactive');
       server.sendHandshake('interactive');
     },

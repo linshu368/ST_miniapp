@@ -187,7 +187,7 @@ describe('provision()', () => {
 
     expect(mockedEnsureUser).toHaveBeenCalledOnce();
     expect(mockedWriteChars).toHaveBeenCalledOnce();
-    expect(mockedWritePlatformAssets).toHaveBeenCalledOnce();
+    expect(mockedWritePlatformAssets).not.toHaveBeenCalled();
     expect(mockedWritePresets).toHaveBeenCalledOnce();
     expect(mockedWriteSettings).toHaveBeenCalledOnce();
   });
@@ -207,8 +207,6 @@ describe('provision()', () => {
     expect(merged.settings['active_group']).toBeNull();
     expect(merged.settings['user_avatar']).toBe('4d015fdd-7f82-482c-912d-466eaa826280.png');
     expect(merged.settings['power_user']).toEqual({
-      chat_display: 3,
-      theme: 'Glimmer - by Rivelle',
       personas: { '4d015fdd-7f82-482c-912d-466eaa826280.png': '用户' },
       persona_descriptions: {
         '4d015fdd-7f82-482c-912d-466eaa826280.png': { position: 0, description: '' },

@@ -14,7 +14,7 @@ import { requestTelegramChatFullscreen } from '@/lib/telegram/init';
 import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
 
-const FIRST_SCREEN_IMAGE_COUNT = 6;
+const FIRST_SCREEN_IMAGE_COUNT = 8;
 const LOBBY_CRITICAL_READY_EVENT = 'miniapp:lobby-critical-ready';
 
 // 命中打分:数字越大越精确,0 = 不命中
