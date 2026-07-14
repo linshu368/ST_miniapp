@@ -57,10 +57,11 @@ export default function TavernChatPage() {
   }, [characterId, entryAttempt]);
 
   useEffect(() => {
-    if (!characterId || (bridgeStatus !== 'interactive' && bridgeStatus !== 'ready')) return;
+    // 角色切换会触发 ST 的聊天创建与首条消息渲染，必须等 APP_READY 后再执行。
+    // 移动端冷启动较慢；interactive 阶段仍可能在加载设置/扩展，过早切换会卡到桥接超时。
+    if (!characterId || bridgeStatus !== 'ready') return;
 
     markTiming('gate_open'); // [iframe-timing] TEMP DEBUG
-    if (bridgeStatus === 'interactive') markTiming('interactive_gate_open');
     const runKey = `${characterId}:${entryAttempt}`;
     if (selectRunRef.current === runKey) return;
     selectRunRef.current = runKey;
