@@ -33,6 +33,7 @@ const PHASES: Array<[string, string, string]> = [
   ['  ├H1 找卡+getCharacters重载', 'sel_start', 'sel_reload_done'],
   ['  ├H3 selectCharacterById', 'sel_reload_done', 'sel_selectById_done'],
   ['  └H2 /newchat', 'sel_selectById_done', 'sel_newchat_done'],
+  ['  └H2 /newchat失败', 'sel_newchat_start', 'sel_newchat_error'],
   // 冷启动（bridge 生命周期，绝对，仅首次有意义）
   ['[冷]iframe_load(网络)', 'bridge_start', 'iframe_onload'],
   ['[冷]st_script+ext_init', 'iframe_onload', 'st_handshake'],
@@ -97,6 +98,9 @@ export default async function debugRoutes(app: FastifyInstance) {
         ` | timeline=${timeline}` +
         ` | ua=${ua}`
     );
+    // Keep failure metadata on its own line: the main timing line can be long enough for
+    // Railway to truncate its tail, and PR #123's BridgeError fields live under meta.
+    request.log.info(`[iframe-timing-meta] char=${charId} meta=${JSON.stringify(body.meta ?? {})}`);
     waterfallLines.sort((a, b) => a[0].localeCompare(b[0]));
     for (const [k, v] of waterfallLines) {
       request.log.info(`[iframe-timing-wf] char=${charId} ${k}: ${v}`);
