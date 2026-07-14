@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { platformAction, useBridgeStatus } from '@/lib/bridge';
+import { BridgeError } from '@miniapp/bridge-protocol';
+import { getBridgeClientOrNull, platformAction, useBridgeStatus } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { requestTelegramChatFullscreen } from '@/lib/telegram/init';
 import { ChatHeader } from '@/components/tavern/chat-header';
@@ -95,6 +96,32 @@ export default function TavernChatPage() {
         })
         .catch((err) => {
           console.error('[TavernChatPage] selectCharacter failed:', err);
+          // [iframe-timing] TEMP DEBUG: success previously was the only flush path, so the
+          // mobile timeout left no remote evidence. Flush the accumulated ST sub-phase marks
+          // and the concrete BridgeError before rendering the retry state.
+          markTiming('select_error');
+          const errorMeta =
+            err instanceof BridgeError
+              ? {
+                  errorName: err.name,
+                  errorCode: err.code,
+                  errorMessage: err.message,
+                  errorRequestId: err.requestId,
+                  errorContext: err.context,
+                }
+              : {
+                  errorName: err instanceof Error ? err.name : typeof err,
+                  errorMessage: err instanceof Error ? err.message : String(err),
+                };
+          flushIframeTiming({
+            characterId,
+            entryAttempt,
+            outcome: 'select_error',
+            bridgeStatusAtGate: bridgeStatus,
+            bridgeStatusAtError: getBridgeClientOrNull()?.getStatus() ?? 'unavailable',
+            activeRun: selectRunRef.current === runKey,
+            ...errorMeta,
+          });
           if (selectRunRef.current === runKey) {
             selectRunRef.current = null;
             setEntryError('角色加载失败，请重试。');
