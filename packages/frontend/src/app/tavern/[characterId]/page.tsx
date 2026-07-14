@@ -22,6 +22,7 @@ export default function TavernChatPage() {
   const [entryAttempt, setEntryAttempt] = useState(0);
   const selectRunRef = useRef<string | null>(null);
   const chatReady = readyCharacterId === characterId;
+  const chatVisibleReady = chatReady && bridgeStatus === 'ready';
 
   useEffect(() => {
     requestTelegramChatFullscreen();
@@ -30,14 +31,14 @@ export default function TavernChatPage() {
   // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。
   useEffect(() => {
     window.dispatchEvent(
-      new CustomEvent(CHAT_INTERACTIVITY_EVENT, { detail: { interactive: chatReady } })
+      new CustomEvent(CHAT_INTERACTIVITY_EVENT, { detail: { interactive: chatVisibleReady } })
     );
     return () => {
       window.dispatchEvent(
         new CustomEvent(CHAT_INTERACTIVITY_EVENT, { detail: { interactive: false } })
       );
     };
-  }, [chatReady]);
+  }, [chatVisibleReady]);
 
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
@@ -109,7 +110,7 @@ export default function TavernChatPage() {
         <ChatSplash
           key={`${characterId}:${entryAttempt}`}
           characterId={characterId}
-          ready={chatReady}
+          ready={chatVisibleReady}
           error={entryError}
           onRetry={() => setEntryAttempt((attempt) => attempt + 1)}
         />
