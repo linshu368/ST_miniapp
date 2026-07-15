@@ -53,6 +53,19 @@ export function totalCredits(plan: Pick<PaymentPlan, 'credits_amount' | 'bonus_c
   return plan.credits_amount + plan.bonus_credits;
 }
 
+/** 仅允许站内回跳地址，避免 returnTo 查询参数形成开放重定向。 */
+export function safePaymentReturnTo(value: string | null): string | null {
+  if (!value) return null;
+  const base = 'https://miniapp.local';
+  try {
+    const url = new URL(value, base);
+    if (url.origin !== base) return null;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 订单按相对时间分组（今天 / 昨天 / 本月 / 更早）；用于流水列表的段落标题。
  * 只用日历日粒度，不考虑时区的精细处理。

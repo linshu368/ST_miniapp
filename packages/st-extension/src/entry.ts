@@ -19,6 +19,7 @@ import { installReasoningAutoParse } from './patches/reasoning-auto-parse.js';
 import { installGlobalRegexSafetyNet } from './patches/global-regex-safety-net.js';
 import { installCharTokenCounterSuppress } from './patches/char-token-counter-suppress.js';
 import { installWelcomeScreenSuppress } from './patches/welcome-screen-suppress.js';
+import { installBillingErrorBridge } from './patches/billing-error-bridge.js';
 import { stTiming } from './debug-timing.js'; // [iframe-timing] TEMP DEBUG
 import { installBootTimingProbes } from './debug-boot-probes.js'; // [iframe-timing] TEMP DEBUG
 import { installBootWaterfallProbe } from './debug-boot-waterfall.js'; // [iframe-timing] TEMP DEBUG
@@ -83,6 +84,7 @@ function init(): void {
 
   const server = createBridgeServer('*');
   server.start();
+  installBillingErrorBridge(server);
 
   // Register action handlers
   server.registerHandler('selectCharacter', (p) => handleSelectCharacter(p as any));

@@ -10,3 +10,12 @@ export interface ModelTierConfig {
 export interface GetModelTiersData {
   tiers: ModelTierConfig[];
 }
+
+export interface InsufficientBalanceErrorResponse {
+  error: {
+    message: string;
+    type: 'insufficient_balance';
+    credits_required: number;
+    credits_available: number;
+  };
+}

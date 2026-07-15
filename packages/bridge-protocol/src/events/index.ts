@@ -1,5 +1,6 @@
 export type { EventMeta } from './types.js';
 export * from './app-ready.js';
+export * from './billing-insufficient.js';
 export * from './character-changed.js';
 export * from './chat-changed.js';
 export * from './chat-created.js';

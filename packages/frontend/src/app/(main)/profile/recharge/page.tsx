@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, Receipt, ShieldCheck } from 'lucide-react';
 import type { PaymentType } from '@miniapp/shared';
 
@@ -13,7 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
-import { formatYuanShort, paymentTypeLabel } from '@/lib/utils/payment';
+import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
 const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
@@ -28,7 +28,9 @@ export default function RechargePage() {
 
 function RechargePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { whisper, impact, notification } = useHaptic();
+  const returnTo = safePaymentReturnTo(searchParams.get('returnTo'));
 
   const goBack = useCallback(() => router.back(), [router]);
   useTelegramBackButton(goBack);
@@ -61,12 +63,15 @@ function RechargePageContent() {
         plan_id: selectedPlan.id,
         payment_type: paymentType,
       });
-      const nextPath = `/profile/recharge/${encodeURIComponent(result.order.id)}?pay_url=${encodeURIComponent(result.pay_url)}`;
-      router.push(nextPath);
+      const nextSearch = new URLSearchParams({ pay_url: result.pay_url });
+      if (returnTo) nextSearch.set('returnTo', returnTo);
+      router.push(
+        `/profile/recharge/${encodeURIComponent(result.order.id)}?${nextSearch.toString()}`
+      );
     } catch {
       notification('error');
     }
-  }, [selectedPlan, createOrder, paymentType, router, impact, notification]);
+  }, [selectedPlan, createOrder, paymentType, router, returnTo, impact, notification]);
 
   return (
     <main
