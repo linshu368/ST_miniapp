@@ -13,6 +13,7 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { InsufficientBalanceErrorResponse } from '@miniapp/shared';
 import { Readable, Transform } from 'node:stream';
 import { verifyPlatformToken } from '../lib/llm-token.js';
 import { getModelTier } from '../platform/model-tiers.js';
@@ -129,32 +130,33 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         deductionRate = tierConfig.deductionRate;
       }
 
-      // ── 余额预检临时关闭：允许 0 积分用户正常发起 LLM 调用 ────────────────
-      // if (deductionRate > 0) {
-      //   try {
-      //     const wallet = await wallets.getOrCreate(userId);
-      //     const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-      //     if (balance < deductionRate) {
-      //       request.log.info(
-      //         { userId, balance, required: deductionRate, model: modelName },
-      //         '[llm-proxy] insufficient balance'
-      //       );
-      //       return reply.status(402).send({
-      //         error: {
-      //           message: `Insufficient credits: have ${balance}, need ${deductionRate}`,
-      //           type: 'insufficient_balance',
-      //           credits_required: deductionRate,
-      //           credits_available: balance,
-      //         },
-      //       });
-      //     }
-      //   } catch (err) {
-      //     request.log.error({ err: String(err), userId }, '[llm-proxy] wallet check failed');
-      //     return reply.status(500).send({
-      //       error: { message: 'Failed to check wallet balance', type: 'internal_error' },
-      //     });
-      //   }
-      // }
+      // ── 余额预检：不足时在调用上游前返回 402，由 ST bridge 引导充值 ─────────
+      if (deductionRate > 0) {
+        try {
+          const wallet = await wallets.getOrCreate(userId);
+          const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
+          if (balance < deductionRate) {
+            request.log.info(
+              { userId, balance, required: deductionRate, model: modelName },
+              '[llm-proxy] insufficient balance'
+            );
+            const response: InsufficientBalanceErrorResponse = {
+              error: {
+                message: `Insufficient credits: have ${balance}, need ${deductionRate}`,
+                type: 'insufficient_balance',
+                credits_required: deductionRate,
+                credits_available: balance,
+              },
+            };
+            return reply.status(402).send(response);
+          }
+        } catch (err) {
+          request.log.error({ err: String(err), userId }, '[llm-proxy] wallet check failed');
+          return reply.status(500).send({
+            error: { message: 'Failed to check wallet balance', type: 'internal_error' },
+          });
+        }
+      }
 
       // ── 构造上游请求 ──────────────────────────────────────────────────────
       const subPath = request.url.replace(/^\/api\/platform\/llm-proxy\/v1/, '') || '/';
@@ -239,6 +241,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       // ── 判断是否 SSE 流式 ─────────────────────────────────────────────────
       const contentType = upstreamRes.headers.get('content-type') || '';
       const isSSE = contentType.includes('text/event-stream');
+      const generationId = upstreamRes.headers.get('x-generation-id') || null;
 
       if (!upstreamRes.body) {
         if (deductionRate > 0) {
@@ -256,6 +259,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
               preset_id: presetId,
               status: 'success',
               deduction_rate: deductionRate,
+              generation_id: generationId,
             },
             request.log
           );
@@ -270,39 +274,48 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
         let streamCompleted = false;
         const replyChunks: string[] = [];
-        let generationId: string | null = null;
+        let sseBuffer = '';
 
         const sseTap = new Transform({
           transform(chunk, _encoding, callback) {
-            const text = chunk.toString();
-            if (text.includes('data: [DONE]')) {
-              streamCompleted = true;
-            }
+            sseBuffer += chunk.toString();
+            const lines = sseBuffer.split('\n');
+            // 保留最后一行（可能不完整），其余行处理
+            sseBuffer = lines.pop() || '';
 
-            // 从 SSE data 行中提取 delta content 累积 assistant reply 和 generation_id
-            const lines = text.split('\n');
             for (const line of lines) {
-              if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+              if (line.includes('data: [DONE]')) {
+                streamCompleted = true;
+                continue;
+              }
+              if (!line.startsWith('data: ')) continue;
               try {
                 const json = JSON.parse(line.slice(6));
-
-                // 提取 generation_id (通常在第一个 chunk 中就会包含)
-                if (!generationId && json?.id) {
-                  generationId = json.id;
-                }
-
                 const delta = json?.choices?.[0]?.delta?.content;
                 if (typeof delta === 'string') {
                   replyChunks.push(delta);
                 }
               } catch {
-                // non-JSON data line, skip
+                // non-JSON data line or incomplete JSON, skip
               }
             }
 
             callback(null, chunk);
           },
           flush(callback) {
+            // 处理 buffer 中剩余的最后一行
+            if (sseBuffer.includes('data: [DONE]')) {
+              streamCompleted = true;
+            } else if (sseBuffer.startsWith('data: ')) {
+              try {
+                const json = JSON.parse(sseBuffer.slice(6));
+                const delta = json?.choices?.[0]?.delta?.content;
+                if (typeof delta === 'string') {
+                  replyChunks.push(delta);
+                }
+              } catch {}
+            }
+
             if (streamCompleted) {
               if (deductionRate > 0) {
                 deductAfterSuccess(userId, deductionRate, modelName, request);
@@ -365,12 +378,13 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             user_id: userId,
             model: modelName,
             user_input: userInput,
-            assistant_reply: null,
+            assistant_reply: null, // 非流式通常在这里无法简单拦截 body
             history: chatMessages,
             character_id: characterId,
             preset_id: presetId,
             status: 'success',
             deduction_rate: deductionRate,
+            generation_id: generationId,
           },
           request.log
         );

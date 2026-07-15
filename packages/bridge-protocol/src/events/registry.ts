@@ -1,6 +1,10 @@
 import type { z } from 'zod';
 import type { EventMeta } from './types.js';
 import { AppReadyPayloadSchema, appReadyMeta } from './app-ready.js';
+import {
+  BillingInsufficientPayloadSchema,
+  billingInsufficientMeta,
+} from './billing-insufficient.js';
 import { CharacterChangedPayloadSchema, characterChangedMeta } from './character-changed.js';
 import { ChatChangedPayloadSchema, chatChangedMeta } from './chat-changed.js';
 import { ChatCreatedPayloadSchema, chatCreatedMeta } from './chat-created.js';
@@ -22,6 +26,7 @@ import { SettingsUpdatedPayloadSchema, settingsUpdatedMeta } from './settings-up
 
 export type EventName =
   | 'app:ready'
+  | 'billing:insufficient'
   | 'character:changed'
   | 'chat:changed'
   | 'chat:created'
@@ -37,6 +42,7 @@ export type EventName =
 
 export type EventPayloadMap = {
   'app:ready': z.infer<typeof AppReadyPayloadSchema>;
+  'billing:insufficient': z.infer<typeof BillingInsufficientPayloadSchema>;
   'character:changed': z.infer<typeof CharacterChangedPayloadSchema>;
   'chat:changed': z.infer<typeof ChatChangedPayloadSchema>;
   'chat:created': z.infer<typeof ChatCreatedPayloadSchema>;
@@ -53,6 +59,7 @@ export type EventPayloadMap = {
 
 export const eventRegistry: Record<EventName, EventMeta> = {
   'app:ready': appReadyMeta,
+  'billing:insufficient': billingInsufficientMeta,
   'character:changed': characterChangedMeta,
   'chat:changed': chatChangedMeta,
   'chat:created': chatCreatedMeta,

@@ -2,19 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ChevronLeft, Clock, Loader2, XCircle } from 'lucide-react';
 import type { PaymentOrder } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
 
 import { cn } from '@/lib/utils';
-import { usePaymentOrderQuery } from '@/lib/api/payment';
+import { paymentKeys, usePaymentOrderQuery } from '@/lib/api/payment';
 import {
   formatCountdown,
   formatNumber,
   formatYuanShort,
   paymentTypeLabel,
   remainingSeconds,
+  safePaymentReturnTo,
 } from '@/lib/utils/payment';
 import { openExternalUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
@@ -23,11 +25,16 @@ export default function PaymentPendingPage() {
   const orderId = params?.orderId ? decodeURIComponent(params.orderId) : undefined;
   const search = useSearchParams();
   const payUrl = search?.get('pay_url') ?? null;
+  const returnTo = safePaymentReturnTo(search?.get('returnTo') ?? null);
 
   const router = useRouter();
-  const goBack = useCallback(() => router.push('/profile/recharge'), [router]);
+  const rechargePath = returnTo
+    ? `/profile/recharge?returnTo=${encodeURIComponent(returnTo)}`
+    : '/profile/recharge';
+  const goBack = useCallback(() => router.push(rechargePath), [rechargePath, router]);
   useTelegramBackButton(goBack);
 
+  const queryClient = useQueryClient();
   const { data, isLoading, isError } = usePaymentOrderQuery(orderId);
   const order = data?.order;
 
@@ -40,6 +47,11 @@ export default function PaymentPendingPage() {
       setCongratsFired(true);
     }
   }, [order?.status, congratsFired, notification]);
+
+  useEffect(() => {
+    if (order?.status !== 'completed') return;
+    void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+  }, [order?.status, queryClient]);
 
   useEffect(() => {
     if (!payUrl || payUrlOpened || order?.status !== 'pending') return;
@@ -94,15 +106,11 @@ export default function PaymentPendingPage() {
         ) : order.status === 'completed' ? (
           <CompletedView
             order={order}
-            onHome={() => router.push('/')}
+            onHome={() => router.push(returnTo ?? '/')}
             onOrders={() => router.push('/profile/orders')}
           />
         ) : (
-          <TerminalView
-            order={order}
-            onRetry={() => router.push('/profile/recharge')}
-            onBack={goBack}
-          />
+          <TerminalView order={order} onRetry={() => router.push(rechargePath)} onBack={goBack} />
         )}
       </div>
     </Screen>
