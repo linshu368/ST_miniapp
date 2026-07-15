@@ -33,6 +33,11 @@ async function fetchGenerationDataWithRetry(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      // 首次请求前主动等待，给 OpenRouter 生成异步统计数据留出时间
+      if (attempt === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
       const res = await fetch(`https://openrouter.ai/api/v1/generation?id=${generationId}`, {
         headers: {
           Authorization: `Bearer ${OPENROUTER_API_KEY}`,
@@ -44,7 +49,14 @@ async function fetchGenerationDataWithRetry(
       }
 
       const data = await res.json();
-      return data?.data || data; // OpenRouter usually wraps response in { data: {...} }
+      const genData = data?.data || data; // OpenRouter usually wraps response in { data: {...} }
+
+      // 如果返回的数据里没有核心指标，说明可能还在处理中，主动抛错触发重试
+      if (!genData || typeof genData.generation_time === 'undefined') {
+        throw new Error('Generation metrics not ready yet');
+      }
+
+      return genData;
     } catch (err) {
       log.warn(
         { err: String(err), generationId, attempt },
@@ -57,8 +69,8 @@ async function fetchGenerationDataWithRetry(
         );
         return null;
       }
-      // Wait before retrying (exponential backoff: 1s, 2s)
-      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+      // Wait before retrying (exponential backoff: 2s, 4s...)
+      await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
     }
   }
   return null;
