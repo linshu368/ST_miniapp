@@ -5,26 +5,36 @@ import { csApi } from '../api';
 import { DEFAULT_SOP, DEFAULT_SQL } from '../constants';
 
 export function PersonaModal(props: {
+  persona?: CsPersonaData;
   onClose: () => void;
-  onCreated: (persona: CsPersonaData) => void;
+  onSaved: (persona: CsPersonaData, mode: 'created' | 'updated') => void;
   onToast: (message: string) => void;
 }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [openingScript, setOpeningScript] = useState('');
-  const [sql, setSql] = useState(DEFAULT_SQL);
+  const [name, setName] = useState(props.persona?.name ?? '');
+  const [description, setDescription] = useState(props.persona?.description ?? '');
+  const [openingScript, setOpeningScript] = useState(props.persona?.opening_script ?? '');
+  const [sql, setSql] = useState(props.persona?.sql ?? DEFAULT_SQL);
+  const isEditing = !!props.persona;
 
-  const createMutation = useMutation({
+  const saveMutation = useMutation({
     mutationFn: () =>
-      csApi.createPersona({
-        name,
-        description,
-        opening_script: openingScript,
-        sql,
-        sop: DEFAULT_SOP,
-      }),
-    onSuccess: (data) => props.onCreated(data.persona),
-    onError: (error) => props.onToast(error instanceof Error ? error.message : '创建失败'),
+      props.persona
+        ? csApi.updatePersona(props.persona.id, {
+            name,
+            description,
+            opening_script: openingScript,
+            sql,
+          })
+        : csApi.createPersona({
+            name,
+            description,
+            opening_script: openingScript,
+            sql,
+            sop: DEFAULT_SOP,
+          }),
+    onSuccess: (data) => props.onSaved(data.persona, isEditing ? 'updated' : 'created'),
+    onError: (error) =>
+      props.onToast(error instanceof Error ? error.message : isEditing ? '更新失败' : '创建失败'),
   });
 
   const canSubmit = name.trim() && sql.trim() && openingScript.trim();
@@ -36,9 +46,14 @@ export function PersonaModal(props: {
         if (event.target === event.currentTarget) props.onClose();
       }}
     >
-      <div className="modal" role="dialog" aria-modal="true" aria-label="新建画像簇">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={isEditing ? '配置画像簇' : '新建画像簇'}
+      >
         <header className="modal-header">
-          <h2>新建画像簇</h2>
+          <h2>{isEditing ? '配置画像簇' : '新建画像簇'}</h2>
           <button className="modal-close" onClick={props.onClose} aria-label="关闭">
             ✕
           </button>
@@ -100,10 +115,10 @@ export function PersonaModal(props: {
           </button>
           <button
             className="btn btn-primary"
-            onClick={() => createMutation.mutate()}
-            disabled={createMutation.isPending || !canSubmit}
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !canSubmit}
           >
-            {createMutation.isPending ? '保存中…' : '保存画像簇'}
+            {saveMutation.isPending ? '保存中…' : isEditing ? '保存配置' : '保存画像簇'}
           </button>
         </footer>
       </div>

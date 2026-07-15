@@ -46,6 +46,7 @@ export interface CsUserData {
   telegram_user_id: string;
   display_name: string;
   username: string | null;
+  avatar_url: string | null;
   register_days: number;
   total_paid_amount: string;
   paid_count: number;
@@ -141,6 +142,27 @@ export interface GetCsSessionData {
 
 export interface GetCsMessagesData {
   messages: CsMessageData[];
+}
+
+export interface CsAppChatTurnData {
+  id: string;
+  user_id: string;
+  character_id: string | null;
+  character_name: string | null;
+  user_input: string;
+  assistant_reply: string | null;
+  model: string;
+  status: 'success' | 'upstream_error' | 'stream_interrupted';
+  created_at: string;
+}
+
+export interface GetCsAppChatData {
+  turns: CsAppChatTurnData[];
+}
+
+export interface CsTelegramReachabilityData {
+  reachable: boolean;
+  reason: string | null;
 }
 
 export interface SendCsMessageRequest {
