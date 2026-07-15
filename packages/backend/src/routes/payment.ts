@@ -11,7 +11,10 @@ import type {
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
-import { getPaymentPlans } from '../features/payment/domain/rechargeRules.js';
+import {
+  getInsufficientCreditsNotice,
+  getPaymentPlans,
+} from '../features/payment/domain/rechargeRules.js';
 import { RechargeUseCase } from '../features/payment/usecases/RechargeUseCase.js';
 import {
   JLPaymentGateway,
@@ -42,8 +45,16 @@ export default async function paymentRoutes(app: FastifyInstance) {
 
   // @frontend-ready: true
   app.get('/api/payment/plans', async (_request, reply) => {
-    const plans = await getPaymentPlans();
-    return reply.send(ok<GetPaymentPlansData>({ plans }));
+    const [plans, insufficientCreditsNotice] = await Promise.all([
+      getPaymentPlans(),
+      getInsufficientCreditsNotice(),
+    ]);
+    return reply.send(
+      ok<GetPaymentPlansData>({
+        plans,
+        insufficient_credits_notice: insufficientCreditsNotice,
+      })
+    );
   });
 
   // @frontend-ready: true

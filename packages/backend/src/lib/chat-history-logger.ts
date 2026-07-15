@@ -7,6 +7,8 @@
 
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
+import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
+import { getPricingConfig } from '../platform/model-tiers.js';
 
 export interface ChatHistoryEntry {
   user_id: string;
@@ -18,11 +20,12 @@ export interface ChatHistoryEntry {
   preset_id?: string | null;
   status: 'success' | 'upstream_error' | 'stream_interrupted';
   upstream_status?: number | null;
-  deduction_rate: number;
+  deduction_rate?: number; // now calculated internally
   generation_id?: string | null;
 }
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
+const wallets = new MiniappWalletRepository();
 
 async function fetchGenerationDataWithRetry(
   generationId: string,
@@ -80,6 +83,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
   void (async () => {
     try {
       let llmMetadata: Record<string, any> = {};
+      let actualDeduction = 0;
 
       // 如果有 generation_id，尝试异步获取详细数据
       if (entry.generation_id) {
@@ -114,6 +118,34 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         }
       }
 
+      // 仅在生成成功时才计算扣费并执行真实扣款
+      if (entry.status === 'success') {
+        const pricing = await getPricingConfig();
+        const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
+
+        if (typeof usageCost === 'number') {
+          actualDeduction = Math.round(usageCost * pricing.exchangeRate * pricing.markup);
+        } else {
+          // 如果本次调用成功了，但获取不到usage，使用兜底额
+          actualDeduction = pricing.fallbackCost;
+        }
+
+        if (actualDeduction > 0) {
+          try {
+            await wallets.deduct(entry.user_id, actualDeduction);
+            log.info(
+              { userId: entry.user_id, amount: actualDeduction },
+              '[chat-history] dynamic deduction success'
+            );
+          } catch (deductErr) {
+            log.error(
+              { err: String(deductErr), userId: entry.user_id, amount: actualDeduction },
+              '[chat-history] dynamic deduction failed'
+            );
+          }
+        }
+      }
+
       const supabase = getSupabaseClient();
       const miniappDb = supabase.schema('miniapp' as 'public');
       const { error } = await miniappDb.from('chat_history').insert({
@@ -126,7 +158,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         preset_id: entry.preset_id ?? null,
         status: entry.status,
         upstream_status: entry.upstream_status ?? null,
-        deduction_rate: entry.deduction_rate,
+        deduction_rate: actualDeduction,
         ...llmMetadata,
       });
 

@@ -54,6 +54,8 @@ export interface PaymentOrder {
 // ==== GET /api/payment/plans ====
 export interface GetPaymentPlansData {
   plans: PaymentPlan[];
+  /** 因余额不足进入充值页时展示的运营提示语 */
+  insufficient_credits_notice: string;
 }
 
 // ==== POST /api/payment/orders ====

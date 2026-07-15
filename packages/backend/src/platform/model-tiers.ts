@@ -88,3 +88,54 @@ export async function getAllTiers(): Promise<BackendModelTierConfig[]> {
 }
 
 export const OPENROUTER_PROVIDER = 'openrouter';
+
+export interface LlmPricingConfig {
+  balanceBaseline: number;
+  fallbackCost: number;
+  exchangeRate: number;
+  markup: number;
+}
+
+const DEFAULT_PRICING: LlmPricingConfig = {
+  balanceBaseline: 30,
+  fallbackCost: 30,
+  exchangeRate: 680,
+  markup: 2.5,
+};
+
+let cachedPricing: LlmPricingConfig | null = null;
+let lastPricingFetchTime = 0;
+
+export async function getPricingConfig(): Promise<LlmPricingConfig> {
+  const now = Date.now();
+  if (cachedPricing && now - lastPricingFetchTime < CACHE_TTL_MS) {
+    return cachedPricing;
+  }
+
+  try {
+    const db = getSupabaseClient().schema('miniapp');
+    const { data, error } = await db
+      .from('runtime_config')
+      .select('value')
+      .eq('key', 'llm_pricing_config')
+      .maybeSingle();
+
+    if (error) {
+      console.error('[model-tiers] Failed to fetch llm_pricing_config:', error);
+      return cachedPricing || DEFAULT_PRICING;
+    }
+
+    if (data?.value && typeof data.value === 'object') {
+      cachedPricing = {
+        ...DEFAULT_PRICING,
+        ...(data.value as Partial<LlmPricingConfig>),
+      };
+      lastPricingFetchTime = now;
+      return cachedPricing;
+    }
+  } catch (err) {
+    console.error('[model-tiers] Error fetching llm_pricing_config:', err);
+  }
+
+  return cachedPricing || DEFAULT_PRICING;
+}
