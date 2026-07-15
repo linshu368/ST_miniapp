@@ -161,6 +161,19 @@ export function ChatSplash({
             : undefined,
       }}
     >
+      {phase === 'showing' && (
+        <button
+          type="button"
+          onClick={returnToLobby}
+          disabled={returning}
+          aria-label="取消进入并返回大厅"
+          className="absolute right-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/30 text-2xl font-light text-white/75 backdrop-blur-xl transition-colors hover:bg-white/10 active:scale-95 disabled:opacity-50"
+          style={{ top: 'calc(env(safe-area-inset-top) + 1rem)' }}
+        >
+          ×
+        </button>
+      )}
+
       {/* 极光气团：两团缓慢漂移的模糊光斑，给纯色背景带来呼吸感 */}
       <div
         className="pointer-events-none absolute -left-1/4 top-[-12%] h-[58vh] w-[58vh] rounded-full opacity-45 blur-3xl"

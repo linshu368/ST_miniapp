@@ -90,10 +90,7 @@ const MOCK_SETTINGS = {
   some_locked_field: 'should_be_filtered',
 };
 
-const MOCK_WRITABLE_PATHS = [
-  { path: 'active_character', transform: 'character_ref' },
-  { path: 'oai_settings.prompts', transform: 'passthrough' },
-];
+const MOCK_WRITABLE_PATHS = [{ path: 'active_character', transform: 'character_ref' }];
 
 function setupSettingsFile() {
   vol.reset();
@@ -161,7 +158,7 @@ describe('uploadSettings()', () => {
 
   it('正常路径：content_hash 应等于白名单子集的 canonical hash', async () => {
     const { pick } = await import('lodash-es');
-    const subset = pick(MOCK_SETTINGS, ['active_character', 'oai_settings.prompts']);
+    const subset = pick(MOCK_SETTINGS, ['active_character']);
     const expectedHash = computeContentHash(subset as Record<string, unknown>);
 
     const result = await uploadSettings(USER_ID, HANDLE);
@@ -171,7 +168,7 @@ describe('uploadSettings()', () => {
   // ── 场景 2：幂等去重 ──────────────────────────────────────────────────
   it('hash 相同时跳过写入，skipped=true', async () => {
     const { pick } = await import('lodash-es');
-    const subset = pick(MOCK_SETTINGS, ['active_character', 'oai_settings.prompts']);
+    const subset = pick(MOCK_SETTINGS, ['active_character']);
     const existingHash = computeContentHash(subset as Record<string, unknown>);
 
     mockSelectLatest.mockReturnValue(chainResult({ content_hash: existingHash }));
@@ -195,6 +192,25 @@ describe('uploadSettings()', () => {
 
     expect(result.skipped).toBe(true);
     expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('历史白名单包含预设字段时，不得将其写入用户设置', async () => {
+    mockSelectPlatform.mockReturnValue(
+      chainResult({
+        platform_version: 1,
+        writable_paths: [
+          ...MOCK_WRITABLE_PATHS,
+          { path: 'oai_settings.prompts', transform: 'passthrough' },
+        ],
+      })
+    );
+
+    await uploadSettings(USER_ID, HANDLE);
+
+    const insertArg = mockInsert.mock.calls[0]![0] as Record<string, unknown>;
+    expect(insertArg.settings_jsonb).toEqual({
+      active_character: 'platform_aaa.png',
+    });
   });
 
   // ── 场景 4：UNIQUE 冲突视为幂等成功 ────────────────────────────────────

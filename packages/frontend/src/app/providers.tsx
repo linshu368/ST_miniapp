@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
@@ -40,6 +41,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {telegramReady ? <PaymentReturnRedirect /> : null}
       {telegramReady ? <GrowthEntryReporter /> : null}
       {telegramReady ? <UserSettingsHydrator /> : null}
       {telegramReady ? (
@@ -53,6 +55,27 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 }
 
+const PAYMENT_RETURN_PREFIX = 'payment_return_';
+
+function PaymentReturnRedirect() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const startParam = getStartParam();
+    if (startParam === 'payment_return') {
+      router.replace('/profile/orders?payment=returned');
+      return;
+    }
+    if (!startParam.startsWith(PAYMENT_RETURN_PREFIX)) return;
+
+    const orderId = startParam.slice(PAYMENT_RETURN_PREFIX.length);
+    if (!orderId || orderId.length > 200 || !/^[A-Za-z0-9_-]+$/.test(orderId)) return;
+    router.replace(`/profile/recharge/${encodeURIComponent(orderId)}?payment=returned`);
+  }, [router]);
+
+  return null;
+}
+
 function GrowthEntryReporter() {
   useEffect(() => {
     try {
@@ -60,25 +83,16 @@ function GrowthEntryReporter() {
       console.log('[Growth] rawInitData:', rawInitData);
 
       // 即使没有 rawInitData，也可以尝试从 URL 中获取 startapp 参数 (本地开发环境)
-      let sourceId = '';
-      if (rawInitData) {
-        sourceId = new URLSearchParams(rawInitData).get('start_param')?.trim() || '';
-      }
-
-      if (!sourceId && typeof window !== 'undefined') {
-        const urlParams = new URLSearchParams(window.location.search);
-        sourceId =
-          (
-            urlParams.get('startapp') ||
-            urlParams.get('start_param') ||
-            urlParams.get('tgWebAppStartParam')
-          )?.trim() || '';
-        console.log('[Growth] Extracted sourceId from URL:', sourceId);
-      }
+      const sourceId = getStartParam();
+      console.log('[Growth] Extracted sourceId:', sourceId);
 
       console.log('[Growth] GrowthEntryReporter sourceId:', sourceId);
 
-      if (!sourceId) {
+      if (
+        !sourceId ||
+        sourceId === 'payment_return' ||
+        sourceId.startsWith(PAYMENT_RETURN_PREFIX)
+      ) {
         console.log('[Growth] No sourceId found, skipping report');
         return;
       }
@@ -118,15 +132,39 @@ function GrowthEntryReporter() {
   return null;
 }
 
+function getStartParam(): string {
+  let rawInitData: string | null = null;
+  try {
+    rawInitData = getRawInitData() ?? null;
+  } catch {
+    // 非 Telegram 环境下继续读取 URL 查询参数。
+  }
+  const initDataStartParam = rawInitData
+    ? new URLSearchParams(rawInitData).get('start_param')?.trim()
+    : null;
+  if (initDataStartParam) return initDataStartParam;
+  if (typeof window === 'undefined') return '';
+
+  const urlParams = new URLSearchParams(window.location.search);
+  return (
+    urlParams.get('startapp') ||
+    urlParams.get('start_param') ||
+    urlParams.get('tgWebAppStartParam') ||
+    ''
+  ).trim();
+}
+
 function UserSettingsHydrator() {
   const applyServerDisplayName = useUserProfileStore((s) => s.applyServerDisplayName);
+  const applyServerPhotoUrl = useUserProfileStore((s) => s.applyServerPhotoUrl);
   const { data } = useUserSettingsQuery();
 
   useEffect(() => {
     if (data) {
       applyServerDisplayName(data.settings.display_name);
+      applyServerPhotoUrl(data.settings.avatar_url);
     }
-  }, [applyServerDisplayName, data]);
+  }, [applyServerDisplayName, applyServerPhotoUrl, data]);
 
   return null;
 }

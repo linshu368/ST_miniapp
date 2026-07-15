@@ -209,7 +209,9 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
   // 允许为空：无行 / 查询失败时 persona.name=null，merger 会保留平台默认 persona。
   const personaResult = await schemaClient('miniapp')
     .from('miniapp_user_settings')
-    .select('display_name, tg_first_name, tg_last_name, tg_username, avatar_url')
+    .select(
+      'display_name, tg_first_name, tg_last_name, tg_username, tg_avatar_url, custom_avatar_url'
+    )
     .eq('user_id', userId)
     .maybeSingle();
   const userPersona = resolveUserPersona(
@@ -255,7 +257,8 @@ interface PersonaSourceRow {
   tg_first_name: string | null;
   tg_last_name: string | null;
   tg_username: string | null;
-  avatar_url: string | null;
+  tg_avatar_url: string | null;
+  custom_avatar_url: string | null;
 }
 
 /**
@@ -275,7 +278,7 @@ function resolveUserPersona(row: PersonaSourceRow | null): UserPersona {
   const username = row.tg_username?.trim();
 
   const name = display || fullName || username || DEFAULT_USER_PERSONA_NAME;
-  const avatarUrl = row.avatar_url?.trim() || null;
+  const avatarUrl = row.custom_avatar_url?.trim() || row.tg_avatar_url?.trim() || null;
 
   return { name, avatarUrl };
 }

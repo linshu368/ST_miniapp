@@ -7,6 +7,8 @@
 
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
+import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
+import { getPricingConfig } from '../platform/model-tiers.js';
 
 export interface ChatHistoryEntry {
   user_id: string;
@@ -18,12 +20,132 @@ export interface ChatHistoryEntry {
   preset_id?: string | null;
   status: 'success' | 'upstream_error' | 'stream_interrupted';
   upstream_status?: number | null;
-  deduction_rate: number;
+  deduction_rate?: number; // now calculated internally
+  generation_id?: string | null;
+}
+
+const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
+const wallets = new MiniappWalletRepository();
+
+async function fetchGenerationDataWithRetry(
+  generationId: string,
+  log: FastifyBaseLogger,
+  maxRetries = 3
+) {
+  if (!OPENROUTER_API_KEY) return null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // 首次请求前主动等待，给 OpenRouter 生成异步统计数据留出时间
+      if (attempt === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
+      const res = await fetch(`https://openrouter.ai/api/v1/generation?id=${generationId}`, {
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error(`OpenRouter API returned status ${res.status}`);
+      }
+
+      const data = await res.json();
+      const genData = data?.data || data; // OpenRouter usually wraps response in { data: {...} }
+
+      // 如果返回的数据里没有核心指标，说明可能还在处理中，主动抛错触发重试
+      if (!genData || typeof genData.generation_time === 'undefined') {
+        throw new Error('Generation metrics not ready yet');
+      }
+
+      return genData;
+    } catch (err) {
+      log.warn(
+        { err: String(err), generationId, attempt },
+        '[chat-history] failed to fetch generation data, retrying...'
+      );
+      if (attempt === maxRetries) {
+        log.error(
+          { err: String(err), generationId },
+          '[chat-history] max retries reached for fetching generation data'
+        );
+        return null;
+      }
+      // Wait before retrying (exponential backoff: 2s, 4s...)
+      await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+    }
+  }
+  return null;
 }
 
 export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger): void {
   void (async () => {
     try {
+      let llmMetadata: Record<string, any> = {};
+      let actualDeduction = 0;
+
+      // 如果有 generation_id，尝试异步获取详细数据
+      if (entry.generation_id) {
+        try {
+          const genData = await fetchGenerationDataWithRetry(entry.generation_id, log);
+          if (genData) {
+            llmMetadata = {
+              llm_provider_name: genData.provider_name ?? null,
+              llm_finish_reason: genData.finish_reason ?? null,
+              llm_usage: genData.usage ?? null,
+              llm_usage_cache: genData.usage_cache ?? null,
+              llm_native_tokens_cached: genData.native_tokens_cached ?? null,
+              llm_native_tokens_reasoning: genData.native_tokens_reasoning ?? null,
+              llm_native_tokens_completion: genData.native_tokens_completion ?? null,
+              llm_native_tokens_prompt: genData.native_tokens_prompt ?? null,
+              llm_latency: genData.latency ?? null,
+              llm_generation_time: genData.generation_time ?? null,
+              llm_model: genData.model ?? null,
+              llm_generation_id: entry.generation_id,
+              llm_generation_data: genData,
+            };
+          } else {
+            // 获取失败时，至少把 generation_id 存下来
+            llmMetadata = { llm_generation_id: entry.generation_id };
+          }
+        } catch (fetchErr) {
+          log.error(
+            { err: String(fetchErr), generationId: entry.generation_id },
+            '[chat-history] error during generation data fetch'
+          );
+          llmMetadata = { llm_generation_id: entry.generation_id };
+        }
+      }
+
+      // 仅在生成成功时才计算扣费并执行真实扣款
+      if (entry.status === 'success') {
+        const pricing = await getPricingConfig();
+        const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
+
+        if (typeof usageCost === 'number') {
+          actualDeduction = Math.round(usageCost * pricing.exchangeRate * pricing.markup);
+        } else {
+          // 如果本次调用成功了，但获取不到usage，使用兜底额
+          actualDeduction = pricing.fallbackCost;
+        }
+
+        if (actualDeduction > 0) {
+          try {
+            await wallets.deduct(entry.user_id, actualDeduction);
+            log.info(
+              { userId: entry.user_id, amount: actualDeduction },
+              '[chat-history] dynamic deduction success'
+            );
+          } catch (deductErr) {
+            log.error(
+              { err: String(deductErr), userId: entry.user_id, amount: actualDeduction },
+              '[chat-history] dynamic deduction failed'
+            );
+          }
+        }
+      }
+
       const supabase = getSupabaseClient();
       const miniappDb = supabase.schema('miniapp' as 'public');
       const { error } = await miniappDb.from('chat_history').insert({
@@ -36,7 +158,8 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         preset_id: entry.preset_id ?? null,
         status: entry.status,
         upstream_status: entry.upstream_status ?? null,
-        deduction_rate: entry.deduction_rate,
+        deduction_rate: actualDeduction,
+        ...llmMetadata,
       });
 
       if (error) {

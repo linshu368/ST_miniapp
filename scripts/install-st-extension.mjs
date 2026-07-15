@@ -26,6 +26,8 @@ const THIRD_PARTY_ROOT = resolve(VENDOR_ROOT, 'public/scripts/extensions/third-p
 
 /** 快照里这些条目不应落地到 vendor。 */
 const SKIP_ENTRIES = new Set(['README.md']);
+/** 已从平台完全下线的扩展；安装时同时清理 vendor 中可能残留的旧副本。 */
+const DISABLED_EXTENSIONS = new Set(['MoonlitEchoesTheme']);
 /** 快照里的这个目录在落地时重命名（绕开 .dockerignore 的 **\/dist）。 */
 const RENAME_DIRS = { bundle: 'dist' };
 
@@ -76,8 +78,12 @@ function main() {
   }
   mkdirSync(THIRD_PARTY_ROOT, { recursive: true });
 
+  for (const name of DISABLED_EXTENSIONS) {
+    rmSync(resolve(THIRD_PARTY_ROOT, name), { recursive: true, force: true });
+  }
+
   const names = readdirSync(SNAPSHOT_ROOT, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
+    .filter((e) => e.isDirectory() && !DISABLED_EXTENSIONS.has(e.name))
     .map((e) => e.name);
 
   if (names.length === 0) {

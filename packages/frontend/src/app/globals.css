@@ -186,6 +186,22 @@
   }
 }
 
+/* 大厅固定前八：金色流光外框，保留卡片自身圆角与交互。 */
+.featured-character-frame {
+  background: linear-gradient(115deg, #8a5a05, #ffd76a, #fff3bd, #d69412, #ffdf7b, #8a5a05);
+  background-size: 300% 100%;
+  animation: splash-border-flow 3s linear infinite;
+  box-shadow:
+    0 0 12px rgb(245 182 37 / 42%),
+    0 0 28px rgb(245 158 11 / 20%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured-character-frame {
+    animation: none;
+  }
+}
+
 /* 斜向高光扫过海报 */
 @keyframes splash-sheen {
   0% {
@@ -256,5 +272,18 @@
   }
   to {
     transform: translateX(22rem);
+  }
+}
+
+/* 角色详情右下角按钮的等待进度，提示导航仍在持续推进 */
+@keyframes character-entry-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  50% {
+    transform: translateX(75%);
+  }
+  100% {
+    transform: translateX(250%);
   }
 }

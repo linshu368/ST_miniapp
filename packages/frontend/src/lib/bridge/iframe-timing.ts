@@ -45,15 +45,25 @@ export function resetPageTiming(): void {
     'ensure_end',
     'select_start',
     'select_end',
+    'select_error',
     'chat_ready',
     // [iframe-timing] round2: selectCharacter ST 端子相位（每次进卡刷新）
     'sel_start',
     'sel_reload_done',
     'sel_selectById_done',
+    'sel_newchat_start',
+    'sel_newchat_error',
     'sel_newchat_done',
   ]) {
     marks.delete(k);
     details.delete(k);
+  }
+  // [iframe-timing] round4: 点卡窗口探针数据（sel_wf_N/sel_evt/sel_longtask_N，N 不定长）按前缀清理
+  for (const k of [...marks.keys()]) {
+    if (k.startsWith('sel_wf') || k.startsWith('sel_longtask') || k === 'sel_evt') {
+      marks.delete(k);
+      details.delete(k);
+    }
   }
 }
 

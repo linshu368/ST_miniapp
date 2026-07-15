@@ -74,6 +74,23 @@ export const PRESET_TO_OAI_SETTINGS: Readonly<Record<string, string>> = {
   extensions: 'extensions',
 };
 
+const PRESET_OWNED_OAI_SETTING_KEYS = new Set(Object.values(PRESET_TO_OAI_SETTINGS));
+
+/**
+ * 预设控制的字段不可出现在用户 B 段 writable_paths 中。
+ *
+ * `oai_settings` 整段同样禁止：它会间接允许覆盖 prompts、prompt_order 等预设内容。
+ */
+export function isPresetOwnedWritablePath(path: string): boolean {
+  if (path === 'oai_settings') return true;
+
+  const prefix = 'oai_settings.';
+  if (!path.startsWith(prefix)) return false;
+
+  const [oaiKey] = path.slice(prefix.length).split('.', 1);
+  return oaiKey !== undefined && PRESET_OWNED_OAI_SETTING_KEYS.has(oaiKey);
+}
+
 /** oai_settings.preset_settings_openai 的指针前缀 */
 const POINTER_PREFIX = 'platform_';
 

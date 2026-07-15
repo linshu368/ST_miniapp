@@ -11,7 +11,10 @@ import type {
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
-import { getPaymentPlans } from '../features/payment/domain/rechargeRules.js';
+import {
+  getInsufficientCreditsNotice,
+  getPaymentPlans,
+} from '../features/payment/domain/rechargeRules.js';
 import { RechargeUseCase } from '../features/payment/usecases/RechargeUseCase.js';
 import {
   JLPaymentGateway,
@@ -21,9 +24,13 @@ import {
   MiniappPaymentOrderRepository,
   toPaymentOrder,
 } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
+import { config } from '../platform/config.js';
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
-const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
+const PAYMENT_TYPES: PaymentType[] = [
+  // 'alipay', // 支付宝通道暂时停用
+  'wxpay',
+];
 
 export default async function paymentRoutes(app: FastifyInstance) {
   if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
@@ -42,8 +49,16 @@ export default async function paymentRoutes(app: FastifyInstance) {
 
   // @frontend-ready: true
   app.get('/api/payment/plans', async (_request, reply) => {
-    const plans = await getPaymentPlans();
-    return reply.send(ok<GetPaymentPlansData>({ plans }));
+    const [plans, insufficientCreditsNotice] = await Promise.all([
+      getPaymentPlans(),
+      getInsufficientCreditsNotice(),
+    ]);
+    return reply.send(
+      ok<GetPaymentPlansData>({
+        plans,
+        insufficient_credits_notice: insufficientCreditsNotice,
+      })
+    );
   });
 
   // @frontend-ready: true
@@ -117,12 +132,26 @@ export default async function paymentRoutes(app: FastifyInstance) {
     );
   });
 
-  app.get('/api/payment/return', async (_request, reply) => {
-    return reply
-      .type('text/html')
-      .send(
-        '<!doctype html><meta charset="utf-8"><p>支付结果处理中，请返回 MiniApp 查看到账状态。</p>'
-      );
+  app.get('/api/payment/return', async (request, reply) => {
+    const returnData = normalizeNotifyData(request.query);
+    const orderId = isSafePaymentOrderId(returnData.out_trade_no) ? returnData.out_trade_no : null;
+    const botUsername = await resolveTelegramBotUsername();
+
+    reply.header('Cache-Control', 'no-store');
+    if (botUsername) {
+      const startParam = orderId ? `payment_return_${orderId}` : 'payment_return';
+      const miniappShortName = resolveMiniappShortName();
+      const telegramUrl = new URL(`https://t.me/${botUsername}/${miniappShortName}`);
+      telegramUrl.searchParams.set('startapp', startParam);
+      return reply.redirect(telegramUrl.toString());
+    }
+
+    const fallbackUrl = new URL(
+      orderId ? `/profile/recharge/${encodeURIComponent(orderId)}` : '/profile/orders',
+      config.frontendUrl
+    );
+    fallbackUrl.searchParams.set('payment', 'returned');
+    return reply.redirect(fallbackUrl.toString());
   });
 
   app.get('/api/payment/webhook/jlpay', async (request, reply) => {
@@ -195,4 +224,36 @@ function clampLimit(limit: unknown): number {
 function parseAmountCents(amount: string | undefined): number {
   if (!amount) return NaN;
   return Math.round(Number.parseFloat(amount) * 100);
+}
+
+let telegramBotUsernamePromise: Promise<string | null> | null = null;
+
+function resolveTelegramBotUsername(): Promise<string | null> {
+  if (!config.telegramBotToken) return Promise.resolve(null);
+  telegramBotUsernamePromise ??= fetch(
+    `https://api.telegram.org/bot${config.telegramBotToken}/getMe`,
+    { signal: AbortSignal.timeout(5_000) }
+  )
+    .then(
+      (response) =>
+        response.json() as Promise<{
+          ok?: boolean;
+          result?: { username?: string };
+        }>
+    )
+    .then((data) => {
+      const username = data.ok ? data.result?.username?.replace(/^@/, '') : null;
+      return username && /^[A-Za-z0-9_]{5,32}$/.test(username) ? username : null;
+    })
+    .catch(() => null);
+  return telegramBotUsernamePromise;
+}
+
+function isSafePaymentOrderId(value: string | undefined): value is string {
+  return Boolean(value && value.length <= 200 && /^[A-Za-z0-9_-]+$/.test(value));
+}
+
+function resolveMiniappShortName(): string {
+  const value = (process.env.MINIAPP_SHORT_NAME || 'app').replace(/^\/+|\/+$/g, '');
+  return /^[A-Za-z0-9_]{1,64}$/.test(value) ? value : 'app';
 }

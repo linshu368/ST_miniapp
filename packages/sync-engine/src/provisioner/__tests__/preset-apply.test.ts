@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyActivePreset,
+  isPresetOwnedWritablePath,
   resolveActivePresetId,
   PRESET_TO_OAI_SETTINGS,
 } from '../preset-apply.js';
@@ -130,6 +131,21 @@ describe('resolveActivePresetId', () => {
     expect(resolveActivePresetId(undefined)).toBeNull();
     expect(resolveActivePresetId('Default')).toBeNull();
     expect(resolveActivePresetId('platform_')).toBeNull();
+  });
+});
+
+describe('isPresetOwnedWritablePath', () => {
+  it('拒绝完整 oai_settings 及所有预设映射字段', () => {
+    expect(isPresetOwnedWritablePath('oai_settings')).toBe(true);
+    expect(isPresetOwnedWritablePath('oai_settings.prompts')).toBe(true);
+    expect(isPresetOwnedWritablePath('oai_settings.prompt_order')).toBe(true);
+    expect(isPresetOwnedWritablePath('oai_settings.openai_max_tokens')).toBe(true);
+    expect(isPresetOwnedWritablePath('oai_settings.temp_openai')).toBe(true);
+  });
+
+  it('不拦截与预设无关的字段', () => {
+    expect(isPresetOwnedWritablePath('active_character')).toBe(false);
+    expect(isPresetOwnedWritablePath('oai_settings.custom_model')).toBe(false);
   });
 });
 

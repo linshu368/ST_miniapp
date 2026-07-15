@@ -12,6 +12,21 @@ TRUSTED_REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REVIEW_REPO_ROOT="${REVIEW_REPO_ROOT:-$TRUSTED_REPO_ROOT}"
 REVIEW_REPO_ROOT="$(cd "$REVIEW_REPO_ROOT" && pwd)"
 
+TMP_REMOTE_PROMPT=""
+TMP_CHANGED=""
+TMP_ARCH=""
+TMP_SRC=""
+TMP_DIFF=""
+TMP_PROMPT=""
+TMP_REQ=""
+
+cleanup() {
+  for file in "$TMP_REMOTE_PROMPT" "$TMP_CHANGED" "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT" "$TMP_REQ"; do
+    [ -z "$file" ] || rm -f -- "$file"
+  done
+}
+trap cleanup EXIT
+
 # ─── 加载本地环境变量 ───
 ENV_FILE="${SCRIPT_DIR}/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -28,13 +43,29 @@ BASE_BRANCH="${1:-main}"
 # ─── 1. 加载 prompt 模板 ───
 
 PROMPT_DIR="${SCRIPT_DIR}/prompts"
-PROMPT_FILE="${PROMPT_DIR}/diff_review.md"
+LOCAL_PROMPT_FILE="${PROMPT_DIR}/diff_review.md"
 ARCHITECTURE_FILE="${TRUSTED_REPO_ROOT}/docs/ARCHITECTURE.md"
+PROMPT_SOURCE="${REVIEW_PROMPT_SOURCE:-local}"
 
-if [ ! -f "$PROMPT_FILE" ]; then
-  echo "❌ 找不到 prompt 文件: ${PROMPT_FILE}" >&2
-  exit 1
-fi
+case "$PROMPT_SOURCE" in
+  feishu)
+    echo "☁️  从飞书读取最新版 prompt..." >&2
+    TMP_REMOTE_PROMPT=$(mktemp)
+    python3 "$SCRIPT_DIR/fetch-feishu-prompt.py" "$TMP_REMOTE_PROMPT"
+    PROMPT_FILE="$TMP_REMOTE_PROMPT"
+    ;;
+  local)
+    PROMPT_FILE="$LOCAL_PROMPT_FILE"
+    if [ ! -f "$PROMPT_FILE" ]; then
+      echo "❌ 找不到 prompt 文件: ${PROMPT_FILE}" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "❌ 不支持的 REVIEW_PROMPT_SOURCE: ${PROMPT_SOURCE}（可选: local, feishu）" >&2
+    exit 1
+    ;;
+esac
 
 if [ ! -f "$ARCHITECTURE_FILE" ]; then
   echo "❌ 找不到架构文档: ${ARCHITECTURE_FILE}" >&2
@@ -42,31 +73,44 @@ if [ ! -f "$ARCHITECTURE_FILE" ]; then
 fi
 
 # ─── 2. 采集输入数据 ───
-
-echo "📐 采集架构文档..." >&2
-ARCHITECTURE_DOC=$(cat "$ARCHITECTURE_FILE")
-
-echo "📦 采集代码上下文..." >&2
-SRC_CODE=$(REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-context.sh")
-
-echo "📝 采集 git diff (对比 ${BASE_BRANCH})..." >&2
-GIT_DIFF=$(REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-diff.sh" "$BASE_BRANCH")
-
-# ─── 3. 占位符替换，组装完整 prompt ───
+#
+# 单次输入 = 提示词模板 + ARCHITECTURE.md + 固定核心块 + diff 圈定源码 + diff。
+# 为把总量压进 REVIEW_TOKEN_LIMIT（默认 10 万），先把「除圈定源码外」的四块
+# 落盘并估算 token，作为 RESERVED 传给 collect-context.sh，由它为变量块（圈定
+# 源码）算出剩余预算，再按相关性排序 + 从末尾截断（见 collect-context.sh 说明）。
 
 TMP_ARCH=$(mktemp)
 TMP_SRC=$(mktemp)
 TMP_DIFF=$(mktemp)
 TMP_PROMPT=$(mktemp)
-TMP_REQ=""
-trap 'rm -f "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT"; [ -n "$TMP_REQ" ] && rm -f "$TMP_REQ"' EXIT
+TMP_CHANGED=$(mktemp)
 
-printf '%s' "$ARCHITECTURE_DOC" > "$TMP_ARCH"
-printf '%s' "$SRC_CODE" > "$TMP_SRC"
-printf '%s' "$GIT_DIFF" > "$TMP_DIFF"
+echo "📐 采集架构文档..." >&2
+cat "$ARCHITECTURE_FILE" > "$TMP_ARCH"
+
+echo "📝 采集 git diff (对比 ${BASE_BRANCH})..." >&2
+REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" "$SCRIPT_DIR/collect-diff.sh" "$BASE_BRANCH" > "$TMP_DIFF"
+git -C "$REVIEW_REPO_ROOT" diff "${BASE_BRANCH}"...HEAD --numstat > "$TMP_CHANGED"
+
+# RESERVED = 提示词模板 + 架构文档 + diff 三块的 token（固定块的 token 由
+# collect-context.sh 自行估算并从预算中扣除，此处不重复计入）。
+REVIEW_TOKEN_LIMIT="${REVIEW_TOKEN_LIMIT:-100000}"
+RESERVED_TOKENS=$(python3 "$SCRIPT_DIR/estimate_tokens.py" "$PROMPT_FILE" "$TMP_ARCH" "$TMP_DIFF")
+echo "🔢 预算：上限 ${REVIEW_TOKEN_LIMIT} tok；模板+文档+diff 占用 ≈${RESERVED_TOKENS} tok" >&2
+
+echo "📦 采集代码上下文（固定核心块 + diff 圈定源码，按相关性排序/截断）..." >&2
+REVIEW_TOKEN_LIMIT="$REVIEW_TOKEN_LIMIT" \
+REVIEW_RESERVED_TOKENS="$RESERVED_TOKENS" \
+REVIEW_REPO_ROOT="$REVIEW_REPO_ROOT" \
+  "$SCRIPT_DIR/collect-context.sh" "$TMP_CHANGED" > "$TMP_SRC"
+
+# ─── 3. 占位符替换，组装完整 prompt ───
 
 python3 "$SCRIPT_DIR/fill-prompt.py" \
   "$PROMPT_FILE" "$TMP_ARCH" "$TMP_SRC" "$TMP_DIFF" "$TMP_PROMPT"
+
+TOTAL_TOKENS=$(python3 "$SCRIPT_DIR/estimate_tokens.py" "$TMP_PROMPT")
+echo "🔢 组装后单次输入 ≈${TOTAL_TOKENS} tok（上限 ${REVIEW_TOKEN_LIMIT}）" >&2
 
 SYSTEM_PROMPT=$(cat "$TMP_PROMPT")
 USER_MESSAGE="开始"
@@ -146,8 +190,10 @@ fi
 
 if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
   mkdir -p "$REVIEW_ARTIFACT_DIR"
+  cp "$PROMPT_FILE" "$REVIEW_ARTIFACT_DIR/prompt-template.md"
   cp "$TMP_ARCH" "$REVIEW_ARTIFACT_DIR/architecture.md"
   cp "$TMP_SRC" "$REVIEW_ARTIFACT_DIR/src-code.txt"
+  cp "$TMP_CHANGED" "$REVIEW_ARTIFACT_DIR/changed-files.txt"
   cp "$TMP_DIFF" "$REVIEW_ARTIFACT_DIR/git-diff.txt"
   cp "$TMP_PROMPT" "$REVIEW_ARTIFACT_DIR/system-prompt.md"
   cp "$TMP_REQ" "$REVIEW_ARTIFACT_DIR/api-request.json"
@@ -157,6 +203,8 @@ if [ -n "${REVIEW_ARTIFACT_DIR:-}" ]; then
     echo "model=${MODEL_NAME}"
     echo "api_url=${API_URL}"
     echo "format=$([ "$IS_OPENAI_FORMAT" -eq 1 ] && echo openai || echo anthropic)"
+    echo "prompt_source=${PROMPT_SOURCE}"
+    echo "prompt_sha256=$(python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$PROMPT_FILE")"
     echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } > "$REVIEW_ARTIFACT_DIR/meta.txt"
   echo "💾 LLM 输入已保存到: ${REVIEW_ARTIFACT_DIR}" >&2

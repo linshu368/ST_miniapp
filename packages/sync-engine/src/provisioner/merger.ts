@@ -9,9 +9,9 @@
  *   - character_ref 失效时回退到系统兜底卡（runtime_config.system_fallback_character_id）
  */
 
-import { get as lodashGet, set as lodashSet, cloneDeep } from 'lodash-es';
+import { get as lodashGet, set as lodashSet, unset as lodashUnset, cloneDeep } from 'lodash-es';
 import type { PlatformSettingsRow, UserSettingsRow, PresetRow } from './fetcher.js';
-import { applyActivePreset } from './preset-apply.js';
+import { applyActivePreset, isPresetOwnedWritablePath } from './preset-apply.js';
 
 /**
  * 平台强制禁用的 ST 内置扩展（iframe 冷启动优化 P0-#1）。
@@ -36,6 +36,8 @@ export const PLATFORM_DISABLED_EXTENSIONS = [
   'expressions', // 角色立绘表情
   'gallery', // 图片画廊
   'stable-diffusion', // 图片生成
+  'third-party/MoonlitEchoesTheme', // Moonlit 已全量下线，不允许存量用户继续加载
+  'token-counter', // Token Counter 面板（平台不展示，且会触发额外 tokenizer 请求）
   'translate', // 聊天翻译
   'tts', // 语音合成
   'vectors', // RAG 向量检索
@@ -94,8 +96,8 @@ export function mergeSettings(
   const merged = cloneDeep(platformSettings.settings_jsonb) as Record<string, unknown>;
 
   // 依据 oai_settings.preset_settings_openai 指针把「当前选中预设」应用进 oai_settings。
-  // 必须在 B 白名单覆盖之前：预设先建立平台基线，用户在 writable_paths（如 oai_settings.prompts）
-  // 里的自定义仍能覆盖预设值，保持既有 writable_paths 契约。
+  // 预设字段属于平台管控：即使历史 platform_settings 白名单里意外保留了这些路径，
+  // 后续 B 段合并也不得覆盖它们。
   // 025 触发器只换指针不写参数、ST 启动也不重新套用预设文件，故这一步是「换预设后参数生效」的关键。
   let presetApplied = false;
   let appliedPresetId: string | undefined;
@@ -109,6 +111,8 @@ export function mergeSettings(
   // 如果有 B 类记录，按白名单覆盖
   if (userSettings) {
     for (const { path, transform } of platformSettings.writable_paths) {
+      if (isPresetOwnedWritablePath(path)) continue;
+
       const bVal = lodashGet(userSettings.settings_jsonb, path);
       if (bVal !== undefined) {
         // character_ref 在投影阶段做校验（这里先 set，后面统一校验）
@@ -181,6 +185,7 @@ export function mergeSettings(
   // 已有的 disabledExtensions 取并集（去重），保证运营后续发布新版 settings 也不会丢。
   // 放在 writable_paths 覆盖之后，用户段无法解禁。
   applyDisabledExtensions(merged);
+  removeMoonlitSettings(merged);
 
   // 关闭消息气泡 token 计数（iframe 加载耗时 P1-H2 瘦身）：vendor 默认即 false，
   // 但平台种子 settings 从运营完整 ST 导出、可能带 true —— 开启时每条消息渲染都要
@@ -219,6 +224,19 @@ function applyDisabledExtensions(merged: Record<string, unknown>): void {
     : [];
   const union = [...new Set([...existingList, ...PLATFORM_DISABLED_EXTENSIONS])];
   lodashSet(merged, 'extension_settings.disabledExtensions', union);
+}
+
+function removeMoonlitSettings(merged: Record<string, unknown>): void {
+  lodashUnset(merged, 'extension_settings.SillyTavernMoonlitEchoesTheme');
+  if (lodashGet(merged, 'power_user.theme') === 'Glimmer - by Rivelle') {
+    lodashUnset(merged, 'power_user.theme');
+  }
+  if (lodashGet(merged, 'power_user.chat_display') === 3) {
+    lodashSet(merged, 'power_user.chat_display', 0);
+  }
+  if (lodashGet(merged, 'background.name') === 'night-city-anime.jpg') {
+    lodashUnset(merged, 'background');
+  }
 }
 
 /**

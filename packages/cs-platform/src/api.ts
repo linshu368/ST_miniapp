@@ -1,8 +1,10 @@
 ﻿import type {
   AdvanceCsSessionRequest,
   CreateCsPersonaRequest,
+  CsTelegramReachabilityData,
   CsPersonaDataResponse,
   DeleteCsPersonaData,
+  GetCsAppChatData,
   GetCsMessagesData,
   GetCsPersonaUsersData,
   GetCsPersonasData,
@@ -14,9 +16,6 @@
   SnoozeCsSessionRequest,
   UpdateCsPersonaRequest,
   ApiResponse,
-  CreateGrowthChannelLinkData,
-  CreateGrowthChannelLinkRequest,
-  GetGrowthChannelLinksData,
 } from '@miniapp/shared';
 
 const API_URL = (
@@ -61,12 +60,6 @@ async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const csApi = {
-  growthLinks: () => apiClient<GetGrowthChannelLinksData>('/api/cs/growth/channel-links'),
-  createGrowthLink: (body: CreateGrowthChannelLinkRequest) =>
-    apiClient<CreateGrowthChannelLinkData>('/api/cs/growth/channel-links', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
   personas: () => apiClient<GetCsPersonasData>('/api/cs/personas'),
   createPersona: (body: CreateCsPersonaRequest) =>
     apiClient<CsPersonaDataResponse>('/api/cs/personas', {
@@ -88,6 +81,10 @@ export const csApi = {
     }),
   users: (id: string) =>
     apiClient<GetCsPersonaUsersData>(`/api/cs/personas/${encodeURIComponent(id)}/users`),
+  telegramReachability: (personaId: string, userId: string) =>
+    apiClient<CsTelegramReachabilityData>(
+      `/api/cs/personas/${encodeURIComponent(personaId)}/users/${encodeURIComponent(userId)}/telegram-reachability`
+    ),
   session: (personaId: string, userId: string) =>
     apiClient<GetCsSessionData>(
       `/api/cs/personas/${encodeURIComponent(personaId)}/users/${encodeURIComponent(userId)}/session`
@@ -95,6 +92,10 @@ export const csApi = {
   messages: (personaId: string, userId: string) =>
     apiClient<GetCsMessagesData>(
       `/api/cs/personas/${encodeURIComponent(personaId)}/users/${encodeURIComponent(userId)}/messages`
+    ),
+  appChat: (personaId: string, userId: string) =>
+    apiClient<GetCsAppChatData>(
+      `/api/cs/personas/${encodeURIComponent(personaId)}/users/${encodeURIComponent(userId)}/app-chat`
     ),
   sendMessage: (personaId: string, userId: string, body: SendCsMessageRequest) =>
     apiClient<SendCsMessageData>(

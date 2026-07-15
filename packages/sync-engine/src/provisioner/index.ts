@@ -8,9 +8,10 @@
  *   1. 拉取数据（Supabase）
  *   2. 确保 ST 用户账号存在（ST API）
  *   3. order=10  写角色卡 PNG（资产层）
- *   4. order=20  写预设 JSON（资产层）
- *   5. order=100 merge + 写 settings.json（配置层）
- *   6. 更新 users.st_initialized_at
+ *   4. order=15  写平台主题与背景（资产层）
+ *   5. order=20  写预设 JSON（资产层）
+ *   6. order=100 merge + 写 settings.json（配置层）
+ *   7. 更新 users.st_initialized_at
  */
 
 import { getSupabaseClient } from '../lib/supabase.js';

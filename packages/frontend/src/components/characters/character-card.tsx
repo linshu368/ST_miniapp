@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import type { CharacterSummary } from '@miniapp/shared';
+import { Flame } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
@@ -9,13 +11,39 @@ interface CharacterCardProps {
   character: CharacterSummary;
   onSelect: (id: string) => void;
   disabled?: boolean;
+  priority?: boolean;
+  onImageSettled?: (id: string) => void;
 }
 
-export function CharacterCard({ character, onSelect, disabled }: CharacterCardProps) {
+export function lobbyImageUrl(source: string): string {
+  try {
+    const url = new URL(source);
+    const marker = '/storage/v1/object/public/';
+    if (!url.pathname.includes(marker)) return source;
+    url.pathname = url.pathname.replace(marker, '/storage/v1/render/image/public/');
+    url.searchParams.set('width', '360');
+    url.searchParams.set('height', '480');
+    url.searchParams.set('resize', 'cover');
+    url.searchParams.set('quality', '68');
+    return url.toString();
+  } catch {
+    return source;
+  }
+}
+
+export function CharacterCard({
+  character,
+  onSelect,
+  disabled,
+  priority = false,
+  onImageSettled,
+}: CharacterCardProps) {
   const gradient = characterRoomGradient(character.id);
   const hasAvatar = !!character.avatar_url;
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
-  return (
+  const card = (
     <button
       type="button"
       disabled={disabled}
@@ -29,16 +57,45 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
     >
       {/* 图片区：3:4 + 渐变叠层 + 名字 / 标签 */}
       <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden">
-        {hasAvatar ? (
+        {character.is_featured && (
+          <span
+            className="absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-amber-200/70 bg-black/55 shadow-[0_0_18px_rgba(251,191,36,0.65)] backdrop-blur-sm"
+            title="热门角色"
+            aria-label="热门角色"
+          >
+            <Flame className="size-[18px] fill-orange-500 text-amber-200" aria-hidden="true" />
+          </span>
+        )}
+        <div
+          className={`absolute inset-0 transition-opacity duration-300 ${
+            imageLoaded ? 'opacity-0' : 'opacity-100'
+          }`}
+          aria-hidden="true"
+          style={{ background: gradient }}
+        />
+        {hasAvatar && !imageFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={character.avatar_url}
+            src={lobbyImageUrl(character.avatar_url)}
             alt={character.name}
-            className="absolute inset-0 h-full w-full object-cover object-top"
+            width={360}
+            height={480}
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
+            decoding="async"
+            onLoad={() => {
+              setImageLoaded(true);
+              onImageSettled?.(character.id);
+            }}
+            onError={() => {
+              setImageFailed(true);
+              onImageSettled?.(character.id);
+            }}
+            className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 ${
+              imageLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
           />
-        ) : (
-          <div className="absolute inset-0" aria-hidden="true" style={{ background: gradient }} />
-        )}
+        ) : null}
 
         {/* 渐变遮罩 */}
         <div
@@ -69,4 +126,8 @@ export function CharacterCard({ character, onSelect, disabled }: CharacterCardPr
       {/* 作者和原始描述暂不展示，避免未清洗字段影响大厅视觉。 */}
     </button>
   );
+
+  if (!character.is_featured) return card;
+
+  return <div className="featured-character-frame h-full rounded-[18px] p-[2px]">{card}</div>;
 }

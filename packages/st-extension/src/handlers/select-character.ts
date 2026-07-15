@@ -6,12 +6,15 @@ import { preAllowCharacterRegex } from '../patches/regex-autoconfirm.js';
 import { preAllowPresetRegex } from '../patches/preset-regex-autoconfirm.js';
 import { preSuppressWorldbookAlert } from '../patches/worldbook-autoimport.js';
 import { stTiming } from '../debug-timing.js'; // [iframe-timing] TEMP DEBUG
+// [iframe-timing] TEMP DEBUG: 点卡窗口细粒度探针（资源瀑布 + 事件序列 + 长任务）
+import { startSelectProbe, markSelectProbe, stopSelectProbe } from '../debug-select-probes.js';
 
 type Payload = ActionPayloadMap['selectCharacter'];
 type Result = ActionResultMap['selectCharacter'];
 
 export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   stTiming('sel_start'); // [iframe-timing] TEMP DEBUG
+  startSelectProbe(); // [iframe-timing] TEMP DEBUG
   const ctx = SillyTavern.getContext();
 
   let index = ctx.characters.findIndex((c) => c.avatar === payload.avatar);
@@ -43,6 +46,7 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
     'sel_reload_done',
     `foundInMemory=${foundInMemory},injected=${injected},reloadAttempts=${reloadAttempts}`
   );
+  markSelectProbe('h1_done'); // [iframe-timing] TEMP DEBUG
 
   if (index < 0) {
     throw new BridgeError(
@@ -64,13 +68,41 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   // 预设正则不依赖具体角色，独立预授权（当前选中预设含内置正则时才写入）。
   preAllowPresetRegex();
 
+  // forceNewChat 快路径：预设新聊天文件名，让 selectCharacterById 内部的 getChat 直接
+  // 装载「新空聊天」，跳过旧聊天装载 + /newchat 的整条重复链。
+  //
+  // 机制即 vendor doNewChat 自身的做法（script.js:11917-11920：置 chat_metadata={}、
+  // characters[chid].chat=新文件名、getChat()），只是提前到选卡之前——服务端 /api/chats/get
+  // 对不存在的文件返回 {}（src/endpoints/chats.js:566），getChatResult 注入 greeting、
+  // freshChat 触发 CHAT_CREATED、saveChatConditional 落盘，与 /newchat 路径逐项等价。
+  // 省掉：旧聊天 chats/get+chats/save、第一次 CHAT_CHANGED 联动的 avatars/get /
+  // quick-replies/save、createOrEditCharacter 的 characters/edit+characters/get
+  // （chat 指针不再回写卡 PNG——平台 100% forceNewChat，从不读该指针，且避免隐藏 DOM
+  // 表单整卡回写的数据完整性隐患）。详见 2026-07-13 点卡路径核验。
+  //
+  // 仅在目标卡非当前选中卡时启用：selectCharacterById 只有 this_chid!==id 才走
+  // clearChat+getChat 分支（script.js:1018）；同卡重进（else 分支不 getChat）或
+  // is_send_press/isChatSaving 守卫空转时，事后校验兜底回退原 /newchat 路径。
+  let presetChatName: string | null = null;
+  if (payload.forceNewChat && String(ctx.characterId) !== String(index)) {
+    const target = ctx.characters[index];
+    if (target) {
+      presetChatName = `${target.name} - ${humanizedDateTime()}`;
+      target.chat = presetChatName;
+    }
+  }
+
   await ctx.selectCharacterById(index, { switchMenu: false });
   stTiming('sel_selectById_done'); // [iframe-timing] TEMP DEBUG: H3
+  markSelectProbe('h3_done'); // [iframe-timing] TEMP DEBUG
 
-  if (payload.forceNewChat) {
+  const fastPathOk = presetChatName !== null && ctx.getCurrentChatId() === presetChatName;
+  if (payload.forceNewChat && !fastPathOk) {
     await ctx.executeSlashCommandsWithOptions('/newchat');
   }
-  stTiming('sel_newchat_done', `forceNewChat=${!!payload.forceNewChat}`); // [iframe-timing] TEMP DEBUG: H2
+  // [iframe-timing] TEMP DEBUG: H2（fastPath=true 时已在 H3 内建新聊天，H2 应≈0）
+  stTiming('sel_newchat_done', `forceNewChat=${!!payload.forceNewChat},fastPath=${fastPathOk}`);
+  stopSelectProbe(); // [iframe-timing] TEMP DEBUG: 收割点卡窗口瀑布/事件/长任务并上报
 
   ctx.saveSettingsDebounced();
 

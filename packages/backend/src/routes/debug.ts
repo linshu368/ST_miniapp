@@ -30,6 +30,7 @@ const PHASES: Array<[string, string, string]> = [
   ['  ├H1 找卡+getCharacters重载', 'sel_start', 'sel_reload_done'],
   ['  ├H3 selectCharacterById', 'sel_reload_done', 'sel_selectById_done'],
   ['  └H2 /newchat', 'sel_selectById_done', 'sel_newchat_done'],
+  ['  └H2 /newchat失败', 'sel_newchat_start', 'sel_newchat_error'],
   // 冷启动（bridge 生命周期，绝对，仅首次有意义）
   ['[冷]iframe_load(网络)', 'bridge_start', 'iframe_onload'],
   ['[冷]st_script+ext_init', 'iframe_onload', 'st_handshake'],
@@ -52,8 +53,14 @@ export default async function debugRoutes(app: FastifyInstance) {
 
     // boot 瀑布/长任务收割数据（round-3 细粒度探针）单独成行，避免主行超长被日志截断。
     // 瀑布偏移基准是 iframe 的 performance.timeOrigin（boot_nav 里携带），非 bridge_start。
+    // round-4 新增 sel_*：点卡窗口探针（瀑布/事件序列/长任务），偏移基准是 sel_start。
     const isWaterfallKey = (k: string) =>
-      k.startsWith('boot_wf') || k.startsWith('boot_longtask') || k === 'boot_nav';
+      k.startsWith('boot_wf') ||
+      k.startsWith('boot_longtask') ||
+      k === 'boot_nav' ||
+      k.startsWith('sel_wf') ||
+      k.startsWith('sel_longtask') ||
+      k === 'sel_evt';
     const mainDetails: Record<string, string> = {};
     const waterfallLines: Array<[string, string]> = [];
     for (const [k, v] of Object.entries(details)) {
@@ -86,6 +93,9 @@ export default async function debugRoutes(app: FastifyInstance) {
         ` | timeline=${timeline}` +
         ` | ua=${ua}`
     );
+    // Keep failure metadata on its own line: the main timing line can be long enough for
+    // Railway to truncate its tail, and PR #123's BridgeError fields live under meta.
+    request.log.info(`[iframe-timing-meta] char=${charId} meta=${JSON.stringify(body.meta ?? {})}`);
     waterfallLines.sort((a, b) => a[0].localeCompare(b[0]));
     for (const [k, v] of waterfallLines) {
       request.log.info(`[iframe-timing-wf] char=${charId} ${k}: ${v}`);

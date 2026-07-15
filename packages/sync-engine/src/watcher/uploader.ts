@@ -21,6 +21,7 @@ import { getSupabaseClient } from '../lib/supabase.js';
 import { settingsPath } from '../lib/st-fs.js';
 import { computeContentHash } from '../lib/hash.js';
 import { createLogger } from '../lib/logger.js';
+import { isPresetOwnedWritablePath } from '../provisioner/preset-apply.js';
 
 const logger = createLogger('uploader');
 
@@ -82,7 +83,10 @@ export async function uploadSettings(userId: string, handle: string): Promise<Up
   const writablePaths = platformRow.writable_paths as WritablePath[];
 
   // ── 步骤 3：lodash.pick 提取白名单子集 ───────────────────────────────────
-  const whitelistKeys = writablePaths.map((w) => w.path);
+  // 预设由平台完整下发，历史白名单若仍有预设字段也不得反向写入用户 B 段。
+  const whitelistKeys = writablePaths
+    .map((w) => w.path)
+    .filter((path) => !isPresetOwnedWritablePath(path));
   const subset = pick(rawSettings, whitelistKeys) as Record<string, unknown>;
 
   if (Object.keys(subset).length === 0) {

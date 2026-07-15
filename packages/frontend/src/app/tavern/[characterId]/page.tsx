@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { platformAction, useBridgeStatus } from '@/lib/bridge';
+import { useEffect, useRef, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { platformAction, useBridgeStatus, useSTEvent } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { ChatHeader } from '@/components/tavern/chat-header';
 import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
@@ -14,12 +14,25 @@ import { markTiming, resetPageTiming, flushIframeTiming } from '@/lib/bridge/ifr
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
+  const router = useRouter();
   const bridgeStatus = useBridgeStatus();
+  const redirectingToRechargeRef = useRef(false);
   // 开屏动画收场信号：只有角色切换成功后才放行，避免露出 ST 原生加载画面。
   const [readyCharacterId, setReadyCharacterId] = useState<string | null>(null);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
   const chatReady = readyCharacterId === characterId;
+
+  useSTEvent('billing:insufficient', () => {
+    if (!characterId || redirectingToRechargeRef.current) return;
+    redirectingToRechargeRef.current = true;
+    const returnTo = `/tavern/${encodeURIComponent(characterId)}`;
+    const search = new URLSearchParams({
+      reason: 'insufficient_credits',
+      returnTo,
+    });
+    router.push(`/profile/recharge?${search.toString()}`);
+  });
 
   // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。
   useEffect(() => {

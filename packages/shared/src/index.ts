@@ -14,3 +14,4 @@ export * from './config/database';
 export * from './st-bridge';
 export * from './png-parser';
 export * from './dev-fixtures';
+export * from './lobby-featured';

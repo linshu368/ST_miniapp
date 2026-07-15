@@ -2,21 +2,33 @@
 
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ChevronLeft, Receipt, ShieldCheck } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ChevronLeft, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
 import type { PaymentType } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
-import { formatYuanShort, paymentTypeLabel } from '@/lib/utils/payment';
+import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
-const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
+const PAYMENT_TYPES: PaymentType[] = [
+  // 'alipay', // 支付宝通道暂时停用
+  'wxpay',
+];
 
 export default function RechargePage() {
   return (
@@ -28,7 +40,9 @@ export default function RechargePage() {
 
 function RechargePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { whisper, impact, notification } = useHaptic();
+  const returnTo = safePaymentReturnTo(searchParams.get('returnTo'));
 
   const goBack = useCallback(() => router.back(), [router]);
   useTelegramBackButton(goBack);
@@ -37,9 +51,12 @@ function RechargePageContent() {
   const createOrder = useCreatePaymentOrderMutation();
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
+  const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const plans = data?.plans ?? [];
+  const showInsufficientCreditsNotice =
+    searchParams.get('reason') === 'insufficient_credits' && !!data && !noticeDismissed;
   const selectedPlan = useMemo(
     () => (data?.plans ?? []).find((p) => p.id === selectedPlanId) ?? null,
     [data, selectedPlanId]
@@ -61,12 +78,15 @@ function RechargePageContent() {
         plan_id: selectedPlan.id,
         payment_type: paymentType,
       });
-      const nextPath = `/profile/recharge/${encodeURIComponent(result.order.id)}?pay_url=${encodeURIComponent(result.pay_url)}`;
-      router.push(nextPath);
+      const nextSearch = new URLSearchParams({ pay_url: result.pay_url });
+      if (returnTo) nextSearch.set('returnTo', returnTo);
+      router.push(
+        `/profile/recharge/${encodeURIComponent(result.order.id)}?${nextSearch.toString()}`
+      );
     } catch {
       notification('error');
     }
-  }, [selectedPlan, createOrder, paymentType, router, impact, notification]);
+  }, [selectedPlan, createOrder, paymentType, router, returnTo, impact, notification]);
 
   return (
     <main
@@ -186,6 +206,31 @@ function RechargePageContent() {
           </Button>
         </div>
       </div>
+      <Dialog
+        open={showInsufficientCreditsNotice}
+        onOpenChange={(open) => {
+          if (!open) setNoticeDismissed(true);
+        }}
+      >
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/10 bg-[#151515] text-white">
+          <DialogHeader className="items-center text-center">
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/15 text-amber-400">
+              <Sparkles className="h-6 w-6" aria-hidden />
+            </div>
+            <DialogTitle>星尘不足</DialogTitle>
+            <DialogDescription className="pt-1 leading-6 text-slate-300">
+              {data?.insufficient_credits_notice}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button className="w-full rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white">
+                选择套餐
+              </Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
