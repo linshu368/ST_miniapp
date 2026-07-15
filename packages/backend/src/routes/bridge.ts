@@ -300,9 +300,6 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           // 关键路径最前面；这里改为「登录拿 cookie 立即放行 + provision 后台异步」。
           log(`[bridge] 已初始化用户再次登录（handle=${stHandle}），先放行 + 后台刷新配置`);
 
-          // iframe 登录必须使用本次 ST 实例新签发的 session。st-bundle 重启后，Redis 中
-          // 旧 cookie 可能仍在 TTL 内但已无法通过签名校验，直接复用会让 /tavern 302 到
-          // /login，桥接永远无法 ready。这里保留可靠的新登录，并覆盖缓存供 REST 桥使用。
           const stCookie = await loginToSt(stHandle);
           await cacheStCookie(dbUser.id, stCookie);
 

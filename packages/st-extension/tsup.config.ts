@@ -9,7 +9,7 @@ export default defineConfig({
   globalName: 'MiniAppBridge',
   clean: true,
   sourcemap: false,
-  minify: true,
+  minify: false,
   define: {
     __BUILD_ID__: JSON.stringify(new Date().toISOString().slice(0, 19)),
     __ST_COMMIT__: JSON.stringify(process.env.ST_COMMIT ?? 'vendored'),

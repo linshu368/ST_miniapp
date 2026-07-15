@@ -151,11 +151,9 @@ whitelistImportDomains:
 requestOverrides: []
 extensions:
   enabled: true
-  # 平台扩展随镜像发布，不在用户冷启动时联网检查/更新。
-  autoUpdate: false
+  autoUpdate: true
   models:
-    # 已禁用依赖本地 transformers 模型的内置扩展，避免误触发模型下载。
-    autoDownload: false
+    autoDownload: true
     classification: Cohee/distilbert-base-uncased-go-emotions-onnx
     captioning: Xenova/vit-gpt2-image-captioning
     embedding: Cohee/jina-embeddings-v2-base-en

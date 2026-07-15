@@ -38,8 +38,6 @@ export function CharacterDetailSheet({
     if (characterId) {
       setMounted(true);
       setGreetingOpen(false);
-      document.documentElement.dataset.chatIntent = 'true';
-      window.dispatchEvent(new Event('miniapp:chat-intent'));
       // 浮层期懒下发预取：用户读简介的时间掩盖单卡下发耗时（幂等，失败静默，
       // 对话页会 await 同一个 promise 并有 selectCharacter 侧兜底）。
       prefetchEnsureStCharacter(characterId).catch(() => {});
@@ -103,10 +101,11 @@ export function CharacterDetailSheet({
         aria-hidden="true"
       />
 
-      {/* 手机端只占下半屏；图片区域仍贴合容器四边铺满。 */}
+      {/* 预览卡：占屏 75dvh 的沉浸式弹窗 */}
       <div
-        className="absolute inset-x-0 bottom-0 mx-auto flex h-[50dvh] w-full max-w-none flex-col overflow-hidden border-0 bg-[#0f0b16]/95 shadow-[0_-20px_80px_rgba(0,0,0,0.55)] sm:h-[65dvh] sm:w-[calc(100vw-1.5rem)] sm:max-w-[430px] sm:rounded-t-[30px] sm:border sm:border-white/10"
+        className="absolute inset-x-0 bottom-0 mx-auto flex w-[calc(100vw-1.5rem)] max-w-[430px] flex-col overflow-hidden rounded-t-[30px] border border-white/10 bg-[#0f0b16]/95 shadow-[0_-20px_80px_rgba(0,0,0,0.55)]"
         style={{
+          height: '75dvh',
           transform: visible ? `translateY(${dragY}px)` : 'translateY(100%)',
           transition: isDragging ? 'none' : 'transform 0.36s cubic-bezier(0.32, 0.72, 0, 1)',
           touchAction: 'none',
@@ -115,15 +114,15 @@ export function CharacterDetailSheet({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* 拖拽把手悬浮在图片上，不再占用顶部留白。 */}
-        <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-20 flex justify-center">
+        {/* 拖拽把手 */}
+        <div className="flex shrink-0 justify-center pb-1 pt-2.5">
           <div className="h-1 w-10 rounded-full bg-white/25" />
         </div>
 
         {/* 可滚动主体 */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ touchAction: 'auto' }}>
           {/* Hero 图 */}
-          <div className="relative h-[28dvh] min-h-[12rem] w-full shrink-0 overflow-hidden sm:h-auto sm:max-h-[36dvh] sm:aspect-[3/4]">
+          <div className="relative aspect-[3/4] max-h-[42dvh] w-full overflow-hidden">
             {isLoading ? (
               <div className="h-full w-full animate-pulse bg-white/5" />
             ) : hasAvatar ? (
@@ -145,7 +144,7 @@ export function CharacterDetailSheet({
               type="button"
               onClick={onClose}
               aria-label="关闭"
-              className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/90 backdrop-blur-md transition-colors hover:bg-black/60 active:scale-95"
+              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/90 backdrop-blur-md transition-colors hover:bg-black/60 active:scale-95"
             >
               <X className="h-4 w-4" />
             </button>

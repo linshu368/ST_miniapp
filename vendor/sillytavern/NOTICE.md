@@ -14,12 +14,7 @@ Do NOT modify files in this directory directly. See ARCHITECTURE.md §1 for deta
 本 vendored 副本含以下**受控**本地改动（例外于只读约束，经 ARCHITECTURE 铁律放开，仅限冷启动优化）。
 审计：`rg "\[miniapp-patch\]" vendor/sillytavern/`。
 
-| 文件                  | 位置                | 改动                                                                                      | 原因               | 回滚                                                             |
-| --------------------- | ------------------- | ----------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------- |
-| public/index.html     | critical boot shell | query-gated iframe 内品牌开屏；主模块使用补丁版本键绕过稳定文件名旧缓存                   | 前台 boot/补丁保鲜 | 见 docs/iframe-foreground-boot-plan.md                           |
-| public/script.js      | firstLoadInit 前段  | getClientVersion/initSecrets/readSecretState/initLocales 串行→Promise.all                 | 冷启动并行化①      | 见 docs/iframe-boot-firstloadinit-parallelization.md §6          |
-| public/script.js      | firstLoadInit 后段  | getUserAvatars/getCharacters 串行→Promise.all；移除 boot 期 getBackgrounds 调用（Tier-2） | 冷启动并行化①/②    | 同上                                                             |
-| public/script.js      | MiniApp fast boot   | query-gated 跳过角色列表/分组渲染，提前 interactive，并延迟 UI-only 初始化                | 提前聊天可交互闸门 | 移除 `miniapp_fast_boot` 分支                                    |
-| public/script.js      | 选角色/新对话路径   | forceNewChat 时跳过旧聊天加载、空文件读取与角色 PNG 指针回写                              | 消除重复 H3/H2 IO  | 移除 `skipChatLoad` / `skipChatFetch` / `skipCharacterSave` 分支 |
-| scripts/extensions.js | activateExtensions  | 并行关键扩展；Moonlit 样式就绪后放行；Quick Reply / JS-Slash-Runner 移出点卡窗口          | 防原生界面闪现     | 移除并行与 `miniapp:st-interactive` 延迟分支                     |
-| scripts/st-context.js | extension context   | 向平台扩展暴露受控 `doNewChat` 原生调用                                                   | 跳过 slash 管线    | 移除 `doNewChat` context 导出                                    |
+| 文件             | 位置               | 改动                                                                                      | 原因            | 回滚                                                    |
+| ---------------- | ------------------ | ----------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------- |
+| public/script.js | firstLoadInit 前段 | getClientVersion/initSecrets/readSecretState/initLocales 串行→Promise.all                 | 冷启动并行化①   | 见 docs/iframe-boot-firstloadinit-parallelization.md §6 |
+| public/script.js | firstLoadInit 后段 | getUserAvatars/getCharacters 串行→Promise.all；移除 boot 期 getBackgrounds 调用（Tier-2） | 冷启动并行化①/② | 同上                                                    |

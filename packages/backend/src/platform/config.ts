@@ -22,8 +22,7 @@ export const config = {
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   botInternalSecret: process.env.BOT_INTERNAL_SECRET || '',
-  // CS 必须使用当前数据库环境对应的 MiniApp Bot；否则同一 tg_id 对另一 Bot 会 chat not found。
-  csTelegramBotToken: process.env.TELEGRAM_BOT_TOKEN || process.env.CS_TELEGRAM_BOT_TOKEN || '',
+  csTelegramBotToken: process.env.CS_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '',
   csAdminToken: process.env.CS_ADMIN_TOKEN || '',
   csTelegramWebhookSecret: process.env.CS_TELEGRAM_WEBHOOK_SECRET || '',
 

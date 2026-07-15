@@ -635,18 +635,12 @@ async function getManifests(names) {
  * Tries to activate all available extensions that are not already active.
  * @returns {Promise<void>}
  */
-const miniAppFastBoot =
-  new URLSearchParams(window.location.search).get('miniapp_fast_boot') === '1';
-let miniAppDeferredExtensionsReleased = !miniAppFastBoot;
-let miniAppDeferredListenerRegistered = false;
-
 async function activateExtensions() {
   extensionLoadErrors.clear();
   const clientVersion = CLIENT_VERSION.split(':')[1];
   const extensions = Object.entries(manifests).sort((a, b) => sortManifestsByOrder(a[1], b[1]));
   const extensionNames = extensions.map((x) => x[0]);
   const promises = [];
-  let hasMiniAppDeferredExtensions = false;
 
   for (let entry of extensions) {
     const name = entry[0];
@@ -655,16 +649,6 @@ async function activateExtensions() {
     const extensionDependencies = manifest.dependencies;
     const minClientVersion = manifest.minimum_client_version;
     const displayName = manifest.display_name || name;
-
-    // [miniapp-patch] Quick Reply and Tavern Helper are not required to select a character or
-    // render the composer. Release them after the critical MiniApp interactive gate.
-    if (
-      !miniAppDeferredExtensionsReleased &&
-      (name === 'quick-reply' || name.endsWith('/JS-Slash-Runner'))
-    ) {
-      hasMiniAppDeferredExtensions = true;
-      continue;
-    }
 
     if (activeExtensions.has(name)) {
       continue;
@@ -723,7 +707,7 @@ async function activateExtensions() {
         const promise = addExtensionLocale(name, manifest).finally(() =>
           Promise.all([addExtensionScript(name, manifest), addExtensionStyle(name, manifest)])
         );
-        const activationPromise = promise
+        await promise
           .then(() => {
             activeExtensions.add(name);
             return callExtensionHook(name, 'activate');
@@ -732,15 +716,7 @@ async function activateExtensions() {
             console.log('Could not activate extension', name, err);
             extensionLoadErrors.add(t`Extension "${displayName}" failed to load: ${err}`);
           });
-        // Moonlit is visual-critical: addExtensionStyle already resolves only after its CSS loads.
-        // Keep it in the interactive gate so the native ST skin can never flash before the theme.
-        promises.push(activationPromise);
-        // [miniapp-patch] Critical extensions are independent in the MiniApp profile. Loading
-        // them concurrently removes one network RTT per extension while the normal ST path
-        // preserves upstream's strict serial activation order.
-        if (!miniAppFastBoot) {
-          await activationPromise;
-        }
+        promises.push(promise);
       } catch (error) {
         console.error('Could not activate extension', name, error);
       }
@@ -775,21 +751,6 @@ async function activateExtensions() {
         t`Extension "${displayName}" did not load. Requires ST client version ${minClientVersion}, but current version is ${clientVersion}.`
       );
     }
-  }
-
-  if (hasMiniAppDeferredExtensions && !miniAppDeferredListenerRegistered) {
-    miniAppDeferredListenerRegistered = true;
-    window.addEventListener(
-      'miniapp:st-interactive',
-      () => {
-        // Keep optional extension downloads and update checks out of the character-entry window.
-        setTimeout(() => {
-          miniAppDeferredExtensionsReleased = true;
-          void activateExtensions();
-        }, 5000);
-      },
-      { once: true }
-    );
   }
 
   await Promise.allSettled(promises);

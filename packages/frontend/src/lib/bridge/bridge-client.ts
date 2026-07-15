@@ -33,28 +33,26 @@ export type BridgeClientOptions = {
   maxReconnectAttempts?: number;
   /** 重连退避基数（默认 2000ms）：第 n 次退避 = base * 2^n → 2s / 4s / 8s */
   reconnectBaseDelayMs?: number;
-  /** 重连 attempt 从 loading 到首段握手的总预算。 */
-  reconnectTotalTimeout?: number;
-  /** 首段握手到 APP_READY 的独立预算；收到 handshake 后不再沿用 boot 起点计时器。 */
-  readyPhaseTimeout?: number;
+  /** 重连 attempt 的握手超时（默认 30s，短于首次 totalTimeout；reload 命中 #1 缓存后握手应很快） */
+  reconnectHandshakeTimeout?: number;
   /**
    * iframe 加载看门狗（安全网 #3）：start/重连后超过该时长仍未收到 iframe load 事件，
    * 视为首次加载停摆（实测部署窗口下连接挂死：文档已回来但后续请求全无、load 永不触发），
-   * 不等握手总超时、立即走重连。默认 45s；0 = 关闭。
+   * 不等 60s 握手总超时、立即走重连。默认 15s；0 = 关闭。
    */
   iframeLoadTimeout?: number;
   /**
    * 握手到达看门狗（安全网 #4）：start/重连后超过该时长仍未收到首段握手消息即走重连。
    * 覆盖 load 看门狗防不住的停摆变体（pro 实测：静态资源 1s 内全到、load 已触发，
    * 但 boot JS 在 /csrf-token 往返后连接挂死、后续 fetch 永久 pending → 握手永不到达）。
-   * 正常首段握手在极端冷缓存可超过 30s，默认 45s；0 = 关闭。
+   * 正常首段握手最迟 ~17s 到达（10 样本最差值），默认 30s；0 = 关闭。
    */
   handshakeArrivalTimeout?: number;
   /**
    * 点卡即检重载阈值（安全网 #5）：用户点卡进入 /tavern/ 时 iframe 由隐藏转可见
    * （重载只在可见态 100% 恢复）。若此刻仍未握手，则按「距本次 boot 起点的该时长」武装一枚更
    * 激进的停摆重载——到点仍无握手即重载，不必干等 30s 握手到达看门狗；点卡时若已超阈值则立即重载。
-   * 默认 45s；阈值按每次 boot attempt 独立计算。0 = 关闭。
+   * 默认 18s（> 正常最迟握手 ~17.5s，不误伤健康慢 boot）；0 = 关闭。
    */
   visibleStallReloadMs?: number;
 };
@@ -74,8 +72,7 @@ export class BridgeClient {
   private readonly expectedUserId: string | null;
   private readonly maxReconnectAttempts: number;
   private readonly reconnectBaseDelayMs: number;
-  private readonly reconnectTotalTimeout: number;
-  private readonly readyPhaseTimeout: number;
+  private readonly reconnectHandshakeTimeout: number;
   private readonly iframeLoadTimeout: number;
   private readonly handshakeArrivalTimeout: number;
   private readonly visibleStallReloadMs: number;
@@ -94,13 +91,11 @@ export class BridgeClient {
   private iframeLoadHandler: (() => void) | null = null;
   private handshakeArrivalTimer: ReturnType<typeof setTimeout> | null = null;
   private clickStallTimer: ReturnType<typeof setTimeout> | null = null;
-  private readyPhaseTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private started = false;
   /** 本次 boot 尝试（start 或 reconnect reload）起点，用于点卡即检的相对阈值计算 */
   private bootAttemptStartedAt = 0;
-  private bootAttemptId = 0;
   /** 用户是否已点卡进入 /tavern/（iframe 转可见）；决定重连后是否也走激进的点卡即检阈值 */
   private userWaiting = false;
 
@@ -113,11 +108,10 @@ export class BridgeClient {
     this.expectedUserId = options?.expectedUserId ?? null;
     this.maxReconnectAttempts = options?.maxReconnectAttempts ?? 3;
     this.reconnectBaseDelayMs = options?.reconnectBaseDelayMs ?? 2000;
-    this.reconnectTotalTimeout = options?.reconnectTotalTimeout ?? 60_000;
-    this.readyPhaseTimeout = options?.readyPhaseTimeout ?? 45_000;
-    this.iframeLoadTimeout = options?.iframeLoadTimeout ?? 45_000;
-    this.handshakeArrivalTimeout = options?.handshakeArrivalTimeout ?? 45_000;
-    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 45_000;
+    this.reconnectHandshakeTimeout = options?.reconnectHandshakeTimeout ?? 30_000;
+    this.iframeLoadTimeout = options?.iframeLoadTimeout ?? 15_000;
+    this.handshakeArrivalTimeout = options?.handshakeArrivalTimeout ?? 30_000;
+    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 10_000;
 
     this.stateMachine = createStateMachine();
     this.buffer = new RequestBuffer();
@@ -128,7 +122,6 @@ export class BridgeClient {
     if (this.started) return;
     this.started = true;
     this.bootAttemptStartedAt = Date.now();
-    this.bootAttemptId += 1;
 
     markTiming('bridge_start'); // [iframe-timing] TEMP DEBUG
     this.stateMachine.transition({ type: 'IFRAME_LOAD_START' });
@@ -156,7 +149,7 @@ export class BridgeClient {
     this.handshakeArrivalTimer = setTimeout(() => {
       this.handshakeArrivalTimer = null;
       markTiming('handshake_arrival_watchdog'); // [iframe-timing] TEMP DEBUG
-      this.handleHandshakeTimeout('handshake_arrival');
+      this.handleHandshakeTimeout();
     }, this.handshakeArrivalTimeout);
   }
 
@@ -185,14 +178,12 @@ export class BridgeClient {
   private armClickStallWatchdog(): void {
     this.clearClickStallWatchdog();
     if (this.visibleStallReloadMs <= 0) return;
-    const bootAttemptId = this.bootAttemptId;
     const elapsed = Date.now() - this.bootAttemptStartedAt;
     const remaining = Math.max(0, this.visibleStallReloadMs - elapsed);
     this.clickStallTimer = setTimeout(() => {
       this.clickStallTimer = null;
-      if (bootAttemptId !== this.bootAttemptId) return;
       markTiming('click_stall_reload'); // [iframe-timing] TEMP DEBUG
-      this.handleHandshakeTimeout('click_stall');
+      this.handleHandshakeTimeout();
     }, remaining);
   }
 
@@ -227,7 +218,7 @@ export class BridgeClient {
     this.iframeLoadTimer = setTimeout(() => {
       this.iframeLoadTimer = null;
       markTiming('iframe_load_watchdog'); // [iframe-timing] TEMP DEBUG
-      this.handleHandshakeTimeout('iframe_load');
+      this.handleHandshakeTimeout();
     }, this.iframeLoadTimeout);
   }
 
@@ -241,23 +232,7 @@ export class BridgeClient {
   /** 武装（或重置）握手超时定时器。超时回调走 handleHandshakeTimeout（重连 or 终止）。 */
   private armHandshakeTimer(timeout: number): void {
     if (this.totalTimer) clearTimeout(this.totalTimer);
-    this.totalTimer = setTimeout(() => this.handleHandshakeTimeout('boot_total'), timeout);
-  }
-
-  private armReadyPhaseTimer(): void {
-    this.clearReadyPhaseTimer();
-    if (this.readyPhaseTimeout <= 0) return;
-    this.readyPhaseTimer = setTimeout(() => {
-      this.readyPhaseTimer = null;
-      markTiming('ready_phase_watchdog');
-      this.handleHandshakeTimeout('ready_phase');
-    }, this.readyPhaseTimeout);
-  }
-
-  private clearReadyPhaseTimer(): void {
-    if (!this.readyPhaseTimer) return;
-    clearTimeout(this.readyPhaseTimer);
-    this.readyPhaseTimer = null;
+    this.totalTimer = setTimeout(() => this.handleHandshakeTimeout(), timeout);
   }
 
   /**
@@ -266,41 +241,25 @@ export class BridgeClient {
    * 还有重连额度 → 带退避重连（重载 iframe 让 ST 重新冷启动 + 重发握手）；
    * 额度耗尽 → 终态 disconnect（停止重试，避免不可恢复场景如 cookie 失效时无限 reload）。
    */
-  private handleHandshakeTimeout(reason: string): void {
-    const status = this.stateMachine.getStatus();
-    if (
-      status === 'interactive' ||
-      status === 'ready' ||
-      status === 'idle' ||
-      status === 'disconnected'
-    )
-      return;
+  private handleHandshakeTimeout(): void {
     // 多个看门狗（load/握手到达/总超时）可能相继超时；已有重连排队时不重复调度
     if (this.reconnectTimer) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.disconnect(
-        `${reason} timeout after ${this.reconnectAttempts} reconnect attempt(s), status=${status}`
-      );
+      this.disconnect(`Handshake timeout after ${this.reconnectAttempts} reconnect attempt(s)`);
       return;
     }
-    this.scheduleReconnect(reason);
+    this.scheduleReconnect();
   }
 
   /** 安排一次带退避的重连：进入 disconnected（reject 死请求 + 清 buffer），退避后 performReconnect。 */
-  private scheduleReconnect(reason: string): void {
+  private scheduleReconnect(): void {
     this.stopPingLoop();
-    if (this.totalTimer) {
-      clearTimeout(this.totalTimer);
-      this.totalTimer = null;
-    }
-    this.clearReadyPhaseTimer();
     this.clearIframeLoadWatchdog();
     this.clearHandshakeArrivalWatchdog();
     this.clearClickStallWatchdog();
-    markTiming(`reconnect_scheduled_${reason}`);
     this.stateMachine.transition({
       type: 'DISCONNECT',
-      reason: `${reason} timeout — scheduling reconnect`,
+      reason: 'Handshake timeout — scheduling reconnect',
     });
     this.rejectAllPending('Bridge reconnecting after handshake timeout');
     this.buffer.clear();
@@ -338,8 +297,7 @@ export class BridgeClient {
 
     this.stateMachine.transition({ type: 'IFRAME_LOAD_START' });
     this.bootAttemptStartedAt = Date.now();
-    this.bootAttemptId += 1;
-    this.armHandshakeTimer(this.reconnectTotalTimeout);
+    this.armHandshakeTimer(this.reconnectHandshakeTimeout);
 
     // 重载 iframe（触发 ST 冷启动 + st-extension 重新 init 并重发握手）
     const src = iframe.src;
@@ -366,7 +324,6 @@ export class BridgeClient {
       clearTimeout(this.totalTimer);
       this.totalTimer = null;
     }
-    this.clearReadyPhaseTimer();
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -562,13 +519,7 @@ export class BridgeClient {
     this.clearHandshakeArrivalWatchdog();
     this.clearClickStallWatchdog();
     // [iframe-timing] TEMP DEBUG: 记录两段握手到达时刻
-    markTiming(
-      msg.phase === 'ready'
-        ? 'st_ready'
-        : msg.phase === 'interactive'
-          ? 'st_interactive'
-          : 'st_handshake'
-    );
+    markTiming(msg.phase === 'ready' ? 'st_ready' : 'st_handshake');
     try {
       handleHandshakeMessage({
         message: msg,
@@ -579,34 +530,11 @@ export class BridgeClient {
         sendBuffered: (requests) => this.flushBufferedRequests(requests),
       });
 
-      if (msg.phase === 'handshake') {
-        if (this.totalTimer) {
-          clearTimeout(this.totalTimer);
-          this.totalTimer = null;
-        }
-        this.armReadyPhaseTimer();
-      }
-
-      if (msg.phase === 'interactive') {
-        if (this.totalTimer) {
-          clearTimeout(this.totalTimer);
-          this.totalTimer = null;
-        }
-        this.clearReadyPhaseTimer();
-        this.reconnectAttempts = 0;
-        if (this.reconnectTimer) {
-          clearTimeout(this.reconnectTimer);
-          this.reconnectTimer = null;
-        }
-        this.startPingLoop();
-      }
-
       if (msg.phase === 'ready') {
         if (this.totalTimer) {
           clearTimeout(this.totalTimer);
           this.totalTimer = null;
         }
-        this.clearReadyPhaseTimer();
         // 握手成功：清零重连计数并取消待执行的重连（安全网 #2）
         this.reconnectAttempts = 0;
         if (this.reconnectTimer) {
@@ -684,7 +612,6 @@ export class BridgeClient {
     this.clearIframeLoadWatchdog();
     this.clearHandshakeArrivalWatchdog();
     this.clearClickStallWatchdog();
-    this.clearReadyPhaseTimer();
     if (this.totalTimer) {
       clearTimeout(this.totalTimer);
       this.totalTimer = null;

@@ -68,32 +68,40 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   // 预设正则不依赖具体角色，独立预授权（当前选中预设含内置正则时才写入）。
   preAllowPresetRegex();
 
-  await ctx.selectCharacterById(index, {
-    switchMenu: false,
-    // forceNewChat 路径无需先拉取、渲染旧聊天；doNewChat 会直接创建并加载新文件。
-    skipChatLoad: payload.forceNewChat,
-  });
+  // forceNewChat 快路径：预设新聊天文件名，让 selectCharacterById 内部的 getChat 直接
+  // 装载「新空聊天」，跳过旧聊天装载 + /newchat 的整条重复链。
+  //
+  // 机制即 vendor doNewChat 自身的做法（script.js:11917-11920：置 chat_metadata={}、
+  // characters[chid].chat=新文件名、getChat()），只是提前到选卡之前——服务端 /api/chats/get
+  // 对不存在的文件返回 {}（src/endpoints/chats.js:566），getChatResult 注入 greeting、
+  // freshChat 触发 CHAT_CREATED、saveChatConditional 落盘，与 /newchat 路径逐项等价。
+  // 省掉：旧聊天 chats/get+chats/save、第一次 CHAT_CHANGED 联动的 avatars/get /
+  // quick-replies/save、createOrEditCharacter 的 characters/edit+characters/get
+  // （chat 指针不再回写卡 PNG——平台 100% forceNewChat，从不读该指针，且避免隐藏 DOM
+  // 表单整卡回写的数据完整性隐患）。详见 2026-07-13 点卡路径核验。
+  //
+  // 仅在目标卡非当前选中卡时启用：selectCharacterById 只有 this_chid!==id 才走
+  // clearChat+getChat 分支（script.js:1018）；同卡重进（else 分支不 getChat）或
+  // is_send_press/isChatSaving 守卫空转时，事后校验兜底回退原 /newchat 路径。
+  let presetChatName: string | null = null;
+  if (payload.forceNewChat && String(ctx.characterId) !== String(index)) {
+    const target = ctx.characters[index];
+    if (target) {
+      presetChatName = `${target.name} - ${humanizedDateTime()}`;
+      target.chat = presetChatName;
+    }
+  }
+
+  await ctx.selectCharacterById(index, { switchMenu: false });
   stTiming('sel_selectById_done'); // [iframe-timing] TEMP DEBUG: H3
   markSelectProbe('h3_done'); // [iframe-timing] TEMP DEBUG
 
-  if (payload.forceNewChat) {
-    // 直接调用 ST 原生函数，跳过 slash 解析；平台不会恢复角色 chat 指针，
-    // 因此无需把本次临时文件名再次写回角色 PNG。
-    stTiming('sel_newchat_start'); // [iframe-timing] TEMP DEBUG
-    try {
-      await ctx.doNewChat({ skipCharacterSave: true, skipChatFetch: true });
-    } catch (error) {
-      // The Vivo failure happens before the first /api/characters/get request. Preserve the
-      // concrete ST exception in the parent timing payload before BridgeServer serializes it.
-      stTiming('sel_newchat_error', describeError(error)); // [iframe-timing] TEMP DEBUG
-      stopSelectProbe();
-      throw error;
-    }
+  const fastPathOk = presetChatName !== null && ctx.getCurrentChatId() === presetChatName;
+  if (payload.forceNewChat && !fastPathOk) {
+    await ctx.executeSlashCommandsWithOptions('/newchat');
   }
-  stTiming(
-    'sel_newchat_done',
-    `forceNewChat=${!!payload.forceNewChat},fastNewChat=${!!payload.forceNewChat}`
-  ); // [iframe-timing] TEMP DEBUG: H2
+  // [iframe-timing] TEMP DEBUG: H2（fastPath=true 时已在 H3 内建新聊天，H2 应≈0）
+  stTiming('sel_newchat_done', `forceNewChat=${!!payload.forceNewChat},fastPath=${fastPathOk}`);
   stopSelectProbe(); // [iframe-timing] TEMP DEBUG: 收割点卡窗口瀑布/事件/长任务并上报
 
   ctx.saveSettingsDebounced();
@@ -106,13 +114,6 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function describeError(error: unknown): string {
-  if (error instanceof Error) {
-    return `name=${error.name},message=${error.message},stack=${error.stack ?? ''}`.slice(0, 2000);
-  }
-  return `value=${String(error)}`.slice(0, 2000);
 }
 
 /**

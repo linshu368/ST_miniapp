@@ -102,15 +102,10 @@ export function createBridgeServer(parentOrigin: string): BridgeServer {
       }
 
       // Phase check
-      const phaseOrder: Record<HandshakePhase, number> = {
-        handshake: 0,
-        interactive: 1,
-        ready: 2,
-      };
-      if (phaseOrder[currentPhase] < phaseOrder[meta.requiredPhase]) {
+      if (meta.requiredPhase === 'ready' && currentPhase !== 'ready') {
         throw new BridgeError(
           'BRIDGE_CALL_ACTION_NOT_AVAILABLE_IN_PHASE',
-          `Action "${request.action}" requires phase "${meta.requiredPhase}", current is "${currentPhase}"`,
+          `Action "${request.action}" requires phase "ready", current is "${currentPhase}"`,
           { requestId: request.requestId }
         );
       }

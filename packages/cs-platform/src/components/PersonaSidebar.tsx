@@ -7,7 +7,6 @@ export function PersonaSidebar(props: {
   isLoading: boolean;
   errorMessage: string | null;
   onSelect: (id: string) => void;
-  onConfigure: (persona: CsPersonaData) => void;
   onCreate: () => void;
   onLogout: () => void;
 }) {
@@ -34,27 +33,18 @@ export function PersonaSidebar(props: {
           <p className="hint-text">暂无画像簇，点击「新建」创建第一个。</p>
         )}
         {props.personas.map((persona) => (
-          <div
+          <button
             key={persona.id}
             className={`persona-item ${props.selectedId === persona.id ? 'is-active' : ''}`}
+            onClick={() => props.onSelect(persona.id)}
           >
-            <button className="persona-select" onClick={() => props.onSelect(persona.id)}>
-              <span className="persona-dot" style={{ background: persona.color }} />
-              <span className="persona-text">
-                <span className="persona-name">{persona.name}</span>
-                {persona.description && <span className="persona-desc">{persona.description}</span>}
-              </span>
-              <span className="persona-count">{persona.active_count}</span>
-            </button>
-            <button
-              className="persona-config"
-              onClick={() => props.onConfigure(persona)}
-              aria-label={`配置画像簇 ${persona.name}`}
-              title="配置画像簇"
-            >
-              配置
-            </button>
-          </div>
+            <span className="persona-dot" style={{ background: persona.color }} />
+            <span className="persona-text">
+              <span className="persona-name">{persona.name}</span>
+              {persona.description && <span className="persona-desc">{persona.description}</span>}
+            </span>
+            <span className="persona-count">{persona.active_count}</span>
+          </button>
         ))}
       </nav>
 
