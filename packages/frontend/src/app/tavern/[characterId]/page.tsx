@@ -1,14 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { BridgeError } from '@miniapp/bridge-protocol';
-import { getBridgeClientOrNull, platformAction, useBridgeStatus } from '@/lib/bridge';
+import { platformAction, useBridgeStatus } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
-import { requestTelegramChatFullscreen } from '@/lib/telegram/init';
 import { ChatHeader } from '@/components/tavern/chat-header';
-import { ChatSplash } from '@/components/tavern/chat-splash';
 import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
+import { ChatSplash } from '@/components/tavern/chat-splash';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 // [iframe-timing] TEMP DEBUG
@@ -21,51 +19,35 @@ export default function TavernChatPage() {
   const [readyCharacterId, setReadyCharacterId] = useState<string | null>(null);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
-  const selectRunRef = useRef<string | null>(null);
   const chatReady = readyCharacterId === characterId;
-  const chatVisibleReady = chatReady && bridgeStatus === 'ready';
-
-  useEffect(() => {
-    requestTelegramChatFullscreen();
-  }, []);
 
   // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。
   useEffect(() => {
     window.dispatchEvent(
-      new CustomEvent(CHAT_INTERACTIVITY_EVENT, { detail: { interactive: chatVisibleReady } })
+      new CustomEvent(CHAT_INTERACTIVITY_EVENT, { detail: { interactive: chatReady } })
     );
     return () => {
       window.dispatchEvent(
         new CustomEvent(CHAT_INTERACTIVITY_EVENT, { detail: { interactive: false } })
       );
     };
-  }, [chatVisibleReady]);
+  }, [chatReady]);
 
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
     if (!characterId) return;
-    setReadyCharacterId(null);
-    setEntryError(null);
-    selectRunRef.current = null;
     resetPageTiming();
     markTiming('page_mount');
-    markTiming('ensure_start');
-    void prefetchEnsureStCharacter(characterId)
-      .catch((err) => {
-        console.error('[TavernChatPage] ensureCharacter failed:', err);
-      })
-      .finally(() => markTiming('ensure_end'));
-  }, [characterId, entryAttempt]);
+  }, [characterId]);
 
   useEffect(() => {
-    // 角色切换会触发 ST 的聊天创建与首条消息渲染，必须等 APP_READY 后再执行。
-    // 移动端冷启动较慢；interactive 阶段仍可能在加载设置/扩展，过早切换会卡到桥接超时。
+    setReadyCharacterId(null);
     if (!characterId || bridgeStatus !== 'ready') return;
+    setEntryError(null);
 
     markTiming('gate_open'); // [iframe-timing] TEMP DEBUG
-    const runKey = `${characterId}:${entryAttempt}`;
-    if (selectRunRef.current === runKey) return;
-    selectRunRef.current = runKey;
+
+    let cancelled = false;
 
     // 懒下发：先确保「当前打开的这张卡」已落盘（登录不再全量下发），再切角色。
     // 预览浮层打开时已预取（prefetchEnsureStCharacter 全会话共享 promise），
@@ -73,11 +55,14 @@ export default function TavernChatPage() {
     // ensure 失败不阻断：卡可能已缓存，交给 selectCharacter 的重载+重试兜底。
     void (async () => {
       try {
+        markTiming('ensure_start'); // [iframe-timing] TEMP DEBUG
         await prefetchEnsureStCharacter(characterId);
+        markTiming('ensure_end'); // [iframe-timing] TEMP DEBUG
       } catch (err) {
+        markTiming('ensure_end'); // [iframe-timing] TEMP DEBUG
         console.error('[TavernChatPage] ensureCharacter failed:', err);
       }
-      if (selectRunRef.current !== runKey) return;
+      if (cancelled) return;
 
       const avatar = `platform_${characterId}.png`;
       markTiming('select_start'); // [iframe-timing] TEMP DEBUG
@@ -87,7 +72,7 @@ export default function TavernChatPage() {
           if (result.chatId) {
             useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
           }
-          if (selectRunRef.current === runKey) {
+          if (!cancelled) {
             setReadyCharacterId(characterId);
             // [iframe-timing] TEMP DEBUG: 呈现时刻，flush 全部相位到后端日志
             markTiming('chat_ready');
@@ -96,49 +81,26 @@ export default function TavernChatPage() {
         })
         .catch((err) => {
           console.error('[TavernChatPage] selectCharacter failed:', err);
-          // [iframe-timing] TEMP DEBUG: success previously was the only flush path, so the
-          // mobile timeout left no remote evidence. Flush the accumulated ST sub-phase marks
-          // and the concrete BridgeError before rendering the retry state.
-          markTiming('select_error');
-          const errorMeta =
-            err instanceof BridgeError
-              ? {
-                  errorName: err.name,
-                  errorCode: err.code,
-                  errorMessage: err.message,
-                  errorRequestId: err.requestId,
-                  errorContext: err.context,
-                }
-              : {
-                  errorName: err instanceof Error ? err.name : typeof err,
-                  errorMessage: err instanceof Error ? err.message : String(err),
-                };
-          flushIframeTiming({
-            characterId,
-            entryAttempt,
-            outcome: 'select_error',
-            bridgeStatusAtGate: bridgeStatus,
-            bridgeStatusAtError: getBridgeClientOrNull()?.getStatus() ?? 'unavailable',
-            activeRun: selectRunRef.current === runKey,
-            ...errorMeta,
-          });
-          if (selectRunRef.current === runKey) {
-            selectRunRef.current = null;
+          if (!cancelled) {
             setEntryError('角色加载失败，请重试。');
           }
         });
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [bridgeStatus, characterId, entryAttempt]);
 
   return (
-    <div className="relative h-[var(--miniapp-visual-viewport-height,100dvh)] min-h-0 w-full overflow-hidden">
+    <div className="relative w-full h-full">
       <ChatHeader />
       <ChatToolsMenu />
       {characterId ? (
         <ChatSplash
           key={`${characterId}:${entryAttempt}`}
           characterId={characterId}
-          ready={chatVisibleReady}
+          ready={chatReady}
           error={entryError}
           onRetry={() => setEntryAttempt((attempt) => attempt + 1)}
         />

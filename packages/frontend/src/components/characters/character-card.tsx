@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import type { CharacterSummary } from '@miniapp/shared';
 import { Flame } from 'lucide-react';
 
@@ -11,37 +10,11 @@ interface CharacterCardProps {
   character: CharacterSummary;
   onSelect: (id: string) => void;
   disabled?: boolean;
-  priority?: boolean;
-  onImageSettled?: (id: string) => void;
 }
 
-export function lobbyImageUrl(source: string): string {
-  try {
-    const url = new URL(source);
-    const marker = '/storage/v1/object/public/';
-    if (!url.pathname.includes(marker)) return source;
-    url.pathname = url.pathname.replace(marker, '/storage/v1/render/image/public/');
-    url.searchParams.set('width', '360');
-    url.searchParams.set('height', '480');
-    url.searchParams.set('resize', 'cover');
-    url.searchParams.set('quality', '68');
-    return url.toString();
-  } catch {
-    return source;
-  }
-}
-
-export function CharacterCard({
-  character,
-  onSelect,
-  disabled,
-  priority = false,
-  onImageSettled,
-}: CharacterCardProps) {
+export function CharacterCard({ character, onSelect, disabled }: CharacterCardProps) {
   const gradient = characterRoomGradient(character.id);
   const hasAvatar = !!character.avatar_url;
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageFailed, setImageFailed] = useState(false);
 
   const card = (
     <button
@@ -66,36 +39,16 @@ export function CharacterCard({
             <Flame className="size-[18px] fill-orange-500 text-amber-200" aria-hidden="true" />
           </span>
         )}
-        <div
-          className={`absolute inset-0 transition-opacity duration-300 ${
-            imageLoaded ? 'opacity-0' : 'opacity-100'
-          }`}
-          aria-hidden="true"
-          style={{ background: gradient }}
-        />
-        {hasAvatar && !imageFailed ? (
+        {hasAvatar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={lobbyImageUrl(character.avatar_url)}
+            src={character.avatar_url}
             alt={character.name}
-            width={360}
-            height={480}
-            loading={priority ? 'eager' : 'lazy'}
-            fetchPriority={priority ? 'high' : 'auto'}
-            decoding="async"
-            onLoad={() => {
-              setImageLoaded(true);
-              onImageSettled?.(character.id);
-            }}
-            onError={() => {
-              setImageFailed(true);
-              onImageSettled?.(character.id);
-            }}
-            className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 ${
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            }`}
+            className="absolute inset-0 h-full w-full object-cover object-top"
           />
-        ) : null}
+        ) : (
+          <div className="absolute inset-0" aria-hidden="true" style={{ background: gradient }} />
+        )}
 
         {/* 渐变遮罩 */}
         <div

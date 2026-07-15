@@ -17,7 +17,7 @@ export default function App() {
     user: CsUserData;
     membership: Membership;
   } | null>(null);
-  const [personaModal, setPersonaModal] = useState<CsPersonaData | 'create' | null>(null);
+  const [showPersonaModal, setShowPersonaModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,21 +55,6 @@ export default function App() {
     queryFn: () => csApi.messages(selectedPersona!.id, selectedUser!.user.user_id),
     enabled: !!selectedPersona && !!selectedUser,
     refetchInterval: selectedUser ? 3_000 : false,
-  });
-
-  const appChatQuery = useQuery({
-    queryKey: ['cs', 'app-chat', selectedUser?.user.user_id],
-    queryFn: () => csApi.appChat(selectedPersona!.id, selectedUser!.user.user_id),
-    enabled: !!selectedPersona && !!selectedUser,
-    refetchInterval: selectedUser ? 10_000 : false,
-  });
-
-  const reachabilityQuery = useQuery({
-    queryKey: ['cs', 'telegram-reachability', selectedPersona?.id, selectedUser?.user.user_id],
-    queryFn: () => csApi.telegramReachability(selectedPersona!.id, selectedUser!.user.user_id),
-    enabled: !!selectedPersona && !!selectedUser,
-    staleTime: 30_000,
-    refetchInterval: selectedUser ? 30_000 : false,
   });
 
   const refreshMutation = useMutation({
@@ -141,8 +126,7 @@ export default function App() {
           setSelectedPersonaId(id);
           setSelectedUser(null);
         }}
-        onCreate={() => setPersonaModal('create')}
-        onConfigure={(persona) => setPersonaModal(persona)}
+        onCreate={() => setShowPersonaModal(true)}
         onLogout={handleLogout}
       />
 
@@ -176,8 +160,6 @@ export default function App() {
             persona={selectedPersona}
             user={selectedUser.user}
             messages={messagesQuery.data?.messages ?? []}
-            appChatTurns={appChatQuery.data?.turns ?? []}
-            telegramReachability={reachabilityQuery.data ?? null}
             session={sessionQuery.data?.session ?? null}
             onChanged={invalidateConversation}
             onToast={setToast}
@@ -187,17 +169,13 @@ export default function App() {
         )}
       </div>
 
-      {personaModal && (
+      {showPersonaModal && (
         <PersonaModal
-          key={personaModal === 'create' ? 'create' : personaModal.id}
-          persona={personaModal === 'create' ? undefined : personaModal}
-          onClose={() => setPersonaModal(null)}
-          onSaved={(persona, mode) => {
-            setPersonaModal(null);
+          onClose={() => setShowPersonaModal(false)}
+          onCreated={(persona) => {
+            setShowPersonaModal(false);
             setSelectedPersonaId(persona.id);
-            setToast(
-              mode === 'created' ? `已创建画像簇：${persona.name}` : `已更新画像簇：${persona.name}`
-            );
+            setToast(`已创建画像簇：${persona.name}`);
             void qc.invalidateQueries({ queryKey: ['cs', 'personas'] });
           }}
           onToast={setToast}

@@ -13,9 +13,9 @@ const SLOW_HINT_MS = 6500;
 /** 长尾兜底：不让用户永远只看一条进度条 */
 const STALL_HINT_MS = 45000;
 /** 退场动画时长，与 CSS splash-exit 保持一致 */
-const EXIT_MS = 320;
+const EXIT_MS = 720;
 /** ready 后先拉满进度，再让整屏退场 */
-const READY_FILL_MS = 120;
+const READY_FILL_MS = 240;
 
 type Phase = 'showing' | 'exiting' | 'gone';
 

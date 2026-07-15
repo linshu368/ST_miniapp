@@ -106,7 +106,7 @@ export function ChatSidebar() {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <button
-          className="rounded-full bg-transparent p-2 text-white transition-colors hover:bg-white/10 active:scale-95"
+          className="rounded-full p-2 text-white/70 hover:text-white transition-colors"
           aria-label="历史对话"
         >
           <Ellipsis className="h-5 w-5" />

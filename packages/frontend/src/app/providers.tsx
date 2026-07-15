@@ -1,8 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
-import { usePathname } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
@@ -11,26 +9,16 @@ import { recordMiniappEntry } from '@/lib/api/growth';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
-import { markTiming } from '@/lib/bridge/iframe-timing';
 import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 import { useAppearanceStore } from '@/stores/appearance-store';
 import { BridgeProvider } from '@/components/bridge/bridge-provider';
-
-const STIframe = dynamic(
-  () => import('@/components/bridge/st-iframe').then((module) => module.STIframe),
-  { ssr: false }
-);
-const FOREGROUND_BOOT_ENABLED = process.env.NEXT_PUBLIC_FOREGROUND_BOOT === '1';
+import { STIframe } from '@/components/bridge/st-iframe';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
-  const pathname = usePathname();
-  const [bridgeRuntimeReady, setBridgeRuntimeReady] = useState(
-    () => pathname.startsWith('/tavern/') || FOREGROUND_BOOT_ENABLED
-  );
-  const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
+  const [telegramReady, setTelegramReady] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
   const hydrateAppearance = useAppearanceStore((s) => s.hydrate);
   const hydrateTheme = useThemeStore((s) => s.hydrate);
@@ -47,27 +35,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
     hydrateTheme();
     // 应用持久化的消息字号倍率
     hydrateFontScale();
-    performance.mark('app_shell_interactive');
-    markTiming('app_shell_interactive');
-    document.documentElement.dataset.appShellInteractive = 'true';
-    performance.mark('st_prewarm_start');
-    markTiming('st_prewarm_start');
-    setBridgeRuntimeReady(true);
+    setTelegramReady(true);
   }, [hydrateUserProfile, hydrateAppearance, hydrateTheme, hydrateFontScale]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setBackgroundTasksReady(true), 1_200);
-    return () => clearTimeout(timer);
-  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
-      {backgroundTasksReady ? <GrowthEntryReporter /> : null}
-      {backgroundTasksReady ? <UserSettingsHydrator /> : null}
-      <BridgeProvider active={bridgeRuntimeReady}>
-        {children}
-        {bridgeRuntimeReady ? <STIframe /> : null}
-      </BridgeProvider>
+      {telegramReady ? <GrowthEntryReporter /> : null}
+      {telegramReady ? <UserSettingsHydrator /> : null}
+      {telegramReady ? (
+        <BridgeProvider>
+          {children}
+          <STIframe />
+        </BridgeProvider>
+      ) : null}
       {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );
@@ -77,6 +57,7 @@ function GrowthEntryReporter() {
   useEffect(() => {
     try {
       const rawInitData = getRawInitData();
+      console.log('[Growth] rawInitData:', rawInitData);
 
       // 即使没有 rawInitData，也可以尝试从 URL 中获取 startapp 参数 (本地开发环境)
       let sourceId = '';
@@ -92,15 +73,20 @@ function GrowthEntryReporter() {
             urlParams.get('start_param') ||
             urlParams.get('tgWebAppStartParam')
           )?.trim() || '';
+        console.log('[Growth] Extracted sourceId from URL:', sourceId);
       }
 
+      console.log('[Growth] GrowthEntryReporter sourceId:', sourceId);
+
       if (!sourceId) {
+        console.log('[Growth] No sourceId found, skipping report');
         return;
       }
 
       const key = `growth_entry_reported:${sourceId}`;
       try {
         if (sessionStorage.getItem(key) === '1') {
+          console.log('[Growth] GrowthEntryReporter already reported in this session');
           return;
         }
         sessionStorage.setItem(key, '1');
@@ -108,8 +94,14 @@ function GrowthEntryReporter() {
         console.warn('[Growth] sessionStorage access failed:', e);
       }
 
+      console.log(
+        '[Growth] GrowthEntryReporter calling recordMiniappEntry with sourceId:',
+        sourceId
+      );
       recordMiniappEntry(sourceId)
-        .then(() => {})
+        .then((res) => {
+          console.log('[Growth] GrowthEntryReporter success:', res);
+        })
         .catch((err) => {
           console.error('[Growth] GrowthEntryReporter failed:', err);
           try {

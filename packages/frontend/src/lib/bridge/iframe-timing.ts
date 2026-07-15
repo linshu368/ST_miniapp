@@ -10,7 +10,6 @@
  *   bridge_start   — BridgeClient.start()（iframe 开始加载 /tavern）
  *   iframe_onload  — <iframe> load 事件（ST index + 同步资源到位）
  *   st_handshake   — 收到 phase='handshake'（ST DOMContentLoaded + 本扩展 init 完成）
- *   st_interactive — 收到 phase='interactive'（选择角色所需关键初始化完成）
  *   st_ready       — 收到 phase='ready'（ST APP_READY，闸门打开）
  *   page_mount     — 进入 /tavern/[id]（用户点卡）
  *   gate_open      — page effect 观察到 bridgeStatus==='ready'
@@ -42,7 +41,6 @@ export function resetPageTiming(): void {
   for (const k of [
     'page_mount',
     'gate_open',
-    'interactive_gate_open',
     'ensure_start',
     'ensure_end',
     'select_start',

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { EventName, EventPayloadMap, STMirrorState } from '@miniapp/bridge-protocol';
 import type { BridgeStatus } from './state-machine';
-import { getBridgeClientOrNull } from './singleton';
+import { getBridgeClient, getBridgeClientOrNull } from './singleton';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 
 export function useBridgeStatus(): BridgeStatus {
@@ -44,22 +44,11 @@ export function useSTEvent<E extends EventName>(
   callbackRef.current = callback;
 
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
-    const subscribe = () => {
-      if (unsubscribe) return;
-      const client = getBridgeClientOrNull();
-      if (!client) return;
-      unsubscribe = client.onEvent(eventName, (payload) => {
-        callbackRef.current(payload);
-      });
-    };
-
-    subscribe();
-    window.addEventListener('miniapp:bridge-client-ready', subscribe);
-    return () => {
-      window.removeEventListener('miniapp:bridge-client-ready', subscribe);
-      unsubscribe?.();
-    };
+    const client = getBridgeClient();
+    const unsub = client.onEvent(eventName, (payload) => {
+      callbackRef.current(payload);
+    });
+    return unsub;
   }, [eventName]);
 }
 
