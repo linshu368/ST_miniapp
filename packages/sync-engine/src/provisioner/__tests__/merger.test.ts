@@ -32,10 +32,7 @@ const makePlatformSettings = (
     theme: 'dark',
     fontSize: 14,
   },
-  writable_paths: [
-    { path: 'active_character', transform: 'character_ref' },
-    { path: 'oai_settings.prompts', transform: 'passthrough' },
-  ],
+  writable_paths: [{ path: 'active_character', transform: 'character_ref' }],
   ...overrides,
 });
 
@@ -80,8 +77,8 @@ describe('mergeSettings', () => {
     expect(result.settings['fontSize']).toBe(14);
   });
 
-  // ── 场景 2：老用户，白名单键被 B 覆盖 ────────────────────────────────────
-  it('老用户白名单字段（oai_settings.prompts）应被 B 的值覆盖', () => {
+  // ── 场景 2：历史 B 段的预设字段不可覆盖平台内容 ───────────────────────────
+  it('历史 writable_paths 中的 oai_settings.prompts 不得覆盖平台内容', () => {
     const platform = makePlatformSettings({
       settings_jsonb: {
         active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
@@ -99,7 +96,7 @@ describe('mergeSettings', () => {
 
     const result = mergeSettingsForTest(platform, userSettings, availableIds, CHAR_UUID_FALLBACK);
 
-    expect(result.settings['oai_settings.prompts']).toEqual([{ enabled: false, custom: true }]);
+    expect(result.settings['oai_settings.prompts']).toEqual([{ enabled: true }]);
     expect(result.settings['theme']).toBe('dark');
   });
 
@@ -265,8 +262,8 @@ describe('mergeSettings', () => {
     expect(oai['prompts']).toEqual([{ identifier: 'main' }, { identifier: 'nsfw' }]);
   });
 
-  // ── 场景 11：预设先应用，B 白名单 oai_settings.prompts 仍覆盖预设 ──────────
-  it('B 的 writable_paths（oai_settings.prompts）应覆盖预设应用后的 prompts', () => {
+  // ── 场景 11：历史白名单不得覆盖已应用的预设 prompts ──────────────────────
+  it('B 的历史 oai_settings.prompts 不得覆盖预设应用后的 prompts', () => {
     const PRESET_ID = 'c9db5957-844e-4707-a9f8-c8a54eee5260';
     const platform = makePlatformSettings({
       settings_jsonb: {
@@ -310,9 +307,9 @@ describe('mergeSettings', () => {
     );
     const oai = result.settings['oai_settings'] as Record<string, unknown>;
 
-    // 采样参数来自预设，但 prompts 被用户 B 覆盖
+    // 采样参数与 prompts 均由预设控制
     expect(oai['temp_openai']).toBe(1.24);
-    expect(oai['prompts']).toEqual([{ identifier: 'user-custom' }]);
+    expect(oai['prompts']).toEqual([{ identifier: 'preset' }]);
   });
 
   // ── 场景 12：强制禁用平台无用扩展（冷启动优化 P0-#1）───────────────────────

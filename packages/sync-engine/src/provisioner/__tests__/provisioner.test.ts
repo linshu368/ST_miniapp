@@ -122,10 +122,7 @@ const mockPlatformSettings: PlatformSettingsRow = {
     active_character: `platform_${CHAR_UUID}.png`,
     theme: 'dark',
   },
-  writable_paths: [
-    { path: 'active_character', transform: 'character_ref' },
-    { path: 'oai_settings.prompts', transform: 'passthrough' },
-  ],
+  writable_paths: [{ path: 'active_character', transform: 'character_ref' }],
 };
 
 function makeProvisionData(userSettings: UserSettingsRow | null = null): ProvisionData {

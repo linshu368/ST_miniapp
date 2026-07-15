@@ -11,7 +11,7 @@
 
 import { get as lodashGet, set as lodashSet, unset as lodashUnset, cloneDeep } from 'lodash-es';
 import type { PlatformSettingsRow, UserSettingsRow, PresetRow } from './fetcher.js';
-import { applyActivePreset } from './preset-apply.js';
+import { applyActivePreset, isPresetOwnedWritablePath } from './preset-apply.js';
 
 /**
  * 平台强制禁用的 ST 内置扩展（iframe 冷启动优化 P0-#1）。
@@ -96,8 +96,8 @@ export function mergeSettings(
   const merged = cloneDeep(platformSettings.settings_jsonb) as Record<string, unknown>;
 
   // 依据 oai_settings.preset_settings_openai 指针把「当前选中预设」应用进 oai_settings。
-  // 必须在 B 白名单覆盖之前：预设先建立平台基线，用户在 writable_paths（如 oai_settings.prompts）
-  // 里的自定义仍能覆盖预设值，保持既有 writable_paths 契约。
+  // 预设字段属于平台管控：即使历史 platform_settings 白名单里意外保留了这些路径，
+  // 后续 B 段合并也不得覆盖它们。
   // 025 触发器只换指针不写参数、ST 启动也不重新套用预设文件，故这一步是「换预设后参数生效」的关键。
   let presetApplied = false;
   let appliedPresetId: string | undefined;
@@ -111,6 +111,8 @@ export function mergeSettings(
   // 如果有 B 类记录，按白名单覆盖
   if (userSettings) {
     for (const { path, transform } of platformSettings.writable_paths) {
+      if (isPresetOwnedWritablePath(path)) continue;
+
       const bVal = lodashGet(userSettings.settings_jsonb, path);
       if (bVal !== undefined) {
         // character_ref 在投影阶段做校验（这里先 set，后面统一校验）

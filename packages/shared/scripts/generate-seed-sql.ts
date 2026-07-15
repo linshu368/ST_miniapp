@@ -380,11 +380,8 @@ function main() {
     `      oai_settings.preset_settings_openai : ${(cleanedSettings.oai_settings as Record<string, unknown>)?.preset_settings_openai}`
   );
 
-  // 白名单（J1：阶段一走整组路径）
-  const writablePaths = [
-    { path: 'active_character', transform: 'character_ref' },
-    { path: 'oai_settings.prompts', transform: 'passthrough' },
-  ];
+  // 白名单：预设由平台完整下发，用户不得覆盖任何预设映射字段。
+  const writablePaths = [{ path: 'active_character', transform: 'character_ref' }];
 
   // canonical content_hash
   const canonical = canonicalize({
@@ -442,7 +439,6 @@ VALUES (
 --
 -- 白名单（writable_paths）：
 --   - { path: "active_character", transform: "character_ref" }
---   - { path: "oai_settings.prompts", transform: "passthrough" }
 --
 -- 生成方式：packages/shared/scripts/generate-seed-sql.ts
 --   重新生成：cd packages/shared && npx tsx scripts/generate-seed-sql.ts
