@@ -26,7 +26,10 @@ import {
 } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
-const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
+const PAYMENT_TYPES: PaymentType[] = [
+  // 'alipay', // 支付宝通道暂时停用
+  'wxpay',
+];
 
 export default async function paymentRoutes(app: FastifyInstance) {
   if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
