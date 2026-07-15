@@ -1,6 +1,16 @@
 import type { BridgeServer } from '../bridge-server.js';
 
 const GENERATE_PATH = '/api/backends/chat-completions/generate';
+const BRIDGE_STATE_KEY = '__miniappBillingErrorBridgeState__';
+
+type BillingErrorBridgeState = {
+  server: BridgeServer;
+};
+
+type BillingErrorBridgeWindow = Window &
+  typeof globalThis & {
+    [BRIDGE_STATE_KEY]?: BillingErrorBridgeState;
+  };
 
 type InsufficientBalanceResponse = {
   error?: {
@@ -16,13 +26,22 @@ type InsufficientBalanceResponse = {
  * recharge flow while ST completes its normal generation-error cleanup.
  */
 export function installBillingErrorBridge(server: BridgeServer): void {
-  const originalFetch = window.fetch.bind(window);
+  const bridgeWindow = window as BillingErrorBridgeWindow;
+  const installedState = bridgeWindow[BRIDGE_STATE_KEY];
+  if (installedState) {
+    installedState.server = server;
+    return;
+  }
 
-  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const state: BillingErrorBridgeState = { server };
+  bridgeWindow[BRIDGE_STATE_KEY] = state;
+  const originalFetch = bridgeWindow.fetch.bind(bridgeWindow);
+
+  bridgeWindow.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const response = await originalFetch(input, init);
     if (response.status !== 402 || !isGenerationRequest(input)) return response;
 
-    void notifyInsufficientBalance(response.clone(), server);
+    void notifyInsufficientBalance(response.clone(), state.server);
     return response;
   };
 }
