@@ -27,7 +27,11 @@ export default function TavernChatPage() {
     if (!characterId || redirectingToRechargeRef.current) return;
     redirectingToRechargeRef.current = true;
     const returnTo = `/tavern/${encodeURIComponent(characterId)}`;
-    router.push(`/profile/recharge?returnTo=${encodeURIComponent(returnTo)}`);
+    const search = new URLSearchParams({
+      reason: 'insufficient_credits',
+      returnTo,
+    });
+    router.push(`/profile/recharge?${search.toString()}`);
   });
 
   // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。

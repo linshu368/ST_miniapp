@@ -80,8 +80,9 @@ export function usePaymentPlansQuery() {
   return useQuery<GetPaymentPlansData>({
     queryKey: paymentKeys.plans(),
     queryFn: fetchPlans,
-    // 套餐信息相对稳定，5 分钟内不重拉
-    staleTime: 5 * 60 * 1000,
+    // 响应同时包含运营可热更的余额不足提示语，每次进入充值页都拉取最新值。
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 

@@ -130,10 +130,10 @@ entries:
         原因：platform_settings 的指针由 025 触发器更新，但触发器不写实际参数，
         且 ST 启动 loadOpenAISettings 只读 oai_settings、不重新套用预设文件；
         故必须在下发时应用，否则运营换预设后采样/prompts 参数不生效。
-        应用发生在 B 白名单覆盖之前，用户 writable_paths（如 oai_settings.prompts）仍可覆盖预设值。
-      白名单（writable_paths）从 platform_settings 最新行读取，包含：
+      预设映射的所有 oai_settings 字段均属平台管控，不能出现在 writable_paths；
+      历史白名单即使遗留这些字段，merge / watcher 也会忽略。
+      白名单（writable_paths）从 platform_settings 最新行读取，例如：
         - { path: active_character, transform: character_ref }
-        - { path: oai_settings.prompts, transform: passthrough }
       投影阶段的 character_ref 校验：
         若 B 表中 active_character 指向不存在的资产，回退到
         runtime_config.system_fallback_character_id 指定的系统兜底卡，
