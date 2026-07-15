@@ -19,11 +19,89 @@ export interface ChatHistoryEntry {
   status: 'success' | 'upstream_error' | 'stream_interrupted';
   upstream_status?: number | null;
   deduction_rate: number;
+  generation_id?: string | null;
+}
+
+const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
+
+async function fetchGenerationDataWithRetry(
+  generationId: string,
+  log: FastifyBaseLogger,
+  maxRetries = 3
+) {
+  if (!OPENROUTER_API_KEY) return null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`https://openrouter.ai/api/v1/generation?id=${generationId}`, {
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error(`OpenRouter API returned status ${res.status}`);
+      }
+
+      const data = await res.json();
+      return data?.data || data; // OpenRouter usually wraps response in { data: {...} }
+    } catch (err) {
+      log.warn(
+        { err: String(err), generationId, attempt },
+        '[chat-history] failed to fetch generation data, retrying...'
+      );
+      if (attempt === maxRetries) {
+        log.error(
+          { err: String(err), generationId },
+          '[chat-history] max retries reached for fetching generation data'
+        );
+        return null;
+      }
+      // Wait before retrying (exponential backoff: 1s, 2s)
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+    }
+  }
+  return null;
 }
 
 export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger): void {
   void (async () => {
     try {
+      let llmMetadata: Record<string, any> = {};
+
+      // 如果有 generation_id，尝试异步获取详细数据
+      if (entry.generation_id) {
+        try {
+          const genData = await fetchGenerationDataWithRetry(entry.generation_id, log);
+          if (genData) {
+            llmMetadata = {
+              llm_provider_name: genData.provider_name ?? null,
+              llm_finish_reason: genData.finish_reason ?? null,
+              llm_usage: genData.usage ?? null,
+              llm_usage_cache: genData.usage_cache ?? null,
+              llm_native_tokens_cached: genData.native_tokens_cached ?? null,
+              llm_native_tokens_reasoning: genData.native_tokens_reasoning ?? null,
+              llm_native_tokens_completion: genData.native_tokens_completion ?? null,
+              llm_native_tokens_prompt: genData.native_tokens_prompt ?? null,
+              llm_latency: genData.latency ?? null,
+              llm_generation_time: genData.generation_time ?? null,
+              llm_model: genData.model ?? null,
+              llm_generation_id: entry.generation_id,
+              llm_generation_data: genData,
+            };
+          } else {
+            // 获取失败时，至少把 generation_id 存下来
+            llmMetadata = { llm_generation_id: entry.generation_id };
+          }
+        } catch (fetchErr) {
+          log.error(
+            { err: String(fetchErr), generationId: entry.generation_id },
+            '[chat-history] error during generation data fetch'
+          );
+          llmMetadata = { llm_generation_id: entry.generation_id };
+        }
+      }
+
       const supabase = getSupabaseClient();
       const miniappDb = supabase.schema('miniapp' as 'public');
       const { error } = await miniappDb.from('chat_history').insert({
@@ -37,6 +115,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         status: entry.status,
         upstream_status: entry.upstream_status ?? null,
         deduction_rate: entry.deduction_rate,
+        ...llmMetadata,
       });
 
       if (error) {
