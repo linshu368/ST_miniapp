@@ -9,8 +9,7 @@
  *   - character_ref 失效时回退到系统兜底卡（runtime_config.system_fallback_character_id）
  */
 
-import { get as lodashGet, set as lodashSet, cloneDeep } from 'lodash-es';
-import moonlitSettings from '../platform-assets/moonlit-settings.json';
+import { get as lodashGet, set as lodashSet, unset as lodashUnset, cloneDeep } from 'lodash-es';
 import type { PlatformSettingsRow, UserSettingsRow, PresetRow } from './fetcher.js';
 import { applyActivePreset } from './preset-apply.js';
 
@@ -37,6 +36,7 @@ export const PLATFORM_DISABLED_EXTENSIONS = [
   'expressions', // 角色立绘表情
   'gallery', // 图片画廊
   'stable-diffusion', // 图片生成
+  'third-party/MoonlitEchoesTheme', // Moonlit 已全量下线，不允许存量用户继续加载
   'token-counter', // Token Counter 面板（平台不展示，且会触发额外 tokenizer 请求）
   'translate', // 聊天翻译
   'tts', // 语音合成
@@ -183,10 +183,7 @@ export function mergeSettings(
   // 已有的 disabledExtensions 取并集（去重），保证运营后续发布新版 settings 也不会丢。
   // 放在 writable_paths 覆盖之后，用户段无法解禁。
   applyDisabledExtensions(merged);
-
-  // 平台统一启用 Moonlit + Glimmer + Echo。配置作为源码常量参与纯内存 merge，
-  // 视觉资产则由 writer 下发到每个 data/<handle>/，避免只修改 default-user。
-  applyMoonlitSettings(merged);
+  removeMoonlitSettings(merged);
 
   // 关闭消息气泡 token 计数（iframe 加载耗时 P1-H2 瘦身）：vendor 默认即 false，
   // 但平台种子 settings 从运营完整 ST 导出、可能带 true —— 开启时每条消息渲染都要
@@ -227,15 +224,17 @@ function applyDisabledExtensions(merged: Record<string, unknown>): void {
   lodashSet(merged, 'extension_settings.disabledExtensions', union);
 }
 
-function applyMoonlitSettings(merged: Record<string, unknown>): void {
-  lodashSet(merged, 'background', cloneDeep(moonlitSettings.background));
-  lodashSet(merged, 'power_user.chat_display', moonlitSettings.power_user.chat_display);
-  lodashSet(merged, 'power_user.theme', moonlitSettings.power_user.theme);
-  lodashSet(
-    merged,
-    'extension_settings.SillyTavernMoonlitEchoesTheme',
-    cloneDeep(moonlitSettings.extension_settings.SillyTavernMoonlitEchoesTheme)
-  );
+function removeMoonlitSettings(merged: Record<string, unknown>): void {
+  lodashUnset(merged, 'extension_settings.SillyTavernMoonlitEchoesTheme');
+  if (lodashGet(merged, 'power_user.theme') === 'Glimmer - by Rivelle') {
+    lodashUnset(merged, 'power_user.theme');
+  }
+  if (lodashGet(merged, 'power_user.chat_display') === 3) {
+    lodashSet(merged, 'power_user.chat_display', 0);
+  }
+  if (lodashGet(merged, 'background.name') === 'night-city-anime.jpg') {
+    lodashUnset(merged, 'background');
+  }
 }
 
 /**
