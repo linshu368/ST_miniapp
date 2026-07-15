@@ -270,6 +270,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
         let streamCompleted = false;
         const replyChunks: string[] = [];
+        let generationId: string | null = null;
 
         const sseTap = new Transform({
           transform(chunk, _encoding, callback) {
@@ -278,12 +279,18 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
               streamCompleted = true;
             }
 
-            // 从 SSE data 行中提取 delta content 累积 assistant reply
+            // 从 SSE data 行中提取 delta content 累积 assistant reply 和 generation_id
             const lines = text.split('\n');
             for (const line of lines) {
               if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
               try {
                 const json = JSON.parse(line.slice(6));
+
+                // 提取 generation_id (通常在第一个 chunk 中就会包含)
+                if (!generationId && json?.id) {
+                  generationId = json.id;
+                }
+
                 const delta = json?.choices?.[0]?.delta?.content;
                 if (typeof delta === 'string') {
                   replyChunks.push(delta);
@@ -312,6 +319,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                     preset_id: presetId,
                     status: 'success',
                     deduction_rate: deductionRate,
+                    generation_id: generationId,
                   },
                   request.log
                 );
@@ -333,6 +341,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                     preset_id: presetId,
                     status: 'stream_interrupted',
                     deduction_rate: 0,
+                    generation_id: generationId,
                   },
                   request.log
                 );

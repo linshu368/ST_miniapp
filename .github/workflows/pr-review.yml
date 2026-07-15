@@ -44,6 +44,10 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          REVIEW_PROMPT_SOURCE: feishu
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_DOCUMENT_ID: ${{ secrets.FEISHU_DOCUMENT_ID }}
           BASE_REF: ${{ github.base_ref }}
           REVIEW_ARTIFACT_DIR: review-artifacts
           REVIEW_REPO_ROOT: pr-worktree
