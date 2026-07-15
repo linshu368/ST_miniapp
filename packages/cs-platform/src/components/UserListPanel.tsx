@@ -2,6 +2,7 @@ import type { CsPersonaData, CsUserData } from '@miniapp/shared';
 import type { Membership } from '../constants';
 import { formatDateTime } from '../constants';
 import { SessionBadge } from './Badge';
+import defaultUserAvatar from '../../../../20260713-130353.png';
 
 export function UserListPanel(props: {
   persona: CsPersonaData;
@@ -102,7 +103,17 @@ function UserGroup(props: {
             onClick={() => props.onSelect(user, props.membership)}
           >
             <div className="user-item-top">
-              <span className="user-name">{user.display_name}</span>
+              <span className="user-identity">
+                <img
+                  className="user-avatar"
+                  src={user.avatar_url || defaultUserAvatar}
+                  alt=""
+                  onError={(event) => {
+                    event.currentTarget.src = defaultUserAvatar;
+                  }}
+                />
+                <span className="user-name">{user.display_name}</span>
+              </span>
               <SessionBadge status={user.session_status} />
             </div>
             <div className="user-item-meta">

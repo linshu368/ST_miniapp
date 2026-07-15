@@ -50,6 +50,14 @@ export default async function characterRoutes(app: FastifyInstance) {
     const characters = await prisma.character.findMany({
       where: { enabled: true },
       orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        avatar_url: true,
+        tags: true,
+        creator: true,
+      },
     });
 
     const { featured, others } = partitionLobbyCharacters(characters);
@@ -73,6 +81,15 @@ export default async function characterRoutes(app: FastifyInstance) {
       })
     );
 
+    const shuffleWindowSeconds = Math.floor(
+      (config.database.environment === 'production'
+        ? PROD_SHUFFLE_WINDOW_MS
+        : TEST_SHUFFLE_WINDOW_MS) / 1000
+    );
+    reply.header(
+      'Cache-Control',
+      `public, max-age=60, s-maxage=${shuffleWindowSeconds}, stale-while-revalidate=${shuffleWindowSeconds}`
+    );
     return reply.send(ok<GetCharactersData>({ characters: charactersSummary }));
   });
 

@@ -9,8 +9,10 @@ import { Input } from '@/components/ui/input';
 
 import { useCharactersQuery } from '@/lib/api/characters';
 
-import { CharacterCard } from './character-card';
+import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
+
+const FIRST_SCREEN_IMAGE_COUNT = 8;
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -48,6 +50,46 @@ export function CharacterGallery() {
   }, [previewId, router]);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
+  const firstScreenCharacters = useMemo(
+    () => characters.slice(0, FIRST_SCREEN_IMAGE_COUNT),
+    [characters]
+  );
+
+  useEffect(() => {
+    if (firstScreenCharacters.length === 0) return;
+
+    const preloadLinks: HTMLLinkElement[] = [];
+    const connectedOrigins = new Set<string>();
+    for (const character of firstScreenCharacters) {
+      if (!character.avatar_url) continue;
+      const href = lobbyImageUrl(character.avatar_url);
+      try {
+        const origin = new URL(href).origin;
+        if (!connectedOrigins.has(origin)) {
+          connectedOrigins.add(origin);
+          const preconnect = document.createElement('link');
+          preconnect.rel = 'preconnect';
+          preconnect.href = origin;
+          preconnect.crossOrigin = 'anonymous';
+          document.head.append(preconnect);
+          preloadLinks.push(preconnect);
+        }
+      } catch {
+        // 相对 URL 无需额外 preconnect。
+      }
+
+      const preload = document.createElement('link');
+      preload.rel = 'preload';
+      preload.as = 'image';
+      preload.href = href;
+      preload.fetchPriority = 'high';
+      document.head.append(preload);
+      preloadLinks.push(preload);
+    }
+
+    return () => preloadLinks.forEach((link) => link.remove());
+  }, [firstScreenCharacters]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return characters;
@@ -142,10 +184,11 @@ export function CharacterGallery() {
         </div>
       ) : (
         <div className="mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 pb-10 pt-2 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] sm:gap-4 sm:px-6 lg:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] lg:px-8">
-          {filtered.map((c) => (
+          {filtered.map((c, index) => (
             <CharacterCard
               key={c.id}
               character={c}
+              priority={index < FIRST_SCREEN_IMAGE_COUNT}
               onSelect={() => {
                 if (!enteringId) setPreviewId(c.id);
               }}
