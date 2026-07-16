@@ -71,6 +71,120 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
 }
 
+interface ValueChange {
+  path: string;
+  before: unknown;
+  after: unknown;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function collectValueChanges(
+  before: unknown,
+  after: unknown,
+  path = '配置值',
+  changes: ValueChange[] = []
+): ValueChange[] {
+  if (Object.is(before, after)) return changes;
+
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const length = Math.max(before.length, after.length);
+    for (let index = 0; index < length; index += 1) {
+      collectValueChanges(before[index], after[index], `${path}[${index}]`, changes);
+    }
+    return changes;
+  }
+
+  if (isPlainObject(before) && isPlainObject(after)) {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    for (const key of keys) {
+      collectValueChanges(before[key], after[key], `${path}.${key}`, changes);
+    }
+    return changes;
+  }
+
+  changes.push({ path, before, after });
+  return changes;
+}
+
+function getPreviousRelease(
+  allReleases: ConfigRelease[],
+  release: ConfigRelease
+): ConfigRelease | undefined {
+  return allReleases
+    .filter(
+      (candidate) =>
+        candidate.config_key === release.config_key &&
+        candidate.runtime_version < release.runtime_version
+    )
+    .sort((left, right) => right.runtime_version - left.runtime_version)[0];
+}
+
+function formatChangeValue(value: unknown): string {
+  if (value === undefined) return '未设置';
+  const serialized = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
+  return serialized.length > 160 ? `${serialized.slice(0, 157)}…` : serialized;
+}
+
+function getReleaseChangeSummary(allReleases: ConfigRelease[], release: ConfigRelease): string {
+  const previousRelease = getPreviousRelease(allReleases, release);
+  if (!previousRelease) return '首次发布完整配置';
+  const changes = collectValueChanges(previousRelease.value, release.value);
+  if (changes.length === 0) return '配置内容未变化';
+  return `${changes.length} 项：${changes
+    .slice(0, 2)
+    .map((change) => change.path)
+    .join('、')}${changes.length > 2 ? '…' : ''}`;
+}
+
+function ReleaseChangeDetails(props: {
+  release: ConfigRelease;
+  allReleases: ConfigRelease[];
+  compact?: boolean;
+}) {
+  const previousRelease = getPreviousRelease(props.allReleases, props.release);
+  if (!previousRelease) {
+    return (
+      <div className="release-change-details">
+        <Typography.Text strong>首次发布的完整配置</Typography.Text>
+        {!props.compact ? (
+          <pre className="diff-preview">{jsonPreview(props.release.value)}</pre>
+        ) : null}
+      </div>
+    );
+  }
+
+  const changes = collectValueChanges(previousRelease.value, props.release.value);
+  const visibleChanges = props.compact ? changes.slice(0, 3) : changes;
+
+  return (
+    <div className="release-change-details">
+      <Typography.Text strong>具体修改（{changes.length} 项）</Typography.Text>
+      {changes.length === 0 ? (
+        <Typography.Text type="secondary">配置内容未变化</Typography.Text>
+      ) : (
+        <div className="release-change-list">
+          {visibleChanges.map((change, index) => (
+            <div className="release-change-item" key={`${change.path}-${index}`}>
+              <code>{change.path}</code>
+              <span className="release-change-before">{formatChangeValue(change.before)}</span>
+              <span aria-hidden>→</span>
+              <span className="release-change-after">{formatChangeValue(change.after)}</span>
+            </div>
+          ))}
+          {props.compact && changes.length > visibleChanges.length ? (
+            <Typography.Text type="secondary">
+              另有 {changes.length - visibleChanges.length} 项修改，请在“发布历史”中展开查看。
+            </Typography.Text>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AdminApp() {
   const [environment, setEnvironment] = useState<AdminEnvironment>('test');
   const [client, setClient] = useState<SupabaseClient | null>(null);
@@ -364,7 +478,11 @@ function AdminWorkspace(props: {
     <Layout className="admin-layout">
       <Layout.Sider width={240} theme="light" className="admin-sider">
         <div className="admin-brand">
-          <img className="admin-brand-mark" src="/brand-icon.svg" alt="" />
+          <img
+            className="admin-brand-mark"
+            src="/mijing-ai-operations-icon-v2.png"
+            alt="蜜镜AI运营平台"
+          />
           <div>
             <strong>蜜镜AI运营平台</strong>
             <small>配置与模型管理</small>
@@ -504,12 +622,19 @@ function AdminWorkspace(props: {
                           </Button>,
                         ]}
                       >
-                        <List.Item.Meta
-                          title={`运行时版本 ${release.runtime_version}`}
-                          description={`${formatDate(release.released_at)}${
-                            release.rollback_of_release_id ? ' · 回滚发布' : ''
-                          }`}
-                        />
+                        <div className="release-list-content">
+                          <List.Item.Meta
+                            title={`运行时版本 ${release.runtime_version}`}
+                            description={`${formatDate(release.released_at)}${
+                              release.rollback_of_release_id ? ' · 回滚发布' : ''
+                            }`}
+                          />
+                          <ReleaseChangeDetails
+                            release={release}
+                            allReleases={selectedReleases}
+                            compact
+                          />
+                        </div>
                       </List.Item>
                     )}
                   />
@@ -539,11 +664,22 @@ function AdminWorkspace(props: {
                       ),
                   },
                   {
+                    title: '修改内容',
+                    render: (_value, release: ConfigRelease) =>
+                      getReleaseChangeSummary(releases, release),
+                  },
+                  {
                     title: '时间',
                     dataIndex: 'released_at',
                     render: formatDate,
                   },
                 ]}
+                expandable={{
+                  expandedRowRender: (release) => (
+                    <ReleaseChangeDetails release={release} allReleases={releases} />
+                  ),
+                  rowExpandable: () => true,
+                }}
               />
             </Card>
           ) : (

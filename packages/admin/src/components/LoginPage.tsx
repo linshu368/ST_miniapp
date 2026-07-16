@@ -15,7 +15,11 @@ export function LoginPage(props: {
     <main className="login-screen">
       <Card className="login-card" bordered={false}>
         <div className="login-brand">
-          <img className="login-brand-icon" src="/brand-icon.svg" alt="" />
+          <img
+            className="login-brand-icon"
+            src="/mijing-ai-operations-icon-v2.png"
+            alt="蜜镜AI运营平台"
+          />
           <div>
             <Typography.Title level={2}>蜜镜AI运营平台</Typography.Title>
             <Typography.Text type="secondary">配置与模型管理</Typography.Text>

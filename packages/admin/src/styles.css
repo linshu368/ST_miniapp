@@ -96,9 +96,11 @@ body {
 }
 
 .admin-brand-mark {
+  flex: 0 0 38px;
   width: 38px;
   height: 38px;
   border-radius: 10px;
+  object-fit: cover;
   box-shadow: 0 5px 14px rgb(6 46 49 / 18%);
 }
 
@@ -163,6 +165,44 @@ body {
     monospace;
 }
 
+.release-list-content {
+  width: 100%;
+  min-width: 0;
+}
+
+.release-change-details {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.release-change-list {
+  display: grid;
+  gap: 6px;
+}
+
+.release-change-item {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.1fr) minmax(100px, 1fr) auto minmax(100px, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border: 1px solid #e4ebe9;
+  border-radius: 8px;
+  background: #f8faf9;
+  overflow-wrap: anywhere;
+}
+
+.release-change-before {
+  color: #b42318;
+  text-decoration: line-through;
+}
+
+.release-change-after {
+  color: #067647;
+}
+
 @media (max-width: 900px) {
   .admin-sider {
     width: 180px !important;
@@ -184,6 +224,10 @@ body {
     gap: 12px;
     padding: 12px;
     flex-wrap: wrap;
+  }
+
+  .release-change-item {
+    grid-template-columns: 1fr;
   }
 }
 
