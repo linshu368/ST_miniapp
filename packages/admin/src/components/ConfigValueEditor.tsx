@@ -1,6 +1,6 @@
-import { Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
-import type { ModelCatalog, PaymentPlan } from '@miniapp/shared';
-import type { ManagedConfigKey } from '../lib/configSchemas';
+import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
+import { ModelCatalogSchema, type ModelCatalog, type PaymentPlan } from '@miniapp/shared';
+import { configMetadata, type ManagedConfigKey } from '../lib/configSchemas';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 
 export function ConfigValueEditor(props: {
@@ -175,11 +175,21 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  const parsedCatalog = ModelCatalogSchema.safeParse(props.value);
+  const modelCatalog = parsedCatalog.success
+    ? parsedCatalog.data
+    : (structuredClone(configMetadata.llm_model_catalog.defaultValue) as ModelCatalog);
+
   return (
-    <ModelCatalogEditor
-      value={props.value as ModelCatalog}
-      onChange={props.onChange}
-      disabled={props.disabled}
-    />
+    <Space direction="vertical" className="editor-stack">
+      {!parsedCatalog.success ? (
+        <Alert type="warning" showIcon message="模型目录数据无效或尚未初始化，已载入安全默认值。" />
+      ) : null}
+      <ModelCatalogEditor
+        value={modelCatalog}
+        onChange={props.onChange}
+        disabled={props.disabled}
+      />
+    </Space>
   );
 }

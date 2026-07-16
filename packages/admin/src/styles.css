@@ -31,6 +31,24 @@ body {
   box-shadow: 0 20px 60px rgb(23 33 31 / 12%);
 }
 
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.login-brand h2 {
+  margin: 0 !important;
+}
+
+.login-brand-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgb(6 46 49 / 22%);
+}
+
 .login-note {
   margin: 20px 0 0 !important;
   text-align: center;
@@ -78,15 +96,10 @@ body {
 }
 
 .admin-brand-mark {
-  display: grid;
   width: 38px;
   height: 38px;
-  place-items: center;
   border-radius: 10px;
-  background: #0f766e;
-  color: #fff;
-  font-size: 20px;
-  font-weight: 800;
+  box-shadow: 0 5px 14px rgb(6 46 49 / 18%);
 }
 
 .admin-brand strong,

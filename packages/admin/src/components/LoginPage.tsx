@@ -14,7 +14,13 @@ export function LoginPage(props: {
   return (
     <main className="login-screen">
       <Card className="login-card" bordered={false}>
-        <Typography.Title level={2}>蜜镜AI运营平台</Typography.Title>
+        <div className="login-brand">
+          <img className="login-brand-icon" src="/brand-icon.svg" alt="" />
+          <div>
+            <Typography.Title level={2}>蜜镜AI运营平台</Typography.Title>
+            <Typography.Text type="secondary">配置与模型管理</Typography.Text>
+          </div>
+        </div>
         <Typography.Paragraph type="secondary">
           当前登录环境：{props.environment === 'test' ? '测试环境' : '生产环境'}
         </Typography.Paragraph>

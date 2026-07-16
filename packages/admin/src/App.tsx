@@ -364,7 +364,7 @@ function AdminWorkspace(props: {
     <Layout className="admin-layout">
       <Layout.Sider width={240} theme="light" className="admin-sider">
         <div className="admin-brand">
-          <span className="admin-brand-mark">蜜</span>
+          <img className="admin-brand-mark" src="/brand-icon.svg" alt="" />
           <div>
             <strong>蜜镜AI运营平台</strong>
             <small>配置与模型管理</small>

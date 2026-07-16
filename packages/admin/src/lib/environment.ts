@@ -14,6 +14,26 @@ const configs: Record<AdminEnvironment, { url: string; anonKey: string }> = {
 };
 
 const clients = new Map<AdminEnvironment, SupabaseClient>();
+const RETRY_DELAYS_MS = [350, 1_000];
+
+const resilientFetch: typeof fetch = async (input, init) => {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await fetch(input, init);
+      if (response.status < 500 || attempt === RETRY_DELAYS_MS.length) return response;
+      lastError = new Error(`Supabase 暂时不可用（HTTP ${response.status}）`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === RETRY_DELAYS_MS.length) throw error;
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Supabase 网络请求失败');
+};
 
 export function getAdminClient(environment: AdminEnvironment): SupabaseClient {
   const cached = clients.get(environment);
@@ -31,6 +51,9 @@ export function getAdminClient(environment: AdminEnvironment): SupabaseClient {
       persistSession: true,
       autoRefreshToken: true,
       storageKey: `mijing-admin-auth-${environment}`,
+    },
+    global: {
+      fetch: resilientFetch,
     },
   });
   clients.set(environment, client);
