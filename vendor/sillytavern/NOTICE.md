@@ -19,4 +19,6 @@ Do NOT modify files in this directory directly. See ARCHITECTURE.md §1 for deta
 | public/script.js             | firstLoadInit 前段 | getClientVersion/initSecrets/readSecretState/initLocales 串行→Promise.all                 | 冷启动并行化①       | 见 docs/iframe-boot-firstloadinit-parallelization.md §6          |
 | public/script.js             | firstLoadInit 后段 | getUserAvatars/getCharacters 串行→Promise.all；移除 boot 期 getBackgrounds 调用（Tier-2） | 冷启动并行化①/②     | 同上                                                             |
 | public/script.js             | 选角色/新对话路径  | forceNewChat 时跳过旧聊天加载、空文件读取与角色 PNG 指针回写                              | 消除重复 H3/H2 IO   | 移除 `skipChatLoad` / `skipChatFetch` / `skipCharacterSave` 分支 |
+| public/script.js             | context import     | 使用版本化 st-context URL                                                                 | 避免新旧模块混用    | 移除 `miniapp_v` 查询参数                                        |
+| public/scripts/extensions.js | context import     | 与 script.js 共享版本化 st-context URL                                                    | 避免 context 双版本 | 移除 `miniapp_v` 查询参数                                        |
 | public/scripts/st-context.js | extension context  | 向平台扩展暴露受控 `doNewChat` 原生调用                                                   | 跳过 slash 命令管线 | 移除 `doNewChat` context 导出                                    |

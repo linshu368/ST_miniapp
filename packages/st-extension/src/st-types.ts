@@ -107,7 +107,7 @@ export interface STContext {
     index: number,
     opts?: { switchMenu?: boolean; skipChatLoad?: boolean }
   ): Promise<void>;
-  doNewChat(opts?: {
+  doNewChat?(opts?: {
     deleteCurrentChat?: boolean;
     skipCharacterSave?: boolean;
     skipChatFetch?: boolean;
