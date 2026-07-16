@@ -19,8 +19,6 @@ import growthRoutes from './routes/growth.js';
 import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
 
-import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
-
 export async function buildApp() {
   const app = Fastify({
     logger: true,
