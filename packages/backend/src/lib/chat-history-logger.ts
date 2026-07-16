@@ -34,6 +34,8 @@ async function fetchGenerationDataWithRetry(
 ) {
   if (!OPENROUTER_API_KEY) return null;
 
+  let lastGenData: any = null;
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       // 首次请求前主动等待，给 OpenRouter 生成异步统计数据留出时间
@@ -48,35 +50,54 @@ async function fetchGenerationDataWithRetry(
       });
 
       if (!res.ok) {
+        try {
+          const errBody = await res.json();
+          lastGenData = errBody?.data || errBody;
+        } catch {
+          lastGenData = { error: { message: `OpenRouter API returned status ${res.status}` } };
+        }
         throw new Error(`OpenRouter API returned status ${res.status}`);
       }
 
       const data = await res.json();
       const genData = data?.data || data; // OpenRouter usually wraps response in { data: {...} }
+      lastGenData = genData;
+
+      if (genData?.error) {
+        throw new Error(`Generation metrics error: ${genData.error.message || 'unknown'}`);
+      }
+
+      // 验证 5 个核心字段是否都存在
+      const isComplete =
+        typeof genData.usage !== 'undefined' &&
+        typeof genData.latency !== 'undefined' &&
+        typeof genData.generation_time !== 'undefined' &&
+        typeof genData.finish_reason !== 'undefined' &&
+        typeof genData.usage_cache !== 'undefined';
 
       // 如果返回的数据里没有核心指标，说明可能还在处理中，主动抛错触发重试
-      if (!genData || typeof genData.generation_time === 'undefined') {
-        throw new Error('Generation metrics not ready yet');
+      if (!isComplete) {
+        throw new Error('Generation metrics not complete yet');
       }
 
       return genData;
     } catch (err) {
       log.warn(
         { err: String(err), generationId, attempt },
-        '[chat-history] failed to fetch generation data, retrying...'
+        '[chat-history] failed to fetch complete generation data, retrying...'
       );
       if (attempt === maxRetries) {
         log.error(
           { err: String(err), generationId },
           '[chat-history] max retries reached for fetching generation data'
         );
-        return null;
+        return lastGenData; // 达到最大重试次数后，返回最后一次获取到的数据（即使是不完整或错误的数据）
       }
       // Wait before retrying (exponential backoff: 2s, 4s...)
       await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
     }
   }
-  return null;
+  return lastGenData;
 }
 
 export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger): void {
@@ -103,10 +124,10 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
               llm_generation_time: genData.generation_time ?? null,
               llm_model: genData.model ?? null,
               llm_generation_id: entry.generation_id,
-              llm_generation_data: genData,
+              llm_generation_data: genData, // 即使不完整或有error，也如实记录
             };
           } else {
-            // 获取失败时，至少把 generation_id 存下来
+            // 获取失败（如网络异常导致完全无法获取）时，至少把 generation_id 存下来
             llmMetadata = { llm_generation_id: entry.generation_id };
           }
         } catch (fetchErr) {
