@@ -17,7 +17,6 @@ import chatsRoutes from './routes/chats.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
-
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
 
 export async function buildApp() {
@@ -93,7 +92,6 @@ export async function buildApp() {
     });
   });
 
-  // 启动后台定时同步任务
   startChatHistorySyncJob(app.log);
 
   app.addHook('onClose', async () => {

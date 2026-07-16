@@ -34,7 +34,7 @@ async function fetchGenerationDataWithRetry(
 ) {
   if (!OPENROUTER_API_KEY) return null;
 
-  let lastGenData: any = null;
+  let lastGenData: Record<string, unknown> | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -67,8 +67,8 @@ async function fetchGenerationDataWithRetry(
         throw new Error(`Generation metrics error: ${genData.error.message || 'unknown'}`);
       }
 
-      // 验证 5 个核心字段是否都存在
       const isComplete =
+        genData &&
         typeof genData.usage !== 'undefined' &&
         typeof genData.latency !== 'undefined' &&
         typeof genData.generation_time !== 'undefined' &&
@@ -91,7 +91,7 @@ async function fetchGenerationDataWithRetry(
           { err: String(err), generationId },
           '[chat-history] max retries reached for fetching generation data'
         );
-        return lastGenData; // 达到最大重试次数后，返回最后一次获取到的数据（即使是不完整或错误的数据）
+        return lastGenData;
       }
       // Wait before retrying (exponential backoff: 2s, 4s...)
       await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
