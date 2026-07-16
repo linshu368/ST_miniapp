@@ -996,9 +996,10 @@ export function resultCheckStatus() {
  * @param {number} id The ID of the character to switch to.
  * @param {object} [options] Options for the switch.
  * @param {boolean} [options.switchMenu=true] Whether to switch the right menu to the character edit menu if the character is already selected.
+ * @param {boolean} [options.skipChatLoad=false] Skip loading the previous chat when the caller will immediately create a new one.
  * @returns {Promise<void>} A promise that resolves when the character is switched.
  */
-export async function selectCharacterById(id, { switchMenu = true } = {}) {
+export async function selectCharacterById(id, { switchMenu = true, skipChatLoad = false } = {}) {
   if (characters[id] === undefined) {
     return;
   }
@@ -1027,7 +1028,13 @@ export async function selectCharacterById(id, { switchMenu = true } = {}) {
       selected_button = 'character_edit';
       setCharacterId(id);
       chat_metadata = {};
-      await getChat();
+      // [miniapp-patch] MiniApp card entry always creates a fresh chat. Avoid loading and
+      // rendering the previous chat only to clear it in doNewChat immediately afterwards.
+      if (skipChatLoad) {
+        setCharacterName(characters[id].name);
+      } else {
+        await getChat();
+      }
     }
   } else {
     //if clicked on character that was already selected
@@ -11891,7 +11898,11 @@ async function importFromURL(items, files) {
   }
 }
 
-export async function doNewChat({ deleteCurrentChat = false } = {}) {
+export async function doNewChat({
+  deleteCurrentChat = false,
+  skipCharacterSave = false,
+  skipChatFetch = false,
+} = {}) {
   //Make a new chat for selected character
   if ((!selected_group && this_chid == undefined) || menu_type == 'create') {
     return;
@@ -11917,8 +11928,20 @@ export async function doNewChat({ deleteCurrentChat = false } = {}) {
     chat_metadata = {};
     characters[this_chid].chat = `${name2} - ${humanizedDateTime()}`;
     $('#selected_chat_pole').val(characters[this_chid].chat);
-    await getChat();
-    await createOrEditCharacter(new CustomEvent('newChat'));
+    if (skipChatFetch) {
+      // [miniapp-patch] The generated filename is new by construction. Initialize the greeting
+      // and persist the first message directly instead of fetching a chat file that cannot exist.
+      await unshallowCharacter(this_chid);
+      chat.splice(0, chat.length);
+      await getChatResult();
+    } else {
+      await getChat();
+    }
+    // [miniapp-patch] MiniApp always creates a new chat on card entry and never restores the
+    // character PNG chat pointer, so this redundant full-card write can be skipped safely.
+    if (!skipCharacterSave) {
+      await createOrEditCharacter(new CustomEvent('newChat'));
+    }
     if (deleteCurrentChat) await delChat(chat_file_for_del + '.jsonl');
   }
 }

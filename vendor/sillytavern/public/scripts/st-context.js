@@ -9,6 +9,7 @@ import {
   CONNECT_API_MAP,
   create_save,
   deactivateSendButtons,
+  doNewChat,
   event_types,
   eventSource,
   extension_prompts,
@@ -248,6 +249,9 @@ export function getContext() {
     writeExtensionFieldBulk,
     getThumbnailUrl,
     selectCharacterById,
+    // [miniapp-patch] Expose the native new-chat primitive so the MiniApp bridge can bypass
+    // slash-command parsing and opt out of redundant fetch/write work on forced-new-chat entry.
+    doNewChat,
     messageFormatting,
     shouldSendOnEnter,
     isMobile,
