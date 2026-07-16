@@ -42,7 +42,7 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
             蜜
           </span>
           <div>
-            <h1>蜜镜AI运营平台</h1>
+            <h1>蜜镜AI用户回访平台</h1>
             <p>用户回访 · Telegram 1V1 · 运营自动化</p>
           </div>
         </div>

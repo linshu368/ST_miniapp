@@ -31,7 +31,7 @@ export async function buildApp() {
         return;
       }
 
-      if ([config.frontendUrl, config.csPlatformUrl].includes(origin)) {
+      if ([config.frontendUrl, config.csPlatformUrl, config.adminPlatformUrl].includes(origin)) {
         callback(null, true);
         return;
       }
