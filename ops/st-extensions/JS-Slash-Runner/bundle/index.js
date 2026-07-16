@@ -38381,12 +38381,9 @@ const EV = Hd(
 );
 let $V;
 async function OV() {
+  /* [miniapp-patch] 平台禁用公网版本检查：直接返回本地版本，消除冷启动窗口 gitlab.com 外联 */
   if (!$V) {
-    const e = await fetch(
-      `https://gitlab.com/api/v4/projects/${encodeURIComponent('novi028/JS-Slash-Runner')}/repository/files/manifest.json/raw?ref=main`
-    );
-    if (!e.ok) throw new Error(`获取最新版本号失败: ${e.status} ${e.statusText}`);
-    $V = _.get(JSON.parse(await e.text()), 'version');
+    $V = yU();
   }
   return $V;
 }
@@ -41942,7 +41939,7 @@ function NZ(e, t) {
         )
       );
     })(e)),
-    `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n${t ? `<base href="${window.location.origin}"/>` : ''}\n<style>\n*,*::before,*::after{box-sizing:border-box;}\nhtml,body{margin:0!important;padding:0;overflow:hidden!important;max-width:100%!important;}\n.user_avatar,.user-avatar{background-image:url('${CE()}')}\n.char_avatar,.char-avatar{background-image:url('${NE()}')}\n</style>\n<link rel="stylesheet" href="https://testingcf.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css" />\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/tailwindcss.min.js"><\/script>\n<script src="https://testingcf.jsdelivr.net/npm/jquery/dist/jquery.min.js"><\/script>\n<script src="https://testingcf.jsdelivr.net/npm/jquery-ui/dist/jquery-ui.min.js"><\/script>\n<link rel="stylesheet" href="https://testingcf.jsdelivr.net/npm/jquery-ui/themes/base/theme.min.css" />\n<script src="https://testingcf.jsdelivr.net/npm/jquery-ui-touch-punch"><\/script>\n<script src="https://testingcf.jsdelivr.net/npm/vue/dist/vue.runtime.global.prod.min.js"><\/script>\n<script src="https://testingcf.jsdelivr.net/npm/vue-router/dist/vue-router.global.prod.min.js"><\/script>\n\n<script src="${CZ}"><\/script>\n<script src="https://testingcf.jsdelivr.net/gh/N0VI028/JS-Slash-Runner/src/iframe/node_modules/log.js"><\/script>\n<script src="${TZ}"><\/script>\n<script src="${IZ}"><\/script>\n</head>\n<body>\n${e}\n</body>\n</html>\n`
+    `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n${t ? `<base href="${window.location.origin}"/>` : ''}\n<style>\n*,*::before,*::after{box-sizing:border-box;}\nhtml,body{margin:0!important;padding:0;overflow:hidden!important;max-width:100%!important;}\n.user_avatar,.user-avatar{background-image:url('${CE()}')}\n.char_avatar,.char-avatar{background-image:url('${NE()}')}\n</style>\n<link rel="stylesheet" href="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/fontawesome/css/all.min.css" />\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/tailwindcss.min.js"><\/script>\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/jquery.min.js"><\/script>\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/jquery-ui.min.js"><\/script>\n<link rel="stylesheet" href="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/jquery-ui.theme.min.css" />\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/jquery.ui.touch-punch.min.js"><\/script>\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/vue.runtime.global.prod.min.js"><\/script>\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/vue-router.global.prod.min.js"><\/script>\n\n<script src="${CZ}"><\/script>\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/log.js"><\/script>\n<script src="${TZ}"><\/script>\n<script src="${IZ}"><\/script>\n</head>\n<body>\n${e}\n</body>\n</html>\n`
   );
 }
 const PZ = Wo({
@@ -50308,7 +50305,7 @@ const aY = Wo({
         r = Xs((e) => {
           e?.src && URL.revokeObjectURL(e.src);
           const t = (function (e, t) {
-            return `<!DOCTYPE html>\n<html>\n<head>\n${t ? `<base href="${window.location.origin}"/>` : ''}\n<script src="https://testingcf.jsdelivr.net/npm/vue/dist/vue.runtime.global.prod.min.js"><\/script>\n<script src="https://testingcf.jsdelivr.net/npm/vue-router/dist/vue-router.global.prod.min.js"><\/script>\n\n<script src="${AZ}"><\/script>\n<script src="${CZ}"><\/script>\n<script src="https://testingcf.jsdelivr.net/gh/N0VI028/JS-Slash-Runner/src/iframe/node_modules/log.js"><\/script>\n</head>\n<body>\n<script type="module">\n${e.match(/^\s*```[^\n]*\n(.*)\n```\s*$/is)?.[1] ?? e}\n<\/script>\n</body>\n</html>\n`;
+            return `<!DOCTYPE html>\n<html>\n<head>\n${t ? `<base href="${window.location.origin}"/>` : ''}\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/vue.runtime.global.prod.min.js"><\/script>\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/vue-router.global.prod.min.js"><\/script>\n\n<script src="${AZ}"><\/script>\n<script src="${CZ}"><\/script>\n<script src="/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/log.js"><\/script>\n</head>\n<body>\n<script type="module">\n${e.match(/^\s*```[^\n]*\n(.*)\n```\s*$/is)?.[1] ?? e}\n<\/script>\n</body>\n</html>\n`;
           })(n.content, n.useBlobUrl);
           return n.useBlobUrl
             ? { src: URL.createObjectURL(new Blob([t], { type: 'text/html' })) }
@@ -56108,7 +56105,7 @@ const M0 = fc(
         setup(e, { expose: t }) {
           t();
           const n = yU();
-          yu('https://testingcf.jsdelivr.net/npm/vue/dist/vue.runtime.global.prod.min.js');
+          yu('/scripts/extensions/third-party/JS-Slash-Runner/lib/vendor/vue.runtime.global.prod.min.js');
           const r = [
               {
                 key: 'render',

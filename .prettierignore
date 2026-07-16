@@ -9,3 +9,5 @@ package-lock.json
 # Faithful copy of vendor SillyTavern config.yaml (vendor baseline + 6 overrides);
 # keep byte-identical to vendor except the documented overrides — do not reformat.
 ops/sillytavern/config.production.yaml
+# 第三方扩展运行产物快照（含受控补丁与 minify 产物），必须字节级受控 — 禁止格式化。
+ops/st-extensions/
