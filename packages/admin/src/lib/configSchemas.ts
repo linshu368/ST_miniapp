@@ -1,0 +1,112 @@
+import { ModelCatalogSchema } from '@miniapp/shared';
+import { z } from 'zod';
+
+export const managedConfigKeys = [
+  'miniapp_new_user_signup_bonus_credits',
+  'miniapp_daily_checkin_bonus_credits',
+  'miniapp_payment_plans',
+  'llm_model_catalog',
+  'llm_pricing_config',
+  'system_fallback_character_id',
+] as const;
+
+export type ManagedConfigKey = (typeof managedConfigKeys)[number];
+
+const nonnegativeInteger = z.number().int().nonnegative();
+const nullableText = z.string().nullable();
+
+export const PaymentPlanSchema = z.object({
+  id: z.string().trim().min(1),
+  price_cents: nonnegativeInteger,
+  original_price_cents: nonnegativeInteger.nullable(),
+  credits_amount: nonnegativeInteger,
+  bonus_credits: nonnegativeInteger,
+  variant: z.enum(['entry', 'standard', 'recommended', 'premium']),
+  badge_text: nullableText,
+  sub_copy: nullableText,
+  highlight_text: nullableText,
+});
+
+export const LlmPricingConfigSchema = z.object({
+  balanceBaseline: z.number().nonnegative(),
+  fallbackCost: z.number().nonnegative(),
+  exchangeRate: z.number().positive(),
+  markup: z.number().positive(),
+});
+
+export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
+  miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
+  miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
+  miniapp_payment_plans: z.array(PaymentPlanSchema).min(1),
+  llm_model_catalog: ModelCatalogSchema,
+  llm_pricing_config: LlmPricingConfigSchema,
+  system_fallback_character_id: z.string().uuid(),
+};
+
+export const configMetadata: Record<
+  ManagedConfigKey,
+  { label: string; description: string; defaultValue: unknown }
+> = {
+  miniapp_new_user_signup_bonus_credits: {
+    label: '新用户赠送星尘',
+    description: '新用户首次进入时一次性赠送的 bonus 星尘。',
+    defaultValue: 398,
+  },
+  miniapp_daily_checkin_bonus_credits: {
+    label: '每日签到奖励',
+    description: '用户每次满足签到间隔后获得的 bonus 星尘。',
+    defaultValue: 40,
+  },
+  miniapp_payment_plans: {
+    label: '充值套餐',
+    description: '星尘商店展示并用于下单校验的正式套餐。',
+    defaultValue: [],
+  },
+  llm_model_catalog: {
+    label: '模型目录',
+    description: '用户可选择的 OpenRouter 模型、档位、展示价与默认模型。',
+    defaultValue: {
+      default_model_id: 'gemini-flash-lite',
+      tiers: [
+        {
+          tier: 'light',
+          label: '轻量',
+          color: '#4ade80',
+          cost_hint: '适合日常对话',
+          sort_order: 1,
+          models: [
+            {
+              id: 'gemini-flash-lite',
+              openrouter_model_id: 'google/gemini-3.1-flash-lite',
+              display_name: 'Gemini Flash Lite',
+              tagline: '轻巧流畅',
+              price_input: 0,
+              price_output: 0,
+              enabled: true,
+              sort_order: 1,
+            },
+          ],
+        },
+      ],
+    },
+  },
+  llm_pricing_config: {
+    label: '动态计费参数',
+    description: '实际扣费换算参数。模型目录中的展示价不会进入该计算。',
+    defaultValue: {
+      balanceBaseline: 30,
+      fallbackCost: 30,
+      exchangeRate: 680,
+      markup: 2.5,
+    },
+  },
+  system_fallback_character_id: {
+    label: '系统兜底角色',
+    description: '角色不可用时使用的系统兜底角色 UUID。',
+    defaultValue: '',
+  },
+};
+
+export function parseManagedConfig(key: ManagedConfigKey, value: unknown): unknown {
+  return configSchemas[key].parse(value);
+}

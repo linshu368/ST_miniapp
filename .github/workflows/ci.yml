@@ -79,6 +79,9 @@ jobs:
       - name: Build frontend
         run: pnpm --filter @miniapp/frontend build
 
+      - name: Build admin platform
+        run: pnpm --filter @miniapp/admin build
+
   docker-build:
     name: Docker Build PR (${{ matrix.name }})
     runs-on: ubuntu-latest
