@@ -2,6 +2,16 @@
 
 本期仅包含配置与模型管理：白名单配置编辑、草稿、发布、回滚、发布历史与审计日志。
 
+## 独立部署
+
+Admin 使用独立 Vercel 项目。首次部署先在仓库根目录链接项目，后续执行：
+
+```powershell
+vercel deploy --prod --yes -A vercel.admin.json
+```
+
+当前生产地址：<https://st-admin-platform.vercel.app>
+
 ## 本地启动
 
 1. 复制 `.env.example` 为 `.env.local`，分别填写测试和生产 Supabase URL / anon key。
