@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, Button, Card, Form, Input, Typography } from 'antd';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AdminEnvironment } from '../lib/environment';
+import { setOperatorName } from '../lib/adminApi';
 
 export function LoginPage(props: {
   client: SupabaseClient;
@@ -31,12 +32,16 @@ export function LoginPage(props: {
         {error ? <Alert type="error" message={error} showIcon className="form-alert" /> : null}
         <Form
           layout="vertical"
-          onFinish={async (values: { email: string; password: string }) => {
+          onFinish={async (values: { email: string; password: string; displayName: string }) => {
             setLoading(true);
             setError(null);
             try {
-              const { error: loginError } = await props.client.auth.signInWithPassword(values);
+              const { error: loginError } = await props.client.auth.signInWithPassword({
+                email: values.email,
+                password: values.password,
+              });
               if (loginError) throw loginError;
+              await setOperatorName(props.client, values.displayName);
               await props.onAuthenticated();
             } catch (loginError) {
               await props.client.auth.signOut();
@@ -59,6 +64,16 @@ export function LoginPage(props: {
             rules={[{ required: true, message: '请输入密码' }]}
           >
             <Input.Password autoComplete="current-password" />
+          </Form.Item>
+          <Form.Item
+            label="操作人姓名"
+            name="displayName"
+            rules={[
+              { required: true, whitespace: true, message: '请输入操作人姓名' },
+              { max: 80, message: '操作人姓名不能超过 80 个字符' },
+            ]}
+          >
+            <Input autoComplete="name" placeholder="用于发布历史与审计日志" />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={loading} block>
             登录

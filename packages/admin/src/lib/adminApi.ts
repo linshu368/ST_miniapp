@@ -5,6 +5,7 @@ import type { ManagedConfigKey } from './configSchemas';
 export interface AdminUser {
   user_id: string;
   email: string;
+  display_name: string | null;
   role: 'owner' | 'operator' | 'viewer';
   can_access_test: boolean;
   can_access_prod: boolean;
@@ -41,12 +42,14 @@ export interface ConfigRelease {
   description: string | null;
   source_draft_id: string | null;
   rollback_of_release_id: string | null;
+  released_by_name: string | null;
   released_at: string;
 }
 
 export interface AuditLog {
   id: string;
   actor_email: string;
+  actor_name: string | null;
   environment: AdminEnvironment;
   action: string;
   record_id: string;
@@ -65,9 +68,19 @@ export async function getCurrentAdmin(client: SupabaseClient, userId: string): P
   const { data, error } = await client
     .schema('admin')
     .from('admin_users')
-    .select('user_id,email,role,can_access_test,can_access_prod')
+    .select('user_id,email,display_name,role,can_access_test,can_access_prod')
     .eq('user_id', userId)
     .single();
+  return unwrap(data as AdminUser | null, error);
+}
+
+export async function setOperatorName(
+  client: SupabaseClient,
+  displayName: string
+): Promise<AdminUser> {
+  const { data, error } = await client
+    .schema('admin')
+    .rpc('set_operator_name', { p_display_name: displayName });
   return unwrap(data as AdminUser | null, error);
 }
 

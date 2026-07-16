@@ -285,7 +285,7 @@ export function AdminApp() {
     );
   }
 
-  if (!user || !admin) {
+  if (!user || !admin || !admin.display_name) {
     return (
       <>
         <div className="environment-login-switch">
@@ -594,7 +594,7 @@ function AdminWorkspace(props: {
           </Space>
           <Space>
             <Typography.Text>
-              {props.admin.email} · {props.admin.role}
+              {props.admin.display_name} · {props.admin.email} · {props.admin.role}
             </Typography.Text>
             <Button onClick={() => void props.onLogout()}>退出</Button>
           </Space>
@@ -710,9 +710,9 @@ function AdminWorkspace(props: {
                         <div className="release-list-content">
                           <List.Item.Meta
                             title={`运行时版本 ${release.runtime_version}`}
-                            description={`${formatDate(release.released_at)}${
-                              release.rollback_of_release_id ? ' · 回滚发布' : ''
-                            }`}
+                            description={`${release.released_by_name ?? '历史记录未标注'} · ${formatDate(
+                              release.released_at
+                            )}${release.rollback_of_release_id ? ' · 回滚发布' : ''}`}
                           />
                           <ReleaseChangeDetails
                             release={release}
@@ -749,6 +749,11 @@ function AdminWorkspace(props: {
                       ),
                   },
                   {
+                    title: '操作人',
+                    dataIndex: 'released_by_name',
+                    render: (name: string | null) => name ?? '历史记录未标注',
+                  },
+                  {
                     title: '修改内容',
                     render: (_value, release: ConfigRelease) =>
                       getReleaseChangeSummary(releases, release),
@@ -774,7 +779,15 @@ function AdminWorkspace(props: {
                 dataSource={audits}
                 pagination={{ pageSize: 20 }}
                 columns={[
-                  { title: '操作人', dataIndex: 'actor_email' },
+                  {
+                    title: '操作人',
+                    render: (_value, audit: AuditLog) => (
+                      <Space direction="vertical" size={0}>
+                        <Typography.Text>{audit.actor_name ?? '历史记录未标注'}</Typography.Text>
+                        <Typography.Text type="secondary">{audit.actor_email}</Typography.Text>
+                      </Space>
+                    ),
+                  },
                   { title: '动作', dataIndex: 'action' },
                   { title: '对象', dataIndex: 'record_id' },
                   { title: '时间', dataIndex: 'created_at', render: formatDate },
