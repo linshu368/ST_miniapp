@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { ok } from '@miniapp/shared';
 import type { GetModelTiersData, ModelCatalog } from '@miniapp/shared';
 import { fetchModelCatalog, getAllTiers } from '../platform/model-tiers.js';
+import { requireTelegramAuth } from '../middleware/auth.js';
 
 export default async function modelsRoutes(app: FastifyInstance) {
   // @frontend-ready: true
@@ -10,8 +11,12 @@ export default async function modelsRoutes(app: FastifyInstance) {
     return reply.send(ok<GetModelTiersData>({ tiers }));
   });
 
-  app.get('/api/v1/models/config', async (_request, reply) => {
-    const catalog = await fetchModelCatalog();
-    return reply.send(ok<ModelCatalog>(catalog));
-  });
+  app.get(
+    '/api/v1/models/config',
+    { preHandler: [requireTelegramAuth] },
+    async (_request, reply) => {
+      const catalog = await fetchModelCatalog();
+      return reply.send(ok<ModelCatalog>(catalog));
+    }
+  );
 }
