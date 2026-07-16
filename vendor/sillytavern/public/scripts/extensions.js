@@ -21,7 +21,9 @@ import {
   setValueByPath,
   versionCompare,
 } from './utils.js';
-import { getContext } from './st-context.js';
+// [miniapp-patch] Keep the extension API on the same cache-busted context module as script.js.
+// This prevents a fresh bridge bundle from observing a stale getContext() contract.
+import { getContext } from './st-context.js?miniapp_v=20260716t0compat1';
 import { isAdmin } from './user.js';
 import { addLocaleData, getCurrentLocale, t } from './i18n.js';
 import { debounce_timeout } from './constants.js';

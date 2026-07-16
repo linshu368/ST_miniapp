@@ -336,7 +336,8 @@ import { applyBrowserFixes } from './scripts/browser-fixes.js';
 import { initServerHistory } from './scripts/server-history.js';
 import { initSettingsSearch } from './scripts/setting-search.js';
 import { initBulkEdit } from './scripts/bulk-edit.js';
-import { getContext } from './scripts/st-context.js';
+// [miniapp-patch] Bypass immutable caches for the locally extended context contract.
+import { getContext } from './scripts/st-context.js?miniapp_v=20260716t0compat1';
 import {
   extractReasoningFromData,
   extractReasoningSignatureFromData,
