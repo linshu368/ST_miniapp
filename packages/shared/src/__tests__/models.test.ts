@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ModelCatalogSchema } from '../api/models.js';
+import {
+  calculateDisplayPrice,
+  ModelCatalogSchema,
+  resolveEnabledCatalogModel,
+} from '../api/models.js';
 
 const validCatalog = {
   default_model_id: 'flash',
@@ -64,5 +68,38 @@ describe('ModelCatalogSchema', () => {
     model.price_input = -1;
 
     expect(ModelCatalogSchema.safeParse(invalidCatalog).success).toBe(false);
+  });
+
+  it('rejects duplicate OpenRouter model mappings', () => {
+    const duplicateMapping = structuredClone(validCatalog);
+    duplicateMapping.tiers[0]!.models.push({
+      ...structuredClone(duplicateMapping.tiers[0]!.models[0]!),
+      id: 'another-stable-id',
+    });
+
+    expect(ModelCatalogSchema.safeParse(duplicateMapping).success).toBe(false);
+  });
+});
+
+describe('OpenRouter model helpers', () => {
+  it('converts USD per-token pricing into one-decimal star pricing per 10k tokens', () => {
+    expect(
+      calculateDisplayPrice(0.0000004, {
+        exchangeRate: 680,
+        markup: 2.5,
+      })
+    ).toBe(6.8);
+  });
+
+  it('resolves enabled stable ids and rejects unknown or disabled models', () => {
+    const catalog = ModelCatalogSchema.parse(validCatalog);
+    expect(resolveEnabledCatalogModel(catalog, 'flash').openrouter_model_id).toBe(
+      'google/gemini-flash'
+    );
+    expect(() => resolveEnabledCatalogModel(catalog, 'missing')).toThrow('unknown model id');
+
+    const disabledCatalog = structuredClone(catalog);
+    disabledCatalog.tiers[0]!.models[0]!.enabled = false;
+    expect(() => resolveEnabledCatalogModel(disabledCatalog, 'flash')).toThrow('model is disabled');
   });
 });

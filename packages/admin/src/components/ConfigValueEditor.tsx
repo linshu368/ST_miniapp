@@ -1,5 +1,11 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
-import { ModelCatalogSchema, type ModelCatalog, type PaymentPlan } from '@miniapp/shared';
+import {
+  ModelCatalogSchema,
+  type DisplayPricingConfig,
+  type ModelCatalog,
+  type OpenRouterModelDirectory,
+  type PaymentPlan,
+} from '@miniapp/shared';
 import { configMetadata, type ManagedConfigKey } from '../lib/configSchemas';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 
@@ -8,6 +14,12 @@ export function ConfigValueEditor(props: {
   value: unknown;
   onChange: (value: unknown) => void;
   disabled?: boolean;
+  openRouterDirectory: OpenRouterModelDirectory | null;
+  pricingConfig: DisplayPricingConfig;
+  publishedModelIds: ReadonlySet<string>;
+  syncLoading: boolean;
+  syncError: string | null;
+  onRefreshOpenRouter: () => void;
 }) {
   if (
     props.configKey === 'miniapp_new_user_signup_bonus_credits' ||
@@ -189,6 +201,12 @@ export function ConfigValueEditor(props: {
         value={modelCatalog}
         onChange={props.onChange}
         disabled={props.disabled}
+        openRouterDirectory={props.openRouterDirectory}
+        pricingConfig={props.pricingConfig}
+        publishedModelIds={props.publishedModelIds}
+        syncLoading={props.syncLoading}
+        syncError={props.syncError}
+        onRefreshOpenRouter={props.onRefreshOpenRouter}
       />
     </Space>
   );

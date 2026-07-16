@@ -10,6 +10,7 @@
 import { getSupabaseClient } from '../lib/supabase.js';
 import {
   ModelCatalogSchema,
+  resolveEnabledCatalogModel,
   type ModelCatalog,
   type ModelCatalogTier,
   type ModelTierConfig as SharedModelTierConfig,
@@ -224,6 +225,16 @@ export async function fetchModelCatalog(): Promise<ModelCatalog> {
 export async function fetchModelTiers(): Promise<BackendModelTierConfig[]> {
   await ensureModelConfig();
   return cachedTiers ?? DEFAULT_TIERS;
+}
+
+export async function resolveOpenRouterModelId(stableModelId: string): Promise<string> {
+  const catalog = await fetchModelCatalog();
+  return resolveEnabledCatalogModel(catalog, stableModelId).openrouter_model_id;
+}
+
+export async function resolveDefaultOpenRouterModelId(): Promise<string> {
+  const catalog = await fetchModelCatalog();
+  return resolveEnabledCatalogModel(catalog, catalog.default_model_id).openrouter_model_id;
 }
 
 export async function getModelTier(modelName: string): Promise<BackendModelTierConfig> {

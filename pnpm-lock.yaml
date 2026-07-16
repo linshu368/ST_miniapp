@@ -75,6 +75,9 @@ importers:
       vite:
         specifier: ^8.1.0
         version: 8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3)
+      vitest:
+        specifier: ^4.1.7
+        version: 4.1.7(@types/node@22.19.17)(vite@8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
   packages/backend:
     dependencies:
@@ -118,6 +121,9 @@ importers:
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
+      vitest:
+        specifier: ^4.1.7
+        version: 4.1.7(@types/node@22.19.17)(vite@8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
   packages/bridge-protocol:
     dependencies:

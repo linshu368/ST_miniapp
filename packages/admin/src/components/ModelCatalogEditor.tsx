@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -11,14 +12,18 @@ import {
   Select,
   Space,
   Switch,
+  Tag,
   Typography,
 } from 'antd';
 import type {
+  DisplayPricingConfig,
   ModelCatalog,
   ModelCatalogModel,
   ModelCatalogTier,
   ModelCatalogTierKey,
+  OpenRouterModelDirectory,
 } from '@miniapp/shared';
+import { calculateModelDisplayPrices } from '../lib/openRouterModels';
 
 const tierOptions: Array<{ value: ModelCatalogTierKey; label: string; color: string }> = [
   { value: 'light', label: '轻量', color: '#4ade80' },
@@ -47,6 +52,12 @@ export function ModelCatalogEditor(props: {
   value: ModelCatalog;
   onChange: (value: ModelCatalog) => void;
   disabled?: boolean;
+  openRouterDirectory: OpenRouterModelDirectory | null;
+  pricingConfig: DisplayPricingConfig;
+  publishedModelIds: ReadonlySet<string>;
+  syncLoading: boolean;
+  syncError: string | null;
+  onRefreshOpenRouter: () => void;
 }) {
   const updateTier = (tierIndex: number, patch: Partial<ModelCatalogTier>) => {
     const next = copyCatalog(props.value);
@@ -69,6 +80,34 @@ export function ModelCatalogEditor(props: {
 
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
+      <Card size="small">
+        <Space direction="vertical" className="field-full">
+          <Space wrap>
+            <Typography.Text strong>OpenRouter 模型目录</Typography.Text>
+            {props.openRouterDirectory ? (
+              <Tag color={props.openRouterDirectory.stale ? 'orange' : 'green'}>
+                {props.openRouterDirectory.stale ? '使用缓存' : '已同步'} ·{' '}
+                {props.openRouterDirectory.models.length} 个模型
+              </Tag>
+            ) : (
+              <Tag>未同步</Tag>
+            )}
+            <Button size="small" loading={props.syncLoading} onClick={props.onRefreshOpenRouter}>
+              重新同步
+            </Button>
+          </Space>
+          {props.syncError ? <Alert type="error" showIcon message={props.syncError} /> : null}
+          {props.openRouterDirectory ? (
+            <Typography.Text type="secondary">
+              上游更新时间：
+              {new Date(props.openRouterDirectory.fetched_at).toLocaleString('zh-CN', {
+                hour12: false,
+              })}
+              。选择模型后，将使用当前汇率与加价倍率自动换算展示价格。
+            </Typography.Text>
+          ) : null}
+        </Space>
+      </Card>
       <Card size="small">
         <Space direction="vertical" className="field-full">
           <Typography.Text strong>默认模型</Typography.Text>
@@ -187,7 +226,7 @@ export function ModelCatalogEditor(props: {
                       <Typography.Text>内部稳定 ID</Typography.Text>
                       <Input
                         value={model.id}
-                        disabled={props.disabled}
+                        disabled={props.disabled || props.publishedModelIds.has(model.id)}
                         onChange={(event) => {
                           const oldId = model.id;
                           const id = event.target.value;
@@ -209,15 +248,29 @@ export function ModelCatalogEditor(props: {
                     </Col>
                     <Col xs={24} md={8}>
                       <Typography.Text>OpenRouter 模型 ID</Typography.Text>
-                      <Input
+                      <Select
+                        className="field-full"
                         value={model.openrouter_model_id}
+                        showSearch
+                        optionFilterProp="label"
+                        options={(props.openRouterDirectory?.models ?? []).map((item) => ({
+                          value: item.id,
+                          label: `${item.name}（${item.id}）`,
+                        }))}
                         placeholder="例如 deepseek/deepseek-v3.2"
-                        disabled={props.disabled}
-                        onChange={(event) =>
+                        disabled={props.disabled || !props.openRouterDirectory}
+                        onChange={(openrouter_model_id) => {
+                          const upstream = props.openRouterDirectory?.models.find(
+                            (item) => item.id === openrouter_model_id
+                          );
+                          if (!upstream) return;
+
                           updateModel(tierIndex, modelIndex, {
-                            openrouter_model_id: event.target.value,
-                          })
-                        }
+                            openrouter_model_id,
+                            display_name: upstream.name,
+                            ...calculateModelDisplayPrices(upstream, props.pricingConfig),
+                          });
+                        }}
                       />
                     </Col>
                     <Col xs={24} md={8}>

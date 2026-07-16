@@ -2,14 +2,16 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export type AdminEnvironment = 'test' | 'production';
 
-const configs: Record<AdminEnvironment, { url: string; anonKey: string }> = {
+const configs: Record<AdminEnvironment, { url: string; anonKey: string; apiUrl: string }> = {
   test: {
     url: import.meta.env.VITE_ADMIN_TEST_SUPABASE_URL || '',
     anonKey: import.meta.env.VITE_ADMIN_TEST_SUPABASE_ANON_KEY || '',
+    apiUrl: import.meta.env.VITE_ADMIN_TEST_API_URL || '',
   },
   production: {
     url: import.meta.env.VITE_ADMIN_PROD_SUPABASE_URL || '',
     anonKey: import.meta.env.VITE_ADMIN_PROD_SUPABASE_ANON_KEY || '',
+    apiUrl: import.meta.env.VITE_ADMIN_PROD_API_URL || '',
   },
 };
 
@@ -61,5 +63,15 @@ export function getAdminClient(environment: AdminEnvironment): SupabaseClient {
 }
 
 export function isEnvironmentConfigured(environment: AdminEnvironment): boolean {
-  return Boolean(configs[environment].url && configs[environment].anonKey);
+  return Boolean(
+    configs[environment].url && configs[environment].anonKey && configs[environment].apiUrl
+  );
+}
+
+export function getAdminApiUrl(environment: AdminEnvironment): string {
+  const apiUrl = configs[environment].apiUrl.replace(/\/+$/, '');
+  if (!apiUrl) {
+    throw new Error(environment === 'test' ? '测试环境后端地址未配置' : '生产环境后端地址未配置');
+  }
+  return apiUrl;
 }

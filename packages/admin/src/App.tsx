@@ -22,6 +22,12 @@ import {
 } from 'antd';
 import { Refine } from '@refinedev/core';
 import { dataProvider } from '@refinedev/supabase';
+import {
+  ModelCatalogSchema,
+  type DisplayPricingConfig,
+  type ModelCatalog,
+  type OpenRouterModelDirectory,
+} from '@miniapp/shared';
 import { LoginPage } from './components/LoginPage';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
 import {
@@ -41,11 +47,13 @@ import {
 } from './lib/adminApi';
 import {
   configMetadata,
+  LlmPricingConfigSchema,
   managedConfigKeys,
   parseManagedConfig,
   type ManagedConfigKey,
 } from './lib/configSchemas';
 import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
+import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRouterModels';
 
 type ViewKey = 'configs' | 'releases' | 'audit';
 
@@ -254,7 +262,7 @@ export function AdminApp() {
       <Result
         status="warning"
         title={`${environment === 'test' ? '测试' : '生产'}环境未配置`}
-        subTitle="请在 Vercel 或本地环境变量中配置对应的 Supabase URL 与 anon key。"
+        subTitle="请在 Vercel 或本地环境变量中配置对应的 Supabase URL、anon key 与后端 API 地址。"
         extra={
           <Segmented
             value={environment}
@@ -335,6 +343,11 @@ function AdminWorkspace(props: {
   const [workingValue, setWorkingValue] = useState<unknown>(
     configMetadata.llm_model_catalog.defaultValue
   );
+  const [openRouterDirectory, setOpenRouterDirectory] = useState<OpenRouterModelDirectory | null>(
+    null
+  );
+  const [openRouterLoading, setOpenRouterLoading] = useState(false);
+  const [openRouterError, setOpenRouterError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -362,6 +375,22 @@ function AdminWorkspace(props: {
     void reload();
   }, [reload]);
 
+  const reloadOpenRouter = useCallback(async () => {
+    setOpenRouterLoading(true);
+    setOpenRouterError(null);
+    try {
+      setOpenRouterDirectory(await fetchOpenRouterModels(props.environment));
+    } catch (error) {
+      setOpenRouterError(error instanceof Error ? error.message : 'OpenRouter 模型同步失败');
+    } finally {
+      setOpenRouterLoading(false);
+    }
+  }, [props.environment]);
+
+  useEffect(() => {
+    void reloadOpenRouter();
+  }, [reloadOpenRouter]);
+
   const currentConfig = useMemo(
     () => configs.find((config) => config.key === selectedKey),
     [configs, selectedKey]
@@ -375,6 +404,31 @@ function AdminWorkspace(props: {
     [releases, selectedKey]
   );
   const canWrite = props.admin.role !== 'viewer';
+  const pricingConfig = useMemo<DisplayPricingConfig>(() => {
+    const runtimeValue = configs.find((config) => config.key === 'llm_pricing_config')?.value;
+    const parsed = LlmPricingConfigSchema.safeParse(
+      runtimeValue ?? configMetadata.llm_pricing_config.defaultValue
+    );
+    return parsed.success
+      ? { exchangeRate: parsed.data.exchangeRate, markup: parsed.data.markup }
+      : { exchangeRate: 680, markup: 2.5 };
+  }, [configs]);
+  const publishedModelIds = useMemo(() => {
+    const runtimeValue = configs.find((config) => config.key === 'llm_model_catalog')?.value;
+    const snapshots = [
+      runtimeValue,
+      ...releases
+        .filter((release) => release.config_key === 'llm_model_catalog')
+        .map((release) => release.value),
+    ];
+    const ids = snapshots.flatMap((snapshot) => {
+      const parsed = ModelCatalogSchema.safeParse(snapshot);
+      return parsed.success
+        ? parsed.data.tiers.flatMap((tier) => tier.models.map((model) => model.id))
+        : [];
+    });
+    return new Set(ids);
+  }, [configs, releases]);
 
   useEffect(() => {
     setWorkingValue(
@@ -383,6 +437,19 @@ function AdminWorkspace(props: {
       )
     );
   }, [currentConfig, latestDraft, selectedKey]);
+
+  const validateOpenRouterConfig = (key: ManagedConfigKey, value: unknown): void => {
+    if (key !== 'llm_model_catalog') return;
+    if (!openRouterDirectory) {
+      throw new Error('OpenRouter 模型目录尚未同步，无法校验模型配置');
+    }
+
+    const catalog = ModelCatalogSchema.parse(value) as ModelCatalog;
+    const issues = getOpenRouterCatalogIssues(catalog, openRouterDirectory);
+    if (issues.length > 0) {
+      throw new Error(`模型配置未通过 OpenRouter 校验：${issues.join('；')}`);
+    }
+  };
 
   const requireWriteConfirmation = async (
     action: string,
@@ -415,6 +482,7 @@ function AdminWorkspace(props: {
     setSaving(true);
     try {
       const parsed = parseManagedConfig(selectedKey, workingValue);
+      validateOpenRouterConfig(selectedKey, parsed);
       if (
         !(await requireWriteConfirmation(
           '保存草稿',
@@ -444,6 +512,7 @@ function AdminWorkspace(props: {
     if (!canWrite || !latestDraft) return;
     setSaving(true);
     try {
+      validateOpenRouterConfig(selectedKey, latestDraft.value);
       if (!(await requireWriteConfirmation('发布配置', currentConfig?.value, latestDraft.value))) {
         return;
       }
@@ -461,6 +530,7 @@ function AdminWorkspace(props: {
     if (!canWrite) return;
     setSaving(true);
     try {
+      validateOpenRouterConfig(selectedKey, release.value);
       if (!(await requireWriteConfirmation('回滚配置', currentConfig?.value, release.value))) {
         return;
       }
@@ -570,6 +640,12 @@ function AdminWorkspace(props: {
                   value={workingValue}
                   onChange={setWorkingValue}
                   disabled={!canWrite}
+                  openRouterDirectory={openRouterDirectory}
+                  pricingConfig={pricingConfig}
+                  publishedModelIds={publishedModelIds}
+                  syncLoading={openRouterLoading}
+                  syncError={openRouterError}
+                  onRefreshOpenRouter={() => void reloadOpenRouter()}
                 />
                 <Divider />
                 <Space wrap>
