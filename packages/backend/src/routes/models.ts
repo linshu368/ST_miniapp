@@ -12,9 +12,14 @@ export default async function modelsRoutes(app: FastifyInstance) {
     return reply.send(ok<GetModelTiersData>({ tiers }));
   });
 
-  app.get('/api/platform/openrouter/models', async (_request, reply) => {
-    const directory = await openRouterModelsClient.getModels();
-    reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=900');
+  app.get('/api/platform/openrouter/models', async (request, reply) => {
+    const query = request.query as { refresh?: string };
+    const forceRefresh = query.refresh === '1';
+    const directory = await openRouterModelsClient.getModels({ forceRefresh });
+    reply.header(
+      'Cache-Control',
+      forceRefresh ? 'no-store' : 'public, max-age=300, stale-while-revalidate=900'
+    );
     return reply.send(ok<OpenRouterModelDirectory>(directory));
   });
 

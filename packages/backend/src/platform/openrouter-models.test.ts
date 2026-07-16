@@ -62,6 +62,19 @@ describe('OpenRouterModelsClient', () => {
     expect(stale.models).toHaveLength(1);
   });
 
+  it('bypasses a fresh cache when a refresh is forced', async () => {
+    const fetchImpl = vi.fn(async () => Response.json(responseBody));
+    const client = new OpenRouterModelsClient({
+      fetchImpl,
+      cacheTtlMs: 60_000,
+    });
+
+    await client.getModels();
+    await client.getModels({ forceRefresh: true });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects an invalid upstream response when no cache exists', async () => {
     const client = new OpenRouterModelsClient({
       fetchImpl: vi.fn(async () => Response.json({ data: [{ id: 'broken' }] })),

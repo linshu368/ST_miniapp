@@ -37,8 +37,8 @@ export class OpenRouterModelsClient {
     this.now = options.now ?? Date.now;
   }
 
-  async getModels(): Promise<OpenRouterModelDirectory> {
-    if (this.cached && this.now() - this.cachedAt < this.cacheTtlMs) {
+  async getModels(options: { forceRefresh?: boolean } = {}): Promise<OpenRouterModelDirectory> {
+    if (!options.forceRefresh && this.cached && this.now() - this.cachedAt < this.cacheTtlMs) {
       return this.cached;
     }
 

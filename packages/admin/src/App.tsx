@@ -375,17 +375,26 @@ function AdminWorkspace(props: {
     void reload();
   }, [reload]);
 
-  const reloadOpenRouter = useCallback(async () => {
-    setOpenRouterLoading(true);
-    setOpenRouterError(null);
-    try {
-      setOpenRouterDirectory(await fetchOpenRouterModels(props.environment));
-    } catch (error) {
-      setOpenRouterError(error instanceof Error ? error.message : 'OpenRouter 模型同步失败');
-    } finally {
-      setOpenRouterLoading(false);
-    }
-  }, [props.environment]);
+  const reloadOpenRouter = useCallback(
+    async (forceRefresh = false) => {
+      setOpenRouterLoading(true);
+      setOpenRouterError(null);
+      try {
+        const directory = await fetchOpenRouterModels(props.environment, forceRefresh);
+        setOpenRouterDirectory(directory);
+        if (forceRefresh) {
+          message.success(`OpenRouter 模型目录同步成功，共 ${directory.models.length} 个模型`);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'OpenRouter 模型同步失败';
+        setOpenRouterError(errorMessage);
+        if (forceRefresh) message.error(errorMessage);
+      } finally {
+        setOpenRouterLoading(false);
+      }
+    },
+    [message, props.environment]
+  );
 
   useEffect(() => {
     void reloadOpenRouter();
@@ -645,7 +654,7 @@ function AdminWorkspace(props: {
                   publishedModelIds={publishedModelIds}
                   syncLoading={openRouterLoading}
                   syncError={openRouterError}
-                  onRefreshOpenRouter={() => void reloadOpenRouter()}
+                  onRefreshOpenRouter={() => void reloadOpenRouter(true)}
                 />
                 <Divider />
                 <Space wrap>

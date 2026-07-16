@@ -10,11 +10,17 @@ import type { AdminEnvironment } from './environment';
 import { getAdminApiUrl } from './environment';
 
 export async function fetchOpenRouterModels(
-  environment: AdminEnvironment
+  environment: AdminEnvironment,
+  forceRefresh = false
 ): Promise<OpenRouterModelDirectory> {
-  const response = await fetch(`${getAdminApiUrl(environment)}/api/platform/openrouter/models`, {
-    headers: { Accept: 'application/json' },
-  });
+  const query = forceRefresh ? `?refresh=1&t=${Date.now()}` : '';
+  const response = await fetch(
+    `${getAdminApiUrl(environment)}/api/platform/openrouter/models${query}`,
+    {
+      headers: { Accept: 'application/json' },
+      cache: forceRefresh ? 'no-store' : 'default',
+    }
+  );
   if (!response.ok) {
     throw new Error(`OpenRouter 模型目录加载失败（HTTP ${response.status}）`);
   }
