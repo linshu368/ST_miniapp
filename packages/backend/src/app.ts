@@ -17,6 +17,7 @@ import chatsRoutes from './routes/chats.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
+import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -89,6 +90,12 @@ export async function buildApp() {
       status: 'ok',
       timestamp: new Date().toISOString(),
     });
+  });
+
+  startChatHistorySyncJob(app.log);
+
+  app.addHook('onClose', async () => {
+    stopChatHistorySyncJob();
   });
 
   return app;
