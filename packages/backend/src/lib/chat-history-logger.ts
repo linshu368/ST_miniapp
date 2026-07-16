@@ -152,17 +152,51 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         }
 
         if (actualDeduction > 0) {
+          const intendedDeduction = actualDeduction;
           try {
             await wallets.deduct(entry.user_id, actualDeduction);
             log.info(
               { userId: entry.user_id, amount: actualDeduction },
               '[chat-history] dynamic deduction success'
             );
-          } catch (deductErr) {
-            log.error(
-              { err: String(deductErr), userId: entry.user_id, amount: actualDeduction },
-              '[chat-history] dynamic deduction failed'
-            );
+          } catch (deductErr: any) {
+            const errStr = String(deductErr);
+            if (errStr.includes('insufficient credits')) {
+              // 触发熔断：扣光所有余额
+              try {
+                const wallet = await wallets.getOrCreate(entry.user_id);
+                const remaining =
+                  wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
+                if (remaining > 0) {
+                  await wallets.deduct(entry.user_id, remaining);
+                  log.warn(
+                    { userId: entry.user_id, intendedDeduction, drainedAmount: remaining },
+                    '[chat-history] insufficient credits, drained remaining balance'
+                  );
+                  actualDeduction = remaining; // 更新为实际扣除的金额
+                } else {
+                  log.warn(
+                    { userId: entry.user_id, intendedDeduction },
+                    '[chat-history] insufficient credits, balance is already 0'
+                  );
+                  actualDeduction = 0;
+                }
+                // 在 metadata 中记录原本应该扣除的金额，便于后续对账和风控分析
+                llmMetadata.llm_intended_deduction = intendedDeduction;
+              } catch (drainErr) {
+                log.error(
+                  { err: String(drainErr), userId: entry.user_id },
+                  '[chat-history] failed to drain balance'
+                );
+                actualDeduction = 0;
+              }
+            } else {
+              log.error(
+                { err: errStr, userId: entry.user_id, amount: actualDeduction },
+                '[chat-history] dynamic deduction failed'
+              );
+              actualDeduction = 0;
+            }
           }
         }
       }
