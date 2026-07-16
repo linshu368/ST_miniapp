@@ -59,6 +59,21 @@ RUN npm ci --no-audit --no-fund --loglevel=error --no-progress --omit=dev --igno
  && node ./docker/build-lib.js \
  && npm cache clean --force
 RUN test -d /build/vendor/sillytavern/node_modules/express
+
+# ---- 发布级资产命名空间（缓存保鲜根治）----
+# 把 index.html 的 <base href="/"> 改为 /st-runtime/<内容哈希>/：整个 ST 模块图
+# （script.js 及所有相对 import、CSS、字体）的 URL 每次发版自动变化，从缓存键层面
+# 绕开 WebView（WebKit 无视 no-cache 的内存/预加载缓存）与 Vercel 边缘的旧副本。
+# nginx 侧 `location ~ ^/st-runtime/` 剥掉前缀后按原有 location 分档（见 ops/nginx）。
+# 仓库内 vendor/index.html 不改动（本地 dev 仍用 base "/"），仅镜像副本被改写。
+RUN set -eux; \
+    RUNTIME_BUILD_ID="$(find public -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)"; \
+    test -n "${RUNTIME_BUILD_ID}"; \
+    # e3b0c44298fc = 空输入的 sha256 前缀：管道静默失败时会得到它，必须拦截。
+    test "${RUNTIME_BUILD_ID}" != "e3b0c44298fc"; \
+    sed -i "s|<base href=\"/\">|<base href=\"/st-runtime/${RUNTIME_BUILD_ID}/\">|" public/index.html; \
+    grep -Fq "/st-runtime/${RUNTIME_BUILD_ID}/" public/index.html
+
 WORKDIR /build
 
 # ========== Stage 2: install sync-engine deps ==========

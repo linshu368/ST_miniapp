@@ -39,6 +39,16 @@ const REQUIRED_FILES = {
     'dist/index.css',
     'lib/jsoneditor.js',
     'lib/tailwindcss.min.js',
+    // 消息渲染 iframe 的本地化 CDN 依赖（快照 README「平台补丁 P2」）
+    'lib/vendor/vue.runtime.global.prod.min.js',
+    'lib/vendor/vue-router.global.prod.min.js',
+    'lib/vendor/jquery.min.js',
+    'lib/vendor/jquery-ui.min.js',
+    'lib/vendor/jquery-ui.theme.min.css',
+    'lib/vendor/jquery.ui.touch-punch.min.js',
+    'lib/vendor/log.js',
+    'lib/vendor/fontawesome/css/all.min.css',
+    'lib/vendor/fontawesome/webfonts/fa-solid-900.woff2',
   ],
 };
 

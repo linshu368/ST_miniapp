@@ -76,13 +76,21 @@ export async function handleSelectCharacter(payload: Payload): Promise<Result> {
   stTiming('sel_selectById_done'); // [iframe-timing] TEMP DEBUG: H3
   markSelectProbe('h3_done'); // [iframe-timing] TEMP DEBUG
 
+  let usedFastNewChat = false;
   if (payload.forceNewChat) {
-    // 直接调用 ST 原生函数，跳过 slash 解析、空聊天文件读取和角色 PNG 指针回写。
-    await ctx.doNewChat({ skipCharacterSave: true, skipChatFetch: true });
+    if (typeof ctx.doNewChat === 'function') {
+      // 直接调用 ST 原生函数，跳过 slash 解析、空聊天文件读取和角色 PNG 指针回写。
+      await ctx.doNewChat({ skipCharacterSave: true, skipChatFetch: true });
+      usedFastNewChat = true;
+    } else {
+      // 兼容仍持有旧 immutable st-context.js 的已打开 WebView。新启动会通过版本化
+      // module URL 获取 doNewChat；这里只防止发布切换窗口中的混合版本直接崩溃。
+      await ctx.executeSlashCommandsWithOptions('/newchat');
+    }
   }
   stTiming(
     'sel_newchat_done',
-    `forceNewChat=${!!payload.forceNewChat},fastNewChat=${!!payload.forceNewChat}`
+    `forceNewChat=${!!payload.forceNewChat},fastNewChat=${usedFastNewChat}`
   ); // [iframe-timing] TEMP DEBUG: H2
   stopSelectProbe(); // [iframe-timing] TEMP DEBUG: 收割点卡窗口瀑布/事件/长任务并上报
 
