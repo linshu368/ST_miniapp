@@ -101,11 +101,17 @@ export function createBridgeServer(parentOrigin: string): BridgeServer {
         });
       }
 
-      // Phase check
-      if (meta.requiredPhase === 'ready' && currentPhase !== 'ready') {
+      // Phase check（序数比较）：三段握手后二元判断会把 interactive 级请求在
+      // handshake 阶段误放行、或在 interactive 阶段误拦 ready 级请求。
+      const phaseOrder: Record<HandshakePhase, number> = {
+        handshake: 0,
+        interactive: 1,
+        ready: 2,
+      };
+      if (phaseOrder[currentPhase] < phaseOrder[meta.requiredPhase]) {
         throw new BridgeError(
           'BRIDGE_CALL_ACTION_NOT_AVAILABLE_IN_PHASE',
-          `Action "${request.action}" requires phase "ready", current is "${currentPhase}"`,
+          `Action "${request.action}" requires phase "${meta.requiredPhase}", current is "${currentPhase}"`,
           { requestId: request.requestId }
         );
       }

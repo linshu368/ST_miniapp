@@ -12,7 +12,9 @@ export const CHAT_INTERACTIVITY_EVENT = 'miniapp:chat-interactivity';
 // 相互踩踏导致停摆（2026-07-16 dev 实测）。查询参数不影响 nginx/Vercel 的路径匹配，
 // 但让缓存键从未出现过 → 旧文档不可能被复用。
 export function createStBootUrl(): string {
-  return `/tavern/?miniapp_doc=${Date.now().toString(36)}`;
+  // miniapp_fast_boot=1：vendor script.js 据此走 T2 fast-boot 关键路径
+  //（world-info 就绪即发 interactive 握手，UI-only init 延迟）。Web 直访 ST 无此参数不受影响。
+  return `/tavern/?miniapp_doc=${Date.now().toString(36)}&miniapp_fast_boot=1`;
 }
 
 type StSessionResponse = {

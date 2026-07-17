@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-export type HandshakePhase = 'handshake' | 'ready';
+export type HandshakePhase = 'handshake' | 'interactive' | 'ready';
 
-export const HandshakePhaseSchema = z.enum(['handshake', 'ready']);
+export const HandshakePhaseSchema = z.enum(['handshake', 'interactive', 'ready']);
 
 /** Only present when phase = 'handshake' */
 export type HandshakeMeta = {

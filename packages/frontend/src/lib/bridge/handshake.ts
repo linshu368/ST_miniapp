@@ -66,6 +66,13 @@ export function handleHandshakeMessage(opts: HandleHandshakeOptions): void {
     if (flushed.length > 0) {
       sendBuffered(flushed);
     }
+  } else if (message.phase === 'interactive') {
+    stateMachine.transition({ type: 'INTERACTIVE_RECEIVED' });
+
+    const flushed = buffer.flush('interactive');
+    if (flushed.length > 0) {
+      sendBuffered(flushed);
+    }
   } else if (message.phase === 'ready') {
     stateMachine.transition({ type: 'READY_RECEIVED' });
 

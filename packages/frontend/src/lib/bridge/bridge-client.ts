@@ -6,6 +6,7 @@ import type {
   EventPayloadMap,
   BridgeResponseAny,
   HandshakeMessage,
+  HandshakePhase,
   BridgeEventAny,
   PongMessage,
 } from '@miniapp/bridge-protocol';
@@ -372,7 +373,21 @@ export class BridgeClient {
     const meta = actionRegistry[action];
     const requestId = generateRequestId();
 
-    if (status === 'loading' || (status === 'handshaked' && meta.requiredPhase === 'ready')) {
+    // 序数比较：当前连接状态尚未达到 action 的 requiredPhase 时入 buffer 等 flush。
+    // loading（首段握手未到）缓冲一切；handshaked=0 / interactive=1 / ready=2。
+    const statusLevel: Partial<Record<BridgeStatus, number>> = {
+      handshaked: 0,
+      interactive: 1,
+      ready: 2,
+    };
+    const requiredLevel: Record<HandshakePhase, number> = {
+      handshake: 0,
+      interactive: 1,
+      ready: 2,
+    };
+    const currentLevel = statusLevel[status] ?? -1;
+
+    if (currentLevel < requiredLevel[meta.requiredPhase]) {
       if (!meta.waitable) {
         return Promise.reject(
           new BridgeError(
@@ -521,8 +536,14 @@ export class BridgeClient {
     this.clearIframeLoadWatchdog();
     this.clearHandshakeArrivalWatchdog();
     this.clearClickStallWatchdog();
-    // [iframe-timing] TEMP DEBUG: 记录两段握手到达时刻
-    markTiming(msg.phase === 'ready' ? 'st_ready' : 'st_handshake');
+    // [iframe-timing] TEMP DEBUG: 记录三段握手到达时刻
+    markTiming(
+      msg.phase === 'ready'
+        ? 'st_ready'
+        : msg.phase === 'interactive'
+          ? 'st_interactive'
+          : 'st_handshake'
+    );
     try {
       handleHandshakeMessage({
         message: msg,
@@ -532,6 +553,24 @@ export class BridgeClient {
         expectedUserId: this.expectedUserId,
         sendBuffered: (requests) => this.flushBufferedRequests(requests),
       });
+
+      if (msg.phase === 'interactive') {
+        // interactive 即视为连接建立：必须解除 60s 握手总超时。T2 的目标人群恰是慢 boot
+        // 长尾（APP_READY 可能 >60s），若不解除，闸门在 interactive 放行后发起的 select
+        // 会被总超时触发的 iframe 重载腰斩。残余风险（interactive 后卡死到不了 ready 时
+        // 无看门狗兜底）可接受：interactive 已证明 ST boot JS 存活且在推进。
+        if (this.totalTimer) {
+          clearTimeout(this.totalTimer);
+          this.totalTimer = null;
+        }
+        this.reconnectAttempts = 0;
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        // ping loop 仍等 ready 才启动：mirror 状态在 ready 前无消费者，且避免与
+        // interactive 窗口内的 select 请求竞争。
+      }
 
       if (msg.phase === 'ready') {
         if (this.totalTimer) {

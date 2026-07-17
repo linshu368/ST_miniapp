@@ -12,7 +12,28 @@ import { startSelectProbe, markSelectProbe, stopSelectProbe } from '../debug-sel
 type Payload = ActionPayloadMap['selectCharacter'];
 type Result = ActionResultMap['selectCharacter'];
 
+declare global {
+  interface Window {
+    /** select 在途计数：vendor script.js 据此把 fast-boot 延迟批次让位给点卡窗口。 */
+    __miniappSelectInFlight?: number;
+  }
+}
+
 export async function handleSelectCharacter(payload: Payload): Promise<Result> {
+  // fast-boot 协调：标记 select 在途；settle（成败均发）后 vendor 才调度延迟初始化批次
+  // （getUserAvatars + UI-only inits），避免其网络/主线程开销与点卡窗口竞争。
+  window.__miniappSelectInFlight = (window.__miniappSelectInFlight ?? 0) + 1;
+  try {
+    return await doSelectCharacter(payload);
+  } finally {
+    window.__miniappSelectInFlight = Math.max(0, (window.__miniappSelectInFlight ?? 1) - 1);
+    if (window.__miniappSelectInFlight === 0) {
+      window.dispatchEvent(new CustomEvent('miniapp:select-settled'));
+    }
+  }
+}
+
+async function doSelectCharacter(payload: Payload): Promise<Result> {
   stTiming('sel_start'); // [iframe-timing] TEMP DEBUG
   startSelectProbe(); // [iframe-timing] TEMP DEBUG
   const ctx = SillyTavern.getContext();
