@@ -855,8 +855,11 @@ if (miniAppFastBoot) {
   // （BridgeClient type='boot-fatal'，通道常量与 @miniapp/bridge-protocol BRIDGE_CHANNEL 一致），
   // 由父窗口按既有重连预算立刻重载。只上报一次，避免风暴。
   let miniAppFatalReported = false;
+  // [miniapp-patch] TDZ 致命签名跨引擎措辞：老 WebKit=「Cannot access uninitialized variable」，
+  // iOS 18.7 / V8=「Cannot access 'xxx' before initialization」（只匹配 before initialization 即可
+  // 覆盖后者，避免漏掉 iOS 变体导致 iOS 不触发 boot_fatal、只能走慢看门狗）。
   const MINIAPP_FATAL_RE =
-    /Cannot access uninitialized variable|is not defined|Importing a module script failed|error loading dynamically imported module|Cannot use import statement/i;
+    /Cannot access uninitialized variable|before initialization|is not defined|Importing a module script failed|error loading dynamically imported module|Cannot use import statement/i;
   const miniAppReportFatal = (detail) => {
     if (miniAppFatalReported) return;
     miniAppFatalReported = true;

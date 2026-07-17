@@ -93,6 +93,12 @@ export class BridgeClient {
   private handshakeArrivalTimer: ReturnType<typeof setTimeout> | null = null;
   private clickStallTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
+  /**
+   * 方案 a：下一次重连是否清 origin HTTP 缓存。仅由 boot-fatal（坏模块图 TDZ）置位——
+   * 该失败源于缓存性坏图，单纯重载复用同一坏缓存必再坏，需在重载 URL 带 miniapp_nuke=1
+   * 让网关回 Clear-Site-Data 清缓存。普通握手超时（可能是网络问题）不置位，避免无谓清缓存。
+   */
+  private nukeCacheOnNextReconnect = false;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private started = false;
   /** 本次 boot 尝试（start 或 reconnect reload）起点，用于点卡即检的相对阈值计算 */
@@ -305,6 +311,15 @@ export class BridgeClient {
     // 旧缓存文档（旧模块图与新模块图并行执行会导致 boot 停摆，见 st-iframe.tsx）。
     const url = new URL(iframe.src, window.location.origin);
     url.searchParams.set('miniapp_doc', Date.now().toString(36));
+    // 方案 a：boot-fatal（缓存性坏图）触发的重连带 miniapp_nuke=1 → 网关回 Clear-Site-Data
+    // 清 origin HTTP 缓存，本次重载子资源全部回源拉新版（等价新哈希首会话）。用后即清，
+    // 避免非坏图的后续重连也无谓清缓存。
+    if (this.nukeCacheOnNextReconnect) {
+      url.searchParams.set('miniapp_nuke', '1');
+      this.nukeCacheOnNextReconnect = false;
+    } else {
+      url.searchParams.delete('miniapp_nuke');
+    }
     iframe.src = url.toString();
 
     // 重载后重新武装加载/握手到达看门狗（load 监听器挂在同一 iframe 元素上，reload 后仍有效）
@@ -334,6 +349,7 @@ export class BridgeClient {
       this.reconnectTimer = null;
     }
     this.reconnectAttempts = 0;
+    this.nukeCacheOnNextReconnect = false;
     this.userWaiting = false;
 
     this.clearIframeLoadWatchdog();
@@ -546,6 +562,8 @@ export class BridgeClient {
     markTimingAt('boot_fatal', Date.now(), detail.slice(0, 160)); // [iframe-timing] TEMP DEBUG
     const status = this.stateMachine.getStatus();
     if (status !== 'loading' && status !== 'handshaked') return;
+    // 坏模块图源于缓存 → 下次重载必须清缓存（方案 a），否则复用同一坏缓存必再坏。
+    this.nukeCacheOnNextReconnect = true;
     this.handleHandshakeTimeout();
   }
 
