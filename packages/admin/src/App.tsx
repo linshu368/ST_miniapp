@@ -691,6 +691,7 @@ function AdminWorkspace(props: {
           </div>
         </div>
         <Menu
+          mode="inline"
           defaultOpenKeys={['configs']}
           selectedKeys={[view === 'configs' ? configMenuKey(selectedKey) : view]}
           onClick={({ key }) => {

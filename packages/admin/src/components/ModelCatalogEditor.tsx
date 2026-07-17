@@ -12,6 +12,7 @@ import {
   Select,
   Space,
   Switch,
+  Table,
   Tag,
   Typography,
 } from 'antd';
@@ -38,6 +39,7 @@ import type {
   ModelCatalogTier,
   ModelCatalogTierKey,
   OpenRouterModelDirectory,
+  OpenRouterModelSummary,
 } from '@miniapp/shared';
 import { calculateModelDisplayPrices } from '../lib/openRouterModels';
 
@@ -46,6 +48,13 @@ const tierOptions: Array<{ value: ModelCatalogTierKey; label: string; color: str
   { value: 'standard', label: '标准', color: '#818cf8' },
   { value: 'premium', label: '旗舰', color: '#c084fc' },
 ];
+
+function formatUsdPerMillion(value: number): string {
+  return `$${(value * 1_000_000).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  })}`;
+}
 
 function copyCatalog(value: ModelCatalog): ModelCatalog {
   return structuredClone(value);
@@ -241,34 +250,140 @@ export function ModelCatalogEditor(props: {
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <Space direction="vertical" size="middle" className="editor-stack">
-        <Card size="small">
-          <Space direction="vertical" className="field-full">
-            <Space wrap>
-              <Typography.Text strong>OpenRouter 模型目录</Typography.Text>
-              {props.openRouterDirectory ? (
-                <Tag color={props.openRouterDirectory.stale ? 'orange' : 'green'}>
-                  {props.openRouterDirectory.stale ? '使用缓存' : '已同步'} ·{' '}
-                  {props.openRouterDirectory.models.length} 个模型
-                </Tag>
-              ) : (
-                <Tag>未同步</Tag>
-              )}
-              <Button size="small" loading={props.syncLoading} onClick={props.onRefreshOpenRouter}>
-                重新同步
-              </Button>
-            </Space>
-            {props.syncError ? <Alert type="error" showIcon message={props.syncError} /> : null}
-            {props.openRouterDirectory ? (
-              <Typography.Text type="secondary">
-                上游更新时间：
-                {new Date(props.openRouterDirectory.fetched_at).toLocaleString('zh-CN', {
-                  hour12: false,
-                })}
-                。选择模型后，将使用当前汇率与加价倍率自动换算展示价格。
-              </Typography.Text>
-            ) : null}
-          </Space>
-        </Card>
+        <Collapse
+          items={[
+            {
+              key: 'openrouter-directory',
+              label: (
+                <Space wrap>
+                  <Typography.Text strong>OpenRouter 模型目录</Typography.Text>
+                  {props.openRouterDirectory ? (
+                    <Tag color={props.openRouterDirectory.stale ? 'orange' : 'green'}>
+                      {props.openRouterDirectory.stale ? '使用缓存' : '已同步'} ·{' '}
+                      {props.openRouterDirectory.models.length} 个模型
+                    </Tag>
+                  ) : (
+                    <Tag>未同步</Tag>
+                  )}
+                </Space>
+              ),
+              extra: (
+                <Button
+                  size="small"
+                  loading={props.syncLoading}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    props.onRefreshOpenRouter();
+                  }}
+                >
+                  重新同步
+                </Button>
+              ),
+              children: (
+                <Space direction="vertical" size="middle" className="field-full">
+                  {props.syncError ? (
+                    <Alert type="error" showIcon message={props.syncError} />
+                  ) : null}
+                  {props.openRouterDirectory ? (
+                    <>
+                      <Typography.Text type="secondary">
+                        上游更新时间：
+                        {new Date(props.openRouterDirectory.fetched_at).toLocaleString('zh-CN', {
+                          hour12: false,
+                        })}
+                        。共获取 {props.openRouterDirectory.models.length}{' '}
+                        个模型；展示价格按当前汇率与加价倍率自动换算。
+                      </Typography.Text>
+                      <Table<OpenRouterModelSummary>
+                        rowKey="id"
+                        size="small"
+                        dataSource={props.openRouterDirectory.models}
+                        scroll={{ x: 1120 }}
+                        pagination={{
+                          defaultPageSize: 20,
+                          showSizeChanger: true,
+                          pageSizeOptions: [20, 50, 100],
+                          showTotal: (total) => `共 ${total} 个模型`,
+                        }}
+                        columns={[
+                          {
+                            title: '模型',
+                            key: 'model',
+                            fixed: 'left',
+                            width: 280,
+                            render: (_, model) => (
+                              <Space direction="vertical" size={0}>
+                                <Typography.Text strong>{model.name}</Typography.Text>
+                                <Typography.Text type="secondary" copyable>
+                                  {model.id}
+                                </Typography.Text>
+                              </Space>
+                            ),
+                          },
+                          {
+                            title: '上下文',
+                            dataIndex: 'context_length',
+                            width: 110,
+                            render: (value: number | null) =>
+                              value === null ? '未知' : value.toLocaleString('en-US'),
+                          },
+                          {
+                            title: '上游输入价',
+                            dataIndex: 'prompt_usd_per_token',
+                            width: 135,
+                            render: (value: number) => `${formatUsdPerMillion(value)} / 百万 token`,
+                          },
+                          {
+                            title: '上游输出价',
+                            dataIndex: 'completion_usd_per_token',
+                            width: 135,
+                            render: (value: number) => `${formatUsdPerMillion(value)} / 百万 token`,
+                          },
+                          {
+                            title: '展示输入价',
+                            key: 'display_input',
+                            width: 120,
+                            render: (_, model) =>
+                              `${calculateModelDisplayPrices(model, props.pricingConfig).price_input.toFixed(1)} 星尘`,
+                          },
+                          {
+                            title: '展示输出价',
+                            key: 'display_output',
+                            width: 120,
+                            render: (_, model) =>
+                              `${calculateModelDisplayPrices(model, props.pricingConfig).price_output.toFixed(1)} 星尘`,
+                          },
+                          {
+                            title: '状态',
+                            key: 'status',
+                            width: 110,
+                            render: (_, model) => {
+                              const expired =
+                                model.expiration_date !== null &&
+                                Number.isFinite(Date.parse(model.expiration_date)) &&
+                                Date.parse(model.expiration_date) <= Date.now();
+                              return expired ? (
+                                <Tag color="red">已过期</Tag>
+                              ) : (
+                                <Tag color="green">可用</Tag>
+                              );
+                            },
+                          },
+                        ]}
+                      />
+                    </>
+                  ) : (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="尚未获取 OpenRouter 模型目录，请点击“重新同步”。"
+                    />
+                  )}
+                </Space>
+              ),
+            },
+          ]}
+        />
         <Card size="small">
           <Space direction="vertical" className="field-full">
             <Typography.Text strong>默认模型</Typography.Text>
