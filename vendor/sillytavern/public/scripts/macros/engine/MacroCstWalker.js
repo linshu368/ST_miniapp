@@ -8,7 +8,8 @@ import { MacroEngine } from './MacroEngine.js';
 import { parseFlags, createEmptyFlags, MacroFlagType } from './MacroFlags.js';
 import { MacroParser } from './MacroParser.js';
 import { MacroRegistry } from './MacroRegistry.js';
-import { isFalseBoolean } from '/scripts/utils.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间产生模块双实例。
+import { isFalseBoolean } from '../../utils.js';
 
 /**
  * @typedef {Object} MacroCall

@@ -1,4 +1,5 @@
-import { gzip } from '/lib.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间加载第二份 lib.js 实例。
+import { gzip } from '../lib.js';
 
 /**
  * @type {RequestCompressionConfig}

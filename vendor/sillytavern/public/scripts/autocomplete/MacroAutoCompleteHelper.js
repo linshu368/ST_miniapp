@@ -26,7 +26,8 @@ import { MacroFlagDefinitions, MacroFlagType } from '../macros/engine/MacroFlags
 import { MacroParser } from '../macros/engine/MacroParser.js';
 import { MacroCstWalker } from '../macros/engine/MacroCstWalker.js';
 import { onboardingExperimentalMacroEngine } from '../macros/engine/MacroDiagnostics.js';
-import { chat_metadata } from '/script.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间加载第二份 script.js 实例。
+import { chat_metadata } from '../../script.js';
 import { extension_settings } from '../extensions.js';
 
 /** @typedef {import('./EnhancedMacroAutoCompleteOption.js').MacroAutoCompleteContext} MacroAutoCompleteContext */

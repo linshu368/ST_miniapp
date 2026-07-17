@@ -299,9 +299,12 @@ export class BridgeClient {
     this.bootAttemptStartedAt = Date.now();
     this.armHandshakeTimer(this.reconnectHandshakeTimeout);
 
-    // 重载 iframe（触发 ST 冷启动 + st-extension 重新 init 并重发握手）
-    const src = iframe.src;
-    iframe.src = src;
+    // 重载 iframe（触发 ST 冷启动 + st-extension 重新 init 并重发握手）。
+    // 每次重载重新生成 miniapp_doc 查询参数：URL 从未出现过 → WKWebView 不可能复活
+    // 旧缓存文档（旧模块图与新模块图并行执行会导致 boot 停摆，见 st-iframe.tsx）。
+    const url = new URL(iframe.src, window.location.origin);
+    url.searchParams.set('miniapp_doc', Date.now().toString(36));
+    iframe.src = url.toString();
 
     // 重载后重新武装加载/握手到达看门狗（load 监听器挂在同一 iframe 元素上，reload 后仍有效）
     this.attachIframeLoadListener();

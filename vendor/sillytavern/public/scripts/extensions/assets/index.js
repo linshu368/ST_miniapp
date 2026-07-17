@@ -24,7 +24,8 @@ import { POPUP_TYPE, Popup, callGenericPopup } from '../../popup.js';
 import { accountStorage } from '../../util/AccountStorage.js';
 import { escapeHtml, flashHighlight, getStringHash, isValidUrl } from '../../utils.js';
 import { t, translate } from '../../i18n.js';
-import { SlashCommandParser } from '/scripts/slash-commands/SlashCommandParser.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间产生模块双实例。
+import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
 export { MODULE_NAME };
 
 const MODULE_NAME = 'assets';
