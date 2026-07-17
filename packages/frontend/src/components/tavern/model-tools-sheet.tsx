@@ -24,16 +24,17 @@ export function ModelToolsSheet() {
   const [menuState, setMenuState] = useState<MenuState>('closed');
   const bridgeReady = useBridgeStatus() === 'ready';
   const catalogQuery = useModelCatalogQuery();
+  const { dataUpdatedAt, refetch } = catalogQuery;
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
   const touchStartY = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (menuState === 'models' && shouldRefreshModelCatalog(catalogQuery.dataUpdatedAt)) {
-      void catalogQuery.refetch();
+    if (menuState === 'models' && shouldRefreshModelCatalog(dataUpdatedAt)) {
+      void refetch();
     }
-  }, [catalogQuery.dataUpdatedAt, catalogQuery.refetch, menuState]);
+  }, [dataUpdatedAt, menuState, refetch]);
 
   const close = useCallback(() => {
     setDragY(0);
