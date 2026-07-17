@@ -46,6 +46,9 @@ export function resetPageTiming(): void {
     'select_start',
     'select_end',
     'select_error',
+    // [iframe-timing] 失败路径遥测：停摆上报打点（每次进卡刷新）
+    'gate_stall',
+    'select_stall',
     'chat_ready',
     // [iframe-timing] round2: selectCharacter ST 端子相位（每次进卡刷新）
     'sel_start',
