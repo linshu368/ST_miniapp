@@ -113,6 +113,40 @@
   }
 }
 
+@keyframes model-current-shimmer {
+  0% {
+    transform: translateX(-140%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(240%) skewX(-18deg);
+  }
+}
+
+@keyframes model-tier-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 0.75;
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+    opacity: 1;
+  }
+}
+
+.model-current-shimmer::after {
+  position: absolute;
+  inset: -40% auto -40% 0;
+  width: 28%;
+  content: '';
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 12%), transparent);
+  animation: model-current-shimmer 3.2s ease-in-out infinite;
+}
+
+.model-tier-pulse {
+  animation: model-tier-pulse 1.8s ease-out infinite;
+}
+
 /* ============ 进入 Chat 开屏动画（chat-splash.tsx） ============ */
 
 /* 整屏退场:轻微放大 + 淡出,像镜头推进角色世界 */

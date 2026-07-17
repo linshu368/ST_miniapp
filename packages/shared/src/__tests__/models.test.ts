@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateDisplayPrice,
   ModelCatalogSchema,
+  resolveEffectiveSelectedModelId,
   resolveEnabledCatalogModel,
+  toPublicModelCatalog,
 } from '../api/models.js';
 
 const validCatalog = {
@@ -79,6 +81,15 @@ describe('ModelCatalogSchema', () => {
 
     expect(ModelCatalogSchema.safeParse(duplicateMapping).success).toBe(false);
   });
+
+  it('enforces stable ids, required taglines, hex colors and one-decimal prices', () => {
+    const invalidCatalog = structuredClone(validCatalog);
+    invalidCatalog.tiers[0]!.color = 'purple';
+    invalidCatalog.tiers[0]!.models[0]!.id = 'Vendor/Model';
+    invalidCatalog.tiers[0]!.models[0]!.tagline = '';
+    invalidCatalog.tiers[0]!.models[0]!.price_input = 0.12;
+    expect(ModelCatalogSchema.safeParse(invalidCatalog).success).toBe(false);
+  });
 });
 
 describe('OpenRouter model helpers', () => {
@@ -101,5 +112,21 @@ describe('OpenRouter model helpers', () => {
     const disabledCatalog = structuredClone(catalog);
     disabledCatalog.tiers[0]!.models[0]!.enabled = false;
     expect(() => resolveEnabledCatalogModel(disabledCatalog, 'flash')).toThrow('model is disabled');
+  });
+
+  it('projects a provider-safe public catalog', () => {
+    const catalog = ModelCatalogSchema.parse(validCatalog);
+    const publicCatalog = toPublicModelCatalog(catalog);
+
+    expect(publicCatalog.tiers[0]?.key).toBe('light');
+    expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('openrouter_model_id');
+    expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('enabled');
+  });
+
+  it('falls back to the default when a stored selection is unavailable', () => {
+    const catalog = ModelCatalogSchema.parse(validCatalog);
+    expect(resolveEffectiveSelectedModelId(catalog, 'flash')).toBe('flash');
+    expect(resolveEffectiveSelectedModelId(catalog, 'removed')).toBe('flash');
+    expect(resolveEffectiveSelectedModelId(catalog, null)).toBe('flash');
   });
 });

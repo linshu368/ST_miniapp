@@ -218,6 +218,29 @@ describe('mergeSettings', () => {
     expect(oai['custom_model']).toBe('anthropic/claude-sonnet-4');
   });
 
+  it('数据库解析出的有效模型应覆盖历史 ST 镜像模型', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        oai_settings: { custom_model: 'legacy/model' },
+      },
+    });
+
+    const result = mergeSettings(
+      platform,
+      null,
+      [],
+      [CHAR_UUID_FALLBACK],
+      CHAR_UUID_FALLBACK,
+      LLM_PROXY_URL,
+      undefined,
+      'google/gemini-3.1-flash-lite'
+    );
+    const oai = result.settings['oai_settings'] as Record<string, unknown>;
+
+    expect(oai['custom_model']).toBe('google/gemini-3.1-flash-lite');
+  });
+
   // ── 场景 10：按指针应用预设到 oai_settings（B 方案核心）────────────────────
   it('应按 oai_settings.preset_settings_openai 指针把预设参数应用进 oai_settings', () => {
     const PRESET_ID = 'c9db5957-844e-4707-a9f8-c8a54eee5260';

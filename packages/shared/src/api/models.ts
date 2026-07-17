@@ -18,34 +18,52 @@ export interface GetModelTiersData {
 }
 
 export const ModelCatalogTierKeySchema = z.enum(['light', 'standard', 'premium']);
+export const StableModelIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(
+    /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/,
+    'stable model id must use lowercase letters, numbers, dots, underscores or hyphens'
+  );
+export const HexColorSchema = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, 'color must be a six-digit hex value');
+const oneDecimalDisplayPrice = z.number().finite().nonnegative().multipleOf(0.1);
 
 export const ModelCatalogModelSchema = z.object({
   /** Stable application-facing identifier. */
-  id: z.string().trim().min(1),
+  id: StableModelIdSchema,
   /** Provider-facing model identifier passed to the OpenRouter bridge. */
-  openrouter_model_id: z.string().trim().min(1),
-  display_name: z.string().trim().min(1),
-  tagline: z.string().max(15),
+  openrouter_model_id: z
+    .string()
+    .trim()
+    .min(3)
+    .max(200)
+    .regex(/^[^\s/]+\/[^\s/]+$/),
+  display_name: z.string().trim().min(1).max(40),
+  tagline: z.string().trim().min(1).max(15),
   /** Display-only prices; billing must use provider usage data instead. */
-  price_input: z.number().finite().nonnegative(),
-  price_output: z.number().finite().nonnegative(),
+  price_input: oneDecimalDisplayPrice,
+  price_output: oneDecimalDisplayPrice,
   enabled: z.boolean(),
-  sort_order: z.number().finite(),
+  sort_order: z.number().int().nonnegative(),
 });
 
 export const ModelCatalogTierSchema = z.object({
   tier: ModelCatalogTierKeySchema,
-  label: z.string().trim().min(1),
-  color: z.string().trim().min(1),
-  cost_hint: z.string(),
-  sort_order: z.number().finite(),
-  models: z.array(ModelCatalogModelSchema),
+  label: z.string().trim().min(1).max(20),
+  color: HexColorSchema,
+  cost_hint: z.string().trim().min(1).max(30),
+  sort_order: z.number().int().nonnegative(),
+  models: z.array(ModelCatalogModelSchema).min(1),
 });
 
 export const ModelCatalogSchema = z
   .object({
     default_model_id: z.string().trim().min(1),
-    tiers: z.array(ModelCatalogTierSchema),
+    tiers: z.array(ModelCatalogTierSchema).min(1),
   })
   .superRefine((catalog, ctx) => {
     const tierKeys = catalog.tiers.map((tier) => tier.tier);
@@ -98,6 +116,79 @@ export type ModelCatalogTierKey = z.infer<typeof ModelCatalogTierKeySchema>;
 export type ModelCatalogModel = z.infer<typeof ModelCatalogModelSchema>;
 export type ModelCatalogTier = z.infer<typeof ModelCatalogTierSchema>;
 export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
+
+export const PublicModelCatalogModelSchema = ModelCatalogModelSchema.omit({
+  openrouter_model_id: true,
+  enabled: true,
+});
+
+export const PublicModelCatalogTierSchema = z.object({
+  key: ModelCatalogTierKeySchema,
+  label: z.string().trim().min(1),
+  color: z.string().trim().min(1),
+  cost_hint: z.string(),
+  sort_order: z.number().finite(),
+  models: z.array(PublicModelCatalogModelSchema),
+});
+
+export const PublicModelCatalogSchema = z.object({
+  default_model_id: z.string().trim().min(1),
+  tiers: z.array(PublicModelCatalogTierSchema),
+});
+
+export const GetModelCatalogDataSchema = z.object({
+  catalog: PublicModelCatalogSchema,
+  selected_model_id: z.string().trim().min(1),
+  selected_openrouter_model_id: z.string().trim().min(1),
+  catalog_version: z.number().int().nonnegative(),
+});
+
+export const SelectModelRequestSchema = z.object({
+  model_id: z.string().trim().min(1),
+});
+
+export const SelectModelDataSchema = z.object({
+  model_id: z.string().trim().min(1),
+  openrouter_model_id: z.string().trim().min(1),
+});
+
+export type PublicModelCatalogModel = z.infer<typeof PublicModelCatalogModelSchema>;
+export type PublicModelCatalogTier = z.infer<typeof PublicModelCatalogTierSchema>;
+export type PublicModelCatalog = z.infer<typeof PublicModelCatalogSchema>;
+export type GetModelCatalogData = z.infer<typeof GetModelCatalogDataSchema>;
+export type SelectModelRequest = z.infer<typeof SelectModelRequestSchema>;
+export type SelectModelData = z.infer<typeof SelectModelDataSchema>;
+
+export function toPublicModelCatalog(catalog: ModelCatalog): PublicModelCatalog {
+  return PublicModelCatalogSchema.parse({
+    default_model_id: catalog.default_model_id,
+    tiers: catalog.tiers
+      .map((tier) => ({
+        key: tier.tier,
+        label: tier.label,
+        color: tier.color,
+        cost_hint: tier.cost_hint,
+        sort_order: tier.sort_order,
+        models: tier.models
+          .filter((model) => model.enabled)
+          .map(({ openrouter_model_id: _openrouterModelId, enabled: _enabled, ...model }) => model),
+      }))
+      .filter((tier) => tier.models.length > 0),
+  });
+}
+
+export function resolveEffectiveSelectedModelId(
+  catalog: ModelCatalog,
+  selectedModelId: string | null | undefined
+): string {
+  if (selectedModelId) {
+    const selected = catalog.tiers
+      .flatMap((tier) => tier.models)
+      .find((model) => model.id === selectedModelId && model.enabled);
+    if (selected) return selected.id;
+  }
+  return resolveEnabledCatalogModel(catalog, catalog.default_model_id).id;
+}
 
 export const OpenRouterModelSchema = z.object({
   id: z.string().trim().min(1),
