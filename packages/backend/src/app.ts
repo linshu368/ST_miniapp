@@ -17,6 +17,7 @@ import chatsRoutes from './routes/chats.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
+import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
 
 export async function buildApp() {
@@ -61,7 +62,14 @@ export async function buildApp() {
       'X-CS-Admin-Token',
       'X-CS-Operator-Id',
       'X-Bot-Internal-Secret',
+      'apikey',
+      'accept-profile',
+      'content-profile',
+      'prefer',
+      'range',
+      'x-client-info',
     ],
+    exposedHeaders: ['content-range', 'range-unit', 'x-supabase-api-version'],
   });
 
   await app.register(characterRoutes);
@@ -77,6 +85,7 @@ export async function buildApp() {
   await app.register(botRoutes);
   await app.register(growthRoutes);
   await app.register(debugRoutes); // [iframe-timing] TEMP DEBUG
+  await app.register(adminSupabaseProxyRoutes);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],

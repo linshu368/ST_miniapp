@@ -48,7 +48,15 @@ export function getAdminClient(environment: AdminEnvironment): SupabaseClient {
     );
   }
 
-  const client = createClient(config.url, config.anonKey, {
+  if (!config.apiUrl) {
+    throw new Error(environment === 'test' ? '测试环境后端地址未配置' : '生产环境后端地址未配置');
+  }
+
+  // 浏览器只访问同一环境的 MiniApp 后端，由后端转发 Supabase 请求。
+  // 这样登录和 RPC 不再依赖浏览器到 Supabase 的跨域预检，避免 WKWebView/
+  // Firefox 将网络抖动误报成 CORS 并使草稿自动保存停摆。
+  const supabaseProxyUrl = `${config.apiUrl.replace(/\/+$/, '')}/api/admin/supabase`;
+  const client = createClient(supabaseProxyUrl, config.anonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -74,4 +82,8 @@ export function getAdminApiUrl(environment: AdminEnvironment): string {
     throw new Error(environment === 'test' ? '测试环境后端地址未配置' : '生产环境后端地址未配置');
   }
   return apiUrl;
+}
+
+export function getAdminSupabaseUrl(environment: AdminEnvironment): string {
+  return configs[environment].url.replace(/\/+$/, '');
 }

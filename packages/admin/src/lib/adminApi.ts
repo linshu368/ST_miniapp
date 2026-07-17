@@ -58,6 +58,21 @@ export interface AuditLog {
   created_at: string;
 }
 
+export interface CharacterCard {
+  id: string;
+  name: string;
+  description: string;
+  avatar_url: string;
+  tags: unknown;
+  creator: string;
+  first_mes: string;
+  creator_notes: string;
+  enabled: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 function unwrap<T>(data: T | null, error: { message: string } | null): T {
   if (error) throw new Error(error.message);
   if (data === null) throw new Error('后台接口没有返回数据');
@@ -158,6 +173,14 @@ export async function publishDraft(
   return unwrap(data as ConfigRelease | null, error);
 }
 
+export async function discardDraft(client: SupabaseClient, draftId: string): Promise<void> {
+  const { data, error } = await client
+    .schema('admin')
+    .rpc('discard_config_draft', { p_draft_id: draftId });
+  const discarded = unwrap(data as boolean | null, error);
+  if (!discarded) throw new Error('草稿未能放弃');
+}
+
 export async function rollbackRelease(
   client: SupabaseClient,
   releaseId: string
@@ -166,4 +189,9 @@ export async function rollbackRelease(
     .schema('admin')
     .rpc('rollback_config_release', { p_release_id: releaseId });
   return unwrap(data as ConfigRelease | null, error);
+}
+
+export async function getCharacters(client: SupabaseClient): Promise<CharacterCard[]> {
+  const { data, error } = await client.schema('admin').rpc('get_characters');
+  return unwrap((data ?? []) as CharacterCard[], error);
 }
