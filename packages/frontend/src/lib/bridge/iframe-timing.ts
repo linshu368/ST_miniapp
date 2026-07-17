@@ -36,6 +36,14 @@ export function markTimingAt(name: string, t: number, info?: string): void {
   if (info) details.set(name, info);
 }
 
+/**
+ * [iframe-timing] 只写 details 不写 marks：用于把「累计计数/结局」类信息挂到 beacon 的
+ * details={...} 里，而不在 timeline 制造一个无意义的时间点（如自愈恢复累计计数 `recovery`）。
+ */
+export function setTimingDetail(name: string, info: string): void {
+  details.set(name, info);
+}
+
 /** 页面级打点在每次进入对话页时重置，保留 bridge 生命周期打点（可能早于本次进入）。 */
 export function resetPageTiming(): void {
   for (const k of [
