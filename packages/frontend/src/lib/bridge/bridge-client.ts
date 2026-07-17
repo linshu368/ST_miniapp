@@ -24,7 +24,7 @@ import { RequestBuffer } from './buffer';
 import type { BufferedRequest } from './buffer';
 import { createHandshakeState, handleHandshakeMessage } from './handshake';
 import type { HandshakeState } from './handshake';
-import { markTiming, markTimingAt } from './iframe-timing'; // [iframe-timing] TEMP DEBUG
+import { markTiming, markTimingAt, setTimingDetail, flushIframeTiming } from './iframe-timing'; // [iframe-timing] TEMP DEBUG
 
 export type BridgeClientOptions = {
   actionTimeout?: number;
@@ -99,6 +99,14 @@ export class BridgeClient {
    * 让网关回 Clear-Site-Data 清缓存。普通握手超时（可能是网络问题）不置位，避免无谓清缓存。
    */
   private nukeCacheOnNextReconnect = false;
+  // [iframe-timing] TEMP DEBUG: 自愈恢复结局埋点累计器（坏模块图自愈成功率压测用）。
+  // boot_fatal 次数 / 清缓存重载次数 / 总重载次数 / 首次 boot_fatal 时刻；用于无歧义统计
+  // 触发→恢复成功/终态失败、以及首次 boot_fatal→chat_ready 的恢复耗时。随埋点整体移除。
+  private bootFatalCount = 0;
+  private nukeReloadCount = 0;
+  private reloadCount = 0;
+  private firstBootFatalAt = 0;
+  private recoveryBeaconEmitted = false;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private started = false;
   /** 本次 boot 尝试（start 或 reconnect reload）起点，用于点卡即检的相对阈值计算 */
@@ -129,6 +137,12 @@ export class BridgeClient {
     if (this.started) return;
     this.started = true;
     this.bootAttemptStartedAt = Date.now();
+    // [iframe-timing] TEMP DEBUG: 每次 boot episode 重置自愈恢复累计器
+    this.bootFatalCount = 0;
+    this.nukeReloadCount = 0;
+    this.reloadCount = 0;
+    this.firstBootFatalAt = 0;
+    this.recoveryBeaconEmitted = false;
 
     markTiming('bridge_start'); // [iframe-timing] TEMP DEBUG
     this.stateMachine.transition({ type: 'IFRAME_LOAD_START' });
@@ -317,9 +331,12 @@ export class BridgeClient {
     if (this.nukeCacheOnNextReconnect) {
       url.searchParams.set('miniapp_nuke', '1');
       this.nukeCacheOnNextReconnect = false;
+      this.nukeReloadCount += 1; // [iframe-timing] TEMP DEBUG
     } else {
       url.searchParams.delete('miniapp_nuke');
     }
+    this.reloadCount += 1; // [iframe-timing] TEMP DEBUG
+    this.updateRecoveryDetail();
     iframe.src = url.toString();
 
     // 重载后重新武装加载/握手到达看门狗（load 监听器挂在同一 iframe 元素上，reload 后仍有效）
@@ -562,9 +579,45 @@ export class BridgeClient {
     markTimingAt('boot_fatal', Date.now(), detail.slice(0, 160)); // [iframe-timing] TEMP DEBUG
     const status = this.stateMachine.getStatus();
     if (status !== 'loading' && status !== 'handshaked') return;
+    // [iframe-timing] TEMP DEBUG: 恢复结局累计（首次 boot_fatal 打独立 mark 供算恢复耗时）
+    this.bootFatalCount += 1;
+    if (this.firstBootFatalAt === 0) {
+      this.firstBootFatalAt = Date.now();
+      markTiming('first_boot_fatal');
+    }
+    this.updateRecoveryDetail();
     // 坏模块图源于缓存 → 下次重载必须清缓存（方案 a），否则复用同一坏缓存必再坏。
     this.nukeCacheOnNextReconnect = true;
     this.handleHandshakeTimeout();
+  }
+
+  /** [iframe-timing] TEMP DEBUG: 把自愈累计计数写进 beacon 的 details（不污染 timeline）。 */
+  private updateRecoveryDetail(): void {
+    setTimingDetail(
+      'recovery',
+      `boot_fatal=${this.bootFatalCount} nuke_reload=${this.nukeReloadCount} reload=${this.reloadCount}`
+    );
+  }
+
+  /**
+   * [iframe-timing] TEMP DEBUG: 发送自愈恢复结局 beacon。
+   * - recovery_ok：坏图后成功握手到 ready（每次 boot episode 只发一次）。
+   * - boot_disconnected：重连额度耗尽进终态（永久卡死的唯一确定信号——正常 beacon 只在
+   *   chat_ready 时发，终态时永远等不到 chat_ready，故必须在此单独兜底上报）。
+   */
+  private emitRecoveryBeacon(
+    outcome: 'recovered' | 'disconnected',
+    extra: Record<string, unknown> = {}
+  ): void {
+    flushIframeTiming({
+      reason: outcome === 'recovered' ? 'recovery_ok' : 'boot_disconnected',
+      recoveryOutcome: outcome,
+      bootFatalCount: this.bootFatalCount,
+      nukeReloadCount: this.nukeReloadCount,
+      reloadCount: this.reloadCount,
+      firstBootFatalAt: this.firstBootFatalAt || null,
+      ...extra,
+    });
   }
 
   private handleHandshake(msg: HandshakeMessage): void {
@@ -618,6 +671,12 @@ export class BridgeClient {
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = null;
+        }
+        // [iframe-timing] TEMP DEBUG: 本次 boot 若经历过坏图/重载才恢复到 ready，发一次恢复成功
+        // beacon（与是否点卡/select 成败解耦，给"boot 已自愈"一个精确时刻信号）。
+        if (!this.recoveryBeaconEmitted && (this.bootFatalCount > 0 || this.reloadCount > 0)) {
+          this.recoveryBeaconEmitted = true;
+          this.emitRecoveryBeacon('recovered');
         }
         // 连接就绪后开始周期性 ping，拉取 ST 镜像状态（currentModel/currentChatId 等），
         // 供前端 mirror store 同步（档位高亮 / 当前对话高亮）。
@@ -698,6 +757,9 @@ export class BridgeClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    // [iframe-timing] TEMP DEBUG: 终态即永久卡死信号。正常 beacon 只在 chat_ready 发，
+    // 终态永远等不到 chat_ready → 必须在此兜底上报，否则自愈失败(卡死)是统计盲区。
+    this.emitRecoveryBeacon('disconnected', { disconnectReason: reason.slice(0, 160) });
     this.stateMachine.transition({ type: 'DISCONNECT', reason });
     this.rejectAllPending(reason);
     this.buffer.clear();
