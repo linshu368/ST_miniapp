@@ -9,7 +9,7 @@ import type { TelegramUser } from '../../middleware/auth.js';
 
 const WORD_COUNT_OPTIONS: PreferredWordCount[] = ['100-300', '300-500', '500-800', '800+'];
 
-interface MiniappUserSettingsRow {
+export interface MiniappUserSettingsRow {
   user_id: string;
   tg_username: string | null;
   tg_first_name: string | null;
@@ -22,6 +22,7 @@ interface MiniappUserSettingsRow {
   pref_word_count: PreferredWordCount;
   pref_show_options: boolean;
   pref_custom_instructions: string | null;
+  selected_model_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -93,6 +94,27 @@ export class MiniappUserSettingsRepository {
       .select('*')
       .single();
     if (error) throw new Error(`更新用户头像失败：${error.message}`);
+    return data as MiniappUserSettingsRow;
+  }
+
+  async setSelectedModelId(
+    userId: string,
+    tgUser: TelegramUser,
+    selectedModelId: string
+  ): Promise<MiniappUserSettingsRow> {
+    await this.getOrCreate(userId, tgUser);
+    const { data, error } = await this.db
+      .from('miniapp_user_settings')
+      .update({
+        ...this.telegramProfileFields(tgUser),
+        selected_model_id: selectedModelId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .select('*')
+      .single();
+
+    if (error) throw new Error(`更新模型选择失败：${error.message}`);
     return data as MiniappUserSettingsRow;
   }
 

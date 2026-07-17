@@ -116,6 +116,9 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 023_move_wishes_to_miniapp.sql # 删除旧 Bot 许愿会话表，许愿池改为 MiniApp 页面
 024_cs_platform.sql # 内部 CS Platform：SQL 用户分层、Telegram 1V1 回访 SOP、Excel 导出审计
 025_preset_auto_promote.sql # 预设自动晋升触发器 + canonical_jsonb 序列化函数
+035_admin_config_management.sql # 运营后台草稿、发布、回滚和审计基础
+036_admin_operator_names.sql # 操作人姓名快照
+037_model_selector_complete.sql # 用户模型选择持久化、严格目录校验和活动草稿复用
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

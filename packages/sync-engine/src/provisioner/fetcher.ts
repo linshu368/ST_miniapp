@@ -9,6 +9,7 @@ import { getSupabaseClient, schemaClient } from '../lib/supabase.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from '../lib/config.js';
+import { resolveProvisionModel } from './model-resolution.js';
 
 // ─── 数据类型定义 ──────────────────────────────────────────────────────────────
 
@@ -95,7 +96,7 @@ export interface ProvisionData {
   systemFallbackCharacterId: string | null;
   /** 用户 ST persona（TG 名字/头像），name 为空表示无可用身份 */
   userPersona: UserPersona;
-  /** 默认 LLM 模型，来自 runtime_config.llm_model_tiers 中 isDefault=true 的项 */
+  /** 用户有效选择对应的 OpenRouter 模型；无有效选择时使用目录默认模型。 */
   defaultLlmModel: string | null;
 }
 
@@ -124,6 +125,7 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     platformSettingsResult,
     apiConfigResult,
     fallbackConfigResult,
+    llmCatalogResult,
     llmModelTiersResult,
   ] = await Promise.all([
     schemaClient('miniapp').from('users').select('st_handle').eq('id', userId).single(),
@@ -157,6 +159,12 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
       .eq('key', 'system_fallback_character_id')
       .maybeSingle(),
     // 默认模型配置
+    schemaClient('miniapp')
+      .from('runtime_config')
+      .select('value')
+      .eq('key', 'llm_model_catalog')
+      .maybeSingle(),
+    // 旧配置仅用于尚未发布正式目录的环境。
     schemaClient('miniapp')
       .from('runtime_config')
       .select('value')
@@ -210,13 +218,14 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
   const personaResult = await schemaClient('miniapp')
     .from('miniapp_user_settings')
     .select(
-      'display_name, tg_first_name, tg_last_name, tg_username, tg_avatar_url, custom_avatar_url'
+      'display_name, tg_first_name, tg_last_name, tg_username, tg_avatar_url, custom_avatar_url, selected_model_id'
     )
     .eq('user_id', userId)
     .maybeSingle();
-  const userPersona = resolveUserPersona(
-    personaResult.error ? null : (personaResult.data as PersonaSourceRow | null)
-  );
+  const personaSource = personaResult.error
+    ? null
+    : (personaResult.data as PersonaSourceRow | null);
+  const userPersona = resolveUserPersona(personaSource);
 
   // 解析兜底卡 ID：runtime_config.value 是 JSONB，存储格式为 JSON 字符串 '"uuid"'
   let systemFallbackCharacterId: string | null = null;
@@ -225,17 +234,23 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     systemFallbackCharacterId = typeof raw === 'string' ? raw : null;
   }
 
-  // 解析默认 LLM 模型
-  let defaultLlmModel: string | null = null;
-  if (!llmModelTiersResult.error && llmModelTiersResult.data) {
-    const raw = (llmModelTiersResult.data as { value: unknown }).value;
-    if (Array.isArray(raw)) {
-      const defaultTier = raw.find((t: any) => t.isDefault);
-      if (defaultTier && typeof defaultTier.modelName === 'string') {
-        defaultLlmModel = defaultTier.modelName;
-      }
-    }
+  const modelResolution = resolveProvisionModel({
+    catalog:
+      !llmCatalogResult.error && llmCatalogResult.data
+        ? (llmCatalogResult.data as { value: unknown }).value
+        : null,
+    selectedModelId: personaSource?.selected_model_id,
+    legacyTiers:
+      !llmModelTiersResult.error && llmModelTiersResult.data
+        ? (llmModelTiersResult.data as { value: unknown }).value
+        : null,
+  });
+  if (modelResolution.strictCatalogInvalid) {
+    console.warn(
+      '[provision-fetcher] Strict model catalog validation failed; runtime-compatible fallback was used'
+    );
   }
+  const defaultLlmModel = modelResolution.openrouterModelId;
 
   return {
     stHandle,
@@ -259,6 +274,7 @@ interface PersonaSourceRow {
   tg_username: string | null;
   tg_avatar_url: string | null;
   custom_avatar_url: string | null;
+  selected_model_id: string | null;
 }
 
 /**

@@ -81,6 +81,7 @@ export interface PersonaInput {
  * @param fallbackCharacterId    - 系统兜底卡 ID（character_ref 失效时的回退值，来自 runtime_config）
  * @param llmProxyUrl            - 写入 ST settings 的平台 LLM 代理地址
  * @param persona                - 用户 ST persona（TG 名字/头像），可选；name 为空则不注入
+ * @param effectiveLlmModel      - 用户稳定选择解析出的 OpenRouter 模型；无选择时为目录默认模型
  */
 export function mergeSettings(
   platformSettings: PlatformSettingsRow,
@@ -90,7 +91,7 @@ export function mergeSettings(
   fallbackCharacterId: string | undefined,
   llmProxyUrl: string,
   persona?: PersonaInput,
-  defaultLlmModel?: string | null
+  effectiveLlmModel?: string | null
 ): MergedSettings {
   // 深拷贝 A 作为 base（绝不修改原始对象）
   const merged = cloneDeep(platformSettings.settings_jsonb) as Record<string, unknown>;
@@ -162,16 +163,14 @@ export function mergeSettings(
   // - main_api 决定实际发起请求的顶层 API；默认模板常为 koboldhorde，会完全不碰上面的 custom_url。
   // - 仅当 chat_completion_source='custom' 时，ST 才使用 oai_settings.custom_url 指向的 backend 代理；
   //   openai 源会改用 reverse_proxy 并落到官方 OpenAI，openrouter 模型 id 也无法在官方端点识别。
-  // - custom_model 为空时 ST 无模型可发；回退到平台当前默认模型（与前端档位一致）。
-  //   用户经档位切换写入的 custom_model 已在上方按 writable_paths 合并，此处仅在缺省时兜底。
+  // - 数据库中的稳定模型选择是权威值；解析成功时覆盖历史 ST 镜像中的 custom_model。
+  // - 无正式目录/选择时，保留历史值；两者都为空才使用最后兜底。
   lodashSet(merged, 'main_api', 'openai');
   lodashSet(merged, 'oai_settings.chat_completion_source', 'custom');
-  if (!lodashGet(merged, 'oai_settings.custom_model')) {
-    lodashSet(
-      merged,
-      'oai_settings.custom_model',
-      defaultLlmModel || 'anthropic/claude-sonnet-4.5'
-    );
+  if (effectiveLlmModel) {
+    lodashSet(merged, 'oai_settings.custom_model', effectiveLlmModel);
+  } else if (!lodashGet(merged, 'oai_settings.custom_model')) {
+    lodashSet(merged, 'oai_settings.custom_model', 'anthropic/claude-sonnet-4.5');
   }
 
   // 强制设置上下文上限：默认模板的 openai_max_context=4095 过小，大角色卡（人设 + 内置正则）

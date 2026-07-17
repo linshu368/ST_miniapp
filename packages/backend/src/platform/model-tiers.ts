@@ -9,6 +9,7 @@
 
 import { getSupabaseClient } from '../lib/supabase.js';
 import {
+  ModelCatalogModelSchema,
   ModelCatalogSchema,
   resolveEnabledCatalogModel,
   type ModelCatalog,
@@ -23,8 +24,10 @@ export interface BackendModelTierConfig extends SharedModelTierConfig {
 
 let cachedTiers: BackendModelTierConfig[] | null = null;
 let cachedCatalog: ModelCatalog | null = null;
+let cachedCatalogVersion = 0;
 let lastFetchTime = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+export const LEGACY_MODEL_TAGLINE = ModelCatalogModelSchema.shape.tagline.parse('经典模型');
 
 const DEFAULT_TIERS: BackendModelTierConfig[] = [
   {
@@ -123,21 +126,35 @@ function catalogToLegacyTiers(catalog: ModelCatalog): BackendModelTierConfig[] {
   );
 }
 
-function legacyTiersToCatalog(tiers: BackendModelTierConfig[]): ModelCatalog {
+export function legacyTiersToCatalog(tiers: BackendModelTierConfig[]): ModelCatalog {
+  const usedStableIds = new Set<string>();
   const models = Array.from(new Map(tiers.map((tier) => [tier.modelName, tier])).values()).map(
-    (tier, sortOrder) => ({
-      id: tier.modelName,
-      openrouter_model_id: tier.modelName,
-      display_name: tier.label,
-      tagline: '',
-      price_input: 0,
-      price_output: 0,
-      enabled: true,
-      sort_order: sortOrder,
-    })
+    (tier, sortOrder) => {
+      const baseId =
+        tier.modelName
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9._-]+/g, '-')
+          .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '') || `model-${sortOrder + 1}`;
+      let stableId = baseId.slice(0, 64).replace(/[^a-z0-9]$/g, '');
+      if (usedStableIds.has(stableId)) stableId = `${stableId.slice(0, 60)}-${sortOrder + 1}`;
+      usedStableIds.add(stableId);
+      return {
+        id: stableId,
+        openrouter_model_id: tier.modelName,
+        display_name: tier.label.slice(0, 40),
+        tagline: LEGACY_MODEL_TAGLINE,
+        price_input: 0,
+        price_output: 0,
+        enabled: true,
+        sort_order: sortOrder,
+      };
+    }
   );
   const defaultTier = tiers.find((tier) => tier.isDefault) ?? tiers[0];
-  const defaultModelId = defaultTier?.modelName ?? models[0]?.id;
+  const defaultModelId =
+    models.find((model) => model.openrouter_model_id === defaultTier?.modelName)?.id ??
+    models[0]?.id;
   if (!defaultModelId) {
     throw new Error('Cannot build a model catalog from an empty legacy tier list');
   }
@@ -149,7 +166,7 @@ function legacyTiersToCatalog(tiers: BackendModelTierConfig[]): ModelCatalog {
         tier: 'standard',
         label: 'Standard',
         color: '#808080',
-        cost_hint: '',
+        cost_hint: '兼容历史配置',
         sort_order: 0,
         models,
       },
@@ -173,14 +190,40 @@ async function fetchRuntimeConfigValue(key: string): Promise<unknown | null> {
   return data?.value ?? null;
 }
 
-async function refreshModelConfig(): Promise<void> {
+interface RuntimeConfigEntry {
+  value: unknown;
+  version: number;
+}
+
+async function fetchRuntimeConfigEntry(key: string): Promise<RuntimeConfigEntry | null> {
+  const db = getSupabaseClient().schema('miniapp');
+  const { data, error } = await db
+    .from('runtime_config')
+    .select('value,version')
+    .eq('key', key)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`[model-tiers] Failed to fetch ${key} metadata:`, error);
+    return null;
+  }
+  if (!data) return null;
+  return {
+    value: data.value,
+    version: typeof data.version === 'number' ? data.version : 0,
+  };
+}
+
+async function refreshModelConfig(catalogEntry?: RuntimeConfigEntry | null): Promise<void> {
   const now = Date.now();
 
   try {
-    const catalog = normalizeCatalog(await fetchRuntimeConfigValue('llm_model_catalog'));
+    const entry = catalogEntry ?? (await fetchRuntimeConfigEntry('llm_model_catalog'));
+    const catalog = normalizeCatalog(entry?.value ?? null);
     if (catalog) {
       cachedCatalog = catalog;
       cachedTiers = catalogToLegacyTiers(catalog);
+      cachedCatalogVersion = entry?.version ?? 0;
       lastFetchTime = now;
       return;
     }
@@ -189,6 +232,7 @@ async function refreshModelConfig(): Promise<void> {
     if (legacyTiers) {
       cachedTiers = legacyTiers;
       cachedCatalog = legacyTiersToCatalog(legacyTiers);
+      cachedCatalogVersion = 0;
       lastFetchTime = now;
       return;
     }
@@ -199,18 +243,35 @@ async function refreshModelConfig(): Promise<void> {
   if (!cachedTiers || !cachedCatalog) {
     cachedTiers = DEFAULT_TIERS;
     cachedCatalog = legacyTiersToCatalog(DEFAULT_TIERS);
+    cachedCatalogVersion = 0;
     lastFetchTime = now;
   }
 }
 
 async function ensureModelConfig(): Promise<void> {
-  if (cachedTiers && cachedCatalog && Date.now() - lastFetchTime < CACHE_TTL_MS) return;
-  await refreshModelConfig();
+  const catalogEntry = await fetchRuntimeConfigEntry('llm_model_catalog');
+  if (
+    cachedTiers &&
+    cachedCatalog &&
+    catalogEntry &&
+    shouldReuseCatalogCache(cachedCatalogVersion, catalogEntry.version)
+  ) {
+    return;
+  }
+  if (cachedTiers && cachedCatalog && !catalogEntry && Date.now() - lastFetchTime < CACHE_TTL_MS) {
+    return;
+  }
+  await refreshModelConfig(catalogEntry);
+}
+
+export function shouldReuseCatalogCache(cachedVersion: number, runtimeVersion: number): boolean {
+  return cachedVersion === runtimeVersion;
 }
 
 export function invalidateModelConfigCache(): void {
   cachedTiers = null;
   cachedCatalog = null;
+  cachedCatalogVersion = 0;
   lastFetchTime = 0;
 }
 
@@ -220,6 +281,17 @@ export const invalidateModelTiersCache = invalidateModelConfigCache;
 export async function fetchModelCatalog(): Promise<ModelCatalog> {
   await ensureModelConfig();
   return cachedCatalog ?? legacyTiersToCatalog(DEFAULT_TIERS);
+}
+
+export async function fetchModelCatalogSnapshot(): Promise<{
+  catalog: ModelCatalog;
+  version: number;
+}> {
+  await ensureModelConfig();
+  return {
+    catalog: cachedCatalog ?? legacyTiersToCatalog(DEFAULT_TIERS),
+    version: cachedCatalogVersion,
+  };
 }
 
 export async function fetchModelTiers(): Promise<BackendModelTierConfig[]> {

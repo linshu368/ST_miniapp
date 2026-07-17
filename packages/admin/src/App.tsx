@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import {
   Alert,
@@ -54,6 +54,7 @@ import {
 } from './lib/configSchemas';
 import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
 import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRouterModels';
+import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
 
 type ViewKey = 'configs' | 'releases' | 'audit';
 
@@ -139,6 +140,10 @@ function formatChangeValue(value: unknown): string {
 function getReleaseChangeSummary(allReleases: ConfigRelease[], release: ConfigRelease): string {
   const previousRelease = getPreviousRelease(allReleases, release);
   if (!previousRelease) return '首次发布完整配置';
+  if (release.config_key === 'llm_model_catalog') {
+    const modelSummary = getModelCatalogChangeSummary(previousRelease.value, release.value);
+    if (modelSummary) return modelSummary;
+  }
   const changes = collectValueChanges(previousRelease.value, release.value);
   if (changes.length === 0) return '配置内容未变化';
   return `${changes.length} 项：${changes
@@ -350,6 +355,10 @@ function AdminWorkspace(props: {
   const [openRouterError, setOpenRouterError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<
+    'idle' | 'pending' | 'saving' | 'saved' | 'invalid' | 'error'
+  >('idle');
+  const hydratedValueRef = useRef('');
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -412,7 +421,11 @@ function AdminWorkspace(props: {
     () => releases.filter((release) => release.config_key === selectedKey),
     [releases, selectedKey]
   );
-  const canWrite = props.admin.role !== 'viewer';
+  const canWrite =
+    props.admin.role !== 'viewer' &&
+    (props.environment === 'production'
+      ? props.admin.can_access_prod
+      : props.admin.can_access_test);
   const pricingConfig = useMemo<DisplayPricingConfig>(() => {
     const runtimeValue = configs.find((config) => config.key === 'llm_pricing_config')?.value;
     const parsed = LlmPricingConfigSchema.safeParse(
@@ -440,25 +453,84 @@ function AdminWorkspace(props: {
   }, [configs, releases]);
 
   useEffect(() => {
-    setWorkingValue(
-      structuredClone(
-        latestDraft?.value ?? currentConfig?.value ?? configMetadata[selectedKey].defaultValue
-      )
+    const nextValue = structuredClone(
+      latestDraft?.value ?? currentConfig?.value ?? configMetadata[selectedKey].defaultValue
     );
+    hydratedValueRef.current = JSON.stringify(nextValue);
+    setWorkingValue(nextValue);
+    setAutoSaveStatus('idle');
   }, [currentConfig, latestDraft, selectedKey]);
 
-  const validateOpenRouterConfig = (key: ManagedConfigKey, value: unknown): void => {
-    if (key !== 'llm_model_catalog') return;
-    if (!openRouterDirectory) {
-      throw new Error('OpenRouter 模型目录尚未同步，无法校验模型配置');
-    }
+  const validateOpenRouterConfig = useCallback(
+    (key: ManagedConfigKey, value: unknown): void => {
+      if (key !== 'llm_model_catalog') return;
+      if (!openRouterDirectory) {
+        throw new Error('OpenRouter 模型目录尚未同步，无法校验模型配置');
+      }
 
-    const catalog = ModelCatalogSchema.parse(value) as ModelCatalog;
-    const issues = getOpenRouterCatalogIssues(catalog, openRouterDirectory);
-    if (issues.length > 0) {
-      throw new Error(`模型配置未通过 OpenRouter 校验：${issues.join('；')}`);
-    }
-  };
+      const catalog = ModelCatalogSchema.parse(value) as ModelCatalog;
+      const issues = getOpenRouterCatalogIssues(catalog, openRouterDirectory);
+      if (issues.length > 0) {
+        throw new Error(`模型配置未通过 OpenRouter 校验：${issues.join('；')}`);
+      }
+    },
+    [openRouterDirectory]
+  );
+
+  useEffect(() => {
+    if (selectedKey !== 'llm_model_catalog' || !canWrite || loading) return;
+    const serialized = JSON.stringify(workingValue);
+    if (serialized === hydratedValueRef.current) return;
+
+    setAutoSaveStatus('pending');
+    const timer = window.setTimeout(async () => {
+      let parsed: unknown;
+      try {
+        parsed = parseManagedConfig(selectedKey, workingValue);
+        validateOpenRouterConfig(selectedKey, parsed);
+      } catch {
+        setAutoSaveStatus('invalid');
+        return;
+      }
+
+      setAutoSaveStatus('saving');
+      try {
+        const savedDraft = await saveDraft({
+          client: props.client,
+          environment: props.environment,
+          key: selectedKey,
+          value: parsed,
+          description: configMetadata[selectedKey].description,
+        });
+        hydratedValueRef.current = serialized;
+        setDrafts((current) => [
+          savedDraft,
+          ...current.filter(
+            (draft) =>
+              !(
+                draft.environment === savedDraft.environment &&
+                draft.config_key === savedDraft.config_key &&
+                draft.status === 'draft'
+              )
+          ),
+        ]);
+        setAutoSaveStatus('saved');
+      } catch (error) {
+        console.error('[admin] model catalog autosave failed:', error);
+        setAutoSaveStatus('error');
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    canWrite,
+    loading,
+    props.client,
+    props.environment,
+    selectedKey,
+    validateOpenRouterConfig,
+    workingValue,
+  ]);
 
   const requireWriteConfirmation = async (
     action: string,
@@ -630,6 +702,31 @@ function AdminWorkspace(props: {
                   <Space>
                     <Tag>正式版本 {currentConfig?.version ?? 0}</Tag>
                     {latestDraft ? <Tag color="orange">有未发布草稿</Tag> : <Tag>已同步</Tag>}
+                    {selectedKey === 'llm_model_catalog' ? (
+                      <Tag
+                        color={
+                          autoSaveStatus === 'error'
+                            ? 'red'
+                            : autoSaveStatus === 'invalid'
+                              ? 'orange'
+                              : autoSaveStatus === 'saved'
+                                ? 'green'
+                                : 'blue'
+                        }
+                      >
+                        {autoSaveStatus === 'pending'
+                          ? '等待自动保存'
+                          : autoSaveStatus === 'saving'
+                            ? '自动保存中'
+                            : autoSaveStatus === 'saved'
+                              ? '草稿已自动保存'
+                              : autoSaveStatus === 'invalid'
+                                ? '请完善字段后自动保存'
+                                : autoSaveStatus === 'error'
+                                  ? '自动保存失败'
+                                  : '自动保存已开启'}
+                      </Tag>
+                    ) : null}
                   </Space>
                 }
               >
@@ -640,7 +737,11 @@ function AdminWorkspace(props: {
                   <Alert
                     type="info"
                     showIcon
-                    message="当前账号为 viewer，只能查看，不能保存或发布。"
+                    message={
+                      props.admin.role === 'viewer'
+                        ? '当前账号为 viewer，只能查看，不能保存或发布。'
+                        : '当前账号没有此环境的写入权限。'
+                    }
                     className="form-alert"
                   />
                 ) : null}
@@ -669,7 +770,13 @@ function AdminWorkspace(props: {
                   <Button
                     danger={props.environment === 'production'}
                     loading={saving}
-                    disabled={!canWrite || !latestDraft}
+                    disabled={
+                      !canWrite ||
+                      !latestDraft ||
+                      autoSaveStatus === 'pending' ||
+                      autoSaveStatus === 'saving' ||
+                      autoSaveStatus === 'invalid'
+                    }
                     onClick={handlePublish}
                   >
                     发布当前草稿

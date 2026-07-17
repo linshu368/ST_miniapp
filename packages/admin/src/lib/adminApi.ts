@@ -138,7 +138,7 @@ export async function saveDraft(input: {
   value: unknown;
   description: string;
 }): Promise<ConfigDraft> {
-  const { data, error } = await input.client.schema('admin').rpc('save_config_draft', {
+  const { data, error } = await input.client.schema('admin').rpc('upsert_config_draft', {
     p_environment: input.environment,
     p_config_key: input.key,
     p_value: input.value,
