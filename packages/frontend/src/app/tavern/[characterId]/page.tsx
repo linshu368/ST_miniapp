@@ -10,7 +10,12 @@ import { ChatSplash } from '@/components/tavern/chat-splash';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 // [iframe-timing] TEMP DEBUG
-import { markTiming, resetPageTiming, flushIframeTiming } from '@/lib/bridge/iframe-timing';
+import {
+  markTiming,
+  resetPageTiming,
+  flushIframeTiming,
+  harvestStIframeStallDiagnostics,
+} from '@/lib/bridge/iframe-timing';
 
 // [iframe-timing] TEMP DEBUG: 失败路径停摆上报阈值。beacon 原本只在 select 成功后发送，
 // 卡死场景零遥测无法定位。两级停摆定时器把卡死样本的 timeline 抢救回来：
@@ -72,6 +77,8 @@ export default function TavernChatPage() {
     const gateStallTimer = window.setTimeout(() => {
       if (gateOpenRef.current) return;
       markTiming('gate_stall');
+      // [iframe-timing] round5: 同源收割 iframe 内 fetch 生命周期/资源/异常，定位楔死请求
+      harvestStIframeStallDiagnostics();
       flushIframeTiming({
         characterId,
         reason: 'gate_stall',
@@ -96,6 +103,8 @@ export default function TavernChatPage() {
     // 超时触发的 catch），覆盖「请求在途永挂」形态；成功/失败时定时器均被解除。
     const selectStallTimer = window.setTimeout(() => {
       markTiming('select_stall');
+      // [iframe-timing] round5: select 在途挂起同样收割 iframe 内部状态
+      harvestStIframeStallDiagnostics();
       flushIframeTiming({
         characterId,
         bridgeStatusAtGate,

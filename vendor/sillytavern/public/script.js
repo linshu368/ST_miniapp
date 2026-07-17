@@ -816,6 +816,56 @@ export async function pingServer() {
 const miniAppFastBoot =
   new URLSearchParams(window.location.search).get('miniapp_fast_boot') === '1';
 
+// [miniapp-patch][iframe-timing] TEMP DEBUG 停摆定位探针：以 fetch 包装记录请求生命周期
+// （resource timing 不含在途未归的请求，无法区分「发出未归」与「从未发出」），并捕获静默
+// 异常。父窗口在 gate_stall 停摆上报时同源直读 window.__miniappFetchLog / __miniappBootErrors。
+// 模块顶层执行，先于 firstLoadInit 的首个 fetch（/csrf-token）。随整套埋点一并移除。
+const miniAppFetchLog = [];
+const miniAppBootErrors = [];
+window.__miniappFetchLog = miniAppFetchLog;
+window.__miniappBootErrors = miniAppBootErrors;
+if (miniAppFastBoot) {
+  const miniAppNativeFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const rawUrl =
+      typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+    const entry = {
+      url: rawUrl.slice(0, 160),
+      start: Math.round(performance.now()),
+      end: -1,
+      status: 0,
+      err: '',
+    };
+    if (miniAppFetchLog.length < 120) miniAppFetchLog.push(entry);
+    return miniAppNativeFetch(input, init).then(
+      (res) => {
+        entry.end = Math.round(performance.now());
+        entry.status = res.status;
+        return res;
+      },
+      (err) => {
+        entry.end = Math.round(performance.now());
+        entry.err = String((err && err.message) || err).slice(0, 80);
+        throw err;
+      }
+    );
+  };
+  window.addEventListener('error', (e) => {
+    if (miniAppBootErrors.length < 20) {
+      miniAppBootErrors.push(
+        `err:${String(e.message || '').slice(0, 120)}@${String(e.filename || '').slice(-60)}:${e.lineno || 0}`
+      );
+    }
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    if (miniAppBootErrors.length < 20) {
+      miniAppBootErrors.push(
+        `rej:${String((e.reason && e.reason.message) || e.reason || '').slice(0, 120)}`
+      );
+    }
+  });
+}
+
 //MARK: firstLoadInit
 async function firstLoadInit() {
   try {
