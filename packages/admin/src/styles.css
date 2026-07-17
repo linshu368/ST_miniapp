@@ -203,6 +203,67 @@ body {
   color: #067647;
 }
 
+.character-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.character-admin-card {
+  height: 100%;
+}
+
+.character-admin-card .ant-card-body {
+  display: flex;
+  height: 100%;
+  min-height: 270px;
+  flex-direction: column;
+}
+
+.character-admin-card-header,
+.character-detail-heading {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.character-admin-card-header > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.character-admin-card-header h4,
+.character-detail-heading h3 {
+  margin: 0 0 4px !important;
+}
+
+.character-description {
+  min-height: 66px;
+  margin: 18px 0 12px !important;
+}
+
+.character-tags {
+  display: flex;
+  min-height: 32px;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.character-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 14px;
+}
+
+.character-long-copy {
+  max-height: 240px;
+  margin: 0 !important;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 900px) {
   .admin-sider {
     width: 180px !important;
@@ -228,6 +289,10 @@ body {
 
   .release-change-item {
     grid-template-columns: 1fr;
+  }
+
+  .character-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   }
 }
 

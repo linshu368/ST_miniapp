@@ -30,8 +30,11 @@ import {
 } from '@miniapp/shared';
 import { LoginPage } from './components/LoginPage';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
+import { CharacterCardsView } from './components/CharacterCardsView';
 import {
+  discardDraft,
   getAuditLogs,
+  getCharacters,
   getCurrentAdmin,
   getDrafts,
   getManagedConfigs,
@@ -41,6 +44,7 @@ import {
   saveDraft,
   type AdminUser,
   type AuditLog,
+  type CharacterCard,
   type ConfigDraft,
   type ConfigRelease,
   type ManagedConfig,
@@ -56,7 +60,7 @@ import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from '
 import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
 
-type ViewKey = 'configs' | 'releases' | 'audit';
+type ViewKey = 'configs' | 'characters' | 'releases' | 'audit';
 
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
@@ -345,6 +349,9 @@ function AdminWorkspace(props: {
   const [drafts, setDrafts] = useState<ConfigDraft[]>([]);
   const [releases, setReleases] = useState<ConfigRelease[]>([]);
   const [audits, setAudits] = useState<AuditLog[]>([]);
+  const [characters, setCharacters] = useState<CharacterCard[]>([]);
+  const [charactersLoading, setCharactersLoading] = useState(false);
+  const [charactersError, setCharactersError] = useState<string | null>(null);
   const [workingValue, setWorkingValue] = useState<unknown>(
     configMetadata.llm_model_catalog.defaultValue
   );
@@ -383,6 +390,22 @@ function AdminWorkspace(props: {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  const reloadCharacters = useCallback(async () => {
+    setCharactersLoading(true);
+    setCharactersError(null);
+    try {
+      setCharacters(await getCharacters(props.client));
+    } catch (error) {
+      setCharactersError(error instanceof Error ? error.message : '角色卡加载失败');
+    } finally {
+      setCharactersLoading(false);
+    }
+  }, [props.client]);
+
+  useEffect(() => {
+    if (view === 'characters') void reloadCharacters();
+  }, [reloadCharacters, view]);
 
   const reloadOpenRouter = useCallback(
     async (forceRefresh = false) => {
@@ -607,6 +630,35 @@ function AdminWorkspace(props: {
     }
   };
 
+  const handleDiscardDraft = async () => {
+    if (!canWrite || !latestDraft || autoSaveStatus === 'pending' || autoSaveStatus === 'saving') {
+      return;
+    }
+    const confirmed = await confirmAction(
+      `${props.environment === 'production' ? '生产环境：' : ''}放弃当前草稿？`,
+      '草稿会被永久删除，编辑器将恢复为当前正式版本。此操作会写入审计日志。',
+      props.environment === 'production'
+    );
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await discardDraft(props.client, latestDraft.id);
+      const publishedValue = structuredClone(
+        currentConfig?.value ?? configMetadata[selectedKey].defaultValue
+      );
+      hydratedValueRef.current = JSON.stringify(publishedValue);
+      setWorkingValue(publishedValue);
+      setDrafts((current) => current.filter((draft) => draft.id !== latestDraft.id));
+      setAutoSaveStatus('idle');
+      message.success('草稿已放弃，已恢复当前正式版本');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '放弃草稿失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleRollback = async (release: ConfigRelease) => {
     if (!canWrite) return;
     setSaving(true);
@@ -644,6 +696,7 @@ function AdminWorkspace(props: {
           onClick={({ key }) => setView(key as ViewKey)}
           items={[
             { key: 'configs', label: '运营配置' },
+            { key: 'characters', label: '角色卡' },
             { key: 'releases', label: '发布历史' },
             { key: 'audit', label: '审计日志' },
           ]}
@@ -684,6 +737,14 @@ function AdminWorkspace(props: {
             <div className="content-loading">
               <Spin />
             </div>
+          ) : view === 'characters' ? (
+            <CharacterCardsView
+              characters={characters}
+              environment={props.environment}
+              loading={charactersLoading}
+              error={charactersError}
+              onRefresh={() => void reloadCharacters()}
+            />
           ) : view === 'configs' ? (
             <div className="config-grid">
               <Card className="config-nav-card" title="白名单配置">
@@ -782,6 +843,19 @@ function AdminWorkspace(props: {
                     发布当前草稿
                   </Button>
                   <Button
+                    danger
+                    loading={saving}
+                    disabled={
+                      !canWrite ||
+                      !latestDraft ||
+                      autoSaveStatus === 'pending' ||
+                      autoSaveStatus === 'saving'
+                    }
+                    onClick={() => void handleDiscardDraft()}
+                  >
+                    放弃当前草稿
+                  </Button>
+                  <Button
                     onClick={() =>
                       setWorkingValue(
                         structuredClone(
@@ -792,7 +866,7 @@ function AdminWorkspace(props: {
                       )
                     }
                   >
-                    放弃未保存编辑
+                    撤销未保存编辑
                   </Button>
                 </Space>
                 <Divider>该配置发布历史</Divider>

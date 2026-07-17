@@ -120,6 +120,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 036_admin_operator_names.sql # 操作人姓名快照
 037_model_selector_complete.sql # 用户模型选择持久化、严格目录校验和活动草稿复用
 038_seed_payment_plans.sql # 将内置充值套餐迁入 runtime_config，后续由运营平台发布调整
+039_admin_character_cards.sql # 放弃配置草稿与运营后台角色卡只读列表
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
