@@ -495,6 +495,11 @@ export class BridgeClient {
           typeof data.info === 'string' ? data.info : undefined
         );
         break;
+      // boot 致命异常（vendor 探针上报，如坏模块图 TDZ）：boot 已确定死亡，
+      // 不必干等 10~45s 看门狗，立即走既有重连预算重载。
+      case 'boot-fatal':
+        this.handleBootFatal(typeof data.detail === 'string' ? data.detail : '');
+        break;
     }
   }
 
@@ -529,6 +534,19 @@ export class BridgeClient {
         /* subscriber error */
       }
     });
+  }
+
+  /**
+   * boot 致命异常处理：vendor 探针在握手前捕获到坏模块图签名（TDZ ReferenceError、
+   * 模块加载失败等）即上报。此时 boot 已确定死亡（firstLoadInit 中断、握手永不到达），
+   * 立即触发重连重载，复用既有的退避与额度（额度耗尽仍走 disconnect 终态）。
+   * 仅在 interactive 之前介入——interactive 后 ST 已可服务，偶发错误不值得重载。
+   */
+  private handleBootFatal(detail: string): void {
+    markTimingAt('boot_fatal', Date.now(), detail.slice(0, 160)); // [iframe-timing] TEMP DEBUG
+    const status = this.stateMachine.getStatus();
+    if (status !== 'loading' && status !== 'handshaked') return;
+    this.handleHandshakeTimeout();
   }
 
   private handleHandshake(msg: HandshakeMessage): void {
