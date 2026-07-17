@@ -9,6 +9,7 @@
 
 import { getSupabaseClient } from '../lib/supabase.js';
 import {
+  ModelCatalogModelSchema,
   ModelCatalogSchema,
   resolveEnabledCatalogModel,
   type ModelCatalog,
@@ -26,6 +27,7 @@ let cachedCatalog: ModelCatalog | null = null;
 let cachedCatalogVersion = 0;
 let lastFetchTime = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+export const LEGACY_MODEL_TAGLINE = ModelCatalogModelSchema.shape.tagline.parse('经典模型');
 
 const DEFAULT_TIERS: BackendModelTierConfig[] = [
   {
@@ -141,7 +143,7 @@ export function legacyTiersToCatalog(tiers: BackendModelTierConfig[]): ModelCata
         id: stableId,
         openrouter_model_id: tier.modelName,
         display_name: tier.label.slice(0, 40),
-        tagline: '经典模型',
+        tagline: LEGACY_MODEL_TAGLINE,
         price_input: 0,
         price_output: 0,
         enabled: true,

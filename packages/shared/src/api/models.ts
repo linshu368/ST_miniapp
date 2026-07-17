@@ -159,6 +159,54 @@ export type GetModelCatalogData = z.infer<typeof GetModelCatalogDataSchema>;
 export type SelectModelRequest = z.infer<typeof SelectModelRequestSchema>;
 export type SelectModelData = z.infer<typeof SelectModelDataSchema>;
 
+const RuntimeCatalogModelSchema = z.object({
+  id: z.string().trim().min(1),
+  openrouter_model_id: z.string().trim().min(1),
+  enabled: z.boolean().optional().default(true),
+});
+
+const RuntimeModelCatalogSchema = z.object({
+  default_model_id: z.string().trim().min(1),
+  tiers: z
+    .array(
+      z.object({
+        models: z.array(RuntimeCatalogModelSchema),
+      })
+    )
+    .min(1),
+});
+
+export interface RuntimeCatalogModel {
+  id: string;
+  openrouter_model_id: string;
+}
+
+/**
+ * Read only the fields required to provision ST. This intentionally ignores
+ * display-only validation so catalogs published before UI schema tightening
+ * remain usable without conflating stable ids with provider ids.
+ */
+export function resolveRuntimeCatalogModel(
+  value: unknown,
+  selectedModelId?: string | null,
+  fallbackToDefault = true
+): RuntimeCatalogModel | null {
+  const parsed = RuntimeModelCatalogSchema.safeParse(value);
+  if (!parsed.success) return null;
+
+  const models = parsed.data.tiers.flatMap((tier) => tier.models);
+  const requestedId =
+    selectedModelId && models.some((model) => model.id === selectedModelId && model.enabled)
+      ? selectedModelId
+      : fallbackToDefault
+        ? parsed.data.default_model_id
+        : null;
+  if (!requestedId) return null;
+
+  const model = models.find((candidate) => candidate.id === requestedId && candidate.enabled);
+  return model ? { id: model.id, openrouter_model_id: model.openrouter_model_id } : null;
+}
+
 export function toPublicModelCatalog(catalog: ModelCatalog): PublicModelCatalog {
   return PublicModelCatalogSchema.parse({
     default_model_id: catalog.default_model_id,

@@ -8,6 +8,7 @@ import type { PublicModelCatalogTier } from '@miniapp/shared';
 import { Check, ChevronDown, ChevronLeft, Sparkles } from 'lucide-react';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 import { useQueryClient } from '@tanstack/react-query';
+import { optimisticBridgeAction } from '@/lib/bridge/optimistic-bridge-action';
 
 export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => void }) {
   const bridgeStatus = useBridgeStatus();
@@ -56,16 +57,31 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
     if (isDisabled || modelId === selectedModelId) return;
     const previousId = selectedModelId;
     const previousRuntimeModel = currentModel;
-    let selectionPersisted = false;
-    setSelectedModelId(modelId);
     setFeedback(null);
     try {
-      const result = await selectModel.mutateAsync({ model_id: modelId });
-      selectionPersisted = true;
-      useSTMirrorStore.getState().updatePartial({ currentModel: result.openrouter_model_id });
-      await platformAction('changeModel', {
-        provider: 'openrouter',
-        modelName: result.openrouter_model_id,
+      const result = await optimisticBridgeAction({
+        applyOptimistic: () => setSelectedModelId(modelId),
+        persist: () => selectModel.mutateAsync({ model_id: modelId }),
+        bridge: async (persisted) => {
+          useSTMirrorStore
+            .getState()
+            .updatePartial({ currentModel: persisted.openrouter_model_id });
+          await platformAction('changeModel', {
+            provider: 'openrouter',
+            modelName: persisted.openrouter_model_id,
+          });
+        },
+        rollbackPersisted: () =>
+          previousId
+            ? selectModel.mutateAsync({ model_id: previousId })
+            : Promise.resolve(undefined),
+        rollbackOptimistic: () => {
+          setSelectedModelId(previousId);
+          useSTMirrorStore.getState().updatePartial({ currentModel: previousRuntimeModel });
+        },
+        onRollbackError: (rollbackError) => {
+          console.error('[ModelTierSwitcher] selection rollback failed:', rollbackError);
+        },
       });
       queryClient.setQueryData(['modelCatalog'], (current: typeof data) =>
         current
@@ -80,14 +96,7 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
       window.setTimeout(props.onClose, 250);
     } catch (err) {
       console.error('[ModelTierSwitcher] changeModel failed:', err);
-      setSelectedModelId(previousId);
-      useSTMirrorStore.getState().updatePartial({ currentModel: previousRuntimeModel });
       setFeedback(err instanceof Error ? err.message : '该模型暂不可用');
-      if (selectionPersisted && previousId) {
-        void selectModel.mutateAsync({ model_id: previousId }).catch((rollbackError) => {
-          console.error('[ModelTierSwitcher] selection rollback failed:', rollbackError);
-        });
-      }
       void refetch();
     }
   }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { legacyTiersToCatalog, shouldReuseCatalogCache } from './model-tiers.js';
+import {
+  LEGACY_MODEL_TAGLINE,
+  legacyTiersToCatalog,
+  shouldReuseCatalogCache,
+} from './model-tiers.js';
+import { ModelCatalogModelSchema } from '@miniapp/shared';
 
 describe('model catalog runtime helpers', () => {
   it('turns provider slugs into separate stable ids for legacy fallback', () => {
@@ -21,5 +26,9 @@ describe('model catalog runtime helpers', () => {
   it('invalidates the cache whenever runtime_config.version changes', () => {
     expect(shouldReuseCatalogCache(4, 4)).toBe(true);
     expect(shouldReuseCatalogCache(4, 5)).toBe(false);
+  });
+
+  it('keeps the legacy compatibility tagline valid against the formal schema', () => {
+    expect(ModelCatalogModelSchema.shape.tagline.parse(LEGACY_MODEL_TAGLINE)).toBe('经典模型');
   });
 });

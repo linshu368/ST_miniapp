@@ -4,6 +4,7 @@ import {
   ModelCatalogSchema,
   resolveEffectiveSelectedModelId,
   resolveEnabledCatalogModel,
+  resolveRuntimeCatalogModel,
   toPublicModelCatalog,
 } from '../api/models.js';
 
@@ -128,5 +129,26 @@ describe('OpenRouter model helpers', () => {
     expect(resolveEffectiveSelectedModelId(catalog, 'flash')).toBe('flash');
     expect(resolveEffectiveSelectedModelId(catalog, 'removed')).toBe('flash');
     expect(resolveEffectiveSelectedModelId(catalog, null)).toBe('flash');
+  });
+
+  it('resolves runtime mappings from catalogs that fail display-only validation', () => {
+    const legacyDisplayCatalog = structuredClone(validCatalog);
+    legacyDisplayCatalog.tiers[0]!.color = 'purple';
+    legacyDisplayCatalog.tiers[0]!.models[0]!.tagline = '';
+    legacyDisplayCatalog.tiers[0]!.models[0]!.price_input = 0.123;
+
+    expect(ModelCatalogSchema.safeParse(legacyDisplayCatalog).success).toBe(false);
+    expect(resolveRuntimeCatalogModel(legacyDisplayCatalog, 'flash', false)).toEqual({
+      id: 'flash',
+      openrouter_model_id: 'google/gemini-flash',
+    });
+  });
+
+  it('never treats an unknown stable id as a provider model id', () => {
+    expect(resolveRuntimeCatalogModel(validCatalog, 'vendor/unknown', false)).toBeNull();
+    expect(resolveRuntimeCatalogModel(validCatalog, 'vendor/unknown')).toEqual({
+      id: 'flash',
+      openrouter_model_id: 'google/gemini-flash',
+    });
   });
 });

@@ -9,11 +9,7 @@ import { getSupabaseClient, schemaClient } from '../lib/supabase.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from '../lib/config.js';
-import {
-  ModelCatalogSchema,
-  resolveEffectiveSelectedModelId,
-  resolveEnabledCatalogModel,
-} from '@miniapp/shared';
+import { resolveProvisionModel } from './model-resolution.js';
 
 // ─── 数据类型定义 ──────────────────────────────────────────────────────────────
 
@@ -238,31 +234,23 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     systemFallbackCharacterId = typeof raw === 'string' ? raw : null;
   }
 
-  // 优先按正式目录解析用户稳定 ID；无选择或已下架时回退目录默认模型。
-  let defaultLlmModel: string | null = null;
-  if (!llmCatalogResult.error && llmCatalogResult.data) {
-    const parsed = ModelCatalogSchema.safeParse(
-      (llmCatalogResult.data as { value: unknown }).value
+  const modelResolution = resolveProvisionModel({
+    catalog:
+      !llmCatalogResult.error && llmCatalogResult.data
+        ? (llmCatalogResult.data as { value: unknown }).value
+        : null,
+    selectedModelId: personaSource?.selected_model_id,
+    legacyTiers:
+      !llmModelTiersResult.error && llmModelTiersResult.data
+        ? (llmModelTiersResult.data as { value: unknown }).value
+        : null,
+  });
+  if (modelResolution.strictCatalogInvalid) {
+    console.warn(
+      '[provision-fetcher] Strict model catalog validation failed; runtime-compatible fallback was used'
     );
-    if (parsed.success) {
-      const selectedId = resolveEffectiveSelectedModelId(
-        parsed.data,
-        personaSource?.selected_model_id
-      );
-      defaultLlmModel = resolveEnabledCatalogModel(parsed.data, selectedId).openrouter_model_id;
-    }
   }
-
-  // 尚未发布正式目录的旧环境继续读取 legacy 默认值。
-  if (!defaultLlmModel && !llmModelTiersResult.error && llmModelTiersResult.data) {
-    const raw = (llmModelTiersResult.data as { value: unknown }).value;
-    if (Array.isArray(raw)) {
-      const defaultTier = raw.find((t: any) => t.isDefault);
-      if (defaultTier && typeof defaultTier.modelName === 'string') {
-        defaultLlmModel = defaultTier.modelName;
-      }
-    }
-  }
+  const defaultLlmModel = modelResolution.openrouterModelId;
 
   return {
     stHandle,
