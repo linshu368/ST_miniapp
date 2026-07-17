@@ -51,9 +51,9 @@ function copyCatalog(value: ModelCatalog): ModelCatalog {
   return structuredClone(value);
 }
 
-function newModel(index: number): ModelCatalogModel {
+function newModel(index: number, timestamp = Date.now()): ModelCatalogModel {
   return {
-    id: `model-${Date.now()}-${index}`,
+    id: `model-${timestamp}-${index}`,
     openrouter_model_id: '',
     display_name: '新模型',
     tagline: '',
@@ -61,6 +61,40 @@ function newModel(index: number): ModelCatalogModel {
     price_output: 0,
     enabled: true,
     sort_order: index + 1,
+  };
+}
+
+export function appendDraftModel(
+  catalog: ModelCatalog,
+  tierIndex: number,
+  timestamp = Date.now()
+): ModelCatalog {
+  const next = copyCatalog(catalog);
+  const models = next.tiers[tierIndex]?.models;
+  if (!models) return catalog;
+  const model = newModel(models.length, timestamp);
+  models.push(model);
+  if (!next.default_model_id) next.default_model_id = model.id;
+  return next;
+}
+
+export function appendDraftTier(catalog: ModelCatalog): ModelCatalog {
+  const used = new Set(catalog.tiers.map((tier) => tier.tier));
+  const option = tierOptions.find((item) => !used.has(item.value));
+  if (!option) return catalog;
+  return {
+    ...catalog,
+    tiers: [
+      ...catalog.tiers,
+      {
+        tier: option.value,
+        label: option.label,
+        color: option.color,
+        cost_hint: '',
+        sort_order: catalog.tiers.length,
+        models: [],
+      },
+    ],
   };
 }
 
@@ -518,13 +552,7 @@ export function ModelCatalogEditor(props: {
                   <Button
                     block
                     disabled={props.disabled}
-                    onClick={() => {
-                      const next = copyCatalog(props.value);
-                      const model = newModel(next.tiers[tierIndex].models.length);
-                      next.tiers[tierIndex].models.push(model);
-                      if (!next.default_model_id) next.default_model_id = model.id;
-                      props.onChange(next);
-                    }}
+                    onClick={() => props.onChange(appendDraftModel(props.value, tierIndex))}
                   >
                     添加模型
                   </Button>
@@ -536,25 +564,7 @@ export function ModelCatalogEditor(props: {
 
         <Button
           disabled={props.disabled || props.value.tiers.length >= tierOptions.length}
-          onClick={() => {
-            const used = new Set(props.value.tiers.map((tier) => tier.tier));
-            const option = tierOptions.find((item) => !used.has(item.value));
-            if (!option) return;
-            props.onChange({
-              ...props.value,
-              tiers: [
-                ...props.value.tiers,
-                {
-                  tier: option.value,
-                  label: option.label,
-                  color: option.color,
-                  cost_hint: '',
-                  sort_order: props.value.tiers.length + 1,
-                  models: [],
-                },
-              ],
-            });
-          }}
+          onClick={() => props.onChange(appendDraftTier(props.value))}
         >
           添加档位
         </Button>

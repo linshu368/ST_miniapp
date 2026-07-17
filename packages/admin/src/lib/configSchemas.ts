@@ -20,6 +20,31 @@ export const LlmPricingConfigSchema = z.object({
   markup: z.number().positive(),
 });
 
+const EditableModelCatalogModelSchema = z.object({
+  id: z.string(),
+  openrouter_model_id: z.string(),
+  display_name: z.string(),
+  tagline: z.string(),
+  price_input: z.number().finite().nonnegative(),
+  price_output: z.number().finite().nonnegative(),
+  enabled: z.boolean(),
+  sort_order: z.number().int().nonnegative(),
+});
+
+const EditableModelCatalogTierSchema = z.object({
+  tier: z.enum(['light', 'standard', 'premium']),
+  label: z.string(),
+  color: z.string(),
+  cost_hint: z.string(),
+  sort_order: z.number().int().nonnegative(),
+  models: z.array(EditableModelCatalogModelSchema),
+});
+
+export const EditableModelCatalogSchema = z.object({
+  default_model_id: z.string(),
+  tiers: z.array(EditableModelCatalogTierSchema),
+});
+
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
   miniapp_daily_checkin_bonus_credits: nonnegativeInteger,

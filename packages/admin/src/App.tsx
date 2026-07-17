@@ -59,8 +59,7 @@ import {
 import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
 import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
-
-type ViewKey = 'configs' | 'characters' | 'releases' | 'audit';
+import { configMenuKey, resolveAdminMenuSelection, type AdminViewKey } from './lib/adminNavigation';
 
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
@@ -343,7 +342,7 @@ function AdminWorkspace(props: {
   onLogout: () => Promise<void>;
 }) {
   const { message } = AntApp.useApp();
-  const [view, setView] = useState<ViewKey>('configs');
+  const [view, setView] = useState<AdminViewKey>('configs');
   const [selectedKey, setSelectedKey] = useState<ManagedConfigKey>('llm_model_catalog');
   const [configs, setConfigs] = useState<ManagedConfig[]>([]);
   const [drafts, setDrafts] = useState<ConfigDraft[]>([]);
@@ -692,10 +691,22 @@ function AdminWorkspace(props: {
           </div>
         </div>
         <Menu
-          selectedKeys={[view]}
-          onClick={({ key }) => setView(key as ViewKey)}
+          defaultOpenKeys={['configs']}
+          selectedKeys={[view === 'configs' ? configMenuKey(selectedKey) : view]}
+          onClick={({ key }) => {
+            const selection = resolveAdminMenuSelection(key);
+            if (selection.configKey) setSelectedKey(selection.configKey);
+            setView(selection.view);
+          }}
           items={[
-            { key: 'configs', label: '运营配置' },
+            {
+              key: 'configs',
+              label: '运营配置',
+              children: managedConfigKeys.map((key) => ({
+                key: configMenuKey(key),
+                label: configMetadata[key].label,
+              })),
+            },
             { key: 'characters', label: '角色卡' },
             { key: 'releases', label: '发布历史' },
             { key: 'audit', label: '审计日志' },
@@ -746,167 +757,155 @@ function AdminWorkspace(props: {
               onRefresh={() => void reloadCharacters()}
             />
           ) : view === 'configs' ? (
-            <div className="config-grid">
-              <Card className="config-nav-card" title="白名单配置">
-                <Menu
-                  selectedKeys={[selectedKey]}
-                  onClick={({ key }) => setSelectedKey(key as ManagedConfigKey)}
-                  items={managedConfigKeys.map((key) => ({
-                    key,
-                    label: configMetadata[key].label,
-                  }))}
-                />
-              </Card>
-              <Card
-                title={configMetadata[selectedKey].label}
-                extra={
-                  <Space>
-                    <Tag>正式版本 {currentConfig?.version ?? 0}</Tag>
-                    {latestDraft ? <Tag color="orange">有未发布草稿</Tag> : <Tag>已同步</Tag>}
-                    {selectedKey === 'llm_model_catalog' ? (
-                      <Tag
-                        color={
-                          autoSaveStatus === 'error'
-                            ? 'red'
-                            : autoSaveStatus === 'invalid'
-                              ? 'orange'
-                              : autoSaveStatus === 'saved'
-                                ? 'green'
-                                : 'blue'
-                        }
-                      >
-                        {autoSaveStatus === 'pending'
-                          ? '等待自动保存'
-                          : autoSaveStatus === 'saving'
-                            ? '自动保存中'
+            <Card
+              title={configMetadata[selectedKey].label}
+              extra={
+                <Space>
+                  <Tag>正式版本 {currentConfig?.version ?? 0}</Tag>
+                  {latestDraft ? <Tag color="orange">有未发布草稿</Tag> : <Tag>已同步</Tag>}
+                  {selectedKey === 'llm_model_catalog' ? (
+                    <Tag
+                      color={
+                        autoSaveStatus === 'error'
+                          ? 'red'
+                          : autoSaveStatus === 'invalid'
+                            ? 'orange'
                             : autoSaveStatus === 'saved'
-                              ? '草稿已自动保存'
-                              : autoSaveStatus === 'invalid'
-                                ? '请完善字段后自动保存'
-                                : autoSaveStatus === 'error'
-                                  ? '自动保存失败'
-                                  : '自动保存已开启'}
-                      </Tag>
-                    ) : null}
-                  </Space>
-                }
-              >
-                <Typography.Paragraph type="secondary">
-                  {configMetadata[selectedKey].description}
-                </Typography.Paragraph>
-                {!canWrite ? (
-                  <Alert
-                    type="info"
-                    showIcon
-                    message={
-                      props.admin.role === 'viewer'
-                        ? '当前账号为 viewer，只能查看，不能保存或发布。'
-                        : '当前账号没有此环境的写入权限。'
-                    }
-                    className="form-alert"
-                  />
-                ) : null}
-                <ConfigValueEditor
-                  configKey={selectedKey}
-                  value={workingValue}
-                  onChange={setWorkingValue}
-                  disabled={!canWrite}
-                  openRouterDirectory={openRouterDirectory}
-                  pricingConfig={pricingConfig}
-                  publishedModelIds={publishedModelIds}
-                  syncLoading={openRouterLoading}
-                  syncError={openRouterError}
-                  onRefreshOpenRouter={() => void reloadOpenRouter(true)}
-                />
-                <Divider />
-                <Space wrap>
-                  <Button
-                    type="primary"
-                    loading={saving}
-                    disabled={!canWrite}
-                    onClick={handleSaveDraft}
-                  >
-                    保存草稿
-                  </Button>
-                  <Button
-                    danger={props.environment === 'production'}
-                    loading={saving}
-                    disabled={
-                      !canWrite ||
-                      !latestDraft ||
-                      autoSaveStatus === 'pending' ||
-                      autoSaveStatus === 'saving' ||
-                      autoSaveStatus === 'invalid'
-                    }
-                    onClick={handlePublish}
-                  >
-                    发布当前草稿
-                  </Button>
-                  <Button
-                    danger
-                    loading={saving}
-                    disabled={
-                      !canWrite ||
-                      !latestDraft ||
-                      autoSaveStatus === 'pending' ||
-                      autoSaveStatus === 'saving'
-                    }
-                    onClick={() => void handleDiscardDraft()}
-                  >
-                    放弃当前草稿
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      setWorkingValue(
-                        structuredClone(
-                          latestDraft?.value ??
-                            currentConfig?.value ??
-                            configMetadata[selectedKey].defaultValue
-                        )
-                      )
-                    }
-                  >
-                    撤销未保存编辑
-                  </Button>
+                              ? 'green'
+                              : 'blue'
+                      }
+                    >
+                      {autoSaveStatus === 'pending'
+                        ? '等待自动保存'
+                        : autoSaveStatus === 'saving'
+                          ? '自动保存中'
+                          : autoSaveStatus === 'saved'
+                            ? '草稿已自动保存'
+                            : autoSaveStatus === 'invalid'
+                              ? '请完善字段后自动保存'
+                              : autoSaveStatus === 'error'
+                                ? '自动保存失败'
+                                : '自动保存已开启'}
+                    </Tag>
+                  ) : null}
                 </Space>
-                <Divider>该配置发布历史</Divider>
-                {selectedReleases.length === 0 ? (
-                  <Empty description="暂无发布记录" />
-                ) : (
-                  <List
-                    dataSource={selectedReleases}
-                    renderItem={(release) => (
-                      <List.Item
-                        actions={[
-                          <Button
-                            key="rollback"
-                            size="small"
-                            disabled={!canWrite}
-                            onClick={() => void handleRollback(release)}
-                          >
-                            回滚到此版本
-                          </Button>,
-                        ]}
-                      >
-                        <div className="release-list-content">
-                          <List.Item.Meta
-                            title={`运行时版本 ${release.runtime_version}`}
-                            description={`${release.released_by_name ?? '历史记录未标注'} · ${formatDate(
-                              release.released_at
-                            )}${release.rollback_of_release_id ? ' · 回滚发布' : ''}`}
-                          />
-                          <ReleaseChangeDetails
-                            release={release}
-                            allReleases={selectedReleases}
-                            compact
-                          />
-                        </div>
-                      </List.Item>
-                    )}
-                  />
-                )}
-              </Card>
-            </div>
+              }
+            >
+              <Typography.Paragraph type="secondary">
+                {configMetadata[selectedKey].description}
+              </Typography.Paragraph>
+              {!canWrite ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  message={
+                    props.admin.role === 'viewer'
+                      ? '当前账号为 viewer，只能查看，不能保存或发布。'
+                      : '当前账号没有此环境的写入权限。'
+                  }
+                  className="form-alert"
+                />
+              ) : null}
+              <ConfigValueEditor
+                configKey={selectedKey}
+                value={workingValue}
+                onChange={setWorkingValue}
+                disabled={!canWrite}
+                openRouterDirectory={openRouterDirectory}
+                pricingConfig={pricingConfig}
+                publishedModelIds={publishedModelIds}
+                syncLoading={openRouterLoading}
+                syncError={openRouterError}
+                onRefreshOpenRouter={() => void reloadOpenRouter(true)}
+              />
+              <Divider />
+              <Space wrap>
+                <Button
+                  type="primary"
+                  loading={saving}
+                  disabled={!canWrite}
+                  onClick={handleSaveDraft}
+                >
+                  保存草稿
+                </Button>
+                <Button
+                  danger={props.environment === 'production'}
+                  loading={saving}
+                  disabled={
+                    !canWrite ||
+                    !latestDraft ||
+                    autoSaveStatus === 'pending' ||
+                    autoSaveStatus === 'saving' ||
+                    autoSaveStatus === 'invalid'
+                  }
+                  onClick={handlePublish}
+                >
+                  发布当前草稿
+                </Button>
+                <Button
+                  danger
+                  loading={saving}
+                  disabled={
+                    !canWrite ||
+                    !latestDraft ||
+                    autoSaveStatus === 'pending' ||
+                    autoSaveStatus === 'saving'
+                  }
+                  onClick={() => void handleDiscardDraft()}
+                >
+                  放弃当前草稿
+                </Button>
+                <Button
+                  onClick={() =>
+                    setWorkingValue(
+                      structuredClone(
+                        latestDraft?.value ??
+                          currentConfig?.value ??
+                          configMetadata[selectedKey].defaultValue
+                      )
+                    )
+                  }
+                >
+                  撤销未保存编辑
+                </Button>
+              </Space>
+              <Divider>该配置发布历史</Divider>
+              {selectedReleases.length === 0 ? (
+                <Empty description="暂无发布记录" />
+              ) : (
+                <List
+                  dataSource={selectedReleases}
+                  renderItem={(release) => (
+                    <List.Item
+                      actions={[
+                        <Button
+                          key="rollback"
+                          size="small"
+                          disabled={!canWrite}
+                          onClick={() => void handleRollback(release)}
+                        >
+                          回滚到此版本
+                        </Button>,
+                      ]}
+                    >
+                      <div className="release-list-content">
+                        <List.Item.Meta
+                          title={`运行时版本 ${release.runtime_version}`}
+                          description={`${release.released_by_name ?? '历史记录未标注'} · ${formatDate(
+                            release.released_at
+                          )}${release.rollback_of_release_id ? ' · 回滚发布' : ''}`}
+                        />
+                        <ReleaseChangeDetails
+                          release={release}
+                          allReleases={selectedReleases}
+                          compact
+                        />
+                      </div>
+                    </List.Item>
+                  )}
+                />
+              )}
+            </Card>
           ) : view === 'releases' ? (
             <Card title="发布历史">
               <Table

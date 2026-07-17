@@ -138,18 +138,6 @@ body {
   place-items: center;
 }
 
-.config-grid {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.config-nav-card {
-  position: sticky;
-  top: 88px;
-}
-
 .field-full,
 .editor-stack {
   width: 100%;
@@ -269,14 +257,6 @@ body {
     width: 180px !important;
     min-width: 180px !important;
     max-width: 180px !important;
-  }
-
-  .config-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .config-nav-card {
-    position: static;
   }
 
   .admin-header {

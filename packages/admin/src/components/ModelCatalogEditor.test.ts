@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ModelCatalog } from '@miniapp/shared';
-import { reorderCatalog } from './ModelCatalogEditor';
+import { ModelCatalogSchema, type ModelCatalog } from '@miniapp/shared';
+import { EditableModelCatalogSchema } from '../lib/configSchemas';
+import { appendDraftModel, appendDraftTier, reorderCatalog } from './ModelCatalogEditor';
 
 const catalog: ModelCatalog = {
   default_model_id: 'flash',
@@ -68,5 +69,22 @@ describe('reorderCatalog', () => {
     expect(result.default_model_id).toBe('flash');
     expect(result.tiers[0]?.models.map((model) => model.id)).toEqual(['economy', 'flash']);
     expect(result.tiers[0]?.models.map((model) => model.sort_order)).toEqual([0, 1]);
+  });
+});
+
+describe('editable model catalog additions', () => {
+  it('keeps a newly added incomplete model editable', () => {
+    const result = appendDraftModel(catalog, 0, 123);
+    expect(result.tiers[0]?.models.at(-1)?.id).toBe('model-123-2');
+    expect(EditableModelCatalogSchema.safeParse(result).success).toBe(true);
+    expect(ModelCatalogSchema.safeParse(result).success).toBe(false);
+  });
+
+  it('keeps a newly added empty tier editable', () => {
+    const result = appendDraftTier(catalog);
+    expect(result.tiers.map((tier) => tier.tier)).toEqual(['light', 'premium', 'standard']);
+    expect(result.tiers.at(-1)?.models).toEqual([]);
+    expect(EditableModelCatalogSchema.safeParse(result).success).toBe(true);
+    expect(ModelCatalogSchema.safeParse(result).success).toBe(false);
   });
 });
