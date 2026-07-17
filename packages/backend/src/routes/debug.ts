@@ -63,7 +63,9 @@ export default async function debugRoutes(app: FastifyInstance) {
       k === 'boot_nav' ||
       k.startsWith('sel_wf') ||
       k.startsWith('sel_longtask') ||
-      k === 'sel_evt';
+      k === 'sel_evt' ||
+      // round5: 停摆诊断收割数据（fetch 生命周期/资源/文档状态），独立成行防截断
+      k.startsWith('stall_');
     const mainDetails: Record<string, string> = {};
     const waterfallLines: Array<[string, string]> = [];
     for (const [k, v] of Object.entries(details)) {
