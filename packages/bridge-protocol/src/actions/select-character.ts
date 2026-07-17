@@ -15,6 +15,8 @@ export const selectCharacterMeta: ActionMeta = {
   name: 'selectCharacter',
   payloadSchema: SelectCharacterPayloadSchema,
   resultSchema: SelectCharacterResultSchema,
-  requiredPhase: 'ready',
+  // interactive：ST 端 settings/角色列表/tokenizers/persona/world-info 就绪即可安全执行，
+  // 不必等 APP_READY——压缩快速点卡用户的闸门等待（慢 boot 长尾上 interactive 领先 ready 数秒）。
+  requiredPhase: 'interactive',
   waitable: true,
 };

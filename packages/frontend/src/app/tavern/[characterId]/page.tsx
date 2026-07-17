@@ -16,6 +16,12 @@ export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const router = useRouter();
   const bridgeStatus = useBridgeStatus();
+  // T2：interactive 即放行（selectCharacter requiredPhase 已降为 interactive），ready 兼容
+  // 旧 ST 两段握手。用派生布尔做 effect 依赖：interactive→ready 升级时布尔值不变，
+  // 不会 cleanup 重跑而作废在途 select、重复发起。
+  const gateOpen = bridgeStatus === 'interactive' || bridgeStatus === 'ready';
+  const bridgeStatusRef = useRef(bridgeStatus);
+  bridgeStatusRef.current = bridgeStatus;
   const redirectingToRechargeRef = useRef(false);
   // 开屏动画收场信号：只有角色切换成功后才放行，避免露出 ST 原生加载画面。
   const [readyCharacterId, setReadyCharacterId] = useState<string | null>(null);
@@ -55,10 +61,12 @@ export default function TavernChatPage() {
 
   useEffect(() => {
     setReadyCharacterId(null);
-    if (!characterId || bridgeStatus !== 'ready') return;
+    if (!characterId || !gateOpen) return;
     setEntryError(null);
 
     markTiming('gate_open'); // [iframe-timing] TEMP DEBUG
+    // [iframe-timing] TEMP DEBUG: 闸门放行时刻的相位（interactive / ready）
+    const bridgeStatusAtGate = bridgeStatusRef.current;
 
     let cancelled = false;
 
@@ -89,7 +97,7 @@ export default function TavernChatPage() {
             setReadyCharacterId(characterId);
             // [iframe-timing] TEMP DEBUG: 呈现时刻，flush 全部相位到后端日志
             markTiming('chat_ready');
-            flushIframeTiming({ characterId, bridgeStatusAtGate: bridgeStatus });
+            flushIframeTiming({ characterId, bridgeStatusAtGate });
           }
         })
         .catch((err) => {
@@ -103,7 +111,7 @@ export default function TavernChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [bridgeStatus, characterId, entryAttempt]);
+  }, [gateOpen, characterId, entryAttempt]);
 
   return (
     <div className="relative w-full h-full">

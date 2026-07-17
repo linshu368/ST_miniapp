@@ -810,6 +810,12 @@ export async function pingServer() {
   }
 }
 
+// [miniapp-patch] T2 三段握手：MiniApp iframe 以 miniapp_fast_boot=1 启动时走查询参数门控的
+// 关键路径 boot——select 依赖就绪即 dispatch miniapp:st-interactive（st-extension 转发为
+// interactive 握手），纯 UI 初始化推迟到 APP_READY 且点卡窗口结束之后。Web 直访不受影响。
+const miniAppFastBoot =
+  new URLSearchParams(window.location.search).get('miniapp_fast_boot') === '1';
+
 //MARK: firstLoadInit
 async function firstLoadInit() {
   try {
@@ -884,7 +890,14 @@ async function firstLoadInit() {
   // ②Tier-2：跳过 getBackgrounds()——平台不展示 ST 背景（settings 固定 __transparent.png），
   // /api/backgrounds/all 结果 boot 期无消费者；initBackgrounds 对空背景列表安全（核验见
   // docs/iframe-boot-firstloadinit-parallelization.md §四.4），用户在背景面板操作时会按需重拉。
-  await Promise.all([getUserAvatars(true, user_avatar), getCharacters()]);
+  // [miniapp-patch] T2 fast-boot：浅层角色列表（跳过全量 DOM 渲染与 groups 拉取——平台不用
+  // ST 原生角色列表 UI 和群聊），getUserAvatars 移出关键路径、由延迟批次补拉（见
+  // scheduleMiniAppDeferredUiInit；persona 面板打开前无消费者，initPersonas 不依赖其结果）。
+  if (miniAppFastBoot) {
+    await getCharacters({ renderList: false, loadGroups: false });
+  } else {
+    await Promise.all([getUserAvatars(true, user_avatar), getCharacters()]);
+  }
   await initTokenizers();
   initBackgrounds();
   initAuthorsNote();
@@ -892,29 +905,84 @@ async function firstLoadInit() {
   await initSlashCommandAutoComplete();
   initMacroAutoComplete();
   initWorldInfo();
-  initHorde();
   initRossMods();
-  initStats();
   initCfg();
-  initLogprobs();
   initInputMarkdown();
-  initServerHistory();
-  initSettingsSearch();
-  initBulkEdit();
   initReasoning();
-  initWelcomeScreen();
-  await initScrapers();
   initCustomSelectedSamplers();
-  initDataMaid();
   initItemizedPrompts();
-  initAccessibility();
-  initSwipePicker();
-  addDebugFunctions();
-  doDailyExtensionUpdatesCheck();
+  // [miniapp-patch] T2 fast-boot 可交互边界：settings/浅层角色列表/tokenizers/persona/
+  // world-info 已就绪，selectCharacter 此刻可安全执行。dispatch 后 st-extension 发
+  // interactive 握手；delay(0) 让出主线程，使父窗口先收到握手、点卡请求得以先于
+  // 剩余 boot 工作入队。APP_READY 语义不变，仍在下方正常 emit。
+  if (miniAppFastBoot) {
+    window.dispatchEvent(new CustomEvent('miniapp:st-interactive'));
+    await delay(0);
+  }
+  // [miniapp-patch] T2 fast-boot：以下均为纯 UI/辅助初始化，boot 关键路径无消费者，
+  // fast-boot 下推迟到 APP_READY + 点卡窗口结束后执行（scheduleMiniAppDeferredUiInit）。
+  if (!miniAppFastBoot) {
+    initHorde();
+    initStats();
+    initLogprobs();
+    initServerHistory();
+    initSettingsSearch();
+    initBulkEdit();
+    initWelcomeScreen();
+    await initScrapers();
+    initDataMaid();
+    initAccessibility();
+    initSwipePicker();
+    addDebugFunctions();
+    doDailyExtensionUpdatesCheck();
+  }
   await eventSource.emit(event_types.APP_INITIALIZED);
   await initLoaderHandle.hide();
   await fixViewport();
   await eventSource.emit(event_types.APP_READY);
+  // [miniapp-patch] T2 fast-boot：补跑上面跳过的延迟批次
+  if (miniAppFastBoot) {
+    scheduleMiniAppDeferredUiInit();
+  }
+}
+
+// [miniapp-patch] T2 fast-boot 延迟批次：getUserAvatars + 关键路径外的 UI 初始化。
+// 调度时机（教训：不要固定定时器——生产 select 可超 5s，会与点卡窗口竞争）：
+// APP_READY 时若有 select 在途（st-extension 维护 window.__miniappSelectInFlight），
+// 等 miniapp:select-settled（成败均发）再入 idle 队列；否则直接入 idle 队列。
+function scheduleMiniAppDeferredUiInit() {
+  const run = async () => {
+    await getUserAvatars(true, user_avatar);
+    initHorde();
+    initStats();
+    initLogprobs();
+    initServerHistory();
+    initSettingsSearch();
+    initBulkEdit();
+    initWelcomeScreen();
+    await initScrapers();
+    initDataMaid();
+    initAccessibility();
+    initSwipePicker();
+    addDebugFunctions();
+    doDailyExtensionUpdatesCheck();
+  };
+
+  const scheduleIdle = () => {
+    const execute = () =>
+      void run().catch((error) => console.error('[miniapp-patch] Deferred UI init failed', error));
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(execute, { timeout: 10000 });
+    } else {
+      setTimeout(execute, 0);
+    }
+  };
+
+  if (window.__miniappSelectInFlight) {
+    window.addEventListener('miniapp:select-settled', scheduleIdle, { once: true });
+  } else {
+    scheduleIdle();
+  }
 }
 
 async function fixViewport() {
@@ -1453,7 +1521,9 @@ export function getCharacterSource(chId = this_chid) {
   return '';
 }
 
-export async function getCharacters() {
+// [miniapp-patch] T2 fast-boot：boot 关键路径允许跳过角色列表 DOM 全量渲染（renderList=false）
+// 与群聊拉取（loadGroups=false）——平台不使用 ST 原生角色列表 UI；默认参数保持原行为。
+export async function getCharacters({ renderList = true, loadGroups = true } = {}) {
   const response = await fetch('/api/characters/all', {
     method: 'POST',
     headers: getRequestHeaders(),
@@ -1489,8 +1559,13 @@ export async function getCharacters() {
       }
     }
 
-    await getGroups();
-    await printCharacters(true);
+    // [miniapp-patch] T2 fast-boot：见上方函数签名说明
+    if (loadGroups) {
+      await getGroups();
+    }
+    if (renderList) {
+      await printCharacters(true);
+    }
   } else {
     console.error('Failed to fetch characters:', response.statusText);
     const errorData = await response.json();
