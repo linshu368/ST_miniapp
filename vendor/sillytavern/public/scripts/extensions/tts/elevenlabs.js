@@ -1,7 +1,8 @@
 import { saveTtsProviderSettings } from './index.js';
-import { event_types, eventSource, getRequestHeaders } from '/script.js';
-import { SECRET_KEYS, secret_state, writeSecret } from '/scripts/secrets.js';
-import { getBase64Async } from '/scripts/utils.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间产生模块双实例。
+import { event_types, eventSource, getRequestHeaders } from '../../../script.js';
+import { SECRET_KEYS, secret_state, writeSecret } from '../../secrets.js';
+import { getBase64Async } from '../../utils.js';
 export { ElevenLabsTtsProvider };
 
 class ElevenLabsTtsProvider {

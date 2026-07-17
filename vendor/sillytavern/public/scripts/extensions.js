@@ -911,6 +911,10 @@ function addExtensionStyle(name, manifest) {
         reject(e);
       };
       document.head.appendChild(link);
+    } else {
+      // [miniapp-patch] Anti-hang: if the element already exists (duplicate activation after a
+      // partial boot), settle instead of leaving the caller awaiting a promise forever.
+      resolve();
     }
   });
 }
@@ -948,6 +952,10 @@ function addExtensionScript(name, manifest) {
         }
       };
       document.body.appendChild(script);
+    } else {
+      // [miniapp-patch] Anti-hang: if the element already exists (duplicate activation after a
+      // partial boot), settle instead of leaving activateExtensions awaiting forever.
+      resolve();
     }
   });
 }

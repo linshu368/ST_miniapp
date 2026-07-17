@@ -7,7 +7,8 @@ import {
 } from '../../../script.js';
 import { groups, selected_group } from '../../../scripts/group-chats.js';
 import { logMacroGeneralError } from './MacroDiagnostics.js';
-import { getStringHash } from '/scripts/utils.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间产生模块双实例。
+import { getStringHash } from '../../utils.js';
 /**
  * MacroEnvBuilder is responsible for constructing the MacroEnv object
  * that is passed to macro handlers.

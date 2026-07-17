@@ -14,7 +14,9 @@ import {
   isSwipingAllowed,
   swipe,
   syncMesToSwipe,
-} from '/script.js';
+  // [miniapp-patch] 绝对路径 import 会逃逸出发布命名空间（/st-runtime/<build>/）并加载
+  // 第二份 script.js 实例（双 firstLoadInit 竞争楔死 boot），统一规范为相对路径。
+} from '../script.js';
 
 /**
  * Returns whether a swipe picker can be opened for the message.
