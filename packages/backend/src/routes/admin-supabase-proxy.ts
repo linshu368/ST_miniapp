@@ -12,6 +12,7 @@ const FORWARDED_REQUEST_HEADERS = [
   'prefer',
   'range',
   'x-client-info',
+  'x-supabase-api-version',
 ];
 const FORWARDED_RESPONSE_HEADERS = [
   'content-range',
