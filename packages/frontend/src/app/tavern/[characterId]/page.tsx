@@ -66,6 +66,17 @@ export default function TavernChatPage() {
     };
   }, [chatReady]);
 
+  // 终态 disconnected 恢复入口：重连额度耗尽后 gateOpen 永假，开屏动画会无限等待且用户
+  // 无任何操作路径（此前只能杀掉 MiniApp 重开）。disconnected 也会在重连退避期短暂出现
+  //（最长 8s），延迟 12s 确认终态后才提示，避免自愈过程误报。
+  useEffect(() => {
+    if (bridgeStatus !== 'disconnected' || chatReady) return;
+    const timer = window.setTimeout(() => {
+      setEntryError('连接中断，请点击重试刷新页面。');
+    }, 12_000);
+    return () => window.clearTimeout(timer);
+  }, [bridgeStatus, chatReady]);
+
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
     if (!characterId) return;
@@ -180,7 +191,15 @@ export default function TavernChatPage() {
           characterId={characterId}
           ready={chatReady}
           error={entryError}
-          onRetry={() => setEntryAttempt((attempt) => attempt + 1)}
+          onRetry={() => {
+            // bridge 终态 disconnected 时页内重试无意义（闸门永不放行），整页刷新
+            // 重建 iframe 与全部连接上下文；其余情况维持原有的页内重试。
+            if (bridgeStatusRef.current === 'disconnected') {
+              window.location.reload();
+              return;
+            }
+            setEntryAttempt((attempt) => attempt + 1);
+          }}
         />
       ) : null}
     </div>

@@ -850,18 +850,49 @@ if (miniAppFastBoot) {
       }
     );
   };
+  // [miniapp-patch] boot 致命异常自愈通道：坏模块图（TDZ/模块加载失败）会让 boot 在握手前
+  // 静默死亡，看门狗要 10~45s 才介入且重载复用坏缓存。捕获到致命签名立即上报父窗口
+  // （BridgeClient type='boot-fatal'，通道常量与 @miniapp/bridge-protocol BRIDGE_CHANNEL 一致），
+  // 由父窗口按既有重连预算立刻重载。只上报一次，避免风暴。
+  let miniAppFatalReported = false;
+  const MINIAPP_FATAL_RE =
+    /Cannot access uninitialized variable|is not defined|Importing a module script failed|error loading dynamically imported module|Cannot use import statement/i;
+  const miniAppReportFatal = (detail) => {
+    if (miniAppFatalReported) return;
+    miniAppFatalReported = true;
+    try {
+      window.parent.postMessage(
+        {
+          channel: 'miniapp-bridge',
+          protocolVersion: 1,
+          type: 'boot-fatal',
+          timestamp: Date.now(),
+          detail: String(detail).slice(0, 200),
+        },
+        '*'
+      );
+    } catch (_) {
+      /* noop */
+    }
+  };
   window.addEventListener('error', (e) => {
+    const msg = String(e.message || '');
     if (miniAppBootErrors.length < 20) {
       miniAppBootErrors.push(
-        `err:${String(e.message || '').slice(0, 120)}@${String(e.filename || '').slice(-60)}:${e.lineno || 0}`
+        `err:${msg.slice(0, 120)}@${String(e.filename || '').slice(-60)}:${e.lineno || 0}`
       );
+    }
+    if (MINIAPP_FATAL_RE.test(msg)) {
+      miniAppReportFatal(`${msg}@${String(e.filename || '').slice(-60)}:${e.lineno || 0}`);
     }
   });
   window.addEventListener('unhandledrejection', (e) => {
+    const msg = String((e.reason && e.reason.message) || e.reason || '');
     if (miniAppBootErrors.length < 20) {
-      miniAppBootErrors.push(
-        `rej:${String((e.reason && e.reason.message) || e.reason || '').slice(0, 120)}`
-      );
+      miniAppBootErrors.push(`rej:${msg.slice(0, 120)}`);
+    }
+    if (MINIAPP_FATAL_RE.test(msg)) {
+      miniAppReportFatal(`rej:${msg}`);
     }
   });
 }

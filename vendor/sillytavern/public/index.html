@@ -5246,7 +5246,10 @@
 
                             <label for="play_message_sound" class="checkbox_label" title="Play a sound when a message generation finishes." data-i18n="[title]Play a sound when a message generation finishes">
                                 <input id="play_message_sound" type="checkbox" />
-                                <audio id="audio_message_sound" src="sounds/message.mp3" hidden></audio>
+                                <!-- [miniapp-patch] preload=none：代理链对 Range 请求返回残缺 206（2 字节）时，
+                                     WebKit 对该媒体元素每 ~75ms 无限重试，boot 期数百个请求冲击连接队列
+                                     （疑似坏模块图诱因，2026-07-17 dev 实测）。禁止预加载，play() 时才拉取。 -->
+                                <audio id="audio_message_sound" src="sounds/message.mp3" preload="none" hidden></audio>
                                 <span>
                                     <small data-i18n="Message Sound">Message Sound</small>
                                 </span>
