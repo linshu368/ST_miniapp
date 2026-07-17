@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronLeft, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
+import { AlertCircle, ChevronLeft, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
 import type { PaymentType } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
@@ -47,7 +47,7 @@ function RechargePageContent() {
   const goBack = useCallback(() => router.back(), [router]);
   useTelegramBackButton(goBack);
 
-  const { data, isLoading } = usePaymentPlansQuery();
+  const { data, isLoading, isError, refetch } = usePaymentPlansQuery();
   const createOrder = useCreatePaymentOrderMutation();
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
@@ -126,21 +126,32 @@ function RechargePageContent() {
         </section>
 
         <section className="flex flex-col gap-3 py-4">
-          {isLoading && plans.length === 0
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton
-                  key={i}
-                  className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
-                />
-              ))
-            : plans.map((plan) => (
-                <PlanCard
-                  key={plan.id}
-                  plan={plan}
-                  selected={plan.id === selectedPlanId}
-                  onSelect={handleSelect}
-                />
-              ))}
+          {isError ? (
+            <div className="flex min-h-[180px] flex-col items-center justify-center rounded-2xl border border-red-400/20 bg-red-400/5 px-6 text-center">
+              <AlertCircle className="h-7 w-7 text-red-300" aria-hidden />
+              <p className="mt-3 text-sm font-semibold text-white">充值套餐暂时无法加载</p>
+              <p className="mt-1 text-xs text-slate-400">请稍后重试，当前不会创建支付订单。</p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={() => void refetch()}>
+                重新加载
+              </Button>
+            </div>
+          ) : isLoading && plans.length === 0 ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton
+                key={i}
+                className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
+              />
+            ))
+          ) : (
+            plans.map((plan) => (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                selected={plan.id === selectedPlanId}
+                onSelect={handleSelect}
+              />
+            ))
+          )}
         </section>
 
         <section className="flex justify-center">
