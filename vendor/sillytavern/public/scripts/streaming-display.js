@@ -20,7 +20,8 @@
 
 import { SVGInject } from '../lib.js';
 import { t } from './i18n.js';
-import { animation_duration, messageFormatting } from '/script.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间加载第二份 script.js 实例。
+import { animation_duration, messageFormatting } from '../script.js';
 
 /** CSS class prefix */
 const CSS_PREFIX = 'streaming-display';

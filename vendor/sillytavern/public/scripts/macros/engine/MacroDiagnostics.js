@@ -3,11 +3,12 @@
 /** @typedef {import('chevrotain').ILexingError} ILexingError */
 /** @typedef {import('chevrotain').IRecognitionException} IRecognitionException */
 
-import { t } from '/scripts/i18n.js';
-import { Popup, POPUP_RESULT } from '/scripts/popup.js';
-import { power_user } from '/scripts/power-user.js';
-import { accountStorage } from '/scripts/util/AccountStorage.js';
-import { SimpleMutex } from '/scripts/util/SimpleMutex.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间产生模块双实例。
+import { t } from '../../i18n.js';
+import { Popup, POPUP_RESULT } from '../../popup.js';
+import { power_user } from '../../power-user.js';
+import { accountStorage } from '../../util/AccountStorage.js';
+import { SimpleMutex } from '../../util/SimpleMutex.js';
 
 /**
  * @typedef {Object} MacroErrorContext

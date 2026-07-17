@@ -1,6 +1,7 @@
 import { MacroRegistry, MacroCategory } from '../engine/MacroRegistry.js';
 import { eventSource, event_types } from '../../events.js';
-import { findExtension } from '/scripts/extensions.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间加载第二份 extensions.js 实例。
+import { findExtension } from '../../extensions.js';
 
 let lastGenerationTypeValue = '';
 let lastGenerationTypeTrackingInitialized = false;
