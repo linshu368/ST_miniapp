@@ -2,6 +2,8 @@
 // 规则：任何一方新增对外数据形状都必须先落这里才能被消费。
 // 语义与老 Bot 项目 payment_orders 保持一致，仅重新包装为 REST + snake_case。
 
+import { z } from 'zod';
+
 export type PaymentType = 'alipay' | 'wxpay';
 
 /** 与老 Bot 后端 payment_orders.payment_status 保持一致：pending → completed / expired / failed */
@@ -30,6 +32,34 @@ export interface PaymentPlan {
   /** 高亮行文案，服务端可配。如"🔥 免费送 2,000""狂送 10,000" */
   highlight_text: string | null;
 }
+
+const nonnegativeInteger = z.number().int().nonnegative();
+const nullableText = z.string().nullable();
+
+export const PaymentPlanSchema: z.ZodType<PaymentPlan> = z.object({
+  id: z.string().trim().min(1),
+  price_cents: nonnegativeInteger,
+  original_price_cents: nonnegativeInteger.nullable(),
+  credits_amount: nonnegativeInteger,
+  bonus_credits: nonnegativeInteger,
+  variant: z.enum(['entry', 'standard', 'recommended', 'premium']),
+  badge_text: nullableText,
+  sub_copy: nullableText,
+  highlight_text: nullableText,
+});
+
+export const PaymentPlansSchema = z
+  .array(PaymentPlanSchema)
+  .min(1)
+  .superRefine((plans, ctx) => {
+    const ids = plans.map((plan) => plan.id);
+    if (new Set(ids).size !== ids.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'payment plan ids must be unique',
+      });
+    }
+  });
 
 export interface PaymentOrder {
   /** 订单号，沿用老项目 TG_{userId}_{ts}_{rand} 语义 */

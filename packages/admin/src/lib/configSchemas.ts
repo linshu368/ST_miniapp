@@ -1,4 +1,4 @@
-import { ModelCatalogSchema } from '@miniapp/shared';
+import { ModelCatalogSchema, PaymentPlansSchema } from '@miniapp/shared';
 import { z } from 'zod';
 
 export const managedConfigKeys = [
@@ -13,20 +13,6 @@ export const managedConfigKeys = [
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 
 const nonnegativeInteger = z.number().int().nonnegative();
-const nullableText = z.string().nullable();
-
-export const PaymentPlanSchema = z.object({
-  id: z.string().trim().min(1),
-  price_cents: nonnegativeInteger,
-  original_price_cents: nonnegativeInteger.nullable(),
-  credits_amount: nonnegativeInteger,
-  bonus_credits: nonnegativeInteger,
-  variant: z.enum(['entry', 'standard', 'recommended', 'premium']),
-  badge_text: nullableText,
-  sub_copy: nullableText,
-  highlight_text: nullableText,
-});
-
 export const LlmPricingConfigSchema = z.object({
   balanceBaseline: z.number().nonnegative(),
   fallbackCost: z.number().nonnegative(),
@@ -37,7 +23,7 @@ export const LlmPricingConfigSchema = z.object({
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
   miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
-  miniapp_payment_plans: z.array(PaymentPlanSchema).min(1),
+  miniapp_payment_plans: PaymentPlansSchema,
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   system_fallback_character_id: z.string().uuid(),

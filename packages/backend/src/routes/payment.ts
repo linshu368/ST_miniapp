@@ -14,6 +14,7 @@ import { getOrCreateDbUser } from '../lib/user.js';
 import {
   getInsufficientCreditsNotice,
   getPaymentPlans,
+  PaymentPlansConfigError,
 } from '../features/payment/domain/rechargeRules.js';
 import { RechargeUseCase } from '../features/payment/usecases/RechargeUseCase.js';
 import {
@@ -48,17 +49,24 @@ export default async function paymentRoutes(app: FastifyInstance) {
   const gateway = new JLPaymentGateway();
 
   // @frontend-ready: true
-  app.get('/api/payment/plans', async (_request, reply) => {
-    const [plans, insufficientCreditsNotice] = await Promise.all([
-      getPaymentPlans(),
-      getInsufficientCreditsNotice(),
-    ]);
-    return reply.send(
-      ok<GetPaymentPlansData>({
-        plans,
-        insufficient_credits_notice: insufficientCreditsNotice,
-      })
-    );
+  app.get('/api/payment/plans', async (request, reply) => {
+    try {
+      const [plans, insufficientCreditsNotice] = await Promise.all([
+        getPaymentPlans(),
+        getInsufficientCreditsNotice(),
+      ]);
+      return reply.send(
+        ok<GetPaymentPlansData>({
+          plans,
+          insufficient_credits_notice: insufficientCreditsNotice,
+        })
+      );
+    } catch (error) {
+      request.log.error({ err: error }, 'Payment plans unavailable');
+      return reply
+        .status(503)
+        .send(fail('PAYMENT_PLANS_UNAVAILABLE', '充值套餐暂不可用，请稍后重试'));
+    }
   });
 
   // @frontend-ready: true
@@ -81,6 +89,11 @@ export default async function paymentRoutes(app: FastifyInstance) {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Create payment order failed';
       request.log.warn({ err: error }, 'Create payment order failed');
+      if (error instanceof PaymentPlansConfigError) {
+        return reply
+          .status(503)
+          .send(fail('PAYMENT_PLANS_UNAVAILABLE', '充值套餐暂不可用，请稍后重试'));
+      }
       return reply.status(400).send(fail('PAYMENT_CREATE_FAILED', message));
     }
   });
