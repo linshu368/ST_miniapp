@@ -148,6 +148,8 @@ function RechargePageContent() {
                 key={plan.id}
                 plan={plan}
                 selected={plan.id === selectedPlanId}
+                selectedColor={pageConfig.selected_plan_color}
+                badgeColor={pageConfig.badge_color}
                 onSelect={handleSelect}
               />
             ))
@@ -210,7 +212,7 @@ function RechargePageContent() {
             )}
             style={
               selectedPlan && !createOrder.isPending
-                ? { backgroundColor: pageConfig.theme_color }
+                ? { backgroundColor: pageConfig.button_color }
                 : undefined
             }
           >
@@ -230,7 +232,13 @@ function RechargePageContent() {
       >
         <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/10 bg-[#151515] text-white">
           <DialogHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/15 text-amber-400">
+            <div
+              className="mb-2 flex h-12 w-12 items-center justify-center rounded-full"
+              style={{
+                color: pageConfig.balance_color,
+                backgroundColor: `${pageConfig.balance_color}26`,
+              }}
+            >
               <Sparkles className="h-6 w-6" aria-hidden />
             </div>
             <DialogTitle>星尘不足</DialogTitle>
@@ -240,7 +248,10 @@ function RechargePageContent() {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button className="w-full rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white">
+              <Button
+                className="w-full rounded-xl font-bold text-white"
+                style={{ backgroundColor: pageConfig.button_color }}
+              >
                 选择套餐
               </Button>
             </DialogClose>

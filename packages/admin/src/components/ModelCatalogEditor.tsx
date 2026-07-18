@@ -270,517 +270,550 @@ export function ModelCatalogEditor(props: {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <Space direction="vertical" size="middle" className="editor-stack">
-        <Collapse
-          items={[
-            {
-              key: 'openrouter-directory',
-              label: (
-                <Space wrap>
-                  <Typography.Text strong>OpenRouter 模型目录</Typography.Text>
-                  {props.openRouterDirectory ? (
-                    <Tag color={props.openRouterDirectory.stale ? 'orange' : 'green'}>
-                      {props.openRouterDirectory.stale ? '使用缓存' : '已同步'} ·{' '}
-                      {props.openRouterDirectory.models.length} 个模型
-                    </Tag>
-                  ) : (
-                    <Tag>未同步</Tag>
-                  )}
-                </Space>
-              ),
-              extra: (
-                <Button
-                  size="small"
-                  loading={props.syncLoading}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    props.onRefreshOpenRouter();
-                  }}
-                >
-                  重新同步
-                </Button>
-              ),
-              children: (
-                <Space direction="vertical" size="middle" className="field-full">
-                  {props.syncError ? (
-                    <Alert type="error" showIcon message={props.syncError} />
-                  ) : null}
-                  {props.openRouterDirectory ? (
-                    <>
-                      <Typography.Text type="secondary">
-                        上游更新时间：
-                        {new Date(props.openRouterDirectory.fetched_at).toLocaleString('zh-CN', {
-                          hour12: false,
-                        })}
-                        。共获取 {props.openRouterDirectory.models.length}{' '}
-                        个模型；展示价格按当前汇率与加价倍率自动换算。
-                      </Typography.Text>
-                      <Input.Search
-                        allowClear
-                        value={openRouterSearch}
-                        placeholder="搜索模型名称、OpenRouter ID、描述或 canonical slug"
-                        onChange={(event) => setOpenRouterSearch(event.target.value)}
-                        suffix={
+      <Row gutter={[20, 20]} align="top">
+        <Col xs={24} xl={16}>
+          <Space direction="vertical" size="middle" className="editor-stack">
+            <Collapse
+              items={[
+                {
+                  key: 'openrouter-directory',
+                  label: (
+                    <Space wrap>
+                      <Typography.Text strong>OpenRouter 模型目录</Typography.Text>
+                      {props.openRouterDirectory ? (
+                        <Tag color={props.openRouterDirectory.stale ? 'orange' : 'green'}>
+                          {props.openRouterDirectory.stale ? '使用缓存' : '已同步'} ·{' '}
+                          {props.openRouterDirectory.models.length} 个模型
+                        </Tag>
+                      ) : (
+                        <Tag>未同步</Tag>
+                      )}
+                    </Space>
+                  ),
+                  extra: (
+                    <Button
+                      size="small"
+                      loading={props.syncLoading}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        props.onRefreshOpenRouter();
+                      }}
+                    >
+                      重新同步
+                    </Button>
+                  ),
+                  children: (
+                    <Space direction="vertical" size="middle" className="field-full">
+                      {props.syncError ? (
+                        <Alert type="error" showIcon message={props.syncError} />
+                      ) : null}
+                      {props.openRouterDirectory ? (
+                        <>
                           <Typography.Text type="secondary">
-                            {filteredOpenRouterModels.length} /{' '}
-                            {props.openRouterDirectory.models.length}
+                            上游更新时间：
+                            {new Date(props.openRouterDirectory.fetched_at).toLocaleString(
+                              'zh-CN',
+                              {
+                                hour12: false,
+                              }
+                            )}
+                            。共获取 {props.openRouterDirectory.models.length}{' '}
+                            个模型；展示价格按当前汇率与加价倍率自动换算。
                           </Typography.Text>
-                        }
-                      />
-                      <Table<OpenRouterModelSummary>
-                        key={openRouterSearch.trim().toLocaleLowerCase()}
-                        rowKey="id"
-                        size="small"
-                        dataSource={filteredOpenRouterModels}
-                        locale={{ emptyText: '没有匹配的 OpenRouter 模型' }}
-                        scroll={{ x: 1120 }}
-                        pagination={{
-                          defaultPageSize: 20,
-                          showSizeChanger: true,
-                          pageSizeOptions: [20, 50, 100],
-                          showTotal: (total) => `共 ${total} 个模型`,
-                        }}
-                        columns={[
-                          {
-                            title: '模型',
-                            key: 'model',
-                            fixed: 'left',
-                            width: 280,
-                            render: (_, model) => (
-                              <Space direction="vertical" size={0}>
-                                <Typography.Text strong>{model.name}</Typography.Text>
-                                <Typography.Text type="secondary" copyable>
-                                  {model.id}
-                                </Typography.Text>
-                              </Space>
-                            ),
-                          },
-                          {
-                            title: '上下文',
-                            dataIndex: 'context_length',
-                            width: 110,
-                            render: (value: number | null) =>
-                              value === null ? '未知' : value.toLocaleString('en-US'),
-                          },
-                          {
-                            title: '上游输入价',
-                            dataIndex: 'prompt_usd_per_token',
-                            width: 135,
-                            render: (value: number) => `${formatUsdPerMillion(value)} / 百万 token`,
-                          },
-                          {
-                            title: '上游输出价',
-                            dataIndex: 'completion_usd_per_token',
-                            width: 135,
-                            render: (value: number) => `${formatUsdPerMillion(value)} / 百万 token`,
-                          },
-                          {
-                            title: '展示输入价',
-                            key: 'display_input',
-                            width: 120,
-                            render: (_, model) =>
-                              `${calculateModelDisplayPrices(model, props.pricingConfig).price_input.toFixed(1)} 星尘`,
-                          },
-                          {
-                            title: '展示输出价',
-                            key: 'display_output',
-                            width: 120,
-                            render: (_, model) =>
-                              `${calculateModelDisplayPrices(model, props.pricingConfig).price_output.toFixed(1)} 星尘`,
-                          },
-                          {
-                            title: '状态',
-                            key: 'status',
-                            width: 110,
-                            render: (_, model) => {
-                              const expired =
-                                model.expiration_date !== null &&
-                                Number.isFinite(Date.parse(model.expiration_date)) &&
-                                Date.parse(model.expiration_date) <= Date.now();
-                              return expired ? (
-                                <Tag color="red">已过期</Tag>
-                              ) : (
-                                <Tag color="green">可用</Tag>
-                              );
-                            },
-                          },
-                        ]}
-                      />
-                    </>
-                  ) : (
-                    <Alert
-                      type="info"
-                      showIcon
-                      message="尚未获取 OpenRouter 模型目录，请点击“重新同步”。"
-                    />
-                  )}
-                </Space>
-              ),
-            },
-          ]}
-        />
-        <Card size="small">
-          <Space direction="vertical" className="field-full">
-            <Typography.Text strong>默认模型</Typography.Text>
-            <Select
-              value={props.value.default_model_id}
-              disabled={props.disabled}
-              options={props.value.tiers.flatMap((tier) =>
-                tier.models.map((model) => ({
-                  value: model.id,
-                  label: `${model.display_name}（${model.id}）`,
-                }))
-              )}
-              onChange={(default_model_id) => props.onChange({ ...props.value, default_model_id })}
-            />
-          </Space>
-        </Card>
-
-        <SortableContext
-          items={props.value.tiers.map((tier) => `tier:${tier.tier}`)}
-          strategy={verticalListSortingStrategy}
-        >
-          <Collapse
-            defaultActiveKey={props.value.tiers.map((tier) => tier.tier)}
-            items={props.value.tiers.map((tier, tierIndex) => ({
-              key: tier.tier,
-              label: (
-                <SortableHandleItem id={`tier:${tier.tier}`} disabled={props.disabled} compact>
-                  <span>
-                    {tier.label} · {tier.models.length} 个模型
-                  </span>
-                </SortableHandleItem>
-              ),
-              children: (
-                <Space direction="vertical" size="middle" className="editor-stack">
-                  <Row gutter={[12, 12]}>
-                    <Col xs={24} md={6}>
-                      <Typography.Text>档位</Typography.Text>
-                      <Select
-                        className="field-full"
-                        value={tier.tier}
-                        options={tierOptions}
-                        disabled={props.disabled}
-                        onChange={(value) => {
-                          const option = tierOptions.find((item) => item.value === value);
-                          updateTier(tierIndex, {
-                            tier: value,
-                            label: option?.label ?? tier.label,
-                            color: option?.color ?? tier.color,
-                          });
-                        }}
-                      />
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Typography.Text>显示名称</Typography.Text>
-                      <Input
-                        value={tier.label}
-                        maxLength={20}
-                        showCount
-                        disabled={props.disabled}
-                        onChange={(event) => updateTier(tierIndex, { label: event.target.value })}
-                      />
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Typography.Text>主题色</Typography.Text>
-                      <Input
-                        value={tier.color}
-                        disabled={props.disabled}
-                        maxLength={7}
-                        status={/^#[0-9a-fA-F]{6}$/.test(tier.color) ? undefined : 'error'}
-                        onChange={(event) => updateTier(tierIndex, { color: event.target.value })}
-                      />
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Typography.Text>排序</Typography.Text>
-                      <InputNumber className="field-full" value={tier.sort_order} disabled />
-                    </Col>
-                    <Col span={24}>
-                      <Typography.Text>参考消耗文案</Typography.Text>
-                      <Input
-                        value={tier.cost_hint}
-                        maxLength={30}
-                        showCount
-                        disabled={props.disabled}
-                        onChange={(event) =>
-                          updateTier(tierIndex, { cost_hint: event.target.value })
-                        }
-                      />
-                    </Col>
-                  </Row>
-
-                  <SortableContext
-                    items={tier.models.map((model) => `model:${model.id}`)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <Space direction="vertical" size="middle" className="editor-stack">
-                      {tier.models.map((model, modelIndex) => (
-                        <SortableHandleItem
-                          key={`${tier.tier}-${model.id}`}
-                          id={`model:${model.id}`}
-                          disabled={props.disabled}
-                        >
-                          <Card
+                          <Input.Search
+                            allowClear
+                            value={openRouterSearch}
+                            placeholder="搜索模型名称、OpenRouter ID、描述或 canonical slug"
+                            onChange={(event) => setOpenRouterSearch(event.target.value)}
+                            suffix={
+                              <Typography.Text type="secondary">
+                                {filteredOpenRouterModels.length} /{' '}
+                                {props.openRouterDirectory.models.length}
+                              </Typography.Text>
+                            }
+                          />
+                          <Table<OpenRouterModelSummary>
+                            key={openRouterSearch.trim().toLocaleLowerCase()}
+                            rowKey="id"
                             size="small"
-                            title={
-                              <Space>
-                                <Radio
-                                  checked={props.value.default_model_id === model.id}
-                                  disabled={props.disabled}
-                                  onChange={() =>
-                                    props.onChange({ ...props.value, default_model_id: model.id })
-                                  }
-                                />
-                                <span>{model.display_name || '未命名模型'}</span>
-                              </Space>
-                            }
-                            extra={
-                              <Popconfirm
-                                title="确定删除这个模型？"
-                                disabled={props.disabled}
-                                onConfirm={() => {
-                                  const next = copyCatalog(props.value);
-                                  next.tiers[tierIndex].models.splice(modelIndex, 1);
-                                  if (next.default_model_id === model.id) {
-                                    next.default_model_id =
-                                      next.tiers.flatMap((item) => item.models)[0]?.id ?? '';
-                                  }
-                                  props.onChange(next);
-                                }}
-                              >
-                                <Button danger size="small" disabled={props.disabled}>
-                                  删除
-                                </Button>
-                              </Popconfirm>
-                            }
-                          >
-                            <Row gutter={[12, 12]}>
-                              <Col xs={24} md={8}>
-                                <Typography.Text>内部稳定 ID</Typography.Text>
-                                <Input
-                                  value={model.id}
-                                  disabled={props.disabled || props.publishedModelIds.has(model.id)}
-                                  maxLength={64}
-                                  status={
-                                    /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(model.id)
-                                      ? undefined
-                                      : 'error'
-                                  }
-                                  onChange={(event) => {
-                                    const oldId = model.id;
-                                    const id = event.target.value;
-                                    updateModel(tierIndex, modelIndex, { id });
-                                    if (props.value.default_model_id === oldId) {
-                                      props.onChange({
-                                        ...copyCatalog(props.value),
-                                        default_model_id: id,
-                                        tiers: copyCatalog(props.value).tiers.map((item, i) => ({
-                                          ...item,
-                                          models: item.models.map((entry, j) =>
-                                            i === tierIndex && j === modelIndex
-                                              ? { ...entry, id }
-                                              : entry
-                                          ),
-                                        })),
-                                      });
-                                    }
-                                  }}
-                                />
-                              </Col>
-                              <Col xs={24} md={8}>
-                                <Typography.Text>OpenRouter 模型 ID</Typography.Text>
-                                <Select
-                                  className="field-full"
-                                  value={model.openrouter_model_id}
-                                  showSearch
-                                  optionFilterProp="label"
-                                  options={(props.openRouterDirectory?.models ?? []).map(
-                                    (item) => ({
-                                      value: item.id,
-                                      label: `${item.name}（${item.id}）`,
-                                    })
-                                  )}
-                                  placeholder="例如 deepseek/deepseek-v3.2"
-                                  disabled={props.disabled || !props.openRouterDirectory}
-                                  onChange={(openrouter_model_id) => {
-                                    const upstream = props.openRouterDirectory?.models.find(
-                                      (item) => item.id === openrouter_model_id
-                                    );
-                                    if (!upstream) return;
+                            dataSource={filteredOpenRouterModels}
+                            locale={{ emptyText: '没有匹配的 OpenRouter 模型' }}
+                            scroll={{ x: 1120 }}
+                            pagination={{
+                              defaultPageSize: 20,
+                              showSizeChanger: true,
+                              pageSizeOptions: [20, 50, 100],
+                              showTotal: (total) => `共 ${total} 个模型`,
+                            }}
+                            columns={[
+                              {
+                                title: '模型',
+                                key: 'model',
+                                fixed: 'left',
+                                width: 280,
+                                render: (_, model) => (
+                                  <Space direction="vertical" size={0}>
+                                    <Typography.Text strong>{model.name}</Typography.Text>
+                                    <Typography.Text type="secondary" copyable>
+                                      {model.id}
+                                    </Typography.Text>
+                                  </Space>
+                                ),
+                              },
+                              {
+                                title: '上下文',
+                                dataIndex: 'context_length',
+                                width: 110,
+                                render: (value: number | null) =>
+                                  value === null ? '未知' : value.toLocaleString('en-US'),
+                              },
+                              {
+                                title: '上游输入价',
+                                dataIndex: 'prompt_usd_per_token',
+                                width: 135,
+                                render: (value: number) =>
+                                  `${formatUsdPerMillion(value)} / 百万 token`,
+                              },
+                              {
+                                title: '上游输出价',
+                                dataIndex: 'completion_usd_per_token',
+                                width: 135,
+                                render: (value: number) =>
+                                  `${formatUsdPerMillion(value)} / 百万 token`,
+                              },
+                              {
+                                title: '展示输入价',
+                                key: 'display_input',
+                                width: 120,
+                                render: (_, model) =>
+                                  `${calculateModelDisplayPrices(model, props.pricingConfig).price_input.toFixed(1)} 星尘`,
+                              },
+                              {
+                                title: '展示输出价',
+                                key: 'display_output',
+                                width: 120,
+                                render: (_, model) =>
+                                  `${calculateModelDisplayPrices(model, props.pricingConfig).price_output.toFixed(1)} 星尘`,
+                              },
+                              {
+                                title: '状态',
+                                key: 'status',
+                                width: 110,
+                                render: (_, model) => {
+                                  const expired =
+                                    model.expiration_date !== null &&
+                                    Number.isFinite(Date.parse(model.expiration_date)) &&
+                                    Date.parse(model.expiration_date) <= Date.now();
+                                  return expired ? (
+                                    <Tag color="red">已过期</Tag>
+                                  ) : (
+                                    <Tag color="green">可用</Tag>
+                                  );
+                                },
+                              },
+                            ]}
+                          />
+                        </>
+                      ) : (
+                        <Alert
+                          type="info"
+                          showIcon
+                          message="尚未获取 OpenRouter 模型目录，请点击“重新同步”。"
+                        />
+                      )}
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+            <Card size="small">
+              <Space direction="vertical" className="field-full">
+                <Typography.Text strong>默认模型</Typography.Text>
+                <Select
+                  value={props.value.default_model_id}
+                  disabled={props.disabled}
+                  options={props.value.tiers.flatMap((tier) =>
+                    tier.models.map((model) => ({
+                      value: model.id,
+                      label: `${model.display_name}（${model.id}）`,
+                    }))
+                  )}
+                  onChange={(default_model_id) =>
+                    props.onChange({ ...props.value, default_model_id })
+                  }
+                />
+              </Space>
+            </Card>
 
-                                    updateModel(tierIndex, modelIndex, {
-                                      openrouter_model_id,
-                                      display_name: upstream.name,
-                                      ...calculateModelDisplayPrices(upstream, {
-                                        ...props.pricingConfig,
-                                        markup: model.markup,
-                                      }),
-                                    });
-                                  }}
-                                />
-                              </Col>
-                              <Col xs={24} md={8}>
-                                <Typography.Text>展示名称</Typography.Text>
-                                <Input
-                                  value={model.display_name}
-                                  maxLength={40}
-                                  showCount
-                                  disabled={props.disabled}
-                                  onChange={(event) =>
-                                    updateModel(tierIndex, modelIndex, {
-                                      display_name: event.target.value,
-                                    })
-                                  }
-                                />
-                              </Col>
-                              <Col xs={24} md={8}>
-                                <Typography.Text>特点文案（最多 15 字）</Typography.Text>
-                                <Input
-                                  value={model.tagline}
-                                  maxLength={15}
-                                  showCount
-                                  disabled={props.disabled}
-                                  onChange={(event) =>
-                                    updateModel(tierIndex, modelIndex, {
-                                      tagline: event.target.value,
-                                    })
-                                  }
-                                />
-                              </Col>
-                              <Col xs={24} md={8}>
-                                <Typography.Text>星尘倍率（markup）</Typography.Text>
-                                <Space.Compact block>
-                                  <AutoComplete
-                                    className="field-full"
-                                    value={String(model.markup)}
-                                    options={MODEL_MARKUP_OPTIONS.map((value) => ({
-                                      value: String(value),
-                                      label: `${value} 倍`,
-                                    }))}
+            <SortableContext
+              items={props.value.tiers.map((tier) => `tier:${tier.tier}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <Collapse
+                defaultActiveKey={props.value.tiers.map((tier) => tier.tier)}
+                items={props.value.tiers.map((tier, tierIndex) => ({
+                  key: tier.tier,
+                  label: (
+                    <SortableHandleItem id={`tier:${tier.tier}`} disabled={props.disabled} compact>
+                      <span>
+                        {tier.label} · {tier.models.length} 个模型
+                      </span>
+                    </SortableHandleItem>
+                  ),
+                  children: (
+                    <Space direction="vertical" size="middle" className="editor-stack">
+                      <Row gutter={[12, 12]}>
+                        <Col xs={24} md={6}>
+                          <Typography.Text>档位</Typography.Text>
+                          <Select
+                            className="field-full"
+                            value={tier.tier}
+                            options={tierOptions}
+                            disabled={props.disabled}
+                            onChange={(value) => {
+                              const option = tierOptions.find((item) => item.value === value);
+                              updateTier(tierIndex, {
+                                tier: value,
+                                label: option?.label ?? tier.label,
+                                color: option?.color ?? tier.color,
+                              });
+                            }}
+                          />
+                        </Col>
+                        <Col xs={24} md={6}>
+                          <Typography.Text>显示名称</Typography.Text>
+                          <Input
+                            value={tier.label}
+                            maxLength={20}
+                            showCount
+                            disabled={props.disabled}
+                            onChange={(event) =>
+                              updateTier(tierIndex, { label: event.target.value })
+                            }
+                          />
+                        </Col>
+                        <Col xs={24} md={6}>
+                          <Typography.Text>主题色</Typography.Text>
+                          <Input
+                            value={tier.color}
+                            disabled={props.disabled}
+                            maxLength={7}
+                            status={/^#[0-9a-fA-F]{6}$/.test(tier.color) ? undefined : 'error'}
+                            onChange={(event) =>
+                              updateTier(tierIndex, { color: event.target.value })
+                            }
+                          />
+                        </Col>
+                        <Col xs={24} md={6}>
+                          <Typography.Text>排序</Typography.Text>
+                          <InputNumber className="field-full" value={tier.sort_order} disabled />
+                        </Col>
+                        <Col span={24}>
+                          <Typography.Text>参考消耗文案</Typography.Text>
+                          <Input
+                            value={tier.cost_hint}
+                            maxLength={30}
+                            showCount
+                            disabled={props.disabled}
+                            onChange={(event) =>
+                              updateTier(tierIndex, { cost_hint: event.target.value })
+                            }
+                          />
+                        </Col>
+                      </Row>
+
+                      <SortableContext
+                        items={tier.models.map((model) => `model:${model.id}`)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <Space direction="vertical" size="middle" className="editor-stack">
+                          {tier.models.map((model, modelIndex) => (
+                            <SortableHandleItem
+                              key={`${tier.tier}-${model.id}`}
+                              id={`model:${model.id}`}
+                              disabled={props.disabled}
+                            >
+                              <Card
+                                size="small"
+                                title={
+                                  <Space>
+                                    <Radio
+                                      checked={props.value.default_model_id === model.id}
+                                      disabled={props.disabled}
+                                      onChange={() =>
+                                        props.onChange({
+                                          ...props.value,
+                                          default_model_id: model.id,
+                                        })
+                                      }
+                                    />
+                                    <span>{model.display_name || '未命名模型'}</span>
+                                  </Space>
+                                }
+                                extra={
+                                  <Popconfirm
+                                    title="确定删除这个模型？"
                                     disabled={props.disabled}
-                                    onChange={(value) =>
-                                      updateModel(tierIndex, modelIndex, {
-                                        markup: Number(value),
-                                      })
-                                    }
-                                    onSelect={(value) => {
-                                      const markup = Number(value);
-                                      const upstream = props.openRouterDirectory?.models.find(
-                                        (item) => item.id === model.openrouter_model_id
-                                      );
-                                      if (!upstream || !ModelMarkupSchema.safeParse(markup).success)
-                                        return;
-                                      updateModel(tierIndex, modelIndex, {
-                                        markup,
-                                        ...calculateModelDisplayPrices(upstream, {
-                                          ...props.pricingConfig,
-                                          markup,
-                                        }),
-                                      });
-                                    }}
-                                  />
-                                  <Button
-                                    disabled={props.disabled}
-                                    onClick={() => {
-                                      const upstream = props.openRouterDirectory?.models.find(
-                                        (item) => item.id === model.openrouter_model_id
-                                      );
-                                      if (
-                                        !upstream ||
-                                        !ModelMarkupSchema.safeParse(model.markup).success
-                                      )
-                                        return;
-                                      updateModel(tierIndex, modelIndex, {
-                                        ...calculateModelDisplayPrices(upstream, {
-                                          ...props.pricingConfig,
-                                          markup: model.markup,
-                                        }),
-                                      });
+                                    onConfirm={() => {
+                                      const next = copyCatalog(props.value);
+                                      next.tiers[tierIndex].models.splice(modelIndex, 1);
+                                      if (next.default_model_id === model.id) {
+                                        next.default_model_id =
+                                          next.tiers.flatMap((item) => item.models)[0]?.id ?? '';
+                                      }
+                                      props.onChange(next);
                                     }}
                                   >
-                                    确认
-                                  </Button>
-                                </Space.Compact>
-                                <Typography.Text type="secondary">
-                                  OpenRouter 实时价 × {model.markup || 0} 倍
-                                </Typography.Text>
-                              </Col>
-                              <Col xs={12} md={4}>
-                                <Typography.Text>输入展示价</Typography.Text>
-                                <InputNumber
-                                  min={0}
-                                  precision={1}
-                                  step={0.1}
-                                  className="field-full"
-                                  value={model.price_input}
-                                  disabled
-                                  onChange={(value) =>
-                                    updateModel(tierIndex, modelIndex, { price_input: value ?? 0 })
-                                  }
-                                />
-                              </Col>
-                              <Col xs={12} md={4}>
-                                <Typography.Text>输出展示价</Typography.Text>
-                                <InputNumber
-                                  min={0}
-                                  precision={1}
-                                  step={0.1}
-                                  className="field-full"
-                                  value={model.price_output}
-                                  disabled
-                                  onChange={(value) =>
-                                    updateModel(tierIndex, modelIndex, { price_output: value ?? 0 })
-                                  }
-                                />
-                              </Col>
-                              <Col xs={12} md={4}>
-                                <Typography.Text>排序</Typography.Text>
-                                <InputNumber
-                                  className="field-full"
-                                  value={model.sort_order}
-                                  disabled
-                                />
-                              </Col>
-                              <Col xs={12} md={4}>
-                                <Typography.Text>上架</Typography.Text>
-                                <div>
-                                  <Switch
-                                    checked={model.enabled}
-                                    disabled={props.disabled}
-                                    onChange={(enabled) =>
-                                      updateModel(tierIndex, modelIndex, { enabled })
-                                    }
-                                  />
-                                </div>
-                              </Col>
-                            </Row>
-                          </Card>
-                        </SortableHandleItem>
-                      ))}
+                                    <Button danger size="small" disabled={props.disabled}>
+                                      删除
+                                    </Button>
+                                  </Popconfirm>
+                                }
+                              >
+                                <Row gutter={[12, 12]}>
+                                  <Col xs={24} md={8}>
+                                    <Typography.Text>内部稳定 ID</Typography.Text>
+                                    <Input
+                                      value={model.id}
+                                      disabled={
+                                        props.disabled || props.publishedModelIds.has(model.id)
+                                      }
+                                      maxLength={64}
+                                      status={
+                                        /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(model.id)
+                                          ? undefined
+                                          : 'error'
+                                      }
+                                      onChange={(event) => {
+                                        const oldId = model.id;
+                                        const id = event.target.value;
+                                        updateModel(tierIndex, modelIndex, { id });
+                                        if (props.value.default_model_id === oldId) {
+                                          props.onChange({
+                                            ...copyCatalog(props.value),
+                                            default_model_id: id,
+                                            tiers: copyCatalog(props.value).tiers.map(
+                                              (item, i) => ({
+                                                ...item,
+                                                models: item.models.map((entry, j) =>
+                                                  i === tierIndex && j === modelIndex
+                                                    ? { ...entry, id }
+                                                    : entry
+                                                ),
+                                              })
+                                            ),
+                                          });
+                                        }
+                                      }}
+                                    />
+                                  </Col>
+                                  <Col xs={24} md={8}>
+                                    <Typography.Text>OpenRouter 模型 ID</Typography.Text>
+                                    <Select
+                                      className="field-full"
+                                      value={model.openrouter_model_id}
+                                      showSearch
+                                      optionFilterProp="label"
+                                      options={(props.openRouterDirectory?.models ?? []).map(
+                                        (item) => ({
+                                          value: item.id,
+                                          label: `${item.name}（${item.id}）`,
+                                        })
+                                      )}
+                                      placeholder="例如 deepseek/deepseek-v3.2"
+                                      disabled={props.disabled || !props.openRouterDirectory}
+                                      onChange={(openrouter_model_id) => {
+                                        const upstream = props.openRouterDirectory?.models.find(
+                                          (item) => item.id === openrouter_model_id
+                                        );
+                                        if (!upstream) return;
+
+                                        updateModel(tierIndex, modelIndex, {
+                                          openrouter_model_id,
+                                          display_name: upstream.name,
+                                          ...calculateModelDisplayPrices(upstream, {
+                                            ...props.pricingConfig,
+                                            markup: model.markup,
+                                          }),
+                                        });
+                                      }}
+                                    />
+                                  </Col>
+                                  <Col xs={24} md={8}>
+                                    <Typography.Text>展示名称</Typography.Text>
+                                    <Input
+                                      value={model.display_name}
+                                      maxLength={40}
+                                      showCount
+                                      disabled={props.disabled}
+                                      onChange={(event) =>
+                                        updateModel(tierIndex, modelIndex, {
+                                          display_name: event.target.value,
+                                        })
+                                      }
+                                    />
+                                  </Col>
+                                  <Col xs={24} md={8}>
+                                    <Typography.Text>特点文案（最多 15 字）</Typography.Text>
+                                    <Input
+                                      value={model.tagline}
+                                      maxLength={15}
+                                      showCount
+                                      disabled={props.disabled}
+                                      onChange={(event) =>
+                                        updateModel(tierIndex, modelIndex, {
+                                          tagline: event.target.value,
+                                        })
+                                      }
+                                    />
+                                  </Col>
+                                  <Col xs={24} md={8}>
+                                    <Typography.Text>星尘倍率（markup）</Typography.Text>
+                                    <Space.Compact block>
+                                      <AutoComplete
+                                        className="field-full"
+                                        value={String(model.markup)}
+                                        options={MODEL_MARKUP_OPTIONS.map((value) => ({
+                                          value: String(value),
+                                          label: `${value} 倍`,
+                                        }))}
+                                        disabled={props.disabled}
+                                        onChange={(value) =>
+                                          updateModel(tierIndex, modelIndex, {
+                                            markup: Number(value),
+                                          })
+                                        }
+                                        onSelect={(value) => {
+                                          const markup = Number(value);
+                                          const upstream = props.openRouterDirectory?.models.find(
+                                            (item) => item.id === model.openrouter_model_id
+                                          );
+                                          if (
+                                            !upstream ||
+                                            !ModelMarkupSchema.safeParse(markup).success
+                                          )
+                                            return;
+                                          updateModel(tierIndex, modelIndex, {
+                                            markup,
+                                            ...calculateModelDisplayPrices(upstream, {
+                                              ...props.pricingConfig,
+                                              markup,
+                                            }),
+                                          });
+                                        }}
+                                      />
+                                      <Button
+                                        disabled={props.disabled}
+                                        onClick={() => {
+                                          const upstream = props.openRouterDirectory?.models.find(
+                                            (item) => item.id === model.openrouter_model_id
+                                          );
+                                          if (
+                                            !upstream ||
+                                            !ModelMarkupSchema.safeParse(model.markup).success
+                                          )
+                                            return;
+                                          updateModel(tierIndex, modelIndex, {
+                                            ...calculateModelDisplayPrices(upstream, {
+                                              ...props.pricingConfig,
+                                              markup: model.markup,
+                                            }),
+                                          });
+                                        }}
+                                      >
+                                        确认
+                                      </Button>
+                                    </Space.Compact>
+                                    <Typography.Text type="secondary">
+                                      OpenRouter 实时价 × {model.markup || 0} 倍
+                                    </Typography.Text>
+                                  </Col>
+                                  <Col xs={12} md={4}>
+                                    <Typography.Text>输入展示价</Typography.Text>
+                                    <InputNumber
+                                      min={0}
+                                      precision={1}
+                                      step={0.1}
+                                      className="field-full"
+                                      value={model.price_input}
+                                      disabled
+                                      onChange={(value) =>
+                                        updateModel(tierIndex, modelIndex, {
+                                          price_input: value ?? 0,
+                                        })
+                                      }
+                                    />
+                                  </Col>
+                                  <Col xs={12} md={4}>
+                                    <Typography.Text>输出展示价</Typography.Text>
+                                    <InputNumber
+                                      min={0}
+                                      precision={1}
+                                      step={0.1}
+                                      className="field-full"
+                                      value={model.price_output}
+                                      disabled
+                                      onChange={(value) =>
+                                        updateModel(tierIndex, modelIndex, {
+                                          price_output: value ?? 0,
+                                        })
+                                      }
+                                    />
+                                  </Col>
+                                  <Col xs={12} md={4}>
+                                    <Typography.Text>排序</Typography.Text>
+                                    <InputNumber
+                                      className="field-full"
+                                      value={model.sort_order}
+                                      disabled
+                                    />
+                                  </Col>
+                                  <Col xs={12} md={4}>
+                                    <Typography.Text>上架</Typography.Text>
+                                    <div>
+                                      <Switch
+                                        checked={model.enabled}
+                                        disabled={props.disabled}
+                                        onChange={(enabled) =>
+                                          updateModel(tierIndex, modelIndex, { enabled })
+                                        }
+                                      />
+                                    </div>
+                                  </Col>
+                                </Row>
+                              </Card>
+                            </SortableHandleItem>
+                          ))}
+                        </Space>
+                      </SortableContext>
+
+                      <Button
+                        block
+                        disabled={props.disabled}
+                        onClick={() => props.onChange(appendDraftModel(props.value, tierIndex))}
+                      >
+                        添加模型
+                      </Button>
                     </Space>
-                  </SortableContext>
+                  ),
+                }))}
+              />
+            </SortableContext>
 
-                  <Button
-                    block
-                    disabled={props.disabled}
-                    onClick={() => props.onChange(appendDraftModel(props.value, tierIndex))}
-                  >
-                    添加模型
-                  </Button>
-                </Space>
-              ),
-            }))}
-          />
-        </SortableContext>
-
-        <Button
-          disabled={props.disabled || props.value.tiers.length >= tierOptions.length}
-          onClick={() => props.onChange(appendDraftTier(props.value))}
-        >
-          添加档位
-        </Button>
-        <ModelCatalogPhonePreview catalog={normalizeCatalogSortOrder(props.value)} />
-      </Space>
+            <Button
+              disabled={props.disabled || props.value.tiers.length >= tierOptions.length}
+              onClick={() => props.onChange(appendDraftTier(props.value))}
+            >
+              添加档位
+            </Button>
+          </Space>
+        </Col>
+        <Col xs={24} xl={8}>
+          <div className="model-preview-sticky">
+            <ModelCatalogPhonePreview catalog={normalizeCatalogSortOrder(props.value)} />
+          </div>
+        </Col>
+      </Row>
     </DndContext>
   );
 }

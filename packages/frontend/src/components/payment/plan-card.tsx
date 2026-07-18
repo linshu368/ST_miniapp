@@ -10,6 +10,8 @@ import { bonusPercent, formatNumber, formatYuan, formatYuanShort } from '@/lib/u
 interface PlanCardProps {
   plan: PaymentPlan;
   selected: boolean;
+  selectedColor: string;
+  badgeColor: string;
   onSelect: (planId: string) => void;
 }
 
@@ -75,7 +77,7 @@ const VARIANT_STYLES: Record<PaymentPlanVariant, VariantStyle> = {
   },
 };
 
-export function PlanCard({ plan, selected, onSelect }: PlanCardProps) {
+export function PlanCard({ plan, selected, selectedColor, badgeColor, onSelect }: PlanCardProps) {
   const style = VARIANT_STYLES[plan.variant];
   const Icon = style.Icon;
   const percent = bonusPercent(plan);
@@ -115,11 +117,23 @@ export function PlanCard({ plan, selected, onSelect }: PlanCardProps) {
       className={cn(
         'group relative w-full overflow-hidden rounded-[20px] text-left transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080014]',
         style.container,
-        selected &&
-          'ring-2 ring-offset-2 ring-offset-[#080014] ring-amber-400 border-transparent shadow-[0_0_30px_rgba(245,158,11,0.2)]'
+        selected && 'border-transparent ring-2 ring-offset-2 ring-offset-[#080014]'
       )}
+      style={
+        selected
+          ? ({
+              borderColor: selectedColor,
+              boxShadow: `0 0 28px ${selectedColor}45`,
+              '--tw-ring-color': selectedColor,
+            } as React.CSSProperties)
+          : undefined
+      }
     >
-      {plan.badge_text ? <span className={style.badgeClass}>{plan.badge_text}</span> : null}
+      {plan.badge_text ? (
+        <span className={style.badgeClass} style={{ background: badgeColor, color: '#fff' }}>
+          {plan.badge_text}
+        </span>
+      ) : null}
 
       <CardContent className="p-3 relative z-10 flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
