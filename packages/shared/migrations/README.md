@@ -122,6 +122,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 038_seed_payment_plans.sql # 将内置充值套餐迁入 runtime_config，后续由运营平台发布调整
 039_admin_character_cards.sql # 放弃配置草稿与运营后台角色卡只读列表
 040_migrate_llm_model_catalog.sql # 将旧版 4 模型迁移为正式分档模型目录
+041_admin_operations_features.sql # 每模型倍率、充值页配置与角色卡运营写操作
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

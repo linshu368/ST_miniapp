@@ -1,5 +1,6 @@
 import {
   Alert,
+  AutoComplete,
   Button,
   Card,
   Col,
@@ -41,6 +42,7 @@ import type {
   OpenRouterModelDirectory,
   OpenRouterModelSummary,
 } from '@miniapp/shared';
+import { MODEL_MARKUP_OPTIONS, ModelMarkupSchema } from '@miniapp/shared';
 import { calculateModelDisplayPrices } from '../lib/openRouterModels';
 
 const tierOptions: Array<{ value: ModelCatalogTierKey; label: string; color: string }> = [
@@ -68,6 +70,7 @@ function newModel(index: number, timestamp = Date.now()): ModelCatalogModel {
     tagline: '',
     price_input: 0,
     price_output: 0,
+    markup: 2.5,
     enabled: true,
     sort_order: index + 1,
   };
@@ -576,7 +579,10 @@ export function ModelCatalogEditor(props: {
                                     updateModel(tierIndex, modelIndex, {
                                       openrouter_model_id,
                                       display_name: upstream.name,
-                                      ...calculateModelDisplayPrices(upstream, props.pricingConfig),
+                                      ...calculateModelDisplayPrices(upstream, {
+                                        ...props.pricingConfig,
+                                        markup: model.markup,
+                                      }),
                                     });
                                   }}
                                 />
@@ -609,6 +615,64 @@ export function ModelCatalogEditor(props: {
                                   }
                                 />
                               </Col>
+                              <Col xs={24} md={8}>
+                                <Typography.Text>星尘倍率（markup）</Typography.Text>
+                                <Space.Compact block>
+                                  <AutoComplete
+                                    className="field-full"
+                                    value={String(model.markup)}
+                                    options={MODEL_MARKUP_OPTIONS.map((value) => ({
+                                      value: String(value),
+                                      label: `${value} 倍`,
+                                    }))}
+                                    disabled={props.disabled}
+                                    onChange={(value) =>
+                                      updateModel(tierIndex, modelIndex, {
+                                        markup: Number(value),
+                                      })
+                                    }
+                                    onSelect={(value) => {
+                                      const markup = Number(value);
+                                      const upstream = props.openRouterDirectory?.models.find(
+                                        (item) => item.id === model.openrouter_model_id
+                                      );
+                                      if (!upstream || !ModelMarkupSchema.safeParse(markup).success)
+                                        return;
+                                      updateModel(tierIndex, modelIndex, {
+                                        markup,
+                                        ...calculateModelDisplayPrices(upstream, {
+                                          ...props.pricingConfig,
+                                          markup,
+                                        }),
+                                      });
+                                    }}
+                                  />
+                                  <Button
+                                    disabled={props.disabled}
+                                    onClick={() => {
+                                      const upstream = props.openRouterDirectory?.models.find(
+                                        (item) => item.id === model.openrouter_model_id
+                                      );
+                                      if (
+                                        !upstream ||
+                                        !ModelMarkupSchema.safeParse(model.markup).success
+                                      )
+                                        return;
+                                      updateModel(tierIndex, modelIndex, {
+                                        ...calculateModelDisplayPrices(upstream, {
+                                          ...props.pricingConfig,
+                                          markup: model.markup,
+                                        }),
+                                      });
+                                    }}
+                                  >
+                                    确认
+                                  </Button>
+                                </Space.Compact>
+                                <Typography.Text type="secondary">
+                                  OpenRouter 实时价 × {model.markup || 0} 倍
+                                </Typography.Text>
+                              </Col>
                               <Col xs={12} md={4}>
                                 <Typography.Text>输入展示价</Typography.Text>
                                 <InputNumber
@@ -617,7 +681,7 @@ export function ModelCatalogEditor(props: {
                                   step={0.1}
                                   className="field-full"
                                   value={model.price_input}
-                                  disabled={props.disabled}
+                                  disabled
                                   onChange={(value) =>
                                     updateModel(tierIndex, modelIndex, { price_input: value ?? 0 })
                                   }
@@ -631,7 +695,7 @@ export function ModelCatalogEditor(props: {
                                   step={0.1}
                                   className="field-full"
                                   value={model.price_output}
-                                  disabled={props.disabled}
+                                  disabled
                                   onChange={(value) =>
                                     updateModel(tierIndex, modelIndex, { price_output: value ?? 0 })
                                   }

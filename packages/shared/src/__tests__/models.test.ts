@@ -4,6 +4,7 @@ import {
   ModelCatalogSchema,
   resolveEffectiveSelectedModelId,
   resolveEnabledCatalogModel,
+  resolveRuntimeCatalogMarkup,
   resolveRuntimeCatalogModel,
   toPublicModelCatalog,
 } from '../api/models.js';
@@ -25,6 +26,7 @@ const validCatalog = {
           tagline: 'Fast',
           price_input: 0.1,
           price_output: 0.2,
+          markup: 2.5,
           enabled: true,
           sort_order: 0,
         },
@@ -91,6 +93,14 @@ describe('ModelCatalogSchema', () => {
     invalidCatalog.tiers[0]!.models[0]!.price_input = 0.12;
     expect(ModelCatalogSchema.safeParse(invalidCatalog).success).toBe(false);
   });
+
+  it('only accepts half-step model markups from one through four', () => {
+    const valid = structuredClone(validCatalog);
+    valid.tiers[0]!.models[0]!.markup = 3.5;
+    expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
+    valid.tiers[0]!.models[0]!.markup = 3.2;
+    expect(ModelCatalogSchema.safeParse(valid).success).toBe(false);
+  });
 });
 
 describe('OpenRouter model helpers', () => {
@@ -150,5 +160,12 @@ describe('OpenRouter model helpers', () => {
       id: 'flash',
       openrouter_model_id: 'google/gemini-flash',
     });
+  });
+
+  it('resolves per-model markup and falls back for legacy catalogs', () => {
+    expect(resolveRuntimeCatalogMarkup(validCatalog, 'google/gemini-flash', 1)).toBe(2.5);
+    const legacy = structuredClone(validCatalog);
+    delete (legacy.tiers[0]!.models[0]! as { markup?: number }).markup;
+    expect(resolveRuntimeCatalogMarkup(legacy, 'google/gemini-flash', 3)).toBe(3);
   });
 });

@@ -1,7 +1,14 @@
 import { getSupabaseClient } from '../../../lib/supabase.js';
-import { PaymentPlansSchema, type PaymentPlan } from '@miniapp/shared';
+import {
+  DEFAULT_RECHARGE_PAGE_CONFIG,
+  PaymentPlansSchema,
+  RechargePageConfigSchema,
+  type PaymentPlan,
+  type RechargePageConfig,
+} from '@miniapp/shared';
 
 export const PAYMENT_PLANS_CONFIG_KEY = 'miniapp_payment_plans';
+export const RECHARGE_PAGE_CONFIG_KEY = 'miniapp_recharge_page_config';
 export const INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY = 'insufficient_credits_notice';
 export const ORDER_EXPIRE_MS = 15 * 60 * 1000;
 
@@ -40,6 +47,22 @@ export function parsePaymentPlansConfig(value: unknown): PaymentPlan[] {
 export async function findPaymentPlan(planId: string): Promise<PaymentPlan | undefined> {
   const plans = await getPaymentPlans();
   return plans.find((plan) => plan.id === planId);
+}
+
+export async function getRechargePageConfig(): Promise<RechargePageConfig> {
+  const db = getSupabaseClient().schema('miniapp');
+  const { data, error } = await db
+    .from('runtime_config')
+    .select('value')
+    .eq('key', RECHARGE_PAGE_CONFIG_KEY)
+    .maybeSingle();
+
+  if (error) {
+    console.warn(`[payment] 读取充值页面配置失败，使用默认配置：${error.message}`);
+    return DEFAULT_RECHARGE_PAGE_CONFIG;
+  }
+  const parsed = RechargePageConfigSchema.safeParse(data?.value);
+  return parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG;
 }
 
 export async function getInsufficientCreditsNotice(): Promise<string> {

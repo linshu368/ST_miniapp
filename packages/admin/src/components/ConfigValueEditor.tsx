@@ -1,6 +1,8 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
 import {
+  DEFAULT_RECHARGE_PAGE_CONFIG,
   ModelCatalogSchema,
+  RechargePageConfigSchema,
   type DisplayPricingConfig,
   type ModelCatalog,
   type OpenRouterModelDirectory,
@@ -12,6 +14,7 @@ import {
   type ManagedConfigKey,
 } from '../lib/configSchemas';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
+import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 
 export function ConfigValueEditor(props: {
   configKey: ManagedConfigKey;
@@ -24,6 +27,7 @@ export function ConfigValueEditor(props: {
   syncLoading: boolean;
   syncError: string | null;
   onRefreshOpenRouter: () => void;
+  paymentPlans: PaymentPlan[];
 }) {
   if (
     props.configKey === 'miniapp_new_user_signup_bonus_credits' ||
@@ -59,7 +63,7 @@ export function ConfigValueEditor(props: {
           ['balanceBaseline', '余额预检基准'],
           ['fallbackCost', '元数据失败兜底星尘'],
           ['exchangeRate', '美元兑星尘汇率'],
-          ['markup', '加价倍率'],
+          ['markup', '旧目录兼容倍率'],
         ].map(([key, label]) => (
           <Col xs={24} md={12} key={key}>
             <Typography.Text>{label}</Typography.Text>
@@ -188,6 +192,18 @@ export function ConfigValueEditor(props: {
           添加充值套餐
         </Button>
       </Space>
+    );
+  }
+
+  if (props.configKey === 'miniapp_recharge_page_config') {
+    const parsed = RechargePageConfigSchema.safeParse(props.value);
+    return (
+      <RechargePageConfigEditor
+        value={parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG}
+        plans={props.paymentPlans}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
     );
   }
 

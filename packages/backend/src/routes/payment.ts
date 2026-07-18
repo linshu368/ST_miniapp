@@ -14,6 +14,7 @@ import { getOrCreateDbUser } from '../lib/user.js';
 import {
   getInsufficientCreditsNotice,
   getPaymentPlans,
+  getRechargePageConfig,
   PaymentPlansConfigError,
 } from '../features/payment/domain/rechargeRules.js';
 import { RechargeUseCase } from '../features/payment/usecases/RechargeUseCase.js';
@@ -51,13 +52,15 @@ export default async function paymentRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
     try {
-      const [plans, insufficientCreditsNotice] = await Promise.all([
+      const [plans, insufficientCreditsNotice, pageConfig] = await Promise.all([
         getPaymentPlans(),
         getInsufficientCreditsNotice(),
+        getRechargePageConfig(),
       ]);
       return reply.send(
         ok<GetPaymentPlansData>({
           plans,
+          page_config: pageConfig,
           insufficient_credits_notice: insufficientCreditsNotice,
         })
       );

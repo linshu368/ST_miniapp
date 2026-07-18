@@ -36,6 +36,7 @@ const catalog: ModelCatalog = {
           tagline: '轻巧流畅',
           price_input: 0,
           price_output: 0,
+          markup: 2.5,
           enabled: true,
           sort_order: 1,
         },

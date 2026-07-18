@@ -4,7 +4,7 @@ import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ChevronLeft, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
-import type { PaymentType } from '@miniapp/shared';
+import { DEFAULT_RECHARGE_PAGE_CONFIG, type PaymentType } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
@@ -55,6 +55,7 @@ function RechargePageContent() {
   const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const plans = data?.plans ?? [];
+  const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
   const showInsufficientCreditsNotice =
     searchParams.get('reason') === 'insufficient_credits' && !!data && !noticeDismissed;
   const selectedPlan = useMemo(
@@ -93,7 +94,7 @@ function RechargePageContent() {
       data-app-shell="recharge"
       className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white"
     >
-      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
+      <div className="h-1 w-full shrink-0" style={{ backgroundColor: pageConfig.theme_color }} />
 
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
         <Button
@@ -105,7 +106,7 @@ function RechargePageContent() {
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
         </Button>
-        <h1 className="text-lg font-black tracking-wide">星尘商店</h1>
+        <h1 className="text-lg font-black tracking-wide">{pageConfig.title}</h1>
       </header>
 
       {/* 主区域：story / cards / trust 三段走 justify-between，
@@ -113,7 +114,7 @@ function RechargePageContent() {
       <div className="flex flex-1 flex-col justify-between px-4 py-4">
         <section className="px-1">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-slate-200">为每段相遇点一盏星光</p>
+            <p className="text-sm font-medium text-slate-200">{pageConfig.description}</p>
             <Link
               href="/profile/orders"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
@@ -122,7 +123,6 @@ function RechargePageContent() {
               我的订单
             </Link>
           </div>
-          <p className="mt-1 text-[11px] text-pink-300/80">限时福利进行中 · 本轮单价历史最低</p>
         </section>
 
         <section className="flex flex-col gap-3 py-4">
@@ -205,14 +205,19 @@ function RechargePageContent() {
             className={cn(
               'flex-1 h-10 rounded-xl font-bold transition-all',
               selectedPlan && !createOrder.isPending
-                ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:opacity-90 shadow-md shadow-pink-500/30 border-0'
+                ? 'text-white hover:opacity-90 border-0'
                 : 'bg-slate-800 text-slate-500'
             )}
+            style={
+              selectedPlan && !createOrder.isPending
+                ? { backgroundColor: pageConfig.theme_color }
+                : undefined
+            }
           >
             {createOrder.isPending
               ? '创建中...'
               : selectedPlan
-                ? `立即支付 ¥${formatYuanShort(selectedPlan.price_cents)}`
+                ? `${pageConfig.button_text} ¥${formatYuanShort(selectedPlan.price_cents)}`
                 : '请选择套餐'}
           </Button>
         </div>

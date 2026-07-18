@@ -31,6 +31,8 @@ export const HexColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, 'color must be a six-digit hex value');
 const oneDecimalDisplayPrice = z.number().finite().nonnegative().multipleOf(0.1);
+export const ModelMarkupSchema = z.number().min(1).max(4).multipleOf(0.5);
+export const MODEL_MARKUP_OPTIONS = [1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
 
 export const ModelCatalogModelSchema = z.object({
   /** Stable application-facing identifier. */
@@ -47,6 +49,8 @@ export const ModelCatalogModelSchema = z.object({
   /** Display-only prices; billing must use provider usage data instead. */
   price_input: oneDecimalDisplayPrice,
   price_output: oneDecimalDisplayPrice,
+  /** Per-model multiplier used for both display pricing and real usage-cost deduction. */
+  markup: ModelMarkupSchema.default(2.5),
   enabled: z.boolean(),
   sort_order: z.number().int().nonnegative(),
 });
@@ -119,6 +123,7 @@ export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
 
 export const PublicModelCatalogModelSchema = ModelCatalogModelSchema.omit({
   openrouter_model_id: true,
+  markup: true,
   enabled: true,
 });
 
@@ -162,6 +167,7 @@ export type SelectModelData = z.infer<typeof SelectModelDataSchema>;
 const RuntimeCatalogModelSchema = z.object({
   id: z.string().trim().min(1),
   openrouter_model_id: z.string().trim().min(1),
+  markup: ModelMarkupSchema.optional(),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -179,6 +185,19 @@ const RuntimeModelCatalogSchema = z.object({
 export interface RuntimeCatalogModel {
   id: string;
   openrouter_model_id: string;
+}
+
+export function resolveRuntimeCatalogMarkup(
+  value: unknown,
+  openRouterModelId: string,
+  fallbackMarkup: number
+): number {
+  const parsed = RuntimeModelCatalogSchema.safeParse(value);
+  if (!parsed.success) return fallbackMarkup;
+  const model = parsed.data.tiers
+    .flatMap((tier) => tier.models)
+    .find((candidate) => candidate.openrouter_model_id === openRouterModelId);
+  return model?.markup ?? fallbackMarkup;
 }
 
 /**

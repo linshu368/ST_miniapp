@@ -9,10 +9,12 @@ import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { getPricingConfig } from '../platform/model-tiers.js';
+import { calculateUsageDeduction } from '../features/billing/usage-pricing.js';
 
 export interface ChatHistoryEntry {
   user_id: string;
   model: string;
+  model_markup?: number;
   user_input: string;
   assistant_reply: string | null;
   history: unknown[];
@@ -143,9 +145,11 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
       if (entry.status === 'success') {
         const pricing = await getPricingConfig();
         const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
+        const modelMarkup = entry.model_markup ?? pricing.markup;
+        llmMetadata.llm_model_markup = modelMarkup;
 
         if (typeof usageCost === 'number') {
-          actualDeduction = Math.round(usageCost * pricing.exchangeRate * pricing.markup);
+          actualDeduction = calculateUsageDeduction(usageCost, pricing.exchangeRate, modelMarkup);
         } else {
           // 如果本次调用成功了，但获取不到usage，使用兜底额
           actualDeduction = pricing.fallbackCost;
