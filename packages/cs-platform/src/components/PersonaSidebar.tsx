@@ -14,9 +14,7 @@ export function PersonaSidebar(props: {
   return (
     <aside className="sidebar">
       <header className="sidebar-brand">
-        <span className="sidebar-logo" aria-hidden="true">
-          蜜
-        </span>
+        <img className="sidebar-logo" src="/favicon.svg" alt="" aria-hidden="true" />
         <span className="sidebar-title">蜜镜AI用户回访平台</span>
       </header>
 

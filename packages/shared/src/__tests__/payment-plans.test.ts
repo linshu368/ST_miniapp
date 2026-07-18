@@ -33,8 +33,28 @@ describe('RechargePageConfigSchema', () => {
         description: '为每段相遇点一盏星光',
         button_text: '立即支付',
         theme_color: '#ec4899',
+        balance_color: '#8b5cf6',
+        selected_plan_color: '#f59e0b',
+        badge_color: '#6366f1',
+        button_color: '#ec4899',
       })
     ).toMatchObject({ theme_color: '#ec4899' });
+  });
+
+  it('fills independent component colors for legacy page configurations', () => {
+    expect(
+      RechargePageConfigSchema.parse({
+        title: '星尘商店',
+        description: '说明',
+        button_text: '支付',
+        theme_color: '#112233',
+      })
+    ).toMatchObject({
+      balance_color: '#8b5cf6',
+      selected_plan_color: '#f59e0b',
+      badge_color: '#6366f1',
+      button_color: '#ec4899',
+    });
   });
 
   it('rejects color names and empty copy', () => {

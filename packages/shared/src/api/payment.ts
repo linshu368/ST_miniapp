@@ -66,6 +66,22 @@ export const RechargePageConfigSchema = z.object({
   description: z.string().trim().min(1).max(120),
   button_text: z.string().trim().min(1).max(20),
   theme_color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  balance_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#8b5cf6'),
+  selected_plan_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#f59e0b'),
+  badge_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#6366f1'),
+  button_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#ec4899'),
 });
 
 export type RechargePageConfig = z.infer<typeof RechargePageConfigSchema>;
@@ -75,6 +91,10 @@ export const DEFAULT_RECHARGE_PAGE_CONFIG: RechargePageConfig = {
   description: '为每段相遇点一盏星光',
   button_text: '立即支付',
   theme_color: '#ec4899',
+  balance_color: '#8b5cf6',
+  selected_plan_color: '#f59e0b',
+  badge_color: '#6366f1',
+  button_color: '#ec4899',
 };
 
 export interface PaymentOrder {

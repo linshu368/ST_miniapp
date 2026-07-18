@@ -53,8 +53,8 @@ export interface AuditLog {
   environment: AdminEnvironment;
   action: string;
   record_id: string;
-  before_value: unknown;
-  after_value: unknown;
+  before_value?: unknown;
+  after_value?: unknown;
   created_at: string;
 }
 
@@ -139,7 +139,7 @@ export async function getAuditLogs(
   const { data, error } = await client
     .schema('admin')
     .from('audit_logs')
-    .select('*')
+    .select('id,actor_email,actor_name,environment,action,record_id,created_at')
     .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(100);

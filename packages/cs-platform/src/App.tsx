@@ -116,6 +116,9 @@ export default function App() {
     void qc.invalidateQueries({
       queryKey: ['cs', 'session', selectedPersona.id, selectedUser.user.user_id],
     });
+    void qc.invalidateQueries({
+      queryKey: ['cs', 'telegram-reachability', selectedPersona.id, selectedUser.user.user_id],
+    });
     void qc.invalidateQueries({ queryKey: ['cs', 'users', selectedPersona.id] });
   };
 
