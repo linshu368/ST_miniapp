@@ -18,12 +18,29 @@ const configs: Record<AdminEnvironment, { url: string; anonKey: string; apiUrl: 
 const clients = new Map<AdminEnvironment, SupabaseClient>();
 const RETRY_DELAYS_MS = [350, 1_000];
 
+export function normalizeEmptyLogoutRequest(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): RequestInit | undefined {
+  const url =
+    typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+  if (method !== 'POST' || !url.includes('/auth/v1/logout') || init?.body != null) return init;
+
+  const headers = new Headers(
+    init?.headers ?? (input instanceof Request ? input.headers : undefined)
+  );
+  if (!headers.get('content-type')?.toLowerCase().includes('application/json')) return init;
+  return { ...(init ?? {}), headers, body: '{}' };
+}
+
 const resilientFetch: typeof fetch = async (input, init) => {
   let lastError: unknown;
+  const normalizedInit = normalizeEmptyLogoutRequest(input, init);
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      const response = await fetch(input, init);
+      const response = await fetch(input, normalizedInit);
       if (response.status < 500 || attempt === RETRY_DELAYS_MS.length) return response;
       lastError = new Error(`Supabase 暂时不可用（HTTP ${response.status}）`);
     } catch (error) {
