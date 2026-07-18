@@ -23,7 +23,7 @@ export function LoginPage(props: {
           />
           <div>
             <Typography.Title level={2}>蜜镜AI运营平台</Typography.Title>
-            <Typography.Text type="secondary">配置与模型管理</Typography.Text>
+            <Typography.Text type="secondary">配置、模型与数据分析</Typography.Text>
           </div>
         </div>
         <Typography.Paragraph type="secondary">
