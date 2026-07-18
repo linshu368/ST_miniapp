@@ -53,7 +53,13 @@ export function ConversationPanel(props: {
       setInput('');
       props.onChanged();
     },
-    onError: (error) => props.onToast(error instanceof Error ? error.message : '发送失败'),
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Telegram 消息发送失败';
+      props.onToast(`发送失败：${message}`);
+      // The backend has already persisted send_failed before returning 502.
+      // Refresh immediately so the session badge and failed-message retry UI do not stay stale.
+      props.onChanged();
+    },
   });
 
   const actionMutation = useMutation({
@@ -258,7 +264,10 @@ export function ConversationPanel(props: {
                 csApi
                   .retryMessage(props.persona.id, props.user.user_id, latestFailed.id)
                   .then(props.onChanged)
-                  .catch((error) => props.onToast(error.message))
+                  .catch((error) => {
+                    props.onToast(`发送失败：${error.message}`);
+                    props.onChanged();
+                  })
               }
             >
               重试上一条失败消息

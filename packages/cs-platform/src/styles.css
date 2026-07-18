@@ -103,6 +103,14 @@ textarea {
   padding: 16px 16px 12px;
 }
 
+.sidebar-brand-icon {
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border-radius: 7px;
+  box-shadow: var(--shadow-sm);
+}
+
 .sidebar-logo,
 .login-logo {
   display: inline-flex;
