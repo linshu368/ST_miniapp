@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { ModelCatalogSchema, type ModelCatalog } from '@miniapp/shared';
 import { EditableModelCatalogSchema } from '../lib/configSchemas';
-import { appendDraftModel, appendDraftTier, reorderCatalog } from './ModelCatalogEditor';
+import {
+  appendDraftModel,
+  appendDraftTier,
+  filterOpenRouterModels,
+  reorderCatalog,
+} from './ModelCatalogEditor';
 
 const catalog: ModelCatalog = {
   default_model_id: 'flash',
@@ -89,5 +94,42 @@ describe('editable model catalog additions', () => {
     expect(result.tiers.at(-1)?.models).toEqual([]);
     expect(EditableModelCatalogSchema.safeParse(result).success).toBe(true);
     expect(ModelCatalogSchema.safeParse(result).success).toBe(false);
+  });
+});
+
+describe('filterOpenRouterModels', () => {
+  const models = [
+    {
+      id: 'google/gemini-flash',
+      canonical_slug: 'google/gemini-flash-latest',
+      name: 'Gemini Flash',
+      description: 'Fast multimodal model',
+      context_length: 1_000_000,
+      prompt_usd_per_token: 0.0000004,
+      completion_usd_per_token: 0.0000012,
+      expiration_date: null,
+    },
+    {
+      id: 'deepseek/deepseek-v3',
+      canonical_slug: null,
+      name: 'DeepSeek V3',
+      description: 'Reasoning and chat',
+      context_length: 128_000,
+      prompt_usd_per_token: 0.0000002,
+      completion_usd_per_token: 0.0000008,
+      expiration_date: null,
+    },
+  ];
+
+  it('searches model name, id, description and canonical slug case-insensitively', () => {
+    expect(filterOpenRouterModels(models, 'GEMINI')).toHaveLength(1);
+    expect(filterOpenRouterModels(models, 'deepseek/')).toHaveLength(1);
+    expect(filterOpenRouterModels(models, 'multimodal')).toHaveLength(1);
+    expect(filterOpenRouterModels(models, 'flash-latest')).toHaveLength(1);
+  });
+
+  it('returns all models for a blank search and none for an unknown term', () => {
+    expect(filterOpenRouterModels(models, '  ')).toHaveLength(2);
+    expect(filterOpenRouterModels(models, 'missing')).toEqual([]);
   });
 });

@@ -32,7 +32,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type {
   DisplayPricingConfig,
   ModelCatalog,
@@ -56,6 +56,19 @@ function formatUsdPerMillion(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   })}`;
+}
+
+export function filterOpenRouterModels(
+  models: readonly OpenRouterModelSummary[],
+  searchTerm: string
+): OpenRouterModelSummary[] {
+  const normalizedTerm = searchTerm.trim().toLocaleLowerCase();
+  if (!normalizedTerm) return [...models];
+  return models.filter((model) =>
+    [model.name, model.id, model.canonical_slug, model.description]
+      .filter((value): value is string => typeof value === 'string')
+      .some((value) => value.toLocaleLowerCase().includes(normalizedTerm))
+  );
 }
 
 function copyCatalog(value: ModelCatalog): ModelCatalog {
@@ -223,6 +236,11 @@ export function ModelCatalogEditor(props: {
   onRefreshOpenRouter: () => void;
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const [openRouterSearch, setOpenRouterSearch] = useState('');
+  const filteredOpenRouterModels = useMemo(
+    () => filterOpenRouterModels(props.openRouterDirectory?.models ?? [], openRouterSearch),
+    [openRouterSearch, props.openRouterDirectory]
+  );
 
   const updateTier = (tierIndex: number, patch: Partial<ModelCatalogTier>) => {
     const next = copyCatalog(props.value);
@@ -297,10 +315,24 @@ export function ModelCatalogEditor(props: {
                         。共获取 {props.openRouterDirectory.models.length}{' '}
                         个模型；展示价格按当前汇率与加价倍率自动换算。
                       </Typography.Text>
+                      <Input.Search
+                        allowClear
+                        value={openRouterSearch}
+                        placeholder="搜索模型名称、OpenRouter ID、描述或 canonical slug"
+                        onChange={(event) => setOpenRouterSearch(event.target.value)}
+                        suffix={
+                          <Typography.Text type="secondary">
+                            {filteredOpenRouterModels.length} /{' '}
+                            {props.openRouterDirectory.models.length}
+                          </Typography.Text>
+                        }
+                      />
                       <Table<OpenRouterModelSummary>
+                        key={openRouterSearch.trim().toLocaleLowerCase()}
                         rowKey="id"
                         size="small"
-                        dataSource={props.openRouterDirectory.models}
+                        dataSource={filteredOpenRouterModels}
+                        locale={{ emptyText: '没有匹配的 OpenRouter 模型' }}
                         scroll={{ x: 1120 }}
                         pagination={{
                           defaultPageSize: 20,
