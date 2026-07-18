@@ -83,7 +83,23 @@ body {
   position: sticky !important;
   top: 0;
   height: 100vh;
+  overflow: hidden;
   border-right: 1px solid #d7e2df;
+}
+
+.admin-sider .ant-layout-sider-children {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.admin-sider .ant-menu {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .admin-brand {
@@ -287,6 +303,15 @@ body {
     min-width: 100% !important;
     max-width: 100% !important;
     height: auto;
+    overflow: visible;
+  }
+
+  .admin-sider .ant-layout-sider-children {
+    height: auto;
+  }
+
+  .admin-sider .ant-menu {
+    overflow: visible;
   }
 
   .admin-content {
