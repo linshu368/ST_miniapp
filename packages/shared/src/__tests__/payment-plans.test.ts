@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PaymentPlansSchema } from '../api/payment.js';
+import { PaymentPlansSchema, RechargePageConfigSchema } from '../api/payment.js';
 
 const plan = {
   id: 'plan-entry',
@@ -22,5 +22,29 @@ describe('PaymentPlansSchema', () => {
     expect(PaymentPlansSchema.safeParse(undefined).success).toBe(false);
     expect(PaymentPlansSchema.safeParse([]).success).toBe(false);
     expect(PaymentPlansSchema.safeParse([plan, plan]).success).toBe(false);
+  });
+});
+
+describe('RechargePageConfigSchema', () => {
+  it('accepts real page copy and a six-digit theme color', () => {
+    expect(
+      RechargePageConfigSchema.parse({
+        title: '星尘商店',
+        description: '为每段相遇点一盏星光',
+        button_text: '立即支付',
+        theme_color: '#ec4899',
+      })
+    ).toMatchObject({ theme_color: '#ec4899' });
+  });
+
+  it('rejects color names and empty copy', () => {
+    expect(
+      RechargePageConfigSchema.safeParse({
+        title: '',
+        description: '说明',
+        button_text: '支付',
+        theme_color: 'pink',
+      }).success
+    ).toBe(false);
   });
 });

@@ -133,6 +133,7 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
       .from('characters')
       .select('*')
       .eq('enabled', true)
+      .is('archived_at', null)
       .order('sort_order', { ascending: true }),
     schemaClient('st_platform')
       .from('platform_presets')

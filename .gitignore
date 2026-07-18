@@ -39,5 +39,6 @@ SillyTavern-sync-package/
 
 
 kk标签测试/
+yunyinghoutai_wenjian/
 .env*
 !packages/admin/.env.example

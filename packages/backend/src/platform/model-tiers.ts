@@ -309,6 +309,23 @@ export async function resolveDefaultOpenRouterModelId(): Promise<string> {
   return resolveEnabledCatalogModel(catalog, catalog.default_model_id).openrouter_model_id;
 }
 
+export async function getModelMarkup(
+  openRouterModelId: string,
+  fallbackMarkup?: number
+): Promise<number> {
+  const fallback = fallbackMarkup ?? (await getPricingConfig()).markup;
+  try {
+    const catalog = await fetchModelCatalog();
+    const model = catalog.tiers
+      .flatMap((tier) => tier.models)
+      .find((candidate) => candidate.openrouter_model_id === openRouterModelId);
+    return model?.markup ?? fallback;
+  } catch (error) {
+    console.error('[model-tiers] Failed to resolve per-model markup:', error);
+    return fallback;
+  }
+}
+
 export async function getModelTier(modelName: string): Promise<BackendModelTierConfig> {
   const tiers = await fetchModelTiers();
   const found = tiers.find((t) => t.modelName === modelName);

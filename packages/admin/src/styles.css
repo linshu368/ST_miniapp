@@ -138,18 +138,6 @@ body {
   place-items: center;
 }
 
-.config-grid {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.config-nav-card {
-  position: sticky;
-  top: 88px;
-}
-
 .field-full,
 .editor-stack {
   width: 100%;
@@ -269,14 +257,6 @@ body {
     width: 180px !important;
     min-width: 180px !important;
     max-width: 180px !important;
-  }
-
-  .config-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .config-nav-card {
-    position: static;
   }
 
   .admin-header {
@@ -417,4 +397,215 @@ body {
 
 .model-phone-row small {
   font-size: 10px;
+}
+
+.recharge-color-control {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.recharge-color-swatch {
+  width: 40px;
+  height: 32px;
+  border: 1px solid rgb(0 0 0 / 12%);
+  border-radius: 8px;
+}
+
+.recharge-phone-preview {
+  width: min(320px, 100%);
+  margin: 0 auto;
+  padding: 8px;
+  color: #fff;
+  background: #151827;
+  border: 6px solid #151827;
+  border-radius: 34px;
+}
+
+.recharge-phone-screen {
+  min-height: 560px;
+  overflow: hidden;
+  background: #0a0a0a;
+  border-radius: 23px;
+}
+
+.recharge-preview-header {
+  display: grid;
+  min-height: 130px;
+  align-content: end;
+  padding: 20px;
+}
+
+.recharge-preview-header .ant-typography {
+  margin: 0 !important;
+  color: #fff !important;
+}
+
+.recharge-preview-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.recharge-preview-balance,
+.recharge-preview-plan {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 12px;
+}
+
+.recharge-preview-balance strong {
+  font-size: 24px;
+}
+
+.recharge-preview-plans {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.recharge-preview-plan span {
+  color: rgb(255 255 255 / 58%);
+  font-size: 11px;
+}
+
+.recharge-preview-button {
+  width: 100%;
+  padding: 12px;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  border: 0;
+  border-radius: 11px;
+}
+
+.character-management-layout {
+  display: grid;
+  grid-template-columns: minmax(480px, 1fr) 360px;
+  gap: 24px;
+  align-items: start;
+}
+
+.character-management-panel {
+  min-width: 0;
+}
+
+.character-management-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #edf0f5;
+  border-radius: 12px;
+}
+
+.character-drag-handle {
+  padding: 8px 4px;
+  color: #87909f;
+  font: inherit;
+  cursor: grab;
+  background: transparent;
+  border: 0;
+}
+
+.character-management-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.character-management-copy span {
+  overflow: hidden;
+  color: #87909f;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-lobby-phone {
+  padding: 8px;
+  color: #fff;
+  background: #121522;
+  border: 6px solid #121522;
+  border-radius: 34px;
+}
+
+.character-lobby-screen {
+  min-height: 620px;
+  padding: 18px 12px;
+  background: #080910;
+  border-radius: 23px;
+}
+
+.character-lobby-screen .ant-typography {
+  color: #fff;
+}
+
+.character-lobby-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.character-lobby-grid button {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  padding: 5px;
+  overflow: hidden;
+  color: #fff;
+  text-align: left;
+  background: #141722;
+  border: 2px solid transparent;
+  border-radius: 14px;
+}
+
+.character-lobby-grid button.is-golden {
+  border-color: #d6ad55;
+  box-shadow: 0 0 12px rgb(214 173 85 / 38%);
+}
+
+.character-lobby-grid img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 9px;
+}
+
+.character-lobby-grid strong {
+  padding: 0 4px 4px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-lobby-grid i {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  padding: 2px 6px;
+  color: #37280e;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  background: #f1d58b;
+  border-radius: 999px;
+}
+
+@media (max-width: 1100px) {
+  .character-management-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .character-lobby-phone {
+    width: min(360px, 100%);
+    margin: 0 auto;
+  }
 }

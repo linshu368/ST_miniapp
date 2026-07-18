@@ -16,7 +16,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { InsufficientBalanceErrorResponse } from '@miniapp/shared';
 import { Readable, Transform } from 'node:stream';
 import { verifyPlatformToken } from '../lib/llm-token.js';
-import { getPricingConfig } from '../platform/model-tiers.js';
+import { getModelMarkup, getPricingConfig } from '../platform/model-tiers.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { saveChatHistory } from '../lib/chat-history-logger.js';
 
@@ -125,6 +125,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       }
 
       const pricing = await getPricingConfig();
+      const modelMarkup = await getModelMarkup(modelName, pricing.markup);
       const balanceBaseline = pricing.balanceBaseline;
 
       // ── 余额预检：不足基线时在调用上游前返回 402，由 ST bridge 引导充值 ─────────
@@ -197,6 +198,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             {
               user_id: userId,
               model: modelName,
+              model_markup: modelMarkup,
               user_input: userInput,
               assistant_reply: null,
               history: chatMessages,
@@ -243,6 +245,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             {
               user_id: userId,
               model: modelName,
+              model_markup: modelMarkup,
               user_input: userInput,
               assistant_reply: null,
               history: chatMessages,
@@ -312,6 +315,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                   {
                     user_id: userId,
                     model: modelName,
+                    model_markup: modelMarkup,
                     user_input: userInput,
                     assistant_reply: replyChunks.join(''),
                     history: chatMessages,
@@ -333,6 +337,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                   {
                     user_id: userId,
                     model: modelName,
+                    model_markup: modelMarkup,
                     user_input: userInput,
                     assistant_reply: replyChunks.length > 0 ? replyChunks.join('') : null,
                     history: chatMessages,
@@ -359,6 +364,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           {
             user_id: userId,
             model: modelName,
+            model_markup: modelMarkup,
             user_input: userInput,
             assistant_reply: null, // 非流式通常在这里无法简单拦截 body
             history: chatMessages,

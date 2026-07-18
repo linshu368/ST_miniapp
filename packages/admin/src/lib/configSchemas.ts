@@ -1,10 +1,16 @@
-import { ModelCatalogSchema, PaymentPlansSchema } from '@miniapp/shared';
+import {
+  DEFAULT_RECHARGE_PAGE_CONFIG,
+  ModelCatalogSchema,
+  PaymentPlansSchema,
+  RechargePageConfigSchema,
+} from '@miniapp/shared';
 import { z } from 'zod';
 
 export const managedConfigKeys = [
   'miniapp_new_user_signup_bonus_credits',
   'miniapp_daily_checkin_bonus_credits',
   'miniapp_payment_plans',
+  'miniapp_recharge_page_config',
   'llm_model_catalog',
   'llm_pricing_config',
   'system_fallback_character_id',
@@ -20,10 +26,37 @@ export const LlmPricingConfigSchema = z.object({
   markup: z.number().positive(),
 });
 
+const EditableModelCatalogModelSchema = z.object({
+  id: z.string(),
+  openrouter_model_id: z.string(),
+  display_name: z.string(),
+  tagline: z.string(),
+  price_input: z.number().finite().nonnegative(),
+  price_output: z.number().finite().nonnegative(),
+  markup: z.number().finite(),
+  enabled: z.boolean(),
+  sort_order: z.number().int().nonnegative(),
+});
+
+const EditableModelCatalogTierSchema = z.object({
+  tier: z.enum(['light', 'standard', 'premium']),
+  label: z.string(),
+  color: z.string(),
+  cost_hint: z.string(),
+  sort_order: z.number().int().nonnegative(),
+  models: z.array(EditableModelCatalogModelSchema),
+});
+
+export const EditableModelCatalogSchema = z.object({
+  default_model_id: z.string(),
+  tiers: z.array(EditableModelCatalogTierSchema),
+});
+
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
   miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
   miniapp_payment_plans: PaymentPlansSchema,
+  miniapp_recharge_page_config: RechargePageConfigSchema,
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
@@ -48,6 +81,11 @@ export const configMetadata: Record<
     description: '星尘商店展示并用于下单校验的正式套餐。',
     defaultValue: [],
   },
+  miniapp_recharge_page_config: {
+    label: '充值页面配置',
+    description: '星尘商店的标题、说明、支付按钮文字和主题色。',
+    defaultValue: DEFAULT_RECHARGE_PAGE_CONFIG,
+  },
   llm_model_catalog: {
     label: '模型目录',
     description: '用户可选择的 OpenRouter 模型、档位、展示价与默认模型。',
@@ -68,6 +106,7 @@ export const configMetadata: Record<
               tagline: '轻巧流畅',
               price_input: 0,
               price_output: 0,
+              markup: 2.5,
               enabled: true,
               sort_order: 1,
             },
@@ -78,7 +117,7 @@ export const configMetadata: Record<
   },
   llm_pricing_config: {
     label: '动态计费参数',
-    description: '实际扣费换算参数。模型目录中的展示价不会进入该计算。',
+    description: '实际扣费基础参数；markup 仅供旧目录兼容，新目录使用每个模型自己的倍率。',
     defaultValue: {
       balanceBaseline: 30,
       fallbackCost: 30,

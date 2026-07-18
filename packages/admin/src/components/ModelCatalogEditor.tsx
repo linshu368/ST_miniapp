@@ -1,5 +1,6 @@
 import {
   Alert,
+  AutoComplete,
   Button,
   Card,
   Col,
@@ -12,6 +13,7 @@ import {
   Select,
   Space,
   Switch,
+  Table,
   Tag,
   Typography,
 } from 'antd';
@@ -38,7 +40,9 @@ import type {
   ModelCatalogTier,
   ModelCatalogTierKey,
   OpenRouterModelDirectory,
+  OpenRouterModelSummary,
 } from '@miniapp/shared';
+import { MODEL_MARKUP_OPTIONS, ModelMarkupSchema } from '@miniapp/shared';
 import { calculateModelDisplayPrices } from '../lib/openRouterModels';
 
 const tierOptions: Array<{ value: ModelCatalogTierKey; label: string; color: string }> = [
@@ -47,20 +51,62 @@ const tierOptions: Array<{ value: ModelCatalogTierKey; label: string; color: str
   { value: 'premium', label: '旗舰', color: '#c084fc' },
 ];
 
+function formatUsdPerMillion(value: number): string {
+  return `$${(value * 1_000_000).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  })}`;
+}
+
 function copyCatalog(value: ModelCatalog): ModelCatalog {
   return structuredClone(value);
 }
 
-function newModel(index: number): ModelCatalogModel {
+function newModel(index: number, timestamp = Date.now()): ModelCatalogModel {
   return {
-    id: `model-${Date.now()}-${index}`,
+    id: `model-${timestamp}-${index}`,
     openrouter_model_id: '',
     display_name: '新模型',
     tagline: '',
     price_input: 0,
     price_output: 0,
+    markup: 2.5,
     enabled: true,
     sort_order: index + 1,
+  };
+}
+
+export function appendDraftModel(
+  catalog: ModelCatalog,
+  tierIndex: number,
+  timestamp = Date.now()
+): ModelCatalog {
+  const next = copyCatalog(catalog);
+  const models = next.tiers[tierIndex]?.models;
+  if (!models) return catalog;
+  const model = newModel(models.length, timestamp);
+  models.push(model);
+  if (!next.default_model_id) next.default_model_id = model.id;
+  return next;
+}
+
+export function appendDraftTier(catalog: ModelCatalog): ModelCatalog {
+  const used = new Set(catalog.tiers.map((tier) => tier.tier));
+  const option = tierOptions.find((item) => !used.has(item.value));
+  if (!option) return catalog;
+  return {
+    ...catalog,
+    tiers: [
+      ...catalog.tiers,
+      {
+        tier: option.value,
+        label: option.label,
+        color: option.color,
+        cost_hint: '',
+        sort_order: catalog.tiers.length,
+        models: [],
+      },
+    ],
   };
 }
 
@@ -207,34 +253,140 @@ export function ModelCatalogEditor(props: {
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <Space direction="vertical" size="middle" className="editor-stack">
-        <Card size="small">
-          <Space direction="vertical" className="field-full">
-            <Space wrap>
-              <Typography.Text strong>OpenRouter 模型目录</Typography.Text>
-              {props.openRouterDirectory ? (
-                <Tag color={props.openRouterDirectory.stale ? 'orange' : 'green'}>
-                  {props.openRouterDirectory.stale ? '使用缓存' : '已同步'} ·{' '}
-                  {props.openRouterDirectory.models.length} 个模型
-                </Tag>
-              ) : (
-                <Tag>未同步</Tag>
-              )}
-              <Button size="small" loading={props.syncLoading} onClick={props.onRefreshOpenRouter}>
-                重新同步
-              </Button>
-            </Space>
-            {props.syncError ? <Alert type="error" showIcon message={props.syncError} /> : null}
-            {props.openRouterDirectory ? (
-              <Typography.Text type="secondary">
-                上游更新时间：
-                {new Date(props.openRouterDirectory.fetched_at).toLocaleString('zh-CN', {
-                  hour12: false,
-                })}
-                。选择模型后，将使用当前汇率与加价倍率自动换算展示价格。
-              </Typography.Text>
-            ) : null}
-          </Space>
-        </Card>
+        <Collapse
+          items={[
+            {
+              key: 'openrouter-directory',
+              label: (
+                <Space wrap>
+                  <Typography.Text strong>OpenRouter 模型目录</Typography.Text>
+                  {props.openRouterDirectory ? (
+                    <Tag color={props.openRouterDirectory.stale ? 'orange' : 'green'}>
+                      {props.openRouterDirectory.stale ? '使用缓存' : '已同步'} ·{' '}
+                      {props.openRouterDirectory.models.length} 个模型
+                    </Tag>
+                  ) : (
+                    <Tag>未同步</Tag>
+                  )}
+                </Space>
+              ),
+              extra: (
+                <Button
+                  size="small"
+                  loading={props.syncLoading}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    props.onRefreshOpenRouter();
+                  }}
+                >
+                  重新同步
+                </Button>
+              ),
+              children: (
+                <Space direction="vertical" size="middle" className="field-full">
+                  {props.syncError ? (
+                    <Alert type="error" showIcon message={props.syncError} />
+                  ) : null}
+                  {props.openRouterDirectory ? (
+                    <>
+                      <Typography.Text type="secondary">
+                        上游更新时间：
+                        {new Date(props.openRouterDirectory.fetched_at).toLocaleString('zh-CN', {
+                          hour12: false,
+                        })}
+                        。共获取 {props.openRouterDirectory.models.length}{' '}
+                        个模型；展示价格按当前汇率与加价倍率自动换算。
+                      </Typography.Text>
+                      <Table<OpenRouterModelSummary>
+                        rowKey="id"
+                        size="small"
+                        dataSource={props.openRouterDirectory.models}
+                        scroll={{ x: 1120 }}
+                        pagination={{
+                          defaultPageSize: 20,
+                          showSizeChanger: true,
+                          pageSizeOptions: [20, 50, 100],
+                          showTotal: (total) => `共 ${total} 个模型`,
+                        }}
+                        columns={[
+                          {
+                            title: '模型',
+                            key: 'model',
+                            fixed: 'left',
+                            width: 280,
+                            render: (_, model) => (
+                              <Space direction="vertical" size={0}>
+                                <Typography.Text strong>{model.name}</Typography.Text>
+                                <Typography.Text type="secondary" copyable>
+                                  {model.id}
+                                </Typography.Text>
+                              </Space>
+                            ),
+                          },
+                          {
+                            title: '上下文',
+                            dataIndex: 'context_length',
+                            width: 110,
+                            render: (value: number | null) =>
+                              value === null ? '未知' : value.toLocaleString('en-US'),
+                          },
+                          {
+                            title: '上游输入价',
+                            dataIndex: 'prompt_usd_per_token',
+                            width: 135,
+                            render: (value: number) => `${formatUsdPerMillion(value)} / 百万 token`,
+                          },
+                          {
+                            title: '上游输出价',
+                            dataIndex: 'completion_usd_per_token',
+                            width: 135,
+                            render: (value: number) => `${formatUsdPerMillion(value)} / 百万 token`,
+                          },
+                          {
+                            title: '展示输入价',
+                            key: 'display_input',
+                            width: 120,
+                            render: (_, model) =>
+                              `${calculateModelDisplayPrices(model, props.pricingConfig).price_input.toFixed(1)} 星尘`,
+                          },
+                          {
+                            title: '展示输出价',
+                            key: 'display_output',
+                            width: 120,
+                            render: (_, model) =>
+                              `${calculateModelDisplayPrices(model, props.pricingConfig).price_output.toFixed(1)} 星尘`,
+                          },
+                          {
+                            title: '状态',
+                            key: 'status',
+                            width: 110,
+                            render: (_, model) => {
+                              const expired =
+                                model.expiration_date !== null &&
+                                Number.isFinite(Date.parse(model.expiration_date)) &&
+                                Date.parse(model.expiration_date) <= Date.now();
+                              return expired ? (
+                                <Tag color="red">已过期</Tag>
+                              ) : (
+                                <Tag color="green">可用</Tag>
+                              );
+                            },
+                          },
+                        ]}
+                      />
+                    </>
+                  ) : (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="尚未获取 OpenRouter 模型目录，请点击“重新同步”。"
+                    />
+                  )}
+                </Space>
+              ),
+            },
+          ]}
+        />
         <Card size="small">
           <Space direction="vertical" className="field-full">
             <Typography.Text strong>默认模型</Typography.Text>
@@ -427,7 +579,10 @@ export function ModelCatalogEditor(props: {
                                     updateModel(tierIndex, modelIndex, {
                                       openrouter_model_id,
                                       display_name: upstream.name,
-                                      ...calculateModelDisplayPrices(upstream, props.pricingConfig),
+                                      ...calculateModelDisplayPrices(upstream, {
+                                        ...props.pricingConfig,
+                                        markup: model.markup,
+                                      }),
                                     });
                                   }}
                                 />
@@ -460,6 +615,64 @@ export function ModelCatalogEditor(props: {
                                   }
                                 />
                               </Col>
+                              <Col xs={24} md={8}>
+                                <Typography.Text>星尘倍率（markup）</Typography.Text>
+                                <Space.Compact block>
+                                  <AutoComplete
+                                    className="field-full"
+                                    value={String(model.markup)}
+                                    options={MODEL_MARKUP_OPTIONS.map((value) => ({
+                                      value: String(value),
+                                      label: `${value} 倍`,
+                                    }))}
+                                    disabled={props.disabled}
+                                    onChange={(value) =>
+                                      updateModel(tierIndex, modelIndex, {
+                                        markup: Number(value),
+                                      })
+                                    }
+                                    onSelect={(value) => {
+                                      const markup = Number(value);
+                                      const upstream = props.openRouterDirectory?.models.find(
+                                        (item) => item.id === model.openrouter_model_id
+                                      );
+                                      if (!upstream || !ModelMarkupSchema.safeParse(markup).success)
+                                        return;
+                                      updateModel(tierIndex, modelIndex, {
+                                        markup,
+                                        ...calculateModelDisplayPrices(upstream, {
+                                          ...props.pricingConfig,
+                                          markup,
+                                        }),
+                                      });
+                                    }}
+                                  />
+                                  <Button
+                                    disabled={props.disabled}
+                                    onClick={() => {
+                                      const upstream = props.openRouterDirectory?.models.find(
+                                        (item) => item.id === model.openrouter_model_id
+                                      );
+                                      if (
+                                        !upstream ||
+                                        !ModelMarkupSchema.safeParse(model.markup).success
+                                      )
+                                        return;
+                                      updateModel(tierIndex, modelIndex, {
+                                        ...calculateModelDisplayPrices(upstream, {
+                                          ...props.pricingConfig,
+                                          markup: model.markup,
+                                        }),
+                                      });
+                                    }}
+                                  >
+                                    确认
+                                  </Button>
+                                </Space.Compact>
+                                <Typography.Text type="secondary">
+                                  OpenRouter 实时价 × {model.markup || 0} 倍
+                                </Typography.Text>
+                              </Col>
                               <Col xs={12} md={4}>
                                 <Typography.Text>输入展示价</Typography.Text>
                                 <InputNumber
@@ -468,7 +681,7 @@ export function ModelCatalogEditor(props: {
                                   step={0.1}
                                   className="field-full"
                                   value={model.price_input}
-                                  disabled={props.disabled}
+                                  disabled
                                   onChange={(value) =>
                                     updateModel(tierIndex, modelIndex, { price_input: value ?? 0 })
                                   }
@@ -482,7 +695,7 @@ export function ModelCatalogEditor(props: {
                                   step={0.1}
                                   className="field-full"
                                   value={model.price_output}
-                                  disabled={props.disabled}
+                                  disabled
                                   onChange={(value) =>
                                     updateModel(tierIndex, modelIndex, { price_output: value ?? 0 })
                                   }
@@ -518,13 +731,7 @@ export function ModelCatalogEditor(props: {
                   <Button
                     block
                     disabled={props.disabled}
-                    onClick={() => {
-                      const next = copyCatalog(props.value);
-                      const model = newModel(next.tiers[tierIndex].models.length);
-                      next.tiers[tierIndex].models.push(model);
-                      if (!next.default_model_id) next.default_model_id = model.id;
-                      props.onChange(next);
-                    }}
+                    onClick={() => props.onChange(appendDraftModel(props.value, tierIndex))}
                   >
                     添加模型
                   </Button>
@@ -536,25 +743,7 @@ export function ModelCatalogEditor(props: {
 
         <Button
           disabled={props.disabled || props.value.tiers.length >= tierOptions.length}
-          onClick={() => {
-            const used = new Set(props.value.tiers.map((tier) => tier.tier));
-            const option = tierOptions.find((item) => !used.has(item.value));
-            if (!option) return;
-            props.onChange({
-              ...props.value,
-              tiers: [
-                ...props.value.tiers,
-                {
-                  tier: option.value,
-                  label: option.label,
-                  color: option.color,
-                  cost_hint: '',
-                  sort_order: props.value.tiers.length + 1,
-                  models: [],
-                },
-              ],
-            });
-          }}
+          onClick={() => props.onChange(appendDraftTier(props.value))}
         >
           添加档位
         </Button>

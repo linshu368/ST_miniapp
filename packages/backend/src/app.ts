@@ -68,6 +68,7 @@ export async function buildApp() {
       'prefer',
       'range',
       'x-client-info',
+      'x-supabase-api-version',
     ],
     exposedHeaders: ['content-range', 'range-unit', 'x-supabase-api-version'],
   });

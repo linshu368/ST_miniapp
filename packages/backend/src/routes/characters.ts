@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/db.js';
 import { config } from '../platform/config.js';
-import { ok, fail, isLobbyFeaturedCharacter, partitionLobbyCharacters } from '@miniapp/shared';
+import { LOBBY_FEATURED_POSITION_COUNT, ok, fail } from '@miniapp/shared';
 import type {
   GetCharactersData,
   GetCharacterByIdData,
@@ -10,8 +10,6 @@ import type {
 } from '@miniapp/shared';
 
 const CHARACTER_STORAGE_BUCKET = process.env.CHARACTER_STORAGE_BUCKET || 'character-assets';
-const PROD_SHUFFLE_WINDOW_MS = 6 * 60 * 60 * 1000;
-const TEST_SHUFFLE_WINDOW_MS = 5 * 60 * 1000;
 
 function resolveCharacterAvatarUrl(
   characterId: string,
@@ -25,30 +23,11 @@ function resolveCharacterAvatarUrl(
   return `${config.supabase.url}/storage/v1/object/public/${CHARACTER_STORAGE_BUCKET}/${storagePath}`;
 }
 
-function currentShuffleBucket(): number {
-  const windowMs =
-    config.database.environment === 'production' ? PROD_SHUFFLE_WINDOW_MS : TEST_SHUFFLE_WINDOW_MS;
-  return Math.floor(Date.now() / windowMs);
-}
-
-function seededHash(input: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function shuffleRank(characterId: string, bucket: number): number {
-  return seededHash(`${config.database.environment}:${bucket}:${characterId}`);
-}
-
 export default async function characterRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
     const characters = await prisma.character.findMany({
-      where: { enabled: true },
+      where: { enabled: true, archived_at: null },
       orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
       select: {
         id: true,
@@ -60,36 +39,19 @@ export default async function characterRoutes(app: FastifyInstance) {
       },
     });
 
-    const { featured, others } = partitionLobbyCharacters(characters);
-    const shuffleBucket = currentShuffleBucket();
-    const shuffledCharacters = [...others].sort((a, b) => {
-      const rankDiff = shuffleRank(a.id, shuffleBucket) - shuffleRank(b.id, shuffleBucket);
-      if (rankDiff !== 0) return rankDiff;
-      return a.id.localeCompare(b.id);
-    });
-    const orderedCharacters = [...featured, ...shuffledCharacters];
-
-    const charactersSummary: CharacterSummary[] = orderedCharacters.map(
-      (c: (typeof characters)[number]) => ({
+    const charactersSummary: CharacterSummary[] = characters.map(
+      (c: (typeof characters)[number], index) => ({
         id: c.id,
         name: c.name,
         description: c.description,
         avatar_url: resolveCharacterAvatarUrl(c.id, c.avatar_url),
         personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
         author_name: c.creator,
-        is_featured: isLobbyFeaturedCharacter(c.id),
+        is_featured: index < LOBBY_FEATURED_POSITION_COUNT,
       })
     );
 
-    const shuffleWindowSeconds = Math.floor(
-      (config.database.environment === 'production'
-        ? PROD_SHUFFLE_WINDOW_MS
-        : TEST_SHUFFLE_WINDOW_MS) / 1000
-    );
-    reply.header(
-      'Cache-Control',
-      `public, max-age=60, s-maxage=${shuffleWindowSeconds}, stale-while-revalidate=${shuffleWindowSeconds}`
-    );
+    reply.header('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=60');
     return reply.send(ok<GetCharactersData>({ characters: charactersSummary }));
   });
 
@@ -97,9 +59,17 @@ export default async function characterRoutes(app: FastifyInstance) {
   app.get('/api/characters/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const character = await prisma.character.findFirst({
-      where: { id, enabled: true },
-    });
+    const [character, featured] = await Promise.all([
+      prisma.character.findFirst({
+        where: { id, enabled: true, archived_at: null },
+      }),
+      prisma.character.findMany({
+        where: { enabled: true, archived_at: null },
+        orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
+        select: { id: true },
+        take: LOBBY_FEATURED_POSITION_COUNT,
+      }),
+    ]);
 
     if (!character) {
       return reply.status(404).send(fail('NOT_FOUND', 'Character not found'));
@@ -112,7 +82,7 @@ export default async function characterRoutes(app: FastifyInstance) {
       avatar_url: resolveCharacterAvatarUrl(character.id, character.avatar_url),
       personality_tags: Array.isArray(character.tags) ? (character.tags as string[]) : [],
       author_name: character.creator,
-      is_featured: isLobbyFeaturedCharacter(character.id),
+      is_featured: featured.some((item) => item.id === character.id),
       greeting: character.first_mes,
       creator_notes: character.creator_notes,
     };

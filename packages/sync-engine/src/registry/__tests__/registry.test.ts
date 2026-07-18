@@ -346,7 +346,7 @@ describe('负向 7：loader 错误处理', () => {
       expect.fail('应该抛出错误');
     } catch (err) {
       expect(err).toBeInstanceOf(RegistryLoadError);
-      expect((err as RegistryLoadError).message).toContain(badPath);
+      expect((err as RegistryLoadError).message).toContain(resolve(badPath));
     }
   });
 });

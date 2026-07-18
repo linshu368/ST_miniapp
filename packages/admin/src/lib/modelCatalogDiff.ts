@@ -37,6 +37,9 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
     ) {
       changes.push(`调整“${model.display_name}”展示价格`);
     }
+    if (oldModel.markup !== model.markup) {
+      changes.push(`调整“${model.display_name}”倍率：${oldModel.markup} → ${model.markup}`);
+    }
     if (
       oldModel.display_name !== model.display_name ||
       oldModel.tagline !== model.tagline ||
@@ -57,5 +60,5 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
   }
 
   if (changes.length === 0) return '模型目录内容未变化';
-  return `${changes.length} 项：${changes.slice(0, 3).join('；')}${changes.length > 3 ? '…' : ''}`;
+  return `${changes.length} 项：${changes.slice(0, 5).join('；')}${changes.length > 5 ? '…' : ''}`;
 }

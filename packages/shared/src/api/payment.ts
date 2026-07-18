@@ -61,6 +61,22 @@ export const PaymentPlansSchema = z
     }
   });
 
+export const RechargePageConfigSchema = z.object({
+  title: z.string().trim().min(1).max(30),
+  description: z.string().trim().min(1).max(120),
+  button_text: z.string().trim().min(1).max(20),
+  theme_color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+});
+
+export type RechargePageConfig = z.infer<typeof RechargePageConfigSchema>;
+
+export const DEFAULT_RECHARGE_PAGE_CONFIG: RechargePageConfig = {
+  title: '星尘商店',
+  description: '为每段相遇点一盏星光',
+  button_text: '立即支付',
+  theme_color: '#ec4899',
+};
+
 export interface PaymentOrder {
   /** 订单号，沿用老项目 TG_{userId}_{ts}_{rand} 语义 */
   id: string;
@@ -84,6 +100,7 @@ export interface PaymentOrder {
 // ==== GET /api/payment/plans ====
 export interface GetPaymentPlansData {
   plans: PaymentPlan[];
+  page_config: RechargePageConfig;
   /** 因余额不足进入充值页时展示的运营提示语 */
   insufficient_credits_notice: string;
 }

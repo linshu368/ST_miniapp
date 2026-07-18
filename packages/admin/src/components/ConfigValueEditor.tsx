@@ -1,13 +1,20 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
 import {
+  DEFAULT_RECHARGE_PAGE_CONFIG,
   ModelCatalogSchema,
+  RechargePageConfigSchema,
   type DisplayPricingConfig,
   type ModelCatalog,
   type OpenRouterModelDirectory,
   type PaymentPlan,
 } from '@miniapp/shared';
-import { configMetadata, type ManagedConfigKey } from '../lib/configSchemas';
+import {
+  configMetadata,
+  EditableModelCatalogSchema,
+  type ManagedConfigKey,
+} from '../lib/configSchemas';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
+import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 
 export function ConfigValueEditor(props: {
   configKey: ManagedConfigKey;
@@ -20,6 +27,7 @@ export function ConfigValueEditor(props: {
   syncLoading: boolean;
   syncError: string | null;
   onRefreshOpenRouter: () => void;
+  paymentPlans: PaymentPlan[];
 }) {
   if (
     props.configKey === 'miniapp_new_user_signup_bonus_credits' ||
@@ -55,7 +63,7 @@ export function ConfigValueEditor(props: {
           ['balanceBaseline', '余额预检基准'],
           ['fallbackCost', '元数据失败兜底星尘'],
           ['exchangeRate', '美元兑星尘汇率'],
-          ['markup', '加价倍率'],
+          ['markup', '旧目录兼容倍率'],
         ].map(([key, label]) => (
           <Col xs={24} md={12} key={key}>
             <Typography.Text>{label}</Typography.Text>
@@ -187,15 +195,34 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (props.configKey === 'miniapp_recharge_page_config') {
+    const parsed = RechargePageConfigSchema.safeParse(props.value);
+    return (
+      <RechargePageConfigEditor
+        value={parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG}
+        plans={props.paymentPlans}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
   const parsedCatalog = ModelCatalogSchema.safeParse(props.value);
-  const modelCatalog = parsedCatalog.success
-    ? parsedCatalog.data
+  const editableCatalog = EditableModelCatalogSchema.safeParse(props.value);
+  const modelCatalog = editableCatalog.success
+    ? (editableCatalog.data as ModelCatalog)
     : (structuredClone(configMetadata.llm_model_catalog.defaultValue) as ModelCatalog);
 
   return (
     <Space direction="vertical" className="editor-stack">
-      {!parsedCatalog.success ? (
-        <Alert type="warning" showIcon message="模型目录数据无效或尚未初始化，已载入安全默认值。" />
+      {!editableCatalog.success ? (
+        <Alert type="warning" showIcon message="模型目录结构无效或尚未初始化，已载入安全默认值。" />
+      ) : !parsedCatalog.success ? (
+        <Alert
+          type="info"
+          showIcon
+          message="当前模型目录尚未填写完整；内容会保留在页面，补全必填项后自动保存草稿。"
+        />
       ) : null}
       <ModelCatalogEditor
         value={modelCatalog}
