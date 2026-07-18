@@ -10,7 +10,18 @@ import { ChatSplash } from '@/components/tavern/chat-splash';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 // [iframe-timing] TEMP DEBUG
-import { markTiming, resetPageTiming, flushIframeTiming } from '@/lib/bridge/iframe-timing';
+import {
+  markTiming,
+  resetPageTiming,
+  flushIframeTiming,
+  harvestStIframeStallDiagnostics,
+} from '@/lib/bridge/iframe-timing';
+
+// [iframe-timing] TEMP DEBUG: 失败路径停摆上报阈值。beacon 原本只在 select 成功后发送，
+// 卡死场景零遥测无法定位。两级停摆定时器把卡死样本的 timeline 抢救回来：
+// 闸门停摆 15s（覆盖握手/boot 停摆形态），select 停摆 25s（早于 30s 动作超时，覆盖在途挂起形态）。
+const GATE_STALL_FLUSH_MS = 15_000;
+const SELECT_STALL_FLUSH_MS = 25_000;
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -22,6 +33,9 @@ export default function TavernChatPage() {
   const gateOpen = bridgeStatus === 'interactive' || bridgeStatus === 'ready';
   const bridgeStatusRef = useRef(bridgeStatus);
   bridgeStatusRef.current = bridgeStatus;
+  // [iframe-timing] TEMP DEBUG: 供闸门停摆定时器读取最新闸门状态（不进 effect 依赖）
+  const gateOpenRef = useRef(gateOpen);
+  gateOpenRef.current = gateOpen;
   const redirectingToRechargeRef = useRef(false);
   // 开屏动画收场信号：只有角色切换成功后才放行，避免露出 ST 原生加载画面。
   const [readyCharacterId, setReadyCharacterId] = useState<string | null>(null);
@@ -52,11 +66,37 @@ export default function TavernChatPage() {
     };
   }, [chatReady]);
 
+  // 终态 disconnected 恢复入口：重连额度耗尽后 gateOpen 永假，开屏动画会无限等待且用户
+  // 无任何操作路径（此前只能杀掉 MiniApp 重开）。disconnected 也会在重连退避期短暂出现
+  //（最长 8s），延迟 12s 确认终态后才提示，避免自愈过程误报。
+  useEffect(() => {
+    if (bridgeStatus !== 'disconnected' || chatReady) return;
+    const timer = window.setTimeout(() => {
+      setEntryError('连接中断，请点击重试刷新页面。');
+    }, 12_000);
+    return () => window.clearTimeout(timer);
+  }, [bridgeStatus, chatReady]);
+
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
     if (!characterId) return;
     resetPageTiming();
     markTiming('page_mount');
+    // [iframe-timing] TEMP DEBUG: 闸门停摆上报——点卡后 15s 闸门仍未放行即 flush 部分
+    // timeline（含 bridge 生命周期打点与看门狗打点），不改变页面行为；后续若闸门放行，
+    // 成功/失败路径会再各自 flush，靠 meta.reason 区分同一次点卡的多条上报。
+    const gateStallTimer = window.setTimeout(() => {
+      if (gateOpenRef.current) return;
+      markTiming('gate_stall');
+      // [iframe-timing] round5: 同源收割 iframe 内 fetch 生命周期/资源/异常，定位楔死请求
+      harvestStIframeStallDiagnostics();
+      flushIframeTiming({
+        characterId,
+        reason: 'gate_stall',
+        bridgeStatusNow: bridgeStatusRef.current,
+      });
+    }, GATE_STALL_FLUSH_MS);
+    return () => window.clearTimeout(gateStallTimer);
   }, [characterId]);
 
   useEffect(() => {
@@ -69,6 +109,20 @@ export default function TavernChatPage() {
     const bridgeStatusAtGate = bridgeStatusRef.current;
 
     let cancelled = false;
+
+    // [iframe-timing] TEMP DEBUG: select 停摆上报——闸门放行后 25s 仍未归（早于 30s 动作
+    // 超时触发的 catch），覆盖「请求在途永挂」形态；成功/失败时定时器均被解除。
+    const selectStallTimer = window.setTimeout(() => {
+      markTiming('select_stall');
+      // [iframe-timing] round5: select 在途挂起同样收割 iframe 内部状态
+      harvestStIframeStallDiagnostics();
+      flushIframeTiming({
+        characterId,
+        bridgeStatusAtGate,
+        reason: 'select_stall',
+        bridgeStatusNow: bridgeStatusRef.current,
+      });
+    }, SELECT_STALL_FLUSH_MS);
 
     // 懒下发：先确保「当前打开的这张卡」已落盘（登录不再全量下发），再切角色。
     // 预览浮层打开时已预取（prefetchEnsureStCharacter 全会话共享 promise），
@@ -89,6 +143,7 @@ export default function TavernChatPage() {
       markTiming('select_start'); // [iframe-timing] TEMP DEBUG
       platformAction('selectCharacter', { avatar, forceNewChat: true })
         .then((result) => {
+          window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
           markTiming('select_end'); // [iframe-timing] TEMP DEBUG
           if (result.chatId) {
             useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
@@ -101,7 +156,19 @@ export default function TavernChatPage() {
           }
         })
         .catch((err) => {
+          window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
           console.error('[TavernChatPage] selectCharacter failed:', err);
+          // [iframe-timing] TEMP DEBUG: 失败路径也 flush 完整 timeline（原本只在成功时上报，
+          // 卡死/超时/拒绝全是遥测盲区），带错误码与错误信息。
+          markTiming('select_error');
+          flushIframeTiming({
+            characterId,
+            bridgeStatusAtGate,
+            reason: 'select_error',
+            bridgeStatusNow: bridgeStatusRef.current,
+            errorCode: (err as { code?: string })?.code ?? null,
+            error: err instanceof Error ? err.message : String(err),
+          });
           if (!cancelled) {
             setEntryError('角色加载失败，请重试。');
           }
@@ -110,6 +177,7 @@ export default function TavernChatPage() {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
     };
   }, [gateOpen, characterId, entryAttempt]);
 
@@ -123,7 +191,15 @@ export default function TavernChatPage() {
           characterId={characterId}
           ready={chatReady}
           error={entryError}
-          onRetry={() => setEntryAttempt((attempt) => attempt + 1)}
+          onRetry={() => {
+            // bridge 终态 disconnected 时页内重试无意义（闸门永不放行），整页刷新
+            // 重建 iframe 与全部连接上下文；其余情况维持原有的页内重试。
+            if (bridgeStatusRef.current === 'disconnected') {
+              window.location.reload();
+              return;
+            }
+            setEntryAttempt((attempt) => attempt + 1);
+          }}
         />
       ) : null}
     </div>

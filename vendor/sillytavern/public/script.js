@@ -816,6 +816,90 @@ export async function pingServer() {
 const miniAppFastBoot =
   new URLSearchParams(window.location.search).get('miniapp_fast_boot') === '1';
 
+// [miniapp-patch][iframe-timing] TEMP DEBUG 停摆定位探针：以 fetch 包装记录请求生命周期
+// （resource timing 不含在途未归的请求，无法区分「发出未归」与「从未发出」），并捕获静默
+// 异常。父窗口在 gate_stall 停摆上报时同源直读 window.__miniappFetchLog / __miniappBootErrors。
+// 模块顶层执行，先于 firstLoadInit 的首个 fetch（/csrf-token）。随整套埋点一并移除。
+const miniAppFetchLog = [];
+const miniAppBootErrors = [];
+window.__miniappFetchLog = miniAppFetchLog;
+window.__miniappBootErrors = miniAppBootErrors;
+if (miniAppFastBoot) {
+  const miniAppNativeFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const rawUrl =
+      typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+    const entry = {
+      url: rawUrl.slice(0, 160),
+      start: Math.round(performance.now()),
+      end: -1,
+      status: 0,
+      err: '',
+    };
+    if (miniAppFetchLog.length < 120) miniAppFetchLog.push(entry);
+    return miniAppNativeFetch(input, init).then(
+      (res) => {
+        entry.end = Math.round(performance.now());
+        entry.status = res.status;
+        return res;
+      },
+      (err) => {
+        entry.end = Math.round(performance.now());
+        entry.err = String((err && err.message) || err).slice(0, 80);
+        throw err;
+      }
+    );
+  };
+  // [miniapp-patch] boot 致命异常自愈通道：坏模块图（TDZ/模块加载失败）会让 boot 在握手前
+  // 静默死亡，看门狗要 10~45s 才介入且重载复用坏缓存。捕获到致命签名立即上报父窗口
+  // （BridgeClient type='boot-fatal'，通道常量与 @miniapp/bridge-protocol BRIDGE_CHANNEL 一致），
+  // 由父窗口按既有重连预算立刻重载。只上报一次，避免风暴。
+  let miniAppFatalReported = false;
+  // [miniapp-patch] TDZ 致命签名跨引擎措辞：老 WebKit=「Cannot access uninitialized variable」，
+  // iOS 18.7 / V8=「Cannot access 'xxx' before initialization」（只匹配 before initialization 即可
+  // 覆盖后者，避免漏掉 iOS 变体导致 iOS 不触发 boot_fatal、只能走慢看门狗）。
+  const MINIAPP_FATAL_RE =
+    /Cannot access uninitialized variable|before initialization|is not defined|Importing a module script failed|error loading dynamically imported module|Cannot use import statement/i;
+  const miniAppReportFatal = (detail) => {
+    if (miniAppFatalReported) return;
+    miniAppFatalReported = true;
+    try {
+      window.parent.postMessage(
+        {
+          channel: 'miniapp-bridge',
+          protocolVersion: 1,
+          type: 'boot-fatal',
+          timestamp: Date.now(),
+          detail: String(detail).slice(0, 200),
+        },
+        '*'
+      );
+    } catch (_) {
+      /* noop */
+    }
+  };
+  window.addEventListener('error', (e) => {
+    const msg = String(e.message || '');
+    if (miniAppBootErrors.length < 20) {
+      miniAppBootErrors.push(
+        `err:${msg.slice(0, 120)}@${String(e.filename || '').slice(-60)}:${e.lineno || 0}`
+      );
+    }
+    if (MINIAPP_FATAL_RE.test(msg)) {
+      miniAppReportFatal(`${msg}@${String(e.filename || '').slice(-60)}:${e.lineno || 0}`);
+    }
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const msg = String((e.reason && e.reason.message) || e.reason || '');
+    if (miniAppBootErrors.length < 20) {
+      miniAppBootErrors.push(`rej:${msg.slice(0, 120)}`);
+    }
+    if (MINIAPP_FATAL_RE.test(msg)) {
+      miniAppReportFatal(`rej:${msg}`);
+    }
+  });
+}
+
 //MARK: firstLoadInit
 async function firstLoadInit() {
   try {
