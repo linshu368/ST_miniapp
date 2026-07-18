@@ -83,16 +83,33 @@ body {
   position: sticky !important;
   top: 0;
   height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border-right: 1px solid #d7e2df;
+}
+
+.admin-sider .ant-layout-sider-children {
+  height: auto;
+  min-height: 100%;
+}
+
+.admin-sider .ant-menu {
+  overflow: visible;
 }
 
 .admin-brand {
   display: flex;
+  position: sticky;
+  z-index: 2;
+  top: 0;
   align-items: center;
   gap: 12px;
   min-height: 80px;
   padding: 18px;
   border-bottom: 1px solid #edf1f0;
+  background: #fff;
 }
 
 .admin-brand-mark {
@@ -287,6 +304,22 @@ body {
     min-width: 100% !important;
     max-width: 100% !important;
     height: auto;
+    overflow: visible;
+    overscroll-behavior: auto;
+    scrollbar-gutter: auto;
+  }
+
+  .admin-sider .ant-layout-sider-children {
+    height: auto;
+    min-height: 0;
+  }
+
+  .admin-sider .ant-menu {
+    overflow: visible;
+  }
+
+  .admin-brand {
+    position: static;
   }
 
   .admin-content {
