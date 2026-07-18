@@ -124,6 +124,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 040_migrate_llm_model_catalog.sql # 将旧版 4 模型迁移为正式分档模型目录
 041_admin_operations_features.sql # 每模型倍率、充值页配置与角色卡运营写操作
 042_admin_config_validation_and_audit_compaction.sql # 充值配置校验分发与角色排序审计压缩
+043_admin_analytics.sql # 运营数据分析聚合、明细查询、权限与查询索引
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

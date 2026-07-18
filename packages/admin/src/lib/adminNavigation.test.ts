@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { configMenuKey, resolveAdminMenuSelection } from './adminNavigation';
+import { analyticsMenuKey, configMenuKey, resolveAdminMenuSelection } from './adminNavigation';
 
 describe('admin navigation', () => {
   it('opens a managed config from the operations submenu', () => {
@@ -13,5 +13,13 @@ describe('admin navigation', () => {
   it('keeps independent top-level pages separate', () => {
     expect(resolveAdminMenuSelection('characters')).toEqual({ view: 'characters' });
     expect(resolveAdminMenuSelection('audit')).toEqual({ view: 'audit' });
+  });
+
+  it('opens analytics reports from the analytics submenu', () => {
+    const key = analyticsMenuKey('models');
+    expect(resolveAdminMenuSelection(key)).toEqual({
+      view: 'analytics',
+      analyticsKey: 'models',
+    });
   });
 });

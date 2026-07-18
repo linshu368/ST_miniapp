@@ -33,6 +33,7 @@ import {
 import { LoginPage } from './components/LoginPage';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
+import { AnalyticsView } from './components/analytics/AnalyticsView';
 import {
   archiveCharacter,
   discardDraft,
@@ -64,7 +65,14 @@ import {
 import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
 import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
-import { configMenuKey, resolveAdminMenuSelection, type AdminViewKey } from './lib/adminNavigation';
+import {
+  analyticsMenuKey,
+  analyticsSections,
+  configMenuKey,
+  resolveAdminMenuSelection,
+  type AdminViewKey,
+  type AnalyticsSectionKey,
+} from './lib/adminNavigation';
 
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
@@ -349,6 +357,7 @@ function AdminWorkspace(props: {
   const { message } = AntApp.useApp();
   const [view, setView] = useState<AdminViewKey>('configs');
   const [selectedKey, setSelectedKey] = useState<ManagedConfigKey>('llm_model_catalog');
+  const [selectedAnalyticsKey, setSelectedAnalyticsKey] = useState<AnalyticsSectionKey>('overview');
   const [configs, setConfigs] = useState<ManagedConfig[]>([]);
   const [drafts, setDrafts] = useState<ConfigDraft[]>([]);
   const [releases, setReleases] = useState<ConfigRelease[]>([]);
@@ -746,16 +755,23 @@ function AdminWorkspace(props: {
           />
           <div>
             <strong>蜜镜AI运营平台</strong>
-            <small>配置与模型管理</small>
+            <small>配置、模型与数据分析</small>
           </div>
         </div>
         <Menu
           mode="inline"
-          defaultOpenKeys={['configs']}
-          selectedKeys={[view === 'configs' ? configMenuKey(selectedKey) : view]}
+          defaultOpenKeys={['configs', 'analytics']}
+          selectedKeys={[
+            view === 'configs'
+              ? configMenuKey(selectedKey)
+              : view === 'analytics'
+                ? analyticsMenuKey(selectedAnalyticsKey)
+                : view,
+          ]}
           onClick={({ key }) => {
             const selection = resolveAdminMenuSelection(key);
             if (selection.configKey) setSelectedKey(selection.configKey);
+            if (selection.analyticsKey) setSelectedAnalyticsKey(selection.analyticsKey);
             setView(selection.view);
           }}
           items={[
@@ -768,6 +784,14 @@ function AdminWorkspace(props: {
               })),
             },
             { key: 'characters', label: '角色卡' },
+            {
+              key: 'analytics',
+              label: '数据分析',
+              children: analyticsSections.map((section) => ({
+                key: analyticsMenuKey(section.key),
+                label: section.label,
+              })),
+            },
             { key: 'releases', label: '发布历史' },
             { key: 'audit', label: '审计日志' },
           ]}
@@ -808,6 +832,12 @@ function AdminWorkspace(props: {
             <div className="content-loading">
               <Spin />
             </div>
+          ) : view === 'analytics' ? (
+            <AnalyticsView
+              client={props.client}
+              section={selectedAnalyticsKey}
+              role={props.admin.role}
+            />
           ) : view === 'characters' ? (
             <CharacterCardsView
               characters={characters}
