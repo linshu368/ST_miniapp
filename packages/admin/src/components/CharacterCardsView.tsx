@@ -21,9 +21,12 @@ import {
 import {
   discardCharacterLayoutDraft,
   getCharacterLayout,
+  listCharacterLayoutReleases,
   publishCharacterLayoutDraft,
+  rollbackCharacterLayoutRelease,
   saveCharacterLayoutDraft,
   type CharacterCard,
+  type CharacterLayoutRelease,
   type CharacterLayoutSnapshot,
   type CharacterLayoutValue,
 } from '../lib/adminApi';
@@ -70,6 +73,7 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
   const [selected, setSelected] = useState<CharacterCard | null>(null);
   const [tab, setTab] = useState<'listed' | 'delisted' | 'deleted'>('listed');
   const [preview, setPreview] = useState<'draft' | 'published'>('draft');
+  const [releases, setReleases] = useState<CharacterLayoutRelease[]>([]);
   const [saving, setSaving] = useState(false);
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const supabaseUrl = getAdminSupabaseUrl(props.environment);
@@ -77,9 +81,13 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
   const reloadLayout = useCallback(async () => {
     setLayoutError(null);
     try {
-      const next = await getCharacterLayout(props.client);
+      const [next, nextReleases] = await Promise.all([
+        getCharacterLayout(props.client),
+        listCharacterLayoutReleases(props.client),
+      ]);
       setSnapshot(next);
       setWorking(next.draft ?? next.published);
+      setReleases(nextReleases);
     } catch (error) {
       setLayoutError(error instanceof Error ? error.message : '角色布局加载失败');
     }
@@ -185,6 +193,30 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
     }
   };
 
+  const rollback = async (release: CharacterLayoutRelease) => {
+    if (!snapshot || snapshot.draft || dirty || !props.canWrite) return;
+    const confirmed = await confirmAction(
+      `${props.environment === 'production' ? '生产环境：' : ''}回滚到布局版本 ${release.layout_version}？`,
+      `将恢复该版本的上架 ${release.listed_count}、下架 ${release.delisted_count}、已删除 ${release.deleted_count} 个角色，并生成新的发布版本。`,
+      true
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      const version = await rollbackCharacterLayoutRelease(
+        props.client,
+        release.id,
+        snapshot.layout_version
+      );
+      message.success(`已回滚并发布为角色布局版本 ${version}`);
+      await Promise.all([props.onRefresh(), reloadLayout()]);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '角色布局回滚失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const renderRow = (
     character: CharacterCard,
     status: 'listed' | 'delisted' | 'deleted',
@@ -210,16 +242,30 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
             <Button
               size="small"
               disabled={!props.canWrite || saving || index === 0}
-              onClick={(event) => move(character.id, 'up', event.shiftKey)}
+              onClick={() => move(character.id, 'up', true)}
+            >
+              置顶
+            </Button>
+            <Button
+              size="small"
+              disabled={!props.canWrite || saving || index === 0}
+              onClick={() => move(character.id, 'up', false)}
             >
               上移
             </Button>
             <Button
               size="small"
               disabled={!props.canWrite || saving || index === listed.length - 1}
-              onClick={(event) => move(character.id, 'down', event.shiftKey)}
+              onClick={() => move(character.id, 'down', false)}
             >
               下移
+            </Button>
+            <Button
+              size="small"
+              disabled={!props.canWrite || saving || index === listed.length - 1}
+              onClick={() => move(character.id, 'down', true)}
+            >
+              置底
             </Button>
             <Button
               size="small"
@@ -297,8 +343,7 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
         }
       >
         <Typography.Paragraph type="secondary">
-          使用上移、下移调整顺序；按住 Shift 点击可置顶或置底。所有状态变更仅在发布后同步到
-          MiniApp。
+          使用置顶、上移、下移、置底按钮调整顺序。所有状态变更仅在发布后同步到 MiniApp。
         </Typography.Paragraph>
         {!props.canWrite ? (
           <Alert type="info" showIcon message="当前账号只能查看角色布局。" />
@@ -336,6 +381,43 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
             放弃草稿
           </Button>
         </Space>
+        <Card size="small" title="发布历史与回滚" className="character-release-history">
+          {releases.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无角色布局发布历史" />
+          ) : (
+            <Space direction="vertical" className="field-full" size="small">
+              {releases.map((release) => (
+                <div className="character-release-row" key={release.id}>
+                  <div>
+                    <strong>版本 {release.layout_version}</strong>
+                    <span>
+                      上架 {release.listed_count} · 下架 {release.delisted_count} · 已删除{' '}
+                      {release.deleted_count}
+                    </span>
+                    <span>
+                      {release.released_by_name || release.released_by_email || '未知操作人'} ·{' '}
+                      {formatDate(release.released_at)}
+                    </span>
+                  </div>
+                  <Button
+                    size="small"
+                    danger
+                    disabled={
+                      !props.canWrite ||
+                      saving ||
+                      dirty ||
+                      Boolean(snapshot?.draft) ||
+                      release.layout_version === snapshot?.layout_version
+                    }
+                    onClick={() => void rollback(release)}
+                  >
+                    回滚到此版本
+                  </Button>
+                </div>
+              ))}
+            </Space>
+          )}
+        </Card>
         {emptyOrLoading ? (
           props.loading ? (
             <Skeleton active paragraph={{ rows: 8 }} />

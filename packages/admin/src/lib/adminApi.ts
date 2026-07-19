@@ -92,6 +92,17 @@ export interface CharacterLayoutSnapshot {
   draft: CharacterLayoutDraft | null;
 }
 
+export interface CharacterLayoutRelease {
+  id: string;
+  layout_version: number;
+  listed_count: number;
+  delisted_count: number;
+  deleted_count: number;
+  released_by_email: string | null;
+  released_by_name: string | null;
+  released_at: string;
+}
+
 function unwrap<T>(data: T | null, error: { message: string } | null): T {
   if (error) throw new Error(error.message);
   if (data === null) throw new Error('后台接口没有返回数据');
@@ -280,5 +291,27 @@ export async function publishCharacterLayoutDraft(
   const { data, error } = await client
     .schema('admin')
     .rpc('publish_character_layout_draft', { p_draft_id: draftId });
+  return unwrap(data as number | null, error);
+}
+
+export async function listCharacterLayoutReleases(
+  client: SupabaseClient,
+  limit = 30
+): Promise<CharacterLayoutRelease[]> {
+  const { data, error } = await client
+    .schema('admin')
+    .rpc('list_character_layout_releases', { p_limit: limit });
+  return unwrap((data ?? []) as CharacterLayoutRelease[], error);
+}
+
+export async function rollbackCharacterLayoutRelease(
+  client: SupabaseClient,
+  releaseId: string,
+  expectedLayoutVersion: number
+): Promise<number> {
+  const { data, error } = await client.schema('admin').rpc('rollback_character_layout_release', {
+    p_release_id: releaseId,
+    p_expected_layout_version: expectedLayoutVersion,
+  });
   return unwrap(data as number | null, error);
 }
