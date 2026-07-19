@@ -623,6 +623,30 @@ body {
   margin: 8px 0 16px;
 }
 
+.character-release-history {
+  margin-bottom: 16px;
+}
+
+.character-release-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.character-release-row > div {
+  display: grid;
+  gap: 2px;
+}
+
+.character-release-row span {
+  color: #64748b;
+  font-size: 12px;
+}
+
 .character-lobby-screen {
   min-height: 620px;
   padding: 18px 12px;
@@ -783,6 +807,11 @@ body {
 }
 
 @media (max-width: 900px) {
+  .character-release-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .analytics-header {
     align-items: flex-start;
     flex-direction: column;
