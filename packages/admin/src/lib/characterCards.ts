@@ -43,6 +43,45 @@ export function charactersForIds(
   });
 }
 
+export interface CharacterLayoutChanges {
+  listed: string[];
+  delisted: string[];
+  deleted: string[];
+  restored: string[];
+  reordered: string[];
+}
+
+export function summarizeCharacterLayoutChanges(
+  current: CharacterLayoutValue,
+  previous: CharacterLayoutValue | null
+): CharacterLayoutChanges {
+  if (!previous) {
+    return { listed: [], delisted: [], deleted: [], restored: [], reordered: [] };
+  }
+
+  const previousState = new Map<string, keyof CharacterLayoutValue>();
+  const currentState = new Map<string, keyof CharacterLayoutValue>();
+  (Object.keys(previous) as Array<keyof CharacterLayoutValue>).forEach((state) => {
+    previous[state].forEach((id) => previousState.set(id, state));
+    current[state].forEach((id) => currentState.set(id, state));
+  });
+
+  return {
+    listed: current.listed_ids.filter((id) => previousState.get(id) !== 'listed_ids'),
+    delisted: current.delisted_ids.filter((id) => previousState.get(id) !== 'delisted_ids'),
+    deleted: current.deleted_ids.filter((id) => previousState.get(id) !== 'deleted_ids'),
+    restored: current.listed_ids
+      .concat(current.delisted_ids)
+      .filter((id) => previousState.get(id) === 'deleted_ids'),
+    reordered: current.listed_ids.filter(
+      (id, index) =>
+        previousState.get(id) === 'listed_ids' &&
+        previous.listed_ids.indexOf(id) !== index &&
+        currentState.get(id) === 'listed_ids'
+    ),
+  };
+}
+
 export function getCharacterAvatarUrl(
   character: Pick<CharacterCard, 'id' | 'avatar_url'>,
   supabaseUrl: string

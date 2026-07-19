@@ -37,6 +37,7 @@ import {
   layoutsEqual,
   moveCharacterId,
   normalizeCharacterTags,
+  summarizeCharacterLayoutChanges,
 } from '../lib/characterCards';
 
 interface CharacterCardsViewProps {
@@ -71,6 +72,7 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
   const [snapshot, setSnapshot] = useState<CharacterLayoutSnapshot | null>(null);
   const [working, setWorking] = useState<CharacterLayoutValue | null>(null);
   const [selected, setSelected] = useState<CharacterCard | null>(null);
+  const [selectedRelease, setSelectedRelease] = useState<CharacterLayoutRelease | null>(null);
   const [tab, setTab] = useState<'listed' | 'delisted' | 'deleted'>('listed');
   const [preview, setPreview] = useState<'draft' | 'published'>('draft');
   const [releases, setReleases] = useState<CharacterLayoutRelease[]>([]);
@@ -116,6 +118,31 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
   const previewCharacters = preview === 'draft' ? listed : publishedListed;
   const hydrated = snapshot?.draft ?? snapshot?.published;
   const dirty = Boolean(working && hydrated && !layoutsEqual(working, hydrated));
+  const characterNames = useMemo(
+    () => new Map(props.characters.map((character) => [character.id, character.name])),
+    [props.characters]
+  );
+  const selectedReleaseIndex = selectedRelease
+    ? releases.findIndex((release) => release.id === selectedRelease.id)
+    : -1;
+  const selectedPreviousRelease =
+    selectedReleaseIndex >= 0 ? (releases[selectedReleaseIndex + 1] ?? null) : null;
+  const selectedReleaseChanges = selectedRelease
+    ? summarizeCharacterLayoutChanges(
+        {
+          listed_ids: selectedRelease.listed_ids,
+          delisted_ids: selectedRelease.delisted_ids,
+          deleted_ids: selectedRelease.deleted_ids,
+        },
+        selectedPreviousRelease
+          ? {
+              listed_ids: selectedPreviousRelease.listed_ids,
+              delisted_ids: selectedPreviousRelease.delisted_ids,
+              deleted_ids: selectedPreviousRelease.deleted_ids,
+            }
+          : null
+      )
+    : null;
 
   const move = (id: string, direction: 'up' | 'down', shiftKey: boolean) => {
     if (!working) return;
@@ -389,7 +416,24 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
               {releases.map((release) => (
                 <div className="character-release-row" key={release.id}>
                   <div>
-                    <strong>版本 {release.layout_version}</strong>
+                    <Space size="small">
+                      <strong>版本 {release.layout_version}</strong>
+                      <Tag
+                        color={
+                          release.release_kind === 'rollback'
+                            ? 'orange'
+                            : release.release_kind === 'baseline'
+                              ? 'default'
+                              : 'blue'
+                        }
+                      >
+                        {release.release_kind === 'rollback'
+                          ? `回滚发布${release.rollback_target_version === null ? '' : ` · 来源 v${release.rollback_target_version}`}`
+                          : release.release_kind === 'baseline'
+                            ? '初始基线'
+                            : '草稿发布'}
+                      </Tag>
+                    </Space>
                     <span>
                       上架 {release.listed_count} · 下架 {release.delisted_count} · 已删除{' '}
                       {release.deleted_count}
@@ -399,20 +443,25 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
                       {formatDate(release.released_at)}
                     </span>
                   </div>
-                  <Button
-                    size="small"
-                    danger
-                    disabled={
-                      !props.canWrite ||
-                      saving ||
-                      dirty ||
-                      Boolean(snapshot?.draft) ||
-                      release.layout_version === snapshot?.layout_version
-                    }
-                    onClick={() => void rollback(release)}
-                  >
-                    回滚到此版本
-                  </Button>
+                  <Space>
+                    <Button size="small" onClick={() => setSelectedRelease(release)}>
+                      查看详情
+                    </Button>
+                    <Button
+                      size="small"
+                      danger
+                      disabled={
+                        !props.canWrite ||
+                        saving ||
+                        dirty ||
+                        Boolean(snapshot?.draft) ||
+                        release.layout_version === snapshot?.layout_version
+                      }
+                      onClick={() => void rollback(release)}
+                    >
+                      回滚到此版本
+                    </Button>
+                  </Space>
                 </div>
               ))}
             </Space>
@@ -529,6 +578,89 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
                 {formatDate(selected.updated_at)}
               </Descriptions.Item>
             </Descriptions>
+          </Space>
+        ) : null}
+      </Drawer>
+      <Drawer
+        width={760}
+        title={selectedRelease ? `角色布局版本 ${selectedRelease.layout_version} 详情` : '发布详情'}
+        open={selectedRelease !== null}
+        onClose={() => setSelectedRelease(null)}
+      >
+        {selectedRelease ? (
+          <Space direction="vertical" size="large" className="field-full">
+            <Descriptions bordered column={1} size="small">
+              <Descriptions.Item label="发布类型">
+                {selectedRelease.release_kind === 'rollback'
+                  ? '回滚发布'
+                  : selectedRelease.release_kind === 'baseline'
+                    ? '初始基线'
+                    : '草稿发布'}
+              </Descriptions.Item>
+              <Descriptions.Item label="发布版本">
+                {selectedRelease.layout_version}
+              </Descriptions.Item>
+              {selectedRelease.rollback_target_version !== null ? (
+                <Descriptions.Item label="回滚来源版本">
+                  {selectedRelease.rollback_target_version}
+                </Descriptions.Item>
+              ) : null}
+              <Descriptions.Item label="操作人">
+                {selectedRelease.released_by_name || '未填写姓名'}
+                {selectedRelease.released_by_email
+                  ? `（${selectedRelease.released_by_email}）`
+                  : ''}
+              </Descriptions.Item>
+              <Descriptions.Item label="发布时间">
+                {formatDate(selectedRelease.released_at)}
+              </Descriptions.Item>
+              <Descriptions.Item label="发布记录 ID">{selectedRelease.id}</Descriptions.Item>
+              <Descriptions.Item label="来源草稿 ID">
+                {selectedRelease.source_draft_id || '无'}
+              </Descriptions.Item>
+            </Descriptions>
+            <Card size="small" title="相对上一版本的变更">
+              {selectedPreviousRelease && selectedReleaseChanges ? (
+                <Space wrap>
+                  <Tag color="green">转为上架 {selectedReleaseChanges.listed.length}</Tag>
+                  <Tag>转为下架 {selectedReleaseChanges.delisted.length}</Tag>
+                  <Tag color="red">转为删除 {selectedReleaseChanges.deleted.length}</Tag>
+                  <Tag color="cyan">从删除恢复 {selectedReleaseChanges.restored.length}</Tag>
+                  <Tag color="purple">顺序变化 {selectedReleaseChanges.reordered.length}</Tag>
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">
+                  这是最早的基线快照，没有上一版本。
+                </Typography.Text>
+              )}
+            </Card>
+            {(
+              [
+                ['已上架角色（按大厅顺序）', selectedRelease.listed_ids, true],
+                ['已下架角色', selectedRelease.delisted_ids, false],
+                ['已删除角色', selectedRelease.deleted_ids, false],
+              ] as const
+            ).map(([title, ids, ordered]) => (
+              <Card size="small" title={`${title} · ${ids.length}`} key={title}>
+                {ids.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无角色" />
+                ) : (
+                  <ol
+                    className={
+                      ordered ? 'character-release-list is-ordered' : 'character-release-list'
+                    }
+                  >
+                    {ids.map((id, index) => (
+                      <li key={id}>
+                        {ordered ? <span>{index + 1}</span> : null}
+                        <strong>{characterNames.get(id) ?? '未知或已移除角色'}</strong>
+                        <code>{id}</code>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </Card>
+            ))}
           </Space>
         ) : null}
       </Drawer>

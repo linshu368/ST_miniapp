@@ -95,6 +95,13 @@ export interface CharacterLayoutSnapshot {
 export interface CharacterLayoutRelease {
   id: string;
   layout_version: number;
+  release_kind: 'baseline' | 'publish' | 'rollback';
+  source_draft_id: string | null;
+  rollback_target_release_id: string | null;
+  rollback_target_version: number | null;
+  listed_ids: string[];
+  delisted_ids: string[];
+  deleted_ids: string[];
   listed_count: number;
   delisted_count: number;
   deleted_count: number;
