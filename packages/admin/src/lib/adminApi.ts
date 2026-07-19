@@ -69,8 +69,27 @@ export interface CharacterCard {
   creator_notes: string;
   enabled: boolean;
   sort_order: number;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CharacterLayoutValue {
+  listed_ids: string[];
+  delisted_ids: string[];
+  deleted_ids: string[];
+}
+
+export interface CharacterLayoutDraft extends CharacterLayoutValue {
+  id: string;
+  base_layout_version: number;
+  updated_at: string;
+}
+
+export interface CharacterLayoutSnapshot {
+  layout_version: number;
+  published: CharacterLayoutValue;
+  draft: CharacterLayoutDraft | null;
 }
 
 function unwrap<T>(data: T | null, error: { message: string } | null): T {
@@ -223,4 +242,43 @@ export async function archiveCharacter(client: SupabaseClient, characterId: stri
     p_character_id: characterId,
   });
   if (!unwrap(data as boolean | null, error)) throw new Error('角色归档失败');
+}
+
+export async function getCharacterLayout(client: SupabaseClient): Promise<CharacterLayoutSnapshot> {
+  const { data, error } = await client.schema('admin').rpc('get_character_layout');
+  return unwrap(data as CharacterLayoutSnapshot | null, error);
+}
+
+export async function saveCharacterLayoutDraft(
+  client: SupabaseClient,
+  layout: CharacterLayoutValue,
+  baseLayoutVersion: number
+): Promise<CharacterLayoutDraft> {
+  const { data, error } = await client.schema('admin').rpc('save_character_layout_draft', {
+    p_listed_ids: layout.listed_ids,
+    p_delisted_ids: layout.delisted_ids,
+    p_deleted_ids: layout.deleted_ids,
+    p_base_layout_version: baseLayoutVersion,
+  });
+  return unwrap(data as CharacterLayoutDraft | null, error);
+}
+
+export async function discardCharacterLayoutDraft(
+  client: SupabaseClient,
+  draftId: string
+): Promise<void> {
+  const { data, error } = await client
+    .schema('admin')
+    .rpc('discard_character_layout_draft', { p_draft_id: draftId });
+  if (!unwrap(data as boolean | null, error)) throw new Error('角色布局草稿未能放弃');
+}
+
+export async function publishCharacterLayoutDraft(
+  client: SupabaseClient,
+  draftId: string
+): Promise<number> {
+  const { data, error } = await client
+    .schema('admin')
+    .rpc('publish_character_layout_draft', { p_draft_id: draftId });
+  return unwrap(data as number | null, error);
 }

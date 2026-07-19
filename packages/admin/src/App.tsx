@@ -36,7 +36,6 @@ import { CharacterCardsView } from './components/CharacterCardsView';
 import { PlatformPresetsView } from './components/PlatformPresetsView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
 import {
-  archiveCharacter,
   discardDraft,
   getAuditLogs,
   getCharacters,
@@ -45,10 +44,8 @@ import {
   getManagedConfigs,
   getReleases,
   publishDraft,
-  reorderCharacters,
   rollbackRelease,
   saveDraft,
-  setCharacterEnabled,
   type AdminUser,
   type AuditLog,
   type CharacterCard,
@@ -366,7 +363,6 @@ function AdminWorkspace(props: {
   const [characters, setCharacters] = useState<CharacterCard[]>([]);
   const [charactersLoading, setCharactersLoading] = useState(false);
   const [charactersError, setCharactersError] = useState<string | null>(null);
-  const [characterMutationLoading, setCharacterMutationLoading] = useState(false);
   const [workingValue, setWorkingValue] = useState<unknown>(
     configMetadata.llm_model_catalog.defaultValue
   );
@@ -417,54 +413,6 @@ function AdminWorkspace(props: {
       setCharactersLoading(false);
     }
   }, [props.client]);
-
-  const handleSetCharacterEnabled = useCallback(
-    async (character: CharacterCard, enabled: boolean) => {
-      setCharacterMutationLoading(true);
-      try {
-        await setCharacterEnabled(props.client, character.id, enabled);
-        await reloadCharacters();
-        message.success(enabled ? '角色已重新上架' : '角色已移至下架标签');
-      } catch (error) {
-        message.error(error instanceof Error ? error.message : '角色上下架失败');
-      } finally {
-        setCharacterMutationLoading(false);
-      }
-    },
-    [message, props.client, reloadCharacters]
-  );
-
-  const handleReorderCharacters = useCallback(
-    async (characterIds: string[]) => {
-      setCharacterMutationLoading(true);
-      try {
-        await reorderCharacters(props.client, characterIds);
-        await reloadCharacters();
-        message.success('角色顺序已更新，前八流金位置已同步');
-      } catch (error) {
-        message.error(error instanceof Error ? error.message : '角色排序失败');
-      } finally {
-        setCharacterMutationLoading(false);
-      }
-    },
-    [message, props.client, reloadCharacters]
-  );
-
-  const handleArchiveCharacter = useCallback(
-    async (character: CharacterCard) => {
-      setCharacterMutationLoading(true);
-      try {
-        await archiveCharacter(props.client, character.id);
-        await reloadCharacters();
-        message.success('角色已软删除并归档');
-      } catch (error) {
-        message.error(error instanceof Error ? error.message : '角色归档失败');
-      } finally {
-        setCharacterMutationLoading(false);
-      }
-    },
-    [message, props.client, reloadCharacters]
-  );
 
   useEffect(() => {
     if (view === 'characters') void reloadCharacters();
@@ -842,16 +790,13 @@ function AdminWorkspace(props: {
             />
           ) : view === 'characters' ? (
             <CharacterCardsView
+              client={props.client}
               characters={characters}
               environment={props.environment}
               loading={charactersLoading}
               error={charactersError}
               canWrite={canWrite}
-              mutationLoading={characterMutationLoading}
-              onRefresh={() => void reloadCharacters()}
-              onSetEnabled={handleSetCharacterEnabled}
-              onReorder={handleReorderCharacters}
-              onArchive={handleArchiveCharacter}
+              onRefresh={reloadCharacters}
             />
           ) : view === 'platform_presets' ? (
             <PlatformPresetsView

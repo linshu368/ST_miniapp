@@ -1,145 +1,280 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  closestCenter,
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import {
+  Alert,
   Avatar,
   Button,
   Card,
   Descriptions,
   Drawer,
   Empty,
+  Modal,
   Popconfirm,
+  Segmented,
   Skeleton,
   Space,
   Tabs,
   Tag,
   Typography,
+  message,
 } from 'antd';
-import type { CharacterCard } from '../lib/adminApi';
+import {
+  discardCharacterLayoutDraft,
+  getCharacterLayout,
+  publishCharacterLayoutDraft,
+  saveCharacterLayoutDraft,
+  type CharacterCard,
+  type CharacterLayoutSnapshot,
+  type CharacterLayoutValue,
+} from '../lib/adminApi';
 import { getAdminSupabaseUrl, type AdminEnvironment } from '../lib/environment';
-import { getCharacterAvatarUrl, normalizeCharacterTags } from '../lib/characterCards';
+import {
+  charactersForIds,
+  getCharacterAvatarUrl,
+  layoutsEqual,
+  moveCharacterId,
+  normalizeCharacterTags,
+} from '../lib/characterCards';
 
 interface CharacterCardsViewProps {
+  client: SupabaseClient;
   characters: CharacterCard[];
   environment: AdminEnvironment;
   loading: boolean;
   error: string | null;
   canWrite: boolean;
-  mutationLoading: boolean;
-  onRefresh: () => void;
-  onSetEnabled: (character: CharacterCard, enabled: boolean) => Promise<void>;
-  onReorder: (characterIds: string[]) => Promise<void>;
-  onArchive: (character: CharacterCard) => Promise<void>;
+  onRefresh: () => Promise<void> | void;
 }
 
-function formatCharacterDate(value: string): string {
+function formatDate(value: string): string {
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
 }
 
-function SortableCharacterRow(props: {
-  character: CharacterCard;
-  disabled: boolean;
-  supabaseUrl: string;
-  onDetail: () => void;
-  onDisable: () => void;
-  onArchive: () => void;
-}) {
-  const sortable = useSortable({ id: props.character.id, disabled: props.disabled });
-  return (
-    <div
-      ref={sortable.setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(sortable.transform),
-        transition: sortable.transition,
-      }}
-      className="character-management-row"
-    >
-      <button
-        type="button"
-        className="character-drag-handle"
-        disabled={props.disabled}
-        {...sortable.attributes}
-        {...sortable.listeners}
-        aria-label={`拖拽排序 ${props.character.name}`}
-      >
-        ⋮⋮
-      </button>
-      <Avatar size={54} src={getCharacterAvatarUrl(props.character, props.supabaseUrl)}>
-        {props.character.name.slice(0, 1)}
-      </Avatar>
-      <div className="character-management-copy" onClick={props.onDetail}>
-        <strong>{props.character.name}</strong>
-        <span>排序 {props.character.sort_order}</span>
-      </div>
-      <Space>
-        <Button size="small" onClick={props.onDetail}>
-          详情
-        </Button>
-        <Button size="small" disabled={props.disabled} onClick={props.onDisable}>
-          下架
-        </Button>
-        <Popconfirm
-          title="确认软删除这个角色？"
-          description="角色将被归档，不会删除历史聊天和 Storage 资源。"
-          okText="确认归档"
-          cancelText="取消"
-          disabled={props.disabled}
-          onConfirm={props.onArchive}
-        >
-          <Button size="small" danger disabled={props.disabled}>
-            删除
-          </Button>
-        </Popconfirm>
-      </Space>
-    </div>
-  );
+function confirmAction(title: string, content: string, danger = false): Promise<boolean> {
+  return new Promise((resolve) => {
+    Modal.confirm({
+      title,
+      content,
+      okText: '确认',
+      cancelText: '取消',
+      okButtonProps: danger ? { danger: true } : undefined,
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  });
 }
 
 export function CharacterCardsView(props: CharacterCardsViewProps) {
-  const [selectedCharacter, setSelectedCharacter] = useState<CharacterCard | null>(null);
-  const [tab, setTab] = useState<'listed' | 'delisted'>('listed');
+  const [snapshot, setSnapshot] = useState<CharacterLayoutSnapshot | null>(null);
+  const [working, setWorking] = useState<CharacterLayoutValue | null>(null);
+  const [selected, setSelected] = useState<CharacterCard | null>(null);
+  const [tab, setTab] = useState<'listed' | 'delisted' | 'deleted'>('listed');
+  const [preview, setPreview] = useState<'draft' | 'published'>('draft');
+  const [saving, setSaving] = useState(false);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
   const supabaseUrl = getAdminSupabaseUrl(props.environment);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  const reloadLayout = useCallback(async () => {
+    setLayoutError(null);
+    try {
+      const next = await getCharacterLayout(props.client);
+      setSnapshot(next);
+      setWorking(next.draft ?? next.published);
+    } catch (error) {
+      setLayoutError(error instanceof Error ? error.message : '角色布局加载失败');
+    }
+  }, [props.client]);
+
+  useEffect(() => {
+    void reloadLayout();
+  }, [reloadLayout]);
+
   const listed = useMemo(
-    () =>
-      props.characters
-        .filter((character) => character.enabled)
-        .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
-    [props.characters]
+    () => charactersForIds(props.characters, working?.listed_ids ?? []),
+    [props.characters, working]
   );
   const delisted = useMemo(
-    () =>
-      props.characters
-        .filter((character) => !character.enabled)
-        .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
-    [props.characters]
+    () => charactersForIds(props.characters, working?.delisted_ids ?? []),
+    [props.characters, working]
   );
+  const deleted = useMemo(
+    () => charactersForIds(props.characters, working?.deleted_ids ?? []),
+    [props.characters, working]
+  );
+  const publishedListed = useMemo(
+    () => charactersForIds(props.characters, snapshot?.published.listed_ids ?? []),
+    [props.characters, snapshot]
+  );
+  const previewCharacters = preview === 'draft' ? listed : publishedListed;
+  const hydrated = snapshot?.draft ?? snapshot?.published;
+  const dirty = Boolean(working && hydrated && !layoutsEqual(working, hydrated));
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    if (!event.over || event.active.id === event.over.id) return;
-    const oldIndex = listed.findIndex((character) => character.id === event.active.id);
-    const newIndex = listed.findIndex((character) => character.id === event.over?.id);
-    if (oldIndex < 0 || newIndex < 0) return;
-    void props.onReorder(arrayMove(listed, oldIndex, newIndex).map((character) => character.id));
+  const move = (id: string, direction: 'up' | 'down', shiftKey: boolean) => {
+    if (!working) return;
+    setWorking({
+      ...working,
+      listed_ids: moveCharacterId(working.listed_ids, id, direction, shiftKey),
+    });
   };
 
+  const moveState = (
+    id: string,
+    from: keyof CharacterLayoutValue,
+    to: keyof CharacterLayoutValue
+  ) => {
+    if (!working) return;
+    setWorking({
+      ...working,
+      [from]: working[from].filter((candidate) => candidate !== id),
+      [to]: [...working[to], id],
+    });
+  };
+
+  const saveDraft = async () => {
+    if (!working || !snapshot || !props.canWrite) return;
+    setSaving(true);
+    try {
+      await saveCharacterLayoutDraft(
+        props.client,
+        working,
+        snapshot.draft?.base_layout_version ?? snapshot.layout_version
+      );
+      message.success('角色布局草稿已保存，MiniApp 尚未改变');
+      await reloadLayout();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '草稿保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const publish = async () => {
+    if (!snapshot?.draft || dirty || !props.canWrite) return;
+    const confirmed = await confirmAction(
+      `${props.environment === 'production' ? '生产环境：' : ''}发布角色布局？`,
+      '发布后排序、上下架、删除和恢复状态将同步到 MiniApp。',
+      props.environment === 'production'
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      const version = await publishCharacterLayoutDraft(props.client, snapshot.draft.id);
+      message.success(`角色布局版本 ${version} 已发布`);
+      await Promise.all([props.onRefresh(), reloadLayout()]);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '角色布局发布失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const discard = async () => {
+    if (!snapshot?.draft || !props.canWrite) return;
+    if (!(await confirmAction('放弃角色布局草稿？', '所有未发布的角色状态和排序将丢失。', true))) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await discardCharacterLayoutDraft(props.client, snapshot.draft.id);
+      message.success('角色布局草稿已放弃');
+      await reloadLayout();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '草稿放弃失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renderRow = (
+    character: CharacterCard,
+    status: 'listed' | 'delisted' | 'deleted',
+    index: number
+  ) => (
+    <div className="character-management-row" key={character.id}>
+      <Avatar size={54} src={getCharacterAvatarUrl(character, supabaseUrl)}>
+        {character.name.slice(0, 1)}
+      </Avatar>
+      <div className="character-management-copy" onClick={() => setSelected(character)}>
+        <strong>{character.name}</strong>
+        <span>
+          {status === 'listed'
+            ? `草稿位置 ${index + 1}`
+            : status === 'deleted'
+              ? '发布后进入已删除区域'
+              : '发布后保持下架'}
+        </span>
+      </div>
+      <Space wrap>
+        {status === 'listed' ? (
+          <>
+            <Button
+              size="small"
+              disabled={!props.canWrite || saving || index === 0}
+              onClick={(event) => move(character.id, 'up', event.shiftKey)}
+            >
+              上移
+            </Button>
+            <Button
+              size="small"
+              disabled={!props.canWrite || saving || index === listed.length - 1}
+              onClick={(event) => move(character.id, 'down', event.shiftKey)}
+            >
+              下移
+            </Button>
+            <Button
+              size="small"
+              disabled={!props.canWrite || saving}
+              onClick={() => moveState(character.id, 'listed_ids', 'delisted_ids')}
+            >
+              下架
+            </Button>
+          </>
+        ) : status === 'delisted' ? (
+          <Button
+            size="small"
+            disabled={!props.canWrite || saving}
+            onClick={() => moveState(character.id, 'delisted_ids', 'listed_ids')}
+          >
+            重新上架
+          </Button>
+        ) : (
+          <Popconfirm
+            title="恢复此角色？"
+            description="角色将恢复到已下架区域，发布前不会影响 MiniApp。"
+            okText="恢复"
+            cancelText="取消"
+            onConfirm={() => moveState(character.id, 'deleted_ids', 'delisted_ids')}
+          >
+            <Button size="small" disabled={!props.canWrite || saving}>
+              恢复
+            </Button>
+          </Popconfirm>
+        )}
+        {status !== 'deleted' ? (
+          <Popconfirm
+            title="移入已删除区域？"
+            description="保存草稿后仍不会影响 MiniApp，发布后才正式隐藏。"
+            okText="确认"
+            cancelText="取消"
+            onConfirm={() =>
+              moveState(
+                character.id,
+                status === 'listed' ? 'listed_ids' : 'delisted_ids',
+                'deleted_ids'
+              )
+            }
+          >
+            <Button size="small" danger disabled={!props.canWrite || saving}>
+              删除
+            </Button>
+          </Popconfirm>
+        ) : null}
+      </Space>
+    </div>
+  );
+
   const emptyOrLoading =
-    props.error ||
-    (props.loading && props.characters.length === 0) ||
-    props.characters.length === 0;
+    props.error || layoutError || (props.loading && props.characters.length === 0) || !working;
 
   return (
     <>
@@ -147,186 +282,169 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
         title="角色卡展示管理"
         extra={
           <Space wrap>
-            <Tag color="green">已上架 {listed.length}</Tag>
-            <Tag>已下架 {delisted.length}</Tag>
-            <Button loading={props.loading} onClick={props.onRefresh}>
+            <Tag color="green">草稿上架 {listed.length}</Tag>
+            <Tag>下架 {delisted.length}</Tag>
+            <Tag color="red">已删除 {deleted.length}</Tag>
+            {dirty ? <Tag color="orange">有未保存修改</Tag> : null}
+            {snapshot?.draft ? <Tag color="blue">有未发布草稿</Tag> : <Tag>已同步</Tag>}
+            <Button
+              loading={props.loading}
+              onClick={() => void Promise.all([props.onRefresh(), reloadLayout()])}
+            >
               刷新
             </Button>
           </Space>
         }
       >
         <Typography.Paragraph type="secondary">
-          左侧管理角色顺序和状态，右侧实时预览用户大厅。前 1—8 个上架位置显示流金边框。
+          使用上移、下移调整顺序；按住 Shift 点击可置顶或置底。所有状态变更仅在发布后同步到
+          MiniApp。
         </Typography.Paragraph>
+        {!props.canWrite ? (
+          <Alert type="info" showIcon message="当前账号只能查看角色布局。" />
+        ) : null}
+        {layoutError || props.error ? (
+          <Alert
+            type="error"
+            showIcon
+            message={layoutError ?? props.error}
+            className="form-alert"
+          />
+        ) : null}
+        <Space wrap className="character-draft-actions">
+          <Button
+            type="primary"
+            loading={saving}
+            disabled={!props.canWrite || !dirty}
+            onClick={() => void saveDraft()}
+          >
+            保存草稿
+          </Button>
+          <Button
+            danger={props.environment === 'production'}
+            loading={saving}
+            disabled={!props.canWrite || !snapshot?.draft || dirty}
+            onClick={() => void publish()}
+          >
+            发布
+          </Button>
+          <Button
+            danger
+            disabled={!props.canWrite || !snapshot?.draft || saving}
+            onClick={() => void discard()}
+          >
+            放弃草稿
+          </Button>
+        </Space>
         {emptyOrLoading ? (
-          props.error ? (
-            <Empty description={props.error}>
-              <Button onClick={props.onRefresh}>重新加载</Button>
-            </Empty>
-          ) : props.loading ? (
+          props.loading ? (
             <Skeleton active paragraph={{ rows: 8 }} />
           ) : (
-            <Empty description="当前环境暂无角色卡" />
+            <Empty description="暂无角色布局" />
           )
         ) : (
           <div className="character-management-layout">
             <div className="character-management-panel">
               <Tabs
                 activeKey={tab}
-                onChange={(key) => setTab(key as 'listed' | 'delisted')}
+                onChange={(key) => setTab(key as typeof tab)}
                 items={[
                   {
                     key: 'listed',
                     label: `已上架（${listed.length}）`,
-                    children: (
-                      <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCenter}
-                        onDragEnd={handleDragEnd}
-                      >
-                        <SortableContext
-                          items={listed.map((character) => character.id)}
-                          strategy={verticalListSortingStrategy}
-                        >
-                          <Space direction="vertical" className="field-full" size="small">
-                            {listed.map((character) => (
-                              <SortableCharacterRow
-                                key={character.id}
-                                character={character}
-                                supabaseUrl={supabaseUrl}
-                                disabled={!props.canWrite || props.mutationLoading}
-                                onDetail={() => setSelectedCharacter(character)}
-                                onDisable={() => void props.onSetEnabled(character, false)}
-                                onArchive={() => void props.onArchive(character)}
-                              />
-                            ))}
-                          </Space>
-                        </SortableContext>
-                      </DndContext>
+                    children: listed.length ? (
+                      <Space direction="vertical" className="field-full" size="small">
+                        {listed.map((character, index) => renderRow(character, 'listed', index))}
+                      </Space>
+                    ) : (
+                      <Empty description="暂无上架角色" />
                     ),
                   },
                   {
                     key: 'delisted',
                     label: `已下架（${delisted.length}）`,
-                    children:
-                      delisted.length === 0 ? (
-                        <Empty description="暂无下架角色" />
-                      ) : (
-                        <Space direction="vertical" className="field-full" size="small">
-                          {delisted.map((character) => (
-                            <div className="character-management-row" key={character.id}>
-                              <Avatar
-                                size={54}
-                                src={getCharacterAvatarUrl(character, supabaseUrl)}
-                              />
-                              <div
-                                className="character-management-copy"
-                                onClick={() => setSelectedCharacter(character)}
-                              >
-                                <strong>{character.name}</strong>
-                                <span>已保留角色数据，可重新上架</span>
-                              </div>
-                              <Space>
-                                <Button
-                                  size="small"
-                                  disabled={!props.canWrite || props.mutationLoading}
-                                  onClick={() => void props.onSetEnabled(character, true)}
-                                >
-                                  重新上架
-                                </Button>
-                                <Popconfirm
-                                  title="确认软删除这个角色？"
-                                  description="角色将被归档，不会删除历史聊天和 Storage 资源。"
-                                  okText="确认归档"
-                                  cancelText="取消"
-                                  disabled={!props.canWrite || props.mutationLoading}
-                                  onConfirm={() => void props.onArchive(character)}
-                                >
-                                  <Button
-                                    size="small"
-                                    danger
-                                    disabled={!props.canWrite || props.mutationLoading}
-                                  >
-                                    删除
-                                  </Button>
-                                </Popconfirm>
-                              </Space>
-                            </div>
-                          ))}
-                        </Space>
-                      ),
+                    children: delisted.length ? (
+                      <Space direction="vertical" className="field-full" size="small">
+                        {delisted.map((character, index) =>
+                          renderRow(character, 'delisted', index)
+                        )}
+                      </Space>
+                    ) : (
+                      <Empty description="暂无下架角色" />
+                    ),
+                  },
+                  {
+                    key: 'deleted',
+                    label: `已删除（${deleted.length}）`,
+                    children: deleted.length ? (
+                      <Space direction="vertical" className="field-full" size="small">
+                        {deleted.map((character, index) => renderRow(character, 'deleted', index))}
+                      </Space>
+                    ) : (
+                      <Empty description="暂无已删除角色" />
+                    ),
                   },
                 ]}
               />
             </div>
-            <div className="character-lobby-phone">
-              <div className="character-lobby-screen">
-                <Typography.Title level={4}>探索角色</Typography.Title>
-                <div className="character-lobby-grid">
-                  {listed.map((character, index) => (
-                    <button
-                      type="button"
-                      key={character.id}
-                      className={index < 8 ? 'is-golden' : ''}
-                      onClick={() => setSelectedCharacter(character)}
-                    >
-                      <img
-                        src={getCharacterAvatarUrl(character, supabaseUrl)}
-                        alt={character.name}
-                      />
-                      {index < 8 ? <i>流金 {index + 1}</i> : null}
-                      <strong>{character.name}</strong>
-                    </button>
-                  ))}
+            <div className="character-preview-column">
+              <Segmented
+                block
+                value={preview}
+                options={[
+                  { label: '草稿预览', value: 'draft' },
+                  { label: '已发布预览', value: 'published' },
+                ]}
+                onChange={(value) => setPreview(value as typeof preview)}
+              />
+              <div className="character-lobby-phone">
+                <div className="character-lobby-screen">
+                  <Typography.Title level={4}>探索角色</Typography.Title>
+                  <div className="character-lobby-grid">
+                    {previewCharacters.map((character, index) => (
+                      <button
+                        type="button"
+                        key={character.id}
+                        className={index < 8 ? 'is-golden' : ''}
+                      >
+                        <img
+                          src={getCharacterAvatarUrl(character, supabaseUrl)}
+                          alt={character.name}
+                        />
+                        {index < 8 ? <i>流金 {index + 1}</i> : null}
+                        <strong>{character.name}</strong>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         )}
       </Card>
-
       <Drawer
         width={640}
-        title={selectedCharacter?.name ?? '角色详情'}
-        open={selectedCharacter !== null}
-        onClose={() => setSelectedCharacter(null)}
+        title={selected?.name ?? '角色详情'}
+        open={selected !== null}
+        onClose={() => setSelected(null)}
       >
-        {selectedCharacter ? (
+        {selected ? (
           <Space direction="vertical" size="large" className="field-full">
             <div className="character-detail-heading">
-              <Avatar size={96} src={getCharacterAvatarUrl(selectedCharacter, supabaseUrl)}>
-                {selectedCharacter.name.slice(0, 1)}
-              </Avatar>
+              <Avatar size={96} src={getCharacterAvatarUrl(selected, supabaseUrl)} />
               <div>
-                <Typography.Title level={3}>{selectedCharacter.name}</Typography.Title>
-                <Space wrap>
-                  <Tag color={selectedCharacter.enabled ? 'green' : 'default'}>
-                    {selectedCharacter.enabled ? '已上架' : '已下架'}
-                  </Tag>
-                  <Tag>排序 {selectedCharacter.sort_order}</Tag>
-                  {normalizeCharacterTags(selectedCharacter.tags).map((tag) => (
-                    <Tag key={tag}>{tag}</Tag>
-                  ))}
-                </Space>
+                <Typography.Title level={3}>{selected.name}</Typography.Title>
+                {normalizeCharacterTags(selected.tags).map((tag) => (
+                  <Tag key={tag}>{tag}</Tag>
+                ))}
               </div>
             </div>
             <Descriptions bordered column={1} size="small">
-              <Descriptions.Item label="角色 ID">{selectedCharacter.id}</Descriptions.Item>
-              <Descriptions.Item label="作者">
-                {selectedCharacter.creator || '未填写'}
-              </Descriptions.Item>
-              <Descriptions.Item label="描述">
-                <Typography.Paragraph className="character-long-copy">
-                  {selectedCharacter.description || '未填写'}
-                </Typography.Paragraph>
-              </Descriptions.Item>
-              <Descriptions.Item label="开场白">
-                <Typography.Paragraph className="character-long-copy">
-                  {selectedCharacter.first_mes || '未填写'}
-                </Typography.Paragraph>
-              </Descriptions.Item>
+              <Descriptions.Item label="角色 ID">{selected.id}</Descriptions.Item>
+              <Descriptions.Item label="作者">{selected.creator || '未填写'}</Descriptions.Item>
+              <Descriptions.Item label="描述">{selected.description || '未填写'}</Descriptions.Item>
               <Descriptions.Item label="更新时间">
-                {formatCharacterDate(selectedCharacter.updated_at)}
+                {formatDate(selected.updated_at)}
               </Descriptions.Item>
             </Descriptions>
           </Space>
