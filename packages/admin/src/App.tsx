@@ -33,6 +33,7 @@ import {
 import { LoginPage } from './components/LoginPage';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
+import { PlatformPresetsView } from './components/PlatformPresetsView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
 import {
   archiveCharacter,
@@ -784,6 +785,7 @@ function AdminWorkspace(props: {
               })),
             },
             { key: 'characters', label: '角色卡' },
+            { key: 'platform_presets', label: '平台预设' },
             {
               key: 'analytics',
               label: '数据分析',
@@ -850,6 +852,12 @@ function AdminWorkspace(props: {
               onSetEnabled={handleSetCharacterEnabled}
               onReorder={handleReorderCharacters}
               onArchive={handleArchiveCharacter}
+            />
+          ) : view === 'platform_presets' ? (
+            <PlatformPresetsView
+              client={props.client}
+              environment={props.environment}
+              canWrite={canWrite}
             />
           ) : view === 'configs' ? (
             <Card

@@ -269,6 +269,39 @@ body {
   white-space: pre-wrap;
 }
 
+.preset-editor-field {
+  display: grid;
+  width: 100%;
+  gap: 7px;
+  color: rgb(0 0 0 / 72%);
+  font-size: 13px;
+}
+
+.preset-json-editor,
+.preset-json-preview {
+  font:
+    12px/1.55 Consolas,
+    'Courier New',
+    monospace;
+}
+
+.preset-json-editor {
+  tab-size: 2;
+}
+
+.preset-json-preview {
+  width: 100%;
+  max-height: 520px;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  color: #d9e2f1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #111827;
+  border-radius: 8px;
+}
+
 @media (max-width: 900px) {
   .admin-sider {
     width: 180px !important;
