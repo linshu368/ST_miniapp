@@ -2396,30 +2396,59 @@ body.ripplestyle {
 
 /* Chat Menu 聊天選單 */
 #nonQRFormItems {
-  gap: 5px;
+  align-items: stretch;
+  gap: 0;
   font-size: calc(var(--mainFontSize));
-  padding: 5px 10px;
+  padding: 5px 8px;
   transition: all 0.8s ease;
   left: 0;
 
   #options_button {
     font-size: calc(var(--mainFontSize));
-    width: calc(var(--mainFontSize) * 0.9) !important;
-    height: calc(var(--mainFontSize) * 0.9) !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: calc(var(--bottomFormBlockSize) - 8px) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
+
+    &:hover {
+      background: color-mix(in srgb, var(--SmartThemeBodyColor) 13%, transparent);
+    }
   }
 }
 #leftSendForm {
   display: flex;
+  width: calc(var(--bottomFormBlockSize) - 2px) !important;
+  min-width: calc(var(--bottomFormBlockSize) - 2px);
+  margin: 0 8px 0 0;
+  padding: 0 8px 0 0 !important;
+  align-self: stretch;
   align-items: center;
   justify-content: center;
+  flex: 0 0 calc(var(--bottomFormBlockSize) - 2px);
+  flex-wrap: nowrap;
+  border-right: 1px solid
+    color-mix(in srgb, var(--SmartThemeBodyColor) 18%, transparent);
 
   > * {
-    min-width: calc(var(--mainFontSize));
-    min-height: calc(var(--mainFontSize)) !important;
     display: flex;
+    min-width: 100%;
+    min-height: 100% !important;
     align-items: center;
     justify-content: center;
   }
+}
+
+#send_textarea {
+  min-width: 0;
+  padding: 7px 8px;
+}
+
+#rightSendForm {
+  margin-left: 6px;
+  padding: 0 !important;
 }
 
 /* Chat Input Overall 整體聊天輸入欄位 */
