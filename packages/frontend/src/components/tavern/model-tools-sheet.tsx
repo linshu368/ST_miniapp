@@ -4,12 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronRight,
-  Image,
+  // Image,
   MessageSquarePlus,
-  Mic,
+  // Mic,
   SlidersHorizontal,
   Sparkles,
-  UserRound,
+  // UserRound,
 } from 'lucide-react';
 
 import { useModelCatalogQuery } from '@/lib/api/models';
@@ -74,7 +74,7 @@ export function ModelToolsSheet() {
     <>
       <button
         onClick={() => setMenuState((state) => (state === 'closed' ? 'tools' : 'closed'))}
-        className="fixed bottom-0 left-0 z-20 flex h-[38px] w-10 items-center justify-center border border-r-0 border-white/10 bg-[#1a1a2e]/95 text-white/70 backdrop-blur-md transition-colors hover:bg-[#1a1a2e] hover:text-white active:scale-95"
+        className="fixed bottom-0 left-0 z-20 flex h-[38px] w-10 items-center justify-center border-0 bg-transparent text-white/70 transition-colors hover:bg-white/5 hover:text-white active:bg-white/10"
         aria-label="工具菜单"
       >
         <SlidersHorizontal className="h-[18px] w-[18px]" />
@@ -139,11 +139,14 @@ function ToolsPanel(props: {
   onModels: () => void;
   onNewChat: () => void;
 }) {
+  /*
+   * 暂时隐藏以下三个未开放工具，保留代码供后续重新启用。
   const disabledTools = [
     { label: '角色人设', subtitle: '自定义性格与风格', icon: UserRound, color: '#c084fc' },
     { label: '场景插画', subtitle: 'AI 绘图生成', icon: Image, color: '#4ade80' },
     { label: '角色配音', subtitle: '语音输入与朗读', icon: Mic, color: '#fbbf24' },
   ];
+  */
 
   return (
     <div className="px-4 pb-8">
@@ -167,6 +170,7 @@ function ToolsPanel(props: {
           </span>
           <ChevronRight className="h-4 w-4 text-white/30" />
         </button>
+        {/* 暂时隐藏，后续开放时恢复 disabledTools 定义及以下渲染代码。
         {disabledTools.map((tool) => (
           <div
             key={tool.label}
@@ -182,6 +186,7 @@ function ToolsPanel(props: {
             <span className="text-[10px] text-white/30">即将开放</span>
           </div>
         ))}
+        */}
       </div>
       <button
         type="button"

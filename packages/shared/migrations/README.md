@@ -125,6 +125,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 041_admin_operations_features.sql # 每模型倍率、充值页配置与角色卡运营写操作
 042_admin_config_validation_and_audit_compaction.sql # 充值配置校验分发与角色排序审计压缩
 043_admin_analytics.sql # 运营数据分析聚合、明细查询、权限与查询索引
+044_admin_platform_presets.sql # 平台统一预设管理、默认快照发布、版本历史与审计
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

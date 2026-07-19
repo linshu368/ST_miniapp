@@ -15,7 +15,13 @@ export const analyticsSections = [
 ] as const;
 
 export type AnalyticsSectionKey = (typeof analyticsSections)[number]['key'];
-export type AdminViewKey = 'configs' | 'characters' | 'analytics' | 'releases' | 'audit';
+export type AdminViewKey =
+  | 'configs'
+  | 'characters'
+  | 'platform_presets'
+  | 'analytics'
+  | 'releases'
+  | 'audit';
 
 const CONFIG_PREFIX = 'config:';
 const ANALYTICS_PREFIX = 'analytics:';
@@ -45,7 +51,7 @@ export function resolveAdminMenuSelection(key: string): {
       return { view: 'analytics', analyticsKey };
     }
   }
-  if (key === 'characters' || key === 'releases' || key === 'audit') {
+  if (key === 'characters' || key === 'platform_presets' || key === 'releases' || key === 'audit') {
     return { view: key };
   }
   return { view: 'configs' };
