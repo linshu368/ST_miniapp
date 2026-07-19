@@ -128,6 +128,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 044_admin_platform_presets.sql # 平台统一预设管理、默认快照发布、版本历史与审计
 045_admin_character_layout_drafts.sql # 角色卡三状态草稿、原子发布、版本与发布历史
 046_admin_character_layout_rollback.sql # 角色布局发布历史查询与原子回滚
+047_admin_character_layout_release_details.sql # 角色布局发布类型、目标版本与完整角色快照
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

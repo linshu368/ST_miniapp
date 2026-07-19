@@ -647,6 +647,39 @@ body {
   font-size: 12px;
 }
 
+.character-release-list {
+  display: grid;
+  max-height: 360px;
+  padding: 0;
+  margin: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.character-release-list li {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(220px, auto);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.character-release-list.is-ordered li {
+  grid-template-columns: 30px minmax(160px, 1fr) minmax(220px, auto);
+}
+
+.character-release-list li > span {
+  color: #b8860b;
+  font-weight: 700;
+}
+
+.character-release-list code {
+  color: #64748b;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .character-lobby-screen {
   min-height: 620px;
   padding: 18px 12px;
@@ -810,6 +843,19 @@ body {
   .character-release-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .character-release-list li,
+  .character-release-list.is-ordered li {
+    grid-template-columns: 30px 1fr;
+  }
+
+  .character-release-list:not(.is-ordered) li {
+    grid-template-columns: 1fr;
+  }
+
+  .character-release-list code {
+    grid-column: 1 / -1;
   }
 
   .analytics-header {

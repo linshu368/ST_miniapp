@@ -4,6 +4,7 @@ import {
   layoutsEqual,
   moveCharacterId,
   normalizeCharacterTags,
+  summarizeCharacterLayoutChanges,
 } from './characterCards';
 
 describe('character card display helpers', () => {
@@ -24,6 +25,26 @@ describe('character card display helpers', () => {
     const layout = { listed_ids: ['a'], delisted_ids: ['b'], deleted_ids: ['c'] };
     expect(layoutsEqual(layout, { ...layout })).toBe(true);
     expect(layoutsEqual(layout, { ...layout, listed_ids: ['b'] })).toBe(false);
+  });
+
+  it('summarizes state transitions, restores, and listed reordering', () => {
+    const changes = summarizeCharacterLayoutChanges(
+      {
+        listed_ids: ['b', 'a', 'd'],
+        delisted_ids: ['c'],
+        deleted_ids: ['e'],
+      },
+      {
+        listed_ids: ['a', 'b', 'c'],
+        delisted_ids: ['e'],
+        deleted_ids: ['d'],
+      }
+    );
+    expect(changes.listed).toEqual(['d']);
+    expect(changes.delisted).toEqual(['c']);
+    expect(changes.deleted).toEqual(['e']);
+    expect(changes.restored).toEqual(['d']);
+    expect(changes.reordered).toEqual(['b', 'a']);
   });
 
   it('uses configured avatars and falls back to the character asset path', () => {
