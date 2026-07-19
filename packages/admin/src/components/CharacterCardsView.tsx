@@ -8,9 +8,12 @@ import {
   Descriptions,
   Drawer,
   Empty,
+  Form,
+  Input,
   Modal,
   Popconfirm,
   Segmented,
+  Select,
   Skeleton,
   Space,
   Tabs,
@@ -19,12 +22,14 @@ import {
   message,
 } from 'antd';
 import {
+  createCharacter,
   discardCharacterLayoutDraft,
   getCharacterLayout,
   listCharacterLayoutReleases,
   publishCharacterLayoutDraft,
   rollbackCharacterLayoutRelease,
   saveCharacterLayoutDraft,
+  uploadCharacterAvatar,
   type CharacterCard,
   type CharacterLayoutRelease,
   type CharacterLayoutSnapshot,
@@ -50,6 +55,20 @@ interface CharacterCardsViewProps {
   onRefresh: () => Promise<void> | void;
 }
 
+interface CreateCharacterFormValue {
+  name: string;
+  description?: string;
+  avatarUrl?: string;
+  tags?: string[];
+  creator?: string;
+  firstMes?: string;
+  creatorNotes?: string;
+  personality?: string;
+  scenario?: string;
+  systemPrompt?: string;
+  mesExample?: string;
+}
+
 function formatDate(value: string): string {
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
 }
@@ -73,6 +92,10 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
   const [working, setWorking] = useState<CharacterLayoutValue | null>(null);
   const [selected, setSelected] = useState<CharacterCard | null>(null);
   const [selectedRelease, setSelectedRelease] = useState<CharacterLayoutRelease | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [createForm] = Form.useForm<CreateCharacterFormValue>();
   const [tab, setTab] = useState<'listed' | 'delisted' | 'deleted'>('listed');
   const [preview, setPreview] = useState<'draft' | 'published'>('draft');
   const [releases, setReleases] = useState<CharacterLayoutRelease[]>([]);
@@ -244,6 +267,52 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
     }
   };
 
+  const submitCreate = async (values: CreateCharacterFormValue) => {
+    setCreateLoading(true);
+    try {
+      const character = await createCharacter(props.client, {
+        name: values.name.trim(),
+        description: values.description?.trim() ?? '',
+        avatarUrl: values.avatarUrl?.trim() ?? '',
+        tags: values.tags ?? [],
+        creator: values.creator?.trim() ?? '',
+        firstMes: values.firstMes ?? '',
+        creatorNotes: values.creatorNotes ?? '',
+        personality: values.personality ?? '',
+        scenario: values.scenario ?? '',
+        systemPrompt: values.systemPrompt ?? '',
+        mesExample: values.mesExample ?? '',
+      });
+      if (avatarFile) {
+        try {
+          await uploadCharacterAvatar(props.client, props.environment, character.id, avatarFile);
+        } catch (uploadError) {
+          await Promise.all([props.onRefresh(), reloadLayout()]);
+          setCreateOpen(false);
+          createForm.resetFields();
+          setAvatarFile(null);
+          setTab('delisted');
+          message.warning(
+            `角色已创建并保持下架，但头像上传失败：${
+              uploadError instanceof Error ? uploadError.message : '未知错误'
+            }`
+          );
+          return;
+        }
+      }
+      await Promise.all([props.onRefresh(), reloadLayout()]);
+      setCreateOpen(false);
+      createForm.resetFields();
+      setAvatarFile(null);
+      setTab('delisted');
+      message.success(`角色“${character.name}”已创建并放入已下架区域`);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '角色卡创建失败');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   const renderRow = (
     character: CharacterCard,
     status: 'listed' | 'delisted' | 'deleted',
@@ -360,6 +429,13 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
             <Tag color="red">已删除 {deleted.length}</Tag>
             {dirty ? <Tag color="orange">有未保存修改</Tag> : null}
             {snapshot?.draft ? <Tag color="blue">有未发布草稿</Tag> : <Tag>已同步</Tag>}
+            <Button
+              type="primary"
+              disabled={!props.canWrite || saving}
+              onClick={() => setCreateOpen(true)}
+            >
+              创建角色卡
+            </Button>
             <Button
               loading={props.loading}
               onClick={() => void Promise.all([props.onRefresh(), reloadLayout()])}
@@ -581,6 +657,105 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
           </Space>
         ) : null}
       </Drawer>
+      <Modal
+        width={760}
+        title="创建新角色卡"
+        open={createOpen}
+        confirmLoading={createLoading}
+        okText="创建并放入已下架"
+        cancelText="取消"
+        onOk={() => createForm.submit()}
+        onCancel={() => {
+          if (createLoading) return;
+          setCreateOpen(false);
+          createForm.resetFields();
+          setAvatarFile(null);
+        }}
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="新角色默认进入“已下架”，不会立即出现在 MiniApp。完成内容检查后，可重新上架、保存草稿并发布。"
+          className="form-alert"
+        />
+        <Form<CreateCharacterFormValue>
+          form={createForm}
+          layout="vertical"
+          onFinish={(values) => void submitCreate(values)}
+        >
+          <Form.Item
+            label="角色名称"
+            name="name"
+            rules={[
+              { required: true, whitespace: true, message: '请输入角色名称' },
+              { max: 120, message: '角色名称不能超过 120 个字符' },
+            ]}
+          >
+            <Input placeholder="用户在大厅中看到的角色名称" maxLength={120} showCount />
+          </Form.Item>
+          <Form.Item
+            label="角色头像 URL"
+            name="avatarUrl"
+            rules={[{ type: 'url', message: '请输入完整的 HTTPS 图片地址' }]}
+          >
+            <Input placeholder="https://...（可稍后补充）" />
+          </Form.Item>
+          <Form.Item
+            label="或上传头像 PNG"
+            extra="仅支持 PNG，最大 5 MB；上传文件时将覆盖上面的头像 URL。"
+          >
+            <input
+              type="file"
+              accept="image/png"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                if (file && (file.type !== 'image/png' || file.size > 5 * 1024 * 1024)) {
+                  message.error('请选择不超过 5 MB 的 PNG 图片');
+                  event.target.value = '';
+                  setAvatarFile(null);
+                  return;
+                }
+                setAvatarFile(file);
+              }}
+            />
+            {avatarFile ? (
+              <Typography.Text type="secondary">已选择：{avatarFile.name}</Typography.Text>
+            ) : null}
+          </Form.Item>
+          <Form.Item label="角色描述" name="description">
+            <Input.TextArea rows={3} maxLength={4000} showCount />
+          </Form.Item>
+          <Form.Item label="标签" name="tags">
+            <Select
+              mode="tags"
+              tokenSeparators={[',', '，']}
+              placeholder="输入标签后按回车"
+              maxTagCount="responsive"
+            />
+          </Form.Item>
+          <Form.Item label="作者" name="creator">
+            <Input maxLength={120} />
+          </Form.Item>
+          <Form.Item label="开场白" name="firstMes">
+            <Input.TextArea rows={4} maxLength={20000} showCount />
+          </Form.Item>
+          <Form.Item label="角色性格" name="personality">
+            <Input.TextArea rows={3} maxLength={20000} showCount />
+          </Form.Item>
+          <Form.Item label="场景设定" name="scenario">
+            <Input.TextArea rows={3} maxLength={20000} showCount />
+          </Form.Item>
+          <Form.Item label="系统提示词" name="systemPrompt">
+            <Input.TextArea rows={4} maxLength={30000} showCount />
+          </Form.Item>
+          <Form.Item label="对话示例" name="mesExample">
+            <Input.TextArea rows={4} maxLength={30000} showCount />
+          </Form.Item>
+          <Form.Item label="创作者备注" name="creatorNotes">
+            <Input.TextArea rows={3} maxLength={20000} showCount />
+          </Form.Item>
+        </Form>
+      </Modal>
       <Drawer
         width={760}
         title={selectedRelease ? `角色布局版本 ${selectedRelease.layout_version} 详情` : '发布详情'}

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AdminEnvironment } from './environment';
+import { getAdminApiUrl } from './environment';
 import type { ManagedConfigKey } from './configSchemas';
 
 export interface AdminUser {
@@ -231,6 +232,72 @@ export async function rollbackRelease(
 export async function getCharacters(client: SupabaseClient): Promise<CharacterCard[]> {
   const { data, error } = await client.schema('admin').rpc('get_characters');
   return unwrap((data ?? []) as CharacterCard[], error);
+}
+
+export async function createCharacter(
+  client: SupabaseClient,
+  input: {
+    name: string;
+    description: string;
+    avatarUrl: string;
+    tags: string[];
+    creator: string;
+    firstMes: string;
+    creatorNotes: string;
+    personality: string;
+    scenario: string;
+    systemPrompt: string;
+    mesExample: string;
+  }
+): Promise<CharacterCard> {
+  const { data, error } = await client.schema('admin').rpc('create_character', {
+    p_name: input.name,
+    p_description: input.description,
+    p_avatar_url: input.avatarUrl,
+    p_tags: input.tags,
+    p_creator: input.creator,
+    p_first_mes: input.firstMes,
+    p_creator_notes: input.creatorNotes,
+    p_personality: input.personality,
+    p_scenario: input.scenario,
+    p_system_prompt: input.systemPrompt,
+    p_mes_example: input.mesExample,
+  });
+  return unwrap(data as CharacterCard | null, error);
+}
+
+export async function uploadCharacterAvatar(
+  client: SupabaseClient,
+  environment: AdminEnvironment,
+  characterId: string,
+  file: File
+): Promise<string> {
+  const { data } = await client.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('登录状态已失效，请重新登录');
+
+  const pngBase64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('头像文件读取失败'));
+    reader.onload = () => {
+      const value = String(reader.result ?? '');
+      resolve(value.slice(value.indexOf(',') + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+  const response = await fetch(
+    `${getAdminApiUrl(environment)}/api/admin/character-assets/${encodeURIComponent(characterId)}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pngBase64 }),
+    }
+  );
+  const body = (await response.json()) as { avatarUrl?: string; message?: string };
+  if (!response.ok || !body.avatarUrl) {
+    throw new Error(body.message || '角色头像上传失败');
+  }
+  return body.avatarUrl;
 }
 
 export async function setCharacterEnabled(
