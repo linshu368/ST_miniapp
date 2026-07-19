@@ -613,6 +613,16 @@ body {
   border-radius: 34px;
 }
 
+.character-preview-column {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.character-draft-actions {
+  margin: 8px 0 16px;
+}
+
 .character-lobby-screen {
   min-height: 620px;
   padding: 18px 12px;

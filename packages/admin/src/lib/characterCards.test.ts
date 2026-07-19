@@ -1,10 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { getCharacterAvatarUrl, normalizeCharacterTags } from './characterCards';
+import {
+  getCharacterAvatarUrl,
+  layoutsEqual,
+  moveCharacterId,
+  normalizeCharacterTags,
+} from './characterCards';
 
 describe('character card display helpers', () => {
   it('keeps usable string tags only', () => {
     expect(normalizeCharacterTags(['温柔', '', 3, null, '理性'])).toEqual(['温柔', '理性']);
     expect(normalizeCharacterTags({ tag: 'invalid' })).toEqual([]);
+  });
+
+  it('moves one position or jumps with Shift semantics', () => {
+    expect(moveCharacterId(['a', 'b', 'c'], 'b', 'up', false)).toEqual(['b', 'a', 'c']);
+    expect(moveCharacterId(['a', 'b', 'c'], 'b', 'down', false)).toEqual(['a', 'c', 'b']);
+    expect(moveCharacterId(['a', 'b', 'c'], 'c', 'up', true)).toEqual(['c', 'a', 'b']);
+    expect(moveCharacterId(['a', 'b', 'c'], 'a', 'down', true)).toEqual(['b', 'c', 'a']);
+    expect(moveCharacterId(['a', 'b'], 'a', 'up', false)).toEqual(['a', 'b']);
+  });
+
+  it('compares complete three-state layouts', () => {
+    const layout = { listed_ids: ['a'], delisted_ids: ['b'], deleted_ids: ['c'] };
+    expect(layoutsEqual(layout, { ...layout })).toBe(true);
+    expect(layoutsEqual(layout, { ...layout, listed_ids: ['b'] })).toBe(false);
   });
 
   it('uses configured avatars and falls back to the character asset path', () => {
