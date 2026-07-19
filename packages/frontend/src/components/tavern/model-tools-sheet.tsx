@@ -74,7 +74,7 @@ export function ModelToolsSheet() {
     <>
       <button
         onClick={() => setMenuState((state) => (state === 'closed' ? 'tools' : 'closed'))}
-        className="fixed bottom-0 left-0 z-20 flex h-[38px] w-10 items-center justify-center border border-r-0 border-white/10 bg-[#1a1a2e]/95 text-white/70 backdrop-blur-md transition-colors hover:bg-[#1a1a2e] hover:text-white active:scale-95"
+        className="fixed bottom-0 left-0 z-20 flex h-[38px] w-10 items-center justify-center border-0 bg-transparent text-white/70 transition-colors hover:bg-white/5 hover:text-white active:bg-white/10"
         aria-label="工具菜单"
       >
         <SlidersHorizontal className="h-[18px] w-[18px]" />
