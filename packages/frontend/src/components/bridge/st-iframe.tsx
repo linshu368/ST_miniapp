@@ -5,8 +5,17 @@ import { useBridgeContext } from './bridge-provider';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { markTiming } from '@/lib/bridge/iframe-timing'; // [iframe-timing] TEMP DEBUG
 
-const ST_IFRAME_URL = '/tavern/';
 export const CHAT_INTERACTIVITY_EVENT = 'miniapp:chat-interactivity';
+
+// ST iframe 文档 URL 必须每次启动唯一：Telegram WKWebView 会无视 no-store 复活旧的
+// /tavern/ 缓存文档（旧 base href → 旧模块图），与新版本模块图在同一 boot 内并行执行、
+// 相互踩踏导致停摆（2026-07-16 dev 实测）。查询参数不影响 nginx/Vercel 的路径匹配，
+// 但让缓存键从未出现过 → 旧文档不可能被复用。
+export function createStBootUrl(): string {
+  // miniapp_fast_boot=1：vendor script.js 据此走 T2 fast-boot 关键路径
+  //（world-info 就绪即发 interactive 握手，UI-only init 延迟）。Web 直访 ST 无此参数不受影响。
+  return `/tavern/?miniapp_doc=${Date.now().toString(36)}&miniapp_fast_boot=1`;
+}
 
 type StSessionResponse = {
   success: boolean;
@@ -26,6 +35,10 @@ function isTextEntryElement(target: EventTarget | null): target is HTMLElement {
 export function STIframe() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { registerIframe, isVisible } = useBridgeContext();
+  const bootUrlRef = useRef<string | null>(null);
+  if (bootUrlRef.current === null) {
+    bootUrlRef.current = createStBootUrl();
+  }
   const [sessionReady, setSessionReady] = useState(false);
   const [chatInteractive, setChatInteractive] = useState(false);
   const loadCountRef = useRef(0); // [iframe-timing] TEMP DEBUG: 区分首次加载与看门狗/超时重载
@@ -136,7 +149,7 @@ export function STIframe() {
     <>
       <iframe
         ref={iframeRef}
-        src={ST_IFRAME_URL}
+        src={bootUrlRef.current}
         // [iframe-timing] TEMP DEBUG: iframe_onload 会被重载覆盖，额外按次打点还原每次 load 时刻
         onLoad={() => {
           loadCountRef.current += 1;

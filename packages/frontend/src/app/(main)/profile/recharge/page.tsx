@@ -3,8 +3,8 @@
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronLeft, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
-import type { PaymentType } from '@miniapp/shared';
+import { AlertCircle, ChevronLeft, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
+import { DEFAULT_RECHARGE_PAGE_CONFIG, type PaymentType } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
@@ -47,7 +47,7 @@ function RechargePageContent() {
   const goBack = useCallback(() => router.back(), [router]);
   useTelegramBackButton(goBack);
 
-  const { data, isLoading } = usePaymentPlansQuery();
+  const { data, isLoading, isError, refetch } = usePaymentPlansQuery();
   const createOrder = useCreatePaymentOrderMutation();
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
@@ -55,6 +55,7 @@ function RechargePageContent() {
   const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const plans = data?.plans ?? [];
+  const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
   const showInsufficientCreditsNotice =
     searchParams.get('reason') === 'insufficient_credits' && !!data && !noticeDismissed;
   const selectedPlan = useMemo(
@@ -93,7 +94,7 @@ function RechargePageContent() {
       data-app-shell="recharge"
       className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white"
     >
-      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
+      <div className="h-1 w-full shrink-0" style={{ backgroundColor: pageConfig.theme_color }} />
 
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
         <Button
@@ -105,7 +106,7 @@ function RechargePageContent() {
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
         </Button>
-        <h1 className="text-lg font-black tracking-wide">星尘商店</h1>
+        <h1 className="text-lg font-black tracking-wide">{pageConfig.title}</h1>
       </header>
 
       {/* 主区域：story / cards / trust 三段走 justify-between，
@@ -113,7 +114,7 @@ function RechargePageContent() {
       <div className="flex flex-1 flex-col justify-between px-4 py-4">
         <section className="px-1">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-slate-200">为每段相遇点一盏星光</p>
+            <p className="text-sm font-medium text-slate-200">{pageConfig.description}</p>
             <Link
               href="/profile/orders"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
@@ -122,25 +123,37 @@ function RechargePageContent() {
               我的订单
             </Link>
           </div>
-          <p className="mt-1 text-[11px] text-pink-300/80">限时福利进行中 · 本轮单价历史最低</p>
         </section>
 
         <section className="flex flex-col gap-3 py-4">
-          {isLoading && plans.length === 0
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton
-                  key={i}
-                  className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
-                />
-              ))
-            : plans.map((plan) => (
-                <PlanCard
-                  key={plan.id}
-                  plan={plan}
-                  selected={plan.id === selectedPlanId}
-                  onSelect={handleSelect}
-                />
-              ))}
+          {isError ? (
+            <div className="flex min-h-[180px] flex-col items-center justify-center rounded-2xl border border-red-400/20 bg-red-400/5 px-6 text-center">
+              <AlertCircle className="h-7 w-7 text-red-300" aria-hidden />
+              <p className="mt-3 text-sm font-semibold text-white">充值套餐暂时无法加载</p>
+              <p className="mt-1 text-xs text-slate-400">请稍后重试，当前不会创建支付订单。</p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={() => void refetch()}>
+                重新加载
+              </Button>
+            </div>
+          ) : isLoading && plans.length === 0 ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton
+                key={i}
+                className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
+              />
+            ))
+          ) : (
+            plans.map((plan) => (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                selected={plan.id === selectedPlanId}
+                selectedColor={pageConfig.selected_plan_color}
+                badgeColor={pageConfig.badge_color}
+                onSelect={handleSelect}
+              />
+            ))
+          )}
         </section>
 
         <section className="flex justify-center">
@@ -194,14 +207,19 @@ function RechargePageContent() {
             className={cn(
               'flex-1 h-10 rounded-xl font-bold transition-all',
               selectedPlan && !createOrder.isPending
-                ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:opacity-90 shadow-md shadow-pink-500/30 border-0'
+                ? 'text-white hover:opacity-90 border-0'
                 : 'bg-slate-800 text-slate-500'
             )}
+            style={
+              selectedPlan && !createOrder.isPending
+                ? { backgroundColor: pageConfig.button_color }
+                : undefined
+            }
           >
             {createOrder.isPending
               ? '创建中...'
               : selectedPlan
-                ? `立即支付 ¥${formatYuanShort(selectedPlan.price_cents)}`
+                ? `${pageConfig.button_text} ¥${formatYuanShort(selectedPlan.price_cents)}`
                 : '请选择套餐'}
           </Button>
         </div>
@@ -214,7 +232,13 @@ function RechargePageContent() {
       >
         <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/10 bg-[#151515] text-white">
           <DialogHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/15 text-amber-400">
+            <div
+              className="mb-2 flex h-12 w-12 items-center justify-center rounded-full"
+              style={{
+                color: pageConfig.balance_color,
+                backgroundColor: `${pageConfig.balance_color}26`,
+              }}
+            >
               <Sparkles className="h-6 w-6" aria-hidden />
             </div>
             <DialogTitle>星尘不足</DialogTitle>
@@ -224,7 +248,10 @@ function RechargePageContent() {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button className="w-full rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white">
+              <Button
+                className="w-full rounded-xl font-bold text-white"
+                style={{ backgroundColor: pageConfig.button_color }}
+              >
                 选择套餐
               </Button>
             </DialogClose>

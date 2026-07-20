@@ -37,10 +37,11 @@ import {
 } from '../../utils.js';
 import { t } from '../../i18n.js';
 import { getSecretLabelById } from '../../secrets.js';
-import { performFuzzySearch } from '/scripts/power-user.js';
-import { StreamingDisplay } from '/scripts/streaming-display.js';
+// [miniapp-patch] 相对化：绝对 import 会逃逸出发布命名空间产生模块双实例。
+import { performFuzzySearch } from '../../power-user.js';
+import { StreamingDisplay } from '../../streaming-display.js';
 import { ConnectionManagerRequestService } from '../shared.js';
-import { formatReasoning } from '/scripts/reasoning.js';
+import { formatReasoning } from '../../reasoning.js';
 
 const MODULE_NAME = 'connection-manager';
 const NONE = '<None>';

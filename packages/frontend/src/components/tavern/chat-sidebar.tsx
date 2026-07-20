@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Ellipsis, Plus, Trash2, Pencil, MessageSquare } from 'lucide-react';
+import { Ellipsis, Trash2, Pencil, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetTrigger, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { platformAction, useBridgeStatus, useSTEvent, useSTMirror } from '@/lib/bridge';
@@ -38,16 +38,6 @@ export function ChatSidebar() {
     'chat:changed',
     useCallback(() => invalidate(), [invalidate])
   );
-
-  async function handleNewChat() {
-    if (!bridgeReady) return;
-    try {
-      await platformAction('newChat', {});
-      setOpen(false);
-    } catch (err) {
-      console.error('[ChatSidebar] newChat failed:', err);
-    }
-  }
 
   async function handleOpenChat(fileName: string, avatar: string) {
     if (!bridgeReady) return;
@@ -113,15 +103,8 @@ export function ChatSidebar() {
         </button>
       </SheetTrigger>
       <SheetContent side="left" className="flex flex-col p-0">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <div className="flex items-center px-4 py-3 border-b border-border">
           <SheetTitle>历史对话</SheetTitle>
-          <button
-            disabled={!bridgeReady}
-            onClick={handleNewChat}
-            className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">

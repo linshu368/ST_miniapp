@@ -21,7 +21,9 @@ import {
   setValueByPath,
   versionCompare,
 } from './utils.js';
-import { getContext } from './st-context.js';
+// [miniapp-patch] Keep the extension API on the same cache-busted context module as script.js.
+// This prevents a fresh bridge bundle from observing a stale getContext() contract.
+import { getContext } from './st-context.js?miniapp_v=20260716t0compat1';
 import { isAdmin } from './user.js';
 import { addLocaleData, getCurrentLocale, t } from './i18n.js';
 import { debounce_timeout } from './constants.js';
@@ -39,6 +41,20 @@ export let extensionNames = [];
  * @type {Record<string, string>}
  */
 export let extensionTypes = {};
+
+/**
+ * [miniapp-patch] Resolve extension assets relative to this module so they stay inside the
+ * release namespace injected at build time (base href /st-runtime/<build>/). Absolute
+ * /scripts/extensions/... URLs would escape the namespace and load a second, unversioned
+ * script.js instance through the extensions' relative back-imports (../../../script.js).
+ * With the default base href "/" this resolves to the same /scripts/extensions/... paths.
+ * @param {string} name Extension name
+ * @param {string} file File name inside the extension directory
+ * @returns {string} Path resolved inside the current release namespace
+ */
+function getExtensionAssetPath(name, file) {
+  return new URL(`extensions/${name}/${file}`, import.meta.url).pathname;
+}
 
 /**
  * A list of active modules provided by the Extras API.
@@ -481,7 +497,8 @@ async function callExtensionHook(name, hookName) {
     return;
   }
 
-  const url = `/scripts/extensions/${name}/${manifest.js}`;
+  // [miniapp-patch] Namespace-aware path (see getExtensionAssetPath).
+  const url = getExtensionAssetPath(name, manifest.js);
   console.debug(
     `callExtensionHook: Calling hook "${hookName}" (function "${hookFunctionName}") for extension "${name}"`
   );
@@ -608,7 +625,8 @@ async function getManifests(names) {
 
   for (const name of names) {
     const promise = new Promise((resolve, reject) => {
-      fetch(`/scripts/extensions/${name}/manifest.json`)
+      // [miniapp-patch] Namespace-aware path (see getExtensionAssetPath).
+      fetch(getExtensionAssetPath(name, 'manifest.json'))
         .then(async (response) => {
           if (response.ok) {
             const json = await response.json();
@@ -876,7 +894,8 @@ function addExtensionStyle(name, manifest) {
   }
 
   return new Promise((resolve, reject) => {
-    const url = `/scripts/extensions/${name}/${manifest.css}`;
+    // [miniapp-patch] Namespace-aware path (see getExtensionAssetPath).
+    const url = getExtensionAssetPath(name, manifest.css);
     const id = sanitizeSelector(`${name}-css`);
 
     if ($(`link[id="${id}"]`).length === 0) {
@@ -892,6 +911,10 @@ function addExtensionStyle(name, manifest) {
         reject(e);
       };
       document.head.appendChild(link);
+    } else {
+      // [miniapp-patch] Anti-hang: if the element already exists (duplicate activation after a
+      // partial boot), settle instead of leaving the caller awaiting a promise forever.
+      resolve();
     }
   });
 }
@@ -908,7 +931,8 @@ function addExtensionScript(name, manifest) {
   }
 
   return new Promise((resolve, reject) => {
-    const url = `/scripts/extensions/${name}/${manifest.js}`;
+    // [miniapp-patch] Namespace-aware path (see getExtensionAssetPath).
+    const url = getExtensionAssetPath(name, manifest.js);
     const id = sanitizeSelector(`${name}-js`);
     let ready = false;
 
@@ -928,6 +952,10 @@ function addExtensionScript(name, manifest) {
         }
       };
       document.body.appendChild(script);
+    } else {
+      // [miniapp-patch] Anti-hang: if the element already exists (duplicate activation after a
+      // partial boot), settle instead of leaving activateExtensions awaiting forever.
+      resolve();
     }
   });
 }
@@ -951,7 +979,8 @@ function addExtensionLocale(name, manifest) {
     return Promise.resolve();
   }
 
-  return fetch(`/scripts/extensions/${name}/${localeFile}`)
+  // [miniapp-patch] Namespace-aware path (see getExtensionAssetPath).
+  return fetch(getExtensionAssetPath(name, localeFile))
     .then(async (response) => {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);

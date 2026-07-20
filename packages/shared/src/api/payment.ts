@@ -2,6 +2,8 @@
 // 规则：任何一方新增对外数据形状都必须先落这里才能被消费。
 // 语义与老 Bot 项目 payment_orders 保持一致，仅重新包装为 REST + snake_case。
 
+import { z } from 'zod';
+
 export type PaymentType = 'alipay' | 'wxpay';
 
 /** 与老 Bot 后端 payment_orders.payment_status 保持一致：pending → completed / expired / failed */
@@ -31,6 +33,70 @@ export interface PaymentPlan {
   highlight_text: string | null;
 }
 
+const nonnegativeInteger = z.number().int().nonnegative();
+const nullableText = z.string().nullable();
+
+export const PaymentPlanSchema: z.ZodType<PaymentPlan> = z.object({
+  id: z.string().trim().min(1),
+  price_cents: nonnegativeInteger,
+  original_price_cents: nonnegativeInteger.nullable(),
+  credits_amount: nonnegativeInteger,
+  bonus_credits: nonnegativeInteger,
+  variant: z.enum(['entry', 'standard', 'recommended', 'premium']),
+  badge_text: nullableText,
+  sub_copy: nullableText,
+  highlight_text: nullableText,
+});
+
+export const PaymentPlansSchema = z
+  .array(PaymentPlanSchema)
+  .min(1)
+  .superRefine((plans, ctx) => {
+    const ids = plans.map((plan) => plan.id);
+    if (new Set(ids).size !== ids.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'payment plan ids must be unique',
+      });
+    }
+  });
+
+export const RechargePageConfigSchema = z.object({
+  title: z.string().trim().min(1).max(30),
+  description: z.string().trim().min(1).max(120),
+  button_text: z.string().trim().min(1).max(20),
+  theme_color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  balance_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#8b5cf6'),
+  selected_plan_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#f59e0b'),
+  badge_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#6366f1'),
+  button_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#ec4899'),
+});
+
+export type RechargePageConfig = z.infer<typeof RechargePageConfigSchema>;
+
+export const DEFAULT_RECHARGE_PAGE_CONFIG: RechargePageConfig = {
+  title: '星尘商店',
+  description: '为每段相遇点一盏星光',
+  button_text: '立即支付',
+  theme_color: '#ec4899',
+  balance_color: '#8b5cf6',
+  selected_plan_color: '#f59e0b',
+  badge_color: '#6366f1',
+  button_color: '#ec4899',
+};
+
 export interface PaymentOrder {
   /** 订单号，沿用老项目 TG_{userId}_{ts}_{rand} 语义 */
   id: string;
@@ -54,6 +120,7 @@ export interface PaymentOrder {
 // ==== GET /api/payment/plans ====
 export interface GetPaymentPlansData {
   plans: PaymentPlan[];
+  page_config: RechargePageConfig;
   /** 因余额不足进入充值页时展示的运营提示语 */
   insufficient_credits_notice: string;
 }

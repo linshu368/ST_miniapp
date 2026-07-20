@@ -128,6 +128,7 @@ that feature is exercised.
 | `ST_PROVISION_URL`                                 | ST feature               | `http://127.0.0.1:9091`                      | sync-engine provision API URL.                                                        |
 | `TELEGRAM_BOT_TOKEN`                               | No                       | `''`                                         | Telegram bot token (init-data verification path).                                     |
 | `CS_TELEGRAM_BOT_TOKEN`                            | No                       | unused when `TELEGRAM_BOT_TOKEN` is set      | Compatibility fallback for CS outreach; the active MiniApp bot always takes priority. |
+| `ADMIN_PLATFORM_URL`                               | Admin CORS               | `https://st-admin-platform.vercel.app`       | Allowed admin origin for the read-only OpenRouter model catalog endpoint.             |
 | `DEV_AUTH_BYPASS`                                  | Dev only                 | unset                                        | `=1` bypasses auth + relaxes CORS (non-prod).                                         |
 | `MOCK_AUTH`                                        | Dev only                 | unset                                        | `=1` mocks auth (non-prod only).                                                      |
 | `PAYMENT_ENABLED`                                  | No                       | `false`                                      | Enables the payment gateway (`=true`).                                                |

@@ -17,6 +17,9 @@ const stProxyUrl = (
 // so every ST asset is requested at the ROOT path (never under /tavern). These mirror
 // the ST-bound prefixes enumerated in ops/nginx/nginx.conf (Layer 3).
 const ST_ROOT_PREFIXES = [
+  // 发布级资产命名空间：st-bundle 构建时把 <base href> 注入为 /st-runtime/<build>/，
+  // ST 模块图整体走该前缀（nginx 剥前缀后按原有分档转发）。
+  'st-runtime',
   'scripts',
   'css',
   'img',

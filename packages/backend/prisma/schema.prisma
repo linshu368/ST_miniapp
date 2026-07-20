@@ -283,6 +283,7 @@ model Character {
   raw_card                  Json?
   enabled                   Boolean  @default(true)
   sort_order                Int      @default(0)
+  archived_at               DateTime? @db.Timestamp(6)
 
   @@map("characters")
   @@schema("miniapp")

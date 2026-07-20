@@ -13,9 +13,10 @@ export interface HandshakeOptions {
 }
 
 /**
- * Initialize two-phase handshake:
+ * Initialize three-phase handshake:
  * 1. Immediately send handshake(phase='handshake') with meta
- * 2. Listen for ST APP_READY event → send handshake(phase='ready')
+ * 2. Listen for miniapp:st-interactive (vendor fast-boot 边界事件) → send handshake(phase='interactive')
+ * 3. Listen for ST APP_READY event → send handshake(phase='ready')
  */
 export function initHandshake(server: BridgeServer, opts: HandshakeOptions): void {
   const ctx = SillyTavern.getContext();
@@ -37,6 +38,19 @@ export function initHandshake(server: BridgeServer, opts: HandshakeOptions): voi
   };
 
   server.sendHandshake('handshake', meta);
+
+  // vendor script.js（miniapp_fast_boot 门控）在 settings/角色列表/tokenizers/persona/
+  // world-info 就绪后 dispatch 该事件，此时 selectCharacter 已可安全执行。
+  // 防御：理论上必先于 APP_READY，但绝不从 ready 降级。
+  window.addEventListener(
+    'miniapp:st-interactive',
+    () => {
+      if (server.getCurrentPhase() === 'ready') return;
+      server.setCurrentPhase('interactive');
+      server.sendHandshake('interactive');
+    },
+    { once: true }
+  );
 
   ctx.eventSource.on(ctx.eventTypes.APP_READY, () => {
     if (!boundUserId) {

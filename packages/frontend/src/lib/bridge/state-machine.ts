@@ -1,8 +1,15 @@
-export type BridgeStatus = 'idle' | 'loading' | 'handshaked' | 'ready' | 'disconnected';
+export type BridgeStatus =
+  | 'idle'
+  | 'loading'
+  | 'handshaked'
+  | 'interactive'
+  | 'ready'
+  | 'disconnected';
 
 export type StateMachineEvent =
   | { type: 'IFRAME_LOAD_START' }
   | { type: 'HANDSHAKE_RECEIVED' }
+  | { type: 'INTERACTIVE_RECEIVED' }
   | { type: 'READY_RECEIVED' }
   | { type: 'DISCONNECT'; reason?: string };
 
@@ -11,7 +18,9 @@ type StatusChangeCallback = (status: BridgeStatus) => void;
 const validTransitions: Record<BridgeStatus, BridgeStatus[]> = {
   idle: ['loading'],
   loading: ['handshaked', 'disconnected'],
-  handshaked: ['ready', 'disconnected'],
+  // handshaked → ready 直达必须保留：旧 ST bundle（两段握手）不发 interactive
+  handshaked: ['interactive', 'ready', 'disconnected'],
+  interactive: ['ready', 'disconnected'],
   ready: ['disconnected'],
   disconnected: ['loading'],
 };
@@ -42,6 +51,9 @@ export function createStateMachine(): BridgeStateMachine {
         break;
       case 'HANDSHAKE_RECEIVED':
         setStatus('handshaked');
+        break;
+      case 'INTERACTIVE_RECEIVED':
+        setStatus('interactive');
         break;
       case 'READY_RECEIVED':
         setStatus('ready');

@@ -20,8 +20,11 @@ function enableReasoningAutoParse(): void {
   try {
     const pu = SillyTavern.getContext().powerUserSettings;
     const reasoning = pu.reasoning as Record<string, unknown> | undefined;
-    if (reasoning && reasoning.auto_parse !== true) {
+    if (reasoning) {
       reasoning.auto_parse = true;
+      reasoning.auto_expand = true;
+      if (typeof reasoning.prefix !== 'string' || !reasoning.prefix) reasoning.prefix = '<think>';
+      if (typeof reasoning.suffix !== 'string' || !reasoning.suffix) reasoning.suffix = '</think>';
     }
   } catch {
     /* power_user 尚未就绪时忽略，APP_READY 会再设一次 */
@@ -36,4 +39,8 @@ export function installReasoningAutoParse(): void {
   enableReasoningAutoParse();
   const ctx = SillyTavern.getContext();
   ctx.eventSource.on(ctx.eventTypes.APP_READY, enableReasoningAutoParse);
+  ctx.eventSource.on(ctx.eventTypes.SETTINGS_UPDATED, () => {
+    // Run after other extension listeners that may restore incompatible defaults.
+    queueMicrotask(enableReasoningAutoParse);
+  });
 }

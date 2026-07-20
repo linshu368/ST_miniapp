@@ -7,6 +7,7 @@ dist/
 .env.compose
 !.env.compose.example
 .vercel
+.playwright-cli/
 
 *.tsbuildinfo
 
@@ -21,6 +22,7 @@ docs/github-secrets-setup.md
 docs/database-schema-reference.md
 scripts/.env.*
 支付开发留痕.md
+/模型选择器PRD.docx
 supabase.json
 supabase/.temp/
 
@@ -37,4 +39,6 @@ SillyTavern-sync-package/
 
 
 kk标签测试/
+yunyinghoutai_wenjian/
 .env*
+!packages/admin/.env.example

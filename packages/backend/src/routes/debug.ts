@@ -35,6 +35,9 @@ const PHASES: Array<[string, string, string]> = [
   ['[冷]iframe_load(网络)', 'bridge_start', 'iframe_onload'],
   ['[冷]st_script+ext_init', 'iframe_onload', 'st_handshake'],
   ['[冷]st_app_boot(→APP_READY)', 'st_handshake', 'st_ready'],
+  // T2 三段握手：interactive 相位（握手→可交互、以及 interactive 领先 APP_READY 的量）
+  ['[冷]st_boot(→interactive)', 'st_handshake', 'st_interactive'],
+  ['[冷]interactive→APP_READY', 'st_interactive', 'st_ready'],
 ];
 
 export default async function debugRoutes(app: FastifyInstance) {
@@ -60,7 +63,9 @@ export default async function debugRoutes(app: FastifyInstance) {
       k === 'boot_nav' ||
       k.startsWith('sel_wf') ||
       k.startsWith('sel_longtask') ||
-      k === 'sel_evt';
+      k === 'sel_evt' ||
+      // round5: 停摆诊断收割数据（fetch 生命周期/资源/文档状态），独立成行防截断
+      k.startsWith('stall_');
     const mainDetails: Record<string, string> = {};
     const waterfallLines: Array<[string, string]> = [];
     for (const [k, v] of Object.entries(details)) {
