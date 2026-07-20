@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import {
   createCharacter,
+  deleteCharacterLayoutRelease,
   discardCharacterLayoutDraft,
   getCharacterLayout,
   listCharacterLayoutReleases,
@@ -276,6 +277,27 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
       await Promise.all([props.onRefresh(), reloadLayout()]);
     } catch (error) {
       message.error(error instanceof Error ? error.message : '角色布局回滚失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteRelease = async (release: CharacterLayoutRelease) => {
+    if (!snapshot || !props.canWrite || release.layout_version === snapshot.layout_version) return;
+    const confirmed = await confirmAction(
+      `删除角色布局版本 ${release.layout_version}？`,
+      '只会删除该历史快照，不会改变当前已发布布局、草稿或 MiniApp 展示。删除后无法再回滚到此版本。',
+      true
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      await deleteCharacterLayoutRelease(props.client, release.id);
+      if (selectedRelease?.id === release.id) setSelectedRelease(null);
+      message.success(`角色布局版本 ${release.layout_version} 已删除`);
+      await reloadLayout();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '角色布局版本删除失败');
     } finally {
       setSaving(false);
     }
@@ -559,6 +581,23 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
                       onClick={() => void rollback(release)}
                     >
                       回滚到此版本
+                    </Button>
+                    <Button
+                      size="small"
+                      danger
+                      disabled={
+                        !props.canWrite ||
+                        saving ||
+                        release.layout_version === snapshot?.layout_version
+                      }
+                      title={
+                        release.layout_version === snapshot?.layout_version
+                          ? '当前已发布版本不能删除'
+                          : '删除该历史快照'
+                      }
+                      onClick={() => void deleteRelease(release)}
+                    >
+                      删除版本
                     </Button>
                   </Space>
                 </div>
