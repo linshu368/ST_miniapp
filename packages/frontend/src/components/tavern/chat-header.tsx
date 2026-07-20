@@ -32,8 +32,8 @@ export function ChatHeader() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-20 box-border flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end border-b border-border/60 bg-background/95 px-2 pb-2 pt-[env(safe-area-inset-top)] text-foreground shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl">
-      <div className="flex h-10 w-full items-center justify-between">
-        <div className="flex items-center gap-0.5">
+      <div className="flex h-10 min-w-0 w-full items-center justify-between">
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
             onClick={() => router.push('/')}
@@ -49,7 +49,7 @@ export function ChatHeader() {
           {displayName}
         </span>
 
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1 pr-1">
           <button
             type="button"
             onClick={() => router.push('/favorites')}
@@ -62,7 +62,7 @@ export function ChatHeader() {
             type="button"
             disabled={setFavorite.isPending}
             onClick={() => setFavorite.mutate({ characterId, favorited: !favorited })}
-            className={`relative flex size-10 items-center justify-center rounded-full border bg-card p-0.5 shadow-sm transition active:scale-95 ${
+            className={`relative flex size-9 shrink-0 items-center justify-center overflow-visible rounded-full border bg-card p-0.5 shadow-sm transition active:scale-95 ${
               favorited ? 'border-primary ring-2 ring-primary/20' : 'border-border'
             }`}
             aria-label={favorited ? '取消收藏当前角色' : '收藏当前角色'}
@@ -79,7 +79,7 @@ export function ChatHeader() {
               </AvatarFallback>
             </Avatar>
             <span
-              className={`absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border-2 border-background ${
+              className={`absolute bottom-0 right-0 flex size-3.5 items-center justify-center rounded-full border-2 border-background ${
                 favorited ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
               }`}
             >

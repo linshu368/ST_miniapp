@@ -257,28 +257,79 @@ export function installMobileChatTheme(): void {
     }
 
     #rightSendForm {
+      box-sizing: border-box !important;
+      position: relative !important;
+      flex: 0 0 48px !important;
+      width: 48px !important;
+      min-width: 48px !important;
+      height: 48px !important;
       align-items: center !important;
-      padding-right: 4px !important;
+      justify-content: center !important;
+      padding: 0 !important;
     }
 
     #rightSendForm > div:not(#send_but):not(.mes_stop) {
       display: none !important;
     }
 
-    #rightSendForm > div:not(.mes_stop),
+    #send_but,
     #send_form .mes_stop {
+      position: absolute !important;
+      inset: 4px !important;
+      align-items: center !important;
+      justify-content: center !important;
+      box-sizing: border-box !important;
       width: 40px !important;
       height: 40px !important;
-      margin: 4px 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
       border-radius: 50% !important;
-      color: var(--miniapp-chat-muted) !important;
+      font-family: inherit !important;
+      font-size: 0 !important;
+      line-height: 0 !important;
       opacity: 1 !important;
+      transform: none !important;
     }
 
     #send_but {
       background: var(--miniapp-chat-accent) !important;
       color: #ffffff !important;
       box-shadow: 0 5px 14px color-mix(in srgb, var(--miniapp-chat-accent) 28%, transparent) !important;
+    }
+
+    #send_but::before,
+    #send_form .mes_stop::before {
+      content: '' !important;
+      display: block !important;
+      width: 20px !important;
+      height: 20px !important;
+      background: currentColor !important;
+      mask-position: center !important;
+      mask-repeat: no-repeat !important;
+      mask-size: contain !important;
+      -webkit-mask-position: center !important;
+      -webkit-mask-repeat: no-repeat !important;
+      -webkit-mask-size: contain !important;
+    }
+
+    #send_but::before {
+      mask-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='black' d='M12 3.5 5.25 10.25l1.5 1.5L11 7.5V20h2V7.5l4.25 4.25 1.5-1.5L12 3.5Z'/%3E%3C/svg%3E") !important;
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='black' d='M12 3.5 5.25 10.25l1.5 1.5L11 7.5V20h2V7.5l4.25 4.25 1.5-1.5L12 3.5Z'/%3E%3C/svg%3E") !important;
+    }
+
+    #send_form .mes_stop {
+      background: var(--miniapp-chat-surface-soft) !important;
+      color: var(--miniapp-chat-accent) !important;
+      box-shadow: inset 0 0 0 1px var(--miniapp-chat-border) !important;
+    }
+
+    #send_form .mes_stop::before {
+      width: 15px !important;
+      height: 15px !important;
+      border-radius: 4px !important;
+      mask-image: none !important;
+      -webkit-mask-image: none !important;
     }
 
     @media (max-width: 520px) {
