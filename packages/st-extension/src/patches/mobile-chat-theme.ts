@@ -7,6 +7,16 @@ export function resolveMiniappAppearance(value: unknown): MiniappAppearance {
   return value === 'dark' ? 'dark' : 'light';
 }
 
+export function shouldExpandComposer(
+  value: string,
+  scrollHeight: number,
+  currentlyExpanded: boolean
+): boolean {
+  if (value.includes('\n')) return true;
+  if (currentlyExpanded) return value.length > 48 || scrollHeight > 60;
+  return value.length > 64 || scrollHeight > 68;
+}
+
 function readAppearance(): MiniappAppearance {
   try {
     return resolveMiniappAppearance(window.localStorage.getItem(APPEARANCE_STORAGE_KEY));
@@ -125,7 +135,12 @@ export function installMobileChatTheme(): void {
     }
 
     #chat .mes[is_user='true'] {
-      margin: 6px 14px 10px 54px !important;
+      box-sizing: border-box !important;
+      align-self: flex-end !important;
+      width: fit-content !important;
+      min-width: 0 !important;
+      max-width: min(calc(100% - 28px), 34rem) !important;
+      margin: 6px 14px 10px auto !important;
       padding: 11px 14px !important;
       border: 1px solid color-mix(in srgb, var(--miniapp-chat-accent) 18%, transparent) !important;
       border-radius: 20px 20px 6px 20px !important;
@@ -147,8 +162,16 @@ export function installMobileChatTheme(): void {
     }
 
     #chat .mes[is_user='true'] .mes_block {
+      flex: 0 1 auto !important;
+      width: auto !important;
       max-width: 100% !important;
       padding-left: 0 !important;
+    }
+
+    #chat .mes[is_user='true'] .mes_text {
+      width: fit-content !important;
+      max-width: 100% !important;
+      padding-top: 0 !important;
     }
 
     #chat .mesAvatarWrapper {
@@ -268,6 +291,35 @@ export function installMobileChatTheme(): void {
       padding: 0 !important;
     }
 
+    #nonQRFormItems.miniapp-composer-expanded {
+      display: grid !important;
+      grid-template-columns: 48px minmax(0, 1fr) 48px !important;
+      grid-template-rows: auto 48px !important;
+      column-gap: 0 !important;
+      align-items: center !important;
+    }
+
+    #nonQRFormItems.miniapp-composer-expanded #send_textarea {
+      grid-column: 1 / -1 !important;
+      grid-row: 1 !important;
+      box-sizing: border-box !important;
+      width: 100% !important;
+      min-height: 42px !important;
+      padding: 12px 14px 4px !important;
+    }
+
+    #nonQRFormItems.miniapp-composer-expanded #leftSendForm {
+      grid-column: 1 !important;
+      grid-row: 2 !important;
+      align-self: center !important;
+    }
+
+    #nonQRFormItems.miniapp-composer-expanded #rightSendForm {
+      grid-column: 3 !important;
+      grid-row: 2 !important;
+      align-self: center !important;
+    }
+
     #rightSendForm > div:not(#send_but):not(.mes_stop) {
       display: none !important;
     }
@@ -367,6 +419,37 @@ export function installMobileChatTheme(): void {
     }
   `;
   document.head.appendChild(style);
+
+  const bindComposerLayout = () => {
+    const textarea = document.querySelector<HTMLTextAreaElement>('#send_textarea');
+    const formItems = document.querySelector<HTMLElement>('#nonQRFormItems');
+    if (!textarea || !formItems || formItems.dataset.miniappLayoutBound === 'true') return false;
+
+    formItems.dataset.miniappLayoutBound = 'true';
+    const syncLayout = () => {
+      const wasExpanded = formItems.classList.contains('miniapp-composer-expanded');
+      const expanded = shouldExpandComposer(textarea.value, textarea.scrollHeight, wasExpanded);
+      formItems.classList.toggle('miniapp-composer-expanded', expanded);
+      if (expanded !== wasExpanded) {
+        requestAnimationFrame(() => {
+          textarea.style.height = '1px';
+          textarea.style.height = `${Math.min(textarea.scrollHeight, window.innerHeight * 0.5)}px`;
+        });
+      }
+    };
+
+    textarea.addEventListener('input', () => requestAnimationFrame(syncLayout));
+    new ResizeObserver(syncLayout).observe(textarea);
+    syncLayout();
+    return true;
+  };
+
+  if (!bindComposerLayout()) {
+    const composerObserver = new MutationObserver(() => {
+      if (bindComposerLayout()) composerObserver.disconnect();
+    });
+    composerObserver.observe(document.body, { childList: true, subtree: true });
+  }
 
   const syncFromParent = () => {
     try {
