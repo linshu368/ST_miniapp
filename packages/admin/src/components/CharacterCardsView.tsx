@@ -38,6 +38,7 @@ import {
 import { getAdminSupabaseUrl, type AdminEnvironment } from '../lib/environment';
 import {
   charactersForIds,
+  filterCharacters,
   getCharacterAvatarUrl,
   layoutsEqual,
   moveCharacterId,
@@ -95,6 +96,7 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [characterSearch, setCharacterSearch] = useState('');
   const [createForm] = Form.useForm<CreateCharacterFormValue>();
   const [tab, setTab] = useState<'listed' | 'delisted' | 'deleted'>('listed');
   const [preview, setPreview] = useState<'draft' | 'published'>('draft');
@@ -133,6 +135,18 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
   const deleted = useMemo(
     () => charactersForIds(props.characters, working?.deleted_ids ?? []),
     [props.characters, working]
+  );
+  const filteredListed = useMemo(
+    () => filterCharacters(listed, characterSearch),
+    [listed, characterSearch]
+  );
+  const filteredDelisted = useMemo(
+    () => filterCharacters(delisted, characterSearch),
+    [delisted, characterSearch]
+  );
+  const filteredDeleted = useMemo(
+    () => filterCharacters(deleted, characterSearch),
+    [deleted, characterSearch]
   );
   const publishedListed = useMemo(
     () => charactersForIds(props.characters, snapshot?.published.listed_ids ?? []),
@@ -459,31 +473,40 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
             className="form-alert"
           />
         ) : null}
-        <Space wrap className="character-draft-actions">
-          <Button
-            type="primary"
-            loading={saving}
-            disabled={!props.canWrite || !dirty}
-            onClick={() => void saveDraft()}
-          >
-            保存草稿
-          </Button>
-          <Button
-            danger={props.environment === 'production'}
-            loading={saving}
-            disabled={!props.canWrite || !snapshot?.draft || dirty}
-            onClick={() => void publish()}
-          >
-            发布
-          </Button>
-          <Button
-            danger
-            disabled={!props.canWrite || !snapshot?.draft || saving}
-            onClick={() => void discard()}
-          >
-            放弃草稿
-          </Button>
-        </Space>
+        <div className="character-draft-toolbar">
+          <Space wrap>
+            <Button
+              type="primary"
+              loading={saving}
+              disabled={!props.canWrite || !dirty}
+              onClick={() => void saveDraft()}
+            >
+              保存草稿
+            </Button>
+            <Button
+              danger={props.environment === 'production'}
+              loading={saving}
+              disabled={!props.canWrite || !snapshot?.draft || dirty}
+              onClick={() => void publish()}
+            >
+              发布
+            </Button>
+            <Button
+              danger
+              disabled={!props.canWrite || !snapshot?.draft || saving}
+              onClick={() => void discard()}
+            >
+              放弃草稿
+            </Button>
+          </Space>
+          <Input.Search
+            allowClear
+            value={characterSearch}
+            className="character-search"
+            placeholder="搜索角色名称、ID、作者或标签"
+            onChange={(event) => setCharacterSearch(event.target.value)}
+          />
+        </div>
         <Card size="small" title="发布历史与回滚" className="character-release-history">
           {releases.length === 0 ? (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无角色布局发布历史" />
@@ -558,37 +581,59 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
                 items={[
                   {
                     key: 'listed',
-                    label: `已上架（${listed.length}）`,
-                    children: listed.length ? (
+                    label: `已上架（${characterSearch ? `${filteredListed.length}/` : ''}${listed.length}）`,
+                    children: filteredListed.length ? (
                       <Space direction="vertical" className="field-full" size="small">
-                        {listed.map((character, index) => renderRow(character, 'listed', index))}
+                        {filteredListed.map((character) =>
+                          renderRow(
+                            character,
+                            'listed',
+                            listed.findIndex((item) => item.id === character.id)
+                          )
+                        )}
                       </Space>
                     ) : (
-                      <Empty description="暂无上架角色" />
+                      <Empty
+                        description={characterSearch ? '没有匹配的上架角色' : '暂无上架角色'}
+                      />
                     ),
                   },
                   {
                     key: 'delisted',
-                    label: `已下架（${delisted.length}）`,
-                    children: delisted.length ? (
+                    label: `已下架（${characterSearch ? `${filteredDelisted.length}/` : ''}${delisted.length}）`,
+                    children: filteredDelisted.length ? (
                       <Space direction="vertical" className="field-full" size="small">
-                        {delisted.map((character, index) =>
-                          renderRow(character, 'delisted', index)
+                        {filteredDelisted.map((character) =>
+                          renderRow(
+                            character,
+                            'delisted',
+                            delisted.findIndex((item) => item.id === character.id)
+                          )
                         )}
                       </Space>
                     ) : (
-                      <Empty description="暂无下架角色" />
+                      <Empty
+                        description={characterSearch ? '没有匹配的下架角色' : '暂无下架角色'}
+                      />
                     ),
                   },
                   {
                     key: 'deleted',
-                    label: `已删除（${deleted.length}）`,
-                    children: deleted.length ? (
+                    label: `已删除（${characterSearch ? `${filteredDeleted.length}/` : ''}${deleted.length}）`,
+                    children: filteredDeleted.length ? (
                       <Space direction="vertical" className="field-full" size="small">
-                        {deleted.map((character, index) => renderRow(character, 'deleted', index))}
+                        {filteredDeleted.map((character) =>
+                          renderRow(
+                            character,
+                            'deleted',
+                            deleted.findIndex((item) => item.id === character.id)
+                          )
+                        )}
                       </Space>
                     ) : (
-                      <Empty description="暂无已删除角色" />
+                      <Empty
+                        description={characterSearch ? '没有匹配的已删除角色' : '暂无已删除角色'}
+                      />
                     ),
                   },
                 ]}

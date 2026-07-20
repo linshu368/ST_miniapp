@@ -619,8 +619,16 @@ body {
   align-content: start;
 }
 
-.character-draft-actions {
+.character-draft-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   margin: 8px 0 16px;
+}
+
+.character-search {
+  width: min(360px, 100%);
 }
 
 .character-release-history {
@@ -840,6 +848,15 @@ body {
 }
 
 @media (max-width: 900px) {
+  .character-draft-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .character-search {
+    width: 100%;
+  }
+
   .character-release-row {
     align-items: stretch;
     flex-direction: column;

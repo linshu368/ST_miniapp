@@ -43,6 +43,23 @@ export function charactersForIds(
   });
 }
 
+export function filterCharacters(characters: CharacterCard[], query: string): CharacterCard[] {
+  const keyword = query.trim().toLocaleLowerCase();
+  if (!keyword) return characters;
+  return characters.filter((character) => {
+    const searchable = [
+      character.name,
+      character.id,
+      character.creator,
+      character.description,
+      ...normalizeCharacterTags(character.tags),
+    ]
+      .join('\n')
+      .toLocaleLowerCase();
+    return searchable.includes(keyword);
+  });
+}
+
 export interface CharacterLayoutChanges {
   listed: string[];
   delisted: string[];

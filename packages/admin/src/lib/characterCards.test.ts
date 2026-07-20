@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getCharacterAvatarUrl,
+  filterCharacters,
   layoutsEqual,
   moveCharacterId,
   normalizeCharacterTags,
@@ -11,6 +12,31 @@ describe('character card display helpers', () => {
   it('keeps usable string tags only', () => {
     expect(normalizeCharacterTags(['温柔', '', 3, null, '理性'])).toEqual(['温柔', '理性']);
     expect(normalizeCharacterTags({ tag: 'invalid' })).toEqual([]);
+  });
+
+  it('filters characters by name, id, creator, description, and tags', () => {
+    const characters = [
+      {
+        id: 'character-a',
+        name: '月光',
+        creator: 'Alice',
+        description: '温柔陪伴',
+        tags: ['治愈'],
+      },
+      {
+        id: 'character-b',
+        name: '星河',
+        creator: 'Bob',
+        description: '冒险故事',
+        tags: ['奇幻'],
+      },
+    ] as never;
+    expect(filterCharacters(characters, '月光')).toHaveLength(1);
+    expect(filterCharacters(characters, 'character-b')[0]?.name).toBe('星河');
+    expect(filterCharacters(characters, 'ALICE')).toHaveLength(1);
+    expect(filterCharacters(characters, '冒险')).toHaveLength(1);
+    expect(filterCharacters(characters, '治愈')).toHaveLength(1);
+    expect(filterCharacters(characters, '不存在')).toEqual([]);
   });
 
   it('moves one position or jumps with Shift semantics', () => {
