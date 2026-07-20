@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronRight,
   Gift,
+  History,
   ImageUp,
   Link as LinkIcon,
   Pencil,
@@ -158,20 +159,30 @@ export default function ProfilePage() {
 
       {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=签到 + 设置占位 */}
       <header className="flex items-center justify-between gap-2 px-4 sm:px-5 py-3 relative z-10">
-        <div className="flex min-w-0 shrink-0 items-center">
+        <div className="flex min-w-0 shrink items-center gap-2">
           <Link
             href="/profile/recharge"
             aria-label={`当前星尘 ${credits}，前往星尘商店`}
-            className="group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm transition-all duration-300 hover:bg-white/10 hover:border-white/20 whitespace-nowrap"
+            className="group inline-flex min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs backdrop-blur-md transition-all duration-300 hover:border-white/20 hover:bg-white/10 sm:px-4 sm:py-2 sm:text-sm"
           >
             <Sparkles
               className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.8)] transition-transform group-hover:scale-110"
               aria-hidden
             />
-            <span className="font-bold tracking-tight text-white">{formatNumber(credits)}</span>
-            <span className="text-white/30">·</span>
-            <span className="text-white/80 font-medium">星尘商店</span>
+            <span className="truncate font-bold tracking-tight text-white">
+              {formatNumber(credits)}
+            </span>
+            <span className="hidden text-white/30 sm:inline">·</span>
+            <span className="hidden font-medium text-white/80 sm:inline">星尘商店</span>
             <ChevronRight className="h-3.5 w-3.5 text-white/50" aria-hidden />
+          </Link>
+          <Link
+            href="/profile/spending"
+            aria-label="查看星尘消耗明细"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-white/70 backdrop-blur-md transition-all hover:border-white/20 hover:bg-white/10 hover:text-white sm:py-2"
+          >
+            <History className="h-3.5 w-3.5 text-amber-300" aria-hidden />
+            明细
           </Link>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">

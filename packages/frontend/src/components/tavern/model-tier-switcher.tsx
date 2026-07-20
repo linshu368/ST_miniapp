@@ -213,6 +213,7 @@ function TierGroup(props: {
         <div className="divide-y divide-white/[0.07] border-t border-white/[0.07]">
           {props.tier.models.map((model) => {
             const active = model.id === props.selectedModelId;
+            const isFree = isFreeCatalogModel(model);
             return (
               <button
                 key={model.id}
@@ -244,9 +245,16 @@ function TierGroup(props: {
                         {model.tagline}
                       </span>
                     ) : null}
+                    {isFree ? (
+                      <span className="shrink-0 rounded-full border border-emerald-300/25 bg-emerald-300/12 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
+                        免费
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-1 text-[11px] text-white/38">
-                    输入 {model.price_input.toFixed(1)}✦　输出 {model.price_output.toFixed(1)}✦
+                    {isFree
+                      ? '0 星尘'
+                      : `输入 ${model.price_input.toFixed(1)}✦　输出 ${model.price_output.toFixed(1)}✦`}
                   </p>
                 </div>
                 {active ? <Sparkles className="h-4 w-4 shrink-0 text-purple-300" /> : null}
@@ -257,4 +265,8 @@ function TierGroup(props: {
       ) : null}
     </section>
   );
+}
+
+function isFreeCatalogModel(model: PublicModelCatalogTier['models'][number]): boolean {
+  return 'is_free' in model && model.is_free === true;
 }

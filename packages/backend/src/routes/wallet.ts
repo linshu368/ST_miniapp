@@ -3,6 +3,7 @@ import { ok, fail } from '@miniapp/shared';
 import type {
   GetDailyCheckinData,
   GetWalletBalanceData,
+  GetWalletSpendingData,
   PostDailyCheckinData,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
@@ -23,6 +24,12 @@ export default async function walletRoutes(app: FastifyInstance) {
     const wallet = await wallets.getOrCreate(dbUser.id);
 
     return reply.send(ok<GetWalletBalanceData>(toWalletBalance(wallet)));
+  });
+
+  app.get('/api/wallet/spending', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
+    if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+    const dbUser = await getOrCreateDbUser(request.user);
+    return reply.send(ok<GetWalletSpendingData>({ items: await wallets.listSpending(dbUser.id) }));
   });
 
   // @frontend-ready: true
