@@ -1,5 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
+import { calculateUsageDeduction } from '../features/billing/usage-pricing.js';
+import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
 const SYNC_INTERVAL_MS = 10 * 60 * 1000;
@@ -10,6 +12,7 @@ const BATCH_LIMIT = 50;
 let timerId: NodeJS.Timeout | null = null;
 let startupTimerId: NodeJS.Timeout | null = null;
 let isRunning = false;
+const wallets = new MiniappWalletRepository();
 
 function isCompleteGenerationData(genData: Record<string, unknown> | null): boolean {
   return (
@@ -70,7 +73,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
 
     const { data, error } = await miniappDb
       .from('chat_history')
-      .select('id, llm_generation_id')
+      .select('id, llm_generation_id, llm_charge_id')
       .not('llm_generation_id', 'is', null)
       .gte('created_at', since)
       .or(
@@ -106,6 +109,39 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
 
       const isComplete = isCompleteGenerationData(genData);
       const llmMetadata = buildGenerationMetadata(genData);
+      const usageCost = genData.usage;
+      const chargeId = record.llm_charge_id;
+
+      if (
+        typeof usageCost === 'number' &&
+        Number.isFinite(usageCost) &&
+        typeof chargeId === 'string' &&
+        chargeId.length > 0
+      ) {
+        try {
+          const originalCharge = await wallets.findLlmUsageCharge(chargeId);
+          if (originalCharge) {
+            const intendedDeduction = calculateUsageDeduction(
+              usageCost,
+              Number(originalCharge.exchange_rate),
+              Number(originalCharge.model_markup)
+            );
+            const reconciled = await wallets.reconcileLlmUsage({
+              chargeId,
+              usageCostUsd: usageCost,
+              calculatedAmount: intendedDeduction,
+              metadata: { source: 'chat_history_sync' },
+            });
+            llmMetadata.llm_intended_deduction = intendedDeduction;
+            llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
+          }
+        } catch (reconcileErr) {
+          log.error(
+            { err: String(reconcileErr), id: record.id, generationId, chargeId },
+            '[sync-job] failed to reconcile LLM usage charge'
+          );
+        }
+      }
 
       const { error: updateErr } = await miniappDb
         .from('chat_history')

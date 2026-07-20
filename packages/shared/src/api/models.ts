@@ -31,8 +31,14 @@ export const HexColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, 'color must be a six-digit hex value');
 const oneDecimalDisplayPrice = z.number().finite().nonnegative().multipleOf(0.1);
-export const ModelMarkupSchema = z.number().min(1).max(4).multipleOf(0.5);
-export const MODEL_MARKUP_OPTIONS = [1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
+export const MODEL_MARKUP_OPTIONS = [0, 1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
+export const ModelMarkupSchema = z
+  .number()
+  .refine(
+    (value): value is (typeof MODEL_MARKUP_OPTIONS)[number] =>
+      MODEL_MARKUP_OPTIONS.includes(value as (typeof MODEL_MARKUP_OPTIONS)[number]),
+    'markup must be 0 or a half-step from 1 through 4'
+  );
 
 export const ModelCatalogModelSchema = z.object({
   /** Stable application-facing identifier. */
@@ -80,6 +86,17 @@ export const ModelCatalogSchema = z
     }
 
     const models = catalog.tiers.flatMap((tier) => tier.models);
+    catalog.tiers.forEach((tier, tierIndex) => {
+      tier.models.forEach((model, modelIndex) => {
+        if (model.markup === 0 && (model.price_input !== 0 || model.price_output !== 0)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tiers', tierIndex, 'models', modelIndex, 'price_input'],
+            message: 'free models must have zero display prices',
+          });
+        }
+      });
+    });
     const modelIds = models.map((model) => model.id);
     const uniqueModelIds = new Set(modelIds);
 
@@ -125,6 +142,8 @@ export const PublicModelCatalogModelSchema = ModelCatalogModelSchema.omit({
   openrouter_model_id: true,
   markup: true,
   enabled: true,
+}).extend({
+  is_free: z.boolean().readonly(),
 });
 
 export const PublicModelCatalogTierSchema = z.object({
@@ -238,7 +257,14 @@ export function toPublicModelCatalog(catalog: ModelCatalog): PublicModelCatalog 
         sort_order: tier.sort_order,
         models: tier.models
           .filter((model) => model.enabled)
-          .map(({ openrouter_model_id: _openrouterModelId, enabled: _enabled, ...model }) => model),
+          .map(
+            ({ openrouter_model_id: _openrouterModelId, enabled: _enabled, markup, ...model }) => ({
+              ...model,
+              price_input: markup === 0 ? 0 : model.price_input,
+              price_output: markup === 0 ? 0 : model.price_output,
+              is_free: markup === 0,
+            })
+          ),
       }))
       .filter((tier) => tier.models.length > 0),
   });
@@ -307,11 +333,12 @@ export function calculateDisplayPrice(usdPerToken: number, pricing: DisplayPrici
     !Number.isFinite(pricing.exchangeRate) ||
     pricing.exchangeRate <= 0 ||
     !Number.isFinite(pricing.markup) ||
-    pricing.markup <= 0
+    pricing.markup < 0
   ) {
     throw new Error('invalid OpenRouter display price inputs');
   }
 
+  if (pricing.markup === 0) return 0;
   return Math.round(usdPerToken * 10_000 * pricing.exchangeRate * pricing.markup * 10) / 10;
 }
 
