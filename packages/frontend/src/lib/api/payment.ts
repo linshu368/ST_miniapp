@@ -16,6 +16,7 @@ import type {
   GetPaymentOrdersQuery,
   GetPaymentPlansData,
   GetWalletBalanceData,
+  GetWalletSpendingData,
   PaymentOrderStatus,
   PostDailyCheckinData,
 } from '@miniapp/shared';
@@ -31,6 +32,7 @@ export const paymentKeys = {
     [...paymentKeys.orders(), 'list', status] as const,
   order: (id: string) => [...paymentKeys.orders(), 'detail', id] as const,
   wallet: () => [...paymentKeys.all, 'wallet'] as const,
+  spending: () => [...paymentKeys.wallet(), 'spending'] as const,
   checkin: () => [...paymentKeys.wallet(), 'checkin'] as const,
 };
 
@@ -62,6 +64,10 @@ async function postCreateOrder(body: CreatePaymentOrderRequest): Promise<CreateP
 
 async function fetchWalletBalance(): Promise<GetWalletBalanceData> {
   return apiClient<GetWalletBalanceData>('/api/wallet/balance');
+}
+
+async function fetchWalletSpending(): Promise<GetWalletSpendingData> {
+  return apiClient<GetWalletSpendingData>('/api/wallet/spending');
 }
 
 async function fetchDailyCheckin(): Promise<GetDailyCheckinData> {
@@ -130,6 +136,15 @@ export function useWalletBalanceQuery() {
 export function useWalletCredits(): number {
   const { data } = useWalletBalanceQuery();
   return data?.credits ?? 0;
+}
+
+export function useWalletSpendingQuery() {
+  return useQuery<GetWalletSpendingData>({
+    queryKey: paymentKeys.spending(),
+    queryFn: fetchWalletSpending,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
 }
 
 export function useDailyCheckinQuery() {

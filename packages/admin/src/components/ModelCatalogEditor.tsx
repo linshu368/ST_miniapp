@@ -123,6 +123,18 @@ export function appendDraftTier(catalog: ModelCatalog): ModelCatalog {
   };
 }
 
+export function applyModelMarkup(
+  model: ModelCatalogModel,
+  markup: number,
+  displayPrices?: Pick<ModelCatalogModel, 'price_input' | 'price_output'>
+): ModelCatalogModel {
+  return {
+    ...model,
+    markup: markup as ModelCatalogModel['markup'],
+    ...(markup === 0 ? { price_input: 0, price_output: 0 } : (displayPrices ?? {})),
+  };
+}
+
 function SortableHandleItem(props: {
   id: string;
   disabled?: boolean;
@@ -675,31 +687,35 @@ export function ModelCatalogEditor(props: {
                                         value={String(model.markup)}
                                         options={MODEL_MARKUP_OPTIONS.map((value) => ({
                                           value: String(value),
-                                          label: `${value} 倍`,
+                                          label: value === 0 ? '0 倍（免费）' : `${value} 倍`,
                                         }))}
                                         disabled={props.disabled}
-                                        onChange={(value) =>
-                                          updateModel(tierIndex, modelIndex, {
-                                            markup: Number(value),
-                                          })
-                                        }
+                                        onChange={(value) => {
+                                          const markup = Number(value);
+                                          updateModel(
+                                            tierIndex,
+                                            modelIndex,
+                                            applyModelMarkup(model, markup)
+                                          );
+                                        }}
                                         onSelect={(value) => {
                                           const markup = Number(value);
                                           const upstream = props.openRouterDirectory?.models.find(
                                             (item) => item.id === model.openrouter_model_id
                                           );
-                                          if (
-                                            !upstream ||
-                                            !ModelMarkupSchema.safeParse(markup).success
-                                          )
-                                            return;
-                                          updateModel(tierIndex, modelIndex, {
-                                            markup,
-                                            ...calculateModelDisplayPrices(upstream, {
-                                              ...props.pricingConfig,
-                                              markup,
-                                            }),
-                                          });
+                                          if (!ModelMarkupSchema.safeParse(markup).success) return;
+                                          const displayPrices =
+                                            markup !== 0 && upstream
+                                              ? calculateModelDisplayPrices(upstream, {
+                                                  ...props.pricingConfig,
+                                                  markup,
+                                                })
+                                              : undefined;
+                                          updateModel(
+                                            tierIndex,
+                                            modelIndex,
+                                            applyModelMarkup(model, markup, displayPrices)
+                                          );
                                         }}
                                       />
                                       <Button
@@ -708,25 +724,36 @@ export function ModelCatalogEditor(props: {
                                           const upstream = props.openRouterDirectory?.models.find(
                                             (item) => item.id === model.openrouter_model_id
                                           );
-                                          if (
-                                            !upstream ||
-                                            !ModelMarkupSchema.safeParse(model.markup).success
-                                          )
+                                          if (!ModelMarkupSchema.safeParse(model.markup).success)
                                             return;
-                                          updateModel(tierIndex, modelIndex, {
-                                            ...calculateModelDisplayPrices(upstream, {
-                                              ...props.pricingConfig,
-                                              markup: model.markup,
-                                            }),
-                                          });
+                                          const displayPrices =
+                                            model.markup !== 0 && upstream
+                                              ? calculateModelDisplayPrices(upstream, {
+                                                  ...props.pricingConfig,
+                                                  markup: model.markup,
+                                                })
+                                              : undefined;
+                                          updateModel(
+                                            tierIndex,
+                                            modelIndex,
+                                            applyModelMarkup(model, model.markup, displayPrices)
+                                          );
                                         }}
                                       >
                                         确认
                                       </Button>
                                     </Space.Compact>
-                                    <Typography.Text type="secondary">
-                                      OpenRouter 实时价 × {model.markup || 0} 倍
-                                    </Typography.Text>
+                                    {model.markup === 0 ? (
+                                      <Alert
+                                        type="success"
+                                        showIcon
+                                        message="免费模型：展示价与实际扣费均为 0 星尘"
+                                      />
+                                    ) : (
+                                      <Typography.Text type="secondary">
+                                        OpenRouter 实时价 × {model.markup} 倍
+                                      </Typography.Text>
+                                    )}
                                   </Col>
                                   <Col xs={12} md={4}>
                                     <Typography.Text>输入展示价</Typography.Text>

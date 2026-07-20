@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ModelCatalogSchema, type ModelCatalog } from '@miniapp/shared';
 import { EditableModelCatalogSchema } from '../lib/configSchemas';
 import {
+  applyModelMarkup,
   appendDraftModel,
   appendDraftTier,
   filterOpenRouterModels,
@@ -94,6 +95,26 @@ describe('editable model catalog additions', () => {
     expect(result.tiers.at(-1)?.models).toEqual([]);
     expect(EditableModelCatalogSchema.safeParse(result).success).toBe(true);
     expect(ModelCatalogSchema.safeParse(result).success).toBe(false);
+  });
+});
+
+describe('applyModelMarkup', () => {
+  it('forces both display prices to zero for a free model', () => {
+    const model = catalog.tiers[0]!.models[0]!;
+    expect(applyModelMarkup(model, 0)).toMatchObject({
+      markup: 0,
+      price_input: 0,
+      price_output: 0,
+    });
+  });
+
+  it('applies recalculated prices for a paid model', () => {
+    const model = catalog.tiers[0]!.models[0]!;
+    expect(applyModelMarkup(model, 2, { price_input: 1.2, price_output: 3.4 })).toMatchObject({
+      markup: 2,
+      price_input: 1.2,
+      price_output: 3.4,
+    });
   });
 });
 

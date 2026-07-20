@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertCircle, ChevronLeft, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
+import { AlertCircle, ChevronLeft, History, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
 import { DEFAULT_RECHARGE_PAGE_CONFIG, type PaymentType } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
@@ -115,13 +115,22 @@ function RechargePageContent() {
         <section className="px-1">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-medium text-slate-200">{pageConfig.description}</p>
-            <Link
-              href="/profile/orders"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <Receipt className="h-3.5 w-3.5" aria-hidden />
-              我的订单
-            </Link>
+            <div className="flex shrink-0 items-center gap-2">
+              <Link
+                href="/profile/orders"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <Receipt className="h-3.5 w-3.5" aria-hidden />
+                我的订单
+              </Link>
+              <Link
+                href="/profile/spending"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <History className="h-3.5 w-3.5" aria-hidden />
+                消耗明细
+              </Link>
+            </div>
           </div>
         </section>
 
