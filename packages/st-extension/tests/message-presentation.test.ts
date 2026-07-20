@@ -3,7 +3,10 @@ import { describe, it } from 'node:test';
 
 import { splitBoldSegments } from '../src/patches/markdown-bold-fallback.js';
 import { resolveReasoningUiState } from '../src/patches/reasoning-stream-ui.js';
-import { resolveMiniappAppearance } from '../src/patches/mobile-chat-theme.js';
+import {
+  resolveMiniappAppearance,
+  shouldExpandComposer,
+} from '../src/patches/mobile-chat-theme.js';
 
 describe('splitBoldSegments', () => {
   it('formats standard and spaced bold markers', () => {
@@ -42,5 +45,15 @@ describe('resolveMiniappAppearance', () => {
     assert.equal(resolveMiniappAppearance('light'), 'light');
     assert.equal(resolveMiniappAppearance(null), 'light');
     assert.equal(resolveMiniappAppearance('system'), 'light');
+  });
+});
+
+describe('shouldExpandComposer', () => {
+  it('keeps short messages compact and expands long or multiline input', () => {
+    assert.equal(shouldExpandComposer('你好', 48, false), false);
+    assert.equal(shouldExpandComposer('第一行\n第二行', 48, false), true);
+    assert.equal(shouldExpandComposer('很长的输入'.repeat(14), 48, false), true);
+    assert.equal(shouldExpandComposer('仍然有较多文字'.repeat(8), 56, true), true);
+    assert.equal(shouldExpandComposer('已清空', 48, true), false);
   });
 });
