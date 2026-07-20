@@ -78,7 +78,14 @@ export function installMobileChatTheme(): void {
     }
 
     #top-bar,
-    #top-settings-holder {
+    #top-settings-holder,
+    #nav-toggle,
+    #floatingPrompt,
+    #leftNavDrawerIcon,
+    #rightNavDrawerIcon,
+    #floatingNavPanel,
+    body > .drawer-icon,
+    body > .panelControlBar {
       display: none !important;
     }
 
@@ -131,12 +138,24 @@ export function installMobileChatTheme(): void {
     }
 
     #chat .mes_block {
+      box-sizing: border-box !important;
+      flex: 1 1 0 !important;
       min-width: 0 !important;
+      width: auto !important;
+      max-width: calc(100% - 46px) !important;
       padding-left: 10px !important;
     }
 
     #chat .mes[is_user='true'] .mes_block {
+      max-width: 100% !important;
       padding-left: 0 !important;
+    }
+
+    #chat .mesAvatarWrapper {
+      box-sizing: border-box !important;
+      flex: 0 0 36px !important;
+      max-width: 36px !important;
+      overflow: hidden !important;
     }
 
     #chat .mesAvatarWrapper,
@@ -181,13 +200,17 @@ export function installMobileChatTheme(): void {
     }
 
     #chat .mes_buttons,
-    #chat .extraMesButtons {
-      gap: 3px !important;
-      color: var(--miniapp-chat-muted) !important;
-    }
-
-    #chat .mes_button {
-      border-radius: 999px !important;
+    #chat .extraMesButtons,
+    #chat .extraMesButtonsHint,
+    #chat .swipe_left,
+    #chat .swipe_right,
+    #chat .swipes-counter,
+    #chat .mes_img_swipes,
+    #chat .mes_reasoning_actions,
+    #chat .mes_timer,
+    #chat .tokenCounterDisplay,
+    #chat .mesIDDisplay {
+      display: none !important;
     }
 
     #form_sheld {
@@ -238,6 +261,10 @@ export function installMobileChatTheme(): void {
       padding-right: 4px !important;
     }
 
+    #rightSendForm > div:not(#send_but):not(.mes_stop) {
+      display: none !important;
+    }
+
     #rightSendForm > div:not(.mes_stop),
     #send_form .mes_stop {
       width: 40px !important;
@@ -272,6 +299,19 @@ export function installMobileChatTheme(): void {
         width: 34px !important;
         min-width: 34px !important;
         height: 34px !important;
+      }
+
+      #chat .mesAvatarWrapper {
+        flex-basis: 34px !important;
+        max-width: 34px !important;
+      }
+
+      #chat .mes_block {
+        max-width: calc(100% - 42px) !important;
+      }
+
+      #chat .mes[is_user='true'] .mes_block {
+        max-width: 100% !important;
       }
     }
   `;
