@@ -157,13 +157,12 @@ export default function ProfilePage() {
       data-app-shell="profile"
       className="app-page relative mx-auto flex w-full max-w-screen-xl flex-col pb-10 pt-[env(safe-area-inset-top)]"
     >
-      <AppearanceToggle className="fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-50" />
       {/* 顶部空间感 Banner */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-[radial-gradient(ellipse_at_top,hsl(var(--primary)/0.16),transparent_70%)]" />
 
       {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=签到 + 设置占位 */}
-      <header className="relative z-10 flex items-center justify-between gap-2 px-4 py-3 pr-14 sm:px-5 sm:pr-16">
-        <div className="flex min-w-0 shrink items-center gap-2">
+      <header className="relative z-10 flex items-center gap-2 px-3 py-3 sm:px-5">
+        <div className="flex min-w-0 flex-1 basis-1/2 items-center gap-1.5">
           <Link
             href="/profile/recharge"
             aria-label={`当前星尘 ${credits}，前往星尘商店`}
@@ -189,12 +188,12 @@ export default function ProfilePage() {
             明细
           </Link>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <div className="flex min-w-0 flex-1 basis-1/2 items-center justify-end gap-1">
           <Button
             disabled={!checkin?.can_claim || claimCheckin.isPending}
             onClick={() => void claimDailyCheckin()}
             size="sm"
-            className="h-8 shrink-0 whitespace-nowrap rounded-full border border-primary/20 bg-primary/10 px-2.5 text-[11px] font-bold text-primary shadow-none hover:bg-primary/15 disabled:border-border disabled:bg-muted disabled:text-muted-foreground sm:h-9 sm:px-3 sm:text-xs"
+            className="h-8 shrink-0 whitespace-nowrap rounded-full border border-primary/20 bg-primary/10 px-2 text-[11px] font-bold text-primary shadow-none hover:bg-primary/15 disabled:border-border disabled:bg-muted disabled:text-muted-foreground sm:h-9 sm:px-3 sm:text-xs"
             aria-label="每日签到"
           >
             <Gift className="mr-1 sm:mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -204,6 +203,7 @@ export default function ProfilePage() {
                 ? `签到 +${checkin.reward_credits}`
                 : '已签到'}
           </Button>
+          <AppearanceToggle />
           <Button
             disabled
             variant="ghost"

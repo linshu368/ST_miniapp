@@ -13,8 +13,8 @@ export function shouldExpandComposer(
   currentlyExpanded: boolean
 ): boolean {
   if (value.includes('\n')) return true;
-  if (currentlyExpanded) return value.length > 48 || scrollHeight > 60;
-  return value.length > 64 || scrollHeight > 68;
+  if (currentlyExpanded) return value.length > 12 || scrollHeight > 54;
+  return value.length > 24 || scrollHeight > 54;
 }
 
 function readAppearance(): MiniappAppearance {
@@ -136,20 +136,31 @@ export function installMobileChatTheme(): void {
 
     #chat .mes[is_user='true'] {
       box-sizing: border-box !important;
-      align-self: flex-end !important;
-      width: fit-content !important;
+      align-self: stretch !important;
+      align-items: flex-end !important;
+      justify-content: flex-end !important;
+      gap: 8px !important;
+      width: 100% !important;
       min-width: 0 !important;
-      max-width: min(calc(100% - 28px), 34rem) !important;
-      margin: 6px 14px 10px auto !important;
-      padding: 11px 14px !important;
-      border: 1px solid color-mix(in srgb, var(--miniapp-chat-accent) 18%, transparent) !important;
-      border-radius: 20px 20px 6px 20px !important;
-      background: var(--miniapp-chat-user) !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      padding: 6px 14px 10px !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: transparent !important;
     }
 
-    #chat .mes[is_user='true'] .mesAvatarWrapper,
     #chat .mes[is_user='true'] .ch_name {
       display: none !important;
+    }
+
+    #chat .mes[is_user='true'] .mesAvatarWrapper {
+      display: block !important;
+      order: 2 !important;
+      flex: 0 0 36px !important;
+      max-width: 36px !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
 
     #chat .mes_block {
@@ -162,10 +173,14 @@ export function installMobileChatTheme(): void {
     }
 
     #chat .mes[is_user='true'] .mes_block {
+      order: 1 !important;
       flex: 0 1 auto !important;
-      width: auto !important;
-      max-width: 100% !important;
-      padding-left: 0 !important;
+      width: fit-content !important;
+      max-width: min(calc(100% - 44px), 34rem) !important;
+      padding: 11px 14px !important;
+      border: 1px solid color-mix(in srgb, var(--miniapp-chat-accent) 18%, transparent) !important;
+      border-radius: 20px 20px 6px 20px !important;
+      background: var(--miniapp-chat-user) !important;
     }
 
     #chat .mes[is_user='true'] .mes_text {
@@ -262,10 +277,18 @@ export function installMobileChatTheme(): void {
       min-height: 48px !important;
       height: 48px;
       padding: 13px 6px 10px 4px !important;
+      resize: none !important;
+      overflow-y: auto !important;
+      scrollbar-width: none !important;
       color: var(--miniapp-chat-text) !important;
       font-size: 15px !important;
       line-height: 22px !important;
       caret-color: var(--miniapp-chat-accent) !important;
+    }
+
+    #send_textarea::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
     }
 
     #send_textarea::placeholder {
@@ -414,7 +437,12 @@ export function installMobileChatTheme(): void {
       }
 
       #chat .mes[is_user='true'] .mes_block {
-        max-width: 100% !important;
+        max-width: calc(100% - 42px) !important;
+      }
+
+      #chat .mes[is_user='true'] .mesAvatarWrapper {
+        flex-basis: 34px !important;
+        max-width: 34px !important;
       }
     }
   `;
