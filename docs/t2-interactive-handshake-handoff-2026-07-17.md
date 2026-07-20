@@ -3,6 +3,10 @@
 > 交接对象：接续本任务的新会话。
 > 工作分支 `dev_iframe_optimization`，所有提交已推远程并由人工合并 `dev` 部署（Railway dev 环境 + Vercel dev 前端）。
 > 阅读本文档前置：`docs/cold-boot-baseline-2026-07-13.md`（baseline 口径）。
+>
+> **⚠️ 2026-07-20 更新：§三的坏模块图卡点已收敛（方案 b 根治，dev 压测 24 boot 零复发），
+> 全程记录见文末【七、追记】；§四计划的 1/2/3 项均已落地，剩余 4/5 项待办。
+> 团队汇报与 pro 验收口径另见 `docs/iframe-optimization-t0-t2-report-2026-07-20.md`。**
 
 ---
 
@@ -134,3 +138,44 @@ node --check vendor/sillytavern/public/script.js   # 改过 vendor JS 时
 - vendor 只读铁律的受控例外：最小 diff、逐行 `[miniapp-patch]` 注释、登记 `vendor/sillytavern/NOTICE.md`；禁止绝对路径 import（逃逸 `/st-runtime/` 命名空间产生双模块图）。
 - pre-commit 有 lint-staged/prettier，pre-push 有前端 lint 预检。
 - 上游合并保护规则见 `.cursor/rules/upstream-merge-protection.mdc`。
+
+---
+
+## 七、追记（2026-07-17 深夜 ~ 07-20）：坏模块图卡点收敛全程
+
+### 7.1 §四计划第 1/2 项落地（`31ad3c1`，PR #150）
+
+- **补正则**：`MINIAPP_FATAL_RE` 增 `before initialization`，覆盖 iOS 18.7 / V8 的 TDZ 措辞。验证生效：iOS 样本开始出现 `boot_fatal:"rej:Cannot access 'extension_prompt_types' before initialization"`。
+- **方案 a**：boot_fatal 触发的重连 URL 带 `miniapp_nuke=1`（bridge-client `nukeCacheOnNextReconnect` 标志，仅 boot_fatal 置位、用后即清）；nginx `/tavern` 对该参数回 `Clear-Site-Data: "cache"`（`map $arg_miniapp_nuke`，非命中不发头、正常首访零影响）。
+
+### 7.2 恢复结局埋点（`fa74e0b`，PR #157 前后合入）
+
+为无歧义统计自愈成功率新增：每条 beacon 的 `details.recovery`（`boot_fatal=N nuke_reload=M reload=K` 累计）、`first_boot_fatal` mark（算恢复耗时）、`reason=recovery_ok` beacon（坏图后恢复到 ready，每 episode 一次）、`reason=boot_disconnected` beacon（终态兜底——原本永久卡死等不到 chat_ready 是统计盲区）。
+
+### 7.3 方案 a 压测结论：**iOS 上无效**（部署 #162 实测）
+
+iOS 18.7 压测约 5 个 episode **全部失败、0% 自愈**，至少 2 个走到 `boot_disconnected` 终态。curl 实测 nginx 确实回了 `Clear-Site-Data: "cache"`，但 **iOS WKWebView 收到后不清缓存**（nuke 重载后同一 TDZ 原样复发、模块全部 `+0ms` 缓存命中）——方案 a 对 WebKit 是 no-op。Chromium 系（此前 Mac/Desktop 样本）有效。方案 a 链路保留作纵深防御（boot_fatal 归零后等于休眠保险丝）。
+
+### 7.4 方案 b 根治落地（`ffa0002`，PR #164）
+
+入口审计结论：5 个 `<script type="module">` 根中，`scripts/i18n.js`（import `power-user.js`）与 `lib/eventemitter.js`（被 `scripts/events.js` 引用）都通向 script.js 大循环图——**i18n.js 是危险的第二入口**，观测 TDZ 变量（`power_user`/`trackMissingDynamicTranslate`/`extension_prompt_types`）正是该邻域导出。
+
+改法：5 根合并为**单一内联 module 根**，静态 import 按原文档序排列。要点：
+
+- 单根之下无多根竞速，DFS 求值顺序与规范下原 5 根**逐模块一致**（循环圈仍经 i18n → power-user 进入，即联网验证过的好顺序），Web 直访零行为变化；
+- 内联而非独立 boot 文件：文档 no-store 根永不陈旧，且无需新增 nginx 路由（新根文件会落 `location /` 404）；
+- import 相对文档 base（含 `/st-runtime/<hash>/` 命名空间），与原 src 解析出相同 URL——无双模块图风险。
+
+已登记 NOTICE.md（回滚 = 还原 5 行 src 标签、删内联块）。
+
+### 7.5 方案 b 验证（部署 #164，2026-07-20 压测）
+
+三平台 24 次冷启动（Android 8 / iOS 9 / Desktop 7，含大量缓存热态重启即原触发条件）：**TDZ boot_fatal 0 次、gate_stall 0、boot_disconnected 0，点卡 100% 成功**。上轮 100% 卡死的同一台 iPhone 本轮 9/9 干净。按上轮 70%+ 触发率估算，24 次全净的概率 <1e-5，结论可置信。耗时无回归（解析段与 baseline 同量级；interactive 全样本领先 APP_READY 280–400ms；fastNewChat 全样本保持）。
+
+### 7.6 当前待办（更新后的 §四）
+
+1. ~~补正则~~ ✅（7.1）
+2. ~~方案 a~~ ✅ 落地但 iOS 无效（7.3），保留作纵深防御
+3. ~~方案 b~~ ✅ 根治并验证（7.4/7.5）
+4. **验证 T2 原始收益**：dev 跑数天自然流量确认 boot_fatal 持续为零后合并 pro，用 pro 真实流量验证 interactive 相位对慢 Android 长尾的收益（对照 24.6s 闸门等待动机样本）。验收口径见 `docs/iframe-optimization-t0-t2-report-2026-07-20.md` §四。
+5. **埋点清理**：全部 `[iframe-timing]` TEMP DEBUG（含 7.2 的恢复结局埋点）在项目收尾时一次性移除；vendor 探针在 NOTICE.md 有登记。
