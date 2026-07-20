@@ -155,6 +155,8 @@ export function ChatSplash({
       className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden px-4 py-4"
       style={{
         background: `radial-gradient(150% 110% at 50% -10%, hsl(${hue} 62% 17%) 0%, hsl(${hue - 26} 48% 8%) 46%, #050309 100%)`,
+        color: '#ffffff',
+        colorScheme: 'dark',
         animation:
           phase === 'exiting'
             ? `splash-exit ${EXIT_MS}ms cubic-bezier(0.4, 0, 0.2, 1) forwards`
@@ -336,7 +338,7 @@ export function ChatSplash({
       <div className="relative mt-[clamp(1rem,3vh,2rem)] flex max-w-[82vw] flex-col items-center px-6 text-center">
         <h1
           className="text-[26px] font-semibold tracking-[0.18em] text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.5)] sm:text-3xl"
-          style={{ animation: 'splash-fade-up 0.7s ease-out 0.35s both' }}
+          style={{ color: '#ffffff', animation: 'splash-fade-up 0.7s ease-out 0.35s both' }}
         >
           {name}
         </h1>
