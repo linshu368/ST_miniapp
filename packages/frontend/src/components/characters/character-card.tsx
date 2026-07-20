@@ -108,9 +108,9 @@ export function CharacterCard({
             {character.name}
           </h3>
 
-          {character.personality_tags.length > 0 && (
+          {(character.personality_tags || []).length > 0 && (
             <div className="flex max-h-[2.25rem] min-w-0 flex-wrap items-center gap-1 overflow-hidden">
-              {character.personality_tags.slice(0, 6).map((t) => (
+              {(character.personality_tags || []).slice(0, 6).map((t) => (
                 <span
                   key={t}
                   className="max-w-[calc(50%-0.125rem)] truncate rounded-full bg-white/12 px-1.5 py-[3px] text-[10px] font-medium leading-none text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur-[2px] sm:max-w-full"

@@ -157,9 +157,9 @@ export function CharacterDetailSheet({
                 {character.author_name && (
                   <p className="mt-1 text-[12px] text-white/55">by {character.author_name}</p>
                 )}
-                {character.personality_tags.length > 0 && (
+                {(character.personality_tags || []).length > 0 && (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {character.personality_tags.slice(0, 6).map((tag) => (
+                    {(character.personality_tags || []).slice(0, 6).map((tag) => (
                       <span
                         key={tag}
                         className="rounded-full bg-white/12 px-2.5 py-[3px] text-[11px] font-medium text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur-[2px]"
