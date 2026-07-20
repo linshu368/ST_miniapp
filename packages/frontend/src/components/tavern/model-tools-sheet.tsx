@@ -7,8 +7,8 @@ import {
   // Image,
   MessageSquarePlus,
   // Mic,
-  SlidersHorizontal,
   Sparkles,
+  WandSparkles,
   // UserRound,
 } from 'lucide-react';
 
@@ -74,10 +74,10 @@ export function ModelToolsSheet() {
     <>
       <button
         onClick={() => setMenuState((state) => (state === 'closed' ? 'tools' : 'closed'))}
-        className="fixed bottom-0 left-0 z-20 flex h-[38px] w-10 items-center justify-center border-0 bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-accent"
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+13px)] left-[13px] z-20 flex size-10 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-sm transition hover:bg-muted active:scale-95"
         aria-label="工具菜单"
       >
-        <SlidersHorizontal className="h-[18px] w-[18px]" />
+        <WandSparkles className="size-[18px]" strokeWidth={2} />
       </button>
 
       {menuState !== 'closed' && typeof document !== 'undefined'
@@ -90,7 +90,7 @@ export function ModelToolsSheet() {
                 aria-label="关闭工具面板"
               />
               <div
-                className="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-[480px] flex-col overflow-hidden rounded-t-[24px] border border-border bg-popover/[0.98] text-popover-foreground shadow-[0_-24px_80px_rgba(0,0,0,0.35)]"
+                className="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-[480px] flex-col overflow-hidden rounded-t-[28px] border border-border bg-popover/[0.98] text-popover-foreground shadow-[0_-24px_80px_rgba(0,0,0,0.25)]"
                 style={{
                   height: menuState === 'models' ? '75dvh' : '50dvh',
                   transform: `translateY(${dragY}px)`,
@@ -103,7 +103,7 @@ export function ModelToolsSheet() {
                 onTouchEnd={handleTouchEnd}
               >
                 <div className="flex shrink-0 justify-center pb-2 pt-2.5">
-                  <div className="h-1 w-10 rounded-full bg-white/25" />
+                  <div className="h-1 w-10 rounded-full bg-muted-foreground/35" />
                 </div>
                 <div
                   ref={scrollRef}

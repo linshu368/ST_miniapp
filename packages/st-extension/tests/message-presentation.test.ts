@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { splitBoldSegments } from '../src/patches/markdown-bold-fallback.js';
 import { resolveReasoningUiState } from '../src/patches/reasoning-stream-ui.js';
+import { resolveMiniappAppearance } from '../src/patches/mobile-chat-theme.js';
 
 describe('splitBoldSegments', () => {
   it('formats standard and spaced bold markers', () => {
@@ -32,5 +33,14 @@ describe('resolveReasoningUiState', () => {
   it('does not expose empty reasoning blocks', () => {
     assert.equal(resolveReasoningUiState('done', false), 'idle');
     assert.equal(resolveReasoningUiState(undefined, false), 'idle');
+  });
+});
+
+describe('resolveMiniappAppearance', () => {
+  it('keeps dark explicit and defaults invalid values to light', () => {
+    assert.equal(resolveMiniappAppearance('dark'), 'dark');
+    assert.equal(resolveMiniappAppearance('light'), 'light');
+    assert.equal(resolveMiniappAppearance(null), 'light');
+    assert.equal(resolveMiniappAppearance('system'), 'light');
   });
 });
