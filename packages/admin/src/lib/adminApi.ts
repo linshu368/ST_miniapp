@@ -378,6 +378,16 @@ export async function listCharacterLayoutReleases(
   return unwrap((data ?? []) as CharacterLayoutRelease[], error);
 }
 
+export async function deleteCharacterLayoutRelease(
+  client: SupabaseClient,
+  releaseId: string
+): Promise<void> {
+  const { error } = await client
+    .schema('admin')
+    .rpc('delete_character_layout_release', { p_release_id: releaseId });
+  if (error) throw error;
+}
+
 export async function rollbackCharacterLayoutRelease(
   client: SupabaseClient,
   releaseId: string,

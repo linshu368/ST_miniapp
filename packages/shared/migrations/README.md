@@ -130,6 +130,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 046_admin_character_layout_rollback.sql # 角色布局发布历史查询与原子回滚
 047_admin_character_layout_release_details.sql # 角色布局发布类型、目标版本与完整角色快照
 048_admin_create_character.sql # 角色卡安全创建、下架初始化、草稿同步与审计
+049_admin_delete_character_layout_release.sql # 删除非当前角色布局历史版本并保留审计
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
