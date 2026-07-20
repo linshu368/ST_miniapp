@@ -8200,11 +8200,23 @@
     <script src="lib/pagination.js"></script>
     <script src="lib/toolcool-color-picker.js"></script>
     <script src="lib/jquery.izoomify.js"></script>
-    <script type="module" src="lib/structured-clone/monkey-patch.js"></script>
-    <script type="module" src="lib/swiped-events.js"></script>
-    <script type="module" src="lib/eventemitter.js"></script>
-    <script type="module" src="scripts/i18n.js"></script>
-    <script type="module" src="script.js"></script>
+    <!-- [miniapp-patch] 单根模块引导（坏模块图 TDZ 根治）：原为 5 个并列 <script type="module">
+         根（monkey-patch / swiped-events / eventemitter / i18n / script.js）。其中 i18n.js 与
+         eventemitter.js 各自是进入 script.js 大循环依赖图的第二入口；WebKit 在全缓存冷启动下
+         对多根共享图的求值顺序失序（i18n/power-user 邻域绑定未初始化 → TDZ ReferenceError →
+         boot 在握手前死亡，2026-07 dev 多轮实测）。合并为单一内联根后引擎不存在多根竞速，
+         静态 import 按原文档序排列 → DFS 求值顺序与规范下的原 5 根逐模块一致（循环圈仍经
+         i18n → power-user 进入，联网验证过的顺序），Web 直访零行为变化。
+         内联（而非独立 boot 文件）：文档本身 no-store，根永不陈旧，且无需新增 nginx 路由。
+         import 说明符相对文档 base（含发布级 /st-runtime/<hash>/ 命名空间），与原 src 解析出
+         完全相同的 URL → 单一模块图，无双图风险。还原方式：恢复上述 5 行并删除本块。 -->
+    <script type="module">
+        import './lib/structured-clone/monkey-patch.js';
+        import './lib/swiped-events.js';
+        import './lib/eventemitter.js';
+        import './scripts/i18n.js';
+        import './script.js';
+    </script>
     <script>
         window.addEventListener('load', (event) => {
             const documentHeight = () => {
