@@ -51,9 +51,12 @@ export type BridgeClientOptions = {
   handshakeArrivalTimeout?: number;
   /**
    * 点卡即检重载阈值（安全网 #5）：用户点卡进入 /tavern/ 时 iframe 由隐藏转可见
-   * （重载只在可见态 100% 恢复）。若此刻仍未握手，则按「距本次 boot 起点的该时长」武装一枚更
-   * 激进的停摆重载——到点仍无握手即重载，不必干等 30s 握手到达看门狗；点卡时若已超阈值则立即重载。
-   * 默认 18s（> 正常最迟握手 ~17.5s，不误伤健康慢 boot）；0 = 关闭。
+   * （重载只在可见态 100% 恢复）。若此刻仍未握手**且 iframe onload 尚未触发**，则按
+   * 「距本次 boot 起点的该时长」武装一枚更激进的停摆重载——到点仍无握手即重载，
+   * 不必干等 30s 握手到达看门狗；点卡时若已超阈值则立即重载。
+   * onload 已触发时跳过本看门狗（文档加载成功、JS 在正常解析中，属慢 boot 而非停摆，
+   * 由 30s handshakeArrivalWatchdog 兜底）。
+   * 默认 15s（与 iframeLoadTimeout 对齐）；0 = 关闭。
    */
   visibleStallReloadMs?: number;
 };
@@ -92,6 +95,8 @@ export class BridgeClient {
   private iframeLoadHandler: (() => void) | null = null;
   private handshakeArrivalTimer: ReturnType<typeof setTimeout> | null = null;
   private clickStallTimer: ReturnType<typeof setTimeout> | null = null;
+  /** iframe load 事件已触发 → 文档加载成功、JS 正在解析执行，boot 在正常推进（只是可能慢） */
+  private iframeLoaded = false;
   private reconnectAttempts = 0;
   /**
    * 方案 a：下一次重连是否清 origin HTTP 缓存。仅由 boot-fatal（坏模块图 TDZ）置位——
@@ -126,7 +131,7 @@ export class BridgeClient {
     this.reconnectHandshakeTimeout = options?.reconnectHandshakeTimeout ?? 30_000;
     this.iframeLoadTimeout = options?.iframeLoadTimeout ?? 15_000;
     this.handshakeArrivalTimeout = options?.handshakeArrivalTimeout ?? 30_000;
-    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 10_000;
+    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 15_000;
 
     this.stateMachine = createStateMachine();
     this.buffer = new RequestBuffer();
@@ -137,6 +142,7 @@ export class BridgeClient {
     if (this.started) return;
     this.started = true;
     this.bootAttemptStartedAt = Date.now();
+    this.iframeLoaded = false;
     // [iframe-timing] TEMP DEBUG: 每次 boot episode 重置自愈恢复累计器
     this.bootFatalCount = 0;
     this.nukeReloadCount = 0;
@@ -184,7 +190,9 @@ export class BridgeClient {
   /**
    * 点卡即检（安全网 #5）：由壳端在用户进入 /tavern/（iframe 转可见）时调用。
    * iframe 可见后重载才 100% 恢复（pro 实测：停摆发生在隐藏预热期，转可见并不能就地解楔，
-   * 只有重载才行）。因此这里在「仍未握手」时武装一枚比 30s 握手到达看门狗更早的停摆重载。
+   * 只有重载才行）。因此这里在「仍未握手 **且 onload 尚未触发**」时武装一枚比 30s 握手到达
+   * 看门狗更早的停摆重载。onload 已触发时说明文档加载成功、JS 正在解析执行，属正常慢 boot
+   * 而非真正停摆——此时跳过本看门狗，由 handshakeArrivalWatchdog (30s) 兜底。
    * 与握手到达看门狗并存、取更早者（handleHandshakeTimeout 用 reconnectTimer 去重，绝不更慢）；
    * 阈值相对本次 boot 起点计（点卡时若已超阈值 → 立即重载）。收到任意握手即解除。
    */
@@ -199,10 +207,14 @@ export class BridgeClient {
   private armClickStallWatchdog(): void {
     this.clearClickStallWatchdog();
     if (this.visibleStallReloadMs <= 0) return;
+    // iframe onload 已触发 → 文档加载成功、JS 在正常解析执行中，不误杀慢 boot
+    if (this.iframeLoaded) return;
     const elapsed = Date.now() - this.bootAttemptStartedAt;
     const remaining = Math.max(0, this.visibleStallReloadMs - elapsed);
     this.clickStallTimer = setTimeout(() => {
       this.clickStallTimer = null;
+      // 等待期间 onload 到了 → boot 在推进，取消重载
+      if (this.iframeLoaded) return;
       markTiming('click_stall_reload'); // [iframe-timing] TEMP DEBUG
       this.handleHandshakeTimeout();
     }, remaining);
@@ -223,7 +235,10 @@ export class BridgeClient {
   private attachIframeLoadListener(): void {
     const iframe = this.iframeRef();
     if (!iframe || this.iframeLoadHandler) return;
-    this.iframeLoadHandler = () => this.clearIframeLoadWatchdog();
+    this.iframeLoadHandler = () => {
+      this.iframeLoaded = true;
+      this.clearIframeLoadWatchdog();
+    };
     iframe.addEventListener('load', this.iframeLoadHandler);
   }
 
@@ -318,6 +333,7 @@ export class BridgeClient {
 
     this.stateMachine.transition({ type: 'IFRAME_LOAD_START' });
     this.bootAttemptStartedAt = Date.now();
+    this.iframeLoaded = false;
     this.armHandshakeTimer(this.reconnectHandshakeTimeout);
 
     // 重载 iframe（触发 ST 冷启动 + st-extension 重新 init 并重发握手）。
