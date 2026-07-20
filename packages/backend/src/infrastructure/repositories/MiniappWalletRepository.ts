@@ -49,7 +49,7 @@ export interface LlmUsageChargeRow {
   calculated_amount: NumericValue;
   charged_amount: NumericValue;
   fallback_used: boolean;
-  status: 'free' | 'charged' | 'partial' | 'reconciled' | 'historical';
+  status: 'pending' | 'free' | 'charged' | 'partial' | 'reconciled' | 'historical';
   created_at: string;
   reconciled_at: string | null;
 }

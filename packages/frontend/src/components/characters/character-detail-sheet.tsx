@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Quote, Sparkles, X } from 'lucide-react';
+import { ChevronDown, Heart, Quote, Sparkles, X } from 'lucide-react';
 
 import { useCharacterQuery } from '@/lib/api/characters';
+import { useFavoriteIdsQuery, useSetFavoriteMutation } from '@/lib/api/favorites';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
@@ -28,6 +29,11 @@ export function CharacterDetailSheet({
 }: CharacterDetailSheetProps) {
   const { data, isLoading } = useCharacterQuery(characterId ?? undefined);
   const character = data?.character;
+  const favoriteIds = useFavoriteIdsQuery();
+  const setFavorite = useSetFavoriteMutation();
+  const favorited = character
+    ? (favoriteIds.data?.character_ids.includes(character.id) ?? false)
+    : false;
 
   // ── 动画状态 ──────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
@@ -245,6 +251,23 @@ export function CharacterDetailSheet({
               className="h-12 shrink-0 rounded-2xl border border-white/12 bg-white/5 px-5 text-[14px] font-medium text-white/70 transition-colors hover:bg-white/10 active:scale-[0.98]"
             >
               {entering ? '取消进入' : '先看看别的'}
+            </button>
+            <button
+              type="button"
+              disabled={!character || setFavorite.isPending}
+              aria-label={favorited ? '取消收藏' : '收藏角色'}
+              aria-pressed={favorited}
+              onClick={() =>
+                character &&
+                setFavorite.mutate({ characterId: character.id, favorited: !favorited })
+              }
+              className={`flex size-12 shrink-0 items-center justify-center rounded-2xl border transition active:scale-95 ${
+                favorited
+                  ? 'border-emerald-300/60 bg-emerald-500 text-white'
+                  : 'border-white/12 bg-white/5 text-white/75'
+              }`}
+            >
+              <Heart className={`h-5 w-5 ${favorited ? 'fill-current' : ''}`} />
             </button>
             <button
               type="button"

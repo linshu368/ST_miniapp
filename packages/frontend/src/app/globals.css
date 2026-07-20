@@ -4,50 +4,49 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --background: 150 20% 98%;
+    --foreground: 160 16% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 160 16% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
+    --popover-foreground: 160 16% 10%;
+    --primary: 160 84% 39%;
     --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
+    --secondary: 150 22% 94%;
+    --secondary-foreground: 160 16% 13%;
+    --muted: 150 16% 94%;
+    --muted-foreground: 160 7% 42%;
+    --accent: 156 45% 92%;
+    --accent-foreground: 160 45% 22%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.625rem;
+    --border: 150 13% 87%;
+    --input: 150 13% 87%;
+    --ring: 160 84% 39%;
+    --radius: 1rem;
   }
 
   .dark {
-    /* 夜间情绪色板：带暖色偏移的深墨 + 珊瑚主色，服务"单手/低光/沉浸"场景 */
-    --background: 260 20% 6%;
-    --foreground: 30 15% 92%;
-    --card: 258 18% 10%;
-    --card-foreground: 30 15% 92%;
-    --popover: 258 18% 10%;
-    --popover-foreground: 30 15% 92%;
-    --primary: 12 75% 62%;
-    --primary-foreground: 260 30% 8%;
-    --secondary: 258 15% 16%;
-    --secondary-foreground: 30 10% 88%;
-    --muted: 258 14% 13%;
-    --muted-foreground: 258 10% 55%;
-    --accent: 340 65% 58%;
-    --accent-foreground: 30 15% 92%;
+    --background: 160 15% 5%;
+    --foreground: 150 15% 92%;
+    --card: 160 13% 8%;
+    --card-foreground: 150 15% 92%;
+    --popover: 160 13% 8%;
+    --popover-foreground: 150 15% 92%;
+    --primary: 158 64% 45%;
+    --primary-foreground: 160 25% 5%;
+    --secondary: 160 10% 14%;
+    --secondary-foreground: 150 12% 88%;
+    --muted: 160 10% 12%;
+    --muted-foreground: 155 7% 58%;
+    --accent: 158 24% 16%;
+    --accent-foreground: 150 15% 92%;
     --destructive: 0 50% 48%;
     --destructive-foreground: 30 15% 92%;
-    --border: 258 12% 18%;
-    --input: 258 12% 16%;
-    --ring: 12 75% 62%;
-    --radius: 0.875rem;
+    --border: 160 9% 18%;
+    --input: 160 9% 17%;
+    --ring: 158 64% 45%;
+    --radius: 1rem;
   }
 }
 
@@ -63,6 +62,9 @@
 
   body {
     @apply bg-background text-foreground;
+    transition:
+      background-color 180ms ease,
+      color 180ms ease;
     font-feature-settings: 'kern', 'liga', 'calt';
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -70,28 +72,15 @@
 }
 
 @layer components {
-  html[data-appearance='light'] [data-app-shell] {
-    background:
-      radial-gradient(circle at 50% 0%, rgba(124, 58, 237, 0.12), transparent 36%),
-      linear-gradient(180deg, #fbf7ff 0%, #f4efff 100%) !important;
-    color: #1f1635 !important;
+  .app-page {
+    @apply min-h-dvh bg-background text-foreground;
+    background-image:
+      radial-gradient(circle at 50% 0%, hsl(var(--primary) / 0.09), transparent 32rem),
+      linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
   }
 
-  html[data-appearance='light'] [data-app-shell] [class*='text-white'] {
-    color: #1f1635 !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='text-slate-'] {
-    color: #34264e !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='bg-white/'],
-  html[data-appearance='light'] [data-app-shell] [class*='bg-white\\['] {
-    background-color: rgba(255, 255, 255, 0.72) !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='border-white/'] {
-    border-color: rgba(79, 70, 229, 0.16) !important;
+  .app-surface {
+    @apply rounded-3xl border border-border bg-card text-card-foreground shadow-sm;
   }
 }
 

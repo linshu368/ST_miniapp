@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateFallbackDeduction,
   calculateUsageDeduction,
+  getInitialBillingDecision,
 } from '../features/billing/usage-pricing.js';
 
 describe('calculateUsageDeduction', () => {
@@ -27,5 +28,25 @@ describe('calculateUsageDeduction', () => {
   it('rejects invalid costs and negative markups', () => {
     expect(() => calculateUsageDeduction(-1, 680, 2.5)).toThrow();
     expect(() => calculateUsageDeduction(0.01, 680, -1)).toThrow();
+  });
+});
+
+describe('getInitialBillingDecision', () => {
+  it('records paid calls as pending with zero charge when usage is late', () => {
+    expect(
+      getInitialBillingDecision({ usageCost: null, exchangeRate: 680, modelMarkup: 2.5 })
+    ).toEqual({ amount: 0, hasActualUsage: false, pending: true });
+  });
+
+  it('keeps free calls at zero even when OpenRouter reports a cost', () => {
+    expect(
+      getInitialBillingDecision({ usageCost: 12.34, exchangeRate: 680, modelMarkup: 0 })
+    ).toEqual({ amount: 0, hasActualUsage: true, pending: false });
+  });
+
+  it('charges paid calls once actual usage is available', () => {
+    expect(
+      getInitialBillingDecision({ usageCost: 0.01, exchangeRate: 680, modelMarkup: 2.5 })
+    ).toEqual({ amount: 17, hasActualUsage: true, pending: false });
   });
 });
