@@ -1,7 +1,6 @@
 'use client';
 
 import { BottomNav } from '@/components/nav/bottom-nav';
-import { AppearanceToggle } from '@/components/appearance-toggle';
 import { usePathname } from 'next/navigation';
 
 const NAV_HIDDEN_PREFIXES = ['/profile/recharge', '/create/wish'];
@@ -13,7 +12,6 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <>
-      <AppearanceToggle className="fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-50" />
       {/* 悬浮底边栏高度+间距约 90px + safe-area，内容区底部留出同等 padding 避免被遮住 */}
       <div className={hideBottomNav ? undefined : 'pb-[calc(5.5rem+env(safe-area-inset-bottom))]'}>
         {children}

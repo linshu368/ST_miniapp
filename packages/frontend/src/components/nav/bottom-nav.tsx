@@ -29,7 +29,7 @@ export function BottomNav() {
     >
       <nav
         aria-label="主导航"
-        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-4 gap-1 rounded-[1.65rem] border border-border bg-card/92 p-1.5 text-card-foreground shadow-[0_14px_38px_rgba(0,0,0,0.18)] backdrop-blur-2xl"
+        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-4 gap-1 rounded-[1.65rem] border border-border bg-card p-1.5 text-card-foreground shadow-[0_14px_38px_rgba(0,0,0,0.26)]"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const active = href === '/' ? pathname === href : pathname?.startsWith(href);
@@ -42,19 +42,19 @@ export function BottomNav() {
               className={cn(
                 'group relative isolate flex h-[58px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-[1.3rem] px-2 transition-[color,background-color,box-shadow,transform] duration-300 ease-out active:scale-[0.97]',
                 active
-                  ? 'bg-primary/10 text-primary ring-1 ring-inset ring-primary/15'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-foreground/65 hover:bg-muted hover:text-foreground'
               )}
             >
               {active ? (
                 <>
                   <span
                     aria-hidden
-                    className="absolute inset-0 -z-10 bg-gradient-to-b from-primary/5 to-transparent"
+                    className="absolute inset-0 -z-10 bg-gradient-to-b from-white/10 to-transparent"
                   />
                   <span
                     aria-hidden
-                    className="absolute bottom-1.5 left-1/2 h-0.5 w-5 -translate-x-1/2 rounded-full bg-primary"
+                    className="absolute bottom-1.5 left-1/2 h-0.5 w-5 -translate-x-1/2 rounded-full bg-primary-foreground/80"
                   />
                 </>
               ) : null}

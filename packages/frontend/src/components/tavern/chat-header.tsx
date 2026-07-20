@@ -7,7 +7,6 @@ import { useCharacterQuery } from '@/lib/api/characters';
 import { useFavoriteIdsQuery, useSetFavoriteMutation } from '@/lib/api/favorites';
 import { useSTMirror } from '@/lib/bridge';
 import { useChatListStore } from '@/stores/chat-list';
-import { AppearanceToggle } from '@/components/appearance-toggle';
 
 const AUTO_CHAT_NAME_RE = /\d{4}-\d{1,2}-\d{1,2}[@_]\d{1,2}h\d{1,2}m\d{1,2}s/;
 
@@ -41,9 +40,8 @@ export function ChatHeader() {
         >
           <Library className="h-5 w-5" />
         </button>
-        <AppearanceToggle className="size-9 shadow-none" />
       </div>
-      <span className="pointer-events-none absolute left-1/2 max-w-[25%] -translate-x-1/2 truncate text-sm font-medium text-foreground">
+      <span className="pointer-events-none absolute left-1/2 max-w-[34%] -translate-x-1/2 truncate text-sm font-medium text-foreground">
         {displayName}
       </span>
       <div className="flex items-center">
