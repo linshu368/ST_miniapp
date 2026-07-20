@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
+import { AppearanceToggle } from '@/components/appearance-toggle';
 
 import { useDailyCheckinMutation, useDailyCheckinQuery, useWalletCredits } from '@/lib/api/payment';
 import {
@@ -156,6 +157,7 @@ export default function ProfilePage() {
       data-app-shell="profile"
       className="app-page relative mx-auto flex w-full max-w-screen-xl flex-col pb-10 pt-[env(safe-area-inset-top)]"
     >
+      <AppearanceToggle className="fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-50" />
       {/* 顶部空间感 Banner */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-[radial-gradient(ellipse_at_top,hsl(var(--primary)/0.16),transparent_70%)]" />
 
@@ -202,10 +204,14 @@ export default function ProfilePage() {
                 ? `签到 +${checkin.reward_credits}`
                 : '已签到'}
           </Button>
-          <Button asChild variant="ghost" size="icon" className="size-8 rounded-full sm:size-9">
-            <Link href="/profile/settings" aria-label="设置">
-              <Settings className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
-            </Link>
+          <Button
+            disabled
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-full text-muted-foreground opacity-45 sm:size-9"
+            aria-label="设置暂未开放"
+          >
+            <Settings className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
           </Button>
         </div>
       </header>
@@ -380,7 +386,6 @@ export default function ProfilePage() {
         <ProfileLink href="/favorites" icon={<Heart />} label="收藏角色" />
         <ProfileLink href="/chats" icon={<History />} label="历史聊天" />
         <ProfileLink href="/profile/orders" icon={<ShoppingBag />} label="我的订单" />
-        <ProfileLink href="/profile/settings" icon={<Settings />} label="外观设置" />
       </section>
     </main>
   );
