@@ -32,6 +32,7 @@ import {
 } from '@miniapp/shared';
 import { LoginPage } from './components/LoginPage';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
+import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { PlatformPresetsView } from './components/PlatformPresetsView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
@@ -455,6 +456,16 @@ function AdminWorkspace(props: {
     () => releases.filter((release) => release.config_key === selectedKey),
     [releases, selectedKey]
   );
+  const hasDuplicateOpenRouterModels = useMemo(() => {
+    if (selectedKey !== 'llm_model_catalog') return false;
+    try {
+      return (
+        Object.keys(findDuplicateOpenRouterAssignments(workingValue as ModelCatalog)).length > 0
+      );
+    } catch {
+      return false;
+    }
+  }, [selectedKey, workingValue]);
   const canWrite =
     props.admin.role !== 'viewer' &&
     (props.environment === 'production'
@@ -889,7 +900,10 @@ function AdminWorkspace(props: {
                 <Button
                   type="primary"
                   loading={saving}
-                  disabled={!canWrite}
+                  disabled={!canWrite || hasDuplicateOpenRouterModels}
+                  title={
+                    hasDuplicateOpenRouterModels ? '请先处理重复的 OpenRouter 模型' : undefined
+                  }
                   onClick={handleSaveDraft}
                 >
                   保存草稿

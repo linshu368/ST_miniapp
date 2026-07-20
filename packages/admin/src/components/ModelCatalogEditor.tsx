@@ -71,6 +71,32 @@ export function filterOpenRouterModels(
   );
 }
 
+export interface DuplicateOpenRouterAssignment {
+  stableId: string;
+  displayName: string;
+  tier: ModelCatalogTierKey;
+}
+
+export function findDuplicateOpenRouterAssignments(
+  catalog: ModelCatalog
+): Record<string, DuplicateOpenRouterAssignment[]> {
+  const assignments = new Map<string, DuplicateOpenRouterAssignment[]>();
+  for (const tier of catalog.tiers) {
+    for (const model of tier.models) {
+      const openRouterId = model.openrouter_model_id.trim();
+      if (!openRouterId) continue;
+      const current = assignments.get(openRouterId) ?? [];
+      current.push({
+        stableId: model.id,
+        displayName: model.display_name,
+        tier: tier.tier,
+      });
+      assignments.set(openRouterId, current);
+    }
+  }
+  return Object.fromEntries([...assignments.entries()].filter(([, models]) => models.length > 1));
+}
+
 function copyCatalog(value: ModelCatalog): ModelCatalog {
   return structuredClone(value);
 }
@@ -253,6 +279,21 @@ export function ModelCatalogEditor(props: {
     () => filterOpenRouterModels(props.openRouterDirectory?.models ?? [], openRouterSearch),
     [openRouterSearch, props.openRouterDirectory]
   );
+  const duplicateOpenRouterAssignments = useMemo(
+    () => findDuplicateOpenRouterAssignments(props.value),
+    [props.value]
+  );
+  const selectedOpenRouterAssignments = useMemo(() => {
+    const assignments = new Map<string, string[]>();
+    for (const tier of props.value.tiers) {
+      for (const model of tier.models) {
+        const openRouterId = model.openrouter_model_id.trim();
+        if (!openRouterId) continue;
+        assignments.set(openRouterId, [...(assignments.get(openRouterId) ?? []), model.id]);
+      }
+    }
+    return assignments;
+  }, [props.value]);
 
   const updateTier = (tierIndex: number, patch: Partial<ModelCatalogTier>) => {
     const next = copyCatalog(props.value);
@@ -285,6 +326,14 @@ export function ModelCatalogEditor(props: {
       <Row gutter={[20, 20]} align="top">
         <Col xs={24} xl={16}>
           <Space direction="vertical" size="middle" className="editor-stack">
+            {Object.keys(duplicateOpenRouterAssignments).length > 0 ? (
+              <Alert
+                type="error"
+                showIcon
+                message="存在重复的 OpenRouter 模型"
+                description="同一个 OpenRouter 模型只能对应一张模型卡。请修改或删除下方标红的重复卡片后再保存草稿。"
+              />
+            ) : null}
             <Collapse
               items={[
                 {
@@ -624,12 +673,21 @@ export function ModelCatalogEditor(props: {
                                     <Select
                                       className="field-full"
                                       value={model.openrouter_model_id}
+                                      status={
+                                        duplicateOpenRouterAssignments[model.openrouter_model_id]
+                                          ? 'error'
+                                          : undefined
+                                      }
                                       showSearch
                                       optionFilterProp="label"
                                       options={(props.openRouterDirectory?.models ?? []).map(
                                         (item) => ({
                                           value: item.id,
                                           label: `${item.name}（${item.id}）`,
+                                          disabled:
+                                            item.id !== model.openrouter_model_id &&
+                                            (selectedOpenRouterAssignments.get(item.id)?.length ??
+                                              0) > 0,
                                         })
                                       )}
                                       placeholder="例如 deepseek/deepseek-v3.2"
@@ -650,6 +708,17 @@ export function ModelCatalogEditor(props: {
                                         });
                                       }}
                                     />
+                                    {duplicateOpenRouterAssignments[model.openrouter_model_id] ? (
+                                      <Typography.Text type="danger">
+                                        重复使用：{' '}
+                                        {duplicateOpenRouterAssignments[model.openrouter_model_id]
+                                          .map(
+                                            (item) =>
+                                              `${item.displayName || '未命名模型'}（${item.stableId}）`
+                                          )
+                                          .join('、')}
+                                      </Typography.Text>
+                                    ) : null}
                                   </Col>
                                   <Col xs={24} md={8}>
                                     <Typography.Text>展示名称</Typography.Text>

@@ -5,6 +5,7 @@ import {
   applyModelMarkup,
   appendDraftModel,
   appendDraftTier,
+  findDuplicateOpenRouterAssignments,
   filterOpenRouterModels,
   reorderCatalog,
 } from './ModelCatalogEditor';
@@ -152,5 +153,24 @@ describe('filterOpenRouterModels', () => {
   it('returns all models for a blank search and none for an unknown term', () => {
     expect(filterOpenRouterModels(models, '  ')).toHaveLength(2);
     expect(filterOpenRouterModels(models, 'missing')).toEqual([]);
+  });
+});
+
+describe('findDuplicateOpenRouterAssignments', () => {
+  it('reports every card sharing the same OpenRouter model across tiers', () => {
+    const duplicateCatalog = structuredClone(catalog);
+    duplicateCatalog.tiers[1]!.models[0]!.openrouter_model_id = 'vendor/flash';
+
+    expect(findDuplicateOpenRouterAssignments(duplicateCatalog)).toEqual({
+      'vendor/flash': [
+        { stableId: 'flash', displayName: 'Flash', tier: 'light' },
+        { stableId: 'pro', displayName: 'Pro', tier: 'premium' },
+      ],
+    });
+  });
+
+  it('ignores unique and incomplete model mappings', () => {
+    const incompleteCatalog = appendDraftModel(catalog, 0, 456);
+    expect(findDuplicateOpenRouterAssignments(incompleteCatalog)).toEqual({});
   });
 });
