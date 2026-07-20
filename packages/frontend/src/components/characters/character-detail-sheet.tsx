@@ -110,24 +110,23 @@ export function CharacterDetailSheet({
 
       {/* 预览卡：占屏 75dvh 的沉浸式弹窗 */}
       <div
-        className="absolute inset-x-0 bottom-0 mx-auto flex w-[calc(100vw-1.5rem)] max-w-[430px] flex-col overflow-hidden rounded-t-[30px] border border-border bg-card/95 text-card-foreground shadow-[0_-20px_80px_rgba(0,0,0,0.35)]"
+        className="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-[430px] flex-col overflow-hidden rounded-t-[30px] border border-border bg-card/95 text-card-foreground shadow-[0_-20px_80px_rgba(0,0,0,0.35)]"
         style={{
           height: '75dvh',
           transform: visible ? `translateY(${dragY}px)` : 'translateY(100%)',
           transition: isDragging ? 'none' : 'transform 0.36s cubic-bezier(0.32, 0.72, 0, 1)',
-          touchAction: 'none',
+          touchAction: 'pan-y',
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* 拖拽把手 */}
-        <div className="flex shrink-0 justify-center pb-1 pt-2.5">
-          <div className="h-1 w-10 rounded-full bg-muted-foreground/35" />
-        </div>
-
-        {/* 可滚动主体 */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ touchAction: 'auto' }}>
+        {/* 可滚动主体：桌面支持滚轮，移动端支持触控，视觉上隐藏滚动条。 */}
+        <div
+          ref={scrollRef}
+          className="character-detail-scroll flex-1 overflow-y-auto overscroll-contain"
+          style={{ touchAction: 'pan-y' }}
+        >
           {/* Hero 图 */}
           <div className="relative aspect-[3/4] max-h-[42dvh] w-full overflow-hidden">
             {isLoading ? (
@@ -150,6 +149,11 @@ export function CharacterDetailSheet({
 
             {/* 底部渐变压暗，承接名字/标签 */}
             <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-card via-card/75 to-transparent" />
+
+            {/* 拖拽把手覆盖在图片上，避免弹窗顶部留下空白。 */}
+            <div className="pointer-events-none absolute inset-x-0 top-2.5 z-10 flex justify-center">
+              <div className="h-1 w-10 rounded-full bg-white/45 shadow-sm" />
+            </div>
 
             {/* 关闭按钮 */}
             <button
