@@ -52,8 +52,9 @@ describe('shouldExpandComposer', () => {
   it('keeps short messages compact and expands long or multiline input', () => {
     assert.equal(shouldExpandComposer('你好', 48, false), false);
     assert.equal(shouldExpandComposer('第一行\n第二行', 48, false), true);
-    assert.equal(shouldExpandComposer('很长的输入'.repeat(14), 48, false), true);
-    assert.equal(shouldExpandComposer('仍然有较多文字'.repeat(8), 56, true), true);
+    assert.equal(shouldExpandComposer('很长的输入'.repeat(5), 48, false), true);
+    assert.equal(shouldExpandComposer('仍然有较多文字内容不能反复抖动', 48, true), true);
+    assert.equal(shouldExpandComposer('视觉上已经换行', 56, false), true);
     assert.equal(shouldExpandComposer('已清空', 48, true), false);
   });
 });

@@ -15,11 +15,16 @@ export function AppearanceToggle({ className }: { className?: string }) {
       aria-label={mode === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
       title={mode === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
       className={cn(
-        'inline-flex size-10 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-sm transition hover:border-primary/40 hover:text-primary active:scale-95',
+        'inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-full border border-border bg-muted px-2 text-[11px] font-bold text-muted-foreground shadow-sm transition hover:border-primary/40 hover:bg-muted hover:text-primary active:scale-95 sm:h-9 sm:px-2.5',
         className
       )}
     >
-      {mode === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      {mode === 'dark' ? (
+        <Sun className="h-3.5 w-3.5 text-primary" />
+      ) : (
+        <Moon className="h-3.5 w-3.5 text-primary" />
+      )}
+      <span>明暗</span>
     </button>
   );
 }
