@@ -13,12 +13,21 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import type { InsufficientBalanceErrorResponse } from '@miniapp/shared';
+import {
+  resolveEffectiveSelectedModelId,
+  resolveEnabledCatalogModel,
+  type InsufficientBalanceErrorResponse,
+} from '@miniapp/shared';
 import { randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { verifyPlatformToken } from '../lib/llm-token.js';
-import { getModelBillingContext, getPricingConfig } from '../platform/model-tiers.js';
+import {
+  fetchModelCatalogSnapshot,
+  getModelBillingContext,
+  getPricingConfig,
+} from '../platform/model-tiers.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
+import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { saveChatHistory } from '../lib/chat-history-logger.js';
 
 const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
@@ -32,6 +41,7 @@ const STRIP_HEADERS = new Set([
 ]);
 
 const wallets = new MiniappWalletRepository();
+const userSettings = new MiniappUserSettingsRepository();
 
 // ─── JWT 验签中间件 ────────────────────────────────────────────────────────────
 
@@ -109,6 +119,46 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         }
       }
 
+      // 模型选择以后端持久化设置为权威来源。ST iframe 的运行时设置可能因 WebView
+      // 事件未生效而停留在旧模型；若继续信任 body.model，会出现 UI 已切换、实际生成和
+      // 计费仍走旧模型。这里在每次生成前覆盖请求体，保证模型与计费快照一致。
+      if (isChatCompletion) {
+        try {
+          const [snapshot, persistedModelId] = await Promise.all([
+            fetchModelCatalogSnapshot(),
+            userSettings.getSelectedModelId(userId),
+          ]);
+          const effectiveModelId = resolveEffectiveSelectedModelId(
+            snapshot.catalog,
+            persistedModelId
+          );
+          const authoritativeModel = resolveEnabledCatalogModel(snapshot.catalog, effectiveModelId);
+          const requestedModel = modelName;
+          modelName = authoritativeModel.openrouter_model_id;
+          (request.body as Record<string, unknown>).model = modelName;
+
+          if (requestedModel !== modelName) {
+            request.log.warn(
+              {
+                userId,
+                requestedModel,
+                authoritativeModel: modelName,
+                selectedModelId: authoritativeModel.id,
+              },
+              '[llm-proxy] runtime model mismatch corrected'
+            );
+          }
+        } catch (err) {
+          request.log.error(
+            { err: String(err), userId, requestedModel: modelName },
+            '[llm-proxy] failed to resolve authoritative user model'
+          );
+          return reply.status(500).send({
+            error: { message: 'Failed to resolve selected model', type: 'internal_error' },
+          });
+        }
+      }
+
       // 优先使用 st-extension 注入的原始用户输入（base64(UTF-8)）。
       // messages 数组末尾的 role=user 往往是预设注入的 post-history 指令（防截断/越狱等），
       // 且真实输入被模板前后缀包裹，故上面的提取只作 header 缺失时的回退。
@@ -164,6 +214,9 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                 credits_available: balance,
               },
             };
+            // ST 的非流式代理会把上游非 2xx 包成外层 200，但会保留 statusText 到
+            // error.message。使用唯一状态文本，让浏览器扩展仍能可靠识别余额不足。
+            reply.raw.statusMessage = 'MiniApp Insufficient Credits';
             return reply.status(402).send(response);
           }
         }

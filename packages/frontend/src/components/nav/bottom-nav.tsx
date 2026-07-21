@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, MessageCircle, Sparkles, User } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -18,6 +19,12 @@ const HIDDEN_PREFIXES = ['/profile/recharge', '/create/wish'];
 
 export function BottomNav() {
   const pathname = usePathname();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
+
   if (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) {
     return null;
   }
@@ -33,20 +40,23 @@ export function BottomNav() {
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const active = href === '/' ? pathname === href : pathname?.startsWith(href);
+          const visuallyActive = active || pendingHref === href;
           return (
             <Link
               key={href}
               href={href}
+              prefetch={false}
+              onClick={() => setPendingHref(href)}
               aria-current={active ? 'page' : undefined}
               aria-label={label}
               className={cn(
-                'group relative isolate flex h-[58px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-[1.3rem] px-2 transition-[color,background-color,box-shadow,transform] duration-300 ease-out active:scale-[0.97]',
-                active
+                'group relative isolate flex h-[58px] min-w-0 touch-manipulation flex-col items-center justify-center gap-1 overflow-hidden rounded-[1.3rem] px-2 transition-[color,background-color,box-shadow,transform] duration-300 ease-out active:scale-[0.97]',
+                visuallyActive
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-foreground/65 hover:bg-muted hover:text-foreground'
               )}
             >
-              {active ? (
+              {visuallyActive ? (
                 <>
                   <span
                     aria-hidden
@@ -66,15 +76,15 @@ export function BottomNav() {
               >
                 <Icon
                   size={19}
-                  strokeWidth={active ? 2.5 : 2}
+                  strokeWidth={visuallyActive ? 2.5 : 2}
                   aria-hidden="true"
-                  className={cn('transition-transform duration-300', active && 'scale-105')}
+                  className={cn('transition-transform duration-300', visuallyActive && 'scale-105')}
                 />
               </span>
               <span
                 className={cn(
                   'text-[10px] font-semibold leading-none tracking-[0.08em] transition-all duration-300',
-                  active ? 'opacity-100' : 'opacity-75 group-hover:opacity-100'
+                  visuallyActive ? 'opacity-100' : 'opacity-75 group-hover:opacity-100'
                 )}
               >
                 {label}

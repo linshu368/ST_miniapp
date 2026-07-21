@@ -13,14 +13,20 @@ import type {
   OpenRouterModelDirectory,
   SelectModelData,
 } from '@miniapp/shared';
-import { fetchModelCatalogSnapshot, getAllTiers } from '../platform/model-tiers.js';
+import {
+  fetchModelCatalogSnapshot,
+  getAllTiers,
+  getPricingConfig,
+} from '../platform/model-tiers.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { openRouterModelsClient } from '../platform/openrouter-models.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
+import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 
 export default async function modelsRoutes(app: FastifyInstance) {
   const settings = new MiniappUserSettingsRepository();
+  const wallets = new MiniappWalletRepository();
 
   // @frontend-ready: true
   app.get('/api/platform/models', async (_request, reply) => {
@@ -87,6 +93,30 @@ export default async function modelsRoutes(app: FastifyInstance) {
         const { catalog } = await fetchModelCatalogSnapshot();
         const selectedModel = resolveEnabledCatalogModel(catalog, parsed.data.model_id);
         const dbUser = await getOrCreateDbUser(request.user);
+
+        if (selectedModel.markup > 0) {
+          const [wallet, pricing] = await Promise.all([
+            wallets.getOrCreate(dbUser.id),
+            getPricingConfig(),
+          ]);
+          const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
+          if (balance < pricing.balanceBaseline) {
+            request.log.info(
+              {
+                userId: dbUser.id,
+                modelId: selectedModel.id,
+                model: selectedModel.openrouter_model_id,
+                balance,
+                required: pricing.balanceBaseline,
+              },
+              '[models] paid model selection blocked by insufficient balance'
+            );
+            return reply
+              .status(402)
+              .send(fail('INSUFFICIENT_CREDITS', '星尘余额不足，请先充值后再切换付费模型'));
+          }
+        }
+
         await settings.setSelectedModelId(dbUser.id, request.user, selectedModel.id);
         return reply.send(
           ok<SelectModelData>({

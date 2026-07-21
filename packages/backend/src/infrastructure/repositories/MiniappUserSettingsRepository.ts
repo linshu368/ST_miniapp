@@ -118,6 +118,19 @@ export class MiniappUserSettingsRepository {
     return data as MiniappUserSettingsRow;
   }
 
+  async getSelectedModelId(userId: string): Promise<string | null> {
+    const { data, error } = await this.db
+      .from('miniapp_user_settings')
+      .select('selected_model_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`查询用户模型选择失败：${error.message}`);
+    return (
+      (data as Pick<MiniappUserSettingsRow, 'selected_model_id'> | null)?.selected_model_id ?? null
+    );
+  }
+
   private async findByUserId(userId: string): Promise<MiniappUserSettingsRow | null> {
     const { data, error } = await this.db
       .from('miniapp_user_settings')
