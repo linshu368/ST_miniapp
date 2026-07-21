@@ -131,9 +131,6 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 047_admin_character_layout_release_details.sql # 角色布局发布类型、目标版本与完整角色快照
 048_admin_create_character.sql # 角色卡安全创建、下架初始化、草稿同步与审计
 049_admin_delete_character_layout_release.sql # 删除非当前角色布局历史版本并保留审计
-050_llm_spending_details.sql # 免费模型、0.1 星尘钱包、逐调用账单、幂等扣费与费用对账
-051_llm_deferred_billing.sql # OpenRouter 用量晚到时零预扣登记，最终用量到达后一次性结算
-052_character_favorites.sql # 用户角色收藏、幂等设置、收藏计数与运营收藏榜
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

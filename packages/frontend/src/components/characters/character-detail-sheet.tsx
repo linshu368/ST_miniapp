@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Heart, Quote, Sparkles, X } from 'lucide-react';
+import { ChevronDown, Quote, Sparkles, X } from 'lucide-react';
 
 import { useCharacterQuery } from '@/lib/api/characters';
-import { useFavoriteIdsQuery, useSetFavoriteMutation } from '@/lib/api/favorites';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
-import { lobbyImageUrl } from './character-card';
 
 // ─── 手势常量 ────────────────────────────────────────────────
 const DISMISS_THRESHOLD_Y = 90; // 下滑超过该值即关闭
@@ -30,11 +28,6 @@ export function CharacterDetailSheet({
 }: CharacterDetailSheetProps) {
   const { data, isLoading } = useCharacterQuery(characterId ?? undefined);
   const character = data?.character;
-  const favoriteIds = useFavoriteIdsQuery();
-  const setFavorite = useSetFavoriteMutation();
-  const favorited = character
-    ? (favoriteIds.data?.character_ids.includes(character.id) ?? false)
-    : false;
 
   // ── 动画状态 ──────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
@@ -110,37 +103,33 @@ export function CharacterDetailSheet({
 
       {/* 预览卡：占屏 75dvh 的沉浸式弹窗 */}
       <div
-        className="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-[430px] flex-col overflow-hidden rounded-t-[30px] border border-border bg-card/95 text-card-foreground shadow-[0_-20px_80px_rgba(0,0,0,0.35)]"
+        className="absolute inset-x-0 bottom-0 mx-auto flex w-[calc(100vw-1.5rem)] max-w-[430px] flex-col overflow-hidden rounded-t-[30px] border border-white/10 bg-[#0f0b16]/95 shadow-[0_-20px_80px_rgba(0,0,0,0.55)]"
         style={{
           height: '75dvh',
           transform: visible ? `translateY(${dragY}px)` : 'translateY(100%)',
           transition: isDragging ? 'none' : 'transform 0.36s cubic-bezier(0.32, 0.72, 0, 1)',
-          touchAction: 'pan-y',
+          touchAction: 'none',
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* 可滚动主体：桌面支持滚轮，移动端支持触控，视觉上隐藏滚动条。 */}
-        <div
-          ref={scrollRef}
-          className="character-detail-scroll flex-1 overflow-y-auto overscroll-contain"
-          style={{ touchAction: 'pan-y' }}
-        >
+        {/* 拖拽把手 */}
+        <div className="flex shrink-0 justify-center pb-1 pt-2.5">
+          <div className="h-1 w-10 rounded-full bg-white/25" />
+        </div>
+
+        {/* 可滚动主体 */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ touchAction: 'auto' }}>
           {/* Hero 图 */}
           <div className="relative aspect-[3/4] max-h-[42dvh] w-full overflow-hidden">
             {isLoading ? (
-              <div className="h-full w-full animate-pulse bg-muted" />
+              <div className="h-full w-full animate-pulse bg-white/5" />
             ) : hasAvatar ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={lobbyImageUrl(character!.avatar_url)}
+                src={character!.avatar_url}
                 alt={character!.name}
-                width={360}
-                height={480}
-                loading="eager"
-                fetchPriority="high"
-                decoding="async"
                 className="h-full w-full object-cover object-top"
               />
             ) : (
@@ -148,12 +137,7 @@ export function CharacterDetailSheet({
             )}
 
             {/* 底部渐变压暗，承接名字/标签 */}
-            <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-card via-card/75 to-transparent" />
-
-            {/* 拖拽把手覆盖在图片上，避免弹窗顶部留下空白。 */}
-            <div className="pointer-events-none absolute inset-x-0 top-2.5 z-10 flex justify-center">
-              <div className="h-1 w-10 rounded-full bg-white/45 shadow-sm" />
-            </div>
+            <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-[#0f0b16] via-[#0f0b16]/70 to-transparent" />
 
             {/* 关闭按钮 */}
             <button
@@ -167,20 +151,18 @@ export function CharacterDetailSheet({
 
             {!isLoading && character && (
               <div className="absolute inset-x-0 bottom-0 px-5 pb-4">
-                <h2 className="text-[26px] font-semibold leading-tight text-foreground">
+                <h2 className="text-[26px] font-semibold leading-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.5)]">
                   {character.name}
                 </h2>
                 {character.author_name && (
-                  <p className="mt-1 text-[12px] text-muted-foreground">
-                    by {character.author_name}
-                  </p>
+                  <p className="mt-1 text-[12px] text-white/55">by {character.author_name}</p>
                 )}
                 {character.personality_tags.length > 0 && (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {character.personality_tags.slice(0, 6).map((tag) => (
                       <span
                         key={tag}
-                        className="rounded-full bg-muted px-2.5 py-[3px] text-[11px] font-medium text-foreground ring-1 ring-inset ring-border"
+                        className="rounded-full bg-white/12 px-2.5 py-[3px] text-[11px] font-medium text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur-[2px]"
                       >
                         {tag}
                       </span>
@@ -195,7 +177,7 @@ export function CharacterDetailSheet({
           {isLoading ? (
             <div className="flex flex-col gap-3 px-5 pt-5">
               {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-3 animate-pulse rounded bg-muted" />
+                <div key={i} className="h-3 animate-pulse rounded bg-white/8" />
               ))}
             </div>
           ) : character ? (
@@ -205,16 +187,16 @@ export function CharacterDetailSheet({
             >
               {/* 角色简介 */}
               <section>
-                <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-white/40">
                   <Sparkles className="h-3 w-3" />
                   角色简介
                 </p>
                 {description ? (
-                  <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-foreground/85">
+                  <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-white/80">
                     {description}
                   </p>
                 ) : (
-                  <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  <p className="text-[13px] leading-relaxed text-white/45">
                     这个角色还没有公开简介，进入后直接开始探索 TA 的世界。
                   </p>
                 )}
@@ -226,7 +208,7 @@ export function CharacterDetailSheet({
                   <button
                     type="button"
                     onClick={() => setGreetingOpen((v) => !v)}
-                    className="flex w-full items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground"
+                    className="flex w-full items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-white/40"
                   >
                     <span className="flex items-center gap-1.5">
                       <Quote className="h-3 w-3" />
@@ -239,8 +221,8 @@ export function CharacterDetailSheet({
                     />
                   </button>
                   {greetingOpen && (
-                    <blockquote className="mt-2.5 rounded-2xl border border-border border-l-2 border-l-primary/60 bg-muted/60 px-4 py-3">
-                      <p className="whitespace-pre-wrap text-[13px] italic leading-relaxed text-foreground/80">
+                    <blockquote className="mt-2.5 rounded-2xl border border-white/10 border-l-2 border-l-primary/60 bg-white/[0.03] px-4 py-3">
+                      <p className="whitespace-pre-wrap text-[13px] italic leading-relaxed text-white/75">
                         {greeting}
                       </p>
                     </blockquote>
@@ -253,39 +235,22 @@ export function CharacterDetailSheet({
 
         {/* 固定底部：先看看别的 / 进入角色 */}
         <div
-          className="shrink-0 border-t border-border bg-card/95 px-5 py-3 backdrop-blur-md"
+          className="shrink-0 border-t border-white/10 bg-[#0f0b16]/95 px-5 py-3 backdrop-blur-md"
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
         >
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="h-12 shrink-0 rounded-2xl border border-border bg-background px-5 text-[14px] font-medium text-foreground transition-colors hover:bg-muted active:scale-[0.98]"
+              className="h-12 shrink-0 rounded-2xl border border-white/12 bg-white/5 px-5 text-[14px] font-medium text-white/70 transition-colors hover:bg-white/10 active:scale-[0.98]"
             >
               {entering ? '取消进入' : '先看看别的'}
             </button>
             <button
               type="button"
-              disabled={!character || setFavorite.isPending}
-              aria-label={favorited ? '取消收藏' : '收藏角色'}
-              aria-pressed={favorited}
-              onClick={() =>
-                character &&
-                setFavorite.mutate({ characterId: character.id, favorited: !favorited })
-              }
-              className={`flex size-12 shrink-0 items-center justify-center rounded-2xl border transition active:scale-95 ${
-                favorited
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-background text-muted-foreground'
-              }`}
-            >
-              <Heart className={`h-5 w-5 ${favorited ? 'fill-current' : ''}`} />
-            </button>
-            <button
-              type="button"
               disabled={!character || entering}
               onClick={() => character && onEnter(character.id)}
-              className="relative flex h-12 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-2xl bg-primary text-[15px] font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-70"
+              className="relative flex h-12 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-[15px] font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all active:scale-[0.98] disabled:opacity-70"
             >
               <Sparkles className={`h-4 w-4 ${entering ? 'animate-spin' : ''}`} />
               {entering ? '正在进入…' : '进入角色'}

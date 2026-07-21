@@ -93,49 +93,6 @@ export interface AnalyticsOutreachMessage {
   created_at: string;
 }
 
-export interface AnalyticsUsageCharge {
-  id: string;
-  charge_key: string;
-  generation_id: string | null;
-  user_id: string;
-  tg_id: string;
-  display_name: string | null;
-  model_id: string | null;
-  model_openrouter_id: string;
-  model_display_name: string;
-  catalog_version: number;
-  pricing_config_version: number;
-  usage_cost_usd: number | null;
-  exchange_rate: number;
-  model_markup: number;
-  initial_amount: number;
-  calculated_amount: number;
-  charged_amount: number;
-  fallback_used: boolean;
-  status: string;
-  debit_ledger_id: string | null;
-  created_at: string;
-  updated_at: string;
-  reconciled_at: string | null;
-  total_count: number;
-}
-
-export interface AnalyticsUsageChargeFilters {
-  search: string;
-  model: string;
-  fallback: boolean | null;
-  status: string;
-}
-
-export interface CharacterFavoriteLeaderboardRow {
-  rank: number;
-  character_id: string;
-  character_name: string;
-  enabled: boolean;
-  favorite_count: number;
-  new_favorite_count: number;
-}
-
 function unwrap<T>(data: T | null, error: { message: string } | null): T {
   if (error) throw new Error(error.message);
   if (data === null) throw new Error('数据分析接口没有返回数据');
@@ -226,47 +183,4 @@ export async function listAnalyticsOutreachMessages(
     p_offset: (page - 1) * pageSize,
   });
   return unwrap((data ?? []) as AnalyticsOutreachMessage[], error);
-}
-
-export async function listLlmUsageCharges(
-  client: SupabaseClient,
-  query: AnalyticsQuery,
-  filters: AnalyticsUsageChargeFilters,
-  page: number,
-  pageSize: number
-): Promise<AnalyticsUsageCharge[]> {
-  const { data, error } = await client.schema('admin').rpc('list_llm_usage_charges', {
-    p_from: query.from,
-    p_to: query.to,
-    p_search: filters.search || null,
-    p_model: filters.model || null,
-    p_fallback: filters.fallback,
-    p_status: filters.status || null,
-    p_limit: pageSize,
-    p_offset: (page - 1) * pageSize,
-  });
-  return unwrap((data ?? []) as AnalyticsUsageCharge[], error);
-}
-
-export async function getLlmUsageChargeDetail(
-  client: SupabaseClient,
-  chargeId: string
-): Promise<AnalyticsRow> {
-  const { data, error } = await client
-    .schema('admin')
-    .rpc('get_llm_usage_charge_detail', { p_charge_id: chargeId });
-  return unwrap(data as AnalyticsRow | null, error);
-}
-
-export async function listCharacterFavoriteLeaderboard(
-  client: SupabaseClient,
-  query: AnalyticsQuery,
-  limit = 50
-): Promise<CharacterFavoriteLeaderboardRow[]> {
-  const { data, error } = await client.schema('admin').rpc('list_character_favorite_leaderboard', {
-    p_from: query.from,
-    p_to: query.to,
-    p_limit: limit,
-  });
-  return unwrap((data ?? []) as CharacterFavoriteLeaderboardRow[], error);
 }

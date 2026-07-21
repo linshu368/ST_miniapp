@@ -1,9 +1,7 @@
 import { getSupabaseClient } from '../../lib/supabase.js';
-import type { GetWalletBalanceData, WalletSpendingRecord } from '@miniapp/shared';
+import type { GetWalletBalanceData } from '@miniapp/shared';
 
-type NumericValue = string | number;
-
-export interface MiniappWalletRow {
+interface MiniappWalletRow {
   user_id: string;
   main_credits: number;
   bonus_credits: number;
@@ -15,60 +13,11 @@ export interface MiniappWalletRow {
   updated_at: string;
 }
 
-type RawMiniappWalletRow = Omit<
-  MiniappWalletRow,
-  'main_credits' | 'bonus_credits' | 'total_credits'
-> & {
-  main_credits: NumericValue;
-  bonus_credits: NumericValue;
-  total_credits: NumericValue | null;
-};
-
 interface WalletRpcResult {
-  wallet?: RawMiniappWalletRow;
+  wallet?: MiniappWalletRow;
   checkin?: DailyCheckinRpcData;
-  charge?: LlmUsageChargeRow;
-  charge_status?: string;
-  reconcile_status?: string;
+  charge_status?: 'reserved' | 'charged' | 'already_reserved' | 'already_charged';
   refund_status?: 'refunded' | 'already_refunded';
-}
-
-export interface LlmUsageChargeRow {
-  charge_key: string;
-  generation_id: string | null;
-  user_id: string;
-  model_id: string | null;
-  model_openrouter_id: string;
-  model_display_name: string;
-  catalog_version: number;
-  pricing_config_version: number;
-  usage_cost_usd: NumericValue | null;
-  exchange_rate: NumericValue;
-  model_markup: NumericValue;
-  initial_amount: NumericValue;
-  calculated_amount: NumericValue;
-  charged_amount: NumericValue;
-  fallback_used: boolean;
-  status: 'pending' | 'free' | 'charged' | 'partial' | 'reconciled' | 'historical';
-  created_at: string;
-  reconciled_at: string | null;
-}
-
-export interface ChargeLlmUsageInput {
-  chargeId: string;
-  generationId: string | null;
-  userId: string;
-  modelId: string | null;
-  modelOpenRouterId: string;
-  modelDisplayName: string;
-  catalogVersion: number;
-  pricingConfigVersion: number;
-  usageCostUsd: number | null;
-  exchangeRate: number;
-  modelMarkup: number;
-  calculatedAmount: number;
-  fallbackUsed: boolean;
-  metadata?: Record<string, unknown>;
 }
 
 interface DailyCheckinRpcData {
@@ -104,7 +53,7 @@ export class MiniappWalletRepository {
       throw new Error(`创建 MiniApp 钱包失败：${error.message}`);
     }
 
-    return normalizeWallet(data as RawMiniappWalletRow);
+    return data as MiniappWalletRow;
   }
 
   private async findByUserId(userId: string): Promise<MiniappWalletRow | null> {
@@ -115,7 +64,7 @@ export class MiniappWalletRepository {
       .maybeSingle();
 
     if (error) throw new Error(`查询 MiniApp 钱包失败：${error.message}`);
-    return data ? normalizeWallet(data as RawMiniappWalletRow) : null;
+    return (data as MiniappWalletRow | null) ?? null;
   }
 
   async deduct(userId: string, amount: number): Promise<MiniappWalletRow> {
@@ -128,96 +77,7 @@ export class MiniappWalletRepository {
       throw new Error(`扣除 MiniApp 钱包余额失败：${error.message}`);
     }
 
-    return normalizeWallet(data as RawMiniappWalletRow);
-  }
-
-  async chargeLlmUsage(input: ChargeLlmUsageInput): Promise<{
-    wallet: MiniappWalletRow;
-    charge: LlmUsageChargeRow;
-    alreadyCharged: boolean;
-  }> {
-    const { data, error } = await this.db.rpc('charge_llm_usage', {
-      p_charge_key: input.chargeId,
-      p_generation_id: input.generationId,
-      p_user_id: input.userId,
-      p_model_id: input.modelId,
-      p_model_openrouter_id: input.modelOpenRouterId,
-      p_model_display_name: input.modelDisplayName,
-      p_catalog_version: input.catalogVersion,
-      p_pricing_config_version: input.pricingConfigVersion,
-      p_usage_cost_usd: input.usageCostUsd,
-      p_exchange_rate: input.exchangeRate,
-      p_model_markup: input.modelMarkup,
-      p_calculated_amount: input.calculatedAmount,
-      p_fallback_used: input.fallbackUsed,
-      p_metadata: input.metadata ?? {},
-    });
-
-    if (error) throw new Error(`记录 LLM 用量扣费失败：${error.message}`);
-    const result = data as WalletRpcResult;
-    if (!result.wallet || !result.charge) {
-      throw new Error('记录 LLM 用量扣费失败：返回结果不完整');
-    }
-    return {
-      wallet: normalizeWallet(result.wallet),
-      charge: result.charge,
-      alreadyCharged: result.charge_status === 'already_charged',
-    };
-  }
-
-  async reconcileLlmUsage(input: {
-    chargeId: string;
-    usageCostUsd: number;
-    calculatedAmount: number;
-    metadata?: Record<string, unknown>;
-  }): Promise<{ wallet: MiniappWalletRow; charge: LlmUsageChargeRow }> {
-    const { data, error } = await this.db.rpc('reconcile_llm_usage', {
-      p_charge_key: input.chargeId,
-      p_usage_cost_usd: input.usageCostUsd,
-      p_calculated_amount: input.calculatedAmount,
-      p_metadata: input.metadata ?? {},
-    });
-    if (error) throw new Error(`对账 LLM 用量扣费失败：${error.message}`);
-    const result = data as WalletRpcResult;
-    if (!result.wallet || !result.charge) {
-      throw new Error('对账 LLM 用量扣费失败：返回结果不完整');
-    }
-    return { wallet: normalizeWallet(result.wallet), charge: result.charge };
-  }
-
-  async findLlmUsageCharge(chargeId: string): Promise<LlmUsageChargeRow | null> {
-    const { data, error } = await this.db
-      .from('llm_usage_charges')
-      .select('*')
-      .eq('charge_key', chargeId)
-      .maybeSingle();
-    if (error) throw new Error(`查询 LLM 用量扣费失败：${error.message}`);
-    return (data as LlmUsageChargeRow | null) ?? null;
-  }
-
-  async listSpending(userId: string): Promise<WalletSpendingRecord[]> {
-    const { data, error } = await this.db
-      .from('llm_usage_charges')
-      .select('charge_key,model_id,model_display_name,charged_amount,created_at')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (error) throw new Error(`查询消费明细失败：${error.message}`);
-    return (
-      (data ?? []) as Array<{
-        charge_key: string;
-        model_id: string | null;
-        model_display_name: string;
-        charged_amount: NumericValue;
-        created_at: string;
-      }>
-    ).map((row) => ({
-      id: row.charge_key,
-      model_id: row.model_id,
-      model_display_name: row.model_display_name,
-      charged_amount: toNumber(row.charged_amount),
-      created_at: row.created_at,
-    }));
+    return data as MiniappWalletRow;
   }
 
   async chargeChatMessage(input: {
@@ -243,7 +103,7 @@ export class MiniappWalletRepository {
     }
 
     return {
-      wallet: normalizeWallet(result.wallet),
+      wallet: result.wallet,
       alreadyCharged: result.charge_status === 'already_charged',
     };
   }
@@ -271,7 +131,7 @@ export class MiniappWalletRepository {
     }
 
     return {
-      wallet: normalizeWallet(result.wallet),
+      wallet: result.wallet,
       alreadyReserved:
         result.charge_status === 'already_reserved' || result.charge_status === 'already_charged',
     };
@@ -297,7 +157,7 @@ export class MiniappWalletRepository {
       throw new Error('确认聊天消息扣费失败：返回结果缺少钱包信息');
     }
 
-    return normalizeWallet(result.wallet);
+    return result.wallet;
   }
 
   async refundChatMessage(input: {
@@ -318,7 +178,7 @@ export class MiniappWalletRepository {
     }
 
     const result = data as WalletRpcResult;
-    return result.wallet ? normalizeWallet(result.wallet) : null;
+    return result.wallet ?? null;
   }
 
   async getDailyCheckinStatus(userId: string): Promise<DailyCheckinStatus> {
@@ -377,41 +237,23 @@ export class MiniappWalletRepository {
     }
 
     return {
-      wallet: normalizeWallet(result.wallet),
+      wallet: result.wallet,
       checkin: result.checkin,
     };
   }
 }
 
 export function toWalletBalance(row: MiniappWalletRow): GetWalletBalanceData {
-  const mainCredits = toNumber(row.main_credits);
-  const bonusCredits = toNumber(row.bonus_credits);
-  const credits =
-    row.total_credits === null ? mainCredits + bonusCredits : toNumber(row.total_credits);
+  const credits = row.total_credits ?? row.main_credits + row.bonus_credits;
   return {
     credits,
-    main_credits: mainCredits,
-    bonus_credits: bonusCredits,
+    main_credits: row.main_credits,
+    bonus_credits: row.bonus_credits,
     total_credits: credits,
     first_paid_at: row.first_paid_at,
     last_paid_at: row.last_paid_at,
     total_paid_amount: String(row.total_paid_amount ?? '0.00'),
   };
-}
-
-function normalizeWallet(row: RawMiniappWalletRow): MiniappWalletRow {
-  return {
-    ...row,
-    main_credits: toNumber(row.main_credits),
-    bonus_credits: toNumber(row.bonus_credits),
-    total_credits: row.total_credits === null ? null : toNumber(row.total_credits),
-  };
-}
-
-function toNumber(value: NumericValue): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) throw new Error(`无效的数值字段：${String(value)}`);
-  return parsed;
 }
 
 function parsePositiveInteger(value: unknown, fallback: number): number {

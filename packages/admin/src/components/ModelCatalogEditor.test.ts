@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ModelCatalogSchema, type ModelCatalog } from '@miniapp/shared';
 import { EditableModelCatalogSchema } from '../lib/configSchemas';
 import {
-  applyModelMarkup,
   appendDraftModel,
   appendDraftTier,
-  findDuplicateOpenRouterAssignments,
   filterOpenRouterModels,
   reorderCatalog,
 } from './ModelCatalogEditor';
@@ -99,26 +97,6 @@ describe('editable model catalog additions', () => {
   });
 });
 
-describe('applyModelMarkup', () => {
-  it('forces both display prices to zero for a free model', () => {
-    const model = catalog.tiers[0]!.models[0]!;
-    expect(applyModelMarkup(model, 0)).toMatchObject({
-      markup: 0,
-      price_input: 0,
-      price_output: 0,
-    });
-  });
-
-  it('applies recalculated prices for a paid model', () => {
-    const model = catalog.tiers[0]!.models[0]!;
-    expect(applyModelMarkup(model, 2, { price_input: 1.2, price_output: 3.4 })).toMatchObject({
-      markup: 2,
-      price_input: 1.2,
-      price_output: 3.4,
-    });
-  });
-});
-
 describe('filterOpenRouterModels', () => {
   const models = [
     {
@@ -153,24 +131,5 @@ describe('filterOpenRouterModels', () => {
   it('returns all models for a blank search and none for an unknown term', () => {
     expect(filterOpenRouterModels(models, '  ')).toHaveLength(2);
     expect(filterOpenRouterModels(models, 'missing')).toEqual([]);
-  });
-});
-
-describe('findDuplicateOpenRouterAssignments', () => {
-  it('reports every card sharing the same OpenRouter model across tiers', () => {
-    const duplicateCatalog = structuredClone(catalog);
-    duplicateCatalog.tiers[1]!.models[0]!.openrouter_model_id = 'vendor/flash';
-
-    expect(findDuplicateOpenRouterAssignments(duplicateCatalog)).toEqual({
-      'vendor/flash': [
-        { stableId: 'flash', displayName: 'Flash', tier: 'light' },
-        { stableId: 'pro', displayName: 'Pro', tier: 'premium' },
-      ],
-    });
-  });
-
-  it('ignores unique and incomplete model mappings', () => {
-    const incompleteCatalog = appendDraftModel(catalog, 0, 456);
-    expect(findDuplicateOpenRouterAssignments(incompleteCatalog)).toEqual({});
   });
 });

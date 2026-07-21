@@ -71,32 +71,6 @@ export function filterOpenRouterModels(
   );
 }
 
-export interface DuplicateOpenRouterAssignment {
-  stableId: string;
-  displayName: string;
-  tier: ModelCatalogTierKey;
-}
-
-export function findDuplicateOpenRouterAssignments(
-  catalog: ModelCatalog
-): Record<string, DuplicateOpenRouterAssignment[]> {
-  const assignments = new Map<string, DuplicateOpenRouterAssignment[]>();
-  for (const tier of catalog.tiers) {
-    for (const model of tier.models) {
-      const openRouterId = model.openrouter_model_id.trim();
-      if (!openRouterId) continue;
-      const current = assignments.get(openRouterId) ?? [];
-      current.push({
-        stableId: model.id,
-        displayName: model.display_name,
-        tier: tier.tier,
-      });
-      assignments.set(openRouterId, current);
-    }
-  }
-  return Object.fromEntries([...assignments.entries()].filter(([, models]) => models.length > 1));
-}
-
 function copyCatalog(value: ModelCatalog): ModelCatalog {
   return structuredClone(value);
 }
@@ -146,18 +120,6 @@ export function appendDraftTier(catalog: ModelCatalog): ModelCatalog {
         models: [],
       },
     ],
-  };
-}
-
-export function applyModelMarkup(
-  model: ModelCatalogModel,
-  markup: number,
-  displayPrices?: Pick<ModelCatalogModel, 'price_input' | 'price_output'>
-): ModelCatalogModel {
-  return {
-    ...model,
-    markup: markup as ModelCatalogModel['markup'],
-    ...(markup === 0 ? { price_input: 0, price_output: 0 } : (displayPrices ?? {})),
   };
 }
 
@@ -279,21 +241,6 @@ export function ModelCatalogEditor(props: {
     () => filterOpenRouterModels(props.openRouterDirectory?.models ?? [], openRouterSearch),
     [openRouterSearch, props.openRouterDirectory]
   );
-  const duplicateOpenRouterAssignments = useMemo(
-    () => findDuplicateOpenRouterAssignments(props.value),
-    [props.value]
-  );
-  const selectedOpenRouterAssignments = useMemo(() => {
-    const assignments = new Map<string, string[]>();
-    for (const tier of props.value.tiers) {
-      for (const model of tier.models) {
-        const openRouterId = model.openrouter_model_id.trim();
-        if (!openRouterId) continue;
-        assignments.set(openRouterId, [...(assignments.get(openRouterId) ?? []), model.id]);
-      }
-    }
-    return assignments;
-  }, [props.value]);
 
   const updateTier = (tierIndex: number, patch: Partial<ModelCatalogTier>) => {
     const next = copyCatalog(props.value);
@@ -326,14 +273,6 @@ export function ModelCatalogEditor(props: {
       <Row gutter={[20, 20]} align="top">
         <Col xs={24} xl={16}>
           <Space direction="vertical" size="middle" className="editor-stack">
-            {Object.keys(duplicateOpenRouterAssignments).length > 0 ? (
-              <Alert
-                type="error"
-                showIcon
-                message="存在重复的 OpenRouter 模型"
-                description="同一个 OpenRouter 模型只能对应一张模型卡。请修改或删除下方标红的重复卡片后再保存草稿。"
-              />
-            ) : null}
             <Collapse
               items={[
                 {
@@ -673,21 +612,12 @@ export function ModelCatalogEditor(props: {
                                     <Select
                                       className="field-full"
                                       value={model.openrouter_model_id}
-                                      status={
-                                        duplicateOpenRouterAssignments[model.openrouter_model_id]
-                                          ? 'error'
-                                          : undefined
-                                      }
                                       showSearch
                                       optionFilterProp="label"
                                       options={(props.openRouterDirectory?.models ?? []).map(
                                         (item) => ({
                                           value: item.id,
                                           label: `${item.name}（${item.id}）`,
-                                          disabled:
-                                            item.id !== model.openrouter_model_id &&
-                                            (selectedOpenRouterAssignments.get(item.id)?.length ??
-                                              0) > 0,
                                         })
                                       )}
                                       placeholder="例如 deepseek/deepseek-v3.2"
@@ -708,17 +638,6 @@ export function ModelCatalogEditor(props: {
                                         });
                                       }}
                                     />
-                                    {duplicateOpenRouterAssignments[model.openrouter_model_id] ? (
-                                      <Typography.Text type="danger">
-                                        重复使用：{' '}
-                                        {duplicateOpenRouterAssignments[model.openrouter_model_id]
-                                          .map(
-                                            (item) =>
-                                              `${item.displayName || '未命名模型'}（${item.stableId}）`
-                                          )
-                                          .join('、')}
-                                      </Typography.Text>
-                                    ) : null}
                                   </Col>
                                   <Col xs={24} md={8}>
                                     <Typography.Text>展示名称</Typography.Text>
@@ -756,35 +675,31 @@ export function ModelCatalogEditor(props: {
                                         value={String(model.markup)}
                                         options={MODEL_MARKUP_OPTIONS.map((value) => ({
                                           value: String(value),
-                                          label: value === 0 ? '0 倍（免费）' : `${value} 倍`,
+                                          label: `${value} 倍`,
                                         }))}
                                         disabled={props.disabled}
-                                        onChange={(value) => {
-                                          const markup = Number(value);
-                                          updateModel(
-                                            tierIndex,
-                                            modelIndex,
-                                            applyModelMarkup(model, markup)
-                                          );
-                                        }}
+                                        onChange={(value) =>
+                                          updateModel(tierIndex, modelIndex, {
+                                            markup: Number(value),
+                                          })
+                                        }
                                         onSelect={(value) => {
                                           const markup = Number(value);
                                           const upstream = props.openRouterDirectory?.models.find(
                                             (item) => item.id === model.openrouter_model_id
                                           );
-                                          if (!ModelMarkupSchema.safeParse(markup).success) return;
-                                          const displayPrices =
-                                            markup !== 0 && upstream
-                                              ? calculateModelDisplayPrices(upstream, {
-                                                  ...props.pricingConfig,
-                                                  markup,
-                                                })
-                                              : undefined;
-                                          updateModel(
-                                            tierIndex,
-                                            modelIndex,
-                                            applyModelMarkup(model, markup, displayPrices)
-                                          );
+                                          if (
+                                            !upstream ||
+                                            !ModelMarkupSchema.safeParse(markup).success
+                                          )
+                                            return;
+                                          updateModel(tierIndex, modelIndex, {
+                                            markup,
+                                            ...calculateModelDisplayPrices(upstream, {
+                                              ...props.pricingConfig,
+                                              markup,
+                                            }),
+                                          });
                                         }}
                                       />
                                       <Button
@@ -793,36 +708,25 @@ export function ModelCatalogEditor(props: {
                                           const upstream = props.openRouterDirectory?.models.find(
                                             (item) => item.id === model.openrouter_model_id
                                           );
-                                          if (!ModelMarkupSchema.safeParse(model.markup).success)
+                                          if (
+                                            !upstream ||
+                                            !ModelMarkupSchema.safeParse(model.markup).success
+                                          )
                                             return;
-                                          const displayPrices =
-                                            model.markup !== 0 && upstream
-                                              ? calculateModelDisplayPrices(upstream, {
-                                                  ...props.pricingConfig,
-                                                  markup: model.markup,
-                                                })
-                                              : undefined;
-                                          updateModel(
-                                            tierIndex,
-                                            modelIndex,
-                                            applyModelMarkup(model, model.markup, displayPrices)
-                                          );
+                                          updateModel(tierIndex, modelIndex, {
+                                            ...calculateModelDisplayPrices(upstream, {
+                                              ...props.pricingConfig,
+                                              markup: model.markup,
+                                            }),
+                                          });
                                         }}
                                       >
                                         确认
                                       </Button>
                                     </Space.Compact>
-                                    {model.markup === 0 ? (
-                                      <Alert
-                                        type="success"
-                                        showIcon
-                                        message="免费模型：展示价与实际扣费均为 0 星尘"
-                                      />
-                                    ) : (
-                                      <Typography.Text type="secondary">
-                                        OpenRouter 实时价 × {model.markup} 倍
-                                      </Typography.Text>
-                                    )}
+                                    <Typography.Text type="secondary">
+                                      OpenRouter 实时价 × {model.markup || 0} 倍
+                                    </Typography.Text>
                                   </Col>
                                   <Col xs={12} md={4}>
                                     <Typography.Text>输入展示价</Typography.Text>

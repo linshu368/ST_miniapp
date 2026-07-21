@@ -4,7 +4,6 @@ import {
   Button,
   Card,
   Col,
-  Descriptions,
   Drawer,
   Empty,
   Input,
@@ -22,10 +21,7 @@ import {
   getAnalyticsChatDetail,
   getAnalyticsDashboard,
   getAnalyticsUserDetail,
-  getLlmUsageChargeDetail,
   listAnalyticsChats,
-  listCharacterFavoriteLeaderboard,
-  listLlmUsageCharges,
   listAnalyticsOutreachMessages,
   listAnalyticsUsers,
   type AnalyticsChat,
@@ -34,10 +30,7 @@ import {
   type AnalyticsOutreachMessage,
   type AnalyticsQuery,
   type AnalyticsRow,
-  type AnalyticsUsageCharge,
-  type AnalyticsUsageChargeFilters,
   type AnalyticsUser,
-  type CharacterFavoriteLeaderboardRow,
 } from '../../lib/analyticsApi';
 import { analyticsSections, type AnalyticsSectionKey } from '../../lib/adminNavigation';
 import { downloadAnalyticsCsv, stringifyAnalyticsValue } from '../../lib/analyticsExport';
@@ -165,7 +158,6 @@ function JsonDrawer(props: { title: string; value: AnalyticsRow | null; onClose:
 function Pager(props: {
   page: number;
   rowCount: number;
-  total?: number;
   loading: boolean;
   onPage: (page: number) => void;
 }) {
@@ -179,12 +171,7 @@ function Pager(props: {
       </Button>
       <Typography.Text>第 {props.page} 页</Typography.Text>
       <Button
-        disabled={
-          props.loading ||
-          (props.total === undefined
-            ? props.rowCount < PAGE_SIZE
-            : props.page * PAGE_SIZE >= props.total)
-        }
+        disabled={props.rowCount < PAGE_SIZE || props.loading}
         onClick={() => props.onPage(props.page + 1)}
       >
         下一页
@@ -535,393 +522,6 @@ function OutreachExplorer(props: {
   );
 }
 
-function chargeStatusTag(status: string) {
-  const labels: Record<string, { label: string; color: string }> = {
-    pending: { label: '待结算', color: 'gold' },
-    free: { label: '免费', color: 'green' },
-    charged: { label: '已扣费', color: 'blue' },
-    reconciled: { label: '已对账', color: 'cyan' },
-    partial: { label: '部分扣费', color: 'orange' },
-    historical: { label: '历史记录', color: 'default' },
-  };
-  const item = labels[status];
-  return <Tag color={item?.color}>{item?.label ?? status}</Tag>;
-}
-
-function formatDecimal(value: unknown, maximumFractionDigits = 6): string {
-  const number = Number(value);
-  return Number.isFinite(number) ? number.toLocaleString('zh-CN', { maximumFractionDigits }) : '-';
-}
-
-function SpendingDetailDrawer(props: {
-  row: AnalyticsUsageCharge | null;
-  detail: AnalyticsRow | null;
-  loading: boolean;
-  error: string | null;
-  onClose: () => void;
-}) {
-  const value = props.detail ?? props.row;
-  const ledgerEntries = props.detail?.ledger_entries;
-  const rawMetadata = value && 'metadata' in value ? value.metadata : null;
-  const metadata =
-    rawMetadata && typeof rawMetadata === 'object' && !Array.isArray(rawMetadata)
-      ? (rawMetadata as Record<string, unknown>)
-      : null;
-  return (
-    <Drawer
-      title="星尘消耗详情"
-      width="min(900px, 96vw)"
-      open={Boolean(props.row)}
-      onClose={props.onClose}
-    >
-      {props.error ? <Alert showIcon type="error" message={props.error} /> : null}
-      <Spin spinning={props.loading}>
-        {value ? (
-          <Space direction="vertical" size="middle" className="analytics-full-width">
-            <Descriptions bordered size="small" column={1}>
-              <Descriptions.Item label="扣费记录 ID">{renderCell(value.id)}</Descriptions.Item>
-              <Descriptions.Item label="扣费幂等键">
-                {renderCell(value.charge_key)}
-              </Descriptions.Item>
-              <Descriptions.Item label="用户">
-                {renderCell(value.display_name)} / Telegram {renderCell(value.tg_id)} /{' '}
-                {renderCell(value.user_id)}
-              </Descriptions.Item>
-              <Descriptions.Item label="模型">
-                {renderCell(value.model_display_name)}（{renderCell(value.model_openrouter_id)}）
-              </Descriptions.Item>
-              <Descriptions.Item label="配置版本">
-                模型目录 v{formatDecimal(value.catalog_version, 0)} / 计费配置 v
-                {formatDecimal(value.pricing_config_version, 0)}
-              </Descriptions.Item>
-              <Descriptions.Item label="上游成本">
-                ${formatDecimal(value.usage_cost_usd, 10)}
-              </Descriptions.Item>
-              <Descriptions.Item label="汇率">
-                {formatDecimal(value.exchange_rate)}
-              </Descriptions.Item>
-              <Descriptions.Item label="倍率">
-                {Number(value.model_markup) === 0
-                  ? '0 倍（免费）'
-                  : `${formatDecimal(value.model_markup)} 倍`}
-              </Descriptions.Item>
-              <Descriptions.Item label="计算公式">
-                {String(value.status) === 'pending'
-                  ? '等待 OpenRouter 返回最终用量，当前实扣 0.0 星尘'
-                  : value.fallback_used
-                    ? `Fallback ${formatDecimal(metadata?.fallback_cost ?? value.initial_amount)} = ${formatDecimal(value.calculated_amount)} 星尘`
-                    : `$${formatDecimal(value.usage_cost_usd, 10)} × ${formatDecimal(value.exchange_rate)} × ${formatDecimal(value.model_markup)} = ${formatDecimal(value.calculated_amount)} 星尘`}
-              </Descriptions.Item>
-              <Descriptions.Item label="初始 / 计算 / 实扣">
-                {formatDecimal(value.initial_amount)} / {formatDecimal(value.calculated_amount)} /{' '}
-                {formatDecimal(value.charged_amount)} 星尘
-              </Descriptions.Item>
-              <Descriptions.Item label="成本来源">
-                {String(value.status) === 'pending' ? (
-                  <Tag color="gold">等待最终用量</Tag>
-                ) : value.fallback_used ? (
-                  <Tag color="orange">历史 Fallback</Tag>
-                ) : Number(value.model_markup) === 0 ? (
-                  <Tag color="green">免费模型</Tag>
-                ) : (
-                  <Tag>实际用量</Tag>
-                )}
-              </Descriptions.Item>
-              <Descriptions.Item label="对账状态">
-                {chargeStatusTag(String(value.status))}
-                {value.reconciled_at ? ` ${formatDate(value.reconciled_at)}` : ''}
-              </Descriptions.Item>
-              <Descriptions.Item label="账本引用">
-                {renderCell(value.debit_ledger_id)}
-              </Descriptions.Item>
-              <Descriptions.Item label="差额原因">
-                {renderCell(metadata?.difference_reason)}
-              </Descriptions.Item>
-            </Descriptions>
-            <div>
-              <Typography.Text strong>关联账本流水</Typography.Text>
-              <pre className="analytics-json">
-                {JSON.stringify(Array.isArray(ledgerEntries) ? ledgerEntries : [], null, 2)}
-              </pre>
-            </div>
-          </Space>
-        ) : null}
-      </Spin>
-    </Drawer>
-  );
-}
-
-function SpendingExplorer(props: {
-  client: SupabaseClient;
-  query: AnalyticsQuery;
-  canViewDetails: boolean;
-}) {
-  const [filters, setFilters] = useState<AnalyticsUsageChargeFilters>({
-    search: '',
-    model: '',
-    fallback: null,
-    status: '',
-  });
-  const [page, setPage] = useState(1);
-  const [rows, setRows] = useState<AnalyticsUsageCharge[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<AnalyticsUsageCharge | null>(null);
-  const [detail, setDetail] = useState<AnalyticsRow | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
-  const total = Number(rows[0]?.total_count ?? 0);
-
-  const updateFilters = (patch: Partial<AnalyticsUsageChargeFilters>) => {
-    setFilters((current) => ({ ...current, ...patch }));
-    setPage(1);
-  };
-
-  const load = useCallback(async () => {
-    if (!props.canViewDetails) return;
-    setLoading(true);
-    setError(null);
-    try {
-      setRows(await listLlmUsageCharges(props.client, props.query, filters, page, PAGE_SIZE));
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '星尘消耗明细加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, page, props.canViewDetails, props.client, props.query]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (!props.canViewDetails) {
-    return <Alert showIcon type="info" message="viewer 账号不能读取用户级星尘消耗明细。" />;
-  }
-
-  return (
-    <Card
-      title="星尘消耗记录"
-      className="analytics-report-card"
-      extra={
-        <Button
-          size="small"
-          disabled={rows.length === 0}
-          onClick={() =>
-            downloadAnalyticsCsv('星尘消耗明细.csv', rows as unknown as AnalyticsRow[])
-          }
-        >
-          导出当前页 CSV
-        </Button>
-      }
-    >
-      <Space direction="vertical" className="analytics-full-width">
-        <Space wrap>
-          <Input.Search
-            allowClear
-            placeholder="用户、Telegram ID 或扣费 ID"
-            className="analytics-search"
-            onSearch={(search) => updateFilters({ search })}
-          />
-          <Input.Search
-            allowClear
-            placeholder="模型 ID（精确匹配）"
-            className="analytics-model-search"
-            onSearch={(model) => updateFilters({ model })}
-          />
-          <Select
-            value={filters.fallback === null ? 'all' : filters.fallback ? 'fallback' : 'actual'}
-            className="analytics-status-select"
-            options={[
-              { label: '全部成本来源', value: 'all' },
-              { label: '实际用量', value: 'actual' },
-              { label: '历史 Fallback', value: 'fallback' },
-            ]}
-            onChange={(value) =>
-              updateFilters({ fallback: value === 'all' ? null : value === 'fallback' })
-            }
-          />
-          <Select
-            value={filters.status}
-            className="analytics-status-select"
-            options={[
-              { label: '全部对账状态', value: '' },
-              { label: '待结算', value: 'pending' },
-              { label: '免费', value: 'free' },
-              { label: '已扣费', value: 'charged' },
-              { label: '已对账', value: 'reconciled' },
-              { label: '部分扣费', value: 'partial' },
-              { label: '历史记录', value: 'historical' },
-            ]}
-            onChange={(status) => updateFilters({ status })}
-          />
-        </Space>
-        {error ? <Alert showIcon type="error" message={error} /> : null}
-        <Table
-          rowKey="id"
-          size="small"
-          loading={loading}
-          dataSource={rows}
-          pagination={false}
-          scroll={{ x: 1800 }}
-          columns={[
-            { title: '时间', dataIndex: 'created_at', render: formatDate, width: 170 },
-            {
-              title: '用户',
-              width: 180,
-              render: (_value, row) => row.display_name || row.tg_id || row.user_id,
-            },
-            { title: '模型', dataIndex: 'model_display_name', width: 180 },
-            { title: 'OpenRouter ID', dataIndex: 'model_openrouter_id', width: 230 },
-            {
-              title: 'USD 成本',
-              dataIndex: 'usage_cost_usd',
-              render: (value) => `$${formatDecimal(value, 10)}`,
-            },
-            {
-              title: '汇率',
-              dataIndex: 'exchange_rate',
-              render: (value) => formatDecimal(value),
-            },
-            {
-              title: '倍率',
-              dataIndex: 'model_markup',
-              render: (value) =>
-                Number(value) === 0 ? <Tag color="green">0 倍（免费）</Tag> : `${value} 倍`,
-            },
-            {
-              title: '计算星尘',
-              dataIndex: 'calculated_amount',
-              render: (value) => formatDecimal(value),
-            },
-            {
-              title: '实扣星尘',
-              dataIndex: 'charged_amount',
-              render: (value) => formatDecimal(value),
-            },
-            {
-              title: '成本来源',
-              dataIndex: 'fallback_used',
-              render: (value, row) =>
-                row.status === 'pending' ? (
-                  <Tag color="gold">等待用量</Tag>
-                ) : value ? (
-                  <Tag color="orange">历史 Fallback</Tag>
-                ) : row.model_markup === 0 ? (
-                  <Tag color="green">免费</Tag>
-                ) : (
-                  <Tag>实际用量</Tag>
-                ),
-            },
-            { title: '状态', dataIndex: 'status', render: chargeStatusTag },
-            {
-              title: '操作',
-              fixed: 'right',
-              render: (_value, row) => (
-                <Button
-                  size="small"
-                  onClick={async () => {
-                    setSelected(row);
-                    setDetail(null);
-                    setDetailError(null);
-                    setDetailLoading(true);
-                    try {
-                      setDetail(await getLlmUsageChargeDetail(props.client, row.id));
-                    } catch (loadError) {
-                      setDetailError(
-                        loadError instanceof Error ? loadError.message : '扣费详情加载失败'
-                      );
-                    } finally {
-                      setDetailLoading(false);
-                    }
-                  }}
-                >
-                  查看详情
-                </Button>
-              ),
-            },
-          ]}
-        />
-        <Space>
-          <Pager
-            page={page}
-            rowCount={rows.length}
-            total={total}
-            loading={loading}
-            onPage={setPage}
-          />
-          <Typography.Text type="secondary">共 {total.toLocaleString('zh-CN')} 条</Typography.Text>
-        </Space>
-      </Space>
-      <SpendingDetailDrawer
-        row={selected}
-        detail={detail}
-        loading={detailLoading}
-        error={detailError}
-        onClose={() => {
-          setSelected(null);
-          setDetail(null);
-          setDetailError(null);
-        }}
-      />
-    </Card>
-  );
-}
-
-function CharacterFavoriteLeaderboard(props: {
-  client: SupabaseClient;
-  query: AnalyticsQuery;
-  refreshToken: number;
-}) {
-  const [rows, setRows] = useState<CharacterFavoriteLeaderboardRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError(null);
-    void listCharacterFavoriteLeaderboard(props.client, props.query)
-      .then((result) => {
-        if (active) setRows(result);
-      })
-      .catch((loadError) => {
-        if (active) {
-          setError(loadError instanceof Error ? loadError.message : '收藏榜加载失败');
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [props.client, props.query, props.refreshToken]);
-
-  return (
-    <Card title="角色卡收藏榜" className="analytics-report-card">
-      {error ? <Alert type="error" showIcon message={error} /> : null}
-      <Table<CharacterFavoriteLeaderboardRow>
-        rowKey="character_id"
-        loading={loading}
-        dataSource={rows}
-        pagination={false}
-        locale={{ emptyText: '当前还没有角色收藏数据' }}
-        columns={[
-          { title: '排名', dataIndex: 'rank', width: 80 },
-          { title: '角色', dataIndex: 'character_name' },
-          {
-            title: '状态',
-            dataIndex: 'enabled',
-            render: (enabled) => (enabled ? <Tag color="green">上架</Tag> : <Tag>下架</Tag>),
-          },
-          { title: '当前收藏', dataIndex: 'favorite_count' },
-          { title: '区间新增', dataIndex: 'new_favorite_count' },
-        ]}
-      />
-    </Card>
-  );
-}
-
 export function AnalyticsView(props: {
   client: SupabaseClient;
   section: AnalyticsSectionKey;
@@ -941,12 +541,6 @@ export function AnalyticsView(props: {
   const canViewDetails = props.role !== 'viewer';
 
   useEffect(() => {
-    if (props.section === 'spending') {
-      setDashboard(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
     let active = true;
     setLoading(true);
     setError(null);
@@ -1089,16 +683,6 @@ export function AnalyticsView(props: {
           ) : null}
           {props.section === 'outreach' ? (
             <OutreachExplorer client={props.client} query={query} canViewDetails={canViewDetails} />
-          ) : null}
-          {props.section === 'spending' ? (
-            <SpendingExplorer client={props.client} query={query} canViewDetails={canViewDetails} />
-          ) : null}
-          {props.section === 'characters' ? (
-            <CharacterFavoriteLeaderboard
-              client={props.client}
-              query={query}
-              refreshToken={refreshToken}
-            />
           ) : null}
         </>
       )}

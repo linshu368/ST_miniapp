@@ -11,19 +11,6 @@ export interface GetWalletBalanceData {
   total_paid_amount: string;
 }
 
-// ==== GET /api/wallet/spending ====
-export interface WalletSpendingRecord {
-  id: string;
-  model_id: string | null;
-  model_display_name: string;
-  charged_amount: number;
-  created_at: string;
-}
-
-export interface GetWalletSpendingData {
-  items: WalletSpendingRecord[];
-}
-
 // ==== GET /api/wallet/checkin ====
 export interface DailyCheckinStatus {
   can_claim: boolean;

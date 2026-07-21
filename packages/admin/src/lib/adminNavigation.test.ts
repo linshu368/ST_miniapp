@@ -22,9 +22,5 @@ describe('admin navigation', () => {
       view: 'analytics',
       analyticsKey: 'models',
     });
-    expect(resolveAdminMenuSelection(analyticsMenuKey('spending'))).toEqual({
-      view: 'analytics',
-      analyticsKey: 'spending',
-    });
   });
 });

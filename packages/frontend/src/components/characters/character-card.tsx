@@ -2,11 +2,10 @@
 
 import { useState } from 'react';
 import type { CharacterSummary } from '@miniapp/shared';
-import { Flame, Heart } from 'lucide-react';
+import { Flame } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
-import { useFavoriteIdsQuery, useSetFavoriteMutation } from '@/lib/api/favorites';
 
 interface CharacterCardProps {
   character: CharacterSummary;
@@ -43,112 +42,89 @@ export function CharacterCard({
   const hasAvatar = !!character.avatar_url;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
-  const favoriteIds = useFavoriteIdsQuery();
-  const setFavorite = useSetFavoriteMutation();
-  const favorited = favoriteIds.data?.character_ids.includes(character.id) ?? false;
 
   const card = (
-    <div className="relative h-full">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onSelect(character.id)}
-        className={cn(
-          'group flex h-full w-full flex-col overflow-hidden rounded-[16px] border border-white/10 bg-white/5 text-left shadow-lg',
-          'transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/20 hover:border-white/20 active:scale-95',
-          'disabled:opacity-60'
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onSelect(character.id)}
+      className={cn(
+        'group flex h-full w-full flex-col overflow-hidden rounded-[16px] border border-white/10 bg-white/5 text-left shadow-lg',
+        'transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/20 hover:border-white/20 active:scale-95',
+        'disabled:opacity-60'
+      )}
+      aria-label={`查看 ${character.name} 的详情`}
+    >
+      {/* 图片区：3:4 + 渐变叠层 + 名字 / 标签 */}
+      <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden">
+        {character.is_featured && (
+          <span
+            className="absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-amber-200/70 bg-black/55 shadow-[0_0_18px_rgba(251,191,36,0.65)] backdrop-blur-sm"
+            title="热门角色"
+            aria-label="热门角色"
+          >
+            <Flame className="size-[18px] fill-orange-500 text-amber-200" aria-hidden="true" />
+          </span>
         )}
-        aria-label={`查看 ${character.name} 的详情`}
-      >
-        {/* 图片区：3:4 + 渐变叠层 + 名字 / 标签 */}
-        <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden">
-          {character.is_featured && (
-            <span
-              className="absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-amber-200/70 bg-black/55 shadow-[0_0_18px_rgba(251,191,36,0.65)] backdrop-blur-sm"
-              title="热门角色"
-              aria-label="热门角色"
-            >
-              <Flame className="size-[18px] fill-orange-500 text-amber-200" aria-hidden="true" />
-            </span>
-          )}
-          <div
-            className={`absolute inset-0 transition-opacity duration-300 ${
-              imageLoaded ? 'opacity-0' : 'opacity-100'
+        <div
+          className={`absolute inset-0 transition-opacity duration-300 ${
+            imageLoaded ? 'opacity-0' : 'opacity-100'
+          }`}
+          aria-hidden="true"
+          style={{ background: gradient }}
+        />
+        {hasAvatar && !imageFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={lobbyImageUrl(character.avatar_url)}
+            alt={character.name}
+            width={360}
+            height={480}
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
+            decoding="async"
+            onLoad={() => {
+              setImageLoaded(true);
+              onImageSettled?.(character.id);
+            }}
+            onError={() => {
+              setImageFailed(true);
+              onImageSettled?.(character.id);
+            }}
+            className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 ${
+              imageLoaded ? 'opacity-100' : 'opacity-0'
             }`}
-            aria-hidden="true"
-            style={{ background: gradient }}
           />
-          {hasAvatar && !imageFailed ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={lobbyImageUrl(character.avatar_url)}
-              alt={character.name}
-              width={360}
-              height={480}
-              loading={priority ? 'eager' : 'lazy'}
-              fetchPriority={priority ? 'high' : 'auto'}
-              decoding="async"
-              onLoad={() => {
-                setImageLoaded(true);
-                onImageSettled?.(character.id);
-              }}
-              onError={() => {
-                setImageFailed(true);
-                onImageSettled?.(character.id);
-              }}
-              className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 ${
-                imageLoaded ? 'opacity-100' : 'opacity-0'
-              }`}
-            />
-          ) : null}
+        ) : null}
 
-          {/* 渐变遮罩 */}
-          <div
-            aria-hidden="true"
-            className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/48 to-transparent"
-          />
+        {/* 渐变遮罩 */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/48 to-transparent"
+        />
 
-          <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
-            <h3 className="line-clamp-2 px-0.5 text-[15px] font-semibold leading-tight text-white drop-shadow-sm sm:text-base">
-              {character.name}
-            </h3>
+        <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
+          <h3 className="line-clamp-2 px-0.5 text-[15px] font-semibold leading-tight text-white drop-shadow-sm sm:text-base">
+            {character.name}
+          </h3>
 
-            {character.personality_tags.length > 0 && (
-              <div className="flex max-h-[2.25rem] min-w-0 flex-wrap items-center gap-1 overflow-hidden">
-                {character.personality_tags.slice(0, 6).map((t) => (
-                  <span
-                    key={t}
-                    className="max-w-[calc(50%-0.125rem)] truncate rounded-full bg-white/12 px-1.5 py-[3px] text-[10px] font-medium leading-none text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur-[2px] sm:max-w-full"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          {character.personality_tags.length > 0 && (
+            <div className="flex max-h-[2.25rem] min-w-0 flex-wrap items-center gap-1 overflow-hidden">
+              {character.personality_tags.slice(0, 6).map((t) => (
+                <span
+                  key={t}
+                  className="max-w-[calc(50%-0.125rem)] truncate rounded-full bg-white/12 px-1.5 py-[3px] text-[10px] font-medium leading-none text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur-[2px] sm:max-w-full"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
+      </div>
 
-        {/* 作者和原始描述暂不展示，避免未清洗字段影响大厅视觉。 */}
-      </button>
-      <button
-        type="button"
-        disabled={disabled || setFavorite.isPending}
-        aria-label={favorited ? `取消收藏 ${character.name}` : `收藏 ${character.name}`}
-        aria-pressed={favorited}
-        onClick={(event) => {
-          event.stopPropagation();
-          setFavorite.mutate({ characterId: character.id, favorited: !favorited });
-        }}
-        className={cn(
-          'absolute left-2 top-2 z-30 flex size-8 items-center justify-center rounded-full border backdrop-blur-sm transition active:scale-90',
-          favorited
-            ? 'border-emerald-200/80 bg-emerald-500 text-white shadow-[0_0_18px_rgba(16,185,129,0.5)]'
-            : 'border-white/50 bg-black/45 text-white/85 hover:bg-black/65'
-        )}
-      >
-        <Heart className={cn('size-[17px]', favorited && 'fill-current')} aria-hidden="true" />
-      </button>
-    </div>
+      {/* 作者和原始描述暂不展示，避免未清洗字段影响大厅视觉。 */}
+    </button>
   );
 
   if (!character.is_featured) return card;

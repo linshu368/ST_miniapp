@@ -32,7 +32,6 @@ import {
 } from '@miniapp/shared';
 import { LoginPage } from './components/LoginPage';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
-import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { PlatformPresetsView } from './components/PlatformPresetsView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
@@ -456,16 +455,6 @@ function AdminWorkspace(props: {
     () => releases.filter((release) => release.config_key === selectedKey),
     [releases, selectedKey]
   );
-  const hasDuplicateOpenRouterModels = useMemo(() => {
-    if (selectedKey !== 'llm_model_catalog') return false;
-    try {
-      return (
-        Object.keys(findDuplicateOpenRouterAssignments(workingValue as ModelCatalog)).length > 0
-      );
-    } catch {
-      return false;
-    }
-  }, [selectedKey, workingValue]);
   const canWrite =
     props.admin.role !== 'viewer' &&
     (props.environment === 'production'
@@ -588,29 +577,12 @@ function AdminWorkspace(props: {
     afterValue: unknown
   ) => {
     const isProduction = props.environment === 'production';
-    const parsedCatalog =
-      selectedKey === 'llm_model_catalog' ? ModelCatalogSchema.safeParse(afterValue) : null;
-    const freeModelCount =
-      parsedCatalog?.success === true
-        ? parsedCatalog.data.tiers
-            .flatMap((tier) => tier.models)
-            .filter((model) => model.markup === 0).length
-        : 0;
     return confirmAction(
       `${isProduction ? '生产环境：' : ''}${action}`,
       <div>
         <Typography.Paragraph>
           {isProduction ? '此操作会影响线上配置，请确认变更内容。' : '请确认本次变更内容。'}
         </Typography.Paragraph>
-        {freeModelCount > 0 ? (
-          <Alert
-            type="success"
-            showIcon
-            className="form-alert"
-            message={`包含 ${freeModelCount} 个免费模型`}
-            description="0 倍模型的输入、输出展示价和实际星尘扣费均为 0。发布后用户可免费使用。"
-          />
-        ) : null}
         <Descriptions size="small" column={1} bordered>
           <Descriptions.Item label="配置">{configMetadata[selectedKey].label}</Descriptions.Item>
           <Descriptions.Item label="变更前">
@@ -900,10 +872,7 @@ function AdminWorkspace(props: {
                 <Button
                   type="primary"
                   loading={saving}
-                  disabled={!canWrite || hasDuplicateOpenRouterModels}
-                  title={
-                    hasDuplicateOpenRouterModels ? '请先处理重复的 OpenRouter 模型' : undefined
-                  }
+                  disabled={!canWrite}
                   onClick={handleSaveDraft}
                 >
                   保存草稿

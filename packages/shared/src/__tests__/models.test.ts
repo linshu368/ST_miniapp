@@ -94,12 +94,8 @@ describe('ModelCatalogSchema', () => {
     expect(ModelCatalogSchema.safeParse(invalidCatalog).success).toBe(false);
   });
 
-  it('accepts zero or half-step model markups from one through four', () => {
+  it('only accepts half-step model markups from one through four', () => {
     const valid = structuredClone(validCatalog);
-    valid.tiers[0]!.models[0]!.markup = 0;
-    valid.tiers[0]!.models[0]!.price_input = 0;
-    valid.tiers[0]!.models[0]!.price_output = 0;
-    expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
     valid.tiers[0]!.models[0]!.markup = 3.5;
     expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
     valid.tiers[0]!.models[0]!.markup = 3.2;
@@ -115,7 +111,6 @@ describe('OpenRouter model helpers', () => {
         markup: 2.5,
       })
     ).toBe(6.8);
-    expect(calculateDisplayPrice(0.0000004, { exchangeRate: 680, markup: 0 })).toBe(0);
   });
 
   it('resolves enabled stable ids and rejects unknown or disabled models', () => {
@@ -137,18 +132,6 @@ describe('OpenRouter model helpers', () => {
     expect(publicCatalog.tiers[0]?.key).toBe('light');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('openrouter_model_id');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('enabled');
-    expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('markup');
-    expect(publicCatalog.tiers[0]?.models[0]?.is_free).toBe(false);
-  });
-
-  it('forces free public model prices to zero', () => {
-    const freeCatalog = structuredClone(validCatalog);
-    freeCatalog.tiers[0]!.models[0]!.markup = 0;
-    freeCatalog.tiers[0]!.models[0]!.price_input = 0;
-    freeCatalog.tiers[0]!.models[0]!.price_output = 0;
-    const publicModel = toPublicModelCatalog(ModelCatalogSchema.parse(freeCatalog)).tiers[0]!
-      .models[0]!;
-    expect(publicModel).toMatchObject({ is_free: true, price_input: 0, price_output: 0 });
   });
 
   it('falls back to the default when a stored selection is unavailable', () => {
