@@ -8,6 +8,7 @@ export const analyticsSections = [
   { key: 'models', label: '模型与成本' },
   { key: 'characters', label: '角色表现' },
   { key: 'billing', label: '充值与星尘' },
+  { key: 'spending', label: '星尘消耗明细' },
   { key: 'checkins', label: '签到与激励' },
   { key: 'growth', label: '渠道归因' },
   { key: 'outreach', label: '客服回访' },

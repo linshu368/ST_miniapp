@@ -20,7 +20,7 @@ export default function ThemePage() {
   const setThemeId = useThemeStore((s) => s.setThemeId);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background">
+    <main className="app-page mx-auto flex max-w-md flex-col">
       <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-3 backdrop-blur-md">
         <Button
           variant="ghost"

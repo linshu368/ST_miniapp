@@ -816,6 +816,10 @@ body {
   width: min(420px, 72vw);
 }
 
+.analytics-model-search {
+  width: min(300px, 72vw);
+}
+
 .analytics-kpi-card {
   height: 100%;
   border-color: #edf0f5;

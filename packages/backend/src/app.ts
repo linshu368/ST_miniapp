@@ -14,6 +14,7 @@ import modelsRoutes from './routes/models.js';
 import { stProxyHandler } from './middleware/stProxy.js';
 import llmProxyRoutes from './routes/llm-proxy.js';
 import chatsRoutes from './routes/chats.js';
+import favoriteRoutes from './routes/favorites.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
@@ -83,6 +84,7 @@ export async function buildApp() {
   await app.register(modelsRoutes);
   await app.register(llmProxyRoutes);
   await app.register(chatsRoutes);
+  await app.register(favoriteRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
   await app.register(debugRoutes); // [iframe-timing] TEMP DEBUG

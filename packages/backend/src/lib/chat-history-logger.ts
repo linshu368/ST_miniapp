@@ -8,13 +8,19 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
-import { getPricingConfig } from '../platform/model-tiers.js';
-import { calculateUsageDeduction } from '../features/billing/usage-pricing.js';
+import { getInitialBillingDecision } from '../features/billing/usage-pricing.js';
 
 export interface ChatHistoryEntry {
   user_id: string;
   model: string;
-  model_markup?: number;
+  charge_id: string;
+  model_id: string | null;
+  model_display_name: string;
+  model_markup: number;
+  catalog_version: number;
+  pricing_config_version: number;
+  exchange_rate: number;
+  fallback_cost: number;
   user_input: string;
   assistant_reply: string | null;
   history: unknown[];
@@ -32,7 +38,7 @@ const wallets = new MiniappWalletRepository();
 async function fetchGenerationDataWithRetry(
   generationId: string,
   log: FastifyBaseLogger,
-  maxRetries = 3
+  maxRetries = 1
 ) {
   if (!OPENROUTER_API_KEY) return null;
 
@@ -95,7 +101,7 @@ async function fetchGenerationDataWithRetry(
         );
         return lastGenData;
       }
-      // Wait before retrying (exponential backoff: 2s, 4s...)
+      // Kept for callers that explicitly request more than one attempt.
       await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
     }
   }
@@ -105,15 +111,20 @@ async function fetchGenerationDataWithRetry(
 export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger): void {
   void (async () => {
     try {
-      let llmMetadata: Record<string, any> = {};
+      let llmMetadata: Record<string, any> = {
+        llm_charge_id: entry.charge_id,
+        llm_model_markup: entry.model_markup,
+        llm_generation_id: entry.generation_id ?? null,
+      };
       let actualDeduction = 0;
 
       // 如果有 generation_id，尝试异步获取详细数据
-      if (entry.generation_id) {
+      if (entry.generation_id && entry.model_markup > 0) {
         try {
           const genData = await fetchGenerationDataWithRetry(entry.generation_id, log);
           if (genData) {
             llmMetadata = {
+              ...llmMetadata,
               llm_provider_name: genData.provider_name ?? null,
               llm_finish_reason: genData.finish_reason ?? null,
               llm_usage: genData.usage ?? null,
@@ -130,78 +141,72 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             };
           } else {
             // 获取失败（如网络异常导致完全无法获取）时，至少把 generation_id 存下来
-            llmMetadata = { llm_generation_id: entry.generation_id };
+            llmMetadata = { ...llmMetadata, llm_generation_id: entry.generation_id };
           }
         } catch (fetchErr) {
           log.error(
             { err: String(fetchErr), generationId: entry.generation_id },
             '[chat-history] error during generation data fetch'
           );
-          llmMetadata = { llm_generation_id: entry.generation_id };
+          llmMetadata = { ...llmMetadata, llm_generation_id: entry.generation_id };
         }
       }
 
       // 仅在生成成功时才计算扣费并执行真实扣款
       if (entry.status === 'success') {
-        const pricing = await getPricingConfig();
         const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
-        const modelMarkup = entry.model_markup ?? pricing.markup;
-        llmMetadata.llm_model_markup = modelMarkup;
+        const billingDecision = getInitialBillingDecision({
+          usageCost,
+          exchangeRate: entry.exchange_rate,
+          modelMarkup: entry.model_markup,
+        });
+        const { hasActualUsage } = billingDecision;
+        const intendedDeduction = billingDecision.amount;
+        llmMetadata.llm_intended_deduction = intendedDeduction;
 
-        if (typeof usageCost === 'number') {
-          actualDeduction = calculateUsageDeduction(usageCost, pricing.exchangeRate, modelMarkup);
-        } else {
-          // 如果本次调用成功了，但获取不到usage，使用兜底额
-          actualDeduction = pricing.fallbackCost;
-        }
-
-        if (actualDeduction > 0) {
-          const intendedDeduction = actualDeduction;
-          try {
-            await wallets.deduct(entry.user_id, actualDeduction);
-            log.info(
-              { userId: entry.user_id, amount: actualDeduction },
-              '[chat-history] dynamic deduction success'
-            );
-          } catch (deductErr: any) {
-            const errStr = String(deductErr);
-            if (errStr.includes('insufficient credits')) {
-              // 触发熔断：扣光所有余额
-              try {
-                const wallet = await wallets.getOrCreate(entry.user_id);
-                const remaining =
-                  wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-                if (remaining > 0) {
-                  await wallets.deduct(entry.user_id, remaining);
-                  log.warn(
-                    { userId: entry.user_id, intendedDeduction, drainedAmount: remaining },
-                    '[chat-history] insufficient credits, drained remaining balance'
-                  );
-                  actualDeduction = remaining; // 更新为实际扣除的金额
-                } else {
-                  log.warn(
-                    { userId: entry.user_id, intendedDeduction },
-                    '[chat-history] insufficient credits, balance is already 0'
-                  );
-                  actualDeduction = 0;
-                }
-                // 在 metadata 中记录原本应该扣除的金额，便于后续对账和风控分析
-                llmMetadata.llm_intended_deduction = intendedDeduction;
-              } catch (drainErr) {
-                log.error(
-                  { err: String(drainErr), userId: entry.user_id },
-                  '[chat-history] failed to drain balance'
-                );
-                actualDeduction = 0;
-              }
-            } else {
-              log.error(
-                { err: errStr, userId: entry.user_id, amount: actualDeduction },
-                '[chat-history] dynamic deduction failed'
-              );
-              actualDeduction = 0;
-            }
-          }
+        try {
+          const actualModel =
+            typeof llmMetadata.llm_model === 'string' && llmMetadata.llm_model.trim()
+              ? llmMetadata.llm_model
+              : entry.model;
+          const routedToDifferentModel = actualModel !== entry.model;
+          const result = await wallets.chargeLlmUsage({
+            chargeId: entry.charge_id,
+            generationId: entry.generation_id ?? null,
+            userId: entry.user_id,
+            modelId: entry.model_id,
+            modelOpenRouterId: actualModel,
+            modelDisplayName: routedToDifferentModel ? actualModel : entry.model_display_name,
+            catalogVersion: entry.catalog_version,
+            pricingConfigVersion: entry.pricing_config_version,
+            usageCostUsd: hasActualUsage ? usageCost : null,
+            exchangeRate: entry.exchange_rate,
+            modelMarkup: entry.model_markup,
+            calculatedAmount: intendedDeduction,
+            fallbackUsed: billingDecision.pending,
+            metadata: {
+              chat_status: entry.status,
+              requested_model: entry.model,
+              billing_mode:
+                entry.model_markup === 0 ? 'free' : hasActualUsage ? 'actual_usage' : 'deferred',
+            },
+          });
+          actualDeduction = Number(result.charge.charged_amount);
+          log.info(
+            {
+              userId: entry.user_id,
+              chargeId: entry.charge_id,
+              intendedAmount: intendedDeduction,
+              chargedAmount: actualDeduction,
+              pending: billingDecision.pending,
+            },
+            '[chat-history] LLM usage billing record created'
+          );
+        } catch (chargeErr) {
+          log.error(
+            { err: String(chargeErr), userId: entry.user_id, chargeId: entry.charge_id },
+            '[chat-history] atomic LLM usage charge failed'
+          );
         }
       }
 

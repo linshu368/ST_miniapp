@@ -326,6 +326,36 @@ export async function getModelMarkup(
   }
 }
 
+export interface ModelBillingContext {
+  modelId: string | null;
+  modelDisplayName: string;
+  openRouterModelId: string;
+  catalogVersion: number;
+  modelMarkup: number;
+}
+
+export async function getModelBillingContext(
+  openRouterModelId: string,
+  fallbackMarkup?: number
+): Promise<ModelBillingContext> {
+  const [snapshot, pricing] = await Promise.all([
+    fetchModelCatalogSnapshot(),
+    fallbackMarkup === undefined ? getPricingConfig() : Promise.resolve(null),
+  ]);
+  const fallback = fallbackMarkup ?? pricing?.markup ?? DEFAULT_PRICING.markup;
+  const model = snapshot.catalog.tiers
+    .flatMap((tier) => tier.models)
+    .find((candidate) => candidate.openrouter_model_id === openRouterModelId);
+
+  return {
+    modelId: model?.id ?? null,
+    modelDisplayName: model?.display_name ?? (openRouterModelId || 'Unknown Model'),
+    openRouterModelId,
+    catalogVersion: snapshot.version,
+    modelMarkup: model?.markup ?? fallback,
+  };
+}
+
 export async function getModelTier(modelName: string): Promise<BackendModelTierConfig> {
   const tiers = await fetchModelTiers();
   const found = tiers.find((t) => t.modelName === modelName);
@@ -347,6 +377,7 @@ export async function getAllTiers(): Promise<BackendModelTierConfig[]> {
 export const OPENROUTER_PROVIDER = 'openrouter';
 
 export interface LlmPricingConfig {
+  version: number;
   balanceBaseline: number;
   fallbackCost: number;
   exchangeRate: number;
@@ -354,6 +385,7 @@ export interface LlmPricingConfig {
 }
 
 const DEFAULT_PRICING: LlmPricingConfig = {
+  version: 0,
   balanceBaseline: 30,
   fallbackCost: 30,
   exchangeRate: 680,
@@ -365,29 +397,22 @@ let lastPricingFetchTime = 0;
 
 export async function getPricingConfig(): Promise<LlmPricingConfig> {
   const now = Date.now();
-  if (cachedPricing && now - lastPricingFetchTime < CACHE_TTL_MS) {
-    return cachedPricing;
-  }
 
   try {
-    const db = getSupabaseClient().schema('miniapp');
-    const { data, error } = await db
-      .from('runtime_config')
-      .select('value')
-      .eq('key', 'llm_pricing_config')
-      .maybeSingle();
-
-    if (error) {
-      console.error('[model-tiers] Failed to fetch llm_pricing_config:', error);
-      return cachedPricing || DEFAULT_PRICING;
+    const entry = await fetchRuntimeConfigEntry('llm_pricing_config');
+    if (entry && cachedPricing?.version === entry.version) {
+      return cachedPricing;
     }
-
-    if (data?.value && typeof data.value === 'object') {
+    if (entry?.value && typeof entry.value === 'object') {
       cachedPricing = {
         ...DEFAULT_PRICING,
-        ...(data.value as Partial<LlmPricingConfig>),
+        ...(entry.value as Partial<LlmPricingConfig>),
+        version: entry.version,
       };
       lastPricingFetchTime = now;
+      return cachedPricing;
+    }
+    if (cachedPricing && now - lastPricingFetchTime < CACHE_TTL_MS) {
       return cachedPricing;
     }
   } catch (err) {
