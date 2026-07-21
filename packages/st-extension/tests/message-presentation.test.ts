@@ -40,11 +40,11 @@ describe('resolveReasoningUiState', () => {
 });
 
 describe('resolveMiniappAppearance', () => {
-  it('keeps dark explicit and defaults invalid values to light', () => {
+  it('keeps light explicit and defaults invalid values to dark', () => {
     assert.equal(resolveMiniappAppearance('dark'), 'dark');
     assert.equal(resolveMiniappAppearance('light'), 'light');
-    assert.equal(resolveMiniappAppearance(null), 'light');
-    assert.equal(resolveMiniappAppearance('system'), 'light');
+    assert.equal(resolveMiniappAppearance(null), 'dark');
+    assert.equal(resolveMiniappAppearance('system'), 'dark');
   });
 });
 

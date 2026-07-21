@@ -4,6 +4,8 @@ import type { ActionMeta } from './types.js';
 export const SelectCharacterPayloadSchema = z.object({
   avatar: z.string(),
   forceNewChat: z.boolean().optional(),
+  /** 调用方随后会显式打开指定会话时，避免先加载角色卡记录的旧会话。 */
+  skipChatLoad: z.boolean().optional(),
 });
 
 export const SelectCharacterResultSchema = z.object({

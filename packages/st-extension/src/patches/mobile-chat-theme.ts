@@ -4,7 +4,7 @@ const APPEARANCE_STORAGE_KEY = 'st_miniapp_appearance_mode';
 export type MiniappAppearance = 'light' | 'dark';
 
 export function resolveMiniappAppearance(value: unknown): MiniappAppearance {
-  return value === 'dark' ? 'dark' : 'light';
+  return value === 'light' ? 'light' : 'dark';
 }
 
 export function shouldExpandComposer(

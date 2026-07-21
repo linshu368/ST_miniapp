@@ -180,7 +180,12 @@ export default function TavernChatPage() {
       const avatar = `platform_${characterId}.png`;
       const latestChat = await latestChatPromise;
       markTiming('select_start'); // [iframe-timing] TEMP DEBUG
-      platformAction('selectCharacter', { avatar, forceNewChat: false })
+      platformAction('selectCharacter', {
+        avatar,
+        forceNewChat: false,
+        // 已知目标会话时不要先加载角色卡内记录的旧会话；select 完成后直接 openChat。
+        skipChatLoad: Boolean(latestChat && isSafeChatFileName(latestChat.fileName)),
+      })
         .then(async (result) => {
           window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
           markTiming('select_end'); // [iframe-timing] TEMP DEBUG
