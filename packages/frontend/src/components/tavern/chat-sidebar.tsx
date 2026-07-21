@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Ellipsis, Plus, Trash2, Pencil, MessageSquare } from 'lucide-react';
+import { MessagesSquare, Trash2, Pencil, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetTrigger, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { platformAction, useBridgeStatus, useSTEvent, useSTMirror } from '@/lib/bridge';
@@ -38,16 +38,6 @@ export function ChatSidebar() {
     'chat:changed',
     useCallback(() => invalidate(), [invalidate])
   );
-
-  async function handleNewChat() {
-    if (!bridgeReady) return;
-    try {
-      await platformAction('newChat', {});
-      setOpen(false);
-    } catch (err) {
-      console.error('[ChatSidebar] newChat failed:', err);
-    }
-  }
 
   async function handleOpenChat(fileName: string, avatar: string) {
     if (!bridgeReady) return;
@@ -106,25 +96,21 @@ export function ChatSidebar() {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <button
-          className="rounded-full p-2 text-white/70 hover:text-white transition-colors"
+          className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
           aria-label="历史对话"
         >
-          <Ellipsis className="h-5 w-5" />
+          <MessagesSquare className="size-[19px]" strokeWidth={2} />
         </button>
       </SheetTrigger>
-      <SheetContent side="left" className="flex flex-col p-0">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <SheetTitle>历史对话</SheetTitle>
-          <button
-            disabled={!bridgeReady}
-            onClick={handleNewChat}
-            className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+      <SheetContent
+        side="left"
+        className="flex w-[86vw] max-w-[340px] flex-col border-border/70 bg-background p-0"
+      >
+        <div className="flex items-center border-b border-border/60 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)]">
+          <SheetTitle className="text-base font-semibold">历史对话</SheetTitle>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 space-y-1 overflow-y-auto p-2">
           {loading && items.length === 0 && (
             <div className="flex items-center justify-center py-8 text-muted-foreground text-xs">
               加载中...
@@ -153,16 +139,14 @@ export function ChatSidebar() {
               <div
                 key={`${item.characterAvatar}/${item.fileName}`}
                 className={cn(
-                  'group flex items-start gap-2 px-4 py-2.5 cursor-pointer transition-colors',
-                  isActive ? 'bg-accent/60' : 'hover:bg-accent/30'
+                  'group flex cursor-pointer items-start gap-2 rounded-2xl border px-3 py-3 transition-colors',
+                  isActive ? 'border-primary/20 bg-primary/10' : 'border-transparent hover:bg-muted'
                 )}
                 onClick={() => handleOpenChat(item.fileName, item.characterAvatar)}
               >
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium truncate">{primaryName}</div>
-                  <div className="text-[11px] text-muted-foreground truncate mt-0.5">
-                    {secondaryText}
-                  </div>
+                  <div className="truncate text-sm font-medium">{primaryName}</div>
+                  <div className="mt-1 truncate text-xs text-muted-foreground">{secondaryText}</div>
                 </div>
 
                 <div className="flex items-center gap-0.5 shrink-0">

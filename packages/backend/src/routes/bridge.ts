@@ -18,6 +18,7 @@ import { FastifyInstance } from 'fastify';
 import { createHmac } from 'node:crypto';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
+import { prisma } from '../lib/db.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { getSupabaseClient } from '../lib/supabase.js';
 import { config } from '../platform/config.js';
@@ -350,6 +351,13 @@ export default async function bridgeRoutes(app: FastifyInstance) {
       }
 
       try {
+        const publishedCharacter = await prisma.character.findFirst({
+          where: { id: characterId, enabled: true, archived_at: null },
+          select: { id: true },
+        });
+        if (!publishedCharacter) {
+          return reply.status(404).send(fail('NOT_FOUND', '角色未上架或已删除'));
+        }
         const dbUser = await getOrCreateDbUser(request.user);
         const status = await ensureStCharacter(dbUser.id, characterId);
         return reply.send(ok<EnsureStCharacterData>({ characterId, status }));

@@ -259,30 +259,31 @@ model runtime_config {
 }
 
 model Character {
-  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                      String
-  description               String   @default("")
-  avatar_url                String   @default("")
-  creator_notes             String   @default("")
-  created_at                DateTime @default(dbgenerated("timezone('Asia/Shanghai'::text, now())")) @db.Timestamp(6)
-  updated_at                DateTime @default(dbgenerated("timezone('Asia/Shanghai'::text, now())")) @db.Timestamp(6)
-  alternate_greetings       Json     @default("[]")
+  description               String    @default("")
+  avatar_url                String    @default("")
+  creator_notes             String    @default("")
+  created_at                DateTime  @default(dbgenerated("timezone('Asia/Shanghai'::text, now())")) @db.Timestamp(6)
+  updated_at                DateTime  @default(dbgenerated("timezone('Asia/Shanghai'::text, now())")) @db.Timestamp(6)
+  alternate_greetings       Json      @default("[]")
   character_book            Json?
-  character_version         String   @default("")
-  creator                   String   @default("")
-  extensions                Json     @default("{}")
-  first_mes                 String   @default("")
-  mes_example               String   @default("")
-  personality               String   @default("")
-  post_history_instructions String   @default("")
-  scenario                  String   @default("")
-  spec                      String   @default("chara_card_v2")
-  spec_version              String   @default("2.0")
-  system_prompt             String   @default("")
-  tags                      Json     @default("[]")
+  character_version         String    @default("")
+  creator                   String    @default("")
+  extensions                Json      @default("{}")
+  first_mes                 String    @default("")
+  mes_example               String    @default("")
+  personality               String    @default("")
+  post_history_instructions String    @default("")
+  scenario                  String    @default("")
+  spec                      String    @default("chara_card_v2")
+  spec_version              String    @default("2.0")
+  system_prompt             String    @default("")
+  tags                      Json      @default("[]")
   raw_card                  Json?
-  enabled                   Boolean  @default(true)
-  sort_order                Int      @default(0)
+  enabled                   Boolean   @default(true)
+  sort_order                Int       @default(0)
+  archived_at               DateTime? @db.Timestamp(6)
 
   @@map("characters")
   @@schema("miniapp")
@@ -320,7 +321,7 @@ model chat_message_charges {
   user_id                                                            String         @db.Uuid
   session_id                                                         String         @db.Uuid
   client_message_id                                                  String
-  amount                                                             Int
+  amount                                                             Decimal        @db.Decimal(14, 1)
   status                                                             String
   wallet_ledger_id                                                   String?        @db.Uuid
   refund_ledger_id                                                   String?        @db.Uuid
@@ -378,14 +379,14 @@ model miniapp_payment_orders {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model user_wallets {
   user_id           String      @id @db.Uuid
-  main_credits      Int         @default(0)
-  bonus_credits     Int         @default(0)
+  main_credits      Decimal     @default(0) @db.Decimal(14, 1)
+  bonus_credits     Decimal     @default(0) @db.Decimal(14, 1)
   created_at        DateTime    @default(now()) @db.Timestamptz(6)
   updated_at        DateTime    @default(now()) @db.Timestamptz(6)
   first_paid_at     DateTime?   @db.Timestamptz(6)
   last_paid_at      DateTime?   @db.Timestamptz(6)
   total_paid_amount Decimal     @default(0) @db.Decimal(12, 2)
-  total_credits     Int?        @default(dbgenerated("(main_credits + bonus_credits)"))
+  total_credits     Decimal?    @default(dbgenerated("(main_credits + bonus_credits)")) @db.Decimal(14, 1)
   users             MiniappUser @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("miniapp")
@@ -398,11 +399,11 @@ model wallet_ledger {
   id                                                                        String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id                                                                   String                 @db.Uuid
   entry_type                                                                String
-  amount                                                                    Int
-  main_delta                                                                Int                    @default(0)
-  bonus_delta                                                               Int                    @default(0)
-  balance_main                                                              Int
-  balance_bonus                                                             Int
+  amount                                                                    Decimal                @db.Decimal(14, 1)
+  main_delta                                                                Decimal                @default(0) @db.Decimal(14, 1)
+  bonus_delta                                                               Decimal                @default(0) @db.Decimal(14, 1)
+  balance_main                                                              Decimal                @db.Decimal(14, 1)
+  balance_bonus                                                             Decimal                @db.Decimal(14, 1)
   reference_type                                                            String?
   reference_id                                                              String?
   metadata                                                                  Json                   @default("{}")
@@ -413,6 +414,35 @@ model wallet_ledger {
 
   @@index([reference_type, reference_id], map: "idx_miniapp_wallet_ledger_reference")
   @@index([user_id, created_at(sort: Desc)], map: "idx_miniapp_wallet_ledger_user_created")
+  @@schema("miniapp")
+}
+
+model llm_usage_charges {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  charge_key             String    @unique @db.Uuid
+  generation_id          String?
+  user_id                String    @db.Uuid
+  model_id               String?
+  model_openrouter_id    String
+  model_display_name     String
+  catalog_version        Int       @default(0)
+  pricing_config_version Int       @default(0)
+  usage_cost_usd         Decimal?  @db.Decimal(20, 10)
+  exchange_rate          Decimal   @db.Decimal(14, 4)
+  model_markup           Decimal   @db.Decimal(4, 1)
+  initial_amount         Decimal   @default(0) @db.Decimal(14, 1)
+  calculated_amount      Decimal   @default(0) @db.Decimal(14, 1)
+  charged_amount         Decimal   @default(0) @db.Decimal(14, 1)
+  fallback_used          Boolean   @default(false)
+  status                 String
+  debit_ledger_id        String?   @db.Uuid
+  metadata               Json      @default("{}")
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime  @default(now()) @db.Timestamptz(6)
+  reconciled_at          DateTime? @db.Timestamptz(6)
+
+  @@index([user_id, created_at(sort: Desc)], map: "idx_llm_usage_charges_user_created")
+  @@index([model_openrouter_id, created_at(sort: Desc)], map: "idx_llm_usage_charges_model_created")
   @@schema("miniapp")
 }
 

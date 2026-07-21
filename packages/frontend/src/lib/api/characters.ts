@@ -7,7 +7,7 @@ import { apiClient } from './client';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
 async function fetchCharacters(): Promise<GetCharactersData> {
-  const response = await fetch('/api/lobby-characters');
+  const response = await fetch('/api/lobby-characters', { cache: 'no-store' });
   const json = (await response.json().catch(() => null)) as ApiResponse<GetCharactersData> | null;
   if (!response.ok || !json?.success) {
     throw new Error(json && !json.success ? json.error.message : `API error: ${response.status}`);
@@ -27,7 +27,8 @@ export const characterKeys = {
   detail: (id: string) => [...characterKeys.all, 'detail', id] as const,
 };
 
-const CHARACTER_CACHE_KEY = 'miniapp:lobby-characters:v2';
+// v3 invalidates the old 24-hour snapshots that could hide Admin changes.
+const CHARACTER_CACHE_KEY = 'miniapp:lobby-characters:v3';
 const CHARACTER_CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 
 function readPersistedCharacters(): GetCharactersData | undefined {
@@ -65,7 +66,10 @@ export function useCharactersQuery() {
     queryKey: characterKeys.lists(),
     queryFn: fetchCharacters,
     initialData: readPersistedCharacters,
-    staleTime: 5 * 60_000,
+    // Persisted data keeps the lobby instant, but every mount must reconcile with
+    // the database so reordering, delisting, and archival appear immediately.
+    staleTime: 0,
+    refetchOnMount: 'always',
     gcTime: CHARACTER_CACHE_MAX_AGE_MS,
   });
 }

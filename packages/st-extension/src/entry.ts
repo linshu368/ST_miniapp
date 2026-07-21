@@ -19,7 +19,11 @@ import { installReasoningAutoParse } from './patches/reasoning-auto-parse.js';
 import { installGlobalRegexSafetyNet } from './patches/global-regex-safety-net.js';
 import { installCharTokenCounterSuppress } from './patches/char-token-counter-suppress.js';
 import { installWelcomeScreenSuppress } from './patches/welcome-screen-suppress.js';
+import { installRichMessageResponsive } from './patches/rich-message-responsive.js';
+import { installMarkdownBoldFallback } from './patches/markdown-bold-fallback.js';
+import { installReasoningStreamUi } from './patches/reasoning-stream-ui.js';
 import { installBillingErrorBridge } from './patches/billing-error-bridge.js';
+import { installMobileChatTheme } from './patches/mobile-chat-theme.js';
 import { stTiming } from './debug-timing.js'; // [iframe-timing] TEMP DEBUG
 import { installBootTimingProbes } from './debug-boot-probes.js'; // [iframe-timing] TEMP DEBUG
 import { installBootWaterfallProbe } from './debug-boot-waterfall.js'; // [iframe-timing] TEMP DEBUG
@@ -63,6 +67,8 @@ function init(): void {
   installScriptPopupAutoCancel();
   // 隐藏 ST 底部输入栏左侧原生按钮（#options_button / #extensionsMenuButton），由平台壳 ChatToolsMenu 替代。
   installNativeUiHide();
+  // 直接覆盖 ST 原生聊天 DOM 的移动端视觉，并与 MiniApp 全局亮暗按钮保持同源同步。
+  installMobileChatTheme();
   // 隐藏 ST 原生「AI Response Configuration / 对话补全预设」抽屉：平台不开放用户改预设，始终隐藏。
   installPresetUiHide();
   // 部分卡 scoped 正则剥离 <UpdateVariable> 后残留空 <details> 壳（encode_tags=false 时渲染为空「详情」）。
@@ -71,9 +77,14 @@ function init(): void {
   installLlmMetadataInject();
   // ST 内置推理解析器默认关闭，模型 <think> 思维链会直接暴露。强制开启作为全局安全网。
   installReasoningAutoParse();
-  // 平台级全局正则兜底：无论哪张卡、哪个预设，<thinking>/<think>/<disclaimer> 在展示层一律删除。
-  // 全局正则无需授权、恒定生效，弥补各卡/预设脚本漏配或授权失败的缝隙。
+  // 流式 reasoning 使用稳定标题动画，完成后平滑折叠并保留为可再次展开的「思考完成」。
+  installReasoningStreamUi();
+  // 平台级全局正则仅兜底隐藏免责声明；思维链交给原生 reasoning 折叠展示，避免闭合时瞬间删除。
   installGlobalRegexSafetyNet();
+  // 酒馆助手富文本 iframe 在窄屏会保留固定宽度并挤压变形；从平台扩展侧注入自适应布局与高度同步。
+  installRichMessageResponsive();
+  // 普通消息若因 Markdown 间距或第三方优化残留 ** 标记，则仅在展示层恢复加粗并补足字重。
+  installMarkdownBoldFallback();
   // 切角色关键路径上 ST 给隐藏的角色编辑面板逐字段远程算 token（~10 次串行 RTT），
   // 移除 data-token-counter 属性使其零调用（见 patches/char-token-counter-suppress）。
   installCharTokenCounterSuppress();

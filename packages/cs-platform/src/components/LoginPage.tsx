@@ -38,11 +38,9 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
         }}
       >
         <div className="login-brand">
-          <span className="login-logo" aria-hidden="true">
-            蜜
-          </span>
+          <img className="login-logo" src="/favicon.svg" alt="" aria-hidden="true" />
           <div>
-            <h1>蜜镜AI运营平台</h1>
+            <h1>蜜镜AI用户回访平台</h1>
             <p>用户回访 · Telegram 1V1 · 运营自动化</p>
           </div>
         </div>

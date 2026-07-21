@@ -116,6 +116,24 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 023_move_wishes_to_miniapp.sql # 删除旧 Bot 许愿会话表，许愿池改为 MiniApp 页面
 024_cs_platform.sql # 内部 CS Platform：SQL 用户分层、Telegram 1V1 回访 SOP、Excel 导出审计
 025_preset_auto_promote.sql # 预设自动晋升触发器 + canonical_jsonb 序列化函数
+035_admin_config_management.sql # 运营后台草稿、发布、回滚和审计基础
+036_admin_operator_names.sql # 操作人姓名快照
+037_model_selector_complete.sql # 用户模型选择持久化、严格目录校验和活动草稿复用
+038_seed_payment_plans.sql # 将内置充值套餐迁入 runtime_config，后续由运营平台发布调整
+039_admin_character_cards.sql # 放弃配置草稿与运营后台角色卡只读列表
+040_migrate_llm_model_catalog.sql # 将旧版 4 模型迁移为正式分档模型目录
+041_admin_operations_features.sql # 每模型倍率、充值页配置与角色卡运营写操作
+042_admin_config_validation_and_audit_compaction.sql # 充值配置校验分发与角色排序审计压缩
+043_admin_analytics.sql # 运营数据分析聚合、明细查询、权限与查询索引
+044_admin_platform_presets.sql # 平台统一预设管理、默认快照发布、版本历史与审计
+045_admin_character_layout_drafts.sql # 角色卡三状态草稿、原子发布、版本与发布历史
+046_admin_character_layout_rollback.sql # 角色布局发布历史查询与原子回滚
+047_admin_character_layout_release_details.sql # 角色布局发布类型、目标版本与完整角色快照
+048_admin_create_character.sql # 角色卡安全创建、下架初始化、草稿同步与审计
+049_admin_delete_character_layout_release.sql # 删除非当前角色布局历史版本并保留审计
+050_llm_spending_details.sql # 免费模型、0.1 星尘钱包、逐调用账单、幂等扣费与费用对账
+051_llm_deferred_billing.sql # OpenRouter 用量晚到时零预扣登记，最终用量到达后一次性结算
+052_character_favorites.sql # 用户角色收藏、幂等设置、收藏计数与运营收藏榜
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

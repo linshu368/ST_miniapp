@@ -1,26 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  LOBBY_FEATURED_CHARACTER_IDS,
-  isLobbyFeaturedCharacter,
-  partitionLobbyCharacters,
-} from '../lobby-featured';
+import { LOBBY_FEATURED_POSITION_COUNT, markLobbyFeaturedByPosition } from '../lobby-featured';
 
 describe('lobby featured characters', () => {
-  it('固定角色始终按配置顺序置顶，并从其余角色中移除', () => {
-    const first = LOBBY_FEATURED_CHARACTER_IDS[0];
-    const third = LOBBY_FEATURED_CHARACTER_IDS[2];
-    const rows = [{ id: 'other-a' }, { id: third }, { id: first }, { id: 'other-b' }];
-
-    const result = partitionLobbyCharacters(rows);
-
-    expect(result.featured.map((row) => row.id)).toEqual([first, third]);
-    expect(result.others.map((row) => row.id)).toEqual(['other-a', 'other-b']);
-  });
-
-  it('可识别固定角色并安全跳过缺失数据', () => {
-    expect(isLobbyFeaturedCharacter(LOBBY_FEATURED_CHARACTER_IDS[7])).toBe(true);
-    expect(isLobbyFeaturedCharacter('missing-character')).toBe(false);
-    expect(partitionLobbyCharacters([{ id: 'other' }]).featured).toEqual([]);
+  it('按当前排序位置标记前八个角色，不绑定固定 UUID', () => {
+    const rows = Array.from({ length: 10 }, (_, index) => ({ id: `character-${index}` }));
+    const result = markLobbyFeaturedByPosition(rows);
+    expect(result.filter((row) => row.is_featured)).toHaveLength(LOBBY_FEATURED_POSITION_COUNT);
+    expect(result[7]?.is_featured).toBe(true);
+    expect(result[8]?.is_featured).toBe(false);
   });
 });

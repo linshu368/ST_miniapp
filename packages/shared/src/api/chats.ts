@@ -14,3 +14,7 @@ export interface GetUserChatsData {
   items: UserChatListItem[];
   total: number;
 }
+
+export interface GetLatestUserChatData {
+  item: UserChatListItem | null;
+}

@@ -14,9 +14,10 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { InsufficientBalanceErrorResponse } from '@miniapp/shared';
+import { randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { verifyPlatformToken } from '../lib/llm-token.js';
-import { getPricingConfig } from '../platform/model-tiers.js';
+import { getModelBillingContext, getPricingConfig } from '../platform/model-tiers.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { saveChatHistory } from '../lib/chat-history-logger.js';
 
@@ -124,27 +125,47 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         }
       }
 
+      const chargeId = randomUUID();
       const pricing = await getPricingConfig();
+      const billingContext = await getModelBillingContext(modelName, pricing.markup);
+      const modelMarkup = billingContext.modelMarkup;
       const balanceBaseline = pricing.balanceBaseline;
+      const billingSnapshot = {
+        charge_id: chargeId,
+        model_id: billingContext.modelId,
+        model_display_name: billingContext.modelDisplayName,
+        model_markup: modelMarkup,
+        catalog_version: billingContext.catalogVersion,
+        pricing_config_version: pricing.version,
+        exchange_rate: pricing.exchangeRate,
+        fallback_cost: pricing.fallbackCost,
+      };
 
       // ── 余额预检：不足基线时在调用上游前返回 402，由 ST bridge 引导充值 ─────────
       try {
-        const wallet = await wallets.getOrCreate(userId);
-        const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-        if (balance < balanceBaseline) {
-          request.log.info(
-            { userId, balance, required: balanceBaseline, model: modelName },
-            '[llm-proxy] insufficient balance'
+        if (modelMarkup === 0) {
+          request.log.debug(
+            { userId, model: modelName },
+            '[llm-proxy] free model balance check skipped'
           );
-          const response: InsufficientBalanceErrorResponse = {
-            error: {
-              message: `Insufficient credits: have ${balance}, need baseline ${balanceBaseline}`,
-              type: 'insufficient_balance',
-              credits_required: balanceBaseline,
-              credits_available: balance,
-            },
-          };
-          return reply.status(402).send(response);
+        } else {
+          const wallet = await wallets.getOrCreate(userId);
+          const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
+          if (balance < balanceBaseline) {
+            request.log.info(
+              { userId, balance, required: balanceBaseline, model: modelName },
+              '[llm-proxy] insufficient balance'
+            );
+            const response: InsufficientBalanceErrorResponse = {
+              error: {
+                message: `Insufficient credits: have ${balance}, need baseline ${balanceBaseline}`,
+                type: 'insufficient_balance',
+                credits_required: balanceBaseline,
+                credits_available: balance,
+              },
+            };
+            return reply.status(402).send(response);
+          }
         }
       } catch (err) {
         request.log.error({ err: String(err), userId }, '[llm-proxy] wallet check failed');
@@ -197,6 +218,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             {
               user_id: userId,
               model: modelName,
+              ...billingSnapshot,
               user_input: userInput,
               assistant_reply: null,
               history: chatMessages,
@@ -235,7 +257,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       // ── 判断是否 SSE 流式 ─────────────────────────────────────────────────
       const contentType = upstreamRes.headers.get('content-type') || '';
       const isSSE = contentType.includes('text/event-stream');
-      const generationId = upstreamRes.headers.get('x-generation-id') || null;
+      let generationId = upstreamRes.headers.get('x-generation-id') || null;
 
       if (!upstreamRes.body) {
         if (isChatCompletion && userInput) {
@@ -243,6 +265,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             {
               user_id: userId,
               model: modelName,
+              ...billingSnapshot,
               user_input: userInput,
               assistant_reply: null,
               history: chatMessages,
@@ -281,6 +304,9 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
               if (!line.startsWith('data: ')) continue;
               try {
                 const json = JSON.parse(line.slice(6));
+                if (!generationId && typeof json?.id === 'string') {
+                  generationId = json.id;
+                }
                 const delta = json?.choices?.[0]?.delta?.content;
                 if (typeof delta === 'string') {
                   replyChunks.push(delta);
@@ -299,6 +325,9 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             } else if (sseBuffer.startsWith('data: ')) {
               try {
                 const json = JSON.parse(sseBuffer.slice(6));
+                if (!generationId && typeof json?.id === 'string') {
+                  generationId = json.id;
+                }
                 const delta = json?.choices?.[0]?.delta?.content;
                 if (typeof delta === 'string') {
                   replyChunks.push(delta);
@@ -312,6 +341,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                   {
                     user_id: userId,
                     model: modelName,
+                    ...billingSnapshot,
                     user_input: userInput,
                     assistant_reply: replyChunks.join(''),
                     history: chatMessages,
@@ -333,6 +363,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                   {
                     user_id: userId,
                     model: modelName,
+                    ...billingSnapshot,
                     user_input: userInput,
                     assistant_reply: replyChunks.length > 0 ? replyChunks.join('') : null,
                     history: chatMessages,
@@ -359,6 +390,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           {
             user_id: userId,
             model: modelName,
+            ...billingSnapshot,
             user_input: userInput,
             assistant_reply: null, // 非流式通常在这里无法简单拦截 body
             history: chatMessages,
