@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { splitBoldSegments } from '../src/patches/markdown-bold-fallback.js';
 import { resolveReasoningUiState } from '../src/patches/reasoning-stream-ui.js';
+import { resolveInsufficientBalanceEvent } from '../src/patches/billing-error-bridge.js';
 
 describe('splitBoldSegments', () => {
   it('formats standard and spaced bold markers', () => {
@@ -32,5 +33,31 @@ describe('resolveReasoningUiState', () => {
   it('does not expose empty reasoning blocks', () => {
     assert.equal(resolveReasoningUiState('done', false), 'idle');
     assert.equal(resolveReasoningUiState(undefined, false), 'idle');
+  });
+});
+
+describe('resolveInsufficientBalanceEvent', () => {
+  it('recognizes direct and ST-wrapped insufficient balance responses', () => {
+    assert.deepEqual(
+      resolveInsufficientBalanceEvent(
+        {
+          error: {
+            type: 'insufficient_balance',
+            credits_required: 20,
+            credits_available: 0,
+          },
+        },
+        false
+      ),
+      { creditsRequired: 20, creditsAvailable: 0 }
+    );
+    assert.deepEqual(
+      resolveInsufficientBalanceEvent({ error: { message: 'MiniApp Insufficient Credits' } }, true),
+      { creditsRequired: 0, creditsAvailable: 0 }
+    );
+    assert.equal(
+      resolveInsufficientBalanceEvent({ error: { message: 'Unrelated error' } }, true),
+      null
+    );
   });
 });

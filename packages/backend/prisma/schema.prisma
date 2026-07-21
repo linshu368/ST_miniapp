@@ -446,6 +446,20 @@ model llm_usage_charges {
   @@schema("miniapp")
 }
 
+/// Minimal idempotency tombstones retained after full usage details exceed the per-user cap.
+/// This model contains row level security and requires additional setup for migrations.
+model llm_usage_charge_dedup {
+  charge_key     String   @id @db.Uuid
+  generation_id  String?
+  user_id        String   @db.Uuid
+  charged_amount Decimal  @default(0) @db.Decimal(14, 1)
+  status         String
+  processed_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([user_id, processed_at(sort: Desc)], map: "idx_llm_usage_charge_dedup_user_processed")
+  @@schema("miniapp")
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.

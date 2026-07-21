@@ -91,6 +91,11 @@ function SpendingRow({ item }: { item: WalletSpendingRecord }) {
         <h2 className="truncate text-[15px] font-bold tracking-tight text-white">
           {item.model_display_name}
         </h2>
+        {item.status === 'failed' ? (
+          <p className="mt-1 text-[10px] font-semibold text-rose-300">生成失败 · 未扣费</p>
+        ) : item.status === 'pending' ? (
+          <p className="mt-1 text-[10px] font-semibold text-amber-300">等待最终用量结算</p>
+        ) : null}
         <time
           dateTime={item.created_at}
           className="mt-1 block text-[10px] font-medium tabular-nums tracking-wide text-white/30"

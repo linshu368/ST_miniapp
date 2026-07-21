@@ -535,6 +535,8 @@ function OutreachExplorer(props: {
 
 function chargeStatusTag(status: string) {
   const labels: Record<string, { label: string; color: string }> = {
+    pending: { label: '待结算', color: 'gold' },
+    failed: { label: '生成失败（未扣费）', color: 'red' },
     free: { label: '免费', color: 'green' },
     charged: { label: '已扣费', color: 'blue' },
     reconciled: { label: '已对账', color: 'cyan' },
@@ -603,17 +605,27 @@ function SpendingDetailDrawer(props: {
                   : `${formatDecimal(value.model_markup)} 倍`}
               </Descriptions.Item>
               <Descriptions.Item label="计算公式">
-                {value.fallback_used
-                  ? `Fallback ${formatDecimal(metadata?.fallback_cost ?? value.initial_amount)} = ${formatDecimal(value.calculated_amount)} 星尘`
-                  : `$${formatDecimal(value.usage_cost_usd, 10)} × ${formatDecimal(value.exchange_rate)} × ${formatDecimal(value.model_markup)} = ${formatDecimal(value.calculated_amount)} 星尘`}
+                {String(value.status) === 'failed'
+                  ? '免费模型生成失败，本次实扣 0.0 星尘'
+                  : String(value.status) === 'pending'
+                    ? '等待 OpenRouter 返回最终用量，当前实扣 0.0 星尘'
+                    : value.fallback_used
+                      ? `历史 Fallback ${formatDecimal(metadata?.fallback_cost ?? value.initial_amount)} = ${formatDecimal(value.calculated_amount)} 星尘`
+                      : `$${formatDecimal(value.usage_cost_usd, 10)} × ${formatDecimal(value.exchange_rate)} × ${formatDecimal(value.model_markup)} = ${formatDecimal(value.calculated_amount)} 星尘`}
               </Descriptions.Item>
               <Descriptions.Item label="初始 / 计算 / 实扣">
                 {formatDecimal(value.initial_amount)} / {formatDecimal(value.calculated_amount)} /{' '}
                 {formatDecimal(value.charged_amount)} 星尘
               </Descriptions.Item>
               <Descriptions.Item label="成本来源">
-                {value.fallback_used ? (
-                  <Tag color="orange">Fallback 预扣</Tag>
+                {String(value.status) === 'failed' ? (
+                  <Tag color="red">生成失败</Tag>
+                ) : String(value.status) === 'pending' ? (
+                  <Tag color="gold">等待最终用量</Tag>
+                ) : value.fallback_used ? (
+                  <Tag color="orange">历史 Fallback</Tag>
+                ) : Number(value.model_markup) === 0 ? (
+                  <Tag color="green">免费模型</Tag>
                 ) : (
                   <Tag>实际用量</Tag>
                 )}
@@ -723,9 +735,9 @@ function SpendingExplorer(props: {
             value={filters.fallback === null ? 'all' : filters.fallback ? 'fallback' : 'actual'}
             className="analytics-status-select"
             options={[
-              { label: '实际 / Fallback', value: 'all' },
+              { label: '全部成本来源', value: 'all' },
               { label: '实际用量', value: 'actual' },
-              { label: 'Fallback 预扣', value: 'fallback' },
+              { label: '历史 Fallback', value: 'fallback' },
             ]}
             onChange={(value) =>
               updateFilters({ fallback: value === 'all' ? null : value === 'fallback' })
@@ -736,6 +748,8 @@ function SpendingExplorer(props: {
             className="analytics-status-select"
             options={[
               { label: '全部对账状态', value: '' },
+              { label: '待结算', value: 'pending' },
+              { label: '生成失败（未扣费）', value: 'failed' },
               { label: '免费', value: 'free' },
               { label: '已扣费', value: 'charged' },
               { label: '已对账', value: 'reconciled' },
@@ -791,7 +805,18 @@ function SpendingExplorer(props: {
             {
               title: '成本来源',
               dataIndex: 'fallback_used',
-              render: (value) => (value ? <Tag color="orange">Fallback</Tag> : <Tag>实际用量</Tag>),
+              render: (value, row) =>
+                row.status === 'failed' ? (
+                  <Tag color="red">生成失败</Tag>
+                ) : row.status === 'pending' ? (
+                  <Tag color="gold">等待用量</Tag>
+                ) : value ? (
+                  <Tag color="orange">历史 Fallback</Tag>
+                ) : row.model_markup === 0 ? (
+                  <Tag color="green">免费</Tag>
+                ) : (
+                  <Tag>实际用量</Tag>
+                ),
             },
             { title: '状态', dataIndex: 'status', render: chargeStatusTag },
             {
