@@ -8,10 +8,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
-import {
-  calculateFallbackDeduction,
-  calculateUsageDeduction,
-} from '../features/billing/usage-pricing.js';
+import { getInitialBillingDecision } from '../features/billing/usage-pricing.js';
 
 export interface ChatHistoryEntry {
   user_id: string;
@@ -41,7 +38,7 @@ const wallets = new MiniappWalletRepository();
 async function fetchGenerationDataWithRetry(
   generationId: string,
   log: FastifyBaseLogger,
-  maxRetries = 3
+  maxRetries = 1
 ) {
   if (!OPENROUTER_API_KEY) return null;
 
@@ -104,7 +101,7 @@ async function fetchGenerationDataWithRetry(
         );
         return lastGenData;
       }
-      // Wait before retrying (exponential backoff: 2s, 4s...)
+      // Kept for callers that explicitly request more than one attempt.
       await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
     }
   }
@@ -117,11 +114,12 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
       let llmMetadata: Record<string, any> = {
         llm_charge_id: entry.charge_id,
         llm_model_markup: entry.model_markup,
+        llm_generation_id: entry.generation_id ?? null,
       };
       let actualDeduction = 0;
 
       // 如果有 generation_id，尝试异步获取详细数据
-      if (entry.generation_id) {
+      if (entry.generation_id && entry.model_markup > 0) {
         try {
           const genData = await fetchGenerationDataWithRetry(entry.generation_id, log);
           if (genData) {
@@ -157,10 +155,13 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
       // 仅在生成成功时才计算扣费并执行真实扣款
       if (entry.status === 'success') {
         const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
-        const hasActualUsage = typeof usageCost === 'number' && Number.isFinite(usageCost);
-        const intendedDeduction = hasActualUsage
-          ? calculateUsageDeduction(usageCost, entry.exchange_rate, entry.model_markup)
-          : calculateFallbackDeduction(entry.fallback_cost, entry.model_markup);
+        const billingDecision = getInitialBillingDecision({
+          usageCost,
+          exchangeRate: entry.exchange_rate,
+          modelMarkup: entry.model_markup,
+        });
+        const { hasActualUsage } = billingDecision;
+        const intendedDeduction = billingDecision.amount;
         llmMetadata.llm_intended_deduction = intendedDeduction;
 
         try {
@@ -182,11 +183,12 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             exchangeRate: entry.exchange_rate,
             modelMarkup: entry.model_markup,
             calculatedAmount: intendedDeduction,
-            fallbackUsed: !hasActualUsage,
+            fallbackUsed: billingDecision.pending,
             metadata: {
               chat_status: entry.status,
-              fallback_cost: entry.fallback_cost,
               requested_model: entry.model,
+              billing_mode:
+                entry.model_markup === 0 ? 'free' : hasActualUsage ? 'actual_usage' : 'deferred',
             },
           });
           actualDeduction = Number(result.charge.charged_amount);
@@ -196,8 +198,9 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
               chargeId: entry.charge_id,
               intendedAmount: intendedDeduction,
               chargedAmount: actualDeduction,
+              pending: billingDecision.pending,
             },
-            '[chat-history] atomic LLM usage charge recorded'
+            '[chat-history] LLM usage billing record created'
           );
         } catch (chargeErr) {
           log.error(
