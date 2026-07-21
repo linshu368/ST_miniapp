@@ -49,7 +49,7 @@ export interface LlmUsageChargeRow {
   calculated_amount: NumericValue;
   charged_amount: NumericValue;
   fallback_used: boolean;
-  status: 'pending' | 'free' | 'charged' | 'partial' | 'reconciled' | 'historical';
+  status: 'pending' | 'failed' | 'free' | 'charged' | 'partial' | 'reconciled' | 'historical';
   created_at: string;
   reconciled_at: string | null;
 }
@@ -198,7 +198,7 @@ export class MiniappWalletRepository {
   async listSpending(userId: string): Promise<WalletSpendingRecord[]> {
     const { data, error } = await this.db
       .from('llm_usage_charges')
-      .select('charge_key,model_id,model_display_name,charged_amount,created_at')
+      .select('charge_key,model_id,model_display_name,charged_amount,status,created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -209,6 +209,7 @@ export class MiniappWalletRepository {
         model_id: string | null;
         model_display_name: string;
         charged_amount: NumericValue;
+        status: WalletSpendingRecord['status'];
         created_at: string;
       }>
     ).map((row) => ({
@@ -216,6 +217,7 @@ export class MiniappWalletRepository {
       model_id: row.model_id,
       model_display_name: row.model_display_name,
       charged_amount: toNumber(row.charged_amount),
+      status: row.status,
       created_at: row.created_at,
     }));
   }

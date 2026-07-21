@@ -134,6 +134,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 050_llm_spending_details.sql # 免费模型、0.1 星尘钱包、逐调用账单、幂等扣费与费用对账
 051_llm_deferred_billing.sql # OpenRouter 用量晚到时零预扣登记，最终用量到达后一次性结算
 052_character_favorites.sql # 用户角色收藏、幂等设置、收藏计数与运营收藏榜
+053_llm_spending_retention.sql # 免费失败明细与每用户最近 100 条完整记录保留
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

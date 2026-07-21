@@ -40,6 +40,10 @@ export function getInitialBillingDecision(input: {
   };
 }
 
+export function shouldRecordUsageCharge(status: string, modelMarkup: number): boolean {
+  return status === 'success' || modelMarkup === 0;
+}
+
 export function calculateFallbackDeduction(fallbackCost: number, modelMarkup: number): number {
   if (
     !Number.isFinite(fallbackCost) ||
