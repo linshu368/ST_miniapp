@@ -8,7 +8,10 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
-import { getInitialBillingDecision } from '../features/billing/usage-pricing.js';
+import {
+  getInitialBillingDecision,
+  shouldRecordUsageCharge,
+} from '../features/billing/usage-pricing.js';
 
 export interface ChatHistoryEntry {
   user_id: string;
@@ -152,8 +155,9 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         }
       }
 
-      // 仅在生成成功时才计算扣费并执行真实扣款
-      if (entry.status === 'success') {
+      // 成功调用进入正常计费；免费模型即使失败或中断也保留一条 0.0 明细，
+      // 方便用户和运营核对，同时付费模型失败仍不产生消费记录。
+      if (shouldRecordUsageCharge(entry.status, entry.model_markup)) {
         const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
         const billingDecision = getInitialBillingDecision({
           usageCost,
@@ -188,7 +192,13 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
               chat_status: entry.status,
               requested_model: entry.model,
               billing_mode:
-                entry.model_markup === 0 ? 'free' : hasActualUsage ? 'actual_usage' : 'deferred',
+                entry.status !== 'success'
+                  ? 'failed_free'
+                  : entry.model_markup === 0
+                    ? 'free'
+                    : hasActualUsage
+                      ? 'actual_usage'
+                      : 'deferred',
             },
           });
           actualDeduction = Number(result.charge.charged_amount);

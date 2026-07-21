@@ -3,6 +3,7 @@ import {
   calculateFallbackDeduction,
   calculateUsageDeduction,
   getInitialBillingDecision,
+  shouldRecordUsageCharge,
 } from '../features/billing/usage-pricing.js';
 
 describe('calculateUsageDeduction', () => {
@@ -48,5 +49,14 @@ describe('getInitialBillingDecision', () => {
     expect(
       getInitialBillingDecision({ usageCost: 0.01, exchangeRate: 680, modelMarkup: 2.5 })
     ).toEqual({ amount: 17, hasActualUsage: true, pending: false });
+  });
+});
+
+describe('shouldRecordUsageCharge', () => {
+  it('records successful calls and failed free calls only', () => {
+    expect(shouldRecordUsageCharge('success', 2.5)).toBe(true);
+    expect(shouldRecordUsageCharge('error', 0)).toBe(true);
+    expect(shouldRecordUsageCharge('aborted', 0)).toBe(true);
+    expect(shouldRecordUsageCharge('error', 2.5)).toBe(false);
   });
 });

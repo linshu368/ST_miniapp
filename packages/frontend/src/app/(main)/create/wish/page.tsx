@@ -288,26 +288,28 @@ export default function WishPage() {
   return (
     <main
       data-app-shell="wish"
-      className="app-page mx-auto flex min-h-[100svh] max-w-md flex-col overflow-hidden"
+      className="mx-auto flex min-h-[100svh] max-w-md flex-col overflow-hidden bg-[#0A0A0A] text-white"
       style={{ '--wish-keyboard-inset': `${keyboardInset}px` } as CSSProperties}
     >
-      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-emerald-700 via-emerald-500 to-teal-300" />
+      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-fuchsia-500 via-purple-500 to-amber-300" />
 
       <header className="flex shrink-0 items-center gap-3 px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <Button
           variant="ghost"
           size="icon"
           onClick={goBack}
-          className="-ml-2 rounded-full text-muted-foreground hover:text-foreground"
+          className="-ml-2 rounded-full text-slate-400 hover:text-white"
           aria-label="返回创作页"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
         </Button>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Wish Pool</p>
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-purple-300/70">
+            Wish Pool
+          </p>
           <h1 className="text-lg font-black tracking-wide">许愿池</h1>
         </div>
-        <div className="rounded-full border border-border bg-primary/10 p-2 text-primary">
+        <div className="rounded-full border border-white/10 bg-white/5 p-2 text-amber-200">
           <Sparkles className="h-4 w-4" aria-hidden />
         </div>
       </header>
@@ -325,8 +327,8 @@ export default function WishPage() {
               className={cn(
                 'max-w-[82%] whitespace-pre-line rounded-3xl px-4 py-3 text-sm leading-6 shadow-lg',
                 message.role === 'user'
-                  ? 'rounded-br-lg bg-primary text-primary-foreground'
-                  : 'rounded-bl-lg border border-border bg-card text-card-foreground'
+                  ? 'rounded-br-lg bg-white text-slate-950'
+                  : 'rounded-bl-lg border border-white/10 bg-white/[0.06] text-slate-100'
               )}
             >
               {message.text}
@@ -335,14 +337,14 @@ export default function WishPage() {
         ))}
       </section>
 
-      <footer className="fixed inset-x-0 bottom-[var(--wish-keyboard-inset,0px)] z-50 mx-auto max-w-md border-t border-border bg-background/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl transition-[bottom] duration-150">
+      <footer className="fixed inset-x-0 bottom-[var(--wish-keyboard-inset,0px)] z-50 mx-auto max-w-md border-t border-white/10 bg-[#0A0A0A]/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl transition-[bottom] duration-150">
         {step === 'extra' && (
           <Button
             type="button"
             variant="ghost"
             onClick={handleFinish}
             disabled={isPending}
-            className="mb-2 h-8 rounded-full px-3 text-xs text-foreground hover:text-foreground"
+            className="mb-2 h-8 rounded-full px-3 text-xs text-slate-300 hover:text-white"
           >
             💖 就这样吧
           </Button>
@@ -365,14 +367,14 @@ export default function WishPage() {
             }}
             placeholder={placeholder}
             disabled={step === 'done' || isPending}
-            className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border-border bg-card text-[16px] leading-6 text-foreground caret-primary shadow-inner outline-none placeholder:text-muted-foreground selection:bg-primary/20 focus-visible:ring-1 focus-visible:ring-primary/40 disabled:opacity-70"
+            className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border-white/10 bg-white/[0.08] text-[16px] leading-6 text-white caret-purple-200 shadow-inner shadow-black/20 outline-none placeholder:text-slate-500 selection:bg-purple-300/30 [-webkit-text-fill-color:#fff] [color-scheme:dark] focus-visible:ring-1 focus-visible:ring-purple-300/40 disabled:opacity-70"
           />
           <Button
             type="button"
             size="icon"
             onClick={handleSubmit}
             disabled={!input.trim() || step === 'done' || isPending}
-            className="h-12 w-12 rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90"
+            className="h-12 w-12 rounded-2xl bg-white text-slate-950 hover:bg-purple-100"
             aria-label="发送许愿"
           >
             <Send className="h-4 w-4" aria-hidden />

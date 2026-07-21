@@ -90,7 +90,10 @@ function RechargePageContent() {
   }, [selectedPlan, createOrder, paymentType, router, returnTo, impact, notification]);
 
   return (
-    <main data-app-shell="recharge" className="app-page mx-auto flex h-[100dvh] max-w-md flex-col">
+    <main
+      data-app-shell="recharge"
+      className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white"
+    >
       <div className="h-1 w-full shrink-0" style={{ backgroundColor: pageConfig.theme_color }} />
 
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
@@ -98,7 +101,7 @@ function RechargePageContent() {
           variant="ghost"
           size="icon"
           onClick={goBack}
-          className="-ml-2 rounded-full text-muted-foreground hover:text-foreground"
+          className="-ml-2 rounded-full text-slate-400 hover:text-white"
           aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
@@ -111,18 +114,18 @@ function RechargePageContent() {
       <div className="flex flex-1 flex-col justify-between px-4 py-4">
         <section className="px-1">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-foreground">{pageConfig.description}</p>
+            <p className="text-sm font-medium text-slate-200">{pageConfig.description}</p>
             <div className="flex shrink-0 items-center gap-2">
               <Link
                 href="/profile/orders"
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-bold text-foreground transition-colors hover:bg-muted"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
               >
                 <Receipt className="h-3.5 w-3.5" aria-hidden />
                 我的订单
               </Link>
               <Link
                 href="/profile/spending"
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-bold text-foreground transition-colors hover:bg-muted"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
               >
                 <History className="h-3.5 w-3.5" aria-hidden />
                 消耗明细
@@ -135,17 +138,18 @@ function RechargePageContent() {
           {isError ? (
             <div className="flex min-h-[180px] flex-col items-center justify-center rounded-2xl border border-red-400/20 bg-red-400/5 px-6 text-center">
               <AlertCircle className="h-7 w-7 text-red-300" aria-hidden />
-              <p className="mt-3 text-sm font-semibold text-foreground">充值套餐暂时无法加载</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                请稍后重试，当前不会创建支付订单。
-              </p>
+              <p className="mt-3 text-sm font-semibold text-white">充值套餐暂时无法加载</p>
+              <p className="mt-1 text-xs text-slate-400">请稍后重试，当前不会创建支付订单。</p>
               <Button variant="outline" size="sm" className="mt-4" onClick={() => void refetch()}>
                 重新加载
               </Button>
             </div>
           ) : isLoading && plans.length === 0 ? (
             Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[68px] rounded-xl border border-border bg-card" />
+              <Skeleton
+                key={i}
+                className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
+              />
             ))
           ) : (
             plans.map((plan) => (
@@ -162,7 +166,7 @@ function RechargePageContent() {
         </section>
 
         <section className="flex justify-center">
-          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1 text-[10px] text-slate-500">
             <ShieldCheck className="h-3 w-3 text-green-500/80" aria-hidden />
             官方认证 · 安全支付 · 积分即时到账
           </span>
@@ -171,7 +175,7 @@ function RechargePageContent() {
 
       {/* 底部固定栏：单行（方法 chips + 立即支付） */}
       <div
-        className="shrink-0 border-t border-border bg-background/95 backdrop-blur-md"
+        className="shrink-0 border-t border-slate-800 bg-[#0A0A0A]/95 backdrop-blur-md"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="flex items-center gap-3 px-4 py-3">
@@ -197,7 +201,7 @@ function RechargePageContent() {
                       ? isAlipay
                         ? 'border-blue-500 bg-blue-500/15 text-blue-400'
                         : 'border-[#09B83E] bg-[#09B83E]/15 text-[#09B83E]'
-                      : 'border-border bg-card text-muted-foreground hover:bg-muted'
+                      : 'border-slate-700 bg-slate-900/50 text-slate-400 hover:bg-slate-800'
                   )}
                 >
                   <Icon className="h-4 w-4" aria-hidden />
@@ -212,8 +216,8 @@ function RechargePageContent() {
             className={cn(
               'flex-1 h-10 rounded-xl font-bold transition-all',
               selectedPlan && !createOrder.isPending
-                ? 'text-foreground hover:opacity-90 border-0'
-                : 'bg-muted text-muted-foreground'
+                ? 'text-white hover:opacity-90 border-0'
+                : 'bg-slate-800 text-slate-500'
             )}
             style={
               selectedPlan && !createOrder.isPending
@@ -235,7 +239,7 @@ function RechargePageContent() {
           if (!open) setNoticeDismissed(true);
         }}
       >
-        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-border bg-popover text-popover-foreground">
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/10 bg-[#151515] text-white">
           <DialogHeader className="items-center text-center">
             <div
               className="mb-2 flex h-12 w-12 items-center justify-center rounded-full"
@@ -247,14 +251,14 @@ function RechargePageContent() {
               <Sparkles className="h-6 w-6" aria-hidden />
             </div>
             <DialogTitle>星尘不足</DialogTitle>
-            <DialogDescription className="pt-1 leading-6 text-foreground">
+            <DialogDescription className="pt-1 leading-6 text-slate-300">
               {data?.insufficient_credits_notice}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
               <Button
-                className="w-full rounded-xl font-bold text-foreground"
+                className="w-full rounded-xl font-bold text-white"
                 style={{ backgroundColor: pageConfig.button_color }}
               >
                 选择套餐
@@ -269,15 +273,18 @@ function RechargePageContent() {
 
 function RechargePageSkeleton() {
   return (
-    <main className="app-page mx-auto flex h-[100dvh] max-w-md flex-col">
-      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-emerald-700 via-emerald-500 to-teal-300" />
+    <main className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#0A0A0A] text-white">
+      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
       <header className="flex shrink-0 items-center gap-2 px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
-        <Skeleton className="h-8 w-8 rounded-full bg-muted" />
-        <Skeleton className="h-5 w-24 rounded bg-muted" />
+        <Skeleton className="h-8 w-8 rounded-full bg-slate-900" />
+        <Skeleton className="h-5 w-24 rounded bg-slate-900" />
       </header>
       <div className="flex flex-1 flex-col gap-3 px-4 py-8">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[68px] rounded-xl border border-border bg-card" />
+          <Skeleton
+            key={i}
+            className="h-[68px] rounded-xl border border-slate-800 bg-slate-900/40"
+          />
         ))}
       </div>
     </main>

@@ -15,6 +15,7 @@ type BillingErrorBridgeWindow = Window &
 type InsufficientBalanceResponse = {
   error?: {
     type?: unknown;
+    message?: unknown;
     credits_required?: unknown;
     credits_available?: unknown;
   };
@@ -39,9 +40,13 @@ export function installBillingErrorBridge(server: BridgeServer): void {
 
   bridgeWindow.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const response = await originalFetch(input, init);
-    if (response.status !== 402 || !isGenerationRequest(input)) return response;
+    if (!isGenerationRequest(input)) return response;
 
-    void notifyInsufficientBalance(response.clone(), state.server);
+    if (response.status === 402) {
+      void notifyInsufficientBalance(response.clone(), state.server);
+    } else if (response.ok) {
+      void notifyWrappedInsufficientBalance(response.clone(), state.server);
+    }
     return response;
   };
 }
@@ -58,21 +63,50 @@ function isGenerationRequest(input: RequestInfo | URL): boolean {
 
 async function notifyInsufficientBalance(response: Response, server: BridgeServer): Promise<void> {
   try {
-    const payload = (await response.json()) as InsufficientBalanceResponse;
-    const error = payload.error;
-    if (
-      error?.type !== 'insufficient_balance' ||
-      typeof error.credits_required !== 'number' ||
-      typeof error.credits_available !== 'number'
-    ) {
-      return;
-    }
-
-    server.sendEvent('billing:insufficient', {
-      creditsRequired: error.credits_required,
-      creditsAvailable: error.credits_available,
-    });
+    const event = resolveInsufficientBalanceEvent(await response.json(), false);
+    if (event) server.sendEvent('billing:insufficient', event);
   } catch {
     // Keep ST's native error handling authoritative when the response is malformed.
   }
+}
+
+async function notifyWrappedInsufficientBalance(
+  response: Response,
+  server: BridgeServer
+): Promise<void> {
+  try {
+    const event = resolveInsufficientBalanceEvent(await response.json(), true);
+    if (event) server.sendEvent('billing:insufficient', event);
+  } catch {
+    // Non-JSON successful responses are unrelated to billing.
+  }
+}
+
+export function resolveInsufficientBalanceEvent(
+  payload: unknown,
+  allowWrappedResponse: boolean
+): { creditsRequired: number; creditsAvailable: number } | null {
+  const error =
+    payload && typeof payload === 'object'
+      ? (payload as InsufficientBalanceResponse).error
+      : undefined;
+  if (
+    error?.type === 'insufficient_balance' &&
+    typeof error.credits_required === 'number' &&
+    typeof error.credits_available === 'number'
+  ) {
+    return {
+      creditsRequired: error.credits_required,
+      creditsAvailable: error.credits_available,
+    };
+  }
+
+  if (
+    allowWrappedResponse &&
+    (error?.message === 'MiniApp Insufficient Credits' || error?.message === 'Payment Required')
+  ) {
+    return { creditsRequired: 0, creditsAvailable: 0 };
+  }
+
+  return null;
 }
