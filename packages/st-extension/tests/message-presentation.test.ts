@@ -7,6 +7,7 @@ import {
   resolveMiniappAppearance,
   shouldExpandComposer,
 } from '../src/patches/mobile-chat-theme.js';
+import { resolveInsufficientBalanceEvent } from '../src/patches/billing-error-bridge.js';
 
 describe('splitBoldSegments', () => {
   it('formats standard and spaced bold markers', () => {
@@ -56,5 +57,31 @@ describe('shouldExpandComposer', () => {
     assert.equal(shouldExpandComposer('仍然有较多文字内容不能反复抖动', 48, true), true);
     assert.equal(shouldExpandComposer('视觉上已经换行', 56, false), true);
     assert.equal(shouldExpandComposer('已清空', 48, true), false);
+  });
+});
+
+describe('resolveInsufficientBalanceEvent', () => {
+  it('recognizes direct and ST-wrapped insufficient balance responses', () => {
+    assert.deepEqual(
+      resolveInsufficientBalanceEvent(
+        {
+          error: {
+            type: 'insufficient_balance',
+            credits_required: 20,
+            credits_available: 0,
+          },
+        },
+        false
+      ),
+      { creditsRequired: 20, creditsAvailable: 0 }
+    );
+    assert.deepEqual(
+      resolveInsufficientBalanceEvent({ error: { message: 'MiniApp Insufficient Credits' } }, true),
+      { creditsRequired: 0, creditsAvailable: 0 }
+    );
+    assert.equal(
+      resolveInsufficientBalanceEvent({ error: { message: 'Unrelated error' } }, true),
+      null
+    );
   });
 });

@@ -3,6 +3,17 @@ import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
 
+export class ApiClientError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string
+  ) {
+    super(message);
+    this.name = 'ApiClientError';
+  }
+}
+
 /** 统一的 HTTP 客户端。仅在 lib/api/ 内部使用；业务层必须走 React Query hook 包装。 */
 export async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${path}`;
@@ -22,9 +33,9 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
   if (!res.ok) {
     console.error(`[API] Error ${res.status} for ${url}:`, json);
     if (json && !json.success) {
-      throw new Error(json.error.message);
+      throw new ApiClientError(json.error.message, res.status, json.error.code);
     }
-    throw new Error(`API error: ${res.status}`);
+    throw new ApiClientError(`API error: ${res.status}`, res.status);
   }
 
   if (!json) {

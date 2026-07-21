@@ -65,6 +65,7 @@ export default function ChatsPage() {
             <Link
               key={`${item.characterAvatar}/${item.fileName}`}
               href={`/tavern/${item.characterId}?${search.toString()}`}
+              prefetch={false}
               className="flex items-center gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm transition hover:border-primary/35 hover:shadow-md active:scale-[0.99]"
             >
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
