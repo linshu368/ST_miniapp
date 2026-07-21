@@ -126,7 +126,9 @@ export class BridgeClient {
     this.reconnectHandshakeTimeout = options?.reconnectHandshakeTimeout ?? 30_000;
     this.iframeLoadTimeout = options?.iframeLoadTimeout ?? 15_000;
     this.handshakeArrivalTimeout = options?.handshakeArrivalTimeout ?? 30_000;
-    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 10_000;
+    // 生产慢机首段握手可接近 17.5s；低于文档约定的 18s 会把健康启动误判为停摆，
+    // 在用户点卡后重载 iframe，反而把等待放大到数十秒。
+    this.visibleStallReloadMs = options?.visibleStallReloadMs ?? 18_000;
 
     this.stateMachine = createStateMachine();
     this.buffer = new RequestBuffer();

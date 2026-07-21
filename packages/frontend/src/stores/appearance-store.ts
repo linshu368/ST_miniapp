@@ -5,7 +5,7 @@ import { create } from 'zustand';
 export type AppearanceMode = 'dark' | 'light';
 
 const STORAGE_KEY = 'st_miniapp_appearance_mode';
-export const DEFAULT_APPEARANCE: AppearanceMode = 'light';
+export const DEFAULT_APPEARANCE: AppearanceMode = 'dark';
 
 export function parseAppearanceMode(value: unknown): AppearanceMode | undefined {
   return value === 'light' || value === 'dark' ? value : undefined;
