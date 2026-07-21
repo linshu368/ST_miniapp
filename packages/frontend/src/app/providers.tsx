@@ -17,6 +17,7 @@ import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 import { BridgeProvider } from '@/components/bridge/bridge-provider';
 import { STIframe } from '@/components/bridge/st-iframe';
+import { ModelPresetReconciler } from '@/components/bridge/model-preset-reconciler';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
@@ -47,6 +48,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <BridgeProvider>
           {children}
           <STIframe />
+          <ModelPresetReconciler />
         </BridgeProvider>
       ) : null}
       {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}

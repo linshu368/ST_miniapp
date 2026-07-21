@@ -11,6 +11,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Spin,
   Table,
@@ -23,11 +24,14 @@ import type { AdminEnvironment } from '../lib/environment';
 import {
   createPlatformPreset,
   listPlatformPresets,
+  listPlatformPresetModelAssignments,
   listPlatformPresetVersions,
   publishPlatformPreset,
   setPlatformPresetEnabled,
   updatePlatformPresetMetadata,
+  updatePlatformPresetModelAssignments,
   type PlatformPreset,
+  type PlatformPresetModelAssignment,
   type PlatformPresetVersion,
 } from '../lib/platformPresetsApi';
 import {
@@ -111,6 +115,7 @@ function PresetAnalysisPanel({ analysis }: { analysis: PresetAnalysis }) {
 export function PlatformPresetsView(props: PlatformPresetsViewProps) {
   const [presets, setPresets] = useState<PlatformPreset[]>([]);
   const [versions, setVersions] = useState<PlatformPresetVersion[]>([]);
+  const [modelAssignments, setModelAssignments] = useState<PlatformPresetModelAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [mutationLoading, setMutationLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +129,8 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
   const [metadataPreset, setMetadataPreset] = useState<PlatformPreset | null>(null);
   const [metadataName, setMetadataName] = useState('');
   const [metadataOrder, setMetadataOrder] = useState(0);
+  const [assignmentPreset, setAssignmentPreset] = useState<PlatformPreset | null>(null);
+  const [assignmentModelIds, setAssignmentModelIds] = useState<string[]>([]);
 
   const parsedEditor = useMemo(() => parsePresetJson(editor.source), [editor.source]);
   const currentDefault = useMemo(
@@ -135,12 +142,14 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
     setLoading(true);
     setError(null);
     try {
-      const [nextPresets, nextVersions] = await Promise.all([
+      const [nextPresets, nextVersions, nextAssignments] = await Promise.all([
         listPlatformPresets(props.client),
         listPlatformPresetVersions(props.client),
+        listPlatformPresetModelAssignments(props.client),
       ]);
       setPresets(nextPresets);
       setVersions(nextVersions);
+      setModelAssignments(nextAssignments);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '平台预设加载失败');
     } finally {
@@ -293,6 +302,57 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
     }
   };
 
+  const openAssignments = (preset: PlatformPreset) => {
+    setAssignmentPreset(preset);
+    setAssignmentModelIds(
+      modelAssignments
+        .filter((assignment) => assignment.preset_id === preset.id)
+        .map((assignment) => assignment.model_id)
+    );
+  };
+
+  const saveAssignments = async () => {
+    if (!props.canWrite || !assignmentPreset) return;
+    if (!assignmentPreset.enabled && assignmentModelIds.length > 0) {
+      message.error('已停用的预设不能分配给模型，请先重新启用');
+      return;
+    }
+    setMutationLoading(true);
+    try {
+      const version = await updatePlatformPresetModelAssignments({
+        client: props.client,
+        presetId: assignmentPreset.id,
+        modelIds: assignmentModelIds,
+        expectedVersion: modelAssignments[0]?.assignment_version ?? 0,
+      });
+      message.success(`适用模型已更新，分配版本 ${version}`);
+      setAssignmentPreset(null);
+      await reload();
+    } catch (mutationError) {
+      message.error(mutationError instanceof Error ? mutationError.message : '适用模型更新失败');
+    } finally {
+      setMutationLoading(false);
+    }
+  };
+
+  const clearDisabledPresetAssignments = async (preset: PlatformPreset) => {
+    setMutationLoading(true);
+    try {
+      await updatePlatformPresetModelAssignments({
+        client: props.client,
+        presetId: preset.id,
+        modelIds: [],
+        expectedVersion: modelAssignments[0]?.assignment_version ?? 0,
+      });
+      message.success('已清除停用预设的模型分配');
+      await reload();
+    } catch (mutationError) {
+      message.error(mutationError instanceof Error ? mutationError.message : '模型分配清除失败');
+    } finally {
+      setMutationLoading(false);
+    }
+  };
+
   if (loading && presets.length === 0) {
     return (
       <div className="content-loading">
@@ -366,6 +426,26 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
                           </Tag>
                         ),
                       },
+                      {
+                        title: '适用模型',
+                        key: 'assigned_models',
+                        render: (_value, preset) => {
+                          const assigned = modelAssignments.filter(
+                            (assignment) => assignment.preset_id === preset.id
+                          );
+                          if (assigned.length === 0) {
+                            return <Typography.Text type="secondary">未专属分配</Typography.Text>;
+                          }
+                          return (
+                            <Space size={[0, 4]} wrap>
+                              {assigned.slice(0, 3).map((assignment) => (
+                                <Tag key={assignment.model_id}>{assignment.display_name}</Tag>
+                              ))}
+                              {assigned.length > 3 ? <Tag>+{assigned.length - 3}</Tag> : null}
+                            </Space>
+                          );
+                        },
+                      },
                       { title: '排序', dataIndex: 'sort_order', width: 80 },
                       {
                         title: '创建时间',
@@ -375,7 +455,7 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
                       {
                         title: '操作',
                         fixed: 'right',
-                        width: 330,
+                        width: 420,
                         render: (_value, preset) => (
                           <Space wrap>
                             <Button size="small" onClick={() => setSelectedPreset(preset)}>
@@ -395,6 +475,33 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
                             >
                               名称/排序
                             </Button>
+                            {preset.enabled ? (
+                              <Button
+                                size="small"
+                                disabled={!props.canWrite}
+                                onClick={() => openAssignments(preset)}
+                              >
+                                调整适用模型
+                              </Button>
+                            ) : modelAssignments.some(
+                                (assignment) => assignment.preset_id === preset.id
+                              ) ? (
+                              <Popconfirm
+                                title="清除该停用预设的模型分配？"
+                                description="清除后相关模型继续使用全局默认预设。"
+                                okText="确认清除"
+                                cancelText="取消"
+                                onConfirm={() => void clearDisabledPresetAssignments(preset)}
+                              >
+                                <Button
+                                  size="small"
+                                  danger
+                                  disabled={!props.canWrite || mutationLoading}
+                                >
+                                  清除模型分配
+                                </Button>
+                              </Popconfirm>
+                            ) : null}
                             {!preset.is_default ? (
                               <>
                                 <Popconfirm
@@ -563,6 +670,48 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
               onChange={(value) => setMetadataOrder(value ?? 0)}
             />
           </label>
+        </Space>
+      </Modal>
+
+      <Modal
+        width={640}
+        open={assignmentPreset !== null}
+        title={`调整适用模型：${assignmentPreset?.display_name ?? ''}`}
+        okText="保存分配"
+        cancelText="取消"
+        confirmLoading={mutationLoading}
+        onCancel={() => setAssignmentPreset(null)}
+        onOk={() => void saveAssignments()}
+      >
+        <Space direction="vertical" className="field-full" size="middle">
+          <Alert
+            type="info"
+            showIcon
+            message="每个模型最多使用一个专属预设"
+            description="选择已分配给其他预设的模型时，保存后会自动移动到当前预设。未选择的模型使用全局默认预设。"
+          />
+          <Select
+            mode="multiple"
+            className="field-full"
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="选择当前预设适用的模型"
+            value={assignmentModelIds}
+            onChange={setAssignmentModelIds}
+            options={modelAssignments.map((assignment) => {
+              const assignedPreset = presets.find((preset) => preset.id === assignment.preset_id);
+              return {
+                value: assignment.model_id,
+                label: assignedPreset
+                  ? `${assignment.display_name}（当前：${assignedPreset.display_name}）`
+                  : assignment.display_name,
+              };
+            })}
+          />
+          <Typography.Text type="secondary">
+            当前已选择 {assignmentModelIds.length} 个模型
+          </Typography.Text>
         </Space>
       </Modal>
     </>

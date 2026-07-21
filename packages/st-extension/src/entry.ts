@@ -35,6 +35,7 @@ import {
   handleRenameChat,
   handleDeleteChat,
   handleChangeModel,
+  handleSyncModelPreset,
   handleGetReadyState,
   setServerRef,
 } from './handlers/index.js';
@@ -106,6 +107,9 @@ function init(): void {
   server.registerHandler('renameChat', (p) => handleRenameChat(p as any));
   server.registerHandler('deleteChat', (p) => handleDeleteChat(p as any));
   server.registerHandler('changeModel', (p) => handleChangeModel(p as any));
+  server.registerHandler('syncModelPreset', (p) =>
+    handleSyncModelPreset(p as Parameters<typeof handleSyncModelPreset>[0])
+  );
   server.registerHandler('getReadyState', () => handleGetReadyState());
 
   // Wire getReadyState handler to server reference

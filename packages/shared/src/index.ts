@@ -16,6 +16,7 @@ export * from './api/notifications';
 export * from './api/support';
 export * from './config/database';
 export * from './st-bridge';
+export * from './platform-presets';
 export * from './png-parser';
 export * from './dev-fixtures';
 export * from './lobby-featured';
