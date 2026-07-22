@@ -147,6 +147,10 @@ async function getOrCreateSession(input: SimulationWorkerInput): Promise<WorkerS
   const existing = sessions.get(input.conversationId);
   if (existing) return existing;
 
+  const simulationStBaseUrl = (config.SIMULATION_ST_BASE_URL ?? config.ST_BASE_URL).replace(
+    /\/$/,
+    ''
+  );
   const provision = await provisionSimulationConversation({
     conversationId: input.conversationId,
     stHandle: input.stHandle,
@@ -157,7 +161,7 @@ async function getOrCreateSession(input: SimulationWorkerInput): Promise<WorkerS
   const browser = await getBrowser();
   const context = await browser.newContext();
   const cookieHeader = await loginStUser(input.stHandle);
-  const stUrl = new URL(config.ST_BASE_URL);
+  const stUrl = new URL(simulationStBaseUrl);
   await context.addCookies(
     cookieHeader
       .split(';')
@@ -177,7 +181,7 @@ async function getOrCreateSession(input: SimulationWorkerInput): Promise<WorkerS
   );
 
   const page = await context.newPage();
-  await page.goto(`${config.ST_BASE_URL}/?miniapp_simulation=1`, {
+  await page.goto(`${simulationStBaseUrl}/?miniapp_simulation=1`, {
     waitUntil: 'domcontentloaded',
     timeout: 60_000,
   });

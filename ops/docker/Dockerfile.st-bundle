@@ -123,6 +123,11 @@ ENV S6_KEEP_ENV=1 \
     S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=60000
 
+# Debian Chromium needs writable XDG directories for its crashpad database when
+# launched by the non-root node user in Railway's container runtime.
+ENV XDG_CONFIG_HOME=/tmp/.chromium \
+    XDG_CACHE_HOME=/tmp/.chromium
+
 # --- ST runtime behavior ---
 # NODE_ENV=production mirrors the vendor SillyTavern Dockerfile.
 ENV NODE_ENV=production
