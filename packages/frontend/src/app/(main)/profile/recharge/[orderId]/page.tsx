@@ -25,6 +25,7 @@ export default function PaymentPendingPage() {
   const orderId = params?.orderId ? decodeURIComponent(params.orderId) : undefined;
   const search = useSearchParams();
   const payUrl = search?.get('pay_url') ?? null;
+  const paymentStarted = search?.get('payment_started') === '1';
   const returnTo = safePaymentReturnTo(search?.get('returnTo') ?? null);
 
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function PaymentPendingPage() {
 
   const { notification } = useHaptic();
   const [congratsFired, setCongratsFired] = useState(false);
-  const [payUrlOpened, setPayUrlOpened] = useState(false);
+  const [payUrlOpened, setPayUrlOpened] = useState(paymentStarted);
   useEffect(() => {
     if (order?.status === 'completed' && !congratsFired) {
       notification('success');
