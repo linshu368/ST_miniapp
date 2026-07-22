@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
-import { openExternalUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
 const PAYMENT_TYPES: PaymentType[] = [
   // 'alipay', // 支付宝通道暂时停用
@@ -89,7 +89,7 @@ function RechargePageContent() {
       );
       // 首次跳转必须紧跟“立即支付”的用户操作。订单页 effect 在手机端可能被
       // Telegram/系统浏览器视为非用户触发，从而拦截厂商页面拉起微信。
-      openExternalUrl(result.pay_url);
+      openPaymentUrl(result.pay_url);
     } catch {
       notification('error');
     }
