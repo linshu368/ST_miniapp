@@ -52,6 +52,7 @@ const ConfigSchema = z.object({
   // ST LLM endpoint 指向平台代理网关的可达地址（写入 settings.json）。
   // 本地默认 backend dev 地址；prod/staging 通过环境变量覆盖为对外可达 URL。
   LLM_PROXY_URL: z.string().url().default('http://localhost:3001/api/platform/llm-proxy/v1'),
+  SIMULATION_CHROMIUM_EXECUTABLE: z.string().default('/usr/bin/chromium'),
 
   // 健康监控（默认 9090，0 = 禁用）
   HEALTH_PORT: z

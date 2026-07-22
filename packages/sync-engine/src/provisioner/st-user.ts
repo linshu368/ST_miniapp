@@ -135,6 +135,26 @@ export async function ensureStUser(opts: CreateUserOptions): Promise<CreateUserR
   return { created: true };
 }
 
+export async function loginStUser(handle: string): Promise<string> {
+  const csrf = await fetchCsrfToken();
+  const res = await fetch(`${config.ST_BASE_URL}/api/users/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: csrf.cookie,
+      'X-CSRF-Token': csrf.token,
+    },
+    body: JSON.stringify({ handle, password: deriveUserPassword(handle) }),
+  });
+  if (!res.ok) {
+    throw new StUserError(`ST 用户 '${handle}' 登录失败（${res.status}）：${await res.text()}`);
+  }
+  const responseCookies = res.headers.getSetCookie?.() ?? [];
+  const fallback = res.headers.get('set-cookie');
+  if (responseCookies.length === 0 && fallback) responseCookies.push(fallback);
+  return mergeCookieHeader(csrf.cookie, responseCookies);
+}
+
 // ─── 错误类型 ─────────────────────────────────────────────────────────────────
 export class StUserError extends Error {
   constructor(

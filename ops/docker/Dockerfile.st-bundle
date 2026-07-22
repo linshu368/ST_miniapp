@@ -101,7 +101,7 @@ FROM node:20-bookworm-slim
 
 # --- 系统依赖 ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates xz-utils tini \
+      curl ca-certificates xz-utils tini chromium \
  && rm -rf /var/lib/apt/lists/*
 
 # --- s6-overlay v3 ---

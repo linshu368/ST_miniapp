@@ -20,7 +20,7 @@ import {
 } from '@miniapp/shared';
 import { randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
-import { verifyPlatformToken } from '../lib/llm-token.js';
+import { verifyPlatformTokenContext, type PlatformTokenContext } from '../lib/llm-token.js';
 import {
   fetchModelCatalogSnapshot,
   getModelBillingContext,
@@ -37,6 +37,7 @@ import {
   resolveEffectiveModelMarkup,
 } from '../features/billing/free-quota.js';
 import { resolveFixedDeduction } from '../features/billing/usage-pricing.js';
+import { getSupabaseClient } from '../lib/supabase.js';
 
 const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
 const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -52,6 +53,88 @@ const wallets = new MiniappWalletRepository();
 const userSettings = new MiniappUserSettingsRepository();
 const freeQuotas = new MiniappCharacterFreeQuotaRepository();
 
+async function getSimulationModelId(conversationId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseClient()
+    .schema('miniapp_simulation' as 'public')
+    .from('conversations')
+    .select('effective_model_id')
+    .eq('id', conversationId)
+    .single();
+  if (error || !data) {
+    throw new Error(`simulation conversation not found: ${conversationId}`);
+  }
+  const row = data as { effective_model_id?: string | null };
+  return row.effective_model_id ?? null;
+}
+
+async function getSimulationTurnMetadata(
+  conversationId: string,
+  turnId: string
+): Promise<Record<string, unknown>> {
+  const { data, error } = await getSupabaseClient()
+    .schema('miniapp_simulation' as 'public')
+    .from('conversations')
+    .select('current_turn_id,current_turn_metadata')
+    .eq('id', conversationId)
+    .single();
+  if (error || !data) return {};
+  const row = data as {
+    current_turn_id?: string | null;
+    current_turn_metadata?: unknown;
+  };
+  if (row.current_turn_id !== turnId) return {};
+  return row.current_turn_metadata &&
+    typeof row.current_turn_metadata === 'object' &&
+    !Array.isArray(row.current_turn_metadata)
+    ? (row.current_turn_metadata as Record<string, unknown>)
+    : {};
+}
+
+async function getSimulationEffectiveContext(
+  conversationId: string,
+  capturedPresetId: string | null
+): Promise<Record<string, unknown>> {
+  const supabase = getSupabaseClient();
+  const { data } = await supabase
+    .schema('miniapp_simulation' as 'public')
+    .from('conversations')
+    .select('effective_model_id,preset_id')
+    .eq('id', conversationId)
+    .single();
+  const conversation = data as {
+    effective_model_id?: string | null;
+    preset_id?: string | null;
+  } | null;
+  const presetId = conversation?.preset_id ?? capturedPresetId;
+  let presetVersion: string | null = null;
+  if (presetId) {
+    const { data: preset } = await supabase
+      .schema('st_platform' as 'public')
+      .from('platform_presets')
+      .select('updated_at')
+      .eq('id', presetId)
+      .maybeSingle();
+    presetVersion = (preset as { updated_at?: string } | null)?.updated_at ?? null;
+  }
+  return {
+    model_id: conversation?.effective_model_id ?? '',
+    preset_id: presetId,
+    preset_version: presetVersion,
+  };
+}
+
+function parseBase64JsonHeader(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string' || value.length === 0) return {};
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(value, 'base64').toString('utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 // ─── JWT 验签中间件 ────────────────────────────────────────────────────────────
 
 async function requirePlatformToken(request: FastifyRequest, reply: FastifyReply) {
@@ -66,8 +149,8 @@ async function requirePlatformToken(request: FastifyRequest, reply: FastifyReply
   }
 
   const token = authHeader.slice(7);
-  const userId = verifyPlatformToken(token);
-  if (!userId) {
+  const context = verifyPlatformTokenContext(token);
+  if (!context) {
     requestLogger(request.log, 'llm-proxy').sys.warn(
       { event: 'llm.auth.invalid_token' },
       'invalid platformToken'
@@ -80,17 +163,23 @@ async function requirePlatformToken(request: FastifyRequest, reply: FastifyReply
     });
   }
 
-  (request as FastifyRequest & { platformUserId: string }).platformUserId = userId;
+  (request as FastifyRequest & { platformContext: PlatformTokenContext }).platformContext = context;
 }
 
 // ─── 路由注册 ──────────────────────────────────────────────────────────────────
 
 export default async function llmProxyRoutes(app: FastifyInstance) {
+  // @frontend-ready: true
   app.all(
     '/api/platform/llm-proxy/v1/*',
     { preHandler: [requirePlatformToken] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const userId = (request as FastifyRequest & { platformUserId: string }).platformUserId;
+      const platformContext = (
+        request as FastifyRequest & { platformContext: PlatformTokenContext }
+      ).platformContext;
+      const userId = platformContext.mode === 'production' ? platformContext.userId : null;
+      const simulationConversationId =
+        platformContext.mode === 'simulation' ? platformContext.conversationId : null;
       const log = requestLogger(request.log, 'llm-proxy');
 
       if (!LLM_API_KEY) {
@@ -137,10 +226,11 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       // 计费仍走旧模型。这里在每次生成前覆盖请求体，保证模型与计费快照一致。
       if (isChatCompletion) {
         try {
-          const [snapshot, persistedModelId] = await Promise.all([
-            fetchModelCatalogSnapshot(),
-            userSettings.getSelectedModelId(userId),
-          ]);
+          const persistedModelId =
+            platformContext.mode === 'production'
+              ? await userSettings.getSelectedModelId(platformContext.userId)
+              : await getSimulationModelId(platformContext.conversationId);
+          const snapshot = await fetchModelCatalogSnapshot();
           const effectiveModelId = resolveEffectiveSelectedModelId(
             snapshot.catalog,
             persistedModelId
@@ -155,6 +245,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
               {
                 event: 'llm.model.mismatch_corrected',
                 userId,
+                simulationConversationId,
                 requestedModel,
                 authoritativeModel: modelName,
                 selectedModelId: authoritativeModel.id,
@@ -164,7 +255,13 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           }
         } catch (err) {
           log.sys.error(
-            { event: 'llm.model.resolve_failed', err, userId, requestedModel: modelName },
+            {
+              event: 'llm.model.resolve_failed',
+              err,
+              userId,
+              simulationConversationId,
+              requestedModel: modelName,
+            },
             'failed to resolve authoritative user model'
           );
           return reply.status(500).send({
@@ -191,9 +288,55 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
       if (isChatCompletion) {
         log.biz.info(
-          { event: 'llm.request.start', userId, model: modelName, characterId, presetId },
+          {
+            event: 'llm.request.start',
+            userId,
+            simulationConversationId,
+            model: modelName,
+            characterId,
+            presetId,
+          },
           'LLM 生成请求开始'
         );
+      }
+
+      let simulation =
+        platformContext.mode === 'simulation' && isChatCompletion
+          ? {
+              conversation_id: platformContext.conversationId,
+              turn_id: String(request.headers['x-st-simulation-turn-id'] ?? ''),
+              metadata: parseBase64JsonHeader(request.headers['x-st-simulation-metadata']),
+              effective_config: parseBase64JsonHeader(
+                request.headers['x-st-simulation-effective-config']
+              ),
+            }
+          : undefined;
+      if (
+        simulation &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          simulation.turn_id
+        )
+      ) {
+        return reply.status(400).send({
+          error: { message: 'Missing or invalid simulation turn id', type: 'invalid_request' },
+        });
+      }
+      if (simulation) {
+        const effectiveContext = await getSimulationEffectiveContext(
+          simulation.conversation_id,
+          typeof simulation.effective_config.preset_id === 'string'
+            ? simulation.effective_config.preset_id
+            : null
+        );
+        simulation = {
+          ...simulation,
+          metadata: await getSimulationTurnMetadata(simulation.conversation_id, simulation.turn_id),
+          effective_config: {
+            ...simulation.effective_config,
+            ...effectiveContext,
+            model_name: modelName,
+          },
+        };
       }
 
       const chargeId = randomUUID();
@@ -202,7 +345,11 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       let modelMarkup = billingContext.modelMarkup;
       let freeQuotaGranted = false;
 
-      if (isChatCompletion && modelMarkup === 0) {
+      if (
+        platformContext.mode === 'production' &&
+        isChatCompletion &&
+        modelMarkup === 0
+      ) {
         if (!isQuotaTrackableCharacterId(characterId)) {
           // 轮次无法归属到角色卡时不判定为免费轮，按额度耗尽后的倍率计费并放行：
           // character_id 一直是可选输入，免费模型不应因为它缺失而完全无法对话。
@@ -226,7 +373,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             const quotaLimit = await getCharacterFreeChatQuotaLimit();
             const quotaDecision = await freeQuotas.reserve({
               chargeId,
-              userId,
+              userId: platformContext.userId,
               characterId,
               quotaLimit,
             });
@@ -325,7 +472,18 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
       // ── 余额预检：不足基线时在调用上游前返回 402，由 ST bridge 引导充值 ─────────
       try {
-        if (fixedDeduction.amount === 0) {
+        if (platformContext.mode === 'simulation') {
+          log.biz.debug(
+            {
+              event: 'llm.balance.check_skipped',
+              simulationConversationId,
+              model: modelName,
+            },
+            'simulation balance check skipped'
+          );
+        } else if (!userId) {
+          throw new Error('production user id is missing');
+        } else if (fixedDeduction.amount === 0) {
           log.biz.debug(
             { event: 'llm.balance.check_skipped', userId, model: modelName },
             'free model balance check skipped'
@@ -410,6 +568,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           saveChatHistory(
             {
               user_id: userId,
+              simulation,
               model: modelName,
               ...billingSnapshot,
               user_input: userInput,
@@ -458,6 +617,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           saveChatHistory(
             {
               user_id: userId,
+              simulation,
               model: modelName,
               ...billingSnapshot,
               user_input: userInput,
@@ -536,6 +696,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                   {
                     event: 'llm.generation.completed',
                     userId,
+                    simulationConversationId,
                     model: modelName,
                     generationId,
                     replyChars: replyChunks.join('').length,
@@ -546,6 +707,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                   saveChatHistory(
                     {
                       user_id: userId,
+                      simulation,
                       model: modelName,
                       ...billingSnapshot,
                       user_input: userInput,
@@ -561,13 +723,20 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                 }
               } else {
                 log.biz.warn(
-                  { event: 'llm.generation.interrupted', userId, model: modelName, generationId },
+                  {
+                    event: 'llm.generation.interrupted',
+                    userId,
+                    simulationConversationId,
+                    model: modelName,
+                    generationId,
+                  },
                   'stream ended without [DONE], skipping deduction'
                 );
                 if (isChatCompletion && userInput) {
                   saveChatHistory(
                     {
                       user_id: userId,
+                      simulation,
                       model: modelName,
                       ...billingSnapshot,
                       user_input: userInput,
@@ -624,6 +793,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           saveChatHistory(
             {
               user_id: userId,
+              simulation,
               model: modelName,
               ...billingSnapshot,
               user_input: userInput,
@@ -645,6 +815,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         saveChatHistory(
           {
             user_id: userId,
+            simulation,
             model: modelName,
             ...billingSnapshot,
             user_input: userInput,

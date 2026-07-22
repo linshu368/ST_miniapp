@@ -55,6 +55,9 @@ export const config = {
   // ── Provision 服务 ────────────────────────────────────────────────────────
   /** sync-engine Bridge API 地址，Bridge 调用 provision */
   stProvisionUrl: process.env.ST_PROVISION_URL || 'http://127.0.0.1:9091',
+  simulation: {
+    serviceKey: process.env.SIMULATION_SERVICE_KEY || '',
+  },
 
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {
