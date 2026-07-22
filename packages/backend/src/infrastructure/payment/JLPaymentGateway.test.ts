@@ -1,5 +1,5 @@
 import { createSign, createVerify, generateKeyPairSync } from 'crypto';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { JLPaymentGateway } from './JLPaymentGateway.js';
 
@@ -43,6 +43,10 @@ function signPlatform(params: Record<string, unknown>): string {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+beforeEach(() => {
+  vi.spyOn(console, 'info').mockImplementation(() => undefined);
 });
 
 describe('JLPaymentGateway V2', () => {
@@ -96,15 +100,24 @@ describe('JLPaymentGateway V2', () => {
     });
   });
 
-  it('rejects QR-code-only responses instead of sending users to a QR page', async () => {
+  it.each([
+    {
+      payType: 'qrcode',
+      payInfo: 'weixin://wxpay/bizpayurl?pr=test',
+    },
+    {
+      payType: 'jump',
+      payInfo: 'https://pay.example/checkout',
+    },
+  ])('rejects $payType responses instead of opening a QR cashier', async ({ payType, payInfo }) => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
         const response: Record<string, unknown> = {
           code: 0,
           trade_no: 'provider-order',
-          pay_type: 'qrcode',
-          pay_info: 'weixin://wxpay/bizpayurl?pr=test',
+          pay_type: payType,
+          pay_info: payInfo,
           timestamp: '1784730000',
           sign_type: 'RSA',
         };
@@ -127,7 +140,7 @@ describe('JLPaymentGateway V2', () => {
 
     expect(result).toEqual({
       success: false,
-      errorMessage: '支付通道未返回微信直达链接（qrcode）',
+      errorMessage: `支付厂商未返回微信直达 scheme（${payType}）`,
     });
   });
 
