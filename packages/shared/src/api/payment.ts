@@ -132,7 +132,7 @@ export interface CreatePaymentOrderRequest {
 }
 export interface CreatePaymentOrderData {
   order: PaymentOrder;
-  /** JLPay 返回的 H5 支付链接 */
+  /** JLPay 返回的支付目标：微信 scheme 或 H5 跳转链接 */
   pay_url: string;
 }
 

@@ -18,7 +18,7 @@ import {
   remainingSeconds,
   safePaymentReturnTo,
 } from '@/lib/utils/payment';
-import { openExternalUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
 export default function PaymentPendingPage() {
   const params = useParams<{ orderId: string }>();
@@ -57,7 +57,7 @@ export default function PaymentPendingPage() {
   useEffect(() => {
     if (!payUrl || payUrlOpened || order?.status !== 'pending') return;
     setPayUrlOpened(true);
-    openExternalUrl(payUrl);
+    openPaymentUrl(payUrl);
   }, [order?.status, payUrl, payUrlOpened]);
 
   const [now, setNow] = useState(() => Date.now());
@@ -205,7 +205,7 @@ function PendingView({
 
       {payUrl ? (
         <Button
-          onClick={() => openExternalUrl(payUrl)}
+          onClick={() => openPaymentUrl(payUrl)}
           className="h-12 w-full rounded-xl border-0 bg-primary font-bold text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90"
         >
           重新打开支付页

@@ -87,6 +87,7 @@ export default async function paymentRoutes(app: FastifyInstance) {
         userId: dbUser.id,
         planId: body.plan_id,
         paymentType: body.payment_type,
+        clientIp: request.ip,
       });
       return reply.send(ok(data));
     } catch (error) {
