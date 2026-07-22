@@ -130,16 +130,21 @@ export class JLPaymentGateway {
 
       const payType = result.pay_type?.toLowerCase();
       const paymentUrl = typeof result.pay_info === 'string' ? result.pay_info.trim() : '';
-      if (
-        (payType === 'scheme' && /^weixin:\/\//i.test(paymentUrl)) ||
-        (payType === 'jump' && /^https?:\/\//i.test(paymentUrl))
-      ) {
+      console.info(
+        {
+          payType: payType || 'unknown',
+          paymentTarget: describePaymentTarget(paymentUrl),
+        },
+        '[payment] JLPay V2 create response'
+      );
+
+      if (payType === 'scheme' && /^weixin:\/\//i.test(paymentUrl)) {
         return { success: true, paymentUrl };
       }
 
       return {
         success: false,
-        errorMessage: `支付通道未返回微信直达链接（${payType || 'unknown'}）`,
+        errorMessage: `支付厂商未返回微信直达 scheme（${payType || 'unknown'}）`,
       };
     } catch (error) {
       console.error('[payment] JLPay V2 createPayment failed', error);
@@ -262,4 +267,14 @@ function normalizePem(value: string, label: 'PRIVATE KEY' | 'PUBLIC KEY'): strin
       .match(/.{1,64}/g)
       ?.join('\n') ?? normalized;
   return `-----BEGIN ${label}-----\n${body}\n-----END ${label}-----`;
+}
+
+function describePaymentTarget(value: string): string {
+  if (/^weixin:\/\//i.test(value)) return 'weixin://';
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return value ? 'invalid' : 'empty';
+  }
 }
