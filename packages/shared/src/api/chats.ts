@@ -1,7 +1,6 @@
 export interface UserChatListItem {
   fileName: string;
   characterAvatar: string;
-  characterAvatarUrl: string;
   characterName: string;
   characterId: string | null;
   isGroup: boolean;
@@ -14,8 +13,4 @@ export interface UserChatListItem {
 export interface GetUserChatsData {
   items: UserChatListItem[];
   total: number;
-}
-
-export interface GetLatestUserChatData {
-  item: UserChatListItem | null;
 }

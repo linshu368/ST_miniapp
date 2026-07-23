@@ -12,7 +12,6 @@
 import { get as lodashGet, set as lodashSet, unset as lodashUnset, cloneDeep } from 'lodash-es';
 import type { PlatformSettingsRow, UserSettingsRow, PresetRow } from './fetcher.js';
 import { applyActivePreset, isPresetOwnedWritablePath } from './preset-apply.js';
-import { DEFAULT_USER_AVATAR_FILENAME } from './user-avatar-constants.js';
 
 /**
  * 平台强制禁用的 ST 内置扩展（iframe 冷启动优化 P0-#1）。
@@ -278,9 +277,7 @@ function applyUserPersona(merged: Record<string, unknown>, persona?: PersonaInpu
   const existingAvatar = lodashGet(merged, 'user_avatar');
   const avatarFile =
     persona.avatarFile ||
-    (typeof existingAvatar === 'string' && existingAvatar && existingAvatar !== 'user-default.png'
-      ? existingAvatar
-      : DEFAULT_USER_AVATAR_FILENAME);
+    (typeof existingAvatar === 'string' && existingAvatar ? existingAvatar : 'user-default.png');
 
   // ST 启动时是从 settings.username 读用户显示名注入内存 name1（见 vendor script.js
   // getSettings: `if (settings.username) name1 = settings.username`），保存时又把 name1

@@ -4,7 +4,6 @@ import type { ActionMeta } from './types.js';
 export const SelectCharacterPayloadSchema = z.object({
   avatar: z.string(),
   forceNewChat: z.boolean().optional(),
-  skipChatLoad: z.boolean().optional(),
 });
 
 export const SelectCharacterResultSchema = z.object({

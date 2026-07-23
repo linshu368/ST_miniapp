@@ -1,7 +1,6 @@
 'use client';
 
 import { create } from 'zustand';
-import { DEFAULT_USER_AVATAR_URL } from '@miniapp/shared';
 
 import { getTelegramDefaultDisplayName, getTelegramPhotoUrl } from '@/lib/telegram/user';
 
@@ -53,7 +52,7 @@ function writeOverride(value: string | undefined): void {
 
 export const useUserProfileStore = create<UserProfileState>((set) => ({
   displayName: '你',
-  photoUrl: DEFAULT_USER_AVATAR_URL,
+  photoUrl: undefined,
   hasCustomName: false,
   hydrate: () => {
     if (typeof window === 'undefined') return;
@@ -61,7 +60,7 @@ export const useUserProfileStore = create<UserProfileState>((set) => ({
     const fallback = getTelegramDefaultDisplayName();
     set({
       displayName: override ?? fallback,
-      photoUrl: getTelegramPhotoUrl() ?? DEFAULT_USER_AVATAR_URL,
+      photoUrl: getTelegramPhotoUrl(),
       hasCustomName: !!override,
     });
   },
@@ -88,6 +87,6 @@ export const useUserProfileStore = create<UserProfileState>((set) => ({
     set({ displayName: fallback, hasCustomName: !!readOverride() });
   },
   applyServerPhotoUrl: (next) => {
-    set({ photoUrl: next.trim() || DEFAULT_USER_AVATAR_URL });
+    set({ photoUrl: next.trim() || getTelegramPhotoUrl() });
   },
 }));
