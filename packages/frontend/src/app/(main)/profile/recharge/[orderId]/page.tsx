@@ -94,7 +94,7 @@ export default function PaymentPendingPage() {
           variant="ghost"
           size="icon"
           onClick={goBack}
-          className="-ml-2 rounded-full text-muted-foreground hover:text-foreground"
+          className="-ml-2 rounded-full text-slate-400 hover:text-white"
           aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
@@ -120,8 +120,8 @@ export default function PaymentPendingPage() {
 
 function Screen({ children }: { children: React.ReactNode }) {
   return (
-    <main className="app-page mx-auto flex max-w-md flex-col pt-[env(safe-area-inset-top)]">
-      <div className="h-1.5 w-full bg-gradient-to-r from-emerald-700 via-emerald-500 to-teal-300" />
+    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-[#0A0A0A] pt-[env(safe-area-inset-top)] text-white">
+      <div className="h-1.5 w-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
       {children}
     </main>
   );
@@ -129,7 +129,7 @@ function Screen({ children }: { children: React.ReactNode }) {
 
 function LoadingView() {
   return (
-    <div className="flex flex-1 items-center justify-center p-10 text-muted-foreground">
+    <div className="flex flex-1 items-center justify-center p-10 text-slate-400">
       <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden />
       加载中
     </div>
@@ -140,11 +140,11 @@ function ErrorView({ onBack, message }: { onBack: () => void; message: string })
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-10 text-center">
       <XCircle className="h-12 w-12 text-red-400" aria-hidden />
-      <div className="text-sm text-foreground">{message}</div>
+      <div className="text-sm text-slate-300">{message}</div>
       <Button
         variant="outline"
         onClick={onBack}
-        className="border-border px-6 text-foreground hover:bg-muted"
+        className="px-6 border-slate-700 text-slate-300 hover:bg-slate-900"
       >
         返回
       </Button>
@@ -167,35 +167,33 @@ function PendingView({
   return (
     <div className="flex flex-1 flex-col items-center gap-6 pt-6">
       <div className="relative flex h-24 w-24 items-center justify-center">
-        <div className="absolute inset-0 animate-ping rounded-full bg-primary/15" aria-hidden />
-        <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25">
+        <div className="absolute inset-0 animate-ping rounded-full bg-pink-500/20" aria-hidden />
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-purple-600 text-white shadow-lg shadow-pink-500/40">
           <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
         </div>
       </div>
 
       <div className="text-center">
         <h1 className="text-xl font-bold">正在等待支付</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          完成付款后积分将自动到账，通常不超过 10 秒
-        </p>
+        <p className="mt-1 text-sm text-slate-400">完成付款后积分将自动到账，通常不超过 10 秒</p>
       </div>
 
-      <div className="app-surface w-full p-5">
+      <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
         <Row label="实付金额" value={`¥ ${formatYuanShort(order.amount_cents)}`} bold />
         <Row label="将到账" value={`${formatNumber(total)} 星尘`} />
         <Row label="支付方式" value={paymentTypeLabel(order.payment_type)} />
         <Row
           label="订单号"
-          value={<span className="font-mono text-[11px] text-muted-foreground">{order.id}</span>}
+          value={<span className="font-mono text-[11px] text-slate-400">{order.id}</span>}
         />
-        <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="mt-3 flex items-center justify-between border-t border-slate-800 pt-3">
+          <span className="flex items-center gap-1 text-xs text-slate-400">
             <Clock className="h-3 w-3" aria-hidden /> 订单剩余
           </span>
           <span
             className={cn(
               'font-mono text-sm tabular-nums',
-              remaining < 60 ? 'text-red-400' : 'text-foreground'
+              remaining < 60 ? 'text-red-400' : 'text-slate-200'
             )}
           >
             {formatCountdown(remaining)}
@@ -206,7 +204,7 @@ function PendingView({
       {payUrl ? (
         <Button
           onClick={() => openPaymentUrl(payUrl)}
-          className="h-12 w-full rounded-xl border-0 bg-primary font-bold text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90"
+          className="h-12 w-full rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white shadow-lg shadow-pink-500/40 hover:opacity-90 border-0"
         >
           重新打开支付页
         </Button>
@@ -215,12 +213,12 @@ function PendingView({
       <Button
         variant="outline"
         onClick={onBack}
-        className="h-11 w-full rounded-xl border-border text-foreground hover:bg-muted"
+        className="h-11 w-full rounded-xl border-slate-700 text-slate-300 hover:bg-slate-900"
       >
         暂不支付，返回星尘商店
       </Button>
 
-      <div className="text-center text-[11px] text-muted-foreground">
+      <div className="text-center text-[11px] text-slate-500">
         支付完成后会自动跳转；若未自动跳转请稍候
       </div>
     </div>
@@ -241,41 +239,43 @@ function CompletedView({
     <div className="flex flex-1 flex-col items-center gap-6 pt-8">
       <div className="relative flex h-24 w-24 items-center justify-center">
         <div className="absolute inset-0 rounded-full bg-green-500/15" aria-hidden />
-        <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25">
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-green-600 text-white shadow-lg shadow-green-500/40">
           <CheckCircle2 className="h-10 w-10" aria-hidden />
         </div>
       </div>
 
       <div className="text-center">
         <h1 className="text-2xl font-bold">支付成功</h1>
-        <p className="mt-2 text-sm text-muted-foreground">星尘已到账，尽情探索吧</p>
+        <p className="mt-2 text-sm text-slate-400">星尘已到账，尽情探索吧</p>
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <span className="text-xs text-muted-foreground">本次到账</span>
+        <span className="text-xs text-slate-500">本次到账</span>
         <div className="flex items-baseline gap-1">
-          <span className="text-4xl font-black text-primary">+{formatNumber(total)}</span>
-          <span className="text-xs text-muted-foreground">星尘</span>
+          <span className="bg-gradient-to-b from-white to-yellow-300 bg-clip-text text-4xl font-black text-transparent">
+            +{formatNumber(total)}
+          </span>
+          <span className="text-xs text-slate-400">星尘</span>
         </div>
         {order.bonus_credits > 0 ? (
-          <span className="rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+          <span className="rounded border border-pink-500/50 bg-pink-500/10 px-2 py-0.5 text-[10px] font-bold text-pink-300">
             含赠送 {formatNumber(order.bonus_credits)}
           </span>
         ) : null}
       </div>
 
-      <div className="app-surface w-full p-5">
+      <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
         <Row label="实付金额" value={`¥ ${formatYuanShort(order.amount_cents)}`} bold />
         <Row label="支付方式" value={paymentTypeLabel(order.payment_type)} />
         <Row
           label="订单号"
-          value={<span className="font-mono text-[11px] text-muted-foreground">{order.id}</span>}
+          value={<span className="font-mono text-[11px] text-slate-400">{order.id}</span>}
         />
         {order.provider_transaction_id ? (
           <Row
             label="渠道流水"
             value={
-              <span className="font-mono text-[11px] text-muted-foreground">
+              <span className="font-mono text-[11px] text-slate-400">
                 {order.provider_transaction_id}
               </span>
             }
@@ -287,13 +287,13 @@ function CompletedView({
         <Button
           variant="outline"
           onClick={onOrders}
-          className="h-11 flex-1 rounded-xl border-border text-foreground hover:bg-muted"
+          className="flex-1 h-11 rounded-xl border-slate-700 text-slate-300 hover:bg-slate-900"
         >
           查看订单
         </Button>
         <Button
           onClick={onHome}
-          className="h-11 flex-1 rounded-xl border-0 bg-primary font-bold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90"
+          className="flex-1 h-11 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white shadow-lg shadow-pink-500/30 hover:opacity-90 border-0"
         >
           继续探索
         </Button>
@@ -314,33 +314,33 @@ function TerminalView({
   const isExpired = order.status === 'expired';
   return (
     <div className="flex flex-1 flex-col items-center gap-6 pt-8">
-      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted text-muted-foreground">
+      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-800 text-slate-400">
         <XCircle className="h-10 w-10" aria-hidden />
       </div>
       <div className="text-center">
         <h1 className="text-xl font-bold">{isExpired ? '订单已过期' : '支付失败'}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-slate-400">
           {isExpired ? '未在 15 分钟内完成支付，可以重新下单' : '请返回重新发起支付'}
         </p>
       </div>
-      <div className="app-surface w-full p-5">
+      <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
         <Row label="订单金额" value={`¥ ${formatYuanShort(order.amount_cents)}`} bold />
         <Row label="支付方式" value={paymentTypeLabel(order.payment_type)} />
         <Row
           label="订单号"
-          value={<span className="font-mono text-[11px] text-muted-foreground">{order.id}</span>}
+          value={<span className="font-mono text-[11px] text-slate-400">{order.id}</span>}
         />
       </div>
       <Button
         onClick={onRetry}
-        className="h-11 w-full rounded-xl border-0 bg-primary font-bold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90"
+        className="h-11 w-full rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white shadow-lg shadow-pink-500/30 hover:opacity-90 border-0"
       >
         重新下单
       </Button>
       <Button
         variant="outline"
         onClick={onBack}
-        className="h-11 w-full rounded-xl border-border text-foreground hover:bg-muted"
+        className="h-11 w-full rounded-xl border-slate-700 text-slate-300 hover:bg-slate-900"
       >
         返回星尘商店
       </Button>
@@ -359,8 +359,8 @@ function Row({
 }) {
   return (
     <div className="flex items-center justify-between py-1.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={cn('text-sm text-foreground', bold && 'font-bold')}>{value}</span>
+      <span className="text-xs text-slate-400">{label}</span>
+      <span className={cn('text-sm text-slate-200', bold && 'font-bold text-white')}>{value}</span>
     </div>
   );
 }

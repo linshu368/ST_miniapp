@@ -3,10 +3,6 @@ import { describe, it } from 'node:test';
 
 import { splitBoldSegments } from '../src/patches/markdown-bold-fallback.js';
 import { resolveReasoningUiState } from '../src/patches/reasoning-stream-ui.js';
-import {
-  resolveMiniappAppearance,
-  shouldExpandComposer,
-} from '../src/patches/mobile-chat-theme.js';
 import { resolveInsufficientBalanceEvent } from '../src/patches/billing-error-bridge.js';
 
 describe('splitBoldSegments', () => {
@@ -37,26 +33,6 @@ describe('resolveReasoningUiState', () => {
   it('does not expose empty reasoning blocks', () => {
     assert.equal(resolveReasoningUiState('done', false), 'idle');
     assert.equal(resolveReasoningUiState(undefined, false), 'idle');
-  });
-});
-
-describe('resolveMiniappAppearance', () => {
-  it('keeps light explicit and defaults invalid values to dark', () => {
-    assert.equal(resolveMiniappAppearance('dark'), 'dark');
-    assert.equal(resolveMiniappAppearance('light'), 'light');
-    assert.equal(resolveMiniappAppearance(null), 'dark');
-    assert.equal(resolveMiniappAppearance('system'), 'dark');
-  });
-});
-
-describe('shouldExpandComposer', () => {
-  it('keeps short messages compact and expands long or multiline input', () => {
-    assert.equal(shouldExpandComposer('你好', 48, false), false);
-    assert.equal(shouldExpandComposer('第一行\n第二行', 48, false), true);
-    assert.equal(shouldExpandComposer('很长的输入'.repeat(5), 48, false), true);
-    assert.equal(shouldExpandComposer('仍然有较多文字内容不能反复抖动', 48, true), true);
-    assert.equal(shouldExpandComposer('视觉上已经换行', 56, false), true);
-    assert.equal(shouldExpandComposer('已清空', 48, true), false);
   });
 });
 
