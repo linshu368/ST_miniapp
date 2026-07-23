@@ -30,6 +30,7 @@ import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappW
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { saveChatHistory } from '../lib/chat-history-logger.js';
 import { requestLogger } from '../lib/logger.js';
+import { extractMarkedUserInput } from '../lib/llm-user-input.js';
 
 const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
 const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -113,13 +114,15 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         modelName = (body.model as string) || '';
 
         if (Array.isArray(body.messages)) {
-          chatMessages = body.messages;
-          for (let i = chatMessages.length - 1; i >= 0; i--) {
-            const msg = chatMessages[i] as { role?: string; content?: string };
-            if (msg.role === 'user' && msg.content) {
-              userInput = msg.content;
-              break;
-            }
+          const extraction = extractMarkedUserInput(body.messages);
+          chatMessages = extraction.messages;
+          body.messages = extraction.messages;
+          userInput = extraction.userInput;
+          if (extraction.issue) {
+            request.log.warn(
+              { userId, issue: extraction.issue },
+              '[llm-proxy] user input marker validation failed'
+            );
           }
         }
       }
@@ -162,22 +165,6 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           return reply.status(500).send({
             error: { message: 'Failed to resolve selected model', type: 'internal_error' },
           });
-        }
-      }
-
-      // 优先使用 st-extension 注入的原始用户输入（base64(UTF-8)）。
-      // messages 数组末尾的 role=user 往往是预设注入的 post-history 指令（防截断/越狱等），
-      // 且真实输入被模板前后缀包裹，故上面的提取只作 header 缺失时的回退。
-      const rawInputHeader = request.headers['x-st-user-input'];
-      if (typeof rawInputHeader === 'string' && rawInputHeader.length > 0) {
-        try {
-          const decoded = Buffer.from(rawInputHeader, 'base64').toString('utf8').trim();
-          if (decoded) userInput = decoded;
-        } catch (err) {
-          log.sys.warn(
-            { event: 'llm.input.decode_failed', err, userId },
-            'failed to decode x-st-user-input header, falling back to messages extraction'
-          );
         }
       }
 

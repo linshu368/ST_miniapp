@@ -2056,12 +2056,14 @@ export async function sendTextareaMessage() {
   if (is_send_press) return;
   if (isExecutingCommandsFromChatInput) return;
 
+  const textareaText = String($('#send_textarea').val());
+  if (!textareaText.trim()) return;
+
   hideSwipeButtons(); //Swipe buttons must be hidden now, otherwise concurrent generations are possible.
 
   let generateType = 'normal';
   // "Continue on send" is activated when the user hits "send" (or presses enter) on an empty chat box, and the last
   // message was sent from a character (not the user or the system).
-  const textareaText = String($('#send_textarea').val());
   const lastMessage = chat[chat.length - 1];
   if (
     power_user.continue_on_send &&
