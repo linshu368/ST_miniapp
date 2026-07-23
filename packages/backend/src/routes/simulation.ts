@@ -1,12 +1,17 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import {
+  SimulationChatStatusParamsSchema,
   SimulationChatRequestSchema,
   fail,
   ok,
   resolveEffectiveSelectedModelId,
   resolveEnabledCatalogModel,
+  type SimulationChatAcceptedData,
   type SimulationChatData,
+  type SimulationChatRequest,
+  type SimulationChatStatusData,
+  type SimulationEffectiveConfig,
   type SimulationNameConflictResponse,
 } from '@miniapp/shared';
 import { getSupabaseClient } from '../lib/supabase.js';
@@ -141,69 +146,226 @@ export default async function simulationRoutes(app: FastifyInstance) {
         return reply.status(409).send(fail('CONVERSATION_BUSY', 'Another turn is already running'));
       }
 
-      let workerResponse: WorkerResponse;
-      try {
-        const worker = await fetch(`${config.stProvisionUrl}/simulation/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            conversationId: conversation.id,
-            stHandle: conversation.st_handle,
-            characterId: character.id,
-            stChatId: conversation.st_chat_id,
-            userMessage: input.user_message,
-            turnId,
-            metadata: input.metadata,
-            requestedModelId: effectiveModelId,
-            requestedPresetId: input.preset_id ?? conversation.preset_id,
-          }),
+      const runTurn = () =>
+        executeWorkerTurn({
+          conversation,
+          character,
+          input,
+          effectiveModelId,
+          turnId,
+          log: request.log,
         });
-        if (!worker.ok) {
-          throw new Error(`simulation worker failed (${worker.status}): ${await worker.text()}`);
-        }
-        workerResponse = (await worker.json()) as WorkerResponse;
-      } catch (error) {
-        await simulationDb
-          .from('conversations')
-          .update({ status: 'failed', updated_at: new Date().toISOString() })
-          .eq('id', conversation.id);
-        request.log.error(
-          { err: String(error), conversationId: conversation.id },
-          '[simulation] worker failed'
+
+      if (input.response_mode === 'async') {
+        void runTurn().catch(() => {
+          // executeWorkerTurn persists and logs failures before rejecting.
+        });
+        return reply.status(202).send(
+          ok<SimulationChatAcceptedData>({
+            status: 'accepted',
+            conversation_id: conversation.id,
+            turn_id: turnId,
+            status_url: `/api/platform/simulation/chat/${turnId}`,
+          })
         );
+      }
+
+      try {
+        return reply.send(ok<SimulationChatData>(await runTurn()));
+      } catch (error) {
         return reply.status(502).send(fail('SIMULATION_WORKER_ERROR', String(error)));
       }
+    }
+  );
 
-      const { error: readyError } = await simulationDb
-        .from('conversations')
-        .update({
-          st_chat_id: workerResponse.stChatId,
-          effective_model_id: workerResponse.effectiveConfig.model_id,
-          preset_id: workerResponse.effectiveConfig.preset_id,
-          status: 'ready',
-          updated_at: new Date().toISOString(),
-          last_active_at: new Date().toISOString(),
-        })
-        .eq('id', conversation.id);
-      if (readyError) {
-        request.log.error(
-          { err: readyError.message, conversationId: conversation.id },
-          '[simulation] failed to persist ready state'
-        );
+  // @frontend-ready: true
+  app.get(
+    '/api/platform/simulation/chat/:turnId',
+    { preHandler: [requireSimulationServiceKey] },
+    async (request, reply) => {
+      const parsed = SimulationChatStatusParamsSchema.safeParse(request.params);
+      if (!parsed.success) {
+        return reply.status(400).send(fail('INVALID_ARGUMENT', 'turnId must be a UUID'));
       }
 
-      return reply.send(
-        ok<SimulationChatData>({
-          conversation_id: conversation.id,
-          chat_log_id: turnId,
-          character_id: character.id,
-          card_hash: character.card_hash,
-          character_name: character.name,
-          assistant_reply: workerResponse.assistantReply,
-          effective_config: workerResponse.effectiveConfig,
-        })
-      );
+      try {
+        const status = await loadTurnStatus(parsed.data.turnId);
+        if (!status) {
+          return reply.status(404).send(fail('NOT_FOUND', 'Simulation turn not found'));
+        }
+        return reply.send(ok<SimulationChatStatusData>(status));
+      } catch (error) {
+        request.log.error(
+          { err: String(error), turnId: parsed.data.turnId },
+          '[simulation] failed to load turn status'
+        );
+        return reply.status(500).send(fail('INTERNAL_ERROR', String(error)));
+      }
     }
+  );
+}
+
+async function executeWorkerTurn({
+  conversation,
+  character,
+  input,
+  effectiveModelId,
+  turnId,
+  log,
+}: {
+  conversation: ConversationRecord;
+  character: CharacterRecord;
+  input: SimulationChatRequest;
+  effectiveModelId: string;
+  turnId: string;
+  log: FastifyBaseLogger;
+}): Promise<SimulationChatData> {
+  const simulationDb = getSupabaseClient().schema('miniapp_simulation' as 'public');
+  let workerResponse: WorkerResponse;
+  try {
+    const worker = await fetch(`${config.stProvisionUrl}/simulation/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversationId: conversation.id,
+        stHandle: conversation.st_handle,
+        characterId: character.id,
+        stChatId: conversation.st_chat_id,
+        userMessage: input.user_message,
+        turnId,
+        metadata: input.metadata,
+        requestedModelId: effectiveModelId,
+        requestedPresetId: input.preset_id ?? conversation.preset_id,
+      }),
+      signal: AbortSignal.timeout(config.simulation.workerTimeoutMs),
+    });
+    if (!worker.ok) {
+      throw new Error(`simulation worker failed (${worker.status}): ${await worker.text()}`);
+    }
+    workerResponse = (await worker.json()) as WorkerResponse;
+  } catch (error) {
+    await simulationDb
+      .from('conversations')
+      .update({ status: 'failed', updated_at: new Date().toISOString() })
+      .eq('id', conversation.id)
+      .eq('current_turn_id', turnId);
+    log.error(
+      { err: String(error), conversationId: conversation.id, turnId },
+      '[simulation] worker failed'
+    );
+    throw error;
+  }
+
+  const { error: readyError } = await simulationDb
+    .from('conversations')
+    .update({
+      st_chat_id: workerResponse.stChatId,
+      effective_model_id: workerResponse.effectiveConfig.model_id,
+      preset_id: workerResponse.effectiveConfig.preset_id,
+      status: 'ready',
+      updated_at: new Date().toISOString(),
+      last_active_at: new Date().toISOString(),
+    })
+    .eq('id', conversation.id)
+    .eq('current_turn_id', turnId);
+  if (readyError) {
+    log.error(
+      { err: readyError.message, conversationId: conversation.id, turnId },
+      '[simulation] failed to persist ready state'
+    );
+  }
+
+  return {
+    conversation_id: conversation.id,
+    chat_log_id: turnId,
+    character_id: character.id,
+    card_hash: character.card_hash,
+    character_name: character.name,
+    assistant_reply: workerResponse.assistantReply,
+    effective_config: workerResponse.effectiveConfig,
+  };
+}
+
+async function loadTurnStatus(turnId: string): Promise<SimulationChatStatusData | null> {
+  const supabase = getSupabaseClient();
+  const simulationDb = supabase.schema('miniapp_simulation' as 'public');
+  const { data: chatLog, error: chatLogError } = await simulationDb
+    .from('chat_log')
+    .select('id,conversation_id,assistant_reply,status,effective_config')
+    .eq('id', turnId)
+    .maybeSingle();
+  if (chatLogError) throw new Error(chatLogError.message);
+
+  let conversationQuery = simulationDb
+    .from('conversations')
+    .select('id,character_id,card_hash,current_turn_id,status');
+  conversationQuery = chatLog?.conversation_id
+    ? conversationQuery.eq('id', chatLog.conversation_id)
+    : conversationQuery.eq('current_turn_id', turnId);
+  const { data: conversation, error: conversationError } = await conversationQuery.maybeSingle();
+  if (conversationError) throw new Error(conversationError.message);
+  if (!conversation) return null;
+
+  if (
+    chatLog &&
+    typeof chatLog.assistant_reply === 'string' &&
+    chatLog.assistant_reply.length > 0 &&
+    isEffectiveConfig(chatLog.effective_config)
+  ) {
+    const { data: character, error: characterError } = await supabase
+      .schema('miniapp' as 'public')
+      .from('characters')
+      .select('name')
+      .eq('id', conversation.character_id)
+      .single();
+    if (characterError || !character) {
+      throw new Error(characterError?.message ?? 'character not found');
+    }
+    return {
+      status: 'completed',
+      conversation_id: conversation.id,
+      turn_id: turnId,
+      result: {
+        conversation_id: conversation.id,
+        chat_log_id: turnId,
+        character_id: conversation.character_id,
+        card_hash: conversation.card_hash,
+        character_name: character.name,
+        assistant_reply: chatLog.assistant_reply,
+        effective_config: chatLog.effective_config,
+      },
+    };
+  }
+
+  if (conversation.status === 'failed' || chatLog?.status === 'failed') {
+    return {
+      status: 'failed',
+      conversation_id: conversation.id,
+      turn_id: turnId,
+      error: 'Simulation worker failed; retry this conversation with a new turn',
+    };
+  }
+
+  return {
+    status: 'pending',
+    conversation_id: conversation.id,
+    turn_id: turnId,
+  };
+}
+
+function isEffectiveConfig(value: unknown): value is SimulationEffectiveConfig {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const configValue = value as Record<string, unknown>;
+  return (
+    typeof configValue.model_id === 'string' &&
+    typeof configValue.model_name === 'string' &&
+    (configValue.preset_id === null || typeof configValue.preset_id === 'string') &&
+    (configValue.preset_version === null ||
+      typeof configValue.preset_version === 'string' ||
+      typeof configValue.preset_version === 'number') &&
+    Boolean(configValue.sampling) &&
+    typeof configValue.sampling === 'object' &&
+    !Array.isArray(configValue.sampling)
   );
 }
 

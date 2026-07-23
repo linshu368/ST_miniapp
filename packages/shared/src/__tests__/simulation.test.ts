@@ -44,4 +44,19 @@ describe('SimulationChatRequestSchema', () => {
       prompt_version: 'v3',
     });
   });
+
+  it('defaults to synchronous responses and accepts async mode', () => {
+    const syncResult = SimulationChatRequestSchema.parse({
+      ...base,
+      card_hash: 'c'.repeat(64),
+    });
+    const asyncResult = SimulationChatRequestSchema.parse({
+      ...base,
+      card_hash: 'd'.repeat(64),
+      response_mode: 'async',
+    });
+
+    expect(syncResult.response_mode).toBe('sync');
+    expect(asyncResult.response_mode).toBe('async');
+  });
 });

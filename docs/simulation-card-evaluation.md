@@ -60,3 +60,24 @@ Content-Type: application/json
 成功响应包含角色原始回复、`chat_log_id` 和最终生效的模型、预设版本及采样参数。
 模拟请求只写 `miniapp_simulation.chat_log`，不会创建 `miniapp.users`、写入
 `miniapp.chat_history` 或调用钱包扣费。
+
+## Railway 异步调用
+
+新会话初始化可能超过公网网关的长连接时限。线上调用应增加：
+
+```json
+{
+  "response_mode": "async"
+}
+```
+
+POST 会立即返回 HTTP 202、`conversation_id`、`turn_id` 和 `status_url`。使用相同
+Bearer 密钥轮询状态：
+
+```http
+GET /api/platform/simulation/chat/<turn_id>
+Authorization: Bearer <SIMULATION_SERVICE_KEY>
+```
+
+`data.status` 为 `pending`、`completed` 或 `failed`。完成时完整聊天响应位于
+`data.result`。未传 `response_mode` 时仍保持原有同步行为。

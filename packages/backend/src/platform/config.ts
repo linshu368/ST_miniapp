@@ -57,6 +57,7 @@ export const config = {
   stProvisionUrl: process.env.ST_PROVISION_URL || 'http://127.0.0.1:9091',
   simulation: {
     serviceKey: process.env.SIMULATION_SERVICE_KEY || '',
+    workerTimeoutMs: parseInt(process.env.SIMULATION_WORKER_TIMEOUT_MS || '300000', 10),
   },
   chatHistorySyncEnabled: process.env.CHAT_HISTORY_SYNC_ENABLED !== 'false',
 

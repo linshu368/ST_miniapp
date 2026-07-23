@@ -11,6 +11,7 @@ export const SimulationChatRequestSchema = z
     conversation_id: UuidSchema.optional(),
     model_id: z.string().trim().min(1).max(64).optional(),
     preset_id: UuidSchema.optional(),
+    response_mode: z.enum(['sync', 'async']).default('sync'),
     metadata: z.record(z.string(), z.unknown()).default({}),
   })
   .superRefine((value, ctx) => {
@@ -24,6 +25,10 @@ export const SimulationChatRequestSchema = z
   });
 
 export type SimulationChatRequest = z.infer<typeof SimulationChatRequestSchema>;
+
+export const SimulationChatStatusParamsSchema = z.object({
+  turnId: UuidSchema,
+});
 
 export interface SimulationEffectiveConfig {
   model_id: string;
@@ -42,6 +47,32 @@ export interface SimulationChatData {
   assistant_reply: string;
   effective_config: SimulationEffectiveConfig;
 }
+
+export interface SimulationChatAcceptedData {
+  status: 'accepted';
+  conversation_id: string;
+  turn_id: string;
+  status_url: string;
+}
+
+export type SimulationChatStatusData =
+  | {
+      status: 'pending';
+      conversation_id: string;
+      turn_id: string;
+    }
+  | {
+      status: 'failed';
+      conversation_id: string;
+      turn_id: string;
+      error: string;
+    }
+  | {
+      status: 'completed';
+      conversation_id: string;
+      turn_id: string;
+      result: SimulationChatData;
+    };
 
 export interface SimulationCardCandidate {
   character_id: string;
