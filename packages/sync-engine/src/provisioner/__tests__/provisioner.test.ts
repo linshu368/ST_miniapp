@@ -31,7 +31,7 @@ vi.mock('../fetcher.js', () => ({
 }));
 
 vi.mock('../writer.js', () => ({
-  DEFAULT_USER_AVATAR_FILENAME: '4d015fdd-7f82-482c-912d-466eaa826280.png',
+  DEFAULT_USER_AVATAR_FILENAME: 'default-user-avatar-20260713.png',
   writeCharacters: vi.fn(async () => ({ written: [], skipped: [], missing: [] })),
   writePlatformAssets: vi.fn(() => ({ written: [], skipped: [] })),
   writePresets: vi.fn(() => ({ written: [], skipped: [] })),
@@ -160,7 +160,7 @@ describe('provision()', () => {
     });
     mockedWritePresets.mockReturnValue({ written: [PRESET_UUID], skipped: [] });
     mockedWriteSettings.mockReturnValue(undefined);
-    mockedEnsureAvatar.mockResolvedValue('4d015fdd-7f82-482c-912d-466eaa826280.png');
+    mockedEnsureAvatar.mockResolvedValue('default-user-avatar-20260713.png');
     mockedEnsureUser.mockResolvedValue({ created: true });
   });
 
@@ -200,11 +200,11 @@ describe('provision()', () => {
 
     expect(merged.settings['username']).toBe('用户');
     expect(merged.settings['name1']).toBe('用户');
-    expect(merged.settings['user_avatar']).toBe('4d015fdd-7f82-482c-912d-466eaa826280.png');
+    expect(merged.settings['user_avatar']).toBe('default-user-avatar-20260713.png');
     expect(merged.settings['power_user']).toEqual({
-      personas: { '4d015fdd-7f82-482c-912d-466eaa826280.png': '用户' },
+      personas: { 'default-user-avatar-20260713.png': '用户' },
       persona_descriptions: {
-        '4d015fdd-7f82-482c-912d-466eaa826280.png': { position: 0, description: '' },
+        'default-user-avatar-20260713.png': { position: 0, description: '' },
       },
       // merger 强制项（P1-H2 瘦身）：关闭消息气泡 token 计数
       message_token_count_enabled: false,
