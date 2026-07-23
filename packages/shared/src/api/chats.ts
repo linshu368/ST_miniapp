@@ -1,6 +1,7 @@
 export interface UserChatListItem {
   fileName: string;
   characterAvatar: string;
+  characterAvatarUrl: string;
   characterName: string;
   characterId: string | null;
   isGroup: boolean;

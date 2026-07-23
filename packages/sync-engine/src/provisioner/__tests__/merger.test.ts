@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { mergeSettings, PLATFORM_DISABLED_EXTENSIONS } from '../merger.js';
 import type { PlatformSettingsRow, UserSettingsRow, PresetRow } from '../fetcher.js';
+import { DEFAULT_USER_AVATAR_FILENAME } from '../user-avatar-constants.js';
 
 // ─── 测试固件 ──────────────────────────────────────────────────────────────────
 
@@ -432,6 +433,32 @@ describe('mergeSettings', () => {
 
     expect(powerUser['message_token_count_enabled']).toBe(false);
     expect(powerUser['personas']).toEqual({});
+  });
+
+  it('persona 头像下载失败时应回退到统一默认文件名', () => {
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        user_avatar: 'user-default.png',
+      },
+    });
+
+    const result = mergeSettings(
+      platform,
+      null,
+      [],
+      [CHAR_UUID_FALLBACK],
+      CHAR_UUID_FALLBACK,
+      LLM_PROXY_URL,
+      { name: '用户', avatarFile: null }
+    );
+
+    expect(result.settings['user_avatar']).toBe(DEFAULT_USER_AVATAR_FILENAME);
+    expect(result.settings['power_user']).toEqual(
+      expect.objectContaining({
+        personas: { [DEFAULT_USER_AVATAR_FILENAME]: '用户' },
+      })
+    );
   });
 
   // ── 场景 8：深拷贝，不修改原始对象 ──────────────────────────────────────

@@ -1,0 +1,1 @@
+export const DEFAULT_USER_AVATAR_FILENAME = '4d015fdd-7f82-482c-912d-466eaa826280.png';

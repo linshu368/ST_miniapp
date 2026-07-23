@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { UserChatListItem } from '@miniapp/shared';
-import { isEffectiveChat, latestChatForCharacter, sortChatsByActivity } from './effective-chats.js';
+import {
+  isEffectiveChat,
+  latestChatForCharacter,
+  latestChatPerCharacter,
+  sortChatsByActivity,
+} from './effective-chats.js';
 
 const base: UserChatListItem = {
   fileName: 'chat-1',
   characterAvatar: 'platform_character.png',
+  characterAvatarUrl: 'https://example.com/character.png',
   characterName: '角色',
   characterId: 'character-1',
   isGroup: false,
@@ -15,7 +21,7 @@ const base: UserChatListItem = {
 };
 
 describe('effective chats', () => {
-  it('hides greeting-only, empty, group, and unmapped conversations', () => {
+  it('filters greeting-only, empty, group, and unmapped conversations', () => {
     expect(isEffectiveChat(base)).toBe(true);
     expect(isEffectiveChat({ ...base, messageCount: 2 })).toBe(false);
     expect(isEffectiveChat({ ...base, fileName: '' })).toBe(false);
@@ -23,7 +29,7 @@ describe('effective chats', () => {
     expect(isEffectiveChat({ ...base, characterId: null })).toBe(false);
   });
 
-  it('sorts by the real last message timestamp', () => {
+  it('sorts by last message time descending', () => {
     const newer = { ...base, fileName: 'newer', lastMessageAt: '2026-07-21T10:00:00.000Z' };
     expect(sortChatsByActivity([base, newer]).map((item) => item.fileName)).toEqual([
       'newer',
@@ -31,18 +37,39 @@ describe('effective chats', () => {
     ]);
   });
 
-  it('selects the latest effective conversation for a character', () => {
+  it('keeps only the latest conversation for each character', () => {
     const newest = {
       ...base,
       fileName: 'newest',
       lastMessageAt: '2026-07-22T10:00:00.000Z',
     };
-    const hidden = {
+    const other = {
       ...base,
-      fileName: 'hidden',
-      lastMessageAt: '2026-07-23T10:00:00.000Z',
-      messageCount: 1,
+      fileName: 'other',
+      characterId: 'character-2',
+      lastMessageAt: '2026-07-21T10:00:00.000Z',
     };
-    expect(latestChatForCharacter([base, newest, hidden], 'character-1')?.fileName).toBe('newest');
+    expect(latestChatPerCharacter([base, other, newest]).map((item) => item.fileName)).toEqual([
+      'newest',
+      'other',
+    ]);
+  });
+
+  it('returns the latest effective conversation for a character', () => {
+    const newest = {
+      ...base,
+      fileName: 'newest',
+      lastMessageAt: '2026-07-22T10:00:00.000Z',
+    };
+    const greetingOnly = {
+      ...base,
+      fileName: 'greeting-only',
+      lastMessageAt: '2026-07-23T10:00:00.000Z',
+      messageCount: 2,
+    };
+    expect(latestChatForCharacter([base, newest, greetingOnly], 'character-1')?.fileName).toBe(
+      'newest'
+    );
+    expect(latestChatForCharacter([base], 'missing')).toBeNull();
   });
 });
