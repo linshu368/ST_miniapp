@@ -16,9 +16,8 @@ import { getOrCreateDbUser } from '../lib/user.js';
 import { fetchWithStCookie } from '../lib/st-cookie.js';
 import { prisma } from '../lib/db.js';
 import {
-  isEffectiveChat,
   latestChatForCharacter,
-  sortChatsByActivity,
+  latestChatPerCharacter,
 } from '../features/chats/effective-chats.js';
 
 interface STRecentChatEntry {
@@ -27,7 +26,7 @@ interface STRecentChatEntry {
   /** 最后一条消息的预览文本（ST getChatInfo 的 mes 字段） */
   mes?: string;
   /** 最后消息时间戳 */
-  last_mes?: string;
+  last_mes?: string | number;
   /** 消息条数 */
   chat_items?: number;
   group_id?: string;
@@ -132,6 +131,7 @@ async function loadCompletedChats(
     return {
       fileName: entry.file_name?.replace(/\.jsonl$/, '') ?? '',
       characterAvatar: avatar,
+      characterAvatarUrl: mapped?.avatarUrl ?? '',
       characterName: mapped?.name ?? entry.character_name ?? '',
       characterId: mapped?.id ?? null,
       isGroup: Boolean(entry.group_id),
@@ -141,13 +141,14 @@ async function loadCompletedChats(
       fileSize: typeof entry.file_size === 'number' ? entry.file_size : 0,
     };
   });
-  return sortChatsByActivity(items.filter(isEffectiveChat));
+
+  return latestChatPerCharacter(items);
 }
 
 async function buildAvatarMap(
   avatars: string[]
-): Promise<Map<string, { id: string; name: string }>> {
-  const result = new Map<string, { id: string; name: string }>();
+): Promise<Map<string, { id: string; name: string; avatarUrl: string }>> {
+  const result = new Map<string, { id: string; name: string; avatarUrl: string }>();
   if (avatars.length === 0) return result;
 
   const platformIds: string[] = [];
@@ -165,15 +166,19 @@ async function buildAvatarMap(
 
   const characters = await prisma.character.findMany({
     where: { id: { in: platformIds } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, avatar_url: true },
   });
 
-  const idToName = new Map(characters.map((c) => [c.id, c.name]));
+  const idToCharacter = new Map(characters.map((character) => [character.id, character]));
 
   for (const [avatar, charId] of avatarToId) {
-    const name = idToName.get(charId);
-    if (name) {
-      result.set(avatar, { id: charId, name });
+    const character = idToCharacter.get(charId);
+    if (character) {
+      result.set(avatar, {
+        id: charId,
+        name: character.name,
+        avatarUrl: character.avatar_url,
+      });
     }
   }
 
