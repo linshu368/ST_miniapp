@@ -618,9 +618,6 @@ function setOpenAIMessages(chat) {
   let j = 0;
   // clean openai msgs
   const messages = [];
-  const userInputIndex = chat.findLastIndex(
-    (message) => message?.is_user === true && message?.is_system !== true
-  );
   // Get current API and model for thought signature validation
   const currentApi = oai_settings.chat_completion_source;
   const currentModel = getChatCompletionModel();
@@ -708,7 +705,6 @@ function setOpenAIMessages(chat) {
       invocations: invocations,
       signature: signature,
       reasoning: reasoning,
-      st_user_input: j === userInputIndex,
     };
     j++;
   }
@@ -1066,7 +1062,6 @@ async function populateChatHistory(
     const prompt = new Prompt(chatPrompt);
     prompt.identifier = `chatHistory-${messages.length - index}`;
     const chatMessage = await Message.fromPromptAsync(promptManager.preparePrompt(prompt));
-    chatMessage.st_user_input = chatPrompt.st_user_input === true;
 
     if (
       promptManager.serviceSettings.names_behavior === character_names_behavior.COMPLETION &&
@@ -3850,8 +3845,6 @@ class Message {
   signature = null;
   /** @type {string?} */
   reasoning = null;
-  /** @type {boolean} */
-  st_user_input = false;
 
   /**
    * @constructor
@@ -4183,7 +4176,6 @@ class MessageCollection {
           ...(message.role === 'tool' && { tool_call_id: message.identifier }),
           ...(message.signature && { signature: message.signature }),
           ...(message.reasoning && { reasoning: message.reasoning }),
-          ...(message.st_user_input && { st_user_input: true }),
         });
       }
       return acc;
@@ -4487,7 +4479,6 @@ export class ChatCompletion {
           ...(item.role === 'tool' ? { tool_call_id: item.identifier } : {}),
           ...(item.signature ? { signature: item.signature } : {}),
           ...(item.reasoning ? { reasoning: item.reasoning } : {}),
-          ...(item.st_user_input ? { st_user_input: true } : {}),
         };
         chat.push(message);
       } else {

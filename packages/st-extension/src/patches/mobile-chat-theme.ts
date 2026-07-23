@@ -17,10 +17,6 @@ export function shouldExpandComposer(
   return value.length > 24 || scrollHeight > 54;
 }
 
-export function hasSendableComposerText(value: string): boolean {
-  return value.trim().length > 0;
-}
-
 function readAppearance(): MiniappAppearance {
   try {
     return resolveMiniappAppearance(window.localStorage.getItem(APPEARANCE_STORAGE_KEY));
@@ -377,13 +373,6 @@ export function installMobileChatTheme(): void {
       box-shadow: 0 5px 14px color-mix(in srgb, var(--miniapp-chat-accent) 28%, transparent) !important;
     }
 
-    #send_but.miniapp-send-disabled {
-      background: var(--miniapp-chat-surface-soft) !important;
-      color: var(--miniapp-chat-muted) !important;
-      box-shadow: inset 0 0 0 1px var(--miniapp-chat-border) !important;
-      cursor: default !important;
-    }
-
     #send_but::before,
     #send_form .mes_stop::before {
       content: '' !important;
@@ -462,19 +451,13 @@ export function installMobileChatTheme(): void {
   const bindComposerLayout = () => {
     const textarea = document.querySelector<HTMLTextAreaElement>('#send_textarea');
     const formItems = document.querySelector<HTMLElement>('#nonQRFormItems');
-    const sendButton = document.querySelector<HTMLElement>('#send_but');
-    if (!textarea || !formItems || !sendButton || formItems.dataset.miniappLayoutBound === 'true') {
-      return false;
-    }
+    if (!textarea || !formItems || formItems.dataset.miniappLayoutBound === 'true') return false;
 
     formItems.dataset.miniappLayoutBound = 'true';
-    const syncComposer = () => {
+    const syncLayout = () => {
       const wasExpanded = formItems.classList.contains('miniapp-composer-expanded');
       const expanded = shouldExpandComposer(textarea.value, textarea.scrollHeight, wasExpanded);
       formItems.classList.toggle('miniapp-composer-expanded', expanded);
-      const sendable = hasSendableComposerText(textarea.value);
-      sendButton.classList.toggle('miniapp-send-disabled', !sendable);
-      sendButton.setAttribute('aria-disabled', String(!sendable));
       if (expanded !== wasExpanded) {
         requestAnimationFrame(() => {
           textarea.style.height = '1px';
@@ -483,9 +466,9 @@ export function installMobileChatTheme(): void {
       }
     };
 
-    textarea.addEventListener('input', () => requestAnimationFrame(syncComposer));
-    new ResizeObserver(syncComposer).observe(textarea);
-    syncComposer();
+    textarea.addEventListener('input', () => requestAnimationFrame(syncLayout));
+    new ResizeObserver(syncLayout).observe(textarea);
+    syncLayout();
     return true;
   };
 
