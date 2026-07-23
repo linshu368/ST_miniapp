@@ -1,6 +1,7 @@
 import { getSupabaseClient } from '../../lib/supabase.js';
 import {
   DEFAULT_USER_AVATAR_URL,
+  normalizeTelegramAvatarUrl,
   type PatchUserSettingsRequest,
   type PreferredWordCount,
   type UserSettings,
@@ -165,7 +166,7 @@ export class MiniappUserSettingsRepository {
       tg_username: tgUser.username ?? null,
       tg_first_name: tgUser.first_name ?? null,
       tg_last_name: tgUser.last_name ?? null,
-      tg_avatar_url: tgUser.photo_url ?? null,
+      tg_avatar_url: normalizeTelegramAvatarUrl(tgUser.photo_url),
     };
   }
 
@@ -220,7 +221,7 @@ export class MiniappUserSettingsRepository {
 
 export function toUserSettings(row: MiniappUserSettingsRow): UserSettings {
   const customAvatar = row.custom_avatar_url?.trim();
-  const telegramAvatar = row.tg_avatar_url?.trim();
+  const telegramAvatar = normalizeTelegramAvatarUrl(row.tg_avatar_url);
   return {
     display_name: row.display_name,
     avatar_url: customAvatar || telegramAvatar || DEFAULT_USER_AVATAR_URL,

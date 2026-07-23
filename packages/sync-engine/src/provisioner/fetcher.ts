@@ -8,6 +8,7 @@
 import { getSupabaseClient, schemaClient } from '../lib/supabase.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { normalizeTelegramAvatarUrl } from '@miniapp/shared';
 import { config } from '../lib/config.js';
 import { resolveProvisionModel } from './model-resolution.js';
 
@@ -298,7 +299,9 @@ export function resolveUserPersona(row: PersonaSourceRow | null): UserPersona {
 
   const name = display || fullName || username || DEFAULT_USER_PERSONA_NAME;
   const avatarUrl =
-    row.custom_avatar_url?.trim() || row.tg_avatar_url?.trim() || config.DEFAULT_USER_AVATAR_URL;
+    row.custom_avatar_url?.trim() ||
+    normalizeTelegramAvatarUrl(row.tg_avatar_url) ||
+    config.DEFAULT_USER_AVATAR_URL;
 
   return { name, avatarUrl };
 }
