@@ -21,6 +21,7 @@ import {
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { openRouterModelsClient } from '../platform/openrouter-models.js';
 import { getOrCreateDbUser } from '../lib/user.js';
+import { requestLogger } from '../lib/logger.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 
@@ -89,6 +90,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('INVALID_MODEL', '请选择有效模型'));
       }
 
+      const log = requestLogger(request.log, 'models');
       try {
         const { catalog } = await fetchModelCatalogSnapshot();
         const selectedModel = resolveEnabledCatalogModel(catalog, parsed.data.model_id);
@@ -101,15 +103,16 @@ export default async function modelsRoutes(app: FastifyInstance) {
           ]);
           const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
           if (balance < pricing.balanceBaseline) {
-            request.log.info(
+            log.biz.info(
               {
+                event: 'models.select.blocked_insufficient',
                 userId: dbUser.id,
                 modelId: selectedModel.id,
                 model: selectedModel.openrouter_model_id,
                 balance,
                 required: pricing.balanceBaseline,
               },
-              '[models] paid model selection blocked by insufficient balance'
+              'paid model selection blocked by insufficient balance'
             );
             return reply
               .status(402)
@@ -118,6 +121,15 @@ export default async function modelsRoutes(app: FastifyInstance) {
         }
 
         await settings.setSelectedModelId(dbUser.id, request.user, selectedModel.id);
+        log.biz.info(
+          {
+            event: 'models.select.done',
+            userId: dbUser.id,
+            modelId: selectedModel.id,
+            model: selectedModel.openrouter_model_id,
+          },
+          '用户切换模型'
+        );
         return reply.send(
           ok<SelectModelData>({
             model_id: selectedModel.id,
@@ -125,9 +137,9 @@ export default async function modelsRoutes(app: FastifyInstance) {
           })
         );
       } catch (error) {
-        request.log.warn(
-          { err: String(error), modelId: parsed.data.model_id },
-          '[models] unavailable model selection'
+        log.sys.warn(
+          { event: 'models.select.unavailable', err: error, modelId: parsed.data.model_id },
+          'unavailable model selection'
         );
         return reply.status(400).send(fail('MODEL_UNAVAILABLE', '该模型暂不可用'));
       }

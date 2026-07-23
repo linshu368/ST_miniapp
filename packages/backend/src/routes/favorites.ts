@@ -11,6 +11,7 @@ import {
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { prisma } from '../lib/db.js';
+import { requestLogger } from '../lib/logger.js';
 import { resolveCharacterAvatarUrl } from './characters.js';
 import { MiniappCharacterFavoriteRepository } from '../infrastructure/repositories/MiniappCharacterFavoriteRepository.js';
 
@@ -97,7 +98,10 @@ export default async function favoriteRoutes(app: FastifyInstance) {
             })
           );
         } catch (error) {
-          request.log.warn({ err: String(error), characterId }, '[favorites] update failed');
+          requestLogger(request.log, 'favorites').sys.warn(
+            { event: 'favorites.update.failed', err: error, characterId },
+            'favorite update failed'
+          );
           return reply.status(400).send(fail('FAVORITE_UPDATE_FAILED', '收藏状态更新失败'));
         }
       },

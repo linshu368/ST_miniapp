@@ -91,8 +91,9 @@ async function handleRequest(
       log: (msg) => logger.info({ userId }, msg),
     })
       .then((result) => {
-        logger.info(
+        logger.biz.info(
           {
+            event: 'provision.async.done',
             userId,
             stHandle: result.stHandle,
             charactersWritten: result.charactersWritten,
@@ -103,7 +104,7 @@ async function handleRequest(
         );
       })
       .catch((err) => {
-        logger.error({ userId, err: String(err) }, 'Provision 失败');
+        logger.sys.error({ event: 'provision.async.failed', userId, err }, 'Provision 失败');
       });
 
     return;
@@ -124,7 +125,10 @@ async function handleRequest(
       const result = await ensureCharacterProvisioned(userId, characterId, {
         log: (msg) => logger.info({ userId, characterId }, msg),
       });
-      logger.info({ userId, characterId, status: result.status }, 'ensure character 完成');
+      logger.biz.info(
+        { event: 'provision.character.done', userId, characterId, status: result.status },
+        'ensure character 完成'
+      );
       jsonResponse(res, 200, {
         status: result.status,
         userId,
@@ -132,7 +136,10 @@ async function handleRequest(
         stHandle: result.stHandle,
       });
     } catch (err) {
-      logger.error({ userId, characterId, err: String(err) }, 'ensure character 失败');
+      logger.sys.error(
+        { event: 'provision.character.failed', userId, characterId, err },
+        'ensure character 失败'
+      );
       jsonResponse(res, 500, { error: 'ensure_character_failed', message: String(err) });
     }
     return;
@@ -162,8 +169,9 @@ async function handleRequest(
         characterScope,
         log: (msg) => logger.info({ userId }, msg),
       });
-      logger.info(
+      logger.biz.info(
         {
+          event: 'provision.sync.done',
           userId,
           stHandle: result.stHandle,
           charactersWritten: result.charactersWritten,
@@ -173,7 +181,7 @@ async function handleRequest(
       );
       jsonResponse(res, 200, { status: 'ok', userId, stHandle: result.stHandle });
     } catch (err) {
-      logger.error({ userId, err: String(err) }, 'Provision (sync) 失败');
+      logger.sys.error({ event: 'provision.sync.failed', userId, err }, 'Provision (sync) 失败');
       jsonResponse(res, 500, { error: 'provision_failed', message: String(err) });
     }
     return;
@@ -198,7 +206,7 @@ export async function startProvisionApi(opts: ProvisionApiOptions): Promise<Prov
     try {
       await handleRequest(req, res);
     } catch (err) {
-      logger.error({ err: String(err) }, '未捕获的请求处理错误');
+      logger.sys.error({ event: 'provision.request.uncaught', err }, '未捕获的请求处理错误');
       if (!res.headersSent) {
         jsonResponse(res, 500, { error: 'internal_error' });
       }

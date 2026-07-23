@@ -26,6 +26,7 @@ import { ok, fail } from '@miniapp/shared';
 import { deriveStHandle } from '@miniapp/shared';
 import type { EnsureStCharacterData } from '@miniapp/shared';
 import { cacheStCookie } from '../lib/st-cookie.js';
+import { requestLogger, type RequestLogger } from '../lib/logger.js';
 
 const miniappUserSettings = new MiniappUserSettingsRepository();
 
@@ -133,7 +134,7 @@ function mergeCookieHeader(existing: string | undefined, setCookies: string[]): 
 // 这样登录不再撞上全量卡下载尖峰（ST 扫目录/生成缩略图 + 网络下载）。
 async function triggerProvisionSync(
   userId: string,
-  log: (msg: string) => void,
+  log: RequestLogger,
   force = false,
   cardsNone = true
 ): Promise<void> {
@@ -142,13 +143,13 @@ async function triggerProvisionSync(
   if (cardsNone) params.set('cards', 'none');
   const query = params.toString();
   const url = `${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}/sync${query ? `?${query}` : ''}`;
-  log(`[bridge] 同步 provision 开始（userId=${userId}, force=${force}, cardsNone=${cardsNone}）`);
+  log.sys.info({ event: 'provision.sync.start', userId, force, cardsNone }, '同步 provision 开始');
   const res = await fetch(url, { method: 'POST' });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`provision 失败（${res.status}）：${text}`);
   }
-  log(`[bridge] 同步 provision 完成（userId=${userId}）`);
+  log.sys.info({ event: 'provision.sync.done', userId }, '同步 provision 完成');
 }
 
 // ─── 异步触发 provision（老用户放行后台刷新，不阻塞关键路径） ──────────────────
@@ -159,7 +160,7 @@ async function triggerProvisionSync(
 // 后台会给懒下发用户补下全部角色卡，重新制造 CPU/IO 尖峰（与 ST 冷启动抢容器）。
 async function triggerProvisionAsync(
   userId: string,
-  log: (msg: string) => void,
+  log: RequestLogger,
   force = false,
   cardsNone = true
 ): Promise<void> {
@@ -173,7 +174,10 @@ async function triggerProvisionAsync(
     const text = await res.text();
     throw new Error(`async provision 触发失败（${res.status}）：${text}`);
   }
-  log(`[bridge] 后台 provision 已触发（userId=${userId}, force=${force}, cardsNone=${cardsNone}）`);
+  log.sys.info(
+    { event: 'provision.async.trigger', userId, force, cardsNone },
+    '后台 provision 已触发'
+  );
 }
 
 // ─── 单卡按需下发（进入对话页时确保当前卡落盘） ──────────────────────────────
@@ -221,7 +225,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       }
 
-      const log = (msg: string) => request.log.info(msg);
+      const log = requestLogger(request.log, 'bridge');
 
       try {
         // ── 1. 获取/创建 Supabase 用户，写入 st_handle ────────────────────
@@ -235,7 +239,10 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         try {
           await miniappUserSettings.getOrCreate(dbUser.id, request.user);
         } catch (err) {
-          request.log.warn({ err: String(err) }, '[bridge] 落库 TG persona 失败（不阻断登录）');
+          log.sys.warn(
+            { event: 'stsession.persona.persist_failed', err, userId: dbUser.id },
+            '落库 TG persona 失败（不阻断登录）'
+          );
         }
 
         // ── 2. 读 st_initialized_at 判断是否首次登录 ───────────────────────
@@ -260,21 +267,33 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         //   阶段 3：force=true provision → 在 ST 完整目录上覆盖写平台文件
         //           （settings.json / characters / presets / secrets.json）
         if (isNewUser) {
-          log(`[bridge] 新用户首次登录（handle=${stHandle}）`);
+          log.biz.info(
+            { event: 'stsession.login.new', userId: dbUser.id, stHandle },
+            '新用户首次登录'
+          );
 
           // 阶段 1：创建 ST 账号 + 写最小平台文件
-          log(`[bridge]   阶段 1/3：创建 ST 账号 + 初始下发`);
+          log.biz.info(
+            { event: 'stsession.provision.phase', userId: dbUser.id, phase: 1 },
+            '阶段 1/3：创建 ST 账号 + 初始下发'
+          );
           await triggerProvisionSync(dbUser.id, log);
 
           // 阶段 2：登录 ST，触发 ST 原生 content initialization（建完整目录）
-          log(`[bridge]   阶段 2/3：登录 ST，等待 content initialization 完成`);
+          log.biz.info(
+            { event: 'stsession.provision.phase', userId: dbUser.id, phase: 2 },
+            '阶段 2/3：登录 ST，等待 content initialization 完成'
+          );
           const stCookieInit = await loginToSt(stHandle);
           // ST content initialization 是同步的（login 返回时已完成），
           // 但为保险起见等待 500ms 让文件写入落盘
           await new Promise((resolve) => setTimeout(resolve, 500));
 
           // 阶段 3：force=true 覆盖写平台文件（盖住 ST 的默认 settings.json）
-          log(`[bridge]   阶段 3/3：force 覆盖写平台文件`);
+          log.biz.info(
+            { event: 'stsession.provision.phase', userId: dbUser.id, phase: 3 },
+            '阶段 3/3：force 覆盖写平台文件'
+          );
           await triggerProvisionSync(dbUser.id, log, true);
 
           // ── 4. 缓存 cookie + 返回 ──────────────────────────────────
@@ -299,16 +318,19 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           //   - cards=none 懒下发保持不变（避免全量卡下载尖峰，见 triggerProvisionAsync）。
           // 原实现是「await 同步 provision → 再登录 → 才放行」，把 provision 耗时串在
           // 关键路径最前面；这里改为「登录拿 cookie 立即放行 + provision 后台异步」。
-          log(`[bridge] 已初始化用户再次登录（handle=${stHandle}），先放行 + 后台刷新配置`);
+          log.biz.info(
+            { event: 'stsession.login.returning', userId: dbUser.id, stHandle },
+            '已初始化用户再次登录，先放行 + 后台刷新配置'
+          );
 
           const stCookie = await loginToSt(stHandle);
           await cacheStCookie(dbUser.id, stCookie);
 
           // 后台异步刷新配置：不 await；触发失败仅告警（用户已用现有配置放行，不阻断）。
           triggerProvisionAsync(dbUser.id, log).catch((err) => {
-            request.log.warn(
-              { err: String(err) },
-              '[bridge] 后台 provision 触发失败（不阻断放行）'
+            log.sys.warn(
+              { event: 'provision.async.trigger_failed', err, userId: dbUser.id },
+              '后台 provision 触发失败（不阻断放行）'
             );
           });
 
@@ -321,7 +343,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           );
         }
       } catch (err) {
-        request.log.error({ err: String(err) }, '[bridge] st-session 失败');
+        log.sys.error({ event: 'stsession.failed', err }, 'st-session 失败');
         return reply.status(500).send(fail('INTERNAL_ERROR', String(err)));
       }
     }
@@ -345,6 +367,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       }
 
+      const log = requestLogger(request.log, 'bridge');
       const { characterId } = request.params as { characterId: string };
       if (!UUID_RE.test(characterId)) {
         return reply.status(400).send(fail('INVALID_ARGUMENT', 'characterId 必须是 UUID'));
@@ -360,9 +383,16 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         }
         const dbUser = await getOrCreateDbUser(request.user);
         const status = await ensureStCharacter(dbUser.id, characterId);
+        log.biz.info(
+          { event: 'provision.character.ensure', userId: dbUser.id, characterId, status },
+          '单卡懒下发完成'
+        );
         return reply.send(ok<EnsureStCharacterData>({ characterId, status }));
       } catch (err) {
-        request.log.error({ err: String(err) }, '[bridge] st-character 失败');
+        log.sys.error(
+          { event: 'provision.character.ensure_failed', err, characterId },
+          'st-character 失败'
+        );
         return reply.status(500).send(fail('INTERNAL_ERROR', String(err)));
       }
     }

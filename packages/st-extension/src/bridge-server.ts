@@ -19,6 +19,9 @@ import type {
   BridgeErrorPayload,
 } from '@miniapp/bridge-protocol';
 import { buildMirrorState } from './mirror-state.js';
+import { createLogger } from './logger.js';
+
+const log = createLogger('bridge-server');
 
 // ── Types ──
 
@@ -53,9 +56,7 @@ export function createBridgeServer(parentOrigin: string): BridgeServer {
     try {
       checkMessageSize(serialized);
     } catch {
-      console.error(
-        `[bridge-server] Message exceeds size limit (${serialized.length} > ${MAX_MESSAGE_SIZE})`
-      );
+      log.error(`Message exceeds size limit (${serialized.length} > ${MAX_MESSAGE_SIZE})`);
       return;
     }
 
