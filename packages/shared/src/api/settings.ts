@@ -4,7 +4,7 @@ export type PreferredWordCount = '100-300' | '300-500' | '500-800' | '800+';
 export type AvatarSource = 'custom' | 'telegram' | 'default';
 
 export const DEFAULT_USER_AVATAR_URL =
-  'https://zoqelpfhurwehlvypryl.supabase.co/storage/v1/object/public/miniapp-users/default_user_avatar/4d015fdd-7f82-482c-912d-466eaa826280.png';
+  'https://zoqelpfhurwehlvypryl.supabase.co/storage/v1/object/public/miniapp-users/default_user_avatar/default-user-avatar-20260713.png';
 
 export interface UserSettings {
   display_name: string | null;
