@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { splitBoldSegments } from '../src/patches/markdown-bold-fallback.js';
 import { resolveReasoningUiState } from '../src/patches/reasoning-stream-ui.js';
 import {
+  hasSendableComposerText,
   resolveMiniappAppearance,
   shouldExpandComposer,
 } from '../src/patches/mobile-chat-theme.js';
@@ -57,6 +58,18 @@ describe('shouldExpandComposer', () => {
     assert.equal(shouldExpandComposer('仍然有较多文字内容不能反复抖动', 48, true), true);
     assert.equal(shouldExpandComposer('视觉上已经换行', 56, false), true);
     assert.equal(shouldExpandComposer('已清空', 48, true), false);
+  });
+});
+
+describe('hasSendableComposerText', () => {
+  it('rejects empty and whitespace-only values', () => {
+    assert.equal(hasSendableComposerText(''), false);
+    assert.equal(hasSendableComposerText(' \n\t '), false);
+  });
+
+  it('accepts values containing visible text', () => {
+    assert.equal(hasSendableComposerText('你好'), true);
+    assert.equal(hasSendableComposerText('  hello  '), true);
   });
 });
 
