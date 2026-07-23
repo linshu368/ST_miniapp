@@ -105,7 +105,7 @@ export function CharacterGallery() {
     <div className="mx-auto w-full max-w-screen-xl px-4 pb-2 pt-2 sm:px-6 lg:px-8">
       <div className="relative">
         <Search
-          className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+          className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
           aria-hidden="true"
         />
         <Input
@@ -113,7 +113,7 @@ export function CharacterGallery() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索角色、标签或作者"
-          className="h-10 rounded-full border-border bg-card pl-10 pr-10 text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:ring-primary/40 transition-all"
+          className="h-10 rounded-full pl-10 pr-10 border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:ring-indigo-500/50 focus-visible:bg-white/10 transition-all"
           aria-label="搜索角色"
         />
         {query && (
@@ -122,7 +122,7 @@ export function CharacterGallery() {
             size="icon"
             onClick={() => setQuery('')}
             aria-label="清空搜索"
-            className="absolute right-1 top-1 h-8 w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="absolute right-1 top-1 h-8 w-8 rounded-full text-white/40 hover:text-white hover:bg-white/10"
           >
             <X className="h-4 w-4" />
           </Button>
@@ -142,7 +142,7 @@ export function CharacterGallery() {
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="aspect-[3/4] w-full animate-breath rounded-[16px] border border-border bg-muted"
+              className="aspect-[3/4] w-full animate-breath rounded-[16px] bg-white/5 border border-white/5"
             />
           ))}
         </div>
@@ -154,7 +154,7 @@ export function CharacterGallery() {
     return (
       <>
         {searchBar}
-        <p className="mx-auto max-w-screen-xl px-4 py-8 text-center text-[13px] text-muted-foreground sm:px-6 lg:px-8">
+        <p className="mx-auto max-w-screen-xl px-4 py-8 text-center text-[13px] text-white/50 sm:px-6 lg:px-8">
           门好像被风合上了。稍后再来。
         </p>
       </>
@@ -165,7 +165,7 @@ export function CharacterGallery() {
     return (
       <>
         {searchBar}
-        <p className="mx-auto max-w-screen-xl px-4 py-8 text-center text-[13px] text-muted-foreground sm:px-6 lg:px-8">
+        <p className="mx-auto max-w-screen-xl px-4 py-8 text-center text-[13px] text-white/50 sm:px-6 lg:px-8">
           空旷的空间，还没有角色到达。
         </p>
       </>
@@ -177,8 +177,8 @@ export function CharacterGallery() {
       {searchBar}
       {filtered.length === 0 ? (
         <div className="mx-auto flex max-w-screen-xl flex-col items-center gap-2 px-4 py-10 sm:px-6 lg:px-8">
-          <p className="text-center text-[13px] text-muted-foreground">没有匹配「{query}」的角色</p>
-          <p className="text-center text-[11px] text-muted-foreground/80">
+          <p className="text-center text-[13px] text-white/50">没有匹配「{query}」的角色</p>
+          <p className="text-center text-[11px] text-white/40">
             可以到「创作」页右上角的许愿池告诉我们你想要的角色。
           </p>
         </div>

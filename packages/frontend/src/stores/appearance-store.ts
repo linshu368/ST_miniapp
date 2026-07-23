@@ -5,11 +5,6 @@ import { create } from 'zustand';
 export type AppearanceMode = 'dark' | 'light';
 
 const STORAGE_KEY = 'st_miniapp_appearance_mode';
-export const DEFAULT_APPEARANCE: AppearanceMode = 'dark';
-
-export function parseAppearanceMode(value: unknown): AppearanceMode | undefined {
-  return value === 'light' || value === 'dark' ? value : undefined;
-}
 
 interface AppearanceState {
   mode: AppearanceMode;
@@ -21,7 +16,8 @@ interface AppearanceState {
 function readStored(): AppearanceMode | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
-    return parseAppearanceMode(window.localStorage.getItem(STORAGE_KEY));
+    const value = window.localStorage.getItem(STORAGE_KEY);
+    return value === 'light' || value === 'dark' ? value : undefined;
   } catch {
     return undefined;
   }
@@ -45,9 +41,9 @@ function applyToRoot(mode: AppearanceMode): void {
 }
 
 export const useAppearanceStore = create<AppearanceState>((set, get) => ({
-  mode: DEFAULT_APPEARANCE,
+  mode: 'dark',
   hydrate: () => {
-    const mode = readStored() ?? DEFAULT_APPEARANCE;
+    const mode = readStored() ?? 'dark';
     set({ mode });
     applyToRoot(mode);
   },
