@@ -122,7 +122,7 @@ export async function startHealthServer(opts: HealthServerOptions): Promise<Heal
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(snapshot, null, 2));
     } catch (err) {
-      logger.error({ err: String(err) }, '构建快照失败');
+      logger.sys.error({ event: 'health.snapshot.failed', err }, '构建快照失败');
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ error: 'internal_error' }));

@@ -1,6 +1,8 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
+import { randomUUID } from 'node:crypto';
 import { config } from './platform/config.js';
+import { fastifyLoggerOptions } from './lib/logger.js';
 import { ok } from '@miniapp/shared';
 import type { HealthData } from '@miniapp/shared';
 import characterRoutes from './routes/characters.js';
@@ -23,7 +25,14 @@ import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-hist
 
 export async function buildApp() {
   const app = Fastify({
-    logger: true,
+    logger: fastifyLoggerOptions() as unknown as FastifyServerOptions['logger'],
+    // 跨边界链路追踪：优先复用入站 X-Request-Id，否则生成。见 docs/日志系统.md §6
+    genReqId(req) {
+      const hdr = req.headers['x-request-id'];
+      if (typeof hdr === 'string' && hdr.length > 0) return hdr;
+      if (Array.isArray(hdr) && hdr[0]) return hdr[0];
+      return randomUUID();
+    },
   });
 
   await app.register(cors, {

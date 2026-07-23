@@ -7,11 +7,12 @@
  * 阶段 5 迁移：切换为查 Supabase st_users.user_st_chats，平台契约不变。
  */
 
-import { FastifyInstance, type FastifyBaseLogger } from 'fastify';
+import { FastifyInstance } from 'fastify';
 import { ok, fail } from '@miniapp/shared';
 import { deriveStHandle } from '@miniapp/shared';
 import type { GetLatestUserChatData, GetUserChatsData, UserChatListItem } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
+import { requestLogger, type RequestLogger } from '../lib/logger.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { fetchWithStCookie } from '../lib/st-cookie.js';
 import { prisma } from '../lib/db.js';
@@ -47,10 +48,11 @@ export default async function chatsRoutes(app: FastifyInstance) {
       return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     }
 
+    const log = requestLogger(request.log, 'chats');
     try {
       const dbUser = await getOrCreateDbUser(request.user);
       const stHandle = deriveStHandle(request.user.id.toString());
-      const items = await loadCompletedChats(dbUser.id, stHandle, request.log);
+      const items = await loadCompletedChats(dbUser.id, stHandle, log);
       if (!items) {
         return reply.status(502).send(fail('ST_UNAVAILABLE', 'Failed to fetch chat list'));
       }
@@ -62,7 +64,7 @@ export default async function chatsRoutes(app: FastifyInstance) {
         })
       );
     } catch (err) {
-      request.log.error({ err: String(err) }, '[chats] /api/users/chats failed');
+      log.sys.error({ event: 'chats.list.failed', err }, '/api/users/chats failed');
       return reply.status(500).send(fail('INTERNAL_ERROR', 'Failed to fetch chat list'));
     }
   });
@@ -79,10 +81,11 @@ export default async function chatsRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('INVALID_CHARACTER_ID', 'Invalid character id'));
       }
 
+      const log = requestLogger(request.log, 'chats');
       try {
         const dbUser = await getOrCreateDbUser(request.user);
         const stHandle = deriveStHandle(request.user.id.toString());
-        const items = await loadCompletedChats(dbUser.id, stHandle, request.log);
+        const items = await loadCompletedChats(dbUser.id, stHandle, log);
         if (!items) {
           return reply.status(502).send(fail('ST_UNAVAILABLE', 'Failed to fetch chat list'));
         }
@@ -92,7 +95,7 @@ export default async function chatsRoutes(app: FastifyInstance) {
           })
         );
       } catch (err) {
-        request.log.error({ err: String(err) }, '[chats] latest chat lookup failed');
+        log.sys.error({ event: 'chats.latest.failed', err }, 'latest chat lookup failed');
         return reply.status(500).send(fail('INTERNAL_ERROR', 'Failed to fetch latest chat'));
       }
     }
@@ -102,7 +105,7 @@ export default async function chatsRoutes(app: FastifyInstance) {
 async function loadCompletedChats(
   dbUserId: string,
   stHandle: string,
-  log: FastifyBaseLogger
+  log: RequestLogger
 ): Promise<UserChatListItem[] | null> {
   const result = await fetchWithStCookie<STRecentChatEntry[] | Record<string, STRecentChatEntry>>(
     dbUserId,
@@ -115,7 +118,10 @@ async function loadCompletedChats(
   );
 
   if (!result.ok || !result.data) {
-    log.warn({ userId: dbUserId, status: result.status }, '[chats] ST /api/chats/recent failed');
+    log.sys.warn(
+      { event: 'chats.st_recent.failed', userId: dbUserId, status: result.status },
+      'ST /api/chats/recent failed'
+    );
     return null;
   }
 

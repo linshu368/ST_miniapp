@@ -29,21 +29,26 @@ function isCompleteGenerationData(genData: Record<string, unknown> | null): bool
 export function startChatHistorySyncJob(log: FastifyBaseLogger): void {
   if (timerId || startupTimerId) return;
 
+  const jlog = log.child({ module: 'chat-history-sync' });
+
   if (!OPENROUTER_API_KEY) {
-    log.warn('[sync-job] missing API key, skipping chat history sync job');
+    jlog.warn(
+      { kind: 'sys', event: 'chathistory_sync.disabled' },
+      'missing API key, skipping chat history sync job'
+    );
     return;
   }
 
   timerId = setInterval(() => {
-    void runSyncJob(log);
+    void runSyncJob(jlog);
   }, SYNC_INTERVAL_MS);
 
   startupTimerId = setTimeout(() => {
     startupTimerId = null;
-    void runSyncJob(log);
+    void runSyncJob(jlog);
   }, STARTUP_DELAY_MS);
 
-  log.info('[sync-job] Chat history sync job started');
+  jlog.info({ kind: 'sys', event: 'chathistory_sync.started' }, 'Chat history sync job started');
 }
 
 export function stopChatHistorySyncJob(): void {
@@ -83,7 +88,10 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       .limit(BATCH_LIMIT);
 
     if (error) {
-      log.error({ err: error.message }, '[sync-job] failed to fetch incomplete chat history');
+      log.error(
+        { kind: 'sys', event: 'chathistory_sync.fetch_failed', err: error },
+        'failed to fetch incomplete chat history'
+      );
       return;
     }
 
@@ -137,8 +145,15 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
           }
         } catch (reconcileErr) {
           log.error(
-            { err: String(reconcileErr), id: record.id, generationId, chargeId },
-            '[sync-job] failed to reconcile LLM usage charge'
+            {
+              kind: 'sys',
+              event: 'chathistory_sync.reconcile_failed',
+              err: reconcileErr,
+              id: record.id,
+              generationId,
+              chargeId,
+            },
+            'failed to reconcile LLM usage charge'
           );
         }
       }
@@ -150,8 +165,14 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
 
       if (updateErr) {
         log.error(
-          { err: updateErr.message, id: record.id, generationId },
-          '[sync-job] failed to update chat history'
+          {
+            kind: 'sys',
+            event: 'chathistory_sync.update_failed',
+            err: updateErr,
+            id: record.id,
+            generationId,
+          },
+          'failed to update chat history'
         );
         continue;
       }
@@ -173,7 +194,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       '[sync-job] sync run finished'
     );
   } catch (err) {
-    log.error({ err: String(err) }, '[sync-job] unexpected error');
+    log.error({ kind: 'sys', event: 'chathistory_sync.unexpected', err }, 'unexpected error');
   } finally {
     isRunning = false;
   }

@@ -1,7 +1,10 @@
 import type { ApiResponse } from '@miniapp/shared';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
+import { createLogger } from '@/lib/logger';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
+
+const log = createLogger('api');
 
 export class ApiClientError extends Error {
   constructor(
@@ -25,13 +28,13 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
   }
   if (initData) headers.set(INIT_DATA_HEADER, initData);
 
-  console.log(`[API] Fetching ${url}`, { initData: !!initData, initDataValue: initData });
+  log.debug(`Fetching ${url}`, { hasInitData: !!initData });
 
   const res = await fetch(url, { ...options, headers });
   const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
 
   if (!res.ok) {
-    console.error(`[API] Error ${res.status} for ${url}:`, json);
+    log.error(`Error ${res.status} for ${url}:`, json);
     if (json && !json.success) {
       throw new ApiClientError(json.error.message, res.status, json.error.code);
     }
@@ -106,7 +109,7 @@ export async function apiStreamClient(
           try {
             parsed = JSON.parse(dataStr);
           } catch (e) {
-            console.warn('Failed to parse SSE chunk:', dataStr);
+            log.warn('Failed to parse SSE chunk:', dataStr);
             continue;
           }
 

@@ -94,13 +94,13 @@ async function fetchGenerationDataWithRetry(
       return genData;
     } catch (err) {
       log.warn(
-        { err: String(err), generationId, attempt },
-        '[chat-history] failed to fetch complete generation data, retrying...'
+        { kind: 'sys', event: 'chathistory.generation.fetch_retry', err, generationId, attempt },
+        'failed to fetch complete generation data, retrying...'
       );
       if (attempt === maxRetries) {
         log.error(
-          { err: String(err), generationId },
-          '[chat-history] max retries reached for fetching generation data'
+          { kind: 'sys', event: 'chathistory.generation.fetch_failed', err, generationId },
+          'max retries reached for fetching generation data'
         );
         return lastGenData;
       }
@@ -112,6 +112,7 @@ async function fetchGenerationDataWithRetry(
 }
 
 export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger): void {
+  const clog = log.child({ module: 'chat-history' });
   void (async () => {
     try {
       let llmMetadata: Record<string, any> = {
@@ -124,7 +125,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
       // 如果有 generation_id，尝试异步获取详细数据
       if (entry.generation_id && entry.model_markup > 0) {
         try {
-          const genData = await fetchGenerationDataWithRetry(entry.generation_id, log);
+          const genData = await fetchGenerationDataWithRetry(entry.generation_id, clog);
           if (genData) {
             llmMetadata = {
               ...llmMetadata,
@@ -147,9 +148,14 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             llmMetadata = { ...llmMetadata, llm_generation_id: entry.generation_id };
           }
         } catch (fetchErr) {
-          log.error(
-            { err: String(fetchErr), generationId: entry.generation_id },
-            '[chat-history] error during generation data fetch'
+          clog.error(
+            {
+              kind: 'sys',
+              event: 'chathistory.generation.fetch_error',
+              err: fetchErr,
+              generationId: entry.generation_id,
+            },
+            'error during generation data fetch'
           );
           llmMetadata = { ...llmMetadata, llm_generation_id: entry.generation_id };
         }
@@ -202,20 +208,28 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             },
           });
           actualDeduction = Number(result.charge.charged_amount);
-          log.info(
+          clog.info(
             {
+              kind: 'biz',
+              event: 'chathistory.billing.recorded',
               userId: entry.user_id,
               chargeId: entry.charge_id,
               intendedAmount: intendedDeduction,
               chargedAmount: actualDeduction,
               pending: billingDecision.pending,
             },
-            '[chat-history] LLM usage billing record created'
+            'LLM usage billing record created'
           );
         } catch (chargeErr) {
-          log.error(
-            { err: String(chargeErr), userId: entry.user_id, chargeId: entry.charge_id },
-            '[chat-history] atomic LLM usage charge failed'
+          clog.error(
+            {
+              kind: 'sys',
+              event: 'chathistory.billing.failed',
+              err: chargeErr,
+              userId: entry.user_id,
+              chargeId: entry.charge_id,
+            },
+            'atomic LLM usage charge failed'
           );
         }
       }
@@ -237,27 +251,44 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
       });
 
       if (error) {
-        log.error(
-          { err: error.message, userId: entry.user_id, model: entry.model },
-          '[chat-history] insert failed'
+        clog.error(
+          {
+            kind: 'sys',
+            event: 'chathistory.insert.failed',
+            err: error,
+            userId: entry.user_id,
+            model: entry.model,
+          },
+          'insert failed'
         );
       } else {
-        log.info({ userId: entry.user_id, model: entry.model }, '[chat-history] saved');
+        clog.info(
+          { kind: 'biz', event: 'chathistory.saved', userId: entry.user_id, model: entry.model },
+          'saved'
+        );
         if (entry.status === 'success') {
           const { error: roundErr } = await miniappDb.rpc('increment_user_total_round', {
             p_user_id: entry.user_id,
             p_delta: 1,
           });
           if (roundErr) {
-            log.error(
-              { err: roundErr.message, userId: entry.user_id },
-              '[chat-history] increment total_round failed'
+            clog.error(
+              {
+                kind: 'sys',
+                event: 'chathistory.round.increment_failed',
+                err: roundErr,
+                userId: entry.user_id,
+              },
+              'increment total_round failed'
             );
           }
         }
       }
     } catch (err: unknown) {
-      log.error({ err: String(err), userId: entry.user_id }, '[chat-history] unexpected error');
+      clog.error(
+        { kind: 'sys', event: 'chathistory.unexpected', err, userId: entry.user_id },
+        'unexpected error'
+      );
     }
   })();
 }

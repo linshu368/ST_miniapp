@@ -69,14 +69,14 @@ export class Consumer {
     // 兜底轮询
     this.pollTimer = setInterval(() => {
       this.poll().catch((err) => {
-        logger.error({ err: String(err) }, '轮询出错');
+        logger.sys.error({ event: 'consumer.poll.failed', err }, '轮询出错');
       });
     }, POLL_INTERVAL_MS);
 
     // 信号驱动：入队后立即消费
     this.emitter.on('nudge', () => {
       this.poll().catch((err) => {
-        logger.error({ err: String(err) }, 'nudge 触发消费出错');
+        logger.sys.error({ event: 'consumer.nudge.failed', err }, 'nudge 触发消费出错');
       });
     });
 
@@ -125,7 +125,10 @@ export class Consumer {
       .limit(BATCH_SIZE);
 
     if (error) {
-      logger.error({ err: error.message }, '查询 pending 任务失败');
+      logger.sys.error(
+        { event: 'consumer.query_pending.failed', err: error },
+        '查询 pending 任务失败'
+      );
       return { processed: 0, succeeded: 0, retried: 0, dead: 0 };
     }
 
@@ -168,7 +171,10 @@ export class Consumer {
       .maybeSingle();
 
     if (claimErr || !claimed) {
-      log.warn('任务领取失败（已被其他消费者抢走或状态已变）');
+      log.warn(
+        { kind: 'sys', event: 'sync_task.claim_lost' },
+        '任务领取失败（已被其他消费者抢走或状态已变）'
+      );
       return 'completed'; // 不计入失败
     }
 
@@ -188,11 +194,12 @@ export class Consumer {
         })
         .eq('id', task.id);
 
-      log.info('任务完成');
+      log.info({ kind: 'biz', event: 'sync_task.completed' }, '任务完成');
       return 'completed';
     } catch (err) {
+      // errorMsg 存入 DB last_error（字符串列）；日志侧传原始 err 保留栈。
       const errorMsg = err instanceof Error ? err.message : String(err);
-      log.error({ err: errorMsg, attempt: newAttempts }, '任务失败');
+      log.error({ kind: 'sys', event: 'sync_task.failed', err, attempt: newAttempts }, '任务失败');
 
       // 计算重试策略
       const decision = computeRetry(newAttempts, task.max_attempts);
@@ -212,6 +219,8 @@ export class Consumer {
 
         log.warn(
           {
+            kind: 'sys',
+            event: 'sync_task.retry',
             attempt: newAttempts,
             maxAttempts: task.max_attempts,
             delayMs: decision.delayMs,
@@ -232,7 +241,7 @@ export class Consumer {
           })
           .eq('id', task.id);
 
-        log.error({ attempts: newAttempts }, '任务进入死信');
+        log.error({ kind: 'sys', event: 'sync_task.dead', attempts: newAttempts }, '任务进入死信');
         return 'dead';
       }
     }

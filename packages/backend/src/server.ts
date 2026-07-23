@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
 import { config } from './platform/config.js';
+import { logger } from './lib/logger.js';
 
 async function main() {
   const app = await buildApp();
@@ -9,7 +10,7 @@ async function main() {
     host: '::', // 同时接受 IPv6 和 IPv4
   });
 
-  console.log(`Backend running on port ${config.port}`);
+  app.log.info({ port: config.port }, 'Backend running');
 
   // Graceful shutdown: close Fastify (stop accepting + drain in-flight) then exit 0 on stop signals.
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
@@ -21,6 +22,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Failed to start server:', err);
+  logger.fatal({ err }, 'Failed to start server');
   process.exit(1);
 });

@@ -16,6 +16,7 @@
 
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { config } from '../platform/config.js';
+import { requestLogger } from '../lib/logger.js';
 import { Readable } from 'node:stream';
 
 // 不透传给 ST 的请求头（由 Node fetch 自动处理或会导致问题）
@@ -87,7 +88,10 @@ export async function stProxyHandler(request: FastifyRequest, reply: FastifyRepl
       redirect: 'manual', // 让重定向原样返回给客户端
     });
   } catch (err) {
-    request.log.error({ err: String(err), targetUrl }, '[stProxy] 上游请求失败');
+    requestLogger(request.log, 'st-proxy').sys.error(
+      { event: 'stproxy.upstream.error', err, targetUrl },
+      '上游请求失败'
+    );
     return reply.status(502).send({ error: 'bad_gateway', message: String(err) });
   }
 

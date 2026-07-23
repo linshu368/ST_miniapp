@@ -122,7 +122,10 @@ export async function startWatcher(): Promise<void> {
     const userId = handleToUser.get(handle);
     if (!userId) return;
 
-    logger.info({ handle, ruleId: matched.id }, '触发上行同步');
+    logger.biz.info(
+      { event: 'watcher.upsync.triggered', handle, ruleId: matched.id },
+      '触发上行同步'
+    );
 
     try {
       const result = await enqueue({ userId, handle });
@@ -130,7 +133,7 @@ export async function startWatcher(): Promise<void> {
         consumer.nudge();
       }
     } catch (err) {
-      logger.error({ handle, err: String(err) }, '入队失败');
+      logger.sys.error({ event: 'watcher.enqueue.failed', handle, err }, '入队失败');
     }
   });
 

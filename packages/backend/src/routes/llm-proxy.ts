@@ -29,6 +29,7 @@ import {
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { saveChatHistory } from '../lib/chat-history-logger.js';
+import { requestLogger } from '../lib/logger.js';
 
 const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
 const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -59,7 +60,10 @@ async function requirePlatformToken(request: FastifyRequest, reply: FastifyReply
   const token = authHeader.slice(7);
   const userId = verifyPlatformToken(token);
   if (!userId) {
-    request.log.warn('[llm-proxy] invalid platformToken');
+    requestLogger(request.log, 'llm-proxy').sys.warn(
+      { event: 'llm.auth.invalid_token' },
+      'invalid platformToken'
+    );
     return reply.status(403).send({
       error: {
         message: 'Invalid or expired platform token',
@@ -79,6 +83,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
     { preHandler: [requirePlatformToken] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const userId = (request as FastifyRequest & { platformUserId: string }).platformUserId;
+      const log = requestLogger(request.log, 'llm-proxy');
 
       if (!LLM_API_KEY) {
         return reply.status(503).send({
@@ -138,20 +143,21 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           (request.body as Record<string, unknown>).model = modelName;
 
           if (requestedModel !== modelName) {
-            request.log.warn(
+            log.biz.warn(
               {
+                event: 'llm.model.mismatch_corrected',
                 userId,
                 requestedModel,
                 authoritativeModel: modelName,
                 selectedModelId: authoritativeModel.id,
               },
-              '[llm-proxy] runtime model mismatch corrected'
+              'runtime model mismatch corrected'
             );
           }
         } catch (err) {
-          request.log.error(
-            { err: String(err), userId, requestedModel: modelName },
-            '[llm-proxy] failed to resolve authoritative user model'
+          log.sys.error(
+            { event: 'llm.model.resolve_failed', err, userId, requestedModel: modelName },
+            'failed to resolve authoritative user model'
           );
           return reply.status(500).send({
             error: { message: 'Failed to resolve selected model', type: 'internal_error' },
@@ -168,11 +174,18 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           const decoded = Buffer.from(rawInputHeader, 'base64').toString('utf8').trim();
           if (decoded) userInput = decoded;
         } catch (err) {
-          request.log.warn(
-            { err: String(err), userId },
-            '[llm-proxy] failed to decode x-st-user-input header, falling back to messages extraction'
+          log.sys.warn(
+            { event: 'llm.input.decode_failed', err, userId },
+            'failed to decode x-st-user-input header, falling back to messages extraction'
           );
         }
+      }
+
+      if (isChatCompletion) {
+        log.biz.info(
+          { event: 'llm.request.start', userId, model: modelName, characterId, presetId },
+          'LLM 生成请求开始'
+        );
       }
 
       const chargeId = randomUUID();
@@ -194,17 +207,23 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       // ── 余额预检：不足基线时在调用上游前返回 402，由 ST bridge 引导充值 ─────────
       try {
         if (modelMarkup === 0) {
-          request.log.debug(
-            { userId, model: modelName },
-            '[llm-proxy] free model balance check skipped'
+          log.biz.debug(
+            { event: 'llm.balance.check_skipped', userId, model: modelName },
+            'free model balance check skipped'
           );
         } else {
           const wallet = await wallets.getOrCreate(userId);
           const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
           if (balance < balanceBaseline) {
-            request.log.info(
-              { userId, balance, required: balanceBaseline, model: modelName },
-              '[llm-proxy] insufficient balance'
+            log.biz.info(
+              {
+                event: 'llm.balance.insufficient',
+                userId,
+                balance,
+                required: balanceBaseline,
+                model: modelName,
+              },
+              'insufficient balance'
             );
             const response: InsufficientBalanceErrorResponse = {
               error: {
@@ -221,7 +240,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           }
         }
       } catch (err) {
-        request.log.error({ err: String(err), userId }, '[llm-proxy] wallet check failed');
+        log.sys.error({ event: 'llm.balance.check_failed', err, userId }, 'wallet check failed');
         return reply.status(500).send({
           error: { message: 'Failed to check wallet balance', type: 'internal_error' },
         });
@@ -258,7 +277,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           duplex: 'half',
         });
       } catch (err) {
-        request.log.error({ err: String(err), targetUrl }, '[llm-proxy] upstream request failed');
+        log.sys.error({ event: 'llm.upstream.error', err, targetUrl }, 'upstream request failed');
         return reply.status(502).send({
           error: { message: `Upstream error: ${String(err)}`, type: 'upstream_error' },
         });
@@ -280,7 +299,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
               status: 'upstream_error',
               upstream_status: upstreamRes.status,
             },
-            request.log
+            log
           );
         }
 
@@ -327,7 +346,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
               status: 'success',
               generation_id: generationId,
             },
-            request.log
+            log
           );
         }
         return reply.send('');
@@ -389,6 +408,16 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             }
 
             if (streamCompleted) {
+              log.biz.info(
+                {
+                  event: 'llm.generation.completed',
+                  userId,
+                  model: modelName,
+                  generationId,
+                  replyChars: replyChunks.join('').length,
+                },
+                'LLM 生成完成'
+              );
               if (isChatCompletion && userInput) {
                 saveChatHistory(
                   {
@@ -403,13 +432,13 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                     status: 'success',
                     generation_id: generationId,
                   },
-                  request.log
+                  log
                 );
               }
             } else {
-              request.log.warn(
-                { userId, model: modelName },
-                '[llm-proxy] stream ended without [DONE], skipping deduction'
+              log.biz.warn(
+                { event: 'llm.generation.interrupted', userId, model: modelName, generationId },
+                'stream ended without [DONE], skipping deduction'
               );
               if (isChatCompletion && userInput) {
                 saveChatHistory(
@@ -425,7 +454,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                     status: 'stream_interrupted',
                     generation_id: generationId,
                   },
-                  request.log
+                  log
                 );
               }
             }
@@ -452,7 +481,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             status: 'success',
             generation_id: generationId,
           },
-          request.log
+          log
         );
       }
       return reply.send(nodeStream);

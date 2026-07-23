@@ -69,7 +69,10 @@ export async function getQueueMetrics(): Promise<QueueMetrics> {
     let pending = 0;
     let failed = 0;
     if (pendingResult.error) {
-      logger.warn({ err: pendingResult.error.message }, '查询 pending 失败');
+      logger.sys.warn(
+        { event: 'metrics.query_pending.failed', err: pendingResult.error },
+        '查询 pending 失败'
+      );
     } else {
       for (const row of pendingResult.data ?? []) {
         const r = row as { attempts: number };
@@ -89,7 +92,7 @@ export async function getQueueMetrics(): Promise<QueueMetrics> {
 
     return { pending, processing, failed, dead, oldest_pending_age_ms };
   } catch (err) {
-    logger.error({ err: String(err) }, 'getQueueMetrics 异常');
+    logger.sys.error({ event: 'metrics.query.failed', err }, 'getQueueMetrics 异常');
     return defaultMetrics;
   }
 }
