@@ -58,6 +58,7 @@ export const config = {
   simulation: {
     serviceKey: process.env.SIMULATION_SERVICE_KEY || '',
   },
+  chatHistorySyncEnabled: process.env.CHAT_HISTORY_SYNC_ENABLED !== 'false',
 
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {

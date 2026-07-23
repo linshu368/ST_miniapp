@@ -117,7 +117,12 @@ export async function buildApp() {
     });
   });
 
-  startChatHistorySyncJob(app.log);
+  if (config.chatHistorySyncEnabled) {
+    app.log.info('[sync-job] Chat history sync job enabled');
+    startChatHistorySyncJob(app.log);
+  } else {
+    app.log.info('[sync-job] Chat history sync job disabled by CHAT_HISTORY_SYNC_ENABLED=false');
+  }
 
   app.addHook('onClose', async () => {
     stopChatHistorySyncJob();
