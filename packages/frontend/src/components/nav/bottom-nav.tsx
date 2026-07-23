@@ -2,13 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, MessageCircle, Sparkles, User } from 'lucide-react';
+import { Home, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
   { href: '/', label: '大厅', Icon: Home },
-  { href: '/chats', label: '聊天', Icon: MessageCircle },
   { href: '/create', label: '创作', Icon: Sparkles },
   { href: '/profile', label: '我的', Icon: User },
 ] as const;
@@ -29,7 +28,7 @@ export function BottomNav() {
     >
       <nav
         aria-label="主导航"
-        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-4 gap-1 rounded-[1.65rem] border border-white/[0.08] bg-[#171027]/92 p-1.5 text-white shadow-[0_14px_38px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
+        className="pointer-events-auto grid w-full max-w-[326px] grid-cols-3 gap-1 rounded-[1.65rem] border border-white/[0.08] bg-[#171027]/92 p-1.5 text-white shadow-[0_14px_38px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const active = href === '/' ? pathname === href : pathname?.startsWith(href);
