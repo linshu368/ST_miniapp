@@ -91,8 +91,9 @@ async function doSelectCharacter(payload: Payload): Promise<Result> {
 
   await ctx.selectCharacterById(index, {
     switchMenu: false,
-    // forceNewChat 路径无需加载和渲染旧聊天；下方 doNewChat 会直接初始化新会话。
-    skipChatLoad: payload.forceNewChat,
+    // 新建会话或壳端已确认目标历史时，不先加载角色卡记录的旧会话。
+    // 后者会由壳端紧接着 openChat，避免重复读取、渲染两份聊天记录。
+    skipChatLoad: payload.forceNewChat || payload.skipChatLoad,
   });
   stTiming('sel_selectById_done'); // [iframe-timing] TEMP DEBUG: H3
   markSelectProbe('h3_done'); // [iframe-timing] TEMP DEBUG

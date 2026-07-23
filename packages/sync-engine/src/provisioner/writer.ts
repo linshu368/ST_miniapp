@@ -29,8 +29,8 @@ import { getSupabaseClient } from '../lib/supabase.js';
 import type { CharacterRow, PresetRow, ApiConfigRow } from './fetcher.js';
 import type { MergedSettings } from './merger.js';
 import { config } from '../lib/config.js';
+import { DEFAULT_USER_AVATAR_FILENAME } from './user-avatar-constants.js';
 
-export const DEFAULT_USER_AVATAR_FILENAME = '4d015fdd-7f82-482c-912d-466eaa826280.png';
 const GLIMMER_THEME_FILENAME = 'Glimmer - by Rivelle.json';
 const MOONLIT_BACKGROUND_FILENAME = 'night-city-anime.jpg';
 
@@ -228,6 +228,23 @@ export async function ensureUserAvatar(
 async function ensureDefaultUserAvatar(handle: string): Promise<string | null> {
   const dst = userAvatarDst(handle, DEFAULT_USER_AVATAR_FILENAME);
   if (existsSync(dst)) return DEFAULT_USER_AVATAR_FILENAME;
+
+  // 默认头像随 st-bundle 一并发布，优先从本地资产复制，避免 provision 依赖
+  // Supabase 公网可用性；远程 URL 仅作为旧部署/本地环境的兼容回退。
+  try {
+    const bundled = resolve(
+      resolvePlatformAssetsRoot(),
+      'user-avatars',
+      DEFAULT_USER_AVATAR_FILENAME
+    );
+    if (existsSync(bundled)) {
+      ensureDir(userAvatarsDir(handle));
+      copyFileSync(bundled, dst);
+      return DEFAULT_USER_AVATAR_FILENAME;
+    }
+  } catch {
+    // 未配置平台资产目录时继续尝试远程默认头像。
+  }
 
   try {
     const res = await fetch(config.DEFAULT_USER_AVATAR_URL);
