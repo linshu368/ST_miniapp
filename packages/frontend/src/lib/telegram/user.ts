@@ -1,5 +1,7 @@
 // 从 Telegram initData 提取当前用户信息
 // 业务代码取 displayName 应走 useUserProfileStore,这里只负责"原始默认值"的解析
+import { normalizeTelegramAvatarUrl } from '@miniapp/shared';
+
 import { getRawInitData } from './auth';
 
 export interface TelegramUserInfo {
@@ -44,5 +46,5 @@ export function getTelegramDefaultDisplayName(): string {
 
 /** 当前 Telegram 用户头像 URL。旧客户端或隐私设置下可能为空。 */
 export function getTelegramPhotoUrl(): string | undefined {
-  return parseTelegramUser(getRawInitData()).photoUrl?.trim() || undefined;
+  return normalizeTelegramAvatarUrl(parseTelegramUser(getRawInitData()).photoUrl) ?? undefined;
 }

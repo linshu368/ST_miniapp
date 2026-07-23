@@ -40,4 +40,14 @@ describe('resolveUserPersona avatar resolution', () => {
     expect(resolveUserPersona(baseRow).avatarUrl).toBe(DEFAULT_AVATAR_URL);
     expect(resolveUserPersona(null).avatarUrl).toBe(DEFAULT_AVATAR_URL);
   });
+
+  it('uses the configured default for Telegram generated SVG placeholders', () => {
+    expect(
+      resolveUserPersona({
+        ...baseRow,
+        tg_avatar_url:
+          'https://t.me/i/userpic/320/vaWa7P-yk8TJ40-AQ-R_qOg5_dfd4p8j3BVI9E_omcjvcbuLDLmY-dymor6jp7W_.svg',
+      }).avatarUrl
+    ).toBe(DEFAULT_AVATAR_URL);
+  });
 });
