@@ -23,6 +23,9 @@ import {
 // 闸门停摆 15s（覆盖握手/boot 停摆形态），select 停摆 25s（早于 30s 动作超时，覆盖在途挂起形态）。
 const GATE_STALL_FLUSH_MS = 15_000;
 const SELECT_STALL_FLUSH_MS = 25_000;
+// openChat 需要 ready 相位，未达标时会在桥接缓冲区排队。相位通常在 select 之后数百毫秒
+// 达标；超过该阈值就改走只需 interactive 的常规加载，避免开屏页无限等待。
+const OPEN_CHAT_TIMEOUT_MS = 12_000;
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -44,10 +47,6 @@ export default function TavernChatPage() {
   const [readyCharacterId, setReadyCharacterId] = useState<string | null>(null);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
-  const [pendingOpenChat, setPendingOpenChat] = useState<{
-    fileName: string;
-    avatar: string;
-  } | null>(null);
   const chatReady = readyCharacterId === characterId;
 
   useSTEvent('billing:insufficient', () => {
@@ -83,25 +82,6 @@ export default function TavernChatPage() {
     }, 12_000);
     return () => window.clearTimeout(timer);
   }, [bridgeStatus, chatReady]);
-
-  useEffect(() => {
-    if (!pendingOpenChat || bridgeStatus !== 'ready' || !characterId) return;
-    let cancelled = false;
-    platformAction('openChat', pendingOpenChat)
-      .then((result) => {
-        if (cancelled) return;
-        useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
-        setPendingOpenChat(null);
-        setReadyCharacterId(characterId);
-      })
-      .catch((err) => {
-        console.error('[TavernChatPage] open requested chat failed:', err);
-        if (!cancelled) setEntryError('历史对话加载失败，请重试。');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bridgeStatus, characterId, pendingOpenChat]);
 
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
@@ -179,12 +159,18 @@ export default function TavernChatPage() {
 
       const avatar = `platform_${characterId}.png`;
       const latestChat = await latestChatPromise;
+      // skipChatLoad 让 ST 在清空聊天区后跳过原生会话加载，必须由下面的 openChat 补齐。
+      // 两者一旦不配对，聊天区就会停在空白状态——目标会话通常正是角色卡记录的会话，
+      // 早前按「文件名与当前会话不同」才 openChat 的写法在该情况下什么都不加载。
+      const targetChat =
+        latestChat && isSafeChatFileName(latestChat.fileName)
+          ? { fileName: latestChat.fileName, avatar: latestChat.characterAvatar || avatar }
+          : null;
       markTiming('select_start'); // [iframe-timing] TEMP DEBUG
       platformAction('selectCharacter', {
         avatar,
         forceNewChat: false,
-        // 已知目标会话时不要先加载角色卡内记录的旧会话；select 完成后直接 openChat。
-        skipChatLoad: Boolean(latestChat && isSafeChatFileName(latestChat.fileName)),
+        skipChatLoad: Boolean(targetChat),
       })
         .then(async (result) => {
           window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
@@ -192,28 +178,17 @@ export default function TavernChatPage() {
           if (result.chatId) {
             useSTMirrorStore.getState().updatePartial({ currentChatId: result.chatId });
           }
-          if (!cancelled) {
-            if (
-              latestChat &&
-              latestChat.fileName !== result.chatId &&
-              isSafeChatFileName(latestChat.fileName)
-            ) {
-              const target = {
-                fileName: latestChat.fileName,
-                avatar: latestChat.characterAvatar || avatar,
-              };
-              if (bridgeStatusRef.current !== 'ready') {
-                setPendingOpenChat(target);
-                return;
-              }
-              const opened = await platformAction('openChat', target);
-              useSTMirrorStore.getState().updatePartial({ currentChatId: opened.chatId });
-            }
-            setReadyCharacterId(characterId);
-            // [iframe-timing] TEMP DEBUG: 呈现时刻，flush 全部相位到后端日志
-            markTiming('chat_ready');
-            flushIframeTiming({ characterId, bridgeStatusAtGate });
+          if (cancelled) return;
+          if (targetChat) {
+            // openChat 要求 ready 相位，桥接会把请求缓冲到相位达标后再投递。
+            const chatId = await openTargetChat(targetChat, avatar);
+            if (cancelled) return;
+            useSTMirrorStore.getState().updatePartial({ currentChatId: chatId });
           }
+          setReadyCharacterId(characterId);
+          // [iframe-timing] TEMP DEBUG: 呈现时刻，flush 全部相位到后端日志
+          markTiming('chat_ready');
+          flushIframeTiming({ characterId, bridgeStatusAtGate });
         })
         .catch((err) => {
           window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
@@ -264,6 +239,32 @@ export default function TavernChatPage() {
       ) : null}
     </div>
   );
+}
+
+/**
+ * 打开指定历史会话，失败或超时时补一次常规角色加载。
+ * 会话可能已被重命名或删除（聊天列表数据会过期），而此前的 selectCharacter 传了
+ * skipChatLoad 已把聊天区清空，不兜底就只剩空白页面。
+ */
+async function openTargetChat(
+  target: { fileName: string; avatar: string },
+  avatar: string
+): Promise<string | null> {
+  try {
+    const opened = await withTimeout(platformAction('openChat', target), OPEN_CHAT_TIMEOUT_MS);
+    return opened.chatId;
+  } catch (err) {
+    console.error('[TavernChatPage] open requested chat failed:', err);
+    const fallback = await platformAction('selectCharacter', { avatar, forceNewChat: false });
+    return fallback.chatId;
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    promise.then(resolve, reject).finally(() => window.clearTimeout(timer));
+  });
 }
 
 function isSafeChatFileName(value: string): boolean {
