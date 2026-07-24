@@ -54,20 +54,25 @@ Railway 当前包含三个服务：
 
 截至 2026-07-23：
 
-| 项目                             | 状态       | 说明                                       |
-| -------------------------------- | ---------- | ------------------------------------------ |
-| 独立 Railway Project             | 已完成     | Project 为 `st-simulation-card-evaluation` |
-| Backend 服务                     | 在线       | Railway 已生成公网地址                     |
-| st-bundle 服务                   | 在线       | 已挂载持久卷，包含 ST、Worker 和 Chromium  |
-| 模拟专用 nginx                   | 部分完成   | 旧部署在线，最新部署构建失败               |
-| nginx 构建上下文修复             | 本地已完成 | commit `50ffa79`，当前尚未推送到远端       |
-| st-bundle watcher 禁用能力       | 代码已完成 | 支持环境变量 `DISABLE_WATCHER=1`           |
-| Backend 聊天记录同步任务禁用能力 | 尚未实现   | 需要新增环境变量开关                       |
-| 线上完整 E2E 验收                | 尚未完成   | 尚未完成公网首轮新会话和多轮续聊验收       |
+- Railway Project `st-simulation-card-evaluation` 已创建并稳定在线；
+- `backend`、`st-bundle`、`nginx` 三个服务均已成功部署；
+- Backend 公网地址为
+  `https://backend-production-7bdc.up.railway.app`；
+- Backend、st-bundle 均连接生产主 Supabase
+  `wbtsfzozlmurljvglhpn`；
+- 生产数据库已执行 054，`miniapp_simulation` 已加入 exposed schemas；
+- Backend 已设置 `CHAT_HISTORY_SYNC_ENABLED=false`，启动日志确认 sync job 被禁用；
+- st-bundle 已设置 `DISABLE_WATCHER=1`，启动日志确认 watcher 被禁用；
+- nginx 根构建上下文及 `.dockerignore` 问题已修复；
+- 已支持 `response_mode=async` 和按 `turn_id` 轮询，避免 Railway 公网长连接时限；
+- 相关提交已推送：`0ccaa8c`、`64595ef`。
 
-最新 nginx 构建失败原因为 Railway 使用 `ops/nginx` 作为服务构建上下文时，
-Dockerfile 仍尝试复制 `ops/nginx/nginx.simulation.conf`，导致构建上下文内找不到文件。
-本地修复已改为从当前服务上下文复制 `nginx.simulation.conf`。
+当前 main Supabase 测试卡：
+
+- 名称：`圣海伦学院0.7`；
+- Character ID：`e25b5bb5-e2c9-48ad-9cdd-05eab0a9730b`；
+- Card Hash：`01a8c013eff334722254c8fcaec8d854128cf3cb2cb6bed174781e2a6c004c9e`；
+- 状态：`is_test=true, enabled=false`。
 
 ## 四、数据库选型决策
 
@@ -128,21 +133,21 @@ enabled=true
 模拟对话本身不依赖该任务，因此采用“代码保持一致、通过环境变量关闭后台任务”的方案。
 不直接注释或删除任务代码，避免当前分支合并后误伤正式 Backend。
 
-### Backend 待增加的开关
+### Backend 已启用的开关
 
-建议增加：
+模拟环境设置：
 
 ```text
 CHAT_HISTORY_SYNC_ENABLED=false
 ```
 
-预期行为：
+当前行为：
 
 - 正式 Backend：缺省或显式设置为 `true`，继续运行同步任务；
 - 模拟 Backend：设置为 `false`，启动时不调用 `startChatHistorySyncJob()`；
 - 启动日志必须明确输出同步任务已启用或已禁用。
 
-该开关目前尚未实现，是继续连接生产 Supabase 前的阻塞项。
+该开关已实现并在线上日志中确认生效。
 
 ### st-bundle 已有开关
 
@@ -168,43 +173,70 @@ DISABLE_WATCHER=1
 8. 对外入口只暴露模拟测试所需接口，避免模拟 Backend 的其他生产业务路由成为额外入口；
 9. 审核通过后的发布动作独立鉴权，并保留操作者、时间、评分和状态变更记录。
 
-## 七、当前卡点
+## 七、线上冒烟测试结果
 
-按阻塞优先级排序：
+公网异步接口已验证：
 
-1. **推送并部署 nginx 构建修复**  
-   本地 `50ffa79` 尚未推送，Railway 最新 nginx deployment 仍然失败。
+- POST `response_mode=async` 在约 `0.5～0.9s` 内返回 HTTP 202；
+- 返回 `conversation_id`、`turn_id`、`status_url`；
+- GET `status_url` 可返回 `pending`、`completed`、`failed`；
+- 冷启动首次生成在约 180 秒后返回 `failed`；
+- 复用同一 `conversation_id` 重试后成功，实测约 69 秒完成；
+- 后续热会话成功，实测约 17 秒完成；
+- 服务重新部署后，已有 `st_chat_id` 的会话约 43 秒完成；
+- 成功结果包含非空 `assistant_reply` 以及完整
+  `model_id/model_name/preset_id/preset_version/sampling`；
+- `miniapp_simulation.chat_log` 正确记录 `turn_id`、轮次、metadata 和实际配置；
+- 模拟输入在生产 `miniapp.chat_history` 中匹配行数为 0；
+- 测试窗口内 `miniapp.users` 和钱包流水数量无变化；
+- 同窗口生产 `chat_history` 总数因真实线上流量增加 1，但新增行不是模拟输入，因此不属于模拟污染。
 
-2. **实现 Backend 后台同步任务环境变量开关**  
-   未实现前，不应让模拟 Backend 长期连接生产 Supabase。
+异步接口解决了 Railway 公网连接约 90 秒被断开的问题，但没有消除 Worker
+内部首次生成超时。
 
-3. **确认 Railway 环境变量**  
-   Backend 与 st-bundle 的 `ST_USER_PASSWORD_SECRET`、`LLM_PROXY_TOKEN_SECRET`
-   必须完全一致；同时配置生产 Supabase、LLM、ST 管理员和模拟服务密钥。
+## 八、后续修复与优化方向
 
-4. **设置 st-bundle 的 `DISABLE_WATCHER=1`**  
-   代码已支持，但需要确认 Railway 服务变量实际生效。
+### 1. Worker 冷启动首次生成失败
 
-5. **完成生产数据库前置操作**  
-   执行 054，并在 Hosted Supabase 中暴露 `miniapp_simulation`。
+现象：
 
-6. **完成线上 E2E 验收**  
-   至少验证测试卡导入、首次新会话、多轮续聊、模型切换、模拟日志完整性，以及
-   `miniapp.users`、`miniapp.chat_history`、钱包数据零变化。
+- 新 BrowserContext 首次打开 ST 后，登录、角色加载、模型列表请求均成功；
+- 日志中没有对应的 LLM chat completion 请求；
+- `SillyTavern.getContext().generate('normal')` 最终触发 180 秒
+  `ST generation timed out`；
+- 保留同一会话和 Worker Session 重试后可以正常生成。
 
-7. **验证并发承载能力**  
-   当前实现没有 BrowserContext TTL、并发队列和会话数量上限。上线初期应限制并发并进行
-   压力测试，不能直接承诺大量并发新会话。
+当前只能确认这是 ST 页面首次初始化与首次生成之间的 readiness 竞态；尚未定位到唯一根因。
+后续应增加明确的连接状态、模型配置、角色/聊天状态 readiness 探针，而不是只等待
+`window.__miniappSimulation` 出现。还需评估自动重试是否会重复写入用户消息。
 
-## 八、建议执行顺序
+### 2. 自动发现测试卡
 
-1. 实现并测试 `CHAT_HISTORY_SYNC_ENABLED`；
-2. 推送当前本地 nginx 修复及 Backend 开关；
-3. 配置 Railway Backend 和 st-bundle 环境变量；
-4. 在生产 Supabase 执行 054 并暴露 schema；
-5. 重新部署三个 Railway 服务；
-6. 检查启动日志，确认 Backend sync job 和 st-bundle watcher 均已禁用；
-7. 导入一张 `is_test=true, enabled=false` 的测试卡；
-8. 从公网 API 完成首轮及连续多轮对话；
-9. 核对生产正常用户、聊天记录和钱包数据没有变化；
-10. 通过小规模并发测试确定初始并发上限，再决定队列和 Worker 扩容方案。
+增加受 `SIMULATION_SERVICE_KEY` 保护的测试卡列表接口，从
+`miniapp.characters` 返回全部：
+
+```text
+is_test=true
+enabled=false
+```
+
+至少返回 `character_id`、`name`、`card_hash`。测试 Agent 获取清单后逐张创建会话，
+不再要求测试人员手工维护 card hash。
+
+### 3. 批量编排与并发能力
+
+当前实现仍是单轮 API 原语，不是完整批量筛卡平台。尚缺：
+
+- 批次/任务实体及统一批次 ID；
+- 多卡、多会话、多轮自动调度器；
+- 全局并发上限、排队、重试、退避和取消；
+- BrowserContext TTL、空闲回收和进程重启恢复；
+- 每张卡的目标轮数和测试脚本/模拟用户 Persona 配置；
+- 批次级状态汇总与统一查询入口；
+- 成功、失败、运行中数量以及每个会话当前轮次；
+- 失败原因和重试次数的持久化；
+- 根据 `miniapp_simulation.chat_log` 生成评分、筛选结果和审核记录；
+- 压力测试及 Railway CPU/内存容量基线。
+
+在这些能力完成前，测试人员可以自行编写脚本调用列表、聊天和轮询接口，但还无法只执行
+一个命令就完成可观测、可恢复的多卡并行筛选任务。
