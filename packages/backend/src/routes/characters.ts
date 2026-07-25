@@ -11,7 +11,7 @@ import type {
 
 const CHARACTER_STORAGE_BUCKET = process.env.CHARACTER_STORAGE_BUCKET || 'character-assets';
 
-export function resolveCharacterAvatarUrl(
+function resolveCharacterAvatarUrl(
   characterId: string,
   avatarUrl: string | null | undefined
 ): string {

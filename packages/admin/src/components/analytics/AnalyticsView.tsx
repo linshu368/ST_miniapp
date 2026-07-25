@@ -24,7 +24,6 @@ import {
   getAnalyticsUserDetail,
   getLlmUsageChargeDetail,
   listAnalyticsChats,
-  listCharacterFavoriteLeaderboard,
   listLlmUsageCharges,
   listAnalyticsOutreachMessages,
   listAnalyticsUsers,
@@ -37,7 +36,6 @@ import {
   type AnalyticsUsageCharge,
   type AnalyticsUsageChargeFilters,
   type AnalyticsUser,
-  type CharacterFavoriteLeaderboardRow,
 } from '../../lib/analyticsApi';
 import { analyticsSections, type AnalyticsSectionKey } from '../../lib/adminNavigation';
 import { downloadAnalyticsCsv, stringifyAnalyticsValue } from '../../lib/analyticsExport';
@@ -875,61 +873,6 @@ function SpendingExplorer(props: {
   );
 }
 
-function CharacterFavoriteLeaderboard(props: {
-  client: SupabaseClient;
-  query: AnalyticsQuery;
-  refreshToken: number;
-}) {
-  const [rows, setRows] = useState<CharacterFavoriteLeaderboardRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError(null);
-    void listCharacterFavoriteLeaderboard(props.client, props.query)
-      .then((result) => {
-        if (active) setRows(result);
-      })
-      .catch((loadError) => {
-        if (active) {
-          setError(loadError instanceof Error ? loadError.message : '收藏榜加载失败');
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [props.client, props.query, props.refreshToken]);
-
-  return (
-    <Card title="角色卡收藏榜" className="analytics-report-card">
-      {error ? <Alert type="error" showIcon message={error} /> : null}
-      <Table<CharacterFavoriteLeaderboardRow>
-        rowKey="character_id"
-        loading={loading}
-        dataSource={rows}
-        pagination={false}
-        locale={{ emptyText: '当前还没有角色收藏数据' }}
-        columns={[
-          { title: '排名', dataIndex: 'rank', width: 80 },
-          { title: '角色', dataIndex: 'character_name' },
-          {
-            title: '状态',
-            dataIndex: 'enabled',
-            render: (enabled) => (enabled ? <Tag color="green">上架</Tag> : <Tag>下架</Tag>),
-          },
-          { title: '当前收藏', dataIndex: 'favorite_count' },
-          { title: '区间新增', dataIndex: 'new_favorite_count' },
-        ]}
-      />
-    </Card>
-  );
-}
-
 export function AnalyticsView(props: {
   client: SupabaseClient;
   section: AnalyticsSectionKey;
@@ -1100,13 +1043,6 @@ export function AnalyticsView(props: {
           ) : null}
           {props.section === 'spending' ? (
             <SpendingExplorer client={props.client} query={query} canViewDetails={canViewDetails} />
-          ) : null}
-          {props.section === 'characters' ? (
-            <CharacterFavoriteLeaderboard
-              client={props.client}
-              query={query}
-              refreshToken={refreshToken}
-            />
           ) : null}
         </>
       )}

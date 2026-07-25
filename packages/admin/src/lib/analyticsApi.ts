@@ -127,15 +127,6 @@ export interface AnalyticsUsageChargeFilters {
   status: string;
 }
 
-export interface CharacterFavoriteLeaderboardRow {
-  rank: number;
-  character_id: string;
-  character_name: string;
-  enabled: boolean;
-  favorite_count: number;
-  new_favorite_count: number;
-}
-
 function unwrap<T>(data: T | null, error: { message: string } | null): T {
   if (error) throw new Error(error.message);
   if (data === null) throw new Error('数据分析接口没有返回数据');
@@ -256,17 +247,4 @@ export async function getLlmUsageChargeDetail(
     .schema('admin')
     .rpc('get_llm_usage_charge_detail', { p_charge_id: chargeId });
   return unwrap(data as AnalyticsRow | null, error);
-}
-
-export async function listCharacterFavoriteLeaderboard(
-  client: SupabaseClient,
-  query: AnalyticsQuery,
-  limit = 50
-): Promise<CharacterFavoriteLeaderboardRow[]> {
-  const { data, error } = await client.schema('admin').rpc('list_character_favorite_leaderboard', {
-    p_from: query.from,
-    p_to: query.to,
-    p_limit: limit,
-  });
-  return unwrap((data ?? []) as CharacterFavoriteLeaderboardRow[], error);
 }
