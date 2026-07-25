@@ -1,12 +1,18 @@
-import { DEFAULT_USER_AVATAR_URL } from '@miniapp/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const telegramPhotoUrl = vi.hoisted(() => ({ value: undefined as string | undefined }));
+const defaultAvatar = vi.hoisted(() => ({ url: 'https://default.example/avatar.png' }));
 
 vi.mock('@/lib/telegram/user', () => ({
   getTelegramDefaultDisplayName: () => '你',
   getTelegramPhotoUrl: () => telegramPhotoUrl.value,
 }));
+
+vi.mock('@/lib/user-avatar', () => ({
+  DEFAULT_USER_AVATAR_URL: defaultAvatar.url,
+}));
+
+const DEFAULT_USER_AVATAR_URL = defaultAvatar.url;
 
 import { useUserProfileStore } from './user-profile-store';
 

@@ -1,11 +1,11 @@
 import { getSupabaseClient } from '../../lib/supabase.js';
 import {
-  DEFAULT_USER_AVATAR_URL,
   normalizeTelegramAvatarUrl,
   type PatchUserSettingsRequest,
   type PreferredWordCount,
   type UserSettings,
 } from '@miniapp/shared';
+import { config } from '../../platform/config.js';
 import type { TelegramUser } from '../../middleware/auth.js';
 
 const WORD_COUNT_OPTIONS: PreferredWordCount[] = ['100-300', '300-500', '500-800', '800+'];
@@ -224,7 +224,7 @@ export function toUserSettings(row: MiniappUserSettingsRow): UserSettings {
   const telegramAvatar = normalizeTelegramAvatarUrl(row.tg_avatar_url);
   return {
     display_name: row.display_name,
-    avatar_url: customAvatar || telegramAvatar || DEFAULT_USER_AVATAR_URL,
+    avatar_url: customAvatar || telegramAvatar || config.defaultUserAvatarUrl,
     avatar_source: customAvatar ? 'custom' : telegramAvatar ? 'telegram' : 'default',
     pref_word_count: row.pref_word_count,
     pref_show_options: row.pref_show_options,
