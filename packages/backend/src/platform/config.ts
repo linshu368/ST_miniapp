@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { createDatabaseConfig } from '@miniapp/shared';
+import { createDatabaseConfig, resolveDefaultUserAvatarUrl } from '@miniapp/shared';
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const databaseConfig = createDatabaseConfig({
@@ -42,6 +42,9 @@ export const config = {
     url: process.env.SUPABASE_URL || '',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   },
+
+  /** 平台默认头像。生产须指向生产 Supabase，未配置时回退到测试环境地址。 */
+  defaultUserAvatarUrl: resolveDefaultUserAvatarUrl(process.env.DEFAULT_USER_AVATAR_URL),
 
   // ── ST 相关 ──────────────────────────────────────────────────────────────
   /** ST 服务地址，Bridge 用于登录和反向代理 */

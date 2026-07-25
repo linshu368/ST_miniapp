@@ -1,9 +1,9 @@
 'use client';
 
 import { create } from 'zustand';
-import { DEFAULT_USER_AVATAR_URL } from '@miniapp/shared';
 
 import { getTelegramDefaultDisplayName, getTelegramPhotoUrl } from '@/lib/telegram/user';
+import { DEFAULT_USER_AVATAR_URL } from '@/lib/user-avatar';
 
 // 用户在 chat 内的"显示名"——也就是 markdown 管线 {{user}} 宏要替换成的字符串。
 // 优先级:用户在 profile 页的自定义 > Telegram first_name/username > '你'
