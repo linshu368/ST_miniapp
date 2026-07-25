@@ -9,8 +9,12 @@ import { Check, ChevronDown, ChevronLeft, Sparkles } from 'lucide-react';
 import { useSTMirrorStore } from '@/stores/st-mirror';
 import { useQueryClient } from '@tanstack/react-query';
 import { optimisticBridgeAction } from '@/lib/bridge/optimistic-bridge-action';
+import { ApiClientError } from '@/lib/api/client';
+import { usePathname, useRouter } from 'next/navigation';
 
 export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => void }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const bridgeStatus = useBridgeStatus();
   const currentModel = useSTMirror((s) => s.currentModel);
   const queryClient = useQueryClient();
@@ -66,10 +70,15 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
           useSTMirrorStore
             .getState()
             .updatePartial({ currentModel: persisted.openrouter_model_id });
-          await platformAction('changeModel', {
+          const applied = await platformAction('changeModel', {
             provider: 'openrouter',
             modelName: persisted.openrouter_model_id,
           });
+          if (applied.appliedModel !== persisted.openrouter_model_id) {
+            throw new Error(
+              `模型运行时未完成切换：期望 ${persisted.openrouter_model_id}，实际 ${applied.appliedModel}`
+            );
+          }
         },
         rollbackPersisted: () =>
           previousId
@@ -96,6 +105,15 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
       window.setTimeout(props.onClose, 250);
     } catch (err) {
       console.error('[ModelTierSwitcher] changeModel failed:', err);
+      if (err instanceof ApiClientError && err.code === 'INSUFFICIENT_CREDITS') {
+        props.onClose();
+        const search = new URLSearchParams({
+          reason: 'insufficient_credits',
+          returnTo: pathname,
+        });
+        router.push(`/profile/recharge?${search.toString()}`);
+        return;
+      }
       setFeedback(err instanceof Error ? err.message : '该模型暂不可用');
       void refetch();
     }

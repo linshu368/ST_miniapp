@@ -18,13 +18,14 @@ import {
   remainingSeconds,
   safePaymentReturnTo,
 } from '@/lib/utils/payment';
-import { openExternalUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
 export default function PaymentPendingPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = params?.orderId ? decodeURIComponent(params.orderId) : undefined;
   const search = useSearchParams();
   const payUrl = search?.get('pay_url') ?? null;
+  const paymentStarted = search?.get('payment_started') === '1';
   const returnTo = safePaymentReturnTo(search?.get('returnTo') ?? null);
 
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function PaymentPendingPage() {
 
   const { notification } = useHaptic();
   const [congratsFired, setCongratsFired] = useState(false);
-  const [payUrlOpened, setPayUrlOpened] = useState(false);
+  const [payUrlOpened, setPayUrlOpened] = useState(paymentStarted);
   useEffect(() => {
     if (order?.status === 'completed' && !congratsFired) {
       notification('success');
@@ -56,7 +57,7 @@ export default function PaymentPendingPage() {
   useEffect(() => {
     if (!payUrl || payUrlOpened || order?.status !== 'pending') return;
     setPayUrlOpened(true);
-    openExternalUrl(payUrl);
+    openPaymentUrl(payUrl);
   }, [order?.status, payUrl, payUrlOpened]);
 
   const [now, setNow] = useState(() => Date.now());
@@ -202,7 +203,7 @@ function PendingView({
 
       {payUrl ? (
         <Button
-          onClick={() => openExternalUrl(payUrl)}
+          onClick={() => openPaymentUrl(payUrl)}
           className="h-12 w-full rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-bold text-white shadow-lg shadow-pink-500/40 hover:opacity-90 border-0"
         >
           重新打开支付页

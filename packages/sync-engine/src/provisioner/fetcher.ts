@@ -8,6 +8,7 @@
 import { getSupabaseClient, schemaClient } from '../lib/supabase.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { normalizeTelegramAvatarUrl } from '@miniapp/shared';
 import { config } from '../lib/config.js';
 import { resolveProvisionModel } from './model-resolution.js';
 
@@ -283,8 +284,10 @@ interface PersonaSourceRow {
  * 名字优先级：用户自定义 display_name > TG first(+last) > TG username。
  * 全空则使用默认名，避免 ST 对话页显示运营侧默认 persona。
  */
-function resolveUserPersona(row: PersonaSourceRow | null): UserPersona {
-  if (!row) return { name: DEFAULT_USER_PERSONA_NAME, avatarUrl: null };
+export function resolveUserPersona(row: PersonaSourceRow | null): UserPersona {
+  if (!row) {
+    return { name: DEFAULT_USER_PERSONA_NAME, avatarUrl: config.DEFAULT_USER_AVATAR_URL };
+  }
 
   const display = row.display_name?.trim();
   const fullName = [row.tg_first_name, row.tg_last_name]
@@ -295,7 +298,10 @@ function resolveUserPersona(row: PersonaSourceRow | null): UserPersona {
   const username = row.tg_username?.trim();
 
   const name = display || fullName || username || DEFAULT_USER_PERSONA_NAME;
-  const avatarUrl = row.custom_avatar_url?.trim() || row.tg_avatar_url?.trim() || null;
+  const avatarUrl =
+    row.custom_avatar_url?.trim() ||
+    normalizeTelegramAvatarUrl(row.tg_avatar_url) ||
+    config.DEFAULT_USER_AVATAR_URL;
 
   return { name, avatarUrl };
 }

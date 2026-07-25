@@ -86,14 +86,17 @@ export function startWatching(
         debounceTimers.delete(handle);
         logger.info({ handle }, 'settings.json 变更（防抖后）');
         onChange(handle, filePath).catch((err) => {
-          logger.error({ handle, err: String(err) }, 'onChange 回调出错');
+          logger.sys.error(
+            { event: 'file_watcher.onchange.failed', handle, err },
+            'onChange 回调出错'
+          );
         });
       }, debounceMs)
     );
   });
 
   watcher.on('error', (err) => {
-    logger.error({ err: String(err) }, '监听错误');
+    logger.sys.error({ event: 'file_watcher.error', err }, '监听错误');
   });
 
   logger.info({ count: handles.length, debounceMs }, '开始监听 settings.json');

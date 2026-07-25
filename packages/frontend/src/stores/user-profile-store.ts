@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 
 import { getTelegramDefaultDisplayName, getTelegramPhotoUrl } from '@/lib/telegram/user';
+import { DEFAULT_USER_AVATAR_URL } from '@/lib/user-avatar';
 
 // 用户在 chat 内的"显示名"——也就是 markdown 管线 {{user}} 宏要替换成的字符串。
 // 优先级:用户在 profile 页的自定义 > Telegram first_name/username > '你'
@@ -52,7 +53,7 @@ function writeOverride(value: string | undefined): void {
 
 export const useUserProfileStore = create<UserProfileState>((set) => ({
   displayName: '你',
-  photoUrl: undefined,
+  photoUrl: DEFAULT_USER_AVATAR_URL,
   hasCustomName: false,
   hydrate: () => {
     if (typeof window === 'undefined') return;
@@ -60,7 +61,7 @@ export const useUserProfileStore = create<UserProfileState>((set) => ({
     const fallback = getTelegramDefaultDisplayName();
     set({
       displayName: override ?? fallback,
-      photoUrl: getTelegramPhotoUrl(),
+      photoUrl: getTelegramPhotoUrl() ?? DEFAULT_USER_AVATAR_URL,
       hasCustomName: !!override,
     });
   },
@@ -87,6 +88,6 @@ export const useUserProfileStore = create<UserProfileState>((set) => ({
     set({ displayName: fallback, hasCustomName: !!readOverride() });
   },
   applyServerPhotoUrl: (next) => {
-    set({ photoUrl: next.trim() || getTelegramPhotoUrl() });
+    set({ photoUrl: next.trim() || DEFAULT_USER_AVATAR_URL });
   },
 }));

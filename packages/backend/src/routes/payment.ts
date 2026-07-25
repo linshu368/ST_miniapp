@@ -1,5 +1,6 @@
-import { FastifyInstance, FastifyReply, FastifyBaseLogger } from 'fastify';
+import { FastifyInstance, FastifyReply } from 'fastify';
 import { ok, fail } from '@miniapp/shared';
+import { requestLogger, type RequestLogger } from '../lib/logger.js';
 import type {
   CreatePaymentOrderRequest,
   GetPaymentOrderData,
@@ -65,7 +66,10 @@ export default async function paymentRoutes(app: FastifyInstance) {
         })
       );
     } catch (error) {
-      request.log.error({ err: error }, 'Payment plans unavailable');
+      requestLogger(request.log, 'payment').sys.error(
+        { event: 'recharge.plans.unavailable', err: error },
+        '充值套餐不可用'
+      );
       return reply
         .status(503)
         .send(fail('PAYMENT_PLANS_UNAVAILABLE', '充值套餐暂不可用，请稍后重试'));
@@ -81,17 +85,32 @@ export default async function paymentRoutes(app: FastifyInstance) {
       return reply.status(400).send(fail('BAD_REQUEST', 'Invalid payment order request'));
     }
 
+    const log = requestLogger(request.log, 'payment');
     try {
       const dbUser = await getOrCreateDbUser(request.user);
       const data = await recharge.createOrder({
         userId: dbUser.id,
         planId: body.plan_id,
         paymentType: body.payment_type,
+        clientIp: request.ip,
       });
+      log.biz.info(
+        {
+          event: 'recharge.order.create',
+          userId: dbUser.id,
+          orderId: data.order.id,
+          planId: body.plan_id,
+          paymentType: body.payment_type,
+        },
+        '用户创建充值订单'
+      );
       return reply.send(ok(data));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Create payment order failed';
-      request.log.warn({ err: error }, 'Create payment order failed');
+      log.sys.warn(
+        { event: 'recharge.order.create_failed', err: error, planId: body.plan_id },
+        '创建充值订单失败'
+      );
       if (error instanceof PaymentPlansConfigError) {
         return reply
           .status(503)
@@ -171,11 +190,23 @@ export default async function paymentRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/payment/webhook/jlpay', async (request, reply) => {
-    return handleJlpayWebhook(request.query, reply, gateway, orders, request.log);
+    return handleJlpayWebhook(
+      request.query,
+      reply,
+      gateway,
+      orders,
+      requestLogger(request.log, 'payment')
+    );
   });
 
   app.post('/api/payment/webhook/jlpay', async (request, reply) => {
-    return handleJlpayWebhook(request.body, reply, gateway, orders, request.log);
+    return handleJlpayWebhook(
+      request.body,
+      reply,
+      gateway,
+      orders,
+      requestLogger(request.log, 'payment')
+    );
   });
 }
 
@@ -184,13 +215,21 @@ async function handleJlpayWebhook(
   reply: FastifyReply,
   gateway: JLPaymentGateway,
   orders: MiniappPaymentOrderRepository,
-  log: FastifyBaseLogger
+  log: RequestLogger
 ) {
   const notifyData = normalizeNotifyData(payload);
   if (!notifyData.out_trade_no || !gateway.verifyNotifySign(notifyData)) {
-    log.warn({ orderId: notifyData.out_trade_no }, 'JLPay webhook signature failed');
+    log.sys.warn(
+      { event: 'payment.webhook.sign_failed', orderId: notifyData.out_trade_no },
+      'JLPay 回调验签失败'
+    );
     return reply.status(400).type('text/plain').send('fail');
   }
+
+  log.biz.info(
+    { event: 'payment.webhook.received', orderId: notifyData.out_trade_no },
+    '收到 JLPay 支付回调'
+  );
 
   if (notifyData.trade_status !== 'TRADE_SUCCESS') {
     return reply.type('text/plain').send('success');
@@ -198,24 +237,39 @@ async function handleJlpayWebhook(
 
   const order = await orders.findById(notifyData.out_trade_no);
   if (!order) {
-    log.warn({ orderId: notifyData.out_trade_no }, 'JLPay webhook order not found');
+    log.sys.warn(
+      { event: 'payment.webhook.order_not_found', orderId: notifyData.out_trade_no },
+      'JLPay 回调订单不存在'
+    );
     return reply.status(404).type('text/plain').send('fail');
   }
 
   const paidAmountCents = parseAmountCents(notifyData.money);
   if (paidAmountCents !== order.amount_cents) {
-    log.warn(
-      { orderId: order.id, expected: order.amount_cents, actual: paidAmountCents },
-      'JLPay webhook amount mismatch'
+    log.sys.warn(
+      {
+        event: 'payment.webhook.amount_mismatch',
+        orderId: order.id,
+        expected: order.amount_cents,
+        actual: paidAmountCents,
+      },
+      'JLPay 回调金额不匹配'
     );
     return reply.status(400).type('text/plain').send('fail');
   }
 
   try {
     await orders.complete(order.id, notifyData.trade_no ?? null);
+    log.biz.info(
+      { event: 'payment.webhook.completed', orderId: order.id, amountCents: order.amount_cents },
+      '支付订单完成'
+    );
     return reply.type('text/plain').send('success');
   } catch (error) {
-    log.error({ err: error, orderId: order.id }, 'JLPay webhook complete failed');
+    log.sys.error(
+      { event: 'payment.webhook.complete_failed', err: error, orderId: order.id },
+      'JLPay 订单完成处理失败'
+    );
     return reply.status(500).type('text/plain').send('fail');
   }
 }

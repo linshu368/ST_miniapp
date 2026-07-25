@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { createDatabaseConfig } from '@miniapp/shared';
+import { createDatabaseConfig, resolveDefaultUserAvatarUrl } from '@miniapp/shared';
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const databaseConfig = createDatabaseConfig({
@@ -43,6 +43,9 @@ export const config = {
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   },
 
+  /** 平台默认头像。生产须指向生产 Supabase，未配置时回退到测试环境地址。 */
+  defaultUserAvatarUrl: resolveDefaultUserAvatarUrl(process.env.DEFAULT_USER_AVATAR_URL),
+
   // ── ST 相关 ──────────────────────────────────────────────────────────────
   /** ST 服务地址，Bridge 用于登录和反向代理 */
   stBaseUrl: process.env.ST_BASE_URL || 'http://localhost:8000',
@@ -59,6 +62,9 @@ export const config = {
     merchantId: process.env.PAYMENT_MERCHANT_ID || '',
     merchantKey: process.env.PAYMENT_MERCHANT_KEY || '',
     baseUrl: process.env.PAYMENT_BASE_URL || 'http://jlusdt.com',
+    v2BaseUrl: process.env.PAYMENT_V2_BASE_URL || '',
+    merchantPrivateKey: process.env.PAYMENT_MERCHANT_PRIVATE_KEY || '',
+    platformPublicKey: process.env.PAYMENT_PLATFORM_PUBLIC_KEY || '',
     notifyUrl: process.env.PAYMENT_NOTIFY_URL || '',
     returnUrl: process.env.PAYMENT_RETURN_URL || '',
   },

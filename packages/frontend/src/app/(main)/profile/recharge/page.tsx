@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
-import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
 const PAYMENT_TYPES: PaymentType[] = [
   // 'alipay', // 支付宝通道暂时停用
@@ -79,11 +79,16 @@ function RechargePageContent() {
         plan_id: selectedPlan.id,
         payment_type: paymentType,
       });
-      const nextSearch = new URLSearchParams({ pay_url: result.pay_url });
+      const nextSearch = new URLSearchParams({
+        pay_url: result.pay_url,
+        payment_started: '1',
+      });
       if (returnTo) nextSearch.set('returnTo', returnTo);
       router.push(
         `/profile/recharge/${encodeURIComponent(result.order.id)}?${nextSearch.toString()}`
       );
+      // 首次跳转必须紧跟“立即支付”的用户操作，避免移动端拦截微信拉起。
+      openPaymentUrl(result.pay_url);
     } catch {
       notification('error');
     }

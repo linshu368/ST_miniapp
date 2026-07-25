@@ -45,6 +45,8 @@ export function installBillingErrorBridge(server: BridgeServer): void {
     if (response.status === 402) {
       void notifyInsufficientBalance(response.clone(), state.server);
     } else if (response.ok) {
+      // ST 非流式代理会把上游 402 包装成 HTTP 200，只留下 statusText 对应的
+      // error.message。兼容这一层包装，避免余额不足事件在 ST server 中丢失。
       void notifyWrappedInsufficientBalance(response.clone(), state.server);
     }
     return response;
@@ -78,7 +80,7 @@ async function notifyWrappedInsufficientBalance(
     const event = resolveInsufficientBalanceEvent(await response.json(), true);
     if (event) server.sendEvent('billing:insufficient', event);
   } catch {
-    // Non-JSON successful responses are unrelated to billing.
+    // 非 JSON 成功响应不是余额不足，保持原响应不变。
   }
 }
 
@@ -103,7 +105,9 @@ export function resolveInsufficientBalanceEvent(
 
   if (
     allowWrappedResponse &&
-    (error?.message === 'MiniApp Insufficient Credits' || error?.message === 'Payment Required')
+    (error?.message === 'MiniApp Insufficient Credits' ||
+      // 兼容发布切换窗口内仍运行旧 backend 的 iframe。
+      error?.message === 'Payment Required')
   ) {
     return { creditsRequired: 0, creditsAvailable: 0 };
   }

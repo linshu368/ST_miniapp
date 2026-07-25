@@ -10,11 +10,16 @@
 import { FastifyInstance } from 'fastify';
 import { ok, fail } from '@miniapp/shared';
 import { deriveStHandle } from '@miniapp/shared';
-import type { GetUserChatsData, UserChatListItem } from '@miniapp/shared';
+import type { GetLatestUserChatData, GetUserChatsData, UserChatListItem } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
+import { requestLogger, type RequestLogger } from '../lib/logger.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { fetchWithStCookie } from '../lib/st-cookie.js';
 import { prisma } from '../lib/db.js';
+import {
+  latestChatForCharacter,
+  latestChatPerCharacter,
+} from '../features/chats/effective-chats.js';
 
 interface STRecentChatEntry {
   file_name: string;
@@ -22,7 +27,7 @@ interface STRecentChatEntry {
   /** 最后一条消息的预览文本（ST getChatInfo 的 mes 字段） */
   mes?: string;
   /** 最后消息时间戳 */
-  last_mes?: string;
+  last_mes?: string | number;
   /** 消息条数 */
   chat_items?: number;
   group_id?: string;
@@ -34,6 +39,8 @@ interface STRecentChatEntry {
 }
 
 const PLATFORM_AVATAR_REGEX = /^platform_([0-9a-f-]{36})\.png$/i;
+const CHARACTER_ID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export default async function chatsRoutes(app: FastifyInstance) {
   app.get('/api/users/chats', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
@@ -41,54 +48,14 @@ export default async function chatsRoutes(app: FastifyInstance) {
       return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     }
 
+    const log = requestLogger(request.log, 'chats');
     try {
       const dbUser = await getOrCreateDbUser(request.user);
       const stHandle = deriveStHandle(request.user.id.toString());
-
-      const result = await fetchWithStCookie<
-        STRecentChatEntry[] | Record<string, STRecentChatEntry>
-      >(dbUser.id, stHandle, '/api/chats/recent', {
-        method: 'POST',
-        body: JSON.stringify({ max: 200 }),
-      });
-
-      if (!result.ok || !result.data) {
-        request.log.warn(
-          { userId: dbUser.id, status: result.status },
-          '[chats] ST /api/chats/recent failed'
-        );
+      const items = await loadCompletedChats(dbUser.id, stHandle, log);
+      if (!items) {
         return reply.status(502).send(fail('ST_UNAVAILABLE', 'Failed to fetch chat list'));
       }
-
-      const rawEntries = Array.isArray(result.data) ? result.data : Object.values(result.data);
-
-      const avatarSet = new Set<string>();
-      for (const entry of rawEntries) {
-        const avatar = entry.avatar ?? entry.character_avatar;
-        if (avatar) avatarSet.add(avatar);
-      }
-
-      const avatarToCharacter = await buildAvatarMap(Array.from(avatarSet));
-
-      const items: UserChatListItem[] = rawEntries.map((entry) => {
-        // ST /api/chats/recent 把角色头像放在 avatar 字段（getChatInfo additionalData）。
-        const avatar = entry.avatar ?? entry.character_avatar ?? '';
-        const mapped = avatarToCharacter.get(avatar);
-
-        return {
-          fileName: entry.file_name?.replace(/\.jsonl$/, '') ?? '',
-          characterAvatar: avatar,
-          characterName: mapped?.name ?? entry.character_name ?? '',
-          characterId: mapped?.id ?? null,
-          isGroup: Boolean(entry.group_id),
-          // mes 是最后一条消息预览文本；last_mes 是时间戳（此前误用为预览）。
-          lastMessage: entry.mes ?? '',
-          lastMessageAt: extractTimestamp(entry.file_name) || (entry.last_mes ?? ''),
-          // chat_items 是消息条数；此前误用 mes（文本）。
-          messageCount: entry.chat_items ?? 0,
-          fileSize: typeof entry.file_size === 'number' ? entry.file_size : 0,
-        };
-      });
 
       return reply.send(
         ok<GetUserChatsData>({
@@ -97,16 +64,97 @@ export default async function chatsRoutes(app: FastifyInstance) {
         })
       );
     } catch (err) {
-      request.log.error({ err: String(err) }, '[chats] /api/users/chats failed');
+      log.sys.error({ event: 'chats.list.failed', err }, '/api/users/chats failed');
       return reply.status(500).send(fail('INTERNAL_ERROR', 'Failed to fetch chat list'));
     }
   });
+
+  app.get(
+    '/api/users/chats/latest',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) {
+        return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      }
+      const { characterId } = request.query as { characterId?: string };
+      if (!characterId || !CHARACTER_ID_REGEX.test(characterId)) {
+        return reply.status(400).send(fail('INVALID_CHARACTER_ID', 'Invalid character id'));
+      }
+
+      const log = requestLogger(request.log, 'chats');
+      try {
+        const dbUser = await getOrCreateDbUser(request.user);
+        const stHandle = deriveStHandle(request.user.id.toString());
+        const items = await loadCompletedChats(dbUser.id, stHandle, log);
+        if (!items) {
+          return reply.status(502).send(fail('ST_UNAVAILABLE', 'Failed to fetch chat list'));
+        }
+        return reply.send(
+          ok<GetLatestUserChatData>({
+            item: latestChatForCharacter(items, characterId),
+          })
+        );
+      } catch (err) {
+        log.sys.error({ event: 'chats.latest.failed', err }, 'latest chat lookup failed');
+        return reply.status(500).send(fail('INTERNAL_ERROR', 'Failed to fetch latest chat'));
+      }
+    }
+  );
+}
+
+async function loadCompletedChats(
+  dbUserId: string,
+  stHandle: string,
+  log: RequestLogger
+): Promise<UserChatListItem[] | null> {
+  const result = await fetchWithStCookie<STRecentChatEntry[] | Record<string, STRecentChatEntry>>(
+    dbUserId,
+    stHandle,
+    '/api/chats/recent',
+    {
+      method: 'POST',
+      body: JSON.stringify({ max: 200 }),
+    }
+  );
+
+  if (!result.ok || !result.data) {
+    log.sys.warn(
+      { event: 'chats.st_recent.failed', userId: dbUserId, status: result.status },
+      'ST /api/chats/recent failed'
+    );
+    return null;
+  }
+
+  const rawEntries = Array.isArray(result.data) ? result.data : Object.values(result.data);
+  const avatars = rawEntries
+    .map((entry) => entry.avatar ?? entry.character_avatar)
+    .filter((avatar): avatar is string => Boolean(avatar));
+  const avatarToCharacter = await buildAvatarMap([...new Set(avatars)]);
+
+  const items = rawEntries.map((entry): UserChatListItem => {
+    const avatar = entry.avatar ?? entry.character_avatar ?? '';
+    const mapped = avatarToCharacter.get(avatar);
+    return {
+      fileName: entry.file_name?.replace(/\.jsonl$/, '') ?? '',
+      characterAvatar: avatar,
+      characterAvatarUrl: mapped?.avatarUrl ?? '',
+      characterName: mapped?.name ?? entry.character_name ?? '',
+      characterId: mapped?.id ?? null,
+      isGroup: Boolean(entry.group_id),
+      lastMessage: entry.mes ?? '',
+      lastMessageAt: normalizeTimestamp(entry.last_mes) || extractTimestamp(entry.file_name),
+      messageCount: entry.chat_items ?? 0,
+      fileSize: typeof entry.file_size === 'number' ? entry.file_size : 0,
+    };
+  });
+
+  return latestChatPerCharacter(items);
 }
 
 async function buildAvatarMap(
   avatars: string[]
-): Promise<Map<string, { id: string; name: string }>> {
-  const result = new Map<string, { id: string; name: string }>();
+): Promise<Map<string, { id: string; name: string; avatarUrl: string }>> {
+  const result = new Map<string, { id: string; name: string; avatarUrl: string }>();
   if (avatars.length === 0) return result;
 
   const platformIds: string[] = [];
@@ -124,15 +172,19 @@ async function buildAvatarMap(
 
   const characters = await prisma.character.findMany({
     where: { id: { in: platformIds } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, avatar_url: true },
   });
 
-  const idToName = new Map(characters.map((c) => [c.id, c.name]));
+  const idToCharacter = new Map(characters.map((character) => [character.id, character]));
 
   for (const [avatar, charId] of avatarToId) {
-    const name = idToName.get(charId);
-    if (name) {
-      result.set(avatar, { id: charId, name });
+    const character = idToCharacter.get(charId);
+    if (character) {
+      result.set(avatar, {
+        id: charId,
+        name: character.name,
+        avatarUrl: character.avatar_url,
+      });
     }
   }
 
@@ -151,4 +203,11 @@ function extractTimestamp(fileName: string | undefined): string {
   } catch {
     return '';
   }
+}
+
+function normalizeTimestamp(value: string | number | undefined): string {
+  if (value === undefined || value === null || value === '') return '';
+  const parsed = typeof value === 'number' ? value : Date.parse(value);
+  if (!Number.isFinite(parsed)) return '';
+  return new Date(parsed).toISOString();
 }

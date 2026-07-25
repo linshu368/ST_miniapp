@@ -3,8 +3,21 @@
 export type PreferredWordCount = '100-300' | '300-500' | '500-800' | '800+';
 export type AvatarSource = 'custom' | 'telegram' | 'default';
 
+/**
+ * 平台默认头像的测试环境地址。
+ * 各环境的 Supabase 项目不同，生产必须通过环境变量覆盖，见 resolveDefaultUserAvatarUrl。
+ */
 export const DEFAULT_USER_AVATAR_URL =
-  'https://zoqelpfhurwehlvypryl.supabase.co/storage/v1/object/public/miniapp-users/default_user_avatar/4d015fdd-7f82-482c-912d-466eaa826280.png';
+  'https://zoqelpfhurwehlvypryl.supabase.co/storage/v1/object/public/miniapp-user-avatars/default_user_avatar/default-user-avatar-20260713.png';
+
+/**
+ * 解析平台默认头像地址。各端把自己的环境变量传进来，空值回退到测试环境地址。
+ * 读取环境变量的动作留在各端：前端必须写成字面量 process.env.NEXT_PUBLIC_* 才能在
+ * 构建期被内联，共享包内的动态访问在浏览器里取不到值。
+ */
+export function resolveDefaultUserAvatarUrl(override: string | null | undefined): string {
+  return override?.trim() || DEFAULT_USER_AVATAR_URL;
+}
 
 export interface UserSettings {
   display_name: string | null;

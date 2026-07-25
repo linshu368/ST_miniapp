@@ -22,6 +22,7 @@ export class RechargeUseCase {
     userId: string;
     planId: string;
     paymentType: PaymentType;
+    clientIp: string;
   }): Promise<CreatePaymentOrderData> {
     if (!config.payment.enabled) {
       throw new Error('支付功能未开启');
@@ -50,6 +51,7 @@ export class RechargeUseCase {
       amount: formatAmountCny(plan.price_cents),
       userId: input.userId,
       productName: `星尘充值 ${plan.credits_amount + plan.bonus_credits}`,
+      clientIp: input.clientIp,
     });
 
     if (!result.success || !result.paymentUrl) {

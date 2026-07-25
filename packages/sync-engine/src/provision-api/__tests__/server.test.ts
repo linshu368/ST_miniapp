@@ -29,14 +29,17 @@ vi.mock('../../lib/config.js', () => ({
   loadConfig: vi.fn(),
 }));
 
-vi.mock('../../lib/logger.js', () => ({
-  createLogger: () => ({
+vi.mock('../../lib/logger.js', () => {
+  const makeLogger = () => ({
     info: vi.fn(),
     error: vi.fn(),
     warn: vi.fn(),
     debug: vi.fn(),
-  }),
-}));
+  });
+  // 复刻真实 createLogger：child logger 额外挂 .biz / .sys（各自同样是完整 logger）
+  const createLogger = () => Object.assign(makeLogger(), { biz: makeLogger(), sys: makeLogger() });
+  return { createLogger };
+});
 
 import { startProvisionApi, type ProvisionApiHandle } from '../server.js';
 
