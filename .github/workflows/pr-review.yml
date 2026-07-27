@@ -32,6 +32,8 @@ jobs:
           path: pr-worktree
           fetch-depth: 0
           persist-credentials: false
+          # pull_request_target + fork PR：checkout 默认拒绝，需显式 opt-in（PR 代码仅作只读审查数据，不执行）
+          allow-unsafe-pr-checkout: true
 
       - name: Setup Python
         uses: actions/setup-python@v5

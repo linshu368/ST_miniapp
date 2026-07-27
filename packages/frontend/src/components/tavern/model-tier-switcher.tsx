@@ -258,17 +258,18 @@ function TierGroup(props: {
                     <span className="truncate text-[15px] font-medium text-white">
                       {model.display_name}
                     </span>
-                    {model.tagline ? (
-                      <span className="max-w-[45%] truncate rounded-full bg-white/7 px-2 py-0.5 text-[10px] text-white/45">
-                        {model.tagline}
-                      </span>
-                    ) : null}
                     {isFree ? (
                       <span className="shrink-0 rounded-full border border-emerald-300/25 bg-emerald-300/12 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
                         免费
                       </span>
                     ) : null}
                   </div>
+                  {/* 介绍语固定在名称下方：长名称不再与介绍语横向挤压，长文案按两行截断。 */}
+                  {model.tagline ? (
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-white/50">
+                      {model.tagline}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-[11px] text-white/38">
                     {isFree
                       ? '0 星尘'

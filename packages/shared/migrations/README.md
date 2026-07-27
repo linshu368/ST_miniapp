@@ -138,6 +138,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 054_default_user_avatar_asset.sql # 默认头像改存受迁移管理的头像 bucket 并放宽其体积上限
 055_character_free_chat_quota.sql # 用户与角色卡 50 轮免费额度、并发预留及额度后扣费倍率
 056_free_quota_exhausted_dialog_config.sql # 免费额度耗尽弹窗文案运行时配置与运营后台管理
+056_character_favorites_and_model_tagline.sql # 角色卡收藏表与幂等收藏 RPC，模型介绍语长度上限放宽到 40
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
