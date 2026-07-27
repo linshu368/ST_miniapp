@@ -37,7 +37,7 @@ const SELECT_STALL_FLUSH_MS = 25_000;
 // openChat 需要 ready 相位，未达标时会在桥接缓冲区排队。相位通常在 select 之后数百毫秒
 // 达标；超过该阈值就改走只需 interactive 的常规加载，避免开屏页无限等待。
 const OPEN_CHAT_TIMEOUT_MS = 12_000;
-const FREE_QUOTA_DIALOG_DURATION_MS = 3_000;
+const FREE_QUOTA_DIALOG_DURATION_MS = 5_000;
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -287,11 +287,11 @@ export default function TavernChatPage() {
       <Dialog open={freeQuotaExhaustedOpen} onOpenChange={setFreeQuotaExhaustedOpen}>
         <DialogContent
           showCloseButton={false}
-          className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/10 bg-[#151515] text-white"
+          className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/20 bg-[#ef856d] text-[#24111a]"
         >
           <DialogHeader className="items-stretch text-left">
             <DialogTitle className="leading-6">{exhaustedDialog.title}</DialogTitle>
-            <DialogDescription className="whitespace-pre-line pt-1 text-left leading-6 text-slate-300">
+            <DialogDescription className="whitespace-pre-line pt-1 text-left leading-6 text-[#4b2026]">
               {exhaustedDialog.description}
             </DialogDescription>
           </DialogHeader>

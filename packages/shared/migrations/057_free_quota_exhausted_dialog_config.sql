@@ -57,7 +57,7 @@ INSERT INTO miniapp.runtime_config (
     "title": "▎ 和「{characterName}」的 50 轮免费时光结束了",
     "description": "▎\n▎ 这是这张卡的免费额度，其他角色都不受影响。\n▎ 往后每轮消耗星尘，故事还在继续。"
   }'::JSONB,
-  '角色卡 50 轮免费额度耗尽后自动展示 3 秒的标题和说明文案；{characterName} 会替换为当前角色名。',
+  '角色卡 50 轮免费额度耗尽后自动展示 5 秒的标题和说明文案；{characterName} 会替换为当前角色名。',
   1,
   now(),
   NULL
