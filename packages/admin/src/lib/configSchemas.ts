@@ -34,6 +34,7 @@ const EditableModelCatalogModelSchema = z.object({
   price_input: z.number().finite().nonnegative(),
   price_output: z.number().finite().nonnegative(),
   markup: z.number().finite(),
+  deduct_markup: z.number().finite().optional(),
   enabled: z.boolean(),
   sort_order: z.number().int().nonnegative(),
 });

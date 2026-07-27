@@ -106,16 +106,23 @@ describe('applyModelMarkup', () => {
       markup: 0,
       price_input: 0,
       price_output: 0,
+      deduct_markup: 2.5,
     });
   });
 
-  it('applies recalculated prices for a paid model', () => {
-    const model = catalog.tiers[0]!.models[0]!;
-    expect(applyModelMarkup(model, 2, { price_input: 1.2, price_output: 3.4 })).toMatchObject({
+  it('applies recalculated prices and removes deduct markup for a paid model', () => {
+    const model = {
+      ...catalog.tiers[0]!.models[0]!,
+      markup: 0 as const,
+      deduct_markup: 3 as const,
+    };
+    const result = applyModelMarkup(model, 2, { price_input: 1.2, price_output: 3.4 });
+    expect(result).toMatchObject({
       markup: 2,
       price_input: 1.2,
       price_output: 3.4,
     });
+    expect(result).not.toHaveProperty('deduct_markup');
   });
 });
 

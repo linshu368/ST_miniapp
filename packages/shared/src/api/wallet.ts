@@ -25,6 +25,15 @@ export interface GetWalletSpendingData {
   items: WalletSpendingRecord[];
 }
 
+// ==== GET /api/wallet/free-quota/:characterId ====
+export interface GetCharacterFreeQuotaData {
+  character_id: string;
+  quota_limit: number;
+  used_rounds: number;
+  remaining_rounds: number;
+  exhausted: boolean;
+}
+
 // ==== GET /api/wallet/checkin ====
 export interface DailyCheckinStatus {
   can_claim: boolean;

@@ -24,9 +24,25 @@ describe('getModelCatalogChangeSummary', () => {
 
     expect(getModelCatalogChangeSummary(before, after)).toContain('下架“Gemini Flash Lite”');
     expect(getModelCatalogChangeSummary(before, after)).toContain(
-      '调整“Gemini Flash Lite”倍率：2.5 → 4'
+      '调整“Gemini Flash Lite”默认倍率：2.5 → 4'
     );
     expect(getModelCatalogChangeSummary(before, after)).toContain('新增模型“New Model”');
     expect(getModelCatalogChangeSummary(before, after)).toContain('默认模型改为“New Model”');
+  });
+
+  it('describes deduct markup changes for free models', () => {
+    const before = structuredClone(configMetadata.llm_model_catalog.defaultValue) as ModelCatalog;
+    Object.assign(before.tiers[0]!.models[0]!, {
+      markup: 0,
+      price_input: 0,
+      price_output: 0,
+      deduct_markup: 2.5,
+    });
+    const after = structuredClone(before);
+    after.tiers[0]!.models[0]!.deduct_markup = 3;
+
+    expect(getModelCatalogChangeSummary(before, after)).toContain(
+      '调整“Gemini Flash Lite”扣费倍率：2.5 → 3'
+    );
   });
 });

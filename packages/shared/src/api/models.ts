@@ -32,12 +32,20 @@ export const HexColorSchema = z
   .regex(/^#[0-9a-fA-F]{6}$/, 'color must be a six-digit hex value');
 const oneDecimalDisplayPrice = z.number().finite().nonnegative().multipleOf(0.1);
 export const MODEL_MARKUP_OPTIONS = [0, 1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
+export const MODEL_DEDUCT_MARKUP_OPTIONS = [1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
 export const ModelMarkupSchema = z
   .number()
   .refine(
     (value): value is (typeof MODEL_MARKUP_OPTIONS)[number] =>
       MODEL_MARKUP_OPTIONS.includes(value as (typeof MODEL_MARKUP_OPTIONS)[number]),
     'markup must be 0 or a half-step from 1 through 4'
+  );
+export const ModelDeductMarkupSchema = z
+  .number()
+  .refine(
+    (value): value is (typeof MODEL_DEDUCT_MARKUP_OPTIONS)[number] =>
+      MODEL_DEDUCT_MARKUP_OPTIONS.includes(value as (typeof MODEL_DEDUCT_MARKUP_OPTIONS)[number]),
+    'deduct_markup must be a half-step from 1 through 4'
   );
 
 export const ModelCatalogModelSchema = z.object({
@@ -56,8 +64,10 @@ export const ModelCatalogModelSchema = z.object({
   /** Display-only prices; billing must use provider usage data instead. */
   price_input: oneDecimalDisplayPrice,
   price_output: oneDecimalDisplayPrice,
-  /** Per-model multiplier used for both display pricing and real usage-cost deduction. */
+  /** Default multiplier; zero identifies a model with an initial free quota. */
   markup: ModelMarkupSchema.default(2.5),
+  /** Multiplier used after a free model's per-character quota is exhausted. */
+  deduct_markup: ModelDeductMarkupSchema.optional(),
   enabled: z.boolean(),
   sort_order: z.number().int().nonnegative(),
 });
@@ -94,6 +104,20 @@ export const ModelCatalogSchema = z
             code: z.ZodIssueCode.custom,
             path: ['tiers', tierIndex, 'models', modelIndex, 'price_input'],
             message: 'free models must have zero display prices',
+          });
+        }
+        if (model.markup === 0 && model.deduct_markup === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tiers', tierIndex, 'models', modelIndex, 'deduct_markup'],
+            message: 'free models must have a deduct_markup',
+          });
+        }
+        if (model.markup !== 0 && model.deduct_markup !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tiers', tierIndex, 'models', modelIndex, 'deduct_markup'],
+            message: 'paid models must not have a deduct_markup',
           });
         }
       });
@@ -142,6 +166,7 @@ export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
 export const PublicModelCatalogModelSchema = ModelCatalogModelSchema.omit({
   openrouter_model_id: true,
   markup: true,
+  deduct_markup: true,
   enabled: true,
 }).extend({
   is_free: z.boolean().readonly(),
@@ -188,6 +213,7 @@ const RuntimeCatalogModelSchema = z.object({
   id: z.string().trim().min(1),
   openrouter_model_id: z.string().trim().min(1),
   markup: ModelMarkupSchema.optional(),
+  deduct_markup: ModelDeductMarkupSchema.optional(),
   enabled: z.boolean().optional().default(true),
 });
 
