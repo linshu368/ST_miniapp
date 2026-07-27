@@ -50,6 +50,7 @@ export interface LlmUsageChargeRow {
   charged_amount: NumericValue;
   fallback_used: boolean;
   status: 'pending' | 'failed' | 'free' | 'charged' | 'partial' | 'reconciled' | 'historical';
+  metadata: Record<string, unknown>;
   created_at: string;
   reconciled_at: string | null;
 }

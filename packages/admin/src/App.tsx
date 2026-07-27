@@ -473,9 +473,19 @@ function AdminWorkspace(props: {
       : props.admin.can_access_test);
   const pricingConfig = useMemo<DisplayPricingConfig>(() => {
     const runtimeValue = configs.find((config) => config.key === 'llm_pricing_config')?.value;
-    const parsed = LlmPricingConfigSchema.safeParse(
-      runtimeValue ?? configMetadata.llm_pricing_config.defaultValue
-    );
+    const defaults = configMetadata.llm_pricing_config.defaultValue as Record<string, unknown>;
+    const runtimeRecord =
+      runtimeValue && typeof runtimeValue === 'object' && !Array.isArray(runtimeValue)
+        ? (runtimeValue as Record<string, unknown>)
+        : {};
+    const parsed = LlmPricingConfigSchema.safeParse({
+      ...defaults,
+      ...runtimeRecord,
+      fixedDeduction: {
+        ...((defaults.fixedDeduction as Record<string, number> | undefined) ?? {}),
+        ...((runtimeRecord.fixedDeduction as Record<string, number> | undefined) ?? {}),
+      },
+    });
     return parsed.success
       ? { exchangeRate: parsed.data.exchangeRate, markup: parsed.data.markup }
       : { exchangeRate: 680, markup: 2.5 };

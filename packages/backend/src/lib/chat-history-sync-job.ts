@@ -128,7 +128,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       ) {
         try {
           const originalCharge = await wallets.findLlmUsageCharge(chargeId);
-          if (originalCharge) {
+          if (originalCharge && originalCharge.metadata?.billing_mode !== 'fixed_tier') {
             const intendedDeduction = calculateUsageDeduction(
               usageCost,
               Number(originalCharge.exchange_rate),

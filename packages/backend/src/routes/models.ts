@@ -24,6 +24,7 @@ import { getOrCreateDbUser } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
+import { resolveFixedDeduction } from '../features/billing/usage-pricing.js';
 
 export default async function modelsRoutes(app: FastifyInstance) {
   const settings = new MiniappUserSettingsRepository();
@@ -94,6 +95,9 @@ export default async function modelsRoutes(app: FastifyInstance) {
       try {
         const { catalog } = await fetchModelCatalogSnapshot();
         const selectedModel = resolveEnabledCatalogModel(catalog, parsed.data.model_id);
+        const selectedTier =
+          catalog.tiers.find((tier) => tier.models.some((model) => model.id === selectedModel.id))
+            ?.tier ?? null;
         const dbUser = await getOrCreateDbUser(request.user);
 
         if (selectedModel.markup > 0) {
@@ -101,8 +105,14 @@ export default async function modelsRoutes(app: FastifyInstance) {
             wallets.getOrCreate(dbUser.id),
             getPricingConfig(),
           ]);
+          const fixedDeduction = resolveFixedDeduction({
+            defaultModelMarkup: selectedModel.markup,
+            effectiveModelMarkup: selectedModel.markup,
+            modelTier: selectedTier,
+            config: pricing.fixedDeduction,
+          });
           const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-          if (balance < pricing.balanceBaseline) {
+          if (balance < fixedDeduction.amount) {
             log.biz.info(
               {
                 event: 'models.select.blocked_insufficient',
@@ -110,7 +120,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
                 modelId: selectedModel.id,
                 model: selectedModel.openrouter_model_id,
                 balance,
-                required: pricing.balanceBaseline,
+                required: fixedDeduction.amount,
               },
               'paid model selection blocked by insufficient balance'
             );

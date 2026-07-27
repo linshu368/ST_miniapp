@@ -11,6 +11,7 @@ import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappW
 import {
   getInitialBillingDecision,
   shouldRecordUsageCharge,
+  type FixedDeductionCategory,
 } from '../features/billing/usage-pricing.js';
 
 export interface ChatHistoryEntry {
@@ -20,6 +21,8 @@ export interface ChatHistoryEntry {
   model_id: string | null;
   model_display_name: string;
   model_markup: number;
+  fixed_deduction: number;
+  fixed_deduction_category: FixedDeductionCategory;
   catalog_version: number;
   pricing_config_version: number;
   exchange_rate: number;
@@ -169,6 +172,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
           usageCost,
           exchangeRate: entry.exchange_rate,
           modelMarkup: entry.model_markup,
+          fixedDeduction: entry.fixed_deduction,
         });
         const { hasActualUsage } = billingDecision;
         const intendedDeduction = billingDecision.amount;
@@ -197,14 +201,9 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             metadata: {
               chat_status: entry.status,
               requested_model: entry.model,
-              billing_mode:
-                entry.status !== 'success'
-                  ? 'failed_free'
-                  : entry.model_markup === 0
-                    ? 'free'
-                    : hasActualUsage
-                      ? 'actual_usage'
-                      : 'deferred',
+              billing_mode: 'fixed_tier',
+              fixed_deduction_category: entry.fixed_deduction_category,
+              fixed_deduction: entry.fixed_deduction,
             },
           });
           actualDeduction = Number(result.charge.charged_amount);

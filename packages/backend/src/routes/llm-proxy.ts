@@ -36,6 +36,7 @@ import {
   isQuotaTrackableCharacterId,
   resolveEffectiveModelMarkup,
 } from '../features/billing/free-quota.js';
+import { resolveFixedDeduction } from '../features/billing/usage-pricing.js';
 
 const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
 const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -290,12 +291,30 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           return null;
         }
       };
-      const balanceBaseline = pricing.balanceBaseline;
+      const fixedDeduction = resolveFixedDeduction({
+        defaultModelMarkup: billingContext.modelMarkup,
+        effectiveModelMarkup: modelMarkup,
+        modelTier: billingContext.modelTier,
+        config: pricing.fixedDeduction,
+      });
+      if (fixedDeduction.category === 'standard_fallback') {
+        log.sys.warn(
+          {
+            event: 'llm.billing.unknown_paid_tier',
+            model: modelName,
+            modelTier: billingContext.modelTier,
+            fixedDeduction: fixedDeduction.amount,
+          },
+          'unknown paid model tier, using standard fixed deduction'
+        );
+      }
       const billingSnapshot = {
         charge_id: chargeId,
         model_id: billingContext.modelId,
         model_display_name: billingContext.modelDisplayName,
         model_markup: modelMarkup,
+        fixed_deduction: fixedDeduction.amount,
+        fixed_deduction_category: fixedDeduction.category,
         catalog_version: billingContext.catalogVersion,
         pricing_config_version: pricing.version,
         exchange_rate: pricing.exchangeRate,
@@ -304,7 +323,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
       // ── 余额预检：不足基线时在调用上游前返回 402，由 ST bridge 引导充值 ─────────
       try {
-        if (modelMarkup === 0) {
+        if (fixedDeduction.amount === 0) {
           log.biz.debug(
             { event: 'llm.balance.check_skipped', userId, model: modelName },
             'free model balance check skipped'
@@ -312,22 +331,22 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         } else {
           const wallet = await wallets.getOrCreate(userId);
           const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-          if (balance < balanceBaseline) {
+          if (balance < fixedDeduction.amount) {
             log.biz.info(
               {
                 event: 'llm.balance.insufficient',
                 userId,
                 balance,
-                required: balanceBaseline,
+                required: fixedDeduction.amount,
                 model: modelName,
               },
               'insufficient balance'
             );
             const response: InsufficientBalanceErrorResponse = {
               error: {
-                message: `Insufficient credits: have ${balance}, need baseline ${balanceBaseline}`,
+                message: `Insufficient credits: have ${balance}, need ${fixedDeduction.amount}`,
                 type: 'insufficient_balance',
-                credits_required: balanceBaseline,
+                credits_required: fixedDeduction.amount,
                 credits_available: balance,
               },
             };
