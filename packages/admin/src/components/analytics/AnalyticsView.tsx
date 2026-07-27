@@ -605,20 +605,28 @@ function SpendingDetailDrawer(props: {
                   : `${formatDecimal(value.model_markup)} 倍`}
               </Descriptions.Item>
               <Descriptions.Item label="计算公式">
-                {String(value.status) === 'failed'
-                  ? '免费模型生成失败，本次实扣 0.0 星尘'
-                  : String(value.status) === 'pending'
-                    ? '等待 OpenRouter 返回最终用量，当前实扣 0.0 星尘'
-                    : value.fallback_used
-                      ? `历史 Fallback ${formatDecimal(metadata?.fallback_cost ?? value.initial_amount)} = ${formatDecimal(value.calculated_amount)} 星尘`
-                      : `$${formatDecimal(value.usage_cost_usd, 10)} × ${formatDecimal(value.exchange_rate)} × ${formatDecimal(value.model_markup)} = ${formatDecimal(value.calculated_amount)} 星尘`}
+                {metadata?.billing_mode === 'fixed_tier'
+                  ? `固定档位 ${formatDecimal(metadata.fixed_deduction ?? value.calculated_amount)} = ${formatDecimal(value.calculated_amount)} 星尘`
+                  : String(value.status) === 'failed'
+                    ? '免费模型生成失败，本次实扣 0.0 星尘'
+                    : String(value.status) === 'pending'
+                      ? '等待 OpenRouter 返回最终用量，当前实扣 0.0 星尘'
+                      : value.fallback_used
+                        ? `历史 Fallback ${formatDecimal(metadata?.fallback_cost ?? value.initial_amount)} = ${formatDecimal(value.calculated_amount)} 星尘`
+                        : `$${formatDecimal(value.usage_cost_usd, 10)} × ${formatDecimal(value.exchange_rate)} × ${formatDecimal(value.model_markup)} = ${formatDecimal(value.calculated_amount)} 星尘`}
               </Descriptions.Item>
               <Descriptions.Item label="初始 / 计算 / 实扣">
                 {formatDecimal(value.initial_amount)} / {formatDecimal(value.calculated_amount)} /{' '}
                 {formatDecimal(value.charged_amount)} 星尘
               </Descriptions.Item>
               <Descriptions.Item label="成本来源">
-                {String(value.status) === 'failed' ? (
+                {metadata?.billing_mode === 'fixed_tier' ? (
+                  Number(value.calculated_amount) === 0 ? (
+                    <Tag color="green">免费额度</Tag>
+                  ) : (
+                    <Tag color="blue">固定档位</Tag>
+                  )
+                ) : String(value.status) === 'failed' ? (
                   <Tag color="red">生成失败</Tag>
                 ) : String(value.status) === 'pending' ? (
                   <Tag color="gold">等待最终用量</Tag>
@@ -812,10 +820,10 @@ function SpendingExplorer(props: {
                   <Tag color="gold">等待用量</Tag>
                 ) : value ? (
                   <Tag color="orange">历史 Fallback</Tag>
-                ) : row.model_markup === 0 ? (
+                ) : row.model_markup === 0 || Number(row.calculated_amount) === 0 ? (
                   <Tag color="green">免费</Tag>
                 ) : (
-                  <Tag>实际用量</Tag>
+                  <Tag color="blue">固定档位</Tag>
                 ),
             },
             { title: '状态', dataIndex: 'status', render: chargeStatusTag },

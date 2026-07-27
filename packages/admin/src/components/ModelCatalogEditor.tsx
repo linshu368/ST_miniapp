@@ -834,7 +834,7 @@ export function ModelCatalogEditor(props: {
                                   </Col>
                                   {model.markup === 0 ? (
                                     <Col xs={24} md={8}>
-                                      <Typography.Text>扣费倍率（deduct_markup）</Typography.Text>
+                                      <Typography.Text>旧扣费倍率（deduct_markup）</Typography.Text>
                                       <Select
                                         className="field-full"
                                         value={model.deduct_markup}
@@ -855,7 +855,7 @@ export function ModelCatalogEditor(props: {
                                         }}
                                       />
                                       <Typography.Text type="secondary">
-                                        免费模型额度用尽后按此倍率扣费
+                                        仅保留兼容；当前额度用尽后按计费参数统一固定扣费
                                       </Typography.Text>
                                     </Col>
                                   ) : null}

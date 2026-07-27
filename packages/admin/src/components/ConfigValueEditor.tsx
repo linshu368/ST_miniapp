@@ -91,29 +91,58 @@ export function ConfigValueEditor(props: {
   }
 
   if (props.configKey === 'llm_pricing_config') {
-    const value = (props.value ?? {}) as Record<string, number>;
+    const value = (props.value ?? {}) as Record<string, unknown>;
+    const fixedDeduction = {
+      freeQuotaExhausted: 10,
+      standard: 30,
+      premium: 50,
+      ...((value.fixedDeduction ?? {}) as Record<string, number>),
+    };
     return (
       <Row gutter={[12, 12]}>
         {[
-          ['balanceBaseline', '余额预检基准'],
-          ['fallbackCost', '元数据失败兜底星尘'],
-          ['exchangeRate', '美元兑星尘汇率'],
-          ['markup', '旧目录兼容倍率'],
+          ['balanceBaseline', '旧余额预检基准（已弃用）'],
+          ['fallbackCost', '旧兜底星尘（已弃用）'],
+          ['exchangeRate', '美元兑星尘汇率（展示用）'],
+          ['markup', '旧目录兼容倍率（展示用）'],
         ].map(([key, label]) => (
           <Col xs={24} md={12} key={key}>
             <Typography.Text>{label}</Typography.Text>
             <InputNumber
               min={0}
               className="field-full"
-              value={value[key]}
+              value={value[key] as number | undefined}
               disabled={props.disabled}
               onChange={(number) => props.onChange({ ...value, [key]: number ?? 0 })}
             />
           </Col>
         ))}
+        {(
+          [
+            ['freeQuotaExhausted', '免费模型超出 50 轮'],
+            ['standard', '标准档'],
+            ['premium', '旗舰档'],
+          ] as const
+        ).map(([key, label]) => (
+          <Col xs={24} md={8} key={key}>
+            <Typography.Text>{label}（星尘/轮）</Typography.Text>
+            <InputNumber
+              min={0}
+              className="field-full"
+              value={fixedDeduction[key]}
+              disabled={props.disabled}
+              onChange={(number) =>
+                props.onChange({
+                  ...value,
+                  fixedDeduction: { ...fixedDeduction, [key]: number ?? 0 },
+                })
+              }
+            />
+          </Col>
+        ))}
         <Col span={24}>
           <Typography.Text type="warning">
-            这里控制真实动态扣费换算；模型目录中的输入/输出价格仅用于展示。
+            新请求按上方三档固定扣费；汇率、倍率与模型输入/输出价格仅用于历史兼容和展示。
           </Typography.Text>
         </Col>
       </Row>

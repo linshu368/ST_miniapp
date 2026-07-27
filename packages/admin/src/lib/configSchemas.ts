@@ -2,6 +2,7 @@ import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
+  LlmPricingConfigSchema,
   ModelCatalogSchema,
   PaymentPlansSchema,
   RechargePageConfigSchema,
@@ -22,12 +23,7 @@ export const managedConfigKeys = [
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 
 const nonnegativeInteger = z.number().int().nonnegative();
-export const LlmPricingConfigSchema = z.object({
-  balanceBaseline: z.number().nonnegative(),
-  fallbackCost: z.number().nonnegative(),
-  exchangeRate: z.number().positive(),
-  markup: z.number().positive(),
-});
+export { LlmPricingConfigSchema };
 
 const EditableModelCatalogModelSchema = z.object({
   id: z.string(),
@@ -126,13 +122,18 @@ export const configMetadata: Record<
     },
   },
   llm_pricing_config: {
-    label: '动态计费参数',
-    description: '实际扣费基础参数；markup 仅供旧目录兼容，新目录使用每个模型自己的倍率。',
+    label: 'LLM 计费参数',
+    description: '每次成功生成的固定扣费标准；原动态计费字段保留用于历史兼容。',
     defaultValue: {
       balanceBaseline: 30,
       fallbackCost: 30,
       exchangeRate: 680,
       markup: 2.5,
+      fixedDeduction: {
+        freeQuotaExhausted: 10,
+        standard: 30,
+        premium: 50,
+      },
     },
   },
   system_fallback_character_id: {

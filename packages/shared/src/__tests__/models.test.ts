@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateDisplayPrice,
+  LlmPricingConfigSchema,
   ModelCatalogSchema,
   resolveEffectiveSelectedModelId,
   resolveEnabledCatalogModel,
@@ -8,6 +9,24 @@ import {
   resolveRuntimeCatalogModel,
   toPublicModelCatalog,
 } from '../api/models.js';
+
+describe('LlmPricingConfigSchema', () => {
+  it('validates fixed per-round deductions', () => {
+    expect(
+      LlmPricingConfigSchema.parse({
+        balanceBaseline: 30,
+        fallbackCost: 30,
+        exchangeRate: 680,
+        markup: 2.5,
+        fixedDeduction: {
+          freeQuotaExhausted: 10,
+          standard: 30,
+          premium: 50,
+        },
+      }).fixedDeduction
+    ).toEqual({ freeQuotaExhausted: 10, standard: 30, premium: 50 });
+  });
+});
 
 const validCatalog = {
   default_model_id: 'flash',

@@ -353,6 +353,23 @@ export interface DisplayPricingConfig {
   markup: number;
 }
 
+export const FixedDeductionConfigSchema = z.object({
+  freeQuotaExhausted: z.number().finite().nonnegative(),
+  standard: z.number().finite().nonnegative(),
+  premium: z.number().finite().nonnegative(),
+});
+
+export const LlmPricingConfigSchema = z.object({
+  balanceBaseline: z.number().finite().nonnegative(),
+  fallbackCost: z.number().finite().nonnegative(),
+  exchangeRate: z.number().finite().positive(),
+  markup: z.number().finite().positive(),
+  fixedDeduction: FixedDeductionConfigSchema,
+});
+
+export type FixedDeductionConfig = z.infer<typeof FixedDeductionConfigSchema>;
+export type LlmPricingRuntimeConfig = z.infer<typeof LlmPricingConfigSchema>;
+
 export function calculateDisplayPrice(usdPerToken: number, pricing: DisplayPricingConfig): number {
   if (
     !Number.isFinite(usdPerToken) ||
