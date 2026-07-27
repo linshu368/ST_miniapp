@@ -54,15 +54,20 @@ INSERT INTO miniapp.runtime_config (
 ) VALUES (
   'miniapp_free_quota_exhausted_dialog_config',
   '{
-    "title": "该卡的免费额度已用光",
-    "description": "你们已经一起完成了 50 轮免费对话。故事还可以继续，后续聊天将按实际使用量消耗星尘。"
+    "title": "▎ 和「{characterName}」的 50 轮免费时光结束了",
+    "description": "▎\n▎ 这是这张卡的免费额度，其他角色都不受影响。\n▎ 往后每轮消耗星尘，故事还在继续。"
   }'::JSONB,
-  '角色卡 50 轮免费额度耗尽后自动展示 3 秒的标题和说明文案。',
+  '角色卡 50 轮免费额度耗尽后自动展示 3 秒的标题和说明文案；{characterName} 会替换为当前角色名。',
   1,
   now(),
   NULL
 )
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT (key) DO UPDATE SET
+  value = EXCLUDED.value,
+  description = EXCLUDED.description,
+  version = miniapp.runtime_config.version + 1,
+  updated_at = now(),
+  text_value = NULL;
 
 CREATE OR REPLACE FUNCTION admin.validate_free_quota_exhausted_dialog_config(p_value JSONB)
 RETURNS VOID

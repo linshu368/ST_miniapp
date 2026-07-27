@@ -6,7 +6,9 @@ import { DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG } from '@miniapp/shared';
 import { platformAction, useBridgeStatus, useSTEvent } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { fetchLatestUserChat } from '@/lib/api/chats';
+import { useCharacterQuery } from '@/lib/api/characters';
 import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
+import { formatFreeQuotaExhaustedDialog } from '@/lib/free-quota-dialog';
 import { ChatHeader } from '@/components/tavern/chat-header';
 import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
 import { ChatSplash } from '@/components/tavern/chat-splash';
@@ -58,9 +60,12 @@ export default function TavernChatPage() {
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
   const [freeQuotaExhaustedOpen, setFreeQuotaExhaustedOpen] = useState(false);
+  const characterQuery = useCharacterQuery(characterId);
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
-  const exhaustedDialog =
-    freeQuotaQuery.data?.exhausted_dialog ?? DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG;
+  const exhaustedDialog = formatFreeQuotaExhaustedDialog(
+    freeQuotaQuery.data?.exhausted_dialog ?? DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+    characterQuery.data?.character.name
+  );
   const chatReady = readyCharacterId === characterId;
 
   useSTEvent('billing:insufficient', () => {
@@ -284,9 +289,9 @@ export default function TavernChatPage() {
           showCloseButton={false}
           className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/10 bg-[#151515] text-white"
         >
-          <DialogHeader className="items-center text-center">
-            <DialogTitle>{exhaustedDialog.title}</DialogTitle>
-            <DialogDescription className="pt-1 leading-6 text-slate-300">
+          <DialogHeader className="items-stretch text-left">
+            <DialogTitle className="leading-6">{exhaustedDialog.title}</DialogTitle>
+            <DialogDescription className="whitespace-pre-line pt-1 text-left leading-6 text-slate-300">
               {exhaustedDialog.description}
             </DialogDescription>
           </DialogHeader>

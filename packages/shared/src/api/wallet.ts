@@ -9,8 +9,9 @@ export const FreeQuotaExhaustedDialogConfigSchema = z.object({
 export type FreeQuotaExhaustedDialogConfig = z.infer<typeof FreeQuotaExhaustedDialogConfigSchema>;
 
 export const DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG: FreeQuotaExhaustedDialogConfig = {
-  title: '该卡的免费额度已用光',
-  description: '你们已经一起完成了 50 轮免费对话。故事还可以继续，后续聊天将按实际使用量消耗星尘。',
+  title: '▎ 和「{characterName}」的 50 轮免费时光结束了',
+  description:
+    '▎\n▎ 这是这张卡的免费额度，其他角色都不受影响。\n▎ 往后每轮消耗星尘，故事还在继续。',
 };
 
 // ==== GET /api/wallet/balance ====

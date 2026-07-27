@@ -57,13 +57,13 @@ describe('free quota exhausted dialog config', () => {
 
   it('falls back to safe defaults for missing or invalid config', () => {
     expect(parseFreeQuotaExhaustedDialogConfig(null)).toMatchObject({
-      title: '该卡的免费额度已用光',
+      title: '▎ 和「{characterName}」的 50 轮免费时光结束了',
     });
     expect(
       parseFreeQuotaExhaustedDialogConfig({
         title: '',
         description: '后续聊天将消耗星尘。',
       })
-    ).toMatchObject({ title: '该卡的免费额度已用光' });
+    ).toMatchObject({ title: '▎ 和「{characterName}」的 50 轮免费时光结束了' });
   });
 });

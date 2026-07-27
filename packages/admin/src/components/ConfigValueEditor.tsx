@@ -71,6 +71,9 @@ export function ConfigValueEditor(props: {
             disabled={props.disabled}
             onChange={(event) => props.onChange({ ...value, title: event.target.value })}
           />
+          <Typography.Text type="secondary">
+            使用 {'{characterName}'} 插入当前角色名；展示时最多保留 7 个字。
+          </Typography.Text>
         </div>
         <div>
           <Typography.Text>说明文案</Typography.Text>
