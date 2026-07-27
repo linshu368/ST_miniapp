@@ -104,7 +104,7 @@ export const configMetadata: Record<
               id: 'gemini-flash-lite',
               openrouter_model_id: 'google/gemini-3.1-flash-lite',
               display_name: 'Gemini Flash Lite',
-              tagline: '轻巧流畅',
+              tagline: '适合日常角色对话，回复快、消耗低。',
               price_input: 0,
               price_output: 0,
               markup: 2.5,
