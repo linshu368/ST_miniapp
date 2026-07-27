@@ -42,7 +42,12 @@ import type {
   OpenRouterModelDirectory,
   OpenRouterModelSummary,
 } from '@miniapp/shared';
-import { MODEL_MARKUP_OPTIONS, ModelMarkupSchema } from '@miniapp/shared';
+import {
+  MODEL_DEDUCT_MARKUP_OPTIONS,
+  MODEL_MARKUP_OPTIONS,
+  ModelDeductMarkupSchema,
+  ModelMarkupSchema,
+} from '@miniapp/shared';
 import { calculateModelDisplayPrices } from '../lib/openRouterModels';
 
 const tierOptions: Array<{ value: ModelCatalogTierKey; label: string; color: string }> = [
@@ -154,10 +159,12 @@ export function applyModelMarkup(
   markup: number,
   displayPrices?: Pick<ModelCatalogModel, 'price_input' | 'price_output'>
 ): ModelCatalogModel {
+  const { deduct_markup: currentDeductMarkup, ...baseModel } = model;
   return {
-    ...model,
+    ...baseModel,
     markup: markup as ModelCatalogModel['markup'],
     ...(markup === 0 ? { price_input: 0, price_output: 0 } : (displayPrices ?? {})),
+    ...(markup === 0 ? { deduct_markup: currentDeductMarkup ?? 2.5 } : {}),
   };
 }
 
@@ -749,7 +756,7 @@ export function ModelCatalogEditor(props: {
                                     />
                                   </Col>
                                   <Col xs={24} md={8}>
-                                    <Typography.Text>星尘倍率（markup）</Typography.Text>
+                                    <Typography.Text>默认倍率（markup）</Typography.Text>
                                     <Space.Compact block>
                                       <AutoComplete
                                         className="field-full"
@@ -816,7 +823,7 @@ export function ModelCatalogEditor(props: {
                                       <Alert
                                         type="success"
                                         showIcon
-                                        message="免费模型：展示价与实际扣费均为 0 星尘"
+                                        message="免费额度内：展示价与实际扣费均为 0 星尘"
                                       />
                                     ) : (
                                       <Typography.Text type="secondary">
@@ -824,6 +831,33 @@ export function ModelCatalogEditor(props: {
                                       </Typography.Text>
                                     )}
                                   </Col>
+                                  {model.markup === 0 ? (
+                                    <Col xs={24} md={8}>
+                                      <Typography.Text>扣费倍率（deduct_markup）</Typography.Text>
+                                      <Select
+                                        className="field-full"
+                                        value={model.deduct_markup}
+                                        options={MODEL_DEDUCT_MARKUP_OPTIONS.map((value) => ({
+                                          value,
+                                          label: `${value} 倍`,
+                                        }))}
+                                        disabled={props.disabled}
+                                        onChange={(deductMarkup) => {
+                                          if (
+                                            !ModelDeductMarkupSchema.safeParse(deductMarkup).success
+                                          ) {
+                                            return;
+                                          }
+                                          updateModel(tierIndex, modelIndex, {
+                                            deduct_markup: deductMarkup,
+                                          });
+                                        }}
+                                      />
+                                      <Typography.Text type="secondary">
+                                        免费模型额度用尽后按此倍率扣费
+                                      </Typography.Text>
+                                    </Col>
+                                  ) : null}
                                   <Col xs={12} md={4}>
                                     <Typography.Text>输入展示价</Typography.Text>
                                     <InputNumber

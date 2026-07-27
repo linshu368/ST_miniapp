@@ -332,6 +332,7 @@ export interface ModelBillingContext {
   openRouterModelId: string;
   catalogVersion: number;
   modelMarkup: number;
+  deductMarkup: number;
 }
 
 export async function getModelBillingContext(
@@ -353,6 +354,7 @@ export async function getModelBillingContext(
     openRouterModelId,
     catalogVersion: snapshot.version,
     modelMarkup: model?.markup ?? fallback,
+    deductMarkup: model?.deduct_markup ?? fallback,
   };
 }
 

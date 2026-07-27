@@ -136,6 +136,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 052_character_favorites.sql # 用户角色收藏、幂等设置、收藏计数与运营收藏榜
 053_llm_spending_retention.sql # 免费失败明细与每用户最近 100 条完整记录保留
 054_default_user_avatar_asset.sql # 默认头像改存受迁移管理的头像 bucket 并放宽其体积上限
+055_character_free_chat_quota.sql # 用户与角色卡 50 轮免费额度、并发预留及额度后扣费倍率
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

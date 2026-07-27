@@ -96,14 +96,38 @@ describe('ModelCatalogSchema', () => {
 
   it('accepts zero or half-step model markups from one through four', () => {
     const valid = structuredClone(validCatalog);
-    valid.tiers[0]!.models[0]!.markup = 0;
-    valid.tiers[0]!.models[0]!.price_input = 0;
-    valid.tiers[0]!.models[0]!.price_output = 0;
+    Object.assign(valid.tiers[0]!.models[0]!, {
+      markup: 0,
+      price_input: 0,
+      price_output: 0,
+      deduct_markup: 2.5,
+    });
     expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
     valid.tiers[0]!.models[0]!.markup = 3.5;
+    delete (valid.tiers[0]!.models[0]! as { deduct_markup?: number }).deduct_markup;
     expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
     valid.tiers[0]!.models[0]!.markup = 3.2;
     expect(ModelCatalogSchema.safeParse(valid).success).toBe(false);
+  });
+
+  it('allows deduct markup only on free models', () => {
+    const free = structuredClone(validCatalog);
+    Object.assign(free.tiers[0]!.models[0]!, {
+      markup: 0,
+      price_input: 0,
+      price_output: 0,
+      deduct_markup: 3,
+    });
+    expect(ModelCatalogSchema.safeParse(free).success).toBe(true);
+
+    Object.assign(free.tiers[0]!.models[0]!, { deduct_markup: 0 });
+    expect(ModelCatalogSchema.safeParse(free).success).toBe(false);
+    delete (free.tiers[0]!.models[0]! as { deduct_markup?: number }).deduct_markup;
+    expect(ModelCatalogSchema.safeParse(free).success).toBe(false);
+
+    const paid = structuredClone(validCatalog);
+    Object.assign(paid.tiers[0]!.models[0]!, { deduct_markup: 2.5 });
+    expect(ModelCatalogSchema.safeParse(paid).success).toBe(false);
   });
 });
 
@@ -138,14 +162,18 @@ describe('OpenRouter model helpers', () => {
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('openrouter_model_id');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('enabled');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('markup');
+    expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('deduct_markup');
     expect(publicCatalog.tiers[0]?.models[0]?.is_free).toBe(false);
   });
 
   it('forces free public model prices to zero', () => {
     const freeCatalog = structuredClone(validCatalog);
-    freeCatalog.tiers[0]!.models[0]!.markup = 0;
-    freeCatalog.tiers[0]!.models[0]!.price_input = 0;
-    freeCatalog.tiers[0]!.models[0]!.price_output = 0;
+    Object.assign(freeCatalog.tiers[0]!.models[0]!, {
+      markup: 0,
+      price_input: 0,
+      price_output: 0,
+      deduct_markup: 2.5,
+    });
     const publicModel = toPublicModelCatalog(ModelCatalogSchema.parse(freeCatalog)).tiers[0]!
       .models[0]!;
     expect(publicModel).toMatchObject({ is_free: true, price_input: 0, price_output: 0 });
