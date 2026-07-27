@@ -69,7 +69,7 @@ describe('ModelCatalogSchema', () => {
     const invalidCatalog = structuredClone(validCatalog);
     const model = invalidCatalog.tiers[0]?.models[0];
     if (!model) throw new Error('test fixture must include a model');
-    model.tagline = '1234567890123456';
+    model.tagline = 'x'.repeat(41);
     model.price_input = -1;
 
     expect(ModelCatalogSchema.safeParse(invalidCatalog).success).toBe(false);

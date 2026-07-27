@@ -735,11 +735,12 @@ export function ModelCatalogEditor(props: {
                                     />
                                   </Col>
                                   <Col xs={24} md={8}>
-                                    <Typography.Text>特点文案（最多 15 字）</Typography.Text>
+                                    <Typography.Text>介绍语（最多 40 字）</Typography.Text>
                                     <Input
                                       value={model.tagline}
-                                      maxLength={15}
+                                      maxLength={40}
                                       showCount
+                                      placeholder="说明适用场景，如：适合长上下文和多轮连续对话。"
                                       disabled={props.disabled}
                                       onChange={(event) =>
                                         updateModel(tierIndex, modelIndex, {

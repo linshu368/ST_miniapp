@@ -51,7 +51,8 @@ export const ModelCatalogModelSchema = z.object({
     .max(200)
     .regex(/^[^\s/]+\/[^\s/]+$/),
   display_name: z.string().trim().min(1).max(40),
-  tagline: z.string().trim().min(1).max(15),
+  /** 介绍语：说明模型适用场景的短句，展示在模型名称下方。 */
+  tagline: z.string().trim().min(1).max(40),
   /** Display-only prices; billing must use provider usage data instead. */
   price_input: oneDecimalDisplayPrice,
   price_output: oneDecimalDisplayPrice,
