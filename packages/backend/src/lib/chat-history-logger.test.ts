@@ -3,8 +3,66 @@ import {
   calculateFallbackDeduction,
   calculateUsageDeduction,
   getInitialBillingDecision,
+  resolveFixedDeduction,
   shouldRecordUsageCharge,
 } from '../features/billing/usage-pricing.js';
+
+const fixedDeduction = {
+  freeQuotaExhausted: 10,
+  standard: 30,
+  premium: 50,
+};
+
+describe('resolveFixedDeduction', () => {
+  it('keeps free quota rounds free and charges every free model 10 after exhaustion', () => {
+    expect(
+      resolveFixedDeduction({
+        defaultModelMarkup: 0,
+        effectiveModelMarkup: 0,
+        modelTier: 'standard',
+        config: fixedDeduction,
+      })
+    ).toEqual({ amount: 0, category: 'free_quota' });
+    expect(
+      resolveFixedDeduction({
+        defaultModelMarkup: 0,
+        effectiveModelMarkup: 3,
+        modelTier: 'standard',
+        config: fixedDeduction,
+      })
+    ).toEqual({ amount: 10, category: 'free_quota_exhausted' });
+  });
+
+  it('charges paid standard and premium tiers fixed amounts', () => {
+    expect(
+      resolveFixedDeduction({
+        defaultModelMarkup: 2.5,
+        effectiveModelMarkup: 2.5,
+        modelTier: 'standard',
+        config: fixedDeduction,
+      })
+    ).toEqual({ amount: 30, category: 'standard' });
+    expect(
+      resolveFixedDeduction({
+        defaultModelMarkup: 2.5,
+        effectiveModelMarkup: 2.5,
+        modelTier: 'premium',
+        config: fixedDeduction,
+      })
+    ).toEqual({ amount: 50, category: 'premium' });
+  });
+
+  it('falls unknown paid tiers back to the standard amount', () => {
+    expect(
+      resolveFixedDeduction({
+        defaultModelMarkup: 2.5,
+        effectiveModelMarkup: 2.5,
+        modelTier: 'light',
+        config: fixedDeduction,
+      })
+    ).toEqual({ amount: 30, category: 'standard_fallback' });
+  });
+});
 
 describe('calculateUsageDeduction', () => {
   it('uses the selected model markup exactly once', () => {
@@ -49,6 +107,17 @@ describe('getInitialBillingDecision', () => {
     expect(
       getInitialBillingDecision({ usageCost: 0.01, exchangeRate: 680, modelMarkup: 2.5 })
     ).toEqual({ amount: 17, hasActualUsage: true, pending: false });
+  });
+
+  it('uses a fixed deduction immediately even when provider usage is late', () => {
+    expect(
+      getInitialBillingDecision({
+        usageCost: null,
+        exchangeRate: 680,
+        modelMarkup: 2.5,
+        fixedDeduction: 30,
+      })
+    ).toEqual({ amount: 30, hasActualUsage: false, pending: false });
   });
 });
 

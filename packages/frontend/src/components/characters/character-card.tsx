@@ -7,6 +7,8 @@ import { Flame } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
+import { FavoriteButton } from './favorite-button';
+
 interface CharacterCardProps {
   character: CharacterSummary;
   onSelect: (id: string) => void;
@@ -43,7 +45,7 @@ export function CharacterCard({
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
 
-  const card = (
+  const cardButton = (
     <button
       type="button"
       disabled={disabled}
@@ -103,7 +105,8 @@ export function CharacterCard({
           className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/48 to-transparent"
         />
 
-        <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
+        {/* 右侧留出心形按钮的位置，名称与标签不被遮挡。 */}
+        <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 px-2.5 pb-2.5 pr-12 sm:px-3 sm:pb-3 sm:pr-[3.25rem]">
           <h3 className="line-clamp-2 px-0.5 text-[15px] font-semibold leading-tight text-white drop-shadow-sm sm:text-base">
             {character.name}
           </h3>
@@ -125,6 +128,18 @@ export function CharacterCard({
 
       {/* 作者和原始描述暂不展示，避免未清洗字段影响大厅视觉。 */}
     </button>
+  );
+
+  // 心形与卡片是兄弟节点：button 不能嵌套 button，同时天然避免点心形误触进入角色。
+  const card = (
+    <div className="relative h-full">
+      {cardButton}
+      <FavoriteButton
+        characterId={character.id}
+        variant="card"
+        className="absolute bottom-2.5 right-2.5 z-20 sm:bottom-3 sm:right-3"
+      />
+    </div>
   );
 
   if (!character.is_featured) return card;

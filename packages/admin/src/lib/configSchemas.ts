@@ -1,5 +1,8 @@
 import {
+  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  FreeQuotaExhaustedDialogConfigSchema,
+  LlmPricingConfigSchema,
   ModelCatalogSchema,
   PaymentPlansSchema,
   RechargePageConfigSchema,
@@ -11,6 +14,7 @@ export const managedConfigKeys = [
   'miniapp_daily_checkin_bonus_credits',
   'miniapp_payment_plans',
   'miniapp_recharge_page_config',
+  'miniapp_free_quota_exhausted_dialog_config',
   'llm_model_catalog',
   'llm_pricing_config',
   'system_fallback_character_id',
@@ -19,12 +23,7 @@ export const managedConfigKeys = [
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 
 const nonnegativeInteger = z.number().int().nonnegative();
-export const LlmPricingConfigSchema = z.object({
-  balanceBaseline: z.number().nonnegative(),
-  fallbackCost: z.number().nonnegative(),
-  exchangeRate: z.number().positive(),
-  markup: z.number().positive(),
-});
+export { LlmPricingConfigSchema };
 
 const EditableModelCatalogModelSchema = z.object({
   id: z.string(),
@@ -34,6 +33,7 @@ const EditableModelCatalogModelSchema = z.object({
   price_input: z.number().finite().nonnegative(),
   price_output: z.number().finite().nonnegative(),
   markup: z.number().finite(),
+  deduct_markup: z.number().finite().optional(),
   enabled: z.boolean(),
   sort_order: z.number().int().nonnegative(),
 });
@@ -57,6 +57,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
   miniapp_payment_plans: PaymentPlansSchema,
   miniapp_recharge_page_config: RechargePageConfigSchema,
+  miniapp_free_quota_exhausted_dialog_config: FreeQuotaExhaustedDialogConfigSchema,
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
@@ -86,6 +87,11 @@ export const configMetadata: Record<
     description: '星尘商店的标题、说明、支付按钮文字和主题色。',
     defaultValue: DEFAULT_RECHARGE_PAGE_CONFIG,
   },
+  miniapp_free_quota_exhausted_dialog_config: {
+    label: '免费额度耗尽弹窗',
+    description: '角色卡 50 轮免费额度耗尽后自动展示 3 秒的标题和说明文案。',
+    defaultValue: DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  },
   llm_model_catalog: {
     label: '模型目录',
     description: '用户可选择的 OpenRouter 模型、档位、展示价与默认模型。',
@@ -103,7 +109,7 @@ export const configMetadata: Record<
               id: 'gemini-flash-lite',
               openrouter_model_id: 'google/gemini-3.1-flash-lite',
               display_name: 'Gemini Flash Lite',
-              tagline: '轻巧流畅',
+              tagline: '适合日常角色对话，回复快、消耗低。',
               price_input: 0,
               price_output: 0,
               markup: 2.5,
@@ -116,13 +122,18 @@ export const configMetadata: Record<
     },
   },
   llm_pricing_config: {
-    label: '动态计费参数',
-    description: '实际扣费基础参数；markup 仅供旧目录兼容，新目录使用每个模型自己的倍率。',
+    label: 'LLM 计费参数',
+    description: '每次成功生成的固定扣费标准；原动态计费字段保留用于历史兼容。',
     defaultValue: {
       balanceBaseline: 30,
       fallbackCost: 30,
       exchangeRate: 680,
       markup: 2.5,
+      fixedDeduction: {
+        freeQuotaExhausted: 10,
+        standard: 30,
+        premium: 50,
+      },
     },
   },
   system_fallback_character_id: {

@@ -11,9 +11,12 @@ import { getSupabaseClient } from '../lib/supabase.js';
 import {
   ModelCatalogModelSchema,
   ModelCatalogSchema,
+  LlmPricingConfigSchema,
   resolveEnabledCatalogModel,
+  type LlmPricingRuntimeConfig,
   type ModelCatalog,
   type ModelCatalogTier,
+  type ModelCatalogTierKey,
   type ModelTierConfig as SharedModelTierConfig,
 } from '@miniapp/shared';
 
@@ -330,8 +333,10 @@ export interface ModelBillingContext {
   modelId: string | null;
   modelDisplayName: string;
   openRouterModelId: string;
+  modelTier: ModelCatalogTierKey | null;
   catalogVersion: number;
   modelMarkup: number;
+  deductMarkup: number;
 }
 
 export async function getModelBillingContext(
@@ -343,16 +348,22 @@ export async function getModelBillingContext(
     fallbackMarkup === undefined ? getPricingConfig() : Promise.resolve(null),
   ]);
   const fallback = fallbackMarkup ?? pricing?.markup ?? DEFAULT_PRICING.markup;
-  const model = snapshot.catalog.tiers
-    .flatMap((tier) => tier.models)
-    .find((candidate) => candidate.openrouter_model_id === openRouterModelId);
+  const catalogTier =
+    snapshot.catalog.tiers.find((tier) =>
+      tier.models.some((candidate) => candidate.openrouter_model_id === openRouterModelId)
+    ) ?? null;
+  const model =
+    catalogTier?.models.find((candidate) => candidate.openrouter_model_id === openRouterModelId) ??
+    null;
 
   return {
     modelId: model?.id ?? null,
     modelDisplayName: model?.display_name ?? (openRouterModelId || 'Unknown Model'),
     openRouterModelId,
+    modelTier: catalogTier?.tier ?? null,
     catalogVersion: snapshot.version,
     modelMarkup: model?.markup ?? fallback,
+    deductMarkup: model?.deduct_markup ?? fallback,
   };
 }
 
@@ -376,12 +387,8 @@ export async function getAllTiers(): Promise<BackendModelTierConfig[]> {
 
 export const OPENROUTER_PROVIDER = 'openrouter';
 
-export interface LlmPricingConfig {
+export interface LlmPricingConfig extends LlmPricingRuntimeConfig {
   version: number;
-  balanceBaseline: number;
-  fallbackCost: number;
-  exchangeRate: number;
-  markup: number;
 }
 
 const DEFAULT_PRICING: LlmPricingConfig = {
@@ -390,6 +397,11 @@ const DEFAULT_PRICING: LlmPricingConfig = {
   fallbackCost: 30,
   exchangeRate: 680,
   markup: 2.5,
+  fixedDeduction: {
+    freeQuotaExhausted: 10,
+    standard: 30,
+    premium: 50,
+  },
 };
 
 let cachedPricing: LlmPricingConfig | null = null;
@@ -404,11 +416,21 @@ export async function getPricingConfig(): Promise<LlmPricingConfig> {
       return cachedPricing;
     }
     if (entry?.value && typeof entry.value === 'object') {
-      cachedPricing = {
+      const runtimePricing = entry.value as Partial<LlmPricingConfig>;
+      const mergedPricing = {
         ...DEFAULT_PRICING,
-        ...(entry.value as Partial<LlmPricingConfig>),
-        version: entry.version,
+        ...runtimePricing,
+        fixedDeduction: {
+          ...DEFAULT_PRICING.fixedDeduction,
+          ...(isRecord(runtimePricing.fixedDeduction) ? runtimePricing.fixedDeduction : {}),
+        },
       };
+      const parsedPricing = LlmPricingConfigSchema.safeParse(mergedPricing);
+      if (!parsedPricing.success) {
+        console.error('[model-tiers] Invalid llm_pricing_config:', parsedPricing.error.flatten());
+        return cachedPricing ?? DEFAULT_PRICING;
+      }
+      cachedPricing = { ...parsedPricing.data, version: entry.version };
       lastPricingFetchTime = now;
       return cachedPricing;
     }

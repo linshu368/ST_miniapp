@@ -2,14 +2,25 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG } from '@miniapp/shared';
 import { platformAction, useBridgeStatus, useSTEvent } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { fetchLatestUserChat } from '@/lib/api/chats';
+import { useCharacterQuery } from '@/lib/api/characters';
+import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
+import { formatFreeQuotaExhaustedDialog } from '@/lib/free-quota-dialog';
 import { ChatHeader } from '@/components/tavern/chat-header';
 import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
 import { ChatSplash } from '@/components/tavern/chat-splash';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 // [iframe-timing] TEMP DEBUG
 import {
   markTiming,
@@ -26,6 +37,7 @@ const SELECT_STALL_FLUSH_MS = 25_000;
 // openChat 需要 ready 相位，未达标时会在桥接缓冲区排队。相位通常在 select 之后数百毫秒
 // 达标；超过该阈值就改走只需 interactive 的常规加载，避免开屏页无限等待。
 const OPEN_CHAT_TIMEOUT_MS = 12_000;
+const FREE_QUOTA_DIALOG_DURATION_MS = 5_000;
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -47,6 +59,13 @@ export default function TavernChatPage() {
   const [readyCharacterId, setReadyCharacterId] = useState<string | null>(null);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
+  const [freeQuotaExhaustedOpen, setFreeQuotaExhaustedOpen] = useState(false);
+  const characterQuery = useCharacterQuery(characterId);
+  const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
+  const exhaustedDialog = formatFreeQuotaExhaustedDialog(
+    freeQuotaQuery.data?.exhausted_dialog ?? DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+    characterQuery.data?.character.name
+  );
   const chatReady = readyCharacterId === characterId;
 
   useSTEvent('billing:insufficient', () => {
@@ -59,6 +78,34 @@ export default function TavernChatPage() {
     });
     router.push(`/profile/recharge?${search.toString()}`);
   });
+
+  useSTEvent('generation:completed', () => {
+    const previousUsedRounds = freeQuotaQuery.data?.used_rounds;
+    if (previousUsedRounds === undefined) return;
+    void (async () => {
+      for (const delayMs of [0, 100, 300, 700, 1_500]) {
+        if (delayMs > 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+        }
+        const { data } = await freeQuotaQuery.refetch();
+        if (!data) continue;
+        if (previousUsedRounds < data.quota_limit && data.used_rounds >= data.quota_limit) {
+          setFreeQuotaExhaustedOpen(true);
+          return;
+        }
+        if (data.used_rounds > previousUsedRounds) return;
+      }
+    })();
+  });
+
+  useEffect(() => {
+    if (!freeQuotaExhaustedOpen) return;
+    const timer = window.setTimeout(
+      () => setFreeQuotaExhaustedOpen(false),
+      FREE_QUOTA_DIALOG_DURATION_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [freeQuotaExhaustedOpen]);
 
   // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。
   useEffect(() => {
@@ -237,6 +284,19 @@ export default function TavernChatPage() {
           }}
         />
       ) : null}
+      <Dialog open={freeQuotaExhaustedOpen} onOpenChange={setFreeQuotaExhaustedOpen}>
+        <DialogContent
+          showCloseButton={false}
+          className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/20 bg-[#ef856d] text-[#24111a]"
+        >
+          <DialogHeader className="items-stretch text-left">
+            <DialogTitle className="leading-6">{exhaustedDialog.title}</DialogTitle>
+            <DialogDescription className="whitespace-pre-line pt-1 text-left leading-6 text-[#4b2026]">
+              {exhaustedDialog.description}
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -38,7 +38,16 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
       changes.push(`调整“${model.display_name}”展示价格`);
     }
     if (oldModel.markup !== model.markup) {
-      changes.push(`调整“${model.display_name}”倍率：${oldModel.markup} → ${model.markup}`);
+      changes.push(`调整“${model.display_name}”默认倍率：${oldModel.markup} → ${model.markup}`);
+    }
+    if (
+      oldModel.markup === 0 &&
+      model.markup === 0 &&
+      oldModel.deduct_markup !== model.deduct_markup
+    ) {
+      changes.push(
+        `调整“${model.display_name}”扣费倍率：${oldModel.deduct_markup} → ${model.deduct_markup}`
+      );
     }
     if (
       oldModel.display_name !== model.display_name ||
