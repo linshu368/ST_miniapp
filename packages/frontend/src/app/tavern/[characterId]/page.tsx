@@ -5,11 +5,22 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { platformAction, useBridgeStatus, useSTEvent } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { fetchLatestUserChat } from '@/lib/api/chats';
+import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { ChatHeader } from '@/components/tavern/chat-header';
 import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
 import { ChatSplash } from '@/components/tavern/chat-splash';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 // [iframe-timing] TEMP DEBUG
 import {
   markTiming,
@@ -47,6 +58,8 @@ export default function TavernChatPage() {
   const [readyCharacterId, setReadyCharacterId] = useState<string | null>(null);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
+  const [freeQuotaExhaustedOpen, setFreeQuotaExhaustedOpen] = useState(false);
+  const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
   const chatReady = readyCharacterId === characterId;
 
   useSTEvent('billing:insufficient', () => {
@@ -58,6 +71,25 @@ export default function TavernChatPage() {
       returnTo,
     });
     router.push(`/profile/recharge?${search.toString()}`);
+  });
+
+  useSTEvent('generation:completed', () => {
+    const previousUsedRounds = freeQuotaQuery.data?.used_rounds;
+    if (previousUsedRounds === undefined) return;
+    void (async () => {
+      for (const delayMs of [0, 100, 300, 700, 1_500]) {
+        if (delayMs > 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+        }
+        const { data } = await freeQuotaQuery.refetch();
+        if (!data) continue;
+        if (previousUsedRounds < data.quota_limit && data.used_rounds >= data.quota_limit) {
+          setFreeQuotaExhaustedOpen(true);
+          return;
+        }
+        if (data.used_rounds > previousUsedRounds) return;
+      }
+    })();
   });
 
   // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。
@@ -237,6 +269,21 @@ export default function TavernChatPage() {
           }}
         />
       ) : null}
+      <Dialog open={freeQuotaExhaustedOpen} onOpenChange={setFreeQuotaExhaustedOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/10 bg-[#151515] text-white">
+          <DialogHeader className="items-center text-center">
+            <DialogTitle>该卡的免费额度已用光</DialogTitle>
+            <DialogDescription className="pt-1 leading-6 text-slate-300">
+              你们已经一起完成了 50 轮免费对话。故事还可以继续，后续聊天将按实际使用量消耗星尘。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button className="w-full">继续陪伴</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

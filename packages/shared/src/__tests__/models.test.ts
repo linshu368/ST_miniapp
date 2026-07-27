@@ -27,6 +27,7 @@ const validCatalog = {
           price_input: 0.1,
           price_output: 0.2,
           markup: 2.5,
+          deduct_markup: 2.5,
           enabled: true,
           sort_order: 0,
         },
@@ -105,6 +106,14 @@ describe('ModelCatalogSchema', () => {
     valid.tiers[0]!.models[0]!.markup = 3.2;
     expect(ModelCatalogSchema.safeParse(valid).success).toBe(false);
   });
+
+  it('requires a positive half-step deduct markup', () => {
+    const valid = structuredClone(validCatalog);
+    valid.tiers[0]!.models[0]!.deduct_markup = 3;
+    expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
+    valid.tiers[0]!.models[0]!.deduct_markup = 0;
+    expect(ModelCatalogSchema.safeParse(valid).success).toBe(false);
+  });
 });
 
 describe('OpenRouter model helpers', () => {
@@ -138,6 +147,7 @@ describe('OpenRouter model helpers', () => {
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('openrouter_model_id');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('enabled');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('markup');
+    expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('deduct_markup');
     expect(publicCatalog.tiers[0]?.models[0]?.is_free).toBe(false);
   });
 

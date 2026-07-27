@@ -28,8 +28,13 @@ import {
 } from '../platform/model-tiers.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
+import { MiniappCharacterFreeQuotaRepository } from '../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import { saveChatHistory } from '../lib/chat-history-logger.js';
 import { requestLogger } from '../lib/logger.js';
+import {
+  CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+  resolveEffectiveModelMarkup,
+} from '../features/billing/free-quota.js';
 
 const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
 const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -43,6 +48,7 @@ const STRIP_HEADERS = new Set([
 
 const wallets = new MiniappWalletRepository();
 const userSettings = new MiniappUserSettingsRepository();
+const freeQuotas = new MiniappCharacterFreeQuotaRepository();
 
 // ─── JWT 验签中间件 ────────────────────────────────────────────────────────────
 
@@ -191,7 +197,86 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       const chargeId = randomUUID();
       const pricing = await getPricingConfig();
       const billingContext = await getModelBillingContext(modelName, pricing.markup);
-      const modelMarkup = billingContext.modelMarkup;
+      let modelMarkup = billingContext.modelMarkup;
+      let freeQuotaGranted = false;
+
+      if (isChatCompletion && modelMarkup === 0) {
+        if (!characterId) {
+          return reply.status(400).send({
+            error: {
+              message: 'Missing character id for free-model quota',
+              type: 'invalid_request_error',
+            },
+          });
+        }
+        try {
+          const quotaDecision = await freeQuotas.reserve({
+            chargeId,
+            userId,
+            characterId,
+            quotaLimit: CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+          });
+          freeQuotaGranted = quotaDecision.grantedFree;
+          modelMarkup = resolveEffectiveModelMarkup(
+            billingContext.modelMarkup,
+            billingContext.deductMarkup,
+            quotaDecision.grantedFree
+          );
+          log.biz.info(
+            {
+              event: 'llm.free_quota.decision',
+              userId,
+              characterId,
+              chargeId,
+              grantedFree: quotaDecision.grantedFree,
+              remainingRounds: quotaDecision.remainingRounds,
+              effectiveMarkup: modelMarkup,
+            },
+            'character free quota decision resolved'
+          );
+        } catch (err) {
+          log.sys.error(
+            { event: 'llm.free_quota.reserve_failed', err, userId, characterId, chargeId },
+            'failed to reserve character free quota'
+          );
+          return reply.status(500).send({
+            error: { message: 'Failed to reserve free quota', type: 'internal_error' },
+          });
+        }
+      }
+
+      const finalizeFreeQuota = async (success: boolean) => {
+        if (!freeQuotaGranted) return null;
+        try {
+          const result = await freeQuotas.finalize(chargeId, success);
+          log.biz.info(
+            {
+              event: 'llm.free_quota.finalized',
+              userId,
+              characterId,
+              chargeId,
+              success,
+              usedRounds: result.usedRounds,
+              justExhausted: result.justExhausted,
+            },
+            'character free quota reservation finalized'
+          );
+          return result;
+        } catch (err) {
+          log.sys.error(
+            {
+              event: 'llm.free_quota.finalize_failed',
+              err,
+              userId,
+              characterId,
+              chargeId,
+              success,
+            },
+            'failed to finalize character free quota'
+          );
+          return null;
+        }
+      };
       const balanceBaseline = pricing.balanceBaseline;
       const billingSnapshot = {
         charge_id: chargeId,
@@ -277,6 +362,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           duplex: 'half',
         });
       } catch (err) {
+        await finalizeFreeQuota(false);
         log.sys.error({ event: 'llm.upstream.error', err, targetUrl }, 'upstream request failed');
         return reply.status(502).send({
           error: { message: `Upstream error: ${String(err)}`, type: 'upstream_error' },
@@ -285,6 +371,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
       // 上游非 2xx → 不扣费，记录失败，直接透传
       if (!upstreamRes.ok) {
+        await finalizeFreeQuota(false);
         if (isChatCompletion && userInput) {
           saveChatHistory(
             {
@@ -332,6 +419,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       let generationId = upstreamRes.headers.get('x-generation-id') || null;
 
       if (!upstreamRes.body) {
+        await finalizeFreeQuota(true);
         if (isChatCompletion && userInput) {
           saveChatHistory(
             {
@@ -369,7 +457,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             sseBuffer = lines.pop() || '';
 
             for (const line of lines) {
-              if (line.includes('data: [DONE]')) {
+              if (line.trim() === 'data: [DONE]') {
                 streamCompleted = true;
                 continue;
               }
@@ -392,7 +480,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           },
           flush(callback) {
             // 处理 buffer 中剩余的最后一行
-            if (sseBuffer.includes('data: [DONE]')) {
+            if (sseBuffer.trim() === 'data: [DONE]') {
               streamCompleted = true;
             } else if (sseBuffer.startsWith('data: ')) {
               try {
@@ -407,58 +495,60 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
               } catch {}
             }
 
-            if (streamCompleted) {
-              log.biz.info(
-                {
-                  event: 'llm.generation.completed',
-                  userId,
-                  model: modelName,
-                  generationId,
-                  replyChars: replyChunks.join('').length,
-                },
-                'LLM 生成完成'
-              );
-              if (isChatCompletion && userInput) {
-                saveChatHistory(
+            void (async () => {
+              await finalizeFreeQuota(streamCompleted);
+              if (streamCompleted) {
+                log.biz.info(
                   {
-                    user_id: userId,
+                    event: 'llm.generation.completed',
+                    userId,
                     model: modelName,
-                    ...billingSnapshot,
-                    user_input: userInput,
-                    assistant_reply: replyChunks.join(''),
-                    history: chatMessages,
-                    character_id: characterId,
-                    preset_id: presetId,
-                    status: 'success',
-                    generation_id: generationId,
+                    generationId,
+                    replyChars: replyChunks.join('').length,
                   },
-                  log
+                  'LLM 生成完成'
                 );
-              }
-            } else {
-              log.biz.warn(
-                { event: 'llm.generation.interrupted', userId, model: modelName, generationId },
-                'stream ended without [DONE], skipping deduction'
-              );
-              if (isChatCompletion && userInput) {
-                saveChatHistory(
-                  {
-                    user_id: userId,
-                    model: modelName,
-                    ...billingSnapshot,
-                    user_input: userInput,
-                    assistant_reply: replyChunks.length > 0 ? replyChunks.join('') : null,
-                    history: chatMessages,
-                    character_id: characterId,
-                    preset_id: presetId,
-                    status: 'stream_interrupted',
-                    generation_id: generationId,
-                  },
-                  log
+                if (isChatCompletion && userInput) {
+                  saveChatHistory(
+                    {
+                      user_id: userId,
+                      model: modelName,
+                      ...billingSnapshot,
+                      user_input: userInput,
+                      assistant_reply: replyChunks.join(''),
+                      history: chatMessages,
+                      character_id: characterId,
+                      preset_id: presetId,
+                      status: 'success',
+                      generation_id: generationId,
+                    },
+                    log
+                  );
+                }
+              } else {
+                log.biz.warn(
+                  { event: 'llm.generation.interrupted', userId, model: modelName, generationId },
+                  'stream ended without [DONE], skipping deduction'
                 );
+                if (isChatCompletion && userInput) {
+                  saveChatHistory(
+                    {
+                      user_id: userId,
+                      model: modelName,
+                      ...billingSnapshot,
+                      user_input: userInput,
+                      assistant_reply: replyChunks.length > 0 ? replyChunks.join('') : null,
+                      history: chatMessages,
+                      character_id: characterId,
+                      preset_id: presetId,
+                      status: 'stream_interrupted',
+                      generation_id: generationId,
+                    },
+                    log
+                  );
+                }
               }
-            }
-            callback();
+            })().finally(() => callback());
           },
         });
 
@@ -466,7 +556,57 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       }
 
       // 非 SSE 响应但有 body（如非流式 chat completion）
-      const nodeStream = Readable.fromWeb(upstreamRes.body as import('stream/web').ReadableStream);
+      let responseBody: string;
+      try {
+        responseBody = await upstreamRes.text();
+      } catch (err) {
+        await finalizeFreeQuota(false);
+        log.sys.error(
+          { event: 'llm.upstream.body_read_failed', err, userId, model: modelName },
+          'failed to read non-streaming upstream response'
+        );
+        return reply.status(502).send({
+          error: { message: 'Failed to read upstream response', type: 'upstream_error' },
+        });
+      }
+
+      let assistantReply: string | null = null;
+      let responseParsed = false;
+      try {
+        const parsed = JSON.parse(responseBody);
+        responseParsed = true;
+        if (!generationId && typeof parsed?.id === 'string') generationId = parsed.id;
+        const content = parsed?.choices?.[0]?.message?.content;
+        if (typeof content === 'string') assistantReply = content;
+      } catch {
+        log.sys.warn(
+          { event: 'llm.upstream.invalid_non_stream_response', userId, model: modelName },
+          'successful upstream response was not valid JSON'
+        );
+      }
+      if (!responseParsed) {
+        await finalizeFreeQuota(false);
+        if (isChatCompletion && userInput) {
+          saveChatHistory(
+            {
+              user_id: userId,
+              model: modelName,
+              ...billingSnapshot,
+              user_input: userInput,
+              assistant_reply: null,
+              history: chatMessages,
+              character_id: characterId,
+              preset_id: presetId,
+              status: 'upstream_error',
+              upstream_status: upstreamRes.status,
+              generation_id: generationId,
+            },
+            log
+          );
+        }
+        return reply.send(responseBody);
+      }
+      await finalizeFreeQuota(true);
       if (isChatCompletion && userInput) {
         saveChatHistory(
           {
@@ -474,7 +614,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             model: modelName,
             ...billingSnapshot,
             user_input: userInput,
-            assistant_reply: null, // 非流式通常在这里无法简单拦截 body
+            assistant_reply: assistantReply,
             history: chatMessages,
             character_id: characterId,
             preset_id: presetId,
@@ -484,7 +624,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           log
         );
       }
-      return reply.send(nodeStream);
+      return reply.send(responseBody);
     }
   );
 }
