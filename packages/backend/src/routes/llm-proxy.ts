@@ -33,6 +33,7 @@ import { saveChatHistory } from '../lib/chat-history-logger.js';
 import { requestLogger } from '../lib/logger.js';
 import {
   CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+  isQuotaTrackableCharacterId,
   resolveEffectiveModelMarkup,
 } from '../features/billing/free-quota.js';
 
@@ -201,47 +202,59 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       let freeQuotaGranted = false;
 
       if (isChatCompletion && modelMarkup === 0) {
-        if (!characterId) {
-          return reply.status(400).send({
-            error: {
-              message: 'Missing character id for free-model quota',
-              type: 'invalid_request_error',
-            },
-          });
-        }
-        try {
-          const quotaDecision = await freeQuotas.reserve({
-            chargeId,
-            userId,
-            characterId,
-            quotaLimit: CHARACTER_FREE_CHAT_QUOTA_LIMIT,
-          });
-          freeQuotaGranted = quotaDecision.grantedFree;
+        if (!isQuotaTrackableCharacterId(characterId)) {
+          // 轮次无法归属到角色卡时不判定为免费轮，按额度耗尽后的倍率计费并放行：
+          // character_id 一直是可选输入，免费模型不应因为它缺失而完全无法对话。
           modelMarkup = resolveEffectiveModelMarkup(
             billingContext.modelMarkup,
             billingContext.deductMarkup,
-            quotaDecision.grantedFree
+            false
           );
-          log.biz.info(
+          log.biz.warn(
             {
-              event: 'llm.free_quota.decision',
+              event: 'llm.free_quota.skipped_untrackable_character',
               userId,
               characterId,
               chargeId,
-              grantedFree: quotaDecision.grantedFree,
-              remainingRounds: quotaDecision.remainingRounds,
               effectiveMarkup: modelMarkup,
             },
-            'character free quota decision resolved'
+            'free quota skipped: character id missing or unusable'
           );
-        } catch (err) {
-          log.sys.error(
-            { event: 'llm.free_quota.reserve_failed', err, userId, characterId, chargeId },
-            'failed to reserve character free quota'
-          );
-          return reply.status(500).send({
-            error: { message: 'Failed to reserve free quota', type: 'internal_error' },
-          });
+        } else {
+          try {
+            const quotaDecision = await freeQuotas.reserve({
+              chargeId,
+              userId,
+              characterId,
+              quotaLimit: CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+            });
+            freeQuotaGranted = quotaDecision.grantedFree;
+            modelMarkup = resolveEffectiveModelMarkup(
+              billingContext.modelMarkup,
+              billingContext.deductMarkup,
+              quotaDecision.grantedFree
+            );
+            log.biz.info(
+              {
+                event: 'llm.free_quota.decision',
+                userId,
+                characterId,
+                chargeId,
+                grantedFree: quotaDecision.grantedFree,
+                remainingRounds: quotaDecision.remainingRounds,
+                effectiveMarkup: modelMarkup,
+              },
+              'character free quota decision resolved'
+            );
+          } catch (err) {
+            log.sys.error(
+              { event: 'llm.free_quota.reserve_failed', err, userId, characterId, chargeId },
+              'failed to reserve character free quota'
+            );
+            return reply.status(500).send({
+              error: { message: 'Failed to reserve free quota', type: 'internal_error' },
+            });
+          }
         }
       }
 

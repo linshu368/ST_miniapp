@@ -239,7 +239,7 @@ GRANT EXECUTE ON FUNCTION miniapp.reserve_character_free_chat_round(UUID, UUID, 
 GRANT EXECUTE ON FUNCTION miniapp.finalize_character_free_chat_round(UUID, BOOLEAN)
   TO service_role, postgres;
 
--- Populate deduct_markup without changing any existing default markup.
+-- Populate deduct_markup for free models and remove it from paid models.
 DO $$
 DECLARE
   v_catalog JSONB;
@@ -264,19 +264,19 @@ BEGIN
     FOR v_model IN
       SELECT value FROM jsonb_array_elements(COALESCE(v_tier -> 'models', '[]'::JSONB))
     LOOP
-      v_deduct_markup := CASE v_model ->> 'openrouter_model_id'
-        WHEN 'google/gemini-3.5-flash-lite' THEN 2
-        WHEN 'deepseek/deepseek-v4-flash' THEN 2.5
-        WHEN 'deepseek/deepseek-v3.2' THEN 3
-        ELSE CASE
-          WHEN COALESCE((v_model ->> 'markup')::NUMERIC, 0) > 0
-            THEN (v_model ->> 'markup')::NUMERIC
+      IF COALESCE((v_model ->> 'markup')::NUMERIC, 0) = 0 THEN
+        v_deduct_markup := CASE v_model ->> 'openrouter_model_id'
+          WHEN 'google/gemini-3.5-flash-lite' THEN 2
+          WHEN 'deepseek/deepseek-v4-flash' THEN 2.5
+          WHEN 'deepseek/deepseek-v3.2' THEN 3
           ELSE 2.5
-        END
-      END;
-      v_models := v_models || jsonb_build_array(
-        v_model || jsonb_build_object('deduct_markup', v_deduct_markup)
-      );
+        END;
+        v_models := v_models || jsonb_build_array(
+          v_model || jsonb_build_object('deduct_markup', v_deduct_markup)
+        );
+      ELSE
+        v_models := v_models || jsonb_build_array(v_model - 'deduct_markup');
+      END IF;
     END LOOP;
     v_tiers := v_tiers || jsonb_build_array(jsonb_set(v_tier, '{models}', v_models));
   END LOOP;
@@ -327,8 +327,17 @@ BEGIN
          <> trunc((model ->> 'price_output')::NUMERIC * 10)
       OR jsonb_typeof(model -> 'markup') IS DISTINCT FROM 'number'
       OR (model ->> 'markup')::NUMERIC NOT IN (0, 1, 1.5, 2, 2.5, 3, 3.5, 4)
-      OR jsonb_typeof(model -> 'deduct_markup') IS DISTINCT FROM 'number'
-      OR (model ->> 'deduct_markup')::NUMERIC NOT IN (1, 1.5, 2, 2.5, 3, 3.5, 4)
+      OR (
+        (model ->> 'markup')::NUMERIC = 0
+        AND (
+          jsonb_typeof(model -> 'deduct_markup') IS DISTINCT FROM 'number'
+          OR (model ->> 'deduct_markup')::NUMERIC NOT IN (1, 1.5, 2, 2.5, 3, 3.5, 4)
+        )
+      )
+      OR (
+        (model ->> 'markup')::NUMERIC <> 0
+        AND model ? 'deduct_markup'
+      )
       OR (
         (model ->> 'markup')::NUMERIC = 0
         AND (

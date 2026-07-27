@@ -37,7 +37,6 @@ const catalog: ModelCatalog = {
           price_input: 0,
           price_output: 0,
           markup: 2.5,
-          deduct_markup: 2.5,
           enabled: true,
           sort_order: 1,
         },

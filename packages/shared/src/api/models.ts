@@ -66,7 +66,7 @@ export const ModelCatalogModelSchema = z.object({
   /** Default multiplier; zero identifies a model with an initial free quota. */
   markup: ModelMarkupSchema.default(2.5),
   /** Multiplier used after a free model's per-character quota is exhausted. */
-  deduct_markup: ModelDeductMarkupSchema.default(2.5),
+  deduct_markup: ModelDeductMarkupSchema.optional(),
   enabled: z.boolean(),
   sort_order: z.number().int().nonnegative(),
 });
@@ -103,6 +103,20 @@ export const ModelCatalogSchema = z
             code: z.ZodIssueCode.custom,
             path: ['tiers', tierIndex, 'models', modelIndex, 'price_input'],
             message: 'free models must have zero display prices',
+          });
+        }
+        if (model.markup === 0 && model.deduct_markup === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tiers', tierIndex, 'models', modelIndex, 'deduct_markup'],
+            message: 'free models must have a deduct_markup',
+          });
+        }
+        if (model.markup !== 0 && model.deduct_markup !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tiers', tierIndex, 'models', modelIndex, 'deduct_markup'],
+            message: 'paid models must not have a deduct_markup',
           });
         }
       });

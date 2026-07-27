@@ -115,7 +115,6 @@ function newModel(index: number, timestamp = Date.now()): ModelCatalogModel {
     price_input: 0,
     price_output: 0,
     markup: 2.5,
-    deduct_markup: 2.5,
     enabled: true,
     sort_order: index + 1,
   };
@@ -160,10 +159,12 @@ export function applyModelMarkup(
   markup: number,
   displayPrices?: Pick<ModelCatalogModel, 'price_input' | 'price_output'>
 ): ModelCatalogModel {
+  const { deduct_markup: currentDeductMarkup, ...baseModel } = model;
   return {
-    ...model,
+    ...baseModel,
     markup: markup as ModelCatalogModel['markup'],
     ...(markup === 0 ? { price_input: 0, price_output: 0 } : (displayPrices ?? {})),
+    ...(markup === 0 ? { deduct_markup: currentDeductMarkup ?? 2.5 } : {}),
   };
 }
 
@@ -830,31 +831,33 @@ export function ModelCatalogEditor(props: {
                                       </Typography.Text>
                                     )}
                                   </Col>
-                                  <Col xs={24} md={8}>
-                                    <Typography.Text>扣费倍率（deduct_markup）</Typography.Text>
-                                    <Select
-                                      className="field-full"
-                                      value={model.deduct_markup}
-                                      options={MODEL_DEDUCT_MARKUP_OPTIONS.map((value) => ({
-                                        value,
-                                        label: `${value} 倍`,
-                                      }))}
-                                      disabled={props.disabled}
-                                      onChange={(deductMarkup) => {
-                                        if (
-                                          !ModelDeductMarkupSchema.safeParse(deductMarkup).success
-                                        ) {
-                                          return;
-                                        }
-                                        updateModel(tierIndex, modelIndex, {
-                                          deduct_markup: deductMarkup,
-                                        });
-                                      }}
-                                    />
-                                    <Typography.Text type="secondary">
-                                      免费模型额度用尽后按此倍率扣费
-                                    </Typography.Text>
-                                  </Col>
+                                  {model.markup === 0 ? (
+                                    <Col xs={24} md={8}>
+                                      <Typography.Text>扣费倍率（deduct_markup）</Typography.Text>
+                                      <Select
+                                        className="field-full"
+                                        value={model.deduct_markup}
+                                        options={MODEL_DEDUCT_MARKUP_OPTIONS.map((value) => ({
+                                          value,
+                                          label: `${value} 倍`,
+                                        }))}
+                                        disabled={props.disabled}
+                                        onChange={(deductMarkup) => {
+                                          if (
+                                            !ModelDeductMarkupSchema.safeParse(deductMarkup).success
+                                          ) {
+                                            return;
+                                          }
+                                          updateModel(tierIndex, modelIndex, {
+                                            deduct_markup: deductMarkup,
+                                          });
+                                        }}
+                                      />
+                                      <Typography.Text type="secondary">
+                                        免费模型额度用尽后按此倍率扣费
+                                      </Typography.Text>
+                                    </Col>
+                                  ) : null}
                                   <Col xs={12} md={4}>
                                     <Typography.Text>输入展示价</Typography.Text>
                                     <InputNumber
