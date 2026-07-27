@@ -1,4 +1,4 @@
--- 055: 角色卡收藏（从零新增）与模型介绍语长度放宽
+-- 056: 角色卡收藏（从零新增）与模型介绍语长度放宽
 --
 -- 目标：
 --   1. 新增 miniapp.character_favorites，承载「用户 → 角色卡」收藏关系。
@@ -130,6 +130,9 @@ COMMENT ON FUNCTION miniapp.list_character_favorites(UUID) IS
 -- 两个校验函数都会拦截 tagline 长度，必须同步放宽，否则运营在 Admin
 -- 保存场景化介绍语（约 17-21 字）会被拒绝。Postgres 无法只替换函数中的
 -- 单个表达式，因此整体 CREATE OR REPLACE，仅 tagline 上限一处发生变化。
+--
+-- validate_model_catalog_prd 以 055 中的定义为基线，完整保留其 deduct_markup
+-- 校验；本迁移编号在 055 之后，若沿用旧定义会把那部分逻辑覆盖掉。
 -- ─────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION admin.validate_model_catalog_prd(p_value JSONB)
@@ -170,6 +173,17 @@ BEGIN
          <> trunc((model ->> 'price_output')::NUMERIC * 10)
       OR jsonb_typeof(model -> 'markup') IS DISTINCT FROM 'number'
       OR (model ->> 'markup')::NUMERIC NOT IN (0, 1, 1.5, 2, 2.5, 3, 3.5, 4)
+      OR (
+        (model ->> 'markup')::NUMERIC = 0
+        AND (
+          jsonb_typeof(model -> 'deduct_markup') IS DISTINCT FROM 'number'
+          OR (model ->> 'deduct_markup')::NUMERIC NOT IN (1, 1.5, 2, 2.5, 3, 3.5, 4)
+        )
+      )
+      OR (
+        (model ->> 'markup')::NUMERIC <> 0
+        AND model ? 'deduct_markup'
+      )
       OR (
         (model ->> 'markup')::NUMERIC = 0
         AND (
