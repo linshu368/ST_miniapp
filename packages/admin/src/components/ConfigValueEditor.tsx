@@ -1,6 +1,8 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
 import {
+  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  FreeQuotaExhaustedDialogConfigSchema,
   ModelCatalogSchema,
   RechargePageConfigSchema,
   type DisplayPricingConfig,
@@ -52,6 +54,36 @@ export function ConfigValueEditor(props: {
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
       />
+    );
+  }
+
+  if (props.configKey === 'miniapp_free_quota_exhausted_dialog_config') {
+    const parsed = FreeQuotaExhaustedDialogConfigSchema.safeParse(props.value);
+    const value = parsed.success ? parsed.data : DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG;
+    return (
+      <Space direction="vertical" size="middle" className="editor-stack">
+        <div>
+          <Typography.Text>弹窗标题</Typography.Text>
+          <Input
+            value={value.title}
+            maxLength={40}
+            showCount
+            disabled={props.disabled}
+            onChange={(event) => props.onChange({ ...value, title: event.target.value })}
+          />
+        </div>
+        <div>
+          <Typography.Text>说明文案</Typography.Text>
+          <Input.TextArea
+            value={value.description}
+            rows={3}
+            maxLength={200}
+            showCount
+            disabled={props.disabled}
+            onChange={(event) => props.onChange({ ...value, description: event.target.value })}
+          />
+        </div>
+      </Space>
     );
   }
 

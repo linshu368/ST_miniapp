@@ -1,4 +1,17 @@
 // MiniApp 钱包领域的前后端共享契约
+import { z } from 'zod';
+
+export const FreeQuotaExhaustedDialogConfigSchema = z.object({
+  title: z.string().trim().min(1).max(40),
+  description: z.string().trim().min(1).max(200),
+});
+
+export type FreeQuotaExhaustedDialogConfig = z.infer<typeof FreeQuotaExhaustedDialogConfigSchema>;
+
+export const DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG: FreeQuotaExhaustedDialogConfig = {
+  title: '该卡的免费额度已用光',
+  description: '你们已经一起完成了 50 轮免费对话。故事还可以继续，后续聊天将按实际使用量消耗星尘。',
+};
 
 // ==== GET /api/wallet/balance ====
 export interface GetWalletBalanceData {
@@ -32,6 +45,7 @@ export interface GetCharacterFreeQuotaData {
   used_rounds: number;
   remaining_rounds: number;
   exhausted: boolean;
+  exhausted_dialog: FreeQuotaExhaustedDialogConfig;
 }
 
 // ==== GET /api/wallet/checkin ====

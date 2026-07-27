@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG } from '@miniapp/shared';
 import { platformAction, useBridgeStatus, useSTEvent } from '@/lib/bridge';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { fetchLatestUserChat } from '@/lib/api/chats';
@@ -11,13 +12,10 @@ import { ChatToolsMenu } from '@/components/tavern/chat-tools-menu';
 import { ChatSplash } from '@/components/tavern/chat-splash';
 import { CHAT_INTERACTIVITY_EVENT } from '@/components/bridge/st-iframe';
 import { useSTMirrorStore } from '@/stores/st-mirror';
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -37,6 +35,7 @@ const SELECT_STALL_FLUSH_MS = 25_000;
 // openChat 需要 ready 相位，未达标时会在桥接缓冲区排队。相位通常在 select 之后数百毫秒
 // 达标；超过该阈值就改走只需 interactive 的常规加载，避免开屏页无限等待。
 const OPEN_CHAT_TIMEOUT_MS = 12_000;
+const FREE_QUOTA_DIALOG_DURATION_MS = 3_000;
 
 export default function TavernChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -60,6 +59,8 @@ export default function TavernChatPage() {
   const [entryAttempt, setEntryAttempt] = useState(0);
   const [freeQuotaExhaustedOpen, setFreeQuotaExhaustedOpen] = useState(false);
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
+  const exhaustedDialog =
+    freeQuotaQuery.data?.exhausted_dialog ?? DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG;
   const chatReady = readyCharacterId === characterId;
 
   useSTEvent('billing:insufficient', () => {
@@ -91,6 +92,15 @@ export default function TavernChatPage() {
       }
     })();
   });
+
+  useEffect(() => {
+    if (!freeQuotaExhaustedOpen) return;
+    const timer = window.setTimeout(
+      () => setFreeQuotaExhaustedOpen(false),
+      FREE_QUOTA_DIALOG_DURATION_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [freeQuotaExhaustedOpen]);
 
   // Splash 覆盖期间禁止 ST 内部输入框抢焦点，避免移动端在聊天出现前提前弹出键盘。
   useEffect(() => {
@@ -270,18 +280,16 @@ export default function TavernChatPage() {
         />
       ) : null}
       <Dialog open={freeQuotaExhaustedOpen} onOpenChange={setFreeQuotaExhaustedOpen}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/10 bg-[#151515] text-white">
+        <DialogContent
+          showCloseButton={false}
+          className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/10 bg-[#151515] text-white"
+        >
           <DialogHeader className="items-center text-center">
-            <DialogTitle>该卡的免费额度已用光</DialogTitle>
+            <DialogTitle>{exhaustedDialog.title}</DialogTitle>
             <DialogDescription className="pt-1 leading-6 text-slate-300">
-              你们已经一起完成了 50 轮免费对话。故事还可以继续，后续聊天将按实际使用量消耗星尘。
+              {exhaustedDialog.description}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button className="w-full">继续陪伴</Button>
-            </DialogClose>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
