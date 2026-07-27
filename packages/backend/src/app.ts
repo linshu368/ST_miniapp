@@ -6,6 +6,7 @@ import { fastifyLoggerOptions } from './lib/logger.js';
 import { ok } from '@miniapp/shared';
 import type { HealthData } from '@miniapp/shared';
 import characterRoutes from './routes/characters.js';
+import favoriteRoutes from './routes/favorites.js';
 import bridgeRoutes from './routes/bridge.js';
 import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
@@ -83,6 +84,7 @@ export async function buildApp() {
   });
 
   await app.register(characterRoutes);
+  await app.register(favoriteRoutes);
   await app.register(bridgeRoutes);
   await app.register(paymentRoutes);
   await app.register(walletRoutes);

@@ -8,6 +8,8 @@ import { useCharacterQuery } from '@/lib/api/characters';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
+import { FavoriteButton } from './favorite-button';
+
 // ─── 手势常量 ────────────────────────────────────────────────
 const DISMISS_THRESHOLD_Y = 90; // 下滑超过该值即关闭
 
@@ -239,6 +241,7 @@ export function CharacterDetailSheet({
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
         >
           <div className="flex items-center gap-3">
+            <FavoriteButton characterId={character?.id} variant="sheet" />
             <button
               type="button"
               onClick={onClose}
