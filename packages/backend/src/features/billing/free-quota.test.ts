@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   isQuotaTrackableCharacterId,
+  parseFreeQuotaExhaustedDialogConfig,
   resolveEffectiveModelMarkup,
 } from './free-quota.js';
 
@@ -38,5 +39,31 @@ describe('isQuotaTrackableCharacterId', () => {
       false
     );
     expect(isQuotaTrackableCharacterId('3f1b9c2e4d5a6b7c8d9e0f1a2b3c4d5e')).toBe(false);
+  });
+});
+
+describe('free quota exhausted dialog config', () => {
+  it('accepts valid runtime copy', () => {
+    expect(
+      parseFreeQuotaExhaustedDialogConfig({
+        title: '额度已用完',
+        description: '后续聊天将消耗星尘。',
+      })
+    ).toEqual({
+      title: '额度已用完',
+      description: '后续聊天将消耗星尘。',
+    });
+  });
+
+  it('falls back to safe defaults for missing or invalid config', () => {
+    expect(parseFreeQuotaExhaustedDialogConfig(null)).toMatchObject({
+      title: '该卡的免费额度已用光',
+    });
+    expect(
+      parseFreeQuotaExhaustedDialogConfig({
+        title: '',
+        description: '后续聊天将消耗星尘。',
+      })
+    ).toMatchObject({ title: '该卡的免费额度已用光' });
   });
 });

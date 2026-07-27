@@ -1,5 +1,7 @@
 import {
+  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  FreeQuotaExhaustedDialogConfigSchema,
   ModelCatalogSchema,
   PaymentPlansSchema,
   RechargePageConfigSchema,
@@ -11,6 +13,7 @@ export const managedConfigKeys = [
   'miniapp_daily_checkin_bonus_credits',
   'miniapp_payment_plans',
   'miniapp_recharge_page_config',
+  'miniapp_free_quota_exhausted_dialog_config',
   'llm_model_catalog',
   'llm_pricing_config',
   'system_fallback_character_id',
@@ -58,6 +61,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
   miniapp_payment_plans: PaymentPlansSchema,
   miniapp_recharge_page_config: RechargePageConfigSchema,
+  miniapp_free_quota_exhausted_dialog_config: FreeQuotaExhaustedDialogConfigSchema,
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
@@ -86,6 +90,11 @@ export const configMetadata: Record<
     label: '充值页面配置',
     description: '星尘商店的标题、说明、支付按钮文字和主题色。',
     defaultValue: DEFAULT_RECHARGE_PAGE_CONFIG,
+  },
+  miniapp_free_quota_exhausted_dialog_config: {
+    label: '免费额度耗尽弹窗',
+    description: '角色卡 50 轮免费额度耗尽后自动展示 3 秒的标题和说明文案。',
+    defaultValue: DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   },
   llm_model_catalog: {
     label: '模型目录',
