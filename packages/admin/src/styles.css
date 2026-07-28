@@ -420,13 +420,10 @@ body {
 .model-phone-cost-hint {
   min-width: 0;
   flex: 1;
+  color: rgb(255 255 255 / 78%);
   font-size: 10px;
   font-weight: 500;
   line-height: 1.4;
-}
-
-.model-phone-cost-hint {
-  color: rgb(255 255 255 / 72%);
 }
 
 .model-phone-row {
