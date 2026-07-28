@@ -19,6 +19,14 @@ type TimingBody = {
   ua?: string;
 };
 
+type ChatConcurrencyBody = Record<string, unknown>;
+
+function logValue(value: unknown, maxLength = 300): string {
+  if (value === undefined || value === null) return '-';
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  return serialized.replace(/[\r\n]/g, ' ').slice(0, maxLength);
+}
+
 // 相邻相位定义：[标签, 起点 mark, 终点 mark]
 const PHASES: Array<[string, string, string]> = [
   // 整体
@@ -105,6 +113,31 @@ export default async function debugRoutes(app: FastifyInstance) {
     for (const [k, v] of waterfallLines) {
       request.log.info(`[iframe-timing-wf] char=${charId} ${k}: ${v}`);
     }
+
+    return reply.send(ok({ received: true }));
+  });
+
+  // @frontend-ready: true — 临时并发诊断端点，只接收动作轨迹并落日志
+  app.post('/api/debug/chat-concurrency', async (request, reply) => {
+    const body = (request.body ?? {}) as ChatConcurrencyBody;
+    const ua = logValue(body.ua, 180);
+    const platform = /iPhone|iPad|iPod/i.test(ua)
+      ? 'iOS'
+      : /Android/i.test(ua)
+        ? 'Android'
+        : /Macintosh|Windows|Linux|X11/i.test(ua)
+          ? 'Desktop'
+          : 'other';
+
+    request.log.info(
+      `[chat-concurrency] source=${logValue(body.source, 30)} stage=${logValue(body.stage, 40)}` +
+        ` action=${logValue(body.action, 40)} req=${logValue(body.requestId, 80)}` +
+        ` parent=${logValue(body.parentSessionId, 80)} doc=${logValue(body.documentId, 80)}` +
+        ` seq=${logValue(body.sequence, 20)} phase=${logValue(body.phase, 20)}` +
+        ` active=${logValue(body.active, 500)} target=${logValue(body.target, 500)}` +
+        ` state=${logValue(body.state, 500)} outcome=${logValue(body.outcome, 80)}` +
+        ` durationMs=${logValue(body.durationMs, 20)} platform=${platform}`
+    );
 
     return reply.send(ok({ received: true }));
   });

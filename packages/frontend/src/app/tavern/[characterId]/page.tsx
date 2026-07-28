@@ -28,6 +28,7 @@ import {
   flushIframeTiming,
   harvestStIframeStallDiagnostics,
 } from '@/lib/bridge/iframe-timing';
+import { reportChatConcurrencyEvent } from '@/lib/bridge/chat-concurrency-debug';
 
 // [iframe-timing] TEMP DEBUG: 失败路径停摆上报阈值。beacon 原本只在 select 成功后发送，
 // 卡死场景零遥测无法定位。两级停摆定时器把卡死样本的 timeline 抢救回来：
@@ -160,6 +161,15 @@ export default function TavernChatPage() {
     markTiming('gate_open'); // [iframe-timing] TEMP DEBUG
     // [iframe-timing] TEMP DEBUG: 闸门放行时刻的相位（interactive / ready）
     const bridgeStatusAtGate = bridgeStatusRef.current;
+    const entryId = `${characterId}:${Date.now().toString(36)}:${entryAttempt}`;
+    reportChatConcurrencyEvent({
+      source: 'chat-page',
+      stage: 'entry_start',
+      requestId: entryId,
+      action: 'entry',
+      phase: bridgeStatusAtGate,
+      target: { characterId, requestedChat: requestedChat ?? '' },
+    });
 
     let cancelled = false;
 
@@ -228,7 +238,7 @@ export default function TavernChatPage() {
           if (cancelled) return;
           if (targetChat) {
             // openChat 要求 ready 相位，桥接会把请求缓冲到相位达标后再投递。
-            const chatId = await openTargetChat(targetChat, avatar);
+            const chatId = await openTargetChat(targetChat, avatar, entryId);
             if (cancelled) return;
             useSTMirrorStore.getState().updatePartial({ currentChatId: chatId });
           }
@@ -260,6 +270,14 @@ export default function TavernChatPage() {
     return () => {
       cancelled = true;
       window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
+      reportChatConcurrencyEvent({
+        source: 'chat-page',
+        stage: 'entry_cleanup',
+        requestId: entryId,
+        action: 'entry',
+        phase: bridgeStatusRef.current,
+        target: { characterId, requestedChat: requestedChat ?? '' },
+      });
     };
   }, [gateOpen, characterId, entryAttempt, requestedChat]);
 
@@ -308,21 +326,49 @@ export default function TavernChatPage() {
  */
 async function openTargetChat(
   target: { fileName: string; avatar: string },
-  avatar: string
+  avatar: string,
+  entryId: string
 ): Promise<string | null> {
+  reportChatConcurrencyEvent({
+    source: 'chat-page',
+    stage: 'open_attempt',
+    requestId: entryId,
+    action: 'openChat',
+    target,
+  });
   try {
     const opened = await withTimeout(platformAction('openChat', target), OPEN_CHAT_TIMEOUT_MS);
     return opened.chatId;
   } catch (err) {
     console.error('[TavernChatPage] open requested chat failed:', err);
+    reportChatConcurrencyEvent({
+      source: 'chat-page',
+      stage: err instanceof ChatOpenTimeoutError ? 'open_wrapper_timeout' : 'open_failed',
+      requestId: entryId,
+      action: 'openChat',
+      target,
+      outcome: err instanceof Error ? err.message : String(err),
+    });
+    reportChatConcurrencyEvent({
+      source: 'chat-page',
+      stage: 'fallback_select',
+      requestId: entryId,
+      action: 'selectCharacter',
+      target: { avatar, forceNewChat: false },
+    });
     const fallback = await platformAction('selectCharacter', { avatar, forceNewChat: false });
     return fallback.chatId;
   }
 }
 
+class ChatOpenTimeoutError extends Error {}
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    const timer = window.setTimeout(
+      () => reject(new ChatOpenTimeoutError(`timed out after ${ms}ms`)),
+      ms
+    );
     promise.then(resolve, reject).finally(() => window.clearTimeout(timer));
   });
 }
