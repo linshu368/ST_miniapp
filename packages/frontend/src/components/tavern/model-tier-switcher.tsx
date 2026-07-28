@@ -217,7 +217,7 @@ function TierGroup(props: {
           >
             {props.tier.label}
           </span>
-          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-white/78">
+          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-amber-100/90">
             {props.tier.cost_hint}
           </span>
         </div>
