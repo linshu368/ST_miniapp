@@ -23,6 +23,7 @@ import { installRichMessageResponsive } from './patches/rich-message-responsive.
 import { installMarkdownBoldFallback } from './patches/markdown-bold-fallback.js';
 import { installReasoningStreamUi } from './patches/reasoning-stream-ui.js';
 import { installBillingErrorBridge } from './patches/billing-error-bridge.js';
+import { installMobileChatTheme } from './patches/mobile-chat-theme.js';
 import { stTiming } from './debug-timing.js'; // [iframe-timing] TEMP DEBUG
 import { installBootTimingProbes } from './debug-boot-probes.js'; // [iframe-timing] TEMP DEBUG
 import { installBootWaterfallProbe } from './debug-boot-waterfall.js'; // [iframe-timing] TEMP DEBUG
@@ -66,6 +67,8 @@ function init(): void {
   installScriptPopupAutoCancel();
   // 隐藏 ST 底部输入栏左侧原生按钮（#options_button / #extensionsMenuButton），由平台壳 ChatToolsMenu 替代。
   installNativeUiHide();
+  // 直接覆盖 ST 原生聊天 DOM 的移动端视觉，并与 MiniApp 全局亮暗按钮保持同源同步。
+  installMobileChatTheme();
   // 隐藏 ST 原生「AI Response Configuration / 对话补全预设」抽屉：平台不开放用户改预设，始终隐藏。
   installPresetUiHide();
   // 部分卡 scoped 正则剥离 <UpdateVariable> 后残留空 <details> 壳（encode_tags=false 时渲染为空「详情」）。

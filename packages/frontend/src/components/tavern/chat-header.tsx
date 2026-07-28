@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { Home } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { ChatSidebar } from './chat-sidebar';
 import { FavoriteButton } from '@/components/characters/favorite-button';
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -26,22 +26,28 @@ export function ChatHeader() {
     : activeChatItem?.characterName || data?.character?.name || '';
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-20 flex items-center justify-between px-3 h-12 bg-[#1a1a2e]/95 backdrop-blur-md pt-[env(safe-area-inset-top)]">
-      <ChatSidebar />
-      {/* 右侧多了收藏按钮，标题可用宽度相应收窄，避免长角色名压到按钮。 */}
-      <span className="absolute left-1/2 -translate-x-1/2 text-sm font-medium text-white truncate max-w-[45%] pointer-events-none">
-        {displayName}
-      </span>
-      <div className="flex items-center gap-0.5">
-        <FavoriteButton characterId={characterId} variant="header" />
-        <button
-          onClick={() => router.push('/')}
-          className="rounded-full p-2 text-white/70 hover:text-white transition-colors"
-          aria-label="返回大厅"
-        >
-          <Home className="h-5 w-5" />
-        </button>
+    <header className="fixed inset-x-0 top-0 z-20 box-border flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end border-b border-border/60 bg-background/95 px-2 pb-2 pt-[env(safe-area-inset-top)] text-foreground shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl">
+      <div className="flex h-10 min-w-0 w-full items-center justify-between">
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => router.push('/')}
+            className="flex size-10 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:scale-95"
+            aria-label="返回大厅"
+          >
+            <ChevronLeft className="size-5" strokeWidth={2.2} />
+          </button>
+          <ChatSidebar />
+        </div>
+
+        <span className="pointer-events-none absolute left-1/2 max-w-[46%] -translate-x-1/2 truncate text-[16px] font-semibold tracking-tight text-foreground">
+          {displayName}
+        </span>
+
+        <div className="flex shrink-0 items-center gap-1 pr-1">
+          <FavoriteButton characterId={characterId} variant="header" />
+        </div>
       </div>
-    </div>
+    </header>
   );
 }
