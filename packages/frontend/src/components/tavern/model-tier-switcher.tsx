@@ -210,18 +210,20 @@ function TierGroup(props: {
         onClick={props.onToggle}
         className="flex w-full items-center justify-between px-4 py-3"
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
           <span
-            className="rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#090b12]"
+            className="mt-0.5 shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#090b12]"
             style={{ backgroundColor: props.tier.color }}
           >
             {props.tier.label}
           </span>
-          <span className="text-[11px] text-white/40">{props.tier.cost_hint}</span>
+          <span className="min-w-0 flex-1 text-left text-[11px] leading-snug text-white/40">
+            {props.tier.cost_hint}
+          </span>
         </div>
         <ChevronDown
           className={cn(
-            'h-4 w-4 text-white/35 transition-transform',
+            'h-4 w-4 shrink-0 text-white/35 transition-transform',
             props.collapsed && '-rotate-90'
           )}
         />
