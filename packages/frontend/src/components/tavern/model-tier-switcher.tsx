@@ -217,7 +217,12 @@ function TierGroup(props: {
           >
             {props.tier.label}
           </span>
-          <span className="min-w-0 flex-1 text-left text-[11px] leading-snug text-white/40">
+          <span
+            className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug"
+            style={{
+              color: `color-mix(in srgb, ${props.tier.color} 72%, white)`,
+            }}
+          >
             {props.tier.cost_hint}
           </span>
         </div>
@@ -271,6 +276,10 @@ function TierGroup(props: {
                       {model.tagline}
                     </p>
                   ) : null}
+                  {/* 占位：对齐原先「输入/输出展示价」行的高度，避免去掉价行后卡片变矮。 */}
+                  <p className="mt-1 text-[11px] leading-normal invisible select-none" aria-hidden>
+                    &nbsp;
+                  </p>
                 </div>
                 {active ? <Sparkles className="h-4 w-4 shrink-0 text-purple-300" /> : null}
               </button>

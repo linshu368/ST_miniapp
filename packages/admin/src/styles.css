@@ -416,12 +416,17 @@ body {
   border-radius: 999px;
 }
 
-.model-phone-tier-title small {
+.model-phone-tier-title small,
+.model-phone-cost-hint {
   min-width: 0;
   flex: 1;
-  color: rgb(255 255 255 / 40%);
   font-size: 10px;
+  font-weight: 500;
   line-height: 1.4;
+}
+
+.model-phone-cost-hint {
+  color: rgb(255 255 255 / 72%);
 }
 
 .model-phone-row {
@@ -486,6 +491,14 @@ body {
   color: rgb(255 255 255 / 52%);
   font-size: 10px;
   font-style: normal;
+}
+
+.model-phone-row-spacer {
+  display: block;
+  height: 1.25em;
+  font-size: 10px;
+  line-height: 1.25;
+  visibility: hidden;
 }
 
 .recharge-color-control {

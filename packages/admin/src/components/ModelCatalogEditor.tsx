@@ -966,7 +966,12 @@ function ModelCatalogPhonePreview(props: { catalog: ModelCatalog }) {
             <section key={tier.tier} className="model-phone-tier">
               <div className="model-phone-tier-title">
                 <span style={{ background: tier.color }}>{tier.label}</span>
-                <small>{tier.cost_hint}</small>
+                <small
+                  className="model-phone-cost-hint"
+                  style={{ color: `color-mix(in srgb, ${tier.color} 72%, white)` }}
+                >
+                  {tier.cost_hint}
+                </small>
               </div>
               {tier.models.map((model) => (
                 <div
@@ -984,6 +989,9 @@ function ModelCatalogPhonePreview(props: { catalog: ModelCatalog }) {
                       ) : null}
                     </strong>
                     <em>{model.tagline}</em>
+                    <small className="model-phone-row-spacer" aria-hidden>
+                      &nbsp;
+                    </small>
                   </div>
                 </div>
               ))}
