@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useCharacterQuery } from '@/lib/api/characters';
-import { hueShiftFromId } from '@/lib/utils/character-hue';
+import { lobbyImageUrl } from '@/components/characters/character-card';
+import { characterRoomGradient } from '@/lib/utils/character-hue';
 
 /** 快加载不打扰：500ms 内 ready 的场景不展示进度条 */
 const PROGRESS_REVEAL_MS = 500;
@@ -82,6 +83,7 @@ export function ChatSplash({
   const router = useRouter();
   const { data } = useCharacterQuery(characterId);
   const character = data?.character;
+  const avatarUrl = character?.avatar_url || '';
 
   const [phase, setPhase] = useState<Phase>('showing');
   const [progressVisible, setProgressVisible] = useState(false);
@@ -89,10 +91,17 @@ export function ChatSplash({
   const [showStallHint, setShowStallHint] = useState(false);
   const [progress, setProgress] = useState(0);
   const [returning, setReturning] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     router.prefetch('/');
   }, [router]);
+
+  useEffect(() => {
+    setImageLoaded(false);
+    setImageFailed(false);
+  }, [avatarUrl]);
 
   useEffect(() => {
     const startedAt = performance.now();
@@ -126,7 +135,6 @@ export function ChatSplash({
     return () => clearTimeout(timer);
   }, [phase]);
 
-  const hue = useMemo(() => hueShiftFromId(characterId), [characterId]);
   const stars = useMemo(() => buildStars(characterId, 28), [characterId]);
 
   if (phase === 'gone') return null;
@@ -134,7 +142,7 @@ export function ChatSplash({
   const name = character?.name ?? '';
   const description = character?.description?.trim() ?? '';
   const tags = (character?.personality_tags ?? []).slice(0, 3);
-  const avatarUrl = character?.avatar_url || '';
+  const posterGradient = characterRoomGradient(characterId);
   const returnToLobby = () => {
     if (returning) return;
     setReturning(true);
@@ -152,9 +160,10 @@ export function ChatSplash({
     <div
       aria-live="polite"
       aria-busy={!ready}
-      className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden px-4 py-4"
+      className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden bg-[#0d100f] px-5 py-5 text-white"
       style={{
-        background: `radial-gradient(150% 110% at 50% -10%, hsl(${hue} 62% 17%) 0%, hsl(${hue - 26} 48% 8%) 46%, #050309 100%)`,
+        color: '#ffffff',
+        colorScheme: 'dark',
         animation:
           phase === 'exiting'
             ? `splash-exit ${EXIT_MS}ms cubic-bezier(0.4, 0, 0.2, 1) forwards`
@@ -167,30 +176,16 @@ export function ChatSplash({
           onClick={returnToLobby}
           disabled={returning}
           aria-label="取消进入并返回大厅"
-          className="absolute right-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/30 text-2xl font-light text-white/75 backdrop-blur-xl transition-colors hover:bg-white/10 active:scale-95 disabled:opacity-50"
+          className="absolute right-4 z-20 flex size-10 items-center justify-center rounded-full border border-white/15 bg-white/[0.04] text-xl font-light text-white/70 transition hover:border-white/30 hover:bg-white/[0.08] active:scale-95 disabled:opacity-50"
           style={{ top: 'calc(env(safe-area-inset-top) + 1rem)' }}
         >
           ×
         </button>
       )}
 
-      {/* 极光气团：两团缓慢漂移的模糊光斑，给纯色背景带来呼吸感 */}
-      <div
-        className="pointer-events-none absolute -left-1/4 top-[-12%] h-[58vh] w-[58vh] rounded-full opacity-45 blur-3xl"
-        style={{
-          background: `radial-gradient(circle, hsl(${hue} 80% 46% / 0.85), transparent 68%)`,
-          animation: 'splash-aurora-a 9s ease-in-out infinite',
-        }}
-      />
-      <div
-        className="pointer-events-none absolute -right-1/4 bottom-[-16%] h-[64vh] w-[64vh] rounded-full opacity-35 blur-3xl"
-        style={{
-          background: `radial-gradient(circle, hsl(${(hue + 42) % 360} 75% 52% / 0.8), transparent 66%)`,
-          animation: 'splash-aurora-b 11s ease-in-out infinite',
-        }}
-      />
-
-      {/* 星尘粒子 */}
+      {/* 保留原有装饰层，但改为克制的版式线条与纸面颗粒。 */}
+      <div className="pointer-events-none absolute inset-y-0 left-[11%] w-px bg-white/[0.055]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-[18%] h-px bg-white/[0.055]" />
       <div className="pointer-events-none absolute inset-0">
         {stars.map((s, i) => (
           <span
@@ -199,60 +194,54 @@ export function ChatSplash({
             style={{
               left: `${s.left}%`,
               top: `${s.top}%`,
-              width: s.size,
-              height: s.size,
-              opacity: s.opacity,
-              boxShadow: `0 0 ${s.size * 3}px hsl(${hue} 90% 80% / 0.9)`,
-              animation: `splash-twinkle ${s.duration}s ease-in-out ${s.delay}s infinite`,
+              width: Math.min(1.2, s.size),
+              height: Math.min(1.2, s.size),
+              opacity: s.opacity * 0.13,
             }}
           />
         ))}
       </div>
 
-      <div className="relative flex flex-col items-center">
+      <div className="absolute left-5 top-[calc(env(safe-area-inset-top)+1.35rem)] text-left">
+        <p className="text-[10px] font-semibold tracking-[0.28em] text-emerald-400">蜜镜 AI</p>
+        <p className="mt-1 text-[9px] tracking-[0.2em] text-white/28">CHARACTER SESSION</p>
+      </div>
+
+      <div className="relative flex w-full max-w-[22rem] flex-col items-center">
         {showSlowHint && !showStallHint && !error && phase === 'showing' && (
           <div
-            className="mb-5 w-[min(20rem,82vw)] rounded-2xl border border-white/10 bg-black/22 px-4 py-3 text-center shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl"
-            style={{ animation: 'splash-fade-up 0.7s ease-out both' }}
+            className="mb-4 w-full border-l-2 border-emerald-400 bg-white/[0.035] px-4 py-3 text-left"
+            style={{ animation: 'splash-fade-up 0.45s ease-out both' }}
           >
-            <p className="text-[12px] font-medium tracking-[0.2em] text-white/70">
-              第一次见面，需要多等几秒
-            </p>
-            <p className="mt-2 text-[12px] leading-relaxed text-white/42">
+            <p className="text-[12px] font-medium text-white/78">第一次见面，需要多等几秒</p>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-white/42">
               我们正在唤醒角色记忆和对话引擎。准备好后会自动进入，不用退出重试。
             </p>
           </div>
         )}
 
         <div
-          className={`mb-5 w-[min(20rem,82vw)] transition-all duration-500 ${
+          className={`mb-4 w-full transition-all duration-500 ${
             progressVisible ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0'
           }`}
         >
-          <div className="mb-2 flex items-center justify-between text-[10px] tracking-[0.22em] text-white/38">
+          <div className="mb-2 flex items-center justify-between text-[9px] tracking-[0.2em] text-white/38">
             <span>正在连接对话</span>
             <span>{ready ? '100%' : progress >= 90 ? '正在完成' : `${Math.floor(progress)}%`}</span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)]">
+          <div className="h-px overflow-hidden bg-white/12">
             <div
-              className="relative h-full overflow-hidden rounded-full"
+              className="h-full bg-emerald-400"
               style={{
                 width: `${progress}%`,
-                background: `linear-gradient(90deg, hsl(${hue} 88% 72%), hsl(${(hue + 42) % 360} 88% 70%))`,
-                boxShadow: `0 0 14px hsl(${hue} 88% 70% / 0.55)`,
                 transition: ready ? `width ${READY_FILL_MS}ms ease-out` : 'width 180ms linear',
               }}
-            >
-              <span
-                className="absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-white/50 to-transparent"
-                style={{ animation: 'splash-progress-shimmer 1.25s linear infinite' }}
-              />
-            </div>
+            />
           </div>
           {(showStallHint || error) && phase === 'showing' && (
             <div
-              className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-center backdrop-blur-xl"
-              style={{ animation: 'splash-fade-up 0.5s ease-out both' }}
+              className="mt-3 border border-white/10 bg-white/[0.035] px-3 py-3 text-center"
+              style={{ animation: 'splash-fade-up 0.4s ease-out both' }}
             >
               <p className="text-[12px] leading-relaxed text-white/48">
                 {error ?? '连接时间比预期更久。可以继续等待，或返回大厅重新进入。'}
@@ -263,7 +252,7 @@ export function ChatSplash({
                     type="button"
                     onClick={onRetry}
                     disabled={returning}
-                    className="min-h-10 rounded-full bg-white/15 px-5 py-2 text-[12px] font-medium text-white/85 transition-colors hover:bg-white/20 disabled:opacity-55"
+                    className="min-h-10 rounded-full bg-emerald-500 px-5 py-2 text-[12px] font-medium text-white transition-colors hover:bg-emerald-400 disabled:opacity-55"
                   >
                     重试
                   </button>
@@ -272,7 +261,7 @@ export function ChatSplash({
                   type="button"
                   onClick={returnToLobby}
                   disabled={returning}
-                  className="min-h-10 rounded-full border border-white/15 bg-white/8 px-5 py-2 text-[12px] font-medium text-white/72 backdrop-blur transition-colors hover:bg-white/14 disabled:opacity-55"
+                  className="min-h-10 rounded-full border border-white/15 px-5 py-2 text-[12px] font-medium text-white/68 transition-colors hover:bg-white/[0.06] disabled:opacity-55"
                 >
                   {returning ? '正在返回…' : '返回大厅'}
                 </button>
@@ -281,125 +270,93 @@ export function ChatSplash({
           )}
         </div>
 
-        {/* 人物海报：流光描边 + 呼吸光晕 + 斜向光扫 */}
+        {/* 人物海报：与大厅共用缩图、占位色和淡入加载策略。 */}
         <div
-          className="relative"
-          style={{ animation: 'splash-pop 0.95s cubic-bezier(0.22, 1, 0.36, 1) both' }}
+          className="relative w-fit"
+          style={{ animation: 'splash-pop 0.65s cubic-bezier(0.22, 1, 0.36, 1) both' }}
         >
-          <div
-            className="pointer-events-none absolute -inset-8 rounded-[40px] blur-2xl"
-            style={{
-              background: `radial-gradient(circle, hsl(${hue} 85% 55% / 0.5), transparent 70%)`,
-              animation: 'splash-glow 3.2s ease-in-out infinite',
-            }}
-          />
-          <div
-            className="relative rounded-[26px] p-[1.5px]"
-            style={{
-              background: `linear-gradient(120deg, hsl(${hue} 90% 72% / 0.9), hsl(${(hue + 60) % 360} 85% 66% / 0.35), hsl(${hue} 90% 72% / 0.9))`,
-              backgroundSize: '200% 100%',
-              animation: 'splash-border-flow 3s linear infinite',
-            }}
-          >
+          <span className="absolute -left-3 -top-3 text-[9px] font-medium tracking-[0.22em] text-white/32">
+            PORTRAIT / 01
+          </span>
+          <div className="relative border border-white/[0.18] bg-[#151917] p-1.5">
             <div
-              className="relative aspect-[3/4] overflow-hidden rounded-[24.5px]"
-              style={{ width: 'clamp(8rem, 24vh, 13rem)' }}
+              className="relative aspect-[3/4] overflow-hidden"
+              style={{ width: 'clamp(8rem, 25vh, 12rem)', background: posterGradient }}
             >
-              {avatarUrl ? (
+              {avatarUrl && !imageFailed ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={avatarUrl}
-                  alt=""
-                  className="absolute inset-0 h-full w-full object-cover object-top"
+                  src={lobbyImageUrl(avatarUrl)}
+                  alt={name}
+                  width={360}
+                  height={480}
+                  loading="eager"
+                  fetchPriority="high"
+                  decoding="async"
+                  onLoad={() => setImageLoaded(true)}
+                  onError={() => setImageFailed(true)}
+                  className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 ${
+                    imageLoaded ? 'opacity-100' : 'opacity-0'
+                  }`}
                 />
-              ) : (
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: `radial-gradient(120% 80% at 70% 30%, hsl(${hue} 55% 30%), hsl(${hue - 20} 40% 10%) 72%)`,
-                  }}
-                />
-              )}
-              {/* 底部压暗，衬托描边光 */}
-              <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
-              {/* 斜向扫过的高光 */}
-              <div
-                className="pointer-events-none absolute inset-y-[-20%] w-1/3 bg-gradient-to-r from-transparent via-white/30 to-transparent"
-                style={{ animation: 'splash-sheen 2.8s ease-in-out 0.6s infinite' }}
-              />
+              ) : null}
             </div>
           </div>
+          <div className="absolute -bottom-2 -right-2 size-5 border-b border-r border-emerald-400/70" />
+        </div>
+
+        {/* 名字、标签和描述全部保留，以简洁的信息版式呈现。 */}
+        <div className="mt-[clamp(1rem,2.8vh,1.75rem)] flex max-w-[86vw] flex-col items-center text-center">
+          <h1
+            className="text-[24px] font-semibold tracking-[0.08em] text-white sm:text-[28px]"
+            style={{ color: '#ffffff', animation: 'splash-fade-up 0.5s ease-out 0.2s both' }}
+          >
+            {name}
+          </h1>
+
+          <div className="mt-3 h-px w-10 bg-emerald-400/80" />
+
+          {tags.length > 0 && (
+            <div
+              className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1"
+              style={{ animation: 'splash-fade-up 0.5s ease-out 0.35s both' }}
+            >
+              {tags.map((tag) => (
+                <span key={tag} className="text-[10px] tracking-[0.16em] text-white/48">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {description && (
+            <p
+              className="mt-3 line-clamp-2 max-w-[19rem] text-[12px] leading-5 text-white/38"
+              style={{ animation: 'splash-fade-up 0.5s ease-out 0.5s both' }}
+            >
+              {description}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* 名字 / 分隔线 / 标签 / 一句话描述：错峰入场 */}
-      <div className="relative mt-[clamp(1rem,3vh,2rem)] flex max-w-[82vw] flex-col items-center px-6 text-center">
-        <h1
-          className="text-[26px] font-semibold tracking-[0.18em] text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.5)] sm:text-3xl"
-          style={{ animation: 'splash-fade-up 0.7s ease-out 0.35s both' }}
-        >
-          {name}
-        </h1>
-
-        <div
-          className="mt-4 h-px w-24 origin-center"
-          style={{
-            background: `linear-gradient(90deg, transparent, hsl(${hue} 85% 75%), transparent)`,
-            animation: 'splash-line 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.55s both',
-          }}
-        />
-
-        {tags.length > 0 && (
-          <div
-            className="mt-4 flex items-center gap-3"
-            style={{ animation: 'splash-fade-up 0.7s ease-out 0.7s both' }}
-          >
-            {tags.map((t, i) => (
-              <span
-                key={t}
-                className="flex items-center gap-3 text-[12px] tracking-[0.2em] text-white/60"
-              >
-                {i > 0 && (
-                  <span
-                    className="h-1 w-1 rounded-full"
-                    style={{ background: `hsl(${hue} 85% 70%)` }}
-                  />
-                )}
-                {t}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {description && (
-          <p
-            className="mt-5 line-clamp-2 text-[13px] leading-relaxed text-white/45"
-            style={{ animation: 'splash-fade-up 0.7s ease-out 0.85s both' }}
-          >
-            「{description}」
-          </p>
-        )}
-      </div>
-
-      {/* 底部等待指示：三粒星尘跳动 */}
+      {/* 底部等待状态保留，动效仅用于说明仍在运行。 */}
       <div
-        className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+clamp(1rem,4vh,3rem))] flex flex-col items-center gap-3"
-        style={{ animation: 'splash-fade-up 0.8s ease-out 1.1s both' }}
+        className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.2rem)] flex flex-col items-center gap-2"
+        style={{ animation: 'splash-fade-up 0.55s ease-out 0.65s both' }}
       >
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           {[0, 1, 2].map((i) => (
             <span
               key={i}
-              className="h-1.5 w-1.5 rounded-full"
+              className="size-1 rounded-full bg-emerald-400"
               style={{
-                background: `hsl(${hue} 85% 72%)`,
-                boxShadow: `0 0 6px hsl(${hue} 85% 70% / 0.9)`,
                 animation: `splash-dot 1.3s ease-in-out ${i * 0.18}s infinite`,
               }}
             />
           ))}
         </div>
-        <p className="text-[11px] tracking-[0.34em] text-white/35">正在进入 TA 的世界</p>
+        <p className="text-[9px] tracking-[0.28em] text-white/28">正在进入 TA 的世界</p>
       </div>
     </div>
   );
