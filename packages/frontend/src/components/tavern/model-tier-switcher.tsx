@@ -146,7 +146,6 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
         </button>
         <div className="text-center">
           <h2 className="text-[17px] font-semibold text-white">选择剧情引擎</h2>
-          <p className="text-[11px] text-white/40">价格单位：星尘 / 万 token</p>
         </div>
         <div className="w-9 text-right text-[10px] text-white/35">{isFetching ? '同步中' : ''}</div>
       </div>
@@ -260,7 +259,7 @@ function TierGroup(props: {
                     </span>
                     {isFree ? (
                       <span className="shrink-0 rounded-full border border-emerald-300/25 bg-emerald-300/12 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
-                        免费
+                        限量免费
                       </span>
                     ) : null}
                   </div>
@@ -270,11 +269,6 @@ function TierGroup(props: {
                       {model.tagline}
                     </p>
                   ) : null}
-                  <p className="mt-1 text-[11px] text-white/38">
-                    {isFree
-                      ? '0 星尘'
-                      : `输入 ${model.price_input.toFixed(1)}✦　输出 ${model.price_output.toFixed(1)}✦`}
-                  </p>
                 </div>
                 {active ? <Sparkles className="h-4 w-4 shrink-0 text-purple-300" /> : null}
               </button>
