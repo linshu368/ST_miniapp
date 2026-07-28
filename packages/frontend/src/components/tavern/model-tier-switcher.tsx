@@ -146,7 +146,6 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
         </button>
         <div className="text-center">
           <h2 className="text-[17px] font-semibold text-foreground">选择剧情引擎</h2>
-          <p className="text-[11px] text-muted-foreground">价格单位：星尘 / 万 token</p>
         </div>
         <div className="w-9 text-right text-[10px] text-muted-foreground">
           {isFetching ? '同步中' : ''}
@@ -215,18 +214,20 @@ function TierGroup(props: {
         onClick={props.onToggle}
         className="flex w-full items-center justify-between px-4 py-3"
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
           <span
-            className="rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#090b12]"
+            className="mt-0.5 shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#090b12]"
             style={{ backgroundColor: props.tier.color }}
           >
             {props.tier.label}
           </span>
-          <span className="text-[11px] text-muted-foreground">{props.tier.cost_hint}</span>
+          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-amber-100/90">
+            {props.tier.cost_hint}
+          </span>
         </div>
         <ChevronDown
           className={cn(
-            'h-4 w-4 text-muted-foreground transition-transform',
+            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
             props.collapsed && '-rotate-90'
           )}
         />
@@ -262,7 +263,7 @@ function TierGroup(props: {
                     </span>
                     {isFree ? (
                       <span className="shrink-0 rounded-full border border-emerald-300/25 bg-emerald-300/12 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
-                        免费
+                        限量免费
                       </span>
                     ) : null}
                   </div>
@@ -272,10 +273,9 @@ function TierGroup(props: {
                       {model.tagline}
                     </p>
                   ) : null}
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {isFree
-                      ? '0 星尘'
-                      : `输入 ${model.price_input.toFixed(1)}✦　输出 ${model.price_output.toFixed(1)}✦`}
+                  {/* 占位：对齐原先「输入/输出展示价」行的高度，避免去掉价行后卡片变矮。 */}
+                  <p className="mt-1 text-[11px] leading-normal invisible select-none" aria-hidden>
+                    &nbsp;
                   </p>
                 </div>
                 {active ? <Sparkles className="h-4 w-4 shrink-0 text-purple-300" /> : null}

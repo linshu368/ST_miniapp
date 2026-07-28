@@ -580,7 +580,7 @@ export function ModelCatalogEditor(props: {
                           <Typography.Text>参考消耗文案</Typography.Text>
                           <Input
                             value={tier.cost_hint}
-                            maxLength={30}
+                            maxLength={50}
                             showCount
                             disabled={props.disabled}
                             onChange={(event) =>
@@ -961,15 +961,12 @@ function ModelCatalogPhonePreview(props: { catalog: ModelCatalog }) {
         <Typography.Title level={5} style={{ color: '#fff', margin: '10px 0 2px' }}>
           选择剧情引擎
         </Typography.Title>
-        <Typography.Text style={{ color: 'rgba(255,255,255,.42)', fontSize: 11 }}>
-          价格单位：星尘 / 万 token
-        </Typography.Text>
         <div className="model-phone-tier-list">
           {enabledTiers.map((tier) => (
             <section key={tier.tier} className="model-phone-tier">
               <div className="model-phone-tier-title">
                 <span style={{ background: tier.color }}>{tier.label}</span>
-                <small>{tier.cost_hint}</small>
+                <small className="model-phone-cost-hint">{tier.cost_hint}</small>
               </div>
               {tier.models.map((model) => (
                 <div
@@ -980,10 +977,15 @@ function ModelCatalogPhonePreview(props: { catalog: ModelCatalog }) {
                 >
                   <i>{model.id === props.catalog.default_model_id ? '✓' : ''}</i>
                   <div>
-                    <strong>{model.display_name}</strong>
+                    <strong>
+                      {model.display_name}
+                      {model.markup === 0 ? (
+                        <span className="model-phone-free-badge">限量免费</span>
+                      ) : null}
+                    </strong>
                     <em>{model.tagline}</em>
-                    <small>
-                      输入 {model.price_input.toFixed(1)}✦ · 输出 {model.price_output.toFixed(1)}✦
+                    <small className="model-phone-row-spacer" aria-hidden>
+                      &nbsp;
                     </small>
                   </div>
                 </div>
