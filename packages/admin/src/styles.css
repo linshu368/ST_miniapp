@@ -402,21 +402,28 @@ body {
 .model-phone-tier-title {
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
   padding: 10px 12px;
 }
 
 .model-phone-tier-title span {
+  flex-shrink: 0;
   padding: 3px 9px;
   color: #111322;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
   border-radius: 999px;
 }
 
 .model-phone-tier-title small,
-.model-phone-row small {
-  color: rgb(255 255 255 / 40%);
+.model-phone-cost-hint {
+  min-width: 0;
+  flex: 1;
+  color: rgb(254 243 199 / 90%);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .model-phone-row {
@@ -457,7 +464,24 @@ body {
 }
 
 .model-phone-row strong {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
   font-size: 13px;
+}
+
+.model-phone-free-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid rgb(110 231 183 / 28%);
+  border-radius: 999px;
+  background: rgb(110 231 183 / 14%);
+  color: #a7f3d0;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .model-phone-row em {
@@ -466,8 +490,12 @@ body {
   font-style: normal;
 }
 
-.model-phone-row small {
+.model-phone-row-spacer {
+  display: block;
+  height: 1.25em;
   font-size: 10px;
+  line-height: 1.25;
+  visibility: hidden;
 }
 
 .recharge-color-control {
