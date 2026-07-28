@@ -25,6 +25,7 @@ import type { BufferedRequest } from './buffer';
 import { createHandshakeState, handleHandshakeMessage } from './handshake';
 import type { HandshakeState } from './handshake';
 import { markTiming, markTimingAt, setTimingDetail, flushIframeTiming } from './iframe-timing'; // [iframe-timing] TEMP DEBUG
+import { reportChatConcurrencyEvent } from './chat-concurrency-debug';
 
 export type BridgeClientOptions = {
   actionTimeout?: number;
@@ -62,9 +63,24 @@ type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
   timer: ReturnType<typeof setTimeout>;
+  action: ActionName;
+  sentAt: number;
 };
 
 type EventCallback<E extends EventName = EventName> = (payload: EventPayloadMap[E]) => void;
+
+function actionTarget(payload: unknown): Record<string, string | boolean> {
+  if (typeof payload !== 'object' || payload === null) return {};
+  const value = payload as Record<string, unknown>;
+  const target: Record<string, string | boolean> = {};
+  for (const key of ['avatar', 'fileName', 'chatName']) {
+    if (typeof value[key] === 'string') target[key] = value[key];
+  }
+  for (const key of ['forceNewChat', 'skipChatLoad']) {
+    if (typeof value[key] === 'boolean') target[key] = value[key];
+  }
+  return target;
+}
 
 export class BridgeClient {
   private readonly iframeRef: () => HTMLIFrameElement | null;
@@ -407,6 +423,15 @@ export class BridgeClient {
 
     const meta = actionRegistry[action];
     const requestId = generateRequestId();
+    reportChatConcurrencyEvent({
+      source: 'bridge-client',
+      stage: 'requested',
+      requestId,
+      action,
+      phase: status,
+      target: actionTarget(payload),
+      active: [...this.pendingRequests.keys()],
+    });
 
     // 序数比较：当前连接状态尚未达到 action 的 requiredPhase 时入 buffer 等 flush。
     // loading（首段握手未到）缓冲一切；handshaked=0 / interactive=1 / ready=2。
@@ -441,6 +466,15 @@ export class BridgeClient {
           reject,
           requiredPhase: meta.requiredPhase,
         });
+        reportChatConcurrencyEvent({
+          source: 'bridge-client',
+          stage: 'queued',
+          requestId,
+          action,
+          phase: status,
+          target: actionTarget(payload),
+          active: { pending: [...this.pendingRequests.keys()], buffered: this.buffer.size },
+        });
       });
     }
 
@@ -472,8 +506,20 @@ export class BridgeClient {
     }
 
     return new Promise<ActionResultMap[A]>((resolve, reject) => {
+      const sentAt = Date.now();
       const timer = setTimeout(() => {
         this.pendingRequests.delete(requestId);
+        reportChatConcurrencyEvent({
+          source: 'bridge-client',
+          stage: 'client_timeout',
+          requestId,
+          action,
+          phase: this.stateMachine.getStatus(),
+          target: actionTarget(payload),
+          active: [...this.pendingRequests.keys()],
+          durationMs: Date.now() - sentAt,
+          outcome: 'BRIDGE_CALL_TIMEOUT',
+        });
         reject(
           new BridgeError(
             'BRIDGE_CALL_TIMEOUT',
@@ -486,6 +532,17 @@ export class BridgeClient {
         resolve: resolve as (v: unknown) => void,
         reject,
         timer,
+        action,
+        sentAt,
+      });
+      reportChatConcurrencyEvent({
+        source: 'bridge-client',
+        stage: 'sent',
+        requestId,
+        action,
+        phase: this.stateMachine.getStatus(),
+        target: actionTarget(payload),
+        active: [...this.pendingRequests.keys()],
       });
 
       const message = {
@@ -535,6 +592,11 @@ export class BridgeClient {
       case 'boot-fatal':
         this.handleBootFatal(typeof data.detail === 'string' ? data.detail : '');
         break;
+      case 'debug-chat-action':
+        if (typeof data.event === 'object' && data.event !== null) {
+          reportChatConcurrencyEvent(data.event as Record<string, unknown>);
+        }
+        break;
     }
   }
 
@@ -544,6 +606,16 @@ export class BridgeClient {
 
     clearTimeout(pending.timer);
     this.pendingRequests.delete(msg.requestId);
+    reportChatConcurrencyEvent({
+      source: 'bridge-client',
+      stage: 'response',
+      requestId: msg.requestId,
+      action: pending.action,
+      phase: this.stateMachine.getStatus(),
+      active: [...this.pendingRequests.keys()],
+      durationMs: Date.now() - pending.sentAt,
+      outcome: msg.success ? 'success' : (msg.error?.code ?? 'BRIDGE_EXEC_ST_INTERNAL'),
+    });
 
     if (msg.success) {
       pending.resolve(msg.data);
