@@ -1,13 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/db.js';
 import { config } from '../platform/config.js';
-import { LOBBY_FEATURED_POSITION_COUNT, ok, fail } from '@miniapp/shared';
+import { LOBBY_FEATURED_POSITION_COUNT, ok, fail, parseLobbySort } from '@miniapp/shared';
 import type {
   GetCharactersData,
   GetCharacterByIdData,
   CharacterSummary,
   CharacterDetail,
 } from '@miniapp/shared';
+import { loadCharacterEngagementStats } from '../features/lobby/engagement-stats.js';
+import { buildRecommendedOrder, dailyShuffleSeed } from '../features/lobby/recommended-ranking.js';
 
 const CHARACTER_STORAGE_BUCKET = process.env.CHARACTER_STORAGE_BUCKET || 'character-assets';
 
@@ -26,9 +28,15 @@ export function resolveCharacterAvatarUrl(
 export default async function characterRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
+    const sort = parseLobbySort((request.query as { sort?: unknown } | undefined)?.sort);
+
     const characters = await prisma.character.findMany({
       where: { enabled: true, archived_at: null },
-      orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
+      // 「最新」只看最后上架时间；「推荐」先取运营顺序，再在内存里做动态排序。
+      orderBy:
+        sort === 'latest'
+          ? [{ last_listed_at: 'desc' }, { created_at: 'desc' }]
+          : [{ sort_order: 'asc' }, { created_at: 'desc' }],
       select: {
         id: true,
         name: true,
@@ -39,7 +47,21 @@ export default async function characterRoutes(app: FastifyInstance) {
       },
     });
 
-    const charactersSummary: CharacterSummary[] = characters.map(
+    let ordered = characters;
+    if (sort === 'recommended') {
+      const engagement = await loadCharacterEngagementStats();
+      // 聚合不可用时保持运营顺序，宁可不动态排序也不能把首页排乱。
+      if (engagement) {
+        ordered = buildRecommendedOrder({
+          operatorOrdered: characters,
+          engagement,
+          fixedCount: LOBBY_FEATURED_POSITION_COUNT,
+          seed: dailyShuffleSeed(),
+        });
+      }
+    }
+
+    const charactersSummary: CharacterSummary[] = ordered.map(
       (c: (typeof characters)[number], index) => ({
         id: c.id,
         name: c.name,
@@ -47,7 +69,8 @@ export default async function characterRoutes(app: FastifyInstance) {
         avatar_url: resolveCharacterAvatarUrl(c.id, c.avatar_url),
         personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
         author_name: c.creator,
-        is_featured: index < LOBBY_FEATURED_POSITION_COUNT,
+        // 「最新」页不保留运营固定位，也不残留热门金框。
+        is_featured: sort === 'recommended' && index < LOBBY_FEATURED_POSITION_COUNT,
       })
     );
 

@@ -37,12 +37,23 @@ export interface BridgeServer {
   registerHandler(action: ActionName, handler: ActionHandler): void;
 }
 
+type ActiveAction = {
+  requestId: string;
+  sequence: number;
+  action: ActionName;
+};
+
 // ── Implementation ──
 
 export function createBridgeServer(parentOrigin: string): BridgeServer {
   let currentPhase: HandshakePhase = 'handshake';
   let listener: ((event: MessageEvent) => void) | null = null;
   const handlers = new Map<string, ActionHandler>();
+  const activeActions = new Map<string, ActiveAction>();
+  let actionSequence = 0;
+  const documentId =
+    new URLSearchParams(window.location.search).get('miniapp_doc') ??
+    `st-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
   function postToParent(data: Record<string, unknown>): void {
     const message = {
@@ -61,6 +72,57 @@ export function createBridgeServer(parentOrigin: string): BridgeServer {
     }
 
     window.parent.postMessage(message, parentOrigin);
+  }
+
+  function getActionTarget(payload: unknown): Record<string, string | boolean> {
+    if (typeof payload !== 'object' || payload === null) return {};
+    const value = payload as Record<string, unknown>;
+    const target: Record<string, string | boolean> = {};
+    for (const key of ['avatar', 'fileName', 'chatName']) {
+      if (typeof value[key] === 'string') target[key] = value[key];
+    }
+    for (const key of ['forceNewChat', 'skipChatLoad']) {
+      if (typeof value[key] === 'boolean') target[key] = value[key];
+    }
+    return target;
+  }
+
+  function getChatState(): Record<string, unknown> {
+    try {
+      const state = buildMirrorState();
+      return {
+        userId: state.userId,
+        characterId: state.currentCharacterId,
+        chatId: state.currentChatId,
+        messageCount: state.messageCount,
+      };
+    } catch (error) {
+      return { unavailable: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  function sendActionTrace(
+    action: ActiveAction,
+    stage: 'handler_start' | 'handler_end',
+    payload: unknown,
+    extra: Record<string, unknown> = {}
+  ): void {
+    postToParent({
+      type: 'debug-chat-action',
+      event: {
+        source: 'st-handler',
+        stage,
+        documentId,
+        requestId: action.requestId,
+        sequence: action.sequence,
+        action: action.action,
+        phase: currentPhase,
+        active: [...activeActions.values()],
+        target: getActionTarget(payload),
+        state: getChatState(),
+        ...extra,
+      },
+    });
   }
 
   function handleMessage(event: MessageEvent): void {
@@ -93,6 +155,15 @@ export function createBridgeServer(parentOrigin: string): BridgeServer {
       return;
     }
     const request = parseResult.data as BridgeRequestAny;
+    const actionTrace: ActiveAction = {
+      requestId: request.requestId,
+      sequence: ++actionSequence,
+      action: request.action as ActionName,
+    };
+    const startedAt = Date.now();
+    let outcome = 'success';
+    activeActions.set(request.requestId, actionTrace);
+    sendActionTrace(actionTrace, 'handler_start', request.payload);
 
     try {
       const meta = actionRegistry[request.action as ActionName];
@@ -157,12 +228,19 @@ export function createBridgeServer(parentOrigin: string): BridgeServer {
           requestId: request.requestId,
         };
       }
+      outcome = errorPayload.code;
 
       postToParent({
         type: 'response',
         requestId: request.requestId,
         success: false,
         error: errorPayload,
+      });
+    } finally {
+      activeActions.delete(request.requestId);
+      sendActionTrace(actionTrace, 'handler_end', request.payload, {
+        outcome,
+        durationMs: Date.now() - startedAt,
       });
     }
   }
