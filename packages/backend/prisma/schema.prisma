@@ -282,6 +282,8 @@ model Character {
   tags                      Json      @default("[]")
   raw_card                  Json?
   enabled                   Boolean   @default(true)
+  is_test                   Boolean   @default(false)
+  card_hash                 String?
   sort_order                Int       @default(0)
   archived_at               DateTime? @db.Timestamp(6)
   last_listed_at            DateTime? @db.Timestamptz(6)

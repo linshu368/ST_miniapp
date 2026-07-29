@@ -1,0 +1,16 @@
+FROM nginx:1.27-alpine
+
+RUN rm -f /etc/nginx/conf.d/default.conf
+
+COPY ops/nginx/nginx.simulation.conf /etc/nginx/templates/nginx.conf.template
+ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+ENV ST_UPSTREAM=st-bundle.railway.internal:8000
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -qO- http://127.0.0.1/nginx-health || exit 1
+
+STOPSIGNAL SIGQUIT
+CMD ["nginx", "-g", "daemon off;"]

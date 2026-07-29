@@ -16,6 +16,11 @@ import { createServer, type Server } from 'node:http';
 import { provision, ensureCharacterProvisioned } from '../provisioner/index.js';
 import { loadConfig, config } from '../lib/config.js';
 import { createLogger } from '../lib/logger.js';
+import {
+  closeSimulationBrowser,
+  sendSimulationTurn,
+  type SimulationWorkerInput,
+} from '../simulation/browser-worker.js';
 
 const logger = createLogger('provision-api');
 
@@ -62,6 +67,22 @@ async function handleRequest(
 ): Promise<void> {
   const url = req.url ?? '';
   const method = req.method ?? '';
+
+  if (method === 'POST' && url === '/simulation/chat') {
+    try {
+      const parsed: unknown = JSON.parse(await readBody(req));
+      if (!isSimulationWorkerInput(parsed)) {
+        jsonResponse(res, 400, { error: 'invalid_simulation_request' });
+        return;
+      }
+      const result = await sendSimulationTurn(parsed);
+      jsonResponse(res, 200, result);
+    } catch (err) {
+      logger.error({ err: String(err) }, 'simulation chat failed');
+      jsonResponse(res, 500, { error: 'simulation_chat_failed', message: String(err) });
+    }
+    return;
+  }
 
   // POST /provision/:userId — 异步（立即返回 202，后台跑）
   // 支持 ?force=true：全量覆盖；?cards=none：不下发角色卡（懒下发，卡走 /character 端点）
@@ -197,6 +218,22 @@ async function handleRequest(
   jsonResponse(res, 404, { error: 'not_found' });
 }
 
+function isSimulationWorkerInput(value: unknown): value is SimulationWorkerInput {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.conversationId === 'string' &&
+    typeof row.stHandle === 'string' &&
+    typeof row.characterId === 'string' &&
+    (row.stChatId === null || typeof row.stChatId === 'string') &&
+    typeof row.userMessage === 'string' &&
+    typeof row.turnId === 'string' &&
+    Boolean(row.metadata) &&
+    typeof row.metadata === 'object' &&
+    !Array.isArray(row.metadata)
+  );
+}
+
 // ─── 启动函数 ─────────────────────────────────────────────────────────────────
 
 export async function startProvisionApi(opts: ProvisionApiOptions): Promise<ProvisionApiHandle> {
@@ -232,8 +269,12 @@ export async function startProvisionApi(opts: ProvisionApiOptions): Promise<Prov
         server.close((err) => {
           if (err) reject(err);
           else {
-            logger.info('Provision API server 已停止');
-            resolve();
+            void closeSimulationBrowser()
+              .then(() => {
+                logger.info('Provision API server 已停止');
+                resolve();
+              })
+              .catch(reject);
           }
         });
       }),

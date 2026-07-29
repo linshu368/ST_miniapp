@@ -17,7 +17,7 @@
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { resolve, basename, extname, join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
@@ -150,24 +150,29 @@ function extractCharaCardFromPngBuffer(buf: Buffer, pngPath: string): CharaCardD
 // ─── CLI 参数解析 ────────────────────────────────────────────────────────────
 
 interface CliArgs {
-  inputPath: string;
+  inputPaths: string[];
   name?: string;
   sortOrder: number;
   setAsFallback: boolean;
+  isTest: boolean;
+  jsonOutput: boolean;
   envPath: string;
 }
 
 interface InputPngs {
-  kind: 'file' | 'directory';
   pngPaths: string[];
 }
 
 interface ImportResult {
-  uuid: string;
+  fileName: string;
+  cardHash: string;
+  characterId: string;
   characterName: string;
   sortOrder: number;
   storagePath: string;
   setAsFallback: boolean;
+  isTest: boolean;
+  created: boolean;
 }
 
 function printHelp(): void {
@@ -176,13 +181,15 @@ function printHelp(): void {
 角色卡上架工具 — import-character.ts
 
 用法：
-  pnpm import-character <png-path-or-dir> [options]
+  pnpm import-character <png-path-or-dir> [...more-paths] [options]
 
 选项：
   --name <name>           覆盖 PNG 内嵌的角色名
   --sort-order <n>        大厅展示顺序；目录模式下作为起始顺序（默认 0）
   --set-as-fallback       将此卡设为系统兜底卡（角色引用失效时的回退值，
                           不是"用户默认进入的角色"。该配置用户感知不到。）
+  --test                  作为测试卡导入（强制 is_test=true, enabled=false）
+  --json                  stdout 仅输出 JSON 结果清单，日志写入 stderr
   --env <path>            指定 .env 文件路径（默认 packages/sync-engine/.env）
   --help                  显示帮助信息
 
@@ -192,6 +199,8 @@ function printHelp(): void {
   pnpm import-character ./角色卡.png -- --set-as-fallback
   pnpm import-character ./角色卡.png -- --name "自定义名字" --sort-order 2
   pnpm import-character ./角色卡文件夹 -- --sort-order 1
+  pnpm import-character ./测试卡目录 -- --test --json
+  pnpm import-character ./卡A.png ./卡B.png -- --test --json
 `.trim()
   );
 }
@@ -204,10 +213,12 @@ function parseArgs(argv: string[]): CliArgs {
     process.exit(0);
   }
 
-  let inputPath = '';
+  const inputPaths: string[] = [];
   let name: string | undefined;
   let sortOrder = 0;
   let setAsFallback = false;
+  let isTest = false;
+  let jsonOutput = false;
   let envPath = resolve(PROJECT_ROOT, 'packages/sync-engine/.env');
 
   for (let i = 0; i < args.length; i++) {
@@ -222,6 +233,10 @@ function parseArgs(argv: string[]): CliArgs {
       if (isNaN(sortOrder)) fatal(`--sort-order 参数无效：${val}`);
     } else if (arg === '--set-as-fallback') {
       setAsFallback = true;
+    } else if (arg === '--test') {
+      isTest = true;
+    } else if (arg === '--json') {
+      jsonOutput = true;
     } else if (arg === '--env') {
       envPath = args[++i] ?? '';
       if (!envPath) fatal('--env 需要一个路径参数');
@@ -230,17 +245,20 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (arg.startsWith('-')) {
       fatal(`未知选项：${arg}（使用 --help 查看用法）`);
     } else {
-      inputPath = arg;
+      inputPaths.push(arg);
     }
   }
 
-  if (!inputPath) fatal('必须提供 PNG 文件或目录路径');
+  if (inputPaths.length === 0) fatal('必须提供至少一个 PNG 文件或目录路径');
+  if (isTest && setAsFallback) fatal('测试卡不能设置为系统兜底卡');
 
   return {
-    inputPath: resolveCliPath(inputPath),
+    inputPaths: inputPaths.map(resolveCliPath),
     name,
     sortOrder,
     setAsFallback,
+    isTest,
+    jsonOutput,
     envPath: resolveCliPath(envPath),
   };
 }
@@ -293,33 +311,39 @@ function resolveCliPath(cliPath: string): string {
   return resolve(PROJECT_ROOT, cliPath);
 }
 
-function resolveInputPngs(inputPath: string): InputPngs {
-  if (!existsSync(inputPath)) {
-    fatal(`PNG 文件或目录不存在：${inputPath}`);
-  }
+function resolveInputPngs(inputPaths: string[]): InputPngs {
+  const resolved = new Set<string>();
 
-  const stat = statSync(inputPath);
-  if (stat.isFile()) {
-    if (extname(inputPath).toLowerCase() !== '.png') {
-      fatal(`输入文件不是 PNG：${inputPath}`);
+  for (const inputPath of inputPaths) {
+    if (!existsSync(inputPath)) {
+      fatal(`PNG 文件或目录不存在：${inputPath}`);
     }
-    return { kind: 'file', pngPaths: [inputPath] };
+
+    const stat = statSync(inputPath);
+    if (stat.isFile()) {
+      if (extname(inputPath).toLowerCase() !== '.png') {
+        fatal(`输入文件不是 PNG：${inputPath}`);
+      }
+      resolved.add(inputPath);
+      continue;
+    }
+
+    if (!stat.isDirectory()) {
+      fatal(`输入路径既不是 PNG 文件，也不是目录：${inputPath}`);
+    }
+
+    const directoryPngs = readdirSync(inputPath, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && extname(entry.name).toLowerCase() === '.png')
+      .map((entry) => join(inputPath, entry.name));
+    if (directoryPngs.length === 0) {
+      fatal(`目录下没有 PNG 文件：${inputPath}`);
+    }
+    directoryPngs.forEach((pngPath) => resolved.add(pngPath));
   }
 
-  if (!stat.isDirectory()) {
-    fatal(`输入路径既不是 PNG 文件，也不是目录：${inputPath}`);
-  }
-
-  const pngPaths = readdirSync(inputPath, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && extname(entry.name).toLowerCase() === '.png')
-    .map((entry) => join(inputPath, entry.name))
-    .sort((a, b) => basename(a).localeCompare(basename(b), 'zh-Hans-CN'));
-
-  if (pngPaths.length === 0) {
-    fatal(`目录下没有 PNG 文件：${inputPath}`);
-  }
-
-  return { kind: 'directory', pngPaths };
+  return {
+    pngPaths: [...resolved].sort((a, b) => basename(a).localeCompare(basename(b), 'zh-Hans-CN')),
+  };
 }
 
 async function uploadPngWithRetry(params: {
@@ -366,19 +390,52 @@ async function importOneCharacter(params: {
   name?: string;
   sortOrder: number;
   setAsFallback: boolean;
+  isTest: boolean;
   bucket: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   schemaClient: any;
 }): Promise<ImportResult> {
-  const { pngPath, name, sortOrder, setAsFallback, bucket, supabase, schemaClient } = params;
+  const { pngPath, name, sortOrder, setAsFallback, isTest, bucket, supabase, schemaClient } =
+    params;
 
   console.log(`\n📦 解析 PNG 文件：${basename(pngPath)}`);
+  const originalPngBuffer = readFileSync(pngPath);
+  const cardHash = createHash('sha256').update(originalPngBuffer).digest('hex');
+
+  const { data: existing, error: existingError } = await schemaClient
+    .from('characters')
+    .select('id,name,sort_order,is_test')
+    .eq('card_hash', cardHash)
+    .maybeSingle();
+  if (existingError) {
+    fatal(`查询 card_hash 失败：${existingError.message}`);
+  }
+  if (existing) {
+    if (Boolean(existing.is_test) !== isTest) {
+      fatal(
+        `相同 card_hash 已作为${existing.is_test ? '测试卡' : '正式卡'}存在，不能以另一种类型重复导入`
+      );
+    }
+    console.log(`   ♻️  已存在相同 card_hash，复用角色：${existing.id}`);
+    return {
+      fileName: basename(pngPath),
+      cardHash,
+      characterId: existing.id as string,
+      characterName: existing.name as string,
+      sortOrder: Number(existing.sort_order ?? sortOrder),
+      storagePath: `characters/platform_${existing.id}.png`,
+      setAsFallback: false,
+      isTest: Boolean(existing.is_test),
+      created: false,
+    };
+  }
+
   let pngBuffer: Buffer;
   let card: CharaCardData;
   try {
-    const normalized = normalizePngBuffer(readFileSync(pngPath), pngPath);
+    const normalized = normalizePngBuffer(originalPngBuffer, pngPath);
     pngBuffer = normalized.buffer;
     if (normalized.repairedMissingIend) {
       console.warn('   ⚠️  PNG 缺少 IEND 结尾块，已在上传前自动修复');
@@ -427,12 +484,42 @@ async function importOneCharacter(params: {
     spec: card.spec ?? 'chara_card_v2',
     spec_version: card.spec_version ?? '2.0',
     avatar_url: avatarUrl,
-    enabled: true,
+    enabled: !isTest,
+    is_test: isTest,
+    card_hash: cardHash,
     sort_order: sortOrder,
     raw_card: card,
     created_at: now,
     updated_at: now,
   });
+
+  if (insertError?.code === '23505') {
+    await supabase.storage.from(bucket).remove([storagePath]);
+    const { data: racedExisting, error: racedExistingError } = await schemaClient
+      .from('characters')
+      .select('id,name,sort_order,is_test')
+      .eq('card_hash', cardHash)
+      .single();
+    if (racedExistingError || !racedExisting) {
+      fatal(`幂等冲突后读取已有角色失败：${racedExistingError?.message ?? '记录不存在'}`);
+    }
+    if (Boolean(racedExisting.is_test) !== isTest) {
+      fatal(
+        `并发导入命中的相同 card_hash 已作为${racedExisting.is_test ? '测试卡' : '正式卡'}存在`
+      );
+    }
+    return {
+      fileName: basename(pngPath),
+      cardHash,
+      characterId: racedExisting.id as string,
+      characterName: racedExisting.name as string,
+      sortOrder: Number(racedExisting.sort_order ?? sortOrder),
+      storagePath: `characters/platform_${racedExisting.id}.png`,
+      setAsFallback: false,
+      isTest: Boolean(racedExisting.is_test),
+      created: false,
+    };
+  }
 
   if (insertError) {
     // 回滚：删除已上传的 Storage 文件
@@ -462,13 +549,27 @@ async function importOneCharacter(params: {
     }
   }
 
-  return { uuid, characterName, sortOrder, storagePath, setAsFallback };
+  return {
+    fileName: basename(pngPath),
+    cardHash,
+    characterId: uuid,
+    characterName,
+    sortOrder,
+    storagePath,
+    setAsFallback,
+    isTest,
+    created: true,
+  };
 }
 
 // ─── 主流程 ──────────────────────────────────────────────────────────────────
 
 async function main() {
   const cli = parseArgs(process.argv);
+  const stdoutLog = console.log.bind(console);
+  if (cli.jsonOutput) {
+    console.log = console.error.bind(console);
+  }
 
   // 1. 加载环境变量
   if (existsSync(cli.envPath)) {
@@ -486,16 +587,16 @@ async function main() {
   const bucket = process.env['CHARACTER_STORAGE_BUCKET'] ?? 'character-assets';
 
   // 2. 校验输入，支持单个 PNG 或目录批量导入
-  const input = resolveInputPngs(cli.inputPath);
-  if (input.kind === 'directory' && cli.name) {
-    fatal('--name 只能在上传单个 PNG 时使用，目录批量导入会使用每张卡内嵌的角色名');
+  const input = resolveInputPngs(cli.inputPaths);
+  if (input.pngPaths.length > 1 && cli.name) {
+    fatal('--name 只能在上传单个 PNG 时使用，批量导入会使用每张卡内嵌的角色名');
   }
-  if (input.kind === 'directory' && cli.setAsFallback) {
+  if (input.pngPaths.length > 1 && cli.setAsFallback) {
     fatal('--set-as-fallback 只能在上传单个 PNG 时使用');
   }
 
-  if (input.kind === 'directory') {
-    console.log(`\n📂 批量导入目录：${cli.inputPath}`);
+  if (input.pngPaths.length > 1) {
+    console.log(`\n📂 批量导入输入：${cli.inputPaths.join(', ')}`);
     console.log(`   找到 PNG 文件：${input.pngPaths.length} 个`);
     console.log(`   sort_order 起始值：${cli.sortOrder}`);
   }
@@ -515,6 +616,7 @@ async function main() {
       name: cli.name,
       sortOrder: cli.sortOrder + index,
       setAsFallback: cli.setAsFallback,
+      isTest: cli.isTest,
       bucket,
       supabase,
       schemaClient,
@@ -524,14 +626,17 @@ async function main() {
 
   // 5. 输出结果摘要
   console.log('\n' + '═'.repeat(60));
-  console.log(input.kind === 'directory' ? '✅ 角色卡批量上架完成' : '✅ 角色卡上架完成');
+  console.log(input.pngPaths.length > 1 ? '✅ 角色卡批量导入完成' : '✅ 角色卡导入完成');
   console.log('═'.repeat(60));
 
   for (const result of results) {
-    console.log(`   UUID          : ${result.uuid}`);
+    console.log(`   UUID          : ${result.characterId}`);
     console.log(`   角色名        : ${result.characterName}`);
+    console.log(`   card_hash     : ${result.cardHash}`);
     console.log(`   sort_order    : ${result.sortOrder}`);
-    console.log(`   enabled       : true`);
+    console.log(`   is_test       : ${result.isTest}`);
+    console.log(`   enabled       : ${!result.isTest}`);
+    console.log(`   created       : ${result.created}`);
     console.log(`   Storage 路径  : ${bucket}/${result.storagePath}`);
     if (result.setAsFallback) {
       console.log(`   系统兜底卡    : ✅ 已设置`);
@@ -542,6 +647,19 @@ async function main() {
   }
 
   console.log('═'.repeat(60));
+  if (cli.jsonOutput) {
+    stdoutLog(
+      JSON.stringify(
+        results.map((result) => ({
+          file_name: result.fileName,
+          character_name: result.characterName,
+          card_hash: result.cardHash,
+          character_id: result.characterId,
+          created: result.created,
+        }))
+      )
+    );
+  }
 }
 
 main().catch((err) => {

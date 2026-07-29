@@ -15,11 +15,23 @@ function getTokenSecret(): string {
   return process.env.LLM_PROXY_TOKEN_SECRET || process.env.ST_USER_PASSWORD_SECRET || '';
 }
 
-interface PlatformTokenPayload {
+interface ProductionPlatformTokenPayload {
   userId: string;
   iat: number;
   ver: 1;
 }
+
+interface SimulationPlatformTokenPayload {
+  mode: 'simulation';
+  conversationId: string;
+  iat: number;
+  exp: number;
+  ver: 2;
+}
+
+export type PlatformTokenContext =
+  | { mode: 'production'; userId: string }
+  | { mode: 'simulation'; conversationId: string };
 
 function base64UrlEncode(data: string | Buffer): string {
   const buf = typeof data === 'string' ? Buffer.from(data, 'utf-8') : data;
@@ -45,7 +57,11 @@ export function signPlatformToken(userId: string): string {
   }
 
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload: PlatformTokenPayload = { userId, iat: Math.floor(Date.now() / 1000), ver: 1 };
+  const payload: ProductionPlatformTokenPayload = {
+    userId,
+    iat: Math.floor(Date.now() / 1000),
+    ver: 1,
+  };
   const payloadB64 = base64UrlEncode(JSON.stringify(payload));
   const signature = hmacSign(`${header}.${payloadB64}`, secret);
 
@@ -56,7 +72,7 @@ export function signPlatformToken(userId: string): string {
  * 验签 platformToken，返回 userId。
  * 签名不匹配或格式异常时返回 null（不抛异常，由调用方决定返回码）。
  */
-export function verifyPlatformToken(token: string): string | null {
+export function verifyPlatformTokenContext(token: string): PlatformTokenContext | null {
   const secret = getTokenSecret();
   if (!secret) return null;
 
@@ -78,10 +94,28 @@ export function verifyPlatformToken(token: string): string | null {
   if (diff !== 0) return null;
 
   try {
-    const payload = JSON.parse(base64UrlDecode(payloadB64)) as PlatformTokenPayload;
-    if (!payload.userId || payload.ver !== 1) return null;
-    return payload.userId;
+    const payload = JSON.parse(base64UrlDecode(payloadB64)) as
+      | ProductionPlatformTokenPayload
+      | SimulationPlatformTokenPayload;
+    if (payload.ver === 1 && payload.userId) {
+      return { mode: 'production', userId: payload.userId };
+    }
+    if (
+      payload.ver === 2 &&
+      payload.mode === 'simulation' &&
+      payload.conversationId &&
+      Number.isFinite(payload.exp) &&
+      payload.exp >= Math.floor(Date.now() / 1000)
+    ) {
+      return { mode: 'simulation', conversationId: payload.conversationId };
+    }
+    return null;
   } catch {
     return null;
   }
+}
+
+export function verifyPlatformToken(token: string): string | null {
+  const context = verifyPlatformTokenContext(token);
+  return context?.mode === 'production' ? context.userId : null;
 }

@@ -15,7 +15,7 @@ import {
 } from '../features/billing/usage-pricing.js';
 
 export interface ChatHistoryEntry {
-  user_id: string;
+  user_id: string | null;
   model: string;
   charge_id: string;
   model_id: string | null;
@@ -36,6 +36,12 @@ export interface ChatHistoryEntry {
   upstream_status?: number | null;
   deduction_rate?: number; // now calculated internally
   generation_id?: string | null;
+  simulation?: {
+    conversation_id: string;
+    turn_id: string;
+    metadata: Record<string, unknown>;
+    effective_config: Record<string, unknown>;
+  };
 }
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -162,6 +168,52 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
           );
           llmMetadata = { ...llmMetadata, llm_generation_id: entry.generation_id };
         }
+      }
+
+      if (entry.simulation) {
+        const supabase = getSupabaseClient();
+        const simulationDb = supabase.schema('miniapp_simulation' as 'public');
+        const { error } = await simulationDb.from('chat_log').insert({
+          id: entry.simulation.turn_id,
+          user_id: null,
+          model: entry.model,
+          user_input: entry.user_input,
+          assistant_reply: entry.assistant_reply,
+          history: entry.history,
+          character_id: entry.character_id ?? null,
+          preset_id: entry.preset_id ?? null,
+          status: entry.status,
+          upstream_status: entry.upstream_status ?? null,
+          deduction_rate: 0,
+          ...llmMetadata,
+          llm_charge_id: null,
+          llm_intended_deduction: 0,
+          conversation_id: entry.simulation.conversation_id,
+          round_index: null,
+          is_simulation: true,
+          metadata: entry.simulation.metadata,
+          effective_config: entry.simulation.effective_config,
+        });
+        if (error) {
+          log.error(
+            {
+              err: error.message,
+              conversationId: entry.simulation.conversation_id,
+              model: entry.model,
+            },
+            '[chat-history] simulation insert failed'
+          );
+        } else {
+          log.info(
+            { conversationId: entry.simulation.conversation_id, model: entry.model },
+            '[chat-history] simulation saved'
+          );
+        }
+        return;
+      }
+
+      if (!entry.user_id) {
+        throw new Error('production chat history requires user_id');
       }
 
       // 成功调用进入正常计费；免费模型即使失败或中断也保留一条 0.0 明细，

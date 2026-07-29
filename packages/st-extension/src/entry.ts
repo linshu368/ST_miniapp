@@ -24,6 +24,7 @@ import { installMarkdownBoldFallback } from './patches/markdown-bold-fallback.js
 import { installReasoningStreamUi } from './patches/reasoning-stream-ui.js';
 import { installBillingErrorBridge } from './patches/billing-error-bridge.js';
 import { installMobileChatTheme } from './patches/mobile-chat-theme.js';
+import { installSimulationRuntime } from './patches/simulation-runtime.js';
 import { stTiming } from './debug-timing.js'; // [iframe-timing] TEMP DEBUG
 import { installBootTimingProbes } from './debug-boot-probes.js'; // [iframe-timing] TEMP DEBUG
 import { installBootWaterfallProbe } from './debug-boot-waterfall.js'; // [iframe-timing] TEMP DEBUG
@@ -75,6 +76,7 @@ function init(): void {
   installEmptyDetailsHide();
   // 每次 LLM 请求前注入 X-ST-Character-Id / X-ST-Preset-Id header，供 llm-proxy 落 chat_history。
   installLlmMetadataInject();
+  installSimulationRuntime();
   // ST 内置推理解析器默认关闭，模型 <think> 思维链会直接暴露。强制开启作为全局安全网。
   installReasoningAutoParse();
   // 流式 reasoning 使用稳定标题动画，完成后平滑折叠并保留为可再次展开的「思考完成」。
