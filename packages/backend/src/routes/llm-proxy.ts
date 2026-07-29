@@ -345,11 +345,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       let modelMarkup = billingContext.modelMarkup;
       let freeQuotaGranted = false;
 
-      if (
-        platformContext.mode === 'production' &&
-        isChatCompletion &&
-        modelMarkup === 0
-      ) {
+      if (platformContext.mode === 'production' && isChatCompletion && modelMarkup === 0) {
         if (!isQuotaTrackableCharacterId(characterId)) {
           // 轮次无法归属到角色卡时不判定为免费轮，按额度耗尽后的倍率计费并放行：
           // character_id 一直是可选输入，免费模型不应因为它缺失而完全无法对话。

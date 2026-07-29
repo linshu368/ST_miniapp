@@ -24,7 +24,7 @@
 
 | 文件                                                            | 内容                                                                                                                                                        |
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/shared/migrations/054_simulation_card_evaluation.sql` | `miniapp.characters` 新增 `is_test` / `card_hash` 列；新建 `miniapp_simulation` schema，含 `conversations` 和 `chat_log` 两张表；RLS 仅 service_role 可访问 |
+| `packages/shared/migrations/062_simulation_card_evaluation.sql` | `miniapp.characters` 新增 `is_test` / `card_hash` 列；新建 `miniapp_simulation` schema，含 `conversations` 和 `chat_log` 两张表；RLS 仅 service_role 可访问 |
 | `packages/backend/prisma/schema.prisma`                         | Prisma model 同步新增字段                                                                                                                                   |
 
 ### 测试卡导入 CLI
@@ -119,7 +119,7 @@
 
 ```bash
 # 环境变量
-export SIM_KEY="df0826407c9587d03ce58f295eefd781854540e37a3dd7ed6db13016d39df029"
+export SIM_KEY="<SIMULATION_SERVICE_KEY>"
 export CARD_HASH="01a8c013eff334722254c8fcaec8d854128cf3cb2cb6bed174781e2a6c004c9e"
 export API="http://127.0.0.1:3001/api/platform/simulation/chat"
 ```
@@ -301,7 +301,7 @@ else:
 ## 七、关键常量速查
 
 ```
-SIMULATION_SERVICE_KEY = df0826407c9587d03ce58f295eefd781854540e37a3dd7ed6db13016d39df029
+SIMULATION_SERVICE_KEY = <从部署平台安全获取，不写入仓库>
 CARD_HASH              = 01a8c013eff334722254c8fcaec8d854128cf3cb2cb6bed174781e2a6c004c9e
 CHARACTER_ID           = e25b5bb5-e2c9-48ad-9cdd-05eab0a9730b
 CHARACTER_NAME         = 圣海伦学院0.7

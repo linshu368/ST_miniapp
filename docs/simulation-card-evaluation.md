@@ -2,7 +2,7 @@
 
 ## 前置配置
 
-1. 执行 `packages/shared/migrations/054_simulation_card_evaluation.sql`。
+1. 执行 `packages/shared/migrations/062_simulation_card_evaluation.sql`。
 2. 在 Supabase API 的 exposed schemas 中加入 `miniapp_simulation`；本地
    `supabase/config.toml` 已配置。
 3. backend 配置 `SIMULATION_SERVICE_KEY`。

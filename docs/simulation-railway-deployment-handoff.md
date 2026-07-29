@@ -1,7 +1,7 @@
 # 测试卡模拟通道 — Railway 部署进度与决策交接
 
-> 分支：`feature/simulation-card-evaluation`  
-> 更新时间：2026-07-23  
+> 分支：`feature/simulation-card-evaluation`
+> 更新时间：2026-07-23
 > Railway Project：`st-simulation-card-evaluation`
 
 ## 一、部署背景
@@ -163,7 +163,7 @@ DISABLE_WATCHER=1
 
 在模拟 Railway 环境连接生产 Supabase 前，必须同时满足：
 
-1. 在生产 Supabase 执行 `054_simulation_card_evaluation.sql`；
+1. 在生产 Supabase 执行 `062_simulation_card_evaluation.sql`；
 2. Hosted Supabase API exposed schemas 加入 `miniapp_simulation`；
 3. Backend 配置 `CHAT_HISTORY_SYNC_ENABLED=false`；
 4. st-bundle 配置 `DISABLE_WATCHER=1`；
