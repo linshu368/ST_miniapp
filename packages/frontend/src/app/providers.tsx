@@ -8,8 +8,10 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { getQueryClient } from '@/lib/api/query-client';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { useUserSettingsQuery } from '@/lib/api/settings';
+import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
+import { parseTelegramUser } from '@/lib/telegram/user';
 import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUserProfileStore } from '@/stores/user-profile-store';
@@ -27,6 +29,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     initTelegramSdk();
+    const telegramUser = parseTelegramUser(getRawInitData());
+    setTelegramUser(telegramUser.id);
+    void loadSessionReplay();
     // initTelegramSdk 是同步副作用,initData 在它跑完后立即可读;
     // hydrate 把 telegram first_name + localStorage 覆盖合成 displayName
     hydrateUserProfile();
@@ -80,7 +85,7 @@ function GrowthEntryReporter() {
   useEffect(() => {
     try {
       const rawInitData = getRawInitData();
-      console.log('[Growth] rawInitData:', rawInitData);
+      console.log('[Growth] Telegram initData status:', { available: Boolean(rawInitData) });
 
       // 即使没有 rawInitData，也可以尝试从 URL 中获取 startapp 参数 (本地开发环境)
       const sourceId = getStartParam();
