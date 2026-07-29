@@ -136,12 +136,13 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 052_character_favorites.sql # 用户角色收藏、幂等设置、收藏计数与运营收藏榜
 053_llm_spending_retention.sql # 免费失败明细与每用户最近 100 条完整记录保留
 054_default_user_avatar_asset.sql # 默认头像改存受迁移管理的头像 bucket 并放宽其体积上限
-055_character_free_chat_quota.sql # 用户与角色卡 50 轮免费额度、并发预留及额度后扣费倍率
+055_character_free_chat_quota.sql # 用户与角色卡免费额度、并发预留及额度后扣费倍率
 056_character_favorites_and_model_tagline.sql # 角色卡收藏表与幂等收藏 RPC，模型介绍语长度上限放宽到 40
 057_free_quota_exhausted_dialog_config.sql # 免费额度耗尽弹窗文案运行时配置与运营后台管理
 058_fixed_tier_llm_billing.sql # 固定每轮扣费：免费额度后 10、标准档 30、旗舰档 50
 059_model_catalog_cost_hint_limit.sql # 模型目录档位参考消耗文案上限 30 → 50
 060_lobby_recommended_latest_sorting.sql # 首页推荐/最新排序：聊天转化率聚合视图与角色最后上架时间
+061_character_free_chat_quota_limit_config.sql # 角色卡免费轮次上限改为 runtime_config（默认 40）并可运营后台调整
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
