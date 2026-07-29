@@ -3,6 +3,11 @@
 # connections on :8000 before starting.
 set -e
 
+if [[ "${DISABLE_WATCHER:-0}" == "1" ]]; then
+  echo "[watcher] disabled for this deployment"
+  exec sleep infinity
+fi
+
 echo "[watcher] waiting for ST on 127.0.0.1:8000 ..."
 for i in $(seq 1 90); do
   if curl -fsS -m 1 http://127.0.0.1:8000/ >/dev/null 2>&1; then

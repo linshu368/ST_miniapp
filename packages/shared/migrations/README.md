@@ -143,7 +143,8 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 059_model_catalog_cost_hint_limit.sql # 模型目录档位参考消耗文案上限 30 → 50
 060_lobby_recommended_latest_sorting.sql # 首页推荐/最新排序：聊天转化率聚合视图与角色最后上架时间
 061_character_free_chat_quota_limit_config.sql # 角色卡免费轮次上限改为 runtime_config（默认 40）并可运营后台调整
-062_admin_layout_exclude_test_cards.sql # 运营后台角色布局排除评测测试卡：修复发布被 is_test 约束拒绝、回滚分桶总数不匹配
+062_simulation_card_evaluation.sql # 测试卡标识、SHA-256 去重与独立模拟会话/聊天日志 schema
+063_admin_layout_exclude_test_cards.sql # 运营后台角色布局排除评测测试卡；依赖 062 提供 is_test 列
 ```
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）

@@ -394,16 +394,46 @@ export function writeSecrets(handle: string, apiConfig: ApiConfigRow | null, use
   atomicWriteFileSync(dst, JSON.stringify(secrets, null, 2));
 }
 
+export function writeSimulationSecrets(
+  handle: string,
+  apiConfig: ApiConfigRow | null,
+  conversationId: string
+): void {
+  if (!apiConfig) return;
+
+  const now = Math.floor(Date.now() / 1000);
+  const platformToken = signTokenPayload({
+    mode: 'simulation',
+    conversationId,
+    iat: now,
+    exp: now + 24 * 60 * 60,
+    ver: 2,
+  });
+  const secrets = {
+    api_key_custom: [
+      {
+        id: randomUUID(),
+        value: platformToken,
+        label: 'simulation',
+        active: true,
+      },
+    ],
+  };
+  atomicWriteFileSync(secretsPath(handle), JSON.stringify(secrets, null, 2));
+}
+
 function signPlatformToken(userId: string): string {
+  return signTokenPayload({ userId, iat: Math.floor(Date.now() / 1000), ver: 1 });
+}
+
+function signTokenPayload(payloadValue: Record<string, unknown>): string {
   const secret = config.LLM_PROXY_TOKEN_SECRET || config.ST_USER_PASSWORD_SECRET;
   if (!secret) {
     throw new Error('LLM_PROXY_TOKEN_SECRET 未配置，无法签发 platformToken');
   }
 
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = base64UrlEncode(
-    JSON.stringify({ userId, iat: Math.floor(Date.now() / 1000), ver: 1 })
-  );
+  const payload = base64UrlEncode(JSON.stringify(payloadValue));
   const signature = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
 
   return `${header}.${payload}.${signature}`;

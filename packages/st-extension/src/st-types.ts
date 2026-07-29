@@ -113,6 +113,8 @@ export interface STContext {
     skipChatFetch?: boolean;
   }): Promise<void>;
   saveSettingsDebounced(): void;
+  /** 触发一次 ST 原生消息生成（见 vendor script.js generate） */
+  generate(type: 'normal'): Promise<void>;
   /** 重新拉取并渲染当前对话（见 vendor script.js reloadCurrentChat） */
   reloadCurrentChat(): Promise<void>;
   openCharacterChat(fileName: string): Promise<void>;

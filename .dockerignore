@@ -24,3 +24,9 @@ packages/db-types/generated
 docs
 ops/nginx
 ops/env
+
+# The simulation gateway is built from the repository root.
+!ops/nginx/
+ops/nginx/*
+!ops/nginx/Dockerfile.simulation
+!ops/nginx/nginx.simulation.conf

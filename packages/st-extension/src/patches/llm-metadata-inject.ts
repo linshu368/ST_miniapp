@@ -29,6 +29,26 @@ const POINTER_PREFIX = 'platform_';
 // 缓冲上限而使「整个 LLM 请求」失败——那会连聊天都发不出，比日志不准严重得多。
 // 因此超限即截断（审计日志可接受），保证请求本身永不因 header 过大而挂。
 const MAX_RAW_INPUT_CHARS = 4000;
+const SIMULATION_SAMPLING_KEYS = [
+  'temperature',
+  'top_p',
+  'top_k',
+  'min_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'repetition_penalty',
+  'max_tokens',
+] as const;
+
+declare global {
+  interface Window {
+    __miniappSimulationTurn?: {
+      turnId: string;
+      metadata: Record<string, unknown>;
+      effectiveConfig?: Record<string, unknown>;
+    };
+  }
+}
 
 function extractCharacterUuid(): string | null {
   try {
@@ -96,6 +116,26 @@ function onSettingsReady(generateData: Record<string, unknown>): void {
   if (characterId) lines.push(`X-ST-Character-Id: ${characterId}`);
   if (presetId) lines.push(`X-ST-Preset-Id: ${presetId}`);
   if (rawUserInput) lines.push(`X-ST-User-Input: ${encodeHeaderValue(rawUserInput)}`);
+  const simulationTurn = window.__miniappSimulationTurn;
+  if (simulationTurn) {
+    const sampling = Object.fromEntries(
+      SIMULATION_SAMPLING_KEYS.filter((key) => generateData[key] !== undefined).map((key) => [
+        key,
+        generateData[key],
+      ])
+    );
+    simulationTurn.effectiveConfig = {
+      model_name: typeof generateData.model === 'string' ? generateData.model : '',
+      preset_id: presetId,
+      sampling,
+    };
+    lines.push(`X-ST-Simulation-Turn-Id: ${simulationTurn.turnId}`);
+    lines.push(
+      `X-ST-Simulation-Effective-Config: ${encodeHeaderValue(
+        JSON.stringify(simulationTurn.effectiveConfig)
+      )}`
+    );
+  }
 
   if (lines.length === 0) return;
 
