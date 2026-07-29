@@ -47,6 +47,17 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        // 扩展语义色：shadcn 那套没有对应位的几支。带 <alpha-value> 以支持 bg-rose/20 这类写法。
+        bubble: {
+          user: 'hsl(var(--bubble-user) / <alpha-value>)',
+        },
+        rose: {
+          DEFAULT: 'hsl(var(--rose) / <alpha-value>)',
+          fill: 'hsl(var(--rose-fill) / <alpha-value>)',
+        },
+        success: 'hsl(var(--success) / <alpha-value>)',
+        warn: 'hsl(var(--warn) / <alpha-value>)',
+        glow: 'hsl(var(--glow) / <alpha-value>)',
       },
       borderRadius: {
         lg: 'var(--radius)',

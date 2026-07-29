@@ -29,7 +29,7 @@ export function BottomNav() {
     >
       <nav
         aria-label="主导航"
-        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-4 gap-1 rounded-[1.65rem] border border-white/[0.08] bg-[#171027]/92 p-1.5 text-white shadow-[0_14px_38px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
+        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-4 gap-1 rounded-[1.65rem] border border-border bg-card/92 p-1.5 text-foreground shadow-[0_14px_38px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const active = href === '/' ? pathname === href : pathname?.startsWith(href);
@@ -43,26 +43,26 @@ export function BottomNav() {
               className={cn(
                 'group relative isolate flex h-[58px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-[1.3rem] px-2 transition-[color,background-color,box-shadow,transform] duration-300 ease-out active:scale-[0.97]',
                 active
-                  ? 'bg-white/[0.075] text-[#ffe3dc] ring-1 ring-inset ring-white/[0.09]'
-                  : 'text-white/45 hover:bg-white/[0.04] hover:text-white/75'
+                  ? 'bg-foreground/[0.06] text-primary ring-1 ring-inset ring-foreground/[0.08]'
+                  : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground/75'
               )}
             >
               {active ? (
                 <>
                   <span
                     aria-hidden
-                    className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),transparent_72%)]"
+                    className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,hsl(var(--foreground)/0.035),transparent_72%)]"
                   />
                   <span
                     aria-hidden
-                    className="absolute bottom-1.5 left-1/2 h-0.5 w-5 -translate-x-1/2 rounded-full bg-[#ef856d]"
+                    className="absolute bottom-1.5 left-1/2 h-0.5 w-5 -translate-x-1/2 rounded-full bg-primary"
                   />
                 </>
               ) : null}
               <span
                 className={cn(
                   'relative flex h-7 w-10 items-center justify-center transition-colors duration-300',
-                  !active && 'group-hover:text-white/80'
+                  !active && 'group-hover:text-foreground/80'
                 )}
               >
                 <Icon
