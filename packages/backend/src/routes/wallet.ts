@@ -15,7 +15,7 @@ import {
 } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { MiniappCharacterFreeQuotaRepository } from '../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import {
-  CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+  getCharacterFreeChatQuotaLimit,
   getFreeQuotaExhaustedDialogConfig,
 } from '../features/billing/free-quota.js';
 
@@ -53,14 +53,15 @@ export default async function walletRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('INVALID_CHARACTER', '角色卡 ID 无效'));
       }
       const dbUser = await getOrCreateDbUser(request.user);
-      const [status, exhaustedDialog] = await Promise.all([
-        freeQuotas.getStatus(dbUser.id, characterId, CHARACTER_FREE_CHAT_QUOTA_LIMIT),
+      const [quotaLimit, exhaustedDialog] = await Promise.all([
+        getCharacterFreeChatQuotaLimit(),
         getFreeQuotaExhaustedDialogConfig(),
       ]);
+      const status = await freeQuotas.getStatus(dbUser.id, characterId, quotaLimit);
       return reply.send(
         ok<GetCharacterFreeQuotaData>({
           character_id: characterId,
-          quota_limit: CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+          quota_limit: quotaLimit,
           used_rounds: status.usedRounds,
           remaining_rounds: status.remainingRounds,
           exhausted: status.exhausted,

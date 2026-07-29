@@ -32,7 +32,7 @@ import { MiniappCharacterFreeQuotaRepository } from '../infrastructure/repositor
 import { saveChatHistory } from '../lib/chat-history-logger.js';
 import { requestLogger } from '../lib/logger.js';
 import {
-  CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+  getCharacterFreeChatQuotaLimit,
   isQuotaTrackableCharacterId,
   resolveEffectiveModelMarkup,
 } from '../features/billing/free-quota.js';
@@ -223,11 +223,12 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           );
         } else {
           try {
+            const quotaLimit = await getCharacterFreeChatQuotaLimit();
             const quotaDecision = await freeQuotas.reserve({
               chargeId,
               userId,
               characterId,
-              quotaLimit: CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+              quotaLimit,
             });
             freeQuotaGranted = quotaDecision.grantedFree;
             modelMarkup = resolveEffectiveModelMarkup(
@@ -243,6 +244,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                 chargeId,
                 grantedFree: quotaDecision.grantedFree,
                 remainingRounds: quotaDecision.remainingRounds,
+                quotaLimit,
                 effectiveMarkup: modelMarkup,
               },
               'character free quota decision resolved'
