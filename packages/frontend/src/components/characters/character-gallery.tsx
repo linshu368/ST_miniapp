@@ -4,8 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 
+import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 import { useCharactersQuery } from '@/lib/api/characters';
 
@@ -13,6 +16,11 @@ import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
 
 const FIRST_SCREEN_IMAGE_COUNT = 8;
+
+const LOBBY_TABS: ReadonlyArray<{ value: LobbySort; label: string }> = [
+  { value: 'recommended', label: '推荐' },
+  { value: 'latest', label: '最新' },
+];
 
 // 命中打分:数字越大越精确,0 = 不命中
 // 顺序:name 完整匹配 > name 开头 > name 包含 > tag 完整 > tag 包含 > author > description
@@ -38,7 +46,8 @@ function scoreMatch(
 
 export function CharacterGallery() {
   const router = useRouter();
-  const { data, isLoading, isError } = useCharactersQuery();
+  const [sort, setSort] = useState<LobbySort>(DEFAULT_LOBBY_SORT);
+  const { data, isLoading, isError } = useCharactersQuery(sort);
   const [query, setQuery] = useState('');
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [enteringId, setEnteringId] = useState<string | null>(null);
@@ -131,10 +140,47 @@ export function CharacterGallery() {
     </div>
   );
 
+  // 切换只改列表顺序，搜索词与卡片上的既有能力都保持不变。
+  const sortTabs = (
+    <div
+      role="tablist"
+      aria-label="角色排序"
+      className="mx-auto flex w-full max-w-screen-xl items-center gap-2 px-4 pb-1 sm:px-6 lg:px-8"
+    >
+      {LOBBY_TABS.map((tab) => {
+        const active = sort === tab.value;
+        return (
+          <button
+            key={tab.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => setSort(tab.value)}
+            className={cn(
+              'rounded-full border px-4 py-1.5 text-[13px] transition-all',
+              active
+                ? 'border-white/20 bg-white/10 text-white'
+                : 'border-transparent text-white/45 hover:bg-white/5 hover:text-white/80'
+            )}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const listHeader = (
+    <>
+      {searchBar}
+      {sortTabs}
+    </>
+  );
+
   if (isLoading) {
     return (
       <>
-        {searchBar}
+        {listHeader}
         <div
           className="mx-auto grid w-full max-w-screen-xl grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3 px-4 py-6 sm:px-6 lg:px-8"
           aria-label="加载中"
@@ -153,7 +199,7 @@ export function CharacterGallery() {
   if (isError) {
     return (
       <>
-        {searchBar}
+        {listHeader}
         <p className="mx-auto max-w-screen-xl px-4 py-8 text-center text-[13px] text-white/50 sm:px-6 lg:px-8">
           门好像被风合上了。稍后再来。
         </p>
@@ -164,7 +210,7 @@ export function CharacterGallery() {
   if (characters.length === 0) {
     return (
       <>
-        {searchBar}
+        {listHeader}
         <p className="mx-auto max-w-screen-xl px-4 py-8 text-center text-[13px] text-white/50 sm:px-6 lg:px-8">
           空旷的空间，还没有角色到达。
         </p>
@@ -174,7 +220,7 @@ export function CharacterGallery() {
 
   return (
     <>
-      {searchBar}
+      {listHeader}
       {filtered.length === 0 ? (
         <div className="mx-auto flex max-w-screen-xl flex-col items-center gap-2 px-4 py-10 sm:px-6 lg:px-8">
           <p className="text-center text-[13px] text-white/50">没有匹配「{query}」的角色</p>
