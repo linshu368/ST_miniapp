@@ -25,6 +25,10 @@ import type { BufferedRequest } from './buffer';
 import { createHandshakeState, handleHandshakeMessage } from './handshake';
 import type { HandshakeState } from './handshake';
 import { markTiming, markTimingAt, setTimingDetail, flushIframeTiming } from './iframe-timing'; // [iframe-timing] TEMP DEBUG
+import {
+  recordBridgeActionFailure,
+  recordBridgeRecoveryOutcome,
+} from '@/lib/sentry/bridge-telemetry';
 
 export type BridgeClientOptions = {
   actionTimeout?: number;
@@ -62,6 +66,8 @@ type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
   timer: ReturnType<typeof setTimeout>;
+  action: ActionName;
+  sentAt: number;
 };
 
 type EventCallback<E extends EventName = EventName> = (payload: EventPayloadMap[E]) => void;
@@ -472,8 +478,10 @@ export class BridgeClient {
     }
 
     return new Promise<ActionResultMap[A]>((resolve, reject) => {
+      const sentAt = Date.now();
       const timer = setTimeout(() => {
         this.pendingRequests.delete(requestId);
+        recordBridgeActionFailure(action, requestId, 'BRIDGE_CALL_TIMEOUT', Date.now() - sentAt);
         reject(
           new BridgeError(
             'BRIDGE_CALL_TIMEOUT',
@@ -486,6 +494,8 @@ export class BridgeClient {
         resolve: resolve as (v: unknown) => void,
         reject,
         timer,
+        action,
+        sentAt,
       });
 
       const message = {
@@ -549,6 +559,12 @@ export class BridgeClient {
       pending.resolve(msg.data);
     } else {
       const err = msg.error;
+      recordBridgeActionFailure(
+        pending.action,
+        msg.requestId,
+        err?.code ?? 'BRIDGE_EXEC_ST_INTERNAL',
+        Date.now() - pending.sentAt
+      );
       pending.reject(
         new BridgeError(
           err?.code ?? 'BRIDGE_EXEC_ST_INTERNAL',
@@ -611,6 +627,11 @@ export class BridgeClient {
     outcome: 'recovered' | 'disconnected',
     extra: Record<string, unknown> = {}
   ): void {
+    recordBridgeRecoveryOutcome(outcome, {
+      bootFatalCount: this.bootFatalCount,
+      nukeReloadCount: this.nukeReloadCount,
+      reloadCount: this.reloadCount,
+    });
     flushIframeTiming({
       reason: outcome === 'recovered' ? 'recovery_ok' : 'boot_disconnected',
       recoveryOutcome: outcome,

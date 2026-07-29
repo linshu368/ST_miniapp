@@ -21,19 +21,24 @@
  * 后端 routes/debug.ts。全部以 [iframe-timing] 标注，便于一次性清理。
  */
 
+import { recordBridgeTelemetryMark } from '@/lib/sentry/bridge-telemetry';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
 
 const marks = new Map<string, number>();
 const details = new Map<string, string>();
 
-export function markTiming(name: string): void {
+export function markTiming(name: string, info?: string): void {
   marks.set(name, Date.now());
+  if (info) details.set(name, info);
+  recordBridgeTelemetryMark(name, info);
 }
 
 /** ST iframe 端打点（携带 ST 侧 Date.now()，同设备同一时钟，可直接与父窗口相减）。 */
 export function markTimingAt(name: string, t: number, info?: string): void {
   marks.set(name, t);
   if (info) details.set(name, info);
+  recordBridgeTelemetryMark(name, info);
 }
 
 /**
