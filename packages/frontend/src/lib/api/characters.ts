@@ -1,18 +1,24 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import type { ApiResponse, GetCharactersData, GetCharacterByIdData } from '@miniapp/shared';
+import { DEFAULT_LOBBY_SORT } from '@miniapp/shared';
+import type {
+  ApiResponse,
+  GetCharactersData,
+  GetCharacterByIdData,
+  LobbySort,
+} from '@miniapp/shared';
 
 import { apiClient } from './client';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
-async function fetchCharacters(): Promise<GetCharactersData> {
-  const response = await fetch('/api/lobby-characters', { cache: 'no-store' });
+async function fetchCharacters(sort: LobbySort): Promise<GetCharactersData> {
+  const response = await fetch(`/api/lobby-characters?sort=${sort}`, { cache: 'no-store' });
   const json = (await response.json().catch(() => null)) as ApiResponse<GetCharactersData> | null;
   if (!response.ok || !json?.success) {
     throw new Error(json && !json.success ? json.error.message : `API error: ${response.status}`);
   }
-  persistCharacters(json.data);
+  persistCharacters(sort, json.data);
   return json.data;
 }
 
@@ -24,17 +30,22 @@ async function fetchCharacterById(id: string): Promise<GetCharacterByIdData> {
 export const characterKeys = {
   all: ['characters'] as const,
   lists: () => [...characterKeys.all, 'list'] as const,
+  list: (sort: LobbySort) => [...characterKeys.all, 'list', sort] as const,
   detail: (id: string) => [...characterKeys.all, 'detail', id] as const,
 };
 
-// v3 invalidates the old 24-hour snapshots that could hide Admin changes.
-const CHARACTER_CACHE_KEY = 'miniapp:lobby-characters:v3';
+// v4 隔离「推荐 / 最新」两套顺序，并弃用只存单一顺序的 v3 快照。
+const CHARACTER_CACHE_KEY_PREFIX = 'miniapp:lobby-characters:v4';
 const CHARACTER_CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 
-function readPersistedCharacters(): GetCharactersData | undefined {
+function cacheKey(sort: LobbySort): string {
+  return `${CHARACTER_CACHE_KEY_PREFIX}:${sort}`;
+}
+
+function readPersistedCharacters(sort: LobbySort): GetCharactersData | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
-    const raw = window.localStorage.getItem(CHARACTER_CACHE_KEY);
+    const raw = window.localStorage.getItem(cacheKey(sort));
     if (!raw) return undefined;
     const cached = JSON.parse(raw) as { savedAt?: number; data?: GetCharactersData };
     if (
@@ -42,7 +53,7 @@ function readPersistedCharacters(): GetCharactersData | undefined {
       Date.now() - cached.savedAt > CHARACTER_CACHE_MAX_AGE_MS ||
       !Array.isArray(cached.data?.characters)
     ) {
-      window.localStorage.removeItem(CHARACTER_CACHE_KEY);
+      window.localStorage.removeItem(cacheKey(sort));
       return undefined;
     }
     return cached.data;
@@ -51,9 +62,9 @@ function readPersistedCharacters(): GetCharactersData | undefined {
   }
 }
 
-function persistCharacters(data: GetCharactersData): void {
+function persistCharacters(sort: LobbySort, data: GetCharactersData): void {
   try {
-    window.localStorage.setItem(CHARACTER_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data }));
+    window.localStorage.setItem(cacheKey(sort), JSON.stringify({ savedAt: Date.now(), data }));
   } catch {
     // 隐私模式或 quota 满时只使用 React Query 内存缓存。
   }
@@ -61,11 +72,11 @@ function persistCharacters(data: GetCharactersData): void {
 
 // ==== React Query hooks（业务层唯一入口）====
 
-export function useCharactersQuery() {
+export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT) {
   return useQuery<GetCharactersData>({
-    queryKey: characterKeys.lists(),
-    queryFn: fetchCharacters,
-    initialData: readPersistedCharacters,
+    queryKey: characterKeys.list(sort),
+    queryFn: () => fetchCharacters(sort),
+    initialData: () => readPersistedCharacters(sort),
     // Persisted data keeps the lobby instant, but every mount must reconcile with
     // the database so reordering, delisting, and archival appear immediately.
     staleTime: 0,
