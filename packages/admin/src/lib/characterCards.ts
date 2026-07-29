@@ -60,6 +60,34 @@ export function filterCharacters(characters: CharacterCard[], query: string): Ch
   });
 }
 
+/**
+ * 布局相关的 RPC 直接抛 Postgres 报错，原文对运营不可读（例如约束名
+ * characters_test_cards_disabled）。这里把已知原因翻成可执行的中文提示，未知原因保留原文，
+ * 便于排查时还能看到真实错误。
+ */
+export function describeCharacterLayoutError(error: unknown, fallback: string): string {
+  const raw = error instanceof Error ? error.message : '';
+  if (!raw) return fallback;
+
+  const testCards = /evaluation test cards:\s*(.+)$/.exec(raw);
+  if (testCards) {
+    return `布局里混入了评测用的测试卡（${testCards[1]}），测试卡不能上架。请刷新页面后重试。`;
+  }
+  if (raw.includes('characters_test_cards_disabled')) {
+    return '布局里混入了评测用的测试卡，测试卡必须保持下架。请刷新页面后重试。';
+  }
+  if (raw.includes('partition every character exactly once')) {
+    return '角色列表与后台已不一致，可能有人同时改了角色。请刷新页面后重新调整。';
+  }
+  if (raw.includes('version changed')) {
+    return '布局版本已被其他人更新，请刷新页面后重新操作。';
+  }
+  if (raw.includes('operator access required')) {
+    return '当前账号没有该环境的运营写入权限。';
+  }
+  return raw || fallback;
+}
+
 export interface CharacterLayoutChanges {
   listed: string[];
   delisted: string[];
