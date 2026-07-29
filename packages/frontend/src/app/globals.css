@@ -95,32 +95,6 @@
   }
 }
 
-@layer components {
-  html[data-appearance='light'] [data-app-shell] {
-    background:
-      radial-gradient(circle at 50% 0%, rgba(124, 58, 237, 0.12), transparent 36%),
-      linear-gradient(180deg, #fbf7ff 0%, #f4efff 100%) !important;
-    color: #1f1635 !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='text-white'] {
-    color: #1f1635 !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='text-slate-'] {
-    color: #34264e !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='bg-white/'],
-  html[data-appearance='light'] [data-app-shell] [class*='bg-white\\['] {
-    background-color: rgba(255, 255, 255, 0.72) !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='border-white/'] {
-    border-color: rgba(79, 70, 229, 0.16) !important;
-  }
-}
-
 /* 流星 shimmer 动画:用于许愿池入口按钮的轻盈"划过"动效 */
 @keyframes meteor-shimmer {
   0% {

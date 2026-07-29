@@ -1,11 +1,4 @@
 const STYLE_ID = 'miniapp-mobile-chat-theme';
-const APPEARANCE_STORAGE_KEY = 'st_miniapp_appearance_mode';
-
-export type MiniappAppearance = 'light' | 'dark';
-
-export function resolveMiniappAppearance(value: unknown): MiniappAppearance {
-  return value === 'light' ? 'light' : 'dark';
-}
 
 export function shouldExpandComposer(
   value: string,
@@ -17,67 +10,38 @@ export function shouldExpandComposer(
   return value.length > 24 || scrollHeight > 54;
 }
 
-function readAppearance(): MiniappAppearance {
-  try {
-    return resolveMiniappAppearance(window.localStorage.getItem(APPEARANCE_STORAGE_KEY));
-  } catch {
-    return 'light';
-  }
-}
-
-function applyAppearance(mode: MiniappAppearance): void {
-  document.documentElement.dataset.miniappAppearance = mode;
-  document.documentElement.style.colorScheme = mode;
-}
-
 /**
  * 直接覆盖 ST 原生聊天 DOM 的视觉层，不复制消息、不代理输入，也不改任何事件处理。
- * MiniApp 外壳和 /tavern iframe 同源，共享 appearance localStorage；切换后 iframe
- * 会收到 storage 事件。额外观察父页面 data-appearance，兜底同文档即时同步。
+ * 配色与外壳的「烛夜」保持同一组取值（见 frontend/src/app/globals.css 的 .dark），
+ * 但因为 iframe 是独立 document，无法复用外壳的 Tailwind token，只能在此重复声明。
  */
 export function installMobileChatTheme(): void {
   if (document.getElementById(STYLE_ID)) return;
 
+  document.documentElement.style.colorScheme = 'dark';
+
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    :root[data-miniapp-appearance='light'] {
-      --miniapp-chat-bg: #f8f9fb;
-      --miniapp-chat-surface: #ffffff;
-      --miniapp-chat-surface-soft: #f1f3f6;
-      --miniapp-chat-text: #17191d;
-      --miniapp-chat-muted: #7b8089;
-      --miniapp-chat-border: #e4e7ec;
-      --miniapp-chat-accent: #10b981;
-      --miniapp-chat-accent-soft: #ecfdf5;
-      --miniapp-chat-user: #ecfdf5;
-      --SmartThemeBodyColor: #17191d !important;
-      --SmartThemeEmColor: #68707c !important;
-      --SmartThemeQuoteColor: #059669 !important;
-      --SmartThemeBorderColor: #e4e7ec !important;
-      --SmartThemeBlurTintColor: #ffffff !important;
-      --SmartThemeChatTintColor: #f8f9fb !important;
-      --SmartThemeUserMesBlurTintColor: #ecfdf5 !important;
-      --SmartThemeBotMesBlurTintColor: transparent !important;
-    }
-
-    :root[data-miniapp-appearance='dark'] {
-      --miniapp-chat-bg: #0d1110;
-      --miniapp-chat-surface: #151a18;
-      --miniapp-chat-surface-soft: #1d2421;
-      --miniapp-chat-text: #eef3f0;
-      --miniapp-chat-muted: #939d98;
-      --miniapp-chat-border: #29312d;
-      --miniapp-chat-accent: #34d399;
-      --miniapp-chat-accent-soft: #12362b;
-      --miniapp-chat-user: #173a30;
-      --SmartThemeBodyColor: #eef3f0 !important;
-      --SmartThemeEmColor: #a5b0aa !important;
-      --SmartThemeQuoteColor: #6ee7b7 !important;
-      --SmartThemeBorderColor: #29312d !important;
-      --SmartThemeBlurTintColor: #151a18 !important;
-      --SmartThemeChatTintColor: #0d1110 !important;
-      --SmartThemeUserMesBlurTintColor: #173a30 !important;
+    :root {
+      --miniapp-chat-bg: #1d181c;
+      --miniapp-chat-surface: #272126;
+      --miniapp-chat-surface-soft: #332b32;
+      --miniapp-chat-text: #ebe2e6;
+      --miniapp-chat-muted: #a2949c;
+      --miniapp-chat-border: #3d343c;
+      --miniapp-chat-accent: #d9b382;
+      --miniapp-chat-accent-soft: #332a20;
+      /* 金色强调色亮度偏高，落在它上面的图标/文字必须用深褐，白色只有 1.96:1 */
+      --miniapp-chat-on-accent: #2a1f16;
+      --miniapp-chat-user: #332a2c;
+      --SmartThemeBodyColor: #ebe2e6 !important;
+      --SmartThemeEmColor: #a2949c !important;
+      --SmartThemeQuoteColor: #d9b382 !important;
+      --SmartThemeBorderColor: #3d343c !important;
+      --SmartThemeBlurTintColor: #272126 !important;
+      --SmartThemeChatTintColor: #1d181c !important;
+      --SmartThemeUserMesBlurTintColor: #332a2c !important;
       --SmartThemeBotMesBlurTintColor: transparent !important;
     }
 
@@ -264,7 +228,7 @@ export function installMobileChatTheme(): void {
       border: 1px solid var(--miniapp-chat-border) !important;
       border-radius: 22px !important;
       background: var(--miniapp-chat-surface) !important;
-      box-shadow: 0 8px 28px rgb(15 23 42 / 8%) !important;
+      box-shadow: 0 8px 28px rgb(16 13 15 / 40%) !important;
       backdrop-filter: none !important;
     }
 
@@ -369,7 +333,7 @@ export function installMobileChatTheme(): void {
 
     #send_but {
       background: var(--miniapp-chat-accent) !important;
-      color: #ffffff !important;
+      color: var(--miniapp-chat-on-accent) !important;
       box-shadow: 0 5px 14px color-mix(in srgb, var(--miniapp-chat-accent) 28%, transparent) !important;
     }
 
@@ -477,31 +441,5 @@ export function installMobileChatTheme(): void {
       if (bindComposerLayout()) composerObserver.disconnect();
     });
     composerObserver.observe(document.body, { childList: true, subtree: true });
-  }
-
-  const syncFromParent = () => {
-    try {
-      const parentMode = window.parent.document.documentElement.dataset.appearance;
-      applyAppearance(resolveMiniappAppearance(parentMode ?? readAppearance()));
-    } catch {
-      applyAppearance(readAppearance());
-    }
-  };
-
-  syncFromParent();
-  window.addEventListener('storage', (event) => {
-    if (event.key === APPEARANCE_STORAGE_KEY) {
-      applyAppearance(resolveMiniappAppearance(event.newValue));
-    }
-  });
-
-  try {
-    const parentRoot = window.parent.document.documentElement;
-    new MutationObserver(syncFromParent).observe(parentRoot, {
-      attributes: true,
-      attributeFilter: ['data-appearance', 'class'],
-    });
-  } catch {
-    // 非同源或父页面不可访问时，仅使用共享 localStorage 的初始值与 storage 事件。
   }
 }
