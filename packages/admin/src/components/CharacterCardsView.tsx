@@ -39,6 +39,7 @@ import {
 import { getAdminSupabaseUrl, type AdminEnvironment } from '../lib/environment';
 import {
   charactersForIds,
+  describeCharacterLayoutError,
   filterCharacters,
   getCharacterAvatarUrl,
   layoutsEqual,
@@ -215,7 +216,7 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
       message.success('角色布局草稿已保存，MiniApp 尚未改变');
       await reloadLayout();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '草稿保存失败');
+      message.error(describeCharacterLayoutError(error, '草稿保存失败'));
     } finally {
       setSaving(false);
     }
@@ -235,7 +236,7 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
       message.success(`角色布局版本 ${version} 已发布`);
       await Promise.all([props.onRefresh(), reloadLayout()]);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '角色布局发布失败');
+      message.error(describeCharacterLayoutError(error, '角色布局发布失败'));
     } finally {
       setSaving(false);
     }
@@ -276,7 +277,7 @@ export function CharacterCardsView(props: CharacterCardsViewProps) {
       message.success(`已回滚并发布为角色布局版本 ${version}`);
       await Promise.all([props.onRefresh(), reloadLayout()]);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '角色布局回滚失败');
+      message.error(describeCharacterLayoutError(error, '角色布局回滚失败'));
     } finally {
       setSaving(false);
     }
