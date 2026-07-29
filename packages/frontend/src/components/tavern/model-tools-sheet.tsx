@@ -12,6 +12,7 @@ import {
   // UserRound,
 } from 'lucide-react';
 
+import { cn } from '@/lib/utils';
 import { useModelCatalogQuery } from '@/lib/api/models';
 import { shouldRefreshModelCatalog } from '@/lib/api/model-cache-policy';
 import { platformAction, useBridgeStatus } from '@/lib/bridge';
@@ -158,9 +159,9 @@ function ToolsPanel(props: {
         <button
           type="button"
           onClick={props.onModels}
-          className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-white/5"
+          className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-secondary"
         >
-          <ToolIcon icon={Sparkles} color="#818cf8" />
+          <ToolIcon icon={Sparkles} />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-foreground">模型选择</p>
             <p className="text-[11px] text-muted-foreground">切换对话模型</p>
@@ -201,12 +202,16 @@ function ToolsPanel(props: {
   );
 }
 
-function ToolIcon(props: { icon: React.ComponentType<{ className?: string }>; color: string }) {
+/** color 只留给未开放工具那组自定义色，缺省走主题强调色。 */
+function ToolIcon(props: { icon: React.ComponentType<{ className?: string }>; color?: string }) {
   const Icon = props.icon;
   return (
     <span
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-      style={{ backgroundColor: `${props.color}20`, color: props.color }}
+      className={cn(
+        'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
+        !props.color && 'bg-primary/15 text-primary'
+      )}
+      style={props.color ? { backgroundColor: `${props.color}20`, color: props.color } : undefined}
     >
       <Icon className="h-[18px] w-[18px]" />
     </span>

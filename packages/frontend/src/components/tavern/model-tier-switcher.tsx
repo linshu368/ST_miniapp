@@ -123,7 +123,7 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
     return (
       <div className="flex flex-col gap-3 px-4 pb-8">
         {[0, 1, 2].map((key) => (
-          <div key={key} className="h-20 animate-pulse rounded-2xl bg-white/5" />
+          <div key={key} className="h-20 animate-pulse rounded-2xl bg-card" />
         ))}
       </div>
     );
@@ -156,7 +156,7 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
         <div className="relative z-10 flex items-center gap-3">
           <span
             className="model-tier-pulse h-3 w-3 shrink-0 rounded-full"
-            style={{ backgroundColor: selectedTier?.color ?? '#818cf8' }}
+            style={{ backgroundColor: selectedTier?.color ?? 'hsl(var(--primary))' }}
           />
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -170,7 +170,7 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
       </div>
 
       {feedback ? (
-        <div className="rounded-xl border border-purple-400/20 bg-purple-400/10 px-3 py-2 text-xs text-purple-100">
+        <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-xs text-primary">
           {feedback}
         </div>
       ) : null}
@@ -221,7 +221,7 @@ function TierGroup(props: {
           >
             {props.tier.label}
           </span>
-          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-amber-100/90">
+          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-primary/90">
             {props.tier.cost_hint}
           </span>
         </div>
@@ -245,7 +245,7 @@ function TierGroup(props: {
                 onClick={() => props.onSelect(model.id)}
                 className={cn(
                   'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-all disabled:opacity-50',
-                  active ? 'bg-purple-400/12' : 'hover:bg-white/5'
+                  active ? 'bg-primary/10' : 'hover:bg-secondary'
                 )}
               >
                 <span
@@ -262,7 +262,7 @@ function TierGroup(props: {
                       {model.display_name}
                     </span>
                     {isFree ? (
-                      <span className="shrink-0 rounded-full border border-emerald-300/25 bg-emerald-300/12 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
+                      <span className="shrink-0 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success">
                         限量免费
                       </span>
                     ) : null}
@@ -278,7 +278,7 @@ function TierGroup(props: {
                     &nbsp;
                   </p>
                 </div>
-                {active ? <Sparkles className="h-4 w-4 shrink-0 text-purple-300" /> : null}
+                {active ? <Sparkles className="h-4 w-4 shrink-0 text-primary" /> : null}
               </button>
             );
           })}

@@ -32,15 +32,15 @@ export default function ChatsPage() {
   const [tab, setTab] = useState<ChatsTab>('history');
 
   return (
-    <main className="min-h-dvh bg-[#0e0918] px-4 pb-8 pt-[calc(1.5rem+env(safe-area-inset-top))] text-white">
+    <main className="min-h-dvh bg-background px-4 pb-8 pt-[calc(1.5rem+env(safe-area-inset-top))] text-foreground">
       <header className="mx-auto mb-4 max-w-2xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#ef856d]">Messages</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Messages</p>
         <h1 className="mt-1 text-2xl font-bold">{TAB_COPY[tab].title}</h1>
-        <p className="mt-1 text-sm text-white/55">{TAB_COPY[tab].description}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{TAB_COPY[tab].description}</p>
       </header>
 
       <div
-        className="mx-auto mb-5 flex max-w-2xl gap-1 rounded-full border border-white/10 bg-white/[0.05] p-1"
+        className="mx-auto mb-5 flex max-w-2xl gap-1 rounded-full border border-border bg-card p-1"
         role="tablist"
         aria-label="对话与收藏"
       >
@@ -55,7 +55,9 @@ export default function ChatsPage() {
               onClick={() => setTab(item.key)}
               className={cn(
                 'flex-1 rounded-full px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98]',
-                active ? 'bg-[#ef856d] text-[#24111a]' : 'text-white/60 hover:text-white/85'
+                active
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               )}
             >
               {item.label}
@@ -79,18 +81,18 @@ function HistoryList() {
   return (
     <section className="mx-auto max-w-2xl space-y-2">
       {loading && items.length === 0 ? (
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-8 text-center text-sm text-white/55">
+        <div className="rounded-3xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
           正在读取历史对话…
         </div>
       ) : null}
 
       {error ? (
-        <div className="rounded-3xl border border-red-400/25 bg-red-400/[0.07] p-5">
-          <p className="text-sm text-red-200">历史聊天加载失败，请稍后重试。</p>
+        <div className="rounded-3xl border border-destructive/30 bg-destructive/10 p-5">
+          <p className="text-sm text-destructive">历史聊天加载失败，请稍后重试。</p>
           <button
             type="button"
             onClick={() => void fetch()}
-            className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#ef856d] px-4 py-2 text-sm font-semibold text-[#24111a] transition active:scale-95"
+            className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition active:scale-95"
           >
             <RefreshCw className="h-4 w-4" />
             重试
@@ -99,13 +101,15 @@ function HistoryList() {
       ) : null}
 
       {!loading && !error && items.length === 0 ? (
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-8 text-center">
-          <MessageCircle className="mx-auto h-9 w-9 text-[#ef856d]" />
+        <div className="rounded-3xl border border-border bg-card p-8 text-center">
+          <MessageCircle className="mx-auto h-9 w-9 text-primary" />
           <h2 className="mt-3 font-semibold">还没有有效对话</h2>
-          <p className="mt-1 text-sm text-white/55">与角色至少发送一句消息后会显示在这里。</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            与角色至少发送一句消息后会显示在这里。
+          </p>
           <Link
             href="/"
-            className="mt-4 inline-flex rounded-full bg-[#ef856d] px-5 py-2.5 text-sm font-semibold text-[#24111a] transition active:scale-95"
+            className="mt-4 inline-flex rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition active:scale-95"
           >
             去选择角色
           </Link>
@@ -120,9 +124,9 @@ function HistoryList() {
             key={item.characterId}
             href={`/tavern/${item.characterId}?${search.toString()}`}
             prefetch={false}
-            className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.05] p-3.5 shadow-lg shadow-black/10 transition hover:border-white/20 hover:bg-white/[0.075] active:scale-[0.99]"
+            className="flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary active:scale-[0.99]"
           >
-            <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-white/10">
+            <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
               {item.characterAvatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -132,7 +136,7 @@ function HistoryList() {
                   className="h-full w-full object-cover object-top"
                 />
               ) : (
-                <span className="flex h-full w-full items-center justify-center text-[#ef856d]">
+                <span className="flex h-full w-full items-center justify-center text-primary">
                   <MessageCircle className="h-5 w-5" />
                 </span>
               )}
@@ -140,15 +144,15 @@ function HistoryList() {
             <span className="min-w-0 flex-1">
               <span className="flex items-center justify-between gap-3">
                 <span className="truncate font-semibold">{item.characterName}</span>
-                <time className="shrink-0 text-[11px] text-white/45">
+                <time className="shrink-0 text-[11px] text-muted-foreground">
                   {formatActivityTime(item.lastMessageAt)}
                 </time>
               </span>
-              <span className="mt-1 block truncate text-sm text-white/55">
+              <span className="mt-1 block truncate text-sm text-muted-foreground">
                 {item.lastMessage || '暂无消息摘要'}
               </span>
             </span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-white/35" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/70" />
           </Link>
         );
       })}
@@ -163,7 +167,7 @@ function FavoritesList() {
   if (isLoading && characters.length === 0) {
     return (
       <section className="mx-auto max-w-2xl space-y-2">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-8 text-center text-sm text-white/55">
+        <div className="rounded-3xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
           正在读取收藏…
         </div>
       </section>
@@ -173,12 +177,12 @@ function FavoritesList() {
   if (isError) {
     return (
       <section className="mx-auto max-w-2xl">
-        <div className="rounded-3xl border border-red-400/25 bg-red-400/[0.07] p-5">
-          <p className="text-sm text-red-200">收藏列表加载失败，请稍后重试。</p>
+        <div className="rounded-3xl border border-destructive/30 bg-destructive/10 p-5">
+          <p className="text-sm text-destructive">收藏列表加载失败，请稍后重试。</p>
           <button
             type="button"
             onClick={() => void refetch()}
-            className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#ef856d] px-4 py-2 text-sm font-semibold text-[#24111a] transition active:scale-95"
+            className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition active:scale-95"
           >
             <RefreshCw className="h-4 w-4" />
             重试
@@ -191,15 +195,15 @@ function FavoritesList() {
   if (characters.length === 0) {
     return (
       <section className="mx-auto max-w-2xl">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-8 text-center">
-          <Heart className="mx-auto h-9 w-9 text-[#ef856d]" />
+        <div className="rounded-3xl border border-border bg-card p-8 text-center">
+          <Heart className="mx-auto h-9 w-9 text-rose" />
           <h2 className="mt-3 font-semibold">还没有收藏角色卡</h2>
-          <p className="mt-1 text-sm text-white/55">
+          <p className="mt-1 text-sm text-muted-foreground">
             在首页或角色详情里点心形，收藏的角色就会出现在这里。
           </p>
           <Link
             href="/"
-            className="mt-4 inline-flex rounded-full bg-[#ef856d] px-5 py-2.5 text-sm font-semibold text-[#24111a] transition active:scale-95"
+            className="mt-4 inline-flex rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition active:scale-95"
           >
             去首页浏览角色
           </Link>
@@ -214,7 +218,7 @@ function FavoritesList() {
         // 整行可点进入聊天，心形浮在上层单独响应，避免 Link 里嵌 button。
         <div
           key={character.id}
-          className="relative flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.05] p-3.5 shadow-lg shadow-black/10 transition hover:border-white/20 hover:bg-white/[0.075]"
+          className="relative flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary"
         >
           <Link
             href={`/tavern/${character.id}`}
@@ -222,7 +226,7 @@ function FavoritesList() {
             aria-label={`进入 ${character.name} 的聊天`}
             className="absolute inset-0 rounded-3xl"
           />
-          <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-white/10">
+          <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
             {character.avatar_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -232,14 +236,14 @@ function FavoritesList() {
                 className="h-full w-full object-cover object-top"
               />
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-[#ef856d]">
+              <span className="flex h-full w-full items-center justify-center text-rose">
                 <Heart className="h-5 w-5" />
               </span>
             )}
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-semibold">{character.name}</span>
-            <span className="mt-1 block truncate text-sm text-white/55">
+            <span className="mt-1 block truncate text-sm text-muted-foreground">
               {character.description?.trim() || '暂无角色简介'}
             </span>
           </span>
