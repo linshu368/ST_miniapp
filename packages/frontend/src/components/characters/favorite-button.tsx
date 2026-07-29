@@ -15,9 +15,10 @@ interface FavoriteButtonProps {
 
 const CONTAINER_STYLES: Record<FavoriteButtonVariant, string> = {
   // 大厅卡面右下角：半透明底 + 模糊，压在渐变遮罩之上仍然可辨。
+  // 卡面变体压在角色图上，底色保持中性黑罩：图片颜色不可控，套主题色反而会脏。
   card: 'h-9 w-9 rounded-full bg-black/45 backdrop-blur-md ring-1 ring-inset ring-white/15 hover:bg-black/60',
-  sheet: 'h-12 w-12 rounded-2xl border border-white/12 bg-white/5 hover:bg-white/10',
-  header: 'h-9 w-9 rounded-full hover:bg-white/10',
+  sheet: 'h-12 w-12 rounded-2xl border border-border bg-card hover:bg-secondary',
+  header: 'h-9 w-9 rounded-full hover:bg-secondary',
 };
 
 const ICON_STYLES: Record<FavoriteButtonVariant, string> = {
@@ -55,7 +56,7 @@ export function FavoriteButton({ characterId, variant = 'card', className }: Fav
         className={cn(
           ICON_STYLES[variant],
           'transition-all duration-200',
-          favorited ? 'fill-rose-500 text-rose-400' : 'text-white/75',
+          favorited ? 'fill-rose-fill text-rose' : 'text-foreground/75',
           // 请求在途时轻微收缩，给出“已受理”的即时反馈。
           pending && 'scale-90'
         )}

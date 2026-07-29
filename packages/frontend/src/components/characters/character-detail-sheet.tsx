@@ -105,7 +105,7 @@ export function CharacterDetailSheet({
 
       {/* 预览卡：占屏 75dvh 的沉浸式弹窗 */}
       <div
-        className="absolute inset-x-0 bottom-0 mx-auto flex w-[calc(100vw-1.5rem)] max-w-[430px] flex-col overflow-hidden rounded-t-[30px] border border-white/10 bg-[#0f0b16]/95 shadow-[0_-20px_80px_rgba(0,0,0,0.55)]"
+        className="absolute inset-x-0 bottom-0 mx-auto flex w-[calc(100vw-1.5rem)] max-w-[430px] flex-col overflow-hidden rounded-t-[30px] border border-border bg-popover/95 shadow-[0_-20px_80px_rgba(0,0,0,0.55)]"
         style={{
           height: '75dvh',
           transform: visible ? `translateY(${dragY}px)` : 'translateY(100%)',
@@ -118,7 +118,7 @@ export function CharacterDetailSheet({
       >
         {/* 拖拽把手 */}
         <div className="flex shrink-0 justify-center pb-1 pt-2.5">
-          <div className="h-1 w-10 rounded-full bg-white/25" />
+          <div className="h-1 w-10 rounded-full bg-muted-foreground/40" />
         </div>
 
         {/* 可滚动主体 */}
@@ -126,7 +126,7 @@ export function CharacterDetailSheet({
           {/* Hero 图 */}
           <div className="relative aspect-[3/4] max-h-[42dvh] w-full overflow-hidden">
             {isLoading ? (
-              <div className="h-full w-full animate-pulse bg-white/5" />
+              <div className="h-full w-full animate-pulse bg-secondary" />
             ) : hasAvatar ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -139,7 +139,7 @@ export function CharacterDetailSheet({
             )}
 
             {/* 底部渐变压暗，承接名字/标签 */}
-            <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-[#0f0b16] via-[#0f0b16]/70 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-popover via-popover/70 to-transparent" />
 
             {/* 关闭按钮 */}
             <button
@@ -179,7 +179,7 @@ export function CharacterDetailSheet({
           {isLoading ? (
             <div className="flex flex-col gap-3 px-5 pt-5">
               {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-3 animate-pulse rounded bg-white/8" />
+                <div key={i} className="h-3 animate-pulse rounded bg-secondary" />
               ))}
             </div>
           ) : character ? (
@@ -189,16 +189,16 @@ export function CharacterDetailSheet({
             >
               {/* 角色简介 */}
               <section>
-                <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-white/40">
+                <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                   <Sparkles className="h-3 w-3" />
                   角色简介
                 </p>
                 {description ? (
-                  <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-white/80">
+                  <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-foreground/90">
                     {description}
                   </p>
                 ) : (
-                  <p className="text-[13px] leading-relaxed text-white/45">
+                  <p className="text-[13px] leading-relaxed text-muted-foreground">
                     这个角色还没有公开简介，进入后直接开始探索 TA 的世界。
                   </p>
                 )}
@@ -210,7 +210,7 @@ export function CharacterDetailSheet({
                   <button
                     type="button"
                     onClick={() => setGreetingOpen((v) => !v)}
-                    className="flex w-full items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-white/40"
+                    className="flex w-full items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground"
                   >
                     <span className="flex items-center gap-1.5">
                       <Quote className="h-3 w-3" />
@@ -223,8 +223,8 @@ export function CharacterDetailSheet({
                     />
                   </button>
                   {greetingOpen && (
-                    <blockquote className="mt-2.5 rounded-2xl border border-white/10 border-l-2 border-l-primary/60 bg-white/[0.03] px-4 py-3">
-                      <p className="whitespace-pre-wrap text-[13px] italic leading-relaxed text-white/75">
+                    <blockquote className="mt-2.5 rounded-2xl border border-border border-l-2 border-l-primary/60 bg-card px-4 py-3">
+                      <p className="whitespace-pre-wrap text-[13px] italic leading-relaxed text-foreground/80">
                         {greeting}
                       </p>
                     </blockquote>
@@ -237,7 +237,7 @@ export function CharacterDetailSheet({
 
         {/* 固定底部：先看看别的 / 进入角色 */}
         <div
-          className="shrink-0 border-t border-white/10 bg-[#0f0b16]/95 px-5 py-3 backdrop-blur-md"
+          className="shrink-0 border-t border-border bg-popover/95 px-5 py-3 backdrop-blur-md"
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
         >
           <div className="flex items-center gap-3">
@@ -245,7 +245,7 @@ export function CharacterDetailSheet({
             <button
               type="button"
               onClick={onClose}
-              className="h-12 shrink-0 rounded-2xl border border-white/12 bg-white/5 px-5 text-[14px] font-medium text-white/70 transition-colors hover:bg-white/10 active:scale-[0.98]"
+              className="h-12 shrink-0 rounded-2xl border border-border bg-card px-5 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-secondary active:scale-[0.98]"
             >
               {entering ? '取消进入' : '先看看别的'}
             </button>
@@ -253,14 +253,14 @@ export function CharacterDetailSheet({
               type="button"
               disabled={!character || entering}
               onClick={() => character && onEnter(character.id)}
-              className="relative flex h-12 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-[15px] font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all active:scale-[0.98] disabled:opacity-70"
+              className="relative flex h-12 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-2xl bg-gradient-to-r from-primary to-rose text-[15px] font-semibold text-primary-foreground shadow-lg shadow-[0_10px_30px_hsl(var(--glow)/0.3)] transition-all active:scale-[0.98] disabled:opacity-70"
             >
               <Sparkles className={`h-4 w-4 ${entering ? 'animate-spin' : ''}`} />
               {entering ? '正在进入…' : '进入角色'}
               {entering && (
                 <span className="absolute inset-x-3 bottom-1 h-1 overflow-hidden rounded-full bg-black/20">
                   <span
-                    className="block h-full w-2/5 rounded-full bg-white/85 shadow-[0_0_8px_rgba(255,255,255,0.7)]"
+                    className="block h-full w-2/5 rounded-full bg-primary-foreground/85 shadow-[0_0_8px_hsl(var(--primary-foreground)/0.7)]"
                     style={{ animation: 'character-entry-progress 1.35s ease-in-out infinite' }}
                   />
                 </span>
