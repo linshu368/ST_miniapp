@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+  parseCharacterFreeChatQuotaLimit,
+} from '@miniapp/shared';
+import {
   CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   isQuotaTrackableCharacterId,
   parseFreeQuotaExhaustedDialogConfig,
@@ -19,8 +23,15 @@ describe('character free chat quota pricing', () => {
     expect(resolveEffectiveModelMarkup(1.5, 3, false)).toBe(1.5);
   });
 
-  it('uses a 50-round limit', () => {
-    expect(CHARACTER_FREE_CHAT_QUOTA_LIMIT).toBe(50);
+  it('defaults to a 40-round limit when runtime_config is missing', () => {
+    expect(CHARACTER_FREE_CHAT_QUOTA_LIMIT).toBe(40);
+    expect(DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT).toBe(40);
+    expect(parseCharacterFreeChatQuotaLimit(null)).toBe(40);
+    expect(parseCharacterFreeChatQuotaLimit(40)).toBe(40);
+    expect(parseCharacterFreeChatQuotaLimit(25)).toBe(25);
+    expect(parseCharacterFreeChatQuotaLimit(0)).toBe(40);
+    expect(parseCharacterFreeChatQuotaLimit(-1)).toBe(40);
+    expect(parseCharacterFreeChatQuotaLimit(3.5)).toBe(40);
   });
 });
 
@@ -57,13 +68,13 @@ describe('free quota exhausted dialog config', () => {
 
   it('falls back to safe defaults for missing or invalid config', () => {
     expect(parseFreeQuotaExhaustedDialogConfig(null)).toMatchObject({
-      title: '▎ 和「{characterName}」的 50 轮免费时光结束了',
+      title: '▎ 和「{characterName}」的 40 轮免费时光结束了',
     });
     expect(
       parseFreeQuotaExhaustedDialogConfig({
         title: '',
         description: '后续聊天将消耗星尘。',
       })
-    ).toMatchObject({ title: '▎ 和「{characterName}」的 50 轮免费时光结束了' });
+    ).toMatchObject({ title: '▎ 和「{characterName}」的 40 轮免费时光结束了' });
   });
 });

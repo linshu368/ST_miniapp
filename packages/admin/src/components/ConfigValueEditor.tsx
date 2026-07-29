@@ -33,11 +33,12 @@ export function ConfigValueEditor(props: {
 }) {
   if (
     props.configKey === 'miniapp_new_user_signup_bonus_credits' ||
-    props.configKey === 'miniapp_daily_checkin_bonus_credits'
+    props.configKey === 'miniapp_daily_checkin_bonus_credits' ||
+    props.configKey === 'miniapp_character_free_chat_quota_limit'
   ) {
     return (
       <InputNumber
-        min={0}
+        min={props.configKey === 'miniapp_character_free_chat_quota_limit' ? 1 : 0}
         precision={0}
         value={typeof props.value === 'number' ? props.value : 0}
         disabled={props.disabled}
@@ -119,7 +120,7 @@ export function ConfigValueEditor(props: {
         ))}
         {(
           [
-            ['freeQuotaExhausted', '免费模型超出 50 轮'],
+            ['freeQuotaExhausted', '免费模型超出免费轮次'],
             ['standard', '标准档'],
             ['premium', '旗舰档'],
           ] as const

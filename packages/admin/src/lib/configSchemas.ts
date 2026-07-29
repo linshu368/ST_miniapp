@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
@@ -12,6 +13,7 @@ import { z } from 'zod';
 export const managedConfigKeys = [
   'miniapp_new_user_signup_bonus_credits',
   'miniapp_daily_checkin_bonus_credits',
+  'miniapp_character_free_chat_quota_limit',
   'miniapp_payment_plans',
   'miniapp_recharge_page_config',
   'miniapp_free_quota_exhausted_dialog_config',
@@ -23,6 +25,7 @@ export const managedConfigKeys = [
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 
 const nonnegativeInteger = z.number().int().nonnegative();
+const positiveInteger = z.number().int().positive();
 export { LlmPricingConfigSchema };
 
 const EditableModelCatalogModelSchema = z.object({
@@ -55,6 +58,7 @@ export const EditableModelCatalogSchema = z.object({
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
   miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
+  miniapp_character_free_chat_quota_limit: positiveInteger,
   miniapp_payment_plans: PaymentPlansSchema,
   miniapp_recharge_page_config: RechargePageConfigSchema,
   miniapp_free_quota_exhausted_dialog_config: FreeQuotaExhaustedDialogConfigSchema,
@@ -77,6 +81,11 @@ export const configMetadata: Record<
     description: '用户每次满足签到间隔后获得的 bonus 星尘。',
     defaultValue: 40,
   },
+  miniapp_character_free_chat_quota_limit: {
+    label: '角色卡免费对话轮次',
+    description: '免费模型在单张角色卡上可免费用的对话轮次；超出后按扣费逻辑计费。',
+    defaultValue: DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
+  },
   miniapp_payment_plans: {
     label: '充值套餐',
     description: '星尘商店展示并用于下单校验的正式套餐。',
@@ -89,7 +98,8 @@ export const configMetadata: Record<
   },
   miniapp_free_quota_exhausted_dialog_config: {
     label: '免费额度耗尽弹窗',
-    description: '角色卡 50 轮免费额度耗尽后自动展示 3 秒的标题和说明文案。',
+    description:
+      '角色卡免费额度耗尽后自动展示的标题和说明文案；轮次数请与「角色卡免费对话轮次」保持一致。',
     defaultValue: DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   },
   llm_model_catalog: {
