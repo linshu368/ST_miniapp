@@ -174,12 +174,18 @@ export async function POST(request: NextRequest) {
     }
 
     stage = 'build_expire_cookies';
-    const expireHeaders = buildExpireSetCookieHeaders(request.headers.get('cookie'), keepNames);
+    const {
+      headers: expireHeaders,
+      orphanTotal,
+      orphanExpired,
+    } = buildExpireSetCookieHeaders(request.headers.get('cookie'), keepNames);
     const expireHeaderBytes = expireHeaders.reduce((sum, h) => sum + h.length, 0);
     log('build_expire_cookies', {
       expireHeaderCount: expireHeaders.length,
       expireHeaderBytes,
-      orphanNameCount: expireHeaders.length / 4,
+      orphanTotal,
+      orphanExpired,
+      orphanRemaining: orphanTotal - orphanExpired,
     });
 
     stage = 'append_set_cookie';
@@ -193,6 +199,9 @@ export async function POST(request: NextRequest) {
       totalMs: Date.now() - startedAt,
       expireHeaderCount: expireHeaders.length,
       expireHeaderBytes,
+      orphanTotal,
+      orphanExpired,
+      orphanRemaining: orphanTotal - orphanExpired,
       cookieHeaderBytes: cookieSummary.cookieHeaderBytes,
       stSessionCookieCount: cookieSummary.stSessionCookieCount,
     });
