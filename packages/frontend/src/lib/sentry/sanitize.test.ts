@@ -35,6 +35,16 @@ describe('sanitizeTelemetry', () => {
     });
   });
 
+  it('redacts Telegram init data at the start of a URL fragment', () => {
+    const input = {
+      url: 'https://example.test/#tgWebAppData=user%3D1%26auth_date%3D2%26hash%3Dsigned&tgWebAppVersion=8.0',
+    };
+
+    expect(sanitizeTelemetry(input)).toEqual({
+      url: 'https://example.test/#tgWebAppData=[Filtered]&tgWebAppVersion=8.0',
+    });
+  });
+
   it('sanitizes arrays without mutating the original value', () => {
     const input = {
       headers: [{ Cookie: 'session=secret' }, { accept: 'application/json' }],
