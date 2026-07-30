@@ -1,10 +1,39 @@
+import * as Sentry from '@sentry/nextjs';
 import type { ApiResponse } from '@miniapp/shared';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
+import { sendSentryLog } from '@/lib/sentry/client';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
 
 const log = createLogger('api');
+
+function createRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function recordFailedRequest(
+  requestId: string,
+  path: string,
+  method: string,
+  status: number
+): void {
+  Sentry.addBreadcrumb({
+    category: 'http',
+    level: 'error',
+    message: `${method} ${path}`,
+    data: { requestId, status },
+  });
+  sendSentryLog('error', 'api.request_failed', {
+    requestId,
+    path,
+    method,
+    status,
+  });
+}
 
 export class ApiClientError extends Error {
   constructor(
@@ -23,6 +52,8 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
 
   const initData = getRawInitData();
   const headers = new Headers(options?.headers);
+  const requestId = createRequestId();
+  headers.set('X-Request-Id', requestId);
   if (options?.body) {
     headers.set('Content-Type', 'application/json');
   }
@@ -30,11 +61,15 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
 
   log.debug(`Fetching ${url}`, { hasInitData: !!initData });
 
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(url, { ...options, headers }).catch((error: unknown) => {
+    recordFailedRequest(requestId, path, options?.method ?? 'GET', 0);
+    throw error;
+  });
   const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
 
   if (!res.ok) {
     log.error(`Error ${res.status} for ${url}:`, json);
+    recordFailedRequest(requestId, path, options?.method ?? 'GET', res.status);
     if (json && !json.success) {
       throw new ApiClientError(json.error.message, res.status, json.error.code);
     }
@@ -65,14 +100,20 @@ export async function apiStreamClient(
 
   const initData = getRawInitData();
   const headers = new Headers(options?.headers);
+  const requestId = createRequestId();
+  headers.set('X-Request-Id', requestId);
   if (options?.body) {
     headers.set('Content-Type', 'application/json');
   }
   if (initData) headers.set(INIT_DATA_HEADER, initData);
 
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(url, { ...options, headers }).catch((error: unknown) => {
+    recordFailedRequest(requestId, path, options.method ?? 'GET', 0);
+    throw error;
+  });
 
   if (!res.ok) {
+    recordFailedRequest(requestId, path, options.method ?? 'GET', res.status);
     throw new Error(`API error: ${res.status}`);
   }
 

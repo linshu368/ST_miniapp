@@ -69,6 +69,7 @@ export async function buildApp() {
       'Content-Type',
       'Authorization',
       'X-Init-Data',
+      'X-Request-Id',
       'X-CS-Admin-Token',
       'X-CS-Operator-Id',
       'X-Bot-Internal-Secret',

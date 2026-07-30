@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { withSentryConfig } from '@sentry/nextjs';
 
 // Dev: Next.js proxies ST paths so the iframe is same-origin (avoids X-Frame-Options
 //   block). Enabled ONLY when ST_LOCAL_URL is set (local dev).
@@ -89,6 +90,10 @@ function prodStRewrites() {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const sentryRelease = process.env.SENTRY_RELEASE || process.env.VERCEL_GIT_COMMIT_SHA;
+const hasSentryUploadConfig = Boolean(
+  process.env.SENTRY_ORG && process.env.SENTRY_PROJECT && process.env.SENTRY_AUTH_TOKEN
+);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -127,4 +132,27 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  release: {
+    name: sentryRelease,
+    create: hasSentryUploadConfig,
+  },
+  sourcemaps: {
+    disable: !hasSentryUploadConfig,
+    deleteSourcemapsAfterUpload: true,
+  },
+  telemetry: false,
+  silent: !hasSentryUploadConfig,
+  webpack: {
+    autoInstrumentServerFunctions: false,
+    autoInstrumentMiddleware: false,
+    autoInstrumentAppDirectory: false,
+    treeshake: {
+      removeDebugLogging: true,
+      excludeReplayIframe: false,
+    },
+  },
+});
