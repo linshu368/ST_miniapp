@@ -5,9 +5,11 @@
  *   1. 从客户端请求中读取 X-Init-Data（TG 身份）
  *   2. 代理转发到 backend POST /api/bridge/st-session
  *   3. 将 st_cookie 原样返回给客户端（客户端用 document.cookie 写入）
+ *   4. 顺带 Set-Cookie 过期请求里残留的旧 ST session（含 HttpOnly，JS 清不掉）
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { buildExpireSetCookieHeaders, pickStSessionPairs } from '@/lib/bridge/st-cookies';
 
 // Scheme Y (Vercel edge): NEXT_PUBLIC_API_URL may be empty when client-side calls
 // go through same-origin Vercel rewrites. Fall back to the nginx gateway URL
@@ -45,5 +47,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json(body);
+  const response = NextResponse.json(body);
+  const keepNames = pickStSessionPairs(body.data.st_cookie).map((p) => p.name);
+  for (const setCookie of buildExpireSetCookieHeaders(request.headers.get('cookie'), keepNames)) {
+    response.headers.append('Set-Cookie', setCookie);
+  }
+  return response;
 }
