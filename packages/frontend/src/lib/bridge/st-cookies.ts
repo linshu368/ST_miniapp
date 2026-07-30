@@ -80,13 +80,31 @@ export function writeStCookies(cookieHeader: string): void {
 }
 
 /**
+ * Cap orphan names expired per response.
+ *
+ * Each orphan emits several Set-Cookie variants. Expiring ~90 orphans at once
+ * produced ~376 Set-Cookie headers (~21KB) and Vercel returned 500 *after* the
+ * route handler finished (`stage=done` but HTTP 500). Keep responses small;
+ * remaining orphans clear on later visits.
+ */
+export const MAX_EXPIRE_ORPHAN_NAMES = 16;
+
+export type ExpireSetCookieResult = {
+  headers: string[];
+  orphanTotal: number;
+  orphanExpired: number;
+};
+
+/**
  * Build Set-Cookie lines that expire orphan ST session cookies on the request.
  * Needed because HttpOnly cookies (set by ST via rewrite) cannot be cleared from JS.
  */
 export function buildExpireSetCookieHeaders(
   requestCookieHeader: string | null,
-  keepNames: Iterable<string>
-): string[] {
+  keepNames: Iterable<string>,
+  options?: { maxOrphans?: number }
+): ExpireSetCookieResult {
+  const maxOrphans = options?.maxOrphans ?? MAX_EXPIRE_ORPHAN_NAMES;
   const keep = new Set(keepNames);
   const orphans = new Set<string>();
   for (const { name } of parseCookiePairs(requestCookieHeader ?? '')) {
@@ -95,12 +113,18 @@ export function buildExpireSetCookieHeaders(
     }
   }
 
+  const orphanNames = [...orphans].sort();
+  const expiredNames = orphanNames.slice(0, Math.max(0, maxOrphans));
   const headers: string[] = [];
-  for (const name of orphans) {
+  for (const name of expiredNames) {
+    // Match writeStCookies / ST rewrite attrs; skip SameSite=Lax to cut header count.
     headers.push(`${name}=; Path=/; Max-Age=0`);
-    headers.push(`${name}=; Path=/; Max-Age=0; SameSite=Lax`);
     headers.push(`${name}=; Path=/; Max-Age=0; SameSite=None; Secure`);
     headers.push(`${name}=; Path=/; Max-Age=0; SameSite=None; Secure; Partitioned`);
   }
-  return headers;
+  return {
+    headers,
+    orphanTotal: orphanNames.length,
+    orphanExpired: expiredNames.length,
+  };
 }

@@ -33,7 +33,7 @@ describe('pickStSessionPairs', () => {
 
 describe('buildExpireSetCookieHeaders', () => {
   it('expires orphan session cookies but keeps the active ones', () => {
-    const headers = buildExpireSetCookieHeaders(
+    const { headers, orphanTotal, orphanExpired } = buildExpireSetCookieHeaders(
       'session-aaaa1111=old; session-aaaa1111.sig=oldsig; session-bbbb2222=cur; session-bbbb2222.sig=cursig; sentry-sc=x',
       ['session-bbbb2222', 'session-bbbb2222.sig']
     );
@@ -43,10 +43,32 @@ describe('buildExpireSetCookieHeaders', () => {
     expect(joined).toContain('session-aaaa1111.sig=; Path=/; Max-Age=0');
     expect(joined).not.toContain('session-bbbb2222=;');
     expect(joined).not.toContain('sentry-sc=;');
+    expect(orphanTotal).toBe(2);
+    expect(orphanExpired).toBe(2);
+  });
+
+  it('caps orphan expiry so response Set-Cookie stays within platform limits', () => {
+    const many = Array.from({ length: 40 }, (_, i) => {
+      const hex = i.toString(16).padStart(8, '0');
+      return `session-${hex}=v; session-${hex}.sig=s`;
+    }).join('; ');
+
+    const { headers, orphanTotal, orphanExpired } = buildExpireSetCookieHeaders(many, [], {
+      maxOrphans: 16,
+    });
+
+    expect(orphanTotal).toBe(80);
+    expect(orphanExpired).toBe(16);
+    // 16 names × 3 attribute variants
+    expect(headers).toHaveLength(48);
   });
 
   it('parses empty cookie header safely', () => {
-    expect(buildExpireSetCookieHeaders(null, [])).toEqual([]);
+    expect(buildExpireSetCookieHeaders(null, [])).toEqual({
+      headers: [],
+      orphanTotal: 0,
+      orphanExpired: 0,
+    });
     expect(parseCookiePairs('')).toEqual([]);
   });
 });
