@@ -29,6 +29,7 @@ import {
   harvestStIframeStallDiagnostics,
 } from '@/lib/bridge/iframe-timing';
 import { reportChatConcurrencyEvent } from '@/lib/bridge/chat-concurrency-debug';
+import { cancelTavernTelemetry, setBridgeTelemetryCharacter } from '@/lib/sentry/bridge-telemetry';
 
 // [iframe-timing] TEMP DEBUG: 失败路径停摆上报阈值。beacon 原本只在 select 成功后发送，
 // 卡死场景零遥测无法定位。两级停摆定时器把卡死样本的 timeline 抢救回来：
@@ -134,6 +135,7 @@ export default function TavernChatPage() {
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
     if (!characterId) return;
+    setBridgeTelemetryCharacter(characterId);
     resetPageTiming();
     markTiming('page_mount');
     // [iframe-timing] TEMP DEBUG: 闸门停摆上报——点卡后 15s 闸门仍未放行即 flush 部分
@@ -209,7 +211,10 @@ export default function TavernChatPage() {
         await prefetchEnsureStCharacter(characterId);
         markTiming('ensure_end'); // [iframe-timing] TEMP DEBUG
       } catch (err) {
-        markTiming('ensure_end'); // [iframe-timing] TEMP DEBUG
+        markTiming(
+          'ensure_end',
+          err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160)
+        ); // [iframe-timing] TEMP DEBUG
         console.error('[TavernChatPage] ensureCharacter failed:', err);
       }
       if (cancelled) return;
@@ -252,7 +257,10 @@ export default function TavernChatPage() {
           console.error('[TavernChatPage] selectCharacter failed:', err);
           // [iframe-timing] TEMP DEBUG: 失败路径也 flush 完整 timeline（原本只在成功时上报，
           // 卡死/超时/拒绝全是遥测盲区），带错误码与错误信息。
-          markTiming('select_error');
+          markTiming(
+            'select_error',
+            err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160)
+          );
           flushIframeTiming({
             characterId,
             bridgeStatusAtGate,
@@ -269,6 +277,7 @@ export default function TavernChatPage() {
 
     return () => {
       cancelled = true;
+      cancelTavernTelemetry();
       window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
       reportChatConcurrencyEvent({
         source: 'chat-page',
