@@ -28,6 +28,7 @@ if (isSentryEnabled) {
     replaysOnErrorSampleRate: 1.0,
     enableLogs: true,
     beforeSend: (event) => sanitizeTelemetry(event),
+    beforeSendTransaction: (event) => sanitizeTelemetry(event),
     beforeBreadcrumb: (breadcrumb) => sanitizeTelemetry(breadcrumb),
   });
   Sentry.addEventProcessor((event) =>

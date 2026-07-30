@@ -16,7 +16,7 @@ const SENSITIVE_KEY_NAMES = new Set([
 ]);
 
 const SENSITIVE_QUERY_PARAM =
-  /([?&](?:authorization|token|access_token|refresh_token|id_token|secret|password|x-init-data|rawInitData|tgWebAppData)=)[^&#\s]*/gi;
+  /([?&#](?:authorization|token|access_token|refresh_token|id_token|secret|password|x-init-data|rawInitData|tgWebAppData)=)[^&#\s]*/gi;
 
 function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, '');
