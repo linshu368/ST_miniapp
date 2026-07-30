@@ -68,7 +68,17 @@ export function STIframe() {
         });
 
         if (!res.ok) {
-          throw new Error(`init-st-session failed: ${res.status}`);
+          let detail = '';
+          try {
+            detail = (await res.text()).slice(0, 500);
+          } catch {
+            detail = '';
+          }
+          console.error('[STIframe] init-st-session non-ok', {
+            status: res.status,
+            detail,
+          });
+          throw new Error(`init-st-session failed: ${res.status}${detail ? ` ${detail}` : ''}`);
         }
 
         const json: StSessionResponse = await res.json();
