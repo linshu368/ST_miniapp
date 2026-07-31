@@ -134,6 +134,8 @@ export interface CreatePaymentOrderData {
   order: PaymentOrder;
   /** JLPay 返回的支付目标：微信 scheme 或 H5 跳转链接 */
   pay_url: string;
+  /** 可直接唤起支付宝 App 的 scheme；解析失败时缺省，前端回退到 pay_url */
+  pay_scheme?: string;
 }
 
 // ==== GET /api/payment/orders/:id ====
