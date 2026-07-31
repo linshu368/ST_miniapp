@@ -3,10 +3,7 @@ import { describe, it } from 'node:test';
 
 import { splitBoldSegments } from '../src/patches/markdown-bold-fallback.js';
 import { resolveReasoningUiState } from '../src/patches/reasoning-stream-ui.js';
-import {
-  resolveMiniappAppearance,
-  shouldExpandComposer,
-} from '../src/patches/mobile-chat-theme.js';
+import { shouldExpandComposer } from '../src/patches/mobile-chat-theme.js';
 import { resolveInsufficientBalanceEvent } from '../src/patches/billing-error-bridge.js';
 
 describe('splitBoldSegments', () => {
@@ -37,15 +34,6 @@ describe('resolveReasoningUiState', () => {
   it('does not expose empty reasoning blocks', () => {
     assert.equal(resolveReasoningUiState('done', false), 'idle');
     assert.equal(resolveReasoningUiState(undefined, false), 'idle');
-  });
-});
-
-describe('resolveMiniappAppearance', () => {
-  it('keeps light explicit and defaults invalid values to dark', () => {
-    assert.equal(resolveMiniappAppearance('dark'), 'dark');
-    assert.equal(resolveMiniappAppearance('light'), 'light');
-    assert.equal(resolveMiniappAppearance(null), 'dark');
-    assert.equal(resolveMiniappAppearance('system'), 'dark');
   });
 });
 

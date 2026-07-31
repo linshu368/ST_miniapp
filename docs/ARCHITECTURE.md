@@ -18,7 +18,7 @@
    - 行为定制 → `packages/st-extension`（构建产物注入 ST 扩展机制）
    - 视觉定制 → 外挂 `user.css`
    - 配置定制 → ST 自身 `config.yaml` / 环境变量 / provision 下发的 `settings.json`
-   - 【实测·例外已放开】**受控本地补丁**：仅限冷启动优化，要求最小 diff、逐行 `[miniapp-patch]` 注释标记、在 `vendor/sillytavern/NOTICE.md` 登记（含回滚文档）。当前仅 1 处：`public/script.js` 的 `firstLoadInit` 前后段串行网络调用 `Promise.all` 并行化（见 `docs/iframe-boot-firstloadinit-parallelization.md`）。审计命令：`rg "\[miniapp-patch\]" vendor/sillytavern/`。**未登记的 vendor 修改一律拦截。**
+   - 【实测·例外已放开】**受控本地补丁**：仅限已登记的冷启动优化与平台部署稳定性修复，要求最小 diff、逐行 `[miniapp-patch]` 注释标记、在 `vendor/sillytavern/NOTICE.md` 登记（含回滚说明）。部署稳定性例外包括 `src/users.js` 支持由 `ST_SESSION_COOKIE_NAME` 固定 session Cookie 名，避免 Railway 容器 hostname 随部署变化造成 Cookie 累积；该覆盖不修改 `os.hostname()`。审计命令：`rg "\[miniapp-patch\]" vendor/sillytavern/`。**未登记的 vendor 修改一律拦截。**
 
 2. **跨进程通信走契约层**：postMessage 走 `bridge-protocol`，REST 走共享契约（`@miniapp/shared/src/api/*`，12 个契约文件），DB 同步层类型走 `db-types`。禁止应用包内重复定义协议字段。
    - 【实测】独立 `api-contract` 包仍未拆出，职责留在 `shared/api`。

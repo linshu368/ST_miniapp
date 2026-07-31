@@ -131,6 +131,9 @@ ENV XDG_CONFIG_HOME=/tmp/.chromium \
 # --- ST runtime behavior ---
 # NODE_ENV=production mirrors the vendor SillyTavern Dockerfile.
 ENV NODE_ENV=production
+# Keep the ST cookie-session name stable across Railway container replacements.
+# `session` is also accepted by the frontend bridge cookie whitelist.
+ENV ST_SESSION_COOKIE_NAME=session
 # The 6 prescribed config overrides set listen=true + whitelistMode=false, which trips
 # ST's security guard (verifySecuritySettings) when the default admin user has no password:
 # ST refuses to start unless basicAuth/whitelist is on OR securityOverride is set. In this

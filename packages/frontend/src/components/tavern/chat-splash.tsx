@@ -173,9 +173,10 @@ export function ChatSplash({
     <div
       aria-live="polite"
       aria-busy={!ready}
-      className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden bg-[#0d100f] px-5 py-5 text-white"
+      className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden bg-background px-5 py-5 text-foreground"
       style={{
-        color: '#ffffff',
+        // 开屏盖在 ST iframe 之上，ST 注入的样式会串进来，这里显式钉住前景色。
+        color: 'hsl(var(--foreground))',
         colorScheme: 'dark',
         animation:
           phase === 'exiting'
@@ -189,7 +190,7 @@ export function ChatSplash({
           onClick={returnToLobby}
           disabled={returning}
           aria-label="取消进入并返回大厅"
-          className="absolute right-4 z-20 flex size-10 items-center justify-center rounded-full border border-white/15 bg-white/[0.04] text-xl font-light text-white/70 transition hover:border-white/30 hover:bg-white/[0.08] active:scale-95 disabled:opacity-50"
+          className="absolute right-4 z-20 flex size-10 items-center justify-center rounded-full border border-border bg-card text-xl font-light text-muted-foreground transition hover:border-primary/30 hover:bg-secondary active:scale-95 disabled:opacity-50"
           style={{ top: 'calc(env(safe-area-inset-top) + 1rem)' }}
         >
           ×
@@ -197,13 +198,13 @@ export function ChatSplash({
       )}
 
       {/* 保留原有装饰层，但改为克制的版式线条与纸面颗粒。 */}
-      <div className="pointer-events-none absolute inset-y-0 left-[11%] w-px bg-white/[0.055]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-[18%] h-px bg-white/[0.055]" />
+      <div className="pointer-events-none absolute inset-y-0 left-[11%] w-px bg-foreground/[0.055]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-[18%] h-px bg-foreground/[0.055]" />
       <div className="pointer-events-none absolute inset-0">
         {stars.map((s, i) => (
           <span
             key={i}
-            className="absolute rounded-full bg-white"
+            className="absolute rounded-full bg-foreground"
             style={{
               left: `${s.left}%`,
               top: `${s.top}%`,
@@ -216,18 +217,20 @@ export function ChatSplash({
       </div>
 
       <div className="absolute left-5 top-[calc(env(safe-area-inset-top)+1.35rem)] text-left">
-        <p className="text-[10px] font-semibold tracking-[0.28em] text-emerald-400">蜜镜 AI</p>
-        <p className="mt-1 text-[9px] tracking-[0.2em] text-white/28">CHARACTER SESSION</p>
+        <p className="text-[10px] font-semibold tracking-[0.28em] text-primary">蜜镜 AI</p>
+        <p className="mt-1 text-[9px] tracking-[0.2em] text-muted-foreground/70">
+          CHARACTER SESSION
+        </p>
       </div>
 
       <div className="relative flex w-full max-w-[22rem] flex-col items-center">
         {showSlowHint && !showStallHint && !error && phase === 'showing' && (
           <div
-            className="mb-4 w-full border-l-2 border-emerald-400 bg-white/[0.035] px-4 py-3 text-left"
+            className="mb-4 w-full border-l-2 border-primary bg-card px-4 py-3 text-left"
             style={{ animation: 'splash-fade-up 0.45s ease-out both' }}
           >
-            <p className="text-[12px] font-medium text-white/78">第一次见面，需要多等几秒</p>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-white/42">
+            <p className="text-[12px] font-medium text-foreground/80">第一次见面，需要多等几秒</p>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
               我们正在唤醒角色记忆和对话引擎。准备好后会自动进入，不用退出重试。
             </p>
           </div>
@@ -238,13 +241,13 @@ export function ChatSplash({
             progressVisible ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0'
           }`}
         >
-          <div className="mb-2 flex items-center justify-between text-[9px] tracking-[0.2em] text-white/38">
+          <div className="mb-2 flex items-center justify-between text-[9px] tracking-[0.2em] text-muted-foreground">
             <span>正在连接对话</span>
             <span>{ready ? '100%' : progress >= 90 ? '正在完成' : `${Math.floor(progress)}%`}</span>
           </div>
-          <div className="h-px overflow-hidden bg-white/12">
+          <div className="h-px overflow-hidden bg-border">
             <div
-              className="h-full bg-emerald-400"
+              className="h-full bg-primary"
               style={{
                 width: `${progress}%`,
                 transition: ready ? `width ${READY_FILL_MS}ms ease-out` : 'width 180ms linear',
@@ -253,10 +256,10 @@ export function ChatSplash({
           </div>
           {(showStallHint || error) && phase === 'showing' && (
             <div
-              className="mt-3 border border-white/10 bg-white/[0.035] px-3 py-3 text-center"
+              className="mt-3 border border-border bg-card px-3 py-3 text-center"
               style={{ animation: 'splash-fade-up 0.4s ease-out both' }}
             >
-              <p className="text-[12px] leading-relaxed text-white/48">
+              <p className="text-[12px] leading-relaxed text-muted-foreground">
                 {error ?? '连接时间比预期更久。可以继续等待，或返回大厅重新进入。'}
               </p>
               <div className="mt-3 flex justify-center gap-2">
@@ -265,7 +268,7 @@ export function ChatSplash({
                     type="button"
                     onClick={onRetry}
                     disabled={returning}
-                    className="min-h-10 rounded-full bg-emerald-500 px-5 py-2 text-[12px] font-medium text-white transition-colors hover:bg-emerald-400 disabled:opacity-55"
+                    className="min-h-10 rounded-full bg-primary px-5 py-2 text-[12px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-55"
                   >
                     重试
                   </button>
@@ -274,7 +277,7 @@ export function ChatSplash({
                   type="button"
                   onClick={returnToLobby}
                   disabled={returning}
-                  className="min-h-10 rounded-full border border-white/15 px-5 py-2 text-[12px] font-medium text-white/68 transition-colors hover:bg-white/[0.06] disabled:opacity-55"
+                  className="min-h-10 rounded-full border border-border px-5 py-2 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-55"
                 >
                   {returning ? '正在返回…' : '返回大厅'}
                 </button>
@@ -288,10 +291,10 @@ export function ChatSplash({
           className="relative w-fit"
           style={{ animation: 'splash-pop 0.65s cubic-bezier(0.22, 1, 0.36, 1) both' }}
         >
-          <span className="absolute -left-3 -top-3 text-[9px] font-medium tracking-[0.22em] text-white/32">
+          <span className="absolute -left-3 -top-3 text-[9px] font-medium tracking-[0.22em] text-muted-foreground/70">
             PORTRAIT / 01
           </span>
-          <div className="relative border border-white/[0.18] bg-[#151917] p-1.5">
+          <div className="relative border border-border bg-card p-1.5">
             <div
               className="relative aspect-[3/4] overflow-hidden"
               style={{ width: 'clamp(8rem, 25vh, 12rem)', background: posterGradient }}
@@ -315,19 +318,22 @@ export function ChatSplash({
               ) : null}
             </div>
           </div>
-          <div className="absolute -bottom-2 -right-2 size-5 border-b border-r border-emerald-400/70" />
+          <div className="absolute -bottom-2 -right-2 size-5 border-b border-r border-primary/70" />
         </div>
 
         {/* 名字、标签和描述全部保留，以简洁的信息版式呈现。 */}
         <div className="mt-[clamp(1rem,2.8vh,1.75rem)] flex max-w-[86vw] flex-col items-center text-center">
           <h1
-            className="text-[24px] font-semibold tracking-[0.08em] text-white sm:text-[28px]"
-            style={{ color: '#ffffff', animation: 'splash-fade-up 0.5s ease-out 0.2s both' }}
+            className="text-[24px] font-semibold tracking-[0.08em] text-foreground sm:text-[28px]"
+            style={{
+              color: 'hsl(var(--foreground))',
+              animation: 'splash-fade-up 0.5s ease-out 0.2s both',
+            }}
           >
             {name}
           </h1>
 
-          <div className="mt-3 h-px w-10 bg-emerald-400/80" />
+          <div className="mt-3 h-px w-10 bg-primary/80" />
 
           {tags.length > 0 && (
             <div
@@ -335,7 +341,7 @@ export function ChatSplash({
               style={{ animation: 'splash-fade-up 0.5s ease-out 0.35s both' }}
             >
               {tags.map((tag) => (
-                <span key={tag} className="text-[10px] tracking-[0.16em] text-white/48">
+                <span key={tag} className="text-[10px] tracking-[0.16em] text-muted-foreground">
                   {tag}
                 </span>
               ))}
@@ -344,7 +350,7 @@ export function ChatSplash({
 
           {description && (
             <p
-              className="mt-3 line-clamp-2 max-w-[19rem] text-[12px] leading-5 text-white/38"
+              className="mt-3 line-clamp-2 max-w-[19rem] text-[12px] leading-5 text-muted-foreground"
               style={{ animation: 'splash-fade-up 0.5s ease-out 0.5s both' }}
             >
               {description}
@@ -362,14 +368,14 @@ export function ChatSplash({
           {[0, 1, 2].map((i) => (
             <span
               key={i}
-              className="size-1 rounded-full bg-emerald-400"
+              className="size-1 rounded-full bg-primary"
               style={{
                 animation: `splash-dot 1.3s ease-in-out ${i * 0.18}s infinite`,
               }}
             />
           ))}
         </div>
-        <p className="text-[9px] tracking-[0.28em] text-white/28">正在进入 TA 的世界</p>
+        <p className="text-[9px] tracking-[0.28em] text-muted-foreground/70">正在进入 TA 的世界</p>
       </div>
     </div>
   );

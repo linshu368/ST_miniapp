@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from 'react';
 import * as Sentry from '@sentry/nextjs';
 import { useBridgeContext } from './bridge-provider';
+import { writeStCookies } from '@/lib/bridge/st-cookies';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { markTiming } from '@/lib/bridge/iframe-timing'; // [iframe-timing] TEMP DEBUG
 import { createBootSessionId } from '@/lib/bridge/boot-session';
@@ -87,7 +88,17 @@ export function STIframe() {
         });
 
         if (!res.ok) {
-          throw new Error(`init-st-session failed: ${res.status}`);
+          let detail = '';
+          try {
+            detail = (await res.text()).slice(0, 500);
+          } catch {
+            detail = '';
+          }
+          console.error('[STIframe] init-st-session non-ok', {
+            status: res.status,
+            detail,
+          });
+          throw new Error(`init-st-session failed: ${res.status}${detail ? ` ${detail}` : ''}`);
         }
 
         const json: StSessionResponse = await res.json();
@@ -199,18 +210,4 @@ export function STIframe() {
       )}
     </>
   );
-}
-
-function writeStCookies(cookieHeader: string): void {
-  // Telegram Mini App 运行在受限/被分区（partitioned）的 WebView / 三方 iframe 上下文
-  // （尤其 Telegram Web 把小程序套在 web.telegram.org 的 iframe 里）。此时 SameSite=Lax
-  // 的 cookie 会被当作三方 cookie 拦截/隔离，导致 ST iframe(/tavern/) 请求不带 connect.sid
-  // → ST 302 到 /login，对话页空白。改用 SameSite=None; Secure 让 cookie 在嵌入上下文也能
-  // 携带；Partitioned(CHIPS) 兼容"三方 cookie 分区"的浏览器（不支持该属性的会忽略，
-  // 退化为 SameSite=None; Secure，同源请求照常携带，无回归风险）。
-  for (const part of cookieHeader.split(';')) {
-    const cookie = part.trim();
-    if (!cookie || !cookie.includes('=')) continue;
-    document.cookie = `${cookie}; Path=/; SameSite=None; Secure; Partitioned`;
-  }
 }

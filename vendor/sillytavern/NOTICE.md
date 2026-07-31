@@ -11,7 +11,7 @@ Do NOT modify files in this directory directly. See ARCHITECTURE.md §1 for deta
 
 ## Local patches (miniapp)
 
-本 vendored 副本含以下**受控**本地改动（例外于只读约束，经 ARCHITECTURE 铁律放开，仅限冷启动优化）。
+本 vendored 副本含以下**受控**本地改动（例外于只读约束，均经 ARCHITECTURE 铁律登记）。
 审计：`rg "\[miniapp-patch\]" vendor/sillytavern/`。
 
 | 文件                         | 位置               | 改动                                                                                                                                                                                                                    | 原因                                                                  | 回滚                                                             |
@@ -30,6 +30,7 @@ Do NOT modify files in this directory directly. See ARCHITECTURE.md §1 for deta
 | public/script.js             | 模块顶层           | TEMP DEBUG 停摆定位探针（miniapp_fast_boot 门控）：fetch 包装记录请求生命周期 + 静默异常捕获，暴露 `__miniappFetchLog` / `__miniappBootErrors` 供父窗口收割；捕获坏模块图致命签名时向父窗口发 `boot-fatal` 触发立即重载 | boot 楔死请求定位 + 坏模块图自愈                                      | 随 [iframe-timing] 埋点整体移除                                  |
 | public/index.html            | 消息提示音         | `audio#audio_message_sound` 增 `preload="none"`                                                                                                                                                                         | 代理链残缺 206 触发 WebKit 每 ~75ms 无限重试风暴（疑似坏模块图诱因）  | 移除 preload 属性                                                |
 | public/index.html            | 模块脚本引导       | 5 个并列 `<script type="module">` 根合并为单一内联根，静态 import 按原文档序（monkey-patch → swiped-events → eventemitter → i18n → script.js）                                                                          | WebKit 全缓存冷启动下多根共享循环图求值失序 → TDZ → boot 死亡（根治） | 还原 5 行 `<script type="module" src=...>` 并删除内联块          |
+| src/users.js                 | session name       | 支持 `ST_SESSION_COOKIE_NAME` 显式覆盖；未配置时保留 hostname hash 回退                                                                                                                                                 | 固定域名长期累积部署相关 Cookie                                       | 删除环境变量分支，恢复仅按 hostname 生成                         |
 
 > 另注（非仓库内改动）：`ops/docker/Dockerfile.st-bundle` 在构建镜像时把 `public/index.html`
 > 的 `<base href="/">` 改写为 `/st-runtime/<内容哈希>/`（发布级资产命名空间，配合

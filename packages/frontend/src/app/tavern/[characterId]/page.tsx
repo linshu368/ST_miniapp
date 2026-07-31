@@ -385,11 +385,11 @@ export default function TavernChatPage() {
       <Dialog open={freeQuotaExhaustedOpen} onOpenChange={setFreeQuotaExhaustedOpen}>
         <DialogContent
           showCloseButton={false}
-          className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-white/20 bg-[#ef856d] text-[#24111a]"
+          className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-primary/40 bg-primary text-primary-foreground"
         >
           <DialogHeader className="items-stretch text-left">
             <DialogTitle className="leading-6">{exhaustedDialog.title}</DialogTitle>
-            <DialogDescription className="whitespace-pre-line pt-1 text-left leading-6 text-[#4b2026]">
+            <DialogDescription className="whitespace-pre-line pt-1 text-left leading-6 text-primary-foreground/80">
               {exhaustedDialog.description}
             </DialogDescription>
           </DialogHeader>

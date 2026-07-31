@@ -51,8 +51,8 @@ export function CharacterCard({
       disabled={disabled}
       onClick={() => onSelect(character.id)}
       className={cn(
-        'group flex h-full w-full flex-col overflow-hidden rounded-[16px] border border-white/10 bg-white/5 text-left shadow-lg',
-        'transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/20 hover:border-white/20 active:scale-95',
+        'group flex h-full w-full flex-col overflow-hidden rounded-[16px] border border-border bg-card text-left shadow-lg',
+        'transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl hover:shadow-[0_18px_40px_hsl(var(--glow)/0.2)] hover:border-primary/30 active:scale-95',
         'disabled:opacity-60'
       )}
       aria-label={`查看 ${character.name} 的详情`}
@@ -61,11 +61,11 @@ export function CharacterCard({
       <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden">
         {character.is_featured && (
           <span
-            className="absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-amber-200/70 bg-black/55 shadow-[0_0_18px_rgba(251,191,36,0.65)] backdrop-blur-sm"
+            className="absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-primary/70 bg-black/55 shadow-[0_0_18px_hsl(var(--glow)/0.65)] backdrop-blur-sm"
             title="热门角色"
             aria-label="热门角色"
           >
-            <Flame className="size-[18px] fill-orange-500 text-amber-200" aria-hidden="true" />
+            <Flame className="size-[18px] fill-primary/80 text-primary" aria-hidden="true" />
           </span>
         )}
         <div

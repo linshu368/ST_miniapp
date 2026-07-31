@@ -654,6 +654,14 @@ export function getPasswordSalt() {
  * @returns {string} The session name
  */
 export function getCookieSessionName() {
+  // [miniapp-patch] A stable explicit name prevents deploy-specific container
+  // hostnames from leaving a new pair of session cookies on every release.
+  // This only changes cookie-session's name; it does not mutate os.hostname().
+  const configuredName = process.env.ST_SESSION_COOKIE_NAME?.trim();
+  if (configuredName) {
+    return configuredName;
+  }
+
   // Get server hostname and hash it to generate a session suffix
   const hostname = os.hostname() || 'localhost';
   const suffix = crypto.createHash('sha256').update(hostname).digest('hex').slice(0, 8);
