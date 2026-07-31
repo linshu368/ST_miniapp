@@ -25,10 +25,8 @@ import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/p
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
-const PAYMENT_TYPES: PaymentType[] = [
-  // 'alipay', // 支付宝通道暂时停用
-  'wxpay',
-];
+// 微信侧厂商收银台只给扫码、不提供 App 唤起，暂时下掉
+const PAYMENT_TYPES: PaymentType[] = ['alipay'];
 
 export default function RechargePage() {
   return (
@@ -51,7 +49,7 @@ function RechargePageContent() {
   const createOrder = useCreatePaymentOrderMutation();
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
+  const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const plans = data?.plans ?? [];
