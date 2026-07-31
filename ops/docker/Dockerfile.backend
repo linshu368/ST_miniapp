@@ -126,6 +126,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${PORT:-3001}/health" >/dev/null 2>&1 || exit 1
 
 # tini as PID 1 (forwards signals to / reaps the tsx+node process tree). The long-running
-# process matches scripts.start's server (`tsx src/server.ts`); prisma codegen was done at build.
+# process matches scripts.start's server; Sentry preloads before Fastify/Pino/Prisma imports.
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["tsx", "src/server.ts"]
+CMD ["tsx", "--import", "./src/instrumentation.ts", "src/server.ts"]

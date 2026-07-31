@@ -41,6 +41,10 @@ export function markTimingAt(name: string, t: number, info?: string): void {
   recordBridgeTelemetryMark(name, info);
 }
 
+export function getTimingMark(name: string): number | undefined {
+  return marks.get(name);
+}
+
 /**
  * [iframe-timing] 只写 details 不写 marks：用于把「累计计数/结局」类信息挂到 beacon 的
  * details={...} 里，而不在 timeline 制造一个无意义的时间点（如自愈恢复累计计数 `recovery`）。
@@ -62,6 +66,7 @@ export function resetPageTiming(): void {
     // [iframe-timing] 失败路径遥测：停摆上报打点（每次进卡刷新）
     'gate_stall',
     'select_stall',
+    'chat_state_ready',
     'chat_ready',
     // [iframe-timing] round2: selectCharacter ST 端子相位（每次进卡刷新）
     'sel_start',

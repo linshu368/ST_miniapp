@@ -8,6 +8,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
+import * as Sentry from '@sentry/node';
 import { ok, fail } from '@miniapp/shared';
 import { deriveStHandle } from '@miniapp/shared';
 import type { GetLatestUserChatData, GetUserChatsData, UserChatListItem } from '@miniapp/shared';
@@ -20,6 +21,12 @@ import {
   latestChatForCharacter,
   latestChatPerCharacter,
 } from '../features/chats/effective-chats.js';
+import {
+  bindBackendUserContext,
+  captureBackendException,
+  getRequestTelemetryContext,
+  sendBackendSentryLog,
+} from '../lib/sentry.js';
 
 interface STRecentChatEntry {
   file_name: string;
@@ -82,11 +89,31 @@ export default async function chatsRoutes(app: FastifyInstance) {
       }
 
       const log = requestLogger(request.log, 'chats');
+      const requestTelemetry = getRequestTelemetryContext(request);
       try {
-        const dbUser = await getOrCreateDbUser(request.user);
+        const dbUser = await Sentry.startSpan(
+          { name: 'backend.user.resolve', op: 'db.query' },
+          () => getOrCreateDbUser(request.user!)
+        );
+        bindBackendUserContext(request.user.id.toString(), dbUser.id, characterId);
         const stHandle = deriveStHandle(request.user.id.toString());
-        const items = await loadCompletedChats(dbUser.id, stHandle, log);
+        const items = await Sentry.startSpan(
+          {
+            name: 'backend.chat.latest.load',
+            op: 'http.client',
+            attributes: { character_id: characterId },
+          },
+          () => loadCompletedChats(dbUser.id, stHandle, log)
+        );
         if (!items) {
+          sendBackendSentryLog('error', 'backend.latest_chat.failed', {
+            stage: 'latest_chat',
+            result: 'st_unavailable',
+            requestId: requestTelemetry.requestId,
+            journeyId: requestTelemetry.journeyId,
+            attemptId: requestTelemetry.attemptId,
+            characterId,
+          });
           return reply.status(502).send(fail('ST_UNAVAILABLE', 'Failed to fetch chat list'));
         }
         return reply.send(
@@ -96,6 +123,15 @@ export default async function chatsRoutes(app: FastifyInstance) {
         );
       } catch (err) {
         log.sys.error({ event: 'chats.latest.failed', err }, 'latest chat lookup failed');
+        captureBackendException(err, request, 'latest_chat', { characterId });
+        sendBackendSentryLog('error', 'backend.latest_chat.failed', {
+          stage: 'latest_chat',
+          result: 'failed',
+          requestId: requestTelemetry.requestId,
+          journeyId: requestTelemetry.journeyId,
+          attemptId: requestTelemetry.attemptId,
+          characterId,
+        });
         return reply.status(500).send(fail('INTERNAL_ERROR', 'Failed to fetch latest chat'));
       }
     }

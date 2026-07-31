@@ -16,4 +16,4 @@ done
 cd /home/node/app/packages/sync-engine
 # Invoke tsx's cli.mjs directly (via the pnpm symlink) to avoid the install-time bin shim
 # which hardcodes absolute NODE_PATH from the build stage.
-exec s6-setuidgid node ./node_modules/tsx/dist/cli.mjs src/provision-api/run.ts
+exec s6-setuidgid node ./node_modules/tsx/dist/cli.mjs --import ./src/instrumentation.ts src/provision-api/run.ts

@@ -15,6 +15,7 @@
  */
 
 import { getSupabaseClient } from '../lib/supabase.js';
+import * as Sentry from '@sentry/node';
 import { config } from '../lib/config.js';
 import { listCharacterIds } from '../lib/st-fs.js';
 import { fetchProvisionData } from './fetcher.js';
@@ -299,12 +300,20 @@ export async function ensureCharacterProvisioned(
 ): Promise<EnsureCharacterResult> {
   const { log = console.log } = options;
 
-  const { data, error } = await getSupabaseClient()
-    .schema('miniapp')
-    .from('users')
-    .select('st_handle')
-    .eq('id', userId)
-    .single();
+  const { data, error } = await Sentry.startSpan(
+    {
+      name: 'sync.character.lookup',
+      op: 'db.query',
+      attributes: { miniapp_user_id: userId, character_id: characterId },
+    },
+    () =>
+      getSupabaseClient()
+        .schema('miniapp')
+        .from('users')
+        .select('st_handle')
+        .eq('id', userId)
+        .single()
+  );
 
   const stHandle = (data as { st_handle: string | null } | null)?.st_handle;
   if (error || !stHandle) {
@@ -314,7 +323,14 @@ export async function ensureCharacterProvisioned(
     );
   }
 
-  const status = await writeCharacterById(stHandle, characterId, false);
+  const status = await Sentry.startSpan(
+    {
+      name: 'sync.character.write',
+      op: 'file.write',
+      attributes: { character_id: characterId },
+    },
+    () => writeCharacterById(stHandle, characterId, false)
+  );
   log(`[ensure-character] handle=${stHandle}, id=${characterId} → ${status}`);
 
   return { stHandle, status };

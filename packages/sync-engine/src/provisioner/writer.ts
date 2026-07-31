@@ -9,6 +9,7 @@ import { copyFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as Sentry from '@sentry/node';
 import {
   backgroundDst,
   backgroundsDir,
@@ -170,15 +171,31 @@ export async function writeCharacterById(
     return 'skipped';
   }
 
-  const { data, error } = await getSupabaseClient()
-    .storage.from(config.CHARACTER_STORAGE_BUCKET)
-    .download(characterStoragePath(characterId));
+  const { data, error } = await Sentry.startSpan(
+    {
+      name: 'sync.character.download',
+      op: 'storage.download',
+      attributes: { character_id: characterId },
+    },
+    () =>
+      getSupabaseClient()
+        .storage.from(config.CHARACTER_STORAGE_BUCKET)
+        .download(characterStoragePath(characterId))
+  );
 
   if (error || !data) {
     return 'missing';
   }
 
-  writeFileSync(dst, Buffer.from(await data.arrayBuffer()));
+  const content = await data.arrayBuffer();
+  Sentry.startSpan(
+    {
+      name: 'sync.character.file_write',
+      op: 'file.write',
+      attributes: { character_id: characterId, bytes: content.byteLength },
+    },
+    () => writeFileSync(dst, Buffer.from(content))
+  );
   return 'written';
 }
 

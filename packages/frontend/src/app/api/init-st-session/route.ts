@@ -16,13 +16,23 @@ const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || process.env.ST_PUBLIC_PROXY_URL || 'http://localhost:3001';
 
 export async function POST(request: NextRequest) {
-  const initData = request.headers.get('X-Init-Data') ?? '';
+  const forwardedHeaders: Record<string, string> = {};
+  for (const name of [
+    'X-Init-Data',
+    'X-Request-Id',
+    'X-First-Chat-Journey-Id',
+    'X-First-Chat-Attempt-Id',
+    'X-Boot-Session-Id',
+    'sentry-trace',
+    'baggage',
+  ]) {
+    const value = request.headers.get(name);
+    if (value) forwardedHeaders[name] = value;
+  }
 
   const backendRes = await fetch(`${BACKEND_URL}/api/bridge/st-session`, {
     method: 'POST',
-    headers: {
-      ...(initData ? { 'X-Init-Data': initData } : {}),
-    },
+    headers: forwardedHeaders,
   });
 
   if (!backendRes.ok) {

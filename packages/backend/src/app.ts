@@ -23,6 +23,7 @@ import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import simulationRoutes from './routes/simulation.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
+import { bindRequestSentryContext } from './lib/sentry.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -34,6 +35,10 @@ export async function buildApp() {
       if (Array.isArray(hdr) && hdr[0]) return hdr[0];
       return randomUUID();
     },
+  });
+
+  app.addHook('onRequest', async (request) => {
+    bindRequestSentryContext(request);
   });
 
   await app.register(cors, {
@@ -71,6 +76,11 @@ export async function buildApp() {
       'Authorization',
       'X-Init-Data',
       'X-Request-Id',
+      'X-First-Chat-Journey-Id',
+      'X-First-Chat-Attempt-Id',
+      'X-Boot-Session-Id',
+      'sentry-trace',
+      'baggage',
       'X-CS-Admin-Token',
       'X-CS-Operator-Id',
       'X-Bot-Internal-Secret',

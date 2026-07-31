@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -74,11 +74,13 @@ export function ChatSplash({
   ready,
   error,
   onRetry,
+  onVisible,
 }: {
   characterId: string;
   ready: boolean;
   error?: string | null;
   onRetry?: () => void;
+  onVisible?: () => void;
 }) {
   const router = useRouter();
   const { data } = useCharacterQuery(characterId);
@@ -93,6 +95,7 @@ export function ChatSplash({
   const [returning, setReturning] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const visibleReportedRef = useRef(false);
 
   useEffect(() => {
     router.prefetch('/');
@@ -134,6 +137,16 @@ export function ChatSplash({
     const timer = setTimeout(() => setPhase('gone'), EXIT_MS);
     return () => clearTimeout(timer);
   }, [phase]);
+
+  useEffect(() => {
+    if (phase !== 'gone' || visibleReportedRef.current) return;
+    const raf = window.requestAnimationFrame(() => {
+      if (visibleReportedRef.current) return;
+      visibleReportedRef.current = true;
+      onVisible?.();
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [onVisible, phase]);
 
   const stars = useMemo(() => buildStars(characterId, 28), [characterId]);
 
