@@ -30,10 +30,9 @@ import {
 import { config } from '../platform/config.js';
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
-const PAYMENT_TYPES: PaymentType[] = [
-  // 'alipay', // 支付宝通道暂时停用
-  'wxpay',
-];
+// 入参白名单。产品侧当前只在充值页出支付宝，这里仍放行 wxpay，
+// 避免缓存了旧前端的客户端选微信时拿到 400 而不是可用的扫码收银台。
+const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
 
 export default async function paymentRoutes(app: FastifyInstance) {
   if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
