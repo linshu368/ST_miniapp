@@ -121,13 +121,24 @@ export function openExternalUrl(url: string): void {
   window.location.assign(url);
 }
 
-export function openPaymentUrl(url: string): void {
+const PAYMENT_SCHEME_PATTERN = /^(weixin|alipays?):\/\//i;
+
+/**
+ * @param url        支付目标：App scheme 或 H5 收银台地址
+ * @param fallbackUrl App 未安装时的兜底收银台地址
+ *
+ * Mini App 的 WebView 分发不了 App scheme，直接 location.assign 只会得到
+ * ERR_UNKNOWN_URL_SCHEME，端上表现为「无法加载」。scheme 必须交给 openLink
+ * 打开的真实浏览器去唤起，中转页见 public/pay/launch.html。
+ */
+export function openPaymentUrl(url: string, fallbackUrl?: string): void {
   if (typeof window === 'undefined') return;
 
-  // Telegram openLink 只保证支持 HTTP(S)。App scheme 必须直接交给 WebView 导航，
-  // 系统才会把 weixin:// / alipays:// 协议分发给对应客户端。
-  if (/^(weixin|alipays?):\/\//i.test(url)) {
-    window.location.assign(url);
+  if (PAYMENT_SCHEME_PATTERN.test(url)) {
+    const launch = new URL('/pay/launch.html', window.location.origin);
+    launch.searchParams.set('scheme', url);
+    if (fallbackUrl) launch.searchParams.set('fallback', fallbackUrl);
+    openExternalUrl(launch.toString());
     return;
   }
 

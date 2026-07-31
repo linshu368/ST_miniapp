@@ -87,7 +87,7 @@ function RechargePageContent() {
         `/profile/recharge/${encodeURIComponent(result.order.id)}?${nextSearch.toString()}`
       );
       // 首次跳转必须紧跟“立即支付”的用户操作，避免移动端拦截微信/支付宝拉起。
-      openPaymentUrl(result.pay_scheme ?? result.pay_url);
+      openPaymentUrl(result.pay_scheme ?? result.pay_url, result.pay_url);
     } catch {
       notification('error');
     }
