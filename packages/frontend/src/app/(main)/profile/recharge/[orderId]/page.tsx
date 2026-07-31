@@ -59,8 +59,8 @@ export default function PaymentPendingPage() {
   useEffect(() => {
     if (!payTarget || payUrlOpened || order?.status !== 'pending') return;
     setPayUrlOpened(true);
-    openPaymentUrl(payTarget);
-  }, [order?.status, payTarget, payUrlOpened]);
+    openPaymentUrl(payTarget, payUrl ?? undefined);
+  }, [order?.status, payTarget, payUrl, payUrlOpened]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -105,7 +105,13 @@ export default function PaymentPendingPage() {
 
       <div className="flex flex-1 flex-col px-5 pb-10 pt-4">
         {order.status === 'pending' ? (
-          <PendingView order={order} remaining={remaining} payTarget={payTarget} onBack={goBack} />
+          <PendingView
+            order={order}
+            remaining={remaining}
+            payTarget={payTarget}
+            payFallback={payUrl}
+            onBack={goBack}
+          />
         ) : order.status === 'completed' ? (
           <CompletedView
             order={order}
@@ -158,11 +164,13 @@ function PendingView({
   order,
   remaining,
   payTarget,
+  payFallback,
   onBack,
 }: {
   order: PaymentOrder;
   remaining: number;
   payTarget: string | null;
+  payFallback: string | null;
   onBack: () => void;
 }) {
   const total = order.credits_amount + order.bonus_credits;
@@ -207,7 +215,7 @@ function PendingView({
 
       {payTarget ? (
         <Button
-          onClick={() => openPaymentUrl(payTarget)}
+          onClick={() => openPaymentUrl(payTarget, payFallback ?? undefined)}
           className="h-12 w-full rounded-xl bg-primary font-bold text-primary-foreground shadow-lg shadow-[0_10px_30px_hsl(var(--glow)/0.4)] hover:opacity-90 border-0"
         >
           重新打开支付页
