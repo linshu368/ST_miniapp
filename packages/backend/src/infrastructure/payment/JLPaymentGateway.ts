@@ -21,7 +21,14 @@ export interface PaymentResult {
 
 /** 收银台页名首字母即支付方式，a=支付宝 w=微信 */
 const CASHIER_ORDER_PATTERN = /([wzamy])(\d{18,20})\.html/i;
-const ALIPAY_QR_WRAPPER = 'alipays://platformapi/startapp?saId=10000007&qrcode=';
+/**
+ * 收银台给的「收款码」其实是厂商一个明文 HTTP 裸 IP 中转页，它再自动提交
+ * alipay.trade.wap.pay 表单跳到支付宝官方收银台。走扫一扫处理器（saId=10000007）
+ * 会被当成扫到的码去校验，这种地址过不了校验，端上表现为「无法加载」；
+ * 改用 H5 容器（appId=20000067）让支付宝内置浏览器直接打开中转页，
+ * 后面的跳转由支付宝自己完成，和真机浏览器里的流程一致。
+ */
+const ALIPAY_H5_WRAPPER = 'alipays://platformapi/startapp?appId=20000067&url=';
 const SCHEME_RESOLVE_BUDGET_MS = 6_000;
 const MOBILE_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
@@ -218,7 +225,8 @@ export class JLPaymentGateway {
    * 因此任何一步失败都只记日志并返回 undefined，调用方继续用原始跳转页。
    */
   private async resolveAlipayScheme(payUrl: string): Promise<string | undefined> {
-    const deadline = Date.now() + SCHEME_RESOLVE_BUDGET_MS;
+    const startedAt = Date.now();
+    const deadline = startedAt + SCHEME_RESOLVE_BUDGET_MS;
     const nextSignal = (): AbortSignal => {
       const left = deadline - Date.now();
       if (left <= 0) throw new Error('resolve budget exhausted');
@@ -261,9 +269,14 @@ export class JLPaymentGateway {
       const target = data.urlScheme?.trim() || data.qrcode?.trim();
       if (!target) return undefined;
 
-      return target.toLowerCase().startsWith('alipays://')
+      const scheme = target.toLowerCase().startsWith('alipays://')
         ? target
-        : `${ALIPAY_QR_WRAPPER}${encodeURIComponent(target)}`;
+        : `${ALIPAY_H5_WRAPPER}${encodeURIComponent(target)}`;
+      console.info(
+        { elapsedMs: Date.now() - startedAt, target: describePaymentTarget(target) },
+        '[payment] resolved alipay scheme'
+      );
+      return scheme;
     } catch (error) {
       console.warn(
         { reason: error instanceof Error ? error.message : 'unknown' },
