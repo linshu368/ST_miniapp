@@ -15,6 +15,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
+import * as Sentry from '@sentry/node';
 import { createHmac } from 'node:crypto';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -27,6 +28,13 @@ import { deriveStHandle } from '@miniapp/shared';
 import type { EnsureStCharacterData } from '@miniapp/shared';
 import { cacheStCookie } from '../lib/st-cookie.js';
 import { requestLogger, type RequestLogger } from '../lib/logger.js';
+import {
+  bindBackendUserContext,
+  captureBackendException,
+  downstreamTelemetryHeaders,
+  getRequestTelemetryContext,
+  sendBackendSentryLog,
+} from '../lib/sentry.js';
 
 const miniappUserSettings = new MiniappUserSettingsRepository();
 
@@ -136,7 +144,8 @@ async function triggerProvisionSync(
   userId: string,
   log: RequestLogger,
   force = false,
-  cardsNone = true
+  cardsNone = true,
+  telemetryHeaders: Record<string, string> = {}
 ): Promise<void> {
   const params = new URLSearchParams();
   if (force) params.set('force', 'true');
@@ -144,7 +153,7 @@ async function triggerProvisionSync(
   const query = params.toString();
   const url = `${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}/sync${query ? `?${query}` : ''}`;
   log.sys.info({ event: 'provision.sync.start', userId, force, cardsNone }, '同步 provision 开始');
-  const res = await fetch(url, { method: 'POST' });
+  const res = await fetch(url, { method: 'POST', headers: telemetryHeaders });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`provision 失败（${res.status}）：${text}`);
@@ -162,14 +171,15 @@ async function triggerProvisionAsync(
   userId: string,
   log: RequestLogger,
   force = false,
-  cardsNone = true
+  cardsNone = true,
+  telemetryHeaders: Record<string, string> = {}
 ): Promise<void> {
   const params = new URLSearchParams();
   if (force) params.set('force', 'true');
   if (cardsNone) params.set('cards', 'none');
   const query = params.toString();
   const url = `${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}${query ? `?${query}` : ''}`;
-  const res = await fetch(url, { method: 'POST' });
+  const res = await fetch(url, { method: 'POST', headers: telemetryHeaders });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`async provision 触发失败（${res.status}）：${text}`);
@@ -184,9 +194,13 @@ async function triggerProvisionAsync(
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function ensureStCharacter(userId: string, characterId: string): Promise<StatusLiteral> {
+async function ensureStCharacter(
+  userId: string,
+  characterId: string,
+  telemetryHeaders: Record<string, string>
+): Promise<StatusLiteral> {
   const url = `${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}/character/${encodeURIComponent(characterId)}/sync`;
-  const res = await fetch(url, { method: 'POST' });
+  const res = await fetch(url, { method: 'POST', headers: telemetryHeaders });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`ensure character 失败（${res.status}）：${text}`);
@@ -226,12 +240,14 @@ export default async function bridgeRoutes(app: FastifyInstance) {
       }
 
       const log = requestLogger(request.log, 'bridge');
+      const telemetryHeaders = downstreamTelemetryHeaders(request);
 
       try {
         // ── 1. 获取/创建 Supabase 用户，写入 st_handle ────────────────────
         const dbUser = await getOrCreateDbUser(request.user);
         const tgIdStr = request.user.id.toString();
         const stHandle = deriveStHandle(tgIdStr);
+        bindBackendUserContext(tgIdStr, dbUser.id);
 
         // 落库 TG 身份（名字/头像）到 miniapp_user_settings，供 provision 注入 ST persona。
         // 必须在 provision 前执行，否则 sync-engine 读不到当前用户的名字/头像（回退平台默认）。
@@ -277,7 +293,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
             { event: 'stsession.provision.phase', userId: dbUser.id, phase: 1 },
             '阶段 1/3：创建 ST 账号 + 初始下发'
           );
-          await triggerProvisionSync(dbUser.id, log);
+          await triggerProvisionSync(dbUser.id, log, false, true, telemetryHeaders);
 
           // 阶段 2：登录 ST，触发 ST 原生 content initialization（建完整目录）
           log.biz.info(
@@ -294,7 +310,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
             { event: 'stsession.provision.phase', userId: dbUser.id, phase: 3 },
             '阶段 3/3：force 覆盖写平台文件'
           );
-          await triggerProvisionSync(dbUser.id, log, true);
+          await triggerProvisionSync(dbUser.id, log, true, true, telemetryHeaders);
 
           // ── 4. 缓存 cookie + 返回 ──────────────────────────────────
           await cacheStCookie(dbUser.id, stCookieInit);
@@ -327,7 +343,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           await cacheStCookie(dbUser.id, stCookie);
 
           // 后台异步刷新配置：不 await；触发失败仅告警（用户已用现有配置放行，不阻断）。
-          triggerProvisionAsync(dbUser.id, log).catch((err) => {
+          triggerProvisionAsync(dbUser.id, log, false, true, telemetryHeaders).catch((err) => {
             log.sys.warn(
               { event: 'provision.async.trigger_failed', err, userId: dbUser.id },
               '后台 provision 触发失败（不阻断放行）'
@@ -344,6 +360,7 @@ export default async function bridgeRoutes(app: FastifyInstance) {
         }
       } catch (err) {
         log.sys.error({ event: 'stsession.failed', err }, 'st-session 失败');
+        captureBackendException(err, request, 'st_session');
         return reply.status(500).send(fail('INTERNAL_ERROR', String(err)));
       }
     }
@@ -368,21 +385,37 @@ export default async function bridgeRoutes(app: FastifyInstance) {
       }
 
       const log = requestLogger(request.log, 'bridge');
+      const requestTelemetry = getRequestTelemetryContext(request);
       const { characterId } = request.params as { characterId: string };
       if (!UUID_RE.test(characterId)) {
         return reply.status(400).send(fail('INVALID_ARGUMENT', 'characterId 必须是 UUID'));
       }
 
       try {
-        const publishedCharacter = await prisma.character.findFirst({
-          where: { id: characterId, enabled: true, archived_at: null },
-          select: { id: true },
-        });
+        const publishedCharacter = await Sentry.startSpan(
+          { name: 'backend.character.validate', op: 'db.query' },
+          () =>
+            prisma.character.findFirst({
+              where: { id: characterId, enabled: true, archived_at: null },
+              select: { id: true },
+            })
+        );
         if (!publishedCharacter) {
           return reply.status(404).send(fail('NOT_FOUND', '角色未上架或已删除'));
         }
-        const dbUser = await getOrCreateDbUser(request.user);
-        const status = await ensureStCharacter(dbUser.id, characterId);
+        const dbUser = await Sentry.startSpan(
+          { name: 'backend.user.resolve', op: 'db.query' },
+          () => getOrCreateDbUser(request.user!)
+        );
+        bindBackendUserContext(request.user.id.toString(), dbUser.id, characterId);
+        const status = await Sentry.startSpan(
+          {
+            name: 'backend.provision.ensure_character',
+            op: 'http.client',
+            attributes: { character_id: characterId },
+          },
+          () => ensureStCharacter(dbUser.id, characterId, downstreamTelemetryHeaders(request))
+        );
         log.biz.info(
           { event: 'provision.character.ensure', userId: dbUser.id, characterId, status },
           '单卡懒下发完成'
@@ -393,6 +426,15 @@ export default async function bridgeRoutes(app: FastifyInstance) {
           { event: 'provision.character.ensure_failed', err, characterId },
           'st-character 失败'
         );
+        captureBackendException(err, request, 'ensure_character', { characterId });
+        sendBackendSentryLog('error', 'backend.ensure_character.failed', {
+          stage: 'ensure_character',
+          result: 'failed',
+          requestId: requestTelemetry.requestId,
+          journeyId: requestTelemetry.journeyId,
+          attemptId: requestTelemetry.attemptId,
+          characterId,
+        });
         return reply.status(500).send(fail('INTERNAL_ERROR', String(err)));
       }
     }

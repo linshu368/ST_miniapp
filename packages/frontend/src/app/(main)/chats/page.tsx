@@ -9,6 +9,9 @@ import { useChatListStore } from '@/stores/chat-list';
 import { useFavoritesQuery } from '@/lib/api/favorites';
 import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
+import { useBridgeStatus } from '@/lib/bridge';
+import { getTimingMark } from '@/lib/bridge/iframe-timing';
+import { beginFirstChatNavigation } from '@/lib/sentry/first-chat-telemetry';
 
 type ChatsTab = 'history' | 'favorites';
 
@@ -73,6 +76,7 @@ export default function ChatsPage() {
 
 function HistoryList() {
   const { items, loading, error, fetch } = useChatListStore();
+  const bridgeStatus = useBridgeStatus();
 
   useEffect(() => {
     void fetch();
@@ -124,6 +128,7 @@ function HistoryList() {
             key={item.characterId}
             href={`/tavern/${item.characterId}?${search.toString()}`}
             prefetch={false}
+            onClick={() => recordFirstChatNavigation(item.characterId!, 'history', bridgeStatus)}
             className="flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary active:scale-[0.99]"
           >
             <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
@@ -163,6 +168,7 @@ function HistoryList() {
 function FavoritesList() {
   const { data, isLoading, isError, refetch } = useFavoritesQuery();
   const characters = data?.characters ?? [];
+  const bridgeStatus = useBridgeStatus();
 
   if (isLoading && characters.length === 0) {
     return (
@@ -223,6 +229,7 @@ function FavoritesList() {
           <Link
             href={`/tavern/${character.id}`}
             prefetch={false}
+            onClick={() => recordFirstChatNavigation(character.id, 'favorites', bridgeStatus)}
             aria-label={`进入 ${character.name} 的聊天`}
             className="absolute inset-0 rounded-3xl"
           />
@@ -252,6 +259,18 @@ function FavoritesList() {
       ))}
     </section>
   );
+}
+
+function recordFirstChatNavigation(
+  characterId: string,
+  source: 'history' | 'favorites',
+  bridgePhase: string
+): void {
+  const bridgeStartedAt = getTimingMark('bridge_start');
+  beginFirstChatNavigation(characterId, source, {
+    bridgePhase,
+    ...(bridgeStartedAt ? { bootElapsedMs: Date.now() - bridgeStartedAt } : {}),
+  });
 }
 
 function formatActivityTime(value: string): string {

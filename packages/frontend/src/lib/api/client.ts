@@ -3,6 +3,8 @@ import type { ApiResponse } from '@miniapp/shared';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
 import { sendSentryLog } from '@/lib/sentry/client';
+import { getFirstChatCorrelation } from '@/lib/sentry/first-chat-telemetry';
+import { getActiveBootSessionId } from '@/lib/bridge/boot-session';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
 
@@ -35,6 +37,20 @@ function recordFailedRequest(
   });
 }
 
+function applyTelemetryHeaders(headers: Headers): void {
+  const bootSessionId = getActiveBootSessionId();
+  if (bootSessionId) headers.set('X-Boot-Session-Id', bootSessionId);
+  const correlation = getFirstChatCorrelation();
+  if (!correlation) return;
+
+  headers.set('X-First-Chat-Journey-Id', correlation.journeyId);
+  headers.set('X-First-Chat-Attempt-Id', correlation.attemptId);
+  const traceData = Sentry.getTraceData();
+  const sentryTrace = traceData['sentry-trace'];
+  if (sentryTrace) headers.set('sentry-trace', sentryTrace);
+  if (traceData.baggage) headers.set('baggage', traceData.baggage);
+}
+
 export class ApiClientError extends Error {
   constructor(
     message: string,
@@ -54,6 +70,7 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
   const headers = new Headers(options?.headers);
   const requestId = createRequestId();
   headers.set('X-Request-Id', requestId);
+  applyTelemetryHeaders(headers);
   if (options?.body) {
     headers.set('Content-Type', 'application/json');
   }
@@ -102,6 +119,7 @@ export async function apiStreamClient(
   const headers = new Headers(options?.headers);
   const requestId = createRequestId();
   headers.set('X-Request-Id', requestId);
+  applyTelemetryHeaders(headers);
   if (options?.body) {
     headers.set('Content-Type', 'application/json');
   }

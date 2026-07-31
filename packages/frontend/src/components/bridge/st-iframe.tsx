@@ -1,21 +1,31 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import { useBridgeContext } from './bridge-provider';
 import { writeStCookies } from '@/lib/bridge/st-cookies';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { markTiming } from '@/lib/bridge/iframe-timing'; // [iframe-timing] TEMP DEBUG
+import { createBootSessionId } from '@/lib/bridge/boot-session';
 
 export const CHAT_INTERACTIVITY_EVENT = 'miniapp:chat-interactivity';
+
+function createCorrelationId(prefix: string): string {
+  const value =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${value}`;
+}
 
 // ST iframe 文档 URL 必须每次启动唯一：Telegram WKWebView 会无视 no-store 复活旧的
 // /tavern/ 缓存文档（旧 base href → 旧模块图），与新版本模块图在同一 boot 内并行执行、
 // 相互踩踏导致停摆（2026-07-16 dev 实测）。查询参数不影响 nginx/Vercel 的路径匹配，
 // 但让缓存键从未出现过 → 旧文档不可能被复用。
-export function createStBootUrl(): string {
+export function createStBootUrl(bootSessionId = createBootSessionId()): string {
   // miniapp_fast_boot=1：vendor script.js 据此走 T2 fast-boot 关键路径
   //（world-info 就绪即发 interactive 握手，UI-only init 延迟）。Web 直访 ST 无此参数不受影响。
-  return `/tavern/?miniapp_doc=${Date.now().toString(36)}&miniapp_fast_boot=1`;
+  return `/tavern/?miniapp_doc=${encodeURIComponent(bootSessionId)}&miniapp_fast_boot=1`;
 }
 
 type StSessionResponse = {
@@ -37,8 +47,11 @@ export function STIframe() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { registerIframe, isVisible } = useBridgeContext();
   const bootUrlRef = useRef<string | null>(null);
+  const bootSessionIdRef = useRef<string | null>(null);
   if (bootUrlRef.current === null) {
-    bootUrlRef.current = createStBootUrl();
+    bootSessionIdRef.current = createBootSessionId();
+    Sentry.setTag('boot_session_id', bootSessionIdRef.current);
+    bootUrlRef.current = createStBootUrl(bootSessionIdRef.current);
   }
   const [sessionReady, setSessionReady] = useState(false);
   const [chatInteractive, setChatInteractive] = useState(false);
@@ -61,6 +74,13 @@ export function STIframe() {
         const headers: Record<string, string> = {};
         const initData = getRawInitData();
         if (initData) headers[INIT_DATA_HEADER] = initData;
+        headers['X-Request-Id'] = createCorrelationId('request');
+        if (bootSessionIdRef.current) {
+          headers['X-Boot-Session-Id'] = bootSessionIdRef.current;
+        }
+        const traceData = Sentry.getTraceData();
+        if (traceData['sentry-trace']) headers['sentry-trace'] = traceData['sentry-trace'];
+        if (traceData.baggage) headers.baggage = traceData.baggage;
 
         const res = await fetch('/api/init-st-session', {
           method: 'POST',

@@ -97,6 +97,20 @@ export async function POST(request: NextRequest) {
   const cookieSummary = summarizeRequestCookies(request.headers.get('cookie'));
   const hasInitData = Boolean(request.headers.get('X-Init-Data'));
 
+  const forwardedHeaders: Record<string, string> = {};
+  for (const name of [
+    'X-Init-Data',
+    'X-Request-Id',
+    'X-First-Chat-Journey-Id',
+    'X-First-Chat-Attempt-Id',
+    'X-Boot-Session-Id',
+    'sentry-trace',
+    'baggage',
+  ]) {
+    const value = request.headers.get(name);
+    if (value) forwardedHeaders[name] = value;
+  }
+
   log('start', {
     backendHost: backendHost(),
     hasInitData,
@@ -110,9 +124,7 @@ export async function POST(request: NextRequest) {
     try {
       backendRes = await fetch(`${BACKEND_URL}/api/bridge/st-session`, {
         method: 'POST',
-        headers: {
-          ...(hasInitData ? { 'X-Init-Data': request.headers.get('X-Init-Data')! } : {}),
-        },
+        headers: forwardedHeaders,
       });
     } catch (err) {
       log('fetch_backend', {

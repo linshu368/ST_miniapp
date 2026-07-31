@@ -3,12 +3,9 @@
 import * as Sentry from '@sentry/nextjs';
 
 import { sendSentryLog, setCharacterContext } from './client';
+import { recordFirstChatSelectMark } from './first-chat-telemetry';
 
-type TrackedSpanName =
-  | 'bridge.boot'
-  | 'tavern.open'
-  | 'tavern.ensure_character'
-  | 'tavern.select_character';
+type TrackedSpanName = 'bridge.boot';
 
 const activeSpans = new Map<TrackedSpanName, Sentry.Span>();
 let activeCharacterId: string | undefined;
@@ -62,12 +59,6 @@ export function setBridgeTelemetryCharacter(characterId: string): void {
   setCharacterContext(characterId);
 }
 
-export function cancelTavernTelemetry(): void {
-  endTrackedSpan('tavern.ensure_character', 'cancelled');
-  endTrackedSpan('tavern.select_character', 'cancelled');
-  endTrackedSpan('tavern.open', 'cancelled');
-}
-
 export function recordBridgeRecoveryOutcome(
   outcome: 'recovered' | 'disconnected',
   counts: { bootFatalCount: number; nukeReloadCount: number; reloadCount: number }
@@ -107,6 +98,7 @@ export function recordBridgeActionFailure(
  * debug POST remains in place for side-by-side validation.
  */
 export function recordBridgeTelemetryMark(name: string, detail?: string): void {
+  recordFirstChatSelectMark(name);
   switch (name) {
     case 'bridge_start':
       startTrackedSpan('bridge.boot', 'bridge.boot');
@@ -117,37 +109,6 @@ export function recordBridgeTelemetryMark(name: string, detail?: string): void {
     case 'boot_fatal':
       endTrackedSpan('bridge.boot', 'fatal');
       logBridgeResult('error', 'bridge.boot_fatal', detail ?? 'fatal');
-      break;
-    case 'page_mount':
-      startTrackedSpan('tavern.open', 'ui.load');
-      break;
-    case 'chat_ready':
-      endTrackedSpan('tavern.open', 'ready');
-      logBridgeResult('info', 'tavern.chat_ready', 'ready');
-      break;
-    case 'ensure_start':
-      startTrackedSpan('tavern.ensure_character', 'bridge.action');
-      break;
-    case 'ensure_end':
-      endTrackedSpan('tavern.ensure_character', detail ? 'error' : 'success');
-      if (detail) logBridgeResult('error', 'tavern.ensure_character_failed', detail);
-      break;
-    case 'select_start':
-      startTrackedSpan('tavern.select_character', 'bridge.action');
-      break;
-    case 'select_end':
-      endTrackedSpan('tavern.select_character', 'success');
-      break;
-    case 'select_error':
-      endTrackedSpan('tavern.select_character', 'error');
-      endTrackedSpan('tavern.open', 'select_error');
-      logBridgeResult('error', 'tavern.select_character_failed', detail ?? 'select_error');
-      break;
-    case 'gate_stall':
-      logBridgeResult('warn', 'tavern.gate_stall', 'stalled');
-      break;
-    case 'select_stall':
-      logBridgeResult('warn', 'tavern.select_stall', 'stalled');
       break;
     default:
       break;

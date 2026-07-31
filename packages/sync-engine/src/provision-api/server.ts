@@ -13,6 +13,7 @@
  */
 
 import { createServer, type Server } from 'node:http';
+import * as Sentry from '@sentry/node';
 import { provision, ensureCharacterProvisioned } from '../provisioner/index.js';
 import { loadConfig, config } from '../lib/config.js';
 import { createLogger } from '../lib/logger.js';
@@ -21,6 +22,11 @@ import {
   sendSimulationTurn,
   type SimulationWorkerInput,
 } from '../simulation/browser-worker.js';
+import {
+  bindProvisionSentryContext,
+  captureSyncException,
+  sendSyncSentryLog,
+} from '../lib/sentry.js';
 
 const logger = createLogger('provision-api');
 
@@ -141,11 +147,23 @@ async function handleRequest(
       jsonResponse(res, 400, { error: 'missing_param' });
       return;
     }
+    const telemetry = bindProvisionSentryContext(req, userId, characterId);
 
     try {
-      const result = await ensureCharacterProvisioned(userId, characterId, {
-        log: (msg) => logger.info({ userId, characterId }, msg),
-      });
+      const result = await Sentry.startSpan(
+        {
+          name: 'sync.ensure_character',
+          op: 'provision.character',
+          attributes: {
+            miniapp_user_id: userId,
+            character_id: characterId,
+          },
+        },
+        () =>
+          ensureCharacterProvisioned(userId, characterId, {
+            log: (msg) => logger.info({ userId, characterId }, msg),
+          })
+      );
       logger.biz.info(
         { event: 'provision.character.done', userId, characterId, status: result.status },
         'ensure character 完成'
@@ -161,6 +179,16 @@ async function handleRequest(
         { event: 'provision.character.failed', userId, characterId, err },
         'ensure character 失败'
       );
+      captureSyncException(err, req, 'ensure_character', { userId, characterId });
+      sendSyncSentryLog('error', 'sync.ensure_character.failed', {
+        stage: 'ensure_character',
+        result: 'failed',
+        requestId: telemetry.requestId,
+        journeyId: telemetry.journeyId,
+        attemptId: telemetry.attemptId,
+        userId,
+        characterId,
+      });
       jsonResponse(res, 500, { error: 'ensure_character_failed', message: String(err) });
     }
     return;
@@ -244,6 +272,7 @@ export async function startProvisionApi(opts: ProvisionApiOptions): Promise<Prov
       await handleRequest(req, res);
     } catch (err) {
       logger.sys.error({ event: 'provision.request.uncaught', err }, '未捕获的请求处理错误');
+      captureSyncException(err, req, 'request_uncaught');
       if (!res.headersSent) {
         jsonResponse(res, 500, { error: 'internal_error' });
       }

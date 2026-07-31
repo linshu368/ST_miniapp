@@ -11,6 +11,9 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 import { useCharactersQuery } from '@/lib/api/characters';
+import { useBridgeStatus } from '@/lib/bridge';
+import { getTimingMark } from '@/lib/bridge/iframe-timing';
+import { beginFirstChatNavigation } from '@/lib/sentry/first-chat-telemetry';
 
 import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
@@ -46,6 +49,7 @@ function scoreMatch(
 
 export function CharacterGallery() {
   const router = useRouter();
+  const bridgeStatus = useBridgeStatus();
   const [sort, setSort] = useState<LobbySort>(DEFAULT_LOBBY_SORT);
   const { data, isLoading, isError } = useCharactersQuery(sort);
   const [query, setQuery] = useState('');
@@ -263,6 +267,11 @@ export function CharacterGallery() {
           if (enteringRef.current) return;
           enteringRef.current = true;
           setEnteringId(id);
+          const bridgeStartedAt = getTimingMark('bridge_start');
+          beginFirstChatNavigation(id, 'gallery', {
+            bridgePhase: bridgeStatus,
+            ...(bridgeStartedAt ? { bootElapsedMs: Date.now() - bridgeStartedAt } : {}),
+          });
           router.push(`/tavern/${id}`);
         }}
       />

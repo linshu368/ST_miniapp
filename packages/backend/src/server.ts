@@ -1,3 +1,6 @@
+import './instrumentation.js';
+
+import * as Sentry from '@sentry/node';
 import { buildApp } from './app.js';
 import { config } from './platform/config.js';
 import { logger } from './lib/logger.js';
@@ -16,6 +19,7 @@ async function main() {
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, async () => {
       await app.close();
+      await Sentry.flush(2_000);
       process.exit(0);
     });
   }
@@ -23,5 +27,6 @@ async function main() {
 
 main().catch((err) => {
   logger.fatal({ err }, 'Failed to start server');
-  process.exit(1);
+  Sentry.captureException(err);
+  void Sentry.flush(2_000).finally(() => process.exit(1));
 });
