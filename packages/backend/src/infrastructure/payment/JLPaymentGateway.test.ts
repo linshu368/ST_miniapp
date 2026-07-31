@@ -236,7 +236,7 @@ describe('JLPaymentGateway 支付宝直达 scheme', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
-  it('把收银台二维码内容套成支付宝唤起协议', async () => {
+  it('把收银台返回的中转页套成支付宝 H5 容器唤起协议', async () => {
     const calls = stubVendorChain({
       cashierUrl: 'https://cashier.example/a1341599655513165824.html',
       polling: { status: 'TRADE_PENDING', qrcode: QR_CONTENT, urlScheme: '' },
@@ -245,7 +245,7 @@ describe('JLPaymentGateway 支付宝直达 scheme', () => {
     await expect(createAlipayOrder()).resolves.toEqual({
       success: true,
       paymentUrl: BRIDGE_URL,
-      paymentScheme: `alipays://platformapi/startapp?saId=10000007&qrcode=${encodeURIComponent(QR_CONTENT)}`,
+      paymentScheme: `alipays://platformapi/startapp?appId=20000067&url=${encodeURIComponent(QR_CONTENT)}`,
     });
     expect(calls).toHaveLength(4);
     expect(calls[3]).toBe('https://cashier.example/cas/order/polling?orderId=1341599655513165824');
