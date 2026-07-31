@@ -5,7 +5,7 @@
 // 原因：未来迁移独立 web 时只需替换此文件，业务代码不动。
 
 import { useCallback, useEffect } from 'react';
-import { backButton, hapticFeedback, isTMA } from '@telegram-apps/sdk-react';
+import { backButton, hapticFeedback, isTMA, openLink } from '@telegram-apps/sdk-react';
 
 export {
   useSignal,
@@ -97,25 +97,23 @@ export function useHaptic(): {
   return { whisper, impact, selection, notification };
 }
 
-type TelegramWindow = Window & {
-  Telegram?: {
-    WebApp?: {
-      openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
-    };
-  };
-};
-
+/**
+ * 交给 Telegram 用浏览器打开，Mini App 自身不导航。
+ *
+ * 必须走 SDK 的 web_app_open_link 桥，不要用 window.Telegram.WebApp：那个全局来自官方
+ * telegram-web-app.js，本项目没有引入，判断永远为假，最终退化成 location.assign——
+ * 结果是在 Mini App 的 WebView 里原地跳转，App scheme 一律拿不到系统分发。
+ */
 export function openExternalUrl(url: string): void {
   if (typeof window === 'undefined') return;
 
   try {
-    const webApp = (window as TelegramWindow).Telegram?.WebApp;
-    if (webApp?.openLink) {
-      webApp.openLink(url, { try_instant_view: false });
+    if (openLink.isAvailable()) {
+      openLink(url);
       return;
     }
   } catch {
-    // 旧版客户端或非 Telegram 环境下走浏览器兜底。
+    // 非 TMA 或旧版客户端，落回普通浏览器导航。
   }
 
   window.location.assign(url);
