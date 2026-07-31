@@ -11,6 +11,7 @@ import { useUserSettingsQuery } from '@/lib/api/settings';
 import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
+import { stripSensitiveTelegramLaunchParamsFromLocation } from '@/lib/telegram/launch-url';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useThemeStore } from '@/stores/theme-store';
@@ -29,6 +30,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     initTelegramSdk();
     const telegramUser = parseTelegramUser(getRawInitData());
     setTelegramUser(telegramUser.id);
+    stripSensitiveTelegramLaunchParamsFromLocation();
     void loadSessionReplay();
     // initTelegramSdk 是同步副作用,initData 在它跑完后立即可读;
     // hydrate 把 telegram first_name + localStorage 覆盖合成 displayName
