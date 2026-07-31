@@ -124,9 +124,9 @@ export function openExternalUrl(url: string): void {
 export function openPaymentUrl(url: string): void {
   if (typeof window === 'undefined') return;
 
-  // Telegram openLink 只保证支持 HTTP(S)。厂商 V2 的 scheme 结果必须直接交给
-  // WebView 导航，系统才会把 weixin:// 协议分发给微信客户端。
-  if (/^weixin:\/\//i.test(url)) {
+  // Telegram openLink 只保证支持 HTTP(S)。App scheme 必须直接交给 WebView 导航，
+  // 系统才会把 weixin:// / alipays:// 协议分发给对应客户端。
+  if (/^(weixin|alipays?):\/\//i.test(url)) {
     window.location.assign(url);
     return;
   }

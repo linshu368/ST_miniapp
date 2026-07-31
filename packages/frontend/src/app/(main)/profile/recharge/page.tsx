@@ -83,12 +83,13 @@ function RechargePageContent() {
         pay_url: result.pay_url,
         payment_started: '1',
       });
+      if (result.pay_scheme) nextSearch.set('pay_scheme', result.pay_scheme);
       if (returnTo) nextSearch.set('returnTo', returnTo);
       router.push(
         `/profile/recharge/${encodeURIComponent(result.order.id)}?${nextSearch.toString()}`
       );
-      // 首次跳转必须紧跟“立即支付”的用户操作，避免移动端拦截微信拉起。
-      openPaymentUrl(result.pay_url);
+      // 首次跳转必须紧跟“立即支付”的用户操作，避免移动端拦截微信/支付宝拉起。
+      openPaymentUrl(result.pay_scheme ?? result.pay_url);
     } catch {
       notification('error');
     }

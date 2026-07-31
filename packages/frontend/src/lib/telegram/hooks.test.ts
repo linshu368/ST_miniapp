@@ -21,6 +21,22 @@ describe('openPaymentUrl', () => {
     expect(openLink).not.toHaveBeenCalled();
   });
 
+  it('navigates directly for an Alipay scheme', () => {
+    const assign = vi.fn();
+    const openLink = vi.fn();
+    vi.stubGlobal('window', {
+      location: { assign },
+      Telegram: { WebApp: { openLink } },
+    });
+
+    const scheme =
+      'alipays://platformapi/startapp?saId=10000007&qrcode=http%3A%2F%2Fpay.example%2Fq';
+    openPaymentUrl(scheme);
+
+    expect(assign).toHaveBeenCalledWith(scheme);
+    expect(openLink).not.toHaveBeenCalled();
+  });
+
   it('uses Telegram openLink for an HTTPS payment page', () => {
     const assign = vi.fn();
     const openLink = vi.fn();

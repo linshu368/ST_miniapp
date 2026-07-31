@@ -72,5 +72,7 @@ export const config = {
     platformPublicKey: process.env.PAYMENT_PLATFORM_PUBLIC_KEY || '',
     notifyUrl: process.env.PAYMENT_NOTIFY_URL || '',
     returnUrl: process.env.PAYMENT_RETURN_URL || '',
+    /** 支付宝直达 scheme 依赖厂商收银台链路，设为 'false' 可随时退回纯 H5 跳转 */
+    alipaySchemeEnabled: process.env.PAYMENT_ALIPAY_SCHEME !== 'false',
   },
 } as const;
