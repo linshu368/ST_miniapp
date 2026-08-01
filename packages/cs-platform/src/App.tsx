@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CsPersonaData, CsSupportConversationSummary, CsUserData } from '@miniapp/shared';
-import { csApi, getCsAdminToken, setCsAdminToken } from './api';
+import {
+  csApi,
+  getCsAdminToken,
+  getSupportEnv,
+  setCsAdminToken,
+  setSupportEnv,
+  type CsSupportEnv,
+} from './api';
 import type { Membership } from './constants';
 import { LoginPage } from './components/LoginPage';
 import { PersonaSidebar, type CsModule } from './components/PersonaSidebar';
@@ -23,6 +30,7 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [module, setModule] = useState<CsModule>('outreach');
   const [selectedSupportId, setSelectedSupportId] = useState<string | null>(null);
+  const [supportEnv, setSupportEnvState] = useState<CsSupportEnv>(() => getSupportEnv());
 
   useEffect(() => {
     if (!toast) return;
@@ -77,14 +85,22 @@ export default function App() {
   });
 
   const supportQuery = useQuery({
-    queryKey: ['cs', 'support', 'conversations'],
-    queryFn: csApi.supportConversations,
+    queryKey: ['cs', 'support', supportEnv, 'conversations'],
+    queryFn: () => csApi.supportConversations(supportEnv),
     enabled: !!authToken && module === 'support',
     refetchInterval: module === 'support' ? 10_000 : false,
   });
   const supportConversations = supportQuery.data?.conversations ?? [];
   const selectedSupport =
     supportConversations.find((conversation) => conversation.id === selectedSupportId) ?? null;
+
+  // 两套环境的会话 id 不通用，切换后必须放掉当前选中的会话。
+  const handleSupportEnvChange = (env: CsSupportEnv) => {
+    if (env === supportEnv) return;
+    setSupportEnv(env);
+    setSupportEnvState(env);
+    setSelectedSupportId(null);
+  };
 
   const refreshMutation = useMutation({
     mutationFn: (personaId: string) => csApi.refreshPersona(personaId),
@@ -172,6 +188,8 @@ export default function App() {
           isLoading={supportQuery.isLoading}
           errorMessage={supportQuery.isError ? String(supportQuery.error.message) : null}
           selected={selectedSupport}
+          env={supportEnv}
+          onEnvChange={handleSupportEnvChange}
           onSelect={(conversation) => setSelectedSupportId(conversation.id)}
           onRefresh={() => void supportQuery.refetch()}
           onToast={setToast}
@@ -254,6 +272,8 @@ function SupportModule(props: {
   isLoading: boolean;
   errorMessage: string | null;
   selected: CsSupportConversationSummary | null;
+  env: CsSupportEnv;
+  onEnvChange: (env: CsSupportEnv) => void;
   onSelect: (conversation: CsSupportConversationSummary) => void;
   onRefresh: () => void;
   onToast: (text: string) => void;
@@ -265,14 +285,17 @@ function SupportModule(props: {
         isLoading={props.isLoading}
         errorMessage={props.errorMessage}
         selectedId={props.selected?.id ?? null}
+        env={props.env}
+        onEnvChange={props.onEnvChange}
         onSelect={props.onSelect}
         onRefresh={props.onRefresh}
       />
       <div className="conversation-column">
         {props.selected ? (
           <SupportConversationPanel
-            key={props.selected.id}
+            key={`${props.env}:${props.selected.id}`}
             conversation={props.selected}
+            env={props.env}
             onToast={props.onToast}
           />
         ) : (

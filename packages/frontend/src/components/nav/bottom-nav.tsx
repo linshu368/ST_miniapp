@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { Home, MessageCircle, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -24,12 +25,41 @@ const HIDDEN_PREFIXES = [
 
 export function BottomNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const unread = useNotificationUnreadCountQuery();
   const hasUnread = (unread.data?.total ?? 0) > 0;
+
+  // 点击后立刻把高亮挪过去，不等路由提交；否则 ST iframe 占着主线程时按钮会看着像没反应。
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
+  // 导航被中断时 pathname 不会变，兜底把高亮还给真实路由，避免停在错误的 tab 上。
+  useEffect(() => {
+    if (!pendingHref) return;
+    const timer = window.setTimeout(() => setPendingHref(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [pendingHref]);
+
+  // 四个主路由改成预取，但排到空闲帧，避免和 ST 冷启动抢带宽。
+  useEffect(() => {
+    const prefetchAll = () => {
+      for (const item of NAV_ITEMS) router.prefetch(item.href);
+    };
+    const idle = window.requestIdleCallback;
+    if (typeof idle === 'function') {
+      const handle = idle(prefetchAll, { timeout: 4000 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(prefetchAll, 2000);
+    return () => window.clearTimeout(timer);
+  }, [router]);
 
   if (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) {
     return null;
   }
+
+  const highlighted = pendingHref ?? pathname;
 
   return (
     <div
@@ -41,13 +71,13 @@ export function BottomNav() {
         className="pointer-events-auto grid w-full max-w-[390px] grid-cols-4 gap-1 rounded-[1.65rem] border border-border bg-card/92 p-1.5 text-foreground shadow-[0_14px_38px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
-          const active = href === '/' ? pathname === href : pathname?.startsWith(href);
+          const active = href === '/' ? highlighted === href : highlighted?.startsWith(href);
           return (
             <Link
               key={href}
               href={href}
-              prefetch={false}
-              aria-current={active ? 'page' : undefined}
+              onClick={() => setPendingHref(href)}
+              aria-current={pathname === href ? 'page' : undefined}
               aria-label={label}
               className={cn(
                 'group relative isolate flex h-[58px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-[1.3rem] px-2 transition-[color,background-color,box-shadow,transform] duration-300 ease-out active:scale-[0.97]',
