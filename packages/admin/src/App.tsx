@@ -35,6 +35,7 @@ import { ConfigValueEditor } from './components/ConfigValueEditor';
 import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { PlatformPresetsView } from './components/PlatformPresetsView';
+import { AnnouncementsView } from './components/AnnouncementsView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
 import {
   discardDraft,
@@ -772,6 +773,7 @@ function AdminWorkspace(props: {
             },
             { key: 'characters', label: '角色卡' },
             { key: 'platform_presets', label: '平台预设' },
+            { key: 'announcements', label: '公告管理' },
             {
               key: 'analytics',
               label: '数据分析',
@@ -838,6 +840,12 @@ function AdminWorkspace(props: {
             />
           ) : view === 'platform_presets' ? (
             <PlatformPresetsView
+              client={props.client}
+              environment={props.environment}
+              canWrite={canWrite}
+            />
+          ) : view === 'announcements' ? (
+            <AnnouncementsView
               client={props.client}
               environment={props.environment}
               canWrite={canWrite}

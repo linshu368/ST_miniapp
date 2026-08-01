@@ -4,7 +4,9 @@
  * Provision API 服务的 CLI 入口。
  * 独立于 watcher 进程启动，可以单独运行：pnpm start:provision
  */
+import '../instrumentation.js';
 
+import * as Sentry from '@sentry/node';
 import { loadConfig, config } from '../lib/config.js';
 import { createLogger } from '../lib/logger.js';
 import { startProvisionApi } from './server.js';
@@ -21,6 +23,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, '收到退出信号，准备退出');
     await handle.stop();
+    await Sentry.flush(2_000);
     logger.info('Provision API 已安全退出');
     process.exit(0);
   };
@@ -33,5 +36,6 @@ async function main() {
 
 main().catch((err) => {
   console.error('Provision API 启动失败:', err);
-  process.exit(1);
+  Sentry.captureException(err);
+  void Sentry.flush(2_000).finally(() => process.exit(1));
 });

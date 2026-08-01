@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describeCharacterLayoutError,
   getCharacterAvatarUrl,
   filterCharacters,
   layoutsEqual,
@@ -7,6 +8,40 @@ import {
   normalizeCharacterTags,
   summarizeCharacterLayoutChanges,
 } from './characterCards';
+
+describe('character layout error messages', () => {
+  it('names the offending test cards instead of leaking the raw constraint', () => {
+    expect(
+      describeCharacterLayoutError(
+        new Error(
+          'character layout must not contain evaluation test cards: 养母一家、斗罗大陆v1.0'
+        ),
+        '发布失败'
+      )
+    ).toContain('养母一家、斗罗大陆v1.0');
+    expect(
+      describeCharacterLayoutError(
+        new Error(
+          'new row for relation "characters" violates check constraint "characters_test_cards_disabled"'
+        ),
+        '发布失败'
+      )
+    ).toContain('测试卡必须保持下架');
+  });
+
+  it('explains stale layout state and keeps unknown errors verbatim', () => {
+    expect(
+      describeCharacterLayoutError(
+        new Error('character layout version changed; refresh before publishing'),
+        '发布失败'
+      )
+    ).toContain('刷新页面');
+    expect(describeCharacterLayoutError(new Error('connection reset'), '发布失败')).toBe(
+      'connection reset'
+    );
+    expect(describeCharacterLayoutError(null, '发布失败')).toBe('发布失败');
+  });
+});
 
 describe('character card display helpers', () => {
   it('keeps usable string tags only', () => {

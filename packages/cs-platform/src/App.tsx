@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CsPersonaData, CsUserData } from '@miniapp/shared';
-import { csApi, getCsAdminToken, setCsAdminToken } from './api';
+import type { CsPersonaData, CsSupportConversationSummary, CsUserData } from '@miniapp/shared';
+import {
+  csApi,
+  getCsAdminToken,
+  getSupportEnv,
+  setCsAdminToken,
+  setSupportEnv,
+  type CsSupportEnv,
+} from './api';
 import type { Membership } from './constants';
 import { LoginPage } from './components/LoginPage';
-import { PersonaSidebar } from './components/PersonaSidebar';
+import { PersonaSidebar, type CsModule } from './components/PersonaSidebar';
 import { UserListPanel } from './components/UserListPanel';
 import { ConversationPanel } from './components/ConversationPanel';
 import { PersonaModal } from './components/PersonaModal';
+import { SupportWorkbench } from './components/SupportWorkbench';
+import { SupportConversationPanel } from './components/SupportConversationPanel';
 
 export default function App() {
   const qc = useQueryClient();
@@ -19,6 +28,9 @@ export default function App() {
   } | null>(null);
   const [personaModal, setPersonaModal] = useState<CsPersonaData | 'create' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [module, setModule] = useState<CsModule>('outreach');
+  const [selectedSupportId, setSelectedSupportId] = useState<string | null>(null);
+  const [supportEnv, setSupportEnvState] = useState<CsSupportEnv>(() => getSupportEnv());
 
   useEffect(() => {
     if (!toast) return;
@@ -72,6 +84,24 @@ export default function App() {
     refetchInterval: selectedUser ? 30_000 : false,
   });
 
+  const supportQuery = useQuery({
+    queryKey: ['cs', 'support', supportEnv, 'conversations'],
+    queryFn: () => csApi.supportConversations(supportEnv),
+    enabled: !!authToken && module === 'support',
+    refetchInterval: module === 'support' ? 10_000 : false,
+  });
+  const supportConversations = supportQuery.data?.conversations ?? [];
+  const selectedSupport =
+    supportConversations.find((conversation) => conversation.id === selectedSupportId) ?? null;
+
+  // 两套环境的会话 id 不通用，切换后必须放掉当前选中的会话。
+  const handleSupportEnvChange = (env: CsSupportEnv) => {
+    if (env === supportEnv) return;
+    setSupportEnv(env);
+    setSupportEnvState(env);
+    setSelectedSupportId(null);
+  };
+
   const refreshMutation = useMutation({
     mutationFn: (personaId: string) => csApi.refreshPersona(personaId),
     onSuccess: (data) => {
@@ -105,6 +135,7 @@ export default function App() {
     setAuthToken('');
     setSelectedPersonaId(null);
     setSelectedUser(null);
+    setSelectedSupportId(null);
     qc.removeQueries({ queryKey: ['cs'] });
   };
 
@@ -140,6 +171,8 @@ export default function App() {
         selectedId={selectedPersona?.id ?? null}
         isLoading={personasQuery.isLoading}
         errorMessage={personasQuery.isError ? String(personasQuery.error.message) : null}
+        module={module}
+        onModuleChange={setModule}
         onSelect={(id) => {
           setSelectedPersonaId(id);
           setSelectedUser(null);
@@ -149,7 +182,19 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {selectedPersona ? (
+      {module === 'support' ? (
+        <SupportModule
+          conversations={supportConversations}
+          isLoading={supportQuery.isLoading}
+          errorMessage={supportQuery.isError ? String(supportQuery.error.message) : null}
+          selected={selectedSupport}
+          env={supportEnv}
+          onEnvChange={handleSupportEnvChange}
+          onSelect={(conversation) => setSelectedSupportId(conversation.id)}
+          onRefresh={() => void supportQuery.refetch()}
+          onToast={setToast}
+        />
+      ) : selectedPersona ? (
         <UserListPanel
           persona={selectedPersona}
           activeUsers={usersQuery.data?.active ?? []}
@@ -173,22 +218,24 @@ export default function App() {
         </section>
       )}
 
-      <div className="conversation-column">
-        {selectedPersona && selectedUser ? (
-          <ConversationPanel
-            persona={selectedPersona}
-            user={selectedUser.user}
-            messages={messagesQuery.data?.messages ?? []}
-            appChatTurns={appChatQuery.data?.turns ?? []}
-            telegramReachability={reachabilityQuery.data ?? null}
-            session={sessionQuery.data?.session ?? null}
-            onChanged={invalidateConversation}
-            onToast={setToast}
-          />
-        ) : (
-          <EmptyState text="从中间列表选择用户，开始 Telegram 1V1 回访" />
-        )}
-      </div>
+      {module === 'outreach' && (
+        <div className="conversation-column">
+          {selectedPersona && selectedUser ? (
+            <ConversationPanel
+              persona={selectedPersona}
+              user={selectedUser.user}
+              messages={messagesQuery.data?.messages ?? []}
+              appChatTurns={appChatQuery.data?.turns ?? []}
+              telegramReachability={reachabilityQuery.data ?? null}
+              session={sessionQuery.data?.session ?? null}
+              onChanged={invalidateConversation}
+              onToast={setToast}
+            />
+          ) : (
+            <EmptyState text="从中间列表选择用户，开始 Telegram 1V1 回访" />
+          )}
+        </div>
+      )}
 
       {personaModal && (
         <PersonaModal
@@ -218,4 +265,43 @@ export default function App() {
 
 function EmptyState({ text }: { text: string }) {
   return <div className="empty-state">{text}</div>;
+}
+
+function SupportModule(props: {
+  conversations: CsSupportConversationSummary[];
+  isLoading: boolean;
+  errorMessage: string | null;
+  selected: CsSupportConversationSummary | null;
+  env: CsSupportEnv;
+  onEnvChange: (env: CsSupportEnv) => void;
+  onSelect: (conversation: CsSupportConversationSummary) => void;
+  onRefresh: () => void;
+  onToast: (text: string) => void;
+}) {
+  return (
+    <>
+      <SupportWorkbench
+        conversations={props.conversations}
+        isLoading={props.isLoading}
+        errorMessage={props.errorMessage}
+        selectedId={props.selected?.id ?? null}
+        env={props.env}
+        onEnvChange={props.onEnvChange}
+        onSelect={props.onSelect}
+        onRefresh={props.onRefresh}
+      />
+      <div className="conversation-column">
+        {props.selected ? (
+          <SupportConversationPanel
+            key={`${props.env}:${props.selected.id}`}
+            conversation={props.selected}
+            env={props.env}
+            onToast={props.onToast}
+          />
+        ) : (
+          <EmptyState text="从中间列表选择一个客服会话开始回复" />
+        )}
+      </div>
+    </>
+  );
 }

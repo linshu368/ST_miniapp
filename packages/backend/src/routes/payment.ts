@@ -28,6 +28,7 @@ import {
   toPaymentOrder,
 } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import { config } from '../platform/config.js';
+import { insertUserNotification } from '../lib/notifications.js';
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
 const PAYMENT_TYPES: PaymentType[] = [
@@ -260,6 +261,22 @@ async function handleJlpayWebhook(
 
   try {
     await orders.complete(order.id, notifyData.trade_no ?? null);
+    if (order.status !== 'completed') {
+      try {
+        const totalCredits = order.credits_amount + order.bonus_credits;
+        await insertUserNotification({
+          userId: order.user_id,
+          category: 'system',
+          title: '星尘充值到账',
+          body: `订单 ${order.id} 已完成，${totalCredits} 星尘已到账。`,
+        });
+      } catch (notificationError) {
+        log.sys.error(
+          { event: 'payment.notification.failed', orderId: order.id, err: notificationError },
+          '支付完成消息写入失败'
+        );
+      }
+    }
     log.biz.info(
       { event: 'payment.webhook.completed', orderId: order.id, amountCents: order.amount_cents },
       '支付订单完成'

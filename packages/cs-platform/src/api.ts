@@ -16,6 +16,10 @@
   SnoozeCsSessionRequest,
   UpdateCsPersonaRequest,
   ApiResponse,
+  GetCsSupportConversationsData,
+  GetCsSupportMessagesData,
+  SendCsSupportMessageRequest,
+  SendSupportMessageData,
 } from '@miniapp/shared';
 
 const API_URL = (
@@ -24,6 +28,34 @@ const API_URL = (
 ).replace(/\/$/, '');
 const TOKEN_KEY = 'cs_admin_token';
 const OPERATOR_KEY = 'cs_operator_id';
+const SUPPORT_ENV_KEY = 'cs_support_env';
+
+/**
+ * 客服工作台可以单独切后端环境：回访链路固定跑在 VITE_API_URL 上（线上客服在用，不能动），
+ * 而工作台需要能指到还没发布到生产的测试后端去验证。
+ */
+export type CsSupportEnv = 'test' | 'production';
+
+const SUPPORT_API_URLS: Record<CsSupportEnv, string> = {
+  test: (
+    import.meta.env.VITE_CS_TEST_API_URL || 'https://stminiapp-development.up.railway.app'
+  ).replace(/\/$/, ''),
+  production: (
+    import.meta.env.VITE_CS_PROD_API_URL || 'https://stminiapp-production.up.railway.app'
+  ).replace(/\/$/, ''),
+};
+
+export function getSupportEnv(): CsSupportEnv {
+  return localStorage.getItem(SUPPORT_ENV_KEY) === 'production' ? 'production' : 'test';
+}
+
+export function setSupportEnv(env: CsSupportEnv) {
+  localStorage.setItem(SUPPORT_ENV_KEY, env);
+}
+
+export function getSupportApiUrl(env: CsSupportEnv): string {
+  return SUPPORT_API_URLS[env];
+}
 
 export function getCsAdminToken() {
   return localStorage.getItem(TOKEN_KEY) ?? '';
@@ -41,14 +73,14 @@ export function setCsOperatorId(operatorId: string) {
   localStorage.setItem(OPERATOR_KEY, operatorId);
 }
 
-async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
+async function apiClient<T>(path: string, options?: RequestInit, baseUrl = API_URL): Promise<T> {
   const headers = new Headers(options?.headers);
   const token = getCsAdminToken();
   if (token) headers.set('X-CS-Admin-Token', token);
   headers.set('X-CS-Operator-Id', getCsOperatorId());
   if (options?.body) headers.set('Content-Type', 'application/json');
 
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const response = await fetch(`${baseUrl}${path}`, { ...options, headers });
   const json = (await response.json().catch(() => null)) as ApiResponse<T> | null;
   if (!response.ok) {
     if (json && !json.success) throw new Error(json.error.message);
@@ -133,6 +165,30 @@ export const csApi = {
         method: 'POST',
         body: JSON.stringify(body),
       }
+    ),
+  // MiniApp 内的客服会话，与上面基于 Telegram 的回访链路互不共用数据。
+  // 这三个接口按 env 走各自的后端，回访接口不受影响。
+  supportConversations: (env: CsSupportEnv) =>
+    apiClient<GetCsSupportConversationsData>(
+      '/api/cs/support/conversations',
+      undefined,
+      getSupportApiUrl(env)
+    ),
+  supportMessages: (env: CsSupportEnv, conversationId: string) =>
+    apiClient<GetCsSupportMessagesData>(
+      `/api/cs/support/conversations/${encodeURIComponent(conversationId)}/messages`,
+      undefined,
+      getSupportApiUrl(env)
+    ),
+  sendSupportMessage: (
+    env: CsSupportEnv,
+    conversationId: string,
+    body: SendCsSupportMessageRequest
+  ) =>
+    apiClient<SendSupportMessageData>(
+      `/api/cs/support/conversations/${encodeURIComponent(conversationId)}/messages`,
+      { method: 'POST', body: JSON.stringify(body) },
+      getSupportApiUrl(env)
     ),
   exportPersona: async (personaId: string, personaName: string) => {
     const headers = new Headers();

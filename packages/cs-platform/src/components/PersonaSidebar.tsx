@@ -1,11 +1,15 @@
 ﻿import type { CsPersonaData } from '@miniapp/shared';
 import { getCsOperatorId } from '../api';
 
+export type CsModule = 'outreach' | 'support';
+
 export function PersonaSidebar(props: {
   personas: CsPersonaData[];
   selectedId: string | null;
   isLoading: boolean;
   errorMessage: string | null;
+  module: CsModule;
+  onModuleChange: (module: CsModule) => void;
   onSelect: (id: string) => void;
   onConfigure: (persona: CsPersonaData) => void;
   onCreate: () => void;
@@ -18,14 +22,38 @@ export function PersonaSidebar(props: {
         <span className="sidebar-title">蜜镜AI用户回访平台</span>
       </header>
 
-      <div className="sidebar-section-head persona-section-head">
+      <div className="module-switch">
+        <button
+          className={props.module === 'outreach' ? 'is-active' : ''}
+          onClick={() => props.onModuleChange('outreach')}
+        >
+          回访
+        </button>
+        <button
+          className={props.module === 'support' ? 'is-active' : ''}
+          onClick={() => props.onModuleChange('support')}
+        >
+          客服工作台
+        </button>
+      </div>
+
+      {props.module === 'support' ? (
+        <div className="module-note">
+          <p>客服工作台处理 MiniApp 内用户提交的问题，不走 Telegram 回访 SOP。</p>
+        </div>
+      ) : null}
+
+      <div
+        className="sidebar-section-head persona-section-head"
+        hidden={props.module !== 'outreach'}
+      >
         <h2>画像簇</h2>
         <button className="btn btn-sm" onClick={props.onCreate}>
           + 新建
         </button>
       </div>
 
-      <nav className="persona-list">
+      <nav className="persona-list" hidden={props.module !== 'outreach'}>
         {props.isLoading && <p className="hint-text">加载中…</p>}
         {props.errorMessage && <p className="error-text">{props.errorMessage}</p>}
         {!props.isLoading && !props.errorMessage && props.personas.length === 0 && (

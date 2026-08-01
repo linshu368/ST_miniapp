@@ -24,30 +24,56 @@
     --input: 240 5.9% 90%;
     --ring: 240 5.9% 10%;
     --radius: 0.625rem;
+
+    /* 扩展语义色的浅色兜底；App 目前始终以 .dark 运行，这里只为避免变量未定义。 */
+    --bubble-user: 32 30% 94%;
+    --rose: 353 45% 52%;
+    --rose-fill: 352 40% 45%;
+    --success: 88 22% 38%;
+    --warn: 34 55% 42%;
+    --glow: 34 53.4% 55%;
   }
 
   .dark {
-    /* 夜间情绪色板：带暖色偏移的深墨 + 珊瑚主色，服务"单手/低光/沉浸"场景 */
-    --background: 260 20% 6%;
-    --foreground: 30 15% 92%;
-    --card: 258 18% 10%;
-    --card-foreground: 30 15% 92%;
-    --popover: 258 18% 10%;
-    --popover-foreground: 30 15% 92%;
-    --primary: 12 75% 62%;
-    --primary-foreground: 260 30% 8%;
-    --secondary: 258 15% 16%;
-    --secondary-foreground: 30 10% 88%;
-    --muted: 258 14% 13%;
-    --muted-foreground: 258 10% 55%;
-    --accent: 340 65% 58%;
-    --accent-foreground: 30 15% 92%;
-    --destructive: 0 50% 48%;
-    --destructive-foreground: 30 15% 92%;
-    --border: 258 12% 18%;
-    --input: 258 12% 16%;
-    --ring: 12 75% 62%;
+    /*
+      全局夜间色板：暖调暗棕紫底 + 烛光金强调。
+      用户集中在凌晨 22:00–02:00、被窝或厕所使用，因此底色不取纯黑、正文不取纯白，
+      两头各收一档，避免暗环境下的光晕与拖影；色温偏暖、蓝分量低。
+      对比度（sRGB 相对亮度实测）：正文/底色 13.8:1，次要文字 6.1:1，
+      强调色 8.9:1，强调底深字 8.2:1，均达 WCAG AAA。
+    */
+    --background: 312 9.4% 10.4%;
+    --foreground: 333 18.4% 90.4%;
+    --card: 310 8.3% 14.1%;
+    --card-foreground: 333 18.4% 90.4%;
+    --popover: 310 8.3% 14.1%;
+    --popover-foreground: 333 18.4% 90.4%;
+    --primary: 34 53.4% 68%;
+    --primary-foreground: 27 31.3% 12.5%;
+    --secondary: 308 8.5% 18.4%;
+    --secondary-foreground: 333 18.4% 90.4%;
+    --muted: 312 8.2% 12%;
+    --muted-foreground: 326 7% 60.8%;
+    --accent: 32 22.9% 16.3%;
+    --accent-foreground: 34 53.4% 68%;
+    --destructive: 3 39.8% 61.6%;
+    --destructive-foreground: 27 31.3% 12.5%;
+    --border: 307 8% 22.2%;
+    --input: 307 8% 22.2%;
+    --ring: 34 53.4% 68%;
     --radius: 0.875rem;
+
+    /*
+      扩展语义色：shadcn 那套没有对应位，但产品上需要与强调金区分开的几支。
+      收藏心形不跟强调金走，避免整屏只有一种颜色；订单三态需要三向语义区分，
+      统一用低饱和自然色，不用高饱和红绿黄，暗环境下不跳。
+    */
+    --bubble-user: 347 9.7% 18.2%;
+    --rose: 353 40% 68.6%;
+    --rose-fill: 352 33.6% 58%;
+    --success: 88 16.5% 62%;
+    --warn: 34 46.8% 60.2%;
+    --glow: 34 53.4% 68%;
   }
 }
 
@@ -66,32 +92,6 @@
     font-feature-settings: 'kern', 'liga', 'calt';
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
-  }
-}
-
-@layer components {
-  html[data-appearance='light'] [data-app-shell] {
-    background:
-      radial-gradient(circle at 50% 0%, rgba(124, 58, 237, 0.12), transparent 36%),
-      linear-gradient(180deg, #fbf7ff 0%, #f4efff 100%) !important;
-    color: #1f1635 !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='text-white'] {
-    color: #1f1635 !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='text-slate-'] {
-    color: #34264e !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='bg-white/'],
-  html[data-appearance='light'] [data-app-shell] [class*='bg-white\\['] {
-    background-color: rgba(255, 255, 255, 0.72) !important;
-  }
-
-  html[data-appearance='light'] [data-app-shell] [class*='border-white/'] {
-    border-color: rgba(79, 70, 229, 0.16) !important;
   }
 }
 

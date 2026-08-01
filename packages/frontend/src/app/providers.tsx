@@ -11,11 +11,10 @@ import { useUserSettingsQuery } from '@/lib/api/settings';
 import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
+import { stripSensitiveTelegramLaunchParamsFromLocation } from '@/lib/telegram/launch-url';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { useFontScaleStore } from '@/stores/font-scale-store';
-import { useThemeStore } from '@/stores/theme-store';
 import { useUserProfileStore } from '@/stores/user-profile-store';
-import { useAppearanceStore } from '@/stores/appearance-store';
 import { BridgeProvider } from '@/components/bridge/bridge-provider';
 import { STIframe } from '@/components/bridge/st-iframe';
 
@@ -23,26 +22,21 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
-  const hydrateAppearance = useAppearanceStore((s) => s.hydrate);
-  const hydrateTheme = useThemeStore((s) => s.hydrate);
   const hydrateFontScale = useFontScaleStore((s) => s.hydrate);
 
   useEffect(() => {
     initTelegramSdk();
     const telegramUser = parseTelegramUser(getRawInitData());
     setTelegramUser(telegramUser.id);
+    stripSensitiveTelegramLaunchParamsFromLocation();
     void loadSessionReplay();
     // initTelegramSdk 是同步副作用,initData 在它跑完后立即可读;
     // hydrate 把 telegram first_name + localStorage 覆盖合成 displayName
     hydrateUserProfile();
-    // 应用全局亮暗模式
-    hydrateAppearance();
-    // 应用持久化的消息主题(4 轴文本色),覆盖 globals.css 的默认 var
-    hydrateTheme();
     // 应用持久化的消息字号倍率
     hydrateFontScale();
     setTelegramReady(true);
-  }, [hydrateUserProfile, hydrateAppearance, hydrateTheme, hydrateFontScale]);
+  }, [hydrateUserProfile, hydrateFontScale]);
 
   return (
     <QueryClientProvider client={queryClient}>

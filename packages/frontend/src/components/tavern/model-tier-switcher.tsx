@@ -123,14 +123,14 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
     return (
       <div className="flex flex-col gap-3 px-4 pb-8">
         {[0, 1, 2].map((key) => (
-          <div key={key} className="h-20 animate-pulse rounded-2xl bg-white/5" />
+          <div key={key} className="h-20 animate-pulse rounded-2xl bg-card" />
         ))}
       </div>
     );
   }
 
   if (!data || data.catalog.tiers.length === 0) {
-    return <p className="px-5 py-10 text-center text-sm text-white/55">暂时没有可用模型</p>;
+    return <p className="px-5 py-10 text-center text-sm text-muted-foreground">暂时没有可用模型</p>;
   }
 
   return (
@@ -139,26 +139,30 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
         <button
           type="button"
           onClick={props.onBack}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/7 text-white/70"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground"
           aria-label="返回工具箱"
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
         <div className="text-center">
-          <h2 className="text-[17px] font-semibold text-white">选择剧情引擎</h2>
+          <h2 className="text-[17px] font-semibold text-foreground">选择剧情引擎</h2>
         </div>
-        <div className="w-9 text-right text-[10px] text-white/35">{isFetching ? '同步中' : ''}</div>
+        <div className="w-9 text-right text-[10px] text-muted-foreground">
+          {isFetching ? '同步中' : ''}
+        </div>
       </div>
 
-      <div className="model-current-shimmer relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3.5">
+      <div className="model-current-shimmer relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3.5">
         <div className="relative z-10 flex items-center gap-3">
           <span
             className="model-tier-pulse h-3 w-3 shrink-0 rounded-full"
-            style={{ backgroundColor: selectedTier?.color ?? '#818cf8' }}
+            style={{ backgroundColor: selectedTier?.color ?? 'hsl(var(--primary))' }}
           />
           <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-white/35">当前引擎</p>
-            <p className="truncate text-[15px] font-semibold text-white">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              当前引擎
+            </p>
+            <p className="truncate text-[15px] font-semibold text-foreground">
               {selectedModel?.display_name ?? '等待选择'}
             </p>
           </div>
@@ -166,7 +170,7 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
       </div>
 
       {feedback ? (
-        <div className="rounded-xl border border-purple-400/20 bg-purple-400/10 px-3 py-2 text-xs text-purple-100">
+        <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-xs text-primary">
           {feedback}
         </div>
       ) : null}
@@ -204,7 +208,7 @@ function TierGroup(props: {
   onSelect: (modelId: string) => void;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black/15">
+    <section className="overflow-hidden rounded-2xl border border-border bg-card">
       <button
         type="button"
         onClick={props.onToggle}
@@ -217,19 +221,19 @@ function TierGroup(props: {
           >
             {props.tier.label}
           </span>
-          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-amber-100/90">
+          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-primary/90">
             {props.tier.cost_hint}
           </span>
         </div>
         <ChevronDown
           className={cn(
-            'h-4 w-4 shrink-0 text-white/35 transition-transform',
+            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
             props.collapsed && '-rotate-90'
           )}
         />
       </button>
       {!props.collapsed ? (
-        <div className="divide-y divide-white/[0.07] border-t border-white/[0.07]">
+        <div className="divide-y divide-border border-t border-border">
           {props.tier.models.map((model) => {
             const active = model.id === props.selectedModelId;
             const isFree = isFreeCatalogModel(model);
@@ -241,33 +245,31 @@ function TierGroup(props: {
                 onClick={() => props.onSelect(model.id)}
                 className={cn(
                   'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-all disabled:opacity-50',
-                  active ? 'bg-purple-400/12' : 'hover:bg-white/5'
+                  active ? 'bg-primary/10' : 'hover:bg-secondary'
                 )}
               >
                 <span
                   className={cn(
                     'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-transform',
-                    active
-                      ? 'scale-110 border-transparent bg-gradient-to-br from-violet-500 to-indigo-400'
-                      : 'border-white/25'
+                    active ? 'scale-110 border-transparent bg-primary' : 'border-border'
                   )}
                 >
-                  {active ? <Check className="h-3.5 w-3.5 text-white" /> : null}
+                  {active ? <Check className="h-3.5 w-3.5 text-primary-foreground" /> : null}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-[15px] font-medium text-white">
+                    <span className="truncate text-[15px] font-medium text-foreground">
                       {model.display_name}
                     </span>
                     {isFree ? (
-                      <span className="shrink-0 rounded-full border border-emerald-300/25 bg-emerald-300/12 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
+                      <span className="shrink-0 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success">
                         限量免费
                       </span>
                     ) : null}
                   </div>
                   {/* 介绍语固定在名称下方：长名称不再与介绍语横向挤压，长文案按两行截断。 */}
                   {model.tagline ? (
-                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-white/50">
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
                       {model.tagline}
                     </p>
                   ) : null}
@@ -276,7 +278,7 @@ function TierGroup(props: {
                     &nbsp;
                   </p>
                 </div>
-                {active ? <Sparkles className="h-4 w-4 shrink-0 text-purple-300" /> : null}
+                {active ? <Sparkles className="h-4 w-4 shrink-0 text-primary" /> : null}
               </button>
             );
           })}

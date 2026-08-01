@@ -7,7 +7,7 @@
     "registry": "tsx src/registry/index.ts",
     "provision": "tsx src/provisioner/run.ts",
     "watch": "tsx src/watcher/run.ts",
-    "start:provision": "tsx src/provision-api/run.ts",
+    "start:provision": "tsx --import ./src/instrumentation.ts src/provision-api/run.ts",
     "import-character": "tsx ../../scripts/import-character.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -15,12 +15,14 @@
   },
   "dependencies": {
     "@miniapp/shared": "workspace:*",
+    "@sentry/node": "^10.69.0",
     "@supabase/supabase-js": "^2.49.0",
     "chokidar": "^5.0.0",
     "dotenv": "^16.4.0",
     "js-yaml": "^4.1.0",
     "lodash-es": "^4.17.21",
     "pino": "^10.3.1",
+    "playwright-core": "^1.61.1",
     "sharp": "^0.35.3",
     "ws": "^8.21.0",
     "zod": "^3.23.0"

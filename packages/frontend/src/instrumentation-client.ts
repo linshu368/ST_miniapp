@@ -27,6 +27,9 @@ if (isSentryEnabled) {
     replaysSessionSampleRate: 1.0,
     replaysOnErrorSampleRate: 1.0,
     enableLogs: true,
+    initialScope: {
+      tags: { service: 'frontend' },
+    },
     beforeSend: (event) => sanitizeTelemetry(event),
     beforeSendTransaction: (event) => sanitizeTelemetry(event),
     beforeBreadcrumb: (breadcrumb) => sanitizeTelemetry(breadcrumb),

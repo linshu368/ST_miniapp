@@ -21,7 +21,11 @@ import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
+import simulationRoutes from './routes/simulation.js';
+import notificationRoutes from './routes/notifications.js';
+import supportRoutes from './routes/support.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
+import { bindRequestSentryContext } from './lib/sentry.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -33,6 +37,10 @@ export async function buildApp() {
       if (Array.isArray(hdr) && hdr[0]) return hdr[0];
       return randomUUID();
     },
+  });
+
+  app.addHook('onRequest', async (request) => {
+    bindRequestSentryContext(request);
   });
 
   await app.register(cors, {
@@ -70,6 +78,11 @@ export async function buildApp() {
       'Authorization',
       'X-Init-Data',
       'X-Request-Id',
+      'X-First-Chat-Journey-Id',
+      'X-First-Chat-Attempt-Id',
+      'X-Boot-Session-Id',
+      'sentry-trace',
+      'baggage',
       'X-CS-Admin-Token',
       'X-CS-Operator-Id',
       'X-Bot-Internal-Secret',
@@ -99,14 +112,19 @@ export async function buildApp() {
   await app.register(growthRoutes);
   await app.register(debugRoutes); // [iframe-timing] TEMP DEBUG
   await app.register(adminSupabaseProxyRoutes);
+  await app.register(simulationRoutes);
+  await app.register(notificationRoutes);
+  await app.register(supportRoutes);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],
     { parseAs: 'buffer' },
     (_req, body, done) => done(null, body)
   );
+  // @frontend-ready: true
   app.all('/api/bridge/st/*', stProxyHandler);
 
+  // @frontend-ready: true
   app.get('/health', async () => {
     return ok<HealthData>({
       status: 'ok',
@@ -114,7 +132,12 @@ export async function buildApp() {
     });
   });
 
-  startChatHistorySyncJob(app.log);
+  if (config.chatHistorySyncEnabled) {
+    app.log.info('[sync-job] Chat history sync job enabled');
+    startChatHistorySyncJob(app.log);
+  } else {
+    app.log.info('[sync-job] Chat history sync job disabled by CHAT_HISTORY_SYNC_ENABLED=false');
+  }
 
   app.addHook('onClose', async () => {
     stopChatHistorySyncJob();

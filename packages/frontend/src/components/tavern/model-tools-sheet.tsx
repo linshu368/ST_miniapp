@@ -7,11 +7,12 @@ import {
   // Image,
   MessageSquarePlus,
   // Mic,
-  SlidersHorizontal,
   Sparkles,
+  WandSparkles,
   // UserRound,
 } from 'lucide-react';
 
+import { cn } from '@/lib/utils';
 import { useModelCatalogQuery } from '@/lib/api/models';
 import { shouldRefreshModelCatalog } from '@/lib/api/model-cache-policy';
 import { platformAction, useBridgeStatus } from '@/lib/bridge';
@@ -74,10 +75,10 @@ export function ModelToolsSheet() {
     <>
       <button
         onClick={() => setMenuState((state) => (state === 'closed' ? 'tools' : 'closed'))}
-        className="fixed bottom-0 left-0 z-20 flex h-[38px] w-10 items-center justify-center border-0 bg-transparent text-white/70 transition-colors hover:bg-white/5 hover:text-white active:bg-white/10"
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+13px)] left-[13px] z-20 flex size-10 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-sm transition hover:bg-muted active:scale-95"
         aria-label="工具菜单"
       >
-        <SlidersHorizontal className="h-[18px] w-[18px]" />
+        <WandSparkles className="size-[18px]" strokeWidth={2} />
       </button>
 
       {menuState !== 'closed' && typeof document !== 'undefined'
@@ -90,7 +91,7 @@ export function ModelToolsSheet() {
                 aria-label="关闭工具面板"
               />
               <div
-                className="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-[480px] flex-col overflow-hidden rounded-t-[24px] border border-white/10 bg-[#141726]/[0.98] shadow-[0_-24px_80px_rgba(0,0,0,0.55)]"
+                className="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-[480px] flex-col overflow-hidden rounded-t-[28px] border border-border bg-popover/[0.98] text-popover-foreground shadow-[0_-24px_80px_rgba(0,0,0,0.25)]"
                 style={{
                   height: menuState === 'models' ? '75dvh' : '50dvh',
                   transform: `translateY(${dragY}px)`,
@@ -103,7 +104,7 @@ export function ModelToolsSheet() {
                 onTouchEnd={handleTouchEnd}
               >
                 <div className="flex shrink-0 justify-center pb-2 pt-2.5">
-                  <div className="h-1 w-10 rounded-full bg-white/25" />
+                  <div className="h-1 w-10 rounded-full bg-muted-foreground/35" />
                 </div>
                 <div
                   ref={scrollRef}
@@ -151,24 +152,24 @@ function ToolsPanel(props: {
   return (
     <div className="px-4 pb-8">
       <div className="mb-4 px-1">
-        <h2 className="text-lg font-semibold text-white">工具箱</h2>
-        <p className="mt-0.5 text-xs text-white/40">调整当前对话体验</p>
+        <h2 className="text-lg font-semibold text-foreground">工具箱</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">调整当前对话体验</p>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.035]">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <button
           type="button"
           onClick={props.onModels}
-          className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-white/5"
+          className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-secondary"
         >
-          <ToolIcon icon={Sparkles} color="#818cf8" />
+          <ToolIcon icon={Sparkles} />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-white">模型选择</p>
-            <p className="text-[11px] text-white/40">切换对话模型</p>
+            <p className="text-sm font-medium text-foreground">模型选择</p>
+            <p className="text-[11px] text-muted-foreground">切换对话模型</p>
           </div>
-          <span className="max-w-[38%] truncate text-xs text-white/45">
+          <span className="max-w-[38%] truncate text-xs text-muted-foreground">
             {props.currentModelName}
           </span>
-          <ChevronRight className="h-4 w-4 text-white/30" />
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </button>
         {/* 暂时隐藏，后续开放时恢复 disabledTools 定义及以下渲染代码。
         {disabledTools.map((tool) => (
@@ -192,7 +193,7 @@ function ToolsPanel(props: {
         type="button"
         disabled={!props.bridgeReady}
         onClick={props.onNewChat}
-        className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3 text-sm text-white/70 disabled:opacity-40"
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground disabled:opacity-40"
       >
         <MessageSquarePlus className="h-4 w-4" />
         开启新对话
@@ -201,12 +202,16 @@ function ToolsPanel(props: {
   );
 }
 
-function ToolIcon(props: { icon: React.ComponentType<{ className?: string }>; color: string }) {
+/** color 只留给未开放工具那组自定义色，缺省走主题强调色。 */
+function ToolIcon(props: { icon: React.ComponentType<{ className?: string }>; color?: string }) {
   const Icon = props.icon;
   return (
     <span
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-      style={{ backgroundColor: `${props.color}20`, color: props.color }}
+      className={cn(
+        'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
+        !props.color && 'bg-primary/15 text-primary'
+      )}
+      style={props.color ? { backgroundColor: `${props.color}20`, color: props.color } : undefined}
     >
       <Icon className="h-[18px] w-[18px]" />
     </span>
