@@ -7,6 +7,7 @@ import { Home, MessageCircle, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
+import { useSupportUnreadQuery } from '@/lib/api/support';
 
 const NAV_ITEMS = [
   { href: '/', label: '大厅', Icon: Home },
@@ -27,7 +28,9 @@ export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
   const unread = useNotificationUnreadCountQuery();
-  const hasUnread = (unread.data?.total ?? 0) > 0;
+  const supportUnread = useSupportUnreadQuery();
+  // 「我的」页里公告和客服回复各有各的红点，导航上只汇总成一个。
+  const hasUnread = (unread.data?.total ?? 0) > 0 || supportUnread.data?.has_unread === true;
 
   // 点击后立刻把高亮挪过去，不等路由提交；否则 ST iframe 占着主线程时按钮会看着像没反应。
   const [pendingHref, setPendingHref] = useState<string | null>(null);

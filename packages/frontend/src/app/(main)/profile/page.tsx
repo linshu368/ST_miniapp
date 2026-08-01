@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 
 import { useDailyCheckinMutation, useDailyCheckinQuery, useWalletCredits } from '@/lib/api/payment';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
+import { useSupportUnreadQuery } from '@/lib/api/support';
 import {
   usePatchUserSettingsMutation,
   useSetUserAvatarMutation,
@@ -37,6 +38,7 @@ export default function ProfilePage() {
   const telegramUserId = useMemo(readTelegramUserId, []);
   const credits = useWalletCredits();
   const unread = useNotificationUnreadCountQuery();
+  const supportUnread = useSupportUnreadQuery();
   const displayName = useUserProfileStore((s) => s.displayName);
   const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
@@ -391,6 +393,7 @@ export default function ProfilePage() {
           Icon={Headphones}
           title="联系客服"
           subtitle="有问题随时找我们"
+          showDot={supportUnread.data?.has_unread === true}
         />
         <ProfileRow
           href="/profile/messages"

@@ -7,16 +7,22 @@ import {
   type SendSupportMessageData,
   type SendSupportMessageRequest,
   type SupportMessage,
+  type SupportUnreadData,
 } from '@miniapp/shared';
 import { getSupabaseClient } from '../lib/supabase.js';
+import { hasUnreadAgentReply } from '../lib/support-unread.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CONVERSATION_COLUMNS = 'id,status,agent_unread_count,last_agent_message_at,user_last_read_at';
 
 interface ConversationRow {
   id: string;
   status: 'open' | 'resolved';
+  agent_unread_count: number;
+  last_agent_message_at: string | null;
+  user_last_read_at: string | null;
 }
 
 export default async function supportRoutes(app: FastifyInstance) {
@@ -33,13 +39,46 @@ export default async function supportRoutes(app: FastifyInstance) {
       return reply.send(
         ok<GetSupportConversationData>({
           conversation: {
-            ...conversation,
+            id: conversation.id,
+            status: conversation.status,
             messages: await listMessages(conversation.id),
           },
         })
       );
     }
   );
+
+  // 「我的」页和底部导航的客服红点都读这里，判定完全在服务端，多端进出不会各自算出不同结果。
+  app.get('/api/support/unread', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
+    if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+    const user = await getOrCreateDbUser(request.user);
+    const conversation = await findConversation(user.id);
+    return reply.send(
+      ok<SupportUnreadData>({
+        has_unread: hasUnreadAgentReply(
+          conversation?.last_agent_message_at,
+          conversation?.user_last_read_at
+        ),
+      })
+    );
+  });
+
+  // 进入客服聊天页即视为读过；聊天页开着又来新回复时会再调一次，推进水位线。
+  app.post('/api/support/read', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
+    if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+    const user = await getOrCreateDbUser(request.user);
+    const conversation = await findConversation(user.id);
+    if (!conversation) return reply.send(ok<SupportUnreadData>({ has_unread: false }));
+
+    const now = new Date().toISOString();
+    const { error } = await getSupabaseClient()
+      .schema('miniapp')
+      .from('support_conversations')
+      .update({ user_last_read_at: now, updated_at: now })
+      .eq('id', conversation.id);
+    if (error) throw new Error(`更新客服已读状态失败：${error.message}`);
+    return reply.send(ok<SupportUnreadData>({ has_unread: false }));
+  });
 
   app.get(
     '/api/support/messages',
@@ -113,29 +152,27 @@ async function findConversation(userId: string): Promise<ConversationRow | null>
   const { data, error } = await getSupabaseClient()
     .schema('miniapp')
     .from('support_conversations')
-    .select('id,status,agent_unread_count')
+    .select(CONVERSATION_COLUMNS)
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw new Error(`读取客服会话失败：${error.message}`);
-  return data as (ConversationRow & { agent_unread_count: number }) | null;
+  return data as ConversationRow | null;
 }
 
-async function getOrCreateConversation(
-  userId: string
-): Promise<ConversationRow & { agent_unread_count: number }> {
+async function getOrCreateConversation(userId: string): Promise<ConversationRow> {
   const existing = await findConversation(userId);
-  if (existing) return existing as ConversationRow & { agent_unread_count: number };
+  if (existing) return existing;
   const { data, error } = await getSupabaseClient()
     .schema('miniapp')
     .from('support_conversations')
     .upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true })
-    .select('id,status,agent_unread_count')
+    .select(CONVERSATION_COLUMNS)
     .maybeSingle();
   if (error) throw new Error(`创建客服会话失败：${error.message}`);
-  if (data) return data as ConversationRow & { agent_unread_count: number };
+  if (data) return data as ConversationRow;
   const afterRace = await findConversation(userId);
   if (!afterRace) throw new Error('创建客服会话后回读失败');
-  return afterRace as ConversationRow & { agent_unread_count: number };
+  return afterRace;
 }
 
 async function listMessages(conversationId: string, after?: string): Promise<SupportMessage[]> {

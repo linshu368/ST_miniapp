@@ -31,7 +31,6 @@ import {
 import { config } from '../platform/config.js';
 import { CsPlatformRepository } from '../infrastructure/repositories/CsPlatformRepository.js';
 import { prisma } from '../lib/db.js';
-import { insertUserNotification } from '../lib/notifications.js';
 
 const ADMIN_HEADER = 'x-cs-admin-token';
 const OPERATOR_HEADER = 'x-cs-operator-id';
@@ -488,9 +487,9 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
       if (!UUID_RE.test(id) || !text || text.length > 4000) {
         return reply.status(400).send(fail('INVALID_MESSAGE', '会话或消息内容无效'));
       }
-      const rows = await prisma.$queryRaw<Array<{ message: SupportMessage; user_id: string }>>`
+      const rows = await prisma.$queryRaw<Array<{ message: SupportMessage }>>`
         WITH target AS (
-          SELECT id, user_id FROM miniapp.support_conversations
+          SELECT id FROM miniapp.support_conversations
           WHERE id = ${id}::uuid FOR UPDATE
         ), inserted AS (
           INSERT INTO miniapp.support_messages (conversation_id, sender, body)
@@ -501,17 +500,13 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
           SET status = 'open', last_agent_message_at = now(), updated_at = now()
           FROM target WHERE c.id = target.id
         )
-        SELECT row_to_json(inserted)::jsonb AS message, target.user_id
-        FROM inserted CROSS JOIN target
+        SELECT row_to_json(inserted)::jsonb AS message
+        FROM inserted
       `;
       const result = rows[0];
       if (!result) return reply.status(404).send(fail('NOT_FOUND', '客服会话不存在'));
-      await insertUserNotification({
-        userId: result.user_id,
-        category: 'system',
-        title: '客服已回复你的问题',
-        body: text.length > 120 ? `${text.slice(0, 117)}…` : text,
-      });
+      // 回复不再写消息中心：用户在消息中心点不进会话，通知要落在「联系客服」入口的红点上，
+      // 而红点由 last_agent_message_at 与 user_last_read_at 的先后推导，这里无需额外写入。
       return reply.status(201).send(ok<SendSupportMessageData>({ message: result.message }));
     }
   );
