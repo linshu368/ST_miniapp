@@ -33,14 +33,20 @@ export default function MessageCenterPage() {
   const markRead = useMarkNotificationsReadMutation();
   const notifications = query.data?.notifications ?? [];
 
-  // 打开某个分页即视为读过该分页，两处红点同时消失；每个分页只提交一次。
-  const markedScopes = useRef(new Set<NotificationScope>());
-  const hasUnread = notifications.some((item) => !item.is_read);
+  // 打开某个分页即视为读过该分页。按消息 id 记账而不是按分页记账：页面开着时轮询到
+  // 新公告也会被标记，否则它会一直挂着未读、把红点留在导航上。
+  const requestedRef = useRef(new Set<string>());
+  const unmarkedIds = notifications
+    .filter((item) => !item.is_read && !requestedRef.current.has(item.id))
+    .map((item) => item.id);
+  const unmarkedKey = unmarkedIds.join(',');
   useEffect(() => {
-    if (!hasUnread || markedScopes.current.has(scope)) return;
-    markedScopes.current.add(scope);
+    if (!unmarkedKey) return;
+    for (const id of unmarkedKey.split(',')) requestedRef.current.add(id);
     markRead.mutate({ scope });
-  }, [hasUnread, markRead, scope]);
+    // markRead 的引用每次渲染都会变，只依赖待标记集合和分页即可。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unmarkedKey, scope]);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background text-foreground">

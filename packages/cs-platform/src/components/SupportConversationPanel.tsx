@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CsSupportConversationSummary } from '@miniapp/shared';
-import { csApi } from '../api';
+import { csApi, type CsSupportEnv } from '../api';
 
 export function SupportConversationPanel(props: {
   conversation: CsSupportConversationSummary;
+  env: CsSupportEnv;
   onToast: (text: string) => void;
 }) {
   const qc = useQueryClient();
@@ -12,8 +13,8 @@ export function SupportConversationPanel(props: {
   const listRef = useRef<HTMLDivElement>(null);
 
   const messagesQuery = useQuery({
-    queryKey: ['cs', 'support', 'messages', props.conversation.id],
-    queryFn: () => csApi.supportMessages(props.conversation.id),
+    queryKey: ['cs', 'support', props.env, 'messages', props.conversation.id],
+    queryFn: () => csApi.supportMessages(props.env, props.conversation.id),
     refetchInterval: 5_000,
   });
   const messages = messagesQuery.data?.messages ?? [];
@@ -23,10 +24,11 @@ export function SupportConversationPanel(props: {
   }, [messages.length]);
 
   const sendMutation = useMutation({
-    mutationFn: (body: string) => csApi.sendSupportMessage(props.conversation.id, { body }),
+    mutationFn: (body: string) =>
+      csApi.sendSupportMessage(props.env, props.conversation.id, { body }),
     onSuccess: () => {
       setDraft('');
-      void qc.invalidateQueries({ queryKey: ['cs', 'support'] });
+      void qc.invalidateQueries({ queryKey: ['cs', 'support', props.env] });
     },
     onError: (error) => props.onToast(error instanceof Error ? error.message : '回复发送失败'),
   });

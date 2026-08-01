@@ -1,4 +1,10 @@
 import type { CsSupportConversationSummary } from '@miniapp/shared';
+import { getSupportApiUrl, type CsSupportEnv } from '../api';
+
+const ENV_OPTIONS: Array<{ value: CsSupportEnv; label: string }> = [
+  { value: 'test', label: '测试' },
+  { value: 'production', label: '生产' },
+];
 
 function formatTime(value: string | null): string {
   if (!value) return '—';
@@ -18,6 +24,8 @@ export function SupportWorkbench(props: {
   isLoading: boolean;
   errorMessage: string | null;
   selectedId: string | null;
+  env: CsSupportEnv;
+  onEnvChange: (env: CsSupportEnv) => void;
   onSelect: (conversation: CsSupportConversationSummary) => void;
   onRefresh: () => void;
 }) {
@@ -29,11 +37,34 @@ export function SupportWorkbench(props: {
           <p>MiniApp 内用户提交的客服会话，与 Telegram 回访互不影响</p>
         </div>
         <div className="panel-actions">
+          <div
+            className={`env-switch ${props.env === 'production' ? 'is-production' : ''}`}
+            role="radiogroup"
+            aria-label="客服工作台后端环境"
+          >
+            {ENV_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={props.env === option.value}
+                className={`env-switch-option ${props.env === option.value ? 'is-active' : ''}`}
+                onClick={() => props.onEnvChange(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <button className="btn btn-sm" onClick={props.onRefresh} disabled={props.isLoading}>
             刷新
           </button>
         </div>
       </header>
+
+      {/* 只有工作台走这个开关，左侧回访始终连 VITE_API_URL 那套后端 */}
+      <p className="env-note">
+        当前环境：{props.env === 'production' ? '生产' : '测试'} · {getSupportApiUrl(props.env)}
+      </p>
 
       <div className="user-scroll">
         {props.isLoading && <p className="hint-text">加载中…</p>}
