@@ -62,7 +62,6 @@ export class RechargeUseCase {
     return {
       order: toPaymentOrder(row),
       pay_url: result.paymentUrl,
-      ...(result.paymentScheme ? { pay_scheme: result.paymentScheme } : {}),
     };
   }
 

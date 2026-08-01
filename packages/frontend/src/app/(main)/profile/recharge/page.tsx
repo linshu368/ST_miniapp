@@ -25,8 +25,10 @@ import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/p
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
-// 微信侧厂商收银台只给扫码、不提供 App 唤起，暂时下掉
-const PAYMENT_TYPES: PaymentType[] = ['alipay'];
+const PAYMENT_TYPES: PaymentType[] = [
+  // 'alipay', // 支付宝通道暂时停用
+  'wxpay',
+];
 
 export default function RechargePage() {
   return (
@@ -49,7 +51,7 @@ function RechargePageContent() {
   const createOrder = useCreatePaymentOrderMutation();
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
+  const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const plans = data?.plans ?? [];
@@ -81,13 +83,12 @@ function RechargePageContent() {
         pay_url: result.pay_url,
         payment_started: '1',
       });
-      if (result.pay_scheme) nextSearch.set('pay_scheme', result.pay_scheme);
       if (returnTo) nextSearch.set('returnTo', returnTo);
       router.push(
         `/profile/recharge/${encodeURIComponent(result.order.id)}?${nextSearch.toString()}`
       );
-      // 首次跳转必须紧跟“立即支付”的用户操作，避免移动端拦截微信/支付宝拉起。
-      openPaymentUrl(result.pay_scheme ?? result.pay_url, result.pay_url);
+      // 首次跳转必须紧跟“立即支付”的用户操作，避免移动端拦截微信拉起。
+      openPaymentUrl(result.pay_url);
     } catch {
       notification('error');
     }
