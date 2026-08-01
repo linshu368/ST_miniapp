@@ -21,12 +21,21 @@ import {
   type SkipCsSessionRequest,
   type SnoozeCsSessionRequest,
   type UpdateCsPersonaRequest,
+  type GetCsSupportConversationsData,
+  type GetCsSupportMessagesData,
+  type SendCsSupportMessageRequest,
+  type SendSupportMessageData,
+  type SupportMessage,
+  type CsSupportConversationSummary,
 } from '@miniapp/shared';
 import { config } from '../platform/config.js';
 import { CsPlatformRepository } from '../infrastructure/repositories/CsPlatformRepository.js';
+import { prisma } from '../lib/db.js';
+import { insertUserNotification } from '../lib/notifications.js';
 
 const ADMIN_HEADER = 'x-cs-admin-token';
 const OPERATOR_HEADER = 'x-cs-operator-id';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface CsRequest extends FastifyRequest {
   csOperatorId?: string;
@@ -406,6 +415,106 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
     const logs = await repository.listAuditLogs();
     return reply.send(ok<GetCsAuditLogsData>({ logs }));
   });
+
+  app.get(
+    '/api/cs/support/conversations',
+    { preHandler: [requireCsAdmin] },
+    async (_request, reply) => {
+      const conversations = await prisma.$queryRaw<CsSupportConversationSummary[]>`
+        SELECT c.id, c.user_id, u.tg_id AS telegram_user_id,
+               COALESCE(s.display_name, s.tg_username, s.tg_first_name) AS display_name,
+               c.status, c.agent_unread_count, c.last_user_message_at,
+               c.last_agent_message_at,
+               (SELECT m.body FROM miniapp.support_messages m
+                WHERE m.conversation_id = c.id
+                ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message
+        FROM miniapp.support_conversations c
+        JOIN miniapp.users u ON u.id = c.user_id
+        LEFT JOIN miniapp.miniapp_user_settings s ON s.user_id = c.user_id
+        ORDER BY (c.status = 'open') DESC,
+                 GREATEST(c.last_user_message_at, c.last_agent_message_at) DESC NULLS LAST
+        LIMIT 200
+      `;
+      return reply.send(ok<GetCsSupportConversationsData>({ conversations }));
+    }
+  );
+
+  app.get(
+    '/api/cs/support/conversations/:id/messages',
+    { preHandler: [requireCsAdmin] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      if (!UUID_RE.test(id)) {
+        return reply.status(400).send(fail('INVALID_CONVERSATION_ID', '会话标识无效'));
+      }
+      const rows = await prisma.$queryRaw<CsSupportConversationSummary[]>`
+        SELECT c.id, c.user_id, u.tg_id AS telegram_user_id,
+               COALESCE(s.display_name, s.tg_username, s.tg_first_name) AS display_name,
+               c.status, c.agent_unread_count, c.last_user_message_at,
+               c.last_agent_message_at,
+               (SELECT m.body FROM miniapp.support_messages m
+                WHERE m.conversation_id = c.id
+                ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message
+        FROM miniapp.support_conversations c
+        JOIN miniapp.users u ON u.id = c.user_id
+        LEFT JOIN miniapp.miniapp_user_settings s ON s.user_id = c.user_id
+        WHERE c.id = ${id}::uuid
+      `;
+      const conversation = rows[0];
+      if (!conversation) return reply.status(404).send(fail('NOT_FOUND', '客服会话不存在'));
+      const messages = await prisma.$queryRaw<SupportMessage[]>`
+        SELECT id, sender, body, client_msg_id, created_at
+        FROM miniapp.support_messages
+        WHERE conversation_id = ${id}::uuid
+        ORDER BY created_at, id
+        LIMIT 500
+      `;
+      await prisma.$executeRaw`
+        UPDATE miniapp.support_conversations
+        SET agent_unread_count = 0, updated_at = now()
+        WHERE id = ${id}::uuid
+      `;
+      return reply.send(ok<GetCsSupportMessagesData>({ conversation, messages }));
+    }
+  );
+
+  app.post(
+    '/api/cs/support/conversations/:id/messages',
+    { preHandler: [requireCsAdmin] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as Partial<SendCsSupportMessageRequest>;
+      const text = body.body?.trim() ?? '';
+      if (!UUID_RE.test(id) || !text || text.length > 4000) {
+        return reply.status(400).send(fail('INVALID_MESSAGE', '会话或消息内容无效'));
+      }
+      const rows = await prisma.$queryRaw<Array<{ message: SupportMessage; user_id: string }>>`
+        WITH target AS (
+          SELECT id, user_id FROM miniapp.support_conversations
+          WHERE id = ${id}::uuid FOR UPDATE
+        ), inserted AS (
+          INSERT INTO miniapp.support_messages (conversation_id, sender, body)
+          SELECT id, 'agent', ${text} FROM target
+          RETURNING id, sender, body, client_msg_id, created_at
+        ), updated AS (
+          UPDATE miniapp.support_conversations c
+          SET status = 'open', last_agent_message_at = now(), updated_at = now()
+          FROM target WHERE c.id = target.id
+        )
+        SELECT row_to_json(inserted)::jsonb AS message, target.user_id
+        FROM inserted CROSS JOIN target
+      `;
+      const result = rows[0];
+      if (!result) return reply.status(404).send(fail('NOT_FOUND', '客服会话不存在'));
+      await insertUserNotification({
+        userId: result.user_id,
+        category: 'system',
+        title: '客服已回复你的问题',
+        body: text.length > 120 ? `${text.slice(0, 117)}…` : text,
+      });
+      return reply.status(201).send(ok<SendSupportMessageData>({ message: result.message }));
+    }
+  );
 }
 
 async function requireCsAdmin(request: CsRequest, reply: FastifyReply) {

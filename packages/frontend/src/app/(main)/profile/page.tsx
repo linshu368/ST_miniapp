@@ -4,15 +4,18 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronRight,
+  Bell,
+  Check,
   Gift,
-  History,
+  Headphones,
   ImageUp,
   Link as LinkIcon,
   Pencil,
   RotateCcw,
-  Settings,
+  ReceiptText,
   Sparkles,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -20,6 +23,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 
 import { useDailyCheckinMutation, useDailyCheckinQuery, useWalletCredits } from '@/lib/api/payment';
+import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import {
   usePatchUserSettingsMutation,
   useSetUserAvatarMutation,
@@ -32,6 +36,7 @@ import { useUserProfileStore } from '@/stores/user-profile-store';
 export default function ProfilePage() {
   const telegramUserId = useMemo(readTelegramUserId, []);
   const credits = useWalletCredits();
+  const unread = useNotificationUnreadCountQuery();
   const displayName = useUserProfileStore((s) => s.displayName);
   const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
@@ -157,60 +162,8 @@ export default function ProfilePage() {
       {/* 顶部空间感 Banner：烛光自顶部渗下，避免深夜使用时出现冷光 */}
       <div className="absolute top-0 left-0 right-0 h-48 bg-[radial-gradient(ellipse_at_top,hsl(var(--primary)/0.16),hsl(var(--rose)/0.06),transparent_70%)] pointer-events-none" />
 
-      {/* 顶部 bar：左=合并 pill（星尘数 + 商店入口），右=签到 + 设置占位 */}
-      <header className="flex items-center justify-between gap-2 px-4 sm:px-5 py-3 relative z-10">
-        <div className="flex min-w-0 shrink items-center gap-2">
-          <Link
-            href="/profile/recharge"
-            aria-label={`当前星尘 ${credits}，前往星尘商店`}
-            className="group inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs backdrop-blur-md transition-all duration-300 hover:border-primary/30 hover:bg-secondary sm:px-4 sm:py-2 sm:text-sm"
-          >
-            <Sparkles
-              className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary drop-shadow-[0_0_8px_hsl(var(--glow)/0.8)] transition-transform group-hover:scale-110"
-              aria-hidden
-            />
-            <span className="truncate font-bold tracking-tight text-foreground">
-              {formatNumber(credits)}
-            </span>
-            <span className="hidden text-muted-foreground sm:inline">·</span>
-            <span className="hidden font-medium text-foreground/80 sm:inline">星尘商店</span>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-          </Link>
-          <Link
-            href="/profile/spending"
-            aria-label="查看星尘消耗明细"
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1.5 text-[11px] font-bold text-muted-foreground backdrop-blur-md transition-all hover:border-primary/30 hover:bg-secondary hover:text-foreground sm:py-2"
-          >
-            <History className="h-3.5 w-3.5 text-primary" aria-hidden />
-            明细
-          </Link>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <Button
-            disabled={!checkin?.can_claim || claimCheckin.isPending}
-            onClick={() => void claimDailyCheckin()}
-            size="sm"
-            className="h-8 sm:h-9 rounded-full border border-primary/25 bg-primary/15 px-2.5 sm:px-3 text-[11px] sm:text-xs font-bold text-primary shadow-none hover:bg-primary/25 disabled:border-border disabled:bg-card disabled:text-muted-foreground/60 whitespace-nowrap shrink-0"
-            aria-label="每日签到"
-          >
-            <Gift className="mr-1 sm:mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-            {claimCheckin.isPending
-              ? '领取中'
-              : checkin?.can_claim
-                ? `签到 +${checkin.reward_credits}`
-                : '已签到'}
-          </Button>
-          <Button
-            disabled
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 rounded-full text-muted-foreground opacity-60"
-            aria-label="设置暂未开放"
-          >
-            <Settings className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
-          </Button>
-        </div>
-      </header>
+      {/* 右上角原有齿轮入口已下线，这里留空 */}
+      <div className="h-3" />
 
       {checkinToast && (
         <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+4.5rem)] z-[9999] flex justify-center px-5">
@@ -336,6 +289,29 @@ export default function ProfilePage() {
             </div>
           ) : null}
         </div>
+
+        {/* 签到刻意做成低对比轻量样式，不与下方星尘卡抢视觉层级 */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={!checkin?.can_claim || claimCheckin.isPending}
+          onClick={() => void claimDailyCheckin()}
+          aria-label="每日签到"
+          className="h-8 rounded-full border border-border bg-card/70 px-3.5 text-[12px] font-semibold text-muted-foreground shadow-none hover:bg-secondary hover:text-foreground disabled:opacity-100"
+        >
+          {checkin?.can_claim ? (
+            <Gift className="mr-1.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+          ) : (
+            <Check className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          )}
+          {claimCheckin.isPending
+            ? '领取中'
+            : checkin?.can_claim
+              ? `签到 · +${formatNumber(checkin.reward_credits)}`
+              : '今日已签到'}
+        </Button>
+
         <div className="text-center">
           {isEditing ? (
             <Input
@@ -377,7 +353,101 @@ export default function ProfilePage() {
           </div>
         </div>
       </section>
+
+      {/* 星尘余额：首屏最强视觉层级，只讲余额和充值，不出现会员信息 */}
+      <section className="relative z-10 mt-7 px-5">
+        <div className="relative overflow-hidden rounded-[26px] border border-primary/20 bg-card p-5 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-[radial-gradient(circle,hsl(var(--glow)/0.28),transparent_68%)]"
+          />
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold tracking-[0.2em] text-muted-foreground">
+                星尘余额
+              </p>
+              <p className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-[34px] font-black leading-none tabular-nums tracking-tight text-foreground">
+                  {formatNumber(credits)}
+                </span>
+                <span className="text-xs font-medium text-muted-foreground">星尘</span>
+              </p>
+            </div>
+            <Link
+              href="/profile/recharge"
+              aria-label="前往星尘充值"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/15 px-3 py-1.5 text-[12px] font-bold text-primary transition hover:bg-primary/25"
+            >
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              星尘充值
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="relative z-10 mt-4 flex flex-col gap-2.5 px-5">
+        <ProfileRow
+          href="/profile/support"
+          Icon={Headphones}
+          title="联系客服"
+          subtitle="有问题随时找我们"
+        />
+        <ProfileRow
+          href="/profile/messages"
+          Icon={Bell}
+          title="消息中心"
+          subtitle="官方公告与系统消息"
+          showDot={(unread.data?.total ?? 0) > 0}
+        />
+        <ProfileRow
+          href="/profile/spending"
+          Icon={ReceiptText}
+          title="消费明细"
+          subtitle="星尘消费支出记录"
+        />
+      </section>
     </main>
+  );
+}
+
+function ProfileRow({
+  href,
+  Icon,
+  title,
+  subtitle,
+  showDot = false,
+}: {
+  href: string;
+  Icon: LucideIcon;
+  title: string;
+  subtitle: string;
+  showDot?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-3.5 rounded-[22px] border border-border bg-card px-4 py-3.5 transition hover:border-primary/25 hover:bg-secondary"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+        <Icon className="h-[18px] w-[18px]" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-bold tracking-tight text-foreground">
+          {title}
+        </span>
+        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{subtitle}</span>
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        {showDot ? (
+          <span
+            role="status"
+            aria-label="有未读消息"
+            className="h-2 w-2 rounded-full bg-destructive"
+          />
+        ) : null}
+        <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+      </span>
+    </Link>
   );
 }
 

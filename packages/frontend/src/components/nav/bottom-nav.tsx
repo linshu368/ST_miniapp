@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Home, MessageCircle, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 
 const NAV_ITEMS = [
   { href: '/', label: '大厅', Icon: Home },
@@ -13,11 +14,19 @@ const NAV_ITEMS = [
   { href: '/profile', label: '我的', Icon: User },
 ] as const;
 
-// 深层页面（支付流程、沉浸式输入页）隐藏底部导航，让主内容拿满可视高度
-const HIDDEN_PREFIXES = ['/profile/recharge', '/create/wish'];
+// 深层页面（支付流程、沉浸式输入页、消息与客服会话）隐藏底部导航，让主内容拿满可视高度
+const HIDDEN_PREFIXES = [
+  '/profile/recharge',
+  '/profile/messages',
+  '/profile/support',
+  '/create/wish',
+];
 
 export function BottomNav() {
   const pathname = usePathname();
+  const unread = useNotificationUnreadCountQuery();
+  const hasUnread = (unread.data?.total ?? 0) > 0;
+
   if (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) {
     return null;
   }
@@ -71,6 +80,13 @@ export function BottomNav() {
                   aria-hidden="true"
                   className={cn('transition-transform duration-300', active && 'scale-105')}
                 />
+                {href === '/profile' && hasUnread ? (
+                  <span
+                    role="status"
+                    aria-label="有未读消息"
+                    className="absolute right-1.5 top-0.5 h-2 w-2 rounded-full bg-destructive ring-2 ring-card"
+                  />
+                ) : null}
               </span>
               <span
                 className={cn(
