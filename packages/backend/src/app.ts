@@ -22,6 +22,8 @@ import growthRoutes from './routes/growth.js';
 import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import simulationRoutes from './routes/simulation.js';
+import notificationRoutes from './routes/notifications.js';
+import supportRoutes from './routes/support.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
 
@@ -111,6 +113,8 @@ export async function buildApp() {
   await app.register(debugRoutes); // [iframe-timing] TEMP DEBUG
   await app.register(adminSupabaseProxyRoutes);
   await app.register(simulationRoutes);
+  await app.register(notificationRoutes);
+  await app.register(supportRoutes);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],

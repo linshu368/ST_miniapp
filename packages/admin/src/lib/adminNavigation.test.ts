@@ -13,6 +13,7 @@ describe('admin navigation', () => {
   it('keeps independent top-level pages separate', () => {
     expect(resolveAdminMenuSelection('characters')).toEqual({ view: 'characters' });
     expect(resolveAdminMenuSelection('platform_presets')).toEqual({ view: 'platform_presets' });
+    expect(resolveAdminMenuSelection('announcements')).toEqual({ view: 'announcements' });
     expect(resolveAdminMenuSelection('audit')).toEqual({ view: 'audit' });
   });
 

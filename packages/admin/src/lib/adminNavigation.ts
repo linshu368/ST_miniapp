@@ -20,6 +20,7 @@ export type AdminViewKey =
   | 'configs'
   | 'characters'
   | 'platform_presets'
+  | 'announcements'
   | 'analytics'
   | 'releases'
   | 'audit';
@@ -52,7 +53,13 @@ export function resolveAdminMenuSelection(key: string): {
       return { view: 'analytics', analyticsKey };
     }
   }
-  if (key === 'characters' || key === 'platform_presets' || key === 'releases' || key === 'audit') {
+  if (
+    key === 'characters' ||
+    key === 'platform_presets' ||
+    key === 'announcements' ||
+    key === 'releases' ||
+    key === 'audit'
+  ) {
     return { view: key };
   }
   return { view: 'configs' };
