@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   GetNotificationsData,
@@ -10,6 +9,7 @@ import type {
   NotificationUnreadCountData,
 } from '@miniapp/shared';
 import { apiClient } from './client';
+import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 export const notificationKeys = {
   all: ['notifications'] as const,
@@ -43,20 +43,6 @@ export function useNotificationUnreadCountQuery() {
   });
   useRefetchOnForeground(query.refetch);
   return query;
-}
-
-/**
- * Telegram WebView 里 focus 事件不可靠，小程序被切走再切回来只会触发 visibilitychange，
- * 少了这一下，用户回到前台最多要再等一个轮询周期才看得到新公告的红点。
- */
-function useRefetchOnForeground(refetch: () => void): void {
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') refetch();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [refetch]);
 }
 
 export function useMarkNotificationsReadMutation() {

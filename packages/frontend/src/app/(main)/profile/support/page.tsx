@@ -7,7 +7,11 @@ import type { SupportMessage } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useSendSupportMessageMutation, useSupportConversationQuery } from '@/lib/api/support';
+import {
+  useMarkSupportReadMutation,
+  useSendSupportMessageMutation,
+  useSupportConversationQuery,
+} from '@/lib/api/support';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { pendingOutbox, type PendingSupportMessage } from '@/lib/utils/notifications';
 
@@ -20,6 +24,7 @@ export default function SupportPage() {
 
   const query = useSupportConversationQuery();
   const send = useSendSupportMessageMutation();
+  const markRead = useMarkSupportReadMutation();
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<PendingSupportMessage[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -30,6 +35,19 @@ export default function SupportPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length, outbox.length]);
+
+  // 打开聊天页即视为读过客服回复。按最新一条回复的时间戳记账，页面开着时轮询到新回复
+  // 也会再推一次已读水位线，否则用户明明正看着，红点还会在「我的」页亮起来。
+  const latestAgentReplyAt =
+    messages.filter((message) => message.sender === 'agent').at(-1)?.created_at ?? null;
+  const markedAtRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!latestAgentReplyAt || markedAtRef.current === latestAgentReplyAt) return;
+    markedAtRef.current = latestAgentReplyAt;
+    markRead.mutate();
+    // markRead 每次渲染都是新引用，只依赖水位线本身。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestAgentReplyAt]);
 
   const submit = (body: string, clientMsgId: string) => {
     setPending((current) => [

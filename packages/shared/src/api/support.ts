@@ -29,6 +29,11 @@ export interface GetSupportMessagesData {
   messages: SupportMessage[];
 }
 
+/** 客服回复的未读态只有有无之分，不展示条数。 */
+export interface SupportUnreadData {
+  has_unread: boolean;
+}
+
 export interface CsSupportConversationSummary {
   id: string;
   user_id: string;
