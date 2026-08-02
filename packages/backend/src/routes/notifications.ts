@@ -10,7 +10,11 @@ import {
   type NotificationUnreadCountData,
 } from '@miniapp/shared';
 import { getSupabaseClient } from '../lib/supabase.js';
-import { parseNotificationScope, selectUnreadIds } from '../lib/notification-scope.js';
+import {
+  isNotificationVisibleToUser,
+  parseNotificationScope,
+  selectUnreadIds,
+} from '../lib/notification-scope.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 
@@ -44,7 +48,10 @@ export default async function notificationRoutes(app: FastifyInstance) {
       .order('sort_order', { ascending: true })
       .order(scope === 'official' ? 'published_at' : 'created_at', { ascending: false })
       .limit(21);
-    builder = scope === 'official' ? builder.is('user_id', null) : builder.eq('user_id', user.id);
+    builder =
+      scope === 'official'
+        ? builder.or(`user_id.is.null,user_id.eq.${user.id}`)
+        : builder.eq('user_id', user.id);
     if (query.cursor) builder = builder.lt('created_at', query.cursor);
 
     const { data, error } = await builder;
@@ -139,7 +146,10 @@ async function countUnread(userId: string, scope: NotificationScope): Promise<nu
     .eq('scope', scope)
     .eq('is_published', true)
     .is('deleted_at', null);
-  query = scope === 'official' ? query.is('user_id', null) : query.eq('user_id', userId);
+  query =
+    scope === 'official'
+      ? query.or(`user_id.is.null,user_id.eq.${userId}`)
+      : query.eq('user_id', userId);
   const { data, error } = await query;
   if (error) throw new Error(`读取未读消息失败：${error.message}`);
   const ids = (data ?? []).map((row) => String(row.id));
@@ -162,7 +172,12 @@ async function listVisibleIds(
   const { data, error } = await query;
   if (error) throw new Error(`读取消息失败：${error.message}`);
   return (data ?? [])
-    .filter((row) => row.scope === 'official' || row.user_id === userId)
+    .filter((row) =>
+      isNotificationVisibleToUser(
+        { scope: row.scope as NotificationScope, user_id: row.user_id as string | null },
+        userId
+      )
+    )
     .map((row) => String(row.id));
 }
 

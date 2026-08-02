@@ -36,6 +36,7 @@ import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEdi
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { PlatformPresetsView } from './components/PlatformPresetsView';
 import { AnnouncementsView } from './components/AnnouncementsView';
+import { OutreachCreditGrantView } from './components/OutreachCreditGrantView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
 import {
   discardDraft,
@@ -766,10 +767,13 @@ function AdminWorkspace(props: {
             {
               key: 'configs',
               label: '运营配置',
-              children: managedConfigKeys.map((key) => ({
-                key: configMenuKey(key),
-                label: configMetadata[key].label,
-              })),
+              children: [
+                ...managedConfigKeys.map((key) => ({
+                  key: configMenuKey(key),
+                  label: configMetadata[key].label,
+                })),
+                { key: 'outreach_credit_grant', label: '回访星尘赠送' },
+              ],
             },
             { key: 'characters', label: '角色卡' },
             { key: 'platform_presets', label: '平台预设' },
@@ -846,6 +850,12 @@ function AdminWorkspace(props: {
             />
           ) : view === 'announcements' ? (
             <AnnouncementsView
+              client={props.client}
+              environment={props.environment}
+              canWrite={canWrite}
+            />
+          ) : view === 'outreach_credit_grant' ? (
+            <OutreachCreditGrantView
               client={props.client}
               environment={props.environment}
               canWrite={canWrite}
