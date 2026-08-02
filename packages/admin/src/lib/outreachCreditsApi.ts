@@ -11,6 +11,11 @@ export const DEFAULT_GRANT_BODY = `您的回复奖励 ${AMOUNT_PLACEHOLDER} 星�
 const TITLE_MAX_LENGTH = 120;
 const BODY_MAX_LENGTH = 4000;
 
+export interface RecentGrant {
+  amount: number;
+  created_at: string;
+}
+
 export interface GrantUserLookup {
   found: boolean;
   user_id?: string;
@@ -21,18 +26,24 @@ export interface GrantUserLookup {
   bonus_credits?: number;
   total_credits?: number;
   created_at?: string;
+  recent_grants?: RecentGrant[];
 }
 
 export interface GrantResult {
-  /** false 表示这次请求命中了幂等，星尘早已发放过，没有重复加钱。 */
+  /** false 表示没有加钱：要么命中幂等（早已发放过），要么被重复窗拦下等客服确认。 */
   granted: boolean;
+  /** true 表示同一人同一金额十分钟内已发过，需要客服显式放行才继续。 */
+  blocked: boolean;
+  reason?: 'duplicate_window';
   user_id: string;
   amount: number;
-  main_credits: number;
-  bonus_credits: number;
-  total_credits: number;
-  notification_id: string;
-  granted_at: string;
+  main_credits?: number;
+  bonus_credits?: number;
+  total_credits?: number;
+  notification_id?: string;
+  granted_at?: string;
+  last_amount?: number;
+  last_granted_at?: string;
 }
 
 function unwrap<T>(data: T | null, error: { message: string } | null): T {
@@ -80,6 +91,44 @@ export function describeGrantIssue(input: {
   return null;
 }
 
+const REQUEST_ID_PREFIX = 'mijing-admin-grant-request';
+
+/**
+ * 幂等键只按「环境 + 收款人 + 金额」派生，不含推送文案：
+ * 发放超时后客服改一版措辞再重试，钱的身份没变，就不该换一个新的幂等键。
+ */
+export function grantRequestKey(input: {
+  environment: string;
+  userId: string;
+  amount: number;
+}): string {
+  return `${REQUEST_ID_PREFIX}|${input.environment}|${input.userId}|${input.amount}`;
+}
+
+/**
+ * 同一个 key 始终拿到同一个 request id，跨取消、跨刷新、跨关标签都不变，
+ * 只有确认发放成功后才由 clearGrantRequestId 作废。这样「超时后重来」一定会
+ * 命中服务端幂等，而不是变成第二次真实扣款。
+ */
+export function ensureGrantRequestId(
+  storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>,
+  key: string,
+  createId: () => string
+): string {
+  const existing = storage.getItem(key);
+  if (existing) return existing;
+  const id = createId();
+  storage.setItem(key, id);
+  return id;
+}
+
+export function clearGrantRequestId(
+  storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>,
+  key: string
+): void {
+  storage.removeItem(key);
+}
+
 export async function lookupUserForCreditGrant(
   client: SupabaseClient,
   identifier: string
@@ -97,6 +146,7 @@ export async function grantUserCredits(input: {
   title: string;
   body: string;
   requestId: string;
+  allowDuplicate?: boolean;
 }): Promise<GrantResult> {
   const { data, error } = await input.client.schema('admin').rpc('grant_user_credits', {
     p_user_id: input.userId,
@@ -104,6 +154,7 @@ export async function grantUserCredits(input: {
     p_title: input.title,
     p_body: input.body,
     p_request_id: input.requestId,
+    p_allow_duplicate: input.allowDuplicate ?? false,
   });
   return unwrap(data as GrantResult | null, error);
 }

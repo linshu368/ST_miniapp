@@ -22,7 +22,10 @@ import {
   DEFAULT_GRANT_TITLE,
   MAX_GRANT_AMOUNT,
   MIN_GRANT_AMOUNT,
+  clearGrantRequestId,
   describeGrantIssue,
+  ensureGrantRequestId,
+  grantRequestKey,
   grantUserCredits,
   lookupUserForCreditGrant,
   renderGrantMessage,
@@ -51,6 +54,10 @@ function describeUser(user: GrantUserLookup): string {
   return `Telegram ${user.tg_id ?? '—'}`;
 }
 
+function formatTime(value: string): string {
+  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
+
 export function OutreachCreditGrantView(props: OutreachCreditGrantViewProps) {
   const [identifier, setIdentifier] = useState('');
   const [lookup, setLookup] = useState<GrantUserLookup | null>(null);
@@ -61,15 +68,15 @@ export function OutreachCreditGrantView(props: OutreachCreditGrantViewProps) {
   const [title, setTitle] = useState(DEFAULT_GRANT_TITLE);
   const [body, setBody] = useState(DEFAULT_GRANT_BODY);
 
-  // 一次确认对应一个 request id：网络抖动重试不会重复发放，
-  // 客服真要给同一个人再发一次，会走一次新的确认、拿到新的 id。
-  const [requestId, setRequestId] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [granting, setGranting] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [records, setRecords] = useState<GrantRecord[]>([]);
 
   const targetUserId = lookup?.found ? (lookup.user_id ?? null) : null;
   const preview = renderGrantMessage({ title, body, amount: amount ?? DEFAULT_GRANT_AMOUNT });
   const issue = describeGrantIssue({ userId: targetUserId, amount, title, body });
+  const recentGrants = lookup?.recent_grants ?? [];
 
   const runLookup = async () => {
     const trimmed = identifier.trim();
@@ -96,8 +103,17 @@ export function OutreachCreditGrantView(props: OutreachCreditGrantViewProps) {
     }
   };
 
-  const submitGrant = async () => {
-    if (!lookup || !targetUserId || amount === null || !requestId) return;
+  const submitGrant = async (allowDuplicate: boolean) => {
+    if (!lookup || !targetUserId || amount === null) return;
+    const storageKey = grantRequestKey({
+      environment: props.environment,
+      userId: targetUserId,
+      amount,
+    });
+    const requestId = ensureGrantRequestId(window.localStorage, storageKey, () =>
+      crypto.randomUUID()
+    );
+
     setGranting(true);
     try {
       const result = await grantUserCredits({
@@ -107,30 +123,49 @@ export function OutreachCreditGrantView(props: OutreachCreditGrantViewProps) {
         title: preview.title,
         body: preview.body,
         requestId,
+        allowDuplicate,
       });
+
+      if (result.blocked) {
+        setDuplicateWarning(
+          `该用户在 ${result.last_granted_at ? formatTime(result.last_granted_at) : '十分钟内'} 已收到过 ${result.last_amount ?? amount} 星尘。如果这是刚才那笔发放超时后的重试，取消即可，星尘不会重复到账；确认要再发一笔请点「仍然发放」。`
+        );
+        return;
+      }
+
       message.success(
         result.granted
           ? `已赠送 ${result.amount} 星尘，当前余额 ${result.total_credits}`
           : '该笔赠送此前已成功，未重复发放'
       );
+      // 只有确认结果落定才作废幂等键，下一笔发放才会拿到新的 id。
+      clearGrantRequestId(window.localStorage, storageKey);
       setRecords((current) => [
         {
-          key: result.notification_id,
+          key: result.notification_id ?? requestId,
           userId: result.user_id,
           userLabel: describeUser(lookup),
           amount: result.amount,
-          grantedAt: new Date(result.granted_at).toLocaleString('zh-CN', { hour12: false }),
+          grantedAt: result.granted_at
+            ? formatTime(result.granted_at)
+            : formatTime(new Date().toISOString()),
         },
         ...current,
       ]);
-      setRequestId(null);
+      setConfirmOpen(false);
+      setDuplicateWarning(null);
       setIdentifier('');
       setLookup(null);
       setLookupError(null);
       setAmount(DEFAULT_GRANT_AMOUNT);
     } catch (error) {
-      // 保留已填内容，客服可以直接重试；重试沿用同一个 request id 不会发两次。
-      message.error(error instanceof Error ? error.message : '赠送失败，请重试');
+      // 保留已填内容与幂等键：无论客服是原地重试、关掉弹窗重来还是刷新页面，
+      // 拿到的都是同一个 request id，服务端不会把超时的那笔再发一遍。
+      message.error(
+        error instanceof Error
+          ? `${error.message}（如果是超时，重试不会重复发放）`
+          : '赠送失败，请重试。如果是超时，重试不会重复发放'
+      );
     } finally {
       setGranting(false);
     }
@@ -179,6 +214,19 @@ export function OutreachCreditGrantView(props: OutreachCreditGrantViewProps) {
             </Descriptions.Item>
             <Descriptions.Item label="当前星尘">{lookup.total_credits ?? 0}</Descriptions.Item>
             <Descriptions.Item label="其中赠送">{lookup.bonus_credits ?? 0}</Descriptions.Item>
+            <Descriptions.Item label="最近回访发放" span={2}>
+              {recentGrants.length === 0 ? (
+                '暂无发放记录'
+              ) : (
+                <Space size={[8, 4]} wrap>
+                  {recentGrants.map((grant) => (
+                    <Tag key={`${grant.created_at}-${grant.amount}`}>
+                      +{grant.amount} · {formatTime(grant.created_at)}
+                    </Tag>
+                  ))}
+                </Space>
+              )}
+            </Descriptions.Item>
           </Descriptions>
         ) : null}
 
@@ -229,7 +277,10 @@ export function OutreachCreditGrantView(props: OutreachCreditGrantViewProps) {
           <Button
             type="primary"
             disabled={!props.canWrite || issue !== null}
-            onClick={() => setRequestId(crypto.randomUUID())}
+            onClick={() => {
+              setDuplicateWarning(null);
+              setConfirmOpen(true);
+            }}
           >
             赠送星尘
           </Button>
@@ -257,24 +308,35 @@ export function OutreachCreditGrantView(props: OutreachCreditGrantViewProps) {
       </Space>
 
       <Modal
-        open={requestId !== null}
+        open={confirmOpen}
         title={props.environment === 'production' ? '生产环境：确认赠送星尘？' : '确认赠送星尘？'}
-        okText="确认赠送"
+        okText={duplicateWarning ? '仍然发放' : '确认赠送'}
         cancelText="取消"
         confirmLoading={granting}
-        okButtonProps={{ danger: props.environment === 'production' }}
-        onOk={() => void submitGrant()}
-        onCancel={() => setRequestId(null)}
+        okButtonProps={{ danger: props.environment === 'production' || duplicateWarning !== null }}
+        onOk={() => void submitGrant(duplicateWarning !== null)}
+        // 只关弹窗，不动幂等键：客服取消后重新发起，拿到的仍是同一个 request id。
+        onCancel={() => {
+          setConfirmOpen(false);
+          setDuplicateWarning(null);
+        }}
       >
-        <Descriptions bordered size="small" column={1}>
-          <Descriptions.Item label="用户">{lookup ? describeUser(lookup) : '—'}</Descriptions.Item>
-          <Descriptions.Item label="用户 UUID">{targetUserId ?? '—'}</Descriptions.Item>
-          <Descriptions.Item label="赠送数量">{amount ?? '—'} 星尘</Descriptions.Item>
-          <Descriptions.Item label="推送标题">{preview.title}</Descriptions.Item>
-          <Descriptions.Item label="推送正文">
-            <span style={{ whiteSpace: 'pre-wrap' }}>{preview.body}</span>
-          </Descriptions.Item>
-        </Descriptions>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {duplicateWarning ? (
+            <Alert type="warning" showIcon message="疑似重复发放" description={duplicateWarning} />
+          ) : null}
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label="用户">
+              {lookup ? describeUser(lookup) : '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="用户 UUID">{targetUserId ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="赠送数量">{amount ?? '—'} 星尘</Descriptions.Item>
+            <Descriptions.Item label="推送标题">{preview.title}</Descriptions.Item>
+            <Descriptions.Item label="推送正文">
+              <span style={{ whiteSpace: 'pre-wrap' }}>{preview.body}</span>
+            </Descriptions.Item>
+          </Descriptions>
+        </Space>
       </Modal>
     </Card>
   );

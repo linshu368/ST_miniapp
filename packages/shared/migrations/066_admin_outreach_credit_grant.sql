@@ -259,7 +259,25 @@ BEGIN
       'main_credits', COALESCE(wallet.main_credits, 0),
       'bonus_credits', COALESCE(wallet.bonus_credits, 0),
       'total_credits', COALESCE(wallet.total_credits, 0),
-      'created_at', v_user.created_at
+      'created_at', v_user.created_at,
+      -- 客服在发放前能看到这个人最近拿过什么，避免凭记忆判断是否已发过。
+      'recent_grants', COALESCE(
+        (
+          SELECT jsonb_agg(
+            jsonb_build_object('amount', recent.amount, 'created_at', recent.created_at)
+            ORDER BY recent.created_at DESC
+          )
+          FROM (
+            SELECT ledger.amount, ledger.created_at
+            FROM miniapp.wallet_ledger AS ledger
+            WHERE ledger.user_id = v_user.id
+              AND ledger.reference_type = 'outreach_grant'
+            ORDER BY ledger.created_at DESC
+            LIMIT 5
+          ) AS recent
+        ),
+        '[]'::jsonb
+      )
     )
     FROM (SELECT 1) AS anchor
     LEFT JOIN miniapp.miniapp_user_settings AS settings ON settings.user_id = v_user.id
@@ -270,12 +288,14 @@ $$;
 
 -- 发放与到账通知在同一个事务里：要么星尘和消息一起成立，要么都不成立，
 -- 不会出现「星尘到账但用户看不到通知」需要人工补推的中间态。
+DROP FUNCTION IF EXISTS admin.grant_user_credits(UUID, INTEGER, TEXT, TEXT, UUID);
 CREATE OR REPLACE FUNCTION admin.grant_user_credits(
   p_user_id UUID,
   p_amount INTEGER,
   p_title TEXT,
   p_body TEXT,
-  p_request_id UUID
+  p_request_id UUID,
+  p_allow_duplicate BOOLEAN DEFAULT false
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -285,6 +305,7 @@ DECLARE
   v_actor admin.admin_users%ROWTYPE;
   v_wallet miniapp.user_wallets%ROWTYPE;
   v_existing miniapp.wallet_ledger%ROWTYPE;
+  v_recent miniapp.wallet_ledger%ROWTYPE;
   v_notification miniapp.notifications%ROWTYPE;
   v_title TEXT := trim(COALESCE(p_title, ''));
   v_body TEXT := trim(COALESCE(p_body, ''));
@@ -319,6 +340,7 @@ BEGIN
     WHERE wallet.user_id = v_existing.user_id;
     RETURN jsonb_build_object(
       'granted', false,
+      'blocked', false,
       'user_id', v_existing.user_id,
       'amount', v_existing.amount,
       'main_credits', v_wallet.main_credits,
@@ -331,6 +353,31 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM miniapp.users AS app_user WHERE app_user.id = p_user_id) THEN
     RAISE EXCEPTION 'user not found' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- request id 只能挡住「同一次操作」的重试。换台机器、换个浏览器重来会带新的 id，
+  -- 所以这里再按「同一人同一金额」加一道短时窗软拦截：不报错，回一个待确认状态，
+  -- 由客服显式放行。PRD 允许短时间内重复赠送，因此只能软拦不能硬禁。
+  IF NOT COALESCE(p_allow_duplicate, false) THEN
+    SELECT ledger.* INTO v_recent
+    FROM miniapp.wallet_ledger AS ledger
+    WHERE ledger.user_id = p_user_id
+      AND ledger.reference_type = 'outreach_grant'
+      AND ledger.amount = p_amount
+      AND ledger.created_at > now() - interval '10 minutes'
+    ORDER BY ledger.created_at DESC
+    LIMIT 1;
+    IF FOUND THEN
+      RETURN jsonb_build_object(
+        'granted', false,
+        'blocked', true,
+        'reason', 'duplicate_window',
+        'user_id', p_user_id,
+        'amount', p_amount,
+        'last_amount', v_recent.amount,
+        'last_granted_at', v_recent.created_at
+      );
+    END IF;
   END IF;
 
   INSERT INTO miniapp.user_wallets (user_id) VALUES (p_user_id)
@@ -384,6 +431,7 @@ BEGIN
 
   RETURN jsonb_build_object(
     'granted', true,
+    'blocked', false,
     'user_id', p_user_id,
     'amount', p_amount,
     'main_credits', v_wallet.main_credits,
@@ -397,12 +445,12 @@ $$;
 
 REVOKE ALL ON FUNCTION admin.lookup_user_for_credit_grant(TEXT)
   FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION admin.grant_user_credits(UUID, INTEGER, TEXT, TEXT, UUID)
+REVOKE ALL ON FUNCTION admin.grant_user_credits(UUID, INTEGER, TEXT, TEXT, UUID, BOOLEAN)
   FROM PUBLIC, anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION admin.lookup_user_for_credit_grant(TEXT)
   TO authenticated, service_role, postgres;
-GRANT EXECUTE ON FUNCTION admin.grant_user_credits(UUID, INTEGER, TEXT, TEXT, UUID)
+GRANT EXECUTE ON FUNCTION admin.grant_user_credits(UUID, INTEGER, TEXT, TEXT, UUID, BOOLEAN)
   TO authenticated, service_role, postgres;
 
 COMMIT;
