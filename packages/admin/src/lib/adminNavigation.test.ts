@@ -10,6 +10,12 @@ describe('admin navigation', () => {
     });
   });
 
+  it('opens the outreach grant page, which sits under 运营配置 but is not a managed config', () => {
+    expect(resolveAdminMenuSelection('outreach_credit_grant')).toEqual({
+      view: 'outreach_credit_grant',
+    });
+  });
+
   it('keeps independent top-level pages separate', () => {
     expect(resolveAdminMenuSelection('characters')).toEqual({ view: 'characters' });
     expect(resolveAdminMenuSelection('platform_presets')).toEqual({ view: 'platform_presets' });
