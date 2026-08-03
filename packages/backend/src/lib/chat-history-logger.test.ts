@@ -9,6 +9,7 @@ import {
 
 const fixedDeduction = {
   freeQuotaExhausted: 10,
+  light: 15,
   standard: 30,
   premium: 50,
 };
@@ -33,7 +34,15 @@ describe('resolveFixedDeduction', () => {
     ).toEqual({ amount: 10, category: 'free_quota_exhausted' });
   });
 
-  it('charges paid standard and premium tiers fixed amounts', () => {
+  it('charges paid light, standard and premium tiers fixed amounts', () => {
+    expect(
+      resolveFixedDeduction({
+        defaultModelMarkup: 1,
+        effectiveModelMarkup: 1,
+        modelTier: 'light',
+        config: fixedDeduction,
+      })
+    ).toEqual({ amount: 15, category: 'light' });
     expect(
       resolveFixedDeduction({
         defaultModelMarkup: 2.5,
@@ -57,7 +66,7 @@ describe('resolveFixedDeduction', () => {
       resolveFixedDeduction({
         defaultModelMarkup: 2.5,
         effectiveModelMarkup: 2.5,
-        modelTier: 'light',
+        modelTier: null,
         config: fixedDeduction,
       })
     ).toEqual({ amount: 30, category: 'standard_fallback' });
