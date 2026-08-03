@@ -1,15 +1,17 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DEFAULT_LOBBY_SORT } from '@miniapp/shared';
 import type {
   ApiResponse,
   GetCharactersData,
   GetCharacterByIdData,
+  LobbyLatestBadgeData,
   LobbySort,
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
+import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
 async function fetchCharacters(sort: LobbySort): Promise<GetCharactersData> {
@@ -32,6 +34,7 @@ export const characterKeys = {
   lists: () => [...characterKeys.all, 'list'] as const,
   list: (sort: LobbySort) => [...characterKeys.all, 'list', sort] as const,
   detail: (id: string) => [...characterKeys.all, 'detail', id] as const,
+  latestBadge: () => [...characterKeys.all, 'latest-badge'] as const,
 };
 
 // v4 隔离「推荐 / 最新」两套顺序，并弃用只存单一顺序的 v3 快照。
@@ -82,6 +85,36 @@ export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT) {
     staleTime: 0,
     refetchOnMount: 'always',
     gcTime: CHARACTER_CACHE_MAX_AGE_MS,
+  });
+}
+
+/**
+ * 首页「最新」入口的 New 提醒。判定在服务端，所以离开首页再回来不会重复提示。
+ * 不做轮询：上新是运营的低频动作，进页面和切回前台各拉一次就够，也避免和 ST 启动抢资源。
+ */
+export function useLobbyLatestBadgeQuery() {
+  const query = useQuery<LobbyLatestBadgeData>({
+    queryKey: characterKeys.latestBadge(),
+    queryFn: () => apiClient<LobbyLatestBadgeData>('/api/characters/latest-badge'),
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
+  useRefetchOnForeground(query.refetch);
+  return query;
+}
+
+export function useMarkLobbyLatestSeenMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<LobbyLatestBadgeData>('/api/characters/latest-seen', { method: 'POST' }),
+    // 首屏的查询可能还在飞，不取消的话它回来会把提醒重新点亮。
+    onMutate: () => client.cancelQueries({ queryKey: characterKeys.latestBadge() }),
+    onSuccess: () => {
+      client.setQueryData<LobbyLatestBadgeData>(characterKeys.latestBadge(), { has_new: false });
+    },
+    // 写失败就宁可让 New 留着：水位线没推进，下次进首页仍该提醒。
+    retry: 2,
   });
 }
 
