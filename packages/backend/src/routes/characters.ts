@@ -7,9 +7,14 @@ import type {
   GetCharacterByIdData,
   CharacterSummary,
   CharacterDetail,
+  LobbyLatestBadgeData,
 } from '@miniapp/shared';
 import { loadCharacterEngagementStats } from '../features/lobby/engagement-stats.js';
 import { buildRecommendedOrder, dailyShuffleSeed } from '../features/lobby/recommended-ranking.js';
+import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
+import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
+import { getOrCreateDbUser } from '../lib/user.js';
+import { requireTelegramAuth } from '../middleware/auth.js';
 
 const CHARACTER_STORAGE_BUCKET = process.env.CHARACTER_STORAGE_BUCKET || 'character-assets';
 
@@ -26,6 +31,17 @@ export function resolveCharacterAvatarUrl(
 }
 
 export default async function characterRoutes(app: FastifyInstance) {
+  const userSettings = new MiniappUserSettingsRepository();
+
+  // 与首页列表用同一套可见性过滤：用户看不到的角色卡不该点亮 New。
+  async function findLatestListedAt(): Promise<Date | null> {
+    const listed = await prisma.character.aggregate({
+      where: { enabled: true, archived_at: null },
+      _max: { last_listed_at: true },
+    });
+    return listed._max.last_listed_at ?? null;
+  }
+
   // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
     const sort = parseLobbySort((request.query as { sort?: unknown } | undefined)?.sort);
@@ -77,6 +93,41 @@ export default async function characterRoutes(app: FastifyInstance) {
     reply.header('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=60');
     return reply.send(ok<GetCharactersData>({ characters: charactersSummary }));
   });
+
+  // 首页「最新」入口的 New 提醒。判定全在服务端，用户换端进出算出的结果一致。
+  // @frontend-ready: true
+  app.get(
+    '/api/characters/latest-badge',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const user = await getOrCreateDbUser(request.user);
+      const [latestListedAt, lastSeenAt] = await Promise.all([
+        findLatestListedAt(),
+        userSettings.getCharactersLastSeenAt(user.id),
+      ]);
+
+      reply.header('Cache-Control', 'no-store');
+      return reply.send(
+        ok<LobbyLatestBadgeData>({ has_new: hasNewLobbyCharacters(latestListedAt, lastSeenAt) })
+      );
+    }
+  );
+
+  // 点进「最新」即算看过本轮上新，列表为空也算；下一批角色卡上架后 New 自然恢复。
+  // @frontend-ready: true
+  app.post(
+    '/api/characters/latest-seen',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const user = await getOrCreateDbUser(request.user);
+      await userSettings.markCharactersSeen(user.id, request.user);
+
+      reply.header('Cache-Control', 'no-store');
+      return reply.send(ok<LobbyLatestBadgeData>({ has_new: false }));
+    }
+  );
 
   // @frontend-ready: true
   app.get('/api/characters/:id', async (request, reply) => {
