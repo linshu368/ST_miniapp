@@ -20,11 +20,12 @@ describe('LlmPricingConfigSchema', () => {
         markup: 2.5,
         fixedDeduction: {
           freeQuotaExhausted: 10,
+          light: 15,
           standard: 30,
           premium: 50,
         },
       }).fixedDeduction
-    ).toEqual({ freeQuotaExhausted: 10, standard: 30, premium: 50 });
+    ).toEqual({ freeQuotaExhausted: 10, light: 15, standard: 30, premium: 50 });
   });
 });
 
