@@ -168,6 +168,19 @@ export function applyModelMarkup(
   };
 }
 
+/** Merge a model patch without resurrecting deduct_markup on paid models. */
+export function mergeModelUpdate(
+  current: ModelCatalogModel,
+  patch: Partial<ModelCatalogModel>
+): ModelCatalogModel {
+  const merged = { ...current, ...patch };
+  if (merged.markup !== 0) {
+    const { deduct_markup: _removed, ...paid } = merged;
+    return paid;
+  }
+  return merged;
+}
+
 function SortableHandleItem(props: {
   id: string;
   disabled?: boolean;
@@ -314,10 +327,10 @@ export function ModelCatalogEditor(props: {
     patch: Partial<ModelCatalogModel>
   ) => {
     const next = copyCatalog(props.value);
-    next.tiers[tierIndex].models[modelIndex] = {
-      ...next.tiers[tierIndex].models[modelIndex],
-      ...patch,
-    };
+    next.tiers[tierIndex].models[modelIndex] = mergeModelUpdate(
+      next.tiers[tierIndex].models[modelIndex],
+      patch
+    );
     props.onChange(next);
   };
 
