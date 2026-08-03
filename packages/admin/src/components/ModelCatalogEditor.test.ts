@@ -7,6 +7,7 @@ import {
   appendDraftTier,
   findDuplicateOpenRouterAssignments,
   filterOpenRouterModels,
+  mergeModelUpdate,
   reorderCatalog,
 } from './ModelCatalogEditor';
 
@@ -122,6 +123,21 @@ describe('applyModelMarkup', () => {
       price_input: 1.2,
       price_output: 3.4,
     });
+    expect(result).not.toHaveProperty('deduct_markup');
+  });
+});
+
+describe('mergeModelUpdate', () => {
+  it('does not keep deduct_markup when a free model becomes paid via shallow patch merge', () => {
+    const freeModel = {
+      ...catalog.tiers[0]!.models[0]!,
+      markup: 0 as const,
+      price_input: 0,
+      price_output: 0,
+      deduct_markup: 3 as const,
+    };
+    const result = mergeModelUpdate(freeModel, applyModelMarkup(freeModel, 1));
+    expect(result.markup).toBe(1);
     expect(result).not.toHaveProperty('deduct_markup');
   });
 });

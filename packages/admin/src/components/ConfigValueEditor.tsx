@@ -95,6 +95,7 @@ export function ConfigValueEditor(props: {
     const value = (props.value ?? {}) as Record<string, unknown>;
     const fixedDeduction = {
       freeQuotaExhausted: 10,
+      light: 15,
       standard: 30,
       premium: 50,
       ...((value.fixedDeduction ?? {}) as Record<string, number>),
@@ -121,11 +122,12 @@ export function ConfigValueEditor(props: {
         {(
           [
             ['freeQuotaExhausted', '免费模型超出免费轮次'],
+            ['light', '轻量档（付费）'],
             ['standard', '标准档'],
             ['premium', '旗舰档'],
           ] as const
         ).map(([key, label]) => (
-          <Col xs={24} md={8} key={key}>
+          <Col xs={24} md={12} lg={6} key={key}>
             <Typography.Text>{label}（星尘/轮）</Typography.Text>
             <InputNumber
               min={0}
@@ -143,7 +145,7 @@ export function ConfigValueEditor(props: {
         ))}
         <Col span={24}>
           <Typography.Text type="warning">
-            新请求按上方三档固定扣费；汇率、倍率与模型输入/输出价格仅用于历史兼容和展示。
+            新请求按上方固定扣费：免费额度用尽、轻量/标准/旗舰档；汇率、倍率与模型输入/输出价格仅用于历史兼容和展示。
           </Typography.Text>
         </Col>
       </Row>

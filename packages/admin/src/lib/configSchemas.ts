@@ -133,7 +133,8 @@ export const configMetadata: Record<
   },
   llm_pricing_config: {
     label: 'LLM 计费参数',
-    description: '每次成功生成的固定扣费标准；原动态计费字段保留用于历史兼容。',
+    description:
+      '每次成功生成的固定扣费标准（免费额度用尽 / 轻量 / 标准 / 旗舰）；原动态计费字段保留用于历史兼容。',
     defaultValue: {
       balanceBaseline: 30,
       fallbackCost: 30,
@@ -141,6 +142,7 @@ export const configMetadata: Record<
       markup: 2.5,
       fixedDeduction: {
         freeQuotaExhausted: 10,
+        light: 15,
         standard: 30,
         premium: 50,
       },

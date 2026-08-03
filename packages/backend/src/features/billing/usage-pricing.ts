@@ -22,6 +22,7 @@ export function calculateUsageDeduction(
 export type FixedDeductionCategory =
   | 'free_quota'
   | 'free_quota_exhausted'
+  | 'light'
   | 'standard'
   | 'premium'
   | 'standard_fallback';
@@ -62,6 +63,9 @@ export function resolveFixedDeduction(input: {
   }
   if (input.modelTier === 'standard') {
     return { amount: input.config.standard, category: 'standard' };
+  }
+  if (input.modelTier === 'light') {
+    return { amount: input.config.light, category: 'light' };
   }
   return { amount: input.config.standard, category: 'standard_fallback' };
 }
