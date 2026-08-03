@@ -24,6 +24,7 @@ export interface MiniappUserSettingsRow {
   pref_show_options: boolean;
   pref_custom_instructions: string | null;
   selected_model_id: string | null;
+  characters_last_seen_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -130,6 +131,32 @@ export class MiniappUserSettingsRepository {
     return (
       (data as Pick<MiniappUserSettingsRow, 'selected_model_id'> | null)?.selected_model_id ?? null
     );
+  }
+
+  /** 首页「最新」New 提醒的水位线。为空表示用户从未进过「最新」分页。 */
+  async getCharactersLastSeenAt(userId: string): Promise<string | null> {
+    const { data, error } = await this.db
+      .from('miniapp_user_settings')
+      .select('characters_last_seen_at')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`查询「最新」查看时间失败：${error.message}`);
+    return (
+      (data as Pick<MiniappUserSettingsRow, 'characters_last_seen_at'> | null)
+        ?.characters_last_seen_at ?? null
+    );
+  }
+
+  async markCharactersSeen(userId: string, tgUser: TelegramUser): Promise<void> {
+    await this.getOrCreate(userId, tgUser);
+    const now = new Date().toISOString();
+    const { error } = await this.db
+      .from('miniapp_user_settings')
+      .update({ characters_last_seen_at: now, updated_at: now })
+      .eq('user_id', userId);
+
+    if (error) throw new Error(`更新「最新」查看时间失败：${error.message}`);
   }
 
   private async findByUserId(userId: string): Promise<MiniappUserSettingsRow | null> {

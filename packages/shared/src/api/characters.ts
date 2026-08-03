@@ -51,3 +51,11 @@ export interface GetCharactersData {
 export interface GetCharacterByIdData {
   character: CharacterDetail;
 }
+
+/**
+ * GET /api/characters/latest-badge 与 POST /api/characters/latest-seen 的响应体。
+ * 只表示「有 / 无」本轮上新，不带条数。
+ */
+export interface LobbyLatestBadgeData {
+  has_new: boolean;
+}

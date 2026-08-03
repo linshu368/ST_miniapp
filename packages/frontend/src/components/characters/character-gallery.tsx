@@ -10,7 +10,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-import { useCharactersQuery } from '@/lib/api/characters';
+import {
+  useCharactersQuery,
+  useLobbyLatestBadgeQuery,
+  useMarkLobbyLatestSeenMutation,
+} from '@/lib/api/characters';
 import { useBridgeStatus } from '@/lib/bridge';
 import { getTimingMark } from '@/lib/bridge/iframe-timing';
 import { beginFirstChatNavigation } from '@/lib/sentry/first-chat-telemetry';
@@ -56,6 +60,19 @@ export function CharacterGallery() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
+
+  const latestBadge = useLobbyLatestBadgeQuery();
+  const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
+  const markedLatestRef = useRef(false);
+  // 点「最新」当场收起，不等标记已看的请求回来；点推荐、搜索、卡片都不影响。
+  const showLatestBadge = sort !== 'latest' && latestBadge.data?.has_new === true;
+
+  // 进过「最新」就推进水位线，列表为空也算看过；每次挂载只写一次。
+  useEffect(() => {
+    if (sort !== 'latest' || markedLatestRef.current) return;
+    markedLatestRef.current = true;
+    markLatestSeen();
+  }, [sort, markLatestSeen]);
 
   // 用户阅读角色详情时同步预取动态路由，减少点击进入后偶发等待路由资源的时间。
   useEffect(() => {
@@ -149,7 +166,7 @@ export function CharacterGallery() {
     <div
       role="tablist"
       aria-label="角色排序"
-      className="mx-auto flex w-full max-w-screen-xl items-center gap-2 px-4 pb-1 sm:px-6 lg:px-8"
+      className="mx-auto flex w-full max-w-screen-xl items-center gap-2 px-4 pb-1 pt-1.5 sm:px-6 lg:px-8"
     >
       {LOBBY_TABS.map((tab) => {
         const active = sort === tab.value;
@@ -161,13 +178,23 @@ export function CharacterGallery() {
             aria-selected={active}
             onClick={() => setSort(tab.value)}
             className={cn(
-              'rounded-full border px-4 py-1.5 text-[13px] transition-all',
+              'relative rounded-full border px-4 py-1.5 text-[13px] transition-all',
               active
                 ? 'border-primary/30 bg-primary/10 text-primary'
                 : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
             )}
           >
             {tab.label}
+            {/* 气泡浮在按钮右上角外侧，不压文字；pointer-events-none 保证点击区域完整。 */}
+            {tab.value === 'latest' && showLatestBadge ? (
+              <span
+                role="status"
+                aria-label="有新角色卡"
+                className="pointer-events-none absolute -right-1 -top-1.5 rounded-full border border-success/50 bg-success/15 px-1.5 text-[9px] font-bold leading-[14px] tracking-wide text-success"
+              >
+                New
+              </span>
+            ) : null}
           </button>
         );
       })}
