@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ChevronRight, Heart, MessageCircle, RefreshCw } from 'lucide-react';
 
@@ -11,6 +11,16 @@ import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { useBridgeStatus } from '@/lib/bridge';
 import { getTimingMark } from '@/lib/bridge/iframe-timing';
+import {
+  beginBusinessNavigation,
+  cancelBusinessNavigation,
+  completeBusinessNavigation,
+  completeBusinessNavigationData,
+  failBusinessNavigation,
+  markBusinessNavigationStarted,
+  mountBusinessNavigation,
+  traceBusinessNavigationOperation,
+} from '@/lib/sentry/business-navigation-telemetry';
 import { beginFirstChatNavigation } from '@/lib/sentry/first-chat-telemetry';
 
 type ChatsTab = 'history' | 'favorites';
@@ -77,9 +87,41 @@ export default function ChatsPage() {
 function HistoryList() {
   const { items, loading, error, fetch } = useChatListStore();
   const bridgeStatus = useBridgeStatus();
+  const businessAttemptIdRef = useRef<string>();
 
   useEffect(() => {
-    void fetch();
+    businessAttemptIdRef.current = mountBusinessNavigation('chat_list_open');
+    let cancelled = false;
+    let firstFrame = 0;
+    let readyFrame = 0;
+
+    void traceBusinessNavigationOperation(
+      businessAttemptIdRef.current,
+      'api.chat_list',
+      'http.client',
+      fetch
+    ).then(() => {
+      if (cancelled) return;
+      const currentError = useChatListStore.getState().error;
+      if (currentError) {
+        failBusinessNavigation(businessAttemptIdRef.current, 'chat_list_request_failed');
+        return;
+      }
+
+      completeBusinessNavigationData(businessAttemptIdRef.current);
+      firstFrame = window.requestAnimationFrame(() => {
+        readyFrame = window.requestAnimationFrame(() => {
+          completeBusinessNavigation(businessAttemptIdRef.current);
+        });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(readyFrame);
+      cancelBusinessNavigation(businessAttemptIdRef.current, 'page_unmounted');
+    };
   }, [fetch]);
 
   return (
@@ -266,11 +308,17 @@ function recordFirstChatNavigation(
   source: 'history' | 'favorites',
   bridgePhase: string
 ): void {
+  const businessAttemptId = beginBusinessNavigation('character_open', {
+    pageFrom: '会话列表',
+    navigationType: 'link',
+    attributes: { character_id: characterId, entry_source: source },
+  });
   const bridgeStartedAt = getTimingMark('bridge_start');
   beginFirstChatNavigation(characterId, source, {
     bridgePhase,
     ...(bridgeStartedAt ? { bootElapsedMs: Date.now() - bridgeStartedAt } : {}),
   });
+  markBusinessNavigationStarted(businessAttemptId);
 }
 
 function formatActivityTime(value: string): string {

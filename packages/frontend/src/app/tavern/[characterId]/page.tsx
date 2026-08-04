@@ -32,6 +32,14 @@ import {
 import { reportChatConcurrencyEvent } from '@/lib/bridge/chat-concurrency-debug';
 import { setBridgeTelemetryCharacter } from '@/lib/sentry/bridge-telemetry';
 import {
+  cancelBusinessNavigation,
+  completeBusinessNavigation,
+  completeBusinessNavigationData,
+  failBusinessNavigation,
+  mountBusinessNavigation,
+  traceBusinessNavigationOperation,
+} from '@/lib/sentry/business-navigation-telemetry';
+import {
   cancelFirstChatAttempt,
   completeFirstChatAfterPaint,
   failFirstChatAttempt,
@@ -76,6 +84,7 @@ export default function TavernChatPage() {
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
   const [freeQuotaExhaustedOpen, setFreeQuotaExhaustedOpen] = useState(false);
+  const businessAttemptIdRef = useRef<string>();
   const firstChatAttemptIdRef = useRef<string>();
   const bridgeStatusAtGateRef = useRef<string>();
   const characterQuery = useCharacterQuery(characterId);
@@ -144,6 +153,7 @@ export default function TavernChatPage() {
     if (bridgeStatus !== 'disconnected' || chatReady) return;
     const timer = window.setTimeout(() => {
       setEntryError('连接中断，请点击重试刷新页面。');
+      failBusinessNavigation(businessAttemptIdRef.current, 'bridge_disconnected');
       failFirstChatAttempt(firstChatAttemptIdRef.current, 'bridge_disconnected');
     }, 12_000);
     return () => window.clearTimeout(timer);
@@ -155,6 +165,7 @@ export default function TavernChatPage() {
     setBridgeTelemetryCharacter(characterId);
     resetPageTiming();
     markTiming('page_mount');
+    businessAttemptIdRef.current = mountBusinessNavigation('character_open');
     const bridgeStartedAt = getTimingMark('bridge_start');
     firstChatAttemptIdRef.current = mountFirstChatAttempt(
       characterId,
@@ -178,6 +189,7 @@ export default function TavernChatPage() {
     }, GATE_STALL_FLUSH_MS);
     return () => {
       window.clearTimeout(gateStallTimer);
+      cancelBusinessNavigation(businessAttemptIdRef.current, 'page_unmounted');
       cancelFirstChatAttempt(firstChatAttemptIdRef.current, 'page_unmounted');
     };
   }, [characterId]);
@@ -225,30 +237,42 @@ export default function TavernChatPage() {
     // 此处 await 同一个 promise：已完成则零等待，未预取（直链进入）则现场发起。
     // ensure 失败不阻断：卡可能已缓存，交给 selectCharacter 的重载+重试兜底。
     void (async () => {
-      const latestChatPromise = traceFirstChatOperation(
-        firstChatAttemptId,
-        'latest_chat',
+      const latestChatPromise = traceBusinessNavigationOperation(
+        businessAttemptIdRef.current,
         'api.latest_chat_lookup',
         'http.client',
         () =>
-          requestedChat && isSafeChatFileName(requestedChat)
-            ? Promise.resolve({
-                fileName: requestedChat,
-                characterAvatar: `platform_${characterId}.png`,
-              })
-            : fetchLatestUserChat(characterId).then((data) => data.item)
+          traceFirstChatOperation(
+            firstChatAttemptId,
+            'latest_chat',
+            'api.latest_chat_lookup',
+            'http.client',
+            () =>
+              requestedChat && isSafeChatFileName(requestedChat)
+                ? Promise.resolve({
+                    fileName: requestedChat,
+                    characterAvatar: `platform_${characterId}.png`,
+                  })
+                : fetchLatestUserChat(characterId).then((data) => data.item)
+          )
       ).catch((err) => {
         console.warn('[TavernChatPage] latest chat lookup failed:', err);
         return null;
       });
       try {
         markTiming('ensure_start'); // [iframe-timing] TEMP DEBUG
-        await traceFirstChatOperation(
-          firstChatAttemptId,
-          'ensure',
+        await traceBusinessNavigationOperation(
+          businessAttemptIdRef.current,
           'api.ensure_character_wait',
           'http.client',
-          () => prefetchEnsureStCharacter(characterId)
+          () =>
+            traceFirstChatOperation(
+              firstChatAttemptId,
+              'ensure',
+              'api.ensure_character_wait',
+              'http.client',
+              () => prefetchEnsureStCharacter(characterId)
+            )
         );
         markTiming('ensure_end'); // [iframe-timing] TEMP DEBUG
       } catch (err) {
@@ -273,17 +297,23 @@ export default function TavernChatPage() {
           ? { fileName: latestChat.fileName, avatar: latestChat.characterAvatar || avatar }
           : null;
       markTiming('select_start'); // [iframe-timing] TEMP DEBUG
-      traceFirstChatOperation(
-        firstChatAttemptId,
-        'select',
+      traceBusinessNavigationOperation(
+        businessAttemptIdRef.current,
         'bridge.select_character',
         'bridge.action',
         () =>
-          platformAction('selectCharacter', {
-            avatar,
-            forceNewChat: false,
-            skipChatLoad: Boolean(targetChat),
-          })
+          traceFirstChatOperation(
+            firstChatAttemptId,
+            'select',
+            'bridge.select_character',
+            'bridge.action',
+            () =>
+              platformAction('selectCharacter', {
+                avatar,
+                forceNewChat: false,
+                skipChatLoad: Boolean(targetChat),
+              })
+          )
       )
         .then(async (result) => {
           window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
@@ -294,10 +324,17 @@ export default function TavernChatPage() {
           if (cancelled) return;
           if (targetChat) {
             // openChat 要求 ready 相位，桥接会把请求缓冲到相位达标后再投递。
-            const chatId = await openTargetChat(targetChat, avatar, entryId, firstChatAttemptId);
+            const chatId = await openTargetChat(
+              targetChat,
+              avatar,
+              entryId,
+              businessAttemptIdRef.current,
+              firstChatAttemptId
+            );
             if (cancelled) return;
             useSTMirrorStore.getState().updatePartial({ currentChatId: chatId });
           }
+          completeBusinessNavigationData(businessAttemptIdRef.current);
           startFirstChatRender(firstChatAttemptId);
           markTiming('chat_state_ready');
           setReadyCharacterId(characterId);
@@ -321,6 +358,7 @@ export default function TavernChatPage() {
           });
           if (!cancelled) {
             setEntryError('角色加载失败，请重试。');
+            failBusinessNavigation(businessAttemptIdRef.current, 'select_error');
             failFirstChatAttempt(firstChatAttemptId, 'select_error', err);
           }
         });
@@ -357,6 +395,7 @@ export default function TavernChatPage() {
               characterId,
               bridgeStatusAtGate: bridgeStatusAtGateRef.current,
             });
+            completeBusinessNavigation(businessAttemptIdRef.current);
             completeFirstChatAfterPaint(firstChatAttemptIdRef.current);
           }}
           onRetry={() => {
@@ -408,6 +447,7 @@ async function openTargetChat(
   target: { fileName: string; avatar: string },
   avatar: string,
   entryId: string,
+  businessAttemptId: string | undefined,
   firstChatAttemptId: string | undefined
 ): Promise<string | null> {
   reportChatConcurrencyEvent({
@@ -418,12 +458,18 @@ async function openTargetChat(
     target,
   });
   try {
-    const opened = await traceFirstChatOperation(
-      firstChatAttemptId,
-      'open_chat',
+    const opened = await traceBusinessNavigationOperation(
+      businessAttemptId,
       'bridge.open_chat',
       'bridge.action',
-      () => withTimeout(platformAction('openChat', target), OPEN_CHAT_TIMEOUT_MS)
+      () =>
+        traceFirstChatOperation(
+          firstChatAttemptId,
+          'open_chat',
+          'bridge.open_chat',
+          'bridge.action',
+          () => withTimeout(platformAction('openChat', target), OPEN_CHAT_TIMEOUT_MS)
+        )
     );
     return opened.chatId;
   } catch (err) {
@@ -444,12 +490,18 @@ async function openTargetChat(
       action: 'selectCharacter',
       target: { avatar, forceNewChat: false },
     });
-    const fallback = await traceFirstChatOperation(
-      firstChatAttemptId,
-      'fallback_select',
+    const fallback = await traceBusinessNavigationOperation(
+      businessAttemptId,
       'bridge.fallback_select',
       'bridge.action',
-      () => platformAction('selectCharacter', { avatar, forceNewChat: false })
+      () =>
+        traceFirstChatOperation(
+          firstChatAttemptId,
+          'fallback_select',
+          'bridge.fallback_select',
+          'bridge.action',
+          () => platformAction('selectCharacter', { avatar, forceNewChat: false })
+        )
     );
     return fallback.chatId;
   }

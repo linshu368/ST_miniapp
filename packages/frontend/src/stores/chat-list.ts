@@ -13,6 +13,7 @@ interface ChatListStore {
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let inFlightFetch: Promise<void> | null = null;
 const DEBOUNCE_MS = 400;
 
 export const useChatListStore = create<ChatListStore>((set, get) => ({
@@ -21,18 +22,26 @@ export const useChatListStore = create<ChatListStore>((set, get) => ({
   error: null,
   lastFetchedAt: 0,
 
-  fetch: async () => {
-    if (get().loading) return;
-    set({ loading: true, error: null });
-    try {
-      const data = await fetchUserChats();
-      set({ items: data.items, loading: false, lastFetchedAt: Date.now() });
-    } catch (err) {
-      set({
-        error: err instanceof Error ? err.message : 'Failed to load chats',
-        loading: false,
-      });
-    }
+  fetch: () => {
+    if (inFlightFetch) return inFlightFetch;
+
+    const request = (async () => {
+      set({ loading: true, error: null });
+      try {
+        const data = await fetchUserChats();
+        set({ items: data.items, loading: false, lastFetchedAt: Date.now() });
+      } catch (err) {
+        set({
+          error: err instanceof Error ? err.message : 'Failed to load chats',
+          loading: false,
+        });
+      }
+    })();
+    inFlightFetch = request;
+    void request.finally(() => {
+      if (inFlightFetch === request) inFlightFetch = null;
+    });
+    return request;
   },
 
   invalidate: () => {
