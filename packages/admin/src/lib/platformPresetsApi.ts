@@ -26,6 +26,12 @@ export interface PlatformPresetModelAssignment {
   display_name: string;
   sort_order: number;
   preset_id: string | null;
+  assigned_preset_display_name: string | null;
+  effective_preset_id: string | null;
+  effective_preset_display_name: string | null;
+  preset_source: 'model' | 'default' | null;
+  preset_config_code: 'OK' | 'ASSIGNMENT_INVALID_FALLBACK' | 'NO_ENABLED_DEFAULT';
+  assignment_updated_at: string | null;
   assignment_version: number;
 }
 
@@ -70,6 +76,22 @@ export async function updatePlatformPresetModelAssignments(input: {
     .rpc('update_platform_preset_model_assignments', {
       p_preset_id: input.presetId,
       p_model_ids: input.modelIds,
+      p_expected_version: input.expectedVersion,
+    });
+  return unwrap(data as number | null, error);
+}
+
+export async function updatePlatformPresetModelAssignment(input: {
+  client: SupabaseClient;
+  modelId: string;
+  presetId: string | null;
+  expectedVersion: number;
+}): Promise<number> {
+  const { data, error } = await input.client
+    .schema('admin')
+    .rpc('update_platform_preset_model_assignment', {
+      p_model_id: input.modelId,
+      p_preset_id: input.presetId,
       p_expected_version: input.expectedVersion,
     });
   return unwrap(data as number | null, error);

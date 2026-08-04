@@ -2,6 +2,8 @@ import type { GetEffectivePresetData } from '@miniapp/shared';
 import { platformAction } from './platform-action';
 
 const PRESET_CHUNK_SIZE = 20_000;
+const inFlightSyncs = new Map<string, Promise<void>>();
+let syncQueue: Promise<void> = Promise.resolve();
 
 function createSyncId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -11,6 +13,21 @@ function createSyncId(): string {
 }
 
 export async function syncModelPresetToST(data: GetEffectivePresetData): Promise<void> {
+  const key = `${data.model_id}:${data.preset_assignments_version}:${data.effective_preset_id}`;
+  const existing = inFlightSyncs.get(key);
+  if (existing) return existing;
+
+  const task = syncQueue.catch(() => undefined).then(() => performSyncModelPresetToST(data));
+  syncQueue = task;
+  inFlightSyncs.set(key, task);
+  try {
+    await task;
+  } finally {
+    if (inFlightSyncs.get(key) === task) inFlightSyncs.delete(key);
+  }
+}
+
+async function performSyncModelPresetToST(data: GetEffectivePresetData): Promise<void> {
   if (data.preset_degraded && data.effective_preset_id === null) {
     await platformAction('changeModel', {
       provider: 'openrouter',

@@ -83,6 +83,7 @@ export interface PersonaInput {
  * @param llmProxyUrl            - 写入 ST settings 的平台 LLM 代理地址
  * @param persona                - 用户 ST persona（TG 名字/头像），可选；name 为空则不注入
  * @param effectiveLlmModel      - 用户稳定选择解析出的 OpenRouter 模型；无选择时为目录默认模型
+ * @param effectivePresetPointer - 当前模型解析出的有效平台预设指针
  */
 export function mergeSettings(
   platformSettings: PlatformSettingsRow,
@@ -92,7 +93,8 @@ export function mergeSettings(
   fallbackCharacterId: string | undefined,
   llmProxyUrl: string,
   persona?: PersonaInput,
-  effectiveLlmModel?: string | null
+  effectiveLlmModel?: string | null,
+  effectivePresetPointer?: string | null
 ): MergedSettings {
   // 深拷贝 A 作为 base（绝不修改原始对象）
   const merged = cloneDeep(platformSettings.settings_jsonb) as Record<string, unknown>;
@@ -105,7 +107,11 @@ export function mergeSettings(
   let appliedPresetId: string | undefined;
   const oaiForPreset = merged.oai_settings;
   if (oaiForPreset && typeof oaiForPreset === 'object') {
-    const applyResult = applyActivePreset(oaiForPreset as Record<string, unknown>, presets);
+    const oaiSettings = oaiForPreset as Record<string, unknown>;
+    if (effectivePresetPointer) {
+      oaiSettings.preset_settings_openai = effectivePresetPointer;
+    }
+    const applyResult = applyActivePreset(oaiSettings, presets);
     presetApplied = applyResult.applied;
     appliedPresetId = applyResult.presetId;
   }

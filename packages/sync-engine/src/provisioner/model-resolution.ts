@@ -11,6 +11,7 @@ interface LegacyTier {
 }
 
 export interface ProvisionModelResolution {
+  modelId: string | null;
   openrouterModelId: string | null;
   strictCatalogInvalid: boolean;
 }
@@ -25,6 +26,7 @@ export function resolveProvisionModel(input: {
   if (strictCatalog.success) {
     const selectedId = resolveEffectiveSelectedModelId(strictCatalog.data, input.selectedModelId);
     return {
+      modelId: selectedId,
       openrouterModelId: resolveEnabledCatalogModel(strictCatalog.data, selectedId)
         .openrouter_model_id,
       strictCatalogInvalid: false,
@@ -38,6 +40,7 @@ export function resolveProvisionModel(input: {
   );
   if (compatibleSelection) {
     return {
+      modelId: compatibleSelection.id,
       openrouterModelId: compatibleSelection.openrouter_model_id,
       strictCatalogInvalid,
     };
@@ -49,15 +52,17 @@ export function resolveProvisionModel(input: {
     );
     if (typeof legacyDefault?.modelName === 'string') {
       return {
+        modelId: null,
         openrouterModelId: legacyDefault.modelName,
         strictCatalogInvalid,
       };
     }
   }
 
+  const compatibleDefault = resolveRuntimeCatalogModel(input.catalog, null, true);
   return {
-    openrouterModelId:
-      resolveRuntimeCatalogModel(input.catalog, null, true)?.openrouter_model_id ?? null,
+    modelId: compatibleDefault?.id ?? null,
+    openrouterModelId: compatibleDefault?.openrouter_model_id ?? null,
     strictCatalogInvalid,
   };
 }

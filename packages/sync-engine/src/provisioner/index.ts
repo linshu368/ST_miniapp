@@ -222,7 +222,8 @@ export async function provision(
       systemFallbackCharacterId ?? undefined,
       config.LLM_PROXY_URL,
       userPersona.name ? { name: userPersona.name, avatarFile: personaAvatarFile } : undefined,
-      data.defaultLlmModel
+      data.defaultLlmModel,
+      data.effectivePresetPointer
     );
   } catch (err) {
     throw new ProvisionError(`merge settings 失败：${err}`, err);

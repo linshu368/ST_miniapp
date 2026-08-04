@@ -45,6 +45,7 @@ describe('resolveProvisionModel', () => {
         legacyTiers: null,
       })
     ).toEqual({
+      modelId: 'selected-model',
       openrouterModelId: 'vendor/selected',
       strictCatalogInvalid: true,
     });

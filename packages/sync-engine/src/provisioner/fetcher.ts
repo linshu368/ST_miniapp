@@ -99,6 +99,8 @@ export interface ProvisionData {
   userPersona: UserPersona;
   /** 用户有效选择对应的 OpenRouter 模型；无有效选择时使用目录默认模型。 */
   defaultLlmModel: string | null;
+  /** 当前稳定模型解析出的模型专属或全局默认预设指针。 */
+  effectivePresetPointer: string | null;
 }
 
 export const DEFAULT_USER_PERSONA_NAME = '用户';
@@ -253,6 +255,25 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     );
   }
   const defaultLlmModel = modelResolution.openrouterModelId;
+  let effectivePresetPointer: string | null = null;
+  if (modelResolution.modelId) {
+    const { data: effectivePresetData, error: effectivePresetError } = await db
+      .schema('st_platform' as 'public')
+      .rpc('resolve_effective_preset_for_model', {
+        p_model_id: modelResolution.modelId,
+        p_include_payload: false,
+      });
+    if (effectivePresetError) {
+      console.warn(
+        `[provision-fetcher] Failed to resolve effective preset for ${modelResolution.modelId}: ${effectivePresetError.message}`
+      );
+    } else {
+      const row = (
+        effectivePresetData as unknown as Array<{ effective_preset_pointer: string | null }> | null
+      )?.[0];
+      effectivePresetPointer = row?.effective_preset_pointer ?? null;
+    }
+  }
 
   return {
     stHandle,
@@ -264,6 +285,7 @@ export async function fetchProvisionData(userId: string): Promise<ProvisionData>
     systemFallbackCharacterId,
     userPersona,
     defaultLlmModel,
+    effectivePresetPointer,
   };
 }
 

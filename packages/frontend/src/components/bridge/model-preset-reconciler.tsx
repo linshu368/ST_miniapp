@@ -1,8 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useEffectivePresetQuery, useModelCatalogQuery } from '@/lib/api/models';
-import { syncModelPresetToST, useBridgeStatus } from '@/lib/bridge';
+import {
+  fetchEffectivePreset,
+  useEffectivePresetQuery,
+  useModelCatalogQuery,
+} from '@/lib/api/models';
+import { platformAction, syncModelPresetToST, useBridgeStatus, useSTEvent } from '@/lib/bridge';
 
 export function ModelPresetReconciler() {
   const bridgeStatus = useBridgeStatus();
@@ -18,6 +22,7 @@ export function ModelPresetReconciler() {
   const inFlightKey = useRef<string | null>(null);
   const bridgeEpoch = useRef(0);
   const retryTimer = useRef<number | null>(null);
+  const preflightRequests = useRef(new Set<string>());
   const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
@@ -25,6 +30,57 @@ export function ModelPresetReconciler() {
     lastAppliedKey.current = null;
     inFlightKey.current = null;
   }, [bridgeStatus]);
+
+  useEffect(() => {
+    if (bridgeStatus !== 'ready') return;
+    void platformAction('presetPreflightControl', {
+      operation: 'set-ready',
+      ready: true,
+    }).catch((error) => {
+      console.error('[ModelPresetReconciler] failed to enable preset preflight:', error);
+    });
+    return () => {
+      void platformAction('presetPreflightControl', {
+        operation: 'set-ready',
+        ready: false,
+      }).catch(() => undefined);
+    };
+  }, [bridgeStatus]);
+
+  useSTEvent('preset:preflight-requested', (request) => {
+    if (preflightRequests.current.has(request.requestId)) return;
+    preflightRequests.current.add(request.requestId);
+
+    void (async () => {
+      let outcome: 'unchanged' | 'synced' | 'failed' = 'failed';
+      try {
+        const latest = await fetchEffectivePreset();
+        const alreadyCurrent =
+          request.currentModel === latest.openrouter_model_id &&
+          request.currentPresetPointer === latest.effective_preset_pointer;
+        if (alreadyCurrent) {
+          outcome = 'unchanged';
+        } else {
+          await syncModelPresetToST(latest);
+          outcome = 'synced';
+        }
+      } catch (error) {
+        console.error('[ModelPresetReconciler] preset preflight failed:', error);
+      } finally {
+        try {
+          await platformAction('presetPreflightControl', {
+            operation: 'complete',
+            requestId: request.requestId,
+            outcome,
+          });
+        } catch (error) {
+          console.error('[ModelPresetReconciler] failed to complete preset preflight:', error);
+        } finally {
+          preflightRequests.current.delete(request.requestId);
+        }
+      }
+    })();
+  });
 
   useEffect(() => {
     if (config?.preset_degraded) {
