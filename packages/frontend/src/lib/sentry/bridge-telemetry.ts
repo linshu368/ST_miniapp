@@ -3,7 +3,7 @@
 import * as Sentry from '@sentry/nextjs';
 
 import { sendSentryLog, setCharacterContext } from './client';
-import { recordFirstChatSelectMark } from './first-chat-telemetry';
+import { recordCharacterSelectMark } from './business-navigation-telemetry';
 
 type TrackedSpanName = 'bridge.boot';
 
@@ -98,7 +98,7 @@ export function recordBridgeActionFailure(
  * debug POST remains in place for side-by-side validation.
  */
 export function recordBridgeTelemetryMark(name: string, detail?: string): void {
-  recordFirstChatSelectMark(name);
+  recordCharacterSelectMark(name);
   switch (name) {
     case 'bridge_start':
       startTrackedSpan('bridge.boot', 'bridge.boot');

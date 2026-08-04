@@ -12,16 +12,14 @@ import { lobbyImageUrl } from '@/components/characters/character-card';
 import { useBridgeStatus } from '@/lib/bridge';
 import { getTimingMark } from '@/lib/bridge/iframe-timing';
 import {
-  beginBusinessNavigation,
+  beginCharacterNavigation,
   cancelBusinessNavigation,
   completeBusinessNavigation,
   completeBusinessNavigationData,
   failBusinessNavigation,
-  markBusinessNavigationStarted,
-  mountBusinessNavigation,
+  mountChatListNavigation,
   traceBusinessNavigationOperation,
 } from '@/lib/sentry/business-navigation-telemetry';
-import { beginFirstChatNavigation } from '@/lib/sentry/first-chat-telemetry';
 
 type ChatsTab = 'history' | 'favorites';
 
@@ -90,7 +88,7 @@ function HistoryList() {
   const businessAttemptIdRef = useRef<string>();
 
   useEffect(() => {
-    businessAttemptIdRef.current = mountBusinessNavigation('chat_list_open');
+    businessAttemptIdRef.current = mountChatListNavigation();
     let cancelled = false;
     let firstFrame = 0;
     let readyFrame = 0;
@@ -170,7 +168,7 @@ function HistoryList() {
             key={item.characterId}
             href={`/tavern/${item.characterId}?${search.toString()}`}
             prefetch={false}
-            onClick={() => recordFirstChatNavigation(item.characterId!, 'history', bridgeStatus)}
+            onClick={() => recordCharacterNavigation(item.characterId!, 'history', bridgeStatus)}
             className="flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary active:scale-[0.99]"
           >
             <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
@@ -271,7 +269,7 @@ function FavoritesList() {
           <Link
             href={`/tavern/${character.id}`}
             prefetch={false}
-            onClick={() => recordFirstChatNavigation(character.id, 'favorites', bridgeStatus)}
+            onClick={() => recordCharacterNavigation(character.id, 'favorites', bridgeStatus)}
             aria-label={`进入 ${character.name} 的聊天`}
             className="absolute inset-0 rounded-3xl"
           />
@@ -303,22 +301,18 @@ function FavoritesList() {
   );
 }
 
-function recordFirstChatNavigation(
+function recordCharacterNavigation(
   characterId: string,
   source: 'history' | 'favorites',
   bridgePhase: string
 ): void {
-  const businessAttemptId = beginBusinessNavigation('character_open', {
+  const bridgeStartedAt = getTimingMark('bridge_start');
+  beginCharacterNavigation(characterId, source, {
     pageFrom: '会话列表',
     navigationType: 'link',
-    attributes: { character_id: characterId, entry_source: source },
-  });
-  const bridgeStartedAt = getTimingMark('bridge_start');
-  beginFirstChatNavigation(characterId, source, {
     bridgePhase,
     ...(bridgeStartedAt ? { bootElapsedMs: Date.now() - bridgeStartedAt } : {}),
   });
-  markBusinessNavigationStarted(businessAttemptId);
 }
 
 function formatActivityTime(value: string): string {

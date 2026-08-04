@@ -36,22 +36,14 @@ import {
   completeBusinessNavigation,
   completeBusinessNavigationData,
   failBusinessNavigation,
-  mountBusinessNavigation,
+  markBusinessNavigationDegraded,
+  mountCharacterNavigation,
+  recordBusinessNavigationRetry,
+  recordBusinessNavigationRetryableFailure,
+  recordBusinessNavigationStall,
+  recordCharacterGateOpen,
   traceBusinessNavigationOperation,
 } from '@/lib/sentry/business-navigation-telemetry';
-import {
-  cancelFirstChatAttempt,
-  completeFirstChatAfterPaint,
-  failFirstChatAttempt,
-  finishFirstChatPrepare,
-  markFirstChatDegraded,
-  mountFirstChatAttempt,
-  recordFirstChatGateOpen,
-  recordFirstChatStall,
-  retryFirstChatAttempt,
-  startFirstChatRender,
-  traceFirstChatOperation,
-} from '@/lib/sentry/first-chat-telemetry';
 
 // [iframe-timing] TEMP DEBUG: 失败路径停摆上报阈值。beacon 原本只在 select 成功后发送，
 // 卡死场景零遥测无法定位。两级停摆定时器把卡死样本的 timeline 抢救回来：
@@ -85,7 +77,6 @@ export default function TavernChatPage() {
   const [entryAttempt, setEntryAttempt] = useState(0);
   const [freeQuotaExhaustedOpen, setFreeQuotaExhaustedOpen] = useState(false);
   const businessAttemptIdRef = useRef<string>();
-  const firstChatAttemptIdRef = useRef<string>();
   const bridgeStatusAtGateRef = useRef<string>();
   const characterQuery = useCharacterQuery(characterId);
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
@@ -154,7 +145,6 @@ export default function TavernChatPage() {
     const timer = window.setTimeout(() => {
       setEntryError('连接中断，请点击重试刷新页面。');
       failBusinessNavigation(businessAttemptIdRef.current, 'bridge_disconnected');
-      failFirstChatAttempt(firstChatAttemptIdRef.current, 'bridge_disconnected');
     }, 12_000);
     return () => window.clearTimeout(timer);
   }, [bridgeStatus, chatReady]);
@@ -165,9 +155,8 @@ export default function TavernChatPage() {
     setBridgeTelemetryCharacter(characterId);
     resetPageTiming();
     markTiming('page_mount');
-    businessAttemptIdRef.current = mountBusinessNavigation('character_open');
     const bridgeStartedAt = getTimingMark('bridge_start');
-    firstChatAttemptIdRef.current = mountFirstChatAttempt(
+    businessAttemptIdRef.current = mountCharacterNavigation(
       characterId,
       bridgeStatusRef.current,
       bridgeStartedAt ? Date.now() - bridgeStartedAt : undefined
@@ -178,7 +167,7 @@ export default function TavernChatPage() {
     const gateStallTimer = window.setTimeout(() => {
       if (gateOpenRef.current) return;
       markTiming('gate_stall');
-      recordFirstChatStall(firstChatAttemptIdRef.current, 'gate', bridgeStatusRef.current);
+      recordBusinessNavigationStall(businessAttemptIdRef.current, 'gate', bridgeStatusRef.current);
       // [iframe-timing] round5: 同源收割 iframe 内 fetch 生命周期/资源/异常，定位楔死请求
       harvestStIframeStallDiagnostics();
       flushIframeTiming({
@@ -190,7 +179,6 @@ export default function TavernChatPage() {
     return () => {
       window.clearTimeout(gateStallTimer);
       cancelBusinessNavigation(businessAttemptIdRef.current, 'page_unmounted');
-      cancelFirstChatAttempt(firstChatAttemptIdRef.current, 'page_unmounted');
     };
   }, [characterId]);
 
@@ -203,8 +191,8 @@ export default function TavernChatPage() {
     // [iframe-timing] TEMP DEBUG: 闸门放行时刻的相位（interactive / ready）
     const bridgeStatusAtGate = bridgeStatusRef.current;
     bridgeStatusAtGateRef.current = bridgeStatusAtGate;
-    const firstChatAttemptId = firstChatAttemptIdRef.current;
-    recordFirstChatGateOpen(firstChatAttemptId, bridgeStatusAtGate);
+    const businessAttemptId = businessAttemptIdRef.current;
+    recordCharacterGateOpen(businessAttemptId, bridgeStatusAtGate);
     const entryId = `${characterId}:${Date.now().toString(36)}:${entryAttempt}`;
     reportChatConcurrencyEvent({
       source: 'chat-page',
@@ -221,7 +209,7 @@ export default function TavernChatPage() {
     // 超时触发的 catch），覆盖「请求在途永挂」形态；成功/失败时定时器均被解除。
     const selectStallTimer = window.setTimeout(() => {
       markTiming('select_stall');
-      recordFirstChatStall(firstChatAttemptId, 'select', bridgeStatusRef.current);
+      recordBusinessNavigationStall(businessAttemptId, 'select', bridgeStatusRef.current);
       // [iframe-timing] round5: select 在途挂起同样收割 iframe 内部状态
       harvestStIframeStallDiagnostics();
       flushIframeTiming({
@@ -238,23 +226,16 @@ export default function TavernChatPage() {
     // ensure 失败不阻断：卡可能已缓存，交给 selectCharacter 的重载+重试兜底。
     void (async () => {
       const latestChatPromise = traceBusinessNavigationOperation(
-        businessAttemptIdRef.current,
+        businessAttemptId,
         'api.latest_chat_lookup',
         'http.client',
         () =>
-          traceFirstChatOperation(
-            firstChatAttemptId,
-            'latest_chat',
-            'api.latest_chat_lookup',
-            'http.client',
-            () =>
-              requestedChat && isSafeChatFileName(requestedChat)
-                ? Promise.resolve({
-                    fileName: requestedChat,
-                    characterAvatar: `platform_${characterId}.png`,
-                  })
-                : fetchLatestUserChat(characterId).then((data) => data.item)
-          )
+          requestedChat && isSafeChatFileName(requestedChat)
+            ? Promise.resolve({
+                fileName: requestedChat,
+                characterAvatar: `platform_${characterId}.png`,
+              })
+            : fetchLatestUserChat(characterId).then((data) => data.item)
       ).catch((err) => {
         console.warn('[TavernChatPage] latest chat lookup failed:', err);
         return null;
@@ -262,21 +243,14 @@ export default function TavernChatPage() {
       try {
         markTiming('ensure_start'); // [iframe-timing] TEMP DEBUG
         await traceBusinessNavigationOperation(
-          businessAttemptIdRef.current,
+          businessAttemptId,
           'api.ensure_character_wait',
           'http.client',
-          () =>
-            traceFirstChatOperation(
-              firstChatAttemptId,
-              'ensure',
-              'api.ensure_character_wait',
-              'http.client',
-              () => prefetchEnsureStCharacter(characterId)
-            )
+          () => prefetchEnsureStCharacter(characterId)
         );
         markTiming('ensure_end'); // [iframe-timing] TEMP DEBUG
       } catch (err) {
-        markFirstChatDegraded(firstChatAttemptId, 'ensure_failed');
+        markBusinessNavigationDegraded(businessAttemptId, 'ensure_failed');
         markTiming(
           'ensure_end',
           err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160)
@@ -288,7 +262,6 @@ export default function TavernChatPage() {
       const avatar = `platform_${characterId}.png`;
       const latestChat = await latestChatPromise;
       if (cancelled) return;
-      finishFirstChatPrepare(firstChatAttemptId);
       // skipChatLoad 让 ST 在清空聊天区后跳过原生会话加载，必须由下面的 openChat 补齐。
       // 两者一旦不配对，聊天区就会停在空白状态——目标会话通常正是角色卡记录的会话，
       // 早前按「文件名与当前会话不同」才 openChat 的写法在该情况下什么都不加载。
@@ -298,22 +271,15 @@ export default function TavernChatPage() {
           : null;
       markTiming('select_start'); // [iframe-timing] TEMP DEBUG
       traceBusinessNavigationOperation(
-        businessAttemptIdRef.current,
+        businessAttemptId,
         'bridge.select_character',
         'bridge.action',
         () =>
-          traceFirstChatOperation(
-            firstChatAttemptId,
-            'select',
-            'bridge.select_character',
-            'bridge.action',
-            () =>
-              platformAction('selectCharacter', {
-                avatar,
-                forceNewChat: false,
-                skipChatLoad: Boolean(targetChat),
-              })
-          )
+          platformAction('selectCharacter', {
+            avatar,
+            forceNewChat: false,
+            skipChatLoad: Boolean(targetChat),
+          })
       )
         .then(async (result) => {
           window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
@@ -324,18 +290,11 @@ export default function TavernChatPage() {
           if (cancelled) return;
           if (targetChat) {
             // openChat 要求 ready 相位，桥接会把请求缓冲到相位达标后再投递。
-            const chatId = await openTargetChat(
-              targetChat,
-              avatar,
-              entryId,
-              businessAttemptIdRef.current,
-              firstChatAttemptId
-            );
+            const chatId = await openTargetChat(targetChat, avatar, entryId, businessAttemptId);
             if (cancelled) return;
             useSTMirrorStore.getState().updatePartial({ currentChatId: chatId });
           }
-          completeBusinessNavigationData(businessAttemptIdRef.current);
-          startFirstChatRender(firstChatAttemptId);
+          completeBusinessNavigationData(businessAttemptId);
           markTiming('chat_state_ready');
           setReadyCharacterId(characterId);
         })
@@ -358,15 +317,13 @@ export default function TavernChatPage() {
           });
           if (!cancelled) {
             setEntryError('角色加载失败，请重试。');
-            failBusinessNavigation(businessAttemptIdRef.current, 'select_error');
-            failFirstChatAttempt(firstChatAttemptId, 'select_error', err);
+            recordBusinessNavigationRetryableFailure(businessAttemptId, 'select_error', err);
           }
         });
     })();
 
     return () => {
       cancelled = true;
-      cancelFirstChatAttempt(firstChatAttemptId, 'entry_effect_cleanup');
       window.clearTimeout(selectStallTimer); // [iframe-timing] TEMP DEBUG
       reportChatConcurrencyEvent({
         source: 'chat-page',
@@ -396,27 +353,16 @@ export default function TavernChatPage() {
               bridgeStatusAtGate: bridgeStatusAtGateRef.current,
             });
             completeBusinessNavigation(businessAttemptIdRef.current);
-            completeFirstChatAfterPaint(firstChatAttemptIdRef.current);
           }}
           onRetry={() => {
             // bridge 终态 disconnected 时页内重试无意义（闸门永不放行），整页刷新
             // 重建 iframe 与全部连接上下文；其余情况维持原有的页内重试。
             if (bridgeStatusRef.current === 'disconnected') {
-              failFirstChatAttempt(firstChatAttemptIdRef.current, 'bridge_disconnected');
+              failBusinessNavigation(businessAttemptIdRef.current, 'bridge_disconnected');
               window.location.reload();
               return;
             }
-            const bridgeStartedAt = getTimingMark('bridge_start');
-            firstChatAttemptIdRef.current = retryFirstChatAttempt(
-              characterId,
-              bridgeStatusRef.current,
-              bridgeStartedAt ? Date.now() - bridgeStartedAt : undefined
-            );
-            firstChatAttemptIdRef.current = mountFirstChatAttempt(
-              characterId,
-              bridgeStatusRef.current,
-              bridgeStartedAt ? Date.now() - bridgeStartedAt : undefined
-            );
+            recordBusinessNavigationRetry(businessAttemptIdRef.current);
             setEntryAttempt((attempt) => attempt + 1);
           }}
         />
@@ -447,8 +393,7 @@ async function openTargetChat(
   target: { fileName: string; avatar: string },
   avatar: string,
   entryId: string,
-  businessAttemptId: string | undefined,
-  firstChatAttemptId: string | undefined
+  businessAttemptId: string | undefined
 ): Promise<string | null> {
   reportChatConcurrencyEvent({
     source: 'chat-page',
@@ -462,18 +407,11 @@ async function openTargetChat(
       businessAttemptId,
       'bridge.open_chat',
       'bridge.action',
-      () =>
-        traceFirstChatOperation(
-          firstChatAttemptId,
-          'open_chat',
-          'bridge.open_chat',
-          'bridge.action',
-          () => withTimeout(platformAction('openChat', target), OPEN_CHAT_TIMEOUT_MS)
-        )
+      () => withTimeout(platformAction('openChat', target), OPEN_CHAT_TIMEOUT_MS)
     );
     return opened.chatId;
   } catch (err) {
-    markFirstChatDegraded(firstChatAttemptId, 'open_chat_fallback');
+    markBusinessNavigationDegraded(businessAttemptId, 'open_chat_fallback');
     console.error('[TavernChatPage] open requested chat failed:', err);
     reportChatConcurrencyEvent({
       source: 'chat-page',
@@ -494,14 +432,7 @@ async function openTargetChat(
       businessAttemptId,
       'bridge.fallback_select',
       'bridge.action',
-      () =>
-        traceFirstChatOperation(
-          firstChatAttemptId,
-          'fallback_select',
-          'bridge.fallback_select',
-          'bridge.action',
-          () => platformAction('selectCharacter', { avatar, forceNewChat: false })
-        )
+      () => platformAction('selectCharacter', { avatar, forceNewChat: false })
     );
     return fallback.chatId;
   }

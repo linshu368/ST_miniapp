@@ -18,14 +18,9 @@ import {
 import { useBridgeStatus } from '@/lib/bridge';
 import { getTimingMark } from '@/lib/bridge/iframe-timing';
 import {
-  beginBusinessNavigation,
+  beginCharacterNavigation,
   cancelBusinessNavigation,
-  markBusinessNavigationStarted,
 } from '@/lib/sentry/business-navigation-telemetry';
-import {
-  beginFirstChatNavigation,
-  cancelFirstChatAttempt,
-} from '@/lib/sentry/first-chat-telemetry';
 
 import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
@@ -69,7 +64,6 @@ export function CharacterGallery() {
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
   const businessAttemptIdRef = useRef<string>();
-  const firstChatAttemptIdRef = useRef<string>();
 
   const latestBadge = useLobbyLatestBadgeQuery();
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
@@ -290,7 +284,6 @@ export function CharacterGallery() {
         onClose={() => {
           if (enteringId) {
             cancelBusinessNavigation(businessAttemptIdRef.current, 'user_cancelled');
-            cancelFirstChatAttempt(firstChatAttemptIdRef.current, 'user_cancelled');
             enteringRef.current = false;
             setEnteringId(null);
             setPreviewId(null);
@@ -304,19 +297,15 @@ export function CharacterGallery() {
         }}
         onEnter={(id) => {
           if (enteringRef.current) return;
-          enteringRef.current = true;
-          setEnteringId(id);
           const bridgeStartedAt = getTimingMark('bridge_start');
-          businessAttemptIdRef.current = beginBusinessNavigation('character_open', {
+          businessAttemptIdRef.current = beginCharacterNavigation(id, 'gallery', {
             pageFrom: '首页',
             navigationType: 'push',
-            attributes: { character_id: id, entry_source: 'gallery' },
-          });
-          firstChatAttemptIdRef.current = beginFirstChatNavigation(id, 'gallery', {
             bridgePhase: bridgeStatus,
             ...(bridgeStartedAt ? { bootElapsedMs: Date.now() - bridgeStartedAt } : {}),
           });
-          markBusinessNavigationStarted(businessAttemptIdRef.current);
+          enteringRef.current = true;
+          setEnteringId(id);
           router.push(`/tavern/${id}`);
         }}
       />

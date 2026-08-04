@@ -9,9 +9,8 @@ import { cn } from '@/lib/utils';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
 import {
-  beginBusinessNavigation,
+  beginChatListNavigation,
   getBusinessPageName,
-  markBusinessNavigationStarted,
 } from '@/lib/sentry/business-navigation-telemetry';
 
 const NAV_ITEMS = [
@@ -85,14 +84,10 @@ export function BottomNav() {
               key={href}
               href={href}
               onClick={() => {
-                setPendingHref(href);
                 if (href === '/chats' && !pathname?.startsWith('/chats')) {
-                  const attemptId = beginBusinessNavigation('chat_list_open', {
-                    pageFrom: getBusinessPageName(pathname),
-                    navigationType: 'link',
-                  });
-                  markBusinessNavigationStarted(attemptId);
+                  beginChatListNavigation(getBusinessPageName(pathname));
                 }
+                setPendingHref(href);
               }}
               aria-current={pathname === href ? 'page' : undefined}
               aria-label={label}
