@@ -286,6 +286,51 @@ describe('mergeSettings', () => {
     expect(oai['prompts']).toEqual([{ identifier: 'main' }, { identifier: 'nsfw' }]);
   });
 
+  it('provision 时应优先应用当前模型解析出的有效预设指针', () => {
+    const DEFAULT_PRESET_ID = 'c9db5957-844e-4707-a9f8-c8a54eee5260';
+    const MODEL_PRESET_ID = '11111111-2222-4333-8444-555555555555';
+    const platform = makePlatformSettings({
+      settings_jsonb: {
+        active_character: `platform_${CHAR_UUID_FALLBACK}.png`,
+        oai_settings: {
+          preset_settings_openai: `platform_${DEFAULT_PRESET_ID}`,
+          temp_openai: 0.5,
+        },
+      },
+    });
+    const presets: PresetRow[] = [
+      {
+        id: DEFAULT_PRESET_ID,
+        display_name: '默认预设',
+        is_default: true,
+        preset_payload: { temperature: 0.8 },
+      },
+      {
+        id: MODEL_PRESET_ID,
+        display_name: '模型专属预设',
+        is_default: false,
+        preset_payload: { temperature: 1.2 },
+      },
+    ];
+
+    const result = mergeSettings(
+      platform,
+      null,
+      presets,
+      [CHAR_UUID_FALLBACK],
+      CHAR_UUID_FALLBACK,
+      LLM_PROXY_URL,
+      undefined,
+      undefined,
+      `platform_${MODEL_PRESET_ID}`
+    );
+    const oai = result.settings['oai_settings'] as Record<string, unknown>;
+
+    expect(result.appliedPresetId).toBe(MODEL_PRESET_ID);
+    expect(oai['preset_settings_openai']).toBe(`platform_${MODEL_PRESET_ID}`);
+    expect(oai['temp_openai']).toBe(1.2);
+  });
+
   // ── 场景 11：历史白名单不得覆盖已应用的预设 prompts ──────────────────────
   it('B 的历史 oai_settings.prompts 不得覆盖预设应用后的 prompts', () => {
     const PRESET_ID = 'c9db5957-844e-4707-a9f8-c8a54eee5260';

@@ -8,6 +8,7 @@ import {
   toPublicModelCatalog,
 } from '@miniapp/shared';
 import type {
+  GetEffectivePresetData,
   GetModelCatalogData,
   GetModelTiersData,
   OpenRouterModelDirectory,
@@ -25,6 +26,7 @@ import { requestLogger } from '../lib/logger.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { resolveFixedDeduction } from '../features/billing/usage-pricing.js';
+import { resolveEffectivePresetForModel } from '../platform/effective-presets.js';
 
 export default async function modelsRoutes(app: FastifyInstance) {
   const settings = new MiniappUserSettingsRepository();
@@ -36,6 +38,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
     return reply.send(ok<GetModelTiersData>({ tiers }));
   });
 
+  // @frontend-ready: true
   app.get('/api/platform/openrouter/models', async (request, reply) => {
     const query = request.query as { refresh?: string };
     const forceRefresh = query.refresh === '1';
@@ -47,6 +50,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
     return reply.send(ok<OpenRouterModelDirectory>(directory));
   });
 
+  // @frontend-ready: true
   app.get(
     '/api/v1/models/config',
     { preHandler: [requireTelegramAuth] },
@@ -67,6 +71,16 @@ export default async function modelsRoutes(app: FastifyInstance) {
       if (userSettings.selected_model_id !== selectedModelId) {
         await settings.setSelectedModelId(dbUser.id, request.user, selectedModelId);
       }
+      const effectivePreset = await resolveEffectivePresetForModel(selectedModel.id);
+      if (effectivePreset.summary.preset_degraded) {
+        request.log.warn(
+          {
+            modelId: selectedModel.id,
+            presetConfigCode: effectivePreset.summary.preset_config_code,
+          },
+          '[models] catalog returned degraded preset configuration'
+        );
+      }
 
       reply.header('Cache-Control', 'private, no-cache');
       return reply.send(
@@ -75,11 +89,13 @@ export default async function modelsRoutes(app: FastifyInstance) {
           selected_model_id: selectedModel.id,
           selected_openrouter_model_id: selectedModel.openrouter_model_id,
           catalog_version: snapshot.version,
+          ...effectivePreset.summary,
         })
       );
     }
   );
 
+  // @frontend-ready: true
   app.post(
     '/api/v1/models/select',
     { preHandler: [requireTelegramAuth] },
@@ -131,6 +147,16 @@ export default async function modelsRoutes(app: FastifyInstance) {
         }
 
         await settings.setSelectedModelId(dbUser.id, request.user, selectedModel.id);
+        const effectivePreset = await resolveEffectivePresetForModel(selectedModel.id);
+        if (effectivePreset.summary.preset_degraded) {
+          request.log.warn(
+            {
+              modelId: selectedModel.id,
+              presetConfigCode: effectivePreset.summary.preset_config_code,
+            },
+            '[models] selected model is using degraded preset configuration'
+          );
+        }
         log.biz.info(
           {
             event: 'models.select.done',
@@ -144,6 +170,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
           ok<SelectModelData>({
             model_id: selectedModel.id,
             openrouter_model_id: selectedModel.openrouter_model_id,
+            ...effectivePreset.summary,
           })
         );
       } catch (error) {
@@ -153,6 +180,47 @@ export default async function modelsRoutes(app: FastifyInstance) {
         );
         return reply.status(400).send(fail('MODEL_UNAVAILABLE', '该模型暂不可用'));
       }
+    }
+  );
+
+  // @frontend-ready: true
+  app.get(
+    '/api/v1/models/effective-preset',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+
+      const dbUser = await getOrCreateDbUser(request.user);
+      const [snapshot, userSettings] = await Promise.all([
+        fetchModelCatalogSnapshot(),
+        settings.getOrCreate(dbUser.id, request.user),
+      ]);
+      const selectedModelId = resolveEffectiveSelectedModelId(
+        snapshot.catalog,
+        userSettings.selected_model_id
+      );
+      const selectedModel = resolveEnabledCatalogModel(snapshot.catalog, selectedModelId);
+      const effectivePreset = await resolveEffectivePresetForModel(selectedModel.id, true);
+
+      if (effectivePreset.summary.preset_degraded) {
+        request.log.warn(
+          {
+            modelId: selectedModel.id,
+            presetConfigCode: effectivePreset.summary.preset_config_code,
+          },
+          '[models] effective preset request returned degraded configuration'
+        );
+      }
+
+      reply.header('Cache-Control', 'private, no-store');
+      return reply.send(
+        ok<GetEffectivePresetData>({
+          model_id: selectedModel.id,
+          openrouter_model_id: selectedModel.openrouter_model_id,
+          preset_payload: effectivePreset.presetPayload,
+          ...effectivePreset.summary,
+        })
+      );
     }
   );
 }

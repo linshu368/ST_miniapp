@@ -198,6 +198,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
       const characterId = (request.headers['x-st-character-id'] as string) || null;
       const presetId = (request.headers['x-st-preset-id'] as string) || null;
+      const presetConfigWarning = (request.headers['x-st-preset-config-warning'] as string) || null;
 
       const isChatCompletion =
         request.method !== 'GET' &&
@@ -219,6 +220,12 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             }
           }
         }
+      }
+      if (presetConfigWarning) {
+        request.log.warn(
+          { userId, modelName, presetId, presetConfigWarning },
+          '[llm-proxy] generation continues with degraded preset configuration'
+        );
       }
 
       // 模型选择以后端持久化设置为权威来源。ST iframe 的运行时设置可能因 WebView

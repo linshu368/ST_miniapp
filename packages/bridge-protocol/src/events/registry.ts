@@ -22,6 +22,10 @@ import {
 import { GenerationStoppedPayloadSchema, generationStoppedMeta } from './generation-stopped.js';
 import { GenerationEndedPayloadSchema, generationEndedMeta } from './generation-ended.js';
 import { ModelChangedPayloadSchema, modelChangedMeta } from './model-changed.js';
+import {
+  PresetPreflightRequestedPayloadSchema,
+  presetPreflightRequestedMeta,
+} from './preset-preflight-requested.js';
 import { SettingsUpdatedPayloadSchema, settingsUpdatedMeta } from './settings-updated.js';
 
 export type EventName =
@@ -38,6 +42,7 @@ export type EventName =
   | 'generation:stopped'
   | 'generation:ended'
   | 'model:changed'
+  | 'preset:preflight-requested'
   | 'settings:updated';
 
 export type EventPayloadMap = {
@@ -54,6 +59,7 @@ export type EventPayloadMap = {
   'generation:stopped': z.infer<typeof GenerationStoppedPayloadSchema>;
   'generation:ended': z.infer<typeof GenerationEndedPayloadSchema>;
   'model:changed': z.infer<typeof ModelChangedPayloadSchema>;
+  'preset:preflight-requested': z.infer<typeof PresetPreflightRequestedPayloadSchema>;
   'settings:updated': z.infer<typeof SettingsUpdatedPayloadSchema>;
 };
 
@@ -71,5 +77,6 @@ export const eventRegistry: Record<EventName, EventMeta> = {
   'generation:stopped': generationStoppedMeta,
   'generation:ended': generationEndedMeta,
   'model:changed': modelChangedMeta,
+  'preset:preflight-requested': presetPreflightRequestedMeta,
   'settings:updated': settingsUpdatedMeta,
 };

@@ -1,5 +1,6 @@
 import { BridgeError } from '@miniapp/bridge-protocol';
 import type { ActionPayloadMap, ActionResultMap } from '@miniapp/bridge-protocol';
+import { setPresetConfigWarning } from '../patches/llm-metadata-inject.js';
 import '../st-types.js';
 
 type Payload = ActionPayloadMap['changeModel'];
@@ -15,7 +16,7 @@ const SELECTOR_MAP: Record<string, string> = {
 
 export async function handleChangeModel(payload: Payload): Promise<Result> {
   const ctx = SillyTavern.getContext();
-  const { provider, modelName } = payload;
+  const { provider, modelName, presetConfigCode } = payload;
   const settings = ctx.chatCompletionSettings as Record<string, unknown>;
   const $ = (window as unknown as { jQuery: JQueryStatic }).jQuery;
 
@@ -41,6 +42,9 @@ export async function handleChangeModel(payload: Payload): Promise<Result> {
   }
 
   ctx.saveSettingsDebounced();
+  if (presetConfigCode !== undefined) {
+    setPresetConfigWarning(presetConfigCode);
+  }
 
   // 主动广播模型变更：custom 源的 #custom_model_id input 不会触发
   // CHATCOMPLETION_MODEL_CHANGED，需手动 emit，让 forwarder 推 model:changed，

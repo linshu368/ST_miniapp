@@ -20,6 +20,8 @@ export interface STCharacter {
 
 export interface STEventSource {
   on(event: string, callback: (...args: any[]) => void): void;
+  once(event: string, callback: (...args: any[]) => void): void;
+  removeListener(event: string, callback: (...args: any[]) => void): void;
   emit(event: string, ...args: any[]): Promise<void>;
   makeFirst(event: string, callback: (...args: any[]) => void): void;
 }
@@ -28,6 +30,12 @@ export interface STPresetManager {
   /** 该预设管理器对应的 API id（chat completion 源为 'openai'，见 vendor preset-manager.js） */
   apiId: string;
   getSelectedPresetName(): string | null;
+  /** 保存并更新内存预设列表；OpenAI manager 会同时选择并应用该预设。 */
+  savePreset(
+    name: string,
+    settings: Record<string, unknown>,
+    options?: { skipUpdate?: boolean }
+  ): Promise<void>;
   /** 读取当前（或指定）预设 extensions 下某路径的值，如 regex_scripts（见 vendor preset-manager.js） */
   readPresetExtensionField(options: { name?: string; path: string }): unknown;
 }

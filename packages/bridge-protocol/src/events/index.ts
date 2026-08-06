@@ -12,5 +12,6 @@ export * from './generation-completed.js';
 export * from './generation-stopped.js';
 export * from './generation-ended.js';
 export * from './model-changed.js';
+export * from './preset-preflight-requested.js';
 export * from './settings-updated.js';
 export * from './registry.js';

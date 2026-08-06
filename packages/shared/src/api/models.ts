@@ -186,21 +186,48 @@ export const PublicModelCatalogSchema = z.object({
   tiers: z.array(PublicModelCatalogTierSchema),
 });
 
-export const GetModelCatalogDataSchema = z.object({
-  catalog: PublicModelCatalogSchema,
-  selected_model_id: z.string().trim().min(1),
-  selected_openrouter_model_id: z.string().trim().min(1),
-  catalog_version: z.number().int().nonnegative(),
+export const PresetConfigCodeSchema = z.enum([
+  'OK',
+  'ASSIGNMENT_INVALID_FALLBACK',
+  'NO_ENABLED_DEFAULT',
+]);
+
+export const EffectivePresetSummarySchema = z.object({
+  effective_preset_id: z.string().uuid().nullable(),
+  effective_preset_pointer: z.string().trim().min(1).nullable(),
+  preset_assignments_version: z.number().int().nonnegative(),
+  preset_source: z.enum(['model', 'default']).nullable(),
+  preset_config_code: PresetConfigCodeSchema,
+  preset_degraded: z.boolean(),
 });
+
+export const GetModelCatalogDataSchema = z
+  .object({
+    catalog: PublicModelCatalogSchema,
+    selected_model_id: z.string().trim().min(1),
+    selected_openrouter_model_id: z.string().trim().min(1),
+    catalog_version: z.number().int().nonnegative(),
+  })
+  .merge(EffectivePresetSummarySchema);
 
 export const SelectModelRequestSchema = z.object({
   model_id: z.string().trim().min(1),
 });
 
-export const SelectModelDataSchema = z.object({
-  model_id: z.string().trim().min(1),
-  openrouter_model_id: z.string().trim().min(1),
-});
+export const SelectModelDataSchema = z
+  .object({
+    model_id: z.string().trim().min(1),
+    openrouter_model_id: z.string().trim().min(1),
+  })
+  .merge(EffectivePresetSummarySchema);
+
+export const GetEffectivePresetDataSchema = z
+  .object({
+    model_id: z.string().trim().min(1),
+    openrouter_model_id: z.string().trim().min(1),
+    preset_payload: z.record(z.unknown()).nullable(),
+  })
+  .merge(EffectivePresetSummarySchema);
 
 export type PublicModelCatalogModel = z.infer<typeof PublicModelCatalogModelSchema>;
 export type PublicModelCatalogTier = z.infer<typeof PublicModelCatalogTierSchema>;
@@ -208,6 +235,9 @@ export type PublicModelCatalog = z.infer<typeof PublicModelCatalogSchema>;
 export type GetModelCatalogData = z.infer<typeof GetModelCatalogDataSchema>;
 export type SelectModelRequest = z.infer<typeof SelectModelRequestSchema>;
 export type SelectModelData = z.infer<typeof SelectModelDataSchema>;
+export type PresetConfigCode = z.infer<typeof PresetConfigCodeSchema>;
+export type EffectivePresetSummary = z.infer<typeof EffectivePresetSummarySchema>;
+export type GetEffectivePresetData = z.infer<typeof GetEffectivePresetDataSchema>;
 
 const RuntimeCatalogModelSchema = z.object({
   id: z.string().trim().min(1),

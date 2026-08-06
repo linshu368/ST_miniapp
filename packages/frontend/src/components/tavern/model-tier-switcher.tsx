@@ -1,9 +1,13 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { platformAction, useBridgeStatus, useSTMirror } from '@/lib/bridge';
+import { platformAction, syncModelPresetToST, useBridgeStatus, useSTMirror } from '@/lib/bridge';
 import { useEffect, useRef, useState } from 'react';
-import { useModelCatalogQuery, useSelectModelMutation } from '@/lib/api/models';
+import {
+  fetchEffectivePreset,
+  useModelCatalogQuery,
+  useSelectModelMutation,
+} from '@/lib/api/models';
 import type { PublicModelCatalogTier } from '@miniapp/shared';
 import { Check, ChevronDown, ChevronLeft, Sparkles } from 'lucide-react';
 import { useSTMirrorStore } from '@/stores/st-mirror';
@@ -67,18 +71,23 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
         applyOptimistic: () => setSelectedModelId(modelId),
         persist: () => selectModel.mutateAsync({ model_id: modelId }),
         bridge: async (persisted) => {
+          const effectivePreset = await queryClient.fetchQuery({
+            queryKey: [
+              'effectivePreset',
+              persisted.model_id,
+              persisted.preset_assignments_version,
+              persisted.effective_preset_id,
+            ],
+            queryFn: fetchEffectivePreset,
+            staleTime: Number.POSITIVE_INFINITY,
+          });
+          if (effectivePreset.model_id !== persisted.model_id) {
+            throw new Error('模型预设配置发生变化，请重试');
+          }
+          await syncModelPresetToST(effectivePreset);
           useSTMirrorStore
             .getState()
             .updatePartial({ currentModel: persisted.openrouter_model_id });
-          const applied = await platformAction('changeModel', {
-            provider: 'openrouter',
-            modelName: persisted.openrouter_model_id,
-          });
-          if (applied.appliedModel !== persisted.openrouter_model_id) {
-            throw new Error(
-              `模型运行时未完成切换：期望 ${persisted.openrouter_model_id}，实际 ${applied.appliedModel}`
-            );
-          }
         },
         rollbackPersisted: () =>
           previousId
@@ -98,6 +107,12 @@ export function ModelTierSwitcher(props: { onBack: () => void; onClose: () => vo
               ...current,
               selected_model_id: result.model_id,
               selected_openrouter_model_id: result.openrouter_model_id,
+              effective_preset_id: result.effective_preset_id,
+              effective_preset_pointer: result.effective_preset_pointer,
+              preset_assignments_version: result.preset_assignments_version,
+              preset_source: result.preset_source,
+              preset_config_code: result.preset_config_code,
+              preset_degraded: result.preset_degraded,
             }
           : current
       );

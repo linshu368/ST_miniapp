@@ -23,6 +23,7 @@ import { installRichMessageResponsive } from './patches/rich-message-responsive.
 import { installMarkdownBoldFallback } from './patches/markdown-bold-fallback.js';
 import { installReasoningStreamUi } from './patches/reasoning-stream-ui.js';
 import { installBillingErrorBridge } from './patches/billing-error-bridge.js';
+import { handlePresetPreflightControl, installPresetPreflight } from './preset-preflight.js';
 import { installMobileChatTheme } from './patches/mobile-chat-theme.js';
 import { installSimulationRuntime } from './patches/simulation-runtime.js';
 import { stTiming } from './debug-timing.js'; // [iframe-timing] TEMP DEBUG
@@ -35,6 +36,7 @@ import {
   handleRenameChat,
   handleDeleteChat,
   handleChangeModel,
+  handleSyncModelPreset,
   handleGetReadyState,
   setServerRef,
 } from './handlers/index.js';
@@ -98,6 +100,7 @@ function init(): void {
   const server = createBridgeServer('*');
   server.start();
   installBillingErrorBridge(server);
+  installPresetPreflight(server);
 
   // Register action handlers
   server.registerHandler('selectCharacter', (p) => handleSelectCharacter(p as any));
@@ -106,6 +109,12 @@ function init(): void {
   server.registerHandler('renameChat', (p) => handleRenameChat(p as any));
   server.registerHandler('deleteChat', (p) => handleDeleteChat(p as any));
   server.registerHandler('changeModel', (p) => handleChangeModel(p as any));
+  server.registerHandler('syncModelPreset', (p) =>
+    handleSyncModelPreset(p as Parameters<typeof handleSyncModelPreset>[0])
+  );
+  server.registerHandler('presetPreflightControl', (p) =>
+    handlePresetPreflightControl(p as Parameters<typeof handlePresetPreflightControl>[0])
+  );
   server.registerHandler('getReadyState', () => handleGetReadyState());
 
   // Wire getReadyState handler to server reference

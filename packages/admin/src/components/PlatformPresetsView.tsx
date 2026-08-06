@@ -11,6 +11,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Spin,
   Table,
@@ -23,11 +24,15 @@ import type { AdminEnvironment } from '../lib/environment';
 import {
   createPlatformPreset,
   listPlatformPresets,
+  listPlatformPresetModelAssignments,
   listPlatformPresetVersions,
   publishPlatformPreset,
   setPlatformPresetEnabled,
   updatePlatformPresetMetadata,
+  updatePlatformPresetModelAssignment,
+  updatePlatformPresetModelAssignments,
   type PlatformPreset,
+  type PlatformPresetModelAssignment,
   type PlatformPresetVersion,
 } from '../lib/platformPresetsApi';
 import {
@@ -48,6 +53,8 @@ interface EditorState {
   source: string;
   sourcePresetId: string | null;
 }
+
+const FOLLOW_GLOBAL_DEFAULT = '__follow_global_default__';
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
@@ -111,6 +118,7 @@ function PresetAnalysisPanel({ analysis }: { analysis: PresetAnalysis }) {
 export function PlatformPresetsView(props: PlatformPresetsViewProps) {
   const [presets, setPresets] = useState<PlatformPreset[]>([]);
   const [versions, setVersions] = useState<PlatformPresetVersion[]>([]);
+  const [modelAssignments, setModelAssignments] = useState<PlatformPresetModelAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [mutationLoading, setMutationLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +132,9 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
   const [metadataPreset, setMetadataPreset] = useState<PlatformPreset | null>(null);
   const [metadataName, setMetadataName] = useState('');
   const [metadataOrder, setMetadataOrder] = useState(0);
+  const [modelDirectoryOpen, setModelDirectoryOpen] = useState(false);
+  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, string>>({});
+  const [savingModelId, setSavingModelId] = useState<string | null>(null);
 
   const parsedEditor = useMemo(() => parsePresetJson(editor.source), [editor.source]);
   const currentDefault = useMemo(
@@ -135,12 +146,22 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
     setLoading(true);
     setError(null);
     try {
-      const [nextPresets, nextVersions] = await Promise.all([
+      const [nextPresets, nextVersions, nextAssignments] = await Promise.all([
         listPlatformPresets(props.client),
         listPlatformPresetVersions(props.client),
+        listPlatformPresetModelAssignments(props.client),
       ]);
       setPresets(nextPresets);
       setVersions(nextVersions);
+      setModelAssignments(nextAssignments);
+      setAssignmentDrafts(
+        Object.fromEntries(
+          nextAssignments.map((assignment) => [
+            assignment.model_id,
+            assignment.preset_id ?? FOLLOW_GLOBAL_DEFAULT,
+          ])
+        )
+      );
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '平台预设加载失败');
     } finally {
@@ -293,6 +314,46 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
     }
   };
 
+  const saveModelAssignment = async (assignment: PlatformPresetModelAssignment) => {
+    if (!props.canWrite) return;
+    const draft = assignmentDrafts[assignment.model_id] ?? FOLLOW_GLOBAL_DEFAULT;
+    const presetId = draft === FOLLOW_GLOBAL_DEFAULT ? null : draft;
+    setSavingModelId(assignment.model_id);
+    try {
+      await updatePlatformPresetModelAssignment({
+        client: props.client,
+        modelId: assignment.model_id,
+        presetId,
+        expectedVersion: assignment.assignment_version,
+      });
+      message.success(`${assignment.display_name} 的预设修改已生效`);
+      await reload();
+    } catch (mutationError) {
+      message.error(mutationError instanceof Error ? mutationError.message : '模型预设修改失败');
+      await reload();
+    } finally {
+      setSavingModelId(null);
+    }
+  };
+
+  const clearDisabledPresetAssignments = async (preset: PlatformPreset) => {
+    setMutationLoading(true);
+    try {
+      await updatePlatformPresetModelAssignments({
+        client: props.client,
+        presetId: preset.id,
+        modelIds: [],
+        expectedVersion: modelAssignments[0]?.assignment_version ?? 0,
+      });
+      message.success('已清除停用预设的模型分配');
+      await reload();
+    } catch (mutationError) {
+      message.error(mutationError instanceof Error ? mutationError.message : '模型分配清除失败');
+    } finally {
+      setMutationLoading(false);
+    }
+  };
+
   if (loading && presets.length === 0) {
     return (
       <div className="content-loading">
@@ -310,6 +371,7 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
             {currentDefault ? (
               <Tag color="green">当前默认：{currentDefault.display_name}</Tag>
             ) : null}
+            <Button onClick={() => setModelDirectoryOpen(true)}>模型目录</Button>
             <Button onClick={() => void reload()} loading={loading}>
               刷新
             </Button>
@@ -366,6 +428,26 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
                           </Tag>
                         ),
                       },
+                      {
+                        title: '适用模型',
+                        key: 'assigned_models',
+                        render: (_value, preset) => {
+                          const assigned = modelAssignments.filter(
+                            (assignment) => assignment.preset_id === preset.id
+                          );
+                          if (assigned.length === 0) {
+                            return <Typography.Text type="secondary">未专属分配</Typography.Text>;
+                          }
+                          return (
+                            <Space size={[0, 4]} wrap>
+                              {assigned.slice(0, 3).map((assignment) => (
+                                <Tag key={assignment.model_id}>{assignment.display_name}</Tag>
+                              ))}
+                              {assigned.length > 3 ? <Tag>+{assigned.length - 3}</Tag> : null}
+                            </Space>
+                          );
+                        },
+                      },
                       { title: '排序', dataIndex: 'sort_order', width: 80 },
                       {
                         title: '创建时间',
@@ -375,7 +457,7 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
                       {
                         title: '操作',
                         fixed: 'right',
-                        width: 330,
+                        width: 320,
                         render: (_value, preset) => (
                           <Space wrap>
                             <Button size="small" onClick={() => setSelectedPreset(preset)}>
@@ -395,6 +477,26 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
                             >
                               名称/排序
                             </Button>
+                            {!preset.enabled &&
+                            modelAssignments.some(
+                              (assignment) => assignment.preset_id === preset.id
+                            ) ? (
+                              <Popconfirm
+                                title="清除该停用预设的模型分配？"
+                                description="清除后相关模型继续使用全局默认预设。"
+                                okText="确认清除"
+                                cancelText="取消"
+                                onConfirm={() => void clearDisabledPresetAssignments(preset)}
+                              >
+                                <Button
+                                  size="small"
+                                  danger
+                                  disabled={!props.canWrite || mutationLoading}
+                                >
+                                  清除模型分配
+                                </Button>
+                              </Popconfirm>
+                            ) : null}
                             {!preset.is_default ? (
                               <>
                                 <Popconfirm
@@ -564,6 +666,113 @@ export function PlatformPresetsView(props: PlatformPresetsViewProps) {
             />
           </label>
         </Space>
+      </Modal>
+
+      <Modal
+        width={980}
+        open={modelDirectoryOpen}
+        title="模型目录"
+        footer={null}
+        onCancel={() => setModelDirectoryOpen(false)}
+      >
+        <Table
+          rowKey="model_id"
+          dataSource={modelAssignments}
+          loading={loading}
+          pagination={false}
+          scroll={{ x: 900 }}
+          columns={[
+            {
+              title: '模型名称',
+              dataIndex: 'display_name',
+              width: 180,
+              render: (name: string, assignment) => (
+                <Space direction="vertical" size={0}>
+                  <Typography.Text strong>{name}</Typography.Text>
+                  <Typography.Text type="secondary">{assignment.model_id}</Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              title: '当前使用预设',
+              key: 'effective_preset',
+              width: 220,
+              render: (_value, assignment) => (
+                <Space direction="vertical" size={2}>
+                  <Typography.Text>
+                    {assignment.effective_preset_display_name ?? '无可用预设'}
+                  </Typography.Text>
+                  {assignment.preset_config_code === 'ASSIGNMENT_INVALID_FALLBACK' ? (
+                    <Tag color="orange">专属预设无效，已回退默认</Tag>
+                  ) : assignment.preset_source === 'model' ? (
+                    <Tag color="blue">模型专属</Tag>
+                  ) : assignment.preset_source === 'default' ? (
+                    <Tag color="green">跟随全局默认</Tag>
+                  ) : (
+                    <Tag color="red">配置异常</Tag>
+                  )}
+                </Space>
+              ),
+            },
+            {
+              title: '最近分配时间',
+              dataIndex: 'assignment_updated_at',
+              width: 180,
+              render: (value: string | null) =>
+                value ? formatDate(value) : <Typography.Text type="secondary">—</Typography.Text>,
+            },
+            {
+              title: '修改',
+              key: 'update_assignment',
+              width: 320,
+              render: (_value, assignment) => {
+                const draft = assignmentDrafts[assignment.model_id] ?? FOLLOW_GLOBAL_DEFAULT;
+                const persisted = assignment.preset_id ?? FOLLOW_GLOBAL_DEFAULT;
+                return (
+                  <Space.Compact block>
+                    <Select
+                      value={draft}
+                      disabled={!props.canWrite || savingModelId !== null}
+                      showSearch
+                      optionFilterProp="label"
+                      className="field-full"
+                      onChange={(value) =>
+                        setAssignmentDrafts((current) => ({
+                          ...current,
+                          [assignment.model_id]: value,
+                        }))
+                      }
+                      options={[
+                        {
+                          value: FOLLOW_GLOBAL_DEFAULT,
+                          label: `跟随全局默认${
+                            currentDefault ? `（${currentDefault.display_name}）` : ''
+                          }`,
+                        },
+                        ...presets
+                          .filter((preset) => preset.enabled)
+                          .map((preset) => ({
+                            value: preset.id,
+                            label: preset.is_default
+                              ? `${preset.display_name}（固定分配）`
+                              : preset.display_name,
+                          })),
+                      ]}
+                    />
+                    <Button
+                      type="primary"
+                      disabled={!props.canWrite || draft === persisted || savingModelId !== null}
+                      loading={savingModelId === assignment.model_id}
+                      onClick={() => void saveModelAssignment(assignment)}
+                    >
+                      保存
+                    </Button>
+                  </Space.Compact>
+                );
+              },
+            },
+          ]}
+        />
       </Modal>
     </>
   );
