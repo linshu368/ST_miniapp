@@ -50,6 +50,12 @@ declare global {
   }
 }
 
+let presetConfigWarning: string | null = null;
+
+export function setPresetConfigWarning(code: string | null): void {
+  presetConfigWarning = code && code !== 'OK' ? code : null;
+}
+
 function extractCharacterUuid(): string | null {
   try {
     const ctx = SillyTavern.getContext();
@@ -115,6 +121,9 @@ function onSettingsReady(generateData: Record<string, unknown>): void {
   const lines: string[] = [];
   if (characterId) lines.push(`X-ST-Character-Id: ${characterId}`);
   if (presetId) lines.push(`X-ST-Preset-Id: ${presetId}`);
+  if (presetConfigWarning) {
+    lines.push(`X-ST-Preset-Config-Warning: ${presetConfigWarning}`);
+  }
   if (rawUserInput) lines.push(`X-ST-User-Input: ${encodeHeaderValue(rawUserInput)}`);
   const simulationTurn = window.__miniappSimulationTurn;
   if (simulationTurn) {

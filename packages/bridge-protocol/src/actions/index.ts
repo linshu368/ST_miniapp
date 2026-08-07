@@ -5,5 +5,7 @@ export * from './new-chat.js';
 export * from './rename-chat.js';
 export * from './delete-chat.js';
 export * from './change-model.js';
+export * from './sync-model-preset.js';
+export * from './preset-preflight-control.js';
 export * from './get-ready-state.js';
 export * from './registry.js';

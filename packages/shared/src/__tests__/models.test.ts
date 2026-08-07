@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateDisplayPrice,
+  GetEffectivePresetDataSchema,
   LlmPricingConfigSchema,
   ModelCatalogSchema,
   resolveEffectiveSelectedModelId,
@@ -232,5 +233,42 @@ describe('OpenRouter model helpers', () => {
     const legacy = structuredClone(validCatalog);
     delete (legacy.tiers[0]!.models[0]! as { markup?: number }).markup;
     expect(resolveRuntimeCatalogMarkup(legacy, 'google/gemini-flash', 3)).toBe(3);
+  });
+});
+
+describe('effective preset contract', () => {
+  it('accepts an explicit non-blocking missing-default state', () => {
+    expect(
+      GetEffectivePresetDataSchema.parse({
+        model_id: 'flash',
+        openrouter_model_id: 'google/gemini-flash',
+        effective_preset_id: null,
+        effective_preset_pointer: null,
+        preset_assignments_version: 3,
+        preset_source: null,
+        preset_config_code: 'NO_ENABLED_DEFAULT',
+        preset_degraded: true,
+        preset_payload: null,
+      })
+    ).toMatchObject({
+      preset_config_code: 'NO_ENABLED_DEFAULT',
+      preset_degraded: true,
+    });
+  });
+
+  it('rejects a malformed effective preset UUID', () => {
+    expect(
+      GetEffectivePresetDataSchema.safeParse({
+        model_id: 'flash',
+        openrouter_model_id: 'google/gemini-flash',
+        effective_preset_id: 'not-a-uuid',
+        effective_preset_pointer: 'platform_not-a-uuid',
+        preset_assignments_version: 3,
+        preset_source: 'model',
+        preset_config_code: 'OK',
+        preset_degraded: false,
+        preset_payload: {},
+      }).success
+    ).toBe(false);
   });
 });

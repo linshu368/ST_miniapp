@@ -4,4 +4,5 @@ export { handleNewChat } from './new-chat.js';
 export { handleRenameChat } from './rename-chat.js';
 export { handleDeleteChat } from './delete-chat.js';
 export { handleChangeModel } from './change-model.js';
+export { handleSyncModelPreset } from './sync-model-preset.js';
 export { handleGetReadyState, setServerRef } from './get-ready-state.js';

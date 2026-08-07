@@ -15,6 +15,16 @@ import {
   changeModelMeta,
 } from './change-model.js';
 import {
+  SyncModelPresetPayloadSchema,
+  SyncModelPresetResultSchema,
+  syncModelPresetMeta,
+} from './sync-model-preset.js';
+import {
+  PresetPreflightControlPayloadSchema,
+  PresetPreflightControlResultSchema,
+  presetPreflightControlMeta,
+} from './preset-preflight-control.js';
+import {
   GetReadyStatePayloadSchema,
   GetReadyStateResultSchema,
   getReadyStateMeta,
@@ -27,6 +37,8 @@ export type ActionName =
   | 'renameChat'
   | 'deleteChat'
   | 'changeModel'
+  | 'syncModelPreset'
+  | 'presetPreflightControl'
   | 'getReadyState';
 
 export type ActionPayloadMap = {
@@ -36,6 +48,8 @@ export type ActionPayloadMap = {
   renameChat: z.infer<typeof RenameChatPayloadSchema>;
   deleteChat: z.infer<typeof DeleteChatPayloadSchema>;
   changeModel: z.infer<typeof ChangeModelPayloadSchema>;
+  syncModelPreset: z.infer<typeof SyncModelPresetPayloadSchema>;
+  presetPreflightControl: z.infer<typeof PresetPreflightControlPayloadSchema>;
   getReadyState: z.infer<typeof GetReadyStatePayloadSchema>;
 };
 
@@ -46,6 +60,8 @@ export type ActionResultMap = {
   renameChat: z.infer<typeof RenameChatResultSchema>;
   deleteChat: z.infer<typeof DeleteChatResultSchema>;
   changeModel: z.infer<typeof ChangeModelResultSchema>;
+  syncModelPreset: z.infer<typeof SyncModelPresetResultSchema>;
+  presetPreflightControl: z.infer<typeof PresetPreflightControlResultSchema>;
   getReadyState: z.infer<typeof GetReadyStateResultSchema>;
 };
 
@@ -56,5 +72,7 @@ export const actionRegistry: Record<ActionName, ActionMeta> = {
   renameChat: renameChatMeta,
   deleteChat: deleteChatMeta,
   changeModel: changeModelMeta,
+  syncModelPreset: syncModelPresetMeta,
+  presetPreflightControl: presetPreflightControlMeta,
   getReadyState: getReadyStateMeta,
 };

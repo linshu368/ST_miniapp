@@ -4,6 +4,7 @@ import type { ActionMeta } from './types.js';
 export const ChangeModelPayloadSchema = z.object({
   provider: z.string(),
   modelName: z.string(),
+  presetConfigCode: z.enum(['OK', 'ASSIGNMENT_INVALID_FALLBACK', 'NO_ENABLED_DEFAULT']).optional(),
 });
 
 export const ChangeModelResultSchema = z.object({

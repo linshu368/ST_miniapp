@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from './client';
 import type {
+  GetEffectivePresetData,
   GetModelCatalogData,
   GetModelTiersData,
   SelectModelData,
@@ -8,7 +9,8 @@ import type {
 } from '@miniapp/shared';
 import { MODEL_CATALOG_STALE_TIME_MS } from './model-cache-policy';
 
-const MODEL_CATALOG_CACHE_KEY = 'miniapp:model-catalog:last-good';
+const MODEL_CATALOG_CACHE_KEY = 'miniapp:model-catalog:last-good:v2';
+export const PRESET_ASSIGNMENT_REFETCH_INTERVAL_MS = 60_000;
 
 export function useModelTiersQuery() {
   return useQuery({
@@ -37,6 +39,8 @@ export function useModelCatalogQuery() {
     },
     staleTime: MODEL_CATALOG_STALE_TIME_MS,
     placeholderData: readLastGoodCatalog,
+    refetchInterval: PRESET_ASSIGNMENT_REFETCH_INTERVAL_MS,
+    refetchIntervalInBackground: true,
   });
 }
 
@@ -47,6 +51,28 @@ export function useSelectModelMutation() {
         method: 'POST',
         body: JSON.stringify(request),
       }),
+  });
+}
+
+export function useEffectivePresetQuery(input: {
+  modelId: string | undefined;
+  assignmentVersion: number | undefined;
+  effectivePresetId: string | null | undefined;
+  enabled: boolean;
+}) {
+  return useQuery({
+    queryKey: ['effectivePreset', input.modelId, input.assignmentVersion, input.effectivePresetId],
+    queryFn: fetchEffectivePreset,
+    enabled: input.enabled && Boolean(input.modelId),
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 10 * 60 * 1000,
+    retry: 2,
+  });
+}
+
+export function fetchEffectivePreset(): Promise<GetEffectivePresetData> {
+  return apiClient<GetEffectivePresetData>('/api/v1/models/effective-preset', {
+    cache: 'no-store',
   });
 }
 
