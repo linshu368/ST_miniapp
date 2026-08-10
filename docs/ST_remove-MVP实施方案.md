@@ -1,6 +1,8 @@
 # 自研引擎替换 ST：MVP 对话链路实施方案
 
-> 状态：**批次 0 已交付**（2026-08-10）。三份接缝见 §四；读到旧 bot 代码后 §二决策 7 已再次修正，§六 M2 随之重写。
+> 状态：**批次 0 已交付**；**批次 1（M1 / M2 / M3a）代码已交付**（2026-08-10，产出与偏离见 §5.9 / §6.5 / §7.4）。
+> ⚠️ 批次 1 尚未清零的唯一验收项是 **§7.3 的五条 ST staging 手验**，它是 M3b 的开工前置，理由见 §四「批次 1 验收现状」。
+> 三份接缝见 §四；读到旧 bot 代码后 §二决策 7 已再次修正，§六 M2 随之重写。
 > 上游文档：`docs/ST_remove.md`（总体方案与 12 项决策）
 > 目标：**先跑通 MVP 对话路径**。不在 MVP 关键路径上的模块一律后置。
 >
@@ -115,8 +117,7 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
           ├──────────────┬──────────────┐
           ▼              ▼              ▼
 批次 1   M1 数据模型    M2 引擎核心    M3a 生成出口服务化
-        （无依赖）  （需 runtime_config  （纯重构 llm-proxy）
-                      平台规则正文）
+        （✅ 已交付）   （✅ 已交付）    （✅ 已交付，欠 §7.3 手验）
           └──────────────┴──────────────┘
                          ▼
 批次 2              M3b 对话 REST + SSE   ← ★ MVP 达成
@@ -151,9 +152,13 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 | `GenerationResult.status` 加 `insufficient_balance`，`chargeId` 改可空，加 `balance`                     | 402 预检与上游失败共用一条返回通道，调用方一处 switch 收口                                                                |
 | shared 新增 `ConversationStreamEvent` / `ConversationErrorCode`                                          | 初稿未定义 SSE 事件负载，不定会让 M5 现编一套。402 / 409 在首字节写出前判定，仍走 HTTP 状态码而非 stream 事件             |
 
-### 批次 1：M1 / M2 / M3a 并行
+### 批次 1：M1 / M2 / M3a 并行（✅ 代码已交付，2026-08-10）
 
-三者互不依赖，接缝已定、依赖已齐，可分给三条线同时做，各自独立 PR。详见 §五 / §六 / §七。
+三者互不依赖，接缝已定、依赖已齐，可分给三条线同时做。详见 §五 / §六 / §七。
+
+> **实际执行偏离**：三个模块最终由同一条线连续做完，合成**一个 PR** 提交，没有按 §十.6 / §十.7 拆成三个。
+> 代价是 M3a 不再能独立回滚——若 §7.3 的 ST 回归发现问题，revert 会连带撤掉 M1 / M2。
+> 缓解办法是提交按模块分开（M1 / M2 / M3a 各自成 commit），必要时可单独 revert commit 而不是整个 PR。
 
 文件面几乎不相交——M1 落在两个新 migration 加两个新 repository，M2 落在全新的 `features/engine/` 加 `runtime_config` 建 key，M3a 落在 `routes/llm-proxy.ts` 加新建的 `features/generation/`。只有三个共同触点，按下面的归属约定执行即可避免互相踩：
 
@@ -163,7 +168,31 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 | `runtime_config` 读取             | M2 复用既有读法（`platform/model-tiers.ts` 读 `llm_model_catalog` 的那套），不另起一套并行实现                      |
 | 上下文切片（谁去掉尾部本轮 user） | M1 的 `getContextMessages` 只返回有序全量（重生成也要用这个原始形态）；切片归 M3b，在调 `build()` 前做              |
 
-> 并行的瓶颈会转移到 review：三个 PR 同时到位，其中 M3a 需要对着 §7.3 的回归清单逐项验。建议 M3a 优先启动——它纪律最严（只搬不改、diff 要逐行可对照原 handler），也是三者中唯一直接威胁 ST 线上链路的。
+> 第二条最终的落法是把 `model-tiers.ts` 里的两个私有读取函数提取到新建的 `platform/runtime-config.ts`，两边共用（见 §6.5）。约定的意图（不长出第二套读法）达成，但代价是 M2 改到了 `model-tiers.ts` 这个原本没列进触点表的文件。
+
+> 并行的瓶颈会转移到 review：三个模块同时到位，其中 M3a 需要对着 §7.3 的回归清单逐项验。M3a 纪律最严（只搬不改、diff 要逐行可对照原 handler），也是三者中唯一直接威胁 ST 线上链路的。
+
+### 批次 1 验收现状（2026-08-10 实测）
+
+**已清零的部分**：
+
+| 项                                    | 结果                                                                                                                     |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm --filter @miniapp/backend test` | **153 用例全绿**（143 纯单测 + 10 条打真库的 M1 集成测试）                                                               |
+| `pnpm typecheck`                      | 全 workspace 干净                                                                                                        |
+| M1 §5.8 的九条                        | 全部由 `conversations.integration.test.ts` 覆盖并通过                                                                    |
+| M2 §6.4 的对拍                        | 已落在 `prompt-engine.test.ts`：把 bot 的 `_buildMessages` / `_buildEnhancedPrompt` 逐字抄进测试当基准，多组输入逐条比对 |
+| 069 / 070 / 071                       | 已在 **test 库**执行；平台规则实测 `degraded = false`、三个占位符齐全、四个 `PreferredWordCount` 档位全覆盖              |
+
+**尚未清零的部分**：
+
+| 欠项                           | 说明                                                                                                            |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| **§7.3 的五条 ST 回归手验**    | **M3b 的开工前置**。它们依赖上游 / 钱包 / 额度 RPC，单测原理上覆盖不到，只能在 staging 对着真实 ST iframe 跑    |
+| 069 / 070 / 071 在生产库的执行 | 迁移不随部署自动跑（§十.4）。生产尚未执行，因此 `saveChatHistory` 目前靠"`session_id` 非空才写该列"兜着（§7.5） |
+
+> 为什么手验必须卡在 M3b 之前：`llm-proxy.ts` 这次改了 415 行、净减 202 行，是批次 1 里唯一碰生产链路的改动。
+> M3b 会直接调 `GenerationService`，等它长出来之后才发现 M3a 有行为偏差，修的时候两边都得动。
 
 ### 批次 2：M3b 集成，MVP 达成
 
@@ -172,6 +201,8 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 ---
 
 ## 五、M1 — 对话数据模型与会话管理
+
+> 状态：**已交付**（2026-08-10）。产出与偏离见 §5.7 / §5.9，验收结果见 §四「批次 1 验收现状」。
 
 ### 5.1 设计取舍
 
@@ -332,15 +363,17 @@ M1 只保证顺序稳定可读，返回**有序全量**：不做截断（MVP 无
 
 ### 5.7 产出清单
 
-| 文件                                                                        | 内容                                                                                                                                  |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/shared/migrations/069_miniapp_chat_sessions.sql`                  | §5.2 全部 DDL                                                                                                                         |
-| `packages/shared/migrations/070_chat_session_rpc.sql`                       | §5.3 两个 RPC                                                                                                                         |
-| `packages/shared/src/api/conversations.ts`                                  | 批次 0 起草，M1 落实类型                                                                                                              |
-| `packages/backend/src/infrastructure/repositories/ChatSessionRepository.ts` | `createSession`（含开场白播种）/ `listSessions` / `getSession`（带 ownership 校验）/ `rename` / `softDelete` / `touchLastMessage`     |
-| `packages/backend/src/infrastructure/repositories/ChatMessageRepository.ts` | `appendUserTurn` / `startAssistantMessage` / `finalizeAssistantMessage` / `listMessages` / `getContextMessages` / `startRegeneration` |
-| `MiniappUserSettingsRepository.ts`（改）                                    | 新增 `getGenerationConfig(userId)` → `UserGenerationConfig`                                                                           |
-| `packages/shared/migrations/README.md`（改）                                | 补 064~070 索引，修 §3.5 的滞后                                                                                                       |
+| 文件                                                                        | 内容                                                                                                                                                                                      |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/migrations/069_miniapp_chat_sessions.sql`                  | §5.2 全部 DDL，另加 RLS / 两条 CHECK / 冗余字段触发器（见 §5.9）                                                                                                                          |
+| `packages/shared/migrations/070_chat_session_rpc.sql`                       | §5.3 两个 RPC，另加共用前置 `guard_chat_session_idle` 与四个 SQLSTATE 约定                                                                                                                |
+| `packages/shared/src/api/conversations.ts`（改）                            | 批次 0 起草，M1 落实类型。唯一改动是 `UserGenerationConfig.selected_model_id` 改可空（见 §5.9）                                                                                           |
+| `packages/backend/src/infrastructure/repositories/ChatSessionRepository.ts` | `createSession`（含开场白播种）/ `listSessions` / `getSession` / `requireSession`（两者都带 ownership 校验）/ `rename` / `softDelete` / `toChatSession`                                   |
+| `packages/backend/src/infrastructure/repositories/ChatMessageRepository.ts` | `insertOpeningMessage` / `appendUserTurn` / `startAssistantMessage` / `startRegeneration` / `finalizeAssistantMessage` / `listMessages` / `getContextMessages` / `findStreamingAssistant` |
+| `packages/backend/src/infrastructure/repositories/conversation-errors.ts`   | `ConversationRepositoryError` + RPC 的 SQLSTATE → `ConversationErrorCode` 映射                                                                                                            |
+| `MiniappUserSettingsRepository.ts`（改）                                    | 新增 `getGenerationConfig(userId)` → `UserGenerationConfig`，无设置行时返回与建表默认值一致的形状                                                                                         |
+| `conversations.integration.test.ts`                                         | §5.8 九条 + 生成配置读取通道，共 10 个用例，打真库                                                                                                                                        |
+| `packages/shared/migrations/README.md`（改）                                | 补 064~071 索引与重号说明，修 §3.5 的滞后                                                                                                                                                 |
 
 ### 5.8 验收（集成测试，M1 不出 HTTP 接口）
 
@@ -354,9 +387,26 @@ M1 只保证顺序稳定可读，返回**有序全量**：不做截断（MVP 无
 8. 跨用户访问他人 session → repository 层 ownership 校验拒绝
 9. 软删会话后不出现在列表，`chat_history` 关联行仍可查
 
+九条已全部落成 `conversations.integration.test.ts` 并通过（§四「批次 1 验收现状」）。该文件在库不可达、凭证缺失或 069 未执行时自动跳过并在 stderr 说明原因，因此 CI 与本地断网都不会因它变红。
+
+### 5.9 相对方案的偏离
+
+| 偏离                                                                           | 原因                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 会话三个冗余字段改由触发器 `trg_refresh_chat_session_stats` 维护，应用层不写   | `message_count` 是聚合语义，PostgREST 写不出表达式更新，拆成读-改-写会在并发下丢计数。触发器与消息写入同事务，天然一致。预览取「最后一条有正文的生效消息」，避免流式占位行把预览清空 |
+| §5.2 的 `idx_chat_messages_session_turn` 换成 `uq_chat_messages_turn_revision` | 原索引与 `uq_chat_messages_active_turn` 的列和谓词完全相同，是纯冗余。换成覆盖 `revision` 的唯一索引后，版本唯一与审计回溯共用一条                                                   |
+| 070 多出 `guard_chat_session_idle`                                             | §5.6 的并发保护与陈旧流清理是两个 RPC 共用的前置，且必须在拿到会话行锁之后跑。抽成一个函数避免两处各写一遍                                                                           |
+| `start_message_regeneration` 的 `p_turn_index` 可空，并多带四个快照入参        | 可空表示由服务端取最后一轮；传值时校验它确实是最后一轮，用来挡前端拿过期轮次发起的重生成。快照入参是因为新 assistant 行在 RPC 内插入，配置快照不能分两步写                           |
+| 新增 `conversation-errors.ts`                                                  | 070 定了四个 SQLSTATE（`P0002` / `55006` / `55000` / `22023`），映射到 shared 的 `ConversationErrorCode` 需要一处收口，否则每个 repository 方法各判一遍字符串                        |
+| `UserGenerationConfig.selected_model_id` 由 `string` 改为 `string \| null`     | 用户从未选过模型时不能提前替换成默认值，否则「用户选过」与「回退到默认」两种状态无法区分。生效模型由生成侧的 `resolveModel` 统一解析（与 `llm-proxy` 同口径）                        |
+| 两张新表启用 RLS 并 `REVOKE` 掉 anon / authenticated                           | 新链路只走 service_role。方案原文只写了 `GRANT`，没写收权                                                                                                                            |
+| `chat_messages` 追加三条 CHECK                                                 | `turn_index >= 0` / `revision >= 0` / user 行恒为 `revision = 0` 且 `status = 'complete'`。语义在方案里是文字约定，落成约束才挡得住                                                  |
+
 ---
 
 ## 六、M2 — Prompt 引擎核心
+
+> 状态：**已交付**（2026-08-10）。产出与偏离见 §6.5 / §6.6，验收结果见 §四「批次 1 验收现状」。
 
 ### 6.1 性质
 
@@ -404,9 +454,37 @@ bot 的最终形状是：
 - 三个 `pref_*` 字段的不同取值确实改变输出；`pref_word_count` 取 miniapp 枚举的每个值都能命中档位、不回落
 - 历史里的开场白只出现一次（回归"引擎重复注入 `first_mes`"这个坑）
 
+四条已全部覆盖并通过（§四「批次 1 验收现状」）。对拍的做法是把 bot 的 `_buildMessages` / `_buildEnhancedPrompt` 逐字抄进 `prompt-engine.test.ts` 当基准函数，多组输入下与 `buildPrompt()` 的输出逐条比对。
+
+### 6.5 产出清单
+
+| 文件                                                              | 内容                                                                                                                 |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/migrations/071_engine_platform_instructions.sql` | 平台规则三件套落 `miniapp.runtime_config`。正文取自 bot 生产库 `system_instructions` version 41                      |
+| `packages/backend/src/platform/runtime-config.ts`                 | `runtime_config` 的统一读取入口：`fetchRuntimeConfigEntry` / `fetchRuntimeConfigValue` / `fetchRuntimeConfigEntries` |
+| `features/engine/platform-instructions.ts`                        | 三件套的读取、校验、按 version 判活的缓存、三级兜底与 `degraded` 标记。**本模块唯一有 IO 的文件**                    |
+| `features/engine/render-instructions.ts`                          | 三个占位符渲染 + 字数档位查找 + `wrapUserInput`（逐字保持 bot 的包装格式）。纯函数                                   |
+| `features/engine/prompt-engine.ts`                                | `buildPrompt(input): EngineOutput`，实现 `PromptEngine` 接缝。纯函数                                                 |
+| `features/engine/index.ts`                                        | 模块出口                                                                                                             |
+| `platform/model-tiers.ts`（改）                                   | 两个私有读取函数移入 `platform/runtime-config.ts`，改为引用，净减 46 行。行为不变                                    |
+| 三个测试文件                                                      | 25 个用例：渲染与档位查找、三件套解析与降级、`buildPrompt` 组装、与 bot 的对拍                                       |
+
+### 6.6 相对方案的偏离
+
+| 偏离                                                                        | 原因                                                                                                                                                       |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §6.3 只说「建三件套」没给编号，实际落成 migration `071`                     | 三个 key 是运行时依赖，得跟着迁移走才能在各环境复现；顺手把 069 / 070 / 071 一起补进 README 索引                                                           |
+| `runtime_config` 读取提取到 `platform/runtime-config.ts` 共用               | 触点约定要求「不另起一套并行实现」。`model-tiers.ts` 的两个私有函数只读 `value`，M2 还要 `text_value`，扩字段而不是复制一份，代价是改到了 `model-tiers.ts` |
+| 三件套加 `degraded` 标记与内置兜底模板                                      | key 缺失或格式损坏时既不能中断生成，也不能悄悄降级。兜底刻意写得很短，靠 `degraded` 与日志把问题顶出来，M3b 可据此打点告警                                 |
+| 加 `findUncoveredWordCounts` + `satisfies Record<PreferredWordCount, true>` | 档位表漏配某个枚举值会静默回落到默认档——用户改了设置看不到变化且不报错。`satisfies` 让枚举增减在编译期就报错，运行时再补一条覆盖检查                       |
+| 三个 key 全读不到时先扛过 5 分钟 TTL 再换兜底                               | 一次网络抖动不应该让全站 prompt 立刻降级                                                                                                                   |
+| `EngineInput.persona` v1 未消费                                             | 模板里没有对应占位符，bot 也没有 persona 概念。接缝字段保留，日后加占位符时不必改 M1 / M3b                                                                 |
+
 ---
 
 ## 七、M3a — 生成执行与计费出口服务化
+
+> 状态：**已交付**（2026-08-10）。产出与偏离见 §7.4 / §7.5，上线前要跑的 ST 回归清单见 §7.3。
 
 ### 7.1 性质与纪律
 
@@ -446,11 +524,47 @@ bot 的最终形状是：
 4. simulation 链路不受影响
 5. 新增的 `session_id` 入参在 ST 链路调用时为 `null`，落库为 NULL
 
+上述 5 条是**部署前必须在 staging 对着真实 ST iframe 手验**的清单——它们依赖上游、钱包、额度 RPC，单测覆盖不到。
+自动化侧已覆盖的部分见 §7.4 的测试文件。
+
+### 7.4 产出清单
+
+| 文件                                                 | 内容                                                                                                                                            |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `features/generation/resolve-model.ts`               | `resolveAuthoritativeModel`（ST 链路用，搬自 handler 第 234~278 行）/ `resolveModelForUser`（自研链路用，补齐档位与倍率，返回 `ResolvedModel`） |
+| `features/generation/quota.ts`                       | `reserveCharacterFreeQuota` / `noFreeQuotaReservation`。预留、生效倍率换算与 finalize 收进 `FreeQuotaReservation` 一个对象                      |
+| `features/generation/precheck.ts`                    | `resolveBillingPlan`（定档扣费额 + 计费快照）/ `checkWalletBalance`（402 判定，不构造响应）                                                     |
+| `features/generation/upstream.ts`                    | `forwardToUpstream` / `resolveUpstreamUrl` / `createSseTap`。tap 逐字节透传，终态在 flush 里跑完才放行                                          |
+| `features/generation/prompt-caching.ts`              | 决策 11 的 `cache_control` 注入，纯函数                                                                                                         |
+| `features/generation/execute.ts`                     | `GenerationService` 实现，串起上面四段，供 M3b 直调                                                                                             |
+| `features/generation/index.ts`                       | 模块出口                                                                                                                                        |
+| `lib/chat-history-logger.ts`（改）                   | `ChatHistoryEntry` 加可选 `session_id`                                                                                                          |
+| `routes/llm-proxy.ts`（改）                          | 改为调用上述服务，净减约 190 行；ST 专有部分（验签 / X-ST-\* / simulation / 透传外壳）原样保留                                                  |
+| `upstream.test.ts` `execute.test.ts` 等 5 个测试文件 | 33 个用例：SSE 切包还原、[DONE] 判据、计费快照字段、402 前不碰上游、缓存断点位置                                                                |
+
+### 7.5 相对方案的偏离
+
+| 偏离                                                                              | 原因                                                                                                                             |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| §7.2 的 `execute.ts` 拆成 `upstream.ts`（传输原语）+ `execute.ts`（自研链路服务） | 两条链路消费方式不同：ST 要把 tap 挂在 pipe 上透传，自研要自己 drain 后重编码。共用的是原语，不是整条 execute                    |
+| 模型解析对外是两个函数而不是一个                                                  | 让 ST 链路只做原来那三步。合成一个就会在 handler 早期多打一次 `runtime_config`，而计费段稍后本来就要再取一次                     |
+| `saveChatHistory` 只在 `session_id` 非空时才把该列写进 insert                     | migration 069 尚未在生产执行。显式传 `null` 会让 ST 链路每一条 chat_history 落库都失败，条件写入的落库结果同为 NULL，判据不变    |
+| SSE tap 顺带记录 `finish_reason`                                                  | M1 的 `chat_messages.finish_reason` 需要它。只进 tap 返回值，不改转发内容，对 ST 无可观测差异                                    |
+| tap 增加 `snapshot()`                                                             | 流被上游打断时 `flush` 不触发，自研链路要靠它补终态，否则预留的免费轮会一直挂着。ST 链路不调用，保持原有（不补终态）行为         |
+| 缓存断点打在**历史最后一条**而不是最后一条消息                                    | 最后一条是「平台规则 + 本轮输入」的包装体，下一轮它会以未包装的原文回到历史里，断点打上去必然 miss；退一位才是两轮逐字相同的前缀 |
+| 免费额度预留失败时 `execute()` 直接抛出，而不是返回 `GenerationResult`            | 与 ST 链路同判据（原 handler 返回 500）。上游侧失败才走 `status` 收口                                                            |
+
 ---
 
 ## 八、M3b — 对话 REST + SSE（MVP 收口）
 
-依赖 M1 + M2 + M3a 全部就绪。
+依赖 M1 + M2 + M3a 全部就绪。**代码依赖已齐（§四「批次 1 验收现状」），开工前置只剩 §7.3 的五条 ST staging 手验。**
+
+M3b 也是三个模块第一次在同一个进程里串起来，下面这几处接缝到今天为止还没有任何测试碰过，验收时要盯：
+
+- `getContextMessages` 返回有序全量 → M3b 切掉尾部本轮 user → `EngineInput.history` + `userInput`。切片只有约定，实现和测试都在 M3b
+- `getGenerationConfig` 同时喂给 M2 的 `userConfig` 与 M3a 的 `resolveModelForUser`，两处对 `selected_model_id` 为 null 的处理要一致
+- M3a 的 `GenerationResult` → M1 的 `finalizeAssistantMessage` + 带 `session_id` 的 `chat_history` 落库
 
 ### 8.1 接口清单
 
@@ -523,6 +637,6 @@ bot 的最终形状是：
 2. **`@frontend-ready` 注释**：每条新路由注册上方必须有，半成品写 `false — <带业务含义的原因>`（硬规则 1、2）
 3. **禁止 `any`**，TypeScript 严格模式
 4. **迁移执行**：不会随部署自动跑。手动触发 GitHub Actions 的 `Database Migration` workflow，逐个指定 `packages/shared/migrations/*.sql`；生产需在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`
-5. **迁移编号**：当前最大 068，本方案占用 069 / 070。历史上有重号，落盘前再确认一次
-6. **M3a 单独 PR**，PR 描述里附 ST 链路回归验证清单。`promptCaching` 在 ST 链路必须传 `false`，否则破坏"行为零变化"判据
-7. 三个批次 1 模块各自独立 PR，互不阻塞 review
+5. **迁移编号**：批次 1 落盘时最大为 068，实际占用 **069 / 070 / 071**，均已补进 README 索引。历史上有重号，后续落盘前再确认一次
+6. PR 描述里附 §7.3 的 ST 链路回归验证清单。`promptCaching` 在 ST 链路必须传 `false`，否则破坏"行为零变化"判据
+7. ~~三个批次 1 模块各自独立 PR~~ 实际合成一个 PR 提交，提交按模块分开，理由与代价见 §四批次 1
