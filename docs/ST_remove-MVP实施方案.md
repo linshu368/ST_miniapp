@@ -27,19 +27,19 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 
 ## 二、本轮已确认的决策（2026-08-10）
 
-| #   | 事项                                           | 结论                                                                                                                                                                                          |
-| --- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | 原则 1 措辞                                    | 改为"**不改变 ST 链路的运行时行为**"。采用方案 A：把生成执行与计费出口从 `llm-proxy` handler 抽成服务（行为零变化），新引擎复用同一服务                                                       |
-| 2   | `chat_history.assistant_message_id`            | **不加**。只加 `session_id`                                                                                                                                                                   |
-| 3   | 开场白 `first_mes`                             | 入库，但**不设专用标记字段**。就是 turn 0 的一条普通 assistant 消息，天然作为上下文的一部分参与 prompt 组装与 `chat_history.history` 序列化                                                   |
-| 4   | 会话删除                                       | **软删**（`deleted_at`）                                                                                                                                                                      |
-| 5   | 重生成范围                                     | **只允许对最后一轮操作**                                                                                                                                                                      |
-| 6   | `pref_word_count` / `pref_custom_instructions` | M2 设计时纳入 prompt 组装；M1 只负责把读取通道建好                                                                                                                                            |
-| 7   | 预设格式（二次修正决策 3）                     | **新引擎不消费预设**。读码后确认旧 bot 没有任何一处读预设，`preset_payload` 是只有 ST PromptManager 能消费的酒馆格式。平台规则改由 `runtime_config` 的模板承载，见 §六                        |
-| 8   | 旧 bot 参照物                                  | **已获取**，移植源三处见 §六                                                                                                                                                                  |
-| 9   | M2 路线（2026-08-10 追加）                     | 三选一中取"忠实移植 bot"：丢弃 `preset_payload`，system 段只用角色卡 `system_prompt`，不传采样参数。代价是预设体系失去消费方、角色卡的 `description` / `personality` / `scenario` 不进 prompt |
-| 10  | 上下文截断                                     | **v1 不做**。bot 侧无此逻辑，无源可移；上限策略后置                                                                                                                                           |
-| 11  | prompt 缓存                                    | bot 给 Anthropic Claude 注入的 `cache_control` 断点**要进 MVP**，但归 M3a 的 request body 层，且以开关控制：ST 链路传 `false` 保住 M3a"行为零变化"的回归判据，自研链路传 `true`               |
+| #   | 事项                                           | 结论                                                                                                                                                                                                                                                                               |
+| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 原则 1 措辞                                    | 改为"**不改变 ST 链路的运行时行为**"。采用方案 A：把生成执行与计费出口从 `llm-proxy` handler 抽成服务（行为零变化），新引擎复用同一服务                                                                                                                                            |
+| 2   | `chat_history.assistant_message_id`            | **不加**。只加 `session_id`                                                                                                                                                                                                                                                        |
+| 3   | 开场白 `first_mes`                             | 入库，但**不设专用标记字段**。就是 turn 0 的一条普通 assistant 消息，天然作为上下文的一部分参与 prompt 组装与 `chat_history.history` 序列化                                                                                                                                        |
+| 4   | 会话删除                                       | **软删**（`deleted_at`）                                                                                                                                                                                                                                                           |
+| 5   | 重生成范围                                     | **只允许对最后一轮操作**                                                                                                                                                                                                                                                           |
+| 6   | `pref_word_count` / `pref_custom_instructions` | M2 设计时纳入 prompt 组装；M1 只负责把读取通道建好                                                                                                                                                                                                                                 |
+| 7   | 预设格式（二次修正决策 3）                     | **MVP 不消费预设，后续自建格式**。读码后确认旧 bot 没有任何一处读预设，`preset_payload` 是只有 ST PromptManager 能消费的酒馆格式。平台规则改由 `runtime_config` 的模板承载（见 §六）；自建格式明确不沿用 ST，定稿后一次性适配 payload 与消费方，故无返工                           |
+| 8   | 旧 bot 参照物                                  | **已获取**，移植源三处见 §六                                                                                                                                                                                                                                                       |
+| 9   | M2 路线（2026-08-10 追加）                     | 三选一中取"忠实移植 bot"：丢弃 `preset_payload`，system 段只用角色卡 `system_prompt`，不传采样参数。两处看似的代价都已被排除——预设体系将自建新格式后一次性适配，miniapp 现有的 ST 生态角色卡将下架，因此 `description` / `personality` / `scenario` 不进 prompt 不构成人设丢失风险 |
+| 10  | 上下文长度管理                                 | **MVP 不做**。bot 侧已有一套"水位线泄洪式"机制，后续需在 miniapp 复现；不是从零设计，不进 MVP 只是排期取舍                                                                                                                                                                         |
+| 11  | prompt 缓存                                    | bot 给 Anthropic Claude 注入的 `cache_control` 断点**要进 MVP**，但归 M3a 的 request body 层，且以开关控制：ST 链路传 `false` 保住 M3a"行为零变化"的回归判据，自研链路传 `true`                                                                                                    |
 
 ---
 
@@ -84,7 +84,7 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 - 模型目录**不是表**，是 `miniapp.runtime_config` 里 key = `llm_model_catalog` 的 JSONB 文档；`packages/backend/src/platform/model-tiers.ts` 负责读取与回退
 - 存在一个方案文档未提及的包 **`packages/admin`**（Vite + React + AntD + Refine 的运营后台，端口 3003），预设池 / 版本历史 / 模型目录分配 / payload 分析面板均已建成
 
-**结论**（按决策 7 二次修正后作废）：以上预设通路只服务 ST 链路。新引擎不读 `preset_payload`，也不调 `resolve_effective_preset_for_model`，整套预设体系随 ST 一起下线。新引擎需要的是 `miniapp.runtime_config` 里新增的平台规则模板三件套，同样不需要 schema 改动。
+**结论**（按决策 7 二次修正）：以上预设通路在 MVP 阶段只服务 ST 链路——新引擎不读 `preset_payload`，也不调 `resolve_effective_preset_for_model`。表与 admin 管理通路保留，等自建预设格式定稿后再整体适配（见 §九 M4）。MVP 需要的是 `miniapp.runtime_config` 里新增的平台规则模板三件套，同样不需要 schema 改动。
 
 ### 3.4 计费链路要点
 
@@ -125,8 +125,7 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
                          ▼
 批次 4              M6 切换与账号链路
 
-废弃：M4 预设载体（新引擎不消费预设）
-后置：上下文上限、角色卡人设入 prompt、用户配置 UI、埋点对齐、压测定容
+后置：M4 自建预设格式与适配、上下文长度管理（水位线泄洪）、用户配置 UI、埋点对齐、压测定容
 ```
 
 ### 批次 0：接缝先行（已交付，2026-08-10）
@@ -154,7 +153,17 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 
 ### 批次 1：M1 / M2 / M3a 并行
 
-三者互不依赖，可分给三条线同时做。详见 §五 / §六 / §七。
+三者互不依赖，接缝已定、依赖已齐，可分给三条线同时做，各自独立 PR。详见 §五 / §六 / §七。
+
+文件面几乎不相交——M1 落在两个新 migration 加两个新 repository，M2 落在全新的 `features/engine/` 加 `runtime_config` 建 key，M3a 落在 `routes/llm-proxy.ts` 加新建的 `features/generation/`。只有三个共同触点，按下面的归属约定执行即可避免互相踩：
+
+| 触点                              | 归属约定                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `MiniappUserSettingsRepository`   | 只有 M1 改（新增 `getGenerationConfig`）。M3a 的 `resolveModel` 读 `selected_model_id` 时只调现有方法，不动这个文件 |
+| `runtime_config` 读取             | M2 复用既有读法（`platform/model-tiers.ts` 读 `llm_model_catalog` 的那套），不另起一套并行实现                      |
+| 上下文切片（谁去掉尾部本轮 user） | M1 的 `getContextMessages` 只返回有序全量（重生成也要用这个原始形态）；切片归 M3b，在调 `build()` 前做              |
+
+> 并行的瓶颈会转移到 review：三个 PR 同时到位，其中 M3a 需要对着 §7.3 的回归清单逐项验。建议 M3a 优先启动——它纪律最严（只搬不改、diff 要逐行可对照原 handler），也是三者中唯一直接威胁 ST 线上链路的。
 
 ### 批次 2：M3b 集成，MVP 达成
 
@@ -311,7 +320,7 @@ SELECT role, content
           CASE role WHEN 'user' THEN 0 ELSE 1 END ASC;
 ```
 
-窗口截断由 M2 在此结果上做，从尾部保留。开场白是 turn 0 的 assistant 行，是否在截断时优先保留由 M2 决定，M1 只保证顺序稳定可读。
+M1 只保证顺序稳定可读，返回**有序全量**：不做截断（MVP 无上下文长度管理，见决策 10），也不切掉尾部本轮 user 消息——后者由 M3b 在调 `build()` 前处理，因为 `EngineInput` 把本轮输入拆成了独立的 `userInput` 字段。重生成路径同样依赖这份原始形态。
 
 ### 5.6 流式落库与断线语义
 
@@ -365,24 +374,24 @@ bot 的最终形状是：
 [system: 角色卡 system_prompt] + [assistant: 开场白] + 历史 + [user: 平台规则 + 本轮输入]
 ```
 
-据此产生三条与初稿不同的事实：**bot 不读预设**（决策 7 二次修正）、**bot 无上下文长度管理**（决策 10）、**bot 只用角色卡的 `system_prompt` 一个字段**——`description` / `personality` / `scenario` / `mes_example` / `post_history_instructions` 全部未使用。
+据此产生三条与初稿不同的事实：**bot 不读预设**（决策 7 二次修正）、**bot 的上下文长度管理是另一套机制**（水位线泄洪，不在 `_buildMessages` 里，MVP 不复现，见决策 10）、**bot 只用角色卡的 `system_prompt` 一个字段**——`description` / `personality` / `scenario` / `mes_example` / `post_history_instructions` 全部未使用。
 
-> ⚠️ 最后一条是已知的质量风险：miniapp 的角色卡按 ST 习惯制作，人设主要写在 `description` 里，忠实移植会让这部分内容不进 prompt。接缝已保留完整字段组，届时只需改引擎实现，不影响 M1 / M3b。
+> 第三条不构成质量风险：miniapp 现有的 ST 生态角色卡将下架，新卡的人设写法跟随新引擎的取数方式。接缝仍保留完整字段组，日后要把人设并入 system 段只需改引擎实现，不影响 M1 / M3b。
 
 ### 6.2 输入来源映射
 
-| `EngineInput` 字段    | 来源                                                                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `character.*`         | `miniapp.characters`（Prisma model `Character`）。v1 只消费 `system_prompt`，其余字段照常取出备用                                          |
-| `history`             | M1 的 `getContextMessages(sessionId)`，**去掉尾部本轮 user 消息**。开场白作为 turn 0 的 assistant 消息包含在内，引擎不得再注入 `first_mes` |
-| `userInput`           | 本轮用户输入原文（重生成时为该轮已存在的 user 消息内容）                                                                                   |
-| `userConfig`          | `MiniappUserSettingsRepository.getGenerationConfig(userId)`                                                                                |
-| `persona.displayName` | `miniapp_user_settings.display_name`                                                                                                       |
-| `instructions`        | `miniapp.runtime_config` 新增的三个 key：平台规则模板 / 选项模式块 / 字数档位                                                              |
+| `EngineInput` 字段    | 来源                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `character.*`         | `miniapp.characters`（Prisma model `Character`）。v1 只消费 `system_prompt`，其余字段照常取出备用                                                       |
+| `history`             | M1 的 `getContextMessages(sessionId)`，由 **M3b** 去掉尾部本轮 user 消息后传入。开场白作为 turn 0 的 assistant 消息包含在内，引擎不得再注入 `first_mes` |
+| `userInput`           | 本轮用户输入原文（重生成时为该轮已存在的 user 消息内容）                                                                                                |
+| `userConfig`          | `MiniappUserSettingsRepository.getGenerationConfig(userId)`                                                                                             |
+| `persona.displayName` | `miniapp_user_settings.display_name`                                                                                                                    |
+| `instructions`        | `miniapp.runtime_config` 新增的三个 key：平台规则模板 / 选项模式块 / 字数档位                                                                           |
 
 ### 6.3 任务清单
 
-1. 在 `miniapp.runtime_config` 建平台规则模板三件套，正文取自 bot 侧同名配置（**M2 的阻塞项**）
+1. 在 `miniapp.runtime_config` 建平台规则模板三件套。正文取自 bot 侧生产库 `wbtsfzozlmurljvglhpn` 的 `public.runtime_config` 表，key 为 `system_instructions` / `interaction_mode_blocks` / `pref_word_count_tiers`
 2. 字数档位的 label 按 miniapp 的 `PreferredWordCount` 枚举（`100-300` / `300-500` / `500-800` / `800+`）重写——bot 侧文案是 `150以内` / `800以上`，直接沿用会匹配失败并静默回落到默认档
 3. 移植为 `packages/backend/src/features/engine/` 下的纯函数模块（无 IO、无 DB、可单测）
 4. 实现 `PromptEngine.build(input): EngineOutput`
@@ -496,15 +505,15 @@ bot 的最终形状是：
 
 ## 九、后置事项（明确不在 MVP 路径）
 
-| 事项                    | 说明                                                                                                                                     |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| ~~M4 预设载体改造~~     | **整体废弃**。按二次修正后的决策 7，新引擎不消费预设，整套预设体系随 ST 链路一起下线，见 `ST_remove.md` §四"删"                          |
-| 上下文长度上限          | v1 不截断（决策 10）。长会话会持续增长 prompt，撞上游 context 上限并推高成本，切换前需要给出上限策略                                     |
-| 角色卡人设字段进 prompt | v1 只用 `system_prompt`，`description` / `personality` / `scenario` 不进 prompt（决策 9 的已知代价）。接缝已预留字段，改动只影响引擎实现 |
-| 用户生成配置 UI         | 三个 `pref_*` 字段至今无编辑界面，随 M5 一起做                                                                                           |
-| 埋点对齐                | 新链路复用现有"点卡 → 呈现"耗时口径                                                                                                      |
-| 压测定容                | 全量切换无灰度爬坡，切换前必须完成（阶段二）                                                                                             |
-| `ARCHITECTURE.md` 更新  | 已滞后 38 个 migration，建议在 M6 之后整体重写                                                                                           |
+| 事项                    | 说明                                                                                                                                                                                                                                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M4 自建预设格式与适配   | 明确不沿用 ST 预设格式。格式定稿后一次性改到位：payload 载体 + 引擎侧消费 + admin 管理通路。**注意**：改造时有三个耦合点会打挂线上 ST——`idx_platform_presets_one_default` 是全表唯一、`trg_preset_auto_promote` 会写 ST 专用的 `platform_settings`、`platform_preset_model_assignments` 主键是 `model_id` 单列 |
+| 上下文长度管理          | 复现 bot 的"水位线泄洪式"机制（决策 10）。MVP 不做，长会话会持续增长 prompt 并推高成本，切换前需要落地                                                                                                                                                                                                         |
+| 角色卡人设字段进 prompt | v1 只用 `system_prompt`。ST 生态卡下架后按新卡的写法决定是否把 `description` / `personality` / `scenario` 并入 system 段                                                                                                                                                                                       |
+| 用户生成配置 UI         | 三个 `pref_*` 字段至今无编辑界面，随 M5 一起做                                                                                                                                                                                                                                                                 |
+| 埋点对齐                | 新链路复用现有"点卡 → 呈现"耗时口径                                                                                                                                                                                                                                                                            |
+| 压测定容                | 全量切换无灰度爬坡，切换前必须完成（阶段二）                                                                                                                                                                                                                                                                   |
+| `ARCHITECTURE.md` 更新  | 已滞后 38 个 migration，建议在 M6 之后整体重写                                                                                                                                                                                                                                                                 |
 
 ---
 
