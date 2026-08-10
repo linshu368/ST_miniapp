@@ -1,0 +1,201 @@
+// 自研引擎对话链路的前后端共享契约
+// 方案：docs/ST_remove-MVP实施方案.md（§八 接口清单）
+// 路由前缀 /api/v1/conversations 由 M3b 实现、M5 消费；鉴权统一走 requireTelegramAuth（X-Init-Data）
+
+import type { PreferredWordCount } from './settings';
+
+// ==== 领域对象 ====
+
+export type ChatMessageRole = 'user' | 'assistant';
+
+export type ChatMessageStatus = 'streaming' | 'complete' | 'interrupted' | 'failed';
+
+export interface ChatMessage {
+  id: string;
+  session_id: string;
+  /** 一问一答共用同一个 turn_index；开场白独占 turn_index = 0 且该轮没有 user 消息 */
+  turn_index: number;
+  role: ChatMessageRole;
+  /** 重生成版本号：assistant 从 0 递增，user 恒为 0。接口只下发当前生效版本，旧版本仅留档 */
+  revision: number;
+  content: string;
+  status: ChatMessageStatus;
+  error_code: string | null;
+  finish_reason: string | null;
+  /** 生成时的模型快照，仅 assistant 消息有值。改配置后历史输出仍可解释（总方案决策 10） */
+  model_id: string | null;
+  created_at: string;
+}
+
+export interface ChatSession {
+  id: string;
+  character_id: string;
+  /** null = 用户未重命名，前端按首条用户消息截断显示；重命名后为实值 */
+  title: string | null;
+  last_message_at: string | null;
+  last_message_preview: string | null;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * 用户级生成配置：对该用户所有会话生效，不做会话级覆盖（总方案决策 10）。
+ * 全部落在 miniapp.miniapp_user_settings 的既有字段上，M1 只建读取通道、不新增列。
+ */
+export interface UserGenerationConfig {
+  selected_model_id: string;
+  pref_word_count: PreferredWordCount;
+  pref_show_options: boolean;
+  pref_custom_instructions: string | null;
+}
+
+/**
+ * 本域的业务错误码，配合 envelope 的 fail(code, message) 使用。
+ * 余额不足与并发占用在 SSE 首字节写出之前判定，所以仍以 HTTP 状态码返回 JSON 错误体，
+ * 不会以 stream 事件的形式出现。
+ */
+export type ConversationErrorCode =
+  | 'session_not_found'
+  | 'character_not_found'
+  /** 409：该会话已有一条 status='streaming' 的 assistant 消息尚未收口 */
+  | 'session_busy'
+  /** 402：余额不足，响应体形状见 models.ts 的 InsufficientBalanceErrorResponse */
+  | 'insufficient_balance'
+  /** 只允许对最后一轮重生成，且该轮必须含 user 消息（本轮决策 5） */
+  | 'regenerate_not_allowed'
+  | 'upstream_error';
+
+// ==== POST /api/v1/conversations ====
+
+export interface CreateConversationRequest {
+  character_id: string;
+}
+
+export interface CreateConversationData {
+  session: ChatSession;
+  /** 建会话时落库的开场白，即 turn 0 的 assistant 消息（本轮决策 3，无专用标记字段） */
+  messages: ChatMessage[];
+}
+
+// ==== GET /api/v1/conversations ====
+
+export interface ListConversationsQuery {
+  /** 传入则只返回该角色下的会话；不传返回跨角色的全部会话 */
+  character_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListConversationsData {
+  sessions: ChatSession[];
+  total: number;
+}
+
+// ==== GET /api/v1/conversations/:id ====
+
+export interface GetConversationQuery {
+  limit?: number;
+  /** 向前翻页：只取 turn_index 小于该值的消息 */
+  before_turn_index?: number;
+}
+
+export interface GetConversationData {
+  session: ChatSession;
+  /** 按 turn_index 升序，同轮内 user 在前 assistant 在后 */
+  messages: ChatMessage[];
+  has_more: boolean;
+}
+
+// ==== PATCH /api/v1/conversations/:id ====
+
+export interface RenameConversationRequest {
+  /** null 表示清空为自动命名 */
+  title: string | null;
+}
+
+export interface RenameConversationData {
+  session: ChatSession;
+}
+
+// ==== DELETE /api/v1/conversations/:id ====
+
+/** 软删（本轮决策 4）：会话不再出现在列表，chat_history 的关联行仍可查 */
+export interface DeleteConversationData {
+  id: string;
+}
+
+// ==== POST /api/v1/conversations/:id/messages ====
+// ==== POST /api/v1/conversations/:id/regenerate ====
+
+export interface SendMessageRequest {
+  content: string;
+}
+
+/** 重生成只作用于最后一轮，轮次由后端判定，无需入参 */
+export type RegenerateRequest = Record<string, never>;
+
+// ==== SSE 事件契约 ====
+// 上面两条路由的响应体是 text/event-stream，每个 data: 行是一个序列化后的
+// ConversationStreamEvent。前端解析用 lib/api/client.ts 已有的 apiStreamClient()。
+
+/**
+ * 首帧：在向上游发起请求之前下发，让前端立刻拿到落库后的 id 并挂上占位气泡。
+ * user_message_id 在重生成时为 null（该轮的 user 消息早已存在）。
+ */
+export interface ConversationStreamStartEvent {
+  type: 'start';
+  turn_index: number;
+  user_message_id: string | null;
+  assistant_message_id: string;
+  revision: number;
+}
+
+/** 增量：text 是本次新增的片段，不是累积全文 */
+export interface ConversationStreamDeltaEvent {
+  type: 'delta';
+  text: string;
+}
+
+/**
+ * 终态：流正常收口或被上游截断都会下发。
+ * 客户端断开不会终止后端流程，后端仍跑到 [DONE] 并落库完整内容。
+ */
+export interface ConversationStreamDoneEvent {
+  type: 'done';
+  assistant_message_id: string;
+  status: ChatMessageStatus;
+  finish_reason: string | null;
+}
+
+/** 流已开始后才发生的错误。开始之前的失败一律走 HTTP 状态码 + JSON 错误体 */
+export interface ConversationStreamErrorEvent {
+  type: 'error';
+  code: ConversationErrorCode;
+  message: string;
+}
+
+export type ConversationStreamEvent =
+  | ConversationStreamStartEvent
+  | ConversationStreamDeltaEvent
+  | ConversationStreamDoneEvent
+  | ConversationStreamErrorEvent;
+
+// ==== GET /api/v1/generation-config ====
+
+export interface GetGenerationConfigData {
+  config: UserGenerationConfig;
+}
+
+// ==== PATCH /api/v1/generation-config ====
+
+export interface PatchGenerationConfigRequest {
+  selected_model_id?: string;
+  pref_word_count?: PreferredWordCount;
+  pref_show_options?: boolean;
+  pref_custom_instructions?: string | null;
+}
+
+export interface PatchGenerationConfigData {
+  config: UserGenerationConfig;
+}
