@@ -4,6 +4,15 @@
 // → 上游转发与 SSE tap → 终态落库实扣」抽成服务，ST 链路与自研引擎共用同一出口，
 // 保证切换前后计费口径不变。M3a 本身是纯重构，行为零变化。
 
+import type { RequestLogger } from '../../lib/logger.js';
+
+/**
+ * 生成出口的日志入口。两条链路各自传入：ST 链路传请求内的 requestLogger（带 reqId），
+ * 自研链路没有 Fastify 上下文时退化成进程级 createLogger()。
+ * 形状与两者兼容，服务层因此不必绑死请求上下文。
+ */
+export type GenerationLogger = RequestLogger;
+
 /**
  * 已解析的权威模型。解析动作独立成函数而不是留在生成出口内部，
  * 因为自研链路要先拿到 model 才能解析绑定的预设，两处各解析一次会漂移。

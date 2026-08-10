@@ -10,37 +10,34 @@
  *   4. 注入平台真实 API key，转发上游（默认 OpenRouter）
  *   5. SSE 流式透传；流正常结束后实际扣费
  *   6. 上游 5xx / 流中断 → 不扣费
+ *
+ * 其中 2~6 的公共部分已在 M3a 抽到 features/generation/，由本路由与自研引擎共用同一出口，
+ * 保证切换前后计费口径不变。留在本文件里的是 ST 链路专有部分：platformToken 验签、
+ * X-ST-* header 解析、simulation 分支、OpenAI 兼容的请求/响应透传外壳。
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import {
-  resolveEffectiveSelectedModelId,
-  resolveEnabledCatalogModel,
-  type InsufficientBalanceErrorResponse,
-} from '@miniapp/shared';
+import type { InsufficientBalanceErrorResponse } from '@miniapp/shared';
 import { randomUUID } from 'node:crypto';
-import { Readable, Transform } from 'node:stream';
+import { Readable } from 'node:stream';
 import { verifyPlatformTokenContext, type PlatformTokenContext } from '../lib/llm-token.js';
-import {
-  fetchModelCatalogSnapshot,
-  getModelBillingContext,
-  getPricingConfig,
-} from '../platform/model-tiers.js';
-import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
+import { getModelBillingContext, getPricingConfig } from '../platform/model-tiers.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
-import { MiniappCharacterFreeQuotaRepository } from '../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import { saveChatHistory } from '../lib/chat-history-logger.js';
 import { requestLogger } from '../lib/logger.js';
 import {
-  getCharacterFreeChatQuotaLimit,
-  isQuotaTrackableCharacterId,
-  resolveEffectiveModelMarkup,
-} from '../features/billing/free-quota.js';
-import { resolveFixedDeduction } from '../features/billing/usage-pricing.js';
+  LLM_API_KEY,
+  checkWalletBalance,
+  createSseTap,
+  forwardToUpstream,
+  noFreeQuotaReservation,
+  reserveCharacterFreeQuota,
+  resolveAuthoritativeModel,
+  resolveBillingPlan,
+  resolveUpstreamUrl,
+  type FreeQuotaReservation,
+} from '../features/generation/index.js';
 import { getSupabaseClient } from '../lib/supabase.js';
-
-const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
-const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
 
 const STRIP_HEADERS = new Set([
   'transfer-encoding',
@@ -49,9 +46,7 @@ const STRIP_HEADERS = new Set([
   'content-length',
 ]);
 
-const wallets = new MiniappWalletRepository();
 const userSettings = new MiniappUserSettingsRepository();
-const freeQuotas = new MiniappCharacterFreeQuotaRepository();
 
 async function getSimulationModelId(conversationId: string): Promise<string | null> {
   const { data, error } = await getSupabaseClient()
@@ -237,14 +232,9 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
             platformContext.mode === 'production'
               ? await userSettings.getSelectedModelId(platformContext.userId)
               : await getSimulationModelId(platformContext.conversationId);
-          const snapshot = await fetchModelCatalogSnapshot();
-          const effectiveModelId = resolveEffectiveSelectedModelId(
-            snapshot.catalog,
-            persistedModelId
-          );
-          const authoritativeModel = resolveEnabledCatalogModel(snapshot.catalog, effectiveModelId);
+          const authoritativeModel = await resolveAuthoritativeModel(persistedModelId);
           const requestedModel = modelName;
-          modelName = authoritativeModel.openrouter_model_id;
+          modelName = authoritativeModel.openRouterModelId;
           (request.body as Record<string, unknown>).model = modelName;
 
           if (requestedModel !== modelName) {
@@ -255,7 +245,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
                 simulationConversationId,
                 requestedModel,
                 authoritativeModel: modelName,
-                selectedModelId: authoritativeModel.id,
+                selectedModelId: authoritativeModel.modelId,
               },
               'runtime model mismatch corrected'
             );
@@ -349,129 +339,35 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       const chargeId = randomUUID();
       const pricing = await getPricingConfig();
       const billingContext = await getModelBillingContext(modelName, pricing.markup);
-      let modelMarkup = billingContext.modelMarkup;
-      let freeQuotaGranted = false;
 
-      if (platformContext.mode === 'production' && isChatCompletion && modelMarkup === 0) {
-        if (!isQuotaTrackableCharacterId(characterId)) {
-          // 轮次无法归属到角色卡时不判定为免费轮，按额度耗尽后的倍率计费并放行：
-          // character_id 一直是可选输入，免费模型不应因为它缺失而完全无法对话。
-          modelMarkup = resolveEffectiveModelMarkup(
-            billingContext.modelMarkup,
-            billingContext.deductMarkup,
-            false
-          );
-          log.biz.warn(
-            {
-              event: 'llm.free_quota.skipped_untrackable_character',
-              userId,
-              characterId,
-              chargeId,
-              effectiveMarkup: modelMarkup,
-            },
-            'free quota skipped: character id missing or unusable'
-          );
-        } else {
-          try {
-            const quotaLimit = await getCharacterFreeChatQuotaLimit();
-            const quotaDecision = await freeQuotas.reserve({
-              chargeId,
-              userId: platformContext.userId,
-              characterId,
-              quotaLimit,
-            });
-            freeQuotaGranted = quotaDecision.grantedFree;
-            modelMarkup = resolveEffectiveModelMarkup(
-              billingContext.modelMarkup,
-              billingContext.deductMarkup,
-              quotaDecision.grantedFree
-            );
-            log.biz.info(
-              {
-                event: 'llm.free_quota.decision',
-                userId,
-                characterId,
+      // 免费额度只对 production 的对话请求成立：simulation 不计费，非 chat completion
+      // （模型列表等 GET）也没有轮次概念。判定本身在 features/generation/quota.ts。
+      let reservation: FreeQuotaReservation;
+      try {
+        reservation =
+          platformContext.mode === 'production' && isChatCompletion
+            ? await reserveCharacterFreeQuota({
                 chargeId,
-                grantedFree: quotaDecision.grantedFree,
-                remainingRounds: quotaDecision.remainingRounds,
-                quotaLimit,
-                effectiveMarkup: modelMarkup,
-              },
-              'character free quota decision resolved'
-            );
-          } catch (err) {
-            log.sys.error(
-              { event: 'llm.free_quota.reserve_failed', err, userId, characterId, chargeId },
-              'failed to reserve character free quota'
-            );
-            return reply.status(500).send({
-              error: { message: 'Failed to reserve free quota', type: 'internal_error' },
-            });
-          }
-        }
+                userId: platformContext.userId,
+                characterId,
+                billing: billingContext,
+                log,
+              })
+            : noFreeQuotaReservation(billingContext.modelMarkup);
+      } catch {
+        return reply.status(500).send({
+          error: { message: 'Failed to reserve free quota', type: 'internal_error' },
+        });
       }
 
-      const finalizeFreeQuota = async (success: boolean) => {
-        if (!freeQuotaGranted) return null;
-        try {
-          const result = await freeQuotas.finalize(chargeId, success);
-          log.biz.info(
-            {
-              event: 'llm.free_quota.finalized',
-              userId,
-              characterId,
-              chargeId,
-              success,
-              usedRounds: result.usedRounds,
-              justExhausted: result.justExhausted,
-            },
-            'character free quota reservation finalized'
-          );
-          return result;
-        } catch (err) {
-          log.sys.error(
-            {
-              event: 'llm.free_quota.finalize_failed',
-              err,
-              userId,
-              characterId,
-              chargeId,
-              success,
-            },
-            'failed to finalize character free quota'
-          );
-          return null;
-        }
-      };
-      const fixedDeduction = resolveFixedDeduction({
-        defaultModelMarkup: billingContext.modelMarkup,
-        effectiveModelMarkup: modelMarkup,
-        modelTier: billingContext.modelTier,
-        config: pricing.fixedDeduction,
+      const billingPlan = resolveBillingPlan({
+        chargeId,
+        billing: billingContext,
+        effectiveModelMarkup: reservation.effectiveModelMarkup,
+        pricing,
+        log,
       });
-      if (fixedDeduction.category === 'standard_fallback') {
-        log.sys.warn(
-          {
-            event: 'llm.billing.unknown_paid_tier',
-            model: modelName,
-            modelTier: billingContext.modelTier,
-            fixedDeduction: fixedDeduction.amount,
-          },
-          'unknown paid model tier, using standard fixed deduction'
-        );
-      }
-      const billingSnapshot = {
-        charge_id: chargeId,
-        model_id: billingContext.modelId,
-        model_display_name: billingContext.modelDisplayName,
-        model_markup: modelMarkup,
-        fixed_deduction: fixedDeduction.amount,
-        fixed_deduction_category: fixedDeduction.category,
-        catalog_version: billingContext.catalogVersion,
-        pricing_config_version: pricing.version,
-        exchange_rate: pricing.exchangeRate,
-        fallback_cost: pricing.fallbackCost,
-      };
+      const billingSnapshot = billingPlan.snapshot;
 
       // ── 余额预检：不足基线时在调用上游前返回 402，由 ST bridge 引导充值 ─────────
       try {
@@ -486,31 +382,20 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           );
         } else if (!userId) {
           throw new Error('production user id is missing');
-        } else if (fixedDeduction.amount === 0) {
-          log.biz.debug(
-            { event: 'llm.balance.check_skipped', userId, model: modelName },
-            'free model balance check skipped'
-          );
         } else {
-          const wallet = await wallets.getOrCreate(userId);
-          const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-          if (balance < fixedDeduction.amount) {
-            log.biz.info(
-              {
-                event: 'llm.balance.insufficient',
-                userId,
-                balance,
-                required: fixedDeduction.amount,
-                model: modelName,
-              },
-              'insufficient balance'
-            );
+          const precheck = await checkWalletBalance({
+            userId,
+            requiredAmount: billingPlan.fixedDeduction.amount,
+            openRouterModelId: modelName,
+            log,
+          });
+          if (!precheck.ok) {
             const response: InsufficientBalanceErrorResponse = {
               error: {
-                message: `Insufficient credits: have ${balance}, need ${fixedDeduction.amount}`,
+                message: `Insufficient credits: have ${precheck.creditsAvailable}, need ${precheck.creditsRequired}`,
                 type: 'insufficient_balance',
-                credits_required: fixedDeduction.amount,
-                credits_available: balance,
+                credits_required: precheck.creditsRequired,
+                credits_available: precheck.creditsAvailable,
               },
             };
             // ST 的非流式代理会把上游非 2xx 包成外层 200，但会保留 statusText 到
@@ -528,14 +413,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
       // ── 构造上游请求 ──────────────────────────────────────────────────────
       const subPath = request.url.replace(/^\/api\/platform\/llm-proxy\/v1/, '') || '/';
-      const targetUrl = `${LLM_UPSTREAM_URL}${subPath}`;
-
-      const forwardHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${LLM_API_KEY}`,
-        'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'ST_miniAPP',
-      };
+      const targetUrl = resolveUpstreamUrl(subPath);
 
       let bodyInit: BodyInit | undefined;
       if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -549,15 +427,13 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
       let upstreamRes: Response;
       try {
-        upstreamRes = await fetch(targetUrl, {
+        upstreamRes = await forwardToUpstream({
+          url: targetUrl,
           method: request.method,
-          headers: forwardHeaders,
           body: bodyInit,
-          // @ts-expect-error Node 18+ fetch supports duplex
-          duplex: 'half',
         });
       } catch (err) {
-        await finalizeFreeQuota(false);
+        await reservation.finalize(false);
         log.sys.error({ event: 'llm.upstream.error', err, targetUrl }, 'upstream request failed');
         return reply.status(502).send({
           error: { message: `Upstream error: ${String(err)}`, type: 'upstream_error' },
@@ -566,7 +442,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
 
       // 上游非 2xx → 不扣费，记录失败，直接透传
       if (!upstreamRes.ok) {
-        await finalizeFreeQuota(false);
+        await reservation.finalize(false);
         if (isChatCompletion && userInput) {
           saveChatHistory(
             {
@@ -615,7 +491,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       let generationId = upstreamRes.headers.get('x-generation-id') || null;
 
       if (!upstreamRes.body) {
-        await finalizeFreeQuota(true);
+        await reservation.finalize(true);
         if (isChatCompletion && userInput) {
           saveChatHistory(
             {
@@ -642,119 +518,72 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
           upstreamRes.body as import('stream/web').ReadableStream
         );
 
-        let streamCompleted = false;
-        const replyChunks: string[] = [];
-        let sseBuffer = '';
-
-        const sseTap = new Transform({
-          transform(chunk, _encoding, callback) {
-            sseBuffer += chunk.toString();
-            const lines = sseBuffer.split('\n');
-            // 保留最后一行（可能不完整），其余行处理
-            sseBuffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (line.trim() === 'data: [DONE]') {
-                streamCompleted = true;
-                continue;
+        // tap 只累积不改写，chunk 逐字节透传给 ST；终态在 flush 里跑完才放行下游结束。
+        const sseTap = createSseTap({
+          generationId,
+          onEnd: async (tapped) => {
+            generationId = tapped.generationId;
+            await reservation.finalize(tapped.completed);
+            if (tapped.completed) {
+              log.biz.info(
+                {
+                  event: 'llm.generation.completed',
+                  userId,
+                  simulationConversationId,
+                  model: modelName,
+                  generationId,
+                  replyChars: tapped.content.length,
+                },
+                'LLM 生成完成'
+              );
+              if (isChatCompletion && userInput) {
+                saveChatHistory(
+                  {
+                    user_id: userId,
+                    simulation,
+                    model: modelName,
+                    ...billingSnapshot,
+                    user_input: userInput,
+                    assistant_reply: tapped.content,
+                    history: chatMessages,
+                    character_id: characterId,
+                    preset_id: presetId,
+                    status: 'success',
+                    generation_id: generationId,
+                  },
+                  log
+                );
               }
-              if (!line.startsWith('data: ')) continue;
-              try {
-                const json = JSON.parse(line.slice(6));
-                if (!generationId && typeof json?.id === 'string') {
-                  generationId = json.id;
-                }
-                const delta = json?.choices?.[0]?.delta?.content;
-                if (typeof delta === 'string') {
-                  replyChunks.push(delta);
-                }
-              } catch {
-                // non-JSON data line or incomplete JSON, skip
+            } else {
+              log.biz.warn(
+                {
+                  event: 'llm.generation.interrupted',
+                  userId,
+                  simulationConversationId,
+                  model: modelName,
+                  generationId,
+                },
+                'stream ended without [DONE], skipping deduction'
+              );
+              if (isChatCompletion && userInput) {
+                saveChatHistory(
+                  {
+                    user_id: userId,
+                    simulation,
+                    model: modelName,
+                    ...billingSnapshot,
+                    user_input: userInput,
+                    assistant_reply: tapped.deltaCount > 0 ? tapped.content : null,
+                    history: chatMessages,
+                    character_id: characterId,
+                    preset_id: presetId,
+                    status: 'stream_interrupted',
+                    generation_id: generationId,
+                  },
+                  log
+                );
               }
             }
-
-            callback(null, chunk);
-          },
-          flush(callback) {
-            // 处理 buffer 中剩余的最后一行
-            if (sseBuffer.trim() === 'data: [DONE]') {
-              streamCompleted = true;
-            } else if (sseBuffer.startsWith('data: ')) {
-              try {
-                const json = JSON.parse(sseBuffer.slice(6));
-                if (!generationId && typeof json?.id === 'string') {
-                  generationId = json.id;
-                }
-                const delta = json?.choices?.[0]?.delta?.content;
-                if (typeof delta === 'string') {
-                  replyChunks.push(delta);
-                }
-              } catch {}
-            }
-
-            void (async () => {
-              await finalizeFreeQuota(streamCompleted);
-              if (streamCompleted) {
-                log.biz.info(
-                  {
-                    event: 'llm.generation.completed',
-                    userId,
-                    simulationConversationId,
-                    model: modelName,
-                    generationId,
-                    replyChars: replyChunks.join('').length,
-                  },
-                  'LLM 生成完成'
-                );
-                if (isChatCompletion && userInput) {
-                  saveChatHistory(
-                    {
-                      user_id: userId,
-                      simulation,
-                      model: modelName,
-                      ...billingSnapshot,
-                      user_input: userInput,
-                      assistant_reply: replyChunks.join(''),
-                      history: chatMessages,
-                      character_id: characterId,
-                      preset_id: presetId,
-                      status: 'success',
-                      generation_id: generationId,
-                    },
-                    log
-                  );
-                }
-              } else {
-                log.biz.warn(
-                  {
-                    event: 'llm.generation.interrupted',
-                    userId,
-                    simulationConversationId,
-                    model: modelName,
-                    generationId,
-                  },
-                  'stream ended without [DONE], skipping deduction'
-                );
-                if (isChatCompletion && userInput) {
-                  saveChatHistory(
-                    {
-                      user_id: userId,
-                      simulation,
-                      model: modelName,
-                      ...billingSnapshot,
-                      user_input: userInput,
-                      assistant_reply: replyChunks.length > 0 ? replyChunks.join('') : null,
-                      history: chatMessages,
-                      character_id: characterId,
-                      preset_id: presetId,
-                      status: 'stream_interrupted',
-                      generation_id: generationId,
-                    },
-                    log
-                  );
-                }
-              }
-            })().finally(() => callback());
           },
         });
 
@@ -766,7 +595,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
       try {
         responseBody = await upstreamRes.text();
       } catch (err) {
-        await finalizeFreeQuota(false);
+        await reservation.finalize(false);
         log.sys.error(
           { event: 'llm.upstream.body_read_failed', err, userId, model: modelName },
           'failed to read non-streaming upstream response'
@@ -791,7 +620,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         );
       }
       if (!responseParsed) {
-        await finalizeFreeQuota(false);
+        await reservation.finalize(false);
         if (isChatCompletion && userInput) {
           saveChatHistory(
             {
@@ -813,7 +642,7 @@ export default async function llmProxyRoutes(app: FastifyInstance) {
         }
         return reply.send(responseBody);
       }
-      await finalizeFreeQuota(true);
+      await reservation.finalize(true);
       if (isChatCompletion && userInput) {
         saveChatHistory(
           {
