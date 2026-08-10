@@ -3,12 +3,15 @@ import {
   normalizeTelegramAvatarUrl,
   type PatchUserSettingsRequest,
   type PreferredWordCount,
+  type UserGenerationConfig,
   type UserSettings,
 } from '@miniapp/shared';
 import { config } from '../../platform/config.js';
 import type { TelegramUser } from '../../middleware/auth.js';
 
 const WORD_COUNT_OPTIONS: PreferredWordCount[] = ['100-300', '300-500', '500-800', '800+'];
+/** 与 migration 015 建表默认值一致 */
+const DEFAULT_WORD_COUNT: PreferredWordCount = '300-500';
 
 export interface MiniappUserSettingsRow {
   user_id: string;
@@ -131,6 +134,37 @@ export class MiniappUserSettingsRepository {
     return (
       (data as Pick<MiniappUserSettingsRow, 'selected_model_id'> | null)?.selected_model_id ?? null
     );
+  }
+
+  /**
+   * 自研引擎的用户生成配置读取通道（M1）。
+   *
+   * 三个 pref_* 字段自 migration 015 就已存在，此前从未被任何生成路径消费；
+   * 引擎侧的用法见 M2（{{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}）。
+   * 配置属于用户层、对该用户所有会话生效（总方案决策 10），因此不接受 session 维度入参。
+   *
+   * 用户还没有设置行时返回与建表默认值一致的形状，避免调用方各写一套兜底。
+   */
+  async getGenerationConfig(userId: string): Promise<UserGenerationConfig> {
+    const { data, error } = await this.db
+      .from('miniapp_user_settings')
+      .select('selected_model_id, pref_word_count, pref_show_options, pref_custom_instructions')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`查询用户生成配置失败：${error.message}`);
+
+    const row = data as Pick<
+      MiniappUserSettingsRow,
+      'selected_model_id' | 'pref_word_count' | 'pref_show_options' | 'pref_custom_instructions'
+    > | null;
+
+    return {
+      selected_model_id: row?.selected_model_id ?? null,
+      pref_word_count: row?.pref_word_count ?? DEFAULT_WORD_COUNT,
+      pref_show_options: row?.pref_show_options ?? true,
+      pref_custom_instructions: row?.pref_custom_instructions ?? null,
+    };
   }
 
   /** 首页「最新」New 提醒的水位线。为空表示用户从未进过「最新」分页。 */

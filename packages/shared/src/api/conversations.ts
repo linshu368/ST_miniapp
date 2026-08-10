@@ -44,7 +44,12 @@ export interface ChatSession {
  * 全部落在 miniapp.miniapp_user_settings 的既有字段上，M1 只建读取通道、不新增列。
  */
 export interface UserGenerationConfig {
-  selected_model_id: string;
+  /**
+   * 用户存下来的模型选择原值，null = 从未选过。
+   * 生效模型由生成侧的 resolveModel 在目录里做一次回退解析（与 llm-proxy 同一套口径），
+   * 这里刻意不提前替换成默认值，否则「用户选过」与「回退到默认」两种状态无法区分。
+   */
+  selected_model_id: string | null;
   pref_word_count: PreferredWordCount;
   pref_show_options: boolean;
   pref_custom_instructions: string | null;
