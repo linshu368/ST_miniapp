@@ -305,6 +305,7 @@ function createHistoryWriter(input: {
         character_id: request.characterId,
         preset_id: request.presetId ?? null,
         session_id: request.sessionId ?? null,
+        history_id: request.historyId ?? null,
         ...outcome,
       },
       log

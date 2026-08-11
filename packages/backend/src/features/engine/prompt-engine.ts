@@ -5,7 +5,7 @@
  *
  * 移植自旧 bot 的 src/infrastructure/ai/SimplePromptEngine.ts 的 _buildMessages()。
  * 最终形状：
- *   [system: 角色卡 system_prompt] + 历史（含 turn 0 的开场白） + [user: 平台规则 + 本轮输入]
+ *   [system: 角色卡 system_prompt] + 历史（含虚拟 turn 0 开场白） + [user: 平台规则 + 本轮输入]
  *
  * 方案：docs/ST_remove-MVP实施方案.md §六。
  */
@@ -18,8 +18,8 @@ import { renderPlatformInstructions, wrapUserInput } from './render-instructions
  *
  * 与 bot 的三处差异，都是前提不同导致的，不是设计变更：
  *
- * 1. **不注入 first_mes**。bot 的开场白不入库，所以每轮现场补一条；本方案决策 3 把开场白
- *    落成 turn 0 的普通 assistant 消息，history 里已经有了，再注入就是每轮重复一条。
+ * 1. **不注入 first_mes**。M3b 首轮把角色卡开场白放进 EngineInput.history，之后从首轮
+ *    chat_history.history 快照恢复；引擎再注入就是每轮重复一条。
  * 2. **不消费预设**（决策 7 二次修正）。system 段只有角色卡 system_prompt，
  *    description / personality / scenario / mes_example / post_history_instructions 全不进 prompt，
  *    与 bot 现状一致；ST 生态卡下架后再按新卡写法决定要不要并入。

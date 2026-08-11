@@ -4,9 +4,9 @@
  * 一轮生成的编排（M3b）。方案 §8.2 的执行序列就落在这个文件里，发消息与重生成共用它。
  *
  * 这是 M1 / M2 / M3a 第一次在同一个进程里串起来，三处接缝都在这里合拢：
- *   - M1 getContextMessages（有序全量）→ 本文件切片 → M2 的 history + userInput
+ *   - chat_history 当前 revision → 本文件还原开场白与历史 → M2 的 history + userInput
  *   - getGenerationConfig 同时喂 M2 的 userConfig 与 M3a 的模型解析
- *   - M3a 的 GenerationResult → M1 的 finalizeAssistantMessage（chat_history 由 execute 内部落）
+ *   - M3a 的 GenerationResult → 收口同一条 chat_history（execute 只补计费与 LLM 元数据）
  *
  * 顺序上有一条硬约束：**SSE 首字节写出之前不能有任何可能失败的判定**。402 与 409 要以
  * HTTP 状态码返回 JSON，响应头一旦发出就只能降级成流内 error 事件，前端处理成本高一截。
@@ -21,10 +21,7 @@ import {
   type GenerationRequest,
   type GenerationStatus,
 } from '../generation/index.js';
-import {
-  ChatMessageRepository,
-  type GenerationSnapshot,
-} from '../../infrastructure/repositories/ChatMessageRepository.js';
+import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import {
   CharacterCardRepository,
@@ -56,12 +53,12 @@ export interface RunConversationTurnInput {
   log: RequestLogger;
 }
 
-let messageRepository: ChatMessageRepository | null = null;
+let historyRepository: ConversationHistoryRepository | null = null;
 let characterRepository: CharacterCardRepository | null = null;
 let userSettingsRepository: MiniappUserSettingsRepository | null = null;
 
-function messages(): ChatMessageRepository {
-  return (messageRepository ??= new ChatMessageRepository());
+function historyRecords(): ConversationHistoryRepository {
+  return (historyRepository ??= new ConversationHistoryRepository());
 }
 function characters(): CharacterCardRepository {
   return (characterRepository ??= new CharacterCardRepository());
@@ -119,28 +116,14 @@ export async function runConversationTurn(
     );
   }
 
-  const snapshot: GenerationSnapshot = {
-    modelId: model.modelId,
-    modelOpenrouterId: model.openRouterModelId,
-    // MVP 不消费预设（决策 7 二次修正）。自建格式定稿后由 M4 填这一列
-    presetId: null,
-    genConfig: userConfig,
-  };
-
-  // ── 落库：user 行 / 重生成版本 ────────────────────────────────────────────
+  // ── 落库：一轮一个 chat_history revision ─────────────────────────────────
   // 两个 RPC 都在会话行锁内做「生成中判定 + 陈旧流清理」，session_busy 与
   // regenerate_not_allowed 由它们以 SQLSTATE 抛出，仓库层已翻成业务错误码。
-  const turn = await startTurn(session.id, mode, snapshot);
+  const turn = await startTurn(session.id, mode, model.openRouterModelId);
 
   // ── 组 prompt ─────────────────────────────────────────────────────────────
-  const context = await messages().getContextMessages(session.id);
-  const { history, tailMismatch } = buildEngineHistory(context, turn.userInput);
-  if (tailMismatch) {
-    log.sys.warn(
-      { event: 'conversation.context.tail_mismatch', userId, sessionId: session.id },
-      '上下文尾部与本轮输入不一致，可能存在并发写入'
-    );
-  }
+  const context = await historyRecords().getContextBeforeTurn(session.id, turn.turnIndex);
+  const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
 
   const prompt = buildPrompt({
     character: toEngineCharacter(card),
@@ -151,24 +134,16 @@ export async function runConversationTurn(
     instructions: instructions.instructions,
   });
 
-  // 重生成的占位行由 RPC 在同事务内建好，这里只补发消息那条路径的。
-  const assistant =
-    turn.assistantMessageId === null
-      ? await messages().startAssistantMessage({
-          sessionId: session.id,
-          turnIndex: turn.turnIndex,
-          snapshot,
-        })
-      : { id: turn.assistantMessageId, revision: turn.revision };
+  await historyRecords().setPromptHistory(turn.historyId, prompt.messages);
 
   const emitStart = (): void => {
     sink.open();
     sink.send({
       type: 'start',
       turn_index: turn.turnIndex,
-      user_message_id: turn.userMessageId,
-      assistant_message_id: assistant.id,
-      revision: assistant.revision,
+      user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
+      assistant_message_id: turn.historyId,
+      revision: turn.revision,
     });
   };
 
@@ -181,6 +156,7 @@ export async function runConversationTurn(
     sampling: prompt.sampling,
     userInput: turn.userInput,
     sessionId: session.id,
+    historyId: turn.historyId,
     presetId: null,
     stream: true,
     // 决策 11：cache_control 断点只在自研链路开，ST 链路传 false 保住 M3a 的纯重构判据
@@ -197,15 +173,13 @@ export async function runConversationTurn(
   );
 
   const status = toMessageStatus(result.status);
-  await messages().finalizeAssistantMessage({
-    messageId: assistant.id,
+  await historyRecords().finalizeTurn({
+    historyId: turn.historyId,
     content: result.content,
-    status,
+    status: result.status,
     finishReason: result.finishReason,
-    // status 已经表达了中断，error_code 留给「本轮没跑起来」的两种失败
-    errorCode: status === 'failed' ? result.status : null,
+    upstreamStatus: result.upstreamStatus ?? null,
     generationId: result.generationId,
-    // execute 只在实际走到计费段时才给 chargeId，与 chat_history 的那条是同一个幂等键
     chargeId: result.chargeId,
   });
 
@@ -227,7 +201,7 @@ export async function runConversationTurn(
 
   sink.send({
     type: 'done',
-    assistant_message_id: assistant.id,
+    assistant_message_id: turn.historyId,
     status,
     finish_reason: result.finishReason,
   });
@@ -239,7 +213,7 @@ export async function runConversationTurn(
       userId,
       sessionId: session.id,
       turnIndex: turn.turnIndex,
-      revision: assistant.revision,
+      revision: turn.revision,
       mode: mode.kind,
       status,
       model: model.openRouterModelId,
@@ -254,10 +228,7 @@ export async function runConversationTurn(
 
 interface StartedTurn {
   turnIndex: number;
-  /** 重生成时为 null：该轮的 user 消息早已存在 */
-  userMessageId: string | null;
-  /** 重生成时由 RPC 在同事务内建好；发消息路径为 null，稍后单独插入 */
-  assistantMessageId: string | null;
+  historyId: string;
   revision: number;
   userInput: string;
 }
@@ -265,24 +236,26 @@ interface StartedTurn {
 async function startTurn(
   sessionId: string,
   mode: ConversationTurnMode,
-  snapshot: GenerationSnapshot
+  model: string
 ): Promise<StartedTurn> {
   if (mode.kind === 'send') {
-    const appended = await messages().appendUserTurn(sessionId, mode.content);
+    const started = await historyRecords().startTurn({
+      sessionId,
+      userContent: mode.content,
+      model,
+    });
     return {
-      turnIndex: appended.turnIndex,
-      userMessageId: appended.userMessageId,
-      assistantMessageId: null,
-      revision: 0,
-      userInput: mode.content,
+      turnIndex: started.turnIndex,
+      historyId: started.historyId,
+      revision: started.revision,
+      userInput: started.userContent,
     };
   }
 
-  const started = await messages().startRegeneration({ sessionId, snapshot });
+  const started = await historyRecords().startRegeneration({ sessionId, model });
   return {
     turnIndex: started.turnIndex,
-    userMessageId: null,
-    assistantMessageId: started.assistantMessageId,
+    historyId: started.historyId,
     revision: started.revision,
     userInput: started.userContent,
   };

@@ -40,7 +40,7 @@ const USER_CONFIG: UserGenerationConfig = {
 function input(overrides: Partial<EngineInput> = {}): EngineInput {
   return {
     character: CHARACTER,
-    // M1 的 getContextMessages 返回的形态：开场白就是 turn 0 的 assistant 消息
+    // M3b 还原出的形态：开场白是虚拟 turn 0 的 assistant 消息
     history: [
       { role: 'assistant', content: FIRST_MES },
       { role: 'user', content: '你在等我？' },
@@ -131,7 +131,7 @@ describe('buildPrompt', () => {
 //   src/features/chat/rules/renderSystemInstructions.ts + SimpleChat._buildEnhancedPrompt()
 // 用它们复算同一组输入，断言与本模块输出逐条一致。
 // bot 的 first_mes 动态注入在这里天然不触发：history[0] 就是开场白，命中它的
-// historyFirstIsGreeting 短路——这正是本方案「开场白入库成 turn 0」与 bot 能对上的原因。
+// historyFirstIsGreeting 短路——M3b 已把开场白放进 history，引擎不得重复注入。
 
 interface BotMessage {
   role: string;

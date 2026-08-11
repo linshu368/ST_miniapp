@@ -3,7 +3,7 @@
 > 状态：**MVP 达成**（2026-08-11）。批次 0、批次 1（M1 / M2 / M3a）、批次 2（M3b）全部交付并验收通过。
 > §8.3 的八条 MVP 判据由 `mvp:regression` 全绿覆盖，一条不经过 ST / iframe / bridge 的对话链路已经跑通（§8.4）。
 > §7.3 的 ST 回归改为本地脚本 + 重构前后对拍，两侧各 7/7 通过、逐字段 diff 一致（§7.3.3）。
-> **下一步是 M5（自研聊天 UI）与 M6（灰度切换）；切换前必须先在生产库执行 069 / 070 / 071，见 §8.7。**
+> **下一步是 M5（自研聊天 UI）与 M6（灰度切换）；切换前必须先在生产库按序执行 069 / 070 / 071 / 072 / 073，见 §8.7。**
 > 三份接缝见 §四；读到旧 bot 代码后 §二决策 7 已再次修正，§六 M2 随之重写。
 > 上游文档：`docs/ST_remove.md`（总体方案与 12 项决策）
 > 目标：**先跑通 MVP 对话路径**。不在 MVP 关键路径上的模块一律后置。
@@ -19,7 +19,7 @@
 
 ```
 建会话（落开场白）→ 发消息 → 读会话历史 → 组装 prompt → 调上游 LLM
-→ SSE 流式回传 → 落库（chat_messages + chat_history）→ 计费
+→ SSE 流式回传 → chat_history 轮次收口 → 计费
 → 重生成（最后一轮）
 ```
 
@@ -37,7 +37,7 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 | --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | 原则 1 措辞                                    | 改为"**不改变 ST 链路的运行时行为**"。采用方案 A：把生成执行与计费出口从 `llm-proxy` handler 抽成服务（行为零变化），新引擎复用同一服务                                                                                                                                            |
 | 2   | `chat_history.assistant_message_id`            | **不加**。只加 `session_id`                                                                                                                                                                                                                                                        |
-| 3   | 开场白 `first_mes`                             | 入库，但**不设专用标记字段**。就是 turn 0 的一条普通 assistant 消息，天然作为上下文的一部分参与 prompt 组装与 `chat_history.history` 序列化                                                                                                                                        |
+| 3   | 开场白 `first_mes`（2026-08-11 修正）          | **不单独落行**。新会话由 API 返回虚拟 turn 0；首轮用户发言时进入 `chat_history.history` 完整 prompt 快照，后续从快照恢复                                                                                                                                                           |
 | 4   | 会话删除                                       | **软删**（`deleted_at`）                                                                                                                                                                                                                                                           |
 | 5   | 重生成范围                                     | **只允许对最后一轮操作**                                                                                                                                                                                                                                                           |
 | 6   | `pref_word_count` / `pref_custom_instructions` | M2 设计时纳入 prompt 组装；M1 只负责把读取通道建好                                                                                                                                                                                                                                 |
@@ -150,7 +150,7 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `EngineInput` 去掉 `presetPayload`，加 `instructions`（`runtime_config` 的模板 + 选项模式块 + 字数档位） | 决策 7 二次修正，引擎不消费预设                                                                                           |
 | `EngineInput` 加独立的 `userInput`，`history` 约定不含本轮输入                                           | 对齐 bot：平台规则包装的是当前用户输入；重生成路径也要把历史尾部的 user 消息摘出来单独传，混在 `history` 里两条路径会打架 |
-| `EngineInput.history` 已含开场白，引擎**不得**注入 `first_mes`                                           | bot 因开场白不入库才动态注入，本方案决策 3 是入库成 turn 0，前提相反，照搬会每轮重复一条                                  |
+| `EngineInput.history` 已含开场白，引擎**不得**再次注入 `first_mes`                                       | M3b 首轮使用角色卡值，后续从首轮 `chat_history.history` 快照恢复；引擎再注入会每轮重复一条                                |
 | `EngineOutput.sampling` / `truncatedTurns` 保留但 v1 恒为空 / 恒为 0                                     | bot 请求体只有 `model / messages / stream`，也无截断逻辑。留字段是为了后续接入时不必改 M3a 入参                           |
 | `GenerationRequest` 加 `model: ResolvedModel`                                                            | 模型解析前置成独立函数。自研链路两处各解析一次会漂移                                                                      |
 | `GenerationRequest` 加 `promptCaching: boolean`                                                          | `cache_control` 对 ST 链路是行为变更，用开关隔离，保住 M3a 的纯重构判据（决策 11）                                        |
@@ -184,20 +184,20 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 
 | 项                                    | 结果                                                                                                                     |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm --filter @miniapp/backend test` | **153 用例全绿**（143 纯单测 + 10 条打真库的 M1 集成测试）                                                               |
+| `pnpm --filter @miniapp/backend test` | 批次 1 当时 153 用例全绿；最终模型调整后为 **173/173**（含 8 条打真库会话集成测试）                                      |
 | `pnpm typecheck`                      | 全 workspace 干净                                                                                                        |
 | M1 §5.8 的九条                        | 全部由 `conversations.integration.test.ts` 覆盖并通过                                                                    |
 | M2 §6.4 的对拍                        | 已落在 `prompt-engine.test.ts`：把 bot 的 `_buildMessages` / `_buildEnhancedPrompt` 逐字抄进测试当基准，多组输入逐条比对 |
-| 069 / 070 / 071                       | 已在 **test 库**执行；平台规则实测 `degraded = false`、三个占位符齐全、四个 `PreferredWordCount` 档位全覆盖              |
+| 069 / 070 / 071 / 072 / 073           | 已在 **test 库**执行；072 收口事实源，073 提供每轮最大 revision 的高效读取视图                                           |
 | **§7.3 的 ST 回归**                   | 改为本地回归脚本 + 重构前后对拍（2026-08-11）：两侧各 **7/7 通过、逐字段 diff 完全一致**，见 §7.3.2 / §7.3.3             |
 
 **尚未清零的部分**：
 
-| 欠项                           | 说明                                                                                                                                           |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 402 `statusMessage` 的真机确认 | 本地只验到后端写进了状态行；HTTP/2 无 reason phrase，每一跳都可能抹掉。**不阻塞 M3b**：写法与重构前逐字相同，合到 `dev` 后点一次即可（§7.3.4） |
-| simulation 链路的端到端确认    | 跑在独立 project 且连生产库，本地无法覆盖。**不阻塞 M3b**：`llm-proxy` 的 simulation 分支一行未动（§7.3.4）                                    |
-| 069 / 070 / 071 在生产库的执行 | 迁移不随部署自动跑（§十.4）。生产尚未执行，因此 `saveChatHistory` 目前靠"`session_id` 非空才写该列"兜着（§7.5）                                |
+| 欠项                                     | 说明                                                                                                                                           |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 402 `statusMessage` 的真机确认           | 本地只验到后端写进了状态行；HTTP/2 无 reason phrase，每一跳都可能抹掉。**不阻塞 M3b**：写法与重构前逐字相同，合到 `dev` 后点一次即可（§7.3.4） |
+| simulation 链路的端到端确认              | 跑在独立 project 且连生产库，本地无法覆盖。**不阻塞 M3b**：`llm-proxy` 的 simulation 分支一行未动（§7.3.4）                                    |
+| 069 / 070 / 071 / 072 / 073 在生产库执行 | 迁移不随部署自动跑（§十.4）。生产尚未执行；M6 前必须按序执行，072 会删除中间模型 `chat_messages`                                               |
 
 > 为什么这道关卡在 M3b 之前：`llm-proxy.ts` 这次改了 415 行、净减 202 行，是批次 1 里唯一碰生产链路的改动。
 > M3b 会直接调 `GenerationService`，等它长出来之后才发现 M3a 有行为偏差，修的时候两边都得动。
@@ -215,201 +215,96 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 
 ### 5.1 设计取舍
 
-| 决策点                 | 结论                                                       | 理由                                                                                                                                                    |
-| ---------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| schema 归属            | `miniapp.*`                                                | 与 `chat_history` / `characters` / `miniapp_user_settings` 同域；`st_*` 三个 schema 是 ST 同步层，替换后要归档                                          |
-| 访问层                 | supabase-js Repository                                     | 与最近的 `MiniappUserSettingsRepository` / `MiniappWalletRepository` / `MiniappCharacterFreeQuotaRepository` 一致。迁移后可选跑 `prisma db pull` 补类型 |
-| system prompt 是否入库 | **不入库**                                                 | 只存 user / assistant。system 段每次生成现场组装，预设更新后历史会话自动跟随，无需回填                                                                  |
-| 开场白                 | turn 0 的普通 assistant 消息，**无特殊标记**（本轮决策 3） | 天然作为上下文一部分；不可重生成由"最后一轮必须含 user 消息"的规则自然保证                                                                              |
-| 会话标题               | `title` 可空                                               | 空 = 前端按首条用户消息截断显示；重命名后写实值。把今天侧边栏靠正则猜"是否自动名"的逻辑换成显式字段                                                     |
+| 决策点                 | 结论                     | 理由                                                                                                                                                    |
+| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| schema 归属            | `miniapp.*`              | 与 `chat_history` / `characters` / `miniapp_user_settings` 同域；`st_*` 三个 schema 是 ST 同步层，替换后要归档                                          |
+| 访问层                 | supabase-js Repository   | 与最近的 `MiniappUserSettingsRepository` / `MiniappWalletRepository` / `MiniappCharacterFreeQuotaRepository` 一致。迁移后可选跑 `prisma db pull` 补类型 |
+| system prompt 是否入库 | **只存每轮 prompt 快照** | `chat_history.history` 保存本次实际发送的完整 messages；下一轮 system 段仍按最新角色卡与平台规则现场组装                                                |
+| 开场白                 | **不单独落行**           | 新会话由 API 返回虚拟 turn 0；首轮生成后只存在于 `chat_history.history`，以后从该快照恢复                                                               |
+| 会话标题               | `title` 可空             | 空 = 前端按首条用户消息截断显示；重命名后写实值。把今天侧边栏靠正则猜"是否自动名"的逻辑换成显式字段                                                     |
 
-### 5.2 迁移：`069_miniapp_chat_sessions.sql`
+### 5.2 最终数据模型（072 收口）
 
-> 执行前确认 069 未被占用（当前最大 068）。
+069 / 070 最初引入了 `chat_messages`。M3b 验收后重新对齐职责：会话只需要两张基础表，
+`chat_messages` 与已有 `chat_history` 重复，因此由 072 回填后删除。
 
-```sql
--- ─── 会话表 ─────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS miniapp.chat_sessions (
-  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id              UUID NOT NULL REFERENCES miniapp.users(id) ON DELETE CASCADE,
-  character_id         UUID NOT NULL REFERENCES miniapp.characters(id) ON DELETE RESTRICT,
-
-  -- NULL = 未重命名，前端按首条用户消息生成显示名
-  title                TEXT,
-
-  -- 侧边栏列表用的冗余字段，避免每次聚合 messages
-  last_message_at      TIMESTAMPTZ,
-  last_message_preview TEXT,
-  message_count        INTEGER NOT NULL DEFAULT 0,
-
-  deleted_at           TIMESTAMPTZ,
-  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_recent
-  ON miniapp.chat_sessions(user_id, last_message_at DESC NULLS LAST)
-  WHERE deleted_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_character_recent
-  ON miniapp.chat_sessions(user_id, character_id, last_message_at DESC NULLS LAST)
-  WHERE deleted_at IS NULL;
-
-GRANT ALL ON miniapp.chat_sessions TO service_role, postgres;
-
-COMMENT ON TABLE miniapp.chat_sessions IS
-  '自研引擎对话会话。用户 × 角色可多会话（决策 9）。运行时真相，替代 ST 文件系统 chats/。';
+```text
+chat_sessions  1 ─── N  chat_history
 ```
 
-```sql
--- ─── 消息表 ─────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS miniapp.chat_messages (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id          UUID NOT NULL REFERENCES miniapp.chat_sessions(id) ON DELETE CASCADE,
+- `chat_sessions`：一行一个用户创建的独立会话，保存用户、角色、标题、摘要、计数与软删除状态。
+- `chat_history`：一行表示某个 session 内一个逻辑 turn 的一个生成 revision；同时是上下文、计费和审计的唯一事实来源。
+- ST 链路继续写 `session_id = NULL` 的调用日志，`turn_index` / `revision` 同样为 NULL，行为不变。
 
-  -- 一问一答共用同一个 turn_index；开场白独占 turn_index=0 且该轮无 user 行
-  turn_index          INTEGER NOT NULL,
-  role                TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+072 只给现有 `chat_history` 补两个字段：
 
-  -- 重生成版本：assistant 行从 0 递增；user 行恒为 0
-  revision            INTEGER NOT NULL DEFAULT 0,
-  -- 每个 (session, turn, role) 恰有一行 is_active = true
-  is_active           BOOLEAN NOT NULL DEFAULT true,
+| 字段         | 业务含义                                                                               |
+| ------------ | -------------------------------------------------------------------------------------- |
+| `turn_index` | session 内由用户主动发起的逻辑轮次，从 1 递增；重生成不增加                            |
+| `revision`   | 同一 `session_id + turn_index` 的生成版本，首次为 0，每次重生成 +1；最大值就是当前版本 |
 
-  content             TEXT NOT NULL DEFAULT '',
+唯一索引是 `(session_id, turn_index, revision)`；两个字段保持 nullable 以兼容 ST 存量和新增日志。
 
-  status              TEXT NOT NULL DEFAULT 'complete'
-                      CHECK (status IN ('streaming', 'complete', 'interrupted', 'failed')),
-  error_code          TEXT,
-  finish_reason       TEXT,
+### 5.3 原子 RPC
 
-  -- ─── 生成配置快照（决策 10）：仅 assistant 行填充 ───────────────────
-  model_id            TEXT,    -- 目录 stable id
-  model_openrouter_id TEXT,    -- 实际路由到的上游模型
-  preset_id           UUID,    -- st_platform.platform_presets.id
-  gen_config          JSONB,   -- UserGenerationConfig 快照
+| RPC                               | 作用                                                                                            |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `start_chat_history_turn`         | 锁 session、清理陈旧 streaming、分配 `max(turn_index)+1`，直接插入 revision 0 的 `chat_history` |
+| `start_chat_history_regeneration` | 锁 session、校验最后一轮、复用 `user_input`，插入 `max(revision)+1` 的 `chat_history`           |
+| `guard_chat_session_idle`         | 存在 120 秒内的 `status='streaming'` 行时抛 `55006`；陈旧行先收口为 `stream_interrupted` 再放行 |
 
-  charge_id           UUID,    -- miniapp.llm_usage_charges.charge_id
-  generation_id       TEXT,    -- OpenRouter generation id
+两个 start RPC 都以 `chat_sessions FOR UPDATE` 为串行点，编号计算与插入在同一事务中完成。
 
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+### 5.4 重生成语义
 
--- 同一轮同一角色只能有一个生效版本
-CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_active_turn
-  ON miniapp.chat_messages(session_id, turn_index, role)
-  WHERE is_active;
-
-CREATE INDEX IF NOT EXISTS idx_chat_messages_session_turn
-  ON miniapp.chat_messages(session_id, turn_index, role)
-  WHERE is_active;
-
-GRANT ALL ON miniapp.chat_messages TO service_role, postgres;
-
-COMMENT ON TABLE miniapp.chat_messages IS
-  '自研引擎对话消息。system 段不入库，每次生成由角色卡+预设+用户配置现场组装。'
-  '重生成保留历史版本（revision 递增），仅 is_active 行参与展示与上下文。';
+```text
+session=S, turn_index=3, revision=0  "第一次生成"
+session=S, turn_index=3, revision=1  "第二次生成"
+session=S, turn_index=3, revision=2  "当前版本"
 ```
 
-```sql
--- ─── chat_history 升维（决策 2）───────────────────────────────────────
-ALTER TABLE miniapp.chat_history
-  ADD COLUMN IF NOT EXISTS session_id UUID
-    REFERENCES miniapp.chat_sessions(id) ON DELETE SET NULL;
+- 当前版本是同一 turn 的 `max(revision)`，不需要 `is_active`。
+- 只允许重生成 `max(turn_index)`。
+- 旧 revision 保留用于审计、质量回溯和计费对账。
 
-CREATE INDEX IF NOT EXISTS idx_chat_history_session
-  ON miniapp.chat_history(session_id, created_at DESC)
-  WHERE session_id IS NOT NULL;
+### 5.5 上下文与开场白
 
-COMMENT ON COLUMN miniapp.chat_history.session_id IS
-  '自研引擎会话 id。存量行（ST 链路产生）为 NULL，切换后新写入必填。';
-```
+每轮先按 turn 取最大 revision，再按 `turn_index` 升序展开 `user_input` / `assistant_reply`。
+开场白不单独落行：新会话由 API 返回虚拟 turn 0；首轮生成时写入完整 `history` prompt 快照，
+后续从首轮快照中恢复。用户首次发送前角色卡若变化，显示当前 `first_mes`；首次发送后以快照为准。
 
-> **不动 `user_character_round` 触发器**：语义保持"用户 × 角色累计轮次"、跨会话累加。`cs_platform.user_metrics` 视图与首页推荐排序（migration 060）都依赖它，改成 per-session 会破坏线上。
+### 5.6 流式落库与异步补全
 
-### 5.3 迁移：`070_chat_session_rpc.sql`
-
-需要原子性的两个操作做成 RPC，避免应用层两步写产生违反唯一索引的中间态：
-
-| RPC                                                              | 作用                                                                                                                                                       |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `miniapp.append_chat_turn(p_session_id, p_user_content)`         | 计算下一个 `turn_index`、插入 user 消息、更新会话冗余字段（`last_message_at` / `last_message_preview` / `message_count`），返回 `turn_index` 与 message id |
-| `miniapp.start_message_regeneration(p_session_id, p_turn_index)` | 校验该轮是最后一轮且含 user 消息 → 把当前 active assistant 置 `is_active=false` → 插入 `revision+1` 的新 assistant 行（`status='streaming'`），全程单事务  |
-
-### 5.4 重生成语义（版本留存、只展示最新）
-
-```
-turn_index=3, role=user      revision=0  is_active=true   "然后呢？"
-turn_index=3, role=assistant revision=0  is_active=false  "（第一次生成）"
-turn_index=3, role=assistant revision=1  is_active=false  "（第二次生成）"
-turn_index=3, role=assistant revision=2  is_active=true   "（当前展示）"
-```
-
-- 展示与上下文一律 `WHERE is_active`，旧版本对用户和模型都不可见
-- **只允许对最后一轮重生成**（本轮决策 5）：`turn_index = max(turn_index)` 且该轮存在 user 消息。后者顺带保证了开场白不可重生成
-- 旧版本保留用于审计与质量回溯
-
-### 5.5 上下文读取
-
-```sql
-SELECT role, content
-  FROM miniapp.chat_messages
- WHERE session_id = $1 AND is_active
- ORDER BY turn_index ASC,
-          CASE role WHEN 'user' THEN 0 ELSE 1 END ASC;
-```
-
-M1 只保证顺序稳定可读，返回**有序全量**：不做截断（MVP 无上下文长度管理，见决策 10），也不切掉尾部本轮 user 消息——后者由 M3b 在调 `build()` 前处理，因为 `EngineInput` 把本轮输入拆成了独立的 `userInput` 字段。重生成路径同样依赖这份原始形态。
-
-### 5.6 流式落库与断线语义
-
-- 生成开始：插入 assistant 行，`status='streaming'`，`content=''`
-- 流结束：一次性 UPDATE 完整 `content` + `status='complete'` + `finish_reason` + `generation_id` + `charge_id`
-- 流中断：写入已累积的 partial content + `status='interrupted'`（对齐 `llm-proxy` 现有的 `stream_interrupted` 语义）
-- **客户端断开不终止上游**：SSE tap 继续跑到 `[DONE]` 并落库，用户切后台/断网回来能看到完整回复。这是相对 ST 的净改进
-- 并发保护：同一 session 若存在 `status='streaming'` 且 `updated_at` 在 120s 内的 assistant 行，新发送请求返回 **409**；超时则先标 `interrupted` 再放行
+- 调上游前同步插入 `chat_history(status='streaming')`，稳定 id、用户输入和轮次立即落库。
+- prompt 组装完成后更新该行的 `history` 完整快照。
+- 流结束同步更新 `assistant_reply` 与终态；客户端断开仍继续 drain 上游并收口。
+- `saveChatHistory()` 在自研链路不再 INSERT 重复行，而是按预建 history id 异步补齐扣费和 OpenRouter 元数据；ST 链路仍按原行为 INSERT。
+- PostgreSQL 当前既是持久化层也是跨请求事实来源；未来 Redis 只承接锁、streaming 状态与热点上下文缓存，不替代数据库唯一约束。
 
 ### 5.7 产出清单
 
-| 文件                                                                        | 内容                                                                                                                                                                                      |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/shared/migrations/069_miniapp_chat_sessions.sql`                  | §5.2 全部 DDL，另加 RLS / 两条 CHECK / 冗余字段触发器（见 §5.9）                                                                                                                          |
-| `packages/shared/migrations/070_chat_session_rpc.sql`                       | §5.3 两个 RPC，另加共用前置 `guard_chat_session_idle` 与四个 SQLSTATE 约定                                                                                                                |
-| `packages/shared/src/api/conversations.ts`（改）                            | 批次 0 起草，M1 落实类型。唯一改动是 `UserGenerationConfig.selected_model_id` 改可空（见 §5.9）                                                                                           |
-| `packages/backend/src/infrastructure/repositories/ChatSessionRepository.ts` | `createSession`（含开场白播种）/ `listSessions` / `getSession` / `requireSession`（两者都带 ownership 校验）/ `rename` / `softDelete` / `toChatSession`                                   |
-| `packages/backend/src/infrastructure/repositories/ChatMessageRepository.ts` | `insertOpeningMessage` / `appendUserTurn` / `startAssistantMessage` / `startRegeneration` / `finalizeAssistantMessage` / `listMessages` / `getContextMessages` / `findStreamingAssistant` |
-| `packages/backend/src/infrastructure/repositories/conversation-errors.ts`   | `ConversationRepositoryError` + RPC 的 SQLSTATE → `ConversationErrorCode` 映射                                                                                                            |
-| `MiniappUserSettingsRepository.ts`（改）                                    | 新增 `getGenerationConfig(userId)` → `UserGenerationConfig`，无设置行时返回与建表默认值一致的形状                                                                                         |
-| `conversations.integration.test.ts`                                         | §5.8 九条 + 生成配置读取通道，共 10 个用例，打真库                                                                                                                                        |
-| `packages/shared/migrations/README.md`（改）                                | 补 064~071 索引与重号说明，修 §3.5 的滞后                                                                                                                                                 |
+| 文件                                                          | 内容                                                                                |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `072_chat_history_conversation_source.sql`                    | 补 turn/revision、回填旧 M3b 数据、建立新 RPC/索引/统计触发器、删除 `chat_messages` |
+| `073_current_chat_history_view.sql`                           | 数据库侧固化每轮最大 revision，分页不把全部旧版本拉回应用层                         |
+| `ConversationHistoryRepository.ts`                            | start/finalize、重生成、最大 revision 查询、上下文恢复、API user/assistant 投影     |
+| `ChatSessionRepository.ts`                                    | 建会话只写 session，开场白作为虚拟消息返回                                          |
+| `generation/types.ts`、`execute.ts`、`chat-history-logger.ts` | 自研链路携带预建 history id，日志器更新原行；ST 链路保持新增日志                    |
+| `conversations.integration.test.ts`                           | 8 条真库测试覆盖建会话、轮次、重生成、上下文、并发、ownership、软删除和配置读取     |
 
-### 5.8 验收（集成测试，M1 不出 HTTP 接口）
+### 5.8 验收
 
-1. 建会话 → 自动落一条 turn 0 的 assistant 开场白（内容 = `characters.first_mes`），`message_count = 1`
-2. 追加 user + assistant 各一条 → `turn_index` 正确递增，会话三个冗余字段同步更新
-3. 对最后一轮重生成 3 次 → 该轮有 4 条 assistant 行（rev 0~3），`is_active` 恰好一条
-4. 对非最后一轮发起重生成 → 被拒
-5. 只有开场白的会话发起重生成 → 被拒（该轮无 user 消息）
-6. 上下文查询顺序稳定：开场白在最前，其后 user/assistant 严格交替
-7. 并发重生成同一轮 → 唯一索引拦截，无双 active
-8. 跨用户访问他人 session → repository 层 ownership 校验拒绝
-9. 软删会话后不出现在列表，`chat_history` 关联行仍可查
+1. 建会话不写 `chat_history`，但 API 返回虚拟开场白，`message_count = 0`。
+2. 用户发言后 `turn_index` 从 1 递增，session 摘要与消息计数同步。
+3. 重生成三次保留 revision 0~3，最大 revision 为当前版本。
+4. 非最后一轮与空会话不可重生成。
+5. 上下文只取每轮最大 revision，并从首轮 prompt 快照恢复开场白。
+6. 并发重生成只放行一条 streaming revision。
+7. ownership、软删除及历史留存语义不变。
+8. ST 与自研计费对拍保持一致。
 
-九条已全部落成 `conversations.integration.test.ts` 并通过（§四「批次 1 验收现状」）。该文件在库不可达、凭证缺失或 069 未执行时自动跳过并在 stderr 说明原因，因此 CI 与本地断网都不会因它变红。
-
-### 5.9 相对方案的偏离
-
-| 偏离                                                                           | 原因                                                                                                                                                                                 |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 会话三个冗余字段改由触发器 `trg_refresh_chat_session_stats` 维护，应用层不写   | `message_count` 是聚合语义，PostgREST 写不出表达式更新，拆成读-改-写会在并发下丢计数。触发器与消息写入同事务，天然一致。预览取「最后一条有正文的生效消息」，避免流式占位行把预览清空 |
-| §5.2 的 `idx_chat_messages_session_turn` 换成 `uq_chat_messages_turn_revision` | 原索引与 `uq_chat_messages_active_turn` 的列和谓词完全相同，是纯冗余。换成覆盖 `revision` 的唯一索引后，版本唯一与审计回溯共用一条                                                   |
-| 070 多出 `guard_chat_session_idle`                                             | §5.6 的并发保护与陈旧流清理是两个 RPC 共用的前置，且必须在拿到会话行锁之后跑。抽成一个函数避免两处各写一遍                                                                           |
-| `start_message_regeneration` 的 `p_turn_index` 可空，并多带四个快照入参        | 可空表示由服务端取最后一轮；传值时校验它确实是最后一轮，用来挡前端拿过期轮次发起的重生成。快照入参是因为新 assistant 行在 RPC 内插入，配置快照不能分两步写                           |
-| 新增 `conversation-errors.ts`                                                  | 070 定了四个 SQLSTATE（`P0002` / `55006` / `55000` / `22023`），映射到 shared 的 `ConversationErrorCode` 需要一处收口，否则每个 repository 方法各判一遍字符串                        |
-| `UserGenerationConfig.selected_model_id` 由 `string` 改为 `string \| null`     | 用户从未选过模型时不能提前替换成默认值，否则「用户选过」与「回退到默认」两种状态无法区分。生效模型由生成侧的 `resolveModel` 统一解析（与 `llm-proxy` 同口径）                        |
-| 两张新表启用 RLS 并 `REVOKE` 掉 anon / authenticated                           | 新链路只走 service_role。方案原文只写了 `GRANT`，没写收权                                                                                                                            |
-| `chat_messages` 追加三条 CHECK                                                 | `turn_index >= 0` / `revision >= 0` / user 行恒为 `revision = 0` 且 `status = 'complete'`。语义在方案里是文字约定，落成约束才挡得住                                                  |
+2026-08-11 实测：后端 **173/173** 测试通过（含真库集成测试），`mvp:regression -- --seed-free-model`
+八个场景全绿。
 
 ---
 
@@ -439,14 +334,14 @@ bot 的最终形状是：
 
 ### 6.2 输入来源映射
 
-| `EngineInput` 字段    | 来源                                                                                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `character.*`         | `miniapp.characters`（Prisma model `Character`）。v1 只消费 `system_prompt`，其余字段照常取出备用                                                       |
-| `history`             | M1 的 `getContextMessages(sessionId)`，由 **M3b** 去掉尾部本轮 user 消息后传入。开场白作为 turn 0 的 assistant 消息包含在内，引擎不得再注入 `first_mes` |
-| `userInput`           | 本轮用户输入原文（重生成时为该轮已存在的 user 消息内容）                                                                                                |
-| `userConfig`          | `MiniappUserSettingsRepository.getGenerationConfig(userId)`                                                                                             |
-| `persona.displayName` | `miniapp_user_settings.display_name`                                                                                                                    |
-| `instructions`        | `miniapp.runtime_config` 新增的三个 key：平台规则模板 / 选项模式块 / 字数档位                                                                           |
+| `EngineInput` 字段    | 来源                                                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `character.*`         | `miniapp.characters`（Prisma model `Character`）。v1 只消费 `system_prompt`，其余字段照常取出备用                          |
+| `history`             | `chat_history` 每轮最大 revision 展开的既往对话；开场白首轮取角色卡、之后取首轮 prompt 快照。本轮 userInput 不混入 history |
+| `userInput`           | 本轮用户输入原文（重生成时为该轮已存在的 user 消息内容）                                                                   |
+| `userConfig`          | `MiniappUserSettingsRepository.getGenerationConfig(userId)`                                                                |
+| `persona.displayName` | `miniapp_user_settings.display_name`                                                                                       |
+| `instructions`        | `miniapp.runtime_config` 新增的三个 key：平台规则模板 / 选项模式块 / 字数档位                                              |
 
 ### 6.3 任务清单
 
@@ -614,7 +509,7 @@ pnpm --filter @miniapp/backend st:regression:diff -- /tmp/before.json /tmp/after
 | §7.2 的 `execute.ts` 拆成 `upstream.ts`（传输原语）+ `execute.ts`（自研链路服务） | 两条链路消费方式不同：ST 要把 tap 挂在 pipe 上透传，自研要自己 drain 后重编码。共用的是原语，不是整条 execute                    |
 | 模型解析对外是两个函数而不是一个                                                  | 让 ST 链路只做原来那三步。合成一个就会在 handler 早期多打一次 `runtime_config`，而计费段稍后本来就要再取一次                     |
 | `saveChatHistory` 只在 `session_id` 非空时才把该列写进 insert                     | migration 069 尚未在生产执行。显式传 `null` 会让 ST 链路每一条 chat_history 落库都失败，条件写入的落库结果同为 NULL，判据不变    |
-| SSE tap 顺带记录 `finish_reason`                                                  | M1 的 `chat_messages.finish_reason` 需要它。只进 tap 返回值，不改转发内容，对 ST 无可观测差异                                    |
+| SSE tap 顺带记录 `finish_reason`                                                  | 自研链路收口 `chat_history.llm_finish_reason` 需要它。只进 tap 返回值，不改转发内容，对 ST 无可观测差异                          |
 | tap 增加 `snapshot()`                                                             | 流被上游打断时 `flush` 不触发，自研链路要靠它补终态，否则预留的免费轮会一直挂着。ST 链路不调用，保持原有（不补终态）行为         |
 | 缓存断点打在**历史最后一条**而不是最后一条消息                                    | 最后一条是「平台规则 + 本轮输入」的包装体，下一轮它会以未包装的原文回到历史里，断点打上去必然 miss；退一位才是两轮逐字相同的前缀 |
 | 免费额度预留失败时 `execute()` 直接抛出，而不是返回 `GenerationResult`            | 与 ST 链路同判据（原 handler 返回 500）。上游侧失败才走 `status` 收口                                                            |
@@ -643,7 +538,7 @@ M3b 也是三个模块第一次在同一个进程里串起来，下面这几处�
 
 - `getContextMessages` 返回有序全量 → M3b 切掉尾部本轮 user → `EngineInput.history` + `userInput`。切片只有约定，实现和测试都在 M3b（`features/conversations/history.ts` + 同名单测；口径改动见 §8.6）
 - `getGenerationConfig` 同时喂给 M2 的 `userConfig` 与 M3a 的 `resolveModelForUser`，两处对 `selected_model_id` 为 null 的处理要一致（两者读同一列，一致性由构造保证，见 §8.6）
-- M3a 的 `GenerationResult` → M1 的 `finalizeAssistantMessage` + 带 `session_id` 的 `chat_history` 落库（`toMessageStatus` 做状态映射，`send_message` 场景逐字段断言）
+- M3a 的 `GenerationResult` → 收口预建的 `chat_history` revision + 异步补齐计费元数据（`send_message` 场景逐字段断言）
 
 ### 8.1 接口清单
 
@@ -651,7 +546,7 @@ M3b 也是三个模块第一次在同一个进程里串起来，下面这几处�
 
 | 方法 / 路径                                 | 职责                                                                                                 |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `POST /api/v1/conversations`                | 建会话（入参 `character_id`），落开场白，返回 session + 首条消息                                     |
+| `POST /api/v1/conversations`                | 建会话（入参 `character_id`），返回 session + 虚拟开场白，不写 `chat_history`                        |
 | `GET /api/v1/conversations`                 | 会话列表（跨角色，支持 `character_id` 过滤 + 分页），直读 DB，替代 `GET /api/users/chats` 的 ST 反代 |
 | `GET /api/v1/conversations/:id`             | 会话详情 + 消息分页                                                                                  |
 | `PATCH /api/v1/conversations/:id`           | 重命名                                                                                               |
@@ -667,16 +562,15 @@ M3b 也是三个模块第一次在同一个进程里串起来，下面这几处�
 ```
 1. requireTelegramAuth → userId
 2. 校验 session 归属 + 无进行中的 streaming（否则 409）
-3. RPC append_chat_turn → 落 user 消息，拿 turn_index
-4. resolveModel(userId) → ResolvedModel（先于组装，避免两处各解析一次）
-5. 读取：会话历史（M1，去掉尾部本轮 user）+ 角色卡 + 用户配置 + runtime_config 平台规则
-6. M2 build() → messages + sampling
-7. M1 startAssistantMessage(status='streaming') + 写入配置快照
-8. M3a execute(request, hooks)：内部先做预检（免费额度 / 余额）
+3. 并行读取模型、角色卡、用户配置、昵称与平台规则
+4. RPC start_chat_history_turn → 原子分配 turn_index，插入 status='streaming' 的 revision 0
+5. 从 chat_history 读取当前 turn 之前各轮的最大 revision；首轮使用角色卡开场白，之后从首轮 history 快照恢复
+6. M2 build() → messages + sampling，并把完整 prompt 更新到本轮 history
+7. M3a execute(request, hooks)：内部先做预检（免费额度 / 余额）
    - 预检不过 → 直接以 status='insufficient_balance' 收口，M3b 返回 HTTP 402 JSON
    - 预检通过 → 转发上游，首个 hook 回调时 M3b 才写 SSE 响应头，先发 start 事件（带 message id / turn_index / revision），再发 delta
-9. SSE 边转发给客户端边累积
-10. 终态：M1 finalizeAssistantMessage + M3a 的 chat_history 落库与实扣（带 session_id）
+8. SSE 边转发给客户端边累积
+9. 终态：同步更新同一条 chat_history 的正文/状态；M3a 异步补齐实扣与 OpenRouter 元数据
 ```
 
 > 顺序的关键约束：**SSE 首字节写出之前不能有任何可能失败的判定**。402 与 409 都要以 HTTP 状态码返回 JSON，一旦响应头发出去就只能降级成 stream 的 error 事件，前端处理成本高一截。所以 M3b 推迟到 execute 的首个回调才写响应头。
@@ -686,7 +580,7 @@ M3b 也是三个模块第一次在同一个进程里串起来，下面这几处�
 用 curl / 集成测试完成全流程，不经过 ST、iframe、bridge：
 
 1. 建会话 → 返回开场白
-2. 发消息 → 收到 SSE 流式 token → 流结束后 `chat_messages` 有完整 assistant 行、`chat_history` 有一行且 `session_id` 非空
+2. 发消息 → 收到 SSE 流式 token → 流结束后 `chat_history` 的该 revision 有完整 prompt、用户输入、assistant 回复且 `session_id` 非空
 3. 扣费金额与 ST 链路同口径（对同一模型档位比对 `llm_usage_charges`）
 4. 免费额度用户前 N 轮不扣费，第 N+1 轮起按 `deduct_markup` 扣
 5. 余额不足返回 402
@@ -709,30 +603,29 @@ pnpm --filter @miniapp/backend mvp:regression -- --seed-free-model
 
 | 场景                   | 覆盖判据 | 主要断言                                                                                                                                          |
 | ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create_session`       | 1、8     | 建会话落 turn 0 开场白且正文等于 `first_mes`；列表 / 详情直读 DB；**全程上游 0 请求**                                                             |
-| `send_message`         | 2        | SSE `start`→`delta`→`done` 顺序与内容；上游收到的 messages 与 M2 组装一致；`chat_messages` 收口；`chat_history` 一行且 `session_id` 非空          |
+| `create_session`       | 1、8     | 建会话返回虚拟 turn 0 开场白但 `chat_history` 为 0 行；列表 / 详情直读 DB；**全程上游 0 请求**                                                    |
+| `send_message`         | 2        | SSE `start`→`delta`→`done`；上游 messages 与 M2 组装一致；同一条 `chat_history` 从 streaming 收口并补齐计费元数据                                 |
 | `billing_parity`       | 3        | 同一模型档位下，自研链路与 ST 链路（自签 token 直打 `llm-proxy`）的 `llm_usage_charges` 逐字段一致                                                |
 | `free_quota`           | 4        | 免费额度最后一轮 charge 状态 `free`、扣 0；下一轮按 `deduct_markup` 计费                                                                          |
 | `insufficient_balance` | 5        | 402 + JSON（`content-type` 不是 `text/event-stream`）、0 个 SSE 事件、**402 前上游 0 请求**、assistant 行收口成 `failed`、充值后重发不被 409 卡住 |
-| `regenerate`           | 6        | 新 revision 生效、旧 revision 保留且 `is_active = false`、详情只出最新、重生成的 prompt 里本轮输入不重复                                          |
-| `client_disconnect`    | 7        | 客户端收到第一片就 abort，后端仍跑完上游：`chat_messages` 正文完整、`chat_history` 落库、照常扣费                                                 |
+| `regenerate`           | 6        | 新 revision 生效、旧 revision 保留、最大 revision 为当前版本、详情只出最新、重生成 prompt 不重复本轮输入                                          |
+| `client_disconnect`    | 7        | 客户端收到第一片就 abort，后端仍跑完上游并收口 `chat_history` 完整正文、照常扣费                                                                  |
 | `conflict_guards`      | —        | `session_busy` / `regenerate_not_allowed` 的 409 与 `session_not_found` 的 404 都在写出 SSE 首字节之前判定                                        |
 
 > **实测：8/8 通过。** 不带 `--seed-free-model` 时 `free_quota` 跳过（test 库五个模型倍率都是 1~4，判据跑不到），其余 7 条全绿。
 
-单测方面 `pnpm --filter @miniapp/backend test` 由 153 增至 **169 用例全绿**，新增 16 条覆盖历史切片、
-SSE 编码与 sink 状态机、错误码 → HTTP 状态映射、状态与角色卡字段映射这四段纯逻辑。
+最新实测 `pnpm --filter @miniapp/backend test` 为 **173/173 全绿**，包含 8 条打真库的最终数据模型集成测试。
 
 `conflict_guards` 的会话忙用**直接往库里插一条 `streaming` 行**来触发，而不是靠慢上游卡时序：
 `guard_chat_session_idle` 的判据就是"存在 120 秒内的 streaming 行"，直接造这个状态比赛跑稳定得多。
 
 #### 8.4.1 本地验不到的部分
 
-| 欠项                     | 为什么                                                                 | 怎么补                                       |
-| ------------------------ | ---------------------------------------------------------------------- | -------------------------------------------- |
-| 真实上游的流式时序       | 假上游按固定 chunk 切包，真实 OpenRouter 的分片节奏、首 token 延迟不同 | M5 接上前端后在 `development` 环境点几轮     |
-| 中间层对 SSE 的缓冲      | 本地直连，Vercel / Railway 的代理是否会攒包看不出来                    | 已按惯例下发 `X-Accel-Buffering: no`，真机验 |
-| 069 / 070 / 071 在生产库 | 迁移不随部署自动跑（§十.4）                                            | M6 切换前执行，见 §8.7                       |
+| 欠项                                 | 为什么                                                                 | 怎么补                                       |
+| ------------------------------------ | ---------------------------------------------------------------------- | -------------------------------------------- |
+| 真实上游的流式时序                   | 假上游按固定 chunk 切包，真实 OpenRouter 的分片节奏、首 token 延迟不同 | M5 接上前端后在 `development` 环境点几轮     |
+| 中间层对 SSE 的缓冲                  | 本地直连，Vercel / Railway 的代理是否会攒包看不出来                    | 已按惯例下发 `X-Accel-Buffering: no`，真机验 |
+| 069 / 070 / 071 / 072 / 073 在生产库 | 迁移不随部署自动跑（§十.4）                                            | M6 切换前按顺序执行，见 §8.7                 |
 
 ### 8.5 产出清单
 
@@ -742,10 +635,11 @@ SSE 编码与 sink 状态机、错误码 → HTTP 状态映射、状态与角色
 | `infrastructure/repositories/CharacterCardRepository.ts`            | 角色卡引擎字段组的读取通道。不过滤 `enabled` / `archived_at`：卡下架也要能把已有会话聊完                                                           |
 | `MiniappUserSettingsRepository.ts`（改）                            | 加 `getDisplayName`，喂 `EngineInput.persona`。与 `getGenerationConfig` 分开是因为 `display_name` 属用户资料，塞进生成配置会污染 `gen_config` 快照 |
 | `features/generation/types.ts` `execute.ts`（改）                   | 加 `onStreamOpen` hook：上游 2xx、即将消费响应体时恰好一次。这是"不会再以 HTTP 状态码失败"的分界点，M3b 据此决定何时写 SSE 响应头（§8.6）          |
-| `features/conversations/history.ts`                                 | `buildEngineHistory`：过滤空正文（含 streaming 占位行）+ 切掉尾部本轮 user                                                                         |
+| `features/conversations/history.ts`                                 | `buildEngineHistory`：开场白置顶 + 过滤既往空回复；本轮 userInput 不混进 history                                                                   |
 | `features/conversations/sse.ts`                                     | `ConversationStreamSink`：把 Fastify `reply` 包成"只开一次头、客户端走了就不再写"的 sink，事件编码是纯函数                                         |
 | `features/conversations/errors.ts`                                  | `ConversationErrorCode` → HTTP 状态码的集中映射 + `sendConversationError`                                                                          |
-| `features/conversations/generate.ts`                                | M1 + M2 + M3a 的编排。`send` 与 `regenerate` 共用一条 `runConversationTurn`，差异只在"这一轮的 assistant 行从哪来"                                 |
+| `features/conversations/generate.ts`                                | M1 + M2 + M3a 编排；`send` / `regenerate` 都先预建一个 chat_history revision，再收口同一行                                                         |
+| `ConversationHistoryRepository.ts`、migration 072                   | chat_history 唯一事实模型、turn/revision RPC、上下文与 API 消息投影；删除 chat_messages                                                            |
 | `routes/conversations.ts`                                           | §8.1 的八条路由，全部 `@frontend-ready`；鉴权走 `requireTelegramAuth`，归属校验落在仓库层                                                          |
 | `app.ts`（改）                                                      | 注册 `conversationRoutes`                                                                                                                          |
 | `history.test.ts` `sse.test.ts` `errors.test.ts` `generate.test.ts` | 16 个用例，覆盖四段纯逻辑                                                                                                                          |
@@ -754,23 +648,22 @@ SSE 编码与 sink 状态机、错误码 → HTTP 状态映射、状态与角色
 
 ### 8.6 相对方案的偏离
 
-| 偏离                                                                                                                            | 原因                                                                                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §8.2 第 8 步的"首个 hook"具体化为**新增的 `onStreamOpen`**，而不是 `onFirstToken`                                               | 等第一个 token 才写响应头，会让客户端白等一整个上游首 token 延迟（实测 1~5 秒）才拿到 `start` 事件，占位气泡挂不上——这恰是本方案要解决的问题。`onStreamOpen` 在预检通过且上游 2xx 之后触发，仍在任何 402 / 502 判定之后，"首字节前不能有可能失败的判定"这条约束不变 |
-| 执行序列改为：**并行读取（角色卡 / 配置 / 昵称 / 平台规则 / 模型）→ append user → 读上下文 → 组装 → 起 assistant 行 → execute** | §8.2 把读取排在 append 之后。但 `append_chat_turn` 与 `startAssistantMessage` 之间的窗口里没有 streaming 行，`guard_chat_session_idle` 拦不住并发；把五个慢读全部提前，这个窗口就只剩一次 insert。判据不变，窗口从"五次往返"缩到"一次"                              |
-| 历史切片按"**空正文全过滤**"实现，而不是"识别并弹出占位行"                                                                      | `send` 与 `regenerate` 两条路径下占位行的位置不同，靠位置识别很脆。空正文本来就不携带信息，部分上游还会拒收空 content，直接全过滤同时解决两件事                                                                                                                     |
-| `PATCH /api/v1/generation-config` **不收** `selected_model_id`                                                                  | 改模型有专门的 `POST /api/v1/models/select`，那条路由带着"切到付费模型前先查余额"的业务闸门。从 PATCH 旁路改会绕过它。GET 仍返回该字段（只读镜像），PATCH 收到就 400 并指向正确路由；shared 契约同步收窄，M5 尚未消费，改动无成本                                   |
-| 402 时把 assistant 占位行收口成 `failed`，而不是删掉                                                                            | 占位行在预检之前就已落库（§8.2 第 7 步先于第 8 步）。留着 `streaming` 会让 `guard_chat_session_idle` 把会话锁死 120 秒——充值后立刻重发会吃 409。收口成 `failed` 后前端能渲染错误态，用户充值后可直接重生成这一轮                                                    |
-| 跳过 §8.2 第 2 步的"无进行中 streaming"预查询                                                                                   | `append_chat_turn` 的 RPC 里已有同一个 guard。前置查询既多一次往返，又有 TOCTOU 窗口，不如直接把 RPC 抛的 SQLSTATE 映射成 409                                                                                                                                       |
-| `getGenerationConfig` 与 `resolveModelForUser` 各读一次 `selected_model_id`                                                     | 接缝要的是"两处处理一致"，而两者读的是同一列、null 处理都收在 `resolveEffectiveSelectedModelId` 里，一致性由构造保证。合并成一次读要么破坏 M3a 的接口，要么让 `getGenerationConfig` 在 M3b 变成死代码                                                               |
+| 偏离                                                                              | 原因                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §8.2 第 8 步的"首个 hook"具体化为**新增的 `onStreamOpen`**，而不是 `onFirstToken` | 等第一个 token 才写响应头，会让客户端白等一整个上游首 token 延迟（实测 1~5 秒）才拿到 `start` 事件，占位气泡挂不上——这恰是本方案要解决的问题。`onStreamOpen` 在预检通过且上游 2xx 之后触发，仍在任何 402 / 502 判定之后，"首字节前不能有可能失败的判定"这条约束不变 |
+| M3b 验收后用 `chat_history` 合并原 `chat_messages` 职责                           | 两者都在持久化同一轮正文与生成状态。072 让 chat_history 增 turn/revision，并以最大 revision 表示当前版本，减少重复数据源                                                                                                                                            |
+| 开场白改为虚拟 turn 0，首轮后只存在于 prompt 快照                                 | 只有用户主动发起的对话进入 chat_history；未发言的 session 不制造调用记录                                                                                                                                                                                            |
+| `PATCH /api/v1/generation-config` **不收** `selected_model_id`                    | 改模型有专门的 `POST /api/v1/models/select`，那条路由带着"切到付费模型前先查余额"的业务闸门。从 PATCH 旁路改会绕过它。GET 仍返回该字段（只读镜像），PATCH 收到就 400 并指向正确路由；shared 契约同步收窄，M5 尚未消费，改动无成本                                   |
+| 402 时把预建 history revision 收口成 `insufficient_balance`                       | 用户主动发起的数据仍需留痕；收口后不会被 streaming guard 锁 120 秒，充值后可立即继续发送或重生成                                                                                                                                                                    |
+| 跳过 §8.2 第 2 步的"无进行中 streaming"预查询                                     | 两个 start RPC 在 session 行锁内调用同一个 guard。前置查询既多一次往返又有 TOCTOU，不如直接映射 RPC 的 SQLSTATE                                                                                                                                                     |
+| `getGenerationConfig` 与 `resolveModelForUser` 各读一次 `selected_model_id`       | 接缝要的是"两处处理一致"，而两者读的是同一列、null 处理都收在 `resolveEffectiveSelectedModelId` 里，一致性由构造保证。合并成一次读要么破坏 M3a 的接口，要么让 `getGenerationConfig` 在 M3b 变成死代码                                                               |
 
 ### 8.7 上线前置（M6 之前必须清掉）
 
-| 事项                                 | 说明                                                                                                                                                        |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 069 / 070 / 071 在**生产库**执行     | 目前只在 test 库跑过。生产未执行时这八条路由全部会 500——表和 RPC 都不存在。执行方式见 §十.4                                                                 |
-| `chat_history.session_id` 的条件写入 | §7.5 那条"`session_id` 非空才写该列"的兜底，是为生产未执行 069 准备的。生产执行后可以去掉，但没有必要赶在 M6 前做                                           |
-| 并发发消息的窄窗口                   | append user 与起 assistant 行之间仍有一次 insert 的窗口，两个并发请求可能都过 guard。单用户场景下不构成问题，且不会把会话卡死（两行都会各自收口），MVP 接受 |
+| 事项                                         | 说明                                                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 069 / 070 / 071 / 072 / 073 在**生产库**执行 | 目前只在 test 库跑过。必须按编号执行；072 回填并删除 `chat_messages`，073 建 current revision 视图。执行方式见 §十.4 |
+| `chat_history.session_id` 的条件写入         | ST 链路不传 history id，继续 INSERT `session_id = NULL` 的日志；自研链路按预建 id UPDATE，不再产生重复行             |
 
 ---
 
@@ -794,6 +687,6 @@ SSE 编码与 sink 状态机、错误码 → HTTP 状态映射、状态与角色
 2. **`@frontend-ready` 注释**：每条新路由注册上方必须有，半成品写 `false — <带业务含义的原因>`（硬规则 1、2）
 3. **禁止 `any`**，TypeScript 严格模式
 4. **迁移执行**：不会随部署自动跑。手动触发 GitHub Actions 的 `Database Migration` workflow，逐个指定 `packages/shared/migrations/*.sql`；生产需在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`
-5. **迁移编号**：批次 1 落盘时最大为 068，实际占用 **069 / 070 / 071**，均已补进 README 索引。历史上有重号，后续落盘前再确认一次
+5. **迁移编号**：批次 1 占用 069 / 070 / 071；最终会话模型调整占用 **072 / 073**，均已补进 README 索引。历史上有重号，后续落盘前再确认一次
 6. PR 描述里附 §7.3 的 ST 链路回归结果（跑 `st:regression`，改动碰到 `llm-proxy` / `features/generation` 时还要附 §7.3.3 的对拍 diff）。`promptCaching` 在 ST 链路必须传 `false`，否则破坏"行为零变化"判据
 7. ~~三个批次 1 模块各自独立 PR~~ 实际合成一个 PR 提交，提交按模块分开，理由与代价见 §四批次 1

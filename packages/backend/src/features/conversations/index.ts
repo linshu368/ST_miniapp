@@ -4,7 +4,7 @@
  * 自研对话链路（M3b）对 backend 内部的出口。routes/conversations.ts 只消费这里的东西。
  */
 
-export { buildEngineHistory, type EngineHistoryResult } from './history.js';
+export { buildEngineHistory } from './history.js';
 
 export { createReplyStreamSink, encodeStreamEvent, type ConversationStreamSink } from './sse.js';
 

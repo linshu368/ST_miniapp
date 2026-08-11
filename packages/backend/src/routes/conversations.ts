@@ -34,10 +34,7 @@ import {
   ChatSessionRepository,
   toChatSession,
 } from '../infrastructure/repositories/ChatSessionRepository.js';
-import {
-  ChatMessageRepository,
-  toChatMessage,
-} from '../infrastructure/repositories/ChatMessageRepository.js';
+import { ConversationHistoryRepository } from '../infrastructure/repositories/ConversationHistoryRepository.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import {
   createReplyStreamSink,
@@ -65,7 +62,7 @@ function parsePositiveInt(value: unknown): number | undefined {
 
 export default async function conversationRoutes(app: FastifyInstance) {
   const sessions = new ChatSessionRepository();
-  const messages = new ChatMessageRepository();
+  const history = new ConversationHistoryRepository();
   const settings = new MiniappUserSettingsRepository();
 
   // ── 会话 CRUD ─────────────────────────────────────────────────────────────
@@ -99,7 +96,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         return reply.send(
           ok<CreateConversationData>({
             session: toChatSession(created.session),
-            messages: created.messages.map(toChatMessage),
+            messages: created.messages,
           })
         );
       } catch (error) {
@@ -161,7 +158,8 @@ export default async function conversationRoutes(app: FastifyInstance) {
       const dbUser = await getOrCreateDbUser(request.user);
       try {
         const session = await sessions.requireSession(sessionId, dbUser.id);
-        const page = await messages.listMessages(sessionId, {
+        const openingMessage = await sessions.getCharacterFirstMes(session.character_id);
+        const page = await history.listMessages(sessionId, openingMessage, {
           limit: parsePositiveInt(query.limit),
           beforeTurnIndex: parsePositiveInt(query.before_turn_index),
         });
@@ -169,7 +167,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         return reply.send(
           ok<GetConversationData>({
             session: toChatSession(session),
-            messages: page.messages.map(toChatMessage),
+            messages: page.messages,
             has_more: page.hasMore,
           })
         );

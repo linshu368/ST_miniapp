@@ -154,6 +154,8 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 069_miniapp_chat_sessions.sql # 自研引擎会话表 / 消息表 + chat_history 补 session_id（M1）
 070_chat_session_rpc.sql # 自研引擎的发消息与重生成原子 RPC（M1）
 071_engine_platform_instructions.sql # 自研引擎平台规则三件套落 miniapp.runtime_config（M2）
+072_chat_history_conversation_source.sql # chat_history 增 turn/revision，替代并删除 chat_messages
+073_current_chat_history_view.sql # 每个 session turn 的 max revision 读取视图
 ```
 
 > 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。

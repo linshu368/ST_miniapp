@@ -44,6 +44,11 @@ export interface GenerationRequest {
   userInput: string;
   /** 自研引擎传入；ST 链路传 null，落库为 NULL */
   sessionId?: string | null;
+  /**
+   * 自研链路在调用上游前已创建的 chat_history 行。
+   * 传入时生成出口更新该行的计费与 LLM 元数据；ST 链路不传，仍按原行为新增日志。
+   */
+  historyId?: string | null;
   presetId?: string | null;
   stream: boolean;
   /**

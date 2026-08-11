@@ -65,7 +65,7 @@ export type SseTap = Transform & {
 /**
  * 边透传边解析 SSE 的 Transform。chunk 原样向下游输出，不改一个字节。
  *
- * finish_reason 是原 handler 未捕获的字段，这里顺带记下来供自研链路落 chat_messages；
+ * finish_reason 是原 handler 未捕获的字段，这里顺带记下来供自研链路收口 chat_history；
  * 它只进 tap 的返回值，不影响转发内容，对 ST 链路无任何可观测差异。
  */
 export function createSseTap(options: {

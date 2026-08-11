@@ -37,14 +37,14 @@ import {
   getSessionRow,
   getWalletCredits,
   listChatHistory,
-  listMessageRows,
+  listConversationHistoryRows,
   listUsageCharges,
   resetConversationArtifacts,
   setFreeQuotaUsedRounds,
   setSelectedModel,
   setWalletBalance,
   waitForChatHistory,
-  waitForSettledMessage,
+  waitForSettledHistory,
   type CatalogModelPick,
   type ChatHistoryRow,
   type ConversationFixtures,
@@ -197,7 +197,7 @@ async function sendMessage(
 
 async function createSessionScenario(context: MvpScenarioContext): Promise<ScenarioResult> {
   const name = 'create_session';
-  const description = '建会话落开场白；会话列表与详情直读 DB，全程零上游请求';
+  const description = '建会话返回虚拟开场白；会话列表与详情直读 DB，全程零上游请求';
 
   await resetState(context, { balance: FUNDED_BALANCE });
   const created = await createSession(context);
@@ -225,7 +225,7 @@ async function createSessionScenario(context: MvpScenarioContext): Promise<Scena
   );
   checker.expect('开场白正文取自角色卡 first_mes', opening?.content, OPENING_MESSAGE);
   checker.expect('开场白状态', opening?.status, 'complete');
-  checker.expect('会话 message_count', created.session.message_count, 1);
+  checker.expect('未发生用户对话时 message_count 为 0', created.session.message_count, 0);
   checker.expect('会话未重命名时 title 为 null', created.session.title, null);
   checker.expect('列表 total', list.json?.data.total, 1);
   checker.expect('列表命中新建的会话', list.json?.data.sessions[0]?.id, created.session.id);
@@ -251,8 +251,7 @@ async function createSessionScenario(context: MvpScenarioContext): Promise<Scena
 
 async function sendMessageScenario(context: MvpScenarioContext): Promise<ScenarioResult> {
   const name = 'send_message';
-  const description =
-    '发消息：SSE start/delta/done、chat_messages 收口、chat_history 带 session_id';
+  const description = '发消息：SSE start/delta/done、chat_history 作为唯一轮次记录并收口';
   const model = context.paidModel;
   if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型（markup > 0）');
 
@@ -267,7 +266,7 @@ async function sendMessageScenario(context: MvpScenarioContext): Promise<Scenari
   const start = response.events.find((event) => event.type === 'start');
   const done = response.events.find((event) => event.type === 'done');
   const assistantMessageId = start?.type === 'start' ? start.assistant_message_id : '';
-  const assistantRow = assistantMessageId ? await waitForSettledMessage(assistantMessageId) : null;
+  const assistantRow = assistantMessageId ? await waitForSettledHistory(assistantMessageId) : null;
   const history = await waitForChatHistory(context.fixtures.userId, 1);
   const charges = await listUsageCharges(context.fixtures.userId);
   const balanceAfter = await getWalletCredits(context.fixtures.userId);
@@ -307,12 +306,12 @@ async function sendMessageScenario(context: MvpScenarioContext): Promise<Scenari
     model.openRouterModelId
   );
 
-  checker.expect('assistant 行收口状态', assistantRow?.status, 'complete');
-  checker.expect('assistant 行正文', assistantRow?.content, MOCK_REPLY_TEXT);
-  checker.expect('assistant 行模型快照', assistantRow?.model_id, model.modelId);
-  checker.expectTrue('assistant 行写入生成配置快照', assistantRow?.gen_config != null);
-  checker.expectTrue('assistant 行写入 charge_id', assistantRow?.charge_id != null);
-  checker.expect('会话 message_count（开场白 + 一问一答）', sessionRow?.message_count, 3);
+  checker.expect('轮次行收口状态', assistantRow?.status, 'success');
+  checker.expect('轮次行正文', assistantRow?.assistant_reply, MOCK_REPLY_TEXT);
+  checker.expect('轮次行模型', assistantRow?.model, model.openRouterModelId);
+  checker.expectTrue('轮次行保存完整 prompt 快照', (assistantRow?.history.length ?? 0) > 0);
+  checker.expectTrue('轮次行写入 charge_id', assistantRow?.llm_charge_id != null);
+  checker.expect('会话 message_count（用户 + assistant）', sessionRow?.message_count, 2);
 
   checker.expect('chat_history 条数', history.length, 1);
   checker.expect('chat_history.status', history[0]?.status, 'success');
@@ -482,8 +481,8 @@ async function insufficientBalanceScenario(context: MvpScenarioContext): Promise
   const body = response.json as { error?: { type?: string; credits_required?: number } } | null;
   // 必须在下面那次「充值后重发」之前定格：那一轮是会真打上游的，晚读就把它算进来了。
   const upstreamCountAt402 = context.upstream.requests.length;
-  const rows = await listMessageRows(session.session.id);
-  const assistantRow = rows.find((row) => row.role === 'assistant' && row.turn_index === 1);
+  const rows = await listConversationHistoryRows(session.session.id);
+  const assistantRow = rows.find((row) => row.turn_index === 1);
   const history = await listChatHistory(context.fixtures.userId);
   const charges = await listUsageCharges(context.fixtures.userId);
 
@@ -500,9 +499,8 @@ async function insufficientBalanceScenario(context: MvpScenarioContext): Promise
   checker.expect('error.type', body?.error?.type, 'insufficient_balance');
   checker.expect('没有下发任何 SSE 事件', response.events.length, 0);
   checker.expect('402 前不碰上游', upstreamCountAt402, 0);
-  checker.expect('assistant 行收口成 failed', assistantRow?.status, 'failed');
-  checker.expect('assistant 行 error_code', assistantRow?.error_code, 'insufficient_balance');
-  checker.expect('chat_history 条数', history.length, 0);
+  checker.expect('轮次行收口成 insufficient_balance', assistantRow?.status, 'insufficient_balance');
+  checker.expect('chat_history 条数', history.length, 1);
   checker.expect('llm_usage_charges 条数', charges.length, 0);
   checker.expect('充值后重发不被 409 卡住', retry.status, 200);
 
@@ -516,7 +514,7 @@ async function insufficientBalanceScenario(context: MvpScenarioContext): Promise
       error_type: body?.error?.type ?? null,
       upstream_request_count_at_402: upstreamCountAt402,
       assistant_status: assistantRow?.status ?? null,
-      assistant_error_code: assistantRow?.error_code ?? null,
+      assistant_error_code: assistantRow?.status ?? null,
       retry_status: retry.status,
     },
   };
@@ -549,11 +547,11 @@ async function regenerateScenario(context: MvpScenarioContext): Promise<Scenario
   });
   const start = response.events.find((event) => event.type === 'start');
   const assistantMessageId = start?.type === 'start' ? start.assistant_message_id : '';
-  if (assistantMessageId) await waitForSettledMessage(assistantMessageId);
+  if (assistantMessageId) await waitForSettledHistory(assistantMessageId);
 
-  const rows = await listMessageRows(session.session.id);
-  const turnRows = rows.filter((row) => row.turn_index === 1 && row.role === 'assistant');
-  const activeRows = turnRows.filter((row) => row.is_active);
+  const rows = await listConversationHistoryRows(session.session.id);
+  const turnRows = rows.filter((row) => row.turn_index === 1);
+  const currentRevision = Math.max(...turnRows.map((row) => row.revision));
   const detail = await callApi<{ data: GetConversationData }>({
     baseUrl: context.baseUrl,
     initData: initDataOf(context),
@@ -576,9 +574,8 @@ async function regenerateScenario(context: MvpScenarioContext): Promise<Scenario
     null
   );
   checker.expect('该轮 assistant 版本数', turnRows.length, 2);
-  checker.expect('生效版本恰好一条', activeRows.length, 1);
-  checker.expect('生效版本是 revision 1', activeRows[0]?.revision, 1);
-  checker.expect('旧版本留档', turnRows.filter((row) => !row.is_active)[0]?.revision, 0);
+  checker.expect('当前版本是最大 revision 1', currentRevision, 1);
+  checker.expect('旧版本留档', turnRows[0]?.revision, 0);
   checker.expect('详情接口只下发生效版本', detail.json?.data.messages.length, 3);
   checker.expect('本轮输入未在历史里重复出现', rawUserInputInHistory, 0);
 
@@ -591,7 +588,7 @@ async function regenerateScenario(context: MvpScenarioContext): Promise<Scenario
       http_status: response.status,
       turn_versions: turnRows.map((row) => ({
         revision: row.revision,
-        is_active: row.is_active,
+        is_active: row.revision === currentRevision,
         status: row.status,
       })),
       detail_messages: (detail.json?.data.messages ?? []).map(normalizeMessage),
@@ -616,9 +613,9 @@ async function clientDisconnectScenario(context: MvpScenarioContext): Promise<Sc
     abortAfterDeltas: 1,
   });
 
-  const rows = await listMessageRows(session.session.id);
-  const assistantId = rows.find((row) => row.role === 'assistant' && row.turn_index === 1)?.id;
-  const assistantRow = assistantId ? await waitForSettledMessage(assistantId) : null;
+  const rows = await listConversationHistoryRows(session.session.id);
+  const assistantId = rows.find((row) => row.turn_index === 1)?.id;
+  const assistantRow = assistantId ? await waitForSettledHistory(assistantId) : null;
   const history = await waitForChatHistory(context.fixtures.userId, 1);
 
   const checker = new Checker();
@@ -627,8 +624,8 @@ async function clientDisconnectScenario(context: MvpScenarioContext): Promise<Sc
     '客户端只收到了部分正文',
     response.streamedContent.length < MOCK_REPLY_TEXT.length
   );
-  checker.expect('后端仍把完整正文落库', assistantRow?.content, MOCK_REPLY_TEXT);
-  checker.expect('后端仍按正常收口', assistantRow?.status, 'complete');
+  checker.expect('后端仍把完整正文落库', assistantRow?.assistant_reply, MOCK_REPLY_TEXT);
+  checker.expect('后端仍按正常收口', assistantRow?.status, 'success');
   checker.expect('chat_history 仍有一条 success', history[0]?.status, 'success');
   checker.expect('chat_history 正文完整', history[0]?.assistant_reply, MOCK_REPLY_TEXT);
 
@@ -639,7 +636,7 @@ async function clientDisconnectScenario(context: MvpScenarioContext): Promise<Sc
     checks: checker.checks,
     observed: {
       client_received_chars: response.streamedContent.length,
-      persisted_chars: assistantRow?.content.length ?? null,
+      persisted_chars: assistantRow?.assistant_reply?.length ?? null,
       assistant_status: assistantRow?.status ?? null,
       chat_history: history.map(normalizeHistory),
     },
@@ -668,11 +665,16 @@ async function conflictGuardsScenario(context: MvpScenarioContext): Promise<Scen
 
   // 直接注入一条未收口的 streaming 行，比抢一个真实生成窗口稳定得多
   const db = getSupabaseClient().schema('miniapp');
-  const { error: insertError } = await db.from('chat_messages').insert({
+  const { error: insertError } = await db.from('chat_history').insert({
+    user_id: context.fixtures.userId,
+    model: 'mvp-regression/busy',
+    user_input: '未收口测试输入',
+    assistant_reply: null,
+    history: [],
+    character_id: context.fixtures.characterId,
     session_id: session.session.id,
     turn_index: 1,
-    role: 'assistant',
-    content: '',
+    revision: 0,
     status: 'streaming',
   });
   if (insertError) throw new Error(`注入 streaming 行失败：${insertError.message}`);

@@ -5,9 +5,9 @@
 //
 // 所有读写都带 user_id 过滤：ownership 校验落在仓库层，M3b 不需要先查一次再判归属。
 
-import type { ChatSession } from '@miniapp/shared';
+import type { ChatMessage, ChatSession } from '@miniapp/shared';
 import { getSupabaseClient } from '../../lib/supabase.js';
-import { ChatMessageRepository, clampLimit, type ChatMessageRow } from './ChatMessageRepository.js';
+import { clampLimit, toOpeningMessage } from './ConversationHistoryRepository.js';
 import { ConversationRepositoryError } from './conversation-errors.js';
 
 const MAX_TITLE_LENGTH = 60;
@@ -33,17 +33,15 @@ export interface ListSessionsOptions {
 
 export class ChatSessionRepository {
   private readonly db = getSupabaseClient().schema('miniapp');
-  private readonly messages = new ChatMessageRepository();
 
   /**
-   * 建会话并播种开场白：开场白就是 turn 0 的一条普通 assistant 消息（本轮决策 3），
-   * 天然作为上下文的一部分参与 prompt 组装，引擎不得再注入 first_mes。
-   * 角色卡 first_mes 为空时不播种，会话从 0 条消息起步。
+   * 建会话不写 chat_history：只有用户主动发起的对话才进入历史表。
+   * 开场白在 API 中仍作为虚拟 turn 0 返回，首轮生成时保存进 chat_history.history。
    */
   async createSession(
     userId: string,
     characterId: string
-  ): Promise<{ session: ChatSessionRow; messages: ChatMessageRow[] }> {
+  ): Promise<{ session: ChatSessionRow; messages: ChatMessage[] }> {
     const firstMes = await this.getCharacterFirstMes(characterId);
 
     const { data, error } = await this.db
@@ -53,24 +51,11 @@ export class ChatSessionRepository {
       .single();
 
     if (error) throw new Error(`创建会话失败：${error.message}`);
-    const created = data as ChatSessionRow;
-
-    if (!firstMes) {
-      return { session: created, messages: [] };
-    }
-
-    let opening: ChatMessageRow;
-    try {
-      opening = await this.messages.insertOpeningMessage(created.id, firstMes);
-    } catch (seedError) {
-      // 播种失败就把空会话回收掉，避免用户侧留下一条永远没有开场白的会话。
-      await this.db.from('chat_sessions').delete().eq('id', created.id);
-      throw seedError;
-    }
-
-    // 会话的三个冗余字段由 069 的触发器在插入开场白时刷新，这里重读拿到刷新后的值。
-    const session = (await this.getSession(created.id, userId)) ?? created;
-    return { session, messages: [opening] };
+    const session = data as ChatSessionRow;
+    return {
+      session,
+      messages: firstMes ? [toOpeningMessage(session.id, firstMes, session.created_at)] : [],
+    };
   }
 
   /** 侧边栏会话列表：直读 DB，替代 ST 的 recent 反代（总方案决策 11） */
@@ -159,7 +144,7 @@ export class ChatSessionRepository {
     }
   }
 
-  private async getCharacterFirstMes(characterId: string): Promise<string> {
+  async getCharacterFirstMes(characterId: string): Promise<string> {
     const { data, error } = await this.db
       .from('characters')
       .select('id, first_mes')

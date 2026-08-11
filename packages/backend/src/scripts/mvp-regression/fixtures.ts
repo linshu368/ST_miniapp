@@ -2,7 +2,7 @@
  * backend / scripts / mvp-regression / fixtures.ts
  *
  * M3b 回归的测试数据。钱包 / 免费额度 / chat_history / 扣费明细这些与 ST 回归共用的读写
- * 直接从 st-regression/fixtures.ts 引，只在这里补会话与消息两张新表的部分。
+ * 直接从 st-regression/fixtures.ts 引，只在这里补会话与对话轮次的部分。
  *
  * 依赖方向是单向的：st-regression 不引本文件——它要能在批次 1 之前的 commit 上原样跑，
  * 见 st-regression/run.ts 头部的对拍步骤。
@@ -12,7 +12,6 @@
  */
 
 import { getSupabaseClient } from '../../lib/supabase.js';
-import type { ChatMessageRow } from '../../infrastructure/repositories/ChatMessageRepository.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 
 export {
@@ -26,10 +25,13 @@ export {
   setFreeQuotaUsedRounds,
   setSelectedModel,
   setWalletBalance,
-  waitForChatHistory,
   type CatalogModelPick,
   type ChatHistoryRow,
   type UsageChargeRow,
+} from '../st-regression/fixtures.js';
+import {
+  listChatHistory as listSharedChatHistory,
+  type ChatHistoryRow,
 } from '../st-regression/fixtures.js';
 
 const HANDLE_PREFIX = 'mvp_regr_';
@@ -106,39 +108,83 @@ export async function getSessionRow(sessionId: string): Promise<ChatSessionRow |
   return (data as ChatSessionRow | null) ?? null;
 }
 
-/** 含非生效版本：重生成那条判据要确认旧版本确实留了档 */
-export async function listMessageRows(sessionId: string): Promise<ChatMessageRow[]> {
+export interface ConversationHistoryTestRow {
+  id: string;
+  session_id: string;
+  turn_index: number;
+  revision: number;
+  model: string;
+  user_input: string;
+  assistant_reply: string | null;
+  history: unknown[];
+  status: string;
+  llm_finish_reason: string | null;
+  llm_generation_id: string | null;
+  llm_charge_id: string | null;
+  created_at: string;
+}
+
+/** 含全部 revision：重生成场景要确认旧版本确实留档 */
+export async function listConversationHistoryRows(
+  sessionId: string
+): Promise<ConversationHistoryTestRow[]> {
   const { data, error } = await db()
-    .from('chat_messages')
+    .from('chat_history')
     .select('*')
     .eq('session_id', sessionId)
     .order('turn_index', { ascending: true })
-    .order('created_at', { ascending: true });
-  if (error) throw new Error(`查询 chat_messages 失败：${error.message}`);
-  return (data ?? []) as ChatMessageRow[];
+    .order('revision', { ascending: true });
+  if (error) throw new Error(`查询会话 chat_history 失败：${error.message}`);
+  return (data ?? []) as ConversationHistoryTestRow[];
 }
 
 /**
  * 落库是在 SSE 收流之后才发生的，HTTP 响应结束时那条 UPDATE 往往还在飞。
  * 轮询到该消息离开 streaming 为止，而不是 sleep 一个拍脑袋的固定值。
  */
-export async function waitForSettledMessage(
-  messageId: string,
+export async function waitForSettledHistory(
+  historyId: string,
   timeoutMs = 20_000
-): Promise<ChatMessageRow> {
+): Promise<ConversationHistoryTestRow> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const { data, error } = await db()
-      .from('chat_messages')
+      .from('chat_history')
       .select('*')
-      .eq('id', messageId)
+      .eq('id', historyId)
       .maybeSingle();
     if (error) throw new Error(`查询消息失败：${error.message}`);
 
-    const row = data as ChatMessageRow | null;
+    const row = data as ConversationHistoryTestRow | null;
     if (row && row.status !== 'streaming') return row;
     if (Date.now() >= deadline) {
-      throw new Error(`等待消息收口超时：${messageId} 仍为 ${row?.status ?? 'missing'}`);
+      throw new Error(`等待对话轮次收口超时：${historyId} 仍为 ${row?.status ?? 'missing'}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
+/**
+ * 自研链路会在调用上游前先建 chat_history 行，不能再以「条数出现」作为异步计费完成判据。
+ * llm_model_markup 由 saveChatHistory 最后补入，免费与付费模型都会有值，用它作为完成水位。
+ */
+export async function waitForChatHistory(
+  userId: string,
+  expectedCount: number,
+  timeoutMs = 20_000
+): Promise<ChatHistoryRow[]> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rows = await listSharedChatHistory(userId);
+    const expectedRows = rows.slice(0, expectedCount);
+    if (
+      rows.length >= expectedCount &&
+      expectedRows.every((row) => row.status !== 'streaming' && row.llm_model_markup !== null)
+    ) {
+      return rows;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`等待 chat_history 异步元数据超时：期望 ${expectedCount} 条已补全记录`);
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
@@ -149,7 +195,7 @@ export async function resetConversationArtifacts(userId: string): Promise<void> 
   await db().from('chat_history').delete().eq('user_id', userId);
   await db().from('llm_usage_charges').delete().eq('user_id', userId);
   await db().from('character_free_chat_quota_decisions').delete().eq('user_id', userId);
-  // chat_messages 由 chat_sessions 的 ON DELETE CASCADE 带走
+  // chat_history.session_id 是 ON DELETE SET NULL，所以先删历史再删 session
   await db().from('chat_sessions').delete().eq('user_id', userId);
 }
 

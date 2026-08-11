@@ -57,8 +57,8 @@ export interface EngineInput {
   character: EngineCharacter;
   /**
    * 会话历史，按 turn 升序、同轮 user 在前。
-   * 开场白已作为 turn 0 的 assistant 消息包含在内（本轮决策 3），因此引擎**不得**再注入
-   * character.first_mes——旧 bot 因为开场白不入库才需要动态注入，这里的前提相反。
+   * 开场白已由 M3b 作为虚拟 turn 0 包含在内：首轮取角色卡，之后取首轮 prompt 快照。
+   * 因此引擎**不得**再注入 character.first_mes，否则每轮都会重复一条。
    * 本轮用户输入不在其中，见 userInput。
    */
   history: EngineHistoryMessage[];

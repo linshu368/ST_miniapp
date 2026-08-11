@@ -13,10 +13,10 @@ export type ChatMessageStatus = 'streaming' | 'complete' | 'interrupted' | 'fail
 export interface ChatMessage {
   id: string;
   session_id: string;
-  /** 一问一答共用同一个 turn_index；开场白独占 turn_index = 0 且该轮没有 user 消息 */
+  /** 用户主动发起的逻辑轮次从 1 递增；开场白是 API 虚拟消息，使用 turn_index = 0 */
   turn_index: number;
   role: ChatMessageRole;
-  /** 重生成版本号：assistant 从 0 递增，user 恒为 0。接口只下发当前生效版本，旧版本仅留档 */
+  /** 重生成版本号：一轮的 user/assistant 投影共用 revision，最大 revision 是当前版本 */
   revision: number;
   content: string;
   status: ChatMessageStatus;
@@ -79,7 +79,7 @@ export interface CreateConversationRequest {
 
 export interface CreateConversationData {
   session: ChatSession;
-  /** 建会话时落库的开场白，即 turn 0 的 assistant 消息（本轮决策 3，无专用标记字段） */
+  /** 开场白是未单独落库的虚拟 turn 0；首轮生成后保存在 chat_history.history 快照中 */
   messages: ChatMessage[];
 }
 

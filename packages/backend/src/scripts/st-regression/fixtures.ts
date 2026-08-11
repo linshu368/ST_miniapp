@@ -101,7 +101,20 @@ export async function seedFreeModelIntoCatalog(): Promise<CatalogOverride> {
     deductMarkup: 2,
   };
 
-  const patched = JSON.parse(JSON.stringify(original)) as typeof original;
+  // 上次进程被强杀时 restore 可能没执行。先移除同名测试模型再注入，避免重复 id 让整份目录
+  // 校验失败并静默回退到内置默认模型。
+  const cleanOriginal = JSON.parse(JSON.stringify(original)) as {
+    tiers: Array<{
+      models: Array<Record<string, unknown> & { id?: unknown; openrouter_model_id?: unknown }>;
+    }>;
+  };
+  for (const tier of cleanOriginal.tiers) {
+    tier.models = tier.models.filter(
+      (model) =>
+        model.id !== freeModel.modelId && model.openrouter_model_id !== freeModel.openRouterModelId
+    );
+  }
+  const patched = JSON.parse(JSON.stringify(cleanOriginal)) as typeof cleanOriginal;
   const firstTier = patched.tiers[0];
   if (!firstTier) throw new Error('llm_model_catalog 没有任何 tier，无法注入免费模型');
   firstTier.models.push({
@@ -131,7 +144,7 @@ export async function seedFreeModelIntoCatalog(): Promise<CatalogOverride> {
   return {
     freeModel,
     async restore() {
-      await write(original, entry.version + 2);
+      await write(cleanOriginal, entry.version + 2);
     },
   };
 }
