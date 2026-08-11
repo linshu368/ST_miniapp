@@ -1,7 +1,7 @@
 # 自研引擎替换 ST：MVP 对话链路实施方案
 
-> 状态：**批次 0 已交付**；**批次 1（M1 / M2 / M3a）代码已交付**（2026-08-10，产出与偏离见 §5.9 / §6.5 / §7.4）。
-> ⚠️ 批次 1 尚未清零的唯一验收项是 **§7.3 的五条 ST staging 手验**，它是 M3b 的开工前置，理由见 §四「批次 1 验收现状」。
+> 状态：**批次 0 已交付**；**批次 1（M1 / M2 / M3a）已交付并验收通过**（代码 2026-08-10，验收 2026-08-11；产出与偏离见 §5.9 / §6.5 / §7.4）。
+> §7.3 的 ST 回归改为本地脚本 + 重构前后对拍，两侧各 7/7 通过、逐字段 diff 一致（§7.3.3）。**M3b 开工前置已清零。**
 > 三份接缝见 §四；读到旧 bot 代码后 §二决策 7 已再次修正，§六 M2 随之重写。
 > 上游文档：`docs/ST_remove.md`（总体方案与 12 项决策）
 > 目标：**先跑通 MVP 对话路径**。不在 MVP 关键路径上的模块一律后置。
@@ -117,7 +117,7 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
           ├──────────────┬──────────────┐
           ▼              ▼              ▼
 批次 1   M1 数据模型    M2 引擎核心    M3a 生成出口服务化
-        （✅ 已交付）   （✅ 已交付）    （✅ 已交付，欠 §7.3 手验）
+        （✅ 已交付）   （✅ 已交付）    （✅ 已交付，§7.3 回归已过）
           └──────────────┴──────────────┘
                          ▼
 批次 2              M3b 对话 REST + SSE   ← ★ MVP 达成
@@ -159,6 +159,7 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 > **实际执行偏离**：三个模块最终由同一条线连续做完，合成**一个 PR** 提交，没有按 §十.6 / §十.7 拆成三个。
 > 代价是 M3a 不再能独立回滚——若 §7.3 的 ST 回归发现问题，revert 会连带撤掉 M1 / M2。
 > 缓解办法是提交按模块分开（M1 / M2 / M3a 各自成 commit），必要时可单独 revert commit 而不是整个 PR。
+> 事后看这个代价没有兑现：§7.3 的对拍未发现任何差异（§7.3.3）。
 
 文件面几乎不相交——M1 落在两个新 migration 加两个新 repository，M2 落在全新的 `features/engine/` 加 `runtime_config` 建 key，M3a 落在 `routes/llm-proxy.ts` 加新建的 `features/generation/`。只有三个共同触点，按下面的归属约定执行即可避免互相踩：
 
@@ -172,7 +173,7 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 
 > 并行的瓶颈会转移到 review：三个模块同时到位，其中 M3a 需要对着 §7.3 的回归清单逐项验。M3a 纪律最严（只搬不改、diff 要逐行可对照原 handler），也是三者中唯一直接威胁 ST 线上链路的。
 
-### 批次 1 验收现状（2026-08-10 实测）
+### 批次 1 验收现状（2026-08-10 代码，2026-08-11 回归）
 
 **已清零的部分**：
 
@@ -183,16 +184,19 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 | M1 §5.8 的九条                        | 全部由 `conversations.integration.test.ts` 覆盖并通过                                                                    |
 | M2 §6.4 的对拍                        | 已落在 `prompt-engine.test.ts`：把 bot 的 `_buildMessages` / `_buildEnhancedPrompt` 逐字抄进测试当基准，多组输入逐条比对 |
 | 069 / 070 / 071                       | 已在 **test 库**执行；平台规则实测 `degraded = false`、三个占位符齐全、四个 `PreferredWordCount` 档位全覆盖              |
+| **§7.3 的 ST 回归**                   | 改为本地回归脚本 + 重构前后对拍（2026-08-11）：两侧各 **7/7 通过、逐字段 diff 完全一致**，见 §7.3.2 / §7.3.3             |
 
 **尚未清零的部分**：
 
-| 欠项                           | 说明                                                                                                            |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| **§7.3 的五条 ST 回归手验**    | **M3b 的开工前置**。它们依赖上游 / 钱包 / 额度 RPC，单测原理上覆盖不到，只能在 staging 对着真实 ST iframe 跑    |
-| 069 / 070 / 071 在生产库的执行 | 迁移不随部署自动跑（§十.4）。生产尚未执行，因此 `saveChatHistory` 目前靠"`session_id` 非空才写该列"兜着（§7.5） |
+| 欠项                           | 说明                                                                                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 402 `statusMessage` 的真机确认 | 本地只验到后端写进了状态行；HTTP/2 无 reason phrase，每一跳都可能抹掉。**不阻塞 M3b**：写法与重构前逐字相同，合到 `dev` 后点一次即可（§7.3.4） |
+| simulation 链路的端到端确认    | 跑在独立 project 且连生产库，本地无法覆盖。**不阻塞 M3b**：`llm-proxy` 的 simulation 分支一行未动（§7.3.4）                                    |
+| 069 / 070 / 071 在生产库的执行 | 迁移不随部署自动跑（§十.4）。生产尚未执行，因此 `saveChatHistory` 目前靠"`session_id` 非空才写该列"兜着（§7.5）                                |
 
-> 为什么手验必须卡在 M3b 之前：`llm-proxy.ts` 这次改了 415 行、净减 202 行，是批次 1 里唯一碰生产链路的改动。
+> 为什么这道关卡在 M3b 之前：`llm-proxy.ts` 这次改了 415 行、净减 202 行，是批次 1 里唯一碰生产链路的改动。
 > M3b 会直接调 `GenerationService`，等它长出来之后才发现 M3a 有行为偏差，修的时候两边都得动。
+> 现在对拍已给出"行为零变化"的机器判据，这个理由不再成立，**M3b 可以开工**。
 
 ### 批次 2：M3b 集成，MVP 达成
 
@@ -484,7 +488,7 @@ bot 的最终形状是：
 
 ## 七、M3a — 生成执行与计费出口服务化
 
-> 状态：**已交付**（2026-08-10）。产出与偏离见 §7.4 / §7.5，上线前要跑的 ST 回归清单见 §7.3。
+> 状态：**已交付并验收通过**（代码 2026-08-10，回归 2026-08-11）。产出与偏离见 §7.4 / §7.5，回归判据与对拍结论见 §7.3，脚本发现的既有问题见 §7.6。
 
 ### 7.1 性质与纪律
 
@@ -524,23 +528,79 @@ bot 的最终形状是：
 4. simulation 链路不受影响
 5. 新增的 `session_id` 入参在 ST 链路调用时为 `null`，落库为 NULL
 
-上述 5 条是**部署前必须在 staging 对着真实 ST iframe 手验**的清单——它们依赖上游、钱包、额度 RPC，单测覆盖不到。
-自动化侧已覆盖的部分见 §7.4 的测试文件。
+原计划是"部署到 staging 对着真实 ST iframe 手验"。实际改成了本地回归脚本，理由与结论见下三节。
+
+#### 7.3.1 为什么不去 staging
+
+**没有 staging 环境。** Railway 只有 `development`（跟 `dev` 分支）和 `production`（跟 `main`），两者都不是可以随意造脏数据的地方。
+
+更关键的是这五条要的是**可控的失败**：上游 5xx 和流中断没法对着真实 OpenRouter 按需触发，只能靠运气或临时改代码，而它们恰恰是最容易出事的两条。
+
+ST 对 `llm-proxy` 而言只是个 HTTP 客户端，它发的东西全部可复现——HMAC 自签的 platformToken、四个 `X-ST-*` header、一个 OpenAI 兼容 body，handler 里没有任何一处需要 iframe 真的存在。所以本地起真实 Fastify app 配假上游，比部署上去验得更全。
+
+#### 7.3.2 本地回归脚本
+
+`packages/backend/src/scripts/st-regression/`：
+
+```
+pnpm --filter @miniapp/backend st:regression -- --seed-free-model
+```
+
+在随机端口起真实的 Fastify app，`LLM_UPSTREAM_URL` 指向假上游，用自签 token 打 `/api/platform/llm-proxy/v1/chat/completions`，再查 test 库断言落库与计费。七个场景：
+
+| 场景                    | 判据                                                                        |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `success_paid`          | 200 透传、收到 `[DONE]`、落库 `success`、按定档扣费、`session_id` 为 NULL   |
+| `insufficient_balance`  | 402 + `statusMessage`、`error.type`、**上游收到 0 个请求**、不落库不扣费    |
+| `upstream_error`        | 502 透传、落库 `upstream_error` + `upstream_status = 502`、不扣费、余额不变 |
+| `stream_interrupted`    | 干净收尾但无 `[DONE]`：落库 `stream_interrupted` 且保留半截正文、不扣费     |
+| `stream_aborted`        | 上游销毁 socket 时的既有行为，见 §7.6                                       |
+| `free_quota_exhaustion` | 最后一轮免费扣 0（charge 状态 `free`），下一轮按 `deduct_markup` 计费       |
+| `idempotent_charge`     | 同一 `charge_id` 二次提交返回 `already_charged`，明细只一条、余额不再变     |
+
+`--seed-free-model` 会临时往共享的 `llm_model_catalog` 插一个 `markup = 0` 的模型再还原：test 库现在五个模型倍率都是 1~4，免费额度那条判据否则永远跑不到。它动的是别人也在读的配置，因此默认不开。
+
+#### 7.3.3 对拍结论
+
+断言只能证明重构后的行为符合**我对旧行为的理解**——理解错了照样全绿。真正的判据是拿旧代码的实际输出当基准：
+
+```
+git checkout ca0b226        # 批次 1 之前
+pnpm --filter @miniapp/backend st:regression -- --seed-free-model --snapshot /tmp/before.json
+git checkout dev_ST_remove
+pnpm --filter @miniapp/backend st:regression -- --seed-free-model --snapshot /tmp/after.json
+pnpm --filter @miniapp/backend st:regression:diff -- /tmp/before.json /tmp/after.json
+```
+
+脚本是未跟踪文件，切 commit 时原样留在工作区，所以同一份场景定义能直接压到旧代码上跑（它刻意不 import 任何 M1/M2 才有的模块）。快照里已剔除 id 与时间戳。
+
+> **2026-08-11 实测：两侧各 7/7 通过，逐字段 diff 完全一致。**
+> 第 2 条（`chat_history` 落库字段逐字段一致）由此从"人眼比对"变成机器判据。
+
+#### 7.3.4 本地验不到的部分
+
+| 欠项                            | 为什么                                                                                                    | 怎么补                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 第 4 条 simulation 链路         | 跑在独立 Railway project 且连生产库，test 库的 `miniapp_simulation.conversations` 无数据                  | 保障来自「`llm-proxy` 的 simulation 分支一行未动」，看 diff 即可 |
+| 402 的 `statusMessage` 能否送达 | 本地只验到后端把 reason phrase 写进了状态行；HTTP/2 没有 reason phrase，Vercel / nginx 每一跳都可能抹掉它 | 合到 `dev` 后在真机点一次余额不足                                |
+
+两条都不是 M3a 引入的风险：simulation 分支未改，`statusMessage` 的写法与重构前逐字相同。
 
 ### 7.4 产出清单
 
-| 文件                                                 | 内容                                                                                                                                            |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `features/generation/resolve-model.ts`               | `resolveAuthoritativeModel`（ST 链路用，搬自 handler 第 234~278 行）/ `resolveModelForUser`（自研链路用，补齐档位与倍率，返回 `ResolvedModel`） |
-| `features/generation/quota.ts`                       | `reserveCharacterFreeQuota` / `noFreeQuotaReservation`。预留、生效倍率换算与 finalize 收进 `FreeQuotaReservation` 一个对象                      |
-| `features/generation/precheck.ts`                    | `resolveBillingPlan`（定档扣费额 + 计费快照）/ `checkWalletBalance`（402 判定，不构造响应）                                                     |
-| `features/generation/upstream.ts`                    | `forwardToUpstream` / `resolveUpstreamUrl` / `createSseTap`。tap 逐字节透传，终态在 flush 里跑完才放行                                          |
-| `features/generation/prompt-caching.ts`              | 决策 11 的 `cache_control` 注入，纯函数                                                                                                         |
-| `features/generation/execute.ts`                     | `GenerationService` 实现，串起上面四段，供 M3b 直调                                                                                             |
-| `features/generation/index.ts`                       | 模块出口                                                                                                                                        |
-| `lib/chat-history-logger.ts`（改）                   | `ChatHistoryEntry` 加可选 `session_id`                                                                                                          |
-| `routes/llm-proxy.ts`（改）                          | 改为调用上述服务，净减约 190 行；ST 专有部分（验签 / X-ST-\* / simulation / 透传外壳）原样保留                                                  |
-| `upstream.test.ts` `execute.test.ts` 等 5 个测试文件 | 33 个用例：SSE 切包还原、[DONE] 判据、计费快照字段、402 前不碰上游、缓存断点位置                                                                |
+| 文件                                                 | 内容                                                                                                                                                         |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `features/generation/resolve-model.ts`               | `resolveAuthoritativeModel`（ST 链路用，搬自 handler 第 234~278 行）/ `resolveModelForUser`（自研链路用，补齐档位与倍率，返回 `ResolvedModel`）              |
+| `features/generation/quota.ts`                       | `reserveCharacterFreeQuota` / `noFreeQuotaReservation`。预留、生效倍率换算与 finalize 收进 `FreeQuotaReservation` 一个对象                                   |
+| `features/generation/precheck.ts`                    | `resolveBillingPlan`（定档扣费额 + 计费快照）/ `checkWalletBalance`（402 判定，不构造响应）                                                                  |
+| `features/generation/upstream.ts`                    | `forwardToUpstream` / `resolveUpstreamUrl` / `createSseTap`。tap 逐字节透传，终态在 flush 里跑完才放行                                                       |
+| `features/generation/prompt-caching.ts`              | 决策 11 的 `cache_control` 注入，纯函数                                                                                                                      |
+| `features/generation/execute.ts`                     | `GenerationService` 实现，串起上面四段，供 M3b 直调                                                                                                          |
+| `features/generation/index.ts`                       | 模块出口                                                                                                                                                     |
+| `lib/chat-history-logger.ts`（改）                   | `ChatHistoryEntry` 加可选 `session_id`                                                                                                                       |
+| `routes/llm-proxy.ts`（改）                          | 改为调用上述服务，净减约 190 行；ST 专有部分（验签 / X-ST-\* / simulation / 透传外壳）原样保留                                                               |
+| `upstream.test.ts` `execute.test.ts` 等 5 个测试文件 | 33 个用例：SSE 切包还原、[DONE] 判据、计费快照字段、402 前不碰上游、缓存断点位置                                                                             |
+| `scripts/st-regression/`（5 个文件）                 | §7.3 的本地回归脚本：假上游、数据播种/清理、模拟 ST 的 HTTP 客户端、七个场景断言、快照对拍工具。挂在 `st:regression` / `st:regression:diff` 两条 pnpm 脚本上 |
 
 ### 7.5 相对方案的偏离
 
@@ -554,11 +614,23 @@ bot 的最终形状是：
 | 缓存断点打在**历史最后一条**而不是最后一条消息                                    | 最后一条是「平台规则 + 本轮输入」的包装体，下一轮它会以未包装的原文回到历史里，断点打上去必然 miss；退一位才是两轮逐字相同的前缀 |
 | 免费额度预留失败时 `execute()` 直接抛出，而不是返回 `GenerationResult`            | 与 ST 链路同判据（原 handler 返回 500）。上游侧失败才走 `status` 收口                                                            |
 
+### 7.6 回归脚本发现的既有问题（非 M3a 引入）
+
+上游**销毁 socket**（而不是干净收尾）时，ST 链路的表现是：
+
+- `upstreamNodeStream.pipe(sseTap)` 没在源流上挂 error 监听器，undici 抛的错变成未捕获的 `'error'` 事件，能打死整个进程
+- `pipe` 出错时不会 `end` 目标流，下游那条响应**一直挂着不结束**
+- tap 的 `flush` 因此不触发，这一轮既不落 `chat_history`，也不 finalize 免费额度预留（预留的那一轮会挂着，直到被后续请求的 stale 清理捡走）
+
+`git show ca0b226:packages/backend/src/routes/llm-proxy.ts` 可确认这段在 M3a 前后逐字节相同，**不是重构引入的，因此不阻塞 M3b**。脚本把它固化成 `stream_aborted` 场景，不判失败，只把「1 条未捕获异常 + 响应不结束 + 0 条落库」记进快照，将来它变了对拍会发现。
+
+自研链路不受影响：`execute.ts` 用的是 `pipeline()` + `try/catch` + `tap.snapshot()`（§7.5），断链时会补齐终态。ST 链路要不要一起修是独立议题，不建议塞进 M3b——那会破坏 M3a"只搬不改"的边界，且需要单独的回归。
+
 ---
 
 ## 八、M3b — 对话 REST + SSE（MVP 收口）
 
-依赖 M1 + M2 + M3a 全部就绪。**代码依赖已齐（§四「批次 1 验收现状」），开工前置只剩 §7.3 的五条 ST staging 手验。**
+依赖 M1 + M2 + M3a 全部就绪。**开工前置已全部清零**（2026-08-11）：代码依赖齐备，§7.3 的 ST 回归已由本地脚本 + 重构前后对拍完成，逐字段 diff 一致。剩余两项（402 `statusMessage` 真机确认、simulation 端到端）不阻塞，理由见 §7.3.4。
 
 M3b 也是三个模块第一次在同一个进程里串起来，下面这几处接缝到今天为止还没有任何测试碰过，验收时要盯：
 
@@ -638,5 +710,5 @@ M3b 也是三个模块第一次在同一个进程里串起来，下面这几处�
 3. **禁止 `any`**，TypeScript 严格模式
 4. **迁移执行**：不会随部署自动跑。手动触发 GitHub Actions 的 `Database Migration` workflow，逐个指定 `packages/shared/migrations/*.sql`；生产需在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`
 5. **迁移编号**：批次 1 落盘时最大为 068，实际占用 **069 / 070 / 071**，均已补进 README 索引。历史上有重号，后续落盘前再确认一次
-6. PR 描述里附 §7.3 的 ST 链路回归验证清单。`promptCaching` 在 ST 链路必须传 `false`，否则破坏"行为零变化"判据
+6. PR 描述里附 §7.3 的 ST 链路回归结果（跑 `st:regression`，改动碰到 `llm-proxy` / `features/generation` 时还要附 §7.3.3 的对拍 diff）。`promptCaching` 在 ST 链路必须传 `false`，否则破坏"行为零变化"判据
 7. ~~三个批次 1 模块各自独立 PR~~ 实际合成一个 PR 提交，提交按模块分开，理由与代价见 §四批次 1
