@@ -55,6 +55,14 @@ export interface GenerationRequest {
 }
 
 export interface GenerationHooks {
+  /**
+   * 上游返回 2xx、即将开始消费响应体时恰好调用一次。
+   *
+   * 这是「本次生成不会再以 HTTP 状态码失败」的分界点：它之前的余额预检与上游拒绝都还能
+   * 走 402 / 502 + JSON 错误体，之后的失败只能以流内事件表达。自研链路据此决定何时写出
+   * SSE 响应头——等到第一个 token 再写会让首字节白等一个上游首 token 的时延。
+   */
+  onStreamOpen?: () => void;
   onFirstToken?: () => void;
   onDelta?: (text: string) => void;
   onError?: (error: Error) => void;

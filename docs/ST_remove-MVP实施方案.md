@@ -1,7 +1,9 @@
 # 自研引擎替换 ST：MVP 对话链路实施方案
 
-> 状态：**批次 0 已交付**；**批次 1（M1 / M2 / M3a）已交付并验收通过**（代码 2026-08-10，验收 2026-08-11；产出与偏离见 §5.9 / §6.5 / §7.4）。
-> §7.3 的 ST 回归改为本地脚本 + 重构前后对拍，两侧各 7/7 通过、逐字段 diff 一致（§7.3.3）。**M3b 开工前置已清零。**
+> 状态：**MVP 达成**（2026-08-11）。批次 0、批次 1（M1 / M2 / M3a）、批次 2（M3b）全部交付并验收通过。
+> §8.3 的八条 MVP 判据由 `mvp:regression` 全绿覆盖，一条不经过 ST / iframe / bridge 的对话链路已经跑通（§8.4）。
+> §7.3 的 ST 回归改为本地脚本 + 重构前后对拍，两侧各 7/7 通过、逐字段 diff 一致（§7.3.3）。
+> **下一步是 M5（自研聊天 UI）与 M6（灰度切换）；切换前必须先在生产库执行 069 / 070 / 071，见 §8.7。**
 > 三份接缝见 §四；读到旧 bot 代码后 §二决策 7 已再次修正，§六 M2 随之重写。
 > 上游文档：`docs/ST_remove.md`（总体方案与 12 项决策）
 > 目标：**先跑通 MVP 对话路径**。不在 MVP 关键路径上的模块一律后置。
@@ -22,6 +24,8 @@
 ```
 
 MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 HTTP 客户端（curl / 集成测试）就能跑完上面全流程，且计费与 `chat_history` 落库结果与 ST 链路口径一致。
+
+> **2026-08-11：判据已达成。** `pnpm --filter @miniapp/backend mvp:regression -- --seed-free-model` 八个场景全绿，其中 `billing_parity` 直接把自研链路与 ST 链路的 `llm_usage_charges` 逐字段对拍。详见 §8.4。
 
 **MVP 不包含**：自研聊天 UI（M5）、灰度切换（M6）、预设载体改造（M4）、用户配置编辑界面、埋点对齐、压测。
 
@@ -121,8 +125,9 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
           └──────────────┴──────────────┘
                          ▼
 批次 2              M3b 对话 REST + SSE   ← ★ MVP 达成
+                    （✅ 已交付，§8.3 八条判据全绿）
                          ▼
-批次 3              M5 自研聊天 UI
+批次 3              M5 自研聊天 UI   ← 当前位置
                          ▼
 批次 4              M6 切换与账号链路
 
@@ -198,9 +203,9 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 > M3b 会直接调 `GenerationService`，等它长出来之后才发现 M3a 有行为偏差，修的时候两边都得动。
 > 现在对拍已给出"行为零变化"的机器判据，这个理由不再成立，**M3b 可以开工**。
 
-### 批次 2：M3b 集成，MVP 达成
+### 批次 2：M3b 集成，MVP 达成（✅ 已交付并验收通过，2026-08-11）
 
-详见 §八。
+八条路由 + M1/M2/M3a 编排落地，§8.3 的八条判据由 `mvp:regression` 全绿覆盖。详见 §八。
 
 ---
 
@@ -630,13 +635,15 @@ pnpm --filter @miniapp/backend st:regression:diff -- /tmp/before.json /tmp/after
 
 ## 八、M3b — 对话 REST + SSE（MVP 收口）
 
+> 状态：**已交付并验收通过**（2026-08-11）。§8.3 的八条判据由本地回归脚本全绿覆盖（§8.4），产出与偏离见 §8.5 / §8.6，上线前的欠项见 §8.7。
+
 依赖 M1 + M2 + M3a 全部就绪。**开工前置已全部清零**（2026-08-11）：代码依赖齐备，§7.3 的 ST 回归已由本地脚本 + 重构前后对拍完成，逐字段 diff 一致。剩余两项（402 `statusMessage` 真机确认、simulation 端到端）不阻塞，理由见 §7.3.4。
 
-M3b 也是三个模块第一次在同一个进程里串起来，下面这几处接缝到今天为止还没有任何测试碰过，验收时要盯：
+M3b 也是三个模块第一次在同一个进程里串起来，下面这几处接缝到今天为止还没有任何测试碰过，验收时要盯——三处均已落地并有测试覆盖，落点见括号：
 
-- `getContextMessages` 返回有序全量 → M3b 切掉尾部本轮 user → `EngineInput.history` + `userInput`。切片只有约定，实现和测试都在 M3b
-- `getGenerationConfig` 同时喂给 M2 的 `userConfig` 与 M3a 的 `resolveModelForUser`，两处对 `selected_model_id` 为 null 的处理要一致
-- M3a 的 `GenerationResult` → M1 的 `finalizeAssistantMessage` + 带 `session_id` 的 `chat_history` 落库
+- `getContextMessages` 返回有序全量 → M3b 切掉尾部本轮 user → `EngineInput.history` + `userInput`。切片只有约定，实现和测试都在 M3b（`features/conversations/history.ts` + 同名单测；口径改动见 §8.6）
+- `getGenerationConfig` 同时喂给 M2 的 `userConfig` 与 M3a 的 `resolveModelForUser`，两处对 `selected_model_id` 为 null 的处理要一致（两者读同一列，一致性由构造保证，见 §8.6）
+- M3a 的 `GenerationResult` → M1 的 `finalizeAssistantMessage` + 带 `session_id` 的 `chat_history` 落库（`toMessageStatus` 做状态映射，`send_message` 场景逐字段断言）
 
 ### 8.1 接口清单
 
@@ -686,6 +693,84 @@ M3b 也是三个模块第一次在同一个进程里串起来，下面这几处�
 6. 重生成最后一轮 → 新 revision 生效，旧版本保留
 7. 中途断开客户端 → 后端仍跑完并落库完整内容
 8. 会话列表直读 DB，不产生任何对 ST 的请求
+
+### 8.4 验收结果（2026-08-11）
+
+与 §7.3 同样的理由（没有 staging、要的是**可控的失败**），八条判据落成本地回归脚本
+`packages/backend/src/scripts/mvp-regression/`：
+
+```
+pnpm --filter @miniapp/backend mvp:regression -- --seed-free-model
+```
+
+在随机端口起真实的 Fastify app，`LLM_UPSTREAM_URL` 指向假上游（复用 §7.3.2 的那一个），
+用 `MOCK_AUTH=1` 的 initData 打 `/api/v1/conversations` 那一组路由，再查 test 库断言会话、
+消息、`chat_history` 与扣费。**全程不经过 ST、iframe、bridge，这正是 §8.3 的判据本身。**
+
+| 场景                   | 覆盖判据 | 主要断言                                                                                                                                          |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_session`       | 1、8     | 建会话落 turn 0 开场白且正文等于 `first_mes`；列表 / 详情直读 DB；**全程上游 0 请求**                                                             |
+| `send_message`         | 2        | SSE `start`→`delta`→`done` 顺序与内容；上游收到的 messages 与 M2 组装一致；`chat_messages` 收口；`chat_history` 一行且 `session_id` 非空          |
+| `billing_parity`       | 3        | 同一模型档位下，自研链路与 ST 链路（自签 token 直打 `llm-proxy`）的 `llm_usage_charges` 逐字段一致                                                |
+| `free_quota`           | 4        | 免费额度最后一轮 charge 状态 `free`、扣 0；下一轮按 `deduct_markup` 计费                                                                          |
+| `insufficient_balance` | 5        | 402 + JSON（`content-type` 不是 `text/event-stream`）、0 个 SSE 事件、**402 前上游 0 请求**、assistant 行收口成 `failed`、充值后重发不被 409 卡住 |
+| `regenerate`           | 6        | 新 revision 生效、旧 revision 保留且 `is_active = false`、详情只出最新、重生成的 prompt 里本轮输入不重复                                          |
+| `client_disconnect`    | 7        | 客户端收到第一片就 abort，后端仍跑完上游：`chat_messages` 正文完整、`chat_history` 落库、照常扣费                                                 |
+| `conflict_guards`      | —        | `session_busy` / `regenerate_not_allowed` 的 409 与 `session_not_found` 的 404 都在写出 SSE 首字节之前判定                                        |
+
+> **实测：8/8 通过。** 不带 `--seed-free-model` 时 `free_quota` 跳过（test 库五个模型倍率都是 1~4，判据跑不到），其余 7 条全绿。
+
+单测方面 `pnpm --filter @miniapp/backend test` 由 153 增至 **169 用例全绿**，新增 16 条覆盖历史切片、
+SSE 编码与 sink 状态机、错误码 → HTTP 状态映射、状态与角色卡字段映射这四段纯逻辑。
+
+`conflict_guards` 的会话忙用**直接往库里插一条 `streaming` 行**来触发，而不是靠慢上游卡时序：
+`guard_chat_session_idle` 的判据就是"存在 120 秒内的 streaming 行"，直接造这个状态比赛跑稳定得多。
+
+#### 8.4.1 本地验不到的部分
+
+| 欠项                     | 为什么                                                                 | 怎么补                                       |
+| ------------------------ | ---------------------------------------------------------------------- | -------------------------------------------- |
+| 真实上游的流式时序       | 假上游按固定 chunk 切包，真实 OpenRouter 的分片节奏、首 token 延迟不同 | M5 接上前端后在 `development` 环境点几轮     |
+| 中间层对 SSE 的缓冲      | 本地直连，Vercel / Railway 的代理是否会攒包看不出来                    | 已按惯例下发 `X-Accel-Buffering: no`，真机验 |
+| 069 / 070 / 071 在生产库 | 迁移不随部署自动跑（§十.4）                                            | M6 切换前执行，见 §8.7                       |
+
+### 8.5 产出清单
+
+| 文件                                                                | 内容                                                                                                                                               |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/src/api/conversations.ts`（改）                             | 收口 `PatchGenerationConfigRequest`（去掉 `selected_model_id`，见 §8.6）；补齐 `start` 事件的下发时机语义                                          |
+| `infrastructure/repositories/CharacterCardRepository.ts`            | 角色卡引擎字段组的读取通道。不过滤 `enabled` / `archived_at`：卡下架也要能把已有会话聊完                                                           |
+| `MiniappUserSettingsRepository.ts`（改）                            | 加 `getDisplayName`，喂 `EngineInput.persona`。与 `getGenerationConfig` 分开是因为 `display_name` 属用户资料，塞进生成配置会污染 `gen_config` 快照 |
+| `features/generation/types.ts` `execute.ts`（改）                   | 加 `onStreamOpen` hook：上游 2xx、即将消费响应体时恰好一次。这是"不会再以 HTTP 状态码失败"的分界点，M3b 据此决定何时写 SSE 响应头（§8.6）          |
+| `features/conversations/history.ts`                                 | `buildEngineHistory`：过滤空正文（含 streaming 占位行）+ 切掉尾部本轮 user                                                                         |
+| `features/conversations/sse.ts`                                     | `ConversationStreamSink`：把 Fastify `reply` 包成"只开一次头、客户端走了就不再写"的 sink，事件编码是纯函数                                         |
+| `features/conversations/errors.ts`                                  | `ConversationErrorCode` → HTTP 状态码的集中映射 + `sendConversationError`                                                                          |
+| `features/conversations/generate.ts`                                | M1 + M2 + M3a 的编排。`send` 与 `regenerate` 共用一条 `runConversationTurn`，差异只在"这一轮的 assistant 行从哪来"                                 |
+| `routes/conversations.ts`                                           | §8.1 的八条路由，全部 `@frontend-ready`；鉴权走 `requireTelegramAuth`，归属校验落在仓库层                                                          |
+| `app.ts`（改）                                                      | 注册 `conversationRoutes`                                                                                                                          |
+| `history.test.ts` `sse.test.ts` `errors.test.ts` `generate.test.ts` | 16 个用例，覆盖四段纯逻辑                                                                                                                          |
+| `scripts/mvp-regression/`（4 个文件）                               | §8.4 的回归脚本：HTTP 客户端（含 SSE 解析与中途 abort）、数据播种 / 清理、八个场景断言、runner。挂在 `mvp:regression` 脚本上                       |
+| `scripts/st-regression/mock-upstream.ts`（改）                      | 加 `chunkDelayMs`（默认 0，ST 回归行为不变）。`client_disconnect` 需要真实的流式窗口才能在中途断开                                                 |
+
+### 8.6 相对方案的偏离
+
+| 偏离                                                                                                                            | 原因                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §8.2 第 8 步的"首个 hook"具体化为**新增的 `onStreamOpen`**，而不是 `onFirstToken`                                               | 等第一个 token 才写响应头，会让客户端白等一整个上游首 token 延迟（实测 1~5 秒）才拿到 `start` 事件，占位气泡挂不上——这恰是本方案要解决的问题。`onStreamOpen` 在预检通过且上游 2xx 之后触发，仍在任何 402 / 502 判定之后，"首字节前不能有可能失败的判定"这条约束不变 |
+| 执行序列改为：**并行读取（角色卡 / 配置 / 昵称 / 平台规则 / 模型）→ append user → 读上下文 → 组装 → 起 assistant 行 → execute** | §8.2 把读取排在 append 之后。但 `append_chat_turn` 与 `startAssistantMessage` 之间的窗口里没有 streaming 行，`guard_chat_session_idle` 拦不住并发；把五个慢读全部提前，这个窗口就只剩一次 insert。判据不变，窗口从"五次往返"缩到"一次"                              |
+| 历史切片按"**空正文全过滤**"实现，而不是"识别并弹出占位行"                                                                      | `send` 与 `regenerate` 两条路径下占位行的位置不同，靠位置识别很脆。空正文本来就不携带信息，部分上游还会拒收空 content，直接全过滤同时解决两件事                                                                                                                     |
+| `PATCH /api/v1/generation-config` **不收** `selected_model_id`                                                                  | 改模型有专门的 `POST /api/v1/models/select`，那条路由带着"切到付费模型前先查余额"的业务闸门。从 PATCH 旁路改会绕过它。GET 仍返回该字段（只读镜像），PATCH 收到就 400 并指向正确路由；shared 契约同步收窄，M5 尚未消费，改动无成本                                   |
+| 402 时把 assistant 占位行收口成 `failed`，而不是删掉                                                                            | 占位行在预检之前就已落库（§8.2 第 7 步先于第 8 步）。留着 `streaming` 会让 `guard_chat_session_idle` 把会话锁死 120 秒——充值后立刻重发会吃 409。收口成 `failed` 后前端能渲染错误态，用户充值后可直接重生成这一轮                                                    |
+| 跳过 §8.2 第 2 步的"无进行中 streaming"预查询                                                                                   | `append_chat_turn` 的 RPC 里已有同一个 guard。前置查询既多一次往返，又有 TOCTOU 窗口，不如直接把 RPC 抛的 SQLSTATE 映射成 409                                                                                                                                       |
+| `getGenerationConfig` 与 `resolveModelForUser` 各读一次 `selected_model_id`                                                     | 接缝要的是"两处处理一致"，而两者读的是同一列、null 处理都收在 `resolveEffectiveSelectedModelId` 里，一致性由构造保证。合并成一次读要么破坏 M3a 的接口，要么让 `getGenerationConfig` 在 M3b 变成死代码                                                               |
+
+### 8.7 上线前置（M6 之前必须清掉）
+
+| 事项                                 | 说明                                                                                                                                                        |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 069 / 070 / 071 在**生产库**执行     | 目前只在 test 库跑过。生产未执行时这八条路由全部会 500——表和 RPC 都不存在。执行方式见 §十.4                                                                 |
+| `chat_history.session_id` 的条件写入 | §7.5 那条"`session_id` 非空才写该列"的兜底，是为生产未执行 069 准备的。生产执行后可以去掉，但没有必要赶在 M6 前做                                           |
+| 并发发消息的窄窗口                   | append user 与起 assistant 行之间仍有一次 insert 的窗口，两个并发请求可能都过 guard。单用户场景下不构成问题，且不会把会话卡死（两行都会各自收口），MVP 接受 |
 
 ---
 

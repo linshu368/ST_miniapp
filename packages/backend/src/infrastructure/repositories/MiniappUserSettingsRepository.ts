@@ -167,6 +167,24 @@ export class MiniappUserSettingsRepository {
     };
   }
 
+  /**
+   * 引擎 persona 的取数通道（M3b，见方案 §6.2 的输入来源映射）。
+   *
+   * 与 getGenerationConfig 分开是因为 UserGenerationConfig 是对外契约，display_name 属于
+   * 用户资料而不是生成配置，塞进去会让 gen_config 快照里多一份与生成无关的个人信息。
+   * 两次读同一张表的代价由调用方并发发起来抵消。
+   */
+  async getDisplayName(userId: string): Promise<string | null> {
+    const { data, error } = await this.db
+      .from('miniapp_user_settings')
+      .select('display_name')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`查询用户昵称失败：${error.message}`);
+    return (data as Pick<MiniappUserSettingsRow, 'display_name'> | null)?.display_name ?? null;
+  }
+
   /** 首页「最新」New 提醒的水位线。为空表示用户从未进过「最新」分页。 */
   async getCharactersLastSeenAt(userId: string): Promise<string | null> {
     const { data, error } = await this.db

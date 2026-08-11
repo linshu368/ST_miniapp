@@ -49,6 +49,13 @@ export interface UpstreamRequestRecord {
 
 export interface MockUpstreamOptions {
   /**
+   * 每个 SSE 分片之间的间隔。默认 0（一口气写完，ST 回归要的就是这个确定性）。
+   *
+   * M3b 回归的「客户端中途断开」那条判据需要一个真实的流式窗口：客户端要在第二、三片
+   * 还没到的时候就把 socket 掐掉，才能证明后端不会跟着停。
+   */
+  chunkDelayMs?: number;
+  /**
    * 是否在 SSE 负载里带 id 字段。
    *
    * 默认 false：带上 id 会让 chat-history-logger 认为有 generation_id，进而对**真实的**
@@ -100,6 +107,11 @@ function writeSseHead(res: ServerResponse): void {
 
 export async function startMockUpstream(options: MockUpstreamOptions = {}): Promise<MockUpstream> {
   const emitId = options.emitGenerationId === true;
+  const chunkDelayMs = Math.max(options.chunkDelayMs ?? 0, 0);
+  const pause = async (): Promise<void> => {
+    if (chunkDelayMs === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, chunkDelayMs));
+  };
   let scenario: UpstreamScenario = 'success';
   const requests: UpstreamRequestRecord[] = [];
 
@@ -149,6 +161,8 @@ export async function startMockUpstream(options: MockUpstreamOptions = {}): Prom
 
       for (const [index, chunk] of REPLY_CHUNKS.entries()) {
         const isLast = index === REPLY_CHUNKS.length - 1;
+        if (index > 0) await pause();
+        if (res.destroyed) return;
         res.write(ssePayload(chunk, emitId, isLast ? 'stop' : null));
       }
       res.write('data: [DONE]\n\n');

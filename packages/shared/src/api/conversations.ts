@@ -145,7 +145,9 @@ export type RegenerateRequest = Record<string, never>;
 // ConversationStreamEvent。前端解析用 lib/api/client.ts 已有的 apiStreamClient()。
 
 /**
- * 首帧：在向上游发起请求之前下发，让前端立刻拿到落库后的 id 并挂上占位气泡。
+ * 首帧：上游接受本次生成（预检通过 + 上游 2xx）后立刻下发，早于第一个 token，
+ * 让前端拿到落库后的 id 就能挂上占位气泡。
+ * 在它之前失败的判定（402 / 409 / 上游拒绝）一律走 HTTP 状态码 + JSON 错误体。
  * user_message_id 在重生成时为 null（该轮的 user 消息早已存在）。
  */
 export interface ConversationStreamStartEvent {
@@ -194,8 +196,11 @@ export interface GetGenerationConfigData {
 
 // ==== PATCH /api/v1/generation-config ====
 
+/**
+ * 只收三个 pref_* 字段。selected_model_id 是只读镜像，改模型走 POST /api/v1/models/select——
+ * 那条路由带着「切到付费模型前先查余额」的业务闸门，从这里旁路改会绕过它。
+ */
 export interface PatchGenerationConfigRequest {
-  selected_model_id?: string;
   pref_word_count?: PreferredWordCount;
   pref_show_options?: boolean;
   pref_custom_instructions?: string | null;

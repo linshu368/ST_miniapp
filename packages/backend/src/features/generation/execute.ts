@@ -180,6 +180,9 @@ export async function execute(
     return finish(failed({ upstreamStatus: upstreamRes.status }));
   }
 
+  // 过了这一行就不会再有 HTTP 状态码级别的失败，调用方可以安全地写出响应头。
+  hooks?.onStreamOpen?.();
+
   const headerGenerationId = upstreamRes.headers.get('x-generation-id');
 
   if (!request.stream) {

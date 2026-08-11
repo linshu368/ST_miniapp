@@ -14,6 +14,7 @@
     "payment:fake-webhook": "tsx src/scripts/fake-payment-webhook.ts",
     "st:regression": "tsx src/scripts/st-regression/run.ts",
     "st:regression:diff": "tsx src/scripts/st-regression/compare-snapshots.ts",
+    "mvp:regression": "tsx src/scripts/mvp-regression/run.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
