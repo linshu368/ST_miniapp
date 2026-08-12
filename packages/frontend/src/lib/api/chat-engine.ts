@@ -18,6 +18,12 @@ export const chatEngineKeys = {
 const CACHE_KEY = 'miniapp:chat-engine-mode';
 
 /**
+ * 开关请求必须在有限时间内有结论。弱网或中间层挂住连接时 fetch 可以既不返回也不报错，
+ * 那样 resolved 永远为 false，ST iframe 就永远没人挂——聊天会整个进不去。
+ */
+const REQUEST_TIMEOUT_MS = 4_000;
+
+/**
  * 上次读到的开关值。ST iframe 的挂载要等这个请求回来，冷启动多一个往返会直接
  * 记在首条消息耗时上；缓存让除首次以外的每次启动都能立刻拿到值，后台再校正。
  */
@@ -58,13 +64,17 @@ export interface ChatEngineState {
 export function useChatEngine(): ChatEngineState {
   const { data, isError } = useQuery<GetChatEngineData>({
     queryKey: chatEngineKeys.mode,
-    queryFn: () => apiClient<GetChatEngineData>('/api/platform/chat-engine'),
+    queryFn: () =>
+      apiClient<GetChatEngineData>('/api/platform/chat-engine', {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      }),
     initialData: readCachedMode,
     // 缓存只用来抢时间，不算新鲜：挂载后立刻回源，翻转开关不需要用户清缓存。
     initialDataUpdatedAt: 0,
     staleTime: 60_000,
-    // 每多retry 一次，无缓存的首启就多等一次退避才能回落到 ST。
-    retry: 1,
+    // 失败即回落 ST，也就是回落到现状，重试只会让无缓存的首启多等一轮退避。
+    // 真正的重试交给 staleTime 到期后的下一次 refetch。
+    retry: false,
   });
 
   useEffect(() => {
