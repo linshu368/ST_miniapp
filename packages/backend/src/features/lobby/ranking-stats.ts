@@ -106,7 +106,10 @@ export async function computeRawCardStats(
   windowDays: number = LOBBY_RANKING_WINDOW_DAYS
 ): Promise<RawCardStats[]> {
   // 事务客户端上的查询必须串行：交互式事务同一时刻只处理一条语句
-  const depthRows = await queryDepth(db, windowDays);
+  const perRevisionRows = await hasConversationTurnColumns(db);
+  const depthRows = perRevisionRows
+    ? await queryDepthByTurn(db, windowDays)
+    : await queryDepthByRow(db, windowDays);
   const returnRows = await queryReturnRate(db, windowDays);
 
   const returnByCard = new Map<string, ReturnRow>();
@@ -133,14 +136,69 @@ export async function computeRawCardStats(
 }
 
 /**
- * D30 与样本量。
- * turns 取窗口内的行数，不是 user_character_round：后者是全历史累计值，
- * 一个三年前聊过 200 轮的用户会让任何时间窗都失去意义。
+ * chat_history 是否已经有 session_id / turn_index（migration 069 与 072）。
+ *
+ * 这两列决定 turns 怎么数，而生产库在 M6 切换前不会有它们，
+ * 无条件引用会让每日 job 每轮直接报错。探测一次比让 job 崩掉便宜。
+ * 069~073 在所有环境执行完之后，这个分支连同 queryDepthByRow 一起删掉。
  */
-function queryDepth(db: RankingDbClient, windowDays: number): Promise<DepthRow[]> {
+async function hasConversationTurnColumns(db: RankingDbClient): Promise<boolean> {
+  const rows = await db.$queryRaw<Array<{ present: boolean }>>`
+    SELECT COUNT(*) = 2 AS present
+    FROM information_schema.columns
+    WHERE table_schema = 'miniapp'
+      AND table_name = 'chat_history'
+      AND column_name IN ('session_id', 'turn_index')
+  `;
+  return rows[0]?.present === true;
+}
+
+/**
+ * D30 与样本量：turns 取窗口内的行数。
+ *
+ * 不用 user_character_round——那是全历史累计值，一个三年前聊过 200 轮的用户
+ * 会让任何时间窗都失去意义。
+ *
+ * 072 之前 chat_history 一行就是一轮，行数即轮数。
+ */
+function queryDepthByRow(db: RankingDbClient, windowDays: number): Promise<DepthRow[]> {
   return db.$queryRaw<DepthRow[]>`
     WITH windowed AS (
       SELECT character_id, user_id, COUNT(*)::int AS turns
+      FROM miniapp.chat_history
+      WHERE character_id IS NOT NULL
+        AND created_at >= now() - (${windowDays}::int * interval '1 day')
+      GROUP BY character_id, user_id
+    )
+    SELECT
+      character_id,
+      COUNT(*)::bigint AS n_c,
+      AVG(LEAST(turns, ${D30_TURN_CAP}::int))::double precision / ${D30_TURN_CAP}::int AS d30_raw
+    FROM windowed
+    GROUP BY character_id
+  `;
+}
+
+/**
+ * 072 之后的 D30：自研链路一行是一个 revision，重生成会在同一轮里多出若干行。
+ *
+ * 直接数行会把「同一句话重生成五次」算成五轮深度，正好奖励了用户不满意的卡。
+ * 所以自研行按 (session_id, turn_index) 去重，ST 行仍是一行一轮。
+ * 402 / 上游失败预建的行留在计数里——用户确实发起了这一轮，与既有视图口径一致。
+ *
+ * R48 不受影响：多出来的 revision 只是同一会话内多几个时间点，
+ * 30 分钟切分与首末时间都不变。
+ */
+function queryDepthByTurn(db: RankingDbClient, windowDays: number): Promise<DepthRow[]> {
+  return db.$queryRaw<DepthRow[]>`
+    WITH windowed AS (
+      SELECT
+        character_id,
+        user_id,
+        (
+          COUNT(*) FILTER (WHERE session_id IS NULL)
+          + COUNT(DISTINCT (session_id, turn_index)) FILTER (WHERE session_id IS NOT NULL)
+        )::int AS turns
       FROM miniapp.chat_history
       WHERE character_id IS NOT NULL
         AND created_at >= now() - (${windowDays}::int * interval '1 day')

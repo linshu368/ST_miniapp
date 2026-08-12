@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, X } from 'lucide-react';
-import { DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG, type ChatMessage } from '@miniapp/shared';
+import {
+  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  type ChatMessage,
+  type GetCharacterFreeQuotaData,
+} from '@miniapp/shared';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ChatComposer } from '@/components/chat/chat-composer';
@@ -69,13 +73,28 @@ export default function SelfHostedChatPage() {
   const conversationQuery = useConversationQuery(sessionId ?? undefined);
   const createConversation = useCreateConversationMutation();
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
+  const refetchFreeQuota = freeQuotaQuery.refetch;
 
   const goBack = useCallback(() => router.push('/'), [router]);
   useTelegramBackButton(goBack);
 
-  const returnTo = sessionId
-    ? `/chat/${encodeURIComponent(characterId)}?session=${encodeURIComponent(sessionId)}`
-    : `/chat/${encodeURIComponent(characterId)}`;
+  const returnTo = useMemo(
+    () =>
+      sessionId
+        ? `/chat/${encodeURIComponent(characterId)}?session=${encodeURIComponent(sessionId)}`
+        : `/chat/${encodeURIComponent(characterId)}`,
+    [characterId, sessionId]
+  );
+
+  /**
+   * 额度快照要在 runTurn 里按调用时刻取，而 runTurn 是 useCallback——直接读
+   * freeQuotaQuery.data 拿到的是创建那一帧的值（首帧通常还是 undefined）。
+   * 用 ref 兜住最新值，判定「刚好在这一轮用完」才有本轮之前的基准可比。
+   */
+  const freeQuotaRef = useRef<GetCharacterFreeQuotaData | undefined>(undefined);
+  useEffect(() => {
+    freeQuotaRef.current = freeQuotaQuery.data;
+  }, [freeQuotaQuery.data]);
 
   // ── 进入会话 ──────────────────────────────────────────────────────────────
   // 无 ?session= 就建一个新的；建完把 id 补进 URL，刷新页面不会又建一个空会话。
@@ -182,9 +201,96 @@ export default function SelfHostedChatPage() {
     !generating && !serverBusy && lastMessage?.role === 'assistant' && lastMessage.turn_index > 0;
 
   // ── 发送与重生成 ──────────────────────────────────────────────────────────
+
+  /** start 之前失败的内容要能原样重发，还回输入框 */
+  const restoreDraft = useCallback((input: { mode: 'send' | 'regenerate'; content?: string }) => {
+    if (input.mode !== 'send' || !input.content) return;
+    setDraft((current) => (current.trim() ? current : (input.content ?? '')));
+  }, []);
+
+  /**
+   * 免费额度是否刚好在这一轮用完。后端的 done 事件不带额度信息，
+   * 只能生成结束后回查一次；扣费与消息落库不在同一个事务里，所以要留一点重试余地。
+   *
+   * before 由调用方在发起本轮之前抓好传进来。读闭包里的 freeQuotaQuery.data 不行——
+   * 那个值会被 runTurn 的 useCallback 冻住，判定条件永远不成立。
+   */
+  const refreshQuotaAndBalance = useCallback(
+    async (before: GetCharacterFreeQuotaData | undefined): Promise<void> => {
+      void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+
+      for (const delayMs of [0, 300, 900]) {
+        if (delayMs > 0) await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+        const { data } = await refetchFreeQuota();
+        if (!data || !before) return;
+        if (before.used_rounds < data.quota_limit && data.used_rounds >= data.quota_limit) {
+          setFreeQuotaExhaustedOpen(true);
+          return;
+        }
+        if (data.used_rounds > before.used_rounds) return;
+      }
+    },
+    [queryClient, refetchFreeQuota]
+  );
+
+  const handleTurnFailure = useCallback(
+    async (
+      error: unknown,
+      input: { mode: 'send' | 'regenerate'; content?: string }
+    ): Promise<void> => {
+      const aborted = error instanceof Error && error.name === 'AbortError';
+
+      // 无论怎么收场，后端都已经在写这一轮了，落库态必须重新拉一次
+      setStreaming(null);
+      if (sessionId) {
+        void queryClient.invalidateQueries({ queryKey: conversationKeys.detail(sessionId) });
+      }
+      if (aborted) return;
+
+      if (!(error instanceof ConversationStreamError)) {
+        setStreamError('网络异常，请重试');
+        restoreDraft(input);
+        return;
+      }
+
+      switch (error.code) {
+        case 'insufficient_balance': {
+          const search = new URLSearchParams({ reason: 'insufficient_credits', returnTo });
+          if (error.balance) search.set('required', String(error.balance.creditsRequired));
+          router.push(`/profile/recharge?${search.toString()}`);
+          restoreDraft(input);
+          return;
+        }
+        case 'session_not_found':
+          setSessionId(null);
+          setStreamError('这段对话已不存在，已为你开启新的对话');
+          restoreDraft(input);
+          return;
+        case 'character_not_found':
+          setStreamError('这个角色已下架');
+          window.setTimeout(goBack, 1_200);
+          return;
+        case 'session_busy':
+          setStreamError('上一条还在生成，请稍候');
+          restoreDraft(input);
+          return;
+        case 'regenerate_not_allowed':
+          setStreamError('这条回复不能重新生成了');
+          return;
+        default:
+          setStreamError(error.message || '生成失败，请重试');
+          restoreDraft(input);
+      }
+    },
+    [goBack, queryClient, restoreDraft, returnTo, router, sessionId]
+  );
+
   const runTurn = useCallback(
     async (input: { mode: 'send' | 'regenerate'; content?: string }) => {
       if (!sessionId) return;
+
+      // 本轮之前的额度。生成结束后要拿它跟新值比，判断额度是不是刚好在这一轮见底
+      const quotaBefore = freeQuotaRef.current;
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -252,92 +358,15 @@ export default function SelfHostedChatPage() {
         // 先等落库态回来再撤临时态，顺序反过来中间会闪一帧空白
         await queryClient.invalidateQueries({ queryKey: conversationKeys.detail(sessionId) });
         setStreaming(null);
-        void refreshQuotaAndBalance();
+        void refreshQuotaAndBalance(quotaBefore);
       } catch (error) {
         await handleTurnFailure(error, input);
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    // handleTurnFailure / refreshQuotaAndBalance 在下面定义且只依赖稳定引用
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId, queryClient]
+    [handleTurnFailure, queryClient, refreshQuotaAndBalance, sessionId]
   );
-
-  /**
-   * 免费额度是否刚好在这一轮用完。后端的 done 事件不带额度信息，
-   * 只能生成结束后回查一次；扣费与消息落库不在同一个事务里，所以要留一点重试余地。
-   */
-  async function refreshQuotaAndBalance(): Promise<void> {
-    void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-
-    const before = freeQuotaQuery.data;
-    for (const delayMs of [0, 300, 900]) {
-      if (delayMs > 0) await new Promise((resolve) => window.setTimeout(resolve, delayMs));
-      const { data } = await freeQuotaQuery.refetch();
-      if (!data || !before) return;
-      if (before.used_rounds < data.quota_limit && data.used_rounds >= data.quota_limit) {
-        setFreeQuotaExhaustedOpen(true);
-        return;
-      }
-      if (data.used_rounds > before.used_rounds) return;
-    }
-  }
-
-  async function handleTurnFailure(
-    error: unknown,
-    input: { mode: 'send' | 'regenerate'; content?: string }
-  ): Promise<void> {
-    const aborted = error instanceof Error && error.name === 'AbortError';
-
-    // 无论怎么收场，后端都已经在写这一轮了，落库态必须重新拉一次
-    setStreaming(null);
-    if (sessionId) {
-      void queryClient.invalidateQueries({ queryKey: conversationKeys.detail(sessionId) });
-    }
-    if (aborted) return;
-
-    if (!(error instanceof ConversationStreamError)) {
-      setStreamError('网络异常，请重试');
-      restoreDraft(input);
-      return;
-    }
-
-    switch (error.code) {
-      case 'insufficient_balance': {
-        const search = new URLSearchParams({ reason: 'insufficient_credits', returnTo });
-        if (error.balance) search.set('required', String(error.balance.creditsRequired));
-        router.push(`/profile/recharge?${search.toString()}`);
-        restoreDraft(input);
-        return;
-      }
-      case 'session_not_found':
-        setSessionId(null);
-        setStreamError('这段对话已不存在，已为你开启新的对话');
-        restoreDraft(input);
-        return;
-      case 'character_not_found':
-        setStreamError('这个角色已下架');
-        window.setTimeout(goBack, 1_200);
-        return;
-      case 'session_busy':
-        setStreamError('上一条还在生成，请稍候');
-        restoreDraft(input);
-        return;
-      case 'regenerate_not_allowed':
-        setStreamError('这条回复不能重新生成了');
-        return;
-      default:
-        setStreamError(error.message || '生成失败，请重试');
-        restoreDraft(input);
-    }
-  }
-
-  /** start 之前失败的内容要能原样重发，还回输入框 */
-  function restoreDraft(input: { mode: 'send' | 'regenerate'; content?: string }): void {
-    if (input.mode !== 'send' || !input.content) return;
-    setDraft((current) => (current.trim() ? current : (input.content ?? '')));
-  }
 
   const handleSend = () => {
     const content = draft.trim();
