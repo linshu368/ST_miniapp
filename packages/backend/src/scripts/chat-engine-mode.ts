@@ -17,7 +17,8 @@ import { getSupabaseClient } from '../lib/supabase.js';
 import { parseChatEngineMode } from '../platform/chat-engine.js';
 
 const db = getSupabaseClient().schema('miniapp');
-const target = process.argv[2];
+// pnpm 会把分隔用的 `--` 原样透传给脚本，这里丢掉它
+const target = process.argv.slice(2).find((arg) => arg !== '--');
 
 const { data: current, error: readError } = await db
   .from('runtime_config')
