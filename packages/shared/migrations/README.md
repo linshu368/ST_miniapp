@@ -156,6 +156,8 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 071_engine_platform_instructions.sql # 自研引擎平台规则三件套落 miniapp.runtime_config（M2）
 072_chat_history_conversation_source.sql # chat_history 增 turn/revision，替代并删除 chat_messages
 073_current_chat_history_view.sql # 每个 session turn 的 max revision 读取视图
+074_lobby_ranking_score_v3.sql # 大厅推荐排序 v3 评分
+075_chat_engine_mode.sql # 聊天链路全局开关 chat_engine_mode（默认 sillytavern，M6）
 ```
 
 > 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。
