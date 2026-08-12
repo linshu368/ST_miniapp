@@ -64,10 +64,19 @@ export interface ChatEngineState {
 export function useChatEngine(): ChatEngineState {
   const { data, isError } = useQuery<GetChatEngineData>({
     queryKey: chatEngineKeys.mode,
-    queryFn: () =>
-      apiClient<GetChatEngineData>('/api/platform/chat-engine', {
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      }),
+    queryFn: async () => {
+      // 不用 AbortSignal.timeout：它要 iOS 16+，更老的 Telegram WebView 上会直接抛
+      // TypeError，请求根本发不出去——那批设备会永远读不到开关且日志上看不出来。
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      try {
+        return await apiClient<GetChatEngineData>('/api/platform/chat-engine', {
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     initialData: readCachedMode,
     // 缓存只用来抢时间，不算新鲜：挂载后立刻回源，翻转开关不需要用户清缓存。
     initialDataUpdatedAt: 0,
