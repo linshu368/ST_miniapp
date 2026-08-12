@@ -14,17 +14,37 @@
  *   - Fastify 的 `request.log`（已带 reqId）与本 logger 输出格式一致；两者共存。
  *   - 报错请传原始 Error 对象 `{ err }`，由 pino err 序列化器保留 stack/cause，
  *     禁止 `String(err)` 丢栈（见 docs/日志系统.md §7）。
- *   - 输出：NODE_ENV=production → stdout JSON；否则 pino-pretty 彩色。
- *   - 级别：LOG_LEVEL 控制；test 默认 silent。
+ *   - 输出：NODE_ENV=production → stdout JSON；本地有 pino-pretty 时彩色。
+ *   - Dockerfile 等 prod 依赖镜像可能不装 pino-pretty：即使 NODE_ENV=development
+ *     也回退 JSON，避免启动期 `unable to determine transport target` 崩掉。
+ *   - 级别：LOG_LEVEL 控制；test 默认 silent。可用 LOG_PRETTY=0/1 强制开关。
  */
 
+import { createRequire } from 'node:module';
 import pino from 'pino';
 import type { FastifyBaseLogger } from 'fastify';
 import { buildPinoOptions, type LogKind } from '@miniapp/shared/src/logging/conventions';
 
+import { resolveLogPretty } from './log-pretty.js';
+
 export const logLevel =
   process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'test' ? 'silent' : 'info');
-export const logPretty = process.env.NODE_ENV !== 'production';
+
+function isPinoPrettyAvailable(): boolean {
+  try {
+    createRequire(import.meta.url).resolve('pino-pretty');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 仅在明确想要彩色、且依赖可解析时启用；缺包时回退 JSON，保证进程能起。 */
+export const logPretty = resolveLogPretty({
+  nodeEnv: process.env.NODE_ENV,
+  logPrettyEnv: process.env.LOG_PRETTY,
+  prettyAvailable: isPinoPrettyAvailable(),
+});
 
 /** 供 Fastify `logger` 选项复用，保证应用日志与 request 日志同源同格式 */
 export function fastifyLoggerOptions(): Record<string, unknown> {
