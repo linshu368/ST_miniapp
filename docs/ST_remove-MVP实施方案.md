@@ -4,6 +4,7 @@
 > §8.3 的八条 MVP 判据由 `mvp:regression` 全绿覆盖，一条不经过 ST / iframe / bridge 的对话链路已经跑通（§8.4）。
 > §7.3 的 ST 回归改为本地脚本 + 重构前后对拍，两侧各 7/7 通过、逐字段 diff 一致（§7.3.3）。
 > **下一步是 M5（自研聊天 UI）与 M6（灰度切换）；切换前必须先在生产库按序执行 069 / 070 / 071 / 072 / 073，见 §8.7。**
+> M5 已拆出独立的模块交接文档：**`docs/ST_remove-M5-自研聊天UI.md`**（2026-08-12），说明目的、实现原则、依赖到位情况与现有代码状态。
 > 三份接缝见 §四；读到旧 bot 代码后 §二决策 7 已再次修正，§六 M2 随之重写。
 > 上游文档：`docs/ST_remove.md`（总体方案与 12 项决策）
 > 目标：**先跑通 MVP 对话路径**。不在 MVP 关键路径上的模块一律后置。
@@ -102,7 +103,7 @@ MVP 完成的判据：不经过 ST、不经过 iframe、不经过 bridge，用 H
 ### 3.5 其他实测点
 
 - 前端路由是 `/tavern/[characterId]`，参数名不是 `id`
-- `packages/frontend/src/lib/api/client.ts` 已有 `apiStreamClient()`（SSE `data:` 解析），**当前零调用方**，M5 可直接用
+- `packages/frontend/src/lib/api/client.ts` 已有 `apiStreamClient()`（SSE `data:` 解析），**当前零调用方**。~~M5 可直接用~~ **此结论已作废（2026-08-12）**：它按 OpenAI 风格解析 `{ content }` 分片、认 `[DONE]`、回调累积全文，而 M3b 下发的是 `ConversationStreamEvent`（`delta.text` 为增量、终态是 `done` 事件），且它对非 2xx 只抛状态码、丢掉 402 的特殊响应体。M5 须另写一个增量事件客户端，顺带删掉这个死函数
 - `showdown` + `dompurify` 已在前端 `package.json`，**当前零 import**
 - 侧边栏会话列表用 Zustand（`stores/chat-list.ts`）而非 React Query，是前端唯一例外
 - 迁移编号有历史冲突（021 / 030 / 031 / 032 / 053 / 065 各出现两次），**当前最大为 068**
