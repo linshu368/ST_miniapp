@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG } from '@miniapp/shared';
 import { platformAction, useBridgeStatus, useSTEvent } from '@/lib/bridge';
-import { useChatEngineMode } from '@/lib/api/chat-engine';
+import { useChatEngine } from '@/lib/api/chat-engine';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { fetchLatestUserChat } from '@/lib/api/chats';
@@ -91,7 +91,7 @@ export default function TavernChatPage() {
   // 开关切到自研链路后仍会有人落到这一页：历史栈、外部旧链接，以及开关还没解析出来
   // 那一瞬间点进来的导航。统一在这里改道，ST 侧的初始化则按 selfHostedChat 整段跳过，
   // 不留下半截 boot。
-  const selfHostedChat = useChatEngineMode() === 'self_hosted';
+  const selfHostedChat = useChatEngine().mode === 'self_hosted';
   useEffect(() => {
     if (!selfHostedChat || !characterId) return;
     router.replace(chatEntryPath('self_hosted', characterId));

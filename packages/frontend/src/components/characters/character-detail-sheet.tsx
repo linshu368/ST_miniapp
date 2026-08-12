@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, Quote, Sparkles, X } from 'lucide-react';
 
 import { useCharacterQuery } from '@/lib/api/characters';
-import { useChatEngineMode } from '@/lib/api/chat-engine';
+import { useChatEngine } from '@/lib/api/chat-engine';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
@@ -31,7 +31,7 @@ export function CharacterDetailSheet({
 }: CharacterDetailSheetProps) {
   const { data, isLoading } = useCharacterQuery(characterId ?? undefined);
   const character = data?.character;
-  const chatEngineMode = useChatEngineMode();
+  const { mode: chatEngineMode } = useChatEngine();
 
   // ── 动画状态 ──────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);

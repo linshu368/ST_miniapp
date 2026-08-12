@@ -8,13 +8,13 @@ interface ChatEntryOptions {
 }
 
 /**
- * 聊天入口的目标路由。开关未解析（undefined）时按 ST 处理，见 useChatEngineMode 的说明。
+ * 聊天入口的目标路由。
  *
  * 两条链路的「继续上次对话」参数互不通用，所以按模式各带各的：ST 认 chat 文件名，
  * 自研链路认 chat_sessions 的 id。
  */
 export function chatEntryPath(
-  mode: ChatEngineMode | undefined,
+  mode: ChatEngineMode,
   characterId: string,
   options: ChatEntryOptions = {}
 ): string {

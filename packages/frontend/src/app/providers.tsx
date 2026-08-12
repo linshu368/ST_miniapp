@@ -6,7 +6,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { getQueryClient } from '@/lib/api/query-client';
-import { useChatEngineMode } from '@/lib/api/chat-engine';
+import { useChatEngine } from '@/lib/api/chat-engine';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
@@ -59,13 +59,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
 /**
  * ST 侧的常驻运行时：iframe 冷启动、st-session provision、预设回灌。
  *
- * 自研链路下一个都不该起来，所以整体挂在开关后面。开关还没解析出来时也先不挂——
- * 这里只有「挂了才发请求」这一个方向，晚挂一帧不会漏掉什么；BridgeProvider 本身
- * 是纯 context，不联网，留在外面让消费 bridge 状态的老组件照常渲染。
+ * 自研链路下一个都不该起来，所以整体挂在开关后面。只有「还在等第一次响应」这一种
+ * 情况会晚挂一帧——开关读失败时 resolved 也是 true、mode 回落 ST，否则接口一挂
+ * 就没人挂 iframe，聊天会永远停在开屏。BridgeProvider 本身是纯 context、不联网，
+ * 留在外面让消费 bridge 状态的老组件照常渲染。
  */
 function LegacySTRuntime() {
-  const chatEngineMode = useChatEngineMode();
-  if (chatEngineMode !== 'sillytavern') return null;
+  const { mode, resolved } = useChatEngine();
+  if (!resolved || mode !== 'sillytavern') return null;
 
   return (
     <>

@@ -9,7 +9,7 @@ import type { ChatSession } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import { useChatListStore } from '@/stores/chat-list';
 import { useCharacterQuery } from '@/lib/api/characters';
-import { useChatEngineMode } from '@/lib/api/chat-engine';
+import { useChatEngine } from '@/lib/api/chat-engine';
 import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
 import { useFavoritesQuery } from '@/lib/api/favorites';
 import { FavoriteButton } from '@/components/characters/favorite-button';
@@ -85,9 +85,9 @@ export default function ChatsPage() {
  * 开关解析出来之前谁都不查，猜错那次就是一发白打的 ST 反代请求。
  */
 function HistoryList() {
-  const chatEngineMode = useChatEngineMode();
+  const { mode, resolved } = useChatEngine();
 
-  if (!chatEngineMode) {
+  if (!resolved) {
     return (
       <section className="mx-auto max-w-2xl space-y-2">
         <HistoryHint>正在读取历史对话…</HistoryHint>
@@ -95,7 +95,7 @@ function HistoryList() {
     );
   }
 
-  return chatEngineMode === 'self_hosted' ? <ConversationHistoryList /> : <StHistoryList />;
+  return mode === 'self_hosted' ? <ConversationHistoryList /> : <StHistoryList />;
 }
 
 function StHistoryList() {
@@ -267,7 +267,7 @@ function FavoritesList() {
   const { data, isLoading, isError, refetch } = useFavoritesQuery();
   const characters = data?.characters ?? [];
   const bridgeStatus = useBridgeStatus();
-  const chatEngineMode = useChatEngineMode();
+  const { mode: chatEngineMode } = useChatEngine();
 
   if (isLoading && characters.length === 0) {
     return (

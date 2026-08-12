@@ -41,7 +41,15 @@ export async function getChatEngineSetting(): Promise<ChatEngineSetting> {
   const now = Date.now();
   if (cache && cache.expiresAt > now) return cache.setting;
 
-  const entry = await fetchRuntimeConfigEntry(CHAT_ENGINE_MODE_CONFIG_KEY);
+  let entry: Awaited<ReturnType<typeof fetchRuntimeConfigEntry>>;
+  try {
+    entry = await fetchRuntimeConfigEntry(CHAT_ENGINE_MODE_CONFIG_KEY);
+  } catch (error) {
+    // 这个接口决定客户端挂不挂 ST，宁可回落也不能 500：读挂了不写缓存，下次再试。
+    console.error(`[chat-engine] 读取 ${CHAT_ENGINE_MODE_CONFIG_KEY} 抛错，本次回落：`, error);
+    return { mode: DEFAULT_CHAT_ENGINE_MODE, degraded: true };
+  }
+
   const setting = parseChatEngineMode(entry?.value);
   if (setting.degraded) {
     console.warn(

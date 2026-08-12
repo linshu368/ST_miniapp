@@ -19,11 +19,6 @@ describe('chatEntryPath', () => {
     );
   });
 
-  // 开关读不到时留在旧链路：反过来会把用户送进一个可能还没准备好的后端
-  it('开关未解析时回落到 ST 页面', () => {
-    expect(chatEntryPath(undefined, 'char-1')).toBe('/tavern/char-1');
-  });
-
   it('两条链路都不把对方的参数带出去', () => {
     expect(chatEntryPath('self_hosted', 'char-1', { legacyChatFile: 'x' })).toBe('/chat/char-1');
     expect(chatEntryPath('sillytavern', 'char-1', { sessionId: 'sess-1' })).toBe('/tavern/char-1');

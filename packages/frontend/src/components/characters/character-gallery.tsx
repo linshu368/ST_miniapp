@@ -15,7 +15,7 @@ import {
   useLobbyLatestBadgeQuery,
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
-import { useChatEngineMode } from '@/lib/api/chat-engine';
+import { useChatEngine } from '@/lib/api/chat-engine';
 import { useBridgeStatus } from '@/lib/bridge';
 import { getTimingMark } from '@/lib/bridge/iframe-timing';
 import { chatEntryPath } from '@/lib/chat-entry';
@@ -56,7 +56,7 @@ function scoreMatch(
 export function CharacterGallery() {
   const router = useRouter();
   const bridgeStatus = useBridgeStatus();
-  const chatEngineMode = useChatEngineMode();
+  const { mode: chatEngineMode } = useChatEngine();
   const [sort, setSort] = useState<LobbySort>(DEFAULT_LOBBY_SORT);
   const { data, isLoading, isError } = useCharactersQuery(sort);
   const [query, setQuery] = useState('');

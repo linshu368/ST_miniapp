@@ -2,7 +2,12 @@
 
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { isChatEngineMode, type ChatEngineMode, type GetChatEngineData } from '@miniapp/shared';
+import {
+  DEFAULT_CHAT_ENGINE_MODE,
+  isChatEngineMode,
+  type ChatEngineMode,
+  type GetChatEngineData,
+} from '@miniapp/shared';
 
 import { apiClient } from './client';
 
@@ -34,29 +39,40 @@ function writeCachedMode(mode: ChatEngineMode): void {
   }
 }
 
-function useChatEngineQuery() {
-  return useQuery<GetChatEngineData>({
+export interface ChatEngineState {
+  /** 直接可用的模式；还没解析出来时是兜底的 ST */
+  mode: ChatEngineMode;
+  /**
+   * 首次启动等第一次响应期间为 false。请求失败不算未解析——读不到开关时
+   * ST 就是答案，否则接口一挂，整个 MiniApp 会停在等开关的状态里。
+   */
+  resolved: boolean;
+}
+
+/**
+ * 聊天链路开关。
+ *
+ * 「读不到怎么办」只在这里回答一次：一律当 ST。调用方只有在「等一下更好」的地方
+ * （比如列表要按模式选数据源）才看 resolved，其余直接用 mode。
+ */
+export function useChatEngine(): ChatEngineState {
+  const { data, isError } = useQuery<GetChatEngineData>({
     queryKey: chatEngineKeys.mode,
     queryFn: () => apiClient<GetChatEngineData>('/api/platform/chat-engine'),
     initialData: readCachedMode,
     // 缓存只用来抢时间，不算新鲜：挂载后立刻回源，翻转开关不需要用户清缓存。
     initialDataUpdatedAt: 0,
     staleTime: 60_000,
+    // 每多retry 一次，无缓存的首启就多等一次退避才能回落到 ST。
+    retry: 1,
   });
-}
-
-/**
- * 聊天链路开关。undefined = 还没解析出来（首次启动或请求失败）。
- *
- * 调用方对 undefined 一律按旧链路处理：读不到开关时保持 ST 是安全的，
- * 反过来会把用户送进一个后端可能还没准备好的链路。
- */
-export function useChatEngineMode(): ChatEngineMode | undefined {
-  const { data } = useChatEngineQuery();
 
   useEffect(() => {
     if (data) writeCachedMode(data.mode);
   }, [data]);
 
-  return data?.mode;
+  return {
+    mode: data?.mode ?? DEFAULT_CHAT_ENGINE_MODE,
+    resolved: data !== undefined || isError,
+  };
 }

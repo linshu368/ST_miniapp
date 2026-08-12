@@ -9,6 +9,9 @@
  * 环境执行时用 Railway 注入变量，避免把连接串落到本地：
  *   railway run --service stminiapp --environment development -- \
  *     pnpm --filter @miniapp/backend chat-engine:mode -- self_hosted
+ *
+ * 这一个 key 会同时改掉全站所有聊天入口，所以写生产库要额外带确认串
+ * （与 db-migrate workflow 的 RUN_PRODUCTION_MIGRATION 同一个思路）。
  */
 
 import { config } from '../platform/config.js';
@@ -16,9 +19,13 @@ import { CHAT_ENGINE_MODE_CONFIG_KEY, CHAT_ENGINE_MODES, isChatEngineMode } from
 import { getSupabaseClient } from '../lib/supabase.js';
 import { parseChatEngineMode } from '../platform/chat-engine.js';
 
+const PRODUCTION_CONFIRMATION = 'SWITCH_PRODUCTION_CHAT_ENGINE';
+
 const db = getSupabaseClient().schema('miniapp');
 // pnpm 会把分隔用的 `--` 原样透传给脚本，这里丢掉它
-const target = process.argv.slice(2).find((arg) => arg !== '--');
+const args = process.argv.slice(2).filter((arg) => arg !== '--');
+const target = args[0];
+const confirmation = args[1];
 
 const { data: current, error: readError } = await db
   .from('runtime_config')
@@ -43,6 +50,13 @@ if (!target) {
 
 if (!isChatEngineMode(target)) {
   console.error(`无效模式 "${target}"，可选：${CHAT_ENGINE_MODES.join(' | ')}`);
+  process.exit(1);
+}
+
+if (config.database.environment === 'production' && confirmation !== PRODUCTION_CONFIRMATION) {
+  console.error(
+    `这是生产库（${config.database.projectRef}）。确认要切换请在模式后追加 ${PRODUCTION_CONFIRMATION}`
+  );
   process.exit(1);
 }
 
