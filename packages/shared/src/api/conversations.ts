@@ -143,9 +143,9 @@ export type RegenerateRequest = Record<string, never>;
 // ==== SSE 事件契约 ====
 // 上面两条路由的响应体是 text/event-stream，每个 data: 行是一个序列化后的
 // ConversationStreamEvent；没有 [DONE] 哨兵，终态是 done 事件。
-// ⚠️ lib/api/client.ts 里现存的 apiStreamClient() 与本契约不兼容——它按 OpenAI 风格
-// 解析 { content } 分片、认 [DONE]、回调累积全文，且对非 2xx 只抛状态码、丢掉响应体
-// （402 的响应体形状特殊，必须能读到）。M5 需另写一个按事件解析的增量客户端。
+// 客户端实现在 frontend/src/lib/api/conversation-stream.ts。原来的 apiStreamClient()
+// 与本契约不兼容（按 OpenAI 风格解析 { content } 分片、认 [DONE]、回调累积全文，
+// 且对非 2xx 只抛状态码、丢掉 402 响应体里的两个金额），已随 M5 一并删除。
 
 /**
  * 首帧：上游接受本次生成（预检通过 + 上游 2xx）后立刻下发，早于第一个 token，
