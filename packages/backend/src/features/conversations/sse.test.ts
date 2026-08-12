@@ -23,10 +23,15 @@ class FakeRaw extends EventEmitter {
   }
 }
 
-function fakeReply(): { reply: FastifyReply; raw: FakeRaw; hijack: ReturnType<typeof vi.fn> } {
+function fakeReply(headers: Record<string, string> = {}): {
+  reply: FastifyReply;
+  raw: FakeRaw;
+  hijack: ReturnType<typeof vi.fn>;
+} {
   const raw = new FakeRaw();
   const hijack = vi.fn();
-  return { reply: { raw, hijack } as unknown as FastifyReply, raw, hijack };
+  const getHeaders = () => headers;
+  return { reply: { raw, hijack, getHeaders } as unknown as FastifyReply, raw, hijack };
 }
 
 describe('encodeStreamEvent', () => {
@@ -66,6 +71,30 @@ describe('createReplyStreamSink', () => {
     // nginx 缓冲住就没有「流式」可言了
     expect(raw.head?.headers['X-Accel-Buffering']).toBe('no');
     expect(sink.opened).toBe(true);
+  });
+
+  // hijack 之后 Fastify 不再发这些头，而 CORS 头就挂在那上面：漏掉的话浏览器
+  // 会拒收整条跨域流，后端却照常生成落库——只在真浏览器里才看得见。
+  it('带上 Fastify 已挂在 reply 上的响应头（CORS 就在里面）', () => {
+    const { reply, raw } = fakeReply({
+      'access-control-allow-origin': 'https://miniapp.example',
+      'access-control-allow-credentials': 'true',
+    });
+    const sink = createReplyStreamSink(reply);
+
+    sink.open();
+
+    expect(raw.head?.headers['access-control-allow-origin']).toBe('https://miniapp.example');
+    expect(raw.head?.headers['access-control-allow-credentials']).toBe('true');
+  });
+
+  it('SSE 自己的头压过 reply 上的同名头', () => {
+    const { reply, raw } = fakeReply({ 'Cache-Control': 'public, max-age=60' });
+    const sink = createReplyStreamSink(reply);
+
+    sink.open();
+
+    expect(raw.head?.headers['Cache-Control']).toBe('no-cache, no-transform');
   });
 
   it('重复 open 无副作用', () => {

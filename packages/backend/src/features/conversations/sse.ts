@@ -13,6 +13,7 @@
  *   - 客户端断开不终止后端流程（§5.6）：断开后写入静默丢弃，execute 继续跑到 [DONE] 并落库。
  */
 
+import type { OutgoingHttpHeaders } from 'node:http';
 import type { FastifyReply } from 'fastify';
 import type { ConversationStreamEvent } from '@miniapp/shared';
 
@@ -55,13 +56,21 @@ export function createReplyStreamSink(reply: FastifyReply): ConversationStreamSi
       opened = true;
       // 交出 reply 的所有权，之后由本 sink 独占裸响应，Fastify 不再尝试序列化任何东西。
       reply.hijack();
-      reply.raw.writeHead(200, {
+      // 连带把 Fastify 已经挂在 reply 上的响应头一起发出去。hijack 之后没人替我们发它们，
+      // 而 @fastify/cors 正是在 onRequest 里用 reply.header() 写的 Access-Control-*：
+      // 漏掉这批头，浏览器会直接拒收这条跨域流（前端报网络异常），后端却照常生成、
+      // 落库、扣费——本地和 node 侧回归都测不出来，只在真浏览器里现形。
+      // 断言：两边描述的是同一批响应头，只是 node 把 accept 之类收窄成了不含 number 的联合
+      const inherited = reply.getHeaders() as OutgoingHttpHeaders;
+      const headers: OutgoingHttpHeaders = {
+        ...inherited,
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
         // nginx 默认会缓冲代理响应，缓冲住就没有「流式」可言了
         'X-Accel-Buffering': 'no',
-      });
+      };
+      reply.raw.writeHead(200, headers);
       reply.raw.flushHeaders();
     },
     send(event) {
