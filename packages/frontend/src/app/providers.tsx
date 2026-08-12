@@ -59,14 +59,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
 /**
  * ST 侧的常驻运行时：iframe 冷启动、st-session provision、预设回灌。
  *
- * 自研链路下一个都不该起来，所以整体挂在开关后面。只有「还在等第一次响应」这一种
- * 情况会晚挂一帧——开关读失败时 resolved 也是 true、mode 回落 ST，否则接口一挂
- * 就没人挂 iframe，聊天会永远停在开屏。BridgeProvider 本身是纯 context、不联网，
+ * 自研链路下一个都不该起来。挂载条件比「resolved」更严——必须等本轮网络回源
+ * （confirmed）：localStorage 里脏的 `sillytavern` 不能在回源前把 iframe 拉起来，
+ * 否则自研环境下点卡路径会被短暂 ST boot 污染。开关读失败时 confirmed 仍为 true、
+ * mode 回落 ST，行为与从前一致。BridgeProvider 本身是纯 context、不联网，
  * 留在外面让消费 bridge 状态的老组件照常渲染。
  */
 function LegacySTRuntime() {
-  const { mode, resolved } = useChatEngine();
-  if (!resolved || mode !== 'sillytavern') return null;
+  const { mode, confirmed } = useChatEngine();
+  if (!confirmed || mode !== 'sillytavern') return null;
 
   return (
     <>
