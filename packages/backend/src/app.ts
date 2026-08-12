@@ -26,6 +26,10 @@ import simulationRoutes from './routes/simulation.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
+import {
+  startLobbyRankingRefreshJob,
+  stopLobbyRankingRefreshJob,
+} from './lib/lobby-ranking-refresh-job.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
 
 export async function buildApp() {
@@ -141,8 +145,15 @@ export async function buildApp() {
     app.log.info('[sync-job] Chat history sync job disabled by CHAT_HISTORY_SYNC_ENABLED=false');
   }
 
+  if (config.lobbyRankingRefreshEnabled) {
+    startLobbyRankingRefreshJob(app.log);
+  } else {
+    app.log.info('[lobby-ranking] refresh job disabled by LOBBY_RANKING_REFRESH_ENABLED=false');
+  }
+
   app.addHook('onClose', async () => {
     stopChatHistorySyncJob();
+    stopLobbyRankingRefreshJob();
   });
 
   return app;

@@ -60,6 +60,8 @@ export const config = {
     workerTimeoutMs: parseInt(process.env.SIMULATION_WORKER_TIMEOUT_MS || '300000', 10),
   },
   chatHistorySyncEnabled: process.env.CHAT_HISTORY_SYNC_ENABLED !== 'false',
+  /** 大厅推荐排序分的每日刷新。关掉后读路径退回运营顺序，不影响其它功能 */
+  lobbyRankingRefreshEnabled: process.env.LOBBY_RANKING_REFRESH_ENABLED !== 'false',
 
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {

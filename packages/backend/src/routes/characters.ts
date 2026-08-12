@@ -9,8 +9,11 @@ import type {
   CharacterDetail,
   LobbyLatestBadgeData,
 } from '@miniapp/shared';
-import { loadCharacterEngagementStats } from '../features/lobby/engagement-stats.js';
-import { buildRecommendedOrder, dailyShuffleSeed } from '../features/lobby/recommended-ranking.js';
+import { loadCharacterRankingScores } from '../features/lobby/ranking-stats.js';
+import {
+  buildRecommendedOrder,
+  resolveFeaturedIds,
+} from '../features/lobby/recommended-ranking.js';
 import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -64,33 +67,42 @@ export default async function characterRoutes(app: FastifyInstance) {
     });
 
     let ordered = characters;
+    let featuredIds = new Set<string>();
+
     if (sort === 'recommended') {
-      const engagement = await loadCharacterEngagementStats();
-      // 聚合不可用时保持运营顺序，宁可不动态排序也不能把首页排乱。
-      if (engagement) {
+      const scores = await loadCharacterRankingScores();
+      // 排序分不可用（job 还没跑过第一轮，或查询失败）时保持运营顺序。
+      // 不能把空结果当成「所有卡样本都是 0」——那会让整个大厅落进冷启动池被随机打乱。
+      if (scores) {
         ordered = buildRecommendedOrder({
           operatorOrdered: characters,
-          engagement,
-          fixedCount: LOBBY_FEATURED_POSITION_COUNT,
-          seed: dailyShuffleSeed(),
+          scores,
+          protectedPrefix: LOBBY_FEATURED_POSITION_COUNT,
         });
+        featuredIds = resolveFeaturedIds(characters, scores, LOBBY_FEATURED_POSITION_COUNT);
+      } else {
+        featuredIds = new Set(characters.slice(0, LOBBY_FEATURED_POSITION_COUNT).map((c) => c.id));
       }
     }
 
-    const charactersSummary: CharacterSummary[] = ordered.map(
-      (c: (typeof characters)[number], index) => ({
-        id: c.id,
-        name: c.name,
-        description: c.description,
-        avatar_url: resolveCharacterAvatarUrl(c.id, c.avatar_url),
-        personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
-        author_name: c.creator,
-        // 「最新」页不保留运营固定位，也不残留热门金框。
-        is_featured: sort === 'recommended' && index < LOBBY_FEATURED_POSITION_COUNT,
-      })
-    );
+    const charactersSummary: CharacterSummary[] = ordered.map((c: (typeof characters)[number]) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      avatar_url: resolveCharacterAvatarUrl(c.id, c.avatar_url),
+      personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
+      author_name: c.creator,
+      // 「最新」页不保留运营固定位，也不残留热门金框。
+      is_featured: featuredIds.has(c.id),
+    }));
 
-    reply.header('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=60');
+    // 推荐页的冷启动卡每次请求重排，缓存会把随机结果钉死；「最新」页是确定顺序，保留 60 秒。
+    reply.header(
+      'Cache-Control',
+      sort === 'recommended'
+        ? 'no-store'
+        : 'public, max-age=60, s-maxage=60, stale-while-revalidate=60'
+    );
     return reply.send(ok<GetCharactersData>({ characters: charactersSummary }));
   });
 
@@ -133,7 +145,9 @@ export default async function characterRoutes(app: FastifyInstance) {
   app.get('/api/characters/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const [character, featured] = await Promise.all([
+    // 金框判定必须与大厅同源：大厅是「排序分主池前八」，这里若还按 sort_order 前八算，
+    // 同一张卡会出现在列表有金框、点进详情没有。
+    const [character, lobbyIds, scores] = await Promise.all([
       prisma.character.findFirst({
         where: { id, enabled: true, archived_at: null },
       }),
@@ -141,13 +155,17 @@ export default async function characterRoutes(app: FastifyInstance) {
         where: { enabled: true, archived_at: null },
         orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
         select: { id: true },
-        take: LOBBY_FEATURED_POSITION_COUNT,
       }),
+      loadCharacterRankingScores(),
     ]);
 
     if (!character) {
       return reply.status(404).send(fail('NOT_FOUND', 'Character not found'));
     }
+
+    const featuredIds = scores
+      ? resolveFeaturedIds(lobbyIds, scores, LOBBY_FEATURED_POSITION_COUNT)
+      : new Set(lobbyIds.slice(0, LOBBY_FEATURED_POSITION_COUNT).map((item) => item.id));
 
     const characterDetail: CharacterDetail = {
       id: character.id,
@@ -156,7 +174,7 @@ export default async function characterRoutes(app: FastifyInstance) {
       avatar_url: resolveCharacterAvatarUrl(character.id, character.avatar_url),
       personality_tags: Array.isArray(character.tags) ? (character.tags as string[]) : [],
       author_name: character.creator,
-      is_featured: featured.some((item) => item.id === character.id),
+      is_featured: featuredIds.has(character.id),
       greeting: character.first_mes,
       creator_notes: character.creator_notes,
     };

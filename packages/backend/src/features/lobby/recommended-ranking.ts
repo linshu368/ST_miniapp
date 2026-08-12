@@ -1,34 +1,20 @@
-// 首页「推荐」页排序：运营固定前八 + 第九张起按聊天转化率 + 新卡冷启动随机插入中段。
+// 首页「推荐」页排序 v3：全量按排序分降序 + 样本不足的冷启动卡随机插入中段。
+//
+// 与 v2 的两处根本差别：
+//   1. 运营固定前八没有了。金框是位置属性，跟着分数跑出来的新前八自动走。
+//   2. 冷启动卡的位置每次请求都重排，不再按自然日固定。大厅取数两跳都是 no-store，
+//      前端 Next 路由代理带 cache: 'no-store'，所以后端不设缓存就真的每次生效。
 
-/** 累计进入聊天人数低于该值的角色视为新卡，不参与前 30 名竞争 */
-export const LOBBY_COLD_START_MIN_ENTERED_USERS = 10;
-/** 新卡随机插入的名次区间，1 起算的闭区间 */
-export const LOBBY_COLD_START_SLOT_FIRST = 31;
-export const LOBBY_COLD_START_SLOT_LAST = 60;
+import { LOBBY_RANKING_MIN_SAMPLE } from './ranking-score.js';
+import type { CardScore } from './ranking-stats.js';
 
-export interface CharacterEngagement {
-  /** 进入过该角色聊天的去重用户数（转化率分母） */
-  enteredUsers: number;
-  /** 与该角色聊天达到 5 轮及以上的去重用户数（转化率分子） */
-  convertedUsers: number;
-}
+/** 冷启动卡的插入区间，按主池长度的比例取，闭区间 */
+export const LOBBY_COLD_START_BAND_START = 0.3;
+export const LOBBY_COLD_START_BAND_END = 0.6;
 
-const EMPTY_ENGAGEMENT: CharacterEngagement = { enteredUsers: 0, convertedUsers: 0 };
+export { LOBBY_RANKING_MIN_SAMPLE };
 
-export function conversionRate(engagement: CharacterEngagement): number {
-  if (engagement.enteredUsers <= 0) return 0;
-  return engagement.convertedUsers / engagement.enteredUsers;
-}
-
-/**
- * 新卡插入位置需要在同一天内保持一致：列表每次重新拉取都重排会让用户浏览时卡片跳动。
- * 以自然日作为种子桶，当天任意一次请求得到的顺序都相同。
- */
-export function dailyShuffleSeed(now: Date = new Date()): number {
-  return Math.floor(now.getTime() / 86_400_000);
-}
-
-/** mulberry32：种子相同则序列相同，保证排序可复现 */
+/** mulberry32：种子相同则序列相同，保证单测可复现 */
 function createRng(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -47,52 +33,95 @@ function shuffle<T>(items: readonly T[], rng: () => number): T[] {
     .map((entry) => entry.item);
 }
 
-export interface BuildRecommendedOrderInput<T> {
-  /** 运营配置顺序（sort_order 升序），推荐页前 N 张与同转化率次级顺序都以它为准 */
-  operatorOrdered: readonly T[];
-  engagement: ReadonlyMap<string, CharacterEngagement>;
-  /** 运营固定位数量，即大厅金框前八 */
-  fixedCount: number;
-  seed: number;
+interface Partitioned<T> {
+  /** 样本达标，按分数降序排好 */
+  main: T[];
+  /** 样本不足，等待随机插入 */
+  cold: T[];
 }
 
 /**
- * 排序规则（PRD 2.2 / 2.3）：
- * 1. 前 fixedCount 张沿用运营顺序，不参与动态排序；
- * 2. 其余角色中，进入聊天人数达标的按转化率从高到低，同转化率沿用运营顺序；
- * 3. 未达标的新卡不进前 30 名，统一随机插入第 31–60 名，彼此之间完全随机。
+ * 分池并给主池排序。
+ * 同分回落到运营顺序：没有表现差异时列表不该来回跳动。
  */
-export function buildRecommendedOrder<T extends { id: string }>(
-  input: BuildRecommendedOrderInput<T>
-): T[] {
-  const { operatorOrdered, engagement, fixedCount, seed } = input;
-
-  const fixed = operatorOrdered.slice(0, Math.max(0, fixedCount));
-  const rest = operatorOrdered.slice(Math.max(0, fixedCount));
-
-  const mature: Array<{ item: T; rate: number; operatorIndex: number }> = [];
+function partition<T extends { id: string }>(
+  operatorOrdered: readonly T[],
+  scores: ReadonlyMap<string, CardScore>
+): Partitioned<T> {
+  const mature: Array<{ item: T; score: number; operatorIndex: number }> = [];
   const cold: T[] = [];
 
-  rest.forEach((item, index) => {
-    const stats = engagement.get(item.id) ?? EMPTY_ENGAGEMENT;
-    if (stats.enteredUsers >= LOBBY_COLD_START_MIN_ENTERED_USERS) {
-      mature.push({ item, rate: conversionRate(stats), operatorIndex: index });
+  operatorOrdered.forEach((item, operatorIndex) => {
+    const stat = scores.get(item.id);
+    if (stat && stat.sampleSize >= LOBBY_RANKING_MIN_SAMPLE) {
+      mature.push({ item, score: stat.score, operatorIndex });
     } else {
       cold.push(item);
     }
   });
 
-  // 同转化率时回落到运营顺序，避免没有表现差异时列表来回跳动。
-  mature.sort((a, b) => (b.rate === a.rate ? a.operatorIndex - b.operatorIndex : b.rate - a.rate));
+  mature.sort((a, b) =>
+    b.score === a.score ? a.operatorIndex - b.operatorIndex : b.score - a.score
+  );
 
-  const baseQueue: T[] = [...fixed, ...mature.map((entry) => entry.item)];
-  const rng = createRng(seed);
+  return { main: mature.map((entry) => entry.item), cold };
+}
+
+/**
+ * 金框位对应的角色 id。
+ *
+ * 取主池的前 count 张，而不是最终列表的前 count 个位置——主池顺序是确定的，
+ * 这样大厅列表与角色详情页对同一张卡的判断不会打架。
+ * buildRecommendedOrder 会保证冷启动卡插不进这段头部，两种口径因此始终一致。
+ */
+export function resolveFeaturedIds<T extends { id: string }>(
+  operatorOrdered: readonly T[],
+  scores: ReadonlyMap<string, CardScore>,
+  count: number
+): Set<string> {
+  const { main } = partition(operatorOrdered, scores);
+  return new Set(main.slice(0, Math.max(0, count)).map((item) => item.id));
+}
+
+export interface BuildRecommendedOrderInput<T> {
+  /** 运营配置顺序（sort_order 升序），同分时的次级顺序以它为准 */
+  operatorOrdered: readonly T[];
+  scores: ReadonlyMap<string, CardScore>;
+  /**
+   * 冷启动卡不得插入的头部长度，即金框区。
+   * 主池很短时 30% 会落进前八，让随机卡拿到金框——挡住这种情况，
+   * 也让 resolveFeaturedIds 的「主池前 N」与列表的「位置前 N」始终指同一批卡。
+   */
+  protectedPrefix?: number;
+  /** 省略则每次调用重新随机；单测传固定值以复现 */
+  seed?: number;
+}
+
+/**
+ * 排序规则：
+ * 1. 样本达标（n_c ≥ 20）的进主池，按 score 降序，同分回落运营顺序；
+ * 2. 样本不足的（含全新卡）随机插入主池长度的 30%–60% 区间，彼此之间完全随机；
+ * 3. 冷启动卡数量超过区间宽度时把窗口向后撑开，不挤占头部。
+ */
+export function buildRecommendedOrder<T extends { id: string }>(
+  input: BuildRecommendedOrderInput<T>
+): T[] {
+  const { operatorOrdered, scores, protectedPrefix = 0, seed } = input;
+
+  const { main, cold } = partition(operatorOrdered, scores);
+  const rng = createRng(seed ?? Math.floor(Math.random() * 0x1_0000_0000));
   const coldQueue = shuffle(cold, rng);
-  const total = baseQueue.length + coldQueue.length;
 
-  // 槽位必须一次性选定：逐张插入会让先插入的新卡被后插入的顶出第 60 名。
-  const firstSlot = LOBBY_COLD_START_SLOT_FIRST - 1;
-  const lastSlot = LOBBY_COLD_START_SLOT_LAST - 1;
+  if (main.length === 0) return coldQueue;
+  if (coldQueue.length === 0) return main;
+
+  const firstSlot = Math.min(
+    Math.max(protectedPrefix, Math.round(LOBBY_COLD_START_BAND_START * main.length)),
+    main.length
+  );
+  const lastSlot = Math.round(LOBBY_COLD_START_BAND_END * main.length);
+
+  // 槽位必须一次性选定：逐张插入会让先插入的冷卡被后插入的顶出区间。
   const windowSize = Math.max(lastSlot - firstSlot + 1, coldQueue.length);
   const candidates: number[] = [];
   for (let offset = 0; offset < windowSize; offset += 1) candidates.push(firstSlot + offset);
@@ -100,11 +129,12 @@ export function buildRecommendedOrder<T extends { id: string }>(
 
   const ordered: T[] = [];
   let coldIndex = 0;
-  let baseIndex = 0;
+  let mainIndex = 0;
+  const total = main.length + coldQueue.length;
 
   for (let position = 0; position < total; position += 1) {
     const coldTurn = slots.has(position) && coldIndex < coldQueue.length;
-    if (coldTurn || baseIndex >= baseQueue.length) {
+    if (coldTurn || mainIndex >= main.length) {
       const item = coldQueue[coldIndex];
       if (item !== undefined) {
         coldIndex += 1;
@@ -112,10 +142,10 @@ export function buildRecommendedOrder<T extends { id: string }>(
         continue;
       }
     }
-    const baseItem = baseQueue[baseIndex];
-    if (baseItem !== undefined) {
-      baseIndex += 1;
-      ordered.push(baseItem);
+    const mainItem = main[mainIndex];
+    if (mainItem !== undefined) {
+      mainIndex += 1;
+      ordered.push(mainItem);
     }
   }
 
