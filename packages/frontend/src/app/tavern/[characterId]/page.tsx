@@ -88,10 +88,12 @@ export default function TavernChatPage() {
   );
   const chatReady = readyCharacterId === characterId;
 
-  // 开关切到自研链路后仍会有人落到这一页：历史栈、外部旧链接，以及开关还没解析出来
-  // 那一瞬间点进来的导航。统一在这里改道，ST 侧的初始化则按 selfHostedChat 整段跳过，
-  // 不留下半截 boot。
-  const selfHostedChat = useChatEngine().mode === 'self_hosted';
+  // 开关切到自研链路后仍会有人落到这一页：历史栈、外部旧链接，以及回源前误导航。
+  // 统一在这里改道。ST 初始化必须等 confirmed && sillytavern——脏缓存的 sillytavern
+  // 不能在回源前踢起 ensure/select，否则自研环境会被短暂 ST boot 污染。
+  const { mode: chatEngineMode, confirmed: chatEngineConfirmed } = useChatEngine();
+  const selfHostedChat = chatEngineMode === 'self_hosted';
+  const allowStBoot = chatEngineConfirmed && chatEngineMode === 'sillytavern';
   useEffect(() => {
     if (!selfHostedChat || !characterId) return;
     router.replace(chatEntryPath('self_hosted', characterId));
@@ -162,7 +164,7 @@ export default function TavernChatPage() {
 
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
-    if (!characterId || selfHostedChat) return;
+    if (!characterId || !allowStBoot) return;
     setBridgeTelemetryCharacter(characterId);
     resetPageTiming();
     markTiming('page_mount');
@@ -191,11 +193,11 @@ export default function TavernChatPage() {
       window.clearTimeout(gateStallTimer);
       cancelFirstChatAttempt(firstChatAttemptIdRef.current, 'page_unmounted');
     };
-  }, [characterId, selfHostedChat]);
+  }, [allowStBoot, characterId]);
 
   useEffect(() => {
     setReadyCharacterId(null);
-    if (!characterId || !gateOpen || selfHostedChat) return;
+    if (!characterId || !gateOpen || !allowStBoot) return;
     setEntryError(null);
 
     markTiming('gate_open'); // [iframe-timing] TEMP DEBUG
@@ -350,7 +352,7 @@ export default function TavernChatPage() {
         target: { characterId, requestedChat: requestedChat ?? '' },
       });
     };
-  }, [gateOpen, characterId, entryAttempt, requestedChat, selfHostedChat]);
+  }, [allowStBoot, gateOpen, characterId, entryAttempt, requestedChat]);
 
   return (
     <div className="relative w-full h-full">

@@ -82,12 +82,12 @@ export default function ChatsPage() {
 
 /**
  * 两条链路的历史来源不同：ST 走 chat 文件反代，自研链路直读 chat_sessions。
- * 开关解析出来之前谁都不查，猜错那次就是一发白打的 ST 反代请求。
+ * 必须等网络回源：仅有脏 sillytavern 缓存时 resolved 也会为 true，猜错就是一发白打的 ST 反代。
  */
 function HistoryList() {
-  const { mode, resolved } = useChatEngine();
+  const { mode, confirmed } = useChatEngine();
 
-  if (!resolved) {
+  if (!confirmed) {
     return (
       <section className="mx-auto max-w-2xl space-y-2">
         <HistoryHint>正在读取历史对话…</HistoryHint>
@@ -267,7 +267,7 @@ function FavoritesList() {
   const { data, isLoading, isError, refetch } = useFavoritesQuery();
   const characters = data?.characters ?? [];
   const bridgeStatus = useBridgeStatus();
-  const { mode: chatEngineMode } = useChatEngine();
+  const { mode: chatEngineMode, confirmed } = useChatEngine();
 
   if (isLoading && characters.length === 0) {
     return (
@@ -326,9 +326,14 @@ function FavoritesList() {
           className="relative flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary"
         >
           <Link
-            href={chatEntryPath(chatEngineMode, character.id)}
+            href={confirmed ? chatEntryPath(chatEngineMode, character.id) : '#'}
             prefetch={false}
-            onClick={() => {
+            onClick={(event) => {
+              // 回源前 mode 可能是默认/脏缓存的 ST，不能放行——否则收藏入口会误进 /tavern。
+              if (!confirmed) {
+                event.preventDefault();
+                return;
+              }
               // ST 冷启动埋点在自研链路里没有收口点，切过去后不再开这段 span。
               if (chatEngineMode === 'self_hosted') return;
               recordFirstChatNavigation(character.id, 'favorites', bridgeStatus);
