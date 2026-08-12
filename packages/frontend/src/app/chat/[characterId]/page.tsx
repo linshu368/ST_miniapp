@@ -15,6 +15,7 @@ import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
+import { ChatSplash } from '@/components/tavern/chat-splash';
 import {
   Dialog,
   DialogContent,
@@ -436,24 +437,6 @@ export default function SelfHostedChatPage() {
         }
       />
 
-      {entryError ? (
-        <div className="mx-4 mb-2 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2">
-          <AlertCircle className="h-4 w-4 shrink-0 text-destructive" aria-hidden />
-          <span className="min-w-0 flex-1 text-[12px] text-destructive">{entryError}</span>
-          <button
-            type="button"
-            onClick={() => {
-              createConversation.reset();
-              setEntryAttempt((attempt) => attempt + 1);
-              if (sessionId) void conversationQuery.refetch();
-            }}
-            className="shrink-0 rounded-full bg-destructive/15 px-2.5 py-1 text-[11px] font-medium text-destructive"
-          >
-            重试
-          </button>
-        </div>
-      ) : null}
-
       {streamError ? (
         <div className="mx-4 mb-2 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2">
           <AlertCircle className="h-4 w-4 shrink-0 text-destructive" aria-hidden />
@@ -504,6 +487,18 @@ export default function SelfHostedChatPage() {
               );
             },
           });
+        }}
+      />
+
+      {/* 始终挂着：ChatSplash 自己负责收场动画并在结束后返回 null，条件卸载会把动画切掉 */}
+      <ChatSplash
+        characterId={characterId}
+        ready={ready}
+        error={entryError}
+        onRetry={() => {
+          createConversation.reset();
+          setEntryAttempt((attempt) => attempt + 1);
+          if (sessionId) void conversationQuery.refetch();
         }}
       />
 

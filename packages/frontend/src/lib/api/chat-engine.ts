@@ -51,17 +51,8 @@ export interface ChatEngineState {
   /**
    * 首次启动等第一次响应期间为 false。请求失败不算未解析——读不到开关时
    * ST 就是答案，否则接口一挂，整个 MiniApp 会停在等开关的状态里。
-   * 有 localStorage 缓存时立刻为 true（缓存也算一种结论）。
    */
   resolved: boolean;
-  /**
-   * 本轮挂载后至少完成过一次网络回源（成功或失败）。
-   *
-   * 与 resolved 的差别：缓存能让 resolved 立刻为 true，但 confirmed 仍要等回源。
-   * 用途：脏 `sillytavern` 缓存时，回源完成前不要挂 ST iframe / 不要走 /tavern 初始化，
-   * 避免自研环境被旧缓存短暂 boot 一次。
-   */
-  confirmed: boolean;
 }
 
 /**
@@ -69,10 +60,9 @@ export interface ChatEngineState {
  *
  * 「读不到怎么办」只在这里回答一次：一律当 ST。调用方只有在「等一下更好」的地方
  * （比如列表要按模式选数据源）才看 resolved，其余直接用 mode。
- * 涉及 ST boot / 点卡导航时再看 confirmed，挡住脏缓存误入。
  */
 export function useChatEngine(): ChatEngineState {
-  const { data, isError, isFetchedAfterMount } = useQuery<GetChatEngineData>({
+  const { data, isError } = useQuery<GetChatEngineData>({
     queryKey: chatEngineKeys.mode,
     queryFn: async () => {
       // 不用 AbortSignal.timeout：它要 iOS 16+，更老的 Telegram WebView 上会直接抛
@@ -103,7 +93,5 @@ export function useChatEngine(): ChatEngineState {
   return {
     mode: data?.mode ?? DEFAULT_CHAT_ENGINE_MODE,
     resolved: data !== undefined || isError,
-    // 失败也算 confirmed：回落 ST 是明确结论，可以挂 iframe。
-    confirmed: isFetchedAfterMount || isError,
   };
 }

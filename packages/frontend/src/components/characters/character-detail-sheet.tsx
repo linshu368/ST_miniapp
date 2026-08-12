@@ -31,7 +31,7 @@ export function CharacterDetailSheet({
 }: CharacterDetailSheetProps) {
   const { data, isLoading } = useCharacterQuery(characterId ?? undefined);
   const character = data?.character;
-  const { mode: chatEngineMode, confirmed } = useChatEngine();
+  const { mode: chatEngineMode } = useChatEngine();
 
   // ── 动画状态 ──────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
@@ -54,10 +54,9 @@ export function CharacterDetailSheet({
   // 对话页会 await 同一个 promise 并有 selectCharacter 侧兜底）。
   // 自研链路直接读库里的角色卡，不需要把卡下发到 ST 数据目录。
   useEffect(() => {
-    // 必须等回源确认仍是 ST：脏 sillytavern 缓存不能在自研环境触发单卡下发。
-    if (!characterId || !confirmed || chatEngineMode !== 'sillytavern') return;
+    if (!characterId || chatEngineMode === 'self_hosted') return;
     prefetchEnsureStCharacter(characterId).catch(() => {});
-  }, [characterId, chatEngineMode, confirmed]);
+  }, [characterId, chatEngineMode]);
 
   // ── 拖拽关闭 ──────────────────────────────────────────────
   const [dragY, setDragY] = useState(0);

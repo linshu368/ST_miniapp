@@ -56,15 +56,13 @@ function scoreMatch(
 export function CharacterGallery() {
   const router = useRouter();
   const bridgeStatus = useBridgeStatus();
-  const { mode: chatEngineMode, confirmed } = useChatEngine();
+  const { mode: chatEngineMode } = useChatEngine();
   const [sort, setSort] = useState<LobbySort>(DEFAULT_LOBBY_SORT);
   const { data, isLoading, isError } = useCharactersQuery(sort);
   const [query, setQuery] = useState('');
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
-  /** 开关还没回源确认就点了进入：先占住进入态，confirmed 后再真正导航 */
-  const pendingEnterIdRef = useRef<string | null>(null);
 
   const latestBadge = useLobbyLatestBadgeQuery();
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
@@ -80,26 +78,9 @@ export function CharacterGallery() {
   }, [sort, markLatestSeen]);
 
   // 用户阅读角色详情时同步预取动态路由，减少点击进入后偶发等待路由资源的时间。
-  // 必须等网络回源：仅有脏 sillytavern 缓存时 resolved 也会为 true，会误预取 /tavern。
   useEffect(() => {
-    if (!confirmed || !previewId) return;
-    router.prefetch(chatEntryPath(chatEngineMode, previewId));
-  }, [chatEngineMode, confirmed, previewId, router]);
-
-  // 点卡时开关尚未回源：等 confirmed 后再按正确模式导航，避免默认/脏缓存 ST 误入 /tavern。
-  useEffect(() => {
-    const pendingId = pendingEnterIdRef.current;
-    if (!confirmed || !pendingId) return;
-    pendingEnterIdRef.current = null;
-    if (chatEngineMode !== 'self_hosted') {
-      const bridgeStartedAt = getTimingMark('bridge_start');
-      beginFirstChatNavigation(pendingId, 'gallery', {
-        bridgePhase: bridgeStatus,
-        ...(bridgeStartedAt ? { bootElapsedMs: Date.now() - bridgeStartedAt } : {}),
-      });
-    }
-    router.push(chatEntryPath(chatEngineMode, pendingId));
-  }, [bridgeStatus, chatEngineMode, confirmed, router]);
+    if (previewId) router.prefetch(chatEntryPath(chatEngineMode, previewId));
+  }, [chatEngineMode, previewId, router]);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
   const firstScreenCharacters = useMemo(
@@ -302,7 +283,6 @@ export function CharacterGallery() {
         onClose={() => {
           if (enteringId) {
             enteringRef.current = false;
-            pendingEnterIdRef.current = null;
             setEnteringId(null);
             setPreviewId(null);
             // 当前本来就在大厅，直接 replace('/') 可能被 Next.js 当成同路由而忽略。
@@ -317,11 +297,6 @@ export function CharacterGallery() {
           if (enteringRef.current) return;
           enteringRef.current = true;
           setEnteringId(id);
-          // 回源前 mode 可能是默认/脏缓存的 sillytavern，不能立刻 push。
-          if (!confirmed) {
-            pendingEnterIdRef.current = id;
-            return;
-          }
           // 首条消息埋点串的是 ST 冷启动的各个阶段，自研链路里没有对应的收口点。
           if (chatEngineMode !== 'self_hosted') {
             const bridgeStartedAt = getTimingMark('bridge_start');
