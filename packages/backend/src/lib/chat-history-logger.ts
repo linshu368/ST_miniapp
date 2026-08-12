@@ -32,6 +32,10 @@ export interface ChatHistoryEntry {
   history: unknown[];
   character_id?: string | null;
   preset_id?: string | null;
+  /** 自研引擎会话 id（M1 migration 069 新增列）。ST 链路不传，落库为 NULL */
+  session_id?: string | null;
+  /** 自研链路预先创建的轮次行；有值时更新该行，ST 链路不传并继续新增日志 */
+  history_id?: string | null;
   status: 'success' | 'upstream_error' | 'stream_interrupted';
   upstream_status?: number | null;
   deduction_rate?: number; // now calculated internally
@@ -287,7 +291,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
 
       const supabase = getSupabaseClient();
       const miniappDb = supabase.schema('miniapp' as 'public');
-      const { error } = await miniappDb.from('chat_history').insert({
+      const historyValues = {
         user_id: entry.user_id,
         model: entry.model,
         user_input: entry.user_input,
@@ -295,22 +299,28 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         history: entry.history,
         character_id: entry.character_id ?? null,
         preset_id: entry.preset_id ?? null,
+        // 只在自研链路带 session 时才写这一列：migration 069 之前的库还没有它，
+        // 显式传 null 会让 ST 链路的落库整条失败。
+        ...(entry.session_id ? { session_id: entry.session_id } : {}),
         status: entry.status,
         upstream_status: entry.upstream_status ?? null,
         deduction_rate: actualDeduction,
         ...llmMetadata,
-      });
+      };
+      const { error } = entry.history_id
+        ? await miniappDb.from('chat_history').update(historyValues).eq('id', entry.history_id)
+        : await miniappDb.from('chat_history').insert(historyValues);
 
       if (error) {
         clog.error(
           {
             kind: 'sys',
-            event: 'chathistory.insert.failed',
+            event: entry.history_id ? 'chathistory.update.failed' : 'chathistory.insert.failed',
             err: error,
             userId: entry.user_id,
             model: entry.model,
           },
-          'insert failed'
+          entry.history_id ? 'update failed' : 'insert failed'
         );
       } else {
         clog.info(

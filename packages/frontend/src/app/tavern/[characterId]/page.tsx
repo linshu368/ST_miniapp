@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG } from '@miniapp/shared';
 import { platformAction, useBridgeStatus, useSTEvent } from '@/lib/bridge';
+import { useChatEngine } from '@/lib/api/chat-engine';
+import { chatEntryPath } from '@/lib/chat-entry';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { fetchLatestUserChat } from '@/lib/api/chats';
 import { useCharacterQuery } from '@/lib/api/characters';
@@ -86,6 +88,15 @@ export default function TavernChatPage() {
   );
   const chatReady = readyCharacterId === characterId;
 
+  // 开关切到自研链路后仍会有人落到这一页：历史栈、外部旧链接，以及开关还没解析出来
+  // 那一瞬间点进来的导航。统一在这里改道，ST 侧的初始化则按 selfHostedChat 整段跳过，
+  // 不留下半截 boot。
+  const selfHostedChat = useChatEngine().mode === 'self_hosted';
+  useEffect(() => {
+    if (!selfHostedChat || !characterId) return;
+    router.replace(chatEntryPath('self_hosted', characterId));
+  }, [characterId, router, selfHostedChat]);
+
   useSTEvent('billing:insufficient', () => {
     if (!characterId || redirectingToRechargeRef.current) return;
     redirectingToRechargeRef.current = true;
@@ -151,7 +162,7 @@ export default function TavernChatPage() {
 
   // [iframe-timing] TEMP DEBUG: 用户点卡进入本页（可能早于 bridge ready）
   useEffect(() => {
-    if (!characterId) return;
+    if (!characterId || selfHostedChat) return;
     setBridgeTelemetryCharacter(characterId);
     resetPageTiming();
     markTiming('page_mount');
@@ -180,11 +191,11 @@ export default function TavernChatPage() {
       window.clearTimeout(gateStallTimer);
       cancelFirstChatAttempt(firstChatAttemptIdRef.current, 'page_unmounted');
     };
-  }, [characterId]);
+  }, [characterId, selfHostedChat]);
 
   useEffect(() => {
     setReadyCharacterId(null);
-    if (!characterId || !gateOpen) return;
+    if (!characterId || !gateOpen || selfHostedChat) return;
     setEntryError(null);
 
     markTiming('gate_open'); // [iframe-timing] TEMP DEBUG
@@ -339,7 +350,7 @@ export default function TavernChatPage() {
         target: { characterId, requestedChat: requestedChat ?? '' },
       });
     };
-  }, [gateOpen, characterId, entryAttempt, requestedChat]);
+  }, [gateOpen, characterId, entryAttempt, requestedChat, selfHostedChat]);
 
   return (
     <div className="relative w-full h-full">

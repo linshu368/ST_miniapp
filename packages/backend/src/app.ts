@@ -17,6 +17,8 @@ import modelsRoutes from './routes/models.js';
 import { stProxyHandler } from './middleware/stProxy.js';
 import llmProxyRoutes from './routes/llm-proxy.js';
 import chatsRoutes from './routes/chats.js';
+import conversationRoutes from './routes/conversations.js';
+import chatEngineRoutes from './routes/chat-engine.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
@@ -25,6 +27,10 @@ import simulationRoutes from './routes/simulation.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
+import {
+  startLobbyRankingRefreshJob,
+  stopLobbyRankingRefreshJob,
+} from './lib/lobby-ranking-refresh-job.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
 
 export async function buildApp() {
@@ -108,6 +114,8 @@ export async function buildApp() {
   await app.register(modelsRoutes);
   await app.register(llmProxyRoutes);
   await app.register(chatsRoutes);
+  await app.register(conversationRoutes);
+  await app.register(chatEngineRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
   await app.register(debugRoutes); // [iframe-timing] TEMP DEBUG
@@ -139,8 +147,15 @@ export async function buildApp() {
     app.log.info('[sync-job] Chat history sync job disabled by CHAT_HISTORY_SYNC_ENABLED=false');
   }
 
+  if (config.lobbyRankingRefreshEnabled) {
+    startLobbyRankingRefreshJob(app.log);
+  } else {
+    app.log.info('[lobby-ranking] refresh job disabled by LOBBY_RANKING_REFRESH_ENABLED=false');
+  }
+
   app.addHook('onClose', async () => {
     stopChatHistorySyncJob();
+    stopLobbyRankingRefreshJob();
   });
 
   return app;

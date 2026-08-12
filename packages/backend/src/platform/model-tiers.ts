@@ -7,7 +7,11 @@
  * provider 固定为 openrouter（R3 决议）。
  */
 
-import { getSupabaseClient } from '../lib/supabase.js';
+import {
+  fetchRuntimeConfigEntry,
+  fetchRuntimeConfigValue,
+  type RuntimeConfigEntry,
+} from './runtime-config.js';
 import {
   ModelCatalogModelSchema,
   ModelCatalogSchema,
@@ -175,46 +179,6 @@ export function legacyTiersToCatalog(tiers: BackendModelTierConfig[]): ModelCata
       },
     ],
   });
-}
-
-async function fetchRuntimeConfigValue(key: string): Promise<unknown | null> {
-  const db = getSupabaseClient().schema('miniapp');
-  const { data, error } = await db
-    .from('runtime_config')
-    .select('value')
-    .eq('key', key)
-    .maybeSingle();
-
-  if (error) {
-    console.error(`[model-tiers] Failed to fetch ${key} from runtime_config:`, error);
-    return null;
-  }
-
-  return data?.value ?? null;
-}
-
-interface RuntimeConfigEntry {
-  value: unknown;
-  version: number;
-}
-
-async function fetchRuntimeConfigEntry(key: string): Promise<RuntimeConfigEntry | null> {
-  const db = getSupabaseClient().schema('miniapp');
-  const { data, error } = await db
-    .from('runtime_config')
-    .select('value,version')
-    .eq('key', key)
-    .maybeSingle();
-
-  if (error) {
-    console.error(`[model-tiers] Failed to fetch ${key} metadata:`, error);
-    return null;
-  }
-  if (!data) return null;
-  return {
-    value: data.value,
-    version: typeof data.version === 'number' ? data.version : 0,
-  };
 }
 
 async function refreshModelConfig(catalogEntry?: RuntimeConfigEntry | null): Promise<void> {

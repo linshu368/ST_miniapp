@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, Quote, Sparkles, X } from 'lucide-react';
 
 import { useCharacterQuery } from '@/lib/api/characters';
+import { useChatEngine } from '@/lib/api/chat-engine';
 import { prefetchEnsureStCharacter } from '@/lib/api/st-bridge';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
@@ -30,6 +31,7 @@ export function CharacterDetailSheet({
 }: CharacterDetailSheetProps) {
   const { data, isLoading } = useCharacterQuery(characterId ?? undefined);
   const character = data?.character;
+  const { mode: chatEngineMode } = useChatEngine();
 
   // ── 动画状态 ──────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
@@ -40,9 +42,6 @@ export function CharacterDetailSheet({
     if (characterId) {
       setMounted(true);
       setGreetingOpen(false);
-      // 浮层期懒下发预取：用户读简介的时间掩盖单卡下发耗时（幂等，失败静默，
-      // 对话页会 await 同一个 promise 并有 selectCharacter 侧兜底）。
-      prefetchEnsureStCharacter(characterId).catch(() => {});
       const raf = requestAnimationFrame(() => setVisible(true));
       return () => cancelAnimationFrame(raf);
     }
@@ -50,6 +49,14 @@ export function CharacterDetailSheet({
     const t = setTimeout(() => setMounted(false), 320);
     return () => clearTimeout(t);
   }, [characterId]);
+
+  // 浮层期懒下发预取：用户读简介的时间掩盖单卡下发耗时（幂等，失败静默，
+  // 对话页会 await 同一个 promise 并有 selectCharacter 侧兜底）。
+  // 自研链路直接读库里的角色卡，不需要把卡下发到 ST 数据目录。
+  useEffect(() => {
+    if (!characterId || chatEngineMode === 'self_hosted') return;
+    prefetchEnsureStCharacter(characterId).catch(() => {});
+  }, [characterId, chatEngineMode]);
 
   // ── 拖拽关闭 ──────────────────────────────────────────────
   const [dragY, setDragY] = useState(0);

@@ -145,7 +145,22 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 061_character_free_chat_quota_limit_config.sql # 角色卡免费轮次上限改为 runtime_config（默认 40）并可运营后台调整
 062_simulation_card_evaluation.sql # 测试卡标识、SHA-256 去重与独立模拟会话/聊天日志 schema
 063_admin_layout_exclude_test_cards.sql # 运营后台角色布局排除评测测试卡；依赖 062 提供 is_test 列
+064_message_center_and_support.sql # 消息中心（官方公告 / 个人通知 + 已读水位）与站内客服会话
+065_light_fixed_deduction.sql # 轻量档固定扣费额并入 llm_pricing_config
+065_support_user_read_state.sql # 客服回复提醒改挂「联系客服」入口，服务端记录每用户已读水位（与上一条同为 065，历史重号）
+066_admin_outreach_credit_grant.sql # 运营回访发放积分与审计
+067_lobby_latest_seen_state.sql # 首页「最新」New 提醒水位线
+068_model_preset_directory_admin.sql # 预设按模型分配的运营后台通路
+069_miniapp_chat_sessions.sql # 自研引擎会话表 / 消息表 + chat_history 补 session_id（M1）
+070_chat_session_rpc.sql # 自研引擎的发消息与重生成原子 RPC（M1）
+071_engine_platform_instructions.sql # 自研引擎平台规则三件套落 miniapp.runtime_config（M2）
+072_chat_history_conversation_source.sql # chat_history 增 turn/revision，替代并删除 chat_messages
+073_current_chat_history_view.sql # 每个 session turn 的 max revision 读取视图
+074_lobby_ranking_score_v3.sql # 大厅推荐排序 v3 评分
+075_chat_engine_mode.sql # 聊天链路全局开关 chat_engine_mode（默认 sillytavern，M6）
 ```
+
+> 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
 

@@ -13,7 +13,8 @@
  *
  * 输出格式：
  *   - NODE_ENV=production：JSON（机器可解析，stdout）
- *   - 其他：pretty（彩色人读）
+ *   - 其他：有 pino-pretty 时彩色；缺包（如 prod 镜像）回退 JSON，避免启动崩溃
+ *   - LOG_PRETTY=0/1 可强制开关
  *
  * 日志级别：LOG_LEVEL 控制（trace/debug/info/warn/error/fatal/silent）
  *   默认 info；测试中设为 silent
@@ -21,11 +22,27 @@
  * 报错请传原始 Error 对象 `{ err }`，禁止 String(err) 丢栈（见 docs/日志系统.md §7）。
  */
 
+import { createRequire } from 'node:module';
 import pino from 'pino';
 import { buildPinoOptions, type LogKind } from '@miniapp/shared/src/logging/conventions';
 
 const level = process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'test' ? 'silent' : 'info');
-const pretty = process.env.NODE_ENV !== 'production';
+
+function isPinoPrettyAvailable(): boolean {
+  try {
+    createRequire(import.meta.url).resolve('pino-pretty');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 与 backend 一致：想要 pretty 但缺包时回退 JSON，避免 prod 镜像启动崩溃。 */
+const pretty = (() => {
+  if (process.env.LOG_PRETTY === '0') return false;
+  const wantPretty = process.env.LOG_PRETTY === '1' || process.env.NODE_ENV !== 'production';
+  return wantPretty && isPinoPrettyAvailable();
+})();
 
 const rootLogger = pino(buildPinoOptions({ level, pretty }) as unknown as pino.LoggerOptions);
 
