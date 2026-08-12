@@ -29,18 +29,14 @@ if (readError) {
   console.error(`读取 ${CHAT_ENGINE_MODE_CONFIG_KEY} 失败：${readError.message}`);
   process.exit(1);
 }
-if (!current) {
-  console.error(
-    `${CHAT_ENGINE_MODE_CONFIG_KEY} 不存在，请先执行 migration 075_chat_engine_mode.sql`
-  );
-  process.exit(1);
-}
 
-const before = parseChatEngineMode(current.value);
+const before = current ? parseChatEngineMode(current.value) : null;
 const env = `${config.database.environment} / ${config.database.projectRef}`;
 
 if (!target) {
-  console.log(`[${env}] ${CHAT_ENGINE_MODE_CONFIG_KEY} = ${before.mode}`);
+  console.log(
+    `[${env}] ${CHAT_ENGINE_MODE_CONFIG_KEY} = ${before?.mode ?? '(未配置，按兜底走 ST)'}`
+  );
   process.exit(0);
 }
 
@@ -49,14 +45,17 @@ if (!isChatEngineMode(target)) {
   process.exit(1);
 }
 
-const { error: writeError } = await db
-  .from('runtime_config')
-  .update({
+// upsert 而不是 update：迁移 075 只保证行存在与说明文案，不是这一行的唯一写入方，
+// 迁移还没在某个环境跑过时也要能切。
+const { error: writeError } = await db.from('runtime_config').upsert(
+  {
+    key: CHAT_ENGINE_MODE_CONFIG_KEY,
     value: { mode: target },
-    version: (typeof current.version === 'number' ? current.version : 0) + 1,
+    version: (typeof current?.version === 'number' ? current.version : 0) + 1,
     updated_at: new Date().toISOString(),
-  })
-  .eq('key', CHAT_ENGINE_MODE_CONFIG_KEY);
+  },
+  { onConflict: 'key' }
+);
 
 if (writeError) {
   console.error(`写入 ${CHAT_ENGINE_MODE_CONFIG_KEY} 失败：${writeError.message}`);
@@ -64,5 +63,5 @@ if (writeError) {
 }
 
 // 后端各实例有 30s 读缓存，前端还要一次刷新才会重新解析开关。
-console.log(`[${env}] ${CHAT_ENGINE_MODE_CONFIG_KEY}: ${before.mode} → ${target}`);
+console.log(`[${env}] ${CHAT_ENGINE_MODE_CONFIG_KEY}: ${before?.mode ?? '(未配置)'} → ${target}`);
 console.log('后端缓存 30s 后全量生效；客户端需刷新一次 MiniApp。');

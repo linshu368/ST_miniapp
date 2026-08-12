@@ -12,7 +12,8 @@
 -- ⚠️ miniapp 与 bot 共用同一个 Supabase 项目，bot 的配置在 public.runtime_config。
 --    手工核对时务必写全 `miniapp.runtime_config`。
 --
--- 已有值时不覆盖：重跑迁移不应把线上已经切过去的开关打回 ST。
+-- 迁移只负责「这一行存在、且有说明」，永远不动 value：重跑不该把已经切过去的
+-- 环境打回 ST，运维脚本先建出来的行也不该被改值。
 
 BEGIN;
 
@@ -26,6 +27,6 @@ INSERT INTO miniapp.runtime_config (
   now(),
   NULL
 )
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT (key) DO UPDATE SET description = EXCLUDED.description;
 
 COMMIT;
