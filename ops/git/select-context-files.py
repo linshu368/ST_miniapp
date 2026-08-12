@@ -23,7 +23,9 @@ stderr: 一行汇总（variable_block_tokens / budget / kept / dropped）
   更低优先级文件全部丢弃（reason=budget）—— 即「从相关性最小的开始砍」。
 额外护栏:
   - include/exclude 正则：只收 packages/ops 下源码与配置，排除 vendor/
-    测试/锁文件/类型声明/生成物等。
+    测试/锁文件/类型声明/生成物，以及整包属于 ST 链路、正在被自研引擎替换的
+    四个包与 ST 专用运维目录（docs/ST_remove.md §四 的删除清单）。
+    这些文件被 diff 触达时仍会出现在 diff 里，只是不再额外投喂全文。
   - 单文件 token 上限（REVIEW_MAX_FILE_TOKENS，默认 30000）：超大单文件
     （多为生成物）不投全文，仅靠 diff 呈现，reason=oversize；不触发预算截断。
 """
@@ -41,7 +43,9 @@ EXCLUDE_RE = re.compile(
     r"(^|/)(vendor|node_modules|dist|\.next)/"
     r"|pnpm-lock\.yaml|package-lock"
     r"|\.test\.|\.spec\.|__tests__/|\.d\.ts$"
-    r"|ops/st-extensions/"
+    # ST 链路：整包只服务 ST、替换后整体删除，不值得占变量块预算
+    r"|^packages/(bridge-protocol|st-extension|sync-engine|db-types)/"
+    r"|^ops/(st-extensions|sillytavern|s6)/"
 )
 MAX_FILE_TOKENS = int(os.environ.get("REVIEW_MAX_FILE_TOKENS", "30000"))
 

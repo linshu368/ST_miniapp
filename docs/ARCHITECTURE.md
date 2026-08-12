@@ -297,7 +297,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 ### 7.1 前端
 
 - Next.js 14 App Router，`src/app/` 下 `(main)` 分组承载底部四 Tab（大厅 `/` / 聊天 `/chats` / 创作 `/create` / 我的 `/profile`），`tavern/[characterId]` 是会话页（不在分组内，无底部导航）。
-- 服务端数据一律 React Query，封装在 `src/lib/api/`；`client.ts` 是唯一 REST 客户端，`apiStreamClient()` 负责 SSE `data:` 解析。
+- 服务端数据一律 React Query，封装在 `src/lib/api/`；`client.ts` 是唯一 REST 客户端。同文件里的 `apiStreamClient()` 是零调用方的死代码，且与自研对话链路的 SSE 契约不兼容（见 `packages/shared/src/api/conversations.ts`），M5 会另写并删除它。
 - 跨组件状态 Zustand：`ui-store` / `user-profile-store` / `chat-list` / `font-scale-store`。
 - 表单 React Hook Form + Zod；UI 用 Tailwind + shadcn/ui；`showdown` + `dompurify` 已在依赖里，供消息区 markdown 渲染使用 ⏳。
 

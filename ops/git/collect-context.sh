@@ -3,15 +3,20 @@
 # 采集源码上下文，输出结构化文本供 LLM 消费。输入分两块：
 #
 # ── 固定块（核心源码，每次审查恒定投喂）────────────────────────────
-#   实测 ≈36k tokens（tiktoken cl100k，2026-07-14 基线，含 <file> 包裹与说明头；
-#   72 文件/3813 行。核心清单变动后请重新实测并更新此数字）
-#   A. 契约层全量：bridge-protocol/src + shared/src
-#      —— 判定「绕过契约 / 重复定义协议字段」（架构铁律 2/4/5）的源头依据
-#   B. 载荷配置：registry.yaml / schema.prisma / next.config.mjs
-#      —— provision 规则、DB 模型、方案 Y rewrites 的声明式行为真相
-#   C. 接线/编排骨架：各包的注册总表与协议端点（app.ts、entry.ts、
-#      bridge-server/forwarders、platformAction 门面、provisioner 编排等）
-#      —— 让 AI 建立「什么被注册到了哪里」的全局地图，替代整包源码
+#   实测 ≈35k tokens（tiktoken cl100k，2026-08-12 基线，含 <file> 包裹与说明头；
+#   35 文件/3899 行。核心清单变动后请重新实测并更新此数字）
+#   A. 契约层全量：shared/src
+#      —— 判定「绕过契约 / 在包内私定对外数据形状」（架构铁律 1/4）的源头依据
+#   B. 载荷配置：schema.prisma / next.config.mjs
+#      —— DB 模型与前端路由分发的声明式行为真相
+#   C. 接线/编排骨架：注册总表、鉴权口径与自研引擎三处接缝（app.ts、
+#      config.ts、auth.ts、engine/generation 的 types、对话链路编排等）
+#      —— 让 AI 建立「什么被注册到了哪里、生成必须从哪个出口走」的全局地图，
+#         替代整包源码
+#
+#   ST 相关源码（bridge-protocol / st-extension / sync-engine / db-types、
+#   前端 bridge 体系、provision 与 iframe 载荷配置）已整体移出固定块：
+#   该链路正在被自研引擎替换（docs/ST_remove.md），恒定投喂只是浪费预算。
 #
 # ── 变量块（diff 圈定源码，按相关性排序 + 预算截断）──────────────────
 #   diff 触达文件的全文（diff 只有 hunks，全文补齐上下文），交由
@@ -83,37 +88,41 @@ count_lines() {
 
 # ─── 固定块 A：契约层全量 ───
 
-find "${REPO_ROOT}/packages/bridge-protocol/src" \
-     "${REPO_ROOT}/packages/shared/src" \
+# ST 专用契约（ST handle 派生、ST 会话与 recent 列表、ST 预设 payload 映射）
+# 随 ST 链路退场，不再恒定投喂；文件删除后这些 -not -path 自然失效，无需清理。
+find "${REPO_ROOT}/packages/shared/src" \
   -type f -name "*.ts" \
   -not -name "*.test.*" -not -name "*.spec.*" -not -name "*.d.ts" \
   -not -path "*/__tests__/*" -not -path "*/node_modules/*" \
+  -not -path "*/src/st-bridge/*" \
+  -not -path "*/src/platform-presets.ts" \
+  -not -path "*/src/api/st-session.ts" \
+  -not -path "*/src/api/chats.ts" \
   | sort >> "$CORE_LIST"
 
 # ─── 固定块 B：载荷配置（声明式行为真相）───
 
-add_core "packages/sync-engine/registry.yaml"
 add_core "packages/backend/prisma/schema.prisma"
 add_core "packages/frontend/next.config.mjs"
 
 # ─── 固定块 C：接线/编排骨架 ───
 
+# backend 全局：路由注册总表 / env 全貌 / 用户侧鉴权口径
 add_core "packages/backend/src/app.ts"
 add_core "packages/backend/src/platform/config.ts"
-add_core "packages/st-extension/src/entry.ts"
-add_core "packages/st-extension/src/bridge-server.ts"
-add_core "packages/st-extension/src/handshake.ts"
-add_core "packages/st-extension/src/mirror-state.ts"
-add_core "packages/st-extension/src/forwarders/index.ts"
+add_core "packages/backend/src/middleware/auth.ts"
+
+# 自研对话链路：三处接缝 + 组装形状 + 编排骨架。
+# 判定「有没有绕过唯一生成出口 / prompt 组装形状是否被改坏」的依据。
+add_core "packages/backend/src/features/engine/types.ts"
+add_core "packages/backend/src/features/engine/prompt-engine.ts"
+add_core "packages/backend/src/features/generation/types.ts"
+add_core "packages/backend/src/features/generation/index.ts"
+add_core "packages/backend/src/features/conversations/generate.ts"
+
+# frontend：全局 Provider 挂载点 + 唯一 REST/SSE 客户端门面
 add_core "packages/frontend/src/app/providers.tsx"
-add_core "packages/frontend/src/lib/bridge/index.ts"
-add_core "packages/frontend/src/lib/bridge/platform-action.ts"
-add_core "packages/frontend/src/lib/bridge/hooks.ts"
-add_core "packages/frontend/src/lib/bridge/singleton.ts"
-add_core "packages/frontend/src/lib/bridge/state-machine.ts"
-add_core "packages/frontend/src/stores/st-mirror.ts"
-add_core "packages/sync-engine/src/lib/config.ts"
-add_core "packages/sync-engine/src/provisioner/index.ts"
+add_core "packages/frontend/src/lib/api/client.ts"
 
 # 固定块去重（保持顺序）
 awk '!seen[$0]++' "$CORE_LIST" > "${CORE_LIST}.uniq" && mv "${CORE_LIST}.uniq" "$CORE_LIST"
@@ -121,9 +130,9 @@ awk '!seen[$0]++' "$CORE_LIST" > "${CORE_LIST}.uniq" && mv "${CORE_LIST}.uniq" "
 # ─── 变量块：相关性排序 + 预算截断（委托 select-context-files.py）───
 
 VAR_BUDGET=0
-CORE_TOKENS=0
+# 恒定投喂的那一块，无论有没有 diff 都要报出真实 token（维护时靠它复核基线）
+CORE_TOKENS=$(python3 "$SELF_DIR/estimate_tokens.py" --list "$CORE_LIST")
 if [ -n "$CHANGED_LIST" ]; then
-  CORE_TOKENS=$(python3 "$SELF_DIR/estimate_tokens.py" --list "$CORE_LIST")
   VAR_BUDGET=$(( TOKEN_LIMIT - RESERVED - CORE_TOKENS - MARGIN ))
   [ "$VAR_BUDGET" -lt 0 ] && VAR_BUDGET=0
   python3 "$SELF_DIR/select-context-files.py" \
@@ -140,8 +149,8 @@ echo "## 上下文采集说明"
 echo ""
 echo "本上下文由两块组成："
 echo ""
-echo "1. **固定块（核心源码）**：契约层全量（bridge-protocol/shared）+ 载荷配置"
-echo "   （registry.yaml/schema.prisma/next.config.mjs）+ 各包接线骨架。约 ${CORE_TOKENS:-36k} tokens。"
+echo "1. **固定块（核心源码）**：契约层全量（shared）+ 载荷配置（schema.prisma/"
+echo "   next.config.mjs）+ 接线骨架（路由注册、鉴权、自研引擎接缝与对话编排）。约 ${CORE_TOKENS} tokens。"
 if [ -n "$CHANGED_LIST" ]; then
   echo "2. **变量块（diff 圈定源码）**：diff 触达文件全文，按改动行数（相关性）降序排列；"
   echo "   受预算约束（约 ${VAR_BUDGET} tokens），超预算的低相关文件已从末尾砍除。"
