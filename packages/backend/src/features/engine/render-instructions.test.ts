@@ -10,12 +10,13 @@ import type { EnginePlatformInstructions, EngineWordCountTiers } from './types.j
 
 const TIERS: EngineWordCountTiers = {
   tiers: [
-    { label: '100-300', promptValue: '100-300' },
-    { label: '300-500', promptValue: '300-500' },
-    { label: '500-800', promptValue: '500-800' },
-    { label: '800+', promptValue: '800以上' },
+    { id: '100-300', uiLabel: '简短', promptValue: '100-300', enabled: true, sortOrder: 0 },
+    { id: '300-500', uiLabel: '适中', promptValue: '300-500', enabled: true, sortOrder: 1 },
+    { id: '500-800', uiLabel: '详细', promptValue: '500-800', enabled: true, sortOrder: 2 },
+    { id: '800+', uiLabel: '长篇', promptValue: '800以上', enabled: true, sortOrder: 3 },
   ],
-  defaultValue: '300-500',
+  defaultTierId: '300-500',
+  layoutColumns: 4,
 };
 
 const INSTRUCTIONS: EnginePlatformInstructions = {
@@ -35,21 +36,27 @@ function config(overrides: Partial<UserGenerationConfig> = {}): UserGenerationCo
 }
 
 describe('resolveWordCountPromptValue', () => {
-  it('命中 PreferredWordCount 的每个取值，都不回落到默认档', () => {
+  it('命中每个档位 id，都不回落到默认档', () => {
     expect(resolveWordCountPromptValue('100-300', TIERS)).toBe('100-300');
     expect(resolveWordCountPromptValue('300-500', TIERS)).toBe('300-500');
     expect(resolveWordCountPromptValue('500-800', TIERS)).toBe('500-800');
     expect(resolveWordCountPromptValue('800+', TIERS)).toBe('800以上');
   });
 
-  it('label 对不上时回落到 defaultValue', () => {
-    // bot 侧的档位文案，落 miniapp 时若照抄就是这个下场
+  it('id 对不上或已下线时回落到 defaultTierId 的 promptValue', () => {
     expect(resolveWordCountPromptValue('150以内', TIERS)).toBe('300-500');
     expect(resolveWordCountPromptValue('800以上', TIERS)).toBe('300-500');
+
+    const withDisabled: EngineWordCountTiers = {
+      ...TIERS,
+      tiers: TIERS.tiers.map((tier) => (tier.id === '800+' ? { ...tier, enabled: false } : tier)),
+    };
+    expect(resolveWordCountPromptValue('800+', withDisabled)).toBe('300-500');
   });
 
-  it('匹配的是 label 而不是 promptValue', () => {
+  it('匹配的是 id 而不是 promptValue / uiLabel', () => {
     expect(resolveWordCountPromptValue('800以上', TIERS)).not.toBe('800以上');
+    expect(resolveWordCountPromptValue('长篇', TIERS)).not.toBe('800以上');
   });
 });
 

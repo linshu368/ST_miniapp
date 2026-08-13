@@ -20,7 +20,6 @@ export type AdminViewKey =
   | 'configs'
   | 'outreach_credit_grant'
   | 'characters'
-  | 'platform_presets'
   | 'announcements'
   | 'analytics'
   | 'releases'
@@ -57,7 +56,6 @@ export function resolveAdminMenuSelection(key: string): {
   if (
     key === 'outreach_credit_grant' ||
     key === 'characters' ||
-    key === 'platform_presets' ||
     key === 'announcements' ||
     key === 'releases' ||
     key === 'audit'

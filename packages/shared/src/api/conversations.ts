@@ -3,6 +3,7 @@
 // 路由前缀 /api/v1/conversations 由 M3b 实现、M5 消费；鉴权统一走 requireTelegramAuth（X-Init-Data）
 
 import type { PreferredWordCount } from './settings';
+import type { PublicWordCountTiers } from './word-count-tiers';
 
 // ==== 领域对象 ====
 
@@ -195,6 +196,8 @@ export type ConversationStreamEvent =
 
 export interface GetGenerationConfigData {
   config: UserGenerationConfig;
+  /** 当前启用的回复长度档位，驱动 MiniApp「生成偏好」按钮文案与布局 */
+  word_count_tiers: PublicWordCountTiers;
 }
 
 // ==== PATCH /api/v1/generation-config ====
@@ -211,4 +214,5 @@ export interface PatchGenerationConfigRequest {
 
 export interface PatchGenerationConfigData {
   config: UserGenerationConfig;
+  word_count_tiers: PublicWordCountTiers;
 }

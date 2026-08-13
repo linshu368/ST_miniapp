@@ -29,6 +29,22 @@ export interface EngineHistoryMessage {
 }
 
 /**
+ * 字数档位：id 与用户 pref_word_count 匹配；promptValue 注入 {{WORD_COUNT}}。
+ * 运营台可增删档位；解析层兼容 071 旧 shape（label / default_value）。
+ */
+export interface EngineWordCountTiers {
+  tiers: Array<{
+    id: string;
+    uiLabel: string;
+    promptValue: string;
+    enabled: boolean;
+    sortOrder: number;
+  }>;
+  defaultTierId: string;
+  layoutColumns: 2 | 3 | 4;
+}
+
+/**
  * 平台规则的权威来源，读自 miniapp.runtime_config。
  * 对齐旧 bot 的 system_instructions 模板机制，三个占位符是 pref_* 得以生效的前提：
  * {{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}。
@@ -40,17 +56,6 @@ export interface EnginePlatformInstructions {
     optionsOff: string;
   };
   wordCountTiers: EngineWordCountTiers;
-}
-
-/**
- * 字数档位：label 用于匹配用户选择，prompt_value 是注入模板的值。
- * label 必须与 shared 的 PreferredWordCount 取值一致（'100-300' / '300-500' / '500-800' / '800+'），
- * 否则匹配失败会静默回落到 defaultValue。旧 bot 的档位文案（'150以内' / '800以上'）与之不同，
- * 配置落库时需要按 miniapp 的枚举重写。
- */
-export interface EngineWordCountTiers {
-  tiers: Array<{ label: string; promptValue: string }>;
-  defaultValue: string;
 }
 
 export interface EngineInput {

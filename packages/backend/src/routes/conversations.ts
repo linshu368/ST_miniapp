@@ -44,6 +44,10 @@ import {
   type ConversationTurnMode,
   type ConversationTurnOutcome,
 } from '../features/conversations/index.js';
+import {
+  fetchPlatformInstructions,
+  toPublicWordCountTiersFromEngine,
+} from '../features/engine/platform-instructions.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -322,8 +326,14 @@ export default async function conversationRoutes(app: FastifyInstance) {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
       const dbUser = await getOrCreateDbUser(request.user);
-      const config = await settings.getGenerationConfig(dbUser.id);
-      return reply.send(ok<GetGenerationConfigData>({ config }));
+      const [config, platform] = await Promise.all([
+        settings.getGenerationConfig(dbUser.id),
+        fetchPlatformInstructions(),
+      ]);
+      const word_count_tiers = toPublicWordCountTiersFromEngine(
+        platform.instructions.wordCountTiers
+      );
+      return reply.send(ok<GetGenerationConfigData>({ config, word_count_tiers }));
     }
   );
 
@@ -358,8 +368,14 @@ export default async function conversationRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('BAD_REQUEST', message));
       }
 
-      const config = await settings.getGenerationConfig(dbUser.id);
-      return reply.send(ok<PatchGenerationConfigData>({ config }));
+      const [config, platform] = await Promise.all([
+        settings.getGenerationConfig(dbUser.id),
+        fetchPlatformInstructions(),
+      ]);
+      const word_count_tiers = toPublicWordCountTiersFromEngine(
+        platform.instructions.wordCountTiers
+      );
+      return reply.send(ok<PatchGenerationConfigData>({ config, word_count_tiers }));
     }
   );
 }

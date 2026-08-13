@@ -2,6 +2,7 @@ import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typog
 import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   ModelCatalogSchema,
   RechargePageConfigSchema,
@@ -9,6 +10,7 @@ import {
   type ModelCatalog,
   type OpenRouterModelDirectory,
   type PaymentPlan,
+  type WordCountTiersConfig,
 } from '@miniapp/shared';
 import {
   configMetadata,
@@ -17,6 +19,32 @@ import {
 } from '../lib/configSchemas';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
+import { SystemInstructionsEditor } from './SystemInstructionsEditor';
+import { WordCountTiersEditor } from './WordCountTiersEditor';
+
+function asWordCountTiersConfig(value: unknown): WordCountTiersConfig {
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Array.isArray((value as WordCountTiersConfig).tiers)
+  ) {
+    const record = value as WordCountTiersConfig;
+    return {
+      tiers: record.tiers,
+      default_tier_id: record.default_tier_id || DEFAULT_WORD_COUNT_TIERS_CONFIG.default_tier_id,
+      layout: {
+        columns:
+          record.layout?.columns === 2 ||
+          record.layout?.columns === 3 ||
+          record.layout?.columns === 4
+            ? record.layout.columns
+            : 4,
+      },
+    };
+  }
+  return structuredClone(DEFAULT_WORD_COUNT_TIERS_CONFIG);
+}
 
 export function ConfigValueEditor(props: {
   configKey: ManagedConfigKey;
@@ -31,6 +59,26 @@ export function ConfigValueEditor(props: {
   onRefreshOpenRouter: () => void;
   paymentPlans: PaymentPlan[];
 }) {
+  if (props.configKey === 'system_instructions') {
+    return (
+      <SystemInstructionsEditor
+        value={typeof props.value === 'string' ? props.value : ''}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'pref_word_count_tiers') {
+    return (
+      <WordCountTiersEditor
+        value={asWordCountTiersConfig(props.value)}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
   if (
     props.configKey === 'miniapp_new_user_signup_bonus_credits' ||
     props.configKey === 'miniapp_daily_checkin_bonus_credits' ||
