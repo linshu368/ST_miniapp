@@ -118,10 +118,14 @@ describe('buildPrompt', () => {
     expect(custom).toContain('偏好：多写环境描写');
   });
 
-  it('v1 不做采样参数与上下文截断', () => {
+  it('默认不截断；传入 truncatedTurns 只回填不切片', () => {
     const output = buildPrompt(input());
     expect(output.sampling).toEqual({});
     expect(output.truncatedTurns).toBe(0);
+
+    const truncated = buildPrompt(input({ truncatedTurns: 26 }));
+    expect(truncated.truncatedTurns).toBe(26);
+    expect(truncated.messages).toEqual(output.messages);
   });
 });
 

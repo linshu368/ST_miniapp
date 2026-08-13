@@ -23,7 +23,7 @@ import { renderPlatformInstructions, wrapUserInput } from './render-instructions
  * 2. **不消费预设**（决策 7 二次修正）。system 段只有角色卡 system_prompt，
  *    description / personality / scenario / mes_example / post_history_instructions 全不进 prompt，
  *    与 bot 现状一致；ST 生态卡下架后再按新卡写法决定要不要并入。
- * 3. **不做上下文长度管理**（决策 10）。history 全量入 prompt，truncatedTurns 恒为 0。
+ * 3. **不在引擎里裁窗口**。入模下界由 SQL 水位线决定，truncatedTurns 只回填观测值。
  *
  * input.persona v1 未消费：模板里没有对应占位符，bot 也没有 persona 概念。
  */
@@ -42,7 +42,7 @@ export function buildPrompt(input: EngineInput): EngineOutput {
   const renderedInstructions = renderPlatformInstructions(input.instructions, input.userConfig);
   messages.push({ role: 'user', content: wrapUserInput(input.userInput, renderedInstructions) });
 
-  return { messages, sampling: {}, truncatedTurns: 0 };
+  return { messages, sampling: {}, truncatedTurns: input.truncatedTurns ?? 0 };
 }
 
 export const promptEngine: PromptEngine = { build: buildPrompt };

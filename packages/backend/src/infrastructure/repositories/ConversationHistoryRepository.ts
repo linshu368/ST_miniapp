@@ -36,12 +36,15 @@ export interface StartedHistoryTurn {
   historyId: string;
   revision: number;
   userContent: string;
+  contextWindowStartTurn: number;
 }
 
 export interface ConversationContext {
   /** 首轮实际 prompt 中保存的开场白；尚无历史时为 null，由调用方使用角色卡当前 first_mes */
   openingMessage: string | null;
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  /** 被窗口截掉的早期轮数 = context_window_start_turn - 1；未泄洪为 0 */
+  truncatedTurns: number;
 }
 
 export class ConversationHistoryRepository {
@@ -52,20 +55,19 @@ export class ConversationHistoryRepository {
     userContent: string;
     model: string;
     staleAfterSeconds?: number;
+    maxContextTurns?: number;
+    retainContextTurns?: number;
   }): Promise<StartedHistoryTurn> {
     const { data, error } = await this.db.rpc('start_chat_history_turn', {
       p_session_id: input.sessionId,
       p_user_content: input.userContent,
       p_model: input.model,
       p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
+      ...contextWindowRpcArgs(input),
     });
     if (error) throwConversationRpcError(error, '创建对话轮次失败');
 
-    const result = data as {
-      turn_index?: number;
-      history_id?: string;
-      revision?: number;
-    } | null;
+    const result = data as StartedHistoryTurnRpc | null;
     if (
       typeof result?.turn_index !== 'number' ||
       !result.history_id ||
@@ -78,6 +80,7 @@ export class ConversationHistoryRepository {
       historyId: result.history_id,
       revision: result.revision,
       userContent: input.userContent,
+      contextWindowStartTurn: readWindowStart(result.context_window_start_turn),
     };
   }
 
@@ -86,21 +89,19 @@ export class ConversationHistoryRepository {
     turnIndex?: number;
     model: string;
     staleAfterSeconds?: number;
+    maxContextTurns?: number;
+    retainContextTurns?: number;
   }): Promise<StartedHistoryTurn> {
     const { data, error } = await this.db.rpc('start_chat_history_regeneration', {
       p_session_id: input.sessionId,
       p_turn_index: input.turnIndex ?? null,
       p_model: input.model,
       p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
+      ...contextWindowRpcArgs(input),
     });
     if (error) throwConversationRpcError(error, '发起重生成失败');
 
-    const result = data as {
-      turn_index?: number;
-      history_id?: string;
-      revision?: number;
-      user_content?: string;
-    } | null;
+    const result = data as (StartedHistoryTurnRpc & { user_content?: string }) | null;
     if (
       typeof result?.turn_index !== 'number' ||
       !result.history_id ||
@@ -114,6 +115,7 @@ export class ConversationHistoryRepository {
       historyId: result.history_id,
       revision: result.revision,
       userContent: result.user_content,
+      contextWindowStartTurn: readWindowStart(result.context_window_start_turn),
     };
   }
 
@@ -149,31 +151,59 @@ export class ConversationHistoryRepository {
   }
 
   /**
-   * 返回 current turn 之前的当前版本上下文。每轮取最大 revision，旧版本只用于审计。
-   * 开场白从首轮保存的完整 prompt 快照提取，不另建数据库行。
+   * 返回 current turn 之前、窗口起点之后的当前版本上下文。
+   * 开场白始终从 turn 1 的 prompt 快照提取，不随泄洪丢掉。
+   * listMessages 不加这个过滤。
    */
   async getContextBeforeTurn(sessionId: string, turnIndex: number): Promise<ConversationContext> {
-    const { data, error } = await this.db
+    const windowStartTurn = await this.readWindowStartTurn(sessionId);
+
+    const windowQuery = this.db
       .from('current_chat_history')
       .select('*')
       .eq('session_id', sessionId)
+      .gte('turn_index', windowStartTurn)
       .lt('turn_index', turnIndex)
       .order('turn_index', { ascending: true });
-    if (error) throw new Error(`读取会话上下文失败：${error.message}`);
 
-    const currentRows = (data ?? []) as ConversationHistoryRow[];
-    return {
-      openingMessage: extractOpeningMessage(currentRows[0]?.history),
-      messages: currentRows.flatMap((row) => {
-        const messages: ConversationContext['messages'] = [
-          { role: 'user', content: row.user_input },
-        ];
-        if (row.assistant_reply?.trim()) {
-          messages.push({ role: 'assistant', content: row.assistant_reply });
-        }
-        return messages;
-      }),
-    };
+    if (windowStartTurn <= 1) {
+      const { data, error } = await windowQuery;
+      if (error) throw new Error(`读取会话上下文失败：${error.message}`);
+      return assembleConversationContext({
+        windowStartTurn,
+        windowRows: (data ?? []) as ConversationHistoryRow[],
+      });
+    }
+
+    const [windowResult, openingResult] = await Promise.all([
+      windowQuery,
+      this.db
+        .from('current_chat_history')
+        .select('history')
+        .eq('session_id', sessionId)
+        .eq('turn_index', 1)
+        .maybeSingle(),
+    ]);
+    if (windowResult.error) throw new Error(`读取会话上下文失败：${windowResult.error.message}`);
+    if (openingResult.error) throw new Error(`读取开场白快照失败：${openingResult.error.message}`);
+
+    return assembleConversationContext({
+      windowStartTurn,
+      windowRows: (windowResult.data ?? []) as ConversationHistoryRow[],
+      openingHistory: (openingResult.data as { history?: unknown[] } | null)?.history,
+    });
+  }
+
+  private async readWindowStartTurn(sessionId: string): Promise<number> {
+    const { data, error } = await this.db
+      .from('chat_sessions')
+      .select('context_window_start_turn')
+      .eq('id', sessionId)
+      .maybeSingle();
+    if (error) throw new Error(`读取上下文窗口起点失败：${error.message}`);
+    return readWindowStart(
+      (data as { context_window_start_turn?: unknown } | null)?.context_window_start_turn
+    );
   }
 
   async listMessages(
@@ -212,6 +242,50 @@ export class ConversationHistoryRepository {
     }
     return { messages, hasMore };
   }
+}
+
+interface StartedHistoryTurnRpc {
+  turn_index?: number;
+  history_id?: string;
+  revision?: number;
+  context_window_start_turn?: number;
+}
+
+function contextWindowRpcArgs(input: { maxContextTurns?: number; retainContextTurns?: number }): {
+  p_max_context_turns?: number;
+  p_retain_context_turns?: number;
+} {
+  return {
+    ...(typeof input.maxContextTurns === 'number'
+      ? { p_max_context_turns: input.maxContextTurns }
+      : {}),
+    ...(typeof input.retainContextTurns === 'number'
+      ? { p_retain_context_turns: input.retainContextTurns }
+      : {}),
+  };
+}
+
+function readWindowStart(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : 1;
+}
+
+export function assembleConversationContext(input: {
+  windowStartTurn: number;
+  windowRows: ConversationHistoryRow[];
+  openingHistory?: unknown[];
+}): ConversationContext {
+  const openingSource = input.openingHistory ?? input.windowRows[0]?.history;
+  return {
+    openingMessage: extractOpeningMessage(openingSource),
+    messages: input.windowRows.flatMap((row) => {
+      const messages: ConversationContext['messages'] = [{ role: 'user', content: row.user_input }];
+      if (row.assistant_reply?.trim()) {
+        messages.push({ role: 'assistant', content: row.assistant_reply });
+      }
+      return messages;
+    }),
+    truncatedTurns: Math.max(input.windowStartTurn - 1, 0),
+  };
 }
 
 export function latestRevisionRows(rows: ConversationHistoryRow[]): ConversationHistoryRow[] {
