@@ -20,6 +20,7 @@ export interface ChatSessionRow {
   last_message_at: string | null;
   last_message_preview: string | null;
   message_count: number;
+  context_window_start_turn: number;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;

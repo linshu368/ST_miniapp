@@ -65,8 +65,14 @@ export interface EngineInput {
    * 开场白已由 M3b 作为虚拟 turn 0 包含在内：首轮取角色卡，之后取首轮 prompt 快照。
    * 因此引擎**不得**再注入 character.first_mes，否则每轮都会重复一条。
    * 本轮用户输入不在其中，见 userInput。
+   * 窗口下界以 SQL 为准，这里已经是泄洪后的切片，引擎不得再 slice。
    */
   history: EngineHistoryMessage[];
+  /**
+   * 被窗口截掉的早期轮数。由 SQL 窗口起点算出，引擎只回填观测字段。
+   * 未泄洪或缺省为 0。
+   */
+  truncatedTurns?: number;
   /** 本轮用户输入原文。引擎负责把平台规则包装在它外面后作为最后一条 user 消息 */
   userInput: string;
   userConfig: UserGenerationConfig;
@@ -88,9 +94,8 @@ export interface EngineOutput {
    */
   sampling: Record<string, number>;
   /**
-   * 被窗口截断掉的轮数，用于观测。
-   * v1 恒为 0：旧 bot 把历史全量入 prompt，没有任何上下文长度管理，忠实移植即不截断。
-   * 上限策略后置，届时只需改引擎实现。
+   * 被窗口截掉的早期轮数，用于观测。
+   * 窗口下界以 SQL 为准；引擎原样回填 input.truncatedTurns，不再二次裁剪。
    */
   truncatedTurns: number;
 }

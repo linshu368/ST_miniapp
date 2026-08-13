@@ -37,6 +37,7 @@ export function isPromptCacheableModel(openRouterModelId: string): boolean {
  * 退一位打在历史最后一条上，缓存的前缀才是两轮都逐字相同的部分。
  *
  * 不可缓存的模型原样返回，调用方无需自己判型号。
+ * 窗口接上之后，cache 看到的就是泄洪后的 messages，不必改断点规则。
  */
 export function applyPromptCaching(
   messages: GenerationMessage[],
