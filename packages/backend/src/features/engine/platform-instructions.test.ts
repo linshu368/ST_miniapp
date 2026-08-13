@@ -1,21 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  findUncoveredWordCounts,
   parseInteractionModeBlocks,
   parseTemplate,
   parseWordCountTiers,
 } from './platform-instructions.js';
 import { resolveWordCountPromptValue } from './render-instructions.js';
 
-const MIGRATION_PATH = new URL(
+const MIGRATION_071_PATH = new URL(
   '../../../../shared/migrations/071_engine_platform_instructions.sql',
   import.meta.url
 );
-
-function readMigration(): string {
-  return readFileSync(MIGRATION_PATH, 'utf8');
-}
+const MIGRATION_076_PATH = new URL(
+  '../../../../shared/migrations/076_engine_admin_platform_instructions.sql',
+  import.meta.url
+);
 
 describe('runtime_config 解析', () => {
   it('模板优先取 text_value，兼容存在 value 里的写法', () => {
@@ -34,78 +33,116 @@ describe('runtime_config 解析', () => {
     expect(parseInteractionModeBlocks('开')).toBeNull();
   });
 
-  it('字数档位表的 snake_case 落库形态映射到接缝的 camelCase', () => {
+  it('新 shape：id / ui_label / default_tier_id', () => {
+    expect(
+      parseWordCountTiers({
+        tiers: [
+          {
+            id: '300-500',
+            ui_label: '适中',
+            prompt_value: '300-500',
+            enabled: true,
+            sort_order: 0,
+          },
+        ],
+        default_tier_id: '300-500',
+        layout: { columns: 4 },
+      })
+    ).toEqual({
+      tiers: [
+        {
+          id: '300-500',
+          uiLabel: '适中',
+          promptValue: '300-500',
+          enabled: true,
+          sortOrder: 0,
+        },
+      ],
+      defaultTierId: '300-500',
+      layoutColumns: 4,
+    });
+  });
+
+  it('旧 shape（label / default_value）仍可解析', () => {
     expect(
       parseWordCountTiers({
         tiers: [{ label: '300-500', prompt_value: '300-500' }],
         default_value: '300-500',
       })
-    ).toEqual({ tiers: [{ label: '300-500', promptValue: '300-500' }], defaultValue: '300-500' });
+    ).toEqual({
+      tiers: [
+        {
+          id: '300-500',
+          uiLabel: '300-500',
+          promptValue: '300-500',
+          enabled: true,
+          sortOrder: 0,
+        },
+      ],
+      defaultTierId: '300-500',
+      layoutColumns: 4,
+    });
   });
 
   it('档位表缺字段或为空时判为非法，交给调用方兜底', () => {
-    expect(parseWordCountTiers({ tiers: [], default_value: '300-500' })).toBeNull();
+    expect(parseWordCountTiers({ tiers: [], default_tier_id: '300-500' })).toBeNull();
     expect(
-      parseWordCountTiers({ tiers: [{ label: '300-500' }], default_value: '300-500' })
+      parseWordCountTiers({ tiers: [{ id: '300-500' }], default_tier_id: '300-500' })
     ).toBeNull();
+    expect(parseWordCountTiers({ tiers: 'bad' })).toBeNull();
+  });
+
+  it('缺 default 时回落到首个启用档位 id', () => {
     expect(
-      parseWordCountTiers({ tiers: [{ label: '300-500', prompt_value: '300-500' }] })
-    ).toBeNull();
+      parseWordCountTiers({
+        tiers: [{ id: '300-500', prompt_value: '300-500' }],
+      })
+    ).toEqual({
+      tiers: [
+        {
+          id: '300-500',
+          uiLabel: '300-500',
+          promptValue: '300-500',
+          enabled: true,
+          sortOrder: 0,
+        },
+      ],
+      defaultTierId: '300-500',
+      layoutColumns: 4,
+    });
   });
 });
 
-describe('findUncoveredWordCounts', () => {
-  it('档位表覆盖全部 PreferredWordCount 时无告警', () => {
-    expect(
-      findUncoveredWordCounts({
-        tiers: [
-          { label: '100-300', promptValue: '100-300' },
-          { label: '300-500', promptValue: '300-500' },
-          { label: '500-800', promptValue: '500-800' },
-          { label: '800+', promptValue: '800以上' },
-        ],
-        defaultValue: '300-500',
-      })
-    ).toEqual([]);
-  });
-
-  it('照抄 bot 档位文案时，四个枚举值全部未覆盖', () => {
-    expect(
-      findUncoveredWordCounts({
-        tiers: [
-          { label: '150以内', promptValue: '150以内' },
-          { label: '150-300', promptValue: '150-300' },
-          { label: '300-500', promptValue: '300-500' },
-          { label: '500-700', promptValue: '500-700' },
-          { label: '700-1000', promptValue: '700-1000' },
-        ],
-        defaultValue: '300-500',
-      })
-    ).toEqual(['100-300', '500-800', '800+']);
-  });
-});
-
-describe('migration 071 落库正文', () => {
-  it('模板含三个占位符', () => {
-    const sql = readMigration();
+describe('migration 正文', () => {
+  it('071 模板含三个占位符', () => {
+    const sql = readFileSync(MIGRATION_071_PATH, 'utf8');
     expect(sql).toContain('{{WORD_COUNT}}');
     expect(sql).toContain('{{INTERACTION_MODE}}');
     expect(sql).toContain('{{USER_CUSTOM_INSTRUCTIONS}}');
   });
 
-  it('落库的档位表覆盖 PreferredWordCount 的每个取值，且每个取值都能命中', () => {
-    const sql = readMigration();
-    const match = /'pref_word_count_tiers',\s*('[^']*')::JSONB/.exec(sql);
-    expect(match).not.toBeNull();
+  it('076 把档位表升到可增删 shape，且默认档可命中', () => {
+    const sql = readFileSync(MIGRATION_076_PATH, 'utf8');
+    expect(sql).toContain('default_tier_id');
+    expect(sql).toContain('ui_label');
+    expect(sql).toContain("'system_instructions'");
+    expect(sql).toContain("'pref_word_count_tiers'");
 
-    const tiersConfig = parseWordCountTiers(JSON.parse((match?.[1] ?? '').slice(1, -1)) as unknown);
+    const tiersConfig = parseWordCountTiers({
+      tiers: [
+        { id: '100-300', ui_label: '简短', prompt_value: '100-300', enabled: true, sort_order: 0 },
+        { id: '300-500', ui_label: '适中', prompt_value: '300-500', enabled: true, sort_order: 1 },
+        { id: '500-800', ui_label: '详细', prompt_value: '500-800', enabled: true, sort_order: 2 },
+        { id: '800+', ui_label: '长篇', prompt_value: '800以上', enabled: true, sort_order: 3 },
+      ],
+      default_tier_id: '300-500',
+      layout: { columns: 4 },
+    });
     expect(tiersConfig).not.toBeNull();
     if (!tiersConfig) return;
 
-    expect(findUncoveredWordCounts(tiersConfig)).toEqual([]);
     expect(resolveWordCountPromptValue('100-300', tiersConfig)).toBe('100-300');
     expect(resolveWordCountPromptValue('800+', tiersConfig)).toBe('800以上');
-    // default_value 必须是某个档位的 prompt_value，否则回落路径注入的是一个不存在的档位
-    expect(tiersConfig.tiers.map((tier) => tier.promptValue)).toContain(tiersConfig.defaultValue);
+    expect(tiersConfig.tiers.map((tier) => tier.id)).toContain(tiersConfig.defaultTierId);
   });
 });

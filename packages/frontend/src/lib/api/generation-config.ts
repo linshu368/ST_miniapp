@@ -39,9 +39,7 @@ export function usePatchGenerationConfigMutation() {
         body: JSON.stringify(request),
       }),
     onSuccess: (data) => {
-      queryClient.setQueryData<GetGenerationConfigData>(generationConfigKeys.detail, {
-        config: data.config,
-      });
+      queryClient.setQueryData<GetGenerationConfigData>(generationConfigKeys.detail, data);
     },
   });
 }

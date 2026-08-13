@@ -34,7 +34,6 @@ import { LoginPage } from './components/LoginPage';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
 import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
-import { PlatformPresetsView } from './components/PlatformPresetsView';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { OutreachCreditGrantView } from './components/OutreachCreditGrantView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
@@ -58,9 +57,11 @@ import {
 } from './lib/adminApi';
 import {
   configMetadata,
+  isTextManagedConfig,
   LlmPricingConfigSchema,
   managedConfigKeys,
   parseManagedConfig,
+  resolveManagedWorkingValue,
   type ManagedConfigKey,
 } from './lib/configSchemas';
 import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
@@ -90,7 +91,22 @@ function confirmAction(title: string, content: React.ReactNode, danger = false):
 }
 
 function jsonPreview(value: unknown): string {
+  if (typeof value === 'string') return value;
   return JSON.stringify(value, null, 2);
+}
+
+function releasePreviewValue(release: Pick<ConfigRelease, 'value' | 'text_value'>): unknown {
+  return release.text_value ?? release.value;
+}
+
+function draftSaveFields(
+  key: ManagedConfigKey,
+  parsed: unknown
+): { value: unknown; textValue?: string | null } {
+  if (isTextManagedConfig(key)) {
+    return { value: null, textValue: typeof parsed === 'string' ? parsed : String(parsed ?? '') };
+  }
+  return { value: parsed };
 }
 
 function formatDate(value: string): string {
@@ -157,11 +173,13 @@ function formatChangeValue(value: unknown): string {
 function getReleaseChangeSummary(allReleases: ConfigRelease[], release: ConfigRelease): string {
   const previousRelease = getPreviousRelease(allReleases, release);
   if (!previousRelease) return '首次发布完整配置';
+  const previousValue = releasePreviewValue(previousRelease);
+  const currentValue = releasePreviewValue(release);
   if (release.config_key === 'llm_model_catalog') {
-    const modelSummary = getModelCatalogChangeSummary(previousRelease.value, release.value);
+    const modelSummary = getModelCatalogChangeSummary(previousValue, currentValue);
     if (modelSummary) return modelSummary;
   }
-  const changes = collectValueChanges(previousRelease.value, release.value);
+  const changes = collectValueChanges(previousValue, currentValue);
   if (changes.length === 0) return '配置内容未变化';
   return `${changes.length} 项：${changes
     .slice(0, 2)
@@ -175,18 +193,17 @@ function ReleaseChangeDetails(props: {
   compact?: boolean;
 }) {
   const previousRelease = getPreviousRelease(props.allReleases, props.release);
+  const currentValue = releasePreviewValue(props.release);
   if (!previousRelease) {
     return (
       <div className="release-change-details">
         <Typography.Text strong>首次发布的完整配置</Typography.Text>
-        {!props.compact ? (
-          <pre className="diff-preview">{jsonPreview(props.release.value)}</pre>
-        ) : null}
+        {!props.compact ? <pre className="diff-preview">{jsonPreview(currentValue)}</pre> : null}
       </div>
     );
   }
 
-  const changes = collectValueChanges(previousRelease.value, props.release.value);
+  const changes = collectValueChanges(releasePreviewValue(previousRelease), currentValue);
   const visibleChanges = props.compact ? changes.slice(0, 3) : changes;
 
   return (
@@ -515,9 +532,11 @@ function AdminWorkspace(props: {
   }, [configs, releases]);
 
   useEffect(() => {
-    const nextValue = structuredClone(
-      latestDraft?.value ?? currentConfig?.value ?? configMetadata[selectedKey].defaultValue
-    );
+    const nextValue = resolveManagedWorkingValue({
+      key: selectedKey,
+      draft: latestDraft,
+      config: currentConfig,
+    });
     hydratedValueRef.current = JSON.stringify(nextValue);
     setWorkingValue(nextValue);
     setAutoSaveStatus('idle');
@@ -561,8 +580,8 @@ function AdminWorkspace(props: {
           client: props.client,
           environment: props.environment,
           key: selectedKey,
-          value: parsed,
           description: configMetadata[selectedKey].description,
+          ...draftSaveFields(selectedKey, parsed),
         });
         hydratedValueRef.current = serialized;
         setDrafts((current) => [
@@ -643,21 +662,20 @@ function AdminWorkspace(props: {
     try {
       const parsed = parseManagedConfig(selectedKey, workingValue);
       validateOpenRouterConfig(selectedKey, parsed);
-      if (
-        !(await requireWriteConfirmation(
-          '保存草稿',
-          latestDraft?.value ?? currentConfig?.value,
-          parsed
-        ))
-      ) {
+      const beforeValue = resolveManagedWorkingValue({
+        key: selectedKey,
+        draft: latestDraft,
+        config: currentConfig,
+      });
+      if (!(await requireWriteConfirmation('保存草稿', beforeValue, parsed))) {
         return;
       }
       await saveDraft({
         client: props.client,
         environment: props.environment,
         key: selectedKey,
-        value: parsed,
         description: configMetadata[selectedKey].description,
+        ...draftSaveFields(selectedKey, parsed),
       });
       message.success('草稿已保存');
       await reload();
@@ -672,8 +690,16 @@ function AdminWorkspace(props: {
     if (!canWrite || !latestDraft) return;
     setSaving(true);
     try {
-      validateOpenRouterConfig(selectedKey, latestDraft.value);
-      if (!(await requireWriteConfirmation('发布配置', currentConfig?.value, latestDraft.value))) {
+      const draftValue = isTextManagedConfig(selectedKey)
+        ? latestDraft.text_value
+        : latestDraft.value;
+      const publishedValue = resolveManagedWorkingValue({
+        key: selectedKey,
+        draft: null,
+        config: currentConfig,
+      });
+      validateOpenRouterConfig(selectedKey, draftValue);
+      if (!(await requireWriteConfirmation('发布配置', publishedValue, draftValue))) {
         return;
       }
       await publishDraft(props.client, latestDraft.id);
@@ -700,9 +726,11 @@ function AdminWorkspace(props: {
     setSaving(true);
     try {
       await discardDraft(props.client, latestDraft.id);
-      const publishedValue = structuredClone(
-        currentConfig?.value ?? configMetadata[selectedKey].defaultValue
-      );
+      const publishedValue = resolveManagedWorkingValue({
+        key: selectedKey,
+        draft: null,
+        config: currentConfig,
+      });
       hydratedValueRef.current = JSON.stringify(publishedValue);
       setWorkingValue(publishedValue);
       setDrafts((current) => current.filter((draft) => draft.id !== latestDraft.id));
@@ -719,8 +747,14 @@ function AdminWorkspace(props: {
     if (!canWrite) return;
     setSaving(true);
     try {
-      validateOpenRouterConfig(selectedKey, release.value);
-      if (!(await requireWriteConfirmation('回滚配置', currentConfig?.value, release.value))) {
+      const targetValue = releasePreviewValue(release);
+      const publishedValue = resolveManagedWorkingValue({
+        key: selectedKey,
+        draft: null,
+        config: currentConfig,
+      });
+      validateOpenRouterConfig(selectedKey, targetValue);
+      if (!(await requireWriteConfirmation('回滚配置', publishedValue, targetValue))) {
         return;
       }
       await rollbackRelease(props.client, release.id);
@@ -776,7 +810,6 @@ function AdminWorkspace(props: {
               ],
             },
             { key: 'characters', label: '角色卡' },
-            { key: 'platform_presets', label: '平台预设' },
             { key: 'announcements', label: '公告管理' },
             {
               key: 'analytics',
@@ -841,12 +874,6 @@ function AdminWorkspace(props: {
               error={charactersError}
               canWrite={canWrite}
               onRefresh={reloadCharacters}
-            />
-          ) : view === 'platform_presets' ? (
-            <PlatformPresetsView
-              client={props.client}
-              environment={props.environment}
-              canWrite={canWrite}
             />
           ) : view === 'announcements' ? (
             <AnnouncementsView
@@ -966,11 +993,11 @@ function AdminWorkspace(props: {
                 <Button
                   onClick={() =>
                     setWorkingValue(
-                      structuredClone(
-                        latestDraft?.value ??
-                          currentConfig?.value ??
-                          configMetadata[selectedKey].defaultValue
-                      )
+                      resolveManagedWorkingValue({
+                        key: selectedKey,
+                        draft: latestDraft,
+                        config: currentConfig,
+                      })
                     )
                   }
                 >

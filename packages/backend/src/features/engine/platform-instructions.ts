@@ -1,9 +1,9 @@
 /**
  * backend / features / engine / platform-instructions.ts
  *
- * 平台规则三件套的读取通道（M2）：miniapp.runtime_config 的
+ * 平台规则三件套的读取通道：miniapp.runtime_config 的
  * system_instructions / interaction_mode_blocks / pref_word_count_tiers 三个 key
- * → 引擎接缝的 EnginePlatformInstructions。正文由 migration 071 落库。
+ * → 引擎接缝的 EnginePlatformInstructions。正文由 migration 071 落库，076 起可由 Admin 发布。
  *
  * 这是本模块里唯一有 IO 的文件；渲染与组装（render-instructions.ts / prompt-engine.ts）保持纯函数。
  *
@@ -11,7 +11,13 @@
  *    这里读的始终是 miniapp schema，两者互不影响。
  */
 
-import type { PreferredWordCount } from '@miniapp/shared';
+import {
+  DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  toPublicWordCountTiers,
+  WordCountTiersConfigSchema,
+  type PublicWordCountTiers,
+  type WordCountTiersConfig,
+} from '@miniapp/shared';
 import {
   fetchRuntimeConfigEntries,
   type RuntimeConfigEntry,
@@ -29,17 +35,6 @@ const CONFIG_KEYS = [
 ] as const;
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
-
-/**
- * PreferredWordCount 的运行时清单。satisfies 保证枚举增减档位时这里编译期就报错，
- * 不会留一个「新档位永远命中不了」的静默缺口。
- */
-const PREFERRED_WORD_COUNTS = Object.keys({
-  '100-300': true,
-  '300-500': true,
-  '500-800': true,
-  '800+': true,
-} satisfies Record<PreferredWordCount, true>) as PreferredWordCount[];
 
 /**
  * 三个 key 全部缺失/损坏时的最后兜底。刻意写得很短——它只保证生成不中断，
@@ -61,13 +56,15 @@ const FALLBACK_INTERACTION_MODE_BLOCKS = {
 } as const;
 
 const FALLBACK_WORD_COUNT_TIERS: EngineWordCountTiers = {
-  tiers: [
-    { label: '100-300', promptValue: '100-300' },
-    { label: '300-500', promptValue: '300-500' },
-    { label: '500-800', promptValue: '500-800' },
-    { label: '800+', promptValue: '800以上' },
-  ],
-  defaultValue: '300-500',
+  tiers: DEFAULT_WORD_COUNT_TIERS_CONFIG.tiers.map((tier) => ({
+    id: tier.id,
+    uiLabel: tier.ui_label,
+    promptValue: tier.prompt_value,
+    enabled: tier.enabled,
+    sortOrder: tier.sort_order,
+  })),
+  defaultTierId: DEFAULT_WORD_COUNT_TIERS_CONFIG.default_tier_id,
+  layoutColumns: DEFAULT_WORD_COUNT_TIERS_CONFIG.layout.columns,
 };
 
 export interface PlatformInstructionsSnapshot {
@@ -100,32 +97,71 @@ export function parseInteractionModeBlocks(
   return { optionsOn, optionsOff };
 }
 
+function layoutColumns(value: unknown): 2 | 3 | 4 {
+  if (value === 2 || value === 3 || value === 4) return value;
+  return 4;
+}
+
+/**
+ * 新 shape（076）：{ tiers:[{id,ui_label,prompt_value,enabled,sort_order}], default_tier_id, layout }
+ * 旧 shape（071）：{ tiers:[{label,prompt_value}], default_value }
+ */
 export function parseWordCountTiers(value: unknown): EngineWordCountTiers | null {
   if (!isRecord(value) || !Array.isArray(value.tiers) || value.tiers.length === 0) return null;
 
   const tiers: EngineWordCountTiers['tiers'] = [];
-  for (const item of value.tiers) {
+  for (const [index, item] of value.tiers.entries()) {
     if (!isRecord(item)) return null;
-    const label = nonEmptyString(item.label);
+    const id = nonEmptyString(item.id) ?? nonEmptyString(item.label);
     const promptValue = nonEmptyString(item.prompt_value);
-    if (!label || !promptValue) return null;
-    tiers.push({ label, promptValue });
+    if (!id || !promptValue) return null;
+    const uiLabel = nonEmptyString(item.ui_label) ?? id;
+    const enabled = typeof item.enabled === 'boolean' ? item.enabled : true;
+    const sortOrder =
+      typeof item.sort_order === 'number' && Number.isFinite(item.sort_order)
+        ? Math.trunc(item.sort_order)
+        : index;
+    tiers.push({ id, uiLabel, promptValue, enabled, sortOrder });
   }
 
-  const defaultValue = nonEmptyString(value.default_value);
-  if (!defaultValue) return null;
+  const defaultTierId =
+    nonEmptyString(value.default_tier_id) ??
+    nonEmptyString(value.default_value) ??
+    tiers.find((tier) => tier.enabled)?.id ??
+    null;
+  if (!defaultTierId) return null;
 
-  return { tiers, defaultValue };
+  const columns = isRecord(value.layout) ? layoutColumns(value.layout.columns) : 4;
+
+  return {
+    tiers,
+    defaultTierId,
+    layoutColumns: columns,
+  };
 }
 
-/**
- * 档位表能否覆盖 PreferredWordCount 的每一个取值。
- * 覆盖不全的档位会静默回落到 defaultValue——用户改了设置却看不到长度变化，且不报错，
- * 所以这里单独判一次并在读取时打日志。
- */
-export function findUncoveredWordCounts(tiersConfig: EngineWordCountTiers): PreferredWordCount[] {
-  const labels = new Set(tiersConfig.tiers.map((tier) => tier.label));
-  return PREFERRED_WORD_COUNTS.filter((wordCount) => !labels.has(wordCount));
+export function engineWordCountTiersToConfig(
+  tiersConfig: EngineWordCountTiers
+): WordCountTiersConfig {
+  const raw = {
+    tiers: tiersConfig.tiers.map((tier) => ({
+      id: tier.id,
+      ui_label: tier.uiLabel,
+      prompt_value: tier.promptValue,
+      enabled: tier.enabled,
+      sort_order: tier.sortOrder,
+    })),
+    default_tier_id: tiersConfig.defaultTierId,
+    layout: { columns: tiersConfig.layoutColumns },
+  };
+  const parsed = WordCountTiersConfigSchema.safeParse(raw);
+  return parsed.success ? parsed.data : DEFAULT_WORD_COUNT_TIERS_CONFIG;
+}
+
+export function toPublicWordCountTiersFromEngine(
+  tiersConfig: EngineWordCountTiers
+): PublicWordCountTiers {
+  return toPublicWordCountTiers(engineWordCountTiersToConfig(tiersConfig));
 }
 
 let cached: PlatformInstructionsSnapshot | null = null;
@@ -165,21 +201,11 @@ function buildSnapshot(entries: Map<string, RuntimeConfigEntry>): PlatformInstru
     degraded = true;
   }
 
-  const resolvedTiers = wordCountTiers ?? FALLBACK_WORD_COUNT_TIERS;
-  const uncovered = findUncoveredWordCounts(resolvedTiers);
-  if (uncovered.length > 0) {
-    // 不算 degraded：其余档位仍然生效，只有这几个取值会落到 defaultValue。
-    console.error(
-      `[engine] runtime_config ${WORD_COUNT_TIERS_KEY} 未覆盖 PreferredWordCount 取值 ${uncovered.join(' / ')}，` +
-        `这些档位会静默回落到 ${resolvedTiers.defaultValue}`
-    );
-  }
-
   return {
     instructions: {
       template: template ?? FALLBACK_TEMPLATE,
       interactionModeBlocks: interactionModeBlocks ?? FALLBACK_INTERACTION_MODE_BLOCKS,
-      wordCountTiers: resolvedTiers,
+      wordCountTiers: wordCountTiers ?? FALLBACK_WORD_COUNT_TIERS,
     },
     degraded,
   };

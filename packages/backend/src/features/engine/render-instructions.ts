@@ -17,21 +17,24 @@ import type { EnginePlatformInstructions, EngineWordCountTiers } from './types.j
 export const EMPTY_CUSTOM_INSTRUCTIONS = '暂无';
 
 /**
- * 把用户选择的字数档位（PreferredWordCount 枚举值）翻成注入 {{WORD_COUNT}} 的文案。
+ * 把用户选择的字数档位 id 翻成注入 {{WORD_COUNT}} 的文案。
  *
- * 匹配靠 label 逐字相等。档位表的 label 与枚举对不上时会落到 defaultValue——这是静默降级，
- * 表现为「用户改了档位但输出长度不变」，所以 071 迁移里把 label 钉死成枚举值。
- *
- * 与 bot 的唯一差异：bot 匹配失败后先找 prompt_value === default_value 的档位、找不到才返回
- * 用户传入的原值。档位表里 default_value 存在时两者等价；不存在时 bot 会把 '800+' 这种枚举
- * 字面量注进模板，这里直接返回 defaultValue 更稳。
+ * 只在 enabled 档位里按 id 匹配；未命中（下线 / 旧值 / 拼写错误）回落到 defaultTierId 对应档位的
+ * promptValue，再不行用配置里的 defaultTierId 字符串本身兜底。
  */
 export function resolveWordCountPromptValue(
-  wordCountLabel: string,
+  wordCountId: string,
   tiersConfig: EngineWordCountTiers
 ): string {
-  const matched = tiersConfig.tiers.find((tier) => tier.label === wordCountLabel);
-  return matched ? matched.promptValue : tiersConfig.defaultValue;
+  const enabled = tiersConfig.tiers.filter((tier) => tier.enabled);
+  const matched = enabled.find((tier) => tier.id === wordCountId);
+  if (matched) return matched.promptValue;
+
+  const fallback =
+    enabled.find((tier) => tier.id === tiersConfig.defaultTierId) ??
+    tiersConfig.tiers.find((tier) => tier.id === tiersConfig.defaultTierId) ??
+    enabled[0];
+  return fallback?.promptValue ?? tiersConfig.defaultTierId;
 }
 
 /**

@@ -373,6 +373,93 @@ body {
   box-shadow: 0 18px 50px rgb(0 0 0 / 18%);
 }
 
+.word-count-phone-preview {
+  min-height: 520px;
+}
+
+.word-count-phone-hint {
+  margin: 0 0 16px;
+  color: rgb(255 255 255 / 55%);
+  font-size: 12px;
+}
+
+.word-count-phone-section {
+  margin-top: 14px;
+  padding: 12px;
+  background: rgb(255 255 255 / 4%);
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 16px;
+}
+
+.word-count-phone-section h4 {
+  margin: 0 0 10px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.word-count-phone-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.word-count-phone-chip {
+  padding: 10px 6px;
+  color: rgb(255 255 255 / 72%);
+  font-size: 12px;
+  font-weight: 600;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 12px;
+  cursor: default;
+}
+
+.word-count-phone-chip.is-active {
+  color: #fff;
+  background: rgb(99 102 241 / 28%);
+  border-color: rgb(129 140 248 / 55%);
+}
+
+.word-count-phone-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.word-count-phone-row strong {
+  display: block;
+  color: #fff;
+  font-size: 13px;
+}
+
+.word-count-phone-row small {
+  display: block;
+  margin-top: 2px;
+  color: rgb(255 255 255 / 45%);
+  font-size: 11px;
+}
+
+.word-count-phone-switch {
+  width: 42px;
+  height: 24px;
+  background: rgb(99 102 241 / 70%);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%);
+  position: relative;
+}
+
+.word-count-phone-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+}
+
 .model-preview-sticky {
   position: sticky;
   top: 16px;

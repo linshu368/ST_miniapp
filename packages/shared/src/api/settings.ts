@@ -1,6 +1,10 @@
 // MiniApp 用户设置领域的前后端共享契约
 
-export type PreferredWordCount = '100-300' | '300-500' | '500-800' | '800+';
+/**
+ * 回复长度档位 id。权威列表来自 runtime_config.pref_word_count_tiers，
+ * 不再是固定四值枚举；非法或已下线的 id 在读取/渲染时回落到 default_tier_id。
+ */
+export type PreferredWordCount = string;
 export type AvatarSource = 'custom' | 'telegram' | 'default';
 
 /**

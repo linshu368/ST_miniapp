@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import type { PreferredWordCount } from '@miniapp/shared';
 
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -11,26 +10,28 @@ import {
   usePatchGenerationConfigMutation,
 } from '@/lib/api/generation-config';
 
-const WORD_COUNT_OPTIONS: Array<{ value: PreferredWordCount; label: string }> = [
-  { value: '100-300', label: '简短' },
-  { value: '300-500', label: '适中' },
-  { value: '500-800', label: '详细' },
-  { value: '800+', label: '长篇' },
-];
-
 const MAX_CUSTOM_INSTRUCTIONS = 500;
 
 /**
  * 生成偏好。用户级配置，对所有会话生效——不是当前这段对话的设置，
  * 文案上要说清楚，否则用户会以为只改这一段。
+ * 回复长度档位与按钮文案来自 runtime_config.pref_word_count_tiers。
  */
 export function ChatGenerationSettings() {
   const query = useGenerationConfigQuery();
   const patch = usePatchGenerationConfigMutation();
   const config = query.data?.config;
+  const wordCountTiers = query.data?.word_count_tiers;
 
   const [instructions, setInstructions] = useState('');
   const [instructionsDirty, setInstructionsDirty] = useState(false);
+
+  const lengthOptions = useMemo(() => {
+    const tiers = wordCountTiers?.tiers ?? [];
+    return tiers.slice().sort((a, b) => a.sort_order - b.sort_order);
+  }, [wordCountTiers]);
+
+  const columns = wordCountTiers?.layout.columns ?? 4;
 
   // 服务端值到手后灌进草稿，但不要盖掉用户正在编辑的内容
   useEffect(() => {
@@ -38,7 +39,7 @@ export function ChatGenerationSettings() {
     setInstructions(config?.pref_custom_instructions ?? '');
   }, [config?.pref_custom_instructions, instructionsDirty]);
 
-  if (query.isLoading || !config) {
+  if (query.isLoading || !config || !wordCountTiers) {
     return (
       <div className="flex justify-center py-10 text-[13px] text-muted-foreground">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
@@ -54,31 +55,42 @@ export function ChatGenerationSettings() {
     patch.mutate({ pref_custom_instructions: next.length > 0 ? next : null });
   };
 
+  const activeWordCount = lengthOptions.some((tier) => tier.id === config.pref_word_count)
+    ? config.pref_word_count
+    : wordCountTiers.default_tier_id;
+
   return (
     <div className="space-y-5">
       <section>
         <h3 className="mb-2 text-[13px] font-semibold text-foreground">回复长度</h3>
-        <div className="grid grid-cols-4 gap-2">
-          {WORD_COUNT_OPTIONS.map((option) => {
-            const active = option.value === config.pref_word_count;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                disabled={patch.isPending}
-                onClick={() => patch.mutate({ pref_word_count: option.value })}
-                className={cn(
-                  'rounded-xl border py-2 text-[13px] font-medium transition-colors disabled:opacity-55',
-                  active
-                    ? 'border-primary/40 bg-primary/10 text-primary'
-                    : 'border-border bg-card text-muted-foreground hover:bg-secondary'
-                )}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
+        {lengthOptions.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground">暂无可用档位</p>
+        ) : (
+          <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+          >
+            {lengthOptions.map((option) => {
+              const active = option.id === activeWordCount;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  disabled={patch.isPending}
+                  onClick={() => patch.mutate({ pref_word_count: option.id })}
+                  className={cn(
+                    'rounded-xl border py-2 text-[13px] font-medium transition-colors disabled:opacity-55',
+                    active
+                      ? 'border-primary/40 bg-primary/10 text-primary'
+                      : 'border-border bg-card text-muted-foreground hover:bg-secondary'
+                  )}
+                >
+                  {option.ui_label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
@@ -110,6 +122,7 @@ export function ChatGenerationSettings() {
           onBlur={saveInstructions}
           rows={3}
           maxLength={MAX_CUSTOM_INSTRUCTIONS}
+          disabled={patch.isPending}
           placeholder="留空则不附加任何额外指令"
           aria-label="自定义指令"
           className="w-full resize-none rounded-xl border border-border bg-card px-3 py-2.5 text-[13px] text-foreground placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
