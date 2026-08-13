@@ -29,6 +29,7 @@ import {
 } from '../../infrastructure/repositories/CharacterCardRepository.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
+import { fetchContextWindowLimits } from './context-window.js';
 import { buildEngineHistory } from './history.js';
 import type { ConversationStreamSink } from './sse.js';
 
@@ -99,14 +100,15 @@ export async function runConversationTurn(
   const userId = session.user_id;
 
   // ── 取数 ──────────────────────────────────────────────────────────────────
-  // 五个读之间互不依赖，串行发会把一轮生成的启动时延叠成五个 RTT。
+  // 六个读之间互不依赖，串行发会把一轮生成的启动时延叠成六个 RTT。
   // 都放在写入之前：这里抛异常时会话还没被动过，不会留下没有回复的孤儿 user 行。
-  const [model, card, userConfig, displayName, instructions] = await Promise.all([
+  const [model, card, userConfig, displayName, instructions, windowLimits] = await Promise.all([
     resolveModelForUser(userId),
     characters().requireCard(session.character_id),
     userSettings().getGenerationConfig(userId),
     userSettings().getDisplayName(userId),
     fetchPlatformInstructions(),
+    fetchContextWindowLimits(),
   ]);
 
   if (instructions.degraded) {
@@ -119,7 +121,7 @@ export async function runConversationTurn(
   // ── 落库：一轮一个 chat_history revision ─────────────────────────────────
   // 两个 RPC 都在会话行锁内做「生成中判定 + 陈旧流清理」，session_busy 与
   // regenerate_not_allowed 由它们以 SQLSTATE 抛出，仓库层已翻成业务错误码。
-  const turn = await startTurn(session.id, mode, model.openRouterModelId);
+  const turn = await startTurn(session.id, mode, model.openRouterModelId, windowLimits);
 
   // ── 组 prompt ─────────────────────────────────────────────────────────────
   const context = await historyRecords().getContextBeforeTurn(session.id, turn.turnIndex);
@@ -128,6 +130,7 @@ export async function runConversationTurn(
   const prompt = buildPrompt({
     character: toEngineCharacter(card),
     history,
+    truncatedTurns: context.truncatedTurns,
     userInput: turn.userInput,
     userConfig,
     persona: { displayName },
@@ -217,6 +220,7 @@ export async function runConversationTurn(
       mode: mode.kind,
       status,
       model: model.openRouterModelId,
+      truncatedTurns: context.truncatedTurns,
       replyChars: result.content.length,
       clientGone: sink.clientGone,
     },
@@ -236,13 +240,16 @@ interface StartedTurn {
 async function startTurn(
   sessionId: string,
   mode: ConversationTurnMode,
-  model: string
+  model: string,
+  windowLimits: { maxTurns: number; retainTurns: number }
 ): Promise<StartedTurn> {
   if (mode.kind === 'send') {
     const started = await historyRecords().startTurn({
       sessionId,
       userContent: mode.content,
       model,
+      maxContextTurns: windowLimits.maxTurns,
+      retainContextTurns: windowLimits.retainTurns,
     });
     return {
       turnIndex: started.turnIndex,
@@ -252,7 +259,12 @@ async function startTurn(
     };
   }
 
-  const started = await historyRecords().startRegeneration({ sessionId, model });
+  const started = await historyRecords().startRegeneration({
+    sessionId,
+    model,
+    maxContextTurns: windowLimits.maxTurns,
+    retainContextTurns: windowLimits.retainTurns,
+  });
   return {
     turnIndex: started.turnIndex,
     historyId: started.historyId,
