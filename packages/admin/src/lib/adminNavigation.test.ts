@@ -18,9 +18,12 @@ describe('admin navigation', () => {
 
   it('keeps independent top-level pages separate', () => {
     expect(resolveAdminMenuSelection('characters')).toEqual({ view: 'characters' });
-    expect(resolveAdminMenuSelection('platform_presets')).toEqual({ view: 'platform_presets' });
     expect(resolveAdminMenuSelection('announcements')).toEqual({ view: 'announcements' });
     expect(resolveAdminMenuSelection('audit')).toEqual({ view: 'audit' });
+  });
+
+  it('drops removed platform presets menu into configs fallback', () => {
+    expect(resolveAdminMenuSelection('platform_presets')).toEqual({ view: 'configs' });
   });
 
   it('opens analytics reports from the analytics submenu', () => {

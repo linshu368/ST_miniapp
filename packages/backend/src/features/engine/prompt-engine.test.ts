@@ -21,12 +21,13 @@ const INSTRUCTIONS: EnginePlatformInstructions = {
   interactionModeBlocks: { optionsOn: '给出选项。', optionsOff: '不要给出选项。' },
   wordCountTiers: {
     tiers: [
-      { label: '100-300', promptValue: '100-300' },
-      { label: '300-500', promptValue: '300-500' },
-      { label: '500-800', promptValue: '500-800' },
-      { label: '800+', promptValue: '800以上' },
+      { id: '100-300', uiLabel: '简短', promptValue: '100-300', enabled: true, sortOrder: 0 },
+      { id: '300-500', uiLabel: '适中', promptValue: '300-500', enabled: true, sortOrder: 1 },
+      { id: '500-800', uiLabel: '详细', promptValue: '500-800', enabled: true, sortOrder: 2 },
+      { id: '800+', uiLabel: '长篇', promptValue: '800以上', enabled: true, sortOrder: 3 },
     ],
-    defaultValue: '300-500',
+    defaultTierId: '300-500',
+    layoutColumns: 4,
   },
 };
 
@@ -178,11 +179,15 @@ function botEnhancedPrompt(
     : instructions.interactionModeBlocks.optionsOff;
 
   const match = instructions.wordCountTiers.tiers.find(
-    (t) => t.label === userConfig.pref_word_count
+    (t) => t.enabled && t.id === userConfig.pref_word_count
   );
-  const fallback = instructions.wordCountTiers.tiers.find(
-    (t) => t.promptValue === instructions.wordCountTiers.defaultValue
-  );
+  const fallback =
+    instructions.wordCountTiers.tiers.find(
+      (t) => t.enabled && t.id === instructions.wordCountTiers.defaultTierId
+    ) ??
+    instructions.wordCountTiers.tiers.find(
+      (t) => t.id === instructions.wordCountTiers.defaultTierId
+    );
   const wordCountValue = match
     ? match.promptValue
     : (fallback?.promptValue ?? userConfig.pref_word_count);

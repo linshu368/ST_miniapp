@@ -2,11 +2,13 @@ import {
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   ModelCatalogSchema,
   PaymentPlansSchema,
   RechargePageConfigSchema,
+  WordCountTiersConfigSchema,
 } from '@miniapp/shared';
 import { z } from 'zod';
 
@@ -20,13 +22,44 @@ export const managedConfigKeys = [
   'llm_model_catalog',
   'llm_pricing_config',
   'system_fallback_character_id',
+  'system_instructions',
+  'pref_word_count_tiers',
 ] as const;
 
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 
+/** 存 runtime_config.text_value 的 managed key；草稿 value 为 null */
+export const TEXT_MANAGED_CONFIG_KEYS = ['system_instructions'] as const;
+export type TextManagedConfigKey = (typeof TEXT_MANAGED_CONFIG_KEYS)[number];
+
+export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedConfigKey {
+  return (TEXT_MANAGED_CONFIG_KEYS as readonly string[]).includes(key);
+}
+
 const nonnegativeInteger = z.number().int().nonnegative();
 const positiveInteger = z.number().int().positive();
 export { LlmPricingConfigSchema };
+
+const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
+  '{{WORD_COUNT}}',
+  '{{INTERACTION_MODE}}',
+  '{{USER_CUSTOM_INSTRUCTIONS}}',
+] as const;
+
+export const SystemInstructionsSchema = z
+  .string()
+  .trim()
+  .min(1, '平台规则不能为空')
+  .superRefine((value, ctx) => {
+    for (const placeholder of REQUIRED_INSTRUCTION_PLACEHOLDERS) {
+      if (!value.includes(placeholder)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `缺少占位符 ${placeholder}`,
+        });
+      }
+    }
+  });
 
 const EditableModelCatalogModelSchema = z.object({
   id: z.string(),
@@ -55,6 +88,17 @@ export const EditableModelCatalogSchema = z.object({
   tiers: z.array(EditableModelCatalogTierSchema),
 });
 
+export const DEFAULT_SYSTEM_INSTRUCTIONS = [
+  'Roleplay System Instructions',
+  '',
+  '{{INTERACTION_MODE}}',
+  '',
+  '输出篇幅为 {{WORD_COUNT}} 字，段落之间使用空行隔开，仅使用简体中文。',
+  '',
+  '用户个人偏好为：',
+  '{{USER_CUSTOM_INSTRUCTIONS}}',
+].join('\n');
+
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
   miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
@@ -65,6 +109,8 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
+  system_instructions: SystemInstructionsSchema,
+  pref_word_count_tiers: WordCountTiersConfigSchema,
 };
 
 export const configMetadata: Record<
@@ -153,8 +199,32 @@ export const configMetadata: Record<
     description: '角色不可用时使用的系统兜底角色 UUID。',
     defaultValue: '',
   },
+  system_instructions: {
+    label: '平台规则模板',
+    description:
+      '自研引擎每轮注入的平台规则（markdown）。须含 {{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
+    defaultValue: DEFAULT_SYSTEM_INSTRUCTIONS,
+  },
+  pref_word_count_tiers: {
+    label: '回复长度档位',
+    description:
+      '生成偏好「回复长度」的档位表：可增删档位、改按钮文案与列布局；prompt_value 注入 {{WORD_COUNT}}。',
+    defaultValue: DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  },
 };
 
 export function parseManagedConfig(key: ManagedConfigKey, value: unknown): unknown {
   return configSchemas[key].parse(value);
+}
+
+export function resolveManagedWorkingValue(input: {
+  key: ManagedConfigKey;
+  draft: { value: unknown; text_value: string | null } | null | undefined;
+  config: { value: unknown; text_value: string | null } | null | undefined;
+}): unknown {
+  const fallback = configMetadata[input.key].defaultValue;
+  if (isTextManagedConfig(input.key)) {
+    return input.draft?.text_value ?? input.config?.text_value ?? fallback;
+  }
+  return structuredClone(input.draft?.value ?? input.config?.value ?? fallback);
 }

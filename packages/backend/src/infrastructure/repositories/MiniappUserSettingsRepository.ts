@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '../../lib/supabase.js';
 import {
+  DEFAULT_WORD_COUNT_TIERS_CONFIG,
   normalizeTelegramAvatarUrl,
   type PatchUserSettingsRequest,
   type PreferredWordCount,
@@ -8,10 +9,13 @@ import {
 } from '@miniapp/shared';
 import { config } from '../../platform/config.js';
 import type { TelegramUser } from '../../middleware/auth.js';
+import {
+  fetchPlatformInstructions,
+  toPublicWordCountTiersFromEngine,
+} from '../../features/engine/platform-instructions.js';
 
-const WORD_COUNT_OPTIONS: PreferredWordCount[] = ['100-300', '300-500', '500-800', '800+'];
-/** 与 migration 015 建表默认值一致 */
-const DEFAULT_WORD_COUNT: PreferredWordCount = '300-500';
+/** 与 migration / DEFAULT_WORD_COUNT_TIERS_CONFIG 默认档一致 */
+const DEFAULT_WORD_COUNT: PreferredWordCount = DEFAULT_WORD_COUNT_TIERS_CONFIG.default_tier_id;
 
 export interface MiniappUserSettingsRow {
   user_id: string;
@@ -66,7 +70,7 @@ export class MiniappUserSettingsRepository {
   ): Promise<MiniappUserSettingsRow> {
     await this.getOrCreate(userId, tgUser);
 
-    const update = this.normalizePatch(patch);
+    const update = await this.normalizePatch(patch);
     const { data, error } = await this.db
       .from('miniapp_user_settings')
       .update({
@@ -144,6 +148,7 @@ export class MiniappUserSettingsRepository {
    * 配置属于用户层、对该用户所有会话生效（总方案决策 10），因此不接受 session 维度入参。
    *
    * 用户还没有设置行时返回与建表默认值一致的形状，避免调用方各写一套兜底。
+   * 若存档 id 已从启用档位中下线，对外回落到当前 default_tier_id，避免 UI 出现无选中态。
    */
   async getGenerationConfig(userId: string): Promise<UserGenerationConfig> {
     const { data, error } = await this.db
@@ -159,9 +164,17 @@ export class MiniappUserSettingsRepository {
       'selected_model_id' | 'pref_word_count' | 'pref_show_options' | 'pref_custom_instructions'
     > | null;
 
+    const publicTiers = toPublicWordCountTiersFromEngine(
+      (await fetchPlatformInstructions()).instructions.wordCountTiers
+    );
+    const stored = row?.pref_word_count ?? publicTiers.default_tier_id ?? DEFAULT_WORD_COUNT;
+    const pref_word_count = publicTiers.tiers.some((tier) => tier.id === stored)
+      ? stored
+      : publicTiers.default_tier_id;
+
     return {
       selected_model_id: row?.selected_model_id ?? null,
-      pref_word_count: row?.pref_word_count ?? DEFAULT_WORD_COUNT,
+      pref_word_count,
       pref_show_options: row?.pref_show_options ?? true,
       pref_custom_instructions: row?.pref_custom_instructions ?? null,
     };
@@ -249,16 +262,18 @@ export class MiniappUserSettingsRepository {
     };
   }
 
-  private normalizePatch(
+  private async normalizePatch(
     patch: PatchUserSettingsRequest
-  ): Partial<
-    Pick<
-      MiniappUserSettingsRow,
-      | 'display_name'
-      | 'custom_avatar_url'
-      | 'pref_word_count'
-      | 'pref_show_options'
-      | 'pref_custom_instructions'
+  ): Promise<
+    Partial<
+      Pick<
+        MiniappUserSettingsRow,
+        | 'display_name'
+        | 'custom_avatar_url'
+        | 'pref_word_count'
+        | 'pref_show_options'
+        | 'pref_custom_instructions'
+      >
     >
   > {
     const update: Partial<
@@ -282,10 +297,14 @@ export class MiniappUserSettingsRepository {
       update.custom_avatar_url = null;
     }
     if ('pref_word_count' in patch) {
-      if (!WORD_COUNT_OPTIONS.includes(patch.pref_word_count as PreferredWordCount)) {
+      const next = typeof patch.pref_word_count === 'string' ? patch.pref_word_count.trim() : '';
+      const publicTiers = toPublicWordCountTiersFromEngine(
+        (await fetchPlatformInstructions()).instructions.wordCountTiers
+      );
+      if (!next || !publicTiers.tiers.some((tier) => tier.id === next)) {
         throw new Error('无效的字数偏好');
       }
-      update.pref_word_count = patch.pref_word_count;
+      update.pref_word_count = next;
     }
     if ('pref_show_options' in patch) {
       update.pref_show_options = Boolean(patch.pref_show_options);

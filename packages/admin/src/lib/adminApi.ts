@@ -26,6 +26,7 @@ export interface ConfigDraft {
   environment: AdminEnvironment;
   config_key: ManagedConfigKey;
   value: unknown;
+  text_value: string | null;
   description: string | null;
   base_version: number;
   status: 'draft' | 'published';
@@ -40,6 +41,7 @@ export interface ConfigRelease {
   config_key: ManagedConfigKey;
   runtime_version: number;
   value: unknown;
+  text_value?: string | null;
   description: string | null;
   source_draft_id: string | null;
   rollback_of_release_id: string | null;
@@ -189,13 +191,15 @@ export async function saveDraft(input: {
   environment: AdminEnvironment;
   key: ManagedConfigKey;
   value: unknown;
+  textValue?: string | null;
   description: string;
 }): Promise<ConfigDraft> {
+  const usesTextValue = input.textValue !== undefined;
   const { data, error } = await input.client.schema('admin').rpc('upsert_config_draft', {
     p_environment: input.environment,
     p_config_key: input.key,
-    p_value: input.value,
-    p_text_value: null,
+    p_value: usesTextValue ? null : input.value,
+    p_text_value: usesTextValue ? input.textValue : null,
     p_description: input.description,
   });
   return unwrap(data as ConfigDraft | null, error);
