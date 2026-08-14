@@ -384,9 +384,9 @@ describe.skipIf(!canRunAgainstDatabase)(
       await createCompletedTurn(session.id, '留痕', '留痕回复');
 
       expect(await sessions.getSession(session.id, otherUserId)).toBeNull();
-      await expect(sessions.rename(session.id, otherUserId, '抢占')).rejects.toBeInstanceOf(
-        ConversationRepositoryError
-      );
+      await expect(
+        sessions.updateSession(session.id, otherUserId, { title: '抢占' })
+      ).rejects.toBeInstanceOf(ConversationRepositoryError);
 
       await sessions.softDelete(session.id, userId);
       expect(await sessions.getSession(session.id, userId)).toBeNull();

@@ -6,12 +6,18 @@ import type {
   DeleteConversationData,
   GetConversationData,
   ListConversationsData,
-  RenameConversationData,
+  UpdateConversationData,
 } from '@miniapp/shared';
 import { apiClient } from './client';
 
 export const conversationKeys = {
   all: ['conversations'] as const,
+  /**
+   * 所有列表的公共前缀。改一个会话会同时影响 /chats 的全量列表和角色内的按角色列表，
+   * 只失效其中一条会让另一条留着旧顺序，所以写操作一律按这个前缀失效。
+   * 它刻意不覆盖 detail：那会把每个打开着的会话都重新拉一遍。
+   */
+  lists: ['conversations', 'list'] as const,
   list: (characterId?: string) => ['conversations', 'list', characterId ?? 'all'] as const,
   detail: (sessionId: string) => ['conversations', 'detail', sessionId] as const,
 };
@@ -84,23 +90,28 @@ export function useCreateConversationMutation() {
         messages: data.messages,
         has_more: false,
       });
-      void queryClient.invalidateQueries({ queryKey: conversationKeys.list(characterId) });
+      void queryClient.invalidateQueries({ queryKey: conversationKeys.lists });
     },
   });
 }
 
-export function useRenameConversationMutation(characterId: string | undefined) {
+/**
+ * 重命名与置顶共用一条 PATCH。字段不传就是不改——title 的 null 已经被
+ * 「清空为自动命名」占用，不能再兼任「不改」。
+ */
+export function useUpdateConversationMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    /** title 传 null 表示清空为自动命名 */
-    mutationFn: async (input: { sessionId: string; title: string | null }) =>
-      apiClient<RenameConversationData>(
-        `/api/v1/conversations/${encodeURIComponent(input.sessionId)}`,
-        { method: 'PATCH', body: JSON.stringify({ title: input.title }) }
-      ),
+    mutationFn: async (input: { sessionId: string; title?: string | null; pinned?: boolean }) => {
+      const { sessionId, ...patch } = input;
+      return apiClient<UpdateConversationData>(
+        `/api/v1/conversations/${encodeURIComponent(sessionId)}`,
+        { method: 'PATCH', body: JSON.stringify(patch) }
+      );
+    },
     onSuccess: (data) => {
-      void queryClient.invalidateQueries({ queryKey: conversationKeys.list(characterId) });
+      void queryClient.invalidateQueries({ queryKey: conversationKeys.lists });
       void queryClient.invalidateQueries({
         queryKey: conversationKeys.detail(data.session.id),
       });
@@ -108,7 +119,7 @@ export function useRenameConversationMutation(characterId: string | undefined) {
   });
 }
 
-export function useDeleteConversationMutation(characterId: string | undefined) {
+export function useDeleteConversationMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -118,7 +129,7 @@ export function useDeleteConversationMutation(characterId: string | undefined) {
       }),
     onSuccess: (data) => {
       queryClient.removeQueries({ queryKey: conversationKeys.detail(data.id) });
-      void queryClient.invalidateQueries({ queryKey: conversationKeys.list(characterId) });
+      void queryClient.invalidateQueries({ queryKey: conversationKeys.lists });
     },
   });
 }

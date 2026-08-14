@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Heart, MessageCircle, RefreshCw } from 'lucide-react';
+import {
+  Check,
+  ChevronRight,
+  Heart,
+  MessageCircle,
+  Pencil,
+  Pin,
+  PinOff,
+  RefreshCw,
+  Trash2,
+  X,
+} from 'lucide-react';
 
 import type { ChatSession } from '@miniapp/shared';
 
@@ -10,7 +21,12 @@ import { cn } from '@/lib/utils';
 import { useChatListStore } from '@/stores/chat-list';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useChatEngine } from '@/lib/api/chat-engine';
-import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
+import {
+  resolveSessionTitle,
+  useConversationsQuery,
+  useDeleteConversationMutation,
+  useUpdateConversationMutation,
+} from '@/lib/api/conversations';
 import { useFavoritesQuery } from '@/lib/api/favorites';
 import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
@@ -154,19 +170,177 @@ function ConversationHistoryList() {
 /**
  * 会话列表只带 character_id。逐行取角色卡而不是让列表接口跟着长字段：
  * 同一角色的多个会话共用一份 query 缓存，一屏最多也就几张卡。
+ *
+ * 整行是进入聊天的链接，操作按钮浮在它上层单独响应，避免 Link 里嵌 button。
  */
 function ConversationHistoryRow({ session }: { session: ChatSession }) {
   const { data } = useCharacterQuery(session.character_id);
   const character = data?.character;
+  const update = useUpdateConversationMutation();
+  const remove = useDeleteConversationMutation();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const avatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
+  // 用户重命名过就显示新名字，没有就回落到角色名——摘要在第二行，标题不必再从摘要里推
+  const name = resolveSessionTitle(session.title, null, character?.name ?? '对话');
+
+  const commitRename = () => {
+    const next = draft.trim();
+    setEditing(false);
+    update.mutate({ sessionId: session.id, title: next.length > 0 ? next : null });
+  };
+
+  if (editing) {
+    return (
+      <div className="rounded-3xl border border-primary/30 bg-card p-3.5">
+        <div className="flex items-center gap-2">
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') commitRename();
+              if (event.key === 'Escape') setEditing(false);
+            }}
+            maxLength={60}
+            placeholder="留空则回到自动命名"
+            aria-label="对话名称"
+            autoFocus
+            className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <RowAction label="保存" onClick={commitRename}>
+            <Check className="h-4 w-4" aria-hidden />
+          </RowAction>
+          <RowAction label="取消" onClick={() => setEditing(false)}>
+            <X className="h-4 w-4" aria-hidden />
+          </RowAction>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <HistoryRow
-      href={chatEntryPath('self_hosted', session.character_id, { sessionId: session.id })}
-      avatarUrl={character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null}
-      name={character?.name ?? resolveSessionTitle(session.title, session.last_message_preview)}
-      timestamp={session.last_message_at ?? session.created_at}
-      preview={session.last_message_preview}
-    />
+    <div
+      className={cn(
+        'relative rounded-3xl border bg-card p-3.5 shadow-lg shadow-black/10 transition',
+        session.pinned_at ? 'border-primary/30' : 'border-border'
+      )}
+    >
+      <div className="flex items-center gap-3">
+        <Link
+          href={chatEntryPath('self_hosted', session.character_id, { sessionId: session.id })}
+          prefetch={false}
+          aria-label={`继续与 ${name} 的对话`}
+          className="absolute inset-0 rounded-3xl"
+        />
+        <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover object-top"
+            />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-primary">
+              <MessageCircle className="h-5 w-5" />
+            </span>
+          )}
+        </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-3">
+            <span className="flex min-w-0 flex-1 items-center gap-1">
+              {session.pinned_at ? (
+                <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="已置顶" />
+              ) : null}
+              <span className="truncate font-semibold">{name}</span>
+            </span>
+            <time className="shrink-0 text-[11px] text-muted-foreground">
+              {formatActivityTime(session.last_message_at ?? session.created_at)}
+            </time>
+          </span>
+          <span className="mt-1 block truncate text-sm text-muted-foreground">
+            {session.last_message_preview || '暂无消息摘要'}
+          </span>
+        </span>
+
+        <span className="relative z-10 flex shrink-0 items-center">
+          <RowAction
+            label={session.pinned_at ? '取消置顶' : '置顶'}
+            onClick={() => update.mutate({ sessionId: session.id, pinned: !session.pinned_at })}
+          >
+            {session.pinned_at ? (
+              <PinOff className="h-4 w-4" aria-hidden />
+            ) : (
+              <Pin className="h-4 w-4" aria-hidden />
+            )}
+          </RowAction>
+          <RowAction
+            label="重命名"
+            onClick={() => {
+              setConfirmingDelete(false);
+              setDraft(session.title ?? '');
+              setEditing(true);
+            }}
+          >
+            <Pencil className="h-4 w-4" aria-hidden />
+          </RowAction>
+          <RowAction label="删除" onClick={() => setConfirmingDelete((current) => !current)}>
+            <Trash2 className="h-4 w-4" aria-hidden />
+          </RowAction>
+        </span>
+      </div>
+
+      {/* 删除不可逆，且这里没有撤销位，必须再问一次 */}
+      {confirmingDelete ? (
+        <div className="relative z-10 mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+          <span className="text-xs text-muted-foreground">删除这段对话记录？</span>
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(false)}
+              className="rounded-full px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmingDelete(false);
+                remove.mutate(session.id);
+              }}
+              className="rounded-full bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground"
+            >
+              删除
+            </button>
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RowAction({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+    >
+      {children}
+    </button>
   );
 }
 

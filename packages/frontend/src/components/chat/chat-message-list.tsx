@@ -12,6 +12,9 @@ const STICK_TO_BOTTOM_THRESHOLD_PX = 120;
 interface ChatMessageListProps {
   /** 已按 turn_index 升序，包含正在流式写入的那条 */
   messages: ChatMessage[];
+  characterName: string;
+  characterAvatarUrl: string | null;
+  userAvatarUrl: string | null;
   hasMore: boolean;
   loadingEarlier: boolean;
   onLoadEarlier: () => void;
@@ -24,6 +27,9 @@ interface ChatMessageListProps {
 
 export function ChatMessageList({
   messages,
+  characterName,
+  characterAvatarUrl,
+  userAvatarUrl,
   hasMore,
   loadingEarlier,
   onLoadEarlier,
@@ -52,14 +58,30 @@ export function ChatMessageList({
     node.scrollTop = node.scrollHeight;
   }, [tail]);
 
+  /**
+   * 键盘弹起会让消息区变矮，浏览器保留 scrollTop，最新那条就被推到折线以下。
+   * 只在用户本来就贴着底部时补一次，正在翻历史的人不该被拽回去。
+   */
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (!stickToBottomRef.current) return;
+      node.scrollTop = node.scrollHeight;
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  // 行间不留 gap：每条消息自带上下留白，行距由行内 padding 决定（对齐原版 #chat）
   return (
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-4 py-4"
+      className="chat-scroll-area flex-1 overflow-y-auto overscroll-contain pb-2 pt-3"
     >
       {hasMore ? (
-        <div className="flex justify-center pb-1">
+        <div className="flex justify-center pb-2 pt-1">
           <button
             type="button"
             onClick={onLoadEarlier}
@@ -76,12 +98,17 @@ export function ChatMessageList({
         <ChatMessageBubble
           key={`${message.id}:${message.revision}`}
           message={message}
+          characterName={characterName}
+          characterAvatarUrl={characterAvatarUrl}
+          userAvatarUrl={userAvatarUrl}
           streaming={message.id === streamingMessageId}
           footer={renderFooter?.(message)}
         />
       ))}
 
-      {awaitingFirstToken ? <ChatTypingBubble /> : null}
+      {awaitingFirstToken ? (
+        <ChatTypingBubble characterName={characterName} characterAvatarUrl={characterAvatarUrl} />
+      ) : null}
     </div>
   );
 }

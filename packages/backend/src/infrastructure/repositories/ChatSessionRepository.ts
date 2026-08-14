@@ -20,6 +20,7 @@ export interface ChatSessionRow {
   last_message_at: string | null;
   last_message_preview: string | null;
   message_count: number;
+  pinned_at: string | null;
   context_window_start_turn: number;
   deleted_at: string | null;
   created_at: string;
@@ -59,7 +60,13 @@ export class ChatSessionRepository {
     };
   }
 
-  /** 侧边栏会话列表：直读 DB，替代 ST 的 recent 反代（总方案决策 11） */
+  /**
+   * 侧边栏会话列表：直读 DB，替代 ST 的 recent 反代（总方案决策 11）。
+   *
+   * 过滤掉 message_count = 0：进角色卡就会建会话，一句话没发的那些不算历史，
+   * 露出来只会让列表堆满「新的对话 / 0 条」。会话本身还在，发出第一句后自动归位。
+   * total 也走同一条 where，否则分页总数会把这些隐藏会话算进去。
+   */
   async listSessions(
     userId: string,
     options: ListSessionsOptions = {}
@@ -71,13 +78,15 @@ export class ChatSessionRepository {
       .from('chat_sessions')
       .select('*', { count: 'exact' })
       .eq('user_id', userId)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .gt('message_count', 0);
 
     if (options.characterId) {
       query = query.eq('character_id', options.characterId);
     }
 
     const { data, error, count } = await query
+      .order('pinned_at', { ascending: false, nullsFirst: false })
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -108,19 +117,32 @@ export class ChatSessionRepository {
     return session;
   }
 
-  /** title 传 null = 清空为自动命名，由前端按首条用户消息截断显示 */
-  async rename(sessionId: string, userId: string, title: string | null): Promise<ChatSessionRow> {
-    const normalized = normalizeTitle(title);
+  /**
+   * 重命名与置顶合到一次写入：两者都是「改会话属性」，分成两个方法会让同时改动的
+   * 请求跑两趟 UPDATE，也让 updated_at 出现两次跳变。
+   * patch 里没出现的键一律不动——title 的 null 是「清空为自动命名」，不能兼任「不改」。
+   */
+  async updateSession(
+    sessionId: string,
+    userId: string,
+    patch: { title?: string | null; pinned?: boolean }
+  ): Promise<ChatSessionRow> {
+    const changes: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if ('title' in patch) changes.title = normalizeTitle(patch.title ?? null);
+    if (patch.pinned !== undefined) {
+      changes.pinned_at = patch.pinned ? new Date().toISOString() : null;
+    }
+
     const { data, error } = await this.db
       .from('chat_sessions')
-      .update({ title: normalized, updated_at: new Date().toISOString() })
+      .update(changes)
       .eq('id', sessionId)
       .eq('user_id', userId)
       .is('deleted_at', null)
       .select('*')
       .maybeSingle();
 
-    if (error) throw new Error(`重命名会话失败：${error.message}`);
+    if (error) throw new Error(`更新会话失败：${error.message}`);
     if (!data) {
       throw new ConversationRepositoryError('session_not_found', `会话不存在：${sessionId}`);
     }
@@ -168,6 +190,7 @@ export function toChatSession(row: ChatSessionRow): ChatSession {
     last_message_at: row.last_message_at,
     last_message_preview: row.last_message_preview,
     message_count: row.message_count,
+    pinned_at: row.pinned_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

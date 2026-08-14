@@ -36,6 +36,8 @@ export interface ChatSession {
   last_message_at: string | null;
   last_message_preview: string | null;
   message_count: number;
+  /** null = 未置顶。置顶会话排在列表最前，多个置顶之间按此时间倒序 */
+  pinned_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -93,6 +95,12 @@ export interface ListConversationsQuery {
   offset?: number;
 }
 
+/**
+ * 列表恒定过滤掉 message_count = 0 的会话：进角色卡就会建会话，一句话没发的那些
+ * 不是历史记录，露出来只会让列表堆满「新的对话 / 0 条」。
+ * 会话仍然存在，发出第一句后自动出现在列表里。
+ */
+
 export interface ListConversationsData {
   sessions: ChatSession[];
   total: number;
@@ -115,12 +123,17 @@ export interface GetConversationData {
 
 // ==== PATCH /api/v1/conversations/:id ====
 
-export interface RenameConversationRequest {
-  /** null 表示清空为自动命名 */
-  title: string | null;
+/**
+ * 两个字段都可选：只传 title 是重命名，只传 pinned 是置顶/取消置顶，都不传是空操作。
+ * title = null 是有意义的取值（清空为自动命名），所以「本次不改标题」只能用
+ * 「不带 title 字段」表达，不能用 null 兼任。
+ */
+export interface UpdateConversationRequest {
+  title?: string | null;
+  pinned?: boolean;
 }
 
-export interface RenameConversationData {
+export interface UpdateConversationData {
   session: ChatSession;
 }
 

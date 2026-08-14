@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Check, Loader2, Pencil, Pin, PinOff, Trash2, X } from 'lucide-react';
 import type { ChatSession } from '@miniapp/shared';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -10,7 +10,7 @@ import {
   resolveSessionTitle,
   useConversationsQuery,
   useDeleteConversationMutation,
-  useRenameConversationMutation,
+  useUpdateConversationMutation,
 } from '@/lib/api/conversations';
 
 interface ChatSessionDrawerProps {
@@ -19,23 +19,23 @@ interface ChatSessionDrawerProps {
   characterId: string;
   activeSessionId: string | null;
   onSelect: (sessionId: string) => void;
-  onCreate: () => void;
-  creating: boolean;
 }
 
+/**
+ * 「开启新对话」不在这里：它是工具箱里的一项，抽屉只负责列既有对话。
+ * 同一个动作摆两处会让人以为是两件事。
+ */
 export function ChatSessionDrawer({
   open,
   onOpenChange,
   characterId,
   activeSessionId,
   onSelect,
-  onCreate,
-  creating,
 }: ChatSessionDrawerProps) {
   // 抽屉关着时不查：会话列表只在用户主动翻的时候才需要新鲜
   const query = useConversationsQuery(characterId, open);
-  const rename = useRenameConversationMutation(characterId);
-  const remove = useDeleteConversationMutation(characterId);
+  const update = useUpdateConversationMutation();
+  const remove = useDeleteConversationMutation();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
@@ -52,7 +52,7 @@ export function ChatSessionDrawer({
     const next = draftTitle.trim();
     setEditingId(null);
     // 清空即回到「按首条消息自动命名」，契约上就是传 null
-    rename.mutate({ sessionId, title: next.length > 0 ? next : null });
+    update.mutate({ sessionId, title: next.length > 0 ? next : null });
   };
 
   return (
@@ -66,23 +66,7 @@ export function ChatSessionDrawer({
             </SheetDescription>
           </div>
 
-          <div className="px-4 py-3">
-            <button
-              type="button"
-              onClick={onCreate}
-              disabled={creating}
-              className="flex w-full items-center justify-center gap-1.5 rounded-full bg-primary px-4 py-2.5 text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-55"
-            >
-              {creating ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Plus className="h-4 w-4" aria-hidden />
-              )}
-              开始新的对话
-            </button>
-          </div>
-
-          <div className="flex-1 space-y-1.5 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+          <div className="flex-1 space-y-1.5 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3">
             {query.isLoading ? (
               <div className="flex justify-center py-10 text-[12px] text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
@@ -137,13 +121,33 @@ export function ChatSessionDrawer({
                           }}
                           className="min-w-0 flex-1 text-left"
                         >
-                          <span className="block truncate text-[13px] font-medium text-foreground">
-                            {resolveSessionTitle(session.title, session.last_message_preview)}
+                          <span className="flex min-w-0 items-center gap-1">
+                            {session.pinned_at ? (
+                              <Pin
+                                className="size-3 shrink-0 fill-current text-primary"
+                                aria-label="已置顶"
+                              />
+                            ) : null}
+                            <span className="truncate text-[13px] font-medium text-foreground">
+                              {resolveSessionTitle(session.title, session.last_message_preview)}
+                            </span>
                           </span>
                           <span className="mt-0.5 block text-[11px] text-muted-foreground">
                             {formatSessionMeta(session)}
                           </span>
                         </button>
+                        <IconAction
+                          label={session.pinned_at ? '取消置顶' : '置顶'}
+                          onClick={() =>
+                            update.mutate({ sessionId: session.id, pinned: !session.pinned_at })
+                          }
+                        >
+                          {session.pinned_at ? (
+                            <PinOff className="h-3.5 w-3.5" aria-hidden />
+                          ) : (
+                            <Pin className="h-3.5 w-3.5" aria-hidden />
+                          )}
+                        </IconAction>
                         <IconAction label="重命名" onClick={() => startEditing(session)}>
                           <Pencil className="h-3.5 w-3.5" aria-hidden />
                         </IconAction>
