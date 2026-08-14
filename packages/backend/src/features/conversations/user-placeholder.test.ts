@@ -27,6 +27,7 @@ const SESSION: ChatSession = {
   last_message_at: null,
   last_message_preview: '你好，{{user}}。',
   message_count: 1,
+  pinned_at: null,
   created_at: '2026-08-14T00:00:00.000Z',
   updated_at: '2026-08-14T00:00:00.000Z',
 };
