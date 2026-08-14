@@ -47,6 +47,7 @@ export interface ConversationFixtures {
   userId: string;
   tgId: string;
   characterId: string;
+  characterName: string;
   tag: string;
 }
 
@@ -65,10 +66,11 @@ export async function seedConversationFixtures(): Promise<ConversationFixtures> 
     .single();
   if (userError) throw new Error(`创建测试用户失败：${userError.message}`);
 
+  const characterName = `MVP 回归测试角色 ${tag}`;
   const { data: character, error: characterError } = await db()
     .from('characters')
     .insert({
-      name: `MVP 回归测试角色 ${tag}`,
+      name: characterName,
       first_mes: OPENING_MESSAGE,
       system_prompt: CHARACTER_SYSTEM_PROMPT,
       // 062 的 characters_test_cards_disabled 要求测试卡必须 enabled=false 且带 card_hash
@@ -84,6 +86,7 @@ export async function seedConversationFixtures(): Promise<ConversationFixtures> 
     userId: (user as { id: string }).id,
     tgId,
     characterId: (character as { id: string }).id,
+    characterName,
     tag,
   };
 }

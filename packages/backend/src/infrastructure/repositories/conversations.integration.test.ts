@@ -71,6 +71,7 @@ describe.skipIf(!canRunAgainstDatabase)(
     let userId: string;
     let otherUserId: string;
     let characterId: string;
+    let characterName: string;
 
     async function createCompletedTurn(
       sessionId: string,
@@ -128,10 +129,11 @@ describe.skipIf(!canRunAgainstDatabase)(
       userId = insertedUsers[0]!.id;
       otherUserId = insertedUsers[1]!.id;
 
+      characterName = `会话模型测试角色 ${suffix}`;
       const { data: character, error: characterError } = await db
         .from('characters')
         .insert({
-          name: `会话模型测试角色 ${suffix}`,
+          name: characterName,
           first_mes: FIRST_MES,
           system_prompt: '测试 system prompt',
           enabled: false,
@@ -162,6 +164,7 @@ describe.skipIf(!canRunAgainstDatabase)(
         content: FIRST_MES,
       });
       expect(session.message_count).toBe(0);
+      expect(session.title).toBe(characterName);
 
       const { count, error } = await db
         .from('chat_history')
@@ -392,6 +395,20 @@ describe.skipIf(!canRunAgainstDatabase)(
         content: '新版本',
         status: 'success',
       });
+    });
+
+    it('建会话 title 默认为角色名，清空重命名恢复为角色名', async () => {
+      const { session } = await sessions.createSession(userId, characterId);
+      expect(session.title).toBe(characterName);
+
+      const renamed = await sessions.updateSession(session.id, userId, { title: '自定义标题' });
+      expect(renamed.title).toBe('自定义标题');
+
+      const reset = await sessions.updateSession(session.id, userId, { title: null });
+      expect(reset.title).toBe(characterName);
+
+      const blank = await sessions.updateSession(session.id, userId, { title: '   ' });
+      expect(blank.title).toBe(characterName);
     });
 
     it('ownership 和软删除语义保持不变，历史不会随软删除丢失', async () => {

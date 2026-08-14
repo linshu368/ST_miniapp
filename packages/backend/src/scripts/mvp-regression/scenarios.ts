@@ -226,7 +226,11 @@ async function createSessionScenario(context: MvpScenarioContext): Promise<Scena
   checker.expect('开场白正文取自角色卡 first_mes', opening?.content, OPENING_MESSAGE);
   checker.expect('开场白状态', opening?.status, 'complete');
   checker.expect('未发生用户对话时 message_count 为 0', created.session.message_count, 0);
-  checker.expect('会话未重命名时 title 为 null', created.session.title, null);
+  checker.expect(
+    '会话未重命名时 title 为角色名',
+    created.session.title,
+    context.fixtures.characterName
+  );
   checker.expect('列表 total', list.json?.data.total, 1);
   checker.expect('列表命中新建的会话', list.json?.data.sessions[0]?.id, created.session.id);
   checker.expect('详情消息条数', detail.json?.data.messages.length, 1);

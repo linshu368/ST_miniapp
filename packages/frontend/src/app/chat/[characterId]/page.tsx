@@ -425,13 +425,10 @@ export default function SelfHostedChatPage() {
       ? '对话加载失败，请重试'
       : null;
 
-  const title = conversationQuery.data
-    ? resolveSessionTitle(
-        conversationQuery.data.session.title,
-        conversationQuery.data.session.last_message_preview,
-        character?.name ?? ''
-      )
-    : (character?.name ?? '');
+  const title = resolveSessionTitle(
+    conversationQuery.data?.session.title,
+    character?.name
+  );
 
   return (
     // 高度跟着可视视口走而不是写死 100dvh：iOS 弹键盘时后者不变，
@@ -502,6 +499,7 @@ export default function SelfHostedChatPage() {
         open={sessionsOpen}
         onOpenChange={setSessionsOpen}
         characterId={characterId}
+        characterName={characterQuery.data?.character.name}
         activeSessionId={sessionId}
         onSelect={(nextSessionId) => {
           setSessionId(nextSessionId);

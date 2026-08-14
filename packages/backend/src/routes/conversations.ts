@@ -214,7 +214,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
 
       const body = (request.body ?? {}) as Partial<UpdateConversationRequest>;
       const hasTitle = 'title' in body;
-      // null 是有意义的取值（清空为自动命名），所以只挡非字符串的非 null
+      // null 是有意义的取值（恢复为角色名），所以只挡非字符串的非 null
       if (hasTitle && body.title !== null && typeof body.title !== 'string') {
         return reply.status(400).send(fail('BAD_REQUEST', '会话标题无效'));
       }
