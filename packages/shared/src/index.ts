@@ -24,4 +24,5 @@ export * from './png-parser';
 export * from './dev-fixtures';
 export * from './lobby-featured';
 export * from './telegram-avatar';
+export * from './user-placeholder';
 export * from './telemetry/sanitize';

@@ -2,11 +2,13 @@
 
 import { create } from 'zustand';
 
+import { DEFAULT_USER_DISPLAY_NAME } from '@miniapp/shared';
+
 import { getTelegramDefaultDisplayName, getTelegramPhotoUrl } from '@/lib/telegram/user';
 import { DEFAULT_USER_AVATAR_URL } from '@/lib/user-avatar';
 
 // 用户在 chat 内的"显示名"——也就是 markdown 管线 {{user}} 宏要替换成的字符串。
-// 优先级:用户在 profile 页的自定义 > Telegram first_name/username > '你'
+// 优先级:用户在 profile 页的自定义 > Telegram first_name/username > DEFAULT_USER_DISPLAY_NAME
 // 持久化:localStorage,key = 'st_miniapp_display_name'
 
 const STORAGE_KEY = 'st_miniapp_display_name';
@@ -52,7 +54,7 @@ function writeOverride(value: string | undefined): void {
 }
 
 export const useUserProfileStore = create<UserProfileState>((set) => ({
-  displayName: '你',
+  displayName: DEFAULT_USER_DISPLAY_NAME,
   photoUrl: DEFAULT_USER_AVATAR_URL,
   hasCustomName: false,
   hydrate: () => {

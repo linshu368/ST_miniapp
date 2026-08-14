@@ -11,6 +11,7 @@ import { clampLimit, toOpeningMessage } from './ConversationHistoryRepository.js
 import { ConversationRepositoryError } from './conversation-errors.js';
 
 const MAX_TITLE_LENGTH = 60;
+const DEFAULT_SESSION_TITLE = '新的对话';
 
 /** PostgREST 把「列不存在」透传成 Postgres 的 42703 */
 function isMissingPinnedColumn(error: { code?: string; message?: string }): boolean {
@@ -62,14 +63,16 @@ export class ChatSessionRepository {
     userId: string,
     characterId: string
   ): Promise<{ session: ChatSessionRow; messages: ChatMessage[] }> {
-    const firstMes = await this.getCharacterFirstMes(characterId);
+    const character = await this.getCharacter(characterId);
     const session =
       (await this.findEmptySession(userId, characterId)) ??
-      (await this.insertSession(userId, characterId));
+      (await this.insertSession(userId, characterId, character.name));
 
     return {
       session,
-      messages: firstMes ? [toOpeningMessage(session.id, firstMes, session.created_at)] : [],
+      messages: character.firstMes
+        ? [toOpeningMessage(session.id, character.firstMes, session.created_at)]
+        : [],
     };
   }
 
@@ -92,10 +95,18 @@ export class ChatSessionRepository {
     return (data as ChatSessionRow | null) ?? null;
   }
 
-  private async insertSession(userId: string, characterId: string): Promise<ChatSessionRow> {
+  private async insertSession(
+    userId: string,
+    characterId: string,
+    characterName: string
+  ): Promise<ChatSessionRow> {
     const { data, error } = await this.db
       .from('chat_sessions')
-      .insert({ user_id: userId, character_id: characterId })
+      .insert({
+        user_id: userId,
+        character_id: characterId,
+        title: titleFromCharacterName(characterName),
+      })
       .select('*')
       .single();
 
@@ -177,7 +188,7 @@ export class ChatSessionRepository {
   /**
    * 重命名与置顶合到一次写入：两者都是「改会话属性」，分成两个方法会让同时改动的
    * 请求跑两趟 UPDATE，也让 updated_at 出现两次跳变。
-   * patch 里没出现的键一律不动——title 的 null 是「清空为自动命名」，不能兼任「不改」。
+   * patch 里没出现的键一律不动——title 的 null 是「恢复为当前角色名」，不能兼任「不改」。
    */
   async updateSession(
     sessionId: string,
@@ -185,7 +196,12 @@ export class ChatSessionRepository {
     patch: { title?: string | null; pinned?: boolean }
   ): Promise<ChatSessionRow> {
     const changes: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if ('title' in patch) changes.title = normalizeTitle(patch.title ?? null);
+    if ('title' in patch) {
+      const normalized = normalizeTitle(patch.title ?? null);
+      const session = await this.requireSession(sessionId, userId);
+      changes.title =
+        normalized ?? titleFromCharacterName((await this.getCharacter(session.character_id)).name);
+    }
     if (patch.pinned !== undefined) {
       changes.pinned_at = patch.pinned ? new Date().toISOString() : null;
     }
@@ -225,9 +241,13 @@ export class ChatSessionRepository {
   }
 
   async getCharacterFirstMes(characterId: string): Promise<string> {
+    return (await this.getCharacter(characterId)).firstMes;
+  }
+
+  private async getCharacter(characterId: string): Promise<{ name: string; firstMes: string }> {
     const { data, error } = await this.db
       .from('characters')
-      .select('id, first_mes')
+      .select('id, name, first_mes')
       .eq('id', characterId)
       .maybeSingle();
 
@@ -235,7 +255,11 @@ export class ChatSessionRepository {
     if (!data) {
       throw new ConversationRepositoryError('character_not_found', `角色卡不存在：${characterId}`);
     }
-    return ((data as { first_mes: string | null }).first_mes ?? '').trim();
+    const row = data as { name: string | null; first_mes: string | null };
+    return {
+      name: (row.name ?? '').trim(),
+      firstMes: (row.first_mes ?? '').trim(),
+    };
   }
 }
 
@@ -252,6 +276,10 @@ export function toChatSession(row: ChatSessionRow): ChatSession {
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+function titleFromCharacterName(name: string): string {
+  return normalizeTitle(name) ?? DEFAULT_SESSION_TITLE;
 }
 
 function normalizeTitle(title: string | null): string | null {

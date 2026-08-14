@@ -161,6 +161,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 076_engine_admin_platform_instructions.sql # 自研引擎平台规则进运营台草稿→发布通路，档位表改可增删
 077_context_window.sql # 自研引擎双水位线上下文窗口（context_window_start_turn + A/B 水位）
 078_chat_session_pinned.sql # 会话置顶时间戳与置顶优先的列表排序索引
+079_chat_session_title_default_character_name.sql # 会话 title 默认回填为绑定角色的 characters.name
 ```
 
 > 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。

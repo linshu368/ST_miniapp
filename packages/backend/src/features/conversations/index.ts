@@ -6,6 +6,11 @@
 
 export { buildEngineHistory } from './history.js';
 
+export {
+  applyUserPlaceholderToMessages,
+  applyUserPlaceholderToSession,
+} from './user-placeholder.js';
+
 export { createReplyStreamSink, encodeStreamEvent, type ConversationStreamSink } from './sse.js';
 
 export { conversationErrorStatus, sendConversationError } from './errors.js';
