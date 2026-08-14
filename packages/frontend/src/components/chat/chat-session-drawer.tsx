@@ -1,17 +1,17 @@
 'use client';
 
-import { useState } from 'react';
-import { Check, Loader2, Pencil, Pin, PinOff, Trash2, X } from 'lucide-react';
+import { Loader2, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import type { ChatSession } from '@miniapp/shared';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
+import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
 import {
-  resolveSessionTitle,
-  useConversationsQuery,
-  useDeleteConversationMutation,
-  useUpdateConversationMutation,
-} from '@/lib/api/conversations';
+  SessionActionButton,
+  SessionDeleteConfirm,
+  SessionRenameField,
+  useSessionRowActions,
+} from './session-row-actions';
 
 interface ChatSessionDrawerProps {
   open: boolean;
@@ -34,26 +34,7 @@ export function ChatSessionDrawer({
 }: ChatSessionDrawerProps) {
   // 抽屉关着时不查：会话列表只在用户主动翻的时候才需要新鲜
   const query = useConversationsQuery(characterId, open);
-  const update = useUpdateConversationMutation();
-  const remove = useDeleteConversationMutation();
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draftTitle, setDraftTitle] = useState('');
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
-
   const sessions = query.data?.sessions ?? [];
-
-  const startEditing = (session: ChatSession) => {
-    setConfirmingDeleteId(null);
-    setEditingId(session.id);
-    setDraftTitle(session.title ?? '');
-  };
-
-  const commitRename = (sessionId: string) => {
-    const next = draftTitle.trim();
-    setEditingId(null);
-    // 清空即回到「按首条消息自动命名」，契约上就是传 null
-    update.mutate({ sessionId, title: next.length > 0 ? next : null });
-  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -77,121 +58,17 @@ export function ChatSessionDrawer({
                 还没有对话记录
               </p>
             ) : (
-              sessions.map((session) => {
-                const active = session.id === activeSessionId;
-                const editing = session.id === editingId;
-
-                return (
-                  <div
-                    key={session.id}
-                    className={cn(
-                      'rounded-xl border px-3 py-2.5 transition-colors',
-                      active ? 'border-primary/40 bg-primary/10' : 'border-border bg-card'
-                    )}
-                  >
-                    {editing ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          value={draftTitle}
-                          onChange={(event) => setDraftTitle(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') commitRename(session.id);
-                            if (event.key === 'Escape') setEditingId(null);
-                          }}
-                          maxLength={60}
-                          placeholder="留空则自动命名"
-                          aria-label="会话名称"
-                          autoFocus
-                          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-[13px] text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        />
-                        <IconAction label="保存" onClick={() => commitRename(session.id)}>
-                          <Check className="h-4 w-4" aria-hidden />
-                        </IconAction>
-                        <IconAction label="取消" onClick={() => setEditingId(null)}>
-                          <X className="h-4 w-4" aria-hidden />
-                        </IconAction>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onSelect(session.id);
-                            onOpenChange(false);
-                          }}
-                          className="min-w-0 flex-1 text-left"
-                        >
-                          <span className="flex min-w-0 items-center gap-1">
-                            {session.pinned_at ? (
-                              <Pin
-                                className="size-3 shrink-0 fill-current text-primary"
-                                aria-label="已置顶"
-                              />
-                            ) : null}
-                            <span className="truncate text-[13px] font-medium text-foreground">
-                              {resolveSessionTitle(session.title, session.last_message_preview)}
-                            </span>
-                          </span>
-                          <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                            {formatSessionMeta(session)}
-                          </span>
-                        </button>
-                        <IconAction
-                          label={session.pinned_at ? '取消置顶' : '置顶'}
-                          onClick={() =>
-                            update.mutate({ sessionId: session.id, pinned: !session.pinned_at })
-                          }
-                        >
-                          {session.pinned_at ? (
-                            <PinOff className="h-3.5 w-3.5" aria-hidden />
-                          ) : (
-                            <Pin className="h-3.5 w-3.5" aria-hidden />
-                          )}
-                        </IconAction>
-                        <IconAction label="重命名" onClick={() => startEditing(session)}>
-                          <Pencil className="h-3.5 w-3.5" aria-hidden />
-                        </IconAction>
-                        <IconAction
-                          label="删除"
-                          onClick={() =>
-                            setConfirmingDeleteId((current) =>
-                              current === session.id ? null : session.id
-                            )
-                          }
-                        >
-                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                        </IconAction>
-                      </div>
-                    )}
-
-                    {/* 删除是不可逆的，且这里没有撤销位，所以必须再问一次 */}
-                    {confirmingDeleteId === session.id ? (
-                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-border/60 pt-2">
-                        <span className="text-[11px] text-muted-foreground">删除这段对话？</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setConfirmingDeleteId(null)}
-                            className="rounded-full px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-secondary"
-                          >
-                            取消
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setConfirmingDeleteId(null);
-                              remove.mutate(session.id);
-                            }}
-                            className="rounded-full bg-destructive px-2.5 py-1 text-[11px] font-semibold text-destructive-foreground"
-                          >
-                            删除
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })
+              sessions.map((session) => (
+                <SessionRow
+                  key={session.id}
+                  session={session}
+                  active={session.id === activeSessionId}
+                  onOpen={() => {
+                    onSelect(session.id);
+                    onOpenChange(false);
+                  }}
+                />
+              ))
             )}
           </div>
         </div>
@@ -200,24 +77,65 @@ export function ChatSessionDrawer({
   );
 }
 
-function IconAction({
-  label,
-  onClick,
-  children,
+/**
+ * 标题回落到首条消息摘要，而不是像 /chats 那样回落到角色名：
+ * 这里所有会话都是同一个角色，写角色名等于每行都一样，区分不了任何东西。
+ */
+function SessionRow({
+  session,
+  active,
+  onOpen,
 }: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
+  session: ChatSession;
+  active: boolean;
+  onOpen: () => void;
 }) {
+  const actions = useSessionRowActions(session);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+    <div
+      className={cn(
+        'rounded-xl border px-3 py-2.5 transition-colors',
+        active ? 'border-primary/40 bg-primary/10' : 'border-border bg-card'
+      )}
     >
-      {children}
-    </button>
+      {actions.editing ? (
+        <SessionRenameField actions={actions} density="compact" />
+      ) : (
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+            <span className="flex min-w-0 items-center gap-1">
+              {session.pinned_at ? (
+                <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="已置顶" />
+              ) : null}
+              <span className="truncate text-[13px] font-medium text-foreground">
+                {resolveSessionTitle(session.title, session.last_message_preview)}
+              </span>
+            </span>
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+              {formatSessionMeta(session)}
+            </span>
+          </button>
+          <SessionActionButton
+            label={session.pinned_at ? '取消置顶' : '置顶'}
+            onClick={actions.togglePin}
+            density="compact"
+          >
+            {session.pinned_at ? <PinOff aria-hidden /> : <Pin aria-hidden />}
+          </SessionActionButton>
+          <SessionActionButton label="重命名" onClick={actions.startRename} density="compact">
+            <Pencil aria-hidden />
+          </SessionActionButton>
+          <SessionActionButton label="删除" onClick={actions.toggleDeleteConfirm} density="compact">
+            <Trash2 aria-hidden />
+          </SessionActionButton>
+        </div>
+      )}
+
+      {actions.confirmingDelete ? (
+        <SessionDeleteConfirm actions={actions} density="compact" />
+      ) : null}
+    </div>
   );
 }
 

@@ -15,6 +15,13 @@ ALTER TABLE miniapp.chat_sessions
 COMMENT ON COLUMN miniapp.chat_sessions.pinned_at IS
   '用户置顶该会话的时间；NULL = 未置顶。列表按 pinned_at DESC NULLS LAST 优先，同为置顶时最近置顶的在前。';
 
+-- 会话列表（/chats 与角色内抽屉）只取 message_count > 0：进角色卡就会建会话，
+-- 一句话没发的那些不该出现在「历史聊天」里。这是产品口径，不是表约束——
+-- 统计会话数、做数据清理、排查某用户会话量时都要带上同一个条件，否则口径对不上。
+-- 建会话时会复用已有的空会话，所以同一用户 × 同一角色最多留一行 message_count = 0。
+COMMENT ON COLUMN miniapp.chat_sessions.message_count IS
+  '该会话已完成的轮次数，由触发器维护。列表口径：message_count > 0 才对用户可见。';
+
 -- 069 建的 idx_chat_sessions_user_recent 头两列是 (user_id, last_message_at)，
 -- 排序键前面插了 pinned_at 之后走不了它，需要一条新的覆盖顺序。
 -- 旧索引保留：按角色过滤的抽屉查询仍会用到，且它是 069 的既有资产，
