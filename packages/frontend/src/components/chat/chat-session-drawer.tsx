@@ -17,6 +17,7 @@ interface ChatSessionDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   characterId: string;
+  characterName?: string | null;
   activeSessionId: string | null;
   onSelect: (sessionId: string) => void;
 }
@@ -29,6 +30,7 @@ export function ChatSessionDrawer({
   open,
   onOpenChange,
   characterId,
+  characterName,
   activeSessionId,
   onSelect,
 }: ChatSessionDrawerProps) {
@@ -66,6 +68,7 @@ export function ChatSessionDrawer({
                 <SessionRow
                   key={session.id}
                   session={session}
+                  characterName={characterName}
                   active={session.id === activeSessionId}
                   onOpen={() => {
                     onSelect(session.id);
@@ -90,15 +93,17 @@ export function ChatSessionDrawer({
  * 两个（且重命名走的是 window.prompt、删除没有二次确认），这里是三个按钮外加
  * 行内改名输入框和删除确认条，20px 的热区在手机上点不准。
  *
- * 标题回落到首条消息摘要，而不是像 /chats 那样回落到角色名：
- * 这里所有会话都是同一个角色，写角色名等于每行都一样，区分不了任何东西。
+ * 标题展示绑定角色名前 7 字：这里所有会话都是同一个角色，用户没重命名时
+ * 各行标题会相同，靠时间和预览区分；重命名后才是用户自己的名字。
  */
 function SessionRow({
   session,
+  characterName,
   active,
   onOpen,
 }: {
   session: ChatSession;
+  characterName?: string | null;
   active: boolean;
   onOpen: () => void;
 }) {
@@ -121,7 +126,7 @@ function SessionRow({
                 <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="已置顶" />
               ) : null}
               <span className="truncate text-sm font-medium text-foreground">
-                {resolveSessionTitle(session.title, session.last_message_preview)}
+                {resolveSessionTitle(session.title, characterName)}
               </span>
             </span>
             <span className="mt-1 block truncate text-xs text-muted-foreground">

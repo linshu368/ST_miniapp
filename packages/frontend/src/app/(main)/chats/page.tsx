@@ -167,8 +167,8 @@ function ConversationHistoryList() {
 }
 
 /**
- * 会话列表只带 character_id。逐行取角色卡而不是让列表接口跟着长字段：
- * 同一角色的多个会话共用一份 query 缓存，一屏最多也就几张卡。
+ * 会话列表只带 character_id。逐行取角色卡只为头像；
+ * 主标题走 session.title（缺省时退到角色名），展示时统一截到 7 字。
  *
  * 整行是进入聊天的链接，操作按钮浮在它上层单独响应，避免 Link 里嵌 button。
  */
@@ -180,7 +180,7 @@ function ConversationHistoryRow({ session }: { session: ChatSession }) {
   const avatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
   // 回落到角色名而不是摘要：这里跨角色，先看是谁；摘要已经占了第二行，标题再放一遍是重复。
   // 角色内抽屉的口径不同（那边回落到摘要），因为那边每行都是同一个角色。
-  const name = resolveSessionTitle(session.title, null, character?.name ?? '对话');
+  const name = resolveSessionTitle(session.title, character?.name ?? '对话');
 
   if (actions.editing) {
     return (

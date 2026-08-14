@@ -3,7 +3,8 @@
 // v1 是旧 bot 的忠实移植（SillyTavern/src/infrastructure/ai/SimplePromptEngine.ts 的
 // _buildMessages 加 SimpleChat._buildEnhancedPrompt 加 rules/renderSystemInstructions.ts）：
 // messages = [system: 角色卡 system_prompt] + 历史 + [user: 平台规则 + 本轮用户输入]。
-// 不消费 platform_presets.preset_payload，不做酒馆语义适配（宏、世界书、正则）。
+// 不消费 platform_presets.preset_payload，不做酒馆语义适配（世界书、正则、卡内嵌资源）。
+// {{user}} 是唯一例外：组 prompt 时替换为 persona.displayName。
 
 import type { UserGenerationConfig } from '@miniapp/shared';
 

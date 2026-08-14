@@ -97,12 +97,13 @@ export function useCreateConversationMutation() {
 
 /**
  * 重命名与置顶共用一条 PATCH。字段不传就是不改——title 的 null 已经被
- * 「清空为自动命名」占用，不能再兼任「不改」。
+ * 「恢复为当前角色名」占用，不能再兼任「不改」。
  */
 export function useUpdateConversationMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    /** title 传 null 表示恢复为当前绑定角色的 name */
     mutationFn: async (input: { sessionId: string; title?: string | null; pinned?: boolean }) => {
       const { sessionId, ...patch } = input;
       return apiClient<UpdateConversationData>(
@@ -134,19 +135,20 @@ export function useDeleteConversationMutation() {
   });
 }
 
+/** 顶栏、会话抽屉、历史列表统一只展示这么多字 */
+export const SESSION_TITLE_DISPLAY_LENGTH = 7;
+const DEFAULT_DISPLAY_TITLE = '新的对话';
+
 /**
- * 会话标题：用户没重命名过时按首条用户消息截断。
- * 契约里 title 为 null 就是这个意思，兜底文案由前端决定。
+ * 会话标题展示：优先用已存 title，缺省时用 fallback（通常是角色名）。
+ * 一律截到 SESSION_TITLE_DISPLAY_LENGTH 个字符；不再用消息预览当标题。
  */
 export function resolveSessionTitle(
-  title: string | null,
-  preview: string | null,
-  fallback = '新的对话'
+  title: string | null | undefined,
+  fallback?: string | null
 ): string {
-  const named = title?.trim();
-  if (named) return named;
-
-  const summary = preview?.trim().replace(/\s+/g, ' ');
-  if (!summary) return fallback;
-  return summary.length > 18 ? `${summary.slice(0, 18)}…` : summary;
+  const source = title?.trim() || fallback?.trim() || DEFAULT_DISPLAY_TITLE;
+  const chars = Array.from(source);
+  if (chars.length <= SESSION_TITLE_DISPLAY_LENGTH) return source;
+  return chars.slice(0, SESSION_TITLE_DISPLAY_LENGTH).join('');
 }

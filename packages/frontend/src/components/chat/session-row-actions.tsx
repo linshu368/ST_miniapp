@@ -54,7 +54,7 @@ export function useSessionRowActions(session: ChatSession): SessionRowActions {
     commitRename: () => {
       const next = draft.trim();
       setEditing(false);
-      // 清空即回到「按首条消息自动命名」，契约上就是传 null
+      // 清空即恢复为当前角色名，契约上就是传 null
       update.mutate({ sessionId: session.id, title: next.length > 0 ? next : null });
     },
     togglePin: () => update.mutate({ sessionId: session.id, pinned: !session.pinned_at }),
@@ -111,7 +111,7 @@ export function SessionRenameField({
           if (event.key === 'Escape') actions.cancelRename();
         }}
         maxLength={60}
-        placeholder="留空则回到自动命名"
+        placeholder="留空则恢复为角色名"
         aria-label="对话名称"
         autoFocus
         className={cn(

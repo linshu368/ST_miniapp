@@ -31,7 +31,7 @@ export interface ChatMessage {
 export interface ChatSession {
   id: string;
   character_id: string;
-  /** null = 用户未重命名，前端按首条用户消息截断显示；重命名后为实值 */
+  /** 会话显示名。创建时默认写入绑定角色的 name；用户重命名后为实值；清空则恢复为当前角色名 */
   title: string | null;
   last_message_at: string | null;
   last_message_preview: string | null;
@@ -125,10 +125,11 @@ export interface GetConversationData {
 
 /**
  * 两个字段都可选：只传 title 是重命名，只传 pinned 是置顶/取消置顶，都不传是空操作。
- * title = null 是有意义的取值（清空为自动命名），所以「本次不改标题」只能用
+ * title = null 是有意义的取值（恢复为当前角色名），所以「本次不改标题」只能用
  * 「不带 title 字段」表达，不能用 null 兼任。
  */
 export interface UpdateConversationRequest {
+  /** null 表示恢复为当前绑定角色的 name */
   title?: string | null;
   pinned?: boolean;
 }
