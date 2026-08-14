@@ -37,6 +37,8 @@ import {
 import { ConversationHistoryRepository } from '../infrastructure/repositories/ConversationHistoryRepository.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import {
+  applyUserPlaceholderToMessages,
+  applyUserPlaceholderToSession,
   createReplyStreamSink,
   runConversationTurn,
   sendConversationError,
@@ -87,7 +89,10 @@ export default async function conversationRoutes(app: FastifyInstance) {
       const log = requestLogger(request.log, 'conversations');
       const dbUser = await getOrCreateDbUser(request.user);
       try {
-        const created = await sessions.createSession(dbUser.id, characterId);
+        const [created, displayName] = await Promise.all([
+          sessions.createSession(dbUser.id, characterId),
+          settings.getDisplayName(dbUser.id),
+        ]);
         log.biz.info(
           {
             event: 'conversation.session.created',
@@ -99,8 +104,8 @@ export default async function conversationRoutes(app: FastifyInstance) {
         );
         return reply.send(
           ok<CreateConversationData>({
-            session: toChatSession(created.session),
-            messages: created.messages,
+            session: applyUserPlaceholderToSession(toChatSession(created.session), displayName),
+            messages: applyUserPlaceholderToMessages(created.messages, displayName),
           })
         );
       } catch (error) {
@@ -136,13 +141,23 @@ export default async function conversationRoutes(app: FastifyInstance) {
       }
 
       const dbUser = await getOrCreateDbUser(request.user);
-      const { sessions: rows, total } = await sessions.listSessions(dbUser.id, {
-        characterId: query.character_id,
-        limit: parsePositiveInt(query.limit),
-        offset: parsePositiveInt(query.offset),
-      });
+      const [{ sessions: rows, total }, displayName] = await Promise.all([
+        sessions.listSessions(dbUser.id, {
+          characterId: query.character_id,
+          limit: parsePositiveInt(query.limit),
+          offset: parsePositiveInt(query.offset),
+        }),
+        settings.getDisplayName(dbUser.id),
+      ]);
 
-      return reply.send(ok<ListConversationsData>({ sessions: rows.map(toChatSession), total }));
+      return reply.send(
+        ok<ListConversationsData>({
+          sessions: rows.map((row) =>
+            applyUserPlaceholderToSession(toChatSession(row), displayName)
+          ),
+          total,
+        })
+      );
     }
   );
 
@@ -161,7 +176,10 @@ export default async function conversationRoutes(app: FastifyInstance) {
       const query = request.query as { limit?: string; before_turn_index?: string };
       const dbUser = await getOrCreateDbUser(request.user);
       try {
-        const session = await sessions.requireSession(sessionId, dbUser.id);
+        const [session, displayName] = await Promise.all([
+          sessions.requireSession(sessionId, dbUser.id),
+          settings.getDisplayName(dbUser.id),
+        ]);
         const openingMessage = await sessions.getCharacterFirstMes(session.character_id);
         const page = await history.listMessages(sessionId, openingMessage, {
           limit: parsePositiveInt(query.limit),
@@ -170,8 +188,8 @@ export default async function conversationRoutes(app: FastifyInstance) {
 
         return reply.send(
           ok<GetConversationData>({
-            session: toChatSession(session),
-            messages: page.messages,
+            session: applyUserPlaceholderToSession(toChatSession(session), displayName),
+            messages: applyUserPlaceholderToMessages(page.messages, displayName),
             has_more: page.hasMore,
           })
         );
@@ -209,11 +227,18 @@ export default async function conversationRoutes(app: FastifyInstance) {
 
       const dbUser = await getOrCreateDbUser(request.user);
       try {
-        const session = await sessions.updateSession(sessionId, dbUser.id, {
-          ...(hasTitle ? { title: body.title ?? null } : {}),
-          ...(body.pinned === undefined ? {} : { pinned: body.pinned }),
-        });
-        return reply.send(ok<UpdateConversationData>({ session: toChatSession(session) }));
+        const [session, displayName] = await Promise.all([
+          sessions.updateSession(sessionId, dbUser.id, {
+            ...(hasTitle ? { title: body.title ?? null } : {}),
+            ...(body.pinned === undefined ? {} : { pinned: body.pinned }),
+          }),
+          settings.getDisplayName(dbUser.id),
+        ]);
+        return reply.send(
+          ok<UpdateConversationData>({
+            session: applyUserPlaceholderToSession(toChatSession(session), displayName),
+          })
+        );
       } catch (error) {
         if (sendConversationError(reply, error)) return;
         throw error;

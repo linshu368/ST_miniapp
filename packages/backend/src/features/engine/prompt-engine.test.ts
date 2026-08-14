@@ -127,6 +127,38 @@ describe('buildPrompt', () => {
     expect(truncated.truncatedTurns).toBe(26);
     expect(truncated.messages).toEqual(output.messages);
   });
+
+  it('把 {{user}} 换成 persona.displayName，system / 历史 / 本轮输入都替换', () => {
+    const { messages } = buildPrompt(
+      input({
+        character: { ...CHARACTER, system_prompt: '你在和 {{user}} 说话。' },
+        history: [
+          { role: 'assistant', content: '{{user}}，你来了。' },
+          { role: 'user', content: '我是 {{user}}' },
+        ],
+        userInput: '{{user}} 也在听',
+      })
+    );
+
+    expect(messages.map((message) => message.content)).toEqual([
+      '你在和 路人甲 说话。',
+      '路人甲，你来了。',
+      '我是 路人甲',
+      '##系统指令：以下为最高优先级指令。\n' +
+        '篇幅 300-500 字。\n不要给出选项。\n偏好：暂无\n' +
+        '##用户指令:路人甲 也在听\n',
+    ]);
+  });
+
+  it('persona.displayName 为空时 {{user}} 回落为「你」', () => {
+    const { messages } = buildPrompt(
+      input({
+        persona: { displayName: null },
+        history: [{ role: 'assistant', content: '你好，{{user}}。' }],
+      })
+    );
+    expect(messages[1]?.content).toBe('你好，你。');
+  });
 });
 
 // ─── 对拍：与旧 bot 的实现逐条比对（§6.4 最重要的验收项）────────────────────

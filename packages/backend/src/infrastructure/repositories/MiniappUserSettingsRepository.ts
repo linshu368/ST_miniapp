@@ -7,6 +7,7 @@ import {
   type UserGenerationConfig,
   type UserSettings,
 } from '@miniapp/shared';
+import { resolveEffectiveDisplayName } from './effective-display-name.js';
 import { config } from '../../platform/config.js';
 import type { TelegramUser } from '../../middleware/auth.js';
 import {
@@ -181,21 +182,22 @@ export class MiniappUserSettingsRepository {
   }
 
   /**
-   * 引擎 persona 的取数通道（M3b，见方案 §6.2 的输入来源映射）。
+   * 引擎 persona 与 {{user}} 注入的取数通道。
    *
-   * 与 getGenerationConfig 分开是因为 UserGenerationConfig 是对外契约，display_name 属于
-   * 用户资料而不是生成配置，塞进去会让 gen_config 快照里多一份与生成无关的个人信息。
-   * 两次读同一张表的代价由调用方并发发起来抵消。
+   * 返回「我的」页同一套生效名：自定义 display_name > TG first_name > TG username > 「你」。
+   * 与 getGenerationConfig 分开是因为 UserGenerationConfig 是对外契约，显示名属于用户资料。
    */
-  async getDisplayName(userId: string): Promise<string | null> {
+  async getDisplayName(userId: string): Promise<string> {
     const { data, error } = await this.db
       .from('miniapp_user_settings')
-      .select('display_name')
+      .select('display_name, tg_first_name, tg_username')
       .eq('user_id', userId)
       .maybeSingle();
 
     if (error) throw new Error(`查询用户昵称失败：${error.message}`);
-    return (data as Pick<MiniappUserSettingsRow, 'display_name'> | null)?.display_name ?? null;
+    return resolveEffectiveDisplayName(
+      data as Pick<MiniappUserSettingsRow, 'display_name' | 'tg_first_name' | 'tg_username'> | null
+    );
   }
 
   /** 首页「最新」New 提醒的水位线。为空表示用户从未进过「最新」分页。 */
