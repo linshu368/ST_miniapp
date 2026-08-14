@@ -171,6 +171,22 @@ describe.skipIf(!canRunAgainstDatabase)(
       expect(count).toBe(0);
     });
 
+    it('已有空会话时复用它，不再插新行', async () => {
+      const first = await sessions.createSession(userId, characterId);
+      const second = await sessions.createSession(userId, characterId);
+      expect(second.session.id).toBe(first.session.id);
+
+      await createCompletedTurn(first.session.id, '开口', '回应');
+      const third = await sessions.createSession(userId, characterId);
+      expect(third.session.id).not.toBe(first.session.id);
+    });
+
+    it('列表不返回一句话都没发的会话', async () => {
+      const { session } = await sessions.createSession(userId, characterId);
+      const { sessions: visible } = await sessions.listSessions(userId, { characterId });
+      expect(visible.map((row) => row.id)).not.toContain(session.id);
+    });
+
     it('新消息分配递增 turn_index，并刷新会话摘要', async () => {
       const { session } = await sessions.createSession(userId, characterId);
       const first = await createCompletedTurn(session.id, '第一句', '第一次回复');
@@ -217,12 +233,11 @@ describe.skipIf(!canRunAgainstDatabase)(
     });
 
     it('拒绝重生成非最后一轮，也拒绝空会话重生成', async () => {
-      const empty = await sessions.createSession(userId, characterId);
+      const { session } = await sessions.createSession(userId, characterId);
       await expect(
-        history.startRegeneration({ sessionId: empty.session.id, model: MODEL })
+        history.startRegeneration({ sessionId: session.id, model: MODEL })
       ).rejects.toMatchObject({ code: 'regenerate_not_allowed' });
 
-      const { session } = await sessions.createSession(userId, characterId);
       const first = await createCompletedTurn(session.id, '第一轮', '第一轮回复');
       await createCompletedTurn(session.id, '第二轮', '第二轮回复');
       await expect(
@@ -384,9 +399,9 @@ describe.skipIf(!canRunAgainstDatabase)(
       await createCompletedTurn(session.id, '留痕', '留痕回复');
 
       expect(await sessions.getSession(session.id, otherUserId)).toBeNull();
-      await expect(sessions.rename(session.id, otherUserId, '抢占')).rejects.toBeInstanceOf(
-        ConversationRepositoryError
-      );
+      await expect(
+        sessions.updateSession(session.id, otherUserId, { title: '抢占' })
+      ).rejects.toBeInstanceOf(ConversationRepositoryError);
 
       await sessions.softDelete(session.id, userId);
       expect(await sessions.getSession(session.id, userId)).toBeNull();

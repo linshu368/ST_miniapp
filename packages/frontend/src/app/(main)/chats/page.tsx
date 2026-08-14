@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Heart, MessageCircle, RefreshCw } from 'lucide-react';
+import {
+  ChevronRight,
+  Heart,
+  MessageCircle,
+  Pencil,
+  Pin,
+  PinOff,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 
 import type { ChatSession } from '@miniapp/shared';
 
@@ -11,6 +20,12 @@ import { useChatListStore } from '@/stores/chat-list';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useChatEngine } from '@/lib/api/chat-engine';
 import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
+import {
+  SessionActionButton,
+  SessionDeleteConfirm,
+  SessionRenameField,
+  useSessionRowActions,
+} from '@/components/chat/session-row-actions';
 import { useFavoritesQuery } from '@/lib/api/favorites';
 import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
@@ -154,19 +169,95 @@ function ConversationHistoryList() {
 /**
  * 会话列表只带 character_id。逐行取角色卡而不是让列表接口跟着长字段：
  * 同一角色的多个会话共用一份 query 缓存，一屏最多也就几张卡。
+ *
+ * 整行是进入聊天的链接，操作按钮浮在它上层单独响应，避免 Link 里嵌 button。
  */
 function ConversationHistoryRow({ session }: { session: ChatSession }) {
   const { data } = useCharacterQuery(session.character_id);
   const character = data?.character;
+  const actions = useSessionRowActions(session);
+
+  const avatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
+  // 回落到角色名而不是摘要：这里跨角色，先看是谁；摘要已经占了第二行，标题再放一遍是重复。
+  // 角色内抽屉的口径不同（那边回落到摘要），因为那边每行都是同一个角色。
+  const name = resolveSessionTitle(session.title, null, character?.name ?? '对话');
+
+  if (actions.editing) {
+    return (
+      <div className="rounded-3xl border border-primary/30 bg-card p-3.5">
+        <SessionRenameField actions={actions} />
+      </div>
+    );
+  }
 
   return (
-    <HistoryRow
-      href={chatEntryPath('self_hosted', session.character_id, { sessionId: session.id })}
-      avatarUrl={character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null}
-      name={character?.name ?? resolveSessionTitle(session.title, session.last_message_preview)}
-      timestamp={session.last_message_at ?? session.created_at}
-      preview={session.last_message_preview}
-    />
+    <div
+      className={cn(
+        'relative rounded-3xl border bg-card p-3.5 shadow-lg shadow-black/10 transition',
+        session.pinned_at ? 'border-primary/30' : 'border-border'
+      )}
+    >
+      <div className="flex items-center gap-3">
+        <Link
+          href={chatEntryPath('self_hosted', session.character_id, { sessionId: session.id })}
+          prefetch={false}
+          aria-label={`继续与 ${name} 的对话`}
+          className="absolute inset-0 rounded-3xl"
+        />
+        <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover object-top"
+            />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-primary">
+              <MessageCircle className="h-5 w-5" />
+            </span>
+          )}
+        </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-3">
+            <span className="flex min-w-0 flex-1 items-center gap-1">
+              {session.pinned_at ? (
+                <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="已置顶" />
+              ) : null}
+              <span className="truncate font-semibold">{name}</span>
+            </span>
+            <time className="shrink-0 text-[11px] text-muted-foreground">
+              {formatActivityTime(session.last_message_at ?? session.created_at)}
+            </time>
+          </span>
+          <span className="mt-1 block truncate text-sm text-muted-foreground">
+            {session.last_message_preview || '暂无消息摘要'}
+          </span>
+        </span>
+
+        <span className="relative z-10 flex shrink-0 items-center">
+          <SessionActionButton
+            label={session.pinned_at ? '取消置顶' : '置顶'}
+            onClick={actions.togglePin}
+          >
+            {session.pinned_at ? <PinOff aria-hidden /> : <Pin aria-hidden />}
+          </SessionActionButton>
+          <SessionActionButton label="重命名" onClick={actions.startRename}>
+            <Pencil aria-hidden />
+          </SessionActionButton>
+          <SessionActionButton label="删除" onClick={actions.toggleDeleteConfirm}>
+            <Trash2 aria-hidden />
+          </SessionActionButton>
+        </span>
+      </div>
+
+      {/* 整行是个覆盖层链接，确认条要浮在它上面才点得到 */}
+      {actions.confirmingDelete ? (
+        <SessionDeleteConfirm actions={actions} className="relative z-10" />
+      ) : null}
+    </div>
   );
 }
 
