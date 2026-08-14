@@ -2,12 +2,7 @@
  * backend / features / generation / index.ts
  *
  * 生成执行与计费出口（M3a）对 backend 内部的出口。
- *
- * 两类调用方：
- *   - ST 链路（routes/llm-proxy.ts）保留自己的 OpenAI 透传外壳，按段调用
- *     resolveAuthoritativeModel / reserveCharacterFreeQuota / resolveBillingPlan /
- *     checkWalletBalance / forwardToUpstream / createSseTap；
- *   - 自研链路（M3b）只需要 resolveModelForUser + generationService.execute。
+ * 自研对话链路走 resolveModelForUser + generationService.execute。
  */
 
 export type {

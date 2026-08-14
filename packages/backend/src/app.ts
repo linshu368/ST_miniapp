@@ -7,23 +7,17 @@ import { ok } from '@miniapp/shared';
 import type { HealthData } from '@miniapp/shared';
 import characterRoutes from './routes/characters.js';
 import favoriteRoutes from './routes/favorites.js';
-import bridgeRoutes from './routes/bridge.js';
 import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
 import settingsRoutes from './routes/settings.js';
 import wishRoutes from './routes/wishes.js';
 import csPlatformRoutes from './routes/cs-platform.js';
 import modelsRoutes from './routes/models.js';
-import { stProxyHandler } from './middleware/stProxy.js';
-import llmProxyRoutes from './routes/llm-proxy.js';
-import chatsRoutes from './routes/chats.js';
 import conversationRoutes from './routes/conversations.js';
 import chatEngineRoutes from './routes/chat-engine.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
-import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
-import simulationRoutes from './routes/simulation.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
@@ -105,22 +99,17 @@ export async function buildApp() {
 
   await app.register(characterRoutes);
   await app.register(favoriteRoutes);
-  await app.register(bridgeRoutes);
   await app.register(paymentRoutes);
   await app.register(walletRoutes);
   await app.register(settingsRoutes);
   await app.register(wishRoutes);
   await app.register(csPlatformRoutes);
   await app.register(modelsRoutes);
-  await app.register(llmProxyRoutes);
-  await app.register(chatsRoutes);
   await app.register(conversationRoutes);
   await app.register(chatEngineRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
-  await app.register(debugRoutes); // [iframe-timing] TEMP DEBUG
   await app.register(adminSupabaseProxyRoutes);
-  await app.register(simulationRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
 
@@ -129,8 +118,6 @@ export async function buildApp() {
     { parseAs: 'buffer' },
     (_req, body, done) => done(null, body)
   );
-  // @frontend-ready: true
-  app.all('/api/bridge/st/*', stProxyHandler);
 
   // @frontend-ready: true
   app.get('/health', async () => {

@@ -52,10 +52,6 @@ vi.mock('./client', () => ({
   sendSentryLog,
 }));
 
-vi.mock('@/lib/bridge/boot-session', () => ({
-  getActiveBootSessionId: () => 'boot_test',
-}));
-
 function createSessionStorage() {
   const values = new Map<string, string>();
   return {
@@ -108,7 +104,6 @@ describe('first chat telemetry', () => {
     const root = sentry.spans.find((span) => span.options.name === 'tavern.first_chat_open');
     expect(root?.ended).toBe(true);
     expect(root?.attributes.result).toBe('success');
-    expect(root?.attributes.boot_session_id).toBe('boot_test');
     expect(sessionStorage.getItem('miniapp:first-chat-completed')).toBe('1');
     expect(sendSentryLog).toHaveBeenCalledWith(
       'info',

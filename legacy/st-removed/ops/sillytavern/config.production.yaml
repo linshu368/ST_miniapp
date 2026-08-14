@@ -1,0 +1,190 @@
+# ============================================================
+# Production config for ST_miniAPP (P1-2 cloud deploy)
+# Baseline: vendor/sillytavern/config.yaml @ 1345cea8bdd76dc5b921f78332f5dfd0de8f49af
+#   (config.yaml is gitignored; hash refers to the vendor/sillytavern tree commit)
+# Overrides (see ops/docker/Dockerfile.st-bundle):
+#   listen=true, whitelistMode=false, enableUserAccounts=true,
+#   port=8000, disableCsrfProtection=true,
+#   forwardedHeaders.xForwardedFor=true
+# NOTE: enableUserAccounts/port/disableCsrfProtection/forwardedHeaders.xForwardedFor
+#   already match these target values in the vendor baseline, so only `listen` and
+#   `whitelistMode` differ from vendor; all 6 fields are asserted to the values above.
+# DO NOT put secrets here. Secrets go through env / per-user secrets.json.
+# ============================================================
+dataRoot: ./data
+listen: true
+listenAddress:
+  ipv4: 0.0.0.0
+  ipv6: '[::]'
+protocol:
+  ipv4: true
+  # ipv6 必须为 true：Railway 私有网络是 IPv6，nginx 把 st-bundle.railway.internal
+  # 解析到 AAAA(IPv6) 地址来连 ST。若 ST 只监听 IPv4，nginx 的 IPv6 连接会 111
+  # (Connection refused)，靠 proxy_next_upstream 回落 IPv4 才成功——每次白撞一次 +
+  # "upstream temporarily disabled" 抖动，表现为 ST iframe 加载慢/Telegram 出不来。
+  # 开成 true 让 ST 双栈监听（listenAddress.ipv6 已是 [::]），IPv6 连接直接成功。
+  ipv6: true
+dnsPreferIPv6: false
+browserLaunch:
+  enabled: true
+  browser: default
+  hostname: auto
+  port: -1
+  avoidLocalhost: false
+port: 8000
+heartbeatInterval: 0
+enableKeepAlive: false
+ssl:
+  enabled: false
+  certPath: ./certs/cert.pem
+  keyPath: ./certs/privkey.pem
+  keyPassphrase: ''
+whitelistMode: false
+enableForwardedWhitelist: true
+whitelist:
+  - ::1
+  - 127.0.0.1
+whitelistDockerHosts: true
+basicAuthMode: false
+basicAuthUser:
+  username: user
+  password: password
+enableCorsProxy: false
+cors:
+  enabled: true
+  origin:
+    - 'null'
+  methods:
+    - OPTIONS
+  allowedHeaders: []
+  exposedHeaders: []
+  credentials: false
+  maxAge: null
+requestProxy:
+  enabled: false
+  url: socks5://username:password@example.com:1080
+  bypass:
+    - localhost
+    - 127.0.0.1
+enableUserAccounts: true
+enableDiscreetLogin: false
+perUserBasicAuth: false
+sso:
+  autheliaAuth: false
+  authentikAuth: false
+  trustedProxies:
+    - ::1
+    - 127.0.0.1
+hostWhitelist:
+  enabled: false
+  scan: true
+  hosts: []
+privateAddressWhitelist:
+  enabled: false
+  allowUnresolvedHosts: false
+  log:
+    blockedRequests: true
+    allowedRequests: false
+  allowedRanges:
+    - 127.0.0.0/8
+    - ::1/128
+sessionTimeout: -1
+disableCsrfProtection: true
+securityOverride: false
+logging:
+  enableAccessLog: true
+  minLogLevel: 0
+rateLimiting:
+  preferRealIpHeader: false
+  basicAuthMaxAttempts: 5
+  accountsLoginMaxAttempts: 5
+  accountsRecoverMaxAttempts: 5
+forwardedHeaders:
+  xRealIp: true
+  xForwardedFor: true
+  cfConnectingIp: false
+backups:
+  allowFullDataBackup: true
+  common:
+    numberOfBackups: 50
+  chat:
+    enabled: true
+    checkIntegrity: true
+    maxTotalBackups: -1
+    throttleInterval: 10000
+thumbnails:
+  enabled: true
+  format: jpg
+  quality: 95
+  dimensions:
+    bg:
+      - 160
+      - 90
+    avatar:
+      - 96
+      - 144
+    persona:
+      - 96
+      - 144
+performance:
+  # 冷启动优化：boot 的 getCharacters 只拉浅层列表（name/avatar/chat 等元数据），
+  # 完整卡数据推迟到选中时由 ST 原生 unshallowCharacter 按需补拉。
+  # 配合 st-extension select-character 的单卡增量注入（避免懒下发新卡触发全量重扫）。
+  lazyLoadCharacters: true
+  memoryCacheCapacity: 100mb
+  useDiskCache: true
+  requestCompression:
+    enabled: false
+    minPayloadSize: 256kb
+    maxPayloadSize: 8mb
+    timeout: 4000
+cacheBuster:
+  enabled: false
+  userAgentPattern: ''
+allowKeysExposure: false
+skipContentCheck: false
+whitelistImportDomains:
+  - localhost
+  - cdn.discordapp.com
+  - files.catbox.moe
+  - raw.githubusercontent.com
+requestOverrides: []
+extensions:
+  enabled: true
+  # 平台扩展随镜像发布，不在用户冷启动时联网检查/更新。
+  autoUpdate: false
+  models:
+    # 已禁用依赖本地 transformers 模型的内置扩展，避免误触发模型下载。
+    autoDownload: false
+    classification: Cohee/distilbert-base-uncased-go-emotions-onnx
+    captioning: Xenova/vit-gpt2-image-captioning
+    embedding: Cohee/jina-embeddings-v2-base-en
+    speechToText: Xenova/whisper-small
+    textToSpeech: Xenova/speecht5_tts
+git:
+  backend: auto
+enableDownloadableTokenizers: true
+promptPlaceholder: '[Start a new chat]'
+openai:
+  randomizeUserId: false
+  captionSystemPrompt: ''
+deepl:
+  formality: default
+mistral:
+  enablePrefix: false
+ollama:
+  keepAlive: -1
+  batchSize: -1
+claude:
+  enableSystemPromptCache: false
+  cachingAtDepth: -1
+  extendedTTL: false
+  enableAdaptiveThinking: false
+gemini:
+  apiVersion: v1beta
+  thoughtSignatures: true
+  enableSystemPromptCache: false
+  image:
+    personGeneration: allow_adult
+enableServerPlugins: false
+enableServerPluginsAutoUpdate: true

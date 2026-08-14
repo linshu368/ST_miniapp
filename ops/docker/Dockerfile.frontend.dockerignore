@@ -24,12 +24,9 @@ node_modules
 **/.env
 **/.env.*
 
-# The frontend image only needs packages/frontend + its workspace deps
-# (@miniapp/shared, @miniapp/bridge-protocol).
+# The frontend image only needs packages/frontend + shared.
 packages/backend
-packages/sync-engine
-packages/st-extension
-packages/db-types
+legacy
 
 # Everything else is irrelevant to building + running the frontend.
 vendor

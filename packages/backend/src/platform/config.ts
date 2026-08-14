@@ -46,19 +46,6 @@ export const config = {
   /** 平台默认头像。生产须指向生产 Supabase，未配置时回退到测试环境地址。 */
   defaultUserAvatarUrl: resolveDefaultUserAvatarUrl(process.env.DEFAULT_USER_AVATAR_URL),
 
-  // ── ST 相关 ──────────────────────────────────────────────────────────────
-  /** ST 服务地址，Bridge 用于登录和反向代理 */
-  stBaseUrl: process.env.ST_BASE_URL || 'http://localhost:8000',
-  /** 用户密码派生密钥，与 sync-engine 保持一致 */
-  stUserPasswordSecret: process.env.ST_USER_PASSWORD_SECRET || '',
-
-  // ── Provision 服务 ────────────────────────────────────────────────────────
-  /** sync-engine Bridge API 地址，Bridge 调用 provision */
-  stProvisionUrl: process.env.ST_PROVISION_URL || 'http://127.0.0.1:9091',
-  simulation: {
-    serviceKey: process.env.SIMULATION_SERVICE_KEY || '',
-    workerTimeoutMs: parseInt(process.env.SIMULATION_WORKER_TIMEOUT_MS || '300000', 10),
-  },
   chatHistorySyncEnabled: process.env.CHAT_HISTORY_SYNC_ENABLED !== 'false',
   /** 大厅推荐排序分的每日刷新。关掉后读路径退回运营顺序，不影响其它功能 */
   lobbyRankingRefreshEnabled: process.env.LOBBY_RANKING_REFRESH_ENABLED !== 'false',
