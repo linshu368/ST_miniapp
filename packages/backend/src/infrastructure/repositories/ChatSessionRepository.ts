@@ -42,7 +42,7 @@ export class ChatSessionRepository {
   private readonly db = getSupabaseClient().schema('miniapp');
 
   /**
-   * 076 是否已在目标库执行。迁移不随部署自动执行，后端先上、迁移后跑的窗口里
+   * 078 是否已在目标库执行。迁移不随部署自动执行，后端先上、迁移后跑的窗口里
    * PostgREST 会对不存在的列直接报错。会话列表是「历史聊天」页与角色内「对话记录」
    * 抽屉的唯一数据源，为一个排序字段让它整个 500 不划算，所以读路径探到缺列就降级。
    * 写路径不降级：置顶写失败只影响新功能本身，而且能让「迁移没跑」暴露出来。
@@ -143,7 +143,7 @@ export class ChatSessionRepository {
       // 只在第一次探到时降级并记一次；之后直接走无置顶排序的分支，不再白打一次请求
       this.pinnedColumnMissing = true;
       console.warn(
-        '[ChatSessionRepository] chat_sessions.pinned_at 不存在，本次按最近活跃排序。请执行迁移 076_chat_session_pinned.sql'
+        '[ChatSessionRepository] chat_sessions.pinned_at 不存在，本次按最近活跃排序。请执行迁移 078_chat_session_pinned.sql'
       );
       result = await run(false);
     }
@@ -247,7 +247,7 @@ export function toChatSession(row: ChatSessionRow): ChatSession {
     last_message_at: row.last_message_at,
     last_message_preview: row.last_message_preview,
     message_count: row.message_count,
-    // 迁移 076 未执行时行里没有这一列，契约仍要给出 null 而不是 undefined
+    // 迁移 078 未执行时行里没有这一列，契约仍要给出 null 而不是 undefined
     pinned_at: row.pinned_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
