@@ -1,86 +1,61 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, PanelLeft, Settings2, Sparkles } from 'lucide-react';
+import { ChevronLeft, PanelLeft } from 'lucide-react';
 
 import { FavoriteButton } from '@/components/characters/favorite-button';
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import { ChatGenerationSettings } from './chat-generation-settings';
-import { ChatModelSwitcher } from './chat-model-switcher';
-
-type ToolsTab = 'model' | 'settings';
 
 interface ChatTopBarProps {
   characterId: string;
   title: string;
   onOpenSessions: () => void;
-  /** 充值页返回时要回到的地址，带上当前会话 */
-  returnTo: string;
 }
 
-export function ChatTopBar({ characterId, title, onOpenSessions, returnTo }: ChatTopBarProps) {
+/**
+ * 几何对齐原版 ST 链路的顶栏（components/tavern/chat-header.tsx）：
+ * 安全区 + 56px 总高、返回键 40px、标题绝对居中 46% 截断、右侧只有收藏。
+ * 原版用 fixed + 固定高度 + items-end 实现，这里用 sticky + 上下 8px 内边距，
+ * 算下来是同一批像素；不跟着换 fixed 是因为键盘弹起时整页要跟 visualViewport 缩，
+ * fixed 会脱离那个容器、重新被 iOS 推出屏幕。
+ *
+ * 侧边栏入口保留 PanelLeft 与「对话记录」，不还原成原版的 MessagesSquare 与
+ * 「历史对话」：原版那个抽屉列的是所有角色的聊天，这里列的是当前角色的会话，
+ * 沿用原文案会指向另一个东西。图标尺寸与配色仍按原版取值。
+ */
+export function ChatTopBar({ characterId, title, onOpenSessions }: ChatTopBarProps) {
   const router = useRouter();
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [tab, setTab] = useState<ToolsTab>('model');
 
   return (
-    <>
-      <header className="sticky top-0 z-20 flex items-center gap-0.5 border-b border-border/60 bg-background/95 px-2 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur-xl">
-        <IconButton label="返回大厅" onClick={() => router.push('/')}>
-          <ChevronLeft className="size-5" strokeWidth={2.2} aria-hidden />
-        </IconButton>
-        <IconButton label="对话记录" onClick={onOpenSessions}>
-          <PanelLeft className="size-[18px]" aria-hidden />
-        </IconButton>
+    <header className="sticky top-0 z-20 flex items-center gap-0.5 border-b border-border/60 bg-background/95 px-2 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl">
+      <IconButton label="返回大厅" onClick={() => router.push('/')}>
+        <ChevronLeft className="size-5" strokeWidth={2.2} aria-hidden />
+      </IconButton>
+      <IconButton label="对话记录" onClick={onOpenSessions} muted>
+        <PanelLeft className="size-[19px]" strokeWidth={2} aria-hidden />
+      </IconButton>
 
-        <span className="pointer-events-none absolute left-1/2 max-w-[46%] -translate-x-1/2 truncate text-[16px] font-semibold tracking-tight text-foreground">
-          {title}
-        </span>
+      <span className="pointer-events-none absolute left-1/2 max-w-[46%] -translate-x-1/2 truncate text-[16px] font-semibold tracking-tight text-foreground">
+        {title}
+      </span>
 
-        <div className="ml-auto flex shrink-0 items-center gap-0.5 pr-1">
-          <FavoriteButton characterId={characterId} variant="header" />
-          <IconButton label="对话设置" onClick={() => setToolsOpen(true)}>
-            <Settings2 className="size-[18px]" aria-hidden />
-          </IconButton>
-        </div>
-      </header>
-
-      <Sheet open={toolsOpen} onOpenChange={setToolsOpen}>
-        <SheetContent
-          side="bottom"
-          className="max-h-[82vh] overflow-y-auto rounded-t-3xl border-border bg-background px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5"
-        >
-          <SheetTitle className="text-[16px] font-bold text-foreground">对话设置</SheetTitle>
-          <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
-            模型与生成偏好对你的所有角色生效
-          </SheetDescription>
-
-          <div className="my-4 flex gap-1 rounded-full bg-muted p-1">
-            <TabButton active={tab === 'model'} onClick={() => setTab('model')}>
-              <Sparkles className="mr-1.5 inline size-3.5" aria-hidden />
-              剧情引擎
-            </TabButton>
-            <TabButton active={tab === 'settings'} onClick={() => setTab('settings')}>
-              生成偏好
-            </TabButton>
-          </div>
-
-          {tab === 'model' ? <ChatModelSwitcher returnTo={returnTo} /> : <ChatGenerationSettings />}
-        </SheetContent>
-      </Sheet>
-    </>
+      <div className="ml-auto flex shrink-0 items-center pr-1">
+        <FavoriteButton characterId={characterId} variant="header" />
+      </div>
+    </header>
   );
 }
 
 function IconButton({
   label,
   onClick,
+  muted,
   children,
 }: {
   label: string;
   onClick: () => void;
+  /** 原版把侧边栏入口压得比返回键淡一档 */
+  muted?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -88,29 +63,9 @@ function IconButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="flex size-10 shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:scale-95"
-    >
-      {children}
-    </button>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
       className={cn(
-        'flex-1 rounded-full py-2 text-[13px] font-medium transition-colors',
-        active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
+        'flex size-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-muted active:scale-95',
+        muted ? 'text-muted-foreground hover:text-foreground' : 'text-foreground'
       )}
     >
       {children}

@@ -23,8 +23,8 @@ import type {
   PatchGenerationConfigData,
   PatchGenerationConfigRequest,
   PatchUserSettingsRequest,
-  RenameConversationRequest,
-  RenameConversationData,
+  UpdateConversationRequest,
+  UpdateConversationData,
   SendMessageRequest,
 } from '@miniapp/shared';
 import { requireTelegramAuth, type TelegramUser } from '../middleware/auth.js';
@@ -194,16 +194,26 @@ export default async function conversationRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('BAD_REQUEST', '会话 ID 无效'));
       }
 
-      const body = (request.body ?? {}) as Partial<RenameConversationRequest>;
-      // null 是有意义的取值（清空为自动命名），所以只挡 undefined 与非字符串
-      if (body.title !== null && typeof body.title !== 'string') {
+      const body = (request.body ?? {}) as Partial<UpdateConversationRequest>;
+      const hasTitle = 'title' in body;
+      // null 是有意义的取值（清空为自动命名），所以只挡非字符串的非 null
+      if (hasTitle && body.title !== null && typeof body.title !== 'string') {
         return reply.status(400).send(fail('BAD_REQUEST', '会话标题无效'));
+      }
+      if (body.pinned !== undefined && typeof body.pinned !== 'boolean') {
+        return reply.status(400).send(fail('BAD_REQUEST', '置顶状态无效'));
+      }
+      if (!hasTitle && body.pinned === undefined) {
+        return reply.status(400).send(fail('BAD_REQUEST', '没有需要更新的字段'));
       }
 
       const dbUser = await getOrCreateDbUser(request.user);
       try {
-        const session = await sessions.rename(sessionId, dbUser.id, body.title);
-        return reply.send(ok<RenameConversationData>({ session: toChatSession(session) }));
+        const session = await sessions.updateSession(sessionId, dbUser.id, {
+          ...(hasTitle ? { title: body.title ?? null } : {}),
+          ...(body.pinned === undefined ? {} : { pinned: body.pinned }),
+        });
+        return reply.send(ok<UpdateConversationData>({ session: toChatSession(session) }));
       } catch (error) {
         if (sendConversationError(reply, error)) return;
         throw error;

@@ -147,6 +147,19 @@
   animation: model-tier-pulse 1.8s ease-out infinite;
 }
 
+/*
+  聊天消息区：滚动条整条藏掉。原版是在 ST iframe 里对 #chat 做的同一件事，
+  移动端本来也不显示，留着只会在桌面调试时多出一条压住气泡右边缘的灰条。
+*/
+.chat-scroll-area {
+  scrollbar-width: none;
+}
+
+.chat-scroll-area::-webkit-scrollbar {
+  display: none;
+  width: 0;
+}
+
 /* ============ 进入 Chat 开屏动画（chat-splash.tsx） ============ */
 
 /* 整屏退场:轻微放大 + 淡出,像镜头推进角色世界 */

@@ -14,7 +14,9 @@ import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
+import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
+import { lobbyImageUrl } from '@/components/characters/character-card';
 import { ChatSplash } from '@/components/tavern/chat-splash';
 import {
   Dialog,
@@ -34,8 +36,10 @@ import {
 } from '@/lib/api/conversations';
 import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { paymentKeys } from '@/lib/api/payment';
+import { useUserSettingsQuery } from '@/lib/api/settings';
 import { formatFreeQuotaExhaustedDialog } from '@/lib/free-quota-dialog';
 import { useTelegramBackButton } from '@/lib/telegram';
+import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 
 const FREE_QUOTA_DIALOG_DURATION_MS = 5_000;
 
@@ -74,6 +78,12 @@ export default function SelfHostedChatPage() {
   const createConversation = useCreateConversationMutation();
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
   const refetchFreeQuota = freeQuotaQuery.refetch;
+  const userSettingsQuery = useUserSettingsQuery();
+  const viewportHeight = useVisualViewportHeight();
+
+  const character = characterQuery.data?.character;
+  const characterAvatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
+  const userAvatarUrl = userSettingsQuery.data?.settings.avatar_url ?? null;
 
   const goBack = useCallback(() => router.push('/'), [router]);
   useTelegramBackButton(goBack);
@@ -390,9 +400,22 @@ export default function SelfHostedChatPage() {
     }
   };
 
+  const openNewConversation = () => {
+    createConversation.mutate(characterId, {
+      onSuccess: (data) => {
+        setSessionId(data.session.id);
+        window.history.replaceState(
+          null,
+          '',
+          `/chat/${encodeURIComponent(characterId)}?session=${encodeURIComponent(data.session.id)}`
+        );
+      },
+    });
+  };
+
   const exhaustedDialog = formatFreeQuotaExhaustedDialog(
     freeQuotaQuery.data?.exhausted_dialog ?? DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
-    characterQuery.data?.character.name
+    character?.name
   );
 
   // 进入失败要能重试。session_not_found 不算失败——上面的分支会自动重建一个新会话
@@ -406,21 +429,28 @@ export default function SelfHostedChatPage() {
     ? resolveSessionTitle(
         conversationQuery.data.session.title,
         conversationQuery.data.session.last_message_preview,
-        characterQuery.data?.character.name ?? ''
+        character?.name ?? ''
       )
-    : (characterQuery.data?.character.name ?? '');
+    : (character?.name ?? '');
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-background text-foreground">
+    // 高度跟着可视视口走而不是写死 100dvh：iOS 弹键盘时后者不变，
+    // 整页会被顶上去，sticky 顶栏就跑出屏幕了
+    <div
+      className="flex flex-col bg-background text-foreground"
+      style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh' }}
+    >
       <ChatTopBar
         characterId={characterId}
         title={title}
         onOpenSessions={() => setSessionsOpen(true)}
-        returnTo={returnTo}
       />
 
       <ChatMessageList
         messages={messages}
+        characterName={character?.name ?? ''}
+        characterAvatarUrl={characterAvatarUrl}
+        userAvatarUrl={userAvatarUrl}
         hasMore={hasMoreEarlier}
         loadingEarlier={loadingEarlier}
         onLoadEarlier={() => void handleLoadEarlier()}
@@ -459,6 +489,13 @@ export default function SelfHostedChatPage() {
         onStop={() => abortRef.current?.abort()}
         generating={generating}
         disabled={!ready || serverBusy}
+        leftSlot={
+          <ChatToolsSheet
+            returnTo={returnTo}
+            onCreateConversation={openNewConversation}
+            creating={createConversation.isPending}
+          />
+        }
       />
 
       <ChatSessionDrawer
@@ -466,7 +503,6 @@ export default function SelfHostedChatPage() {
         onOpenChange={setSessionsOpen}
         characterId={characterId}
         activeSessionId={sessionId}
-        creating={createConversation.isPending}
         onSelect={(nextSessionId) => {
           setSessionId(nextSessionId);
           window.history.replaceState(
@@ -474,19 +510,6 @@ export default function SelfHostedChatPage() {
             '',
             `/chat/${encodeURIComponent(characterId)}?session=${encodeURIComponent(nextSessionId)}`
           );
-        }}
-        onCreate={() => {
-          createConversation.mutate(characterId, {
-            onSuccess: (data) => {
-              setSessionsOpen(false);
-              setSessionId(data.session.id);
-              window.history.replaceState(
-                null,
-                '',
-                `/chat/${encodeURIComponent(characterId)}?session=${encodeURIComponent(data.session.id)}`
-              );
-            },
-          });
         }}
       />
 
