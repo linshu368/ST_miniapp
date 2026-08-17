@@ -228,7 +228,7 @@ export default function SelfHostedChatPage() {
       });
     }
     return merged;
-  }, [persisted, sessionId, streaming]);
+  }, [persisted, activeSessionId, streaming]);
 
   const serverBusy = persisted.some((message) => message.status === 'streaming');
   const generating = streaming !== null;
