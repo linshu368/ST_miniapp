@@ -142,7 +142,7 @@ function ConversationHistoryRow({ session }: { session: ChatSession }) {
     >
       <div className="flex items-center gap-3">
         <Link
-          href={chatEntryPath('self_hosted', session.character_id, { sessionId: session.id })}
+          href={chatEntryPath(session.character_id, { sessionId: session.id })}
           prefetch={false}
           aria-label={`继续与 ${name} 的对话`}
           className="absolute inset-0 rounded-3xl"
