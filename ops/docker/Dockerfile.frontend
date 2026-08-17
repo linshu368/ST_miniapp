@@ -12,8 +12,8 @@
 # Mode: Next.js standalone (next.config.mjs has `output: 'standalone'` +
 #   experimental.outputFileTracingRoot = repo root). `next build` emits a
 #   self-contained runtime at packages/frontend/.next/standalone (server.js +
-#   the minimal traced node_modules, including the @miniapp/shared /
-#   @miniapp/bridge-protocol workspace deps). The runner therefore needs neither
+#   the minimal traced node_modules, including the @miniapp/shared
+#   workspace dep). The runner therefore needs neither
 #   pnpm nor a full node_modules — just `node packages/frontend/server.js`.
 #
 # Conventions inherited from ops/docker/Dockerfile.backend (M2):
@@ -44,14 +44,13 @@ RUN apk add --no-cache libc6-compat \
 
 WORKDIR /build
 # Workspace metadata + only the packages in the frontend dependency closure
-# (frontend + its two workspace deps). Mirrors Dockerfile.backend's lockfile-hit
+# (frontend + shared). Mirrors Dockerfile.backend's lockfile-hit
 # strategy: copy root manifests first so --frozen-lockfile resolves deterministically.
 # tsconfig.base.json: packages/frontend/tsconfig.json (read by `next build`) extends
 # ../../tsconfig.base.json, so the repo-root base config must be present.
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/frontend         packages/frontend
 COPY packages/shared           packages/shared
-COPY packages/bridge-protocol  packages/bridge-protocol
 
 # Full install for the frontend closure (build needs devDeps: typescript, tailwind,
 # next, eslint-config-next). --ignore-scripts skips the root husky `prepare` hook

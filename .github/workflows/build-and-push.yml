@@ -4,9 +4,9 @@
 # Images (namespace = ghcr.io/<owner>/st-miniapp-<component>):
 #   - st-miniapp-frontend    ops/docker/Dockerfile.frontend   (context .)   [staging only]
 #   - st-miniapp-backend     ops/docker/Dockerfile.backend    (context .)
-#   - st-miniapp-st-backend  ops/docker/Dockerfile.st-bundle  (context .)
 #   - st-miniapp-nginx       ops/nginx/Dockerfile             (context ops/nginx)
 #
+# st-miniapp-st-backend 已随 ST 整包归档到 legacy/st-removed/，不再构建。#
 # 方案 Y：对外域名绑 Vercel，生产前端部署在 Vercel，Railway 不消费 frontend 镜像。
 # 因此 frontend 镜像**默认不构建**（避免无用 CI 时间与 GHCR 存储占用），仅在打
 # `staging-*` tag（本地/staging 全栈仿真需要时）才构建。其余三镜像照常每次构建。
@@ -63,10 +63,6 @@ jobs:
             context: .
             file: ops/docker/Dockerfile.backend
             build_args: ''
-          - name: st-backend
-            context: .
-            file: ops/docker/Dockerfile.st-bundle
-            build_args: ''
           - name: nginx
             context: ops/nginx
             file: ops/nginx/Dockerfile
@@ -100,7 +96,7 @@ jobs:
             type=raw,value=${{ github.ref_name }}-latest
 
       - name: Build and push (linux/amd64,linux/arm64)
-        # 方案 Y：frontend 镜像仅在 staging-* tag 构建；其余三镜像每次构建。
+        # 方案 Y：frontend 镜像仅在 staging-* tag 构建；backend / nginx 每次构建。
         if: ${{ matrix.name != 'frontend' || startsWith(github.ref, 'refs/tags/staging-') }}
         uses: docker/build-push-action@v6
         with:
@@ -148,7 +144,7 @@ jobs:
           owner='${{ github.repository_owner }}'
           tag='${{ github.ref_name }}-latest'
           fail=0
-          names="backend st-backend nginx"
+          names="backend nginx"
           if [ "${IS_STAGING_TAG}" = "true" ]; then
             names="frontend ${names}"
           fi
@@ -170,4 +166,4 @@ jobs:
             echo "One or more images is missing a required platform." >&2
             exit 1
           fi
-          echo "All 4 images expose linux/amd64 + linux/arm64."
+          echo "Published images expose linux/amd64 + linux/arm64."

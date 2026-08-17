@@ -24,10 +24,7 @@ node_modules
 
 # The backend image only needs packages/backend and its single workspace dep @miniapp/shared.
 packages/frontend
-packages/sync-engine
-packages/st-extension
-packages/bridge-protocol
-packages/db-types
+legacy
 
 # Everything else is irrelevant to installing + running the backend.
 vendor

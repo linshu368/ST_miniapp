@@ -1,7 +1,7 @@
 # 自研引擎替换 ST：阶段与模块划分
 
 > 状态：总体思路与关键决策已确认（12 项，见 §二）。MVP 阶段的可执行方案见 **`docs/ST_remove-MVP实施方案.md`**（2026-08-10）
-> **进度（2026-08-11）**：M1 / M2 / M3a / M3b 全部交付并验收通过，**MVP 已达成**——一条不经过 ST / iframe / bridge 的对话链路已跑通，计费与 `chat_history` 落库与 ST 链路逐字段一致。下一步是 M5（自研聊天 UI），切换前置见实施方案 §8.7；M5 的开发交接文档见 **`docs/ST_remove-M5-自研聊天UI.md`**。
+> **进度（2026-08-14）**：M1 / M2 / M3a / M3b / M5 已交付；测试与生产已切到自研引擎。ST 旧路径按「归档到 `legacy/st-removed/`、不硬删」执行：整包见 **`docs/ST_remove-整包清理清单.md`**，散文件与接线见 **`docs/ST_remove-混用清理清单.md`**（两份均已执行）。仍暂缓：`chat_engine_mode`、`st_handle`、nginx `/tavern` 分档、Railway `st-bundle`、历史 SQL。
 > ⚠️ 读到旧 bot 代码后，**决策 3（预设格式）已二次修正为"MVP 不消费预设，后续自建格式"**，连带影响 M2 的性质与 M4 的排期，正文均已同步。
 > 前置文档：`docs/ARCHITECTURE.md`（⚠️ 数据层描述停留在 migration 030，实际已到 068，参考时以实测代码为准）
 >

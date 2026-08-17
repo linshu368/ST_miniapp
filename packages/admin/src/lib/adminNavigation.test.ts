@@ -22,10 +22,6 @@ describe('admin navigation', () => {
     expect(resolveAdminMenuSelection('audit')).toEqual({ view: 'audit' });
   });
 
-  it('drops removed platform presets menu into configs fallback', () => {
-    expect(resolveAdminMenuSelection('platform_presets')).toEqual({ view: 'configs' });
-  });
-
   it('opens analytics reports from the analytics submenu', () => {
     const key = analyticsMenuKey('models');
     expect(resolveAdminMenuSelection(key)).toEqual({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import {
   ChevronRight,
@@ -16,9 +16,7 @@ import {
 import type { ChatSession } from '@miniapp/shared';
 
 import { cn } from '@/lib/utils';
-import { useChatListStore } from '@/stores/chat-list';
 import { useCharacterQuery } from '@/lib/api/characters';
-import { useChatEngine } from '@/lib/api/chat-engine';
 import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
 import {
   SessionActionButton,
@@ -29,10 +27,7 @@ import {
 import { useFavoritesQuery } from '@/lib/api/favorites';
 import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
-import { useBridgeStatus } from '@/lib/bridge';
-import { getTimingMark } from '@/lib/bridge/iframe-timing';
 import { chatEntryPath } from '@/lib/chat-entry';
-import { beginFirstChatNavigation } from '@/lib/sentry/first-chat-telemetry';
 
 type ChatsTab = 'history' | 'favorites';
 
@@ -90,60 +85,8 @@ export default function ChatsPage() {
         })}
       </div>
 
-      {tab === 'history' ? <HistoryList /> : <FavoritesList />}
+      {tab === 'history' ? <ConversationHistoryList /> : <FavoritesList />}
     </main>
-  );
-}
-
-/**
- * 两条链路的历史来源不同：ST 走 chat 文件反代，自研链路直读 chat_sessions。
- * 开关解析出来之前谁都不查，猜错那次就是一发白打的 ST 反代请求。
- */
-function HistoryList() {
-  const { mode, resolved } = useChatEngine();
-
-  if (!resolved) {
-    return (
-      <section className="mx-auto max-w-2xl space-y-2">
-        <HistoryHint>正在读取历史对话…</HistoryHint>
-      </section>
-    );
-  }
-
-  return mode === 'self_hosted' ? <ConversationHistoryList /> : <StHistoryList />;
-}
-
-function StHistoryList() {
-  const { items, loading, error, fetch } = useChatListStore();
-  const bridgeStatus = useBridgeStatus();
-
-  useEffect(() => {
-    void fetch();
-  }, [fetch]);
-
-  return (
-    <section className="mx-auto max-w-2xl space-y-2">
-      {loading && items.length === 0 ? <HistoryHint>正在读取历史对话…</HistoryHint> : null}
-
-      {error ? <HistoryError onRetry={() => void fetch()} /> : null}
-
-      {!loading && !error && items.length === 0 ? <HistoryEmpty /> : null}
-
-      {items.map((item) => {
-        if (!item.characterId) return null;
-        return (
-          <HistoryRow
-            key={item.characterId}
-            href={chatEntryPath('sillytavern', item.characterId, { legacyChatFile: item.fileName })}
-            avatarUrl={item.characterAvatarUrl}
-            name={item.characterName}
-            timestamp={item.lastMessageAt}
-            preview={item.lastMessage}
-            onClick={() => recordFirstChatNavigation(item.characterId!, 'history', bridgeStatus)}
-          />
-        );
-      })}
-    </section>
   );
 }
 
@@ -199,7 +142,7 @@ function ConversationHistoryRow({ session }: { session: ChatSession }) {
     >
       <div className="flex items-center gap-3">
         <Link
-          href={chatEntryPath('self_hosted', session.character_id, { sessionId: session.id })}
+          href={chatEntryPath(session.character_id, { sessionId: session.id })}
           prefetch={false}
           aria-label={`继续与 ${name} 的对话`}
           className="absolute inset-0 rounded-3xl"
@@ -357,8 +300,6 @@ function HistoryEmpty() {
 function FavoritesList() {
   const { data, isLoading, isError, refetch } = useFavoritesQuery();
   const characters = data?.characters ?? [];
-  const bridgeStatus = useBridgeStatus();
-  const { mode: chatEngineMode } = useChatEngine();
 
   if (isLoading && characters.length === 0) {
     return (
@@ -417,13 +358,8 @@ function FavoritesList() {
           className="relative flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary"
         >
           <Link
-            href={chatEntryPath(chatEngineMode, character.id)}
+            href={chatEntryPath(character.id)}
             prefetch={false}
-            onClick={() => {
-              // ST 冷启动埋点在自研链路里没有收口点，切过去后不再开这段 span。
-              if (chatEngineMode === 'self_hosted') return;
-              recordFirstChatNavigation(character.id, 'favorites', bridgeStatus);
-            }}
             aria-label={`进入 ${character.name} 的聊天`}
             className="absolute inset-0 rounded-3xl"
           />
@@ -453,18 +389,6 @@ function FavoritesList() {
       ))}
     </section>
   );
-}
-
-function recordFirstChatNavigation(
-  characterId: string,
-  source: 'history' | 'favorites',
-  bridgePhase: string
-): void {
-  const bridgeStartedAt = getTimingMark('bridge_start');
-  beginFirstChatNavigation(characterId, source, {
-    bridgePhase,
-    ...(bridgeStartedAt ? { bootElapsedMs: Date.now() - bridgeStartedAt } : {}),
-  });
 }
 
 function formatActivityTime(value: string): string {

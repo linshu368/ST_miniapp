@@ -2,8 +2,6 @@
 
 import * as Sentry from '@sentry/nextjs';
 
-import { getActiveBootSessionId } from '@/lib/bridge/boot-session';
-
 import { sendSentryLog, type SentryLogAttributes } from './client';
 
 export type FirstChatEntrySource = 'gallery' | 'history' | 'favorites' | 'direct' | 'retry';
@@ -34,7 +32,6 @@ type FirstChatAttempt = {
   attemptId: string;
   attemptNumber: number;
   characterId: string;
-  bootSessionId?: string;
   source: FirstChatEntrySource;
   startedAt: number;
   root: Sentry.Span;
@@ -179,7 +176,6 @@ function finishAttempt(attempt: FirstChatAttempt, result: FirstChatResult, reaso
     attemptId: attempt.attemptId,
     attemptNumber: attempt.attemptNumber,
     characterId: attempt.characterId,
-    bootSessionId: attempt.bootSessionId,
     durationMs: elapsedMs,
     stallCount: attempt.stallCount,
     routeDurationMs: attempt.stageDurations.route,
@@ -240,7 +236,6 @@ export function beginFirstChatNavigation(
   attemptSequence += 1;
   const attemptId = randomId('attempt');
   const attemptNumber = attemptSequence;
-  const bootSessionId = getActiveBootSessionId();
   const attributes: Record<string, string | number | boolean> = {
     service: 'frontend',
     journey_id: journeyId,
@@ -249,7 +244,6 @@ export function beginFirstChatNavigation(
     character_id: characterId,
     entry_source: source,
     is_first_chat: true,
-    ...(bootSessionId ? { boot_session_id: bootSessionId } : {}),
     ...(options.bridgePhase ? { bridge_phase_at_click: options.bridgePhase } : {}),
     ...(options.bootElapsedMs !== undefined
       ? { boot_elapsed_ms_at_click: options.bootElapsedMs }
@@ -266,7 +260,6 @@ export function beginFirstChatNavigation(
     attemptId,
     attemptNumber,
     characterId,
-    bootSessionId,
     source,
     startedAt: Date.now(),
     root,
