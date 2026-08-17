@@ -19,6 +19,7 @@ import llmProxyRoutes from './routes/llm-proxy.js';
 import chatsRoutes from './routes/chats.js';
 import conversationRoutes from './routes/conversations.js';
 import chatEngineRoutes from './routes/chat-engine.js';
+import voiceRoutes from './routes/voice.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import debugRoutes from './routes/debug.js'; // [iframe-timing] TEMP DEBUG
@@ -116,6 +117,7 @@ export async function buildApp() {
   await app.register(chatsRoutes);
   await app.register(conversationRoutes);
   await app.register(chatEngineRoutes);
+  await app.register(voiceRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
   await app.register(debugRoutes); // [iframe-timing] TEMP DEBUG

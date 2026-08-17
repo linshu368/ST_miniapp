@@ -63,6 +63,18 @@ export const config = {
   /** 大厅推荐排序分的每日刷新。关掉后读路径退回运营顺序，不影响其它功能 */
   lobbyRankingRefreshEnabled: process.env.LOBBY_RANKING_REFRESH_ENABLED !== 'false',
 
+  // ── 角色语音（MiniMax）────────────────────────────────────────────────────
+  // 两段式：先用文本模型把回复改写成第一人称语音文本，再合成 mp3。
+  // 两次调用共用同一把 key，与语音管道 v1 的 config.json 一致。
+  voice: {
+    apiKey: process.env.MINIMAX_API_KEY || '',
+    llmUrl: process.env.MINIMAX_LLM_URL || 'https://api.minimaxi.com/v1/text/chatcompletion_v2',
+    llmModel: process.env.MINIMAX_LLM_MODEL || 'MiniMax-Text-01',
+    ttsUrl: process.env.MINIMAX_TTS_URL || 'https://api.minimaxi.com/v1/t2a_v2',
+    /** 单次上游调用的超时。HD 模型合成长文本可以到几十秒 */
+    timeoutMs: parseInt(process.env.MINIMAX_TIMEOUT_MS || '120000', 10),
+  },
+
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {
     enabled: process.env.PAYMENT_ENABLED === 'true',
