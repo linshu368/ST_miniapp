@@ -160,6 +160,36 @@
   width: 0;
 }
 
+/*
+  语音条进度滑块（chat-message-voice.tsx）。
+  原生 range 的滑块只能用厂商前缀伪元素改，Tailwind 覆盖不到，所以落在这里。
+  已播部分的填充色由内联 background-image 渐变负责，这里只管滑块本身。
+*/
+.voice-progress::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background-color: hsl(var(--primary));
+  /* 移动端手指按的是这 10px，配合按钮外的 padding 才够得着 */
+  cursor: pointer;
+}
+
+.voice-progress::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: none;
+  border-radius: 9999px;
+  background-color: hsl(var(--primary));
+  cursor: pointer;
+}
+
+.voice-progress:disabled::-webkit-slider-thumb,
+.voice-progress:disabled::-moz-range-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.5);
+}
+
 /* ============ 进入 Chat 开屏动画（chat-splash.tsx） ============ */
 
 /* 整屏退场:轻微放大 + 淡出,像镜头推进角色世界 */
