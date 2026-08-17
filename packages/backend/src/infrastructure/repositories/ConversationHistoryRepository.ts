@@ -206,6 +206,27 @@ export class ConversationHistoryRepository {
     );
   }
 
+  /**
+   * 按 id 取一轮，并确认它属于该会话。语音生成要拿这条回复的正文。
+   *
+   * 走 current_chat_history 而不是 chat_history：只有当前版本的回复才在页面上，
+   * 被重生成顶掉的旧版本用户已经看不到了，不该还能为它生成语音。
+   */
+  async findCurrentTurnById(
+    sessionId: string,
+    historyId: string
+  ): Promise<ConversationHistoryRow | null> {
+    const { data, error } = await this.db
+      .from('current_chat_history')
+      .select('*')
+      .eq('id', historyId)
+      .eq('session_id', sessionId)
+      .maybeSingle();
+
+    if (error) throw new Error(`查询对话轮次失败：${error.message}`);
+    return (data as ConversationHistoryRow | null) ?? null;
+  }
+
   async listMessages(
     sessionId: string,
     openingMessage: string,

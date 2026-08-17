@@ -9,6 +9,7 @@ export * from './api/wallet';
 export * from './api/chats';
 export * from './api/chat-engine';
 export * from './api/conversations';
+export * from './api/voice';
 export * from './api/st-session';
 export * from './api/wishes';
 export * from './api/cs-platform';

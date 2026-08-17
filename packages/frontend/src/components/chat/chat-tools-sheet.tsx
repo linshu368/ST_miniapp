@@ -3,9 +3,7 @@
 import { useEffect, useState, type ComponentType } from 'react';
 import {
   ChevronLeft,
-  ChevronRight,
   ImageIcon,
-  Loader2,
   MessagesSquare,
   Mic,
   SlidersHorizontal,
@@ -18,10 +16,24 @@ import { cn } from '@/lib/utils';
 import { useModelCatalogQuery } from '@/lib/api/models';
 import { ChatGenerationSettings } from './chat-generation-settings';
 import { ChatModelSwitcher } from './chat-model-switcher';
+import { ToolRow } from './chat-tool-row';
+import { ChatVoicePicker, ChatVoiceSettings } from './chat-voice-settings';
 
 type ToolsTab = 'chat' | 'voice' | 'image';
 /** null = 停在一级页；非空时整个抽屉换成对应的二级页，带返回 */
-type ToolsPanel = 'model' | 'generation' | null;
+type ToolsPanel = 'model' | 'generation' | 'voice' | null;
+
+const PANEL_TITLES: Record<Exclude<ToolsPanel, null>, string> = {
+  model: '模型选择',
+  generation: '生成偏好',
+  voice: '默认声音',
+};
+
+const PANEL_DESCRIPTIONS: Record<Exclude<ToolsPanel, null>, string> = {
+  model: '选择驱动对话的模型',
+  generation: '调整回复长度与自定义指令',
+  voice: '选择角色说话的声音',
+};
 
 const TABS: { key: ToolsTab; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { key: 'chat', label: '对话设置', icon: MessagesSquare },
@@ -127,8 +139,10 @@ export function ChatToolsSheet({ returnTo, onCreateConversation, creating }: Cha
                     onClick={() => setPanel('generation')}
                   />
                 </div>
+              ) : tab === 'voice' ? (
+                <ChatVoiceSettings onOpenVoicePicker={() => setPanel('voice')} />
               ) : (
-                <ComingSoon label={tab === 'voice' ? '语音设置' : '图片设置'} />
+                <ComingSoon label="图片设置" />
               )}
             </>
           ) : (
@@ -143,15 +157,16 @@ export function ChatToolsSheet({ returnTo, onCreateConversation, creating }: Cha
                   <ChevronLeft className="size-5" aria-hidden />
                 </button>
                 <SheetTitle className="text-[16px] font-bold text-foreground">
-                  {panel === 'model' ? '模型选择' : '生成偏好'}
+                  {PANEL_TITLES[panel]}
                 </SheetTitle>
               </div>
-              <SheetDescription className="sr-only">
-                {panel === 'model' ? '选择驱动对话的模型' : '调整回复长度与自定义指令'}
-              </SheetDescription>
+              <SheetDescription className="sr-only">{PANEL_DESCRIPTIONS[panel]}</SheetDescription>
 
               {panel === 'model' ? (
                 <ChatModelSwitcher returnTo={returnTo} onSwitched={() => setOpen(false)} />
+              ) : panel === 'voice' ? (
+                // 选完音色回一级页，而不是关掉整个抽屉：用户接着可能要调倍速
+                <ChatVoicePicker onPicked={() => setPanel(null)} />
               ) : (
                 <ChatGenerationSettings />
               )}
@@ -160,44 +175,6 @@ export function ChatToolsSheet({ returnTo, onCreateConversation, creating }: Cha
         </SheetContent>
       </Sheet>
     </>
-  );
-}
-
-function ToolRow({
-  icon: Icon,
-  title,
-  hint,
-  onClick,
-  pending,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  title: string;
-  hint: string;
-  onClick: () => void;
-  pending?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={pending}
-      className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3.5 text-left transition-colors hover:bg-secondary disabled:opacity-55"
-    >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-        <Icon className="size-[18px]" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[14px] font-semibold text-foreground">{title}</span>
-        <span className="mt-0.5 block truncate text-[11px] leading-snug text-muted-foreground">
-          {hint}
-        </span>
-      </span>
-      {pending ? (
-        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
-      ) : (
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground/70" aria-hidden />
-      )}
-    </button>
   );
 }
 
