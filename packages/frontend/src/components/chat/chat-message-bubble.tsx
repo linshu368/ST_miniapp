@@ -57,6 +57,7 @@ export function ChatMessageBubble({
   // 生成被打断时后端会把已写入的部分连同 interrupted 一起落库。
   // 这半截正文是有价值的（用户已经读过了），只在末尾标注，不把整条换成错误态。
   const interrupted = message.status === 'interrupted';
+  const contentFiltered = message.finish_reason === 'content_filter';
   const failed = message.status === 'failed';
 
   return (
@@ -81,7 +82,12 @@ export function ChatMessageBubble({
                   aria-hidden
                 />
               ) : null}
-              {interrupted ? (
+              {contentFiltered ? (
+                <p className="mt-2 flex items-center gap-1.5 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+                  <AlertCircle className="h-3 w-3 shrink-0" aria-hidden />
+                  回复中断了，本次不消耗星尘，请尝试重新生成
+                </p>
+              ) : interrupted ? (
                 <p className="mt-2 flex items-center gap-1.5 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
                   <AlertCircle className="h-3 w-3 shrink-0" aria-hidden />
                   这条回复被中断了

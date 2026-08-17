@@ -1,6 +1,9 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
-import { calculateUsageDeduction } from '../features/billing/usage-pricing.js';
+import {
+  calculateUsageDeduction,
+  resolveUsageBillingGate,
+} from '../features/billing/usage-pricing.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -118,17 +121,61 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       const isComplete = isCompleteGenerationData(genData);
       const llmMetadata = buildGenerationMetadata(genData);
       const usageCost = genData.usage;
+      const finishReason = typeof genData.finish_reason === 'string' ? genData.finish_reason : null;
       const chargeId = record.llm_charge_id;
 
-      if (
-        typeof usageCost === 'number' &&
-        Number.isFinite(usageCost) &&
-        typeof chargeId === 'string' &&
-        chargeId.length > 0
-      ) {
+      if (typeof chargeId === 'string' && chargeId.length > 0) {
         try {
           const originalCharge = await wallets.findLlmUsageCharge(chargeId);
-          if (originalCharge && originalCharge.metadata?.billing_mode !== 'fixed_tier') {
+          if (
+            originalCharge?.metadata?.billing_mode === 'fixed_tier' &&
+            originalCharge.status === 'pending' &&
+            finishReason !== null
+          ) {
+            const fixedDeduction = Number(
+              originalCharge.metadata?.fixed_deduction ?? originalCharge.calculated_amount
+            );
+            const actualModel =
+              typeof genData.model === 'string' && genData.model.trim()
+                ? genData.model
+                : originalCharge.model_openrouter_id;
+            const reconciled = await wallets.chargeLlmUsage({
+              chargeId,
+              generationId: generationId,
+              userId: originalCharge.user_id,
+              modelId: originalCharge.model_id,
+              modelOpenRouterId: actualModel,
+              modelDisplayName:
+                actualModel !== originalCharge.model_openrouter_id
+                  ? actualModel
+                  : originalCharge.model_display_name,
+              catalogVersion: originalCharge.catalog_version,
+              pricingConfigVersion: originalCharge.pricing_config_version,
+              usageCostUsd:
+                typeof usageCost === 'number' && Number.isFinite(usageCost) ? usageCost : null,
+              exchangeRate: Number(originalCharge.exchange_rate),
+              modelMarkup: Number(originalCharge.model_markup),
+              calculatedAmount: Number.isFinite(fixedDeduction) ? fixedDeduction : 0,
+              fallbackUsed: false,
+              metadata: {
+                ...(originalCharge.metadata ?? {}),
+                source: 'chat_history_sync',
+                finish_reason: finishReason,
+                billing_gate: resolveUsageBillingGate({
+                  status: 'success',
+                  finishReason,
+                }),
+              },
+            });
+            llmMetadata.llm_intended_deduction = Number(reconciled.charge.calculated_amount);
+            llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
+          } else if (
+            originalCharge &&
+            originalCharge.metadata?.billing_mode !== 'fixed_tier' &&
+            typeof usageCost === 'number' &&
+            Number.isFinite(usageCost) &&
+            finishReason === 'stop'
+          ) {
             const intendedDeduction = calculateUsageDeduction(
               usageCost,
               Number(originalCharge.exchange_rate),

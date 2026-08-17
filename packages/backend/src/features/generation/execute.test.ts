@@ -156,6 +156,7 @@ describe('execute（流式）', () => {
       user_input: '你好',
       assistant_reply: '你好',
       status: 'success',
+      finish_reason: 'stop',
       model: 'anthropic/claude-sonnet-4.5',
       model_id: 'anthropic-claude-sonnet-4-5',
       model_markup: 2.5,
@@ -177,6 +178,29 @@ describe('execute（流式）', () => {
     expect(savedHistory()[0]).toMatchObject({
       status: 'stream_interrupted',
       assistant_reply: '半句',
+    });
+  });
+
+  it('收到 content_filter 仍完成落库，并把 finish_reason 交给扣费入口判 0 元', async () => {
+    stubUpstream(() =>
+      sseResponse([
+        DELTA('敏感回复片段'),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'content_filter' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
+
+    const result = await execute(request(), undefined, fakeLogger());
+
+    expect(result).toMatchObject({
+      status: 'success',
+      content: '敏感回复片段',
+      finishReason: 'content_filter',
+    });
+    expect(savedHistory()[0]).toMatchObject({
+      status: 'success',
+      assistant_reply: '敏感回复片段',
+      finish_reason: 'content_filter',
     });
   });
 

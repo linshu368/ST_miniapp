@@ -91,11 +91,17 @@ function SpendingRow({ item }: { item: WalletSpendingRecord }) {
         <h2 className="truncate text-[15px] font-bold tracking-tight text-foreground">
           {item.model_display_name}
         </h2>
-        {item.status === 'failed' ? (
-          <p className="mt-1 text-[10px] font-semibold text-destructive">生成失败 · 未扣费</p>
-        ) : item.status === 'pending' ? (
-          <p className="mt-1 text-[10px] font-semibold text-warn">等待最终用量结算</p>
-        ) : null}
+        <p
+          className={
+            item.status === 'failed'
+              ? 'mt-1 text-[10px] font-semibold text-destructive'
+              : item.status === 'pending'
+                ? 'mt-1 text-[10px] font-semibold text-warn'
+                : 'mt-1 text-[10px] font-semibold text-muted-foreground'
+          }
+        >
+          {item.status_label}
+        </p>
         <time
           dateTime={item.created_at}
           className="mt-1 block text-[10px] font-medium tabular-nums tracking-wide text-muted-foreground/70"
@@ -104,11 +110,17 @@ function SpendingRow({ item }: { item: WalletSpendingRecord }) {
         </time>
       </div>
       <div className="shrink-0 text-right">
-        <p className="text-[15px] font-black tabular-nums text-primary">
-          {item.charged_amount > 0 ? '-' : ''}
-          {item.charged_amount.toFixed(1)}
-        </p>
-        <p className="mt-0.5 text-[10px] text-muted-foreground">星尘</p>
+        {item.status === 'pending' ? (
+          <p className="text-[13px] font-bold text-warn">待结算</p>
+        ) : (
+          <>
+            <p className="text-[15px] font-black tabular-nums text-primary">
+              {item.charged_amount > 0 ? '-' : ''}
+              {item.charged_amount.toFixed(1)}
+            </p>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">星尘</p>
+          </>
+        )}
       </div>
     </article>
   );

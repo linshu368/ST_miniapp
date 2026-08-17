@@ -10,6 +10,7 @@ import { getSupabaseClient } from './supabase.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import {
   getInitialBillingDecision,
+  resolveUsageBillingGate,
   shouldRecordUsageCharge,
   type FixedDeductionCategory,
 } from '../features/billing/usage-pricing.js';
@@ -40,6 +41,7 @@ export interface ChatHistoryEntry {
   upstream_status?: number | null;
   deduction_rate?: number; // now calculated internally
   generation_id?: string | null;
+  finish_reason?: string | null;
 }
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -126,6 +128,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         llm_charge_id: entry.charge_id,
         llm_model_markup: entry.model_markup,
         llm_generation_id: entry.generation_id ?? null,
+        llm_finish_reason: entry.finish_reason ?? null,
       };
       let actualDeduction = 0;
 
@@ -137,7 +140,6 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             llmMetadata = {
               ...llmMetadata,
               llm_provider_name: genData.provider_name ?? null,
-              llm_finish_reason: genData.finish_reason ?? null,
               llm_usage: genData.usage ?? null,
               llm_usage_cache: genData.usage_cache ?? null,
               llm_native_tokens_cached: genData.native_tokens_cached ?? null,
@@ -150,6 +152,9 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
               llm_generation_id: entry.generation_id,
               llm_generation_data: genData, // 即使不完整或有error，也如实记录
             };
+            if (typeof genData.finish_reason === 'string') {
+              llmMetadata.llm_finish_reason = genData.finish_reason;
+            }
           } else {
             // 获取失败（如网络异常导致完全无法获取）时，至少把 generation_id 存下来
             llmMetadata = { ...llmMetadata, llm_generation_id: entry.generation_id };
@@ -172,10 +177,12 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         throw new Error('production chat history requires user_id');
       }
 
-      // 成功调用进入正常计费；免费模型即使失败或中断也保留一条 0.0 明细，
-      // 方便用户和运营核对，同时付费模型失败仍不产生消费记录。
+      // 每轮生成都保留一条明细；只有 finish_reason=stop 的正常完整回复才扣星尘。
       if (shouldRecordUsageCharge(entry.status, entry.model_markup)) {
         const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
+        const finishReason =
+          typeof llmMetadata.llm_finish_reason === 'string' ? llmMetadata.llm_finish_reason : null;
+        const billingGate = resolveUsageBillingGate({ status: entry.status, finishReason });
         const billingDecision = getInitialBillingDecision({
           usageCost,
           exchangeRate: entry.exchange_rate,
@@ -210,6 +217,8 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
               chat_status: entry.status,
               requested_model: entry.model,
               billing_mode: 'fixed_tier',
+              billing_gate: billingGate,
+              finish_reason: finishReason,
               fixed_deduction_category: entry.fixed_deduction_category,
               fixed_deduction: entry.fixed_deduction,
             },

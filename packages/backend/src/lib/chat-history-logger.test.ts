@@ -4,6 +4,7 @@ import {
   calculateUsageDeduction,
   getInitialBillingDecision,
   resolveFixedDeduction,
+  resolveUsageBillingGate,
   shouldRecordUsageCharge,
 } from '../features/billing/usage-pricing.js';
 
@@ -131,10 +132,31 @@ describe('getInitialBillingDecision', () => {
 });
 
 describe('shouldRecordUsageCharge', () => {
-  it('records successful calls and failed free calls only', () => {
+  it('records every generation outcome as spending detail', () => {
     expect(shouldRecordUsageCharge('success', 2.5)).toBe(true);
-    expect(shouldRecordUsageCharge('error', 0)).toBe(true);
-    expect(shouldRecordUsageCharge('aborted', 0)).toBe(true);
+    expect(shouldRecordUsageCharge('upstream_error', 2.5)).toBe(true);
+    expect(shouldRecordUsageCharge('stream_interrupted', 2.5)).toBe(true);
     expect(shouldRecordUsageCharge('error', 2.5)).toBe(false);
+  });
+});
+
+describe('resolveUsageBillingGate', () => {
+  it('only bills natural stop completions', () => {
+    expect(resolveUsageBillingGate({ status: 'success', finishReason: 'stop' })).toBe('billable');
+    expect(resolveUsageBillingGate({ status: 'success', finishReason: null })).toBe(
+      'pending_finish_reason'
+    );
+    expect(resolveUsageBillingGate({ status: 'success', finishReason: 'content_filter' })).toBe(
+      'non_billable'
+    );
+    expect(resolveUsageBillingGate({ status: 'success', finishReason: 'length' })).toBe(
+      'non_billable'
+    );
+    expect(resolveUsageBillingGate({ status: 'success', finishReason: 'tool_calls' })).toBe(
+      'non_billable'
+    );
+    expect(resolveUsageBillingGate({ status: 'stream_interrupted', finishReason: null })).toBe(
+      'non_billable'
+    );
   });
 });

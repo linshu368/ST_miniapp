@@ -104,8 +104,20 @@ export function getInitialBillingDecision(input: {
   };
 }
 
-export function shouldRecordUsageCharge(status: string, modelMarkup: number): boolean {
-  return status === 'success' || modelMarkup === 0;
+export type UsageBillingGate = 'billable' | 'pending_finish_reason' | 'non_billable';
+
+export function resolveUsageBillingGate(input: {
+  status: string;
+  finishReason: string | null;
+}): UsageBillingGate {
+  if (input.status !== 'success') return 'non_billable';
+  if (input.finishReason === 'stop') return 'billable';
+  if (input.finishReason === null) return 'pending_finish_reason';
+  return 'non_billable';
+}
+
+export function shouldRecordUsageCharge(status: string, _modelMarkup: number): boolean {
+  return status === 'success' || status === 'upstream_error' || status === 'stream_interrupted';
 }
 
 export function calculateFallbackDeduction(fallbackCost: number, modelMarkup: number): number {

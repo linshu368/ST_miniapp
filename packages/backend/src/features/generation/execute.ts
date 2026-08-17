@@ -48,7 +48,7 @@ import type {
 /** 一次生成里只有这四个字段随终态变化，其余 chat_history 字段全程固定。 */
 type HistoryOutcome = Pick<
   ChatHistoryEntry,
-  'assistant_reply' | 'status' | 'upstream_status' | 'generation_id'
+  'assistant_reply' | 'status' | 'upstream_status' | 'generation_id' | 'finish_reason'
 >;
 
 type SaveHistory = (outcome: HistoryOutcome) => void;
@@ -175,6 +175,7 @@ export async function execute(
       status: 'upstream_error',
       upstream_status: upstreamRes.status,
       generation_id: null,
+      finish_reason: null,
     });
     hooks?.onError?.(new Error(`upstream ${upstreamRes.status}: ${detail.slice(0, 200)}`));
     return finish(failed({ upstreamStatus: upstreamRes.status }));
@@ -209,6 +210,7 @@ export async function execute(
       status: 'success',
       upstream_status: null,
       generation_id: headerGenerationId,
+      finish_reason: null,
     });
     return finish({
       status: 'success',
@@ -342,6 +344,7 @@ async function settleStream(input: {
       status: 'success',
       upstream_status: null,
       generation_id: result.generationId,
+      finish_reason: result.finishReason,
     });
     return;
   }
@@ -361,6 +364,7 @@ async function settleStream(input: {
     status: 'stream_interrupted',
     upstream_status: null,
     generation_id: result.generationId,
+    finish_reason: result.finishReason,
   });
 }
 
@@ -424,6 +428,7 @@ async function consumeNonStream(input: {
       status: 'upstream_error',
       upstream_status: upstreamRes.status,
       generation_id: generationId,
+      finish_reason: null,
     });
     return {
       status: 'upstream_error',
@@ -443,6 +448,7 @@ async function consumeNonStream(input: {
     status: 'success',
     upstream_status: null,
     generation_id: generationId,
+    finish_reason: finishReason,
   });
   if (assistantReply) {
     hooks?.onFirstToken?.();
