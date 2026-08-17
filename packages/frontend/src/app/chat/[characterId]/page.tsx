@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
+import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
@@ -37,6 +38,12 @@ import {
 import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { paymentKeys } from '@/lib/api/payment';
 import { useUserSettingsQuery } from '@/lib/api/settings';
+import {
+  toVoiceMap,
+  useGenerateVoiceMutation,
+  useSessionVoiceQuery,
+  useVoiceConfigQuery,
+} from '@/lib/api/voice';
 import { formatFreeQuotaExhaustedDialog } from '@/lib/free-quota-dialog';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
@@ -79,6 +86,9 @@ export default function SelfHostedChatPage() {
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
   const refetchFreeQuota = freeQuotaQuery.refetch;
   const userSettingsQuery = useUserSettingsQuery();
+  const voiceConfigQuery = useVoiceConfigQuery();
+  const sessionVoiceQuery = useSessionVoiceQuery(sessionId ?? undefined);
+  const generateVoice = useGenerateVoiceMutation(sessionId ?? undefined);
   const viewportHeight = useVisualViewportHeight();
 
   const character = characterQuery.data?.character;
@@ -209,6 +219,42 @@ export default function SelfHostedChatPage() {
   const lastMessage = messages.at(-1);
   const canRegenerate =
     !generating && !serverBusy && lastMessage?.role === 'assistant' && lastMessage.turn_index > 0;
+
+  // ── 角色语音 ──────────────────────────────────────────────────────────────
+  const voiceByMessage = useMemo(
+    () => toVoiceMap(sessionVoiceQuery.data),
+    [sessionVoiceQuery.data]
+  );
+  const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
+
+  /**
+   * 哪些消息能生成语音。turn_index > 0 排掉开场白，status 排掉正在写和没写完的——
+   * 后端认的 messageId 是 chat_history 行 id，这两类要么不是库里的行，要么没有正文。
+   */
+  const canGenerateVoice = useCallback(
+    (message: ChatMessage): boolean =>
+      message.role === 'assistant' && message.status === 'complete' && message.turn_index > 0,
+    []
+  );
+
+  const handleGenerateVoice = useCallback(
+    (messageId: string) => {
+      generateVoice.mutate(messageId, {
+        onError: (error) => {
+          // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
+          const code = (error as { code?: string }).code;
+          setStreamError(
+            code === 'CONFLICT'
+              ? '这条回复正在生成语音'
+              : code === 'VOICE_UNAVAILABLE'
+                ? '语音功能暂不可用'
+                : '语音生成没能开始，请重试'
+          );
+        },
+      });
+    },
+    [generateVoice]
+  );
 
   // ── 发送与重生成 ──────────────────────────────────────────────────────────
 
@@ -425,10 +471,7 @@ export default function SelfHostedChatPage() {
       ? '对话加载失败，请重试'
       : null;
 
-  const title = resolveSessionTitle(
-    conversationQuery.data?.session.title,
-    character?.name
-  );
+  const title = resolveSessionTitle(conversationQuery.data?.session.title, character?.name);
 
   return (
     // 高度跟着可视视口走而不是写死 100dvh：iOS 弹键盘时后者不变，
@@ -453,15 +496,36 @@ export default function SelfHostedChatPage() {
         onLoadEarlier={() => void handleLoadEarlier()}
         awaitingFirstToken={generating && streaming?.assistantMessageId === null}
         streamingMessageId={streaming?.assistantMessageId ?? null}
-        renderFooter={(message) =>
-          canRegenerate && message.id === lastMessage?.id ? (
-            <ChatRegenerateButton
-              onRegenerate={() => void runTurn({ mode: 'regenerate' })}
-              pending={false}
-              disabled={generating}
+        renderFooter={(message) => {
+          const showVoice = canGenerateVoice(message);
+          const showRegenerate = canRegenerate && message.id === lastMessage?.id;
+          if (!showVoice && !showRegenerate) return null;
+
+          return (
+            <ChatMessageVoiceFooter
+              charCount={message.content.length}
+              voice={
+                showVoice
+                  ? {
+                      voice: voiceByMessage.get(message.id),
+                      playbackRate,
+                      submitting: generateVoice.isPending && generateVoice.variables === message.id,
+                      onGenerate: () => handleGenerateVoice(message.id),
+                    }
+                  : null
+              }
+              regenerate={
+                showRegenerate ? (
+                  <ChatRegenerateButton
+                    onRegenerate={() => void runTurn({ mode: 'regenerate' })}
+                    pending={false}
+                    disabled={generating}
+                  />
+                ) : null
+              }
             />
-          ) : null
-        }
+          );
+        }}
       />
 
       {streamError ? (

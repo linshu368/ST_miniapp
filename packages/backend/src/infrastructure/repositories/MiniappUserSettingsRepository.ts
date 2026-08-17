@@ -6,7 +6,15 @@ import {
   type PreferredWordCount,
   type UserGenerationConfig,
   type UserSettings,
+  type VoiceConfig,
 } from '@miniapp/shared';
+import {
+  DEFAULT_PLAYBACK_RATE,
+  isAllowedPlaybackRate,
+  isKnownVoiceId,
+  resolvePlaybackRate,
+  resolveVoiceId,
+} from '../../features/voice/voice-catalog.js';
 import { resolveEffectiveDisplayName } from './effective-display-name.js';
 import { config } from '../../platform/config.js';
 import type { TelegramUser } from '../../middleware/auth.js';
@@ -33,6 +41,8 @@ export interface MiniappUserSettingsRow {
   pref_custom_instructions: string | null;
   selected_model_id: string | null;
   characters_last_seen_at: string | null;
+  pref_voice_id: string | null;
+  pref_voice_playback_rate: number;
   created_at: string;
   updated_at: string;
 }
@@ -179,6 +189,61 @@ export class MiniappUserSettingsRepository {
       pref_show_options: row?.pref_show_options ?? true,
       pref_custom_instructions: row?.pref_custom_instructions ?? null,
     };
+  }
+
+  /**
+   * 角色语音偏好。与生成偏好同域：用户级、对所有角色生效。
+   *
+   * 存的可能是已下线的音色或不在档位里的倍速（改了目录、改了档位），
+   * 一律在这里回落成有效值，UI 才不会出现无选中态。
+   */
+  async getVoiceConfig(userId: string): Promise<VoiceConfig> {
+    const { data, error } = await this.db
+      .from('miniapp_user_settings')
+      .select('pref_voice_id, pref_voice_playback_rate')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`查询语音偏好失败：${error.message}`);
+
+    const row = data as Pick<
+      MiniappUserSettingsRow,
+      'pref_voice_id' | 'pref_voice_playback_rate'
+    > | null;
+
+    return {
+      voice_id: resolveVoiceId(row?.pref_voice_id),
+      // NUMERIC 经 PostgREST 回来可能是字符串，Number() 一道保证类型
+      playback_rate: resolvePlaybackRate(
+        row ? Number(row.pref_voice_playback_rate) : DEFAULT_PLAYBACK_RATE
+      ),
+    };
+  }
+
+  async setVoiceConfig(
+    userId: string,
+    tgUser: TelegramUser,
+    patch: { voiceId?: string; playbackRate?: number }
+  ): Promise<VoiceConfig> {
+    await this.getOrCreate(userId, tgUser);
+
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (patch.voiceId !== undefined) {
+      if (!isKnownVoiceId(patch.voiceId)) throw new Error('无效的音色');
+      update.pref_voice_id = patch.voiceId;
+    }
+    if (patch.playbackRate !== undefined) {
+      if (!isAllowedPlaybackRate(patch.playbackRate)) throw new Error('无效的播放速度');
+      update.pref_voice_playback_rate = patch.playbackRate;
+    }
+
+    const { error } = await this.db
+      .from('miniapp_user_settings')
+      .update(update)
+      .eq('user_id', userId);
+
+    if (error) throw new Error(`更新语音偏好失败：${error.message}`);
+    return await this.getVoiceConfig(userId);
   }
 
   /**

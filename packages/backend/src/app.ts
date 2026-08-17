@@ -15,6 +15,7 @@ import csPlatformRoutes from './routes/cs-platform.js';
 import modelsRoutes from './routes/models.js';
 import conversationRoutes from './routes/conversations.js';
 import chatEngineRoutes from './routes/chat-engine.js';
+import voiceRoutes from './routes/voice.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
@@ -107,6 +108,7 @@ export async function buildApp() {
   await app.register(modelsRoutes);
   await app.register(conversationRoutes);
   await app.register(chatEngineRoutes);
+  await app.register(voiceRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
   await app.register(adminSupabaseProxyRoutes);
