@@ -4,6 +4,7 @@ import {
   calculateUsageDeduction,
   resolveUsageBillingGate,
 } from '../features/billing/usage-pricing.js';
+import { MiniappCharacterFreeQuotaRepository } from '../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -16,6 +17,7 @@ let timerId: NodeJS.Timeout | null = null;
 let startupTimerId: NodeJS.Timeout | null = null;
 let isRunning = false;
 const wallets = new MiniappWalletRepository();
+const freeQuotas = new MiniappCharacterFreeQuotaRepository();
 
 function isCompleteGenerationData(genData: Record<string, unknown> | null): boolean {
   return (
@@ -123,6 +125,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       const usageCost = genData.usage;
       const finishReason = typeof genData.finish_reason === 'string' ? genData.finish_reason : null;
       const chargeId = record.llm_charge_id;
+      let reconciliationFailed = false;
 
       if (typeof chargeId === 'string' && chargeId.length > 0) {
         try {
@@ -132,18 +135,17 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
             originalCharge.status === 'pending' &&
             finishReason !== null
           ) {
-            const storedOutcome = originalCharge.metadata?.reply_outcome;
             const replyOutcome =
-              storedOutcome === 'complete' ||
-              storedOutcome === 'incomplete' ||
-              storedOutcome === 'empty'
-                ? storedOutcome
-                : typeof record.assistant_reply === 'string' && record.assistant_reply.trim()
-                  ? record.status === 'success'
-                    ? 'complete'
-                    : 'incomplete'
-                  : 'empty';
+              typeof record.assistant_reply === 'string' && record.assistant_reply.trim()
+                ? record.status === 'success'
+                  ? 'complete'
+                  : 'incomplete'
+                : 'empty';
             const billingStatus = replyOutcome === 'complete' ? 'success' : 'stream_interrupted';
+            await freeQuotas.finalizePending(
+              chargeId,
+              billingStatus === 'success' && finishReason === 'stop'
+            );
             const fixedDeduction = Number(
               originalCharge.metadata?.fixed_deduction ?? originalCharge.calculated_amount
             );
@@ -208,6 +210,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
             llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
           }
         } catch (reconcileErr) {
+          reconciliationFailed = true;
           log.error(
             {
               kind: 'sys',
@@ -221,6 +224,9 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
           );
         }
       }
+
+      // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
+      if (reconciliationFailed) continue;
 
       const { error: updateErr } = await miniappDb
         .from('chat_history')

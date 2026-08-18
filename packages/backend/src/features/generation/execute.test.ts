@@ -168,6 +168,25 @@ describe('execute（流式）', () => {
     expect(entry.charge_id).toBe(result.chargeId);
   });
 
+  it('正文和 [DONE] 完整但 finish_reason 暂缺时按成功落库并等待异步结算', async () => {
+    stubUpstream(() => sseResponse([DELTA('完整回复'), 'data: [DONE]\n\n']));
+
+    const result = await execute(request(), undefined, fakeLogger());
+
+    expect(result).toMatchObject({
+      status: 'success',
+      content: '完整回复',
+      generationId: 'gen-1',
+      finishReason: null,
+    });
+    expect(savedHistory()[0]).toMatchObject({
+      status: 'success',
+      assistant_reply: '完整回复',
+      generation_id: 'gen-1',
+      finish_reason: null,
+    });
+  });
+
   it('没有 [DONE] 判为中断，落 stream_interrupted 且不进扣费', async () => {
     stubUpstream(() => sseResponse([DELTA('半句')]));
 

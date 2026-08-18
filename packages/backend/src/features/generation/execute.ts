@@ -56,12 +56,14 @@ type SaveHistory = (outcome: HistoryOutcome) => void;
 /** 与会话 streaming 陈旧回收口径一致，避免一轮生成无限占住会话。 */
 export const GENERATION_TIMEOUT_MS = 120_000;
 
-/**
- * 用户体验上的完整回复必须同时满足：正常收流、自然结束、有可见正文。
- * 其余结果统一视为 incomplete/empty，并由 stream_interrupted 保证不扣费。
- */
-function isCompleteReply(result: Pick<SseTapResult, 'completed' | 'content' | 'finishReason'>) {
-  return result.completed && result.finishReason === 'stop' && result.content.trim().length > 0;
+/** 收到流终止标记且有可见正文，说明回复已完整交付给用户。 */
+function isDeliveredReply(result: Pick<SseTapResult, 'completed' | 'content'>) {
+  return result.completed && result.content.trim().length > 0;
+}
+
+/** 只有 OpenRouter 明确确认自然结束后才能最终扣费。 */
+function isBillableReply(result: Pick<SseTapResult, 'completed' | 'content' | 'finishReason'>) {
+  return isDeliveredReply(result) && result.finishReason === 'stop';
 }
 
 function buildUpstreamBody(request: GenerationRequest): Record<string, unknown> {
@@ -286,7 +288,10 @@ export async function execute(
 
   const tapped = tap.snapshot();
   return finish({
-    status: isCompleteReply(tapped) ? 'success' : 'stream_interrupted',
+    status:
+      isDeliveredReply(tapped) && (tapped.finishReason === 'stop' || tapped.finishReason === null)
+        ? 'success'
+        : 'stream_interrupted',
     content: tapped.content,
     generationId: tapped.generationId,
     finishReason: tapped.finishReason,
@@ -327,7 +332,10 @@ function createHistoryWriter(input: {
   };
 }
 
-/** 流终态：只有自然结束且有可见正文的回复才成功、才允许扣费。 */
+/**
+ * 流终态：完整交付与扣费终态分开判断。finish_reason 暂缺时保留免费额度预留，
+ * 让 chat history 同步任务拿到 OpenRouter 的真实终态后再消费或释放。
+ */
 async function settleStream(input: {
   result: SseTapResult;
   request: GenerationRequest;
@@ -337,10 +345,14 @@ async function settleStream(input: {
   log: GenerationLogger;
 }): Promise<void> {
   const { result, request, billing, reservation, saveHistory, log } = input;
-  const complete = isCompleteReply(result);
-  await reservation.finalize(complete);
+  const delivered = isDeliveredReply(result);
+  const billable = isBillableReply(result);
+  const waitingForFinishReason = delivered && result.finishReason === null;
+  if (!waitingForFinishReason) {
+    await reservation.finalize(billable);
+  }
 
-  if (complete) {
+  if (delivered && (result.finishReason === 'stop' || result.finishReason === null)) {
     log.biz.info(
       {
         event: 'llm.generation.completed',
@@ -350,7 +362,7 @@ async function settleStream(input: {
         generationId: result.generationId,
         replyChars: result.content.length,
       },
-      'LLM 生成完成'
+      waitingForFinishReason ? 'LLM 回复已完整交付，等待计费终态' : 'LLM 生成完成'
     );
     saveHistory({
       assistant_reply: result.content,
@@ -455,14 +467,20 @@ async function consumeNonStream(input: {
     };
   }
 
-  const complete =
-    finishReason === 'stop' &&
-    typeof assistantReply === 'string' &&
-    assistantReply.trim().length > 0;
-  await reservation.finalize(complete);
+  const hasContent = typeof assistantReply === 'string' && assistantReply.trim().length > 0;
+  const delivered = responseParsed && hasContent;
+  const billable = delivered && finishReason === 'stop';
+  const waitingForFinishReason = delivered && finishReason === null;
+  if (!waitingForFinishReason) {
+    await reservation.finalize(billable);
+  }
+  const status =
+    delivered && (finishReason === 'stop' || finishReason === null)
+      ? 'success'
+      : 'stream_interrupted';
   saveHistory({
     assistant_reply: assistantReply,
-    status: complete ? 'success' : 'stream_interrupted',
+    status,
     upstream_status: null,
     generation_id: generationId,
     finish_reason: finishReason,
@@ -472,7 +490,7 @@ async function consumeNonStream(input: {
     hooks?.onDelta?.(assistantReply);
   }
   return {
-    status: complete ? 'success' : 'stream_interrupted',
+    status,
     content: assistantReply ?? '',
     generationId,
     finishReason,

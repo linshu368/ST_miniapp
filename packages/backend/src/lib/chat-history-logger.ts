@@ -7,6 +7,7 @@
 
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
+import { MiniappCharacterFreeQuotaRepository } from '../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import {
   getInitialBillingDecision,
@@ -46,6 +47,7 @@ export interface ChatHistoryEntry {
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
 const wallets = new MiniappWalletRepository();
+const freeQuotas = new MiniappCharacterFreeQuotaRepository();
 
 type ReplyOutcome = 'complete' | 'incomplete' | 'empty';
 
@@ -243,6 +245,12 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             },
           });
           actualDeduction = Number(result.charge.charged_amount);
+          if (finishReason !== null) {
+            await freeQuotas.finalizePending(
+              entry.charge_id,
+              replyOutcome === 'complete' && finishReason === 'stop'
+            );
+          }
           clog.info(
             {
               kind: 'biz',
