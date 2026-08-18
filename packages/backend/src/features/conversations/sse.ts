@@ -67,7 +67,7 @@ export function createReplyStreamSink(reply: FastifyReply): ConversationStreamSi
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
-        // nginx 默认会缓冲代理响应，缓冲住就没有「流式」可言了
+        // 反代默认会缓冲响应，缓冲住就没有「流式」可言了
         'X-Accel-Buffering': 'no',
       };
       reply.raw.writeHead(200, headers);

@@ -2,7 +2,7 @@
 
 > 状态：总体思路与关键决策已确认（12 项，见 §二）。MVP 阶段的可执行方案见 **`docs/ST_remove-MVP实施方案.md`**（2026-08-10）
 > **进度（2026-08-14）**：M1 / M2 / M3a / M3b / M5 已交付；测试与生产已切到自研引擎。ST 旧路径按「归档到 `legacy/st-removed/`、不硬删」执行：整包见 **`docs/ST_remove-整包清理清单.md`**，散文件与接线见 **`docs/ST_remove-混用清理清单.md`**（两份均已执行）。
-> **进度（2026-08-18）**：`chat_engine_mode` 全局开关、first-chat 埋点、`legacy/st-removed/` 本体（1.2G）与 ST 专用 seed 生成器 / 根 `.dockerignore` / ops env 模板残留已硬删除（含 migration 083，需手动执行），见混用清单 §8。仍暂缓：nginx `/tavern` 分档与 Railway `st-bundle`（等网关收敛定稿）、`users.st_handle` 与 `st_*` schema（归 Supabase 瘦身专项）、历史 SQL。
+> **进度（2026-08-18）**：`chat_engine_mode` 全局开关、first-chat 埋点、`legacy/st-removed/` 本体（1.2G）与 ST 专用 seed 生成器 / 根 `.dockerignore` / ops env 模板残留已硬删除（含 migration 083，需手动执行），见混用清单 §8。同日完成**网关收敛**：定为 Vercel 直连 backend，`ops/nginx/` 整个删除，`.railway/railway.ts` 里 nginx / st-bundle 声明与卷退场（Railway 只剩 `stminiapp`），CI 的 nginx 镜像目标、compose 的 nginx 服务、`ST_PUBLIC_PROXY_URL` 一并清掉，见混用清单 §9；Railway 控制台残留服务与卷需手动删除。仍暂缓：`users.st_handle` 与 `st_*` schema（归 Supabase 瘦身专项）、历史 SQL。
 > ⚠️ 读到旧 bot 代码后，**决策 3（预设格式）已二次修正为"MVP 不消费预设，后续自建格式"**，连带影响 M2 的性质与 M4 的排期，正文均已同步。
 > 前置文档：`docs/ARCHITECTURE.md`（⚠️ 数据层描述停留在 migration 030，实际已到 068，参考时以实测代码为准）
 >

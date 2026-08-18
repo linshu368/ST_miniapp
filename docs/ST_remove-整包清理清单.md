@@ -54,7 +54,8 @@
 | 12  | `ops/nginx/Dockerfile.simulation`          | `legacy/st-removed/ops/nginx/Dockerfile.simulation`          |
 | 13  | `ops/nginx/nginx.simulation.conf`          | `legacy/st-removed/ops/nginx/nginx.simulation.conf`          |
 
-`ops/nginx/` 其余文件仍留在原处：生产 nginx 还在给 backend 反代。
+`ops/nginx/` 其余文件当时仍留在原处（生产 nginx 还在给 backend 反代）；已于 2026-08-18
+随网关收敛整个删除，见混用清单 §9。
 
 ---
 
@@ -72,13 +73,13 @@
 
 仍暂缓、不跟代码归档绑在一起：
 
-| 项                                         | 原因                                                    |
-| ------------------------------------------ | ------------------------------------------------------- |
-| ~~`chat_engine_mode` 及前后端开关接线~~    | 已于 2026-08-18 删除（含 migration 083），见混用清单 §8 |
-| `users.st_handle` / `deriveStHandle`       | 列还在；停写要单独 migration                            |
-| `ops/nginx/nginx.conf`、`nginx.local.conf` | 还在给 backend 反代；只能拆 `/tavern` 与 ST 静态分档    |
-| `.railway/railway.ts` 里的 `st-bundle`     | 改的是生产拓扑                                          |
-| 历史 SQL（`006_platform_presets` 等）      | 只记账，不改已执行的 migration                          |
+| 项                                             | 原因                                                    |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| ~~`chat_engine_mode` 及前后端开关接线~~        | 已于 2026-08-18 删除（含 migration 083），见混用清单 §8 |
+| `users.st_handle` / `deriveStHandle`           | 列还在；停写要单独 migration                            |
+| ~~`ops/nginx/nginx.conf`、`nginx.local.conf`~~ | 已于 2026-08-18 随网关收敛删除，见混用清单 §9           |
+| ~~`.railway/railway.ts` 里的 `st-bundle`~~     | 已于 2026-08-18 随网关收敛删除，见混用清单 §9           |
+| 历史 SQL（`006_platform_presets` 等）          | 只记账，不改已执行的 migration                          |
 
 ---
 

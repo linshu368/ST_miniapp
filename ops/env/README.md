@@ -1,40 +1,34 @@
 # ops/env — 生产环境变量模板索引（方案 Y）
 
-> 对外域名绑 **Vercel**（前端在边缘）；Railway 跑 `nginx` / `backend` / `st-bundle`
-> 三个服务。每个部署目标一份模板，列出该处要配的全部变量（含用途、是否必填、来源/典型值）。
+> 对外域名绑 **Vercel**（前端在边缘）；网关收敛后 Railway 只跑 `backend` 一个服务，
+> 前端直连它。每个部署目标一份模板，列出该处要配的全部变量（含用途、是否必填、来源/典型值）。
 > 真实值在各平台控制台注入，**不提交到仓库**。
 
-| 模板                                                                     | 配在哪里                 | 对应服务                                    |
-| ------------------------------------------------------------------------ | ------------------------ | ------------------------------------------- |
-| [`vercel.env.production.example`](./vercel.env.production.example)       | Vercel 项目 Variables    | 前端（Vercel）                              |
-| [`backend.env.production.example`](./backend.env.production.example)     | Railway 服务 `backend`   | Fastify 平台 API                            |
-| [`st-bundle.env.production.example`](./st-bundle.env.production.example) | Railway 服务 `st-bundle` | ST + sync-engine（provision-api + watcher） |
-| [`nginx.env.production.example`](./nginx.env.production.example)         | Railway 服务 `nginx`     | 内部分发网关（envsubst upstream）           |
+| 模板                                                                 | 配在哪里                 | 对应服务         |
+| -------------------------------------------------------------------- | ------------------------ | ---------------- |
+| [`vercel.env.production.example`](./vercel.env.production.example)   | Vercel 项目 Variables    | 前端（Vercel）   |
+| [`backend.env.production.example`](./backend.env.production.example) | Railway 服务 `stminiapp` | Fastify 平台 API |
 
 拓扑与服务创建步骤见 [`../railway/README.md`](../railway/README.md)。
 
-> ⚠️ **dev / production 服务名不同**：Railway 同一 project 禁止同名 service，`development`
-> 已占用 `nginx` / `st-bundle`，故 `production` 环境实际服务名为 **`nginx-pro` / `st-bundle-pro`**
-> （卷 `st-data-pro`），backend 两环境同名 **`stminiapp`**。因此 prod 的内网地址用
-> `st-bundle-pro.railway.internal`（backend 侧 `ST_BASE_URL` / `ST_PROVISION_URL`、nginx 侧
-> `ST_UPSTREAM` 都要指向它）。对照表见 [`../railway/README.md`](../railway/README.md#-环境与服务名对照dev-vs-production)。
+> ⚠️ backend 服务在 development / production 两个环境同名 **`stminiapp`**。原先需要
+> `-pro` 后缀区分的 `nginx` / `st-bundle` 已随网关收敛与 ST 整包退场，控制台里的残留
+> 服务清理步骤见 [`../railway/README.md`](../railway/README.md#️-网关收敛的手动收尾)。
 
-## ⚠️ 跨服务逐字一致密钥
+## ⚠️ 两侧必须对齐的变量
 
-以下两个密钥**必须 backend 与 st-bundle 两个服务完全相同**，否则鉴权 / 扣费链断：
+前端与 backend 之间没有反代，跨域直连，因此这两项必须成对配好，配错即浏览器侧请求全挂：
 
-| 变量                      | 作用                                                                               |
-| ------------------------- | ---------------------------------------------------------------------------------- |
-| `ST_USER_PASSWORD_SECRET` | 派生每个 ST 用户登录密码的 HMAC 密钥（Bridge 登录与 provision 建号两端用同一公式） |
-| `LLM_PROXY_TOKEN_SECRET`  | 签发 / 验签 LLM 代理 token 的密钥（backend 签发写入 ST secrets，LLM proxy 验签）   |
+| 变量                                | 配在哪里 | 取值               |
+| ----------------------------------- | -------- | ------------------ |
+| `NEXT_PUBLIC_API_URL`               | Vercel   | backend 的公网域名 |
+| `FRONTEND_URL`（CORS allow-origin） | backend  | Vercel 的对外域名  |
 
-> 两个模板（backend / st-bundle）顶部都对这两项做了醒目标注。设置时**逐字复制同一值**。
+> `NEXT_PUBLIC_*` 在 build 期固化进 bundle，改完必须 redeploy 前端才生效。
 
 ## 易错点速查
 
-- **`PROVISION_API_BIND_HOST=0.0.0.0`**（st-bundle）：不设则 provision-api 仅绑
-  127.0.0.1，backend 跨服务调不到（provision 全失败）。
-- **内网服务名**：`stminiapp.railway.internal`（backend，监听 8080）/
-  `st-bundle.railway.internal`，改服务名/端口要同步改 nginx 的 `BACKEND_UPSTREAM`/
-  `ST_UPSTREAM`、backend 的 `ST_BASE_URL`/`ST_PROVISION_URL`、st-bundle 的 `LLM_PROXY_URL`。
+- **`PORT`（backend）**：必须与 Railway 路由到容器的端口一致，缺失/不符会 502。
+- **`NEXT_PUBLIC_API_URL` 留空**：没有 rewrites 兜底，浏览器会把 `/api/*` 打到 Vercel
+  自身域名上并全部 404。
 - **密钥不入仓**：模板里全是占位/说明，真实密钥只在控制台注入。

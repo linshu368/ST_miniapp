@@ -15,7 +15,7 @@
 > | 🔜   | 代码已就绪，但要等 M6 打开全局开关、生产库执行 069~073 之后才在生产生效 |
 > | ❌   | 明确不做 / 尚未创建                                                     |
 >
-> 当前进度：M1 / M2 / M3a / M3b / M5 已交付，测试与生产已切到自研引擎。ST 旧路径先归档到 `legacy/st-removed/`，2026-08-18 连同 `chat_engine_mode` 全局开关、first-chat 埋点、ST 专用 seed 生成器与根 `.dockerignore` 一并硬删除（取回用 `git show 6206f3a:<原路径>`；migration 083 待手动执行），过程见 `docs/ST_remove-整包清理清单.md` 与 `docs/ST_remove-混用清理清单.md`。仍暂缓：nginx `/tavern` 与 Railway `st-bundle`（等网关收敛定稿）、`users.st_handle` 与 `st_*` schema（归 Supabase 瘦身专项）。
+> 当前进度：M1 / M2 / M3a / M3b / M5 已交付，测试与生产已切到自研引擎。ST 旧路径先归档到 `legacy/st-removed/`，2026-08-18 连同 `chat_engine_mode` 全局开关、first-chat 埋点、ST 专用 seed 生成器与根 `.dockerignore` 一并硬删除（取回用 `git show 6206f3a:<原路径>`；migration 083 待手动执行），过程见 `docs/ST_remove-整包清理清单.md` 与 `docs/ST_remove-混用清理清单.md`。同日完成网关收敛：nginx 与 Railway `st-bundle` 声明退场，Railway 只剩 `stminiapp`（详见 §8）。仍暂缓：`users.st_handle` 与 `st_*` schema（归 Supabase 瘦身专项）。
 
 ---
 
@@ -339,11 +339,13 @@ packages/backend/src/
 | miniapp 后端 | `ops/docker/Dockerfile.backend` | Railway 服务 `stminiapp`，容器内 :8080 | Railway        |
 | 数据与存储   | 托管                            | PostgreSQL + Storage                   | Supabase Cloud |
 
-**流量路径**：用户 → Vercel（页面 + `/api/*` rewrite）→ backend → Supabase / OpenRouter。
+**流量路径**：用户 → Vercel（页面）→ backend 公网域名 → Supabase / OpenRouter。浏览器直接把 `/api/*` 发往 backend 域名，中间**没有任何反代**。
 
-⏳ **网关收敛待 M6 定稿**：ST 时代的 Railway nginx 唯一职责是分发 `/tavern/*` 与 ST 静态资源、并把 `/api/*` 转给 backend。ST 退场后前者消失，剩下的只是一层可选反代——是让 Vercel rewrite 直连 backend、还是保留 nginx 作为唯一对外入口，属于切换预案的一部分，落定前不要按其中任一种写死配置。同时 st-bundle 单容器与其数据卷整体退场，Railway 收敛为以 backend 为主的简化拓扑。
+✅ **网关收敛已落定（2026-08-18）**：ST 时代的 Railway nginx 唯一职责是分发 `/tavern/*` 与 ST 静态资源、并把 `/api/*` 转给 backend；ST 退场后它已无分发对象，连同 st-bundle 单容器与其数据卷一并退场，Railway 收敛为 **只剩 `stminiapp` 一个服务，它同时是唯一对外服务**。`ops/nginx/`、`ops/env/nginx.env.production.example`、`.railway/railway.ts` 里的 nginx / st-bundle 声明与 CI 的 nginx 镜像矩阵目标均已删除。
 
-**CI/CD**：`.github/workflows/ci.yml`（typecheck / lint / import guard / 测试 / 构建）、`build-and-push.yml`（GHCR 镜像）、`db-migrate.yml`（手动迁移）、`pr-review.yml`。切换完成后镜像矩阵同步收敛（st-backend / nginx 相关目标退场）。
+> 代价是前端与 backend 变成跨域直连，两个变量必须成对配好，任一侧配错即浏览器侧请求全挂：Vercel 的 `NEXT_PUBLIC_API_URL` = backend 公网域名（build 期固化，改后需 redeploy），backend 的 `FRONTEND_URL` = Vercel 对外域名（CORS allow-origin）。Railway 控制台里遗留的 `nginx-pro` / `st-bundle-pro` / 卷 `st-data-pro` 需手动删除，步骤见 `ops/railway/README.md`「网关收敛的手动收尾」。
+
+**CI/CD**：`.github/workflows/ci.yml`（typecheck / lint / import guard / 测试 / 构建）、`build-and-push.yml`（GHCR 镜像）、`db-migrate.yml`（手动迁移）、`pr-review.yml`。镜像矩阵已随收敛只剩 `backend`（`frontend` 仅 `staging-*` tag 构建，`st-backend` / `nginx` 目标已退场）。
 
 ---
 
