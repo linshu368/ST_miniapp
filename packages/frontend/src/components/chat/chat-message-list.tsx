@@ -20,6 +20,8 @@ interface ChatMessageListProps {
   onLoadEarlier: () => void;
   /** 请求已发出但 start 事件还没到，先给个呼吸点 */
   awaitingFirstToken: boolean;
+  /** 当前回复一段时间没有新内容 */
+  replyStalled?: boolean;
   /** 挂在指定消息下方的操作区 */
   renderFooter?: (message: ChatMessage) => ReactNode;
   streamingMessageId?: string | null;
@@ -34,6 +36,7 @@ export function ChatMessageList({
   loadingEarlier,
   onLoadEarlier,
   awaitingFirstToken,
+  replyStalled,
   renderFooter,
   streamingMessageId,
 }: ChatMessageListProps) {
@@ -101,13 +104,18 @@ export function ChatMessageList({
           characterName={characterName}
           characterAvatarUrl={characterAvatarUrl}
           userAvatarUrl={userAvatarUrl}
-          streaming={message.id === streamingMessageId}
+          streaming={message.id === streamingMessageId || message.status === 'streaming'}
+          stalled={replyStalled && message.id === last?.id && message.status === 'streaming'}
           footer={renderFooter?.(message)}
         />
       ))}
 
       {awaitingFirstToken ? (
-        <ChatTypingBubble characterName={characterName} characterAvatarUrl={characterAvatarUrl} />
+        <ChatTypingBubble
+          characterName={characterName}
+          characterAvatarUrl={characterAvatarUrl}
+          stalled={replyStalled}
+        />
       ) : null}
     </div>
   );

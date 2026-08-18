@@ -7,9 +7,11 @@
 
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
+import { MiniappCharacterFreeQuotaRepository } from '../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import {
   getInitialBillingDecision,
+  resolveUsageBillingGate,
   shouldRecordUsageCharge,
   type FixedDeductionCategory,
 } from '../features/billing/usage-pricing.js';
@@ -40,10 +42,23 @@ export interface ChatHistoryEntry {
   upstream_status?: number | null;
   deduction_rate?: number; // now calculated internally
   generation_id?: string | null;
+  finish_reason?: string | null;
 }
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
 const wallets = new MiniappWalletRepository();
+const freeQuotas = new MiniappCharacterFreeQuotaRepository();
+
+type ReplyOutcome = 'complete' | 'incomplete' | 'empty';
+
+function resolveReplyOutcome(entry: ChatHistoryEntry, finishReason: string | null): ReplyOutcome {
+  const hasContent = (entry.assistant_reply ?? '').trim().length > 0;
+  if (!hasContent) return 'empty';
+  if (entry.status === 'success' && (finishReason === 'stop' || finishReason === null)) {
+    return 'complete';
+  }
+  return 'incomplete';
+}
 
 async function fetchGenerationDataWithRetry(
   generationId: string,
@@ -126,6 +141,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         llm_charge_id: entry.charge_id,
         llm_model_markup: entry.model_markup,
         llm_generation_id: entry.generation_id ?? null,
+        llm_finish_reason: entry.finish_reason ?? null,
       };
       let actualDeduction = 0;
 
@@ -137,7 +153,6 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             llmMetadata = {
               ...llmMetadata,
               llm_provider_name: genData.provider_name ?? null,
-              llm_finish_reason: genData.finish_reason ?? null,
               llm_usage: genData.usage ?? null,
               llm_usage_cache: genData.usage_cache ?? null,
               llm_native_tokens_cached: genData.native_tokens_cached ?? null,
@@ -150,6 +165,9 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
               llm_generation_id: entry.generation_id,
               llm_generation_data: genData, // 即使不完整或有error，也如实记录
             };
+            if (typeof genData.finish_reason === 'string') {
+              llmMetadata.llm_finish_reason = genData.finish_reason;
+            }
           } else {
             // 获取失败（如网络异常导致完全无法获取）时，至少把 generation_id 存下来
             llmMetadata = { ...llmMetadata, llm_generation_id: entry.generation_id };
@@ -172,10 +190,17 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         throw new Error('production chat history requires user_id');
       }
 
-      // 成功调用进入正常计费；免费模型即使失败或中断也保留一条 0.0 明细，
-      // 方便用户和运营核对，同时付费模型失败仍不产生消费记录。
+      // 每轮生成都保留一条明细；只有 finish_reason=stop 的正常完整回复才扣星尘。
       if (shouldRecordUsageCharge(entry.status, entry.model_markup)) {
         const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
+        const finishReason =
+          typeof llmMetadata.llm_finish_reason === 'string' ? llmMetadata.llm_finish_reason : null;
+        const replyOutcome = resolveReplyOutcome(entry, finishReason);
+        // 已经拿到 generation id、但 finish_reason 尚未同步时必须先保持待结算。
+        // generation_status 保留真实生成终态，chat_status 仅作为现有计费 RPC 的闸门输入。
+        const billingStatus =
+          finishReason === null && entry.generation_id ? 'success' : entry.status;
+        const billingGate = resolveUsageBillingGate({ status: billingStatus, finishReason });
         const billingDecision = getInitialBillingDecision({
           usageCost,
           exchangeRate: entry.exchange_rate,
@@ -207,14 +232,25 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             calculatedAmount: intendedDeduction,
             fallbackUsed: billingDecision.pending,
             metadata: {
-              chat_status: entry.status,
+              chat_status: billingStatus,
+              generation_status: entry.status,
+              reply_outcome: replyOutcome,
+              reply_char_count: (entry.assistant_reply ?? '').length,
               requested_model: entry.model,
               billing_mode: 'fixed_tier',
+              billing_gate: billingGate,
+              finish_reason: finishReason,
               fixed_deduction_category: entry.fixed_deduction_category,
               fixed_deduction: entry.fixed_deduction,
             },
           });
           actualDeduction = Number(result.charge.charged_amount);
+          if (finishReason !== null) {
+            await freeQuotas.finalizePending(
+              entry.charge_id,
+              replyOutcome === 'complete' && finishReason === 'stop'
+            );
+          }
           clog.info(
             {
               kind: 'biz',

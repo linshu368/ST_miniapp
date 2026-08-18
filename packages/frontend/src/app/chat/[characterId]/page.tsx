@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
+import { getChatReplyPresentation } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
@@ -49,6 +50,7 @@ import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 
 const FREE_QUOTA_DIALOG_DURATION_MS = 5_000;
+const REPLY_STALLED_NOTICE_MS = 15_000;
 
 /** 流式期间叠在落库态之上的临时态。刻意不进 query cache，理由见 lib/api/conversations.ts */
 interface StreamingTurn {
@@ -71,6 +73,7 @@ export default function SelfHostedChatPage() {
   const [sessionId, setSessionId] = useState<string | null>(() => searchParams.get('session'));
   const [draft, setDraft] = useState('');
   const [streaming, setStreaming] = useState<StreamingTurn | null>(null);
+  const [replyStalled, setReplyStalled] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [earlier, setEarlier] = useState<ChatMessage[]>([]);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
@@ -235,6 +238,22 @@ export default function SelfHostedChatPage() {
   const ready = Boolean(activeSessionId) && conversationQuery.isSuccess;
 
   const lastMessage = messages.at(-1);
+  const replyProgressKey = streaming
+    ? `local:${streaming.assistantMessageId ?? 'waiting'}:${streaming.text.length}`
+    : serverBusy && lastMessage?.status === 'streaming'
+      ? `server:${lastMessage.id}:${lastMessage.content.length}`
+      : null;
+
+  // 首字迟迟不到、或正文一段时间不再增长时，先给低干扰的等待提示。
+  // 真正的 120 秒终止由后端负责，终态回来后再明确告知不扣费。
+  useEffect(() => {
+    setReplyStalled(false);
+    if (!replyProgressKey) return;
+
+    const timer = window.setTimeout(() => setReplyStalled(true), REPLY_STALLED_NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [replyProgressKey]);
+
   const canRegenerate =
     !generating && !serverBusy && lastMessage?.role === 'assistant' && lastMessage.turn_index > 0;
 
@@ -251,7 +270,7 @@ export default function SelfHostedChatPage() {
    */
   const canGenerateVoice = useCallback(
     (message: ChatMessage): boolean =>
-      message.role === 'assistant' && message.status === 'complete' && message.turn_index > 0,
+      getChatReplyPresentation(message) === 'complete' && message.turn_index > 0,
     []
   );
 
@@ -513,6 +532,7 @@ export default function SelfHostedChatPage() {
         loadingEarlier={loadingEarlier}
         onLoadEarlier={() => void handleLoadEarlier()}
         awaitingFirstToken={generating && streaming?.assistantMessageId === null}
+        replyStalled={replyStalled}
         streamingMessageId={streaming?.assistantMessageId ?? null}
         renderFooter={(message) => {
           const showVoice = canGenerateVoice(message);
@@ -538,6 +558,9 @@ export default function SelfHostedChatPage() {
                     onRegenerate={() => void runTurn({ mode: 'regenerate' })}
                     pending={false}
                     disabled={generating}
+                    label={
+                      getChatReplyPresentation(message) === 'complete' ? '换一个回复' : '重新回复'
+                    }
                   />
                 ) : null
               }

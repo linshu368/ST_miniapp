@@ -1,11 +1,11 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { AlertCircle } from 'lucide-react';
 import type { ChatMessage } from '@miniapp/shared';
 
 import { cn } from '@/lib/utils';
 import { ChatMarkdown } from './chat-markdown';
+import { getChatReplyPresentation } from './chat-reply-presentation';
 
 /**
  * 几何全部照搬原版聊天页注入 ST iframe 的那套样式
@@ -31,6 +31,8 @@ interface ChatMessageBubbleProps {
   userAvatarUrl: string | null;
   /** 正在流式写入这条消息。此时用 message.content 承载已收到的增量 */
   streaming?: boolean;
+  /** 一段时间没有收到新内容，但生成尚未终止 */
+  stalled?: boolean;
   /** 挂在正文下方的操作区，目前只有重生成按钮 */
   footer?: ReactNode;
 }
@@ -41,6 +43,7 @@ export function ChatMessageBubble({
   characterAvatarUrl,
   userAvatarUrl,
   streaming,
+  stalled,
   footer,
 }: ChatMessageBubbleProps) {
   if (message.role === 'user') {
@@ -54,10 +57,7 @@ export function ChatMessageBubble({
     );
   }
 
-  // 生成被打断时后端会把已写入的部分连同 interrupted 一起落库。
-  // 这半截正文是有价值的（用户已经读过了），只在末尾标注，不把整条换成错误态。
-  const interrupted = message.status === 'interrupted';
-  const failed = message.status === 'failed';
+  const presentation = getChatReplyPresentation(message);
 
   return (
     <div className="flex items-start px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
@@ -67,28 +67,19 @@ export function ChatMessageBubble({
           {characterName}
         </div>
         <div className={cn('pt-1 text-foreground', BODY_TEXT_CLASS)}>
-          {failed && !message.content ? (
-            <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              这条回复没能生成
-            </p>
-          ) : (
-            <>
-              <ChatMarkdown content={message.content} />
-              {streaming ? (
-                <span
-                  className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-primary align-middle"
-                  aria-hidden
-                />
-              ) : null}
-              {interrupted ? (
-                <p className="mt-2 flex items-center gap-1.5 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
-                  <AlertCircle className="h-3 w-3 shrink-0" aria-hidden />
-                  这条回复被中断了
-                </p>
-              ) : null}
-            </>
-          )}
+          {message.content ? <ChatMarkdown content={message.content} /> : null}
+          {streaming ? (
+            <span
+              className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-primary align-middle"
+              aria-hidden
+            />
+          ) : null}
+          {stalled ? <ReplyNotice>TA 回应得有点久，再等一会儿。</ReplyNotice> : null}
+          {presentation === 'incomplete' && message.finish_reason === 'content_filter' ? (
+            <ReplyNotice>回复停在这里了，可以重新回复。本次未扣星尘。</ReplyNotice>
+          ) : presentation === 'empty' ? (
+            <ReplyNotice>TA 刚才没能回应，可以再试一次。本次未扣星尘。</ReplyNotice>
+          ) : null}
         </div>
         {footer ? <div className="pt-1.5">{footer}</div> : null}
       </div>
@@ -100,9 +91,11 @@ export function ChatMessageBubble({
 export function ChatTypingBubble({
   characterName,
   characterAvatarUrl,
+  stalled,
 }: {
   characterName: string;
   characterAvatarUrl: string | null;
+  stalled?: boolean;
 }) {
   return (
     <div className="flex items-start px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
@@ -120,8 +113,20 @@ export function ChatTypingBubble({
             />
           ))}
         </div>
+        {stalled ? <ReplyNotice>TA 回应得有点久，再等一会儿。</ReplyNotice> : null}
       </div>
     </div>
+  );
+}
+
+function ReplyNotice({ children }: { children: ReactNode }) {
+  return (
+    <p
+      className="mt-2 border-l-2 border-border/80 pl-2 text-[11px] leading-relaxed text-muted-foreground"
+      aria-live="polite"
+    >
+      {children}
+    </p>
   );
 }
 

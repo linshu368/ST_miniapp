@@ -30,6 +30,7 @@ export async function forwardToUpstream(input: {
   url: string;
   method: string;
   body?: BodyInit | undefined;
+  signal?: AbortSignal;
 }): Promise<Response> {
   const forwardHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -42,6 +43,7 @@ export async function forwardToUpstream(input: {
     method: input.method,
     headers: forwardHeaders,
     body: input.body,
+    signal: input.signal,
     // @ts-expect-error Node 18+ fetch supports duplex
     duplex: 'half',
   });

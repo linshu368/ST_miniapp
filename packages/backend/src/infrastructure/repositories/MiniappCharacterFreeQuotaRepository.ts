@@ -63,6 +63,24 @@ export class MiniappCharacterFreeQuotaRepository {
     if (error) throw new Error(`确认角色卡免费轮次失败：${error.message}`);
     return normalizeDecision(data);
   }
+
+  /**
+   * 同步任务并不知道本轮是否进入了免费额度体系；只在确有预留时终结，
+   * 付费模型和已终结的决定均保持 no-op。
+   */
+  async finalizePending(
+    chargeId: string,
+    success: boolean
+  ): Promise<CharacterFreeQuotaDecision | null> {
+    const { data, error } = await this.db
+      .from('character_free_chat_quota_decisions')
+      .select('status')
+      .eq('charge_key', chargeId)
+      .maybeSingle();
+    if (error) throw new Error(`查询角色卡免费轮次决定失败：${error.message}`);
+    if ((data as { status?: string } | null)?.status !== 'reserved') return null;
+    return this.finalize(chargeId, success);
+  }
 }
 
 function normalizeDecision(value: unknown): CharacterFreeQuotaDecision {
