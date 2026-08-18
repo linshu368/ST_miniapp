@@ -28,7 +28,6 @@ export interface ChatHistoryEntry {
   catalog_version: number;
   pricing_config_version: number;
   exchange_rate: number;
-  fallback_cost: number;
   user_input: string;
   assistant_reply: string | null;
   history: unknown[];
@@ -146,7 +145,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
       let actualDeduction = 0;
 
       // 如果有 generation_id，尝试异步获取详细数据
-      if (entry.generation_id && entry.model_markup > 0) {
+      if (entry.generation_id && entry.fixed_deduction > 0) {
         try {
           const genData = await fetchGenerationDataWithRetry(entry.generation_id, clog);
           if (genData) {
@@ -191,7 +190,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
       }
 
       // 每轮生成都保留一条明细；只有 finish_reason=stop 的正常完整回复才扣星尘。
-      if (shouldRecordUsageCharge(entry.status, entry.model_markup)) {
+      if (shouldRecordUsageCharge(entry.status)) {
         const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
         const finishReason =
           typeof llmMetadata.llm_finish_reason === 'string' ? llmMetadata.llm_finish_reason : null;

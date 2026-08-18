@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  calculateFallbackDeduction,
   calculateUsageDeduction,
   getInitialBillingDecision,
   resolveFixedDeduction,
@@ -19,16 +18,16 @@ describe('resolveFixedDeduction', () => {
   it('keeps free quota rounds free and charges every free model 10 after exhaustion', () => {
     expect(
       resolveFixedDeduction({
-        defaultModelMarkup: 0,
-        effectiveModelMarkup: 0,
+        isFreeModel: true,
+        isFreeRound: true,
         modelTier: 'standard',
         config: fixedDeduction,
       })
     ).toEqual({ amount: 0, category: 'free_quota' });
     expect(
       resolveFixedDeduction({
-        defaultModelMarkup: 0,
-        effectiveModelMarkup: 3,
+        isFreeModel: true,
+        isFreeRound: false,
         modelTier: 'standard',
         config: fixedDeduction,
       })
@@ -38,24 +37,24 @@ describe('resolveFixedDeduction', () => {
   it('charges paid light, standard and premium tiers fixed amounts', () => {
     expect(
       resolveFixedDeduction({
-        defaultModelMarkup: 1,
-        effectiveModelMarkup: 1,
+        isFreeModel: false,
+        isFreeRound: false,
         modelTier: 'light',
         config: fixedDeduction,
       })
     ).toEqual({ amount: 15, category: 'light' });
     expect(
       resolveFixedDeduction({
-        defaultModelMarkup: 2.5,
-        effectiveModelMarkup: 2.5,
+        isFreeModel: false,
+        isFreeRound: false,
         modelTier: 'standard',
         config: fixedDeduction,
       })
     ).toEqual({ amount: 30, category: 'standard' });
     expect(
       resolveFixedDeduction({
-        defaultModelMarkup: 2.5,
-        effectiveModelMarkup: 2.5,
+        isFreeModel: false,
+        isFreeRound: false,
         modelTier: 'premium',
         config: fixedDeduction,
       })
@@ -65,8 +64,8 @@ describe('resolveFixedDeduction', () => {
   it('falls unknown paid tiers back to the standard amount', () => {
     expect(
       resolveFixedDeduction({
-        defaultModelMarkup: 2.5,
-        effectiveModelMarkup: 2.5,
+        isFreeModel: false,
+        isFreeRound: false,
         modelTier: null,
         config: fixedDeduction,
       })
@@ -84,13 +83,11 @@ describe('calculateUsageDeduction', () => {
     expect(calculateUsageDeduction(0.001, 100, 1)).toBe(0.1);
   });
 
-  it('keeps free usage and fallback charges at zero', () => {
+  it('keeps free usage at zero', () => {
     expect(calculateUsageDeduction(10, 680, 0)).toBe(0);
-    expect(calculateFallbackDeduction(30, 0)).toBe(0);
   });
 
   it('restores charging when markup becomes nonzero', () => {
-    expect(calculateFallbackDeduction(30, 1)).toBe(30);
     expect(calculateUsageDeduction(0.01, 680, 1)).toBe(6.8);
   });
 
@@ -133,10 +130,10 @@ describe('getInitialBillingDecision', () => {
 
 describe('shouldRecordUsageCharge', () => {
   it('records every generation outcome as spending detail', () => {
-    expect(shouldRecordUsageCharge('success', 2.5)).toBe(true);
-    expect(shouldRecordUsageCharge('upstream_error', 2.5)).toBe(true);
-    expect(shouldRecordUsageCharge('stream_interrupted', 2.5)).toBe(true);
-    expect(shouldRecordUsageCharge('error', 2.5)).toBe(false);
+    expect(shouldRecordUsageCharge('success')).toBe(true);
+    expect(shouldRecordUsageCharge('upstream_error')).toBe(true);
+    expect(shouldRecordUsageCharge('stream_interrupted')).toBe(true);
+    expect(shouldRecordUsageCharge('error')).toBe(false);
   });
 });
 

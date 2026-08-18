@@ -33,24 +33,18 @@ export interface FixedDeductionDecision {
 }
 
 export function resolveFixedDeduction(input: {
-  defaultModelMarkup: number;
-  effectiveModelMarkup: number;
+  isFreeModel: boolean;
+  isFreeRound: boolean;
   modelTier: 'light' | 'standard' | 'premium' | null;
   config: FixedDeductionConfig;
 }): FixedDeductionDecision {
   const amounts = Object.values(input.config);
-  if (
-    !Number.isFinite(input.defaultModelMarkup) ||
-    input.defaultModelMarkup < 0 ||
-    !Number.isFinite(input.effectiveModelMarkup) ||
-    input.effectiveModelMarkup < 0 ||
-    amounts.some((amount) => !Number.isFinite(amount) || amount < 0)
-  ) {
+  if (amounts.some((amount) => !Number.isFinite(amount) || amount < 0)) {
     throw new Error('invalid fixed deduction inputs');
   }
 
-  if (input.defaultModelMarkup === 0) {
-    return input.effectiveModelMarkup === 0
+  if (input.isFreeModel) {
+    return input.isFreeRound
       ? { amount: 0, category: 'free_quota' }
       : {
           amount: input.config.freeQuotaExhausted,
@@ -118,18 +112,6 @@ export function resolveUsageBillingGate(input: {
   return 'non_billable';
 }
 
-export function shouldRecordUsageCharge(status: string, _modelMarkup: number): boolean {
+export function shouldRecordUsageCharge(status: string): boolean {
   return status === 'success' || status === 'upstream_error' || status === 'stream_interrupted';
-}
-
-export function calculateFallbackDeduction(fallbackCost: number, modelMarkup: number): number {
-  if (
-    !Number.isFinite(fallbackCost) ||
-    fallbackCost < 0 ||
-    !Number.isFinite(modelMarkup) ||
-    modelMarkup < 0
-  ) {
-    throw new Error('invalid fallback deduction inputs');
-  }
-  return modelMarkup === 0 ? 0 : Math.round(fallbackCost * 10) / 10;
 }

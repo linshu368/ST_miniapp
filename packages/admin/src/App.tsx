@@ -25,7 +25,6 @@ import { dataProvider } from '@refinedev/supabase';
 import {
   ModelCatalogSchema,
   PaymentPlansSchema,
-  type DisplayPricingConfig,
   type ModelCatalog,
   type OpenRouterModelDirectory,
   type PaymentPlan,
@@ -58,7 +57,6 @@ import {
 import {
   configMetadata,
   isTextManagedConfig,
-  LlmPricingConfigSchema,
   managedConfigKeys,
   parseManagedConfig,
   resolveManagedWorkingValue,
@@ -490,25 +488,6 @@ function AdminWorkspace(props: {
     (props.environment === 'production'
       ? props.admin.can_access_prod
       : props.admin.can_access_test);
-  const pricingConfig = useMemo<DisplayPricingConfig>(() => {
-    const runtimeValue = configs.find((config) => config.key === 'llm_pricing_config')?.value;
-    const defaults = configMetadata.llm_pricing_config.defaultValue as Record<string, unknown>;
-    const runtimeRecord =
-      runtimeValue && typeof runtimeValue === 'object' && !Array.isArray(runtimeValue)
-        ? (runtimeValue as Record<string, unknown>)
-        : {};
-    const parsed = LlmPricingConfigSchema.safeParse({
-      ...defaults,
-      ...runtimeRecord,
-      fixedDeduction: {
-        ...((defaults.fixedDeduction as Record<string, number> | undefined) ?? {}),
-        ...((runtimeRecord.fixedDeduction as Record<string, number> | undefined) ?? {}),
-      },
-    });
-    return parsed.success
-      ? { exchangeRate: parsed.data.exchangeRate, markup: parsed.data.markup }
-      : { exchangeRate: 680, markup: 2.5 };
-  }, [configs]);
   const paymentPlans = useMemo<PaymentPlan[]>(() => {
     const runtimeValue = configs.find((config) => config.key === 'miniapp_payment_plans')?.value;
     const parsed = PaymentPlansSchema.safeParse(runtimeValue);
@@ -623,9 +602,8 @@ function AdminWorkspace(props: {
       selectedKey === 'llm_model_catalog' ? ModelCatalogSchema.safeParse(afterValue) : null;
     const freeModelCount =
       parsedCatalog?.success === true
-        ? parsedCatalog.data.tiers
-            .flatMap((tier) => tier.models)
-            .filter((model) => model.markup === 0).length
+        ? parsedCatalog.data.tiers.flatMap((tier) => tier.models).filter((model) => model.is_free)
+            .length
         : 0;
     return confirmAction(
       `${isProduction ? '生产环境：' : ''}${action}`,
@@ -639,7 +617,7 @@ function AdminWorkspace(props: {
             showIcon
             className="form-alert"
             message={`包含 ${freeModelCount} 个免费模型`}
-            description="0 倍模型的输入、输出展示价和实际星尘扣费均为 0。发布后用户可免费使用。"
+            description="免费模型在额度内实际扣费为 0。发布后用户可免费使用。"
           />
         ) : null}
         <Descriptions size="small" column={1} bordered>
@@ -943,7 +921,6 @@ function AdminWorkspace(props: {
                 onChange={setWorkingValue}
                 disabled={!canWrite}
                 openRouterDirectory={openRouterDirectory}
-                pricingConfig={pricingConfig}
                 publishedModelIds={publishedModelIds}
                 syncLoading={openRouterLoading}
                 syncError={openRouterError}

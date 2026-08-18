@@ -8,15 +8,13 @@ describe('getModelCatalogChangeSummary', () => {
     const before = structuredClone(configMetadata.llm_model_catalog.defaultValue) as ModelCatalog;
     const after = structuredClone(before);
     after.tiers[0]!.models[0]!.enabled = false;
-    after.tiers[0]!.models[0]!.markup = 4;
+    after.tiers[0]!.models[0]!.is_free = true;
     after.tiers[0]!.models.push({
       id: 'new-model',
       openrouter_model_id: 'vendor/new-model',
       display_name: 'New Model',
       tagline: '全新体验',
-      price_input: 0.1,
-      price_output: 0.2,
-      markup: 3,
+      is_free: false,
       enabled: true,
       sort_order: 1,
     });
@@ -24,25 +22,9 @@ describe('getModelCatalogChangeSummary', () => {
 
     expect(getModelCatalogChangeSummary(before, after)).toContain('下架“Gemini Flash Lite”');
     expect(getModelCatalogChangeSummary(before, after)).toContain(
-      '调整“Gemini Flash Lite”默认倍率：2.5 → 4'
+      '将“Gemini Flash Lite”改为免费模型'
     );
     expect(getModelCatalogChangeSummary(before, after)).toContain('新增模型“New Model”');
     expect(getModelCatalogChangeSummary(before, after)).toContain('默认模型改为“New Model”');
-  });
-
-  it('describes deduct markup changes for free models', () => {
-    const before = structuredClone(configMetadata.llm_model_catalog.defaultValue) as ModelCatalog;
-    Object.assign(before.tiers[0]!.models[0]!, {
-      markup: 0,
-      price_input: 0,
-      price_output: 0,
-      deduct_markup: 2.5,
-    });
-    const after = structuredClone(before);
-    after.tiers[0]!.models[0]!.deduct_markup = 3;
-
-    expect(getModelCatalogChangeSummary(before, after)).toContain(
-      '调整“Gemini Flash Lite”扣费倍率：2.5 → 3'
-    );
   });
 });
