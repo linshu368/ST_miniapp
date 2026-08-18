@@ -7,8 +7,8 @@ import {
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
-const SYNC_INTERVAL_MS = 10 * 60 * 1000;
-const STARTUP_DELAY_MS = 10 * 1000;
+const SYNC_INTERVAL_MS = 30 * 1000;
+const STARTUP_DELAY_MS = 5 * 1000;
 const LOOKBACK_HOURS = 24;
 const BATCH_LIMIT = 50;
 
@@ -81,7 +81,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
 
     const { data, error } = await miniappDb
       .from('chat_history')
-      .select('id, llm_generation_id, llm_charge_id')
+      .select('id, llm_generation_id, llm_charge_id, assistant_reply, status')
       .not('llm_generation_id', 'is', null)
       .gte('created_at', since)
       .or(
@@ -132,6 +132,18 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
             originalCharge.status === 'pending' &&
             finishReason !== null
           ) {
+            const storedOutcome = originalCharge.metadata?.reply_outcome;
+            const replyOutcome =
+              storedOutcome === 'complete' ||
+              storedOutcome === 'incomplete' ||
+              storedOutcome === 'empty'
+                ? storedOutcome
+                : typeof record.assistant_reply === 'string' && record.assistant_reply.trim()
+                  ? record.status === 'success'
+                    ? 'complete'
+                    : 'incomplete'
+                  : 'empty';
+            const billingStatus = replyOutcome === 'complete' ? 'success' : 'stream_interrupted';
             const fixedDeduction = Number(
               originalCharge.metadata?.fixed_deduction ?? originalCharge.calculated_amount
             );
@@ -160,9 +172,14 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
               metadata: {
                 ...(originalCharge.metadata ?? {}),
                 source: 'chat_history_sync',
+                chat_status: billingStatus,
+                generation_status: record.status,
+                reply_outcome: replyOutcome,
+                reply_char_count:
+                  typeof record.assistant_reply === 'string' ? record.assistant_reply.length : 0,
                 finish_reason: finishReason,
                 billing_gate: resolveUsageBillingGate({
-                  status: 'success',
+                  status: billingStatus,
                   finishReason,
                 }),
               },

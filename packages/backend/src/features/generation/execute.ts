@@ -53,6 +53,17 @@ type HistoryOutcome = Pick<
 
 type SaveHistory = (outcome: HistoryOutcome) => void;
 
+/** 与会话 streaming 陈旧回收口径一致，避免一轮生成无限占住会话。 */
+export const GENERATION_TIMEOUT_MS = 120_000;
+
+/**
+ * 用户体验上的完整回复必须同时满足：正常收流、自然结束、有可见正文。
+ * 其余结果统一视为 incomplete/empty，并由 stream_interrupted 保证不扣费。
+ */
+function isCompleteReply(result: Pick<SseTapResult, 'completed' | 'content' | 'finishReason'>) {
+  return result.completed && result.finishReason === 'stop' && result.content.trim().length > 0;
+}
+
 function buildUpstreamBody(request: GenerationRequest): Record<string, unknown> {
   const messages: UpstreamMessage[] = request.promptCaching
     ? applyPromptCaching(request.messages, request.model.openRouterModelId)
@@ -138,6 +149,7 @@ export async function execute(
       url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH),
       method: 'POST',
       body: JSON.stringify(buildUpstreamBody(request)),
+      signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
     });
   } catch (err) {
     // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
@@ -203,17 +215,17 @@ export async function execute(
   }
 
   if (!upstreamRes.body) {
-    // 2xx 但没有 body：按空回复的正常收流处理，与 ST 链路一致
-    await reservation.finalize(true);
+    // 2xx 但没有正文属于 empty：不扣费，并给前端一个可重试的异常终态。
+    await reservation.finalize(false);
     saveHistory({
       assistant_reply: null,
-      status: 'success',
+      status: 'stream_interrupted',
       upstream_status: null,
       generation_id: headerGenerationId,
       finish_reason: null,
     });
     return finish({
-      status: 'success',
+      status: 'stream_interrupted',
       content: '',
       generationId: headerGenerationId,
       finishReason: null,
@@ -274,7 +286,7 @@ export async function execute(
 
   const tapped = tap.snapshot();
   return finish({
-    status: tapped.completed ? 'success' : 'stream_interrupted',
+    status: isCompleteReply(tapped) ? 'success' : 'stream_interrupted',
     content: tapped.content,
     generationId: tapped.generationId,
     finishReason: tapped.finishReason,
@@ -315,7 +327,7 @@ function createHistoryWriter(input: {
   };
 }
 
-/** 流终态：免费额度终结 + chat_history 落库与实扣。只有见到 [DONE] 才算成功。 */
+/** 流终态：只有自然结束且有可见正文的回复才成功、才允许扣费。 */
 async function settleStream(input: {
   result: SseTapResult;
   request: GenerationRequest;
@@ -325,9 +337,10 @@ async function settleStream(input: {
   log: GenerationLogger;
 }): Promise<void> {
   const { result, request, billing, reservation, saveHistory, log } = input;
-  await reservation.finalize(result.completed);
+  const complete = isCompleteReply(result);
+  await reservation.finalize(complete);
 
-  if (result.completed) {
+  if (complete) {
     log.biz.info(
       {
         event: 'llm.generation.completed',
@@ -357,7 +370,7 @@ async function settleStream(input: {
       model: billing.openRouterModelId,
       generationId: result.generationId,
     },
-    'stream ended without [DONE], skipping deduction'
+    'generation produced an incomplete or empty reply, skipping deduction'
   );
   saveHistory({
     assistant_reply: result.deltaCount > 0 ? result.content : null,
@@ -442,10 +455,14 @@ async function consumeNonStream(input: {
     };
   }
 
-  await reservation.finalize(true);
+  const complete =
+    finishReason === 'stop' &&
+    typeof assistantReply === 'string' &&
+    assistantReply.trim().length > 0;
+  await reservation.finalize(complete);
   saveHistory({
     assistant_reply: assistantReply,
-    status: 'success',
+    status: complete ? 'success' : 'stream_interrupted',
     upstream_status: null,
     generation_id: generationId,
     finish_reason: finishReason,
@@ -455,7 +472,7 @@ async function consumeNonStream(input: {
     hooks?.onDelta?.(assistantReply);
   }
   return {
-    status: 'success',
+    status: complete ? 'success' : 'stream_interrupted',
     content: assistantReply ?? '',
     generationId,
     finishReason,

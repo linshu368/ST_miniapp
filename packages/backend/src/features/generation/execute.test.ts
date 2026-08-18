@@ -100,7 +100,7 @@ const DELTA = (content: string) =>
   `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: { content } }] })}\n\n`;
 
 function stubUpstream(response: Response | (() => Response)) {
-  const fetchMock = vi.fn(async (_url: string, _init?: { body?: string }) =>
+  const fetchMock = vi.fn(async (_url: string, _init?: { body?: string; signal?: AbortSignal }) =>
     typeof response === 'function' ? response() : response
   );
   vi.stubGlobal('fetch', fetchMock);
@@ -181,7 +181,7 @@ describe('execute（流式）', () => {
     });
   });
 
-  it('收到 content_filter 仍完成落库，并把 finish_reason 交给扣费入口判 0 元', async () => {
+  it('内容过滤有正文也按 incomplete 收口且不扣费', async () => {
     stubUpstream(() =>
       sseResponse([
         DELTA('敏感回复片段'),
@@ -193,19 +193,77 @@ describe('execute（流式）', () => {
     const result = await execute(request(), undefined, fakeLogger());
 
     expect(result).toMatchObject({
-      status: 'success',
+      status: 'stream_interrupted',
       content: '敏感回复片段',
       finishReason: 'content_filter',
     });
     expect(savedHistory()[0]).toMatchObject({
-      status: 'success',
+      status: 'stream_interrupted',
       assistant_reply: '敏感回复片段',
       finish_reason: 'content_filter',
     });
   });
 
+  it('自然结束但没有正文按 empty 收口且不扣费', async () => {
+    stubUpstream(() =>
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
+
+    const result = await execute(request(), undefined, fakeLogger());
+
+    expect(result).toMatchObject({
+      status: 'stream_interrupted',
+      content: '',
+      finishReason: 'stop',
+    });
+    expect(savedHistory()[0]).toMatchObject({
+      status: 'stream_interrupted',
+      assistant_reply: null,
+      finish_reason: 'stop',
+    });
+  });
+
+  it('上游 2xx 但没有响应体也按 empty 收口', async () => {
+    stubUpstream(() => new Response(null, { status: 200 }));
+
+    const result = await execute(request(), undefined, fakeLogger());
+
+    expect(result).toMatchObject({ status: 'stream_interrupted', content: '' });
+    expect(savedHistory()[0]).toMatchObject({
+      status: 'stream_interrupted',
+      assistant_reply: null,
+    });
+  });
+
+  it('达到长度上限时保留正文并按 incomplete 收口', async () => {
+    stubUpstream(() =>
+      sseResponse([
+        DELTA('还没说完'),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'length' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
+
+    const result = await execute(request(), undefined, fakeLogger());
+
+    expect(result).toMatchObject({
+      status: 'stream_interrupted',
+      content: '还没说完',
+      finishReason: 'length',
+    });
+  });
+
   it('客户端不消费也照样跑完落库（断线不终止上游）', async () => {
-    stubUpstream(() => sseResponse([DELTA('完整回复'), 'data: [DONE]\n\n']));
+    stubUpstream(() =>
+      sseResponse([
+        DELTA('完整回复'),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
 
     const result = await execute(request(), undefined, fakeLogger());
 
@@ -248,6 +306,20 @@ describe('execute（失败路径）', () => {
     });
     expect(onError).toHaveBeenCalled();
   });
+});
+
+it('上游请求带有服务端生成超时信号', async () => {
+  const fetchMock = stubUpstream(() =>
+    sseResponse([
+      DELTA('完整回复'),
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+      'data: [DONE]\n\n',
+    ])
+  );
+
+  await execute(request(), undefined, fakeLogger());
+
+  expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
 });
 
 describe('execute（请求体）', () => {

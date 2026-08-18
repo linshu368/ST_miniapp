@@ -36,7 +36,7 @@ export default function SpendingPage() {
           <ChevronLeft className="h-5 w-5" aria-hidden />
         </Button>
         <div>
-          <h1 className="text-base font-bold tracking-wide">消耗明细</h1>
+          <h1 className="text-base font-bold tracking-wide">消费明细</h1>
           <p className="text-[10px] text-muted-foreground">最近 100 条模型调用</p>
         </div>
       </header>
@@ -50,7 +50,7 @@ export default function SpendingPage() {
         ) : query.isError && items.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
             <RefreshCw className="h-8 w-8 text-muted-foreground/60" aria-hidden />
-            <p className="text-[13px] font-medium text-muted-foreground">消耗明细暂时无法加载</p>
+            <p className="text-[13px] font-medium text-muted-foreground">消费明细暂时无法加载</p>
             <Button
               variant="outline"
               size="sm"

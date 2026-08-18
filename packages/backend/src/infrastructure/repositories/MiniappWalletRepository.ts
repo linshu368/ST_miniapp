@@ -222,6 +222,7 @@ export class MiniappWalletRepository {
       status: row.status,
       finish_reason:
         typeof row.metadata?.finish_reason === 'string' ? row.metadata.finish_reason : null,
+      reply_outcome: readReplyOutcome(row.metadata ?? {}),
       status_label: formatSpendingStatus(row.status, row.metadata ?? {}),
       created_at: row.created_at,
     }));
@@ -421,27 +422,36 @@ function toNumber(value: NumericValue): number {
   return parsed;
 }
 
-function formatSpendingStatus(
+export function formatSpendingStatus(
   status: WalletSpendingRecord['status'],
   metadata: Record<string, unknown>
 ): string {
-  const finishReason = typeof metadata.finish_reason === 'string' ? metadata.finish_reason : null;
-  const chatStatus = typeof metadata.chat_status === 'string' ? metadata.chat_status : null;
+  const replyOutcome = readReplyOutcome(metadata);
 
   if (status === 'pending') return '待结算';
-  if (status === 'free') return '未扣费';
   if (status === 'charged' || status === 'reconciled') return '已扣费';
   if (status === 'partial') return '余额不足，部分扣费';
+  if (status === 'free') return '本次免费';
+  if (replyOutcome === 'incomplete') return '截断未扣除';
+  if (replyOutcome === 'empty') return '生成失败，未扣除';
+  const finishReason = typeof metadata.finish_reason === 'string' ? metadata.finish_reason : null;
+  const generationStatus =
+    typeof metadata.generation_status === 'string'
+      ? metadata.generation_status
+      : typeof metadata.chat_status === 'string'
+        ? metadata.chat_status
+        : null;
+  if (finishReason && finishReason !== 'stop') return '截断未扣除';
+  if (generationStatus === 'stream_interrupted') return '截断未扣除';
+  if (generationStatus === 'upstream_error') return '生成失败，未扣除';
+  return '未扣除';
+}
 
-  if (finishReason === 'content_filter') return '内容过滤中断 · 未扣费';
-  if (finishReason === 'length') return '回复超长截断 · 未扣费';
-  if (finishReason === 'tool_calls' || finishReason === 'function_call') {
-    return '非最终文本回复 · 未扣费';
-  }
-  if (chatStatus === 'stream_interrupted') return '连接中断 · 未扣费';
-  if (chatStatus === 'upstream_error') return '生成失败 · 未扣费';
-  if (finishReason) return '非正常结束 · 未扣费';
-  return '未扣费';
+function readReplyOutcome(
+  metadata: Record<string, unknown>
+): WalletSpendingRecord['reply_outcome'] {
+  const value = metadata.reply_outcome;
+  return value === 'complete' || value === 'incomplete' || value === 'empty' ? value : null;
 }
 
 function parsePositiveInteger(value: unknown, fallback: number): number {

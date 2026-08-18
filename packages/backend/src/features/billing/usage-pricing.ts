@@ -110,9 +110,11 @@ export function resolveUsageBillingGate(input: {
   status: string;
   finishReason: string | null;
 }): UsageBillingGate {
-  if (input.status !== 'success') return 'non_billable';
-  if (input.finishReason === 'stop') return 'billable';
+  if (input.status === 'upstream_error' || input.status === 'insufficient_balance') {
+    return 'non_billable';
+  }
   if (input.finishReason === null) return 'pending_finish_reason';
+  if (input.status === 'success' && input.finishReason === 'stop') return 'billable';
   return 'non_billable';
 }
 

@@ -156,6 +156,9 @@ describe('resolveUsageBillingGate', () => {
       'non_billable'
     );
     expect(resolveUsageBillingGate({ status: 'stream_interrupted', finishReason: null })).toBe(
+      'pending_finish_reason'
+    );
+    expect(resolveUsageBillingGate({ status: 'upstream_error', finishReason: null })).toBe(
       'non_billable'
     );
   });

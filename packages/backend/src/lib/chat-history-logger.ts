@@ -47,6 +47,17 @@ export interface ChatHistoryEntry {
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
 const wallets = new MiniappWalletRepository();
 
+type ReplyOutcome = 'complete' | 'incomplete' | 'empty';
+
+function resolveReplyOutcome(entry: ChatHistoryEntry, finishReason: string | null): ReplyOutcome {
+  const hasContent = (entry.assistant_reply ?? '').trim().length > 0;
+  if (!hasContent) return 'empty';
+  if (entry.status === 'success' && (finishReason === 'stop' || finishReason === null)) {
+    return 'complete';
+  }
+  return 'incomplete';
+}
+
 async function fetchGenerationDataWithRetry(
   generationId: string,
   log: FastifyBaseLogger,
@@ -182,7 +193,12 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         const usageCost = llmMetadata.llm_usage; // OpenRouter的实际花费金额
         const finishReason =
           typeof llmMetadata.llm_finish_reason === 'string' ? llmMetadata.llm_finish_reason : null;
-        const billingGate = resolveUsageBillingGate({ status: entry.status, finishReason });
+        const replyOutcome = resolveReplyOutcome(entry, finishReason);
+        // 已经拿到 generation id、但 finish_reason 尚未同步时必须先保持待结算。
+        // generation_status 保留真实生成终态，chat_status 仅作为现有计费 RPC 的闸门输入。
+        const billingStatus =
+          finishReason === null && entry.generation_id ? 'success' : entry.status;
+        const billingGate = resolveUsageBillingGate({ status: billingStatus, finishReason });
         const billingDecision = getInitialBillingDecision({
           usageCost,
           exchangeRate: entry.exchange_rate,
@@ -214,7 +230,10 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
             calculatedAmount: intendedDeduction,
             fallbackUsed: billingDecision.pending,
             metadata: {
-              chat_status: entry.status,
+              chat_status: billingStatus,
+              generation_status: entry.status,
+              reply_outcome: replyOutcome,
+              reply_char_count: (entry.assistant_reply ?? '').length,
               requested_model: entry.model,
               billing_mode: 'fixed_tier',
               billing_gate: billingGate,
