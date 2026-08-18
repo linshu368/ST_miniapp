@@ -1,6 +1,8 @@
 # ST 旧路径清理：整包丢弃清单
 
 > 状态：**§2 / §3 已归档到 `legacy/st-removed/`（2026-08-14）。散文件 / 混用接线见 `docs/ST_remove-混用清理清单.md`，同日已执行。**
+> **2026-08-18：`legacy/st-removed/` 整个目录已从工作区删除**（1260 个文件 / 1.2G）。下面两张表的「现路径」不再存在，
+> 内容取回请用 `git show 6206f3a:<原路径>`——那一 commit 就是归档动作本身，它的父提交里还是原路径。
 > 分支：`dev_ST_remove`
 > 上游方案：`docs/ST_remove.md` §四。本文件覆盖其中两条「留」的口径，见 §1。
 
@@ -70,13 +72,13 @@
 
 仍暂缓、不跟代码归档绑在一起：
 
-| 项                                         | 原因                                                 |
-| ------------------------------------------ | ---------------------------------------------------- |
-| `chat_engine_mode` 及前后端开关接线        | ST UI 清掉后再改兜底 / 删分支                        |
-| `users.st_handle` / `deriveStHandle`       | 列还在；停写要单独 migration                         |
-| `ops/nginx/nginx.conf`、`nginx.local.conf` | 还在给 backend 反代；只能拆 `/tavern` 与 ST 静态分档 |
-| `.railway/railway.ts` 里的 `st-bundle`     | 改的是生产拓扑                                       |
-| 历史 SQL（`006_platform_presets` 等）      | 只记账，不改已执行的 migration                       |
+| 项                                         | 原因                                                    |
+| ------------------------------------------ | ------------------------------------------------------- |
+| ~~`chat_engine_mode` 及前后端开关接线~~    | 已于 2026-08-18 删除（含 migration 083），见混用清单 §8 |
+| `users.st_handle` / `deriveStHandle`       | 列还在；停写要单独 migration                            |
+| `ops/nginx/nginx.conf`、`nginx.local.conf` | 还在给 backend 反代；只能拆 `/tavern` 与 ST 静态分档    |
+| `.railway/railway.ts` 里的 `st-bundle`     | 改的是生产拓扑                                          |
+| 历史 SQL（`006_platform_presets` 等）      | 只记账，不改已执行的 migration                          |
 
 ---
 

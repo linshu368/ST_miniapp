@@ -6,8 +6,8 @@
 #   host:8080 ──> nginx:80 ──┬─> frontend:3000   (Next.js standalone)
 #                            └─> backend:3001    (Fastify platform API)
 #
-# Routing is owned by ops/nginx/nginx.local.conf. ST / st-bundle 已归档到
-# legacy/st-removed/，本地 compose 不再起 SillyTavern。
+# Routing is owned by ops/nginx/nginx.local.conf. ST / st-bundle 的代码与镜像定义已删除
+# （取回见 commit 6206f3a 及其之前的历史），本地 compose 不再起 SillyTavern。
 #
 # Secrets: every service reads .env.compose (cp .env.compose.example .env.compose).
 # Only placeholders ship in the repo; real values are operator-supplied.

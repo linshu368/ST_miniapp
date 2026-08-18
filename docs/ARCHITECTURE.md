@@ -15,7 +15,7 @@
 > | 🔜   | 代码已就绪，但要等 M6 打开全局开关、生产库执行 069~073 之后才在生产生效 |
 > | ❌   | 明确不做 / 尚未创建                                                     |
 >
-> 当前进度：M1 / M2 / M3a / M3b / M5 已交付，测试与生产已切到自研引擎。ST 旧路径已归档到 `legacy/st-removed/`（整包 + 混用散文件），见 `docs/ST_remove-整包清理清单.md` 与 `docs/ST_remove-混用清理清单.md`。`chat_engine_mode`、nginx `/tavern`、Railway `st-bundle` 仍暂缓。
+> 当前进度：M1 / M2 / M3a / M3b / M5 已交付，测试与生产已切到自研引擎。ST 旧路径先归档到 `legacy/st-removed/`，2026-08-18 连同 `chat_engine_mode` 全局开关、first-chat 埋点、ST 专用 seed 生成器与根 `.dockerignore` 一并硬删除（取回用 `git show 6206f3a:<原路径>`；migration 083 待手动执行），过程见 `docs/ST_remove-整包清理清单.md` 与 `docs/ST_remove-混用清理清单.md`。仍暂缓：nginx `/tavern` 与 Railway `st-bundle`（等网关收敛定稿）、`users.st_handle` 与 `st_*` schema（归 Supabase 瘦身专项）。
 
 ---
 

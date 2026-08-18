@@ -8,22 +8,11 @@ type LogAttributes = Record<string, LogValue>;
 
 export type RequestTelemetryContext = {
   requestId: string;
-  journeyId?: string;
-  attemptId?: string;
-  bootSessionId?: string;
 };
-
-function header(request: FastifyRequest, name: string): string | undefined {
-  const value = request.headers[name];
-  return Array.isArray(value) ? value[0] : value;
-}
 
 export function getRequestTelemetryContext(request: FastifyRequest): RequestTelemetryContext {
   return {
     requestId: request.id,
-    journeyId: header(request, 'x-first-chat-journey-id'),
-    attemptId: header(request, 'x-first-chat-attempt-id'),
-    bootSessionId: header(request, 'x-boot-session-id'),
   };
 }
 
@@ -32,14 +21,8 @@ export function bindRequestSentryContext(request: FastifyRequest): void {
   const scope = Sentry.getIsolationScope();
   scope.setTag('service', 'backend');
   scope.setTag('request_id', context.requestId);
-  if (context.journeyId) scope.setTag('journey_id', context.journeyId);
-  if (context.attemptId) scope.setTag('attempt_id', context.attemptId);
-  if (context.bootSessionId) scope.setTag('boot_session_id', context.bootSessionId);
   scope.setContext('request_correlation', {
     requestId: context.requestId,
-    journeyId: context.journeyId,
-    attemptId: context.attemptId,
-    bootSessionId: context.bootSessionId,
   });
 }
 
@@ -79,25 +62,10 @@ export function captureBackendException(
     scope.setTag('service', 'backend');
     scope.setTag('stage', stage);
     scope.setTag('request_id', context.requestId);
-    if (context.journeyId) scope.setTag('journey_id', context.journeyId);
-    if (context.attemptId) scope.setTag('attempt_id', context.attemptId);
     for (const [name, value] of Object.entries(attributes)) {
       if (value !== undefined && value !== null) scope.setTag(name, String(value));
     }
-    scope.setContext('first_chat', sanitizeTelemetry({ ...context, stage, ...attributes }));
+    scope.setContext('request', sanitizeTelemetry({ ...context, stage, ...attributes }));
     Sentry.captureException(error instanceof Error ? error : new Error(String(error)));
   });
-}
-
-export function downstreamTelemetryHeaders(request: FastifyRequest): Record<string, string> {
-  const context = getRequestTelemetryContext(request);
-  const traceData = Sentry.getTraceData();
-  return {
-    'X-Request-Id': context.requestId,
-    ...(context.journeyId ? { 'X-First-Chat-Journey-Id': context.journeyId } : {}),
-    ...(context.attemptId ? { 'X-First-Chat-Attempt-Id': context.attemptId } : {}),
-    ...(context.bootSessionId ? { 'X-Boot-Session-Id': context.bootSessionId } : {}),
-    ...(traceData['sentry-trace'] ? { 'sentry-trace': traceData['sentry-trace'] } : {}),
-    ...(traceData.baggage ? { baggage: traceData.baggage } : {}),
-  };
 }
