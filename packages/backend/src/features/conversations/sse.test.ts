@@ -68,7 +68,7 @@ describe('createReplyStreamSink', () => {
     expect(hijack).toHaveBeenCalledTimes(1);
     expect(raw.head?.status).toBe(200);
     expect(raw.head?.headers['Content-Type']).toBe('text/event-stream; charset=utf-8');
-    // nginx 缓冲住就没有「流式」可言了
+    // 反代缓冲住就没有「流式」可言了
     expect(raw.head?.headers['X-Accel-Buffering']).toBe('no');
     expect(sink.opened).toBe(true);
   });

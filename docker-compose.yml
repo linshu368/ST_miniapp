@@ -1,26 +1,29 @@
 # =============================================================================
 # ST_miniAPP — local/staging orchestration.
 #
-# Topology (single bridge network app-net; nginx is the ONLY host-exposed service):
+# Topology (single bridge network app-net; 网关收敛后两个服务各自映到 host 端口):
 #
-#   host:8080 ──> nginx:80 ──┬─> frontend:3000   (Next.js standalone)
-#                            └─> backend:3001    (Fastify platform API)
+#   浏览器 ──> host:3000  frontend  (Next.js standalone)
+#          └─> host:3001  backend   (Fastify platform API)
 #
-# Routing is owned by ops/nginx/nginx.local.conf. ST / st-bundle 已归档到
-# legacy/st-removed/，本地 compose 不再起 SillyTavern。
+# nginx 单域名网关随网关收敛退场（取回见 commit c737294 及其之前的历史）：ST 退场后它
+# 已无分发对象，前端改为直连 backend，跨域由 backend 的 FRONTEND_URL（CORS）放行。
+# ST / st-bundle 的代码与镜像定义同样已删除，本地 compose 不再起 SillyTavern。
 #
 # Secrets: every service reads .env.compose (cp .env.compose.example .env.compose).
 # Only placeholders ship in the repo; real values are operator-supplied.
 # =============================================================================
 
 services:
-  # Fastify platform API.
+  # Fastify platform API. 直接映到 host:3001（浏览器与前端容器都从这里调）。
   backend:
     build:
       context: .
       dockerfile: ops/docker/Dockerfile.backend
     image: st-miniapp/backend:m4
     env_file: .env.compose
+    ports:
+      - '3001:3001'
     networks:
       - app-net
     restart: unless-stopped
@@ -33,44 +36,19 @@ services:
       context: .
       dockerfile: ops/docker/Dockerfile.frontend
       args:
-        # Baked into the client bundle at build time. Empty => same-origin relative
-        # URLs, correct behind the nginx gateway.
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        # Baked into the client bundle at build time. 没有网关做同源代理了，必须是
+        # 浏览器能直达的 backend 地址；改值要重新 build 前端镜像才生效。
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
     image: st-miniapp/frontend:m4
     env_file: .env.compose
+    ports:
+      - '3000:3000'
     # The shared env_file carries PORT=3001 (backend's port); re-assert 3000 here so the
-    # Next standalone server (reads $PORT) listens where the healthcheck/nginx expect it.
+    # Next standalone server (reads $PORT) listens where the healthcheck expects it.
     # `environment` takes precedence over `env_file`.
     environment:
       PORT: '3000'
       HOSTNAME: 0.0.0.0
-    networks:
-      - app-net
-    restart: unless-stopped
-
-  # Single-domain reverse-proxy gateway. The ONLY service mapped to a host port.
-  # ⚠️ 本地仿真专用配置：bind-mount ops/nginx/nginx.local.conf。生产用的是
-  #    ops/nginx/nginx.conf 模板，由 ops/nginx/Dockerfile 经 envsubst 在 Railway
-  #    启动时生成——本地 compose 不消费它。
-  nginx:
-    image: nginx:1.27-alpine
-    ports:
-      - '8080:80'
-    volumes:
-      - ./ops/nginx/nginx.local.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      backend:
-        condition: service_healthy
-      frontend:
-        condition: service_healthy
-    # Probe the in-conf `location = /nginx-health` (returns 200). Gives `ps` a
-    # (healthy) status for the gateway too.
-    healthcheck:
-      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1/nginx-health']
-      interval: 30s
-      timeout: 5s
-      start_period: 5s
-      retries: 3
     networks:
       - app-net
     restart: unless-stopped

@@ -19,7 +19,7 @@ import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
-import { ChatSplash } from '@/components/tavern/chat-splash';
+import { ChatSplash } from '@/components/chat/chat-splash';
 import {
   Dialog,
   DialogContent,

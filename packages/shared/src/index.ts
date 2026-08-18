@@ -6,7 +6,6 @@ export * from './api/payment';
 export * from './api/settings';
 export * from './api/word-count-tiers';
 export * from './api/wallet';
-export * from './api/chat-engine';
 export * from './api/conversations';
 export * from './api/voice';
 export * from './api/wishes';

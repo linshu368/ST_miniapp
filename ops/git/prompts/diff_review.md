@@ -83,7 +83,6 @@ CSS / UI 样式调整、删除未使用的模块或代码路径、前端渲染�
 - packages/frontend 中不涉及 bridge-client / platformAction / iframe 通信的文件
 - packages/backend 中不涉及 bridge-server / ST API Client 的文件
 - packages/shared、packages/sync-engine
-- 纯 ops/nginx 配置（不改路由分发逻辑）
 - 纯 Supabase 交互（链路 ① ⑥ ⑦）
 
 通道 B — 涉及 ST 桥接，涉及以下任一：
@@ -92,7 +91,6 @@ CSS / UI 样式调整、删除未使用的模块或代码路径、前端渲染�
 - packages/frontend 中的 bridge-client / platformAction() / iframe 控制层 / ST 镜像状态相关代码
 - packages/backend 中的 bridge-server / ST API Client / provisioning
 - ops/docker 中 ST 镜像构建脚本
-- ops/nginx 中涉及 /tavern/_ 或 /api/_ 路由分发的变更
 - .gitmodules 中 sillytavern submodule 的 commit hash 变更
 - 任何涉及 postMessage 收发、或链路 ② ③ ⑤ 的代码
 - sillytavern/ 目录下的适配性修改（见架构铁律）

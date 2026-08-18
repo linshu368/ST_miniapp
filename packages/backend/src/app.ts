@@ -14,7 +14,6 @@ import wishRoutes from './routes/wishes.js';
 import csPlatformRoutes from './routes/cs-platform.js';
 import modelsRoutes from './routes/models.js';
 import conversationRoutes from './routes/conversations.js';
-import chatEngineRoutes from './routes/chat-engine.js';
 import voiceRoutes from './routes/voice.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
@@ -79,9 +78,6 @@ export async function buildApp() {
       'Authorization',
       'X-Init-Data',
       'X-Request-Id',
-      'X-First-Chat-Journey-Id',
-      'X-First-Chat-Attempt-Id',
-      'X-Boot-Session-Id',
       'sentry-trace',
       'baggage',
       'X-CS-Admin-Token',
@@ -107,7 +103,6 @@ export async function buildApp() {
   await app.register(csPlatformRoutes);
   await app.register(modelsRoutes);
   await app.register(conversationRoutes);
-  await app.register(chatEngineRoutes);
   await app.register(voiceRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
