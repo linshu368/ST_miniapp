@@ -270,7 +270,7 @@ async function sendMessageScenario(context: MvpScenarioContext): Promise<Scenari
   const name = 'send_message';
   const description = '发消息：SSE start/delta/done、chat_history 作为唯一轮次记录并收口';
   const model = context.paidModel;
-  if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型（markup > 0）');
+  if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型');
 
   await resetState(context, { balance: FUNDED_BALANCE });
   await setSelectedModel(context.fixtures.userId, model.modelId);
@@ -360,7 +360,7 @@ async function sendMessageScenario(context: MvpScenarioContext): Promise<Scenari
 
 async function freeQuotaScenario(context: MvpScenarioContext): Promise<ScenarioResult> {
   const name = 'free_quota';
-  const description = '免费额度边界：最后一轮免费（0 扣费），下一轮按 deduct_markup 计费';
+  const description = '免费额度边界：最后一轮免费（0 扣费），下一轮按固定档位扣费';
   const model = context.freeModel;
   if (!model) {
     return skipped(
@@ -392,11 +392,7 @@ async function freeQuotaScenario(context: MvpScenarioContext): Promise<ScenarioR
   checker.expect('免费轮用尽后 used_rounds 达到上限', usedAfterFree, quotaLimit);
   checker.expect('chat_history 条数', history.length, 2);
   checker.expect('免费轮扣费额', Number(charges[0]?.charged_amount ?? -1), 0);
-  checker.expect(
-    '耗尽后按 deduct_markup 计费',
-    Number(history[1]?.llm_model_markup ?? -1),
-    model.deductMarkup
-  );
+  checker.expect('耗尽后按固定档位计费', Number(history[1]?.llm_model_markup ?? -1), 1);
   checker.expectGreaterThan('耗尽后扣费额', Number(charges[1]?.charged_amount ?? 0), 0);
   checker.expectTrue('钱包只在耗尽后那轮减少', balanceAfter < FUNDED_BALANCE);
 
@@ -421,7 +417,7 @@ async function insufficientBalanceScenario(context: MvpScenarioContext): Promise
   const name = 'insufficient_balance';
   const description = '余额不足：402 JSON（不是流内错误）、不碰上游、assistant 行收口成 failed';
   const model = context.paidModel;
-  if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型（markup > 0）');
+  if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型');
 
   await resetState(context, { balance: 0 });
   await setSelectedModel(context.fixtures.userId, model.modelId);
@@ -478,7 +474,7 @@ async function regenerateScenario(context: MvpScenarioContext): Promise<Scenario
   const name = 'regenerate';
   const description = '重生成最后一轮：新 revision 生效、旧版本留档、上下文不重复本轮输入';
   const model = context.paidModel;
-  if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型（markup > 0）');
+  if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型');
 
   await resetState(context, { balance: FUNDED_BALANCE });
   await setSelectedModel(context.fixtures.userId, model.modelId);
@@ -554,7 +550,7 @@ async function clientDisconnectScenario(context: MvpScenarioContext): Promise<Sc
   const name = 'client_disconnect';
   const description = '客户端收到第一片就断开：后端跑完上游并落完整正文（相对 ST 的净改进）';
   const model = context.paidModel;
-  if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型（markup > 0）');
+  if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型');
 
   await resetState(context, { balance: FUNDED_BALANCE });
   await setSelectedModel(context.fixtures.userId, model.modelId);

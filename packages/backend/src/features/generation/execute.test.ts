@@ -4,10 +4,6 @@ import type { GenerationLogger, GenerationRequest } from './types.js';
 
 const pricing = {
   version: 7,
-  balanceBaseline: 30,
-  fallbackCost: 30,
-  exchangeRate: 680,
-  markup: 2.5,
   fixedDeduction: { freeQuotaExhausted: 10, light: 15, standard: 30, premium: 50 },
 };
 
@@ -17,8 +13,7 @@ const billingContext = {
   openRouterModelId: 'anthropic/claude-sonnet-4.5',
   modelTier: 'premium' as const,
   catalogVersion: 12,
-  modelMarkup: 2.5,
-  deductMarkup: 2.5,
+  isFree: false,
 };
 
 let walletBalance = 1000;
@@ -66,8 +61,7 @@ function request(overrides: Partial<GenerationRequest> = {}): GenerationRequest 
       modelId: billingContext.modelId,
       openRouterModelId: billingContext.openRouterModelId,
       tier: 'premium',
-      markup: 2.5,
-      deductMarkup: null,
+      isFree: false,
     },
     messages: [
       { role: 'system', content: '角色卡 system_prompt' },
@@ -159,11 +153,11 @@ describe('execute（流式）', () => {
       finish_reason: 'stop',
       model: 'anthropic/claude-sonnet-4.5',
       model_id: 'anthropic-claude-sonnet-4-5',
-      model_markup: 2.5,
+      model_markup: 1,
       fixed_deduction: 50,
       fixed_deduction_category: 'premium',
       pricing_config_version: 7,
-      exchange_rate: 680,
+      exchange_rate: 1,
     });
     expect(entry.charge_id).toBe(result.chargeId);
   });

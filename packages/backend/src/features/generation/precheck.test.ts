@@ -20,10 +20,6 @@ function fakeLogger(): GenerationLogger {
 
 const PRICING: LlmPricingConfig = {
   version: 7,
-  balanceBaseline: 30,
-  fallbackCost: 30,
-  exchangeRate: 680,
-  markup: 2.5,
   fixedDeduction: { freeQuotaExhausted: 10, light: 15, standard: 30, premium: 50 },
 };
 
@@ -33,8 +29,7 @@ const PAID_MODEL: ModelBillingContext = {
   openRouterModelId: 'anthropic/claude-sonnet-4.5',
   modelTier: 'premium',
   catalogVersion: 12,
-  modelMarkup: 2.5,
-  deductMarkup: 2.5,
+  isFree: false,
 };
 
 const FREE_MODEL: ModelBillingContext = {
@@ -43,8 +38,7 @@ const FREE_MODEL: ModelBillingContext = {
   modelDisplayName: 'Gemini Flash Lite',
   openRouterModelId: 'google/gemini-3.1-flash-lite',
   modelTier: 'light',
-  modelMarkup: 0,
-  deductMarkup: 1.5,
+  isFree: true,
 };
 
 describe('resolveBillingPlan', () => {
@@ -52,7 +46,7 @@ describe('resolveBillingPlan', () => {
     const plan = resolveBillingPlan({
       chargeId: 'charge-1',
       billing: PAID_MODEL,
-      effectiveModelMarkup: 2.5,
+      isFreeRound: false,
       pricing: PRICING,
       log: fakeLogger(),
     });
@@ -62,21 +56,20 @@ describe('resolveBillingPlan', () => {
       charge_id: 'charge-1',
       model_id: 'anthropic-claude-sonnet-4-5',
       model_display_name: 'Claude Sonnet 4.5',
-      model_markup: 2.5,
+      model_markup: 1,
       fixed_deduction: 50,
       fixed_deduction_category: 'premium',
       catalog_version: 12,
       pricing_config_version: 7,
-      exchange_rate: 680,
-      fallback_cost: 30,
+      exchange_rate: 1,
     });
   });
 
-  it('快照记的是本轮生效倍率而不是模型默认倍率', () => {
+  it('快照用 0/1 标记本轮是否走免费额度', () => {
     const freeRound = resolveBillingPlan({
       chargeId: 'charge-2',
       billing: FREE_MODEL,
-      effectiveModelMarkup: 0,
+      isFreeRound: true,
       pricing: PRICING,
       log: fakeLogger(),
     });
@@ -86,11 +79,11 @@ describe('resolveBillingPlan', () => {
     const exhausted = resolveBillingPlan({
       chargeId: 'charge-3',
       billing: FREE_MODEL,
-      effectiveModelMarkup: 1.5,
+      isFreeRound: false,
       pricing: PRICING,
       log: fakeLogger(),
     });
-    expect(exhausted.snapshot.model_markup).toBe(1.5);
+    expect(exhausted.snapshot.model_markup).toBe(1);
     expect(exhausted.fixedDeduction).toEqual({ amount: 10, category: 'free_quota_exhausted' });
   });
 
@@ -99,7 +92,7 @@ describe('resolveBillingPlan', () => {
     const plan = resolveBillingPlan({
       chargeId: 'charge-4',
       billing: { ...PAID_MODEL, modelTier: null },
-      effectiveModelMarkup: 2.5,
+      isFreeRound: false,
       pricing: PRICING,
       log,
     });

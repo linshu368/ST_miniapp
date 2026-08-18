@@ -87,7 +87,7 @@ export async function execute(
 ): Promise<GenerationResult> {
   const chargeId = randomUUID();
   const pricing = await getPricingConfig();
-  const billing = await getModelBillingContext(request.model.openRouterModelId, pricing.markup);
+  const billing = await getModelBillingContext(request.model.openRouterModelId);
 
   const finish = (result: GenerationResult): GenerationResult => {
     hooks?.onDone?.(result);
@@ -115,7 +115,7 @@ export async function execute(
   const plan = resolveBillingPlan({
     chargeId,
     billing,
-    effectiveModelMarkup: reservation.effectiveModelMarkup,
+    isFreeRound: reservation.isFreeRound,
     pricing,
     log,
   });
