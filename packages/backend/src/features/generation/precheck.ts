@@ -25,13 +25,14 @@ export interface BillingSnapshot {
   charge_id: string;
   model_id: string | null;
   model_display_name: string;
+  /** 0 = 本轮走免费额度；1 = 本轮按定档扣费。仅写入历史审计列。 */
   model_markup: number;
   fixed_deduction: number;
   fixed_deduction_category: FixedDeductionCategory;
   catalog_version: number;
   pricing_config_version: number;
+  /** charge_llm_usage 仍要求正数；定档扣费不再使用汇率。 */
   exchange_rate: number;
-  fallback_cost: number;
 }
 
 export interface BillingPlan {
@@ -43,21 +44,20 @@ export interface BillingPlan {
 /**
  * 结算本轮的定档扣费额并固化计费快照。
  *
- * effectiveModelMarkup 来自免费额度预留结果，不是模型的默认倍率——免费轮为 0，
- * 额度耗尽后为 deduct_markup。
+ * isFreeRound 来自免费额度预留结果：免费模型在额度内为 true，额度耗尽后为 false。
  */
 export function resolveBillingPlan(input: {
   chargeId: string;
   billing: ModelBillingContext;
-  effectiveModelMarkup: number;
+  isFreeRound: boolean;
   pricing: LlmPricingConfig;
   log: GenerationLogger;
 }): BillingPlan {
-  const { chargeId, billing, effectiveModelMarkup, pricing, log } = input;
+  const { chargeId, billing, isFreeRound, pricing, log } = input;
 
   const fixedDeduction = resolveFixedDeduction({
-    defaultModelMarkup: billing.modelMarkup,
-    effectiveModelMarkup,
+    isFreeModel: billing.isFree,
+    isFreeRound,
     modelTier: billing.modelTier,
     config: pricing.fixedDeduction,
   });
@@ -80,13 +80,12 @@ export function resolveBillingPlan(input: {
       charge_id: chargeId,
       model_id: billing.modelId,
       model_display_name: billing.modelDisplayName,
-      model_markup: effectiveModelMarkup,
+      model_markup: isFreeRound ? 0 : 1,
       fixed_deduction: fixedDeduction.amount,
       fixed_deduction_category: fixedDeduction.category,
       catalog_version: billing.catalogVersion,
       pricing_config_version: pricing.version,
-      exchange_rate: pricing.exchangeRate,
-      fallback_cost: pricing.fallbackCost,
+      exchange_rate: 1,
     },
   };
 }

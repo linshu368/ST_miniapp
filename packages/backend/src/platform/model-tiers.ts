@@ -151,8 +151,7 @@ export function legacyTiersToCatalog(tiers: BackendModelTierConfig[]): ModelCata
         openrouter_model_id: tier.modelName,
         display_name: tier.label.slice(0, 40),
         tagline: LEGACY_MODEL_TAGLINE,
-        price_input: 0,
-        price_output: 0,
+        is_free: false,
         enabled: true,
         sort_order: sortOrder,
       };
@@ -276,42 +275,19 @@ export async function resolveDefaultOpenRouterModelId(): Promise<string> {
   return resolveEnabledCatalogModel(catalog, catalog.default_model_id).openrouter_model_id;
 }
 
-export async function getModelMarkup(
-  openRouterModelId: string,
-  fallbackMarkup?: number
-): Promise<number> {
-  const fallback = fallbackMarkup ?? (await getPricingConfig()).markup;
-  try {
-    const catalog = await fetchModelCatalog();
-    const model = catalog.tiers
-      .flatMap((tier) => tier.models)
-      .find((candidate) => candidate.openrouter_model_id === openRouterModelId);
-    return model?.markup ?? fallback;
-  } catch (error) {
-    console.error('[model-tiers] Failed to resolve per-model markup:', error);
-    return fallback;
-  }
-}
-
 export interface ModelBillingContext {
   modelId: string | null;
   modelDisplayName: string;
   openRouterModelId: string;
   modelTier: ModelCatalogTierKey | null;
   catalogVersion: number;
-  modelMarkup: number;
-  deductMarkup: number;
+  isFree: boolean;
 }
 
 export async function getModelBillingContext(
-  openRouterModelId: string,
-  fallbackMarkup?: number
+  openRouterModelId: string
 ): Promise<ModelBillingContext> {
-  const [snapshot, pricing] = await Promise.all([
-    fetchModelCatalogSnapshot(),
-    fallbackMarkup === undefined ? getPricingConfig() : Promise.resolve(null),
-  ]);
-  const fallback = fallbackMarkup ?? pricing?.markup ?? DEFAULT_PRICING.markup;
+  const snapshot = await fetchModelCatalogSnapshot();
   const catalogTier =
     snapshot.catalog.tiers.find((tier) =>
       tier.models.some((candidate) => candidate.openrouter_model_id === openRouterModelId)
@@ -326,8 +302,7 @@ export async function getModelBillingContext(
     openRouterModelId,
     modelTier: catalogTier?.tier ?? null,
     catalogVersion: snapshot.version,
-    modelMarkup: model?.markup ?? fallback,
-    deductMarkup: model?.deduct_markup ?? fallback,
+    isFree: model?.is_free ?? false,
   };
 }
 
@@ -357,10 +332,6 @@ export interface LlmPricingConfig extends LlmPricingRuntimeConfig {
 
 const DEFAULT_PRICING: LlmPricingConfig = {
   version: 0,
-  balanceBaseline: 30,
-  fallbackCost: 30,
-  exchangeRate: 680,
-  markup: 2.5,
   fixedDeduction: {
     freeQuotaExhausted: 10,
     light: 15,

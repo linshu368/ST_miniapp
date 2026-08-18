@@ -6,6 +6,7 @@ import {
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   ModelCatalogSchema,
+  normalizeCatalogModelInput,
   PaymentPlansSchema,
   RechargePageConfigSchema,
   WordCountTiersConfigSchema,
@@ -61,18 +62,18 @@ export const SystemInstructionsSchema = z
     }
   });
 
-const EditableModelCatalogModelSchema = z.object({
-  id: z.string(),
-  openrouter_model_id: z.string(),
-  display_name: z.string(),
-  tagline: z.string(),
-  price_input: z.number().finite().nonnegative(),
-  price_output: z.number().finite().nonnegative(),
-  markup: z.number().finite(),
-  deduct_markup: z.number().finite().optional(),
-  enabled: z.boolean(),
-  sort_order: z.number().int().nonnegative(),
-});
+const EditableModelCatalogModelSchema = z.preprocess(
+  normalizeCatalogModelInput,
+  z.object({
+    id: z.string(),
+    openrouter_model_id: z.string(),
+    display_name: z.string(),
+    tagline: z.string(),
+    is_free: z.boolean(),
+    enabled: z.boolean(),
+    sort_order: z.number().int().nonnegative(),
+  })
+);
 
 const EditableModelCatalogTierSchema = z.object({
   tier: z.enum(['light', 'standard', 'premium']),
@@ -150,7 +151,7 @@ export const configMetadata: Record<
   },
   llm_model_catalog: {
     label: '模型目录',
-    description: '用户可选择的 OpenRouter 模型、档位、展示价与默认模型。',
+    description: '用户可选择的 OpenRouter 模型、档位、是否免费与默认模型。',
     defaultValue: {
       default_model_id: 'gemini-flash-lite',
       tiers: [
@@ -166,9 +167,7 @@ export const configMetadata: Record<
               openrouter_model_id: 'google/gemini-3.1-flash-lite',
               display_name: 'Gemini Flash Lite',
               tagline: '适合日常角色对话，回复快、消耗低。',
-              price_input: 0,
-              price_output: 0,
-              markup: 2.5,
+              is_free: false,
               enabled: true,
               sort_order: 1,
             },
@@ -179,13 +178,8 @@ export const configMetadata: Record<
   },
   llm_pricing_config: {
     label: 'LLM 计费参数',
-    description:
-      '每次成功生成的固定扣费标准（免费额度用尽 / 轻量 / 标准 / 旗舰）；原动态计费字段保留用于历史兼容。',
+    description: '每次成功生成的固定扣费标准（免费额度用尽 / 轻量 / 标准 / 旗舰）。',
     defaultValue: {
-      balanceBaseline: 30,
-      fallbackCost: 30,
-      exchangeRate: 680,
-      markup: 2.5,
       fixedDeduction: {
         freeQuotaExhausted: 10,
         light: 15,

@@ -1,10 +1,7 @@
 import {
   OpenRouterModelDirectorySchema,
-  calculateDisplayPrice,
-  type DisplayPricingConfig,
   type ModelCatalog,
   type OpenRouterModelDirectory,
-  type OpenRouterModelSummary,
 } from '@miniapp/shared';
 import type { AdminEnvironment } from './environment';
 import { getAdminApiUrl } from './environment';
@@ -34,16 +31,6 @@ export async function fetchOpenRouterModels(
     throw new Error(envelope.error?.message || 'OpenRouter 模型目录加载失败');
   }
   return OpenRouterModelDirectorySchema.parse(envelope.data);
-}
-
-export function calculateModelDisplayPrices(
-  model: OpenRouterModelSummary,
-  pricing: DisplayPricingConfig
-): { price_input: number; price_output: number } {
-  return {
-    price_input: calculateDisplayPrice(model.prompt_usd_per_token, pricing),
-    price_output: calculateDisplayPrice(model.completion_usd_per_token, pricing),
-  };
 }
 
 export function getOpenRouterCatalogIssues(

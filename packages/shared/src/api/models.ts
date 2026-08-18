@@ -30,23 +30,21 @@ export const StableModelIdSchema = z
 export const HexColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, 'color must be a six-digit hex value');
-const oneDecimalDisplayPrice = z.number().finite().nonnegative().multipleOf(0.1);
-export const MODEL_MARKUP_OPTIONS = [0, 1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
-export const MODEL_DEDUCT_MARKUP_OPTIONS = [1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
-export const ModelMarkupSchema = z
-  .number()
-  .refine(
-    (value): value is (typeof MODEL_MARKUP_OPTIONS)[number] =>
-      MODEL_MARKUP_OPTIONS.includes(value as (typeof MODEL_MARKUP_OPTIONS)[number]),
-    'markup must be 0 or a half-step from 1 through 4'
-  );
-export const ModelDeductMarkupSchema = z
-  .number()
-  .refine(
-    (value): value is (typeof MODEL_DEDUCT_MARKUP_OPTIONS)[number] =>
-      MODEL_DEDUCT_MARKUP_OPTIONS.includes(value as (typeof MODEL_DEDUCT_MARKUP_OPTIONS)[number]),
-    'deduct_markup must be a half-step from 1 through 4'
-  );
+
+/** Map leftover catalog markup fields to is_free before schema validation. */
+export function normalizeCatalogModelInput(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (typeof record.is_free === 'boolean') {
+    const { markup: _markup, deduct_markup: _deductMarkup, ...rest } = record;
+    return rest;
+  }
+  if (typeof record.markup === 'number') {
+    const { markup, deduct_markup: _deductMarkup, ...rest } = record;
+    return { ...rest, is_free: markup === 0 };
+  }
+  return value;
+}
 
 export const ModelCatalogModelSchema = z.object({
   /** Stable application-facing identifier. */
@@ -61,13 +59,8 @@ export const ModelCatalogModelSchema = z.object({
   display_name: z.string().trim().min(1).max(40),
   /** 介绍语：说明模型适用场景的短句，展示在模型名称下方。 */
   tagline: z.string().trim().min(1).max(40),
-  /** Display-only prices; billing must use provider usage data instead. */
-  price_input: oneDecimalDisplayPrice,
-  price_output: oneDecimalDisplayPrice,
-  /** Default multiplier; zero identifies a model with an initial free quota. */
-  markup: ModelMarkupSchema.default(2.5),
-  /** Multiplier used after a free model's per-character quota is exhausted. */
-  deduct_markup: ModelDeductMarkupSchema.optional(),
+  /** Whether this model receives the per-character free chat quota. */
+  is_free: z.boolean(),
   enabled: z.boolean(),
   sort_order: z.number().int().nonnegative(),
 });
@@ -78,7 +71,7 @@ export const ModelCatalogTierSchema = z.object({
   color: HexColorSchema,
   cost_hint: z.string().trim().min(1).max(50),
   sort_order: z.number().int().nonnegative(),
-  models: z.array(ModelCatalogModelSchema).min(1),
+  models: z.array(z.preprocess(normalizeCatalogModelInput, ModelCatalogModelSchema)).min(1),
 });
 
 export const ModelCatalogSchema = z
@@ -97,31 +90,6 @@ export const ModelCatalogSchema = z
     }
 
     const models = catalog.tiers.flatMap((tier) => tier.models);
-    catalog.tiers.forEach((tier, tierIndex) => {
-      tier.models.forEach((model, modelIndex) => {
-        if (model.markup === 0 && (model.price_input !== 0 || model.price_output !== 0)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['tiers', tierIndex, 'models', modelIndex, 'price_input'],
-            message: 'free models must have zero display prices',
-          });
-        }
-        if (model.markup === 0 && model.deduct_markup === undefined) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['tiers', tierIndex, 'models', modelIndex, 'deduct_markup'],
-            message: 'free models must have a deduct_markup',
-          });
-        }
-        if (model.markup !== 0 && model.deduct_markup !== undefined) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['tiers', tierIndex, 'models', modelIndex, 'deduct_markup'],
-            message: 'paid models must not have a deduct_markup',
-          });
-        }
-      });
-    });
     const modelIds = models.map((model) => model.id);
     const uniqueModelIds = new Set(modelIds);
 
@@ -165,11 +133,7 @@ export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
 
 export const PublicModelCatalogModelSchema = ModelCatalogModelSchema.omit({
   openrouter_model_id: true,
-  markup: true,
-  deduct_markup: true,
   enabled: true,
-}).extend({
-  is_free: z.boolean().readonly(),
 });
 
 export const PublicModelCatalogTierSchema = z.object({
@@ -212,8 +176,6 @@ export type SelectModelData = z.infer<typeof SelectModelDataSchema>;
 const RuntimeCatalogModelSchema = z.object({
   id: z.string().trim().min(1),
   openrouter_model_id: z.string().trim().min(1),
-  markup: ModelMarkupSchema.optional(),
-  deduct_markup: ModelDeductMarkupSchema.optional(),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -231,19 +193,6 @@ const RuntimeModelCatalogSchema = z.object({
 export interface RuntimeCatalogModel {
   id: string;
   openrouter_model_id: string;
-}
-
-export function resolveRuntimeCatalogMarkup(
-  value: unknown,
-  openRouterModelId: string,
-  fallbackMarkup: number
-): number {
-  const parsed = RuntimeModelCatalogSchema.safeParse(value);
-  if (!parsed.success) return fallbackMarkup;
-  const model = parsed.data.tiers
-    .flatMap((tier) => tier.models)
-    .find((candidate) => candidate.openrouter_model_id === openRouterModelId);
-  return model?.markup ?? fallbackMarkup;
 }
 
 /**
@@ -284,14 +233,7 @@ export function toPublicModelCatalog(catalog: ModelCatalog): PublicModelCatalog 
         sort_order: tier.sort_order,
         models: tier.models
           .filter((model) => model.enabled)
-          .map(
-            ({ openrouter_model_id: _openrouterModelId, enabled: _enabled, markup, ...model }) => ({
-              ...model,
-              price_input: markup === 0 ? 0 : model.price_input,
-              price_output: markup === 0 ? 0 : model.price_output,
-              is_free: markup === 0,
-            })
-          ),
+          .map(({ openrouter_model_id: _openrouterModelId, enabled: _enabled, ...model }) => model),
       }))
       .filter((tier) => tier.models.length > 0),
   });
@@ -348,11 +290,6 @@ export type OpenRouterModel = z.infer<typeof OpenRouterModelSchema>;
 export type OpenRouterModelSummary = z.infer<typeof OpenRouterModelSummarySchema>;
 export type OpenRouterModelDirectory = z.infer<typeof OpenRouterModelDirectorySchema>;
 
-export interface DisplayPricingConfig {
-  exchangeRate: number;
-  markup: number;
-}
-
 export const FixedDeductionConfigSchema = z.object({
   freeQuotaExhausted: z.number().finite().nonnegative(),
   light: z.number().finite().nonnegative(),
@@ -361,31 +298,11 @@ export const FixedDeductionConfigSchema = z.object({
 });
 
 export const LlmPricingConfigSchema = z.object({
-  balanceBaseline: z.number().finite().nonnegative(),
-  fallbackCost: z.number().finite().nonnegative(),
-  exchangeRate: z.number().finite().positive(),
-  markup: z.number().finite().positive(),
   fixedDeduction: FixedDeductionConfigSchema,
 });
 
 export type FixedDeductionConfig = z.infer<typeof FixedDeductionConfigSchema>;
 export type LlmPricingRuntimeConfig = z.infer<typeof LlmPricingConfigSchema>;
-
-export function calculateDisplayPrice(usdPerToken: number, pricing: DisplayPricingConfig): number {
-  if (
-    !Number.isFinite(usdPerToken) ||
-    usdPerToken < 0 ||
-    !Number.isFinite(pricing.exchangeRate) ||
-    pricing.exchangeRate <= 0 ||
-    !Number.isFinite(pricing.markup) ||
-    pricing.markup < 0
-  ) {
-    throw new Error('invalid OpenRouter display price inputs');
-  }
-
-  if (pricing.markup === 0) return 0;
-  return Math.round(usdPerToken * 10_000 * pricing.exchangeRate * pricing.markup * 10) / 10;
-}
 
 export function resolveEnabledCatalogModel(
   catalog: ModelCatalog,

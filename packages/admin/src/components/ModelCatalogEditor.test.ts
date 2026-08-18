@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { ModelCatalogSchema, type ModelCatalog } from '@miniapp/shared';
 import { EditableModelCatalogSchema } from '../lib/configSchemas';
 import {
-  applyModelMarkup,
   appendDraftModel,
   appendDraftTier,
   findDuplicateOpenRouterAssignments,
@@ -26,9 +25,7 @@ const catalog: ModelCatalog = {
           openrouter_model_id: 'vendor/flash',
           display_name: 'Flash',
           tagline: '快速响应',
-          price_input: 0.1,
-          price_output: 0.2,
-          markup: 2.5,
+          is_free: false,
           enabled: true,
           sort_order: 7,
         },
@@ -37,9 +34,7 @@ const catalog: ModelCatalog = {
           openrouter_model_id: 'vendor/economy',
           display_name: 'Economy',
           tagline: '节省星尘',
-          price_input: 0.1,
-          price_output: 0.1,
-          markup: 2,
+          is_free: false,
           enabled: true,
           sort_order: 8,
         },
@@ -57,9 +52,7 @@ const catalog: ModelCatalog = {
           openrouter_model_id: 'vendor/pro',
           display_name: 'Pro',
           tagline: '细腻演绎',
-          price_input: 1,
-          price_output: 2,
-          markup: 4,
+          is_free: false,
           enabled: true,
           sort_order: 4,
         },
@@ -100,45 +93,11 @@ describe('editable model catalog additions', () => {
   });
 });
 
-describe('applyModelMarkup', () => {
-  it('forces both display prices to zero for a free model', () => {
-    const model = catalog.tiers[0]!.models[0]!;
-    expect(applyModelMarkup(model, 0)).toMatchObject({
-      markup: 0,
-      price_input: 0,
-      price_output: 0,
-      deduct_markup: 2.5,
-    });
-  });
-
-  it('applies recalculated prices and removes deduct markup for a paid model', () => {
-    const model = {
-      ...catalog.tiers[0]!.models[0]!,
-      markup: 0 as const,
-      deduct_markup: 3 as const,
-    };
-    const result = applyModelMarkup(model, 2, { price_input: 1.2, price_output: 3.4 });
-    expect(result).toMatchObject({
-      markup: 2,
-      price_input: 1.2,
-      price_output: 3.4,
-    });
-    expect(result).not.toHaveProperty('deduct_markup');
-  });
-});
-
 describe('mergeModelUpdate', () => {
-  it('does not keep deduct_markup when a free model becomes paid via shallow patch merge', () => {
-    const freeModel = {
-      ...catalog.tiers[0]!.models[0]!,
-      markup: 0 as const,
-      price_input: 0,
-      price_output: 0,
-      deduct_markup: 3 as const,
-    };
-    const result = mergeModelUpdate(freeModel, applyModelMarkup(freeModel, 1));
-    expect(result.markup).toBe(1);
-    expect(result).not.toHaveProperty('deduct_markup');
+  it('applies a shallow model patch', () => {
+    const result = mergeModelUpdate(catalog.tiers[0]!.models[0]!, { is_free: true });
+    expect(result.is_free).toBe(true);
+    expect(result.display_name).toBe('Flash');
   });
 });
 

@@ -23,9 +23,7 @@ export interface ResolvedModel {
   /** 实际路由到的上游模型 */
   openRouterModelId: string;
   tier: 'light' | 'standard' | 'premium' | null;
-  markup: number;
-  /** 免费模型额度耗尽后改用的倍率；付费模型为 null */
-  deductMarkup: number | null;
+  isFree: boolean;
 }
 
 export interface GenerationMessage {

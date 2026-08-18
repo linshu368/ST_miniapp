@@ -163,6 +163,9 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 078_chat_session_pinned.sql # 会话置顶时间戳与置顶优先的列表排序索引
 079_chat_session_title_default_character_name.sql # 会话 title 默认回填为绑定角色的 characters.name
 080_chat_message_voice.sql # 角色回复语音：chat_message_audio 表、用户语音偏好列、miniapp-chat-voice 桶
+081_finish_reason_billing_gate.sql # 只有 finish_reason=stop 的自然收尾才允许扣星尘
+082_spending_reply_outcomes.sql # 消费明细补 reply_outcome 标签，可判定的空 finish_reason 回到 pending
+083_drop_chat_engine_mode.sql # 删除 ST 切换期的回滚开关 chat_engine_mode（075 建的行）
 ```
 
 > 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。
@@ -260,19 +263,10 @@ D010 → D011 → D014 的演进差异详见 DECISIONS.md D014。
 - `{ path: "active_character", transform: "character_ref" }`
 - `{ path: "oai_settings.prompts", transform: "passthrough" }`
 
-**重新生成种子数据**：
-
-```bash
-cd packages/shared
-../backend/node_modules/.bin/tsx scripts/generate-seed-sql.ts
-```
-
-生成器代码在 `packages/shared/scripts/generate-seed-sql.ts`，会：
-
-1. 从 ST PNG 提取 chara_card_v3 元数据写入 `miniapp.characters`
-2. 从 `OpenAI Settings/Default.json` 写入 `st_platform.platform_presets`
-3. 写入 `st_platform.platform_api_configs` 占位（api_key=REPLACE_ME）
-4. 从 `settings.json` 全量导出 + 三处指针清洗 + canonical content_hash → `st_platform.platform_settings`
+**重新生成种子数据**：已不可能，生成器 `packages/shared/scripts/generate-seed-sql.ts` 于 2026-08-18 随 ST 清理删除
+（取回见 commit `6206f3a` 之前的历史）。它从本机 SillyTavern 数据目录读 PNG 与 `settings.json`，
+产物是已在各环境执行过的 `011_seed_data.sql`，其中 `st_platform.*` 三张表已无消费方。
+011 作为历史迁移保持原样，不重新生成。
 
 ## 部署注意事项
 

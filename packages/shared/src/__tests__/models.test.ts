@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  calculateDisplayPrice,
   LlmPricingConfigSchema,
   ModelCatalogSchema,
   resolveEffectiveSelectedModelId,
   resolveEnabledCatalogModel,
-  resolveRuntimeCatalogMarkup,
   resolveRuntimeCatalogModel,
   toPublicModelCatalog,
 } from '../api/models.js';
@@ -14,10 +12,6 @@ describe('LlmPricingConfigSchema', () => {
   it('validates fixed per-round deductions', () => {
     expect(
       LlmPricingConfigSchema.parse({
-        balanceBaseline: 30,
-        fallbackCost: 30,
-        exchangeRate: 680,
-        markup: 2.5,
         fixedDeduction: {
           freeQuotaExhausted: 10,
           light: 15,
@@ -26,6 +20,28 @@ describe('LlmPricingConfigSchema', () => {
         },
       }).fixedDeduction
     ).toEqual({ freeQuotaExhausted: 10, light: 15, standard: 30, premium: 50 });
+  });
+
+  it('strips leftover exchangeRate and markup fields', () => {
+    expect(
+      LlmPricingConfigSchema.parse({
+        exchangeRate: 680,
+        markup: 2.5,
+        fixedDeduction: {
+          freeQuotaExhausted: 10,
+          light: 15,
+          standard: 30,
+          premium: 50,
+        },
+      })
+    ).toEqual({
+      fixedDeduction: {
+        freeQuotaExhausted: 10,
+        light: 15,
+        standard: 30,
+        premium: 50,
+      },
+    });
   });
 });
 
@@ -44,9 +60,7 @@ const validCatalog = {
           openrouter_model_id: 'google/gemini-flash',
           display_name: 'Gemini Flash',
           tagline: 'Fast',
-          price_input: 0.1,
-          price_output: 0.2,
-          markup: 2.5,
+          is_free: false,
           enabled: true,
           sort_order: 0,
         },
@@ -85,12 +99,11 @@ describe('ModelCatalogSchema', () => {
     expect(ModelCatalogSchema.safeParse(duplicateTier).success).toBe(false);
   });
 
-  it('rejects long taglines and negative display prices', () => {
+  it('rejects long taglines', () => {
     const invalidCatalog = structuredClone(validCatalog);
     const model = invalidCatalog.tiers[0]?.models[0];
     if (!model) throw new Error('test fixture must include a model');
     model.tagline = 'x'.repeat(41);
-    model.price_input = -1;
 
     expect(ModelCatalogSchema.safeParse(invalidCatalog).success).toBe(false);
   });
@@ -105,63 +118,50 @@ describe('ModelCatalogSchema', () => {
     expect(ModelCatalogSchema.safeParse(duplicateMapping).success).toBe(false);
   });
 
-  it('enforces stable ids, required taglines, hex colors and one-decimal prices', () => {
+  it('enforces stable ids, required taglines and hex colors', () => {
     const invalidCatalog = structuredClone(validCatalog);
     invalidCatalog.tiers[0]!.color = 'purple';
     invalidCatalog.tiers[0]!.models[0]!.id = 'Vendor/Model';
     invalidCatalog.tiers[0]!.models[0]!.tagline = '';
-    invalidCatalog.tiers[0]!.models[0]!.price_input = 0.12;
     expect(ModelCatalogSchema.safeParse(invalidCatalog).success).toBe(false);
   });
 
-  it('accepts zero or half-step model markups from one through four', () => {
+  it('accepts free and paid models', () => {
     const valid = structuredClone(validCatalog);
-    Object.assign(valid.tiers[0]!.models[0]!, {
-      markup: 0,
-      price_input: 0,
-      price_output: 0,
-      deduct_markup: 2.5,
-    });
+    valid.tiers[0]!.models[0]!.is_free = true;
     expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
-    valid.tiers[0]!.models[0]!.markup = 3.5;
-    delete (valid.tiers[0]!.models[0]! as { deduct_markup?: number }).deduct_markup;
+    valid.tiers[0]!.models[0]!.is_free = false;
     expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
-    valid.tiers[0]!.models[0]!.markup = 3.2;
-    expect(ModelCatalogSchema.safeParse(valid).success).toBe(false);
   });
 
-  it('allows deduct markup only on free models', () => {
-    const free = structuredClone(validCatalog);
-    Object.assign(free.tiers[0]!.models[0]!, {
-      markup: 0,
-      price_input: 0,
-      price_output: 0,
-      deduct_markup: 3,
-    });
-    expect(ModelCatalogSchema.safeParse(free).success).toBe(true);
+  it('maps leftover markup 0 to is_free and drops markup fields', () => {
+    const legacy = structuredClone(validCatalog) as {
+      tiers: Array<{ models: Array<Record<string, unknown>> }>;
+    };
+    const model = legacy.tiers[0]!.models[0]!;
+    delete model.is_free;
+    model.markup = 0;
+    model.deduct_markup = 2.5;
 
-    Object.assign(free.tiers[0]!.models[0]!, { deduct_markup: 0 });
-    expect(ModelCatalogSchema.safeParse(free).success).toBe(false);
-    delete (free.tiers[0]!.models[0]! as { deduct_markup?: number }).deduct_markup;
-    expect(ModelCatalogSchema.safeParse(free).success).toBe(false);
+    const parsed = ModelCatalogSchema.parse(legacy);
+    expect(parsed.tiers[0]!.models[0]).toMatchObject({ is_free: true });
+    expect(parsed.tiers[0]!.models[0]).not.toHaveProperty('markup');
+    expect(parsed.tiers[0]!.models[0]).not.toHaveProperty('deduct_markup');
+  });
 
-    const paid = structuredClone(validCatalog);
-    Object.assign(paid.tiers[0]!.models[0]!, { deduct_markup: 2.5 });
-    expect(ModelCatalogSchema.safeParse(paid).success).toBe(false);
+  it('maps leftover nonzero markup to a paid model', () => {
+    const legacy = structuredClone(validCatalog) as {
+      tiers: Array<{ models: Array<Record<string, unknown>> }>;
+    };
+    const model = legacy.tiers[0]!.models[0]!;
+    delete model.is_free;
+    model.markup = 2.5;
+
+    expect(ModelCatalogSchema.parse(legacy).tiers[0]!.models[0]!.is_free).toBe(false);
   });
 });
 
 describe('OpenRouter model helpers', () => {
-  it('converts USD per-token pricing into one-decimal star pricing per 10k tokens', () => {
-    expect(
-      calculateDisplayPrice(0.0000004, {
-        exchangeRate: 680,
-        markup: 2.5,
-      })
-    ).toBe(6.8);
-    expect(calculateDisplayPrice(0.0000004, { exchangeRate: 680, markup: 0 })).toBe(0);
-  });
-
   it('resolves enabled stable ids and rejects unknown or disabled models', () => {
     const catalog = ModelCatalogSchema.parse(validCatalog);
     expect(resolveEnabledCatalogModel(catalog, 'flash').openrouter_model_id).toBe(
@@ -181,22 +181,15 @@ describe('OpenRouter model helpers', () => {
     expect(publicCatalog.tiers[0]?.key).toBe('light');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('openrouter_model_id');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('enabled');
-    expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('markup');
-    expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('deduct_markup');
     expect(publicCatalog.tiers[0]?.models[0]?.is_free).toBe(false);
   });
 
-  it('forces free public model prices to zero', () => {
+  it('marks free public models', () => {
     const freeCatalog = structuredClone(validCatalog);
-    Object.assign(freeCatalog.tiers[0]!.models[0]!, {
-      markup: 0,
-      price_input: 0,
-      price_output: 0,
-      deduct_markup: 2.5,
-    });
+    Object.assign(freeCatalog.tiers[0]!.models[0]!, { is_free: true });
     const publicModel = toPublicModelCatalog(ModelCatalogSchema.parse(freeCatalog)).tiers[0]!
       .models[0]!;
-    expect(publicModel).toMatchObject({ is_free: true, price_input: 0, price_output: 0 });
+    expect(publicModel).toMatchObject({ is_free: true });
   });
 
   it('falls back to the default when a stored selection is unavailable', () => {
@@ -210,7 +203,6 @@ describe('OpenRouter model helpers', () => {
     const legacyDisplayCatalog = structuredClone(validCatalog);
     legacyDisplayCatalog.tiers[0]!.color = 'purple';
     legacyDisplayCatalog.tiers[0]!.models[0]!.tagline = '';
-    legacyDisplayCatalog.tiers[0]!.models[0]!.price_input = 0.123;
 
     expect(ModelCatalogSchema.safeParse(legacyDisplayCatalog).success).toBe(false);
     expect(resolveRuntimeCatalogModel(legacyDisplayCatalog, 'flash', false)).toEqual({
@@ -225,12 +217,5 @@ describe('OpenRouter model helpers', () => {
       id: 'flash',
       openrouter_model_id: 'google/gemini-flash',
     });
-  });
-
-  it('resolves per-model markup and falls back for legacy catalogs', () => {
-    expect(resolveRuntimeCatalogMarkup(validCatalog, 'google/gemini-flash', 1)).toBe(2.5);
-    const legacy = structuredClone(validCatalog);
-    delete (legacy.tiers[0]!.models[0]! as { markup?: number }).markup;
-    expect(resolveRuntimeCatalogMarkup(legacy, 'google/gemini-flash', 3)).toBe(3);
   });
 });

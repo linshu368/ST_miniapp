@@ -1,6 +1,5 @@
 import {
   Alert,
-  AutoComplete,
   Button,
   Card,
   Col,
@@ -34,7 +33,6 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useMemo, useState, type ReactNode } from 'react';
 import type {
-  DisplayPricingConfig,
   ModelCatalog,
   ModelCatalogModel,
   ModelCatalogTier,
@@ -42,13 +40,6 @@ import type {
   OpenRouterModelDirectory,
   OpenRouterModelSummary,
 } from '@miniapp/shared';
-import {
-  MODEL_DEDUCT_MARKUP_OPTIONS,
-  MODEL_MARKUP_OPTIONS,
-  ModelDeductMarkupSchema,
-  ModelMarkupSchema,
-} from '@miniapp/shared';
-import { calculateModelDisplayPrices } from '../lib/openRouterModels';
 
 const tierOptions: Array<{ value: ModelCatalogTierKey; label: string; color: string }> = [
   { value: 'light', label: '轻量', color: '#4ade80' },
@@ -112,9 +103,7 @@ function newModel(index: number, timestamp = Date.now()): ModelCatalogModel {
     openrouter_model_id: '',
     display_name: '新模型',
     tagline: '',
-    price_input: 0,
-    price_output: 0,
-    markup: 2.5,
+    is_free: false,
     enabled: true,
     sort_order: index + 1,
   };
@@ -154,31 +143,11 @@ export function appendDraftTier(catalog: ModelCatalog): ModelCatalog {
   };
 }
 
-export function applyModelMarkup(
-  model: ModelCatalogModel,
-  markup: number,
-  displayPrices?: Pick<ModelCatalogModel, 'price_input' | 'price_output'>
-): ModelCatalogModel {
-  const { deduct_markup: currentDeductMarkup, ...baseModel } = model;
-  return {
-    ...baseModel,
-    markup: markup as ModelCatalogModel['markup'],
-    ...(markup === 0 ? { price_input: 0, price_output: 0 } : (displayPrices ?? {})),
-    ...(markup === 0 ? { deduct_markup: currentDeductMarkup ?? 2.5 } : {}),
-  };
-}
-
-/** Merge a model patch without resurrecting deduct_markup on paid models. */
 export function mergeModelUpdate(
   current: ModelCatalogModel,
   patch: Partial<ModelCatalogModel>
 ): ModelCatalogModel {
-  const merged = { ...current, ...patch };
-  if (merged.markup !== 0) {
-    const { deduct_markup: _removed, ...paid } = merged;
-    return paid;
-  }
-  return merged;
+  return { ...current, ...patch };
 }
 
 function SortableHandleItem(props: {
@@ -287,7 +256,6 @@ export function ModelCatalogEditor(props: {
   onChange: (value: ModelCatalog) => void;
   disabled?: boolean;
   openRouterDirectory: OpenRouterModelDirectory | null;
-  pricingConfig: DisplayPricingConfig;
   publishedModelIds: ReadonlySet<string>;
   syncLoading: boolean;
   syncError: string | null;
@@ -398,8 +366,7 @@ export function ModelCatalogEditor(props: {
                                 hour12: false,
                               }
                             )}
-                            。共获取 {props.openRouterDirectory.models.length}{' '}
-                            个模型；展示价格按当前汇率与加价倍率自动换算。
+                            。共获取 {props.openRouterDirectory.models.length} 个模型。
                           </Typography.Text>
                           <Input.Search
                             allowClear
@@ -461,20 +428,6 @@ export function ModelCatalogEditor(props: {
                                 width: 135,
                                 render: (value: number) =>
                                   `${formatUsdPerMillion(value)} / 百万 token`,
-                              },
-                              {
-                                title: '展示输入价',
-                                key: 'display_input',
-                                width: 120,
-                                render: (_, model) =>
-                                  `${calculateModelDisplayPrices(model, props.pricingConfig).price_input.toFixed(1)} 星尘`,
-                              },
-                              {
-                                title: '展示输出价',
-                                key: 'display_output',
-                                width: 120,
-                                render: (_, model) =>
-                                  `${calculateModelDisplayPrices(model, props.pricingConfig).price_output.toFixed(1)} 星尘`,
                               },
                               {
                                 title: '状态',
@@ -721,10 +674,6 @@ export function ModelCatalogEditor(props: {
                                         updateModel(tierIndex, modelIndex, {
                                           openrouter_model_id,
                                           display_name: upstream.name,
-                                          ...calculateModelDisplayPrices(upstream, {
-                                            ...props.pricingConfig,
-                                            markup: model.markup,
-                                          }),
                                         });
                                       }}
                                     />
@@ -770,139 +719,30 @@ export function ModelCatalogEditor(props: {
                                     />
                                   </Col>
                                   <Col xs={24} md={8}>
-                                    <Typography.Text>默认倍率（markup）</Typography.Text>
-                                    <Space.Compact block>
-                                      <AutoComplete
-                                        className="field-full"
-                                        value={String(model.markup)}
-                                        options={MODEL_MARKUP_OPTIONS.map((value) => ({
-                                          value: String(value),
-                                          label: value === 0 ? '0 倍（免费）' : `${value} 倍`,
-                                        }))}
-                                        disabled={props.disabled}
-                                        onChange={(value) => {
-                                          const markup = Number(value);
-                                          updateModel(
-                                            tierIndex,
-                                            modelIndex,
-                                            applyModelMarkup(model, markup)
-                                          );
-                                        }}
-                                        onSelect={(value) => {
-                                          const markup = Number(value);
-                                          const upstream = props.openRouterDirectory?.models.find(
-                                            (item) => item.id === model.openrouter_model_id
-                                          );
-                                          if (!ModelMarkupSchema.safeParse(markup).success) return;
-                                          const displayPrices =
-                                            markup !== 0 && upstream
-                                              ? calculateModelDisplayPrices(upstream, {
-                                                  ...props.pricingConfig,
-                                                  markup,
-                                                })
-                                              : undefined;
-                                          updateModel(
-                                            tierIndex,
-                                            modelIndex,
-                                            applyModelMarkup(model, markup, displayPrices)
-                                          );
-                                        }}
-                                      />
-                                      <Button
-                                        disabled={props.disabled}
-                                        onClick={() => {
-                                          const upstream = props.openRouterDirectory?.models.find(
-                                            (item) => item.id === model.openrouter_model_id
-                                          );
-                                          if (!ModelMarkupSchema.safeParse(model.markup).success)
-                                            return;
-                                          const displayPrices =
-                                            model.markup !== 0 && upstream
-                                              ? calculateModelDisplayPrices(upstream, {
-                                                  ...props.pricingConfig,
-                                                  markup: model.markup,
-                                                })
-                                              : undefined;
-                                          updateModel(
-                                            tierIndex,
-                                            modelIndex,
-                                            applyModelMarkup(model, model.markup, displayPrices)
-                                          );
-                                        }}
-                                      >
-                                        确认
-                                      </Button>
-                                    </Space.Compact>
-                                    {model.markup === 0 ? (
+                                    <Typography.Text>是否免费</Typography.Text>
+                                    <Select
+                                      className="field-full"
+                                      value={model.is_free}
+                                      options={[
+                                        { value: true, label: '是' },
+                                        { value: false, label: '否' },
+                                      ]}
+                                      disabled={props.disabled}
+                                      onChange={(is_free) =>
+                                        updateModel(tierIndex, modelIndex, { is_free })
+                                      }
+                                    />
+                                    {model.is_free ? (
                                       <Alert
                                         type="success"
                                         showIcon
-                                        message="免费额度内：展示价与实际扣费均为 0 星尘"
+                                        message="免费额度内实际扣费为 0 星尘"
                                       />
                                     ) : (
                                       <Typography.Text type="secondary">
-                                        OpenRouter 实时价 × {model.markup} 倍
+                                        按所属档位固定扣费
                                       </Typography.Text>
                                     )}
-                                  </Col>
-                                  {model.markup === 0 ? (
-                                    <Col xs={24} md={8}>
-                                      <Typography.Text>旧扣费倍率（deduct_markup）</Typography.Text>
-                                      <Select
-                                        className="field-full"
-                                        value={model.deduct_markup}
-                                        options={MODEL_DEDUCT_MARKUP_OPTIONS.map((value) => ({
-                                          value,
-                                          label: `${value} 倍`,
-                                        }))}
-                                        disabled={props.disabled}
-                                        onChange={(deductMarkup) => {
-                                          if (
-                                            !ModelDeductMarkupSchema.safeParse(deductMarkup).success
-                                          ) {
-                                            return;
-                                          }
-                                          updateModel(tierIndex, modelIndex, {
-                                            deduct_markup: deductMarkup,
-                                          });
-                                        }}
-                                      />
-                                      <Typography.Text type="secondary">
-                                        仅保留兼容；当前额度用尽后按计费参数统一固定扣费
-                                      </Typography.Text>
-                                    </Col>
-                                  ) : null}
-                                  <Col xs={12} md={4}>
-                                    <Typography.Text>输入展示价</Typography.Text>
-                                    <InputNumber
-                                      min={0}
-                                      precision={1}
-                                      step={0.1}
-                                      className="field-full"
-                                      value={model.price_input}
-                                      disabled
-                                      onChange={(value) =>
-                                        updateModel(tierIndex, modelIndex, {
-                                          price_input: value ?? 0,
-                                        })
-                                      }
-                                    />
-                                  </Col>
-                                  <Col xs={12} md={4}>
-                                    <Typography.Text>输出展示价</Typography.Text>
-                                    <InputNumber
-                                      min={0}
-                                      precision={1}
-                                      step={0.1}
-                                      className="field-full"
-                                      value={model.price_output}
-                                      disabled
-                                      onChange={(value) =>
-                                        updateModel(tierIndex, modelIndex, {
-                                          price_output: value ?? 0,
-                                        })
-                                      }
-                                    />
                                   </Col>
                                   <Col xs={12} md={4}>
                                     <Typography.Text>排序</Typography.Text>
@@ -992,7 +832,7 @@ function ModelCatalogPhonePreview(props: { catalog: ModelCatalog }) {
                   <div>
                     <strong>
                       {model.display_name}
-                      {model.markup === 0 ? (
+                      {model.is_free ? (
                         <span className="model-phone-free-badge">限量免费</span>
                       ) : null}
                     </strong>

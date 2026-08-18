@@ -59,12 +59,3 @@ export async function getFreeQuotaExhaustedDialogConfig(): Promise<FreeQuotaExha
   }
   return parseFreeQuotaExhaustedDialogConfig(data?.value);
 }
-
-export function resolveEffectiveModelMarkup(
-  defaultMarkup: number,
-  deductMarkup: number,
-  freeQuotaGranted: boolean | null
-): number {
-  if (defaultMarkup > 0) return defaultMarkup;
-  return freeQuotaGranted === false ? deductMarkup : 0;
-}

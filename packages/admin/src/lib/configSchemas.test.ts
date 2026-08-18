@@ -2,10 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { LlmPricingConfigSchema } from './configSchemas';
 
 const validConfig = {
-  balanceBaseline: 30,
-  fallbackCost: 30,
-  exchangeRate: 680,
-  markup: 2.5,
   fixedDeduction: {
     freeQuotaExhausted: 10,
     light: 15,
