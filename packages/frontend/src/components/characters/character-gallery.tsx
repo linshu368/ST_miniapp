@@ -15,11 +15,7 @@ import {
   useLobbyLatestBadgeQuery,
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
-import { useChatEngine } from '@/lib/api/chat-engine';
-import { useBridgeStatus } from '@/lib/bridge';
-import { getTimingMark } from '@/lib/bridge/iframe-timing';
 import { chatEntryPath } from '@/lib/chat-entry';
-import { beginFirstChatNavigation } from '@/lib/sentry/first-chat-telemetry';
 
 import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
@@ -55,8 +51,6 @@ function scoreMatch(
 
 export function CharacterGallery() {
   const router = useRouter();
-  const bridgeStatus = useBridgeStatus();
-  const { mode: chatEngineMode } = useChatEngine();
   const [sort, setSort] = useState<LobbySort>(DEFAULT_LOBBY_SORT);
   const { data, isLoading, isError } = useCharactersQuery(sort);
   const [query, setQuery] = useState('');
@@ -79,8 +73,8 @@ export function CharacterGallery() {
 
   // 用户阅读角色详情时同步预取动态路由，减少点击进入后偶发等待路由资源的时间。
   useEffect(() => {
-    if (previewId) router.prefetch(chatEntryPath(chatEngineMode, previewId));
-  }, [chatEngineMode, previewId, router]);
+    if (previewId) router.prefetch(chatEntryPath(previewId));
+  }, [previewId, router]);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
   const firstScreenCharacters = useMemo(
@@ -287,7 +281,7 @@ export function CharacterGallery() {
             setPreviewId(null);
             // 当前本来就在大厅，直接 replace('/') 可能被 Next.js 当成同路由而忽略。
             // 唯一查询参数会启动一笔新的 SPA 导航，并让 App Router 放弃在途角色导航，
-            // 同时保留 query cache、Telegram SDK 与 bridge 连接。
+            // 同时保留 query cache 与 Telegram SDK。
             router.replace(`/?entry_cancelled=${Date.now()}`);
             return;
           }
@@ -297,15 +291,7 @@ export function CharacterGallery() {
           if (enteringRef.current) return;
           enteringRef.current = true;
           setEnteringId(id);
-          // 首条消息埋点串的是 ST 冷启动的各个阶段，自研链路里没有对应的收口点。
-          if (chatEngineMode !== 'self_hosted') {
-            const bridgeStartedAt = getTimingMark('bridge_start');
-            beginFirstChatNavigation(id, 'gallery', {
-              bridgePhase: bridgeStatus,
-              ...(bridgeStartedAt ? { bootElapsedMs: Date.now() - bridgeStartedAt } : {}),
-            });
-          }
-          router.push(chatEntryPath(chatEngineMode, id));
+          router.push(chatEntryPath(id));
         }}
       />
     </>

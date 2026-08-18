@@ -28,11 +28,7 @@ if (isSentryEnabled) {
     release: process.env.SENTRY_RELEASE ?? process.env.RAILWAY_GIT_COMMIT_SHA,
     enableLogs: true,
     tracesSampler: ({ name, inheritOrSampleWith }) => {
-      if (name.includes('/health') || name.includes('/api/debug/')) return 0;
-      if (name.includes('/api/bridge/st/')) return 0;
-      if (name.includes('/api/platform/llm-proxy/v1/')) {
-        return environment === 'production' ? 0.01 : 1;
-      }
+      if (name.includes('/health')) return 0;
       return inheritOrSampleWith(1);
     },
     initialScope: {

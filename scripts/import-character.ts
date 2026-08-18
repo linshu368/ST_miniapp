@@ -190,7 +190,7 @@ function printHelp(): void {
                           不是"用户默认进入的角色"。该配置用户感知不到。）
   --test                  作为测试卡导入（强制 is_test=true, enabled=false）
   --json                  stdout 仅输出 JSON 结果清单，日志写入 stderr
-  --env <path>            指定 .env 文件路径（默认 packages/sync-engine/.env）
+  --env <path>            指定 .env 文件路径（默认 packages/backend/.env）
   --help                  显示帮助信息
 
 示例：
@@ -219,7 +219,7 @@ function parseArgs(argv: string[]): CliArgs {
   let setAsFallback = false;
   let isTest = false;
   let jsonOutput = false;
-  let envPath = resolve(PROJECT_ROOT, 'packages/sync-engine/.env');
+  let envPath = resolve(PROJECT_ROOT, 'packages/backend/.env');
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;

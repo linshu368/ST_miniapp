@@ -32,20 +32,14 @@ export interface ChatHistoryEntry {
   history: unknown[];
   character_id?: string | null;
   preset_id?: string | null;
-  /** 自研引擎会话 id（M1 migration 069 新增列）。ST 链路不传，落库为 NULL */
+  /** 自研引擎会话 id（M1 migration 069 新增列） */
   session_id?: string | null;
-  /** 自研链路预先创建的轮次行；有值时更新该行，ST 链路不传并继续新增日志 */
+  /** 自研链路预先创建的轮次行；有值时更新该行 */
   history_id?: string | null;
   status: 'success' | 'upstream_error' | 'stream_interrupted';
   upstream_status?: number | null;
   deduction_rate?: number; // now calculated internally
   generation_id?: string | null;
-  simulation?: {
-    conversation_id: string;
-    turn_id: string;
-    metadata: Record<string, unknown>;
-    effective_config: Record<string, unknown>;
-  };
 }
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -174,48 +168,6 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         }
       }
 
-      if (entry.simulation) {
-        const supabase = getSupabaseClient();
-        const simulationDb = supabase.schema('miniapp_simulation' as 'public');
-        const { error } = await simulationDb.from('chat_log').insert({
-          id: entry.simulation.turn_id,
-          user_id: null,
-          model: entry.model,
-          user_input: entry.user_input,
-          assistant_reply: entry.assistant_reply,
-          history: entry.history,
-          character_id: entry.character_id ?? null,
-          preset_id: entry.preset_id ?? null,
-          status: entry.status,
-          upstream_status: entry.upstream_status ?? null,
-          deduction_rate: 0,
-          ...llmMetadata,
-          llm_charge_id: null,
-          llm_intended_deduction: 0,
-          conversation_id: entry.simulation.conversation_id,
-          round_index: null,
-          is_simulation: true,
-          metadata: entry.simulation.metadata,
-          effective_config: entry.simulation.effective_config,
-        });
-        if (error) {
-          log.error(
-            {
-              err: error.message,
-              conversationId: entry.simulation.conversation_id,
-              model: entry.model,
-            },
-            '[chat-history] simulation insert failed'
-          );
-        } else {
-          log.info(
-            { conversationId: entry.simulation.conversation_id, model: entry.model },
-            '[chat-history] simulation saved'
-          );
-        }
-        return;
-      }
-
       if (!entry.user_id) {
         throw new Error('production chat history requires user_id');
       }
@@ -291,6 +243,18 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
 
       const supabase = getSupabaseClient();
       const miniappDb = supabase.schema('miniapp' as 'public');
+      if (!entry.history_id) {
+        clog.error(
+          {
+            kind: 'sys',
+            event: 'chathistory.update.missing_id',
+            userId: entry.user_id,
+            model: entry.model,
+          },
+          'missing history_id'
+        );
+        return;
+      }
       const historyValues = {
         user_id: entry.user_id,
         model: entry.model,
@@ -299,28 +263,27 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         history: entry.history,
         character_id: entry.character_id ?? null,
         preset_id: entry.preset_id ?? null,
-        // 只在自研链路带 session 时才写这一列：migration 069 之前的库还没有它，
-        // 显式传 null 会让 ST 链路的落库整条失败。
-        ...(entry.session_id ? { session_id: entry.session_id } : {}),
+        session_id: entry.session_id ?? null,
         status: entry.status,
         upstream_status: entry.upstream_status ?? null,
         deduction_rate: actualDeduction,
         ...llmMetadata,
       };
-      const { error } = entry.history_id
-        ? await miniappDb.from('chat_history').update(historyValues).eq('id', entry.history_id)
-        : await miniappDb.from('chat_history').insert(historyValues);
+      const { error } = await miniappDb
+        .from('chat_history')
+        .update(historyValues)
+        .eq('id', entry.history_id);
 
       if (error) {
         clog.error(
           {
             kind: 'sys',
-            event: entry.history_id ? 'chathistory.update.failed' : 'chathistory.insert.failed',
+            event: 'chathistory.update.failed',
             err: error,
             userId: entry.user_id,
             model: entry.model,
           },
-          entry.history_id ? 'update failed' : 'insert failed'
+          'update failed'
         );
       } else {
         clog.info(

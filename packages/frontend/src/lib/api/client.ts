@@ -4,7 +4,6 @@ import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
 import { sendSentryLog } from '@/lib/sentry/client';
 import { getFirstChatCorrelation } from '@/lib/sentry/first-chat-telemetry';
-import { getActiveBootSessionId } from '@/lib/bridge/boot-session';
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
@@ -39,8 +38,6 @@ function recordFailedRequest(
 }
 
 function applyTelemetryHeaders(headers: Headers): void {
-  const bootSessionId = getActiveBootSessionId();
-  if (bootSessionId) headers.set('X-Boot-Session-Id', bootSessionId);
   const correlation = getFirstChatCorrelation();
   if (!correlation) return;
 

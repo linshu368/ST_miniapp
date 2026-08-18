@@ -15,7 +15,7 @@
 > | 🔜   | 代码已就绪，但要等 M6 打开全局开关、生产库执行 069~073 之后才在生产生效 |
 > | ❌   | 明确不做 / 尚未创建                                                     |
 >
-> 当前进度：M1（数据模型）/ M2（引擎核心）/ M3a（生成出口服务化）/ M3b（对话 REST + SSE）已交付，一条不经过 ST 的对话链路在后端跑通；M5 / M6 未开始，生产流量仍走旧链路。
+> 当前进度：M1 / M2 / M3a / M3b / M5 已交付，测试与生产已切到自研引擎。ST 旧路径已归档到 `legacy/st-removed/`（整包 + 混用散文件），见 `docs/ST_remove-整包清理清单.md` 与 `docs/ST_remove-混用清理清单.md`。`chat_engine_mode`、nginx `/tavern`、Railway `st-bundle` 仍暂缓。
 
 ---
 

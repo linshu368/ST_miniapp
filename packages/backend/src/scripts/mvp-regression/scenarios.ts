@@ -4,15 +4,14 @@
  * §8.3 的 MVP 验收场景与断言：不经过 ST、不经过 iframe、不经过 bridge，
  * 纯 HTTP 客户端把「建会话 → 发消息 → SSE → 落库计费 → 重生成」跑完。
  *
- * 与 §8.3 八条的对应关系：
+ * 与 §8.3 的对应关系：
  *   1 建会话返回开场白            → create_session
  *   2 发消息拿到流式 token + 落库 → send_message
- *   3 扣费与 ST 链路同口径        → billing_parity（同一模型两条链路各跑一轮，比对扣费明细）
- *   4 免费额度边界                → free_quota（需要 --seed-free-model）
- *   5 余额不足 402                → insufficient_balance
- *   6 重生成最后一轮              → regenerate
- *   7 客户端中途断开仍落完整内容  → client_disconnect
- *   8 会话列表直读 DB             → create_session 顺带断言（列表内容 + 全程零上游请求）
+ *   3 免费额度边界                → free_quota（需要 --seed-free-model）
+ *   4 余额不足 402                → insufficient_balance
+ *   5 重生成最后一轮              → regenerate
+ *   6 客户端中途断开仍落完整内容  → client_disconnect
+ *   7 会话列表直读 DB             → create_session 顺带断言（列表内容 + 全程零上游请求）
  *
  * 另加 conflict_guards：409 的两种形态（会话忙 / 不是最后一轮），它们是 SSE 首字节写出
  * 之前必须以 HTTP 状态码返回的判定，走错了前端就得从流里认错误。
@@ -26,10 +25,24 @@ import type {
 } from '@miniapp/shared';
 import { getSupabaseClient } from '../../lib/supabase.js';
 import { getCharacterFreeChatQuotaLimit } from '../../features/billing/free-quota.js';
-import { sendStChatCompletion } from '../st-regression/client.js';
-import { MOCK_REPLY_TEXT, type MockUpstream } from '../st-regression/mock-upstream.js';
-import type { CheckResult, ScenarioResult } from '../st-regression/scenarios.js';
+import { MOCK_REPLY_TEXT, type MockUpstream } from './mock-upstream.js';
 import { buildInitData, callApi } from './client.js';
+
+export interface CheckResult {
+  label: string;
+  passed: boolean;
+  expected: unknown;
+  actual: unknown;
+}
+
+export interface ScenarioResult {
+  name: string;
+  description: string;
+  outcome: 'passed' | 'failed' | 'skipped';
+  skipReason?: string;
+  checks: CheckResult[];
+  observed: Record<string, unknown>;
+}
 import {
   CHARACTER_SYSTEM_PROMPT,
   OPENING_MESSAGE,
@@ -343,72 +356,7 @@ async function sendMessageScenario(context: MvpScenarioContext): Promise<Scenari
   };
 }
 
-// ─── 场景 3：扣费与 ST 链路同口径（§8.3 第 3 条）─────────────────────────────
-
-async function billingParityScenario(context: MvpScenarioContext): Promise<ScenarioResult> {
-  const name = 'billing_parity';
-  const description = '同一模型档位下，自研链路与 ST 链路的扣费明细逐字段一致';
-  const model = context.paidModel;
-  if (!model) return skipped(name, description, '模型目录里没有启用中的付费模型（markup > 0）');
-
-  await resetState(context, { balance: FUNDED_BALANCE });
-  await setSelectedModel(context.fixtures.userId, model.modelId);
-  context.upstream.setScenario('success');
-
-  // 自研链路一轮
-  const session = await createSession(context);
-  await sendMessage(context, session.session.id, '自研链路这一轮');
-  await waitForChatHistory(context.fixtures.userId, 1);
-
-  // ST 链路一轮：同一个用户、同一个角色、同一个模型
-  await sendStChatCompletion({
-    baseUrl: context.baseUrl,
-    userId: context.fixtures.userId,
-    characterId: context.fixtures.characterId,
-    userInput: 'ST 链路这一轮',
-    model: model.openRouterModelId,
-  });
-  const history = await waitForChatHistory(context.fixtures.userId, 2);
-  const charges = await listUsageCharges(context.fixtures.userId);
-
-  const engineCharge = charges[0];
-  const stCharge = charges[1];
-
-  const checker = new Checker();
-  checker.expect('扣费明细条数', charges.length, 2);
-  checker.expect(
-    '扣费金额一致',
-    Number(engineCharge?.charged_amount ?? -1),
-    Number(stCharge?.charged_amount ?? -2)
-  );
-  checker.expect(
-    '计费倍率一致',
-    Number(engineCharge?.model_markup ?? -1),
-    Number(stCharge?.model_markup ?? -2)
-  );
-  checker.expect('上游模型一致', engineCharge?.model_openrouter_id, stCharge?.model_openrouter_id);
-  checker.expect(
-    'chat_history.deduction_rate 一致',
-    Number(history[0]?.deduction_rate ?? -1),
-    Number(history[1]?.deduction_rate ?? -2)
-  );
-  checker.expectTrue('自研链路那条带 session_id', history[0]?.session_id !== null);
-  checker.expect('ST 链路那条 session_id 仍为 NULL', history[1]?.session_id, null);
-
-  return {
-    name,
-    description,
-    outcome: outcomeOf(checker),
-    checks: checker.checks,
-    observed: {
-      engine_charge: engineCharge ? normalizeCharge(engineCharge) : null,
-      st_charge: stCharge ? normalizeCharge(stCharge) : null,
-      chat_history: history.map(normalizeHistory),
-    },
-  };
-}
-
-// ─── 场景 4：免费额度边界（§8.3 第 4 条）─────────────────────────────────────
+// ─── 场景：免费额度边界──────────────────────────────────────────────────────
 
 async function freeQuotaScenario(context: MvpScenarioContext): Promise<ScenarioResult> {
   const name = 'free_quota';
@@ -734,7 +682,6 @@ export const SCENARIOS: Array<{
 }> = [
   { name: 'create_session', run: createSessionScenario },
   { name: 'send_message', run: sendMessageScenario },
-  { name: 'billing_parity', run: billingParityScenario },
   { name: 'free_quota', run: freeQuotaScenario },
   { name: 'insufficient_balance', run: insufficientBalanceScenario },
   { name: 'regenerate', run: regenerateScenario },

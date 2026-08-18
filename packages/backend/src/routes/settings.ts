@@ -13,22 +13,12 @@ import {
   MiniappUserSettingsRepository,
   toUserSettings,
 } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
-import { config } from '../platform/config.js';
 import {
   decodeUploadedAvatar,
   deleteStoredUserAvatar,
   downloadRemoteAvatar,
   storeUserAvatar,
 } from '../lib/user-avatar.js';
-
-async function triggerAvatarProvision(userId: string): Promise<void> {
-  const url = `${config.stProvisionUrl}/provision/${encodeURIComponent(userId)}?force=true&cards=none`;
-  const response = await fetch(url, { method: 'POST' });
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`头像已保存，但同步到聊天失败：${detail}`);
-  }
-}
 
 export default async function settingsRoutes(app: FastifyInstance) {
   const settings = new MiniappUserSettingsRepository();
@@ -60,7 +50,6 @@ export default async function settingsRoutes(app: FastifyInstance) {
         const patch = (request.body ?? {}) as PatchUserSettingsRequest;
         if ('avatar_url' in patch) {
           await deleteStoredUserAvatar(dbUser.id);
-          await triggerAvatarProvision(dbUser.id);
         }
 
         return reply.send(ok<PatchUserSettingsData>({ settings: toUserSettings(row) }));
@@ -90,7 +79,6 @@ export default async function settingsRoutes(app: FastifyInstance) {
         const dbUser = await getOrCreateDbUser(request.user);
         const publicUrl = await storeUserAvatar(dbUser.id, image);
         const row = await settings.setCustomAvatar(dbUser.id, request.user, publicUrl);
-        await triggerAvatarProvision(dbUser.id);
 
         return reply.send(ok<SetUserAvatarData>({ settings: toUserSettings(row) }));
       } catch (error) {

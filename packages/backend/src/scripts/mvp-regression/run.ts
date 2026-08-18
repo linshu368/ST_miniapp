@@ -13,7 +13,7 @@
  * 全程不经过 ST、iframe、bridge——这正是 §8.3 的判据本身。
  *
  * 为什么是脚本而不是集成测试：它要占端口、写真库、单次跑十几秒，塞进 `pnpm test`
- * 会让每次提交都变慢且不稳定。定位与 st:regression 一致：上线前手动跑一遍。
+ * 会让每次提交都变慢且不稳定。定位是上线前手动跑一遍。
  *
  * ⚠️ 前提：packages/backend/.env 里 DATABASE_ENV=test 且 TEST_SUPABASE_* 齐备，
  *    且 069 / 070 / 071 三个迁移已在该库执行。脚本会拒绝在非 test 库上运行。
@@ -21,9 +21,9 @@
 
 import 'dotenv/config';
 import { writeFileSync } from 'node:fs';
-import { startMockUpstream } from '../st-regression/mock-upstream.js';
+import { startMockUpstream } from './mock-upstream.js';
 // 只导入类型：编译后会被抹掉，不会在设置环境变量之前把后端模块拉起来。
-import type { ScenarioResult } from '../st-regression/scenarios.js';
+import type { ScenarioResult } from './scenarios.js';
 
 interface CliArgs {
   snapshotPath: string | null;
@@ -55,9 +55,6 @@ async function main(): Promise<void> {
   process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
   // 鉴权：MOCK_AUTH 让 verifyTelegramInitData 只解析 user 参数，不需要真实 bot token
   process.env.MOCK_AUTH = '1';
-  // billing_parity 场景要以 ST 形态打一轮，用的是同一个自签密钥
-  process.env.LLM_PROXY_TOKEN_SECRET =
-    process.env.LLM_PROXY_TOKEN_SECRET || 'mvp-regression-token-secret';
 
   const { config } = await import('../../platform/config.js');
   if (config.nodeEnv === 'production') {

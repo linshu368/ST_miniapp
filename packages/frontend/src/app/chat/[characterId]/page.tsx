@@ -81,14 +81,16 @@ export default function SelfHostedChatPage() {
   const abortRef = useRef<AbortController | null>(null);
 
   const characterQuery = useCharacterQuery(characterId);
-  const conversationQuery = useConversationQuery(sessionId ?? undefined);
   const createConversation = useCreateConversationMutation();
+  const createdSessionId = createConversation.data?.session.id ?? null;
+  const activeSessionId = sessionId ?? createdSessionId;
+  const conversationQuery = useConversationQuery(activeSessionId ?? undefined);
   const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
   const refetchFreeQuota = freeQuotaQuery.refetch;
   const userSettingsQuery = useUserSettingsQuery();
   const voiceConfigQuery = useVoiceConfigQuery();
-  const sessionVoiceQuery = useSessionVoiceQuery(sessionId ?? undefined);
-  const generateVoice = useGenerateVoiceMutation(sessionId ?? undefined);
+  const sessionVoiceQuery = useSessionVoiceQuery(activeSessionId ?? undefined);
+  const generateVoice = useGenerateVoiceMutation(activeSessionId ?? undefined);
   const viewportHeight = useVisualViewportHeight();
 
   const character = characterQuery.data?.character;
@@ -100,10 +102,10 @@ export default function SelfHostedChatPage() {
 
   const returnTo = useMemo(
     () =>
-      sessionId
-        ? `/chat/${encodeURIComponent(characterId)}?session=${encodeURIComponent(sessionId)}`
+      activeSessionId
+        ? `/chat/${encodeURIComponent(characterId)}?session=${encodeURIComponent(activeSessionId)}`
         : `/chat/${encodeURIComponent(characterId)}`,
-    [characterId, sessionId]
+    [characterId, activeSessionId]
   );
 
   /**
@@ -118,9 +120,11 @@ export default function SelfHostedChatPage() {
 
   // ── 进入会话 ──────────────────────────────────────────────────────────────
   // 无 ?session= 就建一个新的；建完把 id 补进 URL，刷新页面不会又建一个空会话。
+  // mutate 的 onSuccess 在 React Strict Mode 重挂时可能被丢掉，所以 session 以
+  // mutation.data 为准；effect cleanup 必须放开 in-flight 锁，否则重挂后不会再发。
   const creatingRef = useRef(false);
   useEffect(() => {
-    if (sessionId || !characterId || creatingRef.current) return;
+    if (activeSessionId || !characterId || creatingRef.current) return;
     creatingRef.current = true;
 
     createConversation.mutate(characterId, {
@@ -136,9 +140,23 @@ export default function SelfHostedChatPage() {
         creatingRef.current = false;
       },
     });
+
+    return () => {
+      creatingRef.current = false;
+    };
     // createConversation 每次渲染都是新引用，只在这几项变化时重跑
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characterId, sessionId, entryAttempt]);
+  }, [characterId, activeSessionId, entryAttempt]);
+
+  useEffect(() => {
+    if (sessionId || !createdSessionId) return;
+    setSessionId(createdSessionId);
+    window.history.replaceState(
+      null,
+      '',
+      `/chat/${encodeURIComponent(characterId)}?session=${encodeURIComponent(createdSessionId)}`
+    );
+  }, [characterId, createdSessionId, sessionId]);
 
   // 会话被删或不属于当前用户：URL 里的 id 已经没用了，清掉让上面的分支重建一个
   const detailErrorCode =
@@ -159,7 +177,7 @@ export default function SelfHostedChatPage() {
     setStreaming(null);
     setStreamError(null);
     setEarlier([]);
-  }, [sessionId]);
+  }, [activeSessionId]);
 
   useEffect(() => {
     setHasMoreEarlier(conversationQuery.data?.has_more ?? false);
@@ -197,7 +215,7 @@ export default function SelfHostedChatPage() {
     if (streaming.assistantMessageId) {
       merged.push({
         id: streaming.assistantMessageId,
-        session_id: sessionId ?? '',
+        session_id: activeSessionId ?? '',
         turn_index: streaming.turnIndex,
         role: 'assistant',
         revision: streaming.revision,
@@ -210,11 +228,11 @@ export default function SelfHostedChatPage() {
       });
     }
     return merged;
-  }, [persisted, sessionId, streaming]);
+  }, [persisted, activeSessionId, streaming]);
 
   const serverBusy = persisted.some((message) => message.status === 'streaming');
   const generating = streaming !== null;
-  const ready = Boolean(sessionId) && conversationQuery.isSuccess;
+  const ready = Boolean(activeSessionId) && conversationQuery.isSuccess;
 
   const lastMessage = messages.at(-1);
   const canRegenerate =
@@ -298,8 +316,8 @@ export default function SelfHostedChatPage() {
 
       // 无论怎么收场，后端都已经在写这一轮了，落库态必须重新拉一次
       setStreaming(null);
-      if (sessionId) {
-        void queryClient.invalidateQueries({ queryKey: conversationKeys.detail(sessionId) });
+      if (activeSessionId) {
+        void queryClient.invalidateQueries({ queryKey: conversationKeys.detail(activeSessionId) });
       }
       if (aborted) return;
 
@@ -338,12 +356,12 @@ export default function SelfHostedChatPage() {
           restoreDraft(input);
       }
     },
-    [goBack, queryClient, restoreDraft, returnTo, router, sessionId]
+    [goBack, queryClient, restoreDraft, returnTo, router, activeSessionId]
   );
 
   const runTurn = useCallback(
     async (input: { mode: 'send' | 'regenerate'; content?: string }) => {
-      if (!sessionId) return;
+      if (!activeSessionId) return;
 
       // 本轮之前的额度。生成结束后要拿它跟新值比，判断额度是不是刚好在这一轮见底
       const quotaBefore = freeQuotaRef.current;
@@ -356,7 +374,7 @@ export default function SelfHostedChatPage() {
         input.mode === 'send' && input.content !== undefined
           ? {
               id: `local:${Date.now()}`,
-              session_id: sessionId,
+              session_id: activeSessionId,
               turn_index: Number.MAX_SAFE_INTEGER,
               role: 'user',
               revision: 0,
@@ -380,7 +398,7 @@ export default function SelfHostedChatPage() {
 
       try {
         await streamConversationTurn({
-          sessionId,
+          sessionId: activeSessionId,
           content: input.content,
           signal: controller.signal,
           onStart: (event) => {
@@ -412,7 +430,7 @@ export default function SelfHostedChatPage() {
         });
 
         // 先等落库态回来再撤临时态，顺序反过来中间会闪一帧空白
-        await queryClient.invalidateQueries({ queryKey: conversationKeys.detail(sessionId) });
+        await queryClient.invalidateQueries({ queryKey: conversationKeys.detail(activeSessionId) });
         setStreaming(null);
         void refreshQuotaAndBalance(quotaBefore);
       } catch (error) {
@@ -421,7 +439,7 @@ export default function SelfHostedChatPage() {
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [handleTurnFailure, queryClient, refreshQuotaAndBalance, sessionId]
+    [activeSessionId, handleTurnFailure, queryClient, refreshQuotaAndBalance]
   );
 
   const handleSend = () => {
@@ -433,10 +451,10 @@ export default function SelfHostedChatPage() {
 
   const handleLoadEarlier = async () => {
     const oldest = persisted[0];
-    if (!sessionId || !oldest || loadingEarlier) return;
+    if (!activeSessionId || !oldest || loadingEarlier) return;
     setLoadingEarlier(true);
     try {
-      const page = await fetchConversationPage(sessionId, oldest.turn_index);
+      const page = await fetchConversationPage(activeSessionId, oldest.turn_index);
       setEarlier((current) => [...page.messages, ...current]);
       setHasMoreEarlier(page.has_more);
     } catch {
@@ -564,7 +582,7 @@ export default function SelfHostedChatPage() {
         onOpenChange={setSessionsOpen}
         characterId={characterId}
         characterName={characterQuery.data?.character.name}
-        activeSessionId={sessionId}
+        activeSessionId={activeSessionId}
         onSelect={(nextSessionId) => {
           setSessionId(nextSessionId);
           window.history.replaceState(
@@ -583,7 +601,7 @@ export default function SelfHostedChatPage() {
         onRetry={() => {
           createConversation.reset();
           setEntryAttempt((attempt) => attempt + 1);
-          if (sessionId) void conversationQuery.refetch();
+          if (activeSessionId) void conversationQuery.refetch();
         }}
       />
 
