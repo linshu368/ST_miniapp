@@ -1,11 +1,15 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { getSupabaseClient } from './supabase.js';
-import { calculateUsageDeduction } from '../features/billing/usage-pricing.js';
+import {
+  calculateUsageDeduction,
+  resolveUsageBillingGate,
+} from '../features/billing/usage-pricing.js';
+import { MiniappCharacterFreeQuotaRepository } from '../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 
 const OPENROUTER_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
-const SYNC_INTERVAL_MS = 10 * 60 * 1000;
-const STARTUP_DELAY_MS = 10 * 1000;
+const SYNC_INTERVAL_MS = 30 * 1000;
+const STARTUP_DELAY_MS = 5 * 1000;
 const LOOKBACK_HOURS = 24;
 const BATCH_LIMIT = 50;
 
@@ -13,6 +17,7 @@ let timerId: NodeJS.Timeout | null = null;
 let startupTimerId: NodeJS.Timeout | null = null;
 let isRunning = false;
 const wallets = new MiniappWalletRepository();
+const freeQuotas = new MiniappCharacterFreeQuotaRepository();
 
 function isCompleteGenerationData(genData: Record<string, unknown> | null): boolean {
   return (
@@ -78,7 +83,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
 
     const { data, error } = await miniappDb
       .from('chat_history')
-      .select('id, llm_generation_id, llm_charge_id')
+      .select('id, llm_generation_id, llm_charge_id, assistant_reply, status')
       .not('llm_generation_id', 'is', null)
       .gte('created_at', since)
       .or(
@@ -118,17 +123,78 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       const isComplete = isCompleteGenerationData(genData);
       const llmMetadata = buildGenerationMetadata(genData);
       const usageCost = genData.usage;
+      const finishReason = typeof genData.finish_reason === 'string' ? genData.finish_reason : null;
       const chargeId = record.llm_charge_id;
+      let reconciliationFailed = false;
 
-      if (
-        typeof usageCost === 'number' &&
-        Number.isFinite(usageCost) &&
-        typeof chargeId === 'string' &&
-        chargeId.length > 0
-      ) {
+      if (typeof chargeId === 'string' && chargeId.length > 0) {
         try {
           const originalCharge = await wallets.findLlmUsageCharge(chargeId);
-          if (originalCharge && originalCharge.metadata?.billing_mode !== 'fixed_tier') {
+          if (
+            originalCharge?.metadata?.billing_mode === 'fixed_tier' &&
+            originalCharge.status === 'pending' &&
+            finishReason !== null
+          ) {
+            const replyOutcome =
+              typeof record.assistant_reply === 'string' && record.assistant_reply.trim()
+                ? record.status === 'success'
+                  ? 'complete'
+                  : 'incomplete'
+                : 'empty';
+            const billingStatus = replyOutcome === 'complete' ? 'success' : 'stream_interrupted';
+            await freeQuotas.finalizePending(
+              chargeId,
+              billingStatus === 'success' && finishReason === 'stop'
+            );
+            const fixedDeduction = Number(
+              originalCharge.metadata?.fixed_deduction ?? originalCharge.calculated_amount
+            );
+            const actualModel =
+              typeof genData.model === 'string' && genData.model.trim()
+                ? genData.model
+                : originalCharge.model_openrouter_id;
+            const reconciled = await wallets.chargeLlmUsage({
+              chargeId,
+              generationId: generationId,
+              userId: originalCharge.user_id,
+              modelId: originalCharge.model_id,
+              modelOpenRouterId: actualModel,
+              modelDisplayName:
+                actualModel !== originalCharge.model_openrouter_id
+                  ? actualModel
+                  : originalCharge.model_display_name,
+              catalogVersion: originalCharge.catalog_version,
+              pricingConfigVersion: originalCharge.pricing_config_version,
+              usageCostUsd:
+                typeof usageCost === 'number' && Number.isFinite(usageCost) ? usageCost : null,
+              exchangeRate: Number(originalCharge.exchange_rate),
+              modelMarkup: Number(originalCharge.model_markup),
+              calculatedAmount: Number.isFinite(fixedDeduction) ? fixedDeduction : 0,
+              fallbackUsed: false,
+              metadata: {
+                ...(originalCharge.metadata ?? {}),
+                source: 'chat_history_sync',
+                chat_status: billingStatus,
+                generation_status: record.status,
+                reply_outcome: replyOutcome,
+                reply_char_count:
+                  typeof record.assistant_reply === 'string' ? record.assistant_reply.length : 0,
+                finish_reason: finishReason,
+                billing_gate: resolveUsageBillingGate({
+                  status: billingStatus,
+                  finishReason,
+                }),
+              },
+            });
+            llmMetadata.llm_intended_deduction = Number(reconciled.charge.calculated_amount);
+            llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
+          } else if (
+            originalCharge &&
+            originalCharge.metadata?.billing_mode !== 'fixed_tier' &&
+            typeof usageCost === 'number' &&
+            Number.isFinite(usageCost) &&
+            finishReason === 'stop'
+          ) {
             const intendedDeduction = calculateUsageDeduction(
               usageCost,
               Number(originalCharge.exchange_rate),
@@ -144,6 +210,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
             llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
           }
         } catch (reconcileErr) {
+          reconciliationFailed = true;
           log.error(
             {
               kind: 'sys',
@@ -157,6 +224,9 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
           );
         }
       }
+
+      // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
+      if (reconciliationFailed) continue;
 
       const { error: updateErr } = await miniappDb
         .from('chat_history')

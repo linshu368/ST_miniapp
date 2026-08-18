@@ -144,6 +144,8 @@ export function useWalletSpendingQuery() {
     queryFn: fetchWalletSpending,
     staleTime: 0,
     refetchOnMount: 'always',
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) => item.status === 'pending') ? 3_000 : false,
   });
 }
 

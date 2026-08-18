@@ -46,6 +46,9 @@ export interface WalletSpendingRecord {
   model_display_name: string;
   charged_amount: number;
   status: 'pending' | 'failed' | 'free' | 'charged' | 'partial' | 'reconciled' | 'historical';
+  finish_reason: string | null;
+  reply_outcome: 'complete' | 'incomplete' | 'empty' | null;
+  status_label: string;
   created_at: string;
 }
 

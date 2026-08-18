@@ -10,10 +10,12 @@ export function ChatRegenerateButton({
   onRegenerate,
   pending,
   disabled,
+  label = '换一个回复',
 }: {
   onRegenerate: () => void;
   pending: boolean;
   disabled: boolean;
+  label?: string;
 }) {
   return (
     <button
@@ -27,7 +29,7 @@ export function ChatRegenerateButton({
       ) : (
         <RefreshCw className="h-3.5 w-3.5" aria-hidden />
       )}
-      换一个回复
+      {label}
     </button>
   );
 }

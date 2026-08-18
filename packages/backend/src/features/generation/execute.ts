@@ -48,10 +48,23 @@ import type {
 /** 一次生成里只有这四个字段随终态变化，其余 chat_history 字段全程固定。 */
 type HistoryOutcome = Pick<
   ChatHistoryEntry,
-  'assistant_reply' | 'status' | 'upstream_status' | 'generation_id'
+  'assistant_reply' | 'status' | 'upstream_status' | 'generation_id' | 'finish_reason'
 >;
 
 type SaveHistory = (outcome: HistoryOutcome) => void;
+
+/** 与会话 streaming 陈旧回收口径一致，避免一轮生成无限占住会话。 */
+export const GENERATION_TIMEOUT_MS = 120_000;
+
+/** 收到流终止标记且有可见正文，说明回复已完整交付给用户。 */
+function isDeliveredReply(result: Pick<SseTapResult, 'completed' | 'content'>) {
+  return result.completed && result.content.trim().length > 0;
+}
+
+/** 只有 OpenRouter 明确确认自然结束后才能最终扣费。 */
+function isBillableReply(result: Pick<SseTapResult, 'completed' | 'content' | 'finishReason'>) {
+  return isDeliveredReply(result) && result.finishReason === 'stop';
+}
 
 function buildUpstreamBody(request: GenerationRequest): Record<string, unknown> {
   const messages: UpstreamMessage[] = request.promptCaching
@@ -138,6 +151,7 @@ export async function execute(
       url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH),
       method: 'POST',
       body: JSON.stringify(buildUpstreamBody(request)),
+      signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
     });
   } catch (err) {
     // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
@@ -175,6 +189,7 @@ export async function execute(
       status: 'upstream_error',
       upstream_status: upstreamRes.status,
       generation_id: null,
+      finish_reason: null,
     });
     hooks?.onError?.(new Error(`upstream ${upstreamRes.status}: ${detail.slice(0, 200)}`));
     return finish(failed({ upstreamStatus: upstreamRes.status }));
@@ -202,16 +217,17 @@ export async function execute(
   }
 
   if (!upstreamRes.body) {
-    // 2xx 但没有 body：按空回复的正常收流处理，与 ST 链路一致
-    await reservation.finalize(true);
+    // 2xx 但没有正文属于 empty：不扣费，并给前端一个可重试的异常终态。
+    await reservation.finalize(false);
     saveHistory({
       assistant_reply: null,
-      status: 'success',
+      status: 'stream_interrupted',
       upstream_status: null,
       generation_id: headerGenerationId,
+      finish_reason: null,
     });
     return finish({
-      status: 'success',
+      status: 'stream_interrupted',
       content: '',
       generationId: headerGenerationId,
       finishReason: null,
@@ -272,7 +288,10 @@ export async function execute(
 
   const tapped = tap.snapshot();
   return finish({
-    status: tapped.completed ? 'success' : 'stream_interrupted',
+    status:
+      isDeliveredReply(tapped) && (tapped.finishReason === 'stop' || tapped.finishReason === null)
+        ? 'success'
+        : 'stream_interrupted',
     content: tapped.content,
     generationId: tapped.generationId,
     finishReason: tapped.finishReason,
@@ -313,7 +332,10 @@ function createHistoryWriter(input: {
   };
 }
 
-/** 流终态：免费额度终结 + chat_history 落库与实扣。只有见到 [DONE] 才算成功。 */
+/**
+ * 流终态：完整交付与扣费终态分开判断。finish_reason 暂缺时保留免费额度预留，
+ * 让 chat history 同步任务拿到 OpenRouter 的真实终态后再消费或释放。
+ */
 async function settleStream(input: {
   result: SseTapResult;
   request: GenerationRequest;
@@ -323,9 +345,14 @@ async function settleStream(input: {
   log: GenerationLogger;
 }): Promise<void> {
   const { result, request, billing, reservation, saveHistory, log } = input;
-  await reservation.finalize(result.completed);
+  const delivered = isDeliveredReply(result);
+  const billable = isBillableReply(result);
+  const waitingForFinishReason = delivered && result.finishReason === null;
+  if (!waitingForFinishReason) {
+    await reservation.finalize(billable);
+  }
 
-  if (result.completed) {
+  if (delivered && (result.finishReason === 'stop' || result.finishReason === null)) {
     log.biz.info(
       {
         event: 'llm.generation.completed',
@@ -335,13 +362,14 @@ async function settleStream(input: {
         generationId: result.generationId,
         replyChars: result.content.length,
       },
-      'LLM 生成完成'
+      waitingForFinishReason ? 'LLM 回复已完整交付，等待计费终态' : 'LLM 生成完成'
     );
     saveHistory({
       assistant_reply: result.content,
       status: 'success',
       upstream_status: null,
       generation_id: result.generationId,
+      finish_reason: result.finishReason,
     });
     return;
   }
@@ -354,13 +382,14 @@ async function settleStream(input: {
       model: billing.openRouterModelId,
       generationId: result.generationId,
     },
-    'stream ended without [DONE], skipping deduction'
+    'generation produced an incomplete or empty reply, skipping deduction'
   );
   saveHistory({
     assistant_reply: result.deltaCount > 0 ? result.content : null,
     status: 'stream_interrupted',
     upstream_status: null,
     generation_id: result.generationId,
+    finish_reason: result.finishReason,
   });
 }
 
@@ -424,6 +453,7 @@ async function consumeNonStream(input: {
       status: 'upstream_error',
       upstream_status: upstreamRes.status,
       generation_id: generationId,
+      finish_reason: null,
     });
     return {
       status: 'upstream_error',
@@ -437,19 +467,30 @@ async function consumeNonStream(input: {
     };
   }
 
-  await reservation.finalize(true);
+  const hasContent = typeof assistantReply === 'string' && assistantReply.trim().length > 0;
+  const delivered = responseParsed && hasContent;
+  const billable = delivered && finishReason === 'stop';
+  const waitingForFinishReason = delivered && finishReason === null;
+  if (!waitingForFinishReason) {
+    await reservation.finalize(billable);
+  }
+  const status =
+    delivered && (finishReason === 'stop' || finishReason === null)
+      ? 'success'
+      : 'stream_interrupted';
   saveHistory({
     assistant_reply: assistantReply,
-    status: 'success',
+    status,
     upstream_status: null,
     generation_id: generationId,
+    finish_reason: finishReason,
   });
   if (assistantReply) {
     hooks?.onFirstToken?.();
     hooks?.onDelta?.(assistantReply);
   }
   return {
-    status: 'success',
+    status,
     content: assistantReply ?? '',
     generationId,
     finishReason,

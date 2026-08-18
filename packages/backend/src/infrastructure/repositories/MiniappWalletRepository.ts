@@ -199,7 +199,7 @@ export class MiniappWalletRepository {
   async listSpending(userId: string): Promise<WalletSpendingRecord[]> {
     const { data, error } = await this.db
       .from('llm_usage_charges')
-      .select('charge_key,model_id,model_display_name,charged_amount,status,created_at')
+      .select('charge_key,model_id,model_display_name,charged_amount,status,metadata,created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -211,6 +211,7 @@ export class MiniappWalletRepository {
         model_display_name: string;
         charged_amount: NumericValue;
         status: WalletSpendingRecord['status'];
+        metadata: Record<string, unknown> | null;
         created_at: string;
       }>
     ).map((row) => ({
@@ -219,6 +220,10 @@ export class MiniappWalletRepository {
       model_display_name: row.model_display_name,
       charged_amount: toNumber(row.charged_amount),
       status: row.status,
+      finish_reason:
+        typeof row.metadata?.finish_reason === 'string' ? row.metadata.finish_reason : null,
+      reply_outcome: readReplyOutcome(row.metadata ?? {}),
+      status_label: formatSpendingStatus(row.status, row.metadata ?? {}),
       created_at: row.created_at,
     }));
   }
@@ -415,6 +420,38 @@ function toNumber(value: NumericValue): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw new Error(`无效的数值字段：${String(value)}`);
   return parsed;
+}
+
+export function formatSpendingStatus(
+  status: WalletSpendingRecord['status'],
+  metadata: Record<string, unknown>
+): string {
+  const replyOutcome = readReplyOutcome(metadata);
+
+  if (status === 'pending') return '待结算';
+  if (status === 'charged' || status === 'reconciled') return '已扣费';
+  if (status === 'partial') return '余额不足，部分扣费';
+  if (status === 'free') return '本次免费';
+  if (replyOutcome === 'incomplete') return '截断未扣除';
+  if (replyOutcome === 'empty') return '生成失败，未扣除';
+  const finishReason = typeof metadata.finish_reason === 'string' ? metadata.finish_reason : null;
+  const generationStatus =
+    typeof metadata.generation_status === 'string'
+      ? metadata.generation_status
+      : typeof metadata.chat_status === 'string'
+        ? metadata.chat_status
+        : null;
+  if (finishReason && finishReason !== 'stop') return '截断未扣除';
+  if (generationStatus === 'stream_interrupted') return '截断未扣除';
+  if (generationStatus === 'upstream_error') return '生成失败，未扣除';
+  return '未扣除';
+}
+
+function readReplyOutcome(
+  metadata: Record<string, unknown>
+): WalletSpendingRecord['reply_outcome'] {
+  const value = metadata.reply_outcome;
+  return value === 'complete' || value === 'incomplete' || value === 'empty' ? value : null;
 }
 
 function parsePositiveInteger(value: unknown, fallback: number): number {
