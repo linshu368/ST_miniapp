@@ -103,14 +103,14 @@ export default async function modelsRoutes(app: FastifyInstance) {
             ?.tier ?? null;
         const dbUser = await getOrCreateDbUser(request.user);
 
-        if (selectedModel.markup > 0) {
+        if (!selectedModel.is_free) {
           const [wallet, pricing] = await Promise.all([
             wallets.getOrCreate(dbUser.id),
             getPricingConfig(),
           ]);
           const fixedDeduction = resolveFixedDeduction({
-            defaultModelMarkup: selectedModel.markup,
-            effectiveModelMarkup: selectedModel.markup,
+            isFreeModel: false,
+            isFreeRound: false,
             modelTier: selectedTier,
             config: pricing.fixedDeduction,
           });

@@ -4,9 +4,9 @@ import {
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
+  LlmPricingConfigSchema,
   ModelCatalogSchema,
   RechargePageConfigSchema,
-  type DisplayPricingConfig,
   type ModelCatalog,
   type OpenRouterModelDirectory,
   type PaymentPlan,
@@ -52,7 +52,6 @@ export function ConfigValueEditor(props: {
   onChange: (value: unknown) => void;
   disabled?: boolean;
   openRouterDirectory: OpenRouterModelDirectory | null;
-  pricingConfig: DisplayPricingConfig;
   publishedModelIds: ReadonlySet<string>;
   syncLoading: boolean;
   syncError: string | null;
@@ -140,33 +139,17 @@ export function ConfigValueEditor(props: {
   }
 
   if (props.configKey === 'llm_pricing_config') {
-    const value = (props.value ?? {}) as Record<string, unknown>;
-    const fixedDeduction = {
-      freeQuotaExhausted: 10,
-      light: 15,
-      standard: 30,
-      premium: 50,
-      ...((value.fixedDeduction ?? {}) as Record<string, number>),
-    };
+    const parsed = LlmPricingConfigSchema.safeParse(props.value);
+    const fixedDeduction = parsed.success
+      ? parsed.data.fixedDeduction
+      : {
+          freeQuotaExhausted: 10,
+          light: 15,
+          standard: 30,
+          premium: 50,
+        };
     return (
       <Row gutter={[12, 12]}>
-        {[
-          ['balanceBaseline', '旧余额预检基准（已弃用）'],
-          ['fallbackCost', '旧兜底星尘（已弃用）'],
-          ['exchangeRate', '美元兑星尘汇率（展示用）'],
-          ['markup', '旧目录兼容倍率（展示用）'],
-        ].map(([key, label]) => (
-          <Col xs={24} md={12} key={key}>
-            <Typography.Text>{label}</Typography.Text>
-            <InputNumber
-              min={0}
-              className="field-full"
-              value={value[key] as number | undefined}
-              disabled={props.disabled}
-              onChange={(number) => props.onChange({ ...value, [key]: number ?? 0 })}
-            />
-          </Col>
-        ))}
         {(
           [
             ['freeQuotaExhausted', '免费模型超出免费轮次'],
@@ -184,18 +167,12 @@ export function ConfigValueEditor(props: {
               disabled={props.disabled}
               onChange={(number) =>
                 props.onChange({
-                  ...value,
                   fixedDeduction: { ...fixedDeduction, [key]: number ?? 0 },
                 })
               }
             />
           </Col>
         ))}
-        <Col span={24}>
-          <Typography.Text type="warning">
-            新请求按上方固定扣费：免费额度用尽、轻量/标准/旗舰档；汇率、倍率与模型输入/输出价格仅用于历史兼容和展示。
-          </Typography.Text>
-        </Col>
       </Row>
     );
   }
@@ -344,7 +321,6 @@ export function ConfigValueEditor(props: {
         onChange={props.onChange}
         disabled={props.disabled}
         openRouterDirectory={props.openRouterDirectory}
-        pricingConfig={props.pricingConfig}
         publishedModelIds={props.publishedModelIds}
         syncLoading={props.syncLoading}
         syncError={props.syncError}

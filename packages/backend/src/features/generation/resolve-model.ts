@@ -13,11 +13,7 @@
  */
 
 import { resolveEffectiveSelectedModelId, resolveEnabledCatalogModel } from '@miniapp/shared';
-import {
-  fetchModelCatalogSnapshot,
-  getModelBillingContext,
-  getPricingConfig,
-} from '../../platform/model-tiers.js';
+import { fetchModelCatalogSnapshot, getModelBillingContext } from '../../platform/model-tiers.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import type { ResolvedModel } from './types.js';
 
@@ -51,7 +47,7 @@ export async function resolveAuthoritativeModel(
 }
 
 /**
- * 自研链路的模型解析入口：在权威模型之上补齐计费所需的档位与倍率。
+ * 自研链路的模型解析入口：在权威模型之上补齐计费所需的档位与免费属性。
  *
  * ST 链路不走这里——它在 handler 里另有 simulation 分支，且计费上下文是在稍后的计费段
  * 现取的，提前取会平白多一次 runtime_config 读取。
@@ -59,15 +55,12 @@ export async function resolveAuthoritativeModel(
 export async function resolveModelForUser(userId: string): Promise<ResolvedModel> {
   const persistedModelId = await userSettings().getSelectedModelId(userId);
   const authoritative = await resolveAuthoritativeModel(persistedModelId);
-  const pricing = await getPricingConfig();
-  const billing = await getModelBillingContext(authoritative.openRouterModelId, pricing.markup);
+  const billing = await getModelBillingContext(authoritative.openRouterModelId);
 
   return {
     modelId: billing.modelId ?? authoritative.modelId,
     openRouterModelId: authoritative.openRouterModelId,
     tier: billing.modelTier,
-    markup: billing.modelMarkup,
-    // deduct_markup 只对免费模型有意义：它是免费额度耗尽后改用的倍率。
-    deductMarkup: billing.modelMarkup === 0 ? billing.deductMarkup : null,
+    isFree: billing.isFree,
   };
 }

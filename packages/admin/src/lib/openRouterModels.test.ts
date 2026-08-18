@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelCatalog, OpenRouterModelDirectory } from '@miniapp/shared';
-import { calculateModelDisplayPrices, getOpenRouterCatalogIssues } from './openRouterModels';
+import { getOpenRouterCatalogIssues } from './openRouterModels';
 
 const upstream = {
   id: 'google/gemini-flash',
@@ -34,9 +34,7 @@ const catalog: ModelCatalog = {
           openrouter_model_id: upstream.id,
           display_name: 'Gemini Flash',
           tagline: '轻巧流畅',
-          price_input: 0,
-          price_output: 0,
-          markup: 2.5,
+          is_free: false,
           enabled: true,
           sort_order: 1,
         },
@@ -46,13 +44,6 @@ const catalog: ModelCatalog = {
 };
 
 describe('OpenRouter admin helpers', () => {
-  it('calculates editable display prices from the current pricing config', () => {
-    expect(calculateModelDisplayPrices(upstream, { exchangeRate: 680, markup: 2.5 })).toEqual({
-      price_input: 6.8,
-      price_output: 20.4,
-    });
-  });
-
   it('accepts known models and reports missing models', () => {
     expect(getOpenRouterCatalogIssues(catalog, directory)).toEqual([]);
 

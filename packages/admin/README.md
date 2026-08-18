@@ -21,9 +21,8 @@ vercel deploy --prod --yes -A vercel.admin.json
 ## OpenRouter 模型同步
 
 模型目录页面通过对应环境后端的 `/api/platform/openrouter/models` 获取 OpenRouter
-公开模型目录。选择模型后，后台按当前 `llm_pricing_config.exchangeRate` 与 `markup`
-自动换算“星尘/万 token”展示价格，运营仍可调整展示值。真实对话扣费继续只使用
-OpenRouter generation 返回的实际 cost。
+公开模型目录。模型配置保存稳定 ID、OpenRouter 映射、展示信息和固定扣费档位；
+真实对话按 `llm_pricing_config.fixedDeduction` 中的档位金额扣费。
 
 保存或发布模型配置前，后台会拒绝不存在或已经过期的 OpenRouter 模型 ID；已发布
 模型的内部稳定 ID 在页面中不可修改。

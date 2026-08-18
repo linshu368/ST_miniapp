@@ -36,12 +36,11 @@ export interface CatalogModelPick {
   /** 目录 stable id，写进 miniapp_user_settings.selected_model_id */
   modelId: string;
   openRouterModelId: string;
-  markup: number;
-  deductMarkup: number | null;
+  isFree: boolean;
 }
 
 /**
- * 从目录里各挑一个免费模型（markup = 0）和一个付费模型（markup > 0）。
+ * 从目录里各挑一个免费模型和一个付费模型。
  * 不写死模型 id：目录是 runtime_config 里的 JSONB 文档，运营随时会改。
  */
 export async function pickCatalogModels(): Promise<{
@@ -56,14 +55,13 @@ export async function pickCatalogModels(): Promise<{
       (model): CatalogModelPick => ({
         modelId: model.id,
         openRouterModelId: model.openrouter_model_id,
-        markup: model.markup,
-        deductMarkup: model.deduct_markup ?? null,
+        isFree: model.is_free,
       })
     );
 
   return {
-    free: models.find((model) => model.markup === 0) ?? null,
-    paid: models.find((model) => model.markup > 0) ?? null,
+    free: models.find((model) => model.isFree) ?? null,
+    paid: models.find((model) => !model.isFree) ?? null,
   };
 }
 
@@ -73,7 +71,7 @@ export interface CatalogOverride {
 }
 
 /**
- * 往模型目录里临时插一个免费模型（markup = 0）。
+ * 往模型目录里临时插一个免费模型。
  *
  * test 库的目录里现在一个免费模型都没有，免费额度那条判据因此永远跑不到。这里直接改
  * miniapp.runtime_config 的 llm_model_catalog，跑完还原。
@@ -98,8 +96,7 @@ export async function seedFreeModelIntoCatalog(): Promise<CatalogOverride> {
   const freeModel: CatalogModelPick = {
     modelId: 'mvp-regression-free',
     openRouterModelId: 'mvp-regression/free-model',
-    markup: 0,
-    deductMarkup: 2,
+    isFree: true,
   };
 
   const cleanOriginal = JSON.parse(JSON.stringify(original)) as {
@@ -121,10 +118,7 @@ export async function seedFreeModelIntoCatalog(): Promise<CatalogOverride> {
     openrouter_model_id: freeModel.openRouterModelId,
     display_name: 'MVP 回归测试免费模型',
     tagline: '仅供本地回归脚本使用',
-    price_input: 0,
-    price_output: 0,
-    markup: freeModel.markup,
-    deduct_markup: freeModel.deductMarkup,
+    is_free: true,
     enabled: true,
     sort_order: firstTier.models.length,
   });
@@ -178,7 +172,7 @@ export async function getWalletCredits(userId: string): Promise<number> {
 }
 
 /**
- * 直接把已用轮次顶到 limit - 1，用来测「最后一轮免费 → 下一轮按 deduct_markup 计费」的边界。
+ * 直接把已用轮次顶到 limit - 1，用来测「最后一轮免费 → 下一轮按固定扣费」的边界。
  */
 export async function setFreeQuotaUsedRounds(
   userId: string,
