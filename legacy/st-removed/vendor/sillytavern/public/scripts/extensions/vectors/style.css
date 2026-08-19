@@ -1,4 +1,0 @@
-.mes.vectorized .name_text::after {
-  content: '🟢';
-  margin-left: 5px;
-}

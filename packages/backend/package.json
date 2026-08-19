@@ -10,7 +10,6 @@
   "scripts": {
     "dev": "tsx watch --import ./src/instrumentation.ts src/server.ts",
     "start": "npx prisma generate && tsx --import ./src/instrumentation.ts src/server.ts",
-    "chat-engine:mode": "tsx src/scripts/chat-engine-mode.ts",
     "payment:expire-orders": "tsx src/scripts/expire-payment-orders.ts",
     "payment:fake-webhook": "tsx src/scripts/fake-payment-webhook.ts",
     "mvp:regression": "tsx src/scripts/mvp-regression/run.ts",

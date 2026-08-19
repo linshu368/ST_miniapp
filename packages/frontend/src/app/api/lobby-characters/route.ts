@@ -1,7 +1,6 @@
 import { parseLobbySort } from '@miniapp/shared';
 
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_API_URL || process.env.ST_PUBLIC_PROXY_URL || 'http://localhost:3001';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export const revalidate = 0;
 export const dynamic = 'force-dynamic';

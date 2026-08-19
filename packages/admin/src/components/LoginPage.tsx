@@ -23,7 +23,7 @@ export function LoginPage(props: {
           />
           <div>
             <Typography.Title level={2}>蜜镜AI运营平台</Typography.Title>
-            <Typography.Text type="secondary">配置、模型与数据分析</Typography.Text>
+            <Typography.Text type="secondary">配置与内容管理</Typography.Text>
           </div>
         </div>
         <Typography.Paragraph type="secondary">
@@ -73,14 +73,14 @@ export function LoginPage(props: {
               { max: 80, message: '操作人姓名不能超过 80 个字符' },
             ]}
           >
-            <Input autoComplete="name" placeholder="用于发布历史与审计日志" />
+            <Input autoComplete="name" placeholder="用于标记发布与回滚记录" />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={loading} block>
             登录
           </Button>
         </Form>
         <Typography.Paragraph className="login-note">
-          仅授权运营账号可进入，所有发布与回滚均记录审计。
+          仅授权运营账号可进入，所有发布与回滚均会保留操作记录。
         </Typography.Paragraph>
       </Card>
     </main>

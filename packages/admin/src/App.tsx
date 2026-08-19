@@ -35,10 +35,8 @@ import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEdi
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { OutreachCreditGrantView } from './components/OutreachCreditGrantView';
-import { AnalyticsView } from './components/analytics/AnalyticsView';
 import {
   discardDraft,
-  getAuditLogs,
   getCharacters,
   getCurrentAdmin,
   getDrafts,
@@ -48,7 +46,6 @@ import {
   rollbackRelease,
   saveDraft,
   type AdminUser,
-  type AuditLog,
   type CharacterCard,
   type ConfigDraft,
   type ConfigRelease,
@@ -65,14 +62,7 @@ import {
 import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
 import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
-import {
-  analyticsMenuKey,
-  analyticsSections,
-  configMenuKey,
-  resolveAdminMenuSelection,
-  type AdminViewKey,
-  type AnalyticsSectionKey,
-} from './lib/adminNavigation';
+import { configMenuKey, resolveAdminMenuSelection, type AdminViewKey } from './lib/adminNavigation';
 
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
@@ -373,11 +363,9 @@ function AdminWorkspace(props: {
   const { message } = AntApp.useApp();
   const [view, setView] = useState<AdminViewKey>('configs');
   const [selectedKey, setSelectedKey] = useState<ManagedConfigKey>('llm_model_catalog');
-  const [selectedAnalyticsKey, setSelectedAnalyticsKey] = useState<AnalyticsSectionKey>('overview');
   const [configs, setConfigs] = useState<ManagedConfig[]>([]);
   const [drafts, setDrafts] = useState<ConfigDraft[]>([]);
   const [releases, setReleases] = useState<ConfigRelease[]>([]);
-  const [audits, setAudits] = useState<AuditLog[]>([]);
   const [characters, setCharacters] = useState<CharacterCard[]>([]);
   const [charactersLoading, setCharactersLoading] = useState(false);
   const [charactersError, setCharactersError] = useState<string | null>(null);
@@ -399,16 +387,14 @@ function AdminWorkspace(props: {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextConfigs, nextDrafts, nextReleases, nextAudits] = await Promise.all([
+      const [nextConfigs, nextDrafts, nextReleases] = await Promise.all([
         getManagedConfigs(props.client),
         getDrafts(props.client, props.environment),
         getReleases(props.client, props.environment),
-        getAuditLogs(props.client, props.environment),
       ]);
       setConfigs(nextConfigs);
       setDrafts(nextDrafts);
       setReleases(nextReleases);
-      setAudits(nextAudits);
     } catch (error) {
       message.error(error instanceof Error ? error.message : '加载运营配置失败');
     } finally {
@@ -696,7 +682,7 @@ function AdminWorkspace(props: {
     }
     const confirmed = await confirmAction(
       `${props.environment === 'production' ? '生产环境：' : ''}放弃当前草稿？`,
-      '草稿会被永久删除，编辑器将恢复为当前正式版本。此操作会写入审计日志。',
+      '草稿会被永久删除，编辑器将恢复为当前正式版本。此操作会保留操作记录。',
       props.environment === 'production'
     );
     if (!confirmed) return;
@@ -756,23 +742,16 @@ function AdminWorkspace(props: {
           />
           <div>
             <strong>蜜镜AI运营平台</strong>
-            <small>配置、模型与数据分析</small>
+            <small>配置与内容管理</small>
           </div>
         </div>
         <Menu
           mode="inline"
-          defaultOpenKeys={['configs', 'analytics']}
-          selectedKeys={[
-            view === 'configs'
-              ? configMenuKey(selectedKey)
-              : view === 'analytics'
-                ? analyticsMenuKey(selectedAnalyticsKey)
-                : view,
-          ]}
+          defaultOpenKeys={['configs']}
+          selectedKeys={[view === 'configs' ? configMenuKey(selectedKey) : view]}
           onClick={({ key }) => {
             const selection = resolveAdminMenuSelection(key);
             if (selection.configKey) setSelectedKey(selection.configKey);
-            if (selection.analyticsKey) setSelectedAnalyticsKey(selection.analyticsKey);
             setView(selection.view);
           }}
           items={[
@@ -789,16 +768,7 @@ function AdminWorkspace(props: {
             },
             { key: 'characters', label: '角色卡' },
             { key: 'announcements', label: '公告管理' },
-            {
-              key: 'analytics',
-              label: '数据分析',
-              children: analyticsSections.map((section) => ({
-                key: analyticsMenuKey(section.key),
-                label: section.label,
-              })),
-            },
             { key: 'releases', label: '发布历史' },
-            { key: 'audit', label: '审计日志' },
           ]}
         />
       </Layout.Sider>
@@ -837,12 +807,6 @@ function AdminWorkspace(props: {
             <div className="content-loading">
               <Spin />
             </div>
-          ) : view === 'analytics' ? (
-            <AnalyticsView
-              client={props.client}
-              section={selectedAnalyticsKey}
-              role={props.admin.role}
-            />
           ) : view === 'characters' ? (
             <CharacterCardsView
               client={props.client}
@@ -1018,7 +982,7 @@ function AdminWorkspace(props: {
                 />
               )}
             </Card>
-          ) : view === 'releases' ? (
+          ) : (
             <Card title="发布历史">
               <Table
                 rowKey="id"
@@ -1062,28 +1026,6 @@ function AdminWorkspace(props: {
                   ),
                   rowExpandable: () => true,
                 }}
-              />
-            </Card>
-          ) : (
-            <Card title="审计日志">
-              <Table
-                rowKey="id"
-                dataSource={audits}
-                pagination={{ pageSize: 20 }}
-                columns={[
-                  {
-                    title: '操作人',
-                    render: (_value, audit: AuditLog) => (
-                      <Space direction="vertical" size={0}>
-                        <Typography.Text>{audit.actor_name ?? '历史记录未标注'}</Typography.Text>
-                        <Typography.Text type="secondary">{audit.actor_email}</Typography.Text>
-                      </Space>
-                    ),
-                  },
-                  { title: '动作', dataIndex: 'action' },
-                  { title: '对象', dataIndex: 'record_id' },
-                  { title: '时间', dataIndex: 'created_at', render: formatDate },
-                ]}
               />
             </Card>
           )}

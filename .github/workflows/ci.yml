@@ -83,9 +83,6 @@ jobs:
           - name: backend
             context: .
             file: ops/docker/Dockerfile.backend
-          - name: nginx
-            context: ops/nginx
-            file: ops/nginx/Dockerfile
 
     steps:
       - name: Checkout

@@ -49,18 +49,6 @@ export interface ConfigRelease {
   released_at: string;
 }
 
-export interface AuditLog {
-  id: string;
-  actor_email: string;
-  actor_name: string | null;
-  environment: AdminEnvironment;
-  action: string;
-  record_id: string;
-  before_value?: unknown;
-  after_value?: unknown;
-  created_at: string;
-}
-
 export interface CharacterCard {
   id: string;
   name: string;
@@ -170,20 +158,6 @@ export async function getReleases(
     .order('released_at', { ascending: false })
     .limit(100);
   return unwrap((data ?? []) as ConfigRelease[], error);
-}
-
-export async function getAuditLogs(
-  client: SupabaseClient,
-  environment: AdminEnvironment
-): Promise<AuditLog[]> {
-  const { data, error } = await client
-    .schema('admin')
-    .from('audit_logs')
-    .select('id,actor_email,actor_name,environment,action,record_id,created_at')
-    .eq('environment', environment)
-    .order('created_at', { ascending: false })
-    .limit(100);
-  return unwrap((data ?? []) as AuditLog[], error);
 }
 
 export async function saveDraft(input: {

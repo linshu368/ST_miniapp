@@ -29,8 +29,8 @@
 # =============================================================================
 
 # Browser-facing API base. Baked at build time (Next inlines NEXT_PUBLIC_* into the
-# client bundle). Default empty => same-origin relative URLs (correct behind the
-# nginx single-domain gateway). Overridable via compose build arg.
+# client bundle). 网关收敛后没有同源反代了，调用方必须显式传入浏览器可直达的 backend
+# 地址（compose 传 http://localhost:3001）；留空则前端会把 /api/* 打到自身 origin。
 ARG NEXT_PUBLIC_API_URL=""
 
 # ========== Stage 1: builder (install dev+prod deps, run next build) ==========
@@ -73,7 +73,7 @@ RUN apk add --no-cache tini
 
 ENV NODE_ENV=production
 # Next standalone server.js reads PORT + HOSTNAME. HOSTNAME=0.0.0.0 binds all
-# interfaces so nginx (separate container) can reach it; default 'localhost' would not.
+# interfaces so the published host port reaches it; default 'localhost' would not.
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
