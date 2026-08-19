@@ -166,6 +166,8 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 081_finish_reason_billing_gate.sql # 只有 finish_reason=stop 的自然收尾才允许扣星尘
 082_spending_reply_outcomes.sql # 消费明细补 reply_outcome 标签，可判定的空 finish_reason 回到 pending
 083_drop_chat_engine_mode.sql # 删除 ST 切换期的回滚开关 chat_engine_mode（075 建的行）
+084_remove_legacy_llm_display_fields.sql # 模型目录去掉展示价 price_input/price_output，定价配置去掉 balanceBaseline/fallbackCost
+085_llm_free_flag_and_drop_pricing_markup.sql # 目录的 markup/deduct_markup 换成 is_free，定价配置去掉 exchangeRate/markup
 ```
 
 > 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。
