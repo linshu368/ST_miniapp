@@ -2,7 +2,8 @@
 
 > 状态：总体思路与关键决策已确认（12 项，见 §二）。MVP 阶段的可执行方案见 **`docs/ST_remove-MVP实施方案.md`**（2026-08-10）
 > **进度（2026-08-14）**：M1 / M2 / M3a / M3b / M5 已交付；测试与生产已切到自研引擎。ST 旧路径按「归档到 `legacy/st-removed/`、不硬删」执行：整包见 **`docs/ST_remove-整包清理清单.md`**，散文件与接线见 **`docs/ST_remove-混用清理清单.md`**（两份均已执行）。
-> **进度（2026-08-18）**：`chat_engine_mode` 全局开关、first-chat 埋点、`legacy/st-removed/` 本体（1.2G）与 ST 专用 seed 生成器 / 根 `.dockerignore` / ops env 模板残留已硬删除（含 migration 083，需手动执行），见混用清单 §8。同日完成**网关收敛**：定为 Vercel 直连 backend，`ops/nginx/` 整个删除，`.railway/railway.ts` 里 nginx / st-bundle 声明与卷退场（Railway 只剩 `stminiapp`），CI 的 nginx 镜像目标、compose 的 nginx 服务、`ST_PUBLIC_PROXY_URL` 一并清掉，见混用清单 §9；Railway 控制台残留服务与卷需手动删除。仍暂缓：`users.st_handle` 与 `st_*` schema（归 Supabase 瘦身专项）、历史 SQL。
+> **进度（2026-08-18）**：`chat_engine_mode` 全局开关、first-chat 埋点、`legacy/st-removed/` 本体（1.2G）与 ST 专用 seed 生成器 / 根 `.dockerignore` / ops env 模板残留已硬删除，见混用清单 §8。同日完成**网关收敛**：定为 Vercel 直连 backend，`ops/nginx/` 整个删除，`.railway/railway.ts` 里 nginx / st-bundle 声明与卷退场（Railway 只剩 `stminiapp`），CI 的 nginx 镜像目标、compose 的 nginx 服务、`ST_PUBLIC_PROXY_URL` 一并清掉，见混用清单 §9。
+> **进度（2026-08-19）**：上述两批已合 dev → main 并在生产验证通过（验证方式与结果见混用清单 §9.3）；migration 083 / 084 / 085 已在 test 与 production 两库执行。**代码侧的 ST 清理到此收口**，剩下的都是控制台与数据库层面的收尾：Railway dev 的 `nginx` / `st-bundle` 已删，**production 的 `nginx-pro` / `st-bundle-pro` 与两侧的 `ST_BASE_URL` / `ST_PROVISION_URL` / `ST_USER_PASSWORD_SECRET` 尚未清**（步骤见 `ops/railway/README.md`「网关收敛的手动收尾」）。数据库残留统一进 **Supabase 瘦身专项**，起点见 §六。
 > ⚠️ 读到旧 bot 代码后，**决策 3（预设格式）已二次修正为"MVP 不消费预设，后续自建格式"**，连带影响 M2 的性质与 M4 的排期，正文均已同步。
 > 前置文档：`docs/ARCHITECTURE.md`（⚠️ 数据层描述停留在 migration 030，实际已到 068，参考时以实测代码为准）
 >
@@ -153,3 +154,27 @@ M1 / M2 / M3a 三者互不依赖，可完全并行。关键路径：**三者并�
 - ~~旧 bot 的 prompt 引擎实现~~ **已获取**（2026-08-10）。移植源共三处：`SimplePromptEngine._buildMessages`（messages 组装）、`SimpleChat._buildEnhancedPrompt`（平台规则包装用户输入）、`rules/renderSystemInstructions.ts`（占位符渲染）。据此产生决策 3 的二次修正。
 - ~~bot 侧 `runtime_config` 三项正文~~ **来源已确认**：bot 生产库 `wbtsfzozlmurljvglhpn` 的 `public.runtime_config` 表，key 为 `system_instructions` / `interaction_mode_blocks` / `pref_word_count_tiers`，M2 自取。注意字数档位的 label 需按 miniapp 的 `PreferredWordCount` 枚举（`100-300` / `300-500` / `500-800` / `800+`）重写，bot 侧文案（`150以内` / `800以上`）与之不一致，直接沿用会匹配失败并静默回落到默认档。
 - 至此批次 1 的三个模块依赖全部齐备，可并行开工。
+
+---
+
+## 六、Supabase 瘦身专项的起点（2026-08-19 盘点）
+
+> **本节已被 `docs/ST_remove-Supabase瘦身专项.md` 接管**（2026-08-20）。专项对 test 与
+> production 两库做了实测盘点，修正了本节的两处口径：`st_platform` 实际是 **6 张表**而非 3 张
+> （044 / 053 / 068 陆续加了 3 张 preset assignment 相关表），且它**不是零引用**——`admin`
+> schema 里有 10 个 RPC 的函数体引用它，必须先删 RPC 再 drop schema。删除清单、执行序列与
+> schema 归属规则以专项文档为准，本节保留作为起点记录。
+
+代码侧 ST 清理收口后，残留全在数据库。下面四项是专项的输入，每条都标了实测的消费方位置，
+专项开工时按这个顺序判定「能不能直接删」。迁移编号已用到 085，新迁移从 **086** 起。
+
+| 残留                                                                                                                                                           | 实测消费方                                                                                                                                        | 拆除顺序                                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `miniapp.users.st_handle`（**NOT NULL UNIQUE**）/ `public.users.st_handle`（可空唯一）/ `st_initialized_at`                                                    | 唯一写入方是 `backend/src/lib/user.ts:52`——新建用户时 `deriveStHandle(tgId)` 填入；`prisma/schema.prisma:25`（public）与 `:40`（miniapp）声明该列 | **先停写再动列**：改 `lib/user.ts` 不再写 → 去 NOT NULL/UNIQUE → 删列 → `shared/src/st-bridge/handle.ts` 及其测试退场 |
+| `st_platform.*`（platform_settings / platform_presets / platform_api_configs）、`st_users.*`（user_st_settings / user_st_chats）、`st_infra.sync_tasks` 六张表 | **零引用**：代码与 `prisma/schema.prisma` 里都搜不到（已 grep 确认）                                                                              | 导出留档 → 整 schema drop。注意 `st_users.user_st_chats.character_id` 有跨 schema FK 指向 `miniapp.characters`        |
+| `chat_history.preset_id`                                                                                                                                       | 自研链路恒为 null（`features/conversations/generate.ts:163` 传 `presetId: null`），链路仍把它一路透传到 `chat-history-logger`                     | 留列作审计还是删列，要连 `GenerationRequest.presetId` 参数一起定，别只删一半                                          |
+| 历史 SQL（`006_platform_presets` 等）                                                                                                                          | —                                                                                                                                                 | 只记账，不改已执行的 migration                                                                                        |
+
+> 与专项并行、但不属于数据库的收尾：Railway production 的 `nginx-pro` / `st-bundle-pro` 服务与卷
+> `st-data-pro`，以及两个环境 `stminiapp` 上的 `ST_BASE_URL` / `ST_PROVISION_URL` /
+> `ST_USER_PASSWORD_SECRET`。步骤见 `ops/railway/README.md`「网关收敛的手动收尾」。

@@ -274,3 +274,22 @@ backend 228/229，唯一失败是 `conversations.integration.test.ts` 里 `pref_
 确认 Vercel 已指向 backend 公网域名 → 删 `nginx-pro` / `nginx` → 导出后删 `st-bundle-pro` /
 `st-bundle` 与卷 `st-data-pro` / `st-bundle-data`。步骤见 `ops/railway/README.md`
 「网关收敛的手动收尾」。
+
+### 9.3 上线与验证（2026-08-19）
+
+§8 与 §9 两批一起走 dev → main。dev 环境验收通过后合 main，生产部署完成后按下面四项复核，全部通过：
+
+| 检查                         | 结果                                                                                                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| backend `/health`            | 200                                                                                                                                                                                                                                               |
+| 前端 `/api/lobby-characters` | 200 且返回真实角色数据。这条最值得单独测——它原先有 `ST_PUBLIC_PROXY_URL` 兜底，兜底删掉后仍能取到数据，才说明 Vercel 的 `NEXT_PUBLIC_API_URL` 真的指向了 backend 域名                                                                             |
+| 新代码是否真的在跑           | 看 CORS 响应里 `access-control-allow-headers` 是否已不含 `X-First-Chat-Journey-Id` / `X-First-Chat-Attempt-Id` / `X-Boot-Session-Id`——这三个头随 first-chat 埋点一起删掉，**比看部署时间可靠**，因为它直接反映线上进程加载的是哪份 allowedHeaders |
+| CORS preflight               | Vercel 前端域与运营台域均 204 + 正确 `allow-origin`；伪造 Origin 被拒                                                                                                                                                                             |
+
+migration `083` / `084` / `085` 已在 test 与 production 两库执行（手工执行，未走 `db-migrate` workflow，
+该 workflow 至今无成功记录，专项若要用它需先修）。
+
+**手动收尾进度**：dev 侧已完成（`nginx` / `st-bundle` 服务已删，`RAILWAY_SERVICE_NGINX_URL` 与
+`LLM_PROXY_TOKEN_SECRET` 已随之消失）；production 侧未动——`nginx-pro` / `st-bundle-pro` 与卷
+`st-data-pro` 仍在，两个环境的 `stminiapp` 上也都还留着 `ST_BASE_URL` / `ST_PROVISION_URL` /
+`ST_USER_PASSWORD_SECRET`（代码零引用，删除后 redeploy 一次即可）。
