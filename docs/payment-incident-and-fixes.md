@@ -18,9 +18,10 @@
 | `8f2ef87` | T0 我方代码 bug 修复（`openLink` 回归、中转页取回、拉起顺序、测试护栏）+ 本文档初版 |
 | 见下      | 生产配置核实结果 + 配置修正（`config.ts` 默认值、ops 两份文档）+ 本文档补充         |
 
-工作区应为干净状态。若 `git status` 显示未跟踪的 `legacy/`，那不是本次产物，提交时排除。
+工作区本轮新增未提交改动见 `payment.ts` / `recharge/page.tsx` / `JLPaymentGateway.test.ts`。
+若 `git status` 显示未跟踪的 `legacy/`，那不是本次产物，提交时排除。
 
-**下一步**：按「下一轮方案：切支付宝通道（交接）」执行。改动只有两个文件，不需要迁移。
+**下一步**：部署使 `PAYMENT_BASE_URL` / `MINIAPP_SHORT_NAME` 与支付宝白名单一并生效，然后真机验证（T0 的 `openLink` + 支付宝 H5 收银台）。
 
 **两个卡口**：Railway 上 `PAYMENT_BASE_URL` / `MINIAPP_SHORT_NAME` 已改但**尚未部署**；
 T0 的真机验证**还没做**，可与支付宝一起验。
@@ -195,19 +196,31 @@ vi.stubGlobal('window', {
 回调链路健康。顺带把 `PAYMENT_BASE_URL` 切到 https、补了 `MINIAPP_SHORT_NAME`，
 并修正了 ops 两份文档里的错误示例。
 
+### 已完成：切支付宝通道（08-20）
+
+按下方方案落地，网关一行未动、无迁移：
+
+| 文件                                                                   | 改动                                                                                                 |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `packages/backend/src/routes/payment.ts`                               | `PAYMENT_TYPES` 仅 `['alipay']`；注释写明 wxpay 因厂商单笔 15 元限额停用                             |
+| `packages/frontend/src/app/(main)/profile/recharge/page.tsx`           | 白名单同步为 `['alipay']`；默认 `useState` 改为 `'alipay'`；icon 三元保留                            |
+| `packages/backend/src/infrastructure/payment/JLPaymentGateway.test.ts` | 补两条 legacy：`type=alipay` 透传且 MD5 可独立复算；`code=1 + payurl` 返回 `{ success, paymentUrl }` |
+
+**刻意没做**：没有恢复 `resolveAlipayScheme`。唤起仍走 T0 打通的 `openLink` → 厂商 https 收银台。
+
 ### 待办
 
 | 事项                                                    | 归属            | 状态                       |
 | ------------------------------------------------------- | --------------- | -------------------------- |
 | 确认生产走 legacy 还是 V2 路径                          | 运维 / Railway  | ✅ 已确认 legacy           |
 | 核对 `PAYMENT_NOTIFY_URL` 生产实际值                    | 运维 / Railway  | ✅ 配置正确，端点实测存活  |
-| 切支付宝通道、前后端白名单都去掉 `wxpay`                | Dev             | **下一轮，方案见下**       |
-| 部署使 `PAYMENT_BASE_URL` / `MINIAPP_SHORT_NAME` 生效   | 运维 / Railway  | 待随支付宝那轮一起部署     |
+| 切支付宝通道、前后端白名单都去掉 `wxpay`                | Dev             | ✅ 本轮已改代码（未部署）  |
+| 部署使 `PAYMENT_BASE_URL` / `MINIAPP_SHORT_NAME` 生效   | 运维 / Railway  | 待与支付宝白名单一起部署   |
 | T0 真机验证（Telegram 客户端实机走一遍）                | QA              | 未做                       |
 | 下单即失败时给用户可见错误（现在只静默留 pending 订单） | Dev             | 未排期                     |
 | 厂商 wxpay 单笔 15 元限额能否提额                       | 业务 / 厂商后台 | 未跟进（已决定改走支付宝） |
 
-## 下一轮方案：切支付宝通道（交接）
+## 方案：切支付宝通道（08-20 已按此落地）
 
 > 决策前提：厂商 wxpay 通道单笔限额 15 元、所有档位价格都高于它，且限额不可控。
 > 已决定不再确认支付宝限额，直接实现支付宝路径、微信暂时下掉。
@@ -255,10 +268,9 @@ legacy 返回 https 收银台
 是两回事：链路更短，不依赖厂商实现细节。**不要恢复 `resolveAlipayScheme`**，
 `479c212` 所说「真机上仍未稳定唤起」指的就是它。
 
-### 建议补的测试
+### 已补的测试
 
-`JLPaymentGateway.test.ts` 整个文件只测 V2——**生产实际在跑的 legacy 路径目前零测试覆盖**。
-建议照现有 stub `fetch` 的写法补两条：
+`JLPaymentGateway.test.ts` 原先只测 V2。本轮按现有 stub `fetch` 的写法补了两条 legacy：
 
 1. `type=alipay` 时请求体确实带 `type=alipay`，且 MD5 签名可被独立复算验证；
 2. 厂商返回 `code=1 + payurl` 时 `createPayment` 返回 `{ success: true, paymentUrl }`。
