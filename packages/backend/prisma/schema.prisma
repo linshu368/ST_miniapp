@@ -184,7 +184,8 @@ model miniapp_user_settings {
   tg_avatar_url            String?
   custom_avatar_url        String?
   total_round              BigInt      @default(0)
-  pref_word_count          String      @default("300-500")
+  /// NULL = 从未选择，跟随 runtime_config.pref_word_count_tiers.default_tier_id（086）
+  pref_word_count          String?
   pref_show_options        Boolean     @default(true)
   pref_custom_instructions String?
   created_at               DateTime    @default(now()) @db.Timestamptz(6)
