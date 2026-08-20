@@ -5,6 +5,26 @@
 > `packages/backend/src/routes/payment.ts`、`packages/frontend/src/lib/telegram/hooks.ts`、
 > `packages/frontend/src/app/(main)/profile/recharge`。
 
+## 交接状态（截至 2026-08-20）
+
+接手请先读这一节，再按需往下翻。
+
+**分支**：`dev_payment_fix`（基于 `origin/dev` 的 `3dc41cd`）。
+
+**已提交**：
+
+| 提交      | 内容                                                                                |
+| --------- | ----------------------------------------------------------------------------------- |
+| `8f2ef87` | T0 我方代码 bug 修复（`openLink` 回归、中转页取回、拉起顺序、测试护栏）+ 本文档初版 |
+| 见下      | 生产配置核实结果 + 配置修正（`config.ts` 默认值、ops 两份文档）+ 本文档补充         |
+
+工作区应为干净状态。若 `git status` 显示未跟踪的 `legacy/`，那不是本次产物，提交时排除。
+
+**下一步**：按「下一轮方案：切支付宝通道（交接）」执行。改动只有两个文件，不需要迁移。
+
+**两个卡口**：Railway 上 `PAYMENT_BASE_URL` / `MINIAPP_SHORT_NAME` 已改但**尚未部署**；
+T0 的真机验证**还没做**，可与支付宝一起验。
+
 ## 问题现象
 
 用户在 Telegram Mini App 里充值时：
@@ -44,7 +64,7 @@
 
 ## 根因
 
-分三层。第一层是我们自己的代码（已修），第二层是厂商上游（待换通道），第三层是配置隐患（待核实）。
+分三层。第一层是我们自己的代码（已修），第二层是厂商上游（待换通道），第三层是配置（已核实，见下）。
 
 ### 第一层：我方代码 —— 症状 1 的全部原因
 
@@ -83,17 +103,46 @@ Mini App 跑在 Telegram 的 WebView 里，WebView 分发不了自定义协议�
 `RechargeUseCase` 立刻返回 `pay_url` 并把订单留在 `pending`。
 限额拒绝发生在之后加载收银台的时刻，所以订单会白挂 15 分钟，用户也拿不到任何错误提示。
 
-### 第三层：配置隐患（待核实）
+### 第三层：配置（已于 08-20 用 Railway CLI 核实）
 
-**`PAYMENT_NOTIFY_URL` 可能指向 Vercel。** `ops/env/backend.env.production.example` 写的是
-`https://<your-vercel-domain>/api/payment/webhook/jlpay`，但这是 Fastify 后端路由；
-前端只有 `/api/lobby-characters` 一个 Next route，`next.config.mjs` 也没有 rewrites。
-若生产照抄示例，厂商回调会 404，**用户付了钱订单也永远不会变 `completed`**。
+Railway 项目 `gallant-insight` / 环境 `production` / 服务 `stminiapp`
+（`https://stminiapp-production.up.railway.app`，repo `linshu368/ST_miniapp`）。
+核实前的值：
 
-**V2 三个变量未出现在生产 env 示例里。** `PAYMENT_V2_BASE_URL`、`PAYMENT_MERCHANT_PRIVATE_KEY`、
-`PAYMENT_PLATFORM_PUBLIC_KEY` 在 `ops/README.md` 和 `backend.env.production.example` 中都没有登记，
-只有 legacy MD5 那套。这暗示生产走的是 legacy `mapi.php` 路径（`pay_url` 是 https 收银台，
-与症状 2 的截图相符），但**需要核实**，因为它决定 `createV2Payment` 里的微信 scheme 硬校验要不要放宽。
+```
+PAYMENT_ENABLED       = 'true'
+PAYMENT_MERCHANT_ID   = '1002'
+PAYMENT_MERCHANT_KEY  = <已设置，32 位>
+PAYMENT_BASE_URL      = 'http://jlusdt.com'
+PAYMENT_NOTIFY_URL    = 'https://stminiapp-production.up.railway.app/api/payment/webhook/jlpay'
+PAYMENT_RETURN_URL    = 'https://stminiapp-production.up.railway.app/api/payment/return'
+```
+
+**结论 1：生产走 legacy 路径，不是 V2。** `PAYMENT_` 只有上面 6 个键，V2 那三个
+（`PAYMENT_V2_BASE_URL`、`PAYMENT_MERCHANT_PRIVATE_KEY`、`PAYMENT_PLATFORM_PUBLIC_KEY`）**根本不存在**，
+所以 `canUseV2()` 恒为假，走 `createLegacyPayment`，`pay_url` 永远是 https 收银台、不会是 `weixin://`。
+**推论：`createV2Payment` 里那个微信 scheme 硬校验在生产是死代码，切支付宝时不用动它。**
+
+**结论 2：`PAYMENT_NOTIFY_URL` 指向 Railway 后端，配置是对的**——此前基于 env 示例的怀疑不成立。
+两个端点都实测存活：
+
+| 探测                             | 结果                                                            | 说明                                       |
+| -------------------------------- | --------------------------------------------------------------- | ------------------------------------------ |
+| `GET /api/payment/webhook/jlpay` | `400` + body `fail`                                             | 路由存在且在验签，正是无签名请求的设计行为 |
+| `GET /api/payment/return`        | `302` → `https://t.me/MIJINGAI_bot/app?startapp=payment_return` | 回跳正常                                   |
+
+即**不存在「付了钱订单不到账」的问题**。有问题的只是 `ops/env/backend.env.production.example` 里
+那句 `https://<your-vercel-domain>/...` 是错的示例（已于本轮改为 Railway 后端域名并加了警示注释）。
+
+**已顺带修正的两处配置：**
+
+- `PAYMENT_BASE_URL` 原为**明文 `http://`**，订单信息裸奔。已确认 `https://jlusdt.com/mapi.php`
+  走 TLSv1.3、证书校验通过、返回体与 http 逐字节一致后，改为 `https://jlusdt.com`。
+- `MINIAPP_SHORT_NAME` 原未设置。代码里 `payment.ts`、`growth.ts`、`botlink/auto_generate.py`
+  三处默认值本就是 `app`，所以设置它行为等价，价值是把隐式默认变成明示。已设为 `app`。
+
+> ⚠️ 这两个变量用 `railway variable set --skip-deploys` 写入，**尚未重新部署，生产仍在跑旧值**。
+> 下次部署（支付宝那轮）会一并生效。
 
 ## 为什么 CI 没拦住这次回归
 
@@ -122,8 +171,12 @@ vi.stubGlobal('window', {
 | `packages/frontend/src/app/(main)/profile/recharge/page.tsx` | `openPaymentUrl` 移到 `router.push` 之前，消除隐形顺序依赖                                                                                                  |
 | `packages/frontend/src/lib/telegram/hooks.test.ts`           | 改为 mock SDK 的 `openLink`；`stubWindow()` 刻意不挂 `window.Telegram`；新增具名护栏 `never relies on the telegram-web-app.js global`                       |
 
-**为什么中转页也要取回**：`openLink` 只支持 http(s)，`weixin://` 交给它打不开。
-若生产跑 V2 路径（返回 `weixin://`），不带中转页的 T0 等于没修。网关路径待确认前，两条路径一起覆盖。
+**为什么中转页也要取回**：`openLink` 只支持 http(s)，`weixin://` 交给它打不开。当时网关路径未确认，
+若生产跑 V2（返回 `weixin://`）则不带中转页的 T0 等于没修，所以两条路径一起覆盖。
+
+> 事后核实生产走 legacy（见上「第三层」），legacy 只返回 https 收银台，**因此中转页在当前生产是休眠的**，
+> 真正起作用的是 `openExternalUrl` 改走 `openLink` 这一条。中转页保留有价值：它本就是被误删的代码，
+> 且 `PAYMENT_SCHEME_PATTERN` 已含 `alipays?://`，一旦启用 V2 或厂商改返回 scheme 会自动生效。
 
 **刻意没做**：没有恢复 `resolveAlipayScheme`（#229 那个抓厂商收银台三跳链路再拼 `alipays://` 的实现）。
 `479c212` 说「真机上仍未稳定唤起」指的就是它，本次只取回与微信相关、且属于我方 bug 的部分。
@@ -136,17 +189,93 @@ vi.stubGlobal('window', {
   `init-st-session`、`tavern`），与本次改动无关。
 - **真机拉起未验证**，需在 Telegram 客户端实机过一遍。
 
+### 已完成：生产配置核实与修正（08-20）
+
+见上「根因 · 第三层」。两个疑点都已闭环：生产走 legacy 路径；`PAYMENT_NOTIFY_URL` 配置正确、
+回调链路健康。顺带把 `PAYMENT_BASE_URL` 切到 https、补了 `MINIAPP_SHORT_NAME`，
+并修正了 ops 两份文档里的错误示例。
+
 ### 待办
 
-| 事项                                                    | 归属            | 状态                 |
-| ------------------------------------------------------- | --------------- | -------------------- |
-| 确认生产走 legacy 还是 V2 路径                          | 运维 / Railway  | 进行中               |
-| 核对 `PAYMENT_NOTIFY_URL` 生产实际值                    | 运维 / Railway  | 进行中               |
-| 切支付宝通道、前后端白名单都去掉 `wxpay`                | Dev             | 待网关路径确认后开工 |
-| 确认厂商支付宝通道已开通及其单笔限额                    | 业务 / 厂商后台 | 未开始               |
-| 下单即失败时给用户可见错误（现在只静默留 pending 订单） | Dev             | 未排期               |
+| 事项                                                    | 归属            | 状态                       |
+| ------------------------------------------------------- | --------------- | -------------------------- |
+| 确认生产走 legacy 还是 V2 路径                          | 运维 / Railway  | ✅ 已确认 legacy           |
+| 核对 `PAYMENT_NOTIFY_URL` 生产实际值                    | 运维 / Railway  | ✅ 配置正确，端点实测存活  |
+| 切支付宝通道、前后端白名单都去掉 `wxpay`                | Dev             | **下一轮，方案见下**       |
+| 部署使 `PAYMENT_BASE_URL` / `MINIAPP_SHORT_NAME` 生效   | 运维 / Railway  | 待随支付宝那轮一起部署     |
+| T0 真机验证（Telegram 客户端实机走一遍）                | QA              | 未做                       |
+| 下单即失败时给用户可见错误（现在只静默留 pending 订单） | Dev             | 未排期                     |
+| 厂商 wxpay 单笔 15 元限额能否提额                       | 业务 / 厂商后台 | 未跟进（已决定改走支付宝） |
 
-若支付宝通道也卡 15 元，换通道解决不了问题，需要考虑拆单或更换服务商。
+## 下一轮方案：切支付宝通道（交接）
+
+> 决策前提：厂商 wxpay 通道单笔限额 15 元、所有档位价格都高于它，且限额不可控。
+> 已决定不再确认支付宝限额，直接实现支付宝路径、微信暂时下掉。
+
+### 核心结论
+
+**因为生产走 legacy 路径，改动比预想的小得多：两个数组 + 一个默认值，网关代码一行不动，不需要迁移。**
+
+依据（都已核实）：
+
+- `createLegacyPayment` 把 `type: params.type` 原样透传给 `mapi.php`，MD5 签名逻辑与通道无关。
+  **支付宝在网关层已经是现成的**——当初 #228「后端放行 alipay」改的也只是路由白名单，不是网关。
+- `createV2Payment` 里 `payType === 'scheme' && /^weixin:\/\//` 的硬校验在生产是死代码，不用碰。
+  留着也安全：将来若启用 V2 而忘了改它，会以 400「支付厂商未返回微信直达 scheme」显式失败，不会静默走错。
+- DB 约束 `payment_type IN ('alipay','wxpay')` 自 `014_miniapp_payment_wallet.sql` 起就允许 alipay，
+  **不需要迁移**；`prisma/schema.prisma` 里该列是裸 `String`，也不用改。
+- 前端 `paymentTypeLabel()`（已处理 alipay）、`AlipayIcon`（`components/icons.tsx` 里已有）、
+  订单页都是按动态 `payment_type` 渲染，**历史 wxpay 订单照常展示**。
+
+### 具体改动（两个文件）
+
+**`packages/backend/src/routes/payment.ts`** —— `PAYMENT_TYPES` 改为仅 `['alipay']`，
+注释写明 wxpay 因厂商单笔 15 元限额停用。
+
+**`packages/frontend/src/app/(main)/profile/recharge/page.tsx`** —— 同文件内的 `PAYMENT_TYPES`
+同步为 `['alipay']`；`useState<PaymentType>('wxpay')` 改成 `'alipay'`。
+底部支付方式 chip 里 `isAlipay ? AlipayIcon : WeChatPayIcon` 的三元**保留不动**，
+两个 icon 都还在引用，不会产生未使用 import 的 lint 错误。
+
+前后端两个白名单必须同时改（这是上一轮确认过的口径），否则缓存了旧前端的客户端选微信会拿到 400。
+
+### 唤起链路（T0 已打通，无需再改）
+
+```
+legacy 返回 https 收银台
+  → openPaymentUrl 走非 scheme 分支
+  → openExternalUrl
+  → SDK openLink（web_app_open_link 桥）
+  → Telegram 用真实浏览器打开
+  → 厂商页 auto-submit 到支付宝官方 H5 收银台
+  → 浏览器把后续交给支付宝 App
+```
+
+注意这条路**不经过 `launch.html`**（没有 scheme）。这与 #229 那套抓收银台再拼 `alipays://` 的做法
+是两回事：链路更短，不依赖厂商实现细节。**不要恢复 `resolveAlipayScheme`**，
+`479c212` 所说「真机上仍未稳定唤起」指的就是它。
+
+### 建议补的测试
+
+`JLPaymentGateway.test.ts` 整个文件只测 V2——**生产实际在跑的 legacy 路径目前零测试覆盖**。
+建议照现有 stub `fetch` 的写法补两条：
+
+1. `type=alipay` 时请求体确实带 `type=alipay`，且 MD5 签名可被独立复算验证；
+2. 厂商返回 `code=1 + payurl` 时 `createPayment` 返回 `{ success: true, paymentUrl }`。
+
+支付路由本身没有测试文件（全后端只有 `admin-supabase-proxy.test.ts` 一个路由测试），
+给它搭 Fastify 测试环境要 mock 鉴权和 Supabase，成本不成比例，不建议这轮做。
+
+### 风险与回滚
+
+- 开关面就是那两个数组，回滚 = 把 `wxpay` 放回去。
+- 存量 pending wxpay 订单不受影响（白名单只约束新建订单）。
+- **真机验证是必须的**：支付宝唤起正是 #229–#231 反复折腾的地方，只不过这次走 H5 收银台而非
+  scheme 直达。同一次真机测试可以把 T0 的微信侧修复一起验了。
+- 这轮部署会同时让 `PAYMENT_BASE_URL`（https）和 `MINIAPP_SHORT_NAME` 生效，
+  真机验证时留意收银台是否仍能正常打开。
+
+若支付宝通道也卡限额，换通道解决不了问题，需要考虑拆单或更换服务商。
 
 ## 关键诊断方法
 
@@ -155,12 +284,23 @@ vi.stubGlobal('window', {
 `JLPaymentGateway.canUseV2()` 要求三个变量同时非空，否则落 legacy：
 
 ```bash
-railway variables --environment production --service <backend> | grep PAYMENT_
+railway variables --environment production --service stminiapp --kv | grep '^PAYMENT_'
 ```
+
+> `--kv` / `--json` 会打印**明文值**，包含 `PAYMENT_MERCHANT_KEY`。分享输出前先打码。
 
 - `PAYMENT_V2_BASE_URL` + `PAYMENT_MERCHANT_PRIVATE_KEY` + `PAYMENT_PLATFORM_PUBLIC_KEY` 齐全 → V2，
   `pay_url` 是 `weixin://` scheme。
-- 任一为空 → legacy `mapi.php`，`pay_url` 是 https 收银台。
+- 任一为空 → legacy `mapi.php`，`pay_url` 是 https 收银台。**（2026-08-20 实测：生产属于这一种）**
+
+### 不下单也能验回调链路是否健康
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  https://stminiapp-production.up.railway.app/api/payment/webhook/jlpay
+```
+
+`400`（body `fail`）= 路由存在且在验签，正常。`404` = 回调地址配错了，订单永远不会 `completed`。
 
 ### 区分报错来自我方还是厂商
 
