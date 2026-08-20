@@ -5,6 +5,7 @@ export * from './api/health';
 export * from './api/payment';
 export * from './api/settings';
 export * from './api/word-count-tiers';
+export * from './api/lobby-ranking-params';
 export * from './api/wallet';
 export * from './api/conversations';
 export * from './api/voice';
