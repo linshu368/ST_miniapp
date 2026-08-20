@@ -106,7 +106,6 @@ that feature is exercised.
 | `TEST_SUPABASE_PROJECT_REF`                        | No              | shared default                               | Expected test project ref (isolation guard).                                          |
 | `ALLOW_PROD_DATABASE`                              | No              | unset                                        | Escape hatch to allow non-prod env → prod DB.                                         |
 | `RAILWAY_ENVIRONMENT` / `RAILWAY_ENVIRONMENT_NAME` | No              | unset                                        | Detected as `production` env when set to `production`.                                |
-| `MINIAPP_SHORT_NAME`                               | No              | `app`                                        | Mini App short name from BotFather; builds `t.me/<bot>/<short-name>` deep links.      |
 | `TELEGRAM_BOT_TOKEN`                               | No              | `''`                                         | Telegram bot token (init-data verification path).                                     |
 | `CS_TELEGRAM_BOT_TOKEN`                            | No              | unused when `TELEGRAM_BOT_TOKEN` is set      | Compatibility fallback for CS outreach; the active MiniApp bot always takes priority. |
 | `ADMIN_PLATFORM_URL`                               | Admin CORS      | `https://st-admin-platform.vercel.app`       | Allowed admin origin for the read-only OpenRouter model catalog endpoint.             |
@@ -115,9 +114,9 @@ that feature is exercised.
 | `PAYMENT_ENABLED`                                  | No              | `false`                                      | Enables the payment gateway (`=true`).                                                |
 | `PAYMENT_MERCHANT_ID`                              | If payment      | `''`                                         | Payment merchant id.                                                                  |
 | `PAYMENT_MERCHANT_KEY`                             | If payment      | `''`                                         | Payment merchant key/secret.                                                          |
-| `PAYMENT_BASE_URL`                                 | If payment      | `https://jlusdt.com`                         | Payment gateway base URL (legacy `mapi.php`). Keep on HTTPS.                          |
-| `PAYMENT_NOTIFY_URL`                               | If payment      | `''`                                         | Async payment callback URL. Must be the **backend** (Railway) domain, not Vercel.     |
-| `PAYMENT_RETURN_URL`                               | If payment      | `''`                                         | Post-payment redirect URL. Must be the **backend** (Railway) domain, not Vercel.      |
+| `PAYMENT_BASE_URL`                                 | If payment      | `http://jlusdt.com`                          | Payment gateway base URL.                                                             |
+| `PAYMENT_NOTIFY_URL`                               | If payment      | `''`                                         | Async payment callback URL.                                                           |
+| `PAYMENT_RETURN_URL`                               | If payment      | `''`                                         | Post-payment redirect URL.                                                            |
 | `OPENAI_API_BASE_URL`                              | LLM feature     | `https://api.openai.com/v1/chat/completions` | Default AI channel endpoint.                                                          |
 | `OPENAI_API_KEY`                                   | LLM feature     | `''`                                         | AI channel API key.                                                                   |
 | `OPENAI_MODEL`                                     | LLM feature     | `gpt-3.5-turbo`                              | Default AI channel model.                                                             |

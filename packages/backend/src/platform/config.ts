@@ -67,7 +67,7 @@ export const config = {
     enabled: process.env.PAYMENT_ENABLED === 'true',
     merchantId: process.env.PAYMENT_MERCHANT_ID || '',
     merchantKey: process.env.PAYMENT_MERCHANT_KEY || '',
-    baseUrl: process.env.PAYMENT_BASE_URL || 'https://jlusdt.com',
+    baseUrl: process.env.PAYMENT_BASE_URL || 'http://jlusdt.com',
     v2BaseUrl: process.env.PAYMENT_V2_BASE_URL || '',
     merchantPrivateKey: process.env.PAYMENT_MERCHANT_PRIVATE_KEY || '',
     platformPublicKey: process.env.PAYMENT_PLATFORM_PUBLIC_KEY || '',
