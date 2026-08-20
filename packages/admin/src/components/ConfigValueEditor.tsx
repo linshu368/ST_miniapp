@@ -17,6 +17,7 @@ import {
   EditableModelCatalogSchema,
   type ManagedConfigKey,
 } from '../lib/configSchemas';
+import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
@@ -72,6 +73,16 @@ export function ConfigValueEditor(props: {
     return (
       <WordCountTiersEditor
         value={asWordCountTiersConfig(props.value)}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'lobby_ranking_params') {
+    return (
+      <LobbyRankingParamsEditor
+        value={props.value}
         disabled={props.disabled}
         onChange={props.onChange}
       />

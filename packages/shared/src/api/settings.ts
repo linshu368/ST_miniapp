@@ -5,6 +5,12 @@
  * 不再是固定四值枚举；非法或已下线的 id 在读取/渲染时回落到 default_tier_id。
  */
 export type PreferredWordCount = string;
+
+/**
+ * 用户存档的档位 id，null 表示从未选择、跟随当前 default_tier_id。
+ * 生成链路拿到的 UserGenerationConfig.pref_word_count 已经解析过，永远是具体档位。
+ */
+export type StoredPreferredWordCount = PreferredWordCount | null;
 export type AvatarSource = 'custom' | 'telegram' | 'default';
 
 /**
@@ -28,7 +34,7 @@ export interface UserSettings {
   /** Effective avatar URL after custom > Telegram > platform-default resolution. */
   avatar_url: string;
   avatar_source: AvatarSource;
-  pref_word_count: PreferredWordCount;
+  pref_word_count: StoredPreferredWordCount;
   pref_show_options: boolean;
   pref_custom_instructions: string | null;
   updated_at: string;

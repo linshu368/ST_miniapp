@@ -70,16 +70,22 @@ export default async function characterRoutes(app: FastifyInstance) {
     let featuredIds = new Set<string>();
 
     if (sort === 'recommended') {
-      const scores = await loadCharacterRankingScores();
+      const snapshot = await loadCharacterRankingScores();
       // 排序分不可用（job 还没跑过第一轮，或查询失败）时保持运营顺序。
       // 不能把空结果当成「所有卡样本都是 0」——那会让整个大厅落进冷启动池被随机打乱。
-      if (scores) {
+      if (snapshot) {
         ordered = buildRecommendedOrder({
           operatorOrdered: characters,
-          scores,
+          scores: snapshot.scores,
+          minSample: snapshot.minSample,
           protectedPrefix: LOBBY_FEATURED_POSITION_COUNT,
         });
-        featuredIds = resolveFeaturedIds(characters, scores, LOBBY_FEATURED_POSITION_COUNT);
+        featuredIds = resolveFeaturedIds(
+          characters,
+          snapshot.scores,
+          LOBBY_FEATURED_POSITION_COUNT,
+          snapshot.minSample
+        );
       } else {
         featuredIds = new Set(characters.slice(0, LOBBY_FEATURED_POSITION_COUNT).map((c) => c.id));
       }
@@ -147,7 +153,7 @@ export default async function characterRoutes(app: FastifyInstance) {
 
     // 金框判定必须与大厅同源：大厅是「排序分主池前八」，这里若还按 sort_order 前八算，
     // 同一张卡会出现在列表有金框、点进详情没有。
-    const [character, lobbyIds, scores] = await Promise.all([
+    const [character, lobbyIds, snapshot] = await Promise.all([
       prisma.character.findFirst({
         where: { id, enabled: true, archived_at: null },
       }),
@@ -163,8 +169,13 @@ export default async function characterRoutes(app: FastifyInstance) {
       return reply.status(404).send(fail('NOT_FOUND', 'Character not found'));
     }
 
-    const featuredIds = scores
-      ? resolveFeaturedIds(lobbyIds, scores, LOBBY_FEATURED_POSITION_COUNT)
+    const featuredIds = snapshot
+      ? resolveFeaturedIds(
+          lobbyIds,
+          snapshot.scores,
+          LOBBY_FEATURED_POSITION_COUNT,
+          snapshot.minSample
+        )
       : new Set(lobbyIds.slice(0, LOBBY_FEATURED_POSITION_COUNT).map((item) => item.id));
 
     const characterDetail: CharacterDetail = {

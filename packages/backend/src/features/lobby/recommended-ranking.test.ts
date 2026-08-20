@@ -1,14 +1,33 @@
+import { DEFAULT_LOBBY_RANKING_PARAMS } from '@miniapp/shared';
 import { describe, expect, it } from 'vitest';
 import {
   LOBBY_COLD_START_BAND_END,
   LOBBY_COLD_START_BAND_START,
-  LOBBY_RANKING_MIN_SAMPLE,
-  buildRecommendedOrder,
-  resolveFeaturedIds,
+  buildRecommendedOrder as buildOrder,
+  resolveFeaturedIds as resolveFeatured,
+  type BuildRecommendedOrderInput,
 } from './recommended-ranking.js';
 import type { CardScore } from './ranking-stats.js';
 
 const FEATURED_COUNT = 8;
+
+/** 主池门槛现在由排序分快照带进来；这一组用例锁的是排布规则，仍按内置默认门槛断言 */
+const LOBBY_RANKING_MIN_SAMPLE = DEFAULT_LOBBY_RANKING_PARAMS.min_users;
+
+function buildRecommendedOrder<T extends { id: string }>(
+  input: Omit<BuildRecommendedOrderInput<T>, 'minSample'> & { minSample?: number }
+): T[] {
+  return buildOrder({ minSample: LOBBY_RANKING_MIN_SAMPLE, ...input });
+}
+
+function resolveFeaturedIds<T extends { id: string }>(
+  operatorOrdered: readonly T[],
+  scores: ReadonlyMap<string, CardScore>,
+  count: number,
+  minSample: number = LOBBY_RANKING_MIN_SAMPLE
+): Set<string> {
+  return resolveFeatured(operatorOrdered, scores, count, minSample);
+}
 
 function card(id: string) {
   return { id };
@@ -239,5 +258,28 @@ describe('resolveFeaturedIds', () => {
     for (let i = 1; i < 10; i += 1) scores.set(`c${i}`, cold());
 
     expect(resolveFeaturedIds(operatorOrdered, scores, FEATURED_COUNT)).toEqual(new Set(['c0']));
+  });
+});
+
+describe('主池门槛跟着排序分快照走', () => {
+  const operatorOrdered = Array.from({ length: 6 }, (_, i) => card(`c${i}`));
+  // 六张卡样本量都是 10：门槛 20 时全是冷启动卡，门槛 5 时全进主池
+  const scores = new Map<string, CardScore>(
+    operatorOrdered.map((c, i) => [c.id, { score: 100 - i, sampleSize: 10 }])
+  );
+
+  it('门槛高于样本量时整批走冷启动随机', () => {
+    const runs = Array.from({ length: 12 }, () =>
+      buildOrder({ operatorOrdered, scores, minSample: 20 })
+        .map((c) => c.id)
+        .join(',')
+    );
+    expect(new Set(runs).size).toBeGreaterThan(1);
+    expect(resolveFeatured(operatorOrdered, scores, FEATURED_COUNT, 20).size).toBe(0);
+  });
+
+  it('门槛低于样本量时整批按分数降序，顺序确定', () => {
+    const ordered = buildOrder({ operatorOrdered, scores, minSample: 5 });
+    expect(ordered.map((c) => c.id)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4', 'c5']);
   });
 });

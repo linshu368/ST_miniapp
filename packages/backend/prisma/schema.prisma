@@ -6,29 +6,11 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-  schemas   = ["miniapp", "public"]
+  schemas   = ["miniapp"]
 }
 
-model User {
-  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tg_id             String             @unique(map: "users_tg_id_uniq")
-  bonus_credits     Int                @default(660)
-  main_credits      Int?               @default(0)
-  total_credits     Int?               @default(dbgenerated("(main_credits + bonus_credits)"))
-  first_paid_at     DateTime?          @db.Timestamptz(6)
-  last_paid_at      DateTime?          @db.Timestamptz(6)
-  total_paid_amount Decimal            @default(0) @db.Decimal(12, 2)
-  source_id         String?
-  last_checkin_at   DateTime?          @db.Timestamptz(6)
-  created_at        DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime           @default(now()) @db.Timestamptz(6)
-  st_handle         String?            @unique
-  st_initialized_at DateTime?          @db.Timestamptz(6)
-  bot_user_settings bot_user_settings?
-
-  @@map("users")
-  @@schema("public")
-}
+// 旧 bot 的 public.* 表不再由本项目声明：它们属于 bot 体系，日后会随 bot 迁出本 project。
+// 需要读 bot 数据时走一次性 SQL，不要在这里加回 model。
 
 model MiniappUser {
   id                    String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -41,137 +23,15 @@ model MiniappUser {
   st_initialized_at     DateTime?                @db.Timestamptz(6)
   created_at            DateTime                 @default(now()) @db.Timestamptz(6)
   updated_at            DateTime                 @default(now()) @db.Timestamptz(6)
-  chat_message_charges  chat_message_charges[]
   daily_checkins        daily_checkins[]
   miniapp_user_settings miniapp_user_settings?
   payment_orders        miniapp_payment_orders[]
   user_wallets          user_wallets?
   wallet_ledger         wallet_ledger[]
-  wish_role_sessions    wish_role_sessions[]
   wish_roles            wish_roles[]
 
   @@map("users")
   @@schema("miniapp")
-}
-
-model Message {
-  id                            Int       @id @default(autoincrement())
-  user_id                       String
-  role_id                       String?
-  accept_at                     DateTime? @db.Timestamptz(6)
-  instructions                  String?
-  bot_reply                     String?
-  history                       String?
-  model_name                    String?
-  user_input                    String?
-  round                         Int?
-  full_response                 Int?
-  attempt_count                 Int?
-  first_response_latency        Float?
-  meta_model                    String?
-  meta_generation_time          Float?
-  meta_latency                  Float?
-  meta_native_tokens_prompt     Int?
-  meta_native_tokens_completion Int?
-  meta_native_tokens_reasoning  Int?
-  meta_native_tokens_cached     Int?
-  meta_cache_discount           Float?
-  meta_usage                    Json?
-  meta_finish_reason            String?
-  meta_provider_name            String?
-  type                          String?
-  trace_id                      String?
-  session_id                    String?
-  created_at                    DateTime? @db.Timestamptz(6)
-  credits_deducted              Int?
-  credits_account               String?
-  user_preferences              Json?
-
-  @@index([session_id], map: "idx_messages_session_id")
-  @@index([accept_at], map: "idx_messages_timestamp")
-  @@index([user_id, accept_at], map: "idx_messages_user_accept")
-  @@index([user_id], map: "idx_messages_user_id")
-  @@map("messages")
-  @@schema("public")
-}
-
-model bot_user_settings {
-  user_id                  String   @id @db.Uuid
-  tg_username              String?
-  tg_first_name            String?
-  tg_last_name             String?
-  total_round              BigInt   @default(0)
-  pref_word_count          String   @default("300-500")
-  pref_show_options        Boolean  @default(true)
-  pref_custom_instructions String?
-  created_at               DateTime @default(now()) @db.Timestamptz(6)
-  updated_at               DateTime @default(now()) @db.Timestamptz(6)
-  users                    User     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@schema("public")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model bot_users {
-  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id                  String    @unique(map: "bot_users_user_id_uniq")
-  tg_username              String?
-  tg_first_name            String?
-  tg_last_name             String?
-  created_at               DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at               DateTime  @default(now()) @db.Timestamptz(6)
-  bonus_credits            Int       @default(660)
-  main_credits             Int?      @default(0)
-  total_credits            Int?      @default(dbgenerated("(main_credits + bonus_credits)"))
-  first_paid_at            DateTime? @db.Timestamptz(6)
-  last_paid_at             DateTime? @db.Timestamptz(6)
-  total_paid_amount        Decimal   @default(0) @db.Decimal(12, 2)
-  source_id                String?
-  total_round              BigInt?   @default(0)
-  last_checkin_at          DateTime? @db.Timestamptz(6)
-  pref_word_count          String    @default("300-500")
-  pref_show_options        Boolean   @default(true)
-  pref_custom_instructions String?
-
-  @@schema("public")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model botlinks {
-  id               BigInt    @id @default(autoincrement())
-  bot_link         String?
-  source_id        String?   @unique(map: "botlinks_short_code_key")
-  created_at       DateTime? @default(now()) @db.Timestamptz(6)
-  source_name      String?
-  start_time       DateTime? @db.Date
-  end_time         DateTime? @db.Date
-  Purchase_amount  Int?
-  Procurement_days Int?
-
-  @@schema("public")
-}
-
-model chat_snapshots {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id       String
-  role_id       String?
-  snapshot_name String?
-  history       Json      @default("[]")
-  created_at    DateTime? @default(now()) @db.Timestamptz(6)
-  round         Int?      @default(0)
-
-  @@index([user_id], map: "idx_chat_snapshots_user_id")
-  @@schema("public")
-}
-
-model checkin_logs {
-  id            BigInt   @id @default(autoincrement())
-  user_id       String
-  reward        Int
-  checked_in_at DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([user_id, checked_in_at(sort: Desc)], map: "idx_checkin_logs_user_time")
-  @@schema("public")
 }
 
 model miniapp_user_settings {
@@ -184,7 +44,8 @@ model miniapp_user_settings {
   tg_avatar_url            String?
   custom_avatar_url        String?
   total_round              BigInt      @default(0)
-  pref_word_count          String      @default("300-500")
+  /// NULL = 从未选择，跟随 runtime_config.pref_word_count_tiers.default_tier_id（086）
+  pref_word_count          String?
   pref_show_options        Boolean     @default(true)
   pref_custom_instructions String?
   created_at               DateTime    @default(now()) @db.Timestamptz(6)
@@ -192,70 +53,6 @@ model miniapp_user_settings {
   users                    MiniappUser @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("miniapp")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model payment_orders {
-  transaction_id          String   @id
-  user_id                 String
-  amount                  Decimal  @db.Decimal(10, 2)
-  credits_amount          Int      @default(0)
-  payment_status          String   @default("pending")
-  payment_provider        String
-  provider_transaction_id String?
-  credits_added           Boolean  @default(false)
-  created_at              DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([created_at], map: "idx_payment_orders_created")
-  @@index([payment_status], map: "idx_payment_orders_status")
-  @@index([user_id], map: "idx_payment_orders_user_id")
-  @@schema("public")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model role_data {
-  id                        BigInt    @id(map: "role-data_pkey") @default(autoincrement())
-  role_id                   String    @unique(map: "role-data_role_id_key")
-  spec                      String?   @default("chara_card_v2")
-  spec_version              String?   @default("2.0")
-  name                      String?
-  description               String?
-  personality               String?
-  scenario                  String?
-  first_mes                 String?
-  mes_example               String?
-  creator                   String?
-  character_version         String?
-  creator_notes             String?
-  system_prompt             String?
-  post_history_instructions String?
-  alternate_greetings       Json?     @default("[]")
-  character_book            Json?
-  tags                      Json?     @default("[]")
-  title                     String?
-  summary                   String?
-  deeplink                  String?
-  created_at                DateTime  @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
-  updated_at                DateTime  @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
-  avatar                    String?
-  post_link                 String?
-  published_at              DateTime? @db.Timestamp(6)
-
-  @@index([role_id])
-  @@schema("public")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model runtime_config {
-  key         String    @id
-  value       Json?
-  description String?
-  version     Int?      @default(1)
-  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
-  text_value  String?
-
-  @@schema("public")
 }
 
 model Character {
@@ -301,41 +98,6 @@ model MiniappRuntimeConfig {
   text_value  String?
 
   @@map("runtime_config")
-  @@schema("miniapp")
-}
-
-model traffic_clicks {
-  id         BigInt   @id @default(autoincrement())
-  stat_date  DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
-  source_id  String
-  clicks     Int      @default(0)
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @default(now()) @db.Timestamptz(6)
-
-  @@unique([stat_date, source_id], map: "traffic_clicks_uniq")
-  @@index([source_id, stat_date], map: "idx_tc_source_date")
-  @@schema("public")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model chat_message_charges {
-  user_id                                                            String         @db.Uuid
-  session_id                                                         String         @db.Uuid
-  client_message_id                                                  String
-  amount                                                             Decimal        @db.Decimal(14, 1)
-  status                                                             String
-  wallet_ledger_id                                                   String?        @db.Uuid
-  refund_ledger_id                                                   String?        @db.Uuid
-  created_at                                                         DateTime       @default(now()) @db.Timestamptz(6)
-  refunded_at                                                        DateTime?      @db.Timestamptz(6)
-  wallet_ledger_chat_message_charges_refund_ledger_idTowallet_ledger wallet_ledger? @relation("chat_message_charges_refund_ledger_idTowallet_ledger", fields: [refund_ledger_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users                                                              MiniappUser    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  wallet_ledger_chat_message_charges_wallet_ledger_idTowallet_ledger wallet_ledger? @relation("chat_message_charges_wallet_ledger_idTowallet_ledger", fields: [wallet_ledger_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([user_id, session_id, client_message_id])
-  @@index([session_id, created_at(sort: Desc)], map: "idx_miniapp_chat_charges_session")
   @@schema("miniapp")
 }
 
@@ -399,21 +161,19 @@ model user_wallets {
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model wallet_ledger {
-  id                                                                        String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id                                                                   String                 @db.Uuid
-  entry_type                                                                String
-  amount                                                                    Decimal                @db.Decimal(14, 1)
-  main_delta                                                                Decimal                @default(0) @db.Decimal(14, 1)
-  bonus_delta                                                               Decimal                @default(0) @db.Decimal(14, 1)
-  balance_main                                                              Decimal                @db.Decimal(14, 1)
-  balance_bonus                                                             Decimal                @db.Decimal(14, 1)
-  reference_type                                                            String?
-  reference_id                                                              String?
-  metadata                                                                  Json                   @default("{}")
-  created_at                                                                DateTime               @default(now()) @db.Timestamptz(6)
-  chat_message_charges_chat_message_charges_refund_ledger_idTowallet_ledger chat_message_charges[] @relation("chat_message_charges_refund_ledger_idTowallet_ledger")
-  chat_message_charges_chat_message_charges_wallet_ledger_idTowallet_ledger chat_message_charges[] @relation("chat_message_charges_wallet_ledger_idTowallet_ledger")
-  users                                                                     MiniappUser            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id        String      @db.Uuid
+  entry_type     String
+  amount         Decimal     @db.Decimal(14, 1)
+  main_delta     Decimal     @default(0) @db.Decimal(14, 1)
+  bonus_delta    Decimal     @default(0) @db.Decimal(14, 1)
+  balance_main   Decimal     @db.Decimal(14, 1)
+  balance_bonus  Decimal     @db.Decimal(14, 1)
+  reference_type String?
+  reference_id   String?
+  metadata       Json        @default("{}")
+  created_at     DateTime    @default(now()) @db.Timestamptz(6)
+  users          MiniappUser @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([reference_type, reference_id], map: "idx_miniapp_wallet_ledger_reference")
   @@index([user_id, created_at(sort: Desc)], map: "idx_miniapp_wallet_ledger_user_created")
@@ -460,20 +220,6 @@ model llm_usage_charge_dedup {
   processed_at   DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([user_id, processed_at(sort: Desc)], map: "idx_llm_usage_charge_dedup_user_processed")
-  @@schema("miniapp")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model wish_role_sessions {
-  user_id    BigInt       @id
-  db_user_id String?      @db.Uuid
-  state      String
-  created_at DateTime     @default(now()) @db.Timestamptz(6)
-  updated_at DateTime     @default(now()) @db.Timestamptz(6)
-  users      MiniappUser? @relation(fields: [db_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
   @@schema("miniapp")
 }
 

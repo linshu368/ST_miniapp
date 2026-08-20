@@ -1,10 +1,12 @@
 import {
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
+  LobbyRankingParamsSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
   PaymentPlansSchema,
@@ -25,6 +27,7 @@ export const managedConfigKeys = [
   'system_fallback_character_id',
   'system_instructions',
   'pref_word_count_tiers',
+  'lobby_ranking_params',
 ] as const;
 
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
@@ -112,6 +115,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   system_fallback_character_id: z.string().uuid(),
   system_instructions: SystemInstructionsSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
+  lobby_ranking_params: LobbyRankingParamsSchema,
 };
 
 export const configMetadata: Record<
@@ -204,6 +208,12 @@ export const configMetadata: Record<
     description:
       '生成偏好「回复长度」的档位表：可增删档位、改按钮文案与列布局；prompt_value 注入 {{WORD_COUNT}}。',
     defaultValue: DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  },
+  lobby_ranking_params: {
+    label: '推荐页排序参数',
+    description:
+      '首页「推荐」v3 打分口径：统计窗口、轮次上限、会话切分与回访窗口、D30/R48 权重、样本门槛与归一化分位。改动在下一次排序刷新（每 24 小时）后生效。',
+    defaultValue: DEFAULT_LOBBY_RANKING_PARAMS,
   },
 };
 
