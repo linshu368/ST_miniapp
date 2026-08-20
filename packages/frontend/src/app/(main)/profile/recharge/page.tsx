@@ -84,11 +84,12 @@ function RechargePageContent() {
         payment_started: '1',
       });
       if (returnTo) nextSearch.set('returnTo', returnTo);
+      // 必须在 router.push 之前：拉起若退化成本页导航，会被随后的客户端路由抢跑丢弃，
+      // 而等待页的自动拉起又被 payment_started=1 短路，结果是一次都没拉起。
+      openPaymentUrl(result.pay_url);
       router.push(
         `/profile/recharge/${encodeURIComponent(result.order.id)}?${nextSearch.toString()}`
       );
-      // 首次跳转必须紧跟“立即支付”的用户操作，避免移动端拦截微信拉起。
-      openPaymentUrl(result.pay_url);
     } catch {
       notification('error');
     }

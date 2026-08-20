@@ -5,7 +5,7 @@
 // 原因：未来迁移独立 web 时只需替换此文件，业务代码不动。
 
 import { useCallback, useEffect } from 'react';
-import { backButton, hapticFeedback, isTMA } from '@telegram-apps/sdk-react';
+import { backButton, hapticFeedback, isTMA, openLink } from '@telegram-apps/sdk-react';
 
 export {
   useSignal,
@@ -97,37 +97,46 @@ export function useHaptic(): {
   return { whisper, impact, selection, notification };
 }
 
-type TelegramWindow = Window & {
-  Telegram?: {
-    WebApp?: {
-      openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
-    };
-  };
-};
-
+/**
+ * 交给 Telegram 用浏览器打开，Mini App 自身不导航。
+ *
+ * 必须走 SDK 的 web_app_open_link 桥，不要用 window.Telegram.WebApp：那个全局来自官方
+ * telegram-web-app.js，本项目没有引入，判断永远为假，最终退化成 location.assign——
+ * 结果是在 Mini App 的 WebView 里原地跳转，App scheme 一律拿不到系统分发。
+ */
 export function openExternalUrl(url: string): void {
   if (typeof window === 'undefined') return;
 
   try {
-    const webApp = (window as TelegramWindow).Telegram?.WebApp;
-    if (webApp?.openLink) {
-      webApp.openLink(url, { try_instant_view: false });
+    if (openLink.isAvailable()) {
+      openLink(url);
       return;
     }
   } catch {
-    // 旧版客户端或非 Telegram 环境下走浏览器兜底。
+    // 非 TMA 或旧版客户端，落回普通浏览器导航。
   }
 
   window.location.assign(url);
 }
 
-export function openPaymentUrl(url: string): void {
+const PAYMENT_SCHEME_PATTERN = /^(weixin|alipays?):\/\//i;
+
+/**
+ * @param url        支付目标：App scheme 或 H5 收银台地址
+ * @param fallbackUrl App 未安装时的兜底收银台地址
+ *
+ * Mini App 的 WebView 分发不了 App scheme，直接 location.assign 只会得到
+ * ERR_UNKNOWN_URL_SCHEME，端上表现为「无法加载」。scheme 必须交给 openLink
+ * 打开的真实浏览器去唤起，中转页见 public/pay/launch.html。
+ */
+export function openPaymentUrl(url: string, fallbackUrl?: string): void {
   if (typeof window === 'undefined') return;
 
-  // Telegram openLink 只保证支持 HTTP(S)。厂商 V2 的 scheme 结果必须直接交给
-  // WebView 导航，系统才会把 weixin:// 协议分发给微信客户端。
-  if (/^weixin:\/\//i.test(url)) {
-    window.location.assign(url);
+  if (PAYMENT_SCHEME_PATTERN.test(url)) {
+    const launch = new URL('/pay/launch.html', window.location.origin);
+    launch.searchParams.set('scheme', url);
+    if (fallbackUrl) launch.searchParams.set('fallback', fallbackUrl);
+    openExternalUrl(launch.toString());
     return;
   }
 
