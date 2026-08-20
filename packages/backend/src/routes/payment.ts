@@ -31,10 +31,8 @@ import { config } from '../platform/config.js';
 import { insertUserNotification } from '../lib/notifications.js';
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
-const PAYMENT_TYPES: PaymentType[] = [
-  // 'alipay', // 支付宝通道暂时停用
-  'wxpay',
-];
+// wxpay 因厂商单笔 15 元限额停用；存量 wxpay 订单不受白名单影响。
+const PAYMENT_TYPES: PaymentType[] = ['alipay'];
 
 export default async function paymentRoutes(app: FastifyInstance) {
   if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {

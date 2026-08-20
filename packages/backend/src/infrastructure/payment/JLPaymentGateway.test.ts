@@ -1,4 +1,4 @@
-import { createSign, createVerify, generateKeyPairSync } from 'crypto';
+import { createHash, createSign, createVerify, generateKeyPairSync } from 'crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { JLPaymentGateway } from './JLPaymentGateway.js';
@@ -17,6 +17,26 @@ function createGateway() {
     notifyUrl: 'https://backend.example/notify',
     returnUrl: 'https://backend.example/return',
   });
+}
+
+function createLegacyGateway() {
+  return new JLPaymentGateway({
+    merchantId: '1002',
+    merchantKey: 'legacy-secret',
+    baseUrl: 'https://legacy.example',
+    notifyUrl: 'https://backend.example/notify',
+    returnUrl: 'https://backend.example/return',
+  });
+}
+
+function signLegacyMd5(params: Record<string, string>, merchantKey: string): string {
+  const signSource =
+    Object.keys(params)
+      .filter((key) => key !== 'sign' && key !== 'sign_type' && params[key])
+      .sort()
+      .map((key) => `${key}=${params[key]}`)
+      .join('&') + merchantKey;
+  return createHash('md5').update(signSource).digest('hex');
 }
 
 function signingSource(params: Record<string, unknown>): string {
@@ -158,5 +178,64 @@ describe('JLPaymentGateway V2', () => {
     notify.sign = signPlatform(notify);
 
     expect(createGateway().verifyNotifySign(notify)).toBe(true);
+  });
+});
+
+describe('JLPaymentGateway legacy', () => {
+  const alipayParams = {
+    type: 'alipay' as const,
+    outTradeNo: 'merchant-order',
+    amount: '1.00',
+    userId: 'user-id',
+    productName: '星尘充值',
+    clientIp: '203.0.113.8',
+  };
+
+  it('posts type=alipay to mapi.php with an independently verifiable MD5 sign', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe('https://legacy.example/mapi.php');
+      const request = Object.fromEntries(new URLSearchParams(String(init?.body)));
+      expect(request).toMatchObject({
+        pid: '1002',
+        type: 'alipay',
+        out_trade_no: 'merchant-order',
+        money: '1.00',
+        sign_type: 'MD5',
+      });
+      expect(request.sign).toEqual(expect.any(String));
+      expect(request.sign).toBe(signLegacyMd5(request, 'legacy-secret'));
+
+      return new Response(JSON.stringify({ code: 0, msg: 'ignored' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createLegacyGateway().createPayment(alipayParams);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('returns the cashier payurl when the vendor responds with code=1', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            code: 1,
+            payurl: 'https://pay.example/cashier?order=merchant-order',
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      })
+    );
+
+    await expect(createLegacyGateway().createPayment(alipayParams)).resolves.toEqual({
+      success: true,
+      paymentUrl: 'https://pay.example/cashier?order=merchant-order',
+    });
   });
 });
