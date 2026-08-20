@@ -168,6 +168,12 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 083_drop_chat_engine_mode.sql # 删除 ST 切换期的回滚开关 chat_engine_mode（075 建的行）
 084_remove_legacy_llm_display_fields.sql # 模型目录去掉展示价 price_input/price_output，定价配置去掉 balanceBaseline/fallbackCost
 085_llm_free_flag_and_drop_pricing_markup.sql # 目录的 markup/deduct_markup 换成 is_free，定价配置去掉 exchangeRate/markup
+086_miniapp_wish_roles_repair.sql # 补生产库缺失的 miniapp.wish_roles（021 未执行；FK 直接落 028 修正后的 miniapp.users）
+087_drop_dead_admin_rpcs.sql # 删除 admin 21 个零消费方 RPC（含引用 st_platform 的预设组；is_registered_admin 因 RLS 保留）
+088_drop_st_schemas.sql # DROP SCHEMA st_platform / st_users / st_infra CASCADE（必须在 087 之后）
+089_drop_growth.sql # DROP SCHEMA growth CASCADE；代码同批摘掉 CS 渠道链接与 click 重定向
+090_drop_miniapp_simulation.sql # DROP SCHEMA miniapp_simulation CASCADE（保留 characters.is_test）
+091_drop_chat_message_charges.sql # 删旧聊天扣费表 + 4 RPC + character_engagement_stats 视图
 ```
 
 > 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。
@@ -411,9 +417,7 @@ ALTER TABLE public.users DROP COLUMN IF EXISTS st_handle;
 
 ```bash
 cd packages/backend
-# 先在 schema.prisma 的 datasource 块里加入 schemas = ["public", "miniapp", "st_platform", "st_users", "st_infra"]
-npx prisma db pull
 npx prisma generate
 ```
 
-`prisma db pull` 会内省三个新 schema 下的表，并自动加 `@@schema("st_platform")` / `@@schema("st_users")` / `@@schema("st_infra")` 标记，不会破坏现有 `miniapp.*` model。
+`schema.prisma` 只声明 `miniapp` schema。`public` / `st_*` 不再进 Prisma；088 已 drop 三个 ST schema。需要读 bot 的 `public.*` 时走一次性 SQL。
