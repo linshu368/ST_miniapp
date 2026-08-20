@@ -14,11 +14,8 @@
 
 import type { FastifyBaseLogger } from 'fastify';
 import { prisma } from './db.js';
-import {
-  computeRankingScores,
-  LOBBY_RANKING_MIN_SAMPLE,
-  LOBBY_RANKING_WINDOW_DAYS,
-} from '../features/lobby/ranking-score.js';
+import { computeRankingScores } from '../features/lobby/ranking-score.js';
+import { resolveLobbyRankingParams } from '../features/lobby/ranking-params.js';
 import {
   clearCharacterRankingScoreCache,
   computeRawCardStats,
@@ -83,6 +80,10 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
   const startedAt = Date.now();
 
   try {
+    // 配置读在事务外：它走 Supabase REST，与事务用的是不同连接，
+    // 放进去只是白白占着 advisory lock 等一个网络往返。
+    const { params, degraded, version } = await resolveLobbyRankingParams(log);
+
     const outcome = await prisma.$transaction(
       async (tx) => {
         const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
@@ -90,18 +91,18 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
         `;
         if (rows[0]?.locked !== true) return null;
 
-        const raw = await computeRawCardStats(tx, LOBBY_RANKING_WINDOW_DAYS);
-        const scores = computeRankingScores(raw);
+        const raw = await computeRawCardStats(tx, params);
+        const scores = computeRankingScores(raw, params);
 
-        // 空结果意味着 80 天窗口内一条对话都没有。真实环境不可能，
+        // 空结果意味着整个窗口内一条对话都没有。真实环境不可能，
         // 更像是聚合出了问题——这种时候清表会把整个大厅打回随机顺序，宁可不动。
         if (scores.length === 0) return { cardCount: 0, matureCount: 0, skippedEmpty: true };
 
-        await persistRankingScores(tx, scores, LOBBY_RANKING_WINDOW_DAYS);
+        await persistRankingScores(tx, scores, params);
 
         return {
           cardCount: scores.length,
-          matureCount: scores.filter((row) => row.sampleSize >= LOBBY_RANKING_MIN_SAMPLE).length,
+          matureCount: scores.filter((row) => row.sampleSize >= params.min_users).length,
           skippedEmpty: false,
         };
       },
@@ -134,7 +135,10 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
         cardCount: outcome.cardCount,
         matureCount: outcome.matureCount,
         durationMs: Date.now() - startedAt,
-        windowDays: LOBBY_RANKING_WINDOW_DAYS,
+        windowDays: params.window_days,
+        // 这一轮分数是哪版参数算的。运营改完配置来核对时唯一的凭据
+        paramsVersion: version,
+        paramsDegraded: degraded,
       },
       '大厅排序分刷新完成'
     );

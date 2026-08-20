@@ -1,11 +1,15 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_WORD_COUNT_TIERS_CONFIG } from '@miniapp/shared';
 import {
+  buildSnapshot,
   parseInteractionModeBlocks,
   parseTemplate,
   parseWordCountTiers,
+  toPublicWordCountTiersFromEngine,
 } from './platform-instructions.js';
 import { resolveWordCountPromptValue } from './render-instructions.js';
+import type { RuntimeConfigEntry } from '../../platform/runtime-config.js';
 
 const MIGRATION_071_PATH = new URL(
   '../../../../shared/migrations/071_engine_platform_instructions.sql',
@@ -110,6 +114,125 @@ describe('runtime_config 解析', () => {
       defaultTierId: '300-500',
       layoutColumns: 4,
     });
+  });
+});
+
+describe('buildSnapshot：字数档位的契约校验与降级', () => {
+  const TEMPLATE = '{{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}';
+
+  function entries(wordCountValue: unknown): Map<string, RuntimeConfigEntry> {
+    return new Map<string, RuntimeConfigEntry>([
+      ['system_instructions', { value: null, textValue: TEMPLATE, version: 1 }],
+      [
+        'interaction_mode_blocks',
+        { value: { options_on: '开', options_off: '关' }, textValue: null, version: 1 },
+      ],
+      ['pref_word_count_tiers', { value: wordCountValue, textValue: null, version: 7 }],
+    ]);
+  }
+
+  const VALID = {
+    tiers: [
+      {
+        id: '300-500',
+        ui_label: '标准300-500',
+        prompt_value: '300-500',
+        enabled: true,
+        sort_order: 0,
+      },
+      {
+        id: '500-800',
+        ui_label: '详细500-800',
+        prompt_value: '500-800',
+        enabled: true,
+        sort_order: 1,
+      },
+    ],
+    default_tier_id: '500-800',
+    layout: { columns: 3 },
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('合法配置不降级，默认档与列布局按运营配置下发', () => {
+    const snapshot = buildSnapshot(entries(VALID));
+    expect(snapshot.degraded).toBe(false);
+
+    const publicTiers = toPublicWordCountTiersFromEngine(snapshot.instructions.wordCountTiers);
+    expect(publicTiers.default_tier_id).toBe('500-800');
+    expect(publicTiers.tiers.map((tier) => tier.id)).toEqual(['300-500', '500-800']);
+    expect(publicTiers.layout.columns).toBe(3);
+  });
+
+  // 回归：宽松解析放过、shared 契约拦下的配置，过去会静默把整张档位表换成内置默认档，
+  // 既不打日志也不置 degraded，且 prompt 侧仍用运营配置——两个出口分叉。
+  it.each([
+    [
+      'id 不合 id 正则',
+      { ...VALID, tiers: [{ ...VALID.tiers[0], id: '标准档' }], default_tier_id: '标准档' },
+    ],
+    [
+      'ui_label 超过 20 字',
+      {
+        ...VALID,
+        tiers: [{ ...VALID.tiers[0], ui_label: '标'.repeat(21) }],
+        default_tier_id: '300-500',
+      },
+    ],
+    [
+      'default_tier_id 指向停用档位',
+      { ...VALID, tiers: VALID.tiers.map((tier) => ({ ...tier, enabled: tier.id !== '500-800' })) },
+    ],
+    [
+      '档位 id 重复',
+      {
+        ...VALID,
+        tiers: [VALID.tiers[0], { ...VALID.tiers[1], id: '300-500' }],
+        default_tier_id: '300-500',
+      },
+    ],
+  ])('%s：置 degraded、打日志，且两个出口都回落到内置兜底', (_name, wordCountValue) => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const snapshot = buildSnapshot(entries(wordCountValue));
+
+    expect(snapshot.degraded).toBe(true);
+    expect(logged).toHaveBeenCalledOnce();
+    const message = String(logged.mock.calls[0]?.[0]);
+    expect(message).toContain('pref_word_count_tiers');
+    expect(message).toContain('version 7');
+
+    // prompt 出口与 MiniApp 出口必须是同一份内置兜底
+    const publicTiers = toPublicWordCountTiersFromEngine(snapshot.instructions.wordCountTiers);
+    expect(publicTiers.default_tier_id).toBe(DEFAULT_WORD_COUNT_TIERS_CONFIG.default_tier_id);
+    expect(snapshot.instructions.wordCountTiers.defaultTierId).toBe(
+      DEFAULT_WORD_COUNT_TIERS_CONFIG.default_tier_id
+    );
+    expect(publicTiers.tiers.map((tier) => tier.id)).toEqual(
+      DEFAULT_WORD_COUNT_TIERS_CONFIG.tiers.map((tier) => tier.id)
+    );
+  });
+
+  it('契约校验后的值回灌引擎侧，prompt 与 MiniApp 拿到同一份 trim 结果', () => {
+    const snapshot = buildSnapshot(
+      entries({
+        ...VALID,
+        tiers: [{ ...VALID.tiers[0], id: '  300-500  ' }],
+        default_tier_id: '  300-500  ',
+      })
+    );
+
+    expect(snapshot.degraded).toBe(false);
+    expect(snapshot.instructions.wordCountTiers.tiers.map((tier) => tier.id)).toEqual(['300-500']);
+    // 用户存档的是 trim 后的 id，prompt 侧必须能命中，不能因为配置里带空格而回落
+    expect(resolveWordCountPromptValue('300-500', snapshot.instructions.wordCountTiers)).toBe(
+      '300-500'
+    );
+    expect(toPublicWordCountTiersFromEngine(snapshot.instructions.wordCountTiers).tiers).toEqual([
+      { id: '300-500', ui_label: '标准300-500', sort_order: 0 },
+    ]);
   });
 });
 

@@ -8,31 +8,12 @@
  * （样本只有一张卡、没有成熟卡、分母为 0 …），不用起数据库。
  *
  * 口径见 docs/ST_remove-M5-前端实施计划.md §B0。
+ *
+ * 各项参数（窗口、cap、权重、门槛、分位点）来自运营台，由调用方读 runtime_config
+ * 后注入（见 ranking-params.ts）。这里刻意不自己去读配置：纯函数才测得动边界条件。
  */
 
-/** 统计窗口宽度。窗口内 = created_at >= now() - 80d */
-export const LOBBY_RANKING_WINDOW_DAYS = 80;
-
-/**
- * D30 的硬阈值：窗口内去重用户数低于它的卡不进主池，改走冷启动随机插入。
- * 也是「成熟卡」的定义——全局先验 μ_D 与 D30 标尺都只从这批卡取样。
- */
-export const LOBBY_RANKING_MIN_SAMPLE = 20;
-
-/** D30 贝叶斯收缩的先验权重（m_D）。与硬阈值同值：样本刚够进主池时，先验与实测各占一半 */
-export const D30_PRIOR_WEIGHT = 20;
-
-/** R48 的软阈值：分母达到它才完全采信实测值，之下按线性过渡带向中位回退 */
-export const R48_FULL_TRUST_SAMPLE = 40;
-
-/** 单轮对话深度的封顶值。超过 30 轮的部分不再加分，避免重度用户拉高整卡均值 */
-export const D30_TURN_CAP = 30;
-
-export const D30_WEIGHT = 0.75;
-export const R48_WEIGHT = 0.25;
-
-/** 无样本时的中性归一值。既不奖励也不惩罚，等价于「排在标尺正中间」 */
-const NEUTRAL_NORM = 0.5;
+import type { LobbyRankingParams } from '@miniapp/shared';
 
 /** SQL 侧算出的每卡原始量 */
 export interface RawCardStats {
@@ -82,10 +63,13 @@ export function percentile(sortedAsc: readonly number[], fraction: number): numb
   return low + (high - low) * (position - lower);
 }
 
-function buildScale(samples: readonly number[]): Scale | null {
+function buildScale(samples: readonly number[], params: LobbyRankingParams): Scale | null {
   if (samples.length === 0) return null;
   const sorted = [...samples].sort((a, b) => a - b);
-  return { p10: percentile(sorted, 0.1), p90: percentile(sorted, 0.9) };
+  return {
+    p10: percentile(sorted, params.norm_percentile_low),
+    p90: percentile(sorted, params.norm_percentile_high),
+  };
 }
 
 /**
@@ -93,10 +77,10 @@ function buildScale(samples: readonly number[]): Scale | null {
  * P90 <= P10 说明这批卡在该指标上没有区分度（样本太少或全部同值），
  * 此时退化为中性值——硬算会因为除零把所有卡都推到极端。
  */
-export function normalizeByScale(value: number, scale: Scale | null): number {
-  if (!scale) return NEUTRAL_NORM;
+export function normalizeByScale(value: number, scale: Scale | null, neutralNorm: number): number {
+  if (!scale) return neutralNorm;
   const span = scale.p90 - scale.p10;
-  if (!(span > 0)) return NEUTRAL_NORM;
+  if (!(span > 0)) return neutralNorm;
   return clamp((value - scale.p10) / span, 0, 1);
 }
 
@@ -104,7 +88,7 @@ export function normalizeByScale(value: number, scale: Scale | null): number {
  * 全局先验 μ_D：成熟卡按样本量加权的 D30 均值。
  * 一张卡的样本越多，它对「平均一张卡应该有多深」的贡献越大。
  */
-function resolvePriorMean(rows: readonly RawCardStats[]): number {
+function resolvePriorMean(rows: readonly RawCardStats[], params: LobbyRankingParams): number {
   const weightedMean = (candidates: readonly RawCardStats[]): number | null => {
     let weightSum = 0;
     let valueSum = 0;
@@ -118,16 +102,20 @@ function resolvePriorMean(rows: readonly RawCardStats[]): number {
 
   // 冷启动期可能一张成熟卡都没有，退到「所有有样本的卡」，仍为空才用中性值。
   return (
-    weightedMean(rows.filter((row) => row.sampleSize >= LOBBY_RANKING_MIN_SAMPLE)) ??
+    weightedMean(rows.filter((row) => row.sampleSize >= params.min_users)) ??
     weightedMean(rows) ??
-    NEUTRAL_NORM
+    params.neutral_norm
   );
 }
 
-function shrinkD30(row: RawCardStats, priorMean: number): number {
+function shrinkD30(row: RawCardStats, priorMean: number, params: LobbyRankingParams): number {
   const observed = row.d30Raw ?? 0;
   const weight = Math.max(row.sampleSize, 0);
-  return (weight * observed + D30_PRIOR_WEIGHT * priorMean) / (weight + D30_PRIOR_WEIGHT);
+  const prior = params.d30_prior_weight;
+  // 收缩关闭（m_D = 0）且这张卡一个样本都没有时，分母会是 0。
+  // 这种卡没有任何可采信的观测，直接取先验。
+  if (weight + prior <= 0) return priorMean;
+  return (weight * observed + prior * priorMean) / (weight + prior);
 }
 
 function roundToCents(value: number): number {
@@ -140,39 +128,47 @@ function roundToCents(value: number): number {
  * 两条标尺分别取样：D30 用所有成熟卡的收缩值，R48 用所有分母达标卡的原始值。
  * 分开取样是因为两个指标的达标门槛不同——一张卡可以样本够深、但新客还没满 48 小时。
  *
- * 未达 LOBBY_RANKING_MIN_SAMPLE 的卡也会算出分数并返回（便于观察），
+ * 未达 params.min_users 的卡也会算出分数并返回（便于观察），
  * 只是排序时由 buildRecommendedOrder 把它们划进冷启动池，分数不参与比较。
  */
-export function computeRankingScores(rows: readonly RawCardStats[]): RankingScore[] {
-  const priorMean = resolvePriorMean(rows);
+export function computeRankingScores(
+  rows: readonly RawCardStats[],
+  params: LobbyRankingParams
+): RankingScore[] {
+  const priorMean = resolvePriorMean(rows, params);
+  const neutral = params.neutral_norm;
 
   const shrunkByCard = new Map<string, number>();
   for (const row of rows) {
-    shrunkByCard.set(row.characterId, shrinkD30(row, priorMean));
+    shrunkByCard.set(row.characterId, shrinkD30(row, priorMean, params));
   }
 
   const d30Scale = buildScale(
     rows
-      .filter((row) => row.sampleSize >= LOBBY_RANKING_MIN_SAMPLE)
-      .map((row) => shrunkByCard.get(row.characterId) as number)
+      .filter((row) => row.sampleSize >= params.min_users)
+      .map((row) => shrunkByCard.get(row.characterId) as number),
+    params
   );
   const r48Scale = buildScale(
     rows
-      .filter((row) => row.returnSampleSize >= R48_FULL_TRUST_SAMPLE && row.r48Raw !== null)
-      .map((row) => row.r48Raw as number)
+      .filter((row) => row.returnSampleSize >= params.r48_full_trust_sample && row.r48Raw !== null)
+      .map((row) => row.r48Raw as number),
+    params
   );
 
   return rows.map((row) => {
     const d30Shrunk = shrunkByCard.get(row.characterId) as number;
 
     // 分母不足时不能直接采信实测回访率：一个人回访就是 100%。
-    // 用线性过渡带把它按样本量往中性值拉，样本攒够 40 个才完全采信。
-    const trust = clamp(row.returnSampleSize / R48_FULL_TRUST_SAMPLE, 0, 1);
-    const normR48 = row.r48Raw === null ? NEUTRAL_NORM : normalizeByScale(row.r48Raw, r48Scale);
-    const effectiveR48 = trust * normR48 + (1 - trust) * NEUTRAL_NORM;
+    // 用线性过渡带把它按样本量往中性值拉，样本攒够 X_R 个才完全采信。
+    const trust = clamp(row.returnSampleSize / params.r48_full_trust_sample, 0, 1);
+    const normR48 = row.r48Raw === null ? neutral : normalizeByScale(row.r48Raw, r48Scale, neutral);
+    const effectiveR48 = trust * normR48 + (1 - trust) * neutral;
 
     const score =
-      100 * (D30_WEIGHT * normalizeByScale(d30Shrunk, d30Scale) + R48_WEIGHT * effectiveR48);
+      100 *
+      (params.d30_weight * normalizeByScale(d30Shrunk, d30Scale, neutral) +
+        params.r48_weight * effectiveR48);
 
     return { ...row, d30Shrunk, score: roundToCents(score) };
   });

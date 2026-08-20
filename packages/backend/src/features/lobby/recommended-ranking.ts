@@ -5,14 +5,11 @@
 //   2. 冷启动卡的位置每次请求都重排，不再按自然日固定。大厅取数两跳都是 no-store，
 //      前端 Next 路由代理带 cache: 'no-store'，所以后端不设缓存就真的每次生效。
 
-import { LOBBY_RANKING_MIN_SAMPLE } from './ranking-score.js';
 import type { CardScore } from './ranking-stats.js';
 
 /** 冷启动卡的插入区间，按主池长度的比例取，闭区间 */
 export const LOBBY_COLD_START_BAND_START = 0.3;
 export const LOBBY_COLD_START_BAND_END = 0.6;
-
-export { LOBBY_RANKING_MIN_SAMPLE };
 
 /** mulberry32：种子相同则序列相同，保证单测可复现 */
 function createRng(seed: number): () => number {
@@ -46,14 +43,15 @@ interface Partitioned<T> {
  */
 function partition<T extends { id: string }>(
   operatorOrdered: readonly T[],
-  scores: ReadonlyMap<string, CardScore>
+  scores: ReadonlyMap<string, CardScore>,
+  minSample: number
 ): Partitioned<T> {
   const mature: Array<{ item: T; score: number; operatorIndex: number }> = [];
   const cold: T[] = [];
 
   operatorOrdered.forEach((item, operatorIndex) => {
     const stat = scores.get(item.id);
-    if (stat && stat.sampleSize >= LOBBY_RANKING_MIN_SAMPLE) {
+    if (stat && stat.sampleSize >= minSample) {
       mature.push({ item, score: stat.score, operatorIndex });
     } else {
       cold.push(item);
@@ -77,9 +75,10 @@ function partition<T extends { id: string }>(
 export function resolveFeaturedIds<T extends { id: string }>(
   operatorOrdered: readonly T[],
   scores: ReadonlyMap<string, CardScore>,
-  count: number
+  count: number,
+  minSample: number
 ): Set<string> {
-  const { main } = partition(operatorOrdered, scores);
+  const { main } = partition(operatorOrdered, scores, minSample);
   return new Set(main.slice(0, Math.max(0, count)).map((item) => item.id));
 }
 
@@ -87,6 +86,11 @@ export interface BuildRecommendedOrderInput<T> {
   /** 运营配置顺序（sort_order 升序），同分时的次级顺序以它为准 */
   operatorOrdered: readonly T[];
   scores: ReadonlyMap<string, CardScore>;
+  /**
+   * 主池硬门槛（X_D）。由调用方从排序分快照里带过来，不在这里读配置——
+   * 分池门槛必须和这批分数是同一版参数算出来的。
+   */
+  minSample: number;
   /**
    * 冷启动卡不得插入的头部长度，即金框区。
    * 主池很短时 30% 会落进前八，让随机卡拿到金框——挡住这种情况，
@@ -99,16 +103,16 @@ export interface BuildRecommendedOrderInput<T> {
 
 /**
  * 排序规则：
- * 1. 样本达标（n_c ≥ 20）的进主池，按 score 降序，同分回落运营顺序；
+ * 1. 样本达标（n_c ≥ minSample）的进主池，按 score 降序，同分回落运营顺序；
  * 2. 样本不足的（含全新卡）随机插入主池长度的 30%–60% 区间，彼此之间完全随机；
  * 3. 冷启动卡数量超过区间宽度时把窗口向后撑开，不挤占头部。
  */
 export function buildRecommendedOrder<T extends { id: string }>(
   input: BuildRecommendedOrderInput<T>
 ): T[] {
-  const { operatorOrdered, scores, protectedPrefix = 0, seed } = input;
+  const { operatorOrdered, scores, minSample, protectedPrefix = 0, seed } = input;
 
-  const { main, cold } = partition(operatorOrdered, scores);
+  const { main, cold } = partition(operatorOrdered, scores, minSample);
   const rng = createRng(seed ?? Math.floor(Math.random() * 0x1_0000_0000));
   const coldQueue = shuffle(cold, rng);
 

@@ -11,6 +11,10 @@ import {
 } from './ConversationHistoryRepository.js';
 import { ConversationRepositoryError } from './conversation-errors.js';
 import { MiniappUserSettingsRepository } from './MiniappUserSettingsRepository.js';
+import {
+  fetchPlatformInstructions,
+  toPublicWordCountTiersFromEngine,
+} from '../../features/engine/platform-instructions.js';
 
 const DB_TEST_TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 10_000;
@@ -426,10 +430,16 @@ describe.skipIf(!canRunAgainstDatabase)(
       expect(rows).toHaveLength(1);
     });
 
-    it('用户生成配置读取通道保持不变', async () => {
+    it('用户生成配置读取通道保持不变，未选过档位时跟随运营台默认档', async () => {
+      // 086 起新建的设置行 pref_word_count 为 NULL，生效档位取自 runtime_config 当前的
+      // default_tier_id，不能在这里钉死某个 id——运营台随时会改档位表。
+      const expectedDefault = toPublicWordCountTiersFromEngine(
+        (await fetchPlatformInstructions()).instructions.wordCountTiers
+      ).default_tier_id;
+
       await expect(settings.getGenerationConfig(userId)).resolves.toEqual({
         selected_model_id: null,
-        pref_word_count: '300-500',
+        pref_word_count: expectedDefault,
         pref_show_options: true,
         pref_custom_instructions: null,
       });
