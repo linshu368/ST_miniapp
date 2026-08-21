@@ -17,6 +17,16 @@ export interface PaymentResult {
   errorMessage?: string;
 }
 
+export interface PaymentQueryResult {
+  success: boolean;
+  /** 仅 status=1（已支付）为 true。2（已退款）不算已支付。 */
+  paid?: boolean;
+  /** 人民币元，两位小数，用于和本地订单金额比对。 */
+  amount?: string;
+  tradeNo?: string | null;
+  errorMessage?: string;
+}
+
 export interface ZqPaymentNotifyData {
   pid?: string;
   trade_no?: string;
@@ -47,6 +57,21 @@ interface ZqCreateResponse {
   sign_type?: string;
   [key: string]: unknown;
 }
+
+interface ZqQueryResponse {
+  code?: number | string;
+  msg?: string;
+  status?: number | string;
+  money?: string;
+  trade_no?: string;
+  api_trade_no?: string;
+  sign?: string;
+  sign_type?: string;
+  [key: string]: unknown;
+}
+
+/** 厂商《订单查询》支付状态列表：0 未支付 / 1 已支付 / 2 已退款 / 3 已冻结 / 4 预授权。 */
+const QUERY_STATUS_PAID = 1;
 
 export class ZqPaymentGateway {
   private readonly baseUrl: string;
@@ -127,8 +152,55 @@ export class ZqPaymentGateway {
     }
   }
 
+  /** 主动查单。厂商的异步通知不保证送达，查单是唯一由我们发起、不依赖对方推送的口径。
+   *  文档：POST {baseUrl}/api/pay/query */
+  async queryOrder(outTradeNo: string): Promise<PaymentQueryResult> {
+    if (!this.isConfigured()) {
+      return { success: false, errorMessage: '支付参数未配置' };
+    }
+
+    const queryParams: Record<string, string | undefined> = {
+      pid: this.merchantId,
+      out_trade_no: outTradeNo,
+      timestamp: Math.floor(Date.now() / 1000).toString(),
+      sign_type: 'RSA',
+    };
+    queryParams.sign = this.sign(queryParams);
+
+    try {
+      const response = await fetch(`${this.baseUrl.replace(/\/+$/, '')}/api/pay/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(compact(queryParams)),
+        signal: AbortSignal.timeout(8_000),
+      });
+      const result = (await response.json()) as ZqQueryResponse;
+
+      if (Number(result.code) !== 0) {
+        return { success: false, errorMessage: result.msg || '查询支付订单失败' };
+      }
+      if (result.sign && !this.verifySign(result, result.sign)) {
+        return { success: false, errorMessage: '支付平台响应验签失败' };
+      }
+
+      return {
+        success: true,
+        paid: Number(result.status) === QUERY_STATUS_PAID,
+        amount: typeof result.money === 'string' ? result.money : undefined,
+        tradeNo: result.trade_no ?? null,
+      };
+    } catch (error) {
+      console.error('[payment] ZqPay queryOrder failed', error);
+      return { success: false, errorMessage: '支付系统暂时不可用' };
+    }
+  }
+
+  /** 安全边界是「平台公钥能验通这个签名」，不是「sign_type 字面量等于 RSA」。
+   *  子千易实测会省略响应里的 sign_type（见 0ce6eb2），异步通知同样可能不带，
+   *  所以缺失时按 RSA 验；带了但不是 RSA 时仍然拒绝，避免被降级到弱算法。 */
   verifyNotifySign(notifyData: ZqPaymentNotifyData): boolean {
-    if (!notifyData.sign || notifyData.sign_type?.toUpperCase() !== 'RSA') return false;
+    if (!notifyData.sign) return false;
+    if (notifyData.sign_type && notifyData.sign_type.toUpperCase() !== 'RSA') return false;
     return this.verifySign(notifyData, notifyData.sign);
   }
 

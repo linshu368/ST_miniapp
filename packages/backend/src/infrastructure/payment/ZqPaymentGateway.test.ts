@@ -197,4 +197,86 @@ describe('ZqPaymentGateway', () => {
     notify.future_field = 'tampered';
     expect(gateway.verifyNotifySign(notify)).toBe(false);
   });
+
+  it('signs an order query and reads the paid status', async () => {
+    const result: Record<string, unknown> = {
+      code: 0,
+      trade_no: 'ZQ-ORDER-1',
+      out_trade_no: 'MA-order-1',
+      status: 1,
+      money: '6.00',
+    };
+    result.sign = signPlatform(result);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(result), { status: 200 }))
+    );
+
+    await expect(createGateway().queryOrder('MA-order-1')).resolves.toEqual({
+      success: true,
+      paid: true,
+      amount: '6.00',
+      tradeNo: 'ZQ-ORDER-1',
+    });
+
+    const fetchMock = vi.mocked(fetch);
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe('https://zq.example/api/pay/query');
+    expect(init?.method).toBe('POST');
+
+    const request = Object.fromEntries(new URLSearchParams(String(init?.body)).entries()) as Record<
+      string,
+      string
+    >;
+    expect(request).toMatchObject({ pid: '55', out_trade_no: 'MA-order-1', sign_type: 'RSA' });
+
+    const verifier = createVerify('RSA-SHA256');
+    verifier.update(signingSource(request));
+    verifier.end();
+    expect(verifier.verify(merchantKeys.publicKey, request.sign ?? '', 'base64')).toBe(true);
+  });
+
+  it.each([
+    ['unpaid', 0, false],
+    ['refunded', 2, false],
+  ])('reports %s orders as not paid', async (_case, status, paid) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ code: 0, status, money: '6.00' })))
+    );
+
+    await expect(createGateway().queryOrder('MA-order-1')).resolves.toMatchObject({
+      success: true,
+      paid,
+    });
+  });
+
+  it('fails the query when the platform returns an error code', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ code: 1, msg: '订单不存在' })))
+    );
+
+    await expect(createGateway().queryOrder('MA-order-missing')).resolves.toEqual({
+      success: false,
+      errorMessage: '订单不存在',
+    });
+  });
+
+  it('verifies a callback that omits sign_type but rejects a downgraded algorithm', () => {
+    const notify: ZqPaymentNotifyData = {
+      pid: '55',
+      trade_no: 'ZQ-ORDER-1',
+      out_trade_no: 'MA-order-1',
+      trade_status: 'TRADE_SUCCESS',
+      money: '6.00',
+    };
+    notify.sign = signPlatform(notify);
+
+    const gateway = createGateway();
+    expect(gateway.verifyNotifySign(notify)).toBe(true);
+    expect(gateway.verifyNotifySign({ ...notify, sign_type: 'rsa' })).toBe(true);
+    expect(gateway.verifyNotifySign({ ...notify, sign_type: 'MD5' })).toBe(false);
+    expect(gateway.verifyNotifySign({ ...notify, sign: undefined })).toBe(false);
+  });
 });

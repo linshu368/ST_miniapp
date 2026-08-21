@@ -89,6 +89,37 @@ export class MiniappPaymentOrderRepository {
     return typeof data === 'number' ? data : 0;
   }
 
+  async expireAllPending(): Promise<number> {
+    const { data, error } = await this.db.rpc('expire_payment_orders', {
+      p_user_id: null,
+    });
+    if (error) throw new Error(`过期支付订单失败：${error.message}`);
+    return typeof data === 'number' ? data : 0;
+  }
+
+  /**
+   * 判过期前需要跟厂商对一次账的订单：已到期但还没入账的 pending，
+   * 以及窗口内已被判过期、仍未入账的订单（上一轮 cron 可能在查单前就把它判死了）。
+   */
+  async listUnsettledAroundExpiry(input: {
+    since: string;
+    until: string;
+    limit: number;
+  }): Promise<MiniappPaymentOrderRow[]> {
+    const { data, error } = await this.db
+      .from('payment_orders')
+      .select('*')
+      .in('status', ['pending', 'expired'])
+      .eq('credits_added', false)
+      .gte('expires_at', input.since)
+      .lte('expires_at', input.until)
+      .order('expires_at', { ascending: true })
+      .limit(input.limit);
+
+    if (error) throw new Error(`查询待对账支付订单失败：${error.message}`);
+    return (data ?? []) as MiniappPaymentOrderRow[];
+  }
+
   async expirePendingByIdForUser(id: string, userId: string): Promise<void> {
     const { error } = await this.db
       .from('payment_orders')
@@ -99,6 +130,20 @@ export class MiniappPaymentOrderRepository {
       .lte('expires_at', new Date().toISOString());
 
     if (error) throw new Error(`过期支付订单失败：${error.message}`);
+  }
+
+  /** 把已超时但没入账的订单放回 pending，让迟到的已验签回调还能补账。
+   *  complete_payment_order 只接受 pending，没有这一步，回调晚于 15 分钟到达
+   *  就等于用户付了钱而星尘永久拿不到。 */
+  async reopenExpired(id: string): Promise<void> {
+    const { error } = await this.db
+      .from('payment_orders')
+      .update({ status: 'pending' })
+      .eq('id', id)
+      .eq('status', 'expired')
+      .eq('credits_added', false);
+
+    if (error) throw new Error(`恢复超时支付订单失败：${error.message}`);
   }
 
   async markFailed(id: string): Promise<void> {
