@@ -174,6 +174,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 089_drop_growth.sql # DROP SCHEMA growth CASCADE；代码同批摘掉 CS 渠道链接与 click 重定向
 090_drop_miniapp_simulation.sql # DROP SCHEMA miniapp_simulation CASCADE（保留 characters.is_test）
 091_drop_chat_message_charges.sql # 删旧聊天扣费表 + 4 RPC + character_engagement_stats 视图
+092_free_quota_exhausted_notice_text.sql # 免费额度耗尽提示从弹窗标题+说明改为单行轻提示文案
 ```
 
 > 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。

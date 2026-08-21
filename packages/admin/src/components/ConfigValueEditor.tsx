@@ -120,31 +120,18 @@ export function ConfigValueEditor(props: {
     const parsed = FreeQuotaExhaustedDialogConfigSchema.safeParse(props.value);
     const value = parsed.success ? parsed.data : DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG;
     return (
-      <Space direction="vertical" size="middle" className="editor-stack">
-        <div>
-          <Typography.Text>弹窗标题</Typography.Text>
-          <Input
-            value={value.title}
-            maxLength={40}
-            showCount
-            disabled={props.disabled}
-            onChange={(event) => props.onChange({ ...value, title: event.target.value })}
-          />
-          <Typography.Text type="secondary">
-            使用 {'{characterName}'} 插入当前角色名；展示时最多保留 7 个字。
-          </Typography.Text>
-        </div>
-        <div>
-          <Typography.Text>说明文案</Typography.Text>
-          <Input.TextArea
-            value={value.description}
-            rows={3}
-            maxLength={200}
-            showCount
-            disabled={props.disabled}
-            onChange={(event) => props.onChange({ ...value, description: event.target.value })}
-          />
-        </div>
+      <Space direction="vertical" size="small" className="editor-stack">
+        <Input.TextArea
+          value={value.text}
+          rows={3}
+          maxLength={200}
+          showCount
+          disabled={props.disabled}
+          onChange={(event) => props.onChange({ text: event.target.value })}
+        />
+        <Typography.Text type="secondary">
+          使用 {'{characterName}'} 插入当前角色名；展示时最多保留 7 个字。
+        </Typography.Text>
       </Space>
     );
   }
