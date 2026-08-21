@@ -24,7 +24,7 @@ import { requestLogger } from '../lib/logger.js';
 import { resolveCharacterAvatarUrl } from './characters.js';
 import { loadCharacterRankingScores } from '../features/lobby/ranking-stats.js';
 import { resolveLobbyPinnedCharacters } from '../features/lobby/pinned-characters.js';
-import { applyPinnedOnly, resolveFeaturedIds } from '../features/lobby/recommended-ranking.js';
+import { resolveLobbyFeaturedIds } from '../features/lobby/featured.js';
 import { MiniappCharacterFavoriteRepository } from '../infrastructure/repositories/MiniappCharacterFavoriteRepository.js';
 
 const CHARACTER_ID_REGEX =
@@ -82,19 +82,11 @@ export default async function favoriteRoutes(app: FastifyInstance) {
         resolveLobbyPinnedCharacters(request.log),
       ]);
 
-      const featuredIds = snapshot
-        ? resolveFeaturedIds(
-            lobbyOrder,
-            snapshot.scores,
-            LOBBY_FEATURED_POSITION_COUNT,
-            snapshot.minSample,
-            pinned.characterIds
-          )
-        : new Set(
-            applyPinnedOnly(lobbyOrder, pinned.characterIds)
-              .slice(0, LOBBY_FEATURED_POSITION_COUNT)
-              .map((item) => item.id)
-          );
+      const featuredIds = resolveLobbyFeaturedIds({
+        operatorOrdered: lobbyOrder,
+        snapshot,
+        pinnedIds: pinned.characterIds,
+      });
 
       const byId = new Map(lobbyOrder.map((character) => [character.id, character]));
 
