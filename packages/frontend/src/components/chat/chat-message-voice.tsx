@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AudioLines, Loader2, Pause, Play, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
+import { AudioLines, Loader2, Pause, Pencil, Play, RefreshCw } from 'lucide-react';
 import type { MessageVoice } from '@miniapp/shared';
 
 /**
@@ -25,6 +26,8 @@ export interface MessageVoiceState {
   /** 生成请求在途。与 voice.status === 'pending' 一起构成「生成中」 */
   submitting: boolean;
   onGenerate: () => void;
+  /** 「自定义本次语音」页的地址；会话还没落库时为 null，此时入口不出现 */
+  customHref: string | null;
 }
 
 /**
@@ -59,12 +62,51 @@ export function ChatMessageVoiceFooter({
         {regenerate}
       </div>
       {audioUrl ? (
-        <VoiceBar
-          src={audioUrl}
-          durationMs={current?.duration_ms ?? null}
-          playbackRate={voice.playbackRate}
-          onRegenerate={voice.onGenerate}
-        />
+        <>
+          <VoiceBar
+            src={audioUrl}
+            durationMs={current?.duration_ms ?? null}
+            playbackRate={voice.playbackRate}
+            onRegenerate={voice.onGenerate}
+          />
+          <SpokenTextPanel text={current?.spoken_text ?? ''} customHref={voice.customHref} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 「本次语音文字」：这段声音实际念了什么。
+ *
+ * 默认展开，不做折叠。它存在的理由是台词和上方的回复正文本来就不一样——正文含
+ * 叙述、动作、心理描写，台词只留说出口的话。要点一下才看得到，用户根本不会知道
+ * 有这个差异，也就永远解释不了「听到的和看到的不一样」。
+ *
+ * 语音就绪才渲染（由调用方保证）：没有成品时摆一个空文字框，会让人以为已经有能播的东西了。
+ */
+function SpokenTextPanel({ text, customHref }: { text: string; customHref: string | null }) {
+  // 就绪的记录理应都带台词，但兜一手：宁可说明白「没记录」，也别渲染一个空白框
+  const hasText = text.trim().length > 0;
+
+  return (
+    <div className="w-full max-w-[300px] space-y-1.5 rounded-xl border border-border bg-card/60 px-2.5 py-2">
+      <p className="text-[10px] font-medium text-muted-foreground/70">本次语音文字</p>
+      {hasText ? (
+        <p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-foreground/90">
+          {text}
+        </p>
+      ) : (
+        <p className="text-[12px] text-muted-foreground/70">这条语音生成时还没有记录文字</p>
+      )}
+      {customHref ? (
+        <Link
+          href={customHref}
+          className="flex items-center gap-1 pt-0.5 text-[11px] font-medium text-primary transition-opacity hover:opacity-80"
+        >
+          <Pencil className="size-3" aria-hidden />
+          自定义本次语音
+        </Link>
       ) : null}
     </div>
   );

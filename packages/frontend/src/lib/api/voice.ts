@@ -63,6 +63,12 @@ export function useSessionVoiceQuery(sessionId: string | undefined) {
   });
 }
 
+/** customText 为空 = 默认链路，由写稿模型从回复正文里挑台词 */
+export interface GenerateVoiceInput {
+  messageId: string;
+  customText?: string;
+}
+
 /**
  * 受理生成。后端返回 202 + 一条 pending 记录，先塞进缓存让按钮立刻变成「生成中」，
  * 之后交给上面的轮询接管——不这样做的话，要等下一次轮询才有反馈，点下去像没反应。
@@ -71,13 +77,16 @@ export function useGenerateVoiceMutation(sessionId: string | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (messageId: string) => {
+    mutationFn: async ({ messageId, customText }: GenerateVoiceInput) => {
       if (!sessionId) throw new Error('session id is required');
       return apiClient<CreateMessageVoiceData>(
         `/api/v1/conversations/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(
           messageId
         )}/voice`,
-        { method: 'POST' }
+        {
+          method: 'POST',
+          ...(customText ? { body: JSON.stringify({ custom_text: customText }) } : {}),
+        }
       );
     },
     onSuccess: (data) => {

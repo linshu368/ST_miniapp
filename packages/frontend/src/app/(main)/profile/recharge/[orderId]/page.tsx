@@ -32,7 +32,17 @@ export default function PaymentPendingPage() {
   const rechargePath = returnTo
     ? `/profile/recharge?returnTo=${encodeURIComponent(returnTo)}`
     : '/profile/recharge';
-  const goBack = useCallback(() => router.push(rechargePath), [rechargePath, router]);
+  // 返回不能用 push：那会把星尘商店压成新的历史条目，商店自己的返回键再 back
+  // 回到本页，取消支付时就在两页之间死循环。
+  // payment_started=1 只由充值页下单跳转时带上，所以它同时也是「上一格就是商店」的判据；
+  // 支付回跳深链走的是 router.replace，栈里没有商店那一格，只能用 replace 顶掉本页。
+  const goBack = useCallback(() => {
+    if (paymentStarted) {
+      router.back();
+      return;
+    }
+    router.replace(rechargePath);
+  }, [paymentStarted, rechargePath, router]);
   useTelegramBackButton(goBack);
 
   const queryClient = useQueryClient();
@@ -107,11 +117,13 @@ export default function PaymentPendingPage() {
         ) : order.status === 'completed' ? (
           <CompletedView
             order={order}
-            onHome={() => router.push(returnTo ?? '/')}
+            // 支付已完成，本页不该再留在栈里等用户按返回退回来。
+            onHome={() => router.replace(returnTo ?? '/')}
             onOrders={() => router.push('/profile/orders')}
           />
         ) : (
-          <TerminalView order={order} onRetry={() => router.push(rechargePath)} onBack={goBack} />
+          // 重新下单就是回到星尘商店，走 goBack 的分流逻辑，别再往栈里加一格。
+          <TerminalView order={order} onRetry={goBack} onBack={goBack} />
         )}
       </div>
     </Screen>
