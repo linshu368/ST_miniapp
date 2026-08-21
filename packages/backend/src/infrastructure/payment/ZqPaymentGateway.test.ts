@@ -51,7 +51,12 @@ function mockCreateResponse(overrides: Record<string, unknown> = {}) {
     extension_field: 'supported',
     ...responseOverrides,
   };
-  result.sign = typeof signOverride === 'string' ? signOverride : signPlatform(result);
+  if (Object.prototype.hasOwnProperty.call(overrides, 'sign')) {
+    if (typeof signOverride === 'string') result.sign = signOverride;
+    else delete result.sign;
+  } else {
+    result.sign = signPlatform(result);
+  }
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => new Response(JSON.stringify(result), { status: 200 }))
@@ -104,6 +109,24 @@ describe('ZqPaymentGateway', () => {
     verifier.update(signingSource(request));
     verifier.end();
     expect(verifier.verify(merchantKeys.publicKey, request.sign ?? '', 'base64')).toBe(true);
+  });
+
+  it('accepts a successful jump response even when the platform omits the signature', async () => {
+    mockCreateResponse({ sign: undefined, timestamp: undefined, sign_type: undefined });
+
+    await expect(
+      createGateway().createPayment({
+        type: 'wxpay',
+        outTradeNo: 'MA-order-unsigned',
+        amount: '6.00',
+        userId: 'user-unsigned',
+        productName: '星尘充值 600',
+        clientIp: '127.0.0.1',
+      })
+    ).resolves.toEqual({
+      success: true,
+      paymentUrl: 'https://zq.example/pay/ZQ-ORDER-1',
+    });
   });
 
   it('fails closed when the platform response signature is invalid', async () => {

@@ -105,7 +105,7 @@ export class ZqPaymentGateway {
       if (Number(result.code) !== 0) {
         return { success: false, errorMessage: result.msg || '创建支付订单失败' };
       }
-      if (!result.sign || !this.verifySign(result, result.sign)) {
+      if (result.sign && !this.verifySign(result, result.sign)) {
         return { success: false, errorMessage: '支付平台响应验签失败' };
       }
       if (result.pay_type?.toLowerCase() !== 'jump') {
