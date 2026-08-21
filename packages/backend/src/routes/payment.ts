@@ -20,36 +20,23 @@ import {
 } from '../features/payment/domain/rechargeRules.js';
 import { RechargeUseCase } from '../features/payment/usecases/RechargeUseCase.js';
 import {
-  JLPaymentGateway,
-  type PaymentNotifyData,
-} from '../infrastructure/payment/JLPaymentGateway.js';
-import {
   MiniappPaymentOrderRepository,
   toPaymentOrder,
 } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
+import {
+  ZqPaymentGateway,
+  type ZqPaymentNotifyData,
+} from '../infrastructure/payment/ZqPaymentGateway.js';
 import { config } from '../platform/config.js';
 import { insertUserNotification } from '../lib/notifications.js';
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
-const PAYMENT_TYPES: PaymentType[] = [
-  // 'alipay', // 支付宝通道暂时停用
-  'wxpay',
-];
+const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
 
 export default async function paymentRoutes(app: FastifyInstance) {
-  if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
-    app.addContentTypeParser(
-      'application/x-www-form-urlencoded',
-      { parseAs: 'string' },
-      (_request, body, done) => {
-        done(null, Object.fromEntries(new URLSearchParams(body as string)));
-      }
-    );
-  }
-
   const recharge = new RechargeUseCase();
   const orders = new MiniappPaymentOrderRepository();
-  const gateway = new JLPaymentGateway();
+  const gateway = new ZqPaymentGateway();
 
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
@@ -168,9 +155,15 @@ export default async function paymentRoutes(app: FastifyInstance) {
     );
   });
 
+  // @frontend-ready: true
   app.get('/api/payment/return', async (request, reply) => {
     const returnData = normalizeNotifyData(request.query);
-    const orderId = isSafePaymentOrderId(returnData.out_trade_no) ? returnData.out_trade_no : null;
+    const orderId =
+      gateway.isExpectedMerchant(returnData.pid) &&
+      gateway.verifyNotifySign(returnData) &&
+      isSafePaymentOrderId(returnData.out_trade_no)
+        ? returnData.out_trade_no
+        : null;
     const botUsername = await resolveTelegramBotUsername();
 
     reply.header('Cache-Control', 'no-store');
@@ -190,19 +183,10 @@ export default async function paymentRoutes(app: FastifyInstance) {
     return reply.redirect(fallbackUrl.toString());
   });
 
-  app.get('/api/payment/webhook/jlpay', async (request, reply) => {
-    return handleJlpayWebhook(
+  // @frontend-ready: true
+  app.get('/api/payment/webhook/zqpay', async (request, reply) => {
+    return handleZqPayWebhook(
       request.query,
-      reply,
-      gateway,
-      orders,
-      requestLogger(request.log, 'payment')
-    );
-  });
-
-  app.post('/api/payment/webhook/jlpay', async (request, reply) => {
-    return handleJlpayWebhook(
-      request.body,
       reply,
       gateway,
       orders,
@@ -211,37 +195,38 @@ export default async function paymentRoutes(app: FastifyInstance) {
   });
 }
 
-async function handleJlpayWebhook(
+export async function handleZqPayWebhook(
   payload: unknown,
   reply: FastifyReply,
-  gateway: JLPaymentGateway,
-  orders: MiniappPaymentOrderRepository,
+  gateway: Pick<ZqPaymentGateway, 'isExpectedMerchant' | 'verifyNotifySign'>,
+  orders: Pick<MiniappPaymentOrderRepository, 'findById' | 'complete'>,
   log: RequestLogger
 ) {
   const notifyData = normalizeNotifyData(payload);
-  if (!notifyData.out_trade_no || !gateway.verifyNotifySign(notifyData)) {
+  const orderId = notifyData.out_trade_no;
+
+  if (
+    !orderId ||
+    !gateway.isExpectedMerchant(notifyData.pid) ||
+    !gateway.verifyNotifySign(notifyData) ||
+    !isRecentTimestamp(notifyData.timestamp)
+  ) {
     log.sys.warn(
-      { event: 'payment.webhook.sign_failed', orderId: notifyData.out_trade_no },
-      'JLPay 回调验签失败'
+      { event: 'payment.webhook.verify_failed', orderId, pid: notifyData.pid },
+      '子千易支付回调验证失败'
     );
     return reply.status(400).type('text/plain').send('fail');
   }
 
-  log.biz.info(
-    { event: 'payment.webhook.received', orderId: notifyData.out_trade_no },
-    '收到 JLPay 支付回调'
-  );
+  log.biz.info({ event: 'payment.webhook.received', orderId }, '收到子千易支付回调');
 
   if (notifyData.trade_status !== 'TRADE_SUCCESS') {
     return reply.type('text/plain').send('success');
   }
 
-  const order = await orders.findById(notifyData.out_trade_no);
+  const order = await orders.findById(orderId);
   if (!order) {
-    log.sys.warn(
-      { event: 'payment.webhook.order_not_found', orderId: notifyData.out_trade_no },
-      'JLPay 回调订单不存在'
-    );
+    log.sys.warn({ event: 'payment.webhook.order_not_found', orderId }, '子千易支付回调订单不存在');
     return reply.status(404).type('text/plain').send('fail');
   }
 
@@ -250,11 +235,11 @@ async function handleJlpayWebhook(
     log.sys.warn(
       {
         event: 'payment.webhook.amount_mismatch',
-        orderId: order.id,
+        orderId,
         expected: order.amount_cents,
         actual: paidAmountCents,
       },
-      'JLPay 回调金额不匹配'
+      '子千易支付回调金额不匹配'
     );
     return reply.status(400).type('text/plain').send('fail');
   }
@@ -285,13 +270,13 @@ async function handleJlpayWebhook(
   } catch (error) {
     log.sys.error(
       { event: 'payment.webhook.complete_failed', err: error, orderId: order.id },
-      'JLPay 订单完成处理失败'
+      '子千易支付订单完成处理失败'
     );
     return reply.status(500).type('text/plain').send('fail');
   }
 }
 
-function normalizeNotifyData(payload: unknown): PaymentNotifyData {
+function normalizeNotifyData(payload: unknown): ZqPaymentNotifyData {
   if (!payload || typeof payload !== 'object') return {};
   return Object.fromEntries(
     Object.entries(payload as Record<string, unknown>).map(([key, value]) => [key, String(value)])
@@ -309,8 +294,19 @@ function clampLimit(limit: unknown): number {
 }
 
 function parseAmountCents(amount: string | undefined): number {
-  if (!amount) return NaN;
-  return Math.round(Number.parseFloat(amount) * 100);
+  if (!amount || !/^\d+(?:\.\d{1,2})?$/.test(amount)) return NaN;
+  const [yuan = '0', fraction = ''] = amount.split('.');
+  return Number(yuan) * 100 + Number(fraction.padEnd(2, '0'));
+}
+
+function isRecentTimestamp(value: string | undefined): boolean {
+  if (!value || !/^\d{10}$/.test(value)) return false;
+  const timestampMs = Number(value) * 1000;
+  return Number.isSafeInteger(timestampMs) && Math.abs(Date.now() - timestampMs) <= 10 * 60 * 1000;
+}
+
+function isSafePaymentOrderId(value: string | undefined): value is string {
+  return Boolean(value && value.length <= 200 && /^[A-Za-z0-9_-]+$/.test(value));
 }
 
 let telegramBotUsernamePromise: Promise<string | null> | null = null;
@@ -334,10 +330,6 @@ function resolveTelegramBotUsername(): Promise<string | null> {
     })
     .catch(() => null);
   return telegramBotUsernamePromise;
-}
-
-function isSafePaymentOrderId(value: string | undefined): value is string {
-  return Boolean(value && value.length <= 200 && /^[A-Za-z0-9_-]+$/.test(value));
 }
 
 function resolveMiniappShortName(): string {
