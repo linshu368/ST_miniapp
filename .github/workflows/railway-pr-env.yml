@@ -5,6 +5,7 @@ name: Railway PR environment
 
 on:
   pull_request:
+    branches: [dev]
     types: [opened, reopened, synchronize, closed, ready_for_review]
 
 permissions:
