@@ -16,6 +16,12 @@ export async function runVoiceGeneration(input: {
   messageId: string;
   userId: string;
   sourceText: string;
+  /**
+   * 用户指定的台词，已在受理时清洗与校验过。
+   *
+   * 非空时整个写稿阶段跳过：用户既然自己写了念什么，再交给模型改一遍就是帮倒忙。
+   */
+  customText: string | null;
   voiceId: string;
   ttsModel: string;
   ttsSpeed: number;
@@ -25,22 +31,20 @@ export async function runVoiceGeneration(input: {
   const startedAt = Date.now();
 
   try {
-    // 上次失败留下的台词直接拿来用，写稿不重跑
-    const reused = await audio.findReusableDraft(input.messageId);
     let spoken: string;
-    let gate: DraftGate | 'reused';
+    let gate: DraftGate | 'custom';
 
-    if (reused) {
-      spoken = reused;
-      gate = 'reused';
-      await audio.saveDraft(input.audioId, spoken);
+    if (input.customText) {
+      spoken = input.customText;
+      gate = 'custom';
     } else {
       const draft = await draftSpokenText(input.sourceText);
       spoken = draft.text;
       gate = draft.gate;
-      // 先落库再合成：合成失败时这份台词还在，下次重试不用再付一遍写稿
-      await audio.saveDraft(input.audioId, spoken);
     }
+
+    // 先落库再合成：合成失败时还能回答「到底送了什么进 TTS」
+    await audio.saveDraft(input.audioId, spoken);
 
     const synthesized = await synthesizeSpeech({
       text: spoken,

@@ -46,12 +46,13 @@ afterEach(() => {
 });
 
 describe('draftSpokenText — 闸 1 正常写稿', () => {
-  it('返回清洗后的带标签台词', async () => {
+  it('返回清洗后的纯文本台词，标签一个不留', async () => {
+    // 现行 TTS 模型 speech-02-hd 听不懂标签，会把 sighs 当英文单词念出来
     stubUpstream(completion('（声音颤抖）(sighs)“我等了很久。”'));
 
     const result = await draftSpokenText('她低声说：我等了很久。');
 
-    expect(result).toEqual({ text: '(sighs)我等了很久。', gate: 'thinking_off' });
+    expect(result).toEqual({ text: '我等了很久。', gate: 'thinking_off' });
   });
 
   it('提示词拆成 system 与 user，且原文在 user 的末尾', async () => {
@@ -86,11 +87,21 @@ describe('draftSpokenText — 闸 2 开思考重试', () => {
 
     const result = await draftSpokenText('原文');
 
-    expect(result).toEqual({ text: '(breath)我在。', gate: 'thinking_low' });
+    expect(result).toEqual({ text: '我在。', gate: 'thinking_low' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const retry = requestBodyOf(fetchMock, 1);
     expect(retry.reasoning_effort).toBe('low');
     expect(retry.thinking).toBeUndefined();
+  });
+
+  it('第一闸只回了个标签、清洗后剩空串时也重试', async () => {
+    // 去标签之后这种回答什么都不剩，宁可重来一次也别让 TTS 念出 "groans"
+    const fetchMock = stubUpstream(completion('(groans)'), completion('我在。'));
+
+    const result = await draftSpokenText('原文');
+
+    expect(result).toEqual({ text: '我在。', gate: 'thinking_low' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('第一闸台词超过红线时同样重试', async () => {

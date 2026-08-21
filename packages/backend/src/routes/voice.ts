@@ -11,9 +11,10 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { fail, ok } from '@miniapp/shared';
+import { fail, MAX_CUSTOM_VOICE_CHARS, ok } from '@miniapp/shared';
 import type {
   CreateMessageVoiceData,
+  CreateMessageVoiceRequest,
   GetSessionVoiceData,
   GetVoiceConfigData,
   PatchVoiceConfigData,
@@ -33,6 +34,7 @@ import { ConversationHistoryRepository } from '../infrastructure/repositories/Co
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { ConversationRepositoryError } from '../infrastructure/repositories/conversation-errors.js';
 import { runVoiceGeneration } from '../features/voice/generate.js';
+import { normalizeCustomText } from '../features/voice/voice-text.js';
 import {
   DEFAULT_TTS_MODEL,
   DEFAULT_TTS_SPEED,
@@ -149,6 +151,10 @@ export default async function voiceRoutes(app: FastifyInstance) {
    * messageId 是 chat_history.id，也就是前端 assistant 消息的 id。
    * 用户消息（<id>:user）和开场白（opening:<sessionId>）不是合法 UUID，
    * 在参数校验这一步就被挡掉，与产品口径一致。
+   *
+   * 带 custom_text 时是「自定义本次语音」：跳过写稿，念用户给的字。
+   * 清洗与非空判定都放在这里而不是后台任务里——清完变成空串（用户只输了标点）
+   * 要当场回 400，让用户改，而不是等三十秒换来一个失败的播放条。
    */
   // @frontend-ready: true
   app.post(
@@ -168,6 +174,21 @@ export default async function voiceRoutes(app: FastifyInstance) {
       // 写稿与合成是两个供应商两把 key，缺任何一把都走不完整条链路
       if (!config.voice.draft.apiKey || !config.voice.apiKey) {
         return reply.status(503).send(fail('VOICE_UNAVAILABLE', '语音功能暂不可用'));
+      }
+
+      const body = (request.body ?? {}) as CreateMessageVoiceRequest;
+      if (body.custom_text !== undefined && typeof body.custom_text !== 'string') {
+        return reply.status(400).send(fail('BAD_REQUEST', '自定义语音文字格式不正确'));
+      }
+      const rawCustom = body.custom_text?.trim() ?? '';
+      if (rawCustom.length > MAX_CUSTOM_VOICE_CHARS) {
+        return reply
+          .status(400)
+          .send(fail('BAD_REQUEST', `自定义语音文字不能超过 ${MAX_CUSTOM_VOICE_CHARS} 字`));
+      }
+      const customText = rawCustom ? normalizeCustomText(rawCustom) : '';
+      if (rawCustom && !customText) {
+        return reply.status(400).send(fail('BAD_REQUEST', '自定义语音文字里没有可朗读的内容'));
       }
 
       const dbUser = await getOrCreateDbUser(request.user);
@@ -196,7 +217,7 @@ export default async function voiceRoutes(app: FastifyInstance) {
           voiceId: voiceConfig.voice_id,
           ttsModel: DEFAULT_TTS_MODEL,
           ttsSpeed: DEFAULT_TTS_SPEED,
-          sourceChars: sourceText.length,
+          sourceChars: customText ? customText.length : sourceText.length,
         });
       } catch (error) {
         if (error instanceof AudioConflictError) {
@@ -211,6 +232,7 @@ export default async function voiceRoutes(app: FastifyInstance) {
         messageId,
         userId: dbUser.id,
         sourceText: sourceText.slice(0, MAX_SOURCE_CHARS),
+        customText: customText || null,
         voiceId: pending.voice_id,
         ttsModel: pending.tts_model,
         ttsSpeed: Number(pending.tts_speed),

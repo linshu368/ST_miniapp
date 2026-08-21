@@ -5,15 +5,22 @@
 
 import type { MessageVoice, MessageVoiceStatus } from '@miniapp/shared';
 import { getSupabaseClient } from '../../lib/supabase.js';
+import { config } from '../../platform/config.js';
+
+/** 最坏情况下串行发起的上游请求数：写稿两闸各一次，合成一次 */
+const MAX_UPSTREAM_CALLS = 3;
 
 /**
  * pending 超过这个时长即视为失败。
  *
  * 生成是接完请求后在进程内异步跑的，部署重启会让在途的那几条永远停在 pending。
  * 没有这条超时，用户会看到一个永远转圈、还点不了重试的按钮。
- * 取 5 分钟：上游单次调用超时 120s，两段加起来最坏 4 分钟出头。
+ *
+ * 阈值必须大于最坏耗时，否则会把还在正常重试的记录判成失败，用户点重试反而
+ * 撞上一个仍在跑的任务。所以跟着上游超时配置走，不写死——写稿加了兜底闸之后，
+ * 原来那个 5 分钟的常量已经短于最坏耗时了。多留一分钟给对象存储上传和收口写库。
  */
-const PENDING_STALE_MS = 5 * 60 * 1000;
+const PENDING_STALE_MS = config.voice.timeoutMs * MAX_UPSTREAM_CALLS + 60_000;
 
 export type AudioConflictReason = 'already_generating';
 
@@ -129,7 +136,8 @@ export class ChatMessageAudioRepository {
   /**
    * 写稿一出来就落库，别等合成成功。
    *
-   * 合成失败时那份台词已经付过钱了，不存下来下次重试就要再付一次。
+   * 合成失败时这一行是唯一能回答「到底送了什么进 TTS」的地方。
+   * 上游的内容审核拒绝只回一个错误码，没有这份台词就无从判断是审核误伤还是写稿写飞了。
    */
   async saveDraft(id: string, spokenText: string): Promise<void> {
     const { error } = await this.db
@@ -142,27 +150,6 @@ export class ChatMessageAudioRepository {
       .eq('id', id);
 
     if (error) throw new Error(`保存语音台词失败：${error.message}`);
-  }
-
-  /**
-   * 取这条消息上一次失败尝试留下的台词，供重试复用。
-   *
-   * 只认 failed：message_id 固定对应同一段回复原文，所以台词可以放心复用；
-   * 但如果上一次是成功的，用户再点就是想换一个念法，复用会让重新生成变成空操作。
-   */
-  async findReusableDraft(messageId: string): Promise<string | null> {
-    const { data, error } = await this.db
-      .from('chat_message_audio')
-      .select('spoken_text')
-      .eq('message_id', messageId)
-      .eq('status', 'failed')
-      .not('spoken_text', 'is', null)
-      .order('revision', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw new Error(`查询可复用语音台词失败：${error.message}`);
-    return (data as { spoken_text: string | null } | null)?.spoken_text ?? null;
   }
 
   async markReady(
@@ -228,6 +215,9 @@ export function toMessageVoice(row: ChatMessageAudioRow): MessageVoice {
     status: stale ? 'failed' : row.status,
     audio_url: row.status === 'ready' ? row.audio_url : null,
     duration_ms: row.status === 'ready' ? row.duration_ms : null,
+    // 只在成片可播时给台词：pending 行里的台词是半成品，failed 行里的那份没被念出来，
+    // 摆在播放条下面会让用户以为听到的就是这段字
+    spoken_text: row.status === 'ready' ? row.spoken_text : null,
     voice_id: row.voice_id,
     error_code: stale ? 'voice_generation_stalled' : row.error_code,
     created_at: row.created_at,

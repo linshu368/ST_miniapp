@@ -25,6 +25,13 @@ export interface MessageVoice {
   /** 仅 status = ready 时非空 */
   audio_url: string | null;
   duration_ms: number | null;
+  /**
+   * 实际被念出来的那段文字，仅 status = ready 时非空。
+   *
+   * 它和消息正文不是一回事：正文含叙述、动作、心理描写，台词只留角色说出口的话，
+   * 用户自定义时更是完全由用户决定。摆出来才能解释「为什么听到的和看到的不一样」。
+   */
+  spoken_text: string | null;
   voice_id: string;
   /** 仅 status = failed 时非空，用于前端决定提示文案 */
   error_code: string | null;
@@ -56,6 +63,22 @@ export type PatchVoiceConfigData = GetVoiceConfigData;
 /** 进入会话时一次取回整段对话已有的语音 */
 export interface GetSessionVoiceData {
   audio: MessageVoice[];
+}
+
+/**
+ * 自定义台词的字数上限。
+ *
+ * 卡在 300 而不是跟着回复字数上限走：这段文字直接进 TTS，一字一秒地念，
+ * 300 字已经是一分钟出头的音频，再长听的人不会等。
+ */
+export const MAX_CUSTOM_VOICE_CHARS = 300;
+
+/**
+ * custom_text 为空 = 走默认链路，由写稿模型从回复正文里挑台词。
+ * 非空 = 用户指定念什么，原样送进语音模型，不再写稿。
+ */
+export interface CreateMessageVoiceRequest {
+  custom_text?: string;
 }
 
 export interface CreateMessageVoiceData {
