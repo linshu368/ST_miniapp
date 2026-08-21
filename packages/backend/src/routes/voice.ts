@@ -165,7 +165,8 @@ export default async function voiceRoutes(app: FastifyInstance) {
       if (!UUID_PATTERN.test(sessionId) || !UUID_PATTERN.test(messageId)) {
         return reply.status(400).send(fail('BAD_REQUEST', '这条内容不支持生成语音'));
       }
-      if (!config.voice.apiKey) {
+      // 写稿与合成是两个供应商两把 key，缺任何一把都走不完整条链路
+      if (!config.voice.draft.apiKey || !config.voice.apiKey) {
         return reply.status(503).send(fail('VOICE_UNAVAILABLE', '语音功能暂不可用'));
       }
 

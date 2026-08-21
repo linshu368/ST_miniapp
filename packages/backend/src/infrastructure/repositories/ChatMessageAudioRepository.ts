@@ -126,6 +126,45 @@ export class ChatMessageAudioRepository {
     return data as ChatMessageAudioRow;
   }
 
+  /**
+   * 写稿一出来就落库，别等合成成功。
+   *
+   * 合成失败时那份台词已经付过钱了，不存下来下次重试就要再付一次。
+   */
+  async saveDraft(id: string, spokenText: string): Promise<void> {
+    const { error } = await this.db
+      .from('chat_message_audio')
+      .update({
+        spoken_text: spokenText,
+        spoken_chars: spokenText.length,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+
+    if (error) throw new Error(`保存语音台词失败：${error.message}`);
+  }
+
+  /**
+   * 取这条消息上一次失败尝试留下的台词，供重试复用。
+   *
+   * 只认 failed：message_id 固定对应同一段回复原文，所以台词可以放心复用；
+   * 但如果上一次是成功的，用户再点就是想换一个念法，复用会让重新生成变成空操作。
+   */
+  async findReusableDraft(messageId: string): Promise<string | null> {
+    const { data, error } = await this.db
+      .from('chat_message_audio')
+      .select('spoken_text')
+      .eq('message_id', messageId)
+      .eq('status', 'failed')
+      .not('spoken_text', 'is', null)
+      .order('revision', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new Error(`查询可复用语音台词失败：${error.message}`);
+    return (data as { spoken_text: string | null } | null)?.spoken_text ?? null;
+  }
+
   async markReady(
     id: string,
     input: {

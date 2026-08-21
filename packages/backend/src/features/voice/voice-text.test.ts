@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   cleanTags,
+  extractQuotedLines,
   fixEllipsis,
   normalizeConvertedText,
   stripCodeFence,
+  stripQuotes,
   stripTags,
-  toSpokenText,
 } from './voice-text.js';
 
 describe('cleanTags', () => {
@@ -40,6 +41,25 @@ describe('fixEllipsis', () => {
   it('collapses the commas its own substitutions can pile up', () => {
     expect(fixEllipsis('我…………你')).toBe('我，你');
   });
+
+  it('drops the drawn-out wave that TTS reads as a word', () => {
+    expect(fixEllipsis('好呀～～')).toBe('好呀');
+    expect(fixEllipsis('来嘛~')).toBe('来嘛');
+  });
+
+  it('drops leading punctuation left behind on each line', () => {
+    // 标签被剥掉后常在句首留下一个逗号，念出来是个突兀的停顿
+    expect(fixEllipsis('，我在')).toBe('我在');
+    expect(fixEllipsis('第一句\n。第二句')).toBe('第一句\n第二句');
+  });
+});
+
+describe('stripQuotes', () => {
+  it('removes every quote form, straight and full-width alike', () => {
+    expect(stripQuotes('“你回来了”')).toBe('你回来了');
+    expect(stripQuotes('「别走」')).toBe('别走');
+    expect(stripQuotes('"就这样"')).toBe('就这样');
+  });
 });
 
 describe('stripTags', () => {
@@ -65,16 +85,33 @@ describe('stripCodeFence', () => {
   });
 });
 
-describe('full pipeline', () => {
-  it('turns raw LLM output into archived and spoken text', () => {
-    const raw = '```\n（声音颤抖）(sighs)你会不会……也有一天，就这样走掉啊？(voice breaking)\n```';
-    const converted = normalizeConvertedText(raw);
-    expect(converted).toBe('(sighs)你会不会，也有一天，就这样走掉啊？');
-    expect(toSpokenText(converted)).toBe('你会不会，也有一天，就这样走掉啊？');
+describe('normalizeConvertedText', () => {
+  it('keeps tags in the finished line because tags are part of what gets read', () => {
+    const raw = '```\n（声音颤抖）(sighs)“你会不会……也有一天，就这样走掉啊？”(voice breaking)\n```';
+    expect(normalizeConvertedText(raw)).toBe('(sighs)你会不会，也有一天，就这样走掉啊？');
   });
 
-  it('can strip a reply down to nothing when the model returns only junk', () => {
-    // 调用方要据此判失败，不能把空串送进 TTS
-    expect(toSpokenText(normalizeConvertedText('（沉默）'))).toBe('');
+  it('keeps a tag-only line intact', () => {
+    // 参照产出里样本 1 的整条台词就是 (groans)，剥掉标签就什么都不剩了
+    expect(normalizeConvertedText('(groans)')).toBe('(groans)');
+  });
+
+  it('collapses junk-only output to empty so the caller can fall through', () => {
+    expect(normalizeConvertedText('（沉默）')).toBe('');
+  });
+});
+
+describe('extractQuotedLines', () => {
+  it('pulls out dialogue only, one line each', () => {
+    const source = '她低头看着你，“你回来了。”\n屋里很暗。她又说：“我等了很久。”';
+    expect(extractQuotedLines(source)).toBe('你回来了。\n我等了很久。');
+  });
+
+  it('handles the other quote styles', () => {
+    expect(extractQuotedLines('她说「别走」，然后『我等你』')).toBe('别走\n我等你');
+  });
+
+  it('returns empty when the source has no dialogue at all', () => {
+    expect(extractQuotedLines('她站起身，赤着脚踩在木地板上。')).toBe('');
   });
 });
