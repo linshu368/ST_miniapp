@@ -15,6 +15,7 @@ import { PersonaSidebar, type CsModule } from './components/PersonaSidebar';
 import { UserListPanel } from './components/UserListPanel';
 import { ConversationPanel } from './components/ConversationPanel';
 import { PersonaModal } from './components/PersonaModal';
+import { BroadcastModal } from './components/BroadcastModal';
 import { SupportWorkbench } from './components/SupportWorkbench';
 import { SupportConversationPanel } from './components/SupportConversationPanel';
 
@@ -27,6 +28,7 @@ export default function App() {
     membership: Membership;
   } | null>(null);
   const [personaModal, setPersonaModal] = useState<CsPersonaData | 'create' | null>(null);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [module, setModule] = useState<CsModule>('outreach');
   const [selectedSupportId, setSelectedSupportId] = useState<string | null>(null);
@@ -139,6 +141,14 @@ export default function App() {
     qc.removeQueries({ queryKey: ['cs'] });
   };
 
+  // selectedUser 存的是点击那一刻的快照，而备注、等待状态会随着轮询变。
+  // 右栏得用列表里的最新那份，不然保存完备注还要重新点一次用户才看得到。
+  const liveSelectedUser = selectedUser
+    ? ([...(usersQuery.data?.active ?? []), ...(usersQuery.data?.chatted_left ?? [])].find(
+        (user) => user.user_id === selectedUser.user.user_id
+      ) ?? selectedUser.user)
+    : null;
+
   const invalidateConversation = () => {
     if (!selectedPersona || !selectedUser) return;
     void qc.invalidateQueries({
@@ -176,6 +186,8 @@ export default function App() {
         onSelect={(id) => {
           setSelectedPersonaId(id);
           setSelectedUser(null);
+          // 群发框里的人数是按上一个簇统计的，换簇必须关掉重开
+          setBroadcastOpen(false);
         }}
         onCreate={() => setPersonaModal('create')}
         onConfigure={(persona) => setPersonaModal(persona)}
@@ -211,6 +223,7 @@ export default function App() {
               .catch((error) => setToast(error.message))
           }
           onDelete={() => handleDeletePersona(selectedPersona)}
+          onBroadcast={() => setBroadcastOpen(true)}
         />
       ) : (
         <section className="user-panel">
@@ -220,10 +233,10 @@ export default function App() {
 
       {module === 'outreach' && (
         <div className="conversation-column">
-          {selectedPersona && selectedUser ? (
+          {selectedPersona && liveSelectedUser ? (
             <ConversationPanel
               persona={selectedPersona}
-              user={selectedUser.user}
+              user={liveSelectedUser}
               messages={messagesQuery.data?.messages ?? []}
               appChatTurns={appChatQuery.data?.turns ?? []}
               telegramReachability={reachabilityQuery.data ?? null}
@@ -235,6 +248,20 @@ export default function App() {
             <EmptyState text="从中间列表选择用户，开始 Telegram 1V1 回访" />
           )}
         </div>
+      )}
+
+      {broadcastOpen && selectedPersona && (
+        <BroadcastModal
+          persona={selectedPersona}
+          onClose={() => setBroadcastOpen(false)}
+          onSubmitted={(accepted) => {
+            setBroadcastOpen(false);
+            setToast(`已提交群发，共 ${accepted} 人，发送结果请到各自的回访记录里查看`);
+            // 群发会给这些人写入 agent 消息，等待状态和排序都会变
+            void qc.invalidateQueries({ queryKey: ['cs', 'users', selectedPersona.id] });
+          }}
+          onToast={setToast}
+        />
       )}
 
       {personaModal && (

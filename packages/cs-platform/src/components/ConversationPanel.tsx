@@ -10,7 +10,8 @@ import type {
 } from '@miniapp/shared';
 import { csApi } from '../api';
 import { DEFAULT_SOP, SEND_STATUS_LABELS, formatDateTime } from '../constants';
-import { SessionBadge } from './Badge';
+import { SessionBadge, WaitingBadge } from './Badge';
+import { SpecialNoteModal } from './SpecialNoteModal';
 import defaultUserAvatar from '../../../../20260713-130353.png';
 
 export function ConversationPanel(props: {
@@ -25,6 +26,7 @@ export function ConversationPanel(props: {
 }) {
   const [input, setInput] = useState('');
   const [conversationView, setConversationView] = useState<'outreach' | 'app-chat'>('outreach');
+  const [noteOpen, setNoteOpen] = useState(false);
   const messageListRef = useRef<HTMLDivElement>(null);
 
   const stages = props.persona.sop.length ? props.persona.sop : DEFAULT_SOP;
@@ -102,8 +104,37 @@ export function ConversationPanel(props: {
             </p>
           </div>
         </div>
-        <SessionBadge status={props.session?.status ?? 'not_started'} />
+        <div className="panel-header-right">
+          <WaitingBadge state={props.user.waiting_state} />
+          <SessionBadge status={props.session?.status ?? 'not_started'} />
+          <button
+            className={`btn btn-sm ${props.user.special_note ? 'is-flagged' : ''}`}
+            onClick={() => setNoteOpen(true)}
+          >
+            {props.user.special_note ? '已标记' : '特殊标记'}
+          </button>
+        </div>
       </header>
+
+      {props.user.special_note && (
+        <p className="conversation-note">
+          <span className="conversation-note-label">标记</span>
+          {props.user.special_note}
+        </p>
+      )}
+
+      {noteOpen && (
+        <SpecialNoteModal
+          persona={props.persona}
+          user={props.user}
+          onClose={() => setNoteOpen(false)}
+          onSaved={() => {
+            setNoteOpen(false);
+            props.onChanged();
+          }}
+          onToast={props.onToast}
+        />
+      )}
 
       <div className="conversation-tabs">
         <button
