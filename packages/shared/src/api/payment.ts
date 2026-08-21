@@ -113,7 +113,7 @@ export interface PaymentOrder {
   expires_at: string; // ISO 8601
   /** completed 时有值 */
   paid_at: string | null;
-  /** 渠道流水号（JLPay trade_no），completed 后有值 */
+  /** 渠道流水号，completed 后有值 */
   provider_transaction_id: string | null;
 }
 
@@ -132,7 +132,7 @@ export interface CreatePaymentOrderRequest {
 }
 export interface CreatePaymentOrderData {
   order: PaymentOrder;
-  /** JLPay 返回的支付目标：微信 scheme 或 H5 跳转链接 */
+  /** 支付渠道返回的支付目标：微信 scheme 或 H5 跳转链接 */
   pay_url: string;
 }
 

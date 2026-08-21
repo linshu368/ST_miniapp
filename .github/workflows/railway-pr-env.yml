@@ -1,0 +1,111 @@
+# Create / delete a Railway backend named pr-{number} for each feature PR.
+# Domain convention (verified): https://stminiapp-pr-{number}.up.railway.app
+# Duplicates Railway `development` only — never production.
+name: Railway PR environment
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, reopened, synchronize, closed, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: railway-pr-env-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+  RAILWAY_PROJECT_ID: ce38c0c0-88cd-407a-9c04-06124cd42e97
+  RAILWAY_WORKSPACE_ID: 2af5f2b0-e86e-4099-81d0-c2fc8af50c35
+  RAILWAY_DEVELOPMENT_ENV_ID: a184d734-11e3-4b20-a114-1868f4c5f4d3
+  RAILWAY_SERVICE: stminiapp
+
+jobs:
+  upsert:
+    name: Ensure pr-${{ github.event.pull_request.number }}
+    if: github.event.action != 'closed' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Link project
+        run: |
+          railway link \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$RAILWAY_DEVELOPMENT_ENV_ID" \
+            --workspace "$RAILWAY_WORKSPACE_ID" \
+            --json
+
+      - name: Create environment if missing
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          export ENV_NAME="pr-${PR_NUMBER}"
+          BACKEND_URL="https://stminiapp-pr-${PR_NUMBER}.up.railway.app"
+
+          if railway environment list --json | python3 -c "
+          import json, os, sys
+          name = os.environ['ENV_NAME']
+          envs = json.load(sys.stdin).get('environments') or []
+          sys.exit(0 if any(e.get('name') == name for e in envs) else 1)
+          "; then
+            echo "Railway environment ${ENV_NAME} already exists"
+            exit 0
+          fi
+
+          railway environment new "$ENV_NAME" \
+            --duplicate "$RAILWAY_DEVELOPMENT_ENV_ID" \
+            --service-config "$RAILWAY_SERVICE" source.branch "$HEAD_REF" \
+            --service-config "$RAILWAY_SERVICE" variables.PORT.value "8080" \
+            --service-config "$RAILWAY_SERVICE" variables.SENTRY_ENVIRONMENT.value "preview" \
+            --service-config "$RAILWAY_SERVICE" variables.PAYMENT_NOTIFY_URL.value "${BACKEND_URL}/api/payment/webhook/zqpay" \
+            --service-config "$RAILWAY_SERVICE" variables.PAYMENT_RETURN_URL.value "${BACKEND_URL}/api/payment/return" \
+            --json
+
+      - name: Comment backend URL
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BACKEND_URL="https://stminiapp-pr-${PR_NUMBER}.up.railway.app"
+          if gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq '.[].body' \
+            | grep -Fq "$BACKEND_URL"; then
+            echo "PR already has backend URL comment"
+            exit 0
+          fi
+          gh pr comment "$PR_NUMBER" --body "$(cat <<EOF
+          Railway preview backend: ${BACKEND_URL}
+
+          Vercel Preview will call this URL (env \`pr-${PR_NUMBER}\`, copied from \`development\`).
+          EOF
+          )"
+
+  teardown:
+    name: Delete pr-${{ github.event.pull_request.number }}
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Link project
+        run: |
+          railway link \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$RAILWAY_DEVELOPMENT_ENV_ID" \
+            --workspace "$RAILWAY_WORKSPACE_ID" \
+            --json
+
+      - name: Delete environment
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          ENV_NAME="pr-${PR_NUMBER}"
+          railway environment delete "$ENV_NAME" --yes --json || true
