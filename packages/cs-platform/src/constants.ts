@@ -1,4 +1,10 @@
-import type { CsSendStatus, CsSessionStatus, CsSopStageData } from '@miniapp/shared';
+import type {
+  CsBroadcastAudience,
+  CsSendStatus,
+  CsSessionStatus,
+  CsSopStageData,
+  CsWaitingState,
+} from '@miniapp/shared';
 
 export type Membership = 'active' | 'chatted_left';
 
@@ -60,6 +66,28 @@ export const SESSION_STATUS_META: Record<CsSessionStatus, { label: string; tone:
   skipped: { label: '已跳过', tone: 'neutral' },
   send_failed: { label: '发送失败', tone: 'danger' },
 };
+
+/**
+ * 等待状态的呈现。none 不出标签也不上底色——它不是「等我回」，
+ * 一旦也给了颜色，整个列表就全是彩色，黄色的优先级提示就白做了。
+ */
+export const WAITING_STATE_META: Record<CsWaitingState, { label: string; tone: BadgeTone } | null> =
+  {
+    none: null,
+    first_round: { label: '首轮等待回复', tone: 'warning' },
+    second_round: { label: '二次等待回复', tone: 'success' },
+  };
+
+export const BROADCAST_AUDIENCE_OPTIONS: Array<{
+  value: CsBroadcastAudience;
+  label: string;
+}> = [
+  { value: 'all_waiting', label: '所有等待回复' },
+  { value: 'first_round', label: '仅首轮等待回复' },
+  { value: 'second_round', label: '仅二次等待回复' },
+  { value: 'not_started', label: '仅未开始' },
+  { value: 'all', label: '该簇全部在册用户' },
+];
 
 export const SEND_STATUS_LABELS: Record<CsSendStatus, string> = {
   pending: '发送中',

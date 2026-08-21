@@ -2,6 +2,7 @@ import { prisma } from '../../lib/db.js';
 import type {
   CsAuditLogData,
   CsAppChatTurnData,
+  CsBroadcastAudience,
   CsMessageData,
   CsPersonaData,
   CsSendStatus,
@@ -9,6 +10,7 @@ import type {
   CsSessionStatus,
   CsSopStageData,
   CsUserData,
+  CsWaitingState,
 } from '@miniapp/shared';
 
 interface PersonaRow {
@@ -207,6 +209,14 @@ export class CsPlatformRepository {
     return expectOne(rows, '刷新画像簇失败：数据库未返回记录').result;
   }
 
+  /**
+   * 中栏用户列表。
+   *
+   * 排序按「本簇内最后一条用户来信」倒序，没有来信的排在后面、内部再按 MiniApp 活跃时间。
+   * 这是一次性时间排序而不是置顶：任何人来了更晚的消息都会重新排，原会话自然下移。
+   * 原来只按 last_active_at 排，那是用户在 MiniApp 里的活跃时间，和「谁给客服发了新反馈」
+   * 完全是两件事，客服得自己翻。
+   */
   async listUsers(
     personaId: string
   ): Promise<{ active: CsUserData[]; chatted_left: CsUserData[] }> {
@@ -220,7 +230,8 @@ export class CsPlatformRepository {
        FROM cs_platform.persona_users_detail d
        LEFT JOIN miniapp.miniapp_user_settings s ON s.user_id = d.user_id
        WHERE d.persona_id = $1::uuid
-       ORDER BY d.last_active_at DESC NULLS LAST`,
+       ORDER BY d.last_user_message_at DESC NULLS LAST,
+                d.last_active_at DESC NULLS LAST`,
       personaId
     );
     const users = rows.map(toUserData);
@@ -317,6 +328,66 @@ export class CsPlatformRepository {
       expectOne(rows, '跳过会话失败：数据库未返回记录'),
       persona?.sop ?? DEFAULT_SOP
     );
+  }
+
+  /** 写入/清空特殊标记备注。note 传 null 即取消标记，时间与操作人一并清掉 */
+  async setSpecialNote(
+    personaId: string,
+    userId: string,
+    input: { note: string | null; operatorId: string }
+  ): Promise<{ note: string | null; updatedAt: string | null }> {
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `UPDATE cs_platform.persona_member_state
+       SET special_note = $3,
+           special_note_updated_at = CASE WHEN $3::text IS NULL THEN NULL ELSE now() END,
+           special_note_operator_id = CASE WHEN $3::text IS NULL THEN NULL ELSE $4 END
+       WHERE persona_id = $1::uuid AND user_id = $2::uuid
+       RETURNING special_note, special_note_updated_at`,
+      personaId,
+      userId,
+      input.note,
+      input.operatorId
+    );
+    const row = expectOne(rows, '保存备注失败：该用户不在此画像簇中');
+    await this.log(input.operatorId, 'user.special_note', personaId, userId, {
+      cleared: input.note === null,
+    });
+    return {
+      note: normalizeNote(row.special_note),
+      updatedAt: row.special_note_updated_at ? toIso(row.special_note_updated_at) : null,
+    };
+  }
+
+  /**
+   * 群发选人。只发在册成员（chatted_left 已经移出，不该再被打扰），
+   * 按最后来信时间倒序，让预览里看到的样本就是客服最关心的那几个。
+   */
+  async listBroadcastTargets(
+    personaId: string,
+    audience: CsBroadcastAudience
+  ): Promise<
+    Array<{
+      userId: string;
+      telegramUserId: string;
+      displayName: string;
+      waitingState: CsWaitingState;
+    }>
+  > {
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT user_id, telegram_user_id, display_name, waiting_state
+       FROM cs_platform.persona_users_detail
+       WHERE persona_id = $1::uuid
+         AND membership_status = 'active'
+         AND ${audiencePredicate(audience)}
+       ORDER BY last_user_message_at DESC NULLS LAST, last_active_at DESC NULLS LAST`,
+      personaId
+    );
+    return rows.map((row) => ({
+      userId: String(row.user_id),
+      telegramUserId: String(row.telegram_user_id),
+      displayName: String(row.display_name ?? row.telegram_user_id ?? 'Unknown'),
+      waitingState: toWaitingState(row.waiting_state),
+    }));
   }
 
   async listMessages(personaId: string, userId: string): Promise<CsMessageData[]> {
@@ -603,6 +674,25 @@ function toPersonaData(row: PersonaRow): CsPersonaData {
   };
 }
 
+/**
+ * 群发受众 → SQL 谓词。返回的是写死的常量片段，audience 已被 CsBroadcastAudience
+ * 收窄成有限枚举，不存在把外部字符串拼进 SQL 的路径。
+ */
+function audiencePredicate(audience: CsBroadcastAudience): string {
+  switch (audience) {
+    case 'not_started':
+      return `session_status = 'not_started'`;
+    case 'first_round':
+      return `waiting_state = 'first_round'`;
+    case 'second_round':
+      return `waiting_state = 'second_round'`;
+    case 'all_waiting':
+      return `waiting_state IN ('first_round', 'second_round')`;
+    case 'all':
+      return 'TRUE';
+  }
+}
+
 function expectOne<T>(rows: T[], message: string): T {
   const row = rows[0];
   if (!row) throw new Error(message);
@@ -627,7 +717,25 @@ function toUserData(row: Record<string, unknown>): CsUserData {
     current_stage: (row.current_stage as string | null) ?? null,
     chatted_at: row.chatted_at ? toIso(row.chatted_at) : null,
     left_note: (row.left_note as string | null) ?? null,
+    last_user_message_at: row.last_user_message_at ? toIso(row.last_user_message_at) : null,
+    last_agent_message_at: row.last_agent_message_at ? toIso(row.last_agent_message_at) : null,
+    waiting_state: toWaitingState(row.waiting_state),
+    special_note: normalizeNote(row.special_note),
+    special_note_updated_at: row.special_note_updated_at
+      ? toIso(row.special_note_updated_at)
+      : null,
   };
+}
+
+function toWaitingState(value: unknown): CsWaitingState {
+  return value === 'first_round' || value === 'second_round' ? value : 'none';
+}
+
+/** 空串按未标记处理，前端只要判 null 就够，不用同时判空串 */
+function normalizeNote(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function toAppChatTurnData(row: Record<string, unknown>): CsAppChatTurnData {

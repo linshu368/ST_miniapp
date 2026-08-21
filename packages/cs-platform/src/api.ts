@@ -20,6 +20,12 @@
   GetCsSupportMessagesData,
   SendCsSupportMessageRequest,
   SendSupportMessageData,
+  CsBroadcastData,
+  CsBroadcastPreviewData,
+  CsBroadcastPreviewRequest,
+  CsBroadcastRequest,
+  SetCsSpecialNoteData,
+  SetCsSpecialNoteRequest,
 } from '@miniapp/shared';
 
 const API_URL = (
@@ -166,6 +172,21 @@ export const csApi = {
         body: JSON.stringify(body),
       }
     ),
+  setSpecialNote: (personaId: string, userId: string, body: SetCsSpecialNoteRequest) =>
+    apiClient<SetCsSpecialNoteData>(
+      `/api/cs/personas/${encodeURIComponent(personaId)}/users/${encodeURIComponent(userId)}/special-note`,
+      { method: 'PUT', body: JSON.stringify(body) }
+    ),
+  broadcastPreview: (personaId: string, body: CsBroadcastPreviewRequest) =>
+    apiClient<CsBroadcastPreviewData>(
+      `/api/cs/personas/${encodeURIComponent(personaId)}/broadcast/preview`,
+      { method: 'POST', body: JSON.stringify(body) }
+    ),
+  broadcast: (personaId: string, body: CsBroadcastRequest) =>
+    apiClient<CsBroadcastData>(`/api/cs/personas/${encodeURIComponent(personaId)}/broadcast`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   // MiniApp 内的客服会话，与上面基于 Telegram 的回访链路互不共用数据。
   // 这三个接口按 env 走各自的后端，回访接口不受影响。
   supportConversations: (env: CsSupportEnv) =>
