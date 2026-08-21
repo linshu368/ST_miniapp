@@ -17,6 +17,8 @@ import {
   EditableModelCatalogSchema,
   type ManagedConfigKey,
 } from '../lib/configSchemas';
+import type { CharacterCard } from '../lib/adminApi';
+import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
@@ -58,6 +60,9 @@ export function ConfigValueEditor(props: {
   syncError: string | null;
   onRefreshOpenRouter: () => void;
   paymentPlans: PaymentPlan[];
+  characters: CharacterCard[];
+  charactersLoading: boolean;
+  charactersError: string | null;
 }) {
   if (props.configKey === 'system_instructions') {
     return (
@@ -73,6 +78,19 @@ export function ConfigValueEditor(props: {
     return (
       <WordCountTiersEditor
         value={asWordCountTiersConfig(props.value)}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'lobby_pinned_characters') {
+    return (
+      <LobbyPinnedCharactersEditor
+        value={props.value}
+        characters={props.characters}
+        charactersLoading={props.charactersLoading}
+        charactersError={props.charactersError}
         disabled={props.disabled}
         onChange={props.onChange}
       />

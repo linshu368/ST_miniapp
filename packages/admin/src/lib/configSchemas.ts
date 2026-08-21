@@ -1,11 +1,13 @@
 import {
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_LOBBY_PINNED_CHARACTERS,
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
+  LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
@@ -28,6 +30,7 @@ export const managedConfigKeys = [
   'system_instructions',
   'pref_word_count_tiers',
   'lobby_ranking_params',
+  'lobby_pinned_characters',
 ] as const;
 
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
@@ -116,6 +119,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   system_instructions: SystemInstructionsSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
+  lobby_pinned_characters: LobbyPinnedCharactersSchema,
 };
 
 export const configMetadata: Record<
@@ -214,6 +218,12 @@ export const configMetadata: Record<
     description:
       '首页「推荐」v3 打分口径：统计窗口、轮次上限、会话切分与回访窗口、D30/R48 权重、样本门槛与归一化分位。改动在下一次排序刷新（每 24 小时）后生效。',
     defaultValue: DEFAULT_LOBBY_RANKING_PARAMS,
+  },
+  lobby_pinned_characters: {
+    label: '推荐页固定前八',
+    description:
+      '首页「推荐」页最前面的固定位，最多 8 张、按此处顺序展示，同时拿到金框。第九张起仍按排序分。留空表示不固定，完全交给排序分。发布后约 1 分钟内生效。',
+    defaultValue: DEFAULT_LOBBY_PINNED_CHARACTERS,
   },
 };
 
