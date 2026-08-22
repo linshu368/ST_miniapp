@@ -279,7 +279,7 @@ function RechargePageContent() {
                 <AlertCircle className="h-8 w-8" aria-hidden />
               </div>
               <DialogTitle className="text-xl font-black">{paymentPromptConfig.title}</DialogTitle>
-              <DialogDescription className="pt-1 text-center leading-6 text-muted-foreground">
+              <DialogDescription className="whitespace-pre-line pt-1 text-center leading-6 text-muted-foreground">
                 {paymentPromptConfig.description}
               </DialogDescription>
             </DialogHeader>
@@ -293,8 +293,8 @@ function RechargePageContent() {
                 {createOrder.isPending ? '创建中...' : paymentPromptConfig.confirm_text}
               </Button>
             </DialogFooter>
-            <p className="mt-3 text-center text-[11px] leading-4 text-muted-foreground/70">
-              点击确认后，将继续跳转到外部浏览器完成微信支付。
+            <p className="mt-3 whitespace-pre-line text-center text-[11px] leading-4 text-muted-foreground/70">
+              {paymentPromptConfig.footer_note}
             </p>
           </div>
         </DialogContent>

@@ -37,6 +37,7 @@ describe('parsePaymentPromptDialogConfig', () => {
       title: '关闭 VPN',
       description: '关闭后再继续。',
       confirm_text: '继续支付',
+      footer_note: '确认后打开浏览器。',
       accent_color: '#f59e0b',
     };
 

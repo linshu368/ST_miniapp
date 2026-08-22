@@ -41,7 +41,7 @@ export function PaymentPromptDialogConfigEditor(props: PaymentPromptDialogConfig
               />
             </div>
             <div>
-              <Typography.Text>说明文案</Typography.Text>
+              <Typography.Text>说明文案（支持换行）</Typography.Text>
               <Input.TextArea
                 rows={4}
                 maxLength={200}
@@ -49,6 +49,17 @@ export function PaymentPromptDialogConfigEditor(props: PaymentPromptDialogConfig
                 value={props.value.description}
                 disabled={props.disabled}
                 onChange={(event) => update({ description: event.target.value })}
+              />
+            </div>
+            <div>
+              <Typography.Text>底部提示文案（支持换行）</Typography.Text>
+              <Input.TextArea
+                rows={2}
+                maxLength={100}
+                showCount
+                value={props.value.footer_note}
+                disabled={props.disabled}
+                onChange={(event) => update({ footer_note: event.target.value })}
               />
             </div>
             <div>
@@ -136,7 +147,7 @@ export function PaymentPromptDialogConfigEditor(props: PaymentPromptDialogConfig
                       <button type="button" style={{ backgroundColor: props.value.accent_color }}>
                         {props.value.confirm_text || '继续支付'}
                       </button>
-                      <small>点击确认后，将继续跳转到外部浏览器完成微信支付。</small>
+                      <small>{props.value.footer_note || '底部提示文案'}</small>
                     </div>
                   </div>
                 </div>
