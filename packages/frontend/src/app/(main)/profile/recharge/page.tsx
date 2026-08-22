@@ -7,6 +7,7 @@ import { AlertCircle, ChevronLeft, History, Receipt, ShieldCheck, Sparkles } fro
 import {
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  type CreatePaymentOrderData,
   type PaymentType,
 } from '@miniapp/shared';
 
@@ -55,6 +56,7 @@ function RechargePageContent() {
   const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const [paymentPromptOpen, setPaymentPromptOpen] = useState(false);
+  const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
 
   const plans = data?.plans ?? [];
   const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
@@ -75,13 +77,8 @@ function RechargePageContent() {
     [whisper]
   );
 
-  const executePayment = useCallback(async () => {
-    if (!selectedPlan || createOrder.isPending) return;
-    try {
-      const result = await createOrder.mutateAsync({
-        plan_id: selectedPlan.id,
-        payment_type: paymentType,
-      });
+  const openCreatedPayment = useCallback(
+    (result: CreatePaymentOrderData) => {
       const nextSearch = new URLSearchParams({
         pay_url: result.pay_url,
         payment_started: '1',
@@ -93,25 +90,49 @@ function RechargePageContent() {
       router.push(
         `/profile/recharge/${encodeURIComponent(result.order.id)}?${nextSearch.toString()}`
       );
+    },
+    [router, returnTo]
+  );
+
+  const handleSubmit = useCallback(async () => {
+    if (!selectedPlan || createOrder.isPending) return;
+    impact('light');
+    try {
+      // 用户关闭 VPN 前先完成下单；弹窗出现即表示支付地址已经准备好。
+      const result = await createOrder.mutateAsync({
+        plan_id: selectedPlan.id,
+        payment_type: paymentType,
+      });
+      if (paymentPromptConfig.enabled) {
+        setPreparedPayment(result);
+        setPaymentPromptOpen(true);
+        return;
+      }
+      openCreatedPayment(result);
     } catch {
       notification('error');
     }
-  }, [selectedPlan, createOrder, paymentType, router, returnTo, notification]);
-
-  const handleSubmit = useCallback(() => {
-    if (!selectedPlan || createOrder.isPending) return;
-    impact('light');
-    if (paymentPromptConfig.enabled) {
-      setPaymentPromptOpen(true);
-      return;
-    }
-    void executePayment();
-  }, [selectedPlan, createOrder.isPending, impact, paymentPromptConfig.enabled, executePayment]);
+  }, [
+    selectedPlan,
+    createOrder,
+    impact,
+    paymentPromptConfig.enabled,
+    paymentType,
+    openCreatedPayment,
+    notification,
+  ]);
 
   const handleConfirmPayment = useCallback(() => {
+    if (!preparedPayment) return;
     setPaymentPromptOpen(false);
-    void executePayment();
-  }, [executePayment]);
+    setPreparedPayment(null);
+    openCreatedPayment(preparedPayment);
+  }, [preparedPayment, openCreatedPayment]);
+
+  const handlePaymentPromptOpenChange = useCallback((open: boolean) => {
+    setPaymentPromptOpen(open);
+    if (!open) setPreparedPayment(null);
+  }, []);
 
   return (
     <main
@@ -257,7 +278,7 @@ function RechargePageContent() {
           </Button>
         </div>
       </div>
-      <Dialog open={paymentPromptOpen} onOpenChange={setPaymentPromptOpen}>
+      <Dialog open={paymentPromptOpen} onOpenChange={handlePaymentPromptOpenChange}>
         <DialogContent
           className="w-[calc(100%-2rem)] max-w-sm overflow-hidden rounded-3xl border-2 bg-popover p-0 text-popover-foreground"
           style={{ borderColor: paymentPromptConfig.accent_color }}
@@ -296,10 +317,10 @@ function RechargePageContent() {
               <Button
                 className="mx-auto min-h-[46px] w-fit rounded-xl border-0 px-6 font-black text-[#171717] hover:opacity-90"
                 style={{ backgroundColor: paymentPromptConfig.accent_color }}
-                disabled={createOrder.isPending}
+                disabled={!preparedPayment}
                 onClick={handleConfirmPayment}
               >
-                {createOrder.isPending ? '创建中...' : '已关闭VPN，去截图保存二维码'}
+                已关闭VPN，去截图保存二维码
               </Button>
             </DialogFooter>
           </div>
