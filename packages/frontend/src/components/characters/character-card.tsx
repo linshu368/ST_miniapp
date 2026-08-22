@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
 import { FavoriteButton } from './favorite-button';
+import { FeaturedFrame } from './featured-frame';
 
 interface CharacterCardProps {
   character: CharacterSummary;
@@ -142,7 +143,9 @@ export function CharacterCard({
     </div>
   );
 
-  if (!character.is_featured) return card;
-
-  return <div className="featured-character-frame h-full rounded-[18px] p-[2px]">{card}</div>;
+  return (
+    <FeaturedFrame featured={character.is_featured} className="h-full rounded-[18px]">
+      {card}
+    </FeaturedFrame>
+  );
 }
