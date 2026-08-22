@@ -4,7 +4,11 @@ import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ChevronLeft, History, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
-import { DEFAULT_RECHARGE_PAGE_CONFIG, type PaymentType } from '@miniapp/shared';
+import {
+  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
+  DEFAULT_RECHARGE_PAGE_CONFIG,
+  type PaymentType,
+} from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
@@ -25,8 +29,7 @@ import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/p
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
-// 微信通道暂时下线：只从 UI 隐藏入口，后端与渲染逻辑保留，恢复时把 'wxpay' 加回来即可。
-const PAYMENT_TYPES: PaymentType[] = ['alipay'];
+const PAYMENT_TYPES: PaymentType[] = ['wxpay'];
 
 export default function RechargePage() {
   return (
@@ -49,11 +52,14 @@ function RechargePageContent() {
   const createOrder = useCreatePaymentOrderMutation();
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
+  const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
+  const [paymentPromptOpen, setPaymentPromptOpen] = useState(false);
 
   const plans = data?.plans ?? [];
   const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
+  const paymentPromptConfig =
+    data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
   const showInsufficientCreditsNotice =
     searchParams.get('reason') === 'insufficient_credits' && !!data && !noticeDismissed;
   const selectedPlan = useMemo(
@@ -69,9 +75,8 @@ function RechargePageContent() {
     [whisper]
   );
 
-  const handleSubmit = useCallback(async () => {
+  const executePayment = useCallback(async () => {
     if (!selectedPlan || createOrder.isPending) return;
-    impact('light');
     try {
       const result = await createOrder.mutateAsync({
         plan_id: selectedPlan.id,
@@ -91,7 +96,22 @@ function RechargePageContent() {
     } catch {
       notification('error');
     }
-  }, [selectedPlan, createOrder, paymentType, router, returnTo, impact, notification]);
+  }, [selectedPlan, createOrder, paymentType, router, returnTo, notification]);
+
+  const handleSubmit = useCallback(() => {
+    if (!selectedPlan || createOrder.isPending) return;
+    impact('light');
+    if (paymentPromptConfig.enabled) {
+      setPaymentPromptOpen(true);
+      return;
+    }
+    void executePayment();
+  }, [selectedPlan, createOrder.isPending, impact, paymentPromptConfig.enabled, executePayment]);
+
+  const handleConfirmPayment = useCallback(() => {
+    setPaymentPromptOpen(false);
+    void executePayment();
+  }, [executePayment]);
 
   return (
     <main
@@ -237,6 +257,54 @@ function RechargePageContent() {
           </Button>
         </div>
       </div>
+      <Dialog open={paymentPromptOpen} onOpenChange={setPaymentPromptOpen}>
+        <DialogContent
+          className="w-[calc(100%-2rem)] max-w-sm overflow-hidden rounded-3xl border-2 bg-popover p-0 text-popover-foreground"
+          style={{ borderColor: paymentPromptConfig.accent_color }}
+        >
+          <div
+            className="h-1.5 w-full"
+            style={{ backgroundColor: paymentPromptConfig.accent_color }}
+          />
+          <div className="px-5 pb-6 pt-5">
+            <DialogHeader className="items-center text-center">
+              <div className="flex w-full flex-col gap-3">
+                {[
+                  { id: 1, before: '第一步：请关闭VPN' },
+                  { id: 2, before: '第二步：请', emphasis: '直接截图', after: '保存支付码' },
+                  { id: 3, before: '第三步：', emphasis: '手动打开', after: '微信扫码支付' },
+                ].map((step) => (
+                  <div
+                    key={step.id}
+                    className="w-full rounded-xl border border-[#3f3f46] bg-[#262626] px-[14px] py-[15px] text-center text-[15px] font-[750] leading-[22px] text-[#fde68a] dark:text-[#b45309]"
+                  >
+                    {step.before}
+                    {step.emphasis ? (
+                      <span
+                        className="font-[900]"
+                        style={{ color: paymentPromptConfig.accent_color }}
+                      >
+                        {step.emphasis}
+                      </span>
+                    ) : null}
+                    {step.after}
+                  </div>
+                ))}
+              </div>
+            </DialogHeader>
+            <DialogFooter className="mt-4 border-t border-[#3f3f46] pt-4">
+              <Button
+                className="mx-auto min-h-[46px] w-fit rounded-xl border-0 px-6 font-black text-[#171717] hover:opacity-90"
+                style={{ backgroundColor: paymentPromptConfig.accent_color }}
+                disabled={createOrder.isPending}
+                onClick={handleConfirmPayment}
+              >
+                {createOrder.isPending ? '创建中...' : '已关闭VPN，去截图保存二维码'}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={showInsufficientCreditsNotice}
         onOpenChange={(open) => {

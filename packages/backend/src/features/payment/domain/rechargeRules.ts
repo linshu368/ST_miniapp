@@ -1,14 +1,18 @@
 import { getSupabaseClient } from '../../../lib/supabase.js';
 import {
+  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   PaymentPlansSchema,
+  PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
   type PaymentPlan,
+  type PaymentPromptDialogConfig,
   type RechargePageConfig,
 } from '@miniapp/shared';
 
 export const PAYMENT_PLANS_CONFIG_KEY = 'miniapp_payment_plans';
 export const RECHARGE_PAGE_CONFIG_KEY = 'miniapp_recharge_page_config';
+export const PAYMENT_PROMPT_DIALOG_CONFIG_KEY = 'miniapp_payment_prompt_dialog_config';
 export const INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY = 'insufficient_credits_notice';
 export const ORDER_EXPIRE_MS = 15 * 60 * 1000;
 
@@ -63,6 +67,27 @@ export async function getRechargePageConfig(): Promise<RechargePageConfig> {
   }
   const parsed = RechargePageConfigSchema.safeParse(data?.value);
   return parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG;
+}
+
+export function parsePaymentPromptDialogConfig(value: unknown): PaymentPromptDialogConfig {
+  const parsed = PaymentPromptDialogConfigSchema.safeParse(value);
+  return parsed.success ? parsed.data : DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
+}
+
+export async function getPaymentPromptDialogConfig(): Promise<PaymentPromptDialogConfig> {
+  const db = getSupabaseClient().schema('miniapp');
+  const { data, error } = await db
+    .from('runtime_config')
+    .select('value')
+    .eq('key', PAYMENT_PROMPT_DIALOG_CONFIG_KEY)
+    .maybeSingle();
+
+  if (error) {
+    console.warn(`[payment] 读取支付提示弹窗配置失败，使用默认配置：${error.message}`);
+    return DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
+  }
+
+  return parsePaymentPromptDialogConfig(data?.value);
 }
 
 export async function getInsufficientCreditsNotice(): Promise<string> {
