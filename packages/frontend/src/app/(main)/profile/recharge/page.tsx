@@ -266,26 +266,35 @@ function RechargePageContent() {
             className="h-1.5 w-full"
             style={{ backgroundColor: paymentPromptConfig.accent_color }}
           />
-          <div className="px-6 pb-6 pt-5">
+          <div className="px-5 pb-6 pt-5">
             <DialogHeader className="items-center text-center">
-              <div
-                className="mb-2 flex h-14 w-14 items-center justify-center rounded-full border-2"
-                style={{
-                  color: paymentPromptConfig.accent_color,
-                  borderColor: paymentPromptConfig.accent_color,
-                  backgroundColor: `${paymentPromptConfig.accent_color}1f`,
-                }}
-              >
-                <AlertCircle className="h-8 w-8" aria-hidden />
+              <div className="flex w-full flex-col gap-3">
+                {[
+                  { id: 1, before: '第一步：请关闭VPN' },
+                  { id: 2, before: '第二步：请', emphasis: '直接截图', after: '保存支付码' },
+                  { id: 3, before: '第三步：', emphasis: '手动打开', after: '微信扫码支付' },
+                ].map((step) => (
+                  <div
+                    key={step.id}
+                    className="w-full rounded-xl border border-[#3f3f46] bg-[#262626] px-[14px] py-[15px] text-center text-[15px] font-[750] leading-[22px] text-[#fde68a] dark:text-[#b45309]"
+                  >
+                    {step.before}
+                    {step.emphasis ? (
+                      <span
+                        className="font-[900]"
+                        style={{ color: paymentPromptConfig.accent_color }}
+                      >
+                        {step.emphasis}
+                      </span>
+                    ) : null}
+                    {step.after}
+                  </div>
+                ))}
               </div>
-              <DialogTitle className="text-xl font-black">{paymentPromptConfig.title}</DialogTitle>
-              <DialogDescription className="whitespace-pre-line pt-1 text-center leading-6 text-muted-foreground">
-                {paymentPromptConfig.description}
-              </DialogDescription>
             </DialogHeader>
-            <DialogFooter className="mt-5">
+            <DialogFooter className="mt-4 border-t border-[#3f3f46] pt-4">
               <Button
-                className="w-full rounded-xl border-0 font-black text-[#171717] hover:opacity-90"
+                className="mx-auto min-h-[46px] w-fit rounded-xl border-0 px-6 font-black text-[#171717] hover:opacity-90"
                 style={{ backgroundColor: paymentPromptConfig.accent_color }}
                 disabled={createOrder.isPending}
                 onClick={handleConfirmPayment}
@@ -293,9 +302,11 @@ function RechargePageContent() {
                 {createOrder.isPending ? '创建中...' : paymentPromptConfig.confirm_text}
               </Button>
             </DialogFooter>
-            <p className="mt-3 whitespace-pre-line text-center text-[11px] leading-4 text-muted-foreground/70">
-              {paymentPromptConfig.footer_note}
-            </p>
+            {paymentPromptConfig.footer_note && (
+              <p className="mt-3 whitespace-pre-line text-center text-[11px] leading-4 text-muted-foreground/70">
+                {paymentPromptConfig.footer_note}
+              </p>
+            )}
           </div>
         </DialogContent>
       </Dialog>
