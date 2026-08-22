@@ -370,6 +370,9 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
     }
   );
 
+  /** 正在群发的画像簇 id。backend 是单实例部署，进程内集合足够挡住重复提交。 */
+  const broadcastInFlight = new Set<string>();
+
   app.post(
     '/api/cs/personas/:id/broadcast/preview',
     { preHandler: [requireCsAdmin] },
@@ -416,6 +419,15 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('NO_BROADCAST_TARGET', '该范围下没有可发送的用户'));
       }
 
+      // 同一个簇一次只允许跑一轮。两个客服同时点、或客服在 202 之前刷新页面重发，
+      // 都会让同一批真人收到两条一样的消息，而群发发出去收不回来。
+      if (broadcastInFlight.has(id)) {
+        return reply
+          .status(409)
+          .send(fail('BROADCAST_IN_FLIGHT', '该画像簇正在群发中，请等本轮发完再提交'));
+      }
+      broadcastInFlight.add(id);
+
       const operatorId = getOperator(request);
       await repository.log(operatorId, 'persona.broadcast', id, null, {
         audience,
@@ -425,9 +437,13 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
 
       // 提交即返回：几百人要按 Telegram 限速一条条发，同步等完必然打到网关超时。
       // 逐条结果写进 outreach_messages，客服在回访记录里能看到成功/失败。
-      void runBroadcast({ personaId: id, targets, content, operatorId }).catch((error) => {
-        app.log.error({ err: error, personaId: id, audience }, 'cs broadcast failed');
-      });
+      void runBroadcast({ personaId: id, targets, content, operatorId })
+        .catch((error) => {
+          app.log.error({ err: error, personaId: id, audience }, 'cs broadcast failed');
+        })
+        .finally(() => {
+          broadcastInFlight.delete(id);
+        });
 
       return reply.status(202).send(ok<CsBroadcastData>({ audience, accepted: targets.length }));
     }
@@ -461,6 +477,7 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
           status: sent.ok ? 'sent' : 'failed',
           telegramMessageId: sent.telegramMessageId,
           failedReason: sent.error,
+          preserveSopStage: true,
           operatorId: input.operatorId,
         });
       } catch (error) {

@@ -460,6 +460,12 @@ export class CsPlatformRepository {
     failedReason?: string;
     sopStage?: string;
     questionKey?: string;
+    /**
+     * 群发用：只更新会话状态，不动 SOP 进度。
+     * 群发不带 sopStage/questionKey，若照常写入会把整簇的 current_stage 覆盖成 'manual'，
+     * 把正在走 SOP 的用户回访进度全部打回。
+     */
+    preserveSopStage?: boolean;
     operatorId: string;
   }): Promise<CsMessageData> {
     const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -483,14 +489,21 @@ export class CsPlatformRepository {
        VALUES ($1::uuid, $2::uuid, $3, $4, $5, now())
        ON CONFLICT (persona_id, user_id) DO UPDATE
        SET status = EXCLUDED.status,
-           current_stage = EXCLUDED.current_stage,
-           current_question_key = EXCLUDED.current_question_key,
+           current_stage = CASE
+             WHEN $6::boolean THEN outreach_sessions.current_stage
+             ELSE EXCLUDED.current_stage
+           END,
+           current_question_key = CASE
+             WHEN $6::boolean THEN outreach_sessions.current_question_key
+             ELSE EXCLUDED.current_question_key
+           END,
            updated_at = now()`,
       input.personaId,
       input.userId,
       input.status === 'sent' ? 'waiting_reply' : 'send_failed',
       input.sopStage ?? input.questionKey ?? 'manual',
-      input.questionKey ?? input.sopStage ?? 'manual'
+      input.questionKey ?? input.sopStage ?? 'manual',
+      input.preserveSopStage ?? false
     );
 
     if (input.status === 'sent') {
