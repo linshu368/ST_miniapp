@@ -1,11 +1,13 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
 import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   ModelCatalogSchema,
+  PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
   type ModelCatalog,
   type OpenRouterModelDirectory,
@@ -19,6 +21,7 @@ import {
 } from '../lib/configSchemas';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
+import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
 import { WordCountTiersEditor } from './WordCountTiersEditor';
@@ -304,6 +307,17 @@ export function ConfigValueEditor(props: {
       <RechargePageConfigEditor
         value={parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG}
         plans={props.paymentPlans}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'miniapp_payment_prompt_dialog_config') {
+    const parsed = PaymentPromptDialogConfigSchema.safeParse(props.value);
+    return (
+      <PaymentPromptDialogConfigEditor
+        value={parsed.success ? parsed.data : DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG}
         disabled={props.disabled}
         onChange={props.onChange}
       />
