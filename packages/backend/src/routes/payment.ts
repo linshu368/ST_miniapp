@@ -16,6 +16,7 @@ import { getOrCreateDbUser } from '../lib/user.js';
 import {
   getInsufficientCreditsNotice,
   getPaymentPlans,
+  getPaymentPromptDialogConfig,
   getRechargePageConfig,
   PaymentPlansConfigError,
 } from '../features/payment/domain/rechargeRules.js';
@@ -57,15 +58,18 @@ export default async function paymentRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
     try {
-      const [plans, insufficientCreditsNotice, pageConfig] = await Promise.all([
-        getPaymentPlans(),
-        getInsufficientCreditsNotice(),
-        getRechargePageConfig(),
-      ]);
+      const [plans, insufficientCreditsNotice, pageConfig, paymentPromptDialogConfig] =
+        await Promise.all([
+          getPaymentPlans(),
+          getInsufficientCreditsNotice(),
+          getRechargePageConfig(),
+          getPaymentPromptDialogConfig(),
+        ]);
       return reply.send(
         ok<GetPaymentPlansData>({
           plans,
           page_config: pageConfig,
+          payment_prompt_dialog_config: paymentPromptDialogConfig,
           insufficient_credits_notice: insufficientCreditsNotice,
         })
       );

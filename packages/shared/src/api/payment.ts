@@ -97,6 +97,24 @@ export const DEFAULT_RECHARGE_PAGE_CONFIG: RechargePageConfig = {
   button_color: '#ec4899',
 };
 
+export const PaymentPromptDialogConfigSchema = z.object({
+  enabled: z.boolean(),
+  title: z.string().trim().min(1).max(40),
+  description: z.string().trim().min(1).max(200),
+  confirm_text: z.string().trim().min(1).max(30),
+  accent_color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+});
+
+export type PaymentPromptDialogConfig = z.infer<typeof PaymentPromptDialogConfigSchema>;
+
+export const DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG: PaymentPromptDialogConfig = {
+  enabled: true,
+  title: '支付前请先关闭 VPN',
+  description: '为避免支付页面无法打开、订单异常或到账延迟，请关闭 VPN 后再继续支付。',
+  confirm_text: '已关闭VPN，继续支付',
+  accent_color: '#f59e0b',
+};
+
 export interface PaymentOrder {
   /** 订单号，沿用老项目 TG_{userId}_{ts}_{rand} 语义 */
   id: string;
@@ -121,6 +139,7 @@ export interface PaymentOrder {
 export interface GetPaymentPlansData {
   plans: PaymentPlan[];
   page_config: RechargePageConfig;
+  payment_prompt_dialog_config: PaymentPromptDialogConfig;
   /** 因余额不足进入充值页时展示的运营提示语 */
   insufficient_credits_notice: string;
 }

@@ -2,6 +2,7 @@ import {
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_LOBBY_RANKING_PARAMS,
+  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
@@ -10,6 +11,7 @@ import {
   ModelCatalogSchema,
   normalizeCatalogModelInput,
   PaymentPlansSchema,
+  PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
   WordCountTiersConfigSchema,
 } from '@miniapp/shared';
@@ -21,6 +23,7 @@ export const managedConfigKeys = [
   'miniapp_character_free_chat_quota_limit',
   'miniapp_payment_plans',
   'miniapp_recharge_page_config',
+  'miniapp_payment_prompt_dialog_config',
   'miniapp_free_quota_exhausted_dialog_config',
   'llm_model_catalog',
   'llm_pricing_config',
@@ -109,6 +112,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_character_free_chat_quota_limit: positiveInteger,
   miniapp_payment_plans: PaymentPlansSchema,
   miniapp_recharge_page_config: RechargePageConfigSchema,
+  miniapp_payment_prompt_dialog_config: PaymentPromptDialogConfigSchema,
   miniapp_free_quota_exhausted_dialog_config: FreeQuotaExhaustedDialogConfigSchema,
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
@@ -146,6 +150,11 @@ export const configMetadata: Record<
     label: '充值页面配置',
     description: '星尘商店的标题、说明、支付按钮文字和主题色。',
     defaultValue: DEFAULT_RECHARGE_PAGE_CONFIG,
+  },
+  miniapp_payment_prompt_dialog_config: {
+    label: '支付提示弹窗',
+    description: '打开外部支付页前展示的 VPN 提醒文案、启用状态和统一强调色。',
+    defaultValue: DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   },
   miniapp_free_quota_exhausted_dialog_config: {
     label: '免费额度耗尽弹窗',

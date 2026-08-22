@@ -4,7 +4,11 @@ import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ChevronLeft, History, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
-import { DEFAULT_RECHARGE_PAGE_CONFIG, type PaymentType } from '@miniapp/shared';
+import {
+  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
+  DEFAULT_RECHARGE_PAGE_CONFIG,
+  type PaymentType,
+} from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
@@ -25,7 +29,7 @@ import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/p
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
-const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
+const PAYMENT_TYPES: PaymentType[] = ['wxpay'];
 
 export default function RechargePage() {
   return (
@@ -48,11 +52,14 @@ function RechargePageContent() {
   const createOrder = useCreatePaymentOrderMutation();
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
+  const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
+  const [paymentPromptOpen, setPaymentPromptOpen] = useState(false);
 
   const plans = data?.plans ?? [];
   const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
+  const paymentPromptConfig =
+    data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
   const showInsufficientCreditsNotice =
     searchParams.get('reason') === 'insufficient_credits' && !!data && !noticeDismissed;
   const selectedPlan = useMemo(
@@ -68,9 +75,8 @@ function RechargePageContent() {
     [whisper]
   );
 
-  const handleSubmit = useCallback(async () => {
+  const executePayment = useCallback(async () => {
     if (!selectedPlan || createOrder.isPending) return;
-    impact('light');
     try {
       const result = await createOrder.mutateAsync({
         plan_id: selectedPlan.id,
@@ -90,7 +96,22 @@ function RechargePageContent() {
     } catch {
       notification('error');
     }
-  }, [selectedPlan, createOrder, paymentType, router, returnTo, impact, notification]);
+  }, [selectedPlan, createOrder, paymentType, router, returnTo, notification]);
+
+  const handleSubmit = useCallback(() => {
+    if (!selectedPlan || createOrder.isPending) return;
+    impact('light');
+    if (paymentPromptConfig.enabled) {
+      setPaymentPromptOpen(true);
+      return;
+    }
+    void executePayment();
+  }, [selectedPlan, createOrder.isPending, impact, paymentPromptConfig.enabled, executePayment]);
+
+  const handleConfirmPayment = useCallback(() => {
+    setPaymentPromptOpen(false);
+    void executePayment();
+  }, [executePayment]);
 
   return (
     <main
@@ -236,6 +257,48 @@ function RechargePageContent() {
           </Button>
         </div>
       </div>
+      <Dialog open={paymentPromptOpen} onOpenChange={setPaymentPromptOpen}>
+        <DialogContent
+          className="w-[calc(100%-2rem)] max-w-sm overflow-hidden rounded-3xl border-2 bg-popover p-0 text-popover-foreground"
+          style={{ borderColor: paymentPromptConfig.accent_color }}
+        >
+          <div
+            className="h-1.5 w-full"
+            style={{ backgroundColor: paymentPromptConfig.accent_color }}
+          />
+          <div className="px-6 pb-6 pt-5">
+            <DialogHeader className="items-center text-center">
+              <div
+                className="mb-2 flex h-14 w-14 items-center justify-center rounded-full border-2"
+                style={{
+                  color: paymentPromptConfig.accent_color,
+                  borderColor: paymentPromptConfig.accent_color,
+                  backgroundColor: `${paymentPromptConfig.accent_color}1f`,
+                }}
+              >
+                <AlertCircle className="h-8 w-8" aria-hidden />
+              </div>
+              <DialogTitle className="text-xl font-black">{paymentPromptConfig.title}</DialogTitle>
+              <DialogDescription className="pt-1 text-center leading-6 text-muted-foreground">
+                {paymentPromptConfig.description}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-5">
+              <Button
+                className="w-full rounded-xl border-0 font-black text-[#171717] hover:opacity-90"
+                style={{ backgroundColor: paymentPromptConfig.accent_color }}
+                disabled={createOrder.isPending}
+                onClick={handleConfirmPayment}
+              >
+                {createOrder.isPending ? '创建中...' : paymentPromptConfig.confirm_text}
+              </Button>
+            </DialogFooter>
+            <p className="mt-3 text-center text-[11px] leading-4 text-muted-foreground/70">
+              点击确认后，将继续跳转到外部浏览器完成微信支付。
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={showInsufficientCreditsNotice}
         onOpenChange={(open) => {
