@@ -155,6 +155,64 @@ REVOKE ALL ON FUNCTION admin.is_managed_config_key(TEXT)
 REVOKE ALL ON FUNCTION admin.validate_managed_config_value(TEXT, JSONB, TEXT)
   FROM PUBLIC, anon, authenticated, service_role;
 
+-- ─── 执行后自检：断言不成立就让本次迁移失败回滚 ──────────────────────────────
+-- 这块被并行迁移覆盖过两次，且症状（菜单能看见、保存才报错）不看库根本发现不了，
+-- 所以把验证写成断言跟着迁移一起跑，而不是留在注释里等人去手点。
+DO $$
+DECLARE
+  v_key    TEXT;
+  v_def    TEXT;
+  v_raised BOOLEAN;
+BEGIN
+  -- 1) 两个 key 都应对运营台可见
+  FOREACH v_key IN ARRAY ARRAY['lobby_pinned_characters', 'miniapp_payment_prompt_dialog_config'] LOOP
+    IF NOT admin.is_managed_config_key(v_key) THEN
+      RAISE EXCEPTION '自检失败：is_managed_config_key(%) 返回 false', v_key;
+    END IF;
+  END LOOP;
+
+  -- 2) 两张表的 CHECK 都应同时含这两个 key
+  FOR v_def IN
+    SELECT pg_get_constraintdef(oid) FROM pg_constraint
+    WHERE conrelid IN ('admin.config_drafts'::regclass, 'admin.config_releases'::regclass)
+      AND conname LIKE '%config_key_check'
+  LOOP
+    IF position('lobby_pinned_characters' IN v_def) = 0
+       OR position('miniapp_payment_prompt_dialog_config' IN v_def) = 0 THEN
+      RAISE EXCEPTION '自检失败：CHECK 约束缺少 key -> %', v_def;
+    END IF;
+  END LOOP;
+
+  -- 3) 两条新分支都必须真的被走到。用 text_value 守卫探针：只有进了对应分支才会
+  --    抛出这句特定文案，落到下游快照抛的会是别的消息，据此判断分支没被盖掉。
+  FOREACH v_key IN ARRAY ARRAY['lobby_pinned_characters', 'miniapp_payment_prompt_dialog_config'] LOOP
+    v_raised := FALSE;
+    BEGIN
+      PERFORM admin.validate_managed_config_value(v_key, '{}'::jsonb, 'probe');
+    EXCEPTION WHEN OTHERS THEN
+      v_raised := TRUE;
+      IF position('must not use text_value' IN SQLERRM) = 0 THEN
+        RAISE EXCEPTION '自检失败：% 没走到自己的分支，实际报错为 %', v_key, SQLERRM;
+      END IF;
+    END;
+    IF NOT v_raised THEN
+      RAISE EXCEPTION '自检失败：% 的校验分支静默放过了非法输入', v_key;
+    END IF;
+  END LOOP;
+
+  -- 4) 未受影响的老 key 仍应正常下沉到快照链
+  v_raised := FALSE;
+  BEGIN
+    PERFORM admin.validate_managed_config_value('system_instructions', NULL, NULL);
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := TRUE;
+  END;
+  IF NOT v_raised THEN
+    RAISE EXCEPTION '自检失败：校验链下沉断了，system_instructions 放过了空值';
+  END IF;
+END;
+$$;
+
 COMMENT ON FUNCTION admin.validate_managed_config_value(TEXT, JSONB, TEXT) IS
   'Managed config validation entry point. Handles lobby_pinned_characters and miniapp_payment_prompt_dialog_config, then defers to the pre-092 snapshot.';
 
@@ -162,17 +220,7 @@ COMMIT;
 
 NOTIFY pgrst, 'reload schema';
 
--- 验证：
---   SELECT admin.is_managed_config_key('lobby_pinned_characters');                -> true
---   SELECT admin.is_managed_config_key('miniapp_payment_prompt_dialog_config');   -> true
---   -- 两张表的 CHECK 都应同时含这两个 key：
---   SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
---   WHERE conrelid IN ('admin.config_drafts'::regclass, 'admin.config_releases'::regclass)
---     AND conname LIKE '%config_key_check';
---   -- 两条校验分支都应真的拦下非法值（下面两条都应报错，不能静默通过）：
---   SELECT admin.validate_managed_config_value('lobby_pinned_characters', '{"bad":1}'::jsonb);
---   SELECT admin.validate_managed_config_value('miniapp_payment_prompt_dialog_config', '{"bad":1}'::jsonb);
---   -- 未受影响的老 key 仍应正常下沉：
---   SELECT admin.validate_managed_config_value('lobby_ranking_params', '{"bad":1}'::jsonb);
+-- 验证已内联为上面的自检断言：迁移跑通即代表四处声明齐、两条分支可达、下沉链未断，
+-- 不需要另外手工查库。
 --
 -- 回滚：把四处名单里的 'lobby_pinned_characters' 去掉、总入口去掉对应分支后重新执行。
