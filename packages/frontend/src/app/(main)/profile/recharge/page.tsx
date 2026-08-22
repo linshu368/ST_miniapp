@@ -299,7 +299,7 @@ function RechargePageContent() {
                 disabled={createOrder.isPending}
                 onClick={handleConfirmPayment}
               >
-                {createOrder.isPending ? '创建中...' : paymentPromptConfig.confirm_text}
+                {createOrder.isPending ? '创建中...' : '已关闭VPN，去截图保存二维码'}
               </Button>
             </DialogFooter>
             {paymentPromptConfig.footer_note && (
