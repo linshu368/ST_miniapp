@@ -9,7 +9,7 @@ VALUES (
     "enabled": true,
     "title": "支付前请先关闭 VPN",
     "description": "为避免支付页面无法打开、订单异常或到账延迟，请关闭 VPN 后再继续支付。",
-    "confirm_text": "已关闭VPN，继续支付",
+    "confirm_text": "已关闭VPN，去截图保存二维码",
     "accent_color": "#f59e0b"
   }'::JSONB,
   '打开外部支付页前展示的 VPN 提醒弹窗，可配置启用状态、文案与统一强调色。',

@@ -117,7 +117,7 @@ export const DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG: PaymentPromptDialogConfig = {
   enabled: true,
   title: '支付前请先关闭 VPN',
   description: '为避免支付页面无法打开、订单异常或到账延迟，请关闭 VPN 后再继续支付。',
-  confirm_text: '已关闭VPN，继续支付',
+  confirm_text: '已关闭VPN，去截图保存二维码',
   footer_note: '点击确认后，将继续跳转到外部浏览器完成微信支付。',
   accent_color: '#f59e0b',
 };
