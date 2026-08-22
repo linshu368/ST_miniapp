@@ -10,10 +10,9 @@ import type {
   LobbyLatestBadgeData,
 } from '@miniapp/shared';
 import { loadCharacterRankingScores } from '../features/lobby/ranking-stats.js';
-import {
-  buildRecommendedOrder,
-  resolveFeaturedIds,
-} from '../features/lobby/recommended-ranking.js';
+import { applyPinnedOnly, buildRecommendedOrder } from '../features/lobby/recommended-ranking.js';
+import { resolveLobbyFeaturedIds } from '../features/lobby/featured.js';
+import { resolveLobbyPinnedCharacters } from '../features/lobby/pinned-characters.js';
 import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -70,25 +69,28 @@ export default async function characterRoutes(app: FastifyInstance) {
     let featuredIds = new Set<string>();
 
     if (sort === 'recommended') {
-      const snapshot = await loadCharacterRankingScores();
+      const [snapshot, pinned] = await Promise.all([
+        loadCharacterRankingScores(),
+        resolveLobbyPinnedCharacters(request.log),
+      ]);
       // 排序分不可用（job 还没跑过第一轮，或查询失败）时保持运营顺序。
       // 不能把空结果当成「所有卡样本都是 0」——那会让整个大厅落进冷启动池被随机打乱。
-      if (snapshot) {
-        ordered = buildRecommendedOrder({
-          operatorOrdered: characters,
-          scores: snapshot.scores,
-          minSample: snapshot.minSample,
-          protectedPrefix: LOBBY_FEATURED_POSITION_COUNT,
-        });
-        featuredIds = resolveFeaturedIds(
-          characters,
-          snapshot.scores,
-          LOBBY_FEATURED_POSITION_COUNT,
-          snapshot.minSample
-        );
-      } else {
-        featuredIds = new Set(characters.slice(0, LOBBY_FEATURED_POSITION_COUNT).map((c) => c.id));
-      }
+      ordered = snapshot
+        ? buildRecommendedOrder({
+            operatorOrdered: characters,
+            scores: snapshot.scores,
+            minSample: snapshot.minSample,
+            protectedPrefix: LOBBY_FEATURED_POSITION_COUNT,
+            pinnedIds: pinned.characterIds,
+          })
+        : // 分数没有也要认固定位：运营点的主推位与打分无关，不该被 job 状态连带拖掉
+          applyPinnedOnly(characters, pinned.characterIds);
+
+      featuredIds = resolveLobbyFeaturedIds({
+        operatorOrdered: characters,
+        snapshot,
+        pinnedIds: pinned.characterIds,
+      });
     }
 
     const charactersSummary: CharacterSummary[] = ordered.map((c: (typeof characters)[number]) => ({
@@ -151,9 +153,9 @@ export default async function characterRoutes(app: FastifyInstance) {
   app.get('/api/characters/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    // 金框判定必须与大厅同源：大厅是「排序分主池前八」，这里若还按 sort_order 前八算，
+    // 金框判定必须与大厅同源：大厅是「运营固定位 + 排序分主池」，这里若还按 sort_order 前八算，
     // 同一张卡会出现在列表有金框、点进详情没有。
-    const [character, lobbyIds, snapshot] = await Promise.all([
+    const [character, lobbyIds, snapshot, pinned] = await Promise.all([
       prisma.character.findFirst({
         where: { id, enabled: true, archived_at: null },
       }),
@@ -163,20 +165,18 @@ export default async function characterRoutes(app: FastifyInstance) {
         select: { id: true },
       }),
       loadCharacterRankingScores(),
+      resolveLobbyPinnedCharacters(request.log),
     ]);
 
     if (!character) {
       return reply.status(404).send(fail('NOT_FOUND', 'Character not found'));
     }
 
-    const featuredIds = snapshot
-      ? resolveFeaturedIds(
-          lobbyIds,
-          snapshot.scores,
-          LOBBY_FEATURED_POSITION_COUNT,
-          snapshot.minSample
-        )
-      : new Set(lobbyIds.slice(0, LOBBY_FEATURED_POSITION_COUNT).map((item) => item.id));
+    const featuredIds = resolveLobbyFeaturedIds({
+      operatorOrdered: lobbyIds,
+      snapshot,
+      pinnedIds: pinned.characterIds,
+    });
 
     const characterDetail: CharacterDetail = {
       id: character.id,
