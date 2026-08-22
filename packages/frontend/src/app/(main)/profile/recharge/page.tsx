@@ -302,11 +302,6 @@ function RechargePageContent() {
                 {createOrder.isPending ? '创建中...' : '已关闭VPN，去截图保存二维码'}
               </Button>
             </DialogFooter>
-            {paymentPromptConfig.footer_note && (
-              <p className="mt-3 whitespace-pre-line text-center text-[11px] leading-4 text-muted-foreground/70">
-                {paymentPromptConfig.footer_note}
-              </p>
-            )}
           </div>
         </DialogContent>
       </Dialog>
