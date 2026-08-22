@@ -72,14 +72,15 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           BACKEND_URL="https://stminiapp-pr-${PR_NUMBER}.up.railway.app"
-          if gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq '.[].body' \
+          if gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --jq '.[].body' \
             | grep -Fq "$BACKEND_URL"; then
             echo "PR already has backend URL comment"
             exit 0
           fi
-          gh pr comment "$PR_NUMBER" --body "$(cat <<EOF
+          gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$(cat <<EOF
           Railway preview backend: ${BACKEND_URL}
 
           Vercel Preview will call this URL (env \`pr-${PR_NUMBER}\`, copied from \`development\`).

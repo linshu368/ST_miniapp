@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parsePaymentPlansConfig, PaymentPlansConfigError } from './rechargeRules.js';
+import { DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG } from '@miniapp/shared';
+import {
+  parsePaymentPlansConfig,
+  parsePaymentPromptDialogConfig,
+  PaymentPlansConfigError,
+} from './rechargeRules.js';
 
 const validPlan = {
   id: 'plan-entry',
@@ -22,5 +27,27 @@ describe('parsePaymentPlansConfig', () => {
     expect(() => parsePaymentPlansConfig(undefined)).toThrow(PaymentPlansConfigError);
     expect(() => parsePaymentPlansConfig([])).toThrow(PaymentPlansConfigError);
     expect(() => parsePaymentPlansConfig([{ id: 'incomplete' }])).toThrow(PaymentPlansConfigError);
+  });
+});
+
+describe('parsePaymentPromptDialogConfig', () => {
+  it('returns a valid runtime configuration', () => {
+    const config = {
+      enabled: true,
+      title: '关闭 VPN',
+      description: '关闭后再继续。',
+      confirm_text: '继续支付',
+      footer_note: '确认后打开浏览器。',
+      accent_color: '#f59e0b',
+    };
+
+    expect(parsePaymentPromptDialogConfig(config)).toEqual(config);
+  });
+
+  it('falls back to the safe default for missing or malformed values', () => {
+    expect(parsePaymentPromptDialogConfig(undefined)).toEqual(DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG);
+    expect(parsePaymentPromptDialogConfig({ enabled: true })).toEqual(
+      DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG
+    );
   });
 });

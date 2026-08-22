@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { LlmPricingConfigSchema } from './configSchemas';
+import {
+  configMetadata,
+  configSchemas,
+  LlmPricingConfigSchema,
+  managedConfigKeys,
+} from './configSchemas';
 
 const validConfig = {
   fixedDeduction: {
@@ -40,5 +45,15 @@ describe('LlmPricingConfigSchema', () => {
         },
       }).success
     ).toBe(false);
+  });
+});
+
+describe('payment prompt dialog config registration', () => {
+  it('exposes the dialog in the managed config directory with a valid default', () => {
+    const key = 'miniapp_payment_prompt_dialog_config';
+
+    expect(managedConfigKeys).toContain(key);
+    expect(configMetadata[key].label).toBe('支付提示弹窗');
+    expect(configSchemas[key].safeParse(configMetadata[key].defaultValue).success).toBe(true);
   });
 });
