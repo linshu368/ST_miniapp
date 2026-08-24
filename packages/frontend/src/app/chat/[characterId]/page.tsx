@@ -39,7 +39,7 @@ import {
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
 import { customVoicePath } from '@/lib/chat-entry';
-import { formatFreeQuotaExhaustedDialog } from '@/lib/free-quota-dialog';
+import { formatFreeQuotaExhaustedNotice } from '@/lib/free-quota-dialog';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 
