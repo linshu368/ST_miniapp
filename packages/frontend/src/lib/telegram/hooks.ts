@@ -5,7 +5,7 @@
 // 原因：未来迁移独立 web 时只需替换此文件，业务代码不动。
 
 import { useCallback, useEffect } from 'react';
-import { backButton, hapticFeedback, isTMA } from '@telegram-apps/sdk-react';
+import { backButton, hapticFeedback, isTMA, openLink } from '@telegram-apps/sdk-react';
 
 export {
   useSignal,
@@ -97,25 +97,24 @@ export function useHaptic(): {
   return { whisper, impact, selection, notification };
 }
 
-type TelegramWindow = Window & {
-  Telegram?: {
-    WebApp?: {
-      openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
-    };
-  };
-};
-
+/**
+ * 交给 Telegram 用浏览器打开，Mini App 自身不导航。
+ *
+ * 必须走 SDK 的 openLink（web_app_open_link 桥），不要判断 window.Telegram.WebApp：
+ * 那个全局来自官方 telegram-web-app.js，本项目从不引入，判断恒为假，最终一律退化成
+ * location.assign——在 Mini App 的 WebView 里原地跳转，既拿不到外部浏览器，还会被
+ * 随后的客户端路由抢跑丢弃。
+ */
 export function openExternalUrl(url: string): void {
   if (typeof window === 'undefined') return;
 
   try {
-    const webApp = (window as TelegramWindow).Telegram?.WebApp;
-    if (webApp?.openLink) {
-      webApp.openLink(url, { try_instant_view: false });
+    if (openLink.isAvailable()) {
+      openLink(url);
       return;
     }
   } catch {
-    // 旧版客户端或非 Telegram 环境下走浏览器兜底。
+    // 非 TMA 或旧版客户端，落回普通浏览器导航。
   }
 
   window.location.assign(url);
@@ -124,8 +123,9 @@ export function openExternalUrl(url: string): void {
 export function openPaymentUrl(url: string): void {
   if (typeof window === 'undefined') return;
 
-  // Telegram openLink 只保证支持 HTTP(S)。厂商 V2 的 scheme 结果必须直接交给
-  // WebView 导航，系统才会把 weixin:// 协议分发给微信客户端。
+  // openLink 只保证支持 HTTP(S)。当前通道固定 method=jump，网关只接受 http(s) 收银台
+  // 地址，所以这条分支是休眠的；厂商若改回 scheme，需要一并取回 /pay/launch.html 中转页，
+  // 直接 location.assign 在 WebView 里只会得到 ERR_UNKNOWN_URL_SCHEME。
   if (/^weixin:\/\//i.test(url)) {
     window.location.assign(url);
     return;

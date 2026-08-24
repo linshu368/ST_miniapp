@@ -1,14 +1,21 @@
 /**
- * 语音台词清洗。逐条对齐语音管道 0820 版的 pipeline.py（clean_output / strip_tags /
+ * 语音台词清洗。逐条对齐语音管道 0821 版的 pipeline.py（clean_output / strip_tags /
  * fallback_extract_quotes）。
  *
- * 这一层的存在理由是 LLM 不完全可控：system 明令只许用 19 个白名单标签，
- * 但它仍会时不时自创 (voice breaking) 或写中文舞台指示（声音颤抖）。
+ * 这一层的存在理由是 LLM 不完全可控：v4.0 的 system 已明令「不要任何括号标签」，
+ * 但它仍会时不时漏出 (breath) 或写中文舞台指示（声音颤抖）。
  * 这些括号内容一旦漏到 TTS，会被原样念出来，整段语音就毁了。
  * 所以清洗不是锦上添花，是兜底。
  */
 
-/** 模板允许的全部标签，多一个都不行 */
+/**
+ * 上一代 TTS 模型 speech-2.8-turbo 能听懂的标签全集。
+ *
+ * 现行模型 speech-02-hd 听不懂，会把它们当英文单词念出来，所以成品台词里
+ * 一个都不留（见 normalizeConvertedText 末尾的 stripTags）。白名单本身仍然保留：
+ * cleanTags 要靠它区分「模型漏出来的标签」和「不该出现的中文舞台指示」，
+ * 两者在诊断日志里的含义不同。将来换回认标签的 TTS 模型，去掉末尾那一步即可。
+ */
 export const VOICE_TAG_WHITELIST: ReadonlySet<string> = new Set([
   'breath',
   'pant',
@@ -55,21 +62,29 @@ export function cleanTags(text: string): string {
 }
 
 /**
- * 省略号、文字语气词、拖长音与句首多余标点的清理。
+ * 省略号、拖长音与句首多余标点的清理。
  *
- * TTS 遇到省略号会棒读，成段停顿全塌掉；「嗯」「唔」这类文字语气词会被逐字念出来，
- * 而不是发出对应的声音；波浪号会被念成「波浪号」；标签删掉后留在句首的逗号
- * 会让这句话以一个突兀的停顿开头。
+ * TTS 遇到省略号会棒读，成段停顿全塌掉；波浪号会被念成「波浪号」；
+ * 标签删掉后留在句首的逗号会让这句话以一个突兀的停顿开头。
  */
-export function fixEllipsis(text: string): string {
+export function fixPunctuation(text: string): string {
   return text
     .replace(/。{2,}/g, '！')
     .replace(/\.{3,}/g, '，')
     .replace(/…+/g, '，')
     .replace(/，{2,}/g, '，')
-    .replace(/[嗯唔][，。！？…\s]*/g, '')
     .replace(/[~～]+/g, '')
     .replace(/^[，、；：。]+/gm, '');
+}
+
+/**
+ * 删掉「嗯」「唔」这类文字语气词。
+ *
+ * 写稿模型用它们替代一次呼吸或迟疑，但 TTS 是逐字念的，听上去是在念「嗯」这个字，
+ * 而不是发出那个声音。只对写稿产物生效——用户自己敲的「嗯」是他想说的话，不能动。
+ */
+export function stripFillerWords(text: string): string {
+  return text.replace(/[嗯唔][，。！？…\s]*/g, '');
 }
 
 /**
@@ -82,7 +97,7 @@ export function stripQuotes(text: string): string {
   return text.replace(/["'\u201c\u201d\u2018\u2019\u300c\u300d\u300e\u300f`\u201e\u201f]/g, '');
 }
 
-/** 去掉所有语气标签。只用于诊断与判定，不参与送 TTS 的正文 */
+/** 去掉所有语气标签 */
 export function stripTags(text: string): string {
   return text
     .replace(/\([a-z-]+\)/g, '')
@@ -91,13 +106,29 @@ export function stripTags(text: string): string {
 }
 
 /**
- * LLM 原始输出 → 成品台词。
+ * LLM 原始输出 → 成品台词。这份文本既入库存档、展示给用户，也原样送进 TTS。
  *
- * 这份文本既入库存档，也原样送进 TTS：标签是成品的一部分，不再单独剥一版。
- * 参照产出里存在整条台词只有 `(groans)` 的样本，剥掉标签就什么都不剩了。
+ * 末尾的 stripTags 是硬门：送进 speech-02-hd 的文本必须是纯文本。
+ * 极端情况下整条台词只剩空字符串（模型只回了一个标签），这不算 bug——
+ * 空台词判定为无效，交给写稿的下一道闸重试，比让 TTS 念出 "groans" 好。
  */
 export function normalizeConvertedText(raw: string): string {
-  return stripQuotes(fixEllipsis(cleanTags(stripCodeFence(raw)))).trim();
+  return stripTags(
+    stripQuotes(stripFillerWords(fixPunctuation(cleanTags(stripCodeFence(raw)))))
+  ).trim();
+}
+
+/**
+ * 用户自定义台词 → 送 TTS 的文本。
+ *
+ * 不重写、不补语气词、不概括：用户敲什么就念什么，这是产品口径。
+ * 但纯标记必须挡掉——括号、省略号、波浪号、引号会被 speech-02-hd 照字面念出来，
+ * 用户看着自己输入的字，却听到几个莫名的英文词，那是 bug 不是尊重原文。
+ *
+ * 与写稿产物的区别只有一处：不删「嗯」「唔」。
+ */
+export function normalizeCustomText(raw: string): string {
+  return stripTags(stripQuotes(fixPunctuation(cleanTags(raw)))).trim();
 }
 
 /**

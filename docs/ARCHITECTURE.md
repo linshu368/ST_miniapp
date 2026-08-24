@@ -278,7 +278,7 @@ miniapp.chat_sessions  1 ─── N  miniapp.chat_history
 | `models.ts`               | `GET /api/platform/models` · `/openrouter/models`、`GET /api/v1/models/config`、`POST /api/v1/models/select`                                           | 部分公开             |
 | `settings.ts`             | `GET`/`PATCH /api/users/settings`、`POST /api/users/avatar`                                                                                            | `X-Init-Data`        |
 | `wallet.ts`               | `/api/wallet/balance` · `/spending` · `/free-quota/:characterId` · `/checkin`                                                                          | `X-Init-Data`        |
-| `payment.ts`              | `/api/payment/plans` · `/orders*` · `/return` · `/webhook/jlpay`                                                                                       | webhook 验签         |
+| `payment.ts`              | `/api/payment/plans` · `/orders*` · `/return` · `/webhook/zqpay`                                                                                       | RSA 回调验签         |
 | `wishes.ts`               | `/api/wishes/status` · `POST /api/wishes` · `/:id/complete`                                                                                            | `X-Init-Data`        |
 | `notifications.ts`        | `/api/notifications` · `/unread-count` · `/read`                                                                                                       | `X-Init-Data`        |
 | `support.ts`              | `/api/support/conversation` · `/messages` · `/unread` · `/read`                                                                                        | `X-Init-Data`        |
@@ -396,22 +396,22 @@ packages/backend/src/
 
 ## 11. 环境变量
 
-| 变量                                                                     | 用途                                                           |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| `DATABASE_URL` / `DIRECT_URL`                                            | Prisma 连接                                                    |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `*_PROJECT_REF`           | supabase-js 与环境隔离校验                                     |
-| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                                       | LLM 上游（默认 OpenRouter）与平台真实 key，仅 backend 持有     |
-| `UPSTASH_REDIS_REST_URL` / `_TOKEN`                                      | 运行时配置缓存                                                 |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET` | InitData 验签、webhook 与 Bot 内部端点鉴权                     |
-| `CS_PLATFORM_URL` / `CS_ADMIN_TOKEN` / `CS_TELEGRAM_WEBHOOK_SECRET`      | CS 平台 CORS / 工作台鉴权 / CS webhook                         |
-| `ADMIN_PLATFORM_URL`                                                     | 运营后台 CORS                                                  |
-| `FRONTEND_URL`                                                           | CORS 与支付回跳                                                |
-| `PAYMENT_*`                                                              | JLPay 网关（商户号、密钥、回调与回跳地址、支付宝 scheme 开关） |
-| `CHARACTER_STORAGE_BUCKET`                                               | 角色卡资源 bucket（默认 `character-assets`）                   |
-| `DEFAULT_USER_AVATAR_URL`                                                | 平台默认头像                                                   |
-| `CHAT_HISTORY_SYNC_ENABLED`                                              | OpenRouter 用量回捞定时任务开关                                |
-| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                   | 异常上报                                                       |
-| `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL`                            | 本地开发与回归脚本旁路                                         |
+| 变量                                                                     | 用途                                                       |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `DATABASE_URL` / `DIRECT_URL`                                            | Prisma 连接                                                |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `*_PROJECT_REF`           | supabase-js 与环境隔离校验                                 |
+| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                                       | LLM 上游（默认 OpenRouter）与平台真实 key，仅 backend 持有 |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN`                                      | 运行时配置缓存                                             |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET` | InitData 验签、webhook 与 Bot 内部端点鉴权                 |
+| `CS_PLATFORM_URL` / `CS_ADMIN_TOKEN` / `CS_TELEGRAM_WEBHOOK_SECRET`      | CS 平台 CORS / 工作台鉴权 / CS webhook                     |
+| `ADMIN_PLATFORM_URL`                                                     | 运营后台 CORS                                              |
+| `FRONTEND_URL`                                                           | CORS 与支付回跳                                            |
+| `PAYMENT_*`                                                              | 子千易 V2 RSA 商户配置、支付开关、异步回调与同步回跳地址   |
+| `CHARACTER_STORAGE_BUCKET`                                               | 角色卡资源 bucket（默认 `character-assets`）               |
+| `DEFAULT_USER_AVATAR_URL`                                                | 平台默认头像                                               |
+| `CHAT_HISTORY_SYNC_ENABLED`                                              | OpenRouter 用量回捞定时任务开关                            |
+| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                   | 异常上报                                                   |
+| `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL`                            | 本地开发与回归脚本旁路                                     |
 
 > ST 时代的 `ST_BASE_URL` / `ST_USER_PASSWORD_SECRET` / `ST_PROVISION_URL` / `LLM_PROXY_TOKEN_SECRET` / `ST_PUBLIC_PROXY_URL` 等变量随 ST 链路一并退场；`SIMULATION_*` 归 simulation 系统。
 

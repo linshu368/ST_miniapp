@@ -5,7 +5,7 @@ import {
   generateMiniappOrderId,
   ORDER_EXPIRE_MS,
 } from '../domain/rechargeRules.js';
-import { JLPaymentGateway } from '../../../infrastructure/payment/JLPaymentGateway.js';
+import { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
 import {
   MiniappPaymentOrderRepository,
   toPaymentOrder,
@@ -15,7 +15,7 @@ import type { CreatePaymentOrderData, PaymentOrder, PaymentType } from '@miniapp
 export class RechargeUseCase {
   constructor(
     private readonly orders = new MiniappPaymentOrderRepository(),
-    private readonly gateway = new JLPaymentGateway()
+    private readonly gateway = new ZqPaymentGateway()
   ) {}
 
   async createOrder(input: {

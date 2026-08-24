@@ -27,6 +27,7 @@ import {
 import { useFavoritesQuery } from '@/lib/api/favorites';
 import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
+import { FeaturedFrame } from '@/components/characters/featured-frame';
 import { chatEntryPath } from '@/lib/chat-entry';
 
 type ChatsTab = 'history' | 'favorites';
@@ -353,39 +354,42 @@ function FavoritesList() {
     <section className="mx-auto max-w-2xl space-y-2">
       {characters.map((character) => (
         // 整行可点进入聊天，心形浮在上层单独响应，避免 Link 里嵌 button。
-        <div
+        <FeaturedFrame
           key={character.id}
-          className="relative flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary"
+          featured={character.is_featured}
+          className="rounded-[26px]"
         >
-          <Link
-            href={chatEntryPath(character.id)}
-            prefetch={false}
-            aria-label={`进入 ${character.name} 的聊天`}
-            className="absolute inset-0 rounded-3xl"
-          />
-          <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
-            {character.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={lobbyImageUrl(character.avatar_url)}
-                alt=""
-                loading="lazy"
-                className="h-full w-full object-cover object-top"
-              />
-            ) : (
-              <span className="flex h-full w-full items-center justify-center text-rose">
-                <Heart className="h-5 w-5" />
-              </span>
-            )}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-semibold">{character.name}</span>
-            <span className="mt-1 block truncate text-sm text-muted-foreground">
-              {character.description?.trim() || '暂无角色简介'}
+          <div className="relative flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary">
+            <Link
+              href={chatEntryPath(character.id)}
+              prefetch={false}
+              aria-label={`进入 ${character.name} 的聊天`}
+              className="absolute inset-0 rounded-3xl"
+            />
+            <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
+              {character.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={lobbyImageUrl(character.avatar_url)}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full object-cover object-top"
+                />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center text-rose">
+                  <Heart className="h-5 w-5" />
+                </span>
+              )}
             </span>
-          </span>
-          <FavoriteButton characterId={character.id} variant="header" className="relative z-10" />
-        </div>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold">{character.name}</span>
+              <span className="mt-1 block truncate text-sm text-muted-foreground">
+                {character.description?.trim() || '暂无角色简介'}
+              </span>
+            </span>
+            <FavoriteButton characterId={character.id} variant="header" className="relative z-10" />
+          </div>
+        </FeaturedFrame>
       ))}
     </section>
   );

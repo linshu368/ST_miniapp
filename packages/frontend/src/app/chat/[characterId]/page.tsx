@@ -38,7 +38,8 @@ import {
   useSessionVoiceQuery,
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
-import { formatFreeQuotaExhaustedNotice } from '@/lib/free-quota-dialog';
+import { customVoicePath } from '@/lib/chat-entry';
+import { formatFreeQuotaExhaustedDialog } from '@/lib/free-quota-dialog';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 
@@ -261,19 +262,22 @@ export default function SelfHostedChatPage() {
 
   const handleGenerateVoice = useCallback(
     (messageId: string) => {
-      generateVoice.mutate(messageId, {
-        onError: (error) => {
-          // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
-          const code = (error as { code?: string }).code;
-          setStreamError(
-            code === 'CONFLICT'
-              ? '这条回复正在生成语音'
-              : code === 'VOICE_UNAVAILABLE'
-                ? '语音功能暂不可用'
-                : '语音生成没能开始，请重试'
-          );
-        },
-      });
+      generateVoice.mutate(
+        { messageId },
+        {
+          onError: (error) => {
+            // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
+            const code = (error as { code?: string }).code;
+            setStreamError(
+              code === 'CONFLICT'
+                ? '这条回复正在生成语音'
+                : code === 'VOICE_UNAVAILABLE'
+                  ? '语音功能暂不可用'
+                  : '语音生成没能开始，请重试'
+            );
+          },
+        }
+      );
     },
     [generateVoice]
   );
@@ -545,8 +549,16 @@ export default function SelfHostedChatPage() {
                   ? {
                       voice: voiceByMessage.get(message.id),
                       playbackRate,
-                      submitting: generateVoice.isPending && generateVoice.variables === message.id,
+                      submitting:
+                        generateVoice.isPending &&
+                        generateVoice.variables?.messageId === message.id,
                       onGenerate: () => handleGenerateVoice(message.id),
+                      customHref: activeSessionId
+                        ? customVoicePath(characterId, message.id, {
+                            sessionId: activeSessionId,
+                            returnTo,
+                          })
+                        : null,
                     }
                   : null
               }

@@ -1,5 +1,5 @@
 /**
- * 写稿阶段：把角色回复改写成台词。对齐语音管道 0820 版的 step_llm_convert。
+ * 写稿阶段：把角色回复改写成台词。对齐语音管道 0821 版的 step_llm_convert。
  *
  * 供应商是 DeepSeek 的 deepseek-v4-flash，OpenAI 兼容格式。有两个上游行为必须知道：
  *
@@ -38,7 +38,7 @@ const TEMPERATURE = 0.8;
 export type DraftGate = 'thinking_off' | 'thinking_low' | 'quote_fallback';
 
 export interface DraftResult {
-  /** 成品台词，带语气标签，可直接送 TTS */
+  /** 成品台词，纯文本无标签，可直接送 TTS */
   text: string;
   /** 实际是哪一闸产出的。正常应当压倒性是 thinking_off */
   gate: DraftGate;

@@ -545,6 +545,51 @@ textarea {
   font-size: 12px;
 }
 
+.user-item-note.is-flagged {
+  color: var(--warning-700);
+}
+
+/*
+ * 等待状态底色。用左侧色条而不是整块填充：整块底色会盖掉 is-active 的选中态，
+ * 客服就分不清自己现在点开的是哪一条了。
+ */
+.user-item.is-waiting-first_round {
+  border-left: 3px solid var(--warning-700);
+  border-top-left-radius: 2px;
+  border-bottom-left-radius: 2px;
+  background: var(--warning-50);
+}
+
+.user-item.is-waiting-second_round {
+  border-left: 3px solid var(--success-600);
+  border-top-left-radius: 2px;
+  border-bottom-left-radius: 2px;
+  background: var(--success-50);
+}
+
+.user-item.is-waiting-first_round.is-active,
+.user-item.is-waiting-second_round.is-active {
+  border-color: var(--brand-100);
+  background: var(--brand-50);
+}
+
+.user-item.is-waiting-first_round.is-active {
+  border-left-color: var(--warning-700);
+}
+
+.user-item.is-waiting-second_round.is-active {
+  border-left-color: var(--success-600);
+}
+
+.user-flag {
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  color: var(--warning-700);
+  background: var(--warning-50);
+  font-size: 11px;
+}
+
 /* ============ 右栏：会话 ============ */
 
 .conversation-column {
@@ -563,6 +608,36 @@ textarea {
 
 .conversation-panel .panel-header {
   background: var(--gray-0);
+}
+
+.panel-header-right {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn.is-flagged {
+  border-color: var(--warning-700);
+  color: var(--warning-700);
+  background: var(--warning-50);
+}
+
+.conversation-note {
+  border-bottom: 1px solid var(--gray-200);
+  padding: 8px 16px;
+  color: var(--warning-700);
+  background: var(--warning-50);
+  font-size: 12.5px;
+}
+
+.conversation-note-label {
+  margin-right: 6px;
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  color: var(--gray-0);
+  background: var(--warning-700);
+  font-size: 11px;
 }
 
 .conversation-tabs {
@@ -902,6 +977,36 @@ textarea:focus {
   font-size: 12px;
 }
 
+.field-hint.is-warning {
+  color: var(--warning-700);
+}
+
+.broadcast-sample {
+  max-height: 160px;
+  margin-bottom: 14px;
+  overflow-y: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  list-style: none;
+  background: var(--gray-50);
+}
+
+.broadcast-sample li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  color: var(--gray-800);
+  font-size: 12.5px;
+}
+
+.broadcast-sample-state {
+  color: var(--gray-500);
+  font-size: 11.5px;
+}
+
 .sql-editor {
   color: var(--gray-800);
   background: var(--gray-50);
@@ -1117,6 +1222,10 @@ textarea:focus {
   border-radius: var(--radius-lg);
   background: var(--gray-0);
   box-shadow: var(--shadow-lg);
+}
+
+.modal-sm {
+  width: min(460px, 100%);
 }
 
 .modal-header {
