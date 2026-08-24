@@ -161,9 +161,9 @@ export const configMetadata: Record<
     defaultValue: DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   },
   miniapp_free_quota_exhausted_dialog_config: {
-    label: '免费额度耗尽弹窗',
+    label: '免费额度耗尽轻提示',
     description:
-      '角色卡免费额度耗尽后自动展示的标题和说明文案；轮次数请与「角色卡免费对话轮次」保持一致。',
+      '角色卡免费额度耗尽后，在该轮回复下方展示的轻提示文案；使用 {characterName} 插入当前角色名。',
     defaultValue: DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   },
   llm_model_catalog: {
