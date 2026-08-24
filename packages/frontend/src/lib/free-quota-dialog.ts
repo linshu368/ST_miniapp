@@ -5,12 +5,15 @@ const MAX_CHARACTER_NAME_LENGTH = 7;
 const TRUNCATED_CHARACTER_NAME_LENGTH = MAX_CHARACTER_NAME_LENGTH - 1;
 const FALLBACK_CHARACTER_NAME = '当前角色';
 
-export function formatFreeQuotaExhaustedNotice(
+export function formatFreeQuotaExhaustedDialog(
   config: FreeQuotaExhaustedDialogConfig,
   characterName: string | null | undefined
-): string {
+): FreeQuotaExhaustedDialogConfig {
   const displayName = truncateCharacterName(characterName);
-  return config.text.replaceAll(CHARACTER_NAME_PLACEHOLDER, displayName);
+  return {
+    title: config.title.replaceAll(CHARACTER_NAME_PLACEHOLDER, displayName),
+    description: config.description.replaceAll(CHARACTER_NAME_PLACEHOLDER, displayName),
+  };
 }
 
 export function truncateCharacterName(characterName: string | null | undefined): string {

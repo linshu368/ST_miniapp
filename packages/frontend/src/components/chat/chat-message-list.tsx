@@ -22,8 +22,6 @@ interface ChatMessageListProps {
   awaitingFirstToken: boolean;
   /** 当前回复一段时间没有新内容 */
   replyStalled?: boolean;
-  /** 刚好用完免费额度的那一轮回复下方展示轻提示 */
-  quotaExhaustedNotice?: { messageId: string; text: string };
   /** 挂在指定消息下方的操作区 */
   renderFooter?: (message: ChatMessage) => ReactNode;
   streamingMessageId?: string | null;
@@ -39,7 +37,6 @@ export function ChatMessageList({
   onLoadEarlier,
   awaitingFirstToken,
   replyStalled,
-  quotaExhaustedNotice,
   renderFooter,
   streamingMessageId,
 }: ChatMessageListProps) {
@@ -109,9 +106,6 @@ export function ChatMessageList({
           userAvatarUrl={userAvatarUrl}
           streaming={message.id === streamingMessageId || message.status === 'streaming'}
           stalled={replyStalled && message.id === last?.id && message.status === 'streaming'}
-          quotaExhaustedNotice={
-            quotaExhaustedNotice?.messageId === message.id ? quotaExhaustedNotice.text : undefined
-          }
           footer={renderFooter?.(message)}
         />
       ))}

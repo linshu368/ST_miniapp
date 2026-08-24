@@ -1,6 +1,4 @@
-'use client';
-
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from './client';
 import type {
   GetModelCatalogData,
@@ -11,10 +9,6 @@ import type {
 import { MODEL_CATALOG_STALE_TIME_MS } from './model-cache-policy';
 
 const MODEL_CATALOG_CACHE_KEY = 'miniapp:model-catalog:last-good:v2';
-
-export const modelCatalogKeys = {
-  detail: ['modelCatalog'] as const,
-};
 
 export function useModelTiersQuery() {
   return useQuery({
@@ -29,7 +23,7 @@ export function useModelTiersQuery() {
 
 export function useModelCatalogQuery() {
   return useQuery({
-    queryKey: modelCatalogKeys.detail,
+    queryKey: ['modelCatalog'],
     queryFn: async () => {
       try {
         const data = await apiClient<GetModelCatalogData>('/api/v1/models/config');
@@ -46,70 +40,14 @@ export function useModelCatalogQuery() {
   });
 }
 
-/**
- * 选中态立刻写进目录缓存，目录内容本身不变。
- * 失败时只回滚「当前展示的仍是这次点击」的缓存，避免连点时把更新的选择盖掉。
- */
 export function useSelectModelMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation<
-    SelectModelData,
-    Error,
-    SelectModelRequest,
-    { previous?: GetModelCatalogData }
-  >({
+  return useMutation({
     mutationFn: async (request: SelectModelRequest) =>
       apiClient<SelectModelData>('/api/v1/models/select', {
         method: 'POST',
         body: JSON.stringify(request),
       }),
-    onMutate: async (request) => {
-      await queryClient.cancelQueries({ queryKey: modelCatalogKeys.detail });
-      const previous = queryClient.getQueryData<GetModelCatalogData>(modelCatalogKeys.detail);
-      const next = applySelectedModelToCatalog(previous, { model_id: request.model_id });
-      if (next) queryClient.setQueryData(modelCatalogKeys.detail, next);
-      return { previous };
-    },
-    onError: (_error, request, context) => {
-      const current = queryClient.getQueryData<GetModelCatalogData>(modelCatalogKeys.detail);
-      if (current?.selected_model_id !== request.model_id) return;
-      if (context?.previous) {
-        queryClient.setQueryData(modelCatalogKeys.detail, context.previous);
-      }
-    },
-    onSuccess: (data, request) => {
-      const current = queryClient.getQueryData<GetModelCatalogData>(modelCatalogKeys.detail);
-      if (current && current.selected_model_id !== request.model_id) return;
-      const next = applySelectedModelToCatalog(current, {
-        model_id: data.model_id,
-        openrouter_model_id: data.openrouter_model_id,
-      });
-      if (next) {
-        queryClient.setQueryData(modelCatalogKeys.detail, next);
-        writeLastGoodCatalog(next);
-      }
-    },
   });
-}
-
-export function applySelectedModelToCatalog(
-  current: GetModelCatalogData | undefined,
-  selected: { model_id: string; openrouter_model_id?: string }
-): GetModelCatalogData | undefined {
-  if (!current) return current;
-  const nextOpenrouterId = selected.openrouter_model_id ?? current.selected_openrouter_model_id;
-  if (
-    current.selected_model_id === selected.model_id &&
-    current.selected_openrouter_model_id === nextOpenrouterId
-  ) {
-    return current;
-  }
-  return {
-    ...current,
-    selected_model_id: selected.model_id,
-    selected_openrouter_model_id: nextOpenrouterId,
-  };
 }
 
 function readLastGoodCatalog(): GetModelCatalogData | undefined {

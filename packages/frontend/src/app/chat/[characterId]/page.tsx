@@ -20,6 +20,13 @@ import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { ChatSplash } from '@/components/chat/chat-splash';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { ConversationStreamError, streamConversationTurn } from '@/lib/api/conversation-stream';
 import {
@@ -39,10 +46,11 @@ import {
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
 import { customVoicePath } from '@/lib/chat-entry';
-import { formatFreeQuotaExhaustedNotice } from '@/lib/free-quota-dialog';
+import { formatFreeQuotaExhaustedDialog } from '@/lib/free-quota-dialog';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 
+const FREE_QUOTA_DIALOG_DURATION_MS = 5_000;
 const REPLY_STALLED_NOTICE_MS = 15_000;
 
 /** 流式期间叠在落库态之上的临时态。刻意不进 query cache，理由见 lib/api/conversations.ts */
@@ -72,9 +80,7 @@ export default function SelfHostedChatPage() {
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [hasMoreEarlier, setHasMoreEarlier] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [freeQuotaExhaustedMessageId, setFreeQuotaExhaustedMessageId] = useState<string | null>(
-    null
-  );
+  const [freeQuotaExhaustedOpen, setFreeQuotaExhaustedOpen] = useState(false);
   const [entryAttempt, setEntryAttempt] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -183,6 +189,15 @@ export default function SelfHostedChatPage() {
 
   // 离开页面时停掉读流。后端不会因此终止，但本地不该再往一个卸载了的组件里写
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!freeQuotaExhaustedOpen) return;
+    const timer = window.setTimeout(
+      () => setFreeQuotaExhaustedOpen(false),
+      FREE_QUOTA_DIALOG_DURATION_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [freeQuotaExhaustedOpen]);
 
   // ── 渲染用的合并列表 ──────────────────────────────────────────────────────
   const persisted = useMemo(
@@ -298,10 +313,7 @@ export default function SelfHostedChatPage() {
    * 那个值会被 runTurn 的 useCallback 冻住，判定条件永远不成立。
    */
   const refreshQuotaAndBalance = useCallback(
-    async (
-      before: GetCharacterFreeQuotaData | undefined,
-      assistantMessageId: string | null
-    ): Promise<void> => {
+    async (before: GetCharacterFreeQuotaData | undefined): Promise<void> => {
       void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
 
       for (const delayMs of [0, 300, 900]) {
@@ -309,7 +321,7 @@ export default function SelfHostedChatPage() {
         const { data } = await refetchFreeQuota();
         if (!data || !before) return;
         if (before.used_rounds < data.quota_limit && data.used_rounds >= data.quota_limit) {
-          if (assistantMessageId) setFreeQuotaExhaustedMessageId(assistantMessageId);
+          setFreeQuotaExhaustedOpen(true);
           return;
         }
         if (data.used_rounds > before.used_rounds) return;
@@ -407,15 +419,12 @@ export default function SelfHostedChatPage() {
         text: '',
       });
 
-      let assistantMessageId: string | null = null;
-
       try {
         await streamConversationTurn({
           sessionId: activeSessionId,
           content: input.content,
           signal: controller.signal,
           onStart: (event) => {
-            assistantMessageId = event.assistant_message_id;
             setStreaming((current) =>
               current
                 ? {
@@ -440,15 +449,13 @@ export default function SelfHostedChatPage() {
               current ? { ...current, text: current.text + text } : current
             );
           },
-          onDone: (event) => {
-            assistantMessageId = event.assistant_message_id;
-          },
+          onDone: () => undefined,
         });
 
         // 先等落库态回来再撤临时态，顺序反过来中间会闪一帧空白
         await queryClient.invalidateQueries({ queryKey: conversationKeys.detail(activeSessionId) });
         setStreaming(null);
-        void refreshQuotaAndBalance(quotaBefore, assistantMessageId);
+        void refreshQuotaAndBalance(quotaBefore);
       } catch (error) {
         await handleTurnFailure(error, input);
       } finally {
@@ -493,7 +500,7 @@ export default function SelfHostedChatPage() {
     });
   };
 
-  const exhaustedNotice = formatFreeQuotaExhaustedNotice(
+  const exhaustedDialog = formatFreeQuotaExhaustedDialog(
     freeQuotaQuery.data?.exhausted_dialog ?? DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
     character?.name
   );
@@ -531,11 +538,6 @@ export default function SelfHostedChatPage() {
         awaitingFirstToken={generating && streaming?.assistantMessageId === null}
         replyStalled={replyStalled}
         streamingMessageId={streaming?.assistantMessageId ?? null}
-        quotaExhaustedNotice={
-          freeQuotaExhaustedMessageId
-            ? { messageId: freeQuotaExhaustedMessageId, text: exhaustedNotice }
-            : undefined
-        }
         renderFooter={(message) => {
           const showVoice = canGenerateVoice(message);
           const showRegenerate = canRegenerate && message.id === lastMessage?.id;
@@ -637,6 +639,20 @@ export default function SelfHostedChatPage() {
           if (activeSessionId) void conversationQuery.refetch();
         }}
       />
+
+      <Dialog open={freeQuotaExhaustedOpen} onOpenChange={setFreeQuotaExhaustedOpen}>
+        <DialogContent
+          showCloseButton={false}
+          className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-primary/40 bg-primary text-primary-foreground"
+        >
+          <DialogHeader className="items-stretch text-left">
+            <DialogTitle className="leading-6">{exhaustedDialog.title}</DialogTitle>
+            <DialogDescription className="whitespace-pre-line pt-1 text-left leading-6 text-primary-foreground/80">
+              {exhaustedDialog.description}
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
