@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { PaymentPlansSchema, RechargePageConfigSchema } from '../api/payment.js';
+import {
+  PaymentPlansSchema,
+  PaymentPromptDialogConfigSchema,
+  RechargePageConfigSchema,
+} from '../api/payment.js';
 
 const plan = {
   id: 'plan-entry',
@@ -64,6 +68,43 @@ describe('RechargePageConfigSchema', () => {
         description: '说明',
         button_text: '支付',
         theme_color: 'pink',
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe('PaymentPromptDialogConfigSchema', () => {
+  const config = {
+    enabled: true,
+    title: '支付前请先关闭 VPN',
+    description: '请关闭 VPN 后再继续支付。',
+    confirm_text: '已关闭VPN，继续支付',
+    footer_note: '确认后打开外部浏览器。',
+    accent_color: '#f59e0b',
+  };
+
+  it('accepts the payment confirmation copy and accent color', () => {
+    expect(PaymentPromptDialogConfigSchema.parse(config)).toEqual(config);
+  });
+
+  it('fills the footer note for legacy dialog configurations', () => {
+    const { footer_note } = PaymentPromptDialogConfigSchema.parse({
+      enabled: true,
+      title: '支付前请先关闭 VPN',
+      description: '请关闭 VPN 后再继续支付。',
+      confirm_text: '已关闭VPN，继续支付',
+      accent_color: '#f59e0b',
+    });
+
+    expect(footer_note).toBe('点击确认后，将继续跳转到外部浏览器完成微信支付。');
+  });
+
+  it('rejects empty copy and invalid colors', () => {
+    expect(
+      PaymentPromptDialogConfigSchema.safeParse({
+        ...config,
+        description: '',
+        accent_color: 'yellow',
       }).success
     ).toBe(false);
   });

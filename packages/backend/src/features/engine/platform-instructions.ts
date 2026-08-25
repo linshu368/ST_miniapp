@@ -55,17 +55,9 @@ const FALLBACK_INTERACTION_MODE_BLOCKS = {
   optionsOff: '不要在回复末尾生成任何选项。用户自行决定下一步行动。',
 } as const;
 
-const FALLBACK_WORD_COUNT_TIERS: EngineWordCountTiers = {
-  tiers: DEFAULT_WORD_COUNT_TIERS_CONFIG.tiers.map((tier) => ({
-    id: tier.id,
-    uiLabel: tier.ui_label,
-    promptValue: tier.prompt_value,
-    enabled: tier.enabled,
-    sortOrder: tier.sort_order,
-  })),
-  defaultTierId: DEFAULT_WORD_COUNT_TIERS_CONFIG.default_tier_id,
-  layoutColumns: DEFAULT_WORD_COUNT_TIERS_CONFIG.layout.columns,
-};
+const FALLBACK_WORD_COUNT_TIERS: EngineWordCountTiers = configToEngineWordCountTiers(
+  DEFAULT_WORD_COUNT_TIERS_CONFIG
+);
 
 export interface PlatformInstructionsSnapshot {
   instructions: EnginePlatformInstructions;
@@ -140,10 +132,16 @@ export function parseWordCountTiers(value: unknown): EngineWordCountTiers | null
   };
 }
 
-export function engineWordCountTiersToConfig(
+/**
+ * EngineWordCountTiers → shared 契约 shape，校验失败时把 issues 交回调用方。
+ *
+ * 刻意不在这里兜底：兜底只发生在 buildSnapshot 一处，否则同一份配置会在
+ * prompt 出口和 MiniApp 出口分叉成两种结果（见 buildSnapshot 里的注释）。
+ */
+function validateEngineWordCountTiers(
   tiersConfig: EngineWordCountTiers
-): WordCountTiersConfig {
-  const raw = {
+): { ok: true; config: WordCountTiersConfig } | { ok: false; issues: string[] } {
+  const parsed = WordCountTiersConfigSchema.safeParse({
     tiers: tiersConfig.tiers.map((tier) => ({
       id: tier.id,
       ui_label: tier.uiLabel,
@@ -153,9 +151,39 @@ export function engineWordCountTiersToConfig(
     })),
     default_tier_id: tiersConfig.defaultTierId,
     layout: { columns: tiersConfig.layoutColumns },
+  });
+  if (parsed.success) return { ok: true, config: parsed.data };
+  return {
+    ok: false,
+    issues: parsed.error.issues.map(
+      (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`
+    ),
   };
-  const parsed = WordCountTiersConfigSchema.safeParse(raw);
-  return parsed.success ? parsed.data : DEFAULT_WORD_COUNT_TIERS_CONFIG;
+}
+
+function configToEngineWordCountTiers(config: WordCountTiersConfig): EngineWordCountTiers {
+  return {
+    tiers: config.tiers.map((tier) => ({
+      id: tier.id,
+      uiLabel: tier.ui_label,
+      promptValue: tier.prompt_value,
+      enabled: tier.enabled,
+      sortOrder: tier.sort_order,
+    })),
+    defaultTierId: config.default_tier_id,
+    layoutColumns: config.layout.columns,
+  };
+}
+
+/**
+ * buildSnapshot 已保证快照里的 wordCountTiers 一定过得了 shared 契约，
+ * 所以兜底分支正常走不到；保留它只是为了让这个函数对任意入参都是全函数。
+ */
+export function engineWordCountTiersToConfig(
+  tiersConfig: EngineWordCountTiers
+): WordCountTiersConfig {
+  const validated = validateEngineWordCountTiers(tiersConfig);
+  return validated.ok ? validated.config : DEFAULT_WORD_COUNT_TIERS_CONFIG;
 }
 
 export function toPublicWordCountTiersFromEngine(
@@ -172,7 +200,10 @@ function versionSignature(entries: Map<string, RuntimeConfigEntry>): string {
   return CONFIG_KEYS.map((key) => `${key}:${entries.get(key)?.version ?? -1}`).join('|');
 }
 
-function buildSnapshot(entries: Map<string, RuntimeConfigEntry>): PlatformInstructionsSnapshot {
+/** 纯函数，导出仅供单测直接喂 entries；对外的入口是 fetchPlatformInstructions */
+export function buildSnapshot(
+  entries: Map<string, RuntimeConfigEntry>
+): PlatformInstructionsSnapshot {
   let degraded = false;
 
   const template = parseTemplate(entries.get(PLATFORM_INSTRUCTIONS_TEMPLATE_KEY));
@@ -193,12 +224,31 @@ function buildSnapshot(entries: Map<string, RuntimeConfigEntry>): PlatformInstru
     degraded = true;
   }
 
-  const wordCountTiers = parseWordCountTiers(entries.get(WORD_COUNT_TIERS_KEY)?.value);
+  const wordCountEntry = entries.get(WORD_COUNT_TIERS_KEY);
+  let wordCountTiers = parseWordCountTiers(wordCountEntry?.value);
   if (!wordCountTiers) {
     console.error(
       `[engine] runtime_config ${WORD_COUNT_TIERS_KEY} 缺失或格式非法，字数档位已降级到内置兜底`
     );
     degraded = true;
+  } else {
+    // parseWordCountTiers 比 shared 契约宽松（容忍不合 id 正则的档位 id、超长 ui_label、
+    // 重复 id、default_tier_id 指向停用档位等），差集必须在这里判降级。
+    // 否则 prompt 侧会用运营配置渲染 {{WORD_COUNT}}，而 MiniApp 侧的 toPublicWordCountTiersFromEngine
+    // 拿到的是内置默认档位表——用户看到的按钮和实际注入的字数对不上，且全程无日志无 degraded。
+    const validated = validateEngineWordCountTiers(wordCountTiers);
+    if (validated.ok) {
+      // 回灌契约校验后的值：两个出口从此拿到同一份（已 trim）数据
+      wordCountTiers = configToEngineWordCountTiers(validated.config);
+    } else {
+      console.error(
+        `[engine] runtime_config ${WORD_COUNT_TIERS_KEY}（version ${
+          wordCountEntry?.version ?? -1
+        }）不满足 shared 契约，字数档位已整表降级到内置兜底：${validated.issues.join('；')}`
+      );
+      wordCountTiers = null;
+      degraded = true;
+    }
   }
 
   return {

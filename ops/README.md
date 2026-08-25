@@ -112,9 +112,10 @@ that feature is exercised.
 | `DEV_AUTH_BYPASS`                                  | Dev only        | unset                                        | `=1` bypasses auth + relaxes CORS (non-prod).                                         |
 | `MOCK_AUTH`                                        | Dev only        | unset                                        | `=1` mocks auth (non-prod only).                                                      |
 | `PAYMENT_ENABLED`                                  | No              | `false`                                      | Enables the payment gateway (`=true`).                                                |
-| `PAYMENT_MERCHANT_ID`                              | If payment      | `''`                                         | Payment merchant id.                                                                  |
-| `PAYMENT_MERCHANT_KEY`                             | If payment      | `''`                                         | Payment merchant key/secret.                                                          |
-| `PAYMENT_BASE_URL`                                 | If payment      | `http://jlusdt.com`                          | Payment gateway base URL.                                                             |
+| `PAYMENT_BASE_URL`                                 | If payment      | `https://zq.716faka.com`                     | ZqPay V2 API base URL.                                                                |
+| `PAYMENT_MERCHANT_ID`                              | If payment      | `''`                                         | ZqPay merchant ID (`pid`).                                                            |
+| `PAYMENT_MERCHANT_PRIVATE_KEY`                     | If payment      | `''`                                         | Merchant RSA private key used to sign requests.                                       |
+| `PAYMENT_PLATFORM_PUBLIC_KEY`                      | If payment      | `''`                                         | Platform RSA public key used to verify responses and callbacks.                       |
 | `PAYMENT_NOTIFY_URL`                               | If payment      | `''`                                         | Async payment callback URL.                                                           |
 | `PAYMENT_RETURN_URL`                               | If payment      | `''`                                         | Post-payment redirect URL.                                                            |
 | `OPENAI_API_BASE_URL`                              | LLM feature     | `https://api.openai.com/v1/chat/completions` | Default AI channel endpoint.                                                          |

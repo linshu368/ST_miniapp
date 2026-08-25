@@ -1,15 +1,36 @@
 import '../platform/config.js';
-import { getSupabaseClient } from '../lib/supabase.js';
+import { config } from '../platform/config.js';
+import { createLogger } from '../lib/logger.js';
+import { closeSupabaseClient } from '../lib/supabase.js';
+import { MiniappPaymentOrderRepository } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
+import { ZqPaymentGateway } from '../infrastructure/payment/ZqPaymentGateway.js';
+import { runExpirePaymentOrders } from '../features/payment/usecases/ExpirePaymentOrders.js';
 
-const db = getSupabaseClient().schema('miniapp');
+const log = createLogger('payment');
+let exitCode = 0;
 
-const { data, error } = await db.rpc('expire_payment_orders', {
-  p_user_id: null,
-});
+try {
+  const result = await runExpirePaymentOrders({
+    orders: new MiniappPaymentOrderRepository(),
+    gateway: new ZqPaymentGateway(),
+    log,
+    paymentEnabled: config.payment.enabled,
+  });
 
-if (error) {
-  console.error(`Expire payment orders failed: ${error.message}`);
-  process.exit(1);
+  console.log(`Reconciled before expiry: checked=${result.checked} settled=${result.settled}`);
+  console.log(`Expired payment orders: ${result.expired}`);
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  log.sys.error({ event: 'payment.cron.failed', err: error }, '支付订单过期任务失败');
+  console.error(`Expire payment orders failed: ${message}`);
+  exitCode = 1;
+} finally {
+  try {
+    await closeSupabaseClient();
+  } catch (error) {
+    log.sys.error({ event: 'payment.cron.cleanup_failed', err: error }, '支付定时任务资源清理失败');
+    exitCode = 1;
+  }
+
+  process.exit(exitCode);
 }
-
-console.log(`Expired payment orders: ${typeof data === 'number' ? data : 0}`);

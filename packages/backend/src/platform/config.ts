@@ -50,25 +50,29 @@ export const config = {
   /** 大厅推荐排序分的每日刷新。关掉后读路径退回运营顺序，不影响其它功能 */
   lobbyRankingRefreshEnabled: process.env.LOBBY_RANKING_REFRESH_ENABLED !== 'false',
 
-  // ── 角色语音（MiniMax）────────────────────────────────────────────────────
-  // 两段式：先用文本模型把回复改写成第一人称语音文本，再合成 mp3。
-  // 两次调用共用同一把 key，与语音管道 v1 的 config.json 一致。
+  // ── 角色语音 ───────────────────────────────────────────────────────────────
+  // 两段式：先用 DeepSeek 把回复写成台词，再用 MiniMax 合成 mp3。
+  // 两段是不同供应商、不同 key，缺任何一把语音功能都不可用。
   voice: {
+    /** MiniMax，只用于 TTS 合成 */
     apiKey: process.env.MINIMAX_API_KEY || '',
-    llmUrl: process.env.MINIMAX_LLM_URL || 'https://api.minimaxi.com/v1/text/chatcompletion_v2',
-    llmModel: process.env.MINIMAX_LLM_MODEL || 'MiniMax-Text-01',
     ttsUrl: process.env.MINIMAX_TTS_URL || 'https://api.minimaxi.com/v1/t2a_v2',
     /** 单次上游调用的超时。HD 模型合成长文本可以到几十秒 */
     timeoutMs: parseInt(process.env.MINIMAX_TIMEOUT_MS || '120000', 10),
+
+    /** DeepSeek，只用于写稿 */
+    draft: {
+      apiKey: process.env.DEEPSEEK_API_KEY || '',
+      url: process.env.DEEPSEEK_URL || 'https://api.deepseek.com/chat/completions',
+      model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+    },
   },
 
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {
     enabled: process.env.PAYMENT_ENABLED === 'true',
+    baseUrl: process.env.PAYMENT_BASE_URL || 'https://zq.716faka.com',
     merchantId: process.env.PAYMENT_MERCHANT_ID || '',
-    merchantKey: process.env.PAYMENT_MERCHANT_KEY || '',
-    baseUrl: process.env.PAYMENT_BASE_URL || 'http://jlusdt.com',
-    v2BaseUrl: process.env.PAYMENT_V2_BASE_URL || '',
     merchantPrivateKey: process.env.PAYMENT_MERCHANT_PRIVATE_KEY || '',
     platformPublicKey: process.env.PAYMENT_PLATFORM_PUBLIC_KEY || '',
     notifyUrl: process.env.PAYMENT_NOTIFY_URL || '',

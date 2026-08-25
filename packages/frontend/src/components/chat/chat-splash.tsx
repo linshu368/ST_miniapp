@@ -87,7 +87,16 @@ export function ChatSplash({
   const character = data?.character;
   const avatarUrl = character?.avatar_url || '';
 
-  const [phase, setPhase] = useState<Phase>('showing');
+  /**
+   * 挂载那一刻就已经 ready，说明没有任何要等的东西——典型场景是从「自定义本次语音」
+   * 这类二级页返回，会话和消息都还在 React Query 缓存里。这时候再放一遍开屏，
+   * 用户看到的就是凭空弹出来的「正在进入」，所以直接跳到 gone。
+   *
+   * 用 ref 锁住挂载时的值：ready 随后转 true 是正常的首次进入，那一次必须走完整入场。
+   */
+  const skipIntro = useRef(ready).current;
+
+  const [phase, setPhase] = useState<Phase>(skipIntro ? 'gone' : 'showing');
   const [progressVisible, setProgressVisible] = useState(false);
   const [showSlowHint, setShowSlowHint] = useState(false);
   const [showStallHint, setShowStallHint] = useState(false);
@@ -107,6 +116,7 @@ export function ChatSplash({
   }, [avatarUrl]);
 
   useEffect(() => {
+    if (skipIntro) return;
     const startedAt = performance.now();
     const revealTimer = setTimeout(() => setProgressVisible(true), PROGRESS_REVEAL_MS);
     const slowHintTimer = setTimeout(() => setShowSlowHint(true), SLOW_HINT_MS);
@@ -123,7 +133,7 @@ export function ChatSplash({
       clearTimeout(slowHintTimer);
       clearTimeout(stallHintTimer);
     };
-  }, []);
+  }, [skipIntro]);
 
   useEffect(() => {
     if (phase !== 'showing' || !ready) return;

@@ -1,9 +1,8 @@
 import { getSupabaseClient } from '../../lib/supabase.js';
 import {
-  DEFAULT_WORD_COUNT_TIERS_CONFIG,
   normalizeTelegramAvatarUrl,
   type PatchUserSettingsRequest,
-  type PreferredWordCount,
+  type StoredPreferredWordCount,
   type UserGenerationConfig,
   type UserSettings,
   type VoiceConfig,
@@ -23,9 +22,6 @@ import {
   toPublicWordCountTiersFromEngine,
 } from '../../features/engine/platform-instructions.js';
 
-/** 与 migration / DEFAULT_WORD_COUNT_TIERS_CONFIG 默认档一致 */
-const DEFAULT_WORD_COUNT: PreferredWordCount = DEFAULT_WORD_COUNT_TIERS_CONFIG.default_tier_id;
-
 export interface MiniappUserSettingsRow {
   user_id: string;
   tg_username: string | null;
@@ -36,7 +32,8 @@ export interface MiniappUserSettingsRow {
   tg_avatar_url: string | null;
   custom_avatar_url: string | null;
   total_round: number;
-  pref_word_count: PreferredWordCount;
+  /** NULL = 从未选择，跟随 runtime_config 的 default_tier_id（086） */
+  pref_word_count: StoredPreferredWordCount;
   pref_show_options: boolean;
   pref_custom_instructions: string | null;
   selected_model_id: string | null;
@@ -56,6 +53,7 @@ export class MiniappUserSettingsRepository {
       return await this.refreshTelegramProfile(userId, tgUser);
     }
 
+    // pref_word_count 刻意不写：留 NULL 才表示「未选过」，新用户才会跟随运营台的默认档（086）
     const { data, error } = await this.db
       .from('miniapp_user_settings')
       .insert({
@@ -158,8 +156,9 @@ export class MiniappUserSettingsRepository {
    * 引擎侧的用法见 M2（{{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}）。
    * 配置属于用户层、对该用户所有会话生效（总方案决策 10），因此不接受 session 维度入参。
    *
-   * 用户还没有设置行时返回与建表默认值一致的形状，避免调用方各写一套兜底。
-   * 若存档 id 已从启用档位中下线，对外回落到当前 default_tier_id，避免 UI 出现无选中态。
+   * 用户还没有设置行、或存档档位为 NULL（从未选过，见 086）时，回复长度回落到运营台当前的
+   * default_tier_id——这是运营台改默认档能被用户看到的唯一通路，不要在这里改成硬编码档位。
+   * 若存档 id 已从启用档位中下线，同样回落，避免 UI 出现无选中态。
    */
   async getGenerationConfig(userId: string): Promise<UserGenerationConfig> {
     const { data, error } = await this.db
@@ -178,10 +177,11 @@ export class MiniappUserSettingsRepository {
     const publicTiers = toPublicWordCountTiersFromEngine(
       (await fetchPlatformInstructions()).instructions.wordCountTiers
     );
-    const stored = row?.pref_word_count ?? publicTiers.default_tier_id ?? DEFAULT_WORD_COUNT;
-    const pref_word_count = publicTiers.tiers.some((tier) => tier.id === stored)
-      ? stored
-      : publicTiers.default_tier_id;
+    const stored = row?.pref_word_count ?? null;
+    const pref_word_count =
+      stored !== null && publicTiers.tiers.some((tier) => tier.id === stored)
+        ? stored
+        : publicTiers.default_tier_id;
 
     return {
       selected_model_id: row?.selected_model_id ?? null,

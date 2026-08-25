@@ -1,11 +1,13 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
 import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   ModelCatalogSchema,
+  PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
   type ModelCatalog,
   type OpenRouterModelDirectory,
@@ -17,7 +19,11 @@ import {
   EditableModelCatalogSchema,
   type ManagedConfigKey,
 } from '../lib/configSchemas';
+import type { CharacterCard } from '../lib/adminApi';
+import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
+import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
+import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
 import { WordCountTiersEditor } from './WordCountTiersEditor';
@@ -57,6 +63,9 @@ export function ConfigValueEditor(props: {
   syncError: string | null;
   onRefreshOpenRouter: () => void;
   paymentPlans: PaymentPlan[];
+  characters: CharacterCard[];
+  charactersLoading: boolean;
+  charactersError: string | null;
 }) {
   if (props.configKey === 'system_instructions') {
     return (
@@ -72,6 +81,29 @@ export function ConfigValueEditor(props: {
     return (
       <WordCountTiersEditor
         value={asWordCountTiersConfig(props.value)}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'lobby_pinned_characters') {
+    return (
+      <LobbyPinnedCharactersEditor
+        value={props.value}
+        characters={props.characters}
+        charactersLoading={props.charactersLoading}
+        charactersError={props.charactersError}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'lobby_ranking_params') {
+    return (
+      <LobbyRankingParamsEditor
+        value={props.value}
         disabled={props.disabled}
         onChange={props.onChange}
       />
@@ -109,31 +141,18 @@ export function ConfigValueEditor(props: {
     const parsed = FreeQuotaExhaustedDialogConfigSchema.safeParse(props.value);
     const value = parsed.success ? parsed.data : DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG;
     return (
-      <Space direction="vertical" size="middle" className="editor-stack">
-        <div>
-          <Typography.Text>弹窗标题</Typography.Text>
-          <Input
-            value={value.title}
-            maxLength={40}
-            showCount
-            disabled={props.disabled}
-            onChange={(event) => props.onChange({ ...value, title: event.target.value })}
-          />
-          <Typography.Text type="secondary">
-            使用 {'{characterName}'} 插入当前角色名；展示时最多保留 7 个字。
-          </Typography.Text>
-        </div>
-        <div>
-          <Typography.Text>说明文案</Typography.Text>
-          <Input.TextArea
-            value={value.description}
-            rows={3}
-            maxLength={200}
-            showCount
-            disabled={props.disabled}
-            onChange={(event) => props.onChange({ ...value, description: event.target.value })}
-          />
-        </div>
+      <Space direction="vertical" size="small" className="editor-stack">
+        <Input.TextArea
+          value={value.text}
+          rows={3}
+          maxLength={200}
+          showCount
+          disabled={props.disabled}
+          onChange={(event) => props.onChange({ text: event.target.value })}
+        />
+        <Typography.Text type="secondary">
+          使用 {'{characterName}'} 插入当前角色名；展示时最多保留 7 个字。
+        </Typography.Text>
       </Space>
     );
   }
@@ -293,6 +312,17 @@ export function ConfigValueEditor(props: {
       <RechargePageConfigEditor
         value={parsed.success ? parsed.data : DEFAULT_RECHARGE_PAGE_CONFIG}
         plans={props.paymentPlans}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'miniapp_payment_prompt_dialog_config') {
+    const parsed = PaymentPromptDialogConfigSchema.safeParse(props.value);
+    return (
+      <PaymentPromptDialogConfigEditor
+        value={parsed.success ? parsed.data : DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG}
         disabled={props.disabled}
         onChange={props.onChange}
       />

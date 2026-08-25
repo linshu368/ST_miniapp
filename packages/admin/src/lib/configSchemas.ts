@@ -1,13 +1,19 @@
 import {
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_LOBBY_PINNED_CHARACTERS,
+  DEFAULT_LOBBY_RANKING_PARAMS,
+  DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
+  LobbyPinnedCharactersSchema,
+  LobbyRankingParamsSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
   PaymentPlansSchema,
+  PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
   WordCountTiersConfigSchema,
 } from '@miniapp/shared';
@@ -19,12 +25,15 @@ export const managedConfigKeys = [
   'miniapp_character_free_chat_quota_limit',
   'miniapp_payment_plans',
   'miniapp_recharge_page_config',
+  'miniapp_payment_prompt_dialog_config',
   'miniapp_free_quota_exhausted_dialog_config',
   'llm_model_catalog',
   'llm_pricing_config',
   'system_fallback_character_id',
   'system_instructions',
   'pref_word_count_tiers',
+  'lobby_ranking_params',
+  'lobby_pinned_characters',
 ] as const;
 
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
@@ -106,12 +115,15 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_character_free_chat_quota_limit: positiveInteger,
   miniapp_payment_plans: PaymentPlansSchema,
   miniapp_recharge_page_config: RechargePageConfigSchema,
+  miniapp_payment_prompt_dialog_config: PaymentPromptDialogConfigSchema,
   miniapp_free_quota_exhausted_dialog_config: FreeQuotaExhaustedDialogConfigSchema,
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
   system_instructions: SystemInstructionsSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
+  lobby_ranking_params: LobbyRankingParamsSchema,
+  lobby_pinned_characters: LobbyPinnedCharactersSchema,
 };
 
 export const configMetadata: Record<
@@ -143,10 +155,15 @@ export const configMetadata: Record<
     description: '星尘商店的标题、说明、支付按钮文字和主题色。',
     defaultValue: DEFAULT_RECHARGE_PAGE_CONFIG,
   },
+  miniapp_payment_prompt_dialog_config: {
+    label: '支付提示弹窗',
+    description: '打开外部支付页前展示的 VPN 提醒文案、启用状态和统一强调色。',
+    defaultValue: DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
+  },
   miniapp_free_quota_exhausted_dialog_config: {
-    label: '免费额度耗尽弹窗',
+    label: '免费额度耗尽轻提示',
     description:
-      '角色卡免费额度耗尽后自动展示的标题和说明文案；轮次数请与「角色卡免费对话轮次」保持一致。',
+      '角色卡免费额度耗尽后，在该轮回复下方展示的轻提示文案；使用 {characterName} 插入当前角色名。',
     defaultValue: DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   },
   llm_model_catalog: {
@@ -204,6 +221,18 @@ export const configMetadata: Record<
     description:
       '生成偏好「回复长度」的档位表：可增删档位、改按钮文案与列布局；prompt_value 注入 {{WORD_COUNT}}。',
     defaultValue: DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  },
+  lobby_ranking_params: {
+    label: '推荐页排序参数',
+    description:
+      '首页「推荐」v3 打分口径：统计窗口、轮次上限、会话切分与回访窗口、D30/R48 权重、样本门槛与归一化分位。改动在下一次排序刷新（每 24 小时）后生效。',
+    defaultValue: DEFAULT_LOBBY_RANKING_PARAMS,
+  },
+  lobby_pinned_characters: {
+    label: '推荐页固定前八',
+    description:
+      '首页「推荐」页最前面的固定位，最多 8 张、按此处顺序展示，同时拿到金框。第九张起仍按排序分。留空表示不固定，完全交给排序分。发布后约 1 分钟内生效。',
+    defaultValue: DEFAULT_LOBBY_PINNED_CHARACTERS,
   },
 };
 

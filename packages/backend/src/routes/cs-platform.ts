@@ -27,6 +27,14 @@ import {
   type SendSupportMessageData,
   type SupportMessage,
   type CsSupportConversationSummary,
+  type CsBroadcastAudience,
+  type CsBroadcastData,
+  type CsBroadcastPreviewData,
+  type CsBroadcastPreviewRequest,
+  type CsBroadcastRequest,
+  type SetCsSpecialNoteData,
+  type SetCsSpecialNoteRequest,
+  MAX_CS_SPECIAL_NOTE_CHARS,
 } from '@miniapp/shared';
 import { config } from '../platform/config.js';
 import { CsPlatformRepository } from '../infrastructure/repositories/CsPlatformRepository.js';
@@ -35,6 +43,19 @@ import { prisma } from '../lib/db.js';
 const ADMIN_HEADER = 'x-cs-admin-token';
 const OPERATOR_HEADER = 'x-cs-operator-id';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** 群发预览里回给前端的样本条数，只是让客服确认「发对人了」，不是全量名单 */
+const BROADCAST_SAMPLE_SIZE = 5;
+/** 顺序发送的间隔。Telegram 群发限速约 30 条/秒，留一倍余量 */
+const BROADCAST_INTERVAL_MS = 60;
+
+const BROADCAST_AUDIENCES: readonly CsBroadcastAudience[] = [
+  'not_started',
+  'first_round',
+  'second_round',
+  'all_waiting',
+  'all',
+];
 
 interface CsRequest extends FastifyRequest {
   csOperatorId?: string;
@@ -321,6 +342,155 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
     }
   );
 
+  app.put(
+    '/api/cs/personas/:id/users/:userId/special-note',
+    { preHandler: [requireCsAdmin] },
+    async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const body = request.body as Partial<SetCsSpecialNoteRequest>;
+      const raw = typeof body.note === 'string' ? body.note.trim() : '';
+      if (raw.length > MAX_CS_SPECIAL_NOTE_CHARS) {
+        return reply
+          .status(400)
+          .send(fail('NOTE_TOO_LONG', `备注最多 ${MAX_CS_SPECIAL_NOTE_CHARS} 字`));
+      }
+
+      const saved = await repository.setSpecialNote(id, userId, {
+        note: raw.length > 0 ? raw : null,
+        operatorId: getOperator(request),
+      });
+      return reply.send(
+        ok<SetCsSpecialNoteData>({
+          user_id: userId,
+          persona_id: id,
+          special_note: saved.note,
+          special_note_updated_at: saved.updatedAt,
+        })
+      );
+    }
+  );
+
+  /** 正在群发的画像簇 id。backend 是单实例部署，进程内集合足够挡住重复提交。 */
+  const broadcastInFlight = new Set<string>();
+
+  app.post(
+    '/api/cs/personas/:id/broadcast/preview',
+    { preHandler: [requireCsAdmin] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = request.body as Partial<CsBroadcastPreviewRequest>;
+      const audience = parseAudience(body.audience);
+      if (!audience) return reply.status(400).send(fail('BAD_AUDIENCE', '群发范围不合法'));
+
+      const persona = await repository.getPersona(id);
+      if (!persona) return reply.status(404).send(fail('PERSONA_NOT_FOUND', '画像簇不存在'));
+
+      const targets = await repository.listBroadcastTargets(id, audience);
+      return reply.send(
+        ok<CsBroadcastPreviewData>({
+          audience,
+          total: targets.length,
+          sample: targets.slice(0, BROADCAST_SAMPLE_SIZE).map((target) => ({
+            user_id: target.userId,
+            display_name: target.displayName,
+            waiting_state: target.waitingState,
+          })),
+        })
+      );
+    }
+  );
+
+  app.post(
+    '/api/cs/personas/:id/broadcast',
+    { preHandler: [requireCsAdmin] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = request.body as Partial<CsBroadcastRequest>;
+      const audience = parseAudience(body.audience);
+      if (!audience) return reply.status(400).send(fail('BAD_AUDIENCE', '群发范围不合法'));
+      const content = body.content?.trim() ?? '';
+      if (!content) return reply.status(400).send(fail('EMPTY_MESSAGE', '消息内容不能为空'));
+
+      const persona = await repository.getPersona(id);
+      if (!persona) return reply.status(404).send(fail('PERSONA_NOT_FOUND', '画像簇不存在'));
+
+      const targets = await repository.listBroadcastTargets(id, audience);
+      if (targets.length === 0) {
+        return reply.status(400).send(fail('NO_BROADCAST_TARGET', '该范围下没有可发送的用户'));
+      }
+
+      // 同一个簇一次只允许跑一轮。两个客服同时点、或客服在 202 之前刷新页面重发，
+      // 都会让同一批真人收到两条一样的消息，而群发发出去收不回来。
+      if (broadcastInFlight.has(id)) {
+        return reply
+          .status(409)
+          .send(fail('BROADCAST_IN_FLIGHT', '该画像簇正在群发中，请等本轮发完再提交'));
+      }
+      broadcastInFlight.add(id);
+
+      const operatorId = getOperator(request);
+      await repository.log(operatorId, 'persona.broadcast', id, null, {
+        audience,
+        total: targets.length,
+        contentPreview: content.slice(0, 120),
+      });
+
+      // 提交即返回：几百人要按 Telegram 限速一条条发，同步等完必然打到网关超时。
+      // 逐条结果写进 outreach_messages，客服在回访记录里能看到成功/失败。
+      void runBroadcast({ personaId: id, targets, content, operatorId })
+        .catch((error) => {
+          app.log.error({ err: error, personaId: id, audience }, 'cs broadcast failed');
+        })
+        .finally(() => {
+          broadcastInFlight.delete(id);
+        });
+
+
+      return reply.status(202).send(ok<CsBroadcastData>({ audience, accepted: targets.length }));
+    }
+  );
+
+  /**
+   * 顺序发送 + 固定间隔。Telegram 对同一个 bot 的群发限速在 30 条/秒左右，
+   * 超了会返回 429 并要求等待，所以这里宁可慢一点也不并发。
+   * 单个用户失败（拉黑、没启动 bot）只记账不中断，否则一个人挡住整簇。
+   */
+  async function runBroadcast(input: {
+    personaId: string;
+    targets: Array<{ userId: string; telegramUserId: string; displayName: string }>;
+    content: string;
+    operatorId: string;
+  }): Promise<void> {
+    for (const target of input.targets) {
+      try {
+        const pending = await repository.createPendingAgentMessage({
+          personaId: input.personaId,
+          userId: target.userId,
+          telegramUserId: target.telegramUserId,
+          content: input.content,
+          operatorId: input.operatorId,
+        });
+        const sent = await sendTelegramMessage(target.telegramUserId, input.content);
+        await repository.markAgentMessage({
+          messageId: pending.id,
+          personaId: input.personaId,
+          userId: target.userId,
+          status: sent.ok ? 'sent' : 'failed',
+          telegramMessageId: sent.telegramMessageId,
+          failedReason: sent.error,
+          preserveSopStage: true,
+          operatorId: input.operatorId,
+        });
+      } catch (error) {
+        app.log.error(
+          { err: error, personaId: input.personaId, userId: target.userId },
+          'cs broadcast target failed'
+        );
+      }
+      await sleep(BROADCAST_INTERVAL_MS);
+    }
+  }
+
   app.get(
     '/api/cs/personas/:id/export',
     { preHandler: [requireCsAdmin] },
@@ -574,6 +744,14 @@ function resolveCsErrorCode(status: number): string {
   if (status === 404) return 'PERSONA_NOT_FOUND';
   if (status === 409) return 'PERSONA_CONFLICT';
   return 'CS_PLATFORM_ERROR';
+}
+
+function parseAudience(value: unknown): CsBroadcastAudience | null {
+  return BROADCAST_AUDIENCES.find((audience) => audience === value) ?? null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function sendTelegramMessage(

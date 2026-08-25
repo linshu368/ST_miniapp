@@ -1,14 +1,35 @@
+import { DEFAULT_LOBBY_RANKING_PARAMS } from '@miniapp/shared';
 import { describe, expect, it } from 'vitest';
 import {
   LOBBY_COLD_START_BAND_END,
   LOBBY_COLD_START_BAND_START,
-  LOBBY_RANKING_MIN_SAMPLE,
-  buildRecommendedOrder,
-  resolveFeaturedIds,
+  applyPinnedOnly,
+  buildRecommendedOrder as buildOrder,
+  resolveFeaturedIds as resolveFeatured,
+  type BuildRecommendedOrderInput,
 } from './recommended-ranking.js';
 import type { CardScore } from './ranking-stats.js';
 
 const FEATURED_COUNT = 8;
+
+/** 主池门槛现在由排序分快照带进来；这一组用例锁的是排布规则，仍按内置默认门槛断言 */
+const LOBBY_RANKING_MIN_SAMPLE = DEFAULT_LOBBY_RANKING_PARAMS.min_users;
+
+function buildRecommendedOrder<T extends { id: string }>(
+  input: Omit<BuildRecommendedOrderInput<T>, 'minSample'> & { minSample?: number }
+): T[] {
+  return buildOrder({ minSample: LOBBY_RANKING_MIN_SAMPLE, ...input });
+}
+
+function resolveFeaturedIds<T extends { id: string }>(
+  operatorOrdered: readonly T[],
+  scores: ReadonlyMap<string, CardScore>,
+  count: number,
+  minSample: number = LOBBY_RANKING_MIN_SAMPLE,
+  pinnedIds: readonly string[] = []
+): Set<string> {
+  return resolveFeatured(operatorOrdered, scores, count, minSample, pinnedIds);
+}
 
 function card(id: string) {
   return { id };
@@ -239,5 +260,165 @@ describe('resolveFeaturedIds', () => {
     for (let i = 1; i < 10; i += 1) scores.set(`c${i}`, cold());
 
     expect(resolveFeaturedIds(operatorOrdered, scores, FEATURED_COUNT)).toEqual(new Set(['c0']));
+  });
+});
+
+describe('运营固定位', () => {
+  it('按配置顺序占据最前面，其余仍按分数降序', () => {
+    const operatorOrdered = Array.from({ length: 12 }, (_, i) => card(`c${i}`));
+    // 分数与运营顺序同向递减，没有固定位时结果就是 c0…c11
+    const scores = new Map<string, CardScore>(
+      operatorOrdered.map((c, i) => [c.id, mature(12 - i)])
+    );
+
+    const ordered = buildRecommendedOrder({
+      operatorOrdered,
+      scores,
+      pinnedIds: ['c9', 'c5'],
+      seed: 3,
+    });
+
+    expect(ordered.slice(0, 2).map((c) => c.id)).toEqual(['c9', 'c5']);
+    expect(ordered.slice(2).map((c) => c.id)).toEqual([
+      'c0',
+      'c1',
+      'c2',
+      'c3',
+      'c4',
+      'c6',
+      'c7',
+      'c8',
+      'c10',
+      'c11',
+    ]);
+  });
+
+  it('固定位不会让任何卡重复或丢失', () => {
+    const { operatorOrdered, scores } = fixture(60, 45);
+
+    const ordered = buildRecommendedOrder({
+      operatorOrdered,
+      scores,
+      protectedPrefix: FEATURED_COUNT,
+      pinnedIds: ['c50', 'c1', 'c59'],
+      seed: 11,
+    });
+
+    expect(ordered).toHaveLength(60);
+    expect(new Set(ordered.map((c) => c.id)).size).toBe(60);
+  });
+
+  it('配置里已下架/不存在的卡直接跳过，不占位也不报错', () => {
+    const operatorOrdered = Array.from({ length: 5 }, (_, i) => card(`c${i}`));
+    const scores = new Map<string, CardScore>(operatorOrdered.map((c, i) => [c.id, mature(5 - i)]));
+
+    const ordered = buildRecommendedOrder({
+      operatorOrdered,
+      scores,
+      pinnedIds: ['ghost', 'c3'],
+      seed: 3,
+    });
+
+    expect(ordered.map((c) => c.id)).toEqual(['c3', 'c0', 'c1', 'c2', 'c4']);
+  });
+
+  it('空固定位与不传固定位的结果逐字一致', () => {
+    const { operatorOrdered, scores } = fixture(50, 40);
+    const args = { operatorOrdered, scores, protectedPrefix: FEATURED_COUNT, seed: 8 } as const;
+
+    expect(buildRecommendedOrder({ ...args, pinnedIds: [] }).map((c) => c.id)).toEqual(
+      buildRecommendedOrder(args).map((c) => c.id)
+    );
+  });
+
+  it('固定位全部拿到金框，剩余名额才按分数补齐', () => {
+    const operatorOrdered = Array.from({ length: 20 }, (_, i) => card(`c${i}`));
+    const scores = new Map<string, CardScore>(operatorOrdered.map((c, i) => [c.id, mature(i)]));
+
+    const featured = resolveFeaturedIds(operatorOrdered, scores, FEATURED_COUNT, undefined, [
+      'c0',
+      'c1',
+    ]);
+
+    // c0/c1 分数最低，但固定位在前八，所以必须有金框；其余六个名额给分数最高的卡
+    expect(featured).toEqual(new Set(['c0', 'c1', 'c19', 'c18', 'c17', 'c16', 'c15', 'c14']));
+  });
+
+  it('金框口径与列表实际排出的前八一致', () => {
+    const { operatorOrdered, scores } = fixture(80, 70);
+    const pinnedIds = ['c75', 'c2'];
+
+    const featured = resolveFeaturedIds(
+      operatorOrdered,
+      scores,
+      FEATURED_COUNT,
+      undefined,
+      pinnedIds
+    );
+    const ordered = buildRecommendedOrder({
+      operatorOrdered,
+      scores,
+      protectedPrefix: FEATURED_COUNT,
+      pinnedIds,
+      seed: 4,
+    });
+
+    expect(new Set(ordered.slice(0, FEATURED_COUNT).map((c) => c.id))).toEqual(featured);
+  });
+
+  it('固定位数量顶满金框区时，冷启动卡照样进不了前八', () => {
+    const operatorOrdered = Array.from({ length: 30 }, (_, i) => card(`c${i}`));
+    const scores = new Map<string, CardScore>();
+    for (let i = 0; i < 20; i += 1) scores.set(`c${i}`, mature(30 - i));
+    for (let i = 20; i < 30; i += 1) scores.set(`c${i}`, cold());
+
+    const pinnedIds = Array.from({ length: FEATURED_COUNT }, (_, i) => `c${i}`);
+    const ordered = buildRecommendedOrder({
+      operatorOrdered,
+      scores,
+      protectedPrefix: FEATURED_COUNT,
+      pinnedIds,
+      seed: 5,
+    });
+
+    expect(ordered.slice(0, FEATURED_COUNT).map((c) => c.id)).toEqual(pinnedIds);
+  });
+
+  it('applyPinnedOnly 只提固定位，其余保持运营顺序', () => {
+    const operatorOrdered = Array.from({ length: 5 }, (_, i) => card(`c${i}`));
+
+    expect(applyPinnedOnly(operatorOrdered, ['c3', 'ghost']).map((c) => c.id)).toEqual([
+      'c3',
+      'c0',
+      'c1',
+      'c2',
+      'c4',
+    ]);
+    expect(applyPinnedOnly(operatorOrdered, []).map((c) => c.id)).toEqual(
+      operatorOrdered.map((c) => c.id)
+    );
+  });
+});
+
+describe('主池门槛跟着排序分快照走', () => {
+  const operatorOrdered = Array.from({ length: 6 }, (_, i) => card(`c${i}`));
+  // 六张卡样本量都是 10：门槛 20 时全是冷启动卡，门槛 5 时全进主池
+  const scores = new Map<string, CardScore>(
+    operatorOrdered.map((c, i) => [c.id, { score: 100 - i, sampleSize: 10 }])
+  );
+
+  it('门槛高于样本量时整批走冷启动随机', () => {
+    const runs = Array.from({ length: 12 }, () =>
+      buildOrder({ operatorOrdered, scores, minSample: 20 })
+        .map((c) => c.id)
+        .join(',')
+    );
+    expect(new Set(runs).size).toBeGreaterThan(1);
+    expect(resolveFeatured(operatorOrdered, scores, FEATURED_COUNT, 20).size).toBe(0);
+  });
+
+  it('门槛低于样本量时整批按分数降序，顺序确定', () => {
+    const ordered = buildOrder({ operatorOrdered, scores, minSample: 5 });
+    expect(ordered.map((c) => c.id)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4', 'c5']);
   });
 });

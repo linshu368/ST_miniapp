@@ -9,27 +9,30 @@
  * 所以读写彻底分开——这也是 v2 的「每次请求查聚合视图」换掉的原因。
  */
 
+import { DEFAULT_LOBBY_RANKING_PARAMS, type LobbyRankingParams } from '@miniapp/shared';
 import { prisma } from '../../lib/db.js';
-import {
-  D30_TURN_CAP,
-  LOBBY_RANKING_WINDOW_DAYS,
-  type RankingScore,
-  type RawCardStats,
-} from './ranking-score.js';
+import type { RankingScore, RawCardStats } from './ranking-score.js';
 
 /** 与大厅接口原有的缓存宽度一致。汇总表一天才变一次，60 秒纯粹是防重复查询 */
 const RANKING_CACHE_TTL_MS = 60_000;
-
-/** 会话切分阈值：相邻两条消息间隔超过它就算新会话 */
-const SESSION_GAP_MINUTES = 30;
-
-/** 回访窗口 */
-const RETURN_WINDOW_HOURS = 48;
 
 /** 排序时需要的最小信息量：分数用来排，样本量用来判断进主池还是冷启动池 */
 export interface CardScore {
   score: number;
   sampleSize: number;
+}
+
+/**
+ * 读路径拿到的一整份快照。
+ *
+ * minSample 跟着分数一起从表里读，而不是读路径自己去查一次运营配置：
+ * 主池门槛必须和这批分数是同一版参数算出来的。否则运营刚把门槛从 20 调到 200，
+ * 读路径立刻把几乎所有卡打进冷启动池随机化，而分数仍是按 20 算的——
+ * 首页会先乱一天，等到下一次刷新才自洽。
+ */
+export interface RankingSnapshot {
+  scores: Map<string, CardScore>;
+  minSample: number;
 }
 
 /**
@@ -54,9 +57,10 @@ interface ScoreRow {
   character_id: string;
   n_c: number;
   score: string | number;
+  min_users: number | null;
 }
 
-let cache: { at: number; value: Map<string, CardScore> } | null = null;
+let cache: { at: number; value: RankingSnapshot } | null = null;
 
 export function clearCharacterRankingScoreCache(): void {
   cache = null;
@@ -68,25 +72,36 @@ export function clearCharacterRankingScoreCache(): void {
  * 表为空（job 还没跑过第一轮）或查询失败时返回 null——调用方必须据此退回运营顺序。
  * 这条兜底不能省：把空表当成「所有卡样本都是 0」会让整个大厅落进冷启动池被随机打乱。
  */
-export async function loadCharacterRankingScores(): Promise<Map<string, CardScore> | null> {
+export async function loadCharacterRankingScores(): Promise<RankingSnapshot | null> {
   const now = Date.now();
   if (cache && now - cache.at < RANKING_CACHE_TTL_MS) return cache.value;
 
   try {
     const rows = await prisma.$queryRaw<ScoreRow[]>`
-      SELECT character_id, n_c, score
+      SELECT character_id, n_c, score, min_users
       FROM miniapp.character_ranking_scores
     `;
 
     if (rows.length === 0) return cache?.value ?? null;
 
-    const value = new Map<string, CardScore>();
+    const scores = new Map<string, CardScore>();
     for (const row of rows) {
-      value.set(row.character_id, {
+      scores.set(row.character_id, {
         score: Number(row.score),
         sampleSize: Number(row.n_c),
       });
     }
+
+    // 整表同值，取第一行即可。列是 088 加的，旧行理论上都有 DEFAULT，
+    // 真读到 null 说明这批分数早于该迁移，用内置默认门槛比让整站进冷启动池安全。
+    const storedMinSample = Number(rows[0]?.min_users);
+    const value: RankingSnapshot = {
+      scores,
+      minSample:
+        Number.isFinite(storedMinSample) && storedMinSample > 0
+          ? storedMinSample
+          : DEFAULT_LOBBY_RANKING_PARAMS.min_users,
+    };
     cache = { at: now, value };
     return value;
   } catch (error) {
@@ -103,14 +118,14 @@ export async function loadCharacterRankingScores(): Promise<Map<string, CardScor
  */
 export async function computeRawCardStats(
   db: RankingDbClient,
-  windowDays: number = LOBBY_RANKING_WINDOW_DAYS
+  params: LobbyRankingParams = DEFAULT_LOBBY_RANKING_PARAMS
 ): Promise<RawCardStats[]> {
   // 事务客户端上的查询必须串行：交互式事务同一时刻只处理一条语句
   const perRevisionRows = await hasConversationTurnColumns(db);
   const depthRows = perRevisionRows
-    ? await queryDepthByTurn(db, windowDays)
-    : await queryDepthByRow(db, windowDays);
-  const returnRows = await queryReturnRate(db, windowDays);
+    ? await queryDepthByTurn(db, params)
+    : await queryDepthByRow(db, params);
+  const returnRows = await queryReturnRate(db, params);
 
   const returnByCard = new Map<string, ReturnRow>();
   for (const row of returnRows) returnByCard.set(row.character_id, row);
@@ -161,19 +176,20 @@ async function hasConversationTurnColumns(db: RankingDbClient): Promise<boolean>
  *
  * 072 之前 chat_history 一行就是一轮，行数即轮数。
  */
-function queryDepthByRow(db: RankingDbClient, windowDays: number): Promise<DepthRow[]> {
+function queryDepthByRow(db: RankingDbClient, params: LobbyRankingParams): Promise<DepthRow[]> {
   return db.$queryRaw<DepthRow[]>`
     WITH windowed AS (
       SELECT character_id, user_id, COUNT(*)::int AS turns
       FROM miniapp.chat_history
       WHERE character_id IS NOT NULL
-        AND created_at >= now() - (${windowDays}::int * interval '1 day')
+        AND created_at >= now() - (${params.window_days}::int * interval '1 day')
       GROUP BY character_id, user_id
     )
     SELECT
       character_id,
       COUNT(*)::bigint AS n_c,
-      AVG(LEAST(turns, ${D30_TURN_CAP}::int))::double precision / ${D30_TURN_CAP}::int AS d30_raw
+      AVG(LEAST(turns, ${params.turn_cap}::int))::double precision
+        / ${params.turn_cap}::int AS d30_raw
     FROM windowed
     GROUP BY character_id
   `;
@@ -189,7 +205,7 @@ function queryDepthByRow(db: RankingDbClient, windowDays: number): Promise<Depth
  * R48 不受影响：多出来的 revision 只是同一会话内多几个时间点，
  * 30 分钟切分与首末时间都不变。
  */
-function queryDepthByTurn(db: RankingDbClient, windowDays: number): Promise<DepthRow[]> {
+function queryDepthByTurn(db: RankingDbClient, params: LobbyRankingParams): Promise<DepthRow[]> {
   return db.$queryRaw<DepthRow[]>`
     WITH windowed AS (
       SELECT
@@ -201,13 +217,14 @@ function queryDepthByTurn(db: RankingDbClient, windowDays: number): Promise<Dept
         )::int AS turns
       FROM miniapp.chat_history
       WHERE character_id IS NOT NULL
-        AND created_at >= now() - (${windowDays}::int * interval '1 day')
+        AND created_at >= now() - (${params.window_days}::int * interval '1 day')
       GROUP BY character_id, user_id
     )
     SELECT
       character_id,
       COUNT(*)::bigint AS n_c,
-      AVG(LEAST(turns, ${D30_TURN_CAP}::int))::double precision / ${D30_TURN_CAP}::int AS d30_raw
+      AVG(LEAST(turns, ${params.turn_cap}::int))::double precision
+        / ${params.turn_cap}::int AS d30_raw
     FROM windowed
     GROUP BY character_id
   `;
@@ -216,22 +233,38 @@ function queryDepthByTurn(db: RankingDbClient, windowDays: number): Promise<Dept
 /**
  * R48：新客首次会话结束后 48 小时内是否回访。
  *
- * 三个口径上的讲究：
- *   - 新客判定用「全历史首次交互落在窗口内」。chat_history 从无清理，这个判定是精确的；
- *     用窗口内首次会误判——老用户在窗口内的第一条会被当成新客。
- *   - 分母只收首次会话已结束满 48 小时的人。不满 48 小时的样本还没走完观察期，
+ * 四个口径上的讲究：
+ *   - 新客判定默认用「全历史首次交互落在窗口内」（first_touch_lookback_days = null）。
+ *     chat_history 从无清理，这个判定是精确的；用窗口内首次会误判——
+ *     老用户在窗口内的第一条会被当成新客。
+ *     参数填了天数则只回看窗口前那么久，是给「全表扫 first_touch 跑不动」留的成本上界，
+ *     代价是首触更早的老用户会被误判成新客混进分母。
+ *   - 分母只收首次会话已结束满 return_window_hours 的人。不满观察期的样本还没走完，
  *     提前计入等于把「还没来得及回访」算成「没有回访」。
+ *   - 会话切分只在窗口内的消息上做。默认口径下这是恒等的（新客的所有消息本就都在窗口内），
+ *     但启用有界回溯后不加这一条，被误判成新客的老用户会拿几年前那次会话当 session 1。
  *   - 只需要前两个会话，session_no > 2 的行在聚合前就丢掉。
  */
-function queryReturnRate(db: RankingDbClient, windowDays: number): Promise<ReturnRow[]> {
+function queryReturnRate(db: RankingDbClient, params: LobbyRankingParams): Promise<ReturnRow[]> {
+  const lookbackDays = params.first_touch_lookback_days;
+
   return db.$queryRaw<ReturnRow[]>`
     WITH bounds AS (
-      SELECT now() AS now_at, now() - (${windowDays}::int * interval '1 day') AS start_at
+      SELECT
+        now() AS now_at,
+        now() - (${params.window_days}::int * interval '1 day') AS start_at
     ),
     first_touch AS (
       SELECT character_id, user_id, MIN(created_at) AS first_at
-      FROM miniapp.chat_history
+      FROM miniapp.chat_history, bounds b
       WHERE character_id IS NOT NULL
+        -- null = 回看全历史。给了天数就只回看窗口前这么久：此时
+        -- 「回看范围内的最早一条落在窗口内」等价于「窗口前那段里没有记录」，
+        -- 也就是设计文档里那个 NOT EXISTS，但不必全表扫。
+        AND (
+          ${lookbackDays}::int IS NULL
+          OR created_at >= b.start_at - (${lookbackDays}::int * interval '1 day')
+        )
       GROUP BY character_id, user_id
     ),
     newcomers AS (
@@ -249,7 +282,9 @@ function queryReturnRate(db: RankingDbClient, windowDays: number): Promise<Retur
         ) AS prev_at
       FROM miniapp.chat_history h
       JOIN newcomers n ON n.character_id = h.character_id AND n.user_id = h.user_id
+      CROSS JOIN bounds b
       WHERE h.character_id IS NOT NULL
+        AND h.created_at >= b.start_at
     ),
     sessionized AS (
       SELECT
@@ -259,7 +294,8 @@ function queryReturnRate(db: RankingDbClient, windowDays: number): Promise<Retur
         SUM(
           CASE
             WHEN prev_at IS NULL
-              OR created_at - prev_at > (${SESSION_GAP_MINUTES}::int * interval '1 minute')
+              OR created_at - prev_at
+                 > (${params.session_gap_minutes}::int * interval '1 minute')
             THEN 1 ELSE 0
           END
         ) OVER (
@@ -291,12 +327,15 @@ function queryReturnRate(db: RankingDbClient, windowDays: number): Promise<Retur
     SELECT
       p.character_id,
       COUNT(*) FILTER (
-        WHERE p.end_first <= b.now_at - (${RETURN_WINDOW_HOURS}::int * interval '1 hour')
+        WHERE p.end_first
+              <= b.now_at - (${params.return_window_hours}::int * interval '1 hour')
       )::bigint AS k_c,
       COUNT(*) FILTER (
-        WHERE p.end_first <= b.now_at - (${RETURN_WINDOW_HOURS}::int * interval '1 hour')
+        WHERE p.end_first
+              <= b.now_at - (${params.return_window_hours}::int * interval '1 hour')
           AND p.start_second IS NOT NULL
-          AND p.start_second <= p.end_first + (${RETURN_WINDOW_HOURS}::int * interval '1 hour')
+          AND p.start_second
+              <= p.end_first + (${params.return_window_hours}::int * interval '1 hour')
       )::bigint AS returned_c
     FROM pivoted p, bounds b
     GROUP BY p.character_id
@@ -312,7 +351,7 @@ function queryReturnRate(db: RankingDbClient, windowDays: number): Promise<Retur
 export async function persistRankingScores(
   db: RankingDbClient,
   scores: readonly RankingScore[],
-  windowDays: number = LOBBY_RANKING_WINDOW_DAYS
+  params: LobbyRankingParams = DEFAULT_LOBBY_RANKING_PARAMS
 ): Promise<void> {
   if (scores.length === 0) return;
 
@@ -332,11 +371,12 @@ export async function persistRankingScores(
 
   await db.$executeRaw`
     INSERT INTO miniapp.character_ranking_scores (
-      character_id, n_c, d30_raw, d30_shrunk, k_c, r48_raw, score, window_days, computed_at
+      character_id, n_c, d30_raw, d30_shrunk, k_c, r48_raw, score,
+      window_days, min_users, computed_at
     )
     SELECT
       t.character_id, t.n_c, t.d30_raw, t.d30_shrunk, t.k_c, t.r48_raw, t.score,
-      ${windowDays}::int, now()
+      ${params.window_days}::int, ${params.min_users}::int, now()
     FROM jsonb_to_recordset(${payload}::jsonb) AS t(
       character_id uuid,
       n_c          integer,
@@ -356,6 +396,7 @@ export async function persistRankingScores(
       r48_raw     = EXCLUDED.r48_raw,
       score       = EXCLUDED.score,
       window_days = EXCLUDED.window_days,
+      min_users   = EXCLUDED.min_users,
       computed_at = EXCLUDED.computed_at
   `;
 

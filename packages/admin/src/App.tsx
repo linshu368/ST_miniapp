@@ -418,9 +418,12 @@ function AdminWorkspace(props: {
     }
   }, [props.client]);
 
+  // 固定位编辑器要按卡名选卡，所以它也需要角色卡清单，不只有角色卡页面需要
   useEffect(() => {
-    if (view === 'characters') void reloadCharacters();
-  }, [reloadCharacters, view]);
+    if (view === 'characters' || selectedKey === 'lobby_pinned_characters') {
+      void reloadCharacters();
+    }
+  }, [reloadCharacters, selectedKey, view]);
 
   const reloadOpenRouter = useCallback(
     async (forceRefresh = false) => {
@@ -890,6 +893,9 @@ function AdminWorkspace(props: {
                 syncError={openRouterError}
                 onRefreshOpenRouter={() => void reloadOpenRouter(true)}
                 paymentPlans={paymentPlans}
+                characters={characters}
+                charactersLoading={charactersLoading}
+                charactersError={charactersError}
               />
               <Divider />
               <Space wrap>

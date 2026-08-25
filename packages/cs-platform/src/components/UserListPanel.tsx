@@ -1,7 +1,7 @@
 import type { CsPersonaData, CsUserData } from '@miniapp/shared';
 import type { Membership } from '../constants';
 import { formatDateTime } from '../constants';
-import { SessionBadge } from './Badge';
+import { SessionBadge, WaitingBadge } from './Badge';
 import defaultUserAvatar from '../../../../20260713-130353.png';
 
 export function UserListPanel(props: {
@@ -16,6 +16,7 @@ export function UserListPanel(props: {
   onRefresh: () => void;
   onExport: () => void;
   onDelete: () => void;
+  onBroadcast: () => void;
 }) {
   const { persona } = props;
 
@@ -36,6 +37,13 @@ export function UserListPanel(props: {
             disabled={props.refreshPending || props.deletePending}
           >
             {props.refreshPending ? '刷新中…' : '刷新成员'}
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={props.onBroadcast}
+            disabled={props.refreshPending || props.deletePending}
+          >
+            群发
           </button>
           <button className="btn btn-sm" onClick={props.onExport}>
             导出 .xlsx
@@ -99,7 +107,13 @@ function UserGroup(props: {
         props.users.map((user) => (
           <button
             key={`${props.membership}-${user.user_id}`}
-            className={`user-item ${props.selectedUserId === user.user_id ? 'is-active' : ''}`}
+            className={[
+              'user-item',
+              `is-waiting-${user.waiting_state}`,
+              props.selectedUserId === user.user_id ? 'is-active' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             onClick={() => props.onSelect(user, props.membership)}
           >
             <div className="user-item-top">
@@ -113,6 +127,11 @@ function UserGroup(props: {
                   }}
                 />
                 <span className="user-name">{user.display_name}</span>
+                {user.special_note && (
+                  <span className="user-flag" title={user.special_note}>
+                    标记
+                  </span>
+                )}
               </span>
               <SessionBadge status={user.session_status} />
             </div>
@@ -122,6 +141,8 @@ function UserGroup(props: {
               <span>¥{user.total_paid_amount}</span>
               {user.last_active_label && <span>{user.last_active_label}</span>}
             </div>
+            <WaitingBadge state={user.waiting_state} />
+            {user.special_note && <p className="user-item-note is-flagged">{user.special_note}</p>}
             {user.left_note && <p className="user-item-note">{user.left_note}</p>}
           </button>
         ))

@@ -54,7 +54,7 @@ export async function getFreeQuotaExhaustedDialogConfig(): Promise<FreeQuotaExha
     .maybeSingle();
 
   if (error) {
-    console.warn(`[free-quota] 读取额度耗尽弹窗配置失败，使用默认文案：${error.message}`);
+    console.warn(`[free-quota] 读取额度耗尽提示配置失败，使用默认文案：${error.message}`);
     return DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG;
   }
   return parseFreeQuotaExhaustedDialogConfig(data?.value);
