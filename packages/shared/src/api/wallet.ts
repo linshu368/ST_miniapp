@@ -16,16 +16,13 @@ export function parseCharacterFreeChatQuotaLimit(value: unknown): number {
 }
 
 export const FreeQuotaExhaustedDialogConfigSchema = z.object({
-  title: z.string().trim().min(1).max(40),
-  description: z.string().trim().min(1).max(200),
+  text: z.string().trim().min(1).max(200),
 });
 
 export type FreeQuotaExhaustedDialogConfig = z.infer<typeof FreeQuotaExhaustedDialogConfigSchema>;
 
 export const DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG: FreeQuotaExhaustedDialogConfig = {
-  title: '▎ 和「{characterName}」的 40 轮免费时光结束了',
-  description:
-    '▎\n▎ 这是这张卡的免费额度，其他角色都不受影响。\n▎ 往后每轮消耗星尘，故事还在继续。',
+  text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。往后每轮消耗星尘。',
 };
 
 // ==== GET /api/wallet/balance ====

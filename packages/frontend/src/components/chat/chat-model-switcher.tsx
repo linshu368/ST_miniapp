@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ChevronDown, Loader2, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, Sparkles } from 'lucide-react';
 import type { PublicModelCatalogTier } from '@miniapp/shared';
 
 import { ApiClientError } from '@/lib/api/client';
@@ -26,11 +26,12 @@ export function ChatModelSwitcher({
   onSwitched?: () => void;
 }) {
   const router = useRouter();
-  const { data, isLoading, isFetching, refetch } = useModelCatalogQuery();
+  const { data, isLoading, isFetching } = useModelCatalogQuery();
   const selectModel = useSelectModelMutation();
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const latestSelectRef = useRef<string | null>(null);
 
   const selectedId = data?.selected_model_id ?? '';
   const allModels = data?.catalog.tiers.flatMap((tier) => tier.models) ?? [];
@@ -42,15 +43,17 @@ export function ChatModelSwitcher({
   );
 
   const handleSelect = async (modelId: string) => {
-    if (modelId === selectedId || selectModel.isPending) return;
+    if (modelId === selectedId) return;
+    latestSelectRef.current = modelId;
     setError(null);
     setFeedback(null);
     try {
       await selectModel.mutateAsync({ model_id: modelId });
-      await refetch();
+      if (latestSelectRef.current !== modelId) return;
       setFeedback('模型已切换');
       if (onSwitched) window.setTimeout(onSwitched, 250);
     } catch (err) {
+      if (latestSelectRef.current !== modelId) return;
       // 余额闸门拦下来的话，能做的只有去充值，直接把人送过去
       if (err instanceof ApiClientError && err.code === 'INSUFFICIENT_CREDITS') {
         router.push(
@@ -62,7 +65,6 @@ export function ChatModelSwitcher({
         return;
       }
       setError(err instanceof Error ? err.message : '该模型暂不可用');
-      void refetch();
     }
   };
 
@@ -121,7 +123,6 @@ export function ChatModelSwitcher({
             tier={tier}
             collapsed={collapsed.has(tier.key)}
             selectedId={selectedId}
-            pending={selectModel.isPending}
             onToggle={() =>
               setCollapsed((current) => {
                 const next = new Set(current);
@@ -142,14 +143,12 @@ function TierSection({
   tier,
   collapsed,
   selectedId,
-  pending,
   onToggle,
   onSelect,
 }: {
   tier: PublicModelCatalogTier;
   collapsed: boolean;
   selectedId: string;
-  pending: boolean;
   onToggle: () => void;
   onSelect: (modelId: string) => void;
 }) {
@@ -185,10 +184,9 @@ function TierSection({
               <button
                 key={model.id}
                 type="button"
-                disabled={pending}
                 onClick={() => onSelect(model.id)}
                 className={cn(
-                  'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors disabled:opacity-55',
+                  'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors',
                   active ? 'bg-primary/10' : 'hover:bg-secondary'
                 )}
               >
@@ -219,11 +217,7 @@ function TierSection({
                     </span>
                   ) : null}
                 </span>
-                {pending && active ? (
-                  <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
-                ) : active ? (
-                  <Sparkles className="size-4 shrink-0 text-primary" aria-hidden />
-                ) : null}
+                {active ? <Sparkles className="size-4 shrink-0 text-primary" aria-hidden /> : null}
               </button>
             );
           })}
