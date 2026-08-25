@@ -86,8 +86,10 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       .select('id, llm_generation_id, llm_charge_id, assistant_reply, status')
       .not('llm_generation_id', 'is', null)
       .gte('created_at', since)
+      // llm_usage_cache 不参与判定：OpenRouter 从不返回 usage_cache，把它算进来会让窗口内
+      // 每一行都恒为「不完整」，被反复重新拉取直到滚出 24h。
       .or(
-        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null,llm_usage_cache.is.null'
+        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null'
       )
       .order('created_at', { ascending: false })
       .limit(BATCH_LIMIT);

@@ -208,11 +208,9 @@ export interface ChatHistoryRow {
   upstream_status: number | null;
   deduction_rate: number | string;
   character_id: string | null;
-  preset_id: string | null;
   session_id: string | null;
   history: unknown;
   llm_charge_id: string | null;
-  llm_model_markup: number | string | null;
   llm_intended_deduction: number | string | null;
   llm_generation_id: string | null;
   created_at: string;
@@ -222,7 +220,7 @@ export async function listChatHistory(userId: string): Promise<ChatHistoryRow[]>
   const { data, error } = await db()
     .from('chat_history')
     .select(
-      'id, model, user_input, assistant_reply, status, upstream_status, deduction_rate, character_id, preset_id, session_id, history, llm_charge_id, llm_model_markup, llm_intended_deduction, llm_generation_id, created_at'
+      'id, model, user_input, assistant_reply, status, upstream_status, deduction_rate, character_id, session_id, history, llm_charge_id, llm_intended_deduction, llm_generation_id, created_at'
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
@@ -370,7 +368,8 @@ export async function waitForSettledHistory(
 
 /**
  * 自研链路会在调用上游前先建 chat_history 行，不能再以「条数出现」作为异步计费完成判据。
- * llm_model_markup 由 saveChatHistory 最后补入，免费与付费模型都会有值，用它作为完成水位。
+ * llm_intended_deduction 由 saveChatHistory 最后补入，三种终态状态都会有值，用它作为完成水位
+ * （llm_charge_id / llm_finish_reason 不行：它们在更早的 finalizeTurn 就已写入）。
  */
 export async function waitForChatHistory(
   userId: string,
@@ -383,7 +382,7 @@ export async function waitForChatHistory(
     const expectedRows = rows.slice(0, expectedCount);
     if (
       rows.length >= expectedCount &&
-      expectedRows.every((row) => row.status !== 'streaming' && row.llm_model_markup !== null)
+      expectedRows.every((row) => row.status !== 'streaming' && row.llm_intended_deduction !== null)
     ) {
       return rows;
     }

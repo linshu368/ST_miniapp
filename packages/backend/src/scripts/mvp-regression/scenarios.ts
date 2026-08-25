@@ -11,7 +11,7 @@
  *   4 余额不足 402                → insufficient_balance
  *   5 重生成最后一轮              → regenerate
  *   6 客户端中途断开仍落完整内容  → client_disconnect
- *   7 会话列表直读 DB             → create_session 顺带断言（列表内容 + 全程零上游请求）
+ *   7 会话列表直读 DB             → create_session 顺带断言（空会话隐藏 + 全程零上游请求）
  *
  * 另加 conflict_guards：409 的两种形态（会话忙 / 不是最后一轮），它们是 SSE 首字节写出
  * 之前必须以 HTTP 状态码返回的判定，走错了前端就得从流里认错误。
@@ -117,7 +117,6 @@ function normalizeHistory(row: ChatHistoryRow) {
     upstream_status: row.upstream_status,
     deduction_rate: Number(row.deduction_rate),
     has_session_id: row.session_id !== null,
-    preset_id: row.preset_id,
     history_length: Array.isArray(row.history) ? row.history.length : null,
   };
 }
@@ -210,7 +209,7 @@ async function sendMessage(
 
 async function createSessionScenario(context: MvpScenarioContext): Promise<ScenarioResult> {
   const name = 'create_session';
-  const description = '建会话返回虚拟开场白；会话列表与详情直读 DB，全程零上游请求';
+  const description = '建会话返回虚拟开场白；空会话不进列表、详情直读 DB，全程零上游请求';
 
   await resetState(context, { balance: FUNDED_BALANCE });
   const created = await createSession(context);
@@ -244,8 +243,8 @@ async function createSessionScenario(context: MvpScenarioContext): Promise<Scena
     created.session.title,
     context.fixtures.characterName
   );
-  checker.expect('列表 total', list.json?.data.total, 1);
-  checker.expect('列表命中新建的会话', list.json?.data.sessions[0]?.id, created.session.id);
+  checker.expect('未发消息的空会话不计入列表 total', list.json?.data.total, 0);
+  checker.expect('未发消息的空会话不出现在列表', list.json?.data.sessions.length, 0);
   checker.expect('详情消息条数', detail.json?.data.messages.length, 1);
   checker.expect('详情 has_more', detail.json?.data.has_more, false);
   checker.expect('全程未碰上游（§8.3-8）', context.upstream.requests.length, 0);
@@ -392,7 +391,7 @@ async function freeQuotaScenario(context: MvpScenarioContext): Promise<ScenarioR
   checker.expect('免费轮用尽后 used_rounds 达到上限', usedAfterFree, quotaLimit);
   checker.expect('chat_history 条数', history.length, 2);
   checker.expect('免费轮扣费额', Number(charges[0]?.charged_amount ?? -1), 0);
-  checker.expect('耗尽后按固定档位计费', Number(history[1]?.llm_model_markup ?? -1), 1);
+  checker.expect('耗尽后按固定档位计费', Number(charges[1]?.model_markup ?? -1), 1);
   checker.expectGreaterThan('耗尽后扣费额', Number(charges[1]?.charged_amount ?? 0), 0);
   checker.expectTrue('钱包只在耗尽后那轮减少', balanceAfter < FUNDED_BALANCE);
 

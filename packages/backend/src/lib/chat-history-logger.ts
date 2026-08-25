@@ -32,7 +32,6 @@ export interface ChatHistoryEntry {
   assistant_reply: string | null;
   history: unknown[];
   character_id?: string | null;
-  preset_id?: string | null;
   /** 自研引擎会话 id（M1 migration 069 新增列） */
   session_id?: string | null;
   /** 自研链路预先创建的轮次行；有值时更新该行 */
@@ -138,7 +137,6 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
     try {
       let llmMetadata: Record<string, any> = {
         llm_charge_id: entry.charge_id,
-        llm_model_markup: entry.model_markup,
         llm_generation_id: entry.generation_id ?? null,
         llm_finish_reason: entry.finish_reason ?? null,
       };
@@ -297,7 +295,6 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         assistant_reply: entry.assistant_reply,
         history: entry.history,
         character_id: entry.character_id ?? null,
-        preset_id: entry.preset_id ?? null,
         session_id: entry.session_id ?? null,
         status: entry.status,
         upstream_status: entry.upstream_status ?? null,

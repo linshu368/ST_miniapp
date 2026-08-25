@@ -156,8 +156,8 @@ async function hasConversationTurnColumns(db: RankingDbClient): Promise<boolean>
 /**
  * D30 与样本量：turns 取窗口内的行数。
  *
- * 不用 user_character_round——那是全历史累计值，一个三年前聊过 200 轮的用户
- * 会让任何时间窗都失去意义。
+ * 按行数数而不是按累计轮次列：累计值是全历史口径，一个三年前聊过 200 轮的用户
+ * 会让任何时间窗都失去意义。（该列已由 092 删除。）
  *
  * 072 之前 chat_history 一行就是一轮，行数即轮数。
  */
