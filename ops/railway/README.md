@@ -22,8 +22,8 @@
 > - IaC reference：<https://docs.railway.com/infrastructure-as-code/reference>
 
 > 决议（不可推翻）：对外域名绑 **Vercel**，前端作为边缘入口。ST 退场后 nginx 已无分发
-> 对象，**网关收敛为「Vercel 直连 backend」**：nginx 与 st-bundle 一并退场，Railway 只
-> 跑 backend 一个服务，它同时是唯一对外服务。
+> 对象，**网关收敛为「Vercel 直连 backend」**：nginx 与 st-bundle 一并退场。Railway
+> 运行 backend API 和一个独立的支付对账 Cron；其中只有 backend 对外提供 HTTP 服务。
 
 ```
                  对外域名 (绑 Vercel)
@@ -39,6 +39,9 @@
                   └─────┬──────┘
                         ▼
               Supabase / OpenRouter
+
+  Railway Cron（每 5 分钟）──▶ stminiapp-payment-cron
+                              同 backend 镜像，运行一次支付对账后退出
 ```
 
 前端与 backend 之间没有任何反代，因此两侧各有一个必须对齐的变量：Vercel 的
@@ -79,29 +82,55 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
 > 生效，且**一个服务不能同时被 railway.json 与 IaC 管理**。本仓库不放任何 railway.json，
 > 避免双重真相源。
 
-## 单服务（控制台首次创建）
+## 服务（控制台首次创建）
 
 `.railway/railway.ts` 只描述 desired state，**不创建项目**。首次需在 Railway 控制台
 建好 project + 该服务，服务名必须与 `.railway/railway.ts` 里 `service(...)` 第一个
 参数**逐字一致**：
 
-| 服务名（控制台 & IaC） | 镜像（GHCR）         | 监听端口 | healthcheck | 对外                          | 卷  |
-| ---------------------- | -------------------- | -------- | ----------- | ----------------------------- | --- |
-| `stminiapp`            | `st-miniapp-backend` | 8080     | `/health`   | ✅ 绑 Railway 域名/自定义域名 | —   |
+| 服务名（控制台 & IaC）   | GitHub source                         | 监听端口 | healthcheck | 对外                          | 卷  |
+| ------------------------ | ------------------------------------- | -------- | ----------- | ----------------------------- | --- |
+| `stminiapp`              | `ST_miniapp`：dev=`dev` / prod=`main` | 8080     | `/health`   | ✅ 绑 Railway 域名/自定义域名 | —   |
+| `stminiapp-payment-cron` | 与 `stminiapp` 相同                   | —        | 关闭        | ❌ 不生成域名                 | —   |
 
 创建步骤：
 
 1. 控制台 New → Empty Service（或 Deploy from Image），命名为 `stminiapp`。
-2. Service Settings → Source → Docker Image，填 `ghcr.io/<OWNER>/st-miniapp-backend:<tag>`
-   （GHCR 为私有时配置 registry 凭据）。
+2. Service Settings → Source 连接 GitHub 仓库 `linshu368/ST_miniapp`；development 选择
+   `dev`，production 选择 `main`。
 3. 变量按下方「环境变量」从 `ops/env/backend.env.production.example` 填入。⚠️ `PORT`
    必须与 Railway 路由到容器的端口一致（缺失会 502）。
 4. Settings → Networking 生成 Railway 域名（或自定义域名），把它配到 Vercel 的
    `NEXT_PUBLIC_API_URL`（见 `ops/env/vercel.env.production.example`）；反向把 Vercel
    对外域名配到本服务的 `FRONTEND_URL`。
 5. 建好、变量填好后，可选用 IaC 对齐：`railway link` → `railway config plan`
-   →（确认 diff 无误）`railway config apply`。镜像 tag 用环境变量注入：
-   `GHCR_OWNER=<owner> IMAGE_TAG=sha-xxxxxxx railway config apply`。
+   →（确认 diff 无误）`railway config apply`。
+
+### 支付对账 Cron
+
+`stminiapp-payment-cron` 必须是独立服务；不能在 `stminiapp` 上设置 Cron Schedule，
+否则 Railway 会按周期启动并终止 API deployment。
+
+IaC 可用时，`.railway/railway.ts` 中的 `fn('stminiapp-payment-cron', ...)` 会配置该服务。
+若目标环境尚不能用 IaC 管理，则在 Railway 控制台手动创建并逐项对齐：
+
+> 应用 IaC 前必须检查 `railway config plan`。如果 plan 除创建 Cron 外还会修改
+> `stminiapp` 的 source、变量、域名或 healthcheck，立即停止，改用控制台只创建 Cron；
+> 禁止为了上线 Cron 顺带覆盖现有 API 服务配置。
+
+1. New → Empty Service，命名为 `stminiapp-payment-cron`。
+2. Source 连接与 `stminiapp` 相同的 GitHub 仓库和分支：development 用 `dev`，
+   production 用 `main`。Build 的 Dockerfile Path 使用 `/ops/docker/Dockerfile.backend`。
+3. Start Command 覆盖为 `tsx src/scripts/expire-payment-orders.ts`。
+4. Cron Schedule 填 `*/5 * * * *`（UTC）。
+5. 关闭 healthcheck，不生成 Railway domain，不配置 TCP proxy。
+6. 以下变量全部使用 Railway reference 指向 `stminiapp`，不要复制值：
+   - `PAYMENT_ENABLED`、全部 `PAYMENT_*`
+   - `DATABASE_ENV`、`DATABASE_URL`、`DIRECT_URL`
+   - development：全部 `TEST_DATABASE_*`、`TEST_DIRECT_*`、`TEST_SUPABASE_*`
+   - production：全部 `PROD_DATABASE_*`、`PROD_DIRECT_*`、`PROD_SUPABASE_*`
+7. Restart Policy 设为 `Never`。手动 Run 一次，确认日志出现
+   `Reconciled before expiry: checked=… settled=…` 且 deployment 正常退出。
 
 > Railway 内网 DNS 形如 `<service>.railway.internal`（本服务为
 > `stminiapp.railway.internal:8080`）。收敛为单服务后已无跨服务调用，内网地址目前
@@ -120,12 +149,11 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
 密钥类变量只在控制台（或 IaC secret）注入，**不写进 `.railway/railway.ts`**，仓库内
 模板只给占位与说明。
 
-## 镜像 tag 更新流程
+## 自动部署流程
 
-1. push 到 `dev` / `dev_stage5_*` → CI（`.github/workflows/build-and-push.yml`）构建并推送
-   `st-miniapp-backend` 到 GHCR，tag：`sha-<short>` 与 `<branch>-latest`。
-   （**frontend 镜像默认不构建**，前端在 Vercel；仅 `staging-*` tag 才构建 frontend。）
-2. 部署某 commit：用其 `sha-<short>` tag。两种方式二选一：
-   - 控制台：Settings → Source → 更新 image tag → Deploy。
-   - IaC：`GHCR_OWNER=<owner> IMAGE_TAG=sha-<short> railway config apply`。
-3. 回滚：把 tag 切回上一个已知良好的 `sha-<short>` 重新部署即可。
+1. development 的两个服务都连接 `dev`，production 的两个服务都连接 `main`。
+2. 对应分支 push 后，Railway 分别构建 API 与 Cron；两者以同一 Git commit 为发布基准，
+   不需要人工同步 GHCR tag。
+3. 两个服务是独立 deployment，短时间内可能版本不一致；发布后需确认两边最新成功
+   deployment 的 commit SHA 相同。
+4. 回滚时在 Git 分支回滚对应 commit，两个服务会再次自动部署同一代码版本。

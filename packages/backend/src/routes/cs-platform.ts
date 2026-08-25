@@ -445,6 +445,7 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
           broadcastInFlight.delete(id);
         });
 
+
       return reply.status(202).send(ok<CsBroadcastData>({ audience, accepted: targets.length }));
     }
   );

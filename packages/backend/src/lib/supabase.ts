@@ -36,3 +36,15 @@ export function getSupabaseClient(): SupabaseClient {
 
   return _client;
 }
+
+/**
+ * 释放脚本进程可能创建的 Realtime 连接。
+ *
+ * 业务查询走 Supabase REST，本身没有可显式关闭的数据库连接池；removeAllChannels()
+ * 是 supabase-js 提供的客户端级清理入口。清理后丢弃单例，避免一次性任务残留句柄。
+ */
+export async function closeSupabaseClient(): Promise<void> {
+  if (!_client) return;
+  await _client.removeAllChannels();
+  _client = null;
+}
