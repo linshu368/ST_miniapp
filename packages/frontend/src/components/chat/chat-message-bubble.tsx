@@ -33,6 +33,8 @@ interface ChatMessageBubbleProps {
   streaming?: boolean;
   /** 一段时间没有收到新内容，但生成尚未终止 */
   stalled?: boolean;
+  /** 本轮刚好用完该角色卡免费额度时，挂在回复正文下的轻提示 */
+  quotaExhaustedNotice?: string;
   /** 挂在正文下方的操作区，目前只有重生成按钮 */
   footer?: ReactNode;
 }
@@ -44,6 +46,7 @@ export function ChatMessageBubble({
   userAvatarUrl,
   streaming,
   stalled,
+  quotaExhaustedNotice,
   footer,
 }: ChatMessageBubbleProps) {
   if (message.role === 'user') {
@@ -80,6 +83,7 @@ export function ChatMessageBubble({
           ) : presentation === 'empty' ? (
             <ReplyNotice>TA 刚才没能回应，可以再试一次。本次未扣星尘。</ReplyNotice>
           ) : null}
+          {quotaExhaustedNotice ? <ReplyNotice>{quotaExhaustedNotice}</ReplyNotice> : null}
         </div>
         {footer ? <div className="pt-1.5">{footer}</div> : null}
       </div>
