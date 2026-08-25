@@ -10,9 +10,12 @@
  *   因此本批按「Railway 配置进仓库」的决议，落到 IaC 文件而非 railway.json。
  *
  * 方案 Y 拓扑（网关收敛后）：对外域名绑 Vercel（前端在边缘，不在 Railway）。
- * ST 退场后 nginx 已无分发对象，st-bundle 整包退场，Railway 只剩 backend 一个服务：
+ * ST 退场后 nginx 已无分发对象，st-bundle 整包退场；Railway 运行 backend API 和
+ * 一个无公网入口的支付对账 Cron。两个服务都跟随同一 GitHub 分支自动部署：
  *
  *   浏览器 ──▶ Vercel (页面) ──▶ stminiapp (backend, 对外域名) ──▶ Supabase / OpenRouter
+ *                                      ▲
+ *   Railway Cron ──▶ stminiapp-payment-cron（每 5 分钟运行一次后退出）
  *
  * 前端通过 build 期固化的 NEXT_PUBLIC_API_URL 直连 backend 的 Railway 公网域名，
  * 没有中间反代；跨域由 backend 的 FRONTEND_URL（CORS allow-origin）放行。
@@ -32,46 +35,144 @@
  *    Railway 控制台里遗留的 nginx-pro / st-bundle-pro / st-data-pro 需手动删除，
  *    见 ops/railway/README.md「网关收敛的手动收尾」。
  *
- * 镜像 tag：通过环境变量注入（apply 时 `GHCR_OWNER=... IMAGE_TAG=sha-xxxxxxx railway ...`）。
  * ============================================================================
  */
-import { defineRailway, image, project, service } from 'railway/iac';
+import { defineRailway, fn, github, preserve, project, service } from 'railway/iac';
 
-// GHCR owner 与镜像 tag 由部署时注入；占位默认仅用于 `railway config plan` 预览。
-const OWNER = process.env.GHCR_OWNER ?? '<OWNER>';
-const TAG = process.env.IMAGE_TAG ?? 'dev-latest';
+const REPOSITORY = process.env.RAILWAY_GITHUB_REPO ?? 'linshu368/ST_miniapp';
+const COMMON_API_VARIABLES = [
+  'ADMIN_PLATFORM_URL',
+  'BOT_INTERNAL_SECRET',
+  'CS_ADMIN_TOKEN',
+  'CS_TELEGRAM_BOT_TOKEN',
+  'CS_TELEGRAM_WEBHOOK_SECRET',
+  'DATABASE_ENV',
+  'DATABASE_URL',
+  'DEEPSEEK_API_KEY',
+  'DEFAULT_LLM_MODEL',
+  'DIRECT_URL',
+  'FRONTEND_URL',
+  'LLM_API_KEY',
+  'MINIMAX_API_KEY',
+  'NODE_ENV',
+  'OPENAI_API_BASE_URL',
+  'OPENAI_API_KEY',
+  'OPENAI_MODEL',
+  'PAYMENT_BASE_URL',
+  'PAYMENT_ENABLED',
+  'PAYMENT_MERCHANT_ID',
+  'PAYMENT_MERCHANT_PRIVATE_KEY',
+  'PAYMENT_NOTIFY_URL',
+  'PAYMENT_PLATFORM_PUBLIC_KEY',
+  'PAYMENT_RETURN_URL',
+  'PROD_SUPABASE_PROJECT_REF',
+  'SENTRY_DSN',
+  'SENTRY_ENVIRONMENT',
+  'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_WEBHOOK_SECRET',
+  'UPSTASH_REDIS_REST_TOKEN',
+  'UPSTASH_REDIS_REST_URL',
+] as const;
+const DEVELOPMENT_API_VARIABLES = [
+  'DEV_AUTH_BYPASS',
+  'MOCK_AUTH',
+  'TEST_DATABASE_URL',
+  'TEST_DIRECT_URL',
+  'TEST_SUPABASE_PROJECT_REF',
+  'TEST_SUPABASE_SERVICE_ROLE_KEY',
+  'TEST_SUPABASE_URL',
+] as const;
+const PRODUCTION_API_VARIABLES = [
+  'CS_PLATFORM_URL',
+  'DEFAULT_USER_AVATAR_URL',
+  'LLM_DEFAULT_MODEL',
+  'LLM_PROXY_TOKEN_SECRET',
+  'LLM_UPSTREAM_URL',
+  'MINIAPP_SHORT_NAME',
+  'PAYMENT_GATEWAY',
+  'PAYMENT_MERCHANT_KEY',
+  'PAYMENT_V2_BASE_URL',
+  'PORT',
+  'PROD_DATABASE_URL',
+  'PROD_DIRECT_URL',
+  'PROD_SUPABASE_SERVICE_ROLE_KEY',
+  'PROD_SUPABASE_URL',
+  'ST_BASE_URL',
+  'ST_PROVISION_URL',
+  'ST_USER_PASSWORD_SECRET',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_URL',
+] as const;
 
-const ghcr = (name: string) => image(`ghcr.io/${OWNER}/st-miniapp-${name}:${TAG}`);
+export default defineRailway((ctx) => {
+  const production = ctx.environment === 'production';
+  const branch = production ? 'main' : 'dev';
 
-// backend 监听端口。收敛为单服务后已无跨服务 upstream 需要与它对齐，只需与 Railway
-// 控制台 stminiapp 的 PORT 一致（Railway 据此把公网域名路由到容器）。
-const BACKEND_PORT = '8080';
-
-export default defineRailway(() => {
   // ── backend（Railway 服务名：stminiapp）：Fastify 平台 API，唯一对外服务 ───────
-  // 服务名为 `stminiapp`（内网 stminiapp.railway.internal），镜像产物仍是
-  // st-miniapp-backend；服务名不与应用代码耦合（代码仅通过 env 读取地址/端口）。
+  // preserve() 只声明现有变量归 IaC 管理但不读取/覆盖其值；新增变量时须同步补入清单，
+  // 否则 plan 会显示删除。域名、region 和 deploy 默认值保持由 Railway 控制台管理。
+  const apiVariableNames = [
+    ...COMMON_API_VARIABLES,
+    ...(production ? PRODUCTION_API_VARIABLES : DEVELOPMENT_API_VARIABLES),
+  ];
   const stminiapp = service('stminiapp', {
-    source: ghcr('backend'),
-    healthcheck: '/health',
-    healthcheckTimeout: 120,
+    source: github(REPOSITORY, { branch, checkSuites: false }),
+    build: {
+      builder: 'DOCKERFILE',
+      buildCommand: 'pnpm install',
+      buildEnvironment: 'V3',
+      dockerfilePath: '/ops/docker/Dockerfile.backend',
+    },
+    env: Object.fromEntries(apiVariableNames.map((name) => [name, preserve()])),
+  });
+
+  // ── 支付对账 Cron：独立一次性进程，禁止把 schedule 配到 HTTP API 服务 ─────────
+  // 与 API 连接同一 GitHub 仓库和分支，保留 dev/main push 后自动部署；无 healthcheck、
+  // 无公网域名。支付和数据库变量全部引用 stminiapp，避免复制第二套密钥。
+  const paymentCron = fn('stminiapp-payment-cron', {
+    source: github(REPOSITORY, { branch }),
+    build: {
+      builder: 'DOCKERFILE',
+      buildCommand: 'pnpm install',
+      buildEnvironment: 'V3',
+      dockerfilePath: '/ops/docker/Dockerfile.backend',
+    },
+    start: 'tsx src/scripts/expire-payment-orders.ts',
+    deploy: {
+      cronSchedule: '*/5 * * * *',
+      restartPolicyType: 'NEVER',
+    },
     env: {
-      NODE_ENV: 'production',
-      PORT: BACKEND_PORT,
-      DATABASE_ENV: 'production',
-      // LLM 计费上游（key 走密钥）。
-      LLM_UPSTREAM_URL: 'https://openrouter.ai/api/v1',
-      // CORS allow-origin：填 Vercel 对外域名（占位，控制台/此处按实际域名改）。
-      // 收敛后前端直连本服务，此项配错会让浏览器侧全部请求被 CORS 拦掉。
-      FRONTEND_URL: 'https://<your-vercel-domain>',
-      // 密钥（控制台注入）：LLM_API_KEY
-      // Supabase：SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL, DIRECT_URL (+ PROD_* 组)
-      // TG：TELEGRAM_BOT_TOKEN；支付：PAYMENT_*；可选：UPSTASH_REDIS_REST_*
-      // 详见 ops/env/backend.env.production.example
+      NODE_ENV: stminiapp.env.NODE_ENV,
+      DATABASE_ENV: stminiapp.env.DATABASE_ENV,
+      DATABASE_URL: stminiapp.env.DATABASE_URL,
+      DIRECT_URL: stminiapp.env.DIRECT_URL,
+      PROD_SUPABASE_PROJECT_REF: stminiapp.env.PROD_SUPABASE_PROJECT_REF,
+      ...(production
+        ? {
+            PROD_DATABASE_URL: stminiapp.env.PROD_DATABASE_URL,
+            PROD_DIRECT_URL: stminiapp.env.PROD_DIRECT_URL,
+            PROD_SUPABASE_URL: stminiapp.env.PROD_SUPABASE_URL,
+            PROD_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.PROD_SUPABASE_SERVICE_ROLE_KEY,
+          }
+        : {
+            TEST_DATABASE_URL: stminiapp.env.TEST_DATABASE_URL,
+            TEST_DIRECT_URL: stminiapp.env.TEST_DIRECT_URL,
+            TEST_SUPABASE_URL: stminiapp.env.TEST_SUPABASE_URL,
+            TEST_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.TEST_SUPABASE_SERVICE_ROLE_KEY,
+            TEST_SUPABASE_PROJECT_REF: stminiapp.env.TEST_SUPABASE_PROJECT_REF,
+          }),
+      PAYMENT_ENABLED: stminiapp.env.PAYMENT_ENABLED,
+      PAYMENT_BASE_URL: stminiapp.env.PAYMENT_BASE_URL,
+      PAYMENT_MERCHANT_ID: stminiapp.env.PAYMENT_MERCHANT_ID,
+      PAYMENT_MERCHANT_PRIVATE_KEY: stminiapp.env.PAYMENT_MERCHANT_PRIVATE_KEY,
+      PAYMENT_PLATFORM_PUBLIC_KEY: stminiapp.env.PAYMENT_PLATFORM_PUBLIC_KEY,
+      PAYMENT_NOTIFY_URL: stminiapp.env.PAYMENT_NOTIFY_URL,
+      PAYMENT_RETURN_URL: stminiapp.env.PAYMENT_RETURN_URL,
     },
   });
 
   return project('st-miniapp', {
-    resources: [stminiapp],
+    resources: [stminiapp, paymentCron],
   });
 });
