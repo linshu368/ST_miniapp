@@ -1,12 +1,12 @@
 /**
  * backend / lib / chat-history-logger.ts
  *
- * 异步写入 miniapp.chat_history_log，记录每轮 LLM 交互。
+ * 异步写入 experience.chat_history，记录每轮 LLM 交互。
  * 所有写入均为 fire-and-forget，失败仅 log 不影响用户请求。
  */
 
 import type { FastifyBaseLogger } from 'fastify';
-import { getSupabaseClient } from './supabase.js';
+import { getDomainDb } from './supabase.js';
 import { MiniappCharacterFreeQuotaRepository } from '../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import {
@@ -274,8 +274,10 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         }
       }
 
-      const supabase = getSupabaseClient();
-      const miniappDb = supabase.schema('miniapp' as 'public');
+      // chat_history 属 experience；increment_user_total_round 回写 app_core.users
+      // 与 app_core.miniapp_user_settings 的 total_round（归属地图裁决 6 的存量豁免）。
+      const experienceDb = getDomainDb('experience');
+      const appCoreDb = getDomainDb('app_core');
       if (!entry.history_id) {
         clog.error(
           {
@@ -301,7 +303,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
         deduction_rate: actualDeduction,
         ...llmMetadata,
       };
-      const { error } = await miniappDb
+      const { error } = await experienceDb
         .from('chat_history')
         .update(historyValues)
         .eq('id', entry.history_id);
@@ -323,7 +325,7 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
           'saved'
         );
         if (entry.status === 'success') {
-          const { error: roundErr } = await miniappDb.rpc('increment_user_total_round', {
+          const { error: roundErr } = await appCoreDb.rpc('increment_user_total_round', {
             p_user_id: entry.user_id,
             p_delta: 1,
           });

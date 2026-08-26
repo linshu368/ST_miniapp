@@ -6,7 +6,9 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-  schemas   = ["miniapp"]
+  // 只列有 model 落在里面的 schema（migration 099 的归属划分）。
+  // $queryRaw 用全限定名访问 experience / cs_platform，不需要在这里声明。
+  schemas   = ["app_core", "miniapp_features", "billing"]
 }
 
 // 旧 bot 的 public.* 表不再由本项目声明：它们属于 bot 体系，日后会随 bot 迁出本 project。
@@ -31,7 +33,7 @@ model MiniappUser {
   wish_roles            wish_roles[]
 
   @@map("users")
-  @@schema("miniapp")
+  @@schema("app_core")
 }
 
 model miniapp_user_settings {
@@ -52,7 +54,7 @@ model miniapp_user_settings {
   updated_at               DateTime    @default(now()) @db.Timestamptz(6)
   users                    MiniappUser @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@schema("miniapp")
+  @@schema("app_core")
 }
 
 model Character {
@@ -86,7 +88,7 @@ model Character {
   last_listed_at            DateTime? @db.Timestamptz(6)
 
   @@map("characters")
-  @@schema("miniapp")
+  @@schema("app_core")
 }
 
 model MiniappRuntimeConfig {
@@ -98,7 +100,7 @@ model MiniappRuntimeConfig {
   text_value  String?
 
   @@map("runtime_config")
-  @@schema("miniapp")
+  @@schema("app_core")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -112,7 +114,7 @@ model daily_checkins {
   users          MiniappUser @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id, claimed_at(sort: Desc)], map: "idx_miniapp_daily_checkins_user_claimed")
-  @@schema("miniapp")
+  @@schema("miniapp_features")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -136,7 +138,7 @@ model miniapp_payment_orders {
   @@index([status], map: "idx_miniapp_payment_orders_status")
   @@index([user_id, created_at(sort: Desc)], map: "idx_miniapp_payment_orders_user_created")
   @@map("payment_orders")
-  @@schema("miniapp")
+  @@schema("billing")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -154,7 +156,7 @@ model user_wallets {
   total_credits     Decimal?    @default(dbgenerated("(main_credits + bonus_credits)")) @db.Decimal(14, 1)
   users             MiniappUser @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@schema("miniapp")
+  @@schema("billing")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -177,7 +179,7 @@ model wallet_ledger {
 
   @@index([reference_type, reference_id], map: "idx_miniapp_wallet_ledger_reference")
   @@index([user_id, created_at(sort: Desc)], map: "idx_miniapp_wallet_ledger_user_created")
-  @@schema("miniapp")
+  @@schema("billing")
 }
 
 model llm_usage_charges {
@@ -206,7 +208,7 @@ model llm_usage_charges {
 
   @@index([user_id, created_at(sort: Desc)], map: "idx_llm_usage_charges_user_created")
   @@index([model_openrouter_id, created_at(sort: Desc)], map: "idx_llm_usage_charges_model_created")
-  @@schema("miniapp")
+  @@schema("billing")
 }
 
 /// Minimal idempotency tombstones retained after full usage details exceed the per-user cap.
@@ -220,7 +222,7 @@ model llm_usage_charge_dedup {
   processed_at   DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([user_id, processed_at(sort: Desc)], map: "idx_llm_usage_charge_dedup_user_processed")
-  @@schema("miniapp")
+  @@schema("billing")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -241,5 +243,5 @@ model wish_roles {
 
   @@index([status, created_at(sort: Desc)], map: "idx_miniapp_wish_roles_status_created")
   @@index([user_id, created_at(sort: Desc)], map: "idx_miniapp_wish_roles_user_created")
-  @@schema("miniapp")
+  @@schema("miniapp_features")
 }

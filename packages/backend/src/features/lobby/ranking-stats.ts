@@ -79,7 +79,7 @@ export async function loadCharacterRankingScores(): Promise<RankingSnapshot | nu
   try {
     const rows = await prisma.$queryRaw<ScoreRow[]>`
       SELECT character_id, n_c, score, min_users
-      FROM miniapp.character_ranking_scores
+      FROM miniapp_features.character_ranking_scores
     `;
 
     if (rows.length === 0) return cache?.value ?? null;
@@ -161,7 +161,7 @@ async function hasConversationTurnColumns(db: RankingDbClient): Promise<boolean>
   const rows = await db.$queryRaw<Array<{ present: boolean }>>`
     SELECT COUNT(*) = 2 AS present
     FROM information_schema.columns
-    WHERE table_schema = 'miniapp'
+    WHERE table_schema = 'experience'
       AND table_name = 'chat_history'
       AND column_name IN ('session_id', 'turn_index')
   `;
@@ -180,7 +180,7 @@ function queryDepthByRow(db: RankingDbClient, params: LobbyRankingParams): Promi
   return db.$queryRaw<DepthRow[]>`
     WITH windowed AS (
       SELECT character_id, user_id, COUNT(*)::int AS turns
-      FROM miniapp.chat_history
+      FROM experience.chat_history
       WHERE character_id IS NOT NULL
         AND created_at >= now() - (${params.window_days}::int * interval '1 day')
       GROUP BY character_id, user_id
@@ -215,7 +215,7 @@ function queryDepthByTurn(db: RankingDbClient, params: LobbyRankingParams): Prom
           COUNT(*) FILTER (WHERE session_id IS NULL)
           + COUNT(DISTINCT (session_id, turn_index)) FILTER (WHERE session_id IS NOT NULL)
         )::int AS turns
-      FROM miniapp.chat_history
+      FROM experience.chat_history
       WHERE character_id IS NOT NULL
         AND created_at >= now() - (${params.window_days}::int * interval '1 day')
       GROUP BY character_id, user_id
@@ -256,7 +256,7 @@ function queryReturnRate(db: RankingDbClient, params: LobbyRankingParams): Promi
     ),
     first_touch AS (
       SELECT character_id, user_id, MIN(created_at) AS first_at
-      FROM miniapp.chat_history, bounds b
+      FROM experience.chat_history, bounds b
       WHERE character_id IS NOT NULL
         -- null = 回看全历史。给了天数就只回看窗口前这么久：此时
         -- 「回看范围内的最早一条落在窗口内」等价于「窗口前那段里没有记录」，
@@ -280,7 +280,7 @@ function queryReturnRate(db: RankingDbClient, params: LobbyRankingParams): Promi
         LAG(h.created_at) OVER (
           PARTITION BY h.character_id, h.user_id ORDER BY h.created_at
         ) AS prev_at
-      FROM miniapp.chat_history h
+      FROM experience.chat_history h
       JOIN newcomers n ON n.character_id = h.character_id AND n.user_id = h.user_id
       CROSS JOIN bounds b
       WHERE h.character_id IS NOT NULL
@@ -370,7 +370,7 @@ export async function persistRankingScores(
   );
 
   await db.$executeRaw`
-    INSERT INTO miniapp.character_ranking_scores (
+    INSERT INTO miniapp_features.character_ranking_scores (
       character_id, n_c, d30_raw, d30_shrunk, k_c, r48_raw, score,
       window_days, min_users, computed_at
     )
@@ -387,7 +387,7 @@ export async function persistRankingScores(
       score        numeric
     )
     -- chat_history 里可能留有已删除角色的日志，直接插会撞外键
-    WHERE EXISTS (SELECT 1 FROM miniapp.characters c WHERE c.id = t.character_id)
+    WHERE EXISTS (SELECT 1 FROM app_core.characters c WHERE c.id = t.character_id)
     ON CONFLICT (character_id) DO UPDATE SET
       n_c         = EXCLUDED.n_c,
       d30_raw     = EXCLUDED.d30_raw,
@@ -401,7 +401,7 @@ export async function persistRankingScores(
   `;
 
   await db.$executeRaw`
-    DELETE FROM miniapp.character_ranking_scores AS target
+    DELETE FROM miniapp_features.character_ranking_scores AS target
     WHERE NOT EXISTS (
       SELECT 1
       FROM jsonb_to_recordset(${payload}::jsonb) AS t(character_id uuid)

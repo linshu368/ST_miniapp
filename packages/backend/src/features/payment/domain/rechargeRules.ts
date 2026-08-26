@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../../../lib/supabase.js';
+import { getDomainDb } from '../../../lib/supabase.js';
 import {
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
@@ -26,7 +26,7 @@ export class PaymentPlansConfigError extends Error {
 }
 
 export async function getPaymentPlans(): Promise<PaymentPlan[]> {
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('app_core');
   const { data, error } = await db
     .from('runtime_config')
     .select('value')
@@ -54,7 +54,7 @@ export async function findPaymentPlan(planId: string): Promise<PaymentPlan | und
 }
 
 export async function getRechargePageConfig(): Promise<RechargePageConfig> {
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('app_core');
   const { data, error } = await db
     .from('runtime_config')
     .select('value')
@@ -75,7 +75,7 @@ export function parsePaymentPromptDialogConfig(value: unknown): PaymentPromptDia
 }
 
 export async function getPaymentPromptDialogConfig(): Promise<PaymentPromptDialogConfig> {
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('app_core');
   const { data, error } = await db
     .from('runtime_config')
     .select('value')
@@ -91,7 +91,7 @@ export async function getPaymentPromptDialogConfig(): Promise<PaymentPromptDialo
 }
 
 export async function getInsufficientCreditsNotice(): Promise<string> {
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('app_core');
   const { data, error } = await db
     .from('runtime_config')
     .select('text_value,value')

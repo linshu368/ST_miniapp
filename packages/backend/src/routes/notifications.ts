@@ -9,7 +9,7 @@ import {
   type NotificationScope,
   type NotificationUnreadCountData,
 } from '@miniapp/shared';
-import { getSupabaseClient } from '../lib/supabase.js';
+import { getDomainDb } from '../lib/supabase.js';
 import {
   isNotificationVisibleToUser,
   parseNotificationScope,
@@ -38,7 +38,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
     if (!scope) return reply.status(400).send(fail('INVALID_SCOPE', '消息分类无效'));
 
     const user = await getOrCreateDbUser(request.user);
-    const db = getSupabaseClient().schema('miniapp');
+    const db = getDomainDb('miniapp_features');
     let builder = db
       .from('notifications')
       .select('id,scope,category,title,body,published_at,created_at')
@@ -109,8 +109,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
       const user = await getOrCreateDbUser(request.user);
       const visibleIds = await listVisibleIds(user.id, scope, ids);
       if (visibleIds.length === 0) return reply.send(ok<MarkNotificationsReadData>({ marked: 0 }));
-      const { error } = await getSupabaseClient()
-        .schema('miniapp')
+      const { error } = await getDomainDb('miniapp_features')
         .from('notification_reads')
         .upsert(
           visibleIds.map((notificationId) => ({
@@ -128,8 +127,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
 
 async function listReadIds(userId: string, ids: string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
-  const { data, error } = await getSupabaseClient()
-    .schema('miniapp')
+  const { data, error } = await getDomainDb('miniapp_features')
     .from('notification_reads')
     .select('notification_id')
     .eq('user_id', userId)
@@ -139,7 +137,7 @@ async function listReadIds(userId: string, ids: string[]): Promise<Set<string>> 
 }
 
 async function countUnread(userId: string, scope: NotificationScope): Promise<number> {
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('miniapp_features');
   let query = db
     .from('notifications')
     .select('id')
@@ -161,7 +159,7 @@ async function listVisibleIds(
   scope: NotificationScope | undefined,
   ids: string[]
 ): Promise<string[]> {
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('miniapp_features');
   let query = db
     .from('notifications')
     .select('id,scope,user_id')

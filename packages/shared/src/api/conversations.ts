@@ -44,7 +44,7 @@ export interface ChatSession {
 
 /**
  * 用户级生成配置：对该用户所有会话生效，不做会话级覆盖（总方案决策 10）。
- * 全部落在 miniapp.miniapp_user_settings 的既有字段上，M1 只建读取通道、不新增列。
+ * 全部落在 app_core.miniapp_user_settings 的既有字段上，M1 只建读取通道、不新增列。
  */
 export interface UserGenerationConfig {
   /**

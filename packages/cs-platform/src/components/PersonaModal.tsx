@@ -96,7 +96,7 @@ export function PersonaModal(props: {
           <div className="field">
             <label htmlFor="persona-sql">SQL 规则 *</label>
             <p className="field-hint">
-              必须 SELECT user_id（miniapp.users.id UUID），且为只读单条语句。
+              必须 SELECT user_id（app_core.users.id UUID），且为只读单条语句。
             </p>
             <textarea
               id="persona-sql"

@@ -28,7 +28,7 @@ async function main() {
 
   // Create table if it doesn't exist to bypass `prisma db push` issues with other tables
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS miniapp.runtime_config (
+    CREATE TABLE IF NOT EXISTS app_core.runtime_config (
       key TEXT PRIMARY KEY,
       value JSONB,
       description TEXT,

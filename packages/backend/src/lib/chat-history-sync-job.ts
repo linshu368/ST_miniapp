@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import { getSupabaseClient } from './supabase.js';
+import { getDomainDb } from './supabase.js';
 import {
   calculateUsageDeduction,
   resolveUsageBillingGate,
@@ -77,11 +77,11 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
   isRunning = true;
 
   try {
-    const supabase = getSupabaseClient();
-    const miniappDb = supabase.schema('miniapp' as 'public');
+    // chat_history 属 experience（migration 099）
+    const experienceDb = getDomainDb('experience');
     const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
 
-    const { data, error } = await miniappDb
+    const { data, error } = await experienceDb
       .from('chat_history')
       .select('id, llm_generation_id, llm_charge_id, assistant_reply, status')
       .not('llm_generation_id', 'is', null)
@@ -230,7 +230,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
       if (reconciliationFailed) continue;
 
-      const { error: updateErr } = await miniappDb
+      const { error: updateErr } = await experienceDb
         .from('chat_history')
         .update(llmMetadata)
         .eq('id', record.id);

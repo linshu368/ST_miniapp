@@ -9,7 +9,7 @@ import {
   type SupportMessage,
   type SupportUnreadData,
 } from '@miniapp/shared';
-import { getSupabaseClient } from '../lib/supabase.js';
+import { getDomainDb } from '../lib/supabase.js';
 import { hasUnreadAgentReply } from '../lib/support-unread.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
@@ -71,8 +71,7 @@ export default async function supportRoutes(app: FastifyInstance) {
     if (!conversation) return reply.send(ok<SupportUnreadData>({ has_unread: false }));
 
     const now = new Date().toISOString();
-    const { error } = await getSupabaseClient()
-      .schema('miniapp')
+    const { error } = await getDomainDb('cs_platform')
       .from('support_conversations')
       .update({ user_last_read_at: now, updated_at: now })
       .eq('id', conversation.id);
@@ -110,7 +109,7 @@ export default async function supportRoutes(app: FastifyInstance) {
 
       const user = await getOrCreateDbUser(request.user);
       const conversation = await getOrCreateConversation(user.id);
-      const db = getSupabaseClient().schema('miniapp');
+      const db = getDomainDb('cs_platform');
       const now = new Date().toISOString();
       const { data, error } = await db
         .from('support_messages')
@@ -149,8 +148,7 @@ export default async function supportRoutes(app: FastifyInstance) {
 }
 
 async function findConversation(userId: string): Promise<ConversationRow | null> {
-  const { data, error } = await getSupabaseClient()
-    .schema('miniapp')
+  const { data, error } = await getDomainDb('cs_platform')
     .from('support_conversations')
     .select(CONVERSATION_COLUMNS)
     .eq('user_id', userId)
@@ -162,8 +160,7 @@ async function findConversation(userId: string): Promise<ConversationRow | null>
 async function getOrCreateConversation(userId: string): Promise<ConversationRow> {
   const existing = await findConversation(userId);
   if (existing) return existing;
-  const { data, error } = await getSupabaseClient()
-    .schema('miniapp')
+  const { data, error } = await getDomainDb('cs_platform')
     .from('support_conversations')
     .upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true })
     .select(CONVERSATION_COLUMNS)
@@ -176,8 +173,7 @@ async function getOrCreateConversation(userId: string): Promise<ConversationRow>
 }
 
 async function listMessages(conversationId: string, after?: string): Promise<SupportMessage[]> {
-  let query = getSupabaseClient()
-    .schema('miniapp')
+  let query = getDomainDb('cs_platform')
     .from('support_messages')
     .select('id,sender,body,client_msg_id,created_at')
     .eq('conversation_id', conversationId)
@@ -194,8 +190,7 @@ async function findMessageByClientId(
   conversationId: string,
   clientMsgId: string
 ): Promise<SupportMessage | null> {
-  const { data, error } = await getSupabaseClient()
-    .schema('miniapp')
+  const { data, error } = await getDomainDb('cs_platform')
     .from('support_messages')
     .select('id,sender,body,client_msg_id,created_at')
     .eq('conversation_id', conversationId)

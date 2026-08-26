@@ -23,7 +23,7 @@ import type {
   GetConversationData,
   ListConversationsData,
 } from '@miniapp/shared';
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import { getCharacterFreeChatQuotaLimit } from '../../features/billing/free-quota.js';
 import { MOCK_REPLY_TEXT, type MockUpstream } from './mock-upstream.js';
 import { buildInitData, callApi } from './client.js';
@@ -611,7 +611,7 @@ async function conflictGuardsScenario(context: MvpScenarioContext): Promise<Scen
   });
 
   // 直接注入一条未收口的 streaming 行，比抢一个真实生成窗口稳定得多
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('experience');
   const { error: insertError } = await db.from('chat_history').insert({
     user_id: context.fixtures.userId,
     model: 'mvp-regression/busy',
