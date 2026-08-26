@@ -14,9 +14,10 @@
 > 边界：`miniapp_analytics` / `miniapp_traffic` / `cs_platform` 本轮继续不碰；
 > `public` / `analytics`（旧 bot）为 B 类，不得触碰。
 >
-> **执行进展（2026-08-24）**：sync-job 过滤条件已止血；migration 092 已删掉
-> `user_character_round` / `preset_id` / `llm_model_markup` 三列，**test 库已执行并核对，
-> 生产待执行**（见 §2.4）。`chat_history` 现为 29 列。
+> **执行进展（2026-08-25 更新）**：sync-job 过滤条件已止血；migration **097**（原编号 092，
+> 2026-08-25 合入 `main` 后因撞号重编）删掉 `user_character_round` / `preset_id` /
+> `llm_model_markup` 三列，**test 库已执行并核对，生产待执行且已确认被部署阻塞**（见 §2.4）。
+> test 的 `chat_history` 为 29 列，生产仍为 32 列。
 
 ---
 
@@ -106,7 +107,7 @@
 
 ## 二、chat_history 字段级审计
 
-审计时为 32 列，092 之后为 29 列。生命周期回顾：RPC `start_chat_history_turn` / `start_chat_history_regeneration` 先落
+审计时为 32 列，097 之后为 29 列。生命周期回顾：RPC `start_chat_history_turn` / `start_chat_history_regeneration` 先落
 「streaming 行」（只有 id/user/model/user_input/session 三元组/status）→ 生成结束
 `finalizeTurn` 写回复与终态 → `chat-history-logger.ts` 异步补计费结果与 OpenRouter 元数据 →
 `chat-history-sync-job.ts` 对 24h 内元数据不全的行每 30s 轮询补拉。
@@ -134,32 +135,35 @@
 
 ### 2.2 字段级审计全表（其余 17 列）
 
-「状态」列标 **✅ 092 已删** 的三列见 §2.4。
+「状态」列标 **✅ 097 已删** 的三列见 §2.4。
 
-| 字段                                                                  | 业务含义                         | 写入方                                                                    | 读取方                                                                                      | 非空情况（test 自研 388 行 / 生产近 5000 行） | 状态        |
-| --------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------- |
-| `preset_id`                                                           | ST 时代的预设外键                | `execute.ts` 透传 `GenerationRequest.presetId`，自研链路恒为 null         | 无                                                                                          | **0 / 0**                                     | ✅ 092 已删 |
-| `llm_usage_cache`                                                     | 缓存 Token 节省金额              | logger / sync-job 写 OpenRouter `usage_cache`，实际恒为 null              | 无（sync-job 的误用已在 2026-08-24 摘除，见 §2.3 附带发现）                                 | **0 / 0**                                     | A 档待删    |
-| `upstream_status`                                                     | 上游 HTTP 状态码（仅出错时有值） | `finalizeTurn` / logger                                                   | 无业务读取（回归脚本断言用）                                                                | 24 / —（错误行才有）                          | 建议保留    |
-| `deduction_rate`                                                      | 本轮实际扣除星尘数               | logger / sync-job（对账后回写）                                           | 无业务读取；口径与 `llm_usage_charges.charged_amount`、`wallet_ledger` 重复                 | 388（默认 0）                                 | 见 §2.5     |
-| `user_character_round`                                                | 用户 × 角色累计交互轮次          | 触发器 `tf_set_user_character_round`（**每次 insert 做一次 MAX+1 聚合**） | 无（ranking 注释里明确弃用它）                                                              | 388                                           | ✅ 092 已删 |
-| `llm_intended_deduction`                                              | 应扣金额（余额不足时与实扣分离） | logger / sync-job                                                         | 无业务读取；等值数据在 `llm_usage_charges.calculated_amount`，但**该表有保留上限，见 §2.5** | 380                                           | 见 §2.5     |
-| `llm_model_markup`                                                    | 计费加成倍数快照                 | logger                                                                    | 无业务读取；等值数据在 `llm_usage_charges.model_markup`                                     | 359                                           | ✅ 092 已删 |
-| `llm_provider_name`                                                   | OpenRouter 实际路由的底层厂商    | logger / sync-job                                                         | 无                                                                                          | 337                                           | B 档待议    |
-| `llm_usage`                                                           | 本次调用实际成本（USD）          | logger / sync-job                                                         | 无业务读取（计费用的是 API 返回的内存值，不回读列）；sync-job 过滤条件判 null               | 337                                           |
-| `llm_native_tokens_prompt` / `_completion` / `_reasoning` / `_cached` | 原生 Token 四件套                | logger / sync-job                                                         | 无                                                                                          | 各 337                                        |
-| `llm_latency`                                                         | 首字延迟 ms                      | logger / sync-job                                                         | 仅 sync-job 过滤条件判 null                                                                 | 337                                           |
-| `llm_generation_time`                                                 | 生成总耗时 ms                    | logger / sync-job                                                         | 仅 sync-job 过滤条件判 null                                                                 | 337                                           |
-| `llm_model`                                                           | OpenRouter 实际使用的模型        | logger / sync-job                                                         | 无业务读取（改名路由判定用内存值）                                                          | 337                                           |
-| `llm_generation_data`                                                 | Generation 完整原始 JSON         | logger / sync-job                                                         | 仅 sync-job 过滤条件判 null                                                                 | 337，**单列体积大户候选**                     |
+| 字段                                                                  | 业务含义                         | 写入方                                                                    | 读取方                                                                                      | 非空情况（test 自研 388 行 / 生产近 5000 行）                                   | 状态        |
+| --------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------- |
+| `preset_id`                                                           | ST 时代的预设外键                | `execute.ts` 透传 `GenerationRequest.presetId`，自研链路恒为 null         | 无                                                                                          | 0 / 0（**该口径只覆盖自研行；生产全表 ST 存量行 123,574 行全部有值，见 §2.4**） | ✅ 097 已删 |
+| `llm_usage_cache`                                                     | 缓存 Token 节省金额              | logger / sync-job 写 OpenRouter `usage_cache`，实际恒为 null              | 无（sync-job 的误用已在 2026-08-24 摘除，见 §2.3 附带发现）                                 | **0 / 0**                                                                       | A 档待删    |
+| `upstream_status`                                                     | 上游 HTTP 状态码（仅出错时有值） | `finalizeTurn` / logger                                                   | 无业务读取（回归脚本断言用）                                                                | 24 / —（错误行才有）                                                            | 建议保留    |
+| `deduction_rate`                                                      | 本轮实际扣除星尘数               | logger / sync-job（对账后回写）                                           | 无业务读取；口径与 `llm_usage_charges.charged_amount`、`wallet_ledger` 重复                 | 388（默认 0）                                                                   | 见 §2.5     |
+| `user_character_round`                                                | 用户 × 角色累计交互轮次          | 触发器 `tf_set_user_character_round`（**每次 insert 做一次 MAX+1 聚合**） | 无（ranking 注释里明确弃用它）                                                              | 388                                                                             | ✅ 097 已删 |
+| `llm_intended_deduction`                                              | 应扣金额（余额不足时与实扣分离） | logger / sync-job                                                         | 无业务读取；等值数据在 `llm_usage_charges.calculated_amount`，但**该表有保留上限，见 §2.5** | 380                                                                             | 见 §2.5     |
+| `llm_model_markup`                                                    | 计费加成倍数快照                 | logger                                                                    | 无业务读取；等值数据在 `llm_usage_charges.model_markup`                                     | 359                                                                             | ✅ 097 已删 |
+| `llm_provider_name`                                                   | OpenRouter 实际路由的底层厂商    | logger / sync-job                                                         | 无                                                                                          | 337                                                                             | B 档待议    |
+| `llm_usage`                                                           | 本次调用实际成本（USD）          | logger / sync-job                                                         | 无业务读取（计费用的是 API 返回的内存值，不回读列）；sync-job 过滤条件判 null               | 337                                                                             |
+| `llm_native_tokens_prompt` / `_completion` / `_reasoning` / `_cached` | 原生 Token 四件套                | logger / sync-job                                                         | 无                                                                                          | 各 337                                                                          |
+| `llm_latency`                                                         | 首字延迟 ms                      | logger / sync-job                                                         | 仅 sync-job 过滤条件判 null                                                                 | 337                                                                             |
+| `llm_generation_time`                                                 | 生成总耗时 ms                    | logger / sync-job                                                         | 仅 sync-job 过滤条件判 null                                                                 | 337                                                                             |
+| `llm_model`                                                           | OpenRouter 实际使用的模型        | logger / sync-job                                                         | 无业务读取（改名路由判定用内存值）                                                          | 337                                                                             |
+| `llm_generation_data`                                                 | Generation 完整原始 JSON         | logger / sync-job                                                         | 仅 sync-job 过滤条件判 null                                                                 | 337，**单列体积大户候选**                                                       |
 
 ### 2.3 无用字段清单
 
-**A 档 · 死字段（零读取 + 两库实测恒空，可直接进删除清单）**
+**A 档 · 死字段（零读取，可直接进删除清单）**
+
+> 原判据写的是「零读取 + 两库实测恒空」。2026-08-25 生产全表实测推翻了 `preset_id` 的
+> 「恒空」部分（见 §2.4），但「零读取」成立，删除决定不变。
 
 | 字段              | 摘除时必须连带处理                                                                                                                            | 状态   |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| `preset_id`       | `GenerationRequest.presetId` 参数、`execute.ts` 透传、`ConversationHistoryRow` / 回归脚本的字段声明、视图重建（`ST_remove.md` §6 已有此待办） | ✅ 092 |
+| `preset_id`       | `GenerationRequest.presetId` 参数、`execute.ts` 透传、`ConversationHistoryRow` / 回归脚本的字段声明、视图重建（`ST_remove.md` §6 已有此待办） | ✅ 097 |
 | `llm_usage_cache` | logger 与 sync-job 的写入行、`isCompleteGenerationData` 判定、视图重建（`.or()` 过滤已先行摘除）                                              | 待删   |
 
 **B 档 · 只写不读（数据非空，删除等于放弃审计/观测数据，需产品拍板）**
@@ -167,14 +171,14 @@
 按「删了损失什么」分三组：
 
 1. **计费口径重复组**（等值数据已在 `llm_usage_charges` / `wallet_ledger`）：
-   `llm_model_markup`（✅ 092 已删）、`deduction_rate`、`llm_intended_deduction`。
+   `llm_model_markup`（✅ 097 已删）、`deduction_rate`、`llm_intended_deduction`。
    **后两者的结论已细化，见 §2.5——「损失最小」对 `llm_intended_deduction` 不成立。**
 2. **LLM 观测指标组**（唯一存放处，删了就没有历史观测数据；但从未有读取入口）：
    `llm_provider_name`、`llm_usage`、`llm_latency`、`llm_generation_time`、`llm_model`、
    `llm_native_tokens_prompt` / `_completion` / `_reasoning` / `_cached`、
    以及体积上最值得优先处理的 `llm_generation_data`
 3. **独立评估组**：
-   - `user_character_round`（✅ 092 已删）：删列同时卸掉了每次 insert 的 MAX+1 聚合触发器
+   - `user_character_round`（✅ 097 已删）：删列同时卸掉了每次 insert 的 MAX+1 聚合触发器
    - `upstream_status`：错误诊断的唯一落点，量极小，建议保留
 
 **附带发现（操作性 bug，与删字段直接相关）**：`llm_usage_cache` 恒为 null，
@@ -186,10 +190,12 @@
 
 ---
 
-### 2.4 migration 092 执行记录（2026-08-24）
+### 2.4 migration 097 执行记录（原编号 092）
 
 删 `user_character_round` / `preset_id` / `llm_model_markup` 三列。
-文件：`packages/shared/migrations/092_chat_history_drop_dead_columns.sql`。
+文件：`packages/shared/migrations/097_chat_history_drop_dead_columns.sql`
+（2026-08-24 以编号 092 在 test 执行；2026-08-25 合入 `main` 后与
+`092_payment_prompt_dialog_config.sql` 撞号，重编为 097。全程 `IF EXISTS`，重复执行无副作用）。
 
 | 项             | 内容                                                                                                                                                                                                                                                                 |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -198,7 +204,21 @@
 | 代码侧停写     | `GenerationRequest.presetId` 参数链（`types.ts` / `execute.ts` / `generate.ts`）、`chat-history-logger.ts` 的 `preset_id` 与 `llm_model_markup`、`ConversationHistoryRow`、回归脚本字段声明与 `normalizeHistory`                                                     |
 | 回归脚本换水位 | `waitForChatHistory` 原先用 `llm_model_markup !== null` 判断 logger 是否写完，改用 `llm_intended_deduction`（`llm_charge_id` / `llm_finish_reason` 不可用：它们在更早的 `finalizeTurn` 就已写入）。「耗尽后按固定档位计费」断言改读 `llm_usage_charges.model_markup` |
 | test 库        | ✅ 已执行并核对：29 列、三列消失、触发器与索引消失、视图 29 列可查；单测 213 项全绿；真实数据库 MVP 回归 7/7 通过                                                                                                                                                    |
-| 生产库         | ⏳ **待执行**。执行前必须先跑迁移头部的三条核对 SQL：test 库没有 `miniapp_analytics` 的 9 个视图、没有 `cron`、`public` 函数数也不同，**这些只能在生产查**。预期只命中本迁移处理的两个对象；多出任何一个就停下来                                                     |
+| 生产库         | ⏳ **待执行，且已确认被部署阻塞**。详见下方 2026-08-25 实测记录                                                                                                                                                                                                      |
+
+**2026-08-25 生产预检实测**（脚本 `ops/schema-split/preflight-092-prod.sql`，结果归档
+`ops/schema-split/snapshots/2026-08-25/prod/preflight-092.txt`）：
+
+| 项           | 结果                                                                                                                                                                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 库内消费方   | ✅ 只命中预期的 `miniapp.tf_set_user_character_round` 与 `miniapp.current_chat_history`。无 cron、无约束、无其他函数或视图引用这三列。索引 `idx_chat_history_character_user_round` 随列消失                                                |
+| 长事务       | ✅ 无（`active_backends = 0`）                                                                                                                                                                                                             |
+| **阻塞项**   | ❌ **生产运行的 `origin/main` 代码仍在写 `llm_model_markup`**（`chat-history-logger.ts` 第 141 行；生产库 18:30 最新一行该列有值）。现在删列会让 logger 每次 UPDATE 报「列不存在」                                                         |
+| 列级实测修正 | `preset_id` 并非全表恒空：ST 存量行（`session_id IS NULL`）123,574 行**全部有值**（4 个 UUID，最后写入 2026-08-12）；自研行 94,268 行全空。这 4 个 UUID 指向 088 已删除的 `st_platform.platform_presets`，已无法解析，**已拍板照原样删除** |
+| 其余两列     | `llm_model_markup` 206,072 行非空、`user_character_round` 217,250 行非空，均属 B 档「只写不读」，删除决定不变                                                                                                                              |
+
+**执行前置**：必须先把停写这三列的代码发布到生产（即把本分支并入 `main` 发布一次），
+确认 logger 不再写 `llm_model_markup` 之后，才能执行 097。
 
 ### 2.5 deduction_rate 与 llm_intended_deduction：产销与去留
 
@@ -209,7 +229,7 @@
 | 含义       | 本轮**实扣**星尘                                                                                                 | 本轮**应扣**星尘（余额不足 / 非计费终态时与实扣分离）                    |
 | 类型       | `numeric(14,1)` DEFAULT **0**                                                                                    | `numeric(10,2)` DEFAULT **NULL**                                         |
 | 产生方     | `chat-history-logger.ts`（写 `charge_llm_usage` 返回的 `charged_amount`）；`chat-history-sync-job.ts` 对账后回写 | 同左，写 `billingDecision.amount`（固定档口径下即 `calculated_amount`）  |
-| 消费方     | 无业务读取。仅回归脚本 `normalizeHistory` 作观测输出                                                             | 无业务读取。**092 之后新增一个**：回归脚本用它作 logger 完成水位（§2.4） |
+| 消费方     | 无业务读取。仅回归脚本 `normalizeHistory` 作观测输出                                                             | 无业务读取。**097 之后新增一个**：回归脚本用它作 logger 完成水位（§2.4） |
 | 库内等值列 | `llm_usage_charges.charged_amount`                                                                               | `llm_usage_charges.calculated_amount`                                    |
 
 **关键差异：`llm_usage_charges` 有保留上限。** 触发器 `retain_recent_llm_usage_charges`

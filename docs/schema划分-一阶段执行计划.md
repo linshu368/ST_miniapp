@@ -217,13 +217,13 @@ repository 按表所属域选择客户端。一个 repository 横跨多个域时
 
 1. 分别盘点 test / production：
    - schema、表、视图、函数、触发器、FK、grants、owner；
-   - 092 是否已执行；
+   - 097（原 092）是否已执行；
    - `public` / `analytics` 迁出后的残留；
    - `miniapp_analytics` 全量视图定义；
    - cron job 定义和状态；
    - 所有函数体中的 `miniapp.*` 文本引用。
 2. 将查询结果归档为迁移前快照；两库形态不一致处先列差异，不擅自抹平。
-3. 编写 migration 093：
+3. 编写 migration 099：
    - 顶部放只读 preflight 断言；
    - 单事务创建新 schema、移动表/视图/函数、改写函数体、迁移权限；
    - 底部放 postflight 断言；
@@ -231,12 +231,50 @@ repository 按表所属域选择客户端。一个 repository 横跨多个域时
 4. 同步完成全部代码适配、Prisma 和本地 Supabase 配置。
 5. 不动远程数据库，先完成静态检查、单测和构建。
 
-交付门：代码可构建；093 和回滚脚本均经人工审阅；preflight 能明确阻止结构漂移。
+交付门：代码可构建；099 和回滚脚本均经人工审阅；preflight 能明确阻止结构漂移。
+
+#### 批次 A 实测结论（2026-08-25）
+
+盘点已完成，结果见 `ops/schema-split/snapshots/2026-08-25/批次A-双库基线与差异.md`
+（脚本 `ops/schema-split/inventory.sql` / `dump-functions.sql` / `run-inventory.sh`）。
+盘点改变了本阶段的三项前提：
+
+1. **迁移编号重排。** `main` 已占用 092 / 093（两次）/ 094 / 095，`dev` 另有 095 / 096。
+   本阶段编号定为：**097** = chat_history 三列（原 092 重命名）、**098** = test 侧
+   `characters` 死列对齐、**099** = schema 划分一阶段。
+2. **分支必须先跟上 `main`。** 本分支曾落后 69 个提交，`main` 新增的
+   `features/lobby/pinned-characters.ts`、`features/lobby/ranking-params.ts`、
+   `shared/src/api/lobby-ranking-params.ts` 都是新的 `miniapp.*` 消费方。
+   2026-08-25 已合入 `origin/main`（无冲突，5 包 typecheck 全绿）。
+3. **097 的生产执行被部署阻塞。** 生产运行的是 `main`，其 `chat-history-logger.ts`
+   仍在写 `llm_model_markup`。顺序改为：并入 main 发布 → 确认停写 → 执行 097 → 两库对齐 → 做 099。
+
+#### 批次 A 完成记录（2026-08-26）
+
+进度与细节以 `docs/schema划分-批次A进度交接.md` 为准，这里只记交付门。
+
+| 交付门项                 | 状态                                                                              |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| 代码可构建               | ✅ 5 包 typecheck / lint / build 全绿；`prisma generate` 通过                     |
+| 单测                     | ✅ 460 通过 / 0 失败（13 skip 是等 099 提交后才跑的数据库集成测试）               |
+| preflight 能阻止结构漂移 | ✅ 对象集合、函数集合、`search_path` 名单、目标 schema 不存在、自定义类型逐项断言 |
+| 099 与回滚脚本经人工审阅 | ✅ 2026-08-26 按交接文档 §6.0 四项审过，无阻断                                    |
+
+本批次落地的文件：
+
+- `packages/shared/migrations/099_schema_split_phase1.sql`（正文）
+- `packages/shared/migrations/099_schema_split_phase1_rollback.sql`（§六.2 的提交后回滚）
+- `ops/schema-split/postgrest-expose-test.sql` / `postgrest-expose-prod.sql` / `cron-job5-prod.sql`（§三.3 与 §4.4 的事务外收尾，各自带「回滚」小节）
+- `ops/schema-split/dryrun-099-roundtrip.sh`（同事务内跑「099 正文 + 回滚脚本」再 ROLLBACK）
+- 代码：`getDomainDb()` 按域入口、40 处 `.schema()`、44 处 raw SQL、Prisma 多 schema、`supabase/config.toml`
+
+两处对 099 正文的收紧（行为不变，只为让回滚可证明可逆）：目标 schema 必须完全不存在；
+把 `search_path` 固定成 `'miniapp', 'public'` 的函数必须恰好是已知的那三个。
 
 ### 批次 B：test 割接演练（预计 1 个工作日，失败则重演）
 
 1. 记录 test 迁移前对象快照和关键行数；
-2. 执行 093；
+2. 执行 099；
 3. 配置 grants 和 PostgREST exposed schemas，触发热重载；
 4. 部署适配新 schema 的 test 后端及相关前端；
 5. 运行：
@@ -250,12 +288,29 @@ repository 按表所属域选择客户端。一个 repository 横跨多个域时
 交付门：至少完成一次从干净基线开始的完整演练并全绿；记录迁移和部署实际耗时，
 据此确定生产维护窗口。
 
+#### 批次 B 执行记录（2026-08-26）
+
+明细见 `docs/schema划分-批次A进度交接.md` §八，这里只记结论。
+
+099 于 18:19 在 test 提交执行，**8.92 秒**（含 psql 启动与全部断言）。PostgREST 用 GUC
+切换后热重载立即生效，REST 实测 8 个域全 200。5 包 typecheck / lint / build 全绿，
+backend 单测 321 通过 0 跳过（此前 skip 的 13 项数据库集成测试这次真跑并通过），
+MVP regression 7/7。迁前迁后快照归一比对：约束 / 索引 / 表授权 / 触发器 / 视图定义逐行一致，
+21 张表行数分毫不差（`llm_usage_charge_dedup` 的 +7 已取证为演练自身写入的幂等墓碑），
+5 条跨 schema FK 与 5 个视图按 OID 自动跟随，库内与仓库零残留 `miniapp.*`。
+
+**未完成**：test 后端部署与真机/等价 API smoke。批次 B 要到 smoke 通过才算完整。
+
+耗时口径提示：test 的 `chat_history` 1028 行、生产 21.8 万行 / 11 GB，但 `SET SCHEMA`
+不重写数据，体量不进耗时；生产的额外时间预计只花在拿 ACCESS EXCLUSIVE 锁上。
+维护窗口的另一半是部署耗时，取本次 test 部署实测值。
+
 ### 批次 C：production 短停机割接（预计半个工作日）
 
 1. 发布维护通知，停止入口流量和后端后台任务；
 2. 记录生产即时快照，确认 preflight 与 test 演练基线一致；
 3. 确认可回退的旧部署制品、回滚 SQL和执行人；
-4. 执行 093；事务内任一步失败则整体回滚并停止；
+4. 执行 099；事务内任一步失败则整体回滚并停止；
 5. 更新 PostgREST exposed schemas / grants / reload；
 6. 更新 cron job 5；
 7. 部署新代码；
@@ -288,7 +343,7 @@ permission denied、关键行数与迁移前一致。
 
 ## 六、迁移与回滚纪律
 
-### 6.1 migration 093
+### 6.1 migration 099
 
 表移动、函数移动与函数体改写必须在同一事务完成，避免数据库出现
 “表已搬走、函数仍指向 miniapp”的中间状态。
@@ -338,30 +393,29 @@ cron 和 PostgREST 管理配置可在事务提交后作为同一维护窗口的�
 
 ## 八、新窗口开工交接
 
-新窗口必须先读三份文档：
+**当前进度（2026-08-26）以 `docs/schema划分-批次A进度交接.md` 为准。**
+不要按本节旧开工指令去重做盘点、098 或 099 正文——那些已经做完。
 
-1. `docs/schema划分-一阶段执行计划.md` —— 执行顺序、决策、验证与回滚；
-2. `docs/schema归属地图.md` —— 表和函数归属的权威来源；
-3. `docs/schema划分专项.md` —— 现有表、代码、FK 和 `chat_history` 依赖盘点。
+新窗口必须先读：
 
-执行远程数据库或处理 PostgREST 时再补读：
+1. `docs/schema划分-批次A进度交接.md` —— 做到哪、拍板项、下一步、不要重问什么；
+2. `docs/schema划分-一阶段执行计划.md` —— 执行顺序、验证与回滚纪律；
+3. `docs/schema归属地图.md` —— 表和函数归属；
+4. `docs/schema划分专项.md` —— 表、代码、FK 和 `chat_history` 依赖；
+5. `ops/schema-split/snapshots/2026-08-25/批次A-双库基线与差异.md` —— 双库实测基线。
 
-4. `docs/fix-postgrest-schema-exposure.md`；
-5. `docs/ST_remove-Supabase瘦身专项.md`。
+动 PostgREST 时再读 `docs/fix-postgrest-schema-exposure.md`。
 
-新窗口建议直接使用以下开工指令：
+新窗口建议直接使用以下开工指令（批次 A 已于 2026-08-26 完成，下一步是批次 B）：
 
-> 前置阅读：
+> 前置阅读：`docs/schema划分-批次A进度交接.md` 以及它列出的权威文档。
 >
-> - `docs/schema划分-一阶段执行计划.md`
-> - `docs/schema归属地图.md`
-> - `docs/schema划分专项.md`
->
-> 开始 Schema 划分一阶段的批次 A。先分别实测 test 和 production 当前状态，
-> 核对 092、bot 迁出残留、函数/视图/cron/grants；输出差异与 preflight 结论。
-> 未完成双库基线核对前不要执行任何写库动作。之后实现 migration 093、回滚 SQL
-> 和代码适配，并按执行计划验证。保留上游行为，不改 `miniapp_traffic` /
+> 批次 A 已完成，099 与回滚脚本已按交接文档 §6.0 审过。下一步按执行计划 §五 批次 B 做 test 割接演练：
+> 记快照 → 对 test 提交执行 099 → 跑 `ops/schema-split/postgrest-expose-test.sql` 并用 REST 实测 →
+> 部署 test → 跑 typecheck / 单测 / build / MVP regression / 数据库集成测试 / API smoke →
+> 逐项核对对象形态与行数，并记录 099 实际耗时。
+> 生产 097 仍须先发停写死列的代码。保留上游行为，不改 `miniapp_traffic` /
 > `miniapp_analytics` 的名称和内部设计。
 
-此外，新窗口必须具备 production 的只读盘点能力（连接串或 Supabase MCP）。
-如果暂时没有，先完成 test 基线和代码实现，但不得进入 production 割接。
+此外，新窗口必须具备 production 的只读盘点能力（`.env.schema-split` 或 Supabase MCP）。
+如果暂时没有，先完成代码实现，但不得进入 production 割接。
