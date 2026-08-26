@@ -1,7 +1,19 @@
--- 092: 删 miniapp.chat_history 的三个死列。依据见 docs/schema划分专项.md §2。
+-- 097: 删 miniapp.chat_history 的三个死列。依据见 docs/schema划分专项.md §2。
 --
---   preset_id            ST 时代的预设外键。自研链路恒写 null，两库实测全空，零读取。
---                        （指向 st_platform.platform_presets 的 FK 已随 088 drop schema 一起消失。）
+-- 编号沿革：本文件原为 092，与 main 的 092_payment_prompt_dialog_config.sql 撞号，
+-- 2026-08-25 合入 main 后重编为 097（当时全部分支的最大序号是 096）。
+-- **test 库已按原编号执行过**，本文件全程 IF EXISTS，重复执行无副作用。
+--
+-- 生产执行前提（2026-08-25 实测）：生产运行的 origin/main 代码仍在写 llm_model_markup，
+-- 必须先把停写这三列的代码发布到生产，确认不再写入后才能执行本迁移，
+-- 否则 chat-history-logger 的每次 UPDATE 都会因「列不存在」失败。
+--
+--   preset_id            ST 时代的预设外键。零读取。自研链路恒写 null。
+--                        2026-08-25 生产全表实测：ST 存量行（session_id IS NULL）123,574 行
+--                        全部有值（4 个不同 UUID，最后写入 2026-08-12），自研行 94,268 行全空。
+--                        专项文档记的「两库实测全空」是「最近 5000 行」口径，全表并不成立。
+--                        这 4 个 UUID 指向的 st_platform.platform_presets 已随 088 drop schema
+--                        消失，已是无法解析的悬空引用，删列只损失「ST 时代某轮用了哪个预设」。
 --   llm_model_markup     计费加成倍数快照。等值数据在 llm_usage_charges.model_markup，零读取。
 --   user_character_round 用户 × 角色累计轮次。零读取（大厅排序明确弃用它，改按窗口内行数），
 --                        且它由每次 INSERT 触发一次 MAX+1 全表聚合，删列同时卸掉这份写放大。

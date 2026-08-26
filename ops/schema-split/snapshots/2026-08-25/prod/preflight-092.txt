@@ -1,0 +1,23 @@
+===092PRE:functions_referencing_dead_columns===
+fn|fn_args
+miniapp.tf_set_user_character_round|
+===092PRE:views_referencing_dead_columns===
+rel|relkind
+miniapp.current_chat_history|v
+===092PRE:cron_referencing_dead_columns===
+jobid|command
+===092PRE:indexes_referencing_dead_columns===
+idx|idx_def
+miniapp.idx_chat_history_character_user_round|CREATE INDEX idx_chat_history_character_user_round ON miniapp.chat_history USING btree (character_id, user_id, user_character_round) WHERE (character_id IS NOT NULL)
+===092PRE:constraints_referencing_dead_columns===
+rel|con_name|con_def
+===092PRE:current_chat_history_def===
+reloptions|acl|cmnt|view_def
+security_invoker=true|postgres=arwdDxtm/postgres service_role=r/postgres|自研会话每个 turn 的当前版本（max revision）；旧 revision 仍保留在 chat_history 供审计。| SELECT DISTINCT ON (session_id, turn_index) id, user_id, model, user_input, assistant_reply, history, character_id, preset_id, status, upstream_status, deduction_rate, created_at, user_character_round, llm_provider_name, llm_finish_reason, llm_usage, llm_usage_cache, llm_native_tokens_cached, llm_native_tokens_reasoning, llm_native_tokens_completion, llm_native_tokens_prompt, llm_latency, llm_generation_time, llm_model, llm_generation_id, llm_generation_data, llm_intended_deduction, llm_model_markup, llm_charge_id, session_id, turn_index, revision FROM miniapp.chat_history WHERE ((session_id IS NOT NULL) AND (turn_index IS NOT NULL) AND (revision IS NOT NULL)) ORDER BY session_id, turn_index, revision DESC;
+===092PRE:dead_column_nonnull_counts===
+total_rows|preset_id_nonnull|llm_model_markup_nonnull|user_character_round_nonnull
+217840|123574|206072|217250
+===092PRE:blocking_activity===
+non_idle_backends|oldest_xact_seconds|sample_queries
+0|0|
+===092PRE:END===

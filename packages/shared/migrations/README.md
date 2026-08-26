@@ -177,9 +177,25 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 092_free_quota_exhausted_notice_text.sql # 免费额度耗尽提示从弹窗标题+说明改为单行轻提示文案
 095_revert_free_quota_exhausted_notice_text.sql # 回退 092：校验函数与 runtime_config 从 { text } 还原为 { title, description }
 096_reapply_free_quota_exhausted_notice_text.sql # 重做 092：在已执行 095 的环境把文案结构再次改为 { text }
+097_chat_history_drop_dead_columns.sql # 删 chat_history 的 preset_id / llm_model_markup / user_character_round 三个死列（原编号 092，撞号后重编）
+098_characters_drop_st_sync_columns.sql # 删 characters 的 is_default / is_published / is_active 三个 ST 同步期死列，把 test 对齐生产（生产是 no-op）
+099_schema_split_phase1.sql # schema 划分一阶段：miniapp 的 22 表 + 1 视图 + 24 函数按归属域搬进 app_core / miniapp_features / experience / billing，support_* 迁入 cs_platform，并改写全库函数体与运营人群 SQL 里的 miniapp.* 限定名
+099_schema_split_phase1_rollback.sql # 099 的提交后回滚：对象搬回 miniapp、限定名改回、DROP 四个新 schema。事务提交前失败不需要它（099 单事务自动回滚）
 ```
 
+> **099 不是普通迁移**，执行前必读 `docs/schema划分-一阶段执行计划.md`：
+>
+> - 必须先停入口流量与后台任务（`SET SCHEMA` 不重写数据，但要拿 22 张表的 ACCESS EXCLUSIVE 锁）；
+> - 前置：097 与 098 都已在本库执行，由 099 的 preflight 断言；
+> - 事务外还有三步收尾：`ops/schema-split/postgrest-expose-{test,prod}.sql`、
+>   `ops/schema-split/cron-job5-prod.sql`、部署适配新 schema 的代码；
+> - 空跑：`bash ops/schema-split/dryrun-099.sh test`（只验正向）、
+>   `bash ops/schema-split/dryrun-099-roundtrip.sh test`（正向 + 回滚，同事务内跑完再 ROLLBACK）。
+
 > 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。
+>
+> 092 / 093 / 095 也各有两个文件，来自 `main` 与 `dev` 两条并行发布线，**同号但含义不同**，
+> 不要按序号推断内容。097 起为 schema 划分一阶段的新增迁移，序号在全部分支上唯一。
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
 
@@ -395,7 +411,10 @@ INSERT is_default=true
 
 ## 回滚
 
-阶段一不提供自动回滚脚本。如需回滚：
+本节只讲 ST 阶段一（001~00x 建的 `st_*` schema）。
+**schema 划分一阶段（099）的回滚见 `099_schema_split_phase1_rollback.sql`，不要照抄本节的 CASCADE 写法。**
+
+ST 阶段一不提供自动回滚脚本。如需回滚：
 
 ```sql
 -- 删除三个新 schema（CASCADE 级联删除其下所有表）
@@ -423,4 +442,6 @@ cd packages/backend
 npx prisma generate
 ```
 
-`schema.prisma` 只声明 `miniapp` schema。`public` / `st_*` 不再进 Prisma；088 已 drop 三个 ST schema。需要读 bot 的 `public.*` 时走一次性 SQL。
+099 之后 `schema.prisma` 的 `schemas` 是 `["app_core", "miniapp_features", "billing"]`，11 个 model 各自 `@@schema` 到归属域。
+`experience` / `cs_platform` 里没有 model，只被 `$queryRaw` 用全限定名访问，所以不在 `schemas` 里。
+`public` / `st_*` 不进 Prisma；088 已 drop 三个 ST schema。需要读 bot 的 `public.*` 时走一次性 SQL。
