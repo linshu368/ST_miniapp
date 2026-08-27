@@ -18,7 +18,6 @@ export interface ConversationHistoryRow {
   assistant_reply: string | null;
   history: unknown[];
   character_id: string | null;
-  preset_id: string | null;
   status: string;
   upstream_status: number | null;
   deduction_rate: number | null;
