@@ -14,6 +14,10 @@ export interface MiniappPaymentOrderRow {
   created_at: string;
   expires_at: string;
   paid_at: string | null;
+  next_reconcile_at: string;
+  last_reconciled_at: string | null;
+  reconcile_attempts: number;
+  reconcile_locked_until: string | null;
 }
 
 export interface CreateMiniappPaymentOrderInput {
@@ -98,8 +102,8 @@ export class MiniappPaymentOrderRepository {
   }
 
   /**
-   * 需要跟厂商对账的订单：新创建且尚未入账的 pending，
-   * 以及回溯窗口内已被判过期、仍未入账的订单。
+   * 判过期前需要跟厂商对一次账的订单：已到期但还没入账的 pending，
+   * 以及窗口内已被判过期、仍未入账的订单。
    */
   async listUnsettledAroundExpiry(input: {
     since: string;
@@ -118,6 +122,73 @@ export class MiniappPaymentOrderRepository {
 
     if (error) throw new Error(`查询待对账支付订单失败：${error.message}`);
     return (data ?? []) as MiniappPaymentOrderRow[];
+  }
+
+  async listDueForReconciliation(input: {
+    now: string;
+    limit: number;
+  }): Promise<MiniappPaymentOrderRow[]> {
+    const { data, error } = await this.db
+      .from('payment_orders')
+      .select('*')
+      .eq('status', 'pending')
+      .eq('credits_added', false)
+      .gt('expires_at', input.now)
+      .lte('next_reconcile_at', input.now)
+      .or(`reconcile_locked_until.is.null,reconcile_locked_until.lt.${input.now}`)
+      .order('next_reconcile_at', { ascending: true })
+      .limit(input.limit);
+
+    if (error) throw new Error(`查询待快速对账支付订单失败：${error.message}`);
+    return (data ?? []) as MiniappPaymentOrderRow[];
+  }
+
+  async claimForReconciliation(input: {
+    candidate: MiniappPaymentOrderRow;
+    now: string;
+    lockedUntil: string;
+  }): Promise<MiniappPaymentOrderRow | null> {
+    const { candidate } = input;
+    const { data, error } = await this.db
+      .from('payment_orders')
+      .update({
+        last_reconciled_at: input.now,
+        reconcile_attempts: candidate.reconcile_attempts + 1,
+        reconcile_locked_until: input.lockedUntil,
+      })
+      .eq('id', candidate.id)
+      .eq('status', 'pending')
+      .eq('credits_added', false)
+      .eq('next_reconcile_at', candidate.next_reconcile_at)
+      .eq('reconcile_attempts', candidate.reconcile_attempts)
+      .or(`reconcile_locked_until.is.null,reconcile_locked_until.lt.${input.now}`)
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw new Error(`领取快速对账支付订单失败：${error.message}`);
+    return (data as MiniappPaymentOrderRow | null) ?? null;
+  }
+
+  async releaseReconciliationClaim(input: {
+    id: string;
+    lockedUntil: string;
+    nextReconcileAt: string;
+  }): Promise<boolean> {
+    const { data, error } = await this.db
+      .from('payment_orders')
+      .update({
+        next_reconcile_at: input.nextReconcileAt,
+        reconcile_locked_until: null,
+      })
+      .eq('id', input.id)
+      .eq('status', 'pending')
+      .eq('credits_added', false)
+      .eq('reconcile_locked_until', input.lockedUntil)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw new Error(`释放快速对账支付订单失败：${error.message}`);
+    return data !== null;
   }
 
   async expirePendingByIdForUser(id: string, userId: string): Promise<void> {

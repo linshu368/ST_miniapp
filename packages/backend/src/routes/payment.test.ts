@@ -64,6 +64,10 @@ function createOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPa
     created_at: '2026-08-21T09:00:00.000Z',
     expires_at: '2026-08-21T09:15:00.000Z',
     paid_at: null,
+    next_reconcile_at: '2026-08-21T09:01:00.000Z',
+    last_reconciled_at: null,
+    reconcile_attempts: 0,
+    reconcile_locked_until: null,
     ...overrides,
   };
 }
@@ -363,7 +367,6 @@ const routeOrders = {
   findById: vi.fn(async () => createOrder()),
   complete: vi.fn(async () => createOrder({ status: 'completed', credits_added: true })),
   reopenExpired: vi.fn(async () => undefined),
-  expirePendingForUser: vi.fn(async () => 0),
   expirePendingByIdForUser: vi.fn(async () => undefined),
   findByIdForUser: vi.fn(async () => null),
   listByUser: vi.fn(async () => []),
@@ -373,6 +376,12 @@ const routeOrders = {
 
 vi.mock('../lib/supabase.js', () => ({
   getSupabaseClient: () => ({ schema: () => ({}) }),
+}));
+
+vi.mock('../lib/user.js', () => ({
+  getOrCreateDbUser: vi.fn(async () => ({
+    id: '00000000-0000-0000-0000-000000000001',
+  })),
 }));
 
 vi.mock(
@@ -416,6 +425,26 @@ async function buildWebhookApp() {
   await app.ready();
   return app;
 }
+
+describe('GET /api/payment/orders', () => {
+  it('lists orders without expiring pending rows as a read side effect', async () => {
+    vi.stubEnv('DEV_AUTH_BYPASS', '1');
+    const app = await buildWebhookApp();
+
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/payment/orders',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(routeOrders.listByUser).toHaveBeenCalledOnce();
+    } finally {
+      await app.close();
+      vi.unstubAllEnvs();
+    }
+  });
+});
 
 describe('POST/GET /api/payment/webhook/zqpay', () => {
   const notify = createNotify();

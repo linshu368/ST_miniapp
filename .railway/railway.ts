@@ -11,7 +11,7 @@
  *
  * 方案 Y 拓扑（网关收敛后）：对外域名绑 Vercel（前端在边缘，不在 Railway）。
  * ST 退场后 nginx 已无分发对象，st-bundle 整包退场；Railway 运行 backend API 和
- * 一个无公网入口的支付对账 Cron。两个服务都跟随同一 GitHub 分支自动部署：
+ * 两个无公网入口的支付 Cron。三个服务都跟随同一 GitHub 分支自动部署：
  *
  *   浏览器 ──▶ Vercel (页面) ──▶ stminiapp (backend, 对外域名) ──▶ Supabase / OpenRouter
  *                                      ▲
@@ -126,9 +126,54 @@ export default defineRailway((ctx) => {
     env: Object.fromEntries(apiVariableNames.map((name) => [name, preserve()])),
   });
 
-  // ── 支付对账 Cron：独立一次性进程，禁止把 schedule 配到 HTTP API 服务 ─────────
-  // 与 API 连接同一 GitHub 仓库和分支，保留 dev/main push 后自动部署；无 healthcheck、
-  // 无公网域名。支付和数据库变量全部引用 stminiapp，避免复制第二套密钥。
+  // ── 支付 Cron：独立一次性进程，禁止把 schedule 配到 HTTP API 服务 ────────────
+  // 两个任务与 API 使用同一分支和变量：快速任务每分钟查近期订单，过期任务每 5 分钟
+  // 回溯并判过期。都不提供公网入口。
+  const paymentCronEnv = {
+    NODE_ENV: stminiapp.env.NODE_ENV,
+    DATABASE_ENV: stminiapp.env.DATABASE_ENV,
+    DATABASE_URL: stminiapp.env.DATABASE_URL,
+    DIRECT_URL: stminiapp.env.DIRECT_URL,
+    PROD_SUPABASE_PROJECT_REF: stminiapp.env.PROD_SUPABASE_PROJECT_REF,
+    ...(production
+      ? {
+          PROD_DATABASE_URL: stminiapp.env.PROD_DATABASE_URL,
+          PROD_DIRECT_URL: stminiapp.env.PROD_DIRECT_URL,
+          PROD_SUPABASE_URL: stminiapp.env.PROD_SUPABASE_URL,
+          PROD_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.PROD_SUPABASE_SERVICE_ROLE_KEY,
+        }
+      : {
+          TEST_DATABASE_URL: stminiapp.env.TEST_DATABASE_URL,
+          TEST_DIRECT_URL: stminiapp.env.TEST_DIRECT_URL,
+          TEST_SUPABASE_URL: stminiapp.env.TEST_SUPABASE_URL,
+          TEST_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.TEST_SUPABASE_SERVICE_ROLE_KEY,
+          TEST_SUPABASE_PROJECT_REF: stminiapp.env.TEST_SUPABASE_PROJECT_REF,
+        }),
+    PAYMENT_ENABLED: stminiapp.env.PAYMENT_ENABLED,
+    PAYMENT_BASE_URL: stminiapp.env.PAYMENT_BASE_URL,
+    PAYMENT_MERCHANT_ID: stminiapp.env.PAYMENT_MERCHANT_ID,
+    PAYMENT_MERCHANT_PRIVATE_KEY: stminiapp.env.PAYMENT_MERCHANT_PRIVATE_KEY,
+    PAYMENT_PLATFORM_PUBLIC_KEY: stminiapp.env.PAYMENT_PLATFORM_PUBLIC_KEY,
+    PAYMENT_NOTIFY_URL: stminiapp.env.PAYMENT_NOTIFY_URL,
+    PAYMENT_RETURN_URL: stminiapp.env.PAYMENT_RETURN_URL,
+  };
+
+  const paymentReconcileCron = fn('stminiapp-payment-reconcile-cron', {
+    source: github(REPOSITORY, { branch }),
+    build: {
+      builder: 'DOCKERFILE',
+      buildCommand: 'pnpm install',
+      buildEnvironment: 'V3',
+      dockerfilePath: '/ops/docker/Dockerfile.backend',
+    },
+    start: 'tsx src/scripts/reconcile-payment-orders.ts',
+    deploy: {
+      cronSchedule: '* * * * *',
+      restartPolicyType: 'NEVER',
+    },
+    env: paymentCronEnv,
+  });
+
   const paymentCron = fn('stminiapp-payment-cron', {
     source: github(REPOSITORY, { branch }),
     build: {
@@ -142,37 +187,10 @@ export default defineRailway((ctx) => {
       cronSchedule: '*/5 * * * *',
       restartPolicyType: 'NEVER',
     },
-    env: {
-      NODE_ENV: stminiapp.env.NODE_ENV,
-      DATABASE_ENV: stminiapp.env.DATABASE_ENV,
-      DATABASE_URL: stminiapp.env.DATABASE_URL,
-      DIRECT_URL: stminiapp.env.DIRECT_URL,
-      PROD_SUPABASE_PROJECT_REF: stminiapp.env.PROD_SUPABASE_PROJECT_REF,
-      ...(production
-        ? {
-            PROD_DATABASE_URL: stminiapp.env.PROD_DATABASE_URL,
-            PROD_DIRECT_URL: stminiapp.env.PROD_DIRECT_URL,
-            PROD_SUPABASE_URL: stminiapp.env.PROD_SUPABASE_URL,
-            PROD_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.PROD_SUPABASE_SERVICE_ROLE_KEY,
-          }
-        : {
-            TEST_DATABASE_URL: stminiapp.env.TEST_DATABASE_URL,
-            TEST_DIRECT_URL: stminiapp.env.TEST_DIRECT_URL,
-            TEST_SUPABASE_URL: stminiapp.env.TEST_SUPABASE_URL,
-            TEST_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.TEST_SUPABASE_SERVICE_ROLE_KEY,
-            TEST_SUPABASE_PROJECT_REF: stminiapp.env.TEST_SUPABASE_PROJECT_REF,
-          }),
-      PAYMENT_ENABLED: stminiapp.env.PAYMENT_ENABLED,
-      PAYMENT_BASE_URL: stminiapp.env.PAYMENT_BASE_URL,
-      PAYMENT_MERCHANT_ID: stminiapp.env.PAYMENT_MERCHANT_ID,
-      PAYMENT_MERCHANT_PRIVATE_KEY: stminiapp.env.PAYMENT_MERCHANT_PRIVATE_KEY,
-      PAYMENT_PLATFORM_PUBLIC_KEY: stminiapp.env.PAYMENT_PLATFORM_PUBLIC_KEY,
-      PAYMENT_NOTIFY_URL: stminiapp.env.PAYMENT_NOTIFY_URL,
-      PAYMENT_RETURN_URL: stminiapp.env.PAYMENT_RETURN_URL,
-    },
+    env: paymentCronEnv,
   });
 
   return project('st-miniapp', {
-    resources: [stminiapp, paymentCron],
+    resources: [stminiapp, paymentReconcileCron, paymentCron],
   });
 });
