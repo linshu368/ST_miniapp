@@ -20,7 +20,6 @@ function row(
     assistant_reply: assistantReply,
     history,
     character_id: null,
-    preset_id: null,
     status: 'success',
     upstream_status: 200,
     deduction_rate: null,
