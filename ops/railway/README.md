@@ -103,8 +103,10 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
 4. Settings → Networking 生成 Railway 域名（或自定义域名），把它配到 Vercel 的
    `NEXT_PUBLIC_API_URL`（见 `ops/env/vercel.env.production.example`）；反向把 Vercel
    对外域名配到本服务的 `FRONTEND_URL`。
-5. 建好、变量填好后，可选用 IaC 对齐：`railway link` → `railway config plan`
-   →（确认 diff 无误）`railway config apply`。
+5. 建好、变量填好后，可选用 IaC 对齐：development 运行 `railway config plan` /
+   `railway config apply`；production 必须显式运行
+   `RAILWAY_CONFIG_ENV=production railway config plan` /
+   `RAILWAY_CONFIG_ENV=production railway config apply`。
 
 ### 支付对账 Cron
 

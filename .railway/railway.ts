@@ -105,7 +105,11 @@ const PRODUCTION_API_VARIABLES = [
 ] as const;
 
 export default defineRailway((ctx) => {
-  const production = ctx.environment === 'production';
+  // Railway CLI 5.43 的内置 TypeScript runner 尚未稳定传入 ctx.environment；
+  // production plan/apply 必须显式设置 RAILWAY_CONFIG_ENV=production，避免误按 dev 渲染。
+  const targetEnvironment =
+    process.env.RAILWAY_CONFIG_ENV ?? ctx.environment ?? ctx.environmentName ?? 'development';
+  const production = targetEnvironment === 'production';
   const branch = production ? 'main' : 'dev';
 
   // ── backend（Railway 服务名：stminiapp）：Fastify 平台 API，唯一对外服务 ───────
