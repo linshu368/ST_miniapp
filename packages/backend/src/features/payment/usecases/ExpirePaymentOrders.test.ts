@@ -58,7 +58,7 @@ describe('runExpirePaymentOrders', () => {
     vi.clearAllMocks();
   });
 
-  it('queries a 24h window of unsettled orders up to now', async () => {
+  it('queries unsettled orders from the 24h lookback through newly created orders', async () => {
     const orders = createOrders([]);
 
     await runExpirePaymentOrders({
@@ -71,7 +71,7 @@ describe('runExpirePaymentOrders', () => {
 
     expect(orders.listUnsettledAroundExpiry).toHaveBeenCalledWith({
       since: '2026-08-20T12:00:00.000Z',
-      until: '2026-08-21T12:00:00.000Z',
+      until: '2026-08-21T12:15:00.000Z',
       limit: 100,
     });
   });

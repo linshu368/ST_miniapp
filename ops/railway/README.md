@@ -122,7 +122,8 @@ IaC 可用时，`.railway/railway.ts` 中的 `fn('stminiapp-payment-cron', ...)`
 2. Source 连接与 `stminiapp` 相同的 GitHub 仓库和分支：development 用 `dev`，
    production 用 `main`。Build 的 Dockerfile Path 使用 `/ops/docker/Dockerfile.backend`。
 3. Start Command 覆盖为 `tsx src/scripts/expire-payment-orders.ts`。
-4. Cron Schedule 填 `*/5 * * * *`（UTC）。
+4. Cron Schedule 填 `*/5 * * * *`（UTC）。任务会对新创建且尚未入账的订单主动查单，
+   使 webhook 和用户回跳都失败时通常也能在支付后 5 分钟内到账。
 5. 关闭 healthcheck，不生成 Railway domain，不配置 TCP proxy。
 6. 以下变量全部使用 Railway reference 指向 `stminiapp`，不要复制值：
    - `PAYMENT_ENABLED`、全部 `PAYMENT_*`
