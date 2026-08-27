@@ -136,7 +136,7 @@ Railway 控制台手动创建并逐项对齐：
    - development：全部 `TEST_DATABASE_*`、`TEST_DIRECT_*`、`TEST_SUPABASE_*`
    - production：全部 `PROD_DATABASE_*`、`PROD_DIRECT_*`、`PROD_SUPABASE_*`
 7. Restart Policy 都设为 `Never`。分别手动 Run 一次，确认日志出现
-   `Fast payment reconciliation: checked=…` / `Reconciled before expiry: checked=…`
+   `Fast payment reconciliation: checked=…` / `Reconciled before expiry: checked=… failed=…`
    且 deployment 正常退出。
 
 上线顺序与验收：
@@ -144,6 +144,9 @@ Railway 控制台手动创建并逐项对齐：
 1. 先在 test、production 分别执行
    `packages/shared/migrations/100_payment_reconciliation_schedule.sql`，再部署包含快速对账
    repository 的代码；顺序反过来会因缺少调度列导致快速任务失败。
+   `101_payment_settled_by.sql`（入账来源，回调监控用）同理必须先于代码执行：它把入账函数换成
+   三参签名，迁移先跑不影响旧代码，反过来则四条入账路径一起失败。详见
+   [`docs/payment-missing-credits-remediation.md`](../../docs/payment-missing-credits-remediation.md) §3.1。
 2. 用生产测试账号创建并支付最低金额订单，支付后不返回 MiniApp，也不打开订单详情。
 3. Railway 日志应在订单 `created_at` 后约 60–90 秒出现同一 `orderId` 的
    `payment.query.paid source=cron` 和 `payment.settle.completed source=cron`。

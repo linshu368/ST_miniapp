@@ -13,6 +13,7 @@
     "payment:expire-orders": "tsx src/scripts/expire-payment-orders.ts",
     "payment:reconcile-orders": "tsx src/scripts/reconcile-payment-orders.ts",
     "payment:diagnose-query": "tsx src/scripts/diagnose-zqpay-query.ts",
+    "payment:callback-report": "tsx src/scripts/payment-callback-report.ts",
     "mvp:regression": "tsx src/scripts/mvp-regression/run.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

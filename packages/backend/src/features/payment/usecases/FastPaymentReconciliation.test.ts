@@ -29,6 +29,7 @@ function createRow(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPaym
     created_at: '2026-08-27T09:58:59.000Z',
     expires_at: '2026-08-27T10:13:59.000Z',
     paid_at: null,
+    settled_by: null,
     next_reconcile_at: '2026-08-27T09:59:59.000Z',
     last_reconciled_at: null,
     reconcile_attempts: 0,
@@ -107,7 +108,7 @@ describe('runFastPaymentReconciliation', () => {
       now: '2026-08-27T10:00:00.000Z',
       limit: 10,
     });
-    expect(orders.complete).toHaveBeenCalledWith('MA-fast-1', 'ZQ-fast-1');
+    expect(orders.complete).toHaveBeenCalledWith('MA-fast-1', 'ZQ-fast-1', 'cron');
     expect(orders.releaseReconciliationClaim).not.toHaveBeenCalled();
     expect(result).toEqual({ checked: 1, claimed: 1, settled: 1, unpaid: 0, failed: 0 });
   });

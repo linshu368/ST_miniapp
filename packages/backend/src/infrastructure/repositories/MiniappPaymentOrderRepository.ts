@@ -1,5 +1,10 @@
 import { getSupabaseClient } from '../../lib/supabase.js';
-import type { PaymentOrder, PaymentOrderStatus, PaymentType } from '@miniapp/shared';
+import type {
+  PaymentOrder,
+  PaymentOrderStatus,
+  PaymentSettlementSource,
+  PaymentType,
+} from '@miniapp/shared';
 
 export interface MiniappPaymentOrderRow {
   id: string;
@@ -14,6 +19,8 @@ export interface MiniappPaymentOrderRow {
   created_at: string;
   expires_at: string;
   paid_at: string | null;
+  /** 入账获胜路径；migration 101 之前入账的历史订单为 null */
+  settled_by: PaymentSettlementSource | null;
   next_reconcile_at: string;
   last_reconciled_at: string | null;
   reconcile_attempts: number;
@@ -29,6 +36,9 @@ export interface CreateMiniappPaymentOrderInput {
   bonus_credits: number;
   expires_at: string;
 }
+
+/** 日报按天全量取，单页上限只是为了不把一天的订单压成一次超大响应。 */
+const REPORT_PAGE_SIZE = 500;
 
 export class MiniappPaymentOrderRepository {
   private readonly db = getSupabaseClient().schema('miniapp');
@@ -83,6 +93,41 @@ export class MiniappPaymentOrderRepository {
     const { data, error } = await query;
     if (error) throw new Error(`查询支付订单列表失败：${error.message}`);
     return (data ?? []) as MiniappPaymentOrderRow[];
+  }
+
+  /**
+   * 回调监控日报口径：按 created_at 取一整天的订单。
+   * 划天用 created_at 而不是 paid_at，问的是「当天下的单最后由哪条路径入账」，
+   * 跨天才入账的订单仍归它下单的那天，否则兜底路径的耗时会被算到第二天。
+   */
+  async listCreatedBetween(input: {
+    since: string;
+    until: string;
+    status?: PaymentOrderStatus;
+  }): Promise<MiniappPaymentOrderRow[]> {
+    const rows: MiniappPaymentOrderRow[] = [];
+
+    for (let offset = 0; ; offset += REPORT_PAGE_SIZE) {
+      let query = this.db
+        .from('payment_orders')
+        .select('*')
+        .gte('created_at', input.since)
+        .lt('created_at', input.until)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + REPORT_PAGE_SIZE - 1);
+
+      if (input.status) {
+        query = query.eq('status', input.status);
+      }
+
+      const { data, error } = await query;
+      if (error) throw new Error(`查询区间支付订单失败：${error.message}`);
+
+      const page = (data ?? []) as MiniappPaymentOrderRow[];
+      rows.push(...page);
+      if (page.length < REPORT_PAGE_SIZE) return rows;
+    }
   }
 
   async expirePendingForUser(userId: string): Promise<number> {
@@ -227,11 +272,13 @@ export class MiniappPaymentOrderRepository {
 
   async complete(
     id: string,
-    providerTransactionId: string | null
+    providerTransactionId: string | null,
+    settledBy: PaymentSettlementSource
   ): Promise<MiniappPaymentOrderRow> {
     const { data, error } = await this.db.rpc('complete_payment_order', {
       p_order_id: id,
       p_provider_transaction_id: providerTransactionId,
+      p_settled_by: settledBy,
     });
     if (error) throw new Error(`完成支付订单失败：${error.message}`);
     return data as MiniappPaymentOrderRow;

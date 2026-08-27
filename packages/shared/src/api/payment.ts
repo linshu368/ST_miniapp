@@ -9,6 +9,12 @@ export type PaymentType = 'alipay' | 'wxpay';
 /** 与老 Bot 后端 payment_orders.payment_status 保持一致：pending → completed / expired / failed */
 export type PaymentOrderStatus = 'pending' | 'completed' | 'expired' | 'failed';
 
+/**
+ * 入账路径。四条路径共用同一条结算逻辑，谁先确认支付由谁入账。
+ * 取值同时用于日志 `source` 字段和 `payment_orders.settled_by` 列，不能各自定义。
+ */
+export type PaymentSettlementSource = 'webhook' | 'return' | 'query' | 'cron';
+
 /** 套餐视觉变体，驱动 4 档层级样式（entry 降权 / standard / recommended 主推 / premium 大户） */
 export type PaymentPlanVariant = 'entry' | 'standard' | 'recommended' | 'premium';
 

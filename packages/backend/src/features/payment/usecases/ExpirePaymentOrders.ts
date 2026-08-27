@@ -22,6 +22,8 @@ const RECONCILE_FAILURE_MIN_SAMPLE_SIZE = 5;
 export interface ExpirePaymentOrdersResult {
   checked: number;
   settled: number;
+  /** 查单没通的笔数。与快速对账的 failed 同口径，供回调监控算查单失败率。 */
+  failed: number;
   expired: number;
 }
 
@@ -73,7 +75,10 @@ export async function runExpirePaymentOrders(input: {
     }
 
     if (checked > 0) {
-      log.biz.info({ event: 'payment.cron.reconciled', checked, settled }, '判过期前对账完成');
+      log.biz.info(
+        { event: 'payment.cron.reconciled', checked, settled, failed },
+        '判过期前对账完成'
+      );
     }
   }
 
@@ -87,9 +92,9 @@ export async function runExpirePaymentOrders(input: {
       },
       '查单失败率过高，跳过本轮订单过期'
     );
-    return { checked, settled, expired: 0 };
+    return { checked, settled, failed, expired: 0 };
   }
 
   const expired = await orders.expireAllPending();
-  return { checked, settled, expired };
+  return { checked, settled, failed, expired };
 }
