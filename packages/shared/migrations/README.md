@@ -181,6 +181,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 098_characters_drop_st_sync_columns.sql # 删 characters 的 is_default / is_published / is_active 三个 ST 同步期死列，把 test 对齐生产（生产是 no-op）
 099_schema_split_phase1.sql # schema 划分一阶段：miniapp 的 22 表 + 1 视图 + 24 函数按归属域搬进 app_core / miniapp_features / experience / billing，support_* 迁入 cs_platform，并改写全库函数体与运营人群 SQL 里的 miniapp.* 限定名
 099_schema_split_phase1_rollback.sql # 099 的提交后回滚：对象搬回 miniapp、限定名改回、DROP 四个新 schema。事务提交前失败不需要它（099 单事务自动回滚）
+100_payment_reconciliation_schedule.sql # 支付订单快速对账：payment_orders 加 next_reconcile_at / last_reconciled_at / reconcile_attempts / reconcile_locked_until 四列与领取索引。按 to_regclass 自动挑 billing 或 miniapp，与 099 顺序无关
 ```
 
 > **099 不是普通迁移**，执行前必读 `docs/schema划分-一阶段执行计划.md`：

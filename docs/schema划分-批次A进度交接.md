@@ -1,12 +1,13 @@
-# Schema 划分 · 批次进度交接（A / B / C0–C1 已完成，C2/C3 待启动）
+# Schema 划分 · 批次进度交接（A / B / C0–C2 已完成，只剩 C3）
 
-> 日期：2026-08-27（C0 停写热修与生产 097 已收口）  
-> 分支：schema 适配代码在 `origin/dev`（PR #288，`73627ba`）。生产 `main` 已含停写热修 PR #292（合并提交 `fd6533d`），**不含** schema 切换。  
+> 日期：2026-08-27（C0 停写热修、生产 097、C2 制品与 PR 均已收口）  
+> 分支：schema 适配代码在 `origin/dev`（已合入上游 `main`，合并提交 `b16f8df`）。生产 `main` 停在停写热修 PR #292（`fd6533d`），**不含** schema 切换。  
+> **C2 的 PR 是 [#294](https://github.com/linshu368/ST_miniapp/pull/294)（`dev` → `main`），CI 已绿，正挂着等 C3 窗口——现在不要 merge。**  
 > 本文件给新窗口接着干。权威归属与执行纪律仍以下面三份为准，本文只记**做到哪、下一步做什么、不要重问什么**。
 >
-> **新窗口从这里开始读：§一 状态 → §九 C2/C3。** 不要重做 C0/C1（记录在 §十）。
+> **新窗口从这里开始读：§一 状态 → §九 C3。** 不要重做 C0/C1（§十）或 C2（§十一）。
 >
-> 文件名沿用 `批次A`（其它文档按路径引用它），内容已覆盖批次 B（§八）、C 前置（旧 §九）和 C0/C1 收口（§十）。
+> 文件名沿用 `批次A`（其它文档按路径引用它），内容已覆盖批次 B（§八）、C 前置（旧 §九）、C0/C1 收口（§十）和 C2（§十一）。
 
 必读：
 
@@ -20,9 +21,9 @@
 
 ## 一、一句话状态
 
-**批次 A、B 已收口；批次 C 的 C0（停写热修）与 C1（生产 097）已完成。硬阻断已解除。**
+**批次 A、B 已收口；批次 C 的 C0（停写热修）、C1（生产 097）、C2（完整代码 + PR #294）都已完成。**
 
-下一步只剩 **C2 准备完整 schema 代码（先不合 `main`）→ C3 维护窗口跑 099 → 再部署新代码**。路径见 **§九**。
+下一步只剩 **C3：维护窗口跑 099 → PostgREST → cron job 5 → 合 PR #294 部署**。路径见 **§9.3**，C2 取证见 **§十一**。
 
 099 已于 2026-08-26 18:19 在 **test 提交执行**（耗时 8.92 秒），PostgREST 暴露列表已切换，
 test 库现在是新形态：`miniapp` 空壳，22 表 + 1 视图 + 25 函数分布在五个域里。
@@ -58,7 +59,7 @@ test 库现在是新形态：`miniapp` 空壳，22 表 + 1 视图 + 25 函数分
 | `public` 残留函数      | 099 只改限定名、不改行为；是否删除另开评审                                                                                                                                         |
 | PostgREST              | 用 GUC 接管；列表必须先含现有 `miniapp_analytics` / `cs_platform`，再追加新域                                                                                                      |
 | `aiero` schema         | 无关，永久排除                                                                                                                                                                     |
-| 分支                   | schema 适配在 `origin/dev`（PR #288）。生产跟 `main` 自动部署。C2 只开 PR、**不合**；合入放到 C3 第 7 步                                                                           |
+| 分支                   | schema 适配在 `origin/dev`（PR #288 + 上游 `main` 合并 `b16f8df`）。生产跟 `main` 自动部署。C2 的 PR #294 只开、**不合**；合入放到 C3 第 7 步                                      |
 | 编号                   | 097 = chat_history 三列（原 092）；098 = characters 死列；099 = schema 划分                                                                                                        |
 | 生产割接               | 低峰短停机硬切，不做兼容视图 / RPC wrapper                                                                                                                                         |
 
@@ -245,7 +246,7 @@ test 实测通过：
 
 ## 六、新窗口接着做（顺序不要跳）
 
-批次 A、B、C0、C1 已完成（§一 / §八 / §十）。§6.0 已审过。**下一步是 §九 的 C2/C3，不要重做批次 B 或 C0/C1。**
+批次 A、B、C0、C1、C2 已完成（§一 / §八 / §十 / §十一）。§6.0 已审过。**下一步只剩 §9.3 的 C3，不要重做批次 B 或 C0/C1/C2。**
 
 ### 6.0 先审（人的活，不要跳过）
 
@@ -279,7 +280,7 @@ test 实测通过：
 
 ### 6.2 之后
 
-批次 B 已于 2026-08-27 收口（§8.6 / §8.7）。C0/C1 已于同日收口（§十）。下一步是 **§九 的 C2/C3**。
+批次 B 已于 2026-08-27 收口（§8.6 / §8.7）。C0/C1（§十）与 C2（§十一）已于同日收口。下一步是 **§9.3 的 C3**。
 
 ### 空跑命令
 
@@ -307,8 +308,10 @@ bash ops/schema-split/dryrun-099-roundtrip.sh test  # 正向 + 回滚，同事�
 - **test 已是新形态**，不要再往 test 上跑 `dryrun-099.sh` / `dryrun-099-roundtrip.sh`——
   它们的正向 preflight 要求起点是 `miniapp` 还满，现在会直接被断言挡下（这是对的，不是坏了）。
   只验回滚时：把回滚脚本末尾 `COMMIT` 换成 `ROLLBACK` 再跑，原文件不动。
-- **不要把当前整个 `dev` 合入 `main` 或部署到生产。** 生产库仍是 `miniapp.*`，`dev` 已经读新 schema，会立刻 500。
-  production 的 Railway `stminiapp` 跟随 GitHub `main` 自动部署，合 `main` 就是发生产。C2 的 PR 先挂着，合入放到 C3 第 7 步。
+- **099 跑完之前不要 merge PR #294，也不要手动把这份镜像部署到生产。** 生产库仍是 `miniapp.*`，
+  `dev` 已经读新 schema，会立刻 500。production 的 Railway `stminiapp` 以及两个支付 cron 服务
+  都跟随 GitHub `main` 自动部署，合 `main` 就是发生产。合入放到 C3 第 7 步。
+  往 `dev` 推代码是安全的（`development` 环境才跟 `dev`，§11.4 已实测）。
 
 ---
 
@@ -450,49 +453,59 @@ C3 窗口内执行 099 前仍须再核一次，避免窗口前又被手工改过
 
 ---
 
-## 九、批次 C：C2 / C3（2026-08-27 晚，C0/C1 已收口）
+## 九、批次 C：只剩 C3（2026-08-27 晚，C0/C1/C2 已收口）
 
 新窗口从这里执行。权威顺序仍是执行计划 §五 批次 C 的窗口内步骤。
-C0/C1 的取证见 **§十**，不要重做停写热修，也不要再跑 097。
+C0/C1 的取证见 **§十**、C2 的见 **§十一**；不要重做停写热修、不要再跑 097、不要重开 PR。
 
 ### 9.1 当前各面状态
 
-| 面                 | 状态                                                                                                                              |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| 代码 `dev`         | PR #288 已合（`73627ba`）。Railway `development` 已部署新 schema 代码，smoke 通过（§8.6）                                         |
-| 代码 `main`        | 已含停写热修 PR #292（`fd6533d`）。**不含** schema 切换（无 `getDomainDb` / Prisma 多 schema / 099）                              |
-| Railway production | `stminiapp` 已部署 `fd6533d`，`/health` 200。跟随 GitHub `main` **自动部署**                                                      |
-| test 库            | 099 已提交；PostgREST 已切；`miniapp` 空壳；FDW 保留；回滚脚本已事务内验证                                                        |
-| production 库      | **097 已执行**。`chat_history` / `current_chat_history` 29 列。099 未执行；无新域、无 FDW；22 表 + 1 视图 + 25 函数仍在 `miniapp` |
-| production 098     | **已满足**。`characters` 无 `is_default` / `is_published` / `is_active`                                                           |
-| cron job 5         | 仍是 `FROM miniapp.characters`；099 之后必须跑 `ops/schema-split/cron-job5-prod.sql`                                              |
+| 面                    | 状态                                                                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 代码 `dev`            | 已含 PR #288（`73627ba`）与上游 `main`（合并提交 `b16f8df`）。Railway `development` 已部署合并后代码，smoke 通过（§11.4）                                  |
+| 代码 `main`           | 停在停写热修 PR #292（`fd6533d`）。**不含** schema 切换（无 `getDomainDb` / Prisma 多 schema / 099）                                                       |
+| C2 的 PR              | [#294](https://github.com/linshu368/ST_miniapp/pull/294) `dev` → `main`，CI 绿，**保持打开不要 merge**；合入是 C3 第 7 步                                  |
+| Railway production    | `stminiapp` 已部署 `fd6533d`，`/health` 200。跟随 GitHub `main` **自动部署**                                                                               |
+| Railway 生产 cron × 2 | `stminiapp-payment-reconcile-cron`（每分钟）、`stminiapp-payment-cron`（每 5 分钟）也跟随 `main`，都读 `payment_orders`。**C3 第 1 步必须先停，见 §11.3**  |
+| test 库               | 099 已提交；PostgREST 已切；`miniapp` 空壳；FDW 保留；回滚脚本已事务内验证                                                                                 |
+| production 库         | **097 已执行**。`chat_history` / `current_chat_history` 29 列。099 未执行；无新域、无 FDW；22 表 + 1 视图 + 25 函数仍在 `miniapp`                          |
+| production 098        | **已满足**。`characters` 无 `is_default` / `is_published` / `is_active`                                                                                    |
+| production 100        | **已执行**（上游 PR #290/#291 带来，不是本专项做的）。`miniapp.payment_orders` 现 16 列，多 4 个对账列 + 索引 `idx_payment_orders_due_reconcile`，见 §11.2 |
+| cron job 5            | 仍是 `FROM miniapp.characters`；099 之后必须跑 `ops/schema-split/cron-job5-prod.sql`                                                                       |
 
 ### 9.2 当前硬约束（不要踩）
 
 097 的部署阻断已经解除。现在唯一不能做错的是：
 
-**不要把 `origin/dev` 的 schema 适配代码合入 `main`，也不要手动 `railway up` 那份镜像。**
+**在 099 跑完之前不要 merge PR #294，也不要手动 `railway up` 那份镜像。**
 `.railway/railway.ts` 里 production 的 `source.branch` 是 `main`。合 `main` = 立刻把 `getDomainDb('app_core')` 发到仍是 `miniapp.*` 的生产库，会 `schema/relation not found`。
+同一份 `main` 还喂着两个支付 cron 服务，它们会跟着一起换代码。
 
 因此必须继续拆成两份制品：
 
 1. **停写热修**（已上生产，PR #292）— 不要再发一遍；
-2. **完整 schema 适配**（现 `origin/dev`）— 099 + PostgREST + cron job 5 之后才合 `main` 部署。
+2. **完整 schema 适配**（PR #294，head 是 `dev`）— 099 + PostgREST + cron job 5 之后才合 `main` 部署。
 
-097 SQL 在 `origin/dev` / 本分支，**不在 `main`**。已经对生产执行过，幂等 `IF EXISTS`，不必补进 `main` 才算完成。C3 用的 099 等文件也从 `origin/dev` 取。
+往 `dev` 推代码不会碰生产：`development` 环境的 `source.branch` 是 `dev`。§11.4 已实测过一次（推 `dev` 之后生产仍是 `fd6533d`、`/health` 与角色卡接口照常 200）。
+
+097 SQL 在 `origin/dev`，**不在 `main`**。已经对生产执行过，幂等 `IF EXISTS`，不必补进 `main` 才算完成。C3 用的 099 等文件也从 `origin/dev` 取。
 
 ### 9.3 新窗口逐步做什么
 
-**C2. 准备完整代码，但先不部署、也不要合 `main`**
-
-1. 从 `origin/dev` 开（或更新）`dev` → `main` 的 PR，只带 schema 适配；合 main 时上游只读，见 `.cursor/rules/upstream-merge-protection.mdc`。
-2. CI 全绿后 **PR 保持打开，不要 merge**。
-3. 确认可回退的旧生产制品：当前健康的是 Railway deployment `da7b25ee`（commit `fd6533d`，停写热修、097 之后仍读 `miniapp.*`）。
+**C2 已完成（2026-08-27 晚，取证见 §十一）**：`dev` 已合上游 `main`（`b16f8df`），
+PR [#294](https://github.com/linshu368/ST_miniapp/pull/294) 已开、CI 绿、挂着不合。
+可回退的旧生产制品是 Railway deployment `da7b25ee`（commit `fd6533d`，停写热修、097 之后仍读 `miniapp.*`）。
 
 **C3. 生产维护窗口（执行计划 §五 批次 C，顺序不要改）**
 
-1. 发维护通知，停入口流量和后端后台任务。cron job 5 是整点跑，窗口避开 `:00`。
+1. 发维护通知，停入口流量和后端后台任务。**要停的后台任务有三处**：
+   - Railway `stminiapp-payment-reconcile-cron`（每分钟）与 `stminiapp-payment-cron`（每 5 分钟）——
+     在 Railway 控制台把两个服务的 cron 停掉/暂停。理由不是它们会写坏数据（失败只是 log + `exit 1`，
+     见 §11.3），而是**它们可能正握着 `payment_orders` 上的锁，让 099 的 ACCESS EXCLUSIVE 排队**，
+     把一个 9 秒的窗口拖成不定长；
+   - 库内 pg_cron job 5 是整点跑，窗口避开 `:00`。
 2. `SNAP_DATE=... bash ops/schema-split/run-inventory.sh prod`，确认无 FDW / 无新域 / 097 已执行（三列不在）。
+   `payment_orders` 应是 16 列（100 已执行，见 §11.2），这是对的，不要当漂移处理。
 3. 确认可回退的旧部署制品、回滚 SQL 执行人。回滚文件：
    `packages/shared/migrations/099_schema_split_phase1_rollback.sql`。
 4. `psql "$PROD_DIRECT_URL" -X -v ON_ERROR_STOP=1 -f packages/shared/migrations/099_schema_split_phase1.sql`
@@ -501,8 +514,11 @@ C0/C1 的取证见 **§十**，不要重做停写热修，也不要再跑 097。
 5. 先按 `ops/schema-split/postgrest-expose-prod.sql` 文首 **step 0 重新实测** 平台层暴露列表，
    再执行该文件（GUC 会**整体覆盖**平台层，漏写 `miniapp_analytics` / `cs_platform` 会掉线）。
 6. `psql "$PROD_DIRECT_URL" -X -v ON_ERROR_STOP=1 -f ops/schema-split/cron-job5-prod.sql`
-7. **这时才**把 C2 的 PR 合入 `main`，等 Railway production 部署完整新 schema 代码。
-8. 最小上线验证（执行计划 §五 批次 C 那份清单）后恢复流量。
+7. **这时才**把 PR #294 合入 `main`，等 Railway production 部署完整新 schema 代码。
+   同一次合入也会给两个支付 cron 服务换上按域访问的代码，第 1 步停掉的它们要在这之后才恢复。
+8. 最小上线验证（执行计划 §五 批次 C 那份清单）后恢复流量，并恢复两个支付 cron 服务。
+   恢复后看一眼各自下一次运行的日志：`reconcile-payment-orders` 期望打印
+   `Fast payment reconciliation: checked=…`，不是 `failed`。
 9. 下一个整点回来看 cron job 5 的 `cron.job_run_details`，期望 `succeeded`。
 
 **不要**在生产跑 `dryrun-099.sh` / `dryrun-099-roundtrip.sh`（会拿 22 张表 ACCESS EXCLUSIVE 直到 ROLLBACK）。
@@ -515,11 +531,13 @@ C0/C1 的取证见 **§十**，不要重做停写热修，也不要再跑 097。
 
 ### 9.5 新窗口开工指令
 
-> 前置阅读：`docs/schema划分-批次A进度交接.md` §一、§九，以及它列出的权威文档。C0/C1 记录在 §十，不要重做。
+> 前置阅读：`docs/schema划分-批次A进度交接.md` §一、§九、§十一，以及它列出的权威文档。
+> C0/C1 记录在 §十、C2 在 §十一，都不要重做。
 >
-> 批次 A/B/C0/C1 已完成。生产 097 已执行，停写热修已在 `main`（PR #292，`fd6533d`）。
-> **不要**把 `dev` 的 schema 适配代码合入 `main` 或部署到生产——Railway production 跟随 `main` 自动部署。
-> 下一步：按 §9.3 做 C2（`dev` → `main` PR，CI 绿了先挂着）→ 进维护窗口跑 C3（099 → PostgREST → cron job 5 → 再合 PR 部署）。
+> 批次 A/B/C0/C1/C2 已完成。生产 097 已执行；停写热修已在 `main`（PR #292，`fd6533d`）；
+> 完整 schema 适配已在 PR [#294](https://github.com/linshu368/ST_miniapp/pull/294)（`dev` → `main`），CI 绿、挂着不合。
+> **099 跑完之前不要 merge #294**——Railway production 与两个支付 cron 服务都跟随 `main` 自动部署。
+> 下一步：按 §9.3 的 C3 进维护窗口（停两个支付 cron → 盘点 → 099 → PostgREST → cron job 5 → 合 #294 → 验证恢复）。
 > 保留上游行为，不改 `miniapp_traffic` / `miniapp_analytics` 的名称和内部设计。
 
 ---
@@ -567,3 +585,105 @@ psql "$PROD_DIRECT_URL" -X -v ON_ERROR_STOP=1 -f packages/shared/migrations/097_
 | `current_chat_history` 列数                  | 29，可 `SELECT`                                                          |
 
 097 之后新行（`created_at >= 2026-08-27 13:00:45+00`）：至少 2 条 `success`，有 `session_id` / `llm_charge_id` / `llm_intended_deduction`。删列没有把对话写挂。生产 `/health` 仍 200。
+
+---
+
+## 十一、C2 执行记录（2026-08-27 晚）
+
+不要重做本节。新窗口直接进 §9.3 的 C3。
+
+### 11.1 做了什么
+
+| 步骤               | 结果                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 文档提交入 `dev`   | `dev_ST_remove` 的 `f50a513`（C0/C1 收口 + 097 文首注释）经 `d065401` 合入                                                            |
+| 合入上游 `main`    | `b16f8df`，带上 PR #290 / #291 / #292。`git merge` **零冲突**，无需改上游行为                                                         |
+| 开 PR              | [#294](https://github.com/linshu368/ST_miniapp/pull/294) `dev` → `main`。CI Quality Gate + Docker Build PR (backend) 绿。**保持打开** |
+| 可回退的旧生产制品 | Railway deployment `da7b25ee`（commit `fd6533d`）                                                                                     |
+
+`dev` 相对 `main` 带的东西：schema 适配代码、097/098/099 与回滚脚本、`ops/schema-split/*`、
+双库盘点快照、四份文档，外加已在 `dev` 上的 `8ecee42`（chat_history 首轮字段瘦身）和
+`f7dbb4c`（Railway production 配置显式选环境）。
+
+### 11.2 上游带来的新东西：迁移 100 与支付对账代码
+
+**这是 C2 期间新发现的一面，写进来免得 C3 窗口里当漂移误判。**
+
+PR #290 / #291 在 `main` 上加了「支付订单快速对账」，涉及 `payment_orders`：
+
+- `packages/shared/migrations/100_payment_reconciliation_schedule.sql` 给表加 4 列
+  （`next_reconcile_at` / `last_reconciled_at` / `reconcile_attempts` / `reconcile_locked_until`）
+  与索引 `idx_payment_orders_due_reconcile`。**它自己用 `to_regclass` 挑 `billing` 还是 `miniapp`**，
+  所以能独立于 097–099 分别应用到两库。名字里的「调度」是应用层 cron，不是 pg_cron，**它不建库内 job**。
+- 两库都已执行（2026-08-27 实测）：test 落在 `billing.payment_orders`、prod 落在 `miniapp.payment_orders`，
+  两边都是 16 列 + 那个索引。
+
+对 099 的影响：**没有**。列和索引随 `ALTER TABLE … SET SCHEMA` 跟着走；
+099 的索引 / FK / 触发器断言全是同一事务内「迁前 vs 迁后」的对比（`v_base` 在事务开头取），
+不是硬编码数量，所以多出来的列和索引不会顶掉断言。
+
+合并语义已逐处复核（这是 §upstream-merge-protection 要求的「保留上游行为」）：
+
+- `MiniappPaymentOrderRepository` 同时留住上游新增的对账方法与本分支的 `getDomainDb('billing')`；
+- Prisma `miniapp_payment_orders` model 同时有上游 4 个对账列与本分支的 `@@schema("billing")`；
+- 上游新增的 `FastPaymentReconciliation` / `ExpirePaymentOrders` / `reconcile-payment-orders.ts` /
+  `diagnose-zqpay-query.ts` 里没有任何 `.schema('miniapp')` 或 `miniapp.` 字面量，它们都经
+  repository 访问表，所以不需要额外适配。
+
+### 11.3 两个跟随 `main` 的 Railway cron 服务
+
+`.railway/railway.ts` 除 `stminiapp` 外还声明了两个 cron 服务，**`source.branch` 与 API 同为 `main`**：
+
+| 服务                               | 频率      | 入口                                          |
+| ---------------------------------- | --------- | --------------------------------------------- |
+| `stminiapp-payment-reconcile-cron` | 每分钟    | `tsx src/scripts/reconcile-payment-orders.ts` |
+| `stminiapp-payment-cron`           | 每 5 分钟 | `tsx src/scripts/expire-payment-orders.ts`    |
+
+C3 窗口里它们是新增风险面（旧交接文档写「停后端后台任务」时还没有它们）：
+
+- 099 之后、PR #294 合入前，它们跑的是旧代码，读 `miniapp.payment_orders` 会失败。
+  失败本身无害：脚本 `catch` 之后只 log + `exit 1`，`restartPolicyType: NEVER`，不会把订单写成异常态。
+- 真正的理由是**锁**：它们可能正握着 `payment_orders` 上的行锁/事务，
+  让 099 的 ACCESS EXCLUSIVE 排队，把 test 实测 8.92 秒的窗口拖成不定长。
+
+所以 §9.3 的 C3 第 1 步已改成明确点名停这两个服务，第 8 步再恢复。
+
+### 11.4 验证
+
+本地对合并后的 `b16f8df` 跑过（与 CI 的 Quality Gate 重叠，但多跑了 backend 单测与集成测试）：
+
+| 项                       | 结果                                                        |
+| ------------------------ | ----------------------------------------------------------- |
+| 5 包 typecheck           | ✅ 全绿                                                     |
+| lint + 跨包 import guard | ✅ 全绿                                                     |
+| 单测                     | ✅ shared 55 / backend 330 / frontend 56 / admin 41，0 失败 |
+| 数据库集成测试           | ✅ 13 项真跑（连已执行 099 的 test 库）通过，0 skip         |
+| 5 包 build               | ✅ 全绿                                                     |
+
+**MVP regression 本次没跑**（它要打真实 LLM，耗时长；批次 B 已对同一个 test 库跑过 7/7，
+之后只叠加了上游支付对账，那部分有自己的单测）。C3 之前想再要一次全量就跑
+`pnpm --filter @miniapp/backend mvp:regression`。
+
+`development` 环境 smoke（`https://stminiapp-development.up.railway.app`，跑的就是 `b16f8df`）：
+`/health`、`/api/characters?type=recommended|latest`、`/api/payment/plans`、`/api/platform/models`、
+`/api/wallet/balance`、`/api/favorites/ids`、`/api/notifications`、`/api/support/unread` 全部 200。
+（wallet / favorites / notifications / support 不带 `X-Init-Data` 也返回 200 是 `DEV_AUTH_BYPASS=1`，
+见 §8.6，不要重复排查。）
+
+**推 `dev` 不碰生产，已实测**：推送 `b16f8df` 之后，PR 上那条 Railway 检查是
+`Success - stminiapp-development.up.railway.app`；同时生产 `https://stminiapp-production.up.railway.app`
+的 `/health` 200、`/api/characters?type=recommended` 200 且仍返回 231 KB 数据——
+生产仍跑 `fd6533d` 读 `miniapp.*`，未被本次推送影响。
+
+### 11.5 一处已知的文档漂移
+
+097 文件在 §10.2 记的 checksum `bbdb1cdf` 已经对不上了：`f50a513` 改了它的文首注释
+（把「生产待执行」改成「已执行」）。**SQL 语句一个字没动**，且生产早已执行、全程 `IF EXISTS`。
+不要因为 checksum 不符去重跑或回滚 097。
+
+### 11.6 test 库 `miniapp_fdw` 的一个陈旧点（不挡 C3）
+
+§8.7 保留的 `miniapp_fdw` 里，外部表 `chat_history` / `current_chat_history` 仍声明 32 列，
+而生产实际已是 29 列（097 之后）。也就是说经 FDW 查这两张表、只要碰到那三个已删列就会报错。
+它是库外手工建的对照/取数通道，不在版本控制里，也不参与 099；要用就得自己重新
+`IMPORT FOREIGN SCHEMA`。这里只记一笔，避免下次撞上时以为是 099 弄坏的。

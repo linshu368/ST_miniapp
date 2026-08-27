@@ -1,10 +1,10 @@
 # Schema 划分一阶段执行计划
 
-> 状态：批次 A/B/C0/C1 已完成；C2/C3 待启动（维护窗口跑 099）  
+> 状态：批次 A/B/C0/C1/C2 已完成；只剩 C3（维护窗口跑 099，再合 PR #294 部署）  
 > 日期：2026-08-27  
 > 权威归属：`docs/schema归属地图.md`  
 > 依赖盘点：`docs/schema划分专项.md`  
-> 当前进度与开工指令：`docs/schema划分-批次A进度交接.md` §一、§九
+> 当前进度与开工指令：`docs/schema划分-批次A进度交接.md` §一、§九、§十一
 
 ## 一、阶段目标
 
@@ -311,19 +311,22 @@ test `miniapp` 下 6 张计划外副本表已删，099 回滚脚本事务内验�
 
 ### 批次 C：production 短停机割接（预计半个工作日）
 
-**前置（2026-08-27 晚，C0/C1 已收口）**：生产 097 已执行；`main` 已含停写热修 PR #292（`fd6533d`），不含 schema 切换。
-不能把 `dev` 的 schema 适配代码先合进 `main`（Railway production 跟随 `main` 自动部署）。逐步路径以
-`docs/schema划分-批次A进度交接.md` §九 为准：C2 开 PR 先挂着 → 维护窗口内 099 → PostgREST → cron → 再合 PR 部署新代码。
+**前置（2026-08-27 晚，C0/C1/C2 已收口）**：生产 097 已执行；`main` 已含停写热修 PR #292（`fd6533d`），不含 schema 切换。
+C2 的制品是 PR [#294](https://github.com/linshu368/ST_miniapp/pull/294)（`dev` → `main`，CI 绿、挂着不合）。
+099 跑完之前不能 merge 它（Railway production 跟随 `main` 自动部署）。逐步路径以
+`docs/schema划分-批次A进度交接.md` §9.3 为准：维护窗口内 099 → PostgREST → cron → 再合 PR 部署新代码。
 
 窗口内顺序：
 
-1. 发布维护通知，停止入口流量和后端后台任务；
+1. 发布维护通知，停止入口流量和后端后台任务。后端后台任务包含两个跟随 `main` 的 Railway cron
+   服务 `stminiapp-payment-reconcile-cron`（每分钟）与 `stminiapp-payment-cron`（每 5 分钟），
+   它们握着 `payment_orders` 上的锁会让 099 的 DDL 锁排队（详见交接文档 §11.3）；
 2. 记录生产即时快照，确认 preflight 与 test 演练基线一致；
 3. 确认可回退的旧部署制品、回滚 SQL和执行人；
 4. 执行 099；事务内任一步失败则整体回滚并停止；
 5. 更新 PostgREST exposed schemas / grants / reload；
 6. 更新 cron job 5；
-7. 部署新代码；
+7. 部署新代码（合 PR #294 到 `main`，production 与两个支付 cron 服务一起换代码）；
 8. 完成最小上线验证后恢复流量：
    - 登录 / 用户创建；
    - 角色卡列表；
@@ -416,14 +419,16 @@ cron 和 PostgREST 管理配置可在事务提交后作为同一维护窗口的�
 
 动 PostgREST 时再读 `docs/fix-postgrest-schema-exposure.md`。
 
-新窗口建议直接使用以下开工指令（批次 A/B/C0/C1 已完成，下一步是 C2/C3）：
+新窗口建议直接使用以下开工指令（批次 A/B/C0/C1/C2 已完成，只剩 C3）：
 
-> 前置阅读：`docs/schema划分-批次A进度交接.md` §一、§九，以及它列出的权威文档。C0/C1 记录在该文档 §十，不要重做。
+> 前置阅读：`docs/schema划分-批次A进度交接.md` §一、§九、§十一，以及它列出的权威文档。
+> C0/C1 记录在该文档 §十、C2 在 §十一，都不要重做。
 >
-> 批次 A/B/C0/C1 已完成。生产 097 已执行，停写热修已在 `main`（PR #292）。
-> **不要**把 `dev` 的 schema 适配代码合入 `main` 或部署到生产。
-> 下一步：按交接文档 §9.3 做 C2（`dev` → `main` PR，CI 绿了先挂着）→
-> 进维护窗口跑 C3（099 → PostgREST → cron job 5 → 再合 PR 部署）。
+> 批次 A/B/C0/C1/C2 已完成。生产 097 已执行；停写热修已在 `main`（PR #292）；
+> 完整 schema 适配在 PR #294（`dev` → `main`），CI 绿、挂着不合。
+> **099 跑完之前不要 merge #294**——production 与两个支付 cron 服务都跟随 `main` 自动部署。
+> 下一步：按交接文档 §9.3 的 C3 进维护窗口
+> （停两个支付 cron → 盘点 → 099 → PostgREST → cron job 5 → 合 #294 → 验证恢复）。
 > 保留上游行为，不改 `miniapp_traffic` / `miniapp_analytics` 的名称和内部设计。
 
 此外，新窗口必须具备 production 的只读盘点能力（`.env.schema-split` 或 Supabase MCP）。
