@@ -370,6 +370,9 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
     }
   );
 
+  /** 正在群发的画像簇 id。backend 是单实例部署，进程内集合足够挡住重复提交。 */
+  const broadcastInFlight = new Set<string>();
+
   app.post(
     '/api/cs/personas/:id/broadcast/preview',
     { preHandler: [requireCsAdmin] },
@@ -416,6 +419,15 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('NO_BROADCAST_TARGET', '该范围下没有可发送的用户'));
       }
 
+      // 同一个簇一次只允许跑一轮。两个客服同时点、或客服在 202 之前刷新页面重发，
+      // 都会让同一批真人收到两条一样的消息，而群发发出去收不回来。
+      if (broadcastInFlight.has(id)) {
+        return reply
+          .status(409)
+          .send(fail('BROADCAST_IN_FLIGHT', '该画像簇正在群发中，请等本轮发完再提交'));
+      }
+      broadcastInFlight.add(id);
+
       const operatorId = getOperator(request);
       await repository.log(operatorId, 'persona.broadcast', id, null, {
         audience,
@@ -425,9 +437,13 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
 
       // 提交即返回：几百人要按 Telegram 限速一条条发，同步等完必然打到网关超时。
       // 逐条结果写进 outreach_messages，客服在回访记录里能看到成功/失败。
-      void runBroadcast({ personaId: id, targets, content, operatorId }).catch((error) => {
-        app.log.error({ err: error, personaId: id, audience }, 'cs broadcast failed');
-      });
+      void runBroadcast({ personaId: id, targets, content, operatorId })
+        .catch((error) => {
+          app.log.error({ err: error, personaId: id, audience }, 'cs broadcast failed');
+        })
+        .finally(() => {
+          broadcastInFlight.delete(id);
+        });
 
       return reply.status(202).send(ok<CsBroadcastData>({ audience, accepted: targets.length }));
     }
@@ -461,6 +477,7 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
           status: sent.ok ? 'sent' : 'failed',
           telegramMessageId: sent.telegramMessageId,
           failedReason: sent.error,
+          preserveSopStage: true,
           operatorId: input.operatorId,
         });
       } catch (error) {
@@ -576,12 +593,12 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
                COALESCE(s.display_name, s.tg_username, s.tg_first_name) AS display_name,
                c.status, c.agent_unread_count, c.last_user_message_at,
                c.last_agent_message_at,
-               (SELECT m.body FROM miniapp.support_messages m
+               (SELECT m.body FROM cs_platform.support_messages m
                 WHERE m.conversation_id = c.id
                 ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message
-        FROM miniapp.support_conversations c
-        JOIN miniapp.users u ON u.id = c.user_id
-        LEFT JOIN miniapp.miniapp_user_settings s ON s.user_id = c.user_id
+        FROM cs_platform.support_conversations c
+        JOIN app_core.users u ON u.id = c.user_id
+        LEFT JOIN app_core.miniapp_user_settings s ON s.user_id = c.user_id
         ORDER BY (c.status = 'open') DESC,
                  GREATEST(c.last_user_message_at, c.last_agent_message_at) DESC NULLS LAST
         LIMIT 200
@@ -603,25 +620,25 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
                COALESCE(s.display_name, s.tg_username, s.tg_first_name) AS display_name,
                c.status, c.agent_unread_count, c.last_user_message_at,
                c.last_agent_message_at,
-               (SELECT m.body FROM miniapp.support_messages m
+               (SELECT m.body FROM cs_platform.support_messages m
                 WHERE m.conversation_id = c.id
                 ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message
-        FROM miniapp.support_conversations c
-        JOIN miniapp.users u ON u.id = c.user_id
-        LEFT JOIN miniapp.miniapp_user_settings s ON s.user_id = c.user_id
+        FROM cs_platform.support_conversations c
+        JOIN app_core.users u ON u.id = c.user_id
+        LEFT JOIN app_core.miniapp_user_settings s ON s.user_id = c.user_id
         WHERE c.id = ${id}::uuid
       `;
       const conversation = rows[0];
       if (!conversation) return reply.status(404).send(fail('NOT_FOUND', '客服会话不存在'));
       const messages = await prisma.$queryRaw<SupportMessage[]>`
         SELECT id, sender, body, client_msg_id, created_at
-        FROM miniapp.support_messages
+        FROM cs_platform.support_messages
         WHERE conversation_id = ${id}::uuid
         ORDER BY created_at, id
         LIMIT 500
       `;
       await prisma.$executeRaw`
-        UPDATE miniapp.support_conversations
+        UPDATE cs_platform.support_conversations
         SET agent_unread_count = 0, updated_at = now()
         WHERE id = ${id}::uuid
       `;
@@ -641,14 +658,14 @@ export default async function csPlatformRoutes(app: FastifyInstance) {
       }
       const rows = await prisma.$queryRaw<Array<{ message: SupportMessage }>>`
         WITH target AS (
-          SELECT id FROM miniapp.support_conversations
+          SELECT id FROM cs_platform.support_conversations
           WHERE id = ${id}::uuid FOR UPDATE
         ), inserted AS (
-          INSERT INTO miniapp.support_messages (conversation_id, sender, body)
+          INSERT INTO cs_platform.support_messages (conversation_id, sender, body)
           SELECT id, 'agent', ${text} FROM target
           RETURNING id, sender, body, client_msg_id, created_at
         ), updated AS (
-          UPDATE miniapp.support_conversations c
+          UPDATE cs_platform.support_conversations c
           SET status = 'open', last_agent_message_at = now(), updated_at = now()
           FROM target WHERE c.id = target.id
         )

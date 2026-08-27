@@ -1,11 +1,11 @@
-// 自研对话的唯一事实来源：miniapp.chat_history。
+// 自研对话的唯一事实来源：experience.chat_history。
 //
 // 一行代表 session 内一个 turn 的一个 revision；同轮 revision 最大者是当前版本。
 // ST 链路写入的行没有 session_id / turn_index / revision，本仓库不会读到它们。
 
 import type { ChatMessage, ChatMessageStatus } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import { throwConversationRpcError } from './conversation-errors.js';
 
 export const STREAMING_STALE_SECONDS = 120;
@@ -18,7 +18,6 @@ export interface ConversationHistoryRow {
   assistant_reply: string | null;
   history: unknown[];
   character_id: string | null;
-  preset_id: string | null;
   status: string;
   upstream_status: number | null;
   deduction_rate: number | null;
@@ -48,7 +47,7 @@ export interface ConversationContext {
 }
 
 export class ConversationHistoryRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('experience');
 
   async startTurn(input: {
     sessionId: string;

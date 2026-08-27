@@ -10,14 +10,21 @@ enabled = true
 port = 54321
 # Schemas to expose in your API. Tables, views and stored procedures in this schema will get API
 # endpoints. `public` and `graphql_public` schemas are included by default.
+# 与远程库的暴露列表保持同一份口径，见 ops/schema-split/postgrest-expose-{test,prod}.sql。
+# 已删除的 miniapp_simulation / st_platform / st_users / st_infra 不再列出。
+# miniapp 保留到批次 D：migration 099 只把它掏空，schema 本身还在。
 schemas = [
   "public",
   "graphql_public",
   "miniapp",
-  "miniapp_simulation",
-  "st_platform",
-  "st_users",
-  "st_infra",
+  "app_core",
+  "miniapp_features",
+  "experience",
+  "billing",
+  "admin",
+  "cs_platform",
+  "miniapp_traffic",
+  "miniapp_analytics",
 ]
 # Extra schemas to add to the search_path of every request.
 extra_search_path = ["public", "extensions"]

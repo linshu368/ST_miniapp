@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import { getSupabaseClient } from './supabase.js';
+import { getDomainDb } from './supabase.js';
 import {
   calculateUsageDeduction,
   resolveUsageBillingGate,
@@ -77,17 +77,19 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
   isRunning = true;
 
   try {
-    const supabase = getSupabaseClient();
-    const miniappDb = supabase.schema('miniapp' as 'public');
+    // chat_history 属 experience（migration 099）
+    const experienceDb = getDomainDb('experience');
     const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
 
-    const { data, error } = await miniappDb
+    const { data, error } = await experienceDb
       .from('chat_history')
       .select('id, llm_generation_id, llm_charge_id, assistant_reply, status')
       .not('llm_generation_id', 'is', null)
       .gte('created_at', since)
+      // llm_usage_cache 不参与判定：OpenRouter 从不返回 usage_cache，把它算进来会让窗口内
+      // 每一行都恒为「不完整」，被反复重新拉取直到滚出 24h。
       .or(
-        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null,llm_usage_cache.is.null'
+        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null'
       )
       .order('created_at', { ascending: false })
       .limit(BATCH_LIMIT);
@@ -228,7 +230,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
       if (reconciliationFailed) continue;
 
-      const { error: updateErr } = await miniappDb
+      const { error: updateErr } = await experienceDb
         .from('chat_history')
         .update(llmMetadata)
         .eq('id', record.id);

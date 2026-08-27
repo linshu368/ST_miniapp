@@ -1,7 +1,7 @@
 /**
  * backend / features / lobby / ranking-params.ts
  *
- * v3 排序分参数的读取口：miniapp.runtime_config.lobby_ranking_params → 校验 → 兜底。
+ * v3 排序分参数的读取口：app_core.runtime_config.lobby_ranking_params → 校验 → 兜底。
  *
  * 只有刷新 job 会调它，一天一次，所以这里不做缓存——加缓存反而会让「运营改完，
  * 手动触发一次刷新验证」拿到旧值。读一次配置的成本相对于两条全表聚合可以忽略。

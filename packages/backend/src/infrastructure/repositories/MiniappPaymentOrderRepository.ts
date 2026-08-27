@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import type { PaymentOrder, PaymentOrderStatus, PaymentType } from '@miniapp/shared';
 
 export interface MiniappPaymentOrderRow {
@@ -27,7 +27,7 @@ export interface CreateMiniappPaymentOrderInput {
 }
 
 export class MiniappPaymentOrderRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('billing');
 
   async create(input: CreateMiniappPaymentOrderInput): Promise<MiniappPaymentOrderRow> {
     const { data, error } = await this.db.from('payment_orders').insert(input).select('*').single();
