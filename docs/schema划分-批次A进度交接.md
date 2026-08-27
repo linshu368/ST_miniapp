@@ -498,12 +498,7 @@ PR [#294](https://github.com/linshu368/ST_miniapp/pull/294) 已开、CI 绿、�
 
 **C3. 生产维护窗口（执行计划 §五 批次 C，顺序不要改）**
 
-1. 发维护通知，停入口流量和后端后台任务。**要停的后台任务有三处**：
-   - Railway `stminiapp-payment-reconcile-cron`（每分钟）与 `stminiapp-payment-cron`（每 5 分钟）——
-     在 Railway 控制台把两个服务的 cron 停掉/暂停。理由不是它们会写坏数据（失败只是 log + `exit 1`，
-     见 §11.3），而是**它们可能正握着 `payment_orders` 上的锁，让 099 的 ACCESS EXCLUSIVE 排队**，
-     把一个 9 秒的窗口拖成不定长；
-   - 库内 pg_cron job 5 是整点跑，窗口避开 `:00`。
+1. 发维护通知，停入口流量和后端后台任务。**具体停什么、不停什么见 §9.4，不要笼统地「停所有生产服务」。**
 2. `SNAP_DATE=... bash ops/schema-split/run-inventory.sh prod`，确认无 FDW / 无新域 / 097 已执行（三列不在）。
    `payment_orders` 应是 16 列（100 已执行，见 §11.2），这是对的，不要当漂移处理。
 3. 确认可回退的旧部署制品、回滚 SQL 执行人。回滚文件：
@@ -523,13 +518,49 @@ PR [#294](https://github.com/linshu368/ST_miniapp/pull/294) 已开、CI 绿、�
 
 **不要**在生产跑 `dryrun-099.sh` / `dryrun-099-roundtrip.sh`（会拿 22 张表 ACCESS EXCLUSIVE 直到 ROLLBACK）。
 
-### 9.4 连接与脚本
+### 9.4 C3 窗口停什么、不停什么
+
+判据只有两条，别按「保险起见全停」来做：
+
+- **锁**：099 的几秒内要拿 22 张表的 ACCESS EXCLUSIVE。谁在那一刻持有或请求这些表的锁，就会与它互相排队——
+  尤其是长事务，能把 test 实测 8.92 秒拖成不定长。
+- **旧代码空窗**：099 提交后到第 7 步部署完（合 PR + Railway 构建部署，几分钟），
+  旧代码读 `miniapp.*` 必然失败。
+
+**必须停：**
+
+| 对象                                                 | 为什么                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Railway `stminiapp`（backend API）                   | **不只是挡流量。**进程内有两个 `setInterval`（`app.ts` 启动时注册）：`chat-history-sync-job` 每 30 秒读写 `chat_history`；`lobby-ranking-refresh-job` 每 24 小时**整轮包在一个事务里**从 `chat_history` 聚合重写 `character_ranking_scores`。后者触发时刻取决于上次部署时间，撞上就是长事务顶住 099 |
+| Railway `stminiapp-payment-reconcile-cron`（每分钟） | 可能正握着 `payment_orders` 的锁。失败本身无害（log + `exit 1`，`restartPolicyType: NEVER`，见 §11.3）                                                                                                                                                                                              |
+| Railway `stminiapp-payment-cron`（每 5 分钟）        | 同上                                                                                                                                                                                                                                                                                                |
+| 入口流量（前端维护页）                               | 为体验，也为了别让新对话轮次在窗口里起行                                                                                                                                                                                                                                                            |
+
+停 `stminiapp` 有两种做法：Railway 控制台暂停/缩到 0，或把 `CHAT_HISTORY_SYNC_ENABLED`、
+`LOBBY_RANKING_REFRESH_ENABLED` 置 false 再重启。**暂停服务更省事**——第 7 步合 PR 本来就会重新部署把它带回来。
+
+**不要停：**
+
+- **Supabase Postgres / PostgREST**：第 5 步是改 GUC 再 reload，不是停服务；停了没法按脚本 step 4 用 REST 实测。
+- **库内 pg_cron**：job 5 只在整点跑，窗口避开 `:00` 即可；job 2/3 早已 inactive。不必改 `active`（少一个要记着还原的动作）。
+- **Vercel 上的 admin / cs-platform / miniapp 前端**：都不直连数据库，全走 backend。挂维护页是体验问题，不是安全问题。
+
+**两条要先确认的外部依赖：**
+
+1. **旧 bot**。099 会把 `public.compute_daily_metrics` 的函数体改写成 `experience.chat_history`，库内这侧自洽；
+   但 bot 若是仓库外的独立进程、自己拼了 `miniapp.*` 的 SQL，它会在 099 之后**一直**坏，不是窗口内的临时故障。
+   本仓库 `.railway/railway.ts` 只声明三个服务（backend + 两个 cron），bot 不在其中——**进窗口前先确认它是否还在跑、是否直接查 `miniapp`**。
+2. **支付回调**。窗口里 `PAYMENT_NOTIFY_URL` 打过来会失败。缓解手段是上游刚加的快速对账：
+   `payment_orders.next_reconcile_at` 会让恢复后的 cron 把未入账订单捞回来主动查单。
+   所以**窗口要避开充值高峰**，而不是指望回调不丢。
+
+### 9.5 连接与脚本
 
 - 连接：仓库根 `.env.schema-split`（`TEST_POOL_URL` / `PROD_DIRECT_URL` / `PROD_SUPABASE_URL` 等）。不要写进 shell 历史。
 - test 项目 ref `zoqelpfhurwehlvypryl`；prod `wbtsfzozlmurljvglhpn`。脚本里有 ref 闸。
 - 生产 PostgREST 回滚是 `ALTER ROLE authenticator RESET pgrst.db_schemas`，不是手抄旧列表。
 
-### 9.5 新窗口开工指令
+### 9.6 新窗口开工指令
 
 > 前置阅读：`docs/schema划分-批次A进度交接.md` §一、§九、§十一，以及它列出的权威文档。
 > C0/C1 记录在 §十、C2 在 §十一，都不要重做。

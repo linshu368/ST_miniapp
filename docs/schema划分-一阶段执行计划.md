@@ -318,9 +318,10 @@ C2 的制品是 PR [#294](https://github.com/linshu368/ST_miniapp/pull/294)（`d
 
 窗口内顺序：
 
-1. 发布维护通知，停止入口流量和后端后台任务。后端后台任务包含两个跟随 `main` 的 Railway cron
-   服务 `stminiapp-payment-reconcile-cron`（每分钟）与 `stminiapp-payment-cron`（每 5 分钟），
-   它们握着 `payment_orders` 上的锁会让 099 的 DDL 锁排队（详见交接文档 §11.3）；
+1. 发布维护通知，停止入口流量和后端后台任务。**清单见交接文档 §9.4**——要停的是 backend
+   `stminiapp` 服务本身（它进程内有 30 秒的 chat_history sync job 与 24 小时一轮、整轮一个事务的
+   大厅排序重算）、两个跟随 `main` 的 Railway 支付 cron 服务，以及入口流量；
+   PostgREST、库内 pg_cron 和各前端**不要停**；
 2. 记录生产即时快照，确认 preflight 与 test 演练基线一致；
 3. 确认可回退的旧部署制品、回滚 SQL和执行人；
 4. 执行 099；事务内任一步失败则整体回滚并停止；
