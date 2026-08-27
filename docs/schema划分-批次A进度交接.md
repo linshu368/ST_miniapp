@@ -301,17 +301,17 @@ bash ops/schema-split/dryrun-099-roundtrip.sh test  # 正向 + 回滚，同事�
 
 ### 8.1 结果
 
-| 交付门项（执行计划 §五 批次 B） | 状态                                                                  |
-| ------------------------------- | --------------------------------------------------------------------- |
-| 迁移前快照与关键行数            | ✅ `ops/schema-split/snapshots/2026-08-26-pre099/test/`               |
-| 执行 099                        | ✅ 18:19 提交，**8.92 秒**（含 psql 启动与全部 preflight/postflight） |
-| PostgREST 暴露 + 热重载         | ✅ 10 个 schema，REST 实测 8 个域全 200                               |
-| TypeScript / 单测 / build       | ✅ 5 包全绿；backend **321 passed / 0 skipped**                       |
-| MVP regression 全量             | ✅ 7 / 7                                                              |
-| 数据库集成测试                  | ✅ 之前 skip 的 13 项这次真跑并通过                                   |
-| 对象形态与行数核对              | ✅ 见 8.3                                                             |
-| 全仓库 + 库内零 `miniapp.*`     | ✅ 见 8.4                                                             |
-| 部署 test 后端 + 真机/API smoke | ⬜ 待部署                                                             |
+| 交付门项（执行计划 §五 批次 B） | 状态                                                                    |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| 迁移前快照与关键行数            | ✅ `ops/schema-split/snapshots/2026-08-26-pre099/test/`                 |
+| 执行 099                        | ✅ 18:19 提交，**8.92 秒**（含 psql 启动与全部 preflight/postflight）   |
+| PostgREST 暴露 + 热重载         | ✅ 10 个 schema，REST 实测 8 个域全 200                                 |
+| TypeScript / 单测 / build       | ✅ 5 包全绿；backend **321 passed / 0 skipped**                         |
+| MVP regression 全量             | ✅ 7 / 7                                                                |
+| 数据库集成测试                  | ✅ 之前 skip 的 13 项这次真跑并通过                                     |
+| 对象形态与行数核对              | ✅ 见 8.3                                                               |
+| 全仓库 + 库内零 `miniapp.*`     | ✅ 见 8.4                                                               |
+| 部署 test 后端 + 真机/API smoke | ✅ 2026-08-27 PR #288 环境（Railway `pr-288` + Vercel Preview）实测通过 |
 
 **割接耗时 8.92 秒**是生产维护窗口的定长依据的一半——另一半是部署耗时，等这次部署实测。
 注意 test 的 `chat_history` 只有 1028 行、生产 21.8 万行 / 11 GB，但 `SET SCHEMA` 只改
@@ -368,12 +368,48 @@ cs_platform 收到 `support_conversations` / `support_messages`。
 仓库：只剩 `lib/supabase.ts` 的一句说明性注释，以及 `sse.test.ts` / frontend 的
 `https://miniapp.example` / `https://miniapp.local`——那是 URL，不是 schema。
 
+> 以上是 2026-08-26 的取证。`miniapp` 空这一条**在 2026-08-27 已不再成立**，
+> 原因见 §8.7（与 099 无关的库外操作重建了 6 张表）。代码侧零残留仍然成立。
+
 ### 8.5 剩下的
 
-1. 部署适配新 schema 的 test 后端（Railway），**记录部署耗时**；
-2. 部署完跑真机或等价 API smoke：登录/建用户、角色卡列表、建会话/发消息/重生成/历史分页、
-   钱包余额/扣费/充值/签到、收藏/许愿/通知、客服、admin 角色卡与公告、CS 关键查询；
-3. smoke 过了批次 B 才算完整通过，然后才进批次 C 前置（生产发停写死列的代码 → 确认 → 执行 097）。
+1. 把 `dev_ST_remove` 合入 `dev`，让 Railway `development` 也切到新代码；
+2. 然后进批次 C 前置（生产发停写死列的代码 → 确认 → 执行 097）。
 
 出问题就跑 `packages/shared/migrations/099_schema_split_phase1_rollback.sql`，
 再执行 `ops/schema-split/postgrest-expose-test.sql` 的「回滚」小节，然后部署旧代码。
+**但先读 §8.7——回滚脚本目前跑不过。**
+
+### 8.6 PR #288 环境 smoke（2026-08-27）
+
+Railway `pr-288` 后端 + Vercel Preview 前端实测通过，五个域（`app_core` / `experience` /
+`billing` / `miniapp_features` / `cs_platform`）的接口全部 200 并返回迁移后 test 库的数据。
+
+过程中前端一度报「门好像被风合上了」，**与 099 无关**：Vercel Preview 的
+`NEXT_PUBLIC_API_URL` 是构建期固化的，当时还指向已随 PR #287 关闭而删除的
+`stminiapp-pr-287`。改成 `stminiapp-pr-288` 重新部署即好。以后 PR 换号都会踩这个。
+
+**一个曾经误判、现已证伪的结论**：`stminiapp-development` 返回的角色卡与 `pr-288` 不同
+（352 行 vs 468 行），当时据此怀疑 development 连了生产库。实际两者连的是**同一个 test 库**
+（`railway-pr-env.yml` 从 `development` 复制环境，只覆盖 `source.branch` / `PORT` /
+`SENTRY_ENVIRONMENT` 和两个 payment URL，数据库变量原样继承）。差异来自代码不同：
+旧代码读 `miniapp.characters`、新代码读 `app_core.characters`。**不存在生产库误连。**
+
+### 8.7 计划外：test 库里的 `prod_readonly` FDW 与 `miniapp` 重建表
+
+2026-08-27 发现 test 库有：
+
+- 外部服务器 `prod_readonly`（`postgres_fdw` → `db.wbtsfzozlmurljvglhpn.supabase.co`，生产）；
+- schema `miniapp_fdw`，22 张外部表；
+- `miniapp` 下**重新出现 6 张真实表**，装生产数据副本：`characters`(352)、
+  `chat_history`(81000)、`character_favorites`、`character_free_chat_quotas`、
+  `character_free_chat_quota_decisions`、`character_ranking_scores`。
+
+时间与来源：2026-08-26 的 post-099 快照里 `miniapp` 为空、`miniapp_fdw` 不存在；仓库内搜不到
+`prod_readonly` / `postgres_fdw` / `IMPORT FOREIGN SCHEMA`。**由 099 之外的库内操作建立，不在版本控制里。**
+已确认是有意为之（对照 / 取数用），保留。
+
+**后果：099 回滚脚本现在会失败。** 上面 6 张表正是 099 搬走的那批，回滚要把
+`app_core.characters`、`experience.chat_history` 等搬回 `miniapp` 时会**撞名**。
+批次 B 的退路因此暂时不可用。真要回滚，得先给这 6 张副本改名或挪走。
+批次 C 对生产执行前，**必须确认生产库没有同类计划外对象**，否则同一个坑会在生产复现。
