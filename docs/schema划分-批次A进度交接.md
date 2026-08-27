@@ -650,7 +650,8 @@ C3 窗口里它们是新增风险面（旧交接文档写「停后端后台任�
 
 ### 11.4 验证
 
-本地对合并后的 `b16f8df` 跑过（与 CI 的 Quality Gate 重叠，但多跑了 backend 单测与集成测试）：
+本地对合并后的代码跑过（`b16f8df`，之后的 `a636c81` 只多一次文档提交，代码同）。
+与 CI 的 Quality Gate 重叠，但多跑了 backend 单测、数据库集成测试与 MVP regression：
 
 | 项                       | 结果                                                        |
 | ------------------------ | ----------------------------------------------------------- |
@@ -659,10 +660,14 @@ C3 窗口里它们是新增风险面（旧交接文档写「停后端后台任�
 | 单测                     | ✅ shared 55 / backend 330 / frontend 56 / admin 41，0 失败 |
 | 数据库集成测试           | ✅ 13 项真跑（连已执行 099 的 test 库）通过，0 skip         |
 | 5 包 build               | ✅ 全绿                                                     |
+| MVP regression 全量      | ✅ **7 / 7**，76 项断言，0 未通过 0 跳过，约 88 秒          |
 
-**MVP regression 本次没跑**（它要打真实 LLM，耗时长；批次 B 已对同一个 test 库跑过 7/7，
-之后只叠加了上游支付对账，那部分有自己的单测）。C3 之前想再要一次全量就跑
-`pnpm --filter @miniapp/backend mvp:regression`。
+MVP regression 明细（对 test 库）：`create_session` 11 / `send_message` 28 / `free_quota` 6 /
+`insufficient_balance` 9 / `regenerate` 8 / `client_disconnect` 6 / `conflict_guards` 8 项断言。
+**它起本地假上游（`http://127.0.0.1:54363`）替代 OpenRouter，不打真实 LLM、不花钱**，
+所以要复跑随时可以：`pnpm --filter @miniapp/backend mvp:regression`。
+注意它会在 test 库留下计费幂等墓碑（§8.3 记过那 7 行的来历），
+想要干净的行数对照就在跑它之前先取快照。
 
 `development` 环境 smoke（`https://stminiapp-development.up.railway.app`，跑的就是 `b16f8df`）：
 `/health`、`/api/characters?type=recommended|latest`、`/api/payment/plans`、`/api/platform/models`、
