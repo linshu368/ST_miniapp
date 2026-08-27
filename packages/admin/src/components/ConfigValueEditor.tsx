@@ -1,4 +1,16 @@
-import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Input,
+  InputNumber,
+  Row,
+  Select,
+  Space,
+  Switch,
+  Typography,
+} from 'antd';
 import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
@@ -131,6 +143,52 @@ export function ConfigValueEditor(props: {
       <Input
         value={typeof props.value === 'string' ? props.value : ''}
         placeholder="角色 UUID"
+        disabled={props.disabled}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+    );
+  }
+
+  if (props.configKey === 'voice_billing_enabled') {
+    return (
+      <Space align="center">
+        <Switch
+          checked={props.value === true}
+          disabled={props.disabled}
+          onChange={(checked) => props.onChange(checked)}
+        />
+        <Typography.Text type="secondary">
+          开启后语音按次扣费；关闭时语音免费、不预检（300 字长度闸仍生效）。
+        </Typography.Text>
+      </Space>
+    );
+  }
+
+  if (
+    props.configKey === 'voice_generation_credits' ||
+    props.configKey === 'voice_max_spoken_chars'
+  ) {
+    return (
+      <InputNumber
+        min={1}
+        precision={0}
+        value={typeof props.value === 'number' ? props.value : 0}
+        disabled={props.disabled}
+        onChange={(value) => props.onChange(value ?? 1)}
+      />
+    );
+  }
+
+  if (
+    props.configKey === 'voice_price_label' ||
+    props.configKey === 'voice_over_limit_hint' ||
+    props.configKey === 'voice_draft_failed_hint' ||
+    props.configKey === 'voice_tts_failed_hint'
+  ) {
+    return (
+      <Input.TextArea
+        value={typeof props.value === 'string' ? props.value : ''}
+        autoSize={{ minRows: 1, maxRows: 4 }}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
       />
