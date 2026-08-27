@@ -98,8 +98,8 @@ export class MiniappPaymentOrderRepository {
   }
 
   /**
-   * 判过期前需要跟厂商对一次账的订单：已到期但还没入账的 pending，
-   * 以及窗口内已被判过期、仍未入账的订单（上一轮 cron 可能在查单前就把它判死了）。
+   * 需要跟厂商对账的订单：新创建且尚未入账的 pending，
+   * 以及回溯窗口内已被判过期、仍未入账的订单。
    */
   async listUnsettledAroundExpiry(input: {
     since: string;

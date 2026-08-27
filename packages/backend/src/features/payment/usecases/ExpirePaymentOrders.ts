@@ -10,6 +10,7 @@
 
 import type { MiniappPaymentOrderRepository } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
+import { ORDER_EXPIRE_MS } from '../domain/rechargeRules.js';
 import { reconcileWithGateway, type SettlementLogger } from './PaymentSettlement.js';
 
 /** 回溯窗口：也覆盖上一轮 cron 已经判过期、但当时没查单的订单。 */
@@ -45,7 +46,9 @@ export async function runExpirePaymentOrders(input: {
   if (paymentEnabled) {
     const candidates = await orders.listUnsettledAroundExpiry({
       since: new Date(now - RECONCILE_WINDOW_MS).toISOString(),
-      until: new Date(now).toISOString(),
+      // expires_at = created_at + ORDER_EXPIRE_MS。把上界前推完整有效期，等价于新订单
+      // 创建后立即进入查单候选，不再等到 15 分钟过期才进入兜底。
+      until: new Date(now + ORDER_EXPIRE_MS).toISOString(),
       limit: RECONCILE_BATCH_SIZE,
     });
     checked = candidates.length;
