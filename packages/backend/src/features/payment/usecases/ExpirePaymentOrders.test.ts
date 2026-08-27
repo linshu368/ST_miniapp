@@ -162,6 +162,42 @@ describe('runExpirePaymentOrders', () => {
     expect(log.sys.error).toHaveBeenCalled();
   });
 
+  it('skips the expiry sweep when a full query sample fails', async () => {
+    const candidates = Array.from({ length: 5 }, (_, index) =>
+      createRow({ id: `MA-cron-failed-${index}` })
+    );
+    const orders = createOrders(candidates);
+    const gateway = createGateway(
+      Object.fromEntries(
+        candidates.map((candidate) => [
+          candidate.id,
+          { success: false, errorMessage: 'gateway unavailable' },
+        ])
+      )
+    );
+    const log = createLog();
+
+    const result = await runExpirePaymentOrders({
+      orders,
+      gateway,
+      log,
+      paymentEnabled: true,
+      now: NOW,
+    });
+
+    expect(orders.expireAllPending).not.toHaveBeenCalled();
+    expect(result).toEqual({ checked: 5, settled: 0, expired: 0 });
+    expect(log.sys.error).toHaveBeenCalledWith(
+      {
+        event: 'payment.cron.expiry_skipped',
+        checked: 5,
+        failed: 5,
+        failureRate: 1,
+      },
+      '查单失败率过高，跳过本轮订单过期'
+    );
+  });
+
   it('still expires orders when payment is disabled, without querying the vendor', async () => {
     const orders = createOrders([createRow()]);
     const gateway = createGateway({});

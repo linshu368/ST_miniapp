@@ -11,6 +11,7 @@
     "dev": "tsx watch --import ./src/instrumentation.ts src/server.ts",
     "start": "npx prisma generate && tsx --import ./src/instrumentation.ts src/server.ts",
     "payment:expire-orders": "tsx src/scripts/expire-payment-orders.ts",
+    "payment:diagnose-query": "tsx src/scripts/diagnose-zqpay-query.ts",
     "mvp:regression": "tsx src/scripts/mvp-regression/run.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
