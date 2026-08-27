@@ -14,10 +14,9 @@
 > 边界：`miniapp_analytics` / `miniapp_traffic` / `cs_platform` 本轮继续不碰；
 > `public` / `analytics`（旧 bot）为 B 类，不得触碰。
 >
-> **执行进展（2026-08-25 更新）**：sync-job 过滤条件已止血；migration **097**（原编号 092，
-> 2026-08-25 合入 `main` 后因撞号重编）删掉 `user_character_round` / `preset_id` /
-> `llm_model_markup` 三列，**test 库已执行并核对，生产待执行且已确认被部署阻塞**（见 §2.4）。
-> test 的 `chat_history` 为 29 列，生产仍为 32 列。
+> **执行进展（2026-08-27 更新）**：sync-job 过滤条件已止血；migration **097**（原编号 092，
+> 撞号后重编）删掉 `user_character_round` / `preset_id` / `llm_model_markup` 三列，
+> **test 与生产均已执行并核对**（见 §2.4）。两库 `chat_history` 现均为 29 列。
 
 ---
 
@@ -54,7 +53,7 @@
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `chat_sessions`                | 自研引擎会话头：标题、置顶、软删除 `deleted_at`、统计缓存（`message_count` / `last_message_at` / `last_message_preview`）、上下文窗口起点 `context_window_start_turn` | `ChatSessionRepository`；RPC `start_chat_history_turn` / `start_chat_history_regeneration` / `guard_chat_session_idle` / `apply_context_window_flood`；统计缓存由 `chat_history` 上的触发器回写                                                                        |
 | `chat_history`                 | **项目核心资产**：逐轮生成日志，一行 = 一个 turn 的一个 revision（ST 存量行无 session 三元组）。字段级审计见 §2                                                       | 写：RPC 起行 → `ConversationHistoryRepository.setPromptHistory/finalizeTurn` → `chat-history-logger.ts` 补计费与 LLM 元数据 → `chat-history-sync-job.ts`（30s 轮询）补拉 OpenRouter 数据；读：`ConversationHistoryRepository`（经视图）、`lobby/ranking-stats.ts` 聚合 |
-| `current_chat_history`（视图） | `chat_history` 的「当前版本」投影：每 (session_id, turn_index) 取最大 revision，透传全部 32 列                                                                        | `ConversationHistoryRepository` 的上下文装配 / 消息分页 / 语音取正文均走它                                                                                                                                                                                             |
+| `current_chat_history`（视图） | `chat_history` 的「当前版本」投影：每 (session_id, turn_index) 取最大 revision；097 后为 29 列（原 32）                                                               | `ConversationHistoryRepository` 的上下文装配 / 消息分页 / 语音取正文均走它                                                                                                                                                                                             |
 | `chat_message_audio`           | 语音消息产物（每条 assistant 回复的 TTS 结果，存 `miniapp-chat-voice` 桶，表存元数据）                                                                                | `ChatMessageAudioRepository`（voice 功能）                                                                                                                                                                                                                             |
 
 ### 1.4 LLM 计费域
@@ -204,21 +203,21 @@
 | 代码侧停写     | `GenerationRequest.presetId` 参数链（`types.ts` / `execute.ts` / `generate.ts`）、`chat-history-logger.ts` 的 `preset_id` 与 `llm_model_markup`、`ConversationHistoryRow`、回归脚本字段声明与 `normalizeHistory`                                                     |
 | 回归脚本换水位 | `waitForChatHistory` 原先用 `llm_model_markup !== null` 判断 logger 是否写完，改用 `llm_intended_deduction`（`llm_charge_id` / `llm_finish_reason` 不可用：它们在更早的 `finalizeTurn` 就已写入）。「耗尽后按固定档位计费」断言改读 `llm_usage_charges.model_markup` |
 | test 库        | ✅ 已执行并核对：29 列、三列消失、触发器与索引消失、视图 29 列可查；单测 213 项全绿；真实数据库 MVP 回归 7/7 通过                                                                                                                                                    |
-| 生产库         | ⏳ **待执行，且已确认被部署阻塞**。详见下方 2026-08-25 实测记录                                                                                                                                                                                                      |
+| 生产库         | ✅ **已执行**（2026-08-27 13:00:39–13:00:45 UTC，约 6 秒）。停写热修 PR #292 先上生产，确认新行不再写那两列后提交。验证：三列/触发器/旧索引 0；表与视图 29 列；097 后仍有 `success` 新行。明细见交接文档 §十                                                         |
 
 **2026-08-25 生产预检实测**（脚本 `ops/schema-split/preflight-092-prod.sql`，结果归档
 `ops/schema-split/snapshots/2026-08-25/prod/preflight-092.txt`）：
 
-| 项           | 结果                                                                                                                                                                                                                                       |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 库内消费方   | ✅ 只命中预期的 `miniapp.tf_set_user_character_round` 与 `miniapp.current_chat_history`。无 cron、无约束、无其他函数或视图引用这三列。索引 `idx_chat_history_character_user_round` 随列消失                                                |
-| 长事务       | ✅ 无（`active_backends = 0`）                                                                                                                                                                                                             |
-| **阻塞项**   | ❌ **生产运行的 `origin/main` 代码仍在写 `llm_model_markup`**（`chat-history-logger.ts` 第 141 行；生产库 18:30 最新一行该列有值）。现在删列会让 logger 每次 UPDATE 报「列不存在」                                                         |
-| 列级实测修正 | `preset_id` 并非全表恒空：ST 存量行（`session_id IS NULL`）123,574 行**全部有值**（4 个 UUID，最后写入 2026-08-12）；自研行 94,268 行全空。这 4 个 UUID 指向 088 已删除的 `st_platform.platform_presets`，已无法解析，**已拍板照原样删除** |
-| 其余两列     | `llm_model_markup` 206,072 行非空、`user_character_round` 217,250 行非空，均属 B 档「只写不读」，删除决定不变                                                                                                                              |
+| 项                 | 结果                                                                                                                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 库内消费方         | ✅ 只命中预期的 `miniapp.tf_set_user_character_round` 与 `miniapp.current_chat_history`。无 cron、无约束、无其他函数或视图引用这三列。索引 `idx_chat_history_character_user_round` 随列消失                                                |
+| 长事务             | ✅ 无（`active_backends = 0`）                                                                                                                                                                                                             |
+| **阻塞项（当时）** | ❌ 生产 `origin/main` 仍在写 `llm_model_markup`。**2026-08-27 已解除**：PR #292 停写后执行 097，见交接文档 §十                                                                                                                             |
+| 列级实测修正       | `preset_id` 并非全表恒空：ST 存量行（`session_id IS NULL`）123,574 行**全部有值**（4 个 UUID，最后写入 2026-08-12）；自研行 94,268 行全空。这 4 个 UUID 指向 088 已删除的 `st_platform.platform_presets`，已无法解析，**已拍板照原样删除** |
+| 其余两列           | `llm_model_markup` 206,072 行非空、`user_character_round` 217,250 行非空，均属 B 档「只写不读」，删除决定不变                                                                                                                              |
 
-**执行前置**：必须先把停写这三列的代码发布到生产（即把本分支并入 `main` 发布一次），
-确认 logger 不再写 `llm_model_markup` 之后，才能执行 097。
+**执行前置（已满足）**：必须先把停写这三列的代码发布到生产，确认 logger 不再写
+`llm_model_markup` 之后，才能执行 097。2026-08-27 已按此顺序做完（PR #292 → 写入抽查 → 097）。
 
 ### 2.5 deduction_rate 与 llm_intended_deduction：产销与去留
 

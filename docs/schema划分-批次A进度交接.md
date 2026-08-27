@@ -1,10 +1,12 @@
-# Schema 划分 · 批次进度交接（A 已完成 / B test 已割接）
+# Schema 划分 · 批次进度交接（A / B / C0–C1 已完成，C2/C3 待启动）
 
-> 日期：2026-08-26（批次 B 割接同日）  
-> 分支：`dev_ST_remove`（已合入 `origin/main`，合并提交 `abda9ae`）  
+> 日期：2026-08-27（C0 停写热修与生产 097 已收口）  
+> 分支：schema 适配代码在 `origin/dev`（PR #288，`73627ba`）。生产 `main` 已含停写热修 PR #292（合并提交 `fd6533d`），**不含** schema 切换。  
 > 本文件给新窗口接着干。权威归属与执行纪律仍以下面三份为准，本文只记**做到哪、下一步做什么、不要重问什么**。
 >
-> 文件名沿用 `批次A`（其它文档按路径引用它），内容已覆盖批次 B，见 §八。
+> **新窗口从这里开始读：§一 状态 → §九 C2/C3。** 不要重做 C0/C1（记录在 §十）。
+>
+> 文件名沿用 `批次A`（其它文档按路径引用它），内容已覆盖批次 B（§八）、C 前置（旧 §九）和 C0/C1 收口（§十）。
 
 必读：
 
@@ -18,11 +20,21 @@
 
 ## 一、一句话状态
 
-**批次 A 已完成；批次 B 的 test 割接已执行完，库侧与本地验证全绿，只差部署后的 API smoke。**
+**批次 A、B 已收口；批次 C 的 C0（停写热修）与 C1（生产 097）已完成。硬阻断已解除。**
+
+下一步只剩 **C2 准备完整 schema 代码（先不合 `main`）→ C3 维护窗口跑 099 → 再部署新代码**。路径见 **§九**。
 
 099 已于 2026-08-26 18:19 在 **test 提交执行**（耗时 8.92 秒），PostgREST 暴露列表已切换，
 test 库现在是新形态：`miniapp` 空壳，22 表 + 1 视图 + 25 函数分布在五个域里。
-**生产仍未动**（097 与 099 都没执行）。批次 B 的明细与实测数据见 §八。
+新代码已随 PR #288 合入 `dev` 并部署到 Railway `development`，2026-08-27 独立跑过 API smoke（§8.6）。
+回滚脚本已重新验证可用（§8.7）。
+
+生产（2026-08-27 晚实测）：
+
+- Railway `stminiapp` production 跑 `fd6533d`（PR #292），代码仍读 `miniapp.*`
+- 097 已提交：`chat_history` / `current_chat_history` 均为 29 列；触发器与旧索引已没
+- 099 **未执行**；无新域、无 FDW；22 表 + 1 视图 + 25 函数仍在 `miniapp`
+- **不要把 `origin/dev` 的 schema 适配代码合入 `main`。** production 跟随 `main` 自动部署，099 之前会立刻 `schema/relation not found`
 
 批次 A 的交付门（执行计划 §五 批次 A）四项都齐了：
 
@@ -37,18 +49,18 @@ test 库现在是新形态：`miniapp` 空壳，22 表 + 1 视图 + 25 函数分
 
 ## 二、已拍板、不要重开讨论
 
-| 项                     | 决定                                                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------- |
-| 生产 097 顺序          | 先把当前代码部署到生产（纯代码、无 DB 变更），确认不再写 `llm_model_markup` 等三列，再执行 097，再写/跑 099 |
-| `preset_id`            | 照原样删，接受丢失。123,574 行 ST 存量有值，但 `st_platform.platform_presets` 已随 088 消失，引用无法解析   |
-| test `characters` 三列 | 单独 098，不塞进 099。已在 test 执行                                                                        |
-| 函数 EXECUTE           | 按 prod 收敛，不授 `anon` / `authenticated`                                                                 |
-| `public` 残留函数      | 099 只改限定名、不改行为；是否删除另开评审                                                                  |
-| PostgREST              | 用 GUC 接管；列表必须先含现有 `miniapp_analytics` / `cs_platform`，再追加新域                               |
-| `aiero` schema         | 无关，永久排除                                                                                              |
-| 分支                   | 在 `dev_ST_remove` 上 merge `origin/main`，main 改动只读（已完成）                                          |
-| 编号                   | 097 = chat_history 三列（原 092）；098 = characters 死列；099 = schema 划分                                 |
-| 生产割接               | 低峰短停机硬切，不做兼容视图 / RPC wrapper                                                                  |
+| 项                     | 决定                                                                                                                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 生产 097 顺序          | **已执行完 C0/C1。** 不能把整个 `dev` 提前发到生产。完整 schema 代码只在 099 + PostgREST + cron 之后部署。C2 的 PR **不要 merge**（production 跟 `main` 自动部署）。详见 §九 / §十 |
+| `preset_id`            | 照原样删，接受丢失。123,574 行 ST 存量有值，但 `st_platform.platform_presets` 已随 088 消失，引用无法解析                                                                          |
+| test `characters` 三列 | 单独 098，不塞进 099。已在 test 执行                                                                                                                                               |
+| 函数 EXECUTE           | 按 prod 收敛，不授 `anon` / `authenticated`                                                                                                                                        |
+| `public` 残留函数      | 099 只改限定名、不改行为；是否删除另开评审                                                                                                                                         |
+| PostgREST              | 用 GUC 接管；列表必须先含现有 `miniapp_analytics` / `cs_platform`，再追加新域                                                                                                      |
+| `aiero` schema         | 无关，永久排除                                                                                                                                                                     |
+| 分支                   | schema 适配在 `origin/dev`（PR #288）。生产跟 `main` 自动部署。C2 只开 PR、**不合**；合入放到 C3 第 7 步                                                                           |
+| 编号                   | 097 = chat_history 三列（原 092）；098 = characters 死列；099 = schema 划分                                                                                                        |
+| 生产割接               | 低峰短停机硬切，不做兼容视图 / RPC wrapper                                                                                                                                         |
 
 合 main 时的冲突规则：上游（`origin/main`）只读，只改编本分支的改动。见 `.cursor/rules/upstream-merge-protection.mdc`。
 
@@ -71,12 +83,12 @@ test 库现在是新形态：`miniapp` 空壳，22 表 + 1 视图 + 25 函数分
 
 ### 3.3 迁移文件与执行情况
 
-| 文件                                                                 | 库状态                                                                                                  |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `packages/shared/migrations/097_chat_history_drop_dead_columns.sql`  | **test 已执行**（当时编号还是 092，文件全程 `IF EXISTS`，重跑无副作用）。**生产未执行**，被代码部署卡住 |
-| `packages/shared/migrations/098_characters_drop_st_sync_columns.sql` | **test 已执行**，`characters` 31 列 → 28 列。生产是 no-op                                               |
-| `packages/shared/migrations/099_schema_split_phase1.sql`             | 已写完。test 正向空跑 + 往返空跑均通过并 ROLLBACK，**两库都未提交执行**                                 |
-| `packages/shared/migrations/099_schema_split_phase1_rollback.sql`    | 已写完。随往返空跑在 test 上真跑过一遍（搬回 + 改回 + DROP 四个 schema），**未提交执行**                |
+| 文件                                                                 | 库状态                                                                                                                     |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/migrations/097_chat_history_drop_dead_columns.sql`  | **test 已执行**（当时编号还是 092，全程 `IF EXISTS`）。**生产已执行**（2026-08-27 13:00:39–13:00:45 UTC，约 6 秒，见 §十） |
+| `packages/shared/migrations/098_characters_drop_st_sync_columns.sql` | **test 已执行**，`characters` 31 列 → 28 列。生产是 no-op                                                                  |
+| `packages/shared/migrations/099_schema_split_phase1.sql`             | 已写完。**test 已提交**（2026-08-26 18:19，8.92 秒）。**生产未执行**                                                       |
+| `packages/shared/migrations/099_schema_split_phase1_rollback.sql`    | 已写完。test 往返空跑 + 2026-08-27 事务内 ROLLBACK 验证通过。**生产未执行**                                                |
 
 ### 3.4 099 test 空跑（2026-08-26）
 
@@ -218,8 +230,8 @@ test 实测通过：
 1. **`charge_voice_usage`**  
    只在 test。仓库无迁移、无调用方；生产没有。写 `user_wallets` / `wallet_ledger`，按地图归 billing。099 已按可选处理。来源不明，**不要在 099 里顺手删或补进仓库当正式 RPC**，另开评审。取证脚本：`ops/schema-split/probe-charge-voice-usage.sql`。
 
-2. **生产 097 不能现在跑**  
-   生产跑的是 `origin/main`，`chat-history-logger.ts` 仍写 `llm_model_markup`。先发停写这三列的代码，确认不再写入，再执行 097。
+2. **生产 097（已完成，见 §十）**  
+   硬阻断已解除：停写热修 PR #292 已上生产，097 已提交。**新的硬约束**是不要在 099 之前把 `dev` 的 schema 适配合入 `main`（production 自动部署）。
 
 3. **代码适配（已完成，见 §四之二）**
 
@@ -233,7 +245,7 @@ test 实测通过：
 
 ## 六、新窗口接着做（顺序不要跳）
 
-批次 A 已完成（§一）。§6.0 已审过。**下一步是批次 B。**
+批次 A、B、C0、C1 已完成（§一 / §八 / §十）。§6.0 已审过。**下一步是 §九 的 C2/C3，不要重做批次 B 或 C0/C1。**
 
 ### 6.0 先审（人的活，不要跳过）
 
@@ -267,7 +279,7 @@ test 实测通过：
 
 ### 6.2 之后
 
-批次 C（生产）前置仍是「先发停写死列的代码 → 确认停写 → 执行 097」，见 §二。本窗口不做。
+批次 B 已于 2026-08-27 收口（§8.6 / §8.7）。C0/C1 已于同日收口（§十）。下一步是 **§九 的 C2/C3**。
 
 ### 空跑命令
 
@@ -293,7 +305,10 @@ bash ops/schema-split/dryrun-099-roundtrip.sh test  # 正向 + 回滚，同事�
   §四之二 里那四个跨域文件就是例子。
 - 上游 merge 冲突时不要改 main 引进的行为。
 - **test 已是新形态**，不要再往 test 上跑 `dryrun-099.sh` / `dryrun-099-roundtrip.sh`——
-  它们的 preflight 要求起点是 `miniapp` 还在，现在会直接被断言挡下（这是对的，不是坏了）。
+  它们的正向 preflight 要求起点是 `miniapp` 还满，现在会直接被断言挡下（这是对的，不是坏了）。
+  只验回滚时：把回滚脚本末尾 `COMMIT` 换成 `ROLLBACK` 再跑，原文件不动。
+- **不要把当前整个 `dev` 合入 `main` 或部署到生产。** 生产库仍是 `miniapp.*`，`dev` 已经读新 schema，会立刻 500。
+  production 的 Railway `stminiapp` 跟随 GitHub `main` 自动部署，合 `main` 就是发生产。C2 的 PR 先挂着，合入放到 C3 第 7 步。
 
 ---
 
@@ -368,22 +383,32 @@ cs_platform 收到 `support_conversations` / `support_messages`。
 仓库：只剩 `lib/supabase.ts` 的一句说明性注释，以及 `sse.test.ts` / frontend 的
 `https://miniapp.example` / `https://miniapp.local`——那是 URL，不是 schema。
 
-> 以上是 2026-08-26 的取证。`miniapp` 空这一条**在 2026-08-27 已不再成立**，
-> 原因见 §8.7（与 099 无关的库外操作重建了 6 张表）。代码侧零残留仍然成立。
+> 以上是 2026-08-26 的取证。2026-08-27 上午 `miniapp` 曾被库外操作重建 6 张副本表
+> （§8.7），同日晚间已按授权 `DROP`，`miniapp` 再次为空壳。代码侧零残留仍然成立。
 
-### 8.5 剩下的
+### 8.5 批次 B 收口
 
-1. 把 `dev_ST_remove` 合入 `dev`，让 Railway `development` 也切到新代码；
-2. 然后进批次 C 前置（生产发停写死列的代码 → 确认 → 执行 097）。
+交付门已全部满足，批次 B 结束。后续工作见 §九。
 
-出问题就跑 `packages/shared/migrations/099_schema_split_phase1_rollback.sql`，
+test 出问题就跑 `packages/shared/migrations/099_schema_split_phase1_rollback.sql`，
 再执行 `ops/schema-split/postgrest-expose-test.sql` 的「回滚」小节，然后部署旧代码。
-**但先读 §8.7——回滚脚本目前跑不过。**
+该脚本已于 2026-08-27 重新验证可用（§8.7）。
 
-### 8.6 PR #288 环境 smoke（2026-08-27）
+### 8.6 环境 smoke：PR #288 与合并后的 dev（2026-08-27）
 
-Railway `pr-288` 后端 + Vercel Preview 前端实测通过，五个域（`app_core` / `experience` /
-`billing` / `miniapp_features` / `cs_platform`）的接口全部 200 并返回迁移后 test 库的数据。
+**PR #288 环境**：Railway `pr-288` 后端 + Vercel Preview 前端实测通过，五个域（`app_core` /
+`experience` / `billing` / `miniapp_features` / `cs_platform`）的接口全部 200 并返回迁移后 test 库的数据。
+
+**合并后的 dev**：PR #288 已合入 `dev`（合并提交 `73627ba`）并部署到 Railway `development`。
+对 `https://stminiapp-development.up.railway.app` 独立跑过一轮等价 API smoke，覆盖
+`/health`、`/api/characters`（recommended / latest，271 条）、`/api/characters/:id`、
+`/api/payment/plans`、`/api/platform/models`、`/api/wallet/balance`、`/api/favorites/ids`、
+`/api/notifications`、`/api/support/unread`，全部 200。删除 §8.7 那 6 张副本表之后又复跑一遍，仍全绿。
+
+> **不要重复排查这一条**：不带 `X-Init-Data` 直接打 wallet / favorites / notifications / support
+> 会返回 200 而不是 401。这不是鉴权漏洞，是 `development` 环境显式设了 `DEV_AUTH_BYPASS=1`
+> （`middleware/auth.ts` 在缺 initData 时注入固定测试用户 `99999`）。CS 接口走独立鉴权，
+> 所以仍然是 401。生产没有这个变量，行为不同。
 
 过程中前端一度报「门好像被风合上了」，**与 099 无关**：Vercel Preview 的
 `NEXT_PUBLIC_API_URL` 是构建期固化的，当时还指向已随 PR #287 关闭而删除的
@@ -395,21 +420,150 @@ Railway `pr-288` 后端 + Vercel Preview 前端实测通过，五个域（`app_c
 `SENTRY_ENVIRONMENT` 和两个 payment URL，数据库变量原样继承）。差异来自代码不同：
 旧代码读 `miniapp.characters`、新代码读 `app_core.characters`。**不存在生产库误连。**
 
-### 8.7 计划外：test 库里的 `prod_readonly` FDW 与 `miniapp` 重建表
+### 8.7 计划外 FDW（保留）与 6 张副本表（已删，回滚已恢复）
 
 2026-08-27 发现 test 库有：
 
 - 外部服务器 `prod_readonly`（`postgres_fdw` → `db.wbtsfzozlmurljvglhpn.supabase.co`，生产）；
-- schema `miniapp_fdw`，22 张外部表；
-- `miniapp` 下**重新出现 6 张真实表**，装生产数据副本：`characters`(352)、
-  `chat_history`(81000)、`character_favorites`、`character_free_chat_quotas`、
+- schema `miniapp_fdw`，外部表（删除副本表后复核为 23 张）；
+- `miniapp` 下曾重新出现 6 张**真实表**，装生产数据副本：`characters`(352 / 29 MB)、
+  `chat_history`(81000 / 3806 MB)、`character_favorites`、`character_free_chat_quotas`、
   `character_free_chat_quota_decisions`、`character_ranking_scores`。
 
 时间与来源：2026-08-26 的 post-099 快照里 `miniapp` 为空、`miniapp_fdw` 不存在；仓库内搜不到
-`prod_readonly` / `postgres_fdw` / `IMPORT FOREIGN SCHEMA`。**由 099 之外的库内操作建立，不在版本控制里。**
-已确认是有意为之（对照 / 取数用），保留。
+`prod_readonly` / `postgres_fdw` / `IMPORT FOREIGN SCHEMA`。由 099 之外的库内操作建立，不在版本控制里。
+已确认是有意为之（对照 / 取数用）。
 
-**后果：099 回滚脚本现在会失败。** 上面 6 张表正是 099 搬走的那批，回滚要把
-`app_core.characters`、`experience.chat_history` 等搬回 `miniapp` 时会**撞名**。
-批次 B 的退路因此暂时不可用。真要回滚，得先给这 6 张副本改名或挪走。
-批次 C 对生产执行前，**必须确认生产库没有同类计划外对象**，否则同一个坑会在生产复现。
+**处理（2026-08-27 晚，已授权）**：
+
+- `prod_readonly` 与 `miniapp_fdw` **保留**。
+- 6 张 `miniapp.*` 副本表在确认零依赖（0 出入 FK / 0 触发器 / 0 视图引用）后，
+  于单事务内按精确集合断言 `DROP TABLE ... RESTRICT`。删后 `miniapp` 关系对象 0、函数 0。
+- 失败点其实是回滚脚本 §1.2 preflight（要求 `miniapp` 空壳），不是搬迁撞名；删表后该断言满足。
+- 随后把 `099_schema_split_phase1_rollback.sql` 末尾 `COMMIT` 改成 `ROLLBACK` 在 test 上完整跑通
+  （preflight → 搬回 23 表/视图、25 函数 → 改回 44 个函数体 / 13 处人群规则 → `DROP` 四 schema → postflight），
+  事务外复核仍是 `miniapp` 空壳、四个新域仍在。**test 回滚安全网已恢复。**
+  不要用 `dryrun-099-roundtrip.sh` 验这件事——它的正向 preflight 要求起点是未迁形态，现在会挡。
+
+生产 2026-08-27 核对：**无** `prod_readonly` / `miniapp_fdw` / 新域，22 表 + 1 视图 + 25 函数全在 `miniapp`。
+C3 窗口内执行 099 前仍须再核一次，避免窗口前又被手工改过。
+
+---
+
+## 九、批次 C：C2 / C3（2026-08-27 晚，C0/C1 已收口）
+
+新窗口从这里执行。权威顺序仍是执行计划 §五 批次 C 的窗口内步骤。
+C0/C1 的取证见 **§十**，不要重做停写热修，也不要再跑 097。
+
+### 9.1 当前各面状态
+
+| 面                 | 状态                                                                                                                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| 代码 `dev`         | PR #288 已合（`73627ba`）。Railway `development` 已部署新 schema 代码，smoke 通过（§8.6）                                         |
+| 代码 `main`        | 已含停写热修 PR #292（`fd6533d`）。**不含** schema 切换（无 `getDomainDb` / Prisma 多 schema / 099）                              |
+| Railway production | `stminiapp` 已部署 `fd6533d`，`/health` 200。跟随 GitHub `main` **自动部署**                                                      |
+| test 库            | 099 已提交；PostgREST 已切；`miniapp` 空壳；FDW 保留；回滚脚本已事务内验证                                                        |
+| production 库      | **097 已执行**。`chat_history` / `current_chat_history` 29 列。099 未执行；无新域、无 FDW；22 表 + 1 视图 + 25 函数仍在 `miniapp` |
+| production 098     | **已满足**。`characters` 无 `is_default` / `is_published` / `is_active`                                                           |
+| cron job 5         | 仍是 `FROM miniapp.characters`；099 之后必须跑 `ops/schema-split/cron-job5-prod.sql`                                              |
+
+### 9.2 当前硬约束（不要踩）
+
+097 的部署阻断已经解除。现在唯一不能做错的是：
+
+**不要把 `origin/dev` 的 schema 适配代码合入 `main`，也不要手动 `railway up` 那份镜像。**
+`.railway/railway.ts` 里 production 的 `source.branch` 是 `main`。合 `main` = 立刻把 `getDomainDb('app_core')` 发到仍是 `miniapp.*` 的生产库，会 `schema/relation not found`。
+
+因此必须继续拆成两份制品：
+
+1. **停写热修**（已上生产，PR #292）— 不要再发一遍；
+2. **完整 schema 适配**（现 `origin/dev`）— 099 + PostgREST + cron job 5 之后才合 `main` 部署。
+
+097 SQL 在 `origin/dev` / 本分支，**不在 `main`**。已经对生产执行过，幂等 `IF EXISTS`，不必补进 `main` 才算完成。C3 用的 099 等文件也从 `origin/dev` 取。
+
+### 9.3 新窗口逐步做什么
+
+**C2. 准备完整代码，但先不部署、也不要合 `main`**
+
+1. 从 `origin/dev` 开（或更新）`dev` → `main` 的 PR，只带 schema 适配；合 main 时上游只读，见 `.cursor/rules/upstream-merge-protection.mdc`。
+2. CI 全绿后 **PR 保持打开，不要 merge**。
+3. 确认可回退的旧生产制品：当前健康的是 Railway deployment `da7b25ee`（commit `fd6533d`，停写热修、097 之后仍读 `miniapp.*`）。
+
+**C3. 生产维护窗口（执行计划 §五 批次 C，顺序不要改）**
+
+1. 发维护通知，停入口流量和后端后台任务。cron job 5 是整点跑，窗口避开 `:00`。
+2. `SNAP_DATE=... bash ops/schema-split/run-inventory.sh prod`，确认无 FDW / 无新域 / 097 已执行（三列不在）。
+3. 确认可回退的旧部署制品、回滚 SQL 执行人。回滚文件：
+   `packages/shared/migrations/099_schema_split_phase1_rollback.sql`。
+4. `psql "$PROD_DIRECT_URL" -X -v ON_ERROR_STOP=1 -f packages/shared/migrations/099_schema_split_phase1.sql`
+   失败则事务自动回滚，停下来，不要现场改 SQL。
+   文件从 `origin/dev` 取，不要用 `main` 上没有的路径瞎找。
+5. 先按 `ops/schema-split/postgrest-expose-prod.sql` 文首 **step 0 重新实测** 平台层暴露列表，
+   再执行该文件（GUC 会**整体覆盖**平台层，漏写 `miniapp_analytics` / `cs_platform` 会掉线）。
+6. `psql "$PROD_DIRECT_URL" -X -v ON_ERROR_STOP=1 -f ops/schema-split/cron-job5-prod.sql`
+7. **这时才**把 C2 的 PR 合入 `main`，等 Railway production 部署完整新 schema 代码。
+8. 最小上线验证（执行计划 §五 批次 C 那份清单）后恢复流量。
+9. 下一个整点回来看 cron job 5 的 `cron.job_run_details`，期望 `succeeded`。
+
+**不要**在生产跑 `dryrun-099.sh` / `dryrun-099-roundtrip.sh`（会拿 22 张表 ACCESS EXCLUSIVE 直到 ROLLBACK）。
+
+### 9.4 连接与脚本
+
+- 连接：仓库根 `.env.schema-split`（`TEST_POOL_URL` / `PROD_DIRECT_URL` / `PROD_SUPABASE_URL` 等）。不要写进 shell 历史。
+- test 项目 ref `zoqelpfhurwehlvypryl`；prod `wbtsfzozlmurljvglhpn`。脚本里有 ref 闸。
+- 生产 PostgREST 回滚是 `ALTER ROLE authenticator RESET pgrst.db_schemas`，不是手抄旧列表。
+
+### 9.5 新窗口开工指令
+
+> 前置阅读：`docs/schema划分-批次A进度交接.md` §一、§九，以及它列出的权威文档。C0/C1 记录在 §十，不要重做。
+>
+> 批次 A/B/C0/C1 已完成。生产 097 已执行，停写热修已在 `main`（PR #292，`fd6533d`）。
+> **不要**把 `dev` 的 schema 适配代码合入 `main` 或部署到生产——Railway production 跟随 `main` 自动部署。
+> 下一步：按 §9.3 做 C2（`dev` → `main` PR，CI 绿了先挂着）→ 进维护窗口跑 C3（099 → PostgREST → cron job 5 → 再合 PR 部署）。
+> 保留上游行为，不改 `miniapp_traffic` / `miniapp_analytics` 的名称和内部设计。
+
+---
+
+## 十、批次 C 前置：C0 / C1 执行记录（2026-08-27）
+
+不要重做本节。新窗口直接进 §九。
+
+### 10.1 C0 停写热修
+
+从当时的 `origin/main`（`ee9711c`）开 `hotfix/chat-history-stop-dead-columns`，只带 §9.2 旧文列出的运行时停写，外加 `conversation-context.test.ts` 去 `preset_id` 以免类型不过。
+
+**刻意没带**：`getDomainDb` / Prisma 多 schema / 099、`8ecee42` 里的 lobby 注释、sync-job（`llm_usage_cache` 行为变更）、mvp-regression fixtures、097 SQL。
+
+PR https://github.com/linshu368/ST_miniapp/pull/292 ，CI Quality Gate / Docker backend / Vercel 全绿后合入 `main`（合并提交 `fd6533d`）。
+
+Railway `stminiapp` production 自动部署 `da7b25ee`，commit `fd6533d`，status SUCCESS。`/health` 200。
+
+部署后、097 前只读抽查 `miniapp.chat_history`（`created_at >= 2026-08-27 12:56:51+00`）：5 行全是 `success`，都有 `session_id` / `llm_charge_id`；`preset_id`、`llm_model_markup` 均为空。
+
+### 10.2 C1 生产 097
+
+执行前消费方复核（与 097 文首预期一致）：
+
+- 函数：仅 `miniapp.tf_set_user_character_round`
+- 视图：仅 `miniapp.current_chat_history`
+- cron：0 条
+
+文件：`packages/shared/migrations/097_chat_history_drop_dead_columns.sql`（与 `origin/dev` 同内容，checksum `bbdb1cdf`）。`main` 上没有这个文件，从本分支执行。
+
+```
+psql "$PROD_DIRECT_URL" -X -v ON_ERROR_STOP=1 -f packages/shared/migrations/097_chat_history_drop_dead_columns.sql
+```
+
+提交时间：2026-08-27 **13:00:39–13:00:45 UTC**（约 6 秒）。`BEGIN` … `COMMIT` + `NOTIFY pgrst` 均成功。
+
+验证节：
+
+| 项                                           | 结果                                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| 三列                                         | 0 行（`preset_id` / `llm_model_markup` / `user_character_round` 均不在） |
+| 触发器 `trg_set_user_character_round`        | 0                                                                        |
+| 索引 `idx_chat_history_character_user_round` | 0                                                                        |
+| `chat_history` 列数                          | 29                                                                       |
+| `current_chat_history` 列数                  | 29，可 `SELECT`                                                          |
+
+097 之后新行（`created_at >= 2026-08-27 13:00:45+00`）：至少 2 条 `success`，有 `session_id` / `llm_charge_id` / `llm_intended_deduction`。删列没有把对话写挂。生产 `/health` 仍 200。
