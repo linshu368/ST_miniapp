@@ -547,12 +547,34 @@ PR [#294](https://github.com/linshu368/ST_miniapp/pull/294) 已开、CI 绿、�
 
 **两条要先确认的外部依赖：**
 
-1. **旧 bot**。099 会把 `public.compute_daily_metrics` 的函数体改写成 `experience.chat_history`，库内这侧自洽；
-   但 bot 若是仓库外的独立进程、自己拼了 `miniapp.*` 的 SQL，它会在 099 之后**一直**坏，不是窗口内的临时故障。
-   本仓库 `.railway/railway.ts` 只声明三个服务（backend + 两个 cron），bot 不在其中——**进窗口前先确认它是否还在跑、是否直接查 `miniapp`**。
+1. **旧 bot —— 已排除，不用再查**。2026-08-27 确认：仓库外那个旧 bot 处于不维护状态。
+   099 会把 `public.compute_daily_metrics` 的函数体改写成 `experience.chat_history`，库内这侧自洽，
+   不需要为它做任何额外动作。（本仓库 `.railway/railway.ts` 也只声明三个服务：backend + 两个 cron。）
 2. **支付回调**。窗口里 `PAYMENT_NOTIFY_URL` 打过来会失败。缓解手段是上游刚加的快速对账：
    `payment_orders.next_reconcile_at` 会让恢复后的 cron 把未入账订单捞回来主动查单。
    所以**窗口要避开充值高峰**，而不是指望回调不丢。
+
+**窗口时长预算（已定档 2026-08-29 10:05 开始）**
+
+选 `:05` 起步是为了避开整点的 pg_cron job 5——下一次是 11:00，留出约 55 分钟余量。
+test 实测 099 本身只有 8.92 秒，窗口的长度几乎全花在它前后：
+
+| 段                                              | 预算       |
+| ----------------------------------------------- | ---------- |
+| 停服务、等在途请求排空                          | 3–5 分钟   |
+| `run-inventory.sh prod` 取即时快照并核对        | 2–4 分钟   |
+| 099                                             | < 1 分钟   |
+| PostgREST：step 0 重新实测 + 执行 + REST 验各域 | 5–8 分钟   |
+| cron job 5 脚本                                 | 1–2 分钟   |
+| 合 #294 → Railway 构建 + 部署                   | 5–15 分钟  |
+| 最小上线验证                                    | 10–20 分钟 |
+
+合计**乐观 30 分钟、现实 45–60 分钟**，最大变量是 Railway 的构建部署耗时。
+对外公告按 50–60 分钟报比较稳，别按 30 分钟承诺。
+
+想压缩用户可感知的停服时长，可以把验证拆成两段：核心链路（登录 / 角色卡 / 新建会话发消息 / 钱包余额）
+一过就撤维护页恢复流量，admin、CS、analytics 视图那些留在流量恢复之后继续核。
+这是对交付门的排序优化，不是跳过——那份清单仍要全部走完。
 
 ### 9.5 连接与脚本
 
@@ -562,13 +584,31 @@ PR [#294](https://github.com/linshu368/ST_miniapp/pull/294) 已开、CI 绿、�
 
 ### 9.6 新窗口开工指令
 
-> 前置阅读：`docs/schema划分-批次A进度交接.md` §一、§九、§十一，以及它列出的权威文档。
-> C0/C1 记录在 §十、C2 在 §十一，都不要重做。
+C3 窗口已定档 **2026-08-29 10:05**（避开整点的 pg_cron job 5）。把下面整段粘进新窗口即可，
+不需要额外补充背景——它引用的章节里已经有全部取证。
+
+> 前置阅读：`docs/schema划分-批次A进度交接.md` §一、§9.1–§9.5、§十一，以及它列出的权威文档。
+> 批次 A/B/C0/C1/C2 已完成，记录分别在 §八 / §十 / §十一，**都不要重做**。
 >
-> 批次 A/B/C0/C1/C2 已完成。生产 097 已执行；停写热修已在 `main`（PR #292，`fd6533d`）；
-> 完整 schema 适配已在 PR [#294](https://github.com/linshu368/ST_miniapp/pull/294)（`dev` → `main`），CI 绿、挂着不合。
+> 生产 097 已执行；停写热修已在 `main`（PR #292，`fd6533d`）；完整 schema 适配已在
+> PR [#294](https://github.com/linshu368/ST_miniapp/pull/294)（`dev` → `main`），CI 绿、一直挂着没合。
 > **099 跑完之前不要 merge #294**——Railway production 与两个支付 cron 服务都跟随 `main` 自动部署。
-> 下一步：按 §9.3 的 C3 进维护窗口（停两个支付 cron → 盘点 → 099 → PostgREST → cron job 5 → 合 #294 → 验证恢复）。
+>
+> 现在执行 §9.3 的 C3，顺序不要改：
+>
+> 1. 按 **§9.4** 停服务——Railway `stminiapp`（backend，进程内有 30 秒的 chat_history sync job
+>    和 24 小时一轮、整轮一个事务的大厅排序重算）、`stminiapp-payment-reconcile-cron`、
+>    `stminiapp-payment-cron`，再挂前端维护页。PostgREST、库内 pg_cron、各前端**不要停**。
+> 2. `run-inventory.sh prod` 取快照并核对（`payment_orders` 16 列是对的，见 §11.2）。
+> 3. 确认回滚执行人与 `099_schema_split_phase1_rollback.sql`。
+> 4. 跑 099。失败就停下来，不要现场改 SQL。
+> 5. `postgrest-expose-prod.sql`：文首 step 0 当天重新实测暴露列表这一步不可跳过。
+> 6. `cron-job5-prod.sql`。
+> 7. **这时才**合 #294，等 production 与两个 cron 服务部署完。
+> 8. 最小上线验证后恢复流量与两个 cron 服务。
+> 9. 下一个整点回看 cron job 5 的 `cron.job_run_details`。
+>
+> 时长预算见 §9.4 末尾：乐观 30 分钟、现实 45–60 分钟，最大变量是 Railway 构建部署。
 > 保留上游行为，不改 `miniapp_traffic` / `miniapp_analytics` 的名称和内部设计。
 
 ---
