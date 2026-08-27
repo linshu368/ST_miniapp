@@ -496,6 +496,22 @@ C0/C1 的取证见 **§十**、C2 的见 **§十一**；不要重做停写热修
 PR [#294](https://github.com/linshu368/ST_miniapp/pull/294) 已开、CI 绿、挂着不合。
 可回退的旧生产制品是 Railway deployment `da7b25ee`（commit `fd6533d`，停写热修、097 之后仍读 `miniapp.*`）。
 
+**C3 窗口前检查（进窗口前先做完，别在停服之后才发现）**
+
+C2 收口于 2026-08-27，窗口定在 2026-08-29 10:05，中间隔着一天多，`main` 可能又进了 hotfix。
+所以开窗口前先过这三条：
+
+1. `git fetch origin && git log --oneline origin/dev..origin/main` —— 有输出就说明 `main` 有新东西没进 `dev`；
+2. 有的话，在 `dev` 上重新 `git merge origin/main`（上游只读，见
+   `.cursor/rules/upstream-merge-protection.mdc`），推 `dev`，**等 PR #294 的 CI 重新绿**。
+   顺手看一眼新 hotfix 有没有引入 `.schema('miniapp')` 或 `miniapp.` 字面量——
+   §11.2 就是这么发现上游支付对账那一批的；
+3. `gh pr view 294 --json state,mergeStateStatus` —— 期望 `OPEN` + `CLEAN`。
+   `UNSTABLE` 先看是哪项检查没过，`DIRTY` 说明有冲突，都要在停服之前解决。
+
+第 2 条如果触发了，别忘了同步更新 §11.4 的验证记录，并考虑重跑一次
+`pnpm --filter @miniapp/backend mvp:regression`（它用本地假上游，约 90 秒，不花钱）。
+
 **C3. 生产维护窗口（执行计划 §五 批次 C，顺序不要改）**
 
 1. 发维护通知，停入口流量和后端后台任务。**具体停什么、不停什么见 §9.4，不要笼统地「停所有生产服务」。**
@@ -594,7 +610,10 @@ C3 窗口已定档 **2026-08-29 10:05**（避开整点的 pg_cron job 5）。把
 > PR [#294](https://github.com/linshu368/ST_miniapp/pull/294)（`dev` → `main`），CI 绿、一直挂着没合。
 > **099 跑完之前不要 merge #294**——Railway production 与两个支付 cron 服务都跟随 `main` 自动部署。
 >
-> 现在执行 §9.3 的 C3，顺序不要改：
+> **先做 §9.3 的「C3 窗口前检查」三条**（`main` 可能在 C2 之后又进了 hotfix，需要重合上游并等 CI 再绿），
+> 通过之后再停服。
+>
+> 然后执行 §9.3 的 C3，顺序不要改：
 >
 > 1. 按 **§9.4** 停服务——Railway `stminiapp`（backend，进程内有 30 秒的 chat_history sync job
 >    和 24 小时一轮、整轮一个事务的大厅排序重算）、`stminiapp-payment-reconcile-cron`、
