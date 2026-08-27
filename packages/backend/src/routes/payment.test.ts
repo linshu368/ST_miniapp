@@ -64,6 +64,10 @@ function createOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPa
     created_at: '2026-08-21T09:00:00.000Z',
     expires_at: '2026-08-21T09:15:00.000Z',
     paid_at: null,
+    next_reconcile_at: '2026-08-21T09:01:00.000Z',
+    last_reconciled_at: null,
+    reconcile_attempts: 0,
+    reconcile_locked_until: null,
     ...overrides,
   };
 }

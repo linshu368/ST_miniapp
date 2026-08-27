@@ -25,6 +25,10 @@ function createRow(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPaym
     created_at: '2026-08-21T11:45:00.000Z',
     expires_at: '2026-08-21T11:59:00.000Z',
     paid_at: null,
+    next_reconcile_at: '2026-08-21T11:46:00.000Z',
+    last_reconciled_at: null,
+    reconcile_attempts: 0,
+    reconcile_locked_until: null,
     ...overrides,
   };
 }
@@ -58,7 +62,7 @@ describe('runExpirePaymentOrders', () => {
     vi.clearAllMocks();
   });
 
-  it('queries unsettled orders from the 24h lookback through newly created orders', async () => {
+  it('queries a 24h window of unsettled orders up to now', async () => {
     const orders = createOrders([]);
 
     await runExpirePaymentOrders({
@@ -71,7 +75,7 @@ describe('runExpirePaymentOrders', () => {
 
     expect(orders.listUnsettledAroundExpiry).toHaveBeenCalledWith({
       since: '2026-08-20T12:00:00.000Z',
-      until: '2026-08-21T12:15:00.000Z',
+      until: '2026-08-21T12:00:00.000Z',
       limit: 100,
     });
   });
