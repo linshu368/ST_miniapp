@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import type {
   PaymentOrder,
   PaymentOrderStatus,
@@ -19,7 +19,7 @@ export interface MiniappPaymentOrderRow {
   created_at: string;
   expires_at: string;
   paid_at: string | null;
-  /** 入账获胜路径；migration 101 之前入账的历史订单为 null */
+  /** 入账获胜路径；migration 103 之前入账的历史订单为 null */
   settled_by: PaymentSettlementSource | null;
   next_reconcile_at: string;
   last_reconciled_at: string | null;
@@ -41,7 +41,7 @@ export interface CreateMiniappPaymentOrderInput {
 const REPORT_PAGE_SIZE = 500;
 
 export class MiniappPaymentOrderRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('billing');
 
   async create(input: CreateMiniappPaymentOrderInput): Promise<MiniappPaymentOrderRow> {
     const { data, error } = await this.db.from('payment_orders').insert(input).select('*').single();

@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import type { GetWalletBalanceData, WalletSpendingRecord } from '@miniapp/shared';
 
 type NumericValue = string | number;
@@ -87,7 +87,17 @@ export interface DailyCheckinStatus {
 }
 
 export class MiniappWalletRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  /**
+   * 本 repository 横跨三个域，所以显式持有三个域客户端：
+   * · billing —— 钱包、账本、LLM 扣费，是本 repository 的主表；
+   * · app_core —— 只读 runtime_config 里的签到奖励额度；
+   * · miniapp_features —— 签到记录与 claim_daily_checkin RPC。
+   *
+   * 后两个是 099 之前就有的跨域直读，本阶段只把限定名改对，不重构调用关系。
+   */
+  private readonly db = getDomainDb('billing');
+  private readonly appCoreDb = getDomainDb('app_core');
+  private readonly featuresDb = getDomainDb('miniapp_features');
 
   async getOrCreate(userId: string): Promise<MiniappWalletRow> {
     const existing = await this.findByUserId(userId);
@@ -196,6 +206,55 @@ export class MiniappWalletRepository {
     return (data as LlmUsageChargeRow | null) ?? null;
   }
 
+  /**
+   * 语音生成实扣。幂等键 = chat_message_audio.id（每次生成一行，天然一费一单）。
+   *
+   * 与 chargeLlmUsage 区别：语音没有 OpenRouter model catalog 字段，另开 RPC；
+   * wallet_ledger 用 reference_type='voice_usage' 与 llm_usage 区分。
+   *
+   * Q4：TTS 已成功、扣费时余额被对话回合花光时，RPC 返回 insufficient_balance
+   * 而不抛错——调用方据此仍把音频 markReady 给听、credits_charged=0、人工补扣。
+   */
+  async chargeVoiceUsage(input: {
+    chargeKey: string;
+    userId: string;
+    audioId: string;
+    amount: number;
+    metadata?: Record<string, unknown>;
+  }): Promise<{
+    wallet: MiniappWalletRow;
+    chargeStatus: 'charged' | 'already_charged' | 'insufficient_balance';
+    alreadyCharged: boolean;
+    charged: boolean;
+  }> {
+    const { data, error } = await this.db.rpc('charge_voice_usage', {
+      p_charge_key: input.chargeKey,
+      p_user_id: input.userId,
+      p_audio_id: input.audioId,
+      p_amount: input.amount,
+      p_metadata: input.metadata ?? {},
+    });
+
+    if (error) throw new Error(`记录语音扣费失败：${error.message}`);
+    const result = data as WalletRpcResult & {
+      charge_status?: string;
+      charge_id?: string | null;
+      ledger_id?: string | null;
+    };
+    if (!result.wallet) throw new Error('记录语音扣费失败：返回结果不完整');
+
+    const status = (result.charge_status ?? '') as
+      | 'charged'
+      | 'already_charged'
+      | 'insufficient_balance';
+    return {
+      wallet: normalizeWallet(result.wallet),
+      chargeStatus: status,
+      alreadyCharged: status === 'already_charged',
+      charged: status === 'charged',
+    };
+  }
+
   async listSpending(userId: string): Promise<WalletSpendingRecord[]> {
     const { data, error } = await this.db
       .from('llm_usage_charges')
@@ -204,7 +263,7 @@ export class MiniappWalletRepository {
       .order('created_at', { ascending: false })
       .limit(100);
     if (error) throw new Error(`查询消费明细失败：${error.message}`);
-    return (
+    const llmRows = (
       (data ?? []) as Array<{
         charge_key: string;
         model_id: string | null;
@@ -226,10 +285,51 @@ export class MiniappWalletRepository {
       status_label: formatSpendingStatus(row.status, row.metadata ?? {}),
       created_at: row.created_at,
     }));
+
+    // 语音扣费走 wallet_ledger（reference_type='voice_usage'），不在 llm_usage_charges 里。
+    // 客服对账要能看到「角色语音 15」，这里 UNION 一段拼到消费明细前端。
+    const { data: voiceRows, error: voiceError } = await this.db
+      .from('wallet_ledger')
+      .select('reference_id,amount,metadata,created_at')
+      .eq('user_id', userId)
+      .eq('reference_type', 'voice_usage')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (voiceError) throw new Error(`查询语音消费明细失败：${voiceError.message}`);
+
+    const voiceRecords = (
+      (voiceRows ?? []) as Array<{
+        reference_id: string | null;
+        amount: NumericValue;
+        metadata: Record<string, unknown> | null;
+        created_at: string;
+      }>
+    )?.map((row) => {
+      const amount = Math.abs(toNumber(row.amount));
+      const label =
+        typeof row.metadata?.voice_price_label === 'string'
+          ? row.metadata.voice_price_label
+          : '角色语音';
+      return {
+        id: row.reference_id ?? row.created_at,
+        model_id: null,
+        model_display_name: label,
+        charged_amount: amount,
+        status: 'charged' as const,
+        finish_reason: null,
+        reply_outcome: null,
+        status_label: '已扣费',
+        created_at: row.created_at,
+      };
+    });
+
+    return [...llmRows, ...voiceRecords].sort(
+      (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)
+    );
   }
 
   async getDailyCheckinStatus(userId: string): Promise<DailyCheckinStatus> {
-    const { data: configRow, error: configError } = await this.db
+    const { data: configRow, error: configError } = await this.appCoreDb
       .from('runtime_config')
       .select('value, text_value')
       .eq('key', 'miniapp_daily_checkin_bonus_credits')
@@ -241,7 +341,7 @@ export class MiniappWalletRepository {
 
     const rewardCredits = parsePositiveInteger(configRow?.value ?? configRow?.text_value, 40);
 
-    const { data, error } = await this.db
+    const { data, error } = await this.featuresDb
       .from('daily_checkins')
       .select('claimed_at')
       .eq('user_id', userId)
@@ -270,7 +370,7 @@ export class MiniappWalletRepository {
     wallet: MiniappWalletRow;
     checkin: DailyCheckinRpcData;
   }> {
-    const { data, error } = await this.db.rpc('claim_daily_checkin', {
+    const { data, error } = await this.featuresDb.rpc('claim_daily_checkin', {
       p_user_id: userId,
     });
 

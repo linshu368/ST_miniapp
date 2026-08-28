@@ -375,8 +375,11 @@ const routeOrders = {
   create: vi.fn(async () => createOrder()),
 };
 
+// 整个模块被替换掉，所以两个入口都得给：现在业务代码走的是 getDomainDb，
+// 少一个就会在被 mock 的调用链里报 "getDomainDb is not a function"。
 vi.mock('../lib/supabase.js', () => ({
   getSupabaseClient: () => ({ schema: () => ({}) }),
+  getDomainDb: () => ({}),
 }));
 
 vi.mock('../lib/user.js', () => ({

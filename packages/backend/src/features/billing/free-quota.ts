@@ -6,7 +6,7 @@ import {
   parseCharacterFreeChatQuotaLimit,
   type FreeQuotaExhaustedDialogConfig,
 } from '@miniapp/shared';
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 
 /** 配置缺失时的兜底值；实际额度请读 getCharacterFreeChatQuotaLimit()。 */
 export const CHARACTER_FREE_CHAT_QUOTA_LIMIT = DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT;
@@ -29,8 +29,7 @@ export function parseFreeQuotaExhaustedDialogConfig(
 }
 
 export async function getCharacterFreeChatQuotaLimit(): Promise<number> {
-  const { data, error } = await getSupabaseClient()
-    .schema('miniapp')
+  const { data, error } = await getDomainDb('app_core')
     .from('runtime_config')
     .select('value')
     .eq('key', CHARACTER_FREE_CHAT_QUOTA_LIMIT_CONFIG_KEY)
@@ -46,8 +45,7 @@ export async function getCharacterFreeChatQuotaLimit(): Promise<number> {
 }
 
 export async function getFreeQuotaExhaustedDialogConfig(): Promise<FreeQuotaExhaustedDialogConfig> {
-  const { data, error } = await getSupabaseClient()
-    .schema('miniapp')
+  const { data, error } = await getDomainDb('app_core')
     .from('runtime_config')
     .select('value')
     .eq('key', FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG_KEY)

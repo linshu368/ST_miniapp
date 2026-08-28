@@ -1,0 +1,1 @@
+nsp|typ|typkind|typ_owner

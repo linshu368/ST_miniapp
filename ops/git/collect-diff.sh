@@ -23,6 +23,10 @@ PATHSPEC=(
   ':(exclude)*.gif' ':(exclude)*.svg' ':(exclude)*.ico'
   ':(exclude)*.woff' ':(exclude)*.woff2' ':(exclude)*.ttf' ':(exclude)*.eot'
   ':(exclude)docs/**'
+  # 数据库盘点快照：pg_catalog 的机器导出，一次几万行，对代码审查没有价值却能独占
+  # 整个 token 预算（schema 划分那批快照把 diff 撑到 60 万 tok，直接把 API 打成 400）。
+  # 要看基线就去仓库里读文件，不该走 diff。
+  ':(exclude)ops/schema-split/snapshots/**'
   ':(exclude)vendor/sillytavern/**'
   ':(exclude)ops/st-extensions/JS-Slash-Runner/lib/**'
   ':(exclude)ops/st-extensions/JS-Slash-Runner/bundle/**'

@@ -1,11 +1,32 @@
 // 角色回复语音的仓库层（migration 080）。
 //
-// message_id 指向 miniapp.chat_history.id，即 toChatMessages 给 assistant 消息的 id。
-// 表是追加写的：重新生成插新行、把旧行 is_active 置否，既保留「当前语音」也保留用量流水。
+// message_id 指向 experience.chat_history.id，即 toChatMessages 给 assistant 消息的 id。
+// 表是追加写的：重新生成插新行，成功才把旧行 is_active 置否，既保留「当前语音」也保留用量流水。
+//
+// 失败不让位（需求 Q3，migration 102 起）：重新生成时旧 ready 行保持 is_active=true，
+// 新 pending 行 is_active=false。失败后旧 ready 仍是唯一生效行，前端继续能播；
+// 本次失败码通过 resolveMessageVoice 组合进 last_error_code，在播放条下方提示。
+// 并发保护由 uq_chat_message_audio_pending（message_id where status='pending'）接手：
+// pending 行不再一定是 active，原 uq_chat_message_audio_active 拦不住连点。
 
 import type { MessageVoice, MessageVoiceStatus } from '@miniapp/shared';
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import { config } from '../../platform/config.js';
+import { createLogger } from '../../lib/logger.js';
+
+const log = createLogger('voice');
+
+/**
+ * 判定 supabase-js 返回的错误是否为「列不存在」（Postgres 42703）。
+ *
+ * 用于 markReady 写计费列时降级：migration 101 未执行的环境下 credits_charged / charge_id
+ * 两列不存在，主 update 仍要把音频标 ready（用户能听），计费列写入静默跳过。
+ */
+export function isMissingColumnError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === '42703') return true;
+  return /column .* does not exist/i.test(error.message ?? '');
+}
 
 /** 最坏情况下串行发起的上游请求数：写稿两闸各一次，合成一次 */
 const MAX_UPSTREAM_CALLS = 3;
@@ -50,23 +71,44 @@ export interface ChatMessageAudioRow {
   duration_ms: number | null;
   latency_ms: number | null;
   error_code: string | null;
+  /** 本次生成实扣星尘：成功为计费额度，失败/未扣费为 0 */
+  credits_charged: number;
+  /** 扣费幂等键，一般等于本行 id；NULL 表示未扣费 */
+  charge_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export class ChatMessageAudioRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('experience');
 
-  /** 会话内全部生效语音。ownership 由调用方在校验会话归属时保证 */
+  /**
+   * 会话内全部语音（按消息聚合后呈现）。ownership 由调用方在校验会话归属时保证。
+   *
+   * 读路径要取该会话全部行（含 inactive 的 pending / failed），才能在已有可播时
+   * 把本次失败码组合进 last_error_code。索引走 102 的 idx_chat_message_audio_session_all。
+   */
   async listBySession(sessionId: string): Promise<MessageVoice[]> {
     const { data, error } = await this.db
       .from('chat_message_audio')
       .select('*')
-      .eq('session_id', sessionId)
-      .eq('is_active', true);
+      .eq('session_id', sessionId);
 
     if (error) throw new Error(`查询会话语音失败：${error.message}`);
-    return ((data ?? []) as ChatMessageAudioRow[]).map(toMessageVoice);
+
+    const byMessage = new Map<string, ChatMessageAudioRow[]>();
+    for (const row of (data ?? []) as ChatMessageAudioRow[]) {
+      const list = byMessage.get(row.message_id);
+      if (list) list.push(row);
+      else byMessage.set(row.message_id, [row]);
+    }
+
+    const voices: MessageVoice[] = [];
+    for (const rows of byMessage.values()) {
+      const resolved = resolveMessageVoice(rows);
+      if (resolved) voices.push(resolved);
+    }
+    return voices;
   }
 
   async findActiveByMessage(messageId: string): Promise<ChatMessageAudioRow | null> {
@@ -82,11 +124,46 @@ export class ChatMessageAudioRepository {
   }
 
   /**
-   * 受理一次生成：把旧的生效行让位，插入一行 pending。
+   * 查一条消息当前的 pending 行（无论是否 active）。
    *
-   * 并发保护交给 uq_chat_message_audio_active（message_id where is_active）：
-   * 用户连点两下时两个请求会同时走到这里，先读后写在这种情况下必然漏判，
-   * 唯一索引才是真正拦得住的那一道。撞上就翻译成 already_generating。
+   * 102 起 pending 行不一定是 active（重新生成时旧 ready 仍 active、新 pending inactive），
+   * 判重必须按 status 而不是 is_active。uq_chat_message_audio_pending 保证至多一行。
+   */
+  async findPendingByMessage(messageId: string): Promise<ChatMessageAudioRow | null> {
+    const { data, error } = await this.db
+      .from('chat_message_audio')
+      .select('*')
+      .eq('message_id', messageId)
+      .eq('status', 'pending')
+      .maybeSingle();
+
+    if (error) throw new Error(`查询消息生成中语音失败：${error.message}`);
+    return (data as ChatMessageAudioRow | null) ?? null;
+  }
+
+  async findById(id: string): Promise<ChatMessageAudioRow | null> {
+    const { data, error } = await this.db
+      .from('chat_message_audio')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw new Error(`查询语音记录失败：${error.message}`);
+    return (data as ChatMessageAudioRow | null) ?? null;
+  }
+
+  /**
+   * 受理一次生成：插入一行 pending。
+   *
+   * 失败不让位（Q3）：
+   *   - 旧生效行是 ready：保持 is_active=true，新 pending is_active=false。
+   *     失败后旧 ready 仍是唯一生效行，前端继续能播；本次失败码组合进 last_error_code。
+   *   - 旧生效行是 failed 或没有生效行（首次 / 无旧音频可保）：让位后插入 is_active=true 的 pending，
+   *     失败时仍是 active failed，入口变「重试」。
+   *
+   * 并发保护交给 uq_chat_message_audio_pending（message_id where status='pending'）：
+   * pending 行不再一定是 active，原 active 唯一索引拦不住连点。撞 23505 翻译成 already_generating。
+   * 卡死的 pending 先回写成 failed，腾出 pending 唯一索引槽位再插入。
    */
   async createPending(input: {
     messageId: string;
@@ -97,12 +174,21 @@ export class ChatMessageAudioRepository {
     ttsSpeed: number;
     sourceChars: number;
   }): Promise<ChatMessageAudioRow> {
-    const existing = await this.findActiveByMessage(input.messageId);
-    if (existing && existing.status === 'pending' && !isStalePending(existing)) {
+    const pending = await this.findPendingByMessage(input.messageId);
+    if (pending && !isStalePending(pending)) {
       throw new AudioConflictError('already_generating');
     }
+    if (pending) {
+      // 卡死的 pending 回写成 failed，腾出 uq_chat_message_audio_pending 槽位
+      await this.markFailed(pending.id, 'voice_generation_stalled', 0);
+    }
 
-    if (existing) {
+    const existing = await this.findActiveByMessage(input.messageId);
+    const nextRevision = Math.max(existing?.revision ?? -1, pending?.revision ?? -1) + 1;
+
+    // 旧 ready 不让位：失败时用户不能丢掉上一版可播音频
+    const keepOldReadyActive = existing?.status === 'ready';
+    if (existing && !keepOldReadyActive) {
       const { error } = await this.db
         .from('chat_message_audio')
         .update({ is_active: false, updated_at: new Date().toISOString() })
@@ -116,8 +202,9 @@ export class ChatMessageAudioRepository {
         message_id: input.messageId,
         session_id: input.sessionId,
         user_id: input.userId,
-        revision: existing ? existing.revision + 1 : 0,
+        revision: nextRevision,
         status: 'pending',
+        is_active: !keepOldReadyActive,
         voice_id: input.voiceId,
         tts_model: input.ttsModel,
         tts_speed: input.ttsSpeed,
@@ -152,6 +239,12 @@ export class ChatMessageAudioRepository {
     if (error) throw new Error(`保存语音台词失败：${error.message}`);
   }
 
+  /**
+   * 成功才让位：先把同消息当前生效行（旧 ready）置 inactive，再把本行标 ready + active。
+   *
+   * 顺序与「先让位再插入」一致：旧 ready 在本行就绪前仍可播，窗口可接受。
+   * 首次生成时本行就是 active pending，跳过让位直接转 ready。
+   */
   async markReady(
     id: string,
     input: {
@@ -160,8 +253,32 @@ export class ChatMessageAudioRepository {
       audioUrl: string;
       durationMs: number | null;
       latencyMs: number;
+      /** 本次实扣星尘（成功为计费额度，失败/未扣费为 0） */
+      creditsCharged: number;
+      /** 扣费幂等键，未扣费传 null */
+      chargeId: string | null;
     }
   ): Promise<void> {
+    const row = await this.findById(id);
+    if (!row) throw new Error(`语音记录不存在：${id}`);
+
+    if (row.is_active !== true) {
+      // 重新生成成功：把旧 ready 让位，再让本行接管生效
+      const active = await this.findActiveByMessage(row.message_id);
+      if (active && active.id !== id) {
+        const { error: deactivateError } = await this.db
+          .from('chat_message_audio')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('id', active.id);
+        if (deactivateError) throw new Error(`让位旧语音失败：${deactivateError.message}`);
+      }
+      const { error: activateError } = await this.db
+        .from('chat_message_audio')
+        .update({ is_active: true, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (activateError) throw new Error(`激活新语音失败：${activateError.message}`);
+    }
+
     const { error } = await this.db
       .from('chat_message_audio')
       .update({
@@ -178,11 +295,42 @@ export class ChatMessageAudioRepository {
       .eq('id', id);
 
     if (error) throw new Error(`更新语音生成结果失败：${error.message}`);
+
+    // 计费列单独写：migration 101 未执行时 credits_charged / charge_id 两列不存在，
+    // 主 update 已把音频标 ready（用户能听），这里只降级打 warn，不让缺列把整条生成拖成 failed。
+    // migration 执行后两列存在，正常写入；计费开关关闭时 creditsCharged=0 / chargeId=null 也走这条
+    // （写 0 / null 与不写语义等价，但保留分支让"开关打开后"路径与"开关关闭"路径同构，少一处条件分裂）。
+    const { error: billingError } = await this.db
+      .from('chat_message_audio')
+      .update({
+        credits_charged: input.creditsCharged,
+        charge_id: input.chargeId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+
+    if (billingError) {
+      if (isMissingColumnError(billingError)) {
+        log.sys.warn(
+          {
+            event: 'voice.billing_column_missing',
+            audioId: id,
+            code: billingError.code,
+            message: billingError.message,
+          },
+          '语音计费列不存在（migration 101 未执行），已跳过计费列写入，音频仍 ready'
+        );
+      } else {
+        throw new Error(`更新语音计费列失败：${billingError.message}`);
+      }
+    }
   }
 
   /**
-   * 失败行保留且保持 is_active：前端要靠它把按钮显示成「重试」。
-   * 下次生成时 createPending 会把它让位掉。
+   * 失败只标失败，不动 is_active：
+   *   - 首次生成的 pending 本就是 active，失败后保持 active，入口变「重试」。
+   *   - 重新生成的 pending 是 inactive（旧 ready 仍 active），失败后保持 inactive，
+   *     旧 ready 仍是唯一生效行，前端继续能播；本次失败码经 resolveMessageVoice 组合进 last_error_code。
    */
   async markFailed(id: string, errorCode: string, latencyMs: number): Promise<void> {
     const { error } = await this.db
@@ -207,6 +355,9 @@ function isStalePending(row: ChatMessageAudioRow): boolean {
  * 卡死的 pending 对外按 failed 呈现，让用户能重试。
  * 不在读路径回写数据库：读接口会被轮询打到，顺手写库既放大了写量，
  * 也会让「什么时候变成 failed」取决于谁先读到，排查时对不上。
+ *
+ * 单行映射不带 last_error_code（单行没有「上一版可播 + 本次失败」的组合语义），
+ * 组合由 resolveMessageVoice 在会话级聚合时补上。
  */
 export function toMessageVoice(row: ChatMessageAudioRow): MessageVoice {
   const stale = row.status === 'pending' && isStalePending(row);
@@ -220,6 +371,55 @@ export function toMessageVoice(row: ChatMessageAudioRow): MessageVoice {
     spoken_text: row.status === 'ready' ? row.spoken_text : null,
     voice_id: row.voice_id,
     error_code: stale ? 'voice_generation_stalled' : row.error_code,
+    last_error_code: null,
+    credits_charged: row.credits_charged ?? 0,
     created_at: row.created_at,
   };
+}
+
+/**
+ * 把同一条消息的全部 audio 行聚合成对外的一份语音状态。
+ *
+ * 规则（Q3 失败不让位）：
+ *   1. 存在未过期 pending → 生成中（status=pending），隐藏播放条。
+ *   2. 否则取生效行（is_active）：
+ *      - ready：找比它更新且失败的尝试（含卡死 pending 视为 stalled），
+ *        把失败码写进 last_error_code，播放条仍可播。
+ *      - failed：首次生成失败，无上一版可播，入口变「重试」。
+ *      - 卡死 pending：toMessageVoice 已映射为 failed。
+ *   3. 没有生效行（防御）：取最大 revision 行兜底。
+ *
+ * 导出供单测直接覆盖，不连库。
+ */
+export function resolveMessageVoice(rows: ChatMessageAudioRow[]): MessageVoice | null {
+  if (rows.length === 0) return null;
+
+  const livePending = rows.find((r) => r.status === 'pending' && !isStalePending(r));
+  if (livePending) return toMessageVoice(livePending);
+
+  const active = rows.find((r) => r.is_active);
+  const base = active ?? rows.reduce((a, b) => (b.revision > a.revision ? b : a));
+  const voice = toMessageVoice(base);
+
+  if (voice.status !== 'ready') return voice;
+
+  // 已有可播：找比当前 ready 更新一次的失败尝试（含卡死 pending）作为 last_error_code
+  const newerFailure = rows
+    .filter((r) => r !== active && r.revision > base.revision)
+    .map((r) => ({
+      row: r,
+      code:
+        r.status === 'pending' && isStalePending(r)
+          ? 'voice_generation_stalled'
+          : r.status === 'failed'
+            ? r.error_code
+            : null,
+    }))
+    .filter((x) => x.code !== null)
+    .sort((a, b) => b.row.revision - a.row.revision)[0];
+
+  if (newerFailure) {
+    return { ...voice, last_error_code: newerFailure.code };
+  }
+  return voice;
 }

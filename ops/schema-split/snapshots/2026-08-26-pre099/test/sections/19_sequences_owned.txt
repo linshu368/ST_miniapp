@@ -1,0 +1,3 @@
+seq_nsp|seq|owner_nsp|owner_rel|owner_col
+miniapp_traffic|botlinks_id_seq|miniapp_traffic|botlinks|id
+miniapp_traffic|traffic_clicks_id_seq|miniapp_traffic|traffic_clicks|id

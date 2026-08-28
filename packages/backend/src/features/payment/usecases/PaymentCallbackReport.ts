@@ -25,7 +25,7 @@ const SETTLEMENT_SOURCES: readonly PaymentSettlementSource[] = [
   'cron',
 ];
 
-/** migration 101 之前入账的订单没有来源，单列一行，不摊进四条路径里。 */
+/** migration 103 之前入账的订单没有来源，单列一行，不摊进四条路径里。 */
 export const UNKNOWN_SETTLEMENT_SOURCE = 'unknown';
 
 export interface ReportDayRange {

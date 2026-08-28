@@ -104,8 +104,10 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
 4. Settings → Networking 生成 Railway 域名（或自定义域名），把它配到 Vercel 的
    `NEXT_PUBLIC_API_URL`（见 `ops/env/vercel.env.production.example`）；反向把 Vercel
    对外域名配到本服务的 `FRONTEND_URL`。
-5. 建好、变量填好后，可选用 IaC 对齐：`railway link` → `railway config plan`
-   →（确认 diff 无误）`railway config apply`。
+5. 建好、变量填好后，可选用 IaC 对齐：development 运行 `railway config plan` /
+   `railway config apply`；production 必须显式运行
+   `RAILWAY_CONFIG_ENV=production railway config plan` /
+   `RAILWAY_CONFIG_ENV=production railway config apply`。
 
 ### 支付 Cron
 
@@ -144,7 +146,7 @@ Railway 控制台手动创建并逐项对齐：
 1. 先在 test、production 分别执行
    `packages/shared/migrations/100_payment_reconciliation_schedule.sql`，再部署包含快速对账
    repository 的代码；顺序反过来会因缺少调度列导致快速任务失败。
-   `101_payment_settled_by.sql`（入账来源，回调监控用）同理必须先于代码执行：它把入账函数换成
+   `103_payment_settled_by.sql`（入账来源，回调监控用）同理必须先于代码执行：它把入账函数换成
    三参签名，迁移先跑不影响旧代码，反过来则四条入账路径一起失败。详见
    [`docs/payment-missing-credits-remediation.md`](../../docs/payment-missing-credits-remediation.md) §3.1。
 2. 用生产测试账号创建并支付最低金额订单，支付后不返回 MiniApp，也不打开订单详情。

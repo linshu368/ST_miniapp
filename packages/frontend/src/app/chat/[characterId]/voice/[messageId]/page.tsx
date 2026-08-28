@@ -6,7 +6,12 @@ import { ChevronLeft, Loader2 } from 'lucide-react';
 import { MAX_CUSTOM_VOICE_CHARS } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
-import { toVoiceMap, useGenerateVoiceMutation, useSessionVoiceQuery } from '@/lib/api/voice';
+import {
+  toVoiceMap,
+  useGenerateVoiceMutation,
+  useSessionVoiceQuery,
+  useVoiceConfigQuery,
+} from '@/lib/api/voice';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { useTelegramBackButton } from '@/lib/telegram';
 
@@ -39,6 +44,9 @@ export default function CustomVoicePage() {
 
   const sessionVoice = useSessionVoiceQuery(sessionId ?? undefined);
   const generateVoice = useGenerateVoiceMutation(sessionId ?? undefined);
+  const voiceConfig = useVoiceConfigQuery();
+  const priceLabel = voiceConfig.data?.billing.price_label ?? '';
+  const returnToForRecharge = backTo;
 
   const currentText = useMemo(
     () => toVoiceMap(sessionVoice.data).get(messageId)?.spoken_text ?? '',
@@ -65,6 +73,17 @@ export default function CustomVoicePage() {
         onSuccess: goBack,
         onError: (mutationError) => {
           const code = (mutationError as { code?: string }).code;
+          if (code === 'insufficient_balance') {
+            // 402 跳充值页，复用对话链路。金额由 apiClient 从 402 裸形状带出。
+            const balance = (mutationError as { balance?: { creditsRequired: number } }).balance;
+            const search = new URLSearchParams({
+              reason: 'insufficient_credits',
+              returnTo: returnToForRecharge,
+            });
+            if (balance) search.set('required', String(balance.creditsRequired));
+            router.push(`/profile/recharge?${search.toString()}`);
+            return;
+          }
           setError(
             code === 'CONFLICT'
               ? '这条回复正在生成语音，请稍后再试'
@@ -128,6 +147,11 @@ export default function CustomVoicePage() {
       </section>
 
       <div className="sticky bottom-0 border-t border-border bg-background/90 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-xl">
+        {priceLabel ? (
+          <p className="mb-2 text-center text-[11px] text-muted-foreground">
+            成功将消耗 {priceLabel}
+          </p>
+        ) : null}
         <Button
           type="button"
           onClick={submit}

@@ -1,0 +1,2 @@
+db|server_version|conn_role
+postgres|17.6|postgres

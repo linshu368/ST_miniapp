@@ -4,10 +4,10 @@
  * M3b 回归的测试数据：钱包 / 免费额度 / chat_history / 扣费明细，以及会话与对话轮次。
  *
  * 用户的 tg_id 必须是**数字串**：requireTelegramAuth 拿到的是 Telegram 的数字 id，
- * getOrCreateDbUser 用它回查 miniapp.users。所以遗留数据的清理靠 st_handle 前缀认领。
+ * getOrCreateDbUser 用它回查 app_core.users。所以遗留数据的清理靠 st_handle 前缀认领。
  */
 
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb, type DomainSchema } from '../../lib/supabase.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 
@@ -28,8 +28,25 @@ export interface ConversationFixtures {
   tag: string;
 }
 
-function db() {
-  return getSupabaseClient().schema('miniapp');
+/**
+ * 回归数据横跨三个归属域（migration 099），所以按表查它的域，而不是共用一个 schema 客户端。
+ * 归属权威：docs/schema归属地图.md。新增表必须在这里登记，否则不过编译。
+ */
+const FIXTURE_TABLE_DOMAIN = {
+  users: 'app_core',
+  miniapp_user_settings: 'app_core',
+  characters: 'app_core',
+  runtime_config: 'app_core',
+  chat_sessions: 'experience',
+  chat_history: 'experience',
+  user_wallets: 'billing',
+  llm_usage_charges: 'billing',
+  character_free_chat_quotas: 'billing',
+  character_free_chat_quota_decisions: 'billing',
+} as const satisfies Record<string, DomainSchema>;
+
+function db(table: keyof typeof FIXTURE_TABLE_DOMAIN) {
+  return getDomainDb(FIXTURE_TABLE_DOMAIN[table]).from(table);
 }
 
 export interface CatalogModelPick {
@@ -74,14 +91,13 @@ export interface CatalogOverride {
  * 往模型目录里临时插一个免费模型。
  *
  * test 库的目录里现在一个免费模型都没有，免费额度那条判据因此永远跑不到。这里直接改
- * miniapp.runtime_config 的 llm_model_catalog，跑完还原。
+ * app_core.runtime_config 的 llm_model_catalog，跑完还原。
  *
  * ⚠️ 这是**共享配置**，改的瞬间同一个 test 库上的其他人也会看到。所以它藏在
  *    --seed-free-model 后面，默认不开；调用方必须保证 restore() 一定会执行。
  */
 export async function seedFreeModelIntoCatalog(): Promise<CatalogOverride> {
-  const { data, error } = await db()
-    .from('runtime_config')
+  const { data, error } = await db('runtime_config')
     .select('value, version')
     .eq('key', 'llm_model_catalog')
     .maybeSingle();
@@ -124,8 +140,7 @@ export async function seedFreeModelIntoCatalog(): Promise<CatalogOverride> {
   });
 
   const write = async (value: unknown, version: number) => {
-    const { error: writeError } = await db()
-      .from('runtime_config')
+    const { error: writeError } = await db('runtime_config')
       .update({ value, version })
       .eq('key', 'llm_model_catalog');
     if (writeError) throw new Error(`写入 llm_model_catalog 失败：${writeError.message}`);
@@ -143,25 +158,23 @@ export async function seedFreeModelIntoCatalog(): Promise<CatalogOverride> {
 
 /** 模型选择以 miniapp_user_settings 为权威，handler 每次生成前都会用它覆盖 body.model */
 export async function setSelectedModel(userId: string, modelId: string): Promise<void> {
-  const { error } = await db()
-    .from('miniapp_user_settings')
-    .upsert({ user_id: userId, selected_model_id: modelId }, { onConflict: 'user_id' });
+  const { error } = await db('miniapp_user_settings').upsert(
+    { user_id: userId, selected_model_id: modelId },
+    { onConflict: 'user_id' }
+  );
   if (error) throw new Error(`设置 selected_model_id 失败：${error.message}`);
 }
 
 export async function setWalletBalance(userId: string, mainCredits: number): Promise<void> {
-  const { error } = await db()
-    .from('user_wallets')
-    .upsert(
-      { user_id: userId, main_credits: mainCredits, bonus_credits: 0 },
-      { onConflict: 'user_id' }
-    );
+  const { error } = await db('user_wallets').upsert(
+    { user_id: userId, main_credits: mainCredits, bonus_credits: 0 },
+    { onConflict: 'user_id' }
+  );
   if (error) throw new Error(`设置钱包余额失败：${error.message}`);
 }
 
 export async function getWalletCredits(userId: string): Promise<number> {
-  const { data, error } = await db()
-    .from('user_wallets')
+  const { data, error } = await db('user_wallets')
     .select('main_credits, bonus_credits, total_credits')
     .eq('user_id', userId)
     .maybeSingle();
@@ -179,18 +192,15 @@ export async function setFreeQuotaUsedRounds(
   characterId: string,
   usedRounds: number
 ): Promise<void> {
-  const { error } = await db()
-    .from('character_free_chat_quotas')
-    .upsert(
-      { user_id: userId, character_id: characterId, used_rounds: usedRounds, reserved_rounds: 0 },
-      { onConflict: 'user_id,character_id' }
-    );
+  const { error } = await db('character_free_chat_quotas').upsert(
+    { user_id: userId, character_id: characterId, used_rounds: usedRounds, reserved_rounds: 0 },
+    { onConflict: 'user_id,character_id' }
+  );
   if (error) throw new Error(`设置免费额度已用轮次失败：${error.message}`);
 }
 
 export async function getFreeQuotaUsedRounds(userId: string, characterId: string): Promise<number> {
-  const { data, error } = await db()
-    .from('character_free_chat_quotas')
+  const { data, error } = await db('character_free_chat_quotas')
     .select('used_rounds, reserved_rounds')
     .eq('user_id', userId)
     .eq('character_id', characterId)
@@ -208,21 +218,18 @@ export interface ChatHistoryRow {
   upstream_status: number | null;
   deduction_rate: number | string;
   character_id: string | null;
-  preset_id: string | null;
   session_id: string | null;
   history: unknown;
   llm_charge_id: string | null;
-  llm_model_markup: number | string | null;
   llm_intended_deduction: number | string | null;
   llm_generation_id: string | null;
   created_at: string;
 }
 
 export async function listChatHistory(userId: string): Promise<ChatHistoryRow[]> {
-  const { data, error } = await db()
-    .from('chat_history')
+  const { data, error } = await db('chat_history')
     .select(
-      'id, model, user_input, assistant_reply, status, upstream_status, deduction_rate, character_id, preset_id, session_id, history, llm_charge_id, llm_model_markup, llm_intended_deduction, llm_generation_id, created_at'
+      'id, model, user_input, assistant_reply, status, upstream_status, deduction_rate, character_id, session_id, history, llm_charge_id, llm_intended_deduction, llm_generation_id, created_at'
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
@@ -245,8 +252,7 @@ export interface UsageChargeRow {
 }
 
 export async function listUsageCharges(userId: string): Promise<UsageChargeRow[]> {
-  const { data, error } = await db()
-    .from('llm_usage_charges')
+  const { data, error } = await db('llm_usage_charges')
     .select(
       'charge_key, model_id, model_openrouter_id, model_display_name, model_markup, calculated_amount, charged_amount, fallback_used, status, metadata, created_at'
     )
@@ -260,16 +266,14 @@ export async function seedConversationFixtures(): Promise<ConversationFixtures> 
   const tag = Date.now().toString(36);
   const tgId = String(TG_ID_BASE + Math.floor(Math.random() * 1_000_000));
 
-  const { data: user, error: userError } = await db()
-    .from('users')
+  const { data: user, error: userError } = await db('users')
     .insert({ tg_id: tgId, st_handle: `${HANDLE_PREFIX}${tag}` })
     .select('id')
     .single();
   if (userError) throw new Error(`创建测试用户失败：${userError.message}`);
 
   const characterName = `MVP 回归测试角色 ${tag}`;
-  const { data: character, error: characterError } = await db()
-    .from('characters')
+  const { data: character, error: characterError } = await db('characters')
     .insert({
       name: characterName,
       first_mes: OPENING_MESSAGE,
@@ -293,8 +297,7 @@ export async function seedConversationFixtures(): Promise<ConversationFixtures> 
 }
 
 export async function listSessionRows(userId: string): Promise<ChatSessionRow[]> {
-  const { data, error } = await db()
-    .from('chat_sessions')
+  const { data, error } = await db('chat_sessions')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
@@ -303,11 +306,7 @@ export async function listSessionRows(userId: string): Promise<ChatSessionRow[]>
 }
 
 export async function getSessionRow(sessionId: string): Promise<ChatSessionRow | null> {
-  const { data, error } = await db()
-    .from('chat_sessions')
-    .select('*')
-    .eq('id', sessionId)
-    .maybeSingle();
+  const { data, error } = await db('chat_sessions').select('*').eq('id', sessionId).maybeSingle();
   if (error) throw new Error(`查询会话失败：${error.message}`);
   return (data as ChatSessionRow | null) ?? null;
 }
@@ -332,8 +331,7 @@ export interface ConversationHistoryTestRow {
 export async function listConversationHistoryRows(
   sessionId: string
 ): Promise<ConversationHistoryTestRow[]> {
-  const { data, error } = await db()
-    .from('chat_history')
+  const { data, error } = await db('chat_history')
     .select('*')
     .eq('session_id', sessionId)
     .order('turn_index', { ascending: true })
@@ -352,11 +350,7 @@ export async function waitForSettledHistory(
 ): Promise<ConversationHistoryTestRow> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const { data, error } = await db()
-      .from('chat_history')
-      .select('*')
-      .eq('id', historyId)
-      .maybeSingle();
+    const { data, error } = await db('chat_history').select('*').eq('id', historyId).maybeSingle();
     if (error) throw new Error(`查询消息失败：${error.message}`);
 
     const row = data as ConversationHistoryTestRow | null;
@@ -370,7 +364,8 @@ export async function waitForSettledHistory(
 
 /**
  * 自研链路会在调用上游前先建 chat_history 行，不能再以「条数出现」作为异步计费完成判据。
- * llm_model_markup 由 saveChatHistory 最后补入，免费与付费模型都会有值，用它作为完成水位。
+ * llm_intended_deduction 由 saveChatHistory 最后补入，三种终态状态都会有值，用它作为完成水位
+ * （llm_charge_id / llm_finish_reason 不行：它们在更早的 finalizeTurn 就已写入）。
  */
 export async function waitForChatHistory(
   userId: string,
@@ -383,7 +378,7 @@ export async function waitForChatHistory(
     const expectedRows = rows.slice(0, expectedCount);
     if (
       rows.length >= expectedCount &&
-      expectedRows.every((row) => row.status !== 'streaming' && row.llm_model_markup !== null)
+      expectedRows.every((row) => row.status !== 'streaming' && row.llm_intended_deduction !== null)
     ) {
       return rows;
     }
@@ -396,39 +391,36 @@ export async function waitForChatHistory(
 
 /** 清掉上一个场景留下的会话与落库痕迹，让各场景的条数断言可以用绝对值 */
 export async function resetConversationArtifacts(userId: string): Promise<void> {
-  await db().from('chat_history').delete().eq('user_id', userId);
-  await db().from('llm_usage_charges').delete().eq('user_id', userId);
-  await db().from('character_free_chat_quota_decisions').delete().eq('user_id', userId);
+  await db('chat_history').delete().eq('user_id', userId);
+  await db('llm_usage_charges').delete().eq('user_id', userId);
+  await db('character_free_chat_quota_decisions').delete().eq('user_id', userId);
   // chat_history.session_id 是 ON DELETE SET NULL，所以先删历史再删 session
-  await db().from('chat_sessions').delete().eq('user_id', userId);
+  await db('chat_sessions').delete().eq('user_id', userId);
 }
 
 export async function cleanupConversationFixtures(fixtures: ConversationFixtures): Promise<void> {
   await resetConversationArtifacts(fixtures.userId);
-  await db().from('character_free_chat_quotas').delete().eq('user_id', fixtures.userId);
-  await db().from('user_wallets').delete().eq('user_id', fixtures.userId);
-  await db().from('miniapp_user_settings').delete().eq('user_id', fixtures.userId);
-  await db().from('users').delete().eq('id', fixtures.userId);
+  await db('character_free_chat_quotas').delete().eq('user_id', fixtures.userId);
+  await db('user_wallets').delete().eq('user_id', fixtures.userId);
+  await db('miniapp_user_settings').delete().eq('user_id', fixtures.userId);
+  await db('users').delete().eq('id', fixtures.userId);
   // 会话必须先删干净：chat_sessions → characters 是 ON DELETE RESTRICT
-  await db().from('characters').delete().eq('id', fixtures.characterId);
+  await db('characters').delete().eq('id', fixtures.characterId);
 }
 
 /** 上次异常退出遗留的数据。开跑前扫一遍，比指望每次都优雅退出可靠。 */
 export async function sweepOrphanFixtures(): Promise<number> {
-  const { data, error } = await db()
-    .from('users')
-    .select('id')
-    .like('st_handle', `${HANDLE_PREFIX}%`);
+  const { data, error } = await db('users').select('id').like('st_handle', `${HANDLE_PREFIX}%`);
   if (error) throw new Error(`扫描遗留测试用户失败：${error.message}`);
 
   const userIds = (data ?? []).map((row) => (row as { id: string }).id);
   for (const userId of userIds) {
     await resetConversationArtifacts(userId);
-    await db().from('character_free_chat_quotas').delete().eq('user_id', userId);
-    await db().from('user_wallets').delete().eq('user_id', userId);
-    await db().from('miniapp_user_settings').delete().eq('user_id', userId);
-    await db().from('users').delete().eq('id', userId);
+    await db('character_free_chat_quotas').delete().eq('user_id', userId);
+    await db('user_wallets').delete().eq('user_id', userId);
+    await db('miniapp_user_settings').delete().eq('user_id', userId);
+    await db('users').delete().eq('id', userId);
   }
-  await db().from('characters').delete().like('card_hash', `${CARD_HASH_PREFIX}%`);
+  await db('characters').delete().like('card_hash', `${CARD_HASH_PREFIX}%`);
   return userIds.length;
 }

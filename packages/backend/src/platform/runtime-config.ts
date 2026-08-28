@@ -1,14 +1,14 @@
 /**
  * backend / platform / runtime-config.ts
  *
- * miniapp.runtime_config 的统一读取入口。
+ * app_core.runtime_config 的统一读取入口。
  *
  * 实现原样来自 model-tiers.ts（llm_model_catalog / llm_pricing_config 的读法），M2 需要读
  * 平台规则三件套时提取到这里共用，避免同一张表长出第二套读法。调用方各自负责校验、缓存
  * 与兜底——version 字段就是给缓存判活用的（见 shouldReuseCatalogCache）。
  */
 
-import { getSupabaseClient } from '../lib/supabase.js';
+import { getDomainDb } from '../lib/supabase.js';
 
 export interface RuntimeConfigEntry {
   value: unknown;
@@ -32,7 +32,7 @@ function toEntry(row: {
 }
 
 export async function fetchRuntimeConfigEntry(key: string): Promise<RuntimeConfigEntry | null> {
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('app_core');
   const { data, error } = await db
     .from('runtime_config')
     .select(SELECT_COLUMNS)
@@ -59,7 +59,7 @@ export async function fetchRuntimeConfigValue(key: string): Promise<unknown | nu
 export async function fetchRuntimeConfigEntries(
   keys: readonly string[]
 ): Promise<Map<string, RuntimeConfigEntry>> {
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('app_core');
   const { data, error } = await db.from('runtime_config').select(SELECT_COLUMNS).in('key', keys);
 
   if (error) {

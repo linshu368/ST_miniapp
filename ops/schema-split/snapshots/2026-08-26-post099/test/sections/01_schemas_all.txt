@@ -1,0 +1,21 @@
+nsp|nsp_owner|nsp_acl
+admin|postgres|postgres=UC/postgres authenticated=U/postgres service_role=U/postgres
+aiero|postgres|postgres=UC/postgres service_role=U/postgres
+app_core|postgres|postgres=UC/postgres service_role=U/postgres
+auth|supabase_admin|supabase_admin=UC/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin supabase_auth_admin=UC/supabase_admin dashboard_user=UC/supabase_admin postgres=U/supabase_admin
+billing|postgres|postgres=UC/postgres service_role=U/postgres
+cs_platform|postgres|postgres=UC/postgres service_role=U/postgres
+experience|postgres|postgres=UC/postgres service_role=U/postgres
+extensions|postgres|postgres=UC/postgres anon=U/postgres authenticated=U/postgres service_role=U/postgres dashboard_user=UC/postgres
+graphql|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin
+graphql_public|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin
+miniapp|postgres|postgres=UC/postgres service_role=U/postgres
+miniapp_analytics|postgres|(default)
+miniapp_features|postgres|postgres=UC/postgres service_role=U/postgres
+miniapp_traffic|postgres|postgres=UC/postgres anon=U/postgres authenticated=U/postgres service_role=U/postgres
+pgbouncer|pgbouncer|(default)
+public|pg_database_owner|pg_database_owner=UC/pg_database_owner =U/pg_database_owner postgres=U/pg_database_owner anon=U/pg_database_owner authenticated=U/pg_database_owner service_role=U/pg_database_owner
+realtime|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin supabase_realtime_admin=UC/supabase_admin
+storage|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin supabase_storage_admin=U*C*/supabase_admin dashboard_user=UC/supabase_admin
+supabase_migrations|postgres|(default)
+vault|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin service_role=U/supabase_admin

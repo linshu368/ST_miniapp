@@ -1,4 +1,4 @@
--- 101: 支付订单入账来源（settled_by）
+-- 103: 支付订单入账来源（settled_by）
 --
 -- 「这笔星尘是靠哪条路进来的」此前只在日志里，订单行上没有，日报无法用一条 SQL 统计
 -- 四条入账路径的分布与耗时。本迁移把获胜路径落到订单行上。
@@ -24,20 +24,20 @@ BEGIN
   ELSIF to_regclass('miniapp.payment_orders') IS NOT NULL THEN
     target_schema := 'miniapp';
   ELSE
-    RAISE EXCEPTION '101: payment_orders 不在 billing 也不在 miniapp';
+    RAISE EXCEPTION '103: payment_orders 不在 billing 也不在 miniapp';
   END IF;
 
   -- 入账函数同时写钱包与流水，三张表必须同域；否则重建出来的函数会指向不存在的表。
   IF to_regclass(format('%I.user_wallets', target_schema)) IS NULL
      OR to_regclass(format('%I.wallet_ledger', target_schema)) IS NULL THEN
-    RAISE EXCEPTION '101: %.user_wallets / %.wallet_ledger 缺失，三张表不同域，需先确认归属',
+    RAISE EXCEPTION '103: %.user_wallets / %.wallet_ledger 缺失，三张表不同域，需先确认归属',
       target_schema, target_schema;
   END IF;
 
   IF to_regprocedure(format('%I.complete_payment_order(TEXT, TEXT)', target_schema)) IS NULL
      AND to_regprocedure(format('%I.complete_payment_order(TEXT, TEXT, TEXT)', target_schema))
          IS NULL THEN
-    RAISE EXCEPTION '101: %.complete_payment_order 不存在，schema 归属与预期不符', target_schema;
+    RAISE EXCEPTION '103: %.complete_payment_order 不存在，schema 归属与预期不符', target_schema;
   END IF;
 
   EXECUTE format(

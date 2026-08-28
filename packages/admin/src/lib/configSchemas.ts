@@ -34,6 +34,13 @@ export const managedConfigKeys = [
   'pref_word_count_tiers',
   'lobby_ranking_params',
   'lobby_pinned_characters',
+  'voice_billing_enabled',
+  'voice_generation_credits',
+  'voice_max_spoken_chars',
+  'voice_price_label',
+  'voice_over_limit_hint',
+  'voice_draft_failed_hint',
+  'voice_tts_failed_hint',
 ] as const;
 
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
@@ -48,6 +55,7 @@ export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedCo
 
 const nonnegativeInteger = z.number().int().nonnegative();
 const positiveInteger = z.number().int().positive();
+const nonemptyString = z.string().trim().min(1);
 export { LlmPricingConfigSchema };
 
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
@@ -124,6 +132,13 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   pref_word_count_tiers: WordCountTiersConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   lobby_pinned_characters: LobbyPinnedCharactersSchema,
+  voice_billing_enabled: z.boolean(),
+  voice_generation_credits: positiveInteger,
+  voice_max_spoken_chars: positiveInteger,
+  voice_price_label: nonemptyString,
+  voice_over_limit_hint: nonemptyString,
+  voice_draft_failed_hint: nonemptyString,
+  voice_tts_failed_hint: nonemptyString,
 };
 
 export const configMetadata: Record<
@@ -233,6 +248,46 @@ export const configMetadata: Record<
     description:
       '首页「推荐」页最前面的固定位，最多 8 张、按此处顺序展示，同时拿到金框。第九张起仍按排序分。留空表示不固定，完全交给排序分。发布后约 1 分钟内生效。',
     defaultValue: DEFAULT_LOBBY_PINNED_CHARACTERS,
+  },
+  voice_billing_enabled: {
+    label: '语音付费开关',
+    description:
+      '开启后受理阶段做余额预检（不足 402 跳充值），后台见到可播音频后扣「语音单次扣费」。关闭时语音免费、不预检，行为与现网一致。300 字长度闸与该开关解耦，关也仍拦截超长 TTS。',
+    defaultValue: false,
+  },
+  voice_generation_credits: {
+    label: '语音单次扣费',
+    description:
+      '每次语音生成成功（音频可播）后扣的星尘。重新生成视为新的一次，成功再扣。改价时同步改「语音价格文案」。',
+    defaultValue: 15,
+  },
+  voice_max_spoken_chars: {
+    label: '语音文本上限',
+    description:
+      '送进 TTS 的最终文本字数上限。自定义输入与写稿成品共用，口径与现网自定义上限一致（string.length）。',
+    defaultValue: 300,
+  },
+  voice_price_label: {
+    label: '语音价格文案',
+    description: '生成语音入口旁展示的价格文案，前端只读不写死。改价时同步改「语音单次扣费」。',
+    defaultValue: '15 星尘',
+  },
+  voice_over_limit_hint: {
+    label: '语音超限提示',
+    description:
+      '终检超过「语音文本上限」时，当前角色消息底部红字。提示用户删减或缩改，并表明本次未扣费。',
+    defaultValue: '文字处理后的语音文本超过 300 字，请删减或缩改后再生成',
+  },
+  voice_draft_failed_hint: {
+    label: '语音写稿失败提示',
+    description:
+      '写稿失败或无可朗读内容时，当前角色消息底部小字。与超限那句区分，用户再点即可重试。',
+    defaultValue: '本次未生成，请稍后重试',
+  },
+  voice_tts_failed_hint: {
+    label: '语音合成失败提示',
+    description: 'TTS 失败时当前角色消息底部小字，提示可重试，不要用超限那句。',
+    defaultValue: '语音生成失败，请重试',
   },
 };
 

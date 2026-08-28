@@ -242,7 +242,7 @@ SQL 就够；查单成功率是尝试流，**查单失败的订单永远不会�
 
 ### Q1 路径分布 / Q3 cron 追回耗时 → 订单表
 
-migration 101 给订单加了 `settled_by`，在 `complete_payment_order` 里与翻状态同一个事务写入，
+migration 103 给订单加了 `settled_by`，在 `complete_payment_order` 里与翻状态同一个事务写入，
 只有真正入账那一次写。重复确认走 `credits_added` 幂等的提前返回、不覆盖，所以两条路径抢同一笔
 （本文 §1.1 记的那种）在日报里只算先到的那条一笔，不会双计。
 
@@ -299,11 +299,11 @@ railway logs -e production -s stminiapp-payment-reconcile-cron --json --since 24
 
 ### 上线顺序：迁移必须先于代码
 
-1. 先执行 `packages/shared/migrations/101_payment_settled_by.sql`（test、production 各一次）。
+1. 先执行 `packages/shared/migrations/103_payment_settled_by.sql`（test、production 各一次）。
    它自己探测订单表在 `miniapp` 还是 `billing`，两个环境同一份文件，与 099 排期解耦。
 2. 再部署代码。
 
-**顺序不能反。** 101 把入账函数换成三参签名，第三参 `DEFAULT NULL`，所以**迁移先跑、旧代码还在
+**顺序不能反。** 103 把入账函数换成三参签名，第三参 `DEFAULT NULL`，所以**迁移先跑、旧代码还在
 线上时照样能入账**（只是 `settled_by` 留空）；反过来先发代码，RPC 带着 `p_settled_by` 打到只有
 两参的函数上，四条入账路径会一起失败——那正是本文要修的故障。
 
@@ -376,4 +376,4 @@ PostgREST 丢掉缓存的两参签名，漏掉它 rpc 调用会继续按旧签�
 | 日期       | 内容                                                                                                                 |
 | ---------- | -------------------------------------------------------------------------------------------------------------------- |
 | 2026-08-27 | 立项。手工补账 2 笔（¥28 + ¥6），cron 逻辑完成生产首次验证，清理 197 笔历史积压 pending 订单                         |
-| 2026-08-27 | 补回调监控（§3.1）：migration 101 落 `settled_by`，新增只读日报 `payment:callback-report`，过期 cron 汇总补 `failed` |
+| 2026-08-27 | 补回调监控（§3.1）：migration 103 落 `settled_by`，新增只读日报 `payment:callback-report`，过期 cron 汇总补 `failed` |
