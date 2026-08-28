@@ -919,6 +919,13 @@ railway service source connect --image ghcr.io/linshu368/st-miniapp-backend:sha-
 1. **生产 Railway source 被固定在 GHCR 镜像**（**这一条影响后续所有后端发布**）。
    `stminiapp` production 现在是 `image=ghcr.io/linshu368/st-miniapp-backend:sha-a27ed29`，
    **不再跟随 `main` 自动部署**，与 `.railway/railway.ts` 声明的 `source: github(REPO, {branch:'main'})` 漂移。
+
+   > **最危险的后果是版本错位，不是「发不出去」。** 两个 payment cron 的 source **仍跟随 `main`**
+   > （实测 `repo=linshu368/ST_miniapp`）。所以下一次有人合 `main`：两个 cron 会换上新代码，
+   > 而 backend 仍停在 `sha-a27ed29`。它们共用 `payment_orders` 与同一套 repository，
+   > 一旦那次改动涉及支付/计费的表结构或字段语义，就会出现「cron 用新契约、API 用旧契约」的
+   > 静默不一致。**在改回 source 之前，不要往 `main` 合任何涉及后端的改动。**
+
    直接改回去会立刻触发一次构建，可能再次卡死，所以顺序是：**先解决 §12.5 的构建问题，再改回**：
 
    ```bash
