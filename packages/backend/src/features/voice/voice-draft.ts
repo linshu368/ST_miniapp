@@ -17,11 +17,18 @@
  * 或 key 配错了却一直静默走正则兜底，是最难发现的那种故障。
  */
 
-import { MAX_SPOKEN_VOICE_CHARS } from '@miniapp/shared';
 import { config } from '../../platform/config.js';
 import { buildVoiceUserPrompt, VOICE_SYSTEM_PROMPT } from './voice-prompt.js';
 import { extractQuotedLines, normalizeConvertedText } from './voice-text.js';
 import { stageCode, toTransportError, VoiceUpstreamError } from './voice-upstream.js';
+
+/**
+ * 台词字数红线。超过就判定写稿失败，绝不放给语音。
+ *
+ * 取 700 而不是 500：参照产出里存在合法的长篇口述（单条近 300 字），
+ * 500 会把它们误判成失败。上游写稿产物正常在 100 字上下，700 只拦异常。
+ */
+export const MAX_SPOKEN_CHARS = 700;
 
 /** 给足思考空间。写稿便宜，宁可多留 token 也别让思考把正文挤掉 */
 const MAX_TOKENS = 20000;
@@ -97,7 +104,7 @@ async function callDeepSeek(sourceText: string, extra: Record<string, unknown>):
 }
 
 function isUsable(text: string): boolean {
-  return text.length > 0 && text.length <= MAX_SPOKEN_VOICE_CHARS;
+  return text.length > 0 && text.length <= MAX_SPOKEN_CHARS;
 }
 
 export async function draftSpokenText(sourceText: string): Promise<DraftResult> {
@@ -113,11 +120,6 @@ export async function draftSpokenText(sourceText: string): Promise<DraftResult> 
 
   // 闸 3：规则抽引号。产出必然是原文里真实存在的台词，且天然短
   const quoted = normalizeConvertedText(extractQuotedLines(sourceText));
-  if (quoted.length > MAX_SPOKEN_VOICE_CHARS) {
-    // 抽出的引号仍超 300：长对白，不要送 TTS。与「无可朗读内容」用不同 code，
-    // 用户要的是「请删减」，不是「这条回复不能念」
-    throw new VoiceUpstreamError('draft', 'voice_text_too_long', '台词超过 300 字上限');
-  }
   if (quoted) return { text: quoted, gate: 'quote_fallback' };
 
   // 闸 4：彻底失败，拒绝送入语音

@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import type { ApiResponse } from '@miniapp/shared';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
 import { sendSentryLog } from '@/lib/sentry/client';
@@ -35,22 +36,14 @@ function recordFailedRequest(
   });
 }
 
-export interface ApiClientBalanceDetail {
-  creditsRequired: number;
-  creditsAvailable: number;
-}
-
 export class ApiClientError extends Error {
-  readonly balance?: ApiClientBalanceDetail;
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string,
-    balance?: ApiClientBalanceDetail
+    readonly code?: string
   ) {
     super(message);
     this.name = 'ApiClientError';
-    if (balance) this.balance = balance;
   }
 }
 
@@ -73,50 +66,12 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
     recordFailedRequest(requestId, path, options?.method ?? 'GET', 0);
     throw error;
   });
-  const json = (await res.json().catch(() => null)) as
-    | { success: true; data: T }
-    | { success: false; error: { code: string; message: string } }
-    | {
-        error: {
-          type: string;
-          message?: string;
-          credits_required?: number;
-          credits_available?: number;
-        };
-      }
-    | null;
+  const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
 
   if (!res.ok) {
     log.error(`Error ${res.status} for ${url}:`, json);
     recordFailedRequest(requestId, path, options?.method ?? 'GET', res.status);
-
-    // 402 余额不足走裸形状 InsufficientBalanceErrorResponse（与对话链路同形状），
-    // 标准 envelope 装不下两个金额。这里认出它并把金额带出去，供调用方跳充值页带 required。
-    if (
-      json &&
-      typeof json === 'object' &&
-      'error' in json &&
-      json.error &&
-      typeof json.error === 'object' &&
-      (json.error as { type?: string }).type === 'insufficient_balance'
-    ) {
-      const error = json.error as {
-        message?: string;
-        credits_required?: number;
-        credits_available?: number;
-      };
-      throw new ApiClientError(
-        error.message ?? '星尘余额不足',
-        res.status,
-        'insufficient_balance',
-        {
-          creditsRequired: Number(error.credits_required ?? 0),
-          creditsAvailable: Number(error.credits_available ?? 0),
-        }
-      );
-    }
-
-    if (json && 'success' in json && json.success === false) {
+    if (json && !json.success) {
       throw new ApiClientError(json.error.message, res.status, json.error.code);
     }
     throw new ApiClientError(`API error: ${res.status}`, res.status);
@@ -126,9 +81,9 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
     throw new Error('API response is empty');
   }
 
-  if ('success' in json && !json.success) {
+  if (!json.success) {
     throw new Error(json.error.message);
   }
 
-  return (json as { success: true; data: T }).data;
+  return json.data;
 }
