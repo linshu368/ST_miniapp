@@ -1,4 +1,4 @@
--- 101_voice_pending_unique.sql
+-- 102_voice_pending_unique.sql
 --
 -- 重新生成失败时保留上一版可播音频（需求 Q3）。
 --

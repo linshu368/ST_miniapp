@@ -25,6 +25,10 @@ function createRow(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPaym
     created_at: '2026-08-21T11:45:00.000Z',
     expires_at: '2026-08-21T11:59:00.000Z',
     paid_at: null,
+    next_reconcile_at: '2026-08-21T11:46:00.000Z',
+    last_reconciled_at: null,
+    reconcile_attempts: 0,
+    reconcile_locked_until: null,
     ...overrides,
   };
 }
@@ -160,6 +164,42 @@ describe('runExpirePaymentOrders', () => {
     expect(result).toMatchObject({ checked: 2, settled: 1 });
     expect(orders.expireAllPending).toHaveBeenCalledOnce();
     expect(log.sys.error).toHaveBeenCalled();
+  });
+
+  it('skips the expiry sweep when a full query sample fails', async () => {
+    const candidates = Array.from({ length: 5 }, (_, index) =>
+      createRow({ id: `MA-cron-failed-${index}` })
+    );
+    const orders = createOrders(candidates);
+    const gateway = createGateway(
+      Object.fromEntries(
+        candidates.map((candidate) => [
+          candidate.id,
+          { success: false, errorMessage: 'gateway unavailable' },
+        ])
+      )
+    );
+    const log = createLog();
+
+    const result = await runExpirePaymentOrders({
+      orders,
+      gateway,
+      log,
+      paymentEnabled: true,
+      now: NOW,
+    });
+
+    expect(orders.expireAllPending).not.toHaveBeenCalled();
+    expect(result).toEqual({ checked: 5, settled: 0, expired: 0 });
+    expect(log.sys.error).toHaveBeenCalledWith(
+      {
+        event: 'payment.cron.expiry_skipped',
+        checked: 5,
+        failed: 5,
+        failureRate: 1,
+      },
+      '查单失败率过高，跳过本轮订单过期'
+    );
   });
 
   it('still expires orders when payment is disabled, without querying the vendor', async () => {

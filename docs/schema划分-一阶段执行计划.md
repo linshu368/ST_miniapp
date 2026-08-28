@@ -1,9 +1,10 @@
 # Schema 划分一阶段执行计划
 
-> 状态：待开工  
-> 日期：2026-08-25  
+> 状态：批次 A/B/C0/C1/C2 已完成；只剩 C3（维护窗口跑 099，再合 PR #294 部署）  
+> 日期：2026-08-27  
 > 权威归属：`docs/schema归属地图.md`  
-> 依赖盘点：`docs/schema划分专项.md`
+> 依赖盘点：`docs/schema划分专项.md`  
+> 当前进度与开工指令：`docs/schema划分-批次A进度交接.md` §一、§九、§十一
 
 ## 一、阶段目标
 
@@ -247,7 +248,8 @@ repository 按表所属域选择客户端。一个 repository 横跨多个域时
    `shared/src/api/lobby-ranking-params.ts` 都是新的 `miniapp.*` 消费方。
    2026-08-25 已合入 `origin/main`（无冲突，5 包 typecheck 全绿）。
 3. **097 的生产执行被部署阻塞。** 生产运行的是 `main`，其 `chat-history-logger.ts`
-   仍在写 `llm_model_markup`。顺序改为：并入 main 发布 → 确认停写 → 执行 097 → 两库对齐 → 做 099。
+   仍在写 `llm_model_markup`。顺序改为：最小停写热修发生产 → 确认停写 → 执行 097 → 再做 099。
+   **2026-08-27 已按此顺序完成 C0/C1**（交接文档 §十）；剩余是维护窗口内的 099。
 
 #### 批次 A 完成记录（2026-08-26）
 
@@ -299,7 +301,9 @@ MVP regression 7/7。迁前迁后快照归一比对：约束 / 索引 / 表授�
 21 张表行数分毫不差（`llm_usage_charge_dedup` 的 +7 已取证为演练自身写入的幂等墓碑），
 5 条跨 schema FK 与 5 个视图按 OID 自动跟随，库内与仓库零残留 `miniapp.*`。
 
-**未完成**：test 后端部署与真机/等价 API smoke。批次 B 要到 smoke 通过才算完整。
+**已收口（2026-08-27）**：PR #288 合入 `dev`（`73627ba`），Railway `development` 部署后独立 API smoke 通过。
+test `miniapp` 下 6 张计划外副本表已删，099 回滚脚本事务内验证通过。明细见交接文档 §八 / §九。
+批次 B 结束。
 
 耗时口径提示：test 的 `chat_history` 1028 行、生产 21.8 万行 / 11 GB，但 `SET SCHEMA`
 不重写数据，体量不进耗时；生产的额外时间预计只花在拿 ACCESS EXCLUSIVE 锁上。
@@ -307,13 +311,23 @@ MVP regression 7/7。迁前迁后快照归一比对：约束 / 索引 / 表授�
 
 ### 批次 C：production 短停机割接（预计半个工作日）
 
-1. 发布维护通知，停止入口流量和后端后台任务；
+**前置（2026-08-27 晚，C0/C1/C2 已收口）**：生产 097 已执行；`main` 已含停写热修 PR #292（`fd6533d`），不含 schema 切换。
+C2 的制品是 PR [#294](https://github.com/linshu368/ST_miniapp/pull/294)（`dev` → `main`，CI 绿、挂着不合）。
+099 跑完之前不能 merge 它（Railway production 跟随 `main` 自动部署）。逐步路径以
+`docs/schema划分-批次A进度交接.md` §9.3 为准：维护窗口内 099 → PostgREST → cron → 再合 PR 部署新代码。
+
+窗口内顺序：
+
+1. 发布维护通知，停止入口流量和后端后台任务。**清单见交接文档 §9.4**——要停的是 backend
+   `stminiapp` 服务本身（它进程内有 30 秒的 chat_history sync job 与 24 小时一轮、整轮一个事务的
+   大厅排序重算）、两个跟随 `main` 的 Railway 支付 cron 服务，以及入口流量；
+   PostgREST、库内 pg_cron 和各前端**不要停**；
 2. 记录生产即时快照，确认 preflight 与 test 演练基线一致；
 3. 确认可回退的旧部署制品、回滚 SQL和执行人；
 4. 执行 099；事务内任一步失败则整体回滚并停止；
 5. 更新 PostgREST exposed schemas / grants / reload；
 6. 更新 cron job 5；
-7. 部署新代码；
+7. 部署新代码（合 PR #294 到 `main`，production 与两个支付 cron 服务一起换代码）；
 8. 完成最小上线验证后恢复流量：
    - 登录 / 用户创建；
    - 角色卡列表；
@@ -337,7 +351,7 @@ permission denied、关键行数与迁移前一致。
 5. 将迁移前后对象快照、验证结果和遗留项归档。
 
 整体建议节奏：**实现 1–2 天 → test 演练 1 天 → 修正并重演 → production 半天 →
-观察 1–2 天 → 收口**。不以日历强推；批次 B 未完整通过，不进入 production。
+观察 1–2 天 → 收口**。不以日历强推；批次 B 已通过，生产 097 已执行，**099 只在维护窗口内提交**。
 
 ---
 
@@ -393,8 +407,8 @@ cron 和 PostgREST 管理配置可在事务提交后作为同一维护窗口的�
 
 ## 八、新窗口开工交接
 
-**当前进度（2026-08-26）以 `docs/schema划分-批次A进度交接.md` 为准。**
-不要按本节旧开工指令去重做盘点、098 或 099 正文——那些已经做完。
+**当前进度（2026-08-27 晚）以 `docs/schema划分-批次A进度交接.md` 为准。**
+不要按本节旧开工指令去重做盘点、098、099 正文、停写热修或生产 097——那些已经做完。
 
 新窗口必须先读：
 
@@ -406,16 +420,17 @@ cron 和 PostgREST 管理配置可在事务提交后作为同一维护窗口的�
 
 动 PostgREST 时再读 `docs/fix-postgrest-schema-exposure.md`。
 
-新窗口建议直接使用以下开工指令（批次 A 已于 2026-08-26 完成，下一步是批次 B）：
+新窗口建议直接使用以下开工指令（批次 A/B/C0/C1/C2 已完成，只剩 C3）：
 
-> 前置阅读：`docs/schema划分-批次A进度交接.md` 以及它列出的权威文档。
+> 前置阅读：`docs/schema划分-批次A进度交接.md` §一、§九、§十一，以及它列出的权威文档。
+> C0/C1 记录在该文档 §十、C2 在 §十一，都不要重做。
 >
-> 批次 A 已完成，099 与回滚脚本已按交接文档 §6.0 审过。下一步按执行计划 §五 批次 B 做 test 割接演练：
-> 记快照 → 对 test 提交执行 099 → 跑 `ops/schema-split/postgrest-expose-test.sql` 并用 REST 实测 →
-> 部署 test → 跑 typecheck / 单测 / build / MVP regression / 数据库集成测试 / API smoke →
-> 逐项核对对象形态与行数，并记录 099 实际耗时。
-> 生产 097 仍须先发停写死列的代码。保留上游行为，不改 `miniapp_traffic` /
-> `miniapp_analytics` 的名称和内部设计。
+> 批次 A/B/C0/C1/C2 已完成。生产 097 已执行；停写热修已在 `main`（PR #292）；
+> 完整 schema 适配在 PR #294（`dev` → `main`），CI 绿、挂着不合。
+> **099 跑完之前不要 merge #294**——production 与两个支付 cron 服务都跟随 `main` 自动部署。
+> 下一步：按交接文档 §9.3 的 C3 进维护窗口
+> （停两个支付 cron → 盘点 → 099 → PostgREST → cron job 5 → 合 #294 → 验证恢复）。
+> 保留上游行为，不改 `miniapp_traffic` / `miniapp_analytics` 的名称和内部设计。
 
 此外，新窗口必须具备 production 的只读盘点能力（`.env.schema-split` 或 Supabase MCP）。
 如果暂时没有，先完成代码实现，但不得进入 production 割接。

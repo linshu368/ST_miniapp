@@ -3,7 +3,7 @@
 // message_id 指向 experience.chat_history.id，即 toChatMessages 给 assistant 消息的 id。
 // 表是追加写的：重新生成插新行，成功才把旧行 is_active 置否，既保留「当前语音」也保留用量流水。
 //
-// 失败不让位（需求 Q3，migration 101 起）：重新生成时旧 ready 行保持 is_active=true，
+// 失败不让位（需求 Q3，migration 102 起）：重新生成时旧 ready 行保持 is_active=true，
 // 新 pending 行 is_active=false。失败后旧 ready 仍是唯一生效行，前端继续能播；
 // 本次失败码通过 resolveMessageVoice 组合进 last_error_code，在播放条下方提示。
 // 并发保护由 uq_chat_message_audio_pending（message_id where status='pending'）接手：
@@ -71,7 +71,7 @@ export class ChatMessageAudioRepository {
    * 会话内全部语音（按消息聚合后呈现）。ownership 由调用方在校验会话归属时保证。
    *
    * 读路径要取该会话全部行（含 inactive 的 pending / failed），才能在已有可播时
-   * 把本次失败码组合进 last_error_code。索引走 101 的 idx_chat_message_audio_session_all。
+   * 把本次失败码组合进 last_error_code。索引走 102 的 idx_chat_message_audio_session_all。
    */
   async listBySession(sessionId: string): Promise<MessageVoice[]> {
     const { data, error } = await this.db
@@ -111,7 +111,7 @@ export class ChatMessageAudioRepository {
   /**
    * 查一条消息当前的 pending 行（无论是否 active）。
    *
-   * 101 起 pending 行不一定是 active（重新生成时旧 ready 仍 active、新 pending inactive），
+   * 102 起 pending 行不一定是 active（重新生成时旧 ready 仍 active、新 pending inactive），
    * 判重必须按 status 而不是 is_active。uq_chat_message_audio_pending 保证至多一行。
    */
   async findPendingByMessage(messageId: string): Promise<ChatMessageAudioRow | null> {
