@@ -67,6 +67,8 @@ export const PaymentPlansSchema = z
     }
   });
 
+export const DEFAULT_PENDING_ARRIVAL_HINT = '完成付款后积分将自动到账，通常不超过 3 分钟';
+
 export const RechargePageConfigSchema = z.object({
   title: z.string().trim().min(1).max(30),
   description: z.string().trim().min(1).max(120),
@@ -88,6 +90,8 @@ export const RechargePageConfigSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .default('#ec4899'),
+  /** 订单等待页提示：付款后积分到账时效。缺省兼容旧配置。 */
+  pending_arrival_hint: z.string().trim().min(1).max(80).default(DEFAULT_PENDING_ARRIVAL_HINT),
 });
 
 export type RechargePageConfig = z.infer<typeof RechargePageConfigSchema>;
@@ -101,6 +105,7 @@ export const DEFAULT_RECHARGE_PAGE_CONFIG: RechargePageConfig = {
   selected_plan_color: '#f59e0b',
   badge_color: '#6366f1',
   button_color: '#ec4899',
+  pending_arrival_hint: DEFAULT_PENDING_ARRIVAL_HINT,
 };
 
 export const PaymentPromptDialogConfigSchema = z.object({
