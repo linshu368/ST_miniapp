@@ -23,7 +23,8 @@
 
 > 决议（不可推翻）：对外域名绑 **Vercel**，前端作为边缘入口。ST 退场后 nginx 已无分发
 > 对象，**网关收敛为「Vercel 直连 backend」**：nginx 与 st-bundle 一并退场。Railway
-> 运行 backend API 和两个独立的支付 Cron；其中只有 backend 对外提供 HTTP 服务。
+> 运行 backend API、一个常驻支付对账 Worker，以及一个独立的支付过期 Cron；其中只有
+> backend 对外提供 HTTP 服务。
 
 ```
                  对外域名 (绑 Vercel)
@@ -34,13 +35,13 @@
                   └─────┬─────┘
                         │  浏览器直接发往 backend 域名的 /api/*（跨域，靠 CORS）
                   ┌─────▼──────┐
-                  │  stminiapp │  唯一 Railway 服务（Fastify，监听 8080）
+                  │  stminiapp │  唯一对外 Railway 服务（Fastify，监听 8080）
                   │  backend   │  FRONTEND_URL = Vercel 对外域名
                   └─────┬──────┘
                         ▼
               Supabase / OpenRouter
 
-  Railway Cron（每分钟）────▶ stminiapp-payment-reconcile-cron（快速查单，两轮间隔 30 秒）
+  常驻 Worker（每 30 秒一轮）─▶ stminiapp-payment-reconcile-cron（快速查单）
   Railway Cron（每 5 分钟）──▶ stminiapp-payment-cron（过期前回溯查单并判过期）
 ```
 
@@ -109,46 +110,69 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
    `RAILWAY_CONFIG_ENV=production railway config plan` /
    `RAILWAY_CONFIG_ENV=production railway config apply`。
 
-### 支付 Cron
+### 支付对账（快速 Worker + 过期 Cron）
 
-两个支付 Cron 都必须是独立服务；不能在 `stminiapp` 上设置 Cron Schedule，否则 Railway
+两个任务都必须是独立服务；不能在 `stminiapp` 上设置 Cron Schedule，否则 Railway
 会按周期启动并终止 API deployment。上线前必须先对目标数据库执行
 `packages/shared/migrations/100_payment_reconciliation_schedule.sql`。
 
-IaC 可用时，`.railway/railway.ts` 会配置两个服务。若目标环境尚不能用 IaC 管理，则在
+**Railway cron 最短间隔是 5 分钟**（平台硬限制：GraphQL 会返回
+`Minimum interval between cron executions is 5 minutes`）。因此快速对账不能靠
+`* * * * *`，必须改成常驻 Worker：进程内 `while` 每 30 秒跑一轮
+`runFastPaymentReconciliation`，调度仍走库里的 `next_reconcile_at` / 租约 / 退避。
+过期兜底继续用 `*/5 * * * *`。
+
+IaC 可用时，`.railway/railway.ts` 会配置这两个服务。若目标环境尚不能用 IaC 管理，则在
 Railway 控制台手动创建并逐项对齐：
 
-> 应用 IaC 前必须检查 `railway config plan`。如果 plan 除创建 Cron 外还会修改
-> `stminiapp` 的 source、变量、域名或 healthcheck，立即停止，改用控制台只创建 Cron；
-> 禁止为了上线 Cron 顺带覆盖现有 API 服务配置。
+> 应用 IaC 前必须检查 `railway config plan`。如果 plan 除这个对账 Worker / 过期 Cron
+> 外还会修改 `stminiapp` 的 source、变量、域名或 healthcheck，立即停止，改用控制台
+> **只改** `stminiapp-payment-reconcile-cron`；禁止为了对账调度顺带覆盖现有 API 服务配置。
 
 1. New → Empty Service，分别命名为 `stminiapp-payment-reconcile-cron` 和
    `stminiapp-payment-cron`。
 2. Source 连接与 `stminiapp` 相同的 GitHub 仓库和分支：development 用 `dev`，
    production 用 `main`。Build 的 Dockerfile Path 使用 `/ops/docker/Dockerfile.backend`。
-3. 快速查单服务的 Start Command 使用 `tsx src/scripts/reconcile-payment-orders.ts`，
-   Cron Schedule 使用 `* * * * *`。每次启动会立即执行一轮、30 秒后再执行一轮；新订单
-   默认创建 60 秒后可领取，因此首次查单通常发生在创建后 60–90 秒。
-4. 过期服务的 Start Command 使用 `tsx src/scripts/expire-payment-orders.ts`，Cron
-   Schedule 使用 `*/5 * * * *`。它只回溯已到期订单，并在查单健康时执行判过期。
-5. 关闭 healthcheck，不生成 Railway domain，不配置 TCP proxy。
+3. 快速查单服务（常驻 Worker）：
+   - Start Command：`tsx src/scripts/reconcile-payment-orders.ts`
+   - **清空 Cron Schedule**（不要填 `* * * * *`，平台会拒绝）
+   - Restart Policy：`Always`（或 `On Failure`）
+   - 进程保持 Online，日志约每 30 秒一轮 `Fast payment reconciliation: checked=…`。
+     `PAYMENT_ENABLED !== true` 时只 sleep，不查单。SIGTERM/SIGINT 下完本轮再退出。
+   - 新订单默认创建约 60 秒后可领取，因此 webhook / 回跳都失败时，首次查单通常落在
+     创建后 60–90 秒。
+4. 过期服务（一次性 Cron）保持不变：Start Command
+   `tsx src/scripts/expire-payment-orders.ts`，Cron Schedule `*/5 * * * *`，
+   Restart Policy `Never`。它只回溯已到期订单，并在查单健康时执行判过期。
+5. 两个服务都关闭 healthcheck，不生成 Railway domain，不配置 TCP proxy。不要给
+   Worker 加会打 `/health` 的 HTTP 探活（镜像 Dockerfile 的 HEALTHCHECK 针对 API；
+   本服务没有 HTTP 端口，Railway 侧探活必须关掉，否则会把常驻循环判死）。
 6. 以下变量全部使用 Railway reference 指向 `stminiapp`，不要复制值：
    - `PAYMENT_ENABLED`、全部 `PAYMENT_*`
    - `DATABASE_ENV`、`DATABASE_URL`、`DIRECT_URL`
    - development：全部 `TEST_DATABASE_*`、`TEST_DIRECT_*`、`TEST_SUPABASE_*`
    - production：全部 `PROD_DATABASE_*`、`PROD_DIRECT_*`、`PROD_SUPABASE_*`
-7. Restart Policy 都设为 `Never`。分别手动 Run 一次，确认日志出现
-   `Fast payment reconciliation: checked=…` / `Reconciled before expiry: checked=…`
-   且 deployment 正常退出。
+
+把已有的快速 Cron 改成 Worker 时，顺序是：
+
+1. 先部署含常驻循环的代码（可暂时保留 `*/5` schedule：下一次触发后进程不再退出，
+   后续 cron tick 会被跳过）。
+2. 再清空 Cron Schedule，并把 Restart Policy 改为 `Always`，然后 Restart / Redeploy
+   一次，确认服务保持 Online。
+3. 不要先清空 schedule 却仍用 `Never`：旧一次性脚本退出后服务会停掉。
 
 上线顺序与验收：
 
 1. 先在 test、production 分别执行
    `packages/shared/migrations/100_payment_reconciliation_schedule.sql`，再部署包含快速对账
    repository 的代码；顺序反过来会因缺少调度列导致快速任务失败。
+   `103_payment_settled_by.sql`（入账来源，回调监控用）同理必须先于代码执行：它把入账函数换成
+   三参签名，迁移先跑不影响旧代码，反过来则四条入账路径一起失败。详见
+   [`docs/payment-missing-credits-remediation.md`](../../docs/payment-missing-credits-remediation.md) §3.1。
 2. 用生产测试账号创建并支付最低金额订单，支付后不返回 MiniApp，也不打开订单详情。
-3. Railway 日志应在订单 `created_at` 后约 60–90 秒出现同一 `orderId` 的
-   `payment.query.paid source=cron` 和 `payment.settle.completed source=cron`。
+3. Worker 应持续 Online；Railway 日志约每 30 秒一轮，并在订单 `created_at` 后约 60–90 秒
+   出现同一 `orderId` 的 `payment.query.paid source=cron` 和
+   `payment.settle.completed source=cron`。
 4. 数据库中该订单应为 `status=completed, credits_added=true`，且 `wallet_ledger` 对
    `reference_type=payment_order, reference_id=<orderId>` 只有一行。
 5. 若需紧急回滚，只停用 `stminiapp-payment-reconcile-cron`；保留 migration 100 的列和
@@ -174,8 +198,8 @@ Railway 控制台手动创建并逐项对齐：
 ## 自动部署流程
 
 1. development 的三个服务都连接 `dev`，production 的三个服务都连接 `main`。
-2. 对应分支 push 后，Railway 分别构建 API 与两个 Cron；三者以同一 Git commit 为发布基准，
-   不需要人工同步 GHCR tag。
+2. 对应分支 push 后，Railway 分别构建 API、快速对账 Worker 与过期 Cron；三者以同一 Git
+   commit 为发布基准，不需要人工同步 GHCR tag。
 3. 三个服务是独立 deployment，短时间内可能版本不一致；发布后需确认三边最新成功
    deployment 的 commit SHA 相同。
 4. 回滚时在 Git 分支回滚对应 commit，三个服务会再次自动部署同一代码版本。

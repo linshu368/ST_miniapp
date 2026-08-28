@@ -10,11 +10,13 @@
  *   因此本批按「Railway 配置进仓库」的决议，落到 IaC 文件而非 railway.json。
  *
  * 方案 Y 拓扑（网关收敛后）：对外域名绑 Vercel（前端在边缘，不在 Railway）。
- * ST 退场后 nginx 已无分发对象，st-bundle 整包退场；Railway 运行 backend API 和
- * 两个无公网入口的支付 Cron。三个服务都跟随同一 GitHub 分支自动部署：
+ * ST 退场后 nginx 已无分发对象，st-bundle 整包退场；Railway 运行 backend API、
+ * 一个常驻支付对账 Worker，以及一个无公网入口的支付过期 Cron。三个服务都跟随
+ * 同一 GitHub 分支自动部署：
  *
  *   浏览器 ──▶ Vercel (页面) ──▶ stminiapp (backend, 对外域名) ──▶ Supabase / OpenRouter
  *                                      ▲
+ *   常驻 Worker ──▶ stminiapp-payment-reconcile-cron（进程内每 30 秒查一轮）
  *   Railway Cron ──▶ stminiapp-payment-cron（每 5 分钟运行一次后退出）
  *
  * 前端通过 build 期固化的 NEXT_PUBLIC_API_URL 直连 backend 的 Railway 公网域名，
@@ -130,9 +132,10 @@ export default defineRailway((ctx) => {
     env: Object.fromEntries(apiVariableNames.map((name) => [name, preserve()])),
   });
 
-  // ── 支付 Cron：独立一次性进程，禁止把 schedule 配到 HTTP API 服务 ────────────
-  // 两个任务与 API 使用同一分支和变量：快速任务每分钟查近期订单，过期任务每 5 分钟
-  // 回溯并判过期。都不提供公网入口。
+  // ── 支付对账：独立服务，禁止把 schedule 配到 HTTP API 服务 ────────────────
+  // 快速查单必须常驻：Railway cron 最短间隔是 5 分钟（平台硬限制，填 * * * * *
+  // 会被拒绝），60～90 秒目标只能靠进程内循环。过期兜底仍用 5 分钟 cron。
+  // 两者都不提供公网入口。
   const paymentCronEnv = {
     NODE_ENV: stminiapp.env.NODE_ENV,
     DATABASE_ENV: stminiapp.env.DATABASE_ENV,
@@ -162,7 +165,7 @@ export default defineRailway((ctx) => {
     PAYMENT_RETURN_URL: stminiapp.env.PAYMENT_RETURN_URL,
   };
 
-  const paymentReconcileCron = fn('stminiapp-payment-reconcile-cron', {
+  const paymentReconcileWorker = service('stminiapp-payment-reconcile-cron', {
     source: github(REPOSITORY, { branch }),
     build: {
       builder: 'DOCKERFILE',
@@ -172,8 +175,7 @@ export default defineRailway((ctx) => {
     },
     start: 'tsx src/scripts/reconcile-payment-orders.ts',
     deploy: {
-      cronSchedule: '* * * * *',
-      restartPolicyType: 'NEVER',
+      restartPolicyType: 'ALWAYS',
     },
     env: paymentCronEnv,
   });
@@ -195,6 +197,6 @@ export default defineRailway((ctx) => {
   });
 
   return project('st-miniapp', {
-    resources: [stminiapp, paymentReconcileCron, paymentCron],
+    resources: [stminiapp, paymentReconcileWorker, paymentCron],
   });
 });

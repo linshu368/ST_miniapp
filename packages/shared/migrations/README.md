@@ -184,6 +184,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 100_payment_reconciliation_schedule.sql # 支付订单快速对账：payment_orders 加 next_reconcile_at / last_reconciled_at / reconcile_attempts / reconcile_locked_until 四列与领取索引。按 to_regclass 自动挑 billing 或 miniapp，与 099 顺序无关
 101_voice_billing.sql # 语音按次扣费：chat_message_audio 计费列、charge_voice_usage RPC、runtime_config 七键与 managed-config 白名单
 102_voice_pending_unique.sql # 重新生成失败保留上一版可播：preflight 清理存量多 pending + pending 部分唯一索引 + 会话非部分索引
+103_payment_settled_by.sql # 支付订单入账来源 settled_by：complete_payment_order 改为三参并记录 webhook/return/query/cron。与 101 语音计费撞号后改编。按 to_regclass 自动挑 billing 或 miniapp
 ```
 
 > **099 不是普通迁移**，执行前必读 `docs/schema划分-一阶段执行计划.md`：

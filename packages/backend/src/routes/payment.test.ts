@@ -64,6 +64,7 @@ function createOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPa
     created_at: '2026-08-21T09:00:00.000Z',
     expires_at: '2026-08-21T09:15:00.000Z',
     paid_at: null,
+    settled_by: null,
     next_reconcile_at: '2026-08-21T09:01:00.000Z',
     last_reconciled_at: null,
     reconcile_attempts: 0,
@@ -121,7 +122,7 @@ describe('handleZqPayWebhook', () => {
 
     await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
 
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
     expect(insertUserNotification).toHaveBeenCalledOnce();
     expect(state).toMatchObject({
       statusCode: 200,
@@ -170,7 +171,7 @@ describe('handleZqPayWebhook', () => {
     await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
 
     expect(orders.reopenExpired).toHaveBeenCalledWith('MA-order-1');
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
     expect(insertUserNotification).toHaveBeenCalledOnce();
     expect(state.body).toBe('success');
   });
@@ -285,7 +286,7 @@ describe('reconcileWithGateway', () => {
     );
 
     expect(gateway.queryOrder).toHaveBeenCalledWith('MA-query-paid');
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'query');
     expect(changed).toBe(true);
   });
 
@@ -464,7 +465,7 @@ describe('POST/GET /api/payment/webhook/zqpay', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toBe('success');
-    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
 
     await app.close();
   });
@@ -479,7 +480,7 @@ describe('POST/GET /api/payment/webhook/zqpay', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toBe('success');
-    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
 
     await app.close();
   });
@@ -509,7 +510,7 @@ describe('GET /api/payment/return', () => {
     });
 
     expect(response.statusCode).toBe(302);
-    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'return');
 
     await app.close();
   });

@@ -167,7 +167,7 @@ export const configMetadata: Record<
   },
   miniapp_recharge_page_config: {
     label: '充值页面配置',
-    description: '星尘商店的标题、说明、支付按钮文字和主题色。',
+    description: '星尘商店的标题、说明、支付按钮文字、主题色，以及订单等待页的到账提示文案。',
     defaultValue: DEFAULT_RECHARGE_PAGE_CONFIG,
   },
   miniapp_payment_prompt_dialog_config: {
