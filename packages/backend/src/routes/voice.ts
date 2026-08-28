@@ -7,10 +7,7 @@
  * 手机端切后台也会断。所以 POST 只负责「受理」——落一行 pending 立刻返回，
  * 真正的活在进程内异步跑，前端轮询 GET 拿终态。
  *
- * 计费（migration 097 起）：每次生成成功（音频可播后）扣 voice_generation_credits
- * 星尘（默认 15）。受理阶段做 402 预检——余额不足不建 pending，避免「转圈半分钟
- * 再告诉你没钱」。见到可播音频才扣（generate.ts），超限/写稿失败/TTS 失败不扣。
- * 计费开关 voice_billing_enabled 关闭时跳过预检与扣费，行为与现网一致。
+ * 本期不扣费，但每次生成都留一行，用量按行统计（migration 080 头部）。
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -20,7 +17,6 @@ import type {
   CreateMessageVoiceRequest,
   GetSessionVoiceData,
   GetVoiceConfigData,
-  InsufficientBalanceErrorResponse,
   PatchVoiceConfigData,
   PatchVoiceConfigRequest,
 } from '@miniapp/shared';
@@ -36,10 +32,8 @@ import {
 import { ChatSessionRepository } from '../infrastructure/repositories/ChatSessionRepository.js';
 import { ConversationHistoryRepository } from '../infrastructure/repositories/ConversationHistoryRepository.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
-import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
 import { ConversationRepositoryError } from '../infrastructure/repositories/conversation-errors.js';
 import { runVoiceGeneration } from '../features/voice/generate.js';
-import { getVoiceBillingConfig } from '../features/voice/voice-billing-config.js';
 import { normalizeCustomText } from '../features/voice/voice-text.js';
 import {
   DEFAULT_TTS_MODEL,
@@ -61,7 +55,6 @@ export default async function voiceRoutes(app: FastifyInstance) {
   const history = new ConversationHistoryRepository();
   const settings = new MiniappUserSettingsRepository();
   const audio = new ChatMessageAudioRepository();
-  const wallets = new MiniappWalletRepository();
 
   // ── 用户级语音偏好 ────────────────────────────────────────────────────────
 
@@ -70,15 +63,11 @@ export default async function voiceRoutes(app: FastifyInstance) {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
     const dbUser = await getOrCreateDbUser(request.user);
-    const billing = await getVoiceBillingConfig();
     return reply.send(
       ok<GetVoiceConfigData>({
         config: await settings.getVoiceConfig(dbUser.id),
         voices: [...VOICE_CATALOG],
         playback_rates: [...PLAYBACK_RATES],
-        billing: billing.billing,
-        limits: billing.limits,
-        hints: billing.hints,
       })
     );
   });
@@ -102,7 +91,6 @@ export default async function voiceRoutes(app: FastifyInstance) {
       }
 
       const dbUser = await getOrCreateDbUser(request.user);
-      const billing = await getVoiceBillingConfig();
       try {
         const updated = await settings.setVoiceConfig(dbUser.id, request.user, {
           ...(body.voice_id !== undefined ? { voiceId: body.voice_id } : {}),
@@ -113,9 +101,6 @@ export default async function voiceRoutes(app: FastifyInstance) {
             config: updated,
             voices: [...VOICE_CATALOG],
             playback_rates: [...PLAYBACK_RATES],
-            billing: billing.billing,
-            limits: billing.limits,
-            hints: billing.hints,
           })
         );
       } catch (error) {
@@ -216,26 +201,6 @@ export default async function voiceRoutes(app: FastifyInstance) {
         throw error;
       }
 
-      // 计费预检：开关开且余额 < 单次扣费额 → 402，不建 pending。
-      // 复用对话链路的裸形状 InsufficientBalanceErrorResponse（标准 envelope 装不下两个金额），
-      // 前端 apiClient 据此跳充值页并带 required。开关关时跳过预检（现网行为）。
-      const billing = await getVoiceBillingConfig();
-      if (billing.enabled) {
-        const wallet = await wallets.getOrCreate(dbUser.id);
-        const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-        if (balance < billing.creditsPerGeneration) {
-          const response: InsufficientBalanceErrorResponse = {
-            error: {
-              message: `Insufficient credits: have ${balance}, need ${billing.creditsPerGeneration}`,
-              type: 'insufficient_balance',
-              credits_required: billing.creditsPerGeneration,
-              credits_available: balance,
-            },
-          };
-          return reply.status(402).send(response);
-        }
-      }
-
       const turn = await history.findCurrentTurnById(sessionId, messageId);
       const sourceText = turn?.assistant_reply?.trim() ?? '';
       if (!turn || !sourceText) {
@@ -271,9 +236,6 @@ export default async function voiceRoutes(app: FastifyInstance) {
         voiceId: pending.voice_id,
         ttsModel: pending.tts_model,
         ttsSpeed: Number(pending.tts_speed),
-        billingEnabled: billing.enabled,
-        creditsPerGeneration: billing.creditsPerGeneration,
-        priceLabel: billing.priceLabel,
         log,
       });
 

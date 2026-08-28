@@ -15,8 +15,7 @@ vi.mock('../../platform/config.js', () => ({
   },
 }));
 
-const { draftSpokenText } = await import('./voice-draft.js');
-const { MAX_SPOKEN_VOICE_CHARS } = await import('@miniapp/shared');
+const { draftSpokenText, MAX_SPOKEN_CHARS } = await import('./voice-draft.js');
 const { VoiceUpstreamError } = await import('./voice-upstream.js');
 
 function completion(content: string): Response {
@@ -106,7 +105,7 @@ describe('draftSpokenText — 闸 2 开思考重试', () => {
   });
 
   it('第一闸台词超过红线时同样重试', async () => {
-    const tooLong = '啊'.repeat(MAX_SPOKEN_VOICE_CHARS + 1);
+    const tooLong = '啊'.repeat(MAX_SPOKEN_CHARS + 1);
     const fetchMock = stubUpstream(completion(tooLong), completion('短台词'));
 
     const result = await draftSpokenText('原文');
@@ -116,7 +115,7 @@ describe('draftSpokenText — 闸 2 开思考重试', () => {
   });
 
   it('刚好等于红线的台词是合法的，不该重试', async () => {
-    const atLimit = '啊'.repeat(MAX_SPOKEN_VOICE_CHARS);
+    const atLimit = '啊'.repeat(MAX_SPOKEN_CHARS);
     const fetchMock = stubUpstream(completion(atLimit));
 
     const result = await draftSpokenText('原文');
@@ -133,17 +132,6 @@ describe('draftSpokenText — 闸 3 规则抽引号', () => {
     const result = await draftSpokenText('她看着你，“你回来了。”屋里很暗。');
 
     expect(result).toEqual({ text: '你回来了。', gate: 'quote_fallback' });
-  });
-
-  it('抽出的引号仍超过 300 字时抛 voice_text_too_long，不送 TTS', async () => {
-    // 长对白：引号内超过 300 字，闸 3 不放行，与「无可朗读内容」区分
-    const longQuote = '啊'.repeat(MAX_SPOKEN_VOICE_CHARS + 1);
-    stubUpstream(completion(''), completion(''));
-
-    await expect(draftSpokenText(`她低声道：“${longQuote}”`)).rejects.toMatchObject({
-      stage: 'draft',
-      code: 'voice_text_too_long',
-    });
   });
 });
 

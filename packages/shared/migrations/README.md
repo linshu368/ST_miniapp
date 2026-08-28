@@ -182,8 +182,6 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 099_schema_split_phase1.sql # schema 划分一阶段：miniapp 的 22 表 + 1 视图 + 24 函数按归属域搬进 app_core / miniapp_features / experience / billing，support_* 迁入 cs_platform，并改写全库函数体与运营人群 SQL 里的 miniapp.* 限定名
 099_schema_split_phase1_rollback.sql # 099 的提交后回滚：对象搬回 miniapp、限定名改回、DROP 四个新 schema。事务提交前失败不需要它（099 单事务自动回滚）
 100_payment_reconciliation_schedule.sql # 支付订单快速对账：payment_orders 加 next_reconcile_at / last_reconciled_at / reconcile_attempts / reconcile_locked_until 四列与领取索引。按 to_regclass 自动挑 billing 或 miniapp，与 099 顺序无关
-101_voice_billing.sql # 语音按次扣费：chat_message_audio 计费列、charge_voice_usage RPC、runtime_config 七键与 managed-config 白名单
-102_voice_pending_unique.sql # 重新生成失败保留上一版可播：preflight 清理存量多 pending + pending 部分唯一索引 + 会话非部分索引
 103_payment_settled_by.sql # 支付订单入账来源 settled_by：complete_payment_order 改为三参并记录 webhook/return/query/cron。与 101 语音计费撞号后改编。按 to_regclass 自动挑 billing 或 miniapp
 ```
 
@@ -199,7 +197,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 > 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。
 >
 > 092 / 093 / 095 也各有两个文件，来自 `main` 与 `dev` 两条并行发布线，**同号但含义不同**，
-> 不要按序号推断内容。097~099 为 schema 划分一阶段迁移；100 起为支付对账、语音付费等新功能迁移，序号在全部分支上唯一。
+> 不要按序号推断内容。097~099 为 schema 划分一阶段迁移；100 起为支付对账等新功能迁移，序号在全部分支上唯一。
 
 ### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
 

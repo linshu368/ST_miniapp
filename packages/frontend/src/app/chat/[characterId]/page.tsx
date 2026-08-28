@@ -268,17 +268,6 @@ export default function SelfHostedChatPage() {
           onError: (error) => {
             // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
             const code = (error as { code?: string }).code;
-            if (code === 'insufficient_balance') {
-              // 复用对话链路同一条跳转，不另做弹窗。金额由 apiClient 从 402 裸形状带出。
-              const balance = (error as { balance?: { creditsRequired: number } }).balance;
-              const search = new URLSearchParams({
-                reason: 'insufficient_credits',
-                returnTo,
-              });
-              if (balance) search.set('required', String(balance.creditsRequired));
-              router.push(`/profile/recharge?${search.toString()}`);
-              return;
-            }
             setStreamError(
               code === 'CONFLICT'
                 ? '这条回复正在生成语音'
@@ -290,7 +279,7 @@ export default function SelfHostedChatPage() {
         }
       );
     },
-    [generateVoice, returnTo, router]
+    [generateVoice]
   );
 
   // ── 发送与重生成 ──────────────────────────────────────────────────────────
@@ -570,12 +559,6 @@ export default function SelfHostedChatPage() {
                             returnTo,
                           })
                         : null,
-                      priceLabel: voiceConfigQuery.data?.billing.price_label ?? '',
-                      hints: {
-                        overLimit: voiceConfigQuery.data?.hints.over_limit ?? '',
-                        draftFailed: voiceConfigQuery.data?.hints.draft_failed ?? '',
-                        ttsFailed: voiceConfigQuery.data?.hints.tts_failed ?? '',
-                      },
                     }
                   : null
               }
