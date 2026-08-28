@@ -1,13 +1,13 @@
-# Schema 划分 · 批次进度交接（A / B / C0–C2 已完成，只剩 C3）
+# Schema 划分 · 批次进度交接（A / B / C0–C3 全部完成，一阶段已上生产）
 
-> 日期：2026-08-27（C0 停写热修、生产 097、C2 制品与 PR 均已收口）  
-> 分支：schema 适配代码在 `origin/dev`（已合入上游 `main`，合并提交 `b16f8df`）。生产 `main` 停在停写热修 PR #292（`fd6533d`），**不含** schema 切换。  
-> **C2 的 PR 是 [#294](https://github.com/linshu368/ST_miniapp/pull/294)（`dev` → `main`），CI 已绿，正挂着等 C3 窗口——现在不要 merge。**  
-> 本文件给新窗口接着干。权威归属与执行纪律仍以下面三份为准，本文只记**做到哪、下一步做什么、不要重问什么**。
+> 日期：2026-08-28（**C3 生产割接已完成**，见 §十二）  
+> 分支：`main` 已含完整 schema 适配（PR #294 合并提交 `f7295a6`）。生产库已是新形态。  
+> **一阶段割接到此结束。** 剩下的是两个遗留运维项，见 §12.7——其中「生产 Railway source 被临时固定到 GHCR 镜像」会让 `main` 不再自动部署生产，**下一次改后端前必须先处理**。
 >
-> **新窗口从这里开始读：§一 状态 → §九 C3。** 不要重做 C0/C1（§十）或 C2（§十一）。
+> **新窗口从这里开始读：§一 状态 → §十二 C3 记录 → §12.7 遗留项。**
+> 不要重做 C0/C1（§十）、C2（§十一）或 C3（§十二）。
 >
-> 文件名沿用 `批次A`（其它文档按路径引用它），内容已覆盖批次 B（§八）、C 前置（旧 §九）、C0/C1 收口（§十）和 C2（§十一）。
+> 文件名沿用 `批次A`（其它文档按路径引用它），内容已覆盖批次 B（§八）、C 前置（旧 §九）、C0/C1（§十）、C2（§十一）和 C3（§十二）。
 
 必读：
 
@@ -21,21 +21,24 @@
 
 ## 一、一句话状态
 
-**批次 A、B 已收口；批次 C 的 C0（停写热修）、C1（生产 097）、C2（完整代码 + PR #294）都已完成。**
+**批次 A、B、C0、C1、C2、C3 全部完成。schema 划分一阶段已在生产落地。**
 
-下一步只剩 **C3：维护窗口跑 099 → PostgREST → cron job 5 → 合 PR #294 部署**。路径见 **§9.3**，C2 取证见 **§十一**。
+生产割接于 **2026-08-28 10:25–11:05（北京）** 完成，099 本身耗时 **9.435 秒**，
+API 停机约 **38 分钟**（超出预算的部分全花在 Railway 构建卡死上，见 §12.5）。取证见 **§十二**。
 
-099 已于 2026-08-26 18:19 在 **test 提交执行**（耗时 8.92 秒），PostgREST 暴露列表已切换，
-test 库现在是新形态：`miniapp` 空壳，22 表 + 1 视图 + 25 函数分布在五个域里。
-新代码已随 PR #288 合入 `dev` 并部署到 Railway `development`，2026-08-27 独立跑过 API smoke（§8.6）。
-回滚脚本已重新验证可用（§8.7）。
+生产现状（2026-08-28 实测）：
 
-生产（2026-08-27 晚实测）：
+- 库：`miniapp` 空壳；22 表 + 1 视图 + 24 函数分布在 app_core / miniapp_features /
+  experience / billing / cs_platform 五个域；库内 `miniapp.*` 残留三项全 0
+- PostgREST：`authenticator` 的 `pgrst.db_schemas` GUC 已接管，10 个 schema 全部 REST 可达
+- pg_cron job 5：已指向 `app_core.characters`，jobid 未变，11:00 那次 `succeeded`
+- 代码：`main` = `f7295a6`（PR #294），三个 Railway 生产服务都跑新代码
+- 真实用户流量已在新 schema 上跨 experience / billing / app_core 正常读写
 
-- Railway `stminiapp` production 跑 `fd6533d`（PR #292），代码仍读 `miniapp.*`
-- 097 已提交：`chat_history` / `current_chat_history` 均为 29 列；触发器与旧索引已没
-- 099 **未执行**；无新域、无 FDW；22 表 + 1 视图 + 25 函数仍在 `miniapp`
-- **不要把 `origin/dev` 的 schema 适配代码合入 `main`。** production 跟随 `main` 自动部署，099 之前会立刻 `schema/relation not found`
+**两个遗留项见 §12.7**，尤其：生产 `stminiapp` 的 Railway source 目前**固定在 GHCR 镜像**
+`sha-a27ed29`，不再跟随 `main` 自动部署。
+
+test 库同样是新形态（099 于 2026-08-26 18:19 提交，8.92 秒），回滚脚本已验证可用（§8.7）。
 
 批次 A 的交付门（执行计划 §五 批次 A）四项都齐了：
 
@@ -448,15 +451,19 @@ test 出问题就跑 `packages/shared/migrations/099_schema_split_phase1_rollbac
   事务外复核仍是 `miniapp` 空壳、四个新域仍在。**test 回滚安全网已恢复。**
   不要用 `dryrun-099-roundtrip.sh` 验这件事——它的正向 preflight 要求起点是未迁形态，现在会挡。
 
-生产 2026-08-27 核对：**无** `prod_readonly` / `miniapp_fdw` / 新域，22 表 + 1 视图 + 25 函数全在 `miniapp`。
+生产 2026-08-27 核对：**无** `prod_readonly` / `miniapp_fdw` / 新域，22 表 + 1 视图 + 24 函数全在 `miniapp`。
 C3 窗口内执行 099 前仍须再核一次，避免窗口前又被手工改过。
 
 ---
 
-## 九、批次 C：只剩 C3（2026-08-27 晚，C0/C1/C2 已收口）
+## 九、批次 C：C3 的执行计划（**已于 2026-08-28 执行完毕，本节转为历史**）
 
-新窗口从这里执行。权威顺序仍是执行计划 §五 批次 C 的窗口内步骤。
-C0/C1 的取证见 **§十**、C2 的见 **§十一**；不要重做停写热修、不要再跑 097、不要重开 PR。
+> **本节是 C3 执行前写的计划，已全部执行完，实际取证见 §十二。**
+> 保留原文是为了对照「计划 vs 实际」——§12.5 / §12.6 记了两处与本节不符的地方
+> （cron job 5 的 `UPDATE` 权限不足、Railway 构建卡死）。
+> 本节里所有「不要 merge PR #294」「不要合入 main」的禁令**已经解除**，不要再照着执行。
+
+C0/C1 的取证见 **§十**、C2 的见 **§十一**、C3 的见 **§十二**。
 
 ### 9.1 当前各面状态
 
@@ -468,7 +475,7 @@ C0/C1 的取证见 **§十**、C2 的见 **§十一**；不要重做停写热修
 | Railway production    | `stminiapp` 已部署 `fd6533d`，`/health` 200。跟随 GitHub `main` **自动部署**                                                                               |
 | Railway 生产 cron × 2 | `stminiapp-payment-reconcile-cron`（每分钟）、`stminiapp-payment-cron`（每 5 分钟）也跟随 `main`，都读 `payment_orders`。**C3 第 1 步必须先停，见 §11.3**  |
 | test 库               | 099 已提交；PostgREST 已切；`miniapp` 空壳；FDW 保留；回滚脚本已事务内验证                                                                                 |
-| production 库         | **097 已执行**。`chat_history` / `current_chat_history` 29 列。099 未执行；无新域、无 FDW；22 表 + 1 视图 + 25 函数仍在 `miniapp`                          |
+| production 库         | **097 已执行**。`chat_history` / `current_chat_history` 29 列。099 未执行；无新域、无 FDW；22 表 + 1 视图 + 24 函数仍在 `miniapp`                          |
 | production 098        | **已满足**。`characters` 无 `is_default` / `is_published` / `is_active`                                                                                    |
 | production 100        | **已执行**（上游 PR #290/#291 带来，不是本专项做的）。`miniapp.payment_orders` 现 16 列，多 4 个对账列 + 索引 `idx_payment_orders_due_reconcile`，见 §11.2 |
 | cron job 5            | 仍是 `FROM miniapp.characters`；099 之后必须跑 `ops/schema-split/cron-job5-prod.sql`                                                                       |
@@ -782,3 +789,152 @@ MVP regression 明细（对 test 库）：`create_session` 11 / `send_message` 2
 而生产实际已是 29 列（097 之后）。也就是说经 FDW 查这两张表、只要碰到那三个已删列就会报错。
 它是库外手工建的对照/取数通道，不在版本控制里，也不参与 099；要用就得自己重新
 `IMPORT FOREIGN SCHEMA`。这里只记一笔，避免下次撞上时以为是 099 弄坏的。
+
+---
+
+## 十二、C3 生产割接执行记录（2026-08-28）
+
+一阶段到此收口。**不要重做本节。** 后续要动的只有 §12.7 的两个遗留项。
+
+窗口实际是 8/28 10:25–11:05（北京），比 §9.4 定档的 8/29 10:05 提前一天执行。
+起步时刻在 `:25` 而非 `:05`，距整点 pg_cron job 5 只剩 35 分钟，实际赶在 10:36 就改完了 job 5，没有踩到整点。
+
+### 12.1 窗口前检查（§9.3 三条）
+
+| 检查                         | 结果                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| 1. `origin/dev..origin/main` | **空** —— C2 之后 `main` 没进新 hotfix，**第 2 条不触发**，不需要重合上游 |
+| 3. `gh pr view 294`          | `OPEN` + `CLEAN` + `MERGEABLE`，head `a27ed29`；`gh pr checks` 全 pass    |
+
+额外做了两件本可以留在窗口里、提前做完更省时间的事：
+
+- **生产库 099 preflight 事实只读预核**（停服之前）：22 表 + 1 视图与映射逐个一致、无同名重载、
+  固定 `search_path` 恰好 3 个函数、无 FDW / 无新域、`payment_orders` 16 列、`authenticator` 无
+  `pgrst.db_schemas`、无长事务。
+- **PostgREST step 0 当天实测**（02:21:51Z）：hint 为
+  `graphql_public, miniapp, miniapp_analytics, miniapp_traffic, cs_platform, admin`，
+  与脚本 `EXPECTED_BASELINE` **逐项一致、顺序也一致**，所以脚本 step 2 的硬编码列表不需要改。
+
+### 12.2 两处文档旧数（已核实，都不是漂移）
+
+1. **生产 `miniapp` 的函数是 24 个不是 25 个。** §9.1 / §8.7 原来写的 25 是 097 之前的数；
+   少的那个是 097 按设计删掉的 `tf_set_user_character_round`。099 的必选映射正好 24 个，
+   与生产逐个一致。这两处已就地改成 24。
+   **注意 §三 / §八 里关于 test 的「25 函数」是对的、不要跟着改**——test 多一个可选的
+   `charge_voice_usage`（§五 第 1 条），所以 test 是 24 必选 + 1 可选 = 25，生产没有它。
+2. **`cs_platform.personas` 引用 `miniapp.*` 的是 15 条不是 14 条**（总 18 条）。099 文首注释写的
+   「生产 14/18」是 08-25 的数。099 不硬编码这个数——它在事务内动态取「哪些本来就能通过校验」的基线，
+   只追究改写后变坏的。迁移前 18 条全部通过 `validate_persona_sql`，迁移后仍全部通过。
+
+### 12.3 九步的实际执行
+
+| 步  | 动作                        | 时间（UTC）           | 结果                                                                                  |
+| --- | --------------------------- | --------------------- | ------------------------------------------------------------------------------------- |
+| 1   | 停三个 Railway 生产服务     | 02:25:38–02:25:57     | `railway down` × 3，`activeDeployments=0`，backend 域名 404。**前端维护页按决定跳过** |
+| 2   | `run-inventory.sh prod`     | 02:28:48–02:29:08     | 20 秒，stderr 0 字节。快照 `snapshots/2026-08-28-pre099/prod/`                        |
+| 3   | 回滚执行人与回滚脚本        | —                     | 回滚脚本 md5 `84428ca1…`，与 099 的映射表互校逐行一致；可回退制品 `fd6533d`           |
+| 4   | **099**                     | **02:30:32–02:30:41** | **9.435 秒**，`COMMIT` + `NOTIFY`。postflight 全过                                    |
+| 5   | `postgrest-expose-prod.sql` | 02:31:51–02:31:54     | GUC 写入 10 个 schema，REST 实测 10 域全 200                                          |
+| 6   | `cron-job5-prod.sql`        | 02:36:05–02:36:08     | **原脚本失败，改用 `cron.alter_job` 才成功，见 §12.4**                                |
+| 7   | 合 PR #294                  | 02:37:14              | 合并提交 `f7295a6`。三个服务被触发部署；**backend 构建卡死，见 §12.5**                |
+| 8   | 最小上线验证 + 恢复         | 03:03:53              | `/health` 200，核心接口全 200，需鉴权接口正确 401                                     |
+| 9   | job 5 回看                  | 03:00（=11:00 北京）  | run 967 `succeeded`，`INSERT 0 193`，与改写前的 966/965 同数                          |
+
+**099 的实测输出**：preflight 通过（待搬 23 表/视图、24 函数；可选函数 `charge_voice_usage`
+不存在→跳过）→ 建四 schema → 改写 **44 个函数体**（与 test 同数）→ 改写**人群规则 23 处**
+（test 是 13 处，生产人群规则更多）→ postflight 全过。
+
+**迁后核对**：`miniapp` 0 表 0 视图 0 函数；app_core 4/2、miniapp_features 6/6、
+experience 3 表 + 1 视图/5、billing 7/11（无可选函数）、cs_platform 收到 2 张表。
+库内 `miniapp.*` 残留三项（`prosrc` / `pg_get_viewdef` / `personas.sql_text`）全 0。
+行数与迁前分毫不差（`characters` 360、`chat_history` 232167、`payment_orders` 468、`users` 5451、
+`character_favorites` 1122）。四个新域 ACL 恰好 `service_role=U`，`anon` / `authenticated` 无 USAGE。
+6 条 `cs_platform.* → app_core.users` 跨域 FK 按 OID 自动跟随。
+
+**迁前与 08-25 基线的结构 diff 全部可归因**：触发器 −1 与索引 −1（097）、
+索引 +1 `idx_payment_orders_due_reconcile`（上游 100）、视图 `current_chat_history` 少 `preset_id`（097）；
+关系对象 / 约束 / 表授权 / 类型 / 序列 0 差异。
+
+### 12.4 cron job 5：`UPDATE cron.job` 权限不足（脚本已修）
+
+**这一步 §四 早就说过在 test 上演练不了（test 没有 pg_cron），所以是生产窗口里第一次暴露。**
+
+原脚本的 `UPDATE cron.job` 报 `permission denied for table job`。取证：Supabase 上 `cron.job`
+归 `supabase_admin`，`postgres` 只有 SELECT（`postgres=r*`）——**以 `postgres` 身份永远不可能成功**，
+不是偶发。事务整体回滚，job 5 未被改坏。
+
+合法路径：`cron.alter_job` 是 pg_cron 的 **C 函数**（`cron_alter_job`），直接操作 catalog、
+绕过表级 ACL，只校验「必须是 job 所有者」——job 5 的 `username = postgres`，
+`cron.job` 上的 RLS 策略也正好是 `username = CURRENT_USER`。它按 `job_id` 原地更新，**保留 jobid**，
+正是原脚本拒绝 `cron.schedule()` 的那个理由。
+
+`ops/schema-split/cron-job5-prod.sql` 已改成用 `cron.alter_job`，**两个断言块（guard / verify）一字未动**；
+文件末尾「回滚」小节里那条 `UPDATE cron.job` 会撞同一道墙，也一并改了，否则回滚路径是坏的。
+
+### 12.5 Railway backend 构建卡死（本次超时的唯一原因）
+
+合 PR 之后，`stminiapp` 的构建卡在
+`RUN pnpm install --frozen-lockfile ...` 那一层的
+`! Corepack is about to download https://registry.npmjs.org/pnpm/-/pnpm-9.15.9.tgz`，
+第一次卡了约 20 分钟，重触发一次仍然卡住。
+
+**已排除的原因**：`Dockerfile.backend`、根 `package.json`、`pnpm-lock.yaml` 在
+`fd6533d` → `f7295a6` 之间**逐字未变**；同一份 Dockerfile 在两个 payment cron 服务上
+同一时刻构建成功；PR #294 的 CI（`Docker Build PR (backend)` 1m18s、`Build & Push backend` 4m0s）
+也全绿。也**不是** Corepack 在等确认——Docker 构建里 stdin 不是 TTY，那行 `!` 是信息性输出。
+最像的是 Railway 那台 Metal builder（`builder-cexsbx`）到 `registry.npmjs.org` 的出网卡住。
+**根因未定论，Dockerfile 侧的正式修复留作遗留项，见 §12.7。**
+
+**当时的应急处置**：`build-and-push.yml` 在 push 到 `dev` 时会把 backend 多架构镜像推到 GHCR，
+而 `git diff a27ed29 f7295a6` 为空（两者 tree 完全相同），所以 CI 已经有一份和 `main` 等价的镜像。
+实测 `ghcr.io/linshu368/st-miniapp-backend:sha-a27ed29` **可匿名拉取**（无需给 Railway 配凭据），于是：
+
+```bash
+railway service source connect --image ghcr.io/linshu368/st-miniapp-backend:sha-a27ed29 \
+  --service stminiapp --environment production
+```
+
+部署直接进 `DEPLOYING`（不再 BUILDING），**25 秒**后 `/health` 200。
+
+> 一条实测结论，与官方文档不符，记下来省得下次重查：GraphQL 的 `serviceInstanceUpdate` 文档说
+> 非 fork 环境的更新会应用到**所有**非 fork 环境，而本项目三个环境都不是 fork。
+> 但 `railway service source connect --environment production` 实测**只改了 production**，
+> `development` 仍是 `repo=linshu368/ST_miniapp`。以实测为准。
+
+### 12.6 两次窗口内 cron 触发（无害，但纠正一条判断）
+
+`railway down` **不阻止** Railway 按 cron schedule 重新拉起部署。
+`stminiapp-payment-cron`（每 5 分钟）在窗口里触发了两次：`005ae5d4`(02:30:20Z) 与 `e6f6e1c8`(02:35:04Z)。
+`stminiapp-payment-reconcile-cron`（每分钟）一次都没触发。原因未查。
+
+两次都按 §11.3 的预期无害失败：报
+`Could not find the table 'miniapp.payment_orders' in the schema cache`，
+失败在 `listUnsettledAroundExpiry` 的**第一个读**上，也就是在任何写之前就 `exit`。
+而且 `005ae5d4` 容器冷启动花了约 2 分钟、真正发查询是 02:32:22Z，**099 在 02:30:41Z 就已提交，
+两者从未争锁**。数据侧复核：`payment_orders` 468 行不变、窗口内 0 新建 0 对账、无 `pending` 订单。
+**零影响，无需补偿动作。**
+
+### 12.7 遗留项（下一个窗口/下一次动后端前处理）
+
+1. **生产 Railway source 被固定在 GHCR 镜像**（**这一条影响后续所有后端发布**）。
+   `stminiapp` production 现在是 `image=ghcr.io/linshu368/st-miniapp-backend:sha-a27ed29`，
+   **不再跟随 `main` 自动部署**，与 `.railway/railway.ts` 声明的 `source: github(REPO, {branch:'main'})` 漂移。
+   直接改回去会立刻触发一次构建，可能再次卡死，所以顺序是：**先解决 §12.5 的构建问题，再改回**：
+
+   ```bash
+   railway service source connect --repo linshu368/ST_miniapp --branch main \
+     --service stminiapp --environment production
+   ```
+
+2. **`Dockerfile.backend` 的 corepack 取包在 Railway 上不可靠**（§12.5）。两个方向，都还没做：
+   - 把 `corepack prepare pnpm@9.15.9 --activate` 挪进 `apt-get` 那个**稳定层**。
+     现在下载发生在 `pnpm install` 层里，而该层被每次源码变更打穿，等于每次构建都重下一遍；
+     挪进稳定层之后只下一次、之后一直命中缓存。
+   - 加 `ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0`（消除任何 prompt 相关分支）。
+     注意文件头把「corepack pnpm@9.15.9」列为继承自 M1 的硬约束，动它要连注释一起改。
+     改完在 Railway 上真跑一次构建验证，别只看 GitHub Actions 绿。
+
+另外两条不影响运行、只是别再重查：
+
+- §11.5 的 097 checksum 漂移仍然成立。
+- §11.6 的 test `miniapp_fdw` 列数陈旧仍然成立。

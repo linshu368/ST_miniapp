@@ -72,10 +72,16 @@ END
 $guard$;
 
 -- 只改限定名，schedule / active / 其余 SQL 一字不动。
--- 用 UPDATE 而非 cron.schedule()：后者按 jobname 匹配，会新建/顶掉 job 并换掉 jobid。
-UPDATE cron.job
-   SET command = regexp_replace(command, '\mminiapp\.characters\M', 'app_core.characters', 'g')
- WHERE jobid = 5;
+-- 不用 cron.schedule()：它按 jobname 匹配，会新建/顶掉 job 并换掉 jobid。
+-- 也不能直接 UPDATE cron.job：Supabase 上该表归 supabase_admin，postgres 只有 SELECT
+-- （2026-08-28 生产实测 permission denied）。cron.alter_job 是 pg_cron 的 C 函数，
+-- 直接操作 catalog、只校验「必须是 job 所有者」（job 5 的 username = postgres），
+-- 按 job_id 原地更新，因此保留 jobid。NULL 参数表示该字段不改。
+SELECT cron.alter_job(
+  job_id  => 5,
+  command => (SELECT regexp_replace(command, '\mminiapp\.characters\M', 'app_core.characters', 'g')
+                FROM cron.job WHERE jobid = 5)
+);
 
 DO $verify$
 DECLARE v_cmd text;
@@ -122,9 +128,11 @@ WHERE jobid = 5;
 -- relation "app_core.characters" does not exist。顺序：先跑回滚迁移，再执行下面这段。
 --
 --   BEGIN;
---   UPDATE cron.job
---      SET command = regexp_replace(command, '\mapp_core\.characters\M', 'miniapp.characters', 'g')
---    WHERE jobid = 5;
+--   SELECT cron.alter_job(
+--     job_id  => 5,
+--     command => (SELECT regexp_replace(command, '\mapp_core\.characters\M', 'miniapp.characters', 'g')
+--                   FROM cron.job WHERE jobid = 5)
+--   );
 --   -- 复核：应回到 FROM miniapp.characters，且写入目标仍是 miniapp_analytics.card_position_snapshot
 --   SELECT jobid, command FROM cron.job WHERE jobid = 5;
 --   COMMIT;
