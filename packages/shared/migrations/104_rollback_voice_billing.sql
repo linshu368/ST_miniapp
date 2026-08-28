@@ -58,6 +58,12 @@ DROP INDEX IF EXISTS miniapp.idx_chat_message_audio_session_all;
 
 -- ─── 2. 回滚 101：managed-config 白名单还原到 095（去掉 7 个 voice_*，
 --     保留 miniapp_payment_prompt_dialog_config；不要整段重跑 093，093 漏过这个 key）
+--
+-- 必须先删 voice_* 草稿/发布行，再收紧 CHECK。否则 ADD CONSTRAINT 会 23514：
+-- test 上有一条 config_drafts.voice_billing_enabled（2026-08-26）。
+DELETE FROM admin.config_drafts WHERE config_key LIKE 'voice_%';
+DELETE FROM admin.config_releases WHERE config_key LIKE 'voice_%';
+
 ALTER TABLE admin.config_drafts
   DROP CONSTRAINT IF EXISTS config_drafts_config_key_check;
 ALTER TABLE admin.config_drafts
@@ -199,9 +205,6 @@ BEGIN
   END IF;
 END;
 $$;
-
-DELETE FROM admin.config_drafts WHERE config_key LIKE 'voice_%';
-DELETE FROM admin.config_releases WHERE config_key LIKE 'voice_%';
 
 -- ─── 4. 自检 ──────────────────────────────────────────────────────────────
 DO $$
