@@ -3,8 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MiniappPaymentOrderRow } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { PaymentQueryResult } from '../../../infrastructure/payment/ZqPaymentGateway.js';
 import {
-  runDualPassFastPaymentReconciliation,
+  FAST_RECONCILE_LOOP_DELAY_MS,
   runFastPaymentReconciliation,
+  runFastPaymentReconciliationLoop,
   type FastPaymentReconciliationResult,
 } from './FastPaymentReconciliation.js';
 import type { SettlementLogger } from './PaymentSettlement.js';
@@ -192,31 +193,85 @@ describe('runFastPaymentReconciliation', () => {
   });
 });
 
-describe('runDualPassFastPaymentReconciliation', () => {
-  it('starts the second pass 30 seconds after the first pass started', async () => {
-    let clock = 1_000;
-    const empty: FastPaymentReconciliationResult = {
-      checked: 0,
-      claimed: 0,
-      settled: 0,
-      unpaid: 0,
-      failed: 0,
-    };
+describe('runFastPaymentReconciliationLoop', () => {
+  const empty: FastPaymentReconciliationResult = {
+    checked: 0,
+    claimed: 0,
+    settled: 0,
+    unpaid: 0,
+    failed: 0,
+  };
+
+  it('sleeps 30 seconds after each pass until stopped', async () => {
+    const controller = new AbortController();
+    let passes = 0;
     const runPass = vi.fn(async () => {
-      clock += 5_000;
+      passes += 1;
+      if (passes >= 2) controller.abort();
       return empty;
     });
-    const sleep = vi.fn(async (milliseconds: number) => {
-      clock += milliseconds;
-    });
+    const sleep = vi.fn(async () => undefined);
+    const onPass = vi.fn();
+    const onError = vi.fn();
 
-    await runDualPassFastPaymentReconciliation({
+    await runFastPaymentReconciliationLoop({
       runPass,
       sleep,
-      now: () => clock,
+      signal: controller.signal,
+      onPass,
+      onError,
     });
 
-    expect(sleep).toHaveBeenCalledWith(25_000);
     expect(runPass).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(FAST_RECONCILE_LOOP_DELAY_MS, controller.signal);
+    expect(onPass).toHaveBeenCalledTimes(2);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('finishes the current pass before stopping', async () => {
+    const controller = new AbortController();
+    const runPass = vi.fn(async () => {
+      controller.abort();
+      return empty;
+    });
+    const sleep = vi.fn(async () => undefined);
+    const onPass = vi.fn();
+
+    await runFastPaymentReconciliationLoop({
+      runPass,
+      sleep,
+      signal: controller.signal,
+      onPass,
+      onError: vi.fn(),
+    });
+
+    expect(runPass).toHaveBeenCalledTimes(1);
+    expect(onPass).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('keeps looping after a pass error', async () => {
+    const controller = new AbortController();
+    let passes = 0;
+    const runPass = vi.fn(async () => {
+      passes += 1;
+      if (passes === 1) throw new Error('gateway down');
+      controller.abort();
+      return empty;
+    });
+    const onError = vi.fn();
+
+    await runFastPaymentReconciliationLoop({
+      runPass,
+      sleep: vi.fn(async () => undefined),
+      signal: controller.signal,
+      onPass: vi.fn(),
+      onError,
+    });
+
+    expect(runPass).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0]?.[0]).toBeInstanceOf(Error);
   });
 });
