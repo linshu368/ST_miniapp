@@ -90,6 +90,7 @@ describe('runVoiceGeneration — 最终长度闸', () => {
       ttsSpeed: 1,
       billingEnabled: true,
       creditsPerGeneration: 15,
+      priceLabel: '15 星尘',
       log: makeLogger(),
     });
 
@@ -115,6 +116,7 @@ describe('runVoiceGeneration — 最终长度闸', () => {
       ttsSpeed: 1,
       billingEnabled: true,
       creditsPerGeneration: 15,
+      priceLabel: '15 星尘',
       log: makeLogger(),
     });
 
@@ -145,6 +147,7 @@ describe('runVoiceGeneration — 计费开关', () => {
       ttsSpeed: 1,
       billingEnabled: false,
       creditsPerGeneration: 15,
+      priceLabel: '15 星尘',
       log: makeLogger(),
     });
 
@@ -176,6 +179,7 @@ describe('runVoiceGeneration — Q4 扣费时余额不足', () => {
       ttsSpeed: 1,
       billingEnabled: true,
       creditsPerGeneration: 15,
+      priceLabel: '15 星尘',
       log: makeLogger(),
     });
 
@@ -209,6 +213,7 @@ describe('runVoiceGeneration — Q4 扣费时余额不足', () => {
       ttsSpeed: 1,
       billingEnabled: true,
       creditsPerGeneration: 15,
+      priceLabel: '15 星尘',
       log: makeLogger(),
     });
 

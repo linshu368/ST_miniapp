@@ -273,6 +273,7 @@ export default async function voiceRoutes(app: FastifyInstance) {
         ttsSpeed: Number(pending.tts_speed),
         billingEnabled: billing.enabled,
         creditsPerGeneration: billing.creditsPerGeneration,
+        priceLabel: billing.priceLabel,
         log,
       });
 

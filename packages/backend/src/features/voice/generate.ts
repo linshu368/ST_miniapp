@@ -39,6 +39,8 @@ export async function runVoiceGeneration(input: {
   billingEnabled: boolean;
   /** 单次成功扣费额（voice_generation_credits，默认 15） */
   creditsPerGeneration: number;
+  /** 价格展示文案（voice_price_label，如 "15 星尘"），写入扣费 metadata 供消费明细展示 */
+  priceLabel: string;
   log: RequestLogger;
 }): Promise<void> {
   const audio = new ChatMessageAudioRepository();
@@ -108,6 +110,7 @@ export async function runVoiceGeneration(input: {
             tts_model: input.ttsModel,
             spoken_chars: spoken.length,
             gate,
+            voice_price_label: input.priceLabel,
           },
         });
         if (charge.charged) {

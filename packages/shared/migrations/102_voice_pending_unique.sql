@@ -17,6 +17,38 @@
 
 BEGIN;
 
+-- preflight：把同一 message 下多余的 pending 收口成 failed。
+-- 旧代码的 active 索引（uq_chat_message_audio_active）只管 WHERE is_active 的行，
+-- 旧 createPending 对卡死的 pending 会先置 is_active=false 再插新 pending——
+-- 此时两条 pending 都存在（一条 inactive、一条 active），旧唯一索引管不着。
+-- 任何一条消息在旧代码下被「卡死后重试」过，就会留下 ≥2 条 pending。
+-- 不清则下方 CREATE UNIQUE INDEX 撞 23505，整个 102 事务回滚，索引建不出来。
+-- 这些本就是永远转圈的死行，收口成 failed 不影响用户（读路径会把它们映射为 failed）。
+WITH ranked AS (
+  SELECT id, row_number() OVER (
+           PARTITION BY message_id ORDER BY created_at DESC) rn
+  FROM miniapp.chat_message_audio WHERE status = 'pending'
+)
+UPDATE miniapp.chat_message_audio a
+SET status = 'failed', error_code = 'voice_generation_stalled', updated_at = now()
+FROM ranked r WHERE a.id = r.id AND r.rn > 1;
+
+-- 断言：清理后不应再有同一 message 多条 pending。
+-- 若仍违约，说明上面 UPDATE 没覆盖到（理论上不会发生），显式报错避免静默建索引失败。
+DO $$
+DECLARE remaining int;
+BEGIN
+  SELECT count(*) INTO remaining FROM (
+    SELECT message_id FROM miniapp.chat_message_audio
+    WHERE status = 'pending'
+    GROUP BY message_id HAVING count(*) > 1
+  ) s;
+  IF remaining > 0 THEN
+    RAISE EXCEPTION '仍存在同一 message 多条 pending（% 组），无法建 pending 唯一索引', remaining
+      USING ERRCODE = '23505';
+  END IF;
+END$$;
+
 -- 一条消息同时只能有一个 pending。连点两下时第二个 insert 撞 23505，
 -- 由 createPending 翻译成 already_generating，与原 active 索引的拦截语义一致。
 CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_message_audio_pending

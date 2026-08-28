@@ -12,6 +12,21 @@
 import type { MessageVoice, MessageVoiceStatus } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
 import { config } from '../../platform/config.js';
+import { createLogger } from '../../lib/logger.js';
+
+const log = createLogger('voice');
+
+/**
+ * 判定 supabase-js 返回的错误是否为「列不存在」（Postgres 42703）。
+ *
+ * 用于 markReady 写计费列时降级：migration 101 未执行的环境下 credits_charged / charge_id
+ * 两列不存在，主 update 仍要把音频标 ready（用户能听），计费列写入静默跳过。
+ */
+export function isMissingColumnError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === '42703') return true;
+  return /column .* does not exist/i.test(error.message ?? '');
+}
 
 /** 最坏情况下串行发起的上游请求数：写稿两闸各一次，合成一次 */
 const MAX_UPSTREAM_CALLS = 3;
@@ -275,13 +290,40 @@ export class ChatMessageAudioRepository {
         duration_ms: input.durationMs,
         latency_ms: input.latencyMs,
         error_code: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+
+    if (error) throw new Error(`更新语音生成结果失败：${error.message}`);
+
+    // 计费列单独写：migration 101 未执行时 credits_charged / charge_id 两列不存在，
+    // 主 update 已把音频标 ready（用户能听），这里只降级打 warn，不让缺列把整条生成拖成 failed。
+    // migration 执行后两列存在，正常写入；计费开关关闭时 creditsCharged=0 / chargeId=null 也走这条
+    // （写 0 / null 与不写语义等价，但保留分支让"开关打开后"路径与"开关关闭"路径同构，少一处条件分裂）。
+    const { error: billingError } = await this.db
+      .from('chat_message_audio')
+      .update({
         credits_charged: input.creditsCharged,
         charge_id: input.chargeId,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id);
 
-    if (error) throw new Error(`更新语音生成结果失败：${error.message}`);
+    if (billingError) {
+      if (isMissingColumnError(billingError)) {
+        log.sys.warn(
+          {
+            event: 'voice.billing_column_missing',
+            audioId: id,
+            code: billingError.code,
+            message: billingError.message,
+          },
+          '语音计费列不存在（migration 101 未执行），已跳过计费列写入，音频仍 ready'
+        );
+      } else {
+        throw new Error(`更新语音计费列失败：${billingError.message}`);
+      }
+    }
   }
 
   /**

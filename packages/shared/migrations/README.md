@@ -183,7 +183,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 099_schema_split_phase1_rollback.sql # 099 的提交后回滚：对象搬回 miniapp、限定名改回、DROP 四个新 schema。事务提交前失败不需要它（099 单事务自动回滚）
 100_payment_reconciliation_schedule.sql # 支付订单快速对账：payment_orders 加 next_reconcile_at / last_reconciled_at / reconcile_attempts / reconcile_locked_until 四列与领取索引。按 to_regclass 自动挑 billing 或 miniapp，与 099 顺序无关
 101_voice_billing.sql # 语音按次扣费：chat_message_audio 计费列、charge_voice_usage RPC、runtime_config 七键与 managed-config 白名单
-102_voice_pending_unique.sql # 重新生成失败保留上一版可播：pending 部分唯一索引 + 会话非部分索引
+102_voice_pending_unique.sql # 重新生成失败保留上一版可播：preflight 清理存量多 pending + pending 部分唯一索引 + 会话非部分索引
 ```
 
 > **099 不是普通迁移**，执行前必读 `docs/schema划分-一阶段执行计划.md`：
