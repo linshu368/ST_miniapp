@@ -228,7 +228,7 @@ export class CsPlatformRepository {
                 NULLIF(to_jsonb(s)->>'avatar_url', '')
               ) AS avatar_url
        FROM cs_platform.persona_users_detail d
-       LEFT JOIN miniapp.miniapp_user_settings s ON s.user_id = d.user_id
+       LEFT JOIN app_core.miniapp_user_settings s ON s.user_id = d.user_id
        WHERE d.persona_id = $1::uuid
        ORDER BY d.last_user_message_at DESC NULLS LAST,
                 d.last_active_at DESC NULLS LAST`,
@@ -412,8 +412,8 @@ export class CsPlatformRepository {
               h.model,
               h.status,
               h.created_at
-       FROM miniapp.chat_history h
-       LEFT JOIN miniapp.characters c ON c.id = h.character_id
+       FROM experience.chat_history h
+       LEFT JOIN app_core.characters c ON c.id = h.character_id
        WHERE h.user_id = $1::uuid
        ORDER BY h.created_at ASC`,
       userId
@@ -580,7 +580,7 @@ export class CsPlatformRepository {
 
   async findUserByTelegramId(telegramUserId: string): Promise<MiniappUserRow | null> {
     const rows = await prisma.$queryRawUnsafe<MiniappUserRow[]>(
-      `SELECT id, tg_id FROM miniapp.users WHERE tg_id = $1 LIMIT 1`,
+      `SELECT id, tg_id FROM app_core.users WHERE tg_id = $1 LIMIT 1`,
       telegramUserId
     );
     return rows[0] ?? null;
@@ -652,7 +652,7 @@ export class CsPlatformRepository {
         `SELECT q.user_id::uuid FROM (${sql}) AS q WHERE q.user_id IS NOT NULL LIMIT 0`
       );
     } catch {
-      throw new Error('SQL 规则必须 SELECT user_id，且 user_id 必须是 miniapp.users.id UUID');
+      throw new Error('SQL 规则必须 SELECT user_id，且 user_id 必须是 app_core.users.id UUID');
     }
   }
 }

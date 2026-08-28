@@ -1,4 +1,4 @@
-import { getSupabaseClient } from './supabase.js';
+import { getDomainDb } from './supabase.js';
 import { deriveStHandle } from '@miniapp/shared';
 import type { TelegramUser } from '../middleware/auth.js';
 
@@ -16,7 +16,7 @@ export interface MiniappDbUser {
 }
 
 /**
- * 确保 miniapp.users 中有对应的 MiniApp 用户记录并返回。
+ * 确保 app_core.users 中有对应的 MiniApp 用户记录并返回。
  * 不再写 public.users，MiniApp 身份从这里开始独立。
  */
 export async function getOrCreateDbUser(tgUser: TelegramUser): Promise<MiniappDbUser> {
@@ -29,7 +29,7 @@ export async function getOrCreateMiniappUserByTgId(
   sourceId: string | null = null,
   markMiniappEntered = true
 ): Promise<MiniappDbUser> {
-  const db = getSupabaseClient().schema('miniapp');
+  const db = getDomainDb('app_core');
 
   const { data: existing, error: readErr } = await db
     .from('users')
@@ -97,8 +97,7 @@ export async function recordBotStart(
   if (user.bot_entered_at) return user;
 
   const now = new Date().toISOString();
-  const { data, error } = await getSupabaseClient()
-    .schema('miniapp')
+  const { data, error } = await getDomainDb('app_core')
     .from('users')
     .update({
       bot_entered_at: now,
@@ -119,8 +118,7 @@ export async function recordBotStart(
 
 async function markMiniappEnteredAt(userId: string): Promise<MiniappDbUser> {
   const now = new Date().toISOString();
-  const { data, error } = await getSupabaseClient()
-    .schema('miniapp')
+  const { data, error } = await getDomainDb('app_core')
     .from('users')
     .update({
       miniapp_entered_at: now,
@@ -137,8 +135,7 @@ async function markMiniappEnteredAt(userId: string): Promise<MiniappDbUser> {
 
   if (data) return data as MiniappDbUser;
 
-  const { data: current, error: readErr } = await getSupabaseClient()
-    .schema('miniapp')
+  const { data: current, error: readErr } = await getDomainDb('app_core')
     .from('users')
     .select('*')
     .eq('id', userId)

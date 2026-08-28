@@ -1,0 +1,10 @@
+role_name|db_name|setconfig
+(all roles)|postgres|app.settings.jwt_exp=3600 || TimeZone=Asia/Shanghai
+anon|(all dbs)|statement_timeout=3s
+authenticated|(all dbs)|statement_timeout=8s
+authenticator|(all dbs)|session_preload_libraries=safeupdate || statement_timeout=8s || lock_timeout=8s || pgrst.db_schemas=public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing || pgrst.db_extra_search_path=public, graphql_public, miniapp, miniapp_traffic
+postgres|(all dbs)|search_path="\$user", public, extensions
+supabase_admin|(all dbs)|search_path="$user", public, auth, extensions || log_statement=none
+supabase_auth_admin|(all dbs)|search_path=auth || idle_in_transaction_session_timeout=60000 || log_statement=none
+supabase_read_only_user|(all dbs)|default_transaction_read_only=on
+supabase_storage_admin|(all dbs)|search_path=storage || log_statement=none

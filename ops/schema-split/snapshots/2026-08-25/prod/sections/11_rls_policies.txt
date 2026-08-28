@@ -1,0 +1,5 @@
+nsp|rel|pol|pol_permissive|pol_roles|pol_cmd|pol_using|pol_check
+admin|admin_users|admin_users_read_self|PERMISSIVE|authenticated|SELECT|((user_id = auth.uid()) AND admin.is_registered_admin())|
+admin|audit_logs|audit_logs_read_permitted_environment|PERMISSIVE|authenticated|SELECT|admin.can_access_environment(environment)|
+admin|config_drafts|config_drafts_read_permitted_environment|PERMISSIVE|authenticated|SELECT|admin.can_access_environment(environment)|
+admin|config_releases|config_releases_read_permitted_environment|PERMISSIVE|authenticated|SELECT|admin.can_access_environment(environment)|
