@@ -35,6 +35,16 @@ export interface MessageVoice {
   voice_id: string;
   /** 仅 status = failed 时非空，用于前端决定提示文案 */
   error_code: string | null;
+  /**
+   * 上一版可播仍在、本次重新生成失败时的失败码。
+   *
+   * 与 error_code 互斥：status=failed 时本字段恒为 null（没有上一版可播）；
+   * status=ready 时若非空，表示当前可播的是上一版、本次重生成已失败，
+   * 前端据此在播放条下方展示提示，但播放条仍可播。
+   */
+  last_error_code: string | null;
+  /** 本次生成实扣星尘：成功为计费额度（默认 15），失败/未扣费为 0 */
+  credits_charged: number;
   created_at: string;
 }
 
@@ -45,11 +55,40 @@ export interface VoiceConfig {
   playback_rate: number;
 }
 
+export interface VoiceBillingConfig {
+  /** voice_billing_enabled：开关关闭时受理阶段不做 402 预检、后台不扣费，行为与现网一致 */
+  enabled: boolean;
+  /** 单次成功扣费额（voice_generation_credits），入口旁展示与实扣都用它 */
+  credits_per_generation: number;
+  /** 入口旁文案（voice_price_label），前端只读不写死 */
+  price_label: string;
+}
+
+export interface VoiceLimitsConfig {
+  /** 送进 TTS 的最终文本上限（voice_max_spoken_chars），自定义输入与写稿成品共用 */
+  max_spoken_chars: number;
+}
+
+export interface VoiceHintsConfig {
+  /** 终检 >300 时底部红字（voice_over_limit_hint） */
+  over_limit: string;
+  /** 写稿失败/无可朗读内容时底部小字（voice_draft_failed_hint） */
+  draft_failed: string;
+  /** TTS 失败时底部小字（voice_tts_failed_hint） */
+  tts_failed: string;
+}
+
 export interface GetVoiceConfigData {
   config: VoiceConfig;
   voices: VoiceOption[];
   /** 可选倍速档位，由后端给出，避免前端写死一份会和校验规则跑偏 */
   playback_rates: number[];
+  /** 计费配置：价格、开关、入口旁文案。前端展示价格只读这份，改价不发版 */
+  billing: VoiceBillingConfig;
+  /** 长度上限：送进 TTS 的最终文本 ≤ max_spoken_chars */
+  limits: VoiceLimitsConfig;
+  /** 失败提示文案：按 error_code 选用，避免前端写死 */
+  hints: VoiceHintsConfig;
 }
 
 /** 两个字段都可选：只传 voice_id 是换音色，只传 playback_rate 是调倍速 */
@@ -72,6 +111,30 @@ export interface GetSessionVoiceData {
  * 300 字已经是一分钟出头的音频，再长听的人不会等。
  */
 export const MAX_CUSTOM_VOICE_CHARS = 300;
+
+/**
+ * 送进 TTS 的最终文本上限。自定义输入与写稿成品共用，避免两处数字漂移。
+ *
+ * 口径与现网自定义上限一致：使用 JavaScript / PostgreSQL 的字符串长度
+ *（UTF-16 码元，中文基本一字一长度）。不按 token、不按「去掉标点后的汉字数」。
+ */
+export const MAX_SPOKEN_VOICE_CHARS = MAX_CUSTOM_VOICE_CHARS;
+
+/**
+ * 语音生成在 audio 行上落下的失败码。前端按码决定底部红字还是「可重试」。
+ *
+ * - `voice_text_too_long`：终检 >300，业务失败，不调 TTS、不扣费，提示用户删减。
+ * - `voice_draft_*`：写稿挂了或没有可朗读内容，提示「本次未生成」。
+ * - `voice_tts_*`：合成失败，提示可重试，不要用超限那句。
+ * - `voice_insufficient_balance`：仅用于前端 402 映射，一般不落 audio 行。
+ */
+export type VoiceErrorCode =
+  | 'voice_text_too_long'
+  | 'voice_draft_unusable'
+  | 'voice_draft_timeout'
+  | `voice_draft_${string}`
+  | `voice_tts_${string}`
+  | 'voice_insufficient_balance';
 
 /**
  * custom_text 为空 = 走默认链路，由写稿模型从回复正文里挑台词。
