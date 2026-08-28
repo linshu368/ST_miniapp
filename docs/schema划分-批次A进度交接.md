@@ -1,8 +1,9 @@
 # Schema 划分 · 批次进度交接（A / B / C0–C3 全部完成，一阶段已上生产）
 
 > 日期：2026-08-28（**C3 生产割接已完成**，见 §十二）  
-> 分支：`main` 已含完整 schema 适配（PR #294 合并提交 `f7295a6`）。生产库已是新形态。  
-> **一阶段割接到此结束。** 剩下的是两个遗留运维项，见 §12.7——其中「生产 Railway source 被临时固定到 GHCR 镜像」会让 `main` 不再自动部署生产，**下一次改后端前必须先处理**。
+> 分支：`main` 已含完整 schema 适配（PR #294 合并提交 `f7295a6`）与构建修复（PR #295，`015ced9`）。生产库已是新形态。  
+> **一阶段割接到此结束**，§12.5 暴露的两个阻断项也已在 PR #295 里解决（§12.7）。
+> 剩下的都是小尾巴，见 §12.9；动 Railway source / deployment trigger 之前先读 **§12.8**。
 >
 > **新窗口从这里开始读：§一 状态 → §十二 C3 记录 → §12.7 遗留项。**
 > 不要重做 C0/C1（§十）、C2（§十一）或 C3（§十二）。
@@ -32,11 +33,12 @@ API 停机约 **38 分钟**（超出预算的部分全花在 Railway 构建卡�
   experience / billing / cs_platform 五个域；库内 `miniapp.*` 残留三项全 0
 - PostgREST：`authenticator` 的 `pgrst.db_schemas` GUC 已接管，10 个 schema 全部 REST 可达
 - pg_cron job 5：已指向 `app_core.characters`，jobid 未变，11:00 那次 `succeeded`
-- 代码：`main` = `f7295a6`（PR #294），三个 Railway 生产服务都跑新代码
+- 代码：`main` = `015ced9`（PR #294 + #295），三个 Railway 生产服务都跑它，source 均跟随 `main`
 - 真实用户流量已在新 schema 上跨 experience / billing / app_core 正常读写
 
-**两个遗留项见 §12.7**，尤其：生产 `stminiapp` 的 Railway source 目前**固定在 GHCR 镜像**
-`sha-a27ed29`，不再跟随 `main` 自动部署。
+§12.5 的构建卡死与 source 漂移**都已解决**（§12.7）。**尚未闭合的是应用层验证**：
+执行计划 §五 批次 C 第 8 步那份清单里，需要鉴权的 7 项（登录、重生成/历史分页、钱包余额/充值/签到、
+收藏/许愿/通知、客服、admin、CS 页面）还没有人带登录态点过。库侧与无鉴权读路径已全绿。
 
 test 库同样是新形态（099 于 2026-08-26 18:19 提交，8.92 秒），回滚脚本已验证可用（§8.7）。
 
@@ -898,8 +900,11 @@ railway service source connect --image ghcr.io/linshu368/st-miniapp-backend:sha-
 
 > 一条实测结论，与官方文档不符，记下来省得下次重查：GraphQL 的 `serviceInstanceUpdate` 文档说
 > 非 fork 环境的更新会应用到**所有**非 fork 环境，而本项目三个环境都不是 fork。
-> 但 `railway service source connect --environment production` 实测**只改了 production**，
+> 但 `railway service source connect --image --environment production` 实测**只改了 production**，
 > `development` 仍是 `repo=linshu368/ST_miniapp`。以实测为准。
+>
+> **注意 `--image` 与 `--repo` 两条路径的行为不一样**，见 §12.8 —— `--repo` 会跨环境改
+> deployment trigger，而且会在报错的同时已经改掉一部分状态。
 
 ### 12.6 两次窗口内 cron 触发（无害，但纠正一条判断）
 
@@ -914,34 +919,85 @@ railway service source connect --image ghcr.io/linshu368/st-miniapp-backend:sha-
 两者从未争锁**。数据侧复核：`payment_orders` 468 行不变、窗口内 0 新建 0 对账、无 `pending` 订单。
 **零影响，无需补偿动作。**
 
-### 12.7 遗留项（下一个窗口/下一次动后端前处理）
+### 12.7 §12.5 的两个遗留项：**已于 2026-08-28 11:23–11:40 解决**（PR #295）
 
-1. **生产 Railway source 被固定在 GHCR 镜像**（**这一条影响后续所有后端发布**）。
-   `stminiapp` production 现在是 `image=ghcr.io/linshu368/st-miniapp-backend:sha-a27ed29`，
-   **不再跟随 `main` 自动部署**，与 `.railway/railway.ts` 声明的 `source: github(REPO, {branch:'main'})` 漂移。
+1. **`Dockerfile.backend` 的 corepack 取包** —— 已修，合并提交 `015ced9`。
+   把 `corepack prepare "pnpm@${PNPM_VERSION}" --activate` 提到 `apt-get` 那个稳定层
+   （该层输入只有基础镜像和 `PNPM_VERSION`，tarball 只取一次并长期命中缓存）；
+   加 `timeout 180 ... || 重试一次`（观测到的失败是 **STALL 不是 error**，没有超时就没有可失败可重试的东西）；
+   加 `ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0`；并新增断言——`ARG PNPM_VERSION` 与根
+   `package.json` 的 `packageManager` 不一致即构建失败，防止漂移把下载放回易失层。
 
-   > **最危险的后果是版本错位，不是「发不出去」。** 两个 payment cron 的 source **仍跟随 `main`**
-   > （实测 `repo=linshu368/ST_miniapp`）。所以下一次有人合 `main`：两个 cron 会换上新代码，
-   > 而 backend 仍停在 `sha-a27ed29`。它们共用 `payment_orders` 与同一套 repository，
-   > 一旦那次改动涉及支付/计费的表结构或字段语义，就会出现「cron 用新契约、API 用旧契约」的
-   > 静默不一致。**在改回 source 之前，不要往 `main` 合任何涉及后端的改动。**
+   三处独立验证：Railway `development` 构建 **76 秒**成功、GitHub Actions amd64、
+   `Verify multi-arch manifests` 绿（arm64/QEMU）。随后生产从 `main` 构建 `015ced9`
+   **1–2 分钟**成功（对照此前两次约 20 分钟卡死）。
 
-   直接改回去会立刻触发一次构建，可能再次卡死，所以顺序是：**先解决 §12.5 的构建问题，再改回**：
+2. **生产 source 漂移** —— 已恢复：`source = {repo: linshu368/ST_miniapp, image: None}`，
+   production 的 deployment trigger 为 `branch=main`，三个服务都跑 `015ced9`，`/health` 200。
 
-   ```bash
-   railway service source connect --repo linshu368/ST_miniapp --branch main \
-     --service stminiapp --environment production
-   ```
+> **一条重要更正。** 本节原来写着「生产不再跟随 `main` 自动部署」，还据此警告过
+> 「backend 与支付 cron 版本错位」。**这是错的，不要再引用。** `--image` 改的只是
+> `ServiceSource`，**GitHub 的 deployment trigger 一直存在且有效**：合并 PR #295 之后生产
+> 立刻自动从 `main` 构建部署了 `015ced9`（`reason=deploy`、`branch=main`、`image=None`），
+> 而那时 `source` 字段还写着镜像。所以当时真实的状态是「source 字段与实际部署路径不一致」的
+> 混合态，而不是「发不出去」；版本错位的风险从未成立。
 
-2. **`Dockerfile.backend` 的 corepack 取包在 Railway 上不可靠**（§12.5）。两个方向，都还没做：
-   - 把 `corepack prepare pnpm@9.15.9 --activate` 挪进 `apt-get` 那个**稳定层**。
-     现在下载发生在 `pnpm install` 层里，而该层被每次源码变更打穿，等于每次构建都重下一遍；
-     挪进稳定层之后只下一次、之后一直命中缓存。
-   - 加 `ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0`（消除任何 prompt 相关分支）。
-     注意文件头把「corepack pnpm@9.15.9」列为继承自 M1 的硬约束，动它要连注释一起改。
-     改完在 Railway 上真跑一次构建验证，别只看 GitHub Actions 绿。
+### 12.8 `railway service source connect --repo` 的一个坑（我踩了，记下来）
 
-另外两条不影响运行、只是别再重查：
+把 source 接回仓库时执行：
 
+```bash
+railway service source connect --repo linshu368/ST_miniapp --branch main \
+  --service stminiapp --environment production
+```
+
+它**报错 `ServiceInstance not found` 并 exit 1，但已经改掉了一部分状态**：service 级的
+`ServiceSource` 被写成了目标 repo，同时按 `--branch` 更新了**其它环境**的 deployment trigger——
+`development` 的 `stminiapp` 触发器被从 `dev` 改成了 `main`（CLI 帮助里那句
+"GitHub sources are connected at the **service** level and create deployment triggers for
+matching project environments" 就是在说这件事，`-e` 只用于「定位服务」）。
+
+结果是 `development` 误从 `main` 部署了一次。已用 GraphQL 按环境精确改回：
+
+```bash
+railway api 'mutation { deploymentTriggerUpdate(id: "<trigger-id>", input: { branch: "dev" }) { id branch } }'
+```
+
+trigger id 从这里取（`ServiceSource` 上**没有** `branch` 字段，分支只存在 trigger 里）：
+
+```bash
+railway api 'query { project(id: "<pid>") { deploymentTriggers { edges { node { id branch repository environmentId serviceId } } } } }'
+```
+
+**下次动 source，用 `deploymentTriggerUpdate` 按 trigger id 精确改，不要用
+`service source connect --repo`；`--image` 那条路径倒是只影响指定环境。**
+改完务必把全部 trigger 列一遍复核。当时 `development` 那次误部署的代码与 `dev` tip
+tree 完全相同（`git diff 874f119 015ced9` 为空），所以没有实际影响，未做补部署。
+
+期望的 trigger 全貌（2026-08-28 复核后）：
+
+| 环境        | 服务                               | branch |
+| ----------- | ---------------------------------- | ------ |
+| production  | `stminiapp`                        | `main` |
+| production  | `stminiapp-payment-cron`           | `main` |
+| production  | `stminiapp-payment-reconcile-cron` | `main` |
+| development | `stminiapp`                        | `dev`  |
+| development | `stminiapp-payment-cron`           | `dev`  |
+
+`development` **没有** `stminiapp-payment-reconcile-cron` 的 trigger，这是**既有状态不是本次改坏的**：
+PR #294 在我动 source 之前的 Railway 检查就只有 `stminiapp` 和 `stminiapp-payment-cron` 两条。
+要不要给 development 补这个 cron，另行决定。
+
+### 12.9 剩下的小遗留
+
+- **陈旧环境 `pr-276`**：PR 276 已于 2026-08-21 合并，该环境**无任何部署记录**，但仍留着一条
+  `stminiapp` / `branch=main` 的 deployment trigger。也就是说下次推 `main` 可能在这个废弃环境里
+  拉起一个服务（浪费与噪音，不涉及生产；它的变量继承自 `development`，指向 test 库）。
+  这条 `main` 是否是 §12.8 那次误操作改的**无法证实**——我的改动（03:37）晚于 #295 合并（03:33），
+  没有可对比的部署记录。建议删掉这条 trigger 或整个环境，需人确认。
+- `Dockerfile.frontend` 有**同样的隐式取包写法**（只 `corepack enable`，不 `prepare`）。
+  它只在 `staging-*` tag 构建、CI 平时不覆盖，所以本次没动——但同一个坑还在那里。
+- 下一次窗口前检查会看到 `origin/dev..origin/main` **有 2 条输出**（`f7295a6` / `015ced9` 两个合并提交）。
+  这是 merge-commit 工作流的正常现象，两侧 tree 相同（`git diff 874f119 015ced9` 为空），不是漂移。
 - §11.5 的 097 checksum 漂移仍然成立。
 - §11.6 的 test `miniapp_fdw` 列数陈旧仍然成立。
