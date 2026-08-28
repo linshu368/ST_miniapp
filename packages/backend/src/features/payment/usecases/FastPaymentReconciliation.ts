@@ -8,7 +8,8 @@ import { settlePaidOrder, type SettlementLogger } from './PaymentSettlement.js';
 const RECONCILE_BATCH_SIZE = 10;
 const RECONCILE_CONCURRENCY = 5;
 const RECONCILE_LEASE_MS = 2 * 60 * 1000;
-const SECOND_RECONCILE_DELAY_MS = 30 * 1000;
+/** 常驻 worker 每轮查单后的间隔。Railway cron 最短 5 分钟，60～90 秒目标只能靠进程内循环。 */
+export const FAST_RECONCILE_LOOP_DELAY_MS = 30 * 1000;
 const SECOND_ATTEMPT_DELAY_MS = 2 * 60 * 1000;
 const LATER_ATTEMPT_DELAY_MS = 5 * 60 * 1000;
 
@@ -188,22 +189,26 @@ async function releaseForRetry(
   });
 }
 
-export async function runDualPassFastPaymentReconciliation(input: {
+export async function runFastPaymentReconciliationLoop(input: {
   runPass: () => Promise<FastPaymentReconciliationResult>;
-  sleep: (milliseconds: number) => Promise<void>;
-  now?: () => number;
-}): Promise<FastPaymentReconciliationResult> {
-  const now = input.now ?? Date.now;
-  const firstStartedAt = now();
-  const first = await input.runPass();
-  await input.sleep(Math.max(0, firstStartedAt + SECOND_RECONCILE_DELAY_MS - now()));
-  const second = await input.runPass();
-
-  return {
-    checked: first.checked + second.checked,
-    claimed: first.claimed + second.claimed,
-    settled: first.settled + second.settled,
-    unpaid: first.unpaid + second.unpaid,
-    failed: first.failed + second.failed,
-  };
+  sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
+  signal: AbortSignal;
+  onPass: (result: FastPaymentReconciliationResult) => void;
+  onError: (error: unknown) => void;
+}): Promise<void> {
+  while (!input.signal.aborted) {
+    try {
+      input.onPass(await input.runPass());
+    } catch (error) {
+      if (input.signal.aborted) return;
+      input.onError(error);
+    }
+    if (input.signal.aborted) return;
+    try {
+      await input.sleep(FAST_RECONCILE_LOOP_DELAY_MS, input.signal);
+    } catch (error) {
+      if (input.signal.aborted) return;
+      throw error;
+    }
+  }
 }

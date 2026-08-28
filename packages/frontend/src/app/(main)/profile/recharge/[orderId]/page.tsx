@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ChevronLeft, Clock, Loader2, XCircle } from 'lucide-react';
-import type { PaymentOrder } from '@miniapp/shared';
+import { DEFAULT_RECHARGE_PAGE_CONFIG, type PaymentOrder } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
 
 import { cn } from '@/lib/utils';
-import { paymentKeys, usePaymentOrderQuery } from '@/lib/api/payment';
+import { paymentKeys, usePaymentOrderQuery, usePaymentPlansQuery } from '@/lib/api/payment';
 import {
   formatCountdown,
   formatNumber,
@@ -47,7 +47,11 @@ export default function PaymentPendingPage() {
 
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = usePaymentOrderQuery(orderId);
+  const { data: plansData } = usePaymentPlansQuery();
   const order = data?.order;
+  const pendingArrivalHint =
+    plansData?.page_config.pending_arrival_hint ??
+    DEFAULT_RECHARGE_PAGE_CONFIG.pending_arrival_hint;
 
   const { notification } = useHaptic();
   const [congratsFired, setCongratsFired] = useState(false);
@@ -113,7 +117,13 @@ export default function PaymentPendingPage() {
 
       <div className="flex flex-1 flex-col px-5 pb-10 pt-4">
         {order.status === 'pending' ? (
-          <PendingView order={order} remaining={remaining} payUrl={payUrl} onBack={goBack} />
+          <PendingView
+            order={order}
+            remaining={remaining}
+            payUrl={payUrl}
+            onBack={goBack}
+            arrivalHint={pendingArrivalHint}
+          />
         ) : order.status === 'completed' ? (
           <CompletedView
             order={order}
@@ -169,11 +179,13 @@ function PendingView({
   remaining,
   payUrl,
   onBack,
+  arrivalHint,
 }: {
   order: PaymentOrder;
   remaining: number;
   payUrl: string | null;
   onBack: () => void;
+  arrivalHint: string;
 }) {
   const total = order.credits_amount + order.bonus_credits;
   return (
@@ -187,9 +199,7 @@ function PendingView({
 
       <div className="text-center">
         <h1 className="text-xl font-bold">正在等待支付</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          完成付款后积分将自动到账，通常不超过 10 秒
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{arrivalHint}</p>
       </div>
 
       <div className="w-full rounded-2xl border border-border bg-card p-5">

@@ -224,6 +224,95 @@ function isRecentTimestamp(value: string | undefined): boolean {
 
 ---
 
+## 3.1 回调监控（已实现，2026-08-27）
+
+监控每日「当天创建且已入账」的订单：入账路径分布、cron 查单成功率、cron 追回耗时。
+
+**为什么不是一套仪表盘。** 前两问的数据源不同：路径分布和耗时是订单状态，落在订单行上用一条
+SQL 就够；查单成功率是尝试流，**查单失败的订单永远不会变成 completed**，订单表上根本没有
+「失败」这件事，只能看 cron 的汇总日志。硬做成一个看板要先建日志管道，日均十几笔的量级不值得。
+
+### source 取值只有四种
+
+`webhook | return | query | cron`，定义在 `packages/shared/src/api/payment.ts` 的
+`PaymentSettlementSource`，日志 `source` 字段与 `payment_orders.settled_by` 列共用它。
+**没有 `core`**——口头说的 core 指 Railway 上那两个 cron 服务
+（`stminiapp-payment-reconcile-cron` 快速查单 / `stminiapp-payment-cron` 过期兜底），
+两者的查单与入账都记 `source=cron`，在日志和日报里不区分。
+
+### Q1 路径分布 / Q3 cron 追回耗时 → 订单表
+
+migration 103 给订单加了 `settled_by`，在 `complete_payment_order` 里与翻状态同一个事务写入，
+只有真正入账那一次写。重复确认走 `credits_added` 幂等的提前返回、不覆盖，所以两条路径抢同一笔
+（本文 §1.1 记的那种）在日报里只算先到的那条一笔，不会双计。
+
+```bash
+pnpm exec railway run -e production -s stminiapp -- \
+  pnpm --filter @miniapp/backend payment:callback-report
+```
+
+只读，不查厂商也不写库，随时可对生产跑。`-- --days-ago=1` 看昨天（日报在 00:xx 跑时要的就是它），
+`-- --json` 出机器可读结果。输出形如：
+
+```text
+支付回调日报 2026-08-27 (CST)  2026-08-26T16:00:00.000Z → 2026-08-27T16:00:00.000Z
+当天建单 7 笔｜已入账 5 笔（71.4%）｜金额 174.00 元
+订单状态 pending=1 completed=5 expired=1 failed=0
+
+入账路径            笔数     占比     平均耗时     最长耗时     金额(元)
+webhook                0     0.0%            -            -         0.00
+return                 1    20.0%        31.0s        31.0s       128.00
+query                  1    20.0%        42.0s        42.0s         6.00
+cron                   2    40.0%        87.5s        95.0s        34.00
+unknown                1    20.0%       120.0s       120.0s         6.00
+```
+
+口径三条，看数前先对齐：
+
+- **划天按 `created_at`（CST）**，问的是「当天下的单最后由哪条路径入账」。跨天才追回的订单仍归
+  下单那天，否则兜底路径的耗时会被算到第二天去。
+- **耗时是 `paid_at - created_at`**，即建单到入账，**含用户付款前的停留时间**。厂商的真实支付时刻
+  本地没有，这是现有数据能做到的最稳口径。快速 cron 正常时 `cron` 行应落在 60–90 秒。
+- **`unknown` 是 101 之前入账的历史订单**，来源无法追溯，单列一行不摊进四条路径。上线满一天后
+  当天订单里不该再出现它。
+
+### Q2 cron 查单成功率 → cron 汇总日志
+
+快速 cron 每轮打一条 `payment.fast_cron.reconciled`，带
+`checked / claimed / settled / unpaid / failed`：
+
+```bash
+railway logs -e production -s stminiapp-payment-reconcile-cron --json --since 24h \
+  | jq -s '[.[] | select(.event == "payment.fast_cron.reconciled")]
+           | {claimed: (map(.claimed) | add), settled: (map(.settled) | add),
+              unpaid: (map(.unpaid) | add), failed: (map(.failed) | add)}
+           | . + {failure_rate: (if .claimed > 0 then .failed / .claimed else 0 end)}'
+```
+
+- **查单失败率** = `failed / claimed`
+- **`unpaid` 不算失败**——那是「查通了，用户还没付」。绝大多数轮次都是 unpaid 占满，把它算进
+  失败会得出一个恒定 90% 以上的假失败率
+- 过期 cron 的 `payment.cron.reconciled` 也已补上 `failed`，两个服务同口径
+
+失败率是本清单 P0-2 护栏的输入信号：样本 ≥5 且失败过半时 cron 会跳过判过期并打
+`payment.cron.expiry_skipped`。日报里看到失败率抬头，先查 §5.1 的出口 IP / WAF 一类环境差异。
+
+### 上线顺序：迁移必须先于代码
+
+1. 先执行 `packages/shared/migrations/103_payment_settled_by.sql`（test、production 各一次）。
+   它自己探测订单表在 `miniapp` 还是 `billing`，两个环境同一份文件，与 099 排期解耦。
+2. 再部署代码。
+
+**顺序不能反。** 103 把入账函数换成三参签名，第三参 `DEFAULT NULL`，所以**迁移先跑、旧代码还在
+线上时照样能入账**（只是 `settled_by` 留空）；反过来先发代码，RPC 带着 `p_settled_by` 打到只有
+两参的函数上，四条入账路径会一起失败——那正是本文要修的故障。
+
+新旧签名不能共存（两参调用会因重载而歧义，099 preflight 也拒绝同名重载），所以 101 把建新函数和
+删旧函数放在同一个 DO 块里，一个事务内完成。迁移末尾的 `NOTIFY pgrst, 'reload schema'` 是让
+PostgREST 丢掉缓存的两参签名，漏掉它 rpc 调用会继续按旧签名解析。
+
+---
+
 ## 4. 分支与排序约束
 
 当前拓扑：`origin/main` 完整包含在 `origin/dev` 中，`dev` 领先 11 个提交。
@@ -284,6 +373,7 @@ function isRecentTimestamp(value: string | undefined): boolean {
 
 ## 变更记录
 
-| 日期       | 内容                                                                                         |
-| ---------- | -------------------------------------------------------------------------------------------- |
-| 2026-08-27 | 立项。手工补账 2 笔（¥28 + ¥6），cron 逻辑完成生产首次验证，清理 197 笔历史积压 pending 订单 |
+| 日期       | 内容                                                                                                                 |
+| ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-27 | 立项。手工补账 2 笔（¥28 + ¥6），cron 逻辑完成生产首次验证，清理 197 笔历史积压 pending 订单                         |
+| 2026-08-27 | 补回调监控（§3.1）：migration 103 落 `settled_by`，新增只读日报 `payment:callback-report`，过期 cron 汇总补 `failed` |

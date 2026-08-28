@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_PENDING_ARRIVAL_HINT,
   PaymentPlansSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
@@ -45,7 +46,7 @@ describe('RechargePageConfigSchema', () => {
     ).toMatchObject({ theme_color: '#ec4899' });
   });
 
-  it('fills independent component colors for legacy page configurations', () => {
+  it('fills independent component colors and pending hint for legacy page configurations', () => {
     expect(
       RechargePageConfigSchema.parse({
         title: '星尘商店',
@@ -58,6 +59,7 @@ describe('RechargePageConfigSchema', () => {
       selected_plan_color: '#f59e0b',
       badge_color: '#6366f1',
       button_color: '#ec4899',
+      pending_arrival_hint: DEFAULT_PENDING_ARRIVAL_HINT,
     });
   });
 
@@ -68,6 +70,15 @@ describe('RechargePageConfigSchema', () => {
         description: '说明',
         button_text: '支付',
         theme_color: 'pink',
+      }).success
+    ).toBe(false);
+    expect(
+      RechargePageConfigSchema.safeParse({
+        title: '星尘商店',
+        description: '说明',
+        button_text: '支付',
+        theme_color: '#112233',
+        pending_arrival_hint: '',
       }).success
     ).toBe(false);
   });
