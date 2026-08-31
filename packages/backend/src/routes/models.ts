@@ -127,6 +127,13 @@ export default async function modelsRoutes(app: FastifyInstance) {
               },
               'paid model selection blocked by insufficient balance'
             );
+            // 这次拒绝会让前端跳充值页，计数落钱包行；失败只记日志，不能影响 402 返回
+            void wallets.incrementInsufficientBalanceRedirect(dbUser.id).catch((err: unknown) => {
+              log.sys.warn(
+                { event: 'models.select.redirect_count_failed', err, userId: dbUser.id },
+                'failed to record insufficient balance redirect'
+              );
+            });
             return reply
               .status(402)
               .send(fail('INSUFFICIENT_CREDITS', '星尘余额不足，请先充值后再切换付费模型'));

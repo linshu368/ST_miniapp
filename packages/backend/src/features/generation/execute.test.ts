@@ -28,6 +28,9 @@ vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
     async getOrCreate() {
       return { total_credits: walletBalance, main_credits: walletBalance, bonus_credits: 0 };
     }
+    async incrementInsufficientBalanceRedirect() {
+      // 余额不足分支 fire-and-forget 调用，测试里空实现即可
+    }
   },
 }));
 

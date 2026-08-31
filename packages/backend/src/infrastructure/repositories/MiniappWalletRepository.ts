@@ -8,6 +8,8 @@ export interface MiniappWalletRow {
   main_credits: number;
   bonus_credits: number;
   total_credits: number | null;
+  /** 因星尘不足被 402 拦下（前端随即跳充值页）的累计次数（migration 105） */
+  insufficient_balance_redirect_count: number;
   first_paid_at: string | null;
   last_paid_at: string | null;
   total_paid_amount: string | number;
@@ -17,11 +19,13 @@ export interface MiniappWalletRow {
 
 type RawMiniappWalletRow = Omit<
   MiniappWalletRow,
-  'main_credits' | 'bonus_credits' | 'total_credits'
+  'main_credits' | 'bonus_credits' | 'total_credits' | 'insufficient_balance_redirect_count'
 > & {
   main_credits: NumericValue;
   bonus_credits: NumericValue;
   total_credits: NumericValue | null;
+  /** 迁移 105 未执行的环境查不到这一列，按 0 兜底 */
+  insufficient_balance_redirect_count?: NumericValue | null;
 };
 
 interface WalletRpcResult {
@@ -127,6 +131,17 @@ export class MiniappWalletRepository {
 
     if (error) throw new Error(`查询 MiniApp 钱包失败：${error.message}`);
     return data ? normalizeWallet(data as RawMiniappWalletRow) : null;
+  }
+
+  /**
+   * 余额不足拦截计数 +1。调用方在返回 402 前 fire-and-forget 调用，
+   * 失败由调用方记日志，不得影响 402 响应本身。
+   */
+  async incrementInsufficientBalanceRedirect(userId: string): Promise<void> {
+    const { error } = await this.db.rpc('increment_insufficient_balance_redirect', {
+      p_user_id: userId,
+    });
+    if (error) throw new Error(`记录余额不足拦截次数失败：${error.message}`);
   }
 
   async deduct(userId: string, amount: number): Promise<MiniappWalletRow> {
@@ -322,6 +337,10 @@ function normalizeWallet(row: RawMiniappWalletRow): MiniappWalletRow {
     main_credits: toNumber(row.main_credits),
     bonus_credits: toNumber(row.bonus_credits),
     total_credits: row.total_credits === null ? null : toNumber(row.total_credits),
+    insufficient_balance_redirect_count:
+      row.insufficient_balance_redirect_count == null
+        ? 0
+        : toNumber(row.insufficient_balance_redirect_count),
   };
 }
 

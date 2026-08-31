@@ -128,6 +128,15 @@ export async function checkWalletBalance(input: {
       },
       'insufficient balance'
     );
+    // 这次拒绝会让前端跳充值页，计数落钱包行；失败只记日志，不能影响 402 返回
+    void wallets()
+      .incrementInsufficientBalanceRedirect(userId)
+      .catch((err: unknown) => {
+        log.sys.warn(
+          { event: 'llm.balance.redirect_count_failed', err, userId },
+          'failed to record insufficient balance redirect'
+        );
+      });
     return { ok: false, creditsRequired: requiredAmount, creditsAvailable: balance };
   }
 
