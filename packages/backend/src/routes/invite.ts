@@ -34,6 +34,19 @@ const CENTER_CONFIG_KEY = 'miniapp_invite_center_config';
 /** 与 105 迁移中 invite_codes.code 的 CHECK 一致；大小写在 RPC 内归一。 */
 const INVITE_CODE_RE = /^[A-Za-z0-9]{8}$/;
 
+/**
+ * 把请求体里的 invite_code 收窄成"可安全交给 RPC 的码"，否则返回 null。
+ *
+ * 客户端可能送来任意 JSON 类型（数字、对象、null）：先判 string 再 trim，
+ * 不然非字符串会在 .trim() 处抛 TypeError 变成 500。调用方对 null 统一按
+ * invalid_code 返回——这是终态，前端不会重试。
+ */
+export function normalizeInviteCode(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return INVITE_CODE_RE.test(trimmed) ? trimmed : null;
+}
+
 const RECENT_REWARDS_LIMIT = 10;
 
 interface InviteCenterConfigValue {
@@ -126,8 +139,8 @@ export default async function inviteRoutes(app: FastifyInstance) {
     }
 
     const body = (request.body ?? {}) as Partial<InviteBindRequest>;
-    const inviteCode = (body.invite_code ?? '').trim();
-    if (!INVITE_CODE_RE.test(inviteCode)) {
+    const inviteCode = normalizeInviteCode(body.invite_code);
+    if (inviteCode === null) {
       return reply.send(ok<InviteBindData>({ status: 'invalid_code' }));
     }
 
