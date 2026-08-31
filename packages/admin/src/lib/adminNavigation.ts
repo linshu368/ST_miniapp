@@ -3,6 +3,7 @@ import { managedConfigKeys, type ManagedConfigKey } from './configSchemas';
 export type AdminViewKey =
   | 'configs'
   | 'outreach_credit_grant'
+  | 'invite_program'
   | 'characters'
   | 'announcements'
   | 'releases';
@@ -25,6 +26,7 @@ export function resolveAdminMenuSelection(key: string): {
   }
   if (
     key === 'outreach_credit_grant' ||
+    key === 'invite_program' ||
     key === 'characters' ||
     key === 'announcements' ||
     key === 'releases'

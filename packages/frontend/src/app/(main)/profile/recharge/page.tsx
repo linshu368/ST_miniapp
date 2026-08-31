@@ -3,7 +3,16 @@
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertCircle, ChevronLeft, History, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
+import {
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Gem,
+  History,
+  Receipt,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
 import {
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
@@ -26,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
+import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
@@ -51,6 +61,10 @@ function RechargePageContent() {
 
   const { data, isLoading, isError, refetch } = usePaymentPlansQuery();
   const createOrder = useCreatePaymentOrderMutation();
+  const inviteEntry = useInviteEntryStatusQuery();
+  const inviteEntryEnabled = inviteEntry.data?.entry_enabled === true;
+
+  const goInviteCenter = useCallback(() => router.push('/profile/invite'), [router]);
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
@@ -209,6 +223,30 @@ function RechargePageContent() {
           )}
         </section>
 
+        {/* 邀请快捷入口：套餐列表下方、支付安全说明上方（PRD 拍板位置），直达邀请中心无中间确认页 */}
+        {inviteEntryEnabled ? (
+          <section className="pb-3">
+            <button
+              type="button"
+              onClick={goInviteCenter}
+              className="relative flex w-full items-center gap-3 overflow-hidden rounded-[20px] border border-rose/30 bg-[linear-gradient(135deg,hsl(var(--rose)/0.12)_0%,hsl(var(--rose-fill)/0.12)_100%)] px-4 py-3 text-left transition hover:border-rose/45"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-rose to-rose-fill text-primary-foreground shadow-[0_4px_12px_hsl(var(--rose-fill)/0.4)]">
+                <Gem className="h-4 w-4" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-black text-foreground">
+                  邀请好友得 2200 星尘
+                </span>
+                <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                  分享专属链接，好友首次登录后建立邀请关系
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-rose" aria-hidden />
+            </button>
+          </section>
+        ) : null}
+
         <section className="flex justify-center">
           <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70">
             <ShieldCheck className="h-3 w-3 text-success" aria-hidden />
@@ -348,7 +386,7 @@ function RechargePageContent() {
               {data?.insufficient_credits_notice}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
             <DialogClose asChild>
               <Button
                 className="w-full rounded-xl font-bold text-primary-foreground"
@@ -357,6 +395,19 @@ function RechargePageContent() {
                 选择套餐
               </Button>
             </DialogClose>
+            {inviteEntryEnabled ? (
+              <Button
+                variant="outline"
+                className="w-full rounded-xl border-rose/40 bg-transparent font-bold text-rose hover:bg-rose/10 hover:text-rose"
+                onClick={() => {
+                  // PRD：关闭当前提示并直接进入邀请中心
+                  setNoticeDismissed(true);
+                  goInviteCenter();
+                }}
+              >
+                邀请好友得星尘
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>

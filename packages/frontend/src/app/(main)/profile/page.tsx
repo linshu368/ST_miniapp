@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Bell,
   Check,
+  Gem,
   Gift,
   Headphones,
   ImageUp,
@@ -23,6 +24,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 
 import { useDailyCheckinMutation, useDailyCheckinQuery, useWalletCredits } from '@/lib/api/payment';
+import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
 import {
@@ -48,6 +50,7 @@ export default function ProfilePage() {
   const checkinQ = useDailyCheckinQuery();
   const checkin = checkinQ.data?.checkin;
   const claimCheckin = useDailyCheckinMutation();
+  const inviteEntry = useInviteEntryStatusQuery();
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -386,6 +389,44 @@ export default function ProfilePage() {
           </div>
         </div>
       </section>
+
+      {/* 邀请中心：裂变优先入口，位于余额卡与常规列表之间（PRD：星尘余额下方）。
+          显隐由运营总开关控制；"2200星尘"提醒标签在首次进入邀请中心后由服务端字段翻转消失 */}
+      {inviteEntry.data?.entry_enabled ? (
+        <section className="relative z-10 mt-4 px-5">
+          <Link
+            href="/profile/invite"
+            className="relative flex items-center gap-3.5 overflow-hidden rounded-[22px] border border-rose/25 bg-card px-4 py-3.5 transition hover:border-rose/40 hover:bg-secondary"
+          >
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[radial-gradient(circle,hsl(var(--rose)/0.18),transparent_68%)]"
+            />
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose/25 to-rose-fill/25 text-rose">
+              <Gem className="h-[18px] w-[18px]" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2">
+                <span className="truncate text-[15px] font-bold tracking-tight text-foreground">
+                  邀请中心
+                </span>
+                {inviteEntry.data.center_entered ? null : (
+                  <span className="shrink-0 rounded-full bg-gradient-to-r from-rose to-rose-fill px-2 py-0.5 text-[10px] font-black italic text-primary-foreground shadow-sm">
+                    2200星尘
+                  </span>
+                )}
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                分享专属链接，邀请好友得2200星尘
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1 text-[12px] font-bold text-primary">
+              去邀请
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </span>
+          </Link>
+        </section>
+      ) : null}
 
       <section className="relative z-10 mt-4 flex flex-col gap-2.5 px-5">
         <ProfileRow

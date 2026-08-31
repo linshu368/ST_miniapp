@@ -34,6 +34,7 @@ import { ConfigValueEditor } from './components/ConfigValueEditor';
 import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { AnnouncementsView } from './components/AnnouncementsView';
+import { InviteProgramView } from './components/InviteProgramView';
 import { OutreachCreditGrantView } from './components/OutreachCreditGrantView';
 import {
   discardDraft,
@@ -767,6 +768,7 @@ function AdminWorkspace(props: {
                   label: configMetadata[key].label,
                 })),
                 { key: 'outreach_credit_grant', label: '回访星尘赠送' },
+                { key: 'invite_program', label: '裂变邀请管理' },
               ],
             },
             { key: 'characters', label: '角色卡' },
@@ -831,6 +833,15 @@ function AdminWorkspace(props: {
               client={props.client}
               environment={props.environment}
               canWrite={canWrite}
+            />
+          ) : view === 'invite_program' ? (
+            <InviteProgramView
+              client={props.client}
+              environment={props.environment}
+              onOpenConfig={(key) => {
+                setSelectedKey(key);
+                setView('configs');
+              }}
             />
           ) : view === 'configs' ? (
             <Card
