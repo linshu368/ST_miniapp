@@ -160,7 +160,6 @@ export async function runConversationTurn(
     userInput: turn.userInput,
     sessionId: session.id,
     historyId: turn.historyId,
-    presetId: null,
     stream: true,
     // 决策 11：cache_control 断点只在自研链路开，ST 链路传 false 保住 M3a 的纯重构判据
     promptCaching: true,

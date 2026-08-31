@@ -9,6 +9,12 @@ export type PaymentType = 'alipay' | 'wxpay';
 /** 与老 Bot 后端 payment_orders.payment_status 保持一致：pending → completed / expired / failed */
 export type PaymentOrderStatus = 'pending' | 'completed' | 'expired' | 'failed';
 
+/**
+ * 入账路径。四条路径共用同一条结算逻辑，谁先确认支付由谁入账。
+ * 取值同时用于日志 `source` 字段和 `payment_orders.settled_by` 列，不能各自定义。
+ */
+export type PaymentSettlementSource = 'webhook' | 'return' | 'query' | 'cron';
+
 /** 套餐视觉变体，驱动 4 档层级样式（entry 降权 / standard / recommended 主推 / premium 大户） */
 export type PaymentPlanVariant = 'entry' | 'standard' | 'recommended' | 'premium';
 
@@ -61,6 +67,8 @@ export const PaymentPlansSchema = z
     }
   });
 
+export const DEFAULT_PENDING_ARRIVAL_HINT = '完成付款后积分将自动到账，通常不超过 3 分钟';
+
 export const RechargePageConfigSchema = z.object({
   title: z.string().trim().min(1).max(30),
   description: z.string().trim().min(1).max(120),
@@ -82,6 +90,8 @@ export const RechargePageConfigSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .default('#ec4899'),
+  /** 订单等待页提示：付款后积分到账时效。缺省兼容旧配置。 */
+  pending_arrival_hint: z.string().trim().min(1).max(80).default(DEFAULT_PENDING_ARRIVAL_HINT),
 });
 
 export type RechargePageConfig = z.infer<typeof RechargePageConfigSchema>;
@@ -95,6 +105,7 @@ export const DEFAULT_RECHARGE_PAGE_CONFIG: RechargePageConfig = {
   selected_plan_color: '#f59e0b',
   badge_color: '#6366f1',
   button_color: '#ec4899',
+  pending_arrival_hint: DEFAULT_PENDING_ARRIVAL_HINT,
 };
 
 export const PaymentPromptDialogConfigSchema = z.object({

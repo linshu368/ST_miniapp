@@ -1,0 +1,176 @@
+nsp|rel|con_name|con_type|con_refs|con_def
+admin|admin_users|admin_users_email_check|c||CHECK ((char_length(TRIM(BOTH FROM email)) > 0))
+admin|admin_users|admin_users_role_check|c||CHECK ((role = ANY (ARRAY['owner'::text, 'operator'::text, 'viewer'::text])))
+admin|admin_users|admin_users_user_id_fkey|f|auth.users|FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+admin|admin_users|admin_users_pkey|p||PRIMARY KEY (user_id)
+admin|audit_logs|audit_logs_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|audit_logs|audit_logs_actor_user_id_fkey|f|admin.admin_users|FOREIGN KEY (actor_user_id) REFERENCES admin.admin_users(user_id) ON DELETE SET NULL
+admin|audit_logs|audit_logs_pkey|p||PRIMARY KEY (id)
+admin|character_layout_drafts|character_layout_drafts_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|character_layout_drafts|character_layout_drafts_status_check|c||CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))
+admin|character_layout_drafts|character_layout_drafts_created_by_fkey|f|admin.admin_users|FOREIGN KEY (created_by) REFERENCES admin.admin_users(user_id)
+admin|character_layout_drafts|character_layout_drafts_updated_by_fkey|f|admin.admin_users|FOREIGN KEY (updated_by) REFERENCES admin.admin_users(user_id)
+admin|character_layout_drafts|character_layout_drafts_pkey|p||PRIMARY KEY (id)
+admin|character_layout_releases|character_layout_releases_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|character_layout_releases|character_layout_releases_release_kind_check|c||CHECK ((release_kind = ANY (ARRAY['baseline'::text, 'publish'::text, 'rollback'::text])))
+admin|character_layout_releases|character_layout_releases_released_by_fkey|f|admin.admin_users|FOREIGN KEY (released_by) REFERENCES admin.admin_users(user_id)
+admin|character_layout_releases|character_layout_releases_rollback_target_fkey|f|admin.character_layout_releases|FOREIGN KEY (rollback_target_release_id) REFERENCES admin.character_layout_releases(id) ON DELETE SET NULL
+admin|character_layout_releases|character_layout_releases_source_draft_id_fkey|f|admin.character_layout_drafts|FOREIGN KEY (source_draft_id) REFERENCES admin.character_layout_drafts(id)
+admin|character_layout_releases|character_layout_releases_pkey|p||PRIMARY KEY (id)
+admin|character_layout_releases|character_layout_releases_environment_layout_version_key|u||UNIQUE (environment, layout_version)
+admin|character_layout_state|character_layout_state_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|character_layout_state|character_layout_state_pkey|p||PRIMARY KEY (environment)
+admin|config_drafts|config_drafts_base_version_check|c||CHECK ((base_version >= 0))
+admin|config_drafts|config_drafts_check|c||CHECK (((value IS NOT NULL) OR (text_value IS NOT NULL)))
+admin|config_drafts|config_drafts_config_key_check|c||CHECK ((config_key = ANY (ARRAY['miniapp_new_user_signup_bonus_credits'::text, 'miniapp_daily_checkin_bonus_credits'::text, 'miniapp_character_free_chat_quota_limit'::text, 'miniapp_payment_plans'::text, 'miniapp_recharge_page_config'::text, 'miniapp_payment_prompt_dialog_config'::text, 'miniapp_free_quota_exhausted_dialog_config'::text, 'llm_model_catalog'::text, 'llm_pricing_config'::text, 'system_fallback_character_id'::text, 'system_instructions'::text, 'pref_word_count_tiers'::text, 'lobby_ranking_params'::text, 'lobby_pinned_characters'::text])))
+admin|config_drafts|config_drafts_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|config_drafts|config_drafts_status_check|c||CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))
+admin|config_drafts|config_drafts_created_by_fkey|f|admin.admin_users|FOREIGN KEY (created_by) REFERENCES admin.admin_users(user_id) ON DELETE RESTRICT
+admin|config_drafts|config_drafts_updated_by_fkey|f|admin.admin_users|FOREIGN KEY (updated_by) REFERENCES admin.admin_users(user_id) ON DELETE RESTRICT
+admin|config_drafts|config_drafts_pkey|p||PRIMARY KEY (id)
+admin|config_releases|config_releases_check|c||CHECK (((value IS NOT NULL) OR (text_value IS NOT NULL)))
+admin|config_releases|config_releases_check1|c||CHECK (((rollback_of_release_id IS NULL) OR (rollback_of_release_id <> id)))
+admin|config_releases|config_releases_config_key_check|c||CHECK ((config_key = ANY (ARRAY['miniapp_new_user_signup_bonus_credits'::text, 'miniapp_daily_checkin_bonus_credits'::text, 'miniapp_character_free_chat_quota_limit'::text, 'miniapp_payment_plans'::text, 'miniapp_recharge_page_config'::text, 'miniapp_payment_prompt_dialog_config'::text, 'miniapp_free_quota_exhausted_dialog_config'::text, 'llm_model_catalog'::text, 'llm_pricing_config'::text, 'system_fallback_character_id'::text, 'system_instructions'::text, 'pref_word_count_tiers'::text, 'lobby_ranking_params'::text, 'lobby_pinned_characters'::text])))
+admin|config_releases|config_releases_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|config_releases|config_releases_runtime_version_check|c||CHECK ((runtime_version > 0))
+admin|config_releases|config_releases_released_by_fkey|f|admin.admin_users|FOREIGN KEY (released_by) REFERENCES admin.admin_users(user_id) ON DELETE RESTRICT
+admin|config_releases|config_releases_rollback_of_release_id_fkey|f|admin.config_releases|FOREIGN KEY (rollback_of_release_id) REFERENCES admin.config_releases(id) ON DELETE RESTRICT
+admin|config_releases|config_releases_source_draft_id_fkey|f|admin.config_drafts|FOREIGN KEY (source_draft_id) REFERENCES admin.config_drafts(id) ON DELETE RESTRICT
+admin|config_releases|config_releases_pkey|p||PRIMARY KEY (id)
+admin|config_releases|config_releases_environment_config_key_runtime_version_key|u||UNIQUE (environment, config_key, runtime_version)
+admin|environment_config|environment_config_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|environment_config|environment_config_id_check|c||CHECK ((id = 1))
+admin|environment_config|environment_config_pkey|p||PRIMARY KEY (id)
+cs_platform|audit_logs|audit_logs_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE SET NULL
+cs_platform|audit_logs|audit_logs_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE SET NULL
+cs_platform|audit_logs|audit_logs_pkey|p||PRIMARY KEY (id)
+cs_platform|export_logs|export_logs_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE SET NULL
+cs_platform|export_logs|export_logs_pkey|p||PRIMARY KEY (id)
+cs_platform|outreach_messages|outreach_messages_content_check|c||CHECK ((char_length(TRIM(BOTH FROM content)) > 0))
+cs_platform|outreach_messages|outreach_messages_direction_check|c||CHECK ((direction = ANY (ARRAY['agent'::text, 'user'::text])))
+cs_platform|outreach_messages|outreach_messages_send_status_check|c||CHECK ((send_status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text, 'received'::text])))
+cs_platform|outreach_messages|outreach_messages_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|outreach_messages|outreach_messages_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+cs_platform|outreach_messages|outreach_messages_pkey|p||PRIMARY KEY (id)
+cs_platform|outreach_sessions|outreach_sessions_status_check|c||CHECK ((status = ANY (ARRAY['not_started'::text, 'icebreaking'::text, 'waiting_reply'::text, 'following_up'::text, 'completed'::text, 'snoozed'::text, 'skipped'::text, 'send_failed'::text])))
+cs_platform|outreach_sessions|outreach_sessions_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|outreach_sessions|outreach_sessions_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+cs_platform|outreach_sessions|outreach_sessions_pkey|p||PRIMARY KEY (persona_id, user_id)
+cs_platform|persona_member_snapshots|persona_member_snapshots_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|persona_member_snapshots|persona_member_snapshots_run_id_fkey|f|cs_platform.persona_refresh_runs|FOREIGN KEY (run_id) REFERENCES cs_platform.persona_refresh_runs(id) ON DELETE CASCADE
+cs_platform|persona_member_snapshots|persona_member_snapshots_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+cs_platform|persona_member_snapshots|persona_member_snapshots_pkey|p||PRIMARY KEY (run_id, user_id)
+cs_platform|persona_member_state|persona_member_state_membership_status_check|c||CHECK ((membership_status = ANY (ARRAY['active'::text, 'chatted_left'::text])))
+cs_platform|persona_member_state|persona_member_state_last_seen_run_id_fkey|f|cs_platform.persona_refresh_runs|FOREIGN KEY (last_seen_run_id) REFERENCES cs_platform.persona_refresh_runs(id) ON DELETE SET NULL
+cs_platform|persona_member_state|persona_member_state_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|persona_member_state|persona_member_state_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+cs_platform|persona_member_state|persona_member_state_pkey|p||PRIMARY KEY (persona_id, user_id)
+cs_platform|persona_refresh_runs|persona_refresh_runs_status_check|c||CHECK ((status = ANY (ARRAY['running'::text, 'succeeded'::text, 'failed'::text])))
+cs_platform|persona_refresh_runs|persona_refresh_runs_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|persona_refresh_runs|persona_refresh_runs_pkey|p||PRIMARY KEY (id)
+cs_platform|personas|personas_active_count_check|c||CHECK ((active_count >= 0))
+cs_platform|personas|personas_chatted_left_count_check|c||CHECK ((chatted_left_count >= 0))
+cs_platform|personas|personas_status_check|c||CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))
+cs_platform|personas|personas_pkey|p||PRIMARY KEY (id)
+cs_platform|personas|personas_slug_key|u||UNIQUE (slug)
+miniapp|character_favorites|character_favorites_character_id_fkey|f|miniapp.characters|FOREIGN KEY (character_id) REFERENCES miniapp.characters(id) ON DELETE CASCADE
+miniapp|character_favorites|character_favorites_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|character_favorites|character_favorites_pkey|p||PRIMARY KEY (user_id, character_id)
+miniapp|character_free_chat_quota_decisions|character_free_chat_quota_decisions_quota_limit_check|c||CHECK ((quota_limit > 0))
+miniapp|character_free_chat_quota_decisions|character_free_chat_quota_decisions_status_check|c||CHECK ((status = ANY (ARRAY['reserved'::text, 'consumed'::text, 'released'::text, 'paid'::text])))
+miniapp|character_free_chat_quota_decisions|character_free_chat_quota_decisions_character_id_fkey|f|miniapp.characters|FOREIGN KEY (character_id) REFERENCES miniapp.characters(id) ON DELETE CASCADE
+miniapp|character_free_chat_quota_decisions|character_free_chat_quota_decisions_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|character_free_chat_quota_decisions|character_free_chat_quota_decisions_pkey|p||PRIMARY KEY (charge_key)
+miniapp|character_free_chat_quotas|character_free_chat_quotas_reserved_rounds_check|c||CHECK ((reserved_rounds >= 0))
+miniapp|character_free_chat_quotas|character_free_chat_quotas_used_rounds_check|c||CHECK ((used_rounds >= 0))
+miniapp|character_free_chat_quotas|character_free_chat_quotas_character_id_fkey|f|miniapp.characters|FOREIGN KEY (character_id) REFERENCES miniapp.characters(id) ON DELETE CASCADE
+miniapp|character_free_chat_quotas|character_free_chat_quotas_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|character_free_chat_quotas|character_free_chat_quotas_pkey|p||PRIMARY KEY (user_id, character_id)
+miniapp|character_ranking_scores|character_ranking_scores_character_id_fkey|f|miniapp.characters|FOREIGN KEY (character_id) REFERENCES miniapp.characters(id) ON DELETE CASCADE
+miniapp|character_ranking_scores|character_ranking_scores_pkey|p||PRIMARY KEY (character_id)
+miniapp|characters|characters_test_cards_disabled|c||CHECK (((NOT is_test) OR ((enabled = false) AND (card_hash IS NOT NULL))))
+miniapp|characters|characters_pkey|p||PRIMARY KEY (id)
+miniapp|chat_history|chat_history_revision_check|c||CHECK (((revision IS NULL) OR (revision >= 0)))
+miniapp|chat_history|chat_history_turn_index_check|c||CHECK (((turn_index IS NULL) OR (turn_index > 0)))
+miniapp|chat_history|chat_history_character_id_fkey|f|miniapp.characters|FOREIGN KEY (character_id) REFERENCES miniapp.characters(id) ON DELETE SET NULL
+miniapp|chat_history|chat_history_session_id_fkey|f|miniapp.chat_sessions|FOREIGN KEY (session_id) REFERENCES miniapp.chat_sessions(id) ON DELETE SET NULL
+miniapp|chat_history|chat_history_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|chat_history|chat_history_pkey|p||PRIMARY KEY (id)
+miniapp|chat_message_audio|chat_message_audio_revision_check|c||CHECK ((revision >= 0))
+miniapp|chat_message_audio|chat_message_audio_status_check|c||CHECK ((status = ANY (ARRAY['pending'::text, 'ready'::text, 'failed'::text])))
+miniapp|chat_message_audio|chat_message_audio_message_id_fkey|f|miniapp.chat_history|FOREIGN KEY (message_id) REFERENCES miniapp.chat_history(id) ON DELETE CASCADE
+miniapp|chat_message_audio|chat_message_audio_session_id_fkey|f|miniapp.chat_sessions|FOREIGN KEY (session_id) REFERENCES miniapp.chat_sessions(id) ON DELETE CASCADE
+miniapp|chat_message_audio|chat_message_audio_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|chat_message_audio|chat_message_audio_pkey|p||PRIMARY KEY (id)
+miniapp|chat_sessions|chat_sessions_context_window_start_turn_check|c||CHECK ((context_window_start_turn >= 1))
+miniapp|chat_sessions|chat_sessions_character_id_fkey|f|miniapp.characters|FOREIGN KEY (character_id) REFERENCES miniapp.characters(id) ON DELETE RESTRICT
+miniapp|chat_sessions|chat_sessions_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|chat_sessions|chat_sessions_pkey|p||PRIMARY KEY (id)
+miniapp|daily_checkins|daily_checkins_reward_credits_check|c||CHECK ((reward_credits > 0))
+miniapp|daily_checkins|daily_checkins_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|daily_checkins|daily_checkins_pkey|p||PRIMARY KEY (id)
+miniapp|llm_usage_charge_dedup|llm_usage_charge_dedup_pkey|p||PRIMARY KEY (charge_key)
+miniapp|llm_usage_charges|llm_usage_charges_model_markup_check|c||CHECK ((model_markup >= (0)::numeric))
+miniapp|llm_usage_charges|llm_usage_charges_status_check|c||CHECK ((status = ANY (ARRAY['pending'::text, 'failed'::text, 'free'::text, 'charged'::text, 'partial'::text, 'reconciled'::text, 'historical'::text])))
+miniapp|llm_usage_charges|llm_usage_charges_debit_ledger_id_fkey|f|miniapp.wallet_ledger|FOREIGN KEY (debit_ledger_id) REFERENCES miniapp.wallet_ledger(id)
+miniapp|llm_usage_charges|llm_usage_charges_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|llm_usage_charges|llm_usage_charges_pkey|p||PRIMARY KEY (id)
+miniapp|llm_usage_charges|llm_usage_charges_charge_key_key|u||UNIQUE (charge_key)
+miniapp|miniapp_user_settings|miniapp_user_settings_pref_voice_playback_rate_check|c||CHECK (((pref_voice_playback_rate >= 0.5) AND (pref_voice_playback_rate <= 2.0)))
+miniapp|miniapp_user_settings|miniapp_user_settings_pref_word_count_nonempty_check|c||CHECK (((pref_word_count IS NULL) OR (char_length(TRIM(BOTH FROM pref_word_count)) > 0)))
+miniapp|miniapp_user_settings|miniapp_user_settings_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|miniapp_user_settings|miniapp_user_settings_pkey|p||PRIMARY KEY (user_id)
+miniapp|notification_reads|notification_reads_notification_id_fkey|f|miniapp.notifications|FOREIGN KEY (notification_id) REFERENCES miniapp.notifications(id) ON DELETE CASCADE
+miniapp|notification_reads|notification_reads_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|notification_reads|notification_reads_pkey|p||PRIMARY KEY (notification_id, user_id)
+miniapp|notifications|notifications_body_check|c||CHECK (((char_length(TRIM(BOTH FROM body)) >= 1) AND (char_length(TRIM(BOTH FROM body)) <= 4000)))
+miniapp|notifications|notifications_category_check|c||CHECK ((category = ANY (ARRAY['announcement'::text, 'activity'::text, 'system'::text, 'interaction'::text])))
+miniapp|notifications|notifications_scope_check|c||CHECK ((scope = ANY (ARRAY['official'::text, 'personal'::text])))
+miniapp|notifications|notifications_scope_target_check|c||CHECK (((scope = 'official'::text) OR ((scope = 'personal'::text) AND (user_id IS NOT NULL))))
+miniapp|notifications|notifications_sort_order_check|c||CHECK ((sort_order >= 0))
+miniapp|notifications|notifications_title_check|c||CHECK (((char_length(TRIM(BOTH FROM title)) >= 1) AND (char_length(TRIM(BOTH FROM title)) <= 120)))
+miniapp|notifications|notifications_created_by_fkey|f|admin.admin_users|FOREIGN KEY (created_by) REFERENCES admin.admin_users(user_id) ON DELETE SET NULL
+miniapp|notifications|notifications_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|notifications|notifications_pkey|p||PRIMARY KEY (id)
+miniapp|payment_orders|payment_orders_amount_cents_check|c||CHECK ((amount_cents > 0))
+miniapp|payment_orders|payment_orders_bonus_credits_check|c||CHECK ((bonus_credits >= 0))
+miniapp|payment_orders|payment_orders_credits_amount_check|c||CHECK ((credits_amount >= 0))
+miniapp|payment_orders|payment_orders_payment_type_check|c||CHECK ((payment_type = ANY (ARRAY['alipay'::text, 'wxpay'::text])))
+miniapp|payment_orders|payment_orders_status_check|c||CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'expired'::text, 'failed'::text])))
+miniapp|payment_orders|payment_orders_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|payment_orders|payment_orders_pkey|p||PRIMARY KEY (id)
+miniapp|runtime_config|runtime_config_pkey|p||PRIMARY KEY (key)
+miniapp|support_conversations|support_conversations_agent_unread_count_check|c||CHECK ((agent_unread_count >= 0))
+miniapp|support_conversations|support_conversations_status_check|c||CHECK ((status = ANY (ARRAY['open'::text, 'resolved'::text])))
+miniapp|support_conversations|support_conversations_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|support_conversations|support_conversations_pkey|p||PRIMARY KEY (id)
+miniapp|support_conversations|support_conversations_user_id_key|u||UNIQUE (user_id)
+miniapp|support_messages|support_messages_body_check|c||CHECK (((char_length(TRIM(BOTH FROM body)) >= 1) AND (char_length(TRIM(BOTH FROM body)) <= 4000)))
+miniapp|support_messages|support_messages_check|c||CHECK ((((sender = 'user'::text) AND (agent_user_id IS NULL)) OR (sender = 'agent'::text)))
+miniapp|support_messages|support_messages_sender_check|c||CHECK ((sender = ANY (ARRAY['user'::text, 'agent'::text])))
+miniapp|support_messages|support_messages_agent_user_id_fkey|f|admin.admin_users|FOREIGN KEY (agent_user_id) REFERENCES admin.admin_users(user_id) ON DELETE SET NULL
+miniapp|support_messages|support_messages_conversation_id_fkey|f|miniapp.support_conversations|FOREIGN KEY (conversation_id) REFERENCES miniapp.support_conversations(id) ON DELETE CASCADE
+miniapp|support_messages|support_messages_pkey|p||PRIMARY KEY (id)
+miniapp|support_messages|support_messages_conversation_id_client_msg_id_key|u||UNIQUE (conversation_id, client_msg_id)
+miniapp|user_wallets|user_wallets_bonus_credits_check|c||CHECK ((bonus_credits >= (0)::numeric))
+miniapp|user_wallets|user_wallets_main_credits_check|c||CHECK ((main_credits >= (0)::numeric))
+miniapp|user_wallets|user_wallets_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|user_wallets|user_wallets_pkey|p||PRIMARY KEY (user_id)
+miniapp|users|users_pkey|p||PRIMARY KEY (id)
+miniapp|users|users_st_handle_key|u||UNIQUE (st_handle)
+miniapp|users|users_tg_id_key|u||UNIQUE (tg_id)
+miniapp|wallet_ledger|wallet_ledger_amount_check|c||CHECK ((amount <> (0)::numeric))
+miniapp|wallet_ledger|wallet_ledger_balance_bonus_check|c||CHECK ((balance_bonus >= (0)::numeric))
+miniapp|wallet_ledger|wallet_ledger_balance_main_check|c||CHECK ((balance_main >= (0)::numeric))
+miniapp|wallet_ledger|wallet_ledger_entry_type_check|c||CHECK ((entry_type = ANY (ARRAY['recharge'::text, 'chat_debit'::text, 'refund'::text, 'adjustment'::text, 'checkin_bonus'::text, 'wish_reward'::text])))
+miniapp|wallet_ledger|wallet_ledger_user_id_fkey|f|miniapp.users|FOREIGN KEY (user_id) REFERENCES miniapp.users(id) ON DELETE CASCADE
+miniapp|wallet_ledger|wallet_ledger_pkey|p||PRIMARY KEY (id)
+miniapp|wish_roles|wish_roles_reward_credits_check|c||CHECK ((reward_credits > 0))
+miniapp|wish_roles|wish_roles_status_check|c||CHECK ((status = ANY (ARRAY['awaiting_extra'::text, 'completed'::text])))
+miniapp|wish_roles|wish_roles_wish_text_check|c||CHECK ((char_length(TRIM(BOTH FROM wish_text)) > 8))
+miniapp|wish_roles|wish_roles_db_user_id_fkey|f|miniapp.users|FOREIGN KEY (db_user_id) REFERENCES miniapp.users(id) ON DELETE SET NULL
+miniapp|wish_roles|wish_roles_pkey|p||PRIMARY KEY (id)
+miniapp_traffic|botlinks|botlinks_pkey|p||PRIMARY KEY (id)
+miniapp_traffic|botlinks|botlinks_source_id_key|u||UNIQUE (source_id)
+miniapp_traffic|traffic_clicks|traffic_clicks_pkey|p||PRIMARY KEY (id)
+miniapp_traffic|traffic_clicks|traffic_clicks_uniq|u||UNIQUE (stat_date, source_id)

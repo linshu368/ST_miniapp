@@ -1,5 +1,5 @@
 import type { NotificationCategory } from '@miniapp/shared';
-import { getSupabaseClient } from './supabase.js';
+import { getDomainDb } from './supabase.js';
 
 export async function insertUserNotification(input: {
   userId: string;
@@ -8,7 +8,7 @@ export async function insertUserNotification(input: {
   body: string;
 }): Promise<void> {
   const now = new Date().toISOString();
-  const { error } = await getSupabaseClient().schema('miniapp').from('notifications').insert({
+  const { error } = await getDomainDb('miniapp_features').from('notifications').insert({
     scope: 'personal',
     category: input.category,
     title: input.title.trim(),

@@ -6,7 +6,7 @@
 // 所有读写都带 user_id 过滤：ownership 校验落在仓库层，M3b 不需要先查一次再判归属。
 
 import type { ChatMessage, ChatSession } from '@miniapp/shared';
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import { clampLimit, toOpeningMessage } from './ConversationHistoryRepository.js';
 import { ConversationRepositoryError } from './conversation-errors.js';
 
@@ -40,7 +40,9 @@ export interface ListSessionsOptions {
 }
 
 export class ChatSessionRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('experience');
+  /** 会话要回显角色卡的开场白；characters 属 app_core，指向根实体是归属地图允许的例外。 */
+  private readonly appCoreDb = getDomainDb('app_core');
 
   /**
    * 078 是否已在目标库执行。迁移不随部署自动执行，后端先上、迁移后跑的窗口里
@@ -245,7 +247,7 @@ export class ChatSessionRepository {
   }
 
   private async getCharacter(characterId: string): Promise<{ name: string; firstMes: string }> {
-    const { data, error } = await this.db
+    const { data, error } = await this.appCoreDb
       .from('characters')
       .select('id, name, first_mes')
       .eq('id', characterId)

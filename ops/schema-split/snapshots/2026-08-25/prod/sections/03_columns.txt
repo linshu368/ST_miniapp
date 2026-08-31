@@ -1,0 +1,585 @@
+nsp|rel|pos|col|col_type|col_nullable|col_default|col_generated|col_identity
+admin|admin_users|1|user_id|uuid|NO||NEVER|
+admin|admin_users|2|email|text|NO||NEVER|
+admin|admin_users|3|role|text|NO||NEVER|
+admin|admin_users|4|can_access_test|boolean|NO|true|NEVER|
+admin|admin_users|5|can_access_prod|boolean|NO|false|NEVER|
+admin|admin_users|6|created_at|timestamp with time zone|NO|now()|NEVER|
+admin|admin_users|7|updated_at|timestamp with time zone|NO|now()|NEVER|
+admin|admin_users|8|display_name|text|YES||NEVER|
+admin|audit_logs|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|audit_logs|2|actor_user_id|uuid|YES||NEVER|
+admin|audit_logs|3|actor_email|text|NO||NEVER|
+admin|audit_logs|4|environment|text|NO||NEVER|
+admin|audit_logs|5|action|text|NO||NEVER|
+admin|audit_logs|6|schema_name|text|NO||NEVER|
+admin|audit_logs|7|table_name|text|NO||NEVER|
+admin|audit_logs|8|record_id|text|NO||NEVER|
+admin|audit_logs|9|before_value|jsonb|YES||NEVER|
+admin|audit_logs|10|after_value|jsonb|YES||NEVER|
+admin|audit_logs|11|created_at|timestamp with time zone|NO|now()|NEVER|
+admin|audit_logs|12|actor_name|text|YES||NEVER|
+admin|character_layout_drafts|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|character_layout_drafts|2|environment|text|NO||NEVER|
+admin|character_layout_drafts|3|listed_ids|ARRAY|NO|'{}'::uuid[]|NEVER|
+admin|character_layout_drafts|4|delisted_ids|ARRAY|NO|'{}'::uuid[]|NEVER|
+admin|character_layout_drafts|5|deleted_ids|ARRAY|NO|'{}'::uuid[]|NEVER|
+admin|character_layout_drafts|6|base_layout_version|integer(32,0)|NO||NEVER|
+admin|character_layout_drafts|7|status|text|NO|'draft'::text|NEVER|
+admin|character_layout_drafts|8|created_by|uuid|NO||NEVER|
+admin|character_layout_drafts|9|updated_by|uuid|NO||NEVER|
+admin|character_layout_drafts|10|created_at|timestamp with time zone|NO|now()|NEVER|
+admin|character_layout_drafts|11|updated_at|timestamp with time zone|NO|now()|NEVER|
+admin|character_layout_drafts|12|published_at|timestamp with time zone|YES||NEVER|
+admin|character_layout_releases|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|character_layout_releases|2|environment|text|NO||NEVER|
+admin|character_layout_releases|3|layout_version|integer(32,0)|NO||NEVER|
+admin|character_layout_releases|4|listed_ids|ARRAY|NO||NEVER|
+admin|character_layout_releases|5|delisted_ids|ARRAY|NO||NEVER|
+admin|character_layout_releases|6|deleted_ids|ARRAY|NO||NEVER|
+admin|character_layout_releases|7|source_draft_id|uuid|YES||NEVER|
+admin|character_layout_releases|8|released_by|uuid|NO||NEVER|
+admin|character_layout_releases|9|released_at|timestamp with time zone|NO|now()|NEVER|
+admin|character_layout_releases|10|release_kind|text|NO|'publish'::text|NEVER|
+admin|character_layout_releases|11|rollback_target_release_id|uuid|YES||NEVER|
+admin|character_layout_state|1|environment|text|NO||NEVER|
+admin|character_layout_state|2|layout_version|integer(32,0)|NO|0|NEVER|
+admin|character_layout_state|3|updated_at|timestamp with time zone|NO|now()|NEVER|
+admin|config_drafts|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|config_drafts|2|environment|text|NO||NEVER|
+admin|config_drafts|3|config_key|text|NO||NEVER|
+admin|config_drafts|4|value|jsonb|YES||NEVER|
+admin|config_drafts|5|text_value|text|YES||NEVER|
+admin|config_drafts|6|description|text|YES||NEVER|
+admin|config_drafts|7|base_version|integer(32,0)|NO|0|NEVER|
+admin|config_drafts|8|status|text|NO|'draft'::text|NEVER|
+admin|config_drafts|9|created_by|uuid|NO||NEVER|
+admin|config_drafts|10|updated_by|uuid|NO||NEVER|
+admin|config_drafts|11|created_at|timestamp with time zone|NO|now()|NEVER|
+admin|config_drafts|12|updated_at|timestamp with time zone|NO|now()|NEVER|
+admin|config_drafts|13|published_at|timestamp with time zone|YES||NEVER|
+admin|config_releases|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|config_releases|2|environment|text|NO||NEVER|
+admin|config_releases|3|config_key|text|NO||NEVER|
+admin|config_releases|4|runtime_version|integer(32,0)|NO||NEVER|
+admin|config_releases|5|value|jsonb|YES||NEVER|
+admin|config_releases|6|text_value|text|YES||NEVER|
+admin|config_releases|7|description|text|YES||NEVER|
+admin|config_releases|8|source_draft_id|uuid|YES||NEVER|
+admin|config_releases|9|rollback_of_release_id|uuid|YES||NEVER|
+admin|config_releases|10|released_by|uuid|NO||NEVER|
+admin|config_releases|11|released_at|timestamp with time zone|NO|now()|NEVER|
+admin|config_releases|12|released_by_name|text|YES||NEVER|
+admin|environment_config|1|id|smallint(16,0)|NO|1|NEVER|
+admin|environment_config|2|environment|text|NO||NEVER|
+admin|environment_config|3|updated_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|audit_logs|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|audit_logs|2|operator_id|text|NO||NEVER|
+cs_platform|audit_logs|3|action|text|NO||NEVER|
+cs_platform|audit_logs|4|persona_id|uuid|YES||NEVER|
+cs_platform|audit_logs|5|user_id|uuid|YES||NEVER|
+cs_platform|audit_logs|6|metadata|jsonb|NO|'{}'::jsonb|NEVER|
+cs_platform|audit_logs|7|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|export_logs|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|export_logs|2|persona_id|uuid|YES||NEVER|
+cs_platform|export_logs|3|operator_id|text|NO||NEVER|
+cs_platform|export_logs|4|row_count|integer(32,0)|NO|0|NEVER|
+cs_platform|export_logs|5|metadata|jsonb|NO|'{}'::jsonb|NEVER|
+cs_platform|export_logs|6|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|outreach_messages|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|outreach_messages|2|persona_id|uuid|NO||NEVER|
+cs_platform|outreach_messages|3|user_id|uuid|NO||NEVER|
+cs_platform|outreach_messages|4|telegram_user_id|text|NO||NEVER|
+cs_platform|outreach_messages|5|direction|text|NO||NEVER|
+cs_platform|outreach_messages|6|sop_stage|text|YES||NEVER|
+cs_platform|outreach_messages|7|question_key|text|YES||NEVER|
+cs_platform|outreach_messages|8|content|text|NO||NEVER|
+cs_platform|outreach_messages|9|send_status|text|NO|'pending'::text|NEVER|
+cs_platform|outreach_messages|10|idempotency_key|text|YES||NEVER|
+cs_platform|outreach_messages|11|telegram_message_id|text|YES||NEVER|
+cs_platform|outreach_messages|12|sent_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_messages|13|received_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_messages|14|failed_reason|text|YES||NEVER|
+cs_platform|outreach_messages|15|operator_id|text|YES||NEVER|
+cs_platform|outreach_messages|16|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|outreach_sessions|1|persona_id|uuid|NO||NEVER|
+cs_platform|outreach_sessions|2|user_id|uuid|NO||NEVER|
+cs_platform|outreach_sessions|3|status|text|NO|'not_started'::text|NEVER|
+cs_platform|outreach_sessions|4|current_stage|text|YES||NEVER|
+cs_platform|outreach_sessions|5|current_question_key|text|YES||NEVER|
+cs_platform|outreach_sessions|6|next_touch_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_sessions|7|completed_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_sessions|8|skipped_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_sessions|9|skip_reason|text|YES||NEVER|
+cs_platform|outreach_sessions|10|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|outreach_sessions|11|updated_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_member_snapshots|1|run_id|uuid|NO||NEVER|
+cs_platform|persona_member_snapshots|2|persona_id|uuid|NO||NEVER|
+cs_platform|persona_member_snapshots|3|user_id|uuid|NO||NEVER|
+cs_platform|persona_member_snapshots|4|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_member_state|1|persona_id|uuid|NO||NEVER|
+cs_platform|persona_member_state|2|user_id|uuid|NO||NEVER|
+cs_platform|persona_member_state|3|membership_status|text|NO|'active'::text|NEVER|
+cs_platform|persona_member_state|4|first_seen_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_member_state|5|last_seen_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_member_state|6|last_seen_run_id|uuid|YES||NEVER|
+cs_platform|persona_member_state|7|first_contacted_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_member_state|8|last_contacted_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_member_state|9|left_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_member_state|10|left_note|text|YES||NEVER|
+cs_platform|persona_member_state|11|special_note|text|YES||NEVER|
+cs_platform|persona_member_state|12|special_note_updated_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_member_state|13|special_note_operator_id|text|YES||NEVER|
+cs_platform|persona_refresh_runs|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|persona_refresh_runs|2|persona_id|uuid|NO||NEVER|
+cs_platform|persona_refresh_runs|3|operator_id|text|NO|'system'::text|NEVER|
+cs_platform|persona_refresh_runs|4|sql_text|text|NO||NEVER|
+cs_platform|persona_refresh_runs|5|active_count|integer(32,0)|NO|0|NEVER|
+cs_platform|persona_refresh_runs|6|entered_count|integer(32,0)|NO|0|NEVER|
+cs_platform|persona_refresh_runs|7|chatted_left_count|integer(32,0)|NO|0|NEVER|
+cs_platform|persona_refresh_runs|8|status|text|NO|'running'::text|NEVER|
+cs_platform|persona_refresh_runs|9|error_message|text|YES||NEVER|
+cs_platform|persona_refresh_runs|10|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_refresh_runs|11|completed_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|1|persona_id|uuid|YES||NEVER|
+cs_platform|persona_users_detail|2|user_id|uuid|YES||NEVER|
+cs_platform|persona_users_detail|3|telegram_user_id|text|YES||NEVER|
+cs_platform|persona_users_detail|4|display_name|text|YES||NEVER|
+cs_platform|persona_users_detail|5|username|text|YES||NEVER|
+cs_platform|persona_users_detail|6|register_days|integer(32,0)|YES||NEVER|
+cs_platform|persona_users_detail|7|total_paid_amount|numeric(12,2)|YES||NEVER|
+cs_platform|persona_users_detail|8|paid_count|integer(32,0)|YES||NEVER|
+cs_platform|persona_users_detail|9|total_round|bigint(64,0)|YES||NEVER|
+cs_platform|persona_users_detail|10|last_active_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|11|membership_status|text|YES||NEVER|
+cs_platform|persona_users_detail|12|session_status|text|YES||NEVER|
+cs_platform|persona_users_detail|13|current_stage|text|YES||NEVER|
+cs_platform|persona_users_detail|14|current_question_key|text|YES||NEVER|
+cs_platform|persona_users_detail|15|chatted_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|16|left_note|text|YES||NEVER|
+cs_platform|persona_users_detail|17|last_user_message_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|18|last_agent_message_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|19|waiting_state|text|YES||NEVER|
+cs_platform|persona_users_detail|20|special_note|text|YES||NEVER|
+cs_platform|persona_users_detail|21|special_note_updated_at|timestamp with time zone|YES||NEVER|
+cs_platform|personas|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|personas|2|slug|text|NO||NEVER|
+cs_platform|personas|3|name|text|NO||NEVER|
+cs_platform|personas|4|description|text|NO|''::text|NEVER|
+cs_platform|personas|5|color|text|NO|'#5BBD72'::text|NEVER|
+cs_platform|personas|6|sql_text|text|NO||NEVER|
+cs_platform|personas|7|opening_script|text|NO|''::text|NEVER|
+cs_platform|personas|8|sop|jsonb|NO|'[]'::jsonb|NEVER|
+cs_platform|personas|9|status|text|NO|'active'::text|NEVER|
+cs_platform|personas|10|active_count|integer(32,0)|NO|0|NEVER|
+cs_platform|personas|11|chatted_left_count|integer(32,0)|NO|0|NEVER|
+cs_platform|personas|12|last_refreshed_at|timestamp with time zone|YES||NEVER|
+cs_platform|personas|13|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|personas|14|updated_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|user_metrics|1|user_id|uuid|YES||NEVER|
+cs_platform|user_metrics|2|telegram_user_id|text|YES||NEVER|
+cs_platform|user_metrics|3|display_name|text|YES||NEVER|
+cs_platform|user_metrics|4|username|text|YES||NEVER|
+cs_platform|user_metrics|5|register_days|integer(32,0)|YES||NEVER|
+cs_platform|user_metrics|6|total_paid_amount|numeric(12,2)|YES||NEVER|
+cs_platform|user_metrics|7|paid_count|integer(32,0)|YES||NEVER|
+cs_platform|user_metrics|8|total_round|bigint(64,0)|YES||NEVER|
+cs_platform|user_metrics|9|last_active_at|timestamp with time zone|YES||NEVER|
+miniapp|character_favorites|1|user_id|uuid|NO||NEVER|
+miniapp|character_favorites|2|character_id|uuid|NO||NEVER|
+miniapp|character_favorites|3|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|character_free_chat_quota_decisions|1|charge_key|uuid|NO||NEVER|
+miniapp|character_free_chat_quota_decisions|2|user_id|uuid|NO||NEVER|
+miniapp|character_free_chat_quota_decisions|3|character_id|uuid|NO||NEVER|
+miniapp|character_free_chat_quota_decisions|4|granted_free|boolean|NO||NEVER|
+miniapp|character_free_chat_quota_decisions|5|status|text|NO||NEVER|
+miniapp|character_free_chat_quota_decisions|6|quota_limit|integer(32,0)|NO||NEVER|
+miniapp|character_free_chat_quota_decisions|7|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|character_free_chat_quota_decisions|8|finalized_at|timestamp with time zone|YES||NEVER|
+miniapp|character_free_chat_quotas|1|user_id|uuid|NO||NEVER|
+miniapp|character_free_chat_quotas|2|character_id|uuid|NO||NEVER|
+miniapp|character_free_chat_quotas|3|used_rounds|integer(32,0)|NO|0|NEVER|
+miniapp|character_free_chat_quotas|4|reserved_rounds|integer(32,0)|NO|0|NEVER|
+miniapp|character_free_chat_quotas|5|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|character_free_chat_quotas|6|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|character_ranking_scores|1|character_id|uuid|NO||NEVER|
+miniapp|character_ranking_scores|2|n_c|integer(32,0)|NO|0|NEVER|
+miniapp|character_ranking_scores|3|d30_raw|double precision|YES||NEVER|
+miniapp|character_ranking_scores|4|d30_shrunk|double precision|YES||NEVER|
+miniapp|character_ranking_scores|5|k_c|integer(32,0)|NO|0|NEVER|
+miniapp|character_ranking_scores|6|r48_raw|double precision|YES||NEVER|
+miniapp|character_ranking_scores|7|score|numeric(6,2)|NO|0|NEVER|
+miniapp|character_ranking_scores|8|window_days|integer(32,0)|NO||NEVER|
+miniapp|character_ranking_scores|9|computed_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|character_ranking_scores|10|min_users|integer(32,0)|NO|20|NEVER|
+miniapp|characters|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|characters|2|name|text|NO||NEVER|
+miniapp|characters|3|description|text|NO|''::text|NEVER|
+miniapp|characters|4|avatar_url|text|NO|''::text|NEVER|
+miniapp|characters|8|creator_notes|text|NO|''::text|NEVER|
+miniapp|characters|9|created_at|timestamp without time zone|NO|timezone('Asia/Shanghai'::text, now())|NEVER|
+miniapp|characters|10|updated_at|timestamp without time zone|NO|timezone('Asia/Shanghai'::text, now())|NEVER|
+miniapp|characters|11|alternate_greetings|jsonb|NO|'[]'::jsonb|NEVER|
+miniapp|characters|12|character_book|jsonb|YES||NEVER|
+miniapp|characters|13|character_version|text|NO|''::text|NEVER|
+miniapp|characters|14|creator|text|NO|''::text|NEVER|
+miniapp|characters|15|extensions|jsonb|NO|'{}'::jsonb|NEVER|
+miniapp|characters|16|first_mes|text|NO|''::text|NEVER|
+miniapp|characters|17|mes_example|text|NO|''::text|NEVER|
+miniapp|characters|18|personality|text|NO|''::text|NEVER|
+miniapp|characters|19|post_history_instructions|text|NO|''::text|NEVER|
+miniapp|characters|20|scenario|text|NO|''::text|NEVER|
+miniapp|characters|21|spec|text|NO|'chara_card_v2'::text|NEVER|
+miniapp|characters|22|spec_version|text|NO|'2.0'::text|NEVER|
+miniapp|characters|23|system_prompt|text|NO|''::text|NEVER|
+miniapp|characters|24|tags|jsonb|NO|'[]'::jsonb|NEVER|
+miniapp|characters|26|enabled|boolean|NO|true|NEVER|
+miniapp|characters|27|sort_order|integer(32,0)|NO|0|NEVER|
+miniapp|characters|28|raw_card|jsonb|YES||NEVER|
+miniapp|characters|29|archived_at|timestamp without time zone|YES||NEVER|
+miniapp|characters|30|is_test|boolean|NO|false|NEVER|
+miniapp|characters|31|card_hash|text|YES||NEVER|
+miniapp|characters|32|last_listed_at|timestamp with time zone|YES||NEVER|
+miniapp|chat_history|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|chat_history|2|user_id|uuid|NO||NEVER|
+miniapp|chat_history|3|model|text|NO||NEVER|
+miniapp|chat_history|4|user_input|text|NO||NEVER|
+miniapp|chat_history|5|assistant_reply|text|YES||NEVER|
+miniapp|chat_history|6|history|jsonb|NO||NEVER|
+miniapp|chat_history|7|character_id|uuid|YES||NEVER|
+miniapp|chat_history|8|preset_id|uuid|YES||NEVER|
+miniapp|chat_history|9|status|text|NO|'success'::text|NEVER|
+miniapp|chat_history|10|upstream_status|integer(32,0)|YES||NEVER|
+miniapp|chat_history|11|deduction_rate|numeric(14,1)|YES|0|NEVER|
+miniapp|chat_history|12|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|chat_history|13|user_character_round|integer(32,0)|YES||NEVER|
+miniapp|chat_history|14|llm_provider_name|text|YES||NEVER|
+miniapp|chat_history|15|llm_finish_reason|text|YES||NEVER|
+miniapp|chat_history|16|llm_usage|jsonb|YES||NEVER|
+miniapp|chat_history|17|llm_usage_cache|jsonb|YES||NEVER|
+miniapp|chat_history|18|llm_native_tokens_cached|integer(32,0)|YES||NEVER|
+miniapp|chat_history|19|llm_native_tokens_reasoning|integer(32,0)|YES||NEVER|
+miniapp|chat_history|20|llm_native_tokens_completion|integer(32,0)|YES||NEVER|
+miniapp|chat_history|21|llm_native_tokens_prompt|integer(32,0)|YES||NEVER|
+miniapp|chat_history|22|llm_latency|numeric|YES||NEVER|
+miniapp|chat_history|23|llm_generation_time|numeric|YES||NEVER|
+miniapp|chat_history|24|llm_model|text|YES||NEVER|
+miniapp|chat_history|25|llm_generation_id|text|YES||NEVER|
+miniapp|chat_history|26|llm_generation_data|jsonb|YES||NEVER|
+miniapp|chat_history|27|llm_intended_deduction|numeric(10,2)|YES|NULL::numeric|NEVER|
+miniapp|chat_history|28|llm_model_markup|numeric(4,1)|YES||NEVER|
+miniapp|chat_history|29|llm_charge_id|uuid|YES||NEVER|
+miniapp|chat_history|30|session_id|uuid|YES||NEVER|
+miniapp|chat_history|31|turn_index|integer(32,0)|YES||NEVER|
+miniapp|chat_history|32|revision|integer(32,0)|YES||NEVER|
+miniapp|chat_message_audio|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|chat_message_audio|2|message_id|uuid|NO||NEVER|
+miniapp|chat_message_audio|3|session_id|uuid|NO||NEVER|
+miniapp|chat_message_audio|4|user_id|uuid|NO||NEVER|
+miniapp|chat_message_audio|5|revision|integer(32,0)|NO|0|NEVER|
+miniapp|chat_message_audio|6|is_active|boolean|NO|true|NEVER|
+miniapp|chat_message_audio|7|status|text|NO|'pending'::text|NEVER|
+miniapp|chat_message_audio|8|voice_id|text|NO||NEVER|
+miniapp|chat_message_audio|9|tts_model|text|NO||NEVER|
+miniapp|chat_message_audio|10|tts_speed|numeric(3,2)|NO||NEVER|
+miniapp|chat_message_audio|11|source_chars|integer(32,0)|NO|0|NEVER|
+miniapp|chat_message_audio|12|spoken_chars|integer(32,0)|NO|0|NEVER|
+miniapp|chat_message_audio|13|spoken_text|text|YES||NEVER|
+miniapp|chat_message_audio|14|storage_path|text|YES||NEVER|
+miniapp|chat_message_audio|15|audio_url|text|YES||NEVER|
+miniapp|chat_message_audio|16|duration_ms|integer(32,0)|YES||NEVER|
+miniapp|chat_message_audio|17|latency_ms|integer(32,0)|YES||NEVER|
+miniapp|chat_message_audio|18|error_code|text|YES||NEVER|
+miniapp|chat_message_audio|19|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|chat_message_audio|20|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|chat_sessions|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|chat_sessions|2|user_id|uuid|NO||NEVER|
+miniapp|chat_sessions|3|character_id|uuid|NO||NEVER|
+miniapp|chat_sessions|4|title|text|YES||NEVER|
+miniapp|chat_sessions|5|last_message_at|timestamp with time zone|YES||NEVER|
+miniapp|chat_sessions|6|last_message_preview|text|YES||NEVER|
+miniapp|chat_sessions|7|message_count|integer(32,0)|NO|0|NEVER|
+miniapp|chat_sessions|8|deleted_at|timestamp with time zone|YES||NEVER|
+miniapp|chat_sessions|9|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|chat_sessions|10|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|chat_sessions|11|context_window_start_turn|integer(32,0)|NO|1|NEVER|
+miniapp|chat_sessions|12|pinned_at|timestamp with time zone|YES||NEVER|
+miniapp|current_chat_history|1|id|uuid|YES||NEVER|
+miniapp|current_chat_history|2|user_id|uuid|YES||NEVER|
+miniapp|current_chat_history|3|model|text|YES||NEVER|
+miniapp|current_chat_history|4|user_input|text|YES||NEVER|
+miniapp|current_chat_history|5|assistant_reply|text|YES||NEVER|
+miniapp|current_chat_history|6|history|jsonb|YES||NEVER|
+miniapp|current_chat_history|7|character_id|uuid|YES||NEVER|
+miniapp|current_chat_history|8|preset_id|uuid|YES||NEVER|
+miniapp|current_chat_history|9|status|text|YES||NEVER|
+miniapp|current_chat_history|10|upstream_status|integer(32,0)|YES||NEVER|
+miniapp|current_chat_history|11|deduction_rate|numeric(14,1)|YES||NEVER|
+miniapp|current_chat_history|12|created_at|timestamp with time zone|YES||NEVER|
+miniapp|current_chat_history|13|user_character_round|integer(32,0)|YES||NEVER|
+miniapp|current_chat_history|14|llm_provider_name|text|YES||NEVER|
+miniapp|current_chat_history|15|llm_finish_reason|text|YES||NEVER|
+miniapp|current_chat_history|16|llm_usage|jsonb|YES||NEVER|
+miniapp|current_chat_history|17|llm_usage_cache|jsonb|YES||NEVER|
+miniapp|current_chat_history|18|llm_native_tokens_cached|integer(32,0)|YES||NEVER|
+miniapp|current_chat_history|19|llm_native_tokens_reasoning|integer(32,0)|YES||NEVER|
+miniapp|current_chat_history|20|llm_native_tokens_completion|integer(32,0)|YES||NEVER|
+miniapp|current_chat_history|21|llm_native_tokens_prompt|integer(32,0)|YES||NEVER|
+miniapp|current_chat_history|22|llm_latency|numeric|YES||NEVER|
+miniapp|current_chat_history|23|llm_generation_time|numeric|YES||NEVER|
+miniapp|current_chat_history|24|llm_model|text|YES||NEVER|
+miniapp|current_chat_history|25|llm_generation_id|text|YES||NEVER|
+miniapp|current_chat_history|26|llm_generation_data|jsonb|YES||NEVER|
+miniapp|current_chat_history|27|llm_intended_deduction|numeric(10,2)|YES||NEVER|
+miniapp|current_chat_history|28|llm_model_markup|numeric(4,1)|YES||NEVER|
+miniapp|current_chat_history|29|llm_charge_id|uuid|YES||NEVER|
+miniapp|current_chat_history|30|session_id|uuid|YES||NEVER|
+miniapp|current_chat_history|31|turn_index|integer(32,0)|YES||NEVER|
+miniapp|current_chat_history|32|revision|integer(32,0)|YES||NEVER|
+miniapp|daily_checkins|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|daily_checkins|2|user_id|uuid|NO||NEVER|
+miniapp|daily_checkins|3|reward_credits|integer(32,0)|NO||NEVER|
+miniapp|daily_checkins|4|claimed_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|llm_usage_charge_dedup|1|charge_key|uuid|NO||NEVER|
+miniapp|llm_usage_charge_dedup|2|generation_id|text|YES||NEVER|
+miniapp|llm_usage_charge_dedup|3|user_id|uuid|NO||NEVER|
+miniapp|llm_usage_charge_dedup|4|charged_amount|numeric(14,1)|NO|0|NEVER|
+miniapp|llm_usage_charge_dedup|5|status|text|NO||NEVER|
+miniapp|llm_usage_charge_dedup|6|processed_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|llm_usage_charges|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|llm_usage_charges|2|charge_key|uuid|NO||NEVER|
+miniapp|llm_usage_charges|3|generation_id|text|YES||NEVER|
+miniapp|llm_usage_charges|4|user_id|uuid|NO||NEVER|
+miniapp|llm_usage_charges|5|model_id|text|YES||NEVER|
+miniapp|llm_usage_charges|6|model_openrouter_id|text|NO||NEVER|
+miniapp|llm_usage_charges|7|model_display_name|text|NO||NEVER|
+miniapp|llm_usage_charges|8|catalog_version|integer(32,0)|NO|0|NEVER|
+miniapp|llm_usage_charges|9|pricing_config_version|integer(32,0)|NO|0|NEVER|
+miniapp|llm_usage_charges|10|usage_cost_usd|numeric(20,10)|YES||NEVER|
+miniapp|llm_usage_charges|11|exchange_rate|numeric(14,4)|NO||NEVER|
+miniapp|llm_usage_charges|12|model_markup|numeric(4,1)|NO||NEVER|
+miniapp|llm_usage_charges|13|initial_amount|numeric(14,1)|NO|0|NEVER|
+miniapp|llm_usage_charges|14|calculated_amount|numeric(14,1)|NO|0|NEVER|
+miniapp|llm_usage_charges|15|charged_amount|numeric(14,1)|NO|0|NEVER|
+miniapp|llm_usage_charges|16|fallback_used|boolean|NO|false|NEVER|
+miniapp|llm_usage_charges|17|status|text|NO||NEVER|
+miniapp|llm_usage_charges|18|debit_ledger_id|uuid|YES||NEVER|
+miniapp|llm_usage_charges|19|metadata|jsonb|NO|'{}'::jsonb|NEVER|
+miniapp|llm_usage_charges|20|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|llm_usage_charges|21|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|llm_usage_charges|22|reconciled_at|timestamp with time zone|YES||NEVER|
+miniapp|miniapp_user_settings|1|user_id|uuid|NO||NEVER|
+miniapp|miniapp_user_settings|2|tg_username|text|YES||NEVER|
+miniapp|miniapp_user_settings|3|tg_first_name|text|YES||NEVER|
+miniapp|miniapp_user_settings|4|tg_last_name|text|YES||NEVER|
+miniapp|miniapp_user_settings|5|display_name|text|YES||NEVER|
+miniapp|miniapp_user_settings|6|avatar_url|text|YES||NEVER|
+miniapp|miniapp_user_settings|7|total_round|bigint(64,0)|NO|0|NEVER|
+miniapp|miniapp_user_settings|8|pref_word_count|text|YES||NEVER|
+miniapp|miniapp_user_settings|9|pref_show_options|boolean|NO|true|NEVER|
+miniapp|miniapp_user_settings|10|pref_custom_instructions|text|YES||NEVER|
+miniapp|miniapp_user_settings|11|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|miniapp_user_settings|12|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|miniapp_user_settings|13|selected_model_id|text|YES||NEVER|
+miniapp|miniapp_user_settings|14|tg_avatar_url|text|YES||NEVER|
+miniapp|miniapp_user_settings|15|custom_avatar_url|text|YES||NEVER|
+miniapp|miniapp_user_settings|16|characters_last_seen_at|timestamp with time zone|YES||NEVER|
+miniapp|miniapp_user_settings|17|pref_voice_id|text|YES||NEVER|
+miniapp|miniapp_user_settings|18|pref_voice_playback_rate|numeric(3,2)|NO|1.0|NEVER|
+miniapp|notification_reads|1|notification_id|uuid|NO||NEVER|
+miniapp|notification_reads|2|user_id|uuid|NO||NEVER|
+miniapp|notification_reads|3|read_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|notifications|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|notifications|2|scope|text|NO||NEVER|
+miniapp|notifications|3|category|text|NO||NEVER|
+miniapp|notifications|4|title|text|NO||NEVER|
+miniapp|notifications|5|body|text|NO||NEVER|
+miniapp|notifications|6|user_id|uuid|YES||NEVER|
+miniapp|notifications|7|sort_order|integer(32,0)|NO|0|NEVER|
+miniapp|notifications|8|is_published|boolean|NO|false|NEVER|
+miniapp|notifications|9|published_at|timestamp with time zone|YES||NEVER|
+miniapp|notifications|10|created_by|uuid|YES||NEVER|
+miniapp|notifications|11|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|notifications|12|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|notifications|13|deleted_at|timestamp with time zone|YES||NEVER|
+miniapp|payment_orders|1|id|text|NO||NEVER|
+miniapp|payment_orders|2|user_id|uuid|NO||NEVER|
+miniapp|payment_orders|3|status|text|NO|'pending'::text|NEVER|
+miniapp|payment_orders|4|payment_type|text|NO||NEVER|
+miniapp|payment_orders|5|amount_cents|integer(32,0)|NO||NEVER|
+miniapp|payment_orders|6|credits_amount|integer(32,0)|NO||NEVER|
+miniapp|payment_orders|7|bonus_credits|integer(32,0)|NO|0|NEVER|
+miniapp|payment_orders|8|provider_transaction_id|text|YES||NEVER|
+miniapp|payment_orders|9|credits_added|boolean|NO|false|NEVER|
+miniapp|payment_orders|10|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|payment_orders|11|expires_at|timestamp with time zone|NO||NEVER|
+miniapp|payment_orders|12|paid_at|timestamp with time zone|YES||NEVER|
+miniapp|runtime_config|1|key|text|NO||NEVER|
+miniapp|runtime_config|2|value|jsonb|YES||NEVER|
+miniapp|runtime_config|3|description|text|YES||NEVER|
+miniapp|runtime_config|4|version|integer(32,0)|YES|1|NEVER|
+miniapp|runtime_config|5|updated_at|timestamp with time zone|NO|CURRENT_TIMESTAMP|NEVER|
+miniapp|runtime_config|6|text_value|text|YES||NEVER|
+miniapp|support_conversations|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|support_conversations|2|user_id|uuid|NO||NEVER|
+miniapp|support_conversations|3|status|text|NO|'open'::text|NEVER|
+miniapp|support_conversations|4|last_user_message_at|timestamp with time zone|YES||NEVER|
+miniapp|support_conversations|5|last_agent_message_at|timestamp with time zone|YES||NEVER|
+miniapp|support_conversations|6|agent_unread_count|integer(32,0)|NO|0|NEVER|
+miniapp|support_conversations|7|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|support_conversations|8|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|support_conversations|9|user_last_read_at|timestamp with time zone|YES||NEVER|
+miniapp|support_messages|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|support_messages|2|conversation_id|uuid|NO||NEVER|
+miniapp|support_messages|3|sender|text|NO||NEVER|
+miniapp|support_messages|4|body|text|NO||NEVER|
+miniapp|support_messages|5|client_msg_id|uuid|YES||NEVER|
+miniapp|support_messages|6|agent_user_id|uuid|YES||NEVER|
+miniapp|support_messages|7|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|user_wallets|1|user_id|uuid|NO||NEVER|
+miniapp|user_wallets|2|main_credits|numeric(14,1)|NO|0|NEVER|
+miniapp|user_wallets|3|bonus_credits|numeric(14,1)|NO|0|NEVER|
+miniapp|user_wallets|4|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|user_wallets|5|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|user_wallets|6|first_paid_at|timestamp with time zone|YES||NEVER|
+miniapp|user_wallets|7|last_paid_at|timestamp with time zone|YES||NEVER|
+miniapp|user_wallets|8|total_paid_amount|numeric(12,2)|NO|0|NEVER|
+miniapp|user_wallets|11|total_credits|numeric(14,1)|YES||ALWAYS|
+miniapp|users|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|users|2|tg_id|text|NO||NEVER|
+miniapp|users|3|source_id|text|YES||NEVER|
+miniapp|users|4|bot_entered_at|timestamp with time zone|YES||NEVER|
+miniapp|users|5|miniapp_entered_at|timestamp with time zone|YES||NEVER|
+miniapp|users|6|total_round|bigint(64,0)|NO|0|NEVER|
+miniapp|users|7|st_handle|text|NO||NEVER|
+miniapp|users|8|st_initialized_at|timestamp with time zone|YES||NEVER|
+miniapp|users|9|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|users|10|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|wallet_ledger|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|wallet_ledger|2|user_id|uuid|NO||NEVER|
+miniapp|wallet_ledger|3|entry_type|text|NO||NEVER|
+miniapp|wallet_ledger|4|amount|numeric(14,1)|NO||NEVER|
+miniapp|wallet_ledger|5|main_delta|numeric(14,1)|NO|0|NEVER|
+miniapp|wallet_ledger|6|bonus_delta|numeric(14,1)|NO|0|NEVER|
+miniapp|wallet_ledger|7|balance_main|numeric(14,1)|NO||NEVER|
+miniapp|wallet_ledger|8|balance_bonus|numeric(14,1)|NO||NEVER|
+miniapp|wallet_ledger|9|reference_type|text|YES||NEVER|
+miniapp|wallet_ledger|10|reference_id|text|YES||NEVER|
+miniapp|wallet_ledger|11|metadata|jsonb|NO|'{}'::jsonb|NEVER|
+miniapp|wallet_ledger|12|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|wish_roles|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp|wish_roles|2|user_id|bigint(64,0)|NO||NEVER|
+miniapp|wish_roles|3|db_user_id|uuid|YES||NEVER|
+miniapp|wish_roles|4|wish_text|text|NO||NEVER|
+miniapp|wish_roles|5|extra_text|text|YES||NEVER|
+miniapp|wish_roles|6|total_paid_amount_at_submit|numeric(12,2)|NO|0|NEVER|
+miniapp|wish_roles|7|reward_credits|integer(32,0)|NO|1|NEVER|
+miniapp|wish_roles|8|status|text|NO|'awaiting_extra'::text|NEVER|
+miniapp|wish_roles|9|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp|wish_roles|10|closed_at|timestamp with time zone|YES||NEVER|
+miniapp_analytics|base_chat_bj|1|id|uuid|YES||NEVER|
+miniapp_analytics|base_chat_bj|2|user_id|uuid|YES||NEVER|
+miniapp_analytics|base_chat_bj|3|character_id|uuid|YES||NEVER|
+miniapp_analytics|base_chat_bj|4|status|text|YES||NEVER|
+miniapp_analytics|base_chat_bj|5|created_at|timestamp with time zone|YES||NEVER|
+miniapp_analytics|base_chat_bj|6|msg_ts_bj|timestamp without time zone|YES||NEVER|
+miniapp_analytics|base_chat_bj|7|msg_date_bj|date|YES||NEVER|
+miniapp_analytics|base_chat_bj|8|llm_latency|numeric|YES||NEVER|
+miniapp_analytics|base_cohort_members|1|user_id|uuid|YES||NEVER|
+miniapp_analytics|base_cohort_members|2|cohort_date|date|YES||NEVER|
+miniapp_analytics|base_first_session|1|user_id|uuid|YES||NEVER|
+miniapp_analytics|base_first_session|2|first_session_rounds|bigint(64,0)|YES||NEVER|
+miniapp_analytics|base_first_session|3|fs_start_bj|timestamp without time zone|YES||NEVER|
+miniapp_analytics|base_first_session|4|fs_end_bj|timestamp without time zone|YES||NEVER|
+miniapp_analytics|base_users_bj|1|user_id|uuid|YES||NEVER|
+miniapp_analytics|base_users_bj|2|miniapp_entered_at|timestamp with time zone|YES||NEVER|
+miniapp_analytics|base_users_bj|3|enter_ts_bj|timestamp without time zone|YES||NEVER|
+miniapp_analytics|base_users_bj|4|enter_date_bj|date|YES||NEVER|
+miniapp_analytics|card_position_snapshot|1|snapshot_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_analytics|card_position_snapshot|2|character_id|uuid|NO||NEVER|
+miniapp_analytics|card_position_snapshot|3|name|text|YES||NEVER|
+miniapp_analytics|card_position_snapshot|4|sort_order|integer(32,0)|YES||NEVER|
+miniapp_analytics|card_position_snapshot|5|enabled|boolean|YES||NEVER|
+miniapp_analytics|v_card_quality_session|1|name|text|YES||NEVER|
+miniapp_analytics|v_card_quality_session|2|id|uuid|YES||NEVER|
+miniapp_analytics|v_card_quality_session|3|enabled|boolean|YES||NEVER|
+miniapp_analytics|v_card_quality_session|4|sort_order|integer(32,0)|YES||NEVER|
+miniapp_analytics|v_card_quality_session|5|user_cnt|integer(32,0)|YES||NEVER|
+miniapp_analytics|v_card_quality_session|6|r48_eligible_user_cnt|integer(32,0)|YES||NEVER|
+miniapp_analytics|v_card_quality_session|7|d30_score|numeric|YES||NEVER|
+miniapp_analytics|v_card_quality_session|8|r48_score|numeric|YES||NEVER|
+miniapp_analytics|v_card_quality_session|9|final_score|numeric(6,2)|YES||NEVER|
+miniapp_analytics|v_card_quality_session|10|window_days|integer(32,0)|YES||NEVER|
+miniapp_analytics|v_card_quality_session|11|computed_at|timestamp with time zone|YES||NEVER|
+miniapp_analytics|v_card_quality_session|12|absolute_score|numeric|YES||NEVER|
+miniapp_analytics|v_daily_funnel|1|enter_date_bj|date|YES||NEVER|
+miniapp_analytics|v_daily_funnel|2|entered|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_daily_funnel|3|ge1|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_daily_funnel|4|ge3|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_daily_funnel|5|ge5|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_daily_funnel|6|ge15|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_daily_funnel|7|exactly1|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_daily_funnel|8|entered_to_ge1_rate|numeric|YES||NEVER|
+miniapp_analytics|v_daily_funnel|9|ge1_to_ge5_rate|numeric|YES||NEVER|
+miniapp_analytics|v_daily_funnel|10|ge1_to_ge15_rate|numeric|YES||NEVER|
+miniapp_analytics|v_daily_funnel|11|entered_to_ge5_rate|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|1|cohort_date|date|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|2|cohort_code|text|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|3|cohort_users|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|4|d0_ltv_yuan|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|5|d1_ltv_yuan|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|6|d3_ltv_yuan|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|7|d7_ltv_yuan|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|8|d30_ltv_yuan|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|9|d60_ltv_yuan|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_ltv|10|d90_ltv_yuan|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_retention|1|cohort_date|date|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_retention|2|activated_users|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_retention|3|d0_retention_pct|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_retention|4|d1_retention_pct|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_retention|5|d3_retention_pct|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_retention|6|d7_retention_pct|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_retention|7|d30_retention_pct|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_retention|8|d60_retention_pct|numeric|YES||NEVER|
+miniapp_analytics|v_miniapp_cohort_retention|9|d90_retention_pct|numeric|YES||NEVER|
+miniapp_analytics|v_user_ecosystem_daily|1|cohort_date|date|YES||NEVER|
+miniapp_analytics|v_user_ecosystem_daily|2|entered_users|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_user_ecosystem_daily|3|activated_users|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_user_ecosystem_daily|4|converted_users|bigint(64,0)|YES||NEVER|
+miniapp_analytics|v_user_ecosystem_daily|5|d7_new_to_old_rate|numeric|YES||NEVER|
+miniapp_analytics|v_user_ecosystem_daily|6|is_confident|boolean|YES||NEVER|
+miniapp_analytics|v_user_ecosystem_daily|7|d7_payment_rate|numeric|YES||NEVER|
+miniapp_analytics|v_user_ecosystem_daily|8|d7_arpu_cny|numeric|YES||NEVER|
+miniapp_analytics|v_user_ecosystem_daily|9|d30_payment_rate|numeric|YES||NEVER|
+miniapp_traffic|botlinks|1|id|bigint(64,0)|NO|nextval('miniapp_traffic.botlinks_id_seq'::regclass)|NEVER|
+miniapp_traffic|botlinks|2|bot_link|text|YES||NEVER|
+miniapp_traffic|botlinks|3|source_id|text|YES||NEVER|
+miniapp_traffic|botlinks|4|created_at|timestamp with time zone|YES|now()|NEVER|
+miniapp_traffic|botlinks|5|source_name|text|YES||NEVER|
+miniapp_traffic|botlinks|6|start_time|date|YES||NEVER|
+miniapp_traffic|botlinks|7|end_time|date|YES||NEVER|
+miniapp_traffic|botlinks|8|Purchase_amount|integer(32,0)|YES||NEVER|
+miniapp_traffic|botlinks|9|Procurement_days|integer(32,0)|YES||NEVER|
+miniapp_traffic|traffic_clicks|1|id|bigint(64,0)|NO|nextval('miniapp_traffic.traffic_clicks_id_seq'::regclass)|NEVER|
+miniapp_traffic|traffic_clicks|2|stat_date|date|NO|CURRENT_DATE|NEVER|
+miniapp_traffic|traffic_clicks|3|source_id|text|NO||NEVER|
+miniapp_traffic|traffic_clicks|4|clicks|integer(32,0)|NO|0|NEVER|
+miniapp_traffic|traffic_clicks|5|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_traffic|traffic_clicks|6|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_traffic|traffic_daily_stats|1|stat_date|date|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|2|source_id|text|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|3|source_name|text|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|4|start_time|date|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|5|end_time|date|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|6|purchase_amount|integer(32,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|7|procurement_days|integer(32,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|8|daily_cost|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|9|clicks|integer(32,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|10|activated_users|bigint(64,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|11|daily_cpa|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|12|conversion_rate|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|13|total_activated_users|bigint(64,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|14|cumulative_cpa|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|15|cumulative_ltv|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|16|weekly_ref_date|date|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|17|weekly_cpa|numeric|YES||NEVER|

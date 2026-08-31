@@ -5,7 +5,8 @@
 #
 # Inherited from M1 (ops/docker/Dockerfile.st-bundle, hard constraints):
 #   - base: node:20-bookworm-slim (matches .nvmrc=20; glibc)
-#   - corepack pnpm@9.15.9 (matches root packageManager field)
+#   - corepack pnpm@9.15.9 (matches root packageManager field; version now via ARG PNPM_VERSION,
+#     provisioned explicitly in the stable layer rather than implicitly on pnpm's first call)
 #   - pnpm install --frozen-lockfile, dependencies installed INSIDE the image
 #   - ARG TARGETARCH (keeps buildx cross-platform builds working)
 #   - multi-stage builder -> runtime; runs as the base image's non-root `node` user
@@ -27,25 +28,52 @@
 # =============================================================================
 
 # Pin the toolchain versions so build-time fetches are deterministic.
+# PNPM_VERSION must stay in lockstep with the root package.json "packageManager" field.
+ARG PNPM_VERSION=9.15.9
 ARG PRISMA_VERSION=6.19.3
 ARG TSX_VERSION=4.21.0
 
 # ========== Stage 1: builder (prod deps + generated prisma client) ==========
 FROM node:20-bookworm-slim AS builder
 ARG TARGETARCH
+ARG PNPM_VERSION
 ARG PRISMA_VERSION
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
+# Corepack must never wait on (or even consider) an interactive confirmation: a Docker build has
+# no TTY, and leaving this unset made the download path the only thing standing between a build
+# and a hang. See the corepack note below.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # openssl: let Prisma detect the right libssl (bookworm = openssl-3.0.x) when generating.
+#
+# `corepack prepare` belongs in THIS layer, not in the `pnpm install` layer below. The pnpm
+# tarball fetch used to happen implicitly on pnpm's first invocation — i.e. inside a layer that
+# every source change invalidates, so it re-downloaded on essentially every build. On 2026-08-28
+# that fetch stalled on a Railway Metal builder and hung the production build twice (~20 min each,
+# see docs/schema划分-批次A进度交接.md §12.5). Here the layer's only inputs are the base image and
+# PNPM_VERSION, so the tarball is fetched once and then cached across all subsequent builds.
+#
+# `timeout ... || retry` matters because the observed failure was a STALL, not an error: without a
+# timeout there is nothing to fail and retry, the build just hangs until someone notices.
 RUN apt-get update && apt-get install -y --no-install-recommends openssl \
  && rm -rf /var/lib/apt/lists/* \
- && corepack enable
+ && corepack enable \
+ && (timeout 180 corepack prepare "pnpm@${PNPM_VERSION}" --activate \
+     || timeout 180 corepack prepare "pnpm@${PNPM_VERSION}" --activate) \
+ && pnpm --version
 
 WORKDIR /build
 # Workspace metadata + only the packages in the backend dependency closure.
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/backend packages/backend
 COPY packages/shared  packages/shared
+
+# If ARG PNPM_VERSION ever drifts from the root "packageManager" field, corepack would silently
+# fetch the package.json version at `pnpm install` time — putting the download back into the layer
+# that source changes invalidate, i.e. re-opening the hang. Fail loudly here instead.
+RUN want=$(node -p "require('./package.json').packageManager") \
+ && test "$want" = "pnpm@${PNPM_VERSION}" \
+    || { echo "packageManager=$want != ARG PNPM_VERSION=pnpm@${PNPM_VERSION}; bump both" >&2; exit 1; }
 
 # Production dependencies only (backend + its workspace dep @miniapp/shared). This excludes
 # devDependencies (tsx, prisma CLI, typescript, and shared's vitest/vite tooling).

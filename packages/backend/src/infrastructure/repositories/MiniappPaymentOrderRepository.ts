@@ -1,5 +1,10 @@
-import { getSupabaseClient } from '../../lib/supabase.js';
-import type { PaymentOrder, PaymentOrderStatus, PaymentType } from '@miniapp/shared';
+import { getDomainDb } from '../../lib/supabase.js';
+import type {
+  PaymentOrder,
+  PaymentOrderStatus,
+  PaymentSettlementSource,
+  PaymentType,
+} from '@miniapp/shared';
 
 export interface MiniappPaymentOrderRow {
   id: string;
@@ -14,6 +19,12 @@ export interface MiniappPaymentOrderRow {
   created_at: string;
   expires_at: string;
   paid_at: string | null;
+  /** 入账获胜路径；migration 103 之前入账的历史订单为 null */
+  settled_by: PaymentSettlementSource | null;
+  next_reconcile_at: string;
+  last_reconciled_at: string | null;
+  reconcile_attempts: number;
+  reconcile_locked_until: string | null;
 }
 
 export interface CreateMiniappPaymentOrderInput {
@@ -26,8 +37,11 @@ export interface CreateMiniappPaymentOrderInput {
   expires_at: string;
 }
 
+/** 日报按天全量取，单页上限只是为了不把一天的订单压成一次超大响应。 */
+const REPORT_PAGE_SIZE = 500;
+
 export class MiniappPaymentOrderRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('billing');
 
   async create(input: CreateMiniappPaymentOrderInput): Promise<MiniappPaymentOrderRow> {
     const { data, error } = await this.db.from('payment_orders').insert(input).select('*').single();
@@ -81,6 +95,41 @@ export class MiniappPaymentOrderRepository {
     return (data ?? []) as MiniappPaymentOrderRow[];
   }
 
+  /**
+   * 回调监控日报口径：按 created_at 取一整天的订单。
+   * 划天用 created_at 而不是 paid_at，问的是「当天下的单最后由哪条路径入账」，
+   * 跨天才入账的订单仍归它下单的那天，否则兜底路径的耗时会被算到第二天。
+   */
+  async listCreatedBetween(input: {
+    since: string;
+    until: string;
+    status?: PaymentOrderStatus;
+  }): Promise<MiniappPaymentOrderRow[]> {
+    const rows: MiniappPaymentOrderRow[] = [];
+
+    for (let offset = 0; ; offset += REPORT_PAGE_SIZE) {
+      let query = this.db
+        .from('payment_orders')
+        .select('*')
+        .gte('created_at', input.since)
+        .lt('created_at', input.until)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + REPORT_PAGE_SIZE - 1);
+
+      if (input.status) {
+        query = query.eq('status', input.status);
+      }
+
+      const { data, error } = await query;
+      if (error) throw new Error(`查询区间支付订单失败：${error.message}`);
+
+      const page = (data ?? []) as MiniappPaymentOrderRow[];
+      rows.push(...page);
+      if (page.length < REPORT_PAGE_SIZE) return rows;
+    }
+  }
+
   async expirePendingForUser(userId: string): Promise<number> {
     const { data, error } = await this.db.rpc('expire_payment_orders', {
       p_user_id: userId,
@@ -99,7 +148,7 @@ export class MiniappPaymentOrderRepository {
 
   /**
    * 判过期前需要跟厂商对一次账的订单：已到期但还没入账的 pending，
-   * 以及窗口内已被判过期、仍未入账的订单（上一轮 cron 可能在查单前就把它判死了）。
+   * 以及窗口内已被判过期、仍未入账的订单。
    */
   async listUnsettledAroundExpiry(input: {
     since: string;
@@ -118,6 +167,73 @@ export class MiniappPaymentOrderRepository {
 
     if (error) throw new Error(`查询待对账支付订单失败：${error.message}`);
     return (data ?? []) as MiniappPaymentOrderRow[];
+  }
+
+  async listDueForReconciliation(input: {
+    now: string;
+    limit: number;
+  }): Promise<MiniappPaymentOrderRow[]> {
+    const { data, error } = await this.db
+      .from('payment_orders')
+      .select('*')
+      .eq('status', 'pending')
+      .eq('credits_added', false)
+      .gt('expires_at', input.now)
+      .lte('next_reconcile_at', input.now)
+      .or(`reconcile_locked_until.is.null,reconcile_locked_until.lt.${input.now}`)
+      .order('next_reconcile_at', { ascending: true })
+      .limit(input.limit);
+
+    if (error) throw new Error(`查询待快速对账支付订单失败：${error.message}`);
+    return (data ?? []) as MiniappPaymentOrderRow[];
+  }
+
+  async claimForReconciliation(input: {
+    candidate: MiniappPaymentOrderRow;
+    now: string;
+    lockedUntil: string;
+  }): Promise<MiniappPaymentOrderRow | null> {
+    const { candidate } = input;
+    const { data, error } = await this.db
+      .from('payment_orders')
+      .update({
+        last_reconciled_at: input.now,
+        reconcile_attempts: candidate.reconcile_attempts + 1,
+        reconcile_locked_until: input.lockedUntil,
+      })
+      .eq('id', candidate.id)
+      .eq('status', 'pending')
+      .eq('credits_added', false)
+      .eq('next_reconcile_at', candidate.next_reconcile_at)
+      .eq('reconcile_attempts', candidate.reconcile_attempts)
+      .or(`reconcile_locked_until.is.null,reconcile_locked_until.lt.${input.now}`)
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw new Error(`领取快速对账支付订单失败：${error.message}`);
+    return (data as MiniappPaymentOrderRow | null) ?? null;
+  }
+
+  async releaseReconciliationClaim(input: {
+    id: string;
+    lockedUntil: string;
+    nextReconcileAt: string;
+  }): Promise<boolean> {
+    const { data, error } = await this.db
+      .from('payment_orders')
+      .update({
+        next_reconcile_at: input.nextReconcileAt,
+        reconcile_locked_until: null,
+      })
+      .eq('id', input.id)
+      .eq('status', 'pending')
+      .eq('credits_added', false)
+      .eq('reconcile_locked_until', input.lockedUntil)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw new Error(`释放快速对账支付订单失败：${error.message}`);
+    return data !== null;
   }
 
   async expirePendingByIdForUser(id: string, userId: string): Promise<void> {
@@ -156,11 +272,13 @@ export class MiniappPaymentOrderRepository {
 
   async complete(
     id: string,
-    providerTransactionId: string | null
+    providerTransactionId: string | null,
+    settledBy: PaymentSettlementSource
   ): Promise<MiniappPaymentOrderRow> {
     const { data, error } = await this.db.rpc('complete_payment_order', {
       p_order_id: id,
       p_provider_transaction_id: providerTransactionId,
+      p_settled_by: settledBy,
     });
     if (error) throw new Error(`完成支付订单失败：${error.message}`);
     return data as MiniappPaymentOrderRow;

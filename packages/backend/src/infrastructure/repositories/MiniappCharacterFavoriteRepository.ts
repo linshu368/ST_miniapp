@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 
 export interface CharacterFavoriteRow {
   character_id: string;
@@ -15,7 +15,7 @@ export interface CharacterFavoriteStateRow {
  * 收藏列表的可用性过滤和重复收藏收敛都在数据库侧完成。
  */
 export class MiniappCharacterFavoriteRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('miniapp_features');
 
   async list(userId: string): Promise<CharacterFavoriteRow[]> {
     const { data, error } = await this.db.rpc('list_character_favorites', {

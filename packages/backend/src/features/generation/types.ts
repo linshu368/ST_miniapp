@@ -47,7 +47,6 @@ export interface GenerationRequest {
    * 传入时生成出口更新该行的计费与 LLM 元数据；ST 链路不传，仍按原行为新增日志。
    */
   historyId?: string | null;
-  presetId?: string | null;
   stream: boolean;
   /**
    * 是否为 Anthropic Claude 注入 OpenRouter 的 cache_control 断点（system 段 + 历史尾部），

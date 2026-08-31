@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import {
   normalizeTelegramAvatarUrl,
   type PatchUserSettingsRequest,
@@ -45,7 +45,7 @@ export interface MiniappUserSettingsRow {
 }
 
 export class MiniappUserSettingsRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('app_core');
 
   async getOrCreate(userId: string, tgUser: TelegramUser): Promise<MiniappUserSettingsRow> {
     const existing = await this.findByUserId(userId);

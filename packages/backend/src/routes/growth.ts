@@ -60,7 +60,7 @@ export default async function growthRoutes(app: FastifyInstance) {
 
       if (!dbUser.source_id) {
         const affectedRows = await prisma.$executeRawUnsafe(
-          `UPDATE miniapp.users SET source_id = $1, updated_at = now() WHERE id = $2::uuid AND source_id IS NULL`,
+          `UPDATE app_core.users SET source_id = $1, updated_at = now() WHERE id = $2::uuid AND source_id IS NULL`,
           sourceId,
           dbUser.id
         );

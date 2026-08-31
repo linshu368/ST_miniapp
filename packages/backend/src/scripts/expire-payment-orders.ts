@@ -17,7 +17,10 @@ try {
     paymentEnabled: config.payment.enabled,
   });
 
-  console.log(`Reconciled before expiry: checked=${result.checked} settled=${result.settled}`);
+  console.log(
+    `Reconciled before expiry: checked=${result.checked} settled=${result.settled} ` +
+      `failed=${result.failed}`
+  );
   console.log(`Expired payment orders: ${result.expired}`);
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);

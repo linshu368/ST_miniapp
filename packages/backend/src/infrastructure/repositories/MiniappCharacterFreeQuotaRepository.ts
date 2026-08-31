@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 
 interface CharacterFreeQuotaRpcResult {
   granted_free: boolean;
@@ -17,7 +17,7 @@ export interface CharacterFreeQuotaDecision {
 }
 
 export class MiniappCharacterFreeQuotaRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('billing');
 
   async getStatus(
     userId: string,

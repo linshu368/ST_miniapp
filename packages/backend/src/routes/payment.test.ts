@@ -64,6 +64,11 @@ function createOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPa
     created_at: '2026-08-21T09:00:00.000Z',
     expires_at: '2026-08-21T09:15:00.000Z',
     paid_at: null,
+    settled_by: null,
+    next_reconcile_at: '2026-08-21T09:01:00.000Z',
+    last_reconciled_at: null,
+    reconcile_attempts: 0,
+    reconcile_locked_until: null,
     ...overrides,
   };
 }
@@ -117,7 +122,7 @@ describe('handleZqPayWebhook', () => {
 
     await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
 
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
     expect(insertUserNotification).toHaveBeenCalledOnce();
     expect(state).toMatchObject({
       statusCode: 200,
@@ -166,7 +171,7 @@ describe('handleZqPayWebhook', () => {
     await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
 
     expect(orders.reopenExpired).toHaveBeenCalledWith('MA-order-1');
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
     expect(insertUserNotification).toHaveBeenCalledOnce();
     expect(state.body).toBe('success');
   });
@@ -281,7 +286,7 @@ describe('reconcileWithGateway', () => {
     );
 
     expect(gateway.queryOrder).toHaveBeenCalledWith('MA-query-paid');
-    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'query');
     expect(changed).toBe(true);
   });
 
@@ -363,7 +368,6 @@ const routeOrders = {
   findById: vi.fn(async () => createOrder()),
   complete: vi.fn(async () => createOrder({ status: 'completed', credits_added: true })),
   reopenExpired: vi.fn(async () => undefined),
-  expirePendingForUser: vi.fn(async () => 0),
   expirePendingByIdForUser: vi.fn(async () => undefined),
   findByIdForUser: vi.fn(async () => null),
   listByUser: vi.fn(async () => []),
@@ -371,8 +375,17 @@ const routeOrders = {
   create: vi.fn(async () => createOrder()),
 };
 
+// 整个模块被替换掉，所以两个入口都得给：现在业务代码走的是 getDomainDb，
+// 少一个就会在被 mock 的调用链里报 "getDomainDb is not a function"。
 vi.mock('../lib/supabase.js', () => ({
   getSupabaseClient: () => ({ schema: () => ({}) }),
+  getDomainDb: () => ({}),
+}));
+
+vi.mock('../lib/user.js', () => ({
+  getOrCreateDbUser: vi.fn(async () => ({
+    id: '00000000-0000-0000-0000-000000000001',
+  })),
 }));
 
 vi.mock(
@@ -417,6 +430,26 @@ async function buildWebhookApp() {
   return app;
 }
 
+describe('GET /api/payment/orders', () => {
+  it('lists orders without expiring pending rows as a read side effect', async () => {
+    vi.stubEnv('DEV_AUTH_BYPASS', '1');
+    const app = await buildWebhookApp();
+
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/payment/orders',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(routeOrders.listByUser).toHaveBeenCalledOnce();
+    } finally {
+      await app.close();
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('POST/GET /api/payment/webhook/zqpay', () => {
   const notify = createNotify();
 
@@ -432,7 +465,7 @@ describe('POST/GET /api/payment/webhook/zqpay', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toBe('success');
-    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
 
     await app.close();
   });
@@ -447,7 +480,7 @@ describe('POST/GET /api/payment/webhook/zqpay', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toBe('success');
-    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
 
     await app.close();
   });
@@ -477,7 +510,7 @@ describe('GET /api/payment/return', () => {
     });
 
     expect(response.statusCode).toBe(302);
-    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1');
+    expect(routeOrders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'return');
 
     await app.close();
   });

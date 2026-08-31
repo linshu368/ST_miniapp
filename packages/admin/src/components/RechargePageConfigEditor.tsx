@@ -63,6 +63,17 @@ export function RechargePageConfigEditor(props: RechargePageConfigEditorProps) {
                 onChange={(event) => update({ button_text: event.target.value })}
               />
             </div>
+            <div>
+              <Typography.Text>订单等待页到账提示</Typography.Text>
+              <Input.TextArea
+                rows={2}
+                maxLength={80}
+                showCount
+                value={props.value.pending_arrival_hint}
+                disabled={props.disabled}
+                onChange={(event) => update({ pending_arrival_hint: event.target.value })}
+              />
+            </div>
             <div className="recharge-color-grid">
               {colorFields.map((field) => (
                 <div key={field.key}>

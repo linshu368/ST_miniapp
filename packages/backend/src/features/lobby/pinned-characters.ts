@@ -2,7 +2,7 @@
  * backend / features / lobby / pinned-characters.ts
  *
  * 首页「推荐」运营固定位的读取口：
- * miniapp.runtime_config.lobby_pinned_characters → 校验 → 兜底。
+ * app_core.runtime_config.lobby_pinned_characters → 校验 → 兜底。
  *
  * 与 ranking-params 的关键差别是调用频率：那个一天读一次（刷新 job），这个在大厅
  * 读路径上，每次打开首页都要用。所以这里带一层 60 秒内存缓存，TTL 与

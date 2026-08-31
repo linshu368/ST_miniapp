@@ -1,0 +1,6 @@
+psql:ops/schema-split/inventory.sql:255: ERROR:  relation "cron.job" does not exist
+LINE 7: FROM cron.job j
+             ^
+psql:ops/schema-split/inventory.sql:265: ERROR:  relation "cron.job_run_details" does not exist
+LINE 6: FROM cron.job_run_details r
+             ^

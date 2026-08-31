@@ -9,8 +9,8 @@ import type {
 export type Membership = 'active' | 'chatted_left';
 
 export const DEFAULT_SQL = `SELECT u.id AS user_id
-FROM miniapp.users u
-JOIN miniapp.miniapp_user_settings s ON s.user_id = u.id
+FROM app_core.users u
+JOIN app_core.miniapp_user_settings s ON s.user_id = u.id
 WHERE s.total_round > 40
   AND u.miniapp_entered_at < now() - interval '7 days'
 ORDER BY s.total_round DESC`;

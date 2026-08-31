@@ -1,0 +1,1426 @@
+===SECTION:00_meta===
+db|server_version|conn_role
+postgres|17.6|postgres
+===SECTION:01_schemas_all===
+nsp|nsp_owner|nsp_acl
+admin|postgres|postgres=UC/postgres authenticated=U/postgres service_role=U/postgres
+aiero|postgres|postgres=UC/postgres service_role=U/postgres
+app_core|postgres|postgres=UC/postgres service_role=U/postgres
+auth|supabase_admin|supabase_admin=UC/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin supabase_auth_admin=UC/supabase_admin dashboard_user=UC/supabase_admin postgres=U/supabase_admin
+billing|postgres|postgres=UC/postgres service_role=U/postgres
+cs_platform|postgres|postgres=UC/postgres service_role=U/postgres
+experience|postgres|postgres=UC/postgres service_role=U/postgres
+extensions|postgres|postgres=UC/postgres anon=U/postgres authenticated=U/postgres service_role=U/postgres dashboard_user=UC/postgres
+graphql|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin
+graphql_public|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin
+miniapp|postgres|postgres=UC/postgres service_role=U/postgres
+miniapp_analytics|postgres|(default)
+miniapp_features|postgres|postgres=UC/postgres service_role=U/postgres
+miniapp_traffic|postgres|postgres=UC/postgres anon=U/postgres authenticated=U/postgres service_role=U/postgres
+pgbouncer|pgbouncer|(default)
+public|pg_database_owner|pg_database_owner=UC/pg_database_owner =U/pg_database_owner postgres=U/pg_database_owner anon=U/pg_database_owner authenticated=U/pg_database_owner service_role=U/pg_database_owner
+realtime|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin supabase_realtime_admin=UC/supabase_admin
+storage|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin anon=U/supabase_admin authenticated=U/supabase_admin service_role=U/supabase_admin supabase_storage_admin=U*C*/supabase_admin dashboard_user=UC/supabase_admin
+supabase_migrations|postgres|(default)
+vault|supabase_admin|supabase_admin=UC/supabase_admin postgres=U*/supabase_admin service_role=U/supabase_admin
+===SECTION:02_relations===
+nsp|rel|relkind|rel_owner|rls|persist
+admin|admin_users|r|postgres|t|p
+admin|audit_logs|r|postgres|t|p
+admin|character_layout_drafts|r|postgres|t|p
+admin|character_layout_releases|r|postgres|t|p
+admin|character_layout_state|r|postgres|t|p
+admin|config_drafts|r|postgres|t|p
+admin|config_releases|r|postgres|t|p
+admin|environment_config|r|postgres|t|p
+app_core|characters|r|postgres|t|p
+app_core|miniapp_user_settings|r|postgres|t|p
+app_core|runtime_config|r|postgres|t|p
+app_core|users|r|postgres|t|p
+billing|character_free_chat_quota_decisions|r|postgres|t|p
+billing|character_free_chat_quotas|r|postgres|t|p
+billing|llm_usage_charge_dedup|r|postgres|t|p
+billing|llm_usage_charges|r|postgres|t|p
+billing|payment_orders|r|postgres|t|p
+billing|user_wallets|r|postgres|t|p
+billing|wallet_ledger|r|postgres|t|p
+cs_platform|audit_logs|r|postgres|t|p
+cs_platform|export_logs|r|postgres|t|p
+cs_platform|outreach_messages|r|postgres|t|p
+cs_platform|outreach_sessions|r|postgres|t|p
+cs_platform|persona_member_snapshots|r|postgres|t|p
+cs_platform|persona_member_state|r|postgres|t|p
+cs_platform|persona_refresh_runs|r|postgres|t|p
+cs_platform|personas|r|postgres|t|p
+cs_platform|support_conversations|r|postgres|t|p
+cs_platform|support_messages|r|postgres|t|p
+cs_platform|persona_users_detail|v|postgres|f|p
+cs_platform|user_metrics|v|postgres|f|p
+experience|chat_history|r|postgres|f|p
+experience|chat_message_audio|r|postgres|t|p
+experience|chat_sessions|r|postgres|t|p
+experience|current_chat_history|v|postgres|f|p
+miniapp_analytics|funnel_stats|v|postgres|f|p
+miniapp_features|character_favorites|r|postgres|t|p
+miniapp_features|character_ranking_scores|r|postgres|f|p
+miniapp_features|daily_checkins|r|postgres|t|p
+miniapp_features|notification_reads|r|postgres|t|p
+miniapp_features|notifications|r|postgres|t|p
+miniapp_features|wish_roles|r|postgres|t|p
+miniapp_traffic|botlinks_id_seq|S|postgres|f|p
+miniapp_traffic|traffic_clicks_id_seq|S|postgres|f|p
+miniapp_traffic|botlinks|r|postgres|f|p
+miniapp_traffic|traffic_clicks|r|postgres|f|p
+miniapp_traffic|traffic_daily_stats|v|postgres|f|p
+===SECTION:03_columns===
+nsp|rel|pos|col|col_type|col_nullable|col_default|col_generated|col_identity
+admin|admin_users|1|user_id|uuid|NO||NEVER|
+admin|admin_users|2|email|text|NO||NEVER|
+admin|admin_users|3|role|text|NO||NEVER|
+admin|admin_users|4|can_access_test|boolean|NO|true|NEVER|
+admin|admin_users|5|can_access_prod|boolean|NO|false|NEVER|
+admin|admin_users|6|created_at|timestamp with time zone|NO|now()|NEVER|
+admin|admin_users|7|updated_at|timestamp with time zone|NO|now()|NEVER|
+admin|admin_users|8|display_name|text|YES||NEVER|
+admin|audit_logs|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|audit_logs|2|actor_user_id|uuid|YES||NEVER|
+admin|audit_logs|3|actor_email|text|NO||NEVER|
+admin|audit_logs|4|environment|text|NO||NEVER|
+admin|audit_logs|5|action|text|NO||NEVER|
+admin|audit_logs|6|schema_name|text|NO||NEVER|
+admin|audit_logs|7|table_name|text|NO||NEVER|
+admin|audit_logs|8|record_id|text|NO||NEVER|
+admin|audit_logs|9|before_value|jsonb|YES||NEVER|
+admin|audit_logs|10|after_value|jsonb|YES||NEVER|
+admin|audit_logs|11|created_at|timestamp with time zone|NO|now()|NEVER|
+admin|audit_logs|12|actor_name|text|YES||NEVER|
+admin|character_layout_drafts|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|character_layout_drafts|2|environment|text|NO||NEVER|
+admin|character_layout_drafts|3|listed_ids|ARRAY|NO|'{}'::uuid[]|NEVER|
+admin|character_layout_drafts|4|delisted_ids|ARRAY|NO|'{}'::uuid[]|NEVER|
+admin|character_layout_drafts|5|deleted_ids|ARRAY|NO|'{}'::uuid[]|NEVER|
+admin|character_layout_drafts|6|base_layout_version|integer(32,0)|NO||NEVER|
+admin|character_layout_drafts|7|status|text|NO|'draft'::text|NEVER|
+admin|character_layout_drafts|8|created_by|uuid|NO||NEVER|
+admin|character_layout_drafts|9|updated_by|uuid|NO||NEVER|
+admin|character_layout_drafts|10|created_at|timestamp with time zone|NO|now()|NEVER|
+admin|character_layout_drafts|11|updated_at|timestamp with time zone|NO|now()|NEVER|
+admin|character_layout_drafts|12|published_at|timestamp with time zone|YES||NEVER|
+admin|character_layout_releases|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|character_layout_releases|2|environment|text|NO||NEVER|
+admin|character_layout_releases|3|layout_version|integer(32,0)|NO||NEVER|
+admin|character_layout_releases|4|listed_ids|ARRAY|NO||NEVER|
+admin|character_layout_releases|5|delisted_ids|ARRAY|NO||NEVER|
+admin|character_layout_releases|6|deleted_ids|ARRAY|NO||NEVER|
+admin|character_layout_releases|7|source_draft_id|uuid|YES||NEVER|
+admin|character_layout_releases|8|released_by|uuid|NO||NEVER|
+admin|character_layout_releases|9|released_at|timestamp with time zone|NO|now()|NEVER|
+admin|character_layout_releases|10|release_kind|text|NO|'publish'::text|NEVER|
+admin|character_layout_releases|11|rollback_target_release_id|uuid|YES||NEVER|
+admin|character_layout_state|1|environment|text|NO||NEVER|
+admin|character_layout_state|2|layout_version|integer(32,0)|NO|0|NEVER|
+admin|character_layout_state|3|updated_at|timestamp with time zone|NO|now()|NEVER|
+admin|config_drafts|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|config_drafts|2|environment|text|NO||NEVER|
+admin|config_drafts|3|config_key|text|NO||NEVER|
+admin|config_drafts|4|value|jsonb|YES||NEVER|
+admin|config_drafts|5|text_value|text|YES||NEVER|
+admin|config_drafts|6|description|text|YES||NEVER|
+admin|config_drafts|7|base_version|integer(32,0)|NO|0|NEVER|
+admin|config_drafts|8|status|text|NO|'draft'::text|NEVER|
+admin|config_drafts|9|created_by|uuid|NO||NEVER|
+admin|config_drafts|10|updated_by|uuid|NO||NEVER|
+admin|config_drafts|11|created_at|timestamp with time zone|NO|now()|NEVER|
+admin|config_drafts|12|updated_at|timestamp with time zone|NO|now()|NEVER|
+admin|config_drafts|13|published_at|timestamp with time zone|YES||NEVER|
+admin|config_releases|1|id|uuid|NO|gen_random_uuid()|NEVER|
+admin|config_releases|2|environment|text|NO||NEVER|
+admin|config_releases|3|config_key|text|NO||NEVER|
+admin|config_releases|4|runtime_version|integer(32,0)|NO||NEVER|
+admin|config_releases|5|value|jsonb|YES||NEVER|
+admin|config_releases|6|text_value|text|YES||NEVER|
+admin|config_releases|7|description|text|YES||NEVER|
+admin|config_releases|8|source_draft_id|uuid|YES||NEVER|
+admin|config_releases|9|rollback_of_release_id|uuid|YES||NEVER|
+admin|config_releases|10|released_by|uuid|NO||NEVER|
+admin|config_releases|11|released_at|timestamp with time zone|NO|now()|NEVER|
+admin|config_releases|12|released_by_name|text|YES||NEVER|
+admin|environment_config|1|id|smallint(16,0)|NO|1|NEVER|
+admin|environment_config|2|environment|text|NO||NEVER|
+admin|environment_config|3|updated_at|timestamp with time zone|NO|now()|NEVER|
+app_core|characters|1|id|uuid|NO|gen_random_uuid()|NEVER|
+app_core|characters|2|name|text|NO||NEVER|
+app_core|characters|3|description|text|NO|''::text|NEVER|
+app_core|characters|4|avatar_url|text|NO|''::text|NEVER|
+app_core|characters|8|creator_notes|text|NO|''::text|NEVER|
+app_core|characters|9|created_at|timestamp without time zone|NO|timezone('Asia/Shanghai'::text, now())|NEVER|
+app_core|characters|10|updated_at|timestamp without time zone|NO|timezone('Asia/Shanghai'::text, now())|NEVER|
+app_core|characters|11|alternate_greetings|jsonb|NO|'[]'::jsonb|NEVER|
+app_core|characters|12|character_book|jsonb|YES||NEVER|
+app_core|characters|13|character_version|text|NO|''::text|NEVER|
+app_core|characters|14|creator|text|NO|''::text|NEVER|
+app_core|characters|15|extensions|jsonb|NO|'{}'::jsonb|NEVER|
+app_core|characters|16|first_mes|text|NO|''::text|NEVER|
+app_core|characters|17|mes_example|text|NO|''::text|NEVER|
+app_core|characters|18|personality|text|NO|''::text|NEVER|
+app_core|characters|19|post_history_instructions|text|NO|''::text|NEVER|
+app_core|characters|20|scenario|text|NO|''::text|NEVER|
+app_core|characters|21|spec|text|NO|'chara_card_v2'::text|NEVER|
+app_core|characters|22|spec_version|text|NO|'2.0'::text|NEVER|
+app_core|characters|23|system_prompt|text|NO|''::text|NEVER|
+app_core|characters|24|tags|jsonb|NO|'[]'::jsonb|NEVER|
+app_core|characters|26|enabled|boolean|NO|true|NEVER|
+app_core|characters|27|sort_order|integer(32,0)|NO|0|NEVER|
+app_core|characters|30|raw_card|jsonb|YES||NEVER|
+app_core|characters|34|archived_at|timestamp without time zone|YES||NEVER|
+app_core|characters|35|is_test|boolean|NO|false|NEVER|
+app_core|characters|36|card_hash|text|YES||NEVER|
+app_core|characters|37|last_listed_at|timestamp with time zone|YES||NEVER|
+app_core|miniapp_user_settings|1|user_id|uuid|NO||NEVER|
+app_core|miniapp_user_settings|2|tg_username|text|YES||NEVER|
+app_core|miniapp_user_settings|3|tg_first_name|text|YES||NEVER|
+app_core|miniapp_user_settings|4|tg_last_name|text|YES||NEVER|
+app_core|miniapp_user_settings|5|display_name|text|YES||NEVER|
+app_core|miniapp_user_settings|6|avatar_url|text|YES||NEVER|
+app_core|miniapp_user_settings|7|total_round|bigint(64,0)|NO|0|NEVER|
+app_core|miniapp_user_settings|8|pref_word_count|text|YES||NEVER|
+app_core|miniapp_user_settings|9|pref_show_options|boolean|NO|true|NEVER|
+app_core|miniapp_user_settings|10|pref_custom_instructions|text|YES||NEVER|
+app_core|miniapp_user_settings|11|created_at|timestamp with time zone|NO|now()|NEVER|
+app_core|miniapp_user_settings|12|updated_at|timestamp with time zone|NO|now()|NEVER|
+app_core|miniapp_user_settings|13|tg_avatar_url|text|YES||NEVER|
+app_core|miniapp_user_settings|14|custom_avatar_url|text|YES||NEVER|
+app_core|miniapp_user_settings|15|selected_model_id|text|YES||NEVER|
+app_core|miniapp_user_settings|16|characters_last_seen_at|timestamp with time zone|YES||NEVER|
+app_core|miniapp_user_settings|17|pref_voice_id|text|YES||NEVER|
+app_core|miniapp_user_settings|18|pref_voice_playback_rate|numeric(3,2)|NO|1.0|NEVER|
+app_core|runtime_config|1|key|text|NO||NEVER|
+app_core|runtime_config|2|value|jsonb|YES||NEVER|
+app_core|runtime_config|3|description|text|YES||NEVER|
+app_core|runtime_config|4|version|integer(32,0)|YES|1|NEVER|
+app_core|runtime_config|5|updated_at|timestamp with time zone|NO|CURRENT_TIMESTAMP|NEVER|
+app_core|runtime_config|6|text_value|text|YES||NEVER|
+app_core|users|1|id|uuid|NO|gen_random_uuid()|NEVER|
+app_core|users|2|tg_id|text|NO||NEVER|
+app_core|users|3|source_id|text|YES||NEVER|
+app_core|users|4|bot_entered_at|timestamp with time zone|YES||NEVER|
+app_core|users|5|miniapp_entered_at|timestamp with time zone|YES||NEVER|
+app_core|users|6|total_round|bigint(64,0)|NO|0|NEVER|
+app_core|users|7|st_handle|text|NO||NEVER|
+app_core|users|8|st_initialized_at|timestamp with time zone|YES||NEVER|
+app_core|users|9|created_at|timestamp with time zone|NO|now()|NEVER|
+app_core|users|10|updated_at|timestamp with time zone|NO|now()|NEVER|
+billing|character_free_chat_quota_decisions|1|charge_key|uuid|NO||NEVER|
+billing|character_free_chat_quota_decisions|2|user_id|uuid|NO||NEVER|
+billing|character_free_chat_quota_decisions|3|character_id|uuid|NO||NEVER|
+billing|character_free_chat_quota_decisions|4|granted_free|boolean|NO||NEVER|
+billing|character_free_chat_quota_decisions|5|status|text|NO||NEVER|
+billing|character_free_chat_quota_decisions|6|quota_limit|integer(32,0)|NO||NEVER|
+billing|character_free_chat_quota_decisions|7|created_at|timestamp with time zone|NO|now()|NEVER|
+billing|character_free_chat_quota_decisions|8|finalized_at|timestamp with time zone|YES||NEVER|
+billing|character_free_chat_quotas|1|user_id|uuid|NO||NEVER|
+billing|character_free_chat_quotas|2|character_id|uuid|NO||NEVER|
+billing|character_free_chat_quotas|3|used_rounds|integer(32,0)|NO|0|NEVER|
+billing|character_free_chat_quotas|4|reserved_rounds|integer(32,0)|NO|0|NEVER|
+billing|character_free_chat_quotas|5|created_at|timestamp with time zone|NO|now()|NEVER|
+billing|character_free_chat_quotas|6|updated_at|timestamp with time zone|NO|now()|NEVER|
+billing|llm_usage_charge_dedup|1|charge_key|uuid|NO||NEVER|
+billing|llm_usage_charge_dedup|2|generation_id|text|YES||NEVER|
+billing|llm_usage_charge_dedup|3|user_id|uuid|NO||NEVER|
+billing|llm_usage_charge_dedup|4|charged_amount|numeric(14,1)|NO|0|NEVER|
+billing|llm_usage_charge_dedup|5|status|text|NO||NEVER|
+billing|llm_usage_charge_dedup|6|processed_at|timestamp with time zone|NO|now()|NEVER|
+billing|llm_usage_charges|1|id|uuid|NO|gen_random_uuid()|NEVER|
+billing|llm_usage_charges|2|charge_key|uuid|NO||NEVER|
+billing|llm_usage_charges|3|generation_id|text|YES||NEVER|
+billing|llm_usage_charges|4|user_id|uuid|NO||NEVER|
+billing|llm_usage_charges|5|model_id|text|YES||NEVER|
+billing|llm_usage_charges|6|model_openrouter_id|text|NO||NEVER|
+billing|llm_usage_charges|7|model_display_name|text|NO||NEVER|
+billing|llm_usage_charges|8|catalog_version|integer(32,0)|NO|0|NEVER|
+billing|llm_usage_charges|9|pricing_config_version|integer(32,0)|NO|0|NEVER|
+billing|llm_usage_charges|10|usage_cost_usd|numeric(20,10)|YES||NEVER|
+billing|llm_usage_charges|11|exchange_rate|numeric(14,4)|NO||NEVER|
+billing|llm_usage_charges|12|model_markup|numeric(4,1)|NO||NEVER|
+billing|llm_usage_charges|13|initial_amount|numeric(14,1)|NO|0|NEVER|
+billing|llm_usage_charges|14|calculated_amount|numeric(14,1)|NO|0|NEVER|
+billing|llm_usage_charges|15|charged_amount|numeric(14,1)|NO|0|NEVER|
+billing|llm_usage_charges|16|fallback_used|boolean|NO|false|NEVER|
+billing|llm_usage_charges|17|status|text|NO||NEVER|
+billing|llm_usage_charges|18|debit_ledger_id|uuid|YES||NEVER|
+billing|llm_usage_charges|19|metadata|jsonb|NO|'{}'::jsonb|NEVER|
+billing|llm_usage_charges|20|created_at|timestamp with time zone|NO|now()|NEVER|
+billing|llm_usage_charges|21|updated_at|timestamp with time zone|NO|now()|NEVER|
+billing|llm_usage_charges|22|reconciled_at|timestamp with time zone|YES||NEVER|
+billing|payment_orders|1|id|text|NO||NEVER|
+billing|payment_orders|2|user_id|uuid|NO||NEVER|
+billing|payment_orders|3|status|text|NO|'pending'::text|NEVER|
+billing|payment_orders|4|payment_type|text|NO||NEVER|
+billing|payment_orders|5|amount_cents|integer(32,0)|NO||NEVER|
+billing|payment_orders|6|credits_amount|integer(32,0)|NO||NEVER|
+billing|payment_orders|7|bonus_credits|integer(32,0)|NO|0|NEVER|
+billing|payment_orders|8|provider_transaction_id|text|YES||NEVER|
+billing|payment_orders|9|credits_added|boolean|NO|false|NEVER|
+billing|payment_orders|10|created_at|timestamp with time zone|NO|now()|NEVER|
+billing|payment_orders|11|expires_at|timestamp with time zone|NO||NEVER|
+billing|payment_orders|12|paid_at|timestamp with time zone|YES||NEVER|
+billing|user_wallets|1|user_id|uuid|NO||NEVER|
+billing|user_wallets|2|main_credits|numeric(14,1)|NO|0|NEVER|
+billing|user_wallets|3|bonus_credits|numeric(14,1)|NO|0|NEVER|
+billing|user_wallets|4|created_at|timestamp with time zone|NO|now()|NEVER|
+billing|user_wallets|5|updated_at|timestamp with time zone|NO|now()|NEVER|
+billing|user_wallets|6|first_paid_at|timestamp with time zone|YES||NEVER|
+billing|user_wallets|7|last_paid_at|timestamp with time zone|YES||NEVER|
+billing|user_wallets|8|total_paid_amount|numeric(12,2)|NO|0|NEVER|
+billing|user_wallets|10|total_credits|numeric(14,1)|YES||ALWAYS|
+billing|wallet_ledger|1|id|uuid|NO|gen_random_uuid()|NEVER|
+billing|wallet_ledger|2|user_id|uuid|NO||NEVER|
+billing|wallet_ledger|3|entry_type|text|NO||NEVER|
+billing|wallet_ledger|4|amount|numeric(14,1)|NO||NEVER|
+billing|wallet_ledger|5|main_delta|numeric(14,1)|NO|0|NEVER|
+billing|wallet_ledger|6|bonus_delta|numeric(14,1)|NO|0|NEVER|
+billing|wallet_ledger|7|balance_main|numeric(14,1)|NO||NEVER|
+billing|wallet_ledger|8|balance_bonus|numeric(14,1)|NO||NEVER|
+billing|wallet_ledger|9|reference_type|text|YES||NEVER|
+billing|wallet_ledger|10|reference_id|text|YES||NEVER|
+billing|wallet_ledger|11|metadata|jsonb|NO|'{}'::jsonb|NEVER|
+billing|wallet_ledger|12|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|audit_logs|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|audit_logs|2|operator_id|text|NO||NEVER|
+cs_platform|audit_logs|3|action|text|NO||NEVER|
+cs_platform|audit_logs|4|persona_id|uuid|YES||NEVER|
+cs_platform|audit_logs|5|user_id|uuid|YES||NEVER|
+cs_platform|audit_logs|6|metadata|jsonb|NO|'{}'::jsonb|NEVER|
+cs_platform|audit_logs|7|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|export_logs|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|export_logs|2|persona_id|uuid|YES||NEVER|
+cs_platform|export_logs|3|operator_id|text|NO||NEVER|
+cs_platform|export_logs|4|row_count|integer(32,0)|NO|0|NEVER|
+cs_platform|export_logs|5|metadata|jsonb|NO|'{}'::jsonb|NEVER|
+cs_platform|export_logs|6|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|outreach_messages|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|outreach_messages|2|persona_id|uuid|NO||NEVER|
+cs_platform|outreach_messages|3|user_id|uuid|NO||NEVER|
+cs_platform|outreach_messages|4|telegram_user_id|text|NO||NEVER|
+cs_platform|outreach_messages|5|direction|text|NO||NEVER|
+cs_platform|outreach_messages|6|sop_stage|text|YES||NEVER|
+cs_platform|outreach_messages|7|question_key|text|YES||NEVER|
+cs_platform|outreach_messages|8|content|text|NO||NEVER|
+cs_platform|outreach_messages|9|send_status|text|NO|'pending'::text|NEVER|
+cs_platform|outreach_messages|10|idempotency_key|text|YES||NEVER|
+cs_platform|outreach_messages|11|telegram_message_id|text|YES||NEVER|
+cs_platform|outreach_messages|12|sent_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_messages|13|received_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_messages|14|failed_reason|text|YES||NEVER|
+cs_platform|outreach_messages|15|operator_id|text|YES||NEVER|
+cs_platform|outreach_messages|16|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|outreach_sessions|1|persona_id|uuid|NO||NEVER|
+cs_platform|outreach_sessions|2|user_id|uuid|NO||NEVER|
+cs_platform|outreach_sessions|3|status|text|NO|'not_started'::text|NEVER|
+cs_platform|outreach_sessions|4|current_stage|text|YES||NEVER|
+cs_platform|outreach_sessions|5|current_question_key|text|YES||NEVER|
+cs_platform|outreach_sessions|6|next_touch_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_sessions|7|completed_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_sessions|8|skipped_at|timestamp with time zone|YES||NEVER|
+cs_platform|outreach_sessions|9|skip_reason|text|YES||NEVER|
+cs_platform|outreach_sessions|10|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|outreach_sessions|11|updated_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_member_snapshots|1|run_id|uuid|NO||NEVER|
+cs_platform|persona_member_snapshots|2|persona_id|uuid|NO||NEVER|
+cs_platform|persona_member_snapshots|3|user_id|uuid|NO||NEVER|
+cs_platform|persona_member_snapshots|4|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_member_state|1|persona_id|uuid|NO||NEVER|
+cs_platform|persona_member_state|2|user_id|uuid|NO||NEVER|
+cs_platform|persona_member_state|3|membership_status|text|NO|'active'::text|NEVER|
+cs_platform|persona_member_state|4|first_seen_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_member_state|5|last_seen_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_member_state|6|last_seen_run_id|uuid|YES||NEVER|
+cs_platform|persona_member_state|7|first_contacted_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_member_state|8|last_contacted_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_member_state|9|left_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_member_state|10|left_note|text|YES||NEVER|
+cs_platform|persona_member_state|11|special_note|text|YES||NEVER|
+cs_platform|persona_member_state|12|special_note_updated_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_member_state|13|special_note_operator_id|text|YES||NEVER|
+cs_platform|persona_refresh_runs|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|persona_refresh_runs|2|persona_id|uuid|NO||NEVER|
+cs_platform|persona_refresh_runs|3|operator_id|text|NO|'system'::text|NEVER|
+cs_platform|persona_refresh_runs|4|sql_text|text|NO||NEVER|
+cs_platform|persona_refresh_runs|5|active_count|integer(32,0)|NO|0|NEVER|
+cs_platform|persona_refresh_runs|6|entered_count|integer(32,0)|NO|0|NEVER|
+cs_platform|persona_refresh_runs|7|chatted_left_count|integer(32,0)|NO|0|NEVER|
+cs_platform|persona_refresh_runs|8|status|text|NO|'running'::text|NEVER|
+cs_platform|persona_refresh_runs|9|error_message|text|YES||NEVER|
+cs_platform|persona_refresh_runs|10|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|persona_refresh_runs|11|completed_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|1|persona_id|uuid|YES||NEVER|
+cs_platform|persona_users_detail|2|user_id|uuid|YES||NEVER|
+cs_platform|persona_users_detail|3|telegram_user_id|text|YES||NEVER|
+cs_platform|persona_users_detail|4|display_name|text|YES||NEVER|
+cs_platform|persona_users_detail|5|username|text|YES||NEVER|
+cs_platform|persona_users_detail|6|register_days|integer(32,0)|YES||NEVER|
+cs_platform|persona_users_detail|7|total_paid_amount|numeric(12,2)|YES||NEVER|
+cs_platform|persona_users_detail|8|paid_count|integer(32,0)|YES||NEVER|
+cs_platform|persona_users_detail|9|total_round|bigint(64,0)|YES||NEVER|
+cs_platform|persona_users_detail|10|last_active_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|11|membership_status|text|YES||NEVER|
+cs_platform|persona_users_detail|12|session_status|text|YES||NEVER|
+cs_platform|persona_users_detail|13|current_stage|text|YES||NEVER|
+cs_platform|persona_users_detail|14|current_question_key|text|YES||NEVER|
+cs_platform|persona_users_detail|15|chatted_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|16|left_note|text|YES||NEVER|
+cs_platform|persona_users_detail|17|last_user_message_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|18|last_agent_message_at|timestamp with time zone|YES||NEVER|
+cs_platform|persona_users_detail|19|waiting_state|text|YES||NEVER|
+cs_platform|persona_users_detail|20|special_note|text|YES||NEVER|
+cs_platform|persona_users_detail|21|special_note_updated_at|timestamp with time zone|YES||NEVER|
+cs_platform|personas|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|personas|2|slug|text|NO||NEVER|
+cs_platform|personas|3|name|text|NO||NEVER|
+cs_platform|personas|4|description|text|NO|''::text|NEVER|
+cs_platform|personas|5|color|text|NO|'#5BBD72'::text|NEVER|
+cs_platform|personas|6|sql_text|text|NO||NEVER|
+cs_platform|personas|7|opening_script|text|NO|''::text|NEVER|
+cs_platform|personas|8|sop|jsonb|NO|'[]'::jsonb|NEVER|
+cs_platform|personas|9|status|text|NO|'active'::text|NEVER|
+cs_platform|personas|10|active_count|integer(32,0)|NO|0|NEVER|
+cs_platform|personas|11|chatted_left_count|integer(32,0)|NO|0|NEVER|
+cs_platform|personas|12|last_refreshed_at|timestamp with time zone|YES||NEVER|
+cs_platform|personas|13|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|personas|14|updated_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|support_conversations|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|support_conversations|2|user_id|uuid|NO||NEVER|
+cs_platform|support_conversations|3|status|text|NO|'open'::text|NEVER|
+cs_platform|support_conversations|4|last_user_message_at|timestamp with time zone|YES||NEVER|
+cs_platform|support_conversations|5|last_agent_message_at|timestamp with time zone|YES||NEVER|
+cs_platform|support_conversations|6|agent_unread_count|integer(32,0)|NO|0|NEVER|
+cs_platform|support_conversations|7|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|support_conversations|8|updated_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|support_conversations|9|user_last_read_at|timestamp with time zone|YES||NEVER|
+cs_platform|support_messages|1|id|uuid|NO|gen_random_uuid()|NEVER|
+cs_platform|support_messages|2|conversation_id|uuid|NO||NEVER|
+cs_platform|support_messages|3|sender|text|NO||NEVER|
+cs_platform|support_messages|4|body|text|NO||NEVER|
+cs_platform|support_messages|5|client_msg_id|uuid|YES||NEVER|
+cs_platform|support_messages|6|agent_user_id|uuid|YES||NEVER|
+cs_platform|support_messages|7|created_at|timestamp with time zone|NO|now()|NEVER|
+cs_platform|user_metrics|1|user_id|uuid|YES||NEVER|
+cs_platform|user_metrics|2|telegram_user_id|text|YES||NEVER|
+cs_platform|user_metrics|3|display_name|text|YES||NEVER|
+cs_platform|user_metrics|4|username|text|YES||NEVER|
+cs_platform|user_metrics|5|register_days|integer(32,0)|YES||NEVER|
+cs_platform|user_metrics|6|total_paid_amount|numeric(12,2)|YES||NEVER|
+cs_platform|user_metrics|7|paid_count|integer(32,0)|YES||NEVER|
+cs_platform|user_metrics|8|total_round|bigint(64,0)|YES||NEVER|
+cs_platform|user_metrics|9|last_active_at|timestamp with time zone|YES||NEVER|
+experience|chat_history|1|id|uuid|NO|gen_random_uuid()|NEVER|
+experience|chat_history|2|user_id|uuid|NO||NEVER|
+experience|chat_history|3|model|text|NO||NEVER|
+experience|chat_history|4|user_input|text|NO||NEVER|
+experience|chat_history|5|assistant_reply|text|YES||NEVER|
+experience|chat_history|6|history|jsonb|NO||NEVER|
+experience|chat_history|7|character_id|uuid|YES||NEVER|
+experience|chat_history|9|status|text|NO|'success'::text|NEVER|
+experience|chat_history|10|upstream_status|integer(32,0)|YES||NEVER|
+experience|chat_history|11|deduction_rate|numeric(14,1)|YES|0|NEVER|
+experience|chat_history|12|created_at|timestamp with time zone|NO|now()|NEVER|
+experience|chat_history|14|llm_provider_name|text|YES||NEVER|
+experience|chat_history|15|llm_finish_reason|text|YES||NEVER|
+experience|chat_history|16|llm_usage|jsonb|YES||NEVER|
+experience|chat_history|17|llm_usage_cache|jsonb|YES||NEVER|
+experience|chat_history|18|llm_native_tokens_cached|integer(32,0)|YES||NEVER|
+experience|chat_history|19|llm_native_tokens_reasoning|integer(32,0)|YES||NEVER|
+experience|chat_history|20|llm_native_tokens_completion|integer(32,0)|YES||NEVER|
+experience|chat_history|21|llm_native_tokens_prompt|integer(32,0)|YES||NEVER|
+experience|chat_history|22|llm_latency|numeric|YES||NEVER|
+experience|chat_history|23|llm_generation_time|numeric|YES||NEVER|
+experience|chat_history|24|llm_model|text|YES||NEVER|
+experience|chat_history|25|llm_generation_id|text|YES||NEVER|
+experience|chat_history|26|llm_generation_data|jsonb|YES||NEVER|
+experience|chat_history|27|llm_intended_deduction|numeric(10,2)|YES|NULL::numeric|NEVER|
+experience|chat_history|29|llm_charge_id|uuid|YES||NEVER|
+experience|chat_history|30|session_id|uuid|YES||NEVER|
+experience|chat_history|31|turn_index|integer(32,0)|YES||NEVER|
+experience|chat_history|32|revision|integer(32,0)|YES||NEVER|
+experience|chat_message_audio|1|id|uuid|NO|gen_random_uuid()|NEVER|
+experience|chat_message_audio|2|message_id|uuid|NO||NEVER|
+experience|chat_message_audio|3|session_id|uuid|NO||NEVER|
+experience|chat_message_audio|4|user_id|uuid|NO||NEVER|
+experience|chat_message_audio|5|revision|integer(32,0)|NO|0|NEVER|
+experience|chat_message_audio|6|is_active|boolean|NO|true|NEVER|
+experience|chat_message_audio|7|status|text|NO|'pending'::text|NEVER|
+experience|chat_message_audio|8|voice_id|text|NO||NEVER|
+experience|chat_message_audio|9|tts_model|text|NO||NEVER|
+experience|chat_message_audio|10|tts_speed|numeric(3,2)|NO||NEVER|
+experience|chat_message_audio|11|source_chars|integer(32,0)|NO|0|NEVER|
+experience|chat_message_audio|12|spoken_chars|integer(32,0)|NO|0|NEVER|
+experience|chat_message_audio|13|spoken_text|text|YES||NEVER|
+experience|chat_message_audio|14|storage_path|text|YES||NEVER|
+experience|chat_message_audio|15|audio_url|text|YES||NEVER|
+experience|chat_message_audio|16|duration_ms|integer(32,0)|YES||NEVER|
+experience|chat_message_audio|17|latency_ms|integer(32,0)|YES||NEVER|
+experience|chat_message_audio|18|error_code|text|YES||NEVER|
+experience|chat_message_audio|19|created_at|timestamp with time zone|NO|now()|NEVER|
+experience|chat_message_audio|20|updated_at|timestamp with time zone|NO|now()|NEVER|
+experience|chat_message_audio|21|credits_charged|integer(32,0)|NO|0|NEVER|
+experience|chat_message_audio|22|charge_id|uuid|YES||NEVER|
+experience|chat_sessions|1|id|uuid|NO|gen_random_uuid()|NEVER|
+experience|chat_sessions|2|user_id|uuid|NO||NEVER|
+experience|chat_sessions|3|character_id|uuid|NO||NEVER|
+experience|chat_sessions|4|title|text|YES||NEVER|
+experience|chat_sessions|5|last_message_at|timestamp with time zone|YES||NEVER|
+experience|chat_sessions|6|last_message_preview|text|YES||NEVER|
+experience|chat_sessions|7|message_count|integer(32,0)|NO|0|NEVER|
+experience|chat_sessions|8|deleted_at|timestamp with time zone|YES||NEVER|
+experience|chat_sessions|9|created_at|timestamp with time zone|NO|now()|NEVER|
+experience|chat_sessions|10|updated_at|timestamp with time zone|NO|now()|NEVER|
+experience|chat_sessions|11|context_window_start_turn|integer(32,0)|NO|1|NEVER|
+experience|chat_sessions|12|pinned_at|timestamp with time zone|YES||NEVER|
+experience|current_chat_history|1|id|uuid|YES||NEVER|
+experience|current_chat_history|2|user_id|uuid|YES||NEVER|
+experience|current_chat_history|3|model|text|YES||NEVER|
+experience|current_chat_history|4|user_input|text|YES||NEVER|
+experience|current_chat_history|5|assistant_reply|text|YES||NEVER|
+experience|current_chat_history|6|history|jsonb|YES||NEVER|
+experience|current_chat_history|7|character_id|uuid|YES||NEVER|
+experience|current_chat_history|8|status|text|YES||NEVER|
+experience|current_chat_history|9|upstream_status|integer(32,0)|YES||NEVER|
+experience|current_chat_history|10|deduction_rate|numeric(14,1)|YES||NEVER|
+experience|current_chat_history|11|created_at|timestamp with time zone|YES||NEVER|
+experience|current_chat_history|12|llm_provider_name|text|YES||NEVER|
+experience|current_chat_history|13|llm_finish_reason|text|YES||NEVER|
+experience|current_chat_history|14|llm_usage|jsonb|YES||NEVER|
+experience|current_chat_history|15|llm_usage_cache|jsonb|YES||NEVER|
+experience|current_chat_history|16|llm_native_tokens_cached|integer(32,0)|YES||NEVER|
+experience|current_chat_history|17|llm_native_tokens_reasoning|integer(32,0)|YES||NEVER|
+experience|current_chat_history|18|llm_native_tokens_completion|integer(32,0)|YES||NEVER|
+experience|current_chat_history|19|llm_native_tokens_prompt|integer(32,0)|YES||NEVER|
+experience|current_chat_history|20|llm_latency|numeric|YES||NEVER|
+experience|current_chat_history|21|llm_generation_time|numeric|YES||NEVER|
+experience|current_chat_history|22|llm_model|text|YES||NEVER|
+experience|current_chat_history|23|llm_generation_id|text|YES||NEVER|
+experience|current_chat_history|24|llm_generation_data|jsonb|YES||NEVER|
+experience|current_chat_history|25|llm_intended_deduction|numeric(10,2)|YES||NEVER|
+experience|current_chat_history|26|llm_charge_id|uuid|YES||NEVER|
+experience|current_chat_history|27|session_id|uuid|YES||NEVER|
+experience|current_chat_history|28|turn_index|integer(32,0)|YES||NEVER|
+experience|current_chat_history|29|revision|integer(32,0)|YES||NEVER|
+miniapp_analytics|funnel_stats|1|bot_entered_count|bigint(64,0)|YES||NEVER|
+miniapp_analytics|funnel_stats|2|miniapp_entered_count|bigint(64,0)|YES||NEVER|
+miniapp_analytics|funnel_stats|3|active_chat_count|bigint(64,0)|YES||NEVER|
+miniapp_features|character_favorites|1|user_id|uuid|NO||NEVER|
+miniapp_features|character_favorites|2|character_id|uuid|NO||NEVER|
+miniapp_features|character_favorites|3|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_features|character_ranking_scores|1|character_id|uuid|NO||NEVER|
+miniapp_features|character_ranking_scores|2|n_c|integer(32,0)|NO|0|NEVER|
+miniapp_features|character_ranking_scores|3|d30_raw|double precision|YES||NEVER|
+miniapp_features|character_ranking_scores|4|d30_shrunk|double precision|YES||NEVER|
+miniapp_features|character_ranking_scores|5|k_c|integer(32,0)|NO|0|NEVER|
+miniapp_features|character_ranking_scores|6|r48_raw|double precision|YES||NEVER|
+miniapp_features|character_ranking_scores|7|score|numeric(6,2)|NO|0|NEVER|
+miniapp_features|character_ranking_scores|8|window_days|integer(32,0)|NO||NEVER|
+miniapp_features|character_ranking_scores|9|computed_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_features|character_ranking_scores|10|min_users|integer(32,0)|NO|20|NEVER|
+miniapp_features|daily_checkins|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp_features|daily_checkins|2|user_id|uuid|NO||NEVER|
+miniapp_features|daily_checkins|3|reward_credits|integer(32,0)|NO||NEVER|
+miniapp_features|daily_checkins|4|claimed_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_features|notification_reads|1|notification_id|uuid|NO||NEVER|
+miniapp_features|notification_reads|2|user_id|uuid|NO||NEVER|
+miniapp_features|notification_reads|3|read_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_features|notifications|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp_features|notifications|2|scope|text|NO||NEVER|
+miniapp_features|notifications|3|category|text|NO||NEVER|
+miniapp_features|notifications|4|title|text|NO||NEVER|
+miniapp_features|notifications|5|body|text|NO||NEVER|
+miniapp_features|notifications|6|user_id|uuid|YES||NEVER|
+miniapp_features|notifications|7|sort_order|integer(32,0)|NO|0|NEVER|
+miniapp_features|notifications|8|is_published|boolean|NO|false|NEVER|
+miniapp_features|notifications|9|published_at|timestamp with time zone|YES||NEVER|
+miniapp_features|notifications|10|created_by|uuid|YES||NEVER|
+miniapp_features|notifications|11|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_features|notifications|12|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_features|notifications|13|deleted_at|timestamp with time zone|YES||NEVER|
+miniapp_features|wish_roles|1|id|uuid|NO|gen_random_uuid()|NEVER|
+miniapp_features|wish_roles|2|user_id|bigint(64,0)|NO||NEVER|
+miniapp_features|wish_roles|3|db_user_id|uuid|YES||NEVER|
+miniapp_features|wish_roles|4|wish_text|text|NO||NEVER|
+miniapp_features|wish_roles|5|extra_text|text|YES||NEVER|
+miniapp_features|wish_roles|6|total_paid_amount_at_submit|numeric(12,2)|NO|0|NEVER|
+miniapp_features|wish_roles|7|reward_credits|integer(32,0)|NO|1|NEVER|
+miniapp_features|wish_roles|8|status|text|NO|'awaiting_extra'::text|NEVER|
+miniapp_features|wish_roles|9|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_features|wish_roles|10|closed_at|timestamp with time zone|YES||NEVER|
+miniapp_traffic|botlinks|1|id|bigint(64,0)|NO|nextval('miniapp_traffic.botlinks_id_seq'::regclass)|NEVER|
+miniapp_traffic|botlinks|2|source_name|text|YES||NEVER|
+miniapp_traffic|botlinks|3|bot_link|text|YES||NEVER|
+miniapp_traffic|botlinks|4|source_id|text|YES||NEVER|
+miniapp_traffic|botlinks|5|created_at|timestamp with time zone|YES|now()|NEVER|
+miniapp_traffic|botlinks|6|start_time|date|YES||NEVER|
+miniapp_traffic|botlinks|7|end_time|date|YES||NEVER|
+miniapp_traffic|botlinks|8|Purchase_amount|integer(32,0)|YES||NEVER|
+miniapp_traffic|botlinks|9|Procurement_days|integer(32,0)|YES||NEVER|
+miniapp_traffic|traffic_clicks|1|id|bigint(64,0)|NO|nextval('miniapp_traffic.traffic_clicks_id_seq'::regclass)|NEVER|
+miniapp_traffic|traffic_clicks|2|stat_date|date|NO|CURRENT_DATE|NEVER|
+miniapp_traffic|traffic_clicks|3|source_id|text|NO||NEVER|
+miniapp_traffic|traffic_clicks|4|clicks|integer(32,0)|NO|0|NEVER|
+miniapp_traffic|traffic_clicks|5|created_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_traffic|traffic_clicks|6|updated_at|timestamp with time zone|NO|now()|NEVER|
+miniapp_traffic|traffic_daily_stats|1|stat_date|date|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|2|source_id|text|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|3|source_name|text|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|4|start_time|date|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|5|end_time|date|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|6|purchase_amount|integer(32,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|7|procurement_days|integer(32,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|8|daily_cost|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|9|clicks|integer(32,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|10|activated_users|bigint(64,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|11|daily_cpa|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|12|conversion_rate|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|13|total_activated_users|bigint(64,0)|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|14|cumulative_cpa|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|15|cumulative_ltv|numeric|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|16|weekly_ref_date|date|YES||NEVER|
+miniapp_traffic|traffic_daily_stats|17|weekly_cpa|numeric|YES||NEVER|
+===SECTION:04_functions===
+nsp|fn|fn_args|fn_returns|fn_kind|security_definer|fn_owner|fn_config|fn_lang|src_md5|body_refs_miniapp|fn_acl
+admin|archive_character|p_character_id uuid|boolean|f|t|postgres|search_path=pg_catalog|plpgsql|6f2a89c04d1f204d29062b5397336987|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|can_access_environment|p_environment text|boolean|f|t|postgres|search_path=pg_catalog|sql|3725139032361f9e176d1b7b6d48841f|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|create_announcement|p_category text, p_title text, p_body text, p_sort_order integer, p_is_published boolean|miniapp_features.notifications|f|t|postgres|search_path=pg_catalog|plpgsql|7211d0aebd620cf22daa9d02aced672f|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|create_character|p_name text, p_description text, p_avatar_url text, p_tags jsonb, p_creator text, p_first_mes text, p_creator_notes text, p_personality text, p_scenario text, p_system_prompt text, p_mes_example text|app_core.characters|f|t|postgres|search_path=pg_catalog|plpgsql|544a46f159fea60d8796929ad2bf6412|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|current_environment||text|f|t|postgres|search_path=pg_catalog|plpgsql|abaf260dad6817aa23e1fbba03738ab9|f|postgres=X/postgres service_role=X/postgres
+admin|delete_announcement|p_id uuid|void|f|t|postgres|search_path=pg_catalog|plpgsql|ff6a899360a5753f4c09e8f33bf3b419|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|delete_character_layout_release|p_release_id uuid|void|f|t|postgres|search_path=pg_catalog|plpgsql|75b23a9effe117d37010ac53975671c2|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|discard_character_layout_draft|p_draft_id uuid|boolean|f|t|postgres|search_path=pg_catalog|plpgsql|b4eb626811da843e5506d863e61b583b|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|discard_config_draft|p_draft_id uuid|boolean|f|t|postgres|search_path=pg_catalog|plpgsql|0cc14c44bb397d03418786661ccce228|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|get_character_layout||jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|bb2b7e2b2dda2e9448e54a4db73afc2d|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|get_characters||TABLE(id uuid, name text, description text, avatar_url text, tags jsonb, creator text, first_mes text, creator_notes text, enabled boolean, sort_order integer, archived_at timestamp without time zone, created_at timestamp without time zone, updated_at timestamp without time zone)|f|t|postgres|search_path=pg_catalog|plpgsql|4f07ba1b25c8f7d33e1665df218d3288|f|=X/postgres postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|get_managed_configs||TABLE(key text, value jsonb, description text, version integer, updated_at timestamp with time zone, text_value text)|f|t|postgres|search_path=pg_catalog|plpgsql|5cfe143bb83c5dac15c1fa858796e92d|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|grant_user_credits|p_user_id uuid, p_amount integer, p_title text, p_body text, p_request_id uuid, p_allow_duplicate boolean|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|2971dd4326d055a6031e03efb867b4b0|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|is_managed_config_key|p_config_key text|boolean|f|f|postgres|search_path=pg_catalog|sql|7a0f2a6582a5471edd2bd4d9c2b4f044|f|postgres=X/postgres
+admin|is_registered_admin||boolean|f|t|postgres|search_path=pg_catalog|plpgsql|5f306595150343ef982d6177c43142c1|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|list_announcements||SETOF miniapp_features.notifications|f|t|postgres|search_path=pg_catalog|plpgsql|192e39e3c9bb0162f6ec4e9ee3b82370|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|list_character_layout_releases|p_limit integer|TABLE(id uuid, layout_version integer, release_kind text, source_draft_id uuid, rollback_target_release_id uuid, rollback_target_version integer, listed_ids uuid[], delisted_ids uuid[], deleted_ids uuid[], listed_count integer, delisted_count integer, deleted_count integer, released_by_email text, released_by_name text, released_at timestamp with time zone)|f|t|postgres|search_path=pg_catalog|plpgsql|842e60d3e68ee440bf823faa38f6fab6|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|lookup_user_for_credit_grant|p_identifier text|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|7f627fd89b8d928fb37b149a6b7fdc0c|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|publish_character_layout_draft|p_draft_id uuid|integer|f|t|postgres|search_path=pg_catalog|plpgsql|fffac1b197945dd3eb6854b184cc3fd7|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|publish_config_draft|p_draft_id uuid|admin.config_releases|f|t|postgres|search_path=pg_catalog|plpgsql|a2deea1b4a75904c5df5469457c0e1dd|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|reorder_characters|p_character_ids uuid[]|boolean|f|t|postgres|search_path=pg_catalog|plpgsql|c7aa890467f7d10cd7c79d7ee5b06bbe|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|rollback_character_layout_release|p_release_id uuid, p_expected_layout_version integer|integer|f|t|postgres|search_path=pg_catalog|plpgsql|cb20a8f51c6b0a93c36e5407612c8e3c|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|rollback_config_release|p_release_id uuid|admin.config_releases|f|t|postgres|search_path=pg_catalog|plpgsql|66c67d4331439d29160c00f92fc4708b|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|save_character_layout_draft|p_listed_ids uuid[], p_delisted_ids uuid[], p_deleted_ids uuid[], p_base_layout_version integer|admin.character_layout_drafts|f|t|postgres|search_path=pg_catalog|plpgsql|b1ae95b3f9edf72d3c5cd743bc6f4bb1|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|save_config_draft|p_environment text, p_config_key text, p_value jsonb, p_text_value text, p_description text|admin.config_drafts|f|t|postgres|search_path=pg_catalog|plpgsql|1080344a201fa3d05fc6094f73563ab5|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|set_announcement_published|p_id uuid, p_is_published boolean|miniapp_features.notifications|f|t|postgres|search_path=pg_catalog|plpgsql|f08e92410ef83a823018b2935d3ff820|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|set_character_enabled|p_character_id uuid, p_enabled boolean|boolean|f|t|postgres|search_path=pg_catalog|plpgsql|e3d0e2fadd6d52b2e0646ebdb9916003|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|set_operator_name|p_display_name text|admin.admin_users|f|t|postgres|search_path=pg_catalog|plpgsql|fdebf2fd7f4380df13d04424d8b9c0ea|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|snapshot_operator_name||trigger|f|t|postgres|search_path=pg_catalog|plpgsql|5380a1b7bdc700adc2949293615324f1|f|postgres=X/postgres
+admin|update_announcement|p_id uuid, p_category text, p_title text, p_body text, p_sort_order integer|miniapp_features.notifications|f|t|postgres|search_path=pg_catalog|plpgsql|667c2d1c18a77b7c36ff94990afb8e36|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|upsert_config_draft|p_environment text, p_config_key text, p_value jsonb, p_text_value text, p_description text|admin.config_drafts|f|t|postgres|search_path=pg_catalog|plpgsql|19c719ba69701d06eca647bed7592cd3|f|postgres=X/postgres authenticated=X/postgres service_role=X/postgres
+admin|validate_character_layout|p_listed_ids uuid[], p_delisted_ids uuid[], p_deleted_ids uuid[]|void|f|f|postgres|search_path=pg_catalog|plpgsql|eeebf878c4ffff0a5c41ba4b908a575a|f|postgres=X/postgres
+admin|validate_fixed_llm_deduction_config|p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|af932ea8af0a02e9097cf766c64bc588|f|postgres=X/postgres
+admin|validate_free_quota_exhausted_dialog_config|p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|1cdf31af3c263b6f840cbef8228a61a5|f|postgres=X/postgres
+admin|validate_lobby_pinned_characters|p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|161b752507d20fece1afe0dfe0f3da83|f|postgres=X/postgres
+admin|validate_lobby_ranking_params|p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|8907187007863ed72465874097137ceb|f|postgres=X/postgres
+admin|validate_managed_config_value|p_config_key text, p_value jsonb, p_text_value text|void|f|f|postgres|search_path=pg_catalog|plpgsql|92dd9962a2e431fdaa03451219184817|f|postgres=X/postgres
+admin|validate_managed_config_value_before_fixed_billing|p_config_key text, p_value jsonb, p_text_value text|void|f|f|postgres|search_path=pg_catalog|plpgsql|d2621ae91ba2957375abed820d3751bd|f|postgres=X/postgres
+admin|validate_managed_config_value_before_payment_prompt|p_config_key text, p_value jsonb, p_text_value text|void|f|f|postgres|search_path=pg_catalog|plpgsql|0092e8eefef84b913b2e1c6eb04bb21b|f|postgres=X/postgres
+admin|validate_model_catalog_core|p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|4187d8abd500ef7efb3dd8f95a1380a8|f|postgres=X/postgres
+admin|validate_model_catalog_draft_trigger||trigger|f|f|postgres|search_path=pg_catalog|plpgsql|f3ead8aff729b4c60942a3af2bcd095f|f|(default)
+admin|validate_model_catalog_prd|p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|330b36767ef43a77048f46cdf56baa4e|f|postgres=X/postgres
+admin|validate_operations_config_draft_trigger||trigger|f|f|postgres|search_path=pg_catalog|plpgsql|d9f8f5eb0173574275c37f96f5f04340|f|postgres=X/postgres
+admin|validate_payment_plan_ids|p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|b492b2e53690e47573a812fa5b31786b|f|postgres=X/postgres
+admin|validate_payment_plans_draft_trigger||trigger|f|f|postgres|search_path=pg_catalog|plpgsql|109fddbb204027bb5d3db26cdb3e6acc|f|postgres=X/postgres
+admin|validate_payment_prompt_dialog_config|p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|2f02dca0c9dfd7fe50e012e1dd1a8938|f|postgres=X/postgres
+admin|validate_platform_preset_payload|p_payload jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|d4cc00d36eb7c712781b49b95988c2e4|f|postgres=X/postgres
+admin|validate_recharge_page_config|p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|541c23719787a3341e4b4e06abd3b87e|f|postgres=X/postgres
+admin|validate_voice_config_value|p_config_key text, p_value jsonb|void|f|f|postgres|search_path=pg_catalog|plpgsql|905881bea6cc1c9d865f41abf52dd8cb|f|postgres=X/postgres
+app_core|increment_user_total_round|p_user_id uuid, p_delta integer|void|f|t|postgres|search_path=app_core, public|plpgsql|662591286d10f17ea48a7b6d414f0767|f|=X/postgres postgres=X/postgres service_role=X/postgres anon=X/postgres authenticated=X/postgres
+app_core|tf_track_character_listing||trigger|f|f|postgres|search_path=pg_catalog, public|plpgsql|037a3391d95c04c05a9bbd9d42a22d25|f|(default)
+billing|charge_llm_usage|p_charge_key uuid, p_generation_id text, p_user_id uuid, p_model_id text, p_model_openrouter_id text, p_model_display_name text, p_catalog_version integer, p_pricing_config_version integer, p_usage_cost_usd numeric, p_exchange_rate numeric, p_model_markup numeric, p_calculated_amount numeric, p_fallback_used boolean, p_metadata jsonb|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|2662a73b6adf2005641b0e295a536f41|f|postgres=X/postgres service_role=X/postgres
+billing|charge_voice_usage|p_charge_key uuid, p_user_id uuid, p_audio_id uuid, p_amount numeric, p_metadata jsonb|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|66ef47bd7ea62165d9c3152379762af4|f|postgres=X/postgres service_role=X/postgres
+billing|complete_payment_order|p_order_id text, p_provider_transaction_id text|billing.payment_orders|f|t|postgres||plpgsql|6c8ccf75c6880c92405ec7aa3f0ab220|f|=X/postgres postgres=X/postgres service_role=X/postgres anon=X/postgres authenticated=X/postgres
+billing|deduct_wallet_credits|p_user_id uuid, p_amount numeric|billing.user_wallets|f|t|postgres|search_path=pg_catalog|plpgsql|8fbf75695032df26db54c7fd5c5953d1|f|postgres=X/postgres service_role=X/postgres
+billing|expire_payment_orders|p_user_id uuid|integer|f|t|postgres||plpgsql|8926c3ee6fed396dd1ba61de2ee7e3f2|f|=X/postgres postgres=X/postgres service_role=X/postgres anon=X/postgres authenticated=X/postgres
+billing|finalize_character_free_chat_round|p_charge_key uuid, p_success boolean|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|31259b436720fda9e64d025600507043|f|postgres=X/postgres service_role=X/postgres
+billing|grant_new_user_signup_bonus|p_user_id uuid|billing.user_wallets|f|t|postgres|search_path=billing, public|plpgsql|b793a12a55dbe66ff76b529fcb768249|f|postgres=X/postgres service_role=X/postgres
+billing|grant_wallet_on_user_insert||trigger|f|t|postgres|search_path=billing, public|plpgsql|59e1bf9b4cf3fbbf8aa98362282037dd|f|(default)
+billing|prepare_llm_usage_charge||trigger|f|t|postgres|search_path=pg_catalog|plpgsql|d666574b326bbe700d09f11a42f152ef|f|(default)
+billing|reconcile_llm_usage|p_charge_key uuid, p_usage_cost_usd numeric, p_calculated_amount numeric, p_metadata jsonb|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|49318c359afc4167c4debd0a9f9173d4|f|postgres=X/postgres service_role=X/postgres
+billing|reserve_character_free_chat_round|p_charge_key uuid, p_user_id uuid, p_character_id uuid, p_quota_limit integer|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|1e20da7156732add0441bce285427528|f|postgres=X/postgres service_role=X/postgres
+billing|retain_recent_llm_usage_charges||trigger|f|t|postgres|search_path=pg_catalog|plpgsql|f45e4045b64722164e12e9587c388f74|f|(default)
+cs_platform|normalize_persona_sql|p_sql text|text|f|f|postgres||plpgsql|0ee0127be5b751a14cde544d0304316e|f|=X/postgres postgres=X/postgres anon=X/postgres authenticated=X/postgres service_role=X/postgres
+cs_platform|refresh_persona_members|p_persona_id uuid, p_operator_id text|jsonb|f|t|postgres||plpgsql|44a36c29fb04f9c8ca175a8c2452e2ce|f|=X/postgres postgres=X/postgres service_role=X/postgres anon=X/postgres authenticated=X/postgres
+cs_platform|validate_persona_sql|p_sql text|void|f|f|postgres||plpgsql|111d9ca07af26674af8cb5e2cc1509f8|f|=X/postgres postgres=X/postgres service_role=X/postgres anon=X/postgres authenticated=X/postgres
+experience|apply_context_window_flood|p_session_id uuid, p_completed_turns integer, p_current_start integer, p_max_turns integer, p_retain_turns integer|integer|f|t|postgres|search_path=pg_catalog|plpgsql|d463d2bbc124607dda2de298f548ffde|f|postgres=X/postgres service_role=X/postgres
+experience|guard_chat_session_idle|p_session_id uuid, p_stale_after_seconds integer|void|f|t|postgres|search_path=pg_catalog|plpgsql|187daca58e897da452cbba29f3f3878f|f|postgres=X/postgres
+experience|start_chat_history_regeneration|p_session_id uuid, p_turn_index integer, p_model text, p_stale_after_seconds integer, p_max_context_turns integer, p_retain_context_turns integer|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|6b09ebdc5b265e40ab3f0d7d85f7b07b|f|postgres=X/postgres service_role=X/postgres
+experience|start_chat_history_turn|p_session_id uuid, p_user_content text, p_model text, p_stale_after_seconds integer, p_max_context_turns integer, p_retain_context_turns integer|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|822985b77def651bf0202013ce34a224|f|postgres=X/postgres service_role=X/postgres
+experience|tf_refresh_chat_session_stats_from_history||trigger|f|t|postgres|search_path=pg_catalog|plpgsql|6eecd37c019a77cd40ff25b0cfb4c17c|f|(default)
+miniapp_features|claim_daily_checkin|p_user_id uuid|jsonb|f|t|postgres||plpgsql|dac3b288b3d08a493082d485183e466e|f|=X/postgres postgres=X/postgres service_role=X/postgres anon=X/postgres authenticated=X/postgres
+miniapp_features|complete_wish_role|p_db_user_id uuid, p_telegram_user_id bigint, p_wish_id uuid, p_extra_text text|jsonb|f|t|postgres||plpgsql|89e1479d71ec0f23e3fe7a8dd7638a20|f|=X/postgres postgres=X/postgres service_role=X/postgres anon=X/postgres authenticated=X/postgres
+miniapp_features|create_wish_role|p_db_user_id uuid, p_telegram_user_id bigint, p_wish_text text, p_reward_credits integer|jsonb|f|t|postgres||plpgsql|1a99bcd890dd49266f0f92724d6a074a|f|=X/postgres postgres=X/postgres service_role=X/postgres anon=X/postgres authenticated=X/postgres
+miniapp_features|get_character_favorite_counts|p_character_ids uuid[]|TABLE(character_id uuid, favorite_count bigint)|f|t|postgres|search_path=pg_catalog|sql|7ecaa6e3903046fc10796be338383991|f|postgres=X/postgres service_role=X/postgres
+miniapp_features|list_character_favorites|p_user_id uuid|TABLE(character_id uuid, created_at timestamp with time zone)|f|t|postgres|search_path=pg_catalog|sql|71a40def8a10a0fe111ec0e2d4d7c33d|f|postgres=X/postgres service_role=X/postgres
+miniapp_features|set_character_favorite|p_user_id uuid, p_character_id uuid, p_favorited boolean|jsonb|f|t|postgres|search_path=pg_catalog|plpgsql|1ef1cc2a884368ea4b16a530edf2e5d1|f|postgres=X/postgres service_role=X/postgres
+miniapp_traffic|increment_click|p_source_id text|void|f|f|postgres||plpgsql|e92ed4d15502e7fde45424cd86891059|f|=X/postgres postgres=X/postgres anon=X/postgres authenticated=X/postgres service_role=X/postgres
+public|gin_extract_query_trgm|text, internal, smallint, internal, internal, internal, internal|internal|f|f|supabase_admin||c|bcc3d1b35e67c79fdd7743051b5bb54e|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gin_extract_value_trgm|text, internal|internal|f|f|supabase_admin||c|c75ed6efb95d6922885e652c3b1ae63f|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gin_trgm_consistent|internal, smallint, text, integer, internal, internal, internal, internal|boolean|f|f|supabase_admin||c|1a51ef4f90da1f8206849b90da034f15|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gin_trgm_triconsistent|internal, smallint, text, integer, internal, internal, internal|"char"|f|f|supabase_admin||c|2042fbe8e50aa61204b33362850572be|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_compress|internal|internal|f|f|supabase_admin||c|0c5e51542dfa58ac5c28c29a37958c04|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_consistent|internal, text, smallint, oid, internal|boolean|f|f|supabase_admin||c|520315289c6207994f47bd6b574fcbe2|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_decompress|internal|internal|f|f|supabase_admin||c|92fd74d4efb9a0f25dd35b9b75f71a6b|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_distance|internal, text, smallint, oid, internal|double precision|f|f|supabase_admin||c|96b6ebcb046f8c4a69cbe07f341d676e|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_in|cstring|gtrgm|f|f|supabase_admin||c|af406f0d6fd3f9f056beb474dc267883|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_options|internal|void|f|f|supabase_admin||c|e959830838e9384393160a2b19d70bb7|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_out|gtrgm|cstring|f|f|supabase_admin||c|809b516b4474d75b7ea2606e56263a8b|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_penalty|internal, internal, internal|internal|f|f|supabase_admin||c|78a76e7fec267214504a675b59c13d82|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_picksplit|internal, internal|internal|f|f|supabase_admin||c|c2073eb2953664de02fe1c5070a2c0e3|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_same|gtrgm, gtrgm, internal|internal|f|f|supabase_admin||c|5b60e89adb1cae9e6b7e3b9e7512a859|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|gtrgm_union|internal, internal|gtrgm|f|f|supabase_admin||c|ac59a0687df15075468862ca946ee148|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|set_limit|real|real|f|f|supabase_admin||c|79156a0336c67021d9428bff7da30542|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|show_limit||real|f|f|supabase_admin||c|3ab6c68b603f0310182efe3695d82a92|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|show_trgm|text|text[]|f|f|supabase_admin||c|bb20c15988887dca8023fcdec2e15705|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|similarity|text, text|real|f|f|supabase_admin||c|a65b94a37c1cfdf8414dc6e5180328ee|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|similarity_dist|text, text|real|f|f|supabase_admin||c|ace88dc523cc3a38ee252b232a6f3233|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|similarity_op|text, text|boolean|f|f|supabase_admin||c|4317659571d5d65d8c2c051c25c0cecd|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|strict_word_similarity|text, text|real|f|f|supabase_admin||c|658697160f2064b47734aebdbd38425f|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|strict_word_similarity_commutator_op|text, text|boolean|f|f|supabase_admin||c|d06f5838b6234053cb93ddd82002f172|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|strict_word_similarity_dist_commutator_op|text, text|real|f|f|supabase_admin||c|21d307ff0ca968d7cb12e9ecdf15ed5e|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|strict_word_similarity_dist_op|text, text|real|f|f|supabase_admin||c|4a6a81f56250df9a7e29bb72de12835f|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|strict_word_similarity_op|text, text|boolean|f|f|supabase_admin||c|04fed7fd0767165a07b85c5ec4fd59a1|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|word_similarity|text, text|real|f|f|supabase_admin||c|b9d296bc7ed64b19e32192351e9b284f|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|word_similarity_commutator_op|text, text|boolean|f|f|supabase_admin||c|02611902707b5de0d52c0f6a91da6218|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|word_similarity_dist_commutator_op|text, text|real|f|f|supabase_admin||c|d3dad69b1ecbf95b0cd4ad9d0b898eca|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|word_similarity_dist_op|text, text|real|f|f|supabase_admin||c|ba8863f446eceb450a04b6c324db7419|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|word_similarity_op|text, text|boolean|f|f|supabase_admin||c|5412212962db1aa604d6b20bbcf89c75|f|=X/supabase_admin supabase_admin=X/supabase_admin postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+===SECTION:05_function_miniapp_refs===
+fn|ref|hits
+===SECTION:06_triggers===
+nsp|rel|trg|trg_def|trg_enabled
+admin|audit_logs|audit_logs_snapshot_operator_name|CREATE TRIGGER audit_logs_snapshot_operator_name BEFORE INSERT ON admin.audit_logs FOR EACH ROW EXECUTE FUNCTION admin.snapshot_operator_name()|O
+admin|config_drafts|config_drafts_validate_model_catalog_prd|CREATE TRIGGER config_drafts_validate_model_catalog_prd BEFORE INSERT OR UPDATE OF value ON admin.config_drafts FOR EACH ROW EXECUTE FUNCTION admin.validate_model_catalog_draft_trigger()|O
+admin|config_drafts|config_drafts_validate_operations_config|CREATE TRIGGER config_drafts_validate_operations_config BEFORE INSERT OR UPDATE OF value ON admin.config_drafts FOR EACH ROW EXECUTE FUNCTION admin.validate_operations_config_draft_trigger()|O
+admin|config_drafts|config_drafts_validate_payment_plan_ids|CREATE TRIGGER config_drafts_validate_payment_plan_ids BEFORE INSERT OR UPDATE OF value ON admin.config_drafts FOR EACH ROW EXECUTE FUNCTION admin.validate_payment_plans_draft_trigger()|O
+admin|config_releases|config_releases_snapshot_operator_name|CREATE TRIGGER config_releases_snapshot_operator_name BEFORE INSERT ON admin.config_releases FOR EACH ROW EXECUTE FUNCTION admin.snapshot_operator_name()|O
+app_core|characters|trg_characters_track_listing|CREATE TRIGGER trg_characters_track_listing BEFORE INSERT OR UPDATE OF enabled, archived_at ON app_core.characters FOR EACH ROW EXECUTE FUNCTION app_core.tf_track_character_listing()|O
+app_core|users|trg_miniapp_new_user_wallet_bonus|CREATE TRIGGER trg_miniapp_new_user_wallet_bonus AFTER INSERT ON app_core.users FOR EACH ROW EXECUTE FUNCTION billing.grant_wallet_on_user_insert()|O
+billing|llm_usage_charges|trg_prepare_llm_usage_charge|CREATE TRIGGER trg_prepare_llm_usage_charge BEFORE INSERT ON billing.llm_usage_charges FOR EACH ROW EXECUTE FUNCTION billing.prepare_llm_usage_charge()|O
+billing|llm_usage_charges|trg_retain_recent_llm_usage_charges|CREATE TRIGGER trg_retain_recent_llm_usage_charges AFTER INSERT OR UPDATE OF status, charged_amount ON billing.llm_usage_charges FOR EACH ROW EXECUTE FUNCTION billing.retain_recent_llm_usage_charges()|O
+experience|chat_history|trg_refresh_chat_session_stats_from_history|CREATE TRIGGER trg_refresh_chat_session_stats_from_history AFTER INSERT OR UPDATE OF assistant_reply, status ON experience.chat_history FOR EACH ROW WHEN ((new.session_id IS NOT NULL)) EXECUTE FUNCTION experience.tf_refresh_chat_session_stats_from_history()|O
+===SECTION:07_constraints===
+nsp|rel|con_name|con_type|con_refs|con_def
+admin|admin_users|admin_users_email_check|c||CHECK ((char_length(TRIM(BOTH FROM email)) > 0))
+admin|admin_users|admin_users_role_check|c||CHECK ((role = ANY (ARRAY['owner'::text, 'operator'::text, 'viewer'::text])))
+admin|admin_users|admin_users_user_id_fkey|f|auth.users|FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+admin|admin_users|admin_users_pkey|p||PRIMARY KEY (user_id)
+admin|audit_logs|audit_logs_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|audit_logs|audit_logs_actor_user_id_fkey|f|admin.admin_users|FOREIGN KEY (actor_user_id) REFERENCES admin.admin_users(user_id) ON DELETE SET NULL
+admin|audit_logs|audit_logs_pkey|p||PRIMARY KEY (id)
+admin|character_layout_drafts|character_layout_drafts_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|character_layout_drafts|character_layout_drafts_status_check|c||CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))
+admin|character_layout_drafts|character_layout_drafts_created_by_fkey|f|admin.admin_users|FOREIGN KEY (created_by) REFERENCES admin.admin_users(user_id)
+admin|character_layout_drafts|character_layout_drafts_updated_by_fkey|f|admin.admin_users|FOREIGN KEY (updated_by) REFERENCES admin.admin_users(user_id)
+admin|character_layout_drafts|character_layout_drafts_pkey|p||PRIMARY KEY (id)
+admin|character_layout_releases|character_layout_releases_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|character_layout_releases|character_layout_releases_release_kind_check|c||CHECK ((release_kind = ANY (ARRAY['baseline'::text, 'publish'::text, 'rollback'::text])))
+admin|character_layout_releases|character_layout_releases_released_by_fkey|f|admin.admin_users|FOREIGN KEY (released_by) REFERENCES admin.admin_users(user_id)
+admin|character_layout_releases|character_layout_releases_rollback_target_fkey|f|admin.character_layout_releases|FOREIGN KEY (rollback_target_release_id) REFERENCES admin.character_layout_releases(id) ON DELETE SET NULL
+admin|character_layout_releases|character_layout_releases_source_draft_id_fkey|f|admin.character_layout_drafts|FOREIGN KEY (source_draft_id) REFERENCES admin.character_layout_drafts(id)
+admin|character_layout_releases|character_layout_releases_pkey|p||PRIMARY KEY (id)
+admin|character_layout_releases|character_layout_releases_environment_layout_version_key|u||UNIQUE (environment, layout_version)
+admin|character_layout_state|character_layout_state_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|character_layout_state|character_layout_state_pkey|p||PRIMARY KEY (environment)
+admin|config_drafts|config_drafts_base_version_check|c||CHECK ((base_version >= 0))
+admin|config_drafts|config_drafts_check|c||CHECK (((value IS NOT NULL) OR (text_value IS NOT NULL)))
+admin|config_drafts|config_drafts_config_key_check|c||CHECK ((config_key = ANY (ARRAY['miniapp_new_user_signup_bonus_credits'::text, 'miniapp_daily_checkin_bonus_credits'::text, 'miniapp_character_free_chat_quota_limit'::text, 'miniapp_payment_plans'::text, 'miniapp_recharge_page_config'::text, 'miniapp_payment_prompt_dialog_config'::text, 'miniapp_free_quota_exhausted_dialog_config'::text, 'llm_model_catalog'::text, 'llm_pricing_config'::text, 'system_fallback_character_id'::text, 'system_instructions'::text, 'pref_word_count_tiers'::text, 'lobby_ranking_params'::text, 'lobby_pinned_characters'::text, 'voice_billing_enabled'::text, 'voice_generation_credits'::text, 'voice_max_spoken_chars'::text, 'voice_price_label'::text, 'voice_over_limit_hint'::text, 'voice_draft_failed_hint'::text, 'voice_tts_failed_hint'::text])))
+admin|config_drafts|config_drafts_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|config_drafts|config_drafts_status_check|c||CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))
+admin|config_drafts|config_drafts_created_by_fkey|f|admin.admin_users|FOREIGN KEY (created_by) REFERENCES admin.admin_users(user_id) ON DELETE RESTRICT
+admin|config_drafts|config_drafts_updated_by_fkey|f|admin.admin_users|FOREIGN KEY (updated_by) REFERENCES admin.admin_users(user_id) ON DELETE RESTRICT
+admin|config_drafts|config_drafts_pkey|p||PRIMARY KEY (id)
+admin|config_releases|config_releases_check|c||CHECK (((value IS NOT NULL) OR (text_value IS NOT NULL)))
+admin|config_releases|config_releases_check1|c||CHECK (((rollback_of_release_id IS NULL) OR (rollback_of_release_id <> id)))
+admin|config_releases|config_releases_config_key_check|c||CHECK ((config_key = ANY (ARRAY['miniapp_new_user_signup_bonus_credits'::text, 'miniapp_daily_checkin_bonus_credits'::text, 'miniapp_character_free_chat_quota_limit'::text, 'miniapp_payment_plans'::text, 'miniapp_recharge_page_config'::text, 'miniapp_payment_prompt_dialog_config'::text, 'miniapp_free_quota_exhausted_dialog_config'::text, 'llm_model_catalog'::text, 'llm_pricing_config'::text, 'system_fallback_character_id'::text, 'system_instructions'::text, 'pref_word_count_tiers'::text, 'lobby_ranking_params'::text, 'lobby_pinned_characters'::text, 'voice_billing_enabled'::text, 'voice_generation_credits'::text, 'voice_max_spoken_chars'::text, 'voice_price_label'::text, 'voice_over_limit_hint'::text, 'voice_draft_failed_hint'::text, 'voice_tts_failed_hint'::text])))
+admin|config_releases|config_releases_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|config_releases|config_releases_runtime_version_check|c||CHECK ((runtime_version > 0))
+admin|config_releases|config_releases_released_by_fkey|f|admin.admin_users|FOREIGN KEY (released_by) REFERENCES admin.admin_users(user_id) ON DELETE RESTRICT
+admin|config_releases|config_releases_rollback_of_release_id_fkey|f|admin.config_releases|FOREIGN KEY (rollback_of_release_id) REFERENCES admin.config_releases(id) ON DELETE RESTRICT
+admin|config_releases|config_releases_source_draft_id_fkey|f|admin.config_drafts|FOREIGN KEY (source_draft_id) REFERENCES admin.config_drafts(id) ON DELETE RESTRICT
+admin|config_releases|config_releases_pkey|p||PRIMARY KEY (id)
+admin|config_releases|config_releases_environment_config_key_runtime_version_key|u||UNIQUE (environment, config_key, runtime_version)
+admin|environment_config|environment_config_environment_check|c||CHECK ((environment = ANY (ARRAY['test'::text, 'production'::text])))
+admin|environment_config|environment_config_id_check|c||CHECK ((id = 1))
+admin|environment_config|environment_config_pkey|p||PRIMARY KEY (id)
+app_core|characters|characters_test_cards_disabled|c||CHECK (((NOT is_test) OR ((enabled = false) AND (card_hash IS NOT NULL))))
+app_core|characters|characters_pkey|p||PRIMARY KEY (id)
+app_core|miniapp_user_settings|miniapp_user_settings_pref_voice_playback_rate_check|c||CHECK (((pref_voice_playback_rate >= 0.5) AND (pref_voice_playback_rate <= 2.0)))
+app_core|miniapp_user_settings|miniapp_user_settings_pref_word_count_nonempty_check|c||CHECK (((pref_word_count IS NULL) OR (char_length(TRIM(BOTH FROM pref_word_count)) > 0)))
+app_core|miniapp_user_settings|miniapp_user_settings_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+app_core|miniapp_user_settings|miniapp_user_settings_pkey|p||PRIMARY KEY (user_id)
+app_core|runtime_config|runtime_config_pkey|p||PRIMARY KEY (key)
+app_core|users|users_pkey|p||PRIMARY KEY (id)
+app_core|users|users_st_handle_key|u||UNIQUE (st_handle)
+app_core|users|users_tg_id_key|u||UNIQUE (tg_id)
+billing|character_free_chat_quota_decisions|character_free_chat_quota_decisions_quota_limit_check|c||CHECK ((quota_limit > 0))
+billing|character_free_chat_quota_decisions|character_free_chat_quota_decisions_status_check|c||CHECK ((status = ANY (ARRAY['reserved'::text, 'consumed'::text, 'released'::text, 'paid'::text])))
+billing|character_free_chat_quota_decisions|character_free_chat_quota_decisions_character_id_fkey|f|app_core.characters|FOREIGN KEY (character_id) REFERENCES app_core.characters(id) ON DELETE CASCADE
+billing|character_free_chat_quota_decisions|character_free_chat_quota_decisions_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+billing|character_free_chat_quota_decisions|character_free_chat_quota_decisions_pkey|p||PRIMARY KEY (charge_key)
+billing|character_free_chat_quotas|character_free_chat_quotas_reserved_rounds_check|c||CHECK ((reserved_rounds >= 0))
+billing|character_free_chat_quotas|character_free_chat_quotas_used_rounds_check|c||CHECK ((used_rounds >= 0))
+billing|character_free_chat_quotas|character_free_chat_quotas_character_id_fkey|f|app_core.characters|FOREIGN KEY (character_id) REFERENCES app_core.characters(id) ON DELETE CASCADE
+billing|character_free_chat_quotas|character_free_chat_quotas_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+billing|character_free_chat_quotas|character_free_chat_quotas_pkey|p||PRIMARY KEY (user_id, character_id)
+billing|llm_usage_charge_dedup|llm_usage_charge_dedup_pkey|p||PRIMARY KEY (charge_key)
+billing|llm_usage_charges|llm_usage_charges_model_markup_check|c||CHECK ((model_markup >= (0)::numeric))
+billing|llm_usage_charges|llm_usage_charges_status_check|c||CHECK ((status = ANY (ARRAY['pending'::text, 'failed'::text, 'free'::text, 'charged'::text, 'partial'::text, 'reconciled'::text, 'historical'::text])))
+billing|llm_usage_charges|llm_usage_charges_debit_ledger_id_fkey|f|billing.wallet_ledger|FOREIGN KEY (debit_ledger_id) REFERENCES billing.wallet_ledger(id)
+billing|llm_usage_charges|llm_usage_charges_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+billing|llm_usage_charges|llm_usage_charges_pkey|p||PRIMARY KEY (id)
+billing|llm_usage_charges|llm_usage_charges_charge_key_key|u||UNIQUE (charge_key)
+billing|payment_orders|payment_orders_amount_cents_check|c||CHECK ((amount_cents > 0))
+billing|payment_orders|payment_orders_bonus_credits_check|c||CHECK ((bonus_credits >= 0))
+billing|payment_orders|payment_orders_credits_amount_check|c||CHECK ((credits_amount >= 0))
+billing|payment_orders|payment_orders_payment_type_check|c||CHECK ((payment_type = ANY (ARRAY['alipay'::text, 'wxpay'::text])))
+billing|payment_orders|payment_orders_status_check|c||CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'expired'::text, 'failed'::text])))
+billing|payment_orders|payment_orders_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+billing|payment_orders|payment_orders_pkey|p||PRIMARY KEY (id)
+billing|user_wallets|user_wallets_bonus_credits_check|c||CHECK ((bonus_credits >= (0)::numeric))
+billing|user_wallets|user_wallets_main_credits_check|c||CHECK ((main_credits >= (0)::numeric))
+billing|user_wallets|user_wallets_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+billing|user_wallets|user_wallets_pkey|p||PRIMARY KEY (user_id)
+billing|wallet_ledger|wallet_ledger_amount_check|c||CHECK ((amount <> (0)::numeric))
+billing|wallet_ledger|wallet_ledger_balance_bonus_check|c||CHECK ((balance_bonus >= (0)::numeric))
+billing|wallet_ledger|wallet_ledger_balance_main_check|c||CHECK ((balance_main >= (0)::numeric))
+billing|wallet_ledger|wallet_ledger_entry_type_check|c||CHECK ((entry_type = ANY (ARRAY['recharge'::text, 'chat_debit'::text, 'refund'::text, 'adjustment'::text, 'checkin_bonus'::text, 'wish_reward'::text])))
+billing|wallet_ledger|wallet_ledger_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+billing|wallet_ledger|wallet_ledger_pkey|p||PRIMARY KEY (id)
+cs_platform|audit_logs|audit_logs_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE SET NULL
+cs_platform|audit_logs|audit_logs_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE SET NULL
+cs_platform|audit_logs|audit_logs_pkey|p||PRIMARY KEY (id)
+cs_platform|export_logs|export_logs_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE SET NULL
+cs_platform|export_logs|export_logs_pkey|p||PRIMARY KEY (id)
+cs_platform|outreach_messages|outreach_messages_content_check|c||CHECK ((char_length(TRIM(BOTH FROM content)) > 0))
+cs_platform|outreach_messages|outreach_messages_direction_check|c||CHECK ((direction = ANY (ARRAY['agent'::text, 'user'::text])))
+cs_platform|outreach_messages|outreach_messages_send_status_check|c||CHECK ((send_status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text, 'received'::text])))
+cs_platform|outreach_messages|outreach_messages_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|outreach_messages|outreach_messages_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+cs_platform|outreach_messages|outreach_messages_pkey|p||PRIMARY KEY (id)
+cs_platform|outreach_sessions|outreach_sessions_status_check|c||CHECK ((status = ANY (ARRAY['not_started'::text, 'icebreaking'::text, 'waiting_reply'::text, 'following_up'::text, 'completed'::text, 'snoozed'::text, 'skipped'::text, 'send_failed'::text])))
+cs_platform|outreach_sessions|outreach_sessions_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|outreach_sessions|outreach_sessions_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+cs_platform|outreach_sessions|outreach_sessions_pkey|p||PRIMARY KEY (persona_id, user_id)
+cs_platform|persona_member_snapshots|persona_member_snapshots_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|persona_member_snapshots|persona_member_snapshots_run_id_fkey|f|cs_platform.persona_refresh_runs|FOREIGN KEY (run_id) REFERENCES cs_platform.persona_refresh_runs(id) ON DELETE CASCADE
+cs_platform|persona_member_snapshots|persona_member_snapshots_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+cs_platform|persona_member_snapshots|persona_member_snapshots_pkey|p||PRIMARY KEY (run_id, user_id)
+cs_platform|persona_member_state|persona_member_state_membership_status_check|c||CHECK ((membership_status = ANY (ARRAY['active'::text, 'chatted_left'::text])))
+cs_platform|persona_member_state|persona_member_state_last_seen_run_id_fkey|f|cs_platform.persona_refresh_runs|FOREIGN KEY (last_seen_run_id) REFERENCES cs_platform.persona_refresh_runs(id) ON DELETE SET NULL
+cs_platform|persona_member_state|persona_member_state_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|persona_member_state|persona_member_state_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+cs_platform|persona_member_state|persona_member_state_pkey|p||PRIMARY KEY (persona_id, user_id)
+cs_platform|persona_refresh_runs|persona_refresh_runs_status_check|c||CHECK ((status = ANY (ARRAY['running'::text, 'succeeded'::text, 'failed'::text])))
+cs_platform|persona_refresh_runs|persona_refresh_runs_persona_id_fkey|f|cs_platform.personas|FOREIGN KEY (persona_id) REFERENCES cs_platform.personas(id) ON DELETE CASCADE
+cs_platform|persona_refresh_runs|persona_refresh_runs_pkey|p||PRIMARY KEY (id)
+cs_platform|personas|personas_active_count_check|c||CHECK ((active_count >= 0))
+cs_platform|personas|personas_chatted_left_count_check|c||CHECK ((chatted_left_count >= 0))
+cs_platform|personas|personas_status_check|c||CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))
+cs_platform|personas|personas_pkey|p||PRIMARY KEY (id)
+cs_platform|personas|personas_slug_key|u||UNIQUE (slug)
+cs_platform|support_conversations|support_conversations_agent_unread_count_check|c||CHECK ((agent_unread_count >= 0))
+cs_platform|support_conversations|support_conversations_status_check|c||CHECK ((status = ANY (ARRAY['open'::text, 'resolved'::text])))
+cs_platform|support_conversations|support_conversations_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+cs_platform|support_conversations|support_conversations_pkey|p||PRIMARY KEY (id)
+cs_platform|support_conversations|support_conversations_user_id_key|u||UNIQUE (user_id)
+cs_platform|support_messages|support_messages_body_check|c||CHECK (((char_length(TRIM(BOTH FROM body)) >= 1) AND (char_length(TRIM(BOTH FROM body)) <= 4000)))
+cs_platform|support_messages|support_messages_check|c||CHECK ((((sender = 'user'::text) AND (agent_user_id IS NULL)) OR (sender = 'agent'::text)))
+cs_platform|support_messages|support_messages_sender_check|c||CHECK ((sender = ANY (ARRAY['user'::text, 'agent'::text])))
+cs_platform|support_messages|support_messages_agent_user_id_fkey|f|admin.admin_users|FOREIGN KEY (agent_user_id) REFERENCES admin.admin_users(user_id) ON DELETE SET NULL
+cs_platform|support_messages|support_messages_conversation_id_fkey|f|cs_platform.support_conversations|FOREIGN KEY (conversation_id) REFERENCES cs_platform.support_conversations(id) ON DELETE CASCADE
+cs_platform|support_messages|support_messages_pkey|p||PRIMARY KEY (id)
+cs_platform|support_messages|support_messages_conversation_id_client_msg_id_key|u||UNIQUE (conversation_id, client_msg_id)
+experience|chat_history|chat_history_revision_check|c||CHECK (((revision IS NULL) OR (revision >= 0)))
+experience|chat_history|chat_history_turn_index_check|c||CHECK (((turn_index IS NULL) OR (turn_index > 0)))
+experience|chat_history|chat_history_character_id_fkey|f|app_core.characters|FOREIGN KEY (character_id) REFERENCES app_core.characters(id) ON DELETE SET NULL
+experience|chat_history|chat_history_session_id_fkey|f|experience.chat_sessions|FOREIGN KEY (session_id) REFERENCES experience.chat_sessions(id) ON DELETE SET NULL
+experience|chat_history|chat_history_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+experience|chat_history|chat_history_pkey|p||PRIMARY KEY (id)
+experience|chat_message_audio|chat_message_audio_revision_check|c||CHECK ((revision >= 0))
+experience|chat_message_audio|chat_message_audio_status_check|c||CHECK ((status = ANY (ARRAY['pending'::text, 'ready'::text, 'failed'::text])))
+experience|chat_message_audio|chat_message_audio_message_id_fkey|f|experience.chat_history|FOREIGN KEY (message_id) REFERENCES experience.chat_history(id) ON DELETE CASCADE
+experience|chat_message_audio|chat_message_audio_session_id_fkey|f|experience.chat_sessions|FOREIGN KEY (session_id) REFERENCES experience.chat_sessions(id) ON DELETE CASCADE
+experience|chat_message_audio|chat_message_audio_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+experience|chat_message_audio|chat_message_audio_pkey|p||PRIMARY KEY (id)
+experience|chat_sessions|chat_sessions_context_window_start_turn_check|c||CHECK ((context_window_start_turn >= 1))
+experience|chat_sessions|chat_sessions_character_id_fkey|f|app_core.characters|FOREIGN KEY (character_id) REFERENCES app_core.characters(id) ON DELETE RESTRICT
+experience|chat_sessions|chat_sessions_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+experience|chat_sessions|chat_sessions_pkey|p||PRIMARY KEY (id)
+miniapp_features|character_favorites|character_favorites_character_id_fkey|f|app_core.characters|FOREIGN KEY (character_id) REFERENCES app_core.characters(id) ON DELETE CASCADE
+miniapp_features|character_favorites|character_favorites_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+miniapp_features|character_favorites|character_favorites_pkey|p||PRIMARY KEY (user_id, character_id)
+miniapp_features|character_ranking_scores|character_ranking_scores_character_id_fkey|f|app_core.characters|FOREIGN KEY (character_id) REFERENCES app_core.characters(id) ON DELETE CASCADE
+miniapp_features|character_ranking_scores|character_ranking_scores_pkey|p||PRIMARY KEY (character_id)
+miniapp_features|daily_checkins|daily_checkins_reward_credits_check|c||CHECK ((reward_credits > 0))
+miniapp_features|daily_checkins|daily_checkins_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+miniapp_features|daily_checkins|daily_checkins_pkey|p||PRIMARY KEY (id)
+miniapp_features|notification_reads|notification_reads_notification_id_fkey|f|miniapp_features.notifications|FOREIGN KEY (notification_id) REFERENCES miniapp_features.notifications(id) ON DELETE CASCADE
+miniapp_features|notification_reads|notification_reads_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+miniapp_features|notification_reads|notification_reads_pkey|p||PRIMARY KEY (notification_id, user_id)
+miniapp_features|notifications|notifications_body_check|c||CHECK (((char_length(TRIM(BOTH FROM body)) >= 1) AND (char_length(TRIM(BOTH FROM body)) <= 4000)))
+miniapp_features|notifications|notifications_category_check|c||CHECK ((category = ANY (ARRAY['announcement'::text, 'activity'::text, 'system'::text, 'interaction'::text])))
+miniapp_features|notifications|notifications_scope_check|c||CHECK ((scope = ANY (ARRAY['official'::text, 'personal'::text])))
+miniapp_features|notifications|notifications_scope_target_check|c||CHECK (((scope = 'official'::text) OR ((scope = 'personal'::text) AND (user_id IS NOT NULL))))
+miniapp_features|notifications|notifications_sort_order_check|c||CHECK ((sort_order >= 0))
+miniapp_features|notifications|notifications_title_check|c||CHECK (((char_length(TRIM(BOTH FROM title)) >= 1) AND (char_length(TRIM(BOTH FROM title)) <= 120)))
+miniapp_features|notifications|notifications_created_by_fkey|f|admin.admin_users|FOREIGN KEY (created_by) REFERENCES admin.admin_users(user_id) ON DELETE SET NULL
+miniapp_features|notifications|notifications_user_id_fkey|f|app_core.users|FOREIGN KEY (user_id) REFERENCES app_core.users(id) ON DELETE CASCADE
+miniapp_features|notifications|notifications_pkey|p||PRIMARY KEY (id)
+miniapp_features|wish_roles|wish_roles_reward_credits_check|c||CHECK ((reward_credits > 0))
+miniapp_features|wish_roles|wish_roles_status_check|c||CHECK ((status = ANY (ARRAY['awaiting_extra'::text, 'completed'::text])))
+miniapp_features|wish_roles|wish_roles_wish_text_check|c||CHECK ((char_length(TRIM(BOTH FROM wish_text)) > 8))
+miniapp_features|wish_roles|wish_roles_db_user_id_fkey|f|app_core.users|FOREIGN KEY (db_user_id) REFERENCES app_core.users(id) ON DELETE SET NULL
+miniapp_features|wish_roles|wish_roles_pkey|p||PRIMARY KEY (id)
+miniapp_traffic|botlinks|botlinks_pkey|p||PRIMARY KEY (id)
+miniapp_traffic|botlinks|botlinks_source_id_key|u||UNIQUE (source_id)
+miniapp_traffic|traffic_clicks|traffic_clicks_pkey|p||PRIMARY KEY (id)
+miniapp_traffic|traffic_clicks|traffic_clicks_uniq|u||UNIQUE (stat_date, source_id)
+===SECTION:08_fk_crossing===
+child_rel|parent_rel|con_name|on_delete
+admin.admin_users|auth.users|admin_users_user_id_fkey|c
+billing.character_free_chat_quota_decisions|app_core.characters|character_free_chat_quota_decisions_character_id_fkey|c
+billing.character_free_chat_quota_decisions|app_core.users|character_free_chat_quota_decisions_user_id_fkey|c
+billing.character_free_chat_quotas|app_core.characters|character_free_chat_quotas_character_id_fkey|c
+billing.character_free_chat_quotas|app_core.users|character_free_chat_quotas_user_id_fkey|c
+billing.llm_usage_charges|app_core.users|llm_usage_charges_user_id_fkey|c
+billing.payment_orders|app_core.users|payment_orders_user_id_fkey|c
+billing.user_wallets|app_core.users|user_wallets_user_id_fkey|c
+billing.wallet_ledger|app_core.users|wallet_ledger_user_id_fkey|c
+cs_platform.audit_logs|app_core.users|audit_logs_user_id_fkey|n
+cs_platform.outreach_messages|app_core.users|outreach_messages_user_id_fkey|c
+cs_platform.outreach_sessions|app_core.users|outreach_sessions_user_id_fkey|c
+cs_platform.persona_member_snapshots|app_core.users|persona_member_snapshots_user_id_fkey|c
+cs_platform.persona_member_state|app_core.users|persona_member_state_user_id_fkey|c
+cs_platform.support_conversations|app_core.users|support_conversations_user_id_fkey|c
+cs_platform.support_messages|admin.admin_users|support_messages_agent_user_id_fkey|n
+experience.chat_history|app_core.characters|chat_history_character_id_fkey|n
+experience.chat_history|app_core.users|chat_history_user_id_fkey|c
+experience.chat_message_audio|app_core.users|chat_message_audio_user_id_fkey|c
+experience.chat_sessions|app_core.characters|chat_sessions_character_id_fkey|r
+experience.chat_sessions|app_core.users|chat_sessions_user_id_fkey|c
+miniapp_features.character_favorites|app_core.characters|character_favorites_character_id_fkey|c
+miniapp_features.character_favorites|app_core.users|character_favorites_user_id_fkey|c
+miniapp_features.character_ranking_scores|app_core.characters|character_ranking_scores_character_id_fkey|c
+miniapp_features.daily_checkins|app_core.users|daily_checkins_user_id_fkey|c
+miniapp_features.notification_reads|app_core.users|notification_reads_user_id_fkey|c
+miniapp_features.notifications|admin.admin_users|notifications_created_by_fkey|n
+miniapp_features.notifications|app_core.users|notifications_user_id_fkey|c
+miniapp_features.wish_roles|app_core.users|wish_roles_db_user_id_fkey|n
+===SECTION:09_views_def===
+nsp|rel|relkind|reloptions|def_refs_miniapp|view_def
+cs_platform|persona_users_detail|v||f| SELECT ms.persona_id, ms.user_id, um.telegram_user_id, um.display_name, um.username, um.register_days, um.total_paid_amount, um.paid_count, um.total_round, um.last_active_at, ms.membership_status, COALESCE(os.status, 'not_started'::text) AS session_status, os.current_stage, os.current_question_key, ms.last_contacted_at AS chatted_at, ms.left_note, msg.last_user_message_at, msg.last_agent_message_at, CASE WHEN (COALESCE(msg.user_message_count, (0)::bigint) = 0) THEN 'none'::text WHEN (COALESCE(msg.agent_sent_count, (0)::bigint) = 0) THEN 'first_round'::text ELSE 'second_round'::text END AS waiting_state, ms.special_note, ms.special_note_updated_at FROM (((cs_platform.persona_member_state ms JOIN cs_platform.user_metrics um ON ((um.user_id = ms.user_id))) LEFT JOIN cs_platform.outreach_sessions os ON (((os.persona_id = ms.persona_id) AND (os.user_id = ms.user_id)))) LEFT JOIN ( SELECT outreach_messages.persona_id, outreach_messages.user_id, max(outreach_messages.created_at) FILTER (WHERE (outreach_messages.direction = 'user'::text)) AS last_user_message_at, max(outreach_messages.created_at) FILTER (WHERE ((outreach_messages.direction = 'agent'::text) AND (outreach_messages.send_status = 'sent'::text))) AS last_agent_message_at, count(*) FILTER (WHERE (outreach_messages.direction = 'user'::text)) AS user_message_count, count(*) FILTER (WHERE ((outreach_messages.direction = 'agent'::text) AND (outreach_messages.send_status = 'sent'::text))) AS agent_sent_count FROM cs_platform.outreach_messages GROUP BY outreach_messages.persona_id, outreach_messages.user_id) msg ON (((msg.persona_id = ms.persona_id) AND (msg.user_id = ms.user_id))));
+cs_platform|user_metrics|v||f| WITH payment_summary AS ( SELECT payment_orders.user_id, (count(*) FILTER (WHERE (payment_orders.status = 'completed'::text)))::integer AS paid_count, (COALESCE(sum(payment_orders.amount_cents) FILTER (WHERE (payment_orders.status = 'completed'::text)), (0)::bigint))::integer AS paid_cents FROM billing.payment_orders GROUP BY payment_orders.user_id ), message_activity AS ( SELECT chat_history.user_id, max(chat_history.created_at) AS last_message_at FROM experience.chat_history GROUP BY chat_history.user_id ) SELECT u.id AS user_id, u.tg_id AS telegram_user_id, COALESCE(NULLIF(s.display_name, ''::text), NULLIF(s.tg_username, ''::text), NULLIF(s.tg_first_name, ''::text), u.tg_id) AS display_name, s.tg_username AS username, GREATEST((floor((EXTRACT(epoch FROM (now() - COALESCE(u.miniapp_entered_at, u.created_at))) / (86400)::numeric)))::integer, 0) AS register_days, (COALESCE(w.total_paid_amount, (0)::numeric))::numeric(12,2) AS total_paid_amount, COALESCE(p.paid_count, 0) AS paid_count, COALESCE(u.total_round, s.total_round, (0)::bigint) AS total_round, COALESCE(m.last_message_at, s.updated_at, u.updated_at, u.miniapp_entered_at, u.created_at) AS last_active_at FROM ((((app_core.users u LEFT JOIN app_core.miniapp_user_settings s ON ((s.user_id = u.id))) LEFT JOIN billing.user_wallets w ON ((w.user_id = u.id))) LEFT JOIN payment_summary p ON ((p.user_id = u.id))) LEFT JOIN message_activity m ON ((m.user_id = u.id)));
+experience|current_chat_history|v|security_invoker=true|f| SELECT DISTINCT ON (session_id, turn_index) id, user_id, model, user_input, assistant_reply, history, character_id, status, upstream_status, deduction_rate, created_at, llm_provider_name, llm_finish_reason, llm_usage, llm_usage_cache, llm_native_tokens_cached, llm_native_tokens_reasoning, llm_native_tokens_completion, llm_native_tokens_prompt, llm_latency, llm_generation_time, llm_model, llm_generation_id, llm_generation_data, llm_intended_deduction, llm_charge_id, session_id, turn_index, revision FROM experience.chat_history WHERE ((session_id IS NOT NULL) AND (turn_index IS NOT NULL) AND (revision IS NOT NULL)) ORDER BY session_id, turn_index, revision DESC;
+miniapp_analytics|funnel_stats|v||f| SELECT count(id) FILTER (WHERE (bot_entered_at IS NOT NULL)) AS bot_entered_count, count(id) FILTER (WHERE ((bot_entered_at IS NOT NULL) AND (miniapp_entered_at IS NOT NULL))) AS miniapp_entered_count, count(id) FILTER (WHERE ((bot_entered_at IS NOT NULL) AND (miniapp_entered_at IS NOT NULL) AND (total_round >= 1))) AS active_chat_count FROM app_core.users;
+miniapp_traffic|traffic_daily_stats|v||f| WITH source_aggregates AS ( SELECT b_1.source_id, ( SELECT count(DISTINCT u_1.id) AS count FROM app_core.users u_1 WHERE ((u_1.source_id = b_1.source_id) AND (u_1.total_round >= 3) AND ((COALESCE(u_1.miniapp_entered_at, u_1.created_at))::date >= b_1.start_time) AND ((COALESCE(u_1.miniapp_entered_at, u_1.created_at))::date <= b_1.end_time))) AS total_activated_users, ( SELECT COALESCE(((sum(p.amount_cents))::numeric / 100.0), (0)::numeric) AS "coalesce" FROM billing.payment_orders p WHERE ((p.status = 'completed'::text) AND (p.user_id IN ( SELECT u_1.id FROM app_core.users u_1 WHERE ((u_1.source_id = b_1.source_id) AND (u_1.total_round >= 3) AND ((COALESCE(u_1.miniapp_entered_at, u_1.created_at))::date >= b_1.start_time) AND ((COALESCE(u_1.miniapp_entered_at, u_1.created_at))::date <= b_1.end_time)))))) AS total_ltv_amount, CASE WHEN (b_1.end_time < CURRENT_DATE) THEN b_1.end_time ELSE CURRENT_DATE END AS weekly_ref_date_calc, GREATEST(0, ((LEAST(CURRENT_DATE, b_1.end_time) - b_1.start_time) + 1)) AS elapsed_days FROM miniapp_traffic.botlinks b_1 ), weekly_agg AS ( SELECT sa_1.source_id, count(DISTINCT u_1.id) AS weekly_activated_users FROM ((source_aggregates sa_1 JOIN miniapp_traffic.botlinks b_1 ON ((b_1.source_id = sa_1.source_id))) LEFT JOIN app_core.users u_1 ON (((u_1.source_id = sa_1.source_id) AND (u_1.total_round >= 3) AND ((COALESCE(u_1.miniapp_entered_at, u_1.created_at))::date > (sa_1.weekly_ref_date_calc - '7 days'::interval)) AND ((COALESCE(u_1.miniapp_entered_at, u_1.created_at))::date <= sa_1.weekly_ref_date_calc) AND ((COALESCE(u_1.miniapp_entered_at, u_1.created_at))::date >= b_1.start_time) AND ((COALESCE(u_1.miniapp_entered_at, u_1.created_at))::date <= b_1.end_time)))) GROUP BY sa_1.source_id ) SELECT c.stat_date, c.source_id, b.source_name, b.start_time, b.end_time, b."Purchase_amount" AS purchase_amount, b."Procurement_days" AS procurement_days, CASE WHEN (COALESCE(b."Procurement_days", 0) > 0) THEN round(((b."Purchase_amount")::numeric / (b."Procurement_days")::numeric), 2) ELSE NULL::numeric END AS daily_cost, c.clicks, COALESCE(u.activated_users, (0)::bigint) AS activated_users, CASE WHEN ((COALESCE(u.activated_users, (0)::bigint) > 0) AND (COALESCE(b."Procurement_days", 0) > 0)) THEN round((((b."Purchase_amount")::numeric / (b."Procurement_days")::numeric) / (u.activated_users)::numeric), 2) ELSE NULL::numeric END AS daily_cpa, CASE WHEN (COALESCE(c.clicks, 0) > 0) THEN round(((COALESCE(u.activated_users, (0)::bigint))::numeric / (c.clicks)::numeric), 4) ELSE NULL::numeric END AS conversion_rate, sa.total_activated_users, CASE WHEN ((sa.total_activated_users > 0) AND (COALESCE(b."Procurement_days", 0) > 0)) THEN round((LEAST((((b."Purchase_amount")::numeric / (b."Procurement_days")::numeric) * (sa.elapsed_days)::numeric), (b."Purchase_amount")::numeric) / (sa.total_activated_users)::numeric), 2) ELSE NULL::numeric END AS cumulative_cpa, CASE WHEN (sa.total_activated_users > 0) THEN round((sa.total_ltv_amount / (sa.total_activated_users)::numeric), 2) ELSE NULL::numeric END AS cumulative_ltv, sa.weekly_ref_date_calc AS weekly_ref_date, CASE WHEN ((wa.weekly_activated_users > 0) AND (COALESCE(b."Procurement_days", 0) > 0)) THEN round(((((b."Purchase_amount")::numeric / (b."Procurement_days")::numeric) * (LEAST(7, ((sa.weekly_ref_date_calc - b.start_time) + 1)))::numeric) / (wa.weekly_activated_users)::numeric), 2) ELSE NULL::numeric END AS weekly_cpa FROM ((((miniapp_traffic.traffic_clicks c JOIN miniapp_traffic.botlinks b ON (((b.source_id = c.source_id) AND (c.stat_date >= b.start_time) AND (c.stat_date <= b.end_time)))) LEFT JOIN LATERAL ( SELECT count(DISTINCT u_1.id) AS activated_users FROM app_core.users u_1 WHERE ((u_1.source_id = c.source_id) AND ((COALESCE(u_1.miniapp_entered_at, u_1.created_at))::date = c.stat_date) AND (u_1.total_round >= 3))) u ON (true)) LEFT JOIN source_aggregates sa ON ((sa.source_id = c.source_id))) LEFT JOIN weekly_agg wa ON ((wa.source_id = c.source_id)));
+===SECTION:10_indexes===
+nsp|rel|idx|idx_def
+admin|admin_users|admin_users_pkey|CREATE UNIQUE INDEX admin_users_pkey ON admin.admin_users USING btree (user_id)
+admin|admin_users|idx_admin_users_email_lower|CREATE UNIQUE INDEX idx_admin_users_email_lower ON admin.admin_users USING btree (lower(email))
+admin|admin_users|idx_admin_users_role|CREATE INDEX idx_admin_users_role ON admin.admin_users USING btree (role)
+admin|audit_logs|audit_logs_pkey|CREATE UNIQUE INDEX audit_logs_pkey ON admin.audit_logs USING btree (id)
+admin|audit_logs|idx_admin_audit_logs_actor_created|CREATE INDEX idx_admin_audit_logs_actor_created ON admin.audit_logs USING btree (actor_user_id, created_at DESC)
+admin|audit_logs|idx_admin_audit_logs_environment_created|CREATE INDEX idx_admin_audit_logs_environment_created ON admin.audit_logs USING btree (environment, created_at DESC)
+admin|character_layout_drafts|character_layout_drafts_pkey|CREATE UNIQUE INDEX character_layout_drafts_pkey ON admin.character_layout_drafts USING btree (id)
+admin|character_layout_drafts|idx_character_layout_one_active_draft|CREATE UNIQUE INDEX idx_character_layout_one_active_draft ON admin.character_layout_drafts USING btree (environment) WHERE (status = 'draft'::text)
+admin|character_layout_releases|character_layout_releases_environment_layout_version_key|CREATE UNIQUE INDEX character_layout_releases_environment_layout_version_key ON admin.character_layout_releases USING btree (environment, layout_version)
+admin|character_layout_releases|character_layout_releases_pkey|CREATE UNIQUE INDEX character_layout_releases_pkey ON admin.character_layout_releases USING btree (id)
+admin|character_layout_state|character_layout_state_pkey|CREATE UNIQUE INDEX character_layout_state_pkey ON admin.character_layout_state USING btree (environment)
+admin|config_drafts|config_drafts_pkey|CREATE UNIQUE INDEX config_drafts_pkey ON admin.config_drafts USING btree (id)
+admin|config_drafts|idx_admin_config_drafts_creator|CREATE INDEX idx_admin_config_drafts_creator ON admin.config_drafts USING btree (created_by, created_at DESC)
+admin|config_drafts|idx_admin_config_drafts_lookup|CREATE INDEX idx_admin_config_drafts_lookup ON admin.config_drafts USING btree (environment, config_key, status, updated_at DESC)
+admin|config_drafts|idx_admin_config_drafts_one_active|CREATE UNIQUE INDEX idx_admin_config_drafts_one_active ON admin.config_drafts USING btree (environment, config_key) WHERE (status = 'draft'::text)
+admin|config_releases|config_releases_environment_config_key_runtime_version_key|CREATE UNIQUE INDEX config_releases_environment_config_key_runtime_version_key ON admin.config_releases USING btree (environment, config_key, runtime_version)
+admin|config_releases|config_releases_pkey|CREATE UNIQUE INDEX config_releases_pkey ON admin.config_releases USING btree (id)
+admin|config_releases|idx_admin_config_releases_lookup|CREATE INDEX idx_admin_config_releases_lookup ON admin.config_releases USING btree (environment, config_key, released_at DESC)
+admin|config_releases|idx_admin_config_releases_rollback|CREATE INDEX idx_admin_config_releases_rollback ON admin.config_releases USING btree (rollback_of_release_id) WHERE (rollback_of_release_id IS NOT NULL)
+admin|config_releases|idx_admin_config_releases_source_draft|CREATE UNIQUE INDEX idx_admin_config_releases_source_draft ON admin.config_releases USING btree (source_draft_id) WHERE (source_draft_id IS NOT NULL)
+admin|environment_config|environment_config_pkey|CREATE UNIQUE INDEX environment_config_pkey ON admin.environment_config USING btree (id)
+app_core|characters|characters_pkey|CREATE UNIQUE INDEX characters_pkey ON app_core.characters USING btree (id)
+app_core|characters|idx_characters_active_order|CREATE INDEX idx_characters_active_order ON app_core.characters USING btree (enabled, sort_order, created_at DESC) WHERE (archived_at IS NULL)
+app_core|characters|idx_characters_card_hash_unique|CREATE UNIQUE INDEX idx_characters_card_hash_unique ON app_core.characters USING btree (card_hash) WHERE (card_hash IS NOT NULL)
+app_core|characters|idx_characters_enabled_sort|CREATE INDEX idx_characters_enabled_sort ON app_core.characters USING btree (enabled, sort_order) WHERE (enabled = true)
+app_core|characters|idx_characters_last_listed_at|CREATE INDEX idx_characters_last_listed_at ON app_core.characters USING btree (last_listed_at DESC) WHERE (enabled AND (archived_at IS NULL))
+app_core|characters|idx_characters_test_name|CREATE INDEX idx_characters_test_name ON app_core.characters USING btree (name) WHERE (is_test = true)
+app_core|miniapp_user_settings|miniapp_user_settings_pkey|CREATE UNIQUE INDEX miniapp_user_settings_pkey ON app_core.miniapp_user_settings USING btree (user_id)
+app_core|runtime_config|runtime_config_pkey|CREATE UNIQUE INDEX runtime_config_pkey ON app_core.runtime_config USING btree (key)
+app_core|users|users_pkey|CREATE UNIQUE INDEX users_pkey ON app_core.users USING btree (id)
+app_core|users|users_st_handle_key|CREATE UNIQUE INDEX users_st_handle_key ON app_core.users USING btree (st_handle)
+app_core|users|users_tg_id_key|CREATE UNIQUE INDEX users_tg_id_key ON app_core.users USING btree (tg_id)
+billing|character_free_chat_quota_decisions|character_free_chat_quota_decisions_pkey|CREATE UNIQUE INDEX character_free_chat_quota_decisions_pkey ON billing.character_free_chat_quota_decisions USING btree (charge_key)
+billing|character_free_chat_quota_decisions|idx_character_free_chat_quota_decisions_pair|CREATE INDEX idx_character_free_chat_quota_decisions_pair ON billing.character_free_chat_quota_decisions USING btree (user_id, character_id, created_at DESC)
+billing|character_free_chat_quota_decisions|idx_character_free_chat_quota_decisions_stale|CREATE INDEX idx_character_free_chat_quota_decisions_stale ON billing.character_free_chat_quota_decisions USING btree (created_at) WHERE (status = 'reserved'::text)
+billing|character_free_chat_quotas|character_free_chat_quotas_pkey|CREATE UNIQUE INDEX character_free_chat_quotas_pkey ON billing.character_free_chat_quotas USING btree (user_id, character_id)
+billing|llm_usage_charge_dedup|idx_llm_usage_charge_dedup_generation|CREATE UNIQUE INDEX idx_llm_usage_charge_dedup_generation ON billing.llm_usage_charge_dedup USING btree (generation_id) WHERE (generation_id IS NOT NULL)
+billing|llm_usage_charge_dedup|idx_llm_usage_charge_dedup_user_processed|CREATE INDEX idx_llm_usage_charge_dedup_user_processed ON billing.llm_usage_charge_dedup USING btree (user_id, processed_at DESC)
+billing|llm_usage_charge_dedup|llm_usage_charge_dedup_pkey|CREATE UNIQUE INDEX llm_usage_charge_dedup_pkey ON billing.llm_usage_charge_dedup USING btree (charge_key)
+billing|llm_usage_charges|idx_llm_usage_charges_generation|CREATE UNIQUE INDEX idx_llm_usage_charges_generation ON billing.llm_usage_charges USING btree (generation_id) WHERE (generation_id IS NOT NULL)
+billing|llm_usage_charges|idx_llm_usage_charges_model_created|CREATE INDEX idx_llm_usage_charges_model_created ON billing.llm_usage_charges USING btree (model_openrouter_id, created_at DESC)
+billing|llm_usage_charges|idx_llm_usage_charges_pending_created|CREATE INDEX idx_llm_usage_charges_pending_created ON billing.llm_usage_charges USING btree (created_at) WHERE (status = 'pending'::text)
+billing|llm_usage_charges|idx_llm_usage_charges_user_created|CREATE INDEX idx_llm_usage_charges_user_created ON billing.llm_usage_charges USING btree (user_id, created_at DESC)
+billing|llm_usage_charges|llm_usage_charges_charge_key_key|CREATE UNIQUE INDEX llm_usage_charges_charge_key_key ON billing.llm_usage_charges USING btree (charge_key)
+billing|llm_usage_charges|llm_usage_charges_pkey|CREATE UNIQUE INDEX llm_usage_charges_pkey ON billing.llm_usage_charges USING btree (id)
+billing|payment_orders|idx_miniapp_payment_orders_status|CREATE INDEX idx_miniapp_payment_orders_status ON billing.payment_orders USING btree (status)
+billing|payment_orders|idx_miniapp_payment_orders_user_created|CREATE INDEX idx_miniapp_payment_orders_user_created ON billing.payment_orders USING btree (user_id, created_at DESC)
+billing|payment_orders|idx_payment_orders_paid_at|CREATE INDEX idx_payment_orders_paid_at ON billing.payment_orders USING btree (paid_at DESC) WHERE (paid_at IS NOT NULL)
+billing|payment_orders|payment_orders_pkey|CREATE UNIQUE INDEX payment_orders_pkey ON billing.payment_orders USING btree (id)
+billing|user_wallets|user_wallets_pkey|CREATE UNIQUE INDEX user_wallets_pkey ON billing.user_wallets USING btree (user_id)
+billing|wallet_ledger|idx_miniapp_wallet_ledger_reference|CREATE INDEX idx_miniapp_wallet_ledger_reference ON billing.wallet_ledger USING btree (reference_type, reference_id)
+billing|wallet_ledger|idx_miniapp_wallet_ledger_user_created|CREATE INDEX idx_miniapp_wallet_ledger_user_created ON billing.wallet_ledger USING btree (user_id, created_at DESC)
+billing|wallet_ledger|idx_wallet_ledger_outreach_grant_request|CREATE UNIQUE INDEX idx_wallet_ledger_outreach_grant_request ON billing.wallet_ledger USING btree (reference_id) WHERE (reference_type = 'outreach_grant'::text)
+billing|wallet_ledger|wallet_ledger_pkey|CREATE UNIQUE INDEX wallet_ledger_pkey ON billing.wallet_ledger USING btree (id)
+cs_platform|audit_logs|audit_logs_pkey|CREATE UNIQUE INDEX audit_logs_pkey ON cs_platform.audit_logs USING btree (id)
+cs_platform|export_logs|export_logs_pkey|CREATE UNIQUE INDEX export_logs_pkey ON cs_platform.export_logs USING btree (id)
+cs_platform|outreach_messages|idx_cs_outreach_messages_idempotency|CREATE UNIQUE INDEX idx_cs_outreach_messages_idempotency ON cs_platform.outreach_messages USING btree (persona_id, user_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)
+cs_platform|outreach_messages|idx_cs_outreach_messages_user_created|CREATE INDEX idx_cs_outreach_messages_user_created ON cs_platform.outreach_messages USING btree (persona_id, user_id, created_at DESC)
+cs_platform|outreach_messages|idx_outreach_messages_created_at|CREATE INDEX idx_outreach_messages_created_at ON cs_platform.outreach_messages USING btree (created_at DESC)
+cs_platform|outreach_messages|outreach_messages_pkey|CREATE UNIQUE INDEX outreach_messages_pkey ON cs_platform.outreach_messages USING btree (id)
+cs_platform|outreach_sessions|outreach_sessions_pkey|CREATE UNIQUE INDEX outreach_sessions_pkey ON cs_platform.outreach_sessions USING btree (persona_id, user_id)
+cs_platform|persona_member_snapshots|persona_member_snapshots_pkey|CREATE UNIQUE INDEX persona_member_snapshots_pkey ON cs_platform.persona_member_snapshots USING btree (run_id, user_id)
+cs_platform|persona_member_state|persona_member_state_pkey|CREATE UNIQUE INDEX persona_member_state_pkey ON cs_platform.persona_member_state USING btree (persona_id, user_id)
+cs_platform|persona_refresh_runs|persona_refresh_runs_pkey|CREATE UNIQUE INDEX persona_refresh_runs_pkey ON cs_platform.persona_refresh_runs USING btree (id)
+cs_platform|personas|personas_pkey|CREATE UNIQUE INDEX personas_pkey ON cs_platform.personas USING btree (id)
+cs_platform|personas|personas_slug_key|CREATE UNIQUE INDEX personas_slug_key ON cs_platform.personas USING btree (slug)
+cs_platform|support_conversations|idx_support_conversations_queue|CREATE INDEX idx_support_conversations_queue ON cs_platform.support_conversations USING btree (status, last_user_message_at DESC NULLS LAST)
+cs_platform|support_conversations|support_conversations_pkey|CREATE UNIQUE INDEX support_conversations_pkey ON cs_platform.support_conversations USING btree (id)
+cs_platform|support_conversations|support_conversations_user_id_key|CREATE UNIQUE INDEX support_conversations_user_id_key ON cs_platform.support_conversations USING btree (user_id)
+cs_platform|support_messages|idx_support_messages_conversation|CREATE INDEX idx_support_messages_conversation ON cs_platform.support_messages USING btree (conversation_id, created_at, id)
+cs_platform|support_messages|support_messages_conversation_id_client_msg_id_key|CREATE UNIQUE INDEX support_messages_conversation_id_client_msg_id_key ON cs_platform.support_messages USING btree (conversation_id, client_msg_id)
+cs_platform|support_messages|support_messages_pkey|CREATE UNIQUE INDEX support_messages_pkey ON cs_platform.support_messages USING btree (id)
+experience|chat_history|chat_history_pkey|CREATE UNIQUE INDEX chat_history_pkey ON experience.chat_history USING btree (id)
+experience|chat_history|idx_chat_history_character_user_created_at|CREATE INDEX idx_chat_history_character_user_created_at ON experience.chat_history USING btree (character_id, user_id, created_at) WHERE (character_id IS NOT NULL)
+experience|chat_history|idx_chat_history_created_at|CREATE INDEX idx_chat_history_created_at ON experience.chat_history USING btree (created_at DESC)
+experience|chat_history|idx_chat_history_model|CREATE INDEX idx_chat_history_model ON experience.chat_history USING btree (model, created_at DESC)
+experience|chat_history|idx_chat_history_session|CREATE INDEX idx_chat_history_session ON experience.chat_history USING btree (session_id, created_at DESC) WHERE (session_id IS NOT NULL)
+experience|chat_history|idx_chat_history_session_current|CREATE INDEX idx_chat_history_session_current ON experience.chat_history USING btree (session_id, turn_index, revision DESC) WHERE ((session_id IS NOT NULL) AND (turn_index IS NOT NULL))
+experience|chat_history|idx_chat_history_user|CREATE INDEX idx_chat_history_user ON experience.chat_history USING btree (user_id, created_at DESC)
+experience|chat_history|uq_chat_history_session_turn_revision|CREATE UNIQUE INDEX uq_chat_history_session_turn_revision ON experience.chat_history USING btree (session_id, turn_index, revision) WHERE ((session_id IS NOT NULL) AND (turn_index IS NOT NULL) AND (revision IS NOT NULL))
+experience|chat_message_audio|chat_message_audio_pkey|CREATE UNIQUE INDEX chat_message_audio_pkey ON experience.chat_message_audio USING btree (id)
+experience|chat_message_audio|idx_chat_message_audio_charge|CREATE INDEX idx_chat_message_audio_charge ON experience.chat_message_audio USING btree (charge_id) WHERE (charge_id IS NOT NULL)
+experience|chat_message_audio|idx_chat_message_audio_session|CREATE INDEX idx_chat_message_audio_session ON experience.chat_message_audio USING btree (session_id) WHERE is_active
+experience|chat_message_audio|idx_chat_message_audio_session_all|CREATE INDEX idx_chat_message_audio_session_all ON experience.chat_message_audio USING btree (session_id, message_id)
+experience|chat_message_audio|idx_chat_message_audio_user_created|CREATE INDEX idx_chat_message_audio_user_created ON experience.chat_message_audio USING btree (user_id, created_at DESC)
+experience|chat_message_audio|uq_chat_message_audio_active|CREATE UNIQUE INDEX uq_chat_message_audio_active ON experience.chat_message_audio USING btree (message_id) WHERE is_active
+experience|chat_message_audio|uq_chat_message_audio_pending|CREATE UNIQUE INDEX uq_chat_message_audio_pending ON experience.chat_message_audio USING btree (message_id) WHERE (status = 'pending'::text)
+experience|chat_sessions|chat_sessions_pkey|CREATE UNIQUE INDEX chat_sessions_pkey ON experience.chat_sessions USING btree (id)
+experience|chat_sessions|idx_chat_sessions_user_character_recent|CREATE INDEX idx_chat_sessions_user_character_recent ON experience.chat_sessions USING btree (user_id, character_id, last_message_at DESC NULLS LAST) WHERE (deleted_at IS NULL)
+experience|chat_sessions|idx_chat_sessions_user_pinned_recent|CREATE INDEX idx_chat_sessions_user_pinned_recent ON experience.chat_sessions USING btree (user_id, pinned_at DESC NULLS LAST, last_message_at DESC NULLS LAST, created_at DESC) WHERE (deleted_at IS NULL)
+experience|chat_sessions|idx_chat_sessions_user_recent|CREATE INDEX idx_chat_sessions_user_recent ON experience.chat_sessions USING btree (user_id, last_message_at DESC NULLS LAST) WHERE (deleted_at IS NULL)
+miniapp_features|character_favorites|character_favorites_pkey|CREATE UNIQUE INDEX character_favorites_pkey ON miniapp_features.character_favorites USING btree (user_id, character_id)
+miniapp_features|character_favorites|idx_character_favorites_character_created|CREATE INDEX idx_character_favorites_character_created ON miniapp_features.character_favorites USING btree (character_id, created_at DESC)
+miniapp_features|character_favorites|idx_character_favorites_user_created|CREATE INDEX idx_character_favorites_user_created ON miniapp_features.character_favorites USING btree (user_id, created_at DESC)
+miniapp_features|character_ranking_scores|character_ranking_scores_pkey|CREATE UNIQUE INDEX character_ranking_scores_pkey ON miniapp_features.character_ranking_scores USING btree (character_id)
+miniapp_features|character_ranking_scores|idx_character_ranking_scores_score|CREATE INDEX idx_character_ranking_scores_score ON miniapp_features.character_ranking_scores USING btree (score DESC, character_id)
+miniapp_features|daily_checkins|daily_checkins_pkey|CREATE UNIQUE INDEX daily_checkins_pkey ON miniapp_features.daily_checkins USING btree (id)
+miniapp_features|daily_checkins|idx_daily_checkins_claimed_at|CREATE INDEX idx_daily_checkins_claimed_at ON miniapp_features.daily_checkins USING btree (claimed_at DESC)
+miniapp_features|daily_checkins|idx_miniapp_daily_checkins_user_claimed|CREATE INDEX idx_miniapp_daily_checkins_user_claimed ON miniapp_features.daily_checkins USING btree (user_id, claimed_at DESC)
+miniapp_features|notification_reads|idx_notification_reads_user|CREATE INDEX idx_notification_reads_user ON miniapp_features.notification_reads USING btree (user_id, notification_id)
+miniapp_features|notification_reads|notification_reads_pkey|CREATE UNIQUE INDEX notification_reads_pkey ON miniapp_features.notification_reads USING btree (notification_id, user_id)
+miniapp_features|notifications|idx_notifications_official_feed|CREATE INDEX idx_notifications_official_feed ON miniapp_features.notifications USING btree (sort_order, published_at DESC, created_at DESC) WHERE ((scope = 'official'::text) AND is_published AND (deleted_at IS NULL))
+miniapp_features|notifications|idx_notifications_official_targeted|CREATE INDEX idx_notifications_official_targeted ON miniapp_features.notifications USING btree (user_id, published_at DESC) WHERE ((scope = 'official'::text) AND (user_id IS NOT NULL) AND is_published AND (deleted_at IS NULL))
+miniapp_features|notifications|idx_notifications_personal_feed|CREATE INDEX idx_notifications_personal_feed ON miniapp_features.notifications USING btree (user_id, created_at DESC) WHERE ((scope = 'personal'::text) AND is_published AND (deleted_at IS NULL))
+miniapp_features|notifications|notifications_pkey|CREATE UNIQUE INDEX notifications_pkey ON miniapp_features.notifications USING btree (id)
+miniapp_features|wish_roles|idx_miniapp_wish_roles_status_created|CREATE INDEX idx_miniapp_wish_roles_status_created ON miniapp_features.wish_roles USING btree (status, created_at DESC)
+miniapp_features|wish_roles|idx_miniapp_wish_roles_user_created|CREATE INDEX idx_miniapp_wish_roles_user_created ON miniapp_features.wish_roles USING btree (user_id, created_at DESC)
+miniapp_features|wish_roles|wish_roles_pkey|CREATE UNIQUE INDEX wish_roles_pkey ON miniapp_features.wish_roles USING btree (id)
+miniapp_traffic|botlinks|botlinks_pkey|CREATE UNIQUE INDEX botlinks_pkey ON miniapp_traffic.botlinks USING btree (id)
+miniapp_traffic|botlinks|botlinks_source_id_key|CREATE UNIQUE INDEX botlinks_source_id_key ON miniapp_traffic.botlinks USING btree (source_id)
+miniapp_traffic|traffic_clicks|idx_tc_source_date|CREATE INDEX idx_tc_source_date ON miniapp_traffic.traffic_clicks USING btree (source_id, stat_date)
+miniapp_traffic|traffic_clicks|traffic_clicks_pkey|CREATE UNIQUE INDEX traffic_clicks_pkey ON miniapp_traffic.traffic_clicks USING btree (id)
+miniapp_traffic|traffic_clicks|traffic_clicks_uniq|CREATE UNIQUE INDEX traffic_clicks_uniq ON miniapp_traffic.traffic_clicks USING btree (stat_date, source_id)
+===SECTION:11_rls_policies===
+nsp|rel|pol|pol_permissive|pol_roles|pol_cmd|pol_using|pol_check
+admin|admin_users|admin_users_read_self|PERMISSIVE|authenticated|SELECT|((user_id = auth.uid()) AND admin.is_registered_admin())|
+admin|audit_logs|audit_logs_read_permitted_environment|PERMISSIVE|authenticated|SELECT|admin.can_access_environment(environment)|
+admin|config_drafts|config_drafts_read_permitted_environment|PERMISSIVE|authenticated|SELECT|admin.can_access_environment(environment)|
+admin|config_releases|config_releases_read_permitted_environment|PERMISSIVE|authenticated|SELECT|admin.can_access_environment(environment)|
+===SECTION:12_table_grants===
+nsp|rel|grantee|privs
+admin|admin_users|authenticated|SELECT
+admin|admin_users|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|admin_users|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|audit_logs|authenticated|SELECT
+admin|audit_logs|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|audit_logs|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|character_layout_drafts|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|character_layout_drafts|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|character_layout_releases|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|character_layout_releases|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|character_layout_state|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|character_layout_state|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|config_drafts|authenticated|SELECT
+admin|config_drafts|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|config_drafts|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|config_releases|authenticated|SELECT
+admin|config_releases|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|config_releases|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|environment_config|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+admin|environment_config|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+app_core|characters|anon|DELETE,INSERT,SELECT,UPDATE
+app_core|characters|authenticated|DELETE,INSERT,SELECT,UPDATE
+app_core|characters|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+app_core|characters|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+app_core|miniapp_user_settings|anon|DELETE,INSERT,SELECT,UPDATE
+app_core|miniapp_user_settings|authenticated|DELETE,INSERT,SELECT,UPDATE
+app_core|miniapp_user_settings|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+app_core|miniapp_user_settings|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+app_core|runtime_config|anon|DELETE,INSERT,SELECT,UPDATE
+app_core|runtime_config|authenticated|DELETE,INSERT,SELECT,UPDATE
+app_core|runtime_config|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+app_core|runtime_config|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+app_core|users|anon|DELETE,INSERT,SELECT,UPDATE
+app_core|users|authenticated|DELETE,INSERT,SELECT,UPDATE
+app_core|users|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+app_core|users|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|character_free_chat_quota_decisions|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|character_free_chat_quota_decisions|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|character_free_chat_quotas|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|character_free_chat_quotas|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|llm_usage_charge_dedup|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|llm_usage_charge_dedup|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|llm_usage_charges|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|llm_usage_charges|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|payment_orders|anon|DELETE,INSERT,SELECT,UPDATE
+billing|payment_orders|authenticated|DELETE,INSERT,SELECT,UPDATE
+billing|payment_orders|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|payment_orders|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|user_wallets|anon|DELETE,INSERT,SELECT,UPDATE
+billing|user_wallets|authenticated|DELETE,INSERT,SELECT,UPDATE
+billing|user_wallets|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|user_wallets|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|wallet_ledger|anon|DELETE,INSERT,SELECT,UPDATE
+billing|wallet_ledger|authenticated|DELETE,INSERT,SELECT,UPDATE
+billing|wallet_ledger|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+billing|wallet_ledger|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|audit_logs|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|audit_logs|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|audit_logs|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|audit_logs|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|export_logs|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|export_logs|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|export_logs|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|export_logs|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|outreach_messages|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|outreach_messages|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|outreach_messages|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|outreach_messages|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|outreach_sessions|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|outreach_sessions|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|outreach_sessions|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|outreach_sessions|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|persona_member_snapshots|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|persona_member_snapshots|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|persona_member_snapshots|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|persona_member_snapshots|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|persona_member_state|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|persona_member_state|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|persona_member_state|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|persona_member_state|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|persona_refresh_runs|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|persona_refresh_runs|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|persona_refresh_runs|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|persona_refresh_runs|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|persona_users_detail|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|persona_users_detail|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|persona_users_detail|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|persona_users_detail|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|personas|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|personas|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|personas|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|personas|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|support_conversations|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|support_conversations|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|support_messages|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|support_messages|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|user_metrics|anon|DELETE,INSERT,SELECT,UPDATE
+cs_platform|user_metrics|authenticated|DELETE,INSERT,SELECT,UPDATE
+cs_platform|user_metrics|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+cs_platform|user_metrics|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+experience|chat_history|anon|DELETE,INSERT,SELECT,UPDATE
+experience|chat_history|authenticated|DELETE,INSERT,SELECT,UPDATE
+experience|chat_history|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+experience|chat_history|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+experience|chat_message_audio|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+experience|chat_message_audio|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+experience|chat_sessions|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+experience|chat_sessions|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+experience|current_chat_history|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+experience|current_chat_history|service_role|SELECT
+miniapp_analytics|funnel_stats|anon|DELETE,INSERT,SELECT,UPDATE
+miniapp_analytics|funnel_stats|authenticated|DELETE,INSERT,SELECT,UPDATE
+miniapp_analytics|funnel_stats|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_analytics|funnel_stats|service_role|DELETE,INSERT,SELECT,UPDATE
+miniapp_features|character_favorites|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|character_favorites|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|character_ranking_scores|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|character_ranking_scores|service_role|DELETE,INSERT,SELECT,UPDATE
+miniapp_features|daily_checkins|anon|DELETE,INSERT,SELECT,UPDATE
+miniapp_features|daily_checkins|authenticated|DELETE,INSERT,SELECT,UPDATE
+miniapp_features|daily_checkins|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|daily_checkins|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|notification_reads|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|notification_reads|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|notifications|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|notifications|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|wish_roles|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_features|wish_roles|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|botlinks|anon|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|botlinks|authenticated|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|botlinks|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|botlinks|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|traffic_clicks|anon|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|traffic_clicks|authenticated|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|traffic_clicks|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|traffic_clicks|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|traffic_daily_stats|anon|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|traffic_daily_stats|authenticated|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|traffic_daily_stats|postgres|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+miniapp_traffic|traffic_daily_stats|service_role|DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+===SECTION:13_default_acls===
+nsp|grantor|objtype|acl
+auth|supabase_auth_admin|S|postgres=rwU/supabase_auth_admin dashboard_user=rwU/supabase_auth_admin
+auth|supabase_auth_admin|f|postgres=X/supabase_auth_admin dashboard_user=X/supabase_auth_admin
+auth|supabase_auth_admin|r|postgres=arwdDxtm/supabase_auth_admin dashboard_user=arwdDxtm/supabase_auth_admin
+extensions|supabase_admin|S|postgres=r*w*U*/supabase_admin
+extensions|supabase_admin|f|postgres=X*/supabase_admin
+extensions|supabase_admin|r|postgres=a*r*w*d*D*x*t*m*/supabase_admin
+graphql|supabase_admin|S|postgres=rwU/supabase_admin anon=rwU/supabase_admin authenticated=rwU/supabase_admin service_role=rwU/supabase_admin
+graphql|supabase_admin|f|postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+graphql|supabase_admin|r|postgres=arwdDxtm/supabase_admin anon=arwdDxtm/supabase_admin authenticated=arwdDxtm/supabase_admin service_role=arwdDxtm/supabase_admin
+graphql_public|supabase_admin|S|postgres=rwU/supabase_admin anon=rwU/supabase_admin authenticated=rwU/supabase_admin service_role=rwU/supabase_admin
+graphql_public|supabase_admin|f|postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+graphql_public|supabase_admin|r|postgres=arwdDxtm/supabase_admin anon=arwdDxtm/supabase_admin authenticated=arwdDxtm/supabase_admin service_role=arwdDxtm/supabase_admin
+public|postgres|S|postgres=rwU/postgres anon=rwU/postgres authenticated=rwU/postgres service_role=rwU/postgres
+public|postgres|f|postgres=X/postgres anon=X/postgres authenticated=X/postgres service_role=X/postgres
+public|postgres|r|postgres=arwdDxtm/postgres anon=arwdDxtm/postgres authenticated=arwdDxtm/postgres service_role=arwdDxtm/postgres
+public|supabase_admin|S|postgres=rwU/supabase_admin anon=rwU/supabase_admin authenticated=rwU/supabase_admin service_role=rwU/supabase_admin
+public|supabase_admin|f|postgres=X/supabase_admin anon=X/supabase_admin authenticated=X/supabase_admin service_role=X/supabase_admin
+public|supabase_admin|r|postgres=arwdDxtm/supabase_admin anon=arwdDxtm/supabase_admin authenticated=arwdDxtm/supabase_admin service_role=arwdDxtm/supabase_admin
+realtime|supabase_admin|S|postgres=rwU/supabase_admin dashboard_user=rwU/supabase_admin
+realtime|supabase_admin|f|postgres=X/supabase_admin dashboard_user=X/supabase_admin
+realtime|supabase_admin|r|postgres=arwdDxtm/supabase_admin dashboard_user=arwdDxtm/supabase_admin
+storage|postgres|S|postgres=rwU/postgres anon=rwU/postgres authenticated=rwU/postgres service_role=rwU/postgres
+storage|postgres|f|postgres=X/postgres anon=X/postgres authenticated=X/postgres service_role=X/postgres
+storage|postgres|r|postgres=arwdDxtm/postgres anon=arwdDxtm/postgres authenticated=arwdDxtm/postgres service_role=arwdDxtm/postgres
+===SECTION:14_role_settings===
+role_name|db_name|setconfig
+(all roles)|postgres|app.settings.jwt_exp=3600 || TimeZone=Asia/Shanghai
+anon|(all dbs)|statement_timeout=3s
+authenticated|(all dbs)|statement_timeout=8s
+authenticator|(all dbs)|session_preload_libraries=safeupdate || statement_timeout=8s || lock_timeout=8s || pgrst.db_schemas=public, graphql_public, miniapp, miniapp_traffic, admin, cs_platform, app_core, miniapp_features, experience, billing || pgrst.db_extra_search_path=public, graphql_public, miniapp, miniapp_traffic
+postgres|(all dbs)|search_path="\$user", public, extensions
+supabase_admin|(all dbs)|search_path="$user", public, auth, extensions || log_statement=none
+supabase_auth_admin|(all dbs)|search_path=auth || idle_in_transaction_session_timeout=60000 || log_statement=none
+supabase_read_only_user|(all dbs)|default_transaction_read_only=on
+supabase_storage_admin|(all dbs)|search_path=storage || log_statement=none
+===SECTION:15_publications===
+pubname|nsp|rel
+supabase_realtime|(none)|(none)
+===SECTION:16_types===
+nsp|typ|typkind|typ_owner
+===SECTION:17_extensions===
+ext|nsp|ext_version
+hypopg|extensions|1.4.1
+index_advisor|extensions|0.2.0
+pg_stat_statements|extensions|1.11
+pg_trgm|public|1.6
+pgcrypto|extensions|1.3
+plpgsql|pg_catalog|1.0
+supabase_vault|vault|0.3.1
+uuid-ossp|extensions|1.1
+===SECTION:18_comments===
+nsp|rel|col|cmnt
+admin|admin_users|(table)|Allowlist of Supabase Auth users permitted to use the administration application.
+admin|admin_users|can_access_prod|Explicit production access flag; false by default for every role.
+admin|admin_users|display_name|Unverified operator name supplied at login and used for subsequent audit snapshots.
+admin|audit_logs|(table)|Append-only audit snapshots written by admin mutation RPCs.
+admin|audit_logs|actor_email|Email snapshot resolved from admin.admin_users, never supplied by an RPC caller.
+admin|audit_logs|actor_name|Operator name snapshot captured when the audited mutation occurs.
+admin|config_drafts|(table)|Unpublished runtime_config snapshots with the source version used for optimistic locking.
+admin|config_drafts|base_version|runtime_config version observed when the draft was saved; publication fails if stale.
+admin|config_releases|(table)|Immutable runtime_config release snapshots, including rollback-generated releases.
+admin|config_releases|released_by_name|Operator name snapshot captured when the release is created.
+admin|config_releases|runtime_version|Version written atomically to miniapp.runtime_config.
+admin|environment_config|(table)|Singleton database environment authority. Bootstrap id=1 as service_role/postgres after migration.
+admin|environment_config|environment|Authoritative database environment; authenticated callers cannot read or modify this table directly.
+app_core|characters|(table)|[partition=A][shape=resource:platform_pool][direction=down] 平台管控的默认角色卡池。复用 miniapp schema（D003 决策），跨 schema FK 由 PG 原生支持。同步引擎下发到 ST data/<handle>/characters/platform_<id>.png（D004 资产文件稳定命名）
+app_core|characters|card_hash|Lowercase SHA-256 of the original imported card file bytes.
+app_core|characters|created_at|北京时间墙上时间（Asia/Shanghai），不带时区
+app_core|characters|enabled|是否上架。同步引擎只下发 enabled=true 的卡。下架不删数据，便于回溯
+app_core|characters|is_test|True only for pre-release evaluation cards. Test cards must remain disabled.
+app_core|characters|last_listed_at|角色最后一次上架（enabled 置为 true 且未归档）的时间，供首页「最新」排序使用。
+app_core|characters|raw_card|从 SillyTavern 角色卡 PNG 中解析出的原始角色卡 JSON，用于无损保留生态扩展字段
+app_core|characters|sort_order|大厅展示顺序，数字越小越靠前。同 sort_order 时按 created_at 兜底
+app_core|characters|updated_at|北京时间墙上时间（Asia/Shanghai），不带时区
+app_core|miniapp_user_settings|(table)|MiniApp 独立用户设置表。与 Bot/ST settings 表隔离。
+app_core|miniapp_user_settings|characters_last_seen_at|用户最后一次进入首页「最新」分页的时间；晚于它的角色卡上架即为本轮上新，New 提醒以此为准。
+app_core|miniapp_user_settings|custom_avatar_url|User-imported avatar stored in platform-managed Supabase Storage; takes priority over Telegram.
+app_core|miniapp_user_settings|pref_voice_id|默认音色 id（MiniMax voice_id）。NULL = 用后端音色目录里的默认项。改音色只影响之后新生成的语音，已生成的保持不变。
+app_core|miniapp_user_settings|pref_voice_playback_rate|播放倍速，前端 HTMLAudioElement.playbackRate。对已生成的语音即时生效，不触发重新合成。
+app_core|miniapp_user_settings|pref_word_count|回复长度档位 id；NULL 表示用户从未选择、跟随 miniapp.runtime_config.pref_word_count_tiers 的 default_tier_id。非 NULL 但已下线的 id 同样由应用层回落到 default_tier_id。
+app_core|miniapp_user_settings|selected_model_id|Stable llm_model_catalog model id selected by the user; never stores a provider model slug.
+app_core|miniapp_user_settings|tg_avatar_url|Latest avatar URL supplied by Telegram initData; refreshed on authenticated requests.
+app_core|users|(table)|MiniApp 独立用户身份表。从本迁移后新用户开始记录，不迁移 public.users 历史数据。
+app_core|users|bot_entered_at|用户首次在挂载 bot 中点击 /start 的时间，由 bot 内部接口写入。
+app_core|users|miniapp_entered_at|用户首次进入 MiniApp 的时间，由 MiniApp 登录链路创建用户时写入。
+app_core|users|source_id|用户来源渠道占位字段，当前默认 NULL。
+app_core|users|st_handle|SillyTavern 用户 handle，由 tg_id 确定性派生，对应 ST data/<handle>/ 目录。
+app_core|users|st_initialized_at|首次 MiniApp→ST provision 完成时间，NULL 表示尚未初始化。
+app_core|users|tg_id|Telegram 用户唯一标识。
+app_core|users|total_round|用户使用 MiniApp 以来的总对话轮数，与 miniapp_user_settings.total_round 同步递增。
+billing|character_free_chat_quota_decisions|(table)|Idempotent reservation and finalization decisions for the 50-round free quota.
+billing|character_free_chat_quotas|(table)|Successful free-model rounds counted per user and character after migration 055.
+billing|llm_usage_charge_dedup|(table)|Minimal permanent idempotency keys for LLM charges whose full details are capped at 100 rows per user.
+billing|llm_usage_charges|(table)|One immutable-model-snapshot billing record per LLM call; wallet reconciliation updates only monetary outcome fields.
+billing|payment_orders|(table)|MiniApp 独立支付订单表。与 Bot 的 public.payment_orders 完全隔离，不参与 ST 同步。
+billing|user_wallets|(table)|MiniApp 独立钱包表。与 public.users / public.bot_users 的积分字段完全隔离。
+billing|user_wallets|first_paid_at|MiniApp 用户首次成功充值时间。
+billing|user_wallets|last_paid_at|MiniApp 用户最近一次成功充值时间。
+billing|user_wallets|total_paid_amount|MiniApp 用户累计成功充值金额，单位为人民币元。
+billing|wallet_ledger|(table)|MiniApp 独立钱包流水表，记录充值、聊天扣费、退款和人工调整。
+cs_platform|persona_member_state|special_note|客服在聊天页右上角「特殊标记」里填的备注：用户问题、承诺的处理动作或二次回访提醒。NULL 或空串表示未标记。与 left_note 不同——left_note 是系统写的移出说明，这一列是客服手写的。
+cs_platform|persona_member_state|special_note_operator_id|最后一次保存备注的客服操作人标识，取自 X-CS-Operator-Id。
+cs_platform|persona_member_state|special_note_updated_at|备注最后一次保存时间。清空备注时一并置 NULL，等价于取消标记。
+cs_platform|support_conversations|user_last_read_at|用户最后一次打开客服聊天页的时间；晚于它的客服消息即为未读，红点以此为准。
+experience|chat_history|(table)|平台 LLM 交互日志。每次 llm-proxy 调用落一行，记录用户输入、完整上下文(history)和模型回复，用于运营监控、内容审计和用量分析。
+experience|chat_history|deduction_rate|本轮实际扣除的星尘数
+experience|chat_history|llm_finish_reason|流结束原因
+experience|chat_history|llm_generation_data|OpenRouter Generation 完整原始数据
+experience|chat_history|llm_generation_id|OpenRouter Generation ID
+experience|chat_history|llm_generation_time|生成总耗时(ms)
+experience|chat_history|llm_intended_deduction|余额不足时，原本应该扣除的额度；实际扣除金额仍记录在 deduction_rate
+experience|chat_history|llm_latency|首字延迟(ms)
+experience|chat_history|llm_model|OpenRouter实际使用的模型名
+experience|chat_history|llm_native_tokens_cached|原生缓存Token数
+experience|chat_history|llm_native_tokens_completion|原生补全Token数
+experience|chat_history|llm_native_tokens_prompt|原生提示词Token数
+experience|chat_history|llm_native_tokens_reasoning|原生推理Token数
+experience|chat_history|llm_provider_name|OpenRouter实际路由的底层厂商名称
+experience|chat_history|llm_usage|本次api调用的实际cost
+experience|chat_history|llm_usage_cache|本轮缓存Token节省的金额
+experience|chat_history|revision|同一 session + turn 的生成版本，首次为 0，重生成递增；最大 revision 为当前版本。ST 日志为 NULL。
+experience|chat_history|session_id|自研引擎会话 id。存量行（ST 链路产生）为 NULL，切换后新写入必填。
+experience|chat_history|turn_index|自研会话内由用户主动发起的逻辑轮次，从 1 递增；ST 日志为 NULL。
+experience|chat_message_audio|(table)|角色回复的语音产物。追加写：重新生成插新行并把旧行 is_active 置否，既保留「当前语音」也保留完整用量流水（本期不扣费，仅计量）。
+experience|chat_message_audio|charge_id|扣费幂等键，一般等于本行 id。NULL 表示本次未扣费（开关关或失败）。
+experience|chat_message_audio|credits_charged|本次生成实扣星尘：成功为 voice_generation_credits（默认 15），失败/未扣费为 0。与 wallet_ledger 的 voice_usage 行一一对应（reference_id = charge_id）。
+experience|chat_message_audio|spoken_text|LLM 按语音模板改写、清洗去标签后真正送进 TTS 的文本，与消息正文不同。
+experience|chat_message_audio|status|pending = 已受理、上游未回；ready = 可播放；failed = 失败可重试。进程重启会留下永远 pending 的行，读路径按 created_at 超时判定为 failed。
+experience|chat_sessions|(table)|自研引擎对话会话。用户 × 角色可多会话（决策 9）。运行时真相，替代 ST 文件系统 chats/。
+experience|chat_sessions|context_window_start_turn|入模历史下界（含）：从该 turn_index 起到本轮之前。默认 1=尚未泄洪。只在窗口超过 max_context_turns 时跳到 retain_context_turns。
+experience|chat_sessions|message_count|该会话已完成的轮次数，由触发器维护。列表口径：message_count > 0 才对用户可见。
+experience|chat_sessions|pinned_at|用户置顶该会话的时间；NULL = 未置顶。列表按 pinned_at DESC NULLS LAST 优先，同为置顶时最近置顶的在前。
+experience|chat_sessions|title|会话显示名。创建时默认写入绑定角色的 characters.name；用户重命名后为实值；清空重命名则恢复为当前角色名。UI 只展示前 7 个字符。
+experience|current_chat_history|(table)|自研会话每个 turn 的当前版本（max revision）；旧 revision 仍保留在 chat_history 供审计。
+miniapp_features|character_favorites|(table)|MiniApp 用户角色卡收藏关系。主键 (user_id, character_id) 保证同一张卡不重复收藏。
+miniapp_features|character_ranking_scores|(table)|首页推荐排序 v3 的每卡评分快照，由后端每日 job 刷新；大厅读路径只读本表。
+miniapp_features|character_ranking_scores|min_users|算这批分数时用的主池硬门槛（n_c ≥ min_users 才进主池）。读路径按这一列分池，保证与分数同版。
+miniapp_features|character_ranking_scores|n_c|统计窗口内与该卡有过至少一轮对话的去重用户数；低于阈值的卡进冷启动池而非主池。
+miniapp_features|character_ranking_scores|r48_raw|48 小时回访率原始值；k_c = 0 时为 NULL，表示无样本，不等同于回访率 0。
+miniapp_features|daily_checkins|(table)|MiniApp ??????????? user_wallets.bonus_credits?
+miniapp_features|notifications|user_id|归属用户。「消息」必须有归属人；「官方」为空表示全员广播，不为空表示定向投递给该用户。
+miniapp_features|wish_roles|(table)|MiniApp 私密角色许愿记录，供运营用 SQL 查询消费。
+===SECTION:19_sequences_owned===
+seq_nsp|seq|owner_nsp|owner_rel|owner_col
+miniapp_traffic|botlinks_id_seq|miniapp_traffic|botlinks|id
+miniapp_traffic|traffic_clicks_id_seq|miniapp_traffic|traffic_clicks|id
+===SECTION:20_cron_jobs===
+===SECTION:21_cron_last_runs===
+===SECTION:22_rowcounts===
+nsp|rel|row_count
+admin|admin_users|1
+admin|audit_logs|381
+admin|character_layout_drafts|11
+admin|character_layout_releases|9
+admin|character_layout_state|1
+admin|config_drafts|64
+admin|config_releases|64
+admin|environment_config|1
+app_core|characters|468
+app_core|miniapp_user_settings|17
+app_core|runtime_config|28
+app_core|users|24
+billing|character_free_chat_quota_decisions|279
+billing|character_free_chat_quotas|163
+billing|llm_usage_charge_dedup|1097
+billing|llm_usage_charges|680
+billing|payment_orders|162
+billing|user_wallets|21
+billing|wallet_ledger|550
+cs_platform|audit_logs|5
+cs_platform|export_logs|0
+cs_platform|outreach_messages|0
+cs_platform|outreach_sessions|0
+cs_platform|persona_member_snapshots|0
+cs_platform|persona_member_state|0
+cs_platform|persona_refresh_runs|11
+cs_platform|personas|8
+cs_platform|support_conversations|5
+cs_platform|support_messages|13
+experience|chat_history|1028
+experience|chat_message_audio|41
+experience|chat_sessions|466
+miniapp_features|character_favorites|36
+miniapp_features|character_ranking_scores|292
+miniapp_features|daily_checkins|63
+miniapp_features|notification_reads|39
+miniapp_features|notifications|30
+miniapp_features|wish_roles|3
+miniapp_traffic|botlinks|1
+miniapp_traffic|traffic_clicks|1
+===SECTION:23_relation_sizes===
+nsp|rel|total_size|total_bytes
+app_core|characters|54 MB|56115200
+admin|audit_logs|50 MB|51904512
+experience|chat_history|30 MB|31465472
+billing|llm_usage_charges|960 kB|983040
+billing|wallet_ledger|584 kB|598016
+experience|chat_sessions|504 kB|516096
+billing|llm_usage_charge_dedup|424 kB|434176
+admin|config_releases|280 kB|286720
+admin|config_drafts|256 kB|262144
+billing|payment_orders|184 kB|188416
+experience|chat_message_audio|184 kB|188416
+admin|character_layout_drafts|184 kB|188416
+miniapp_features|character_ranking_scores|176 kB|180224
+admin|character_layout_releases|160 kB|163840
+billing|character_free_chat_quota_decisions|152 kB|155648
+app_core|runtime_config|120 kB|122880
+cs_platform|personas|112 kB|114688
+cs_platform|support_conversations|96 kB|98304
+app_core|users|96 kB|98304
+miniapp_features|notifications|80 kB|81920
+billing|character_free_chat_quotas|72 kB|73728
+admin|admin_users|64 kB|65536
+miniapp_traffic|traffic_clicks|64 kB|65536
+cs_platform|support_messages|64 kB|65536
+app_core|miniapp_user_settings|64 kB|65536
+miniapp_features|wish_roles|64 kB|65536
+billing|user_wallets|56 kB|57344
+miniapp_features|daily_checkins|56 kB|57344
+miniapp_features|character_favorites|56 kB|57344
+miniapp_traffic|botlinks|48 kB|49152
+cs_platform|outreach_messages|40 kB|40960
+miniapp_features|notification_reads|40 kB|40960
+cs_platform|audit_logs|32 kB|32768
+admin|character_layout_state|32 kB|32768
+admin|environment_config|32 kB|32768
+cs_platform|persona_refresh_runs|32 kB|32768
+cs_platform|persona_member_state|16 kB|16384
+cs_platform|outreach_sessions|16 kB|16384
+cs_platform|export_logs|16 kB|16384
+cs_platform|persona_member_snapshots|8192 bytes|8192
+===SECTION:24_activity===
+active_backends|oldest_xact_seconds
+0|0
+===SECTION:END===

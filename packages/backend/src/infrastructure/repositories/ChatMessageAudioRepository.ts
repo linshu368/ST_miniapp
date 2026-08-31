@@ -1,10 +1,10 @@
 // 角色回复语音的仓库层（migration 080）。
 //
-// message_id 指向 miniapp.chat_history.id，即 toChatMessages 给 assistant 消息的 id。
+// message_id 指向 experience.chat_history.id，即 toChatMessages 给 assistant 消息的 id。
 // 表是追加写的：重新生成插新行、把旧行 is_active 置否，既保留「当前语音」也保留用量流水。
 
 import type { MessageVoice, MessageVoiceStatus } from '@miniapp/shared';
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import { config } from '../../platform/config.js';
 
 /** 最坏情况下串行发起的上游请求数：写稿两闸各一次，合成一次 */
@@ -55,7 +55,7 @@ export interface ChatMessageAudioRow {
 }
 
 export class ChatMessageAudioRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('experience');
 
   /** 会话内全部生效语音。ownership 由调用方在校验会话归属时保证 */
   async listBySession(sessionId: string): Promise<MessageVoice[]> {

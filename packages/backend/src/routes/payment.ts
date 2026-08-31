@@ -169,7 +169,6 @@ export default async function paymentRoutes(app: FastifyInstance) {
       query.status && PAYMENT_STATUSES.includes(query.status) ? query.status : undefined;
     const limit = clampLimit(query.limit);
     const dbUser = await getOrCreateDbUser(request.user);
-    await orders.expirePendingForUser(dbUser.id);
     const rows = await orders.listByUser({
       userId: dbUser.id,
       status,

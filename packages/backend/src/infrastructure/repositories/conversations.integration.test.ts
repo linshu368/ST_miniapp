@@ -3,7 +3,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { config } from '../../platform/config.js';
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 import { ChatSessionRepository, type ChatSessionRow } from './ChatSessionRepository.js';
 import {
   ConversationHistoryRepository,
@@ -35,8 +35,7 @@ async function probeTestDatabase(): Promise<boolean> {
     return false;
   }
   try {
-    const { error } = await getSupabaseClient()
-      .schema('miniapp')
+    const { error } = await getDomainDb('experience')
       .from('chat_history')
       .select('id, turn_index, revision')
       .limit(1)
@@ -45,8 +44,7 @@ async function probeTestDatabase(): Promise<boolean> {
       reportSkip(`目标库不可用或 072 未执行（${error.message}）`);
       return false;
     }
-    const { error: windowError } = await getSupabaseClient()
-      .schema('miniapp')
+    const { error: windowError } = await getDomainDb('experience')
       .from('chat_sessions')
       .select('id, context_window_start_turn')
       .limit(1)
@@ -71,7 +69,9 @@ describe.skipIf(!canRunAgainstDatabase)(
     let sessions: ChatSessionRepository;
     let history: ConversationHistoryRepository;
     let settings: MiniappUserSettingsRepository;
-    let db: ReturnType<ReturnType<typeof getSupabaseClient>['schema']>;
+    // 会话与逐轮日志在 experience，用户与角色卡在 app_core（migration 099）
+    let experienceDb: ReturnType<typeof getDomainDb>;
+    let appCoreDb: ReturnType<typeof getDomainDb>;
     let userId: string;
     let otherUserId: string;
     let characterId: string;
@@ -104,7 +104,7 @@ describe.skipIf(!canRunAgainstDatabase)(
     }
 
     async function listTurnRows(sessionId: string, turnIndex: number) {
-      const { data, error } = await db
+      const { data, error } = await experienceDb
         .from('chat_history')
         .select('*')
         .eq('session_id', sessionId)
@@ -118,10 +118,11 @@ describe.skipIf(!canRunAgainstDatabase)(
       sessions = new ChatSessionRepository();
       history = new ConversationHistoryRepository();
       settings = new MiniappUserSettingsRepository();
-      db = getSupabaseClient().schema('miniapp');
+      experienceDb = getDomainDb('experience');
+      appCoreDb = getDomainDb('app_core');
 
       const suffix = Date.now().toString(36);
-      const { data: users, error: userError } = await db
+      const { data: users, error: userError } = await appCoreDb
         .from('users')
         .insert([
           { tg_id: `history-test-${suffix}-a`, st_handle: `history_test_${suffix}_a` },
@@ -134,7 +135,7 @@ describe.skipIf(!canRunAgainstDatabase)(
       otherUserId = insertedUsers[1]!.id;
 
       characterName = `会话模型测试角色 ${suffix}`;
-      const { data: character, error: characterError } = await db
+      const { data: character, error: characterError } = await appCoreDb
         .from('characters')
         .insert({
           name: characterName,
@@ -152,10 +153,10 @@ describe.skipIf(!canRunAgainstDatabase)(
 
     afterAll(async () => {
       if (!userId) return;
-      await db.from('chat_history').delete().in('user_id', [userId, otherUserId]);
-      await db.from('chat_sessions').delete().in('user_id', [userId, otherUserId]);
-      await db.from('characters').delete().eq('id', characterId);
-      await db.from('users').delete().in('id', [userId, otherUserId]);
+      await experienceDb.from('chat_history').delete().in('user_id', [userId, otherUserId]);
+      await experienceDb.from('chat_sessions').delete().in('user_id', [userId, otherUserId]);
+      await appCoreDb.from('characters').delete().eq('id', characterId);
+      await appCoreDb.from('users').delete().in('id', [userId, otherUserId]);
     }, DB_TEST_TIMEOUT_MS);
 
     it('建会话只返回虚拟开场白，不写 chat_history', async () => {
@@ -170,7 +171,7 @@ describe.skipIf(!canRunAgainstDatabase)(
       expect(session.message_count).toBe(0);
       expect(session.title).toBe(characterName);
 
-      const { count, error } = await db
+      const { count, error } = await experienceDb
         .from('chat_history')
         .select('id', { count: 'exact', head: true })
         .eq('session_id', session.id);

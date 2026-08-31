@@ -11,7 +11,7 @@
  * 通知上；但多入口就必须共用一条幂等路径，否则会出现重复加星尘。
  */
 
-import type { PaymentOrderStatus } from '@miniapp/shared';
+import type { PaymentOrderStatus, PaymentSettlementSource } from '@miniapp/shared';
 import type { RequestLogger } from '../../../lib/logger.js';
 import { insertUserNotification } from '../../../lib/notifications.js';
 import type { MiniappPaymentOrderRepository } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
@@ -20,7 +20,7 @@ import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPayment
 /** 同时接受 requestLogger()（带 reqId，路由用）和 createLogger()（脚本用）。 */
 export type SettlementLogger = Pick<RequestLogger, 'biz' | 'sys'>;
 
-export type SettlementSource = 'webhook' | 'return' | 'query' | 'cron';
+export type SettlementSource = PaymentSettlementSource;
 
 export type SettlementOutcome = 'completed' | 'order_not_found' | 'amount_mismatch' | 'failed';
 
@@ -76,7 +76,7 @@ export async function settlePaidOrder(
   }
 
   try {
-    await orders.complete(order.id, input.providerTransactionId);
+    await orders.complete(order.id, input.providerTransactionId, source);
     if (order.status !== 'completed') {
       try {
         const totalCredits = order.credits_amount + order.bonus_credits;

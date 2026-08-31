@@ -1,7 +1,7 @@
 /**
  * backend / features / engine / platform-instructions.ts
  *
- * 平台规则三件套的读取通道：miniapp.runtime_config 的
+ * 平台规则三件套的读取通道：app_core.runtime_config 的
  * system_instructions / interaction_mode_blocks / pref_word_count_tiers 三个 key
  * → 引擎接缝的 EnginePlatformInstructions。正文由 migration 071 落库，076 起可由 Admin 发布。
  *

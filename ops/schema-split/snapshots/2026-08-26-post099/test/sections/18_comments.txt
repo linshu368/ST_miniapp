@@ -1,0 +1,91 @@
+nsp|rel|col|cmnt
+admin|admin_users|(table)|Allowlist of Supabase Auth users permitted to use the administration application.
+admin|admin_users|can_access_prod|Explicit production access flag; false by default for every role.
+admin|admin_users|display_name|Unverified operator name supplied at login and used for subsequent audit snapshots.
+admin|audit_logs|(table)|Append-only audit snapshots written by admin mutation RPCs.
+admin|audit_logs|actor_email|Email snapshot resolved from admin.admin_users, never supplied by an RPC caller.
+admin|audit_logs|actor_name|Operator name snapshot captured when the audited mutation occurs.
+admin|config_drafts|(table)|Unpublished runtime_config snapshots with the source version used for optimistic locking.
+admin|config_drafts|base_version|runtime_config version observed when the draft was saved; publication fails if stale.
+admin|config_releases|(table)|Immutable runtime_config release snapshots, including rollback-generated releases.
+admin|config_releases|released_by_name|Operator name snapshot captured when the release is created.
+admin|config_releases|runtime_version|Version written atomically to miniapp.runtime_config.
+admin|environment_config|(table)|Singleton database environment authority. Bootstrap id=1 as service_role/postgres after migration.
+admin|environment_config|environment|Authoritative database environment; authenticated callers cannot read or modify this table directly.
+app_core|characters|(table)|[partition=A][shape=resource:platform_pool][direction=down] 平台管控的默认角色卡池。复用 miniapp schema（D003 决策），跨 schema FK 由 PG 原生支持。同步引擎下发到 ST data/<handle>/characters/platform_<id>.png（D004 资产文件稳定命名）
+app_core|characters|card_hash|Lowercase SHA-256 of the original imported card file bytes.
+app_core|characters|created_at|北京时间墙上时间（Asia/Shanghai），不带时区
+app_core|characters|enabled|是否上架。同步引擎只下发 enabled=true 的卡。下架不删数据，便于回溯
+app_core|characters|is_test|True only for pre-release evaluation cards. Test cards must remain disabled.
+app_core|characters|last_listed_at|角色最后一次上架（enabled 置为 true 且未归档）的时间，供首页「最新」排序使用。
+app_core|characters|raw_card|从 SillyTavern 角色卡 PNG 中解析出的原始角色卡 JSON，用于无损保留生态扩展字段
+app_core|characters|sort_order|大厅展示顺序，数字越小越靠前。同 sort_order 时按 created_at 兜底
+app_core|characters|updated_at|北京时间墙上时间（Asia/Shanghai），不带时区
+app_core|miniapp_user_settings|(table)|MiniApp 独立用户设置表。与 Bot/ST settings 表隔离。
+app_core|miniapp_user_settings|characters_last_seen_at|用户最后一次进入首页「最新」分页的时间；晚于它的角色卡上架即为本轮上新，New 提醒以此为准。
+app_core|miniapp_user_settings|custom_avatar_url|User-imported avatar stored in platform-managed Supabase Storage; takes priority over Telegram.
+app_core|miniapp_user_settings|pref_voice_id|默认音色 id（MiniMax voice_id）。NULL = 用后端音色目录里的默认项。改音色只影响之后新生成的语音，已生成的保持不变。
+app_core|miniapp_user_settings|pref_voice_playback_rate|播放倍速，前端 HTMLAudioElement.playbackRate。对已生成的语音即时生效，不触发重新合成。
+app_core|miniapp_user_settings|pref_word_count|回复长度档位 id；NULL 表示用户从未选择、跟随 miniapp.runtime_config.pref_word_count_tiers 的 default_tier_id。非 NULL 但已下线的 id 同样由应用层回落到 default_tier_id。
+app_core|miniapp_user_settings|selected_model_id|Stable llm_model_catalog model id selected by the user; never stores a provider model slug.
+app_core|miniapp_user_settings|tg_avatar_url|Latest avatar URL supplied by Telegram initData; refreshed on authenticated requests.
+app_core|users|(table)|MiniApp 独立用户身份表。从本迁移后新用户开始记录，不迁移 public.users 历史数据。
+app_core|users|bot_entered_at|用户首次在挂载 bot 中点击 /start 的时间，由 bot 内部接口写入。
+app_core|users|miniapp_entered_at|用户首次进入 MiniApp 的时间，由 MiniApp 登录链路创建用户时写入。
+app_core|users|source_id|用户来源渠道占位字段，当前默认 NULL。
+app_core|users|st_handle|SillyTavern 用户 handle，由 tg_id 确定性派生，对应 ST data/<handle>/ 目录。
+app_core|users|st_initialized_at|首次 MiniApp→ST provision 完成时间，NULL 表示尚未初始化。
+app_core|users|tg_id|Telegram 用户唯一标识。
+app_core|users|total_round|用户使用 MiniApp 以来的总对话轮数，与 miniapp_user_settings.total_round 同步递增。
+billing|character_free_chat_quota_decisions|(table)|Idempotent reservation and finalization decisions for the 50-round free quota.
+billing|character_free_chat_quotas|(table)|Successful free-model rounds counted per user and character after migration 055.
+billing|llm_usage_charge_dedup|(table)|Minimal permanent idempotency keys for LLM charges whose full details are capped at 100 rows per user.
+billing|llm_usage_charges|(table)|One immutable-model-snapshot billing record per LLM call; wallet reconciliation updates only monetary outcome fields.
+billing|payment_orders|(table)|MiniApp 独立支付订单表。与 Bot 的 public.payment_orders 完全隔离，不参与 ST 同步。
+billing|user_wallets|(table)|MiniApp 独立钱包表。与 public.users / public.bot_users 的积分字段完全隔离。
+billing|user_wallets|first_paid_at|MiniApp 用户首次成功充值时间。
+billing|user_wallets|last_paid_at|MiniApp 用户最近一次成功充值时间。
+billing|user_wallets|total_paid_amount|MiniApp 用户累计成功充值金额，单位为人民币元。
+billing|wallet_ledger|(table)|MiniApp 独立钱包流水表，记录充值、聊天扣费、退款和人工调整。
+cs_platform|persona_member_state|special_note|客服在聊天页右上角「特殊标记」里填的备注：用户问题、承诺的处理动作或二次回访提醒。NULL 或空串表示未标记。与 left_note 不同——left_note 是系统写的移出说明，这一列是客服手写的。
+cs_platform|persona_member_state|special_note_operator_id|最后一次保存备注的客服操作人标识，取自 X-CS-Operator-Id。
+cs_platform|persona_member_state|special_note_updated_at|备注最后一次保存时间。清空备注时一并置 NULL，等价于取消标记。
+cs_platform|support_conversations|user_last_read_at|用户最后一次打开客服聊天页的时间；晚于它的客服消息即为未读，红点以此为准。
+experience|chat_history|(table)|平台 LLM 交互日志。每次 llm-proxy 调用落一行，记录用户输入、完整上下文(history)和模型回复，用于运营监控、内容审计和用量分析。
+experience|chat_history|deduction_rate|本轮实际扣除的星尘数
+experience|chat_history|llm_finish_reason|流结束原因
+experience|chat_history|llm_generation_data|OpenRouter Generation 完整原始数据
+experience|chat_history|llm_generation_id|OpenRouter Generation ID
+experience|chat_history|llm_generation_time|生成总耗时(ms)
+experience|chat_history|llm_intended_deduction|余额不足时，原本应该扣除的额度；实际扣除金额仍记录在 deduction_rate
+experience|chat_history|llm_latency|首字延迟(ms)
+experience|chat_history|llm_model|OpenRouter实际使用的模型名
+experience|chat_history|llm_native_tokens_cached|原生缓存Token数
+experience|chat_history|llm_native_tokens_completion|原生补全Token数
+experience|chat_history|llm_native_tokens_prompt|原生提示词Token数
+experience|chat_history|llm_native_tokens_reasoning|原生推理Token数
+experience|chat_history|llm_provider_name|OpenRouter实际路由的底层厂商名称
+experience|chat_history|llm_usage|本次api调用的实际cost
+experience|chat_history|llm_usage_cache|本轮缓存Token节省的金额
+experience|chat_history|revision|同一 session + turn 的生成版本，首次为 0，重生成递增；最大 revision 为当前版本。ST 日志为 NULL。
+experience|chat_history|session_id|自研引擎会话 id。存量行（ST 链路产生）为 NULL，切换后新写入必填。
+experience|chat_history|turn_index|自研会话内由用户主动发起的逻辑轮次，从 1 递增；ST 日志为 NULL。
+experience|chat_message_audio|(table)|角色回复的语音产物。追加写：重新生成插新行并把旧行 is_active 置否，既保留「当前语音」也保留完整用量流水（本期不扣费，仅计量）。
+experience|chat_message_audio|charge_id|扣费幂等键，一般等于本行 id。NULL 表示本次未扣费（开关关或失败）。
+experience|chat_message_audio|credits_charged|本次生成实扣星尘：成功为 voice_generation_credits（默认 15），失败/未扣费为 0。与 wallet_ledger 的 voice_usage 行一一对应（reference_id = charge_id）。
+experience|chat_message_audio|spoken_text|LLM 按语音模板改写、清洗去标签后真正送进 TTS 的文本，与消息正文不同。
+experience|chat_message_audio|status|pending = 已受理、上游未回；ready = 可播放；failed = 失败可重试。进程重启会留下永远 pending 的行，读路径按 created_at 超时判定为 failed。
+experience|chat_sessions|(table)|自研引擎对话会话。用户 × 角色可多会话（决策 9）。运行时真相，替代 ST 文件系统 chats/。
+experience|chat_sessions|context_window_start_turn|入模历史下界（含）：从该 turn_index 起到本轮之前。默认 1=尚未泄洪。只在窗口超过 max_context_turns 时跳到 retain_context_turns。
+experience|chat_sessions|message_count|该会话已完成的轮次数，由触发器维护。列表口径：message_count > 0 才对用户可见。
+experience|chat_sessions|pinned_at|用户置顶该会话的时间；NULL = 未置顶。列表按 pinned_at DESC NULLS LAST 优先，同为置顶时最近置顶的在前。
+experience|chat_sessions|title|会话显示名。创建时默认写入绑定角色的 characters.name；用户重命名后为实值；清空重命名则恢复为当前角色名。UI 只展示前 7 个字符。
+experience|current_chat_history|(table)|自研会话每个 turn 的当前版本（max revision）；旧 revision 仍保留在 chat_history 供审计。
+miniapp_features|character_favorites|(table)|MiniApp 用户角色卡收藏关系。主键 (user_id, character_id) 保证同一张卡不重复收藏。
+miniapp_features|character_ranking_scores|(table)|首页推荐排序 v3 的每卡评分快照，由后端每日 job 刷新；大厅读路径只读本表。
+miniapp_features|character_ranking_scores|min_users|算这批分数时用的主池硬门槛（n_c ≥ min_users 才进主池）。读路径按这一列分池，保证与分数同版。
+miniapp_features|character_ranking_scores|n_c|统计窗口内与该卡有过至少一轮对话的去重用户数；低于阈值的卡进冷启动池而非主池。
+miniapp_features|character_ranking_scores|r48_raw|48 小时回访率原始值；k_c = 0 时为 NULL，表示无样本，不等同于回访率 0。
+miniapp_features|daily_checkins|(table)|MiniApp ??????????? user_wallets.bonus_credits?
+miniapp_features|notifications|user_id|归属用户。「消息」必须有归属人；「官方」为空表示全员广播，不为空表示定向投递给该用户。
+miniapp_features|wish_roles|(table)|MiniApp 私密角色许愿记录，供运营用 SQL 查询消费。

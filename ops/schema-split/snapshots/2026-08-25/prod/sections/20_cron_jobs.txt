@@ -1,0 +1,4 @@
+jobid|schedule|active|db_name|run_as|command
+2|0 4 * * *|f|postgres|postgres|SELECT compute_daily_metrics( COALESCE((SELECT MIN(stat_date) FROM miniapp_analytics.session_metrics_daily), '2026-07-05')::DATE, CURRENT_DATE )
+3|0 16 * * *|f|postgres|postgres|SELECT compute_daily_metrics( COALESCE((SELECT MIN(stat_date) FROM miniapp_analytics.session_metrics_daily), '2026-07-05')::DATE, (CURRENT_DATE - 1)::DATE )
+5|0 * * * *|t|postgres|postgres|INSERT INTO miniapp_analytics.card_position_snapshot (character_id, name, sort_order, enabled) SELECT id, name, sort_order, enabled FROM miniapp.characters WHERE enabled = true AND COALESCE(is_test,false) = false AND archived_at IS NULL

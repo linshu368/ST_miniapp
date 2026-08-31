@@ -9,7 +9,7 @@
 import type { UserGenerationConfig } from '@miniapp/shared';
 
 /**
- * 角色卡基础字段组，取自 miniapp.characters。
+ * 角色卡基础字段组，取自 app_core.characters。
  * v1 只消费 system_prompt；其余字段先在接缝里占位，是为了让「把人设也写进 system 段」
  * 这类调整只改引擎实现、不动 M1 与 M3b 的取数与调用方。
  */
@@ -46,7 +46,7 @@ export interface EngineWordCountTiers {
 }
 
 /**
- * 平台规则的权威来源，读自 miniapp.runtime_config。
+ * 平台规则的权威来源，读自 app_core.runtime_config。
  * 对齐旧 bot 的 system_instructions 模板机制，三个占位符是 pref_* 得以生效的前提：
  * {{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}。
  */

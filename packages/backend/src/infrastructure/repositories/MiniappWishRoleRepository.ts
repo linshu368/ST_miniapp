@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../../lib/supabase.js';
+import { getDomainDb } from '../../lib/supabase.js';
 
 export interface WishRole {
   id: string;
@@ -19,7 +19,7 @@ interface CreateWishRoleResult {
 }
 
 export class MiniappWishRoleRepository {
-  private readonly db = getSupabaseClient().schema('miniapp');
+  private readonly db = getDomainDb('miniapp_features');
 
   async findLatestWithinWindow(
     telegramUserId: number,

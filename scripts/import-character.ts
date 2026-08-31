@@ -2,7 +2,7 @@
 /**
  * import-character.ts — 角色卡上架工具
  *
- * 将酒馆角色卡 PNG 上传到 Supabase Storage 并写入 miniapp.characters 表。
+ * 将酒馆角色卡 PNG 上传到 Supabase Storage 并写入 app_core.characters 表。
  *
  * 用法：
  *   pnpm import-character <png-path-or-dir> -- [options]
@@ -461,7 +461,7 @@ async function importOneCharacter(params: {
   await uploadPngWithRetry({ supabase, bucket, storagePath, pngBuffer });
   console.log('   ✅ 上传成功');
 
-  console.log('\n📝 写入 miniapp.characters 表...');
+  console.log('\n📝 写入 app_core.characters 表...');
   const d = card.data;
 
   const { error: insertError } = await schemaClient.from('characters').insert({
@@ -606,7 +606,8 @@ async function main() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const schemaClient = (supabase as any).schema('miniapp');
+  // characters 与 runtime_config 都属 app_core（migration 099）
+  const schemaClient = (supabase as any).schema('app_core');
 
   // 4. 逐个上传 PNG 并写库
   const results: ImportResult[] = [];
