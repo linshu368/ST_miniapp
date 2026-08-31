@@ -1,6 +1,7 @@
 import {
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   DEFAULT_LOBBY_PINNED_CHARACTERS,
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
@@ -8,6 +9,7 @@ import {
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
+  LlmProviderRoutingConfigSchema,
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
   ModelCatalogSchema,
@@ -29,6 +31,7 @@ export const managedConfigKeys = [
   'miniapp_free_quota_exhausted_dialog_config',
   'llm_model_catalog',
   'llm_pricing_config',
+  'llm_provider_routing_config',
   'system_fallback_character_id',
   'system_instructions',
   'pref_word_count_tiers',
@@ -119,6 +122,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_free_quota_exhausted_dialog_config: FreeQuotaExhaustedDialogConfigSchema,
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
+  llm_provider_routing_config: LlmProviderRoutingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
   system_instructions: SystemInstructionsSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
@@ -204,6 +208,12 @@ export const configMetadata: Record<
         premium: 50,
       },
     },
+  },
+  llm_provider_routing_config: {
+    label: '模型供应商路由',
+    description:
+      '按「模型 × 供应商」控制 OpenRouter 路由：屏蔽列表写入 provider.ignore；优先列表写入 provider.order 并允许兜底回落。规则只作用于所填模型，未配置的模型不受影响。',
+    defaultValue: DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   },
   system_fallback_character_id: {
     label: '系统兜底角色',

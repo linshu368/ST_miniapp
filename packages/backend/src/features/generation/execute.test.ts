@@ -17,10 +17,15 @@ const billingContext = {
 };
 
 let walletBalance = 1000;
+let providerPreferences: Record<string, unknown> | null = null;
 
 vi.mock('../../platform/model-tiers.js', () => ({
   getPricingConfig: async () => pricing,
   getModelBillingContext: async () => billingContext,
+}));
+
+vi.mock('../../platform/provider-routing.js', () => ({
+  getProviderPreferencesForModel: async () => providerPreferences,
 }));
 
 vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
@@ -107,6 +112,7 @@ function requestBodyOf(fetchMock: ReturnType<typeof stubUpstream>): Record<strin
 
 beforeEach(() => {
   walletBalance = 1000;
+  providerPreferences = null;
   vi.mocked(saveChatHistory).mockClear();
 });
 
@@ -342,6 +348,20 @@ describe('execute（请求体）', () => {
     await execute(request(), undefined, fakeLogger());
 
     expect(Object.keys(requestBodyOf(fetchMock)).sort()).toEqual(['messages', 'model', 'stream']);
+  });
+
+  it('命中供应商路由规则时请求体带 provider 字段', async () => {
+    providerPreferences = { ignore: ['alibaba'], order: ['friendli'], allow_fallbacks: true };
+    const fetchMock = stubUpstream(() => sseResponse(['data: [DONE]\n\n']));
+
+    await execute(request(), undefined, fakeLogger());
+
+    const body = requestBodyOf(fetchMock);
+    expect(body.provider).toEqual({
+      ignore: ['alibaba'],
+      order: ['friendli'],
+      allow_fallbacks: true,
+    });
   });
 
   it('promptCaching=false 时 content 全是字符串（ST 链路的行为零变化判据）', async () => {

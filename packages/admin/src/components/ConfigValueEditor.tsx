@@ -24,6 +24,7 @@ import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEditor';
+import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
 import { WordCountTiersEditor } from './WordCountTiersEditor';
@@ -314,6 +315,17 @@ export function ConfigValueEditor(props: {
         plans={props.paymentPlans}
         disabled={props.disabled}
         onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'llm_provider_routing_config') {
+    return (
+      <ProviderRoutingConfigEditor
+        value={props.value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+        openRouterDirectory={props.openRouterDirectory}
       />
     );
   }

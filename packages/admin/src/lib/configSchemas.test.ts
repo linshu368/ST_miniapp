@@ -70,3 +70,44 @@ describe('payment prompt dialog config registration', () => {
     expect(configSchemas[key].safeParse(configMetadata[key].defaultValue).success).toBe(true);
   });
 });
+
+describe('llm provider routing config registration', () => {
+  it('exposes provider routing in the managed config directory with a valid empty default', () => {
+    const key = 'llm_provider_routing_config';
+
+    expect(managedConfigKeys).toContain(key);
+    expect(configMetadata[key].label).toBe('模型供应商路由');
+    expect(configSchemas[key].safeParse(configMetadata[key].defaultValue).success).toBe(true);
+    expect(configMetadata[key].defaultValue).toEqual({ rules: [] });
+  });
+
+  it('accepts per-model rules and rejects rules without any provider', () => {
+    const key = 'llm_provider_routing_config';
+
+    expect(
+      configSchemas[key].safeParse({
+        rules: [
+          {
+            openrouter_model_id: 'deepseek/deepseek-chat-v3.2',
+            blocked_providers: ['alibaba'],
+            preferred_providers: [],
+            note: 'Alibaba 失败率 52.78%',
+          },
+        ],
+      }).success
+    ).toBe(true);
+
+    expect(
+      configSchemas[key].safeParse({
+        rules: [
+          {
+            openrouter_model_id: 'deepseek/deepseek-chat-v3.2',
+            blocked_providers: [],
+            preferred_providers: [],
+            note: '',
+          },
+        ],
+      }).success
+    ).toBe(false);
+  });
+});
