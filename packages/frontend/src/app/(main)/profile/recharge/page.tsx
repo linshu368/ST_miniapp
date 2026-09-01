@@ -222,21 +222,14 @@ function RechargePageContent() {
             ))
           )}
 
-          {/* 邀请快捷入口：紧挨着套餐列表，保持相同的 gap-3 和高度 */}
+          {/* 邀请快捷入口：紧挨着套餐列表，保持相同的 gap-3，并对齐高档套餐卡高度 */}
           {inviteEntryEnabled ? (
             <button
               type="button"
               onClick={goInviteCenter}
-              className="relative flex w-full h-[68px] items-center gap-3 overflow-hidden rounded-xl border px-4 text-left transition hover:opacity-80"
-              style={{
-                backgroundColor: `${pageConfig.button_color}1A`,
-                borderColor: `${pageConfig.button_color}4D`,
-              }}
+              className="relative flex h-[86px] w-full items-center gap-3 overflow-hidden rounded-xl border border-rose-fill/60 bg-[linear-gradient(135deg,hsl(var(--rose)/0.18)_0%,hsl(var(--rose-fill)/0.18)_100%)] px-4 text-left shadow-[0_0_20px_hsl(var(--rose-fill)/0.12)] transition hover:opacity-80"
             >
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-primary-foreground shadow-sm"
-                style={{ backgroundColor: pageConfig.button_color }}
-              >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-fill/35 text-primary-foreground shadow-sm">
                 <Gem className="h-4 w-4" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
@@ -247,11 +240,7 @@ function RechargePageContent() {
                   分享专属链接，好友首次登录后建立邀请关系
                 </span>
               </span>
-              <ChevronRight
-                className="h-4 w-4 shrink-0"
-                style={{ color: pageConfig.button_color }}
-                aria-hidden
-              />
+              <ChevronRight className="h-4 w-4 shrink-0 text-primary-foreground" aria-hidden />
             </button>
           ) : null}
         </section>
