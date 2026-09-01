@@ -1,12 +1,17 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import { MAX_CUSTOM_VOICE_CHARS } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
-import { toVoiceMap, useGenerateVoiceMutation, useSessionVoiceQuery } from '@/lib/api/voice';
+import {
+  toVoiceMap,
+  useGenerateVoiceMutation,
+  useSessionVoiceQuery,
+  useVoiceConfigQuery,
+} from '@/lib/api/voice';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { useTelegramBackButton } from '@/lib/telegram';
 
@@ -39,6 +44,13 @@ export default function CustomVoicePage() {
 
   const sessionVoice = useSessionVoiceQuery(sessionId ?? undefined);
   const generateVoice = useGenerateVoiceMutation(sessionId ?? undefined);
+  const voiceConfig = useVoiceConfigQuery();
+  const priceLabel = voiceConfig.data?.billing.enabled ? voiceConfig.data.billing.price_label : '';
+  const maxChars = Math.min(
+    voiceConfig.data?.limits.max_spoken_chars ?? MAX_CUSTOM_VOICE_CHARS,
+    MAX_CUSTOM_VOICE_CHARS
+  );
+  const returnToForRecharge = backTo;
 
   const currentText = useMemo(
     () => toVoiceMap(sessionVoice.data).get(messageId)?.spoken_text ?? '',
@@ -50,9 +62,22 @@ export default function CustomVoicePage() {
   const [draft, setDraft] = useState<string | null>(null);
   const text = draft ?? currentText;
   const [error, setError] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const acceptedTextRef = useRef('');
+  const compositionRef = useRef<{
+    text: string;
+    selectionStart: number;
+    selectionEnd: number;
+  } | null>(null);
+  const rejectedCompositionRef = useRef<typeof compositionRef.current>(null);
+  const rejectedCompositionTimerRef = useRef<number | null>(null);
+
+  const showOverLimitError = () => {
+    setError(`自定义语音文字不能超过${maxChars}字`);
+  };
 
   const submit = () => {
-    const custom = text.trim();
+    const custom = (textareaRef.current?.value ?? text).trim();
     if (!custom) {
       setError('请先填写要生成语音的文字');
       return;
@@ -65,6 +90,17 @@ export default function CustomVoicePage() {
         onSuccess: goBack,
         onError: (mutationError) => {
           const code = (mutationError as { code?: string }).code;
+          if (code === 'insufficient_balance') {
+            // 402 跳充值页，复用对话链路。金额由 apiClient 从 402 裸形状带出。
+            const balance = (mutationError as { balance?: { creditsRequired: number } }).balance;
+            const search = new URLSearchParams({
+              reason: 'insufficient_credits',
+              returnTo: returnToForRecharge,
+            });
+            if (balance) search.set('required', String(balance.creditsRequired));
+            router.push(`/profile/recharge?${search.toString()}`);
+            return;
+          }
           setError(
             code === 'CONFLICT'
               ? '这条回复正在生成语音，请稍后再试'
@@ -105,22 +141,98 @@ export default function CustomVoicePage() {
         ) : (
           <div>
             <textarea
-              value={text}
+              ref={(node) => {
+                textareaRef.current = node;
+                if (node && draft === null) acceptedTextRef.current = node.value;
+              }}
+              defaultValue={currentText}
+              onCompositionStart={(event) => {
+                compositionRef.current = {
+                  text: event.currentTarget.value,
+                  selectionStart: event.currentTarget.selectionStart,
+                  selectionEnd: event.currentTarget.selectionEnd,
+                };
+              }}
+              onCompositionEnd={(event) => {
+                const snapshot = compositionRef.current;
+                compositionRef.current = null;
+                if (!snapshot) return;
+
+                const nextText = event.currentTarget.value;
+                const hadNoSelection = snapshot.selectionStart === snapshot.selectionEnd;
+                const replacesTailAtLimit =
+                  snapshot.text.length >= maxChars && hadNoSelection && nextText !== snapshot.text;
+                if (nextText.length > maxChars || replacesTailAtLimit) {
+                  // 某些 WebView 会让中文候选词等长替换末尾字符，所以除了长度外，
+                  // 还要根据合成开始前的快照判断“满额且无选区”的输入是否合法。
+                  event.currentTarget.value = snapshot.text;
+                  event.currentTarget.setSelectionRange(
+                    snapshot.selectionStart,
+                    snapshot.selectionEnd
+                  );
+                  acceptedTextRef.current = snapshot.text;
+                  // Chrome/WebView 可能在 compositionend 后再派发最终 input。
+                  // 仅在当前事件循环保留一次性快照，拦完该 input 立即释放，避免影响后续删除。
+                  rejectedCompositionRef.current = snapshot;
+                  if (rejectedCompositionTimerRef.current !== null) {
+                    window.clearTimeout(rejectedCompositionTimerRef.current);
+                  }
+                  rejectedCompositionTimerRef.current = window.setTimeout(() => {
+                    rejectedCompositionRef.current = null;
+                    rejectedCompositionTimerRef.current = null;
+                  }, 0);
+                  setDraft(snapshot.text);
+                  showOverLimitError();
+                  return;
+                }
+
+                acceptedTextRef.current = nextText;
+                setDraft(nextText);
+                setError(null);
+              }}
               onChange={(event) => {
-                setDraft(event.target.value);
+                const nextText = event.currentTarget.value;
+                // 预编辑文字只用于跟随输入法展示，不做长度判断、不提前报错。
+                // 这里不能 setState：受控组件在中文合成期间重渲染会中断 IME，
+                // 某些 WebView 随后不再派发 compositionend，表现为输入和删除都被锁住。
+                if ((event.nativeEvent as InputEvent).isComposing || compositionRef.current) return;
+
+                const rejectedComposition = rejectedCompositionRef.current;
+                if (rejectedComposition) {
+                  event.currentTarget.value = rejectedComposition.text;
+                  event.currentTarget.setSelectionRange(
+                    rejectedComposition.selectionStart,
+                    rejectedComposition.selectionEnd
+                  );
+                  rejectedCompositionRef.current = null;
+                  if (rejectedCompositionTimerRef.current !== null) {
+                    window.clearTimeout(rejectedCompositionTimerRef.current);
+                    rejectedCompositionTimerRef.current = null;
+                  }
+                  showOverLimitError();
+                  return;
+                }
+
+                if (nextText.length > maxChars) {
+                  event.currentTarget.value = acceptedTextRef.current;
+                  showOverLimitError();
+                  return;
+                }
+                acceptedTextRef.current = nextText;
+                setDraft(nextText);
                 setError(null);
               }}
               rows={8}
-              maxLength={MAX_CUSTOM_VOICE_CHARS}
               autoFocus
               placeholder="想让这条语音说什么就写什么"
               aria-label="自定义语音文字"
+              aria-invalid={Boolean(error)}
               className="w-full resize-none rounded-xl border border-border bg-card px-3 py-2.5 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
             <div className="mt-1.5 flex items-start justify-between gap-3">
               <span className="text-[11px] leading-snug text-destructive">{error}</span>
               <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                {text.length} / {MAX_CUSTOM_VOICE_CHARS}
+                {text.length} / {maxChars}
               </span>
             </div>
           </div>
@@ -128,6 +240,11 @@ export default function CustomVoicePage() {
       </section>
 
       <div className="sticky bottom-0 border-t border-border bg-background/90 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-xl">
+        {priceLabel ? (
+          <p className="mb-2 text-center text-[11px] text-muted-foreground">
+            成功将消耗 {priceLabel}
+          </p>
+        ) : null}
         <Button
           type="button"
           onClick={submit}
