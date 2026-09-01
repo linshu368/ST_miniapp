@@ -1,0 +1,6 @@
+{"file":".trellis/spec/shared/contracts/index.md","reason":"先定义语音价格、限制、提示及错误响应的跨端 shared 契约"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"新增语音原子扣费 migration、RPC、权限与 rollback 必须遵循数据库规范"}
+{"file":".trellis/spec/backend/app/index.md","reason":"后端语音路由、generation 计费边界、runtime config、日志和测试规范"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"前端语音 React Query、组件状态、Tailwind 与测试规范"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"覆盖 UI 到 shared、route、feature、repository、Supabase、响应的完整链路"}
+{"file":"docs/log_system.md","reason":"语音生成与扣费日志必须使用 pino 结构化事件、原始 err 和脱敏规则"}
