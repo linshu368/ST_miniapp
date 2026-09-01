@@ -249,6 +249,14 @@ export default function SelfHostedChatPage() {
     [sessionVoiceQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
+  const voicePriceLabel = voiceConfigQuery.data?.billing.enabled
+    ? voiceConfigQuery.data.billing.price_label
+    : '';
+
+  useEffect(() => {
+    const charged = sessionVoiceQuery.data?.audio.some((item) => item.credits_charged > 0);
+    if (charged) void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+  }, [queryClient, sessionVoiceQuery.data]);
 
   /**
    * 哪些消息能生成语音。turn_index > 0 排掉开场白，status 排掉正在写和没写完的——
@@ -268,6 +276,17 @@ export default function SelfHostedChatPage() {
           onError: (error) => {
             // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
             const code = (error as { code?: string }).code;
+            if (code === 'insufficient_balance') {
+              // 复用对话链路同一条跳转，不另做弹窗。金额由 apiClient 从 402 裸形状带出。
+              const balance = (error as { balance?: { creditsRequired: number } }).balance;
+              const search = new URLSearchParams({
+                reason: 'insufficient_credits',
+                returnTo,
+              });
+              if (balance) search.set('required', String(balance.creditsRequired));
+              router.push(`/profile/recharge?${search.toString()}`);
+              return;
+            }
             setStreamError(
               code === 'CONFLICT'
                 ? '这条回复正在生成语音'
@@ -279,7 +298,7 @@ export default function SelfHostedChatPage() {
         }
       );
     },
-    [generateVoice]
+    [generateVoice, returnTo, router]
   );
 
   // ── 发送与重生成 ──────────────────────────────────────────────────────────
@@ -559,6 +578,12 @@ export default function SelfHostedChatPage() {
                             returnTo,
                           })
                         : null,
+                      priceLabel: voicePriceLabel,
+                      hints: {
+                        overLimit: voiceConfigQuery.data?.hints.over_limit ?? '',
+                        draftFailed: voiceConfigQuery.data?.hints.draft_failed ?? '',
+                        ttsFailed: voiceConfigQuery.data?.hints.tts_failed ?? '',
+                      },
                     }
                   : null
               }
