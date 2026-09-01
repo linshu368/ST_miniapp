@@ -227,7 +227,7 @@ function RechargePageContent() {
             <button
               type="button"
               onClick={goInviteCenter}
-              className="relative flex h-[86px] w-full items-center gap-3 overflow-hidden rounded-xl border border-[#ec4899] bg-[#ec4899] px-4 text-left shadow-[0_0_26px_rgba(236,72,153,0.32)] transition hover:opacity-80"
+              className="relative flex h-[86px] w-full items-center gap-3 overflow-hidden rounded-xl border border-[#47162e] bg-[#47162e] px-4 text-left shadow-[0_0_26px_rgba(71,22,46,0.32)] transition hover:opacity-80"
             >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-rose to-rose-fill text-primary-foreground shadow-md shadow-[0_4px_12px_hsl(var(--rose-fill)/0.45)]">
                 <Gem className="h-5 w-5" aria-hidden />
