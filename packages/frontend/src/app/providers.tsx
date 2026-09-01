@@ -5,8 +5,11 @@ import { useRouter } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
+import { INVITE_START_PARAM_PREFIX } from '@miniapp/shared';
+
 import { getQueryClient } from '@/lib/api/query-client';
 import { recordMiniappEntry } from '@/lib/api/growth';
+import { bindInvite } from '@/lib/api/invite';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { getRawInitData } from '@/lib/telegram/auth';
@@ -40,6 +43,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       {telegramReady ? <PaymentReturnRedirect /> : null}
       {telegramReady ? <GrowthEntryReporter /> : null}
+      {telegramReady ? <InviteBindReporter /> : null}
       {telegramReady ? <UserSettingsHydrator /> : null}
       {telegramReady ? children : null}
       {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}
@@ -83,7 +87,10 @@ function GrowthEntryReporter() {
       if (
         !sourceId ||
         sourceId === 'payment_return' ||
-        sourceId.startsWith(PAYMENT_RETURN_PREFIX)
+        sourceId.startsWith(PAYMENT_RETURN_PREFIX) ||
+        // 邀请深链不是渠道码：source_id='invite' 由绑定接口守卫式写入（阶段二计划 E2），
+        // 走 botlinks 渠道逻辑会互相踩踏。
+        sourceId.startsWith(INVITE_START_PARAM_PREFIX)
       ) {
         console.log('[Growth] No sourceId found, skipping report');
         return;
@@ -118,6 +125,51 @@ function GrowthEntryReporter() {
         });
     } catch (err) {
       console.error('[Growth] Unhandled error in GrowthEntryReporter:', err);
+    }
+  }, []);
+
+  return null;
+}
+
+const INVITE_BIND_PENDING_KEY = 'invite_bind_pending';
+const INVITE_BIND_DONE_KEY = 'invite_bind_done';
+/** 与后端路由的校验一致；大小写在 RPC 内归一。 */
+const INVITE_CODE_RE = /^[A-Za-z0-9]{8}$/;
+
+/**
+ * 邀请绑定上报（阶段二计划任务二）。
+ * inv_ 参数先落 sessionStorage 再上报，网络失败保留待重试（防首开抖动漏归因）；
+ * 任何终态（bound / already_bound / self_invite / not_new_user / invalid_code）都视为完成，
+ * 不再重复请求。被邀请人侧无感知（E6），结果仅记录在控制台。
+ */
+function InviteBindReporter() {
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(INVITE_BIND_DONE_KEY) === '1') return;
+
+      const startParam = getStartParam();
+      if (startParam.startsWith(INVITE_START_PARAM_PREFIX)) {
+        const code = startParam.slice(INVITE_START_PARAM_PREFIX.length);
+        if (INVITE_CODE_RE.test(code)) {
+          sessionStorage.setItem(INVITE_BIND_PENDING_KEY, code);
+        }
+      }
+
+      const pendingCode = sessionStorage.getItem(INVITE_BIND_PENDING_KEY);
+      if (!pendingCode) return;
+
+      bindInvite(pendingCode)
+        .then((data) => {
+          console.log('[Invite] bind result:', data.status);
+          sessionStorage.setItem(INVITE_BIND_DONE_KEY, '1');
+          sessionStorage.removeItem(INVITE_BIND_PENDING_KEY);
+        })
+        .catch((err) => {
+          // 保留 pending，下次挂载（下次启动）重试。
+          console.error('[Invite] bind failed, will retry on next launch:', err);
+        });
+    } catch (err) {
+      console.error('[Invite] Unhandled error in InviteBindReporter:', err);
     }
   }, []);
 
