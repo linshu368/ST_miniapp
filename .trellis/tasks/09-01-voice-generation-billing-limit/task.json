@@ -3,7 +3,7 @@
   "name": "voice-generation-billing-limit",
   "title": "语音生成收费与300字限制",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "backend",
