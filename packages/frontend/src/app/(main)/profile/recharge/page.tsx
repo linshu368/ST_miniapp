@@ -227,16 +227,16 @@ function RechargePageContent() {
             <button
               type="button"
               onClick={goInviteCenter}
-              className="relative flex h-[86px] w-full items-center gap-3 overflow-hidden rounded-xl border border-[#47162e] bg-[#47162e] px-4 text-left shadow-[0_0_26px_rgba(71,22,46,0.32)] transition hover:opacity-80"
+              className="relative flex h-[86px] w-full items-center gap-3 overflow-hidden rounded-xl border border-[#d946ef] bg-[linear-gradient(135deg,rgba(74,22,87,0.96)_0%,rgba(111,23,84,0.96)_100%)] px-4 text-left shadow-[0_0_22px_rgba(217,70,239,0.28)] transition hover:opacity-80"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-rose to-rose-fill text-primary-foreground shadow-md shadow-[0_4px_12px_hsl(var(--rose-fill)/0.45)]">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-fuchsia-500 to-pink-400 text-primary-foreground shadow-md shadow-[0_4px_12px_rgba(217,70,239,0.45)]">
                 <Gem className="h-5 w-5" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-black text-foreground">
                   邀请好友得 2200 星尘
                 </span>
-                <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                <span className="mt-0.5 block truncate text-[10px] text-fuchsia-100/80">
                   分享专属链接，好友首次登录后建立邀请关系
                 </span>
               </span>
