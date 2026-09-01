@@ -227,10 +227,10 @@ function RechargePageContent() {
             <button
               type="button"
               onClick={goInviteCenter}
-              className="relative flex h-[86px] w-full items-center gap-3 overflow-hidden rounded-xl border border-rose-fill/60 bg-[linear-gradient(135deg,hsl(var(--rose)/0.18)_0%,hsl(var(--rose-fill)/0.18)_100%)] px-4 text-left shadow-[0_0_20px_hsl(var(--rose-fill)/0.12)] transition hover:opacity-80"
+              className="relative flex h-[86px] w-full items-center gap-3 overflow-hidden rounded-xl border border-rose/80 bg-[linear-gradient(135deg,hsl(var(--rose)/0.34)_0%,hsl(var(--rose-fill)/0.30)_58%,hsl(var(--primary)/0.16)_100%)] px-4 text-left shadow-[0_0_26px_hsl(var(--rose-fill)/0.24),inset_0_0_18px_hsl(var(--rose-fill)/0.08)] transition hover:opacity-80"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-fill/35 text-primary-foreground shadow-sm">
-                <Gem className="h-4 w-4" aria-hidden />
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-rose to-rose-fill text-primary-foreground shadow-md shadow-[0_4px_12px_hsl(var(--rose-fill)/0.45)]">
+                <Gem className="h-5 w-5" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-black text-foreground">
