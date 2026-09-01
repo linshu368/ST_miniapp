@@ -3,11 +3,13 @@
  *
  * 裂变邀请阶段三 UAT 的测试数据与库侧读写。
  *
- * 数据隔离与阶段一沙盘同口径：专用 tg_id 段 + st_handle 前缀认领，跑完自动清理零残留。
+ * 数据隔离与阶段一沙盘同口径：st_handle 前缀 + 待清理 tg_id 落盘登记，跑完自动清理零残留。
  * 归属域按 docs/schema归属地图.md：users 在 app_core，invite 三表在 miniapp_traffic，
  * 钱包与流水在 billing。新增表必须在 FIXTURE_TABLE_DOMAIN 登记，否则不过编译。
  */
 
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../../platform/config.js';
 import { type DomainSchema } from '../../lib/supabase.js';
@@ -46,8 +48,57 @@ function getScriptDb(domain: DomainSchema) {
 /** 与 mvp-regression 的 mvp_regr_ 前缀并列，互不干扰。 */
 const HANDLE_PREFIX = 'invite_uat_';
 
-/** 8_9xx_xxx_xxx 段不与真实 Telegram id 冲突，也不与 mvp-regression 的 8_8xx 段重叠。 */
+/**
+ * 新建测试用户用的 tg_id 起点，与 mvp-regression 的 8_8xx 段错开。
+ *
+ * ⚠️ 这个段位**不保证**空着：真实 Telegram id 是单调递增的外部序列，本库里已经出现
+ *    8_866_xxx_xxx 量级的真实账号，8_9xx 段被真人占用只是时间问题。所以它只用于
+ *    「往哪写」，绝不可反过来当成「这段里的都是测试数据」的删除依据 —— 认领一律走
+ *    st_handle 前缀或 PENDING_LEDGER_PATH 的精确登记。
+ */
 const TG_ID_BASE = 8_900_000_000;
+
+/**
+ * 待清理 tg_id 的落盘登记表。
+ *
+ * 场景让接口层的 getOrCreateDbUser 自己建号时（真实首开链路），建出来的 st_handle 是
+ * tg-<id>，不带 invite_uat_ 前缀，进程若在建号后、登记 user id 前被杀就没人认领得到。
+ * 因此在发请求**之前**先把 tg_id 同步写进这个文件：崩了下次开跑照样能精确清掉，
+ * 又不必对整段 tg_id 行使删除权。
+ */
+const PENDING_LEDGER_PATH = fileURLToPath(
+  new URL('../../../.invite-uat-pending.json', import.meta.url)
+);
+
+function readPendingTgIds(): string[] {
+  if (!existsSync(PENDING_LEDGER_PATH)) return [];
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(PENDING_LEDGER_PATH, 'utf8'));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string');
+  } catch {
+    // 登记表损坏时宁可少清一次，也不要让脚本起不来。
+    return [];
+  }
+}
+
+function writePendingTgIds(tgIds: string[]): void {
+  writeFileSync(PENDING_LEDGER_PATH, `${JSON.stringify(tgIds)}\n`, 'utf8');
+}
+
+/** 同步落盘：必须在发起建号请求前调用，异步写会在硬杀时丢掉。 */
+export function recordPendingTgId(tgId: string): void {
+  const pending = readPendingTgIds();
+  if (pending.includes(tgId)) return;
+  writePendingTgIds([...pending, tgId]);
+}
+
+/** 对应 tg_id 已确认清理干净，从登记表划掉。 */
+export function clearPendingTgIds(tgIds: string[]): void {
+  if (tgIds.length === 0) return;
+  const done = new Set(tgIds);
+  writePendingTgIds(readPendingTgIds().filter((tgId) => !done.has(tgId)));
+}
 
 const FIXTURE_TABLE_DOMAIN = {
   users: 'app_core',
@@ -337,48 +388,71 @@ export async function cleanupUsers(userIds: string[]): Promise<void> {
   if (userIds.length === 0) return;
 
   // 关系可能以 inviter 或 invitee 身份存在，两侧都要认领。
-  const { data: relByInviter } = await db('invite_relations')
-    .select('id')
-    .in('inviter_user_id', userIds);
-  const { data: relByInvitee } = await db('invite_relations')
-    .select('id')
-    .in('invitee_user_id', userIds);
+  const relByInviter = await db('invite_relations').select('id').in('inviter_user_id', userIds);
+  if (relByInviter.error) throw new Error(`清理时查询邀请关系失败：${relByInviter.error.message}`);
+  const relByInvitee = await db('invite_relations').select('id').in('invitee_user_id', userIds);
+  if (relByInvitee.error) throw new Error(`清理时查询邀请关系失败：${relByInvitee.error.message}`);
   const relationIds = [
-    ...((relByInviter ?? []) as Array<{ id: string }>),
-    ...((relByInvitee ?? []) as Array<{ id: string }>),
+    ...((relByInviter.data ?? []) as Array<{ id: string }>),
+    ...((relByInvitee.data ?? []) as Array<{ id: string }>),
   ].map((row) => row.id);
 
+  // 任何一步失败都必须抛：静默跳过会留下「钱包清了、用户还在」的半删状态，
+  // 而 users 上大量外键是 ON DELETE CASCADE，删成功与否的差别是实打实的数据差异。
+  const del = async (
+    table:
+      | 'invite_reward_logs'
+      | 'invite_relations'
+      | 'invite_codes'
+      | 'wallet_ledger'
+      | 'user_wallets'
+      | 'miniapp_user_settings'
+      | 'users',
+    column: string,
+    values: string[]
+  ): Promise<void> => {
+    const { error } = await db(table).delete().in(column, values);
+    if (error) throw new Error(`清理 ${table} 失败：${error.message}`);
+  };
+
   if (relationIds.length > 0) {
-    await db('invite_reward_logs').delete().in('relation_id', relationIds);
-    await db('invite_relations').delete().in('id', relationIds);
+    await del('invite_reward_logs', 'relation_id', relationIds);
+    await del('invite_relations', 'id', relationIds);
   }
-  await db('invite_codes').delete().in('user_id', userIds);
-  await db('wallet_ledger').delete().in('user_id', userIds);
-  await db('user_wallets').delete().in('user_id', userIds);
-  await db('miniapp_user_settings').delete().in('user_id', userIds);
-  await db('users').delete().in('id', userIds);
+  await del('invite_codes', 'user_id', userIds);
+  await del('wallet_ledger', 'user_id', userIds);
+  await del('user_wallets', 'user_id', userIds);
+  await del('miniapp_user_settings', 'user_id', userIds);
+  await del('users', 'id', userIds);
 }
 
 /**
  * 上次异常退出遗留的数据。开跑前扫一遍，比指望每次都优雅退出可靠。
  *
- * 两条认领路径：脚本直插的用户带 invite_uat_ 前缀 st_handle；由接口层
- * getOrCreateDbUser 建出来的用户 st_handle 是 tg-<id>，只能靠专用 tg_id 段认领。
+ * 两条认领路径都是精确匹配，不做任何段位/范围推断：脚本直插的用户带 invite_uat_ 前缀
+ * st_handle；接口层建出来的用户 st_handle 是 tg-<id>，靠 PENDING_LEDGER_PATH 里事先
+ * 登记的 tg_id 逐个 eq 认领。
+ *
+ * 曾经这里用 `like('tg_id', '89________')` 扫整段 8_9xx_xxx_xxx，那等于对一整个
+ * 十亿号段行使删除权 —— 真实 Telegram id 迟早涨进来，届时会连人带钱包流水一起删掉。
  */
 export async function sweepOrphanFixtures(): Promise<number> {
   const byHandle = await db('users').select('id').like('st_handle', `${HANDLE_PREFIX}%`);
   if (byHandle.error) throw new Error(`扫描遗留 UAT 用户失败：${byHandle.error.message}`);
 
-  // tg_id 是 TEXT，范围比较会退化成字典序（'8999' 也会落进 8.9e9~9e9 区间）。
-  // 用固定长度 LIKE 精确框住 89xxxxxxxx 这 10 位一段。
-  const byTgRange = await db('users').select('id').like('tg_id', '89________');
-  if (byTgRange.error) throw new Error(`扫描遗留 UAT 用户失败：${byTgRange.error.message}`);
+  const pendingTgIds = readPendingTgIds();
+  let byPending: Array<{ id: string }> = [];
+  if (pendingTgIds.length > 0) {
+    const found = await db('users').select('id').in('tg_id', pendingTgIds);
+    if (found.error) throw new Error(`扫描遗留 UAT 用户失败：${found.error.message}`);
+    byPending = (found.data ?? []) as Array<{ id: string }>;
+  }
 
   const userIds = [
-    ...new Set(
-      [...(byHandle.data ?? []), ...(byTgRange.data ?? [])].map((row) => (row as { id: string }).id)
-    ),
+    ...new Set([...(byHandle.data ?? []), ...byPending].map((row) => (row as { id: string }).id)),
   ];
   await cleanupUsers(userIds);
+  // 登记表里没建成号的 tg_id 也一并划掉：本轮已确认库里没有对应用户。
+  clearPendingTgIds(pendingTgIds);
   return userIds.length;
 }

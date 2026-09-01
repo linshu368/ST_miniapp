@@ -18,9 +18,11 @@ import {
   callEnsureInviteCodeRpc,
   callGrantRewardRpc,
   cleanupUsers,
+  clearPendingTgIds,
   createTestUser,
   findUserIdByTgId,
   nextTgId,
+  recordPendingTgId,
   getBonusCredits,
   getInviteCodeRow,
   getSourceId,
@@ -90,9 +92,13 @@ class ScenarioRecorder {
   /**
    * 只占一个 tg_id，不建库行——让接口层的 getOrCreateDbUser 自己建号，
    * 这才是被邀请人首次打开 MiniApp 的真实链路。返回的 claim 用于事后认领清理。
+   *
+   * 先落盘再返回：接口层建号成功后、claim() 登记 user id 前进程被杀，这个文件是
+   * 下次开跑唯一能精确认领到该用户的线索。
    */
   freshTgId(): string {
     const tgId = nextTgId();
+    recordPendingTgId(tgId);
     this.pendingTgIds.push(tgId);
     return tgId;
   }
@@ -136,7 +142,14 @@ function defineScenario(
       try {
         await body(ctx, rec);
       } finally {
-        await cleanupUsers(rec.userIds);
+        // 清理失败记成断言失败而不是抛出：抛出会盖掉 body 里真正的错因。
+        // 失败时不划掉登记表，留给下次开跑的 sweep 兜底。
+        try {
+          await cleanupUsers(rec.userIds);
+          clearPendingTgIds(rec.pendingTgIds);
+        } catch (error) {
+          rec.expect('清理本场景测试数据', '清理成功', (error as Error).message);
+        }
       }
       return {
         name,
