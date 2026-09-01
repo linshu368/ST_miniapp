@@ -396,13 +396,9 @@ export default function ProfilePage() {
         <section className="relative z-10 mt-4 px-5">
           <Link
             href="/profile/invite"
-            className="relative flex items-center gap-3.5 overflow-hidden rounded-[22px] border border-rose/25 bg-card px-4 py-3.5 transition hover:border-rose/40 hover:bg-secondary"
+            className="relative flex items-center gap-3.5 overflow-hidden rounded-[22px] border border-border bg-card px-4 py-3.5 transition hover:border-primary/25 hover:bg-secondary"
           >
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[radial-gradient(circle,hsl(var(--rose)/0.18),transparent_68%)]"
-            />
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose/25 to-rose-fill/25 text-rose">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Gem className="h-[18px] w-[18px]" aria-hidden />
             </span>
             <span className="min-w-0 flex-1">

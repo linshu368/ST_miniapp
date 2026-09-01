@@ -237,10 +237,6 @@ function InviteTabPanel({ center }: { center: ReturnType<typeof useInviteCenterQ
         </button>
       </div>
 
-      <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-        可直接修改文案，点击刷新后会恢复为运营平台已发布的文案，手动修改内容不保留。
-      </p>
-
       <Button
         onClick={handleCopy}
         className="h-12 rounded-[18px] border-0 bg-gradient-to-r from-primary via-rose to-rose-fill text-[15px] font-black text-primary-foreground shadow-[0_10px_30px_hsl(var(--rose)/0.28)] transition hover:opacity-90"
@@ -263,11 +259,6 @@ function InviteTabPanel({ center }: { center: ReturnType<typeof useInviteCenterQ
           专属链接暂时无法生成，请稍后重新进入本页。
         </p>
       ) : null}
-
-      <p className="px-1 text-[11px] leading-relaxed text-muted-foreground/80">
-        专属链接仅用于归因：新用户首次完成 MiniApp
-        登录时，才会绑定对应邀请人；已绑定的用户不会被其他链接覆盖。
-      </p>
     </div>
   );
 }

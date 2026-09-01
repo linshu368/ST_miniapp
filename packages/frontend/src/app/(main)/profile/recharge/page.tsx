@@ -221,17 +221,22 @@ function RechargePageContent() {
               />
             ))
           )}
-        </section>
 
-        {/* 邀请快捷入口：套餐列表下方、支付安全说明上方（PRD 拍板位置），直达邀请中心无中间确认页 */}
-        {inviteEntryEnabled ? (
-          <section className="pb-3">
+          {/* 邀请快捷入口：紧挨着套餐列表，保持相同的 gap-3 和高度 */}
+          {inviteEntryEnabled ? (
             <button
               type="button"
               onClick={goInviteCenter}
-              className="relative flex w-full items-center gap-3 overflow-hidden rounded-[20px] border border-rose/30 bg-[linear-gradient(135deg,hsl(var(--rose)/0.12)_0%,hsl(var(--rose-fill)/0.12)_100%)] px-4 py-3 text-left transition hover:border-rose/45"
+              className="relative flex w-full h-[68px] items-center gap-3 overflow-hidden rounded-xl border px-4 text-left transition hover:opacity-80"
+              style={{
+                backgroundColor: `${pageConfig.button_color}1A`,
+                borderColor: `${pageConfig.button_color}4D`,
+              }}
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-rose to-rose-fill text-primary-foreground shadow-[0_4px_12px_hsl(var(--rose-fill)/0.4)]">
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-primary-foreground shadow-sm"
+                style={{ backgroundColor: pageConfig.button_color }}
+              >
                 <Gem className="h-4 w-4" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
@@ -242,10 +247,14 @@ function RechargePageContent() {
                   分享专属链接，好友首次登录后建立邀请关系
                 </span>
               </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-rose" aria-hidden />
+              <ChevronRight
+                className="h-4 w-4 shrink-0"
+                style={{ color: pageConfig.button_color }}
+                aria-hidden
+              />
             </button>
-          </section>
-        ) : null}
+          ) : null}
+        </section>
 
         <section className="flex justify-center">
           <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70">
