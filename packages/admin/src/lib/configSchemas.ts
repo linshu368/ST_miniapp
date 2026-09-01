@@ -319,7 +319,7 @@ export const configMetadata: Record<
   miniapp_invite_center_config: {
     label: '裂变邀请素材',
     description:
-      '邀请中心素材：poster_url 为已发布海报图（2160×3840，先贴 URL）；copy_templates 为已发布文案库（C 端刷新按钮轮换来源），{link} 会被替换为用户专属链接。',
+      '邀请中心素材：poster_url 为已发布海报图（2160×3840，支持直接上传 PNG/JPG/WEBP，也可贴 URL）；copy_templates 为已发布文案库（C 端刷新按钮轮换来源），{link} 会被替换为用户专属链接。',
     defaultValue: DEFAULT_INVITE_CENTER_CONFIG,
   },
   miniapp_invite_entry_enabled: {

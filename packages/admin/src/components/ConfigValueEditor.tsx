@@ -130,6 +130,7 @@ export function ConfigValueEditor(props: {
   characters: CharacterCard[];
   charactersLoading: boolean;
   charactersError: string | null;
+  onUploadInvitePoster: (file: File) => Promise<string>;
 }) {
   if (props.configKey === 'system_instructions') {
     return (
@@ -409,6 +410,7 @@ export function ConfigValueEditor(props: {
         value={asInviteCenterConfig(props.value)}
         disabled={props.disabled}
         onChange={props.onChange}
+        onUploadPoster={props.onUploadInvitePoster}
       />
     );
   }

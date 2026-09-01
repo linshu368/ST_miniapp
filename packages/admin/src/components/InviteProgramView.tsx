@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   Alert,
@@ -18,11 +18,8 @@ import {
 } from 'antd';
 import type { Dayjs } from 'dayjs';
 import type { AdminEnvironment } from '../lib/environment';
-import {
-  configMetadata,
-  INVITE_RULE_KEY_LABELS,
-  type ManagedConfigKey,
-} from '../lib/configSchemas';
+import { configMetadata, INVITE_RULE_KEY_LABELS } from '../lib/configSchemas';
+import { INVITE_PROGRAM_CONFIG_KEYS, type InviteProgramTabKey } from '../lib/adminNavigation';
 import {
   INVITE_RECORDS_PAGE_SIZE,
   listInviteRecords,
@@ -31,17 +28,17 @@ import {
   type InviteRewardStatusFilter,
 } from '../lib/inviteAdminApi';
 
-/** 素材/规则/开关的编辑入口只在 config 视图一处，这里只做跳转说明卡，避免两处编辑同一 key。 */
-const INVITE_CONFIG_KEYS = [
-  'miniapp_invite_center_config',
-  'miniapp_invite_reward_rules',
-  'miniapp_invite_entry_enabled',
-] as const satisfies readonly ManagedConfigKey[];
-
 interface InviteProgramViewProps {
   client: SupabaseClient;
   environment: AdminEnvironment;
-  onOpenConfig: (key: ManagedConfigKey) => void;
+  /** 受控 tab：三个 invite config key + 'records'。App 据此把通用 config 编辑器切到对应 key。 */
+  activeTab: InviteProgramTabKey;
+  onTabChange: (tab: InviteProgramTabKey) => void;
+  /**
+   * 当前激活 config tab 的编辑器，由 App 注入——复用「运营配置」同一套
+   * 草稿 / 发布 / 回滚 / 历史流程，避免另造一套编辑状态机。
+   */
+  configEditor: ReactNode;
 }
 
 function formatTime(value: string): string {
@@ -133,34 +130,6 @@ export function InviteProgramView(props: InviteProgramViewProps) {
     setPage(1);
     void fetchRecords({}, 1, pageSize);
   };
-
-  const materialsTab = (
-    <Space direction="vertical" size="middle" className="field-full">
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        素材、奖励规则与入口开关统一走「运营配置」的草稿 / 发布 /
-        回滚流程，这里只做入口，避免同一配置出现两处编辑。
-      </Typography.Paragraph>
-      <Row gutter={[16, 16]}>
-        {INVITE_CONFIG_KEYS.map((key) => (
-          <Col xs={24} lg={8} key={key}>
-            <Card
-              size="small"
-              title={configMetadata[key].label}
-              extra={
-                <Button type="link" size="small" onClick={() => props.onOpenConfig(key)}>
-                  前往编辑
-                </Button>
-              }
-            >
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                {configMetadata[key].description}
-              </Typography.Paragraph>
-            </Card>
-          </Col>
-        ))}
-      </Row>
-    </Space>
-  );
 
   const recordsTab = (
     <Space direction="vertical" size="middle" className="field-full">
@@ -340,13 +309,21 @@ export function InviteProgramView(props: InviteProgramViewProps) {
   return (
     <Card title="裂变邀请管理">
       <Typography.Paragraph type="secondary">
-        配置用户端的邀请海报与文案，并按邀请关系查询被邀请新用户与奖励状态。
+        统一管理裂变邀请的奖励规则、海报文案素材与入口开关（走草稿 / 发布 /
+        回滚流程），并按邀请关系查询被邀请新用户与奖励状态。
         {props.environment === 'production' ? '当前处于生产环境。' : null}
       </Typography.Paragraph>
       <Tabs
-        defaultActiveKey="materials"
+        activeKey={props.activeTab}
+        onChange={(key) => props.onTabChange(key as InviteProgramTabKey)}
         items={[
-          { key: 'materials', label: '素材配置', children: materialsTab },
+          ...INVITE_PROGRAM_CONFIG_KEYS.map((key) => ({
+            key,
+            label: configMetadata[key].label,
+            // 只在激活时挂载：通用 config 编辑器绑定 App 的 selectedKey，
+            // 非激活 tab 挂着会展示错误 key 的内容。
+            children: props.activeTab === key ? props.configEditor : null,
+          })),
           { key: 'records', label: '邀请数据', children: recordsTab },
         ]}
       />

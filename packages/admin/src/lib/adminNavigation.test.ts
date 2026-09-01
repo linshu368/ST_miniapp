@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { configMenuKey, resolveAdminMenuSelection } from './adminNavigation';
+import {
+  configMenuKey,
+  INVITE_PROGRAM_CONFIG_KEYS,
+  resolveAdminMenuSelection,
+  sidebarManagedConfigKeys,
+} from './adminNavigation';
 
 describe('admin navigation', () => {
   it('opens a managed config from the operations submenu', () => {
@@ -22,15 +27,28 @@ describe('admin navigation', () => {
     });
   });
 
-  it('opens invite managed configs from the operations submenu', () => {
+  it('routes invite managed configs to the invite program view tabs', () => {
     expect(resolveAdminMenuSelection(configMenuKey('miniapp_invite_reward_rules'))).toEqual({
-      view: 'configs',
+      view: 'invite_program',
       configKey: 'miniapp_invite_reward_rules',
     });
+    expect(resolveAdminMenuSelection(configMenuKey('miniapp_invite_center_config'))).toEqual({
+      view: 'invite_program',
+      configKey: 'miniapp_invite_center_config',
+    });
     expect(resolveAdminMenuSelection(configMenuKey('miniapp_invite_entry_enabled'))).toEqual({
-      view: 'configs',
+      view: 'invite_program',
       configKey: 'miniapp_invite_entry_enabled',
     });
+  });
+
+  it('hides invite managed configs from the sidebar config submenu', () => {
+    for (const key of INVITE_PROGRAM_CONFIG_KEYS) {
+      expect(sidebarManagedConfigKeys).not.toContain(key);
+    }
+    // 其余 config 目录不受影响
+    expect(sidebarManagedConfigKeys).toContain('llm_model_catalog');
+    expect(sidebarManagedConfigKeys).toContain('miniapp_payment_plans');
   });
 
   it('keeps independent top-level pages separate', () => {
