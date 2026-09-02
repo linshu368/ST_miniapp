@@ -13,6 +13,7 @@
 
 import type { PaymentOrderStatus, PaymentSettlementSource } from '@miniapp/shared';
 import type { RequestLogger } from '../../../lib/logger.js';
+import { checkInviteFirstPaidReward } from '../../../lib/invite-rewards.js';
 import { insertUserNotification } from '../../../lib/notifications.js';
 import type { MiniappPaymentOrderRepository } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
@@ -93,6 +94,11 @@ export async function settlePaidOrder(
         );
       }
     }
+
+    // 裂变「被邀请人首次付费」奖励。挂在这里而不是各入口，是因为四条入账路径都收敛到本函数。
+    // 不按 order.status 跳过重放：判定 RPC 自带幂等，重放反而给上一次失败的判定一次重试机会。
+    await checkInviteFirstPaidReward({ userId: order.user_id, orderId: order.id }, log);
+
     log.biz.info(
       {
         event: 'payment.settle.completed',

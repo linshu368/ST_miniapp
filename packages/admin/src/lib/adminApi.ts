@@ -278,6 +278,37 @@ export async function uploadCharacterAvatar(
   return body.avatarUrl;
 }
 
+/** 上传邀请海报图片（PNG/JPG/WEBP），返回可写进 poster_url 的 public URL。 */
+export async function uploadInvitePoster(
+  client: SupabaseClient,
+  environment: AdminEnvironment,
+  file: File
+): Promise<string> {
+  const { data } = await client.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('登录状态已失效，请重新登录');
+
+  const imageBase64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('海报文件读取失败'));
+    reader.onload = () => {
+      const value = String(reader.result ?? '');
+      resolve(value.slice(value.indexOf(',') + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+  const response = await fetch(`${getAdminApiUrl(environment)}/api/admin/invite-poster`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64 }),
+  });
+  const body = (await response.json()) as { posterUrl?: string; message?: string };
+  if (!response.ok || !body.posterUrl) {
+    throw new Error(body.message || '邀请海报上传失败');
+  }
+  return body.posterUrl;
+}
+
 export async function setCharacterEnabled(
   client: SupabaseClient,
   characterId: string,
