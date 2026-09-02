@@ -111,4 +111,6 @@ NOTIFY pgrst, 'reload schema';
 -- DROP INDEX IF EXISTS experience.idx_chat_message_audio_session_all;
 -- ALTER TABLE experience.chat_message_audio DROP COLUMN IF EXISTS charged_at,
 --   DROP COLUMN IF EXISTS debit_ledger_id, DROP COLUMN IF EXISTS credits_charged;
--- DELETE FROM app_core.runtime_config WHERE key LIKE 'voice_%';
+-- DELETE FROM app_core.runtime_config WHERE key IN (
+--   'voice_billing_enabled','voice_generation_credits','voice_max_spoken_chars',
+--   'voice_price_label','voice_over_limit_hint','voice_draft_failed_hint','voice_tts_failed_hint');
