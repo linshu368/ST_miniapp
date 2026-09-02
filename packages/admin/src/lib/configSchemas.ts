@@ -34,6 +34,9 @@ export const managedConfigKeys = [
   'pref_word_count_tiers',
   'lobby_ranking_params',
   'lobby_pinned_characters',
+  'miniapp_invite_reward_rules',
+  'miniapp_invite_center_config',
+  'miniapp_invite_entry_enabled',
 ] as const;
 
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
@@ -98,6 +101,76 @@ export const EditableModelCatalogSchema = z.object({
   tiers: z.array(EditableModelCatalogTierSchema),
 });
 
+/**
+ * 裂变邀请三个 config 的 zod 口径与 105 迁移的 DB 校验函数
+ * （admin.validate_invite_reward_rules / validate_invite_center_config）保持一致：
+ * 前端先给可读报错，DB 校验做最终兜底。
+ */
+export const InviteRewardRuleSchema = z.object({
+  rule_key: z.string().trim().min(1, 'rule_key 不能为空').max(64, 'rule_key 不能超过 64 个字符'),
+  credits: z.number().int('奖励星尘必须是整数').positive('奖励星尘必须大于 0'),
+  enabled: z.boolean(),
+});
+
+export const InviteRewardRulesSchema = z
+  .object({
+    total_cap_credits: z.number().int('累计上限必须是整数').positive('累计上限必须大于 0'),
+    rules: z.array(InviteRewardRuleSchema),
+  })
+  .superRefine((value, ctx) => {
+    const seen = new Set<string>();
+    for (const rule of value.rules) {
+      if (seen.has(rule.rule_key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `rule_key 重复：${rule.rule_key}`,
+        });
+      }
+      seen.add(rule.rule_key);
+    }
+  });
+
+export type InviteRewardRulesConfig = z.infer<typeof InviteRewardRulesSchema>;
+
+/** rule_key → 运营台展示名；未收录的 key 各处回落展示原始 rule_key。 */
+export const INVITE_RULE_KEY_LABELS: Record<string, string> = {
+  invitee_registered: '被邀请人完成注册',
+  invitee_first_paid: '被邀请人首次付费',
+};
+
+export const InviteCenterConfigSchema = z.object({
+  // 允许空串：海报未发布时 C 端降级隐藏。
+  poster_url: z.string(),
+  copy_templates: z
+    .array(
+      z.string().refine((template) => {
+        const trimmed = template.trim();
+        return trimmed.length >= 1 && trimmed.length <= 1000;
+      }, '每条文案不能为空且不超过 1000 字')
+    )
+    .min(1, '文案库至少保留 1 条文案'),
+});
+
+export type InviteCenterConfig = z.infer<typeof InviteCenterConfigSchema>;
+
+export const InviteEntryEnabledSchema = z.boolean();
+
+/** 与 105 迁移的 runtime_config seed 完全一致。 */
+export const DEFAULT_INVITE_REWARD_RULES: InviteRewardRulesConfig = {
+  total_cap_credits: 2200,
+  rules: [
+    { rule_key: 'invitee_registered', credits: 200, enabled: true },
+    { rule_key: 'invitee_first_paid', credits: 2000, enabled: false },
+  ],
+};
+
+export const DEFAULT_INVITE_CENTER_CONFIG: InviteCenterConfig = {
+  poster_url: '',
+  copy_templates: [
+    '我在这里发现了超多有趣的角色，快来和我一起聊！点击专属链接注册，我们都能拿星尘奖励：{link}',
+  ],
+};
+
 export const DEFAULT_SYSTEM_INSTRUCTIONS = [
   'Roleplay System Instructions',
   '',
@@ -124,6 +197,9 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   pref_word_count_tiers: WordCountTiersConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   lobby_pinned_characters: LobbyPinnedCharactersSchema,
+  miniapp_invite_reward_rules: InviteRewardRulesSchema,
+  miniapp_invite_center_config: InviteCenterConfigSchema,
+  miniapp_invite_entry_enabled: InviteEntryEnabledSchema,
 };
 
 export const configMetadata: Record<
@@ -233,6 +309,24 @@ export const configMetadata: Record<
     description:
       '首页「推荐」页最前面的固定位，最多 8 张、按此处顺序展示，同时拿到金框。第九张起仍按排序分。留空表示不固定，完全交给排序分。发布后约 1 分钟内生效。',
     defaultValue: DEFAULT_LOBBY_PINNED_CHARACTERS,
+  },
+  miniapp_invite_reward_rules: {
+    label: '裂变邀请奖励规则',
+    description:
+      '裂变邀请的奖励规则：total_cap_credits 为单个下级用户累计奖励上限；rule_key 发布后不可改名（发放流水引用它做幂等键），金额与开关可随时发布调整。',
+    defaultValue: DEFAULT_INVITE_REWARD_RULES,
+  },
+  miniapp_invite_center_config: {
+    label: '裂变邀请素材',
+    description:
+      '邀请中心素材：poster_url 为已发布海报图（2160×3840，支持直接上传 PNG/JPG/WEBP，也可贴 URL）；copy_templates 为已发布文案库（C 端刷新按钮轮换来源），{link} 会被替换为用户专属链接。',
+    defaultValue: DEFAULT_INVITE_CENTER_CONFIG,
+  },
+  miniapp_invite_entry_enabled: {
+    label: '裂变邀请入口开关',
+    description:
+      '裂变邀请入口总开关：关闭时 C 端隐藏邀请中心全部入口。生产环境先关后开，代码上线不等于功能上线。',
+    defaultValue: false,
   },
 };
 

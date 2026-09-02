@@ -1,4 +1,16 @@
-import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Input,
+  InputNumber,
+  Row,
+  Select,
+  Space,
+  Switch,
+  Typography,
+} from 'antd';
 import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
@@ -16,10 +28,16 @@ import {
 } from '@miniapp/shared';
 import {
   configMetadata,
+  DEFAULT_INVITE_CENTER_CONFIG,
+  DEFAULT_INVITE_REWARD_RULES,
   EditableModelCatalogSchema,
+  type InviteCenterConfig,
+  type InviteRewardRulesConfig,
   type ManagedConfigKey,
 } from '../lib/configSchemas';
 import type { CharacterCard } from '../lib/adminApi';
+import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
+import { InviteRewardRulesEditor } from './InviteRewardRulesEditor';
 import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
@@ -52,6 +70,52 @@ function asWordCountTiersConfig(value: unknown): WordCountTiersConfig {
   return structuredClone(DEFAULT_WORD_COUNT_TIERS_CONFIG);
 }
 
+/**
+ * 宽松结构归一化（对齐 asWordCountTiersConfig 的做法）：
+ * 只校验形状不校验取值，编辑中间态（清空文案、清空数字）不会把整个表单打回默认值；
+ * 取值合法性由保存时的 zod + DB 校验兜底。
+ */
+function asInviteRewardRules(value: unknown): InviteRewardRulesConfig {
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Array.isArray((value as InviteRewardRulesConfig).rules)
+  ) {
+    const record = value as InviteRewardRulesConfig;
+    return {
+      total_cap_credits:
+        typeof record.total_cap_credits === 'number'
+          ? record.total_cap_credits
+          : DEFAULT_INVITE_REWARD_RULES.total_cap_credits,
+      rules: record.rules.map((rule) => ({
+        rule_key: typeof rule?.rule_key === 'string' ? rule.rule_key : '',
+        credits: typeof rule?.credits === 'number' ? rule.credits : 1,
+        enabled: rule?.enabled === true,
+      })),
+    };
+  }
+  return structuredClone(DEFAULT_INVITE_REWARD_RULES);
+}
+
+function asInviteCenterConfig(value: unknown): InviteCenterConfig {
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Array.isArray((value as InviteCenterConfig).copy_templates)
+  ) {
+    const record = value as InviteCenterConfig;
+    return {
+      poster_url: typeof record.poster_url === 'string' ? record.poster_url : '',
+      copy_templates: record.copy_templates.map((template) =>
+        typeof template === 'string' ? template : ''
+      ),
+    };
+  }
+  return structuredClone(DEFAULT_INVITE_CENTER_CONFIG);
+}
+
 export function ConfigValueEditor(props: {
   configKey: ManagedConfigKey;
   value: unknown;
@@ -66,6 +130,7 @@ export function ConfigValueEditor(props: {
   characters: CharacterCard[];
   charactersLoading: boolean;
   charactersError: string | null;
+  onUploadInvitePoster: (file: File) => Promise<string>;
 }) {
   if (props.configKey === 'system_instructions') {
     return (
@@ -326,6 +391,47 @@ export function ConfigValueEditor(props: {
         disabled={props.disabled}
         onChange={props.onChange}
       />
+    );
+  }
+
+  if (props.configKey === 'miniapp_invite_reward_rules') {
+    return (
+      <InviteRewardRulesEditor
+        value={asInviteRewardRules(props.value)}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'miniapp_invite_center_config') {
+    return (
+      <InviteCenterConfigEditor
+        value={asInviteCenterConfig(props.value)}
+        disabled={props.disabled}
+        onChange={props.onChange}
+        onUploadPoster={props.onUploadInvitePoster}
+      />
+    );
+  }
+
+  if (props.configKey === 'miniapp_invite_entry_enabled') {
+    const enabled = props.value === true;
+    return (
+      <Space align="center" size="middle">
+        <Switch
+          checked={enabled}
+          disabled={props.disabled}
+          onChange={(next) => props.onChange(next)}
+        />
+        <div>
+          <Typography.Text strong>{enabled ? '入口已开启' : '入口已关闭'}</Typography.Text>
+          <br />
+          <Typography.Text type="secondary">
+            关闭时 C 端「我的」页卡片、充值页快捷入口与星尘不足弹窗按钮全部隐藏。发布后生效。
+          </Typography.Text>
+        </div>
+      </Space>
     );
   }
 
