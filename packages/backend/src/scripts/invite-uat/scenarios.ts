@@ -16,6 +16,7 @@ import {
   ageUser,
   callBindInviteRpc,
   callCheckInviteChatRoundsRewardRpc,
+  callCheckInviteFirstPaidRewardRpc,
   callEnsureInviteCodeRpc,
   callGrantRewardRpc,
   cleanupUsers,
@@ -35,8 +36,10 @@ import {
   overrideConfig,
   readRewardRules,
   seedInviteCode,
+  seedPendingPaymentOrder,
   setSourceId,
   setTotalRound,
+  settlePaymentOrder,
   type InviteTestUser,
 } from './fixtures.js';
 import { buildInitData, getEntryStatus, getStats, postBind, postCenterView } from './client.js';
@@ -67,6 +70,7 @@ export interface Scenario {
 }
 
 const CHAT_ROUNDS_RULE_KEY = 'invitee_chat_rounds';
+const FIRST_PAID_RULE_KEY = 'invitee_first_paid';
 
 type RewardRulesConfig = Awaited<ReturnType<typeof readRewardRules>>;
 type RewardRule = RewardRulesConfig['rules'][number];
@@ -79,6 +83,30 @@ function getChatRoundsRule(rules: RewardRulesConfig): RewardRule {
 
 function getThresholdRounds(rule: RewardRule): number {
   return typeof rule.threshold_rounds === 'number' ? rule.threshold_rounds : 3;
+}
+
+function getFirstPaidRule(rules: RewardRulesConfig): RewardRule {
+  const rule = rules.rules.find((item) => item.rule_key === FIRST_PAID_RULE_KEY);
+  if (!rule) throw new Error(`奖励规则缺少 ${FIRST_PAID_RULE_KEY}`);
+  return rule;
+}
+
+function withFirstPaidEnabled(rules: RewardRulesConfig): RewardRulesConfig {
+  return {
+    ...rules,
+    rules: rules.rules.map((rule) =>
+      rule.rule_key === FIRST_PAID_RULE_KEY ? { ...rule, enabled: true } : rule
+    ),
+  };
+}
+
+function withFirstPaidDisabled(rules: RewardRulesConfig): RewardRulesConfig {
+  return {
+    ...rules,
+    rules: rules.rules.map((rule) =>
+      rule.rule_key === FIRST_PAID_RULE_KEY ? { ...rule, enabled: false } : rule
+    ),
+  };
 }
 
 /** 收集断言与待清理用户，让每个场景的样板代码收敛到一处。 */
@@ -490,6 +518,116 @@ const legacyRegisteredRewardNoDoublePay = defineScenario(
       rewards.some((r) => r.rule_key === CHAT_ROUNDS_RULE_KEY)
     );
     rec.expect('bonus 无新增变化', bonusBefore, await getBonusCredits(inviter.userId));
+  }
+);
+
+const firstPaidRewardGrant = defineScenario(
+  'first_paid_reward_grant',
+  '被邀请人首笔订单入账 → invitee_first_paid 发奖一次；同单重放与第二笔均不再发',
+  async (ctx, rec) => {
+    const original = await readRewardRules();
+    const expectedCredits = getFirstPaidRule(original).credits;
+
+    const inviter = await rec.inviter(nextCode());
+    const inviteeTgId = rec.freshTgId();
+    const bind = await postBind(ctx.baseUrl, buildInitData(inviteeTgId), inviter.code);
+    rec.expect('绑定成功', 'bound', bind.data?.status);
+    const inviteeId = await rec.claim(inviteeTgId);
+    const relationId = (await listRelationsByInvitee(inviteeId))[0]?.id ?? '';
+    const bonusBefore = await getBonusCredits(inviter.userId);
+
+    const override = await overrideConfig(
+      'miniapp_invite_reward_rules',
+      withFirstPaidEnabled(original)
+    );
+    try {
+      const firstOrder = await seedPendingPaymentOrder(inviteeId);
+      const beforeSettle = await callCheckInviteFirstPaidRewardRpc(inviteeId, firstOrder);
+      rec.expect('订单尚未入账 → not_settled', 'not_settled', beforeSettle.status);
+
+      await settlePaymentOrder(firstOrder);
+      const granted = await callCheckInviteFirstPaidRewardRpc(inviteeId, firstOrder);
+      rec.expect('首笔入账 → granted', 'granted', granted.status);
+      rec.expect('发奖金额等于 invitee_first_paid 规则值', expectedCredits, granted.credits);
+
+      // 四条入账路径都会重放挂点，重放必须零账务变化。
+      const replay = await callCheckInviteFirstPaidRewardRpc(inviteeId, firstOrder);
+      rec.expect('同一订单重放 → duplicated', 'duplicated', replay.status);
+      rec.expect('重放金额为 0', 0, replay.credits);
+
+      const secondOrder = await seedPendingPaymentOrder(inviteeId);
+      await settlePaymentOrder(secondOrder);
+      const second = await callCheckInviteFirstPaidRewardRpc(inviteeId, secondOrder);
+      rec.expect('同一被邀请人复购 → not_first_paid', 'not_first_paid', second.status);
+      rec.expect('复购金额为 0', 0, second.credits);
+
+      const logs = await listRewardLogsByRelation(relationId);
+      rec.expect('发奖明细恰 1 行', 1, logs.length);
+      rec.expect('明细规则为 invitee_first_paid', FIRST_PAID_RULE_KEY, logs[0]?.rule_key);
+      rec.expect('明细 event_ref 为首笔订单号', firstOrder, logs[0]?.event_ref);
+
+      const ledger = await listInviteLedger(inviter.userId);
+      rec.expect('invite_reward 流水恰 1 条', 1, ledger.length);
+      rec.expect('流水 bonus_delta = 发奖金额', expectedCredits, ledger[0]?.bonus_delta);
+      rec.expect(
+        '邀请人 bonus 只增加一次发奖金额',
+        expectedCredits,
+        (await getBonusCredits(inviter.userId)) - bonusBefore
+      );
+    } finally {
+      await override.restore();
+    }
+
+    rec.expect('config 已还原为原值', original, await readRewardRules());
+  }
+);
+
+const firstPaidRewardLateEnable = defineScenario(
+  'first_paid_reward_late_enable',
+  '规则启用前被邀请人已付过款 → 启用后的复购不补发首付奖励',
+  async (ctx, rec) => {
+    const original = await readRewardRules();
+
+    const inviter = await rec.inviter(nextCode());
+    const inviteeTgId = rec.freshTgId();
+    const bind = await postBind(ctx.baseUrl, buildInitData(inviteeTgId), inviter.code);
+    rec.expect('绑定成功', 'bound', bind.data?.status);
+    const inviteeId = await rec.claim(inviteeTgId);
+    const relationId = (await listRelationsByInvitee(inviteeId))[0]?.id ?? '';
+    const bonusBefore = await getBonusCredits(inviter.userId);
+
+    const disabledOverride = await overrideConfig(
+      'miniapp_invite_reward_rules',
+      withFirstPaidDisabled(original)
+    );
+    try {
+      // 规则关着时也照样付一笔并跑挂点：真实链路里挂点无条件调用，靠 grant 返回 skipped 兜住。
+      const earlyOrder = await seedPendingPaymentOrder(inviteeId);
+      await settlePaymentOrder(earlyOrder);
+      const skipped = await callCheckInviteFirstPaidRewardRpc(inviteeId, earlyOrder);
+      rec.expect('规则未启用 → skipped', 'skipped', skipped.status);
+      rec.expect('未启用时金额为 0', 0, skipped.credits);
+    } finally {
+      await disabledOverride.restore();
+    }
+
+    const enabledOverride = await overrideConfig(
+      'miniapp_invite_reward_rules',
+      withFirstPaidEnabled(original)
+    );
+    try {
+      const laterOrder = await seedPendingPaymentOrder(inviteeId);
+      await settlePaymentOrder(laterOrder);
+      const later = await callCheckInviteFirstPaidRewardRpc(inviteeId, laterOrder);
+      rec.expect('启用后的复购 → not_first_paid', 'not_first_paid', later.status);
+      rec.expect('金额为 0', 0, later.credits);
+      rec.expect('全程无发奖明细', 0, (await listRewardLogsByRelation(relationId)).length);
+      rec.expect('邀请人 bonus 零变化', bonusBefore, await getBonusCredits(inviter.userId));
+    } finally {
+      await enabledOverride.restore();
+    }
+
+    rec.expect('config 已还原为原值', original, await readRewardRules());
   }
 );
 
@@ -1126,6 +1264,8 @@ export const SCENARIOS: Scenario[] = [
   chatRoundRewardThreshold,
   chatRoundRewardBindBackfill,
   legacyRegisteredRewardNoDoublePay,
+  firstPaidRewardGrant,
+  firstPaidRewardLateEnable,
   idempotencyReplay,
   idempotencyRuleDisabled,
   rewardCap,
