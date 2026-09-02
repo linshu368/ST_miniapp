@@ -304,14 +304,14 @@ export class MiniappWalletRepository {
       }>
     )?.map((row) => {
       const amount = Math.abs(toNumber(row.amount));
-      const label =
-        typeof row.metadata?.voice_price_label === 'string'
-          ? row.metadata.voice_price_label
-          : '角色语音';
+      // const label =
+      //   typeof row.metadata?.voice_price_label === 'string'
+      //     ? row.metadata.voice_price_label
+      //     : '角色语音';
       return {
         id: row.reference_id ?? row.created_at,
         model_id: null,
-        model_display_name: '语音消费 ' + label,
+        model_display_name: '语音消费',
         charged_amount: amount,
         status: 'charged' as const,
         finish_reason: null,
