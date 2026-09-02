@@ -52,12 +52,14 @@ vi.mock('../../lib/chat-voice-storage.js', () => ({
   deleteMessageVoice: vi.fn(async () => undefined),
 }));
 
-// 默认与自定义都经过文字处理；测试中让处理结果等于输入，专注验证编排不变量。
+const draftSpokenText = vi.fn(async (sourceText: string) => ({
+  text: `写稿：${sourceText}`,
+  gate: 'thinking_off' as const,
+}));
+
 vi.mock('./voice-draft.js', () => ({
-  draftSpokenText: vi.fn(async (sourceText: string) => ({
-    text: sourceText,
-    gate: 'thinking_off',
-  })),
+  draftSpokenText: (...args: unknown[]) =>
+    draftSpokenText(...(args as Parameters<typeof draftSpokenText>)),
 }));
 
 const { runVoiceGeneration } = await import('./generate.js');
@@ -76,6 +78,62 @@ function makeLogger() {
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe('runVoiceGeneration — 文本来源分支', () => {
+  it('自定义文本跳过写稿模型，原样送入 TTS，并以 custom gate 计费', async () => {
+    const customText = '这是用户指定的台词。';
+
+    await runVoiceGeneration({
+      audioId: 'custom-audio',
+      messageId: 'custom-message',
+      userId: 'u1',
+      sourceText: '这是默认回复。',
+      customText,
+      voiceId: 'v1',
+      ttsModel: 'speech-02-hd',
+      ttsSpeed: 1,
+      billingEnabled: true,
+      creditsPerGeneration: 15,
+      priceLabel: '15 星尘',
+      maxSpokenChars: 300,
+      log: makeLogger(),
+    });
+
+    expect(draftSpokenText).not.toHaveBeenCalled();
+    expect(saveDraft).toHaveBeenCalledWith('custom-audio', customText);
+    expect(synthesizeSpeech).toHaveBeenCalledWith(expect.objectContaining({ text: customText }));
+    expect(settleVoiceGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ gate: 'custom' }) })
+    );
+  });
+
+  it('默认文本继续经过写稿模型，并将写稿结果送入 TTS', async () => {
+    const sourceText = '这是默认回复。';
+
+    await runVoiceGeneration({
+      audioId: 'reply-audio',
+      messageId: 'reply-message',
+      userId: 'u1',
+      sourceText,
+      customText: null,
+      voiceId: 'v1',
+      ttsModel: 'speech-02-hd',
+      ttsSpeed: 1,
+      billingEnabled: false,
+      creditsPerGeneration: 15,
+      priceLabel: '15 星尘',
+      maxSpokenChars: 300,
+      log: makeLogger(),
+    });
+
+    expect(draftSpokenText).toHaveBeenCalledOnce();
+    expect(draftSpokenText).toHaveBeenCalledWith(sourceText);
+    expect(saveDraft).toHaveBeenCalledWith('reply-audio', `写稿：${sourceText}`);
+    expect(synthesizeSpeech).toHaveBeenCalledWith(
+      expect.objectContaining({ text: `写稿：${sourceText}` })
+    );
+  });
 });
 
 describe('runVoiceGeneration — 最终长度闸', () => {
