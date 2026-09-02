@@ -311,7 +311,7 @@ export class MiniappWalletRepository {
       return {
         id: row.reference_id ?? row.created_at,
         model_id: null,
-        model_display_name: label,
+        model_display_name: '语音消费 ' + label,
         charged_amount: amount,
         status: 'charged' as const,
         finish_reason: null,
