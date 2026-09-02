@@ -27,7 +27,7 @@ export async function runVoiceGeneration(input: {
   /**
    * 用户指定的台词，已在受理时清洗与校验过。
    *
-   * 非空时使用自定义文字处理模式；服务端仍会处理并执行最终长度闸。
+   * 非空时跳过写稿模型，直接执行最终长度闸并送入 TTS。
    */
   customText: string | null;
   voiceId: string;
@@ -49,12 +49,14 @@ export async function runVoiceGeneration(input: {
     let spoken: string;
     let gate: DraftGate | 'custom';
 
-    const draft = await draftSpokenText(
-      input.customText ?? input.sourceText,
-      input.customText ? 'custom' : 'reply'
-    );
-    spoken = draft.text;
-    gate = draft.gate;
+    if (input.customText) {
+      spoken = input.customText;
+      gate = 'custom';
+    } else {
+      const draft = await draftSpokenText(input.sourceText);
+      spoken = draft.text;
+      gate = draft.gate;
+    }
 
     // 最终长度闸：送进 TTS 前再拦一次。模型「说自己没超」不算数，写稿与自定义共用。
     // 超限是业务失败，不是 TTS 失败：不创建 MiniMax 请求，credits_charged=0。
