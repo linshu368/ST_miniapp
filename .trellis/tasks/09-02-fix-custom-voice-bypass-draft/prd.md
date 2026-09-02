@@ -14,10 +14,10 @@
 
 ## Acceptance Criteria
 
-- [ ] 自定义文本生成时 `draftSpokenText` 未被调用，TTS 收到自定义文本。
-- [ ] 默认生成时 `draftSpokenText` 被调用，TTS 收到写稿结果。
-- [ ] 自定义分支日志/计费 metadata 的 gate 为 `custom`。
-- [ ] 相关后端测试与 TypeScript 类型检查通过。
+- [x] 自定义文本生成时 `draftSpokenText` 未被调用，TTS 收到自定义文本。
+- [x] 默认生成时 `draftSpokenText` 被调用，TTS 收到写稿结果。
+- [x] 自定义分支日志/计费 metadata 的 gate 为 `custom`。
+- [x] 相关后端测试与 TypeScript 类型检查通过。
 
 ## Notes
 
