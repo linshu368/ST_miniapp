@@ -7,6 +7,10 @@ import type { PublicModelCatalogTier } from '@miniapp/shared';
 
 import { ApiClientError } from '@/lib/api/client';
 import { useModelCatalogQuery, useSelectModelMutation } from '@/lib/api/models';
+import {
+  buildInsufficientCreditsRechargePathFromError,
+  isInsufficientCreditsError,
+} from '@/lib/insufficient-credits';
 import { cn } from '@/lib/utils';
 
 /**
@@ -55,13 +59,8 @@ export function ChatModelSwitcher({
     } catch (err) {
       if (latestSelectRef.current !== modelId) return;
       // 余额闸门拦下来的话，能做的只有去充值，直接把人送过去
-      if (err instanceof ApiClientError && err.code === 'INSUFFICIENT_CREDITS') {
-        router.push(
-          `/profile/recharge?${new URLSearchParams({
-            reason: 'insufficient_credits',
-            returnTo,
-          }).toString()}`
-        );
+      if (err instanceof ApiClientError && isInsufficientCreditsError(err)) {
+        router.push(buildInsufficientCreditsRechargePathFromError(err, returnTo));
         return;
       }
       setError(err instanceof Error ? err.message : '该模型暂不可用');

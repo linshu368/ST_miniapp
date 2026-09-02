@@ -40,6 +40,10 @@ import {
 } from '@/lib/api/voice';
 import { customVoicePath } from '@/lib/chat-entry';
 import { formatFreeQuotaExhaustedNotice } from '@/lib/free-quota-dialog';
+import {
+  buildInsufficientCreditsRechargePathFromError,
+  isInsufficientCreditsError,
+} from '@/lib/insufficient-credits';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 
@@ -276,15 +280,8 @@ export default function SelfHostedChatPage() {
           onError: (error) => {
             // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
             const code = (error as { code?: string }).code;
-            if (code === 'insufficient_balance') {
-              // 复用对话链路同一条跳转，不另做弹窗。金额由 apiClient 从 402 裸形状带出。
-              const balance = (error as { balance?: { creditsRequired: number } }).balance;
-              const search = new URLSearchParams({
-                reason: 'insufficient_credits',
-                returnTo,
-              });
-              if (balance) search.set('required', String(balance.creditsRequired));
-              router.push(`/profile/recharge?${search.toString()}`);
+            if (isInsufficientCreditsError(error)) {
+              router.push(buildInsufficientCreditsRechargePathFromError(error, returnTo));
               return;
             }
             setStreamError(
@@ -359,9 +356,7 @@ export default function SelfHostedChatPage() {
 
       switch (error.code) {
         case 'insufficient_balance': {
-          const search = new URLSearchParams({ reason: 'insufficient_credits', returnTo });
-          if (error.balance) search.set('required', String(error.balance.creditsRequired));
-          router.push(`/profile/recharge?${search.toString()}`);
+          router.push(buildInsufficientCreditsRechargePathFromError(error, returnTo));
           restoreDraft(input);
           return;
         }
