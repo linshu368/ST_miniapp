@@ -110,7 +110,7 @@ export const InviteRewardRuleSchema = z.object({
   rule_key: z.string().trim().min(1, 'rule_key 不能为空').max(64, 'rule_key 不能超过 64 个字符'),
   credits: z.number().int('奖励星尘必须是整数').positive('奖励星尘必须大于 0'),
   enabled: z.boolean(),
-  threshold_rounds: z.number().int('达标轮数必须是整数').positive('达标轮数必须大于 0').optional(),
+  threshold_rounds: z.number().int('达标轮数必须是整数').min(1, '达标轮数最小值为1').optional(),
 });
 
 export const InviteRewardRulesSchema = z

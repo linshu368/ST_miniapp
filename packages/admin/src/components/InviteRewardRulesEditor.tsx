@@ -64,13 +64,13 @@ export function InviteRewardRulesEditor(props: InviteRewardRulesEditorProps) {
                     <Typography.Text>达标轮数</Typography.Text>
                     <br />
                     <InputNumber
-                      min={1}
+                      min={0}
                       precision={0}
                       value={rule.threshold_rounds ?? 3}
                       disabled={props.disabled}
                       addonAfter="轮"
                       onChange={(threshold) =>
-                        updateRule(index, { threshold_rounds: threshold ?? 1 })
+                        updateRule(index, { threshold_rounds: threshold ?? 0 })
                       }
                     />
                   </div>
