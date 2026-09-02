@@ -59,6 +59,22 @@ export function InviteRewardRulesEditor(props: InviteRewardRulesEditorProps) {
                     onChange={(credits) => updateRule(index, { credits: credits ?? 1 })}
                   />
                 </div>
+                {rule.rule_key === 'invitee_chat_rounds' || rule.threshold_rounds !== undefined ? (
+                  <div>
+                    <Typography.Text>达标轮数</Typography.Text>
+                    <br />
+                    <InputNumber
+                      min={1}
+                      precision={0}
+                      value={rule.threshold_rounds ?? 3}
+                      disabled={props.disabled}
+                      addonAfter="轮"
+                      onChange={(threshold) =>
+                        updateRule(index, { threshold_rounds: threshold ?? 1 })
+                      }
+                    />
+                  </div>
+                ) : null}
                 <div>
                   <Typography.Text>启用</Typography.Text>
                   <br />

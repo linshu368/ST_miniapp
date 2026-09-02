@@ -15,6 +15,7 @@ import { INVITE_SOURCE_ID } from '@miniapp/shared';
 import {
   ageUser,
   callBindInviteRpc,
+  callCheckInviteChatRoundsRewardRpc,
   callEnsureInviteCodeRpc,
   callGrantRewardRpc,
   cleanupUsers,
@@ -35,6 +36,7 @@ import {
   readRewardRules,
   seedInviteCode,
   setSourceId,
+  setTotalRound,
   type InviteTestUser,
 } from './fixtures.js';
 import { buildInitData, getEntryStatus, getStats, postBind, postCenterView } from './client.js';
@@ -62,6 +64,21 @@ export interface Scenario {
   name: string;
   description: string;
   run(ctx: ScenarioContext): Promise<ScenarioResult>;
+}
+
+const CHAT_ROUNDS_RULE_KEY = 'invitee_chat_rounds';
+
+type RewardRulesConfig = Awaited<ReturnType<typeof readRewardRules>>;
+type RewardRule = RewardRulesConfig['rules'][number];
+
+function getChatRoundsRule(rules: RewardRulesConfig): RewardRule {
+  const rule = rules.rules.find((item) => item.rule_key === CHAT_ROUNDS_RULE_KEY);
+  if (!rule) throw new Error(`奖励规则缺少 ${CHAT_ROUNDS_RULE_KEY}`);
+  return rule;
+}
+
+function getThresholdRounds(rule: RewardRule): number {
+  return typeof rule.threshold_rounds === 'number' ? rule.threshold_rounds : 3;
 }
 
 /** 收集断言与待清理用户，让每个场景的样板代码收敛到一处。 */
@@ -164,12 +181,8 @@ function defineScenario(
 
 const attributionHappyPath = defineScenario(
   'attribution_happy_path',
-  '新用户经有效链接首次登录 → 建立唯一关系、注册奖到账、source_id 记 invite',
+  '新用户经有效链接首次登录 → 建立唯一关系，不立即发奖，source_id 记 invite',
   async (ctx, rec) => {
-    const rules = await readRewardRules();
-    const registerRule = rules.rules.find((rule) => rule.rule_key === 'invitee_registered');
-    const expectedCredits = registerRule?.enabled ? registerRule.credits : 0;
-
     const inviter = await rec.inviter(nextCode());
     const bonusBefore = await getBonusCredits(inviter.userId);
 
@@ -184,21 +197,15 @@ const attributionHappyPath = defineScenario(
     rec.expect('留档的邀请码正确', inviter.code, relations[0]?.invite_code);
 
     const rewards = await listRewardLogsByInviter(inviter.userId);
-    rec.expect('发奖明细恰 1 行', 1, rewards.length);
-    rec.expect('发奖规则为 invitee_registered', 'invitee_registered', rewards[0]?.rule_key);
-    rec.expect('event_ref 为被邀请人 id', inviteeId, rewards[0]?.event_ref);
-    rec.expect('发奖金额等于已发布规则值', expectedCredits, rewards[0]?.credits);
+    rec.expect('绑定后发奖明细仍为 0 行', 0, rewards.length);
 
     const ledger = await listInviteLedger(inviter.userId);
-    rec.expect('invite_reward 流水恰 1 条', 1, ledger.length);
-    rec.expect('流水金额与发奖一致', expectedCredits, ledger[0]?.bonus_delta);
-    rec.expect('流水 reference_id 指向发奖明细', rewards[0]?.id, ledger[0]?.reference_id);
+    rec.expect('绑定后 invite_reward 流水仍为 0 条', 0, ledger.length);
 
     const bonusAfter = await getBonusCredits(inviter.userId);
-    rec.expect('邀请人 bonus 增量 = 发奖金额', expectedCredits, bonusAfter - bonusBefore);
+    rec.expect('绑定后邀请人 bonus 无变化', 0, bonusAfter - bonusBefore);
     rec.expect('被邀请人 source_id 记为 invite', INVITE_SOURCE_ID, await getSourceId(inviteeId));
 
-    rec.note('expected_credits', expectedCredits);
     rec.note('bonus_delta', bonusAfter - bonusBefore);
   }
 );
@@ -343,10 +350,155 @@ const attributionSourceIdGuard = defineScenario(
   }
 );
 
+const chatRoundRewardThreshold = defineScenario(
+  'chat_round_reward_threshold',
+  '被邀请人 total_round 达到配置阈值 → invitee_chat_rounds 发奖一次',
+  async (ctx, rec) => {
+    const rules = await readRewardRules();
+    const chatRule = getChatRoundsRule(rules);
+    const threshold = getThresholdRounds(chatRule);
+    const expectedCredits = chatRule.enabled ? chatRule.credits : 0;
+
+    const inviter = await rec.inviter(nextCode());
+    const inviteeTgId = rec.freshTgId();
+    const bind = await postBind(ctx.baseUrl, buildInitData(inviteeTgId), inviter.code);
+    rec.expect('绑定成功', 'bound', bind.data?.status);
+    const inviteeId = await rec.claim(inviteeTgId);
+    const relationId = (await listRelationsByInvitee(inviteeId))[0]?.id ?? '';
+    const bonusBefore = await getBonusCredits(inviter.userId);
+
+    await setTotalRound(inviteeId, Math.max(0, threshold - 1));
+    const below = await callCheckInviteChatRoundsRewardRpc(inviteeId);
+    rec.expect('未达阈值 → below_threshold', 'below_threshold', below.status);
+    rec.expect('未达阈值金额为 0', 0, below.credits);
+    rec.expect('未达阈值无发奖明细', 0, (await listRewardLogsByRelation(relationId)).length);
+
+    await setTotalRound(inviteeId, threshold);
+    const granted = await callCheckInviteChatRoundsRewardRpc(inviteeId);
+    rec.expect('达阈值 → granted', chatRule.enabled ? 'granted' : 'skipped', granted.status);
+    rec.expect('发奖金额等于 invitee_chat_rounds 规则值', expectedCredits, granted.credits);
+    rec.expect('返回阈值等于配置值', threshold, granted.threshold_rounds);
+
+    const rewards = await listRewardLogsByRelation(relationId);
+    rec.expect('达标后发奖明细恰 1 行', chatRule.enabled ? 1 : 0, rewards.length);
+    if (chatRule.enabled) {
+      rec.expect('发奖规则为 invitee_chat_rounds', CHAT_ROUNDS_RULE_KEY, rewards[0]?.rule_key);
+      rec.expect('event_ref 为被邀请人 id', inviteeId, rewards[0]?.event_ref);
+    }
+    rec.expect(
+      'invite_reward 流水条数匹配',
+      chatRule.enabled ? 1 : 0,
+      (await listInviteLedger(inviter.userId)).length
+    );
+    rec.expect(
+      '邀请人 bonus 增量 = 发奖金额',
+      expectedCredits,
+      (await getBonusCredits(inviter.userId)) - bonusBefore
+    );
+
+    const duplicated = await callCheckInviteChatRoundsRewardRpc(inviteeId);
+    rec.expect(
+      '达标检查重放 → duplicated',
+      chatRule.enabled ? 'duplicated' : 'skipped',
+      duplicated.status
+    );
+    rec.expect('重放金额为 0', 0, duplicated.credits);
+    rec.expect(
+      '重放后明细条数不变',
+      chatRule.enabled ? 1 : 0,
+      (await listRewardLogsByRelation(relationId)).length
+    );
+  }
+);
+
+const chatRoundRewardBindBackfill = defineScenario(
+  'chat_round_reward_bind_backfill',
+  '绑定补报前 total_round 已达阈值 → bind_invite 内补做达标检查并发奖',
+  async (ctx, rec) => {
+    const rules = await readRewardRules();
+    const chatRule = getChatRoundsRule(rules);
+    const threshold = getThresholdRounds(chatRule);
+    const inviter = await rec.inviter(nextCode());
+    const invitee = await rec.user();
+    await setTotalRound(invitee.userId, threshold);
+    const bonusBefore = await getBonusCredits(inviter.userId);
+
+    const bind = await postBind(ctx.baseUrl, buildInitData(invitee.tgId), inviter.code);
+    rec.expect('绑定成功', 'bound', bind.data?.status);
+
+    const relationId = (await listRelationsByInvitee(invitee.userId))[0]?.id ?? '';
+    const rewards = await listRewardLogsByRelation(relationId);
+    rec.expect('绑定补报触发达标发奖', chatRule.enabled ? 1 : 0, rewards.length);
+    if (chatRule.enabled) {
+      rec.expect('补发规则为 invitee_chat_rounds', CHAT_ROUNDS_RULE_KEY, rewards[0]?.rule_key);
+      rec.expect('补发金额等于规则值', chatRule.credits, rewards[0]?.credits);
+    }
+    rec.expect(
+      '邀请人 bonus 增量匹配',
+      chatRule.enabled ? chatRule.credits : 0,
+      (await getBonusCredits(inviter.userId)) - bonusBefore
+    );
+  }
+);
+
+const legacyRegisteredRewardNoDoublePay = defineScenario(
+  'legacy_registered_reward_no_double_pay',
+  '历史 invitee_registered 已发奖关系达到新阈值 → 不再补发 invitee_chat_rounds',
+  async (_ctx, rec) => {
+    const rules = await readRewardRules();
+    const chatRule = getChatRoundsRule(rules);
+    const threshold = getThresholdRounds(chatRule);
+    const inviter = await rec.inviter(nextCode());
+    const invitee = await rec.user();
+    const bound = await callBindInviteRpc(invitee.userId, inviter.code);
+    rec.expect('前置绑定成功', 'bound', bound.status);
+    const relationId = bound.relation_id ?? '';
+
+    const legacyOverride = await overrideConfig('miniapp_invite_reward_rules', {
+      total_cap_credits: rules.total_cap_credits,
+      rules: [
+        { rule_key: 'invitee_registered', credits: 200, enabled: true },
+        {
+          rule_key: CHAT_ROUNDS_RULE_KEY,
+          credits: chatRule.credits,
+          enabled: chatRule.enabled,
+          threshold_rounds: threshold,
+        },
+        ...rules.rules.filter(
+          (rule) => !['invitee_registered', CHAT_ROUNDS_RULE_KEY].includes(rule.rule_key)
+        ),
+      ],
+    });
+    try {
+      const legacy = await callGrantRewardRpc(relationId, 'invitee_registered', invitee.userId);
+      rec.expect('模拟历史注册奖发放成功', 'granted', legacy.status);
+    } finally {
+      await legacyOverride.restore();
+    }
+
+    const bonusBefore = await getBonusCredits(inviter.userId);
+    await setTotalRound(invitee.userId, threshold);
+    const check = await callCheckInviteChatRoundsRewardRpc(invitee.userId);
+    rec.expect('新达标检查识别历史奖励为 duplicated', 'duplicated', check.status);
+    rec.expect('新达标检查不发金额', 0, check.credits);
+
+    const rewards = await listRewardLogsByRelation(relationId);
+    rec.expect('仍只有历史注册奖 1 行', 1, rewards.length);
+    rec.expect(
+      '没有新增 invitee_chat_rounds',
+      false,
+      rewards.some((r) => r.rule_key === CHAT_ROUNDS_RULE_KEY)
+    );
+    rec.expect('bonus 无新增变化', bonusBefore, await getBonusCredits(inviter.userId));
+  }
+);
+
 const idempotencyReplay = defineScenario(
   'idempotency_replay',
-  '同一注册事件重放多次 → invite_reward_logs 唯一键只入账一次（接口层 + 库层双打）',
+  '绑定与达标事件重放多次 → invite_reward_logs 唯一键只入账一次（接口层 + 库层双打）',
   async (ctx, rec) => {
+    const chatRule = getChatRoundsRule(await readRewardRules());
+    const threshold = getThresholdRounds(chatRule);
     const inviter = await rec.inviter(nextCode());
     const inviteeTgId = rec.freshTgId();
     const initData = buildInitData(inviteeTgId);
@@ -355,7 +507,7 @@ const idempotencyReplay = defineScenario(
     rec.expect('首次 bound', 'bound', first.data?.status);
     const inviteeId = await rec.claim(inviteeTgId);
 
-    const bonusAfterFirst = await getBonusCredits(inviter.userId);
+    const bonusAfterBind = await getBonusCredits(inviter.userId);
     const relationId = (await listRelationsByInvitee(inviteeId))[0]?.id ?? '';
 
     // 接口层重放：前端网络抖动 / 用户重开 MiniApp 都会走到这里。
@@ -364,9 +516,15 @@ const idempotencyReplay = defineScenario(
       rec.expect(`第 ${i + 1} 次接口重放 → already_bound`, 'already_bound', replay.data?.status);
     }
 
+    rec.expect('绑定重放后仍无发奖明细', 0, (await listRewardLogsByRelation(relationId)).length);
+
+    await setTotalRound(inviteeId, threshold);
+    const firstGrant = await callCheckInviteChatRoundsRewardRpc(inviteeId);
+    rec.expect('首次达标检查发奖', 'granted', firstGrant.status);
+
     // 库层重放：直接对同一 (relation, rule_key, event_ref) 调发奖 RPC。
     for (let i = 0; i < 3; i += 1) {
-      const replay = await callGrantRewardRpc(relationId, 'invitee_registered', inviteeId);
+      const replay = await callGrantRewardRpc(relationId, CHAT_ROUNDS_RULE_KEY, inviteeId);
       rec.expect(`第 ${i + 1} 次 RPC 重放 → duplicated`, 'duplicated', replay.status);
       rec.expect(`第 ${i + 1} 次 RPC 重放金额为 0`, 0, replay.credits);
     }
@@ -374,7 +532,11 @@ const idempotencyReplay = defineScenario(
     rec.expect('关系仍恰 1 行', 1, (await listRelationsByInvitee(inviteeId)).length);
     rec.expect('发奖明细仍恰 1 行', 1, (await listRewardLogsByRelation(relationId)).length);
     rec.expect('invite_reward 流水仍恰 1 条', 1, (await listInviteLedger(inviter.userId)).length);
-    rec.expect('bonus 零变化', bonusAfterFirst, await getBonusCredits(inviter.userId));
+    rec.expect(
+      'bonus 只增加首次达标发奖金额',
+      firstGrant.credits,
+      (await getBonusCredits(inviter.userId)) - bonusAfterBind
+    );
   }
 );
 
@@ -398,7 +560,7 @@ const idempotencyRuleDisabled = defineScenario(
     const unknown = await callGrantRewardRpc(relationId, 'rule_that_does_not_exist', 'ref-001');
     rec.expect('配置中不存在的规则 → skipped', 'skipped', unknown.status);
 
-    rec.expect('明细仍只有注册奖 1 行', 1, (await listRewardLogsByRelation(relationId)).length);
+    rec.expect('绑定后仍无发奖明细', 0, (await listRewardLogsByRelation(relationId)).length);
     rec.expect('bonus 零变化', bonusBefore, await getBonusCredits(inviter.userId));
   }
 );
@@ -426,7 +588,8 @@ const rewardCap = defineScenario(
     const override = await overrideConfig('miniapp_invite_reward_rules', {
       total_cap_credits: cap,
       rules: [
-        { rule_key: 'invitee_registered', credits: 200, enabled: true },
+        { rule_key: 'invitee_registered', credits: 200, enabled: false },
+        { rule_key: CHAT_ROUNDS_RULE_KEY, credits: 200, enabled: true, threshold_rounds: 3 },
         { rule_key: 'invitee_first_paid', credits: cap * 10, enabled: true },
       ],
     });
@@ -483,7 +646,7 @@ function tally(statuses: string[]): Record<string, number> {
 
 const concurrencyBindRpc = defineScenario(
   'concurrency_bind_rpc',
-  '库层并发：N 条连接同时对同一 invitee 调 bind_invite → 关系/发奖/流水各恰 1 行',
+  '库层并发：N 条连接同时对同一 invitee 调 bind_invite → 关系恰 1 行且不立即发奖',
   async (_ctx, rec) => {
     const inviter = await rec.inviter(nextCode());
     const invitee = await rec.user();
@@ -502,20 +665,16 @@ const concurrencyBindRpc = defineScenario(
     const relations = await listRelationsByInvitee(invitee.userId);
     rec.expect('invite_relations 恰 1 行', 1, relations.length);
     const rewards = await listRewardLogsByRelation(relations[0]?.id ?? '');
-    rec.expect('发奖明细恰 1 行', 1, rewards.length);
+    rec.expect('发奖明细仍为 0 行', 0, rewards.length);
     const ledger = await listInviteLedger(inviter.userId);
-    rec.expect('invite_reward 流水恰 1 条', 1, ledger.length);
-    rec.expect(
-      '钱包增量 = 单笔发奖金额',
-      rewards[0]?.credits ?? 0,
-      (await getBonusCredits(inviter.userId)) - bonusBefore
-    );
+    rec.expect('invite_reward 流水仍为 0 条', 0, ledger.length);
+    rec.expect('绑定后钱包无变化', 0, (await getBonusCredits(inviter.userId)) - bonusBefore);
   }
 );
 
 const concurrencyBindHttp = defineScenario(
   'concurrency_bind_http',
-  '接口层并发：用户行尚未创建时 N 个并发 bind 请求（首开竞态）→ 仍只绑一次只发一次',
+  '接口层并发：用户行尚未创建时 N 个并发 bind 请求（首开竞态）→ 仍只绑一次且不立即发奖',
   async (ctx, rec) => {
     const inviter = await rec.inviter(nextCode());
     // 关键：此刻库里还没有这个用户，N 个请求会同时走 getOrCreateDbUser 建号。
@@ -539,21 +698,18 @@ const concurrencyBindHttp = defineScenario(
     const relations = await listRelationsByInvitee(inviteeId);
     rec.expect('invite_relations 恰 1 行', 1, relations.length);
     const rewards = await listRewardLogsByRelation(relations[0]?.id ?? '');
-    rec.expect('发奖明细恰 1 行', 1, rewards.length);
-    rec.expect('invite_reward 流水恰 1 条', 1, (await listInviteLedger(inviter.userId)).length);
-    rec.expect(
-      '钱包增量 = 单笔发奖金额',
-      rewards[0]?.credits ?? 0,
-      (await getBonusCredits(inviter.userId)) - bonusBefore
-    );
+    rec.expect('发奖明细仍为 0 行', 0, rewards.length);
+    rec.expect('invite_reward 流水仍为 0 条', 0, (await listInviteLedger(inviter.userId)).length);
+    rec.expect('绑定后钱包无变化', 0, (await getBonusCredits(inviter.userId)) - bonusBefore);
     rec.expect('source_id 恰为 invite', INVITE_SOURCE_ID, await getSourceId(inviteeId));
   }
 );
 
 const concurrencyGrantReward = defineScenario(
   'concurrency_grant_reward',
-  '库层并发：同参数并发调 grant_invite_reward → 唯一键吸收，只入账一次',
+  '库层并发：同参数并发调 invitee_chat_rounds 发奖 → 唯一键吸收，只入账一次',
   async (_ctx, rec) => {
+    const chatRule = getChatRoundsRule(await readRewardRules());
     const inviter = await rec.inviter(nextCode());
     const invitee = await rec.user();
     const bound = await callBindInviteRpc(invitee.userId, inviter.code);
@@ -563,17 +719,53 @@ const concurrencyGrantReward = defineScenario(
     const bonusBefore = await getBonusCredits(inviter.userId);
     const results = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        callGrantRewardRpc(relationId, 'invitee_registered', invitee.userId)
+        callGrantRewardRpc(relationId, CHAT_ROUNDS_RULE_KEY, invitee.userId)
       )
     );
     const counts = tally(results.map((result) => result.status));
     rec.note('status_tally', counts);
 
-    // 绑定时已发过一次，所以这一轮全部应为 duplicated。
-    rec.expect('全部 duplicated', CONCURRENCY, counts['duplicated'] ?? 0);
+    rec.expect('恰一个 granted', 1, counts['granted'] ?? 0);
+    rec.expect('其余全为 duplicated', CONCURRENCY - 1, counts['duplicated'] ?? 0);
     rec.expect('发奖明细仍恰 1 行', 1, (await listRewardLogsByRelation(relationId)).length);
     rec.expect('invite_reward 流水仍恰 1 条', 1, (await listInviteLedger(inviter.userId)).length);
-    rec.expect('bonus 零变化', bonusBefore, await getBonusCredits(inviter.userId));
+    rec.expect(
+      'bonus 只增加一笔发奖金额',
+      chatRule.credits,
+      (await getBonusCredits(inviter.userId)) - bonusBefore
+    );
+  }
+);
+
+const concurrencyChatRoundCheck = defineScenario(
+  'concurrency_chat_round_check',
+  '库层并发：多次达标检查同时触发 → 只发一笔 invitee_chat_rounds',
+  async (_ctx, rec) => {
+    const chatRule = getChatRoundsRule(await readRewardRules());
+    const threshold = getThresholdRounds(chatRule);
+    const inviter = await rec.inviter(nextCode());
+    const invitee = await rec.user();
+    const bound = await callBindInviteRpc(invitee.userId, inviter.code);
+    rec.expect('前置绑定成功', 'bound', bound.status);
+    await setTotalRound(invitee.userId, threshold);
+    const relationId = bound.relation_id ?? '';
+    const bonusBefore = await getBonusCredits(inviter.userId);
+
+    const results = await Promise.all(
+      Array.from({ length: CONCURRENCY }, () => callCheckInviteChatRoundsRewardRpc(invitee.userId))
+    );
+    const counts = tally(results.map((result) => result.status));
+    rec.note('status_tally', counts);
+
+    rec.expect('恰一个 granted', 1, counts['granted'] ?? 0);
+    rec.expect('其余全为 duplicated', CONCURRENCY - 1, counts['duplicated'] ?? 0);
+    rec.expect('发奖明细恰 1 行', 1, (await listRewardLogsByRelation(relationId)).length);
+    rec.expect('invite_reward 流水恰 1 条', 1, (await listInviteLedger(inviter.userId)).length);
+    rec.expect(
+      'bonus 只增加一笔发奖金额',
+      chatRule.credits,
+      (await getBonusCredits(inviter.userId)) - bonusBefore
+    );
   }
 );
 
@@ -724,7 +916,7 @@ const statsAlignment = defineScenario(
     rec.expect('无下级时到账记录为空', 0, empty.data?.recent_rewards.length);
     rec.expect('update_mode 恒为 realtime', 'realtime', empty.data?.update_mode);
 
-    // 造 3 个下级：各得一笔注册奖；再给其中一个补一笔额外奖励，让"人数 ≠ 记录条数"。
+    // 造 3 个下级关系；再给其中一个补一笔额外奖励，让"人数 ≠ 记录条数"。
     const inviteeCount = 3;
     for (let i = 0; i < inviteeCount; i += 1) {
       const tgId = rec.freshTgId();
@@ -739,7 +931,8 @@ const statsAlignment = defineScenario(
     const extraOverride = await overrideConfig('miniapp_invite_reward_rules', {
       total_cap_credits: 2200,
       rules: [
-        { rule_key: 'invitee_registered', credits: 200, enabled: true },
+        { rule_key: 'invitee_registered', credits: 200, enabled: false },
+        { rule_key: CHAT_ROUNDS_RULE_KEY, credits: 200, enabled: true, threshold_rounds: 3 },
         { rule_key: 'invitee_first_paid', credits: 300, enabled: true },
       ],
     });
@@ -807,7 +1000,8 @@ const statsTruncation = defineScenario(
     const override = await overrideConfig('miniapp_invite_reward_rules', {
       total_cap_credits: 100_000,
       rules: [
-        { rule_key: 'invitee_registered', credits: 200, enabled: true },
+        { rule_key: 'invitee_registered', credits: 200, enabled: false },
+        { rule_key: CHAT_ROUNDS_RULE_KEY, credits: 200, enabled: true, threshold_rounds: 3 },
         { rule_key: 'invitee_first_paid', credits: 50, enabled: true },
       ],
     });
@@ -825,7 +1019,7 @@ const statsTruncation = defineScenario(
     }
 
     const logs = await listRewardLogsByInviter(inviter.userId);
-    rec.expect('库内明细共 13 条（1 注册 + 12 额外）', 13, logs.length);
+    rec.expect('库内明细共 12 条', 12, logs.length);
 
     const stats = await getStats(ctx.baseUrl, buildInitData(inviter.tgId));
     rec.expect('下发恰 10 条', RECENT_REWARDS_LIMIT, stats.data?.recent_rewards.length);
@@ -929,12 +1123,16 @@ export const SCENARIOS: Scenario[] = [
   attributionInvalidCode,
   attributionCodeNormalization,
   attributionSourceIdGuard,
+  chatRoundRewardThreshold,
+  chatRoundRewardBindBackfill,
+  legacyRegisteredRewardNoDoublePay,
   idempotencyReplay,
   idempotencyRuleDisabled,
   rewardCap,
   concurrencyBindRpc,
   concurrencyBindHttp,
   concurrencyGrantReward,
+  concurrencyChatRoundCheck,
   concurrencyEnsureCode,
   authGuard,
   entrySwitch,

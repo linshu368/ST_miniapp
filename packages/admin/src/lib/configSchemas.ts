@@ -110,6 +110,7 @@ export const InviteRewardRuleSchema = z.object({
   rule_key: z.string().trim().min(1, 'rule_key 不能为空').max(64, 'rule_key 不能超过 64 个字符'),
   credits: z.number().int('奖励星尘必须是整数').positive('奖励星尘必须大于 0'),
   enabled: z.boolean(),
+  threshold_rounds: z.number().int('达标轮数必须是整数').positive('达标轮数必须大于 0').optional(),
 });
 
 export const InviteRewardRulesSchema = z
@@ -135,6 +136,7 @@ export type InviteRewardRulesConfig = z.infer<typeof InviteRewardRulesSchema>;
 /** rule_key → 运营台展示名；未收录的 key 各处回落展示原始 rule_key。 */
 export const INVITE_RULE_KEY_LABELS: Record<string, string> = {
   invitee_registered: '被邀请人完成注册',
+  invitee_chat_rounds: '被邀请人完成文本对话',
   invitee_first_paid: '被邀请人首次付费',
 };
 
@@ -159,7 +161,8 @@ export const InviteEntryEnabledSchema = z.boolean();
 export const DEFAULT_INVITE_REWARD_RULES: InviteRewardRulesConfig = {
   total_cap_credits: 2200,
   rules: [
-    { rule_key: 'invitee_registered', credits: 200, enabled: true },
+    { rule_key: 'invitee_registered', credits: 200, enabled: false },
+    { rule_key: 'invitee_chat_rounds', credits: 200, enabled: true, threshold_rounds: 3 },
     { rule_key: 'invitee_first_paid', credits: 2000, enabled: false },
   ],
 };
