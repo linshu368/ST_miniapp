@@ -75,10 +75,13 @@ BEGIN
   WHERE message_id=v_audio.message_id AND is_active=true AND id<>p_audio_id;
 
   UPDATE experience.chat_message_audio SET status='ready', is_active=true,
-    spoken_text=p_metadata->>'spoken_text', spoken_chars=char_length(COALESCE(p_metadata->>'spoken_text','')),
-    storage_path=p_metadata->>'storage_path', audio_url=p_metadata->>'audio_url',
-    duration_ms=NULLIF(p_metadata->>'duration_ms','')::INTEGER,
-    latency_ms=NULLIF(p_metadata->>'latency_ms','')::INTEGER, error_code=NULL,
+    -- metadata 缺字段或显式传 JSON null 时不得清空前序阶段已经落库的结果。
+    spoken_text=COALESCE(p_metadata->>'spoken_text', spoken_text),
+    spoken_chars=char_length(COALESCE(p_metadata->>'spoken_text', spoken_text, '')),
+    storage_path=COALESCE(p_metadata->>'storage_path', storage_path),
+    audio_url=COALESCE(p_metadata->>'audio_url', audio_url),
+    duration_ms=COALESCE(NULLIF(p_metadata->>'duration_ms','')::INTEGER, duration_ms),
+    latency_ms=COALESCE(NULLIF(p_metadata->>'latency_ms','')::INTEGER, latency_ms), error_code=NULL,
     credits_charged=v_amount, debit_ledger_id=v_ledger, charged_at=now(), updated_at=now()
   WHERE id=p_audio_id;
 
