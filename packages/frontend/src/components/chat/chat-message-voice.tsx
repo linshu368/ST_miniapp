@@ -28,6 +28,14 @@ export interface MessageVoiceState {
   onGenerate: () => void;
   /** 「自定义本次语音」页的地址；会话还没落库时为 null，此时入口不出现 */
   customHref: string | null;
+  /** 入口旁价格文案（voice_price_label），前端只读不写死 */
+  priceLabel: string;
+  /** 失败提示文案，按 error_code 选用（来自 voice config hints） */
+  hints: {
+    overLimit: string;
+    draftFailed: string;
+    ttsFailed: string;
+  };
 }
 
 /**
@@ -53,6 +61,19 @@ export function ChatMessageVoiceFooter({
 
   const current = voice.voice;
   const audioUrl = current?.status === 'ready' ? current.audio_url : null;
+  // 失败码：status=failed 用 error_code（首次失败，无上一版可播）；
+  // status=ready 但本次重生成失败时用 last_error_code（旧音频仍可播，提示挂在播放条下方）。
+  const failureCode = current?.status === 'failed' ? current.error_code : current?.last_error_code;
+  // 超限红字：仅当失败码为 voice_text_too_long 时展示。
+  // 成功、或用户再次点下去变 pending 时（failureCode 变 null）自动隐藏。
+  const overLimit = failureCode === 'voice_text_too_long' ? voice.hints.overLimit : null;
+  // 其它失败小字：写稿失败 / TTS 失败，与超限那句区分。
+  const otherFailedHint =
+    failureCode && failureCode !== 'voice_text_too_long'
+      ? isTtsFailure(failureCode)
+        ? voice.hints.ttsFailed
+        : voice.hints.draftFailed
+      : null;
 
   return (
     <div className="space-y-1.5">
@@ -61,6 +82,11 @@ export function ChatMessageVoiceFooter({
         {audioUrl ? null : <VoiceAction {...voice} />}
         {regenerate}
       </div>
+      {overLimit ? (
+        <p className="text-[11px] leading-snug text-destructive">{overLimit}</p>
+      ) : otherFailedHint ? (
+        <p className="text-[11px] leading-snug text-muted-foreground/80">{otherFailedHint}</p>
+      ) : null}
       {audioUrl ? (
         <>
           <VoiceBar
@@ -74,6 +100,11 @@ export function ChatMessageVoiceFooter({
       ) : null}
     </div>
   );
+}
+
+/** TTS 失败码以 voice_tts_ 前缀；写稿失败以 voice_draft_ 前缀。 */
+function isTtsFailure(code: string | null | undefined): boolean {
+  return typeof code === 'string' && code.startsWith('voice_tts');
 }
 
 /**
@@ -112,7 +143,7 @@ function SpokenTextPanel({ text, customHref }: { text: string; customHref: strin
   );
 }
 
-function VoiceAction({ voice, submitting, onGenerate }: MessageVoiceState) {
+function VoiceAction({ voice, submitting, onGenerate, priceLabel }: MessageVoiceState) {
   const generating = submitting || voice?.status === 'pending';
 
   if (generating) {
@@ -125,14 +156,16 @@ function VoiceAction({ voice, submitting, onGenerate }: MessageVoiceState) {
   }
 
   // ready 态由 ChatMessageVoiceFooter 直接渲染语音条，走不到这里
+  const isRetry = voice?.status === 'failed';
   return (
     <button
       type="button"
       onClick={onGenerate}
-      className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+      className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary hover:text-foreground"
     >
       <AudioLines className="h-3.5 w-3.5" aria-hidden />
-      {voice?.status === 'failed' ? '重试语音' : '生成语音'}
+      {isRetry ? '重试语音' : '生成语音'}
+      {priceLabel ? <span className="text-primary/80">· {priceLabel}</span> : null}
     </button>
   );
 }
