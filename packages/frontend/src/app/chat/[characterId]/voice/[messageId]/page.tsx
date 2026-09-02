@@ -13,10 +13,6 @@ import {
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
 import { chatEntryPath } from '@/lib/chat-entry';
-import {
-  buildInsufficientCreditsRechargePathFromError,
-  isInsufficientCreditsError,
-} from '@/lib/insufficient-credits';
 import { useTelegramBackButton } from '@/lib/telegram';
 
 /**
@@ -96,10 +92,15 @@ export default function CustomVoicePage() {
         onSuccess: goBack,
         onError: (mutationError) => {
           const code = (mutationError as { code?: string }).code;
-          if (isInsufficientCreditsError(mutationError)) {
-            router.push(
-              buildInsufficientCreditsRechargePathFromError(mutationError, returnToForRecharge)
-            );
+          if (code === 'insufficient_balance') {
+            // 402 跳充值页，复用对话链路。金额由 apiClient 从 402 裸形状带出。
+            const balance = (mutationError as { balance?: { creditsRequired: number } }).balance;
+            const search = new URLSearchParams({
+              reason: 'insufficient_credits',
+              returnTo: returnToForRecharge,
+            });
+            if (balance) search.set('required', String(balance.creditsRequired));
+            router.push(`/profile/recharge?${search.toString()}`);
             return;
           }
           setError(
