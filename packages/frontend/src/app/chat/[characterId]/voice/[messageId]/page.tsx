@@ -45,9 +45,11 @@ export default function CustomVoicePage() {
   const sessionVoice = useSessionVoiceQuery(sessionId ?? undefined);
   const generateVoice = useGenerateVoiceMutation(sessionId ?? undefined);
   const voiceConfig = useVoiceConfigQuery();
-  const priceLabel = voiceConfig.data?.billing.enabled ? voiceConfig.data.billing.price_label : '';
+  const priceLabel = voiceConfig.data?.billing?.enabled
+    ? voiceConfig.data?.billing?.price_label
+    : '';
   const maxChars = Math.min(
-    voiceConfig.data?.limits.max_spoken_chars ?? MAX_CUSTOM_VOICE_CHARS,
+    voiceConfig.data?.limits?.max_spoken_chars ?? MAX_CUSTOM_VOICE_CHARS,
     MAX_CUSTOM_VOICE_CHARS
   );
   const returnToForRecharge = backTo;

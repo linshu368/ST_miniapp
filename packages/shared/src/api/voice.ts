@@ -36,7 +36,7 @@ export interface MessageVoice {
   /** 仅 status = failed 时非空，用于前端决定提示文案 */
   error_code: string | null;
   /**
-   * 保留字段，当前实现失败后新 attempt 接管并恢复“生成语音”状态，因此恒为 null。
+   * 保留字段，当前实现失败后新 attempt 接管并恢复“生成语音”状态。
    */
   last_error_code: string | null;
   /** 本次生成实扣星尘：成功为计费额度（默认 15），失败/未扣费为 0 */

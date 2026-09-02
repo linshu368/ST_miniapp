@@ -249,8 +249,8 @@ export default function SelfHostedChatPage() {
     [sessionVoiceQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
-  const voicePriceLabel = voiceConfigQuery.data?.billing.enabled
-    ? voiceConfigQuery.data.billing.price_label
+  const voicePriceLabel = voiceConfigQuery.data?.billing?.enabled
+    ? voiceConfigQuery.data?.billing?.price_label
     : '';
 
   useEffect(() => {
@@ -580,9 +580,9 @@ export default function SelfHostedChatPage() {
                         : null,
                       priceLabel: voicePriceLabel,
                       hints: {
-                        overLimit: voiceConfigQuery.data?.hints.over_limit ?? '',
-                        draftFailed: voiceConfigQuery.data?.hints.draft_failed ?? '',
-                        ttsFailed: voiceConfigQuery.data?.hints.tts_failed ?? '',
+                        overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
+                        draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
+                        ttsFailed: voiceConfigQuery.data?.hints?.tts_failed ?? '',
                       },
                     }
                   : null
