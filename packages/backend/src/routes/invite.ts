@@ -4,8 +4,8 @@
  * 裂变邀请（invite program）C 端接口。
  * 设计依据：docs/裂变工程落地实施方案.md + docs/裂变阶段一实施计划.md。
  *
- * 数据侧全部收敛在 migration 105 的三张 miniapp_traffic 表与三个 SECURITY DEFINER RPC；
- * 本文件不做任何手动余额加减，发奖只发生在 bind_invite → grant_invite_reward 事务内。
+ * 数据侧全部收敛在 miniapp_traffic 表与 SECURITY DEFINER RPC；
+ * 本文件不做任何手动余额加减，发奖只发生在数据库 RPC 内。
  */
 
 import { FastifyInstance } from 'fastify';

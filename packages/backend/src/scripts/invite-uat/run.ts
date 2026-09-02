@@ -15,7 +15,7 @@
  * 会让每次提交都变慢且不稳定。定位是阶段验收与发布前手动跑一遍。
  *
  * ⚠️ 前提：packages/backend/.env 里 DATABASE_ENV=test 且 TEST_SUPABASE_* 齐备，
- *    且 105 / 106 两个迁移已在该库执行。脚本会拒绝在非 test 库上运行。
+ *    且 105 / 106 / 108 迁移已在该库执行。脚本会拒绝在非 test 库上运行。
  */
 
 import 'dotenv/config';

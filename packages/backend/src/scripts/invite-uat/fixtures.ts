@@ -171,6 +171,21 @@ export async function getSourceId(userId: string): Promise<string | null> {
   return (data as { source_id: string | null } | null)?.source_id ?? null;
 }
 
+export async function setTotalRound(userId: string, totalRound: number): Promise<void> {
+  const now = new Date().toISOString();
+  const userUpdate = await db('users')
+    .update({ total_round: totalRound, updated_at: now })
+    .eq('id', userId);
+  if (userUpdate.error) throw new Error(`设置 users.total_round 失败：${userUpdate.error.message}`);
+
+  const settingsUpdate = await db('miniapp_user_settings')
+    .update({ total_round: totalRound, updated_at: now })
+    .eq('user_id', userId);
+  if (settingsUpdate.error) {
+    throw new Error(`设置 miniapp_user_settings.total_round 失败：${settingsUpdate.error.message}`);
+  }
+}
+
 /** 直接给用户造一个固定邀请码，省掉走 center-view 的往返。 */
 export async function seedInviteCode(userId: string, code: string): Promise<string> {
   const { error } = await db('invite_codes').insert({ user_id: userId, code });
@@ -309,6 +324,36 @@ export async function callGrantRewardRpc(
   return { status: row.status, credits: Number(row.credits) };
 }
 
+export async function callCheckInviteChatRoundsRewardRpc(inviteeUserId: string): Promise<{
+  status: string;
+  credits: number;
+  total_round: number;
+  threshold_rounds: number | null;
+}> {
+  const { data, error } = await getScriptDb('miniapp_traffic').rpc(
+    'check_invite_chat_rounds_reward',
+    {
+      p_invitee_user_id: inviteeUserId,
+    }
+  );
+  if (error) throw new Error(`check_invite_chat_rounds_reward RPC 失败：${error.message}`);
+  const row = (
+    data as Array<{
+      status: string;
+      credits: number;
+      total_round: number;
+      threshold_rounds: number | null;
+    }> | null
+  )?.[0];
+  if (!row) throw new Error('check_invite_chat_rounds_reward RPC 返回空');
+  return {
+    status: row.status,
+    credits: Number(row.credits),
+    total_round: Number(row.total_round),
+    threshold_rounds: row.threshold_rounds === null ? null : Number(row.threshold_rounds),
+  };
+}
+
 export async function callEnsureInviteCodeRpc(
   userId: string
 ): Promise<{ code: string; first_visit: boolean }> {
@@ -365,12 +410,17 @@ export async function overrideConfig(key: string, value: unknown): Promise<Confi
 
 export async function readRewardRules(): Promise<{
   total_cap_credits: number;
-  rules: Array<{ rule_key: string; credits: number; enabled: boolean }>;
+  rules: Array<{ rule_key: string; credits: number; enabled: boolean; threshold_rounds?: number }>;
 }> {
   const snapshot = await readConfig('miniapp_invite_reward_rules');
   return snapshot.value as {
     total_cap_credits: number;
-    rules: Array<{ rule_key: string; credits: number; enabled: boolean }>;
+    rules: Array<{
+      rule_key: string;
+      credits: number;
+      enabled: boolean;
+      threshold_rounds?: number;
+    }>;
   };
 }
 
