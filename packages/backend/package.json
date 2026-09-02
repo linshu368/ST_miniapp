@@ -15,6 +15,7 @@
     "payment:diagnose-query": "tsx src/scripts/diagnose-zqpay-query.ts",
     "payment:callback-report": "tsx src/scripts/payment-callback-report.ts",
     "mvp:regression": "tsx src/scripts/mvp-regression/run.ts",
+    "invite:uat": "tsx src/scripts/invite-uat/run.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
