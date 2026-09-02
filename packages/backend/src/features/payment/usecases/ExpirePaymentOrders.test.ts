@@ -9,6 +9,10 @@ vi.mock('../../../lib/notifications.js', () => ({
   insertUserNotification: vi.fn(async () => undefined),
 }));
 
+vi.mock('../../../lib/invite-rewards.js', () => ({
+  checkInviteFirstPaidReward: vi.fn(async () => undefined),
+}));
+
 const NOW = Date.parse('2026-08-21T12:00:00.000Z');
 
 function createRow(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPaymentOrderRow {

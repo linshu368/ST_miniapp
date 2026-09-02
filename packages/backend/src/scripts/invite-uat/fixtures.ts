@@ -107,6 +107,7 @@ const FIXTURE_TABLE_DOMAIN = {
   invite_codes: 'miniapp_traffic',
   invite_relations: 'miniapp_traffic',
   invite_reward_logs: 'miniapp_traffic',
+  payment_orders: 'billing',
   user_wallets: 'billing',
   wallet_ledger: 'billing',
 } as const satisfies Record<string, DomainSchema>;
@@ -354,6 +355,57 @@ export async function callCheckInviteChatRoundsRewardRpc(inviteeUserId: string):
   };
 }
 
+export async function callCheckInviteFirstPaidRewardRpc(
+  inviteeUserId: string,
+  orderId: string
+): Promise<{ status: string; credits: number }> {
+  const { data, error } = await getScriptDb('miniapp_traffic').rpc(
+    'check_invite_first_paid_reward',
+    {
+      p_invitee_user_id: inviteeUserId,
+      p_order_id: orderId,
+    }
+  );
+  if (error) throw new Error(`check_invite_first_paid_reward RPC 失败：${error.message}`);
+  const row = (data as Array<{ status: string; credits: number }> | null)?.[0];
+  if (!row) throw new Error('check_invite_first_paid_reward RPC 返回空');
+  return { status: row.status, credits: Number(row.credits) };
+}
+
+let orderCursor = 0;
+
+/** 造一笔待支付订单。金额与套餐无关，首付判定只看订单是否入账。 */
+export async function seedPendingPaymentOrder(userId: string): Promise<string> {
+  orderCursor += 1;
+  const orderId = `MA-INVITEUAT-${Date.now()}-${orderCursor}`;
+  const { error } = await db('payment_orders').insert({
+    id: orderId,
+    user_id: userId,
+    payment_type: 'wxpay',
+    amount_cents: 600,
+    credits_amount: 600,
+    bonus_credits: 0,
+    expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+  });
+  if (error) throw new Error(`创建 UAT 支付订单失败：${error.message}`);
+  return orderId;
+}
+
+/**
+ * 走真实入账函数把订单结成 completed。
+ *
+ * 不手写 status='completed'：首付判定读的就是这个函数写下的订单状态与 credits_added，
+ * 手写会让用例绕开真实入账语义（包括 first_paid_at 的 COALESCE 行为）。
+ */
+export async function settlePaymentOrder(orderId: string): Promise<void> {
+  const { error } = await getScriptDb('billing').rpc('complete_payment_order', {
+    p_order_id: orderId,
+    p_provider_transaction_id: `ZQ-${orderId}`,
+    p_settled_by: 'webhook',
+  });
+  if (error) throw new Error(`入账 UAT 支付订单失败：${error.message}`);
+}
+
 export async function callEnsureInviteCodeRpc(
   userId: string
 ): Promise<{ code: string; first_visit: boolean }> {
@@ -433,6 +485,7 @@ export async function readEntryEnabledRaw(): Promise<unknown> {
  *
  * 删除顺序受外键约束：reward_logs → relations → invite_codes，
  * 再删 ledger / wallet（注册赠送 trigger 造的行也一并清掉）→ 最后删 users。
+ * payment_orders.user_id 也 FK 到 users，首付用例造的订单必须在删 users 前清掉。
  */
 export async function cleanupUsers(userIds: string[]): Promise<void> {
   if (userIds.length === 0) return;
@@ -454,6 +507,7 @@ export async function cleanupUsers(userIds: string[]): Promise<void> {
       | 'invite_reward_logs'
       | 'invite_relations'
       | 'invite_codes'
+      | 'payment_orders'
       | 'wallet_ledger'
       | 'user_wallets'
       | 'miniapp_user_settings'
@@ -470,6 +524,7 @@ export async function cleanupUsers(userIds: string[]): Promise<void> {
     await del('invite_relations', 'id', relationIds);
   }
   await del('invite_codes', 'user_id', userIds);
+  await del('payment_orders', 'user_id', userIds);
   await del('wallet_ledger', 'user_id', userIds);
   await del('user_wallets', 'user_id', userIds);
   await del('miniapp_user_settings', 'user_id', userIds);
