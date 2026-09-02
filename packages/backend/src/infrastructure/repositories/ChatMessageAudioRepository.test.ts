@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  isMissingColumnError,
-  resolveMessageVoice,
-  type ChatMessageAudioRow,
-} from './ChatMessageAudioRepository.js';
+import { resolveMessageVoice, type ChatMessageAudioRow } from './ChatMessageAudioRepository.js';
 
 /**
  * resolveMessageVoice 的关键不变量（需求 Q3：失败不让位）：
@@ -45,32 +41,6 @@ function row(overrides: Partial<ChatMessageAudioRow>): ChatMessageAudioRow {
     ...overrides,
   };
 }
-
-describe('isMissingColumnError — migration 101 未执行时的计费列降级判定', () => {
-  it('Postgres 42703 错误码 → true（计费列不存在，应降级）', () => {
-    expect(
-      isMissingColumnError({ code: '42703', message: 'column "credits_charged" does not exist' })
-    ).toBe(true);
-  });
-
-  it('message 含 schema cache 但无 code → true（兼容 PostgREST 客户端）', () => {
-    expect(isMissingColumnError({ message: 'Could not find column in the schema cache' })).toBe(
-      true
-    );
-  });
-
-  it('null → false（无错误不应降级）', () => {
-    expect(isMissingColumnError(null)).toBe(false);
-  });
-
-  it('其他错误码（如 23505 唯一约束冲突）→ false（不应降级，应抛错）', () => {
-    expect(isMissingColumnError({ code: '23505', message: 'duplicate key' })).toBe(false);
-  });
-
-  it('无关 message → false', () => {
-    expect(isMissingColumnError({ message: 'connection reset' })).toBe(false);
-  });
-});
 
 describe('resolveMessageVoice — 首次生成', () => {
   it('未过期 pending → status=pending，无 audio_url', () => {

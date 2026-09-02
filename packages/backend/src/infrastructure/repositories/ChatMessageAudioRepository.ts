@@ -30,10 +30,6 @@ const PENDING_STALE_MS = config.voice.timeoutMs * MAX_UPSTREAM_CALLS + 60_000;
 
 export type AudioConflictReason = 'already_generating';
 
-export function isMissingColumnError(error: { code?: string; message?: string } | null): boolean {
-  return error?.code === '42703' || error?.message?.includes('schema cache') === true;
-}
-
 export class AudioConflictError extends Error {
   constructor(readonly reason: AudioConflictReason) {
     super('这条回复正在生成语音');
