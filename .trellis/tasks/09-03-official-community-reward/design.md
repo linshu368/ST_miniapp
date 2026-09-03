@@ -46,7 +46,7 @@
 新增 `features/community/`：
 
 - 业务配置（开关、奖励、chat id、链接、备用账号、文案、开始时间）通过 `platform/runtime-config.ts` 读取。
-- Community Bot 凭据通过 `platform/config.ts` 从当前部署 env 读取：`TELEGRAM_COMMUNITY_BOT_TOKEN`、`TELEGRAM_COMMUNITY_WEBHOOK_SECRET`、`TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`。测试与生产使用相同变量名、各自环境值。
+- Community Bot 凭据通过 `platform/config.ts` 从当前部署 env 只读取 `TELEGRAM_COMMUNITY_BOT_TOKEN`。测试与生产使用相同变量名、各自环境值；Webhook `secret_token` 为该 token 的 SHA-256 十六进制摘要，不另设环境变量。
 - Community Bot 专用于 `@MijingAI_Official` 的 `chat_member` Webhook 和 `getChatMember`；不得误用现有 `TELEGRAM_BOT_TOKEN`，后者继续服务 MiniApp 登录验签与主 Bot 既有链路。
 - `CommunityMembershipService` 负责目标群/成员状态过滤、tg id 映射和调用原子 RPC。
 - Telegram client 增加 `getChatMember(chatId,userId)`，设置超时和错误归一化；它只确认当前状态，不直接产生领奖资格。
@@ -126,16 +126,16 @@ Bot API 的 `getChatMember` 不返回加入时间。若活动期新入群事件�
 - `miniapp_official_community_reward_started_at`
 - 可选 JSON 文案配置
 
-测试与生产均使用 `@MijingAI_Official` / `https://t.me/MijingAI_Official`，对应同一个 Telegram 数字 `chat_id`。环境分别维护开关、活动开始时间与 `TELEGRAM_COMMUNITY_*` Secret；测试发奖必须使用测试数据库。
+测试与生产均使用 `@MijingAI_Official` / `https://t.me/MijingAI_Official`，对应同一个 Telegram 数字 `chat_id`。环境分别维护开关、活动开始时间与 `TELEGRAM_COMMUNITY_BOT_TOKEN`；测试发奖必须使用测试数据库。
 
 ### 6.1 Community Bot 环境隔离
 
-- 测试部署：三项 `TELEGRAM_COMMUNITY_*` env 注入测试 Community Bot 的值。
+- 测试部署：`TELEGRAM_COMMUNITY_BOT_TOKEN` 注入测试 Community Bot 的值。
 - 生产部署：同名 env 注入生产 Community Bot 的值。
 - 单个后端进程只读取当前部署环境的一套值，不接受请求参数切换 Bot，也不同时持有测试/生产两套 Community Bot 凭据。
-- 社群 Webhook 使用 `TELEGRAM_COMMUNITY_WEBHOOK_SECRET`；社群内部受信调用如确有需要，使用 `TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`，不得与现有主 Bot Secret 混用。
-- 成员查询与 Community Webhook 统一使用 `TELEGRAM_COMMUNITY_BOT_TOKEN`。启动/健康检查可调用 `getMe`，仅记录非敏感 Bot ID/username。
-- 三项 Secret 不下发前端、不写数据库、不进入日志/Trellis/Git；曾暴露的旧值在环境接入前轮换。
+- 社群 Webhook 的 `secret_token` 使用 `SHA-256(TELEGRAM_COMMUNITY_BOT_TOKEN)` 的小写十六进制结果；部署注册 `setWebhook` 时必须使用同一派生算法。
+- 成员查询与 Community Webhook 统一以 `TELEGRAM_COMMUNITY_BOT_TOKEN` 为唯一密钥来源。启动/健康检查可调用 `getMe`，仅记录非敏感 Bot ID/username。
+- Bot token 与派生 secret 不下发前端、不写数据库、不进入日志/Trellis/Git；曾暴露的旧值在环境接入前轮换。
 
 ## 7. 测试设计
 

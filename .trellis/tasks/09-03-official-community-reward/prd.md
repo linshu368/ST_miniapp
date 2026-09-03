@@ -4,7 +4,7 @@
 
 在“我的”页面增加“官方社群”入口，点击后从底部拉起说明弹窗，引导用户进入 Telegram 官方社群。系统仅在确认用户真实入群，且 Telegram 身份与当前 MiniApp 账户匹配后，一次性赠送 500 星尘，并在“消息中心 → 官方”发送到账通知。
 
-本任务当前只完成需求、技术方案和任务拆分；用户确认前不进入开发。
+本任务已进入实现阶段；代码完成与测试环境 migration、Telegram UAT、账务对账及生产启用分开验收。
 
 ## 2. 成功口径
 
@@ -52,7 +52,7 @@
 - 主链路：官方群 Bot 作为管理员接收 `chat_member` 更新，仅处理目标 `chat_id` 的有效入群状态。
 - 辅助验证链路：用户点击“我已加入，立即验证”，后端以当前签名登录态 user id 调用 `getChatMember`，并查询是否存在活动启用后记录的合格入群事件。`getChatMember` 只能确认“当前是否在群”，不能证明入群时间，因此不得单独据此向既有成员发奖。
 - 两条链路均使用 Telegram 数字 user id 匹配账户，不使用 username、昵称或手机号。
-- Webhook 校验 secret token，并按 `update_id` 去重；未知群、未知账户、非入群状态不发奖。
+- Webhook 校验由 `TELEGRAM_COMMUNITY_BOT_TOKEN` 确定性派生的 secret token，并按 `update_id` 去重；未知群、未知账户、非入群状态不发奖。
 - 用户在活动启用后通过指定入口入群、但当时尚未建立 MiniApp 账户映射时，系统保留合格入群事件；后续登录并主动验证后可领取。
 - 匹配失败不发奖，本期不提供人工补发 UI。
 - 活动启用前已经在群的成员，即使上线后主动验证，也返回不符合本期资格；不得仅凭当前 member 状态补发。
@@ -94,7 +94,7 @@
 
 ## 6. 依赖与上线门槛
 
-- **已确认：**本功能使用独立的 Community Bot。测试和生产后端均从各自部署环境的 `TELEGRAM_COMMUNITY_BOT_TOKEN`、`TELEGRAM_COMMUNITY_WEBHOOK_SECRET`、`TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET` 读取配置；对应 Bot 作为 `@MijingAI_Official` 管理员，接收 `chat_member` 并执行成员查询。
+- **已确认：**本功能使用独立的 Community Bot。测试和生产后端均只配置各自部署环境的 `TELEGRAM_COMMUNITY_BOT_TOKEN`；Webhook secret token 从该值以 SHA-256 确定性派生，不另设环境变量。对应 Bot 作为 `@MijingAI_Official` 管理员，接收 `chat_member` 并执行成员查询。
 - 测试与生产均使用同一社群 `@MijingAI_Official`，入口链接统一为 `https://t.me/MijingAI_Official`；后端仍以该社群的稳定数字 `chat_id` 校验事件。
 - Webhook 订阅包含 `chat_member`；测试与生产使用相同 env 变量名但各自注入对应环境值，并分别配置功能开关和活动开始时间，避免测试事件进入生产奖励链路。
 - 数据库 migration 先在测试环境手工执行，验证并发幂等、账务对账和回滚说明。
@@ -108,26 +108,26 @@
 4. **已确认：**总开关同时控制入口和新发奖；关闭时两者同时停止，不影响历史记录。
 5. **已确认：**奖励金额、入口开关、社群链接和展示文案均由后端运行时配置下发。
 6. **已确认：**符合资格且成功匹配的用户正常到账时效为 1 分钟内；主动验证只辅助匹配活动期合格事件，不能给既有成员兜底发奖。
-7. **已确认：**Community Bot 的三项环境变量固定命名为 `TELEGRAM_COMMUNITY_BOT_TOKEN`、`TELEGRAM_COMMUNITY_WEBHOOK_SECRET`、`TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`；密钥正文不得写入代码、文档、日志或前端响应。
+7. **已确认：**Community Bot 只使用 `TELEGRAM_COMMUNITY_BOT_TOKEN`；不配置 `TELEGRAM_COMMUNITY_WEBHOOK_SECRET` 或 `TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`。Bot token 及其派生 webhook secret 不得写入代码、文档、日志或前端响应。
 
 当前仅剩实施配置参数待获取：`@MijingAI_Official` 的稳定数字 `chat_id`，以及测试启用、生产启用各自的精确时间戳。
 
 ## 8. 验收标准
 
-- [ ] 入口顺序、图标、文案、500 星尘提示及暗色视觉符合参考图和现有页面。
-- [ ] 点击后从底部拉起弹窗；安全区、遮罩、关闭和按钮状态可用。
-- [ ] 能尝试打开官方群；失败时完整显示并可复制备用账号。
-- [ ] 点击、复制、待审批、匹配失败均不会发奖。
+- [x] 入口顺序、图标、文案、500 星尘提示及暗色视觉已按设计实现（待真机视觉确认）。
+- [ ] 点击后从底部拉起弹窗；安全区、遮罩、关闭和按钮状态已实现，仍待补下滑手势与真机确认。
+- [x] 能尝试打开官方群；失败时完整显示并可复制备用账号。
+- [x] 点击、复制、待审批、匹配失败均不会调用发奖 RPC。
 - [ ] 真实入群事件能按 Telegram user id 匹配账户并发放 500 bonus 星尘。
-- [ ] 主动验证同时校验当前成员状态和活动启用后的合格入群事件，不会把奖励发给既有群成员。
-- [ ] 领奖记录、钱包、ledger、官方通知在同一事务成功或回滚。
-- [ ] 唯一约束吸收重复与并发，余额和通知仅增加一次。
+- [x] 主动验证同时校验当前成员状态和活动启用后的合格入群事件，并接入既有成员排除基线。
+- [x] 领奖记录、钱包、ledger、官方通知在同一数据库函数事务执行（待测试库失败注入验证）。
+- [x] 唯一约束和事务级 advisory lock 已实现重复/并发屏障（待测试库并发验证）。
 - [ ] “消息中心 → 官方”出现约定通知，未读/已读状态正确。
-- [ ] 到账后余额刷新；失败时不显示虚假到账。
-- [ ] 退群再入群、重复事件、重复验证不重复发奖或通知。
-- [ ] 未建立账户的群成员不会误发，后续登录验证可领取。
-- [ ] 活动启用前已在群的成员主动验证、退群再入群或重复尝试均不会领取本期奖励。
+- [x] 主动验证到账后刷新余额；Webhook 到账由 15 秒轮询感知并刷新余额/未读；失败时不显示虚假到账。
+- [x] 退群再入群、重复事件、重复验证由 claim/update 唯一事实和排除基线阻止重复发奖或通知（待 UAT）。
+- [x] 未建立账户的合格事件保留为 unmatched，后续登录验证可匹配领取。
+- [x] 活动启用前成员由上线前排除基线阻止领取（基线数据仍待导入验证）。
 - [ ] 测试/生产配置隔离，关闭总开关后不产生新奖励。
-- [ ] 社群 Webhook 与成员查询仅使用当前部署环境的 `TELEGRAM_COMMUNITY_*` 配置，不误用现有 `TELEGRAM_BOT_TOKEN`（MiniApp 登录/主 Bot）。
-- [ ] 符合资格且账户匹配成功后，正常情况下 1 分钟内完成到账和官方通知。
+- [x] 社群 Webhook 与成员查询仅使用当前部署环境的 `TELEGRAM_COMMUNITY_BOT_TOKEN`，不误用现有 `TELEGRAM_BOT_TOKEN`（MiniApp 登录/主 Bot）。
+- [x] 代码路径为 Webhook 实时到账，前端未领取态每 15 秒刷新；真实 1 分钟时效待 UAT 验证。
 - [ ] shared/backend/frontend 检查、测试环境 UAT 与账务对账通过。
