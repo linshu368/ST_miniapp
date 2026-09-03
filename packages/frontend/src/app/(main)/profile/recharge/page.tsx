@@ -3,7 +3,16 @@
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertCircle, ChevronLeft, History, Receipt, ShieldCheck, Sparkles } from 'lucide-react';
+import {
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Gem,
+  History,
+  Receipt,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
 import {
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
@@ -26,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
+import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
@@ -51,6 +61,10 @@ function RechargePageContent() {
 
   const { data, isLoading, isError, refetch } = usePaymentPlansQuery();
   const createOrder = useCreatePaymentOrderMutation();
+  const inviteEntry = useInviteEntryStatusQuery();
+  const inviteEntryEnabled = inviteEntry.data?.entry_enabled === true;
+
+  const goInviteCenter = useCallback(() => router.push('/profile/invite'), [router]);
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
@@ -207,6 +221,28 @@ function RechargePageContent() {
               />
             ))
           )}
+
+          {/* 邀请快捷入口：紧挨着套餐列表，保持相同的 gap-3，并对齐高档套餐卡高度 */}
+          {inviteEntryEnabled ? (
+            <button
+              type="button"
+              onClick={goInviteCenter}
+              className="relative flex h-[86px] w-full items-center gap-3 overflow-hidden rounded-xl border border-[#d946ef] bg-[linear-gradient(135deg,rgba(74,22,87,0.96)_0%,rgba(111,23,84,0.96)_100%)] px-4 text-left shadow-[0_0_22px_rgba(217,70,239,0.28)] transition hover:opacity-80"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-fuchsia-500 to-pink-400 text-primary-foreground shadow-md shadow-[0_4px_12px_rgba(217,70,239,0.45)]">
+                <Gem className="h-5 w-5" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-black text-foreground">
+                  邀请好友得 2200 星尘
+                </span>
+                <span className="mt-0.5 block truncate text-[10px] text-fuchsia-100/80">
+                  分享专属链接，好友首次登录后建立邀请关系
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-primary-foreground" aria-hidden />
+            </button>
+          ) : null}
         </section>
 
         <section className="flex justify-center">
@@ -348,7 +384,7 @@ function RechargePageContent() {
               {data?.insufficient_credits_notice}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
             <DialogClose asChild>
               <Button
                 className="w-full rounded-xl font-bold text-primary-foreground"
@@ -357,6 +393,19 @@ function RechargePageContent() {
                 选择套餐
               </Button>
             </DialogClose>
+            {inviteEntryEnabled ? (
+              <Button
+                variant="outline"
+                className="w-full rounded-xl border-rose/40 bg-transparent font-bold text-rose hover:bg-rose/10 hover:text-rose"
+                onClick={() => {
+                  // PRD：关闭当前提示并直接进入邀请中心
+                  setNoticeDismissed(true);
+                  goInviteCenter();
+                }}
+              >
+                邀请好友得星尘
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>

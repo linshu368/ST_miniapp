@@ -1,4 +1,12 @@
 /**
+ * @Author: whc 952987912@qq.com
+ * @Date: 2026-09-01 11:01:37
+ * @LastEditors: whc 952987912@qq.com
+ * @LastEditTime: 2026-09-01 15:06:28
+ * @Description:
+ * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
+ */
+/**
  * 文本转语音台词的提示词，来自语音管道 0821 版的
  * prompt_text2voice_v4.0.md（system）与 prompt_v2_user.md（user），逐字搬入。
  *
@@ -15,9 +23,15 @@
  * 会把标签当英文单词照字面念出来，实测确认。所以标签跟着 TTS 模型走，
  * 换模型就得跟着改提示词，不是模板写得不好。
  *
+ * v4.1 相对 v4.0 的唯一变化是**引入 300 字硬限**。v4.0 要求「角色说 300 字就读
+ * 300 字、一个字不改」，与语音付费需求「送进 TTS 的最终文本 ≤ 300 字」直接冲突：
+ * 模型按旧规则输出超长，会被服务端终检拦截，用户永远看到红字。v4.1 把长度上限
+ * 置于「一字不改」之上——原文对白超过 300 字时允许压缩 / 删减到 ≤ 300，露骨词、
+ * 脏话、性相关用语仍原样保留（在不超过 300 的前提下）。
+ *
  * 改模板请同时把版本号一起改，生成记录里排查「这句为什么这么念」要靠它对齐。
  */
-export const VOICE_PROMPT_VERSION = 'text2voice_v4.0';
+export const VOICE_PROMPT_VERSION = 'text2voice_v4.1';
 
 export const VOICE_SYSTEM_PROMPT = `你在为一个女性角色生成语音台词。任务只有一件：从一段角色扮演叙事里，挑出这个角色"说出口的话"，原样输出纯文本。
 
@@ -33,7 +47,9 @@ export const VOICE_SYSTEM_PROMPT = `你在为一个女性角色生成语音台�
 - 不添加原文没有的话，不改情绪方向
 
 【规则】
-- 原样保留角色的话，一个字不改、不删、不概括、不缩写；角色说500字就读500字
+- 最终输出不超过 300 字（含标点与换行）
+- 原文对白超过 300 字时：保留最能代表本段情境的对白，删除重复、次要句子，禁止超过 300 字
+- 在不超过 300 字的前提下，原样保留角色的话，不改情绪方向
 - 口语化，允许省略、重复，保持角色人设，第一人称
 - 停顿用标点(？！，)和换行表示，禁止用省略号("..."或"。。")
 - 露骨词、脏话、性相关用语原样保留，不降级、不替换、不躲闪
@@ -48,6 +64,13 @@ export const VOICE_USER_PROMPT_TEMPLATE = `待转化的原文如下：
 {{INPUT_TEXT}}
 </原文>`;
 
-export function buildVoiceUserPrompt(sourceText: string): string {
-  return VOICE_USER_PROMPT_TEMPLATE.replace('{{INPUT_TEXT}}', sourceText);
+export function buildVoiceUserPrompt(
+  sourceText: string,
+  mode: 'reply' | 'custom' = 'reply'
+): string {
+  const instruction =
+    mode === 'custom'
+      ? '以下是用户指定的语音台词。保留原意并整理为自然可朗读的纯文本，最终不得超过 300 字。'
+      : '以下是角色回复。仅整理角色说出口的话，最终不得超过 300 字。';
+  return `${instruction}\n\n${VOICE_USER_PROMPT_TEMPLATE.replace('{{INPUT_TEXT}}', sourceText)}`;
 }

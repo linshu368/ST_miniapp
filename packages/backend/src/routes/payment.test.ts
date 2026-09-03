@@ -6,12 +6,17 @@ import type { RequestLogger } from '../lib/logger.js';
 import type { MiniappPaymentOrderRow } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { PaymentQueryResult } from '../infrastructure/payment/ZqPaymentGateway.js';
 import { insertUserNotification } from '../lib/notifications.js';
+import { checkInviteFirstPaidReward } from '../lib/invite-rewards.js';
 import { handleZqPayWebhook } from './payment.js';
 import { reconcileWithGateway } from '../features/payment/usecases/PaymentSettlement.js';
 import { toPaymentOrder } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 
 vi.mock('../lib/notifications.js', () => ({
   insertUserNotification: vi.fn(async () => undefined),
+}));
+
+vi.mock('../lib/invite-rewards.js', () => ({
+  checkInviteFirstPaidReward: vi.fn(async () => undefined),
 }));
 
 function createReply() {
@@ -131,6 +136,18 @@ describe('handleZqPayWebhook', () => {
     });
   });
 
+  it('runs the invite first-paid reward hook for the credited order', async () => {
+    const orders = createOrders();
+    const { reply } = createReply();
+
+    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
+
+    expect(checkInviteFirstPaidReward).toHaveBeenCalledWith(
+      { userId: '00000000-0000-0000-0000-000000000001', orderId: 'MA-order-1' },
+      expect.anything()
+    );
+  });
+
   it('accepts a callback that carries sign_type=RSA and a fresh timestamp', async () => {
     const orders = createOrders();
     const { reply, state } = createReply();
@@ -161,6 +178,8 @@ describe('handleZqPayWebhook', () => {
     expect(orders.complete).toHaveBeenCalledOnce();
     expect(orders.reopenExpired).not.toHaveBeenCalled();
     expect(insertUserNotification).not.toHaveBeenCalled();
+    // 到账通知不重发，但发奖判定要重跑：判定自带幂等，重放是上一次失败判定唯一的重试机会。
+    expect(checkInviteFirstPaidReward).toHaveBeenCalledOnce();
     expect(state.body).toBe('success');
   });
 
