@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"核查交互、数据层、bridge、视觉和前端测试"}
+{"file":".trellis/spec/backend/app/index.md","reason":"核查合同、鉴权、日志、配置和后端测试"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"核查公开 DTO 一致性及消费者编译"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"核查 migration 幂等、锁、权限、test-first 与回滚"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核查跨层数据流和失败边界"}

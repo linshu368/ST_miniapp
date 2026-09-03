@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"我的页面、React Query、Sheet 与 Telegram bridge 前端规范"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Fastify 路由、runtime config、日志和 shared-first 规范"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"跨前后端 API 合同必须先在 shared 定义"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"原子奖励 migration、schema、幂等与手工发布规范"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"功能跨 frontend/backend/shared/database/Telegram"}
