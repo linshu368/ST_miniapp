@@ -6,11 +6,11 @@
 
 1. 前端获取官方群配置和当前账户领取状态。
 2. 用户从“我的”页打开底部 Sheet，再由同步点击调用 Telegram SDK 打开群链接。
-3. Bot 管理员接收 `chat_member` 更新并记录活动启用后的合格新入群事实；用户返回 MiniApp 点击验证时，后端调用 `getChatMember`，同时查询该合格事件。
+3. Bot 管理员接收 `chat_member` 更新并记录活动启用后的新入群事实；用户返回 MiniApp 点击验证时，后端调用 `getChatMember` 并查询该合格事件。
 4. 后端只接受目标群、有效成员状态和可映射的 Telegram user id。
 5. 数据库 RPC 以 `(user_id, community_chat_id)` 唯一键，在同一事务写领奖事实、bonus 钱包、wallet ledger 和官方定向通知。
 
-外链打开结果不是入群结果；`getChatMember` 也不提供加入时间，不能单独区分既有成员。身份只用 Telegram 数字 user id；新成员资格来自活动启用后的 Telegram 事件，发奖幂等由数据库唯一约束和事务保证。
+外链打开结果不是入群结果；`getChatMember` 不提供加入时间，不能单独区分既有成员。身份只用 Telegram 数字 user id；新成员资格来自活动启用后的 Telegram 事件，发奖幂等由数据库唯一约束和事务保证。
 
 ## 2. 现有能力与复用点
 
@@ -45,9 +45,11 @@
 
 新增 `features/community/`：
 
-- 通过 `platform/runtime-config.ts` 读取开关、奖励、chat id、链接、备用账号；Bot token/secret 不下发前端。
+- 业务配置（开关、奖励、chat id、链接、备用账号、文案、开始时间）通过 `platform/runtime-config.ts` 读取。
+- Community Bot 密钥通过 `platform/config.ts` 从 env 读取：`TELEGRAM_COMMUNITY_BOT_TOKEN`、`TELEGRAM_COMMUNITY_WEBHOOK_SECRET`、`TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`。测试与生产使用同名变量、各自环境值。
+- Community Bot 专用于 `@MijingAI_Official` 的 `chat_member` Webhook 和 `getChatMember`；不得误用现有 `TELEGRAM_BOT_TOKEN`，后者继续服务 MiniApp initData 验签、主 Bot 和既有链路。
 - `CommunityMembershipService` 负责目标群/成员状态过滤、tg id 映射和调用原子 RPC。
-- Telegram client 增加 `getChatMember(chatId,userId)`，设置超时和错误归一化；该接口只确认当前状态，不直接生成领奖资格。
+- Telegram client 增加 `getChatMember(chatId,userId)`，设置超时和错误归一化；它只确认当前状态，不直接产生领奖资格。
 - 新增 `GET /api/community/entry` 与 `POST /api/community/verify-membership`，均使用 `requireTelegramAuth` 并带 `@frontend-ready` 注释。
 - 扩展 `/api/telegram/webhook` 解析 `update_id/chat_member`，不得重写或简化现有 message 逻辑。
 - Webhook 对从未登录 MiniApp 的活动期新成员记录待匹配合格事件，不盲目创建奖励账户；后续登录可主动验证并匹配。
@@ -72,7 +74,7 @@
 
 建议独立 `telegram_update_receipts(update_id primary key, update_type, telegram_user_id, community_chat_id, old_status, new_status, occurred_at, received_at, processed_at, result)`，既避免重放，也保留活动启用后“新入群”的资格事实。
 
-运行时配置增加 `miniapp_official_community_reward_started_at`。只有 Telegram 事件时间不早于该时间、目标群匹配、状态由非成员迁移为有效成员时，才生成合格事件。主动 `getChatMember` 不得绕过这一事实。
+配置增加 `miniapp_official_community_reward_started_at`。只有事件时间不早于该时间、目标群匹配、成员状态由非成员迁移为有效成员时，才生成合格事件。主动 `getChatMember` 不得绕过这一事实。
 
 #### `grant_community_join_reward` RPC
 
@@ -97,13 +99,13 @@
 
 ### Webhook 实时发奖
 
-`Telegram chat_member → secret/update_id 校验 → chat_id/活动开始时间/状态迁移过滤 → 记录合格事件 → tg_id 查 App 用户 → RPC → 到账+通知`
+`Telegram chat_member → secret/update_id 校验 → chat_id/活动时间/状态迁移过滤 → 合格事件 → tg_id 查 App 用户 → RPC → 到账+通知`
 
 ### 主动补偿
 
-`POST verify（X-Init-Data） → 当前 tg id → Telegram getChatMember + 合格事件查询 → 两者均通过 → RPC → rewarded/already_rewarded`
+`POST verify（X-Init-Data） → 当前 tg id → getChatMember + 合格事件查询 → 两者通过 → RPC → rewarded/already_rewarded`
 
-因为 Bot API 的 `getChatMember` 不返回加入时间，若活动期新入群的 `chat_member` 事件完全丢失，则系统无法在“不误发给既有成员”的前提下仅靠主动查询自动补发。Webhook 应返回可重试状态并保留 update 去重/失败日志；漏事件个案进入后续人工核查范围，本期不提供用户侧人工补发入口。
+Bot API 的 `getChatMember` 不返回加入时间。若活动期新入群事件完全丢失，就无法在“不误发给既有成员”的前提下仅靠主动查询自动补发；因此 Webhook 需返回可重试状态并保留失败日志，个案进入后续人工核查，本期不提供用户侧补发入口。
 
 ## 5. 安全、可靠性与日志
 
@@ -124,7 +126,16 @@
 - `miniapp_official_community_reward_started_at`
 - 可选 JSON 文案配置
 
-Bot token 和 webhook secret 继续使用服务端机密。若配置需运营管理，加入 managed-config 白名单及完整校验链路。
+测试与生产均使用 `@MijingAI_Official` / `https://t.me/MijingAI_Official`，对应同一个 Telegram 数字 `chat_id`。环境分别维护开关、活动开始时间与 `TELEGRAM_COMMUNITY_*` Secret；测试发奖必须使用测试数据库。
+
+### 6.1 Community Bot 环境隔离
+
+- 测试部署：三项 `TELEGRAM_COMMUNITY_*` env 注入测试 Community Bot 的值。
+- 生产部署：同名 env 注入生产 Community Bot 的值。
+- 单个后端进程只读取当前部署环境的一套值，不接受请求参数切换 Bot，也不同时持有测试/生产两套 Community Bot 凭据。
+- 社群 Webhook 使用 `TELEGRAM_COMMUNITY_WEBHOOK_SECRET` 校验；社群内部受信调用如确有需要，使用 `TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`，不得与现有 `BOT_INTERNAL_SECRET` 混用。
+- 成员查询与 Community Webhook 统一使用 `TELEGRAM_COMMUNITY_BOT_TOKEN`。启动/健康检查可调用 `getMe`，仅记录非敏感 Bot ID/username 便于环境核对。
+- 三项 Secret 不下发前端、不写数据库、不进入日志/Trellis/Git；已暴露值必须先轮换。
 
 ## 7. 测试设计
 
@@ -133,12 +144,12 @@ Bot token 和 webhook secret 继续使用服务端机密。若配置需运营管
 - Backend：成员状态映射、目标群过滤、关闭配置、未知用户、Telegram 超时、RPC 状态映射。
 - Webhook：secret 错误、非目标群、重复 update、member/admin/creator、left/kicked/restricted/pending。
 - DB：首次、顺序重放、并发、不同群/用户、失败回滚、claim/wallet/ledger/notification 四方对账。
-- UAT：真实测试群加入、申请待审批、审批后到账、待匹配事件后续验证、退群再入群、既有成员拒绝、跳转失败复制。
+- UAT：真实社群新入群、申请待审批、审批后到账、待匹配事件后续验证、退群再入群、既有成员拒绝、跳转失败复制。
 
 ## 8. 发布与回滚
 
 1. 先部署 migration 和后端，入口开关关闭。
-2. 测试群配置 Bot 管理员、allowed updates、chat id 与链接。
+2. 将两环境 `TELEGRAM_COMMUNITY_BOT_TOKEN` 对应的 Bot 加入 `@MijingAI_Official` 并授予管理员权限；分别注册到对应环境的 Community Webhook，allowed updates 包含 `chat_member`，读取并核实数字 chat id。
 3. 完成自动化、测试环境 UAT 和账务对账。
 4. 部署前端，生产仍关闭。
 5. 经年确认后启用，观察 granted/duplicated/unmatched/failed。
@@ -150,6 +161,6 @@ Bot token 和 webhook secret 继续使用服务端机密。若配置需运营管
 - 不采用“打开群即发奖”：无法证明入群且易作弊。
 - 不只依赖 Webhook 自动匹配：事件可先落为待匹配事实，再由用户登录后的主动验证完成账户匹配。
 - 不只依赖主动验证：实时体验差且用户未必返回。
-- 不把 `getChatMember` 当作漏事件的无条件补偿：它没有加入时间，会误发给活动前既有成员。
+- 不把 `getChatMember` 当作无条件漏事件补偿：它没有加入时间，会误发给活动前既有成员。
 - 不复用 `insertUserNotification`：固定 personal 且与钱包非同事务。
 - 不直接复用运营赠送 RPC：其幂等语义不是账户+社群。
