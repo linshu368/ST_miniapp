@@ -3,7 +3,7 @@
   "name": "official-community-reward",
   "title": "我的页面官方社群入口与入群奖励",
   "description": "规划我的页面官方社群入口、底部弹窗、真实入群账户匹配、一次性500星尘奖励及官方到账通知；本阶段仅产出需求与设计，不开发。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "backend",

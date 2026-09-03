@@ -46,8 +46,8 @@
 新增 `features/community/`：
 
 - 业务配置（开关、奖励、chat id、链接、备用账号、文案、开始时间）通过 `platform/runtime-config.ts` 读取。
-- Community Bot 密钥通过 `platform/config.ts` 从 env 读取：`TELEGRAM_COMMUNITY_BOT_TOKEN`、`TELEGRAM_COMMUNITY_WEBHOOK_SECRET`、`TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`。测试与生产使用同名变量、各自环境值。
-- Community Bot 专用于 `@MijingAI_Official` 的 `chat_member` Webhook 和 `getChatMember`；不得误用现有 `TELEGRAM_BOT_TOKEN`，后者继续服务 MiniApp initData 验签、主 Bot 和既有链路。
+- Community Bot 凭据通过 `platform/config.ts` 从当前部署 env 读取：`TELEGRAM_COMMUNITY_BOT_TOKEN`、`TELEGRAM_COMMUNITY_WEBHOOK_SECRET`、`TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`。测试与生产使用相同变量名、各自环境值。
+- Community Bot 专用于 `@MijingAI_Official` 的 `chat_member` Webhook 和 `getChatMember`；不得误用现有 `TELEGRAM_BOT_TOKEN`，后者继续服务 MiniApp 登录验签与主 Bot 既有链路。
 - `CommunityMembershipService` 负责目标群/成员状态过滤、tg id 映射和调用原子 RPC。
 - Telegram client 增加 `getChatMember(chatId,userId)`，设置超时和错误归一化；它只确认当前状态，不直接产生领奖资格。
 - 新增 `GET /api/community/entry` 与 `POST /api/community/verify-membership`，均使用 `requireTelegramAuth` 并带 `@frontend-ready` 注释。
@@ -133,9 +133,9 @@ Bot API 的 `getChatMember` 不返回加入时间。若活动期新入群事件�
 - 测试部署：三项 `TELEGRAM_COMMUNITY_*` env 注入测试 Community Bot 的值。
 - 生产部署：同名 env 注入生产 Community Bot 的值。
 - 单个后端进程只读取当前部署环境的一套值，不接受请求参数切换 Bot，也不同时持有测试/生产两套 Community Bot 凭据。
-- 社群 Webhook 使用 `TELEGRAM_COMMUNITY_WEBHOOK_SECRET` 校验；社群内部受信调用如确有需要，使用 `TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`，不得与现有 `BOT_INTERNAL_SECRET` 混用。
-- 成员查询与 Community Webhook 统一使用 `TELEGRAM_COMMUNITY_BOT_TOKEN`。启动/健康检查可调用 `getMe`，仅记录非敏感 Bot ID/username 便于环境核对。
-- 三项 Secret 不下发前端、不写数据库、不进入日志/Trellis/Git；已暴露值必须先轮换。
+- 社群 Webhook 使用 `TELEGRAM_COMMUNITY_WEBHOOK_SECRET`；社群内部受信调用如确有需要，使用 `TELEGRAM_COMMUNITY_BOT_INTERNAL_SECRET`，不得与现有主 Bot Secret 混用。
+- 成员查询与 Community Webhook 统一使用 `TELEGRAM_COMMUNITY_BOT_TOKEN`。启动/健康检查可调用 `getMe`，仅记录非敏感 Bot ID/username。
+- 三项 Secret 不下发前端、不写数据库、不进入日志/Trellis/Git；曾暴露的旧值在环境接入前轮换。
 
 ## 7. 测试设计
 
@@ -149,7 +149,7 @@ Bot API 的 `getChatMember` 不返回加入时间。若活动期新入群事件�
 ## 8. 发布与回滚
 
 1. 先部署 migration 和后端，入口开关关闭。
-2. 将两环境 `TELEGRAM_COMMUNITY_BOT_TOKEN` 对应的 Bot 加入 `@MijingAI_Official` 并授予管理员权限；分别注册到对应环境的 Community Webhook，allowed updates 包含 `chat_member`，读取并核实数字 chat id。
+2. 将两环境 `TELEGRAM_COMMUNITY_BOT_TOKEN` 对应的 Bot 加入 `@MijingAI_Official` 并授予管理员权限；分别注册对应 Community Webhook，allowed updates 包含 `chat_member`，读取并核实数字 chat id。
 3. 完成自动化、测试环境 UAT 和账务对账。
 4. 部署前端，生产仍关闭。
 5. 经年确认后启用，观察 granted/duplicated/unmatched/failed。
