@@ -14,6 +14,7 @@ export * from './api/wishes';
 export * from './api/cs-platform';
 export * from './api/growth';
 export * from './api/invite';
+export * from './api/community';
 export * from './api/models';
 export * from './api/notifications';
 export * from './api/support';

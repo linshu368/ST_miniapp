@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { openExternalUrl, openPaymentUrl } from './hooks';
+import { openExternalUrl, openPaymentUrl, openTelegramCommunity } from './hooks';
 
 const openLink = vi.fn();
 const isAvailable = vi.fn(() => true);
+const openTelegramLink = vi.fn();
+const telegramLinkAvailable = vi.fn(() => true);
 
 vi.mock('@telegram-apps/sdk-react', () => ({
   backButton: {
@@ -16,6 +18,9 @@ vi.mock('@telegram-apps/sdk-react', () => ({
   hapticFeedback: {},
   isTMA: () => true,
   openLink: Object.assign((url: string) => openLink(url), { isAvailable: () => isAvailable() }),
+  openTelegramLink: Object.assign((url: string) => openTelegramLink(url), {
+    isAvailable: () => telegramLinkAvailable(),
+  }),
 }));
 
 /** 刻意不挂 window.Telegram：本项目从不引入 telegram-web-app.js，
@@ -29,6 +34,22 @@ function stubWindow() {
 beforeEach(() => {
   vi.clearAllMocks();
   isAvailable.mockReturnValue(true);
+  telegramLinkAvailable.mockReturnValue(true);
+});
+
+describe('openTelegramCommunity', () => {
+  it('uses Telegram native link bridge synchronously', () => {
+    stubWindow();
+    expect(openTelegramCommunity('https://t.me/MijingAI_Official')).toBe(true);
+    expect(openTelegramLink).toHaveBeenCalledWith('https://t.me/MijingAI_Official');
+  });
+
+  it('returns false without navigating when the native bridge is unavailable', () => {
+    telegramLinkAvailable.mockReturnValue(false);
+    const { assign } = stubWindow();
+    expect(openTelegramCommunity('https://t.me/MijingAI_Official')).toBe(false);
+    expect(assign).not.toHaveBeenCalled();
+  });
 });
 
 afterEach(() => {

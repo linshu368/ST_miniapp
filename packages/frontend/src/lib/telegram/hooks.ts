@@ -5,7 +5,13 @@
 // 原因：未来迁移独立 web 时只需替换此文件，业务代码不动。
 
 import { useCallback, useEffect } from 'react';
-import { backButton, hapticFeedback, isTMA, openLink } from '@telegram-apps/sdk-react';
+import {
+  backButton,
+  hapticFeedback,
+  isTMA,
+  openLink,
+  openTelegramLink,
+} from '@telegram-apps/sdk-react';
 
 export {
   useSignal,
@@ -118,6 +124,18 @@ export function openExternalUrl(url: string): void {
   }
 
   window.location.assign(url);
+}
+
+/** 在 Telegram 内打开 t.me 链接；失败时不离开 MiniApp，由调用方展示复制兜底。 */
+export function openTelegramCommunity(url: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (!openTelegramLink.isAvailable()) return false;
+    openTelegramLink(url);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function openPaymentUrl(url: string): void {
