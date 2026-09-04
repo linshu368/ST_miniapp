@@ -155,7 +155,11 @@ export default async function communityRoutes(app: FastifyInstance) {
     const telegramUserId = event?.new_chat_member?.user?.id;
     const chatId = event?.chat?.id;
     const occurredAt = event?.date ? new Date(event.date * 1000) : null;
-    if (!Number.isSafeInteger(update.update_id) || !telegramUserId || !chatId || !occurredAt)
+    if (
+      !isValidTelegramUpdateIdentity(update.update_id, telegramUserId, chatId) ||
+      !occurredAt ||
+      Number.isNaN(occurredAt.getTime())
+    )
       return reply.send(ok({ ignored: true }));
     const community = await readOfficialCommunityConfig();
     const oldStatus = event?.old_chat_member?.status ?? 'unknown';
@@ -184,49 +188,35 @@ export default async function communityRoutes(app: FastifyInstance) {
     const finalEligible = eligible && !exclusion.data;
     const receipt = await getDomainDb('miniapp_features')
       .from('telegram_community_update_receipts')
-      .upsert(
-        {
-          update_id: update.update_id,
-          community_chat_id: String(chatId),
-          telegram_user_id: String(telegramUserId),
-          old_status: oldStatus,
-          new_status: newStatus,
-          occurred_at: occurredAt.toISOString(),
-          eligible: finalEligible,
-          result: finalEligible ? 'eligible' : 'ignored',
-        },
-        { onConflict: 'update_id', ignoreDuplicates: true }
-      )
+      .insert({
+        update_id: update.update_id,
+        community_chat_id: String(chatId),
+        telegram_user_id: String(telegramUserId),
+        old_status: oldStatus,
+        new_status: newStatus,
+        occurred_at: occurredAt.toISOString(),
+        eligible: finalEligible,
+        result: finalEligible ? 'eligible' : 'ignored',
+      })
       .select('update_id')
-      .maybeSingle();
+      .single();
     if (receipt.error) {
+      // update_id 的主键插入权就是处理权；重投不能再次进入发奖及其前置副作用。
+      if (isUniqueViolation(receipt.error))
+        return reply.send(ok({ ignored: true, duplicate: true }));
       request.log.error({ err: receipt.error }, '[community] receipt failed');
       return reply.status(500).send(fail('INTERNAL', 'Webhook processing failed'));
     }
     if (!finalEligible) return reply.send(ok({ ignored: true }));
-    let receiptId = receipt.data?.update_id;
-    if (!receiptId) {
-      const existing = await getDomainDb('miniapp_features')
-        .from('telegram_community_update_receipts')
-        .select('update_id,result')
-        .eq('update_id', update.update_id!)
-        .maybeSingle();
-      if (existing.error) {
-        request.log.error({ err: existing.error }, '[community] replay receipt query failed');
-        return reply.status(500).send(fail('INTERNAL', 'Webhook processing failed'));
-      }
-      if (!existing.data || !['eligible', 'failed'].includes(existing.data.result))
-        return reply.send(ok({ ignored: true, duplicate: true }));
-      receiptId = existing.data.update_id;
-    }
+    const receiptId = receipt.data.update_id;
     const user = await getDomainDb('app_core')
       .from('users')
       .select('id')
       .eq('tg_id', String(telegramUserId))
       .maybeSingle();
     if (user.error) {
-      request.log.error({ err: user.error }, '[community] user lookup failed');
-      return reply.status(500).send(fail('INTERNAL', 'Webhook processing failed'));
+      await markReceiptFailed(receiptId, request.log, user.error);
+      return reply.send(ok({ ignored: false, matched: false, status: 'failed' }));
     }
     if (!user.data) {
       const unmatched = await getDomainDb('miniapp_features')
@@ -234,36 +224,73 @@ export default async function communityRoutes(app: FastifyInstance) {
         .update({ result: 'unmatched' })
         .eq('update_id', receiptId);
       if (unmatched.error) {
-        request.log.error({ err: unmatched.error }, '[community] unmatched receipt update failed');
-        return reply.status(500).send(fail('INTERNAL', 'Webhook processing failed'));
+        request.log.error(
+          { err: unmatched.error, updateId: receiptId },
+          '[community] unmatched receipt update failed'
+        );
+        return reply.send(ok({ ignored: false, matched: false, status: 'failed' }));
       }
       return reply.send(ok({ ignored: false, matched: false }));
     }
+    let result: VerifyCommunityMembershipData;
     try {
-      const result = await grant(
+      result = await grant(
         user.data.id,
         String(telegramUserId),
         community.chatId,
         community.rewardCredits,
         receiptId
       );
-      const processed = await getDomainDb('miniapp_features')
-        .from('telegram_community_update_receipts')
-        .update({ result: result.status, processed_at: new Date().toISOString() })
-        .eq('update_id', receiptId);
-      if (processed.error) throw processed.error;
-      return reply.send(ok({ ignored: false, matched: true, status: result.status }));
     } catch (err) {
-      const failed = await getDomainDb('miniapp_features')
-        .from('telegram_community_update_receipts')
-        .update({ result: 'failed' })
-        .eq('update_id', receiptId);
-      if (failed.error)
-        request.log.error({ err: failed.error }, '[community] failed receipt update failed');
-      request.log.error({ err }, '[community] reward failed');
-      return reply.status(500).send(fail('INTERNAL', 'Webhook reward failed'));
+      await markReceiptFailed(receiptId, request.log, err);
+      // 收据保留失败事实，交由人工补偿；返回 2xx 防止 Telegram 持续重投打库。
+      return reply.send(ok({ ignored: false, matched: true, status: 'failed' }));
     }
+    const processed = await getDomainDb('miniapp_features')
+      .from('telegram_community_update_receipts')
+      .update({ result: result.status, processed_at: new Date().toISOString() })
+      .eq('update_id', receiptId);
+    if (processed.error) {
+      // RPC 已提交时绝不能把收据改写为 failed；记录 update_id 供对账修复。
+      request.log.error(
+        { err: processed.error, updateId: receiptId },
+        '[community] rewarded receipt update failed'
+      );
+    }
+    return reply.send(ok({ ignored: false, matched: true, status: result.status }));
   });
+}
+
+export function isValidTelegramUpdateIdentity(
+  updateId: number | undefined,
+  telegramUserId: number | undefined,
+  chatId: number | undefined
+): boolean {
+  return (
+    Number.isSafeInteger(updateId) &&
+    Number.isSafeInteger(telegramUserId) &&
+    Number.isSafeInteger(chatId) &&
+    telegramUserId! > 0 &&
+    chatId !== 0
+  );
+}
+
+export function isUniqueViolation(error: { code?: string }): boolean {
+  return error.code === '23505';
+}
+
+async function markReceiptFailed(
+  updateId: number,
+  log: { error: (bindings: { err: unknown; updateId?: number }, message: string) => void },
+  err: unknown
+): Promise<void> {
+  const failed = await getDomainDb('miniapp_features')
+    .from('telegram_community_update_receipts')
+    .update({ result: 'failed', processed_at: new Date().toISOString() })
+    .eq('update_id', updateId);
+  if (failed.error)
+    log.error({ err: failed.error, updateId }, '[community] failed receipt update failed');
+  log.error({ err, updateId }, '[community] reward failed');
 }
 
 async function grant(

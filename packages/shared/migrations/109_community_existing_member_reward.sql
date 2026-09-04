@@ -1,5 +1,6 @@
 -- 109: 允许活动上线前的官方群既有成员经实时成员校验后手动领取一次性奖励。
 -- 手工执行：必须先在 test 验证既有成员手动路径和新成员 webhook 自动路径，再执行 production。
+-- 下方 CREATE OR REPLACE 完整替换迁移 108 定义的 grant_community_join_reward。
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';

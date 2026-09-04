@@ -2,7 +2,7 @@
  * @Author: whc 952987912@qq.com
  * @Date: 2026-09-04 09:17:52
  * @LastEditors: whc 952987912@qq.com
- * @LastEditTime: 2026-09-04 09:40:10
+ * @LastEditTime: 2026-09-04 10:20:03
  * @Description:
  * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
  */
@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest';
 import {
   deriveCommunityWebhookSecret,
   isEligibleJoinTransition,
+  isUniqueViolation,
+  isValidTelegramUpdateIdentity,
   resolveCommunityClaimStatus,
   secretMatches,
 } from './community.js';
@@ -36,6 +38,21 @@ describe('community webhook guards', () => {
     expect(secretMatches('secret-x', 'secret')).toBe(false);
     expect(secretMatches(undefined, 'secret')).toBe(false);
     expect(secretMatches('', '')).toBe(false);
+  });
+
+  it('treats only PostgreSQL unique violations as duplicate receipt claims', () => {
+    expect(isUniqueViolation({ code: '23505' })).toBe(true);
+    expect(isUniqueViolation({ code: '42P01' })).toBe(false);
+    expect(isUniqueViolation({})).toBe(false);
+  });
+
+  it('rejects malformed Telegram update identities before persistence', () => {
+    expect(isValidTelegramUpdateIdentity(1, 2, -100123)).toBe(true);
+    expect(isValidTelegramUpdateIdentity(undefined, 2, -100123)).toBe(false);
+    expect(isValidTelegramUpdateIdentity(1, Number.NaN, -100123)).toBe(false);
+    expect(isValidTelegramUpdateIdentity(1, 0, -100123)).toBe(false);
+    expect(isValidTelegramUpdateIdentity(1, 2, Number.POSITIVE_INFINITY)).toBe(false);
+    expect(isValidTelegramUpdateIdentity(1, 2, 0)).toBe(false);
   });
 
   it('derives a Telegram-compatible webhook secret from the only Community Bot setting', () => {
