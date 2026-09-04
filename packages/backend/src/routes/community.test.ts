@@ -1,7 +1,16 @@
+/**
+ * @Author: whc 952987912@qq.com
+ * @Date: 2026-09-04 09:17:52
+ * @LastEditors: whc 952987912@qq.com
+ * @LastEditTime: 2026-09-04 09:40:10
+ * @Description:
+ * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
+ */
 import { describe, expect, it } from 'vitest';
 import {
   deriveCommunityWebhookSecret,
   isEligibleJoinTransition,
+  resolveCommunityClaimStatus,
   secretMatches,
 } from './community.js';
 
@@ -16,6 +25,12 @@ const base = {
 };
 
 describe('community webhook guards', () => {
+  it('distinguishes existing members from users waiting for automatic rewards', () => {
+    expect(resolveCommunityClaimStatus(true, true)).toBe('rewarded');
+    expect(resolveCommunityClaimStatus(false, true)).toBe('existing_member');
+    expect(resolveCommunityClaimStatus(false, false)).toBe('unclaimed');
+  });
+
   it('requires an exact non-empty webhook secret', () => {
     expect(secretMatches('secret', 'secret')).toBe(true);
     expect(secretMatches('secret-x', 'secret')).toBe(false);
