@@ -76,7 +76,7 @@ export function CommunitySheet({
         ) : null}
         <div className="mt-5 grid gap-2.5">
           <Button
-            disabled={rewarded || ineligible}
+            // disabled={ineligible}
             onClick={() => {
               setOpenFailed(!openTelegramCommunity(community.telegram_url));
             }}
