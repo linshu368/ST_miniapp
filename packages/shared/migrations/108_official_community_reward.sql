@@ -209,11 +209,11 @@ GRANT EXECUTE ON FUNCTION miniapp_features.grant_community_join_reward(UUID,TEXT
 
 INSERT INTO app_core.runtime_config (key, value, description, version, updated_at, text_value) VALUES
   ('miniapp_official_community_enabled', 'false'::jsonb, '官方社群入口与新发奖总开关', 1, now(), NULL),
-  ('miniapp_official_community_chat_id', '"@join_bonus_bot"'::jsonb, 'Telegram 稳定数字 chat_id', 1, now(), NULL),
+  ('miniapp_official_community_chat_id', '"-1003644202312"'::jsonb, 'Telegram 稳定数字 chat_id', 1, now(), NULL),
   ('miniapp_official_community_url', '"https://t.me/MijingAI_Official"'::jsonb, '官方群公开链接', 1, now(), NULL),
   ('miniapp_official_community_fallback_handle', '"@MijingAI_Official"'::jsonb, '跳转失败备用账号', 1, now(), NULL),
   ('miniapp_official_community_reward_credits', '500'::jsonb, '新成员一次性 bonus 星尘', 1, now(), NULL),
-  ('miniapp_official_community_reward_started_at', '""'::jsonb, '活动启用 ISO 时间', 1, now(), NULL),
+  ('miniapp_official_community_reward_started_at', '"2026-09-03T08:11:57.147Z"'::jsonb, '活动启用 ISO 时间', 1, now(), NULL),
   ('miniapp_official_community_copy', '{"title":"加入官方社群","description":"即将为你打开官方纸飞机社群。系统确认已实际入群并完成账户 ID 匹配后，将自动发放 500 星尘。"}'::jsonb, '社群入口展示文案', 1, now(), NULL)
 ON CONFLICT (key) DO NOTHING;
 
