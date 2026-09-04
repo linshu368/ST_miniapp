@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Copy, ExternalLink, Loader2, Send } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Loader2, Send } from 'lucide-react';
 import type { CommunityEntryData } from '@miniapp/shared';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -18,8 +18,6 @@ export function CommunitySheet({
   community: CommunityEntryData;
 }) {
   const verify = useVerifyCommunityMembershipMutation();
-  // const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
   const [openFailed, setOpenFailed] = useState(false);
   const status = verify.data?.status;
   const rewarded =
@@ -41,19 +39,8 @@ export function CommunitySheet({
   useEffect(() => {
     if (!open) {
       setOpenFailed(false);
-      setCopyFailed(false);
     }
   }, [open]);
-  // const copyHandle = async () => {
-  //   try {
-  //     await navigator.clipboard.writeText(community.fallback_handle);
-  //     setCopyFailed(false);
-  //     setCopied(true);
-  //     window.setTimeout(() => setCopied(false), 1500);
-  //   } catch {
-  //     setCopyFailed(true);
-  //   }
-  // };
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -70,10 +57,6 @@ export function CommunitySheet({
             <SheetDescription className="mt-1 text-sm">{community.description}</SheetDescription>
           </div>
         </div>
-        {/* <div className="mt-5 rounded-2xl border border-primary/20 bg-primary/10 p-4 text-sm text-foreground">
-          真实加入后可领取 <strong>{community.reward_credits} 星尘</strong>
-          。活动上线前已在群的成员不参与本期奖励。
-        </div> */}
         {rewarded ? (
           <div className="mt-4 flex items-center gap-2 rounded-2xl bg-emerald-500/10 p-4 text-sm font-bold text-emerald-400">
             <CheckCircle2 className="h-5 w-5" />
@@ -83,11 +66,6 @@ export function CommunitySheet({
         {message ? (
           <p role="status" className="mt-4 text-center text-sm text-muted-foreground">
             {message}
-          </p>
-        ) : null}
-        {copyFailed ? (
-          <p role="alert" className="mt-3 text-center text-sm text-destructive">
-            复制失败，请手动搜索 {community.fallback_handle}
           </p>
         ) : null}
         {openFailed ? (
@@ -118,16 +96,6 @@ export function CommunitySheet({
               {verify.isPending ? '正在验证' : '我已加入，立即验证'}
             </Button>
           ) : null}
-          {/* {openFailed ? (
-            <Button
-              variant="ghost"
-              onClick={() => void copyHandle()}
-              className="h-10 text-muted-foreground"
-            >
-              <Copy className="mr-2 h-4 w-4" />
-              {copied ? '已复制' : `复制 ${community.fallback_handle}`}
-            </Button>
-          ) : null} */}
         </div>
       </SheetContent>
     </Sheet>
