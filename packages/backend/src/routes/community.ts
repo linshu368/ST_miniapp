@@ -70,7 +70,7 @@ export default async function communityRoutes(app: FastifyInstance) {
         reward_credits: community.rewardCredits,
         telegram_url: community.url,
         fallback_handle: community.handle,
-        claim_status: claim.data ? 'rewarded' : exclusion.data ? 'ineligible' : 'unclaimed',
+        claim_status: resolveCommunityClaimStatus(Boolean(claim.data), Boolean(exclusion.data)),
         rewarded_at: claim.data?.granted_at ?? null,
       })
     );
@@ -108,17 +108,14 @@ export default async function communityRoutes(app: FastifyInstance) {
               rewarded_at: null,
             })
           );
-        const eligible = await getDomainDb('miniapp_features')
-          .from('telegram_community_update_receipts')
-          .select('update_id')
+        const existingMember = await getDomainDb('miniapp_features')
+          .from('community_reward_exclusions')
+          .select('telegram_user_id')
           .eq('community_chat_id', community.chatId)
           .eq('telegram_user_id', String(request.user.id))
-          .eq('eligible', true)
-          .order('occurred_at', { ascending: false })
-          .limit(1)
           .maybeSingle();
-        if (eligible.error) throw eligible.error;
-        if (!eligible.data)
+        if (existingMember.error) throw existingMember.error;
+        if (!existingMember.data)
           return reply.send(
             ok<VerifyCommunityMembershipData>({
               status: 'ineligible',
@@ -133,7 +130,7 @@ export default async function communityRoutes(app: FastifyInstance) {
               String(request.user.id),
               community.chatId,
               community.rewardCredits,
-              eligible.data.update_id
+              null
             )
           )
         );
@@ -274,7 +271,7 @@ async function grant(
   telegramUserId: string,
   chatId: string,
   credits: number,
-  updateId: number
+  updateId: number | null
 ): Promise<VerifyCommunityMembershipData> {
   const { data, error } = await getDomainDb('miniapp_features').rpc('grant_community_join_reward', {
     p_user_id: userId,
@@ -287,6 +284,14 @@ async function grant(
   const row = (data as GrantRow[] | null)?.[0];
   if (!row) throw new Error('community reward RPC returned no row');
   return { status: row.status, reward_credits: row.credits, rewarded_at: row.granted_at };
+}
+
+export function resolveCommunityClaimStatus(
+  hasClaim: boolean,
+  isExistingMember: boolean
+): CommunityEntryData['claim_status'] {
+  if (hasClaim) return 'rewarded';
+  return isExistingMember ? 'existing_member' : 'unclaimed';
 }
 
 export function secretMatches(provided: unknown, expected: string): boolean {

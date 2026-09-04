@@ -8,9 +8,6 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { useVerifyCommunityMembershipMutation } from '@/lib/api/community';
 import { openTelegramCommunity } from '@/lib/telegram/hooks';
 
-// 当前依赖 chat_member webhook 自动发奖；如后续需要恢复手动补偿入口，改为 true。
-const MANUAL_VERIFY_ENABLED = false;
-
 export function CommunitySheet({
   open,
   onOpenChange,
@@ -24,11 +21,11 @@ export function CommunitySheet({
   // const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const [openFailed, setOpenFailed] = useState(false);
-  const [openAttempted, setOpenAttempted] = useState(false);
   const status = verify.data?.status;
   const rewarded =
     community.claim_status === 'rewarded' || status === 'rewarded' || status === 'already_rewarded';
   const ineligible = community.claim_status === 'ineligible' || status === 'ineligible';
+  const canManuallyVerify = community.claim_status === 'existing_member';
   const message =
     community.claim_status === 'ineligible' || status === 'ineligible'
       ? '本奖励仅面向活动上线后新加入的成员。'
@@ -43,7 +40,6 @@ export function CommunitySheet({
               : null;
   useEffect(() => {
     if (!open) {
-      setOpenAttempted(false);
       setOpenFailed(false);
       setCopyFailed(false);
     }
@@ -104,7 +100,6 @@ export function CommunitySheet({
           <Button
             disabled={rewarded || ineligible}
             onClick={() => {
-              setOpenAttempted(true);
               setOpenFailed(!openTelegramCommunity(community.telegram_url));
             }}
             className="h-12 rounded-2xl"
@@ -112,7 +107,7 @@ export function CommunitySheet({
             <ExternalLink className="mr-2 h-4 w-4" />
             打开官方社群
           </Button>
-          {MANUAL_VERIFY_ENABLED && openAttempted && !rewarded && !ineligible ? (
+          {canManuallyVerify && !rewarded && !ineligible ? (
             <Button
               variant="outline"
               disabled={verify.isPending}

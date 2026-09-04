@@ -1,5 +1,5 @@
 /** 官方 Telegram 社群入口与一次性入群奖励契约。 */
-export type CommunityClaimStatus = 'unclaimed' | 'rewarded' | 'ineligible';
+export type CommunityClaimStatus = 'unclaimed' | 'existing_member' | 'rewarded' | 'ineligible';
 
 export interface CommunityEntryData {
   enabled: boolean;
