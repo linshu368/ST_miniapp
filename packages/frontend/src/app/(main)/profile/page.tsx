@@ -470,8 +470,8 @@ export default function ProfilePage() {
             subtitle="加入秘境官方社群，与大家一起交流。"
             // iconClassName="bg-sky-500/15 text-sky-400"
             trailing={
-              <span className="flex items-center gap-1 text-xs font-bold text-amber-400">
-                <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              <span className="flex items-center gap-1 text-xs font-bold text-amber-400 text-primary">
+                <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
                 {communityEntry.data.reward_credits} 星尘
                 <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
               </span>
