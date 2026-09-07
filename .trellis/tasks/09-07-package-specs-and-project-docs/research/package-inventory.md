@@ -22,7 +22,7 @@
 
 ## 数据库限制
 
-当前执行环境没有可调用的 Supabase MCP，因此不能生成测试库表字段实况。已在 `test-database-reference.md` 明确 Blocked，并规定解阻、采集、对账和脱敏流程。
+Supabase MCP 后续已连接。用户明确指定 `lhcyrmigpqeloxjrfwmn` 为本次测试参考库；已只读采集其表/字段/约束/索引/RLS/functions/triggers/grants/advisors 和 migration history，并写入 `test-database-reference.md`。仓库正式 test ref 是 `zoqelpfhurwehlvypryl`，两者不一致，已标为身份与 schema drift GAP，当前参考不得替代正式 test 验收。
 
 ## 可追溯来源矩阵
 
