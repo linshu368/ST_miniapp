@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"检查新增规范是否与后端和全局硬规则一致"}
+{"file":".trellis/spec/admin/app/index.md","reason":"检查 Admin 规范覆盖度和旧规则保留情况"}
+{"file":".trellis/spec/cs-platform/app/index.md","reason":"检查 CS Platform 规范覆盖度和旧规则保留情况"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"检查 shared 出口、契约和 consumer 边界"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"检查数据库安全、迁移、MCP 只读采集和环境标记"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查跨包、跨层依赖及契约同步完整性"}
+{"file":".trellis/tasks/09-07-package-specs-and-project-docs/research/planning-baseline.md","reason":"核验文档结论是否符合规划调研事实并避免泄露敏感信息"}
