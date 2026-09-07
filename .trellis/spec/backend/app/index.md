@@ -10,6 +10,7 @@
 | [路由、功能域与调用链](./routes-and-features.md)                   | API、业务流程、LLM、支付、语音、增长       |
 | [数据、可靠性、安全与可观测性](./data-reliability-and-security.md) | DB、外部调用、鉴权、并发、任务、日志、配置 |
 | [测试、脚本、构建与部署](./testing-scripts-and-deployment.md)      | 测试、验收、Railway、定时任务、迁移        |
+| [规范约定](./backend-rules.md)                                     | 工程相关约束                               |
 
 ## 架构定位
 
