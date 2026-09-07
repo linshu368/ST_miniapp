@@ -4,7 +4,7 @@
 
 ## A. 决策与核验
 
-确认 PRD 七项待拍板；分别只读核验 test/prod 的 admin 账号、schema、角色字段、experience 历史、RLS/grant；核对 OpenRouter 真实目录字段；写 ADR 固化 V1 prompt、测试不计费、生产只读和部署拓扑。脱敏/权限未确认或环境差异无法解释则不进入生产实现。
+确认 PRD 七项待拍板；分别只读核验 test/prod 的 Admin 账号认证能力、`preset_platform` 目标 schema 可用性、角色字段、experience 历史、RLS/grant；核对 OpenRouter 真实目录字段；写 ADR 固化 V1 prompt、独立数据域、测试不计费、生产只读和部署拓扑。脱敏/权限未确认或环境差异无法解释则不进入生产实现。
 
 ## B. Shared 契约
 
@@ -16,9 +16,9 @@ pnpm --filter @miniapp/shared test
 pnpm -r typecheck
 ```
 
-## C. Supabase admin 域
+## C. Supabase `preset_platform` 独立域
 
-扫描最新 migration 编号；创建表/RLS/grant/index/comment 和原子发布/回滚/开轮/收口 RPC。先 test 单文件执行，验证 shape、允许/拒绝、并发、幂等、分页 explain、锁/容量和回滚；生产独立确认。无数据可 drop，有数据后优先 flag-off + forward-fix。
+扫描最新 migration 编号；创建 `preset_platform` schema 及其表/RLS/grant/index/comment 和原子发布/回滚/开轮/收口 RPC，migration 声明 `-- domain: preset_platform`。不得在 `admin` schema 新增 Preset Platform 表、函数或策略；认证复用与数据归属分离。先 test 单文件执行，验证 shape、归属、允许/拒绝、跨域只读边界、并发、幂等、分页 explain、锁/容量和回滚；生产独立确认。无数据可 drop，有数据后优先 flag-off + forward-fix。
 
 ## D. Backend 骨架
 
@@ -58,4 +58,4 @@ pnpm format:check
 
 ## I. 文档与 Trellis
 
-新增包 README 和 preset-platform specs；更新根 README、ARCHITECTURE、shared/backend/database specs；记录规划偏差、验证命令、环境结果和剩余风险。
+新增包 README 和 preset-platform specs；更新根 README、ARCHITECTURE、`docs/schema归属地图.md`、shared/backend/database specs，把数据库域口径由现有八域同步为包含独立 `preset_platform` 的新布局；记录规划偏差、验证命令、环境结果和剩余风险。
