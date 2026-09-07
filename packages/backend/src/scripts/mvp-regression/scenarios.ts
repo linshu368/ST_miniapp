@@ -49,6 +49,7 @@ import {
   getFreeQuotaUsedRounds,
   getSessionRow,
   getWalletCredits,
+  getInsufficientBalanceRedirectCount,
   listChatHistory,
   listConversationHistoryRows,
   listUsageCharges,
@@ -423,7 +424,9 @@ async function insufficientBalanceScenario(context: MvpScenarioContext): Promise
   context.upstream.setScenario('success');
 
   const session = await createSession(context);
+  const countBefore = await getInsufficientBalanceRedirectCount(context.fixtures.userId);
   const response = await sendMessage(context, session.session.id, '还能聊吗？');
+  const countAfter = await getInsufficientBalanceRedirectCount(context.fixtures.userId);
 
   const body = response.json as { error?: { type?: string; credits_required?: number } } | null;
   // 必须在下面那次「充值后重发」之前定格：那一轮是会真打上游的，晚读就把它算进来了。
@@ -439,6 +442,7 @@ async function insufficientBalanceScenario(context: MvpScenarioContext): Promise
 
   const checker = new Checker();
   checker.expect('HTTP 状态码', response.status, 402);
+  checker.expect('余额不足拦截计数 +1', countAfter, countBefore + 1);
   checker.expectTrue(
     '响应是 JSON 而不是 SSE',
     !String(response.headers['content-type'] ?? '').includes('text/event-stream')

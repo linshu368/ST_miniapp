@@ -184,6 +184,7 @@ Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 
 100_payment_reconciliation_schedule.sql # 支付订单快速对账：payment_orders 加 next_reconcile_at / last_reconciled_at / reconcile_attempts / reconcile_locked_until 四列与领取索引。按 to_regclass 自动挑 billing 或 miniapp，与 099 顺序无关
 103_payment_settled_by.sql # 支付订单入账来源 settled_by：complete_payment_order 改为三参并记录 webhook/return/query/cron。与 101 语音计费撞号后改编。按 to_regclass 自动挑 billing 或 miniapp
 104_rollback_voice_billing.sql # 回滚 test 上已执行的 101/102 语音付费（prod 从未执行，不要跑）。先合 PR #298 并部署 backend
+105_wallet_insufficient_redirect_count.sql # user_wallets 加余额不足拦截计数列与自增 RPC，聊天预检和付费模型切换两处 402 前计数。按 to_regclass 自动挑 billing 或 miniapp
 ```
 
 > **099 不是普通迁移**，执行前必读 `docs/schema划分-一阶段执行计划.md`：

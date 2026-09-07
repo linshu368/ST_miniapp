@@ -17,6 +17,7 @@ const billingContext = {
 };
 
 let walletBalance = 1000;
+const incrementRedirectCount = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock('../../platform/model-tiers.js', () => ({
   getPricingConfig: async () => pricing,
@@ -28,6 +29,7 @@ vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
     async getOrCreate() {
       return { total_credits: walletBalance, main_credits: walletBalance, bonus_credits: 0 };
     }
+    incrementInsufficientBalanceRedirect = incrementRedirectCount;
   },
 }));
 
@@ -107,6 +109,7 @@ function requestBodyOf(fetchMock: ReturnType<typeof stubUpstream>): Record<strin
 
 beforeEach(() => {
   walletBalance = 1000;
+  incrementRedirectCount.mockClear();
   vi.mocked(saveChatHistory).mockClear();
 });
 
@@ -299,6 +302,7 @@ describe('execute（失败路径）', () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(savedHistory()).toHaveLength(0);
+    expect(incrementRedirectCount).toHaveBeenCalledWith('user-1');
   });
 
   it('上游非 2xx：不扣费，落 upstream_error 并带上状态码', async () => {

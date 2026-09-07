@@ -184,6 +184,18 @@ export async function getWalletCredits(userId: string): Promise<number> {
   return Number(row.total_credits ?? Number(row.main_credits) + Number(row.bonus_credits));
 }
 
+export async function getInsufficientBalanceRedirectCount(userId: string): Promise<number> {
+  const { data, error } = await db('user_wallets')
+    .select('insufficient_balance_redirect_count')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw new Error(`查询余额不足拦截次数失败：${error.message}`);
+  return Number(
+    (data as { insufficient_balance_redirect_count?: number } | null)
+      ?.insufficient_balance_redirect_count ?? 0
+  );
+}
+
 /**
  * 直接把已用轮次顶到 limit - 1，用来测「最后一轮免费 → 下一轮按固定扣费」的边界。
  */

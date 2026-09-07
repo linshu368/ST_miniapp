@@ -1,4 +1,5 @@
 import { getDomainDb } from '../../lib/supabase.js';
+import { prisma } from '../../lib/db.js';
 import type { GetWalletBalanceData, WalletSpendingRecord } from '@miniapp/shared';
 
 type NumericValue = string | number;
@@ -8,6 +9,10 @@ export interface MiniappWalletRow {
   main_credits: number;
   bonus_credits: number;
   total_credits: number | null;
+  /** 因星尘不足被 402 拦下（前端随即跳充值页）的累计次数（migration 105） */
+  insufficient_balance_redirect_count: number;
+  /** 首次因星尘不足被 402 拦下的时间戳（migration 105），未被拦截过为 null */
+  first_insufficient_balance_redirect_at: string | null;
   first_paid_at: string | null;
   last_paid_at: string | null;
   total_paid_amount: string | number;
@@ -17,11 +22,18 @@ export interface MiniappWalletRow {
 
 type RawMiniappWalletRow = Omit<
   MiniappWalletRow,
-  'main_credits' | 'bonus_credits' | 'total_credits'
+  | 'main_credits'
+  | 'bonus_credits'
+  | 'total_credits'
+  | 'insufficient_balance_redirect_count'
+  | 'first_insufficient_balance_redirect_at'
 > & {
   main_credits: NumericValue;
   bonus_credits: NumericValue;
   total_credits: NumericValue | null;
+  /** 迁移 105 未执行的环境查不到这一列，按 0 兜底 */
+  insufficient_balance_redirect_count?: NumericValue | null;
+  first_insufficient_balance_redirect_at?: string | null;
 };
 
 interface WalletRpcResult {
@@ -127,6 +139,32 @@ export class MiniappWalletRepository {
 
     if (error) throw new Error(`查询 MiniApp 钱包失败：${error.message}`);
     return data ? normalizeWallet(data as RawMiniappWalletRow) : null;
+  }
+
+  /**
+   * 余额不足拦截计数 +1。调用方在返回 402 前 await；失败由调用方记日志，不得影响 402。
+   *
+   * 优先走 105 的 RPC；PostgREST 缓存未刷新时 RPC 会 PGRST202（列其实已经在），
+   * 这时改走 Prisma 直写，不依赖 schema cache。
+   */
+  async incrementInsufficientBalanceRedirect(userId: string): Promise<void> {
+    const { error } = await this.db.rpc('increment_insufficient_balance_redirect', {
+      p_user_id: userId,
+    });
+    if (!error) return;
+
+    const affected = await prisma.$executeRaw`
+      UPDATE billing.user_wallets
+      SET
+        insufficient_balance_redirect_count = insufficient_balance_redirect_count + 1,
+        first_insufficient_balance_redirect_at =
+          COALESCE(first_insufficient_balance_redirect_at, now()),
+        updated_at = now()
+      WHERE user_id = ${userId}::uuid
+    `;
+    if (affected === 0) {
+      throw new Error(`记录余额不足拦截次数失败：${error.message}；SQL 兜底未更新到钱包行`);
+    }
   }
 
   async deduct(userId: string, amount: number): Promise<MiniappWalletRow> {
@@ -410,6 +448,11 @@ function normalizeWallet(row: RawMiniappWalletRow): MiniappWalletRow {
     main_credits: toNumber(row.main_credits),
     bonus_credits: toNumber(row.bonus_credits),
     total_credits: row.total_credits === null ? null : toNumber(row.total_credits),
+    insufficient_balance_redirect_count:
+      row.insufficient_balance_redirect_count == null
+        ? 0
+        : toNumber(row.insufficient_balance_redirect_count),
+    first_insufficient_balance_redirect_at: row.first_insufficient_balance_redirect_at ?? null,
   };
 }
 
