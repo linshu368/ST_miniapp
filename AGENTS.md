@@ -21,6 +21,22 @@
 
 ## ST_miniapp Project Rules
 
+### 1. 项目与规范入口
+
+这是由五个 pnpm workspace 包和一个独立 Python worker 组成的多应用项目。开始工作前先读根 `README.md` 和 `docs/ARCHITECTURE.md`，再按改动范围读取：
+
+- Frontend：`.trellis/spec/frontend/app/index.md`
+- Backend：`.trellis/spec/backend/app/index.md`
+- Admin：`.trellis/spec/admin/app/index.md`
+- CS Platform：`.trellis/spec/cs-platform/app/index.md`
+- Shared contracts：`.trellis/spec/shared/contracts/index.md`
+- Supabase/migrations：`.trellis/spec/database/supabase/index.md`
+- 跨层设计：`.trellis/spec/guides/cross-layer-thinking-guide.md`
+
+若文档与实现冲突，先记录来源和差异，不得把推断写成当前事实。
+
+### 2. Trellis 工作流
+
 对于非琐碎的工作，使用 Trellis：
 
 1. 在 `.trellis/tasks/` 下创建任务，命令为 `python ./.trellis/scripts/task.py create "<title>" --slug <slug>`。
@@ -29,19 +45,47 @@
 4. 在规划文档被审核完成并且任务移到 `in_progress` 之前，不要写产品代码。
 5. 在派发子代理时，用 `implement.jsonl` 和 `check.jsonl` 列出相关的规范/研究文件。
 
-项目具体硬性规则：
+复杂任务在 `task.py start` 前必须通过以下规划门禁：
+
+1. **复用调研**：列出检索过的组件、hooks、helpers、contracts、features/repositories 和数据库函数，并说明复用、扩展或不复用理由。
+2. **可靠性设计**：基于真实故障模型评估超时、有限重试、幂等、并发、事务、降级、补偿、限流、容量和可观测性；不适用项也要说明。
+3. **最小充分方案**：控制新文件、层级、状态源、公开 API 和依赖；说明拒绝的过度设计。禁止为假设中的未来需求建立通用框架。
+4. **演进与恢复**：说明兼容、迁移/发布顺序、旧数据、灰度、停止条件、回滚或 forward-fix。
+5. **可验证性**：`implement.md`/`task.md` 必须覆盖失败路径、consumer 校验、人工场景和可执行命令，而不只验证 happy path。
+
+高可用、复用与简洁必须平衡：高可用不是堆组件，复用不是提前泛化，简洁不是省略安全、错误处理、日志、测试或恢复。冲突时先保证业务正确性与安全，再采用满足需求的最低复杂度。
+
+### 3. 全局硬性规则
 
 - 包管理器：`pnpm`；运行时：Node.js `>=22`。
 - TypeScript 严格模式；不要添加 `any`。
 - 外部数据契约必须在 `packages/shared/src/api/*` 中定义，然后才能被后端处理器或前端使用者使用。
 - `frontend`、`backend`、`admin` 和 `cs-platform` 之间不能互相导入；跨应用调用使用 HTTP。
 - 前端/管理端/CS 端代码不能直接使用数据库行类型。
-- 前端服务器数据必须通过 `src/lib/api/` 的 React Query hooks 获取，而不是在组件层级直接 `fetch`。
+- Frontend 服务器数据必须通过 `src/lib/api/` 的 React Query hooks 获取；Admin/CS 按各自 spec 使用统一 helper/client。组件层不得散落直接 `fetch`。
 - 每个 Fastify 路由注册都必须保留附近的 `@frontend-ready: true|false` 注释。
 - LLM 生成和计费必须通过 `packages/backend/src/features/generation/` 进行。
 - 运行时配置必须通过 `packages/backend/src/platform/runtime-config.ts` 读取。
 - 数据库迁移位于 `packages/shared/migrations/`，并且是手动执行的；生产环境的迁移需要先测试验证并附带回滚说明。
 - 服务器日志使用现有的 pino 规范。原始错误要记录为 `{ err }`，而不是 `String(err)`。
-- 服务端得请求route都要使用 pino 记录相关得请求参数，返回参数以及整体链路方便部署railway后可以查看
+- 服务端 route 使用 pino 记录允许的请求字段、结果摘要、耗时和链路上下文，以便 Railway 排障；禁止记录 token、密钥、完整 initData、支付私钥、个人敏感信息或大响应正文。
+- 所有外部调用必须有明确超时；重试必须有限、仅用于可安全重试操作，并考虑退避/限流。关键写入需评估幂等和并发一致性。
+- 环境变量和 secret 不得写入源码、日志、URL、测试 fixture 或 Markdown；浏览器端 `NEXT_PUBLIC_*`/`VITE_*` 一律视为公开。
+- 修改跨包契约后运行 shared 测试及所有消费者 typecheck；修改部署/环境/数据库行为时同步 README、架构和相关 spec。
+
+### 4. 数据库与环境
+
+- test 与 production 不保证同构，必须明确当前操作环境；不得用测试库结论代替生产实况。
+- `packages/shared/migrations/` 是唯一 migration 源，不得创建 `supabase/migrations/` 平行来源或改写历史 migration。
+- migration 一次执行一个文件，记录前后 shape、权限/RLS、关键读写、锁/容量和回滚。
+- Supabase MCP 只允许在确认连接目标后执行只读结构采集；禁止读取业务行或将敏感导出提交 Git。
+
+### 5. 验证与提交
+
+- 最少运行受影响包 typecheck 和相关测试；跨包/部署改动运行 build 与 `pnpm -r typecheck`。不能运行的检查必须说明原因和风险。
+- 修复 bug 必须优先增加能复现问题的回归测试；无测试基础设施时记录可重复人工验证。
+- commit 遵循仓库近期 Conventional Commit 风格（如 `feat:`、`fix:`、`docs:`、`chore:`），一个提交对应一个完整变更单元。
+- 不自动 amend 或 push；不要把用户已有的无关修改混入提交。
+- 拉取/合并 upstream 时把上游代码视为只读；冲突解决保留上游行为，仅适配当前分支改动，除非用户明确授权改变上游逻辑。
 
 在开始实现之前，先阅读 `.trellis/spec/` 中的相关规格，以及它们引用的源文档。

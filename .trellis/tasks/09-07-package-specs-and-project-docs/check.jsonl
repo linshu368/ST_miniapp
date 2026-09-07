@@ -5,3 +5,5 @@
 {"file":".trellis/spec/database/supabase/index.md","reason":"检查数据库安全、迁移、MCP 只读采集和环境标记"}
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查跨包、跨层依赖及契约同步完整性"}
 {"file":".trellis/tasks/09-07-package-specs-and-project-docs/research/planning-baseline.md","reason":"核验文档结论是否符合规划调研事实并避免泄露敏感信息"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"检查 Frontend 专题导航、现行架构、状态边界与 ST 退场说明"}
+{"file":".trellis/tasks/09-07-package-specs-and-project-docs/research/package-inventory.md","reason":"检查追加 Backend/Frontend 规范可追溯到现场实现"}

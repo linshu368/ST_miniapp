@@ -2,7 +2,7 @@
 
 ## Goal
 
-基于仓库当前真实实现，系统梳理 `packages/admin`、`packages/cs-platform`、`packages/shared` 的结构、职责、文件内容、组件/模块、业务功能和工程约束，形成可被 Trellis 注入的详细项目规范；同时补齐根级 AI 协作指引和项目 README，并通过 Supabase MCP 采集**测试库**元数据，形成可维护、可追溯、无敏感数据的数据库结构文档。
+基于仓库当前真实实现，系统梳理 `packages/frontend`、`packages/backend`、`packages/admin`、`packages/cs-platform`、`packages/shared` 的结构、职责、文件内容、组件/模块、业务功能和工程约束，形成可被 Trellis 注入的详细项目规范；同时补齐根级 AI 协作指引和项目 README，并通过 Supabase MCP 采集**测试库**元数据，形成可维护、可追溯、无敏感数据的数据库结构文档。
 
 ## Requirements
 
@@ -13,6 +13,12 @@
 - 明确 React + TypeScript + Vite + Ant Design + Refine + Supabase + Zod + dnd-kit 的使用规则。
 - 明确组件拆分、受控编辑器、数据访问 helper、Supabase schema/RPC、环境切换、错误处理、敏感信息、样式、测试和构建部署要求。
 - 规范必须以当前实现为事实基础，不得把未落地的理想架构描述为现状；改进项需明确标记为“新增约束”或“建议”。
+
+### 1A. Frontend 与 Backend 项目规范（用户追加范围）
+
+- Frontend 覆盖 App Router 路由、页面/组件职责、React Query API hooks、SSE、Zustand/局部/URL/表单状态、Telegram/Sentry、安全、可访问性、测试、性能和 Vercel；明确 ST iframe/bridge 已退场。
+- Backend 覆盖进程入口、routes/features/repositories/infrastructure/lib/platform/scripts/Prisma 职责、REST/SSE/支付/语音/增长数据流、鉴权、配置、可靠性、日志、测试和 Railway。
+- 两端均形成专题化可导航 spec，当前事实与新增硬规则不得混淆，并保留 shared 契约先行和应用包隔离边界。
 
 ### 2. CS Platform 项目规范
 
@@ -34,7 +40,7 @@
 
 ### 4. Trellis spec 集成
 
-- 将规范整合至 `.trellis/spec/admin/app/`、`.trellis/spec/cs-platform/app/`、`.trellis/spec/shared/contracts/` 和 `.trellis/spec/database/supabase/`。
+- 将规范整合至 `.trellis/spec/frontend/app/`、`.trellis/spec/backend/app/`、`.trellis/spec/admin/app/`、`.trellis/spec/cs-platform/app/`、`.trellis/spec/shared/contracts/` 和 `.trellis/spec/database/supabase/`。
 - 每个 spec 入口均包含：适用范围、来源、开发前检查、硬性规则、专题文档索引和 Quality Check。
 - 详细规则按职责拆分为专题文件，避免单一 `index.md` 过长；索引必须可独立指导 AI 找到对应规则。
 - 保留并增强既有约束，不得无依据删除 backend 或全局已有硬规则。
@@ -68,6 +74,8 @@
 ## Acceptance Criteria
 
 - [ ] Admin spec 形成可导航的完整规范，覆盖目录/文件、组件、功能、数据访问、鉴权、环境、测试和部署规则。
+- [ ] Frontend spec 形成可导航的完整规范，覆盖路由/文件、页面组件、API/SSE、状态管理、Telegram、安全、测试、性能和部署，并移除 ST bridge 现行歧义。
+- [ ] Backend spec 形成可导航的完整规范，覆盖目录/文件、routes/features/repositories、调用链、可靠性、安全、日志、测试、脚本和部署。
 - [ ] CS Platform spec 形成可导航的完整规范，覆盖两套业务、目录/文件、React Query/API、认证、轮询、样式、测试和部署规则。
 - [ ] Shared spec 形成可导航的完整规范，覆盖公开出口、API contracts、schema/类型、纯函数、测试、消费关系与兼容策略。
 - [ ] Supabase spec 和数据库参考文档覆盖测试库全部目标业务 schema 的表、字段和关键数据库对象，并标注采集环境、时间、方法及不代表生产库。

@@ -5,3 +5,5 @@
 {"file":".trellis/spec/database/supabase/index.md","reason":"Supabase 与 migration 的现有数据库硬规则入口"}
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"确保 shared、应用端、backend 和数据库文档的跨层边界一致"}
 {"file":".trellis/tasks/09-07-package-specs-and-project-docs/research/planning-baseline.md","reason":"规划阶段的仓库事实、风险和 Supabase 采集边界摘要"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"追加范围：Frontend 路由组件、API/SSE、状态管理和质量规范入口"}
+{"file":".trellis/tasks/09-07-package-specs-and-project-docs/research/package-inventory.md","reason":"追加范围后的 Backend/Frontend 现场文件与职责研究摘要"}

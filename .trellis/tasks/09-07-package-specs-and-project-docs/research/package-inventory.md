@@ -1,5 +1,13 @@
 # 包与全局研究清单
 
+## Frontend
+
+已盘点包配置、App Router 全部页面、Providers、characters/chat/payment/profile/nav/ui 组件、`lib/api` 业务 hooks、SSE parser、Telegram/Sentry、三个 Zustand stores、纯工具和现有测试。当前为自研聊天 UI，ST iframe/bridge 已退场；旧 `CLAUDE.md` 相应章节仅为历史差异。完整职责已写入 `.trellis/spec/frontend/app/**`。
+
+## Backend
+
+已盘点进程入口、全部 route plugins、billing/community/conversations/engine/generation/lobby/payment/voice features、infrastructure adapters/repositories、lib/platform、Prisma、scripts、测试和 Railway 入口。明确 generation/runtime-config 唯一入口、REST/SSE/支付/语音/增长调用链及可靠性规则，写入 `.trellis/spec/backend/app/**`。
+
 ## Admin
 
 已盘点根配置、环境模板、Vite/Vercel、入口、全局样式、全部 `components/*`、`lib/*` 与测试。其核心边界是运营 UI → `src/lib` → Supabase/backend；功能包括配置发布/回滚、模型、回复档位、角色卡、公告、裂变和赠送。完整文件职责已写入 `.trellis/spec/admin/app/architecture-and-files.md`。
@@ -29,6 +37,8 @@ Supabase MCP 后续已连接。用户明确指定 `lhcyrmigpqeloxjrfwmn` 为本�
 | 结论类别                     | 已检索路径                                                                                                        | 输出位置                                                        |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | workspace/脚本/版本          | `package.json`、`pnpm-workspace.yaml`、`.nvmrc`、`tsconfig.base.json`、各包 `package.json`                        | 根 README 运行环境、命令、依赖图                                |
+| Frontend 页面/组件/状态      | `packages/frontend/src/**`、包配置、`CLAUDE.md`、Next/Vitest/Tailwind 配置                                        | Frontend 架构/页面组件/API 状态/质量 specs                      |
+| Backend 路由/功能/数据       | `packages/backend/src/**`、`prisma/**`、包配置、`CLAUDE.md`、ops Railway/Docker                                   | Backend 架构/路由功能/可靠性/测试部署 specs                     |
 | Admin 文件/组件              | `packages/admin/{src,public}/**`、`.env.example`、Vite/TS/Vercel/README 配置                                      | Admin `architecture-and-files.md`、`features-and-components.md` |
 | Admin 数据/环境              | `src/lib/{adminApi,announcementsApi,inviteAdminApi,outreachCreditsApi,environment,configSchemas}.ts` 及相关 tests | Admin data/UI/test specs                                        |
 | CS 文件/业务流               | `packages/cs-platform/src/{App,api,constants,styles}.ts*`、全部 `components/*.tsx`、包配置                        | CS architecture/features specs                                  |

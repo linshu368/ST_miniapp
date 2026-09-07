@@ -22,6 +22,8 @@
 | T8  | Done   | 新增完整项目 README                   | `README.md`                                                          | T2, T3, T4, T6 | 覆盖依赖、环境、栈、包关系、命令、部署、规范、commit、变量        |
 | T9  | Done   | 全局一致性、安全、设计门禁与格式检查  | 全部任务改动                                                         | T7, T8         | 样例任务走查及 Trellis validate、格式、链接/secret 检查通过       |
 | T10 | Done   | 整理用户审核与提交建议                | Git 变更集                                                           | T9             | 已整理交付摘要与建议 commit；未自动 commit/push                   |
+| T11 | Done   | 补充 Frontend 完整专题规范            | `.trellis/spec/frontend/app/**`                                      | T1             | 路由、组件、API/SSE、四类状态、质量和部署覆盖                     |
+| T12 | Done   | 补充 Backend 完整专题规范             | `.trellis/spec/backend/app/**`                                       | T1             | 文件职责、路由/功能、调用链、可靠性、测试和部署覆盖               |
 
 ## Execution Log
 
@@ -31,3 +33,4 @@
 - 2026-09-07：完成四类 spec、根 AGENTS/README 和规划门禁样例；Supabase 测试库采集因当前会话无 MCP 标记 Blocked，未以迁移文件冒充实况。
 - 2026-09-07：MCP 解阻；用户指定 `lhcyrmigpqeloxjrfwmn` 为本次测试参考库。完成只读结构/安全采集；发现其与仓库正式 test ref、119 个 shared migrations 及目标 schema 严重漂移，已完整标记 GAP，未执行修复。
 - 2026-09-07：最终格式、Trellis context、Markdown 链接、敏感模式和 Git diff 检查通过；变更集已暂存供用户审核，未自动 commit/push。
+- 2026-09-07：按用户反馈扩展范围，完成 Frontend/Backend 专题化完整 specs；Frontend 明确 ST bridge 已退场，Backend 补齐 route/feature/repository 与可靠性边界。
