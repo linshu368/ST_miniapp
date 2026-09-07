@@ -33,6 +33,7 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 2. main 是上线快照。 生产部署跟 main。不要直接往 main 推日常开发提交。
 3. dev 不可落后于 main。 生产 hotfix 合进 main 之后，必须回到 dev。你拉 feature 之前先 git fetch + 确认本地 dev 已快进到 origin/dev。
 4. 合入目标是 dev（PR base = dev）。不要把未发布的 feature 直接打到 main
+5. 提交合并至 dev 得 PR 后根据 PR 审查文档判断 P0 P1 得问题是否有风险 是否需要修改，将 Preview 链接 打到 telegram bot 上进行测试，自测没有问题后，再通知相关人员确认是否合并进 dev （需要压缩合并，方便有问题回滚）
 
 ## 2. Workspace 与依赖关系
 
