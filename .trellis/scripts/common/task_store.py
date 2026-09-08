@@ -26,7 +26,6 @@ from pathlib import Path
 from .config import (
     get_codex_dispatch_mode,
     get_packages,
-    get_session_auto_commit,
     is_monorepo,
     resolve_package,
     validate_package,
@@ -43,11 +42,6 @@ from .paths import (
     get_developer,
     get_repo_root,
     get_tasks_dir,
-)
-from .safe_commit import (
-    print_gitignore_warning,
-    safe_archive_paths_to_add,
-    safe_git_add,
 )
 from .task_utils import (
     archive_task_complete,
@@ -383,6 +377,11 @@ def cmd_create(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    meta.setdefault(
+        "module_impact",
+        {"schema_version": 1, "mode": "pending"},
+    )
+
     task_data = {
         "id": slug,
         "name": slug,
@@ -578,15 +577,42 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
     dir_name = task_dir.name
     task_json_path = task_dir / FILE_TASK_JSON
+    rollback_manifest: Path | None = None
+    original_task_data: dict | None = None
+    child_restore_data: dict[str, dict] = {}
+
+    # 项目级阻断式归档前门禁：先校验并把经审核的模块载荷应用到工作区。
+    # 此工具不执行任何 Git 操作。失败时 task 状态和目录均保持不变。
+    try:
+        scripts_dir = Path(__file__).resolve().parents[1]
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from module_knowledge import KnowledgeError, apply_for_archive, rollback
+
+        rollback_manifest = apply_for_archive(task_dir, repo_root)
+        if rollback_manifest:
+            print(
+                colored(
+                    f"Module knowledge applied to working tree; rollback: {rollback_manifest}",
+                    Colors.GREEN,
+                ),
+                file=sys.stderr,
+            )
+    except (KnowledgeError, OSError, ValueError, json.JSONDecodeError) as exc:
+        print(
+            colored(f"Error: module knowledge pre-archive check failed: {exc}", Colors.RED),
+            file=sys.stderr,
+        )
+        return 1
 
     # Update status before archiving
     today = datetime.now().strftime("%Y-%m-%d")
-    # Names of child task dirs whose task.json gets modified below; passed
-    # into safe_archive_paths_to_add so they're staged in this commit.
+    # Names of child task dirs whose task.json gets modified below，用于输出与恢复。
     modified_children: list[str] = []
     if task_json_path.is_file():
         data = read_json(task_json_path)
         if data:
+            original_task_data = dict(data)
             # Warn (don't block) when the recorded branch is stale — it was
             # likely already merged and deleted (#399 item 2).
             stored_branch = data.get("branch")
@@ -619,9 +645,11 @@ def cmd_archive(args: argparse.Namespace) -> int:
                         if child_json.is_file():
                             child_data = read_json(child_json)
                             if child_data:
+                                child_data_before = dict(child_data)
                                 child_data["parent"] = None
                                 write_json(child_json, child_data)
                                 modified_children.append(child_dir_path.name)
+                                child_restore_data[child_dir_path.name] = child_data_before
 
     # Clear any session that still points at this task before the path moves.
     from .active_task import clear_task_from_sessions
@@ -634,18 +662,13 @@ def cmd_archive(args: argparse.Namespace) -> int:
         year_month = archive_dest.parent.name
         print(colored(f"Archived: {dir_name} -> archive/{year_month}/", Colors.GREEN), file=sys.stderr)
 
-        # Auto-commit unless --no-commit
-        if not getattr(args, "no_commit", False):
-            if not _auto_commit_archive(dir_name, repo_root, modified_children):
-                print(
-                    colored(
-                        "Archive moved on disk, but git auto-commit did not complete. "
-                        "Resolve `git status` before continuing.",
-                        Colors.RED,
-                    ),
-                    file=sys.stderr,
-                )
-                return 1
+        print(
+            colored(
+                "Git auto-commit is disabled. Review the final diff before any git add/commit; never auto-push.",
+                Colors.YELLOW,
+            ),
+            file=sys.stderr,
+        )
 
         # Return the archive path
         print(f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}/{year_month}/{dir_name}")
@@ -655,92 +678,25 @@ def cmd_archive(args: argparse.Namespace) -> int:
         run_task_hooks("after_archive", archived_json, repo_root)
         return 0
 
-    return 1
-
-
-def _auto_commit_archive(
-    task_name: str,
-    repo_root: Path,
-    modified_children: list[str] | None = None,
-) -> bool:
-    """Stage Trellis-owned task paths and commit after archive.
-
-    Scoped narrowly to the archived task's source + destination paths
-    plus any child task dirs whose ``task.json`` was edited (parent →
-    children relationship update). Dirty changes in OTHER active task
-    dirs are NOT bundled into the archive commit.
-
-    If ``.gitignore`` blocks the paths, we warn + skip — we do NOT
-    retry with ``git add -f``. The warning explicitly forbids
-    ``git add -f .trellis/`` (which would fan out to caches/backups)
-    and points users at ``session_auto_commit: false``.
-
-    Honors ``session_auto_commit`` in ``.trellis/config.yaml``: when
-    set to ``false``, this function returns immediately without
-    touching git (the archive directory move on disk is unaffected).
-    """
-    if not get_session_auto_commit(repo_root):
-        print(
-            "[OK] session_auto_commit: false — skipping git stage/commit.",
-            file=sys.stderr,
-        )
-        return True
-
-    source_rel = f"{DIR_WORKFLOW}/{DIR_TASKS}/{task_name}"
-    rc, tracked_out, _ = run_git(
-        ["ls-files", "--", source_rel],
-        cwd=repo_root,
-    )
-    source_was_tracked = rc == 0 and bool(tracked_out.strip())
-
-    paths = safe_archive_paths_to_add(
-        repo_root, task_name=task_name, modified_children=modified_children
-    )
-    if not paths:
-        print("[OK] No task changes to commit.", file=sys.stderr)
-        return True
-
-    success, _, err = safe_git_add(paths, repo_root)
-    if not success:
-        if err and "ignored by" in err.lower():
-            print_gitignore_warning(paths)
-        else:
+    # move 失败时恢复本命令已修改的状态与模块内容；不触碰用户其他改动。
+    if original_task_data is not None:
+        write_json(task_json_path, original_task_data)
+    for child_name, child_data in child_restore_data.items():
+        child_path = find_task_by_name(child_name, tasks_dir)
+        if child_path:
+            write_json(child_path / FILE_TASK_JSON, child_data)
+    if rollback_manifest:
+        try:
+            rollback(repo_root, rollback_manifest)
+        except (KnowledgeError, OSError, ValueError, json.JSONDecodeError) as exc:
             print(
-                f"[WARN] git add failed: {err.strip() if err else 'unknown error'}",
+                colored(
+                    f"Error: archive failed and module rollback also failed: {exc}; manifest={rollback_manifest}",
+                    Colors.RED,
+                ),
                 file=sys.stderr,
             )
-        return not source_was_tracked
-
-    # Belt-and-suspenders for the phantom-delete bug: `safe_git_add` uses
-    # `git add` (no -A) which only stages additions/modifications. The
-    # source task directory was moved away by `shutil.move`, so its files
-    # need an explicit `git rm --cached` to stage the deletions in this
-    # same commit — otherwise they sit as uncommitted "phantom deletes"
-    # against HEAD until something later picks them up.
-    #
-    # `--ignore-unmatch` makes this a no-op when the task was never tracked
-    # (e.g. archiving a task that lived only in working tree).
-    run_git(
-        ["rm", "-r", "--cached", "--ignore-unmatch", "--", source_rel],
-        cwd=repo_root,
-    )
-
-    rc, _, _ = run_git(
-        ["diff", "--cached", "--quiet", "--", *paths, source_rel],
-        cwd=repo_root,
-    )
-    if rc == 0:
-        print("[OK] No task changes to commit.", file=sys.stderr)
-        return True
-
-    commit_msg = f"chore(task): archive {task_name}"
-    rc, _, err = run_git(["commit", "-m", commit_msg], cwd=repo_root)
-    if rc == 0:
-        print(f"[OK] Auto-committed: {commit_msg}", file=sys.stderr)
-        return True
-    else:
-        print(f"[WARN] Auto-commit failed: {err.strip()}", file=sys.stderr)
-        return not source_was_tracked
+    return 1
 
 
 # =============================================================================

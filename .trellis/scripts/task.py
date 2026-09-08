@@ -95,6 +95,18 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     task_json_path = full_path / FILE_TASK_JSON
 
+    # 在 active pointer 和状态写入前阻断未完成的模块影响声明。
+    try:
+        from module_knowledge import KnowledgeError, validate_module_impact
+
+        task_data = read_json(task_json_path) if task_json_path.is_file() else None
+        if not task_data:
+            raise KnowledgeError("任务缺少可读 task.json")
+        validate_module_impact(task_data)
+    except (KnowledgeError, OSError, ValueError, json.JSONDecodeError) as exc:
+        print(colored(f"Error: module impact declaration invalid: {exc}", Colors.RED))
+        return 1
+
     if not resolve_context_key():
         # Degraded mode: no session identity available.
         # Hook didn't inject TRELLIS_CONTEXT_ID (common on Windows + Claude Code,
@@ -544,7 +556,11 @@ def main() -> int:
     # archive
     p_archive = subparsers.add_parser("archive", help="Archive task")
     p_archive.add_argument("name", help="Task directory or name")
-    p_archive.add_argument("--no-commit", action="store_true", help="Skip auto git commit after archive")
+    p_archive.add_argument(
+        "--no-commit",
+        action="store_true",
+        help="兼容参数；archive 始终不会自动暂存或提交",
+    )
 
     # list
     p_list = subparsers.add_parser("list", help="List tasks")

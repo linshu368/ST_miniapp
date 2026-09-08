@@ -31,8 +31,6 @@ from datetime import datetime
 from pathlib import Path
 
 from common.paths import (
-    DIR_TASKS,
-    DIR_WORKFLOW,
     FILE_JOURNAL_PREFIX,
     get_repo_root,
     get_current_task,
@@ -42,17 +40,11 @@ from common.paths import (
 from common.developer import ensure_developer
 from common.git import run_git
 from common.log import Colors, colored
-from common.safe_commit import (
-    print_gitignore_warning,
-    safe_git_add,
-    safe_trellis_paths_to_add,
-)
 from common.tasks import load_task
 from common.types import TaskInfo
 from common.config import (
     get_packages,
     get_session_auto_commit,
-    get_session_commit_message,
     get_max_journal_lines,
     is_monorepo,
     resolve_package,
@@ -434,78 +426,6 @@ def update_index(
 # Main Function
 # =============================================================================
 
-def _auto_commit_workspace(repo_root: Path) -> None:
-    """Stage Trellis-owned workspace + current-task paths and commit.
-
-    Path scope is restricted to specific products: the current developer's
-    journal files + index.md, and ONLY the current task directory (resolved
-    via ``get_current_task``). We never `git add` the whole `.trellis/` tree
-    or iterate over all active task dirs (#303: parallel-window dirty task
-    dirs must not be bundled into the session auto-commit). If `.gitignore`
-    blocks the specific paths we warn + skip — never retry with ``-f``.
-
-    Honors ``session_auto_commit`` in ``.trellis/config.yaml``: when set to
-    ``false``, this function returns immediately without touching git
-    (journal/index files are still written to disk by the caller).
-    """
-    if not get_session_auto_commit(repo_root):
-        print(
-            "[OK] session_auto_commit: false — skipping git stage/commit.",
-            file=sys.stderr,
-        )
-        return
-
-    commit_msg = get_session_commit_message(repo_root)
-    # Resolve the current task so staging is scoped to its dir only. The ref
-    # is ``.trellis/tasks/<name>`` (or under archive/) — pass the bare name.
-    current = get_current_task(repo_root)
-    if current:
-        task_name = Path(current).name
-        paths = safe_trellis_paths_to_add(repo_root, task_name=task_name)
-    else:
-        # Current task unknown (0 or >=2 parallel sessions — exactly the
-        # parallel-window case #303 is about). Do NOT fall back to the wide
-        # `tasks_dir.iterdir()` scan; that would re-leak other tasks' dirty
-        # dirs into the session commit. Stage only the developer's journal/
-        # index and skip every task dir.
-        paths = [
-            p
-            for p in safe_trellis_paths_to_add(repo_root, task_name=None)
-            if not p.startswith(f"{DIR_WORKFLOW}/{DIR_TASKS}/")
-        ]
-    if not paths:
-        print("[OK] No workspace changes to commit.", file=sys.stderr)
-        return
-
-    success, _, err = safe_git_add(paths, repo_root)
-    if not success:
-        if err and "ignored by" in err.lower():
-            print_gitignore_warning(paths)
-        else:
-            print(
-                f"[WARN] git add failed: {err.strip() if err else 'unknown error'}",
-                file=sys.stderr,
-            )
-        return
-
-    # Check if there are staged changes for the paths we just staged.
-    rc, _, _ = run_git(
-        ["diff", "--cached", "--quiet", "--", *paths], cwd=repo_root
-    )
-    if rc == 0:
-        print("[OK] No workspace changes to commit.", file=sys.stderr)
-        return
-
-    rc, _, commit_err = run_git(["commit", "-m", commit_msg], cwd=repo_root)
-    if rc == 0:
-        print(f"[OK] Auto-committed: {commit_msg}", file=sys.stderr)
-    else:
-        print(
-            f"[WARN] Auto-commit failed: {commit_err.strip()}",
-            file=sys.stderr,
-        )
-
-
 def add_session(
     title: str,
     commit: str = "-",
@@ -514,7 +434,7 @@ def add_session(
     extra_content: str | None = None,
     tests: list[str] | None = None,
     next_steps: list[str] | None = None,
-    auto_commit: bool = True,
+    auto_commit: bool = False,
     package: str | None = None,
     branch: str | None = None,
 ) -> int:
@@ -603,10 +523,11 @@ def add_session(
     print(f"  - {target_file.name if target_file else 'journal'}", file=sys.stderr)
     print("  - index.md", file=sys.stderr)
 
-    # Auto-commit workspace changes
     if auto_commit:
-        print("", file=sys.stderr)
-        _auto_commit_workspace(repo_root)
+        print(
+            "[WARN] auto_commit 参数已停用；文件保留在工作区，必须人工审核后提交。",
+            file=sys.stderr,
+        )
 
     return 0
 
@@ -629,8 +550,11 @@ def main() -> int:
     parser.add_argument("--change", action="append", help="Main Changes bullet (repeatable)")
     parser.add_argument("--test", action="append", help="Testing bullet (repeatable)")
     parser.add_argument("--next-step", action="append", help="Next Steps bullet (repeatable)")
-    parser.add_argument("--no-commit", action="store_true",
-                        help="Skip auto-commit of workspace changes")
+    parser.add_argument(
+        "--no-commit",
+        action="store_true",
+        help="兼容参数；session 始终不会自动暂存或提交",
+    )
     parser.add_argument("--stdin", action="store_true",
                         help="Read extra content from stdin (explicit opt-in)")
 
@@ -671,7 +595,7 @@ def main() -> int:
         args.title, args.commit, args.summary,
         changes=args.change, extra_content=extra_content, tests=args.test,
         next_steps=args.next_step,
-        auto_commit=not args.no_commit,
+        auto_commit=False,
         package=package,
         branch=branch,
     )

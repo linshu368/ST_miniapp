@@ -163,6 +163,7 @@ Phase 3: Finish  → verify, update spec, commit, and wrap up
 - `task.md` — executable task breakdown for ST_miniapp work: task IDs, statuses, file scopes, dependencies, and verification.
 - `implement.jsonl` / `check.jsonl` — spec and research manifests for sub-agent context. They do not replace `implement.md`.
 - Lightweight tasks may be PRD-only plus the generated `task.md`. Complex ST_miniapp tasks must have reviewed `prd.md`, `design.md`, `implement.md`, and `task.md` before `task.py start`.
+- Every task must resolve `task.json.meta.module_impact` before start: declare affected IDs from `.trellis/spec/modules-index.md`, or use `no_module_change` with a concrete reason. Completed changes provide reviewed `module-updates.json`; archive applies it to the working tree before moving the task.
 
 ### Parent / Child Task Trees
 
@@ -194,6 +195,7 @@ Complex task: ask the user if you can create a Trellis task and enter the planni
 [workflow-state:planning]
 Load `trellis-brainstorm`; stay in planning.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, `implement.md`, and `task.md`; ask for review before `task.py start`.
+Read `.trellis/spec/modules-index.md` and affected module files; replace pending module_impact with changes/no_module_change before start.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
 Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research manifests before start.
 [/workflow-state:planning]
@@ -207,6 +209,7 @@ Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research mani
 [workflow-state:planning-inline]
 Load `trellis-brainstorm`; stay in planning.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, `implement.md`, and `task.md`; ask for review before `task.py start`.
+Read `.trellis/spec/modules-index.md` and affected module files; replace pending module_impact with changes/no_module_change before start.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
 Inline mode: skip jsonl curation; Phase 2 reads artifacts/specs via `trellis-before-dev`.
 [/workflow-state:planning-inline]
@@ -605,6 +608,8 @@ Load the `trellis-update-spec` skill and review whether this task produced new k
 - New technical decisions
 
 Update the docs under `.trellis/spec/` accordingly. Even if the conclusion is "nothing to update", walk through the judgment.
+
+For module implementation facts, do not directly rely on prose memory: prepare `module-updates.json` matching `task.json.meta.module_impact`, run `module_knowledge.py check <task>`, and include its final content in the human review. Archive applies the reviewed payload and rebuilds indexes without Git operations.
 
 #### 3.4 Commit changes `[required · once]`
 

@@ -196,6 +196,19 @@ def get_context_packages_text(repo_root: Path | None = None) -> str:
             lines.append(f"Spec layers: {', '.join(pkg['specLayers'])}")
             for layer in pkg["specLayers"]:
                 lines.append(f"  - .trellis/spec/{pkg['name']}/{layer}/index.md")
+                modules_index = (
+                    repo_root
+                    / DIR_WORKFLOW
+                    / DIR_SPEC
+                    / pkg["name"]
+                    / layer
+                    / "modules"
+                    / "index.md"
+                )
+                if modules_index.is_file():
+                    lines.append(
+                        f"  - .trellis/spec/{pkg['name']}/{layer}/modules/index.md (当前功能模块现状)"
+                    )
         else:
             lines.append("Spec: not configured")
         lines.append("")

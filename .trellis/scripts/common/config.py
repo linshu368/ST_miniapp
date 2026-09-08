@@ -167,7 +167,7 @@ def _next_content_line(lines: list[str], start: int) -> tuple[int, str]:
 # Defaults
 DEFAULT_SESSION_COMMIT_MESSAGE = "chore: record journal"
 DEFAULT_MAX_JOURNAL_LINES = 2000
-DEFAULT_SESSION_AUTO_COMMIT = True
+DEFAULT_SESSION_AUTO_COMMIT = False
 DEFAULT_CODEX_DISPATCH_MODE = "auto"
 
 CONFIG_FILE = "config.yaml"
@@ -215,31 +215,30 @@ def get_max_journal_lines(repo_root: Path | None = None) -> int:
 
 
 def get_session_auto_commit(repo_root: Path | None = None) -> bool:
-    """Whether scripts should auto-stage + auto-commit session/task changes.
+    """读取遗留配置；Trellis 脚本已禁止自动暂存与提交。
 
-    Governs both ``add_session.py:_auto_commit_workspace`` and
-    ``task_store.py:_auto_commit_archive``.
-
-    Default: ``True`` (existing behavior — auto-stage + auto-commit).
-    Set ``session_auto_commit: false`` in ``.trellis/config.yaml`` to skip
-    auto-staging entirely; the journal/archive files are still written to
-    disk, but the user manages ``git add`` / ``git commit`` themselves.
+    默认值固定为 ``False``。即使旧配置写为 true，调用方也不得据此执行
+    ``git add`` / ``git commit``；保留 getter 仅用于兼容和迁移告警。
 
     Accepts native YAML booleans (``true`` / ``false``) and the string
     aliases ``true / false / yes / no / 1 / 0 / on / off`` (case-insensitive).
-    Invalid values fall back to ``True`` with a stderr warning.
+    Invalid values fall back to ``False`` with a stderr warning.
     """
     config = _load_config(repo_root)
     raw = config.get("session_auto_commit", DEFAULT_SESSION_AUTO_COMMIT)
+    if raw is True or str(raw).strip().lower() in ("true", "yes", "1", "on"):
+        print(
+            "[WARN] session_auto_commit=true 已被安全策略忽略；Trellis 禁止自动提交",
+            file=sys.stderr,
+        )
+        return False
     if isinstance(raw, bool):
-        return raw
+        return False
     s = str(raw).strip().lower()
-    if s in ("true", "yes", "1", "on"):
-        return True
     if s in ("false", "no", "0", "off"):
         return False
     print(
-        f"[WARN] invalid session_auto_commit value: {raw!r}; using true (default)",
+        f"[WARN] invalid session_auto_commit value: {raw!r}; using false (default)",
         file=sys.stderr,
     )
     return DEFAULT_SESSION_AUTO_COMMIT
