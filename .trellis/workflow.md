@@ -47,7 +47,7 @@ python ./.trellis/scripts/task.py create "<title>" [--slug <name>] [--parent <di
 python ./.trellis/scripts/task.py start <name>          # set active task (session-scoped when available)
 python ./.trellis/scripts/task.py current --source      # show active task and source
 python ./.trellis/scripts/task.py finish                # clear active task (triggers after_finish hooks)
-python ./.trellis/scripts/task.py archive <name>        # move to archive/{year-month}/
+python ./.trellis/scripts/task.py archive <name> --no-commit  # move to archive/{year-month}/; never auto-commit
 python ./.trellis/scripts/task.py list [--mine] [--status <s>]
 python ./.trellis/scripts/task.py list-archive
 
@@ -228,6 +228,7 @@ Sub-agent dispatch protocol applies to all platforms and all sub-agents, includi
 [workflow-state:in_progress]
 Tools: `trellis-implement` / `trellis-research` are sub-agent types only (Task/Agent tool, NOT Skill; there is no skill by these names). `trellis-update-spec` is a skill. `trellis-check` exists as both; prefer the Agent form when verifying after code changes.
 Flow: `trellis-implement` -> `trellis-check` -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
+Before any git add/commit, present the final paths, diff/digest, validation results, and commit file list for explicit human approval; approval expires if content changes. Never auto-commit or auto-push; push requires separate human authorization.
 Main-session default: dispatch implement/check sub-agents. Sub-agent self-exemption: if already running as `trellis-implement`, do NOT spawn another `trellis-implement` or `trellis-check`; if already running as `trellis-check`, do NOT spawn another `trellis-check` or `trellis-implement`. Dispatch is main session only.
 Dispatch prompt starts with `Active task: <task path from task.py current>`. Read context: jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if present`.
 [/workflow-state:in_progress]
@@ -239,6 +240,7 @@ Dispatch prompt starts with `Active task: <task path from task.py current>`. Rea
 
 [workflow-state:in_progress-inline]
 Flow: `trellis-before-dev` -> edit -> `trellis-check` -> validation -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
+Before any git add/commit, present the final paths, diff/digest, validation results, and commit file list for explicit human approval; approval expires if content changes. Never auto-commit or auto-push; push requires separate human authorization.
 Do not dispatch implement/check sub-agents in inline mode.
 Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, plus relevant spec/research loaded by skills.
 [/workflow-state:in_progress-inline]
@@ -261,7 +263,7 @@ Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, p
      channel as the live blocks. -->
 
 [workflow-state:completed]
-Code committed. Run `/trellis:finish-work`; if dirty, return to Phase 3.4 first.
+Code committed. Run `/trellis:finish-work` only in no-auto-commit mode; archive with `--no-commit`, then require a new human review before any bookkeeping commit. Never auto-push.
 [/workflow-state:completed]
 
 ### Rules
@@ -608,7 +610,9 @@ Update the docs under `.trellis/spec/` accordingly. Even if the conclusion is "n
 
 **Spec-sync preamble**: before drafting commits, ask: did this task fix a bug or surface non-obvious knowledge that should land in `.trellis/spec/` so future-you (or future-AI) doesn't repeat the mistake? If yes, return to Phase 3.3 first — spec writes belong in the same task's commit batch, not as a forgotten follow-up.
 
-The AI drives a batched commit of this task's code changes so `/finish-work` can run cleanly afterwards. Goal: produce work commits FIRST, then bookkeeping (archive + journal) commits land after — never interleaved.
+**Mandatory human review gate**: every file added, modified, or deleted by Trellis work must be reviewed in its final state by a human before any `git add` or `git commit`. The review must include the changed paths, final diff or digest, validation results, and proposed commit file list. If any reviewed file or digest changes, the approval expires and review must happen again.
+
+The AI may prepare a batched commit plan, but must not stage or commit until the human explicitly approves the final reviewed content. Goal: produce work commits FIRST, then bookkeeping (archive + journal) changes — never interleaved and never auto-committed.
 
 **Step-by-step**:
 
@@ -632,7 +636,7 @@ The AI drives a batched commit of this task's code changes so `/finish-work` can
    - **AI-edited this session** — files you wrote/edited via Edit/Write/Bash tool calls in this session. You know what changed and why.
    - **Unrecognized** — dirty files you did NOT touch this session (could be the user's manual edits, leftover WIP from a previous session, or unrelated work). Do NOT silently include these.
 
-4. **Draft a commit plan**. Group AI-edited files into logical commits (1 commit per coherent change unit, not 1 commit per file). Each entry: `<commit message>` + file list. List unrecognized files separately at the bottom.
+4. **Draft a commit plan and review packet**. Group AI-edited files into logical commits (1 commit per coherent change unit, not 1 commit per file). Each entry: `<commit message>` + file list. Include the final diff/digest and validation results. List unrecognized files separately at the bottom.
 
 5. **Present the plan once, ask for one-shot confirmation**. Format:
 
@@ -651,20 +655,21 @@ The AI drives a batched commit of this task's code changes so `/finish-work` can
    Reply 'ok' / '行' to execute. Reply with edits, or '我自己来' / 'manual' to abort.
    ```
 
-6. **On confirmation**: run `git add <files>` + `git commit -m "<msg>"` for each batch in order. Do not amend. Do not push.
+6. **On confirmation**: re-check that the path set and content digest still match the reviewed packet. If they differ, do not stage; present a new review packet. If they match, run `git add <files>` + `git commit -m "<msg>"` for each approved batch in order. Do not amend. Do not push.
 
 7. **On rejection** (user replies "不行" / "我自己来" / "manual" / any pushback on the plan): stop. Do not attempt a second plan. The user will commit by hand; you skip ahead to 3.5 once they confirm.
 
 **Rules**:
 
 - No `git commit --amend` anywhere — three-stage three-commit flow (work commits → archive commit → journal commit).
-- Never push to remote in this step.
+- Trellis task/archive/session/journal/hooks must never auto-commit. Keep `session_auto_commit: false`; archive with `task.py archive <task> --no-commit`, then review the resulting final diff before a separate commit approval.
+- Never automatically push to remote. A commit approval is not a push approval; pushing requires a separate explicit human authorization or manual human action.
 - If the user wants different message wording but accepts the file grouping, edit the message and re-confirm once — but if they reject the grouping, exit to manual mode.
 - The batched plan is one prompt; do not prompt per commit.
 
 #### 3.5 Wrap-up reminder
 
-After the above, remind the user they can run `/finish-work` to wrap up (archive the task, record the session).
+After the above, remind the user they can wrap up in no-auto-commit mode. Archive with `task.py archive <task> --no-commit`; any resulting task/journal changes require a new final human review before commit. Never auto-push.
 
 ---
 

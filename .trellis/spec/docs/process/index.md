@@ -13,6 +13,10 @@
 ## 必须遵守
 
 - 所有 Trellis 任务产物使用 `.trellis/tasks/{MM-DD-slug}/`。
+- 所有 Trellis 工作造成的文件新增、修改或删除，都必须先向人工展示变更范围、diff/摘要、验证结果和拟提交文件清单，取得人工明确确认后才能执行 `git add` / `git commit`；未确认时只能保留工作区变更。
+- 禁止 Trellis task、hook、归档、session/journal 或其他脚本自动执行 Git 提交；调用现有归档命令时必须使用 `task.py archive <task> --no-commit`，并关闭 `session_auto_commit`，直到相关脚本完成“人工确认后提交”的安全改造。
+- Trellis 不得自动 `git push`。提交后的推送必须由人工单独明确确认或由人工自行执行；对提交的确认不等于对推送的确认。
+- 人工审核确认必须发生在最终文件内容和验证完成之后；审核后若文件继续变化，原确认失效，必须重新展示并确认。
 - `prd.md` 只写需求、约束与验收标准。
 - `design.md` 负责技术设计与规则落点说明。
 - `implement.md` 负责按顺序描述实施计划、验证方式与风险控制。
@@ -39,3 +43,4 @@
 - 调整 spec、agent 或流程结构后，运行 `python ./.trellis/scripts/get_context.py --mode packages`。
 - 检查 Markdown 是否为中文且结构清晰可读。
 - 检查包级 CLAUDE 规则与 Trellis 承接文档之间是否存在漂移或矛盾。
+- 提交前检查不存在自动提交/推送路径，并确认人工审核记录对应当前最终 diff；归档使用 `--no-commit`。

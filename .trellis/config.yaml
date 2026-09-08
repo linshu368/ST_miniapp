@@ -1,6 +1,7 @@
 # Trellis Configuration for ST_miniapp
 
 session_commit_message: 'chore: record trellis session'
+session_auto_commit: false
 max_journal_lines: 2000
 
 packages:

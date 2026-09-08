@@ -1,0 +1,31 @@
+{
+  "id": "feature-module-spec-sync",
+  "name": "feature-module-spec-sync",
+  "title": "Trellis 功能模块知识库与归档同步规划",
+  "description": "规划按 package 和功能模块维护现状文件，并在 Trellis task 归档时基于任务声明与实际变更同步更新模块知识。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "trellis-process-and-cross-package-spec",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-08",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/spec/",
+    ".trellis/scripts/task.py",
+    ".trellis/scripts/common/task_store.py",
+    ".trellis/workflow.md"
+  ],
+  "notes": "本任务仅交付规划；实现阶段建议拆为知识库基线与归档同步两个可独立验收的子任务。",
+  "meta": {}
+}
