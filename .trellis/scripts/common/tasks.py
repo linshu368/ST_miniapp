@@ -30,7 +30,13 @@ def load_task(task_dir: Path) -> TaskInfo | None:
         TaskInfo if task.json exists and is valid, None otherwise.
     """
     task_json = task_dir / FILE_TASK_JSON
-    if not task_json.is_file():
+    try:
+        if not task_json.is_file():
+            return None
+    except OSError:
+        # Windows may briefly retain an inaccessible, delete-pending directory
+        # after an archive move. Treat it as absent instead of breaking every
+        # task-list consumer while the owning process releases its handle.
         return None
 
     data = read_json(task_json)
@@ -66,7 +72,12 @@ def iter_active_tasks(tasks_dir: Path) -> Iterator[TaskInfo]:
         return
 
     for d in sorted(tasks_dir.iterdir()):
-        if not d.is_dir() or d.name == "archive":
+        if d.name == "archive":
+            continue
+        try:
+            if not d.is_dir():
+                continue
+        except OSError:
             continue
         info = load_task(d)
         if info is not None:

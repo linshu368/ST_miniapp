@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import ast
+import tempfile
 import unittest
+import sys
 from pathlib import Path
+from unittest.mock import patch
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from common.tasks import iter_active_tasks, load_task
 
 
 class TrellisGitSafetyTest(unittest.TestCase):
@@ -34,6 +43,22 @@ class TrellisGitSafetyTest(unittest.TestCase):
         )
         self.assertIn("DEFAULT_SESSION_AUTO_COMMIT = False", config)
         self.assertNotIn("return True\n", config.split("def get_session_auto_commit", 1)[1].split("def get_codex", 1)[0])
+
+    def test_task_enumeration_skips_inaccessible_delete_pending_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tasks_dir = Path(temp_dir)
+            stale_dir = tasks_dir / "delete-pending"
+            stale_dir.mkdir()
+            original_is_file = Path.is_file
+
+            def is_file_with_windows_error(path: Path) -> bool:
+                if path.parent == stale_dir:
+                    raise PermissionError("simulated delete-pending directory")
+                return original_is_file(path)
+
+            with patch.object(Path, "is_file", is_file_with_windows_error):
+                self.assertIsNone(load_task(stale_dir))
+                self.assertEqual(list(iter_active_tasks(tasks_dir)), [])
 
 
 if __name__ == "__main__":
