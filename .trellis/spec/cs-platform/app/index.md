@@ -1,5 +1,7 @@
 # CS Platform 应用规范
 
+> 当前客服业务与客户端基建见 [功能模块现状索引](./modules/index.md)；模块文件描述当前事实，本目录其他文件继续承载工程规范。
+
 适用于 `packages/cs-platform/**`。本包是内部客服 SPA，承载 Telegram 用户回访和 MiniApp 站内客服两条隔离业务流。
 
 ## 专题规范

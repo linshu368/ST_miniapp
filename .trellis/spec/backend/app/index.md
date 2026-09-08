@@ -12,6 +12,10 @@
 | [测试、脚本、构建与部署](./testing-scripts-and-deployment.md)      | 测试、验收、Railway、定时任务、迁移        |
 | [规范约定](./backend-rules.md)                                     | 工程相关约束                               |
 
+## 功能模块现状
+
+当前业务、基础设施和公共能力的实现位置与调用链见 [模块索引](./modules/index.md)。模块文件描述当前事实，本文及专题文件继续承载编码规范。
+
 ## 架构定位
 
 - Fastify 5 + TypeScript ESM 服务，开发/生产均由 `tsx` 启动；Node.js `>=22`。

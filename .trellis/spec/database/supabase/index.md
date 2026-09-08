@@ -1,5 +1,7 @@
 # Supabase 与数据库迁移规范
 
+> 当前数据业务域与数据库基建见 [功能模块现状索引](./modules/index.md)；模块文件描述当前事实，本目录其他文件继续承载迁移与安全规范。
+
 适用于 `packages/shared/migrations/*.sql`、Supabase/PostgREST 配置、Prisma 映射、运行时数据库访问和结构文档。
 
 ## 专题规范

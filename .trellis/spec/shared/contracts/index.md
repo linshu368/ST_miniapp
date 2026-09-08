@@ -1,5 +1,7 @@
 # Shared 契约规范
 
+> 当前契约与公共基础能力见 [功能模块现状索引](./modules/index.md)；模块文件描述当前事实，本目录其他文件继续承载契约规范。
+
 `@miniapp/shared` 是 frontend、backend、admin、cs-platform 唯一共享契约层。适用于 `packages/shared/src/**`；SQL migration 由 database spec 管理。
 
 ## 专题规范
