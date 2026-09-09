@@ -1,13 +1,12 @@
 /**
  * backend / lib / supabase.ts
  *
- * Supabase service_role 客户端（绕过 RLS）。
- * 专用于 Bridge / 内部服务直接读写 MiniApp 业务表的场景。
- * 普通业务查询仍走 Prisma（DATABASE_URL postgres 用户）。
+ * Supabase service_role 客户端（绕过 RLS），用于 RPC 与 Prisma 未声明的 schema。
+ * Prisma 已声明的三个域（app_core / miniapp_features / billing）优先走 Prisma。
  *
- * 业务表按归属域分布在多个物理 schema 里（migration 099），所以访问入口是
- * getDomainDb(域名)，而不是一个统一的 .schema('miniapp')。归属权威见
- * docs/schema归属地图.md。
+ * 业务表按归属域分布在八个物理 schema 里（migration 099），所以访问入口是
+ * getDomainDb(域名) —— 每次都要显式说出访问哪个域，没有「默认域」这种东西。
+ * 归属权威见 docs/schema归属地图.md。
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';

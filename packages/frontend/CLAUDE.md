@@ -66,6 +66,12 @@ useEffect(() => {
 }, [])
 ```
 
+### 数据来源与边界
+
+- **后端 REST / SSE 是前端唯一的服务端数据来源**，统一走 `src/lib/api/`（`client.ts` 是唯一 REST 客户端，SSE 走 `lib/api/conversation-stream.ts`）。
+- **前端不直连数据库**：不引入 supabase-js，不消费任何数据库行类型，只消费 `@miniapp/shared` 的 `src/api/*` 契约。
+- **应用包互不 import**：前端禁止 import `@miniapp/backend`（由 `.eslintrc.json` 的 import guard 在 CI 拦截）。
+
 ### 类型
 
 - **禁止 `any`**。AI 生成的代码出现 `any` 时必须修正为具体类型。
@@ -87,65 +93,22 @@ useEffect(() => {
 
 ---
 
-## iframe 集成与跨边界通信(阶段二)
-
-> 平台前端宿主一个 ST iframe(原生 JS + jQuery),所有 ST 功能调用通过 postMessage 协议跨边界。
-> 本节规则不可与上方"硬规则"冲突,违反即 review 否决。
-
-### 三类数据源与调用方式
-
-| 数据/操作类型                                 | 调用方式          | 封装位置                                                             |
-| --------------------------------------------- | ----------------- | -------------------------------------------------------------------- |
-| 平台业务数据(用户、订单、计费)                | 平台后端 REST API | `src/lib/api/` 下的 React Query hooks                                |
-| ST 功能调用(切角色、重生成、新对话等)         | postMessage RPC   | `src/lib/bridge/` 下的 bridge-client                                 |
-| Supabase 只读查询(角色卡列表浏览等低敏感数据) | Supabase JS SDK   | `src/lib/api/` 下的 React Query hooks(与 REST 同级,组件无感知数据源) |
-
-> 三种调用在组件层的形态都是 `useXxxQuery` / `useXxxMutation` / `platformAction()`,组件不感知底层是 fetch / postMessage / supabase-js。
-
-### iframe 生命周期硬规则
-
-- ST iframe 必须在**大厅页(用户登录后第一个落地页)就静默挂载并预加载**,通过 CSS `display: none` 隐藏。目的:用户进入聊天页时零等待。
-- 进入聊天页只切换 iframe 的可见性(`display` / `visibility`),**禁止 unmount/remount iframe DOM 节点**。一次会话生命周期内 iframe 只加载一次。
-- iframe 节点必须挂载在 React 组件树之外或通过 ref 持久持有,**禁止把 iframe 写在会被路由切换销毁的组件里**。推荐做法:在根布局(`app/layout.tsx` 或专用 Provider)中渲染,通过 Zustand 控制显隐。
-- 用户从聊天页返回大厅时,iframe 重新隐藏而不卸载。
-
-### postMessage 通信硬规则
-
-- **禁止业务组件直接调用 `iframe.contentWindow.postMessage`**。所有 ST 调用必须经 `src/lib/bridge/` 下的 `platformAction()` 统一入口。
-- **禁止业务组件直接 `window.addEventListener('message', ...)`**。所有 ST 事件订阅必须通过 bridge-client 暴露的 hook(如 `useSTEvent('generationStarted', handler)`)。
-- 协议类型(action 枚举、event 枚举、消息结构)必须从 `@repo/bridge-protocol` 包导入,**禁止在前端就地定义 action/event 字符串字面量**。
-- `postMessage` 第二个参数(targetOrigin)**禁止使用 `'*'`**,必须传入精确的 ST iframe origin(从环境变量读取)。
-- 所有 RPC 调用必须由 bridge-client 内部生成 `requestId`、维护超时(默认建议 ≤30s)和错误回调,**禁止业务组件自行管理 requestId**。
-- bridge-client 内部对 RPC 响应做异常归一化,业务组件用 try/catch 处理 `BridgeError`,不直接处理底层 `MessageEvent`。
-
-```typescript
-// ✅ 正确
-import { platformAction, useSTEvent } from '@/lib/bridge'
-
-await platformAction('regenerate')
-useSTEvent('generationStarted', () => setLoading(true))
-
-// ❌ 错误:绕过 bridge-client
-iframe.contentWindow?.postMessage({ action: 'regenerate' }, '*')
-window.addEventListener('message', e => { ... })
-
 ## 目录约定
 
 ```
-
 src/
-├── app/ # Next.js App Router 路由
+├── app/                # Next.js App Router 路由
+│   ├── (main)/         # 底部四 Tab：大厅 / 聊天 / 创作 / 我的
+│   └── chat/           # 会话页（不在分组内，无底部导航）
 ├── components/
-│ ├── ui/ # shadcn/ui 组件
-│ └── <模块>/ # 业务组件，按模块分目录
-├── hooks/ # 自定义 hooks
-├── stores/ # Zustand stores
-│ └── st-mirror.ts # 🆕 ST iframe 回传状态镜像
+│   ├── ui/             # shadcn/ui 组件
+│   └── <模块>/         # 业务组件，按模块分目录
+├── hooks/              # 自定义 hooks
+├── stores/             # Zustand stores（跨组件状态）
 ├── lib/
-│ ├── api/ # React Query hooks，每个业务模块一个文件
-│ └── utils.ts # 通用工具（cn() 等）
-│ ├── bridge/ # 🆕 bridge-client:platformAction、useSTEvent、RPC 状态机
-
+│   ├── api/            # React Query hooks，每个业务模块一个文件
+│   ├── telegram/       # Telegram Mini App SDK 与鉴权适配
+│   └── utils.ts        # 通用工具（cn() 等）
 ```
 
 > 工作前必须**现场扫描** `src/`，以现场结构为准；上表用于判定**新增代码应放哪里**。
@@ -163,25 +126,20 @@ src/
 7. API 调用封装在 `lib/api/` 下的 React Query hooks，组件不直接 fetch
 8. 不用 `useEffect` 做数据获取
 9. 引入新依赖前先确认已有的库能否实现
-10.ST 功能调用一律走 platformAction(),不直接 postMessage
-11.ST 事件订阅一律走 useSTEvent(),不直接 addEventListener
-12.action / event 名称从 @repo/bridge-protocol 导入,不写字符串字面量
-13.iframe 节点持久挂载,切页面只改显隐,不 unmount
-14.平台前端不直接写 ST 数据;Supabase 访问仅只读且封装为 React Query hooks
+10. 服务端数据只从后端 REST / SSE 来，不直连数据库、不消费 DB 行类型
 
 ---
 
 ## 明确不选的技术
 
-| 不选                                      | 理由                         |
-| ----------------------------------------- | ---------------------------- |
-| Vue / Nuxt / Svelte / Solid               | AI 对 React 生成质量更高     |
-| Redux / Mobx                              | Zustand 够用                 |
-| Material UI / Ant Design / Chakra UI      | shadcn/ui 更灵活             |
-| styled-components / emotion               | Tailwind 更快                |
-| NestJS                                    | 对小团队过度设计             |
-| TypeORM / Sequelize                       | Prisma 更好用                |
-| Socket.io                                 | SSE 够用                     |
-| Redux Saga / RxJS                         | 过度设计                     |
-| GraphQL                                   | REST + React Query 更合适    |
-```
+| 不选                                 | 理由                      |
+| ------------------------------------ | ------------------------- |
+| Vue / Nuxt / Svelte / Solid          | AI 对 React 生成质量更高  |
+| Redux / Mobx                         | Zustand 够用              |
+| Material UI / Ant Design / Chakra UI | shadcn/ui 更灵活          |
+| styled-components / emotion          | Tailwind 更快             |
+| NestJS                               | 对小团队过度设计          |
+| TypeORM / Sequelize                  | Prisma 更好用             |
+| Socket.io                            | SSE 够用                  |
+| Redux Saga / RxJS                    | 过度设计                  |
+| GraphQL                              | REST + React Query 更合适 |

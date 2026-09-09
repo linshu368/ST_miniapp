@@ -5,7 +5,7 @@ import {
   resolveFixedDeduction,
   resolveUsageBillingGate,
   shouldRecordUsageCharge,
-} from '../features/billing/usage-pricing.js';
+} from './usage-pricing.js';
 
 const fixedDeduction = {
   freeQuotaExhausted: 10,

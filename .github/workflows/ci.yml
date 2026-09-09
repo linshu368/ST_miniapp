@@ -64,6 +64,11 @@ jobs:
       - name: Lint cross-package imports
         run: npx eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --ignore-pattern '**/__tests__/eslint-import-guard.ts' --no-inline-config
 
+      # 禁止旧 schema / 已退场链路的新引用，以及在收口好的主路径之外另开出口。
+      # 规则与豁免清单在 scripts/check-legacy-references.mjs。
+      - name: Guard against legacy references
+        run: pnpm lint:legacy
+
       - name: Test shared package
         run: pnpm --filter @miniapp/shared test
 

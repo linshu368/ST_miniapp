@@ -26,7 +26,7 @@ const settleVoiceGeneration = vi.fn(async () => ({
   charged: true,
 }));
 
-vi.mock('../generation/index.js', () => ({
+vi.mock('./billing.js', () => ({
   settleVoiceGeneration: (...args: unknown[]) =>
     settleVoiceGeneration(...(args as Parameters<typeof settleVoiceGeneration>)),
 }));

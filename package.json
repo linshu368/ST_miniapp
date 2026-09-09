@@ -11,6 +11,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r --if-present lint",
     "lint:imports": "eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --ignore-pattern '**/__tests__/eslint-import-guard.ts' --no-inline-config",
+    "lint:legacy": "node scripts/check-legacy-references.mjs",
     "import-character": "pnpm --filter @miniapp/backend exec tsx ../../scripts/import-character.ts",
     "supabase": "supabase",
     "supabase:start": "supabase start",

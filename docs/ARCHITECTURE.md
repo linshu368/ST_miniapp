@@ -24,7 +24,8 @@
 3. **应用包互不 import**：`frontend` / `backend` / `cs-platform` / `admin` 之间没有 import 关系，跨进程一律走 HTTP。
 4. **DB 类型不进前端**：前端与运营台只消费 `shared/api/*` 契约，不接触数据库行类型。
 5. **前端不在组件里 fetch**：服务端数据统一走 `frontend/src/lib/api/` 的 React Query hooks；跨组件状态用 Zustand，局部状态用 `useState`（frontend CLAUDE.md）。
-6. **生成与计费只有一个出口**：任何要调 LLM 的路径都必须走 `backend/src/features/generation/`。禁止在别处另起一套"转发 + 扣费 + 落库"，否则计费口径必然漂移。
+6. **生成与计费只有一个出口**：任何要调聊天 LLM 的路径都必须走 `backend/src/features/generation/`（**含实扣**：`settle.ts` 与 `sync-job.ts` 两条结算路径也都在这个模块里）。禁止在别处另起一套"转发 + 扣费 + 落库"，否则计费口径必然漂移。唯一的刻意例外是语音写稿（`features/voice/`）：不同供应商、非流式、抽取任务、按次计费，理由写在 `voice-draft.ts` 与 `voice/billing.ts` 头注释里。
+   同类纪律还有三条，一并由 CI 的 legacy guard 拦（见 §7.5）：`experience.chat_history` 只由 `ConversationHistoryRepository` 读写；支付到账只由 `PaymentSettlement.settlePaidOrder` 入账；OpenRouter 用量统计只由 `generation/openrouter-metadata.ts` 读取。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
 8. **数据库按八个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表（存量豁免清单见 `docs/schema归属地图.md` §四）。
 9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发。历史存在重号（见 §7.4），**不要按序号推断内容**。
@@ -189,7 +190,7 @@ SSE 事件契约定义在 `shared/src/api/conversations.ts`：`start`（带 mess
    · 上游 2xx → onStreamOpen 回调，此时才写 SSE 响应头并下发 start 事件
 7. 边转发 delta 边累积；客户端断开不终止后端，继续 drain 到 [DONE]
 8. 终态：同步更新同一条 chat_history 的正文与状态；实扣与 OpenRouter 元数据异步补齐
-   （chat-history-logger 即时写 + chat-history-sync-job 30 秒轮询回捞 24h 内不全的行）
+   （`generation/settle.ts` 即时写 + `generation/sync-job.ts` 30 秒轮询回捞 24h 内不全的行）
 ```
 
 **硬约束**：SSE 首字节写出之前不能有任何可能失败的判定。402（余额不足）、409（会话忙 / 不可重生成）、404 全部以 HTTP 状态码 + JSON 返回；响应头一旦发出就只能降级成流内 `error` 事件。所以响应头推迟到上游已 2xx 的 `onStreamOpen` 才写——不是等第一个 token，否则客户端要白等一整个上游首 token 延迟才能挂上占位气泡。
@@ -218,14 +219,19 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 ### 4.5 生成与计费出口（`features/generation`）
 
-| 文件                | 职责                                                                                    |
-| ------------------- | --------------------------------------------------------------------------------------- |
-| `resolve-model.ts`  | 权威模型解析：用户 `selected_model_id` → 模型目录 → `ResolvedModel`                     |
-| `quota.ts`          | 角色免费额度 `reserve` / `finalize` 两阶段                                              |
-| `precheck.ts`       | 定档扣费额与计费快照、余额预检（402 判定，不构造响应）                                  |
-| `upstream.ts`       | 上游转发原语 + SSE tap（逐字节透传、抓 `generation_id` / `finish_reason`、判 `[DONE]`） |
-| `prompt-caching.ts` | Anthropic `cache_control` 断点注入（system + 窗口内历史最后一条，不打本轮输入）         |
-| `execute.ts`        | `GenerationService`：把上面串成一条出口，供对话链路直调                                 |
+| 文件                     | 职责                                                                                    |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| `resolve-model.ts`       | 权威模型解析：用户 `selected_model_id` → 模型目录 → `ResolvedModel`                     |
+| `quota.ts`               | 角色免费额度 `reserve` / `finalize` 两阶段                                              |
+| `precheck.ts`            | 定档扣费额与计费快照、余额预检（402 判定，不构造响应）                                  |
+| `upstream.ts`            | 上游转发原语 + SSE tap（逐字节透传、抓 `generation_id` / `finish_reason`、判 `[DONE]`） |
+| `prompt-caching.ts`      | Anthropic `cache_control` 断点注入（system + 窗口内历史最后一条，不打本轮输入）         |
+| `execute.ts`             | `GenerationService`：把上面串成一条出口，供对话链路直调                                 |
+| `settle.ts`              | **星尘实扣就在这里**：补用量元数据 → `charge_llm_usage` → 免费额度收口 → 回写计费列     |
+| `sync-job.ts`            | 计费的第二条结算路径：30 秒轮询回捞 `finish_reason` 未到、挂 pending 的行               |
+| `openrouter-metadata.ts` | OpenRouter 用量统计（`/generation?id=`）的唯一读取与字段映射入口，上面两者共用          |
+
+`settle.ts` 是 fire-and-forget 的：它第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），挂在请求里会让用户在回复已经流完之后继续等。它与请求内同步的 `finalizeTurn` 写同一行 `chat_history` 的**不同列**，列归属见 `ConversationHistoryRepository` 头注释，因此谁先落地都不会互相覆盖。
 
 计费要点：
 
@@ -343,7 +349,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 **鉴权机制**：用户侧统一 `requireTelegramAuth`（`middleware/auth.ts`，读 `X-Init-Data` 做 HMAC-SHA256 校验；非生产可用 `MOCK_AUTH=1` / `DEV_AUTH_BYPASS=1` 旁路）。运营侧 CS 用 `X-CS-Admin-Token` + `X-CS-Operator-Id`，admin 用 Supabase 会话，Bot 用 `X-Bot-Internal-Secret` 与 Telegram webhook secret。
 
-**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`chat-history-sync-job`（30 秒轮询，回捞 24h 内 OpenRouter 元数据不全的行并结算 pending 计费）、`lobby-ranking-refresh-job`（24 小时一轮重算大厅推荐排序分）。支付对账与过期是独立 Railway 服务（见 §8）。
+**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（30 秒轮询，回捞 24h 内 OpenRouter 元数据不全的行并结算 pending 计费）、`lib/lobby-ranking-refresh-job.ts`（24 小时一轮重算大厅推荐排序分）。支付对账与过期是独立 Railway 服务（见 §8）。
 
 ---
 
@@ -367,14 +373,15 @@ packages/backend/src/
 ├── middleware/auth.ts      # requireTelegramAuth
 ├── routes/                 # 路由（见 §6）
 ├── features/               # conversations / engine / generation / voice /
-│                           # billing / lobby / payment
+│                           # billing / lobby / payment / community
 ├── infrastructure/         # repositories / payment 网关 / redis
 ├── platform/               # config, runtime-config, model-tiers, openrouter-models
-├── lib/                    # supabase(getDomainDb), user, chat-history-logger,
-│                           # chat-history-sync-job, lobby-ranking-refresh-job,
+├── lib/                    # supabase(getDomainDb), user, lobby-ranking-refresh-job,
 │                           # chat-voice-storage, logger, sentry, notifications…
 └── scripts/                # 回归与运维脚本（含支付对账/过期/回调日报）
 ```
+
+**`lib/` 的边界**：只放跨 feature 的技术设施（DB 客户端、日志、存储、用户身份）。**带业务决策的代码一律进 `features/`**——尤其是花钱、扣费、落业务表的。历史上 LLM 实扣曾经藏在 `lib/chat-history-logger.ts` 里，照着链路读下来根本找不到钱在哪扣，现已收回 `features/generation/settle.ts`。
 
 ### 7.3 测试与回归
 
@@ -392,6 +399,28 @@ packages/backend/src/
   - 099 有配套 `_rollback` 文件，是正向 + 回滚，不是撞号。
 - 执行方式：GitHub Actions → `Database Migration` → 选环境 → 填文件路径；生产需在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。workflow 会校验连接串 project ref（test = `zoqelpfhurwehlvypryl`，production = `wbtsfzozlmurljvglhpn`）。
 - **099 不是普通迁移**：执行前必读 `docs/schema划分-一阶段执行计划.md`（停流量、前置 097/098、事务外三步收尾）。test 与生产均已执行完毕。
+
+### 7.5 legacy guard（禁止旧链路的新引用）
+
+`scripts/check-legacy-references.mjs`，本地跑 `pnpm lint:legacy`，CI 在 import guard 之后强制执行。
+
+它解决的问题是：本仓经历过 ST 退场、schema 拆八域、growth 下线、支付方案变更等多轮迁移，靠人 review 记不住哪条链路已经死了。每条规则都对应一个**已经收口完成**的决定，命中即说明有人又开了第二条：
+
+| 规则                        | 拦什么                                                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `miniapp-schema-client`     | `.schema('miniapp')` / `getDomainDb('miniapp')`                                                            |
+| `miniapp-schema-sql`        | `FROM/JOIN/INTO/UPDATE/TABLE miniapp.*`                                                                    |
+| `dropped-schema-sql`        | `st_platform` / `st_users` / `st_infra` / `growth` / `miniapp_simulation` 限定名                           |
+| `deleted-packages`          | `@miniapp/db-types` / `sync-engine` / `st-extension`、`@repo/bridge-protocol`                              |
+| `retired-identifiers`       | `apiStreamClient` / `platform_presets` / `chat_engine_mode` / `routes/llm-proxy` / `deduct_wallet_credits` |
+| `chat-history-writer`       | `ConversationHistoryRepository` 之外读写 `chat_history`                                                    |
+| `llm-chat-upstream`         | `upstream.ts` 之外打 `/chat/completions`                                                                   |
+| `openrouter-generation-api` | `openrouter-metadata.ts` 之外读 OpenRouter 用量统计                                                        |
+| `payment-settlement`        | `PaymentSettlement` 之外调 `complete_payment_order`                                                        |
+
+**扫描范围只含活代码**（`packages/*/src`、`scripts/`、`botlink/`）。历史迁移 SQL、`docs/`、`ops/` 快照按定义就是留档，刻意不扫——改已执行过的迁移比留着它更危险。
+
+每条规则的 `allow` 清单就是「这条主路径本人 + 测试夹具」。**往 `allow` 里加文件等于宣布又多了一个出口**，必须在 PR 描述里写清业务上为什么必须独立。
 
 ---
 
@@ -415,7 +444,7 @@ packages/backend/src/
 
 **支付入账的四条路径**（唯一出口 `features/payment/usecases/PaymentSettlement.settlePaidOrder`，幂等靠 `credits_added`，先到者写 `payment_orders.settled_by`）：`webhook`（网关异步回调）→ `return`（同步回跳）→ `query`（订单页轮询时对账）→ `cron`（上述两个 Railway 任务兜底）。四路兜底的由来见 `docs/payment-missing-credits-remediation.md`（生产曾因 cron 未部署漏账）。
 
-**CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / 测试 / Docker 构建，矩阵仅 backend）、`build-and-push.yml`（GHCR 镜像：backend 跟 `dev` 推送；frontend 仅 `staging-*` tag）、`db-migrate.yml`（手动迁移）、`pr-review.yml`、`railway-pr-env.yml`（PR 临时环境）。生产不走 GHCR，Railway 直接从 GitHub `main` 构建。
+**CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / **legacy guard** / 测试 / Docker 构建，矩阵仅 backend）、`build-and-push.yml`（GHCR 镜像：backend 跟 `dev` 推送；frontend 仅 `staging-*` tag）、`db-migrate.yml`（手动迁移）、`pr-review.yml`、`railway-pr-env.yml`（PR 临时环境）。生产不走 GHCR，Railway 直接从 GitHub `main` 构建。
 
 > 运维遗留（需人工处理）：Railway production 控制台的 `nginx-pro` / `st-bundle-pro` / 卷 `st-data-pro` 与两侧 `ST_*` 变量待手动删除（见 `ops/railway/README.md`）；废弃的 `pr-276` 环境仍挂着一条 `branch=main` 的 trigger；`Dockerfile.frontend` 仍是隐式 pnpm 取包写法（backend 已在 PR #295 修复构建卡死）。
 

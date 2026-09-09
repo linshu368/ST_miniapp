@@ -1,8 +1,8 @@
 /**
  * backend / features / voice / voice-billing-config.ts
  *
- * 语音计费与文案配置的统一读取入口。七个键都在 miniapp.runtime_config，
- * 由 migration 097 种入。读取范式对齐 features/billing/free-quota.ts：
+ * 语音计费与文案配置的统一读取入口。七个键都在 app_core.runtime_config，
+ * 由 migration 097 种入（099 拆域后从 miniapp 迁到 app_core）。读取范式对齐 features/billing/free-quota.ts：
  * 直读 runtime_config，缺失/损坏时降级到内置兜底并打 warn，不另起第二套读法
  * （架构铁律 7：runtime_config 只有一个读取入口 platform/runtime-config.ts）。
  */
