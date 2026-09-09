@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -323,6 +324,79 @@ def validate_task_updates(root: Path, task_dir: Path, task_data: dict) -> tuple[
     return impact, updates
 
 
+def _archive_task_reference(task_dir: Path, archived_at: datetime) -> str:
+    year_month = archived_at.strftime("%Y-%m")
+    return f".trellis/tasks/archive/{year_month}/{task_dir.name}/"
+
+
+def _resolve_commit_reference(root: Path, task_data: dict) -> str | None:
+    recorded = task_data.get("commit")
+    if isinstance(recorded, str) and recorded.strip():
+        return recorded.strip()
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=root,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    commit = result.stdout.strip()
+    if result.returncode == 0 and commit:
+        return commit
+    return None
+
+
+def _change_summary(update: dict) -> str:
+    for key in ("change_summary", "summary"):
+        raw = update.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip().rstrip("。；;")
+    operation = update.get("operation")
+    if operation == "create":
+        return "创建模块知识文档"
+    if operation == "rename":
+        from_module_id = update.get("from_module_id")
+        if isinstance(from_module_id, str) and from_module_id.strip():
+            return f"从 `{from_module_id.strip()}` 重命名并更新模块知识文档"
+        return "重命名并更新模块知识文档"
+    return "更新模块知识文档"
+
+
+def _archive_history_line(root: Path, task_dir: Path, task_data: dict, update: dict) -> str:
+    title = str(task_data.get("title") or task_data.get("name") or task_dir.name).strip()
+    archived_at = datetime.now()
+    commit = _resolve_commit_reference(root, task_data)
+    commit_text = f"commit：`{commit}`" if commit else "commit：未记录"
+    return (
+        f"- {archived_at.strftime('%Y-%m-%d')}：任务 `{title}`"
+        f"（`{_archive_task_reference(task_dir, archived_at)}`）{_change_summary(update)}；{commit_text}。"
+    )
+
+
+def _append_archive_history(content: str, line: str) -> str:
+    normalized = content.rstrip()
+    if line in normalized:
+        return normalized + "\n"
+    match = re.search(r"(?m)^## 变更记录\s*$", normalized)
+    if not match:
+        return f"{normalized}\n\n## 变更记录\n\n{line}\n"
+    tail = normalized[match.end():]
+    next_section = re.search(r"(?m)^## ", tail)
+    if not next_section:
+        section_body = tail.strip()
+        separator = "\n" if section_body else "\n\n"
+        return f"{normalized}{separator}{line}\n"
+    insert_at = match.end() + next_section.start()
+    before = normalized[:insert_at].rstrip()
+    after = normalized[insert_at:].lstrip("\n")
+    return f"{before}\n{line}\n\n{after}\n"
+
+
 class RepoLock:
     def __init__(self, root: Path, timeout: float = 5.0):
         self.path = root / ".trellis/.runtime/module-sync.lock"
@@ -346,7 +420,13 @@ class RepoLock:
         self.path.unlink(missing_ok=True)
 
 
-def apply_task(root: Path, task_dir: Path, task_data: dict) -> Path | None:
+def apply_task(
+    root: Path,
+    task_dir: Path,
+    task_data: dict,
+    *,
+    record_archive_history: bool = False,
+) -> Path | None:
     _, updates = validate_task_updates(root, task_dir, task_data)
     if not updates:
         return None
@@ -381,7 +461,14 @@ def apply_task(root: Path, task_dir: Path, task_data: dict) -> Path | None:
                         _safe_repo_path(
                             root, update["from_target"], modules_only=True
                         ).unlink()
-                    _atomic_write(target, update["content"].encode("utf-8"))
+                    content = update["content"]
+                    if record_archive_history:
+                        content = _append_archive_history(
+                            content,
+                            _archive_history_line(root, task_dir, task_data, update),
+                        )
+                        validate_module_content(root, target, content)
+                    _atomic_write(target, content.encode("utf-8"))
             _atomic_write(manifest_path, json.dumps({"schema_version": 1, "entries": entries}, ensure_ascii=False, indent=2).encode("utf-8"))
             docs = baseline_check(root, require_indexes=False)
             for path, content in render_indexes(root, docs).items():
@@ -428,7 +515,7 @@ def check_task(task_dir: Path, root: Path | None = None) -> None:
 def apply_for_archive(task_dir: Path, root: Path | None = None) -> Path | None:
     root = root or repo_root_from(task_dir)
     resolved, task_data = load_task(root, str(task_dir))
-    return apply_task(root, resolved, task_data)
+    return apply_task(root, resolved, task_data, record_archive_history=True)
 
 
 def main() -> int:

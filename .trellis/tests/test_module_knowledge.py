@@ -12,6 +12,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from module_knowledge import (  # noqa: E402
     KnowledgeError,
+    apply_for_archive,
     apply_task,
     baseline_check,
     rebuild_indexes,
@@ -122,7 +123,59 @@ class ModuleKnowledgeTest(unittest.TestCase):
             [{"operation": "update", "module_id": "backend.business.demo", "target": target.relative_to(self.root).as_posix(), "expected_sha256": digest, "content": module_content(title="新标题"), "evidence": self.evidence()}],
         )
         apply_task(self.root, task_dir, data)
-        self.assertIn("新标题", target.read_text(encoding="utf-8"))
+        updated = target.read_text(encoding="utf-8")
+        self.assertIn("新标题", updated)
+        self.assertNotIn("## 变更记录", updated)
+
+    def test_apply_for_archive_appends_change_history(self) -> None:
+        target = self.root / ".trellis/spec/backend/app/modules/business/demo.md"
+        target.parent.mkdir(parents=True)
+        target.write_text(module_content(), encoding="utf-8")
+        digest = hashlib.sha256(target.read_bytes()).hexdigest()
+        task_dir, data = self.write_task(
+            {"schema_version": 1, "mode": "changes", "modules": ["backend.business.demo"]},
+            [
+                {
+                    "operation": "update",
+                    "module_id": "backend.business.demo",
+                    "target": target.relative_to(self.root).as_posix(),
+                    "expected_sha256": digest,
+                    "content": module_content(title="新标题"),
+                    "change_summary": "补充归档历史记录",
+                    "evidence": self.evidence(),
+                }
+            ],
+        )
+        data.update({"title": "测试任务"})
+        (task_dir / "task.json").write_text(json.dumps(data), encoding="utf-8")
+        apply_for_archive(task_dir, self.root)
+        updated = target.read_text(encoding="utf-8")
+        self.assertIn("新标题", updated)
+        self.assertIn("## 变更记录", updated)
+        self.assertIn("任务 `测试任务`", updated)
+        self.assertIn("`.trellis/tasks/archive/", updated)
+        self.assertIn("补充归档历史记录", updated)
+        self.assertIn("commit：未记录", updated)
+        baseline_check(self.root)
+
+    def test_apply_for_archive_uses_default_change_summary(self) -> None:
+        target = ".trellis/spec/backend/app/modules/business/demo.md"
+        content = module_content()
+        task_dir, data = self.write_task(
+            {"schema_version": 1, "mode": "changes", "modules": ["backend.business.demo"]},
+            [
+                {
+                    "operation": "create",
+                    "module_id": "backend.business.demo",
+                    "target": target,
+                    "content": content,
+                    "evidence": self.evidence(),
+                }
+            ],
+        )
+        apply_for_archive(task_dir, self.root)
+        updated = (self.root / target).read_text(encoding="utf-8")
+        self.assertIn("创建模块知识文档", updated)
 
     def test_path_traversal_is_rejected(self) -> None:
         task_dir, data = self.write_task(
