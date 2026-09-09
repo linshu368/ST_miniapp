@@ -2,7 +2,7 @@
   "id": "preset-dialogue-platform-planning",
   "name": "preset-dialogue-platform-planning",
   "title": "预设对话平台系统规划",
-  "description": "规划 packages 下独立预设对话平台的架构、模块、数据、环境、安全、可靠性、实施路线与 Trellis spec 同步方案。",
+  "description": "规划 packages 下独立预设对话平台的架构、模块、独立 preset_platform 数据域、环境、安全、可靠性、实施路线与 Trellis spec 同步方案。",
   "status": "planning",
   "dev_type": null,
   "scope": "cross-package-planning",
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "父级规划任务；实现建议拆为 shared/database/backend/preset-platform/docs 子任务，评审后逐项启动。",
+  "notes": "父级规划任务；Preset Platform 数据模型不归属 admin，由独立 preset_platform 域管理；实现建议拆为 shared/database/backend/preset-platform/docs 子任务，评审后逐项启动。",
   "meta": {}
 }

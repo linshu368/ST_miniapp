@@ -10,7 +10,7 @@ packages/preset-platform (Vite React)
       → packages/backend /api/internal/preset-platform/*
           ├─ 运营鉴权/权限、会话/预设编排
           ├─ features/generation provider primitive → OpenRouter
-          ├─ admin schema：工作台会话、消息、草稿、发布、审计
+          ├─ preset_platform schema：工作台会话、消息、草稿、发布、审计
           ├─ app_core：角色卡只读
           └─ experience：真实输入只读 + 服务端脱敏
 ```
@@ -62,19 +62,19 @@ type PresetDefinitionV1 = {
 
 ## 3. 数据模型与真相
 
-首期全部工作台资产归 `admin` schema；若未来 MiniApp 正式消费，再用 migration 将已发布运行时快照投影到 `app_core`，现在不双写。
+新建独立 `preset_platform` schema，首期全部工作台资产、数据访问函数和授权策略均归该域管理，**不归属 `admin` schema**。即使认证阶段复用 Admin 的 Supabase 账号，也只把它视为外部身份来源，不把 Preset Platform 的表、RPC、RLS、grant、审计或生命周期并入 Admin。若未来 MiniApp 正式消费，再用 migration 将已发布运行时快照投影到 `app_core`，现在不双写。
 
-| 表                                | 责任/关键约束                                                            |
-| --------------------------------- | ------------------------------------------------------------------------ |
-| `admin.preset_definitions`        | 稳定身份、名称、简介、标签、归档；内部以 UUID 身份。                     |
-| `admin.preset_drafts`             | 作者态 definition、schema_version、revision、owner；同名覆盖显式确认。   |
-| `admin.preset_releases`           | immutable version、payload_hash、发布人/时间、来源草稿；历史不 UPDATE。  |
-| `admin.preset_platform_default`   | 单行 release pointer + revision；发布/回滚原子切换。                     |
-| `admin.preset_test_sessions`      | operator、标题、model、default/pinned binding、角色快照、busy/revision。 |
-| `admin.preset_test_messages`      | turn/role/content/status/request_id、模型/预设/角色快照、finish/error。  |
-| `admin.preset_platform_audit_log` | 发布、回滚、覆盖、生产素材读取的安全摘要，不记正文/个人数据。            |
+| 表                                   | 责任/关键约束                                                            |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| `preset_platform.preset_definitions` | 稳定身份、名称、简介、标签、归档；内部以 UUID 身份。                     |
+| `preset_platform.preset_drafts`      | 作者态 definition、schema_version、revision、owner；同名覆盖显式确认。   |
+| `preset_platform.preset_releases`    | immutable version、payload_hash、发布人/时间、来源草稿；历史不 UPDATE。  |
+| `preset_platform.platform_default`   | 单行 release pointer + revision；发布/回滚原子切换。                     |
+| `preset_platform.test_sessions`      | operator、标题、model、default/pinned binding、角色快照、busy/revision。 |
+| `preset_platform.test_messages`      | turn/role/content/status/request_id、模型/预设/角色快照、finish/error。  |
+| `preset_platform.audit_log`          | 发布、回滚、覆盖、生产素材读取的安全摘要，不记正文/个人数据。            |
 
-数据库不变量：UUID/timestamptz、显式 check/FK/index/comment；release immutable；默认 pointer 只指有效 release；原子 RPC 锁 session 分配 turn；request ID unique；RLS/grant 按 viewer/operator/publisher；`SECURITY DEFINER` 固定 search_path、撤销 PUBLIC execute。
+数据库不变量：migration 文件头声明 `-- domain: preset_platform`；UUID/timestamptz、显式 check/FK/index/comment；release immutable；默认 pointer 只指有效 release；原子 RPC 锁 session 分配 turn；request ID unique；RLS/grant 按 viewer/operator/publisher；`SECURITY DEFINER` 固定 search_path、撤销 PUBLIC execute。Preset Platform repository 只能以按域 client/RPC 访问自有域，跨域角色卡与真实输入仍遵循只读 repository 边界，不直接 JOIN。
 
 模型缓存首期复用进程内实现，只有多实例实测需要跨重启 stale fallback 时才新增表/Redis。
 
@@ -179,4 +179,4 @@ SPA/backend 可回滚；数据库 expand-first，旧版本忽略新表。错误�
 
 ## 10. 文档与 Spec
 
-实现时新增 `packages/preset-platform/README.md`；新增 `.trellis/spec/preset-platform/app/` 下 index、architecture、features、api-auth-environments、ui-state-accessibility、testing-deployment；更新根 README、`docs/ARCHITECTURE.md` 以及 shared/backend/database specs。
+实现时新增 `packages/preset-platform/README.md`；新增 `.trellis/spec/preset-platform/app/` 下 index、architecture、features、api-auth-environments、ui-state-accessibility、testing-deployment；更新根 README、`docs/ARCHITECTURE.md`、`docs/schema归属地图.md` 以及 shared/backend/database specs，正式登记 `preset_platform` 独立归属域，并同步更新现有“八域”口径。

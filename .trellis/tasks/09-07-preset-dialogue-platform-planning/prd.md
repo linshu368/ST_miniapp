@@ -19,7 +19,9 @@
 
 - 新建独立 workspace 应用，建议目录/包名为 `packages/preset-platform` / `@miniapp/preset-platform`。
 - 使用独立域名、部署项目、环境变量与 CORS origin；不得嵌入 `packages/admin`。
-- 默认进入探索测试环境，顶栏持续展示当前目标；生产环境采用更醒目的风险提示与确认。
+- 新建独立数据库归属域 `preset_platform`，预设、草稿、发布版本、测试会话、测试消息与平台审计均由该域管理，不归属或写入 `admin` schema。
+- Admin 仅可作为登录账号/认证能力的候选复用来源，不因此拥有 Preset Platform 的业务数据、RPC 或生命周期。
+- 默认进入测试环境，顶栏持续展示当前目标；生产环境采用更醒目的风险提示与确认。
 - 左侧导航采用多页面工作台：对话测试、OpenRouter 模型、预设库、平台预设、测试素材、预设草稿箱。
 
 ### 3.2 OpenRouter 模型
@@ -87,6 +89,7 @@
 - 外部调用有明确超时；读取只在安全瞬时错误下有限重试，写操作没有幂等键时不自动重试。
 - 列表分页/限量；正文设长度上限；生成设整体 deadline 与并发限制。
 - 迁移只进入 `packages/shared/migrations/`，先测试后生产、每次一个文件、手工执行。
+- 所有 Preset Platform 自有表、RPC、RLS、grant 与审计对象统一位于 `preset_platform` schema；禁止为了复用 Admin 登录或发布模式而放入 `admin` schema。
 - test 与 production 不保证同构；project ref、API base、Supabase client 必须成组切换并 fail fast。
 
 ## 5. 明确不做
@@ -100,6 +103,7 @@
 ## 6. 验收标准
 
 - [ ] 独立应用可启动、构建和部署，默认连接测试环境；缺变量时 fail fast，不回退生产。
+- [ ] 数据库存在独立 `preset_platform` 归属域；平台自有表/RPC/RLS/grant 不落入 `admin`，Admin 数据模型无新增 Preset Platform 业务对象。
 - [ ] 能加载、搜索和选择 OpenRouter 模型；失败时展示带时间的陈旧缓存或明确错误态。
 - [ ] 会话 A/B 可分别配置并发送，切换后历史、配置和回复不串线。
 - [ ] 预设库应用只改变当前会话后续发送，历史和其他会话不变。
@@ -118,5 +122,5 @@
 3. 真实输入时间窗、单卡数量、脱敏规则、可见角色和审计保留期。
 4. 内部测试预算、速率/并发上限及高价模型范围。
 5. 会话/草稿私有还是团队共享；建议首期私有会话、团队共享已发布预设。
-6. 生产模式是否允许在生产库 `admin` 域保存工作台数据；默认允许但绝不写业务域。若安全不允许，则由测试库存储、受控 backend 只读生产素材。
-7. 是否沿用 Admin 的 Supabase 账号/角色表；默认沿用，避免第二套身份体系。
+6. 生产模式是否允许在生产库独立 `preset_platform` 域保存工作台数据；默认允许但绝不写 `admin` 或 MiniApp 业务域。若安全不允许，则由测试库的 `preset_platform` 域存储、受控 backend 只读生产素材。
+7. 是否沿用 Admin 的 Supabase 账号/角色表；默认沿用认证能力以避免第二套身份体系，但平台授权关系及业务数据仍由 `preset_platform` 独立管理，不归属 Admin。

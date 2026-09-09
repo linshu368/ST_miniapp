@@ -21,6 +21,8 @@
 | Shared 契约     | `packages/shared/src/api/*`                                 | 新增 preset-platform 契约、状态和错误码。                                       |
 | 发布语义        | Admin 草稿/发布/历史/回滚                                   | 复用不可变发布、并发版本、审计、恢复思想；多资产不塞进 runtime_config 单 JSON。 |
 
+复用 Admin 的认证协议、前端基线或发布语义只代表复用现有能力，不代表数据归属。Preset Platform 的业务表、RPC、RLS、grant 与审计应位于独立 `preset_platform` schema，Admin 不管理其数据生命周期。
+
 ## 需谨慎扩展
 
 - Admin `App.tsx` 已高度耦合，只参考视觉/行为；不提前创建跨应用 UI 包。
@@ -32,6 +34,7 @@
 
 - 不复活 `st_platform.platform_presets`、旧 RPC、ST payload、宏、世界书和 prompt_order。
 - 不复用 Admin 空壳 Refine resources 架构。
+- 不在 `admin` schema 存放 Preset Platform 的预设、草稿、发布、测试会话、消息或审计数据；即使沿用 Admin 账号，也保持认证来源与数据归属分离。
 - 不用 MiniApp `experience.chat_sessions/chat_history` 存测试工作台数据。
 - 不允许浏览器直查 `experience.chat_history`；真实输入必须经 backend 脱敏。
 - 不建立新 OpenRouter key、浏览器直连或第二套 runtime-config 入口。
