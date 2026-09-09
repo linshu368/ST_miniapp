@@ -18,6 +18,7 @@ import voiceRoutes from './routes/voice.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import inviteRoutes from './routes/invite.js';
+import communityRoutes from './routes/community.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
@@ -108,6 +109,7 @@ export async function buildApp() {
   await app.register(botRoutes);
   await app.register(growthRoutes);
   await app.register(inviteRoutes);
+  await app.register(communityRoutes);
   await app.register(adminSupabaseProxyRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
