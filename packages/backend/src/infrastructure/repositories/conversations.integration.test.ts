@@ -124,10 +124,7 @@ describe.skipIf(!canRunAgainstDatabase)(
       const suffix = Date.now().toString(36);
       const { data: users, error: userError } = await appCoreDb
         .from('users')
-        .insert([
-          { tg_id: `history-test-${suffix}-a`, st_handle: `history_test_${suffix}_a` },
-          { tg_id: `history-test-${suffix}-b`, st_handle: `history_test_${suffix}_b` },
-        ])
+        .insert([{ tg_id: `history-test-${suffix}-a` }, { tg_id: `history-test-${suffix}-b` }])
         .select('id');
       if (userError) throw new Error(`创建测试用户失败：${userError.message}`);
       const insertedUsers = (users ?? []) as Array<{ id: string }>;

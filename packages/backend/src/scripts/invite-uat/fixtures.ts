@@ -3,16 +3,16 @@
  *
  * 裂变邀请阶段三 UAT 的测试数据与库侧读写。
  *
- * 数据隔离与阶段一沙盘同口径：st_handle 前缀 + 待清理 tg_id 落盘登记，跑完自动清理零残留。
+ * 数据隔离：所有测试 tg_id 建号前先落盘登记，跑完自动清理零残留（见 pending-user-ledger.ts）。
  * 归属域按 docs/schema归属地图.md：users 在 app_core，invite 三表在 miniapp_traffic，
  * 钱包与流水在 billing。新增表必须在 FIXTURE_TABLE_DOMAIN 登记，否则不过编译。
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../../platform/config.js';
 import { type DomainSchema } from '../../lib/supabase.js';
+import { createPendingUserLedger } from '../pending-user-ledger.js';
 
 /**
  * 脚本专用 Supabase 客户端：与 lib/supabase.ts 的差别只有一个带重试的 fetch。
@@ -45,59 +45,28 @@ function getScriptDb(domain: DomainSchema) {
   return scriptClient.schema(domain);
 }
 
-/** 与 mvp-regression 的 mvp_regr_ 前缀并列，互不干扰。 */
-const HANDLE_PREFIX = 'invite_uat_';
-
 /**
  * 新建测试用户用的 tg_id 起点，与 mvp-regression 的 8_8xx 段错开。
  *
  * ⚠️ 这个段位**不保证**空着：真实 Telegram id 是单调递增的外部序列，本库里已经出现
  *    8_866_xxx_xxx 量级的真实账号，8_9xx 段被真人占用只是时间问题。所以它只用于
  *    「往哪写」，绝不可反过来当成「这段里的都是测试数据」的删除依据 —— 认领一律走
- *    st_handle 前缀或 PENDING_LEDGER_PATH 的精确登记。
+ *    登记表里的精确 tg_id。
  */
 const TG_ID_BASE = 8_900_000_000;
 
-/**
- * 待清理 tg_id 的落盘登记表。
- *
- * 场景让接口层的 getOrCreateDbUser 自己建号时（真实首开链路），建出来的 st_handle 是
- * tg-<id>，不带 invite_uat_ 前缀，进程若在建号后、登记 user id 前被杀就没人认领得到。
- * 因此在发请求**之前**先把 tg_id 同步写进这个文件：崩了下次开跑照样能精确清掉，
- * 又不必对整段 tg_id 行使删除权。
- */
-const PENDING_LEDGER_PATH = fileURLToPath(
-  new URL('../../../.invite-uat-pending.json', import.meta.url)
+const ledger = createPendingUserLedger(
+  fileURLToPath(new URL('../../../.invite-uat-pending.json', import.meta.url))
 );
-
-function readPendingTgIds(): string[] {
-  if (!existsSync(PENDING_LEDGER_PATH)) return [];
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(PENDING_LEDGER_PATH, 'utf8'));
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is string => typeof item === 'string');
-  } catch {
-    // 登记表损坏时宁可少清一次，也不要让脚本起不来。
-    return [];
-  }
-}
-
-function writePendingTgIds(tgIds: string[]): void {
-  writeFileSync(PENDING_LEDGER_PATH, `${JSON.stringify(tgIds)}\n`, 'utf8');
-}
 
 /** 同步落盘：必须在发起建号请求前调用，异步写会在硬杀时丢掉。 */
 export function recordPendingTgId(tgId: string): void {
-  const pending = readPendingTgIds();
-  if (pending.includes(tgId)) return;
-  writePendingTgIds([...pending, tgId]);
+  ledger.record(tgId);
 }
 
 /** 对应 tg_id 已确认清理干净，从登记表划掉。 */
 export function clearPendingTgIds(tgIds: string[]): void {
-  if (tgIds.length === 0) return;
-  const done = new Set(tgIds);
-  writePendingTgIds(readPendingTgIds().filter((tgId) => !done.has(tgId)));
+  ledger.clear(tgIds);
 }
 
 const FIXTURE_TABLE_DOMAIN = {
@@ -119,7 +88,6 @@ function db(table: keyof typeof FIXTURE_TABLE_DOMAIN) {
 export interface InviteTestUser {
   userId: string;
   tgId: string;
-  stHandle: string;
 }
 
 let tgIdCursor = 0;
@@ -145,13 +113,11 @@ export async function findUserIdByTgId(tgId: string): Promise<string | null> {
  */
 export async function createTestUser(): Promise<InviteTestUser> {
   const tgId = nextTgId();
-  const stHandle = `${HANDLE_PREFIX}${tgId}`;
-  const { data, error } = await db('users')
-    .insert({ tg_id: tgId, st_handle: stHandle })
-    .select('id')
-    .single();
+  // 先登记再建号：这一行是崩溃后还能认领到这个用户的唯一依据。
+  ledger.record(tgId);
+  const { data, error } = await db('users').insert({ tg_id: tgId }).select('id').single();
   if (error) throw new Error(`创建 UAT 用户失败：${error.message}`);
-  return { userId: (data as { id: string }).id, tgId, stHandle };
+  return { userId: (data as { id: string }).id, tgId };
 }
 
 /** 把 created_at 回拨，制造"已有账户"（超出 bind_invite 的 30 分钟新用户判定窗）。 */
@@ -534,30 +500,23 @@ export async function cleanupUsers(userIds: string[]): Promise<void> {
 /**
  * 上次异常退出遗留的数据。开跑前扫一遍，比指望每次都优雅退出可靠。
  *
- * 两条认领路径都是精确匹配，不做任何段位/范围推断：脚本直插的用户带 invite_uat_ 前缀
- * st_handle；接口层建出来的用户 st_handle 是 tg-<id>，靠 PENDING_LEDGER_PATH 里事先
- * 登记的 tg_id 逐个 eq 认领。
+ * 认领只有一条路径且是精确匹配：登记表里的 tg_id 逐个 in 查。脚本直插的用户和接口层
+ * 自己建出来的用户（真实首开链路）都在建号前登记过，所以这一条就够。
  *
- * 曾经这里用 `like('tg_id', '89________')` 扫整段 8_9xx_xxx_xxx，那等于对一整个
- * 十亿号段行使删除权 —— 真实 Telegram id 迟早涨进来，届时会连人带钱包流水一起删掉。
+ * 不做任何段位/范围推断。曾经这里用 `like('tg_id', '89________')` 扫整段
+ * 8_9xx_xxx_xxx，那等于对一整个十亿号段行使删除权 —— 真实 Telegram id 迟早涨进来，
+ * 届时会连人带钱包流水一起删掉。
  */
 export async function sweepOrphanFixtures(): Promise<number> {
-  const byHandle = await db('users').select('id').like('st_handle', `${HANDLE_PREFIX}%`);
-  if (byHandle.error) throw new Error(`扫描遗留 UAT 用户失败：${byHandle.error.message}`);
+  const pendingTgIds = ledger.read();
+  if (pendingTgIds.length === 0) return 0;
 
-  const pendingTgIds = readPendingTgIds();
-  let byPending: Array<{ id: string }> = [];
-  if (pendingTgIds.length > 0) {
-    const found = await db('users').select('id').in('tg_id', pendingTgIds);
-    if (found.error) throw new Error(`扫描遗留 UAT 用户失败：${found.error.message}`);
-    byPending = (found.data ?? []) as Array<{ id: string }>;
-  }
+  const found = await db('users').select('id').in('tg_id', pendingTgIds);
+  if (found.error) throw new Error(`扫描遗留 UAT 用户失败：${found.error.message}`);
 
-  const userIds = [
-    ...new Set([...(byHandle.data ?? []), ...byPending].map((row) => (row as { id: string }).id)),
-  ];
+  const userIds = [...new Set((found.data ?? []).map((row) => (row as { id: string }).id))];
   await cleanupUsers(userIds);
   // 登记表里没建成号的 tg_id 也一并划掉：本轮已确认库里没有对应用户。
-  clearPendingTgIds(pendingTgIds);
+  ledger.clear(pendingTgIds);
   return userIds.length;
 }

@@ -4,18 +4,30 @@
  * M3b 回归的测试数据：钱包 / 免费额度 / chat_history / 扣费明细，以及会话与对话轮次。
  *
  * 用户的 tg_id 必须是**数字串**：requireTelegramAuth 拿到的是 Telegram 的数字 id，
- * getOrCreateDbUser 用它回查 app_core.users。所以遗留数据的清理靠 st_handle 前缀认领。
+ * getOrCreateDbUser 用它回查 app_core.users，塞不进测试前缀。所以遗留用户的认领靠
+ * 建号前落盘的 tg_id 登记表（见 pending-user-ledger.ts）；角色卡另有 card_hash 前缀。
  */
 
+import { fileURLToPath } from 'node:url';
 import { getDomainDb, type DomainSchema } from '../../lib/supabase.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
+import { createPendingUserLedger } from '../pending-user-ledger.js';
 
-const HANDLE_PREFIX = 'mvp_regr_';
 const CARD_HASH_PREFIX = 'mvp-regr-';
 
-/** 8_8xx_xxx_xxx 段不与真实 Telegram id 冲突，且一眼能认出是本脚本造的 */
+/**
+ * 新建测试用户用的 tg_id 起点，与 invite-uat 的 8_9xx 段错开。
+ *
+ * ⚠️ 只决定「往哪写」。真实 Telegram id 是单调递增的外部序列，本库里已经出现
+ *    8_866_xxx_xxx 量级的真实账号，这个段位不保证空着，**绝不可**反过来当成
+ *    「这段里的都是测试数据」的删除依据。认领一律走登记表里的精确 tg_id。
+ */
 const TG_ID_BASE = 8_800_000_000;
+
+const ledger = createPendingUserLedger(
+  fileURLToPath(new URL('../../../.mvp-regression-pending.json', import.meta.url))
+);
 
 export const OPENING_MESSAGE = '（MVP 回归测试开场白）你抬头看了看天。';
 export const CHARACTER_SYSTEM_PROMPT = '你是一个用于 M3b 回归测试的角色。永远用中文回答。';
@@ -266,8 +278,10 @@ export async function seedConversationFixtures(): Promise<ConversationFixtures> 
   const tag = Date.now().toString(36);
   const tgId = String(TG_ID_BASE + Math.floor(Math.random() * 1_000_000));
 
+  // 先登记再建号：这一行是崩溃后还能认领到这个用户的唯一依据。
+  ledger.record(tgId);
   const { data: user, error: userError } = await db('users')
-    .insert({ tg_id: tgId, st_handle: `${HANDLE_PREFIX}${tag}` })
+    .insert({ tg_id: tgId })
     .select('id')
     .single();
   if (userError) throw new Error(`创建测试用户失败：${userError.message}`);
@@ -406,14 +420,26 @@ export async function cleanupConversationFixtures(fixtures: ConversationFixtures
   await db('users').delete().eq('id', fixtures.userId);
   // 会话必须先删干净：chat_sessions → characters 是 ON DELETE RESTRICT
   await db('characters').delete().eq('id', fixtures.characterId);
+  // 与 seedConversationFixtures 里的 record 对称划掉；漏掉的话登记表会无限增长。
+  ledger.clear([fixtures.tgId]);
 }
 
-/** 上次异常退出遗留的数据。开跑前扫一遍，比指望每次都优雅退出可靠。 */
+/**
+ * 上次异常退出遗留的数据。开跑前扫一遍，比指望每次都优雅退出可靠。
+ *
+ * 认领是精确匹配：登记表里的 tg_id 逐个 in 查，不做任何号段推断（理由见
+ * pending-user-ledger.ts）。角色卡不属于任何用户，仍按 card_hash 前缀清。
+ */
 export async function sweepOrphanFixtures(): Promise<number> {
-  const { data, error } = await db('users').select('id').like('st_handle', `${HANDLE_PREFIX}%`);
-  if (error) throw new Error(`扫描遗留测试用户失败：${error.message}`);
+  const pendingTgIds = ledger.read();
+  let userIds: string[] = [];
 
-  const userIds = (data ?? []).map((row) => (row as { id: string }).id);
+  if (pendingTgIds.length > 0) {
+    const { data, error } = await db('users').select('id').in('tg_id', pendingTgIds);
+    if (error) throw new Error(`扫描遗留测试用户失败：${error.message}`);
+    userIds = [...new Set((data ?? []).map((row) => (row as { id: string }).id))];
+  }
+
   for (const userId of userIds) {
     await resetConversationArtifacts(userId);
     await db('character_free_chat_quotas').delete().eq('user_id', userId);
@@ -422,5 +448,7 @@ export async function sweepOrphanFixtures(): Promise<number> {
     await db('users').delete().eq('id', userId);
   }
   await db('characters').delete().like('card_hash', `${CARD_HASH_PREFIX}%`);
+  // 登记表里没建成号的 tg_id 也一并划掉：本轮已确认库里没有对应用户。
+  ledger.clear(pendingTgIds);
   return userIds.length;
 }

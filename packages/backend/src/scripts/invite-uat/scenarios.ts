@@ -131,6 +131,9 @@ class ScenarioRecorder {
   async user(): Promise<InviteTestUser> {
     const created = await createTestUser();
     this.userIds.push(created.userId);
+    // createTestUser 建号前已把 tg_id 落进登记表，这里登记回来，好在收尾时对称划掉；
+    // 漏掉的话登记表会随每次成功运行无限增长。
+    this.pendingTgIds.push(created.tgId);
     return created;
   }
 

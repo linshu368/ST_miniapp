@@ -1,7 +1,19 @@
 # `st_handle` 退场方案
 
-> 状态：⏳ 待排期。本文只做方案，**未执行任何改动**。
+> 状态：**代码侧已执行**（夹具改认领键、删 `st-bridge`、停止写入、guard 规则）。
+> 迁移 `111` / `112` 文件已写好但**尚未执行**——按 §三 的顺序手动触发。
 > 归属：降低项目复杂度专项 → 「彻底删除旧 schema + 删除所有兼容访问」子项的收尾件。
+
+## 〇、方案修订记录（初版的认领键方案已否决）
+
+初版提出用 `app_core.users.source_id` 当测试数据认领键。核对代码后**否决**，两条硬冲突：
+
+1. **`source_id` 本身就是 invite-uat 的断言对象**：`scenarios.ts` 里有「被邀请人 source_id 记为 invite」「既有 source_id 未被覆盖」，还有专门的 `attribution_source_id_guard` 场景。拿它当测试标记会污染被测对象。
+2. **`tg_id` 号段也不可用**，而且这是一条已有的明确决定。`invite-uat/fixtures.ts` 记着：曾用 `like('tg_id', '89________')` 扫整段，后来撤销了——「真实 Telegram id 是单调递增的外部序列，本库里已经出现 8_866_xxx_xxx 量级的真实账号」，按号段删会连人带钱包流水一起删掉。
+
+删掉 `st_handle` 后，`app_core.users` 剩下的列（`tg_id` / `source_id` / `bot_entered_at` / `miniapp_entered_at` / `total_round` / 两个时间戳）**全是业务读取字段**，没有空位可借。
+
+**最终采用**：把 invite-uat 已有的落盘登记表抽成 `scripts/pending-user-ledger.ts`，两套夹具共用；**所有**测试 tg_id 在建号请求发出前先同步落盘。零 schema 改动，认领仍是精确 `in` 匹配，不对任何号段行使删除权。
 
 ---
 
@@ -58,48 +70,49 @@ st_handle TEXT NOT NULL UNIQUE,
 
 `st_handle` 是 `NOT NULL`，**先删代码会让所有新用户注册失败**。所以必须先放松约束、再改代码、最后删列。
 
-### 第 1 步：夹具换认领键（纯代码，可独立合并）
+### 第 1 步：夹具换认领键（纯代码，与线上无关）— ✅ 已完成
 
-先做这一步，它和线上无关，但决定了后面能不能删列。
+`scripts/pending-user-ledger.ts` 抽出共用的落盘登记表，两套夹具接上：
 
-建议的新认领键：给两套夹具的测试用户统一走 **`app_core.users.source_id`**（渠道归因字段，测试号本来就不该有真实渠道），值用 `regression-<tag>` / `invite-uat-<tag>`。
+| 夹具           | 登记表文件                                      | 改动                                                                                                                                                    |
+| -------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| mvp-regression | `packages/backend/.mvp-regression-pending.json` | `seedConversationFixtures` 建号前 `record`；`sweepOrphanFixtures` 改按登记表 `in` 查；`cleanupConversationFixtures` 收尾 `clear`                        |
+| invite-uat     | `packages/backend/.invite-uat-pending.json`     | `createTestUser` 建号前 `record`；`sweepOrphanFixtures` 去掉 st_handle 那条认领路径；`ScenarioRecorder.user()` 把 tgId 记进 `pendingTgIds` 以便对称清理 |
 
-- 它已经存在、可为 NULL、业务只在归因链路读，且真实用户的 `source_id` 来自 botlink，不会撞。
-- 扫描改成 `LIKE 'regression-%'` / `LIKE 'invite-uat-%'`。
-- `invite-uat` 的 `PENDING_LEDGER_PATH` 机制照旧保留：接口层自建的号仍然拿不到前缀，还是得靠落盘登记。
+两个文件都已进 `.gitignore`。`pending-user-ledger.test.ts` 覆盖了崩溃重开、幂等、脏文件、部分清理等 7 个用例。
 
-> 若判定 `source_id` 会干扰归因用例的断言，退路是加一列 `app_core.users.test_tag TEXT`（仅 test 库需要，生产不建），但那样 test 与生产 schema 会分叉，不推荐。
+**遗留的机制局限（沿用 invite-uat 原有取舍，不是本次新增）**：登记表是本机文件，换台机器或删掉它就扫不到上一轮的残留。这两个脚本本来就是对着 test 库本地跑的，可接受。
 
-验收：`pnpm --filter @miniapp/backend mvp:regression` 与 `invite:uat` 全绿，且 `sweepOrphanFixtures()` 能扫到故意留下的脏数据。
+验收：`pnpm --filter @miniapp/backend mvp:regression` 与 `invite:uat` 全绿，且故意留下脏数据后 `sweepOrphanFixtures()` 能扫到。**这两项需要连 test 库，尚未执行。**
 
-### 第 2 步：迁移 A —— 放松约束（先上，不删列）
+### 第 2 步：迁移 111 —— 放松约束（先上，不删列）— ⏳ 待执行
+
+`packages/shared/migrations/111_users_st_handle_drop_not_null.sql`，只做 `DROP NOT NULL` 并自检。
+
+此时新旧代码都能跑（旧代码继续写值，新代码不写也不报错），给部署留出安全窗口。
+
+> **这一步必须先于第 3 步的代码上线。** 反过来做，所有新用户注册都会因 NOT NULL 违反而失败。
+
+### 第 3 步：改代码，停止写入 — ✅ 已完成（待随 111 之后部署）
+
+- 删 `packages/shared/src/st-bridge/`（含 `handle.test.ts`）与 `shared/src/index.ts` 的导出
+- `lib/user.ts`：`MiniappDbUser` 去掉两个字段，insert 不再带 `st_handle`
+- `schema.prisma`：`MiniappUser` 去掉两个字段
+- `conversations.integration.test.ts` 造号不再带 `st_handle`
+
+部署后观察一轮，确认新注册用户 `st_handle IS NULL` 且注册链路无报错：
 
 ```sql
--- domain: app_core
-ALTER TABLE app_core.users ALTER COLUMN st_handle DROP NOT NULL;
-```
-
-只做这一件事。此时新旧代码都能跑（旧代码继续写值，新代码不写也不报错），给部署留出安全窗口。
-
-### 第 3 步：改代码，停止写入
-
-删 `st-bridge/`、改 `lib/user.ts` / `schema.prisma` / `MiniappDbUser`，合并部署。
-
-部署后观察一轮：确认新注册用户 `st_handle IS NULL` 且注册链路无报错。
-
-```sql
-SELECT count(*) FILTER (WHERE st_handle IS NULL) AS 新号,
+SELECT count(*) FILTER (WHERE st_handle IS NULL)     AS 新号,
        count(*) FILTER (WHERE st_handle IS NOT NULL) AS 存量
 FROM app_core.users;
 ```
 
-### 第 4 步：迁移 B —— 删列（观察期后）
+「新号」应随时间增长；为 0 说明代码还没停写，不要往下执行。
 
-```sql
--- domain: app_core
-ALTER TABLE app_core.users DROP COLUMN IF EXISTS st_handle;
-ALTER TABLE app_core.users DROP COLUMN IF EXISTS st_initialized_at;
-```
+### 第 4 步：迁移 112 —— 删列（观察期后）— ⏳ 待执行
+
+`packages/shared/migrations/112_users_drop_st_handle.sql`，删 `st_handle` 与 `st_initialized_at` 并自检。
 
 删列前**先导出留档**（与 087/088 处置平台预设时同一口径）：
 
@@ -107,33 +120,32 @@ ALTER TABLE app_core.users DROP COLUMN IF EXISTS st_initialized_at;
 \copy (SELECT id, tg_id, st_handle, st_initialized_at FROM app_core.users) TO 'st_handle_backup.csv' CSV HEADER
 ```
 
-### 第 5 步：补 guard
+### 第 5 步：补 guard — ✅ 已完成
 
-在 `scripts/check-legacy-references.mjs` 加规则：
-
-```js
-{
-  id: 'st-handle',
-  pattern: /\bst_handle\b|\bst_initialized_at\b|\bderiveStHandle\b|st-bridge/g,
-  message: 'ST 身份映射已退场，用户身份只用 app_core.users.tg_id',
-}
-```
+`scripts/check-legacy-references.mjs` 已加 `st-handle` 规则，禁止 `st_handle` / `st_initialized_at` / `deriveStHandle` / `st-bridge` 的新引用。
 
 ---
 
 ## 四、风险与注意
 
-| 风险                                          | 处置                                                                       |
-| --------------------------------------------- | -------------------------------------------------------------------------- |
-| 先删代码后放松约束 → 新用户注册全挂           | 严格按 §三 顺序，迁移 A 必须先于代码上线                                   |
-| 迁移 A 与代码部署之间抢跑                     | 迁移手动触发（铁律 9），先跑迁移、确认后再 merge 代码                      |
-| 夹具改键前删列 → 回归无法清理，测试库越积越脏 | 第 1 步必须最先做完并验证                                                  |
-| `UNIQUE` 索引残留                             | `DROP COLUMN` 会连带删除 `users_st_handle_key`，无需单独处理               |
-| 生产与 test 步调不一致                        | 两库都要走完 4 步；`DROP NOT NULL` 与 `DROP COLUMN` 分两个迁移文件，别合并 |
+| 风险                                    | 处置                                                                        |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| 先部署代码后跑 111 → 新用户注册全挂     | 严格按 §三 顺序：111 必须先于代码上线                                       |
+| 111 与代码部署抢跑                      | 迁移手动触发（铁律 9），先跑 111、确认后再合代码                            |
+| 登记表机制没验过就删列 → 测试库越积越脏 | 合并前跑通 `mvp:regression` 与 `invite:uat`，并验一次 `sweepOrphanFixtures` |
+| `UNIQUE` 索引残留                       | `DROP COLUMN` 会连带删除 `users_st_handle_key`，无需单独处理                |
+| 生产与 test 步调不一致                  | 两库都要走完；111 与 112 分两个文件，**不要合并成一个**                     |
+| 迁移编号撞车                            | 111 / 112 避开了本地未提交的 110；合并前确认远端没有同号文件                |
 
-## 五、预估
+## 五、当前进度
 
-第 1 步是主要工作量（改两套夹具 + 跑通两个回归），约半天。第 2~5 步各自都很小，但被两个观察期分隔，整体跨度取决于排期，不是连续工时。
+| 步骤                         | 状态                                     |
+| ---------------------------- | ---------------------------------------- |
+| 1. 夹具换认领键              | ✅ 代码完成，待连库跑回归验证            |
+| 2. 迁移 111（DROP NOT NULL） | ⏳ 文件已写，待手动执行（test → 生产）   |
+| 3. 停止写入的代码            | ✅ 完成，**必须在 111 之后部署**         |
+| 4. 迁移 112（DROP COLUMN）   | ⏳ 文件已写，待观察期后执行 + 先导出留档 |
+| 5. guard 规则                | ✅ 完成                                  |
 
 ---
 

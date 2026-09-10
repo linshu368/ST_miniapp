@@ -300,23 +300,23 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 
 ### 5.3 数据真相归属
 
-| 数据                 | 权威源                                                                                         | 备注                                                           |
-| -------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| 用户身份             | `app_core.users`                                                                               | TG 身份 + 归因字段（`st_handle` 为遗留列，列级瘦身待办）       |
-| 角色卡元数据         | `app_core.characters`（Prisma）                                                                | 大厅展示 + 引擎取数；`raw_card` 保留原始 JSON                  |
-| 角色卡资源           | Supabase Storage `character-assets`                                                            | PNG / 头像；前端只读                                           |
-| **会话**             | **`experience.chat_sessions`**                                                                 | 置顶 / 标题 / 窗口起点 / 统计缓存                              |
-| **对话内容与轮次**   | **`experience.chat_history`**                                                                  | 上下文 / 计费 / 审计三用；ST 存量行 `session_id` 为 NULL       |
-| 语音消息             | `experience.chat_message_audio` + Storage `miniapp-chat-voice`                                 | 每条 assistant 回复的 TTS 产物元数据                           |
-| 用户生成配置         | `app_core.miniapp_user_settings`                                                               | `selected_model_id` + 三个 `pref_*` + 语音偏好；用户级生效     |
-| 钱包 / 订单 / 签到   | `billing.user_wallets` / `payment_orders` / `wallet_ledger`、`miniapp_features.daily_checkins` | `payment_orders.settled_by` 记录入账路径（103）                |
-| LLM 计费明细         | `billing.llm_usage_charges`（+ `_dedup` 幂等墓碑）                                             | 每用户保留最近 100 条完整行，更早压缩进 dedup                  |
-| 免费额度             | `billing.character_free_chat_quotas`                                                           | 用户 × 角色计轮                                                |
-| 收藏 / 许愿 / 排序分 | `miniapp_features.character_favorites` / `wish_roles` / `character_ranking_scores`             | 排序分由 lobby 定时任务从 `chat_history` 聚合重算（074）       |
-| 消息中心 / 站内客服  | `miniapp_features.notifications` / `notification_reads`、`cs_platform.support_*`               | —                                                              |
-| 平台运行时配置       | `app_core.runtime_config`（+ Upstash Redis 缓存）                                              | 模型目录、定价、平台规则三件套、充值套餐、大厅置顶与排序参数等 |
-| CS 回访              | `cs_platform.*`                                                                                | `user_metrics` / `persona_users_detail` 视图（094 补效率字段） |
-| 渠道归因             | `miniapp_traffic.*`                                                                            | Bot `/start` 与 miniapp 进入上报                               |
+| 数据                 | 权威源                                                                                         | 备注                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 用户身份             | `app_core.users`                                                                               | TG 身份 + 归因字段，身份一律用 `tg_id`（`st_handle` 退场中，见 §10.2） |
+| 角色卡元数据         | `app_core.characters`（Prisma）                                                                | 大厅展示 + 引擎取数；`raw_card` 保留原始 JSON                          |
+| 角色卡资源           | Supabase Storage `character-assets`                                                            | PNG / 头像；前端只读                                                   |
+| **会话**             | **`experience.chat_sessions`**                                                                 | 置顶 / 标题 / 窗口起点 / 统计缓存                                      |
+| **对话内容与轮次**   | **`experience.chat_history`**                                                                  | 上下文 / 计费 / 审计三用；ST 存量行 `session_id` 为 NULL               |
+| 语音消息             | `experience.chat_message_audio` + Storage `miniapp-chat-voice`                                 | 每条 assistant 回复的 TTS 产物元数据                                   |
+| 用户生成配置         | `app_core.miniapp_user_settings`                                                               | `selected_model_id` + 三个 `pref_*` + 语音偏好；用户级生效             |
+| 钱包 / 订单 / 签到   | `billing.user_wallets` / `payment_orders` / `wallet_ledger`、`miniapp_features.daily_checkins` | `payment_orders.settled_by` 记录入账路径（103）                        |
+| LLM 计费明细         | `billing.llm_usage_charges`（+ `_dedup` 幂等墓碑）                                             | 每用户保留最近 100 条完整行，更早压缩进 dedup                          |
+| 免费额度             | `billing.character_free_chat_quotas`                                                           | 用户 × 角色计轮                                                        |
+| 收藏 / 许愿 / 排序分 | `miniapp_features.character_favorites` / `wish_roles` / `character_ranking_scores`             | 排序分由 lobby 定时任务从 `chat_history` 聚合重算（074）               |
+| 消息中心 / 站内客服  | `miniapp_features.notifications` / `notification_reads`、`cs_platform.support_*`               | —                                                                      |
+| 平台运行时配置       | `app_core.runtime_config`（+ Upstash Redis 缓存）                                              | 模型目录、定价、平台规则三件套、充值套餐、大厅置顶与排序参数等         |
+| CS 回访              | `cs_platform.*`                                                                                | `user_metrics` / `persona_users_detail` 视图（094 补效率字段）         |
+| 渠道归因             | `miniapp_traffic.*`                                                                            | Bot `/start` 与 miniapp 进入上报                                       |
 
 **Prisma vs supabase-js 边界**：`schema.prisma` 只声明 `app_core` / `miniapp_features` / `billing` 三个 schema 共 11 个 model（用户、角色卡、runtime_config、签到、许愿、订单、钱包、流水、计费）；`experience`、`cs_platform`、`admin`、`miniapp_traffic`、`miniapp_analytics` 以及所有 RPC 走 supabase-js **按域客户端**（`lib/supabase.ts` 的 `getDomainDb(域)`）或 raw SQL 全限定名。统一 `.schema('miniapp')` 的旧写法已废弃。
 
@@ -482,18 +482,18 @@ packages/backend/src/
 
 ### 10.2 待办
 
-| 项                           | 状态 | 说明                                                                                                                |
-| ---------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------- |
-| Schema 划分批次 D 收口       | ⏳   | 观察期后删空壳 `miniapp` schema；补做需登录态的 7 项应用层验证（交接文档 §一）                                      |
-| chat_history 列级瘦身        | ⏳   | `history` 列（TOAST ~10 GB）处置方案另立项；A 档 `llm_usage_cache`、B 档观测列待删（`docs/schema划分专项.md` §2.5） |
-| 语音按次计费重启             | ⏳   | 101/102 已回退，重做需重新评审计费口径与部署顺序                                                                    |
-| M4 自建预设格式              | ⏳   | 明确不沿用 ST 格式；旧预设数据已删（088），从零设计                                                                 |
-| 角色卡人设字段进 prompt      | ⏳   | v1 只用 `system_prompt`，待新卡写法定稿后决定                                                                       |
-| 支付 remediation 遗留        | ⏳   | 补账护栏与审计项见 `docs/payment-missing-credits-remediation.md`                                                    |
-| Railway 控制台遗留清理       | ⏳   | `nginx-pro` / `st-bundle-pro` / `st-data-pro` / `ST_*` 变量 / `pr-276` 环境，人工确认删除                           |
-| `users.st_handle` 等遗留列   | ⏳   | 归列级瘦身专项                                                                                                      |
-| `Dockerfile.frontend` 取包层 | ⏳   | 与 backend 同款的构建卡死隐患，仅 `staging-*` 构建受影响                                                            |
-| `api-contract` 独立包        | ❌   | 不建，职责留在 `shared/api`                                                                                         |
+| 项                           | 状态 | 说明                                                                                                                                                   |
+| ---------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Schema 划分批次 D 收口       | ⏳   | 观察期后删空壳 `miniapp` schema；补做需登录态的 7 项应用层验证（交接文档 §一）                                                                         |
+| chat_history 列级瘦身        | ⏳   | `history` 列（TOAST ~10 GB）处置方案另立项；A 档 `llm_usage_cache`、B 档观测列待删（`docs/schema划分专项.md` §2.5）                                    |
+| 语音按次计费重启             | ⏳   | 101/102 已回退，重做需重新评审计费口径与部署顺序                                                                                                       |
+| M4 自建预设格式              | ⏳   | 明确不沿用 ST 格式；旧预设数据已删（088），从零设计                                                                                                    |
+| 角色卡人设字段进 prompt      | ⏳   | v1 只用 `system_prompt`，待新卡写法定稿后决定                                                                                                          |
+| 支付 remediation 遗留        | ⏳   | 补账护栏与审计项见 `docs/payment-missing-credits-remediation.md`                                                                                       |
+| Railway 控制台遗留清理       | ⏳   | `nginx-pro` / `st-bundle-pro` / `st-data-pro` / `ST_*` 变量 / `pr-276` 环境，人工确认删除                                                              |
+| `users.st_handle` 等遗留列   | ⏳   | 代码侧已停止写入、`st-bridge` 已删；剩迁移 111（DROP NOT NULL，**须先于代码上线**）与 112（DROP COLUMN，观察期后）。步骤见 `docs/st_handle退场方案.md` |
+| `Dockerfile.frontend` 取包层 | ⏳   | 与 backend 同款的构建卡死隐患，仅 `staging-*` 构建受影响                                                                                               |
+| `api-contract` 独立包        | ❌   | 不建，职责留在 `shared/api`                                                                                                                            |
 
 ---
 
