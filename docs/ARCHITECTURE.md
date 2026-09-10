@@ -28,7 +28,7 @@
    同类纪律还有三条，一并由 CI 的 legacy guard 拦（见 §7.5）：`experience.chat_history` 只由 `ConversationHistoryRepository` 读写；支付到账只由 `PaymentSettlement.settlePaidOrder` 入账；OpenRouter 用量统计只由 `generation/openrouter-metadata.ts` 读取。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
 8. **数据库按八个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表（存量豁免清单见 `docs/schema归属地图.md` §四）。
-9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发。历史存在重号（见 §7.4），**不要按序号推断内容**。
+9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发；执行状态记录在 `app_core.schema_migrations` 账本（workflow 自动查重 + 记账）。2026-09-10 起新迁移命名 `YYYYMMDD_描述.sql`（CI 拦旧式编号）；历史存量存在重号（见 §7.4），**不要按序号推断内容**。改库只有仓库迁移一条路，禁止 Management API / Studio 直改。
 10. **TypeScript 严格模式，禁止 `any`**。
 
 ---
@@ -391,13 +391,15 @@ packages/backend/src/
 
 ### 7.4 迁移
 
-- 位置 `packages/shared/migrations/`，当前最大编号 **104**，共 113 个 SQL 文件（`archive/` 另存 087 删除的 admin RPC 定义备查）。
-- **编号规则必须小心**：
+- 位置 `packages/shared/migrations/`（`archive/` 另存 087 删除的 admin RPC 定义备查）。
+- **命名规则（2026-09-10 起）**：新迁移一律 `YYYYMMDD_描述.sql`。三位数字编号已停用并由 CI 拦截（`pnpm lint:migrations`，冻结清单在 `scripts/check-migration-filenames.mjs`）——历史上 021/030/031/032/053/065/086/088/092/093/095 撞号，100 号立规后 105/108/109 又各撞一对。
+- **迁移账本**：`app_core.schema_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by）。workflow 执行前查账本防重跑（`force_rerun` 可绕过），执行成功后自动记账。账本只覆盖 2026-09-10 后的新迁移，存量不回填。
+- **历史存量编号必须小心**（均已冻结，仅供查档）：
   - 021 / 030 / 031 / 032 / 053 / 065 历史重号，同号无依赖，按文件名字母序执行；
-  - 086 / 088 / 092 / 093 / 095 也各有两个文件，来自 `main` 与 `dev` 两条并行发布线，**同号但含义不同，不要按序号推断内容**；
+  - 086 / 088 / 092 / 093 / 095 与 105 / 108 / 109 也各有两个文件，来自并行发布线，**同号但含义不同，不要按序号推断内容**；
   - 101 / 102 缺号：语音计费迁移已随 PR #298 revert 从仓库删除，test 库用 104 回滚（生产从未执行，**不要在生产跑 104**）；
   - 099 有配套 `_rollback` 文件，是正向 + 回滚，不是撞号。
-- 执行方式：GitHub Actions → `Database Migration` → 选环境 → 填文件路径；生产需在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。workflow 会校验连接串 project ref（test = `zoqelpfhurwehlvypryl`，production = `wbtsfzozlmurljvglhpn`）。
+- 执行方式：GitHub Actions → `Database Migration` → 选环境 → 填文件路径；生产需在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。workflow 会校验连接串 project ref（test = `zoqelpfhurwehlvypryl`，production = `wbtsfzozlmurljvglhpn`）。**改库只有这一条路**：禁止 Supabase Management API / Studio 直改表结构。
 - **099 不是普通迁移**：执行前必读 `docs/schema划分-一阶段执行计划.md`（停流量、前置 097/098、事务外三步收尾）。test 与生产均已执行完毕。
 
 ### 7.5 legacy guard（禁止旧链路的新引用）

@@ -69,6 +69,11 @@ jobs:
       - name: Guard against legacy references
         run: pnpm lint:legacy
 
+      # 新迁移必须用 YYYYMMDD_描述.sql 命名（三位数字编号已停用，撞号惯犯）。
+      # 规则与冻结清单在 scripts/check-migration-filenames.mjs。
+      - name: Check migration filenames
+        run: pnpm lint:migrations
+
       - name: Test shared package
         run: pnpm --filter @miniapp/shared test
 

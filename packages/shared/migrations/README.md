@@ -234,7 +234,21 @@ D010 → D011 → D014 的演进差异详见 DECISIONS.md D014。
 
 ## 文件命名规范
 
-`<三位序号>_<描述>.sql`，如 `012_xxx.sql`
+**2026-09-10 起：`YYYYMMDD_<小写下划线描述>.sql`**，如 `20260910_schema_migrations_ledger.sql`。
+
+三位数字编号已停用：021/030/031/032/053/065/086/088/092/093/095 历史撞号，100 号立「全分支唯一」规矩后 105/108/109 又各撞一对——并行分支取号必然撞。日期戳 + 语义名天然不撞号，也不再承诺执行顺序（顺序依赖写进迁移文件头部注释的「前置」字段）。
+
+CI 强制执行（`pnpm lint:migrations`，规则在 `scripts/check-migration-filenames.mjs`）：存量旧编号文件已冻结锁死，新增三位数字编号文件或不合规命名会被 CI 拒绝。
+
+## 迁移账本（2026-09-10 起）
+
+`app_core.schema_migrations`（建表见 `20260910_schema_migrations_ledger.sql`）记录每个环境实际执行过的迁移：
+
+- `Database Migration` workflow 执行前查账本，**已有记录则拒绝重跑**（确需重跑勾选 `force_rerun` 入参）；执行成功后自动写入 `filename / checksum / applied_by`。
+- 账本只覆盖 2026-09-10 之后的新迁移，存量迁移不回填（历史已无法精确对账）。
+- 查某环境执行状态：`SELECT * FROM app_core.schema_migrations ORDER BY applied_at DESC`。
+
+**改库只有仓库迁移一条路**：禁止用 Supabase Management API / Studio SQL Editor 直改表结构（110 曾经生产走 Management API、仓库 SQL 只给 test 补跑，账本对不上就是这么来的）。Studio 只作为 CLI/CI 完全不可用时的最后备用，用完必须补记账本。
 
 ## 阶段一表清单（三标签视图）
 

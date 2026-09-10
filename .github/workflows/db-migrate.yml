@@ -21,6 +21,11 @@ on:
         type: string
         required: false
         default: ''
+      force_rerun:
+        description: Re-apply even if the ledger says this file was already applied
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -100,10 +105,41 @@ jobs:
             exit 1
           fi
 
+          migration_name="$(basename "$migration_file")"
+          if [[ ! "$migration_name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Migration filename contains unexpected characters: $migration_name" >&2
+            exit 1
+          fi
+
           echo "::add-mask::$db_url"
           printf '%s' "$db_url" > "$RUNNER_TEMP/db_url"
           echo "project_ref=$project_ref" >> "$GITHUB_OUTPUT"
           echo "migration_file=$migration_file" >> "$GITHUB_OUTPUT"
+          echo "migration_name=$migration_name" >> "$GITHUB_OUTPUT"
+
+      # 账本查重：app_core.schema_migrations 里已有记录则拒绝重跑（force_rerun 可绕过）。
+      # 账本表尚未建立时（首次跑 20260910_schema_migrations_ledger.sql 之前）静默放行。
+      - name: Check migration ledger
+        if: ${{ !inputs.force_rerun }}
+        env:
+          MIGRATION_NAME: ${{ steps.target.outputs.migration_name }}
+        run: |
+          set -euo pipefail
+          DB_URL="$(<"$RUNNER_TEMP/db_url")"
+          echo "::add-mask::$DB_URL"
+          cat > "$RUNNER_TEMP/ledger_check.sql" <<SQL
+          DO \$\$
+          BEGIN
+            IF to_regclass('app_core.schema_migrations') IS NOT NULL
+               AND EXISTS (
+                 SELECT 1 FROM app_core.schema_migrations
+                 WHERE filename = '${MIGRATION_NAME}'
+               ) THEN
+              RAISE EXCEPTION 'MIGRATION_ALREADY_APPLIED: % — 如确需重跑，请在 workflow 入参勾选 force_rerun', '${MIGRATION_NAME}';
+            END IF;
+          END \$\$;
+          SQL
+          supabase db query --db-url "$DB_URL" --file "$RUNNER_TEMP/ledger_check.sql"
 
       - name: Apply migration
         env:
@@ -113,6 +149,32 @@ jobs:
           DB_URL="$(<"$RUNNER_TEMP/db_url")"
           echo "::add-mask::$DB_URL"
           supabase db query --db-url "$DB_URL" --file "$MIGRATION_FILE"
+
+      # 记账：apply 成功后写入账本（账本表还不存在时静默跳过）。
+      - name: Record in migration ledger
+        env:
+          MIGRATION_FILE: ${{ steps.target.outputs.migration_file }}
+          MIGRATION_NAME: ${{ steps.target.outputs.migration_name }}
+          APPLIED_BY: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          DB_URL="$(<"$RUNNER_TEMP/db_url")"
+          echo "::add-mask::$DB_URL"
+          CHECKSUM="$(sha256sum "$MIGRATION_FILE" | cut -d' ' -f1)"
+          cat > "$RUNNER_TEMP/ledger_record.sql" <<SQL
+          DO \$\$
+          BEGIN
+            IF to_regclass('app_core.schema_migrations') IS NOT NULL THEN
+              INSERT INTO app_core.schema_migrations (filename, checksum, applied_by)
+              VALUES ('${MIGRATION_NAME}', '${CHECKSUM}', '${APPLIED_BY}')
+              ON CONFLICT (filename) DO UPDATE
+                SET checksum = EXCLUDED.checksum,
+                    applied_at = now(),
+                    applied_by = EXCLUDED.applied_by;
+            END IF;
+          END \$\$;
+          SQL
+          supabase db query --db-url "$DB_URL" --file "$RUNNER_TEMP/ledger_record.sql"
 
       - name: Cleanup database URL
         if: always()
