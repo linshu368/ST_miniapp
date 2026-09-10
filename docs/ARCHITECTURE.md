@@ -219,17 +219,18 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 ### 4.5 生成与计费出口（`features/generation`）
 
-| 文件                     | 职责                                                                                    |
-| ------------------------ | --------------------------------------------------------------------------------------- |
-| `resolve-model.ts`       | 权威模型解析：用户 `selected_model_id` → 模型目录 → `ResolvedModel`                     |
-| `quota.ts`               | 角色免费额度 `reserve` / `finalize` 两阶段                                              |
-| `precheck.ts`            | 定档扣费额与计费快照、余额预检（402 判定，不构造响应）                                  |
-| `upstream.ts`            | 上游转发原语 + SSE tap（逐字节透传、抓 `generation_id` / `finish_reason`、判 `[DONE]`） |
-| `prompt-caching.ts`      | Anthropic `cache_control` 断点注入（system + 窗口内历史最后一条，不打本轮输入）         |
-| `execute.ts`             | `GenerationService`：把上面串成一条出口，供对话链路直调                                 |
-| `settle.ts`              | **星尘实扣就在这里**：补用量元数据 → `charge_llm_usage` → 免费额度收口 → 回写计费列     |
-| `sync-job.ts`            | 计费的第二条结算路径：30 秒轮询回捞 `finish_reason` 未到、挂 pending 的行               |
-| `openrouter-metadata.ts` | OpenRouter 用量统计（`/generation?id=`）的唯一读取与字段映射入口，上面两者共用          |
+| 文件                     | 职责                                                                                                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolve-model.ts`       | 权威模型解析：用户 `selected_model_id` → 模型目录 → `ResolvedModel`                                                                                        |
+| `quota.ts`               | 角色免费额度 `reserve` / `finalize` 两阶段                                                                                                                 |
+| `precheck.ts`            | 定档扣费额与计费快照、余额预检（402 判定，不构造响应）                                                                                                     |
+| `upstream.ts`            | 上游转发原语 + SSE tap（逐字节透传、抓 `generation_id` / `finish_reason`、判 `[DONE]`）                                                                    |
+| `prompt-caching.ts`      | Anthropic `cache_control` 断点注入（system + 窗口内历史最后一条，不打本轮输入）                                                                            |
+| `execute.ts`             | `GenerationService`：把上面串成一条出口，供对话链路直调                                                                                                    |
+| `apply-charge.ts`        | settle / sync-job 共用的定档扣费拼装：闸门标签 → `charge_llm_usage` → 免费额度收口（不回写 `chat_history`）                                                |
+| `settle.ts`              | 补用量元数据 → `applyLlmCharge` → 回写计费列；fire-and-forget                                                                                              |
+| `sync-job.ts`            | 计费的第二条到达路径：30 秒轮询回捞 `finish_reason` 未到、挂 pending 的行，定档 pending 同样走 `applyLlmCharge`（历史 usage 对账仍走 `reconcileLlmUsage`） |
+| `openrouter-metadata.ts` | OpenRouter 用量统计（`/generation?id=`）的唯一读取与字段映射入口，settle / sync-job 共用                                                                   |
 
 `settle.ts` 是 fire-and-forget 的：它第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），挂在请求里会让用户在回复已经流完之后继续等。它与请求内同步的 `finalizeTurn` 写同一行 `chat_history` 的**不同列**，列归属见 `ConversationHistoryRepository` 头注释，因此谁先落地都不会互相覆盖。
 
@@ -419,6 +420,7 @@ packages/backend/src/
 | `llm-chat-upstream`         | `upstream.ts` 之外打 `/chat/completions`                                                                   |
 | `openrouter-generation-api` | `openrouter-metadata.ts` 之外读 OpenRouter 用量统计                                                        |
 | `payment-settlement`        | `PaymentSettlement` 之外调 `complete_payment_order`                                                        |
+| `llm-usage-charge`          | `apply-charge.ts` 之外调 `chargeLlmUsage`（settle / sync-job 必须走 `applyLlmCharge`）                     |
 
 **扫描范围只含活代码**（`packages/*/src`、`scripts/`、`botlink/`）。历史迁移 SQL、`docs/`、`ops/` 快照按定义就是留档，刻意不扫——改已执行过的迁移比留着它更危险。
 

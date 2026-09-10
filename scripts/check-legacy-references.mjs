@@ -129,6 +129,18 @@ const RULES = [
       'packages/backend/src/scripts/invite-uat/fixtures.ts',
     ],
   },
+  {
+    id: 'llm-usage-charge',
+    pattern: /\bchargeLlmUsage\b/g,
+    message:
+      'LLM 定档扣费只有一个出口：features/generation/apply-charge.ts。settle / sync-job 组 command 后调 applyLlmCharge，禁止再直接 chargeLlmUsage',
+    allow: [
+      'packages/backend/src/features/generation/apply-charge.ts',
+      'packages/backend/src/infrastructure/repositories/MiniappWalletRepository.ts',
+      'packages/backend/src/features/generation/apply-charge.test.ts',
+      'packages/backend/src/features/generation/sync-job.test.ts',
+    ],
+  },
 ];
 
 function shouldScan(path) {

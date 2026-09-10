@@ -8,15 +8,16 @@
  * （见 §finish_reason 计费闸门）。本任务负责把这些 pending 行结算掉。
  *
  * 它和 settle.ts 是同一个行为的两条路径，所以刻意放在同一个模块下：
- * 用量元数据的字段映射共用 openrouter-metadata.ts，chat_history 的写入共用
- * ConversationHistoryRepository，不允许任何一边私开第二套。
+ * 用量元数据的字段映射共用 openrouter-metadata.ts，定档扣费拼装共用
+ * apply-charge.ts，chat_history 的写入共用 ConversationHistoryRepository。
+ * 不允许任何一边私开第二套。
  */
 
 import type { FastifyBaseLogger } from 'fastify';
-import { calculateUsageDeduction, resolveUsageBillingGate } from '../billing/usage-pricing.js';
+import { calculateUsageDeduction } from '../billing/usage-pricing.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
-import { MiniappCharacterFreeQuotaRepository } from '../../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import { MiniappWalletRepository } from '../../infrastructure/repositories/MiniappWalletRepository.js';
+import { applyLlmCharge } from './apply-charge.js';
 import {
   buildGenerationMetadata,
   fetchGenerationData,
@@ -33,7 +34,6 @@ let timerId: NodeJS.Timeout | null = null;
 let startupTimerId: NodeJS.Timeout | null = null;
 let isRunning = false;
 const wallets = new MiniappWalletRepository();
-const freeQuotas = new MiniappCharacterFreeQuotaRepository();
 let historyRepository: ConversationHistoryRepository | null = null;
 
 function history(): ConversationHistoryRepository {
@@ -182,10 +182,13 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
 /**
  * 结算这一行对应的计费记录，并把结算金额并进要回写的元数据。
  *
- * 两种口径：`fixed_tier` 的 pending 行等 finish_reason 到齐后按定档结算；
- * 历史 usage 口径的行按实际用量重算。两者都靠 charge_id 幂等，重复跑不会多扣。
+ * 两种口径：`fixed_tier` 的 pending 行等 finish_reason 到齐后走 applyLlmCharge
+ *（与 settle 同一套标签）；历史 usage 口径的行按实际用量重算。两者都靠
+ * charge_id 幂等，重复跑不会多扣。
+ *
+ * 导出给单测：锁死回捞后 success + length 是 incomplete，而不是旧的 complete。
  */
-async function reconcileCharge(input: {
+export async function reconcileCharge(input: {
   record: {
     id: string;
     llm_charge_id: string | null;
@@ -210,35 +213,19 @@ async function reconcileCharge(input: {
     originalCharge.status === 'pending' &&
     finishReason !== null
   ) {
-    const replyOutcome =
-      typeof record.assistant_reply === 'string' && record.assistant_reply.trim()
-        ? record.status === 'success'
-          ? 'complete'
-          : 'incomplete'
-        : 'empty';
-    const billingStatus = replyOutcome === 'complete' ? 'success' : 'stream_interrupted';
-    await freeQuotas.finalizePending(
-      chargeId,
-      billingStatus === 'success' && finishReason === 'stop'
-    );
-
     const fixedDeduction = Number(
       originalCharge.metadata?.fixed_deduction ?? originalCharge.calculated_amount
     );
-    const actualModel =
-      typeof genData.model === 'string' && genData.model.trim()
-        ? genData.model
-        : originalCharge.model_openrouter_id;
-    const reconciled = await wallets.chargeLlmUsage({
+    const observedModel =
+      typeof genData.model === 'string' && genData.model.trim() ? genData.model : null;
+    const result = await applyLlmCharge({
       chargeId,
       generationId,
       userId: originalCharge.user_id,
       modelId: originalCharge.model_id,
-      modelOpenRouterId: actualModel,
-      modelDisplayName:
-        actualModel !== originalCharge.model_openrouter_id
-          ? actualModel
-          : originalCharge.model_display_name,
+      requestedModel: originalCharge.model_openrouter_id,
+      observedModel,
+      requestedDisplayName: originalCharge.model_display_name,
       catalogVersion: originalCharge.catalog_version,
       pricingConfigVersion: originalCharge.pricing_config_version,
       usageCostUsd: typeof usageCost === 'number' && Number.isFinite(usageCost) ? usageCost : null,
@@ -246,20 +233,16 @@ async function reconcileCharge(input: {
       modelMarkup: Number(originalCharge.model_markup),
       calculatedAmount: Number.isFinite(fixedDeduction) ? fixedDeduction : 0,
       fallbackUsed: false,
-      metadata: {
+      generationStatus: record.status,
+      finishReason,
+      assistantReply: record.assistant_reply,
+      baseMetadata: {
         ...(originalCharge.metadata ?? {}),
         source: 'chat_history_sync',
-        chat_status: billingStatus,
-        generation_status: record.status,
-        reply_outcome: replyOutcome,
-        reply_char_count:
-          typeof record.assistant_reply === 'string' ? record.assistant_reply.length : 0,
-        finish_reason: finishReason,
-        billing_gate: resolveUsageBillingGate({ status: billingStatus, finishReason }),
       },
     });
-    llmMetadata.llm_intended_deduction = Number(reconciled.charge.calculated_amount);
-    llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
+    llmMetadata.llm_intended_deduction = result.calculatedAmount;
+    llmMetadata.deduction_rate = result.chargedAmount;
     return;
   }
 

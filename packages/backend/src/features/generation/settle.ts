@@ -3,7 +3,7 @@
  *
  * 生成出口的终态结算段：**星尘实扣就发生在这里**，是 execute.ts 的最后一步。
  *
- *   补 OpenRouter 用量元数据 → 实扣（charge_llm_usage）→ 免费额度收口
+ *   补 OpenRouter 用量元数据 → applyLlmCharge（charge_llm_usage + 免费额度收口）
  *   → 回写 chat_history 的计费列 → 累加轮次并触发邀请奖励检查
  *
  * 为什么是 fire-and-forget：第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），
@@ -19,14 +19,12 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { getDomainDb } from '../../lib/supabase.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
-import { MiniappCharacterFreeQuotaRepository } from '../../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
-import { MiniappWalletRepository } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import {
   getInitialBillingDecision,
-  resolveUsageBillingGate,
   shouldRecordUsageCharge,
   type FixedDeductionCategory,
 } from '../billing/usage-pricing.js';
+import { applyLlmCharge } from './apply-charge.js';
 import {
   buildGenerationMetadata,
   fetchGenerationDataForSettlement,
@@ -64,26 +62,10 @@ export interface GenerationSettlementEntry {
   finish_reason?: string | null;
 }
 
-const wallets = new MiniappWalletRepository();
-const freeQuotas = new MiniappCharacterFreeQuotaRepository();
 let historyRepository: ConversationHistoryRepository | null = null;
 
 function history(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
-}
-
-type ReplyOutcome = 'complete' | 'incomplete' | 'empty';
-
-function resolveReplyOutcome(
-  entry: GenerationSettlementEntry,
-  finishReason: string | null
-): ReplyOutcome {
-  const hasContent = (entry.assistant_reply ?? '').trim().length > 0;
-  if (!hasContent) return 'empty';
-  if (entry.status === 'success' && (finishReason === 'stop' || finishReason === null)) {
-    return 'complete';
-  }
-  return 'incomplete';
 }
 
 async function checkInviteChatRoundsReward(userId: string, log: FastifyBaseLogger): Promise<void> {
@@ -277,12 +259,6 @@ async function chargeRound(input: {
   const { entry, llmMetadata, finishReason, clog } = input;
   const userId = entry.user_id as string;
   const usageCost = llmMetadata.llm_usage;
-  const replyOutcome = resolveReplyOutcome(entry, finishReason);
-
-  // 已经拿到 generation id、但 finish_reason 尚未同步时必须先保持待结算。
-  // generation_status 保留真实生成终态，chat_status 仅作为现有计费 RPC 的闸门输入。
-  const billingStatus = finishReason === null && entry.generation_id ? 'success' : entry.status;
-  const billingGate = resolveUsageBillingGate({ status: billingStatus, finishReason });
   const billingDecision = getInitialBillingDecision({
     usageCost,
     exchangeRate: entry.exchange_rate,
@@ -293,19 +269,20 @@ async function chargeRound(input: {
   const intendedDeduction = billingDecision.amount;
   llmMetadata.llm_intended_deduction = intendedDeduction;
 
+  const observedModel =
+    typeof llmMetadata.llm_model === 'string' && llmMetadata.llm_model.trim()
+      ? llmMetadata.llm_model
+      : null;
+
   try {
-    const actualModel =
-      typeof llmMetadata.llm_model === 'string' && llmMetadata.llm_model.trim()
-        ? llmMetadata.llm_model
-        : entry.model;
-    const routedToDifferentModel = actualModel !== entry.model;
-    const result = await wallets.chargeLlmUsage({
+    const result = await applyLlmCharge({
       chargeId: entry.charge_id,
       generationId: entry.generation_id ?? null,
       userId,
       modelId: entry.model_id,
-      modelOpenRouterId: actualModel,
-      modelDisplayName: routedToDifferentModel ? actualModel : entry.model_display_name,
+      requestedModel: entry.model,
+      observedModel,
+      requestedDisplayName: entry.model_display_name,
       catalogVersion: entry.catalog_version,
       pricingConfigVersion: entry.pricing_config_version,
       usageCostUsd: hasActualUsage ? (usageCost as number) : null,
@@ -313,27 +290,16 @@ async function chargeRound(input: {
       modelMarkup: entry.model_markup,
       calculatedAmount: intendedDeduction,
       fallbackUsed: billingDecision.pending,
-      metadata: {
-        chat_status: billingStatus,
-        generation_status: entry.status,
-        reply_outcome: replyOutcome,
-        reply_char_count: (entry.assistant_reply ?? '').length,
+      generationStatus: entry.status,
+      finishReason,
+      assistantReply: entry.assistant_reply,
+      baseMetadata: {
         requested_model: entry.model,
         billing_mode: 'fixed_tier',
-        billing_gate: billingGate,
-        finish_reason: finishReason,
         fixed_deduction_category: entry.fixed_deduction_category,
         fixed_deduction: entry.fixed_deduction,
       },
     });
-    const actualDeduction = Number(result.charge.charged_amount);
-
-    if (finishReason !== null) {
-      await freeQuotas.finalizePending(
-        entry.charge_id,
-        replyOutcome === 'complete' && finishReason === 'stop'
-      );
-    }
 
     clog.info(
       {
@@ -342,12 +308,12 @@ async function chargeRound(input: {
         userId,
         chargeId: entry.charge_id,
         intendedAmount: intendedDeduction,
-        chargedAmount: actualDeduction,
+        chargedAmount: result.chargedAmount,
         pending: billingDecision.pending,
       },
       'LLM usage billing record created'
     );
-    return actualDeduction;
+    return result.chargedAmount;
   } catch (chargeErr) {
     clog.error(
       {
