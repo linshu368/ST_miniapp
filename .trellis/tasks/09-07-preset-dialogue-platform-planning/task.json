@@ -18,9 +18,27 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "09-10-preset-platform-shared-contracts",
+    "09-10-preset-platform-database-domain",
+    "09-10-preset-platform-backend-foundation",
+    "09-10-preset-platform-session-preset-api",
+    "09-10-preset-platform-model-generation",
+    "09-10-preset-platform-materials-redaction",
+    "09-10-preset-platform-spa-shell-deployment",
+    "09-10-preset-platform-conversation-model-ui",
+    "09-10-preset-platform-preset-management-ui",
+    "09-10-preset-platform-materials-ui",
+    "09-10-preset-platform-integration-docs"
+  ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "父级规划任务；Preset Platform 数据模型不归属 admin，由独立 preset_platform 域管理；实现建议拆为 shared/database/backend/preset-platform/docs 子任务，评审后逐项启动。",
-  "meta": {}
+  "notes": "父级规划任务；Preset Platform 数据模型不归属 admin，由独立 preset_platform 域管理；已确认沿用 Admin Supabase 账号/角色表、会话/草稿私有、V1 单段、test/prod 环境切换、OpenRouter 正常模型均可选、生产库独立保存工作台数据、关键用户信息脱敏且不做内容审计；前端按 Admin/CS Platform 走独立 Vercel 静态部署，Railway 仅补 backend CORS/env；实现已拆为 11 个 shared/database/backend/preset-platform/docs 子任务，评审后逐项启动。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "父任务仅维护规划文档和子任务拆分；具体模块事实由各实现子任务在完成后通过 module-updates.json 写入。"
+    }
+  }
 }

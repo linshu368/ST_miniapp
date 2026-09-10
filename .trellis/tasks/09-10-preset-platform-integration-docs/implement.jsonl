@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "契约最终同步"}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend 最终同步"}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "数据库最终同步"}
+{"file": ".trellis/spec/admin/app/index.md", "reason": "Vercel/运营 SPA 参考"}

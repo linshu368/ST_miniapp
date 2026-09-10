@@ -8,20 +8,35 @@
 
 ## 可复用与扩展
 
-| 能力            | 位置                                                        | 决策                                                                            |
-| --------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Vite React 基线 | `packages/admin/package.json`、`main.tsx`、Vite/Vercel 配置 | 复用版本、脚本、AntD locale/theme 和 SPA 部署方式，不复制业务大组件。           |
-| 环境模式        | `packages/admin/src/lib/environment.ts`、`.env.example`     | 新包实现同约束环境模块；API/Supabase/session/cache 成组切换。                   |
-| Supabase 登录   | Admin Supabase provider/LoginPage                           | 沿用认证协议和账号；不复制 token，不在 UI 承载授权。                            |
-| 数据边界        | `packages/admin/src/lib/*Api.ts`                            | 保持“组件 → lib helper → backend/Supabase”。                                    |
-| OpenRouter 目录 | `backend/src/platform/openrouter-models.ts`                 | 复用超时、缓存、并发合并、stale fallback；专用端点补运营鉴权和字段。            |
-| 发布模型目录    | `backend/src/platform/model-tiers.ts`                       | 可作精选视图；全量模型仍以 OpenRouter 当前目录为准。                            |
-| 流协议          | `backend/src/features/generation/upstream.ts`               | 扩展内部测试 purpose，复用 SSE tap/finish reason/provider request id。          |
-| Prompt 纯函数   | `backend/src/features/engine/`                              | 复用规范化和 prompt cache；新增 preset composer，不改 MiniApp 默认语义。        |
-| Shared 契约     | `packages/shared/src/api/*`                                 | 新增 preset-platform 契约、状态和错误码。                                       |
-| 发布语义        | Admin 草稿/发布/历史/回滚                                   | 复用不可变发布、并发版本、审计、恢复思想；多资产不塞进 runtime_config 单 JSON。 |
+| 能力                    | 位置                                                                                                 | 决策                                                                                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vite React 基线         | `packages/admin/package.json`、`main.tsx`、Vite/Vercel 配置                                          | 复用版本、脚本、AntD locale/theme 和 SPA 部署方式，不复制业务大组件。                                                                                                         |
+| Vercel 静态部署         | `packages/admin/vercel.json`、`packages/cs-platform/vercel.json`                                     | 新包采用独立 Vercel Project 和包内 `vercel.json`，使用 pnpm filter build、静态 dist 输出和 SPA fallback；不部署到 Railway。                                                   |
+| CI quality gate         | `.github/workflows/ci.yml`                                                                           | 根 typecheck/lint/import guard 覆盖 workspace；需显式增加 preset-platform test/build。                                                                                        |
+| Railway backend/PR 环境 | `.railway/railway.ts`、`.github/workflows/railway-pr-env.yml`、`ops/railway/README.md`               | Railway 继续只管理 backend 与支付任务；新平台只补 backend CORS/env `PRESET_PLATFORM_URL` 和 Vercel Preview 指向 PR backend 的约定。                                           |
+| 环境模式                | `packages/admin/src/lib/environment.ts`、`.env.example`                                              | 新包实现同约束环境模块；API/Supabase/session/cache 成组切换。                                                                                                                 |
+| Supabase 登录           | Admin Supabase provider/LoginPage                                                                    | 沿用认证协议和账号；不复制 token，不在 UI 承载授权。                                                                                                                          |
+| 数据边界                | `packages/admin/src/lib/*Api.ts`                                                                     | 保持“组件 → lib helper → backend/Supabase”。                                                                                                                                  |
+| OpenRouter 目录         | `backend/src/platform/openrouter-models.ts`                                                          | 复用超时、缓存、并发合并、stale fallback；专用端点补运营鉴权和字段。                                                                                                          |
+| Admin 模型目录交互      | `packages/admin/src/lib/openRouterModels.ts`、`packages/admin/src/components/ModelCatalogEditor.tsx` | 参考按环境 API base 获取目录、`OpenRouterModelDirectorySchema` 校验、搜索名称/ID/描述/canonical slug、stale/同步状态、上游时间、强刷和过期展示；新平台不直接复用 Admin 组件。 |
+| 发布模型目录            | `backend/src/platform/model-tiers.ts`                                                                | 可作精选视图；全量模型仍以 OpenRouter 当前目录为准。                                                                                                                          |
+| 流协议                  | `backend/src/features/generation/upstream.ts`                                                        | 扩展内部测试 purpose，复用 SSE tap/finish reason/provider request id。                                                                                                        |
+| Prompt 纯函数           | `backend/src/features/engine/`                                                                       | 复用规范化和 prompt cache；新增 preset composer，不改 MiniApp 默认语义。                                                                                                      |
+| Shared 契约             | `packages/shared/src/api/*`                                                                          | 新增 preset-platform 契约、状态和错误码。                                                                                                                                     |
+| 发布语义                | Admin 草稿/发布/历史/回滚                                                                            | 复用不可变发布、并发版本、审计、恢复思想；多资产不塞进 runtime_config 单 JSON。                                                                                               |
 
 复用 Admin 的认证协议、前端基线或发布语义只代表复用现有能力，不代表数据归属。Preset Platform 的业务表、RPC、RLS、grant 与审计应位于独立 `preset_platform` schema，Admin 不管理其数据生命周期。
+
+## 2026-09-10 评审确认
+
+- 测试环境和生产环境均沿用 Admin Supabase 账号/角色表；Preset Platform 的授权关系和业务数据独立归属 `preset_platform`。
+- 会话和草稿均为当前操作者私有；已发布预设和平台默认预设按角色权限共享查看/应用。
+- 预设 V1 采用单段 system instruction + 采样参数白名单，不做多段 prompt 编排。
+- 新平台必须支持 test/prod 环境切换，沿用 Admin 成组环境设计：API base、Supabase client/session、Query cache 和环境指纹一起切换。
+- OpenRouter 正常可调用模型均可选择；首期不按高价模型做 allowlist 限制，但仍需要速率、并发和 deadline。
+- 生产模式允许在生产库独立 `preset_platform` 域保存工作台数据，不写入 `admin` 或 MiniApp 业务域。
+- 关键用户信息需要服务端脱敏；角色卡按当前环境均可选择导入；首期不做内容审计。
+- 参考 `D:\飞书\0904-预设对话平台-交互预览.html`：保留左侧会话、中间对话、右侧配置/素材的对话测试布局；平台预设、预设库和草稿箱合并为“预设管理”页面 Tab；对话页点击预设选择器时用右侧抽屉展示已发布预设和私有草稿。
 
 ## 需谨慎扩展
 
@@ -39,6 +54,7 @@
 - 不允许浏览器直查 `experience.chat_history`；真实输入必须经 backend 脱敏。
 - 不建立新 OpenRouter key、浏览器直连或第二套 runtime-config 入口。
 - 不首期引入通用插件系统、消息队列、独立微服务或跨应用 UI 框架。
+- 不为 Preset Platform 新增 Railway frontend service、Docker image 或 GHCR 发布链路；前端发布走 Vercel，backend 仍走现有 Railway `stminiapp`。
 
 ## 差异与风险
 

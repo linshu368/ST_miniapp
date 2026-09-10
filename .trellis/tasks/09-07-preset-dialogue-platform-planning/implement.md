@@ -4,7 +4,7 @@
 
 ## A. 决策与核验
 
-确认 PRD 七项待拍板；分别只读核验 test/prod 的 Admin 账号认证能力、`preset_platform` 目标 schema 可用性、角色字段、experience 历史、RLS/grant；核对 OpenRouter 真实目录字段；写 ADR 固化 V1 prompt、独立数据域、测试不计费、生产只读和部署拓扑。脱敏/权限未确认或环境差异无法解释则不进入生产实现。
+已确认：沿用 Admin Supabase 账号/角色表；会话和草稿私有；V1 预设单段；支持 test/prod 成组环境切换；正常可调用 OpenRouter 模型均可选；生产库允许独立 `preset_platform` 保存工作台数据；关键用户信息脱敏且不做内容审计。实施前仍需分别只读核验 test/prod 的 Admin 账号认证能力、`preset_platform` 目标 schema 可用性、角色字段、experience 历史、RLS/grant；核对 OpenRouter 真实目录字段；写 ADR 固化 V1 prompt、独立数据域、测试不计费、生产只读和部署拓扑。权限或环境差异无法解释则不进入生产实现。
 
 ## B. Shared 契约
 
@@ -26,21 +26,25 @@ pnpm -r typecheck
 
 ## E. 模型与生成
 
-扩展运营鉴权模型端点和 refresh 限频；在 generation 内新增 internal test purpose，跳过 quota/wallet/charge；实现 V1 composer、原子开轮、idempotency、busy、断线 drain、retry/恢复和内部流量隔离。
+扩展运营鉴权模型端点和 refresh 限频；模型目录查询/搜索/选择参考 Admin 的 `openRouterModels.ts` 与 `ModelCatalogEditor.tsx`：按环境 API base 拉取目录、shared schema 校验、stale/同步状态、强刷、按名称/ID/描述/canonical slug 搜索、过期/不可用展示。在 generation 内新增 internal test purpose，跳过 quota/wallet/charge；实现 V1 composer、原子开轮、idempotency、busy、断线 drain、retry/恢复和内部流量隔离。
 
 测试目录 fresh/stale/no-cache、上游 4xx/5xx/429/timeout、流前/流内失败、断线、重复/并发、重启后陈旧状态；断言钱包、免费额度、正式 chat_history 无变化。
 
-## F. 生产素材与脱敏
+## F. 当前环境测试素材与脱敏
 
-实现角色安全摘要、按 ID 服务端取上下文、真实输入有界查询/脱敏/拒绝/opaque ref/审计；代码和数据库双重只读。使用人工 PII fixture 覆盖手机号、邮箱、TG、URL、身份/支付样式、Unicode、超长；测试下架、无样本、权限、超时及 response/log/Sentry 无原文。发现泄漏或线上写入立即 flag-off + revoke。
+实现当前环境角色安全摘要、按 ID 服务端取上下文、真实输入有界查询/关键用户信息脱敏/opaque ref；代码和数据库双重只读。首期不做内容审计或语义风险审核。使用人工 PII fixture 覆盖用户 ID、手机号、邮箱、TG、URL query、身份/支付样式、Unicode、超长；测试下架、无样本、权限、超时及 response/log/Sentry 无原文。发现未脱敏关键用户信息或线上写入立即 flag-off + revoke。
 
 ## G. 独立 SPA
 
-创建包、路由、providers、环境/login/工作台；按会话 → 模型 → 预设/默认 → 素材 → 草稿实现。API hooks 统一，query key 含环境，SSE 关联 request/session/environment；覆盖状态、未保存拦截、生产确认、响应式和原子环境切换。
+创建包、路由、providers、环境/login/工作台；按会话 → 模型 → 预设管理（平台预设/预设库/草稿箱 Tab）→ 测试素材实现。对话测试页按参考 HTML 图 1 处理：左侧私有会话列表、中间对话流、右侧会话配置/当前环境角色卡/脱敏输入快捷区；模型用 OpenRouter 下拉选择；点击预设打开右侧抽屉，合并展示已发布预设和私有草稿。API hooks 统一，query key 含环境，SSE 关联 request/session/environment；覆盖状态、未保存拦截、生产确认、响应式和原子环境切换。
+
+部署配置参考 Admin/CS Platform：新增 `packages/preset-platform/vercel.json`，使用 `framework: null`、`installCommand: pnpm install`、`buildCommand: pnpm --filter @miniapp/preset-platform build`、静态 `outputDirectory` 和 SPA rewrite。Vercel Preview 默认只配置 test Supabase 与 preview/development backend；production 项目才配置 prod 变量。不要新增前端 Dockerfile、GHCR 镜像或 Railway frontend service。
 
 ## H. 集成与灰度
 
 Test 完成主路径、故障、隐私和零回写证明；新 Vercel Preview 仅连 test。Production 独立 shape/migration，backend flag-off 先发，再按 viewer → operator → publisher 灰度。体验终审后决定长期上线，否则关闭生产 flag。
+
+CI/部署补充：在 `.github/workflows/ci.yml` 的 quality gate 中增加 `pnpm --filter @miniapp/preset-platform test` 和 `pnpm --filter @miniapp/preset-platform build`；根 `pnpm typecheck` / `pnpm lint` / import guard 已覆盖新 workspace。`.github/workflows/build-and-push.yml` 不新增 Preset Platform 镜像。`.railway/railway.ts` 不新增 service，仅把 `PRESET_PLATFORM_URL` 纳入 backend preserved env 清单，并在 Railway development/production/PR 环境中对齐 CORS origin；`railway-pr-env.yml` 继续只创建 backend `pr-{N}`，Preset Platform Vercel Preview 通过环境变量指向该 backend。
 
 ```bash
 pnpm --filter @miniapp/shared test
@@ -54,7 +58,7 @@ pnpm lint:imports
 pnpm format:check
 ```
 
-人工 smoke：环境登录/指纹隔离、A/B 会话、默认/固定版本、生产角色只读、脱敏输入、断线恢复、发布/回滚和 401/403/409/429/timeout。
+人工 smoke：环境登录/指纹隔离、A/B 私有会话、默认/固定版本、当前环境角色只读、脱敏输入、预设抽屉、预设管理 Tab、断线恢复、发布/回滚和 401/403/409/429/timeout。
 
 ## I. 文档与 Trellis
 
