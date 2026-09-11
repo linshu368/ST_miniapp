@@ -5,8 +5,8 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-08-feature-module-spec-sync/
-last_verified_at: 2026-09-08
+last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
+last_verified_at: 2026-09-11
 ---
 
 # 运行时、鉴权与数据访问基建
@@ -17,7 +17,7 @@ last_verified_at: 2026-09-08
 
 ## 当前状态
 
-配置与 runtime config 已集中，Supabase 按域访问，服务日志使用 Pino。
+配置与 runtime config 已集中，Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/model-tiers.ts` 集中读取 `llm_model_catalog`，损坏时降级到 `DEFAULT_CATALOG`，不再读取旧 tiers key。
 
 ## 入口与调用者
 
@@ -29,6 +29,7 @@ Backend routes、features、jobs 统一消费。
 | --------------------------------------------------- | ----------------- |
 | `packages/backend/src/platform/config.ts`           | 环境配置解析      |
 | `packages/backend/src/platform/runtime-config.ts`   | DB 运行配置入口   |
+| `packages/backend/src/platform/model-tiers.ts`      | 模型目录读取/缓存 |
 | `packages/backend/src/middleware/auth.ts`           | Telegram 鉴权     |
 | `packages/backend/src/lib/supabase.ts`              | 按域数据库 client |
 | `packages/backend/src/infrastructure/repositories/` | 数据访问实现      |

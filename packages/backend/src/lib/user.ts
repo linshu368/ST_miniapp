@@ -1,5 +1,4 @@
 import { getDomainDb } from './supabase.js';
-import { deriveStHandle } from '@miniapp/shared';
 import type { TelegramUser } from '../middleware/auth.js';
 
 export interface MiniappDbUser {
@@ -9,8 +8,6 @@ export interface MiniappDbUser {
   bot_entered_at: string | null;
   miniapp_entered_at: string | null;
   total_round: number;
-  st_handle: string;
-  st_initialized_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -49,14 +46,12 @@ export async function getOrCreateMiniappUserByTgId(
     return user;
   }
 
-  const stHandle = deriveStHandle(tgId);
   const now = new Date().toISOString();
   const { data, error: insertErr } = await db
     .from('users')
     .insert({
       tg_id: tgId,
       source_id: sourceId,
-      st_handle: stHandle,
       miniapp_entered_at: markMiniappEntered ? now : null,
       created_at: now,
       updated_at: now,

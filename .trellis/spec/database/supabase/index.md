@@ -22,7 +22,7 @@
 
 ## Pre-Development Checklist
 
-1. 阅读 `docs/ARCHITECTURE.md` 数据库章节、`docs/schema*`、`ops/schema-split/inventory.sql` 和相关 migration。
+1. 阅读 `docs/ARCHITECTURE.md` 数据库章节、`ops/schema-split/inventory.sql` 和相关 migration；历史专项文档已清理时按 ARCHITECTURE 中的 Git 取回说明追溯，不引用不存在的工作区路径。
 2. 搜索 `.from()`、`.rpc()`、`.schema()`、raw SQL、Prisma model、repository、函数/view/trigger/FK/cron 引用。
 3. 明确 schema 归属、锁与容量、事务、幂等、RLS/grant、发布顺序、验证和回滚。
 4. test 与 production 不保证同构；不得将一方结果冒充另一方。
@@ -30,6 +30,7 @@
 ## Required Rules
 
 - `packages/shared/migrations/` 是唯一 migration 源；禁止建立 `supabase/migrations` 平行来源或改写历史文件。
+- 新 migration 使用 `YYYYMMDD_描述.sql`，三位编号只作为冻结历史；远端执行通过手工 workflow、`psql` 和 `supabase_migrations.repo_migrations` 账本治理。
 - 每次只执行并验证一个 migration；测试库验证后才规划生产执行，生产必须附回滚/恢复说明。
 - `public` 和旧 `analytics` 属旧 bot 边界；无已批准 PRD 不得修改/引用。
 - 删除/瘦身必须同时获得应用无引用、数据库内部无引用、生产无读写证据三类负信号。

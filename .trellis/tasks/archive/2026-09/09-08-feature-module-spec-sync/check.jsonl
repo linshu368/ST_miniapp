@@ -1,3 +1,0 @@
-{"file":".trellis/spec/docs/process/index.md","reason":"检查流程变更职责、规划完整性、Markdown 可读性和同步义务。"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查方案是否复用现有 task/spec/archive 能力并避免过度设计。"}
-{"file":".trellis/tasks/09-08-feature-module-spec-sync/research/current-state-and-reuse.md","reason":"核对设计没有把非阻断 after_archive hook 误写成当前可用事务机制。"}

@@ -22,7 +22,7 @@ import communityRoutes from './routes/community.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
-import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
+import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,

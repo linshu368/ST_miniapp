@@ -2,7 +2,7 @@
 
 > 当前业务、基础设施和公共能力的实现位置与调用链见 [功能模块现状索引](./modules/index.md)；模块文件描述当前事实，本目录其他文件继续承载编码规范。
 
-适用于 `packages/frontend`。当前架构是 Next.js 14 App Router 自研 MiniApp UI；`docs/ARCHITECTURE.md` 明确 SillyTavern、iframe、postMessage bridge 已退场。`packages/frontend/CLAUDE.md` 中“阶段二 iframe/bridge”属于历史规则，不得据此新增 `lib/bridge`、ST mirror 或兼容层；其 React/TypeScript/数据获取/状态/表单/样式规则仍有效。
+适用于 `packages/frontend`。当前架构是 Next.js 14 App Router 自研 MiniApp UI；`docs/ARCHITECTURE.md` 明确 SillyTavern、iframe、postMessage bridge 已退场。规则来源为根 `AGENTS.md`、本目录 spec 与架构文档；包级 `CLAUDE.md` 已删除，不得恢复 `lib/bridge`、ST mirror 或平行规则来源。
 
 ## 专题导航
 

@@ -40,7 +40,7 @@ export function useConversationsQuery(characterId: string | undefined, enabled =
 /**
  * 单个会话的消息。
  *
- * 这里是落库态的唯一真相：流式期间的临时文本由聊天页用组件 state 叠在它之上，
+ * 这里是落库态的唯一真相：流式期间的临时文本由 use-conversation-turn 用组件 state 叠在它之上，
  * 不写进缓存——逐帧 setQueryData 会让所有订阅方重渲染，且流被中断后
  * 缓存里会留下一条永远不会收口的假消息。
  */

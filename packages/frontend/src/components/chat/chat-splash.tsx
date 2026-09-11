@@ -171,9 +171,9 @@ export function ChatSplash({
     setReturning(true);
     router.replace('/');
 
-    // 极端情况下 ST 冷启动会长时间占用主线程，给客户端路由一个短窗口后用原生导航兜底。
+    // 极端情况下客户端路由被长时间占用，给 replace 一个短窗口后用原生导航兜底。
     window.setTimeout(() => {
-      if (window.location.pathname.startsWith('/tavern/')) {
+      if (window.location.pathname.startsWith('/chat/')) {
         window.location.replace('/');
       }
     }, 1200);

@@ -5,15 +5,15 @@ scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/09-08-feature-module-spec-sync/
-last_verified_at: 2026-09-08
+last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
+last_verified_at: 2026-09-11
 ---
 
 # Schema、RLS 与迁移执行基建
 
 ## 职责与边界
 
-定义八域归属、跨域边界、RLS/grant 和单文件迁移纪律。
+定义八域归属、跨域边界、RLS/grant，以及日期命名、账本治理和 `psql` 单文件迁移纪律。
 
 ## 当前状态
 
@@ -28,12 +28,12 @@ last_verified_at: 2026-09-08
 | 路径                               | 职责               |
 | ---------------------------------- | ------------------ |
 | `packages/shared/migrations/`      | migration 唯一来源 |
-| `docs/schema归属地图.md`           | 域归属权威说明     |
+| `docs/ARCHITECTURE.md`             | 现行域归属说明     |
 | `.github/workflows/db-migrate.yml` | 手工执行入口       |
 
 ## 关键实现链路
 
-声明 domain → test 单文件执行 → shape/RLS/关键读写 → production 人工确认。
+声明 domain → test 账本查重/`psql` 单文件执行 → shape/RLS/关键读写 → 成功记账 → production 人工确认。
 
 ## 数据、契约与外部依赖
 
@@ -41,7 +41,7 @@ Supabase PostgreSQL/PostgREST/Auth/Storage。
 
 ## 关键节点与约束
 
-禁止平行 migration 源；生产先测试并记录锁、容量和回滚。
+禁止平行 migration 源；新文件必须日期命名；生产先测试并记录锁、容量、账本状态和回滚。
 
 ## 验证方式
 

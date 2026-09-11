@@ -1,4 +1,0 @@
-{"file":".trellis/spec/shared/contracts/index.md","reason":"检查共享契约及消费者一致性"}
-{"file":".trellis/spec/backend/app/index.md","reason":"检查后端路由与测试要求"}
-{"file":".trellis/spec/frontend/app/index.md","reason":"检查前端交互与类型质量"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查跨层状态和数据流完整性"}

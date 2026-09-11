@@ -16,14 +16,12 @@ import { getRawInitData } from '@/lib/telegram/auth';
 import { initTelegramSdk } from '@/lib/telegram/init';
 import { stripSensitiveTelegramLaunchParamsFromLocation } from '@/lib/telegram/launch-url';
 import { parseTelegramUser } from '@/lib/telegram/user';
-import { useFontScaleStore } from '@/stores/font-scale-store';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
-  const hydrateFontScale = useFontScaleStore((s) => s.hydrate);
 
   useEffect(() => {
     initTelegramSdk();
@@ -34,10 +32,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // initTelegramSdk 是同步副作用,initData 在它跑完后立即可读;
     // hydrate 把 telegram first_name + localStorage 覆盖合成 displayName
     hydrateUserProfile();
-    // 应用持久化的消息字号倍率
-    hydrateFontScale();
     setTelegramReady(true);
-  }, [hydrateUserProfile, hydrateFontScale]);
+  }, [hydrateUserProfile]);
 
   return (
     <QueryClientProvider client={queryClient}>

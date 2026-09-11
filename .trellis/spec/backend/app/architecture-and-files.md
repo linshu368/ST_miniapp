@@ -41,7 +41,7 @@ Repository 隐藏 schema client/Prisma 行形状，返回领域结果；跨 sche
 - `lobby-ranking-refresh-job.ts`/`lobby-latest-badge.ts`：大厅后台能力；`notifications.ts`/`notification-scope.ts`、`support-unread.ts`：通知/客服；`telegram-links.ts`、`user-avatar.ts`、`user.ts`：边界工具。
 - `platform/config.ts`：环境变量解析唯一中心；`runtime-config.ts`：DB 配置读取唯一入口；`model-tiers.ts`、`openrouter-models.ts`：模型档位和目录。
 - `prisma/schema.prisma` 是 Prisma 映射，不是共享契约；`prisma/migrations/` 是历史，当前 migration 唯一源仍是 `packages/shared/migrations/`；`seed.ts` 保护开发 fixture。
-- `scripts/payment-*` 执行支付诊断/对账/过期；`seed-config.ts` 初始化配置；`invite-uat/`、`mvp-regression/` 是场景验证器。
+- `scripts/payment-*` 执行支付诊断/对账/过期；`seed-config.ts` 初始化配置。阶段 `invite-uat/`、`mvp-regression/` 已删除，不得作为现行场景验证器。
 - `*.test.ts` 与源码就近；integration test 必须显式确认 test DB，不能让普通单测意外访问远端。
 
 ## 新文件放置规则

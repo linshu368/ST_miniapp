@@ -8,7 +8,6 @@
 - `telegram-avatar.ts`：头像 URL 归一化。
 - `user-placeholder.ts`：`{{user}}` 替换和默认称呼。
 - `config/database.ts`：环境到数据库配置的纯解析/校验。
-- `st-bridge/*`：bridge handle 解析与类型。
 - `telemetry/sanitize.ts`：敏感信息清洗。
 
 ## 硬规则
@@ -18,3 +17,4 @@
 - fixture 名称显式标记 dev/test，禁止真实用户、token、连接串或生产 ID。
 - sanitization 采用 allowlist/明确敏感键规则，并测试嵌套、数组、循环/异常输入；不得把脱敏当成可记录任意对象的许可。
 - helper 只共享稳定语义，不把应用 UI 文案、组件、数据库连接或 provider SDK 放入 shared。
+- ST bridge、iframe/postMessage 协议与已退场包不得重新加入 shared。

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatHistoryEntry } from '../../lib/chat-history-logger.js';
+import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
 
 const pricing = {
@@ -31,12 +31,12 @@ vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
   },
 }));
 
-vi.mock('../../lib/chat-history-logger.js', () => ({ saveChatHistory: vi.fn() }));
+vi.mock('./settle.js', () => ({ settleGeneration: vi.fn() }));
 
-const { saveChatHistory } = await import('../../lib/chat-history-logger.js');
+const { settleGeneration } = await import('./settle.js');
 const { execute } = await import('./execute.js');
 
-const savedHistory = () => vi.mocked(saveChatHistory).mock.calls.map((call) => call[0]);
+const savedHistory = () => vi.mocked(settleGeneration).mock.calls.map((call) => call[0]);
 
 function fakeLogger(): GenerationLogger {
   const sink = {
@@ -107,7 +107,7 @@ function requestBodyOf(fetchMock: ReturnType<typeof stubUpstream>): Record<strin
 
 beforeEach(() => {
   walletBalance = 1000;
-  vi.mocked(saveChatHistory).mockClear();
+  vi.mocked(settleGeneration).mockClear();
 });
 
 afterEach(() => {
@@ -143,7 +143,7 @@ describe('execute（流式）', () => {
     expect(result.chargeId).toBeTruthy();
     expect(deltas).toEqual(['你', '好']);
 
-    const entry = savedHistory()[0] as ChatHistoryEntry;
+    const entry = savedHistory()[0] as GenerationSettlementEntry;
     expect(entry).toMatchObject({
       user_id: 'user-1',
       session_id: 'session-1',
