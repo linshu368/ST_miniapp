@@ -1,7 +1,15 @@
-// 自研对话的唯一事实来源：experience.chat_history。
+// 对话的唯一事实来源：experience.chat_history。**这个表只由本仓库写。**
 //
 // 一行代表 session 内一个 turn 的一个 revision；同轮 revision 最大者是当前版本。
-// ST 链路写入的行没有 session_id / turn_index / revision，本仓库不会读到它们。
+// 存量 ST 行没有 session_id / turn_index / revision，本仓库不会读到它们。
+//
+// 一轮生成会分三段写同一行，三段的列集合基本不重叠，所以谁先落地都不会覆盖对方：
+//   1. startTurn / startRegeneration  开轮 RPC 建行：身份与轮次列 + status='streaming'
+//   2. setPromptHistory → finalizeTurn 请求内同步收口：prompt 快照 + 用户可见终态
+//   3. recordBillingOutcome / applyGenerationMetadata  异步补齐：扣费额与 OpenRouter 用量元数据
+// 唯一共享的列是 llm_finish_reason：第 2 段写 SSE tap 观测值，第 3 段仅在真的从
+// OpenRouter 取到更权威的值时才覆盖（它要等用量统计，必然晚于第 2 段）。
+// 第 3 段的实现见 features/generation/settle.ts 与 features/generation/sync-job.ts。
 
 import type { ChatMessage, ChatMessageStatus } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
@@ -123,6 +131,11 @@ export class ConversationHistoryRepository {
     if (error) throw new Error(`写入对话上下文快照失败：${error.message}`);
   }
 
+  /**
+   * 请求内同步收口：写用户可见终态与本轮已知的 LLM 标识。
+   * 故意不碰计费金额与 OpenRouter 用量元数据，那些归 recordBillingOutcome /
+   * applyGenerationMetadata，避免两个写入方抢同一列。
+   */
   async finalizeTurn(input: {
     historyId: string;
     content: string;
@@ -147,6 +160,67 @@ export class ConversationHistoryRepository {
       .single();
     if (error) throw new Error(`收口对话轮次失败：${error.message}`);
     return data as ConversationHistoryRow;
+  }
+
+  /**
+   * 生成终态结算：实扣金额 + OpenRouter 用量元数据。由 features/generation/settle.ts 调用。
+   * metadata 的键由 generation/openrouter-metadata.ts 统一构造，这里不做字段映射。
+   */
+  async recordBillingOutcome(input: {
+    historyId: string;
+    deductionRate: number;
+    metadata: Record<string, unknown>;
+  }): Promise<void> {
+    const { error } = await this.db
+      .from('chat_history')
+      .update({ deduction_rate: input.deductionRate, ...input.metadata })
+      .eq('id', input.historyId);
+    if (error) throw new Error(`回写生成计费结果失败：${error.message}`);
+  }
+
+  /**
+   * 回捞任务的元数据补齐：只覆盖 llm_* 用量字段与（若已结算）扣费额。
+   * 由 features/generation/sync-job.ts 调用。
+   */
+  async applyGenerationMetadata(
+    historyId: string,
+    metadata: Record<string, unknown>
+  ): Promise<void> {
+    const { error } = await this.db.from('chat_history').update(metadata).eq('id', historyId);
+    if (error) throw new Error(`补齐 LLM 元数据失败：${error.message}`);
+  }
+
+  /** 回捞任务的扫描口：24h 内有 generation_id 但用量字段不全的行。 */
+  async listRowsMissingGenerationData(input: { since: string; limit: number }): Promise<
+    Array<{
+      id: string;
+      llm_generation_id: string | null;
+      llm_charge_id: string | null;
+      assistant_reply: string | null;
+      status: string;
+    }>
+  > {
+    const { data, error } = await this.db
+      .from('chat_history')
+      .select('id, llm_generation_id, llm_charge_id, assistant_reply, status')
+      .not('llm_generation_id', 'is', null)
+      .gte('created_at', input.since)
+      // llm_usage_cache 不参与判定：OpenRouter 从不返回 usage_cache，把它算进来会让窗口内
+      // 每一行都恒为「不完整」，被反复重新拉取直到滚出 24h。
+      .or(
+        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null'
+      )
+      .order('created_at', { ascending: false })
+      .limit(input.limit);
+
+    if (error) throw new Error(`扫描待补齐的对话轮次失败：${error.message}`);
+    return (data ?? []) as Array<{
+      id: string;
+      llm_generation_id: string | null;
+      llm_charge_id: string | null;
+      assistant_reply: string | null;
+      status: string;
+    }>;
   }
 
   /**

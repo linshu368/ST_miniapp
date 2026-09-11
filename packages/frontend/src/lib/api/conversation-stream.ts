@@ -1,10 +1,9 @@
 /**
- * 自研对话链路的流式客户端。
+ * 对话链路的流式客户端，也是前端唯一的 SSE 入口。
  *
- * 为什么不用原来的 apiStreamClient：它按 OpenAI 风格解析 { content } 分片、认 [DONE] 哨兵、
- * 回调累积全文，且对非 2xx 只抛状态码、丢掉响应体。本链路四条都对不上——
- * 事件是 ConversationStreamEvent、终态是 done 事件、delta 是增量、
- * 而 402 的响应体里带着充值文案要用的两个金额。它已随本次改动删除。
+ * 四条约束决定了它不能用通用的 OpenAI 风格流客户端：事件是 ConversationStreamEvent
+ * 而非 { content } 分片；终态是 done 事件而非 [DONE] 哨兵；delta 是增量而非累积全文；
+ * 非 2xx 必须保留响应体——402 的响应体里带着充值文案要用的两个金额。
  *
  * 契约见 packages/shared/src/api/conversations.ts。
  */

@@ -1,450 +1,83 @@
 # SQL 迁移文件
 
-> **权威源**：本目录的 schema 设计**完全遵循** [`/DECISIONS.md`](../../../DECISIONS.md) 中的"分区与形态总览"章节、D001-D014 决策，以及 [`/Schema划分设计.md`](../../../Schema划分设计.md) 的两维方案。本 README 仅作为执行索引，决策依据请查阅 DECISIONS.md。
+本目录是仓库里**唯一**的 schema 变更源。现行规则以 [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md) 铁律 9 与 §7.4 为准，不要再引用已删除的 `DECISIONS.md` / `Schema划分设计.md`。
 
-## Schema 架构（D014 三 schema 切分）
+当前事实：
 
-| Schema        | 性质                          | 阶段一表                                                               |
-| ------------- | ----------------------------- | ---------------------------------------------------------------------- |
-| `public`      | 共用基础                      | `users`（扩展 `st_handle` / `st_initialized_at`）                      |
-| `miniapp`     | 运营业务                      | `characters`（D003 复用，D011 新增同步字段）+ 现有运营表（不参与同步） |
-| `st_platform` | 分区 A：平台管控（D014 新增） | `platform_settings` / `platform_presets` / `platform_api_configs`      |
-| `st_users`    | 分区 B：用户镜像（D014 新增） | `user_st_settings` / `user_st_chats`                                   |
-| `st_infra`    | 同步引擎运维基建（D014 新增） | `sync_tasks`（未来 audit / metrics / locks 也进此 schema）             |
+- 物理布局是 099 之后的八域（`app_core` / `experience` / `billing` / `miniapp_features` / `cs_platform` / `admin` / `miniapp_traffic` / `miniapp_analytics`）。`st_*` / `growth` / `miniapp_simulation` 已删。
+- 新表必须在文件头声明 `-- domain: xxx`。跨域直连豁免见 ARCHITECTURE 铁律 8，不要另写一份地图。
+- 新文件命名 `YYYYMMDD_<小写下划线描述>.sql`。三位数字编号已冻结，CI `pnpm lint:migrations` 拦截新编号。
 
-跨 schema FK：`st_users.user_st_chats.character_id` FK 到 `miniapp.characters`（PG 原生支持）；`st_infra.sync_tasks.user_id` FK 到 `public.users`。
+## 现行执行通道
 
-> 早期版本（D010-D013）所有 ST 同步层表都在统一的 `st` schema 下，D014 后拆分为三个语义角色 schema。决策依据见 DECISIONS.md D014。
+**改库只有 GitHub Actions `Database Migration` 一条路。** 它才会查、写 `supabase_migrations.repo_migrations` 账本。
 
-## 使用方式
+仓库 Secrets：
 
-阶段一采用原生 SQL 迁移（详见 D004），Schema 稳定后切换到 Prisma migrate。当前仓库提供三种执行方式：
+| Secret              | 用途                                                                               |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| `TEST_DATABASE_URL` | test 库 **Session pooler** 连接串（端口 5432），必须包含 `zoqelpfhurwehlvypryl`    |
+| `PROD_DATABASE_URL` | production **Session pooler** 连接串（端口 5432），必须包含 `wbtsfzozlmurljvglhpn` |
 
-- **GitHub Actions**：使用 `.github/workflows/db-migrate.yml` 手动触发执行指定 SQL 文件，推荐用于测试分支和受控生产变更。
-- **本地 Supabase CLI**：使用根目录 `pnpm supabase:*` 脚本执行本地服务、项目链接或指定 SQL 文件。
-- **Supabase Studio**：在 SQL Editor 中按文件名数字前缀逐个执行，作为 CLI/CI 无法连接数据库时的备用方式。
+> Action 用 `psql -f` 执行整份 SQL（`supabase db query` 不能跑多语句文件）。直连 `db.*.supabase.co` 是 IPv6-only，GitHub-hosted runner 连不上。`SUPABASE_ACCESS_TOKEN` 只给本地 CLI 用，这个 workflow 不读。
 
-### 本地 Supabase CLI
+步骤：GitHub → Actions → `Database Migration` → 选 `environment` → 填 `migration_file`（如 `packages/shared/migrations/20260910_schema_migrations_ledger.sql`）→ 生产必须在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。
 
-仓库根目录已安装 `supabase` CLI，并保留 `packages/shared/migrations/*.sql` 作为 SQL 迁移源；不要把迁移文件复制到 `supabase/migrations` 形成两套来源。
+应用启动**不会**自动跑 SQL；`packages/backend` 的 `start` 只做 `prisma generate`。workflow 校验 project ref：test 只能连 `zoqelpfhurwehlvypryl`，production 只能连 `wbtsfzozlmurljvglhpn`。
+
+不要用的方式（不记账，不能当现行通道）：
+
+- Supabase Studio SQL Editor、Management API 直改表结构
+- 按历史三位数字前缀在 Studio 里手跑
+- 本地 `pnpm supabase:db:query --file …` 对着远程库执行（仅排障时用，事后必须补账本）
+
+### 本地 CLI（查询 / 调试）
+
+SQL 源只在本目录；不要复制到 `supabase/migrations` 变成第二套来源。
 
 ```bash
 pnpm supabase --version
 pnpm supabase:status
 pnpm supabase:start
 pnpm supabase:stop
-```
-
-链接远程项目时需要先登录 Supabase CLI（或设置 `SUPABASE_ACCESS_TOKEN`）：
-
-```bash
 pnpm supabase login
 pnpm supabase:link:test
 pnpm supabase:link:prod
 ```
 
-本地或远程执行单个 SQL 文件时，沿用 CI 的 `db query --file` 方式：
+查库（不是发布）：
 
 ```bash
-pnpm supabase:db:query -- --db-url "$DATABASE_URL" --file packages/shared/migrations/025_preset_auto_promote.sql
+pnpm supabase:db:query -- --db-url "$DATABASE_URL" --file packages/shared/migrations/20260910_schema_migrations_ledger.sql
 ```
 
-### GitHub Actions 执行
+## 命名与账本
 
-在仓库 Secrets 中配置：
+- **2026-09-10 起**：`YYYYMMDD_描述.sql`。存量三位编号文件锁死，新增编号会被 CI 拒绝（`scripts/check-migration-filenames.mjs`）。
+- **账本** `supabase_migrations.repo_migrations`（建表：`20260910_schema_migrations_ledger.sql`）：workflow 执行前查重，已有记录则拒绝（`force_rerun` 可绕过）；成功后写入 `filename / checksum / applied_by`。放在平台 schema，不进 `app_core`。不要用同 schema 下 CLI 的 `schema_migrations`（列是 `version`，没有 `filename`）。
+- 账本只覆盖 2026-09-10 之后的新迁移，不回填更早历史。
+- 查环境：`SELECT * FROM supabase_migrations.repo_migrations ORDER BY applied_at DESC`。
+- 已执行文件被改过：用**新迁移**表达修正，不要改旧文件再跑。
 
-| Secret                  | 用途                                                               |
-| ----------------------- | ------------------------------------------------------------------ |
-| `SUPABASE_ACCESS_TOKEN` | Supabase Management API token，供 Supabase CLI 使用                |
-| `TEST_DATABASE_URL`     | `test` 分支 Postgres 连接串，必须包含 `zoqelpfhurwehlvypryl`       |
-| `PROD_DATABASE_URL`     | `production` 主库 Postgres 连接串，必须包含 `wbtsfzozlmurljvglhpn` |
+顺序依赖写在各文件头部「前置」，不要按文件名序号推断。并行分支撞号的存量（021/030/031/032/053/065/086/088/092/093/095 与 105/108/109）**同号含义可以不同**。099 已在 test 与生产执行完毕；其执行剧本是历史文档，见下方。
 
-执行路径：
-
-1. GitHub → Actions → `Database Migration`
-2. 点击 `Run workflow`
-3. 选择 `environment`
-4. 填写 `migration_file`，例如：
-   - `packages/shared/migrations/014_miniapp_payment_wallet.sql`
-   - `packages/shared/migrations/015_miniapp_settings_wallet_ops.sql`
-   - `packages/shared/migrations/016_miniapp_wallet_ledger_chat_idempotency.sql`
-   - `packages/shared/migrations/017_miniapp_wallet_payment_summary.sql`
-   - `packages/shared/migrations/018_miniapp_free_chat_idempotency.sql`
-   - `packages/shared/migrations/019_miniapp_billing_checkin.sql`
-   - `packages/shared/migrations/020_drop_legacy_app_chat_tables.sql`
-   - `packages/shared/migrations/021_miniapp_wish_roles.sql`
-   - `packages/shared/migrations/023_move_wishes_to_miniapp.sql`
-   - `packages/shared/migrations/024_cs_platform.sql`
-5. 如选择 `production`，必须在 `confirm_production` 填入 `RUN_PRODUCTION_MIGRATION`
-
-Workflow 会在执行前校验连接串中的 project ref。`test` 只能连接 `zoqelpfhurwehlvypryl`，`production` 只能连接 `wbtsfzozlmurljvglhpn`。
-
-> 当前部署流程不会在应用启动时自动执行 SQL migration；`packages/backend` 的 `start` 仅执行 `prisma generate` 后启动服务。上线数据库变更时必须手动触发上述 `Database Migration` workflow，逐个指定 `packages/shared/migrations/*.sql` 文件。
-
-### 全新部署（首次跑）
-
-```bash
-# 里程碑 A（D1）：身份扩展
-001_users_add_st_fields.sql        # 扩展 public.users.st_handle / st_initialized_at
-002_users_backfill_st_handle.sql   # 回填 tg_<tg_id>，依赖 001
-
-# 里程碑 A（D2 + D014）：建三个 schema + 6 张同步表
-003_create_st_schemas.sql          # CREATE SCHEMA st_platform / st_users / st_infra（D014）
-004_characters_add_sync_fields.sql # ALTER miniapp.characters 加 is_default/is_published/is_active/sort_order
-005_platform_settings.sql          # CREATE st_platform.platform_settings（A 类配置型，append-only）
-006_platform_presets.sql           # CREATE st_platform.platform_presets（A 类资产型）
-007_platform_api_configs.sql       # CREATE st_platform.platform_api_configs（A 类资产型 + 凭证）
-008_user_st_settings.sql           # CREATE st_users.user_st_settings（B 类配置型，append-only）
-009_user_st_chats.sql              # CREATE st_users.user_st_chats（B 类资产型，占位）
-
-# 里程碑 A（D2）：RLS 和种子
-010_rls_policies.sql               # 6 张表 minimal RLS（3 st_platform.* + 2 st_users.* + miniapp.characters）
-011_seed_data.sql                  # 3 角色卡 + 1 预设 + 1 API 配置 + 1 settings 全量快照
-
-# 里程碑 B（D6）：任务队列
-012_sync_tasks.sql                 # CREATE st_infra.sync_tasks（含独立 RLS）
-
-# MiniApp 支付/钱包/设置
-014_miniapp_payment_wallet.sql     # MiniApp 独立支付订单与钱包
-015_miniapp_settings_wallet_ops.sql # MiniApp 独立设置与订单过期函数
-016_miniapp_wallet_ledger_chat_idempotency.sql # 钱包流水、聊天扣费幂等与失败补偿
-017_miniapp_wallet_payment_summary.sql # 钱包首次/最近付费、累计金额和总积分汇总字段
-018_miniapp_free_chat_idempotency.sql # 免费聊天模式下保留请求幂等
-019_miniapp_billing_checkin.sql # 模型档次扣费配置、预留/确认扣费与每日签到 bonus
-020_drop_legacy_app_chat_tables.sql # 删除阶段一遗留 miniapp.app_sessions / app_messages
-021_miniapp_wish_roles.sql # MiniApp 角色许愿、24h 限流、许愿奖励
-023_move_wishes_to_miniapp.sql # 删除旧 Bot 许愿会话表，许愿池改为 MiniApp 页面
-024_cs_platform.sql # 内部 CS Platform：SQL 用户分层、Telegram 1V1 回访 SOP、Excel 导出审计
-025_preset_auto_promote.sql # 预设自动晋升触发器 + canonical_jsonb 序列化函数
-035_admin_config_management.sql # 运营后台草稿、发布、回滚和审计基础
-036_admin_operator_names.sql # 操作人姓名快照
-037_model_selector_complete.sql # 用户模型选择持久化、严格目录校验和活动草稿复用
-038_seed_payment_plans.sql # 将内置充值套餐迁入 runtime_config，后续由运营平台发布调整
-039_admin_character_cards.sql # 放弃配置草稿与运营后台角色卡只读列表
-040_migrate_llm_model_catalog.sql # 将旧版 4 模型迁移为正式分档模型目录
-041_admin_operations_features.sql # 每模型倍率、充值页配置与角色卡运营写操作
-042_admin_config_validation_and_audit_compaction.sql # 充值配置校验分发与角色排序审计压缩
-043_admin_analytics.sql # 运营数据分析聚合、明细查询、权限与查询索引
-044_admin_platform_presets.sql # 平台统一预设管理、默认快照发布、版本历史与审计
-045_admin_character_layout_drafts.sql # 角色卡三状态草稿、原子发布、版本与发布历史
-046_admin_character_layout_rollback.sql # 角色布局发布历史查询与原子回滚
-047_admin_character_layout_release_details.sql # 角色布局发布类型、目标版本与完整角色快照
-048_admin_create_character.sql # 角色卡安全创建、下架初始化、草稿同步与审计
-049_admin_delete_character_layout_release.sql # 删除非当前角色布局历史版本并保留审计
-050_llm_spending_details.sql # 免费模型、0.1 星尘钱包、逐调用账单、幂等扣费与费用对账
-051_llm_deferred_billing.sql # OpenRouter 用量晚到时零预扣登记，最终用量到达后一次性结算
-052_character_favorites.sql # 用户角色收藏、幂等设置、收藏计数与运营收藏榜
-053_llm_spending_retention.sql # 免费失败明细与每用户最近 100 条完整记录保留
-054_default_user_avatar_asset.sql # 默认头像改存受迁移管理的头像 bucket 并放宽其体积上限
-055_character_free_chat_quota.sql # 用户与角色卡免费额度、并发预留及额度后扣费倍率
-056_character_favorites_and_model_tagline.sql # 角色卡收藏表与幂等收藏 RPC，模型介绍语长度上限放宽到 40
-057_free_quota_exhausted_dialog_config.sql # 免费额度耗尽弹窗文案运行时配置与运营后台管理
-058_fixed_tier_llm_billing.sql # 固定每轮扣费：免费额度后 10、标准档 30、旗舰档 50
-059_model_catalog_cost_hint_limit.sql # 模型目录档位参考消耗文案上限 30 → 50
-060_lobby_recommended_latest_sorting.sql # 首页推荐/最新排序：聊天转化率聚合视图与角色最后上架时间
-061_character_free_chat_quota_limit_config.sql # 角色卡免费轮次上限改为 runtime_config（默认 40）并可运营后台调整
-062_simulation_card_evaluation.sql # 测试卡标识、SHA-256 去重与独立模拟会话/聊天日志 schema
-063_admin_layout_exclude_test_cards.sql # 运营后台角色布局排除评测测试卡；依赖 062 提供 is_test 列
-064_message_center_and_support.sql # 消息中心（官方公告 / 个人通知 + 已读水位）与站内客服会话
-065_light_fixed_deduction.sql # 轻量档固定扣费额并入 llm_pricing_config
-065_support_user_read_state.sql # 客服回复提醒改挂「联系客服」入口，服务端记录每用户已读水位（与上一条同为 065，历史重号）
-066_admin_outreach_credit_grant.sql # 运营回访发放积分与审计
-067_lobby_latest_seen_state.sql # 首页「最新」New 提醒水位线
-068_model_preset_directory_admin.sql # 预设按模型分配的运营后台通路
-069_miniapp_chat_sessions.sql # 自研引擎会话表 / 消息表 + chat_history 补 session_id（M1）
-070_chat_session_rpc.sql # 自研引擎的发消息与重生成原子 RPC（M1）
-071_engine_platform_instructions.sql # 自研引擎平台规则三件套落 miniapp.runtime_config（M2）
-072_chat_history_conversation_source.sql # chat_history 增 turn/revision，替代并删除 chat_messages
-073_current_chat_history_view.sql # 每个 session turn 的 max revision 读取视图
-074_lobby_ranking_score_v3.sql # 大厅推荐排序 v3 评分
-075_chat_engine_mode.sql # 聊天链路全局开关 chat_engine_mode（默认 sillytavern，M6）
-076_engine_admin_platform_instructions.sql # 自研引擎平台规则进运营台草稿→发布通路，档位表改可增删
-077_context_window.sql # 自研引擎双水位线上下文窗口（context_window_start_turn + A/B 水位）
-078_chat_session_pinned.sql # 会话置顶时间戳与置顶优先的列表排序索引
-079_chat_session_title_default_character_name.sql # 会话 title 默认回填为绑定角色的 characters.name
-080_chat_message_voice.sql # 角色回复语音：chat_message_audio 表、用户语音偏好列、miniapp-chat-voice 桶
-081_finish_reason_billing_gate.sql # 只有 finish_reason=stop 的自然收尾才允许扣星尘
-082_spending_reply_outcomes.sql # 消费明细补 reply_outcome 标签，可判定的空 finish_reason 回到 pending
-083_drop_chat_engine_mode.sql # 删除 ST 切换期的回滚开关 chat_engine_mode（075 建的行）
-084_remove_legacy_llm_display_fields.sql # 模型目录去掉展示价 price_input/price_output，定价配置去掉 balanceBaseline/fallbackCost
-085_llm_free_flag_and_drop_pricing_markup.sql # 目录的 markup/deduct_markup 换成 is_free，定价配置去掉 exchangeRate/markup
-086_miniapp_wish_roles_repair.sql # 补生产库缺失的 miniapp.wish_roles（021 未执行；FK 直接落 028 修正后的 miniapp.users）
-087_drop_dead_admin_rpcs.sql # 删除 admin 21 个零消费方 RPC（含引用 st_platform 的预设组；is_registered_admin 因 RLS 保留）
-088_drop_st_schemas.sql # DROP SCHEMA st_platform / st_users / st_infra CASCADE（必须在 087 之后）
-089_drop_growth.sql # DROP SCHEMA growth CASCADE；代码同批摘掉 CS 渠道链接与 click 重定向
-090_drop_miniapp_simulation.sql # DROP SCHEMA miniapp_simulation CASCADE（保留 characters.is_test）
-091_drop_chat_message_charges.sql # 删旧聊天扣费表 + 4 RPC + character_engagement_stats 视图
-092_free_quota_exhausted_notice_text.sql # 免费额度耗尽提示从弹窗标题+说明改为单行轻提示文案
-095_revert_free_quota_exhausted_notice_text.sql # 回退 092：校验函数与 runtime_config 从 { text } 还原为 { title, description }
-096_reapply_free_quota_exhausted_notice_text.sql # 重做 092：在已执行 095 的环境把文案结构再次改为 { text }
-097_chat_history_drop_dead_columns.sql # 删 chat_history 的 preset_id / llm_model_markup / user_character_round 三个死列（原编号 092，撞号后重编）
-098_characters_drop_st_sync_columns.sql # 删 characters 的 is_default / is_published / is_active 三个 ST 同步期死列，把 test 对齐生产（生产是 no-op）
-099_schema_split_phase1.sql # schema 划分一阶段：miniapp 的 22 表 + 1 视图 + 24 函数按归属域搬进 app_core / miniapp_features / experience / billing，support_* 迁入 cs_platform，并改写全库函数体与运营人群 SQL 里的 miniapp.* 限定名
-099_schema_split_phase1_rollback.sql # 099 的提交后回滚：对象搬回 miniapp、限定名改回、DROP 四个新 schema。事务提交前失败不需要它（099 单事务自动回滚）
-100_payment_reconciliation_schedule.sql # 支付订单快速对账：payment_orders 加 next_reconcile_at / last_reconciled_at / reconcile_attempts / reconcile_locked_until 四列与领取索引。按 to_regclass 自动挑 billing 或 miniapp，与 099 顺序无关
-103_payment_settled_by.sql # 支付订单入账来源 settled_by：complete_payment_order 改为三参并记录 webhook/return/query/cron。与 101 语音计费撞号后改编。按 to_regclass 自动挑 billing 或 miniapp
-104_rollback_voice_billing.sql # 回滚 test 上已执行的 101/102 语音付费（prod 从未执行，不要跑）。先合 PR #298 并部署 backend
-```
-
-> **099 不是普通迁移**，执行前必读 `docs/schema划分-一阶段执行计划.md`：
->
-> - 必须先停入口流量与后台任务（`SET SCHEMA` 不重写数据，但要拿 22 张表的 ACCESS EXCLUSIVE 锁）；
-> - 前置：097 与 098 都已在本库执行，由 099 的 preflight 断言；
-> - 事务外还有三步收尾：`ops/schema-split/postgrest-expose-{test,prod}.sql`、
->   `ops/schema-split/cron-job5-prod.sql`、部署适配新 schema 的代码；
-> - 空跑：`bash ops/schema-split/dryrun-099.sh test`（只验正向）、
->   `bash ops/schema-split/dryrun-099-roundtrip.sh test`（正向 + 回滚，同事务内跑完再 ROLLBACK）。
-
-> 021 / 030 / 031 / 032 / 053 / 065 各出现过两次（历史重号），按文件名字母序执行即可，同号文件之间无依赖。
->
-> 092 / 093 / 095 也各有两个文件，来自 `main` 与 `dev` 两条并行发布线，**同号但含义不同**，
-> 不要按序号推断内容。097~099 为 schema 划分一阶段迁移；100 起为支付对账等新功能迁移，序号在全部分支上唯一。
-
-### 已部署「统一 st schema」的环境（D014 原地搬迁，保留数据）
-
-若 Supabase 上 5~6 张表仍在 `st.*` 下，**不要**直接 `DROP SCHEMA st CASCADE`（会丢种子与用户镜像数据）：
-
-```sql
--- 1. 原地搬迁（ALTER TABLE SET SCHEMA，保留数据与 FK）
-013_migrate_st_schema_split.sql
-
--- 2. 刷新 RLS + schema USAGE（幂等）
-010_rls_policies.sql
-```
-
-搬迁后表位置：
-
-| 原位置                                                               | 新位置                |
-| -------------------------------------------------------------------- | --------------------- |
-| `st.platform_settings` / `platform_presets` / `platform_api_configs` | `st_platform.*`       |
-| `st.user_st_settings` / `user_st_chats`                              | `st_users.*`          |
-| `st.sync_tasks`（若已建）                                            | `st_infra.sync_tasks` |
-
-### 可重置的测试环境（无数据可丢）
-
-```sql
-DROP SCHEMA IF EXISTS st CASCADE;
-DROP SCHEMA IF EXISTS st_platform CASCADE;
-DROP SCHEMA IF EXISTS st_users CASCADE;
-DROP SCHEMA IF EXISTS st_infra CASCADE;
--- 再顺序跑 003-012
-```
-
-D010 → D011 → D014 的演进差异详见 DECISIONS.md D014。
-
-## 文件命名规范
-
-`<三位序号>_<描述>.sql`，如 `012_xxx.sql`
-
-## 阶段一表清单（三标签视图）
-
-每张表的 `COMMENT ON TABLE` 必带 `[partition=...][shape=...][direction=...]` 三标签，供同步引擎从 `information_schema` 反向校验配置清单。详细解释见 DECISIONS.md 总览章节。
-
-| 表                                                     | partition | shape                  | direction | 说明                                           | 落地 SQL         |
-| ------------------------------------------------------ | --------- | ---------------------- | --------- | ---------------------------------------------- | ---------------- |
-| `public.users` (扩展 `st_handle`, `st_initialized_at`) | identity  | -                      | none      | 身份映射，Bridge 写入一次                      | 001 / 002        |
-| `miniapp.characters` (复用 + 同步字段)                 | A         | resource:platform_pool | down      | 平台默认角色卡池                               | 004 / 011 (seed) |
-| `st_platform.platform_settings` (新方案核心)           | A         | config                 | down      | settings.json 全量快照 + writable_paths 白名单 | 005 / 011 (seed) |
-| `st_platform.platform_presets`                         | A         | resource:platform_pool | down      | 平台默认 API 预设池                            | 006 / 011 (seed) |
-| `st_platform.platform_api_configs`                     | A         | resource:platform_pool | down      | 平台 API 配置（含凭证）                        | 007 / 011 (seed) |
-| `st_users.user_st_settings` (新方案核心)               | B         | config                 | up        | 用户白名单内 settings 反向镜像，append-only    | 008              |
-| `st_users.user_st_chats`                               | B         | resource:user_pool     | up        | 用户聊天记录镜像（占位）                       | 009              |
-| `st_infra.sync_tasks`                                  | infra     | queue                  | internal  | 反向同步任务持久化队列                         | 012              |
-
-**标签字典**：
-
-- `partition`：`A`（平台管控）/ `B`（用户运行时）/ `identity`（身份系统）/ `infra`（引擎基建）
-- `shape`：`config`（配置型）/ `resource:platform_pool`（资源型-平台池）/ `resource:user_pool`（资源型-用户池）/ `queue`（任务队列）
-- `direction`：`down`（Supabase → ST）/ `up`（ST → Supabase）/ `none`（不参与双向同步）/ `internal`（引擎内部，无 ST 文件系统对应）
-
-## RLS 策略（D009 minimal 模式 + D014 三 schema）
-
-阶段一所有同步相关表统一采用 **service_role 唯一可访问** 的最小模式：
-
-- `anon` / `authenticated` 角色：**完全禁止**
-  - schema 级（三个新 schema 全部）：`REVOKE USAGE ON SCHEMA st_platform / st_users / st_infra FROM anon, authenticated`
-  - 表级：无任何 policy，所有表的 GRANT 已 REVOKE
-- `service_role` 角色：BYPASSRLS + schema USAGE，全权限（同步引擎走此身份）
-- `postgres` 角色：BYPASSRLS，全权限（现有 backend 通过 Prisma `DATABASE_URL` 连接，不受影响）
-
-未来阶段二如需开放部分表给 authenticated 直读（如大厅展示），需要：
-
-1. `GRANT USAGE ON SCHEMA st_platform TO authenticated`（按需选择具体 schema）
-2. `CREATE POLICY ... FOR SELECT TO authenticated USING (...)`
-3. 同步在 DECISIONS.md 补对应决策
-
-## 种子数据（011）
-
-| 类型              | 数量           | 来源                                                                             | 目标表                             | UUID 范围              |
-| ----------------- | -------------- | -------------------------------------------------------------------------------- | ---------------------------------- | ---------------------- |
-| 角色卡            | 3              | `SillyTavern-latest/data/default-user/characters/{第七开发部,莫池来,贺商寒}.png` | `miniapp.characters`               | `11111111-...001..003` |
-| 预设              | 1              | `OpenAI Settings/Default.json`                                                   | `st_platform.platform_presets`     | `22222222-...001`      |
-| API 配置          | 1              | 占位（`api_key=REPLACE_ME`，部署时替换）                                         | `st_platform.platform_api_configs` | `33333333-...001`      |
-| platform_settings | 1（version=1） | `default-user/settings.json` 经清洗                                              | `st_platform.platform_settings`    | `44444444-...001`      |
-
-**settings_jsonb 清洗（用户确认 Q5）**：
-
-- `active_character` → `platform_<第一张卡 uuid>.png`
-- `oai_settings.preset_settings_openai` → `platform_<预设 uuid>`
-- `main_api` → `"openai"`
-
-**writable_paths 白名单（J1，阶段一走整组路径）**：
-
-- `{ path: "active_character", transform: "character_ref" }`
-- `{ path: "oai_settings.prompts", transform: "passthrough" }`
-
-**重新生成种子数据**：已不可能，生成器 `packages/shared/scripts/generate-seed-sql.ts` 于 2026-08-18 随 ST 清理删除
-（取回见 commit `6206f3a` 之前的历史）。它从本机 SillyTavern 数据目录读 PNG 与 `settings.json`，
-产物是已在各环境执行过的 `011_seed_data.sql`，其中 `st_platform.*` 三张表已无消费方。
-011 作为历史迁移保持原样，不重新生成。
-
-## 部署注意事项
-
-### API Key 替换
-
-种子数据写入 `st_platform.platform_api_configs` 时 `api_key = "REPLACE_ME"`，部署时必须替换：
-
-```sql
-UPDATE st_platform.platform_api_configs
-SET config_payload = jsonb_set(config_payload, '{api_key}', '"sk-or-v1-XXXXX"')
-WHERE id = '33333333-3333-4333-8333-000000000001';
-```
-
-或通过运维后台替换。**注意**：011 的 ON CONFLICT 子句故意不更新 `config_payload`，保护已部署的真实 key 不被种子重置。
-
-### platform_settings 后续版本
-
-阶段一种子只写 `platform_version = 1`。
-
-**预设更新场景**（最常见）：运营无需手动操作 `platform_settings`，只需在 `platform_presets` 中 INSERT 一行 `is_default=true` 的新预设，触发器 `trg_preset_auto_promote`（025）会自动追加新版 `platform_settings`（详见下方「运营更新预设」章节）。
-
-**其他 settings 变更**（如开放新的 writable_paths、修改 main_api 等）：仍需手动 INSERT：
-
-```sql
--- platform_version 单调递增；content_hash 不能与历史重复
-INSERT INTO st_platform.platform_settings (
-  platform_version, settings_jsonb, writable_paths, content_hash, created_by, note
-) VALUES (
-  2, '{...}'::jsonb, '[...]'::jsonb, 'sha256-hash', 'admin@xxx', 'v2: 开放 power_user.theme'
-);
-```
-
-应用层负责计算 canonical content_hash（key 排序后 sha256），同 hash 会被 UNIQUE 约束拒绝。
-
-### 运营更新预设
-
-> **前置条件**：migration `025_preset_auto_promote.sql` 已执行。
-
-运营只需执行**一条 SQL**，触发器自动完成所有关联操作：
-
-```sql
--- ═══════════════════════════════════════════════════════════════════════
--- 运营更新预设：一条 INSERT 即可
--- ═══════════════════════════════════════════════════════════════════════
---
--- 作用：向 platform_presets 插入一行新的默认预设。
---       触发器 trg_preset_auto_promote 会自动完成以下操作：
---         ① 将旧默认预设的 is_default 置为 false、enabled 置为 false
---         ② 复制最新 platform_settings，将 preset 指针更新为新预设
---         ③ platform_version 自动 +1
---         ④ content_hash 自动计算
---         ⑤ 插入新的 platform_settings 行
---
--- 下发时机：
---   - 新用户：下次登录时 provision 自动下发新预设文件 + 新 settings 指针
---   - 老用户：settings.json 每次登录都会刷新（指针生效），新预设文件因
---             UUID 不同（文件不存在）也会被写入，无需 force
-
-INSERT INTO st_platform.platform_presets (display_name, preset_payload, is_default)
-VALUES (
-  '预设名称',                  -- 运营展示名（不影响落盘文件名）
-  '{
-    "完整的 ST OpenAI 预设 JSON，
-     从 SillyTavern 的 OpenAI Settings/*.json 中导出"
-  }'::jsonb,
-  true                         -- 标记为默认 → 触发自动晋升
-);
-```
-
-**执行后的验证查询**：
-
-```sql
--- ① 检查当前默认预设（应只有一行 is_default=true）
-SELECT id, display_name, is_default, enabled, created_at
-  FROM st_platform.platform_presets
- ORDER BY created_at DESC
- LIMIT 5;
-
--- ② 检查 platform_settings 最新版本（指针应指向新预设）
-SELECT platform_version,
-       settings_jsonb->'oai_settings'->>'preset_settings_openai' AS preset_pointer,
-       created_by, note, created_at
-  FROM st_platform.platform_settings
- ORDER BY platform_version DESC
- LIMIT 3;
-```
-
-**触发器内部流程（运营无需关心，仅供排障参考）**：
-
-```
-INSERT is_default=true
-  │
-  ├─ ① UPDATE platform_presets SET is_default=false, enabled=false WHERE is_default=true
-  │     → 旧默认预设降级并禁用（新用户不再收到旧预设文件）
-  │
-  ├─ ② SELECT latest platform_settings (max platform_version)
-  │     → 取最新一行 settings 快照作为基底
-  │
-  ├─ ③ jsonb_set(settings_jsonb, 'oai_settings.preset_settings_openai', 'platform_<新UUID>')
-  │     → 更新 settings 中的预设指针
-  │
-  ├─ ④ platform_version + 1, canonical_jsonb → sha256 → content_hash
-  │     → 版本递增 + 计算跨语言一致的 hash（使用 canonical_jsonb 函数）
-  │
-  └─ ⑤ INSERT INTO platform_settings (new version row)
-        → 追加新版 settings 行（append-only，不修改历史）
-```
-
-**注意事项**：
-
-- `is_default` 必须设为 `true`，否则触发器不会执行，预设只会作为普通行写入
-- `preset_payload` 必须是完整可用的 ST 预设 JSON，provision 会原样写入用户的 `OpenAI Settings/` 目录
-- 旧预设文件不会从已有用户的磁盘上删除（provision 无清理逻辑），但指针已切换，ST 不会再使用旧文件
-- 如需回滚到旧预设，不能直接 UPDATE（append-only），需 INSERT 一行新预设指向旧 payload
-
-## 回滚
-
-本节只讲 ST 阶段一（001~00x 建的 `st_*` schema）。
-**schema 划分一阶段（099）的回滚见 `099_schema_split_phase1_rollback.sql`，不要照抄本节的 CASCADE 写法。**
-
-ST 阶段一不提供自动回滚脚本。如需回滚：
-
-```sql
--- 删除三个新 schema（CASCADE 级联删除其下所有表）
-DROP SCHEMA IF EXISTS st_infra CASCADE;
-DROP SCHEMA IF EXISTS st_users CASCADE;
-DROP SCHEMA IF EXISTS st_platform CASCADE;
-
--- 回滚 miniapp.characters 同步字段
-ALTER TABLE miniapp.characters DROP COLUMN IF EXISTS is_default;
-ALTER TABLE miniapp.characters DROP COLUMN IF EXISTS is_published;
-ALTER TABLE miniapp.characters DROP COLUMN IF EXISTS is_active;
-ALTER TABLE miniapp.characters DROP COLUMN IF EXISTS sort_order;
-
--- 回滚 001/002（如果连身份字段也要回滚）
-ALTER TABLE public.users DROP COLUMN IF EXISTS st_initialized_at;
-ALTER TABLE public.users DROP COLUMN IF EXISTS st_handle;
-```
-
-## Prisma 同步
-
-执行完迁移后，如需更新 Prisma Client：
+## Prisma
 
 ```bash
 cd packages/backend
 npx prisma generate
 ```
 
-099 之后 `schema.prisma` 的 `schemas` 是 `["app_core", "miniapp_features", "billing"]`，11 个 model 各自 `@@schema` 到归属域。
-`experience` / `cs_platform` 里没有 model，只被 `$queryRaw` 用全限定名访问，所以不在 `schemas` 里。
-`public` / `st_*` 不进 Prisma；088 已 drop 三个 ST schema。需要读 bot 的 `public.*` 时走一次性 SQL。
+099 之后 `schema.prisma` 的 `schemas` 是 `["app_core", "miniapp_features", "billing"]`。`experience` / `cs_platform` 等无 Prisma model 的域走 `getDomainDb` 或全限定 SQL。
+
+## 历史（不是现行规则）
+
+下列文件已从工作区删除，需要时从 git 取回，并标明那是当时的决策而不是现在的权威：
+
+| 内容                                     | 取回                                                  |
+| ---------------------------------------- | ----------------------------------------------------- |
+| 八域归属原稿                             | `git show 7541a54^:docs/schema归属地图.md`            |
+| 099 执行剧本                             | `git show b4491cd^:docs/schema划分-一阶段执行计划.md` |
+| ST 三 schema / DECISIONS 时代的本 README | 本文件改版前的 git 历史                               |
+
+`st_platform` / `st_users` / `st_infra`（088）、`growth`（089）、`miniapp_simulation`（090）已删库。不要按「D014 三 schema」或「Studio + 数字前缀」执行新变更。

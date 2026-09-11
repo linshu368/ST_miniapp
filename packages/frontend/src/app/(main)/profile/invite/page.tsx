@@ -37,6 +37,7 @@ const TABS: Array<{ id: InviteTab; label: string }> = [
 /** 奖励规则的用户可读文案；未识别的 rule_key 走兜底。 */
 const RULE_LABELS: Record<string, string> = {
   invitee_registered: '新好友加入奖励',
+  invitee_chat_rounds: '新好友聊够3轮奖励',
   invitee_first_paid: '好友首次充值奖励',
 };
 

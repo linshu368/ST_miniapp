@@ -92,6 +92,9 @@ function asInviteRewardRules(value: unknown): InviteRewardRulesConfig {
         rule_key: typeof rule?.rule_key === 'string' ? rule.rule_key : '',
         credits: typeof rule?.credits === 'number' ? rule.credits : 1,
         enabled: rule?.enabled === true,
+        ...(typeof rule?.threshold_rounds === 'number'
+          ? { threshold_rounds: rule.threshold_rounds }
+          : {}),
       })),
     };
   }

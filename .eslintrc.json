@@ -11,20 +11,30 @@
           {
             "patterns": [
               {
+                "group": [
+                  "@miniapp/backend",
+                  "@miniapp/backend/*",
+                  "@miniapp/admin",
+                  "@miniapp/admin/*",
+                  "@miniapp/cs-platform",
+                  "@miniapp/cs-platform/*"
+                ],
+                "message": "应用包互不 import，跨进程走 HTTP（架构铁律 §3）"
+              },
+              {
+                "group": [
+                  "**/backend/**",
+                  "**/admin/**",
+                  "**/cs-platform/**",
+                  "**/packages/backend/**",
+                  "**/packages/admin/**",
+                  "**/packages/cs-platform/**"
+                ],
+                "message": "禁止相对路径跨应用包（架构铁律 §3）"
+              },
+              {
                 "group": ["@miniapp/db-types", "@miniapp/db-types/*"],
-                "message": "frontend 禁止 import db-types（架构铁律 §4）"
-              },
-              {
-                "group": ["@miniapp/backend", "@miniapp/backend/*"],
-                "message": "应用包互不 import，跨进程走 HTTP（架构铁律 §3）"
-              },
-              {
-                "group": ["@miniapp/sync-engine", "@miniapp/sync-engine/*"],
-                "message": "应用包互不 import，跨进程走 HTTP（架构铁律 §3）"
-              },
-              {
-                "group": ["@miniapp/st-extension", "@miniapp/st-extension/*"],
-                "message": "应用包互不 import，跨进程走 postMessage（架构铁律 §3）"
+                "message": "db-types 已删除，前端只消费 @miniapp/shared"
               }
             ]
           }
@@ -39,16 +49,94 @@
           {
             "patterns": [
               {
-                "group": ["@miniapp/frontend", "@miniapp/frontend/*"],
-                "message": "应用包互不 import（架构铁律 §3）"
+                "group": [
+                  "@miniapp/frontend",
+                  "@miniapp/frontend/*",
+                  "@miniapp/admin",
+                  "@miniapp/admin/*",
+                  "@miniapp/cs-platform",
+                  "@miniapp/cs-platform/*"
+                ],
+                "message": "应用包互不 import，跨进程走 HTTP（架构铁律 §3）"
               },
               {
-                "group": ["@miniapp/sync-engine", "@miniapp/sync-engine/*"],
-                "message": "应用包互不 import，backend 通过 HTTP 调 sync-engine（架构铁律 §3）"
+                "group": [
+                  "**/frontend/**",
+                  "**/admin/**",
+                  "**/cs-platform/**",
+                  "**/packages/frontend/**",
+                  "**/packages/admin/**",
+                  "**/packages/cs-platform/**"
+                ],
+                "message": "禁止相对路径跨应用包（架构铁律 §3）"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/admin/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@miniapp/frontend",
+                  "@miniapp/frontend/*",
+                  "@miniapp/backend",
+                  "@miniapp/backend/*",
+                  "@miniapp/cs-platform",
+                  "@miniapp/cs-platform/*"
+                ],
+                "message": "应用包互不 import，跨进程走 HTTP（架构铁律 §3）"
               },
               {
-                "group": ["@miniapp/st-extension", "@miniapp/st-extension/*"],
-                "message": "应用包互不 import（架构铁律 §3）"
+                "group": [
+                  "**/frontend/**",
+                  "**/backend/**",
+                  "**/cs-platform/**",
+                  "**/packages/frontend/**",
+                  "**/packages/backend/**",
+                  "**/packages/cs-platform/**"
+                ],
+                "message": "禁止相对路径跨应用包（架构铁律 §3）"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/cs-platform/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@miniapp/frontend",
+                  "@miniapp/frontend/*",
+                  "@miniapp/backend",
+                  "@miniapp/backend/*",
+                  "@miniapp/admin",
+                  "@miniapp/admin/*"
+                ],
+                "message": "应用包互不 import，跨进程走 HTTP（架构铁律 §3）"
+              },
+              {
+                "group": [
+                  "**/frontend/**",
+                  "**/backend/**",
+                  "**/admin/**",
+                  "**/packages/frontend/**",
+                  "**/packages/backend/**",
+                  "**/packages/admin/**"
+                ],
+                "message": "禁止相对路径跨应用包（架构铁律 §3）"
               }
             ]
           }
@@ -68,12 +156,25 @@
                   "@miniapp/frontend/*",
                   "@miniapp/backend",
                   "@miniapp/backend/*",
-                  "@miniapp/sync-engine",
-                  "@miniapp/sync-engine/*",
-                  "@miniapp/st-extension",
-                  "@miniapp/st-extension/*"
+                  "@miniapp/admin",
+                  "@miniapp/admin/*",
+                  "@miniapp/cs-platform",
+                  "@miniapp/cs-platform/*"
                 ],
                 "message": "契约层包禁止 import 应用层包（架构铁律 §4.4）"
+              },
+              {
+                "group": [
+                  "**/frontend/**",
+                  "**/backend/**",
+                  "**/admin/**",
+                  "**/cs-platform/**",
+                  "**/packages/frontend/**",
+                  "**/packages/backend/**",
+                  "**/packages/admin/**",
+                  "**/packages/cs-platform/**"
+                ],
+                "message": "契约层禁止相对路径引用应用包（架构铁律 §4.4）"
               }
             ]
           }
