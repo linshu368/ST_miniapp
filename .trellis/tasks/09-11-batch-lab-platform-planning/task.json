@@ -1,0 +1,48 @@
+{
+  "id": "batch-lab-platform-planning",
+  "name": "batch-lab-platform-planning",
+  "title": "预设批量调试平台 V1 规划",
+  "description": "规划 packages/batch-lab 独立内部调试平台，覆盖样本 SQL 与冻结、A/B 完整组合、单轮/连续多轮生成、后处理、持久任务、历史结果、复用原文、JSONL 导出，以及 backend/shared/Supabase 独立域接入。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-11-batch-lab-foundation",
+    "09-11-batch-lab-data-samples",
+    "09-11-batch-lab-backend-execution",
+    "09-11-batch-lab-postprocessing",
+    "09-11-batch-lab-frontend-workbench",
+    "09-11-batch-lab-history-export",
+    "09-11-batch-lab-integration-spec"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "admin.infrastructure.admin-client-auth",
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "shared.business.conversation-contracts",
+        "shared.infrastructure.database-environment",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}

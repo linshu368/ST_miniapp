@@ -1,0 +1,40 @@
+{
+  "id": "batch-lab-postprocessing",
+  "name": "batch-lab-postprocessing",
+  "title": "Batch Lab 后处理与富文本渲染",
+  "description": "实现不可变后处理版本、安全隔离 regex-json 执行器、展示清洗、renderer 版本与 display result。",
+  "status": "planning",
+  "dev_type": "feature",
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-11-batch-lab-platform-planning",
+  "relatedFiles": [
+    ".trellis/tasks/09-11-batch-lab-platform-planning/prd.md",
+    ".trellis/tasks/09-11-batch-lab-platform-planning/design.md",
+    ".trellis/tasks/09-11-batch-lab-platform-planning/implement.md"
+  ],
+  "notes": "依赖：09-11-batch-lab-foundation; 09-11-batch-lab-data-samples 的 processor/display 存储。保持 planning，人工评审后单独 start。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.infrastructure.runtime-data-security",
+        "shared.business.conversation-contracts",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}
