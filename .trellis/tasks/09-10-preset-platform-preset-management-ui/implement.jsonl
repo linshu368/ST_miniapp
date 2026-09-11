@@ -1,4 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/admin/app/index.md", "reason": "发布/回滚/草稿交互参考"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层发布链路"}
-{"file": ".trellis/tasks/09-07-preset-dialogue-platform-planning/research/reuse-and-current-state.md", "reason": "预设管理合并决策"}
