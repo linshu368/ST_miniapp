@@ -5,3 +5,4 @@
 {"file":".trellis/spec/database/supabase/index.md","reason":"检查 migration、RLS/grant、环境与回滚"}
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查端到端形状和失败路径"}
 {"file":".trellis/tasks/09-11-chat-image-generation-plan/research/reuse-and-reliability.md","reason":"对照复用决策与故障模型"}
+{"file":".trellis/tasks/09-11-chat-image-generation-plan/research/shengtu-pipeline-reference.md","reason":"检查实现是否符合外部生图流水线、Grok/Liaobots 配置与翻译要求"}

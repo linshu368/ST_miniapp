@@ -9,3 +9,4 @@
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"全链路边界检查"}
 {"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用与最小充分方案检查"}
 {"file":".trellis/tasks/09-11-chat-image-generation-plan/research/reuse-and-reliability.md","reason":"现有语音链路复用与图片故障模型调研"}
+{"file":".trellis/tasks/09-11-chat-image-generation-plan/research/shengtu-pipeline-reference.md","reason":"外部生图流水线、分镜师 prompt、Grok/Liaobots 配置与翻译链路依据"}
