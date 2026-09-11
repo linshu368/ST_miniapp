@@ -8,6 +8,8 @@
  *
  * 只扫活代码（packages/<pkg>/src、scripts、botlink）。历史迁移 SQL、docs、
  * ops 快照按定义就是留档，不在扫描范围内——改已执行过的迁移比留着它更危险。
+ * 例外：packages/shared/migrations 下 2026-09-10 起的日期命名新迁移（YYYYMMDD_*.sql）
+ * 会被扫——它们在 PR 阶段还没执行，正是拦「新迁移又开一条旧链路」的时机。
  *
  * 本地跑：pnpm lint:legacy
  */
@@ -30,9 +32,11 @@ const SKIP_DIRECTORIES = new Set([
   '.next',
   '.turbo',
   'coverage',
-  'migrations', // packages/shared/migrations：历史迁移留档
   'generated',
 ]);
+
+/** migrations 目录只扫日期命名的新迁移；三位编号存量是留档（见 check-migration-filenames.mjs）。 */
+const NEW_MIGRATION_PATTERN = /^20\d{6}_[a-z0-9_]+\.sql$/;
 
 /**
  * allow 里的路径是该规则的唯一合法归属地——也就是「这条主路径本人」。
@@ -148,6 +152,14 @@ const RULES = [
       'packages/backend/src/features/generation/sync-job.test.ts',
     ],
   },
+  {
+    id: 'wallet-bonus-grant',
+    // 逐行匹配「bonus_credits = bonus_credits + …」这一句加值语句；扣费是减号，不会误伤。
+    pattern: /\bbonus_credits\s*=\s*(?:billing\.user_wallets\.)?bonus_credits\s*\+/g,
+    message:
+      '星尘发放只有一个入口：billing.grant_bonus_credits（钱包 upsert + 加值 + 流水）。发奖 RPC 组好 entry_type / reference / metadata 后调它，禁止再自己 UPDATE user_wallets',
+    allow: ['packages/shared/migrations/20260911_billing_grant_bonus_credits.sql'],
+  },
 ];
 
 function shouldScan(path) {
@@ -173,9 +185,33 @@ function collectFiles(dir, out) {
     }
     if (stats.isDirectory()) {
       if (SKIP_DIRECTORIES.has(entry)) continue;
+      if (entry === 'migrations') {
+        collectNewMigrations(full, out);
+        continue;
+      }
       collectFiles(full, out);
     } else if (shouldScan(full)) {
       out.push(full);
+    }
+  }
+  return out;
+}
+
+/** migrations 目录顶层：只收日期命名的新迁移，不递归（archive/ 是留档）。 */
+function collectNewMigrations(dir, out) {
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return out;
+  }
+  for (const entry of entries) {
+    if (!NEW_MIGRATION_PATTERN.test(entry)) continue;
+    const full = join(dir, entry);
+    try {
+      if (statSync(full).isFile()) out.push(full);
+    } catch {
+      // 忽略读取失败的条目
     }
   }
   return out;
@@ -198,6 +234,8 @@ function scanTargets() {
       for (const pkg of readdirSync(rootPath)) {
         if (pkg.startsWith('.')) continue;
         collectFiles(join(rootPath, pkg, 'src'), files);
+        // 日期命名的新迁移也算活代码（PR 阶段尚未执行）；三位编号存量不扫。
+        collectNewMigrations(join(rootPath, pkg, 'migrations'), files);
       }
     } else {
       collectFiles(rootPath, files);

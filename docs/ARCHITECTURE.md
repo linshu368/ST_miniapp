@@ -27,7 +27,7 @@
 5. **前端不在组件里 fetch**：服务端数据统一走 `frontend/src/lib/api/` 的 React Query hooks；跨组件状态用 Zustand，局部状态用 `useState`（frontend CLAUDE.md）。
 6. **生成与计费只有一个出口**：任何要调聊天 LLM 的路径都必须走 `backend/src/features/generation/`（**含实扣**：`settle.ts` 与 `sync-job.ts` 两条结算路径也都在这个模块里）。禁止在别处另起一套"转发 + 扣费 + 落库"，否则计费口径必然漂移。唯一的刻意例外是语音写稿（`features/voice/`）：不同供应商、非流式、抽取任务、按次计费，理由写在 `voice-draft.ts` 与 `voice/billing.ts` 头注释里。
    同类纪律还有三条，一并由 CI 的 legacy guard 拦（见 §7.5）：`experience.chat_history` 只由 `ConversationHistoryRepository` 读写；支付到账只由 `PaymentSettlement.settlePaidOrder` 入账；OpenRouter 用量统计只由 `generation/openrouter-metadata.ts` 读取。
-   **星尘发放（签到 / 许愿 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**（`claim_daily_checkin` / `grant_invite_reward` 及其 `check_invite_*_reward` 判定函数 / `grant_community_join_reward`），应用层只调 RPC、不做手动余额加减；这条目前没有 CI guard，靠 review。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
+   **星尘发放（注册 / 签到 / 许愿 / 运营赠送 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**，且六个发奖 RPC 的「钱包 upsert + `bonus_credits` 加值 + `wallet_ledger` 记账」都收口在唯一入口 **`billing.grant_bonus_credits`**（`20260911_billing_grant_bonus_credits.sql`）；业务判定（配置、去重、上限、通知、审计）留在各 RPC。应用层只调 RPC、不做手动余额加减。CI 由 legacy guard `wallet-bonus-grant` 拦新迁移里再出现 `bonus_credits = bonus_credits + …`（见 §7.5）。充值入账（动 `main_credits` 与支付字段）是另一条已收口的路径，不走这个入口。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
 8. **数据库按八个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表（存量豁免清单见 `docs/schema归属地图.md` §四）。
 9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发；执行状态记录在 `app_core.schema_migrations` 账本（workflow 自动查重 + 记账）。2026-09-10 起新迁移命名 `YYYYMMDD_描述.sql`（CI 拦旧式编号）；历史存量存在重号（见 §7.4），**不要按序号推断内容**。改库只有仓库迁移一条路，禁止 Management API / Studio 直改。
@@ -414,20 +414,22 @@ packages/backend/src/
 
 它解决的问题是：本仓经历过 ST 退场、schema 拆八域、growth 下线、支付方案变更等多轮迁移，靠人 review 记不住哪条链路已经死了。每条规则都对应一个**已经收口完成**的决定，命中即说明有人又开了第二条：
 
-| 规则                        | 拦什么                                                                                                     |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `miniapp-schema-client`     | `.schema('miniapp')` / `getDomainDb('miniapp')`                                                            |
-| `miniapp-schema-sql`        | `FROM/JOIN/INTO/UPDATE/TABLE miniapp.*`                                                                    |
-| `dropped-schema-sql`        | `st_platform` / `st_users` / `st_infra` / `growth` / `miniapp_simulation` 限定名                           |
-| `deleted-packages`          | `@miniapp/db-types` / `sync-engine` / `st-extension`、`@repo/bridge-protocol`                              |
-| `retired-identifiers`       | `apiStreamClient` / `platform_presets` / `chat_engine_mode` / `routes/llm-proxy` / `deduct_wallet_credits` |
-| `chat-history-writer`       | `ConversationHistoryRepository` 之外读写 `chat_history`                                                    |
-| `llm-chat-upstream`         | `upstream.ts` 之外打 `/chat/completions`                                                                   |
-| `openrouter-generation-api` | `openrouter-metadata.ts` 之外读 OpenRouter 用量统计                                                        |
-| `payment-settlement`        | `PaymentSettlement` 之外调 `complete_payment_order`                                                        |
-| `llm-usage-charge`          | `apply-charge.ts` 之外调 `chargeLlmUsage`（settle / sync-job 必须走 `applyLlmCharge`）                     |
+| 规则                          | 拦什么                                                                                                     |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `miniapp-schema-client`       | `.schema('miniapp')` / `getDomainDb('miniapp')`                                                            |
+| `miniapp-schema-sql`          | `FROM/JOIN/INTO/UPDATE/TABLE miniapp.*`                                                                    |
+| `dropped-schema-sql`          | `st_platform` / `st_users` / `st_infra` / `growth` / `miniapp_simulation` 限定名                           |
+| `deleted-packages`            | `@miniapp/db-types` / `sync-engine` / `st-extension`、`@repo/bridge-protocol`                              |
+| `retired-identifiers`         | `apiStreamClient` / `platform_presets` / `chat_engine_mode` / `routes/llm-proxy` / `deduct_wallet_credits` |
+| `chat-history-writer`         | `ConversationHistoryRepository` 之外读写 `chat_history`                                                    |
+| `llm-chat-upstream`           | `upstream.ts` 之外打 `/chat/completions`                                                                   |
+| `openrouter-generation-api`   | `openrouter-metadata.ts` 之外读 OpenRouter 用量统计                                                        |
+| `payment-settlement`          | `PaymentSettlement` 之外调 `complete_payment_order`                                                        |
+| `llm-usage-charge`            | `apply-charge.ts` 之外调 `chargeLlmUsage`（settle / sync-job 必须走 `applyLlmCharge`）                     |
+| `legacy-model-tiers-contract` | 旧模型档位契约与 `llm_model_tiers` 回退（模型目录只有 catalog 一种形状）                                   |
+| `wallet-bonus-grant`          | `grant_bonus_credits` 之外出现 `bonus_credits = bonus_credits + …`（发奖 RPC 必须调唯一入口）              |
 
-**扫描范围只含活代码**（`packages/*/src`、`scripts/`、`botlink/`）。历史迁移 SQL、`docs/`、`ops/` 快照按定义就是留档，刻意不扫——改已执行过的迁移比留着它更危险。
+**扫描范围只含活代码**（`packages/*/src`、`scripts/`、`botlink/`，以及 `packages/shared/migrations/` 下 **日期命名的新迁移**）。三位编号的历史迁移 SQL、`docs/`、`ops/` 快照按定义就是留档，刻意不扫——改已执行过的迁移比留着它更危险；新迁移在 PR 阶段尚未执行，正是拦「新迁移又开一条旧链路」的时机。
 
 每条规则的 `allow` 清单就是「这条主路径本人 + 测试夹具」。**往 `allow` 里加文件等于宣布又多了一个出口**，必须在 PR 描述里写清业务上为什么必须独立。
 
