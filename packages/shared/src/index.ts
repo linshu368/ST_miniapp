@@ -16,6 +16,7 @@ export * from './api/growth';
 export * from './api/invite';
 export * from './api/community';
 export * from './api/models';
+export * from './api/provider-routing';
 export * from './api/notifications';
 export * from './api/support';
 export * from './config/database';

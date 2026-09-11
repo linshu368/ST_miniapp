@@ -25,6 +25,8 @@ import {
   getPricingConfig,
   type ModelBillingContext,
 } from '../../platform/model-tiers.js';
+import { getProviderPreferencesForModel } from '../../platform/provider-routing.js';
+import type { OpenRouterProviderPreferences } from '@miniapp/shared';
 import { saveChatHistory, type ChatHistoryEntry } from '../../lib/chat-history-logger.js';
 import { createLogger } from '../../lib/logger.js';
 import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
@@ -66,7 +68,10 @@ function isBillableReply(result: Pick<SseTapResult, 'completed' | 'content' | 'f
   return isDeliveredReply(result) && result.finishReason === 'stop';
 }
 
-function buildUpstreamBody(request: GenerationRequest): Record<string, unknown> {
+function buildUpstreamBody(
+  request: GenerationRequest,
+  providerPreferences: OpenRouterProviderPreferences | null
+): Record<string, unknown> {
   const messages: UpstreamMessage[] = request.promptCaching
     ? applyPromptCaching(request.messages, request.model.openRouterModelId)
     : request.messages.map((message) => ({ role: message.role, content: message.content }));
@@ -75,6 +80,9 @@ function buildUpstreamBody(request: GenerationRequest): Record<string, unknown> 
     model: request.model.openRouterModelId,
     messages,
     stream: request.stream,
+    // 「模型 × 供应商」路由：屏蔽 -> ignore，优先 -> order + allow_fallbacks（运营在 admin 配置）。
+    // 未命中规则的模型不带 provider 字段，交给 OpenRouter 默认路由。
+    ...(providerPreferences ? { provider: providerPreferences } : {}),
     // v1 恒为空对象（引擎不消费预设、不传采样参数），留着是为了后续接入预设采样参数时不改这里
     ...request.sampling,
   };
@@ -145,12 +153,15 @@ export async function execute(
 
   const saveHistory = createHistoryWriter({ request, billing, plan, log });
 
+  // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
+  const providerPreferences = await getProviderPreferencesForModel(billing.openRouterModelId);
+
   let upstreamRes: Response;
   try {
     upstreamRes = await forwardToUpstream({
       url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH),
       method: 'POST',
-      body: JSON.stringify(buildUpstreamBody(request)),
+      body: JSON.stringify(buildUpstreamBody(request, providerPreferences)),
       signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
     });
   } catch (err) {
