@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"检查 Frontend 数据流、组件与质量门禁"}
+{"file":".trellis/spec/backend/app/index.md","reason":"检查 Backend generation/config/route 硬规则"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"检查真实故障模型、事务、恢复、安全与日志"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"检查公开契约、兼容与消费者验证"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"检查 migration、RLS/grant、环境与回滚"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查端到端形状和失败路径"}
+{"file":".trellis/tasks/09-11-chat-image-generation-plan/research/reuse-and-reliability.md","reason":"对照复用决策与故障模型"}
