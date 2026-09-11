@@ -1,5 +1,0 @@
-{"file":".trellis/spec/docs/process/index.md","reason":"检查文档/流程同步、中文与人工审核。"}
-{"file":".trellis/spec/backend/app/index.md","reason":"确认一般测试策略没有弱化 backend 高风险门禁。"}
-{"file":".trellis/spec/frontend/app/index.md","reason":"确认一般测试策略没有弱化 frontend 人工/自动验证。"}
-{"file":".trellis/spec/database/supabase/index.md","reason":"确认迁移和生产验证仍是强制要求。"}
-{"file":".trellis/tasks/09-11-trellis-spec-doc-stability-refresh/research/current-state-audit.md","reason":"检查根文档和规则收口覆盖已知问题。"}

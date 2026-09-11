@@ -1,6 +1,0 @@
-{"file":".trellis/spec/shared/contracts/index.md","reason":"检查所有语音公开 DTO 均以 shared 为唯一事实源且消费者可编译"}
-{"file":".trellis/spec/database/supabase/index.md","reason":"检查 migration 幂等、事务锁、test-first、权限与 rollback"}
-{"file":".trellis/spec/backend/app/index.md","reason":"检查计费经过 generation、配置入口、路由注释、日志和后端测试"}
-{"file":".trellis/spec/frontend/app/index.md","reason":"检查前端无组件 fetch、状态/错误交互、样式与回归测试"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查价格、限制、错误码、扣费结果和 UI 的跨层一致性"}
-{"file":"docs/log_system.md","reason":"检查日志保留原始错误对象且不泄漏密钥、私有地址或请求秘密"}

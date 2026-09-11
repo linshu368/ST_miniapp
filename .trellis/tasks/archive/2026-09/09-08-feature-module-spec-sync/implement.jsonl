@@ -1,3 +1,0 @@
-{"file":".trellis/spec/docs/process/index.md","reason":"约束 Trellis 流程、规划产物、规范职责与中文文档质量。"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"模块知识覆盖跨包调用链时需保持边界、契约和失败路径完整。"}
-{"file":".trellis/tasks/09-08-feature-module-spec-sync/research/current-state-and-reuse.md","reason":"提供 archive/hook 当前行为、可复用点与自动化边界调研。"}

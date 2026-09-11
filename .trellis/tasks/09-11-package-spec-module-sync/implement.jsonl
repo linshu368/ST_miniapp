@@ -1,8 +1,0 @@
-{"file":".trellis/spec/backend/app/index.md","reason":"同步 backend 工程规则与模块入口。"}
-{"file":".trellis/spec/frontend/app/index.md","reason":"同步前端编排、注释和验证原则。"}
-{"file":".trellis/spec/admin/app/index.md","reason":"同步 Admin 包规则。"}
-{"file":".trellis/spec/cs-platform/app/index.md","reason":"同步 CS 包规则。"}
-{"file":".trellis/spec/shared/contracts/index.md","reason":"修正 shared 契约与导出现状。"}
-{"file":".trellis/spec/database/supabase/index.md","reason":"修正迁移、账本和 schema 规则。"}
-{"file":".trellis/spec/docs/process/index.md","reason":"约束 spec/module 同步责任与文档质量。"}
-{"file":".trellis/tasks/09-11-trellis-spec-doc-stability-refresh/research/current-state-audit.md","reason":"执行前初步漂移输入；启动前替换或补充最终基线研究。"}

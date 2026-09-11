@@ -1,6 +1,0 @@
-{"file":".trellis/spec/docs/process/index.md","reason":"检查来源、同步责任、中文和人工审核门禁。"}
-{"file":".trellis/spec/backend/app/index.md","reason":"核对 backend 规则与质量检查。"}
-{"file":".trellis/spec/frontend/app/index.md","reason":"核对 frontend 规则与质量检查。"}
-{"file":".trellis/spec/shared/contracts/index.md","reason":"核对 shared 边界和消费者验证。"}
-{"file":".trellis/spec/database/supabase/index.md","reason":"核对迁移与数据库安全门禁。"}
-{"file":".trellis/tasks/09-11-trellis-spec-doc-stability-refresh/research/current-state-audit.md","reason":"确保已知 P0/P1 漂移被覆盖。"}
