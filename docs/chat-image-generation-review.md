@@ -2,21 +2,22 @@
 
 > 状态：待产品 / 工程 / 运维评审，尚未实施。
 > 范围：`packages/backend`、`packages/frontend`、`packages/shared`，以及对应 migration、Storage 与运行配置。
-> 产品输入：`MiniApp 图片功能构建与初版 UI`（2026-09-11 提供）及配套状态图。
+> 产品输入：`MiniApp 图片功能构建与初版 UI`（2026-09-11 提供）及配套状态图；2026-09-11 追加图 1~9 前端交互参考。
 
 ## 1. 评审摘要
 
-本方案复用现有语音链路的产品形态和稳定原语：图片是 assistant message 的旁支产物，使用 202 异步受理、会话级批量查询、Supabase Storage、成功后原子扣费和 React Query 条件轮询。图片生成比语音更慢、供应商 POST 更难安全重试，因此**不照搬语音的纯进程内 fire-and-forget**，改用 PostgreSQL attempt 表 + `FOR UPDATE SKIP LOCKED` 租约作为最小持久任务队列。
+本方案复用现有语音链路的产品形态和稳定原语：图片是 assistant message 的旁支产物，输入路径拆成“默认写稿后出图”和“用户自定义原文出图”，并使用 202 异步受理、会话级批量查询、Supabase Storage、成功后原子扣费和 React Query 条件轮询。图片生成比语音更慢、供应商 POST 更难安全重试，因此**不照搬语音的纯进程内 fire-and-forget**，改用 PostgreSQL attempt 表 + `FOR UPDATE SKIP LOCKED` 租约作为最小持久任务队列。
 
-推荐初版：OpenRouter 文本模型免费生成中文画面描述；OpenAI Images API `gpt-image-1` 生成 `1024x1536` 单张竖图；默认展示价 12 星尘但以 runtime config 为准。图片上传成功后，通过一个数据库 RPC 原子完成钱包扣款、ledger、幂等墓碑和图片 ready/current 收口。失败、模糊超时或结算时余额不足均不扣费、不展示结果。
+推荐初版：文本模型免费生成中文画面描述，用户可确认或改写；图片 provider/model 暂不拍板，只在方案中预留单一 adapter 与配置切换点，待评审后确定。出图默认单张竖图，默认展示价 12 星尘但以 runtime config 为准。图片上传成功后，通过一个数据库 RPC 原子完成钱包扣款、ledger、幂等墓碑和图片 ready/current 收口。失败、模糊超时或结算时余额不足均不扣费、不展示结果。
 
 ## 2. 产品口径到工程约束
 
 | 产品口径             | 工程落点                                                                                                          |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | 只在最后完整回复显示 | 后端每次 description/create 均校验 ownership、assistant、最新 turn/revision、status=completed；前端只做同口径展示 |
-| 描述免费             | description 调用 generation 文本能力，但不进入 quota/钱包结算                                                     |
-| 用户改什么就画什么   | create 保存 trim 后原文快照；只做校验/安全审核，不润色、不截断                                                    |
+| 默认先写稿再出图     | description 调用 generation 文本能力生成 1~200 字画面描述；确认后以该描述创建 attempt                             |
+| 用户改什么就画什么   | create 保存 trim 后原文快照；自定义路径不再调用写稿模型，只做校验/安全审核，不润色、不截断                        |
+| 文本限制 200 字      | 对齐语音 300 字限制的处理模式：shared 常量 + 前端提示/禁用 + 后端受理和送模型前权威校验                           |
 | 成功才扣费           | Storage 可读后调用原子 settlement RPC；预检只改善体验，不构成扣款                                                 |
 | 失败不消耗           | failed/failed_unknown 不调用 settlement；已上传但结算失败则补偿删除                                               |
 | 图片挂在该回复下     | attempt 外键绑定具体 `chat_history.id`，不只绑定 turn/session                                                     |
@@ -34,11 +35,13 @@
 - `platform/runtime-config.ts` 的 TTL/version/降级读取与 Admin managed config 发布方式。
 - Supabase Storage 的服务端上传/删除模式。
 - 语音结算曾使用的“产物可用后，以业务行 ID 幂等扣费并在同一事务收口 ready”语义。
+- 语音 `custom_text` 的两段式口径和 300 字限制处理方式：空自定义走写稿，非空自定义跳过写稿；图片复用这个分支模式，但图片上限是 200 字。
 
 ### 3.2 只复用思路、不直接共表/共类型
 
 - 不把图片放进 `experience.chat_message_audio`；媒体属性、失败阶段和展示规则不同。
 - 不把 image DTO 塞进 `voice.ts`；新增 `shared/src/api/images.ts`，避免形成含糊的通用媒体契约。
+- 语音写稿实现只评估抽取结构化文本调用、JSON 解析、deadline/错误映射；不复用语音台词抽取、TTS 标签、朗读清洗和 300 字常量。
 - Storage 可抽取“安全路径 + upload/remove”小原语，但首版可保留薄的 `chat-image-storage.ts`；不建立通用媒体框架。
 - `features/generation/execute.ts` 是聊天 SSE 专用，不能硬塞图片分支；在同目录增加明确的 text-json/image 原语和 settlement facade。
 
@@ -52,11 +55,12 @@
 
 ```text
 点击“看看TA”
-  -> POST image-description
-  -> generation.generateStructuredText（不扣费）
-  -> 面板展示 description
-  -> 用户确认/编辑确认
-  -> POST images（余额预检 + 原子创建 pending attempt）
+  -> 默认路径：POST image-description
+       -> generation.generateStructuredText（不扣费，产出 1~200 字画面描述）
+       -> 面板展示 description
+       -> 用户直接确认
+  -> 自定义路径：用户编辑/输入最终 prompt（1~200 字，不再写稿）
+  -> POST images（余额预检 + 原子创建 pending attempt，保存最终 prompt 快照）
   -> 202
   -> DB job runner claim
   -> generation.generateImage（有总 deadline，不安全自动重投）
@@ -102,8 +106,8 @@ interface MessageImage {
 | --------------------------------------------- | --------------------------- | --------------------------------------------------- |
 | `GET /api/v1/image/config`                    | -                           | enabled、价格/标签、prompt 上限、安全提示、展示尺寸 |
 | `GET /api/v1/conversations/:sessionId/images` | -                           | 会话内按 message 聚合的 current + latest attempt    |
-| `POST .../:messageId/image-description`       | 可选空 body                 | `{ description }`；同步等待，明确超时，不扣费       |
-| `POST .../:messageId/images`                  | `{ prompt, prompt_source }` | `202 { image }`；pending attempt                    |
+| `POST .../:messageId/image-description`       | 可选空 body                 | 默认路径写稿，返回 `{ description }`；同步等待，明确超时，不扣费 |
+| `POST .../:messageId/images`                  | `{ prompt, prompt_source }` | `202 { image }`；pending attempt；自定义路径不再写稿 |
 
 错误码至少区分：`image_unavailable`、`image_description_failed`、`image_prompt_invalid`、`image_content_rejected`、`image_generation_failed`、`image_generation_unknown`、`image_storage_failed`、`image_insufficient_balance`、`image_already_pending`、`image_message_not_eligible`。
 
@@ -118,7 +122,7 @@ interface MessageImage {
 - partial unique：同 message 至多一个 active attempt（pending/leased/generating/storing），避免双击并发。
 - partial unique：同 message 至多一个 `is_current=true` 的 ready 图。
 - `check` 约束限定状态、正价格、正尺寸、ready 必备 storage/url/charge 数据。
-- prompt 是业务审计输入，受 200 字上限；不写日志，不进入公开批量 response。
+- prompt 是业务审计输入，默认路径保存写稿确认文本，自定义路径保存用户最终原文；受 200 字上限，不写日志，不进入公开批量 response。
 
 表归属 `experience`。浏览器不直连，RLS 默认拒绝；只授予 backend service role 必要访问，通过 repository/RPC 使用。
 
@@ -140,15 +144,16 @@ interface MessageImage {
 
 ### 7.1 描述模型
 
-- 走现有 OpenRouter 上游与 `LLM_API_KEY`，模型由 `image_description_model` runtime config 选择，不跟随用户聊天模型。
+- 默认路径走现有文本上游与 `LLM_API_KEY`，模型由 `image_description_model` runtime config 选择，不跟随用户聊天模型；自定义路径不调用描述模型。
+- 实施前评估与语音写稿是否共享领域无关的结构化文本 helper；语音专属台词清洗、标签处理、朗读抽取和 300 字终检不得进入图片描述。
 - 输入仅取生成描述所需的有限信息：角色名/必要人设摘要、目标 assistant 回复、最近有限轮对话；不发送整段 prompt 快照。
 - 系统要求一句简体中文、健康向、可公开、只描述画面；结构化返回 `{ "description": "..." }`。
-- 模型空响应/非法 JSON 可做一次同请求语义的解析修复或明确失败；总 deadline 不因重试重置。
+- 模型空响应/非法 JSON 可做一次同请求语义的解析修复或明确失败；总 deadline 不因重试重置。最终描述超过 200 字视为写稿失败或要求模型同 deadline 内重写，不能截断后冒充模型结果。
 
 ### 7.2 图片模型
 
-- 推荐 provider：OpenAI Images API；模型：`gpt-image-1`；secret：`OPENAI_API_KEY`。
-- endpoint、timeout、最大响应大小由 `platform/config.ts` 启动期校验。缺 key 时 config 返回 disabled/路由 503，不能带病受理。
+- provider/model 待评审确定；规划只要求一个 `generation/image-provider.ts` adapter、一个 `image_generation_model` runtime key，以及启动期 secret/endpoint/timeout 校验。
+- endpoint、timeout、最大响应大小由 `platform/config.ts` 启动期校验。缺少评审后确定的 key 时 config 返回 disabled/路由 503，不能带病受理。
 - 默认尺寸 `1024x1536`，单张，WebP；若 provider 实际 response 只提供 PNG，可原样保存并返回真实 MIME，不为初版引入图像转码依赖。
 - 用户最终 prompt 原样进入图片请求的用户描述字段；平台健康向 policy 可作为独立 system/policy 输入，但不能改写用户文本后冒充原文。
 
@@ -162,13 +167,13 @@ interface MessageImage {
 | `image_generation_credits`     | `12`                 | 单次成功扣费                   |
 | `image_price_label`            | `12 星尘`            | 前端展示，仍与数值做一致性校验 |
 | `image_description_model`      | 评审时从现有目录选定 | 免费描述模型                   |
-| `image_generation_model`       | `gpt-image-1`        | 图片模型                       |
+| `image_generation_model`       | 待评审确定           | 图片模型                       |
 | `image_width` / `image_height` | `1024` / `1536`      | 初版固定竖图                   |
 | `image_max_prompt_chars`       | `200`                | shared/backend 权威上限        |
 | `image_max_output_bytes`       | 工程压测后定         | 下载/上传容量闸门              |
 | `image_prompt_policy`          | 健康向模板           | 自动描述与出图安全边界         |
 
-配置解析必须有安全降级：缺失/损坏时功能 disabled，而不是使用可能错误价格继续受理。价格和配置快照写入 attempt，运行中改价不影响已受理任务。
+配置解析必须有安全降级：缺失/损坏时功能 disabled，而不是使用可能错误价格或未评审模型继续受理。价格和配置快照写入 attempt，运行中改价不影响已受理任务。
 
 ## 8. 持久任务队列
 
@@ -219,7 +224,25 @@ interface MessageImage {
 - `ChatMessageImageFooter`：渲染 latest pending/error/current ready，放在语音 footer 之前。
 - `ChatImageViewer`：Radix Dialog，全屏大图、关闭、焦点恢复和有意义 alt。
 
-### 10.2 服务器状态与恢复
+### 10.2 图稿状态映射
+
+用户提供图 1~9 是前端验收依据。实现可按现有聊天页 token 调整圆角、字号和间距，但不得改变状态层级、入口位置、主次按钮职责和图片展示位置。
+
+| 图 | 状态 | 交互要求 |
+| --- | --- | --- |
+| 图 1 | 入口 | “看看TA”出现在最后完整 assistant 回复的操作行，位于“生成语音”左侧；历史、开场白、streaming/中断回复不展示 |
+| 图 2 | 写稿 loading | 点击入口立即打开底部 Sheet，聊天背景压暗；显示“正在看看 TA 此刻的样子”、说明文案和加载动效；不可重复提交 |
+| 图 3 | 写稿完成确认 | 展示“TA 此刻的样子”、描述卡片、主按钮“确认 生成图片 · {price_label}”、次按钮“我来改改”和“出图失败不消耗” |
+| 图 4 | 自定义编辑 | 标题“改成你想要的样子”；输入框带入原描述；显示当前字数与上限 200；主按钮“按我写的生成图片 · {price_label}”；提交后不再写稿 |
+| 图 5 | 出图 loading | 展示“正在出图”、大约耗时、进度/等待视觉、本次消耗和失败不消耗；主按钮置灰“生成中...” |
+| 图 6 | 消息内 ready | 图片位于该 assistant 回复下方、语音上方；卡片右下角放大按钮；下方展示费用和“再点一次「看看TA」可换一张”提示 |
+| 图 7 | 大图预览 | 点击放大按钮打开沉浸预览；顶部有状态胶囊和关闭；底部提示长按保存到相册；支持关闭、焦点恢复、safe area |
+| 图 8 | 出图失败 | Sheet 展示失败标签、标题、原因；主按钮按原 prompt 重试并显示价格，次按钮进入自定义编辑 |
+| 图 9 | 余额不足 | Sheet 展示“星尘不够”、required/available；主按钮“去充值”复用现有充值流程，次按钮关闭且不创建 attempt |
+
+图 6 ready 展示由会话 images query 收敛，不要求 Sheet 等到 ready 后再变成成功页。用户离开/刷新后进入会话，应通过结果卡恢复 pending、failed 或 ready。
+
+### 10.3 服务器状态与恢复
 
 - config 和会话 images 都在 `lib/api/images.ts`，组件不直接 fetch。
 - 会话 images query 仅存在 pending/generating/storing 时 1.5~2 秒轮询；终态、后台页面停止。
@@ -227,7 +250,13 @@ interface MessageImage {
 - Sheet 描述是局部临时状态；离开前未确认不持久化。已经确认的 attempt 由数据库恢复。
 - 充值 URL 只带安全的 `returnTo`（character/session/message anchor），严格编码和 allowlist；不带 prompt、token 或价格。
 
-### 10.3 状态覆盖
+### 10.4 大图保存与 Telegram 差异
+
+- `ChatImageViewer` 中的图片保留可长按目标，不叠加阻断长按的透明层；放大/关闭等按钮不遮挡主体。
+- 实施前确认 Telegram Mini App 当前稳定 SDK 是否提供保存到相册 API；若无稳定官方 API，则采用 WebView/系统长按保存能力，并在 test 验收记录 Android、iOS 和桌面差异。
+- 不把图片二进制、签名 URL、prompt 或支付回跳参数写入 URL、日志、Sentry breadcrumb。
+
+### 10.5 状态覆盖
 
 必须实现：描述 loading/error/retry、确认、编辑、提交 disabled、生成中、ready、失败可重试、余额不足、功能 unavailable。图片保留固定宽高比/占位，避免消息列表跳动；大图支持 Esc/返回关闭、safe area、reduced motion。
 
@@ -255,9 +284,9 @@ Pino 事件建议：`image.description.*`、`image.accept.*`、`image.job.claim`
 ## 13. 发布、灰度、停止与回滚
 
 1. test 单文件执行兼容 migration，核验 shape、RLS/grants、claim 并发、settlement 幂等与 rollback。
-2. 创建 test bucket/policy，配置 test secret/runtime config；保持功能开关关闭。
+2. 创建 test bucket/policy，配置评审后的 test secret/runtime config；保持功能开关关闭。
 3. 发布 backend，再发布 frontend；开启 test 开关完成产品必验和故障矩阵。
-4. 生产重复 migration/bucket/secret/backend/frontend 顺序，开关仍关闭；经年确认后小流量开启。
+4. 生产重复 migration/bucket/secret/backend/frontend 顺序，开关仍关闭；评审和验收确认后小流量开启。
 5. 观测成功率、queue age/P95、provider 429、扣费不一致、孤儿对象、Storage 失败。
 
 建议停止条件：5 分钟成功率低于 90%、P95 超过 90 秒、任一扣费与 ready 不一致、孤儿持续增长或 provider 429 超过 10%。停止时先关 `image_generation_enabled`，不再接新单；默认让 runner 收口已受理任务，若发现计费一致性问题则同时暂停 runner并只读盘点。
@@ -266,12 +295,12 @@ Pino 事件建议：`image.description.*`、`image.accept.*`、`image.job.claim`
 
 ## 14. 验证清单
 
-按需求不新增测试文件，但必须运行仓库既有 shared/backend/frontend typecheck、test、lint、build 和 `pnpm -r typecheck`。此外在 test 环境逐项人工验证：入口条件、描述不扣费、原描述/自定义出图、双击/双设备、离页/刷新/重启、明确失败、模糊超时、Storage 失败、预检不足、结算余额竞争、RPC 重放、多次生成 current、充值回跳、窄屏/软键盘/大图。
+按需求不新增测试文件，但必须运行仓库既有 shared/backend/frontend typecheck、test、lint、build 和 `pnpm -r typecheck`。此外在 test 环境逐项人工验证：图 1~9 交互、入口条件、描述不扣费、默认路径写稿后出图、自定义路径不写稿直出、1/200/201 字、双击/双设备、离页/刷新/重启、明确失败、模糊超时、Storage 失败、预检不足、结算余额竞争、RPC 重放、多次生成 current、充值回跳、窄屏/软键盘/safe area/大图长按保存。
 
 ## 15. 待评审拍板
 
-1. 是否批准 OpenAI `gpt-image-1` 作为初版 provider/model；若已有商务供应商，请只替换 adapter 配置，不改变链路。
-2. 是否批准默认 `1024x1536` 单图、价格 12 星尘、200 字上限。
+1. 确定初版图片 provider/model、secret 名、endpoint、响应格式和限流口径；无论选择哪个供应商，只替换 adapter 配置，不改变链路。
+2. 是否批准默认 `1024x1536` 单图和价格 12 星尘；200 字上限已纳入本轮需求。
 3. Storage 采用私有 bucket + 短签名 URL（推荐），还是接受公共 URL 的转发风险。
 4. 用户自定义 prompt 的内容安全由 provider moderation 还是现有平台审核能力前置；拒绝时统一不扣费。
 5. `failed_unknown` 是否允许用户立即新建 attempt（推荐），并接受供应商侧可能已产生但平台不向用户收费的成本。
