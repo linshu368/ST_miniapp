@@ -14,11 +14,12 @@
 
 仓库 Secrets：
 
-| Secret                  | 用途                                               |
-| ----------------------- | -------------------------------------------------- |
-| `SUPABASE_ACCESS_TOKEN` | Supabase CLI                                       |
-| `TEST_DATABASE_URL`     | test 库连接串，必须包含 `zoqelpfhurwehlvypryl`     |
-| `PROD_DATABASE_URL`     | production 连接串，必须包含 `wbtsfzozlmurljvglhpn` |
+| Secret              | 用途                                                                               |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| `TEST_DATABASE_URL` | test 库 **Session pooler** 连接串（端口 5432），必须包含 `zoqelpfhurwehlvypryl`    |
+| `PROD_DATABASE_URL` | production **Session pooler** 连接串（端口 5432），必须包含 `wbtsfzozlmurljvglhpn` |
+
+> Action 用 `psql -f` 执行整份 SQL（`supabase db query` 不能跑多语句文件）。直连 `db.*.supabase.co` 是 IPv6-only，GitHub-hosted runner 连不上。`SUPABASE_ACCESS_TOKEN` 只给本地 CLI 用，这个 workflow 不读。
 
 步骤：GitHub → Actions → `Database Migration` → 选 `environment` → 填 `migration_file`（如 `packages/shared/migrations/20260910_schema_migrations_ledger.sql`）→ 生产必须在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。
 

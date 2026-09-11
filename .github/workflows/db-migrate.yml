@@ -42,7 +42,6 @@ jobs:
     env:
       TEST_PROJECT_REF: zoqelpfhurwehlvypryl
       PROD_PROJECT_REF: wbtsfzozlmurljvglhpn
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
       PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
 
@@ -50,11 +49,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v2
-        with:
-          version: latest
-          github-token: ${{ github.token }}
+      # supabase db query 走 prepared statement，多语句文件会报
+      # "cannot insert multiple commands into a prepared statement"。
+      # 迁移文件都是 BEGIN/DO/COMMIT 脚本，必须用 psql 按文件执行。
+      - name: Install psql
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
 
       - name: Resolve target
         id: target
@@ -72,11 +71,6 @@ jobs:
           else
             project_ref="$TEST_PROJECT_REF"
             db_url="$TEST_DATABASE_URL"
-          fi
-
-          if [[ -z "${SUPABASE_ACCESS_TOKEN:-}" ]]; then
-            echo "Missing GitHub secret: SUPABASE_ACCESS_TOKEN" >&2
-            exit 1
           fi
 
           if [[ -z "$db_url" ]]; then
@@ -148,7 +142,7 @@ jobs:
             END IF;
           END \$\$;
           SQL
-          supabase db query --db-url "$DB_URL" --file "$RUNNER_TEMP/ledger_check.sql"
+          psql --no-psqlrc -d "$DB_URL" --set ON_ERROR_STOP=1 --file "$RUNNER_TEMP/ledger_check.sql"
 
       - name: Apply migration
         env:
@@ -157,7 +151,7 @@ jobs:
           set -euo pipefail
           DB_URL="$(<"$RUNNER_TEMP/db_url")"
           echo "::add-mask::$DB_URL"
-          supabase db query --db-url "$DB_URL" --file "$MIGRATION_FILE"
+          psql --no-psqlrc -d "$DB_URL" --set ON_ERROR_STOP=1 --file "$MIGRATION_FILE"
 
       # 记账：apply 成功后写入账本（账本表还不存在时静默跳过）。
       - name: Record in migration ledger
@@ -190,7 +184,7 @@ jobs:
             END IF;
           END \$\$;
           SQL
-          supabase db query --db-url "$DB_URL" --file "$RUNNER_TEMP/ledger_record.sql"
+          psql --no-psqlrc -d "$DB_URL" --set ON_ERROR_STOP=1 --file "$RUNNER_TEMP/ledger_record.sql"
 
       - name: Cleanup database URL
         if: always()
