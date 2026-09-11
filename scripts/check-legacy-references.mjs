@@ -76,9 +76,10 @@ const RULES = [
 
   {
     id: 'legacy-model-tiers-contract',
-    pattern: /\bGetModelTiersData\b|\buseModelTiersQuery\b|\/api\/platform\/models\b/g,
+    pattern:
+      /\bGetModelTiersData\b|\buseModelTiersQuery\b|\/api\/platform\/models\b|\bllm_model_tiers\b|\blegacyTiersToCatalog\b/g,
     message:
-      '旧模型档位契约已退场：模型目录只有 GET /api/v1/models/config（PublicModelCatalog）一种对外形状，前端走 useModelCatalogQuery',
+      '旧模型档位已退场：runtime_config 只读 llm_model_catalog（040 起），对外只有 GET /api/v1/models/config（PublicModelCatalog）一种形状，前端走 useModelCatalogQuery',
   },
   {
     id: 'st-handle',
