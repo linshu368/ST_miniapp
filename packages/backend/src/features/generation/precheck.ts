@@ -1,11 +1,11 @@
 /**
  * backend / features / generation / precheck.ts
  *
- * 定档扣费额与余额预检（M3a）。搬自 routes/llm-proxy.ts 原第 446~527 行，
- * 分支、日志事件名与字段逐条对照原 handler，行为零变化。
+ * 定档扣费额与余额预检。
  *
- * 预检在调用上游之前完成：余额不足要在首字节写出前判定，这样调用方还能用
- * HTTP 状态码（ST 链路 402）而不是流内 error 事件收口。
+ * 预检必须在调用上游之前完成：余额不足要在 SSE 首字节写出前判定，这样调用方还能用
+ * HTTP 402 收口。响应头一旦发出就只能降级成流内 error 事件，前端处理成本高一截。
+ * 本模块只做判定、不构造响应。
  */
 
 import { resolveFixedDeduction, type FixedDeductionDecision } from '../billing/usage-pricing.js';

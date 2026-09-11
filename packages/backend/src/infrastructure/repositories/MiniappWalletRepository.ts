@@ -129,19 +129,6 @@ export class MiniappWalletRepository {
     return data ? normalizeWallet(data as RawMiniappWalletRow) : null;
   }
 
-  async deduct(userId: string, amount: number): Promise<MiniappWalletRow> {
-    const { data, error } = await this.db.rpc('deduct_wallet_credits', {
-      p_user_id: userId,
-      p_amount: amount,
-    });
-
-    if (error) {
-      throw new Error(`扣除 MiniApp 钱包余额失败：${error.message}`);
-    }
-
-    return normalizeWallet(data as RawMiniappWalletRow);
-  }
-
   async chargeLlmUsage(input: ChargeLlmUsageInput): Promise<{
     wallet: MiniappWalletRow;
     charge: LlmUsageChargeRow;

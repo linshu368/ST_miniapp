@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-08-feature-module-spec-sync/
-last_verified_at: 2026-09-08
+last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
+last_verified_at: 2026-09-11
 ---
 
 # 会话与语音共享契约
@@ -17,7 +17,7 @@ last_verified_at: 2026-09-08
 
 ## 当前状态
 
-Backend 与 Frontend 已共同消费统一契约。
+Backend 与 Frontend 已共同消费统一契约；模型只保留 catalog 契约，旧 tiers 契约和端点已删除。
 
 ## 入口与调用者
 
@@ -25,11 +25,12 @@ Backend 与 Frontend 已共同消费统一契约。
 
 ## 涉及文件
 
-| 路径                                       | 职责           |
-| ------------------------------------------ | -------------- |
-| `packages/shared/src/api/conversations.ts` | 会话与 SSE DTO |
-| `packages/shared/src/api/voice.ts`         | 语音 DTO       |
-| `packages/shared/src/index.ts`             | 公共出口       |
+| 路径                                       | 职责             |
+| ------------------------------------------ | ---------------- |
+| `packages/shared/src/api/conversations.ts` | 会话与 SSE DTO   |
+| `packages/shared/src/api/voice.ts`         | 语音 DTO         |
+| `packages/shared/src/api/models.ts`        | 模型 catalog DTO |
+| `packages/shared/src/index.ts`             | 公共出口         |
 
 ## 关键实现链路
 

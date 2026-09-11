@@ -28,7 +28,6 @@ export * from './api/notifications';
 export * from './api/support';
 export * from './api/batch-lab';
 export * from './config/database';
-export * from './st-bridge';
 export * from './png-parser';
 export * from './dev-fixtures';
 export * from './lobby-featured';

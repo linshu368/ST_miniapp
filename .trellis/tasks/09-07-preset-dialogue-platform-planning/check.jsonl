@@ -1,6 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/admin/app/index.md", "reason": "检查新运营 SPA 交互、环境和发布规则"}
-{"file": ".trellis/spec/backend/app/index.md", "reason": "检查 backend 契约、生成与可靠性规则"}
-{"file": ".trellis/spec/shared/contracts/index.md", "reason": "检查共享契约和消费者兼容"}
-{"file": ".trellis/spec/database/supabase/index.md", "reason": "检查迁移、权限、回滚与环境证据"}
-{"file": ".trellis/tasks/09-07-preset-dialogue-platform-planning/research/reuse-and-current-state.md", "reason": "检查规划是否符合当前实现与复用边界"}

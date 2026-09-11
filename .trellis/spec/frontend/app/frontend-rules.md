@@ -2,15 +2,11 @@
 
 适用于 `packages/frontend`。
 
-来源补充：
-本规范同步承接 `packages/frontend/CLAUDE.md` 中仍符合当前架构的前端开发与审查硬规则。
-当 `packages/frontend/CLAUDE.md` 更新时，需要同时评估本规范是否应同步更新。
-其中 ST iframe/bridge 章节属于历史内容；当前架构以 `docs/ARCHITECTURE.md` 和本规范为准。
+规则来源为根 `AGENTS.md`、`docs/ARCHITECTURE.md` 和本目录专题规范；包级 `CLAUDE.md` 已删除，ST iframe/bridge 只作为禁止恢复的历史边界。
 
 ## 开发前检查
 
-- 阅读 `packages/frontend/CLAUDE.md` 中的数据获取、表单、样式和目录约定；不得恢复其中已退场的 ST iframe/bridge。
-- 阅读 `docs/frontend-rules-template.md`。
+- 阅读根 `AGENTS.md`、本目录入口及相关专题；不得恢复已退场的 ST iframe/bridge。
 - 阅读 `docs/ARCHITECTURE.md` 的第 1、3、4、7 节。
 - 搜索现有 `packages/frontend/src/lib/api`、`components`、`stores`、`app` 实现。
 - 若改动跨越 backend / API / database，同步阅读 `.trellis/spec/guides/cross-layer-thinking-guide.md`。
@@ -42,9 +38,9 @@
 - 优先考虑高可用性：关键交互需要考虑加载态、错误态、有限重试、取消、降级与恢复。
 - 在满足以上目标时，保持实现简洁明了，不引入无用代码、无意义抽象或过度封装。
 - UI、组件、页面改动需要尽量贴合现有结构与设计系统，不因为技术实现方便就擅自重做交互。
-- 修改复杂交互、SSE、状态同步或边界条件时，补充必要且简洁的代码注释。
+- 对复杂交互、业务编排、SSE/状态同步、非显然约束和边界条件，尽量补充解释“为什么”的必要且简洁注释；简单、自解释的方法无需注释。
 - 若变更影响接入方式、用法约束、流程规则或模块组织，需要同步补充相关文档。
-- 若变更引入或修改关键逻辑、状态流或数据转换，需要补充相关测试，或明确说明当前无法补测的原因。
+- 默认不因新增或修改代码自动创建测试文件；只有用户明确要求、审核后的验收标准确认需要，或已确认风险必须回归锁定时才创建。无论是否新建测试，现有相关测试与适用人工场景仍须执行。
 
 ## 目录与实现约定
 
@@ -64,4 +60,4 @@
 - 检查是否误增了已退场的 ST iframe/bridge 或第二套 SSE/HTTP client。
 - 检查是否直接使用了数据库行类型。
 - 检查实现是否复用现有组件与功能结构，且没有明显无用代码或过度设计。
-- 检查必要注释、相关文档与测试是否已补齐；若未补齐，需记录原因。
+- 检查复杂逻辑的必要注释和相关文档；记录测试必要性判断，并确认适用验证已执行。
