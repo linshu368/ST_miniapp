@@ -1,16 +1,15 @@
 /**
  * backend / features / conversations / generate.ts
  *
- * 一轮生成的编排（M3b）。方案 §8.2 的执行序列就落在这个文件里，发消息与重生成共用它。
- *
- * 这是 M1 / M2 / M3a 第一次在同一个进程里串起来，三处接缝都在这里合拢：
- *   - chat_history 当前 revision → 本文件还原开场白与历史 → M2 的 history + userInput
- *   - getGenerationConfig 同时喂 M2 的 userConfig 与 M3a 的模型解析
- *   - M3a 的 GenerationResult → 收口同一条 chat_history（execute 只补计费与 LLM 元数据）
+ * 一轮生成的编排。发消息与重生成共用它，三处接缝都在这里合拢：
+ *   - chat_history 当前 revision → 本文件还原开场白与历史 → engine 的 history + userInput
+ *   - getGenerationConfig 同时喂 engine 的 userConfig 与 generation 的模型解析
+ *   - generation 的 GenerationResult → finalizeTurn 收口同一条 chat_history
+ *     （计费列与 LLM 元数据由 generation/settle.ts 异步补齐，与本文件写的列不重叠）
  *
  * 顺序上有一条硬约束：**SSE 首字节写出之前不能有任何可能失败的判定**。402 与 409 要以
  * HTTP 状态码返回 JSON，响应头一旦发出就只能降级成流内 error 事件，前端处理成本高一截。
- * 所以响应头推迟到 M3a 的 onStreamOpen（上游已 2xx）才写。
+ * 所以响应头推迟到 generation 的 onStreamOpen（上游已 2xx）才写。
  */
 
 import type { ChatMessageStatus } from '@miniapp/shared';
@@ -161,7 +160,7 @@ export async function runConversationTurn(
     sessionId: session.id,
     historyId: turn.historyId,
     stream: true,
-    // 决策 11：cache_control 断点只在自研链路开，ST 链路传 false 保住 M3a 的纯重构判据
+    // Anthropic prompt cache 的 cache_control 断点，配合双水位线泄洪制造稳定前缀
     promptCaching: true,
   };
 

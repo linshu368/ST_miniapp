@@ -1,13 +1,9 @@
 /**
- * @Author: whc 952987912@qq.com
- * @Date: 2026-08-26 16:31:18
- * @LastEditors: whc 952987912@qq.com
- * @LastEditTime: 2026-09-01 14:43:15
- * @Description:
- *  backend / features / generation / index.ts
- * 生成执行与计费出口（M3a）对 backend 内部的出口。
- * 自研对话链路走 resolveModelForUser + generationService.execute。
- * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
+ * backend / features / generation / index.ts
+ *
+ * 生成执行与计费出口对 backend 内部的唯一入口（架构铁律 6）。
+ * 对话链路走 resolveModelForUser + execute；LLM 计费的两条结算路径
+ * （即时 settle 与回捞 sync-job）也都在本模块内，别处不要另起。
  */
 
 export type {
@@ -59,4 +55,5 @@ export {
 } from './prompt-caching.js';
 
 export { execute, generationService } from './execute.js';
-export { precheckVoiceCredits, settleVoiceGeneration } from './voice-billing.js';
+export { settleGeneration, type GenerationSettlementEntry } from './settle.js';
+export { startChatHistorySyncJob, stopChatHistorySyncJob } from './sync-job.js';

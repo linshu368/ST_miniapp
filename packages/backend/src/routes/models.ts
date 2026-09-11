@@ -9,15 +9,10 @@ import {
 } from '@miniapp/shared';
 import type {
   GetModelCatalogData,
-  GetModelTiersData,
   OpenRouterModelDirectory,
   SelectModelData,
 } from '@miniapp/shared';
-import {
-  fetchModelCatalogSnapshot,
-  getAllTiers,
-  getPricingConfig,
-} from '../platform/model-tiers.js';
+import { fetchModelCatalogSnapshot, getPricingConfig } from '../platform/model-tiers.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { openRouterModelsClient } from '../platform/openrouter-models.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -29,12 +24,6 @@ import { resolveFixedDeduction } from '../features/billing/usage-pricing.js';
 export default async function modelsRoutes(app: FastifyInstance) {
   const settings = new MiniappUserSettingsRepository();
   const wallets = new MiniappWalletRepository();
-
-  // @frontend-ready: true
-  app.get('/api/platform/models', async (_request, reply) => {
-    const tiers = await getAllTiers();
-    return reply.send(ok<GetModelTiersData>({ tiers }));
-  });
 
   // @frontend-ready: true
   app.get('/api/platform/openrouter/models', async (request, reply) => {

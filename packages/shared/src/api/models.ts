@@ -1,22 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Legacy model-switcher contract. Keep this shape stable while consumers move
- * to the catalog endpoint.
- */
-export interface ModelTierConfig {
-  tier: string;
-  modelName: string;
-  provider: string;
-  label: string;
-  deductionRate: number;
-  isDefault?: boolean;
-}
-
-export interface GetModelTiersData {
-  tiers: ModelTierConfig[];
-}
-
 export const ModelCatalogTierKeySchema = z.enum(['light', 'standard', 'premium']);
 export const StableModelIdSchema = z
   .string()

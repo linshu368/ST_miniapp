@@ -1,9 +1,8 @@
-// Prompt 引擎（M2）的唯一入口契约。后端内部类型，不进 shared。
+// Prompt 引擎的唯一入口契约。后端内部类型，不进 shared。
 //
-// v1 是旧 bot 的忠实移植（SillyTavern/src/infrastructure/ai/SimplePromptEngine.ts 的
-// _buildMessages 加 SimpleChat._buildEnhancedPrompt 加 rules/renderSystemInstructions.ts）：
-// messages = [system: 角色卡 system_prompt] + 历史 + [user: 平台规则 + 本轮用户输入]。
-// 不消费 platform_presets.preset_payload，不做酒馆语义适配（世界书、正则、卡内嵌资源）。
+// 最终形状：messages = [system: 角色卡 system_prompt] + 历史 + [user: 平台规则 + 本轮用户输入]。
+// 不支持酒馆语义（预设、宏、世界书、正则、卡内嵌资源），表现质量全部由 system prompt
+// 与本模块的组装逻辑承担。
 // {{user}} 是唯一例外：组 prompt 时替换为 persona.displayName。
 
 import type { UserGenerationConfig } from '@miniapp/shared';
