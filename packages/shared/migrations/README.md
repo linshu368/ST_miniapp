@@ -10,7 +10,7 @@
 
 ## 现行执行通道
 
-**改库只有 GitHub Actions `Database Migration` 一条路。** 它才会查、写 `app_core.schema_migrations` 账本。
+**改库只有 GitHub Actions `Database Migration` 一条路。** 它才会查、写 `supabase_migrations.schema_migrations` 账本。
 
 仓库 Secrets：
 
@@ -53,9 +53,9 @@ pnpm supabase:db:query -- --db-url "$DATABASE_URL" --file packages/shared/migrat
 ## 命名与账本
 
 - **2026-09-10 起**：`YYYYMMDD_描述.sql`。存量三位编号文件锁死，新增编号会被 CI 拒绝（`scripts/check-migration-filenames.mjs`）。
-- **账本** `app_core.schema_migrations`（建表：`20260910_schema_migrations_ledger.sql`）：workflow 执行前查重，已有记录则拒绝（`force_rerun` 可绕过）；成功后写入 `filename / checksum / applied_by`。
+- **账本** `supabase_migrations.schema_migrations`（建表：`20260910_schema_migrations_ledger.sql`）：workflow 执行前查重，已有记录则拒绝（`force_rerun` 可绕过）；成功后写入 `filename / checksum / applied_by`。放在平台 schema，不进 `app_core`。
 - 账本只覆盖 2026-09-10 之后的新迁移，不回填更早历史。
-- 查环境：`SELECT * FROM app_core.schema_migrations ORDER BY applied_at DESC`。
+- 查环境：`SELECT * FROM supabase_migrations.schema_migrations ORDER BY applied_at DESC`。
 - 已执行文件被改过：用**新迁移**表达修正，不要改旧文件再跑。
 
 顺序依赖写在各文件头部「前置」，不要按文件名序号推断。并行分支撞号的存量（021/030/031/032/053/065/086/088/092/093/095 与 105/108/109）**同号含义可以不同**。099 已在 test 与生产执行完毕；其执行剧本是历史文档，见下方。

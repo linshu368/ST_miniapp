@@ -34,7 +34,7 @@
    - `miniapp_features.character_ranking_scores` 由 lobby 定时任务直接聚合 `experience.chat_history`；
    - `experience.chat_history.llm_charge_id` 软引用 `billing.llm_usage_charges`；
    - `notifications.created_by`、`support_messages.agent_user_id` FK → `admin.admin_users`。
-9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发；执行状态记录在 `app_core.schema_migrations` 账本（workflow 自动查重 + 记账）。2026-09-10 起新迁移命名 `YYYYMMDD_描述.sql`（CI 拦旧式编号）；历史存量存在重号（见 §7.4），**不要按序号推断内容**。改库只有仓库迁移一条路，禁止 Management API / Studio 直改。
+9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发；执行状态记录在 `supabase_migrations.schema_migrations` 账本（workflow 自动查重 + 记账）。2026-09-10 起新迁移命名 `YYYYMMDD_描述.sql`（CI 拦旧式编号）；历史存量存在重号（见 §7.4），**不要按序号推断内容**。改库只有仓库迁移一条路，禁止 Management API / Studio 直改。
 10. **TypeScript 严格模式，禁止 `any`**。
 
 ---
@@ -402,7 +402,7 @@ packages/backend/src/
 
 - 位置 `packages/shared/migrations/`（`archive/` 另存 087 删除的 admin RPC 定义备查）。
 - **命名规则（2026-09-10 起）**：新迁移一律 `YYYYMMDD_描述.sql`。三位数字编号已停用并由 CI 拦截（`pnpm lint:migrations`，冻结清单在 `scripts/check-migration-filenames.mjs`）——历史上 021/030/031/032/053/065/086/088/092/093/095 撞号，100 号立规后 105/108/109 又各撞一对。
-- **迁移账本**：`app_core.schema_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by）。workflow 执行前查账本防重跑（`force_rerun` 可绕过），执行成功后自动记账。账本只覆盖 2026-09-10 后的新迁移，存量不回填。
+- **迁移账本**：`supabase_migrations.schema_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by）。这是平台 schema 上的仓库账本，不是八个业务域的表。workflow 执行前查账本防重跑（`force_rerun` 可绕过），执行成功后自动记账。账本只覆盖 2026-09-10 后的新迁移，存量不回填。
 - **历史存量编号必须小心**（均已冻结，仅供查档）：
   - 021 / 030 / 031 / 032 / 053 / 065 历史重号，同号无依赖，按文件名字母序执行；
   - 086 / 088 / 092 / 093 / 095 与 105 / 108 / 109 也各有两个文件，来自并行发布线，**同号但含义不同，不要按序号推断内容**；
