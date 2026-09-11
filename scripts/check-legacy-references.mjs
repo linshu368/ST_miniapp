@@ -99,8 +99,11 @@ const RULES = [
       'experience.chat_history 只能由 ConversationHistoryRepository 读写（列归属见该文件头注释）',
     allow: [
       'packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts',
-      // 集成测试直连库造数据、断言与清理，不经业务链路
+      // 测试与回归夹具直连库造数据、断言与清理，不经业务链路
       'packages/backend/src/infrastructure/repositories/conversations.integration.test.ts',
+      'packages/backend/src/scripts/mvp-regression/fixtures.ts',
+      'packages/backend/src/scripts/mvp-regression/scenarios.ts',
+      'packages/backend/src/scripts/invite-uat/fixtures.ts',
     ],
   },
   {
@@ -111,6 +114,7 @@ const RULES = [
     allow: [
       'packages/backend/src/features/generation/upstream.ts',
       'packages/backend/src/features/generation/upstream.test.ts',
+      'packages/backend/src/scripts/mvp-regression/mock-upstream.ts',
       // 语音写稿的 DeepSeek 端点：与聊天不同供应商、非流式、抽取任务、按次计费，
       // 业务上确实独立（理由见 features/voice/voice-draft.ts 与 features/voice/billing.ts）
       'packages/backend/src/platform/config.ts',
@@ -132,6 +136,7 @@ const RULES = [
     allow: [
       'packages/backend/src/features/payment/usecases/PaymentSettlement.ts',
       'packages/backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts',
+      'packages/backend/src/scripts/invite-uat/fixtures.ts',
     ],
   },
   {
