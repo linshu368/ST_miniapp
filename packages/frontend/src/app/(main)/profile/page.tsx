@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ChevronRight,
   Bell,
   Check,
+  Gem,
   Gift,
   Headphones,
   ImageUp,
@@ -14,6 +16,7 @@ import {
   RotateCcw,
   ReceiptText,
   Sparkles,
+  Send,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -22,9 +25,17 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 
-import { useDailyCheckinMutation, useDailyCheckinQuery, useWalletCredits } from '@/lib/api/payment';
-import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
+import {
+  paymentKeys,
+  useDailyCheckinMutation,
+  useDailyCheckinQuery,
+  useWalletCredits,
+} from '@/lib/api/payment';
+import { useInviteEntryStatusQuery } from '@/lib/api/invite';
+import { notificationKeys, useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
+import { useCommunityEntryQuery } from '@/lib/api/community';
+import { CommunitySheet } from '@/components/profile/community-sheet';
 import {
   usePatchUserSettingsMutation,
   useSetUserAvatarMutation,
@@ -35,6 +46,7 @@ import { formatNumber } from '@/lib/utils/payment';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
 export default function ProfilePage() {
+  const queryClient = useQueryClient();
   const telegramUserId = useMemo(readTelegramUserId, []);
   const credits = useWalletCredits();
   const unread = useNotificationUnreadCountQuery();
@@ -48,12 +60,16 @@ export default function ProfilePage() {
   const checkinQ = useDailyCheckinQuery();
   const checkin = checkinQ.data?.checkin;
   const claimCheckin = useDailyCheckinMutation();
+  const inviteEntry = useInviteEntryStatusQuery();
+  const communityEntry = useCommunityEntryQuery();
+  const previousCommunityStatus = useRef(communityEntry.data?.claim_status);
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [checkinToast, setCheckinToast] = useState<{ reward: number } | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const [communityOpen, setCommunityOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const avatarMenuRef = useRef<HTMLDivElement>(null);
@@ -70,6 +86,16 @@ export default function ProfilePage() {
     const timer = window.setTimeout(() => setCheckinToast(null), 1500);
     return () => window.clearTimeout(timer);
   }, [checkinToast]);
+
+  useEffect(() => {
+    const previous = previousCommunityStatus.current;
+    const current = communityEntry.data?.claim_status;
+    previousCommunityStatus.current = current;
+    if (previous === 'unclaimed' && current === 'rewarded') {
+      void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+      void queryClient.invalidateQueries({ queryKey: notificationKeys.unread });
+    }
+  }, [communityEntry.data?.claim_status, queryClient]);
 
   useEffect(() => {
     if (!avatarMenuOpen) return;
@@ -387,6 +413,40 @@ export default function ProfilePage() {
         </div>
       </section>
 
+      {/* 邀请中心：裂变优先入口，位于余额卡与常规列表之间（PRD：星尘余额下方）。
+          显隐由运营总开关控制；"2200星尘"提醒标签在首次进入邀请中心后由服务端字段翻转消失 */}
+      {inviteEntry.data?.entry_enabled ? (
+        <section className="relative z-10 mt-4 px-5">
+          <Link
+            href="/profile/invite"
+            className="relative flex items-center gap-3.5 overflow-hidden rounded-[22px] border border-border bg-card px-4 py-3.5 transition hover:border-primary/25 hover:bg-secondary"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Gem className="h-[18px] w-[18px]" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2">
+                <span className="truncate text-[15px] font-bold tracking-tight text-foreground">
+                  邀请中心
+                </span>
+                {inviteEntry.data.center_entered ? null : (
+                  <span className="shrink-0 rounded-full bg-gradient-to-r from-rose to-rose-fill px-2 py-0.5 text-[10px] font-black italic text-primary-foreground shadow-sm">
+                    2200星尘
+                  </span>
+                )}
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                分享专属链接，邀请好友得2200星尘
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1 text-[12px] font-bold text-primary">
+              去邀请
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </span>
+          </Link>
+        </section>
+      ) : null}
+
       <section className="relative z-10 mt-4 flex flex-col gap-2.5 px-5">
         <ProfileRow
           href="/profile/support"
@@ -402,6 +462,22 @@ export default function ProfilePage() {
           subtitle="官方公告与系统消息"
           showDot={(unread.data?.total ?? 0) > 0}
         />
+        {communityEntry.data?.enabled ? (
+          <ProfileRow
+            onClick={() => setCommunityOpen(true)}
+            Icon={Send}
+            title="官方社群"
+            subtitle="加入秘境官方社群，与大家一起交流。"
+            // iconClassName="bg-sky-500/15 text-sky-400"
+            trailing={
+              <span className="flex items-center gap-1 text-xs font-bold text-amber-400 text-primary">
+                <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
+                {communityEntry.data.reward_credits} 星尘
+                <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+              </span>
+            }
+          />
+        ) : null}
         <ProfileRow
           href="/profile/spending"
           Icon={ReceiptText}
@@ -409,29 +485,41 @@ export default function ProfilePage() {
           subtitle="星尘消费支出记录"
         />
       </section>
+      {communityEntry.data ? (
+        <CommunitySheet
+          open={communityOpen}
+          onOpenChange={setCommunityOpen}
+          community={communityEntry.data}
+        />
+      ) : null}
     </main>
   );
 }
 
 function ProfileRow({
   href,
+  onClick,
   Icon,
   title,
   subtitle,
   showDot = false,
+  iconClassName,
+  trailing,
 }: {
-  href: string;
+  href?: string;
+  onClick?: () => void;
   Icon: LucideIcon;
   title: string;
   subtitle: string;
   showDot?: boolean;
+  iconClassName?: string;
+  trailing?: ReactNode;
 }) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3.5 rounded-[22px] border border-border bg-card px-4 py-3.5 transition hover:border-primary/25 hover:bg-secondary"
-    >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+  const content = (
+    <>
+      <span
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${iconClassName ?? 'bg-primary/10 text-primary'}`}
+      >
         <Icon className="h-[18px] w-[18px]" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
@@ -441,6 +529,7 @@ function ProfileRow({
         <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{subtitle}</span>
       </span>
       <span className="flex shrink-0 items-center gap-2">
+        {trailing}
         {showDot ? (
           <span
             role="status"
@@ -448,9 +537,20 @@ function ProfileRow({
             className="h-2 w-2 rounded-full bg-destructive"
           />
         ) : null}
-        <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+        {!trailing ? <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden /> : null}
       </span>
+    </>
+  );
+  const className =
+    'flex w-full items-center gap-3.5 rounded-[22px] border border-border bg-card px-4 py-3.5 text-left transition hover:border-primary/25 hover:bg-secondary';
+  return href ? (
+    <Link href={href} className={className}>
+      {content}
     </Link>
+  ) : (
+    <button type="button" onClick={onClick} className={className}>
+      {content}
+    </button>
   );
 }
 

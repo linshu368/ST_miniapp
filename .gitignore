@@ -17,6 +17,9 @@ ops/git/.env
 # Prisma schema 本地备份,不入库
 *.prisma.bak
 
+# invite-uat 待清理 tg_id 的本地登记表，跑完即空
+packages/backend/.invite-uat-pending.json
+
 # 含敏感值的本地文档和脚本配置，不入库
 docs/github-secrets-setup.md
 docs/database-schema-reference.md

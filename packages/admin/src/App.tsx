@@ -34,6 +34,7 @@ import { ConfigValueEditor } from './components/ConfigValueEditor';
 import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
 import { CharacterCardsView } from './components/CharacterCardsView';
 import { AnnouncementsView } from './components/AnnouncementsView';
+import { InviteProgramView } from './components/InviteProgramView';
 import { OutreachCreditGrantView } from './components/OutreachCreditGrantView';
 import {
   discardDraft,
@@ -45,6 +46,7 @@ import {
   publishDraft,
   rollbackRelease,
   saveDraft,
+  uploadInvitePoster,
   type AdminUser,
   type CharacterCard,
   type ConfigDraft,
@@ -54,7 +56,6 @@ import {
 import {
   configMetadata,
   isTextManagedConfig,
-  managedConfigKeys,
   parseManagedConfig,
   resolveManagedWorkingValue,
   type ManagedConfigKey,
@@ -62,7 +63,15 @@ import {
 import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
 import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
-import { configMenuKey, resolveAdminMenuSelection, type AdminViewKey } from './lib/adminNavigation';
+import {
+  configMenuKey,
+  INVITE_PROGRAM_CONFIG_KEYS,
+  isInviteProgramConfigKey,
+  resolveAdminMenuSelection,
+  sidebarManagedConfigKeys,
+  type AdminViewKey,
+  type InviteProgramTabKey,
+} from './lib/adminNavigation';
 
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
@@ -363,6 +372,8 @@ function AdminWorkspace(props: {
   const { message } = AntApp.useApp();
   const [view, setView] = useState<AdminViewKey>('configs');
   const [selectedKey, setSelectedKey] = useState<ManagedConfigKey>('llm_model_catalog');
+  // 「裂变邀请管理」当前 tab；config tab 激活时须与 selectedKey 同步，编辑器才指向正确的 key
+  const [inviteTab, setInviteTab] = useState<InviteProgramTabKey>(INVITE_PROGRAM_CONFIG_KEYS[0]);
   const [configs, setConfigs] = useState<ManagedConfig[]>([]);
   const [drafts, setDrafts] = useState<ConfigDraft[]>([]);
   const [releases, setReleases] = useState<ConfigRelease[]>([]);
@@ -734,6 +745,158 @@ function AdminWorkspace(props: {
     }
   };
 
+  // 通用 managed config 编辑卡：编辑器 + 草稿/发布/回滚 + 该配置发布历史，始终跟随 selectedKey。
+  // 「运营配置」视图与「裂变邀请管理」的三个 config tab 共用，避免另造一套编辑状态机。
+  const configEditorCard = (
+    <Card
+      title={configMetadata[selectedKey].label}
+      extra={
+        <Space>
+          <Tag>正式版本 {currentConfig?.version ?? 0}</Tag>
+          {latestDraft ? <Tag color="orange">有未发布草稿</Tag> : <Tag>已同步</Tag>}
+          {selectedKey === 'llm_model_catalog' ? (
+            <Tag
+              color={
+                autoSaveStatus === 'error'
+                  ? 'red'
+                  : autoSaveStatus === 'invalid'
+                    ? 'orange'
+                    : autoSaveStatus === 'saved'
+                      ? 'green'
+                      : 'blue'
+              }
+            >
+              {autoSaveStatus === 'pending'
+                ? '等待自动保存'
+                : autoSaveStatus === 'saving'
+                  ? '自动保存中'
+                  : autoSaveStatus === 'saved'
+                    ? '草稿已自动保存'
+                    : autoSaveStatus === 'invalid'
+                      ? '请完善字段后自动保存'
+                      : autoSaveStatus === 'error'
+                        ? '自动保存失败'
+                        : '自动保存已开启'}
+            </Tag>
+          ) : null}
+        </Space>
+      }
+    >
+      <Typography.Paragraph type="secondary">
+        {configMetadata[selectedKey].description}
+      </Typography.Paragraph>
+      {!canWrite ? (
+        <Alert
+          type="info"
+          showIcon
+          message={
+            props.admin.role === 'viewer'
+              ? '当前账号为 viewer，只能查看，不能保存或发布。'
+              : '当前账号没有此环境的写入权限。'
+          }
+          className="form-alert"
+        />
+      ) : null}
+      <ConfigValueEditor
+        configKey={selectedKey}
+        value={workingValue}
+        onChange={setWorkingValue}
+        disabled={!canWrite}
+        openRouterDirectory={openRouterDirectory}
+        publishedModelIds={publishedModelIds}
+        syncLoading={openRouterLoading}
+        syncError={openRouterError}
+        onRefreshOpenRouter={() => void reloadOpenRouter(true)}
+        paymentPlans={paymentPlans}
+        characters={characters}
+        charactersLoading={charactersLoading}
+        charactersError={charactersError}
+        onUploadInvitePoster={(file) => uploadInvitePoster(props.client, props.environment, file)}
+      />
+      <Divider />
+      <Space wrap>
+        <Button
+          type="primary"
+          loading={saving}
+          disabled={!canWrite || hasDuplicateOpenRouterModels}
+          title={hasDuplicateOpenRouterModels ? '请先处理重复的 OpenRouter 模型' : undefined}
+          onClick={handleSaveDraft}
+        >
+          保存草稿
+        </Button>
+        <Button
+          danger={props.environment === 'production'}
+          loading={saving}
+          disabled={
+            !canWrite ||
+            !latestDraft ||
+            autoSaveStatus === 'pending' ||
+            autoSaveStatus === 'saving' ||
+            autoSaveStatus === 'invalid'
+          }
+          onClick={handlePublish}
+        >
+          发布当前草稿
+        </Button>
+        <Button
+          danger
+          loading={saving}
+          disabled={
+            !canWrite || !latestDraft || autoSaveStatus === 'pending' || autoSaveStatus === 'saving'
+          }
+          onClick={() => void handleDiscardDraft()}
+        >
+          放弃当前草稿
+        </Button>
+        <Button
+          onClick={() =>
+            setWorkingValue(
+              resolveManagedWorkingValue({
+                key: selectedKey,
+                draft: latestDraft,
+                config: currentConfig,
+              })
+            )
+          }
+        >
+          撤销未保存编辑
+        </Button>
+      </Space>
+      <Divider>该配置发布历史</Divider>
+      {selectedReleases.length === 0 ? (
+        <Empty description="暂无发布记录" />
+      ) : (
+        <List
+          dataSource={selectedReleases}
+          renderItem={(release) => (
+            <List.Item
+              actions={[
+                <Button
+                  key="rollback"
+                  size="small"
+                  disabled={!canWrite}
+                  onClick={() => void handleRollback(release)}
+                >
+                  回滚到此版本
+                </Button>,
+              ]}
+            >
+              <div className="release-list-content">
+                <List.Item.Meta
+                  title={`运行时版本 ${release.runtime_version}`}
+                  description={`${release.released_by_name ?? '历史记录未标注'} · ${formatDate(
+                    release.released_at
+                  )}${release.rollback_of_release_id ? ' · 回滚发布' : ''}`}
+                />
+                <ReleaseChangeDetails release={release} allReleases={selectedReleases} compact />
+              </div>
+            </List.Item>
+          )}
+        />
+      )}
+    </Card>
+  );
+
   return (
     <Layout className="admin-layout">
       <Layout.Sider width={240} theme="light" className="admin-sider">
@@ -754,7 +917,17 @@ function AdminWorkspace(props: {
           selectedKeys={[view === 'configs' ? configMenuKey(selectedKey) : view]}
           onClick={({ key }) => {
             const selection = resolveAdminMenuSelection(key);
-            if (selection.configKey) setSelectedKey(selection.configKey);
+            if (selection.view === 'invite_program') {
+              // 从菜单进入「裂变邀请管理」时，把编辑器同步到当前激活的 config tab
+              const nextTab =
+                selection.configKey && isInviteProgramConfigKey(selection.configKey)
+                  ? selection.configKey
+                  : inviteTab;
+              setInviteTab(nextTab);
+              if (nextTab !== 'records') setSelectedKey(nextTab);
+            } else if (selection.configKey) {
+              setSelectedKey(selection.configKey);
+            }
             setView(selection.view);
           }}
           items={[
@@ -762,11 +935,12 @@ function AdminWorkspace(props: {
               key: 'configs',
               label: '运营配置',
               children: [
-                ...managedConfigKeys.map((key) => ({
+                ...sidebarManagedConfigKeys.map((key) => ({
                   key: configMenuKey(key),
                   label: configMetadata[key].label,
                 })),
                 { key: 'outreach_credit_grant', label: '回访星尘赠送' },
+                { key: 'invite_program', label: '裂变邀请管理' },
               ],
             },
             { key: 'characters', label: '角色卡' },
@@ -832,162 +1006,20 @@ function AdminWorkspace(props: {
               environment={props.environment}
               canWrite={canWrite}
             />
+          ) : view === 'invite_program' ? (
+            <InviteProgramView
+              client={props.client}
+              environment={props.environment}
+              activeTab={inviteTab}
+              onTabChange={(tab) => {
+                setInviteTab(tab);
+                // 切到 config tab 时同步 selectedKey，让共用的编辑卡指向正确的配置
+                if (tab !== 'records') setSelectedKey(tab);
+              }}
+              configEditor={configEditorCard}
+            />
           ) : view === 'configs' ? (
-            <Card
-              title={configMetadata[selectedKey].label}
-              extra={
-                <Space>
-                  <Tag>正式版本 {currentConfig?.version ?? 0}</Tag>
-                  {latestDraft ? <Tag color="orange">有未发布草稿</Tag> : <Tag>已同步</Tag>}
-                  {selectedKey === 'llm_model_catalog' ? (
-                    <Tag
-                      color={
-                        autoSaveStatus === 'error'
-                          ? 'red'
-                          : autoSaveStatus === 'invalid'
-                            ? 'orange'
-                            : autoSaveStatus === 'saved'
-                              ? 'green'
-                              : 'blue'
-                      }
-                    >
-                      {autoSaveStatus === 'pending'
-                        ? '等待自动保存'
-                        : autoSaveStatus === 'saving'
-                          ? '自动保存中'
-                          : autoSaveStatus === 'saved'
-                            ? '草稿已自动保存'
-                            : autoSaveStatus === 'invalid'
-                              ? '请完善字段后自动保存'
-                              : autoSaveStatus === 'error'
-                                ? '自动保存失败'
-                                : '自动保存已开启'}
-                    </Tag>
-                  ) : null}
-                </Space>
-              }
-            >
-              <Typography.Paragraph type="secondary">
-                {configMetadata[selectedKey].description}
-              </Typography.Paragraph>
-              {!canWrite ? (
-                <Alert
-                  type="info"
-                  showIcon
-                  message={
-                    props.admin.role === 'viewer'
-                      ? '当前账号为 viewer，只能查看，不能保存或发布。'
-                      : '当前账号没有此环境的写入权限。'
-                  }
-                  className="form-alert"
-                />
-              ) : null}
-              <ConfigValueEditor
-                configKey={selectedKey}
-                value={workingValue}
-                onChange={setWorkingValue}
-                disabled={!canWrite}
-                openRouterDirectory={openRouterDirectory}
-                publishedModelIds={publishedModelIds}
-                syncLoading={openRouterLoading}
-                syncError={openRouterError}
-                onRefreshOpenRouter={() => void reloadOpenRouter(true)}
-                paymentPlans={paymentPlans}
-                characters={characters}
-                charactersLoading={charactersLoading}
-                charactersError={charactersError}
-              />
-              <Divider />
-              <Space wrap>
-                <Button
-                  type="primary"
-                  loading={saving}
-                  disabled={!canWrite || hasDuplicateOpenRouterModels}
-                  title={
-                    hasDuplicateOpenRouterModels ? '请先处理重复的 OpenRouter 模型' : undefined
-                  }
-                  onClick={handleSaveDraft}
-                >
-                  保存草稿
-                </Button>
-                <Button
-                  danger={props.environment === 'production'}
-                  loading={saving}
-                  disabled={
-                    !canWrite ||
-                    !latestDraft ||
-                    autoSaveStatus === 'pending' ||
-                    autoSaveStatus === 'saving' ||
-                    autoSaveStatus === 'invalid'
-                  }
-                  onClick={handlePublish}
-                >
-                  发布当前草稿
-                </Button>
-                <Button
-                  danger
-                  loading={saving}
-                  disabled={
-                    !canWrite ||
-                    !latestDraft ||
-                    autoSaveStatus === 'pending' ||
-                    autoSaveStatus === 'saving'
-                  }
-                  onClick={() => void handleDiscardDraft()}
-                >
-                  放弃当前草稿
-                </Button>
-                <Button
-                  onClick={() =>
-                    setWorkingValue(
-                      resolveManagedWorkingValue({
-                        key: selectedKey,
-                        draft: latestDraft,
-                        config: currentConfig,
-                      })
-                    )
-                  }
-                >
-                  撤销未保存编辑
-                </Button>
-              </Space>
-              <Divider>该配置发布历史</Divider>
-              {selectedReleases.length === 0 ? (
-                <Empty description="暂无发布记录" />
-              ) : (
-                <List
-                  dataSource={selectedReleases}
-                  renderItem={(release) => (
-                    <List.Item
-                      actions={[
-                        <Button
-                          key="rollback"
-                          size="small"
-                          disabled={!canWrite}
-                          onClick={() => void handleRollback(release)}
-                        >
-                          回滚到此版本
-                        </Button>,
-                      ]}
-                    >
-                      <div className="release-list-content">
-                        <List.Item.Meta
-                          title={`运行时版本 ${release.runtime_version}`}
-                          description={`${release.released_by_name ?? '历史记录未标注'} · ${formatDate(
-                            release.released_at
-                          )}${release.rollback_of_release_id ? ' · 回滚发布' : ''}`}
-                        />
-                        <ReleaseChangeDetails
-                          release={release}
-                          allReleases={selectedReleases}
-                          compact
-                        />
-                      </div>
-                    </List.Item>
-                  )}
-                />
-              )}
-            </Card>
+            configEditorCard
           ) : (
             <Card title="发布历史">
               <Table
