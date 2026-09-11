@@ -24,6 +24,7 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
       NEXT_PUBLIC_API_URL: http://localhost:3001
       NEXT_PUBLIC_USE_MOCK_INIT_DATA: '0'
+      VITE_BATCH_LAB_API_URL: http://localhost:3001
       DATABASE_ENV: test
       TEST_SUPABASE_PROJECT_REF: zoqelpfhurwehlvypryl
       PROD_SUPABASE_PROJECT_REF: wbtsfzozlmurljvglhpn
@@ -66,6 +67,12 @@ jobs:
 
       - name: Test shared package
         run: pnpm --filter @miniapp/shared test
+
+      - name: Test Batch Lab
+        run: pnpm --filter @miniapp/batch-lab test
+
+      - name: Build Batch Lab
+        run: pnpm --filter @miniapp/batch-lab build
 
       - name: Build frontend
         run: pnpm --filter @miniapp/frontend build

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "operation": "update",
+      "module_id": "backend.infrastructure.runtime-data-security",
+      "target": ".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md",
+      "expected_sha256": "661478fd136ed1d4543051273f0af5bafcf58a30e349c6284256b4c85bbe4757",
+      "content": "---\nmodule_id: backend.infrastructure.runtime-data-security\ntitle: 运行时、鉴权与数据访问基建\nscope: backend\ncategory: infrastructure\nstatus: active\nowners: [backend]\nlast_verified_task: .trellis/tasks/09-11-batch-lab-foundation/\nlast_verified_at: 2026-09-11\n---\n\n# 运行时、鉴权与数据访问基建\n\n## 职责与边界\n\n提供配置、Telegram/运营鉴权、域数据库 client、repository、日志和后台任务基座。\n\n## 当前状态\n\n配置与 runtime config 已集中，Supabase 按域访问，服务日志使用 Pino。Batch Lab 入口由 feature flag、精确 CORS origin 与权威数据库环境共同 fail closed。\n\n## 入口与调用者\n\nBackend routes、features、jobs 统一消费。\n\n## 涉及文件\n\n| 路径                                                | 职责              |\n| --------------------------------------------------- | ----------------- |\n| `packages/backend/src/platform/config.ts`           | 环境配置解析      |\n| `packages/backend/src/platform/runtime-config.ts`   | DB 运行配置入口   |\n| `packages/backend/src/middleware/auth.ts`           | Telegram 鉴权     |\n| `packages/backend/src/lib/supabase.ts`              | 按域数据库 client |\n| `packages/backend/src/infrastructure/repositories/` | 数据访问实现      |\n\n## 关键实现链路\n\n启动解析配置 → route 鉴权 → feature → repository/domain client → Pino 结果摘要。\n\n## 数据、契约与外部依赖\n\n连接 Supabase、Redis/Sentry 等；secret 仅服务端读取。\n\n## 关键节点与约束\n\n外部调用必须超时；日志禁止 token/敏感正文；跨域访问走 RPC/repository/API。\n\n## 验证方式\n\n`pnpm --filter @miniapp/backend typecheck && pnpm --filter @miniapp/backend test`。\n\n## 已知缺口与待核验项\n\n部署控制台遗留资源仍需人工清理。\n\n## 关联模块\n\n`database.infrastructure.schema-security`。\n",
+      "evidence": [
+        ".trellis/tasks/09-11-batch-lab-foundation/prd.md",
+        "packages/backend/src/routes/batch-lab.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "shared.infrastructure.database-environment",
+      "target": ".trellis/spec/shared/contracts/modules/infrastructure/database-environment.md",
+      "expected_sha256": "56aadce4c2f73e4b1423945ae87b09f5e59dfa9ca09e2b5411588e3e3eef1401",
+      "content": "---\nmodule_id: shared.infrastructure.database-environment\ntitle: 数据库环境与迁移公共配置\nscope: shared\ncategory: infrastructure\nstatus: active\nowners: [shared]\nlast_verified_task: .trellis/tasks/09-11-batch-lab-foundation/\nlast_verified_at: 2026-09-11\n---\n\n# 数据库环境与迁移公共配置\n\n## 职责与边界\n\n提供 test/production 数据库配置解析与 migration 唯一来源约定。\n\n## 当前状态\n\n迁移集中在 `packages/shared/migrations`，环境必须显式区分；Batch Lab 浏览器契约复用相同环境口径且不暴露数据库配置。\n\n## 入口与调用者\n\nBackend、脚本和手工迁移流程使用。\n\n## 涉及文件\n\n| 路径                                     | 职责         |\n| ---------------------------------------- | ------------ |\n| `packages/shared/src/config/database.ts` | 环境配置     |\n| `packages/shared/migrations/`            | SQL 唯一来源 |\n\n## 关键实现链路\n\n选择环境 → 校验 project ref → 单文件 migration → shape/RLS/读写验证。\n\n## 数据、契约与外部依赖\n\n依赖 Supabase/PostgreSQL，不存储 secret 值。\n\n## 关键节点与约束\n\n测试与生产不保证同构；迁移不随应用部署自动执行。\n\n## 验证方式\n\nShared tests 与 database spec 的手工门禁。\n\n## 已知缺口与待核验项\n\n历史 migration 存在重号，不能按编号推断语义。\n\n## 关联模块\n\n`database.infrastructure.schema-security`。\n",
+      "evidence": [
+        ".trellis/tasks/09-11-batch-lab-foundation/prd.md",
+        "packages/shared/src/api/batch-lab.ts"
+      ]
+    }
+  ]
+}

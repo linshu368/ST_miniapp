@@ -14,11 +14,21 @@ const databaseConfig = createDatabaseConfig({
   ],
 });
 
+const batchLabSourceEnvironment = process.env.BATCH_LAB_SAMPLE_SOURCE_ENV || 'test';
+if (batchLabSourceEnvironment !== 'test' && batchLabSourceEnvironment !== 'production') {
+  throw new Error('BATCH_LAB_SAMPLE_SOURCE_ENV must be test or production');
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   csPlatformUrl: process.env.CS_PLATFORM_URL || 'https://st-cs-platform.vercel.app',
   adminPlatformUrl: process.env.ADMIN_PLATFORM_URL || 'https://st-admin-platform.vercel.app',
+  batchLab: {
+    enabled: process.env.BATCH_LAB_ENABLED === 'true',
+    url: process.env.BATCH_LAB_URL || '',
+    sourceEnvironment: batchLabSourceEnvironment,
+  },
   nodeEnv,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',

@@ -1,0 +1,55 @@
+/**
+ * @Author: whc 952987912@qq.com
+ * @Date: 2026-09-11 11:32:06
+ * @LastEditors: whc 952987912@qq.com
+ * @LastEditTime: 2026-09-11 11:32:08
+ * @Description:
+ * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
+ */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #f5f7fa;
+}
+.app-layout {
+  min-height: 100vh;
+}
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.app-title {
+  margin: 0 !important;
+  color: white !important;
+  white-space: nowrap;
+}
+.app-header .ant-menu {
+  flex: 1;
+}
+.app-content {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+.welcome-card {
+  margin-top: 24px;
+}
+@media (max-width: 640px) {
+  .app-header {
+    height: auto;
+    padding: 12px 16px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .app-header .ant-menu {
+    width: 100%;
+  }
+  .app-content {
+    padding: 20px 12px;
+  }
+}

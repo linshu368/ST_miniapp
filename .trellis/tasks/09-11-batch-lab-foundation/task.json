@@ -3,7 +3,7 @@
   "name": "batch-lab-foundation",
   "title": "Batch Lab 工程骨架、共享契约与部署",
   "description": "建立 packages/batch-lab 独立 SPA、共享基础契约、统一 API client、环境上下文、CORS、Vercel 与 CI 部署基线。V1 不实现用户登录或角色。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": "feature",
   "scope": "cross-package",
   "package": "cross-package",
