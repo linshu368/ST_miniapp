@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { createDatabaseConfig, resolveDefaultUserAvatarUrl } from '@miniapp/shared';
+import { resolveBatchLabSourceConfig } from '../features/batch-lab/source-config.js';
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const databaseConfig = createDatabaseConfig({
@@ -18,6 +19,13 @@ const batchLabSourceEnvironment = process.env.BATCH_LAB_SAMPLE_SOURCE_ENV || 'te
 if (batchLabSourceEnvironment !== 'test' && batchLabSourceEnvironment !== 'production') {
   throw new Error('BATCH_LAB_SAMPLE_SOURCE_ENV must be test or production');
 }
+const batchLabSourceConfig = resolveBatchLabSourceConfig({
+  env: process.env,
+  backendEnvironment: databaseConfig.environment,
+  sourceEnvironment: batchLabSourceEnvironment,
+  testProjectRef: databaseConfig.testProjectRef,
+  prodProjectRef: databaseConfig.prodProjectRef,
+});
 
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
@@ -28,6 +36,7 @@ export const config = {
     enabled: process.env.BATCH_LAB_ENABLED === 'true',
     url: process.env.BATCH_LAB_URL || '',
     sourceEnvironment: batchLabSourceEnvironment,
+    source: batchLabSourceConfig,
   },
   nodeEnv,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
