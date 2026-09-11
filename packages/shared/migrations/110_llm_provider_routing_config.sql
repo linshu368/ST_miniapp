@@ -1,7 +1,10 @@
--- 105_llm_provider_routing_config.sql
+-- 110_llm_provider_routing_config.sql
 --
 -- 新增运营可管理的「模型 × 供应商」OpenRouter 路由配置 llm_provider_routing_config，
 -- 接入运营台的草稿/发布/回滚流程。
+--
+-- 编号：本文件原名 105，与 origin/dev 的 105_invite_program.sql / 105_voice_billing_atomic.sql
+-- 撞号后改为 110。test 上 105_invite 已执行，白名单已含三个 miniapp_invite_* key。
 --
 -- 背景：同一个 OpenRouter 模型背后有多个底层供应商，质量参差不齐（截断、内容过滤等）。
 -- 运营按模型维度维护两类策略，后端生成请求时翻译成 OpenRouter provider routing 参数：
@@ -14,8 +17,9 @@
 -- seed 为空 rules，等于本次迁移不改变任何路由行为；首批规则由运营在平台上发布，
 -- 顺便走通整条草稿 -> 发布链路。
 --
--- 白名单四处同步遵循 095 的教训：不照抄历史名单，校验总入口只显式处理新 key，
--- 其余委托给当前入口（095 版本，104 已还原）的快照 validate_managed_config_value_before_provider_routing。
+-- 白名单四处同步遵循 095 的教训：并入 105_invite 的 17 个 key，只追加本文件新 key；
+-- 校验总入口只显式处理新 key，其余委托给 105_invite 入口快照
+-- validate_managed_config_value_before_provider_routing。
 
 BEGIN;
 
@@ -30,6 +34,12 @@ BEGIN
   END IF;
   IF to_regprocedure('admin.validate_payment_prompt_dialog_config(jsonb)') IS NULL THEN
     RAISE EXCEPTION '缺少 admin.validate_payment_prompt_dialog_config，请先执行 092';
+  END IF;
+  IF to_regprocedure('admin.validate_invite_reward_rules(jsonb)') IS NULL THEN
+    RAISE EXCEPTION '缺少 admin.validate_invite_reward_rules，请先执行 105_invite_program.sql';
+  END IF;
+  IF to_regprocedure('admin.validate_invite_center_config(jsonb)') IS NULL THEN
+    RAISE EXCEPTION '缺少 admin.validate_invite_center_config，请先执行 105_invite_program.sql';
   END IF;
 END;
 $$;
@@ -67,6 +77,52 @@ END;
 $$;
 
 -- ─── 2. managed-config 白名单（四处之三：两张表 CHECK + 可见性开关）────────
+-- 基线是 105_invite 的 17 个 key。重写 CHECK 前先列出白名单外的草稿/发布行；
+-- 有则失败并报出 key 名，绝不删除邀请等仍在用的草稿。
+DO $$
+DECLARE
+  v_allowed CONSTANT TEXT[] := ARRAY[
+    'miniapp_new_user_signup_bonus_credits',
+    'miniapp_daily_checkin_bonus_credits',
+    'miniapp_character_free_chat_quota_limit',
+    'miniapp_payment_plans',
+    'miniapp_recharge_page_config',
+    'miniapp_payment_prompt_dialog_config',
+    'miniapp_free_quota_exhausted_dialog_config',
+    'llm_model_catalog',
+    'llm_pricing_config',
+    'llm_provider_routing_config',
+    'system_fallback_character_id',
+    'system_instructions',
+    'pref_word_count_tiers',
+    'lobby_ranking_params',
+    'lobby_pinned_characters',
+    'miniapp_invite_reward_rules',
+    'miniapp_invite_center_config',
+    'miniapp_invite_entry_enabled'
+  ];
+  v_bad TEXT;
+BEGIN
+  SELECT string_agg(config_key, ', ' ORDER BY config_key)
+  INTO v_bad
+  FROM (
+    SELECT DISTINCT config_key
+    FROM (
+      SELECT config_key FROM admin.config_drafts
+      UNION
+      SELECT config_key FROM admin.config_releases
+    ) keys
+    WHERE NOT (config_key = ANY (v_allowed))
+  ) leftover;
+
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      '无法收紧 config_key CHECK：admin.config_drafts/releases 仍有不在 110 白名单的 key: %',
+      v_bad;
+  END IF;
+END;
+$$;
+
 ALTER TABLE admin.config_drafts
   DROP CONSTRAINT IF EXISTS config_drafts_config_key_check;
 ALTER TABLE admin.config_drafts
@@ -85,7 +141,10 @@ ALTER TABLE admin.config_drafts
     'system_instructions',
     'pref_word_count_tiers',
     'lobby_ranking_params',
-    'lobby_pinned_characters'
+    'lobby_pinned_characters',
+    'miniapp_invite_reward_rules',
+    'miniapp_invite_center_config',
+    'miniapp_invite_entry_enabled'
   ));
 
 ALTER TABLE admin.config_releases
@@ -106,7 +165,10 @@ ALTER TABLE admin.config_releases
     'system_instructions',
     'pref_word_count_tiers',
     'lobby_ranking_params',
-    'lobby_pinned_characters'
+    'lobby_pinned_characters',
+    'miniapp_invite_reward_rules',
+    'miniapp_invite_center_config',
+    'miniapp_invite_entry_enabled'
   ));
 
 CREATE OR REPLACE FUNCTION admin.is_managed_config_key(p_config_key TEXT)
@@ -131,7 +193,10 @@ AS $$
     'system_instructions',
     'pref_word_count_tiers',
     'lobby_ranking_params',
-    'lobby_pinned_characters'
+    'lobby_pinned_characters',
+    'miniapp_invite_reward_rules',
+    'miniapp_invite_center_config',
+    'miniapp_invite_entry_enabled'
   );
 $$;
 
@@ -267,8 +332,8 @@ END;
 $$;
 
 -- ─── 4. 校验总入口（四处之四）───────────────────────────────────────────────
--- 先把当前入口（095 版本，104 已还原到这个状态）快照成 before_provider_routing，
--- 新入口只显式处理新 key，其余全部委托下沉——照抄历史名单会重演 095 修过的事故。
+-- 先把当前入口（105_invite 版本）快照成 before_provider_routing，
+-- 新入口只显式处理新 key，其余全部委托下沉。
 CREATE OR REPLACE FUNCTION admin.validate_managed_config_value_before_provider_routing(
   p_config_key TEXT,
   p_value JSONB,
@@ -294,6 +359,36 @@ BEGIN
         USING ERRCODE = '22023';
     END IF;
     PERFORM admin.validate_payment_prompt_dialog_config(p_value);
+    RETURN;
+  END IF;
+
+  IF p_config_key = 'miniapp_invite_reward_rules' THEN
+    IF p_text_value IS NOT NULL THEN
+      RAISE EXCEPTION 'miniapp_invite_reward_rules must not use text_value'
+        USING ERRCODE = '22023';
+    END IF;
+    PERFORM admin.validate_invite_reward_rules(p_value);
+    RETURN;
+  END IF;
+
+  IF p_config_key = 'miniapp_invite_center_config' THEN
+    IF p_text_value IS NOT NULL THEN
+      RAISE EXCEPTION 'miniapp_invite_center_config must not use text_value'
+        USING ERRCODE = '22023';
+    END IF;
+    PERFORM admin.validate_invite_center_config(p_value);
+    RETURN;
+  END IF;
+
+  IF p_config_key = 'miniapp_invite_entry_enabled' THEN
+    IF p_text_value IS NOT NULL THEN
+      RAISE EXCEPTION 'miniapp_invite_entry_enabled must not use text_value'
+        USING ERRCODE = '22023';
+    END IF;
+    IF jsonb_typeof(p_value) IS DISTINCT FROM 'boolean' THEN
+      RAISE EXCEPTION 'miniapp_invite_entry_enabled must be a boolean'
+        USING ERRCODE = '22023';
+    END IF;
     RETURN;
   END IF;
 
@@ -357,7 +452,10 @@ BEGIN
   END IF;
   IF NOT admin.is_managed_config_key('lobby_pinned_characters')
      OR NOT admin.is_managed_config_key('miniapp_payment_prompt_dialog_config')
-     OR NOT admin.is_managed_config_key('llm_model_catalog') THEN
+     OR NOT admin.is_managed_config_key('llm_model_catalog')
+     OR NOT admin.is_managed_config_key('miniapp_invite_reward_rules')
+     OR NOT admin.is_managed_config_key('miniapp_invite_center_config')
+     OR NOT admin.is_managed_config_key('miniapp_invite_entry_enabled') THEN
     RAISE EXCEPTION '自检失败：误把既有 key 从白名单抹掉';
   END IF;
 
@@ -369,7 +467,10 @@ BEGIN
   LOOP
     IF position('llm_provider_routing_config' IN v_def) = 0
        OR position('lobby_pinned_characters' IN v_def) = 0
-       OR position('miniapp_payment_prompt_dialog_config' IN v_def) = 0 THEN
+       OR position('miniapp_payment_prompt_dialog_config' IN v_def) = 0
+       OR position('miniapp_invite_reward_rules' IN v_def) = 0
+       OR position('miniapp_invite_center_config' IN v_def) = 0
+       OR position('miniapp_invite_entry_enabled' IN v_def) = 0 THEN
       RAISE EXCEPTION '自检失败：CHECK 约束缺少 key -> %', v_def;
     END IF;
   END LOOP;
@@ -422,6 +523,19 @@ BEGIN
     RAISE EXCEPTION '自检失败：校验链下沉断了，system_instructions 放过了空值';
   END IF;
 
+  v_raised := FALSE;
+  BEGIN
+    PERFORM admin.validate_managed_config_value('miniapp_invite_center_config', '{}'::jsonb, 'probe');
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := TRUE;
+    IF position('must not use text_value' IN SQLERRM) = 0 THEN
+      RAISE EXCEPTION '自检失败：invite 分支没接到，实际报错为 %', SQLERRM;
+    END IF;
+  END;
+  IF NOT v_raised THEN
+    RAISE EXCEPTION '自检失败：miniapp_invite_center_config 的校验分支静默放过了非法输入';
+  END IF;
+
   -- 7) seed 行已存在
   runtime_tbl := COALESCE(
     to_regclass('app_core.runtime_config'),
@@ -441,7 +555,7 @@ COMMENT ON FUNCTION admin.validate_llm_provider_routing_config(JSONB) IS
   '校验「模型 × 供应商」路由配置：rules 数组按 openrouter_model_id 去重，每条至少一个'
   '屏蔽或优先供应商，供应商 slug 列表内去重且黑白名单不得交叉。';
 COMMENT ON FUNCTION admin.validate_managed_config_value(TEXT, JSONB, TEXT) IS
-  'Managed config validation entry point. Handles llm_provider_routing_config, then defers to the pre-105 snapshot.';
+  'Managed config validation entry point. Handles llm_provider_routing_config, then defers to the 105_invite snapshot.';
 
 COMMIT;
 
@@ -457,5 +571,5 @@ NOTIFY pgrst, 'reload schema';
 --   -- 校验总入口还原为 095 版本（即本文件 before_provider_routing 快照的函数体），
 --   -- 再删掉 validate_llm_provider_routing_config / validate_provider_slug_list /
 --   -- validate_managed_config_value_before_provider_routing，
---   -- 最后按 104 的名单（去掉 llm_provider_routing_config）重建两张表 CHECK 与 is_managed_config_key。
+--   -- 最后按 105_invite 的名单（去掉 llm_provider_routing_config）重建两张表 CHECK 与 is_managed_config_key。
 --   COMMIT;
