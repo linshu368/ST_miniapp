@@ -77,6 +77,18 @@ jobs:
       - name: Test shared package
         run: pnpm --filter @miniapp/shared test
 
+      # 无凭证单元测试。backend 的 `pnpm test` 排除 *.integration.test.ts；
+      # 真库集成要显式跑 `pnpm --filter @miniapp/backend test:integration`，
+      # 本 job 的占位 SUPABASE_* 不能当成真库通过。
+      - name: Test backend package
+        run: pnpm --filter @miniapp/backend test
+
+      - name: Test frontend package
+        run: pnpm --filter @miniapp/frontend test
+
+      - name: Test admin package
+        run: pnpm --filter @miniapp/admin test
+
       - name: Build frontend
         run: pnpm --filter @miniapp/frontend build
 

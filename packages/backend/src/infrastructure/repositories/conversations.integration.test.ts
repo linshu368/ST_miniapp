@@ -1,5 +1,6 @@
 // chat_sessions + chat_history 会话模型的真库集成测试。
 // 运行前提：072 已在 DATABASE_ENV=test 指向的库执行；无凭证或不可达时自动跳过。
+// 不进默认 `pnpm test`（CI 门禁），需要时跑 `pnpm test:integration`。
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { config } from '../../platform/config.js';

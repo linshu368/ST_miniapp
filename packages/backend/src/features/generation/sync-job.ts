@@ -33,8 +33,12 @@ const BATCH_LIMIT = 50;
 let timerId: NodeJS.Timeout | null = null;
 let startupTimerId: NodeJS.Timeout | null = null;
 let isRunning = false;
-const wallets = new MiniappWalletRepository();
+let walletRepository: MiniappWalletRepository | null = null;
 let historyRepository: ConversationHistoryRepository | null = null;
+
+function wallets(): MiniappWalletRepository {
+  return (walletRepository ??= new MiniappWalletRepository());
+}
 
 function history(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
@@ -205,7 +209,7 @@ export async function reconcileCharge(input: {
   if (typeof chargeId !== 'string' || chargeId.length === 0) return;
 
   const usageCost = genData.usage;
-  const originalCharge = await wallets.findLlmUsageCharge(chargeId);
+  const originalCharge = await wallets().findLlmUsageCharge(chargeId);
   if (!originalCharge) return;
 
   if (
@@ -257,7 +261,7 @@ export async function reconcileCharge(input: {
       Number(originalCharge.exchange_rate),
       Number(originalCharge.model_markup)
     );
-    const reconciled = await wallets.reconcileLlmUsage({
+    const reconciled = await wallets().reconcileLlmUsage({
       chargeId,
       usageCostUsd: usageCost,
       calculatedAmount: intendedDeduction,

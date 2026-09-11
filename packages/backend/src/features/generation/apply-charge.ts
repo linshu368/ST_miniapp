@@ -21,8 +21,16 @@ import { resolveUsageBillingGate } from '../billing/usage-pricing.js';
 
 export type ReplyOutcome = 'complete' | 'incomplete' | 'empty';
 
-const wallets = new MiniappWalletRepository();
-const freeQuotas = new MiniappCharacterFreeQuotaRepository();
+let walletRepository: MiniappWalletRepository | null = null;
+let freeQuotaRepository: MiniappCharacterFreeQuotaRepository | null = null;
+
+function wallets(): MiniappWalletRepository {
+  return (walletRepository ??= new MiniappWalletRepository());
+}
+
+function freeQuotas(): MiniappCharacterFreeQuotaRepository {
+  return (freeQuotaRepository ??= new MiniappCharacterFreeQuotaRepository());
+}
 
 /**
  * 回复体验口径。complete 要求生成终态 success 且 finish_reason 是自然收尾
@@ -115,7 +123,7 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
   const actualModel = observed ?? command.requestedModel;
   const routedToDifferentModel = actualModel !== command.requestedModel;
 
-  const result = await wallets.chargeLlmUsage({
+  const result = await wallets().chargeLlmUsage({
     chargeId: command.chargeId,
     generationId: command.generationId,
     userId: command.userId,
@@ -146,7 +154,7 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
   // 免费额度两阶段收口：只有自然收尾的完整回复才消费预留，其余释放。
   // finish_reason 未到时保持预留，等回捞拿到终态后再走到这里。
   if (command.finishReason !== null) {
-    await freeQuotas.finalizePending(
+    await freeQuotas().finalizePending(
       command.chargeId,
       replyOutcome === 'complete' && command.finishReason === 'stop'
     );
