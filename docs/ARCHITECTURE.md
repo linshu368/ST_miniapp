@@ -433,7 +433,7 @@ packages/backend/src/
 | `legacy-model-tiers-contract` | 旧模型档位契约与 `llm_model_tiers` 回退（模型目录只有 catalog 一种形状）                                   |
 | `wallet-bonus-grant`          | `grant_bonus_credits` 之外出现 `bonus_credits = bonus_credits + …`（发奖 RPC 必须调唯一入口）              |
 
-**扫描范围只含活代码**（`packages/*/src`、`scripts/`、`botlink/`，以及 `packages/shared/migrations/` 下 **日期命名的新迁移**）。三位编号的历史迁移 SQL、`docs/`、`ops/` 快照按定义就是留档，刻意不扫——改已执行过的迁移比留着它更危险；新迁移在 PR 阶段尚未执行，正是拦「新迁移又开一条旧链路」的时机。
+**扫描范围只含活代码**（`packages/*/src`、`scripts/`，以及 `packages/shared/migrations/` 下 **日期命名的新迁移**）。三位编号的历史迁移 SQL、`docs/`、`ops/` 快照按定义就是留档，刻意不扫——改已执行过的迁移比留着它更危险；新迁移在 PR 阶段尚未执行，正是拦「新迁移又开一条旧链路」的时机。
 
 每条规则的 `allow` 清单就是「这条主路径本人 + 测试夹具」。**往 `allow` 里加文件等于宣布又多了一个出口**，必须在 PR 描述里写清业务上为什么必须独立。
 
