@@ -1,7 +1,7 @@
 # ST_miniAPP 架构说明
 
 > 本文档描述项目当前架构（2026-09-11 更新，基于 2026-08-12 自研引擎版重写）。
-> 自研 prompt 引擎替换 SillyTavern 的动机与决策见 `docs/ST_remove.md`；数据库八域划分的归属与割接记录见 `docs/schema归属地图.md` 与 `docs/schema划分-批次A进度交接.md`。
+> 八域划分与跨域豁免以本文 §5.1 和铁律 8 为准。ST 替换动机、归属地图原稿、099 割接剧本已移出工作区，取回方式见 §12。
 >
 > **状态口径**（每条能力都带标注，不标注即为 ✅）：
 >
@@ -20,16 +20,20 @@
 
 ## 1. 架构铁律（违反即拦截）
 
-1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型（backend CLAUDE.md 硬规则）。
+1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。
 2. **每条路由注册上方必须有 `@frontend-ready: true|false — 原因`**，半成品要写出带业务含义的原因。
-3. **应用包互不 import**：`frontend` / `backend` / `cs-platform` / `admin` 之间没有 import 关系，跨进程一律走 HTTP。
+3. **应用包互不 import**：`frontend` / `backend` / `cs-platform` / `admin` 之间没有 import 关系，跨进程一律走 HTTP。根目录 `.eslintrc.json` 拦包名与相对路径；已退场包由 `pnpm lint:legacy` 拦截。
 4. **DB 类型不进前端**：前端与运营台只消费 `shared/api/*` 契约，不接触数据库行类型。
-5. **前端不在组件里 fetch**：服务端数据统一走 `frontend/src/lib/api/` 的 React Query hooks；跨组件状态用 Zustand，局部状态用 `useState`（frontend CLAUDE.md）。
+5. **前端不在组件里 fetch**：服务端数据统一走 `frontend/src/lib/api/` 的 React Query hooks；跨组件状态用 Zustand，局部状态用 `useState`。
 6. **生成与计费只有一个出口**：任何要调聊天 LLM 的路径都必须走 `backend/src/features/generation/`（**含实扣**：`settle.ts` 与 `sync-job.ts` 两条结算路径也都在这个模块里）。禁止在别处另起一套"转发 + 扣费 + 落库"，否则计费口径必然漂移。唯一的刻意例外是语音写稿（`features/voice/`）：不同供应商、非流式、抽取任务、按次计费，理由写在 `voice-draft.ts` 与 `voice/billing.ts` 头注释里。
    同类纪律还有三条，一并由 CI 的 legacy guard 拦（见 §7.5）：`experience.chat_history` 只由 `ConversationHistoryRepository` 读写；支付到账只由 `PaymentSettlement.settlePaidOrder` 入账；OpenRouter 用量统计只由 `generation/openrouter-metadata.ts` 读取。
    **星尘发放（注册 / 签到 / 许愿 / 运营赠送 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**，且六个发奖 RPC 的「钱包 upsert + `bonus_credits` 加值 + `wallet_ledger` 记账」都收口在唯一入口 **`billing.grant_bonus_credits`**（`20260911_billing_grant_bonus_credits.sql`）；业务判定（配置、去重、上限、通知、审计）留在各 RPC。应用层只调 RPC、不做手动余额加减。CI 由 legacy guard `wallet-bonus-grant` 拦新迁移里再出现 `bonus_credits = bonus_credits + …`（见 §7.5）。充值入账（动 `main_credits` 与支付字段）是另一条已收口的路径，不走这个入口。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
-8. **数据库按八个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表（存量豁免清单见 `docs/schema归属地图.md` §四）。
+8. **数据库按八个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
+   - `users.total_round` / `miniapp_user_settings.total_round` 由 experience 链路回写；
+   - `miniapp_features.character_ranking_scores` 由 lobby 定时任务直接聚合 `experience.chat_history`；
+   - `experience.chat_history.llm_charge_id` 软引用 `billing.llm_usage_charges`；
+   - `notifications.created_by`、`support_messages.agent_user_id` FK → `admin.admin_users`。
 9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发；执行状态记录在 `app_core.schema_migrations` 账本（workflow 自动查重 + 记账）。2026-09-10 起新迁移命名 `YYYYMMDD_描述.sql`（CI 拦旧式编号）；历史存量存在重号（见 §7.4），**不要按序号推断内容**。改库只有仓库迁移一条路，禁止 Management API / Studio 直改。
 10. **TypeScript 严格模式，禁止 `any`**。
 
@@ -205,7 +209,7 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 [system: 角色卡 system_prompt] + 历史（含虚拟 turn 0 开场白） + [user: 平台规则 + 本轮输入]
 ```
 
-- **上下文长度管理已落地（077）**：双水位线泄洪，窗口在 [A, B] 轮之间增长，超过高水位 B（`max_context_turns`，默认 75）一次性收缩到低水位 A（`retain_context_turns`，默认 50）。窗口起点持久化在 `chat_sessions.context_window_start_turn`，由开轮 RPC 在会话行锁内更新（`apply_context_window_flood`）；**不删** `chat_history`，只决定本轮 prompt 带哪些轮。引擎不二次裁剪，`truncatedTurns` 回填真实观测值。双水位（而非滑动窗口）是为了给 Anthropic prompt cache 制造稳定前缀，设计见 `docs/context-window-and-prompt-cache.md`。
+- **上下文长度管理已落地（077）**：双水位线泄洪，窗口在 [A, B] 轮之间增长，超过高水位 B（`max_context_turns`，默认 75）一次性收缩到低水位 A（`retain_context_turns`，默认 50）。窗口起点持久化在 `chat_sessions.context_window_start_turn`，由开轮 RPC 在会话行锁内更新（`apply_context_window_flood`）；**不删** `chat_history`，只决定本轮 prompt 带哪些轮。引擎不二次裁剪，`truncatedTurns` 回填真实观测值。双水位（而非滑动窗口）是为了给 Anthropic prompt cache 制造稳定前缀；设计原稿：`git show b4491cd^:docs/context-window-and-prompt-cache.md`。
 - **不消费预设**：ST 酒馆格式的 `platform_presets` 已随 088 整体删除（数据留档在库外）。自建预设格式是待办（M4，见 §10）。
 - **不注入 `first_mes`**：开场白由编排层放进 history，引擎再注入会每轮重复一条。
 - **不做酒馆语义适配**：宏、世界书、正则、卡内嵌资源一律不支持，表现质量由 system prompt 与组装逻辑承担。
@@ -383,15 +387,15 @@ packages/backend/src/
 ├── platform/               # config, runtime-config, model-tiers, openrouter-models
 ├── lib/                    # supabase(getDomainDb), user, lobby-ranking-refresh-job,
 │                           # chat-voice-storage, logger, sentry, notifications…
-└── scripts/                # 回归与运维脚本（含支付对账/过期/回调日报）
+└── scripts/                # 运维脚本（支付对账/过期/回调日报）
 ```
 
 **`lib/` 的边界**：只放跨 feature 的技术设施（DB 客户端、日志、存储、用户身份）。**带业务决策的代码一律进 `features/`**——尤其是花钱、扣费、落业务表的。历史上 LLM 实扣曾经藏在 `lib/chat-history-logger.ts` 里，照着链路读下来根本找不到钱在哪扣，现已收回 `features/generation/settle.ts`。
 
 ### 7.3 测试与回归
 
-- 单元 / 集成：Vitest。`conversations.integration.test.ts` 打真库验证会话、轮次、重生成、并发、软删除。
-- 端到端回归：`pnpm --filter @miniapp/backend mvp:regression` 在随机端口起真实 Fastify app、假上游，覆盖建会话 / 发消息 / 计费对拍 / 免费额度 / 402 / 重生成 / 客户端断开 / 冲突守卫等场景，断言落库与扣费。schema 割接（C2/C3）以它全绿作为交付门之一。
+- 单元测试：Vitest，无凭证。CI `quality-gate` 跑 shared / backend / frontend / admin 的 `pnpm test`。backend 默认排除 `*.integration.test.ts`。
+- 真库集成：`pnpm --filter @miniapp/backend test:integration`（`conversations.integration.test.ts`：会话、轮次、重生成、并发、软删除）。缺凭证时 skip，不把 skip 当成真库通过。
 - 本地验不到的部分：真实上游的流式时序、中间层对 SSE 的缓冲（已按惯例下发 `X-Accel-Buffering: no`），需真机验。
 
 ### 7.4 迁移
@@ -406,7 +410,7 @@ packages/backend/src/
   - 101 / 102 缺号：语音计费迁移已随 PR #298 revert 从仓库删除，test 库用 104 回滚（生产从未执行，**不要在生产跑 104**）；
   - 099 有配套 `_rollback` 文件，是正向 + 回滚，不是撞号。
 - 执行方式：GitHub Actions → `Database Migration` → 选环境 → 填文件路径；生产需在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。workflow 会校验连接串 project ref（test = `zoqelpfhurwehlvypryl`，production = `wbtsfzozlmurljvglhpn`）。**改库只有这一条路**：禁止 Supabase Management API / Studio 直改表结构。
-- **099 不是普通迁移**：执行前必读 `docs/schema划分-一阶段执行计划.md`（停流量、前置 097/098、事务外三步收尾）。test 与生产均已执行完毕。
+- **099 不是普通迁移**：test 与生产均已执行完毕。当时的停流量 / 前置 097/098 / 事务外收尾剧本是历史文档：`git show b4491cd^:docs/schema划分-一阶段执行计划.md`。
 
 ### 7.5 legacy guard（禁止旧链路的新引用）
 
@@ -453,7 +457,7 @@ packages/backend/src/
 
 **Railway IaC**：`.railway/railway.ts` 声明 `development`（跟 `dev` 分支）与 `production`（跟 `main` 分支）两套环境 × 上述三个服务；改动需 `railway config plan/apply`，且渲染 production 必须显式 `RAILWAY_CONFIG_ENV=production`。**`main` 分支自动部署生产**（三个服务的 deployment trigger 均为 `branch=main`）——合并进 `main` 即上线，数据库迁移需在合并前按 §7.4 手动执行。对 `dev` 的 PR 会由 `railway-pr-env.yml` 拉起 `pr-{N}` 临时环境（变量继承 development，指向 test 库）。
 
-**支付入账的四条路径**（唯一出口 `features/payment/usecases/PaymentSettlement.settlePaidOrder`，幂等靠 `credits_added`，先到者写 `payment_orders.settled_by`）：`webhook`（网关异步回调）→ `return`（同步回跳）→ `query`（订单页轮询时对账）→ `cron`（上述两个 Railway 任务兜底）。四路兜底的由来见 `docs/payment-missing-credits-remediation.md`（生产曾因 cron 未部署漏账）。
+**支付入账的四条路径**（唯一出口 `features/payment/usecases/PaymentSettlement.settlePaidOrder`，幂等靠 `credits_added`，先到者写 `payment_orders.settled_by`）：`webhook`（网关异步回调）→ `return`（同步回跳）→ `query`（订单页轮询时对账）→ `cron`（上述两个 Railway 任务兜底）。四路兜底的由来见历史文档 `git show 7541a54^:docs/payment-missing-credits-remediation.md`（生产曾因 cron 未部署漏账）。
 
 **CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / **legacy guard** / 测试 / Docker 构建，矩阵仅 backend）、`build-and-push.yml`（GHCR 镜像：backend 跟 `dev` 推送；frontend 仅 `staging-*` tag）、`db-migrate.yml`（手动迁移）、`pr-review.yml`、`railway-pr-env.yml`（PR 临时环境）。生产不走 GHCR，Railway 直接从 GitHub `main` 构建。
 
@@ -488,26 +492,26 @@ packages/backend/src/
 | 大厅推荐排序 v3 + 运营置顶 + 排序参数运营化                             | 074 / 088 / 093、`features/lobby/`                                                     |
 | 支付四路入账 + 快速对账 + `settled_by` 溯源                             | `features/payment/` + 100/103 + Railway 双任务服务                                     |
 | Schema 划分一阶段（八域物理布局，test + 生产）                          | 097~099、`getDomainDb`、Prisma 多 schema                                               |
-| 端到端回归 + 数据库集成测试                                             | `scripts/mvp-regression/`、`*.integration.test.ts`                                     |
+| 数据库集成测试                                                          | `*.integration.test.ts`                                                                |
 | 大厅 / 收藏 / 钱包 / 签到 / 许愿 / 消息中心 / 站内客服                  | `routes/*` + `frontend/(main)/*`                                                       |
 | 运营后台（14 个 managed 配置 / 角色卡 / 公告 / 发布历史 / 回访赠送）    | `packages/admin` + backend admin 通路                                                  |
 | CS 回访工作台（画像簇 / 特殊标记 / 等待状态 / 群发 / 导出）             | `packages/cs-platform` + 094                                                           |
 
 ### 10.2 待办
 
-| 项                             | 状态 | 说明                                                                                                                                                   |
-| ------------------------------ | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Schema 划分批次 D 收口         | ⏳   | 观察期后删空壳 `miniapp` schema；补做需登录态的 7 项应用层验证（交接文档 §一）                                                                         |
-| chat_history 列级瘦身          | ⏳   | `history` 列（TOAST ~10 GB）处置方案另立项；A 档 `llm_usage_cache`、B 档观测列待删（`docs/schema划分专项.md` §2.5）                                    |
-| 语音按次计费开启               | ⏳   | 链路已随 105 落地，`voice_billing_enabled` 默认关；开启是运营决定，且该 key 尚未纳入 admin managed key，目前只能走迁移改                               |
-| `llm_model_tiers` 回退分支删除 | ⏳   | 040 已把旧 key 提升为 `llm_model_catalog`，test 库该行停在 v1（2026-07-07）。`model-tiers.ts` 仍保留读旧 key 的回退分支，需确认生产库后删除（R1-B）    |
-| M4 自建预设格式                | ⏳   | 明确不沿用 ST 格式；旧预设数据已删（088），从零设计                                                                                                    |
-| 角色卡人设字段进 prompt        | ⏳   | v1 只用 `system_prompt`，待新卡写法定稿后决定                                                                                                          |
-| 支付 remediation 遗留          | ⏳   | 补账护栏与审计项见 `docs/payment-missing-credits-remediation.md`                                                                                       |
-| Railway 控制台遗留清理         | ⏳   | `nginx-pro` / `st-bundle-pro` / `st-data-pro` / `ST_*` 变量 / `pr-276` 环境，人工确认删除                                                              |
-| `users.st_handle` 等遗留列     | ⏳   | 代码侧已停止写入、`st-bridge` 已删；剩迁移 111（DROP NOT NULL，**须先于代码上线**）与 112（DROP COLUMN，观察期后）。步骤见 `docs/st_handle退场方案.md` |
-| `Dockerfile.frontend` 取包层   | ⏳   | 与 backend 同款的构建卡死隐患，仅 `staging-*` 构建受影响                                                                                               |
-| `api-contract` 独立包          | ❌   | 不建，职责留在 `shared/api`                                                                                                                            |
+| 项                             | 状态 | 说明                                                                                                                                                                     |
+| ------------------------------ | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Schema 划分批次 D 收口         | ⏳   | 观察期后删空壳 `miniapp` schema；补做需登录态的 7 项应用层验证（交接文档 §一）                                                                                           |
+| chat_history 列级瘦身          | ⏳   | `history` 列（TOAST ~10 GB）处置方案另立项；A 档 `llm_usage_cache`、B 档观测列待删（历史盘点：`git show b4491cd^:docs/schema划分专项.md` §2.5）                          |
+| 语音按次计费开启               | ⏳   | 链路已随 105 落地，`voice_billing_enabled` 默认关；开启是运营决定，且该 key 尚未纳入 admin managed key，目前只能走迁移改                                                 |
+| `llm_model_tiers` 回退分支删除 | ⏳   | 040 已把旧 key 提升为 `llm_model_catalog`，test 库该行停在 v1（2026-07-07）。`model-tiers.ts` 仍保留读旧 key 的回退分支，需确认生产库后删除（R1-B）                      |
+| M4 自建预设格式                | ⏳   | 明确不沿用 ST 格式；旧预设数据已删（088），从零设计                                                                                                                      |
+| 角色卡人设字段进 prompt        | ⏳   | v1 只用 `system_prompt`，待新卡写法定稿后决定                                                                                                                            |
+| 支付 remediation 遗留          | ⏳   | 补账护栏与审计项见历史文档 `git show 7541a54^:docs/payment-missing-credits-remediation.md`                                                                               |
+| Railway 控制台遗留清理         | ⏳   | `nginx-pro` / `st-bundle-pro` / `st-data-pro` / `ST_*` 变量 / `pr-276` 环境，人工确认删除                                                                                |
+| `users.st_handle` 等遗留列     | ⏳   | 代码侧已停止写入、`st-bridge` 已删；剩迁移 111（DROP NOT NULL，**须先于代码上线**）与 112（DROP COLUMN，观察期后）。步骤见 `git show 7541a54^:docs/st_handle退场方案.md` |
+| `Dockerfile.frontend` 取包层   | ⏳   | 与 backend 同款的构建卡死隐患，仅 `staging-*` 构建受影响                                                                                                                 |
+| `api-contract` 独立包          | ❌   | 不建，职责留在 `shared/api`                                                                                                                                              |
 
 ---
 
@@ -543,20 +547,26 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（backend 公网域名）。权�
 
 ## 12. 相关文档
 
-> **2026-09-10 起 `docs/` 只保留本文件与 `重构实施方案.md`**（专项文档分两批清理：`b4491cd` 删了 ST_remove / context-window / schema划分三份计划；`7541a54` 删了其余 14 份）。正文里仍按原名引用的下列文档已不在工作区，需要时从 git 历史取：`git show b4491cd^:docs/<文件名>` 或 `git show 7541a54^:docs/<文件名>`。本表保留条目是为了让引用可追溯，不代表文件仍存在。
+**现行入口（当前 checkout 即可读）：**
 
-| 文档                                          | 内容                                                                        |
-| --------------------------------------------- | --------------------------------------------------------------------------- |
-| `docs/重构实施方案.md`                        | 2026-09 降复杂度重构（P1 迁移账本 / P2 计费收口 / P3 聊天页拆分）进度与纠正 |
-| `docs/ST_remove.md`                           | ST 替换总方案（代码侧清理已于 2026-08-19 收口）                             |
-| `docs/schema归属地图.md`                      | 八域归属与跨域访问规则（表和函数归属的权威来源）                            |
-| `docs/schema划分专项.md`                      | miniapp 表盘点与 `chat_history` 字段级审计                                  |
-| `docs/schema划分-一阶段执行计划.md`           | 八域物理划分的批次、验证与回滚纪律                                          |
-| `docs/schema划分-批次A进度交接.md`            | **割接权威进度**：A/B/C0~C3 执行记录与遗留项                                |
-| `docs/context-window-and-prompt-cache.md`     | 双水位线泄洪与 prompt cache 设计（已落地）                                  |
-| `docs/payment-zqpay-v2-integration.md`        | 子千易 V2 支付接入                                                          |
-| `docs/payment-missing-credits-remediation.md` | 星尘不到账复盘：四路入账兜底的由来与待办                                    |
-| `docs/fix-postgrest-schema-exposure.md`       | PostgREST schema 暴露的正确改法                                             |
-| `docs/log_system.md`                          | 日志分层与事件命名                                                          |
-| `packages/backend/CLAUDE.md`                  | 后端硬规则                                                                  |
-| `packages/frontend/CLAUDE.md`                 | 前端硬规则                                                                  |
+| 文档                                   | 内容                                           |
+| -------------------------------------- | ---------------------------------------------- |
+| 本文件                                 | 架构铁律、包边界、八域、迁移与验证             |
+| `docs/重构实施方案.md`                 | 2026-09 降复杂度重构进度（不是第二套架构权威） |
+| `packages/shared/migrations/README.md` | 迁移执行通道、命名、账本（操作备忘）           |
+
+各包 `CLAUDE.md` 已删除，后端/前端硬规则以本文铁律为准；后续模块上下文放到 spec，不要再在各包下恢复一份。
+
+> **历史文档不在工作区。** 专项文档分两批清过：`b4491cd`（ST_remove / context-window / schema 划分计划）、`7541a54`（含 schema 归属地图等其余 14 份）。取回：`git show b4491cd^:docs/<文件名>` 或 `git show 7541a54^:docs/<文件名>`。下列条目只供追溯，**不是现行权威**。
+
+| 历史文档                                                     | 当时内容                             | 取回                                                            |
+| ------------------------------------------------------------ | ------------------------------------ | --------------------------------------------------------------- |
+| `docs/ST_remove.md`                                          | ST 替换总方案                        | `git show b4491cd^:docs/ST_remove.md`                           |
+| `docs/schema归属地图.md`                                     | 八域归属原稿（豁免已收回本文铁律 8） | `git show 7541a54^:docs/schema归属地图.md`                      |
+| `docs/schema划分专项.md`                                     | miniapp 表盘点                       | `git show b4491cd^:docs/schema划分专项.md`                      |
+| `docs/schema划分-一阶段执行计划.md`                          | 099 批次与回滚纪律                   | `git show b4491cd^:docs/schema划分-一阶段执行计划.md`           |
+| `docs/schema划分-批次A进度交接.md`                           | A/B/C0~C3 执行记录                   | `git show 7541a54^:docs/schema划分-批次A进度交接.md`            |
+| `docs/context-window-and-prompt-cache.md`                    | 双水位线与 prompt cache              | `git show b4491cd^:docs/context-window-and-prompt-cache.md`     |
+| `docs/payment-missing-credits-remediation.md`                | 支付四路入账复盘                     | `git show 7541a54^:docs/payment-missing-credits-remediation.md` |
+| `docs/st_handle退场方案.md`                                  | st_handle 退场步骤                   | `git show 7541a54^:docs/st_handle退场方案.md`                   |
+| `packages/backend/CLAUDE.md` / `packages/frontend/CLAUDE.md` | 已删除的包级 AI 规则                 | git 历史                                                        |

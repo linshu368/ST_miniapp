@@ -6,7 +6,7 @@
  *
  * 业务表按归属域分布在八个物理 schema 里（migration 099），所以访问入口是
  * getDomainDb(域名) —— 每次都要显式说出访问哪个域，没有「默认域」这种东西。
- * 归属权威见 docs/schema归属地图.md。
+ * 归属与跨域豁免见 docs/ARCHITECTURE.md 铁律 8 与 §5.1。
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
