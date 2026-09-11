@@ -504,7 +504,7 @@ packages/backend/src/
 | Schema 划分批次 D 收口         | ⏳   | 观察期后删空壳 `miniapp` schema；补做需登录态的 7 项应用层验证（交接文档 §一）                                                                                           |
 | chat_history 列级瘦身          | ⏳   | `history` 列（TOAST ~10 GB）处置方案另立项；A 档 `llm_usage_cache`、B 档观测列待删（历史盘点：`git show b4491cd^:docs/schema划分专项.md` §2.5）                          |
 | 语音按次计费开启               | ⏳   | 链路已随 105 落地，`voice_billing_enabled` 默认关；开启是运营决定，且该 key 尚未纳入 admin managed key，目前只能走迁移改                                                 |
-| `llm_model_tiers` 回退分支删除 | ⏳   | 040 已把旧 key 提升为 `llm_model_catalog`，test 库该行停在 v1（2026-07-07）。`model-tiers.ts` 仍保留读旧 key 的回退分支，需确认生产库后删除（R1-B）                      |
+| `llm_model_tiers` 回退分支删除 | ✅   | R1-B 已删除旧 key、旧契约、端点和双缓存；`model-tiers.ts` 只读 `llm_model_catalog`，故障时退到内置 `DEFAULT_CATALOG`，不是旧 tiers 回退                                  |
 | M4 自建预设格式                | ⏳   | 明确不沿用 ST 格式；旧预设数据已删（088），从零设计                                                                                                                      |
 | 角色卡人设字段进 prompt        | ⏳   | v1 只用 `system_prompt`，待新卡写法定稿后决定                                                                                                                            |
 | 支付 remediation 遗留          | ⏳   | 补账护栏与审计项见历史文档 `git show 7541a54^:docs/payment-missing-credits-remediation.md`                                                                               |

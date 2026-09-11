@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"核查 Frontend 数据流、可访问性和验证命令"}
+{"file":".trellis/spec/backend/app/index.md","reason":"核查 Backend 安全、超时、幂等、日志和测试"}
+{"file":".trellis/spec/cs-platform/app/index.md","reason":"核查回访/客服两流隔离、环境与构建"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"核查 DTO 兼容和消费者一致性"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"核查 migration、RLS/grants、锁容量与恢复"}
+{"file":".trellis/tasks/09-09-support-image-bidirectional-planning/research/current-state.md","reason":"按真实当前实现核对验收，不采信需求稿中的未落地声明"}
