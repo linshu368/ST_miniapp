@@ -58,6 +58,45 @@ function resolveReplyOutcome(entry: ChatHistoryEntry, finishReason: string | nul
   return 'incomplete';
 }
 
+async function checkInviteChatRoundsReward(userId: string, log: FastifyBaseLogger): Promise<void> {
+  const { data, error } = await getDomainDb('miniapp_traffic').rpc(
+    'check_invite_chat_rounds_reward',
+    {
+      p_invitee_user_id: userId,
+    }
+  );
+
+  if (error) {
+    log.error(
+      { kind: 'sys', event: 'chathistory.invite_reward.check_failed', err: error, userId },
+      'invite chat-round reward check failed'
+    );
+    return;
+  }
+
+  const row = (
+    data as Array<{
+      status: string;
+      credits: number;
+      total_round: number;
+      threshold_rounds: number;
+    }>
+  )?.[0];
+  if (row?.status === 'granted') {
+    log.info(
+      {
+        kind: 'biz',
+        event: 'chathistory.invite_reward.granted',
+        userId,
+        credits: Number(row.credits),
+        totalRound: Number(row.total_round),
+        thresholdRounds: Number(row.threshold_rounds),
+      },
+      'invite chat-round reward granted'
+    );
+  }
+}
+
 async function fetchGenerationDataWithRetry(
   generationId: string,
   log: FastifyBaseLogger,
@@ -339,6 +378,8 @@ export function saveChatHistory(entry: ChatHistoryEntry, log: FastifyBaseLogger)
               },
               'increment total_round failed'
             );
+          } else {
+            await checkInviteChatRoundsReward(entry.user_id, clog);
           }
         }
       }
