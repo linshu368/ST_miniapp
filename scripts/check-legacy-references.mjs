@@ -75,6 +75,12 @@ const RULES = [
   },
 
   {
+    id: 'legacy-model-tiers-contract',
+    pattern: /\bGetModelTiersData\b|\buseModelTiersQuery\b|\/api\/platform\/models\b/g,
+    message:
+      '旧模型档位契约已退场：模型目录只有 GET /api/v1/models/config（PublicModelCatalog）一种对外形状，前端走 useModelCatalogQuery',
+  },
+  {
     id: 'st-handle',
     pattern: /\bst_handle\b|\bst_initialized_at\b|\bderiveStHandle\b|st-bridge/g,
     message:

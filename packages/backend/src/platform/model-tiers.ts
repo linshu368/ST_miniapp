@@ -1,10 +1,10 @@
 /**
  * backend / platform / model-tiers.ts
  *
- * Published model catalog and legacy model-tier compatibility.
+ * 模型目录（runtime_config.llm_model_catalog）的唯一读取与缓存入口。
  *
- * Reads llm_model_catalog first and falls back to llm_model_tiers.
- * provider 固定为 openrouter（R3 决议）。
+ * 读 llm_model_catalog；缺失或损坏时回退到旧 key llm_model_tiers（040 之前的形状），
+ * 两者都没有时用内置兜底目录。provider 固定为 openrouter（R3 决议）。
  */
 
 import {
@@ -16,31 +16,34 @@ import {
   ModelCatalogModelSchema,
   ModelCatalogSchema,
   LlmPricingConfigSchema,
-  resolveEnabledCatalogModel,
   type LlmPricingRuntimeConfig,
   type ModelCatalog,
   type ModelCatalogTier,
   type ModelCatalogTierKey,
-  type ModelTierConfig as SharedModelTierConfig,
 } from '@miniapp/shared';
 
-// 扩展 SharedModelTierConfig 以包含后端需要的字段
-export interface BackendModelTierConfig extends SharedModelTierConfig {
-  // 后端内部使用的字段可以加在这里
+/** 040 之前 runtime_config.llm_model_tiers 的行形状，只在回退分支里解析。 */
+export interface LegacyModelTier {
+  tier: string;
+  modelName: string;
+  provider: string;
+  label: string;
+  deductionRate: number;
+  isDefault?: boolean;
 }
 
-let cachedTiers: BackendModelTierConfig[] | null = null;
 let cachedCatalog: ModelCatalog | null = null;
 let cachedCatalogVersion = 0;
 let lastFetchTime = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const OPENROUTER_PROVIDER = 'openrouter';
 export const LEGACY_MODEL_TAGLINE = ModelCatalogModelSchema.shape.tagline.parse('经典模型');
 
-const DEFAULT_TIERS: BackendModelTierConfig[] = [
+const DEFAULT_TIERS: LegacyModelTier[] = [
   {
     tier: 'modelA',
     modelName: 'google/gemini-3.1-flash-lite',
-    provider: 'openrouter',
+    provider: OPENROUTER_PROVIDER,
     label: 'gemini模型',
     deductionRate: 0,
     isDefault: true,
@@ -48,7 +51,7 @@ const DEFAULT_TIERS: BackendModelTierConfig[] = [
   {
     tier: 'modelB',
     modelName: 'anthropic/claude-sonnet-4.5',
-    provider: 'openrouter',
+    provider: OPENROUTER_PROVIDER,
     label: 'claude模型',
     deductionRate: 0,
   },
@@ -58,10 +61,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function parseLegacyTiers(value: unknown): BackendModelTierConfig[] | null {
+function parseLegacyTiers(value: unknown): LegacyModelTier[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
 
-  const tiers: BackendModelTierConfig[] = [];
+  const tiers: LegacyModelTier[] = [];
   for (const item of value) {
     if (
       !isRecord(item) ||
@@ -118,22 +121,7 @@ function normalizeCatalog(value: unknown): ModelCatalog | null {
   return ModelCatalogSchema.safeParse(normalized).success ? normalized : null;
 }
 
-function catalogToLegacyTiers(catalog: ModelCatalog): BackendModelTierConfig[] {
-  return catalog.tiers.flatMap((tier) =>
-    tier.models.map((model) => ({
-      // A catalog tier may contain multiple models, so the stable model id is
-      // also the unique legacy switcher key.
-      tier: model.id,
-      modelName: model.openrouter_model_id,
-      provider: OPENROUTER_PROVIDER,
-      label: model.display_name,
-      deductionRate: 0,
-      ...(model.id === catalog.default_model_id ? { isDefault: true } : {}),
-    }))
-  );
-}
-
-export function legacyTiersToCatalog(tiers: BackendModelTierConfig[]): ModelCatalog {
+export function legacyTiersToCatalog(tiers: LegacyModelTier[]): ModelCatalog {
   const usedStableIds = new Set<string>();
   const models = Array.from(new Map(tiers.map((tier) => [tier.modelName, tier])).values()).map(
     (tier, sortOrder) => {
@@ -188,7 +176,6 @@ async function refreshModelConfig(catalogEntry?: RuntimeConfigEntry | null): Pro
     const catalog = normalizeCatalog(entry?.value ?? null);
     if (catalog) {
       cachedCatalog = catalog;
-      cachedTiers = catalogToLegacyTiers(catalog);
       cachedCatalogVersion = entry?.version ?? 0;
       lastFetchTime = now;
       return;
@@ -196,7 +183,6 @@ async function refreshModelConfig(catalogEntry?: RuntimeConfigEntry | null): Pro
 
     const legacyTiers = parseLegacyTiers(await fetchRuntimeConfigValue('llm_model_tiers'));
     if (legacyTiers) {
-      cachedTiers = legacyTiers;
       cachedCatalog = legacyTiersToCatalog(legacyTiers);
       cachedCatalogVersion = 0;
       lastFetchTime = now;
@@ -206,8 +192,7 @@ async function refreshModelConfig(catalogEntry?: RuntimeConfigEntry | null): Pro
     console.error('[model-tiers] Error refreshing model config:', err);
   }
 
-  if (!cachedTiers || !cachedCatalog) {
-    cachedTiers = DEFAULT_TIERS;
+  if (!cachedCatalog) {
     cachedCatalog = legacyTiersToCatalog(DEFAULT_TIERS);
     cachedCatalogVersion = 0;
     lastFetchTime = now;
@@ -217,14 +202,13 @@ async function refreshModelConfig(catalogEntry?: RuntimeConfigEntry | null): Pro
 async function ensureModelConfig(): Promise<void> {
   const catalogEntry = await fetchRuntimeConfigEntry('llm_model_catalog');
   if (
-    cachedTiers &&
     cachedCatalog &&
     catalogEntry &&
     shouldReuseCatalogCache(cachedCatalogVersion, catalogEntry.version)
   ) {
     return;
   }
-  if (cachedTiers && cachedCatalog && !catalogEntry && Date.now() - lastFetchTime < CACHE_TTL_MS) {
+  if (cachedCatalog && !catalogEntry && Date.now() - lastFetchTime < CACHE_TTL_MS) {
     return;
   }
   await refreshModelConfig(catalogEntry);
@@ -232,21 +216,6 @@ async function ensureModelConfig(): Promise<void> {
 
 export function shouldReuseCatalogCache(cachedVersion: number, runtimeVersion: number): boolean {
   return cachedVersion === runtimeVersion;
-}
-
-export function invalidateModelConfigCache(): void {
-  cachedTiers = null;
-  cachedCatalog = null;
-  cachedCatalogVersion = 0;
-  lastFetchTime = 0;
-}
-
-/** Backwards-compatible cache helper name for existing integrations. */
-export const invalidateModelTiersCache = invalidateModelConfigCache;
-
-export async function fetchModelCatalog(): Promise<ModelCatalog> {
-  await ensureModelConfig();
-  return cachedCatalog ?? legacyTiersToCatalog(DEFAULT_TIERS);
 }
 
 export async function fetchModelCatalogSnapshot(): Promise<{
@@ -258,21 +227,6 @@ export async function fetchModelCatalogSnapshot(): Promise<{
     catalog: cachedCatalog ?? legacyTiersToCatalog(DEFAULT_TIERS),
     version: cachedCatalogVersion,
   };
-}
-
-export async function fetchModelTiers(): Promise<BackendModelTierConfig[]> {
-  await ensureModelConfig();
-  return cachedTiers ?? DEFAULT_TIERS;
-}
-
-export async function resolveOpenRouterModelId(stableModelId: string): Promise<string> {
-  const catalog = await fetchModelCatalog();
-  return resolveEnabledCatalogModel(catalog, stableModelId).openrouter_model_id;
-}
-
-export async function resolveDefaultOpenRouterModelId(): Promise<string> {
-  const catalog = await fetchModelCatalog();
-  return resolveEnabledCatalogModel(catalog, catalog.default_model_id).openrouter_model_id;
 }
 
 export interface ModelBillingContext {
@@ -305,26 +259,6 @@ export async function getModelBillingContext(
     isFree: model?.is_free ?? false,
   };
 }
-
-export async function getModelTier(modelName: string): Promise<BackendModelTierConfig> {
-  const tiers = await fetchModelTiers();
-  const found = tiers.find((t) => t.modelName === modelName);
-  if (found) return found;
-
-  return {
-    tier: 'unknown',
-    modelName,
-    provider: 'openrouter',
-    label: 'Unknown Model',
-    deductionRate: 0,
-  };
-}
-
-export async function getAllTiers(): Promise<BackendModelTierConfig[]> {
-  return fetchModelTiers();
-}
-
-export const OPENROUTER_PROVIDER = 'openrouter';
 
 export interface LlmPricingConfig extends LlmPricingRuntimeConfig {
   version: number;
