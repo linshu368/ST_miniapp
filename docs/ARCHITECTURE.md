@@ -359,10 +359,10 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 ### 7.1 前端
 
 - Next.js 14 App Router，`src/app/` 下 `(main)` 分组承载底部四 Tab（大厅 `/` / 聊天 `/chats` / 创作 `/create` / 我的 `/profile`），会话页是 **`/chat/[characterId]?session=...`**（不在分组内，无底部导航），另有自定义语音台词页 `/chat/[characterId]/voice/[messageId]`。
-- 自研聊天 UI（M5 已交付）：`components/chat/` 下消息列表 / 气泡 / markdown（showdown + DOMPurify）/ 输入区 / 重生成 / 语音播放条 / 会话抽屉 / 工具箱；SSE 客户端是 `lib/api/conversation-stream.ts` 的 `streamConversationTurn()`（旧 `apiStreamClient` 已删除）。
+- 自研聊天 UI（M5 已交付）：`components/chat/` 下消息列表 / 气泡 / markdown（showdown + DOMPurify）/ 输入区 / 重生成 / 语音播放条 / 会话抽屉 / 工具箱；SSE 客户端是 `lib/api/conversation-stream.ts` 的 `streamConversationTurn()`（旧 `apiStreamClient` 已删除）。会话页编排：`hooks/use-chat-session.ts` 管创建 / URL `?session=` / 失效重建，`hooks/use-conversation-turn.ts` 管发消息、重生成、abort、流式临时态与失败分流；语音生成仍留在 page。余额不足跳充值统一走 `lib/recharge-redirect.ts`（同时认 `insufficient_balance` 与 `INSUFFICIENT_CREDITS`）；`apiClient` 会把对话/语音的 402 裸形状收成带金额的 `ApiClientError`。
 - 用户生成配置有编辑界面：会话页工具箱（`chat-tools-sheet.tsx`）内含生成偏好（三个 `pref_*`）、模型切换、语音设置三块；图片设置为占位 ⏳。
 - 服务端数据一律 React Query，封装在 `src/lib/api/`；`client.ts` 是唯一 REST 客户端。
-- 跨组件状态 Zustand：`ui-store` / `user-profile-store` / `font-scale-store`（会话列表走 React Query，不进 store）。
+- 跨组件状态 Zustand：仅 `user-profile-store`（会话列表走 React Query，不进 store）。
 - 表单 React Hook Form + Zod；UI 用 Tailwind + shadcn/ui。
 
 ### 7.2 后端目录
