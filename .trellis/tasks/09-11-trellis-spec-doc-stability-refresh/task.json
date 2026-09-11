@@ -1,0 +1,36 @@
+{
+  "id": "trellis-spec-doc-stability-refresh",
+  "name": "trellis-spec-doc-stability-refresh",
+  "title": "Trellis 规范与系统文档稳定性重整",
+  "description": "基于近期重构提交重新建立系统事实基线，分阶段同步包级 spec、模块知识、根文档与 Trellis 工作流门禁。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-11-system-fact-baseline-audit",
+    "09-11-package-spec-module-sync",
+    "09-11-docs-workflow-gate-sync"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "父任务仅承载需求、子任务顺序和集成验收；模块知识变更由对应子任务声明。"
+    }
+  }
+}

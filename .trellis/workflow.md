@@ -220,6 +220,8 @@ Inline mode: skip jsonl curation; Phase 2 reads artifacts/specs via `trellis-bef
 - 2.2 Quality check `[required · repeatable]`
 - 2.3 Rollback `[on demand]`
 
+实施时只为复杂业务编排、非显然约束、关键状态转换和边界处理补充简洁的 why 注释；简单自解释方法无需注释，项目要求的结构化注释不受影响。默认不自动创建测试文件，只有用户明确要求、已审核规划/验收标准确认或风险评估确认需要回归锁定时才创建；这不影响运行现有相关测试、typecheck、lint、build、静态检查和人工回归。
+
 <!-- Per-turn breadcrumb: shown while status='in_progress'.
      Scope: all of Phase 2 + Phase 3.2-3.4 (status stays 'in_progress' from
      task.py start until task.py archive; only archive flips it). The body
@@ -233,6 +235,7 @@ Tools: `trellis-implement` / `trellis-research` are sub-agent types only (Task/A
 Flow: `trellis-implement` -> `trellis-check` -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
 Before any git add/commit, present the final paths, diff/digest, validation results, and commit file list for explicit human approval; approval expires if content changes. Never auto-commit or auto-push; push requires separate human authorization.
 Main-session default: dispatch implement/check sub-agents. Sub-agent self-exemption: if already running as `trellis-implement`, do NOT spawn another `trellis-implement` or `trellis-check`; if already running as `trellis-check`, do NOT spawn another `trellis-check` or `trellis-implement`. Dispatch is main session only.
+Code-writing gate: add concise why-comments for complex business flow and non-obvious constraints; simple self-explanatory methods need no comments. Do not create test files by default; create them only when explicitly requested or confirmed by reviewed acceptance criteria/risk assessment. Always run applicable existing validation.
 Dispatch prompt starts with `Active task: <task path from task.py current>`. Read context: jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if present`.
 [/workflow-state:in_progress]
 
@@ -245,6 +248,7 @@ Dispatch prompt starts with `Active task: <task path from task.py current>`. Rea
 Flow: `trellis-before-dev` -> edit -> `trellis-check` -> validation -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
 Before any git add/commit, present the final paths, diff/digest, validation results, and commit file list for explicit human approval; approval expires if content changes. Never auto-commit or auto-push; push requires separate human authorization.
 Do not dispatch implement/check sub-agents in inline mode.
+Code-writing gate: add concise why-comments for complex business flow and non-obvious constraints; simple self-explanatory methods need no comments. Do not create test files by default; create them only when explicitly requested or confirmed by reviewed acceptance criteria/risk assessment. Always run applicable existing validation.
 Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, plus relevant spec/research loaded by skills.
 [/workflow-state:in_progress-inline]
 

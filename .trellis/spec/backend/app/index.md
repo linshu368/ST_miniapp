@@ -1,6 +1,6 @@
 # Backend 应用规范
 
-适用于 `packages/backend`。本文是入口；实现前必须按改动范围继续阅读专题规范。事实基线以当前源码和 `docs/ARCHITECTURE.md` 为准；`packages/backend/CLAUDE.md` 的硬规则继续有效，冲突时不得静默选择，先记录差异。
+适用于 `packages/backend`。本文是入口；实现前必须按改动范围继续阅读专题规范。事实基线以当前源码、根 `AGENTS.md` 和 `docs/ARCHITECTURE.md` 为准；包级 `CLAUDE.md` 已删除，不得恢复平行规则来源。
 
 ## 专题导航
 
@@ -25,7 +25,7 @@
 
 ## 开发前硬门禁
 
-1. 阅读本入口、对应专题、`packages/backend/CLAUDE.md` 和 `docs/ARCHITECTURE.md`；日志任务再读 `docs/log_system.md`。
+1. 阅读本入口、对应专题、根 `AGENTS.md` 和 `docs/ARCHITECTURE.md`；日志任务再读 `docs/log_system.md`。
 2. 搜索现有 route、feature、repository、helper、shared contract 和测试，说明复用/扩展决策。
 3. 对外数据形状必须先定义于 `packages/shared/src/api/*`，再写 handler；不得暴露 Prisma/Supabase 行类型。
 4. 外部调用必须明确超时；只对安全可重试操作做有限退避重试。关键写入必须评估幂等、并发、事务、补偿和重复回调。
@@ -41,4 +41,4 @@ pnpm --filter @miniapp/backend typecheck
 pnpm --filter @miniapp/backend test
 ```
 
-契约变更必须追加所有消费者 typecheck；对话/生成链路按需运行 `pnpm --filter @miniapp/backend mvp:regression -- --seed-free-model`。数据库迁移不随部署自动执行，只能按 Supabase spec 的单文件流程操作。
+契约变更必须追加所有消费者 typecheck；对话/生成链路运行现有 backend 测试并记录真实上游/SSE 人工回归，已删除的阶段 `mvp:regression` 不再是验证入口。数据库迁移不随部署自动执行，只能按 Supabase spec 的单文件流程操作。

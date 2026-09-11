@@ -1,0 +1,42 @@
+{
+  "id": "package-spec-module-sync",
+  "name": "package-spec-module-sync",
+  "title": "同步包级 Spec 与模块知识",
+  "description": "依据已审核事实基线，修正各包工程 spec 与受影响模块知识，删除退场链路和失效引用。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-package-spec",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-11-trellis-spec-doc-stability-refresh",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.business.engagement-support",
+        "backend.business.wallet-payment",
+        "backend.infrastructure.runtime-data-security",
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts",
+        "database.business.billing-payment",
+        "database.infrastructure.schema-security",
+        "shared.infrastructure.database-environment"
+      ]
+    }
+  }
+}

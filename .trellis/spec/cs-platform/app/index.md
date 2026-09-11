@@ -36,4 +36,4 @@ pnpm --filter @miniapp/cs-platform typecheck
 pnpm --filter @miniapp/cs-platform build
 ```
 
-本包当前无 test script；新增可测试逻辑时应补 Vitest 基础设施与脚本，未补前必须记录人工回归，不能声称自动测试已覆盖。
+本包当前无 test script；默认不因新增逻辑自动引入 Vitest 或新建测试文件。仅在用户、审核后的验收标准或明确风险确认需要时添加最小测试基础设施；在此之前必须执行并记录可重复人工回归，不能声称自动测试已覆盖。

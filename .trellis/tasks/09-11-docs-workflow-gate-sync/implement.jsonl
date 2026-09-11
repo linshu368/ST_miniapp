@@ -1,0 +1,5 @@
+{"file":".trellis/spec/docs/process/index.md","reason":"文档、流程、注释、测试与人工审核的权威 process 入口。"}
+{"file":".trellis/spec/backend/app/index.md","reason":"保留 backend 专项注释和测试/部署门禁。"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"保留 frontend 交互与状态验证门禁。"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"保留迁移和数据库验证专项要求。"}
+{"file":".trellis/tasks/09-11-trellis-spec-doc-stability-refresh/research/current-state-audit.md","reason":"当前根文档和流程的已知漂移输入。"}

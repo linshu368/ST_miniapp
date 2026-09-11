@@ -1,0 +1,32 @@
+{
+  "id": "system-fact-baseline-audit",
+  "name": "system-fact-baseline-audit",
+  "title": "建立系统事实基线与文档漂移清单",
+  "description": "以近期提交和当前实现为证据，建立权威事实基线并形成可执行的文档漂移清单。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-package-docs",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-11-trellis-spec-doc-stability-refresh",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "本子任务只产出事实审计与漂移清单，不修改模块事实文档。"
+    }
+  }
+}

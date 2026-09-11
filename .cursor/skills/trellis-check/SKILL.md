@@ -52,9 +52,9 @@ Run the project's lint, type-check, and test commands. Fix any failures before p
 
 ### Test Coverage
 
-- [ ] New function → unit test added?
-- [ ] Bug fix → regression test added?
-- [ ] Changed behavior → existing tests updated?
+- [ ] Test-file creation was explicitly requested or confirmed by reviewed acceptance criteria/risk assessment? If not, no new test file was created.
+- [ ] Applicable existing tests, type-checks, lint/build/static checks, and manual scenarios were run regardless of whether a test file was created?
+- [ ] Bug fixes and high-risk behavior have a recorded regression-test necessity decision and remaining-risk note?
 
 ### Spec Sync
 

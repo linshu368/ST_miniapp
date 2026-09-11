@@ -2,9 +2,10 @@
 
 ## 文件与不可变性
 
-- 新 SQL 只添加到 `packages/shared/migrations/`，采用仓库现有编号/描述风格；创建前检查重号。历史 migration 已可能在不同环境执行，禁止编辑、重排或“清理”。
+- 新 SQL 只添加到 `packages/shared/migrations/`。2026-09-10 起统一命名为 `YYYYMMDD_描述.sql`，并通过 `pnpm lint:migrations` 校验；三位编号文件属于冻结历史，不得继续编号、改名、编辑、重排或“清理”，也不得按编号推断依赖和环境执行状态。
 - `supabase/config.toml` 当前 `schema_paths=[]`，本地 reset/push 不会自然代表 shared migrations 的执行链；必须使用项目约定的手工流程。
 - 远端 test/production 的正式入口是 `.github/workflows/db-migrate.yml` 的 `workflow_dispatch`：一次选择一个 `packages/shared/migrations/*.sql`，保留 project-ref 校验、production 明文确认、environment concurrency 和执行摘要。本地 CLI 仅用于明确授权的本地/诊断场景，不能绕开工作流门禁。
+- workflow 使用 `psql --no-psqlrc --set ON_ERROR_STOP=1 --file` 执行完整多语句文件。执行前按 filename 查询 `supabase_migrations.repo_migrations`，成功后记录 filename、checksum 与执行者；它是仓库迁移账本，不得与 Supabase CLI 自有 migration history 混淆。`force_rerun` 只能用于已审查的显式恢复场景。
 
 ## 设计必填
 

@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-08-feature-module-spec-sync/
-last_verified_at: 2026-09-08
+last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
+last_verified_at: 2026-09-11
 ---
 
 # 许愿、社区、消息与客服
@@ -17,7 +17,7 @@ last_verified_at: 2026-09-08
 
 ## 当前状态
 
-主要互动 API 已实现，奖励写入使用业务唯一键和原子钱包流水。
+主要互动 API 已实现。许愿、邀请和官方社群等发奖 RPC 保留各自业务判定，但钱包加值与流水最终统一调用 `billing.grant_bonus_credits`。
 
 ## 入口与调用者
 
@@ -42,7 +42,7 @@ Frontend profile、通知与客服页面调用对应 `/api/*`。
 
 ## 关键节点与约束
 
-奖励不可由前端去重充当真相；客服内容不得进入普通遥测。
+奖励不可由前端去重充当真相；应用层不得手动增加 `bonus_credits`；客服内容不得进入普通遥测。
 
 ## 验证方式
 
@@ -54,4 +54,4 @@ Frontend profile、通知与客服页面调用对应 `/api/*`。
 
 ## 关联模块
 
-`frontend.business.engagement-support`、`database.business.engagement-support-data`。
+`frontend.business.engagement-support`、`backend.business.wallet-payment`、`database.business.billing-payment`。

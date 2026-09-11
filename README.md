@@ -1,18 +1,17 @@
 # ST_miniapp
 
-ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、两个内部运营 SPA、共享契约/迁移包，以及 workspace 外的 Python bot worker。
+ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、两个内部运营 SPA，以及共享契约/迁移包。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；生产运维入口见 [`ops/README.md`](ops/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 
 ## 0. 运行环境
 
-| 依赖         | 要求                                                   |
-| ------------ | ------------------------------------------------------ |
-| Node.js      | `>=22`（根 `package.json` 和 backend 的权威要求）      |
-| pnpm         | `>=9`，仓库锁定 `pnpm@9.15.9`                          |
-| Python       | 仅 `botlink/` 需要，版本按其部署环境/requirements 验证 |
-| Supabase CLI | 本地 Supabase、链接测试项目和手工 SQL 操作需要         |
-| Docker       | 可选，用于本地依赖或部署镜像验证                       |
+| 依赖         | 要求                                              |
+| ------------ | ------------------------------------------------- |
+| Node.js      | `>=22`（根 `package.json` 和 backend 的权威要求） |
+| pnpm         | `>=9`，仓库锁定 `pnpm@9.15.9`                     |
+| Supabase CLI | 本地 Supabase、链接测试项目和手工 SQL 操作需要    |
+| Docker       | 可选，用于本地依赖或部署镜像验证                  |
 
 当前存在配置差异：`.nvmrc` 和部分 Dockerfile 仍使用 Node 20，而根工程要求 Node 22。开发/CI 以 Node 22 为准；调整容器版本前需单独验证，不要假设完全一致。
 
@@ -43,7 +42,6 @@ packages/backend  ─┼──> packages/shared
 packages/admin    ─┤
 packages/cs-platform┘
 
-botlink/  （独立 Python worker，不属于 pnpm workspace）
 ```
 
 `pnpm-workspace.yaml` 只包含 `packages/*`。四个应用包可以依赖 `@miniapp/shared`，但彼此不得直接 import；跨应用通信使用 HTTP。Shared 不依赖应用包。
@@ -55,7 +53,6 @@ botlink/  （独立 Python worker，不属于 pnpm workspace）
 | `packages/admin`       | `@miniapp/admin` / Vite React       | 配置、模型、角色卡、公告、裂变和运营赠送                    | 3003         |
 | `packages/cs-platform` | `@miniapp/cs-platform` / Vite React | Telegram 回访与 MiniApp 客服工作台                          | 3002         |
 | `packages/shared`      | `@miniapp/shared` / TS 源码包       | API DTO、Zod schema、常量、纯工具和 SQL migrations          | -            |
-| `botlink`              | Python worker                       | 独立 bot/自动化进程                                         | -            |
 
 Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产物；修改公开出口会直接影响所有消费者。
 
@@ -83,7 +80,7 @@ pnpm dev:admin
 pnpm dev:cs-platform
 ```
 
-注意：`pnpm dev:all` 当前与 `pnpm dev` 相同，并不会启动 Admin、CS Platform 或 botlink。
+注意：`pnpm dev:all` 当前与 `pnpm dev` 相同，并不会启动 Admin 或 CS Platform。
 
 常用检查：
 
@@ -117,9 +114,8 @@ CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记�
 | 数据库选择      | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                                                                          | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作 |
 | Telegram        | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                                  | Bot、webhook 和内部调用鉴权                                              |
 | CS              | `CS_ADMIN_TOKEN`, `CS_TELEGRAM_WEBHOOK_SECRET`                                                                                                                          | CS 请求头和 webhook 鉴权                                                 |
-| LLM             | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`, `LLM_PROXY_TOKEN_SECRET`                                                                      | 生成代理上游、模型和签名                                                 |
+| LLM             | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                | 生成上游与默认模型                                                       |
 | Voice           | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                               | 语音文案与 TTS；关键 key 缺失时语音不可用                                |
-| ST              | `ST_BASE_URL`, `ST_USER_PASSWORD_SECRET`, `ST_PROVISION_URL`                                                                                                            | ST/sync-engine 集成                                                      |
 | Payment         | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL` | 支付开关、商户和签名/回调                                                |
 | Cache/Telemetry | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                             | Redis、Sentry 和日志                                                     |
 | Feature/asset   | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`                                                     | 资源和运行开关                                                           |
@@ -155,6 +151,7 @@ pnpm supabase:link:test
 - `packages/shared/migrations/` 是唯一 SQL migration 来源；不要复制到 `supabase/migrations/`。
 - `supabase/config.toml` 的 migration schema path 当前不会自动重放 shared migrations，因此本地 reset/push 不代表项目迁移链已完整执行。
 - 远端 migration 默认通过 [`.github/workflows/db-migrate.yml`](.github/workflows/db-migrate.yml) 的手工 `workflow_dispatch` 单文件执行；保留项目 ref 校验、production 明文确认和环境并发锁。先测试后生产，每一步记录前后结构、RLS/grants、关键读写、锁/容量和回滚。
+- 2026-09-10 起新 migration 使用 `YYYYMMDD_描述.sql`；workflow 以 `psql --file` 执行，并在 `supabase_migrations.repo_migrations` 中按 filename/checksum 查重和记账。历史三位编号文件已冻结且可能重号，不得按编号推断环境状态。
 - 测试库与生产库不保证同构。数据库结构参考必须标注环境、时间和证据，不能拿 migration 当实库快照。
 - 详细规则见 [Supabase spec](.trellis/spec/database/supabase/index.md)。
 
@@ -167,7 +164,6 @@ pnpm supabase:link:test
 | CS Platform | Vercel，`packages/cs-platform/vercel.json`                    | 静态 SPA rewrite；Preview 不应默认写生产                                  |
 | Backend     | Railway / backend Docker 配置                                 | Railway IaC 与变量流程见 [`ops/railway/README.md`](ops/railway/README.md) |
 | Supabase    | 托管 PostgreSQL/PostgREST/Auth/Storage                        | migration 与应用部署分离，禁止随应用发布自动执行生产迁移                  |
-| botlink     | 独立 Python/Procfile 部署                                     | 不使用 pnpm workspace 流程                                                |
 
 每次部署记录目标环境、commit、变量变更、数据库前置条件、smoke test 和回滚目标。不要因为测试部署成功就自动修改生产。
 
@@ -200,7 +196,7 @@ pnpm supabase:link:test
 - [系统架构](docs/ARCHITECTURE.md)
 - [运维总览](ops/README.md)
 - [日志系统](docs/log_system.md)
-- [Schema 归属地图](docs/schema归属地图.md)
+- [数据库域与归属](docs/ARCHITECTURE.md#51-数据库八域布局099-之后test-与生产一致)
 - [Trellis 工作流](.trellis/workflow.md)
 - [Admin spec](.trellis/spec/admin/app/index.md)
 - [CS Platform spec](.trellis/spec/cs-platform/app/index.md)
