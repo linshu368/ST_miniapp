@@ -1,4 +1,4 @@
--- 20260910: 数据库迁移账本 supabase_migrations.schema_migrations。
+-- 20260910: 数据库迁移账本 supabase_migrations.repo_migrations。
 -- domain: supabase_migrations（平台 schema，不是八个业务域之一）
 --
 -- 背景：迁移目录无 applied 记录，哪个文件在哪个库跑过全靠人记；编号撞号是惯犯
@@ -7,9 +7,8 @@
 -- 执行成功后写入记录。
 --
 -- 放在 supabase_migrations：库里已有这个 schema，专门记迁移历史；不要占用
--- app_core（业务根域）。本表列是 filename / checksum / applied_by，和 Supabase CLI
--- 自带的 schema_migrations（version / statements / name）不是同一张表。若 CLI 表
--- 已经占了同名，本迁移会失败而不是覆盖。
+-- app_core（业务根域）。表名用 repo_migrations，不要用 schema_migrations——
+-- 那张是 Supabase CLI 的历史表（version / statements / name），没有 filename 列。
 --
 -- 配套规则（见 migrations/README.md）：
 --   1. 本文件起，新迁移一律命名 YYYYMMDD_描述.sql，日期戳 + 语义名，并行分支天然不撞号；
@@ -23,23 +22,7 @@ BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS supabase_migrations;
 
--- CLI 若已占用同名表（有 version 列、没有 filename 列），禁止覆盖。
-DO $$
-BEGIN
-  IF to_regclass('supabase_migrations.schema_migrations') IS NOT NULL
-     AND NOT EXISTS (
-       SELECT 1
-       FROM information_schema.columns
-       WHERE table_schema = 'supabase_migrations'
-         AND table_name = 'schema_migrations'
-         AND column_name = 'filename'
-     ) THEN
-    RAISE EXCEPTION
-      'supabase_migrations.schema_migrations 已存在且没有 filename 列（多半是 Supabase CLI 历史表），拒绝覆盖';
-  END IF;
-END $$;
-
-CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+CREATE TABLE IF NOT EXISTS supabase_migrations.repo_migrations (
   filename text PRIMARY KEY,
   checksum text NOT NULL,
   applied_at timestamptz NOT NULL DEFAULT now(),
@@ -52,7 +35,7 @@ BEGIN
   IF to_regclass('app_core.schema_migrations') IS NULL THEN
     NULL;
   ELSE
-    INSERT INTO supabase_migrations.schema_migrations (filename, checksum, applied_at, applied_by)
+    INSERT INTO supabase_migrations.repo_migrations (filename, checksum, applied_at, applied_by)
     SELECT filename, checksum, applied_at, applied_by
     FROM app_core.schema_migrations
     ON CONFLICT (filename) DO NOTHING;
@@ -60,12 +43,12 @@ BEGIN
   END IF;
 END $$;
 
-COMMENT ON TABLE supabase_migrations.schema_migrations IS
-  '仓库 SQL 迁移账本：db-migrate workflow 执行前查重、执行后写入。只覆盖 2026-09-10 之后的新迁移。';
-COMMENT ON COLUMN supabase_migrations.schema_migrations.filename IS '迁移文件名（不含路径），如 20260910_schema_migrations_ledger.sql';
-COMMENT ON COLUMN supabase_migrations.schema_migrations.checksum IS '迁移文件内容 sha256，用于发现「已执行的文件事后被改动」';
-COMMENT ON COLUMN supabase_migrations.schema_migrations.applied_by IS 'workflow 传入的执行者标识（GitHub actor），本地执行时为数据库角色名';
+COMMENT ON TABLE supabase_migrations.repo_migrations IS
+  '仓库 SQL 迁移账本：db-migrate workflow 执行前查重、执行后写入。只覆盖 2026-09-10 之后的新迁移。勿与 CLI 的 schema_migrations 混淆。';
+COMMENT ON COLUMN supabase_migrations.repo_migrations.filename IS '迁移文件名（不含路径），如 20260910_schema_migrations_ledger.sql';
+COMMENT ON COLUMN supabase_migrations.repo_migrations.checksum IS '迁移文件内容 sha256，用于发现「已执行的文件事后被改动」';
+COMMENT ON COLUMN supabase_migrations.repo_migrations.applied_by IS 'workflow 传入的执行者标识（GitHub actor），本地执行时为数据库角色名';
 
-REVOKE ALL ON supabase_migrations.schema_migrations FROM anon, authenticated;
+REVOKE ALL ON supabase_migrations.repo_migrations FROM anon, authenticated;
 
 COMMIT;

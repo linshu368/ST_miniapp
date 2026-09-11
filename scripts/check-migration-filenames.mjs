@@ -5,7 +5,7 @@
  * 背景：三位数字编号在并行分支上撞号是惯犯（021/030/031/032/053/065/086/088/092/093/095
  * 历史撞号，100 号立「全分支唯一」规矩后 105/108/109 又各撞一对）。2026-09-10 起新迁移
  * 一律用 YYYYMMDD_描述.sql（日期戳 + 语义名），并行分支天然不撞号；配套账本表
- * supabase_migrations.schema_migrations 记录每个环境实际执行过哪些文件（见 db-migrate.yml）。
+ * supabase_migrations.repo_migrations 记录每个环境实际执行过哪些文件（见 db-migrate.yml）。
  *
  * 规则：
  *   1. 存量旧编号文件在下方 FROZEN_LEGACY_FILES 清单里锁死——新增任何三位数字编号

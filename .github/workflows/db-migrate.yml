@@ -117,7 +117,8 @@ jobs:
           echo "migration_file=$migration_file" >> "$GITHUB_OUTPUT"
           echo "migration_name=$migration_name" >> "$GITHUB_OUTPUT"
 
-      # 账本查重：supabase_migrations.schema_migrations 里已有记录则拒绝重跑（force_rerun 可绕过）。
+      # 账本查重：supabase_migrations.repo_migrations 里已有记录则拒绝重跑（force_rerun 可绕过）。
+      # 必须用 repo_migrations，不能用 schema_migrations（那是 CLI 表，没有 filename 列）。
       # 账本表尚未建立时（首次跑 20260910_schema_migrations_ledger.sql 之前）静默放行。
       - name: Check migration ledger
         if: ${{ !inputs.force_rerun }}
@@ -130,12 +131,17 @@ jobs:
           cat > "$RUNNER_TEMP/ledger_check.sql" <<SQL
           DO \$\$
           BEGIN
-            -- EXISTS 必须放在独立分支里。写成 AND EXISTS 时 Postgres 会把整段
-            -- 当成一条查询来解析，表还不存在就会直接报 relation does not exist。
-            IF to_regclass('supabase_migrations.schema_migrations') IS NULL THEN
+            -- 用 information_schema 判断列，避免误查 CLI 的 schema_migrations。
+            -- EXISTS 必须放在独立分支：写成 AND EXISTS 时 Postgres 会整段解析。
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'supabase_migrations'
+                AND table_name = 'repo_migrations'
+                AND column_name = 'filename'
+            ) THEN
               NULL;
             ELSIF EXISTS (
-              SELECT 1 FROM supabase_migrations.schema_migrations
+              SELECT 1 FROM supabase_migrations.repo_migrations
               WHERE filename = '${MIGRATION_NAME}'
             ) THEN
               RAISE EXCEPTION 'MIGRATION_ALREADY_APPLIED: % — 如确需重跑，请在 workflow 入参勾选 force_rerun', '${MIGRATION_NAME}';
@@ -167,8 +173,15 @@ jobs:
           cat > "$RUNNER_TEMP/ledger_record.sql" <<SQL
           DO \$\$
           BEGIN
-            IF to_regclass('supabase_migrations.schema_migrations') IS NOT NULL THEN
-              INSERT INTO supabase_migrations.schema_migrations (filename, checksum, applied_by)
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'supabase_migrations'
+                AND table_name = 'repo_migrations'
+                AND column_name = 'filename'
+            ) THEN
+              NULL;
+            ELSE
+              INSERT INTO supabase_migrations.repo_migrations (filename, checksum, applied_by)
               VALUES ('${MIGRATION_NAME}', '${CHECKSUM}', '${APPLIED_BY}')
               ON CONFLICT (filename) DO UPDATE
                 SET checksum = EXCLUDED.checksum,
