@@ -27,6 +27,8 @@ function row(
     llm_finish_reason: 'stop',
     llm_generation_id: null,
     llm_charge_id: null,
+    llm_billing_snapshot: null,
+    llm_billing_settled_at: null,
     session_id: 'session',
     turn_index: turnIndex,
     revision: 0,

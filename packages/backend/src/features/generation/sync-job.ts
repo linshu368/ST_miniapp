@@ -1,11 +1,13 @@
 /**
  * backend / features / generation / sync-job.ts
  *
- * 生成计费的第二条结算路径：进程内 30 秒轮询，回捞 24h 内元数据不全的轮次。
+ * 生成计费的第二条结算路径：进程内 30 秒轮询，回捞 24h 内元数据不全
+ * 或结算未完成的轮次。
  *
  * 为什么需要它：OpenRouter 的用量统计是异步的，settle.ts 那一次即时拉取经常拿不到
  * finish_reason。没有 finish_reason 就不能判「是否自然收尾」，于是计费挂 pending
- * （见 §finish_reason 计费闸门）。本任务负责把这些 pending 行结算掉。
+ * （见 §finish_reason 计费闸门）。本任务负责把这些 pending 行结算掉；也负责把
+ * 「元数据齐了、账没结」的行按请求时快照补建 charge、补额度收口、补金额回写。
  *
  * 它和 settle.ts 是同一个行为的两条路径，所以刻意放在同一个模块下：
  * 用量元数据的字段映射共用 openrouter-metadata.ts，定档扣费拼装共用
@@ -15,7 +17,11 @@
 
 import type { FastifyBaseLogger } from 'fastify';
 import { calculateUsageDeduction } from '../billing/usage-pricing.js';
-import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import {
+  ConversationHistoryRepository,
+  type ChatHistorySyncRow,
+  type LlmBillingSnapshot,
+} from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import { MiniappWalletRepository } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import { applyLlmCharge } from './apply-charge.js';
 import {
@@ -126,8 +132,16 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       const llmMetadata = buildGenerationMetadata(genData);
       const finishReason = typeof genData.finish_reason === 'string' ? genData.finish_reason : null;
 
+      let settled = false;
       try {
-        await reconcileCharge({ record, generationId, genData, finishReason, llmMetadata });
+        const reconciled = await reconcileCharge({
+          record,
+          generationId,
+          genData,
+          finishReason,
+          llmMetadata,
+        });
+        settled = reconciled.settled;
       } catch (reconcileErr) {
         // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
         log.error(
@@ -145,7 +159,11 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       }
 
       try {
-        await history().applyGenerationMetadata(record.id, llmMetadata);
+        await history().applyGenerationMetadata(
+          record.id,
+          llmMetadata,
+          settled ? new Date().toISOString() : undefined
+        );
       } catch (err) {
         log.error(
           {
@@ -186,88 +204,199 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
 /**
  * 结算这一行对应的计费记录，并把结算金额并进要回写的元数据。
  *
- * 两种口径：`fixed_tier` 的 pending 行等 finish_reason 到齐后走 applyLlmCharge
- *（与 settle 同一套标签）；历史 usage 口径的行按实际用量重算。两者都靠
- * charge_id 幂等，重复跑不会多扣。
+ * 定档：finish_reason 到齐后走 applyLlmCharge（与 settle 同一套标签）。
+ * 无 charge 行时按请求时快照重建；已 charged / free 的行也重入以补额度收口和金额回写。
+ * 历史 usage 口径仍走 reconcileLlmUsage。都靠 charge_id 幂等，重复跑不会多扣。
  *
  * 导出给单测：锁死回捞后 success + length 是 incomplete，而不是旧的 complete。
  */
 export async function reconcileCharge(input: {
-  record: {
-    id: string;
-    llm_charge_id: string | null;
-    assistant_reply: string | null;
-    status: string;
-  };
+  record: Pick<
+    ChatHistorySyncRow,
+    | 'id'
+    | 'user_id'
+    | 'model'
+    | 'llm_charge_id'
+    | 'assistant_reply'
+    | 'status'
+    | 'llm_billing_snapshot'
+  >;
   generationId: string;
   genData: Record<string, unknown>;
   finishReason: string | null;
   llmMetadata: Record<string, unknown>;
-}): Promise<void> {
+}): Promise<{ settled: boolean }> {
   const { record, generationId, genData, finishReason, llmMetadata } = input;
   const chargeId = record.llm_charge_id;
-  if (typeof chargeId !== 'string' || chargeId.length === 0) return;
+  if (typeof chargeId !== 'string' || chargeId.length === 0) return { settled: false };
 
   const usageCost = genData.usage;
+  const snapshot = readBillingSnapshot(record.llm_billing_snapshot);
   const originalCharge = await wallets().findLlmUsageCharge(chargeId);
-  if (!originalCharge) return;
 
-  if (
-    originalCharge.metadata?.billing_mode === 'fixed_tier' &&
-    originalCharge.status === 'pending' &&
-    finishReason !== null
-  ) {
-    const fixedDeduction = Number(
-      originalCharge.metadata?.fixed_deduction ?? originalCharge.calculated_amount
-    );
-    const observedModel =
-      typeof genData.model === 'string' && genData.model.trim() ? genData.model : null;
-    const result = await applyLlmCharge({
-      chargeId,
-      generationId,
-      userId: originalCharge.user_id,
-      modelId: originalCharge.model_id,
-      requestedModel: originalCharge.model_openrouter_id,
-      observedModel,
-      requestedDisplayName: originalCharge.model_display_name,
-      catalogVersion: originalCharge.catalog_version,
-      pricingConfigVersion: originalCharge.pricing_config_version,
-      usageCostUsd: typeof usageCost === 'number' && Number.isFinite(usageCost) ? usageCost : null,
-      exchangeRate: Number(originalCharge.exchange_rate),
-      modelMarkup: Number(originalCharge.model_markup),
-      calculatedAmount: Number.isFinite(fixedDeduction) ? fixedDeduction : 0,
-      fallbackUsed: false,
-      generationStatus: record.status,
-      finishReason,
-      assistantReply: record.assistant_reply,
-      baseMetadata: {
-        ...(originalCharge.metadata ?? {}),
-        source: 'chat_history_sync',
-      },
-    });
-    llmMetadata.llm_intended_deduction = result.calculatedAmount;
-    llmMetadata.deduction_rate = result.chargedAmount;
-    return;
+  if (originalCharge && originalCharge.metadata?.billing_mode !== 'fixed_tier') {
+    if (typeof usageCost === 'number' && Number.isFinite(usageCost) && finishReason === 'stop') {
+      const intendedDeduction = calculateUsageDeduction(
+        usageCost,
+        Number(originalCharge.exchange_rate),
+        Number(originalCharge.model_markup)
+      );
+      const reconciled = await wallets().reconcileLlmUsage({
+        chargeId,
+        usageCostUsd: usageCost,
+        calculatedAmount: intendedDeduction,
+        metadata: { source: 'chat_history_sync' },
+      });
+      llmMetadata.llm_intended_deduction = intendedDeduction;
+      llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
+      return { settled: true };
+    }
+    return { settled: false };
   }
 
-  if (
-    originalCharge.metadata?.billing_mode !== 'fixed_tier' &&
-    typeof usageCost === 'number' &&
-    Number.isFinite(usageCost) &&
-    finishReason === 'stop'
-  ) {
-    const intendedDeduction = calculateUsageDeduction(
-      usageCost,
-      Number(originalCharge.exchange_rate),
-      Number(originalCharge.model_markup)
-    );
-    const reconciled = await wallets().reconcileLlmUsage({
-      chargeId,
-      usageCostUsd: usageCost,
-      calculatedAmount: intendedDeduction,
-      metadata: { source: 'chat_history_sync' },
-    });
-    llmMetadata.llm_intended_deduction = intendedDeduction;
-    llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
+  if (finishReason === null) return { settled: false };
+
+  const command = buildFixedTierChargeCommand({
+    chargeId,
+    generationId,
+    record,
+    genData,
+    finishReason,
+    snapshot,
+    originalCharge,
+    usageCost,
+  });
+  if (!command) return { settled: false };
+
+  const result = await applyLlmCharge(command);
+  llmMetadata.llm_intended_deduction = result.calculatedAmount;
+  llmMetadata.deduction_rate = result.chargedAmount;
+  return { settled: true };
+}
+
+function buildFixedTierChargeCommand(input: {
+  chargeId: string;
+  generationId: string;
+  record: Pick<ChatHistorySyncRow, 'user_id' | 'model' | 'assistant_reply' | 'status'>;
+  genData: Record<string, unknown>;
+  finishReason: string;
+  snapshot: LlmBillingSnapshot | null;
+  originalCharge: {
+    user_id: string;
+    model_id: string | null;
+    model_openrouter_id: string;
+    model_display_name: string;
+    catalog_version: number;
+    pricing_config_version: number;
+    exchange_rate: unknown;
+    model_markup: unknown;
+    calculated_amount: unknown;
+    metadata: Record<string, unknown> | null;
+  } | null;
+  usageCost: unknown;
+}) {
+  const {
+    chargeId,
+    generationId,
+    record,
+    genData,
+    finishReason,
+    snapshot,
+    originalCharge,
+    usageCost,
+  } = input;
+  if (!originalCharge && !snapshot) return null;
+
+  const userId = originalCharge?.user_id ?? record.user_id;
+  if (typeof userId !== 'string' || userId.length === 0) return null;
+
+  const displayName = (
+    originalCharge?.model_display_name ??
+    snapshot?.model_display_name ??
+    ''
+  ).trim();
+  if (!displayName) return null;
+
+  const requestedModel = originalCharge?.model_openrouter_id ?? record.model;
+  if (typeof requestedModel !== 'string' || requestedModel.trim() === '') return null;
+
+  const fixedDeduction = resolveFixedDeductionAmount(snapshot, originalCharge);
+  const observedModel =
+    typeof genData.model === 'string' && genData.model.trim() ? genData.model : null;
+
+  return {
+    chargeId,
+    generationId,
+    userId,
+    modelId: originalCharge?.model_id ?? snapshot?.model_id ?? null,
+    requestedModel,
+    observedModel,
+    requestedDisplayName: displayName,
+    catalogVersion: originalCharge?.catalog_version ?? snapshot?.catalog_version ?? 0,
+    pricingConfigVersion:
+      originalCharge?.pricing_config_version ?? snapshot?.pricing_config_version ?? 0,
+    usageCostUsd: typeof usageCost === 'number' && Number.isFinite(usageCost) ? usageCost : null,
+    exchangeRate: Number(originalCharge?.exchange_rate ?? snapshot?.exchange_rate ?? 1),
+    modelMarkup: Number(originalCharge?.model_markup ?? snapshot?.model_markup ?? 0),
+    calculatedAmount: fixedDeduction,
+    fallbackUsed: false,
+    generationStatus: record.status,
+    finishReason,
+    assistantReply: record.assistant_reply,
+    baseMetadata: {
+      ...(originalCharge?.metadata ?? {}),
+      requested_model: requestedModel,
+      billing_mode: 'fixed_tier' as const,
+      fixed_deduction_category:
+        snapshot?.fixed_deduction_category ?? originalCharge?.metadata?.fixed_deduction_category,
+      fixed_deduction: fixedDeduction,
+      source: 'chat_history_sync',
+    },
+  };
+}
+
+function resolveFixedDeductionAmount(
+  snapshot: LlmBillingSnapshot | null,
+  charge: { metadata?: Record<string, unknown> | null; calculated_amount: unknown } | null
+): number {
+  if (snapshot && Number.isFinite(snapshot.fixed_deduction) && snapshot.fixed_deduction >= 0) {
+    return snapshot.fixed_deduction;
   }
+  if (!charge) return 0;
+  const fromMeta = Number(charge.metadata?.fixed_deduction ?? charge.calculated_amount);
+  return Number.isFinite(fromMeta) && fromMeta >= 0 ? fromMeta : 0;
+}
+
+function readBillingSnapshot(value: unknown): LlmBillingSnapshot | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  if (row.billing_mode !== undefined && row.billing_mode !== 'fixed_tier') return null;
+
+  const modelDisplayName =
+    typeof row.model_display_name === 'string' ? row.model_display_name.trim() : '';
+  if (!modelDisplayName) return null;
+
+  const fixedDeduction = Number(row.fixed_deduction);
+  const catalogVersion = Number(row.catalog_version);
+  const pricingConfigVersion = Number(row.pricing_config_version);
+  const exchangeRate = Number(row.exchange_rate);
+  const modelMarkup = Number(row.model_markup);
+  if (!Number.isFinite(fixedDeduction) || fixedDeduction < 0) return null;
+  if (!Number.isInteger(catalogVersion) || !Number.isInteger(pricingConfigVersion)) return null;
+  if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) return null;
+  if (!Number.isFinite(modelMarkup) || modelMarkup < 0) return null;
+
+  return {
+    charge_id: typeof row.charge_id === 'string' ? row.charge_id : '',
+    model_id: typeof row.model_id === 'string' ? row.model_id : null,
+    model_display_name: modelDisplayName,
+    model_markup: modelMarkup,
+    fixed_deduction: fixedDeduction,
+    fixed_deduction_category:
+      typeof row.fixed_deduction_category === 'string' ? row.fixed_deduction_category : '',
+    catalog_version: catalogVersion,
+    pricing_config_version: pricingConfigVersion,
+    exchange_rate: exchangeRate,
+    billing_mode: 'fixed_tier',
+  };
 }

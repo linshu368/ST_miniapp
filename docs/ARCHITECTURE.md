@@ -34,7 +34,7 @@
    - `miniapp_features.character_ranking_scores` 由 lobby 定时任务直接聚合 `experience.chat_history`；
    - `experience.chat_history.llm_charge_id` 软引用 `billing.llm_usage_charges`；
    - `notifications.created_by`、`support_messages.agent_user_id` FK → `admin.admin_users`。
-9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发；执行状态记录在 `supabase_migrations.repo_migrations` 账本（workflow 自动查重 + 记账）。2026-09-10 起新迁移命名 `YYYYMMDD_描述.sql`（CI 拦旧式编号）；历史存量存在重号（见 §7.4），**不要按序号推断内容**。改库只有仓库迁移一条路，禁止 Management API / Studio 直改。
+9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发；`mode=inspect` 只读互证，`mode=apply` 查账本、执行、记账在同一次调用里。执行状态在 `supabase_migrations.repo_migrations`（首次）和 `repo_migration_events`（含 `force_rerun` 历史）。2026-09-10 起新迁移命名 `YYYYMMDD_描述.sql`（CI 拦旧式编号）；历史存量存在重号（见 §7.4），**不要按序号推断内容**。改库只有仓库迁移一条路，禁止 Management API / Studio 直改。生产禁止跑 `104_rollback_voice_billing.sql`。
 10. **TypeScript 严格模式，禁止 `any`**。
 
 ---
@@ -196,7 +196,7 @@ SSE 事件契约定义在 `shared/src/api/conversations.ts`：`start`（带 mess
    · 上游 2xx → onStreamOpen 回调，此时才写 SSE 响应头并下发 start 事件
 7. 边转发 delta 边累积；客户端断开不终止后端，继续 drain 到 [DONE]
 8. 终态：同步更新同一条 chat_history 的正文与状态；实扣与 OpenRouter 元数据异步补齐
-   （`generation/settle.ts` 即时写 + `generation/sync-job.ts` 30 秒轮询回捞 24h 内不全的行）
+   （`generation/settle.ts` 即时写 + `generation/sync-job.ts` 30 秒轮询回捞 24h 内元数据不全或结算未完成的行）
 ```
 
 **硬约束**：SSE 首字节写出之前不能有任何可能失败的判定。402（余额不足）、409（会话忙 / 不可重生成）、404 全部以 HTTP 状态码 + JSON 返回；响应头一旦发出就只能降级成流内 `error` 事件。所以响应头推迟到上游已 2xx 的 `onStreamOpen` 才写——不是等第一个 token，否则客户端要白等一整个上游首 token 延迟才能挂上占位气泡。
@@ -225,18 +225,18 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 ### 4.5 生成与计费出口（`features/generation`）
 
-| 文件                     | 职责                                                                                                                                                       |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resolve-model.ts`       | 权威模型解析：用户 `selected_model_id` → 模型目录 → `ResolvedModel`                                                                                        |
-| `quota.ts`               | 角色免费额度 `reserve` / `finalize` 两阶段                                                                                                                 |
-| `precheck.ts`            | 定档扣费额与计费快照、余额预检（402 判定，不构造响应）                                                                                                     |
-| `upstream.ts`            | 上游转发原语 + SSE tap（逐字节透传、抓 `generation_id` / `finish_reason`、判 `[DONE]`）                                                                    |
-| `prompt-caching.ts`      | Anthropic `cache_control` 断点注入（system + 窗口内历史最后一条，不打本轮输入）                                                                            |
-| `execute.ts`             | `GenerationService`：把上面串成一条出口，供对话链路直调                                                                                                    |
-| `apply-charge.ts`        | settle / sync-job 共用的定档扣费拼装：闸门标签 → `charge_llm_usage` → 免费额度收口（不回写 `chat_history`）                                                |
-| `settle.ts`              | 补用量元数据 → `applyLlmCharge` → 回写计费列；fire-and-forget。成功结算后顺带调 `check_invite_chat_rounds_reward`（邀请聊天轮数发奖判定，失败只打日志）    |
-| `sync-job.ts`            | 计费的第二条到达路径：30 秒轮询回捞 `finish_reason` 未到、挂 pending 的行，定档 pending 同样走 `applyLlmCharge`（历史 usage 对账仍走 `reconcileLlmUsage`） |
-| `openrouter-metadata.ts` | OpenRouter 用量统计（`/generation?id=`）的唯一读取与字段映射入口，settle / sync-job 共用                                                                   |
+| 文件                     | 职责                                                                                                                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolve-model.ts`       | 权威模型解析：用户 `selected_model_id` → 模型目录 → `ResolvedModel`                                                                                                                                     |
+| `quota.ts`               | 角色免费额度 `reserve` / `finalize` 两阶段                                                                                                                                                              |
+| `precheck.ts`            | 定档扣费额与计费快照、余额预检（402 判定，不构造响应）                                                                                                                                                  |
+| `upstream.ts`            | 上游转发原语 + SSE tap（逐字节透传、抓 `generation_id` / `finish_reason`、判 `[DONE]`）                                                                                                                 |
+| `prompt-caching.ts`      | Anthropic `cache_control` 断点注入（system + 窗口内历史最后一条，不打本轮输入）                                                                                                                         |
+| `execute.ts`             | `GenerationService`：把上面串成一条出口，供对话链路直调                                                                                                                                                 |
+| `apply-charge.ts`        | settle / sync-job 共用的定档扣费拼装：闸门标签 → `charge_llm_usage` → 免费额度收口（不回写 `chat_history`）。已 charged / free 的行可重入：RPC 幂等，补额度收口                                         |
+| `settle.ts`              | 先落请求时定价快照 → 补用量元数据 → `applyLlmCharge` → 回写计费列与 `llm_billing_settled_at`；fire-and-forget。成功结算后顺带调 `check_invite_chat_rounds_reward`（邀请聊天轮数发奖判定，失败只打日志） |
+| `sync-job.ts`            | 计费的第二条到达路径：30 秒轮询回捞 24h 内用量元数据不全**或结算未完成**的行。无 charge 行按快照补建；定档 pending / charged / free 都走 `applyLlmCharge`（历史 usage 对账仍走 `reconcileLlmUsage`）    |
+| `openrouter-metadata.ts` | OpenRouter 用量统计（`/generation?id=`）的唯一读取与字段映射入口，settle / sync-job 共用                                                                                                                |
 
 `settle.ts` 是 fire-and-forget 的：它第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），挂在请求里会让用户在回复已经流完之后继续等。它与请求内同步的 `finalizeTurn` 写同一行 `chat_history` 的**不同列**，列归属见 `ConversationHistoryRepository` 头注释，因此谁先落地都不会互相覆盖。
 
@@ -246,6 +246,7 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 - 免费额度按**用户 × 角色**计轮，上限来自 `runtime_config.miniapp_character_free_chat_quota_limit`（默认 40）。
 - 实扣走 RPC `billing.charge_llm_usage`，幂等键是 `charge_id`。
 - **finish_reason 计费闸门（081/082）**：只有 `status=success` 且 `finish_reason='stop'` 的自然收尾才扣星尘；finish_reason 未到时挂 `pending` 等 sync-job 回捞后结算；截断（length）、中断、上游错误一律不扣费。消费明细带 `reply_outcome`（complete / incomplete / empty）体验口径标签。
+- **完成态拆开**：用量元数据补齐 ≠ 结算完成。`experience.chat_history.llm_billing_snapshot` 保存请求时定价快照；`llm_billing_settled_at` 有值才表示扣费行存在、额度已收口、金额已回写。短暂扣费 / 额度 / 回写失败时元数据仍可先落，回捞按快照补建，不重新定价。
 
 ### 4.6 语音消息（`features/voice`）✅ 生成链路 / ✅ 按次计费链路（开关默认关）
 
@@ -358,7 +359,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 **鉴权机制**：用户侧统一 `requireTelegramAuth`（`middleware/auth.ts`，读 `X-Init-Data` 做 HMAC-SHA256 校验；非生产可用 `MOCK_AUTH=1` / `DEV_AUTH_BYPASS=1` 旁路）。运营侧 CS 用 `X-CS-Admin-Token` + `X-CS-Operator-Id`，admin 用 Supabase 会话，Bot 用 `X-Bot-Internal-Secret` 与 Telegram webhook secret。
 
-**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（30 秒轮询，回捞 24h 内 OpenRouter 元数据不全的行并结算 pending 计费）、`lib/lobby-ranking-refresh-job.ts`（24 小时一轮重算大厅推荐排序分）。支付对账与过期是独立 Railway 服务（见 §8）。
+**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（30 秒轮询，回捞 24h 内 OpenRouter 元数据不全或结算未完成的行，按请求时快照补结算）、`lib/lobby-ranking-refresh-job.ts`（24 小时一轮重算大厅推荐排序分）。支付对账与过期是独立 Railway 服务（见 §8）。
 
 ---
 
@@ -402,14 +403,14 @@ packages/backend/src/
 
 - 位置 `packages/shared/migrations/`（`archive/` 另存 087 删除的 admin RPC 定义备查）。
 - **命名规则（2026-09-10 起）**：新迁移一律 `YYYYMMDD_描述.sql`。三位数字编号已停用并由 CI 拦截（`pnpm lint:migrations`，冻结清单在 `scripts/check-migration-filenames.mjs`）——历史上 021/030/031/032/053/065/086/088/092/093/095 撞号，100 号立规后 105/108/109 又各撞一对。
-- **迁移账本**：`supabase_migrations.repo_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by）。这是平台 schema 上的仓库账本，不是八个业务域的表，也不是 CLI 的 `schema_migrations`。workflow 执行前查账本防重跑（`force_rerun` 可绕过），执行成功后自动记账。账本只覆盖 2026-09-10 后的新迁移，存量不回填。
+- **迁移账本**：`supabase_migrations.repo_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by / applied_at）。这是平台 schema 上的仓库账本，不是八个业务域的表，也不是 CLI 的 `schema_migrations`。`Database Migration` workflow 的 `apply` 把查账本、执行 SQL、写账本放在同一次调用（`scripts/apply-repo-migration.sh`）：已记录且 checksum 一致则拒绝重跑；checksum 不一致报 `MIGRATION_CHECKSUM_DRIFT`（不要改旧文件再跑，写新迁移）；账本表不存在时除 `20260910_schema_migrations_ledger.sql` 外直接失败，不再静默放行。`force_rerun` 只允许文件未改时再执行一遍 SQL，**不覆盖**首次 `applied_at` / checksum，历史写在 `repo_migration_events`（`20260914_repo_migration_ledger_events.sql`）。Apply 与 Record 之间用 `repo_migration_claims` 认领，避免「库已变、账本没有」。`mode=inspect` 用仓库日期命名文件的 sha256 对账本，并探 R3 `grant_bonus_credits`、111 `st_handle` 可空、A 的结算两列。账本只覆盖 2026-09-10 后的新迁移，存量不回填。生产环境拒绝 `104_rollback_voice_billing.sql`。本地协议回归：`pnpm test:migration-ledger`。
 - **历史存量编号必须小心**（均已冻结，仅供查档）：
   - 021 / 030 / 031 / 032 / 053 / 065 历史重号，同号无依赖，按文件名字母序执行；
   - 086 / 088 / 092 / 093 / 095 与 105 / 108 / 109 也各有两个文件，来自并行发布线，**同号但含义不同，不要按序号推断内容**；
   - 105–112 按文件名对号（两条并行线：裂变邀请 vs 语音计费 / 社群奖励）：`105_invite_program`（邀请三表 + RPC）/ `105_voice_billing_atomic`（语音扣费 RPC）；`106_invite_admin_query`；`107_invite_poster_bucket`；`108_invite_chat_round_reward` / `108_official_community_reward`；`109_invite_first_paid_reward` / `109_community_existing_member_reward`（整体替换 108 的 `grant_community_join_reward`）；`110_characters_add_persona_and_style`；`111` / `112` 为 `st_handle` 退场两步；
   - 101 / 102 缺号：语音计费迁移已随 PR #298 revert 从仓库删除，test 库用 104 回滚（生产从未执行，**不要在生产跑 104**）；
   - 099 有配套 `_rollback` 文件，是正向 + 回滚，不是撞号。
-- 执行方式：GitHub Actions → `Database Migration` → 选环境 → 填文件路径；生产需在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。workflow 会校验连接串 project ref（test = `zoqelpfhurwehlvypryl`，production = `wbtsfzozlmurljvglhpn`）。**改库只有这一条路**：禁止 Supabase Management API / Studio 直改表结构。
+- 执行方式：GitHub Actions → `Database Migration` → 选 `mode`（`inspect` 只读 / `apply` 执行）→ 选环境 → `apply` 时填文件路径；生产需在 `confirm_production` 填 `RUN_PRODUCTION_MIGRATION`。workflow 会校验连接串 project ref（test = `zoqelpfhurwehlvypryl`，production = `wbtsfzozlmurljvglhpn`）。**改库只有这一条路**：禁止 Supabase Management API / Studio 直改表结构。
 - **099 不是普通迁移**：test 与生产均已执行完毕。当时的停流量 / 前置 097/098 / 事务外收尾剧本是历史文档：`git show b4491cd^:docs/schema划分-一阶段执行计划.md`。
 
 ### 7.5 legacy guard（禁止旧链路的新引用）
@@ -549,11 +550,11 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（backend 公网域名）。权�
 
 **现行入口（当前 checkout 即可读）：**
 
-| 文档                                   | 内容                                           |
-| -------------------------------------- | ---------------------------------------------- |
-| 本文件                                 | 架构铁律、包边界、八域、迁移与验证             |
-| `docs/重构实施方案.md`                 | 2026-09 降复杂度重构进度（不是第二套架构权威） |
-| `packages/shared/migrations/README.md` | 迁移执行通道、命名、账本（操作备忘）           |
+| 文档                                   | 内容                                                                       |
+| -------------------------------------- | -------------------------------------------------------------------------- |
+| 本文件                                 | 架构铁律、包边界、八域、迁移与验证；发布前运维见 `docs/重构实施方案.md` R4 |
+| `docs/重构实施方案.md`                 | 2026-09 降复杂度重构进度（不是第二套架构权威）                             |
+| `packages/shared/migrations/README.md` | 迁移执行通道、命名、账本（操作备忘）                                       |
 
 各包 `CLAUDE.md` 已删除，后端/前端硬规则以本文铁律为准；后续模块上下文放到 spec，不要再在各包下恢复一份。
 
