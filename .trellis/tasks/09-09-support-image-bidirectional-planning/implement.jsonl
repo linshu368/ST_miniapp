@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend React Query、shared DTO、UI 与质量门禁"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend route、外部调用可靠性、日志与测试硬规则"}
+{"file":".trellis/spec/cs-platform/app/index.md","reason":"双业务流隔离、环境 query key、统一 API helper 与构建门禁"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"客服图片跨应用契约兼容扩展规则"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"唯一 migration 来源、RLS/grants、test→production 与回滚规则"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"双链路端到端边界与失败路径检查"}
+{"file":".trellis/tasks/09-09-support-image-bidirectional-planning/research/current-state.md","reason":"当前文本链路、schema 与需求稿差异的源码调研"}
