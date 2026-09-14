@@ -1,8 +1,7 @@
 /**
- * dev 后端种子数据 —— 保护前端 mock 依赖的 character UUID 永远存在。
+ * dev 后端种子数据 —— 保证 shared/dev-fixtures 里的角色 UUID 在库里存在。
  *
- * 维护约定见根 CLAUDE.md「数据契约纪律」第 6 条 / packages/backend/CLAUDE.md Dev 提交前清单第 3 条：
- * - 本文件的 upsert 列表必须与 packages/shared/src/dev-fixtures.ts 的 DEV_SEED_CHARACTERS 常量一致
+ * UUID 与 packages/shared/src/dev-fixtures.ts 的 DEV_SEED_CHARACTERS 必须一致（架构铁律 1）：
  * - 不得删除或修改已存在的 UUID
  * - dev 部署时（Railway deploy hook 或手动 `pnpm tsx prisma/seed.ts`）跑一次
  *

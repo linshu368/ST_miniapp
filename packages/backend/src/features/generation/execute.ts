@@ -1,19 +1,15 @@
 /**
  * backend / features / generation / execute.ts
  *
- * 自研链路的生成出口（M3a）。把本模块的四段能力串成 GenerationService：
- *   免费额度预留 → 定档扣费额与余额预检 → 上游转发与 SSE tap → 终态落库实扣。
+ * 唯一的生成与计费出口（架构铁律 6）。把本模块的四段能力串成 GenerationService：
+ *   免费额度预留 → 定档扣费额与余额预检 → 上游转发与 SSE tap → 终态结算（settle.ts）。
  *
- * 与 ST 链路共用 quota / precheck / upstream / chat-history-logger 四个模块，
- * 因此计费口径、chat_history 字段、charge_id 幂等语义在切换前后完全一致。
- *
- * 与 ST 链路的两处刻意差异，都只作用于自研链路：
- *   1. 请求体由 messages + sampling 现场构造，而不是透传 ST 的 OpenAI 请求外壳；
- *   2. promptCaching 打开时注入 Anthropic 的 cache_control 断点（决策 11）。
+ * 任何要调聊天 LLM 的路径都必须进这里。别处另起「转发 + 扣费 + 落库」会让计费口径漂移，
+ * 因为 charge_id 幂等语义、finish_reason 计费闸门、免费额度两阶段都只实现在这一条链上。
  *
  * 客户端断开不终止上游：本函数自行 drain 到 [DONE] 再落库，用户切后台回来仍能看到完整回复。
  *
- * 免费额度预留失败、钱包查询失败会原样抛出，调用方按 500 处理——与 ST 链路同判据。
+ * 免费额度预留失败、钱包查询失败会原样抛出，调用方按 500 处理。
  * 上游侧的失败（连不上 / 非 2xx / 流中断）不抛出，统一从 GenerationResult.status 收口。
  */
 
@@ -25,8 +21,8 @@ import {
   getPricingConfig,
   type ModelBillingContext,
 } from '../../platform/model-tiers.js';
-import { saveChatHistory, type ChatHistoryEntry } from '../../lib/chat-history-logger.js';
 import { createLogger } from '../../lib/logger.js';
+import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
 import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
 import {
@@ -45,9 +41,9 @@ import type {
   GenerationService,
 } from './types.js';
 
-/** 一次生成里只有这四个字段随终态变化，其余 chat_history 字段全程固定。 */
+/** 一次生成里只有这五个字段随终态变化，其余结算入参全程固定。 */
 type HistoryOutcome = Pick<
-  ChatHistoryEntry,
+  GenerationSettlementEntry,
   'assistant_reply' | 'status' | 'upstream_status' | 'generation_id' | 'finish_reason'
 >;
 
@@ -305,7 +301,7 @@ function toError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
 }
 
-/** chat_history 的固定字段一次绑定，终态只补那四个会变的。 */
+/** 结算入参的固定字段一次绑定，终态只补那五个会变的。 */
 function createHistoryWriter(input: {
   request: GenerationRequest;
   billing: ModelBillingContext;
@@ -314,7 +310,7 @@ function createHistoryWriter(input: {
 }): SaveHistory {
   const { request, billing, plan, log } = input;
   return (outcome) => {
-    saveChatHistory(
+    settleGeneration(
       {
         user_id: request.userId,
         model: billing.openRouterModelId,

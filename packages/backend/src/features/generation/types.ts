@@ -1,22 +1,18 @@
-// 生成执行与计费出口（M3a）的统一接缝。后端内部类型，不进 shared。
+// 生成执行与计费出口的统一接缝。后端内部类型，不进 shared。
 //
-// M3a 把 routes/llm-proxy.ts 里内联的「权威模型解析 → 免费额度预留 → 定档扣费额与余额预检
-// → 上游转发与 SSE tap → 终态落库实扣」抽成服务，ST 链路与自研引擎共用同一出口，
-// 保证切换前后计费口径不变。M3a 本身是纯重构，行为零变化。
+// 出口的五段是固定顺序：权威模型解析 → 免费额度预留 → 定档扣费额与余额预检
+// → 上游转发与 SSE tap → 终态结算（实扣与落库）。顺序不能换：预留结果决定本轮是否免费，
+// 而定档扣费额又由该结果决定，余额预检再吃这个额度。
 
 import type { RequestLogger } from '../../lib/logger.js';
 
 /**
- * 生成出口的日志入口。两条链路各自传入：ST 链路传请求内的 requestLogger（带 reqId），
- * 自研链路没有 Fastify 上下文时退化成进程级 createLogger()。
- * 形状与两者兼容，服务层因此不必绑死请求上下文。
+ * 生成出口的日志入口。对话链路传请求内的 requestLogger（带 reqId），
+ * 没有 Fastify 上下文时退化成进程级 createLogger()，服务层因此不必绑死请求上下文。
  */
 export type GenerationLogger = RequestLogger;
 
-/**
- * 已解析的权威模型。解析动作独立成函数而不是留在生成出口内部，
- * 因为自研链路要先拿到 model 才能解析绑定的预设，两处各解析一次会漂移。
- */
+/** 已解析的权威模型。 */
 export interface ResolvedModel {
   /** 模型目录的 stable id */
   modelId: string;

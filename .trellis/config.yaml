@@ -1,0 +1,34 @@
+# Trellis Configuration for ST_miniapp
+
+session_commit_message: 'chore: record trellis session'
+session_auto_commit: false
+max_journal_lines: 2000
+
+packages:
+  frontend:
+    path: packages/frontend
+  backend:
+    path: packages/backend
+  shared:
+    path: packages/shared
+  admin:
+    path: packages/admin
+  cs-platform:
+    path: packages/cs-platform
+  database:
+    path: packages/shared/migrations
+  docs:
+    path: docs
+
+default_package: backend
+
+codex:
+  dispatch_mode: inline
+
+channel:
+  worker_guard:
+    idle_timeout: 5m
+    max_live_workers: 6
+
+prompt_injection:
+  skip_keyword: 'no-trellis'

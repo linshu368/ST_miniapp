@@ -62,10 +62,32 @@ jobs:
         run: pnpm lint
 
       - name: Lint cross-package imports
-        run: npx eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --ignore-pattern '**/__tests__/eslint-import-guard.ts' --no-inline-config
+        run: npx eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --no-inline-config
+
+      # 禁止旧 schema / 已退场链路的新引用，以及在收口好的主路径之外另开出口。
+      # 规则与豁免清单在 scripts/check-legacy-references.mjs。
+      - name: Guard against legacy references
+        run: pnpm lint:legacy
+
+      # 新迁移必须用 YYYYMMDD_描述.sql 命名（三位数字编号已停用，撞号惯犯）。
+      # 规则与冻结清单在 scripts/check-migration-filenames.mjs。
+      - name: Check migration filenames
+        run: pnpm lint:migrations
 
       - name: Test shared package
         run: pnpm --filter @miniapp/shared test
+
+      # 无凭证单元测试。backend 的 `pnpm test` 排除 *.integration.test.ts；
+      # 真库集成要显式跑 `pnpm --filter @miniapp/backend test:integration`，
+      # 本 job 的占位 SUPABASE_* 不能当成真库通过。
+      - name: Test backend package
+        run: pnpm --filter @miniapp/backend test
+
+      - name: Test frontend package
+        run: pnpm --filter @miniapp/frontend test
+
+      - name: Test admin package
+        run: pnpm --filter @miniapp/admin test
 
       - name: Build frontend
         run: pnpm --filter @miniapp/frontend build

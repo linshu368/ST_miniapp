@@ -50,7 +50,8 @@ export class RechargeUseCase {
       outTradeNo: orderId,
       amount: formatAmountCny(plan.price_cents),
       userId: input.userId,
-      productName: `星尘充值 ${plan.credits_amount + plan.bonus_credits}`,
+      // 子千易 `name`。原「星尘充值 *」疑似命中支付宝禁售词，改为文档示例做验证。
+      productName: 'VIP会员',
       clientIp: input.clientIp,
     });
 
