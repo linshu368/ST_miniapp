@@ -271,7 +271,7 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 | `POST .../:messageId/image-description`       | DeepSeek 免费生成中文分镜描述            |
 | `POST .../:messageId/image`                   | 确认中文稿并创建 pending attempt（202）  |
 
-流水线：角色视觉锚点与回复资格校验 → 默认 DeepSeek 写稿或保留自定义中文稿 → `experience.chat_message_images` pending → `claim_chat_image_jobs` 租约领取 → DeepSeek 直译英文 → Grok/Liaobots → 下载 URL 的 HTTPS/私网/大小/MIME 防护 → Storage `miniapp-chat-images` → `billing.settle_image_generation` 原子扣款、ledger 与 current ready。provider dispatch 前租约可恢复；dispatch 后模糊超时不自动重投。余额竞争明确失败时删除对象，结算响应未知时保留对象和状态等待幂等对账。
+流水线：角色视觉锚点与回复资格校验 → 默认 DeepSeek 写稿或保留自定义中文稿 → `experience.chat_message_images` pending → `claim_chat_image_jobs` 租约领取 → DeepSeek 直译英文 → Grok/Liaobots（失败后以相同内容降级 Replicate Z）→ 下载 URL 的 HTTPS/私网/大小/MIME 防护 → Storage `miniapp-chat-images` → `billing.settle_image_generation` 原子扣款、ledger 与 current ready。provider 写请求不自动重投；Replicate 仅轮询同一个 prediction。余额竞争明确失败时删除对象，结算响应未知时保留对象和状态等待幂等对账。
 
 当前仅能确认代码、契约和 migration 静态/编译状态；test 环境真实 provider、Storage、并发/重启、图 1~9 与 Telegram WebView 证据仍需发布验收。
 
@@ -544,7 +544,8 @@ packages/backend/src/
 | `LLM_UPSTREAM_URL` / `LLM_API_KEY`                                                 | LLM 上游（默认 OpenRouter）与平台真实 key，仅 backend 持有           |
 | `MINIMAX_API_KEY` / `MINIMAX_TTS_URL` / `MINIMAX_TIMEOUT_MS`                       | 语音合成上游                                                         |
 | `DEEPSEEK_API_KEY` / `DEEPSEEK_URL` / `DEEPSEEK_MODEL`                             | 语音台词写稿上游                                                     |
-| `LIAOBOTS_AUTH` / `LIAOBOTS_BASE` / `GROK_MODEL`                                   | 图片 Grok/Liaobots 上游；鉴权仅 backend secret                       |
+| `LIAOBOTS_AUTH` / `LIAOBOTS_BASE` / `GROK_MODEL`                                   | 图片 Grok/Liaobots 主上游；鉴权仅 backend secret                     |
+| `REPLICATE_TOKEN` / `REPLICATE_BASE` / `Z_MODEL`                                   | Grok 失败后的 Replicate Z 图片降级通道                               |
 | `IMAGE_GENERATION_TIMEOUT_MS` / `IMAGE_DOWNLOAD_TIMEOUT_MS`                        | 图片 provider 与下载超时                                             |
 | `IMAGE_WORKER_ENABLED` / `IMAGE_WORKER_INTERVAL_MS` / `IMAGE_WORKER_LEASE_SECONDS` | 图片数据库任务 worker 与租约控制                                     |
 | `UPSTASH_REDIS_REST_URL` / `_TOKEN`                                                | 运行时配置缓存                                                       |

@@ -21,7 +21,7 @@
 - 写稿和翻译模型若与语音一致，复用现有 DeepSeek 配置：`DEEPSEEK_API_KEY`、`DEEPSEEK_URL`、`DEEPSEEK_MODEL`，默认模型仍为 `deepseek-v4-flash`。
 - Grok/Liaobots 配置由 backend `platform/config.ts` 读取环境变量：`LIAOBOTS_AUTH`、`LIAOBOTS_BASE`、`GROK_MODEL`。
 - `LIAOBOTS_AUTH` 是 secret，只能存在 backend 环境变量；`LIAOBOTS_BASE` 和 `GROK_MODEL` 可配置但不下发前端。
-- Python 中的 Replicate/Z 降级链路不进入初版，除非后续单独评审；当前规划的图片 provider 只有 Grok。
+- 2026-09-14 追加 Replicate/Z 降级：Grok 调用失败后以相同角色锚点和场景内容改用 tag 结构重渲染，不添加新画面内容。配置为 `REPLICATE_TOKEN`、`REPLICATE_BASE`、`Z_MODEL`。
 
 ## 约束
 

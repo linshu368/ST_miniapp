@@ -19,7 +19,7 @@
 5. 图片是 message 旁支产物，独立表持久化 attempts；不扩张 conversation 消息本体，不与 audio 共表。
 6. 余额预检不是扣费。Storage 结果已验证后，钱包扣款、ledger、幂等记录和 image ready/current 必须由单一数据库事务完成。
 7. 同一 attempt 最多扣一次；同 message 至多一个 active attempt 和一个 current ready 图，正确性由数据库约束/RPC 保证。
-8. 出图失败、内容拒绝、超时或状态未知不扣费。provider 请求进入模糊区后不得自动重投。
+8. 出图失败、内容拒绝、超时或状态未知不扣费。单个 provider 请求进入模糊区后不得向同一 provider 自动重投；Grok 失败时允许按产品要求切换到 Z 降级通道一次。
 9. 已确认任务必须支持离页与进程重启恢复；初版使用 PostgreSQL claim/lease，不新增 Redis 队列或独立 worker。
 10. 新增/修改方法在定义处增加中文注释，说明职责；涉及外部调用、任务或账务时同时说明超时、幂等、事务/补偿和失败语义。
 
@@ -27,7 +27,7 @@
 
 - 公开状态：`pending | generating | ready | failed | failed_unknown`；`leased/storing` 只在数据库内部映射为 generating。
 - Frontend 只在存在非终态时条件轮询；终态或页面后台停止，回前台精确刷新。
-- DB 内部可有 `leased`，但不暴露给用户；provider 前租约过期可重领，provider dispatch 后超时收口为 `failed_unknown`。
+- DB 内部可有 `leased`，但不暴露给用户；provider 前租约过期可重领。Grok 失败后至多切换一次 Z；Z dispatch 后超时收口为 `failed_unknown`，不再追加通道或重投。
 - 新 attempt 失败时保留旧 current ready 图；新图只在成功结算事务中替换 current。
 
 ## 安全、容量与日志

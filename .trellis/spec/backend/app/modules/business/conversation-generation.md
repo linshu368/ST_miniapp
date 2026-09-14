@@ -17,7 +17,7 @@ last_verified_at: 2026-09-14
 
 ## 当前状态
 
-自研会话链路已上线。图片生成代码已落地但 runtime 开关默认关闭：默认路径由 DeepSeek 写中文分镜，自定义路径保留用户中文稿，两路均在 worker 中直译英文后调用 Grok/Liaobots，成功转存 Storage 后才原子结算。真实上游与生产开放仍待环境验收。
+自研会话链路已上线。图片生成代码已落地但 runtime 开关默认关闭：默认路径由 DeepSeek 写中文分镜，自定义路径保留用户中文稿，两路均在 worker 中直译英文后优先调用 Grok/Liaobots；主通道失败时以相同内容降级到 Replicate Z 模型，成功转存 Storage 后才原子结算。真实上游与生产开放仍待环境验收。
 
 ## 入口与调用者
 
@@ -35,15 +35,15 @@ Frontend 调用 `/api/v1/conversations*`、generation config，以及 `/api/v1/i
 
 ## 关键实现链路
 
-聊天链路保持“鉴权 → 原子开轮 → SSE → history/计费收口”。图片链路为“ownership/回复资格 → 中文稿 → pending attempt → DB 租约 → DeepSeek 直译 → provider dispatch 边界 → Grok → Storage → `settle_image_generation` 原子扣费与 current ready”；provider 模糊超时不自动重投。
+聊天链路保持“鉴权 → 原子开轮 → SSE → history/计费收口”。图片链路为“ownership/回复资格 → 中文稿 → pending attempt → DB 租约 → DeepSeek 直译 → provider dispatch 边界 → Grok（失败则 Z 降级）→ Storage → `settle_image_generation` 原子扣费与 current ready”；同一 provider 写请求不重试，Replicate 只轮询已创建 prediction。
 
 ## 数据、契约与外部依赖
 
-消费 shared conversations/images 契约、experience 会话与图片 attempt、OpenRouter、DeepSeek、Grok/Liaobots 和 Supabase Storage。
+消费 shared conversations/images 契约、experience 会话与图片 attempt、OpenRouter、DeepSeek、Grok/Liaobots、Replicate Z 和 Supabase Storage。
 
 ## 关键节点与约束
 
-流前错误使用 HTTP；响应头发出后使用流内 error。聊天与图片上游适配不得旁路 `features/generation`。图片 provider 前租约可恢复，dispatch 后结果未知必须失败关闭；结算明确余额不足删除对象，结算响应未知则保留对象和 storing 状态待幂等对账。
+流前错误使用 HTTP；响应头发出后使用流内 error。聊天与图片上游适配不得旁路 `features/generation`。图片 provider 前租约可恢复；Grok 失败只允许切换一次 Z，Z dispatch 后结果未知必须失败关闭。结算明确余额不足删除对象，结算响应未知则保留对象和 storing 状态待幂等对账。
 
 ## 验证方式
 
