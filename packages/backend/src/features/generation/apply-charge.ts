@@ -11,6 +11,10 @@
  * 不再因为 chat_history.status=success 就打 complete。金额仍由 RPC 按
  * chat_status + finish_reason 决定（081），charge_id 幂等，不会多扣。
  *
+ * 已存在的 charged / free 行也可以再进这里：RPC 对同 charge_id 直接返回原行，
+ * 随后补跑 finalizePending（非 reserved 为 no-op）并把金额交回给调用方回写。
+ * 不回写 chat_history。
+ *
  * 金额判定不在应用层：charge_llm_usage RPC 按 metadata 的 chat_status + finish_reason
  * 自行计算（见 081_finish_reason_billing_gate.sql）。
  */
@@ -106,6 +110,7 @@ export interface LlmChargeResult {
 /**
  * 结算一笔 LLM 定档扣费：闸门标签 → charge_llm_usage → 免费额度收口。
  * 异常原样抛出：settle 消化打日志并返回 0；sync-job 冒泡以便下一轮重试。
+ * 可对已 charged / free 的行重入：不重复扣款，仍会补额度收口。
  */
 export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChargeResult> {
   const replyOutcome = resolveReplyOutcome({

@@ -6,10 +6,12 @@
 // 一轮生成会分三段写同一行，三段的列集合基本不重叠，所以谁先落地都不会覆盖对方：
 //   1. startTurn / startRegeneration  开轮 RPC 建行：身份与轮次列 + status='streaming'
 //   2. setPromptHistory → finalizeTurn 请求内同步收口：prompt 快照 + 用户可见终态
-//   3. recordBillingOutcome / applyGenerationMetadata  异步补齐：扣费额与 OpenRouter 用量元数据
+//   3. saveBillingSnapshot / recordBillingOutcome / applyGenerationMetadata
+//      异步补齐：请求时定价快照、扣费额、结算完成时间、OpenRouter 用量元数据
 // 唯一共享的列是 llm_finish_reason：第 2 段写 SSE tap 观测值，第 3 段仅在真的从
 // OpenRouter 取到更权威的值时才覆盖（它要等用量统计，必然晚于第 2 段）。
 // 第 3 段的实现见 features/generation/settle.ts 与 features/generation/sync-job.ts。
+// 用量元数据补齐 ≠ 结算完成：llm_billing_settled_at 有值才算扣费行、额度收口、金额回写都齐。
 
 import type { ChatMessage, ChatMessageStatus } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
@@ -33,9 +35,36 @@ export interface ConversationHistoryRow {
   llm_finish_reason: string | null;
   llm_generation_id: string | null;
   llm_charge_id: string | null;
+  llm_billing_snapshot: LlmBillingSnapshot | null;
+  llm_billing_settled_at: string | null;
   session_id: string;
   turn_index: number;
   revision: number;
+}
+
+/** 请求时定价快照。回捞按此重建 charge，不重新定价。 */
+export interface LlmBillingSnapshot {
+  charge_id: string;
+  model_id: string | null;
+  model_display_name: string;
+  model_markup: number;
+  fixed_deduction: number;
+  fixed_deduction_category: string;
+  catalog_version: number;
+  pricing_config_version: number;
+  exchange_rate: number;
+  billing_mode: 'fixed_tier';
+}
+
+export interface ChatHistorySyncRow {
+  id: string;
+  user_id: string;
+  model: string;
+  llm_generation_id: string | null;
+  llm_charge_id: string | null;
+  assistant_reply: string | null;
+  status: string;
+  llm_billing_snapshot: LlmBillingSnapshot | null;
 }
 
 export interface StartedHistoryTurn {
@@ -163,64 +192,85 @@ export class ConversationHistoryRepository {
   }
 
   /**
-   * 生成终态结算：实扣金额 + OpenRouter 用量元数据。由 features/generation/settle.ts 调用。
+   * 生成终态结算：实扣金额 + OpenRouter 用量元数据 + 结算完成时间。
+   * 由 features/generation/settle.ts 调用。
    * metadata 的键由 generation/openrouter-metadata.ts 统一构造，这里不做字段映射。
+   * billingSettledAt 有值才表示扣费行、额度收口、金额回写都齐；不要用元数据是否齐全代替。
    */
   async recordBillingOutcome(input: {
     historyId: string;
     deductionRate: number;
     metadata: Record<string, unknown>;
+    billingSettledAt?: string;
   }): Promise<void> {
     const { error } = await this.db
       .from('chat_history')
-      .update({ deduction_rate: input.deductionRate, ...input.metadata })
+      .update({
+        deduction_rate: input.deductionRate,
+        ...input.metadata,
+        ...(input.billingSettledAt ? { llm_billing_settled_at: input.billingSettledAt } : {}),
+      })
       .eq('id', input.historyId);
     if (error) throw new Error(`回写生成计费结果失败：${error.message}`);
   }
 
   /**
-   * 回捞任务的元数据补齐：只覆盖 llm_* 用量字段与（若已结算）扣费额。
+   * 扣费前先落下请求时定价快照。charge 行还没建出来时，回捞靠它按原价补建。
+   * 由 features/generation/settle.ts 调用；不碰用量元数据列。
+   */
+  async saveBillingSnapshot(historyId: string, snapshot: LlmBillingSnapshot): Promise<void> {
+    const { error } = await this.db
+      .from('chat_history')
+      .update({ llm_billing_snapshot: snapshot })
+      .eq('id', historyId);
+    if (error) throw new Error(`回写计费快照失败：${error.message}`);
+  }
+
+  /**
+   * 回捞任务的元数据补齐：覆盖 llm_* 用量字段与（若已结算）扣费额、结算完成时间。
    * 由 features/generation/sync-job.ts 调用。
    */
   async applyGenerationMetadata(
     historyId: string,
-    metadata: Record<string, unknown>
+    metadata: Record<string, unknown>,
+    billingSettledAt?: string
   ): Promise<void> {
-    const { error } = await this.db.from('chat_history').update(metadata).eq('id', historyId);
+    const { error } = await this.db
+      .from('chat_history')
+      .update({
+        ...metadata,
+        ...(billingSettledAt ? { llm_billing_settled_at: billingSettledAt } : {}),
+      })
+      .eq('id', historyId);
     if (error) throw new Error(`补齐 LLM 元数据失败：${error.message}`);
   }
 
-  /** 回捞任务的扫描口：24h 内有 generation_id 但用量字段不全的行。 */
-  async listRowsMissingGenerationData(input: { since: string; limit: number }): Promise<
-    Array<{
-      id: string;
-      llm_generation_id: string | null;
-      llm_charge_id: string | null;
-      assistant_reply: string | null;
-      status: string;
-    }>
-  > {
+  /**
+   * 回捞任务的扫描口：24h 内有 generation_id，且用量字段不全或结算未完成的行。
+   * 结算未完成 = 已有请求时快照但还没有 llm_billing_settled_at。
+   * 没有快照的存量行仍只按用量字段不全扫描，避免把 24h 内已结清的历史行整批拖进来。
+   */
+  async listRowsMissingGenerationData(input: {
+    since: string;
+    limit: number;
+  }): Promise<ChatHistorySyncRow[]> {
     const { data, error } = await this.db
       .from('chat_history')
-      .select('id, llm_generation_id, llm_charge_id, assistant_reply, status')
+      .select(
+        'id, user_id, model, llm_generation_id, llm_charge_id, assistant_reply, status, llm_billing_snapshot'
+      )
       .not('llm_generation_id', 'is', null)
       .gte('created_at', input.since)
       // llm_usage_cache 不参与判定：OpenRouter 从不返回 usage_cache，把它算进来会让窗口内
       // 每一行都恒为「不完整」，被反复重新拉取直到滚出 24h。
       .or(
-        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null'
+        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null,and(llm_billing_snapshot.not.is.null,llm_billing_settled_at.is.null)'
       )
       .order('created_at', { ascending: false })
       .limit(input.limit);
 
     if (error) throw new Error(`扫描待补齐的对话轮次失败：${error.message}`);
-    return (data ?? []) as Array<{
-      id: string;
-      llm_generation_id: string | null;
-      llm_charge_id: string | null;
-      assistant_reply: string | null;
-      status: string;
-    }>;
+    return (data ?? []) as ChatHistorySyncRow[];
   }
 
   /**

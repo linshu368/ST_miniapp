@@ -247,4 +247,22 @@ describe('applyLlmCharge', () => {
     await expect(applyLlmCharge(command())).rejects.toThrow('rpc failed');
     expect(finalizePending).not.toHaveBeenCalled();
   });
+
+  it('still finalizes quota when the charge row already exists', async () => {
+    chargeLlmUsage.mockResolvedValue({
+      charge: { charged_amount: 0, calculated_amount: 50 },
+      alreadyCharged: true,
+    });
+
+    const result = await applyLlmCharge(command());
+
+    expect(result.chargedAmount).toBe(0);
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
+  });
+
+  it('rethrows quota finalize failures so retry can close reserved', async () => {
+    finalizePending.mockRejectedValueOnce(new Error('quota rpc failed'));
+    await expect(applyLlmCharge(command())).rejects.toThrow('quota rpc failed');
+    expect(chargeLlmUsage).toHaveBeenCalledOnce();
+  });
 });

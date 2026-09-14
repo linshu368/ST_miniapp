@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChargeLlmUsageInput } from '../../infrastructure/repositories/MiniappWalletRepository.js';
+import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 
 const { chargeLlmUsage, finalizePending, findLlmUsageCharge, reconcileLlmUsage } = vi.hoisted(
   () => ({
@@ -56,22 +57,44 @@ function pendingFixedCharge(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function billingSnapshot(overrides: Partial<LlmBillingSnapshot> = {}): LlmBillingSnapshot {
+  return {
+    charge_id: 'charge-1',
+    model_id: 'model-1',
+    model_display_name: 'Claude Sonnet 4.5',
+    model_markup: 1,
+    fixed_deduction: 50,
+    fixed_deduction_category: 'premium',
+    catalog_version: 12,
+    pricing_config_version: 7,
+    exchange_rate: 1,
+    billing_mode: 'fixed_tier',
+    ...overrides,
+  };
+}
+
 function syncInput(
   overrides: {
     finishReason?: string | null;
     assistantReply?: string | null;
     status?: string;
     genData?: Record<string, unknown>;
+    llmChargeId?: string | null;
+    snapshot?: LlmBillingSnapshot | null;
   } = {}
 ) {
   const finishReason = overrides.finishReason === undefined ? 'length' : overrides.finishReason;
   return {
     record: {
       id: 'row-1',
-      llm_charge_id: 'charge-1',
+      user_id: 'user-1',
+      model: 'anthropic/claude-sonnet-4.5',
+      llm_charge_id: overrides.llmChargeId === undefined ? 'charge-1' : overrides.llmChargeId,
       assistant_reply:
         overrides.assistantReply === undefined ? '还没说完' : overrides.assistantReply,
       status: overrides.status ?? 'success',
+      llm_billing_snapshot:
+        overrides.snapshot === undefined ? billingSnapshot() : overrides.snapshot,
     },
     generationId: 'gen-1',
     genData: {
@@ -156,7 +179,7 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
   });
 
   it('uses pending row fixed_deduction, not the zero calculated_amount', async () => {
-    await reconcileCharge(syncInput({ finishReason: 'stop' }));
+    await reconcileCharge(syncInput({ finishReason: 'stop', snapshot: null }));
     expect(lastCharge().calculatedAmount).toBe(50);
   });
 
@@ -209,5 +232,157 @@ describe('reconcileCharge (legacy usage branch)', () => {
       llm_intended_deduction: 6.8,
       deduction_rate: 12,
     });
+  });
+});
+
+describe('reconcileCharge (A1 rebuild from snapshot)', () => {
+  beforeEach(() => {
+    chargeLlmUsage.mockReset();
+    finalizePending.mockReset();
+    findLlmUsageCharge.mockReset();
+    reconcileLlmUsage.mockReset();
+    chargeLlmUsage.mockResolvedValue({
+      charge: { charged_amount: 50, calculated_amount: 50 },
+    });
+    finalizePending.mockResolvedValue(null);
+    findLlmUsageCharge.mockResolvedValue(null);
+  });
+
+  it('rebuilds a missing charge row from the request-time snapshot', async () => {
+    const input = syncInput({ finishReason: 'stop', assistantReply: '完整回复' });
+    const result = await reconcileCharge(input);
+
+    expect(result).toEqual({ settled: true });
+    expect(lastCharge()).toMatchObject({
+      chargeId: 'charge-1',
+      userId: 'user-1',
+      calculatedAmount: 50,
+      catalogVersion: 12,
+      pricingConfigVersion: 7,
+      modelMarkup: 1,
+    });
+    expect(lastCharge().metadata).toMatchObject({
+      billing_mode: 'fixed_tier',
+      fixed_deduction: 50,
+      source: 'chat_history_sync',
+      reply_outcome: 'complete',
+    });
+    expect(input.llmMetadata).toEqual({
+      llm_intended_deduction: 50,
+      deduction_rate: 50,
+    });
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
+  });
+
+  it('does not reprice when the snapshot amount differs from current catalog', async () => {
+    await reconcileCharge(
+      syncInput({
+        finishReason: 'stop',
+        snapshot: billingSnapshot({ fixed_deduction: 30 }),
+      })
+    );
+    expect(lastCharge().calculatedAmount).toBe(30);
+  });
+
+  it('cannot rebuild without a snapshot and leaves settlement incomplete', async () => {
+    const result = await reconcileCharge(syncInput({ finishReason: 'stop', snapshot: null }));
+    expect(result).toEqual({ settled: false });
+    expect(chargeLlmUsage).not.toHaveBeenCalled();
+    expect(finalizePending).not.toHaveBeenCalled();
+  });
+});
+
+describe('reconcileCharge (A2 already charged / free)', () => {
+  beforeEach(() => {
+    chargeLlmUsage.mockReset();
+    finalizePending.mockReset();
+    findLlmUsageCharge.mockReset();
+    reconcileLlmUsage.mockReset();
+    finalizePending.mockResolvedValue(null);
+  });
+
+  it('free rows still finalize quota and write back the charged amount', async () => {
+    findLlmUsageCharge.mockResolvedValue({
+      ...pendingFixedCharge(),
+      status: 'free',
+      charged_amount: 0,
+      calculated_amount: 0,
+    });
+    chargeLlmUsage.mockResolvedValue({
+      charge: { charged_amount: 0, calculated_amount: 0 },
+      alreadyCharged: true,
+    });
+
+    const input = syncInput({ finishReason: 'stop', assistantReply: '完整回复' });
+    const result = await reconcileCharge(input);
+
+    expect(result).toEqual({ settled: true });
+    expect(chargeLlmUsage).toHaveBeenCalledOnce();
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
+    expect(input.llmMetadata).toEqual({
+      llm_intended_deduction: 0,
+      deduction_rate: 0,
+    });
+  });
+
+  it('charged rows still finalize quota and write back the charged amount', async () => {
+    findLlmUsageCharge.mockResolvedValue({
+      ...pendingFixedCharge(),
+      status: 'charged',
+      charged_amount: 50,
+      calculated_amount: 50,
+    });
+    chargeLlmUsage.mockResolvedValue({
+      charge: { charged_amount: 50, calculated_amount: 50 },
+      alreadyCharged: true,
+    });
+
+    const input = syncInput({ finishReason: 'stop', assistantReply: '完整回复' });
+    const result = await reconcileCharge(input);
+
+    expect(result).toEqual({ settled: true });
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
+    expect(input.llmMetadata.deduction_rate).toBe(50);
+  });
+
+  it('process restart after charge success still closes quota with the same charge_id', async () => {
+    findLlmUsageCharge.mockResolvedValue({
+      ...pendingFixedCharge(),
+      status: 'charged',
+      charged_amount: 50,
+      calculated_amount: 50,
+    });
+    chargeLlmUsage.mockResolvedValue({
+      charge: { charged_amount: 50, calculated_amount: 50 },
+      alreadyCharged: true,
+    });
+
+    await reconcileCharge(syncInput({ finishReason: 'stop', assistantReply: '完整回复' }));
+    expect(lastCharge().chargeId).toBe('charge-1');
+    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
+  });
+
+  it('duplicate execution keeps the snapshot amount and the same charge_id', async () => {
+    findLlmUsageCharge.mockResolvedValue({
+      ...pendingFixedCharge(),
+      status: 'charged',
+      charged_amount: 50,
+      calculated_amount: 50,
+    });
+    chargeLlmUsage.mockResolvedValue({
+      charge: { charged_amount: 50, calculated_amount: 50 },
+      alreadyCharged: true,
+    });
+
+    const first = syncInput({ finishReason: 'stop', assistantReply: '完整回复' });
+    const second = syncInput({ finishReason: 'stop', assistantReply: '完整回复' });
+    await reconcileCharge(first);
+    await reconcileCharge(second);
+
+    expect(chargeLlmUsage).toHaveBeenCalledTimes(2);
+    expect(lastCharge().chargeId).toBe('charge-1');
+    expect(lastCharge().calculatedAmount).toBe(50);
+    expect(first.llmMetadata.deduction_rate).toBe(50);
+    expect(second.llmMetadata.deduction_rate).toBe(50);
   });
 });
