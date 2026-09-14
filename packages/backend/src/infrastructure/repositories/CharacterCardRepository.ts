@@ -20,10 +20,11 @@ export interface CharacterCardRow {
   mes_example: string;
   system_prompt: string;
   post_history_instructions: string;
+  character_persona_and_style: string | null;
 }
 
 const CARD_COLUMNS =
-  'id, name, description, personality, scenario, first_mes, mes_example, system_prompt, post_history_instructions';
+  'id, name, description, personality, scenario, first_mes, mes_example, system_prompt, post_history_instructions, character_persona_and_style';
 
 export class CharacterCardRepository {
   private readonly db = getDomainDb('app_core');

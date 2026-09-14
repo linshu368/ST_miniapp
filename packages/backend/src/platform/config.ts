@@ -69,6 +69,18 @@ export const config = {
     },
   },
 
+  // 聊天图片生成：DeepSeek 复用 voice.draft；这里仅放 Liaobots/Grok 与图片链路超时。
+  image: {
+    liaobotsAuth: process.env.LIAOBOTS_AUTH || '',
+    liaobotsBase: process.env.LIAOBOTS_BASE || 'https://ai.liaobots1.work',
+    grokModel: process.env.GROK_MODEL || 'grok-imagine-image-quality',
+    timeoutMs: parseInt(process.env.IMAGE_GENERATION_TIMEOUT_MS || '180000', 10),
+    downloadTimeoutMs: parseInt(process.env.IMAGE_DOWNLOAD_TIMEOUT_MS || '60000', 10),
+    workerEnabled: process.env.IMAGE_WORKER_ENABLED !== 'false',
+    workerIntervalMs: parseInt(process.env.IMAGE_WORKER_INTERVAL_MS || '3000', 10),
+    workerLeaseSeconds: parseInt(process.env.IMAGE_WORKER_LEASE_SECONDS || '180', 10),
+  },
+
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {
     enabled: process.env.PAYMENT_ENABLED === 'true',

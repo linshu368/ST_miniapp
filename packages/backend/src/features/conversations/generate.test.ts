@@ -24,6 +24,7 @@ describe('toEngineCharacter', () => {
       mes_example: '对话示例',
       system_prompt: '你是测试角色。',
       post_history_instructions: '历史后指令',
+      character_persona_and_style: null,
     };
 
     expect(toEngineCharacter(card)).toEqual({
