@@ -3,7 +3,7 @@
   "name": "chat-image-generation-plan",
   "title": "角色对话图片生成功能规划",
   "description": "基于产品 PRD 与交互稿，规划角色回复图片生成的 frontend/backend/shared 全链路，并输出独立技术评审文档与功能 spec。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "packages/frontend, packages/backend, packages/shared, .trellis/spec, docs",
   "package": "backend",

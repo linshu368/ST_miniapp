@@ -1,6 +1,6 @@
 # ST_miniAPP 架构说明
 
-> 本文档描述项目当前架构（2026-09-11 更新，基于 2026-08-12 自研引擎版重写）。
+> 本文档描述项目当前架构（2026-09-14 更新，基于 2026-08-12 自研引擎版重写）。
 > 八域划分与跨域豁免以本文 §5.1 和铁律 8 为准。ST 替换动机、归属地图原稿、099 割接剧本已移出工作区，取回方式见 §12。
 >
 > **状态口径**（每条能力都带标注，不标注即为 ✅）：
@@ -15,6 +15,7 @@
 > **Schema 划分一阶段已在生产落地**（2026-08-28 C3 割接完成，099 执行 9.4 秒、API 停机约 38 分钟）：原 `miniapp` schema 的 22 表 + 1 视图 + 24 函数已按归属域分布到 `app_core` / `miniapp_features` / `experience` / `billing` / `cs_platform`，`miniapp` 只剩空壳待批次 D 删除。
 > 语音消息生成链路已上线（080）；按次计费首版（101/102）曾整体回退（PR #298，test 库用 104 清理），随后以 **105_voice_billing_atomic** 重做落地，由 `runtime_config.voice_billing_enabled` 开关控制（默认关，详见 §4.6）。
 > 2026-09 新增两条增长链路：裂变邀请（105–109，`routes/invite.ts`）与官方社群入群奖励（108/109，`routes/community.ts`），发奖全部在数据库 RPC 内完成（见 §1 铁律 6）。
+> 角色回复图片生成的代码与 test migration 已落地，但 `image_generation_enabled` 默认关闭；真实 DeepSeek/Grok、Telegram 真机及 production 发布尚未验收，不视为现网已开放。
 
 ---
 
@@ -50,7 +51,7 @@
 │ │  /chat/[characterId] 会话页（自研 UI） │ │ (Vite :3002) │ 公告/发布历史      │  │
 │ │    ├ 消息区：SSE 流式 / markdown /     │ └──────┬───────┴─────────┬─────────┘  │
 │ │    │ 重生成 / 语音气泡                 │        │                 │            │
-│ │    └ 工具箱：生成偏好 / 模型 / 语音     │        │ X-CS-Admin-     │ Supabase   │
+│ │    └ 工具箱：生成偏好 / 模型 / 语音 / 图片│        │ X-CS-Admin-     │ Supabase   │
 │ │  lib/api + React Query + Zustand      │        │ Token           │ session    │
 │ └───────────────┬──────────────────────┘        │                 │            │
 └─────────────────┼───────────────────────────────┼─────────────────┼────────────┘
@@ -66,6 +67,7 @@
         │         ├ features/engine      prompt 组装（纯函数）              │
         │         └ features/generation  免费额度 → 余额预检 → 上游 → 落库  │
         │   routes/voice.ts  语音消息生成（features/voice，开关控计费）      │
+        │   routes/images.ts 图片描述/异步出图（DB 租约 worker，默认关闭）   │
         │                                                                   │
         │  平台业务：characters / favorites / wallet / payment / wishes /   │
         │            settings / models / notifications / support            │
@@ -90,7 +92,7 @@
 │  ├ admin         运营台账号/审计     │   · payment-cron（*/5 过期任务）
 │  └ miniapp       空壳（待删）        │
 │  Storage: character-assets /        │
-│           miniapp-chat-voice        │
+│           miniapp-chat-voice / images │
 └────────────────────────────────────┘
 ```
 
@@ -111,9 +113,9 @@
 
 ### 3.1 契约层
 
-`shared` 是跨包唯一契约来源：`src/api/*` 的 **20 个 REST 契约文件**、`migrations/`（SQL 迁移）、纯工具与常量。所有应用包都消费它。
+`shared` 是跨包唯一契约来源：`src/api/*` 的 REST 契约文件、`migrations/`（SQL 迁移）、纯工具与常量。所有应用包都消费它。
 
-`shared/src/api/` 逐个文件：`envelope`（统一响应包络 `ok()` / `fail()`）、`characters`、`favorites`、**`conversations`**（对话链路契约，含 SSE 事件）、**`voice`**（语音消息契约）、`models`（只有 catalog 一种形状，旧 tiers 契约已删）、`settings`、`wallet`、`payment`（含 `PaymentSettlementSource`）、`wishes`、`notifications`、`support`、`cs-platform`、`growth`（仅入口归因）、`invite`（裂变邀请）、`community`（官方社群奖励）、`health`、`lobby-pinned-characters`、`lobby-ranking-params`、`word-count-tiers`。
+`shared/src/api/` 包含 `envelope`（统一响应包络）、`characters`、`favorites`、**`conversations`**（含 SSE）、**`voice`**、**`images`**（配置、中文描述、attempt 与会话聚合）、`models`、`settings`、`wallet`、`payment`、`wishes`、`notifications`、`support`、`cs-platform`、`growth`、`invite`、`community`、`health` 及大厅运营配置契约。
 
 > ST 时代的 `chats` / `st-session` / `simulation` 契约已随 ST 清理删除。曾计划的独立 `api-contract` 包不建 ❌，职责留在 `shared/api`。
 > `db-types` 包（Supabase schema 镜像）已随 ST 清理整包删除 ❌，当前 `packages/` 只有 5 个包。
@@ -178,6 +180,7 @@
 SSE 事件契约定义在 `shared/src/api/conversations.ts`：`start`（带 message id / turn_index / revision）→ `delta`（增量片段，非累积）→ `done`（终态 + finish_reason），流开始后才发生的错误走 `error` 事件。
 
 语音消息端点在 `routes/voice.ts`（见 §4.6）。
+图片消息端点在 `routes/images.ts`（见 §4.7）。
 
 ### 4.3 一轮生成的执行序列
 
@@ -259,6 +262,19 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 **计费状态**：首版按次扣费（PR #293，迁移 101/102）2026-08-28 整体 revert（PR #298），test 库用 `104_rollback_voice_billing.sql` 清理（生产从未执行 101/102，**不要在生产跑 104**）。随后以 `105_voice_billing_atomic.sql` 重做：`billing.charge_voice_usage` RPC 在 Storage 已有可播 URL 之后、`markReady` 之前原子扣费，幂等键 `charge_key = audio_id`，结果写回 `chat_message_audio.credits_charged / debit_ledger_id / charged_at`。应用侧入口是 `features/voice/billing.ts`（`precheckVoiceCredits` / `settleVoiceGeneration`），与聊天 LLM 计费刻意平行、不共用 `applyLlmCharge`。**是否真扣**由 `runtime_config.voice_billing_enabled` 决定（`voice-billing-config.ts` 读七个 `voice_*` key，默认 `enabled: false`、15 星尘/次）；这些 key **不在 admin 的 managed key 清单里**，目前只能走迁移改。
 
+### 4.7 角色回复图片（代码已落地，runtime 开关默认关）
+
+| 方法 / 路径                                   | 职责                                     |
+| --------------------------------------------- | ---------------------------------------- |
+| `GET /api/v1/images/config`                   | 安全展示配置、价格、尺寸与提示           |
+| `GET /api/v1/conversations/:sessionId/images` | 会话内图片 current/latest 聚合与轮询恢复 |
+| `POST .../:messageId/image-description`       | DeepSeek 免费生成中文分镜描述            |
+| `POST .../:messageId/image`                   | 确认中文稿并创建 pending attempt（202）  |
+
+流水线：角色视觉锚点与回复资格校验 → 默认 DeepSeek 写稿或保留自定义中文稿 → `experience.chat_message_images` pending → `claim_chat_image_jobs` 租约领取 → DeepSeek 直译英文 → Grok/Liaobots → 下载 URL 的 HTTPS/私网/大小/MIME 防护 → Storage `miniapp-chat-images` → `billing.settle_image_generation` 原子扣款、ledger 与 current ready。provider dispatch 前租约可恢复；dispatch 后模糊超时不自动重投。余额竞争明确失败时删除对象，结算响应未知时保留对象和状态等待幂等对账。
+
+当前仅能确认代码、契约和 migration 静态/编译状态；test 环境真实 provider、Storage、并发/重启、图 1~9 与 Telegram WebView 证据仍需发布验收。
+
 ---
 
 ## 5. 数据模型与真相归属
@@ -268,7 +284,7 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 | Schema              | 归属域       | 内容                                                                                                                                                                                                    |
 | ------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app_core`          | 跨模块根数据 | `users` / `miniapp_user_settings` / `characters` / `runtime_config`                                                                                                                                     |
-| `experience`        | 核心互动内容 | `chat_sessions` / `chat_history` / `chat_message_audio`（105 起带 `credits_charged` 等计费列）/ 视图 `current_chat_history`                                                                             |
+| `experience`        | 核心互动内容 | `chat_sessions` / `chat_history` / `chat_message_audio` / `chat_message_images`（图片 attempt 与租约）/ 视图 `current_chat_history`                                                                     |
 | `billing`           | 钱           | `payment_orders` / `wallet_ledger` / `user_wallets` / `llm_usage_charges` / `llm_usage_charge_dedup` / `character_free_chat_quotas` / `_decisions`                                                      |
 | `miniapp_features`  | 产品功能状态 | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `wish_roles` / `notifications` / `notification_reads` / `community_reward_claims` / `telegram_community_update_receipts`（108） |
 | `cs_platform`       | 客服与触达   | CS 回访画像与会话 + 迁入的 `support_conversations` / `support_messages`                                                                                                                                 |
@@ -315,6 +331,7 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 | **会话**             | **`experience.chat_sessions`**                                                                 | 置顶 / 标题 / 窗口起点 / 统计缓存                                      |
 | **对话内容与轮次**   | **`experience.chat_history`**                                                                  | 上下文 / 计费 / 审计三用；ST 存量行 `session_id` 为 NULL               |
 | 语音消息             | `experience.chat_message_audio` + Storage `miniapp-chat-voice`                                 | 每条 assistant 回复的 TTS 产物元数据                                   |
+| 图片消息             | `experience.chat_message_images` + Storage `miniapp-chat-images`                               | 每条 assistant 回复的图片 attempts、current 与内部任务状态             |
 | 用户生成配置         | `app_core.miniapp_user_settings`                                                               | `selected_model_id` + 三个 `pref_*` + 语音偏好；用户级生效             |
 | 钱包 / 订单 / 签到   | `billing.user_wallets` / `payment_orders` / `wallet_ledger`、`miniapp_features.daily_checkins` | `payment_orders.settled_by` 记录入账路径（103）                        |
 | LLM 计费明细         | `billing.llm_usage_charges`（+ `_dedup` 幂等墓碑）                                             | 每用户保留最近 100 条完整行，更早压缩进 dedup                          |
@@ -337,6 +354,7 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
 | `conversations.ts`        | `/api/v1/conversations*`、`/api/v1/generation-config`（见 §4.2）                                                                                                                 | `X-Init-Data`             |
 | `voice.ts`                | `/api/v1/voice/config`、`/api/v1/conversations/:sessionId/voice`、`.../messages/:messageId/voice`（见 §4.6）                                                                     | `X-Init-Data`             |
+| `images.ts`               | `/api/v1/images/config`、会话图片查询、`.../image-description`、`.../image`（见 §4.7）                                                                                           | `X-Init-Data`             |
 | `characters.ts`           | `GET /api/characters` · `/:id` · `/latest-badge` · `POST /latest-seen`                                                                                                           | 列表公开，红点需鉴权      |
 | `favorites.ts`            | `GET /api/favorites` · `/ids`、`PUT`/`DELETE /api/favorites/:characterId`                                                                                                        | `X-Init-Data`             |
 | `models.ts`               | `GET /api/platform/openrouter/models`、`GET /api/v1/models/config`、`POST /api/v1/models/select`（旧 tiers 端点 `/api/platform/models` 已删）                                    | 部分公开                  |
@@ -358,7 +376,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 **鉴权机制**：用户侧统一 `requireTelegramAuth`（`middleware/auth.ts`，读 `X-Init-Data` 做 HMAC-SHA256 校验；非生产可用 `MOCK_AUTH=1` / `DEV_AUTH_BYPASS=1` 旁路）。运营侧 CS 用 `X-CS-Admin-Token` + `X-CS-Operator-Id`，admin 用 Supabase 会话，Bot 用 `X-Bot-Internal-Secret` 与 Telegram webhook secret。
 
-**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（30 秒轮询，回捞 24h 内 OpenRouter 元数据不全的行并结算 pending 计费）、`lib/lobby-ranking-refresh-job.ts`（24 小时一轮重算大厅推荐排序分）。支付对账与过期是独立 Railway 服务（见 §8）。
+**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（OpenRouter 计费回捞）、`features/image/job.ts`（图片 DB 租约 worker，可由 `IMAGE_WORKER_ENABLED` 关闭）、`lib/lobby-ranking-refresh-job.ts`（大厅排序重算）。支付对账与过期是独立 Railway 服务（见 §8）。
 
 ---
 
@@ -368,7 +386,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 - Next.js 14 App Router，`src/app/` 下 `(main)` 分组承载底部四 Tab（大厅 `/` / 聊天 `/chats` / 创作 `/create` / 我的 `/profile`），会话页是 **`/chat/[characterId]?session=...`**（不在分组内，无底部导航），另有自定义语音台词页 `/chat/[characterId]/voice/[messageId]`。
 - 自研聊天 UI（M5 已交付）：`components/chat/` 下消息列表 / 气泡 / markdown（showdown + DOMPurify）/ 输入区 / 重生成 / 语音播放条 / 会话抽屉 / 工具箱；SSE 客户端是 `lib/api/conversation-stream.ts` 的 `streamConversationTurn()`（旧 `apiStreamClient` 已删除）。会话页编排：`hooks/use-chat-session.ts` 管创建 / URL `?session=` / 失效重建，`hooks/use-conversation-turn.ts` 管发消息、重生成、abort、流式临时态与失败分流；语音生成仍留在 page。余额不足跳充值统一走 `lib/recharge-redirect.ts`（同时认 `insufficient_balance` 与 `INSUFFICIENT_CREDITS`）；`apiClient` 会把对话/语音的 402 裸形状收成带金额的 `ApiClientError`。
-- 用户生成配置有编辑界面：会话页工具箱（`chat-tools-sheet.tsx`）内含生成偏好（三个 `pref_*`）、模型切换、语音设置三块；图片设置为占位 ⏳。
+- 用户生成配置有编辑界面：会话页工具箱（`chat-tools-sheet.tsx`）内含生成偏好、模型切换和语音设置；角色回复图片通过消息操作行与独立 Sheet 交互，不是工具箱设置项。
 - 服务端数据一律 React Query，封装在 `src/lib/api/`；`client.ts` 是唯一 REST 客户端。
 - 跨组件状态 Zustand：仅 `user-profile-store`（会话列表走 React Query，不进 store）。
 - 表单 React Hook Form + Zod；UI 用 Tailwind + shadcn/ui。
@@ -381,12 +399,12 @@ packages/backend/src/
 ├── instrumentation.ts      # Sentry 初始化
 ├── middleware/auth.ts      # requireTelegramAuth
 ├── routes/                 # 路由（见 §6）
-├── features/               # conversations / engine / generation / voice /
+├── features/               # conversations / engine / generation / voice / image /
 │                           # billing / lobby / payment / community
 ├── infrastructure/         # repositories / payment 网关 / redis
 ├── platform/               # config, runtime-config, model-tiers, openrouter-models
-├── lib/                    # supabase(getDomainDb), user, lobby-ranking-refresh-job,
-│                           # chat-voice-storage, logger, sentry, notifications…
+├── lib/                    # supabase(getDomainDb), user, ranking job, voice/image storage,
+│                           # logger, sentry, notifications…
 └── scripts/                # 运维脚本（支付对账/过期/回调日报）
 ```
 
@@ -478,24 +496,25 @@ packages/backend/src/
 
 ### 10.1 已落地
 
-| 能力                                                                    | 位置                                                                                   |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| 会话数据模型 + 轮次/重生成语义 + 原子 RPC                               | migrations 069~073 / 077~079、`ChatSessionRepository`、`ConversationHistoryRepository` |
-| Prompt 引擎（含平台规则三件套与降级）                                   | `features/engine/`                                                                     |
-| 上下文双水位线泄洪 + Anthropic prompt cache                             | 077、`features/conversations/context-window.ts`、`prompt-caching.ts`                   |
-| 生成与计费出口（含 finish_reason 计费闸门）                             | `features/generation/` + 081/082                                                       |
-| 对话 REST + SSE（含置顶 / 标题 / 分页）                                 | `routes/conversations.ts` + `features/conversations/`                                  |
-| 自研聊天 UI（M5：气泡 / markdown / 流式 / 重生成 / 工具箱）             | `frontend/src/app/chat/` + `components/chat/`                                          |
-| 语音消息生成（DeepSeek 写稿 + MiniMax TTS）+ 按次计费链路（开关默认关） | `routes/voice.ts` + `features/voice/` + 080 / 105                                      |
-| 裂变邀请（邀请码 / 绑定 / 三条发奖规则 / 运营台明细与海报）             | `routes/invite.ts` + `lib/invite-rewards.ts` + 105~109 + admin                         |
-| 官方社群入群奖励（webhook 自动 + 既有成员手动校验）                     | `routes/community.ts` + `features/community/` + 108 / 109                              |
-| 大厅推荐排序 v3 + 运营置顶 + 排序参数运营化                             | 074 / 088 / 093、`features/lobby/`                                                     |
-| 支付四路入账 + 快速对账 + `settled_by` 溯源                             | `features/payment/` + 100/103 + Railway 双任务服务                                     |
-| Schema 划分一阶段（八域物理布局，test + 生产）                          | 097~099、`getDomainDb`、Prisma 多 schema                                               |
-| 数据库集成测试                                                          | `*.integration.test.ts`                                                                |
-| 大厅 / 收藏 / 钱包 / 签到 / 许愿 / 消息中心 / 站内客服                  | `routes/*` + `frontend/(main)/*`                                                       |
-| 运营后台（14 个 managed 配置 / 角色卡 / 公告 / 发布历史 / 回访赠送）    | `packages/admin` + backend admin 通路                                                  |
-| CS 回访工作台（画像簇 / 特殊标记 / 等待状态 / 群发 / 导出）             | `packages/cs-platform` + 094                                                           |
+| 能力                                                                    | 位置                                                                                        |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 会话数据模型 + 轮次/重生成语义 + 原子 RPC                               | migrations 069~073 / 077~079、`ChatSessionRepository`、`ConversationHistoryRepository`      |
+| Prompt 引擎（含平台规则三件套与降级）                                   | `features/engine/`                                                                          |
+| 上下文双水位线泄洪 + Anthropic prompt cache                             | 077、`features/conversations/context-window.ts`、`prompt-caching.ts`                        |
+| 生成与计费出口（含 finish_reason 计费闸门）                             | `features/generation/` + 081/082                                                            |
+| 对话 REST + SSE（含置顶 / 标题 / 分页）                                 | `routes/conversations.ts` + `features/conversations/`                                       |
+| 自研聊天 UI（M5：气泡 / markdown / 流式 / 重生成 / 工具箱）             | `frontend/src/app/chat/` + `components/chat/`                                               |
+| 角色回复图片（代码/test migration 已落地，开关默认关，真实验收待完成）  | `routes/images.ts` + `features/image/` + `features/generation/image-upstream.ts` + 20260914 |
+| 语音消息生成（DeepSeek 写稿 + MiniMax TTS）+ 按次计费链路（开关默认关） | `routes/voice.ts` + `features/voice/` + 080 / 105                                           |
+| 裂变邀请（邀请码 / 绑定 / 三条发奖规则 / 运营台明细与海报）             | `routes/invite.ts` + `lib/invite-rewards.ts` + 105~109 + admin                              |
+| 官方社群入群奖励（webhook 自动 + 既有成员手动校验）                     | `routes/community.ts` + `features/community/` + 108 / 109                                   |
+| 大厅推荐排序 v3 + 运营置顶 + 排序参数运营化                             | 074 / 088 / 093、`features/lobby/`                                                          |
+| 支付四路入账 + 快速对账 + `settled_by` 溯源                             | `features/payment/` + 100/103 + Railway 双任务服务                                          |
+| Schema 划分一阶段（八域物理布局，test + 生产）                          | 097~099、`getDomainDb`、Prisma 多 schema                                                    |
+| 数据库集成测试                                                          | `*.integration.test.ts`                                                                     |
+| 大厅 / 收藏 / 钱包 / 签到 / 许愿 / 消息中心 / 站内客服                  | `routes/*` + `frontend/(main)/*`                                                            |
+| 运营后台（14 个 managed 配置 / 角色卡 / 公告 / 发布历史 / 回访赠送）    | `packages/admin` + backend admin 通路                                                       |
+| CS 回访工作台（画像簇 / 特殊标记 / 等待状态 / 群发 / 导出）             | `packages/cs-platform` + 094                                                                |
 
 ### 10.2 待办
 
@@ -517,27 +536,30 @@ packages/backend/src/
 
 ## 11. 环境变量（backend 主要项）
 
-| 变量                                                                     | 用途                                                                 |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| `DATABASE_ENV` + `PROD_*` / `TEST_*` 变量组                              | 选择环境并注入下面的标准名；非 prod 连生产库需 `ALLOW_PROD_DATABASE` |
-| `DATABASE_URL` / `DIRECT_URL`                                            | Prisma 连接                                                          |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_PROJECT_REF`    | supabase-js 与环境隔离校验                                           |
-| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                                       | LLM 上游（默认 OpenRouter）与平台真实 key，仅 backend 持有           |
-| `MINIMAX_API_KEY` / `MINIMAX_TTS_URL` / `MINIMAX_TIMEOUT_MS`             | 语音合成上游                                                         |
-| `DEEPSEEK_API_KEY` / `DEEPSEEK_URL` / `DEEPSEEK_MODEL`                   | 语音台词写稿上游                                                     |
-| `UPSTASH_REDIS_REST_URL` / `_TOKEN`                                      | 运行时配置缓存                                                       |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET` | InitData 验签、webhook 与 Bot 内部端点鉴权                           |
-| `TELEGRAM_COMMUNITY_BOT_TOKEN`                                           | 官方社群 Bot：成员校验 `getChatMember` 与 community-webhook 密钥派生 |
-| `CS_PLATFORM_URL` / `CS_ADMIN_TOKEN` / `CS_TELEGRAM_WEBHOOK_SECRET`      | CS 平台 CORS / 工作台鉴权 / CS webhook                               |
-| `ADMIN_PLATFORM_URL`                                                     | 运营后台 CORS                                                        |
-| `FRONTEND_URL`                                                           | CORS 与支付回跳                                                      |
-| `PAYMENT_*`                                                              | 子千易 V2 RSA 商户配置、支付开关、异步回调与同步回跳地址             |
-| `CHARACTER_STORAGE_BUCKET`                                               | 角色卡资源 bucket（默认 `character-assets`）                         |
-| `DEFAULT_USER_AVATAR_URL`                                                | 平台默认头像                                                         |
-| `CHAT_HISTORY_SYNC_ENABLED`                                              | OpenRouter 用量回捞定时任务开关                                      |
-| `LOBBY_RANKING_REFRESH_ENABLED`                                          | 大厅推荐排序分每日重算开关                                           |
-| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                   | 异常上报（release 缺省回退 `RAILWAY_GIT_COMMIT_SHA`）                |
-| `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL` / `LOG_PRETTY`             | 本地开发与回归脚本旁路                                               |
+| 变量                                                                               | 用途                                                                 |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `DATABASE_ENV` + `PROD_*` / `TEST_*` 变量组                                        | 选择环境并注入下面的标准名；非 prod 连生产库需 `ALLOW_PROD_DATABASE` |
+| `DATABASE_URL` / `DIRECT_URL`                                                      | Prisma 连接                                                          |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_PROJECT_REF`              | supabase-js 与环境隔离校验                                           |
+| `LLM_UPSTREAM_URL` / `LLM_API_KEY`                                                 | LLM 上游（默认 OpenRouter）与平台真实 key，仅 backend 持有           |
+| `MINIMAX_API_KEY` / `MINIMAX_TTS_URL` / `MINIMAX_TIMEOUT_MS`                       | 语音合成上游                                                         |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_URL` / `DEEPSEEK_MODEL`                             | 语音台词写稿上游                                                     |
+| `LIAOBOTS_AUTH` / `LIAOBOTS_BASE` / `GROK_MODEL`                                   | 图片 Grok/Liaobots 上游；鉴权仅 backend secret                       |
+| `IMAGE_GENERATION_TIMEOUT_MS` / `IMAGE_DOWNLOAD_TIMEOUT_MS`                        | 图片 provider 与下载超时                                             |
+| `IMAGE_WORKER_ENABLED` / `IMAGE_WORKER_INTERVAL_MS` / `IMAGE_WORKER_LEASE_SECONDS` | 图片数据库任务 worker 与租约控制                                     |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN`                                                | 运行时配置缓存                                                       |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET`           | InitData 验签、webhook 与 Bot 内部端点鉴权                           |
+| `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                     | 官方社群 Bot：成员校验 `getChatMember` 与 community-webhook 密钥派生 |
+| `CS_PLATFORM_URL` / `CS_ADMIN_TOKEN` / `CS_TELEGRAM_WEBHOOK_SECRET`                | CS 平台 CORS / 工作台鉴权 / CS webhook                               |
+| `ADMIN_PLATFORM_URL`                                                               | 运营后台 CORS                                                        |
+| `FRONTEND_URL`                                                                     | CORS 与支付回跳                                                      |
+| `PAYMENT_*`                                                                        | 子千易 V2 RSA 商户配置、支付开关、异步回调与同步回跳地址             |
+| `CHARACTER_STORAGE_BUCKET`                                                         | 角色卡资源 bucket（默认 `character-assets`）                         |
+| `DEFAULT_USER_AVATAR_URL`                                                          | 平台默认头像                                                         |
+| `CHAT_HISTORY_SYNC_ENABLED`                                                        | OpenRouter 用量回捞定时任务开关                                      |
+| `LOBBY_RANKING_REFRESH_ENABLED`                                                    | 大厅推荐排序分每日重算开关                                           |
+| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                             | 异常上报（release 缺省回退 `RAILWAY_GIT_COMMIT_SHA`）                |
+| `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL` / `LOG_PRETTY`                       | 本地开发与回归脚本旁路                                               |
 
 Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（backend 公网域名）。权威解析在 `packages/backend/src/platform/config.ts`；`ops/env/*.example` 示例文件比实际清单窄，以代码为准。
 

@@ -1,23 +1,23 @@
 ---
 module_id: frontend.business.conversation-ui
-title: 用户会话与语音界面
+title: 用户会话、语音与图片界面
 scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
-last_verified_at: 2026-09-11
+last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
+last_verified_at: 2026-09-14
 ---
 
-# 用户会话与语音界面
+# 用户会话、语音与图片界面
 
 ## 职责与边界
 
-负责会话列表、流式聊天、重生成、模型/生成偏好和语音交互展示。
+负责会话列表、流式聊天、重生成、模型/生成偏好、语音和角色回复图片交互展示。
 
 ## 当前状态
 
-自研聊天 UI、SSE、工具箱和语音播放/自定义台词已落地；session 生命周期与 turn 流式编排已分别收口到 hooks，余额不足跳转统一走 recharge helper。
+自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片入口只面向最后完整回复，支持免费描述、确认/自定义、生成中、失败、余额不足、消息下 ready 卡和 Dialog 预览；真实 Telegram WebView 与图稿逐项验收尚未完成。
 
 ## 入口与调用者
 
@@ -25,26 +25,28 @@ last_verified_at: 2026-09-11
 
 ## 涉及文件
 
-| 路径                                                    | 职责            |
-| ------------------------------------------------------- | --------------- |
-| `packages/frontend/src/app/chat/[characterId]/page.tsx` | 会话页          |
-| `packages/frontend/src/components/chat/`                | 聊天组件        |
-| `packages/frontend/src/lib/api/conversation-stream.ts`  | SSE client      |
-| `packages/frontend/src/hooks/use-chat-session.ts`       | 会话生命周期    |
-| `packages/frontend/src/hooks/use-conversation-turn.ts`  | 发送/重生成编排 |
-| `packages/frontend/src/lib/recharge-redirect.ts`        | 充值跳转收口    |
+| 路径                                                           | 职责                   |
+| -------------------------------------------------------------- | ---------------------- |
+| `packages/frontend/src/app/chat/[characterId]/page.tsx`        | 会话页                 |
+| `packages/frontend/src/components/chat/`                       | 聊天组件               |
+| `packages/frontend/src/lib/api/conversation-stream.ts`         | SSE client             |
+| `packages/frontend/src/hooks/use-chat-session.ts`              | 会话生命周期           |
+| `packages/frontend/src/hooks/use-conversation-turn.ts`         | 发送/重生成编排        |
+| `packages/frontend/src/lib/recharge-redirect.ts`               | 充值跳转收口           |
+| `packages/frontend/src/lib/api/images.ts`                      | 图片查询与 mutation    |
+| `packages/frontend/src/components/chat/chat-message-image.tsx` | 图片面板、结果卡与预览 |
 
 ## 关键实现链路
 
-页面接线 → session hook → turn hook → SSE start/delta/done/error → 气泡状态与缓存收敛；page 保留布局与语音接线。
+页面接线 → session/turn hooks → SSE 与气泡收敛；图片 query 在存在非终态 attempt 时按 1.8 秒轮询，message footer 按图片在上、语音在下注入，成功后刷新图片与钱包。
 
 ## 数据、契约与外部依赖
 
-消费 shared conversations/voice 契约和 Backend HTTP/SSE。
+消费 shared conversations/voice/images 契约和 Backend HTTP/SSE。
 
 ## 关键节点与约束
 
-服务端状态走 React Query；组件不直接 fetch；流事件按 request/session 关联。
+服务端状态走 React Query；组件不直接 fetch；图片组件只持有局部面板状态，不接收内部英文 prompt。
 
 ## 验证方式
 
@@ -52,7 +54,7 @@ last_verified_at: 2026-09-11
 
 ## 已知缺口与待核验项
 
-图片设置仍为占位能力。
+图片 runtime 开关默认关闭；图 1~9、Telegram 长按保存、safe area/软键盘和真实后端联调仍待 test 环境人工验收。
 
 ## 关联模块
 

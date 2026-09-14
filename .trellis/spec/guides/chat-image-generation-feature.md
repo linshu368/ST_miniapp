@@ -1,6 +1,6 @@
-# 角色对话图片生成功能规范（规划态）
+# 角色对话图片生成功能规范
 
-> 状态：**规划中，未实现**。本文件是后续实现必须遵守的功能规范，不得据此宣称现网已有图片生成。技术取舍与评审项见 [`docs/chat-image-generation-review.md`](../../../docs/chat-image-generation-review.md)。
+> 状态：**代码与 test migration 已实现，运行时开关默认关闭；真实上游、真机和生产发布尚未验收**。不得把代码落地表述为现网已开放。技术取舍与评审项见 [`docs/chat-image-generation-review.md`](../../../docs/chat-image-generation-review.md)。
 
 ## 功能边界
 
@@ -14,7 +14,7 @@
 
 1. 对外 image DTO 先定义在 `packages/shared/src/api/images.ts`；Frontend 不使用数据库行类型。
 2. Frontend 所有请求集中在 `src/lib/api/images.ts` React Query hooks；组件不得直接 fetch。
-3. 描述和图片模型调用必须扩展 `backend/src/features/generation/`，不得在 route/image feature 建上游与计费旁路。
+3. DeepSeek 与 Grok 上游适配位于 `backend/src/features/generation/image-upstream.ts`；image feature 只做任务编排，route 不直接调用 provider。
 4. Runtime config 只从 `platform/runtime-config.ts` 读取；provider secret/endpoint 只从 `platform/config.ts` 读取，secret 不下发浏览器。
 5. 图片是 message 旁支产物，独立表持久化 attempts；不扩张 conversation 消息本体，不与 audio 共表。
 6. 余额预检不是扣费。Storage 结果已验证后，钱包扣款、ledger、幂等记录和 image ready/current 必须由单一数据库事务完成。
@@ -25,7 +25,7 @@
 
 ## 状态与恢复
 
-- 公开状态：`pending | generating | storing | ready | failed | failed_unknown`。
+- 公开状态：`pending | generating | ready | failed | failed_unknown`；`leased/storing` 只在数据库内部映射为 generating。
 - Frontend 只在存在非终态时条件轮询；终态或页面后台停止，回前台精确刷新。
 - DB 内部可有 `leased`，但不暴露给用户；provider 前租约过期可重领，provider dispatch 后超时收口为 `failed_unknown`。
 - 新 attempt 失败时保留旧 current ready 图；新图只在成功结算事务中替换 current。

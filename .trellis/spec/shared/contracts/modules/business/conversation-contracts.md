@@ -1,23 +1,23 @@
 ---
 module_id: shared.business.conversation-contracts
-title: 会话与语音共享契约
+title: 会话、语音与图片共享契约
 scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
-last_verified_at: 2026-09-11
+last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
+last_verified_at: 2026-09-14
 ---
 
-# 会话与语音共享契约
+# 会话、语音与图片共享契约
 
 ## 职责与边界
 
-定义会话、SSE、生成配置和语音消息的跨进程数据形状，不包含业务执行。
+定义会话、SSE、生成配置、语音和图片 attempt 的跨进程数据形状，不包含业务执行。
 
 ## 当前状态
 
-Backend 与 Frontend 已共同消费统一契约；模型只保留 catalog 契约，旧 tiers 契约和端点已删除。
+Backend 与 Frontend 已共同消费统一契约；图片契约包含 200 字中文稿上限、配置、描述、创建、会话聚合状态与稳定错误码，不暴露英文/provider prompt。
 
 ## 入口与调用者
 
@@ -29,6 +29,7 @@ Backend 与 Frontend 已共同消费统一契约；模型只保留 catalog 契�
 | ------------------------------------------ | ---------------- |
 | `packages/shared/src/api/conversations.ts` | 会话与 SSE DTO   |
 | `packages/shared/src/api/voice.ts`         | 语音 DTO         |
+| `packages/shared/src/api/images.ts`        | 图片 DTO 与校验  |
 | `packages/shared/src/api/models.ts`        | 模型 catalog DTO |
 | `packages/shared/src/index.ts`             | 公共出口         |
 
@@ -42,7 +43,7 @@ Zod/schema 与类型 → Backend 校验/响应 → Frontend client 与状态处�
 
 ## 关键节点与约束
 
-流事件 start/delta/done/error 语义必须保持消费者兼容。
+流事件 start/delta/done/error 语义必须保持消费者兼容；图片内部 leased/storing 不进入公开状态，中文稿 1~200 字由 shared schema 与后端共同执行。
 
 ## 验证方式
 
