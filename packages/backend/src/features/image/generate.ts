@@ -5,17 +5,30 @@ import type { ChatMessageImageRow } from '../../infrastructure/repositories/Chat
 import { CharacterCardRepository } from '../../infrastructure/repositories/CharacterCardRepository.js';
 import { ChatSessionRepository } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
-import { storeGeneratedMessageImage } from '../../lib/chat-image-storage.js';
+import {
+  deleteGeneratedMessageImage,
+  storeGeneratedMessageImage,
+} from '../../lib/chat-image-storage.js';
+import { config } from '../../platform/config.js';
 import type { ImageRuntimeConfig } from './config.js';
 import {
   buildProviderPrompt,
+  buildZProviderPrompt,
   generateGrokImage,
+  generateZImage,
   ImageUpstreamError,
   requireVisualAnchor,
   translateImagePrompt,
-} from './upstream.js';
+} from '../generation/image-upstream.js';
 
 type ImageLogger = Logger | RequestLogger;
+
+class ImageSettlementUnknownError extends Error {
+  constructor(readonly cause: unknown) {
+    super('图片结算结果未知');
+    this.name = 'ImageSettlementUnknownError';
+  }
+}
 
 /** 图片任务收口：翻译中文短文、调用 Grok、转存 Storage、成功后交给结算 RPC 原子扣费和置 current。 */
 export async function runImageGeneration(input: {
@@ -31,8 +44,6 @@ export async function runImageGeneration(input: {
   const attempt = input.attempt;
 
   try {
-    await images.markGenerating(attempt.id);
-
     const session = await sessions.getSession(attempt.session_id, attempt.user_id);
     if (!session) {
       await images.markFailed(attempt.id, 'image_session_not_found', Date.now() - startedAt);
@@ -53,13 +64,43 @@ export async function runImageGeneration(input: {
       promptEn,
       imageConfig: input.imageConfig,
     });
-    await images.savePrompts(attempt.id, promptEn, providerPrompt);
+    // generating 是不可自动重领的 dispatch 边界；翻译失败或此前崩溃仍可由 leased 租约恢复。
+    await images.markProviderDispatch(attempt.id, promptEn, providerPrompt);
 
-    const providerUrl = await generateGrokImage({
-      prompt: providerPrompt,
-      width: attempt.width,
-      height: attempt.height,
-    });
+    let providerUrl: string;
+    try {
+      providerUrl = await generateGrokImage({
+        prompt: providerPrompt,
+        width: attempt.width,
+        height: attempt.height,
+      });
+    } catch (grokError) {
+      if (!config.image.replicateToken || !config.image.zModel) throw grokError;
+      input.log.sys.warn(
+        {
+          event: 'image.provider.fallback',
+          attemptId: attempt.id,
+          fromProvider: 'liaobots_grok',
+          toProvider: 'replicate_z',
+          errorCode: grokError instanceof ImageUpstreamError ? grokError.code : 'unknown',
+          err: grokError,
+        },
+        'Grok 生图失败，降级到 Z 模型'
+      );
+      await images.markProviderFallback({
+        id: attempt.id,
+        provider: 'replicate_z',
+        model: config.image.zModel,
+        baseUrlHost: readUrlHost(config.image.replicateBase),
+      });
+      const fallback = await generateZImage({
+        prompt: buildZProviderPrompt({ visualAnchor, promptEn }),
+        width: attempt.width,
+        height: attempt.height,
+      });
+      providerUrl = fallback.url;
+      await images.recordProviderRequestId(attempt.id, fallback.requestId);
+    }
 
     await images.markStoring(attempt.id);
     const stored = await storeGeneratedMessageImage({
@@ -70,16 +111,26 @@ export async function runImageGeneration(input: {
       maxBytes: input.imageConfig.maxOutputBytes,
     });
 
-    const settlement = await images.settleReady({
-      attemptId: attempt.id,
-      userId: attempt.user_id,
-      amount: Number(attempt.price_credits),
-      storagePath: stored.path,
-      imageUrl: stored.url,
-      mimeType: stored.mimeType,
-      byteSize: stored.byteSize,
-      latencyMs: Date.now() - startedAt,
-    });
+    let settlement;
+    try {
+      settlement = await images.settleReady({
+        attemptId: attempt.id,
+        userId: attempt.user_id,
+        amount: Number(attempt.price_credits),
+        storagePath: stored.path,
+        imageUrl: stored.url,
+        mimeType: stored.mimeType,
+        byteSize: stored.byteSize,
+        latencyMs: Date.now() - startedAt,
+      });
+    } catch (error) {
+      // RPC 可能已提交但响应丢失；不能删除对象或覆盖 ready，只保留 storing 供人工/后续对账重放。
+      throw new ImageSettlementUnknownError(error);
+    }
+
+    if (settlement.charge_status === 'insufficient_balance') {
+      await compensateStoredImage(stored.path, attempt, input.log);
+    }
 
     input.log.biz.info(
       {
@@ -95,6 +146,19 @@ export async function runImageGeneration(input: {
     );
   } catch (error) {
     const latencyMs = Date.now() - startedAt;
+    if (error instanceof ImageSettlementUnknownError) {
+      input.log.sys.error(
+        {
+          event: 'image.settlement.unknown',
+          attemptId: attempt.id,
+          messageId: attempt.message_id,
+          latencyMs,
+          err: error.cause,
+        },
+        '图片结算响应未知，保留对象与状态等待幂等对账'
+      );
+      return;
+    }
     const code: ImageErrorCode =
       error instanceof ImageUpstreamError
         ? (error.code as ImageErrorCode)
@@ -114,7 +178,7 @@ export async function runImageGeneration(input: {
 
     try {
       if (error instanceof ImageUpstreamError && error.unknownOutcome) {
-        await images.markFailedUnknown(attempt.id, 'image_provider_timeout_unknown', latencyMs);
+        await images.markFailedUnknown(attempt.id, error.code as ImageErrorCode, latencyMs);
       } else {
         await images.markFailed(attempt.id, code, latencyMs);
       }
@@ -124,5 +188,35 @@ export async function runImageGeneration(input: {
         '标记图片生成失败时再次出错'
       );
     }
+  }
+}
+
+function readUrlHost(value: string): string | null {
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+/** 结算明确拒绝后删除不可展示对象；删除失败只告警，保留路径摘要供运维清理。 */
+async function compensateStoredImage(
+  storagePath: string,
+  attempt: ChatMessageImageRow,
+  log: ImageLogger
+): Promise<void> {
+  try {
+    await deleteGeneratedMessageImage(storagePath);
+  } catch (error) {
+    log.sys.error(
+      {
+        event: 'image.storage.compensation_failed',
+        attemptId: attempt.id,
+        messageId: attempt.message_id,
+        storagePath,
+        err: error,
+      },
+      '图片结算拒绝后的对象清理失败'
+    );
   }
 }

@@ -69,7 +69,7 @@ export async function getImageRuntimeConfig(): Promise<ImageRuntimeConfig> {
     ),
     failedUnknownHint: readString(
       entries.get('image_failed_unknown_hint')?.value,
-      '外部平台没有确认成功，本次不消耗星尘。'
+      '本次没有消耗星尘。可以直接重试，或者把描述改一改再试。'
     ),
   };
 }

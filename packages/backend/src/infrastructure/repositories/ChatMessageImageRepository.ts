@@ -174,16 +174,38 @@ export class ChatMessageImageRepository {
     return (data as ChatMessageImageRow | null) ?? null;
   }
 
-  async markGenerating(id: string): Promise<void> {
-    await this.update(id, { status: 'generating', stage: 'generating' });
-  }
-
-  async savePrompts(id: string, promptEn: string, providerPrompt: string): Promise<void> {
+  /** 原子保存内部 prompt 并跨过 provider dispatch 边界；此后任务不得因租约过期自动重投。 */
+  async markProviderDispatch(id: string, promptEn: string, providerPrompt: string): Promise<void> {
     await this.update(id, {
+      status: 'generating',
+      stage: 'provider_dispatch',
       prompt_en: promptEn,
       provider_prompt: providerPrompt,
+      provider_request_id: id,
       updated_at: new Date().toISOString(),
     });
+  }
+
+  /** Grok 明确失败或传输失败后记录实际降级通道，保证 attempt 审计不仍显示主 provider。 */
+  async markProviderFallback(input: {
+    id: string;
+    provider: string;
+    model: string;
+    baseUrlHost: string | null;
+  }): Promise<void> {
+    await this.update(input.id, {
+      provider: input.provider,
+      model: input.model,
+      base_url_host: input.baseUrlHost,
+      stage: 'provider_fallback_dispatch',
+      provider_request_id: input.id,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  async recordProviderRequestId(id: string, requestId: string | null): Promise<void> {
+    if (!requestId) return;
+    await this.update(id, { provider_request_id: requestId, updated_at: new Date().toISOString() });
   }
 
   async markStoring(id: string): Promise<void> {

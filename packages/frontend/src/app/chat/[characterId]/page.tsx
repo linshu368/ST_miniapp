@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
+import { ChatMessageImageFooter } from '@/components/chat/chat-message-image';
 import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
 import { getChatReplyPresentation } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
@@ -20,6 +21,13 @@ import { useChatSession } from '@/hooks/use-chat-session';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { fetchConversationPage, resolveSessionTitle } from '@/lib/api/conversations';
+import {
+  toImageMap,
+  useCreateImageDescriptionMutation,
+  useCreateMessageImageMutation,
+  useImageConfigQuery,
+  useSessionImagesQuery,
+} from '@/lib/api/images';
 import { paymentKeys } from '@/lib/api/payment';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import {
@@ -29,7 +37,7 @@ import {
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
 import { customVoicePath } from '@/lib/chat-entry';
-import { redirectToRechargeFromError } from '@/lib/recharge-redirect';
+import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 
@@ -90,6 +98,10 @@ export default function SelfHostedChatPage() {
   const voiceConfigQuery = useVoiceConfigQuery();
   const sessionVoiceQuery = useSessionVoiceQuery(activeSessionId ?? undefined);
   const generateVoice = useGenerateVoiceMutation(activeSessionId ?? undefined);
+  const imageConfigQuery = useImageConfigQuery();
+  const sessionImagesQuery = useSessionImagesQuery(activeSessionId ?? undefined);
+  const describeImage = useCreateImageDescriptionMutation(activeSessionId ?? undefined);
+  const createImage = useCreateMessageImageMutation(activeSessionId ?? undefined);
   const viewportHeight = useVisualViewportHeight();
 
   const characterAvatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
@@ -117,6 +129,10 @@ export default function SelfHostedChatPage() {
     () => toVoiceMap(sessionVoiceQuery.data),
     [sessionVoiceQuery.data]
   );
+  const imageByMessage = useMemo(
+    () => toImageMap(sessionImagesQuery.data),
+    [sessionImagesQuery.data]
+  );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
   const voicePriceLabel = voiceConfigQuery.data?.billing?.enabled
     ? voiceConfigQuery.data?.billing?.price_label
@@ -127,6 +143,13 @@ export default function SelfHostedChatPage() {
     if (charged) void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
   }, [queryClient, sessionVoiceQuery.data]);
 
+  useEffect(() => {
+    const charged = sessionImagesQuery.data?.images.some(
+      (item) => (item.current?.credits_charged ?? 0) > 0
+    );
+    if (charged) void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+  }, [queryClient, sessionImagesQuery.data]);
+
   /**
    * 哪些消息能生成语音。turn_index > 0 排掉开场白，status 排掉正在写和没写完的——
    * 后端认的 messageId 是 chat_history 行 id，这两类要么不是库里的行，要么没有正文。
@@ -135,6 +158,10 @@ export default function SelfHostedChatPage() {
     (message: ChatMessage): boolean =>
       getChatReplyPresentation(message) === 'complete' && message.turn_index > 0,
     []
+  );
+  const canGenerateImage = useCallback(
+    (message: ChatMessage): boolean => canGenerateVoice(message) && message.id === lastMessage?.id,
+    [canGenerateVoice, lastMessage?.id]
   );
 
   const handleGenerateVoice = useCallback(
@@ -211,49 +238,75 @@ export default function SelfHostedChatPage() {
         quotaExhaustedNotice={quotaExhaustedNotice}
         renderFooter={(message) => {
           const showVoice = canGenerateVoice(message);
+          const showImage = canGenerateImage(message);
           const showRegenerate = canRegenerate && message.id === lastMessage?.id;
-          if (!showVoice && !showRegenerate) return null;
+          if (!showVoice && !showImage && !showRegenerate) return null;
 
           return (
-            <ChatMessageVoiceFooter
-              charCount={message.content.length}
-              voice={
-                showVoice
+            <ChatMessageImageFooter
+              image={
+                showImage
                   ? {
-                      voice: voiceByMessage.get(message.id),
-                      playbackRate,
-                      submitting:
-                        generateVoice.isPending &&
-                        generateVoice.variables?.messageId === message.id,
-                      onGenerate: () => handleGenerateVoice(message.id),
-                      customHref: activeSessionId
-                        ? customVoicePath(characterId, message.id, {
-                            sessionId: activeSessionId,
-                            returnTo,
-                          })
-                        : null,
-                      priceLabel: voicePriceLabel,
-                      hints: {
-                        overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
-                        draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
-                        ttsFailed: voiceConfigQuery.data?.hints?.tts_failed ?? '',
+                      image: imageByMessage.get(message.id),
+                      config: imageConfigQuery.data,
+                      describe: async () => (await describeImage.mutateAsync(message.id)).prompt_cn,
+                      create: async (body) => {
+                        await createImage.mutateAsync({ messageId: message.id, body });
                       },
+                      onRecharge: () =>
+                        redirectToRecharge(router, {
+                          returnTo,
+                          requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
+                        }),
                     }
                   : null
               }
-              regenerate={
-                showRegenerate ? (
-                  <ChatRegenerateButton
-                    onRegenerate={() => void runTurn({ mode: 'regenerate' })}
-                    pending={false}
-                    disabled={generating}
-                    label={
-                      getChatReplyPresentation(message) === 'complete' ? '换一个回复' : '重新回复'
-                    }
-                  />
-                ) : null
-              }
-            />
+            >
+              {(imageAction) => (
+                <ChatMessageVoiceFooter
+                  charCount={message.content.length}
+                  imageAction={imageAction}
+                  voice={
+                    showVoice
+                      ? {
+                          voice: voiceByMessage.get(message.id),
+                          playbackRate,
+                          submitting:
+                            generateVoice.isPending &&
+                            generateVoice.variables?.messageId === message.id,
+                          onGenerate: () => handleGenerateVoice(message.id),
+                          customHref: activeSessionId
+                            ? customVoicePath(characterId, message.id, {
+                                sessionId: activeSessionId,
+                                returnTo,
+                              })
+                            : null,
+                          priceLabel: voicePriceLabel,
+                          hints: {
+                            overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
+                            draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
+                            ttsFailed: voiceConfigQuery.data?.hints?.tts_failed ?? '',
+                          },
+                        }
+                      : null
+                  }
+                  regenerate={
+                    showRegenerate ? (
+                      <ChatRegenerateButton
+                        onRegenerate={() => void runTurn({ mode: 'regenerate' })}
+                        pending={false}
+                        disabled={generating}
+                        label={
+                          getChatReplyPresentation(message) === 'complete'
+                            ? '换一个回复'
+                            : '重新回复'
+                        }
+                      />
+                    ) : null
+                  }
+                />
+              )}
+            </ChatMessageImageFooter>
           );
         }}
       />
