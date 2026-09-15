@@ -297,5 +297,6 @@ export function toPaymentOrder(row: MiniappPaymentOrderRow): PaymentOrder {
     expires_at: row.expires_at,
     paid_at: row.paid_at,
     provider_transaction_id: row.provider_transaction_id,
+    settled_by: row.settled_by,
   };
 }

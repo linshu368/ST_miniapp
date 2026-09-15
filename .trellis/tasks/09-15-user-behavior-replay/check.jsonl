@@ -1,0 +1,16 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify each frontend/shared/backend boundary, runtime validation and failure path."}
+{"file":".trellis/spec/frontend/app/index.md","reason":"Verify frontend state, UI, deployment and quality compliance."}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"Verify API ownership, SSE handling and the approved sensitive-data/replay boundary."}
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"Verify chat/recharge behavior, polling, payment-URL and telemetry constraints."}
+{"file":".trellis/spec/frontend/app/modules/business/conversation-ui.md","reason":"Verify chat lifecycle and stream UI regression risk."}
+{"file":".trellis/spec/frontend/app/modules/business/wallet-payment.md","reason":"Verify payment state remains server-authoritative and external WebView behavior is tested."}
+{"file":".trellis/spec/backend/app/index.md","reason":"Verify any context route has shared contracts, auth, logging and reliability controls."}
+{"file":".trellis/spec/backend/app/modules/business/wallet-payment.md","reason":"Verify replay events do not change the payment settlement state machine."}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"Verify sensitive logging, config and domain-access constraints."}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Verify replay context/events are compatible browser-safe shared contracts."}
+{"file":".trellis/spec/shared/contracts/modules/business/conversation-contracts.md","reason":"Verify session/SSE compatibility."}
+{"file":".trellis/spec/shared/contracts/modules/business/wallet-payment-contracts.md","reason":"Verify order status and settled_by compatibility."}
+{"file":".trellis/tasks/09-15-user-behavior-replay/research/current-system-assessment.md","reason":"Verify implementation uses the documented technical and privacy boundaries."}
+{"file": ".trellis/tasks/09-15-user-behavior-replay/research/t1-decision-record.md", "reason": "Verify later work follows T1 decisions and does not invent user_cohort"}
+{"file": ".trellis/spec/frontend/app/testing-quality-and-deployment.md", "reason": "Verify Sentry event vs replay canvas privacy split"}
+{"file": ".trellis/tasks/09-15-user-behavior-replay/research/t4-posthog-sdk-record.md", "reason": "T4 official posthog-js API and masking used by frontend adapter"}

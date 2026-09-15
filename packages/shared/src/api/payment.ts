@@ -5,15 +5,18 @@
 import { z } from 'zod';
 
 export type PaymentType = 'alipay' | 'wxpay';
+export const PaymentTypeSchema = z.enum(['alipay', 'wxpay']);
 
 /** 与老 Bot 后端 payment_orders.payment_status 保持一致：pending → completed / expired / failed */
 export type PaymentOrderStatus = 'pending' | 'completed' | 'expired' | 'failed';
+export const PaymentOrderStatusSchema = z.enum(['pending', 'completed', 'expired', 'failed']);
 
 /**
  * 入账路径。四条路径共用同一条结算逻辑，谁先确认支付由谁入账。
  * 取值同时用于日志 `source` 字段和 `payment_orders.settled_by` 列，不能各自定义。
  */
 export type PaymentSettlementSource = 'webhook' | 'return' | 'query' | 'cron';
+export const PaymentSettlementSourceSchema = z.enum(['webhook', 'return', 'query', 'cron']);
 
 /** 套餐视觉变体，驱动 4 档层级样式（entry 降权 / standard / recommended 主推 / premium 大户） */
 export type PaymentPlanVariant = 'entry' | 'standard' | 'recommended' | 'premium';
@@ -151,6 +154,11 @@ export interface PaymentOrder {
   paid_at: string | null;
   /** 渠道流水号，completed 后有值 */
   provider_transaction_id: string | null;
+  /**
+   * 入账路径。未完成订单与 migration 103 之前的历史订单为 null。
+   * 订单详情与订单列表必须使用同一映射，不得只在其中一个透出。
+   */
+  settled_by: PaymentSettlementSource | null;
 }
 
 // ==== GET /api/payment/plans ====

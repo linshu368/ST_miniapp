@@ -129,6 +129,15 @@ export class MiniappWalletRepository {
     return data ? normalizeWallet(data as RawMiniappWalletRow) : null;
   }
 
+  /**
+   * 付费状态读钱包权威位：`first_paid_at` 由 `complete_payment_order` 在已完成订单入账时写入。
+   * 只读，不创建钱包行。
+   */
+  async hasCompletedPayment(userId: string): Promise<boolean> {
+    const wallet = await this.findByUserId(userId);
+    return wallet?.first_paid_at != null;
+  }
+
   async chargeLlmUsage(input: ChargeLlmUsageInput): Promise<{
     wallet: MiniappWalletRow;
     charge: LlmUsageChargeRow;

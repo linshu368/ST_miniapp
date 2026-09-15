@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 
 import { useConversationQuery, useCreateConversationMutation } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { getReplayLifecycle, useReplayLifecycle, type ReplayLifecycleState } from '@/lib/telemetry';
 
 function replaceChatUrl(characterId: string, sessionId: string | null): void {
   window.history.replaceState(
@@ -128,4 +129,93 @@ export function useChatSession(characterId: string) {
     selectSession,
     detailErrorCode,
   };
+}
+
+/**
+ * `/chat/:characterId` 与 `/chat/:characterId/voice/:messageId` 同属一段聊天回放。
+ * `/chats` 是历史列表，不算在内。
+ */
+export function isChatReplayPath(pathname: string): boolean {
+  const path = pathname.split('?')[0] ?? pathname;
+  return /^\/chat\/[^/]+$/.test(path) || /^\/chat\/[^/]+\/voice\/[^/]+$/.test(path);
+}
+
+export function shouldEndChatReplayAfterLeave(input: {
+  occupancy: number;
+  pathname: string;
+  state: ReplayLifecycleState;
+  paywallContinuationActive?: boolean;
+}): boolean {
+  if (input.occupancy > 0) return false;
+  if (isChatReplayPath(input.pathname)) return false;
+  if (input.paywallContinuationActive) return false;
+  return input.state === 'chat';
+}
+
+let chatReplayOccupancy = 0;
+let leaveReplayTimer: ReturnType<typeof setTimeout> | undefined;
+
+function scheduleEndReplayIfLeftChat(): void {
+  if (leaveReplayTimer !== undefined) clearTimeout(leaveReplayTimer);
+  leaveReplayTimer = setTimeout(() => {
+    leaveReplayTimer = undefined;
+    const pathname = typeof window === 'undefined' ? '' : window.location.pathname;
+    const lifecycle = getReplayLifecycle();
+    if (
+      !shouldEndChatReplayAfterLeave({
+        occupancy: chatReplayOccupancy,
+        pathname,
+        state: lifecycle.getState(),
+        paywallContinuationActive: lifecycle.isPaywallContinuationActive(),
+      })
+    ) {
+      return;
+    }
+    void lifecycle.endReplay('route_change');
+  }, 0);
+}
+
+export function resetChatReplayOccupancyForTests(): void {
+  chatReplayOccupancy = 0;
+  if (leaveReplayTimer === undefined) return;
+  clearTimeout(leaveReplayTimer);
+  leaveReplayTimer = undefined;
+}
+
+/**
+ * 聊天页 / 自定义语音页共用的回放绑定。
+ * 不能把 end 放进 useChatSession 的 unmount：切到语音页也会卸掉那个 hook。
+ */
+export function useChatReplayBinding(input: {
+  characterId: string;
+  conversationSessionId: string | null;
+  selectedModelId: string | null;
+}): void {
+  const lifecycle = useReplayLifecycle();
+
+  useEffect(() => {
+    if (!input.conversationSessionId) return;
+    void lifecycle
+      .startChatReplay({
+        characterId: input.characterId,
+        conversationSessionId: input.conversationSessionId,
+        selectedModelId: input.selectedModelId,
+      })
+      .catch(() => undefined);
+  }, [input.characterId, input.conversationSessionId, input.selectedModelId, lifecycle]);
+
+  useEffect(() => {
+    chatReplayOccupancy += 1;
+    if (leaveReplayTimer !== undefined) {
+      clearTimeout(leaveReplayTimer);
+      leaveReplayTimer = undefined;
+    }
+    if (chatReplayOccupancy === 1) {
+      lifecycle.reenterChatFromFollowup();
+    }
+    return () => {
+      chatReplayOccupancy = Math.max(0, chatReplayOccupancy - 1);
+      scheduleEndReplayIfLeftChat();
+    };
+  }, [lifecycle]);
 }

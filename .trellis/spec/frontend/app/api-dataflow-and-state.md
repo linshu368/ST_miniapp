@@ -9,6 +9,7 @@
 - `generation-config.ts`、`models.ts`、`model-cache-policy.ts`：生成偏好、模型目录/选择和缓存 freshness。
 - `voice.ts`：用户语音配置、会话音频、生成 mutation 和 audio map。
 - `payment.ts`：套餐、下单、订单状态轮询、余额、流水、签到、订单 infinite query。
+- `telemetry.ts`：`GET /api/telemetry/replay-context` 的 React Query hook；失败不得阻断 replay。
 - `settings.ts`、`notifications.ts`、`support.ts`、`wishes.ts`、`invite.ts`、`community.ts`：对应业务域。
 - `growth.ts`：Provider 上报使用的纯请求函数；`health.ts`：健康查询；`use-refetch-on-foreground.ts`：可见性恢复；`mock-registry*`：显式开发 mock，不得生产误启。
 
@@ -41,4 +42,60 @@ SSE：`page → streamConversationTurn(AbortSignal, callbacks) → fetch Readabl
 
 ## Telegram 与敏感边界
 
-`lib/telegram/init.ts` 初始化 SDK；`auth.ts` 提供 raw initData；`user.ts` 解析最小用户字段；`launch-url.ts` 尽早清理 URL 敏感参数；`hooks.ts/index.ts` 封装运行环境。禁止日志/Sentry/replay 收集完整 initData、支付参数和消息正文。
+`lib/telegram/init.ts` 初始化 SDK；`auth.ts` 提供 raw initData；`user.ts` 解析最小用户字段；`launch-url.ts` 尽早清理 URL 敏感参数；`hooks.ts/index.ts` 封装运行环境。
+
+禁止日志、Sentry 事件、PostHog 事件属性、URL query 和应用错误上报收集完整 initData、支付参数、`pay_url`、token/secret 和消息正文。`sanitizeTelemetry` 只清理已知敏感键，不能替代 Session Replay 的 DOM/输入屏蔽。
+
+### Design Decision: Session Replay 聊天正文例外
+
+**Context**: 产品需要在回放中检查流式节奏和 Markdown 呈现；原规则把消息正文从所有 replay 中排除，无法满足该验收。
+
+**Decision**: 2026-09-15 隐私责任人批准受控例外：用户输入和模型回复可以出现在 Session Replay **画面**中。该例外覆盖即将接入的 PostHog Session Replay，以及现有 Sentry Session Replay（`maskAllText: false`，本期不改）。例外不授权把正文复制到事件、日志或错误上报。支付密码/账号/验证码等输入仍须 browser-side 屏蔽；完整 initData 与 `pay_url` 不得出现在录制 URL 或事件属性中。PostHog Session Replay 保留期以当前套餐上限为准：**当前项目为 Free 套餐，最长 30 天**。60 天仅在升级付费套餐后才可能，不得写成当前能力或验收项。
+
+**Contracts**:
+
+| 通道                                               | 完整 initData / token / secret | `pay_url` 与支付表单               | 聊天正文       |
+| -------------------------------------------------- | ------------------------------ | ---------------------------------- | -------------- |
+| 应用日志、Sentry 事件、PostHog 事件属性、URL query | 禁止                           | 禁止                               | 禁止           |
+| PostHog / Sentry Session Replay 画面               | 禁止                           | 禁止（`ph-no-capture` 或暂停录制） | 允许（已批准） |
+
+**Validation & Error Matrix**:
+
+- 事件 capture 含 message/content/initData/`pay_url` → 丢弃该属性或整事件，不得上报。
+- 支付输入未加屏蔽 → 不得开始/继续录制该控件；第三方无法屏蔽时先 `stopSessionRecording`。
+- Replay SDK 失败 → no-op，不阻断聊天或支付。
+
+**Good / Base / Bad**:
+
+- Good: 回放能看到流式 Markdown；时间线事件只有 session/order/model id。
+- Base: 聊天页录制；充值页敏感输入被屏蔽。
+- Bad: `capture('chat_turn_completed', { text: delta })` 或把 `pay_url` 放进 router query 并继续录制。
+
+**Wrong vs Correct**:
+
+#### Wrong
+
+```ts
+posthog.capture('chat_turn_completed', { content: assistantText });
+```
+
+#### Correct
+
+```ts
+posthog.capture('chat_turn_completed', {
+  telegram_user_id,
+  replay_context_id,
+  conversation_session_id,
+  character_id,
+  selected_model_id,
+});
+```
+
+**Tests Required**:
+
+- T1 无产品代码，不新增自动化测试。
+- 后续 adapter 必须在 runtime schema 拒绝 `content` / `pay_url` / initData 类属性。
+- T7 在 PostHog 检索上述敏感字段应为空，并确认已批准的聊天正文只出现在回放画面。
+- T7 确认项目套餐为 Free、Session Replay retention 为 30 天（套餐与设置截图）；不得按 60 天验收。
+
+**Related**: `.trellis/tasks/09-15-user-behavior-replay/research/t1-decision-record.md`（含 Free 套餐 30 天保留策略）。本期不做 `user_cohort`。

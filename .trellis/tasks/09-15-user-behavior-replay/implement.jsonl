@@ -1,0 +1,17 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Replay context/events may cross frontend, shared contracts and an authenticated Backend read endpoint."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Extend existing Providers, hooks, recharge helper, payment flow and telemetry owners rather than duplicating them."}
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend App Router, API/state, UI, sensitive-data and quality constraints for SDK and lifecycle work."}
+{"file":".trellis/spec/frontend/app/modules/business/conversation-ui.md","reason":"Existing chat session, SSE, regenerate and recharge-helper ownership."}
+{"file":".trellis/spec/frontend/app/modules/business/wallet-payment.md","reason":"Existing recharge, external payment, polling and return semantics."}
+{"file":".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md","reason":"Provider, Telegram runtime and public browser configuration boundary."}
+{"file":".trellis/spec/backend/app/index.md","reason":"Authenticated route, configuration, logging and reliability rules if the minimal replay context endpoint is required."}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"Conversation ownership and stream behavior must not regress when emitting lifecycle context."}
+{"file":".trellis/spec/backend/app/modules/business/wallet-payment.md","reason":"Payment settlement remains authoritative and must not gain a second state machine."}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"Telegram auth, domain data access, config and Pino sensitive-data constraints."}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Cross-process replay context and event shapes must be browser-safe shared contracts."}
+{"file":".trellis/spec/shared/contracts/modules/business/conversation-contracts.md","reason":"Conversation session/SSE compatibility requirements for event association."}
+{"file":".trellis/spec/shared/contracts/modules/business/wallet-payment-contracts.md","reason":"Order status and settlement-source compatibility requirements."}
+{"file":".trellis/tasks/09-15-user-behavior-replay/research/current-system-assessment.md","reason":"Repository and PostHog public-documentation evidence, known privacy gaps, and reuse decisions."}
+{"file": ".trellis/tasks/09-15-user-behavior-replay/research/t1-decision-record.md", "reason": "T1 privacy, idle, US Cloud governance; user_cohort skipped this phase"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "Approved Session Replay chat-body exception and event-property prohibition"}
+{"file": ".trellis/tasks/09-15-user-behavior-replay/research/t4-posthog-sdk-record.md", "reason": "T4 official posthog-js 1.433.4 API, Next.js 14 init path, web vs mobile startSessionRecording, masking"}

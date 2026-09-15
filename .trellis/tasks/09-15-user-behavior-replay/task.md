@@ -1,0 +1,43 @@
+# Task Breakdown
+
+## Status Legend
+
+- Todo: not started
+- Doing: currently in progress
+- Done: completed and verified
+- Blocked: waiting on external input
+- Skipped: intentionally skipped with a recorded reason
+
+## Tasks
+
+| ID  | Status | Task                                                                                     | Files / Scope                                                  | Depends On | Verification                                                                                                                                    |
+| --- | ------ | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1  | Done   | 完成隐私、区域、访问控制、保留期、100% 录制、idle 超时的书面确认；`user_cohort` 本期跳过 | 产品/合规决策；`research/t1-decision-record.md`；frontend spec | -          | 已批准的决策记录；当前 Free 套餐最长 30 天，不得写成 60 天；`user_cohort` 明确不进入本期契约；项目级 30 天/100% 采样互证放 T7                   |
+| T2  | Done   | 定义 replay context/事件契约，并兼容扩展订单 `settled_by`                                | `packages/shared/src/api/*`、payment mapper/消费者             | T1         | shared tests/typecheck；所有消费者 typecheck；兼容性与数据最小化 review                                                                         |
+| T3  | Done   | 实现受鉴权 context API 与支付终态 PostHog adapter                                        | telemetry route、`features/payment/*`、config                  | T1, T2     | route/auth tests；已结算才发事件；telemetry 超时/失败不影响订单结算                                                                             |
+| T4  | Done   | 集成受控 PostHog adapter 与跨路由 lifecycle owner；保留现有 Sentry Replay                | frontend package、Provider、telemetry、环境文档                | T1, T2     | frontend typecheck/test/lint/build；SDK/存储/失败 no-op；Sentry Replay 行为不回归                                                               |
+| T5  | Done   | 接入聊天/自定义语音、流式、模型切换与 replay context 事件                                | chat page、voice page、turn/session hooks、model switcher      | T4         | 既有前端测试；新增已批准的 lifecycle tests；真机 SSE/Markdown/离开/超时回归                                                                     |
+| T6  | Done   | 接入四类付费墙、邀请、充值、订单回流/终态事件并消除 `pay_url` 录制风险                   | recharge helper、充值/邀请/订单页、payment return、安全存储    | T3, T4     | 支付跳转/回流/无回流/迟到付款 smoke；URL/事件/回放脱敏检查                                                                                      |
+| T7  | Doing  | 验证 PostHog 检索、屏蔽、访问与保留期，按顺序发布                                        | Preview/production 配置与发布记录；同一 PostHog 项目 `610481`  | T3-T6      | PR Preview WebView 矩阵、敏感数据搜索、回滚演练；项目级 100% 采样与 **30 天**（Free 上限）到期删除截图，不得按 60 天验收；Production 变量先留空 |
+| T8  | Todo   | 完成全量质量检查、module knowledge 更新、人工提交审阅                                    | task artifacts、相关 specs/module update                       | T7         | `pnpm -r typecheck`、相关 lint/test/build、Trellis check、人工 review                                                                           |
+
+## Execution Log
+
+- 2026-09-15：创建任务并保持 `planning`。已完成需求与设计文档；未运行 `task.py start`，未修改产品代码。
+- 2026-09-15：需求方确认完整聊天正文可在回放中可见；该选择与当前 frontend spec 的消息正文限制冲突，T1 必须先完成规范例外和隐私批准。
+- 2026-09-15：需求方确认外部收银台不要求画面回放，采用 MiniApp 内回放加 order ID 关联事件的验收口径。
+- 2026-09-15：`task.py validate 09-15-user-behavior-replay` 通过；`implement.jsonl` 与 `check.jsonl` 分别包含 14 和 13 条真实上下文。
+- 2026-09-15：计划审查后修正了外部支付断段、假放弃、订单 `settled_by` 缺失、全量采样、邀请/语音/回流路由、returnTo 持久化、用户标签来源与最终结果状态机；仍未运行 `task.py start`。
+- 2026-09-15：需求方撤回“关闭 Sentry Session Replay”；明确保留 Sentry 录制，并接受与 PostHog 双录制。
+- 2026-09-15：执行 T1。发现 `implement.md` 将隐私/区域/`user_cohort` 标为已完成但无决策记录，且 frontend spec 仍禁止 replay 正文。需求方确认：隐私例外（覆盖 PostHog 与现有 Sentry Replay）、PostHog US Cloud、访问限产品+工程、审计/删除责任人与隐私责任人同一人、当时讨论的 60 天保留策略、100% 录制为上线要求（项目互证放 T7）、idle 15 分钟。书面记录：`research/t1-decision-record.md`。
+- 2026-09-15：需求方确认当前 PostHog 为 **Free 套餐，Session Replay 最长 30 天**。60 天不是当前能力，T7 只核验 30 天到期删除；升级付费套餐前不得把 60 天写入验收或环境说明。
+- 2026-09-15：需求方确认本期跳过 `user_cohort`（后期精细化检索待办）。T1 解锁为 Done；T2 契约不得包含该字段。
+- 2026-09-15：T2 完成。新增 `packages/shared/src/api/telemetry.ts`（context + 受限事件 union，无 user_cohort）；`PaymentOrder.settled_by` 兼容扩展并由 `toPaymentOrder()` 同时服务详情与列表。`task.py start` 已将总任务设为 `in_progress`。
+- 2026-09-15：T4 完成。锁定 `posthog-js@1.433.4`；官方 web API 是 `startSessionRecording({ sampling, linked_flag, url_trigger, event_trigger })` / `stopSessionRecording()`，不是移动端的 `startSessionRecording(false)`。书面记录：`research/t4-posthog-sdk-record.md`。Frontend adapter + 根 Providers lifecycle owner（idle/chat/paywall_followup/external_payment_pending/ended）；未改 backend、shared 契约、Sentry Replay、聊天 turn 打点或支付页。验证：frontend typecheck / test（89） / lint / build 通过。
+- 2026-09-15：T3 完成。新增 `GET /api/telemetry/replay-context`（`requireTelegramAuth`，只返回 `GetReplayContextData`）；支付终态在 `complete`/`markFailed` 成功落库后异步 capture `payment_order_settled`/`payment_order_failed`（Node 原生 fetch，配置在 `platform/config.ts`）。未改 frontend / shared 事件字段 / `toPaymentOrder()`。验证：`pnpm --filter @miniapp/shared typecheck`、`pnpm --filter @miniapp/backend typecheck`、`pnpm --filter @miniapp/backend test`（51 files / 435 tests）。Backend 包无独立 lint script。T4 可消费 context API；T6 可依赖服务端终态事件。
+- 2026-09-15：T6 完成。`recharge-redirect` 在 `router.push` 前 `enterPaywallFollowup` 并发 `paywall_triggered`（`triggerSource` 可选，供 T5 填写）；paywall continuation 进 sessionStorage，不进 URL。充值/邀请/订单页接入漏斗与回流事件；`pay_url` 改为 order ID keyed 的短 TTL sessionStorage，等待页 query 不再带支付地址。`PaymentReturnRedirect` 与订单详情/列表都记 `payment_return_observed`；订单状态按 `order_id + state + settled_by` 去重。未改 backend、shared 契约、T4 adapter/lifecycle/masking、T5 聊天调用点。验证：frontend typecheck / test（106）/ lint / build 通过。未做 Telegram WebView 真机支付跳转与 PostHog UI 检索（属 T7）。
+- 2026-09-15：T5 完成。聊天页/自定义语音页通过 `useChatReplayBinding` 消费 T4 lifecycle：真实 session ID 才 `startChatReplay`；语音路由不 `endReplay`；离开聊天且 state 仍为 `chat` 才 `endReplay('route_change')`（`paywall_followup` / `external_payment_pending` 不结束）。`use-conversation-turn` 记录 turn/stream/regen 事件并 `setStreaming`，不对 delta 打点。成功切模型 `updateSessionProperties`。四个余额不足出口传入 `PaywallTriggerSource`。`ReplayEventDraft` 改为 distributive Omit（类型-only，无运行时变化），否则 `capture()` 无法带事件专有字段。未改 backend / shared 事件字典 / adapter / masking / providers。验证：frontend typecheck / test（106） / lint / build 通过。真机 SSE/离开/超时仍属 T7。
+- 2026-09-15：开始 T7。不改 T1–T6 产品代码；只收集 test 项目互证、I6 自动化、手工矩阵、敏感字段搜索、按序发布记录与回滚演练证据。
+- 2026-09-15：T7 I6 自动化全部通过（`research/t7-i6-automation.log`，`I6_FAILS=0`）。需求方随后确认无隔离 test 项目：`610481` 用于 Preview 真机验收与日后生产，接受初期遗留数据。Production PostHog 变量仍禁止启用。开启录制后 decide 返回 recording 对象；30 天/100%/DPA/访问截图与 Preview 矩阵未完成。书面记录：`research/t7-verification-record.md`。
+- 2026-09-15：PR-320 真机 Session Replay 无 recording。已确认 Vercel Preview 注入了 `NEXT_PUBLIC_POSTHOG_*`，但 `readPostHogBrowserEnv` 经 `process.env` 对象读属性，Next 未把 key/host 内联进客户端包，adapter 走 `missing_config` no-op。最小修复：静态访问 `process.env.NEXT_PUBLIC_POSTHOG_*`，聊天开始等待 SDK ready，不以 `startNewRecording()` 返回 true 当作已在录。T7 仍为 Doing；Production 变量未启用。证据：`research/t7-verification-record.md` §8。
+- 2026-09-15：Preview 真机已入库约 7:52 回放，但未达标：多角色卡共用 `$session_id`；`paywall_triggered` 后 occupancy/`startChatReplay` 以 `route_change` 结束原 context；两笔测试订单均无服务端终态（尚未结算，且一笔可能停在关 VPN 弹窗）。修复：`resetSessionId()` 拆独立回放；paywall hold 与同角色重绑保持 context。证据：`research/t7-verification-record.md` §9。须用两张明确角色 ID 的卡复测。Production 变量仍禁止启用。
