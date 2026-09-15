@@ -34,6 +34,13 @@ export type PostHogClient = {
   startSessionRecording: (override?: typeof START_RECORDING_OVERRIDE | true) => void;
   stopSessionRecording: () => void;
   sessionRecordingStarted: () => boolean;
+  /**
+   * web SDK 的 stop+start 不会轮转 `$session_id`，回放列表会把多段合成一条。
+   * `sessionManager.resetSessionId()` 只清会话 ID，不清 identity。
+   */
+  sessionManager?: {
+    resetSessionId: () => void;
+  };
 };
 
 export type PostHogSdkModule = { default: PostHogClient };
@@ -234,6 +241,8 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
         if (client.sessionRecordingStarted()) {
           client.stopSessionRecording();
         }
+        // stop+start 仍复用当前 `$session_id`；必须先 reset 再 start，角色卡才会拆成独立回放。
+        client.sessionManager?.resetSessionId();
         client.startSessionRecording(START_RECORDING_OVERRIDE);
         // 调用成功不等于已经在录：recorder.js / remote config 仍可能未就绪。
         return client.sessionRecordingStarted();

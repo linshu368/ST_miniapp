@@ -41,6 +41,10 @@ startSessionRecording(override?: {
 
 因此 adapter 的「开始新回放段」实现为：若已在录则 `stopSessionRecording()`，再 `startSessionRecording({ sampling: true, linked_flag: true, url_trigger: true, event_trigger: true })`，以满足 T1 的 100% 手动录制、不被 sampling/flag/URL/event trigger 丢掉。逻辑段仍以 `replay_context_id` 关联；不调用会丢掉 identity 的 `reset()`。
 
+Preview 真机（项目 `610481`）证明：**web 上 `stopSessionRecording()` + `startSessionRecording(overrides)` 不会轮转 `$session_id`**。多角色卡的 `replay_chat_started` 会挂在同一条 PostHog session 上，回放列表只显示一条。
+
+因此 adapter 在每次 `startNewRecording` 时调用 `sessionManager.resetSessionId()`（只清会话 ID，随后 `startSessionRecording` 的 `checkAndGetSessionAndWindowId()` 分配新 ID），再 `identify` 保持 Telegram `distinct_id`。若 `sessionManager` 不可用则降级为旧行为。
+
 无参 `startSessionRecording()` 仍遵守项目 ingestion control，本期不用。
 
 ## Browser-side masking

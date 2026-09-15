@@ -144,9 +144,11 @@ export function shouldEndChatReplayAfterLeave(input: {
   occupancy: number;
   pathname: string;
   state: ReplayLifecycleState;
+  paywallContinuationActive?: boolean;
 }): boolean {
   if (input.occupancy > 0) return false;
   if (isChatReplayPath(input.pathname)) return false;
+  if (input.paywallContinuationActive) return false;
   return input.state === 'chat';
 }
 
@@ -158,16 +160,18 @@ function scheduleEndReplayIfLeftChat(): void {
   leaveReplayTimer = setTimeout(() => {
     leaveReplayTimer = undefined;
     const pathname = typeof window === 'undefined' ? '' : window.location.pathname;
+    const lifecycle = getReplayLifecycle();
     if (
       !shouldEndChatReplayAfterLeave({
         occupancy: chatReplayOccupancy,
         pathname,
-        state: getReplayLifecycle().getState(),
+        state: lifecycle.getState(),
+        paywallContinuationActive: lifecycle.isPaywallContinuationActive(),
       })
     ) {
       return;
     }
-    void getReplayLifecycle().endReplay('route_change');
+    void lifecycle.endReplay('route_change');
   }, 0);
 }
 
@@ -206,9 +210,12 @@ export function useChatReplayBinding(input: {
       clearTimeout(leaveReplayTimer);
       leaveReplayTimer = undefined;
     }
+    if (chatReplayOccupancy === 1) {
+      lifecycle.reenterChatFromFollowup();
+    }
     return () => {
       chatReplayOccupancy = Math.max(0, chatReplayOccupancy - 1);
       scheduleEndReplayIfLeftChat();
     };
-  }, []);
+  }, [lifecycle]);
 }

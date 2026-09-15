@@ -63,6 +63,14 @@ describe('shouldEndChatReplayAfterLeave', () => {
         state: 'external_payment_pending',
       })
     ).toBe(false);
+    expect(
+      shouldEndChatReplayAfterLeave({
+        occupancy: 0,
+        pathname: '/profile/recharge',
+        state: 'chat',
+        paywallContinuationActive: true,
+      })
+    ).toBe(false);
     expect(shouldEndChatReplayAfterLeave({ occupancy: 0, pathname: '/', state: 'idle' })).toBe(
       false
     );

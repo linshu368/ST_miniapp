@@ -20,6 +20,9 @@ function createClient(): PostHogClient {
       recording = false;
     }),
     sessionRecordingStarted: vi.fn(() => recording),
+    sessionManager: {
+      resetSessionId: vi.fn(),
+    },
   };
   return client;
 }
@@ -96,6 +99,24 @@ describe('PostHog adapter', () => {
       event_trigger: true,
     });
     expect(client.startSessionRecording).not.toHaveBeenCalledWith(false);
+    expect(client.sessionManager?.resetSessionId).toHaveBeenCalledTimes(1);
+  });
+
+  it('rotates $session_id between consecutive recordings without resetting identity', async () => {
+    const client = createClient();
+    const adapter = createPostHogAdapter({
+      env: { key: 'phc_test', host: 'https://us.i.posthog.com' },
+      isBrowser: () => true,
+      loadSdk: async () => ({ default: client }),
+    });
+    await adapter.init('123456789');
+    expect(adapter.startNewRecording(replayContextId)).toBe(true);
+    expect(adapter.startNewRecording(replayContextId)).toBe(true);
+    expect(client.stopSessionRecording).toHaveBeenCalledTimes(1);
+    expect(client.sessionManager?.resetSessionId).toHaveBeenCalledTimes(2);
+    expect(client.startSessionRecording).toHaveBeenCalledTimes(2);
+    expect(client.identify).toHaveBeenCalledTimes(1);
+    expect(client.identify).toHaveBeenCalledWith('123456789');
   });
 
   it('does not treat startSessionRecording() itself as proof that recording started', async () => {

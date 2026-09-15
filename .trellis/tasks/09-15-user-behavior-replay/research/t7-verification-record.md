@@ -169,3 +169,36 @@ Preview 客户端 chunk `2610-f01b2d18dc2db2fe.js` 含 adapter 代码（`disable
 - `lifecycle.ts`：开始聊天前等待 SDK；init 完成后若仍在 chat 且未在录则补 start
 
 验证：`pnpm --filter @miniapp/frontend typecheck|test|lint|build` 通过（110 tests）。**须把此修复推到 PR-320 并等新 Vercel Preview 后再真机复测。** Production 变量仍禁止启用。T7 保持 Doing。
+
+## 9. Preview 真机回放已入库后的未达标项（2026-09-15）
+
+已入库：Vercel Preview 一条约 7:52 的真实回放；聊天、流式、付费墙、充值及支付尝试事件可见。隐私事件属性抽查（最近 60 条）未见 `pay_url` / `initData` / `content` / `message`。回放画面、Sentry、应用日志仍未全面验收。
+
+### 9.1 多角色卡共用同一个 `$session_id`
+
+测试窗口内约 10 次 `replay_chat_started` 共用同一 PostHog `$session_id`，回放列表只有一条。
+
+根因：web `posthog-js@1.433.4` 的 `stopSessionRecording()` + `startSessionRecording(overrides)` **不轮转** `$session_id`（T4 原先只排除了 `startSessionRecording(false)`）。
+
+修复：`startNewRecording` 在 start 前调用 `sessionManager.resetSessionId()`，不调用会丢掉 identity 的 `reset()`。
+
+### 9.2 付费墙后 `replay_chat_ended(route_change)` 抢跑
+
+两次 `paywall_triggered` 后，原 `replay_context_id` 在几毫秒内被 `replay_chat_ended(end_reason=route_change)` 结束，并立刻创建新 context。付费墙到充值的关联因此偶发断开。
+
+根因：
+
+1. `startChatReplay` 只在 `state === 'chat'` 且身份相同才复用；`enterPaywallFollowup` 之后聊天页重绑（`selectedModelId` 等）会把 `paywall_followup` 当成新聊天。
+2. `enterPaywallFollowup` 原先走队列，occupancy 的 `setTimeout(0)` `endReplay('route_change')` 可能在状态切到 followup 之前看到 `state === 'chat'`。
+
+修复：进入付费墙时同步置 `paywallHold`；同角色重绑保持原 context；`route_change` / `pagehide` 在 hold/followup 期间不结束；回到聊天页再 `reenterChatFromFollowup`，此后离开大厅才结束。
+
+### 9.3 `order_id` 链路
+
+| 观察                                                                                        | 结论                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 订单 A：创单 → `external_payment_open_requested` → `pending` → `payment_flow_left_observed` | 前端离开路径符合设计。`payment_flow_left_observed` 不是失败终态。                                                                                                                                     |
+| 订单 B：只有创单、无打开外部支付                                                            | 充值页在 `paymentPromptConfig.enabled` 时先弹「关 VPN」对话框，确认后才 `openCreatedPayment`。关闭弹窗不会发 open 事件。若 9.2 抢跑结束了 context，后续 open 也会被 `hasActiveReplayContext()` 丢掉。 |
+| 两笔均无 `payment_return_observed` / `payment_order_settled` / `payment_order_failed`       | 符合「未结算不发服务端终态」。终态只在 `complete` / 创单网关 `markFailed` 成功之后发送。Railway Preview 的 `POSTHOG_API_KEY` 仍须确认，否则结算后也不会入库。                                         |
+
+**须用两张明确记录角色 ID 的卡重新真机录制**，在项目 `610481` 核对：独立回放（不同 `$session_id`）、paywall 的 `replay_context_id` 连续、以及 `order_id` 从创单到 open/回流/服务端终态。本轮自动化：frontend typecheck / test（116） / lint / build 通过。Production 变量仍禁止启用。

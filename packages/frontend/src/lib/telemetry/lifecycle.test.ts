@@ -154,4 +154,116 @@ describe('replay lifecycle owner', () => {
     expect(api.getState()).toBe('ended');
     vi.useRealTimers();
   });
+
+  it('applies paywall follow-up to an in-flight chat start without a second context', async () => {
+    const adapter = createMockAdapter();
+    adapter.whenReady.mockImplementation(async () => {
+      await Promise.resolve();
+      return true;
+    });
+    const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
+    const started = api.startChatReplay({
+      characterId,
+      conversationSessionId,
+      selectedModelId: null,
+    });
+    await api.enterPaywallFollowup();
+    await started;
+    expect(api.getState()).toBe('paywall_followup');
+    expect(api.getSnapshot().replayContextId).toBe(replayContextId);
+    expect(adapter.startNewRecording).toHaveBeenCalledTimes(1);
+    expect(adapter.stopRecording).not.toHaveBeenCalled();
+  });
+
+  it('keeps the same context when chat rebinds during paywall follow-up', async () => {
+    let nextId = 0;
+    const adapter = createMockAdapter();
+    const api = createReplayLifecycle({
+      adapter,
+      createContextId: () => `11111111-1111-4111-8111-11111111111${nextId++}`,
+    });
+    const first = await api.startChatReplay({
+      characterId,
+      conversationSessionId,
+      selectedModelId: null,
+    });
+    await api.enterPaywallFollowup();
+    const second = await api.startChatReplay({
+      characterId,
+      conversationSessionId,
+      selectedModelId: 'gpt-4o',
+    });
+    expect(second).toBe(first);
+    expect(api.getState()).toBe('paywall_followup');
+    expect(adapter.startNewRecording).toHaveBeenCalledTimes(1);
+    expect(adapter.stopRecording).not.toHaveBeenCalled();
+    expect(
+      adapter.captures.filter((item) => (item as { event: string }).event === 'replay_chat_ended')
+    ).toEqual([]);
+  });
+
+  it('ignores route_change and pagehide while paywall continuation is held', async () => {
+    const adapter = createMockAdapter();
+    const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
+    await api.startChatReplay({
+      characterId,
+      conversationSessionId,
+      selectedModelId: null,
+    });
+    await api.enterPaywallFollowup();
+    await api.endReplay('route_change');
+    expect(api.getState()).toBe('paywall_followup');
+    expect(api.getSnapshot().replayContextId).toBe(replayContextId);
+    expect(adapter.stopRecording).not.toHaveBeenCalled();
+
+    await api.endReplay('pagehide');
+    expect(api.getState()).toBe('paywall_followup');
+    expect(api.isPaywallContinuationActive()).toBe(true);
+  });
+
+  it('starts a new recording when entering a different character', async () => {
+    const otherCharacterId = '44444444-4444-4444-8444-444444444444';
+    const otherSessionId = '55555555-5555-4555-8555-555555555555';
+    let nextId = 0;
+    const adapter = createMockAdapter();
+    const api = createReplayLifecycle({
+      adapter,
+      createContextId: () => `11111111-1111-4111-8111-11111111111${nextId++}`,
+    });
+    const first = await api.startChatReplay({
+      characterId,
+      conversationSessionId,
+      selectedModelId: null,
+    });
+    const second = await api.startChatReplay({
+      characterId: otherCharacterId,
+      conversationSessionId: otherSessionId,
+      selectedModelId: null,
+    });
+    expect(second).not.toBe(first);
+    expect(adapter.startNewRecording).toHaveBeenCalledTimes(2);
+    expect(adapter.stopRecording).toHaveBeenCalledTimes(1);
+    expect(adapter.captures.map((item) => (item as { event: string }).event)).toEqual([
+      'replay_chat_started',
+      'replay_chat_ended',
+      'replay_chat_started',
+    ]);
+  });
+
+  it('allows leaving chat after returning from paywall follow-up', async () => {
+    const adapter = createMockAdapter();
+    const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
+    await api.startChatReplay({
+      characterId,
+      conversationSessionId,
+      selectedModelId: null,
+    });
+    await api.enterPaywallFollowup();
+    api.reenterChatFromFollowup();
+    expect(api.getState()).toBe('chat');
+    expect(api.isPaywallContinuationActive()).toBe(false);
+    await api.endReplay('route_change');
+    expect(api.getState()).toBe('ended');
+    expect(adapter.stopRecording).toHaveBeenCalledTimes(1);
+  });
 });

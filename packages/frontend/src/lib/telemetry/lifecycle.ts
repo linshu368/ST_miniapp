@@ -118,15 +118,30 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let attached = false;
   let contextFetchFailedFor: string | null = null;
+  // 必须在 router.push / unmount 之前同步置位，否则 occupancy 的 route_change
+  // 会抢在 queued enterPaywallFollowup 前结束 context。
+  let paywallHold = false;
 
   const activityListener: EventListener = () => {
     notifyUserActivity();
   };
 
+  function isPaywallContinuationActive(): boolean {
+    if (paywallHold) return true;
+    return snapshot.state === 'paywall_followup' || snapshot.state === 'external_payment_pending';
+  }
+
+  function sameChatIdentity(input: StartChatReplayInput): boolean {
+    return Boolean(
+      identity &&
+      identity.characterId === input.characterId &&
+      identity.conversationSessionId === input.conversationSessionId
+    );
+  }
+
   const pageHideListener: EventListener = () => {
-    const state = snapshot.state;
-    if (state === 'paywall_followup' || state === 'external_payment_pending') return;
-    if (state !== 'chat') return;
+    if (isPaywallContinuationActive()) return;
+    if (snapshot.state !== 'chat') return;
     void endReplay('pagehide');
   };
 
@@ -247,22 +262,34 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     if (snapshot.state === 'chat') captureStarted();
   }
 
+  function keepCurrentChatReplay(input: StartChatReplayInput): void {
+    if (!identity) return;
+    identity = {
+      ...identity,
+      telegramUserId: identity.telegramUserId || adapter().getDistinctId() || '',
+      selectedModelId: input.selectedModelId,
+    };
+    adapter().registerSessionProperties(sessionProperties());
+    armRecordingIfNeeded();
+  }
+
   async function startChatReplay(input: StartChatReplayInput): Promise<string | null> {
     await enqueue(async () => {
       await adapter().whenReady();
       const telegramUserId = adapter().getDistinctId();
-      if (
-        snapshot.state === 'chat' &&
-        identity &&
-        identity.characterId === input.characterId &&
-        identity.conversationSessionId === input.conversationSessionId
-      ) {
-        identity = { ...identity, selectedModelId: input.selectedModelId };
-        adapter().registerSessionProperties(sessionProperties());
-        armRecordingIfNeeded();
+      const activeFollowup =
+        paywallHold ||
+        snapshot.state === 'paywall_followup' ||
+        snapshot.state === 'external_payment_pending';
+
+      // 付费墙跳转时聊天页仍可能重绑（selectedModelId / Strict Mode）。
+      // 若把 paywall_followup 当成新聊天，会立刻 route_change 掉原 context。
+      if (sameChatIdentity(input) && (snapshot.state === 'chat' || activeFollowup)) {
+        keepCurrentChatReplay(input);
         return;
       }
 
+      const switchingAway = Boolean(identity) && !sameChatIdentity(input);
       if (snapshot.state === 'chat' || snapshot.state === 'paywall_followup') {
         captureEnded('route_change');
         adapter().stopRecording(snapshot.replayContextId ?? undefined);
@@ -270,6 +297,9 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
         adapter().stopRecording(snapshot.replayContextId ?? undefined);
       }
 
+      if (switchingAway) {
+        paywallHold = false;
+      }
       const replayContextId = makeId();
       identity = {
         telegramUserId: telegramUserId ?? '',
@@ -280,7 +310,7 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
       userTags = {};
       contextFetchFailedFor = null;
       snapshot = {
-        state: 'chat',
+        state: paywallHold ? 'paywall_followup' : 'chat',
         replayContextId,
         telemetryReady: adapter().isReady(),
         streaming: false,
@@ -294,31 +324,49 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     return snapshot.replayContextId;
   }
 
-  async function enterPaywallFollowup(): Promise<void> {
-    await enqueue(() => {
+  function enterPaywallFollowup(): Promise<void> {
+    paywallHold = true;
+    if (snapshot.state === 'external_payment_pending') {
+      return Promise.resolve();
+    }
+    return enqueue(() => {
+      if (snapshot.state === 'external_payment_pending') return;
       if (snapshot.state !== 'chat' && snapshot.state !== 'paywall_followup') return;
       setState('paywall_followup');
       armIdleTimer();
     });
   }
 
-  async function enterExternalPaymentPending(): Promise<void> {
-    await enqueue(() => {
-      if (
-        snapshot.state !== 'chat' &&
-        snapshot.state !== 'paywall_followup' &&
-        snapshot.state !== 'external_payment_pending'
-      ) {
-        return;
-      }
-      setState('external_payment_pending');
-      clearIdleTimer();
-    });
+  function enterExternalPaymentPending(): Promise<void> {
+    if (
+      snapshot.state !== 'chat' &&
+      snapshot.state !== 'paywall_followup' &&
+      snapshot.state !== 'external_payment_pending'
+    ) {
+      return Promise.resolve();
+    }
+    paywallHold = true;
+    setState('external_payment_pending');
+    clearIdleTimer();
+    return Promise.resolve();
+  }
+
+  function reenterChatFromFollowup(): void {
+    if (snapshot.state !== 'paywall_followup' && snapshot.state !== 'external_payment_pending') {
+      return;
+    }
+    paywallHold = false;
+    setState('chat');
+    armIdleTimer();
   }
 
   async function endReplay(reason: ReplayChatEndReason): Promise<void> {
     await enqueue(() => {
       if (snapshot.state === 'idle' || snapshot.state === 'ended') return;
+      if ((reason === 'route_change' || reason === 'pagehide') && isPaywallContinuationActive()) {
+        return;
+      }
+      paywallHold = false;
       clearIdleTimer();
       captureEnded(reason);
       adapter().stopRecording(snapshot.replayContextId ?? undefined);
@@ -367,6 +415,7 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     getState(): ReplayLifecycleState {
       return snapshot.state;
     },
+    isPaywallContinuationActive,
     refreshTelemetryReady(): void {
       const distinctId = adapter().getDistinctId();
       if (identity && !identity.telegramUserId && distinctId) {
@@ -381,6 +430,7 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     startChatReplay,
     enterPaywallFollowup,
     enterExternalPaymentPending,
+    reenterChatFromFollowup,
     endReplay,
     notifyUserActivity,
     setStreaming(active: boolean): void {
