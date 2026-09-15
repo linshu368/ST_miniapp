@@ -12,10 +12,12 @@ const MIME_EXTENSIONS = {
   'image/jpeg': 'jpg',
 } as const;
 
+export type StoredImageMimeType = keyof typeof MIME_EXTENSIONS;
+
 export interface StoredMessageImage {
   path: string;
   url: string;
-  mimeType: keyof typeof MIME_EXTENSIONS;
+  mimeType: StoredImageMimeType;
   byteSize: number;
 }
 
@@ -28,12 +30,43 @@ export async function storeGeneratedMessageImage(input: {
   maxBytes: number;
 }): Promise<StoredMessageImage> {
   const downloaded = await downloadImage(input.sourceUrl, input.maxBytes);
-  const extension = MIME_EXTENSIONS[downloaded.mimeType];
+  return uploadGeneratedMessageImage({
+    userId: input.userId,
+    messageId: input.messageId,
+    attemptId: input.attemptId,
+    bytes: downloaded.bytes,
+    mimeType: downloaded.mimeType,
+    maxBytes: input.maxBytes,
+  });
+}
+
+export async function storeGeneratedMessageImageBytes(input: {
+  userId: string;
+  messageId: string;
+  attemptId: string;
+  bytes: Buffer;
+  mimeType: StoredImageMimeType;
+  maxBytes: number;
+}): Promise<StoredMessageImage> {
+  return uploadGeneratedMessageImage(input);
+}
+
+async function uploadGeneratedMessageImage(input: {
+  userId: string;
+  messageId: string;
+  attemptId: string;
+  bytes: Buffer;
+  mimeType: StoredImageMimeType;
+  maxBytes: number;
+}): Promise<StoredMessageImage> {
+  if (input.bytes.byteLength <= 0 || input.bytes.byteLength > input.maxBytes)
+    throw imageSizeError();
+  const extension = MIME_EXTENSIONS[input.mimeType];
   const path = `${input.userId}/${input.messageId}/${input.attemptId}.${extension}`;
   const client = getSupabaseClient();
 
-  const { error } = await client.storage.from(IMAGE_BUCKET).upload(path, downloaded.bytes, {
-    contentType: downloaded.mimeType,
+  const { error } = await client.storage.from(IMAGE_BUCKET).upload(path, input.bytes, {
+    contentType: input.mimeType,
     cacheControl: '31536000',
     upsert: false,
   });
@@ -45,8 +78,8 @@ export async function storeGeneratedMessageImage(input: {
   return {
     path,
     url: data.publicUrl,
-    mimeType: downloaded.mimeType,
-    byteSize: downloaded.bytes.byteLength,
+    mimeType: input.mimeType,
+    byteSize: input.bytes.byteLength,
   };
 }
 
@@ -62,7 +95,7 @@ export async function deleteGeneratedMessageImage(path: string): Promise<void> {
 async function downloadImage(
   url: string,
   maxBytes: number
-): Promise<{ bytes: Buffer; mimeType: keyof typeof MIME_EXTENSIONS }> {
+): Promise<{ bytes: Buffer; mimeType: StoredImageMimeType }> {
   const response = await fetchValidatedImage(url);
 
   if (!response.ok) {
@@ -171,7 +204,7 @@ function imageSizeError(): ImageUpstreamError {
   return new ImageUpstreamError('download', 'image_storage_size', '图片大小超出限制');
 }
 
-function normalizeMimeType(value: string | null): keyof typeof MIME_EXTENSIONS | null {
+function normalizeMimeType(value: string | null): StoredImageMimeType | null {
   const mime = value?.split(';')[0]?.trim().toLowerCase();
   return mime === 'image/webp' || mime === 'image/png' || mime === 'image/jpeg' ? mime : null;
 }

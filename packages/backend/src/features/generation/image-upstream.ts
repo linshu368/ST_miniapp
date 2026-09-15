@@ -1,4 +1,6 @@
 import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
+import { Buffer } from 'node:buffer';
+import type { StoredImageMimeType } from '../../lib/chat-image-storage.js';
 import type { CharacterCardRow } from '../../infrastructure/repositories/CharacterCardRepository.js';
 import type {
   ConversationContext,
@@ -40,7 +42,7 @@ interface ChatCompletionResponse {
 }
 
 interface GrokImageResponse {
-  data?: { url?: string }[];
+  data?: { b64_json?: string; media_type?: string; url?: string }[];
   error?: { message?: string };
 }
 
@@ -52,12 +54,22 @@ interface ReplicatePredictionResponse {
   urls?: { get?: string };
 }
 
-export interface GeneratedProviderImage {
-  url: string;
-  provider: 'liaobots_grok' | 'replicate_z';
-  model: string;
-  requestId: string | null;
-}
+export type GeneratedProviderImage =
+  | {
+      source: 'url';
+      url: string;
+      provider: 'liaobots_grok' | 'replicate_z';
+      model: string;
+      requestId: string | null;
+    }
+  | {
+      source: 'bytes';
+      bytes: Buffer;
+      mimeType: StoredImageMimeType;
+      provider: 'liaobots_grok' | 'replicate_z';
+      model: string;
+      requestId: string | null;
+    };
 
 export function requireVisualAnchor(character: CharacterCardRow): string {
   const anchor = character.character_persona_and_style?.trim();
@@ -86,7 +98,6 @@ export async function draftImageDescription(input: {
     `【必要角色卡信息】：\n${compactCharacterNotes(input.character)}`,
     `【最近对话上下文】：\n${formatRecentMessages(input.context, input.turn)}`,
   ].join('\n\n');
-
   const text = normalizePromptText(
     await callDeepSeek(DESCRIPTION_SYSTEM_PROMPT, userPrompt, 'description')
   );
@@ -134,34 +145,32 @@ export async function generateGrokImage(input: {
   prompt: string;
   width: number;
   height: number;
-}): Promise<string> {
+}): Promise<GeneratedProviderImage> {
   if (!config.image.liaobotsAuth || !config.image.liaobotsBase || !config.image.grokModel) {
     throw new ImageUpstreamError('provider', 'image_generation_not_allowed', '图片服务未配置');
   }
 
   let response: Response;
   try {
-    response = await fetch(
-      `${config.image.liaobotsBase.replace(/\/+$/, '')}/v1/images/generations`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.image.liaobotsAuth}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: config.image.grokModel,
-          prompt: input.prompt,
-          n: 1,
-          size: `${input.width}x${input.height}`,
-        }),
-        signal: AbortSignal.timeout(config.image.timeoutMs),
-      }
-    );
+    response = await fetch(`${config.image.liaobotsBase}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.image.liaobotsAuth}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.image.grokModel,
+        prompt: input.prompt,
+        n: 1,
+        size: `${input.width}x${input.height}`,
+      }),
+      signal: AbortSignal.timeout(config.image.timeoutMs),
+    });
   } catch (error) {
     throw toImageTransportError('provider', error, true);
   }
 
+  console.log('response', response);
   let body: GrokImageResponse;
   try {
     body = (await response.json()) as GrokImageResponse;
@@ -179,11 +188,29 @@ export async function generateGrokImage(input: {
       body.error?.message || `图片服务返回 HTTP ${response.status}`
     );
   }
-  const url = body.data?.[0]?.url;
-  if (!url) {
-    throw new ImageUpstreamError('provider', 'image_provider_empty', '图片服务没有返回图片 URL');
+  const firstImage = body.data?.[0];
+  const metadata = {
+    provider: 'liaobots_grok' as const,
+    model: config.image.grokModel,
+    requestId: null,
+  };
+  const url = firstImage?.url;
+  if (url) return { source: 'url', url, ...metadata };
+  const b64Json = firstImage?.b64_json;
+  if (b64Json) {
+    const bytes = decodeBase64Image(b64Json);
+    const mimeType =
+      normalizeGeneratedMimeType(firstImage?.media_type) ?? inferImageMimeType(bytes);
+    if (!mimeType) {
+      throw new ImageUpstreamError(
+        'provider',
+        'image_provider_bad_response',
+        '图片服务返回了不支持的图片类型'
+      );
+    }
+    return { source: 'bytes', bytes, mimeType, ...metadata };
   }
-  return url;
+  throw new ImageUpstreamError('provider', 'image_provider_empty', '图片服务没有返回图片 URL');
 }
 
 /**
@@ -261,7 +288,51 @@ export async function generateZImage(input: {
   const url = readReplicateOutputUrl(prediction.output);
   if (!url)
     throw new ImageUpstreamError('provider', 'image_provider_empty', 'Z 图片服务没有返回图片 URL');
-  return { url, provider: 'replicate_z', model: zModel, requestId: prediction.id ?? null };
+  return {
+    source: 'url',
+    url,
+    provider: 'replicate_z',
+    model: zModel,
+    requestId: prediction.id ?? null,
+  };
+}
+
+function resolveLiaobotsImageEndpoint(base: string): string {
+  const trimmed = base.trim().replace(/\/+$/, '');
+  if (trimmed.endsWith('/v1/images/generations')) return trimmed;
+  return `${trimmed}/v1/images/generations`;
+}
+
+function normalizeGeneratedMimeType(value: string | undefined): StoredImageMimeType | null {
+  const mime = value?.split(';')[0]?.trim().toLowerCase();
+  return mime === 'image/webp' || mime === 'image/png' || mime === 'image/jpeg' ? mime : null;
+}
+
+function inferImageMimeType(bytes: Buffer): StoredImageMimeType | null {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return 'image/png';
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  return null;
+}
+
+function decodeBase64Image(value: string): Buffer {
+  const normalized = value.trim().replace(/\s/g, '');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) {
+    throw new ImageUpstreamError(
+      'provider',
+      'image_provider_bad_response',
+      '图片服务返回了无法解析的图片内容'
+    );
+  }
+  const bytes = Buffer.from(normalized, 'base64');
+  if (bytes.byteLength === 0) {
+    throw new ImageUpstreamError('provider', 'image_provider_empty', '图片服务没有返回图片内容');
+  }
+  return bytes;
 }
 
 /** 防止异常 provider 响应诱导后端把 Replicate token 发往其他域名。 */

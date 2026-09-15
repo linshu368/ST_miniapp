@@ -7,6 +7,7 @@ import { ChatSessionRepository } from '../../infrastructure/repositories/ChatSes
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import {
   deleteGeneratedMessageImage,
+  storeGeneratedMessageImageBytes,
   storeGeneratedMessageImage,
 } from '../../lib/chat-image-storage.js';
 import { config } from '../../platform/config.js';
@@ -16,6 +17,7 @@ import {
   buildZProviderPrompt,
   generateGrokImage,
   generateZImage,
+  type GeneratedProviderImage,
   ImageUpstreamError,
   requireVisualAnchor,
   translateImagePrompt,
@@ -67,9 +69,9 @@ export async function runImageGeneration(input: {
     // generating 是不可自动重领的 dispatch 边界；翻译失败或此前崩溃仍可由 leased 租约恢复。
     await images.markProviderDispatch(attempt.id, promptEn, providerPrompt);
 
-    let providerUrl: string;
+    let providerImage: GeneratedProviderImage;
     try {
-      providerUrl = await generateGrokImage({
+      providerImage = await generateGrokImage({
         prompt: providerPrompt,
         width: attempt.width,
         height: attempt.height,
@@ -98,18 +100,28 @@ export async function runImageGeneration(input: {
         width: attempt.width,
         height: attempt.height,
       });
-      providerUrl = fallback.url;
+      providerImage = fallback;
       await images.recordProviderRequestId(attempt.id, fallback.requestId);
     }
 
     await images.markStoring(attempt.id);
-    const stored = await storeGeneratedMessageImage({
-      userId: attempt.user_id,
-      messageId: attempt.message_id,
-      attemptId: attempt.id,
-      sourceUrl: providerUrl,
-      maxBytes: input.imageConfig.maxOutputBytes,
-    });
+    const stored =
+      providerImage.source === 'bytes'
+        ? await storeGeneratedMessageImageBytes({
+            userId: attempt.user_id,
+            messageId: attempt.message_id,
+            attemptId: attempt.id,
+            bytes: providerImage.bytes,
+            mimeType: providerImage.mimeType,
+            maxBytes: input.imageConfig.maxOutputBytes,
+          })
+        : await storeGeneratedMessageImage({
+            userId: attempt.user_id,
+            messageId: attempt.message_id,
+            attemptId: attempt.id,
+            sourceUrl: providerImage.url,
+            maxBytes: input.imageConfig.maxOutputBytes,
+          });
 
     let settlement;
     try {

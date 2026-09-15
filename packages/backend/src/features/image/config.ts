@@ -42,7 +42,7 @@ export async function getImageRuntimeConfig(): Promise<ImageRuntimeConfig> {
     priceLabel: readString(entries.get('image_price_label')?.value, '50 星尘'),
     defaultArtStyle: readString(
       entries.get('image_default_art_style')?.value,
-      '精致二次元竖幅插画，柔和光影，健康公开发布'
+      '精致二次元竖幅插画，柔和光影'
     ),
     width: readPositiveInteger(entries.get('image_width')?.value, 1024),
     height: readPositiveInteger(entries.get('image_height')?.value, 1536),
