@@ -188,6 +188,18 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
     isReady(): boolean {
       return Boolean(client) && !disabled;
     },
+    whenReady(): Promise<boolean> {
+      if (initPromise) return initPromise;
+      return Promise.resolve(Boolean(client) && !disabled);
+    },
+    isRecording(): boolean {
+      if (!client || disabled) return false;
+      try {
+        return client.sessionRecordingStarted();
+      } catch {
+        return false;
+      }
+    },
     getDistinctId(): string | undefined {
       return distinctId;
     },
@@ -223,7 +235,8 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
           client.stopSessionRecording();
         }
         client.startSessionRecording(START_RECORDING_OVERRIDE);
-        return true;
+        // 调用成功不等于已经在录：recorder.js / remote config 仍可能未就绪。
+        return client.sessionRecordingStarted();
       } catch {
         reportHealth('replay_recording_failed', 'recording_failed', replayContextId);
         return false;

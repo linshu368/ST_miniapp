@@ -126,3 +126,46 @@ API 探测（不打印 key）：
 ## 7. 给 T8 的结论
 
 **生产配置不允许启用。** 允许推 `dev_posthog`、对 `dev` 开 PR，在 Preview 做真机验收。T8 不得把 Production PostHog 写成已开。
+
+## 8. PR-320 真机无 recording（2026-09-15）
+
+部署核对（无密钥）：
+
+| 项                     | 已验证结果                                                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PR                     | [linshu368/ST_miniapp#320](https://github.com/linshu368/ST_miniapp/pull/320) `dev_posthog` → `dev`，HEAD `1ed302b`                                                 |
+| Vercel Preview         | `https://st-miniapp-frontend-git-devposthog-3213527545-4308s-projects.vercel.app`，deployment `dpl_9kex8U3W6JAGtJY6r3ZSByriU7u6` / buildId `0BO_2xZ5ONLJGca46J8di` |
+| Railway PR backend     | `https://stminiapp-pr-320.up.railway.app`（status: Success）                                                                                                       |
+| Vercel Preview 变量    | `NEXT_PUBLIC_POSTHOG_KEY` / `HOST` 已存在且仅 Preview；Production 无这两项（符合先不启用生产）                                                                     |
+| 项目 `610481` 远程录制 | `/array/{token}/config` 的 `sessionRecording` 为对象；`endpoint=/s/`；`sampleRate=null`；无 URL/flag/event trigger；`minimumDurationMilliseconds=null`             |
+
+### 根因（已验证）
+
+Preview 客户端 chunk `2610-f01b2d18dc2db2fe.js` 含 adapter 代码（`disable_session_recording`、`startSessionRecording`、`replay_sdk_init_failed`），但 **没有** `https://us.i.posthog.com`，也 **没有** 任何 `phc_` 字面量。
+
+原因：`readPostHogBrowserEnv(env = process.env)` 再读 `env.NEXT_PUBLIC_POSTHOG_*`。Next.js 只内联静态 `process.env.NEXT_PUBLIC_*`，所以即使 Preview 变量已注入，浏览器运行时仍是 `missing_config`，SDK 不 init、不 identify、不请求 `/s/`。这是前端录制问题，与后端支付终态 capture 无关。
+
+本地 `next build`（读取 gitignored `.env.local`）在修复后：客户端 chunk 出现 host + `phc_` 字面量。未把值写入本文。
+
+### 链路对照
+
+| 段                                                   | 结论                                                                                                                           |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 手机是否打开本次 PR Preview                          | **未验证**。需要对照 Telegram WebApp URL 是否为上面的 Preview host，而不是生产 `st-miniapp-frontend.vercel.app`                |
+| 构建时 KEY/HOST 是否有效                             | 平台变量存在；**旧 Preview bundle 未内联**。修复后须等新 deployment                                                            |
+| SDK init / identify                                  | 旧 Preview 不会执行（no-op）                                                                                                   |
+| 聊天页真实 session ID → `startNewRecording`          | 代码路径存在；旧 Preview 因 adapter disabled 直接 return false                                                                 |
+| `sessionRecordingStarted()`                          | 旧代码在调用 `startSessionRecording` 后无条件 return true；修复后改为返回 SDK `sessionRecordingStarted()`                      |
+| 远程配置 + `https://us.i.posthog.com/s/`             | 项目侧允许保存；旧 Preview **不会发** 录制请求                                                                                 |
+| 事件已写入 vs 回放入库                               | 旧 Preview 连 SDK 事件都不应发出。若 Activity 里也没有 `replay_chat_started`，与 no-op 一致；有事件无 recording 才是另一类问题 |
+| `replay_sdk_init_failed` / `replay_recording_failed` | 缺配置时只打本地/Sentry warn（`client` 尚未建立，不会 capture 到 PostHog）                                                     |
+| CSP / WebView 拦截                                   | **未验证**（无真机 HAR）。当前根因已足够解释零 recording                                                                       |
+| Railway `POSTHOG_API_KEY`                            | **未列出**。只影响服务端支付终态事件，不影响 Session Replay 画面                                                               |
+
+### 最小修复（未宣称上线）
+
+- `config.ts`：静态读取 `process.env.NEXT_PUBLIC_POSTHOG_KEY/HOST`
+- `adapter.ts`：`whenReady` / `isRecording`；`startNewRecording` 以 `sessionRecordingStarted()` 为准
+- `lifecycle.ts`：开始聊天前等待 SDK；init 完成后若仍在 chat 且未在录则补 start
+
+验证：`pnpm --filter @miniapp/frontend typecheck|test|lint|build` 通过（110 tests）。**须把此修复推到 PR-320 并等新 Vercel Preview 后再真机复测。** Production 变量仍禁止启用。T7 保持 Doing。

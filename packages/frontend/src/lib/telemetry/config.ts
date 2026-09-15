@@ -15,10 +15,17 @@ export type PostHogConfigResolution =
   | { ok: true; key: string; host: string }
   | { ok: false; failureCode: Extract<ReplaySdkFailureCode, 'missing_config' | 'invalid_host'> };
 
-export function readPostHogBrowserEnv(env: NodeJS.ProcessEnv = process.env): PostHogBrowserEnv {
+/**
+ * Next.js 只把静态成员访问 `process.env.NEXT_PUBLIC_*` 内联进浏览器包。
+ * 经 `env = process.env` 再读属性时，Preview/生产 bundle 里永远是 undefined，
+ * adapter 会走 missing_config no-op，Session Replay 不会初始化。
+ */
+export function readPostHogBrowserEnv(env?: PostHogBrowserEnv): PostHogBrowserEnv {
+  const key = env ? env.key : process.env.NEXT_PUBLIC_POSTHOG_KEY;
+  const host = env ? env.host : process.env.NEXT_PUBLIC_POSTHOG_HOST;
   return {
-    key: env.NEXT_PUBLIC_POSTHOG_KEY?.trim() || undefined,
-    host: env.NEXT_PUBLIC_POSTHOG_HOST?.trim() || undefined,
+    key: key?.trim() || undefined,
+    host: host?.trim() || undefined,
   };
 }
 

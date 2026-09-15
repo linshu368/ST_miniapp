@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { isAllowedPostHogHost, resolvePostHogConfig } from './config';
+import { isAllowedPostHogHost, readPostHogBrowserEnv, resolvePostHogConfig } from './config';
 
 describe('resolvePostHogConfig', () => {
   it('no-ops when key or host is missing', () => {
@@ -27,5 +30,27 @@ describe('resolvePostHogConfig', () => {
       key: 'phc_test',
       host: 'https://us.i.posthog.com',
     });
+  });
+
+  it('reads public config from static process.env members so Next can inline them', () => {
+    const previousKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
+    const previousHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = ' phc_inline_test ';
+    process.env.NEXT_PUBLIC_POSTHOG_HOST = ' https://us.i.posthog.com ';
+    try {
+      expect(readPostHogBrowserEnv()).toEqual({
+        key: 'phc_inline_test',
+        host: 'https://us.i.posthog.com',
+      });
+    } finally {
+      process.env.NEXT_PUBLIC_POSTHOG_KEY = previousKey;
+      process.env.NEXT_PUBLIC_POSTHOG_HOST = previousHost;
+    }
+  });
+
+  it('keeps static process.env.NEXT_PUBLIC_POSTHOG_* member access in source', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'config.ts'), 'utf8');
+    expect(source).toContain('process.env.NEXT_PUBLIC_POSTHOG_KEY');
+    expect(source).toContain('process.env.NEXT_PUBLIC_POSTHOG_HOST');
   });
 });

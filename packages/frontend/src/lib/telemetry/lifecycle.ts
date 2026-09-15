@@ -231,8 +231,25 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     );
   }
 
+  function armRecordingIfNeeded(): void {
+    const contextId = snapshot.replayContextId;
+    if (!contextId) return;
+    if (
+      snapshot.state !== 'chat' &&
+      snapshot.state !== 'paywall_followup' &&
+      snapshot.state !== 'external_payment_pending'
+    ) {
+      return;
+    }
+    if (!adapter().isReady() || adapter().isRecording()) return;
+    adapter().startNewRecording(contextId);
+    adapter().registerSessionProperties(sessionProperties());
+    if (snapshot.state === 'chat') captureStarted();
+  }
+
   async function startChatReplay(input: StartChatReplayInput): Promise<string | null> {
     await enqueue(async () => {
+      await adapter().whenReady();
       const telegramUserId = adapter().getDistinctId();
       if (
         snapshot.state === 'chat' &&
@@ -242,6 +259,7 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
       ) {
         identity = { ...identity, selectedModelId: input.selectedModelId };
         adapter().registerSessionProperties(sessionProperties());
+        armRecordingIfNeeded();
         return;
       }
 
@@ -356,6 +374,7 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
       }
       snapshot = { ...snapshot, telemetryReady: adapter().isReady() };
       emit();
+      armRecordingIfNeeded();
     },
     attachWindowListeners,
     detachWindowListeners,

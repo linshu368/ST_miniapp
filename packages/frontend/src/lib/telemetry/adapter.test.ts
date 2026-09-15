@@ -6,16 +6,22 @@ const replayContextId = '11111111-1111-4111-8111-111111111111';
 const occurredAt = '2026-09-15T10:00:00.000Z';
 
 function createClient(): PostHogClient {
-  return {
+  let recording = false;
+  const client: PostHogClient = {
     init: vi.fn(),
     identify: vi.fn(),
     setPersonProperties: vi.fn(),
     register_for_session: vi.fn(),
     capture: vi.fn(),
-    startSessionRecording: vi.fn(),
-    stopSessionRecording: vi.fn(),
-    sessionRecordingStarted: vi.fn(() => false),
+    startSessionRecording: vi.fn(() => {
+      recording = true;
+    }),
+    stopSessionRecording: vi.fn(() => {
+      recording = false;
+    }),
+    sessionRecordingStarted: vi.fn(() => recording),
   };
+  return client;
 }
 
 describe('PostHog adapter', () => {
@@ -82,6 +88,7 @@ describe('PostHog adapter', () => {
     );
     expect(client.identify).toHaveBeenCalledWith('123456789');
     expect(adapter.startNewRecording(replayContextId)).toBe(true);
+    expect(adapter.isRecording()).toBe(true);
     expect(client.startSessionRecording).toHaveBeenCalledWith({
       sampling: true,
       linked_flag: true,
@@ -89,6 +96,21 @@ describe('PostHog adapter', () => {
       event_trigger: true,
     });
     expect(client.startSessionRecording).not.toHaveBeenCalledWith(false);
+  });
+
+  it('does not treat startSessionRecording() itself as proof that recording started', async () => {
+    const client = createClient();
+    client.startSessionRecording = vi.fn();
+    client.sessionRecordingStarted = vi.fn(() => false);
+    const adapter = createPostHogAdapter({
+      env: { key: 'phc_test', host: 'https://us.i.posthog.com' },
+      isBrowser: () => true,
+      loadSdk: async () => ({ default: client }),
+    });
+    await adapter.init('123456789');
+    expect(adapter.startNewRecording(replayContextId)).toBe(false);
+    expect(adapter.isRecording()).toBe(false);
+    expect(client.startSessionRecording).toHaveBeenCalled();
   });
 
   it('rejects events that carry chat body or pay_url', async () => {
