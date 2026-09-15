@@ -6,13 +6,13 @@
 
 ## 专题导航
 
-| 文档                                                          | 必读场景                                  |
-| ------------------------------------------------------------- | ----------------------------------------- |
-| [架构、路由与文件职责](./architecture-routes-and-files.md)    | 所有 Frontend 任务                        |
-| [页面、组件与使用规范](./pages-components-and-ui.md)          | 页面、聊天、大厅、支付、个人中心、UI      |
-| [API、数据流与状态管理](./api-dataflow-and-state.md)          | React Query、SSE、Zustand、Telegram、表单 |
-| [测试、质量、性能与部署](./testing-quality-and-deployment.md) | 测试、可访问性、性能、Sentry、Vercel      |
-| [规范约定](./frontend-rules.md)                               | 工程相关约束                              |
+| 文档                                                          | 必读场景                                                           |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [架构、路由与文件职责](./architecture-routes-and-files.md)    | 所有 Frontend 任务                                                 |
+| [页面、组件与使用规范](./pages-components-and-ui.md)          | 页面、聊天、大厅、支付、个人中心、UI                               |
+| [API、数据流与状态管理](./api-dataflow-and-state.md)          | React Query、SSE、Zustand、Telegram、表单、Session Replay 敏感边界 |
+| [测试、质量、性能与部署](./testing-quality-and-deployment.md) | 测试、可访问性、性能、Sentry、Vercel                               |
+| [规范约定](./frontend-rules.md)                               | 工程相关约束                                                       |
 
 ## 不可谈判规则
 

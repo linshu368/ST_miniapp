@@ -2,28 +2,29 @@
 
 ## 当前 API 文件
 
-| 文件                         | 领域                             |
-| ---------------------------- | -------------------------------- |
-| `envelope.ts`                | 通用成功/失败包络                |
-| `characters.ts`              | 角色卡列表、详情和运营字段       |
-| `favorites.ts`               | 收藏操作                         |
-| `health.ts`                  | 健康检查                         |
-| `payment.ts`                 | 支付计划、订单和回调相关公开形状 |
-| `settings.ts`                | 用户/运行配置与 provider schema  |
-| `word-count-tiers.ts`        | 回复长度档位配置                 |
-| `lobby-ranking-params.ts`    | 大厅排序参数                     |
-| `lobby-pinned-characters.ts` | 大厅置顶角色                     |
-| `wallet.ts`                  | 钱包余额、流水和计费结果         |
-| `conversations.ts`           | 会话/消息 DTO                    |
-| `voice.ts`                   | 语音生成请求、状态和计费响应     |
-| `wishes.ts`                  | 心愿功能                         |
-| `cs-platform.ts`             | Telegram 回访后台 DTO            |
-| `growth.ts`                  | 增长/裂变公共模型                |
-| `invite.ts`                  | 邀请关系和奖励                   |
-| `community.ts`               | 官方社群状态与奖励               |
-| `models.ts`                  | 可用模型目录                     |
-| `notifications.ts`           | 通知 DTO                         |
-| `support.ts`                 | MiniApp 客服会话/消息 DTO        |
+| 文件                         | 领域                                   |
+| ---------------------------- | -------------------------------------- |
+| `envelope.ts`                | 通用成功/失败包络                      |
+| `characters.ts`              | 角色卡列表、详情和运营字段             |
+| `favorites.ts`               | 收藏操作                               |
+| `health.ts`                  | 健康检查                               |
+| `payment.ts`                 | 支付计划、订单和回调相关公开形状       |
+| `settings.ts`                | 用户/运行配置与 provider schema        |
+| `word-count-tiers.ts`        | 回复长度档位配置                       |
+| `lobby-ranking-params.ts`    | 大厅排序参数                           |
+| `lobby-pinned-characters.ts` | 大厅置顶角色                           |
+| `wallet.ts`                  | 钱包余额、流水和计费结果               |
+| `conversations.ts`           | 会话/消息 DTO                          |
+| `voice.ts`                   | 语音生成请求、状态和计费响应           |
+| `wishes.ts`                  | 心愿功能                               |
+| `cs-platform.ts`             | Telegram 回访后台 DTO                  |
+| `growth.ts`                  | 增长/裂变公共模型                      |
+| `invite.ts`                  | 邀请关系和奖励                         |
+| `community.ts`               | 官方社群状态与奖励                     |
+| `models.ts`                  | 可用模型目录                           |
+| `notifications.ts`           | 通知 DTO                               |
+| `support.ts`                 | MiniApp 客服会话/消息 DTO              |
+| `telemetry.ts`               | replay context 与 PostHog 安全事件形状 |
 
 ## 设计规则
 

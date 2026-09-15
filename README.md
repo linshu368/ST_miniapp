@@ -117,6 +117,7 @@ CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记�
 | LLM             | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                | 生成上游与默认模型                                                       |
 | Voice           | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                               | 语音文案与 TTS；关键 key 缺失时语音不可用                                |
 | Payment         | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL` | 支付开关、商户和签名/回调                                                |
+| Backend PostHog | `POSTHOG_API_KEY`, `POSTHOG_HOST`, `POSTHOG_TIMEOUT_MS`                                                                                                                 | 服务端支付终态 capture；缺 key 或非法 host 时 no-op。不是浏览器公开变量  |
 | Cache/Telemetry | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                             | Redis、Sentry 和日志                                                     |
 | Feature/asset   | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`                                                     | 资源和运行开关                                                           |
 
@@ -124,7 +125,9 @@ CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记�
 
 ### Frontend
 
-主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_USE_MOCK`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
+主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_USE_MOCK`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`、`NEXT_PUBLIC_POSTHOG_KEY`、`NEXT_PUBLIC_POSTHOG_HOST`。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
+
+`NEXT_PUBLIC_POSTHOG_KEY` 与 `NEXT_PUBLIC_POSTHOG_HOST` 是浏览器公开配置，不是 secret。Host 必须是 HTTPS（例如 US Cloud 的 `https://us.i.posthog.com`）。缺任一变量、host 非法或 SDK 失败时前端 PostHog adapter 为 no-op，不影响聊天/支付，也不改变现有 Sentry Replay。允许在 development / preview / production 配置；某环境留空即关闭 PostHog。Frontend 没有 `.env.example`，勿新建平行模板。当前 PostHog 项目为 **Free 套餐**，Session Replay **最长保留 30 天**；升级付费套餐前不得按 60 天描述或验收。
 
 ### Admin
 

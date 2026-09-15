@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CheckCircle2,
   ChevronLeft,
@@ -18,6 +18,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { usePaymentOrdersInfiniteQuery } from '@/lib/api/payment';
+import {
+  capturePaymentOrderStatusObserved,
+  capturePaymentReturnObserved,
+  retainPaywallFollowupIfActive,
+} from '@/lib/payment/flow-telemetry';
 import {
   formatNumber,
   formatYuanShort,
@@ -40,13 +45,46 @@ function tabToStatus(tab: TabKey): PaymentOrderStatus | 'all' {
 }
 
 export default function OrdersPage() {
+  return (
+    <Suspense fallback={<OrdersPageFallback />}>
+      <OrdersPageContent />
+    </Suspense>
+  );
+}
+
+function OrdersPageFallback() {
+  return (
+    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background text-foreground">
+      <div className="flex flex-1 items-center justify-center text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> 加载中
+      </div>
+    </main>
+  );
+}
+
+function OrdersPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const paymentReturned = searchParams.get('payment') === 'returned';
   const goBack = useCallback(() => router.push('/profile'), [router]);
   useTelegramBackButton(goBack);
 
   const [tab, setTab] = useState<TabKey>('all');
   const [openOrder, setOpenOrder] = useState<PaymentOrder | null>(null);
   const { whisper } = useHaptic();
+
+  useEffect(() => {
+    retainPaywallFollowupIfActive();
+  }, []);
+
+  useEffect(() => {
+    if (!paymentReturned) return;
+    capturePaymentReturnObserved({
+      orderId: null,
+      surface: 'orders_list',
+      onceKey: 'orders_list',
+    });
+  }, [paymentReturned]);
 
   const query = usePaymentOrdersInfiniteQuery(tabToStatus(tab), 20);
   const items = useMemo(() => (query.data?.pages ?? []).flatMap((p) => p.items), [query.data]);
@@ -127,6 +165,7 @@ export default function OrdersPage() {
               order={order}
               onOpen={() => {
                 whisper();
+                capturePaymentOrderStatusObserved(order);
                 setOpenOrder(order);
               }}
             />

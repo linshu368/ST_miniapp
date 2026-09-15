@@ -20,12 +20,13 @@
 - `engine/`：`prompt-engine.ts` 组消息，`render-instructions.ts` 渲染模板，`platform-instructions.ts` 取平台规则，`types.ts/index.ts` 定义内部边界；除配置读取外尽量纯函数。
 - `generation/`：生成/计费唯一出口；`execute.ts` 编排，`precheck.ts` 余额预检，`quota.ts` 免费额度，`resolve-model.ts` 模型解析，`prompt-caching.ts` 缓存策略，`upstream.ts` OpenRouter 流，`voice-billing.ts` 语音策略。
 - `lobby/`：精选、置顶、推荐排序参数/分数/统计与刷新。
-- `payment/domain/`：充值规则；`payment/usecases/`：下单、结算、回调报告、快速对账、订单过期。
+- `payment/domain/`：充值规则；`payment/usecases/`：下单、结算、回调报告、快速对账、订单过期、支付终态 telemetry observer。
 - `voice/`：语音文本/提示词/草稿、音色目录、MiniMax/DeepSeek 上游、生成编排与计费配置。
 
 ## `src/infrastructure/`
 
 - `payment/ZqPaymentGateway.ts`：支付供应商签名、请求/查询和响应适配，不决定业务结算规则。
+- `telemetry/posthog-capture.ts`：Node 原生 fetch 调 PostHog capture；短超时、无重试，失败不回滚业务。
 - `redis/UpstashConfigStore.ts`：远端配置缓存适配。
 - `repositories/CharacterCardRepository.ts`：角色卡；`ChatSessionRepository.ts`、`ConversationHistoryRepository.ts`：会话、历史、原子开轮；`ChatMessageAudioRepository.ts`：音频；`CsPlatformRepository.ts`：CS。
 - `MiniappCharacterFavoriteRepository.ts`、`MiniappCharacterFreeQuotaRepository.ts`、`MiniappPaymentOrderRepository.ts`、`MiniappUserSettingsRepository.ts`、`MiniappWalletRepository.ts`、`MiniappWishRoleRepository.ts`：各业务域持久化。

@@ -533,6 +533,7 @@ packages/backend/src/
 | `ADMIN_PLATFORM_URL`                                                     | 运营后台 CORS                                                        |
 | `FRONTEND_URL`                                                           | CORS 与支付回跳                                                      |
 | `PAYMENT_*`                                                              | 子千易 V2 RSA 商户配置、支付开关、异步回调与同步回跳地址             |
+| `POSTHOG_API_KEY` / `POSTHOG_HOST` / `POSTHOG_TIMEOUT_MS`                | 服务端支付终态 capture（缺 key 时 no-op）；不是浏览器公开变量        |
 | `CHARACTER_STORAGE_BUCKET`                                               | 角色卡资源 bucket（默认 `character-assets`）                         |
 | `DEFAULT_USER_AVATAR_URL`                                                | 平台默认头像                                                         |
 | `CHAT_HISTORY_SYNC_ENABLED`                                              | OpenRouter 用量回捞定时任务开关                                      |
