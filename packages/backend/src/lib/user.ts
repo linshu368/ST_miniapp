@@ -1,5 +1,4 @@
 import { getDomainDb } from './supabase.js';
-import { deriveStHandle } from '@miniapp/shared';
 import type { TelegramUser } from '../middleware/auth.js';
 
 export interface MiniappDbUser {
@@ -9,8 +8,6 @@ export interface MiniappDbUser {
   bot_entered_at: string | null;
   miniapp_entered_at: string | null;
   total_round: number;
-  st_handle: string;
-  st_initialized_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -22,6 +19,22 @@ export interface MiniappDbUser {
 export async function getOrCreateDbUser(tgUser: TelegramUser): Promise<MiniappDbUser> {
   const tgIdStr = tgUser.id.toString();
   return getOrCreateMiniappUserByTgId(tgIdStr, null, true);
+}
+
+/** 支付 webhook/cron 没有 Telegram header，用内部 user UUID 反查 analytics identity。 */
+export async function findTelegramIdByUserId(userId: string): Promise<string | null> {
+  const { data, error } = await getDomainDb('app_core')
+    .from('users')
+    .select('tg_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`查询 MiniApp 用户 Telegram ID 失败：${error.message}`);
+  }
+
+  const tgId = data?.tg_id;
+  return typeof tgId === 'string' && tgId.length > 0 ? tgId : null;
 }
 
 export async function getOrCreateMiniappUserByTgId(
@@ -49,14 +62,12 @@ export async function getOrCreateMiniappUserByTgId(
     return user;
   }
 
-  const stHandle = deriveStHandle(tgId);
   const now = new Date().toISOString();
   const { data, error: insertErr } = await db
     .from('users')
     .insert({
       tg_id: tgId,
       source_id: sourceId,
-      st_handle: stHandle,
       miniapp_entered_at: markMiniappEntered ? now : null,
       created_at: now,
       updated_at: now,

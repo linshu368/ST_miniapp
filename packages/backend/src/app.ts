@@ -22,7 +22,8 @@ import communityRoutes from './routes/community.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
-import { startChatHistorySyncJob, stopChatHistorySyncJob } from './lib/chat-history-sync-job.js';
+import telemetryRoutes from './routes/telemetry.js';
+import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
@@ -113,6 +114,7 @@ export async function buildApp() {
   await app.register(adminSupabaseProxyRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
+  await app.register(telemetryRoutes);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],

@@ -11,6 +11,9 @@ import {
   toPaymentOrder,
 } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { CreatePaymentOrderData, PaymentOrder, PaymentType } from '@miniapp/shared';
+import { createLogger } from '../../../lib/logger.js';
+import type { SettlementLogger } from './PaymentSettlement.js';
+import { observePaymentOrderFailed } from './PaymentOrderTelemetry.js';
 
 export class RechargeUseCase {
   constructor(
@@ -23,6 +26,7 @@ export class RechargeUseCase {
     planId: string;
     paymentType: PaymentType;
     clientIp: string;
+    log?: SettlementLogger;
   }): Promise<CreatePaymentOrderData> {
     if (!config.payment.enabled) {
       throw new Error('支付功能未开启');
@@ -50,12 +54,30 @@ export class RechargeUseCase {
       outTradeNo: orderId,
       amount: formatAmountCny(plan.price_cents),
       userId: input.userId,
-      productName: `星尘充值 ${plan.credits_amount + plan.bonus_credits}`,
+      // 子千易 `name`。原「星尘充值 *」疑似命中支付宝禁售词，改为文档示例做验证。
+      productName: 'VIP会员',
       clientIp: input.clientIp,
     });
 
     if (!result.success || !result.paymentUrl) {
       await this.orders.markFailed(orderId);
+      const log = input.log ?? createLogger('payment');
+      try {
+        void observePaymentOrderFailed(
+          {
+            orderId: row.id,
+            userId: row.user_id,
+            paymentType: row.payment_type,
+            settledBy: row.settled_by,
+          },
+          log
+        );
+      } catch (telemetryError) {
+        log.sys.error(
+          { event: 'payment.telemetry.failed', err: telemetryError, orderId: row.id },
+          '支付终态事件发送失败'
+        );
+      }
       throw new Error(result.errorMessage || '创建支付订单失败');
     }
 

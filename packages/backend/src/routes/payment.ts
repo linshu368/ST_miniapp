@@ -101,6 +101,7 @@ export default async function paymentRoutes(app: FastifyInstance) {
         planId: body.plan_id,
         paymentType: body.payment_type,
         clientIp: request.ip,
+        log,
       });
       log.biz.info(
         {

@@ -2,12 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from './client';
-import type {
-  GetModelCatalogData,
-  GetModelTiersData,
-  SelectModelData,
-  SelectModelRequest,
-} from '@miniapp/shared';
+import type { GetModelCatalogData, SelectModelData, SelectModelRequest } from '@miniapp/shared';
 import { MODEL_CATALOG_STALE_TIME_MS } from './model-cache-policy';
 
 const MODEL_CATALOG_CACHE_KEY = 'miniapp:model-catalog:last-good:v2';
@@ -15,17 +10,6 @@ const MODEL_CATALOG_CACHE_KEY = 'miniapp:model-catalog:last-good:v2';
 export const modelCatalogKeys = {
   detail: ['modelCatalog'] as const,
 };
-
-export function useModelTiersQuery() {
-  return useQuery({
-    queryKey: ['modelTiers'],
-    queryFn: async () => {
-      const data = await apiClient<GetModelTiersData>('/api/platform/models');
-      return data;
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
-}
 
 export function useModelCatalogQuery() {
   return useQuery({

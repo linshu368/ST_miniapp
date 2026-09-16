@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { shouldExpandComposer } from './composer-layout';
 
 /** 与后端 routes/conversations.ts 的 MAX_USER_INPUT_LENGTH 对齐，前端先拦一道 */
@@ -70,7 +71,12 @@ export function ChatComposer({
   };
 
   return (
-    <div className="bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+    <div
+      className={cn(
+        'bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2',
+        PH_CHAT_REPLAY_VISIBLE_CLASS
+      )}
+    >
       <div
         className={cn(
           'relative min-h-[50px] rounded-[22px] border bg-card shadow-[0_8px_28px_rgb(16_13_15/40%)] transition-colors',

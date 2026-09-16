@@ -1,8 +1,7 @@
 /**
  * backend / features / generation / quota.ts
  *
- * 角色卡免费额度的预留与终结（M3a）。搬自 routes/llm-proxy.ts 原第 355~445 行，
- * 分支、日志事件名与字段逐条对照原 handler，行为零变化。
+ * 角色卡免费额度的预留与终结。
  *
  * 两阶段：生成前 reserve 占一轮，流终态 finalize 决定这一轮算消耗还是退回。
  * 预留结果会决定本轮是否免费，而定档扣费额又由该结果决定，
@@ -34,7 +33,7 @@ export interface FreeQuotaReservation {
   finalize(success: boolean): Promise<CharacterFreeQuotaDecision | null>;
 }
 
-/** 不进免费额度体系时的空预留（付费模型 / 非对话请求 / simulation）。 */
+/** 不进免费额度体系时的空预留（付费模型 / 非对话请求）。 */
 export function noFreeQuotaReservation(): FreeQuotaReservation {
   return {
     isFreeRound: false,
@@ -46,7 +45,7 @@ export function noFreeQuotaReservation(): FreeQuotaReservation {
 /**
  * 预留一轮角色卡免费额度。
  *
- * 预留失败会抛出——原 handler 在这里返回 500，调用方沿用即可。
+ * 预留失败会抛出，调用方按 500 处理：额度没占上就发生成，会让免费轮口径漂移。
  */
 export async function reserveCharacterFreeQuota(input: {
   chargeId: string;

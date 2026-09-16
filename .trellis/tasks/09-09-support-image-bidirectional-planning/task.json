@@ -1,0 +1,38 @@
+{
+  "id": "support-image-bidirectional-planning",
+  "name": "support-image-bidirectional-planning",
+  "title": "客服图片双向收发双链路规划",
+  "description": "规划 Telegram 回访与 MiniApp 站内客服两条链路的单图双向收发，覆盖契约、数据库、Storage、Backend、Frontend、CS Platform、可靠性、验证与发布恢复。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.engagement-support",
+        "backend.business.engagement-support",
+        "cs-platform.business.customer-operations",
+        "shared.business.engagement-support-contracts",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}

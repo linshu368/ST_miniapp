@@ -1,7 +1,7 @@
 import type { RequestLogger } from '../../lib/logger.js';
 import { deleteMessageVoice, storeMessageVoice } from '../../lib/chat-voice-storage.js';
 import { ChatMessageAudioRepository } from '../../infrastructure/repositories/ChatMessageAudioRepository.js';
-import { settleVoiceGeneration } from '../generation/index.js';
+import { settleVoiceGeneration } from './billing.js';
 import { synthesizeSpeech } from './minimax.js';
 import { draftSpokenText, type DraftGate } from './voice-draft.js';
 import { VoiceUpstreamError } from './voice-upstream.js';
