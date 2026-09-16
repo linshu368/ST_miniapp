@@ -130,7 +130,7 @@ export class MiniappWalletRepository {
   }
 
   /**
-   * 付费状态读钱包权威位：`first_paid_at` 由 `complete_payment_order` 在已完成订单入账时写入。
+   * 付费状态读钱包权威位：`first_paid_at` 由支付入账主路径在已完成订单结算时写入。
    * 只读，不创建钱包行。
    */
   async hasCompletedPayment(userId: string): Promise<boolean> {
