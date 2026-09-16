@@ -6,23 +6,23 @@
 
 ## Tasks
 
-| ID  | Status      | Task                                   | Files / Scope               | Depends On | Verification                     |
-| --- | ----------- | -------------------------------------- | --------------------------- | ---------- | -------------------------------- |
-| T0  | Done        | 人工评审并确认依赖/环境/安全门禁       | task artifacts + target env | -          | prod/test 分支关系只读核验       |
-| T1  | Done        | 冻结 shared 契约、状态、错误与容量限制 | shared contracts/tests      | T0         | 66 tests + consumers typecheck   |
-| T2  | Done        | 实现持久边界、事务/幂等与 repository   | backend/database            | T1         | repository/migration/并发测试    |
-| T3  | In Progress | 实现数据库、环境和样本集链路核心能力   | owned application files     | T2         | PRD业务验收                      |
-| T4  | Todo        | 覆盖失败、恢复、安全与容量             | tests/runbooks              | T3         | 故障注入与停止/回滚演练          |
-| T5  | Todo        | 完成消费者检查、Spec payload和集成交接 | spec/docs/module updates    | T4         | 命令全绿 + integration owner验收 |
+| ID  | Status | Task                                   | Files / Scope               | Depends On | Verification                     |
+| --- | ------ | -------------------------------------- | --------------------------- | ---------- | -------------------------------- |
+| T0  | Done   | 人工评审并确认依赖/环境/安全门禁       | task artifacts + target env | -          | prod/test 分支关系只读核验       |
+| T1  | Done   | 冻结 shared 契约、状态、错误与容量限制 | shared contracts/tests      | T0         | 66 tests + consumers typecheck   |
+| T2  | Done   | 实现持久边界、事务/幂等与 repository   | backend/database            | T1         | repository/migration/并发测试    |
+| T3  | Done   | 实现数据库、环境和样本集链路核心能力   | owned application files     | T2         | PRD业务验收                      |
+| T4  | Done   | 覆盖失败、恢复、安全与容量             | tests/runbooks              | T3         | 故障注入与停止/回滚演练          |
+| T5  | Done   | 完成消费者检查、Spec payload和集成交接 | spec/docs/module updates    | T4         | 命令全绿 + integration owner验收 |
 
 ## 完成定义
 
-- [ ] 写 SQL、多语句、危险 schema/函数被拒绝且只读角色物理上无写权限
-- [ ] 参数/SQL/limit/source 改动使旧 preview 失效
-- [ ] 保存使用同一 preview，不重新抽样；零有效样本不可保存
-- [ ] 重复、不足、历史缺失分别统计，冻结内容不随源库变化
-- [ ] production 未显式 allow、ref 或只读凭据任一不符即拒绝启动
-- [ ] 验证命令、失败路径、发布/回滚和 Spec/module payload完整。
+- [x] 写 SQL、多语句、危险 schema/函数被拒绝且只读角色物理上无写权限
+- [x] 参数/SQL/limit/source 改动使旧 preview 失效
+- [x] 保存使用同一 preview，不重新抽样；零有效样本不可保存
+- [x] 重复、不足、历史缺失分别统计，冻结内容不随源库变化
+- [x] production 未显式 allow、ref 或只读凭据任一不符即拒绝启动
+- [x] 验证命令、失败路径、发布/回滚和 Spec/module payload完整。
 - [ ] 本任务独立归档后，父任务仍不完成；必须等待 integration-spec 全量收口。
 
 ## Execution Log
@@ -55,3 +55,6 @@
 - 2026-09-11：经单独人工授权执行真实验证，但在首个 identity/read-only/timeouts 探针失败且无 SQLSTATE；后续三表读取及全部 DML/DDL/函数负测均未执行，未将失败伪报通过。按停止条件人工立即改回 NOLOGIN 并撤本地 URI；MCP 只读确认 rolcanlogin=false、无高权、read-only/5s/500ms 配置保留，本地确认 URI 已移除且 feature=false。下一步须单独规划不泄密连接诊断并重新授权。
 - 2026-09-11：经人工确认完成不泄密诊断增强：连接阶段仅分类 DNS、TLS、认证、授权、超时、网络、容量、服务不可用或未知；会话探针逐项分类缺行、身份、read-only、statement timeout、lock timeout 不匹配。分类不包含 endpoint、用户名实际值、URI、secret、数据库返回值或原始错误消息。相关 31 tests、backend typecheck、diff check 通过；角色保持 NOLOGIN、本地来源 URI 仍为空，未重新连接，等待人工确认。
 - 2026-09-14：从安全状态离线续作 T3；新增保守 SQL 预检/命名参数绑定与专用 pg READ ONLY 有界查询原语，限定三张来源表，拒绝分号、写/DDL、SELECT INTO、函数、quoted identifier、dollar quote、非白名单 relation 及参数错配；查询设置 5s/500ms local timeout、limit+1 截断、8 MiB 字节上限，并对连接/查询错误脱敏映射、失败回滚和 release。独立检查发现并修复 CTE 名伪装 schema、quoted function、cast 误绑定及连接错误泄露风险。相关 29 tests、backend typecheck、diff check 通过；未联网、未访问数据库/secret、未执行 migration，来源角色仍应保持 NOLOGIN，公开 `sample_preview` capability 继续 false，等待锚点补齐/持久编排完成。
+- 2026-09-16：补齐 T3 锚点补齐与持久编排：用户 SQL 只产生 `source_history_id` 锚点，Backend 使用专用只读来源连接在 READ ONLY 事务中回读 `experience.chat_history` / `experience.chat_sessions` / `app_core.characters` 权威快照，统计重复锚点、缺失 session/history/character、无效锚点和截断；生成 `sha256` digest、15 分钟 preview TTL，并通过 `batch_lab.create_sample_preview` 单 RPC 持久化同批 preview。`POST /api/batch-lab/sample-sets` 只消费同一 `preview_id + digest + source_environment + idempotency_key`，由数据库 RPC 冻结 snapshot，不重新抽样；零有效样本在服务端拒绝。`sample_preview` capability 在 context 探针通过后开放。
+- 2026-09-16：T4 自动回归覆盖 SQL 攻击/参数错配/函数拒绝、连接和查询错误脱敏、READ ONLY/timeout/rollback/release、preview 锚点补齐、重复与缺失排除、route 环境错配和冻结错误映射；未重新启用真实来源 LOGIN、未读取业务行、未执行 migration。已通过 targeted shared/backend/batch-lab tests 与 backend/shared/batch-lab typecheck；等待全量消费者 typecheck、diff check 与 module payload 校验后收口 T5。
+- 2026-09-16：T5 收口：`module-updates.json` 覆盖 backend/source access、shared Batch Lab契约、database conversation-storage只读来源和 schema-security，并通过 `module_knowledge.py check 09-11-batch-lab-data-samples`。验证通过：`pnpm -r typecheck`、`pnpm --filter @miniapp/backend test`（53 files / 477 tests）、`pnpm --filter @miniapp/shared test`（47 tests）、`pnpm --filter @miniapp/batch-lab test`、`pnpm --filter @miniapp/batch-lab build`、`git diff --check`。Batch Lab build 保留既有 500 kB chunk warning。`pnpm lint:imports` 仍因仓库 ESLint 命令 `--rule '{}'` 参数解析失败；`pnpm lint:migrations` 因已提交的 `110_batch_lab_samples.sql` 使用三位编号失败。该 migration 已在任务历史中记录为远端执行对象，本轮不贸然改名以免迁移账本与实库执行历史分叉；交给 integration-spec/owner 单独决策 forward-fix。
