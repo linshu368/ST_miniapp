@@ -511,6 +511,121 @@ export const batchLabExperimentListResponseSchema = z
   })
   .strict();
 
+export const batchLabExperimentKindSchema = z.enum(['generation', 'reuse_display']);
+export type BatchLabExperimentKind = z.infer<typeof batchLabExperimentKindSchema>;
+
+export const batchLabExperimentLineageSchema = z
+  .object({
+    kind: batchLabExperimentKindSchema,
+    source_experiment_id: uuidSchema.nullable(),
+    generation_source_experiment_id: uuidSchema.nullable(),
+  })
+  .strict();
+export type BatchLabExperimentLineage = z.infer<typeof batchLabExperimentLineageSchema>;
+
+export const batchLabExperimentDetailSchema = batchLabExperimentSummarySchema
+  .extend({
+    lineage: batchLabExperimentLineageSchema,
+  })
+  .strict();
+export type BatchLabExperimentDetail = z.infer<typeof batchLabExperimentDetailSchema>;
+
+export const batchLabExperimentDetailResponseSchema = z
+  .object({ success: z.literal(true), data: batchLabExperimentDetailSchema })
+  .strict();
+
+export const batchLabCopyExperimentRequestSchema = z
+  .object({
+    source_experiment_id: uuidSchema,
+    name: z.string().trim().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
+    source_environment: batchLabSourceEnvironmentSchema,
+    idempotency_key: uuidSchema,
+  })
+  .strict();
+export type BatchLabCopyExperimentRequest = z.infer<typeof batchLabCopyExperimentRequestSchema>;
+
+export const batchLabReuseDisplayExperimentRequestSchema = z
+  .object({
+    source_experiment_id: uuidSchema,
+    name: z.string().trim().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
+    source_environment: batchLabSourceEnvironmentSchema,
+    variants: z
+      .array(batchLabExperimentVariantSchema)
+      .min(2)
+      .max(BATCH_LAB_MAX_EXPERIMENT_VARIANTS)
+      .refine(
+        (variants) => new Set(variants.map((variant) => variant.key)).size === variants.length,
+        { message: 'variant keys must be unique' }
+      ),
+    idempotency_key: uuidSchema,
+  })
+  .strict();
+export type BatchLabReuseDisplayExperimentRequest = z.infer<
+  typeof batchLabReuseDisplayExperimentRequestSchema
+>;
+
+export const batchLabAnnotationTargetSchema = z
+  .object({
+    experiment_id: uuidSchema,
+    sample_ordinal: z.number().int().nonnegative().nullable(),
+    turn_index: z.number().int().min(1).max(BATCH_LAB_MAX_EXPERIMENT_TURNS).nullable(),
+  })
+  .strict();
+export type BatchLabAnnotationTarget = z.infer<typeof batchLabAnnotationTargetSchema>;
+
+export const batchLabAnnotationSchema = batchLabAnnotationTargetSchema
+  .extend({
+    tag: z.string().trim().max(80).nullable(),
+    note: z.string().trim().max(4_000).nullable(),
+    updated_at: isoDateTimeSchema,
+  })
+  .strict();
+export type BatchLabAnnotation = z.infer<typeof batchLabAnnotationSchema>;
+
+export const batchLabUpsertAnnotationRequestSchema = batchLabAnnotationTargetSchema
+  .extend({
+    tag: z.string().trim().max(80).nullable(),
+    note: z.string().trim().max(4_000).nullable(),
+    source_environment: batchLabSourceEnvironmentSchema,
+  })
+  .strict();
+export type BatchLabUpsertAnnotationRequest = z.infer<typeof batchLabUpsertAnnotationRequestSchema>;
+
+export const batchLabAnnotationResponseSchema = z
+  .object({ success: z.literal(true), data: batchLabAnnotationSchema })
+  .strict();
+
+export const BATCH_LAB_JSONL_SCHEMA_VERSION = 'batch_lab_jsonl_v1';
+
+export const batchLabExportAttemptSchema = z
+  .object({
+    attempt_id: uuidSchema,
+    variant_key: batchLabExperimentVariantSchema.shape.key,
+    turn_index: z.number().int().min(1).max(BATCH_LAB_MAX_EXPERIMENT_TURNS),
+    status: z.enum(['pending', 'running', 'succeeded', 'failed', 'blocked', 'unknown']),
+    generation_id: z.string().nullable(),
+    finish_reason: z.string().nullable(),
+    raw_output: z.string().nullable(),
+    display_result_id: uuidSchema.nullable(),
+    error_code: z.string().nullable(),
+    error_message: z.string().nullable(),
+  })
+  .strict();
+export type BatchLabExportAttempt = z.infer<typeof batchLabExportAttemptSchema>;
+
+export const batchLabExportRowSchema = z
+  .object({
+    schema_version: z.literal(BATCH_LAB_JSONL_SCHEMA_VERSION),
+    experiment: batchLabExperimentDetailSchema,
+    sample: batchLabPreviewItemSchema.omit({ ordinal: true }).extend({
+      ordinal: z.number().int().nonnegative(),
+    }),
+    attempts: z.array(batchLabExportAttemptSchema),
+    annotations: z.array(batchLabAnnotationSchema),
+  })
+  .strict();
+export type BatchLabExportRow = z.infer<typeof batchLabExportRowSchema>;
+
 export const batchLabRunWorkerRequestSchema = z
   .object({
     source_environment: batchLabSourceEnvironmentSchema,

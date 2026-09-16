@@ -17,4 +17,7 @@ export const batchLabQueryKeys = {
   experiments(context: BatchLabContext) {
     return [...this.environment(context), 'experiments'] as const;
   },
+  experiment(context: BatchLabContext, experimentId: string) {
+    return [...this.experiments(context), experimentId] as const;
+  },
 };

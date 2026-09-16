@@ -34,7 +34,12 @@ vi.mock('../features/batch-lab/postprocessing-service.js', () => ({
 }));
 const executionMethods = vi.hoisted(() => ({
   listExperiments: vi.fn(),
+  getExperimentDetail: vi.fn(),
   createExperiment: vi.fn(),
+  copyExperiment: vi.fn(),
+  createReuseDisplayExperiment: vi.fn(),
+  upsertAnnotation: vi.fn(),
+  buildExportRows: vi.fn(),
   startExperiment: vi.fn(),
   runWorkerOnce: vi.fn(),
 }));
@@ -77,7 +82,12 @@ describe('Batch Lab routes', () => {
     postprocessingMethods.createProcessorVersion.mockReset();
     postprocessingMethods.preview.mockReset();
     executionMethods.listExperiments.mockReset();
+    executionMethods.getExperimentDetail.mockReset();
     executionMethods.createExperiment.mockReset();
+    executionMethods.copyExperiment.mockReset();
+    executionMethods.createReuseDisplayExperiment.mockReset();
+    executionMethods.upsertAnnotation.mockReset();
+    executionMethods.buildExportRows.mockReset();
     executionMethods.startExperiment.mockReset();
     executionMethods.runWorkerOnce.mockReset();
     repositoryMethods.listTemplates.mockReset();
@@ -438,6 +448,171 @@ describe('Batch Lab routes', () => {
 
     expect(response.statusCode).toBe(409);
     expect(executionMethods.createExperiment).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('returns experiment detail with lineage', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    executionMethods.getExperimentDetail.mockResolvedValue({
+      id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+      name: 'experiment',
+      sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+      source_environment: 'test',
+      status: 'draft',
+      variants: [
+        {
+          key: 'a',
+          name: 'A',
+          model_id: 'model-a',
+          openrouter_model_id: 'openrouter/a',
+          tier: 'standard',
+          is_free: false,
+          sampling: {},
+          processor_version_id: null,
+          max_turns: 1,
+        },
+        {
+          key: 'b',
+          name: 'B',
+          model_id: 'model-b',
+          openrouter_model_id: 'openrouter/b',
+          tier: 'standard',
+          is_free: false,
+          sampling: {},
+          processor_version_id: null,
+          max_turns: 1,
+        },
+      ],
+      total_attempts: 0,
+      completed_attempts: 0,
+      failed_attempts: 0,
+      created_at: '2026-09-11T06:00:00.000Z',
+      started_at: null,
+      completed_at: null,
+      lineage: {
+        kind: 'generation',
+        source_experiment_id: null,
+        generation_source_experiment_id: null,
+      },
+    });
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/batch-lab/experiments/35d2159d-dcea-46e9-aab2-8c68bd14e307',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.lineage.kind).toBe('generation');
+    await app.close();
+  });
+
+  it('rejects copy requests whose path id and body id differ', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/batch-lab/experiments/35d2159d-dcea-46e9-aab2-8c68bd14e307/copy',
+      payload: {
+        source_experiment_id: '26d2159d-dcea-46e9-aab2-8c68bd14e307',
+        name: 'copy',
+        source_environment: 'test',
+        idempotency_key: 'd5e7e560-6f51-4be1-bcf0-745652088fa2',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(executionMethods.copyExperiment).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('exports JSONL rows as an attachment stream', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    executionMethods.buildExportRows.mockResolvedValue([
+      {
+        schema_version: 'batch_lab_jsonl_v1',
+        experiment: {
+          id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+          name: 'experiment',
+          sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+          source_environment: 'test',
+          status: 'failed',
+          variants: [
+            {
+              key: 'a',
+              name: 'A',
+              model_id: 'model-a',
+              openrouter_model_id: 'openrouter/a',
+              tier: 'standard',
+              is_free: false,
+              sampling: {},
+              processor_version_id: null,
+              max_turns: 1,
+            },
+            {
+              key: 'b',
+              name: 'B',
+              model_id: 'model-b',
+              openrouter_model_id: 'openrouter/b',
+              tier: 'standard',
+              is_free: false,
+              sampling: {},
+              processor_version_id: null,
+              max_turns: 1,
+            },
+          ],
+          total_attempts: 1,
+          completed_attempts: 0,
+          failed_attempts: 1,
+          created_at: '2026-09-11T06:00:00.000Z',
+          started_at: null,
+          completed_at: null,
+          lineage: {
+            kind: 'generation',
+            source_experiment_id: null,
+            generation_source_experiment_id: null,
+          },
+        },
+        sample: {
+          ordinal: 0,
+          source_history_id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+          source_session_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+          source_user_id: 'd5e7e560-6f51-4be1-bcf0-745652088fa2',
+          source_character_id: '3f902d7f-734c-4ca7-b40f-a780d48d46e4',
+          turn_index: 1,
+          revision: 0,
+          user_input: 'hello',
+          original_assistant_reply: null,
+          original_model: 'model-a',
+          history: [{ role: 'user', content: 'hello' }],
+          character_snapshot: {},
+          dynamic_input_snapshot: {},
+          restoration_strategy: 'exact_prompt_snapshot',
+        },
+        attempts: [],
+        annotations: [],
+      },
+    ]);
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/batch-lab/experiments/35d2159d-dcea-46e9-aab2-8c68bd14e307/export.jsonl',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-disposition']).toContain('attachment');
+    expect(response.body).toContain('batch_lab_jsonl_v1');
     await app.close();
   });
 

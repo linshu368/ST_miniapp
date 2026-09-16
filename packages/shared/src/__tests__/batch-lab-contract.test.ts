@@ -11,8 +11,11 @@ import {
   BATCH_LAB_DEFAULT_SAMPLE_LIMIT,
   BATCH_LAB_MAX_WORKER_CLAIM_LIMIT,
   batchLabCreateExperimentRequestSchema,
+  batchLabExportRowSchema,
   BATCH_LAB_MAX_SAMPLE_LIMIT,
+  BATCH_LAB_JSONL_SCHEMA_VERSION,
   batchLabExperimentSummarySchema,
+  batchLabReuseDisplayExperimentRequestSchema,
   batchLabCreateSampleSetRequestSchema,
   batchLabProcessorConfigSchema,
   batchLabProcessorPreviewRequestSchema,
@@ -165,6 +168,98 @@ describe('batch lab data sample contracts', () => {
         claim_limit: BATCH_LAB_MAX_WORKER_CLAIM_LIMIT + 1,
       }).success
     ).toBe(false);
+  });
+
+  it('validates reuse-display requests as zero-generation experiment inputs', () => {
+    const variant = {
+      key: 'a',
+      name: 'A',
+      model_id: 'model-a',
+      openrouter_model_id: 'openrouter/a',
+      tier: 'standard' as const,
+      is_free: false,
+      sampling: {},
+      processor_version_id: null,
+      max_turns: 1,
+    };
+    expect(
+      batchLabReuseDisplayExperimentRequestSchema.safeParse({
+        source_experiment_id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+        name: 'reuse display',
+        source_environment: 'test',
+        variants: [variant, { ...variant, key: 'b', name: 'B' }],
+        idempotency_key: 'd5e7e560-6f51-4be1-bcf0-745652088fa2',
+      }).success
+    ).toBe(true);
+  });
+
+  it('validates JSONL export rows with frozen sample and failed attempts', () => {
+    const variant = {
+      key: 'a',
+      name: 'A',
+      model_id: 'model-a',
+      openrouter_model_id: 'openrouter/a',
+      tier: 'standard' as const,
+      is_free: false,
+      sampling: {},
+      processor_version_id: null,
+      max_turns: 1,
+    };
+    expect(
+      batchLabExportRowSchema.safeParse({
+        schema_version: BATCH_LAB_JSONL_SCHEMA_VERSION,
+        experiment: {
+          id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+          name: 'experiment',
+          sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+          source_environment: 'test',
+          status: 'failed',
+          variants: [variant, { ...variant, key: 'b', name: 'B' }],
+          total_attempts: 2,
+          completed_attempts: 1,
+          failed_attempts: 1,
+          created_at: '2026-09-11T06:00:00.000Z',
+          started_at: '2026-09-11T06:01:00.000Z',
+          completed_at: '2026-09-11T06:02:00.000Z',
+          lineage: {
+            kind: 'generation',
+            source_experiment_id: null,
+            generation_source_experiment_id: null,
+          },
+        },
+        sample: {
+          ordinal: 0,
+          source_history_id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+          source_session_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+          source_user_id: 'd5e7e560-6f51-4be1-bcf0-745652088fa2',
+          source_character_id: '3f902d7f-734c-4ca7-b40f-a780d48d46e4',
+          turn_index: 12,
+          revision: 0,
+          user_input: 'hello',
+          original_assistant_reply: 'world',
+          original_model: 'model-a',
+          history: [{ role: 'user', content: 'hello' }],
+          character_snapshot: {},
+          dynamic_input_snapshot: {},
+          restoration_strategy: 'exact_prompt_snapshot',
+        },
+        attempts: [
+          {
+            attempt_id: '26d2159d-dcea-46e9-aab2-8c68bd14e307',
+            variant_key: 'a',
+            turn_index: 1,
+            status: 'failed',
+            generation_id: null,
+            finish_reason: null,
+            raw_output: null,
+            display_result_id: null,
+            error_code: 'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR',
+            error_message: 'failed',
+          },
+        ],
+        annotations: [],
+      }).success
+    ).toBe(true);
   });
 
   it('rejects storage-only experiment fields from public summaries', () => {

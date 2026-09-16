@@ -42,11 +42,15 @@ import {
   message,
 } from 'antd';
 import {
+  copyBatchLabExperiment,
   createBatchLabExperiment,
   createBatchLabPreview,
   createBatchLabProcessor,
+  createBatchLabReuseDisplayExperiment,
   createBatchLabSampleSet,
+  downloadBatchLabExperimentJsonl,
   getBatchLabContext,
+  getBatchLabExperiment,
   listBatchLabExperiments,
   listBatchLabProcessors,
   listBatchLabSampleSets,
@@ -54,6 +58,7 @@ import {
   previewBatchLabProcessor,
   runBatchLabWorkerOnce,
   startBatchLabExperiment,
+  upsertBatchLabAnnotation,
 } from './api/client';
 import { batchLabQueryKeys } from './api/query-keys';
 import {
@@ -416,31 +421,145 @@ function ExperimentsPage({
         locale={{ emptyText: '暂无实验，先创建并启动一个 A/B 组合。' }}
         scroll={{ x: 840 }}
       />
-      <ExperimentDrawer experiment={selected} onClose={() => setSelected(null)} />
+      <ExperimentDrawer context={context} experiment={selected} onClose={() => setSelected(null)} />
     </section>
   );
 }
 
 function ExperimentDrawer({
+  context,
   experiment,
   onClose,
 }: {
+  context: BatchLabContext;
   experiment: BatchLabExperimentSummary | null;
   onClose: () => void;
 }) {
-  const variants = experiment?.variants ?? [];
+  const queryClient = useQueryClient();
+  const detailQuery = useQuery({
+    queryKey: experiment
+      ? batchLabQueryKeys.experiment(context, experiment.id)
+      : [...batchLabQueryKeys.experiments(context), 'none'],
+    queryFn: ({ signal }) => getBatchLabExperiment(experiment?.id ?? '', signal),
+    enabled: experiment !== null,
+  });
+  const detail = detailQuery.data;
+  const variants = detail?.variants ?? experiment?.variants ?? [];
   const diffRows = variants.length >= 2 ? variantDiffRows(variants[0], variants[1]) : [];
+  const invalidateExperiments = async () => {
+    await queryClient.invalidateQueries({ queryKey: batchLabQueryKeys.experiments(context) });
+    if (experiment) {
+      await queryClient.invalidateQueries({
+        queryKey: batchLabQueryKeys.experiment(context, experiment.id),
+      });
+    }
+  };
+  const copyMutation = useMutation({
+    mutationFn: () => {
+      if (!experiment) throw new Error('请选择实验');
+      return copyBatchLabExperiment({
+        source_experiment_id: experiment.id,
+        name: `${experiment.name} · 副本`,
+        source_environment: context.source_environment,
+        idempotency_key: newIdempotencyKey(),
+      });
+    },
+    onSuccess: async () => {
+      message.success('已复制为新草稿');
+      await invalidateExperiments();
+    },
+    onError: (error) => message.error(errorMessage(error)),
+  });
+  const reuseMutation = useMutation({
+    mutationFn: () => {
+      if (!detail) throw new Error('详情尚未加载');
+      return createBatchLabReuseDisplayExperiment({
+        source_experiment_id: detail.id,
+        name: `${detail.name} · 复用原文`,
+        source_environment: context.source_environment,
+        variants: detail.variants.map((variant) => ({ ...variant })),
+        idempotency_key: newIdempotencyKey(),
+      });
+    },
+    onSuccess: async () => {
+      message.success('已保存复用原文实验');
+      await invalidateExperiments();
+    },
+    onError: (error) => message.error(errorMessage(error)),
+  });
+  const annotationMutation = useMutation({
+    mutationFn: (note: string) => {
+      if (!experiment) throw new Error('请选择实验');
+      return upsertBatchLabAnnotation({
+        experiment_id: experiment.id,
+        sample_ordinal: null,
+        turn_index: null,
+        tag: null,
+        note,
+        source_environment: context.source_environment,
+      });
+    },
+    onSuccess: () => message.success('备注已保存'),
+    onError: (error) => message.error(errorMessage(error)),
+  });
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      if (!experiment) throw new Error('请选择实验');
+      const blob = await downloadBatchLabExperimentJsonl(experiment.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `batch-lab-${experiment.id}.jsonl`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    },
+    onError: (error) => message.error(errorMessage(error)),
+  });
 
   return (
     <Drawer width={720} title={experiment?.name} open={experiment !== null} onClose={onClose}>
       {experiment ? (
         <Space direction="vertical" size={20} className="full-width">
+          <Space wrap>
+            <Button loading={copyMutation.isPending} onClick={() => copyMutation.mutate()}>
+              复制为草稿
+            </Button>
+            <Button
+              disabled={!detail}
+              loading={reuseMutation.isPending}
+              onClick={() => reuseMutation.mutate()}
+            >
+              复用原文
+            </Button>
+            <Button loading={exportMutation.isPending} onClick={() => exportMutation.mutate()}>
+              导出 JSONL
+            </Button>
+          </Space>
           <Descriptions bordered size="small" column={1}>
             <Descriptions.Item label="状态">
-              {experimentStatusText(experiment.status)}
+              {experimentStatusText(detail?.status ?? experiment.status)}
             </Descriptions.Item>
-            <Descriptions.Item label="样本集">{experiment.sample_set_id}</Descriptions.Item>
-            <Descriptions.Item label="来源环境">{experiment.source_environment}</Descriptions.Item>
+            <Descriptions.Item label="样本集">
+              {detail?.sample_set_id ?? experiment.sample_set_id}
+            </Descriptions.Item>
+            <Descriptions.Item label="来源环境">
+              {detail?.source_environment ?? experiment.source_environment}
+            </Descriptions.Item>
+            <Descriptions.Item label="血缘">
+              {detail ? (
+                <Space direction="vertical" size={2}>
+                  <Typography.Text>{detail.lineage.kind}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    source: {detail.lineage.source_experiment_id ?? '-'}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    generation: {detail.lineage.generation_source_experiment_id ?? '-'}
+                  </Typography.Text>
+                </Space>
+              ) : (
+                '加载中'
+              )}
+            </Descriptions.Item>
             <Descriptions.Item label="进度">
               {experiment.completed_attempts} 成功 / {experiment.failed_attempts} 失败 /{' '}
               {experiment.total_attempts} 总任务
@@ -471,9 +590,24 @@ function ExperimentDrawer({
           <Alert
             type="info"
             showIcon
-            message="逐样本逐轮结果读端尚未开放"
-            description="当前后端只返回实验摘要与冻结配置。结果分页、失败项重试、复用原文和 JSONL 属于后续 history-export 子任务，工作台在这里保留真实集成入口。"
+            message="逐样本逐轮事实通过 JSONL 恢复"
+            description="详情抽屉展示冻结配置、血缘和操作入口；全量样本/轮次事实通过导出按行恢复，避免一次性把大正文塞进列表响应。"
           />
+          <Card title="实验备注" size="small">
+            <Input.TextArea id="experiment-note" rows={4} placeholder="记录观察，不参与评分。" />
+            <Button
+              className="section-gap"
+              loading={annotationMutation.isPending}
+              onClick={() => {
+                const element = document.getElementById('experiment-note');
+                annotationMutation.mutate(
+                  element instanceof HTMLTextAreaElement ? element.value : ''
+                );
+              }}
+            >
+              保存备注
+            </Button>
+          </Card>
         </Space>
       ) : null}
     </Drawer>

@@ -31,4 +31,23 @@ describe('batchLabQueryKeys', () => {
       })
     ).toEqual(['batch-lab', 'test', 'test', 'experiments']);
   });
+
+  it('scopes experiment detail by environment and id', () => {
+    expect(
+      batchLabQueryKeys.experiment(
+        {
+          backend_environment: 'production',
+          source_environment: 'test',
+          capabilities: { sample_preview: true, experiment_execution: true },
+        },
+        '35d2159d-dcea-46e9-aab2-8c68bd14e307'
+      )
+    ).toEqual([
+      'batch-lab',
+      'production',
+      'test',
+      'experiments',
+      '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+    ]);
+  });
 });

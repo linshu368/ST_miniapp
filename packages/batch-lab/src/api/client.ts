@@ -1,9 +1,12 @@
 import {
+  batchLabAnnotationResponseSchema,
+  batchLabCopyExperimentRequestSchema,
   batchLabCreateExperimentRequestSchema,
   batchLabCreateProcessorVersionRequestSchema,
   batchLabCreateSampleSetRequestSchema,
   batchLabContextResponseSchema,
   batchLabErrorResponseSchema,
+  batchLabExperimentDetailResponseSchema,
   batchLabExperimentListResponseSchema,
   batchLabExperimentResponseSchema,
   batchLabProcessorPreviewRequestSchema,
@@ -12,27 +15,34 @@ import {
   batchLabProcessorVersionResponseSchema,
   batchLabPreviewRequestSchema,
   batchLabPreviewResponseSchema,
+  batchLabReuseDisplayExperimentRequestSchema,
   batchLabRunWorkerRequestSchema,
   batchLabRunWorkerResponseSchema,
   batchLabSampleSetListResponseSchema,
   batchLabSampleSetResponseSchema,
   batchLabSqlTemplateListResponseSchema,
   batchLabStartExperimentRequestSchema,
+  batchLabUpsertAnnotationRequestSchema,
+  type BatchLabAnnotation,
+  type BatchLabCopyExperimentRequest,
   type BatchLabContext,
   type BatchLabCreateExperimentRequest,
   type BatchLabCreateProcessorVersionRequest,
   type BatchLabCreateSampleSetRequest,
   type BatchLabDisplayResult,
+  type BatchLabExperimentDetail,
   type BatchLabExperimentSummary,
   type BatchLabProcessorPreviewRequest,
   type BatchLabProcessorVersion,
   type BatchLabPreview,
   type BatchLabPreviewRequest,
+  type BatchLabReuseDisplayExperimentRequest,
   type BatchLabRunWorkerRequest,
   type BatchLabRunWorkerResult,
   type BatchLabSampleSet,
   type BatchLabSqlTemplate,
   type BatchLabStartExperimentRequest,
+  type BatchLabUpsertAnnotationRequest,
 } from '@miniapp/shared';
 import type { ZodType } from 'zod';
 
@@ -266,6 +276,96 @@ export async function createBatchLabExperiment(
     signal,
   });
   return response.data;
+}
+
+export async function getBatchLabExperiment(
+  experimentId: string,
+  signal?: AbortSignal
+): Promise<BatchLabExperimentDetail> {
+  const response = await request(
+    `/api/batch-lab/experiments/${experimentId}`,
+    batchLabExperimentDetailResponseSchema,
+    { signal }
+  );
+  return response.data;
+}
+
+export async function copyBatchLabExperiment(
+  input: BatchLabCopyExperimentRequest,
+  signal?: AbortSignal
+): Promise<BatchLabExperimentSummary> {
+  const body = batchLabCopyExperimentRequestSchema.parse(input);
+  const response = await request(
+    `/api/batch-lab/experiments/${body.source_experiment_id}/copy`,
+    batchLabExperimentResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }
+  );
+  return response.data;
+}
+
+export async function createBatchLabReuseDisplayExperiment(
+  input: BatchLabReuseDisplayExperimentRequest,
+  signal?: AbortSignal
+): Promise<BatchLabExperimentSummary> {
+  const body = batchLabReuseDisplayExperimentRequestSchema.parse(input);
+  const response = await request(
+    `/api/batch-lab/experiments/${body.source_experiment_id}/reuse-display`,
+    batchLabExperimentResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }
+  );
+  return response.data;
+}
+
+export async function upsertBatchLabAnnotation(
+  input: BatchLabUpsertAnnotationRequest,
+  signal?: AbortSignal
+): Promise<BatchLabAnnotation> {
+  const body = batchLabUpsertAnnotationRequestSchema.parse(input);
+  const response = await request(
+    `/api/batch-lab/experiments/${body.experiment_id}/annotations`,
+    batchLabAnnotationResponseSchema,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }
+  );
+  return response.data;
+}
+
+export async function downloadBatchLabExperimentJsonl(
+  experimentId: string,
+  signal?: AbortSignal
+): Promise<Blob> {
+  const response = await fetch(
+    `${apiBase()}/api/batch-lab/experiments/${experimentId}/export.jsonl`,
+    {
+      headers: { Accept: 'application/x-ndjson', 'X-Request-Id': requestId() },
+      signal,
+    }
+  );
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => undefined);
+    const parsed = batchLabErrorResponseSchema.safeParse(payload);
+    throw new BatchLabClientError(
+      'http',
+      parsed.success ? parsed.data.error.message : `请求失败（HTTP ${response.status}）`,
+      parsed.success ? parsed.data.error.code : undefined,
+      response.status
+    );
+  }
+  return response.blob();
 }
 
 export async function startBatchLabExperiment(

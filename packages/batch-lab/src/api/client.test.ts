@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   BatchLabClientError,
+  copyBatchLabExperiment,
   createBatchLabExperiment,
+  downloadBatchLabExperimentJsonl,
   previewBatchLabProcessor,
   request,
 } from './client';
@@ -180,5 +182,78 @@ describe('Batch Lab API client', () => {
         ],
       })
     ).resolves.toMatchObject({ status: 'draft' });
+  });
+
+  it('copies an experiment through the lineage endpoint', async () => {
+    vi.stubEnv('VITE_BATCH_LAB_API_URL', 'http://test');
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe(
+        'http://test/api/batch-lab/experiments/35d2159d-dcea-46e9-aab2-8c68bd14e307/copy'
+      );
+      expect(init?.method).toBe('POST');
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            id: '26d2159d-dcea-46e9-aab2-8c68bd14e307',
+            name: 'copy',
+            sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+            source_environment: 'test',
+            status: 'draft',
+            variants: [
+              {
+                key: 'a',
+                name: 'A',
+                model_id: 'model-a',
+                openrouter_model_id: 'openrouter/a',
+                tier: 'standard',
+                is_free: false,
+                sampling: {},
+                processor_version_id: null,
+                max_turns: 1,
+              },
+              {
+                key: 'b',
+                name: 'B',
+                model_id: 'model-b',
+                openrouter_model_id: 'openrouter/b',
+                tier: 'standard',
+                is_free: false,
+                sampling: {},
+                processor_version_id: null,
+                max_turns: 1,
+              },
+            ],
+            total_attempts: 0,
+            completed_attempts: 0,
+            failed_attempts: 0,
+            created_at: '2026-09-11T06:00:00.000Z',
+            started_at: null,
+            completed_at: null,
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      copyBatchLabExperiment({
+        source_experiment_id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+        name: 'copy',
+        source_environment: 'test',
+        idempotency_key: 'd5e7e560-6f51-4be1-bcf0-745652088fa2',
+      })
+    ).resolves.toMatchObject({ name: 'copy', status: 'draft' });
+  });
+
+  it('downloads experiment JSONL as a blob', async () => {
+    vi.stubEnv('VITE_BATCH_LAB_API_URL', 'http://test');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"schema_version":"batch_lab_jsonl_v1"}\n', { status: 200 }))
+    );
+    const blob = await downloadBatchLabExperimentJsonl('35d2159d-dcea-46e9-aab2-8c68bd14e307');
+    await expect(blob.text()).resolves.toContain('batch_lab_jsonl_v1');
   });
 });

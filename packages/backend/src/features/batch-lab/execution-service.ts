@@ -1,10 +1,16 @@
 import { createHash } from 'node:crypto';
 import type {
+  BatchLabAnnotation,
+  BatchLabCopyExperimentRequest,
   BatchLabCreateExperimentRequest,
+  BatchLabExperimentDetail,
   BatchLabExperimentSummary,
+  BatchLabExportRow,
+  BatchLabReuseDisplayExperimentRequest,
   BatchLabRunWorkerRequest,
   BatchLabRunWorkerResult,
   BatchLabStartExperimentRequest,
+  BatchLabUpsertAnnotationRequest,
 } from '@miniapp/shared';
 import { createLogger, type RequestLogger } from '../../lib/logger.js';
 import {
@@ -39,6 +45,28 @@ export class BatchLabExecutionService {
 
   listExperiments(): Promise<BatchLabExperimentSummary[]> {
     return this.repository.listExperiments();
+  }
+
+  getExperimentDetail(experimentId: string): Promise<BatchLabExperimentDetail> {
+    return this.repository.getExperimentDetail(experimentId);
+  }
+
+  copyExperiment(input: BatchLabCopyExperimentRequest): Promise<BatchLabExperimentSummary> {
+    return this.repository.copyExperiment(input);
+  }
+
+  createReuseDisplayExperiment(
+    input: BatchLabReuseDisplayExperimentRequest
+  ): Promise<BatchLabExperimentSummary> {
+    return this.repository.createReuseDisplayExperiment(input);
+  }
+
+  upsertAnnotation(input: BatchLabUpsertAnnotationRequest): Promise<BatchLabAnnotation> {
+    return this.repository.upsertAnnotation(input);
+  }
+
+  buildExportRows(experimentId: string): Promise<BatchLabExportRow[]> {
+    return this.repository.buildExportRows(experimentId);
   }
 
   async runWorkerOnce(input: BatchLabRunWorkerRequest): Promise<BatchLabRunWorkerResult> {
