@@ -10,16 +10,19 @@
 
 ## Tasks
 
-| ID  | Status  | Task                                                                              | Files / Scope                                                                  | Depends On | Verification                                                                    |
-| --- | ------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------- | ------------------------------------------------------------------------------- |
-| T1  | Done    | 定义图片配置、描述、attempt、错误、200 字 prompt 上限与会话批量查询契约           | `packages/shared/src/api/images.ts`、shared exports                            | -          | `pnpm --filter @miniapp/shared typecheck`；`pnpm --filter @miniapp/shared test` |
-| T2  | Done    | 增加 experience 图片 attempt 表、索引、领取/收口 RPC 与 Storage bucket 策略       | `packages/shared/migrations/*.sql`                                             | T1         | test 环境单文件迁移；shape/RLS/grant/锁/回滚核验                                |
-| T3  | Done    | 准备角色卡取数、`character_persona_and_style` 读取和分镜师 prompt 资源            | backend repositories、`features/image/` prompt 资源                            | T1,T2      | 字段存在/缺失场景；角色锚点不伪造；backend typecheck                            |
-| T4  | Done    | 扩展 generation 的 DeepSeek 写稿/翻译与 Grok/Liaobots 生图能力                    | `packages/backend/src/features/generation/`、`features/image/`、storage/config | T3         | DeepSeek 配置复用结论；Grok 配置缺失/成功/失败人工接口回归                      |
-| T5  | Doing   | 增加图片配置、默认写稿/自定义中文直出、翻译后生图、attempt 查询/创建路由与 runner | backend routes、`app.ts`、runtime config                                       | T4         | 默认/自定义路径、200 字、翻译、202/402/409/422/5xx、重启恢复、并发与超时场景    |
-| T6  | Done    | 按图 1~9 增加 React Query API、图片面板状态机、消息挂图、大图预览与充值回跳       | frontend `lib/api`、chat page/components                                       | T1,T5      | frontend typecheck/test/lint/build；图 1~9 与 Telegram WebView 人工验收         |
-| T7  | Blocked | 运行全链路验收、记录 test 环境发布顺序与停止/恢复条件                             | frontend/backend/shared、migration runbook                                     | T2-T6      | 本地门禁/故障矩阵已记录；真实 test provider/DB/真机证据待补                     |
-| T8  | Done    | 按“代码已落地、开关默认关、真实上线待验收”更新架构与模块现状 spec                 | `docs/ARCHITECTURE.md`、module spec/module-updates                             | T7         | module knowledge check；文档链接检查                                            |
+| ID  | Status  | Task                                                                              | Files / Scope                                                                   | Depends On | Verification                                                                    |
+| --- | ------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------- |
+| T1  | Done    | 定义图片配置、描述、attempt、错误、200 字 prompt 上限与会话批量查询契约           | `packages/shared/src/api/images.ts`、shared exports                             | -          | `pnpm --filter @miniapp/shared typecheck`；`pnpm --filter @miniapp/shared test` |
+| T2  | Done    | 增加 experience 图片 attempt 表、索引、领取/收口 RPC 与 Storage bucket 策略       | `packages/shared/migrations/*.sql`                                              | T1         | test 环境单文件迁移；shape/RLS/grant/锁/回滚核验                                |
+| T3  | Done    | 准备角色卡取数、`character_persona_and_style` 读取和分镜师 prompt 资源            | backend repositories、`features/image/` prompt 资源                             | T1,T2      | 字段存在/缺失场景；角色锚点不伪造；backend typecheck                            |
+| T4  | Done    | 扩展 generation 的 DeepSeek 写稿/翻译与 Grok/Liaobots 生图能力                    | `packages/backend/src/features/generation/`、`features/image/`、storage/config  | T3         | DeepSeek 配置复用结论；Grok 配置缺失/成功/失败人工接口回归                      |
+| T5  | Doing   | 增加图片配置、默认写稿/自定义中文直出、翻译后生图、attempt 查询/创建路由与 runner | backend routes、`app.ts`、runtime config                                        | T4         | 默认/自定义路径、200 字、翻译、202/402/409/422/5xx、重启恢复、并发与超时场景    |
+| T6  | Done    | 按图 1~9 增加 React Query API、图片面板状态机、消息挂图、大图预览与充值回跳       | frontend `lib/api`、chat page/components                                        | T1,T5      | frontend typecheck/test/lint/build；图 1~9 与 Telegram WebView 人工验收         |
+| T7  | Blocked | 运行全链路验收、记录 test 环境发布顺序与停止/恢复条件                             | frontend/backend/shared、migration runbook                                      | T2-T6      | 本地门禁/故障矩阵已记录；真实 test provider/DB/真机证据待补                     |
+| T8  | Done    | 按“代码已落地、开关默认关、真实上线待验收”更新架构与模块现状 spec                 | `docs/ARCHITECTURE.md`、module spec/module-updates                              | T7         | module knowledge check；文档链接检查                                            |
+| T9  | Done    | 增加 description 调用前 draft 落库、敏感 userPrompt 字段与同一行确认推进          | shared migration/contracts、backend image repository/routes、frontend image API | T5,T6      | draft 状态/约束、调用前提交、失败保留、确认幂等、consumer typecheck             |
+| T10 | Done    | 将图片写稿/翻译文本模型 URL/API key/model 改为 runtime 可配并保留 DeepSeek 默认   | backend image config/generation、shared migration、发布文档                     | T9         | runtime tuple/整组回退、参数不变、secret 泄露扫描、test 环境切换验证            |
+| T11 | Blocked | 执行追加变更全链路验证并同步架构/模块事实                                         | backend/frontend/shared、migration runbook、module spec                         | T9,T10     | 既有门禁、test migration、失败矩阵、灰度/停止/恢复证据                          |
 
 ## Execution Log
 
@@ -36,3 +39,6 @@
 - 2026-09-14：完成 T4 可靠性收口：DeepSeek/Grok 上游适配移动到 `features/generation/image-upstream.ts`；provider dispatch 前保持 leased，dispatch 后禁止自动重投；下载增加 HTTPS/redirect/私网/流式字节防护；结算余额竞争失败补偿删对象，结算响应未知保留 storing 等待幂等对账。backend typecheck/test 通过。
 - 2026-09-14：T7 本地可执行门禁与源码故障矩阵完成，记录于 `research/test-acceptance-2026-09-14.md`。shared 43、backend 401、frontend 72 项既有测试及各包 typecheck、frontend lint/build、legacy/migration guard 均通过；真实 DeepSeek/Grok、test DB 并发/账务/Storage 和 Telegram 图 1~9 仍受环境限制，T7 标记 Blocked，功能开关必须保持关闭。
 - 2026-09-14：完成 T8 当前事实同步：更新 `docs/ARCHITECTURE.md`、图片 feature guide 和五个 module spec，明确“代码/test migration 已落地、runtime 默认关闭、未宣称生产上线”；生成并校验 `module-updates.json`，`module_knowledge.py check` 通过。
+- 2026-09-16：追加规划 T9-T11。用户确认采用“description 调用前在 `chat_message_images` 创建 draft，保存完整 userPrompt，确认时复用同一行”的生命周期；原“不持久化描述预览/确认时新建 attempt”决策作废。
+- 2026-09-16：图片写稿与翻译改为共用 `app_core.runtime_config.image_text_model_config` 单行 JSON 中的 URL/API key/model；对象完整有效时使用 runtime tuple，否则整组回退现有 `config.voice.draft` DeepSeek 参数。API key 为 backend-only secret，不纳入 Admin managed config，其他请求参数保持不变。
+- 2026-09-16：完成 T9-T10 最小范围实现，仅改图片 description/translation、对应图片 attempt 契约与前端 draft id 传递；未改聊天生成、语音、计费、Grok/Replicate 或其他业务链。shared/backend typecheck、57/435 项既有测试、migration naming 与 diff check 通过；frontend typecheck 仅被工作区缺失既有 `posthog-js` 依赖阻断。远端 migration 与真实上游切换未执行，T11 保持 Blocked。

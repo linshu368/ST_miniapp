@@ -6,6 +6,7 @@
 - 模型确认：写稿/翻译使用 DeepSeek，若与语音同为 `deepseek-v4-flash` 则复用现有 DeepSeek 配置；图片 provider 使用 Grok via Liaobots。
 - 工程确认：数据库任务队列而非语音 fire-and-forget；成功后结算，余额竞争失败删除产物。
 - 运维确认：test/prod 分别配置 `LIAOBOTS_AUTH`、`LIAOBOTS_BASE`、`GROK_MODEL`、DeepSeek env、Storage bucket、runtime config；不把 secret 写入文档或 Admin。
+- 追加确认：description 调用前创建并复用同一 draft 行；`description_user_prompt` 为 backend-only 敏感审计字段。图片写稿/翻译 runtime API key 是“secret 进入 runtime_config”的显式例外，不进入 Admin managed config。
 
 ## 实施顺序
 
@@ -28,6 +29,10 @@
    - 图 9：余额不足 Sheet，主按钮跳现有充值流程，回跳定位但不自动重新提交。
    - Chat page 仅组合 hooks 并通过现有 `renderFooter` 按“图片在上、语音在下”注入。
 8. **文档/发布**：补 env example、runtime config 管理项、ARCHITECTURE；记录外部流水线参考与“视觉分镜师”prompt 版本；test 验证后再更新 module spec 的“当前状态”。
+9. **追加兼容 Migration**：新增日期命名 forward migration，为 `experience.chat_message_images` 增加 `description_user_prompt`，扩展 draft 状态并使 `prompt_cn/prompt_source` 仅在 draft 阶段可空；重建状态相关 CHECK、claim 条件和权限自检。规划单个 backend-only `image_text_model_config` JSON key 的 shape，但不写真实 API key、不加入 Admin managed key。说明表锁、既有行兼容、容量、rollback guard 与 forward-fix。
+10. **Draft 生命周期与契约**：shared description 响应增加 `draft_id`，确认请求增加 `draft_id`；repository 增加 createDraft/markDraftReady/markDraftFailed/confirmDraft 原子状态方法（优先 DB RPC/条件更新防 TOCTOU）。把当前 `draftImageDescription` 内的 userPrompt 组装提取为可先构建的函数；route 组装后先落 draft，成功提交后才把同一字符串传给模型；失败保留 draft。frontend 保存 draft id 并随确认/编辑提交，刷新/关闭后的废弃 draft 不进入 worker。
+11. **可配置文本模型**：在 `features/image/config.ts` 通过 `fetchRuntimeConfigEntry('image_text_model_config')` 读取同一 JSON 对象中的 URL/API key/model，严格校验并按整组回退 `config.voice.draft`；将同一 resolved tuple 传给 description 和 translation。`callDeepSeek` 除 endpoint/auth/model 外请求参数保持不变；日志只记录 runtime/fallback 来源与安全错误码，不记录 value。
+12. **追加发布记录**：同步任务 research、架构/模块事实（实施完成后），先 test migration 和双端部署、开关保持关闭；完成 draft 状态、配置切换/回退、secret 泄露扫描和 consumer 验证后才允许灰度。
 
 ## 可执行验证
 
@@ -47,6 +52,8 @@ pnpm -r typecheck
 
 Migration 在 test 环境逐文件执行并记录：执行前后表/RPC shape、RLS/grants、claim 并发、结算幂等、余额不足、锁等待、rollback。不得因“规划通过”直接执行生产 migration。
 
+追加 migration 还需验证：既有 pending/ready/failed 行约束不变；draft 可在 `prompt_cn/prompt_source` 为空时插入；非 draft 状态拒绝空 prompt；worker 不领取 draft；跨用户/跨 message 确认失败；description 上游失败后 draft 仍在；runtime API key 对 anon/authenticated/Admin 不可见。
+
 ## 人工与接口场景
 
 - 入口：开场白/历史/streaming/中断均隐藏；最后完整回复显示。
@@ -59,9 +66,14 @@ Migration 在 test 环境逐文件执行并记录：执行前后表/RPC shape、
 - 展示：多次生成 current 切换、旧 attempt 保留、图片/语音顺序、大图关闭、窄屏/软键盘/safe area/reduced motion。
 - 图稿：逐项对照图 1~9 验收入口、Sheet 高度/压暗层、按钮层级、字数提示、结果卡位置、放大按钮、预览层和长按保存提示。
 - 回跳：充值后回到原 character/session/message，不自动提交。
+- 调用前落库：用可控 stub/无效上游验证 fetch 尚未发出前 draft insert 已提交；网络超时/HTTP/解析失败后行转 `draft_failed`，`description_user_prompt` 存在但 API/日志不返回正文。
+- Draft 并发：双击 description、同消息多次重新写稿、两个设备同时确认同一 draft、确认其他用户或其他 message 的 draft、重复确认；确保只有一次推进 pending，旧/失败 draft 不被 worker 领取也不扣费。
+- 模型配置：单个 runtime JSON 对象三项全有效时 description/translation 都使用该 tuple；分别模拟 URL/API key/model 缺失或非法，验证整组回退当前 DeepSeek；原子修改该行 version/value 后新请求生效；请求体除 model 外与当前参数一致。
+- Secret 扫描：shared DTO、frontend bundle、Admin config API/发布历史、pino/Sentry、错误响应及 git diff 中均不得出现 runtime API key 或 `description_user_prompt` 正文。
 
 ## 发布与恢复
 
 - test：migration → bucket → DeepSeek 与 Liaobots backend secret/config → backend → frontend → 开关 → smoke。
 - production：复核 test 证据、角色 `character_persona_and_style` 覆盖和 Grok 配置，逐项重复，先保持开关关闭；小流量开启并观测成功率、P95、429、失败码、扣费不一致、孤儿对象。
 - 回滚：先关开关；让 runner 收口已接单任务；回退应用。已产生记录和账务不删除，异常数据用审计脚本 forward-fix。
+- 追加变更发布：forward migration → backend/frontend 同批兼容发布（开关关闭）→ 配置 backend-only runtime tuple 或保留默认 fallback → test 验证 → 灰度。停止条件增加 draft_failed 激增、draft 长期堆积、runtime/fallback 切换异常；回滚不删除新增列或 draft 行。
