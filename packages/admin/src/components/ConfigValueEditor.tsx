@@ -158,7 +158,7 @@ export function ConfigValueEditor(props: {
           <Typography.Text strong>请求 URL</Typography.Text>
           <Input
             value={value.url}
-            placeholder="https://api.example.com/v1/chat/completions"
+            placeholder="请输入完整的 HTTPS Chat Completions 请求地址"
             disabled={props.disabled}
             onChange={(event) => props.onChange({ ...value, url: event.target.value })}
           />
