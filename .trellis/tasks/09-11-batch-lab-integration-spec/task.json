@@ -3,7 +3,7 @@
   "name": "batch-lab-integration-spec",
   "title": "Batch Lab 集成验收、发布与 Spec 收口",
   "description": "完成全链路验收、容量安全与故障恢复、Vercel/CI 发布回滚、来源只读验证及全部 Spec/module facts 收口。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": "feature",
   "scope": "cross-package",
   "package": "cross-package",
