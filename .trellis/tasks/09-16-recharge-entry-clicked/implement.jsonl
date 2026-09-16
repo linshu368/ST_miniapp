@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "telemetry event contract rules"}
+{"file": ".trellis/spec/shared/contracts/testing-and-change-management.md", "reason": "telemetry contract tests required"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "PostHog adapter whenReady and forbidden keys"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "shared contract plus frontend producer"}

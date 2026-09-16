@@ -1,0 +1,32 @@
+{
+  "id": "recharge-entry-clicked",
+  "name": "recharge-entry-clicked",
+  "title": "个人中心星尘充值入口点击埋点",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-09-16",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-15-user-behavior-replay",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["shared.business.wallet-payment-contracts", "frontend.business.wallet-payment"]
+    }
+  }
+}

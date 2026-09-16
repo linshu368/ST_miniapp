@@ -3,6 +3,8 @@ import type { PaymentOrder } from '@miniapp/shared';
 
 import {
   capturePaymentOrderStatusObserved,
+  captureRechargeEntryClicked,
+  captureRechargeViewed,
   forgetPaymentReturnMemoryForTests,
   markExternalPaymentOpened,
   noteExternalPaymentBackgrounded,
@@ -31,11 +33,25 @@ const getSnapshot = vi.fn(
   })
 );
 
+const adapterCapture = vi.fn();
+const clearReplaySessionProperties = vi.fn();
+const whenReady = vi.fn(async () => true);
+const getDistinctId = vi.fn((): string | undefined => '123456789');
+
 vi.mock('@/lib/telemetry', () => ({
   getReplayLifecycle: () => ({
     capture,
     getSnapshot,
     enterPaywallFollowup: vi.fn(),
+  }),
+}));
+
+vi.mock('@/lib/telemetry/adapter', () => ({
+  getPostHogAdapter: () => ({
+    capture: adapterCapture,
+    clearReplaySessionProperties,
+    whenReady,
+    getDistinctId,
   }),
 }));
 
@@ -85,8 +101,18 @@ function capturedPayload(): string {
   return JSON.stringify(capture.mock.calls);
 }
 
+function capturedAdapterPayload(): string {
+  return JSON.stringify(adapterCapture.mock.calls);
+}
+
 beforeEach(() => {
   capture.mockClear();
+  adapterCapture.mockClear();
+  clearReplaySessionProperties.mockClear();
+  whenReady.mockReset();
+  whenReady.mockResolvedValue(true);
+  getDistinctId.mockReset();
+  getDistinctId.mockReturnValue('123456789');
   getSnapshot.mockReturnValue({
     state: 'external_payment_pending',
     replayContextId: '11111111-1111-4111-8111-111111111111',
@@ -335,5 +361,80 @@ describe('payment return observed', () => {
       })
     ).toBe(true);
     expect(capture).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('recharge entry clicked', () => {
+  it('sends recharge_entry_clicked without replay context and without urls', async () => {
+    getSnapshot.mockReturnValue({
+      state: 'idle',
+      replayContextId: null,
+      telemetryReady: false,
+      streaming: false,
+    });
+
+    captureRechargeEntryClicked({ telegramUserId: '123456789' });
+    expect(adapterCapture).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    expect(adapterCapture).toHaveBeenCalledTimes(1);
+    expect(clearReplaySessionProperties).toHaveBeenCalledTimes(1);
+    expect(clearReplaySessionProperties.mock.invocationCallOrder[0]).toBeLessThan(
+      adapterCapture.mock.invocationCallOrder[0] ?? 0
+    );
+    expect(adapterCapture.mock.calls[0]?.[0]).toEqual({
+      event: 'recharge_entry_clicked',
+      telegram_user_id: '123456789',
+      occurred_at: expect.any(String),
+      entry_source: 'profile_balance',
+    });
+    expect(capturedAdapterPayload()).not.toContain('pay_url');
+    expect(capturedAdapterPayload()).not.toContain('/profile');
+  });
+
+  it('attaches an active replay context id when one already exists', async () => {
+    captureRechargeEntryClicked({ telegramUserId: '123456789' });
+    await Promise.resolve();
+    expect(adapterCapture.mock.calls[0]?.[0]).toMatchObject({
+      event: 'recharge_entry_clicked',
+      replay_context_id: '11111111-1111-4111-8111-111111111111',
+      entry_source: 'profile_balance',
+    });
+    expect(clearReplaySessionProperties).not.toHaveBeenCalled();
+  });
+
+  it('does not wait for PostHog readiness before returning, then no-ops if init failed', async () => {
+    let resolveReady: ((value: boolean) => void) | undefined;
+    whenReady.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReady = resolve;
+      })
+    );
+
+    captureRechargeEntryClicked({ telegramUserId: '123456789' });
+    expect(adapterCapture).not.toHaveBeenCalled();
+
+    resolveReady?.(false);
+    await Promise.resolve();
+    expect(adapterCapture).not.toHaveBeenCalled();
+  });
+
+  it('skips the event when no telegram user id is available', async () => {
+    getDistinctId.mockReturnValue(undefined);
+    captureRechargeEntryClicked({ telegramUserId: null });
+    await Promise.resolve();
+    expect(adapterCapture).not.toHaveBeenCalled();
+  });
+
+  it('keeps recharge_viewed gated on replay context', () => {
+    getSnapshot.mockReturnValue({
+      state: 'idle',
+      replayContextId: null,
+      telemetryReady: false,
+      streaming: false,
+    });
+    captureRechargeViewed();
+    expect(capture).not.toHaveBeenCalled();
+    expect(adapterCapture).not.toHaveBeenCalled();
   });
 });

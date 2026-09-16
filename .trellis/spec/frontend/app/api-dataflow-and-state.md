@@ -130,6 +130,8 @@ posthog.capture('chat_turn_completed', {
 - SDK 动态 import 超时或抛错 → `init_failed` no-op，聊天/支付继续；`whenReady()` 必须 settle。
 - `startNewRecording` 以 `sessionRecordingStarted()` 为准，不得把 SDK 调用返回值当成已在录。
 - capture 含禁止键（`content`/`pay_url`/`initData` 等）→ runtime schema 丢弃。
+- 个人中心「星尘充值」点击发送 `recharge_entry_clicked`（`entry_source=profile_balance`）；允许没有 `replay_context_id`。必须经现有 adapter，`onClick` 不得 `await whenReady()`/`init`；SDK 未配置或失败时链接照常跳转。不得与 `recharge_viewed` 混为一项。
+- `register_for_session` 的聊天属性会自动进入后续 PostHog 事件；Replay 真正结束且 `replay_chat_ended` 发出后需用 `unregister_for_session` 清理四个聊天关联属性。无活跃 context 的充值入口发送前再清理一次，以覆盖页面重载留下的旧值；followup / external payment pending 期间不得清理。
 - 无真实 `conversationSessionId` → 不 `startChatReplay`。
 - 未配置 Backend `POSTHOG_API_KEY` → 不发服务端终态事件，也不反查用户；结算仍成功。
 - pending 订单与 `payment_flow_left_observed` 都不是支付失败。
@@ -143,11 +145,12 @@ posthog.capture('chat_turn_completed', {
 ### 6. Tests Required
 
 - `config.test.ts`：静态 env 读取与非法 host。
-- `adapter.test.ts`：`resetSessionId` + override start；schema 拒绝禁止键；SDK import 超时后 `init`/`whenReady` settle 且忽略迟到的 load。
-- `lifecycle.test.ts`：paywall hold、同角色重绑、followup 忽略 `route_change`。
+- `adapter.test.ts`：`resetSessionId` + override start；schema 拒绝禁止键；SDK import 超时后 `init`/`whenReady` settle 且忽略迟到的 load；`recharge_entry_clicked` 无 `replay_context_id` 可发送，旧聊天会话属性可清除。
+- `lifecycle.test.ts`：paywall hold、同角色重绑、followup 忽略 `route_change`；真正结束后才清除聊天会话属性。
 - `recharge-redirect.test.ts`：调用 followup 后立即 push；continuation 在跳转前写入；`paywall_triggered` 等队列 settle。
-- `return-observer.test.ts` / `flow-telemetry.test.ts`：有离开证据才 `webview_resume`；同 order 去重；无 pending 不误报。
-- shared `telemetry-contract.test.ts`：`return_source`、禁止键、`user_cohort` 不存在。
+- `flow-telemetry.test.ts`：回流去重/误报；`recharge_entry_clicked` 无 context 仍发送，有活跃 context 才附带 ID，`whenReady` 未完成时同步不 capture，init 失败 no-op，payload 无 URL/`pay_url`；`recharge_viewed` 无 context 仍跳过。
+- `return-observer.test.ts`：有离开证据才 `webview_resume`；同 order 去重；无 pending 不误报。
+- shared `telemetry-contract.test.ts`：`return_source`、禁止键、`user_cohort` 不存在、`recharge_entry_clicked` 允许没有 `replay_context_id`。
 
 ### 7. Wrong vs Correct
 
