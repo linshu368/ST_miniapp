@@ -28,7 +28,7 @@
 | description 调用前审计               | 扩展现有 image attempt 表           | 用户明确要求先保存完整 userPrompt；新增 draft 状态并确认时复用同一行，避免平行审计表与重复事实源                                          |
 | runtime_config 单项读取              | 复用 `fetchRuntimeConfigEntry`      | URL/key/model 放在同一 JSON 行可原子发布配置 tuple，不新增直读表实现                                                                      |
 | DeepSeek 默认参数                    | 整组 fallback 复用                  | runtime 三项任一无效时回退 `config.voice.draft` 全套，避免跨 endpoint 混用 key/model；保持现有默认行为                                    |
-| Admin runtime 配置发布链             | 不复用到文本模型 secret             | Admin draft/release/audit 会扩大 API key 暴露面；backend-only `image_text_model_config` 不加入 managed whitelist                          |
+| Admin runtime 配置发布链             | 复用并增加敏感值防护                | 用户要求 test/prod 均可配置；复用草稿/发布/回滚与环境权限，不新建旁路 API；API key 使用密码框并在确认/历史预览脱敏                        |
 
 ## 故障模型摘要
 
@@ -48,7 +48,7 @@
 - **draft 确认竞态**：两个请求同时确认同一 draft 时，条件更新/RPC 只允许一个从 `draft_ready` 到 `pending`；另一请求返回既有状态/409。
 - **draft 堆积与容量**：每次 description 都会保存角色卡和近期对话拼成的大文本；不建该字段索引，观测日增量与平均字节，后续再按合规保留期单独设计清理，初版不引入定时清理框架。
 - **配置更新**：URL/key/model 位于同一 JSON value，通过单行更新与 version 递增原子切换；resolver 只接受三项全部有效的 tuple，否则整组回退。
-- **runtime key 泄露**：API key 不进入 Admin managed config、shared/frontend、日志/Sentry/错误；anon/authenticated 无 runtime_config 表权限，service role 与数据库备份按 secret 权限治理。
+- **runtime key 泄露**：API key 按追加要求进入有权限的 Admin managed config，但不进入 C 端 shared/frontend、日志/Sentry/错误；确认与历史预览脱敏，Admin 数据库权限、操作审计和备份均按 secret 权限治理。
 
 ## 容量与观测
 

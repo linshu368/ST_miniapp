@@ -22,6 +22,7 @@
 | T8  | Done    | 按“代码已落地、开关默认关、真实上线待验收”更新架构与模块现状 spec                 | `docs/ARCHITECTURE.md`、module spec/module-updates                              | T7         | module knowledge check；文档链接检查                                            |
 | T9  | Done    | 增加 description 调用前 draft 落库、敏感 userPrompt 字段与同一行确认推进          | shared migration/contracts、backend image repository/routes、frontend image API | T5,T6      | draft 状态/约束、调用前提交、失败保留、确认幂等、consumer typecheck             |
 | T10 | Done    | 将图片写稿/翻译文本模型 URL/API key/model 改为 runtime 可配并保留 DeepSeek 默认   | backend image config/generation、shared migration、发布文档                     | T9         | runtime tuple/整组回退、参数不变、secret 泄露扫描、test 环境切换验证            |
+| T12 | Done    | 增加 Admin 图片生成配置聚合菜单及 test/production 草稿发布支持                    | admin navigation/schema/editor、shared migration                                | T10        | admin typecheck/test/build、DB managed key 校验、敏感预览脱敏                   |
 | T11 | Blocked | 执行追加变更全链路验证并同步架构/模块事实                                         | backend/frontend/shared、migration runbook、module spec                         | T9,T10     | 既有门禁、test migration、失败矩阵、灰度/停止/恢复证据                          |
 
 ## Execution Log
@@ -40,5 +41,8 @@
 - 2026-09-14：T7 本地可执行门禁与源码故障矩阵完成，记录于 `research/test-acceptance-2026-09-14.md`。shared 43、backend 401、frontend 72 项既有测试及各包 typecheck、frontend lint/build、legacy/migration guard 均通过；真实 DeepSeek/Grok、test DB 并发/账务/Storage 和 Telegram 图 1~9 仍受环境限制，T7 标记 Blocked，功能开关必须保持关闭。
 - 2026-09-14：完成 T8 当前事实同步：更新 `docs/ARCHITECTURE.md`、图片 feature guide 和五个 module spec，明确“代码/test migration 已落地、runtime 默认关闭、未宣称生产上线”；生成并校验 `module-updates.json`，`module_knowledge.py check` 通过。
 - 2026-09-16：追加规划 T9-T11。用户确认采用“description 调用前在 `chat_message_images` 创建 draft，保存完整 userPrompt，确认时复用同一行”的生命周期；原“不持久化描述预览/确认时新建 attempt”决策作废。
-- 2026-09-16：图片写稿与翻译改为共用 `app_core.runtime_config.image_text_model_config` 单行 JSON 中的 URL/API key/model；对象完整有效时使用 runtime tuple，否则整组回退现有 `config.voice.draft` DeepSeek 参数。API key 为 backend-only secret，不纳入 Admin managed config，其他请求参数保持不变。
+- 2026-09-16：图片写稿与翻译改为共用 `app_core.runtime_config.image_text_model_config` 单行 JSON 中的 URL/API key/model；对象完整有效时使用 runtime tuple，否则整组回退现有 `config.voice.draft` DeepSeek 参数，其他请求参数保持不变。
+- 2026-09-16：按追加要求增加 Admin「图片生成配置」聚合菜单，管理 `image_text_model_config`、`image_prompt_policy`、`image_default_art_style`；复用 test/production 环境隔离和草稿/发布/回滚链，模型 tuple 做前后端整组校验，API key 使用密码框且确认/历史预览脱敏。
+- 2026-09-16：T12 本地验证通过：Admin typecheck、46 项既有测试与 production build；shared/backend typecheck、migration naming、`git diff --check` 通过。Vite 仅报告既有主 chunk 超过 500 kB 的非阻断警告；数据库 migration 仍待 test 后 production 分环境执行。
+- 2026-09-16：首次执行追加 migration 时，目标库存在当前仓库静态白名单未包含的历史 draft key，重建 `config_drafts_config_key_check` 被 23514 阻断且事务整体回滚。已改为读取目标库现有 CHECK 并仅 OR 扩展 `image_text_model_config`，不删除历史合法 key、不改写业务行；migration naming 与 diff check 复验通过，需重新整文件执行。
 - 2026-09-16：完成 T9-T10 最小范围实现，仅改图片 description/translation、对应图片 attempt 契约与前端 draft id 传递；未改聊天生成、语音、计费、Grok/Replicate 或其他业务链。shared/backend typecheck、57/435 项既有测试、migration naming 与 diff check 通过；frontend typecheck 仅被工作区缺失既有 `posthog-js` 依赖阻断。远端 migration 与真实上游切换未执行，T11 保持 Blocked。

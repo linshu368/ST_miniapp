@@ -19,7 +19,7 @@
 - 描述接口返回 draft id；用户确认生成时必须携带该 id，并由后端在 ownership、message 绑定和状态校验后，将同一行从描述阶段原子推进为 pending 图片任务，不再创建第二条 attempt。
 - draft 阶段记录及新增 `userPrompt` 字段仅供 backend 审计/排障，不进入 shared 对外 attempt DTO、不返回前端、不写日志。其内容包含角色卡与近期对话，按消息正文同级敏感数据保护。
 - `draftImageDescription` 与 `translateImagePrompt` 共用一个可运行时配置的 OpenAI-compatible 文本模型配置对象：请求 URL、API key、模型名称作为同一个 `app_core.runtime_config` JSON value 原子发布；temperature、max_tokens、thinking、messages 等请求参数保持当前实现不变。
-- 运行时文本模型配置缺失或不合法时，整组回退到当前 `config.voice.draft` 的 DeepSeek URL/API key/model，保证默认行为与现状一致；不得把数据库 URL/API key/model 下发前端或加入 Admin managed config 清单。
+- 运行时文本模型配置缺失或不合法时，整组回退到当前 `config.voice.draft` 的 DeepSeek URL/API key/model，保证默认行为与现状一致；该配置按追加要求加入 Admin managed config，但不得进入 C 端 frontend/shared 响应或日志。
 
 ### 出图与展示
 
@@ -46,8 +46,8 @@
 - 计费口径为“Storage 中存在可读取图片，且数据库在同一事务内完成扣款、流水与 ready 收口后才算成功”；预检不等于实扣。
 - 同一 attempt 最多扣一次；并发确认、worker 重领、前端重试不得重复扣费或错误覆盖另一张图。
 - 自动描述和用户描述都经过平台既有内容安全边界；初版仅健康向出图，不做参考图上传、图生图、多图、站内相册/作品集、站内分享或运营审核后台。
-- 外部模型密钥只存在 backend secret；日志、URL、Markdown、fixture 不记录密钥、完整中文短文、英文 prompt、完整对话或图片正文。
-- 本次按明确需求允许图片写稿/翻译 API key 存在 `app_core.runtime_config`，但该 key 仍属于 backend-only secret：只能由 service role 读取，禁止进入 Admin 草稿/发布/审计快照、公开 DTO、日志和错误响应。数据库备份与运维访问按 secret 处理。
+- 除图片写稿/翻译模型配置这一明确例外外，外部模型密钥只存在 backend secret；日志、URL、Markdown、fixture 不记录密钥、完整中文短文、英文 prompt、完整对话或图片正文。
+- 图片写稿/翻译 API key 存在 `app_core.runtime_config` 并按最新要求进入 Admin 草稿/发布/审计链；只有具备对应 test/production 环境权限的 Admin 与 backend 可访问。密码框、确认弹窗和历史预览不得显示明文，且禁止进入 C 端公开 DTO、日志和错误响应。数据库备份与运维访问按 secret 处理。
 
 ## 工程约束
 
@@ -96,4 +96,4 @@
 - [ ] description 成功返回 draft id；确认生成校验 draft 归属、session/message 绑定和允许状态，并原子复用同一行推进 pending；重复确认、跨用户/跨消息 draft id、失败 draft 均不能创建重复任务或扣费。
 - [ ] draft 未确认、描述失败和长期遗留记录不被图片 worker 领取；有明确保留/清理口径，不占用“同一消息仅一个出图中 attempt”的约束。
 - [ ] `draftImageDescription` 与 `translateImagePrompt` 使用同一组 runtime 文本模型 URL/API key/model，其他请求参数不变；三项均有效时使用 runtime 配置，任一缺失/非法时整组回退当前 DeepSeek 配置。
-- [ ] runtime API key 只能由 backend service role 读取，不纳入 Admin managed keys、不进入 frontend/shared 响应、日志、错误、Markdown 或 fixture；配置轮换后新请求生效，既有运行中 attempt 按阶段语义安全收口。
+- [ ] `image_text_model_config`、`image_prompt_policy`、`image_default_art_style` 在 Admin「图片生成配置」菜单中按 test/production 环境独立保存、发布和回滚；模型 API key 用密码框录入并在确认/历史预览中脱敏，不进入 C 端 frontend/shared 响应、日志、错误或 fixture。

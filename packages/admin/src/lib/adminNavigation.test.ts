@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   configMenuKey,
+  IMAGE_GENERATION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
@@ -49,6 +50,19 @@ describe('admin navigation', () => {
     // 其余 config 目录不受影响
     expect(sidebarManagedConfigKeys).toContain('llm_model_catalog');
     expect(sidebarManagedConfigKeys).toContain('miniapp_payment_plans');
+  });
+
+  it('routes image generation configs to one grouped menu and hides duplicate entries', () => {
+    for (const key of IMAGE_GENERATION_CONFIG_KEYS) {
+      expect(resolveAdminMenuSelection(configMenuKey(key))).toEqual({
+        view: 'image_generation_config',
+        configKey: key,
+      });
+      expect(sidebarManagedConfigKeys).not.toContain(key);
+    }
+    expect(resolveAdminMenuSelection('image_generation_config')).toEqual({
+      view: 'image_generation_config',
+    });
   });
 
   it('keeps independent top-level pages separate', () => {

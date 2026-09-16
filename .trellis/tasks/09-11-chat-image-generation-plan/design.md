@@ -76,16 +76,16 @@ Chat UI
 
 - 默认写稿：参考 `shengtu_pipeline.py` 的 `fenjingshi_cn`。系统提示词使用用户提供的 `视觉分镜师prompt.txt`，实施时需作为 backend 非 secret prompt 资源纳入仓库或等价受控配置；输入包含 `art_style`、`character_persona_and_style`、最近对话上下文和必要角色卡信息。
 - 角色锚点：`character_persona_and_style` 从当前会话对应 `app_core.characters` 读取，是角色核心特征来源；为空时不能伪造锚点，需返回明确不可用错误或走经评审的角色卡字段兜底。
-- 文本模型运行时配置：新增一个 backend-only key `image_text_model_config` 到 `app_core.runtime_config`，其 JSON value 为 `{ "url", "api_key", "model" }`，确保三项在一次 runtime_config 行更新中原子发布。通过现有 `fetchRuntimeConfigEntry` 读取并严格解析：URL 必须为 HTTPS，API key/model 为非空且设合理长度上限；对象完整有效才组成 runtime tuple，缺失或任一字段无效则整组回退 `config.voice.draft` 当前 DeepSeek tuple，禁止字段级混搭。
+- 文本模型运行时配置：新增受 Admin 环境权限保护、由 backend 消费的 key `image_text_model_config` 到 `app_core.runtime_config`，其 JSON value 为 `{ "url", "api_key", "model" }`，确保三项在一次 runtime_config 行更新中原子发布。通过现有 `fetchRuntimeConfigEntry` 读取并严格解析：URL 必须为 HTTPS，API key/model 为非空且设合理长度上限；对象完整有效才组成 runtime tuple，缺失或任一字段无效则整组回退 `config.voice.draft` 当前 DeepSeek tuple，禁止字段级混搭。
 - `draftImageDescription` 与 `translateImagePrompt` 接收同一个已解析 `ImageTextModelConfig`（或由同一 resolver 获取），`callDeepSeek` 只替换 URL、Authorization 与 model；temperature=0.6、max_tokens=1200、thinking disabled、messages 和 timeout 等其他参数保持不变。配置不要求模型必须叫 DeepSeek，但 endpoint 必须兼容当前 chat completions 响应。
-- API key 虽按需求存 runtime_config，仍是 secret：`image_text_model_config` 不加入 `admin.is_managed_config_key`、draft/release CHECK 或前端 config；读取失败日志只记录 key 名/降级原因，不打印 value。migration 不写真实 key，默认可不 seed 该行（或仅以 SQL 注释说明 shape），缺失时走 `config.voice.draft`。
+- API key 虽按需求存 runtime_config，仍是 secret。按追加要求，`image_text_model_config` 加入 Admin managed key 与 draft/release CHECK，使用现有环境隔离、草稿、发布、回滚和审计链路；Admin 密码框录入，确认与历史预览脱敏，读取失败日志只记录 key 名/降级原因。migration 只 seed 空 tuple，不写真实 key，缺失或空 tuple 时走 `config.voice.draft`。
 - 翻译：参考 `translate_cn2en`，默认写稿和自定义中文短文在调用 Grok 前都先由 DeepSeek 直译英文；翻译提示词要求不增删内容、只输出英文，不改变用户确认的中文稿。
 - 出图：provider 固定为 Grok via Liaobots；实现经 `generation/grok-image-provider.ts` 单一 adapter 调用 `/v1/images/generations`，请求包含 `model=GROK_MODEL`、`prompt`、`n=1`、`size`。
 - 最终 provider prompt 可参考 Python 的“角色锚点 + 英文场景 + 控制尾巴”结构：角色锚点来自 `character_persona_and_style`，健康向控制尾巴来自 `image_prompt_policy` 或 backend 常量。不得把 Python 示例中的固定女性美型词无差别套给所有角色。
 - Grok 配置：`LIAOBOTS_AUTH`、`LIAOBOTS_BASE`、`GROK_MODEL` 由 `platform/config.ts` 读取；`LIAOBOTS_AUTH` 是 backend secret，不能进入 runtime_config/admin/前端，缺失时 config 返回 disabled/路由 503。
 - 尺寸：默认竖图 `1024x1536`，输出 WebP（provider 不支持时接收 PNG 后在既有 Node 能力允许范围内保持 PNG；不为转码新增重依赖）。
 - 运营 runtime config：`image_generation_enabled`、`image_generation_credits`、`image_price_label`、`image_default_art_style`、`image_width`、`image_height`、`image_max_prompt_chars`、`image_max_output_bytes`、`image_prompt_policy`。
-- 除用户明确指定的 backend-only `image_text_model_config.api_key` 外，secret 不进 runtime_config；所有 secret 均不得进入 Admin/前端，前端只拿安全展示配置。
+- 除用户明确指定并由 Admin 管理的 `image_text_model_config.api_key` 外，secret 不进 runtime_config；该值仅允许进入有环境权限的 Admin 配置链和 backend，不得进入 C 端前端或日志。
 
 `shengtu_pipeline.py` 里的 Replicate/Z 降级不进入初版。Grok 明确失败或审核失败按图片失败态处理，不自动切换供应商；若后续要加入降级模型，需要独立评审计费、内容安全、成本和状态机。
 
