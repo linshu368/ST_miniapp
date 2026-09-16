@@ -17,7 +17,7 @@ last_verified_at: 2026-09-08
 
 ## 当前状态
 
-Backend 与 Frontend 已统一使用。
+Backend 与 Frontend 已统一使用。`PaymentOrder.settled_by` 已作为兼容扩展透出；replay context / PostHog 事件形状在 `api/telemetry.ts`，本期不含 `user_cohort`。
 
 ## 入口与调用者
 
@@ -25,10 +25,11 @@ Backend 与 Frontend 已统一使用。
 
 ## 涉及文件
 
-| 路径                                 | 职责     |
-| ------------------------------------ | -------- |
-| `packages/shared/src/api/wallet.ts`  | 钱包 DTO |
-| `packages/shared/src/api/payment.ts` | 支付 DTO |
+| 路径                                   | 职责                  |
+| -------------------------------------- | --------------------- |
+| `packages/shared/src/api/wallet.ts`    | 钱包 DTO              |
+| `packages/shared/src/api/payment.ts`   | 支付 DTO              |
+| `packages/shared/src/api/telemetry.ts` | replay 事件与 context |
 
 ## 关键实现链路
 
@@ -40,7 +41,7 @@ Backend 与 Frontend 已统一使用。
 
 ## 关键节点与约束
 
-金额精度、订单终态和 settled_by 联合值必须兼容。
+金额精度、订单终态和 settled_by 联合值必须兼容。订单详情与列表使用同一 `toPaymentOrder()` 映射。telemetry 事件不得携带聊天正文、`pay_url` 或 initData。
 
 ## 验证方式
 

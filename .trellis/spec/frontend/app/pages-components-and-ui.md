@@ -21,7 +21,7 @@ SSE 流消息是临时客户端状态：`start` 建占位，`delta` 追加增量
 ## 个人中心、支付、通知与客服
 
 - Profile 组合 settings/wallet/checkin/invite/community/support unread；编辑成功同时更新 React Query cache 与相应 Zustand 展示镜像，避免双状态漂移。
-- Recharge 使用 `PlanCard` 做选择，mutation 做下单；订单详情仅 pending 时 2 秒轮询，进入终态立即停止。回跳参数要校验/编码，不将支付凭证放 URL。
+- Recharge 使用 `PlanCard` 做选择，mutation 做下单；订单详情仅 pending 时 2 秒轮询，进入终态立即停止。`pay_url` 只进短 TTL sessionStorage。打开外部支付前先 `enterExternalPaymentPending` 并写入 pending 记录，再 `openLink`。Telegram 冻结恢复时 URL 通常不变，回流由根上 visibility/focus/pageshow 观察，不能只靠 `?payment=returned` / `start_param`。pending 与离开事件都不是支付失败。
 - Orders 使用有界 infinite query；Spending 使用流水 query；均提供 loading skeleton、empty、error retry 和终止状态。
 - Notifications 按 scope 查询并显式 mark read；Support 查询会话、发送、标记已读并合理轮询/前台刷新；输入内容不得写遥测。
 - Invite/Community 的绑定、校验、奖励由后端幂等保证；前端可做 session 去重，但不能把 sessionStorage 当业务真相。

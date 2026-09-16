@@ -9,6 +9,7 @@
 | `voice.ts` / `models.ts`                   | 语音配置、会话音频、语音生成；模型档位/目录/选择                               |
 | `settings.ts` / `wallet.ts`                | 用户昵称头像偏好；余额、流水、签到                                             |
 | `payment.ts` / `wishes.ts`                 | 套餐、下单、订单查询/回调；许愿状态、创建、完成                                |
+| `telemetry.ts`                             | 受鉴权 replay context；支付终态事件在 feature 层异步发送                       |
 | `notifications.ts` / `support.ts`          | 消息中心；MiniApp 客服会话、消息、已读/未读                                    |
 | `cs-platform.ts`                           | Telegram 回访、画像、群发、导出等内部 API                                      |
 | `invite.ts` / `growth.ts` / `community.ts` | 邀请绑定/统计；渠道归因；官方群验证与奖励                                      |

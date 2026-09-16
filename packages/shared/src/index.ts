@@ -18,6 +18,7 @@ export * from './api/community';
 export * from './api/models';
 export * from './api/notifications';
 export * from './api/support';
+export * from './api/telemetry';
 export * from './config/database';
 export * from './png-parser';
 export * from './dev-fixtures';
