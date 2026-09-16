@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Image from 'next/image';
-import { Check, Expand, Eye, ImageIcon, Loader2, RefreshCw, X } from 'lucide-react';
+import { Check, Download, Expand, Eye, ImageIcon, Loader2, RefreshCw, X } from 'lucide-react';
 import type {
   CreateMessageImageRequest,
   GetImageConfigData,
@@ -12,6 +12,7 @@ import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
+import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
 
 type PromptSource = CreateMessageImageRequest['prompt_source'];
 
@@ -33,6 +34,8 @@ export function ChatMessageImageFooter({
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const [saveError, setSaveError] = useState('');
   const [prompt, setPrompt] = useState('');
   const [source, setSource] = useState<PromptSource>('generated');
   const [stage, setStage] = useState<
@@ -127,6 +130,30 @@ export function ChatMessageImageFooter({
     setStage('confirming');
   };
 
+  const saveImage = async () => {
+    if (!ready?.image_url || saveState === 'saving') return;
+
+    setSaveState('saving');
+    setSaveError('');
+    try {
+      const pathname = new URL(ready.image_url).pathname;
+      const extension = pathname.match(/\.(png|jpe?g|webp)$/i)?.[1]?.toLowerCase() ?? 'png';
+      const requested = await requestTelegramFileDownload(
+        ready.image_url,
+        `mijing-image-${ready.id}.${extension}`
+      );
+      if (!requested) {
+        setSaveState('failed');
+        setSaveError('当前 Telegram 版本暂不支持文件下载，请升级后重试');
+        return;
+      }
+      setSaveState('saved');
+    } catch {
+      setSaveState('failed');
+      setSaveError('图片保存未完成，请重试');
+    }
+  };
+
   const submit = async () => {
     const value = prompt.trim();
     if (!value) {
@@ -184,7 +211,11 @@ export function ChatMessageImageFooter({
       {ready?.image_url ? (
         <button
           type="button"
-          onClick={() => setViewerOpen(true)}
+          onClick={() => {
+            setSaveState('idle');
+            setSaveError('');
+            setViewerOpen(true);
+          }}
           className="group relative ml-2 block w-full max-w-[224px] overflow-hidden rounded-xl border border-border bg-card text-left"
         >
           <Image
@@ -394,9 +425,26 @@ export function ChatMessageImageFooter({
               className="max-h-[72vh] w-auto max-w-full rounded-2xl object-contain"
             />
           ) : null}
-          <p className="absolute bottom-8 text-center text-[12px] leading-relaxed text-muted-foreground">
-            长按图片可保存到相册
-          </p>
+          <div className="absolute bottom-8 flex flex-col items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void saveImage()}
+              disabled={saveState === 'saving'}
+              className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+            >
+              {saveState === 'saving' ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Download className="size-4" aria-hidden />
+              )}
+              {saveState === 'saving' ? '正在保存…' : saveState === 'saved' ? '已保存' : '保存图片'}
+            </button>
+            {saveError ? (
+              <p className="max-w-[80vw] text-center text-[12px] leading-relaxed text-destructive">
+                {saveError}
+              </p>
+            ) : null}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
