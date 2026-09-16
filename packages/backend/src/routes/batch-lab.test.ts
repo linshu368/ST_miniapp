@@ -32,6 +32,17 @@ vi.mock('../features/batch-lab/postprocessing-service.js', () => ({
       return postprocessingMethods;
     }),
 }));
+const executionMethods = vi.hoisted(() => ({
+  listExperiments: vi.fn(),
+  createExperiment: vi.fn(),
+  startExperiment: vi.fn(),
+  runWorkerOnce: vi.fn(),
+}));
+vi.mock('../features/batch-lab/execution-service.js', () => ({
+  BatchLabExecutionService: vi.fn().mockImplementation(function BatchLabExecutionServiceMock() {
+    return executionMethods;
+  }),
+}));
 const repositoryMethods = vi.hoisted(() => ({
   listTemplates: vi.fn(),
   freezeSampleSet: vi.fn(),
@@ -65,6 +76,10 @@ describe('Batch Lab routes', () => {
     postprocessingMethods.listProcessorVersions.mockReset();
     postprocessingMethods.createProcessorVersion.mockReset();
     postprocessingMethods.preview.mockReset();
+    executionMethods.listExperiments.mockReset();
+    executionMethods.createExperiment.mockReset();
+    executionMethods.startExperiment.mockReset();
+    executionMethods.runWorkerOnce.mockReset();
     repositoryMethods.listTemplates.mockReset();
     repositoryMethods.freezeSampleSet.mockReset();
     repositoryMethods.listSampleSets.mockReset();
@@ -109,7 +124,7 @@ describe('Batch Lab routes', () => {
       data: {
         backend_environment: 'test',
         source_environment: 'test',
-        capabilities: { sample_preview: true, experiment_execution: false },
+        capabilities: { sample_preview: true, experiment_execution: true },
       },
     });
     await app.close();
@@ -291,6 +306,165 @@ describe('Batch Lab routes', () => {
 
     expect(response.statusCode).toBe(504);
     expect(response.body).not.toContain('regex internals');
+    await app.close();
+  });
+
+  it('creates an experiment through the execution service', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    executionMethods.createExperiment.mockResolvedValue({
+      id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+      name: 'experiment',
+      sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+      source_environment: 'test',
+      status: 'draft',
+      variants: [
+        {
+          key: 'a',
+          name: 'A',
+          model_id: 'model-a',
+          openrouter_model_id: 'openrouter/a',
+          tier: 'standard',
+          is_free: false,
+          sampling: {},
+          processor_version_id: null,
+          max_turns: 1,
+        },
+        {
+          key: 'b',
+          name: 'B',
+          model_id: 'model-b',
+          openrouter_model_id: 'openrouter/b',
+          tier: 'standard',
+          is_free: false,
+          sampling: {},
+          processor_version_id: null,
+          max_turns: 1,
+        },
+      ],
+      total_attempts: 0,
+      completed_attempts: 0,
+      failed_attempts: 0,
+      created_at: '2026-09-11T06:00:00.000Z',
+      started_at: null,
+      completed_at: null,
+    });
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/batch-lab/experiments',
+      payload: {
+        name: 'experiment',
+        sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+        source_environment: 'test',
+        idempotency_key: 'd5e7e560-6f51-4be1-bcf0-745652088fa2',
+        variants: [
+          {
+            key: 'a',
+            name: 'A',
+            model_id: 'model-a',
+            openrouter_model_id: 'openrouter/a',
+            tier: 'standard',
+            is_free: false,
+            sampling: {},
+            processor_version_id: null,
+            max_turns: 1,
+          },
+          {
+            key: 'b',
+            name: 'B',
+            model_id: 'model-b',
+            openrouter_model_id: 'openrouter/b',
+            tier: 'standard',
+            is_free: false,
+            sampling: {},
+            processor_version_id: null,
+            max_turns: 1,
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.status).toBe('draft');
+    expect(executionMethods.createExperiment).toHaveBeenCalledOnce();
+    await app.close();
+  });
+
+  it('rejects experiment creation for the wrong source environment before service calls', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/batch-lab/experiments',
+      payload: {
+        name: 'experiment',
+        sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+        source_environment: 'production',
+        idempotency_key: 'd5e7e560-6f51-4be1-bcf0-745652088fa2',
+        variants: [
+          {
+            key: 'a',
+            name: 'A',
+            model_id: 'model-a',
+            openrouter_model_id: 'openrouter/a',
+            tier: 'standard',
+            is_free: false,
+            sampling: {},
+            processor_version_id: null,
+            max_turns: 1,
+          },
+          {
+            key: 'b',
+            name: 'B',
+            model_id: 'model-b',
+            openrouter_model_id: 'openrouter/b',
+            tier: 'standard',
+            is_free: false,
+            sampling: {},
+            processor_version_id: null,
+            max_turns: 1,
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(executionMethods.createExperiment).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('runs one internal worker lease through the execution service', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    executionMethods.runWorkerOnce.mockResolvedValue({
+      claimed_count: 1,
+      completed_count: 1,
+      failed_count: 0,
+    });
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/batch-lab/worker/run-once',
+      payload: { source_environment: 'test', worker_id: 'worker-1', claim_limit: 1 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual({
+      claimed_count: 1,
+      completed_count: 1,
+      failed_count: 0,
+    });
     await app.close();
   });
 });

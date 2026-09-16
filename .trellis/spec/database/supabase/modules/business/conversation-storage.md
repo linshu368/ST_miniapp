@@ -5,7 +5,7 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/09-11-batch-lab-data-samples/
+last_verified_task: .trellis/tasks/09-11-batch-lab-backend-execution/
 last_verified_at: 2026-09-16
 ---
 
@@ -13,11 +13,11 @@ last_verified_at: 2026-09-16
 
 ## 职责与边界
 
-维护 experience 域会话、轮次、Prompt 快照和语音元数据。
+维护 experience 域会话、轮次、Prompt 快照和语音元数据。Batch Lab 可以读取冻结样本副本用于内部调试，但不得把实验输出写回真实会话存储。
 
 ## 当前状态
 
-多会话、revision、软删、上下文水位与原子开轮 RPC 已落地。Batch Lab 样本 preview 可通过专用只读角色读取 `experience.chat_history` 与 `experience.chat_sessions` 作为冻结样本来源；该读取不改变 conversation 真相源，也不允许写入 experience 域。
+多会话、revision、软删、上下文水位与原子开轮 RPC 已落地。Batch Lab 样本 preview 可通过专用只读角色读取 `experience.chat_history` 与 `experience.chat_sessions` 作为冻结样本来源；该读取不改变 conversation 真相源，也不允许写入 experience 域。Backend execution 使用冻结后的 `batch_lab.sample_snapshots` 和 `batch_lab.experiment_attempts`，不重新查询线上会话补事实。
 
 ## 入口与调用者
 
@@ -25,37 +25,38 @@ Backend conversation/voice repositories 通过按域 client/RPC 使用。Batch L
 
 ## 涉及文件
 
-| 路径                                                       | 职责                   |
-| ---------------------------------------------------------- | ---------------------- |
-| `packages/shared/migrations/069_miniapp_chat_sessions.sql` | 会话基线               |
-| `packages/shared/migrations/077_context_window.sql`        | 上下文水位             |
-| `packages/shared/migrations/080_chat_message_voice.sql`    | 语音元数据             |
-| `packages/shared/migrations/110_batch_lab_samples.sql`     | Batch Lab 来源只读授权 |
+| 路径                                                          | 职责                             |
+| ------------------------------------------------------------- | -------------------------------- |
+| `packages/shared/migrations/069_miniapp_chat_sessions.sql`    | 会话基线                         |
+| `packages/shared/migrations/077_context_window.sql`           | 上下文水位                       |
+| `packages/shared/migrations/080_chat_message_voice.sql`       | 语音元数据                       |
+| `packages/shared/migrations/110_batch_lab_samples.sql`        | Batch Lab 来源只读授权与样本冻结 |
+| `packages/shared/migrations/20260916_batch_lab_execution.sql` | Batch Lab 实验/attempt 状态机    |
 
 ## 关键实现链路
 
-会话行锁 → 分配 turn/revision → 写 streaming → 收口终态/语音状态。Batch Lab preview 使用锚点 ID 回读当前已落库的历史、session 和角色快照，再冻结副本；后续实验不得重新查询线上会话补事实。
+会话行锁 -> 分配 turn/revision -> 写 streaming -> 收口终态/语音状态。Batch Lab preview 使用锚点 ID 回读当前已落库的历史、session 和角色快照，再冻结副本；后续实验只消费冻结副本和同分支前序输出，不重新查询线上会话表补事实。
 
 ## 数据、契约与外部依赖
 
-权威表位于 experience，音频正文位于 Supabase Storage。Batch Lab 样本保存的是调试副本，不反向服务线上会话。
+权威表位于 experience，音频正文位于 Supabase Storage。Batch Lab 样本、实验与展示结果保存的是调试副本，不反向服务线上会话。实验 raw output/display result 仅用于分析，不进入真实会话上下文。
 
 ## 关键节点与约束
 
-并发以会话行为串行点；不删除历史轮次，仅调整窗口起点。Batch Lab 来源角色只有必要 SELECT，无 INSERT/UPDATE/DELETE/TRUNCATE/DDL；缺失 session/history/character 必须显式排除或统计，不能静默构造样本。
+并发以会话行为串行点；不删除历史轮次，仅调整窗口起点。Batch Lab 来源角色只有必要 SELECT，无 INSERT/UPDATE/DELETE/TRUNCATE/DDL；缺失 session/history/character 必须显式排除或统计，不能静默构造样本。Batch Lab execution 不得写 `experience.chat_history`、不创建 session turn、不修改冻结样本。
 
 ## 验证方式
 
-Backend repository integration 与 MVP regression；Batch Lab 相关 preview/freeze 通过 `packages/backend/src/features/batch-lab/*.test.ts` 与 migration/runbook 证据验证。
+Backend repository integration 与 MVP regression；Batch Lab 相关 preview/freeze/execution 通过 `packages/backend/src/features/batch-lab/*.test.ts`、repository tests 和 migration/runbook 证据验证。
 
 ## 已知缺口与待核验项
 
-`chat_history.history` 容量治理仍待专项处理。真实来源 LOGIN/secret 验证需单独人工授权执行，当前离线测试不代表来源连通。
+`chat_history.history` 容量治理仍待专项处理。真实来源 LOGIN/secret 验证、execution migration 实库执行和 worker 常驻调度仍需人工授权执行；离线测试不代表生产连通。
 
 ## 关联模块
 
-`backend.business.conversation-generation`。
+`backend.business.conversation-generation`、`backend.infrastructure.runtime-data-security`。
 
 ## 变更记录
 
-- 2026-09-16：任务 `Batch Lab 数据库域、环境与样本集`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-data-samples/`）更新模块知识文档；commit：`14124a5b9df62627bb9fddfd722194206a0aa83b`。
+- 2026-09-16：任务 `Batch Lab Backend 实验与生成执行`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-backend-execution/`）更新模块知识文档；commit：`1316d11e29cd120e61be456cb93f4795d489af9b`。

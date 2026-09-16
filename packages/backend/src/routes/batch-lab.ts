@@ -60,7 +60,7 @@ export default async function batchLabRoutes(app: FastifyInstance) {
       source_environment: config.batchLab.sourceEnvironment,
       capabilities: {
         sample_preview: true,
-        experiment_execution: false,
+        experiment_execution: true,
       },
     });
   });

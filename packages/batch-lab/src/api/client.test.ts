@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { BatchLabClientError, previewBatchLabProcessor, request } from './client';
+import {
+  BatchLabClientError,
+  createBatchLabExperiment,
+  previewBatchLabProcessor,
+  request,
+} from './client';
 
 const successSchema = z.object({ success: z.literal(true), data: z.string() });
 
@@ -111,5 +116,69 @@ describe('Batch Lab API client', () => {
     await expect(
       previewBatchLabProcessor({ config: { protocol: 'none_v1' }, input_text: 'hello' }, undefined)
     ).resolves.toMatchObject({ status: 'success', output_text: 'hello' });
+  });
+
+  it('creates an experiment through the shared response schema', async () => {
+    vi.stubEnv('VITE_BATCH_LAB_API_URL', 'http://test');
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('http://test/api/batch-lab/experiments');
+      expect(init?.method).toBe('POST');
+      const body = JSON.parse(String(init?.body));
+      expect(body.variants).toHaveLength(2);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+            name: 'experiment',
+            sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+            source_environment: 'test',
+            status: 'draft',
+            variants: body.variants,
+            total_attempts: 0,
+            completed_attempts: 0,
+            failed_attempts: 0,
+            created_at: '2026-09-11T06:00:00.000Z',
+            started_at: null,
+            completed_at: null,
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createBatchLabExperiment({
+        name: 'experiment',
+        sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+        source_environment: 'test',
+        idempotency_key: 'd5e7e560-6f51-4be1-bcf0-745652088fa2',
+        variants: [
+          {
+            key: 'a',
+            name: 'A',
+            model_id: 'model-a',
+            openrouter_model_id: 'openrouter/a',
+            tier: 'standard',
+            is_free: false,
+            sampling: {},
+            processor_version_id: null,
+            max_turns: 1,
+          },
+          {
+            key: 'b',
+            name: 'B',
+            model_id: 'model-b',
+            openrouter_model_id: 'openrouter/b',
+            tier: 'premium',
+            is_free: false,
+            sampling: {},
+            processor_version_id: null,
+            max_turns: 1,
+          },
+        ],
+      })
+    ).resolves.toMatchObject({ status: 'draft' });
   });
 });
