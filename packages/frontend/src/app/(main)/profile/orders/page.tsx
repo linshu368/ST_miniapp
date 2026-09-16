@@ -20,7 +20,7 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { usePaymentOrdersInfiniteQuery } from '@/lib/api/payment';
 import {
   capturePaymentOrderStatusObserved,
-  capturePaymentReturnObserved,
+  observePaymentReturn,
   retainPaywallFollowupIfActive,
 } from '@/lib/payment/flow-telemetry';
 import {
@@ -79,10 +79,9 @@ function OrdersPageContent() {
 
   useEffect(() => {
     if (!paymentReturned) return;
-    capturePaymentReturnObserved({
-      orderId: null,
-      surface: 'orders_list',
-      onceKey: 'orders_list',
+    observePaymentReturn({
+      source: 'query_param',
+      route: '/profile/orders',
     });
   }, [paymentReturned]);
 

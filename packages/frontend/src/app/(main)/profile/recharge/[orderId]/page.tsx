@@ -14,7 +14,8 @@ import {
   captureExternalPaymentOpenRequested,
   capturePaymentFlowLeftObserved,
   capturePaymentOrderStatusObserved,
-  capturePaymentReturnObserved,
+  markExternalPaymentOpened,
+  observePaymentReturn,
   retainPaywallFollowupIfActive,
 } from '@/lib/payment/flow-telemetry';
 import {
@@ -95,10 +96,10 @@ export default function PaymentPendingPage() {
 
   useEffect(() => {
     if (!paymentReturned || !orderId) return;
-    capturePaymentReturnObserved({
+    observePaymentReturn({
+      source: 'query_param',
       orderId,
-      surface: 'order_detail',
-      onceKey: 'order_detail',
+      route: `/profile/recharge/${orderId}`,
     });
   }, [orderId, paymentReturned]);
 
@@ -186,6 +187,10 @@ export default function PaymentPendingPage() {
                   return;
                 }
                 captureExternalPaymentOpenRequested({
+                  orderId,
+                  paymentType: order.payment_type,
+                });
+                markExternalPaymentOpened({
                   orderId,
                   paymentType: order.payment_type,
                 });

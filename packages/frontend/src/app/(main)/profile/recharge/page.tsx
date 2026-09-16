@@ -45,6 +45,7 @@ import {
   capturePaywallInviteSelected,
   capturePaywallRechargeSelected,
   captureRechargeViewed,
+  markExternalPaymentOpened,
   retainPaywallFollowupIfActive,
 } from '@/lib/payment/flow-telemetry';
 import { paymentOrderPagePath, persistPaymentOpen } from '@/lib/payment/open-storage';
@@ -129,6 +130,10 @@ function RechargePageContent() {
       });
       // 必须在 router.push 之前：拉起若退化成本页导航，会被随后的客户端路由抢跑丢弃。
       if (openFailureKind !== 'invalid_url') {
+        markExternalPaymentOpened({
+          orderId: result.order.id,
+          paymentType,
+        });
         openPaymentUrl(result.pay_url);
       }
       router.push(

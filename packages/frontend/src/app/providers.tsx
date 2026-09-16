@@ -11,7 +11,11 @@ import { getQueryClient } from '@/lib/api/query-client';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { bindInvite } from '@/lib/api/invite';
 import { useUserSettingsQuery } from '@/lib/api/settings';
-import { capturePaymentReturnObserved } from '@/lib/payment/flow-telemetry';
+import { observePaymentReturn } from '@/lib/payment/flow-telemetry';
+import {
+  attachPaymentReturnObserver,
+  detachPaymentReturnObserver,
+} from '@/lib/payment/return-observer';
 import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { initReplayTelemetry, ReplayLifecycleOwner } from '@/lib/telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
@@ -57,26 +61,29 @@ function PaymentReturnRedirect() {
   const router = useRouter();
 
   useEffect(() => {
+    attachPaymentReturnObserver();
     const startParam = getStartParam();
     if (startParam === 'payment_return') {
-      capturePaymentReturnObserved({
+      observePaymentReturn({
+        source: 'start_param',
         orderId: null,
-        surface: 'orders_list',
-        onceKey: 'payment_return_redirect',
+        route: '/profile/orders',
       });
       router.replace('/profile/orders?payment=returned');
-      return;
+    } else if (startParam.startsWith(PAYMENT_RETURN_PREFIX)) {
+      const orderId = startParam.slice(PAYMENT_RETURN_PREFIX.length);
+      if (orderId && orderId.length <= 200 && /^[A-Za-z0-9_-]+$/.test(orderId)) {
+        observePaymentReturn({
+          source: 'start_param',
+          orderId,
+          route: `/profile/recharge/${orderId}`,
+        });
+        router.replace(`/profile/recharge/${encodeURIComponent(orderId)}?payment=returned`);
+      }
     }
-    if (!startParam.startsWith(PAYMENT_RETURN_PREFIX)) return;
-
-    const orderId = startParam.slice(PAYMENT_RETURN_PREFIX.length);
-    if (!orderId || orderId.length > 200 || !/^[A-Za-z0-9_-]+$/.test(orderId)) return;
-    capturePaymentReturnObserved({
-      orderId,
-      surface: 'order_detail',
-      onceKey: 'payment_return_redirect',
-    });
-    router.replace(`/profile/recharge/${encodeURIComponent(orderId)}?payment=returned`);
+    return () => {
+      detachPaymentReturnObserver();
+    };
   }, [router]);
 
   return null;

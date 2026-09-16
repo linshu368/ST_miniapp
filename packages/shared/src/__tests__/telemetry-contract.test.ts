@@ -172,6 +172,34 @@ describe('replay telemetry events', () => {
     ).toMatchObject({ settled_by: 'webhook', order_status: 'completed' });
   });
 
+  it('accepts payment_return_observed with optional source, route, type and elapsed', () => {
+    const paymentBase = {
+      telegram_user_id: '123456789',
+      replay_context_id: replayContextId,
+      occurred_at: occurredAt,
+      order_id: 'MA-order-1',
+    };
+    expect(
+      ReplayTelemetryEventSchema.safeParse({
+        event: 'payment_return_observed',
+        ...paymentBase,
+        return_surface: 'orders_list',
+        payment_type: 'wxpay',
+        return_source: 'webview_resume',
+        return_route: '/profile/orders',
+        elapsed_ms: 12_000,
+      }).success
+    ).toBe(true);
+    expect(
+      ReplayTelemetryEventSchema.safeParse({
+        event: 'payment_return_observed',
+        ...paymentBase,
+        return_surface: 'order_detail',
+        pay_url: 'https://pay.example/checkout',
+      }).success
+    ).toBe(false);
+  });
+
   it('maps nullable settled_by on observed and left events', () => {
     const paymentBase = {
       telegram_user_id: '123456789',

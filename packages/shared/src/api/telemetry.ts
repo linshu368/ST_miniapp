@@ -89,6 +89,10 @@ export type PaywallTriggerSource = z.infer<typeof PaywallTriggerSourceSchema>;
 export const PaymentReturnSurfaceSchema = z.enum(['order_detail', 'orders_list']);
 export type PaymentReturnSurface = z.infer<typeof PaymentReturnSurfaceSchema>;
 
+/** 回流是怎么被前端观察到的；不表示支付成功或失败。 */
+export const PaymentReturnSourceSchema = z.enum(['start_param', 'query_param', 'webview_resume']);
+export type PaymentReturnSource = z.infer<typeof PaymentReturnSourceSchema>;
+
 export const ExternalPaymentOpenFailureKindSchema = z.enum([
   'unavailable',
   'invalid_url',
@@ -238,6 +242,10 @@ export const ExternalPaymentOpenRequestedEventSchema = frontendEvent(
 export const PaymentReturnObservedEventSchema = frontendEvent('payment_return_observed', {
   order_id: z.string().trim().min(1).max(128).nullable(),
   return_surface: PaymentReturnSurfaceSchema,
+  payment_type: PaymentTypeSchema.optional(),
+  return_source: PaymentReturnSourceSchema.optional(),
+  return_route: z.string().trim().min(1).max(200).optional(),
+  elapsed_ms: NonNegativeIntSchema.optional(),
 });
 export const PaymentOrderStatusObservedEventSchema = frontendEvent(
   'payment_order_status_observed',

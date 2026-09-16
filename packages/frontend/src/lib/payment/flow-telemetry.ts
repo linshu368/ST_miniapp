@@ -2,6 +2,7 @@ import type {
   ExternalPaymentOpenFailureKind,
   PaymentFlowLastObservedAction,
   PaymentOrder,
+  PaymentReturnSource,
   PaymentReturnSurface,
   PaymentType,
   PaywallTriggerSource,
@@ -9,6 +10,17 @@ import type {
 
 import { getReplayLifecycle, type ReplayEventDraft } from '@/lib/telemetry';
 
+import {
+  clearExternalPaymentPending,
+  clearObservedReturnOrderIdsForTests,
+  EXTERNAL_PAYMENT_PENDING_TTL_MS,
+  observedOrderKey,
+  persistObservedReturnOrderId,
+  readExternalPaymentPending,
+  readObservedReturnOrderIds,
+  writeExternalPaymentPending,
+  type ExternalPaymentPending,
+} from './external-payment-pending';
 import { readPaymentOpenMeta } from './open-storage';
 import {
   patchPaywallContinuation,
@@ -17,8 +29,11 @@ import {
 } from './paywall-continuation';
 
 const statusObservedKeys = new Set<string>();
-const returnObservedKeys = new Set<string>();
 const viewedRechargeKeys = new Set<string>();
+const returnObservedKeys = new Set<string>();
+
+let memoryPending: ExternalPaymentPending | null = null;
+let leftForExternalPayment = false;
 
 function omitUndefined<T extends Record<string, unknown>>(value: T): T {
   const entries = Object.entries(value).filter(([, item]) => item !== undefined);
@@ -27,8 +42,19 @@ function omitUndefined<T extends Record<string, unknown>>(value: T): T {
 
 export function resetPaymentFlowTelemetryForTests(): void {
   statusObservedKeys.clear();
-  returnObservedKeys.clear();
   viewedRechargeKeys.clear();
+  returnObservedKeys.clear();
+  memoryPending = null;
+  leftForExternalPayment = false;
+  clearExternalPaymentPending();
+  clearObservedReturnOrderIdsForTests();
+}
+
+/** 模拟 WebView 保有 sessionStorage、但 JS 堆已丢失（刷新 / 新文档）。 */
+export function forgetPaymentReturnMemoryForTests(): void {
+  memoryPending = null;
+  leftForExternalPayment = false;
+  returnObservedKeys.clear();
 }
 
 export function retainPaywallFollowupIfActive(): void {
@@ -168,20 +194,141 @@ export function captureExternalPaymentOpenRequested(input: {
   rememberAction('external_payment_open_requested', input.orderId);
 }
 
-export function capturePaymentReturnObserved(input: {
-  orderId: string | null;
-  surface: PaymentReturnSurface;
-  onceKey: string;
-}): void {
-  const key = `${input.onceKey}:${input.orderId ?? ''}:${input.surface}`;
-  if (returnObservedKeys.has(key)) return;
-  returnObservedKeys.add(key);
-  captureDraft({
-    event: 'payment_return_observed',
-    order_id: input.orderId,
-    return_surface: input.surface,
-  });
-  rememberAction('payment_return_observed', input.orderId ?? undefined);
+export type MarkExternalPaymentOpenedInput = {
+  orderId: string;
+  paymentType: PaymentType;
+  now?: number;
+};
+
+/**
+ * 必须在 openPaymentUrl 之前调用。Telegram openLink 可能同步把 WebView
+ * 切到 hidden；若先打开再记账，回流监听会错过这次离开。
+ */
+export function markExternalPaymentOpened(input: MarkExternalPaymentOpenedInput): void {
+  const orderId = input.orderId.trim();
+  if (!orderId) return;
+  memoryPending = {
+    orderId,
+    paymentType: input.paymentType,
+    replayContextId: getReplayLifecycle().getSnapshot().replayContextId,
+    openedAt: input.now ?? Date.now(),
+  };
+  leftForExternalPayment = false;
+  writeExternalPaymentPending(memoryPending);
+}
+
+export function noteExternalPaymentBackgrounded(now: number = Date.now()): void {
+  if (!readPendingReturn(now)) return;
+  leftForExternalPayment = true;
+}
+
+export type ObservePaymentReturnInput = {
+  source: PaymentReturnSource;
+  orderId?: string | null;
+  route?: string;
+  now?: number;
+};
+
+/**
+ * 只表示前端看到用户回到 MiniApp，不表示支付成功、失败或放弃。
+ * WebView 恢复路径必须先有打开外部支付的 pending，并且曾经切到后台，
+ * 避免 VPN 弹窗 focus / 普通前后台切换误报。
+ */
+export function observePaymentReturn(input: ObservePaymentReturnInput): boolean {
+  const now = input.now ?? Date.now();
+  const pending = readPendingReturn(now);
+  const explicit = input.source === 'start_param' || input.source === 'query_param';
+  if (!explicit) {
+    if (!pending || !leftForExternalPayment) return false;
+  }
+
+  const orderId = resolveReturnOrderId(input.orderId, pending);
+  if (hasObservedReturn(orderId)) return false;
+  if (!hasActiveReplayContext()) return false;
+
+  const route = safePaymentReturnRoute(input.route ?? currentPathname());
+  const matchingPending =
+    pending && (orderId === null || pending.orderId === orderId) ? pending : null;
+  rememberObservedReturn(orderId);
+  captureDraft(
+    omitUndefined({
+      event: 'payment_return_observed' as const,
+      order_id: orderId,
+      return_surface: surfaceFromRoute(route),
+      payment_type: matchingPending?.paymentType,
+      return_source: input.source,
+      return_route: route,
+      elapsed_ms: matchingPending ? Math.max(0, now - matchingPending.openedAt) : undefined,
+    })
+  );
+  rememberAction('payment_return_observed', orderId ?? undefined);
+  clearPendingReturn();
+  return true;
+}
+
+function readPendingReturn(now: number): ExternalPaymentPending | null {
+  const candidate = memoryPending ?? readExternalPaymentPending(now);
+  if (!candidate) return null;
+  if (now - candidate.openedAt > EXTERNAL_PAYMENT_PENDING_TTL_MS) {
+    clearPendingReturn();
+    return null;
+  }
+  memoryPending = candidate;
+  return candidate;
+}
+
+function clearPendingReturn(): void {
+  memoryPending = null;
+  leftForExternalPayment = false;
+  clearExternalPaymentPending();
+}
+
+function resolveReturnOrderId(
+  explicitOrderId: string | null | undefined,
+  pending: ExternalPaymentPending | null
+): string | null {
+  const explicit = explicitOrderId?.trim() || null;
+  if (explicit) return explicit;
+  return pending?.orderId ?? readPaywallContinuation()?.orderId ?? null;
+}
+
+function hasObservedReturn(orderId: string | null): boolean {
+  const key = observedOrderKey(orderId);
+  if (returnObservedKeys.has(key)) return true;
+  for (const stored of readObservedReturnOrderIds()) {
+    returnObservedKeys.add(stored);
+  }
+  return returnObservedKeys.has(key);
+}
+
+function rememberObservedReturn(orderId: string | null): void {
+  returnObservedKeys.add(observedOrderKey(orderId));
+  persistObservedReturnOrderId(orderId);
+}
+
+function surfaceFromRoute(pathname: string): PaymentReturnSurface {
+  if (pathname === '/profile/orders' || pathname.startsWith('/profile/orders/')) {
+    return 'orders_list';
+  }
+  return 'order_detail';
+}
+
+function currentPathname(): string {
+  if (typeof window === 'undefined') return '/';
+  return window.location.pathname;
+}
+
+export function safePaymentReturnRoute(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '/';
+  try {
+    const url = new URL(trimmed, 'https://miniapp.local');
+    return (url.pathname || '/').slice(0, 200);
+  } catch {
+    const path = trimmed.split('?')[0]?.split('#')[0] ?? '/';
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    return normalized.slice(0, 200) || '/';
+  }
 }
 
 export function capturePaymentOrderStatusObserved(order: PaymentOrder): void {
