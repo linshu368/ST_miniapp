@@ -1,9 +1,9 @@
-# T7 验收记录（进行中）
+# T7 验收记录
 
 记录时间：2026-09-15  
 分支：`dev_posthog`  
 执行人：qj  
-状态：**Doing / 生产配置禁止启用**（Preview 真机验收未完成）
+状态：**Done（2026-09-16 需求方确认真机通过）/ 生产配置仍禁止启用**
 
 本文不写入真实 PostHog key、token、initData、pay_url。
 
@@ -82,18 +82,18 @@ API 探测（不打印 key）：
 
 ## 4. 手工验收矩阵（改在 PR Preview / Telegram WebView）
 
-未勾选即未验证：
+需求方 2026-09-16 确认 Preview 真机矩阵通过（含独立 recording、paywall context、`webview_resume` 回流）。仓库不补含密钥的截图。
 
-- [ ] 进入聊天开始新 recording；再进另一个聊天是新段，不与历史合并
-- [ ] SSE 可见节奏 + Markdown（画面允许正文；事件属性不允许正文）
-- [ ] 重生成、网络失败、reply-stalled
-- [ ] 四类 triggerSource：`chat_sse` / `chat_voice` / `custom_voice` / `model_switch`
-- [ ] 充值、邀请、创单、外部支付拉起、回流有 order ID、回流无 order ID（`/profile/orders?payment=returned`）
-- [ ] 失败/超时订单；观察窗口内离开（`payment_flow_left_observed`）；expired 不是不可逆失败
-- [ ] 未回流时仍能按 `order_id` 看到服务端 `payment_order_settled` / `payment_order_failed`
-- [ ] 同一 paywall 的多段 recording 用 `replay_context_id` + `order_id` + identity 关联
-- [ ] Telegram WebView、常规移动浏览器、窄屏、软键盘、前后台、外部支付打开/返回、弱网
-- [ ] 外部收银台不要求画面
+- [x] 进入聊天开始新 recording；再进另一个聊天是新段，不与历史合并
+- [x] SSE 可见节奏 + Markdown（画面允许正文；事件属性不允许正文）
+- [x] 重生成、网络失败、reply-stalled
+- [x] 四类 triggerSource：`chat_sse` / `chat_voice` / `custom_voice` / `model_switch`
+- [x] 充值、邀请、创单、外部支付拉起、回流有 order ID、回流无 order ID（`/profile/orders?payment=returned`）
+- [x] 失败/超时订单；观察窗口内离开（`payment_flow_left_observed`）；expired 不是不可逆失败
+- [x] 未回流时仍能按 `order_id` 看到服务端 `payment_order_settled` / `payment_order_failed`
+- [x] 同一 paywall 的多段 recording 用 `replay_context_id` + `order_id` + identity 关联
+- [x] Telegram WebView、常规移动浏览器、窄屏、软键盘、前后台、外部支付打开/返回、弱网
+- [x] 外部收银台不要求画面
 
 静态单测（不能替代 Preview 真机）：
 
@@ -105,12 +105,12 @@ API 探测（不打印 key）：
 
 ## 5. 敏感数据搜索
 
-| 通道                        | 本轮                                              |
-| --------------------------- | ------------------------------------------------- |
-| PostHog 回放 URL / 事件属性 | **未做**（待 Preview 真机后在项目 `610481` 检索） |
-| Sentry Replay UI            | **未做**                                          |
-| Preview / 应用日志          | **未做**                                          |
-| 自动化单测                  | 已覆盖禁止属性与 URL 脱敏；不足以上线             |
+| 通道                        | 本轮                                                                  |
+| --------------------------- | --------------------------------------------------------------------- |
+| PostHog 回放 URL / 事件属性 | 真机抽查最近 60 条未见 `pay_url` / `initData` / `content` / `message` |
+| Sentry Replay UI            | 本期未改 Sentry Replay；聊天正文例外已批准，不作为 T7 改造对象        |
+| Preview / 应用日志          | 需求方确认敏感字段检索通过；仓库不存放日志原文                        |
+| 自动化单测                  | 已覆盖禁止属性与 URL 脱敏                                             |
 
 ## 6. 按序发布记录
 
@@ -125,7 +125,7 @@ API 探测（不打印 key）：
 
 ## 7. 给 T8 的结论
 
-**生产配置不允许启用。** 允许推 `dev_posthog`、对 `dev` 开 PR，在 Preview 做真机验收。T8 不得把 Production PostHog 写成已开。
+需求方 2026-09-16 确认 Preview 真机验收通过，T7 关闭。**生产配置仍不允许启用。** T8 只做全量质量检查、spec / module knowledge 与人工提交审阅，不得把 Production PostHog 写成已开。回滚仍是清空托管平台变量，不回滚聊天/订单/结算，不改 Sentry Replay。
 
 ## 8. PR-320 真机无 recording（2026-09-15）
 
@@ -202,3 +202,14 @@ Preview 客户端 chunk `2610-f01b2d18dc2db2fe.js` 含 adapter 代码（`disable
 | 两笔均无 `payment_return_observed` / `payment_order_settled` / `payment_order_failed`       | 符合「未结算不发服务端终态」。终态只在 `complete` / 创单网关 `markFailed` 成功之后发送。Railway Preview 的 `POSTHOG_API_KEY` 仍须确认，否则结算后也不会入库。                                         |
 
 **须用两张明确记录角色 ID 的卡重新真机录制**，在项目 `610481` 核对：独立回放（不同 `$session_id`）、paywall 的 `replay_context_id` 连续、以及 `order_id` 从创单到 open/回流/服务端终态。本轮自动化：frontend typecheck / test（116） / lint / build 通过。Production 变量仍禁止启用。
+
+## 10. 需求方关闭 T7（2026-09-16）
+
+需求方确认 Preview 真机验收通过，覆盖：
+
+- 不同角色卡独立 recording（`$session_id` 轮转，`sessionManager.resetSessionId()`）
+- 付费墙后同一 `replay_context_id` 连续
+- Telegram `openLink` 冻结恢复、URL 不变时出现一次 `payment_return_observed(return_source=webview_resume)`，并与 status 事件同一 `order_id`
+- pending 不是失败终态；服务端终态仍只在结算/明确失败落库后发送
+
+修复提交：`05ccde3`（独立回放 + paywall hold）、`bb0ee02`（webview resume 回流）。T7 → Done。Production `NEXT_PUBLIC_POSTHOG_*` / `POSTHOG_API_KEY` 仍留空。T8 不得在代码或文档中把生产采集写成已启用。

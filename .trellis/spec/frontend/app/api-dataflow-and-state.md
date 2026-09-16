@@ -99,3 +99,78 @@ posthog.capture('chat_turn_completed', {
 - T7 确认项目套餐为 Free、Session Replay retention 为 30 天（套餐与设置截图）；不得按 60 天验收。
 
 **Related**: `.trellis/tasks/09-15-user-behavior-replay/research/t1-decision-record.md`（含 Free 套餐 30 天保留策略）。本期不做 `user_cohort`。
+
+## Scenario: PostHog Session Replay 与支付回流
+
+### 1. Scope / Trigger
+
+- Trigger: 聊天/付费墙需要 Session Replay 与受限事件；Telegram WebView、Next.js 公开变量、web SDK session 轮转和外部支付回流都与默认假设不同。
+
+### 2. Signatures
+
+- Frontend adapter：`createPostHogAdapter()` / `getReplayLifecycle()`；生命周期状态 `idle | chat | paywall_followup | external_payment_pending | ended`。
+- Context API：`GET /api/telemetry/replay-context`（Telegram 鉴权，无 query），形状为 `GetReplayContextData`。
+- 回流观察：`observePaymentReturn({ source, route })`；`source` 为 `start_param | query_param | webview_resume`。
+
+### 3. Contracts
+
+- 浏览器公开变量：`NEXT_PUBLIC_POSTHOG_KEY`、`NEXT_PUBLIC_POSTHOG_HOST`（必须 HTTPS，无 userinfo/path/query）。
+- 服务端密钥：`POSTHOG_API_KEY` / `POSTHOG_HOST` 只在 Backend；缺省 no-op。
+- Next.js 只内联静态 `process.env.NEXT_PUBLIC_*`。`readPostHogBrowserEnv` 必须直接读 `process.env.NEXT_PUBLIC_POSTHOG_KEY/HOST`，禁止 `const env = process.env; env.NEXT_PUBLIC_*`。
+- web `posthog-js` 开始新段：先 `sessionManager.resetSessionId()`，再 `startSessionRecording({ sampling, linked_flag, url_trigger, event_trigger })`。`stopSessionRecording()` + `startSessionRecording(overrides)` **不会**轮转 `$session_id`；禁止调用会丢掉 identity 的 `reset()`；禁止把移动端 `startSessionRecording(false)` 用在 web。
+- 录制 owner 在根 `Providers` 的 `ReplayLifecycleOwner`，不能放在会随路由卸载的 `use-chat-session` cleanup。
+- 进入付费墙必须**同步** `enterPaywallFollowup()`（hold），再 `router.push`。hold/followup 期间忽略 `route_change`/`pagehide`；同角色重绑保持原 `replay_context_id`；回到聊天再 `reenterChatFromFollowup()`。
+- 打开外部支付前写入 `st.replay.external_payment_pending` 并 `enterExternalPaymentPending()`，再 `openLink`。Telegram 冻结恢复时 URL 通常不变；根上 visibility/focus/pageshow 在有离开证据时发一次 `payment_return_observed(return_source=webview_resume)`。同一 `order_id` 去重；普通前后台、刷新、VPN 弹窗 focus 不误报。
+- `pay_url` 只进 order-id keyed 的短 TTL `sessionStorage`，不得进 router query / 事件属性 / 回放 URL。
+
+### 4. Validation & Error Matrix
+
+- 缺 KEY/HOST 或 host 非 HTTPS → adapter `missing_config`/`invalid_host` no-op，聊天/支付继续。
+- `startNewRecording` 以 `sessionRecordingStarted()` 为准，不得把 SDK 调用返回值当成已在录。
+- capture 含禁止键（`content`/`pay_url`/`initData` 等）→ runtime schema 丢弃。
+- 无真实 `conversationSessionId` → 不 `startChatReplay`。
+- 未配置 Backend `POSTHOG_API_KEY` → 不发服务端终态事件，也不反查用户；结算仍成功。
+- pending 订单与 `payment_flow_left_observed` 都不是支付失败。
+
+### 5. Good/Base/Bad Cases
+
+- Good: 两张角色卡两条 `$session_id`；付费墙到充值同一 `replay_context_id`；切回 Telegram 且 URL 不变时一次 `payment_return_observed` 与 status 事件同一 `order_id`。
+- Base: Preview 注入公开变量，Production 留空即关闭；Sentry Replay 维持现有 100% / `maskAllText: false`。
+- Bad: 经 `process.env` 对象读公开变量导致 Preview 零 recording；`enterPaywallFollowup` 排队后被 occupancy `route_change` 掐断；只认 `?payment=returned` 导致 WebView 恢复无回流事件。
+
+### 6. Tests Required
+
+- `config.test.ts`：静态 env 读取与非法 host。
+- `adapter.test.ts`：`resetSessionId` + override start；schema 拒绝禁止键。
+- `lifecycle.test.ts`：paywall hold、同角色重绑、followup 忽略 `route_change`。
+- `return-observer.test.ts` / `flow-telemetry.test.ts`：有离开证据才 `webview_resume`；同 order 去重；无 pending 不误报。
+- shared `telemetry-contract.test.ts`：`return_source`、禁止键、`user_cohort` 不存在。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+function readEnv(env = process.env) {
+  return { key: env.NEXT_PUBLIC_POSTHOG_KEY, host: env.NEXT_PUBLIC_POSTHOG_HOST };
+}
+posthog.startSessionRecording(false);
+void lifecycle.enterPaywallFollowup();
+router.push(rechargePath);
+```
+
+#### Correct
+
+```ts
+const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
+const host = process.env.NEXT_PUBLIC_POSTHOG_HOST;
+client.sessionManager?.resetSessionId();
+client.startSessionRecording({
+  sampling: true,
+  linked_flag: true,
+  url_trigger: true,
+  event_trigger: true,
+});
+await lifecycle.enterPaywallFollowup();
+router.push(rechargePath);
+```

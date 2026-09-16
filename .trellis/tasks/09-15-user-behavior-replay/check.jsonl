@@ -14,3 +14,5 @@
 {"file": ".trellis/tasks/09-15-user-behavior-replay/research/t1-decision-record.md", "reason": "Verify later work follows T1 decisions and does not invent user_cohort"}
 {"file": ".trellis/spec/frontend/app/testing-quality-and-deployment.md", "reason": "Verify Sentry event vs replay canvas privacy split"}
 {"file": ".trellis/tasks/09-15-user-behavior-replay/research/t4-posthog-sdk-record.md", "reason": "T4 official posthog-js API and masking used by frontend adapter"}
+{"file": ".trellis/tasks/09-15-user-behavior-replay/research/t7-verification-record.md", "reason": "T7 Preview acceptance; Production PostHog remains disabled"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "PostHog capture must not affect payment settlement"}

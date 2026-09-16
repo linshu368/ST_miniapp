@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "operation": "update",
+      "module_id": "frontend.infrastructure.client-ui-foundation",
+      "target": ".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md",
+      "expected_sha256": "cdda1044e43f6a2fc6724d0a1ef6ada86cfe13bf0c24bc62542170da48256328",
+      "change_summary": "写入 PostHog adapter、根 lifecycle 与 NEXT_PUBLIC 静态内联约束",
+      "content": "---\nmodule_id: frontend.infrastructure.client-ui-foundation\ntitle: API、Telegram 与 UI 基建\nscope: frontend\ncategory: infrastructure\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/09-15-user-behavior-replay/\nlast_verified_at: 2026-09-16\n---\n\n# API、Telegram 与 UI 基建\n\n## 职责与边界\n\n提供统一 REST client、Query provider、Telegram runtime、Zustand 状态、通用 UI，以及受控 PostHog Session Replay adapter。不拥有聊天 turn 编排或支付结算。\n\n## 当前状态\n\nAPI 与 server state 已集中。根 `Providers` 在 Telegram 用户就绪后初始化 PostHog adapter 与 `ReplayLifecycleOwner`。Sentry Session Replay 维持现有 100% / `maskAllText: false`，本期未改。缺 PostHog 公开配置或 SDK 失败时 adapter no-op。\n\n## 入口与调用者\n\n所有 Frontend 页面和业务组件使用 API/UI 基建。聊天页通过 `useChatReplayBinding` 消费 lifecycle；充值/订单页通过 `lib/payment` 消费 capture 与回流观察。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/frontend/src/lib/api/client.ts` | REST client |\n| `packages/frontend/src/lib/api/telemetry.ts` | `GET /api/telemetry/replay-context` hook |\n| `packages/frontend/src/app/providers.tsx` | Query/Telegram/Sentry/PostHog/回流观察接线 |\n| `packages/frontend/src/lib/telemetry/config.ts` | 静态读取 `NEXT_PUBLIC_POSTHOG_*` |\n| `packages/frontend/src/lib/telemetry/adapter.ts` | SDK 单例、identify、capture、启停录制 |\n| `packages/frontend/src/lib/telemetry/lifecycle.ts` | 根上单一 replay 状态机 |\n| `packages/frontend/src/lib/telemetry/masking.ts` | `ph-no-capture` / 网络 URL 脱敏 |\n| `packages/frontend/src/lib/telemetry/ReplayLifecycleOwner.tsx` | idle/pagehide 与 occupancy |\n\n## 关键实现链路\n\nTelegram 就绪 → 静态读公开 env → adapter init/identify → lifecycle `idle|chat|paywall_followup|external_payment_pending|ended`。开始新回放段先 `sessionManager.resetSessionId()`，再 `startSessionRecording(overrides)`；以 `sessionRecordingStarted()` 为准。\n\n## 数据、契约与外部依赖\n\n依赖 Telegram SDK、React Query、Zustand、`@miniapp/shared` telemetry 契约、`posthog-js@1.433.4`。浏览器变量不是 secret。\n\n## 关键节点与约束\n\nNext.js 只内联静态 `process.env.NEXT_PUBLIC_*`。web SDK 的 stop+start 不轮转 `$session_id`，禁止 `reset()` 和移动端 `startSessionRecording(false)`。事件不得含正文/`pay_url`/initData。Production 公开变量留空即关闭 PostHog，不关闭 Sentry Replay。\n\n## 验证方式\n\n`pnpm --filter @miniapp/frontend typecheck && pnpm --filter @miniapp/frontend test && pnpm --filter @miniapp/frontend lint && pnpm --filter @miniapp/frontend build`。真机 Recording 在 Vercel Preview 验证。\n\n## 已知缺口与待核验项\n\n打开 Production PostHog 是独立运维步骤。Telegram WebView 差异需持续人工回归。\n\n## 关联模块\n\n`frontend.business.conversation-ui`、`frontend.business.wallet-payment`、`backend.infrastructure.runtime-data-security`、`shared.business.wallet-payment-contracts`。\n",
+      "evidence": [
+        ".trellis/tasks/09-15-user-behavior-replay/prd.md",
+        ".trellis/tasks/09-15-user-behavior-replay/task.md",
+        ".trellis/tasks/09-15-user-behavior-replay/research/t7-verification-record.md",
+        "packages/frontend/src/lib/telemetry/config.ts",
+        "packages/frontend/src/lib/telemetry/adapter.ts",
+        "packages/frontend/src/lib/telemetry/lifecycle.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "frontend.business.conversation-ui",
+      "target": ".trellis/spec/frontend/app/modules/business/conversation-ui.md",
+      "expected_sha256": "3be093786d30ce9a2d1c93983f12ef64b5900ea88c95d302b12ec653b0ed5be3",
+      "change_summary": "写入聊天/语音 replay 绑定、turn 事件与付费墙 hold",
+      "content": "---\nmodule_id: frontend.business.conversation-ui\ntitle: 用户会话与语音界面\nscope: frontend\ncategory: business\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/09-15-user-behavior-replay/\nlast_verified_at: 2026-09-16\n---\n\n# 用户会话与语音界面\n\n## 职责与边界\n\n负责会话列表、流式聊天、重生成、模型/生成偏好、语音交互，以及聊天/语音页的 replay 绑定与 turn 事件。不拥有 PostHog SDK 初始化，也不改变支付结算。\n\n## 当前状态\n\n自研聊天 UI、SSE、工具箱和语音播放/自定义台词已落地。真实 `conversationSessionId` 才 `startChatReplay`。语音路由不 `endReplay`。四个余额不足出口经 `recharge-redirect` 传入 `PaywallTriggerSource`。\n\n## 入口与调用者\n\n用户从 `/chats` 和 `/chat/[characterId]` 进入；自定义语音走 `/chat/[characterId]/voice/[messageId]`。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/frontend/src/app/chat/[characterId]/page.tsx` | 会话页 |\n| `packages/frontend/src/app/chat/[characterId]/voice/[messageId]/page.tsx` | 自定义语音页 |\n| `packages/frontend/src/hooks/use-chat-session.ts` | 会话生命周期与 `useChatReplayBinding` |\n| `packages/frontend/src/hooks/use-conversation-turn.ts` | 发送/重生成编排与 turn 事件 |\n| `packages/frontend/src/lib/recharge-redirect.ts` | 付费墙跳转与 `enterPaywallFollowup` |\n| `packages/frontend/src/lib/api/conversation-stream.ts` | SSE client |\n| `packages/frontend/src/components/chat/chat-model-switcher.tsx` | 成功切模型后更新 session properties |\n\n## 关键实现链路\n\n页面接线 → `useChatReplayBinding`（ occupancy 回到聊天时 `reenterChatFromFollowup`）→ turn hook 记录 start/stream/complete/fail/regen 并 `setStreaming`，不对 delta 打点。离开聊天且 state 仍为 `chat` 才 `endReplay('route_change')`。\n\n## 数据、契约与外部依赖\n\n消费 shared conversations/voice/telemetry 契约和 Backend HTTP/SSE。`ReplayEventDraft` 必须是 distributive Omit。\n\n## 关键节点与约束\n\n不能把 recording stop 放进 `useChatSession` unmount。`enterPaywallFollowup` 必须在 `router.push` 前同步完成。hold/followup 期间忽略 `route_change`/`pagehide`。分析失败不改变用户可见错误处理。\n\n## 验证方式\n\n`pnpm --filter @miniapp/frontend test && pnpm --filter @miniapp/frontend build`。真机覆盖 SSE 节奏、换角色独立回放、付费墙 context 连续。\n\n## 已知缺口与待核验项\n\n图片设置仍为占位能力。\n\n## 关联模块\n\n`frontend.infrastructure.client-ui-foundation`、`backend.business.conversation-generation`、`shared.business.conversation-contracts`。\n",
+      "evidence": [
+        ".trellis/tasks/09-15-user-behavior-replay/prd.md",
+        ".trellis/tasks/09-15-user-behavior-replay/task.md",
+        ".trellis/tasks/09-15-user-behavior-replay/research/t7-verification-record.md",
+        "packages/frontend/src/hooks/use-chat-session.ts",
+        "packages/frontend/src/lib/recharge-redirect.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "frontend.business.wallet-payment",
+      "target": ".trellis/spec/frontend/app/modules/business/wallet-payment.md",
+      "expected_sha256": "b155bc9ac1792701e6388313fdb29cddda6366895cc0f995fc708e7a082881bd",
+      "change_summary": "写入 pay_url 存储、外部支付 pending 与 webview_resume 回流",
+      "content": "---\nmodule_id: frontend.business.wallet-payment\ntitle: 钱包、签到与充值\nscope: frontend\ncategory: business\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/09-15-user-behavior-replay/\nlast_verified_at: 2026-09-16\n---\n\n# 钱包、签到与充值\n\n## 职责与边界\n\n展示余额、消费、签到、充值套餐、订单状态和支付回跳，并记录 MiniApp 内付费墙/回流事件。不执行入账，不推断收银台成败。\n\n## 当前状态\n\n钱包与支付页面使用统一 API hooks。`pay_url` 改 order-id keyed 短 TTL sessionStorage。Telegram `openLink` 冻结恢复时 URL 不变，回流由根上 visibility/focus/pageshow 观察。\n\n## 入口与调用者\n\n用户从个人中心、聊天余额不足跳转进入钱包/充值；`Providers` 挂载 `return-observer`。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/frontend/src/app/(main)/profile/recharge/page.tsx` | 充值下单与打开外部支付 |\n| `packages/frontend/src/app/(main)/profile/recharge/[orderId]/page.tsx` | 订单等待/轮询 |\n| `packages/frontend/src/app/(main)/profile/orders/page.tsx` | 订单列表回流 |\n| `packages/frontend/src/lib/payment/flow-telemetry.ts` | 漏斗事件与回流去重 |\n| `packages/frontend/src/lib/payment/return-observer.ts` | WebView 恢复观察 |\n| `packages/frontend/src/lib/payment/external-payment-pending.ts` | pending 记录与回流去重存储 |\n| `packages/frontend/src/lib/payment/open-storage.ts` | `pay_url` 短 TTL 存储 |\n| `packages/frontend/src/lib/payment/paywall-continuation.ts` | 不进 URL 的付费墙 continuation |\n| `packages/frontend/src/lib/api/payment.ts` | 支付 hooks |\n\n## 关键实现链路\n\n套餐/余额 query → 创单 → 写 pending + `enterExternalPaymentPending` → `openPaymentUrl` → 回流观察一次 `payment_return_observed` → 订单轮询打 status。终态以服务端为准。\n\n## 数据、契约与外部依赖\n\n消费 shared wallet/payment/telemetry 契约、Backend 和外部支付页。\n\n## 关键节点与约束\n\n同一 `order_id` 只记一次回流。普通前后台、刷新、VPN 弹窗 focus 不误报。`payment_flow_left_observed` 与 pending 都不是失败。等待页 query 不得带 `pay_url`。\n\n## 验证方式\n\nFrontend tests/build；Preview 真机核对 `webview_resume` 与同一 `order_id` 的 status 事件。\n\n## 已知缺口与待核验项\n\n打开 Production PostHog 仍是运维步骤。第三方收银台画面不在验收范围。\n\n## 关联模块\n\n`frontend.infrastructure.client-ui-foundation`、`backend.business.wallet-payment`、`shared.business.wallet-payment-contracts`。\n",
+      "evidence": [
+        ".trellis/tasks/09-15-user-behavior-replay/prd.md",
+        ".trellis/tasks/09-15-user-behavior-replay/task.md",
+        ".trellis/tasks/09-15-user-behavior-replay/research/t7-verification-record.md",
+        "packages/frontend/src/lib/payment/return-observer.ts",
+        "packages/frontend/src/lib/payment/flow-telemetry.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "backend.infrastructure.runtime-data-security",
+      "target": ".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md",
+      "expected_sha256": "04aabdaf5d3e816cbe83c75aa548d0b372a96e05f70bdcbb29595c07c892e279",
+      "change_summary": "写入 PostHog 服务端 capture 配置与 replay-context 路由",
+      "content": "---\nmodule_id: backend.infrastructure.runtime-data-security\ntitle: 运行时、鉴权与数据访问基建\nscope: backend\ncategory: infrastructure\nstatus: active\nowners: [backend]\nlast_verified_task: .trellis/tasks/09-15-user-behavior-replay/\nlast_verified_at: 2026-09-16\n---\n\n# 运行时、鉴权与数据访问基建\n\n## 职责与边界\n\n提供配置、Telegram/运营鉴权、域数据库 client、repository、日志、后台任务基座，以及非关键 PostHog capture。不拥有订单状态机。\n\n## 当前状态\n\n配置与 runtime config 已集中。PostHog 使用 Node 原生 fetch，配置在 `platform/config.ts`（`POSTHOG_API_KEY`/`POSTHOG_HOST`/`POSTHOG_TIMEOUT_MS`）。缺 key 或非法 host 时 no-op。\n\n## 入口与调用者\n\nBackend routes、features、jobs 统一消费。支付终态 usecase 调用 `posthog-capture.ts`。Frontend 经 `GET /api/telemetry/replay-context` 取最小用户标签。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/backend/src/platform/config.ts` | 环境配置解析，含 PostHog |\n| `packages/backend/src/platform/runtime-config.ts` | DB 运行配置入口 |\n| `packages/backend/src/middleware/auth.ts` | Telegram 鉴权 |\n| `packages/backend/src/routes/telemetry.ts` | replay-context 只读 API |\n| `packages/backend/src/infrastructure/telemetry/posthog-capture.ts` | 短超时、无重试 capture |\n| `packages/backend/src/lib/supabase.ts` | 按域数据库 client |\n\n## 关键实现链路\n\n启动解析配置 → route 鉴权 → feature → repository/domain client → Pino 结果摘要。PostHog capture 失败只记 `{ err }` 安全摘要。\n\n## 数据、契约与外部依赖\n\n连接 Supabase、Redis/Sentry/PostHog ingestion。secret 仅服务端读取。replay-context 返回 `telegram_user_id`、`is_paid_user`、`total_chat_rounds`，不含 `user_cohort`。\n\n## 关键节点与约束\n\n外部调用必须超时。日志禁止 token/敏感正文/`pay_url`/initData。未配置 PostHog 时支付终态路径不反查 Telegram 用户。Production `POSTHOG_API_KEY` 留空即关闭服务端事件。\n\n## 验证方式\n\n`pnpm --filter @miniapp/backend typecheck && pnpm --filter @miniapp/backend test`。\n\n## 已知缺口与待核验项\n\n部署控制台遗留资源仍需人工清理。打开生产 PostHog 是独立运维步骤。\n\n## 关联模块\n\n`backend.business.wallet-payment`、`database.infrastructure.schema-security`、`shared.business.wallet-payment-contracts`。\n",
+      "evidence": [
+        ".trellis/tasks/09-15-user-behavior-replay/prd.md",
+        ".trellis/tasks/09-15-user-behavior-replay/task.md",
+        ".trellis/tasks/09-15-user-behavior-replay/research/t7-verification-record.md",
+        "packages/backend/src/infrastructure/telemetry/posthog-capture.ts",
+        "packages/backend/src/routes/telemetry.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "backend.business.wallet-payment",
+      "target": ".trellis/spec/backend/app/modules/business/wallet-payment.md",
+      "expected_sha256": "3531e28021bb993fb17e834a8a55ed4d08359b46a7c30ea10faf20fd639bdf3b",
+      "change_summary": "写入结算后异步终态事件，明确不回滚订单",
+      "content": "---\nmodule_id: backend.business.wallet-payment\ntitle: 钱包、签到与充值支付\nscope: backend\ncategory: business\nstatus: active\nowners: [backend]\nlast_verified_task: .trellis/tasks/09-15-user-behavior-replay/\nlast_verified_at: 2026-09-16\n---\n\n# 钱包、签到与充值支付\n\n## 职责与边界\n\n负责余额/消费查询、签到奖励、充值订单、支付回调与对账结算。支付终态 PostHog 事件是结算成功后的非关键观测，不改变状态机。\n\n## 当前状态\n\n支付 webhook/return/query/cron 四路结算仍统一到幂等出口。`PaymentSettlement` complete 与所有 `markFailed` 成功落库后异步发送 `payment_order_settled`/`payment_order_failed`。`settled_by` 由既有 `toPaymentOrder()` 透出。\n\n## 入口与调用者\n\nFrontend 钱包/订单页、支付网关和 Railway 支付任务调用。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/backend/src/routes/wallet.ts` | 钱包与签到 |\n| `packages/backend/src/routes/payment.ts` | 支付 API |\n| `packages/backend/src/features/payment/usecases/PaymentOrderTelemetry.ts` | 终态事件 observer |\n| `packages/backend/src/features/payment/` | 下单、结算、对账 |\n\n## 关键实现链路\n\n鉴权/验签 → 订单或钱包用例 → 原子结算 → 流水/余额 → DTO；之后 fire-and-forget capture。用户不回到 MiniApp 也能按 `order_id` 关联终态。\n\n## 数据、契约与外部依赖\n\n依赖 billing 域、支付网关、shared wallet/payment/telemetry 契约和 `posthog-capture`。\n\n## 关键节点与约束\n\n订单、流水、余额口径分离。telemetry 超时/失败不得延迟或回滚写入。重复结算不产生业务副作用。pending/expired 不是本 observer 的发送点。\n\n## 验证方式\n\nBackend payment/wallet/telemetry tests、对账脚本和 test 支付 smoke。\n\n## 已知缺口与待核验项\n\n支付 remediation 遗留按专项文档推进。Railway Production `POSTHOG_API_KEY` 仍留空。\n\n## 关联模块\n\n`backend.infrastructure.runtime-data-security`、`frontend.business.wallet-payment`、`shared.business.wallet-payment-contracts`、`database.business.billing-payment`。\n",
+      "evidence": [
+        ".trellis/tasks/09-15-user-behavior-replay/prd.md",
+        ".trellis/tasks/09-15-user-behavior-replay/task.md",
+        ".trellis/tasks/09-15-user-behavior-replay/research/t7-verification-record.md",
+        "packages/backend/src/features/payment/usecases/PaymentOrderTelemetry.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "shared.business.wallet-payment-contracts",
+      "target": ".trellis/spec/shared/contracts/modules/business/wallet-payment-contracts.md",
+      "expected_sha256": "750c71ac669515bb674ad1b8304aab48eb8faabbceb0633a46f6b4270b19de57",
+      "change_summary": "写入 telemetry 禁止键、settled_by 与 webview_resume 回流字段",
+      "content": "---\nmodule_id: shared.business.wallet-payment-contracts\ntitle: 钱包与支付契约\nscope: shared\ncategory: business\nstatus: active\nowners: [shared]\nlast_verified_task: .trellis/tasks/09-15-user-behavior-replay/\nlast_verified_at: 2026-09-16\n---\n\n# 钱包与支付契约\n\n## 职责与边界\n\n定义余额、消费、签到、套餐、订单、结算来源、支付状态，以及 browser-safe replay context/事件形状。不暴露 SDK 类型、数据库 row 或凭据。\n\n## 当前状态\n\n`PaymentOrder.settled_by` 已兼容扩展，详情与列表共用 `toPaymentOrder()`。`api/telemetry.ts` 定义 context、受限事件 union、idle 15 分钟、`return_source`（含 `webview_resume`）。本期不含 `user_cohort`。\n\n## 入口与调用者\n\n钱包/支付 routes、hooks、frontend adapter/lifecycle、backend `PaymentOrderTelemetry`。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/shared/src/api/wallet.ts` | 钱包 DTO |\n| `packages/shared/src/api/payment.ts` | 支付 DTO 与 `settled_by` |\n| `packages/shared/src/api/telemetry.ts` | replay context 与事件契约 |\n| `packages/shared/src/__tests__/telemetry-contract.test.ts` | 禁止键与回流字段 |\n\n## 关键实现链路\n\n请求 schema → Backend handler/usecase → response schema → Frontend hooks；事件 capture 先 `parseReplayTelemetryEvent`。\n\n## 数据、契约与外部依赖\n\n类型层不含支付 secret 或数据库 row。`TELEMETRY_FORBIDDEN_PROPERTY_KEYS` 拒绝正文/`pay_url`/initData/`user_cohort`。\n\n## 关键节点与约束\n\n金额精度、订单终态和 `settled_by` 联合值必须兼容。`payment_return_observed.order_id` 可为 null；`webview_resume` 表示 URL 未变的 WebView 恢复，不表示支付成功。\n\n## 验证方式\n\n`pnpm --filter @miniapp/shared test` 与 Backend/Frontend typecheck。\n\n## 已知缺口与待核验项\n\n新增网关字段需保持供应商细节在服务端。\n\n## 关联模块\n\n`backend.business.wallet-payment`、`frontend.business.wallet-payment`、`frontend.infrastructure.client-ui-foundation`。\n",
+      "evidence": [
+        ".trellis/tasks/09-15-user-behavior-replay/prd.md",
+        ".trellis/tasks/09-15-user-behavior-replay/task.md",
+        ".trellis/tasks/09-15-user-behavior-replay/research/t7-verification-record.md",
+        "packages/shared/src/api/telemetry.ts",
+        "packages/shared/src/__tests__/telemetry-contract.test.ts"
+      ]
+    }
+  ]
+}

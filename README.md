@@ -127,7 +127,7 @@ CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记�
 
 主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_USE_MOCK`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`、`NEXT_PUBLIC_POSTHOG_KEY`、`NEXT_PUBLIC_POSTHOG_HOST`。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
 
-`NEXT_PUBLIC_POSTHOG_KEY` 与 `NEXT_PUBLIC_POSTHOG_HOST` 是浏览器公开配置，不是 secret。Host 必须是 HTTPS（例如 US Cloud 的 `https://us.i.posthog.com`）。缺任一变量、host 非法或 SDK 失败时前端 PostHog adapter 为 no-op，不影响聊天/支付，也不改变现有 Sentry Replay。允许在 development / preview / production 配置；某环境留空即关闭 PostHog。Frontend 没有 `.env.example`，勿新建平行模板。当前 PostHog 项目为 **Free 套餐**，Session Replay **最长保留 30 天**；升级付费套餐前不得按 60 天描述或验收。
+`NEXT_PUBLIC_POSTHOG_KEY` 与 `NEXT_PUBLIC_POSTHOG_HOST` 是浏览器公开配置，不是 secret。Host 必须是 HTTPS（例如 US Cloud 的 `https://us.i.posthog.com`）。缺任一变量、host 非法或 SDK 失败时前端 PostHog adapter 为 no-op，不影响聊天/支付，也不改变现有 Sentry Replay。允许在 development / preview / production 配置；某环境留空即关闭 PostHog。Next.js 只内联静态 `process.env.NEXT_PUBLIC_*`；经 `process.env` 对象间接读取时客户端包拿不到值，Preview 会出现零 recording。Frontend 没有 `.env.example`，勿新建平行模板。当前 PostHog 项目为 **Free 套餐**，Session Replay **最长保留 30 天**；升级付费套餐前不得按 60 天描述或验收。Production 变量默认留空，打开生产采集是独立运维步骤。
 
 ### Admin
 

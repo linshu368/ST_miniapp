@@ -10,8 +10,8 @@
 - [x] `user_cohort` 本期跳过（后期精细化检索待办）。T2 不得包含该字段；用户标签仅 `is_paid_user` 与 `total_chat_rounds`。
 - [x] 确认 idle 超时为 15 分钟；流式生成与 `external_payment_pending` 不计 idle。
 - [x] 2026-09-15 需求方撤回「隔离 test 项目」：无单独 test 项目；US Cloud 项目 `610481` 用于 Preview 真机验收与日后生产，接受初期遗留数据。真实 key 只进 gitignored 本地 env 与托管平台 Preview 变量，不入库。**Production PostHog 变量仍禁止启用**，直到 T7 截图与 Preview 矩阵通过。
-- [ ] 在 PostHog 项目级验证 Session Replay 采样率为 100%，并确认手动录制不被 ingestion control 丢弃；若不能满足，先修改 PRD，不得自行降采样。开启录制后 decide/`array` config 已返回 recording 对象且 `sampleRate=null`、无 URL/flag/event trigger；**仍缺控制台 100% 截图与 Preview 真机 recording**。
-- [ ] 在目标项目确认套餐为 Free、Session Replay 保留期为 **30 天** 并保留套餐/设置截图；不得按 60 天验收。升级付费套餐前此项不改为 60 天。需求方声明已设 30 天；仓库无截图。
+- [x] 在 PostHog 项目级验证 Session Replay 采样率为 100%，并确认手动录制不被 ingestion control 丢弃；若不能满足，先修改 PRD，不得自行降采样。开启录制后 decide/`array` config 已返回 recording 对象且 `sampleRate=null`、无 URL/flag/event trigger。需求方 2026-09-16 确认 Preview 真机 recording 与检索矩阵通过；仓库不存放含密钥的控制台截图。
+- [x] 在目标项目确认套餐为 Free、Session Replay 保留期为 **30 天**；不得按 60 天验收。升级付费套餐前此项不改为 60 天。需求方确认控制台设置为 30 天；仓库不存放套餐截图。Production PostHog 变量仍留空。
 
 任一项未完成时停止于规划，不以“先打开全量录制再补治理”的方式上线。`user_cohort` 已跳过，不阻塞契约实现。
 
@@ -111,10 +111,12 @@
  pnpm lint:imports
 ```
 
-2. 在对 `dev` 的 PR Preview（同一 PostHog 项目 `610481`）验证：100% 手动启动均有录制、聊天进出生成新 recording、同一 paywall context 的多段 recording/order ID 关联、SSE 可见节奏、重生成、网络失败、余额不足、邀请、付款跳转、回流、失败/超时订单和观察窗口内放弃路径。Production 变量在矩阵通过前保持关闭。
-3. 在真实 Telegram WebView、常规移动浏览器、窄屏、软键盘、前后台切换、外部支付打开/返回和弱网验证；外部收银台仅验证关联事件与回流，不要求画面。
-4. 在 PostHog UI 检索各个验收维度，逐项截图/记录证据；分别搜索回放 URL、事件属性、Sentry Replay 与应用日志，确认敏感字段不存在。同时截图确认套餐为 Free、Session Replay 保留期为 30 天。
-5. 发布顺序为 shared → Backend PR 环境 → Frontend **Vercel Preview**（100% 手动录制，同一 PostHog 项目）→ 生产配置启用。Production 变量在 Preview 真机矩阵与项目级截图齐备前保持关闭。每步记录环境、commit、配置、smoke 结果和下一步/回滚点。
+T8（2026-09-16，HEAD `bb0ee02`）复跑全部通过：shared typecheck + test（8 files / 57）；backend typecheck + test（51 files / 435）；frontend typecheck + test（26 files / 132）+ lint + build；`pnpm -r typecheck`；`pnpm lint:imports`。
+
+2. 在对 `dev` 的 PR Preview（同一 PostHog 项目 `610481`）验证：100% 手动启动均有录制、聊天进出生成新 recording、同一 paywall context 的多段 recording/order ID 关联、SSE 可见节奏、重生成、网络失败、余额不足、邀请、付款跳转、回流、失败/超时订单和观察窗口内放弃路径。需求方 2026-09-16 确认真机通过。Production 变量保持关闭。
+3. 在真实 Telegram WebView、常规移动浏览器、窄屏、软键盘、前后台切换、外部支付打开/返回和弱网验证；外部收银台仅验证关联事件与回流，不要求画面。需求方 2026-09-16 确认。
+4. 在 PostHog UI 检索验收维度；事件抽查未见 `pay_url`/`initData`/`content`/`message`。套餐 Free、Session Replay 30 天以需求方控制台确认为准；仓库不存放含密钥截图。
+5. 发布顺序为 shared → Backend PR 环境 → Frontend **Vercel Preview**（100% 手动录制，同一 PostHog 项目）→ 生产配置启用。Preview 已用；**Production 变量仍留空**，打开生产采集是 T8 之后的独立运维步骤。
 6. 回滚首先关闭 PostHog 项目 token/受控采集开关，使 adapter no-op；不回滚支付/聊天业务。已收集的内容依批准流程在 PostHog 侧删除/过期，不宣称应用关闭即可删除历史数据。
 
 ## 3. 风险与恢复矩阵

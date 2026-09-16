@@ -17,3 +17,4 @@ Common ST_miniapp owners:
 - Prompt assembly: `packages/backend/src/features/engine/`
 - Server logging conventions: `packages/shared/src/logging/conventions.ts` and `packages/backend/src/lib/logger.ts`
 - SQL migrations: `packages/shared/migrations/`
+- PostHog replay events: `packages/shared/src/api/telemetry.ts`；frontend adapter/lifecycle：`packages/frontend/src/lib/telemetry/`；支付回流：`packages/frontend/src/lib/payment/`；服务端终态：`packages/backend/src/features/payment/usecases/PaymentOrderTelemetry.ts`
