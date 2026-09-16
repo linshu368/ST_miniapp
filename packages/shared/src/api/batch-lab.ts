@@ -72,6 +72,10 @@ export const batchLabErrorCodeSchema = z.enum([
   'BATCH_LAB_PROCESSOR_TIMEOUT',
   'BATCH_LAB_PROCESSOR_LIMIT_EXCEEDED',
   'BATCH_LAB_PROCESSOR_RUNTIME_ERROR',
+  'BATCH_LAB_EXPERIMENT_NOT_FOUND',
+  'BATCH_LAB_EXPERIMENT_STATE_CONFLICT',
+  'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR',
+  'BATCH_LAB_EXPERIMENT_NO_WORK',
 ]);
 
 // 错误响应
@@ -410,4 +414,121 @@ export type BatchLabProcessorPreviewRequest = z.infer<typeof batchLabProcessorPr
 
 export const batchLabProcessorPreviewResponseSchema = z
   .object({ success: z.literal(true), data: batchLabDisplayResultSchema })
+  .strict();
+
+export const BATCH_LAB_MAX_EXPERIMENT_VARIANTS = 2;
+export const BATCH_LAB_MAX_EXPERIMENT_TURNS = 5;
+export const BATCH_LAB_MAX_WORKER_CLAIM_LIMIT = 20;
+
+export const batchLabExperimentStatusSchema = z.enum([
+  'draft',
+  'queued',
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+]);
+export type BatchLabExperimentStatus = z.infer<typeof batchLabExperimentStatusSchema>;
+
+export const batchLabExperimentVariantSchema = z
+  .object({
+    key: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/),
+    name: z.string().trim().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
+    model_id: z.string().trim().min(1).max(200),
+    openrouter_model_id: z.string().trim().min(1).max(200),
+    tier: z.enum(['light', 'standard', 'premium']).nullable(),
+    is_free: z.boolean(),
+    sampling: z.record(z.number().finite()),
+    processor_version_id: uuidSchema.nullable(),
+    max_turns: z.number().int().min(1).max(BATCH_LAB_MAX_EXPERIMENT_TURNS),
+  })
+  .strict();
+export type BatchLabExperimentVariant = z.infer<typeof batchLabExperimentVariantSchema>;
+
+export const batchLabCreateExperimentRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
+    sample_set_id: uuidSchema,
+    source_environment: batchLabSourceEnvironmentSchema,
+    variants: z
+      .array(batchLabExperimentVariantSchema)
+      .min(2)
+      .max(BATCH_LAB_MAX_EXPERIMENT_VARIANTS)
+      .refine(
+        (variants) => new Set(variants.map((variant) => variant.key)).size === variants.length,
+        {
+          message: 'variant keys must be unique',
+        }
+      ),
+    idempotency_key: uuidSchema,
+  })
+  .strict();
+export type BatchLabCreateExperimentRequest = z.infer<typeof batchLabCreateExperimentRequestSchema>;
+
+export const batchLabStartExperimentRequestSchema = z
+  .object({
+    experiment_id: uuidSchema,
+    source_environment: batchLabSourceEnvironmentSchema,
+    idempotency_key: uuidSchema,
+  })
+  .strict();
+export type BatchLabStartExperimentRequest = z.infer<typeof batchLabStartExperimentRequestSchema>;
+
+export const batchLabExperimentSummarySchema = z
+  .object({
+    id: uuidSchema,
+    name: z.string().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
+    sample_set_id: uuidSchema,
+    source_environment: batchLabSourceEnvironmentSchema,
+    status: batchLabExperimentStatusSchema,
+    variants: z
+      .array(batchLabExperimentVariantSchema)
+      .min(2)
+      .max(BATCH_LAB_MAX_EXPERIMENT_VARIANTS),
+    total_attempts: countSchema,
+    completed_attempts: countSchema,
+    failed_attempts: countSchema,
+    created_at: isoDateTimeSchema,
+    started_at: isoDateTimeSchema.nullable(),
+    completed_at: isoDateTimeSchema.nullable(),
+  })
+  .strict();
+export type BatchLabExperimentSummary = z.infer<typeof batchLabExperimentSummarySchema>;
+
+export const batchLabExperimentResponseSchema = z
+  .object({ success: z.literal(true), data: batchLabExperimentSummarySchema })
+  .strict();
+
+export const batchLabExperimentListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z
+      .object({
+        items: z.array(batchLabExperimentSummarySchema),
+        next_cursor: z.string().min(1).nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const batchLabRunWorkerRequestSchema = z
+  .object({
+    source_environment: batchLabSourceEnvironmentSchema,
+    worker_id: z.string().trim().min(1).max(120),
+    claim_limit: z.number().int().min(1).max(BATCH_LAB_MAX_WORKER_CLAIM_LIMIT),
+  })
+  .strict();
+export type BatchLabRunWorkerRequest = z.infer<typeof batchLabRunWorkerRequestSchema>;
+
+export const batchLabRunWorkerResultSchema = z
+  .object({
+    claimed_count: countSchema,
+    completed_count: countSchema,
+    failed_count: countSchema,
+  })
+  .strict();
+export type BatchLabRunWorkerResult = z.infer<typeof batchLabRunWorkerResultSchema>;
+
+export const batchLabRunWorkerResponseSchema = z
+  .object({ success: z.literal(true), data: batchLabRunWorkerResultSchema })
   .strict();

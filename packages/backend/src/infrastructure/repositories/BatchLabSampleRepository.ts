@@ -167,6 +167,10 @@ export function repositoryError(error: DatabaseErrorLike): BatchLabRepositoryErr
     'BATCH_LAB_PROCESSOR_TIMEOUT',
     'BATCH_LAB_PROCESSOR_LIMIT_EXCEEDED',
     'BATCH_LAB_PROCESSOR_RUNTIME_ERROR',
+    'BATCH_LAB_EXPERIMENT_NOT_FOUND',
+    'BATCH_LAB_EXPERIMENT_STATE_CONFLICT',
+    'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR',
+    'BATCH_LAB_EXPERIMENT_NO_WORK',
   ];
   const code = knownCodes.find((candidate) => error.message?.includes(candidate));
   return new BatchLabRepositoryError(

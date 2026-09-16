@@ -1,27 +1,38 @@
 import {
+  batchLabCreateExperimentRequestSchema,
   batchLabCreateProcessorVersionRequestSchema,
   batchLabCreateSampleSetRequestSchema,
   batchLabContextResponseSchema,
   batchLabErrorResponseSchema,
+  batchLabExperimentListResponseSchema,
+  batchLabExperimentResponseSchema,
   batchLabProcessorPreviewRequestSchema,
   batchLabProcessorPreviewResponseSchema,
   batchLabProcessorVersionListResponseSchema,
   batchLabProcessorVersionResponseSchema,
   batchLabPreviewRequestSchema,
   batchLabPreviewResponseSchema,
+  batchLabRunWorkerRequestSchema,
+  batchLabRunWorkerResponseSchema,
   batchLabSampleSetListResponseSchema,
   batchLabSampleSetResponseSchema,
   batchLabSqlTemplateListResponseSchema,
+  batchLabStartExperimentRequestSchema,
   type BatchLabContext,
+  type BatchLabCreateExperimentRequest,
   type BatchLabCreateProcessorVersionRequest,
   type BatchLabCreateSampleSetRequest,
   type BatchLabDisplayResult,
+  type BatchLabExperimentSummary,
   type BatchLabProcessorPreviewRequest,
   type BatchLabProcessorVersion,
   type BatchLabPreview,
   type BatchLabPreviewRequest,
+  type BatchLabRunWorkerRequest,
+  type BatchLabRunWorkerResult,
   type BatchLabSampleSet,
   type BatchLabSqlTemplate,
+  type BatchLabStartExperimentRequest,
 } from '@miniapp/shared';
 import type { ZodType } from 'zod';
 
@@ -228,4 +239,68 @@ export async function listBatchLabSampleSets(signal?: AbortSignal): Promise<Batc
     }
   );
   return response.data.items;
+}
+
+export async function listBatchLabExperiments(
+  signal?: AbortSignal
+): Promise<BatchLabExperimentSummary[]> {
+  const response = await request(
+    '/api/batch-lab/experiments',
+    batchLabExperimentListResponseSchema,
+    {
+      signal,
+    }
+  );
+  return response.data.items;
+}
+
+export async function createBatchLabExperiment(
+  input: BatchLabCreateExperimentRequest,
+  signal?: AbortSignal
+): Promise<BatchLabExperimentSummary> {
+  const body = batchLabCreateExperimentRequestSchema.parse(input);
+  const response = await request('/api/batch-lab/experiments', batchLabExperimentResponseSchema, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  return response.data;
+}
+
+export async function startBatchLabExperiment(
+  input: BatchLabStartExperimentRequest,
+  signal?: AbortSignal
+): Promise<BatchLabExperimentSummary> {
+  const body = batchLabStartExperimentRequestSchema.parse(input);
+  const response = await request(
+    '/api/batch-lab/experiments/start',
+    batchLabExperimentResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }
+  );
+  return response.data;
+}
+
+export async function runBatchLabWorkerOnce(
+  input: BatchLabRunWorkerRequest,
+  signal?: AbortSignal
+): Promise<BatchLabRunWorkerResult> {
+  const body = batchLabRunWorkerRequestSchema.parse(input);
+  const response = await request(
+    '/api/batch-lab/worker/run-once',
+    batchLabRunWorkerResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+      timeoutMs: 60_000,
+    }
+  );
+  return response.data;
 }

@@ -1,9 +1,12 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
+  batchLabCreateExperimentRequestSchema,
   batchLabCreateProcessorVersionRequestSchema,
   batchLabCreateSampleSetRequestSchema,
   batchLabProcessorPreviewRequestSchema,
   batchLabPreviewRequestSchema,
+  batchLabRunWorkerRequestSchema,
+  batchLabStartExperimentRequestSchema,
   fail,
   ok,
   type BatchLabContext,
@@ -13,6 +16,7 @@ import {
   BatchLabRepositoryError,
   BatchLabSampleRepository,
 } from '../infrastructure/repositories/BatchLabSampleRepository.js';
+import { BatchLabExecutionService } from '../features/batch-lab/execution-service.js';
 import { BatchLabPostprocessingService } from '../features/batch-lab/postprocessing-service.js';
 import { BatchLabSampleService } from '../features/batch-lab/sample-service.js';
 import { verifyBatchLabSourceConnection } from '../features/batch-lab/source-database.js';
@@ -193,6 +197,96 @@ export default async function batchLabRoutes(app: FastifyInstance) {
       return sendBatchLabError(reply, err);
     }
   });
+
+  // @frontend-ready: true - Batch Lab experiment summaries
+  app.get('/api/batch-lab/experiments', async (_request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    try {
+      const service = new BatchLabExecutionService();
+      return ok({ items: await service.listExperiments(), next_cursor: null });
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: true - Batch Lab creates an immutable A/B experiment draft
+  app.post('/api/batch-lab/experiments', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const parsed = batchLabCreateExperimentRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_EXPERIMENT_VALIDATION_ERROR', 'Batch Lab experiment is invalid'));
+    }
+    if (parsed.data.source_environment !== config.batchLab.sourceEnvironment) {
+      return reply
+        .status(409)
+        .send(fail('BATCH_LAB_ENVIRONMENT_MISMATCH', 'Batch Lab source environment mismatch'));
+    }
+
+    try {
+      const service = new BatchLabExecutionService();
+      return ok(await service.createExperiment(parsed.data));
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: true - Batch Lab starts a draft experiment exactly once
+  app.post('/api/batch-lab/experiments/start', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const parsed = batchLabStartExperimentRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send(
+          fail('BATCH_LAB_EXPERIMENT_VALIDATION_ERROR', 'Batch Lab experiment start is invalid')
+        );
+    }
+    if (parsed.data.source_environment !== config.batchLab.sourceEnvironment) {
+      return reply
+        .status(409)
+        .send(fail('BATCH_LAB_ENVIRONMENT_MISMATCH', 'Batch Lab source environment mismatch'));
+    }
+
+    try {
+      const service = new BatchLabExecutionService();
+      return ok(await service.startExperiment(parsed.data));
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: false - internal Batch Lab worker lease runner
+  app.post('/api/batch-lab/worker/run-once', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const parsed = batchLabRunWorkerRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_EXPERIMENT_VALIDATION_ERROR', 'Batch Lab worker request is invalid'));
+    }
+    if (parsed.data.source_environment !== config.batchLab.sourceEnvironment) {
+      return reply
+        .status(409)
+        .send(fail('BATCH_LAB_ENVIRONMENT_MISMATCH', 'Batch Lab source environment mismatch'));
+    }
+
+    try {
+      const service = new BatchLabExecutionService();
+      return ok(await service.runWorkerOnce(parsed.data));
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
 }
 
 async function ensureBatchLabReady(reply: FastifyReply): Promise<boolean> {
@@ -235,6 +329,10 @@ function publicBatchLabMessage(code: BatchLabErrorCode): string {
   if (code === 'BATCH_LAB_PROCESSOR_LIMIT_EXCEEDED')
     return 'Batch Lab processor output is too large';
   if (code === 'BATCH_LAB_PROCESSOR_RUNTIME_ERROR') return 'Batch Lab processor execution failed';
+  if (code === 'BATCH_LAB_EXPERIMENT_NOT_FOUND') return 'Batch Lab experiment was not found';
+  if (code === 'BATCH_LAB_EXPERIMENT_STATE_CONFLICT') return 'Batch Lab experiment state changed';
+  if (code === 'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR') return 'Batch Lab experiment is invalid';
+  if (code === 'BATCH_LAB_EXPERIMENT_NO_WORK') return 'Batch Lab experiment has no work to run';
   if (code === 'BATCH_LAB_INVALID_SQL') return 'Batch Lab SQL is invalid';
   if (code === 'BATCH_LAB_TIMEOUT') return 'Batch Lab request timed out';
   if (code === 'BATCH_LAB_CAPACITY_EXCEEDED') return 'Batch Lab request exceeds capacity limits';
@@ -264,6 +362,11 @@ function statusForBatchLabError(code: BatchLabErrorCode): number {
     return 413;
   }
   if (code === 'BATCH_LAB_PROCESSOR_NOT_FOUND') return 404;
+  if (code === 'BATCH_LAB_EXPERIMENT_NOT_FOUND') return 404;
+  if (code === 'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR') return 422;
+  if (code === 'BATCH_LAB_EXPERIMENT_STATE_CONFLICT' || code === 'BATCH_LAB_EXPERIMENT_NO_WORK') {
+    return 409;
+  }
   if (
     code === 'BATCH_LAB_PREVIEW_NOT_FOUND' ||
     code === 'BATCH_LAB_PREVIEW_EXPIRED' ||
