@@ -3,8 +3,12 @@
  *
  * 生成出口的终态结算段：**星尘实扣就发生在这里**，是 execute.ts 的最后一步。
  *
- *   补 OpenRouter 用量元数据 → applyLlmCharge（charge_llm_usage + 免费额度收口）
- *   → 回写 chat_history 的计费列 → 累加轮次并触发邀请奖励检查
+ *   补 OpenRouter 用量元数据 → 先落请求时定价快照 → applyLlmCharge
+ *   （charge_llm_usage + 免费额度收口）→ 回写 chat_history 的计费列
+ *   → 累加轮次并触发邀请奖励检查
+ *
+ * 用量元数据补齐 ≠ 结算完成。扣费失败仍会写下快照和上游元数据，但不打
+ * llm_billing_settled_at，交给 sync-job 按快照补建，不重新定价。
  *
  * 为什么是 fire-and-forget：第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），
  * 挂在请求里会让用户在回复已经流完之后仍然等着。所以 SSE 收流后立即返回，
@@ -18,7 +22,10 @@
 
 import type { FastifyBaseLogger } from 'fastify';
 import { getDomainDb } from '../../lib/supabase.js';
-import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import {
+  ConversationHistoryRepository,
+  type LlmBillingSnapshot,
+} from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import {
   getInitialBillingDecision,
   shouldRecordUsageCharge,
@@ -124,7 +131,8 @@ export function settleGeneration(entry: GenerationSettlementEntry, log: FastifyB
   })();
 }
 
-async function runSettlement(
+/** 导出给单测：扣费失败仍落快照、不打结算完成。 */
+export async function runSettlement(
   entry: GenerationSettlementEntry,
   clog: FastifyBaseLogger
 ): Promise<void> {
@@ -153,10 +161,32 @@ async function runSettlement(
   }
 
   let actualDeduction = 0;
+  let billingSettled = false;
+  const willCharge = shouldRecordUsageCharge(entry.status);
+
+  // 扣费前先落快照：RPC 失败或进程在建 charge 行之前中断时，回捞才能按原价补建。
+  if (willCharge && entry.history_id) {
+    try {
+      await history().saveBillingSnapshot(entry.history_id, billingSnapshotFromEntry(entry));
+    } catch (err) {
+      clog.error(
+        {
+          kind: 'sys',
+          event: 'chathistory.billing.snapshot_failed',
+          err,
+          userId: entry.user_id,
+          chargeId: entry.charge_id,
+        },
+        'failed to persist billing snapshot'
+      );
+    }
+  }
 
   // 每轮生成都保留一条明细；只有 finish_reason=stop 的正常完整回复才扣星尘。
-  if (shouldRecordUsageCharge(entry.status)) {
-    actualDeduction = await chargeRound({ entry, llmMetadata, finishReason, clog });
+  if (willCharge) {
+    const round = await chargeRound({ entry, llmMetadata, finishReason, clog });
+    actualDeduction = round.chargedAmount;
+    billingSettled = round.settled;
   }
 
   if (!entry.history_id) {
@@ -177,6 +207,7 @@ async function runSettlement(
       historyId: entry.history_id,
       deductionRate: actualDeduction,
       metadata: llmMetadata,
+      ...(billingSettled ? { billingSettledAt: new Date().toISOString() } : {}),
     });
   } catch (err) {
     clog.error(
@@ -249,13 +280,13 @@ async function fetchUsageData(
   }
 }
 
-/** 实扣与免费额度收口。返回真实扣减额，回写进 chat_history.deduction_rate。 */
+/** 实扣与免费额度收口。settled 表示已不在等 finish_reason，可以打结算完成。 */
 async function chargeRound(input: {
   entry: GenerationSettlementEntry;
   llmMetadata: Record<string, unknown>;
   finishReason: string | null;
   clog: FastifyBaseLogger;
-}): Promise<number> {
+}): Promise<{ chargedAmount: number; settled: boolean }> {
   const { entry, llmMetadata, finishReason, clog } = input;
   const userId = entry.user_id as string;
   const usageCost = llmMetadata.llm_usage;
@@ -273,6 +304,7 @@ async function chargeRound(input: {
     typeof llmMetadata.llm_model === 'string' && llmMetadata.llm_model.trim()
       ? llmMetadata.llm_model
       : null;
+  const waitingForFinishReason = finishReason === null && Boolean(entry.generation_id);
 
   try {
     const result = await applyLlmCharge({
@@ -313,7 +345,7 @@ async function chargeRound(input: {
       },
       'LLM usage billing record created'
     );
-    return result.chargedAmount;
+    return { chargedAmount: result.chargedAmount, settled: !waitingForFinishReason };
   } catch (chargeErr) {
     clog.error(
       {
@@ -325,6 +357,21 @@ async function chargeRound(input: {
       },
       'atomic LLM usage charge failed'
     );
-    return 0;
+    return { chargedAmount: 0, settled: false };
   }
+}
+
+function billingSnapshotFromEntry(entry: GenerationSettlementEntry): LlmBillingSnapshot {
+  return {
+    charge_id: entry.charge_id,
+    model_id: entry.model_id,
+    model_display_name: entry.model_display_name,
+    model_markup: entry.model_markup,
+    fixed_deduction: entry.fixed_deduction,
+    fixed_deduction_category: entry.fixed_deduction_category,
+    catalog_version: entry.catalog_version,
+    pricing_config_version: entry.pricing_config_version,
+    exchange_rate: entry.exchange_rate,
+    billing_mode: 'fixed_tier',
+  };
 }
