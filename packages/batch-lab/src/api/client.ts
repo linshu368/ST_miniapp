@@ -1,7 +1,18 @@
 import {
+  batchLabCreateSampleSetRequestSchema,
   batchLabContextResponseSchema,
   batchLabErrorResponseSchema,
+  batchLabPreviewRequestSchema,
+  batchLabPreviewResponseSchema,
+  batchLabSampleSetListResponseSchema,
+  batchLabSampleSetResponseSchema,
+  batchLabSqlTemplateListResponseSchema,
   type BatchLabContext,
+  type BatchLabCreateSampleSetRequest,
+  type BatchLabPreview,
+  type BatchLabPreviewRequest,
+  type BatchLabSampleSet,
+  type BatchLabSqlTemplate,
 } from '@miniapp/shared';
 import type { ZodType } from 'zod';
 
@@ -107,4 +118,57 @@ export async function getBatchLabContext(signal?: AbortSignal): Promise<BatchLab
     signal,
   });
   return response.data;
+}
+
+export async function listBatchLabSqlTemplates(
+  signal?: AbortSignal
+): Promise<BatchLabSqlTemplate[]> {
+  const response = await request(
+    '/api/batch-lab/sql-templates',
+    batchLabSqlTemplateListResponseSchema,
+    {
+      signal,
+    }
+  );
+  return response.data.items;
+}
+
+export async function createBatchLabPreview(
+  input: BatchLabPreviewRequest,
+  signal?: AbortSignal
+): Promise<BatchLabPreview> {
+  const body = batchLabPreviewRequestSchema.parse(input);
+  const response = await request('/api/batch-lab/sample-previews', batchLabPreviewResponseSchema, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+    timeoutMs: 30_000,
+  });
+  return response.data;
+}
+
+export async function createBatchLabSampleSet(
+  input: BatchLabCreateSampleSetRequest,
+  signal?: AbortSignal
+): Promise<BatchLabSampleSet> {
+  const body = batchLabCreateSampleSetRequestSchema.parse(input);
+  const response = await request('/api/batch-lab/sample-sets', batchLabSampleSetResponseSchema, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  return response.data;
+}
+
+export async function listBatchLabSampleSets(signal?: AbortSignal): Promise<BatchLabSampleSet[]> {
+  const response = await request(
+    '/api/batch-lab/sample-sets',
+    batchLabSampleSetListResponseSchema,
+    {
+      signal,
+    }
+  );
+  return response.data.items;
 }

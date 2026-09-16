@@ -116,6 +116,14 @@ export const batchLabSqlTemplateSchema = z
 // SQL 模板类型
 export type BatchLabSqlTemplate = z.infer<typeof batchLabSqlTemplateSchema>;
 
+// SQL 模板列表响应模式
+export const batchLabSqlTemplateListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({ items: z.array(batchLabSqlTemplateSchema) }).strict(),
+  })
+  .strict();
+
 // 预览请求模式
 export const batchLabPreviewRequestSchema = z
   .object({
@@ -153,6 +161,7 @@ export const batchLabPreviewExclusionReasonSchema = z.enum([
   'invalid_anchor',
   'snapshot_too_large',
 ]);
+export type BatchLabPreviewExclusionReason = z.infer<typeof batchLabPreviewExclusionReasonSchema>;
 
 // 预览统计模式
 export const batchLabPreviewStatisticsSchema = z
@@ -177,6 +186,7 @@ export const batchLabSnapshotMessageSchema = z
     content: z.string(),
   })
   .strict();
+export type BatchLabSnapshotMessage = z.infer<typeof batchLabSnapshotMessageSchema>;
 
 // 预览项模式
 export const batchLabPreviewItemSchema = z

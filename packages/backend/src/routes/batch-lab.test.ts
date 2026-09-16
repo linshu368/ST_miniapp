@@ -14,16 +14,44 @@ const mockedConfig = vi.hoisted(() => ({
 vi.mock('../platform/config.js', () => ({ config: mockedConfig }));
 const verifyBatchLabSourceConnection = vi.hoisted(() => vi.fn());
 vi.mock('../features/batch-lab/source-database.js', () => ({ verifyBatchLabSourceConnection }));
+const createPreview = vi.hoisted(() => vi.fn());
+vi.mock('../features/batch-lab/sample-service.js', () => ({
+  BatchLabSampleService: vi.fn().mockImplementation(function BatchLabSampleServiceMock() {
+    return { createPreview };
+  }),
+}));
+const repositoryMethods = vi.hoisted(() => ({
+  listTemplates: vi.fn(),
+  freezeSampleSet: vi.fn(),
+  listSampleSets: vi.fn(),
+}));
+vi.mock('../infrastructure/repositories/BatchLabSampleRepository.js', () => ({
+  BatchLabRepositoryError: class BatchLabRepositoryError extends Error {
+    constructor(
+      readonly code: string,
+      message: string
+    ) {
+      super(message);
+    }
+  },
+  BatchLabSampleRepository: vi.fn().mockImplementation(function BatchLabSampleRepositoryMock() {
+    return repositoryMethods;
+  }),
+}));
 
 import batchLabRoutes from './batch-lab.js';
 
-describe('Batch Lab context route', () => {
+describe('Batch Lab routes', () => {
   beforeEach(() => {
     mockedConfig.batchLab.enabled = false;
     mockedConfig.batchLab.url = '';
     mockedConfig.batchLab.source = { configured: false, reason: 'not configured' };
     verifyBatchLabSourceConnection.mockReset();
     verifyBatchLabSourceConnection.mockResolvedValue(undefined);
+    createPreview.mockReset();
+    repositoryMethods.listTemplates.mockReset();
+    repositoryMethods.freezeSampleSet.mockReset();
+    repositoryMethods.listSampleSets.mockReset();
   });
 
   it('fails closed when the feature is disabled', async () => {
@@ -65,7 +93,7 @@ describe('Batch Lab context route', () => {
       data: {
         backend_environment: 'test',
         source_environment: 'test',
-        capabilities: { sample_preview: false, experiment_execution: false },
+        capabilities: { sample_preview: true, experiment_execution: false },
       },
     });
     await app.close();
@@ -98,6 +126,83 @@ describe('Batch Lab context route', () => {
     const response = await app.inject({ method: 'GET', url: '/api/batch-lab/context' });
     expect(response.json().data.backend_environment).toBe('development');
     mockedConfig.database.environment = 'test';
+    await app.close();
+  });
+
+  it('rejects preview requests for a different source environment', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/batch-lab/sample-previews',
+      payload: {
+        source_environment: 'production',
+        template_key: null,
+        template_version: null,
+        sql: 'select id as source_history_id from experience.chat_history',
+        parameters: {},
+        sample_limit: 1,
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      success: false,
+      error: { code: 'BATCH_LAB_ENVIRONMENT_MISMATCH' },
+    });
+    expect(createPreview).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('creates a preview through the service without leaking raw errors', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    createPreview.mockResolvedValue({
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      digest: `sha256:${'a'.repeat(64)}`,
+      source_environment: 'test',
+      final_sql: 'select id as source_history_id from experience.chat_history',
+      parameters: {},
+      sample_limit: 1,
+      statistics: {
+        requested_count: 1,
+        candidate_count: 1,
+        valid_count: 1,
+        user_count: 1,
+        session_count: 1,
+        character_count: 1,
+        excluded_by_reason: {},
+        truncated: false,
+        snapshot_bytes: 128,
+      },
+      items: [],
+      created_at: '2026-09-11T06:00:00.000Z',
+      expires_at: '2026-09-11T06:15:00.000Z',
+    });
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/batch-lab/sample-previews',
+      payload: {
+        source_environment: 'test',
+        template_key: null,
+        template_version: null,
+        sql: 'select id as source_history_id from experience.chat_history',
+        parameters: {},
+        sample_limit: 1,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.id).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect(createPreview).toHaveBeenCalledOnce();
     await app.close();
   });
 });
