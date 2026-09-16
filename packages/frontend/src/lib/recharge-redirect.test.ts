@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiClientError } from './api/client';
 import { ConversationStreamError } from './api/conversation-stream';
+import { readPaywallContinuation } from './payment/paywall-continuation';
 import { setReplaySessionStorageForTests } from './payment/session-storage';
 import {
   isInsufficientCreditsError,
@@ -57,7 +58,8 @@ function memoryStorage(): Storage {
 }
 
 beforeEach(() => {
-  enterPaywallFollowup.mockClear();
+  enterPaywallFollowup.mockReset();
+  enterPaywallFollowup.mockImplementation(async () => {});
   capture.mockClear();
   getSnapshot.mockClear();
   setReplaySessionStorageForTests(memoryStorage());
@@ -154,21 +156,67 @@ describe('rechargePath / redirectToRecharge', () => {
     });
   });
 
-  it('redirectToRecharge 先进入 paywall followup 再 push', async () => {
+  it('调用 followup 后立即 push，不等待队列；continuation 在跳转前已写入', async () => {
     const router = { push: vi.fn() };
     const order: string[] = [];
-    enterPaywallFollowup.mockImplementation(async () => {
-      order.push('followup');
+    let releaseFollowup: () => void = () => undefined;
+    enterPaywallFollowup.mockImplementation(() => {
+      order.push('followup-called');
+      return new Promise<void>((resolve) => {
+        releaseFollowup = resolve;
+      });
     });
     router.push.mockImplementation(() => {
       order.push('push');
     });
 
+    const pending = redirectToRecharge(router, {
+      returnTo: `/chat/${characterId}?session=${conversationSessionId}`,
+      requiredCredits: 12,
+      triggerSource: 'chat_sse',
+    });
+    expect(order).toEqual(['followup-called', 'push']);
+    expect(router.push).toHaveBeenCalledWith(
+      `/profile/recharge?reason=insufficient_credits&returnTo=${encodeURIComponent(`/chat/${characterId}?session=${conversationSessionId}`)}&required=12`
+    );
+    expect(capture).not.toHaveBeenCalled();
+    expect(readPaywallContinuation()).toMatchObject({
+      triggerSource: 'chat_sse',
+      requiredCredits: 12,
+      characterId,
+      conversationSessionId,
+      replayContextId,
+    });
+
+    releaseFollowup();
+    await pending;
+    expect(capture).toHaveBeenCalledWith({
+      event: 'paywall_triggered',
+      trigger_source: 'chat_sse',
+      character_id: characterId,
+      conversation_session_id: conversationSessionId,
+      selected_model_id: null,
+      required_credits: 12,
+    });
+  });
+
+  it('无 triggerSource 时仍立即 push 且不发 paywall_triggered', async () => {
+    const router = { push: vi.fn() };
     await redirectToRecharge(router, { returnTo: '/chat/c1' });
-    expect(order).toEqual(['followup', 'push']);
+    expect(enterPaywallFollowup).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledWith(
       '/profile/recharge?reason=insufficient_credits&returnTo=%2Fchat%2Fc1'
     );
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it('followup 失败不回滚已经发生的跳转', async () => {
+    const router = { push: vi.fn() };
+    enterPaywallFollowup.mockImplementation(async () => {
+      throw new Error('queue blocked');
+    });
+    await redirectToRecharge(router, { returnTo: '/chat/c1', triggerSource: 'chat_sse' });
+    expect(router.push).toHaveBeenCalledTimes(1);
     expect(capture).not.toHaveBeenCalled();
   });
 

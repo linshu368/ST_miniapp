@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createPostHogAdapter, type PostHogClient } from './adapter';
+import {
+  createPostHogAdapter,
+  POSTHOG_SDK_LOAD_TIMEOUT_MS,
+  type PostHogClient,
+  type PostHogSdkModule,
+} from './adapter';
 
 const replayContextId = '11111111-1111-4111-8111-111111111111';
 const occurredAt = '2026-09-15T10:00:00.000Z';
@@ -68,6 +73,35 @@ describe('PostHog adapter', () => {
     await expect(adapter.init('123456789')).resolves.toBe(false);
     expect(adapter.isReady()).toBe(false);
     expect(adapter.startNewRecording()).toBe(false);
+  });
+
+  it('fails init when SDK import never settles, and ignores a late load', async () => {
+    vi.useFakeTimers();
+    const client = createClient();
+    let resolveSdk: ((mod: PostHogSdkModule) => void) | undefined;
+    const adapter = createPostHogAdapter({
+      env: { key: 'phc_test', host: 'https://us.i.posthog.com' },
+      isBrowser: () => true,
+      loadSdk: () =>
+        new Promise((resolve) => {
+          resolveSdk = resolve;
+        }),
+    });
+
+    try {
+      const pending = adapter.init('123456789');
+      await vi.advanceTimersByTimeAsync(POSTHOG_SDK_LOAD_TIMEOUT_MS);
+      await expect(pending).resolves.toBe(false);
+      await expect(adapter.whenReady()).resolves.toBe(false);
+      expect(adapter.isReady()).toBe(false);
+
+      resolveSdk?.({ default: client });
+      await Promise.resolve();
+      expect(client.init).not.toHaveBeenCalled();
+      expect(adapter.isReady()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('starts recording with ingestion overrides, not startSessionRecording(false)', async () => {

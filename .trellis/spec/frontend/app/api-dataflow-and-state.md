@@ -119,13 +119,15 @@ posthog.capture('chat_turn_completed', {
 - Next.js 只内联静态 `process.env.NEXT_PUBLIC_*`。`readPostHogBrowserEnv` 必须直接读 `process.env.NEXT_PUBLIC_POSTHOG_KEY/HOST`，禁止 `const env = process.env; env.NEXT_PUBLIC_*`。
 - web `posthog-js` 开始新段：先 `sessionManager.resetSessionId()`，再 `startSessionRecording({ sampling, linked_flag, url_trigger, event_trigger })`。`stopSessionRecording()` + `startSessionRecording(overrides)` **不会**轮转 `$session_id`；禁止调用会丢掉 identity 的 `reset()`；禁止把移动端 `startSessionRecording(false)` 用在 web。
 - 录制 owner 在根 `Providers` 的 `ReplayLifecycleOwner`，不能放在会随路由卸载的 `use-chat-session` cleanup。
-- 进入付费墙必须**同步** `enterPaywallFollowup()`（hold），再 `router.push`。hold/followup 期间忽略 `route_change`/`pagehide`；同角色重绑保持原 `replay_context_id`；回到聊天再 `reenterChatFromFollowup()`。
+- 进入付费墙必须先**同步调用** `enterPaywallFollowup()`（内部立刻置 `paywallHold`），再 `router.push`。`push` **不得** `await` lifecycle 队列 / `whenReady()` / SDK import。continuation 的 `triggerSource` / `returnTo` / `requiredCredits` 在 push 前同步写入；`replay_context_id` 与 `paywall_triggered` 在 queue settle 后补丁，失败则降级，不得挡住跳转。hold/followup 期间忽略 `route_change`/`pagehide`；同角色重绑保持原 `replay_context_id`；回到聊天再 `reenterChatFromFollowup()`。
+- `loadSdk()` / `initPromise` 必须有显式超时（`POSTHOG_SDK_LOAD_TIMEOUT_MS`）；超时视为 `init_failed`，保证 `whenReady()` 有限时间内 settle，lifecycle 串行队列不得被动态 import 永久占住。
 - 打开外部支付前写入 `st.replay.external_payment_pending` 并 `enterExternalPaymentPending()`，再 `openLink`。Telegram 冻结恢复时 URL 通常不变；根上 visibility/focus/pageshow 在有离开证据时发一次 `payment_return_observed(return_source=webview_resume)`。同一 `order_id` 去重；普通前后台、刷新、VPN 弹窗 focus 不误报。
 - `pay_url` 只进 order-id keyed 的短 TTL `sessionStorage`，不得进 router query / 事件属性 / 回放 URL。
 
 ### 4. Validation & Error Matrix
 
 - 缺 KEY/HOST 或 host 非 HTTPS → adapter `missing_config`/`invalid_host` no-op，聊天/支付继续。
+- SDK 动态 import 超时或抛错 → `init_failed` no-op，聊天/支付继续；`whenReady()` 必须 settle。
 - `startNewRecording` 以 `sessionRecordingStarted()` 为准，不得把 SDK 调用返回值当成已在录。
 - capture 含禁止键（`content`/`pay_url`/`initData` 等）→ runtime schema 丢弃。
 - 无真实 `conversationSessionId` → 不 `startChatReplay`。
@@ -136,13 +138,14 @@ posthog.capture('chat_turn_completed', {
 
 - Good: 两张角色卡两条 `$session_id`；付费墙到充值同一 `replay_context_id`；切回 Telegram 且 URL 不变时一次 `payment_return_observed` 与 status 事件同一 `order_id`。
 - Base: Preview 注入公开变量，Production 留空即关闭；Sentry Replay 维持现有 100% / `maskAllText: false`。
-- Bad: 经 `process.env` 对象读公开变量导致 Preview 零 recording；`enterPaywallFollowup` 排队后被 occupancy `route_change` 掐断；只认 `?payment=returned` 导致 WebView 恢复无回流事件。
+- Bad: 经 `process.env` 对象读公开变量导致 Preview 零 recording；`enterPaywallFollowup` 排队后被 occupancy `route_change` 掐断；`await enterPaywallFollowup()` 后再 push，SDK chunk 挂起导致付费墙跳转静默卡死；只认 `?payment=returned` 导致 WebView 恢复无回流事件。
 
 ### 6. Tests Required
 
 - `config.test.ts`：静态 env 读取与非法 host。
-- `adapter.test.ts`：`resetSessionId` + override start；schema 拒绝禁止键。
+- `adapter.test.ts`：`resetSessionId` + override start；schema 拒绝禁止键；SDK import 超时后 `init`/`whenReady` settle 且忽略迟到的 load。
 - `lifecycle.test.ts`：paywall hold、同角色重绑、followup 忽略 `route_change`。
+- `recharge-redirect.test.ts`：调用 followup 后立即 push；continuation 在跳转前写入；`paywall_triggered` 等队列 settle。
 - `return-observer.test.ts` / `flow-telemetry.test.ts`：有离开证据才 `webview_resume`；同 order 去重；无 pending 不误报。
 - shared `telemetry-contract.test.ts`：`return_source`、禁止键、`user_cohort` 不存在。
 
@@ -155,7 +158,7 @@ function readEnv(env = process.env) {
   return { key: env.NEXT_PUBLIC_POSTHOG_KEY, host: env.NEXT_PUBLIC_POSTHOG_HOST };
 }
 posthog.startSessionRecording(false);
-void lifecycle.enterPaywallFollowup();
+await lifecycle.enterPaywallFollowup();
 router.push(rechargePath);
 ```
 
@@ -171,6 +174,11 @@ client.startSessionRecording({
   url_trigger: true,
   event_trigger: true,
 });
-await lifecycle.enterPaywallFollowup();
+const followup = lifecycle.enterPaywallFollowup();
+writePaywallContinuation({ ...snapshot.replayContextId });
 router.push(rechargePath);
+void followup.then(() => {
+  patchPaywallContinuation({ replayContextId: snapshot.replayContextId });
+  lifecycle.capture({ event: 'paywall_triggered', ... });
+});
 ```

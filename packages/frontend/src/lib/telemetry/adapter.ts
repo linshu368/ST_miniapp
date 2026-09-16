@@ -50,10 +50,33 @@ export type PostHogAdapterDeps = {
   loadSdk?: () => Promise<PostHogSdkModule>;
   now?: () => Date;
   isBrowser?: () => boolean;
+  /** 仅测试注入；生产默认 `POSTHOG_SDK_LOAD_TIMEOUT_MS`。 */
+  loadSdkTimeoutMs?: number;
 };
+
+/** posthog-js 动态 import 若挂起，lifecycle 串行队列会一起卡住；必须在有限时间内放弃。 */
+export const POSTHOG_SDK_LOAD_TIMEOUT_MS = 3_000;
 
 function defaultLoadSdk(): Promise<PostHogSdkModule> {
   return import('posthog-js') as Promise<PostHogSdkModule>;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('posthog_sdk_load_timeout'));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
 }
 
 function occurredAt(now: () => Date): string {
@@ -81,6 +104,10 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
   const now = deps.now ?? (() => new Date());
   const loadSdk = deps.loadSdk ?? defaultLoadSdk;
   const isBrowser = deps.isBrowser ?? (() => typeof window !== 'undefined');
+  const loadSdkTimeoutMs =
+    deps.loadSdkTimeoutMs !== undefined && deps.loadSdkTimeoutMs > 0
+      ? deps.loadSdkTimeoutMs
+      : POSTHOG_SDK_LOAD_TIMEOUT_MS;
   const seen = new Set<string>();
   let initPromise: Promise<boolean> | undefined;
   let client: PostHogClient | undefined;
@@ -157,7 +184,7 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
       }
 
       try {
-        const mod = await loadSdk();
+        const mod = await withTimeout(loadSdk(), loadSdkTimeoutMs);
         const sdk = mod.default;
         sdk.init(config.key, {
           api_host: config.host,

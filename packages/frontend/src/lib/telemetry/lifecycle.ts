@@ -275,6 +275,7 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
 
   async function startChatReplay(input: StartChatReplayInput): Promise<string | null> {
     await enqueue(async () => {
+      // adapter.loadSdk 有超时；这里若永不 settle，followup/endReplay 会一起挂死。
       await adapter().whenReady();
       const telegramUserId = adapter().getDistinctId();
       const activeFollowup =
