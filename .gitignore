@@ -8,6 +8,7 @@ dist/
 !.env.compose.example
 .vercel
 .playwright-cli/
+.cursor/mcp.json
 
 *.tsbuildinfo
 

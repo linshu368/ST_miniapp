@@ -5,7 +5,7 @@
 ## business
 
 - [大厅角色发现与收藏](business/character-lobby.md) — `frontend.business.character-lobby` · `active`
-- [用户会话与语音界面](business/conversation-ui.md) — `frontend.business.conversation-ui` · `active`
+- [用户会话、语音与图片界面](business/conversation-ui.md) — `frontend.business.conversation-ui` · `active`
 - [个人互动、通知与客服](business/engagement-support.md) — `frontend.business.engagement-support` · `active`
 - [钱包、签到与充值](business/wallet-payment.md) — `frontend.business.wallet-payment` · `active`
 

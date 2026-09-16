@@ -5,7 +5,7 @@
 ## business
 
 - [钱包、订单与生成计费数据](business/billing-payment.md) — `database.business.billing-payment` · `active`
-- [会话与语音存储](business/conversation-storage.md) — `database.business.conversation-storage` · `active`
+- [会话、语音与图片存储](business/conversation-storage.md) — `database.business.conversation-storage` · `active`
 
 ## infrastructure
 
