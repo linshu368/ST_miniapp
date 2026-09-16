@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { BatchLabClientError, request } from './client';
+import { BatchLabClientError, previewBatchLabProcessor, request } from './client';
 
 const successSchema = z.object({ success: z.literal(true), data: z.string() });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.useRealTimers();
 });
 
@@ -74,5 +75,41 @@ describe('Batch Lab API client', () => {
         code: 'BATCH_LAB_PROTOCOL_ERROR',
       })
     );
+  });
+
+  it('previews a processor through the shared response schema', async () => {
+    vi.stubEnv('VITE_BATCH_LAB_API_URL', 'http://test');
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('http://test/api/batch-lab/processors/preview');
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(String(init?.body))).toEqual({
+        config: { protocol: 'none_v1' },
+        input_text: 'hello',
+      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+            processor_version_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+            processor_digest: `sha256:${'a'.repeat(64)}`,
+            status: 'success',
+            match_count: 0,
+            input_text: 'hello',
+            output_text: 'hello',
+            sanitized_html: 'hello',
+            error_code: null,
+            renderer: { protocol: 'batch_lab_html_v1', version: 1 },
+            created_at: '2026-09-11T06:00:00.000Z',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      previewBatchLabProcessor({ config: { protocol: 'none_v1' }, input_text: 'hello' }, undefined)
+    ).resolves.toMatchObject({ status: 'success', output_text: 'hello' });
   });
 });

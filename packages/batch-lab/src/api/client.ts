@@ -1,14 +1,23 @@
 import {
+  batchLabCreateProcessorVersionRequestSchema,
   batchLabCreateSampleSetRequestSchema,
   batchLabContextResponseSchema,
   batchLabErrorResponseSchema,
+  batchLabProcessorPreviewRequestSchema,
+  batchLabProcessorPreviewResponseSchema,
+  batchLabProcessorVersionListResponseSchema,
+  batchLabProcessorVersionResponseSchema,
   batchLabPreviewRequestSchema,
   batchLabPreviewResponseSchema,
   batchLabSampleSetListResponseSchema,
   batchLabSampleSetResponseSchema,
   batchLabSqlTemplateListResponseSchema,
   type BatchLabContext,
+  type BatchLabCreateProcessorVersionRequest,
   type BatchLabCreateSampleSetRequest,
+  type BatchLabDisplayResult,
+  type BatchLabProcessorPreviewRequest,
+  type BatchLabProcessorVersion,
   type BatchLabPreview,
   type BatchLabPreviewRequest,
   type BatchLabSampleSet,
@@ -131,6 +140,54 @@ export async function listBatchLabSqlTemplates(
     }
   );
   return response.data.items;
+}
+
+export async function listBatchLabProcessors(
+  signal?: AbortSignal
+): Promise<BatchLabProcessorVersion[]> {
+  const response = await request(
+    '/api/batch-lab/processors',
+    batchLabProcessorVersionListResponseSchema,
+    { signal }
+  );
+  return response.data.items;
+}
+
+export async function createBatchLabProcessor(
+  input: BatchLabCreateProcessorVersionRequest,
+  signal?: AbortSignal
+): Promise<BatchLabProcessorVersion> {
+  const body = batchLabCreateProcessorVersionRequestSchema.parse(input);
+  const response = await request(
+    '/api/batch-lab/processors',
+    batchLabProcessorVersionResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }
+  );
+  return response.data;
+}
+
+export async function previewBatchLabProcessor(
+  input: BatchLabProcessorPreviewRequest,
+  signal?: AbortSignal
+): Promise<BatchLabDisplayResult> {
+  const body = batchLabProcessorPreviewRequestSchema.parse(input);
+  const response = await request(
+    '/api/batch-lab/processors/preview',
+    batchLabProcessorPreviewResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+      timeoutMs: 30_000,
+    }
+  );
+  return response.data;
 }
 
 export async function createBatchLabPreview(

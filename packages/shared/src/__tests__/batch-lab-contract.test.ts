@@ -11,6 +11,8 @@ import {
   BATCH_LAB_DEFAULT_SAMPLE_LIMIT,
   BATCH_LAB_MAX_SAMPLE_LIMIT,
   batchLabCreateSampleSetRequestSchema,
+  batchLabProcessorConfigSchema,
+  batchLabProcessorPreviewRequestSchema,
   batchLabPreviewRequestSchema,
   batchLabPreviewSchema,
 } from '../api/batch-lab';
@@ -82,6 +84,39 @@ describe('batch lab data sample contracts', () => {
         created_at: '2026-09-11T06:00:00.000Z',
         expires_at: '2026-09-11T06:15:00.000Z',
         leaked_database_row: true,
+      }).success
+    ).toBe(false);
+  });
+
+  it('validates bounded regex processor config', () => {
+    expect(
+      batchLabProcessorConfigSchema.safeParse({
+        protocol: 'regex_json_v1',
+        rules: [{ pattern: 'hello', flags: 'gi', replacement: 'hi' }],
+        timeout_ms: 250,
+      }).success
+    ).toBe(true);
+    expect(
+      batchLabProcessorConfigSchema.safeParse({
+        protocol: 'regex_json_v1',
+        rules: [{ pattern: 'hello', flags: 'gg', replacement: 'hi' }],
+        timeout_ms: 250,
+      }).success
+    ).toBe(false);
+  });
+
+  it('requires processor previews to reference exactly one processor source', () => {
+    expect(
+      batchLabProcessorPreviewRequestSchema.safeParse({
+        processor_version_id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+        input_text: 'hello',
+      }).success
+    ).toBe(true);
+    expect(
+      batchLabProcessorPreviewRequestSchema.safeParse({
+        processor_version_id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+        config: { protocol: 'none_v1' },
+        input_text: 'hello',
       }).success
     ).toBe(false);
   });

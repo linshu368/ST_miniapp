@@ -20,6 +20,18 @@ vi.mock('../features/batch-lab/sample-service.js', () => ({
     return { createPreview };
   }),
 }));
+const postprocessingMethods = vi.hoisted(() => ({
+  listProcessorVersions: vi.fn(),
+  createProcessorVersion: vi.fn(),
+  preview: vi.fn(),
+}));
+vi.mock('../features/batch-lab/postprocessing-service.js', () => ({
+  BatchLabPostprocessingService: vi
+    .fn()
+    .mockImplementation(function BatchLabPostprocessingServiceMock() {
+      return postprocessingMethods;
+    }),
+}));
 const repositoryMethods = vi.hoisted(() => ({
   listTemplates: vi.fn(),
   freezeSampleSet: vi.fn(),
@@ -40,6 +52,7 @@ vi.mock('../infrastructure/repositories/BatchLabSampleRepository.js', () => ({
 }));
 
 import batchLabRoutes from './batch-lab.js';
+import { BatchLabRepositoryError } from '../infrastructure/repositories/BatchLabSampleRepository.js';
 
 describe('Batch Lab routes', () => {
   beforeEach(() => {
@@ -49,6 +62,9 @@ describe('Batch Lab routes', () => {
     verifyBatchLabSourceConnection.mockReset();
     verifyBatchLabSourceConnection.mockResolvedValue(undefined);
     createPreview.mockReset();
+    postprocessingMethods.listProcessorVersions.mockReset();
+    postprocessingMethods.createProcessorVersion.mockReset();
+    postprocessingMethods.preview.mockReset();
     repositoryMethods.listTemplates.mockReset();
     repositoryMethods.freezeSampleSet.mockReset();
     repositoryMethods.listSampleSets.mockReset();
@@ -203,6 +219,78 @@ describe('Batch Lab routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data.id).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
     expect(createPreview).toHaveBeenCalledOnce();
+    await app.close();
+  });
+
+  it('lists processor versions through the postprocessing service', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    postprocessingMethods.listProcessorVersions.mockResolvedValue([
+      {
+        id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+        name: 'No postprocessing',
+        protocol: 'none_v1',
+        config: { protocol: 'none_v1' },
+        digest: `sha256:${'a'.repeat(64)}`,
+        created_at: '2026-09-11T06:00:00.000Z',
+      },
+    ]);
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({ method: 'GET', url: '/api/batch-lab/processors' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.items).toHaveLength(1);
+    expect(postprocessingMethods.listProcessorVersions).toHaveBeenCalledOnce();
+    await app.close();
+  });
+
+  it('rejects processor previews that provide both id and inline config', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/batch-lab/processors/preview',
+      payload: {
+        processor_version_id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+        config: { protocol: 'none_v1' },
+        input_text: 'hello',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      success: false,
+      error: { code: 'BATCH_LAB_PROCESSOR_VALIDATION_ERROR' },
+    });
+    expect(postprocessingMethods.preview).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('maps processor timeout errors to gateway timeout without leaking details', async () => {
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    postprocessingMethods.preview.mockRejectedValue(
+      new BatchLabRepositoryError('BATCH_LAB_PROCESSOR_TIMEOUT', 'regex internals')
+    );
+    const app = Fastify();
+    await app.register(batchLabRoutes);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/batch-lab/processors/preview',
+      payload: { config: { protocol: 'none_v1' }, input_text: 'hello' },
+    });
+
+    expect(response.statusCode).toBe(504);
+    expect(response.body).not.toContain('regex internals');
     await app.close();
   });
 });

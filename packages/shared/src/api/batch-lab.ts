@@ -12,6 +12,12 @@ export const BATCH_LAB_MAX_NAME_LENGTH = 120;
 export const BATCH_LAB_MAX_PREVIEW_BYTES = 8 * 1024 * 1024;
 // 预览 TTL 秒
 export const BATCH_LAB_PREVIEW_TTL_SECONDS = 15 * 60;
+export const BATCH_LAB_MAX_PROCESSOR_INPUT_CHARS = 200_000;
+export const BATCH_LAB_MAX_PROCESSOR_OUTPUT_CHARS = 200_000;
+export const BATCH_LAB_MAX_PROCESSOR_RULES = 50;
+export const BATCH_LAB_MAX_PROCESSOR_PATTERN_LENGTH = 2_000;
+export const BATCH_LAB_MAX_PROCESSOR_REPLACEMENT_LENGTH = 20_000;
+export const BATCH_LAB_PROCESSOR_TIMEOUT_MS = 250;
 
 // 后端环境
 export const batchLabBackendEnvironmentSchema = z.enum(['development', 'test', 'production']);
@@ -61,6 +67,11 @@ export const batchLabErrorCodeSchema = z.enum([
   'BATCH_LAB_PREVIEW_MISMATCH',
   'BATCH_LAB_EMPTY_PREVIEW',
   'BATCH_LAB_IDEMPOTENCY_CONFLICT',
+  'BATCH_LAB_PROCESSOR_NOT_FOUND',
+  'BATCH_LAB_PROCESSOR_VALIDATION_ERROR',
+  'BATCH_LAB_PROCESSOR_TIMEOUT',
+  'BATCH_LAB_PROCESSOR_LIMIT_EXCEEDED',
+  'BATCH_LAB_PROCESSOR_RUNTIME_ERROR',
 ]);
 
 // 错误响应
@@ -282,4 +293,121 @@ export const batchLabSampleSetListResponseSchema = z
       })
       .strict(),
   })
+  .strict();
+
+export const batchLabProcessorProtocolSchema = z.enum(['none_v1', 'regex_json_v1']);
+export type BatchLabProcessorProtocol = z.infer<typeof batchLabProcessorProtocolSchema>;
+
+export const batchLabRegexRuleSchema = z
+  .object({
+    pattern: z.string().min(1).max(BATCH_LAB_MAX_PROCESSOR_PATTERN_LENGTH),
+    flags: z
+      .string()
+      .regex(/^[dgimsuy]*$/)
+      .max(7)
+      .refine((value) => new Set(value).size === value.length, 'regex flags must be unique'),
+    replacement: z.string().max(BATCH_LAB_MAX_PROCESSOR_REPLACEMENT_LENGTH),
+  })
+  .strict();
+export type BatchLabRegexRule = z.infer<typeof batchLabRegexRuleSchema>;
+
+export const batchLabProcessorConfigSchema = z.discriminatedUnion('protocol', [
+  z.object({ protocol: z.literal('none_v1') }).strict(),
+  z
+    .object({
+      protocol: z.literal('regex_json_v1'),
+      rules: z.array(batchLabRegexRuleSchema).max(BATCH_LAB_MAX_PROCESSOR_RULES),
+      timeout_ms: z.number().int().min(1).max(BATCH_LAB_PROCESSOR_TIMEOUT_MS),
+    })
+    .strict(),
+]);
+export type BatchLabProcessorConfig = z.infer<typeof batchLabProcessorConfigSchema>;
+
+export const batchLabCreateProcessorVersionRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
+    config: batchLabProcessorConfigSchema,
+    idempotency_key: uuidSchema.optional(),
+  })
+  .strict();
+export type BatchLabCreateProcessorVersionRequest = z.infer<
+  typeof batchLabCreateProcessorVersionRequestSchema
+>;
+
+export const batchLabProcessorVersionSchema = z
+  .object({
+    id: uuidSchema,
+    name: z.string().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
+    protocol: batchLabProcessorProtocolSchema,
+    config: batchLabProcessorConfigSchema,
+    digest: digestSchema,
+    created_at: isoDateTimeSchema,
+  })
+  .strict();
+export type BatchLabProcessorVersion = z.infer<typeof batchLabProcessorVersionSchema>;
+
+export const batchLabProcessorVersionListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({ items: z.array(batchLabProcessorVersionSchema) }).strict(),
+  })
+  .strict();
+
+export const batchLabProcessorVersionResponseSchema = z
+  .object({ success: z.literal(true), data: batchLabProcessorVersionSchema })
+  .strict();
+
+export const batchLabDisplayRendererSchema = z
+  .object({
+    protocol: z.literal('batch_lab_html_v1'),
+    version: z.literal(1),
+  })
+  .strict();
+export type BatchLabDisplayRenderer = z.infer<typeof batchLabDisplayRendererSchema>;
+
+export const batchLabDisplayResultStatusSchema = z.enum([
+  'success',
+  'failed',
+  'timeout',
+  'limit_exceeded',
+  'validation_error',
+]);
+export type BatchLabDisplayResultStatus = z.infer<typeof batchLabDisplayResultStatusSchema>;
+
+export const batchLabDisplayResultSchema = z
+  .object({
+    id: uuidSchema.optional(),
+    processor_version_id: uuidSchema,
+    processor_digest: digestSchema,
+    status: batchLabDisplayResultStatusSchema,
+    match_count: countSchema,
+    input_text: z.string().max(BATCH_LAB_MAX_PROCESSOR_INPUT_CHARS),
+    output_text: z.string().max(BATCH_LAB_MAX_PROCESSOR_OUTPUT_CHARS),
+    sanitized_html: z.string().max(BATCH_LAB_MAX_PROCESSOR_OUTPUT_CHARS * 6),
+    error_code: batchLabErrorCodeSchema.nullable(),
+    renderer: batchLabDisplayRendererSchema,
+    created_at: isoDateTimeSchema.optional(),
+  })
+  .strict();
+export type BatchLabDisplayResult = z.infer<typeof batchLabDisplayResultSchema>;
+
+export const batchLabProcessorPreviewRequestSchema = z
+  .object({
+    processor_version_id: uuidSchema.optional(),
+    config: batchLabProcessorConfigSchema.optional(),
+    input_text: z.string().max(BATCH_LAB_MAX_PROCESSOR_INPUT_CHARS),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if ((value.processor_version_id === undefined) === (value.config === undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'provide exactly one of processor_version_id or config',
+      });
+    }
+  });
+export type BatchLabProcessorPreviewRequest = z.infer<typeof batchLabProcessorPreviewRequestSchema>;
+
+export const batchLabProcessorPreviewResponseSchema = z
+  .object({ success: z.literal(true), data: batchLabDisplayResultSchema })
   .strict();

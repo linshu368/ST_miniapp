@@ -8,6 +8,9 @@ export const batchLabQueryKeys = {
   templates(context: BatchLabContext) {
     return [...this.environment(context), 'sql-templates'] as const;
   },
+  processors(context: BatchLabContext) {
+    return [...this.environment(context), 'processors'] as const;
+  },
   sampleSets(context: BatchLabContext) {
     return [...this.environment(context), 'sample-sets'] as const;
   },

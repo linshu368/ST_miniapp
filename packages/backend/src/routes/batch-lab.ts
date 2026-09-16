@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
+  batchLabCreateProcessorVersionRequestSchema,
   batchLabCreateSampleSetRequestSchema,
+  batchLabProcessorPreviewRequestSchema,
   batchLabPreviewRequestSchema,
   fail,
   ok,
@@ -11,6 +13,7 @@ import {
   BatchLabRepositoryError,
   BatchLabSampleRepository,
 } from '../infrastructure/repositories/BatchLabSampleRepository.js';
+import { BatchLabPostprocessingService } from '../features/batch-lab/postprocessing-service.js';
 import { BatchLabSampleService } from '../features/batch-lab/sample-service.js';
 import { verifyBatchLabSourceConnection } from '../features/batch-lab/source-database.js';
 import { BatchLabSourceQueryError } from '../features/batch-lab/source-query.js';
@@ -66,6 +69,61 @@ export default async function batchLabRoutes(app: FastifyInstance) {
     try {
       const repository = new BatchLabSampleRepository();
       return ok({ items: await repository.listTemplates() });
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: true - Batch Lab immutable postprocessor version list
+  app.get('/api/batch-lab/processors', async (_request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    try {
+      const service = new BatchLabPostprocessingService();
+      return ok({ items: await service.listProcessorVersions() });
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: true - Batch Lab creates a new immutable postprocessor version
+  app.post('/api/batch-lab/processors', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const parsed = batchLabCreateProcessorVersionRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_PROCESSOR_VALIDATION_ERROR', 'Batch Lab processor is invalid'));
+    }
+
+    try {
+      const service = new BatchLabPostprocessingService();
+      return ok(await service.createProcessorVersion(parsed.data));
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: true - Batch Lab single-item postprocessing preview and display storage
+  app.post('/api/batch-lab/processors/preview', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const parsed = batchLabProcessorPreviewRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send(
+          fail('BATCH_LAB_PROCESSOR_VALIDATION_ERROR', 'Batch Lab processor preview is invalid')
+        );
+    }
+
+    try {
+      const service = new BatchLabPostprocessingService();
+      return ok(await service.preview(parsed.data));
     } catch (err) {
       return sendBatchLabError(reply, err);
     }
@@ -160,17 +218,52 @@ async function ensureBatchLabReady(reply: FastifyReply): Promise<boolean> {
 
 function sendBatchLabError(reply: FastifyReply, err: unknown): FastifyReply {
   if (err instanceof BatchLabSourceQueryError || err instanceof BatchLabRepositoryError) {
-    return reply.status(statusForBatchLabError(err.code)).send(fail(err.code, err.message));
+    return reply
+      .status(statusForBatchLabError(err.code))
+      .send(fail(err.code, publicBatchLabMessage(err.code)));
   }
   return reply
     .status(503)
     .send(fail('BATCH_LAB_SOURCE_UNAVAILABLE', 'Batch Lab is temporarily unavailable'));
 }
 
+function publicBatchLabMessage(code: BatchLabErrorCode): string {
+  if (code === 'BATCH_LAB_PROCESSOR_NOT_FOUND') return 'Batch Lab processor version was not found';
+  if (code === 'BATCH_LAB_PROCESSOR_VALIDATION_ERROR')
+    return 'Batch Lab processor config is invalid';
+  if (code === 'BATCH_LAB_PROCESSOR_TIMEOUT') return 'Batch Lab processor timed out';
+  if (code === 'BATCH_LAB_PROCESSOR_LIMIT_EXCEEDED')
+    return 'Batch Lab processor output is too large';
+  if (code === 'BATCH_LAB_PROCESSOR_RUNTIME_ERROR') return 'Batch Lab processor execution failed';
+  if (code === 'BATCH_LAB_INVALID_SQL') return 'Batch Lab SQL is invalid';
+  if (code === 'BATCH_LAB_TIMEOUT') return 'Batch Lab request timed out';
+  if (code === 'BATCH_LAB_CAPACITY_EXCEEDED') return 'Batch Lab request exceeds capacity limits';
+  if (code === 'BATCH_LAB_EMPTY_PREVIEW') return 'Batch Lab preview has no valid samples';
+  if (code === 'BATCH_LAB_ENVIRONMENT_MISMATCH') return 'Batch Lab source environment mismatch';
+  if (
+    code === 'BATCH_LAB_PREVIEW_NOT_FOUND' ||
+    code === 'BATCH_LAB_PREVIEW_EXPIRED' ||
+    code === 'BATCH_LAB_PREVIEW_MISMATCH'
+  ) {
+    return 'Batch Lab preview is no longer available';
+  }
+  if (code === 'BATCH_LAB_IDEMPOTENCY_CONFLICT') return 'Batch Lab idempotency key conflicts';
+  return 'Batch Lab is temporarily unavailable';
+}
+
 function statusForBatchLabError(code: BatchLabErrorCode): number {
-  if (code === 'BATCH_LAB_TIMEOUT') return 504;
+  if (code === 'BATCH_LAB_TIMEOUT' || code === 'BATCH_LAB_PROCESSOR_TIMEOUT') return 504;
   if (code === 'BATCH_LAB_INVALID_SQL' || code === 'BATCH_LAB_EMPTY_PREVIEW') return 422;
-  if (code === 'BATCH_LAB_CAPACITY_EXCEEDED') return 413;
+  if (
+    code === 'BATCH_LAB_PROCESSOR_VALIDATION_ERROR' ||
+    code === 'BATCH_LAB_PROCESSOR_RUNTIME_ERROR'
+  ) {
+    return 422;
+  }
+  if (code === 'BATCH_LAB_CAPACITY_EXCEEDED' || code === 'BATCH_LAB_PROCESSOR_LIMIT_EXCEEDED') {
+    return 413;
+  }
+  if (code === 'BATCH_LAB_PROCESSOR_NOT_FOUND') return 404;
   if (
     code === 'BATCH_LAB_PREVIEW_NOT_FOUND' ||
     code === 'BATCH_LAB_PREVIEW_EXPIRED' ||

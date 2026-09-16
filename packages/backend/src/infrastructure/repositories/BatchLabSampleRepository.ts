@@ -162,6 +162,11 @@ export function repositoryError(error: DatabaseErrorLike): BatchLabRepositoryErr
     'BATCH_LAB_EMPTY_PREVIEW',
     'BATCH_LAB_IDEMPOTENCY_CONFLICT',
     'BATCH_LAB_CAPACITY_EXCEEDED',
+    'BATCH_LAB_PROCESSOR_NOT_FOUND',
+    'BATCH_LAB_PROCESSOR_VALIDATION_ERROR',
+    'BATCH_LAB_PROCESSOR_TIMEOUT',
+    'BATCH_LAB_PROCESSOR_LIMIT_EXCEEDED',
+    'BATCH_LAB_PROCESSOR_RUNTIME_ERROR',
   ];
   const code = knownCodes.find((candidate) => error.message?.includes(candidate));
   return new BatchLabRepositoryError(

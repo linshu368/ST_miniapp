@@ -11,4 +11,14 @@ describe('batchLabQueryKeys', () => {
       })
     ).toEqual(['batch-lab', 'development', 'test']);
   });
+
+  it('scopes processor versions by the active environments', () => {
+    expect(
+      batchLabQueryKeys.processors({
+        backend_environment: 'production',
+        source_environment: 'production',
+        capabilities: { sample_preview: true, experiment_execution: false },
+      })
+    ).toEqual(['batch-lab', 'production', 'production', 'processors']);
+  });
 });
