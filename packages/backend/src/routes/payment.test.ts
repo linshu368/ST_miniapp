@@ -8,8 +8,12 @@ import type { PaymentQueryResult } from '../infrastructure/payment/ZqPaymentGate
 import { insertUserNotification } from '../lib/notifications.js';
 import { checkInviteFirstPaidReward } from '../lib/invite-rewards.js';
 import { handleZqPayWebhook } from './payment.js';
-import { reconcileWithGateway } from '../features/payment/usecases/PaymentSettlement.js';
+import {
+  reconcileWithGateway,
+  settlePaidOrder,
+} from '../features/payment/usecases/PaymentSettlement.js';
 import { toPaymentOrder } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
+import { observePaymentOrderSettled } from '../features/payment/usecases/PaymentOrderTelemetry.js';
 
 vi.mock('../lib/notifications.js', () => ({
   insertUserNotification: vi.fn(async () => undefined),
@@ -17,6 +21,11 @@ vi.mock('../lib/notifications.js', () => ({
 
 vi.mock('../lib/invite-rewards.js', () => ({
   checkInviteFirstPaidReward: vi.fn(async () => undefined),
+}));
+
+vi.mock('../features/payment/usecases/PaymentOrderTelemetry.js', () => ({
+  observePaymentOrderSettled: vi.fn(),
+  observePaymentOrderFailed: vi.fn(),
 }));
 
 function createReply() {
@@ -96,7 +105,16 @@ function createNotify(overrides: Record<string, string> = {}) {
 function createOrders(order = createOrder()) {
   return {
     findById: vi.fn(async () => order),
-    complete: vi.fn(async () => createOrder({ status: 'completed', credits_added: true })),
+    complete: vi.fn(
+      async (_id: string, _txid: string | null, settledBy: MiniappPaymentOrderRow['settled_by']) =>
+        createOrder({
+          ...order,
+          id: order.id,
+          status: 'completed',
+          credits_added: true,
+          settled_by: settledBy,
+        })
+    ),
     reopenExpired: vi.fn(async () => undefined),
   };
 }
@@ -129,6 +147,15 @@ describe('handleZqPayWebhook', () => {
 
     expect(orders.complete).toHaveBeenCalledWith('MA-order-1', 'ZQ-order-1', 'webhook');
     expect(insertUserNotification).toHaveBeenCalledOnce();
+    expect(observePaymentOrderSettled).toHaveBeenCalledWith(
+      {
+        orderId: 'MA-order-1',
+        userId: '00000000-0000-0000-0000-000000000001',
+        paymentType: 'wxpay',
+        settledBy: 'webhook',
+      },
+      expect.anything()
+    );
     expect(state).toMatchObject({
       statusCode: 200,
       contentType: 'text/plain',
@@ -165,7 +192,7 @@ describe('handleZqPayWebhook', () => {
   });
 
   it('does not notify twice when a completed order receives a repeated callback', async () => {
-    const order = createOrder({ status: 'completed', credits_added: true });
+    const order = createOrder({ status: 'completed', credits_added: true, settled_by: 'webhook' });
     const orders = {
       findById: vi.fn(async () => order),
       complete: vi.fn(async () => order),
@@ -181,6 +208,43 @@ describe('handleZqPayWebhook', () => {
     // 到账通知不重发，但发奖判定要重跑：判定自带幂等，重放是上一次失败判定唯一的重试机会。
     expect(checkInviteFirstPaidReward).toHaveBeenCalledOnce();
     expect(state.body).toBe('success');
+  });
+
+  it('does not emit settlement telemetry when complete fails to persist', async () => {
+    const orders = createOrders();
+    orders.complete.mockRejectedValueOnce(new Error('db down'));
+    const { reply, state } = createReply();
+
+    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
+
+    expect(observePaymentOrderSettled).not.toHaveBeenCalled();
+    expect(state).toMatchObject({ statusCode: 500, body: 'fail' });
+  });
+
+  it('keeps settlement successful when terminal telemetry throws', async () => {
+    vi.mocked(observePaymentOrderSettled).mockImplementationOnce(() => {
+      throw new Error('posthog down');
+    });
+    const orders = createOrders();
+    const { reply, state } = createReply();
+
+    await handleZqPayWebhook(createNotify(), reply, createGateway(), orders, createLog());
+
+    expect(orders.complete).toHaveBeenCalledOnce();
+    expect(state.body).toBe('success');
+  });
+
+  it('does not wait for hanging telemetry before returning completed', async () => {
+    vi.mocked(observePaymentOrderSettled).mockImplementationOnce(
+      () => new Promise(() => undefined)
+    );
+    const result = await settlePaidOrder(
+      { orderId: 'MA-order-1', paidAmount: '6.00', providerTransactionId: 'ZQ-order-1' },
+      createOrders(),
+      createLog(),
+      'webhook'
+    );
+    expect(result).toBe('completed');
   });
 
   it('reopens an order that expired before the callback arrived, then credits it', async () => {
@@ -263,6 +327,7 @@ describe('handleZqPayWebhook', () => {
     );
 
     expect(orders.complete).not.toHaveBeenCalled();
+    expect(observePaymentOrderSettled).not.toHaveBeenCalled();
     expect(state).toMatchObject({ statusCode: 400, body: 'fail' });
   });
 
@@ -563,5 +628,36 @@ describe('GET /api/payment/return', () => {
     expect(routeOrders.complete).not.toHaveBeenCalled();
 
     await app.close();
+  });
+});
+
+describe('toPaymentOrder', () => {
+  it('maps settled_by for both completed and historical rows', () => {
+    expect(toPaymentOrder(createOrder({ settled_by: 'return' })).settled_by).toBe('return');
+    expect(toPaymentOrder(createOrder({ settled_by: null })).settled_by).toBeNull();
+  });
+
+  it('keeps the same mapped shape used by order detail and order list', () => {
+    const mapped = toPaymentOrder(
+      createOrder({
+        id: 'MA-shared-map',
+        status: 'completed',
+        paid_at: '2026-08-21T09:02:00.000Z',
+        settled_by: 'query',
+      })
+    );
+    expect(mapped).toEqual({
+      id: 'MA-shared-map',
+      status: 'completed',
+      payment_type: 'wxpay',
+      amount_cents: 600,
+      credits_amount: 600,
+      bonus_credits: 0,
+      created_at: '2026-08-21T09:00:00.000Z',
+      expires_at: '2026-08-21T09:15:00.000Z',
+      paid_at: '2026-08-21T09:02:00.000Z',
+      provider_transaction_id: null,
+      settled_by: 'query',
+    });
   });
 });

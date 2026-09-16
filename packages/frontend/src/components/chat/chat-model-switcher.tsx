@@ -8,6 +8,7 @@ import type { PublicModelCatalogTier } from '@miniapp/shared';
 import { ApiClientError } from '@/lib/api/client';
 import { useModelCatalogQuery, useSelectModelMutation } from '@/lib/api/models';
 import { isInsufficientCreditsError, redirectToRecharge } from '@/lib/recharge-redirect';
+import { getReplayLifecycle } from '@/lib/telemetry';
 import { cn } from '@/lib/utils';
 
 /**
@@ -51,13 +52,18 @@ export function ChatModelSwitcher({
     try {
       await selectModel.mutateAsync({ model_id: modelId });
       if (latestSelectRef.current !== modelId) return;
+      try {
+        getReplayLifecycle().updateSessionProperties({ selectedModelId: modelId });
+      } catch {
+        // 属性更新失败不阻断选模型
+      }
       setFeedback('模型已切换');
       if (onSwitched) window.setTimeout(onSwitched, 250);
     } catch (err) {
       if (latestSelectRef.current !== modelId) return;
       // 余额闸门拦下来的话，能做的只有去充值，直接把人送过去
       if (err instanceof ApiClientError && isInsufficientCreditsError(err)) {
-        redirectToRecharge(router, { returnTo });
+        void redirectToRecharge(router, { returnTo, triggerSource: 'model_switch' });
         return;
       }
       setError(err instanceof Error ? err.message : '该模型暂不可用');

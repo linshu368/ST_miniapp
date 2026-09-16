@@ -17,7 +17,7 @@ import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { ChatSplash } from '@/components/chat/chat-splash';
-import { useChatSession } from '@/hooks/use-chat-session';
+import { useChatReplayBinding, useChatSession } from '@/hooks/use-chat-session';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { fetchConversationPage, resolveSessionTitle } from '@/lib/api/conversations';
@@ -28,6 +28,7 @@ import {
   useImageConfigQuery,
   useSessionImagesQuery,
 } from '@/lib/api/images';
+import { useModelCatalogQuery } from '@/lib/api/models';
 import { paymentKeys } from '@/lib/api/payment';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import {
@@ -54,6 +55,14 @@ export default function SelfHostedChatPage() {
 
   const session = useChatSession(characterId);
   const { activeSessionId, returnTo } = session;
+  const modelCatalogQuery = useModelCatalogQuery();
+  const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
+
+  useChatReplayBinding({
+    characterId,
+    conversationSessionId: activeSessionId,
+    selectedModelId,
+  });
 
   const persisted = useMemo(
     () => [...earlier, ...(session.conversationQuery.data?.messages ?? [])],
@@ -87,6 +96,7 @@ export default function SelfHostedChatPage() {
     characterId,
     characterName: character?.name,
     sessionId: activeSessionId,
+    selectedModelId,
     persistedMessages: persisted,
     returnTo,
     onSessionGone: session.abandonSession,
@@ -171,7 +181,7 @@ export default function SelfHostedChatPage() {
         {
           onError: (error) => {
             // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
-            if (redirectToRechargeFromError(router, error, returnTo)) return;
+            if (redirectToRechargeFromError(router, error, returnTo, 'chat_voice')) return;
             const code = (error as { code?: string }).code;
             setStreamError(
               code === 'CONFLICT'
