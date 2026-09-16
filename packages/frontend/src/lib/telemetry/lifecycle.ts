@@ -371,6 +371,9 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
       clearIdleTimer();
       captureEnded(reason);
       adapter().stopRecording(snapshot.replayContextId ?? undefined);
+      // PostHog 会把 session super properties 自动合并到后续事件。
+      // 结束事件已发出后再清理，避免个人中心主动充值误继承旧聊天 context。
+      adapter().clearReplaySessionProperties();
       identity = null;
       userTags = {};
       snapshot = {

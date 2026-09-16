@@ -21,17 +21,19 @@ last_verified_at: 2026-09-08
 
 ## 入口与调用者
 
-用户从个人中心进入钱包/充值流程。
+用户从个人中心进入钱包/充值流程。个人中心「星尘充值」点击发送 `recharge_entry_clicked`，不依赖 Replay context；无活跃 context 时发送前清除旧聊天会话属性，防止误归因。
 
 ## 涉及文件
 
-| 路径                                                 | 职责       |
-| ---------------------------------------------------- | ---------- |
-| `packages/frontend/src/app/(main)/profile/recharge/` | 充值页面   |
-| `packages/frontend/src/app/(main)/profile/orders/`   | 订单页面   |
-| `packages/frontend/src/app/(main)/profile/spending/` | 消费页面   |
-| `packages/frontend/src/lib/api/free-quota.ts`        | 额度 hooks |
-| `packages/frontend/src/lib/api/payment.ts`           | 支付 hooks |
+| 路径                                                  | 职责                     |
+| ----------------------------------------------------- | ------------------------ |
+| `packages/frontend/src/app/(main)/profile/page.tsx`   | 个人中心充值入口点击埋点 |
+| `packages/frontend/src/app/(main)/profile/recharge/`  | 充值页面                 |
+| `packages/frontend/src/app/(main)/profile/orders/`    | 订单页面                 |
+| `packages/frontend/src/app/(main)/profile/spending/`  | 消费页面                 |
+| `packages/frontend/src/lib/payment/flow-telemetry.ts` | 支付漏斗与入口点击事件   |
+| `packages/frontend/src/lib/api/free-quota.ts`         | 额度 hooks               |
+| `packages/frontend/src/lib/api/payment.ts`            | 支付 hooks               |
 
 ## 关键实现链路
 

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/shared/contracts/testing-and-change-management.md", "reason": "forbidden keys and consumer typecheck"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "SDK failure must not block payment navigation"}

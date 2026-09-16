@@ -21,6 +21,7 @@ function createMockAdapter(): Mocked<PostHogAdapter> & { captures: unknown[] } {
     identify: vi.fn(),
     setPersonProperties: vi.fn(),
     registerSessionProperties: vi.fn(),
+    clearReplaySessionProperties: vi.fn(),
     startNewRecording: vi.fn(() => {
       recording = true;
       return true;
@@ -107,9 +108,11 @@ describe('replay lifecycle owner', () => {
     await api.enterPaywallFollowup();
     expect(api.getState()).toBe('paywall_followup');
     expect(adapter.stopRecording).not.toHaveBeenCalled();
+    expect(adapter.clearReplaySessionProperties).not.toHaveBeenCalled();
 
     await api.enterExternalPaymentPending();
     expect(api.getState()).toBe('external_payment_pending');
+    expect(adapter.clearReplaySessionProperties).not.toHaveBeenCalled();
     for (const fn of timeouts) fn();
     await Promise.resolve();
     expect(api.getState()).toBe('external_payment_pending');
@@ -215,6 +218,7 @@ describe('replay lifecycle owner', () => {
     expect(api.getState()).toBe('paywall_followup');
     expect(api.getSnapshot().replayContextId).toBe(replayContextId);
     expect(adapter.stopRecording).not.toHaveBeenCalled();
+    expect(adapter.clearReplaySessionProperties).not.toHaveBeenCalled();
 
     await api.endReplay('pagehide');
     expect(api.getState()).toBe('paywall_followup');
@@ -265,5 +269,9 @@ describe('replay lifecycle owner', () => {
     await api.endReplay('route_change');
     expect(api.getState()).toBe('ended');
     expect(adapter.stopRecording).toHaveBeenCalledTimes(1);
+    expect(adapter.clearReplaySessionProperties).toHaveBeenCalledTimes(1);
+    expect(adapter.capture.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      adapter.clearReplaySessionProperties.mock.invocationCallOrder[0] ?? 0
+    );
   });
 });

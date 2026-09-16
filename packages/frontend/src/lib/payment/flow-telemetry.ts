@@ -9,6 +9,7 @@ import type {
 } from '@miniapp/shared';
 
 import { getReplayLifecycle, type ReplayEventDraft } from '@/lib/telemetry';
+import { getPostHogAdapter } from '@/lib/telemetry/adapter';
 
 import {
   clearExternalPaymentPending,
@@ -114,6 +115,40 @@ export function captureRechargeViewed(): void {
   viewedRechargeKeys.add(key);
   captureDraft({ event: 'recharge_viewed' });
   rememberAction('recharge_viewed');
+}
+
+/**
+ * 个人中心「星尘充值」主动点击。不能走 captureDraft：那条路径没有 Replay context 会静默丢弃。
+ * whenReady 已有 SDK load timeout；这里只 fire-and-forget，不得挡住 Link 跳转。
+ */
+export function captureRechargeEntryClicked(input: { telegramUserId?: string | null } = {}): void {
+  const occurredAt = new Date().toISOString();
+  const replayContextId = hasActiveReplayContext()
+    ? (getReplayLifecycle().getSnapshot().replayContextId ?? undefined)
+    : undefined;
+  const clickedUserId = input.telegramUserId?.trim() || undefined;
+
+  void getPostHogAdapter()
+    .whenReady()
+    .then((ready) => {
+      if (!ready) return;
+      const telegramUserId = clickedUserId || getPostHogAdapter().getDistinctId();
+      if (!telegramUserId) return;
+      if (!replayContextId) {
+        // 页面重载可能跳过 endReplay；发送前清掉 SDK 保留的旧聊天会话属性。
+        getPostHogAdapter().clearReplaySessionProperties();
+      }
+      getPostHogAdapter().capture(
+        omitUndefined({
+          event: 'recharge_entry_clicked' as const,
+          telegram_user_id: telegramUserId,
+          occurred_at: occurredAt,
+          entry_source: 'profile_balance' as const,
+          replay_context_id: replayContextId,
+        })
+      );
+    })
+    .catch(() => undefined);
 }
 
 export function capturePaywallDismissed(): void {
