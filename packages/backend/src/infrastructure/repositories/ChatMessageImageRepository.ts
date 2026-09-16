@@ -22,8 +22,9 @@ export interface ChatMessageImageRow {
   session_id: string;
   message_id: string;
   attempt_no: number;
-  prompt_cn: string;
-  prompt_source: ImagePromptSource;
+  prompt_cn: string | null;
+  prompt_source: ImagePromptSource | null;
+  description_user_prompt: string | null;
   prompt_en: string | null;
   provider_prompt: string | null;
   provider: string;
@@ -56,6 +57,9 @@ export interface ChatMessageImageRow {
 }
 
 type ImageInternalStatus =
+  | 'draft_describing'
+  | 'draft_ready'
+  | 'draft_failed'
   | 'pending'
   | 'leased'
   | 'generating'
@@ -80,6 +84,7 @@ export class ChatMessageImageRepository {
       .from('chat_message_images')
       .select('*')
       .eq('session_id', sessionId)
+      .not('status', 'in', '(draft_describing,draft_ready,draft_failed)')
       .order('created_at', { ascending: false });
 
     if (error) throw new Error(`查询会话图片失败：${error.message}`);
@@ -147,6 +152,97 @@ export class ChatMessageImageRepository {
       if (error.code === '23505') throw new ImageConflictError();
       throw new Error(`创建图片生成记录失败：${error.message}`);
     }
+    return data as ChatMessageImageRow;
+  }
+
+  /** 在写稿模型调用前创建 draft 并保存完整 user prompt；插入失败时调用方不得请求上游。 */
+  async createDescriptionDraft(input: {
+    userId: string;
+    sessionId: string;
+    messageId: string;
+    userPrompt: string;
+    model: string;
+    baseUrlHost: string | null;
+    width: number;
+    height: number;
+    priceCredits: number;
+    priceLabel: string;
+  }): Promise<ChatMessageImageRow> {
+    const attemptNo = (await this.readMaxAttemptNo(input.messageId)) + 1;
+    const { data, error } = await this.db
+      .from('chat_message_images')
+      .insert({
+        user_id: input.userId,
+        session_id: input.sessionId,
+        message_id: input.messageId,
+        attempt_no: attemptNo,
+        description_user_prompt: input.userPrompt,
+        provider: 'liaobots_grok',
+        model: input.model,
+        base_url_host: input.baseUrlHost,
+        width: input.width,
+        height: input.height,
+        output_format: 'webp',
+        price_credits: input.priceCredits,
+        price_label: input.priceLabel,
+        status: 'draft_describing',
+        stage: 'description',
+      })
+      .select('*')
+      .single();
+    if (error) throw new Error(`创建图片描述草稿失败：${error.message}`);
+    return data as ChatMessageImageRow;
+  }
+
+  async markDescriptionDraftReady(id: string, promptCn: string): Promise<void> {
+    await this.update(id, {
+      status: 'draft_ready',
+      stage: 'description_ready',
+      prompt_cn: promptCn,
+      prompt_source: 'generated',
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  async markDescriptionDraftFailed(id: string, errorCode: ImageErrorCode): Promise<void> {
+    await this.update(id, {
+      status: 'draft_failed',
+      stage: 'description_failed',
+      error_code: errorCode,
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  /** 只允许草稿所有者把绑定当前消息的 draft_ready 原子推进为 pending。 */
+  async confirmDescriptionDraft(input: {
+    id: string;
+    userId: string;
+    sessionId: string;
+    messageId: string;
+    promptCn: string;
+    promptSource: ImagePromptSource;
+  }): Promise<ChatMessageImageRow> {
+    const { data, error } = await this.db
+      .from('chat_message_images')
+      .update({
+        prompt_cn: input.promptCn,
+        prompt_source: input.promptSource,
+        status: 'pending',
+        stage: 'pending',
+        next_attempt_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', input.id)
+      .eq('user_id', input.userId)
+      .eq('session_id', input.sessionId)
+      .eq('message_id', input.messageId)
+      .eq('status', 'draft_ready')
+      .select('*')
+      .maybeSingle();
+    if (error?.code === '23505') throw new ImageConflictError();
+    if (error) throw new Error(`确认图片描述草稿失败：${error.message}`);
+    if (!data) throw new ImageConflictError();
     return data as ChatMessageImageRow;
   }
 
@@ -292,6 +388,7 @@ export class ChatMessageImageRepository {
 }
 
 export function toMessageImageAttempt(row: ChatMessageImageRow): MessageImageAttempt {
+  if (!row.prompt_cn || !row.prompt_source) throw new Error('图片 attempt 尚未进入可公开状态');
   return {
     id: row.id,
     message_id: row.message_id,
@@ -315,6 +412,9 @@ export function toMessageImageAttempt(row: ChatMessageImageRow): MessageImageAtt
 }
 
 function toPublicStatus(status: ImageInternalStatus): MessageImageStatus {
+  if (status === 'draft_describing' || status === 'draft_ready' || status === 'draft_failed') {
+    throw new Error('图片描述草稿状态不得进入公开 attempt');
+  }
   if (status === 'leased' || status === 'storing') return 'generating';
   return status;
 }

@@ -8,6 +8,7 @@ import type {
 } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import { config } from '../../platform/config.js';
 import type { ImageRuntimeConfig } from '../image/config.js';
+import type { ImageTextModelConfig } from '../image/config.js';
 
 const DESCRIPTION_SYSTEM_PROMPT = [
   '你是视觉分镜师，只为健康、可公开发布的角色聊天图片写中文画面描述。',
@@ -56,20 +57,20 @@ interface ReplicatePredictionResponse {
 
 export type GeneratedProviderImage =
   | {
-      source: 'url';
-      url: string;
-      provider: 'liaobots_grok' | 'replicate_z';
-      model: string;
-      requestId: string | null;
-    }
+    source: 'url';
+    url: string;
+    provider: 'liaobots_grok' | 'replicate_z';
+    model: string;
+    requestId: string | null;
+  }
   | {
-      source: 'bytes';
-      bytes: Buffer;
-      mimeType: StoredImageMimeType;
-      provider: 'liaobots_grok' | 'replicate_z';
-      model: string;
-      requestId: string | null;
-    };
+    source: 'bytes';
+    bytes: Buffer;
+    mimeType: StoredImageMimeType;
+    provider: 'liaobots_grok' | 'replicate_z';
+    model: string;
+    requestId: string | null;
+  };
 
 export function requireVisualAnchor(character: CharacterCardRow): string {
   const anchor = character.character_persona_and_style?.trim();
@@ -90,6 +91,7 @@ export async function draftImageDescription(input: {
   context: ConversationContext;
   turn: ConversationHistoryRow;
   imageConfig: ImageRuntimeConfig;
+  persistUserPrompt: (userPrompt: string) => Promise<void>;
 }): Promise<string> {
   const userPrompt = [
     `【生成风格】：${input.imageConfig.defaultArtStyle}`,
@@ -98,8 +100,15 @@ export async function draftImageDescription(input: {
     `【必要角色卡信息】：\n${compactCharacterNotes(input.character)}`,
     `【最近对话上下文】：\n${formatRecentMessages(input.context, input.turn)}`,
   ].join('\n\n');
+  // 审计写入是调用上游的前置提交点；失败时不得产生无记录的模型请求。
+  await input.persistUserPrompt(userPrompt);
   const text = normalizePromptText(
-    await callDeepSeek(DESCRIPTION_SYSTEM_PROMPT, userPrompt, 'description')
+    await callDeepSeek(
+      DESCRIPTION_SYSTEM_PROMPT,
+      userPrompt,
+      'description',
+      input.imageConfig.textModel
+    )
   );
   if (!text || text.length > MAX_IMAGE_PROMPT_CHARS) {
     throw new ImageUpstreamError(
@@ -112,9 +121,12 @@ export async function draftImageDescription(input: {
 }
 
 /** 将用户确认的中文稿直译为 provider 输入，不执行图片领域润色。 */
-export async function translateImagePrompt(promptCn: string): Promise<string> {
+export async function translateImagePrompt(
+  promptCn: string,
+  textModel: ImageTextModelConfig
+): Promise<string> {
   const translated = normalizePromptText(
-    await callDeepSeek(TRANSLATE_SYSTEM_PROMPT, promptCn, 'translation')
+    await callDeepSeek(TRANSLATE_SYSTEM_PROMPT, promptCn, 'translation', textModel)
   );
   if (!translated) {
     throw new ImageUpstreamError('translation', 'image_translation_failed', '图片描述翻译为空');
@@ -398,25 +410,26 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** DeepSeek 普通文本调用复用语音既有配置，但不复用语音专属清洗逻辑。 */
+/** OpenAI-compatible 普通文本调用；默认回退现有 DeepSeek 配置。 */
 async function callDeepSeek(
   systemPrompt: string,
   userPrompt: string,
-  stage: 'description' | 'translation'
+  stage: 'description' | 'translation',
+  textModel: ImageTextModelConfig
 ): Promise<string> {
-  if (!config.voice.draft.apiKey || !config.voice.draft.url || !config.voice.draft.model) {
+  if (!textModel.apiKey || !textModel.url || !textModel.model) {
     throw new ImageUpstreamError(stage, 'image_generation_not_allowed', 'DeepSeek 未配置');
   }
   let response: Response;
   try {
-    response = await fetch(config.voice.draft.url, {
+    response = await fetch(textModel.url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${config.voice.draft.apiKey}`,
+        Authorization: `Bearer ${textModel.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: config.voice.draft.model,
+        model: textModel.model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },

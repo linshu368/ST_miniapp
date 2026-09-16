@@ -7,6 +7,7 @@ import {
   type CreateMessageImageData,
   type GetImageConfigData,
   type GetSessionImagesData,
+  type ImageErrorCode,
   type InsufficientBalanceErrorResponse,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
@@ -43,11 +44,11 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 type PreparedMessageContext =
   | {
-      ok: true;
-      session: ChatSessionRow;
-      turn: ConversationHistoryRow;
-      character: CharacterCardRow;
-    }
+    ok: true;
+    session: ChatSessionRow;
+    turn: ConversationHistoryRow;
+    character: CharacterCardRow;
+  }
   | { ok: false; reply: (reply: FastifyReply) => unknown };
 
 export default async function imageRoutes(app: FastifyInstance) {
@@ -104,13 +105,14 @@ export default async function imageRoutes(app: FastifyInstance) {
       if (!ids) return reply.status(400).send(fail('BAD_REQUEST', '这条内容不支持生成图片'));
 
       const imageConfig = await getImageRuntimeConfig();
-      const unavailable = imageUnavailable(imageConfig.enabled);
+      const unavailable = imageUnavailable(imageConfig);
       if (unavailable) return reply.status(503).send(fail('IMAGE_UNAVAILABLE', unavailable));
 
       const dbUser = await getOrCreateDbUser(request.user);
       const prepared = await prepareMessageContext(ids.sessionId, ids.messageId, dbUser.id);
       if (!prepared.ok) return prepared.reply(reply);
 
+      let draftId: string | null = null;
       try {
         const visualAnchor = requireVisualAnchor(prepared.character);
         const context = await history.getContextBeforeTurn(ids.sessionId, prepared.turn.turn_index);
@@ -120,7 +122,24 @@ export default async function imageRoutes(app: FastifyInstance) {
           context,
           turn: prepared.turn,
           imageConfig,
+          persistUserPrompt: async (userPrompt) => {
+            const draft = await images.createDescriptionDraft({
+              userId: dbUser.id,
+              sessionId: ids.sessionId,
+              messageId: ids.messageId,
+              userPrompt,
+              model: config.image.grokModel,
+              baseUrlHost: readUrlHost(config.image.liaobotsBase),
+              width: imageConfig.width,
+              height: imageConfig.height,
+              priceCredits: imageConfig.creditsPerGeneration,
+              priceLabel: imageConfig.priceLabel,
+            });
+            draftId = draft.id;
+          },
         });
+        if (!draftId) throw new Error('图片描述草稿未创建');
+        await images.markDescriptionDraftReady(draftId, promptCn);
         log.biz.info(
           {
             event: 'image.description.done',
@@ -129,8 +148,23 @@ export default async function imageRoutes(app: FastifyInstance) {
           },
           '图片描述生成完成'
         );
-        return reply.send(ok<CreateImageDescriptionData>({ prompt_cn: promptCn }));
+        return reply.send(ok<CreateImageDescriptionData>({ draft_id: draftId, prompt_cn: promptCn }));
       } catch (error) {
+        if (draftId) {
+          try {
+            await images.markDescriptionDraftFailed(
+              draftId,
+              error instanceof ImageUpstreamError
+                ? (error.code as ImageErrorCode)
+                : 'image_description_unusable'
+            );
+          } catch (markError) {
+            log.sys.error(
+              { event: 'image.description.mark_failed_error', draftId, err: markError },
+              '标记图片描述草稿失败时再次出错'
+            );
+          }
+        }
         log.sys.error(
           {
             event: 'image.description.failed',
@@ -158,7 +192,7 @@ export default async function imageRoutes(app: FastifyInstance) {
       if (!ids) return reply.status(400).send(fail('BAD_REQUEST', '这条内容不支持生成图片'));
 
       const imageConfig = await getImageRuntimeConfig();
-      const unavailable = imageUnavailable(imageConfig.enabled);
+      const unavailable = imageUnavailable(imageConfig);
       if (unavailable) return reply.status(503).send(fail('IMAGE_UNAVAILABLE', unavailable));
 
       const parsed = CreateMessageImageRequestSchema.safeParse(request.body ?? {});
@@ -195,19 +229,28 @@ export default async function imageRoutes(app: FastifyInstance) {
       }
 
       try {
-        const pending = await images.createPending({
-          userId: dbUser.id,
-          sessionId: ids.sessionId,
-          messageId: ids.messageId,
-          promptCn: parsed.data.prompt_cn,
-          promptSource: parsed.data.prompt_source,
-          model: config.image.grokModel,
-          baseUrlHost: readUrlHost(config.image.liaobotsBase),
-          width: imageConfig.width,
-          height: imageConfig.height,
-          priceCredits: imageConfig.creditsPerGeneration,
-          priceLabel: imageConfig.priceLabel,
-        });
+        const pending = parsed.data.draft_id
+          ? await images.confirmDescriptionDraft({
+            id: parsed.data.draft_id,
+            userId: dbUser.id,
+            sessionId: ids.sessionId,
+            messageId: ids.messageId,
+            promptCn: parsed.data.prompt_cn,
+            promptSource: parsed.data.prompt_source,
+          })
+          : await images.createPending({
+            userId: dbUser.id,
+            sessionId: ids.sessionId,
+            messageId: ids.messageId,
+            promptCn: parsed.data.prompt_cn,
+            promptSource: parsed.data.prompt_source,
+            model: config.image.grokModel,
+            baseUrlHost: readUrlHost(config.image.liaobotsBase),
+            width: imageConfig.width,
+            height: imageConfig.height,
+            priceCredits: imageConfig.creditsPerGeneration,
+            priceLabel: imageConfig.priceLabel,
+          });
         return reply
           .status(202)
           .send(ok<CreateMessageImageData>({ attempt: toMessageImageAttempt(pending) }));
@@ -263,9 +306,17 @@ function readMessageRouteParams(params: unknown): { sessionId: string; messageId
   return { sessionId: value.sessionId, messageId: value.messageId };
 }
 
-function imageUnavailable(enabled: boolean): string | null {
-  if (!enabled) return '图片生成功能暂未开放';
-  if (!config.voice.draft.apiKey || !config.image.liaobotsAuth || !config.image.grokModel) {
+function imageUnavailable(
+  imageConfig: Awaited<ReturnType<typeof getImageRuntimeConfig>>
+): string | null {
+  if (!imageConfig.enabled) return '图片生成功能暂未开放';
+  if (
+    !imageConfig.textModel.apiKey ||
+    !imageConfig.textModel.url ||
+    !imageConfig.textModel.model ||
+    !config.image.liaobotsAuth ||
+    !config.image.grokModel
+  ) {
     return '图片生成功能暂不可用';
   }
   return null;

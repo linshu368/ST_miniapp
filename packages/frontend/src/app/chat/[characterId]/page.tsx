@@ -259,7 +259,10 @@ export default function SelfHostedChatPage() {
                   ? {
                       image: imageByMessage.get(message.id),
                       config: imageConfigQuery.data,
-                      describe: async () => (await describeImage.mutateAsync(message.id)).prompt_cn,
+                      describe: async () => {
+                        const result = await describeImage.mutateAsync(message.id);
+                        return { draftId: result.draft_id, prompt: result.prompt_cn };
+                      },
                       create: async (body) => {
                         await createImage.mutateAsync({ messageId: message.id, body });
                       },
