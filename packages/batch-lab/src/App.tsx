@@ -165,7 +165,7 @@ function CapabilityBanner({ context }: { context: BatchLabContext }) {
       showIcon
       message={
         <Space wrap>
-          <strong>权威环境</strong>
+          <strong>环境</strong>
           <Tag>Backend: {context.backend_environment}</Tag>
           <Tag color={context.source_environment === 'production' ? 'red' : 'blue'}>
             样本来源: {context.source_environment}
@@ -421,7 +421,7 @@ function ExperimentsPage({
           </Typography.Text>
         </div>
         <Button loading={workerMutation.isPending} onClick={() => workerMutation.mutate()}>
-          Worker run-once
+          执行任务
         </Button>
       </div>
       <Table
