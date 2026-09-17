@@ -12,18 +12,18 @@
 
 ## 2. 产品口径到工程约束
 
-| 产品口径             | 工程落点                                                                                                          |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| 只在最后完整回复显示 | 后端每次 description/create 均校验 ownership、assistant、最新 turn/revision、status=completed；前端只做同口径展示 |
+| 产品口径             | 工程落点                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 只在最后完整回复显示 | 后端每次 description/create 均校验 ownership、assistant、最新 turn/revision、status=completed；前端只做同口径展示      |
 | 默认先写稿再出图     | description 用分镜师 prompt + 角色信息 + 最近上下文调用 DeepSeek 生成 1~200 字中文短文；确认后以该中文短文创建 attempt |
-| 用户改什么就画什么   | create 保存 trim 后中文原文快照；自定义路径不再调用分镜写稿，只做校验/安全审核，不润色、不截断                    |
-| Grok 前内部翻译      | 默认/自定义两路调用 Grok 前都用 DeepSeek 直译英文；英文 prompt 不展示给用户，不替换中文主文本                     |
-| 文本限制 200 字      | 对齐语音 300 字限制的处理模式：shared 常量 + 前端提示/禁用 + 后端受理和送模型前权威校验                           |
-| 成功才扣费           | Storage 可读后调用原子 settlement RPC；预检只改善体验，不构成扣款                                                 |
-| 失败不消耗           | failed/failed_unknown 不调用 settlement；已上传但结算失败则补偿删除                                               |
-| 图片挂在该回复下     | attempt 外键绑定具体 `chat_history.id`，不只绑定 turn/session                                                     |
-| 每次重新消耗         | 每次确认创建新 attempt；`attempt.id` 是独立 charge key                                                            |
-| 离开后回来可见       | 会话 images query + DB 持久任务；前端仅 pending 时轮询                                                            |
+| 用户改什么就画什么   | create 保存 trim 后中文原文快照；自定义路径不再调用分镜写稿，只做校验/安全审核，不润色、不截断                         |
+| Grok 前内部翻译      | 默认/自定义两路调用 Grok 前都用 DeepSeek 直译英文；英文 prompt 不展示给用户，不替换中文主文本                          |
+| 文本限制 200 字      | 对齐语音 300 字限制的处理模式：shared 常量 + 前端提示/禁用 + 后端受理和送模型前权威校验                                |
+| 成功才扣费           | Storage 可读后调用原子 settlement RPC；预检只改善体验，不构成扣款                                                      |
+| 失败不消耗           | failed/failed_unknown 不调用 settlement；已上传但结算失败则补偿删除                                                    |
+| 图片挂在该回复下     | attempt 外键绑定具体 `chat_history.id`，不只绑定 turn/session                                                          |
+| 每次重新消耗         | 每次确认创建新 attempt；`attempt.id` 是独立 charge key                                                                 |
+| 离开后回来可见       | 会话 images query + DB 持久任务；前端仅 pending 时轮询                                                                 |
 
 ## 3. 现状与复用调研
 
@@ -108,12 +108,12 @@ interface MessageImage {
 
 公开 response 不返回 `storage_path`、provider 原始响应、英文 prompt、Grok 原始 URL、lease 或内部重试字段。是否返回中文短文摘要需按 UI 必要性评审；默认不在会话批量查询里返回完整 `prompt_cn`。建议接口：
 
-| Method / Path                                 | Request                     | Response / 语义                                     |
-| --------------------------------------------- | --------------------------- | --------------------------------------------------- |
-| `GET /api/v1/image/config`                    | -                           | enabled、价格/标签、prompt 上限、安全提示、展示尺寸 |
-| `GET /api/v1/conversations/:sessionId/images` | -                           | 会话内按 message 聚合的 current + latest attempt    |
-| `POST .../:messageId/image-description`       | 可选空 body                 | 默认路径分镜写稿，返回 `{ description }` 中文短文；同步等待，明确超时，不扣费 |
-| `POST .../:messageId/images`                  | `{ prompt_cn, prompt_source }` | `202 { image }`；pending attempt；自定义路径不再分镜写稿，后台仍会翻译后生图 |
+| Method / Path                                 | Request                        | Response / 语义                                                               |
+| --------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------- |
+| `GET /api/v1/image/config`                    | -                              | enabled、价格/标签、prompt 上限、安全提示、展示尺寸                           |
+| `GET /api/v1/conversations/:sessionId/images` | -                              | 会话内按 message 聚合的 current + latest attempt                              |
+| `POST .../:messageId/image-description`       | 可选空 body                    | 默认路径分镜写稿，返回 `{ description }` 中文短文；同步等待，明确超时，不扣费 |
+| `POST .../:messageId/images`                  | `{ prompt_cn, prompt_source }` | `202 { image }`；pending attempt；自定义路径不再分镜写稿，后台仍会翻译后生图  |
 
 错误码至少区分：`image_unavailable`、`image_description_failed`、`image_prompt_invalid`、`image_content_rejected`、`image_translation_failed`、`image_generation_failed`、`image_generation_unknown`、`image_storage_failed`、`image_insufficient_balance`、`image_already_pending`、`image_message_not_eligible`、`image_character_style_missing`。
 
@@ -171,25 +171,25 @@ interface MessageImage {
 
 建议 managed keys：
 
-| Key                            | 初始建议             | 说明                           |
-| ------------------------------ | -------------------- | ------------------------------ |
-| `image_generation_enabled`     | `false`              | 发布总开关                     |
-| `image_generation_credits`     | `12`                 | 单次成功扣费                   |
-| `image_price_label`            | `12 星尘`            | 前端展示，仍与数值做一致性校验 |
-| `image_default_art_style`      | 写实风格             | 无前端风格选择时给分镜师 prompt |
-| `image_width` / `image_height` | `1024` / `1536`      | 初版固定竖图                   |
-| `image_max_prompt_chars`       | `200`                | shared/backend 权威上限        |
-| `image_max_output_bytes`       | 工程压测后定         | 下载/上传容量闸门              |
-| `image_prompt_policy`          | 健康向模板           | 自动描述与出图安全边界         |
+| Key                            | 初始建议        | 说明                            |
+| ------------------------------ | --------------- | ------------------------------- |
+| `image_generation_enabled`     | `false`         | 发布总开关                      |
+| `image_generation_credits`     | `12`            | 单次成功扣费                    |
+| `image_price_label`            | `12 星尘`       | 前端展示，仍与数值做一致性校验  |
+| `image_default_art_style`      | 写实风格        | 无前端风格选择时给分镜师 prompt |
+| `image_width` / `image_height` | `1024` / `1536` | 初版固定竖图                    |
+| `image_max_prompt_chars`       | `200`           | shared/backend 权威上限         |
+| `image_max_output_bytes`       | 工程压测后定    | 下载/上传容量闸门               |
+| `image_prompt_policy`          | 健康向模板      | 自动描述与出图安全边界          |
 
 启动配置：
 
-| Env | 说明 |
-| --- | --- |
+| Env                                                    | 说明                                           |
+| ------------------------------------------------------ | ---------------------------------------------- |
 | `DEEPSEEK_API_KEY` / `DEEPSEEK_URL` / `DEEPSEEK_MODEL` | 复用语音写稿同源配置，供图片分镜写稿与翻译使用 |
-| `LIAOBOTS_AUTH` | Liaobots 鉴权 secret，只在 backend 使用 |
-| `LIAOBOTS_BASE` | Liaobots base URL |
-| `GROK_MODEL` | Grok 生图模型名 |
+| `LIAOBOTS_AUTH`                                        | Liaobots 鉴权 secret，只在 backend 使用        |
+| `LIAOBOTS_BASE`                                        | Liaobots base URL                              |
+| `GROK_MODEL`                                           | Grok 生图模型名                                |
 
 配置解析必须有安全降级：缺失/损坏时功能 disabled，而不是使用可能错误价格、模型或 endpoint 继续受理。价格和配置快照写入 attempt，运行中改价不影响已受理任务。
 
@@ -246,17 +246,17 @@ interface MessageImage {
 
 用户提供图 1~9 是前端验收依据。实现可按现有聊天页 token 调整圆角、字号和间距，但不得改变状态层级、入口位置、主次按钮职责和图片展示位置。
 
-| 图 | 状态 | 交互要求 |
-| --- | --- | --- |
-| 图 1 | 入口 | “看看TA”出现在最后完整 assistant 回复的操作行，位于“生成语音”左侧；历史、开场白、streaming/中断回复不展示 |
-| 图 2 | 写稿 loading | 点击入口立即打开底部 Sheet，聊天背景压暗；显示“正在看看 TA 此刻的样子”、说明文案和加载动效；不可重复提交 |
-| 图 3 | 写稿完成确认 | 展示“TA 此刻的样子”、描述卡片、主按钮“确认 生成图片 · {price_label}”、次按钮“我来改改”和“出图失败不消耗” |
-| 图 4 | 自定义编辑 | 标题“改成你想要的样子”；输入框带入原描述；显示当前字数与上限 200；主按钮“按我写的生成图片 · {price_label}”；提交后不再写稿 |
-| 图 5 | 出图 loading | 展示“正在出图”、大约耗时、进度/等待视觉、本次消耗和失败不消耗；主按钮置灰“生成中...” |
-| 图 6 | 消息内 ready | 图片位于该 assistant 回复下方、语音上方；卡片右下角放大按钮；下方展示费用和“再点一次「看看TA」可换一张”提示 |
-| 图 7 | 大图预览 | 点击放大按钮打开沉浸预览；顶部有状态胶囊和关闭；底部提示长按保存到相册；支持关闭、焦点恢复、safe area |
-| 图 8 | 出图失败 | Sheet 展示失败标签、标题、原因；主按钮按原中文短文重试并显示价格，次按钮进入自定义编辑 |
-| 图 9 | 余额不足 | Sheet 展示“星尘不够”、required/available；主按钮“去充值”复用现有充值流程，次按钮关闭且不创建 attempt |
+| 图   | 状态         | 交互要求                                                                                                                   |
+| ---- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| 图 1 | 入口         | “看看TA”出现在最后完整 assistant 回复的操作行，位于“生成语音”左侧；历史、开场白、streaming/中断回复不展示                  |
+| 图 2 | 写稿 loading | 点击入口立即打开底部 Sheet，聊天背景压暗；显示“正在看看 TA 此刻的样子”、说明文案和加载动效；不可重复提交                   |
+| 图 3 | 写稿完成确认 | 展示“TA 此刻的样子”、描述卡片、主按钮“确认 生成图片 · {price_label}”、次按钮“我来改改”和“出图失败不消耗”                   |
+| 图 4 | 自定义编辑   | 标题“改成你想要的样子”；输入框带入原描述；显示当前字数与上限 200；主按钮“按我写的生成图片 · {price_label}”；提交后不再写稿 |
+| 图 5 | 出图 loading | 展示“正在出图”、大约耗时、进度/等待视觉、本次消耗和失败不消耗；主按钮置灰“生成中...”                                       |
+| 图 6 | 消息内 ready | 图片位于该 assistant 回复下方、语音上方；卡片右下角放大按钮；下方展示费用和“再点一次「看看TA」可换一张”提示                |
+| 图 7 | 大图预览     | 点击放大按钮打开沉浸预览；顶部有状态胶囊和关闭；底部提示长按保存到相册；支持关闭、焦点恢复、safe area                      |
+| 图 8 | 出图失败     | Sheet 展示失败标签、标题、原因；主按钮按原中文短文重试并显示价格，次按钮进入自定义编辑                                     |
+| 图 9 | 余额不足     | Sheet 展示“星尘不够”、required/available；主按钮“去充值”复用现有充值流程，次按钮关闭且不创建 attempt                       |
 
 图 6 ready 展示由会话 images query 收敛，不要求 Sheet 等到 ready 后再变成成功页。用户离开/刷新后进入会话，应通过结果卡恢复 pending、failed 或 ready。
 
@@ -280,18 +280,18 @@ interface MessageImage {
 
 ## 11. 可靠性评估
 
-| 项     | 设计                                                                                         |
-| ------ | -------------------------------------------------------------------------------------------- |
+| 项     | 设计                                                                                          |
+| ------ | --------------------------------------------------------------------------------------------- |
 | 超时   | 分镜写稿、翻译、Grok provider、下载、Storage、DB 各有 timeout；全链路总 deadline 不被重试重置 |
 | 重试   | 分镜/翻译非法结构最多一次；Grok 明确失败/模糊超时不自动重投；上传与 settlement 可安全有限重试 |
-| 幂等   | active partial unique、claim SKIP LOCKED、attempt charge key、settlement dedup               |
-| 并发   | DB 约束/RPC 为真相；前端 disabled 和单进程 concurrency 只做流控                              |
-| 事务   | 钱包、ledger、charge、ready/current 同事务；Storage 使用显式补偿                             |
-| 降级   | 配置/key 异常关闭新受理；描述失败不影响聊天/语音；旧成功图在新 attempt 失败时保留            |
-| 限流   | runner 有界并发；Liaobots/Grok 429 记录并暂停新 claim 的短退避，不无限堆并发                 |
-| 容量   | 单张/固定尺寸/输出字节上限；DB 不存二进制；查询只返回每 message 聚合状态                     |
-| 可观测 | 阶段耗时、状态计数、错误码、provider request id、queue age、settlement/orphan 不一致         |
-| 恢复   | provider 前可重领；provider 后模糊任务收口 unknown；Storage/settlement 可重放；只读对账兜底  |
+| 幂等   | active partial unique、claim SKIP LOCKED、attempt charge key、settlement dedup                |
+| 并发   | DB 约束/RPC 为真相；前端 disabled 和单进程 concurrency 只做流控                               |
+| 事务   | 钱包、ledger、charge、ready/current 同事务；Storage 使用显式补偿                              |
+| 降级   | 配置/key 异常关闭新受理；描述失败不影响聊天/语音；旧成功图在新 attempt 失败时保留             |
+| 限流   | runner 有界并发；Liaobots/Grok 429 记录并暂停新 claim 的短退避，不无限堆并发                  |
+| 容量   | 单张/固定尺寸/输出字节上限；DB 不存二进制；查询只返回每 message 聚合状态                      |
+| 可观测 | 阶段耗时、状态计数、错误码、provider request id、queue age、settlement/orphan 不一致          |
+| 恢复   | provider 前可重领；provider 后模糊任务收口 unknown；Storage/settlement 可重放；只读对账兜底   |
 
 ## 12. 日志与隐私
 
