@@ -164,7 +164,7 @@ export async function draftImageDescription(input: {
     `【最近对话上下文】：\n${formatRecentMessages(input.context, input.turn)}`,
   ].join('\n\n');
   // 审计写入是调用上游的前置提交点；失败时不得产生无记录的模型请求。
-  await input.persistUserPrompt(userPrompt);
+  await input.persistUserPrompt(`${DESCRIPTION_SYSTEM_PROMPT}\n\n${userPrompt}`);
   const text = normalizePromptText(
     await callDeepSeek(
       DESCRIPTION_SYSTEM_PROMPT,
