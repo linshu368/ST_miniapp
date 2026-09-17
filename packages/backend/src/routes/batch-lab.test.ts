@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockedConfig = vi.hoisted(() => ({
+  nodeEnv: 'test',
   batchLab: {
     enabled: false,
     url: '',
@@ -72,6 +73,7 @@ import { BatchLabRepositoryError } from '../infrastructure/repositories/BatchLab
 
 describe('Batch Lab routes', () => {
   beforeEach(() => {
+    mockedConfig.nodeEnv = 'test';
     mockedConfig.batchLab.enabled = false;
     mockedConfig.batchLab.url = '';
     mockedConfig.batchLab.source = { configured: false, reason: 'not configured' };
@@ -154,6 +156,28 @@ describe('Batch Lab routes', () => {
       error: { code: 'BATCH_LAB_SOURCE_UNAVAILABLE' },
     });
     expect(response.body).not.toContain('connection failed');
+    await app.close();
+  });
+
+  it('returns context with disabled capabilities for a development source probe failure', async () => {
+    mockedConfig.nodeEnv = 'development';
+    mockedConfig.batchLab.enabled = true;
+    mockedConfig.batchLab.url = 'https://batch-lab.example.com';
+    mockedConfig.batchLab.source = { configured: true, reason: '' };
+    verifyBatchLabSourceConnection.mockRejectedValue(new Error('connection failed'));
+    const app = Fastify({ logger: false });
+    await app.register(batchLabRoutes);
+    const response = await app.inject({ method: 'GET', url: '/api/batch-lab/context' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      success: true,
+      data: {
+        backend_environment: 'test',
+        source_environment: 'test',
+        capabilities: { sample_preview: false, experiment_execution: false },
+      },
+    });
+    mockedConfig.nodeEnv = 'test';
     await app.close();
   });
 

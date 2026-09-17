@@ -53,6 +53,16 @@ export default async function batchLabRoutes(app: FastifyInstance) {
       await verifyBatchLabSourceConnection();
     } catch (err) {
       request.log.error({ err }, 'Batch Lab source connection verification failed');
+      if (config.nodeEnv === 'development') {
+        return ok<BatchLabContext>({
+          backend_environment: config.database.environment,
+          source_environment: config.batchLab.sourceEnvironment,
+          capabilities: {
+            sample_preview: false,
+            experiment_execution: false,
+          },
+        });
+      }
       return reply
         .status(503)
         .send(fail('BATCH_LAB_SOURCE_UNAVAILABLE', 'Batch Lab source database is unavailable'));
