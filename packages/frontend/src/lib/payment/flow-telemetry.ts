@@ -10,6 +10,8 @@ import type {
 
 import { getReplayLifecycle, type ReplayEventDraft } from '@/lib/telemetry';
 import { getPostHogAdapter } from '@/lib/telemetry/adapter';
+import { getRawInitData } from '@/lib/telegram/auth';
+import { parseTelegramUser } from '@/lib/telegram/user';
 
 import {
   clearExternalPaymentPending,
@@ -41,6 +43,17 @@ function omitUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(entries) as T;
 }
 
+function currentTelegramUserId(): string | null {
+  const initDataUserId = parseTelegramUser(getRawInitData()).id;
+  return initDataUserId === undefined
+    ? (getPostHogAdapter().getDistinctId() ?? null)
+    : String(initDataUserId);
+}
+
+function pendingBelongsToCurrentUser(pending: ExternalPaymentPending): boolean {
+  return !pending.telegramUserId || currentTelegramUserId() === pending.telegramUserId;
+}
+
 export function resetPaymentFlowTelemetryForTests(): void {
   statusObservedKeys.clear();
   viewedRechargeKeys.clear();
@@ -69,6 +82,7 @@ export function hasActiveReplayContext(): boolean {
   if (!snapshot.replayContextId) return false;
   return (
     snapshot.state === 'chat' ||
+    snapshot.state === 'recharge' ||
     snapshot.state === 'paywall_followup' ||
     snapshot.state === 'external_payment_pending'
   );
@@ -81,9 +95,9 @@ function rememberAction(action: PaymentFlowLastObservedAction, orderId?: string)
   });
 }
 
-function captureDraft(draft: ReplayEventDraft): void {
-  if (!hasActiveReplayContext()) return;
-  getReplayLifecycle().capture(draft);
+function captureDraft(draft: ReplayEventDraft): boolean {
+  if (!hasActiveReplayContext()) return false;
+  return getReplayLifecycle().capture(draft);
 }
 
 function paywallChatFields(): {
@@ -112,43 +126,47 @@ export function captureRechargeViewed(): void {
   const snapshot = getReplayLifecycle().getSnapshot();
   const key = snapshot.replayContextId ?? '';
   if (!key || viewedRechargeKeys.has(key)) return;
-  viewedRechargeKeys.add(key);
-  captureDraft({ event: 'recharge_viewed' });
-  rememberAction('recharge_viewed');
+  if (captureDraft({ event: 'recharge_viewed' })) {
+    viewedRechargeKeys.add(key);
+    rememberAction('recharge_viewed');
+  }
 }
 
 /**
- * 个人中心「星尘充值」主动点击。不能走 captureDraft：那条路径没有 Replay context 会静默丢弃。
- * whenReady 已有 SDK load timeout；这里只 fire-and-forget，不得挡住 Link 跳转。
+ * 点击时同步保留充值 context；SDK 的异步加载与录制不能挡住 Link 跳转。
  */
 export function captureRechargeEntryClicked(input: { telegramUserId?: string | null } = {}): void {
   const occurredAt = new Date().toISOString();
-  const replayContextId = hasActiveReplayContext()
-    ? (getReplayLifecycle().getSnapshot().replayContextId ?? undefined)
-    : undefined;
   const clickedUserId = input.telegramUserId?.trim() || undefined;
+  getReplayLifecycle().startRechargeReplay(clickedUserId);
+  captureDraft({
+    event: 'recharge_entry_clicked',
+    occurred_at: occurredAt,
+    entry_source: 'profile_balance',
+  });
+}
 
-  void getPostHogAdapter()
-    .whenReady()
-    .then((ready) => {
-      if (!ready) return;
-      const telegramUserId = clickedUserId || getPostHogAdapter().getDistinctId();
-      if (!telegramUserId) return;
-      if (!replayContextId) {
-        // 页面重载可能跳过 endReplay；发送前清掉 SDK 保留的旧聊天会话属性。
-        getPostHogAdapter().clearReplaySessionProperties();
-      }
-      getPostHogAdapter().capture(
-        omitUndefined({
-          event: 'recharge_entry_clicked' as const,
-          telegram_user_id: telegramUserId,
-          occurred_at: occurredAt,
-          entry_source: 'profile_balance' as const,
-          replay_context_id: replayContextId,
-        })
-      );
-    })
-    .catch(() => undefined);
+/** 只从已打开且未过期的支付 pending 恢复；调用方在录屏前先清理旧 pay_url query。 */
+export function restorePaymentReplayFromPending(orderId?: string | null): boolean {
+  const pending = readPendingReturn(Date.now());
+  if (!pending?.replayContextId || (orderId && orderId !== pending.orderId)) return false;
+  if (!pendingBelongsToCurrentUser(pending)) return false;
+  if (!hasActiveReplayContext()) {
+    getReplayLifecycle().restorePaymentReplay(pending.replayContextId);
+  }
+  return getReplayLifecycle().getSnapshot().replayContextId === pending.replayContextId;
+}
+
+export function resumePaymentReplayFromPending(
+  orderId?: string | null,
+  explicitReturn = false
+): boolean {
+  const pending = readPendingReturn(Date.now());
+  if (!pending || (!pending.leftMiniApp && !explicitReturn)) return false;
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false;
+  if (!restorePaymentReplayFromPending(orderId)) return false;
+  getReplayLifecycle().resumePaymentReplay();
+  return true;
 }
 
 export function capturePaywallDismissed(): void {
@@ -246,15 +264,20 @@ export function markExternalPaymentOpened(input: MarkExternalPaymentOpenedInput)
     orderId,
     paymentType: input.paymentType,
     replayContextId: getReplayLifecycle().getSnapshot().replayContextId,
+    telegramUserId: currentTelegramUserId(),
     openedAt: input.now ?? Date.now(),
+    leftMiniApp: false,
   };
   leftForExternalPayment = false;
   writeExternalPaymentPending(memoryPending);
 }
 
 export function noteExternalPaymentBackgrounded(now: number = Date.now()): void {
-  if (!readPendingReturn(now)) return;
+  const pending = readPendingReturn(now);
+  if (!pending) return;
   leftForExternalPayment = true;
+  memoryPending = { ...pending, leftMiniApp: true };
+  writeExternalPaymentPending(memoryPending);
 }
 
 export type ObservePaymentReturnInput = {
@@ -272,18 +295,23 @@ export type ObservePaymentReturnInput = {
 export function observePaymentReturn(input: ObservePaymentReturnInput): boolean {
   const now = input.now ?? Date.now();
   const pending = readPendingReturn(now);
+  if (pending && !pendingBelongsToCurrentUser(pending)) return false;
   const explicit = input.source === 'start_param' || input.source === 'query_param';
   if (!explicit) {
-    if (!pending || !leftForExternalPayment) return false;
+    if (!pending || (!leftForExternalPayment && !pending.leftMiniApp)) return false;
   }
 
   const orderId = resolveReturnOrderId(input.orderId, pending);
   if (hasObservedReturn(orderId)) return false;
+  if (pending && (orderId === null || pending.orderId === orderId)) {
+    restorePaymentReplayFromPending(pending.orderId);
+  }
   if (!hasActiveReplayContext()) return false;
 
   const route = safePaymentReturnRoute(input.route ?? currentPathname());
   const matchingPending =
     pending && (orderId === null || pending.orderId === orderId) ? pending : null;
+  if (matchingPending) resumePaymentReplayFromPending(matchingPending.orderId, explicit);
   rememberObservedReturn(orderId);
   captureDraft(
     omitUndefined({
@@ -369,20 +397,23 @@ export function safePaymentReturnRoute(raw: string): string {
 export function capturePaymentOrderStatusObserved(order: PaymentOrder): void {
   const key = `${order.id}:${order.status}:${String(order.settled_by)}`;
   if (statusObservedKeys.has(key)) return;
-  statusObservedKeys.add(key);
   const elapsed = Number.isFinite(Date.parse(order.created_at))
     ? Math.max(0, Date.now() - Date.parse(order.created_at))
     : undefined;
-  captureDraft(
-    omitUndefined({
-      event: 'payment_order_status_observed' as const,
-      order_id: order.id,
-      order_status: order.status,
-      settled_by: order.settled_by,
-      elapsed_ms: elapsed,
-    })
-  );
-  rememberAction('payment_order_status_observed', order.id);
+  if (
+    captureDraft(
+      omitUndefined({
+        event: 'payment_order_status_observed' as const,
+        order_id: order.id,
+        order_status: order.status,
+        settled_by: order.settled_by,
+        elapsed_ms: elapsed,
+      })
+    )
+  ) {
+    statusObservedKeys.add(key);
+    rememberAction('payment_order_status_observed', order.id);
+  }
 }
 
 export function capturePaymentFlowLeftObserved(order: PaymentOrder): void {

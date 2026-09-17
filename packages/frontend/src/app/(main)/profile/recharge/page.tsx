@@ -45,6 +45,7 @@ import {
   capturePaywallInviteSelected,
   capturePaywallRechargeSelected,
   captureRechargeViewed,
+  resumePaymentReplayFromPending,
   markExternalPaymentOpened,
   retainPaywallFollowupIfActive,
 } from '@/lib/payment/flow-telemetry';
@@ -84,6 +85,7 @@ function RechargePageContent() {
 
   useEffect(() => {
     retainPaywallFollowupIfActive();
+    resumePaymentReplayFromPending();
     captureRechargeViewed();
   }, []);
 
@@ -116,7 +118,6 @@ function RechargePageContent() {
 
   const openCreatedPayment = useCallback(
     async (result: CreatePaymentOrderData) => {
-      await getReplayLifecycle().enterExternalPaymentPending();
       const openFailureKind = persistPaymentOpen({
         orderId: result.order.id,
         payUrl: result.pay_url,
@@ -130,6 +131,7 @@ function RechargePageContent() {
       });
       // 必须在 router.push 之前：拉起若退化成本页导航，会被随后的客户端路由抢跑丢弃。
       if (openFailureKind !== 'invalid_url') {
+        await getReplayLifecycle().enterExternalPaymentPending();
         markExternalPaymentOpened({
           orderId: result.order.id,
           paymentType,

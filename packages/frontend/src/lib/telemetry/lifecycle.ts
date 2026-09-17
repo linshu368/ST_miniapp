@@ -12,6 +12,7 @@ import { getPostHogAdapter, type PostHogAdapter } from './adapter';
 export type ReplayLifecycleState =
   | 'idle'
   | 'chat'
+  | 'recharge'
   | 'paywall_followup'
   | 'external_payment_pending'
   | 'ended';
@@ -113,6 +114,12 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
   const listeners = new Set<() => void>();
   let snapshot: ReplayLifecycleSnapshot = INITIAL_SNAPSHOT;
   let identity: ChatIdentity | null = null;
+  let rechargeUserId: string | null = null;
+  let rechargeStarting = false;
+  let rechargeStartGeneration = 0;
+  let rechargeResumeMode = false;
+  let rechargeExitRequested = false;
+  const pendingRechargeEvents: ReplayEventDraft[] = [];
   let userTags: UserTags = {};
   let queue: Promise<void> = Promise.resolve();
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -141,7 +148,7 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
 
   const pageHideListener: EventListener = () => {
     if (isPaywallContinuationActive()) return;
-    if (snapshot.state !== 'chat') return;
+    if (snapshot.state !== 'chat' && snapshot.state !== 'recharge') return;
     void endReplay('pagehide');
   };
 
@@ -180,7 +187,11 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
 
   function idleTimerAllowed(): boolean {
     if (snapshot.streaming) return false;
-    return snapshot.state === 'chat' || snapshot.state === 'paywall_followup';
+    return (
+      snapshot.state === 'chat' ||
+      snapshot.state === 'recharge' ||
+      snapshot.state === 'paywall_followup'
+    );
   }
 
   function armIdleTimer(): void {
@@ -204,7 +215,8 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
   }
 
   function sessionProperties(): Record<string, string | number | boolean | null> {
-    if (!identity || !snapshot.replayContextId) return {};
+    if (!snapshot.replayContextId) return {};
+    if (!identity) return { replay_context_id: snapshot.replayContextId };
     return omitUndefined({
       replay_context_id: snapshot.replayContextId,
       character_id: identity.characterId,
@@ -251,13 +263,19 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     if (!contextId) return;
     if (
       snapshot.state !== 'chat' &&
+      snapshot.state !== 'recharge' &&
       snapshot.state !== 'paywall_followup' &&
       snapshot.state !== 'external_payment_pending'
     ) {
       return;
     }
+    if (snapshot.state === 'external_payment_pending' || rechargeStarting) return;
     if (!adapter().isReady() || adapter().isRecording()) return;
-    adapter().startNewRecording(contextId);
+    if (snapshot.state === 'recharge' && rechargeResumeMode) {
+      adapter().resumeRecording(contextId);
+    } else {
+      adapter().startNewRecording(contextId);
+    }
     adapter().registerSessionProperties(sessionProperties());
     if (snapshot.state === 'chat') captureStarted();
   }
@@ -294,14 +312,26 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
       if (snapshot.state === 'chat' || snapshot.state === 'paywall_followup') {
         captureEnded('route_change');
         adapter().stopRecording(snapshot.replayContextId ?? undefined);
+      } else if (snapshot.state === 'recharge') {
+        adapter().stopRecording(snapshot.replayContextId ?? undefined);
       } else if (snapshot.state === 'external_payment_pending') {
         adapter().stopRecording(snapshot.replayContextId ?? undefined);
       }
 
-      if (switchingAway) {
+      if (
+        switchingAway ||
+        (!identity && snapshot.state === 'external_payment_pending') ||
+        snapshot.state === 'recharge'
+      ) {
         paywallHold = false;
       }
       const replayContextId = makeId();
+      rechargeUserId = null;
+      pendingRechargeEvents.length = 0;
+      rechargeStarting = false;
+      rechargeStartGeneration += 1;
+      rechargeResumeMode = false;
+      rechargeExitRequested = false;
       identity = {
         telegramUserId: telegramUserId ?? '',
         characterId: input.characterId,
@@ -325,6 +355,110 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     return snapshot.replayContextId;
   }
 
+  /** 点击处理器不能等待 SDK：先同步保留 context，再异步启动并发送排队的入口事件。 */
+  function startRechargeReplay(telegramUserId?: string | null): string {
+    if (snapshot.replayContextId && (identity || snapshot.state === 'recharge')) {
+      return snapshot.replayContextId;
+    }
+    if (snapshot.replayContextId) adapter().stopRecording(snapshot.replayContextId);
+    const contextId = makeId();
+    identity = null;
+    rechargeUserId = telegramUserId?.trim() || null;
+    userTags = {};
+    paywallHold = false;
+    rechargeStarting = true;
+    const generation = ++rechargeStartGeneration;
+    rechargeResumeMode = false;
+    rechargeExitRequested = false;
+    adapter().clearReplaySessionProperties();
+    setState('recharge', contextId);
+    armIdleTimer();
+    void enqueue(async () => {
+      const ready = await adapter().whenReady();
+      if (generation !== rechargeStartGeneration) {
+        if (
+          ready &&
+          snapshot.replayContextId === contextId &&
+          snapshot.state === 'external_payment_pending'
+        ) {
+          rechargeUserId = rechargeUserId || adapter().getDistinctId() || null;
+          adapter().clearReplaySessionProperties();
+          adapter().registerSessionProperties(sessionProperties());
+          rechargeStarting = false;
+          pendingRechargeEvents.splice(0).forEach((draft) => capture(draft));
+        }
+        return;
+      }
+      if (
+        snapshot.replayContextId !== contextId ||
+        snapshot.state !== 'recharge' ||
+        rechargeExitRequested
+      )
+        return;
+      rechargeUserId = rechargeUserId || adapter().getDistinctId() || null;
+      if (ready) {
+        adapter().clearReplaySessionProperties();
+        adapter().startNewRecording(contextId);
+        adapter().registerSessionProperties(sessionProperties());
+      }
+      rechargeStarting = false;
+      const drafts = pendingRechargeEvents.splice(0);
+      if (ready) drafts.forEach((draft) => capture(draft));
+    });
+    return contextId;
+  }
+
+  function restorePaymentReplay(contextId: string, telegramUserId?: string | null): void {
+    if (
+      snapshot.replayContextId ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(contextId)
+    )
+      return;
+    identity = null;
+    rechargeUserId = telegramUserId?.trim() || adapter().getDistinctId() || null;
+    rechargeResumeMode = true;
+    adapter().clearReplaySessionProperties();
+    setState('external_payment_pending', contextId);
+    // 新文档只恢复关联上下文；直到确认回到 MiniApp 才重新录制。
+  }
+
+  function resumePaymentReplay(): void {
+    if (snapshot.state !== 'external_payment_pending' || !snapshot.replayContextId) return;
+    const contextId = snapshot.replayContextId;
+    if (!identity) rechargeResumeMode = true;
+    paywallHold = Boolean(identity);
+    setState(identity ? 'paywall_followup' : 'recharge');
+    if (adapter().isReady()) {
+      if (!identity) adapter().clearReplaySessionProperties();
+      adapter().resumeRecording(contextId);
+      adapter().registerSessionProperties(sessionProperties());
+      rechargeStarting = false;
+      pendingRechargeEvents.splice(0).forEach((draft) => capture(draft));
+    } else {
+      rechargeStarting = true;
+      void enqueue(async () => {
+        const ready = await adapter().whenReady();
+        if (snapshot.replayContextId !== contextId || rechargeExitRequested) return;
+        if (
+          snapshot.state !== 'recharge' &&
+          snapshot.state !== 'paywall_followup' &&
+          snapshot.state !== 'chat'
+        )
+          return;
+        if (ready) {
+          rechargeUserId = rechargeUserId || adapter().getDistinctId() || null;
+          if (!identity) adapter().clearReplaySessionProperties();
+          adapter().resumeRecording(contextId);
+          adapter().registerSessionProperties(sessionProperties());
+        }
+        rechargeStarting = false;
+        const drafts = pendingRechargeEvents.splice(0);
+        if (ready) drafts.forEach((draft) => capture(draft));
+      });
+    }
+    armIdleTimer();
+  }
+
   function enterPaywallFollowup(): Promise<void> {
     paywallHold = true;
     if (snapshot.state === 'external_payment_pending') {
@@ -341,6 +475,7 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
   function enterExternalPaymentPending(): Promise<void> {
     if (
       snapshot.state !== 'chat' &&
+      snapshot.state !== 'recharge' &&
       snapshot.state !== 'paywall_followup' &&
       snapshot.state !== 'external_payment_pending'
     ) {
@@ -349,22 +484,36 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     paywallHold = true;
     setState('external_payment_pending');
     clearIdleTimer();
+    if (!identity && rechargeStarting) rechargeStartGeneration += 1;
+    adapter().stopRecording(snapshot.replayContextId ?? undefined);
     return Promise.resolve();
   }
 
   function reenterChatFromFollowup(): void {
+    if (!identity) return;
     if (snapshot.state !== 'paywall_followup' && snapshot.state !== 'external_payment_pending') {
       return;
     }
+    if (snapshot.state === 'external_payment_pending' && identity) resumePaymentReplay();
     paywallHold = false;
     setState('chat');
     armIdleTimer();
   }
 
   async function endReplay(reason: ReplayChatEndReason): Promise<void> {
+    if (
+      !identity &&
+      (snapshot.state === 'recharge' || snapshot.state === 'external_payment_pending')
+    ) {
+      rechargeExitRequested = true;
+    }
     await enqueue(() => {
       if (snapshot.state === 'idle' || snapshot.state === 'ended') return;
-      if ((reason === 'route_change' || reason === 'pagehide') && isPaywallContinuationActive()) {
+      if (
+        (reason === 'route_change' || reason === 'pagehide') &&
+        identity &&
+        isPaywallContinuationActive()
+      ) {
         return;
       }
       paywallHold = false;
@@ -375,6 +524,12 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
       // 结束事件已发出后再清理，避免个人中心主动充值误继承旧聊天 context。
       adapter().clearReplaySessionProperties();
       identity = null;
+      rechargeUserId = null;
+      pendingRechargeEvents.length = 0;
+      rechargeStarting = false;
+      rechargeStartGeneration += 1;
+      rechargeResumeMode = false;
+      rechargeExitRequested = false;
       userTags = {};
       snapshot = {
         state: 'ended',
@@ -406,6 +561,29 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     removeWindowListener('touchstart', activityListener);
   }
 
+  function capture(draft: ReplayEventDraft): boolean {
+    if (
+      !snapshot.replayContextId ||
+      (!identity && snapshot.state !== 'recharge' && snapshot.state !== 'external_payment_pending')
+    )
+      return false;
+    if (rechargeStarting) {
+      if (pendingRechargeEvents.length >= 32) return false;
+      pendingRechargeEvents.push(draft);
+      return true;
+    }
+    return adapter().capture(
+      omitUndefined({
+        ...draft,
+        telegram_user_id: identity?.telegramUserId || rechargeUserId || adapter().getDistinctId(),
+        replay_context_id: snapshot.replayContextId,
+        occurred_at: draft.occurred_at ?? now().toISOString(),
+        is_paid_user: draft.is_paid_user ?? userTags.is_paid_user,
+        total_chat_rounds: draft.total_chat_rounds ?? userTags.total_chat_rounds,
+      })
+    );
+  }
+
   return {
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
@@ -418,6 +596,12 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     },
     getState(): ReplayLifecycleState {
       return snapshot.state;
+    },
+    isStandaloneRecharge(): boolean {
+      return (
+        !identity &&
+        (snapshot.state === 'recharge' || snapshot.state === 'external_payment_pending')
+      );
     },
     isPaywallContinuationActive,
     refreshTelemetryReady(): void {
@@ -432,6 +616,9 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
     attachWindowListeners,
     detachWindowListeners,
     startChatReplay,
+    startRechargeReplay,
+    restorePaymentReplay,
+    resumePaymentReplay,
     enterPaywallFollowup,
     enterExternalPaymentPending,
     reenterChatFromFollowup,
@@ -482,19 +669,7 @@ export function createReplayLifecycle(deps: ReplayLifecycleDeps = {}) {
       contextFetchFailedFor = contextId;
       adapter().reportHealth('replay_sdk_init_failed', 'context_fetch_failed', contextId);
     },
-    capture(draft: ReplayEventDraft): void {
-      if (!identity || !snapshot.replayContextId) return;
-      adapter().capture(
-        omitUndefined({
-          ...draft,
-          telegram_user_id: identity.telegramUserId,
-          replay_context_id: snapshot.replayContextId,
-          occurred_at: draft.occurred_at ?? now().toISOString(),
-          is_paid_user: draft.is_paid_user ?? userTags.is_paid_user,
-          total_chat_rounds: draft.total_chat_rounds ?? userTags.total_chat_rounds,
-        })
-      );
-    },
+    capture,
   };
 }
 

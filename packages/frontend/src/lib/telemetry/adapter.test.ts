@@ -154,6 +154,21 @@ describe('PostHog adapter', () => {
     expect(client.identify).toHaveBeenCalledWith('123456789');
   });
 
+  it('resumes a payment recording without rotating $session_id', async () => {
+    const client = createClient();
+    const adapter = createPostHogAdapter({
+      env: { key: 'phc_test', host: 'https://us.i.posthog.com' },
+      isBrowser: () => true,
+      loadSdk: async () => ({ default: client }),
+    });
+    await adapter.init('123456789');
+    adapter.startNewRecording(replayContextId);
+    adapter.stopRecording(replayContextId);
+    expect(adapter.resumeRecording(replayContextId)).toBe(true);
+    expect(client.sessionManager?.resetSessionId).toHaveBeenCalledTimes(1);
+    expect(client.startSessionRecording).toHaveBeenCalledTimes(2);
+  });
+
   it('does not treat startSessionRecording() itself as proof that recording started', async () => {
     const client = createClient();
     client.startSessionRecording = vi.fn();

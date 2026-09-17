@@ -9,6 +9,7 @@ import {
 import { setReplaySessionStorageForTests } from './session-storage';
 
 const capture = vi.fn();
+const resumePaymentReplay = vi.fn();
 const getSnapshot = vi.fn(() => ({
   state: 'external_payment_pending' as const,
   replayContextId: '11111111-1111-4111-8111-111111111111',
@@ -20,6 +21,7 @@ vi.mock('@/lib/telemetry', () => ({
   getReplayLifecycle: () => ({
     capture,
     getSnapshot,
+    resumePaymentReplay,
     enterPaywallFollowup: vi.fn(),
   }),
 }));

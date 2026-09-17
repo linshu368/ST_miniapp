@@ -1,0 +1,34 @@
+{
+  "id": "recharge-entry-replay",
+  "name": "recharge-entry-replay",
+  "title": "主动充值入口回放及第三方支付边界",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-09-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev_posthog",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-15-user-behavior-replay",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.wallet-payment"
+      ]
+    }
+  }
+}
