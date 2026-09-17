@@ -534,7 +534,8 @@ export async function runBatchLabExperimentWorkerOnce(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal,
-      timeoutMs: 150_000,
+      // 一批最多执行 10 次生成，需覆盖串行上游调用的最坏耗时。
+      timeoutMs: 10 * 60_000,
     }
   );
   return response.data;

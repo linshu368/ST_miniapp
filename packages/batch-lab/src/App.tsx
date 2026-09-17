@@ -375,16 +375,36 @@ function ExperimentsPage({
     },
     onError: (error) => message.error(errorMessage(error)),
   });
+  const executeOneMutation = useMutation({
+    mutationFn: (experiment: BatchLabExperimentSummary) =>
+      runBatchLabExperimentWorkerOnce({
+        experiment_id: experiment.id,
+        source_environment: context.source_environment,
+        worker_id: `batch-lab-ui-${newIdempotencyKey()}`,
+        claim_limit: 1,
+      }),
+    onSuccess: async (result) => {
+      if (result.claimed_count === 0) {
+        message.info('当前没有可领取的任务，可能已有任务正在执行或等待前一轮完成');
+      } else {
+        message.success(
+          `单条执行完成：成功 ${result.completed_count}，失败 ${result.failed_count}`
+        );
+      }
+      await invalidateExperiments();
+    },
+    onError: (error) => message.error(errorMessage(error)),
+  });
   const executeAllMutation = useMutation({
     mutationFn: async (experiment: BatchLabExperimentSummary) => {
       const total = { claimed: 0, completed: 0, failed: 0 };
-      // 每次只领取有上限的一批，避免单请求无界运行；停止操作会在两批之间生效。
+      // 每批最多 10 条，降低单次请求耗时；停止操作会在两批之间生效。
       for (;;) {
         const result = await runBatchLabExperimentWorkerOnce({
           experiment_id: experiment.id,
           source_environment: context.source_environment,
           worker_id: `batch-lab-ui-${newIdempotencyKey()}`,
-          claim_limit: 20,
+          claim_limit: 10,
         });
         total.claimed += result.claimed_count;
         total.completed += result.completed_count;
@@ -490,6 +510,13 @@ function ExperimentsPage({
             onClick={() => startMutation.mutate(record)}
           >
             启动
+          </Button>
+          <Button
+            disabled={record.status !== 'queued' && record.status !== 'running'}
+            loading={executeOneMutation.isPending && executeOneMutation.variables?.id === record.id}
+            onClick={() => executeOneMutation.mutate(record)}
+          >
+            执行
           </Button>
           <Button
             disabled={record.status !== 'queued' && record.status !== 'running'}
