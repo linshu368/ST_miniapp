@@ -1,0 +1,38 @@
+{
+  "id": "image-generation-posthog-plan",
+  "name": "image-generation-posthog-plan",
+  "title": "图片生成 PostHog 接入规划",
+  "description": "规划图片生成功能接入 PostHog 的事件契约、Frontend/Backend 埋点节点、配置边界、可靠性和验证方案，复用现有支付与 replay telemetry 模式。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-09-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "shared.business.conversation-contracts"
+      ]
+    }
+  }
+}
