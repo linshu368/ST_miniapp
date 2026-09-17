@@ -5,8 +5,8 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-11-batch-lab-backend-execution/
-last_verified_at: 2026-09-16
+last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
+last_verified_at: 2026-09-17
 ---
 
 # 运行时、鉴权与数据访问基建
@@ -57,7 +57,7 @@ Backend routes、features、jobs 统一消费。Batch Lab 路由提供 context�
 
 ## 已知缺口与待核验项
 
-Batch Lab 真实来源 LOGIN/secret 验证、execution migration 执行和 worker 常驻调度需要 integration-spec 统筹；当前提供 run-once 内部入口和可复用 service。`pnpm lint:imports` 当前仍受仓库 ESLint 命令 `--rule '{}'` 解析问题影响。
+Batch Lab spec、Vercel Preview API base、CORS、发布顺序、停止条件和回滚剧本已收口到 `.trellis/spec/batch-lab/app/`；真实来源 LOGIN/secret 验证、production migration 执行和 worker 常驻调度仍需目标环境人工授权记录。`pnpm lint:imports` 当前仍受仓库 ESLint 命令 `--rule '{}'` 解析问题影响。
 
 ## 关联模块
 
@@ -66,3 +66,4 @@ Batch Lab 真实来源 LOGIN/secret 验证、execution migration 执行和 worke
 ## 变更记录
 
 - 2026-09-16：任务 `Batch Lab Backend 实验与生成执行`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-backend-execution/`）更新模块知识文档；commit：`1316d11e29cd120e61be456cb93f4795d489af9b`。
+- 2026-09-17：任务 `Batch Lab 集成验收、发布与 Spec 收口`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-integration-spec/`）收口 Batch Lab integration/spec、发布回滚、环境与剩余人工核验事实；提交前归档，见本任务后续 Git 提交。

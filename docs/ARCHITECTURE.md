@@ -22,8 +22,8 @@
 
 1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。
 2. **每条路由注册上方必须有 `@frontend-ready: true|false — 原因`**，半成品要写出带业务含义的原因。
-3. **应用包互不 import**：`frontend` / `backend` / `cs-platform` / `admin` 之间没有 import 关系，跨进程一律走 HTTP。根目录 `.eslintrc.json` 拦包名与相对路径；已退场包由 `pnpm lint:legacy` 拦截。
-4. **DB 类型不进前端**：前端与运营台只消费 `shared/api/*` 契约，不接触数据库行类型。
+3. **应用包互不 import**：`frontend` / `backend` / `cs-platform` / `admin` / `batch-lab` 之间没有 import 关系，跨进程一律走 HTTP。根目录 `.eslintrc.json` 拦包名与相对路径；已退场包由 `pnpm lint:legacy` 拦截。
+4. **DB 类型不进前端**：前端、运营台与内部 SPA 只消费 `shared/api/*` 契约，不接触数据库行类型。
 5. **前端不在组件里 fetch**：服务端数据统一走 `frontend/src/lib/api/` 的 React Query hooks；跨组件状态用 Zustand，局部状态用 `useState`。
 6. **生成与计费只有一个出口**：任何要调聊天 LLM 的路径都必须走 `backend/src/features/generation/`（**含实扣**：`settle.ts` 与 `sync-job.ts` 两条结算路径也都在这个模块里）。禁止在别处另起一套"转发 + 扣费 + 落库"，否则计费口径必然漂移。唯一的刻意例外是语音写稿（`features/voice/`）：不同供应商、非流式、抽取任务、按次计费，理由写在 `voice-draft.ts` 与 `voice/billing.ts` 头注释里。
    同类纪律还有三条，一并由 CI 的 legacy guard 拦（见 §7.5）：`experience.chat_history` 只由 `ConversationHistoryRepository` 读写；支付到账只由 `PaymentSettlement.settlePaidOrder` 入账；OpenRouter 用量统计只由 `generation/openrouter-metadata.ts` 读取。
@@ -111,12 +111,12 @@
 
 ### 3.1 契约层
 
-`shared` 是跨包唯一契约来源：`src/api/*` 的 **20 个 REST 契约文件**、`migrations/`（SQL 迁移）、纯工具与常量。所有应用包都消费它。
+`shared` 是跨包唯一契约来源：`src/api/*` 的 **21 个 REST/内部工具契约文件**、`migrations/`（SQL 迁移）、纯工具与常量。所有应用包都消费它。
 
-`shared/src/api/` 逐个文件：`envelope`（统一响应包络 `ok()` / `fail()`）、`characters`、`favorites`、**`conversations`**（对话链路契约，含 SSE 事件）、**`voice`**（语音消息契约）、`models`（只有 catalog 一种形状，旧 tiers 契约已删）、`settings`、`wallet`、`payment`（含 `PaymentSettlementSource`）、`wishes`、`notifications`、`support`、`cs-platform`、`growth`（仅入口归因）、`invite`（裂变邀请）、`community`（官方社群奖励）、`health`、`lobby-pinned-characters`、`lobby-ranking-params`、`word-count-tiers`。
+`shared/src/api/` 逐个文件：`envelope`（统一响应包络 `ok()` / `fail()`）、`characters`、`favorites`、**`conversations`**（对话链路契约，含 SSE 事件）、**`voice`**（语音消息契约）、`models`（只有 catalog 一种形状，旧 tiers 契约已删）、`settings`、`wallet`、`payment`（含 `PaymentSettlementSource`）、`wishes`、`notifications`、`support`、`cs-platform`、`batch-lab`（内部样本、实验、后处理、历史复用与 JSONL 导出契约）、`growth`（仅入口归因）、`invite`（裂变邀请）、`community`（官方社群奖励）、`health`、`lobby-pinned-characters`、`lobby-ranking-params`、`word-count-tiers`。
 
 > ST 时代的 `chats` / `st-session` / `simulation` 契约已随 ST 清理删除。曾计划的独立 `api-contract` 包不建 ❌，职责留在 `shared/api`。
-> `db-types` 包（Supabase schema 镜像）已随 ST 清理整包删除 ❌，当前 `packages/` 只有 5 个包。
+> `db-types` 包（Supabase schema 镜像）已随 ST 清理整包删除 ❌，当前 `packages/` 有 6 个包。
 
 ### 3.2 应用层
 
@@ -126,6 +126,7 @@
 | `backend`     | Fastify 5：对话 REST + SSE、prompt 引擎、生成与计费出口、语音生成、平台业务 REST、CS / 归因 / Bot webhook                                                                                                | 3001     | Railway（容器内 :8080） |
 | `admin`       | 运营后台：运营配置（17 个 managed key，含模型目录 / 平台规则 / 大厅置顶与排序参数 / 邀请规则与邀请中心）、角色卡、公告、发布历史、回访星尘赠送、邀请海报上传与邀请明细查询。Vite + React + AntD + Refine | 3003     | Vercel                  |
 | `cs-platform` | 内部运营平台：CS 回访工作台（画像簇 / Telegram 1V1 SOP / 特殊标记 / 等待状态 / 群发 / 导出）+ 站内客服。Vite + React + React Query                                                                       | 3002     | Vercel                  |
+| `batch-lab`   | 内部预设批量调试平台：SQL 样本 preview/freeze、A/B 实验执行、后处理、结果复用、备注和 JSONL 导出。Vite + React + React Query + Ant Design                                                                | 3004     | Vercel                  |
 
 ### 3.3 依赖方向（强制）
 
@@ -138,6 +139,7 @@
   backend      ──► shared, prisma-client, supabase-js
   admin        ──► shared
   cs-platform  ──► shared
+  batch-lab    ──► shared
 
 禁止：
   ✗ 应用包 → 应用包（跨进程一律 HTTP）
@@ -347,6 +349,7 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 | `notifications.ts`        | `/api/notifications` · `/unread-count` · `/read`                                                                                                                                 | `X-Init-Data`             |
 | `support.ts`              | `/api/support/conversation` · `/messages` · `/unread` · `/read`                                                                                                                  | `X-Init-Data`             |
 | `cs-platform.ts`          | `/api/cs/*`：画像簇 CRUD/refresh、簇内用户、回访 session（advance/snooze/skip）、消息收发/重试、特殊标记、按等待状态群发、XLSX 导出、审计日志、CS 侧客服会话、CS 专用 TG webhook | `X-CS-Admin-Token`        |
+| `batch-lab.ts`            | `/api/batch-lab/*`：内部样本 preview/freeze、processor、实验 start/worker、详情、copy、reuse-display、annotation、JSONL export                                                   | Backend feature/CORS      |
 | `growth.ts`               | `POST /api/growth/miniapp-entry`（089 之后仅剩入口归因；渠道链接管理与 click 重定向已下线）                                                                                      | `X-Init-Data`             |
 | `invite.ts`               | `GET /api/invite/entry-status` · `POST /api/invite/center-view` · `POST /api/invite/bind` · `GET /api/invite/stats`（裂变邀请；发奖全在 `miniapp_traffic` RPC 内）               | `X-Init-Data`             |
 | `community.ts`            | `GET /api/community/entry` · `POST /api/community/verify-membership`（既有成员手动领奖）· `POST /api/telegram/community-webhook`（新成员入群自动发奖）                           | `X-Init-Data` / TG secret |
@@ -394,7 +397,7 @@ packages/backend/src/
 
 ### 7.3 测试与回归
 
-- 单元测试：Vitest，无凭证。CI `quality-gate` 跑 shared / backend / frontend / admin 的 `pnpm test`。backend 默认排除 `*.integration.test.ts`。
+- 单元测试：Vitest，无凭证。CI `quality-gate` 跑 shared / backend / frontend / admin / batch-lab 的适用 `pnpm test`。backend 默认排除 `*.integration.test.ts`。
 - 真库集成：`pnpm --filter @miniapp/backend test:integration`（`conversations.integration.test.ts`：会话、轮次、重生成、并发、软删除）。缺凭证时 skip，不把 skip 当成真库通过。
 - 本地验不到的部分：真实上游的流式时序、中间层对 SSE 的缓冲（已按惯例下发 `X-Accel-Buffering: no`），需真机验。
 
@@ -446,14 +449,15 @@ packages/backend/src/
 | 平台前端     | `packages/frontend`             | Vercel 构建部署，对外域名绑定 Vercel                                                                              | Vercel         |
 | CS 运营平台  | `packages/cs-platform`          | 独立 Vercel 项目（Vite 静态构建）                                                                                 | Vercel         |
 | 运营后台     | `packages/admin`                | 独立 Vercel 项目（Vite 静态构建）                                                                                 | Vercel         |
+| Batch Lab    | `packages/batch-lab`            | 独立 Vercel 项目（Vite 静态构建 + SPA rewrite），Preview API base 必须显式指向 development/PR backend             | Vercel         |
 | miniapp 后端 | `ops/docker/Dockerfile.backend` | Railway 服务 **`stminiapp`**（唯一对外 HTTP），容器内 :8080                                                       | Railway        |
 | 支付快速对账 | 同上镜像                        | Railway 服务 `stminiapp-payment-reconcile-cron`：常驻 worker，进程内约 30 秒一轮按 `next_reconcile_at` 领单查厂商 | Railway        |
 | 支付过期任务 | 同上镜像                        | Railway Cron `stminiapp-payment-cron`：`*/5 * * * *` 跑过期前回溯对账 + 判过期                                    | Railway        |
 | 数据与存储   | 托管                            | PostgreSQL + Storage；test 与 production 两个项目                                                                 | Supabase Cloud |
 
-**流量路径**：用户 → Vercel（页面）→ backend 公网域名 → Supabase / OpenRouter / MiniMax。浏览器直接把 `/api/*` 发往 backend 域名，中间**没有任何反代**（ST 时代的 nginx 网关已随收敛退场）。
+**流量路径**：用户或内部使用者 → Vercel（页面 / SPA）→ backend 公网域名 → Supabase / OpenRouter / MiniMax。浏览器直接把 `/api/*` 发往 backend 域名，中间**没有任何反代**（ST 时代的 nginx 网关已随收敛退场）。
 
-> 跨域直连要求两个变量成对配好，任一侧配错即浏览器侧请求全挂：Vercel 的 `NEXT_PUBLIC_API_URL` = backend 公网域名（build 期固化，改后需 redeploy），backend 的 `FRONTEND_URL` = Vercel 对外域名（CORS allow-origin）。
+> 跨域直连要求变量成对配好，任一侧配错即浏览器侧请求全挂：Frontend Vercel 的 `NEXT_PUBLIC_API_URL` = backend 公网域名，Batch Lab Vercel 的 `VITE_BATCH_LAB_API_URL` = backend 公网域名（均为 build 期固化，改后需 redeploy）；backend 的 `FRONTEND_URL` / `BATCH_LAB_URL` 分别 allowlist 对应 Vercel origin。
 
 **Railway IaC**：`.railway/railway.ts` 声明 `development`（跟 `dev` 分支）与 `production`（跟 `main` 分支）两套环境 × 上述三个服务；改动需 `railway config plan/apply`，且渲染 production 必须显式 `RAILWAY_CONFIG_ENV=production`。**`main` 分支自动部署生产**（三个服务的 deployment trigger 均为 `branch=main`）——合并进 `main` 即上线，数据库迁移需在合并前按 §7.4 手动执行。对 `dev` 的 PR 会由 `railway-pr-env.yml` 拉起 `pr-{N}` 临时环境（变量继承 development，指向 test 库）。
 
@@ -539,7 +543,7 @@ packages/backend/src/
 | `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                   | 异常上报（release 缺省回退 `RAILWAY_GIT_COMMIT_SHA`）                |
 | `MOCK_AUTH` / `DEV_AUTH_BYPASS` / `LOG_LEVEL` / `LOG_PRETTY`             | 本地开发与回归脚本旁路                                               |
 
-Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（backend 公网域名）。权威解析在 `packages/backend/src/platform/config.ts`；`ops/env/*.example` 示例文件比实际清单窄，以代码为准。
+Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名）与 `VITE_BATCH_LAB_API_URL`（Batch Lab backend 公网域名）。Backend CORS 对应变量由 `packages/backend/src/platform/config.ts` 解析，其中 Batch Lab 使用 `BATCH_LAB_URL` 精确 origin；`ops/env/*.example` 示例文件比实际清单窄，以代码为准。
 
 > ST 时代的 `ST_*` / `LLM_PROXY_TOKEN_SECRET` 等变量应用已不消费；Railway IaC 的 `preserve()` 与生产控制台可能仍留名，属待清理项（§10.2）。
 

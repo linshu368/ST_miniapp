@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/09-11-batch-lab-history-export/
-last_verified_at: 2026-09-16
+last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
+last_verified_at: 2026-09-17
 ---
 
 # 会话与语音存储
@@ -52,7 +52,7 @@ Backend repository integration 与 MVP regression；Batch Lab 相关 preview/fre
 
 ## 已知缺口与待核验项
 
-`chat_history.history` 容量治理仍待专项处理。真实来源 LOGIN/secret 验证、execution/history migration 实库执行和 worker 常驻调度仍需人工授权执行；离线测试不代表生产连通。
+`chat_history.history` 容量治理仍待专项处理。Batch Lab spec 已收口来源只读、冻结样本、history/export 和 JSONL 导出边界；真实来源 LOGIN/secret 验证、production migration 执行和 worker 常驻调度仍需目标环境人工授权执行，离线测试不代表生产连通。
 
 ## 关联模块
 
@@ -62,3 +62,4 @@ Backend repository integration 与 MVP regression；Batch Lab 相关 preview/fre
 
 - 2026-09-16：任务 `Batch Lab Backend 实验与生成执行`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-backend-execution/`）更新模块知识文档；commit：`1316d11e29cd120e61be456cb93f4795d489af9b`。
 - 2026-09-16：任务 `Batch Lab 历史、复用原文与导出`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-history-export/`）更新模块知识文档；提交前归档，见本任务后续 Git 提交。
+- 2026-09-17：任务 `Batch Lab 集成验收、发布与 Spec 收口`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-integration-spec/`）收口 Batch Lab integration/spec、发布回滚、环境与剩余人工核验事实；提交前归档，见本任务后续 Git 提交。

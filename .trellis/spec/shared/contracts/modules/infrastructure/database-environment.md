@@ -5,8 +5,8 @@ scope: shared
 category: infrastructure
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-11-batch-lab-data-samples/
-last_verified_at: 2026-09-16
+last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
+last_verified_at: 2026-09-17
 ---
 
 # 数据库环境与迁移公共配置
@@ -50,7 +50,7 @@ Shared tests 与 database spec 的手工门禁。
 
 ## 已知缺口与待核验项
 
-历史三位编号 migration 已冻结且存在重号；仓库账本只证明已记录的环境执行，不得用 migration 文件存在替代实库状态。
+历史三位编号 migration 已冻结且存在重号；仓库账本只证明已记录的环境执行，不得用 migration 文件存在替代实库状态。Batch Lab 新 spec 已固定 test-first、单文件迁移、shape/RLS/读写验证和 forward-fix 口径。
 
 ## 关联模块
 
@@ -59,3 +59,4 @@ Shared tests 与 database spec 的手工门禁。
 ## 变更记录
 
 - 2026-09-16：任务 `Batch Lab 数据库域、环境与样本集`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-data-samples/`）更新模块知识文档；commit：`14124a5b9df62627bb9fddfd722194206a0aa83b`。
+- 2026-09-17：任务 `Batch Lab 集成验收、发布与 Spec 收口`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-integration-spec/`）收口 Batch Lab integration/spec、发布回滚、环境与剩余人工核验事实；提交前归档，见本任务后续 Git 提交。

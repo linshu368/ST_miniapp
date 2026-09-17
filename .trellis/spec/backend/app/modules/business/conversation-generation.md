@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-11-batch-lab-history-export/
-last_verified_at: 2026-09-16
+last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
+last_verified_at: 2026-09-17
 ---
 
 # 会话与生成
@@ -51,7 +51,7 @@ Frontend 调用 `/api/v1/conversations*` 与 generation config；Batch Lab backe
 
 ## 已知缺口与待核验项
 
-真实 OpenRouter 上游 smoke、长任务 worker drain、history/export migration 实库执行和生产发布/回滚需要 integration-spec 阶段统筹。角色卡更多人设字段和自建预设格式仍待后续任务。
+Batch Lab spec、发布顺序和回滚剧本已收口到 `.trellis/spec/batch-lab/app/`；真实 OpenRouter 上游 smoke、长任务 worker drain、history/export migration 生产执行仍需目标环境人工授权记录。角色卡更多人设字段和自建预设格式仍待后续任务。
 
 ## 关联模块
 
@@ -61,3 +61,4 @@ Frontend 调用 `/api/v1/conversations*` 与 generation config；Batch Lab backe
 
 - 2026-09-16：任务 `Batch Lab Backend 实验与生成执行`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-backend-execution/`）更新模块知识文档；commit：`1316d11e29cd120e61be456cb93f4795d489af9b`。
 - 2026-09-16：任务 `Batch Lab 历史、复用原文与导出`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-history-export/`）更新模块知识文档；提交前归档，见本任务后续 Git 提交。
+- 2026-09-17：任务 `Batch Lab 集成验收、发布与 Spec 收口`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-integration-spec/`）收口 Batch Lab integration/spec、发布回滚、环境与剩余人工核验事实；提交前归档，见本任务后续 Git 提交。

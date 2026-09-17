@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-11-batch-lab-history-export/
-last_verified_at: 2026-09-16
+last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
+last_verified_at: 2026-09-17
 ---
 
 # 会话与语音共享契约
@@ -52,7 +52,7 @@ Zod/schema 与类型 -> Backend 校验/响应 -> batch-lab client schema parse -
 
 ## 已知缺口与待核验项
 
-自建预设契约仍未定义。Batch Lab 最终 `.trellis/spec/batch-lab/app/` 与发布/回滚剧本由 integration-spec 收口。
+自建预设契约仍未定义。Batch Lab 最终 `.trellis/spec/batch-lab/app/`、发布顺序、故障恢复与 JSONL 验收矩阵已由 integration-spec 收口；目标环境 smoke 与生产迁移执行仍需人工记录。
 
 ## 关联模块
 
@@ -62,3 +62,4 @@ Zod/schema 与类型 -> Backend 校验/响应 -> batch-lab client schema parse -
 
 - 2026-09-16：任务 `Batch Lab 后处理与富文本渲染`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-postprocessing/`）更新模块知识文档；commit：`1f41de3952d8b4bad42ea59fb4a439d08d2cab26`。
 - 2026-09-16：任务 `Batch Lab 历史、复用原文与导出`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-history-export/`）更新模块知识文档；提交前归档，见本任务后续 Git 提交。
+- 2026-09-17：任务 `Batch Lab 集成验收、发布与 Spec 收口`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-integration-spec/`）收口 Batch Lab integration/spec、发布回滚、环境与剩余人工核验事实；提交前归档，见本任务后续 Git 提交。
