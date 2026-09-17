@@ -11,14 +11,18 @@ export type ExternalPaymentPending = {
   orderId: string;
   paymentType: PaymentType | undefined;
   replayContextId: string | null;
+  telegramUserId: string | null;
   openedAt: number;
+  leftMiniApp: boolean;
 };
 
 type StoredPending = {
   orderId?: unknown;
   paymentType?: unknown;
   replayContextId?: unknown;
+  telegramUserId?: unknown;
   openedAt?: unknown;
+  leftMiniApp?: unknown;
 };
 
 type StoredObserved = {
@@ -42,7 +46,9 @@ export function writeExternalPaymentPending(record: ExternalPaymentPending): boo
     orderId: record.orderId,
     paymentType: record.paymentType,
     replayContextId: record.replayContextId,
+    telegramUserId: record.telegramUserId,
     openedAt: record.openedAt,
+    leftMiniApp: record.leftMiniApp,
   });
 }
 
@@ -61,7 +67,9 @@ export function readExternalPaymentPending(
     orderId: stored.orderId.trim(),
     paymentType: isPaymentType(stored.paymentType) ? stored.paymentType : undefined,
     replayContextId: typeof stored.replayContextId === 'string' ? stored.replayContextId : null,
+    telegramUserId: typeof stored.telegramUserId === 'string' ? stored.telegramUserId : null,
     openedAt: stored.openedAt,
+    leftMiniApp: stored.leftMiniApp === true,
   };
 }
 

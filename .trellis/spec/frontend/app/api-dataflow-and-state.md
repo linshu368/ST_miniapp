@@ -108,7 +108,7 @@ posthog.capture('chat_turn_completed', {
 
 ### 2. Signatures
 
-- Frontend adapter：`createPostHogAdapter()` / `getReplayLifecycle()`；生命周期状态 `idle | chat | paywall_followup | external_payment_pending | ended`。
+- Frontend adapter：`createPostHogAdapter()` / `getReplayLifecycle()`；生命周期状态 `idle | chat | recharge | paywall_followup | external_payment_pending | ended`。`recharge` 是独立的主动充值 context，不带聊天身份。
 - Context API：`GET /api/telemetry/replay-context`（Telegram 鉴权，无 query），形状为 `GetReplayContextData`。
 - 回流观察：`observePaymentReturn({ source, route })`；`source` 为 `start_param | query_param | webview_resume`。
 
@@ -121,7 +121,7 @@ posthog.capture('chat_turn_completed', {
 - 录制 owner 在根 `Providers` 的 `ReplayLifecycleOwner`，不能放在会随路由卸载的 `use-chat-session` cleanup。
 - 进入付费墙必须先**同步调用** `enterPaywallFollowup()`（内部立刻置 `paywallHold`），再 `router.push`。`push` **不得** `await` lifecycle 队列 / `whenReady()` / SDK import。continuation 的 `triggerSource` / `returnTo` / `requiredCredits` 在 push 前同步写入；`replay_context_id` 与 `paywall_triggered` 在 queue settle 后补丁，失败则降级，不得挡住跳转。hold/followup 期间忽略 `route_change`/`pagehide`；同角色重绑保持原 `replay_context_id`；回到聊天再 `reenterChatFromFollowup()`。
 - `loadSdk()` / `initPromise` 必须有显式超时（`POSTHOG_SDK_LOAD_TIMEOUT_MS`）；超时视为 `init_failed`，保证 `whenReady()` 有限时间内 settle，lifecycle 串行队列不得被动态 import 永久占住。
-- 打开外部支付前写入 `st.replay.external_payment_pending` 并 `enterExternalPaymentPending()`，再 `openLink`。Telegram 冻结恢复时 URL 通常不变；根上 visibility/focus/pageshow 在有离开证据时发一次 `payment_return_observed(return_source=webview_resume)`。同一 `order_id` 去重；普通前后台、刷新、VPN 弹窗 focus 不误报。
+- 打开外部支付前写入 `st.replay.external_payment_pending` 并 `enterExternalPaymentPending()` 同步停录，再 `openLink`。无效支付 URL 不进入 pending；`pagehide`/hidden 证据写回 pending，可信回流后 `resumeRecording()`，不轮转 `$session_id`。新文档只在 pending 未过期且有离开证据或显式回流时恢复 MiniApp 内录制，不伪造聊天身份；初次跳转订单页不能立即恢复。Telegram 冻结恢复时 URL 通常不变；根上 visibility/focus/pageshow 在有离开证据时发一次 `payment_return_observed(return_source=webview_resume)`。同一 `order_id` 去重；普通前后台、刷新、VPN 弹窗 focus 不误报。
 - `pay_url` 只进 order-id keyed 的短 TTL `sessionStorage`，不得进 router query / 事件属性 / 回放 URL。
 
 ### 4. Validation & Error Matrix
@@ -130,8 +130,8 @@ posthog.capture('chat_turn_completed', {
 - SDK 动态 import 超时或抛错 → `init_failed` no-op，聊天/支付继续；`whenReady()` 必须 settle。
 - `startNewRecording` 以 `sessionRecordingStarted()` 为准，不得把 SDK 调用返回值当成已在录。
 - capture 含禁止键（`content`/`pay_url`/`initData` 等）→ runtime schema 丢弃。
-- 个人中心「星尘充值」点击发送 `recharge_entry_clicked`（`entry_source=profile_balance`）；允许没有 `replay_context_id`。必须经现有 adapter，`onClick` 不得 `await whenReady()`/`init`；SDK 未配置或失败时链接照常跳转。不得与 `recharge_viewed` 混为一项。
-- `register_for_session` 的聊天属性会自动进入后续 PostHog 事件；Replay 真正结束且 `replay_chat_ended` 发出后需用 `unregister_for_session` 清理四个聊天关联属性。无活跃 context 的充值入口发送前再清理一次，以覆盖页面重载留下的旧值；followup / external payment pending 期间不得清理。
+- 个人中心「星尘充值」点击同步保留主动充值 context；SDK 尝试启动录制后发送 `recharge_entry_clicked`（`entry_source=profile_balance`），充值页事件等待同一启动尝试。不能给它伪造聊天会话。`onClick` 不得 `await whenReady()`/`init`；SDK 未配置或失败时链接照常跳转。不得与 `recharge_viewed` 混为一项。
+- `register_for_session` 的聊天属性会自动进入后续 PostHog 事件；Replay 真正结束且 `replay_chat_ended` 发出后需用 `unregister_for_session` 清理四个聊天关联属性。主动充值在 SDK 就绪后再清理一次，以覆盖初始化前 no-op 和页面重载留下的旧值；聊天 followup 期间不得清理。
 - 无真实 `conversationSessionId` → 不 `startChatReplay`。
 - 未配置 Backend `POSTHOG_API_KEY` → 不发服务端终态事件，也不反查用户；结算仍成功。
 - pending 订单与 `payment_flow_left_observed` 都不是支付失败。
@@ -148,7 +148,7 @@ posthog.capture('chat_turn_completed', {
 - `adapter.test.ts`：`resetSessionId` + override start；schema 拒绝禁止键；SDK import 超时后 `init`/`whenReady` settle 且忽略迟到的 load；`recharge_entry_clicked` 无 `replay_context_id` 可发送，旧聊天会话属性可清除。
 - `lifecycle.test.ts`：paywall hold、同角色重绑、followup 忽略 `route_change`；真正结束后才清除聊天会话属性。
 - `recharge-redirect.test.ts`：调用 followup 后立即 push；continuation 在跳转前写入；`paywall_triggered` 等队列 settle。
-- `flow-telemetry.test.ts`：回流去重/误报；`recharge_entry_clicked` 无 context 仍发送，有活跃 context 才附带 ID，`whenReady` 未完成时同步不 capture，init 失败 no-op，payload 无 URL/`pay_url`；`recharge_viewed` 无 context 仍跳过。
+- `flow-telemetry.test.ts`：回流去重/误报；`recharge_entry_clicked` 先保留 context 再排入录制队列，payload 无 URL/`pay_url`；`recharge_viewed` 无 context 仍跳过；SDK 尚未接收的订单状态可重试。
 - `return-observer.test.ts`：有离开证据才 `webview_resume`；同 order 去重；无 pending 不误报。
 - shared `telemetry-contract.test.ts`：`return_source`、禁止键、`user_cohort` 不存在、`recharge_entry_clicked` 允许没有 `replay_context_id`。
 

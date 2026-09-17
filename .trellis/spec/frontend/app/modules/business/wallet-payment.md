@@ -21,7 +21,7 @@ last_verified_at: 2026-09-08
 
 ## 入口与调用者
 
-用户从个人中心进入钱包/充值流程。个人中心「星尘充值」点击发送 `recharge_entry_clicked`，不依赖 Replay context；无活跃 context 时发送前清除旧聊天会话属性，防止误归因。
+用户从个人中心进入钱包/充值流程。个人中心「星尘充值」点击同步建立独立充值 Replay context，SDK 启动尝试后发送 `recharge_entry_clicked`；不会伪造聊天会话。外部支付前暂停 MiniApp 录制，可信回流后恢复；主动充值启动时清除旧聊天会话属性，防止误归因。
 
 ## 涉及文件
 

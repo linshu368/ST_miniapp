@@ -297,6 +297,19 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
         return false;
       }
     },
+    resumeRecording(replayContextId?: string): boolean {
+      if (!client || disabled) return false;
+      try {
+        if (!client.sessionRecordingStarted()) {
+          // 外部支付返回仍属于同一 MiniApp 会话；不能 resetSessionId。
+          client.startSessionRecording(START_RECORDING_OVERRIDE);
+        }
+        return client.sessionRecordingStarted();
+      } catch {
+        reportHealth('replay_recording_failed', 'recording_failed', replayContextId);
+        return false;
+      }
+    },
     stopRecording(replayContextId?: string): void {
       if (!client || disabled) return;
       try {
