@@ -60,7 +60,11 @@ export async function runImageGeneration(input: {
 
     const character = await characters.requireCard(session.character_id);
     const visualAnchor = requireVisualAnchor(character);
-    const promptEn = await translateImagePrompt(attempt.prompt_cn);
+    if (!attempt.prompt_cn) {
+      await images.markFailed(attempt.id, 'image_prompt_empty', Date.now() - startedAt);
+      return;
+    }
+    const promptEn = await translateImagePrompt(attempt.prompt_cn, input.imageConfig.textModel);
     const providerPrompt = buildProviderPrompt({
       visualAnchor,
       promptEn,

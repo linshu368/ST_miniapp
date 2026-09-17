@@ -19,7 +19,7 @@ type PromptSource = CreateMessageImageRequest['prompt_source'];
 export interface MessageImageUiState {
   image: MessageImageState | undefined;
   config: GetImageConfigData | undefined;
-  describe: () => Promise<string>;
+  describe: () => Promise<{ draftId: string; prompt: string }>;
   create: (request: CreateMessageImageRequest) => Promise<void>;
   onRecharge: () => void;
 }
@@ -37,6 +37,7 @@ export function ChatMessageImageFooter({
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [saveError, setSaveError] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [draftId, setDraftId] = useState<string | null>(null);
   const [source, setSource] = useState<PromptSource>('generated');
   const [stage, setStage] = useState<
     'idle' | 'describing' | 'confirming' | 'creating' | 'failed' | 'insufficient'
@@ -101,12 +102,15 @@ export function ChatMessageImageFooter({
       return;
     }
     generationStartedRef.current = false;
+    setDraftId(null);
+    setPrompt('');
     setSheetOpen(true);
     setError('');
     setStage('describing');
     try {
-      const nextPrompt = await image.describe();
-      setPrompt(nextPrompt);
+      const description = await image.describe();
+      setDraftId(description.draftId);
+      setPrompt(description.prompt);
       setSource('generated');
       setStage('confirming');
     } catch (err) {
@@ -117,6 +121,7 @@ export function ChatMessageImageFooter({
 
   const openRetryFlow = () => {
     generationStartedRef.current = false;
+    setDraftId(null);
     setPrompt(latest?.prompt_cn ?? '');
     setSource(latest?.prompt_source ?? 'custom');
     setError('');
@@ -168,7 +173,11 @@ export function ChatMessageImageFooter({
     generationStartedRef.current = true;
     setStage('creating');
     try {
-      await image.create({ prompt_cn: value, prompt_source: source });
+      await image.create({
+        ...(draftId ? { draft_id: draftId } : {}),
+        prompt_cn: value,
+        prompt_source: source,
+      });
       // 202 只表示任务已受理；Sheet 保持生成中，直到会话图片轮询拿到终态。
       setStage('creating');
     } catch (err) {

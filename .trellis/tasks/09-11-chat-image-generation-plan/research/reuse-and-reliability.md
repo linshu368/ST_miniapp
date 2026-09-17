@@ -25,6 +25,10 @@
 | 语音成功后扣费 RPC 模式              | 复用事务语义                        | Storage 成功后，扣钱包、ledger、ready 必须原子且幂等                                                                                      |
 | 语音 fire-and-forget                 | 不复用                              | 图片更慢，离页和进程重启要求持久任务恢复；当前模式会留下 pending                                                                          |
 | 新增 BullMQ/独立 worker              | 不采用                              | 现有 PostgreSQL 足以承载初版低吞吐队列，引入新状态源和部署单元属于过度设计                                                                |
+| description 调用前审计               | 扩展现有 image attempt 表           | 用户明确要求先保存完整 userPrompt；新增 draft 状态并确认时复用同一行，避免平行审计表与重复事实源                                          |
+| runtime_config 单项读取              | 复用 `fetchRuntimeConfigEntry`      | URL/key/model 放在同一 JSON 行可原子发布配置 tuple，不新增直读表实现                                                                      |
+| DeepSeek 默认参数                    | 整组 fallback 复用                  | runtime 三项任一无效时回退 `config.voice.draft` 全套，避免跨 endpoint 混用 key/model；保持现有默认行为                                    |
+| Admin runtime 配置发布链             | 复用并增加敏感值防护                | 用户要求 test/prod 均可配置；复用草稿/发布/回滚与环境权限，不新建旁路 API；API key 使用密码框并在确认/历史预览脱敏                        |
 
 ## 故障模型摘要
 
@@ -39,6 +43,12 @@
 - **DB 收口重放**：以 attempt id 为 charge key，RPC 幂等返回 already_charged/current；不能重复扣款。
 - **进程重启**：pending 任务可重领；已经进入 provider 模糊区的任务不自动重投，避免重复；ready/failed 为终态。
 - **并发确认**：客户端 disabled 只是体验，数据库 partial unique/租约/RPC 才是正确性保障。
+- **调用前 DB 写失败**：不得调用文本模型；route 返回安全错误，不产生无审计上游请求。
+- **写稿调用失败**：draft 转 `draft_failed` 并保留 userPrompt；不进入 worker、不扣费，日志只记 id/code/耗时。
+- **draft 确认竞态**：两个请求同时确认同一 draft 时，条件更新/RPC 只允许一个从 `draft_ready` 到 `pending`；另一请求返回既有状态/409。
+- **draft 堆积与容量**：每次 description 都会保存角色卡和近期对话拼成的大文本；不建该字段索引，观测日增量与平均字节，后续再按合规保留期单独设计清理，初版不引入定时清理框架。
+- **配置更新**：URL/key/model 位于同一 JSON value，通过单行更新与 version 递增原子切换；resolver 只接受三项全部有效的 tuple，否则整组回退。
+- **runtime key 泄露**：API key 按追加要求进入有权限的 Admin managed config，但不进入 C 端 shared/frontend、日志/Sentry/错误；确认与历史预览脱敏，Admin 数据库权限、操作审计和备份均按 secret 权限治理。
 
 ## 容量与观测
 

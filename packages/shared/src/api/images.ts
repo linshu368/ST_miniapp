@@ -3,8 +3,8 @@ import { z } from 'zod';
 /**
  * 聊天页角色图片生成。
  *
- * 图片是 assistant 回复的旁支产物：一次确认创建一个 attempt，成功图片固定绑定
- * 发起它的那条 message。描述预览不持久化，只有用户确认后的中文短文进入 attempt。
+ * 图片是 assistant 回复的旁支产物：默认描述先创建 draft attempt，确认后推进为出图任务，
+ * 成功图片固定绑定发起它的那条 message。
  */
 
 /** 图片 prompt 的用户可见中文短文上限。前端提示和后端受理/送模型前校验共用。 */
@@ -45,6 +45,7 @@ export type ImageErrorCode =
 export const ImagePromptSourceSchema = z.enum(['generated', 'custom']);
 export const ImagePromptCnSchema = z.string().trim().min(1).max(MAX_IMAGE_PROMPT_CHARS);
 export const CreateMessageImageRequestSchema = z.object({
+  draft_id: z.string().uuid().optional(),
   prompt_cn: ImagePromptCnSchema,
   prompt_source: ImagePromptSourceSchema,
 });
@@ -127,6 +128,7 @@ export interface GetSessionImagesData {
 }
 
 export interface CreateImageDescriptionData {
+  draft_id: string;
   prompt_cn: string;
 }
 

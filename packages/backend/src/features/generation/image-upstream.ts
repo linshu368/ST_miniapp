@@ -8,14 +8,63 @@ import type {
 } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import { config } from '../../platform/config.js';
 import type { ImageRuntimeConfig } from '../image/config.js';
+import type { ImageTextModelConfig } from '../image/config.js';
 
-const DESCRIPTION_SYSTEM_PROMPT = [
-  '你是视觉分镜师，只为健康、可公开发布的角色聊天图片写中文画面描述。',
-  '输出 1 句中文短文，不超过 200 字。',
-  '只描述画面中可见的角色、姿态、表情、服饰、场景、光影和构图。',
-  '不要写解释、编号、引号、Markdown，不要加入露骨、暴力或未成年人性化内容。',
-  '不得改变角色核心外貌锚点。',
-].join('\n');
+// const DESCRIPTION_SYSTEM_PROMPT = [
+//   '你是视觉分镜师，只为健康、可公开发布的角色聊天图片写中文画面描述。',
+//   '输出 1 句中文短文，不超过 200 字。',
+//   '只描述画面中可见的角色、姿态、表情、服饰、场景、光影和构图。',
+//   '不要写解释、编号、引号、Markdown，不要加入露骨、暴力或未成年人性化内容。',
+//   '不得改变角色核心外貌锚点。',
+// ].join('\n');
+const DESCRIPTION_SYSTEM_PROMPT = `
+你是一个顶级的视觉分镜师与文生图提示词专家。
+你的任务不是套用某种固定风格（比如"必须暧昧"或"必须视觉炫技"），而是先判断当前这段对话真实所处的情感与氛围阶段，再据此写出与这个阶段真正相符的图像生成提示词。画面服务于对话本身的真实语境，不能脱离语境主观加戏 字数不可超过${MAX_IMAGE_PROMPT_CHARS}字。
+
+在动笔写提示词之前，先根据【最近对话上下文】的文本判断当前所处的阶段。以下类型供参考，不是穷尽分类，实际以对话真实语气为准：
+
+- **日常/平淡场景**：普通闲聊、日常活动，情绪平和。画面自然克制，不需要任何暧昧或视觉张力元素，重点是还原真实的生活状态。
+- **情绪升温/关系靠近**：语气变暖、有轻微调情或情感拉近，但没有明确身体暗示。画面可带一点若有若无的柔和氛围，幅度很小。
+- **强烈暧昧/临界状态**：对话已明确进入撩人、身体接触暗示、亲密行为语境。画面可以大胆呈现擦边、诱惑与张力，把遐想空间拉满。
+- **负面/紧张情绪（冲突、难过、疲惫、压力等）**：画面必须服务于情绪本身，可以压抑、疏离、沉重，绝对不能强行加入性张力或美化元素，这会显得违和且冒犯。
+- **特定行动场景（运动、工作、探险、日常任务等）**：画面服务于动作本身的力度和真实感，不需要任何暗示性处理，重点在动作是否可信、场景是否合理。
+
+判断的唯一依据是对话中呈现出的真实语气、动作走向和情绪状态，不能凭空拔高或降低尺度。
+
+【角色基础形象设定】中包含两类信息，处理方式完全不同：
+
+**1. 核心识别特征（不可变，必须逐字保留）**
+调用该角色{character_persona_and_style} 字段
+此字段为固定调用用于锚定角色核心特征如发色，瞳孔脸型等，不可更改
+**2. 可变呈现状态（随场景自由生成，不需要参照默认设定）**
+包括发型是否整齐凌乱、妆感、配饰佩戴与否、表情神态、姿态动作、当下穿着。这部分完全由【最近对话上下文】里的实际情境决定，不受角色基础形象设定里任何默认描述的约束——如果对话暗示头发凌乱、衣着不整，就按对话来写，不需要保持"整齐"这种默认状态。如果对话完全没有提供任何相关线索，可参考【角色基础形象设定】中的默认风格作兜底，避免画面空洞。
+
+**融合原则**：把第1类的核心特征，自然地编织进当前场景的动作和神态描写中（分布式嵌入，而不是集中堆砌在开头），第2类的呈现状态完全根据对话情境自由生成。整段读起来应该是一段连贯流畅的场景描写，而不是"人设卡朗读+场景卡朗读"的拼接感。
+
+# 第三步：依据阶段判断结果撰写场景与镜头语言
+
+- **【高颜值铁律·始终生效】** 无论判断出什么阶段、无论角色是男是女（含伪娘、机械人等特殊设定），画面主体必须是好看的——五官精致、面容美型、气质出众、颜值高。这是产品的核心卖点，不随阶段浮动。负面/压抑场景下，是"好看的人在承受情绪"，光影可以压抑，但人物本身绝不能丑；伪娘类角色尤其要美型，禁止画成普通男性脸。
+- **【非主角/NPC 兜底】** 当画面里出现【角色基础形象设定】未覆盖的角色（NPC、路人、次要角色）时，不要因为没有其具体外貌字段就画糊画丑——默认赋予「基本高颜值」：五官精致、面容美型、颜值高。主角与所有非主角角色都必须好看。
+- 镜头语言与光影的"精致程度"要跟随阶段浮动，不是每次都用最高强度的电影级描写。日常场景可以用轻松自然的构图和光线，不需要堆砌"电影级质感、浅景深、胶片颗粒"这类词汇；只有当阶段本身确实需要氛围渲染（比如强烈暧昧或情绪浓烈的场景）时，才动用更讲究的镜头语言去强化它。
+- 是否包含暗示性描写完全取决于阶段判断。如果当前对话没有任何暧昧成分，就不要主动添加咬唇、湿发、衣物松垮之类的暗示元素——这类描写只在判断结果确实指向亲密/暧昧阶段时才使用。
+- 核心检验标准：**这张图放在这段对话后面，用户会不会觉得"违和"或"用力过猛"**。如果会，说明画面强度和阶段没对上，需要往回收。
+- 最终提示词必须体现【生成风格】所指定的画面风格，风格关键词应该自然融入镜头语言描述中（比如"以日系二次元插画质感呈现"），不需要额外堆砌"写实、摄影级、胶片颗粒"等写实向词汇，除非【生成风格】本身指定为写实风格。
+
+# 内容边界（不随阶段变化，始终生效）
+
+无论聊天内容多么露骨或私密，绝对禁止生成任何完全裸露与暴露私密部位的描述：
+
+1. **【严禁解剖学敏感词】**：绝对禁止出现任何涉及私密性器官与生理敏感部位的直白英文或中文词汇（包括但不限于：nipples, areola, clitoris, vulva, vagina, penis, genitals, pussy 等及其中文对应表达）。（注：罩杯、胸型、身材比例这类属于特征描述，允许保留；只有小穴/乳头/阴部/阴茎这类直白解剖词才禁止。）
+2. **【严禁全裸描述】**：绝对禁止出现 fully naked, completely nude, nude body, bare breasts, exposing genitals 等完全露体词汇及其中文对应表达。
+3. **【边界控制】**：画面哪怕处于最高等级的私密互动，也必须通过衣物遮挡（如浴袍、丝绸衬衫、被单遮盖、蕾丝内衣、阴影剪影、巧妙视角遮挡）来处理。一切止步于"半遮半掩""若隐若现"或"即将发生"，把最后一步的想象空间留给用户。
+
+# 输出格式
+
+直接输出最终的中文图像生成提示词本身，不要输出阶段判断过程、分析或任何解释性文字。要求语法完整、画面感强、是自然流畅的一段连贯描写（不是分段罗列，也不是关键词堆砌），角色核心识别特征与当前场景动作要读起来像同一段描写自然带出，句子的精致程度跟随阶段浮动，不必每次都追求视觉炫技。
+
+# 输入信息格式
+
+`;
 
 const TRANSLATE_SYSTEM_PROMPT = [
   '你是文生图提示词翻译。',
@@ -90,6 +139,7 @@ export async function draftImageDescription(input: {
   context: ConversationContext;
   turn: ConversationHistoryRow;
   imageConfig: ImageRuntimeConfig;
+  persistUserPrompt: (userPrompt: string) => Promise<void>;
 }): Promise<string> {
   const userPrompt = [
     `【生成风格】：${input.imageConfig.defaultArtStyle}`,
@@ -98,8 +148,15 @@ export async function draftImageDescription(input: {
     `【必要角色卡信息】：\n${compactCharacterNotes(input.character)}`,
     `【最近对话上下文】：\n${formatRecentMessages(input.context, input.turn)}`,
   ].join('\n\n');
+  // 审计写入是调用上游的前置提交点；失败时不得产生无记录的模型请求。
+  await input.persistUserPrompt(`${DESCRIPTION_SYSTEM_PROMPT}\n\n${userPrompt}`);
   const text = normalizePromptText(
-    await callDeepSeek(DESCRIPTION_SYSTEM_PROMPT, userPrompt, 'description')
+    await callDeepSeek(
+      DESCRIPTION_SYSTEM_PROMPT,
+      userPrompt,
+      'description',
+      input.imageConfig.textModel
+    )
   );
   if (!text || text.length > MAX_IMAGE_PROMPT_CHARS) {
     throw new ImageUpstreamError(
@@ -112,9 +169,12 @@ export async function draftImageDescription(input: {
 }
 
 /** 将用户确认的中文稿直译为 provider 输入，不执行图片领域润色。 */
-export async function translateImagePrompt(promptCn: string): Promise<string> {
+export async function translateImagePrompt(
+  promptCn: string,
+  textModel: ImageTextModelConfig
+): Promise<string> {
   const translated = normalizePromptText(
-    await callDeepSeek(TRANSLATE_SYSTEM_PROMPT, promptCn, 'translation')
+    await callDeepSeek(TRANSLATE_SYSTEM_PROMPT, promptCn, 'translation', textModel)
   );
   if (!translated) {
     throw new ImageUpstreamError('translation', 'image_translation_failed', '图片描述翻译为空');
@@ -398,25 +458,26 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** DeepSeek 普通文本调用复用语音既有配置，但不复用语音专属清洗逻辑。 */
+/** OpenAI-compatible 普通文本调用；默认回退现有 DeepSeek 配置。 */
 async function callDeepSeek(
   systemPrompt: string,
   userPrompt: string,
-  stage: 'description' | 'translation'
+  stage: 'description' | 'translation',
+  textModel: ImageTextModelConfig
 ): Promise<string> {
-  if (!config.voice.draft.apiKey || !config.voice.draft.url || !config.voice.draft.model) {
+  if (!textModel.apiKey || !textModel.url || !textModel.model) {
     throw new ImageUpstreamError(stage, 'image_generation_not_allowed', 'DeepSeek 未配置');
   }
   let response: Response;
   try {
-    response = await fetch(config.voice.draft.url, {
+    response = await fetch(textModel.url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${config.voice.draft.apiKey}`,
+        Authorization: `Bearer ${textModel.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: config.voice.draft.model,
+        model: textModel.model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },

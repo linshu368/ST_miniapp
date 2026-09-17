@@ -17,6 +17,7 @@ import {
   Space,
   Spin,
   Table,
+  Tabs,
   Tag,
   Typography,
 } from 'antd';
@@ -65,12 +66,15 @@ import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRou
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
 import {
   configMenuKey,
+  IMAGE_GENERATION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
   isInviteProgramConfigKey,
+  isImageGenerationConfigKey,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
   type AdminViewKey,
   type InviteProgramTabKey,
+  type ImageGenerationConfigKey,
 } from './lib/adminNavigation';
 
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
@@ -94,6 +98,14 @@ function jsonPreview(value: unknown): string {
 
 function releasePreviewValue(release: Pick<ConfigRelease, 'value' | 'text_value'>): unknown {
   return release.text_value ?? release.value;
+}
+
+function maskConfigSecret(key: ManagedConfigKey, value: unknown): unknown {
+  if (key !== 'image_text_model_config' || !isPlainObject(value)) return value;
+  return {
+    ...value,
+    api_key: typeof value.api_key === 'string' && value.api_key ? '••••••••' : '',
+  };
 }
 
 function draftSaveFields(
@@ -190,7 +202,10 @@ function ReleaseChangeDetails(props: {
   compact?: boolean;
 }) {
   const previousRelease = getPreviousRelease(props.allReleases, props.release);
-  const currentValue = releasePreviewValue(props.release);
+  const currentValue = maskConfigSecret(
+    props.release.config_key,
+    releasePreviewValue(props.release)
+  );
   if (!previousRelease) {
     return (
       <div className="release-change-details">
@@ -200,7 +215,10 @@ function ReleaseChangeDetails(props: {
     );
   }
 
-  const changes = collectValueChanges(releasePreviewValue(previousRelease), currentValue);
+  const changes = collectValueChanges(
+    maskConfigSecret(previousRelease.config_key, releasePreviewValue(previousRelease)),
+    currentValue
+  );
   const visibleChanges = props.compact ? changes.slice(0, 3) : changes;
 
   return (
@@ -374,6 +392,9 @@ function AdminWorkspace(props: {
   const [selectedKey, setSelectedKey] = useState<ManagedConfigKey>('llm_model_catalog');
   // 「裂变邀请管理」当前 tab；config tab 激活时须与 selectedKey 同步，编辑器才指向正确的 key
   const [inviteTab, setInviteTab] = useState<InviteProgramTabKey>(INVITE_PROGRAM_CONFIG_KEYS[0]);
+  const [imageConfigTab, setImageConfigTab] = useState<ImageGenerationConfigKey>(
+    IMAGE_GENERATION_CONFIG_KEYS[0]
+  );
   const [configs, setConfigs] = useState<ManagedConfig[]>([]);
   const [drafts, setDrafts] = useState<ConfigDraft[]>([]);
   const [releases, setReleases] = useState<ConfigRelease[]>([]);
@@ -623,10 +644,14 @@ function AdminWorkspace(props: {
         <Descriptions size="small" column={1} bordered>
           <Descriptions.Item label="配置">{configMetadata[selectedKey].label}</Descriptions.Item>
           <Descriptions.Item label="变更前">
-            <pre className="diff-preview">{jsonPreview(beforeValue)}</pre>
+            <pre className="diff-preview">
+              {jsonPreview(maskConfigSecret(selectedKey, beforeValue))}
+            </pre>
           </Descriptions.Item>
           <Descriptions.Item label="变更后">
-            <pre className="diff-preview">{jsonPreview(afterValue)}</pre>
+            <pre className="diff-preview">
+              {jsonPreview(maskConfigSecret(selectedKey, afterValue))}
+            </pre>
           </Descriptions.Item>
         </Descriptions>
       </div>,
@@ -925,6 +950,13 @@ function AdminWorkspace(props: {
                   : inviteTab;
               setInviteTab(nextTab);
               if (nextTab !== 'records') setSelectedKey(nextTab);
+            } else if (selection.view === 'image_generation_config') {
+              const nextTab =
+                selection.configKey && isImageGenerationConfigKey(selection.configKey)
+                  ? selection.configKey
+                  : imageConfigTab;
+              setImageConfigTab(nextTab);
+              setSelectedKey(nextTab);
             } else if (selection.configKey) {
               setSelectedKey(selection.configKey);
             }
@@ -941,6 +973,7 @@ function AdminWorkspace(props: {
                 })),
                 { key: 'outreach_credit_grant', label: '回访星尘赠送' },
                 { key: 'invite_program', label: '裂变邀请管理' },
+                { key: 'image_generation_config', label: '图片生成配置' },
               ],
             },
             { key: 'characters', label: '角色卡' },
@@ -1018,6 +1051,29 @@ function AdminWorkspace(props: {
               }}
               configEditor={configEditorCard}
             />
+          ) : view === 'image_generation_config' ? (
+            <Space direction="vertical" size="middle" className="editor-stack">
+              <Card title="图片生成配置">
+                <Typography.Paragraph type="secondary">
+                  分别管理当前{props.environment === 'production' ? '生产' : '测试'}
+                  环境的图片文本模型、Prompt
+                  策略与默认画风。保存草稿不会立即生效，发布后后端运行时读取新版本。
+                </Typography.Paragraph>
+                <Tabs
+                  activeKey={imageConfigTab}
+                  items={IMAGE_GENERATION_CONFIG_KEYS.map((key) => ({
+                    key,
+                    label: configMetadata[key].label,
+                  }))}
+                  onChange={(key) => {
+                    const nextKey = key as ImageGenerationConfigKey;
+                    setImageConfigTab(nextKey);
+                    setSelectedKey(nextKey);
+                  }}
+                />
+              </Card>
+              {configEditorCard}
+            </Space>
           ) : view === 'configs' ? (
             configEditorCard
           ) : (
