@@ -59,6 +59,7 @@ export async function main(): Promise<void> {
     for (const check of allowedReadChecks) {
       await runPositiveCheck(check.name, () => activePool.query(check.sql));
     }
+    await runPositiveCheck('sample visibility', () => verifySampleVisibility(activePool));
     for (const check of deniedStatementChecks) {
       await runDeniedCheck(activePool, check);
     }
@@ -159,6 +160,28 @@ async function verifyAclBoundary(pool: Pool): Promise<void> {
     !row.sequences_denied
   ) {
     throw new Error('Batch Lab source ACL boundary is unsafe');
+  }
+}
+
+async function verifySampleVisibility(pool: Pool): Promise<void> {
+  const result = await pool.query<{ valid_candidate_count: number }>(`
+    select count(*)::int as valid_candidate_count
+    from experience.chat_history h
+    join experience.chat_sessions s on s.id = h.session_id
+    join app_core.characters c on c.id = h.character_id
+    where h.user_input is not null
+      and btrim(h.user_input) <> ''
+      and h.model is not null
+      and btrim(h.model) <> ''
+      and h.turn_index >= 1
+      and h.revision >= 0
+      and jsonb_typeof(h.history) = 'array'
+      and s.deleted_at is null
+    limit 1
+  `);
+  const count = result.rows[0]?.valid_candidate_count ?? 0;
+  if (count < 1) {
+    throw new Error('Batch Lab source role cannot see any complete sample candidates');
   }
 }
 

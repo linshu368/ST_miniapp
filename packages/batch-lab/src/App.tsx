@@ -78,8 +78,13 @@ const { Header, Content } = Layout;
 
 const DEFAULT_SAMPLE_SQL = `SELECT h.id AS source_history_id
 FROM experience.chat_history AS h
+JOIN experience.chat_sessions AS s ON s.id = h.session_id
+JOIN app_core.characters AS c ON c.id = h.character_id
 WHERE h.user_input IS NOT NULL
   AND h.model IS NOT NULL
+  AND h.turn_index >= 1
+  AND h.revision >= 0
+  AND s.deleted_at IS NULL
 ORDER BY h.created_at DESC`;
 
 type PageKey = 'experiments' | 'samples' | 'processors' | 'new';
