@@ -47,11 +47,6 @@ export async function fetchRuntimeConfigEntry(key: string): Promise<RuntimeConfi
   return toEntry(data);
 }
 
-export async function fetchRuntimeConfigValue(key: string): Promise<unknown | null> {
-  const entry = await fetchRuntimeConfigEntry(key);
-  return entry?.value ?? null;
-}
-
 /**
  * 一次取多个 key，缺失的 key 不出现在返回的 Map 里。
  * 热路径上要同时读三个平台规则 key，逐个查会多两个往返。

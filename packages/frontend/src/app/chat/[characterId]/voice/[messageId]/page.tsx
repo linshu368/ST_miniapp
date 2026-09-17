@@ -6,6 +6,8 @@ import { ChevronLeft, Loader2 } from 'lucide-react';
 import { MAX_CUSTOM_VOICE_CHARS } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
+import { useChatReplayBinding } from '@/hooks/use-chat-session';
+import { useModelCatalogQuery } from '@/lib/api/models';
 import {
   toVoiceMap,
   useGenerateVoiceMutation,
@@ -13,6 +15,7 @@ import {
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 
 /**
@@ -32,6 +35,12 @@ export default function CustomVoicePage() {
   const characterId = params.characterId;
   const messageId = params.messageId;
   const sessionId = searchParams.get('session');
+  const modelCatalogQuery = useModelCatalogQuery();
+  useChatReplayBinding({
+    characterId,
+    conversationSessionId: sessionId,
+    selectedModelId: modelCatalogQuery.data?.selected_model_id ?? null,
+  });
   // returnTo 缺失或不是站内相对路径时回落到会话入口，不拿它当跳转目标
   const returnTo = searchParams.get('returnTo');
   const backTo =
@@ -92,17 +101,10 @@ export default function CustomVoicePage() {
         onSuccess: goBack,
         onError: (mutationError) => {
           const code = (mutationError as { code?: string }).code;
-          if (code === 'insufficient_balance') {
-            // 402 跳充值页，复用对话链路。金额由 apiClient 从 402 裸形状带出。
-            const balance = (mutationError as { balance?: { creditsRequired: number } }).balance;
-            const search = new URLSearchParams({
-              reason: 'insufficient_credits',
-              returnTo: returnToForRecharge,
-            });
-            if (balance) search.set('required', String(balance.creditsRequired));
-            router.push(`/profile/recharge?${search.toString()}`);
+          if (
+            redirectToRechargeFromError(router, mutationError, returnToForRecharge, 'custom_voice')
+          )
             return;
-          }
           setError(
             code === 'CONFLICT'
               ? '这条回复正在生成语音，请稍后再试'

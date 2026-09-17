@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { ChatMessage } from '@miniapp/shared';
 
+import { cn } from '@/lib/utils';
+import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { ChatMessageBubble, ChatTypingBubble } from './chat-message-bubble';
 
 /** 距底部多少像素内算「用户还在看最新消息」，超出就认为他在翻历史 */
@@ -84,7 +86,10 @@ export function ChatMessageList({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="chat-scroll-area flex-1 overflow-y-auto overscroll-contain pb-2 pt-3"
+      className={cn(
+        'chat-scroll-area flex-1 overflow-y-auto overscroll-contain pb-2 pt-3',
+        PH_CHAT_REPLAY_VISIBLE_CLASS
+      )}
     >
       {hasMore ? (
         <div className="flex justify-center pb-2 pt-1">

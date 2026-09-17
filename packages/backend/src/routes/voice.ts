@@ -38,7 +38,7 @@ import { ConversationHistoryRepository } from '../infrastructure/repositories/Co
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { ConversationRepositoryError } from '../infrastructure/repositories/conversation-errors.js';
 import { runVoiceGeneration } from '../features/voice/generate.js';
-import { precheckVoiceCredits } from '../features/generation/index.js';
+import { precheckVoiceCredits } from '../features/voice/billing.js';
 import { getVoiceBillingConfig } from '../features/voice/voice-billing-config.js';
 import { normalizeCustomText } from '../features/voice/voice-text.js';
 import {

@@ -1,5 +1,6 @@
 // chat_sessions + chat_history 会话模型的真库集成测试。
 // 运行前提：072 已在 DATABASE_ENV=test 指向的库执行；无凭证或不可达时自动跳过。
+// 不进默认 `pnpm test`（CI 门禁），需要时跑 `pnpm test:integration`。
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { config } from '../../platform/config.js';
@@ -124,10 +125,7 @@ describe.skipIf(!canRunAgainstDatabase)(
       const suffix = Date.now().toString(36);
       const { data: users, error: userError } = await appCoreDb
         .from('users')
-        .insert([
-          { tg_id: `history-test-${suffix}-a`, st_handle: `history_test_${suffix}_a` },
-          { tg_id: `history-test-${suffix}-b`, st_handle: `history_test_${suffix}_b` },
-        ])
+        .insert([{ tg_id: `history-test-${suffix}-a` }, { tg_id: `history-test-${suffix}-b` }])
         .select('id');
       if (userError) throw new Error(`创建测试用户失败：${userError.message}`);
       const insertedUsers = (users ?? []) as Array<{ id: string }>;

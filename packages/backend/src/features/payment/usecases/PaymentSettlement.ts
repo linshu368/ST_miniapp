@@ -17,6 +17,7 @@ import { checkInviteFirstPaidReward } from '../../../lib/invite-rewards.js';
 import { insertUserNotification } from '../../../lib/notifications.js';
 import type { MiniappPaymentOrderRepository } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
+import { observePaymentOrderSettled } from './PaymentOrderTelemetry.js';
 
 /** 同时接受 requestLogger()（带 reqId，路由用）和 createLogger()（脚本用）。 */
 export type SettlementLogger = Pick<RequestLogger, 'biz' | 'sys'>;
@@ -77,7 +78,24 @@ export async function settlePaidOrder(
   }
 
   try {
-    await orders.complete(order.id, input.providerTransactionId, source);
+    const completed = await orders.complete(order.id, input.providerTransactionId, source);
+    // 终态事件是非关键观测：必须在 complete 成功之后触发，且不得 delay/回滚入账。
+    try {
+      void observePaymentOrderSettled(
+        {
+          orderId: completed.id,
+          userId: order.user_id,
+          paymentType: order.payment_type,
+          settledBy: completed.settled_by,
+        },
+        log
+      );
+    } catch (telemetryError) {
+      log.sys.error(
+        { event: 'payment.telemetry.failed', err: telemetryError, orderId: order.id },
+        '支付终态事件发送失败'
+      );
+    }
     if (order.status !== 'completed') {
       try {
         const totalCredits = order.credits_amount + order.bonus_credits;

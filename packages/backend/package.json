@@ -14,9 +14,8 @@
     "payment:reconcile-orders": "tsx src/scripts/reconcile-payment-orders.ts",
     "payment:diagnose-query": "tsx src/scripts/diagnose-zqpay-query.ts",
     "payment:callback-report": "tsx src/scripts/payment-callback-report.ts",
-    "mvp:regression": "tsx src/scripts/mvp-regression/run.ts",
-    "invite:uat": "tsx src/scripts/invite-uat/run.ts",
-    "test": "vitest run",
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run src/infrastructure/repositories/conversations.integration.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

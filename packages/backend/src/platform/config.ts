@@ -69,6 +69,21 @@ export const config = {
     },
   },
 
+  // 聊天图片生成：DeepSeek 复用 voice.draft；这里仅放 Liaobots/Grok 与图片链路超时。
+  image: {
+    liaobotsAuth: process.env.LIAOBOTS_AUTH || '',
+    liaobotsBase: process.env.LIAOBOTS_BASE || 'https://ai.liaobots1.work',
+    grokModel: process.env.GROK_MODEL || 'grok-imagine-image-quality',
+    replicateToken: process.env.REPLICATE_TOKEN || '',
+    zModel: process.env.Z_MODEL || 'prunaai/z-image-turbo',
+    replicateBase: process.env.REPLICATE_BASE || 'https://api.replicate.com/v1',
+    timeoutMs: parseInt(process.env.IMAGE_GENERATION_TIMEOUT_MS || '180000', 10),
+    downloadTimeoutMs: parseInt(process.env.IMAGE_DOWNLOAD_TIMEOUT_MS || '60000', 10),
+    workerEnabled: process.env.IMAGE_WORKER_ENABLED !== 'false',
+    workerIntervalMs: parseInt(process.env.IMAGE_WORKER_INTERVAL_MS || '3000', 10),
+    workerLeaseSeconds: parseInt(process.env.IMAGE_WORKER_LEASE_SECONDS || '180', 10),
+  },
+
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {
     enabled: process.env.PAYMENT_ENABLED === 'true',
@@ -78,5 +93,14 @@ export const config = {
     platformPublicKey: process.env.PAYMENT_PLATFORM_PUBLIC_KEY || '',
     notifyUrl: process.env.PAYMENT_NOTIFY_URL || '',
     returnUrl: process.env.PAYMENT_RETURN_URL || '',
+  },
+
+  // ── PostHog 服务端 capture（支付终态等非关键事件）──────────────────────────
+  // 这是进程环境密钥，走 config.ts；不是 app_core.runtime_config 的运营配置。
+  // 缺 key / 非法 host 时 adapter no-op，不得影响支付结算。
+  posthog: {
+    apiKey: process.env.POSTHOG_API_KEY || '',
+    host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
+    timeoutMs: parseInt(process.env.POSTHOG_TIMEOUT_MS || '3000', 10),
   },
 } as const;

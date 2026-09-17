@@ -4,8 +4,7 @@ import { normalizeInviteCode } from './invite.js';
 /**
  * 邀请码入参收窄的回归测试。
  *
- * 起因：阶段三 UAT（invite-uat 的 attribution_invalid_code 场景）打出这个缺口——
- * 请求体里 invite_code 是数字时，原实现的 (body.invite_code ?? '').trim() 抛
+ * 起因：请求体里 invite_code 是数字时，原实现的 (body.invite_code ?? '').trim() 抛
  * TypeError 变成 500。非法输入必须走 invalid_code 终态，不能是服务端错误。
  */
 describe('normalizeInviteCode', () => {

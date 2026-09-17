@@ -33,6 +33,7 @@ import {
   EditableModelCatalogSchema,
   type InviteCenterConfig,
   type InviteRewardRulesConfig,
+  type ImageTextModelConfig,
   type ManagedConfigKey,
 } from '../lib/configSchemas';
 import type { CharacterCard } from '../lib/adminApi';
@@ -136,6 +137,118 @@ export function ConfigValueEditor(props: {
   charactersError: string | null;
   onUploadInvitePoster: (file: File) => Promise<string>;
 }) {
+  if (props.configKey === 'image_text_model_config') {
+    const record =
+      props.value && typeof props.value === 'object' && !Array.isArray(props.value)
+        ? (props.value as Partial<ImageTextModelConfig>)
+        : {};
+    const value: ImageTextModelConfig = {
+      url: typeof record.url === 'string' ? record.url : '',
+      api_key: typeof record.api_key === 'string' ? record.api_key : '',
+      model: typeof record.model === 'string' ? record.model : '',
+    };
+    return (
+      <Space direction="vertical" size="middle" className="editor-stack">
+        <Alert
+          type="warning"
+          showIcon
+          message="API Key 属于敏感配置"
+          description="仅在对应环境保存和发布；界面预览会隐藏具体值。测试与生产环境需分别配置。"
+        />
+        <div>
+          <Typography.Text strong>请求 URL</Typography.Text>
+          <Input
+            value={value.url}
+            placeholder="请输入完整的 HTTPS Chat Completions 请求地址"
+            disabled={props.disabled}
+            onChange={(event) => props.onChange({ ...value, url: event.target.value })}
+          />
+        </div>
+        <div>
+          <Typography.Text strong>API Key</Typography.Text>
+          <Input.Password
+            value={value.api_key}
+            autoComplete="new-password"
+            placeholder="留空时与其他两项一起回退 DeepSeek"
+            disabled={props.disabled}
+            onChange={(event) => props.onChange({ ...value, api_key: event.target.value })}
+          />
+        </div>
+        <div>
+          <Typography.Text strong>模型名称</Typography.Text>
+          <Input
+            value={value.model}
+            placeholder="模型 ID"
+            disabled={props.disabled}
+            onChange={(event) => props.onChange({ ...value, model: event.target.value })}
+          />
+        </div>
+      </Space>
+    );
+  }
+
+  if (
+    props.configKey === 'image_prompt_policy' ||
+    props.configKey === 'image_default_art_style' ||
+    props.configKey === 'image_price_label' ||
+    props.configKey === 'image_prompt_over_limit_hint' ||
+    props.configKey === 'image_description_failed_hint' ||
+    props.configKey === 'image_generation_failed_hint' ||
+    props.configKey === 'image_failed_unknown_hint'
+  ) {
+    return (
+      <Input.TextArea
+        value={typeof props.value === 'string' ? props.value : ''}
+        rows={6}
+        maxLength={
+          props.configKey === 'image_prompt_policy' || props.configKey === 'image_default_art_style'
+            ? 1000
+            : 200
+        }
+        showCount
+        disabled={props.disabled}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+    );
+  }
+
+  if (props.configKey === 'image_generation_enabled') {
+    return (
+      <Space align="center" size="middle">
+        <Switch
+          checked={props.value === true}
+          disabled={props.disabled}
+          onChange={props.onChange}
+        />
+        <Typography.Text strong>
+          {props.value === true ? '图片生成入口已开启' : '图片生成入口已关闭'}
+        </Typography.Text>
+      </Space>
+    );
+  }
+
+  if (
+    props.configKey === 'image_generation_credits' ||
+    props.configKey === 'image_width' ||
+    props.configKey === 'image_height' ||
+    props.configKey === 'image_max_prompt_chars' ||
+    props.configKey === 'image_max_output_bytes'
+  ) {
+    const isDimension = props.configKey === 'image_width' || props.configKey === 'image_height';
+    const isBytes = props.configKey === 'image_max_output_bytes';
+    const isContractLimit = props.configKey === 'image_max_prompt_chars';
+    return (
+      <InputNumber
+        min={isDimension ? 256 : isBytes ? 1048576 : 1}
+        max={isDimension ? 4096 : isBytes ? 52428800 : isContractLimit ? 200 : undefined}
+        precision={0}
+        value={typeof props.value === 'number' ? props.value : undefined}
+        disabled={props.disabled || isContractLimit}
+        onChange={(value) => props.onChange(value ?? configMetadata[props.configKey].defaultValue)}
+      />
+    );
+  }
+
   if (props.configKey === 'system_instructions') {
     return (
       <SystemInstructionsEditor
