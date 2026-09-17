@@ -76,6 +76,12 @@ import {
 
 const { Header, Content } = Layout;
 
+const DEFAULT_SAMPLE_SQL = `SELECT h.id AS source_history_id
+FROM experience.chat_history AS h
+WHERE h.user_input IS NOT NULL
+  AND h.model IS NOT NULL
+ORDER BY h.created_at DESC`;
+
 type PageKey = 'experiments' | 'samples' | 'processors' | 'new';
 
 type ExperimentFormValues = {
@@ -728,7 +734,7 @@ function SamplesPage({
               : null,
             sample_limit: BATCH_LAB_DEFAULT_SAMPLE_LIMIT,
             parameters_json: JSON.stringify(defaultTemplate?.default_parameters ?? {}, null, 2),
-            sql: defaultTemplate?.sql ?? 'SELECT * FROM turn_samples LIMIT {{sample_count}};',
+            sql: defaultTemplate?.sql ?? DEFAULT_SAMPLE_SQL,
           }}
           onValuesChange={() => setPreview(null)}
           onFinish={(values) => previewMutation.mutate(values)}
