@@ -125,6 +125,64 @@ body {
   overflow-wrap: anywhere;
 }
 
+.phone-preview {
+  width: min(100%, 390px);
+  max-width: 390px;
+  margin: 0 auto;
+  border: 1px solid #334153;
+  border-radius: 14px;
+  background: #11161d;
+  color: #f2f5f8;
+  box-shadow: none;
+  white-space: normal;
+}
+
+.batch-lab-message-render {
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.batch-lab-message-text p,
+.batch-lab-memory-block p {
+  margin: 0 0 8px;
+}
+
+.batch-lab-status-block {
+  margin-top: 16px;
+  padding: 8px 10px;
+  background: #eef8f2;
+  color: #173026;
+  white-space: normal;
+}
+
+.batch-lab-status-block strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.batch-lab-memory-block {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #334153;
+}
+
+.batch-lab-memory-block summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.combo-save-alert {
+  margin-bottom: 14px;
+  padding: 4px 10px;
+  border: 0;
+  background: #e8f7ed;
+}
+
+.combo-processor-field {
+  margin-top: 14px;
+}
+
 .ant-table-cell {
   vertical-align: top;
 }

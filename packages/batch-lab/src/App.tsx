@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   BatchLabContext,
+  BatchLabExperimentResultDetail,
   BatchLabExperimentSummary,
   BatchLabExperimentVariant,
   BatchLabPreview,
   BatchLabProcessorVersion,
   BatchLabSampleSet,
+  BatchLabSampleSnapshot,
   BatchLabSqlTemplate,
 } from '@miniapp/shared';
 import {
@@ -48,16 +50,22 @@ import {
   createBatchLabProcessor,
   createBatchLabReuseDisplayExperiment,
   createBatchLabSampleSet,
+  deleteBatchLabExperiment,
+  deleteBatchLabSampleSet,
   downloadBatchLabExperimentJsonl,
   getBatchLabContext,
   getBatchLabExperiment,
+  getBatchLabExperimentResults,
+  getBatchLabSampleSet,
   listBatchLabExperiments,
   listBatchLabProcessors,
+  listBatchLabSampleSetSamples,
   listBatchLabSampleSets,
   listBatchLabSqlTemplates,
   previewBatchLabProcessor,
-  runBatchLabWorkerOnce,
+  runBatchLabExperimentWorkerOnce,
   startBatchLabExperiment,
+  stopBatchLabExperiment,
   upsertBatchLabAnnotation,
 } from './api/client';
 import { batchLabQueryKeys } from './api/query-keys';
@@ -67,7 +75,6 @@ import {
   experimentProgress,
   experimentStatusText,
   newIdempotencyKey,
-  parseSampling,
   parseSqlParameters,
   processorConfigToRulesJson,
   processorOptionLabel,
@@ -76,8 +83,8 @@ import {
 
 const { Header, Content } = Layout;
 
-const DEFAULT_EXPERIMENT_MODEL_ID = 'google-gemini-3.1-flash-lite';
 const DEFAULT_EXPERIMENT_OPENROUTER_MODEL_ID = 'google/gemini-3.1-flash-lite';
+const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 const DEFAULT_SAMPLE_SQL = `SELECT h.id AS source_history_id
 FROM experience.chat_history AS h
@@ -85,7 +92,7 @@ JOIN experience.chat_sessions AS s ON s.id = h.session_id
 JOIN app_core.characters AS c ON c.id = h.character_id
 WHERE h.user_input IS NOT NULL
   AND h.model IS NOT NULL
-  AND h.turn_index >= 1
+  AND h.turn_index >= {{min_turn}}
   AND h.revision >= 0
   AND s.deleted_at IS NULL
 ORDER BY h.created_at DESC`;
@@ -94,15 +101,15 @@ type PageKey = 'experiments' | 'samples' | 'processors' | 'new';
 
 type ExperimentFormValues = {
   name: string;
+  purpose: string;
   sample_set_id: string;
   max_turns: number;
+  run_mode: 'single' | 'multi_turn';
   variants: Array<{
     name: string;
-    model_id: string;
+    provider_base_url: string;
     openrouter_model_id: string;
-    tier: 'light' | 'standard' | 'premium' | null;
-    is_free: boolean;
-    sampling: string;
+    output_preset_content: string;
     processor_version_id: string | null;
   }>;
 };
@@ -117,6 +124,7 @@ type ProcessorFormValues = {
 type SampleFormValues = {
   name: string;
   template_key: string | null;
+  min_turn: number;
   sample_limit: number;
   parameters_json: string;
   sql: string;
@@ -142,16 +150,28 @@ function makeVariant(
   key: 'a' | 'b'
 ): BatchLabExperimentVariant {
   const variant = values.variants[index];
+  const modelName = variant.openrouter_model_id.trim();
+  const presetContent = variant.output_preset_content.trim();
   return {
     key,
     name: variant.name,
-    model_id: variant.model_id,
-    openrouter_model_id: variant.openrouter_model_id,
-    tier: variant.tier,
-    is_free: variant.is_free,
-    sampling: parseSampling(variant.sampling),
+    model_id: modelName,
+    openrouter_model_id: modelName,
+    tier: null,
+    is_free: false,
+    sampling: {},
     processor_version_id: variant.processor_version_id,
     max_turns: values.max_turns,
+    provider_config: {
+      base_url: variant.provider_base_url.trim() || DEFAULT_OPENROUTER_BASE_URL,
+      key_ref: 'BATCH_LAB_MODEL_KEY',
+      module_name: modelName,
+    },
+    output_preset: {
+      name: `${variant.name} 输出预设`,
+      content: presetContent,
+      format: presetContent,
+    },
   };
 }
 
@@ -287,6 +307,7 @@ function WorkbenchShell({
         ) : null}
         {page === 'processors' ? (
           <ProcessorsPage
+            context={context}
             processors={data.processors.data ?? []}
             loading={data.processors.isPending}
           />
@@ -312,8 +333,8 @@ function ExperimentsPage({
   context: BatchLabContext;
   experiments: BatchLabExperimentSummary[];
 }) {
-  const queryClient = useQueryClient();
   const [selected, setSelected] = useState<BatchLabExperimentSummary | null>(null);
+  const queryClient = useQueryClient();
   const invalidateExperiments = () =>
     queryClient.invalidateQueries({ queryKey: batchLabQueryKeys.experiments(context) });
   const startMutation = useMutation({
@@ -324,26 +345,85 @@ function ExperimentsPage({
         idempotency_key: newIdempotencyKey(),
       }),
     onSuccess: async () => {
-      message.success('实验已进入队列');
+      message.success('实验已启动');
       await invalidateExperiments();
     },
     onError: (error) => message.error(errorMessage(error)),
   });
-  const workerMutation = useMutation({
-    mutationFn: () =>
-      runBatchLabWorkerOnce({
+  const stopMutation = useMutation({
+    mutationFn: (experiment: BatchLabExperimentSummary) =>
+      stopBatchLabExperiment({
+        experiment_id: experiment.id,
         source_environment: context.source_environment,
-        worker_id: `batch-lab-ui-${Date.now()}`,
-        claim_limit: 5,
       }),
-    onSuccess: async (result) => {
-      message.success(
-        `领取 ${result.claimed_count}，完成 ${result.completed_count}，失败 ${result.failed_count}`
-      );
+    onSuccess: async () => {
+      message.success('实验已停止，不再领取新任务');
       await invalidateExperiments();
     },
     onError: (error) => message.error(errorMessage(error)),
   });
+  const deleteMutation = useMutation({
+    mutationFn: (experiment: BatchLabExperimentSummary) =>
+      deleteBatchLabExperiment({
+        experiment_id: experiment.id,
+        source_environment: context.source_environment,
+      }),
+    onSuccess: async (_, experiment) => {
+      if (selected?.id === experiment.id) setSelected(null);
+      message.success('实验记录已删除');
+      await invalidateExperiments();
+    },
+    onError: (error) => message.error(errorMessage(error)),
+  });
+  const executeAllMutation = useMutation({
+    mutationFn: async (experiment: BatchLabExperimentSummary) => {
+      const total = { claimed: 0, completed: 0, failed: 0 };
+      // 每次只领取有上限的一批，避免单请求无界运行；停止操作会在两批之间生效。
+      for (;;) {
+        const result = await runBatchLabExperimentWorkerOnce({
+          experiment_id: experiment.id,
+          source_environment: context.source_environment,
+          worker_id: `batch-lab-ui-${newIdempotencyKey()}`,
+          claim_limit: 20,
+        });
+        total.claimed += result.claimed_count;
+        total.completed += result.completed_count;
+        total.failed += result.failed_count;
+        await invalidateExperiments();
+        if (result.claimed_count === 0) return total;
+      }
+    },
+    onSuccess: async (result) => {
+      if (result.claimed === 0) {
+        message.info('当前没有可领取的任务，可能已有任务正在执行或等待前一轮完成');
+      } else {
+        message.success(`全部执行完成：成功 ${result.completed}，失败 ${result.failed}`);
+      }
+      await invalidateExperiments();
+    },
+    onError: (error) => message.error(errorMessage(error)),
+  });
+
+  const confirmExecuteAll = (experiment: BatchLabExperimentSummary) => {
+    Modal.confirm({
+      title: '全部执行实验任务？',
+      content: `将持续分批执行“${experiment.name}”中的全部待处理任务，直至没有可领取任务。`,
+      okText: '全部执行',
+      cancelText: '取消',
+      onOk: () => executeAllMutation.mutateAsync(experiment),
+    });
+  };
+
+  const confirmDelete = (experiment: BatchLabExperimentSummary) => {
+    Modal.confirm({
+      title: '删除实验记录？',
+      content: `“${experiment.name}”将从列表隐藏，已生成的审计数据仍会保留。`,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => deleteMutation.mutateAsync(experiment),
+    });
+  };
 
   const columns: TableProps<BatchLabExperimentSummary>['columns'] = [
     {
@@ -402,14 +482,36 @@ function ExperimentsPage({
       key: 'actions',
       render: (_, record) => (
         <Space wrap>
-          <Button onClick={() => setSelected(record)}>查看</Button>
+          <Button onClick={() => setSelected(record)}>查看对比</Button>
           <Button
             type="primary"
-            disabled={record.status !== 'draft' || !context.capabilities.experiment_execution}
-            loading={startMutation.isPending}
+            disabled={record.status !== 'draft'}
+            loading={startMutation.isPending && startMutation.variables?.id === record.id}
             onClick={() => startMutation.mutate(record)}
           >
             启动
+          </Button>
+          <Button
+            disabled={record.status !== 'queued' && record.status !== 'running'}
+            loading={executeAllMutation.isPending && executeAllMutation.variables?.id === record.id}
+            onClick={() => confirmExecuteAll(record)}
+          >
+            全部执行
+          </Button>
+          <Button
+            disabled={record.status !== 'queued' && record.status !== 'running'}
+            loading={stopMutation.isPending && stopMutation.variables?.id === record.id}
+            onClick={() => stopMutation.mutate(record)}
+          >
+            停止
+          </Button>
+          <Button
+            danger
+            disabled={record.status === 'queued' || record.status === 'running'}
+            loading={deleteMutation.isPending && deleteMutation.variables?.id === record.id}
+            onClick={() => confirmDelete(record)}
+          >
+            删除
           </Button>
         </Space>
       ),
@@ -425,9 +527,6 @@ function ExperimentsPage({
             按后端持久状态恢复进度，刷新页面不会丢失运行记录。
           </Typography.Text>
         </div>
-        <Button loading={workerMutation.isPending} onClick={() => workerMutation.mutate()}>
-          执行任务
-        </Button>
       </div>
       <Table
         rowKey="id"
@@ -454,19 +553,35 @@ function ExperimentDrawer({
   const queryClient = useQueryClient();
   const detailQuery = useQuery({
     queryKey: experiment
-      ? batchLabQueryKeys.experiment(context, experiment.id)
+      ? batchLabQueryKeys.experimentResults(context, experiment.id)
       : [...batchLabQueryKeys.experiments(context), 'none'],
-    queryFn: ({ signal }) => getBatchLabExperiment(experiment?.id ?? '', signal),
+    queryFn: ({ signal }) =>
+      getBatchLabExperimentResults(experiment?.id ?? '', { limit: 20 }, signal),
     enabled: experiment !== null,
   });
-  const detail = detailQuery.data;
+  const resultDetail = detailQuery.data;
+  const detail = resultDetail?.experiment;
   const variants = detail?.variants ?? experiment?.variants ?? [];
   const diffRows = variants.length >= 2 ? variantDiffRows(variants[0], variants[1]) : [];
+  const [displayMode, setDisplayMode] = useState<'rich' | 'raw'>('rich');
+  const [selectedSampleOrdinal, setSelectedSampleOrdinal] = useState<number | null>(null);
+  const [selectedTurn, setSelectedTurn] = useState<number>(1);
+  const activeSample =
+    resultDetail?.samples.find((sample) => sample.ordinal === selectedSampleOrdinal) ??
+    resultDetail?.samples[0] ??
+    null;
+  const activeSampleAttempts =
+    activeSample && resultDetail
+      ? resultDetail.attempts.filter((attempt) => attempt.sample_ordinal === activeSample.ordinal)
+      : [];
+  const activeTurns = [...new Set(activeSampleAttempts.map((attempt) => attempt.turn_index))].sort(
+    (a, b) => a - b
+  );
   const invalidateExperiments = async () => {
     await queryClient.invalidateQueries({ queryKey: batchLabQueryKeys.experiments(context) });
     if (experiment) {
       await queryClient.invalidateQueries({
-        queryKey: batchLabQueryKeys.experiment(context, experiment.id),
+        queryKey: batchLabQueryKeys.experimentResults(context, experiment.id),
       });
     }
   };
@@ -533,7 +648,7 @@ function ExperimentDrawer({
   });
 
   return (
-    <Drawer width={720} title={experiment?.name} open={experiment !== null} onClose={onClose}>
+    <Drawer width={1200} title={experiment?.name} open={experiment !== null} onClose={onClose}>
       {experiment ? (
         <Space direction="vertical" size={20} className="full-width">
           <Space wrap>
@@ -603,12 +718,95 @@ function ExperimentDrawer({
               scroll={{ x: 640 }}
             />
           </Card>
-          <Alert
-            type="info"
-            showIcon
-            message="逐样本逐轮事实通过 JSONL 恢复"
-            description="详情抽屉展示冻结配置、血缘和操作入口；全量样本/轮次事实通过导出按行恢复，避免一次性把大正文塞进列表响应。"
-          />
+          <Card
+            title="查看对比"
+            size="small"
+            extra={
+              <Select
+                size="small"
+                value={displayMode}
+                onChange={setDisplayMode}
+                options={[
+                  { value: 'rich', label: '富文本' },
+                  { value: 'raw', label: '原文' },
+                ]}
+              />
+            }
+          >
+            {activeSample ? (
+              <Space direction="vertical" size={14} className="full-width">
+                <Select
+                  value={activeSample.ordinal}
+                  onChange={setSelectedSampleOrdinal}
+                  options={(resultDetail?.samples ?? []).map((sample) => ({
+                    value: sample.ordinal,
+                    label: `样本 #${sample.ordinal} · 第 ${sample.turn_index} 轮`,
+                  }))}
+                />
+                <Select
+                  value={selectedTurn}
+                  onChange={setSelectedTurn}
+                  options={(activeTurns.length > 0 ? activeTurns : [1]).map((turn) => ({
+                    value: turn,
+                    label: `第 ${turn} 轮`,
+                  }))}
+                />
+                <Descriptions bordered size="small" column={1}>
+                  <Descriptions.Item label="当前样本">
+                    #{activeSample.ordinal} · 第 {activeSample.turn_index} 轮
+                  </Descriptions.Item>
+                  <Descriptions.Item label="用户输入">{activeSample.user_input}</Descriptions.Item>
+                </Descriptions>
+                <Collapse
+                  size="small"
+                  items={[
+                    {
+                      key: 'context',
+                      label: `${activeSample.history.length} 条上下文消息`,
+                      children: (
+                        <Space direction="vertical" className="full-width">
+                          {activeSample.history.map((messageItem, index) => (
+                            <Typography.Paragraph
+                              key={`${messageItem.role}-${index}`}
+                              className="sample-message"
+                            >
+                              <Tag>{messageItem.role}</Tag>
+                              {messageItem.content}
+                            </Typography.Paragraph>
+                          ))}
+                        </Space>
+                      ),
+                    },
+                  ]}
+                />
+                <div className="two-column">
+                  {variants.map((variant) => {
+                    const attempt = activeSampleAttempts.find(
+                      (item) => item.variant_key === variant.key && item.turn_index === selectedTurn
+                    );
+                    const richHtml = attempt?.display_result?.sanitized_html;
+                    return (
+                      <Card key={variant.key} size="small" title={variant.name}>
+                        <Tag>{attempt?.status ?? 'pending'}</Tag>
+                        {displayMode === 'rich' && richHtml ? (
+                          <div
+                            className="rich-preview phone-preview"
+                            dangerouslySetInnerHTML={{ __html: richHtml }}
+                          />
+                        ) : (
+                          <Typography.Paragraph className="sample-message">
+                            {attempt?.raw_output ?? attempt?.error_message ?? '暂无输出'}
+                          </Typography.Paragraph>
+                        )}
+                      </Card>
+                    );
+                  })}
+                </div>
+              </Space>
+            ) : (
+              <Skeleton active />
+            )}
+          </Card>
           <Card title="实验备注" size="small">
             <Input.TextArea id="experiment-note" rows={4} placeholder="记录观察，不参与评分。" />
             <Button
@@ -644,6 +842,7 @@ function SamplesPage({
   const queryClient = useQueryClient();
   const [form] = Form.useForm<SampleFormValues>();
   const [preview, setPreview] = useState<BatchLabPreview | null>(null);
+  const [selectedSampleSet, setSelectedSampleSet] = useState<BatchLabSampleSet | null>(null);
   const defaultTemplate = templates[0];
 
   const templateOptions = templates.map((template) => ({
@@ -663,11 +862,24 @@ function SamplesPage({
         template_key: template?.key ?? null,
         template_version: template?.version ?? null,
         sql: values.sql,
-        parameters: parseSqlParameters(values.parameters_json),
+        parameters: { ...parseSqlParameters(values.parameters_json), min_turn: values.min_turn },
         sample_limit: values.sample_limit,
       });
     },
     onSuccess: (value) => setPreview(value),
+    onError: (error) => message.error(errorMessage(error)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (sampleSet: BatchLabSampleSet) =>
+      deleteBatchLabSampleSet({
+        sample_set_id: sampleSet.id,
+        source_environment: context.source_environment,
+      }),
+    onSuccess: async () => {
+      message.success('样本集已归档');
+      await queryClient.invalidateQueries({ queryKey: batchLabQueryKeys.sampleSets(context) });
+    },
     onError: (error) => message.error(errorMessage(error)),
   });
 
@@ -693,9 +905,18 @@ function SamplesPage({
   const applyTemplate = (value: string | null) => {
     const template = templates.find((item) => `${item.key}:${item.version}` === value);
     if (!template) return;
+    const minTurn =
+      typeof template.default_parameters.min_turn === 'number'
+        ? template.default_parameters.min_turn
+        : Number(form.getFieldValue('min_turn') ?? 60);
     form.setFieldsValue({
       sql: template.sql,
-      parameters_json: JSON.stringify(template.default_parameters, null, 2),
+      min_turn: minTurn,
+      parameters_json: JSON.stringify(
+        { min_turn: minTurn, ...template.default_parameters },
+        null,
+        2
+      ),
     });
     setPreview(null);
   };
@@ -730,6 +951,23 @@ function SamplesPage({
           },
           { title: '来源', dataIndex: 'source_environment', width: 100 },
           { title: '创建', dataIndex: 'created_at', render: (value: string) => formatDate(value) },
+          {
+            title: '操作',
+            key: 'actions',
+            width: 190,
+            render: (_, record) => (
+              <Space wrap>
+                <Button onClick={() => setSelectedSampleSet(record)}>查看样本</Button>
+                <Button
+                  danger
+                  loading={deleteMutation.isPending}
+                  onClick={() => deleteMutation.mutate(record)}
+                >
+                  删除
+                </Button>
+              </Space>
+            ),
+          },
         ]}
         locale={{ emptyText: '暂无冻结样本集。' }}
       />
@@ -742,8 +980,16 @@ function SamplesPage({
             template_key: defaultTemplate
               ? `${defaultTemplate.key}:${defaultTemplate.version}`
               : null,
+            min_turn:
+              typeof defaultTemplate?.default_parameters.min_turn === 'number'
+                ? defaultTemplate.default_parameters.min_turn
+                : 60,
             sample_limit: BATCH_LAB_DEFAULT_SAMPLE_LIMIT,
-            parameters_json: JSON.stringify(defaultTemplate?.default_parameters ?? {}, null, 2),
+            parameters_json: JSON.stringify(
+              { min_turn: 60, ...(defaultTemplate?.default_parameters ?? {}) },
+              null,
+              2
+            ),
             sql: defaultTemplate?.sql ?? DEFAULT_SAMPLE_SQL,
           }}
           onValuesChange={() => setPreview(null)}
@@ -763,6 +1009,9 @@ function SamplesPage({
             </Form.Item>
             <Form.Item name="sample_limit" label="抽取条数" rules={[{ required: true }]}>
               <InputNumber min={1} max={BATCH_LAB_MAX_SAMPLE_LIMIT} className="full-width" />
+            </Form.Item>
+            <Form.Item name="min_turn" label="当前轮次至少" rules={[{ required: true }]}>
+              <InputNumber min={1} max={10_000} className="full-width" />
             </Form.Item>
           </div>
           <Form.Item name="parameters_json" label="参数 JSON">
@@ -791,7 +1040,120 @@ function SamplesPage({
         </Form>
       </Card>
       {preview ? <PreviewPanel preview={preview} /> : null}
+      <SampleSetDrawer
+        context={context}
+        sampleSet={selectedSampleSet}
+        onClose={() => setSelectedSampleSet(null)}
+      />
     </section>
+  );
+}
+
+function SampleSetDrawer({
+  context,
+  sampleSet,
+  onClose,
+}: {
+  context: BatchLabContext;
+  sampleSet: BatchLabSampleSet | null;
+  onClose: () => void;
+}) {
+  const detailQuery = useQuery({
+    queryKey: sampleSet
+      ? batchLabQueryKeys.sampleSet(context, sampleSet.id)
+      : [...batchLabQueryKeys.sampleSets(context), 'none'],
+    queryFn: ({ signal }) => getBatchLabSampleSet(sampleSet?.id ?? '', signal),
+    enabled: sampleSet !== null,
+  });
+  const samplesQuery = useQuery({
+    queryKey: sampleSet
+      ? batchLabQueryKeys.sampleSetSamples(context, sampleSet.id)
+      : [...batchLabQueryKeys.sampleSets(context), 'none', 'samples'],
+    queryFn: ({ signal }) =>
+      listBatchLabSampleSetSamples(sampleSet?.id ?? '', { limit: 50 }, signal),
+    enabled: sampleSet !== null,
+  });
+
+  return (
+    <Drawer width={1200} title={sampleSet?.name} open={sampleSet !== null} onClose={onClose}>
+      <Space direction="vertical" size={18} className="full-width">
+        {detailQuery.data ? (
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label="样本数">{detailQuery.data.sample_count}</Descriptions.Item>
+            <Descriptions.Item label="来源环境">
+              {detailQuery.data.source_environment}
+            </Descriptions.Item>
+            <Descriptions.Item label="创建时间">
+              {formatDate(detailQuery.data.created_at)}
+            </Descriptions.Item>
+            <Descriptions.Item label="冻结参数">
+              <Typography.Text code>
+                {JSON.stringify(detailQuery.data.frozen_parameters)}
+              </Typography.Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="筛选 SQL">
+              <Input.TextArea
+                className="code-input"
+                value={detailQuery.data.frozen_sql}
+                rows={8}
+                readOnly
+              />
+            </Descriptions.Item>
+          </Descriptions>
+        ) : (
+          <Skeleton active />
+        )}
+        <Table<BatchLabSampleSnapshot>
+          rowKey="source_history_id"
+          loading={samplesQuery.isPending}
+          size="small"
+          dataSource={samplesQuery.data?.items ?? []}
+          scroll={{ x: 980 }}
+          columns={[
+            { title: '#', dataIndex: 'ordinal', width: 70 },
+            {
+              title: '锚点',
+              render: (_, item) => (
+                <Space direction="vertical" size={2}>
+                  <Typography.Text>{item.source_session_id}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    第 {item.turn_index} 轮 · revision {item.revision}
+                  </Typography.Text>
+                </Space>
+              ),
+            },
+            { title: '用户输入', dataIndex: 'user_input' },
+            {
+              title: '上下文',
+              render: (_, item) => (
+                <Collapse
+                  size="small"
+                  items={[
+                    {
+                      key: 'history',
+                      label: `${item.history.length} 条窗口消息`,
+                      children: (
+                        <Space direction="vertical" className="full-width">
+                          {item.history.map((messageItem, index) => (
+                            <Typography.Paragraph
+                              key={`${messageItem.role}-${index}`}
+                              className="sample-message"
+                            >
+                              <Tag>{messageItem.role}</Tag>
+                              {messageItem.content}
+                            </Typography.Paragraph>
+                          ))}
+                        </Space>
+                      ),
+                    },
+                  ]}
+                />
+              ),
+            },
+          ]}
+        />
+      </Space>
+    </Drawer>
   );
 }
 
@@ -870,9 +1232,11 @@ function PreviewPanel({ preview }: { preview: BatchLabPreview }) {
 }
 
 function ProcessorsPage({
+  context,
   processors,
   loading,
 }: {
+  context: BatchLabContext;
   processors: BatchLabProcessorVersion[];
   loading: boolean;
 }) {
@@ -880,6 +1244,7 @@ function ProcessorsPage({
   const [form] = Form.useForm<ProcessorFormValues>();
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewStatus, setPreviewStatus] = useState<string | null>(null);
+  const [previewHits, setPreviewHits] = useState<number | null>(null);
 
   const previewMutation = useMutation({
     mutationFn: (values: ProcessorFormValues) =>
@@ -890,6 +1255,7 @@ function ProcessorsPage({
     onSuccess: (result) => {
       setPreviewHtml(result.sanitized_html);
       setPreviewStatus(displayStatusText(result.status));
+      setPreviewHits(result.match_count);
     },
     onError: (error) => message.error(errorMessage(error)),
   });
@@ -903,7 +1269,7 @@ function ProcessorsPage({
       }),
     onSuccess: async () => {
       message.success('已保存不可变版本');
-      await queryClient.invalidateQueries({ queryKey: ['batch-lab'] });
+      await queryClient.invalidateQueries({ queryKey: batchLabQueryKeys.processors(context) });
     },
     onError: (error) => message.error(errorMessage(error)),
   });
@@ -916,6 +1282,7 @@ function ProcessorsPage({
     });
     setPreviewHtml(null);
     setPreviewStatus(null);
+    setPreviewHits(null);
   };
 
   return (
@@ -942,6 +1309,7 @@ function ProcessorsPage({
             onValuesChange={() => {
               setPreviewHtml(null);
               setPreviewStatus(null);
+              setPreviewHits(null);
             }}
             onFinish={(values) => previewMutation.mutate(values)}
           >
@@ -978,8 +1346,14 @@ function ProcessorsPage({
         <Card title="预览">
           {previewHtml ? (
             <Space direction="vertical" className="full-width">
-              <Tag color="green">{previewStatus}</Tag>
-              <div className="rich-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+              <Space>
+                <Tag color="green">{previewStatus}</Tag>
+                <Tag>{previewHits ?? 0} 处匹配</Tag>
+              </Space>
+              <div
+                className="rich-preview phone-preview"
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
             </Space>
           ) : (
             <Typography.Text type="secondary">运行预览后显示用户展示结果。</Typography.Text>
@@ -1041,8 +1415,10 @@ function ExperimentWizard({
     mutationFn: (values: ExperimentFormValues) =>
       createBatchLabExperiment({
         name: values.name,
+        purpose: values.purpose?.trim() ? values.purpose.trim() : null,
         sample_set_id: values.sample_set_id,
         source_environment: context.source_environment,
+        run_mode: values.run_mode,
         variants: [makeVariant(values, 0, 'a'), makeVariant(values, 1, 'b')],
         idempotency_key: newIdempotencyKey(),
       }),
@@ -1078,25 +1454,25 @@ function ExperimentWizard({
 
   const initialValues: ExperimentFormValues = {
     name: '长对话 · 减少重复描写',
+    purpose: '',
     sample_set_id: sampleSets[0]?.id ?? '',
     max_turns: 1,
+    run_mode: 'single',
     variants: [
       {
         name: '基准 A',
-        model_id: DEFAULT_EXPERIMENT_MODEL_ID,
+        provider_base_url: DEFAULT_OPENROUTER_BASE_URL,
         openrouter_model_id: DEFAULT_EXPERIMENT_OPENROUTER_MODEL_ID,
-        tier: 'standard',
-        is_free: false,
-        sampling: '{"temperature":0.7,"top_p":0.9}',
+        output_preset_content:
+          '保持角色一致，自然回应用户，推进对话。\n结尾使用 [status]...[/status] 和 [memory]...[/memory] 输出状态及展示记忆。',
         processor_version_id: processors[0]?.id ?? null,
       },
       {
         name: '候选 B',
-        model_id: DEFAULT_EXPERIMENT_MODEL_ID,
+        provider_base_url: DEFAULT_OPENROUTER_BASE_URL,
         openrouter_model_id: DEFAULT_EXPERIMENT_OPENROUTER_MODEL_ID,
-        tier: 'standard',
-        is_free: false,
-        sampling: '{"temperature":0.7,"top_p":0.9}',
+        output_preset_content:
+          '保持角色一致，自然回应用户，推进对话。\n减少重复的动作和情绪描写；用户要求安静时，不主动追问。\n结尾使用 [status]...[/status] 和 [memory]...[/memory] 输出状态及展示记忆。',
         processor_version_id: processors[1]?.id ?? processors[0]?.id ?? null,
       },
     ],
@@ -1137,15 +1513,34 @@ function ExperimentWizard({
               <Form.Item name="max_turns" label="重跑轮数 X" rules={[{ required: true }]}>
                 <InputNumber min={1} max={BATCH_LAB_MAX_EXPERIMENT_TURNS} className="full-width" />
               </Form.Item>
+              <Form.Item name="run_mode" label="运行模式" rules={[{ required: true }]}>
+                <Select
+                  options={[
+                    { value: 'single', label: '单轮' },
+                    { value: 'multi_turn', label: '连续多轮' },
+                  ]}
+                />
+              </Form.Item>
             </div>
+            <Form.Item name="purpose" label="本次想验证什么 · 选填">
+              <Input.TextArea rows={3} maxLength={2000} />
+            </Form.Item>
           </Card>
           <div className="two-column section-gap">
             {[0, 1].map((index) => (
               <Card
                 key={index}
                 title={index === 0 ? '组合 A · 基准' : '组合 B · 候选'}
-                extra={index === 1 ? <Button onClick={copyBaseline}>从 A 复制</Button> : null}
+                extra={
+                  index === 1 ? <Button onClick={copyBaseline}>从 A 复制整套组合</Button> : null
+                }
               >
+                <Alert
+                  className="combo-save-alert"
+                  type="success"
+                  showIcon={false}
+                  message="生成配置与展示规则一起保存"
+                />
                 <Form.Item
                   name={['variants', index, 'name']}
                   label="组合名称"
@@ -1154,42 +1549,34 @@ function ExperimentWizard({
                   <Input maxLength={120} />
                 </Form.Item>
                 <Form.Item
-                  name={['variants', index, 'model_id']}
-                  label="模型 ID"
+                  name={['variants', index, 'provider_base_url']}
+                  label="OpenRouter URL"
                   rules={[{ required: true }]}
                 >
-                  <Input maxLength={200} />
+                  <Input maxLength={500} placeholder="https://openrouter.ai/api/v1" />
                 </Form.Item>
                 <Form.Item
                   name={['variants', index, 'openrouter_model_id']}
-                  label="OpenRouter 模型"
+                  label="生成模型"
                   rules={[{ required: true }]}
                 >
-                  <Input maxLength={200} />
+                  <Input maxLength={200} placeholder="google/gemini-3.1-flash-lite" />
                 </Form.Item>
-                <div className="form-grid two">
-                  <Form.Item name={['variants', index, 'tier']} label="档位">
-                    <Select
-                      options={[
-                        { value: 'light', label: 'light' },
-                        { value: 'standard', label: 'standard' },
-                        { value: 'premium', label: 'premium' },
-                      ]}
-                    />
-                  </Form.Item>
-                  <Form.Item name={['variants', index, 'is_free']} label="免费模型">
-                    <Select
-                      options={[
-                        { value: false, label: '否' },
-                        { value: true, label: '是' },
-                      ]}
-                    />
-                  </Form.Item>
-                </div>
-                <Form.Item name={['variants', index, 'sampling']} label="采样参数 JSON">
-                  <Input.TextArea rows={5} className="code-input" />
+                <Form.Item
+                  name={['variants', index, 'output_preset_content']}
+                  label="① 输出预设 · 规定内容与格式"
+                  rules={[{ required: true }]}
+                >
+                  <Input.TextArea rows={8} maxLength={10_000} />
                 </Form.Item>
-                <Form.Item name={['variants', index, 'processor_version_id']} label="后处理版本">
+                <Typography.Text type="secondary">
+                  ↓ 模型按上方约定输出，再由下方规则展示
+                </Typography.Text>
+                <Form.Item
+                  className="combo-processor-field"
+                  name={['variants', index, 'processor_version_id']}
+                  label="② 对应后处理 · 与本版预设配套"
+                >
                   <Select options={processorOptions} />
                 </Form.Item>
               </Card>

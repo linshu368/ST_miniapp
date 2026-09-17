@@ -137,6 +137,50 @@ export function computeProcessorDigest(config: BatchLabProcessorConfig): string 
 }
 
 export function renderSafeHtml(text: string): string {
+  const statusBlocks: string[] = [];
+  const memoryBlocks: string[] = [];
+  let bodyText = text
+    .replace(/\[status\]([\s\S]*?)\[\/status\]/gi, (_match, content: string) => {
+      statusBlocks.push(content.trim());
+      return '\n';
+    })
+    .replace(/\[memory\]([\s\S]*?)\[\/memory\]/gi, (_match, content: string) => {
+      memoryBlocks.push(content.trim());
+      return '\n';
+    })
+    .trim();
+
+  const bodyHtml = bodyText
+    ? `<div class="batch-lab-message-text">${renderParagraphs(bodyText)}</div>`
+    : '';
+  const statusHtml = statusBlocks
+    .filter((value) => value.length > 0)
+    .map(
+      (value) =>
+        `<section class="batch-lab-status-block"><strong>当前状态</strong>${renderLines(value)}</section>`
+    )
+    .join('');
+  const memoryHtml = memoryBlocks
+    .filter((value) => value.length > 0)
+    .map(
+      (value) =>
+        `<details class="batch-lab-memory-block"><summary>记忆</summary><div>${renderParagraphs(value)}</div></details>`
+    )
+    .join('');
+
+  return `<div class="batch-lab-message-render">${bodyHtml}${statusHtml}${memoryHtml}</div>`;
+}
+
+function renderParagraphs(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0)
+    .map((paragraph) => `<p>${renderLines(paragraph)}</p>`)
+    .join('');
+}
+
+function renderLines(text: string): string {
   return escapeHtml(text).replace(/\r\n|\r|\n/g, '<br>');
 }
 

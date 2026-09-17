@@ -1,23 +1,38 @@
 import {
   BATCH_LAB_JSONL_SCHEMA_VERSION,
   batchLabAnnotationSchema,
+  batchLabExperimentResultDetailSchema,
   batchLabExperimentDetailSchema,
   batchLabExportRowSchema,
   batchLabExperimentSummarySchema,
   type BatchLabAnnotation,
   type BatchLabCopyExperimentRequest,
   type BatchLabCreateExperimentRequest,
+  type BatchLabDeleteExperimentRequest,
+  type BatchLabDisplayResult,
   type BatchLabExperimentDetail,
+  type BatchLabExperimentResultDetail,
   type BatchLabExperimentSummary,
   type BatchLabExperimentVariant,
   type BatchLabExportAttempt,
   type BatchLabExportRow,
+  type BatchLabOutputPreset,
+  type BatchLabProviderConfig,
   type BatchLabReuseDisplayExperimentRequest,
   type BatchLabStartExperimentRequest,
+  type BatchLabStopExperimentRequest,
   type BatchLabUpsertAnnotationRequest,
 } from '@miniapp/shared';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
-import { BatchLabRepositoryError, repositoryError } from './BatchLabSampleRepository.js';
+import {
+  BatchLabRepositoryError,
+  BatchLabSampleRepository,
+  repositoryError,
+} from './BatchLabSampleRepository.js';
+import { toDisplayResult } from './BatchLabProcessorRepository.js';
+
+const EMPTY_OUTPUT_PRESET = { name: '', content: '', format: '' };
+const EMPTY_PROVIDER_CONFIG = { base_url: '', key_ref: '', module_name: '' };
 
 interface ExperimentRow {
   id: string;
@@ -25,6 +40,10 @@ interface ExperimentRow {
   source_environment: 'test' | 'production';
   sample_set_id: string;
   status: BatchLabExperimentSummary['status'];
+  purpose?: string | null;
+  run_mode?: BatchLabExperimentSummary['run_mode'];
+  output_preset?: Partial<BatchLabOutputPreset> | null;
+  provider_config?: Partial<BatchLabProviderConfig> | null;
   variants: BatchLabExperimentVariant[];
   total_attempts: number;
   completed_attempts: number;
@@ -52,6 +71,21 @@ export interface ExperimentAttemptRow {
   display_result_id?: string | null;
   error_code?: string | null;
   error_message?: string | null;
+}
+
+interface DisplayResultRow {
+  id: string;
+  processor_version_id: string;
+  processor_digest: string;
+  status: BatchLabDisplayResult['status'];
+  error_code: BatchLabDisplayResult['error_code'];
+  match_count: number;
+  input_text: string;
+  output_text: string;
+  sanitized_html: string;
+  renderer_protocol: 'batch_lab_html_v1';
+  renderer_version: 1;
+  created_at: string;
 }
 
 export interface ExecutionSampleSnapshot {
@@ -106,6 +140,10 @@ export class BatchLabExecutionRepository {
       p_source_environment: input.source_environment,
       p_variants: input.variants,
       p_idempotency_key: input.idempotency_key,
+      p_purpose: input.purpose ?? null,
+      p_run_mode: input.run_mode ?? 'single',
+      p_output_preset: input.output_preset ?? EMPTY_OUTPUT_PRESET,
+      p_provider_config: input.provider_config ?? EMPTY_PROVIDER_CONFIG,
     });
     if (error) throw repositoryError(error);
     return toExperiment(expectFirst<ExperimentRow>(data, 'experiment'));
@@ -121,15 +159,43 @@ export class BatchLabExecutionRepository {
     return toExperiment(expectFirst<ExperimentRow>(data, 'experiment'));
   }
 
+  async stopExperiment(input: BatchLabStopExperimentRequest): Promise<BatchLabExperimentSummary> {
+    const { data, error } = await this.db.rpc('stop_experiment', {
+      p_experiment_id: input.experiment_id,
+      p_source_environment: input.source_environment,
+    });
+    if (error) throw repositoryError(error);
+    return toExperiment(expectFirst<ExperimentRow>(data, 'experiment'));
+  }
+
+  async softDeleteExperiment(
+    input: BatchLabDeleteExperimentRequest
+  ): Promise<{ id: string; deleted_at: string }> {
+    const { data, error } = await this.db.rpc('soft_delete_experiment', {
+      p_experiment_id: input.experiment_id,
+      p_source_environment: input.source_environment,
+    });
+    if (error) throw repositoryError(error);
+    return expectFirst<{ id: string; deleted_at: string }>(data, 'deleted experiment');
+  }
+
   async listExperiments(limit = 50): Promise<BatchLabExperimentSummary[]> {
     const safeLimit = Math.max(1, Math.min(limit, 100));
     const { data, error } = await this.db
       .from('experiments')
-      .select(
-        'id,name,source_environment,sample_set_id,status,variants,total_attempts,completed_attempts,failed_attempts,created_at,started_at,completed_at'
-      )
+      .select(EXPERIMENT_SELECT)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(safeLimit);
+    if (error && isMissingPrototypeColumns(error)) {
+      const legacy = await this.db
+        .from('experiments')
+        .select(EXPERIMENT_SELECT_LEGACY)
+        .order('created_at', { ascending: false })
+        .limit(safeLimit);
+      if (legacy.error) throw repositoryError(legacy.error);
+      return ((legacy.data ?? []) as ExperimentRow[]).map(toExperiment);
+    }
     if (error) throw repositoryError(error);
     return ((data ?? []) as ExperimentRow[]).map(toExperiment);
   }
@@ -148,8 +214,12 @@ export class BatchLabExecutionRepository {
     }
     const copied = await this.createExperiment({
       name: input.name,
+      purpose: input.purpose ?? source.purpose,
       sample_set_id: source.sample_set_id,
       source_environment: input.source_environment,
+      run_mode: source.run_mode ?? 'single',
+      output_preset: source.output_preset ?? EMPTY_OUTPUT_PRESET,
+      provider_config: source.provider_config ?? EMPTY_PROVIDER_CONFIG,
       variants: source.variants.map((variant) => ({ ...variant })),
       idempotency_key: input.idempotency_key,
     });
@@ -173,6 +243,7 @@ export class BatchLabExecutionRepository {
     }
     const row = {
       name: input.name,
+      purpose: input.purpose ?? source.purpose,
       source_environment: input.source_environment,
       sample_set_id: source.sample_set_id,
       idempotency_key: input.idempotency_key,
@@ -181,6 +252,9 @@ export class BatchLabExecutionRepository {
       kind: 'reuse_display',
       source_experiment_id: source.id,
       generation_source_experiment_id: source.lineage.generation_source_experiment_id ?? source.id,
+      run_mode: source.run_mode ?? 'single',
+      output_preset: input.output_preset ?? source.output_preset ?? EMPTY_OUTPUT_PRESET,
+      provider_config: input.provider_config ?? source.provider_config ?? EMPTY_PROVIDER_CONFIG,
       total_attempts: 0,
       completed_attempts: 0,
       failed_attempts: 0,
@@ -198,6 +272,40 @@ export class BatchLabExecutionRepository {
       throw repositoryError(error);
     }
     return toExperiment(expectFirst<ExperimentRow>(data, 'reuse experiment'));
+  }
+
+  async getExperimentResultDetail(
+    experimentId: string,
+    input: { sampleLimit?: number; sampleCursor?: string | null } = {}
+  ): Promise<BatchLabExperimentResultDetail> {
+    const experiment = await this.getExperimentDetail(experimentId);
+    const sampleRepository = new BatchLabSampleRepository(this.db);
+    const [sampleSet, samplePage, annotations] = await Promise.all([
+      sampleRepository.getSampleSetDetail(experiment.sample_set_id),
+      sampleRepository.listSampleSnapshots(experiment.sample_set_id, {
+        limit: input.sampleLimit ?? 25,
+        cursor: input.sampleCursor ?? null,
+      }),
+      this.listAnnotations(experiment.id),
+    ]);
+    const ordinals = new Set(samplePage.items.map((sample) => sample.ordinal));
+    const attempts = await this.listResultAttempts(experiment.id, ordinals);
+    const progress = {
+      total_attempts: experiment.total_attempts,
+      completed_attempts: experiment.completed_attempts,
+      failed_attempts: experiment.failed_attempts,
+      pending_attempts: attempts.filter((attempt) => attempt.status === 'pending').length,
+      running_attempts: attempts.filter((attempt) => attempt.status === 'running').length,
+    };
+    return batchLabExperimentResultDetailSchema.parse({
+      experiment,
+      sample_set: sampleSet,
+      samples: samplePage.items,
+      attempts,
+      annotations,
+      progress,
+      next_sample_cursor: samplePage.next_cursor,
+    });
   }
 
   async upsertAnnotation(input: BatchLabUpsertAnnotationRequest): Promise<BatchLabAnnotation> {
@@ -271,11 +379,19 @@ export class BatchLabExecutionRepository {
     );
   }
 
-  async claimAttempts(workerId: string, limit: number): Promise<ExperimentAttemptRow[]> {
-    const { data, error } = await this.db.rpc('claim_experiment_attempts', {
+  async claimAttempts(
+    workerId: string,
+    limit: number,
+    experimentId?: string
+  ): Promise<ExperimentAttemptRow[]> {
+    const rpcName = experimentId
+      ? 'claim_experiment_attempts_for_experiment'
+      : 'claim_experiment_attempts';
+    const { data, error } = await this.db.rpc(rpcName, {
       p_worker_id: workerId,
       p_limit: limit,
       p_lease_seconds: 120,
+      ...(experimentId ? { p_experiment_id: experimentId } : {}),
     });
     if (error) throw repositoryError(error);
     return (data ?? []) as ExperimentAttemptRow[];
@@ -349,6 +465,16 @@ export class BatchLabExecutionRepository {
       .select(EXPERIMENT_SELECT)
       .eq('id', id)
       .limit(1);
+    if (error && isMissingPrototypeColumns(error)) {
+      const legacy = await this.db
+        .from('experiments')
+        .select(EXPERIMENT_SELECT_LEGACY)
+        .eq('id', id)
+        .limit(1);
+      if (legacy.error) throw repositoryError(legacy.error);
+      const legacyRow = ((legacy.data ?? []) as ExperimentRow[])[0];
+      if (legacyRow) return legacyRow;
+    }
     if (error) throw repositoryError(error);
     const row = ((data ?? []) as ExperimentRow[])[0];
     if (!row) {
@@ -421,6 +547,16 @@ export class BatchLabExecutionRepository {
       .select(EXPERIMENT_SELECT)
       .eq('idempotency_key', idempotencyKey)
       .limit(1);
+    if (error && isMissingPrototypeColumns(error)) {
+      const legacy = await this.db
+        .from('experiments')
+        .select(EXPERIMENT_SELECT_LEGACY)
+        .eq('idempotency_key', idempotencyKey)
+        .limit(1);
+      if (legacy.error) return null;
+      const legacyRow = ((legacy.data ?? []) as ExperimentRow[])[0];
+      return legacyRow ? toExperiment(legacyRow) : null;
+    }
     if (error) return null;
     const row = ((data ?? []) as ExperimentRow[])[0];
     return row ? toExperiment(row) : null;
@@ -453,6 +589,66 @@ export class BatchLabExecutionRepository {
       .eq('experiment_id', experimentId);
     if (error) throw repositoryError(error);
     return ((data ?? []) as AnnotationRow[]).map(toAnnotation);
+  }
+
+  private async listResultAttempts(
+    experimentId: string,
+    sampleOrdinals: Set<number>
+  ): Promise<BatchLabExperimentResultDetail['attempts']> {
+    if (sampleOrdinals.size === 0) return [];
+    const { data, error } = await this.db
+      .from('experiment_attempts')
+      .select(
+        'id,sample_ordinal,variant_key,turn_index,status,generation_id,finish_reason,raw_output,display_result_id,error_code,error_message'
+      )
+      .eq('experiment_id', experimentId)
+      .in('sample_ordinal', [...sampleOrdinals])
+      .order('sample_ordinal')
+      .order('variant_key')
+      .order('turn_index');
+    if (error) throw repositoryError(error);
+    const attemptRows = (data ?? []) as Array<
+      AttemptExportRow & { display_result_id: string | null }
+    >;
+    const displayIds = [
+      ...new Set(
+        attemptRows
+          .map((row) => row.display_result_id)
+          .filter((value): value is string => typeof value === 'string')
+      ),
+    ];
+    const displays = await this.getDisplayResults(displayIds);
+    return attemptRows.map((row) => ({
+      sample_ordinal: row.sample_ordinal,
+      attempt_id: row.id,
+      variant_key: row.variant_key,
+      turn_index: row.turn_index,
+      status: row.status,
+      generation_id: row.generation_id,
+      finish_reason: row.finish_reason,
+      raw_output: row.raw_output,
+      display_result_id: row.display_result_id,
+      display_result: row.display_result_id ? (displays.get(row.display_result_id) ?? null) : null,
+      error_code: row.error_code,
+      error_message: row.error_message,
+    }));
+  }
+
+  private async getDisplayResults(ids: string[]): Promise<Map<string, BatchLabDisplayResult>> {
+    if (ids.length === 0) return new Map();
+    const { data, error } = await this.db
+      .from('display_results')
+      .select(
+        'id,processor_version_id,processor_digest,status,error_code,match_count,input_text,output_text,sanitized_html,renderer_protocol,renderer_version,created_at'
+      )
+      .in('id', ids);
+    if (error) throw repositoryError(error);
+    return new Map(
+      ((data ?? []) as DisplayResultRow[]).map((row) => {
+        const result = toDisplayResult(row);
+        return [row.id, result] as const;
+      })
+    );
   }
 
   private async listSamplesForExport(sampleSetId: string) {
@@ -527,7 +723,22 @@ export class BatchLabExecutionRepository {
 }
 
 const EXPERIMENT_SELECT =
+  'id,name,source_environment,sample_set_id,status,purpose,run_mode,output_preset,provider_config,variants,total_attempts,completed_attempts,failed_attempts,kind,source_experiment_id,generation_source_experiment_id,created_at,started_at,completed_at,deleted_at';
+
+const EXPERIMENT_SELECT_LEGACY =
   'id,name,source_environment,sample_set_id,status,variants,total_attempts,completed_attempts,failed_attempts,kind,source_experiment_id,generation_source_experiment_id,created_at,started_at,completed_at';
+
+function isMissingPrototypeColumns(error: { code?: string; message?: string; details?: string }) {
+  const text = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''}`;
+  return (
+    text.includes('42703') ||
+    text.includes('PGRST204') ||
+    text.includes('purpose') ||
+    text.includes('run_mode') ||
+    text.includes('output_preset') ||
+    text.includes('provider_config')
+  );
+}
 
 export function toExperiment(row: ExperimentRow): BatchLabExperimentSummary {
   return batchLabExperimentSummarySchema.parse({
@@ -536,6 +747,10 @@ export function toExperiment(row: ExperimentRow): BatchLabExperimentSummary {
     sample_set_id: row.sample_set_id,
     source_environment: row.source_environment,
     status: row.status,
+    purpose: row.purpose ?? null,
+    run_mode: row.run_mode ?? 'single',
+    output_preset: normalizeOutputPreset(row.output_preset),
+    provider_config: normalizeProviderConfig(row.provider_config),
     variants: row.variants,
     total_attempts: row.total_attempts,
     completed_attempts: row.completed_attempts,
@@ -544,6 +759,26 @@ export function toExperiment(row: ExperimentRow): BatchLabExperimentSummary {
     started_at: row.started_at,
     completed_at: row.completed_at,
   });
+}
+
+function normalizeOutputPreset(
+  value: Partial<BatchLabOutputPreset> | null | undefined
+): BatchLabOutputPreset {
+  return {
+    name: value?.name ?? EMPTY_OUTPUT_PRESET.name,
+    content: value?.content ?? EMPTY_OUTPUT_PRESET.content,
+    format: value?.format ?? EMPTY_OUTPUT_PRESET.format,
+  };
+}
+
+function normalizeProviderConfig(
+  value: Partial<BatchLabProviderConfig> | null | undefined
+): BatchLabProviderConfig {
+  return {
+    base_url: value?.base_url ?? EMPTY_PROVIDER_CONFIG.base_url,
+    key_ref: value?.key_ref ?? EMPTY_PROVIDER_CONFIG.key_ref,
+    module_name: value?.module_name ?? EMPTY_PROVIDER_CONFIG.module_name,
+  };
 }
 
 export function toExperimentDetail(row: ExperimentRow): BatchLabExperimentDetail {

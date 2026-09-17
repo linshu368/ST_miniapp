@@ -3,7 +3,7 @@
   "name": "batch-lab-prototype-alignment",
   "title": "Batch Lab 原型一致性修复规划",
   "description": "Align packages/batch-lab and backend Batch Lab APIs with the provided V1 PRD/prototype: sample detail/delete, complete compare detail, phone-width rich preview, new experiment purpose/model/preset fields, and supporting shared contracts/migrations.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "cross-package",
   "package": "cross-package",
@@ -25,8 +25,15 @@
   "meta": {
     "module_impact": {
       "schema_version": 1,
-      "mode": "pending",
-      "reason": "Cross-package Batch Lab correction touches shared API contracts, backend routes/services/repositories, batch-lab frontend, and likely batch_lab schema migration. Resolve with reviewed implementation before task start."
+      "mode": "changes",
+      "modules": [
+        "backend.infrastructure.runtime-data-security",
+        "shared.infrastructure.database-environment",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security",
+        "admin.infrastructure.admin-client-auth"
+      ],
+      "reason": "Cross-package Batch Lab correction touches shared API contracts, backend routes/services/repositories, batch-lab frontend, and batch_lab schema migration."
     }
   }
 }

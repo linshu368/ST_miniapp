@@ -70,13 +70,21 @@ describe('Batch Lab postprocessing service', () => {
 
     expect(result.status).toBe('validation_error');
     expect(result.output_text).toBe('hello');
-    expect(result.sanitized_html).toBe('hello');
+    expect(result.sanitized_html).toBe(
+      '<div class="batch-lab-message-render"><div class="batch-lab-message-text"><p>hello</p></div></div>'
+    );
     expect(result.error_code).toBe('BATCH_LAB_PROCESSOR_VALIDATION_ERROR');
   });
 
   it('escapes generated HTML so dangerous tags and URLs render as text', () => {
     expect(renderSafeHtml('<script>alert(1)</script>\n<a href="javascript:alert(1)">x</a>')).toBe(
-      '&lt;script&gt;alert(1)&lt;/script&gt;<br>&lt;a href=&quot;javascript:alert(1)&quot;&gt;x&lt;/a&gt;'
+      '<div class="batch-lab-message-render"><div class="batch-lab-message-text"><p>&lt;script&gt;alert(1)&lt;/script&gt;<br>&lt;a href=&quot;javascript:alert(1)&quot;&gt;x&lt;/a&gt;</p></div></div>'
+    );
+  });
+
+  it('renders status and memory tags as phone-message display blocks', () => {
+    expect(renderSafeHtml('正文\n\n[status]地点：客厅[/status]\n[memory]记住灯光[/memory]')).toBe(
+      '<div class="batch-lab-message-render"><div class="batch-lab-message-text"><p>正文</p></div><section class="batch-lab-status-block"><strong>当前状态</strong>地点：客厅</section><details class="batch-lab-memory-block"><summary>记忆</summary><div><p>记住灯光</p></div></details></div>'
     );
   });
 

@@ -38,6 +38,16 @@ const context: ExecutionContext = {
         sampling: { temperature: 0.2 },
         processor_version_id: null,
         max_turns: 1,
+        provider_config: {
+          base_url: 'https://openrouter.ai/api/v1',
+          key_ref: 'BATCH_LAB_MODEL_KEY',
+          module_name: 'openrouter/a',
+        },
+        output_preset: {
+          name: 'preset A',
+          content: '保持角色一致',
+          format: '使用 [status] 和 [memory]',
+        },
       },
       {
         key: 'b',
@@ -68,6 +78,16 @@ const context: ExecutionContext = {
     sampling: { temperature: 0.2 },
     processor_version_id: null,
     max_turns: 1,
+    provider_config: {
+      base_url: 'https://openrouter.ai/api/v1',
+      key_ref: 'BATCH_LAB_MODEL_KEY',
+      module_name: 'openrouter/a',
+    },
+    output_preset: {
+      name: 'preset A',
+      content: '保持角色一致',
+      format: '使用 [status] 和 [memory]',
+    },
   },
   sample: {
     source_user_id: '22222222-2222-4222-8222-222222222222',
@@ -130,7 +150,21 @@ describe('BatchLabExecutionService', () => {
     ]);
   });
 
+  it('adds output preset instructions before source history when provided', () => {
+    expect(
+      buildAttemptMessages(context.sample.history, [], 'next input', {
+        content: '保持角色一致',
+        format: '使用 [status] 和 [memory]',
+      })[0]
+    ).toEqual({
+      role: 'system',
+      content:
+        '请严格遵循本次 Batch Lab 输出预设。\n内容要求：保持角色一致\n格式要求：使用 [status] 和 [memory]',
+    });
+  });
+
   it('executes claimed attempts with internal research policy and no display processor by default', async () => {
+    vi.stubEnv('BATCH_LAB_MODEL_KEY', 'test-batch-lab-key');
     const repo = repository();
     const gen = generator({
       status: 'success',
@@ -159,6 +193,17 @@ describe('BatchLabExecutionService', () => {
         policy: { kind: 'internal_research' },
         stream: false,
         promptCaching: false,
+        sampling: {},
+        upstream: {
+          baseUrl: 'https://openrouter.ai/api/v1',
+          apiKey: 'test-batch-lab-key',
+        },
+        model: expect.objectContaining({
+          modelId: 'openrouter/a',
+          openRouterModelId: 'openrouter/a',
+          tier: null,
+          isFree: false,
+        }),
       }),
       undefined,
       expect.anything()
@@ -173,6 +218,7 @@ describe('BatchLabExecutionService', () => {
   });
 
   it('marks upstream failures retryable for the first leased attempt', async () => {
+    vi.stubEnv('BATCH_LAB_MODEL_KEY', 'test-batch-lab-key');
     const repo = repository();
     const gen = generator({
       status: 'upstream_error',
@@ -205,5 +251,46 @@ describe('BatchLabExecutionService', () => {
         retryable: true,
       })
     );
+  });
+
+  it('claims work only from the selected queued experiment', async () => {
+    vi.stubEnv('BATCH_LAB_MODEL_KEY', 'test-batch-lab-key');
+    const repo = repository({
+      getExperimentDetail: vi.fn(async () => ({
+        ...context.experiment,
+        status: 'queued' as const,
+        lineage: {
+          kind: 'generation' as const,
+          source_experiment_id: null,
+          generation_source_experiment_id: null,
+        },
+      })),
+    });
+    const gen = generator({
+      status: 'success',
+      content: 'raw output',
+      generationId: 'gen-1',
+      finishReason: 'stop',
+      chargeId: null,
+      modelId: 'model-a',
+      modelOpenRouterId: 'openrouter/a',
+    });
+    const service = new BatchLabExecutionService(
+      repo,
+      {} as unknown as BatchLabProcessorRepository,
+      gen,
+      fakeLogger()
+    );
+
+    await expect(
+      service.runExperimentWorkerOnce({
+        experiment_id: attempt.experiment_id,
+        source_environment: 'test',
+        worker_id: 'worker-targeted',
+        claim_limit: 1,
+      })
+    ).resolves.toEqual({ claimed_count: 1, completed_count: 1, failed_count: 0 });
+
+    expect(repo.claimAttempts).toHaveBeenCalledWith('worker-targeted', 1, attempt.experiment_id);
   });
 });

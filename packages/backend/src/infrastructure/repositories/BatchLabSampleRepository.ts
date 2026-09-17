@@ -1,6 +1,7 @@
 import {
   batchLabPreviewItemSchema,
   batchLabPreviewStatisticsSchema,
+  batchLabSampleSetDetailSchema,
   batchLabSampleSetSchema,
   batchLabSqlTemplateSchema,
   type BatchLabCreateSampleSetRequest,
@@ -9,6 +10,8 @@ import {
   type BatchLabPreviewItem,
   type BatchLabPreviewStatistics,
   type BatchLabSampleSet,
+  type BatchLabSampleSetDetail,
+  type BatchLabSampleSnapshotPage,
   type BatchLabSourceEnvironment,
   type BatchLabSqlParameterValue,
   type BatchLabSqlTemplate,
@@ -18,6 +21,8 @@ import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 interface DatabaseErrorLike {
   code?: string;
   message?: string;
+  details?: string;
+  hint?: string;
 }
 
 export class BatchLabRepositoryError extends Error {
@@ -51,7 +56,10 @@ interface SampleSetRow {
   source_digest: string;
   sample_count: number;
   statistics: BatchLabPreviewStatistics;
+  frozen_sql?: string;
+  frozen_parameters?: Record<string, BatchLabSqlParameterValue>;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 interface SqlTemplateRow {
@@ -119,13 +127,111 @@ export class BatchLabSampleRepository {
     const safeLimit = Math.max(1, Math.min(limit, 100));
     const { data, error } = await this.db
       .from('sample_sets')
-      .select(
-        'id,name,source_environment,source_preview_id,source_digest,sample_count,statistics,created_at'
-      )
+      .select(SAMPLE_SET_SELECT)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(safeLimit);
+    if (error && isMissingDeletedAtColumn(error)) {
+      const legacy = await this.db
+        .from('sample_sets')
+        .select(SAMPLE_SET_SELECT_LEGACY)
+        .order('created_at', { ascending: false })
+        .limit(safeLimit);
+      if (legacy.error) throw repositoryError(legacy.error);
+      return ((legacy.data ?? []) as SampleSetRow[]).map(toSampleSet);
+    }
     if (error) throw repositoryError(error);
     return ((data ?? []) as SampleSetRow[]).map(toSampleSet);
+  }
+
+  async getSampleSetDetail(id: string): Promise<BatchLabSampleSetDetail> {
+    const { data, error } = await this.db
+      .from('sample_sets')
+      .select(`${SAMPLE_SET_SELECT},frozen_sql,frozen_parameters`)
+      .eq('id', id)
+      .limit(1);
+    if (error && isMissingDeletedAtColumn(error)) {
+      const legacy = await this.db
+        .from('sample_sets')
+        .select(`${SAMPLE_SET_SELECT_LEGACY},frozen_sql,frozen_parameters`)
+        .eq('id', id)
+        .limit(1);
+      if (legacy.error) throw repositoryError(legacy.error);
+      const legacyRow = ((legacy.data ?? []) as SampleSetRow[])[0];
+      if (legacyRow) return toSampleSetDetail(legacyRow);
+    }
+    if (error) throw repositoryError(error);
+    const row = ((data ?? []) as SampleSetRow[])[0];
+    if (!row) {
+      throw new BatchLabRepositoryError(
+        'BATCH_LAB_SAMPLE_SET_NOT_FOUND',
+        'Batch Lab sample set was not found'
+      );
+    }
+    return toSampleSetDetail(row);
+  }
+
+  async listSampleSnapshots(
+    sampleSetId: string,
+    input: { limit?: number; cursor?: string | null } = {}
+  ): Promise<BatchLabSampleSnapshotPage> {
+    const safeLimit = Math.max(1, Math.min(input.limit ?? 50, 100));
+    const cursorOrdinal = input.cursor ? Number.parseInt(input.cursor, 10) : null;
+    let query = this.db
+      .from('sample_snapshots')
+      .select(
+        'ordinal,source_history_id,source_session_id,source_user_id,source_character_id,turn_index,revision,user_input,original_assistant_reply,original_model,history,character_snapshot,dynamic_input_snapshot,restoration_strategy'
+      )
+      .eq('sample_set_id', sampleSetId)
+      .order('ordinal')
+      .limit(safeLimit + 1);
+    if (cursorOrdinal !== null && Number.isFinite(cursorOrdinal)) {
+      query = query.gte('ordinal', cursorOrdinal);
+    }
+    const { data, error } = await query;
+    if (error) throw repositoryError(error);
+    const rows = ((data ?? []) as BatchLabPreviewItem[]).map((row) =>
+      batchLabPreviewItemSchema.parse(row)
+    );
+    const items = rows.slice(0, safeLimit);
+    const extra = rows.length > safeLimit ? rows[safeLimit] : null;
+    return {
+      sample_set_id: sampleSetId,
+      items,
+      next_cursor: extra ? String(extra.ordinal) : null,
+    };
+  }
+
+  async softDeleteSampleSet(input: {
+    id: string;
+    sourceEnvironment: BatchLabSourceEnvironment;
+  }): Promise<{ id: string; deleted_at: string }> {
+    const deletedAt = new Date().toISOString();
+    const { data, error } = await this.db
+      .from('sample_sets')
+      .update({ deleted_at: deletedAt })
+      .eq('id', input.id)
+      .eq('source_environment', input.sourceEnvironment)
+      .is('deleted_at', null)
+      .select('id,deleted_at')
+      .limit(1);
+    if (error) throw repositoryError(error);
+    const row = ((data ?? []) as Array<{ id: string; deleted_at: string }>)[0];
+    if (!row) {
+      const existing = await this.getSampleSetDetail(input.id);
+      if (existing.source_environment !== input.sourceEnvironment) {
+        throw new BatchLabRepositoryError(
+          'BATCH_LAB_ENVIRONMENT_MISMATCH',
+          'Batch Lab source environment mismatch'
+        );
+      }
+      if (existing.deleted_at) return { id: existing.id, deleted_at: existing.deleted_at };
+      throw new BatchLabRepositoryError(
+        'BATCH_LAB_SAMPLE_SET_NOT_FOUND',
+        'Batch Lab sample set was not found'
+      );
+    }
+    return row;
   }
 }
 
@@ -141,6 +247,17 @@ export function toSqlTemplate(row: SqlTemplateRow): BatchLabSqlTemplate {
   });
 }
 
+const SAMPLE_SET_SELECT =
+  'id,name,source_environment,source_preview_id,source_digest,sample_count,statistics,created_at,deleted_at';
+
+const SAMPLE_SET_SELECT_LEGACY =
+  'id,name,source_environment,source_preview_id,source_digest,sample_count,statistics,created_at';
+
+function isMissingDeletedAtColumn(error: DatabaseErrorLike): boolean {
+  const text = `${error.code ?? ''} ${error.message ?? ''}`;
+  return text.includes('42703') || text.includes('PGRST204') || text.includes('deleted_at');
+}
+
 export function toSampleSet(row: SampleSetRow): BatchLabSampleSet {
   return batchLabSampleSetSchema.parse({
     id: row.id,
@@ -151,6 +268,15 @@ export function toSampleSet(row: SampleSetRow): BatchLabSampleSet {
     sample_count: row.sample_count,
     statistics: batchLabPreviewStatisticsSchema.parse(row.statistics),
     created_at: row.created_at,
+    deleted_at: row.deleted_at ?? null,
+  });
+}
+
+export function toSampleSetDetail(row: SampleSetRow): BatchLabSampleSetDetail {
+  return batchLabSampleSetDetailSchema.parse({
+    ...toSampleSet(row),
+    frozen_sql: row.frozen_sql,
+    frozen_parameters: row.frozen_parameters ?? {},
   });
 }
 
@@ -171,11 +297,26 @@ export function repositoryError(error: DatabaseErrorLike): BatchLabRepositoryErr
     'BATCH_LAB_EXPERIMENT_STATE_CONFLICT',
     'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR',
     'BATCH_LAB_EXPERIMENT_NO_WORK',
+    'BATCH_LAB_SAMPLE_SET_NOT_FOUND',
+    'BATCH_LAB_SAMPLE_SET_IN_USE',
   ];
-  const code = knownCodes.find((candidate) => error.message?.includes(candidate));
+  const originalMessage = [error.message, error.details, error.hint].filter(Boolean).join(' · ');
+  if (
+    error.code === 'PGRST202' &&
+    originalMessage.includes('claim_experiment_attempts_for_experiment')
+  ) {
+    return new BatchLabRepositoryError(
+      'BATCH_LAB_CONFIGURATION_ERROR',
+      'Batch Lab targeted worker migration is not applied',
+      { cause: error }
+    );
+  }
+  const code = knownCodes.find((candidate) => originalMessage.includes(candidate));
   return new BatchLabRepositoryError(
     code ?? 'BATCH_LAB_SOURCE_UNAVAILABLE',
-    code ? '样本数据状态已变化，请刷新后重试' : 'Batch Lab 数据库暂不可用',
+    code
+      ? '样本数据状态已变化，请刷新后重试'
+      : `Batch Lab 数据库暂不可用${error.code ? `（${error.code}）` : ''}${originalMessage ? `：${originalMessage}` : ''}`,
     { cause: error }
   );
 }

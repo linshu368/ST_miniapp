@@ -4,9 +4,12 @@ import {
   BatchLabClientError,
   copyBatchLabExperiment,
   createBatchLabExperiment,
+  deleteBatchLabExperiment,
   downloadBatchLabExperimentJsonl,
   previewBatchLabProcessor,
   request,
+  runBatchLabExperimentWorkerOnce,
+  stopBatchLabExperiment,
 } from './client';
 
 const successSchema = z.object({ success: z.literal(true), data: z.string() });
@@ -255,5 +258,106 @@ describe('Batch Lab API client', () => {
     );
     const blob = await downloadBatchLabExperimentJsonl('35d2159d-dcea-46e9-aab2-8c68bd14e307');
     await expect(blob.text()).resolves.toContain('batch_lab_jsonl_v1');
+  });
+
+  it('runs a worker batch only for the selected experiment', async () => {
+    vi.stubEnv('VITE_BATCH_LAB_API_URL', 'http://test');
+    const experimentId = '35d2159d-dcea-46e9-aab2-8c68bd14e307';
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe(`http://test/api/batch-lab/experiments/${experimentId}/worker/run-once`);
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        experiment_id: experimentId,
+        worker_id: 'batch-lab-ui-test',
+        claim_limit: 1,
+      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { claimed_count: 1, completed_count: 1, failed_count: 0 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      runBatchLabExperimentWorkerOnce({
+        experiment_id: experimentId,
+        source_environment: 'test',
+        worker_id: 'batch-lab-ui-test',
+        claim_limit: 1,
+      })
+    ).resolves.toEqual({ claimed_count: 1, completed_count: 1, failed_count: 0 });
+  });
+
+  it('stops and deletes the selected experiment through control endpoints', async () => {
+    vi.stubEnv('VITE_BATCH_LAB_API_URL', 'http://test');
+    const experimentId = '35d2159d-dcea-46e9-aab2-8c68bd14e307';
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        expect(url).toBe(`http://test/api/batch-lab/experiments/${experimentId}/stop`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id: experimentId,
+              name: 'experiment',
+              sample_set_id: '87fce0db-a75e-45b7-87be-b8e7edc8ae8f',
+              source_environment: 'test',
+              status: 'cancelled',
+              variants: [
+                {
+                  key: 'a',
+                  name: 'A',
+                  model_id: 'a',
+                  openrouter_model_id: 'a',
+                  tier: null,
+                  is_free: false,
+                  sampling: {},
+                  processor_version_id: null,
+                  max_turns: 1,
+                },
+                {
+                  key: 'b',
+                  name: 'B',
+                  model_id: 'b',
+                  openrouter_model_id: 'b',
+                  tier: null,
+                  is_free: false,
+                  sampling: {},
+                  processor_version_id: null,
+                  max_turns: 1,
+                },
+              ],
+              total_attempts: 2,
+              completed_attempts: 0,
+              failed_attempts: 0,
+              created_at: '2026-09-17T06:00:00.000Z',
+              started_at: '2026-09-17T06:01:00.000Z',
+              completed_at: '2026-09-17T06:02:00.000Z',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      expect(url).toBe(`http://test/api/batch-lab/experiments/${experimentId}`);
+      expect(init?.method).toBe('DELETE');
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { id: experimentId, deleted_at: '2026-09-17T06:03:00.000Z' },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      stopBatchLabExperiment({ experiment_id: experimentId, source_environment: 'test' })
+    ).resolves.toMatchObject({ status: 'cancelled' });
+    await expect(
+      deleteBatchLabExperiment({ experiment_id: experimentId, source_environment: 'test' })
+    ).resolves.toMatchObject({ id: experimentId });
   });
 });

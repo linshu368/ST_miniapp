@@ -161,10 +161,11 @@ export async function execute(
   let upstreamRes: Response;
   try {
     upstreamRes = await forwardToUpstream({
-      url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH),
+      url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH, request.upstream?.baseUrl),
       method: 'POST',
       body: JSON.stringify(buildUpstreamBody(request)),
       signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
+      apiKey: request.upstream?.apiKey,
     });
   } catch (err) {
     // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致

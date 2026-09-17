@@ -5,12 +5,17 @@ import {
   batchLabCreateExperimentRequestSchema,
   batchLabCreateProcessorVersionRequestSchema,
   batchLabCreateSampleSetRequestSchema,
+  batchLabDeleteExperimentRequestSchema,
+  batchLabDeleteSampleSetRequestSchema,
   batchLabExperimentDetailResponseSchema,
+  batchLabExperimentResultDetailResponseSchema,
   batchLabProcessorPreviewRequestSchema,
   batchLabPreviewRequestSchema,
   batchLabReuseDisplayExperimentRequestSchema,
+  batchLabRunExperimentWorkerRequestSchema,
   batchLabRunWorkerRequestSchema,
   batchLabStartExperimentRequestSchema,
+  batchLabStopExperimentRequestSchema,
   batchLabUpsertAnnotationRequestSchema,
   fail,
   ok,
@@ -213,14 +218,114 @@ export default async function batchLabRoutes(app: FastifyInstance) {
     }
   });
 
+  // @frontend-ready: true - Batch Lab frozen sample set metadata and SQL
+  app.get('/api/batch-lab/sample-sets/:id', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const sampleSetId = getRouteId(request.params);
+    if (!sampleSetId) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_PROTOCOL_ERROR', 'Batch Lab sample set id is invalid'));
+    }
+
+    try {
+      const repository = new BatchLabSampleRepository();
+      return ok(await repository.getSampleSetDetail(sampleSetId));
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: true - Batch Lab frozen sample snapshots for inspection
+  app.get('/api/batch-lab/sample-sets/:id/samples', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const sampleSetId = getRouteId(request.params);
+    if (!sampleSetId) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_PROTOCOL_ERROR', 'Batch Lab sample set id is invalid'));
+    }
+
+    try {
+      const repository = new BatchLabSampleRepository();
+      const pagination = parsePagination(request.query);
+      return ok(
+        await repository.listSampleSnapshots(sampleSetId, {
+          limit: pagination.sampleLimit,
+          cursor: pagination.sampleCursor,
+        })
+      );
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: true - Batch Lab safely archives a sample set without deleting snapshots
+  app.delete('/api/batch-lab/sample-sets/:id', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const sampleSetId = getRouteId(request.params);
+    const parsed = batchLabDeleteSampleSetRequestSchema.safeParse(request.body);
+    if (!sampleSetId || !parsed.success || parsed.data.sample_set_id !== sampleSetId) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_PROTOCOL_ERROR', 'Batch Lab sample set delete is invalid'));
+    }
+    if (parsed.data.source_environment !== config.batchLab.sourceEnvironment) {
+      return reply
+        .status(409)
+        .send(fail('BATCH_LAB_ENVIRONMENT_MISMATCH', 'Batch Lab source environment mismatch'));
+    }
+
+    try {
+      const repository = new BatchLabSampleRepository();
+      return ok(
+        await repository.softDeleteSampleSet({
+          id: sampleSetId,
+          sourceEnvironment: parsed.data.source_environment,
+        })
+      );
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
   // @frontend-ready: true - Batch Lab experiment summaries
-  app.get('/api/batch-lab/experiments', async (_request, reply) => {
+  app.get('/api/batch-lab/experiments', async (request, reply) => {
     const guard = await ensureBatchLabReady(reply);
     if (!guard) return;
 
     try {
       const service = new BatchLabExecutionService();
       return ok({ items: await service.listExperiments(), next_cursor: null });
+    } catch (err) {
+      request.log.error({ err }, 'Batch Lab experiment list failed');
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: true - Batch Lab experiment comparison details for the workbench
+  app.get('/api/batch-lab/experiments/:id/results', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const experimentId = getExperimentId(request.params);
+    if (!experimentId) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_EXPERIMENT_VALIDATION_ERROR', 'Batch Lab experiment id is invalid'));
+    }
+
+    try {
+      const service = new BatchLabExecutionService();
+      return batchLabExperimentResultDetailResponseSchema.parse(
+        ok(await service.getExperimentResultDetail(experimentId, parsePagination(request.query)))
+      );
     } catch (err) {
       return sendBatchLabError(reply, err);
     }
@@ -351,6 +456,58 @@ export default async function batchLabRoutes(app: FastifyInstance) {
     }
   });
 
+  // @frontend-ready: true - stops new claims while allowing an already running request to settle
+  app.post('/api/batch-lab/experiments/:id/stop', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const experimentId = getExperimentId(request.params);
+    const parsed = batchLabStopExperimentRequestSchema.safeParse(request.body);
+    if (!experimentId || !parsed.success || parsed.data.experiment_id !== experimentId) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_EXPERIMENT_VALIDATION_ERROR', 'Batch Lab stop request is invalid'));
+    }
+    if (parsed.data.source_environment !== config.batchLab.sourceEnvironment) {
+      return reply
+        .status(409)
+        .send(fail('BATCH_LAB_ENVIRONMENT_MISMATCH', 'Batch Lab source environment mismatch'));
+    }
+
+    try {
+      const service = new BatchLabExecutionService();
+      return ok(await service.stopExperiment(parsed.data));
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
+  // @frontend-ready: true - soft deletes an inactive experiment while preserving its audit facts
+  app.delete('/api/batch-lab/experiments/:id', async (request, reply) => {
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const experimentId = getExperimentId(request.params);
+    const parsed = batchLabDeleteExperimentRequestSchema.safeParse(request.body);
+    if (!experimentId || !parsed.success || parsed.data.experiment_id !== experimentId) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_EXPERIMENT_VALIDATION_ERROR', 'Batch Lab delete request is invalid'));
+    }
+    if (parsed.data.source_environment !== config.batchLab.sourceEnvironment) {
+      return reply
+        .status(409)
+        .send(fail('BATCH_LAB_ENVIRONMENT_MISMATCH', 'Batch Lab source environment mismatch'));
+    }
+
+    try {
+      const service = new BatchLabExecutionService();
+      return ok(await service.deleteExperiment(parsed.data));
+    } catch (err) {
+      return sendBatchLabError(reply, err);
+    }
+  });
+
   // @frontend-ready: true - Batch Lab upserts a lightweight experiment/sample/turn annotation
   app.put('/api/batch-lab/experiments/:id/annotations', async (request, reply) => {
     const guard = await ensureBatchLabReady(reply);
@@ -426,14 +583,74 @@ export default async function batchLabRoutes(app: FastifyInstance) {
       return sendBatchLabError(reply, err);
     }
   });
+
+  // @frontend-ready: true - executes a bounded worker batch for one selected experiment only
+  app.post('/api/batch-lab/experiments/:id/worker/run-once', async (request, reply) => {
+    const startedAt = Date.now();
+    const guard = await ensureBatchLabReady(reply);
+    if (!guard) return;
+
+    const experimentId = getExperimentId(request.params);
+    const parsed = batchLabRunExperimentWorkerRequestSchema.safeParse(request.body);
+    if (!experimentId || !parsed.success || parsed.data.experiment_id !== experimentId) {
+      return reply
+        .status(400)
+        .send(fail('BATCH_LAB_EXPERIMENT_VALIDATION_ERROR', 'Batch Lab worker request is invalid'));
+    }
+    if (parsed.data.source_environment !== config.batchLab.sourceEnvironment) {
+      return reply
+        .status(409)
+        .send(fail('BATCH_LAB_ENVIRONMENT_MISMATCH', 'Batch Lab source environment mismatch'));
+    }
+
+    try {
+      const service = new BatchLabExecutionService();
+      const result = await service.runExperimentWorkerOnce(parsed.data);
+      request.log.info(
+        {
+          experimentId,
+          workerId: parsed.data.worker_id,
+          claimedCount: result.claimed_count,
+          completedCount: result.completed_count,
+          failedCount: result.failed_count,
+          durationMs: Date.now() - startedAt,
+        },
+        'Batch Lab targeted worker batch completed'
+      );
+      return ok(result);
+    } catch (err) {
+      request.log.error(
+        { err, experimentId, durationMs: Date.now() - startedAt },
+        'Batch Lab targeted worker batch failed'
+      );
+      return sendBatchLabError(reply, err);
+    }
+  });
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function getExperimentId(params: unknown): string | null {
+  return getRouteId(params);
+}
+
+function getRouteId(params: unknown): string | null {
   if (typeof params !== 'object' || params === null || !('id' in params)) return null;
   const id = (params as { id?: unknown }).id;
   return typeof id === 'string' && uuidPattern.test(id) ? id : null;
+}
+
+function parsePagination(query: unknown): { sampleLimit?: number; sampleCursor?: string | null } {
+  if (typeof query !== 'object' || query === null) return {};
+  const values = query as { limit?: unknown; cursor?: unknown };
+  const limit =
+    typeof values.limit === 'string' && values.limit.trim()
+      ? Number.parseInt(values.limit, 10)
+      : undefined;
+  return {
+    sampleLimit: Number.isFinite(limit) ? limit : undefined,
+    sampleCursor: typeof values.cursor === 'string' && values.cursor ? values.cursor : null,
+  };
 }
 
 async function ensureBatchLabReady(reply: FastifyReply): Promise<boolean> {
@@ -469,6 +686,7 @@ function sendBatchLabError(reply: FastifyReply, err: unknown): FastifyReply {
 }
 
 function publicBatchLabMessage(code: BatchLabErrorCode): string {
+  if (code === 'BATCH_LAB_CONFIGURATION_ERROR') return 'Batch Lab database migration is not ready';
   if (code === 'BATCH_LAB_PROCESSOR_NOT_FOUND') return 'Batch Lab processor version was not found';
   if (code === 'BATCH_LAB_PROCESSOR_VALIDATION_ERROR')
     return 'Batch Lab processor config is invalid';
@@ -477,6 +695,8 @@ function publicBatchLabMessage(code: BatchLabErrorCode): string {
     return 'Batch Lab processor output is too large';
   if (code === 'BATCH_LAB_PROCESSOR_RUNTIME_ERROR') return 'Batch Lab processor execution failed';
   if (code === 'BATCH_LAB_EXPERIMENT_NOT_FOUND') return 'Batch Lab experiment was not found';
+  if (code === 'BATCH_LAB_SAMPLE_SET_NOT_FOUND') return 'Batch Lab sample set was not found';
+  if (code === 'BATCH_LAB_SAMPLE_SET_IN_USE') return 'Batch Lab sample set is already in use';
   if (code === 'BATCH_LAB_EXPERIMENT_STATE_CONFLICT') return 'Batch Lab experiment state changed';
   if (code === 'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR') return 'Batch Lab experiment is invalid';
   if (code === 'BATCH_LAB_EXPERIMENT_NO_WORK') return 'Batch Lab experiment has no work to run';
@@ -510,7 +730,9 @@ function statusForBatchLabError(code: BatchLabErrorCode): number {
   }
   if (code === 'BATCH_LAB_PROCESSOR_NOT_FOUND') return 404;
   if (code === 'BATCH_LAB_EXPERIMENT_NOT_FOUND') return 404;
+  if (code === 'BATCH_LAB_SAMPLE_SET_NOT_FOUND') return 404;
   if (code === 'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR') return 422;
+  if (code === 'BATCH_LAB_SAMPLE_SET_IN_USE') return 409;
   if (code === 'BATCH_LAB_EXPERIMENT_STATE_CONFLICT' || code === 'BATCH_LAB_EXPERIMENT_NO_WORK') {
     return 409;
   }

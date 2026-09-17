@@ -18,6 +18,9 @@ export const BATCH_LAB_MAX_PROCESSOR_RULES = 50;
 export const BATCH_LAB_MAX_PROCESSOR_PATTERN_LENGTH = 2_000;
 export const BATCH_LAB_MAX_PROCESSOR_REPLACEMENT_LENGTH = 20_000;
 export const BATCH_LAB_PROCESSOR_TIMEOUT_MS = 250;
+export const BATCH_LAB_MAX_PURPOSE_LENGTH = 2_000;
+export const BATCH_LAB_MAX_OUTPUT_PRESET_TEXT_LENGTH = 10_000;
+export const BATCH_LAB_MAX_PROVIDER_CONFIG_LENGTH = 500;
 
 // 后端环境
 export const batchLabBackendEnvironmentSchema = z.enum(['development', 'test', 'production']);
@@ -76,6 +79,8 @@ export const batchLabErrorCodeSchema = z.enum([
   'BATCH_LAB_EXPERIMENT_STATE_CONFLICT',
   'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR',
   'BATCH_LAB_EXPERIMENT_NO_WORK',
+  'BATCH_LAB_SAMPLE_SET_NOT_FOUND',
+  'BATCH_LAB_SAMPLE_SET_IN_USE',
 ]);
 
 // 错误响应
@@ -275,6 +280,7 @@ export const batchLabSampleSetSchema = z
     sample_count: z.number().int().positive().max(BATCH_LAB_MAX_SAMPLE_LIMIT),
     statistics: batchLabPreviewStatisticsSchema,
     created_at: isoDateTimeSchema,
+    deleted_at: isoDateTimeSchema.nullable().optional(),
   })
   .strict();
 
@@ -296,6 +302,49 @@ export const batchLabSampleSetListResponseSchema = z
         next_cursor: z.string().min(1).nullable(),
       })
       .strict(),
+  })
+  .strict();
+
+export const batchLabSampleSetDetailSchema = batchLabSampleSetSchema
+  .extend({
+    frozen_sql: z.string().min(1).max(BATCH_LAB_MAX_SQL_LENGTH),
+    frozen_parameters: z.record(batchLabSqlParameterValueSchema),
+  })
+  .strict();
+export type BatchLabSampleSetDetail = z.infer<typeof batchLabSampleSetDetailSchema>;
+
+export const batchLabSampleSetDetailResponseSchema = z
+  .object({ success: z.literal(true), data: batchLabSampleSetDetailSchema })
+  .strict();
+
+export const batchLabSampleSnapshotSchema = batchLabPreviewItemSchema;
+export type BatchLabSampleSnapshot = z.infer<typeof batchLabSampleSnapshotSchema>;
+
+export const batchLabSampleSnapshotPageSchema = z
+  .object({
+    sample_set_id: uuidSchema,
+    items: z.array(batchLabSampleSnapshotSchema).max(BATCH_LAB_MAX_SAMPLE_LIMIT),
+    next_cursor: z.string().min(1).nullable(),
+  })
+  .strict();
+export type BatchLabSampleSnapshotPage = z.infer<typeof batchLabSampleSnapshotPageSchema>;
+
+export const batchLabSampleSnapshotPageResponseSchema = z
+  .object({ success: z.literal(true), data: batchLabSampleSnapshotPageSchema })
+  .strict();
+
+export const batchLabDeleteSampleSetRequestSchema = z
+  .object({
+    sample_set_id: uuidSchema,
+    source_environment: batchLabSourceEnvironmentSchema,
+  })
+  .strict();
+export type BatchLabDeleteSampleSetRequest = z.infer<typeof batchLabDeleteSampleSetRequestSchema>;
+
+export const batchLabDeleteSampleSetResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({ id: uuidSchema, deleted_at: isoDateTimeSchema }).strict(),
   })
   .strict();
 
@@ -420,6 +469,9 @@ export const BATCH_LAB_MAX_EXPERIMENT_VARIANTS = 2;
 export const BATCH_LAB_MAX_EXPERIMENT_TURNS = 5;
 export const BATCH_LAB_MAX_WORKER_CLAIM_LIMIT = 20;
 
+export const batchLabExperimentRunModeSchema = z.enum(['single', 'multi_turn']);
+export type BatchLabExperimentRunMode = z.infer<typeof batchLabExperimentRunModeSchema>;
+
 export const batchLabExperimentStatusSchema = z.enum([
   'draft',
   'queued',
@@ -429,6 +481,24 @@ export const batchLabExperimentStatusSchema = z.enum([
   'cancelled',
 ]);
 export type BatchLabExperimentStatus = z.infer<typeof batchLabExperimentStatusSchema>;
+
+export const batchLabOutputPresetSchema = z
+  .object({
+    name: z.string().trim().max(BATCH_LAB_MAX_NAME_LENGTH),
+    content: z.string().max(BATCH_LAB_MAX_OUTPUT_PRESET_TEXT_LENGTH),
+    format: z.string().max(BATCH_LAB_MAX_OUTPUT_PRESET_TEXT_LENGTH),
+  })
+  .strict();
+export type BatchLabOutputPreset = z.infer<typeof batchLabOutputPresetSchema>;
+
+export const batchLabProviderConfigSchema = z
+  .object({
+    base_url: z.string().trim().max(BATCH_LAB_MAX_PROVIDER_CONFIG_LENGTH),
+    key_ref: z.string().trim().max(BATCH_LAB_MAX_PROVIDER_CONFIG_LENGTH),
+    module_name: z.string().trim().max(BATCH_LAB_MAX_PROVIDER_CONFIG_LENGTH),
+  })
+  .strict();
+export type BatchLabProviderConfig = z.infer<typeof batchLabProviderConfigSchema>;
 
 export const batchLabExperimentVariantSchema = z
   .object({
@@ -441,6 +511,8 @@ export const batchLabExperimentVariantSchema = z
     sampling: z.record(z.number().finite()),
     processor_version_id: uuidSchema.nullable(),
     max_turns: z.number().int().min(1).max(BATCH_LAB_MAX_EXPERIMENT_TURNS),
+    provider_config: batchLabProviderConfigSchema.optional(),
+    output_preset: batchLabOutputPresetSchema.optional(),
   })
   .strict();
 export type BatchLabExperimentVariant = z.infer<typeof batchLabExperimentVariantSchema>;
@@ -450,6 +522,10 @@ export const batchLabCreateExperimentRequestSchema = z
     name: z.string().trim().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
     sample_set_id: uuidSchema,
     source_environment: batchLabSourceEnvironmentSchema,
+    purpose: z.string().trim().max(BATCH_LAB_MAX_PURPOSE_LENGTH).nullable().optional(),
+    run_mode: batchLabExperimentRunModeSchema.optional(),
+    output_preset: batchLabOutputPresetSchema.optional(),
+    provider_config: batchLabProviderConfigSchema.optional(),
     variants: z
       .array(batchLabExperimentVariantSchema)
       .min(2)
@@ -474,6 +550,29 @@ export const batchLabStartExperimentRequestSchema = z
   .strict();
 export type BatchLabStartExperimentRequest = z.infer<typeof batchLabStartExperimentRequestSchema>;
 
+export const batchLabStopExperimentRequestSchema = z
+  .object({
+    experiment_id: uuidSchema,
+    source_environment: batchLabSourceEnvironmentSchema,
+  })
+  .strict();
+export type BatchLabStopExperimentRequest = z.infer<typeof batchLabStopExperimentRequestSchema>;
+
+export const batchLabDeleteExperimentRequestSchema = z
+  .object({
+    experiment_id: uuidSchema,
+    source_environment: batchLabSourceEnvironmentSchema,
+  })
+  .strict();
+export type BatchLabDeleteExperimentRequest = z.infer<typeof batchLabDeleteExperimentRequestSchema>;
+
+export const batchLabDeleteExperimentResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({ id: uuidSchema, deleted_at: isoDateTimeSchema }).strict(),
+  })
+  .strict();
+
 export const batchLabExperimentSummarySchema = z
   .object({
     id: uuidSchema,
@@ -481,6 +580,10 @@ export const batchLabExperimentSummarySchema = z
     sample_set_id: uuidSchema,
     source_environment: batchLabSourceEnvironmentSchema,
     status: batchLabExperimentStatusSchema,
+    purpose: z.string().max(BATCH_LAB_MAX_PURPOSE_LENGTH).nullable().optional(),
+    run_mode: batchLabExperimentRunModeSchema.optional(),
+    output_preset: batchLabOutputPresetSchema.optional(),
+    provider_config: batchLabProviderConfigSchema.optional(),
     variants: z
       .array(batchLabExperimentVariantSchema)
       .min(2)
@@ -538,6 +641,7 @@ export const batchLabCopyExperimentRequestSchema = z
   .object({
     source_experiment_id: uuidSchema,
     name: z.string().trim().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
+    purpose: z.string().trim().max(BATCH_LAB_MAX_PURPOSE_LENGTH).nullable().optional(),
     source_environment: batchLabSourceEnvironmentSchema,
     idempotency_key: uuidSchema,
   })
@@ -548,7 +652,10 @@ export const batchLabReuseDisplayExperimentRequestSchema = z
   .object({
     source_experiment_id: uuidSchema,
     name: z.string().trim().min(1).max(BATCH_LAB_MAX_NAME_LENGTH),
+    purpose: z.string().trim().max(BATCH_LAB_MAX_PURPOSE_LENGTH).nullable().optional(),
     source_environment: batchLabSourceEnvironmentSchema,
+    output_preset: batchLabOutputPresetSchema.optional(),
+    provider_config: batchLabProviderConfigSchema.optional(),
     variants: z
       .array(batchLabExperimentVariantSchema)
       .min(2)
@@ -626,6 +733,44 @@ export const batchLabExportRowSchema = z
   .strict();
 export type BatchLabExportRow = z.infer<typeof batchLabExportRowSchema>;
 
+export const batchLabResultAttemptSchema = batchLabExportAttemptSchema
+  .extend({
+    sample_ordinal: z.number().int().nonnegative(),
+    display_result: batchLabDisplayResultSchema.nullable(),
+  })
+  .strict();
+export type BatchLabResultAttempt = z.infer<typeof batchLabResultAttemptSchema>;
+
+export const batchLabExperimentProgressSummarySchema = z
+  .object({
+    total_attempts: countSchema,
+    completed_attempts: countSchema,
+    failed_attempts: countSchema,
+    pending_attempts: countSchema,
+    running_attempts: countSchema,
+  })
+  .strict();
+export type BatchLabExperimentProgressSummary = z.infer<
+  typeof batchLabExperimentProgressSummarySchema
+>;
+
+export const batchLabExperimentResultDetailSchema = z
+  .object({
+    experiment: batchLabExperimentDetailSchema,
+    sample_set: batchLabSampleSetDetailSchema,
+    samples: z.array(batchLabSampleSnapshotSchema).max(BATCH_LAB_MAX_SAMPLE_LIMIT),
+    attempts: z.array(batchLabResultAttemptSchema),
+    annotations: z.array(batchLabAnnotationSchema),
+    progress: batchLabExperimentProgressSummarySchema,
+    next_sample_cursor: z.string().min(1).nullable(),
+  })
+  .strict();
+export type BatchLabExperimentResultDetail = z.infer<typeof batchLabExperimentResultDetailSchema>;
+
+export const batchLabExperimentResultDetailResponseSchema = z
+  .object({ success: z.literal(true), data: batchLabExperimentResultDetailSchema })
+  .strict();
+
 export const batchLabRunWorkerRequestSchema = z
   .object({
     source_environment: batchLabSourceEnvironmentSchema,
@@ -634,6 +779,15 @@ export const batchLabRunWorkerRequestSchema = z
   })
   .strict();
 export type BatchLabRunWorkerRequest = z.infer<typeof batchLabRunWorkerRequestSchema>;
+
+export const batchLabRunExperimentWorkerRequestSchema = batchLabRunWorkerRequestSchema
+  .extend({
+    experiment_id: uuidSchema,
+  })
+  .strict();
+export type BatchLabRunExperimentWorkerRequest = z.infer<
+  typeof batchLabRunExperimentWorkerRequestSchema
+>;
 
 export const batchLabRunWorkerResultSchema = z
   .object({

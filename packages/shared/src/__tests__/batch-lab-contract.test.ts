@@ -2,7 +2,7 @@
  * @Author: whc 952987912@qq.com
  * @Date: 2026-09-11 14:38:37
  * @LastEditors: whc 952987912@qq.com
- * @LastEditTime: 2026-09-11 14:38:41
+ * @LastEditTime: 2026-09-17 18:37:59
  * @Description:
  * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
  */
@@ -11,6 +11,7 @@ import {
   BATCH_LAB_DEFAULT_SAMPLE_LIMIT,
   BATCH_LAB_MAX_WORKER_CLAIM_LIMIT,
   batchLabCreateExperimentRequestSchema,
+  batchLabDeleteExperimentRequestSchema,
   batchLabExportRowSchema,
   BATCH_LAB_MAX_SAMPLE_LIMIT,
   BATCH_LAB_JSONL_SCHEMA_VERSION,
@@ -21,7 +22,9 @@ import {
   batchLabProcessorPreviewRequestSchema,
   batchLabPreviewRequestSchema,
   batchLabPreviewSchema,
+  batchLabRunExperimentWorkerRequestSchema,
   batchLabRunWorkerRequestSchema,
+  batchLabStopExperimentRequestSchema,
 } from '../api/batch-lab';
 
 describe('batch lab data sample contracts', () => {
@@ -42,6 +45,36 @@ describe('batch lab data sample contracts', () => {
         ...request,
         sample_limit: BATCH_LAB_MAX_SAMPLE_LIMIT + 1,
       }).success
+    ).toBe(false);
+  });
+
+  it('requires an experiment id for targeted worker execution', () => {
+    expect(
+      batchLabRunExperimentWorkerRequestSchema.safeParse({
+        experiment_id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+        source_environment: 'test',
+        worker_id: 'batch-lab-ui',
+        claim_limit: 1,
+      }).success
+    ).toBe(true);
+    expect(
+      batchLabRunExperimentWorkerRequestSchema.safeParse({
+        source_environment: 'test',
+        worker_id: 'batch-lab-ui',
+        claim_limit: 1,
+      }).success
+    ).toBe(false);
+  });
+
+  it('binds stop and delete controls to one experiment and source environment', () => {
+    const input = {
+      experiment_id: '35d2159d-dcea-46e9-aab2-8c68bd14e307',
+      source_environment: 'test' as const,
+    };
+    expect(batchLabStopExperimentRequestSchema.safeParse(input).success).toBe(true);
+    expect(batchLabDeleteExperimentRequestSchema.safeParse(input).success).toBe(true);
+    expect(
+      batchLabStopExperimentRequestSchema.safeParse({ source_environment: 'test' }).success
     ).toBe(false);
   });
 

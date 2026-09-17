@@ -51,6 +51,14 @@ export interface GenerationRequest {
    */
   promptCaching: boolean;
   /**
+   * Backend-only upstream override for internal tooling such as Batch Lab. Public generation
+   * requests continue using the process-wide LLM upstream configuration.
+   */
+  upstream?: {
+    baseUrl?: string;
+    apiKey?: string;
+  };
+  /**
    * Internal research calls reuse the upstream generation transport but skip wallet, quota and
    * chat_history settlement. Do not expose this switch through public/shared request contracts.
    */

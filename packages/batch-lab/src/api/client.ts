@@ -5,9 +5,14 @@ import {
   batchLabCreateProcessorVersionRequestSchema,
   batchLabCreateSampleSetRequestSchema,
   batchLabContextResponseSchema,
+  batchLabDeleteExperimentRequestSchema,
+  batchLabDeleteExperimentResponseSchema,
+  batchLabDeleteSampleSetRequestSchema,
+  batchLabDeleteSampleSetResponseSchema,
   batchLabErrorResponseSchema,
   batchLabExperimentDetailResponseSchema,
   batchLabExperimentListResponseSchema,
+  batchLabExperimentResultDetailResponseSchema,
   batchLabExperimentResponseSchema,
   batchLabProcessorPreviewRequestSchema,
   batchLabProcessorPreviewResponseSchema,
@@ -16,12 +21,16 @@ import {
   batchLabPreviewRequestSchema,
   batchLabPreviewResponseSchema,
   batchLabReuseDisplayExperimentRequestSchema,
+  batchLabRunExperimentWorkerRequestSchema,
   batchLabRunWorkerRequestSchema,
   batchLabRunWorkerResponseSchema,
   batchLabSampleSetListResponseSchema,
   batchLabSampleSetResponseSchema,
+  batchLabSampleSetDetailResponseSchema,
+  batchLabSampleSnapshotPageResponseSchema,
   batchLabSqlTemplateListResponseSchema,
   batchLabStartExperimentRequestSchema,
+  batchLabStopExperimentRequestSchema,
   batchLabUpsertAnnotationRequestSchema,
   type BatchLabAnnotation,
   type BatchLabCopyExperimentRequest,
@@ -29,19 +38,26 @@ import {
   type BatchLabCreateExperimentRequest,
   type BatchLabCreateProcessorVersionRequest,
   type BatchLabCreateSampleSetRequest,
+  type BatchLabDeleteExperimentRequest,
+  type BatchLabDeleteSampleSetRequest,
   type BatchLabDisplayResult,
   type BatchLabExperimentDetail,
+  type BatchLabExperimentResultDetail,
   type BatchLabExperimentSummary,
   type BatchLabProcessorPreviewRequest,
   type BatchLabProcessorVersion,
   type BatchLabPreview,
   type BatchLabPreviewRequest,
   type BatchLabReuseDisplayExperimentRequest,
+  type BatchLabRunExperimentWorkerRequest,
   type BatchLabRunWorkerRequest,
   type BatchLabRunWorkerResult,
   type BatchLabSampleSet,
+  type BatchLabSampleSetDetail,
+  type BatchLabSampleSnapshotPage,
   type BatchLabSqlTemplate,
   type BatchLabStartExperimentRequest,
+  type BatchLabStopExperimentRequest,
   type BatchLabUpsertAnnotationRequest,
 } from '@miniapp/shared';
 import type { ZodType } from 'zod';
@@ -251,6 +267,53 @@ export async function listBatchLabSampleSets(signal?: AbortSignal): Promise<Batc
   return response.data.items;
 }
 
+export async function getBatchLabSampleSet(
+  sampleSetId: string,
+  signal?: AbortSignal
+): Promise<BatchLabSampleSetDetail> {
+  const response = await request(
+    `/api/batch-lab/sample-sets/${sampleSetId}`,
+    batchLabSampleSetDetailResponseSchema,
+    { signal }
+  );
+  return response.data;
+}
+
+export async function listBatchLabSampleSetSamples(
+  sampleSetId: string,
+  input: { cursor?: string | null; limit?: number } = {},
+  signal?: AbortSignal
+): Promise<BatchLabSampleSnapshotPage> {
+  const search = new URLSearchParams();
+  if (input.cursor) search.set('cursor', input.cursor);
+  if (input.limit) search.set('limit', String(input.limit));
+  const suffix = search.size > 0 ? `?${search.toString()}` : '';
+  const response = await request(
+    `/api/batch-lab/sample-sets/${sampleSetId}/samples${suffix}`,
+    batchLabSampleSnapshotPageResponseSchema,
+    { signal }
+  );
+  return response.data;
+}
+
+export async function deleteBatchLabSampleSet(
+  input: BatchLabDeleteSampleSetRequest,
+  signal?: AbortSignal
+): Promise<{ id: string; deleted_at: string }> {
+  const body = batchLabDeleteSampleSetRequestSchema.parse(input);
+  const response = await request(
+    `/api/batch-lab/sample-sets/${body.sample_set_id}`,
+    batchLabDeleteSampleSetResponseSchema,
+    {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }
+  );
+  return response.data;
+}
+
 export async function listBatchLabExperiments(
   signal?: AbortSignal
 ): Promise<BatchLabExperimentSummary[]> {
@@ -286,6 +349,23 @@ export async function getBatchLabExperiment(
     `/api/batch-lab/experiments/${experimentId}`,
     batchLabExperimentDetailResponseSchema,
     { signal }
+  );
+  return response.data;
+}
+
+export async function getBatchLabExperimentResults(
+  experimentId: string,
+  input: { cursor?: string | null; limit?: number } = {},
+  signal?: AbortSignal
+): Promise<BatchLabExperimentResultDetail> {
+  const search = new URLSearchParams();
+  if (input.cursor) search.set('cursor', input.cursor);
+  if (input.limit) search.set('limit', String(input.limit));
+  const suffix = search.size > 0 ? `?${search.toString()}` : '';
+  const response = await request(
+    `/api/batch-lab/experiments/${experimentId}/results${suffix}`,
+    batchLabExperimentResultDetailResponseSchema,
+    { signal, timeoutMs: 30_000 }
   );
   return response.data;
 }
@@ -386,6 +466,42 @@ export async function startBatchLabExperiment(
   return response.data;
 }
 
+export async function stopBatchLabExperiment(
+  input: BatchLabStopExperimentRequest,
+  signal?: AbortSignal
+): Promise<BatchLabExperimentSummary> {
+  const body = batchLabStopExperimentRequestSchema.parse(input);
+  const response = await request(
+    `/api/batch-lab/experiments/${body.experiment_id}/stop`,
+    batchLabExperimentResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }
+  );
+  return response.data;
+}
+
+export async function deleteBatchLabExperiment(
+  input: BatchLabDeleteExperimentRequest,
+  signal?: AbortSignal
+): Promise<{ id: string; deleted_at: string }> {
+  const body = batchLabDeleteExperimentRequestSchema.parse(input);
+  const response = await request(
+    `/api/batch-lab/experiments/${body.experiment_id}`,
+    batchLabDeleteExperimentResponseSchema,
+    {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }
+  );
+  return response.data;
+}
+
 export async function runBatchLabWorkerOnce(
   input: BatchLabRunWorkerRequest,
   signal?: AbortSignal
@@ -400,6 +516,25 @@ export async function runBatchLabWorkerOnce(
       body: JSON.stringify(body),
       signal,
       timeoutMs: 60_000,
+    }
+  );
+  return response.data;
+}
+
+export async function runBatchLabExperimentWorkerOnce(
+  input: BatchLabRunExperimentWorkerRequest,
+  signal?: AbortSignal
+): Promise<BatchLabRunWorkerResult> {
+  const body = batchLabRunExperimentWorkerRequestSchema.parse(input);
+  const response = await request(
+    `/api/batch-lab/experiments/${body.experiment_id}/worker/run-once`,
+    batchLabRunWorkerResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+      timeoutMs: 150_000,
     }
   );
   return response.data;

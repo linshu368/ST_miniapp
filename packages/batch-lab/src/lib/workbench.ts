@@ -152,29 +152,27 @@ export function processorOptionLabel(processor: BatchLabProcessorVersion): strin
 
 export function variantDiffRows(a: BatchLabExperimentVariant, b: BatchLabExperimentVariant) {
   return [
-    { key: 'model_id', label: '模型 ID', baseline: a.model_id, candidate: b.model_id },
+    {
+      key: 'provider_base_url',
+      label: 'OpenRouter URL',
+      baseline: a.provider_config?.base_url ?? '未设置',
+      candidate: b.provider_config?.base_url ?? '未设置',
+    },
     {
       key: 'openrouter_model_id',
-      label: 'OpenRouter 模型',
+      label: '模型名称',
       baseline: a.openrouter_model_id,
       candidate: b.openrouter_model_id,
     },
-    { key: 'tier', label: '档位', baseline: a.tier ?? '未设置', candidate: b.tier ?? '未设置' },
     {
-      key: 'is_free',
-      label: '免费模型',
-      baseline: a.is_free ? '是' : '否',
-      candidate: b.is_free ? '是' : '否',
-    },
-    {
-      key: 'sampling',
-      label: '采样参数',
-      baseline: JSON.stringify(a.sampling),
-      candidate: JSON.stringify(b.sampling),
+      key: 'output_preset',
+      label: '输出预设',
+      baseline: a.output_preset?.content ?? '未设置',
+      candidate: b.output_preset?.content ?? '未设置',
     },
     {
       key: 'processor',
-      label: '后处理版本',
+      label: '对应后处理',
       baseline: a.processor_version_id ?? '不处理',
       candidate: b.processor_version_id ?? '不处理',
     },

@@ -3,13 +3,17 @@ import type {
   BatchLabAnnotation,
   BatchLabCopyExperimentRequest,
   BatchLabCreateExperimentRequest,
+  BatchLabDeleteExperimentRequest,
   BatchLabExperimentDetail,
+  BatchLabExperimentResultDetail,
   BatchLabExperimentSummary,
   BatchLabExportRow,
   BatchLabReuseDisplayExperimentRequest,
   BatchLabRunWorkerRequest,
+  BatchLabRunExperimentWorkerRequest,
   BatchLabRunWorkerResult,
   BatchLabStartExperimentRequest,
+  BatchLabStopExperimentRequest,
   BatchLabUpsertAnnotationRequest,
 } from '@miniapp/shared';
 import { createLogger, type RequestLogger } from '../../lib/logger.js';
@@ -25,6 +29,7 @@ import {
   type ExperimentAttemptRow,
 } from '../../infrastructure/repositories/BatchLabExecutionRepository.js';
 import { BatchLabProcessorRepository } from '../../infrastructure/repositories/BatchLabProcessorRepository.js';
+import { BatchLabRepositoryError } from '../../infrastructure/repositories/BatchLabSampleRepository.js';
 import { runPostprocessor } from './postprocessing-service.js';
 
 export class BatchLabExecutionService {
@@ -43,12 +48,29 @@ export class BatchLabExecutionService {
     return this.repository.startExperiment(input);
   }
 
+  stopExperiment(input: BatchLabStopExperimentRequest): Promise<BatchLabExperimentSummary> {
+    return this.repository.stopExperiment(input);
+  }
+
+  deleteExperiment(
+    input: BatchLabDeleteExperimentRequest
+  ): Promise<{ id: string; deleted_at: string }> {
+    return this.repository.softDeleteExperiment(input);
+  }
+
   listExperiments(): Promise<BatchLabExperimentSummary[]> {
     return this.repository.listExperiments();
   }
 
   getExperimentDetail(experimentId: string): Promise<BatchLabExperimentDetail> {
     return this.repository.getExperimentDetail(experimentId);
+  }
+
+  getExperimentResultDetail(
+    experimentId: string,
+    input: { sampleLimit?: number; sampleCursor?: string | null } = {}
+  ): Promise<BatchLabExperimentResultDetail> {
+    return this.repository.getExperimentResultDetail(experimentId, input);
   }
 
   copyExperiment(input: BatchLabCopyExperimentRequest): Promise<BatchLabExperimentSummary> {
@@ -71,6 +93,36 @@ export class BatchLabExecutionService {
 
   async runWorkerOnce(input: BatchLabRunWorkerRequest): Promise<BatchLabRunWorkerResult> {
     const attempts = await this.repository.claimAttempts(input.worker_id, input.claim_limit);
+    return this.runClaimedAttempts(attempts);
+  }
+
+  async runExperimentWorkerOnce(
+    input: BatchLabRunExperimentWorkerRequest
+  ): Promise<BatchLabRunWorkerResult> {
+    const experiment = await this.repository.getExperimentDetail(input.experiment_id);
+    if (experiment.source_environment !== input.source_environment) {
+      throw new BatchLabRepositoryError(
+        'BATCH_LAB_ENVIRONMENT_MISMATCH',
+        'Batch Lab source environment mismatch'
+      );
+    }
+    if (experiment.status !== 'queued' && experiment.status !== 'running') {
+      throw new BatchLabRepositoryError(
+        'BATCH_LAB_EXPERIMENT_STATE_CONFLICT',
+        'Only queued or running experiments can be executed'
+      );
+    }
+    const attempts = await this.repository.claimAttempts(
+      input.worker_id,
+      input.claim_limit,
+      input.experiment_id
+    );
+    return this.runClaimedAttempts(attempts);
+  }
+
+  private async runClaimedAttempts(
+    attempts: ExperimentAttemptRow[]
+  ): Promise<BatchLabRunWorkerResult> {
     let completedCount = 0;
     let failedCount = 0;
 
@@ -93,23 +145,39 @@ export class BatchLabExecutionService {
       const messages = buildAttemptMessages(
         context.sample.history,
         context.previousOutputs,
-        context.sample.user_input
+        context.sample.user_input,
+        context.variant.output_preset
       );
+      const modelName =
+        context.variant.provider_config?.module_name?.trim() ||
+        context.variant.openrouter_model_id.trim();
+      const upstreamBaseUrl = context.variant.provider_config?.base_url?.trim() || undefined;
+      const batchLabModelKey = process.env.BATCH_LAB_MODEL_KEY?.trim();
+      if (!batchLabModelKey) {
+        throw new BatchLabRepositoryError(
+          'BATCH_LAB_CONFIGURATION_ERROR',
+          'Batch Lab model key is not configured'
+        );
+      }
       const result = await this.generator.execute(
         {
           userId: context.sample.source_user_id,
           characterId: context.sample.source_character_id,
           model: {
-            modelId: context.variant.model_id,
-            openRouterModelId: context.variant.openrouter_model_id,
-            tier: context.variant.tier,
-            isFree: context.variant.is_free,
+            modelId: modelName,
+            openRouterModelId: modelName,
+            tier: null,
+            isFree: false,
           },
           messages,
-          sampling: context.variant.sampling,
+          sampling: {},
           userInput: context.sample.user_input,
           stream: false,
           promptCaching: false,
+          upstream: {
+            baseUrl: upstreamBaseUrl,
+            apiKey: batchLabModelKey,
+          },
           policy: { kind: 'internal_research' },
         },
         undefined,
@@ -117,11 +185,17 @@ export class BatchLabExecutionService {
       );
 
       if (result.status !== 'success') {
+        const upstreamStatus = result.upstreamStatus ?? null;
         await this.repository.failAttempt({
           attempt,
           attemptId: attempt.id,
           errorCode: result.status,
-          errorMessage: `generation finished with ${result.status}`,
+          errorMessage:
+            result.status === 'upstream_error'
+              ? upstreamStatus === null
+                ? '上游生成请求失败：未收到 HTTP 状态码，请检查网络、URL 和超时日志'
+                : `上游生成请求失败（HTTP ${upstreamStatus}）`
+              : `generation finished with ${result.status}`,
           retryable: attempt.attempt_count < 2 && result.status === 'upstream_error',
         });
         await this.repository.refreshExperimentCounts(attempt.experiment_id);
@@ -168,9 +242,14 @@ export class BatchLabExecutionService {
       await this.repository.failAttempt({
         attempt,
         attemptId: attempt.id,
-        errorCode: 'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR',
+        errorCode:
+          err instanceof BatchLabRepositoryError
+            ? err.code
+            : 'BATCH_LAB_EXPERIMENT_VALIDATION_ERROR',
         errorMessage: err instanceof Error ? err.message : 'unknown error',
-        retryable: attempt.attempt_count < 2,
+        retryable:
+          attempt.attempt_count < 2 &&
+          !(err instanceof BatchLabRepositoryError && err.code === 'BATCH_LAB_CONFIGURATION_ERROR'),
       });
       await this.repository.refreshExperimentCounts(attempt.experiment_id);
       return 'failed';
@@ -206,9 +285,23 @@ interface BatchLabGenerationExecutor {
 export function buildAttemptMessages(
   baseHistory: GenerationMessage[],
   previousOutputs: string[],
-  userInput: string
+  userInput: string,
+  outputPreset?: { content?: string; format?: string } | null
 ): GenerationMessage[] {
+  const presetParts = [
+    outputPreset?.content?.trim() ? `内容要求：${outputPreset.content.trim()}` : null,
+    outputPreset?.format?.trim() ? `格式要求：${outputPreset.format.trim()}` : null,
+  ].filter((value): value is string => value !== null);
+
   return [
+    ...(presetParts.length > 0
+      ? [
+          {
+            role: 'system',
+            content: `请严格遵循本次 Batch Lab 输出预设。\n${presetParts.join('\n')}`,
+          },
+        ]
+      : []),
     ...baseHistory.map((message) => ({ role: message.role, content: message.content })),
     ...previousOutputs.map((content) => ({ role: 'assistant', content })),
     { role: 'user', content: userInput },
