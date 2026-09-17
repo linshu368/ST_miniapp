@@ -15,6 +15,11 @@
 - 默认写稿产物与自定义描述 trim 后均须为 1~200 字；前端提示且禁止超限提交，后端执行同一权威校验。处理方式参考语音 300 字限制：shared 定义常量，route/feature 在受理与送模型前共用同一上限。
 - 默认写稿参考 `shengtu_pipeline.py`：后端准备当前会话角色卡信息、`app_core.characters.character_persona_and_style`、生成风格和最近对话，用“视觉分镜师”系统提示词调用 DeepSeek 产出中文短文。
 - 不管默认写稿还是用户自定义，用户可见、可编辑、入库主文本都必须是中文短文；调用 Grok 生图前再由 DeepSeek 做内部直译英文 prompt，英文 prompt 不展示给用户。
+- 默认写稿在调用文本模型前，必须先在 `experience.chat_message_images` 创建 draft 阶段记录，并把 `draftImageDescription` 组装出的完整 `userPrompt` 保存到新增内部字段；模型调用失败也保留该记录用于审计，禁止先请求模型、后补写。
+- 描述接口返回 draft id；用户确认生成时必须携带该 id，并由后端在 ownership、message 绑定和状态校验后，将同一行从描述阶段原子推进为 pending 图片任务，不再创建第二条 attempt。
+- draft 阶段记录及新增 `userPrompt` 字段仅供 backend 审计/排障，不进入 shared 对外 attempt DTO、不返回前端、不写日志。其内容包含角色卡与近期对话，按消息正文同级敏感数据保护。
+- `draftImageDescription` 与 `translateImagePrompt` 共用一个可运行时配置的 OpenAI-compatible 文本模型配置对象：请求 URL、API key、模型名称作为同一个 `app_core.runtime_config` JSON value 原子发布；temperature、max_tokens、thinking、messages 等请求参数保持当前实现不变。
+- 运行时文本模型配置缺失或不合法时，整组回退到当前 `config.voice.draft` 的 DeepSeek URL/API key/model，保证默认行为与现状一致；该配置按追加要求加入 Admin managed config，但不得进入 C 端 frontend/shared 响应或日志。
 
 ### 出图与展示
 
@@ -41,7 +46,8 @@
 - 计费口径为“Storage 中存在可读取图片，且数据库在同一事务内完成扣款、流水与 ready 收口后才算成功”；预检不等于实扣。
 - 同一 attempt 最多扣一次；并发确认、worker 重领、前端重试不得重复扣费或错误覆盖另一张图。
 - 自动描述和用户描述都经过平台既有内容安全边界；初版仅健康向出图，不做参考图上传、图生图、多图、站内相册/作品集、站内分享或运营审核后台。
-- 外部模型密钥只存在 backend secret；日志、URL、Markdown、fixture 不记录密钥、完整中文短文、英文 prompt、完整对话或图片正文。
+- 除图片写稿/翻译模型配置这一明确例外外，外部模型密钥只存在 backend secret；日志、URL、Markdown、fixture 不记录密钥、完整中文短文、英文 prompt、完整对话或图片正文。
+- 图片写稿/翻译 API key 存在 `app_core.runtime_config` 并按最新要求进入 Admin 草稿/发布/审计链；只有具备对应 test/production 环境权限的 Admin 与 backend 可访问。密码框、确认弹窗和历史预览不得显示明文，且禁止进入 C 端公开 DTO、日志和错误响应。数据库备份与运维访问按 secret 处理。
 
 ## 工程约束
 
@@ -49,6 +55,7 @@
 - 对外 DTO 先落 `packages/shared/src/api/*`；前端通过 `src/lib/api/` React Query hooks 调用，不在组件直接 fetch。
 - 模型调用、生成审计与计费编排扩展 `packages/backend/src/features/generation/`，不得在图片 feature 另建旁路。
 - 运行时运营配置只通过 `platform/runtime-config.ts`；启动期 secret/endpoint 只通过 `platform/config.ts`。
+- 图片写稿/翻译模型是上述 secret 规则的显式例外：三项参数从 `app_core.runtime_config` 经 `platform/runtime-config.ts` 读取；仅在缺失/非法时整组回退 `platform/config.ts` 的当前 DeepSeek 参数，不新增第二套 runtime_config 读取。
 - 复用语音的“消息旁支产物、202 受理、会话批量回读、Storage、成功后原子扣费”模式，但图片必须使用可重启恢复的数据库任务租约，不照搬纯 fire-and-forget。
 - 写稿和翻译若沿用语音同款 DeepSeek `deepseek-v4-flash`，应复用现有 DeepSeek 配置；只复用领域无关的结构化/普通文本调用、超时、解析和错误边界，不复用语音专属台词清洗、TTS 标签和朗读口径。
 - 图片生成模型使用 Grok，经 Liaobots OpenAI-compatible images endpoint 调用；`LIAOBOTS_AUTH`、`LIAOBOTS_BASE`、`GROK_MODEL` 通过 backend config 配置，不下发前端，不把任何默认密钥写入源码或文档。
@@ -71,7 +78,7 @@
 
 - [ ] 入口出现条件、位置及描述/确认/编辑/生成/成功/失败/余额不足状态与 PRD 和交互稿一致。
 - [ ] 图 1~9 对应的入口、写稿加载、确认、自定义、出图加载、ready 展示、放大预览、失败重试、余额不足充值状态均有明确 UI 状态和可重复人工验收路径。
-- [ ] 描述预览不扣费；确认或编辑确认后才创建出图 attempt，按钮价格来自 runtime config。
+- [ ] 描述预览不扣费；description 阶段只创建不可被 worker 领取的 draft attempt，确认或编辑确认后才将其推进为可出图 pending，按钮价格来自 runtime config。
 - [ ] 默认路径为空自定义输入时才调用文本写稿模型；自定义路径提交用户最终文本时跳过写稿模型，按原文出图、不二次加工。
 - [ ] 自动描述与用户自定义描述都通过 shared 契约 1~200 字校验，并复用同一后端权威上限；超限不创建 attempt、不调用图片模型、不扣费。
 - [ ] 默认写稿使用“视觉分镜师”系统提示词，并从当前角色卡读取 `character_persona_and_style` 与必要角色信息；字段缺失时有明确失败/兜底策略，不凭空造固定外貌锚点。
@@ -85,3 +92,8 @@
 - [ ] shared、backend、frontend 的既有 typecheck/test/build 按实施计划通过；不新增测试文件，并完成失败路径人工验收。
 - [ ] 放大预览支持关闭、焦点恢复、移动端 safe area；保存相册能力按 Telegram 实际支持验证并记录平台差异。
 - [ ] DeepSeek 配置复用结论、Grok provider 配置和外部流水线参考已在设计/实施记录中明确，功能上线后再更新模块现状文档。
+- [ ] description 请求在任何文本模型网络调用前已创建 `chat_message_images` draft 行并持久化完整 `userPrompt`；通过可控上游超时/失败仍能查询到该审计行，且日志/响应不泄露其正文。
+- [ ] description 成功返回 draft id；确认生成校验 draft 归属、session/message 绑定和允许状态，并原子复用同一行推进 pending；重复确认、跨用户/跨消息 draft id、失败 draft 均不能创建重复任务或扣费。
+- [ ] draft 未确认、描述失败和长期遗留记录不被图片 worker 领取；有明确保留/清理口径，不占用“同一消息仅一个出图中 attempt”的约束。
+- [ ] `draftImageDescription` 与 `translateImagePrompt` 使用同一组 runtime 文本模型 URL/API key/model，其他请求参数不变；三项均有效时使用 runtime 配置，任一缺失/非法时整组回退当前 DeepSeek 配置。
+- [ ] `image_text_model_config`、`image_prompt_policy`、`image_default_art_style` 在 Admin「图片生成配置」菜单中按 test/production 环境独立保存、发布和回滚；模型 API key 用密码框录入并在确认/历史预览中脱敏，不进入 C 端 frontend/shared 响应、日志、错误或 fixture。
