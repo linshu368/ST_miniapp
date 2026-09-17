@@ -76,6 +76,9 @@ import {
 
 const { Header, Content } = Layout;
 
+const DEFAULT_EXPERIMENT_MODEL_ID = 'google-gemini-3.1-flash-lite';
+const DEFAULT_EXPERIMENT_OPENROUTER_MODEL_ID = 'google/gemini-3.1-flash-lite';
+
 const DEFAULT_SAMPLE_SQL = `SELECT h.id AS source_history_id
 FROM experience.chat_history AS h
 JOIN experience.chat_sessions AS s ON s.id = h.session_id
@@ -334,7 +337,9 @@ function ExperimentsPage({
         claim_limit: 5,
       }),
     onSuccess: async (result) => {
-      message.success(`领取 ${result.claimed_count}，完成 ${result.completed_count}`);
+      message.success(
+        `领取 ${result.claimed_count}，完成 ${result.completed_count}，失败 ${result.failed_count}`
+      );
       await invalidateExperiments();
     },
     onError: (error) => message.error(errorMessage(error)),
@@ -1078,8 +1083,8 @@ function ExperimentWizard({
     variants: [
       {
         name: '基准 A',
-        model_id: 'current-online-model',
-        openrouter_model_id: 'openrouter/current',
+        model_id: DEFAULT_EXPERIMENT_MODEL_ID,
+        openrouter_model_id: DEFAULT_EXPERIMENT_OPENROUTER_MODEL_ID,
         tier: 'standard',
         is_free: false,
         sampling: '{"temperature":0.7,"top_p":0.9}',
@@ -1087,8 +1092,8 @@ function ExperimentWizard({
       },
       {
         name: '候选 B',
-        model_id: 'current-online-model',
-        openrouter_model_id: 'openrouter/current',
+        model_id: DEFAULT_EXPERIMENT_MODEL_ID,
+        openrouter_model_id: DEFAULT_EXPERIMENT_OPENROUTER_MODEL_ID,
         tier: 'standard',
         is_free: false,
         sampling: '{"temperature":0.7,"top_p":0.9}',
