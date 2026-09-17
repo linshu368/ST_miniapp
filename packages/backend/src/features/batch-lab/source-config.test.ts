@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveBatchLabSourceConfig } from './source-config.js';
 
 const base = {
+  nodeEnv: 'test',
   backendEnvironment: 'test' as const,
   sourceEnvironment: 'test' as const,
   testProjectRef: 'zoqelpfhurwehlvypryl',
@@ -53,6 +54,18 @@ describe('resolveBatchLabSourceConfig', () => {
       env: {
         BATCH_LAB_SOURCE_DATABASE_URL:
           'postgresql://batch_lab_source_login.zoqelpfhurwehlvypryl:secret@aws-0-region.pooler.supabase.com:6543/postgres?sslmode=require',
+      },
+    });
+    expect(result).toMatchObject({ configured: true, projectRef: 'zoqelpfhurwehlvypryl' });
+  });
+
+  it('allows a non-TLS local development test source for poolers that reset TLS handshakes', () => {
+    const result = resolveBatchLabSourceConfig({
+      ...base,
+      nodeEnv: 'development',
+      env: {
+        BATCH_LAB_SOURCE_DATABASE_URL:
+          'postgresql://batch_lab_source_login.zoqelpfhurwehlvypryl:secret@aws-0-region.pooler.supabase.com:5432/postgres',
       },
     });
     expect(result).toMatchObject({ configured: true, projectRef: 'zoqelpfhurwehlvypryl' });

@@ -21,6 +21,7 @@ if (batchLabSourceEnvironment !== 'test' && batchLabSourceEnvironment !== 'produ
 }
 const batchLabSourceConfig = resolveBatchLabSourceConfig({
   env: process.env,
+  nodeEnv,
   backendEnvironment: databaseConfig.environment,
   sourceEnvironment: batchLabSourceEnvironment,
   testProjectRef: databaseConfig.testProjectRef,

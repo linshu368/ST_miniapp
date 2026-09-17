@@ -18,6 +18,7 @@ export type BatchLabSourceConfig =
 
 export function resolveBatchLabSourceConfig(input: {
   env: Env;
+  nodeEnv: string;
   backendEnvironment: DatabaseEnvironment;
   sourceEnvironment: SourceEnvironment;
   testProjectRef: string;
@@ -38,7 +39,9 @@ export function resolveBatchLabSourceConfig(input: {
   if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
     return unavailable('Batch Lab source database URL must use PostgreSQL');
   }
-  if (url.searchParams.get('sslmode') !== 'require') {
+  const isDevelopmentTestSource =
+    input.nodeEnv === 'development' && input.sourceEnvironment === 'test';
+  if (url.searchParams.get('sslmode') !== 'require' && !isDevelopmentTestSource) {
     return unavailable('Batch Lab source database URL must require TLS');
   }
   let username: string;
