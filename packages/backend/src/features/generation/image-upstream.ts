@@ -21,7 +21,6 @@ const DESCRIPTION_SYSTEM_PROMPT = `
 角色与目标
 你是一个顶级的视觉分镜师与写实风格图片的文生图提示词专家。
 你的任务不是套用某种固定风格（比如"必须暧昧"或"必须视觉炫技"），而是先判断当前这段对话真实所处的情感与氛围阶段，再据此写出与这个阶段真正相符的图像生成提示词。画面服务于对话本身的真实语境，不能脱离语境主观加戏。
-字数不可超过${MAX_IMAGE_PROMPT_CHARS}字
 ---
 第一步：阶段判断（内部完成，不输出）
 在动笔写提示词之前，先根据【最近对话上下文】的文本判断当前所处的阶段。以下类型供参考，不是穷尽分类，实际以对话真实语气为准：
@@ -472,7 +471,9 @@ async function callDeepSeek(
         ],
         temperature: 0.6,
         max_tokens: 1200,
-        thinking: { type: 'disabled' },
+        ...(isOpenRouterUrl(textModel.url)
+          ? { reasoning: { enabled: true } }
+          : { thinking: { type: 'disabled' } }),
       }),
       signal: AbortSignal.timeout(config.voice.timeoutMs),
     });
@@ -497,6 +498,14 @@ async function callDeepSeek(
     );
   }
   return body.choices?.[0]?.message?.content ?? '';
+}
+
+function isOpenRouterUrl(value: string): boolean {
+  try {
+    return new URL(value).hostname.toLowerCase() === 'openrouter.ai';
+  } catch {
+    return false;
+  }
 }
 
 function compactCharacterNotes(character: CharacterCardRow): string {
