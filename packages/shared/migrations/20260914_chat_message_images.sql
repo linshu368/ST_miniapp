@@ -117,7 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_message_images_claim
 COMMENT ON TABLE experience.chat_message_images IS
   '角色回复的图片生成 attempt。每次用户确认创建一行；成功后当前图与钱包扣费在同一事务内收口。';
 COMMENT ON COLUMN experience.chat_message_images.prompt_cn IS
-  '用户确认的中文短文。默认写稿与自定义路径共用 1~200 字上限，不静默截断。';
+  '用户确认的中文短文。默认写稿与自定义路径共用 1~1000 字上限，不静默截断。';
 COMMENT ON COLUMN experience.chat_message_images.prompt_en IS
   '内部 DeepSeek 直译英文，仅供 provider 输入和受控排障，不返回前端、不写日志。';
 COMMENT ON COLUMN experience.chat_message_images.provider_prompt IS
@@ -381,15 +381,15 @@ COMMENT ON FUNCTION billing.settle_image_generation(UUID, UUID, NUMERIC, JSONB) 
 INSERT INTO app_core.runtime_config(key, value, description, version, updated_at, text_value)
 VALUES
   ('image_generation_enabled', 'false'::JSONB, '图片生成入口总开关。关闭时不受理新 attempt，已受理任务继续收口。', 1, now(), NULL),
-  ('image_generation_credits', '50'::JSONB, '单张图片成功生成后扣费额。仅 ready 结算成功才实扣。', 1, now(), NULL),
-  ('image_price_label', '"50 星尘"'::JSONB, '图片生成按钮展示价格文案。', 1, now(), NULL),
+  ('image_generation_credits', '60'::JSONB, '单张图片成功生成后扣费额。仅 ready 结算成功才实扣。', 1, now(), NULL),
+  ('image_price_label', '"60 星尘"'::JSONB, '图片生成按钮展示价格文案。', 1, now(), NULL),
   ('image_default_art_style', '"精致二次元竖幅插画，柔和光影，健康公开发布"'::JSONB, '默认分镜写稿输入的画风说明。', 1, now(), NULL),
   ('image_width', '1024'::JSONB, '图片生成宽度像素。', 1, now(), NULL),
   ('image_height', '1536'::JSONB, '图片生成高度像素。', 1, now(), NULL),
-  ('image_max_prompt_chars', '200'::JSONB, '用户可见中文短文上限；必须与 shared MAX_IMAGE_PROMPT_CHARS 一致。', 1, now(), NULL),
+  ('image_max_prompt_chars', '1000'::JSONB, '用户可见中文短文上限；必须与 shared MAX_IMAGE_PROMPT_CHARS 一致。', 1, now(), NULL),
   ('image_max_output_bytes', '15728640'::JSONB, '后端允许转存的最大图片字节数。', 1, now(), NULL),
   ('image_prompt_policy', '"仅生成健康向、可公开发布的单人/场景竖图，不包含露骨、暴力或未成年人性化内容。"'::JSONB, '图片 prompt 健康向控制策略展示与 provider 尾巴来源。', 1, now(), NULL),
-  ('image_prompt_over_limit_hint', '"描述最多 200 字，请删减后再生成。"'::JSONB, '图片描述超限提示。', 1, now(), NULL),
+  ('image_prompt_over_limit_hint', '"描述最多 1000 字，请删减后再生成。"'::JSONB, '图片描述超限提示。', 1, now(), NULL),
   ('image_description_failed_hint', '"这次没有写出合适的画面描述，请稍后重试。"'::JSONB, '默认写稿失败提示。', 1, now(), NULL),
   ('image_generation_failed_hint', '"图片生成没有成功，本次不消耗星尘。"'::JSONB, '明确失败提示。', 1, now(), NULL),
   ('image_failed_unknown_hint', '"外部平台没有确认成功，本次不消耗星尘。"'::JSONB, '模糊失败提示。', 1, now(), NULL)

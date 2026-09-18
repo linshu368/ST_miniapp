@@ -112,20 +112,20 @@ export async function runImageGeneration(input: {
     const stored =
       providerImage.source === 'bytes'
         ? await storeGeneratedMessageImageBytes({
-            userId: attempt.user_id,
-            messageId: attempt.message_id,
-            attemptId: attempt.id,
-            bytes: providerImage.bytes,
-            mimeType: providerImage.mimeType,
-            maxBytes: input.imageConfig.maxOutputBytes,
-          })
+          userId: attempt.user_id,
+          messageId: attempt.message_id,
+          attemptId: attempt.id,
+          bytes: providerImage.bytes,
+          mimeType: providerImage.mimeType,
+          maxBytes: input.imageConfig.maxOutputBytes,
+        })
         : await storeGeneratedMessageImage({
-            userId: attempt.user_id,
-            messageId: attempt.message_id,
-            attemptId: attempt.id,
-            sourceUrl: providerImage.url,
-            maxBytes: input.imageConfig.maxOutputBytes,
-          });
+          userId: attempt.user_id,
+          messageId: attempt.message_id,
+          attemptId: attempt.id,
+          sourceUrl: providerImage.url,
+          maxBytes: input.imageConfig.maxOutputBytes,
+        });
 
     let settlement;
     try {
