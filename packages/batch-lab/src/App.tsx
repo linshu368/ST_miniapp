@@ -83,8 +83,8 @@ import {
 
 const { Header, Content } = Layout;
 
-const DEFAULT_EXPERIMENT_OPENROUTER_MODEL_ID = 'google/gemini-3.1-flash-lite';
-const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_EXPERIMENT_OPENROUTER_MODEL_ID = 'deepseek/deepseek-v4.1-flash';
+const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const DEFAULT_SAMPLE_SQL = `SELECT h.id AS source_history_id
 FROM experience.chat_history AS h
