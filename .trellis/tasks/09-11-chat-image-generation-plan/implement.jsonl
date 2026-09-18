@@ -1,0 +1,12 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 架构与最低质量门禁"}
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"聊天组件、移动端状态与可访问性约束"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"React Query、轮询、恢复与状态归属"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend 路由、generation 与配置硬规则"}
+{"file":".trellis/spec/backend/app/routes-and-features.md","reason":"语音/对话路由及生成调用链约束"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"超时、幂等、事务、队列、恢复与日志规则"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"跨应用契约及兼容规则"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"迁移、RLS、环境、回滚规则"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"全链路边界检查"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用与最小充分方案检查"}
+{"file":".trellis/tasks/09-11-chat-image-generation-plan/research/reuse-and-reliability.md","reason":"现有语音链路复用与图片故障模型调研"}
+{"file":".trellis/tasks/09-11-chat-image-generation-plan/research/shengtu-pipeline-reference.md","reason":"外部生图流水线、分镜师 prompt、Grok/Liaobots 配置与翻译链路依据"}

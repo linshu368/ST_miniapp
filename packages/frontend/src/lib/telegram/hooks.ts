@@ -7,6 +7,7 @@
 import { useCallback, useEffect } from 'react';
 import {
   backButton,
+  downloadFile,
   hapticFeedback,
   isTMA,
   openLink,
@@ -124,6 +125,15 @@ export function openExternalUrl(url: string): void {
   }
 
   window.location.assign(url);
+}
+
+/** 请求 Telegram 客户端展示原生文件下载确认框；旧版客户端由调用方展示不支持提示。 */
+export async function requestTelegramFileDownload(url: string, fileName: string): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  if (!downloadFile.isAvailable()) return false;
+  await downloadFile(url, fileName);
+  return true;
 }
 
 /** 在 Telegram 内打开 t.me 链接；失败时不离开 MiniApp，由调用方展示复制兜底。 */

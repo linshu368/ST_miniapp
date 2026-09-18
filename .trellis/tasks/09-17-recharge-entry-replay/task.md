@@ -10,11 +10,11 @@
 
 ## Tasks
 
-| ID | Status | Task | Files / Scope | Depends On | Verification |
-| -- | ------ | ---- | ------------- | ---------- | ------------ |
-| T1 | Done | 生命周期和 SDK 启停 | telemetry | - | lifecycle/adapter tests |
-| T2 | Done | 入口、外链、回流和 reload 集成 | payment/profile | T1 | flow/return tests |
-| T3 | Doing | 规范与质量门禁 | specs | T2 | typecheck/test/lint/build; Preview manual |
+| ID  | Status | Task                           | Files / Scope   | Depends On | Verification                              |
+| --- | ------ | ------------------------------ | --------------- | ---------- | ----------------------------------------- |
+| T1  | Done   | 生命周期和 SDK 启停            | telemetry       | -          | lifecycle/adapter tests                   |
+| T2  | Done   | 入口、外链、回流和 reload 集成 | payment/profile | T1         | flow/return tests                         |
+| T3  | Doing  | 规范与质量门禁                 | specs           | T2         | typecheck/test/lint/build; Preview manual |
 
 ## Execution Log
 
