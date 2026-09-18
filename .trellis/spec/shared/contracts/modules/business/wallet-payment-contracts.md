@@ -17,7 +17,7 @@ last_verified_at: 2026-09-08
 
 ## 当前状态
 
-Backend 与 Frontend 已统一使用。`PaymentOrder.settled_by` 已作为兼容扩展透出；replay context / PostHog 事件形状在 `api/telemetry.ts`，本期不含 `user_cohort`。
+Backend 与 Frontend 已统一使用。`PaymentOrder.settled_by` 已作为兼容扩展透出；replay context / PostHog 事件形状在 `api/telemetry.ts`，含允许无 `replay_context_id` 的 `recharge_entry_clicked`，本期不含 `user_cohort`。
 
 ## 入口与调用者
 

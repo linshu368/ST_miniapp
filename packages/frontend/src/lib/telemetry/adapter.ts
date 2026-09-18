@@ -22,6 +22,13 @@ const START_RECORDING_OVERRIDE = {
   event_trigger: true as const,
 };
 
+const REPLAY_SESSION_PROPERTY_KEYS = [
+  'replay_context_id',
+  'character_id',
+  'conversation_session_id',
+  'selected_model_id',
+] as const;
+
 type JsonValue = string | number | boolean | null;
 type SessionPropertyMap = Record<string, JsonValue>;
 
@@ -30,6 +37,7 @@ export type PostHogClient = {
   identify: (distinctId: string, properties?: SessionPropertyMap) => void;
   setPersonProperties: (properties: SessionPropertyMap) => void;
   register_for_session: (properties: SessionPropertyMap) => void;
+  unregister_for_session: (property: string) => void;
   capture: (event: string, properties?: Record<string, unknown>) => void;
   startSessionRecording: (override?: typeof START_RECORDING_OVERRIDE | true) => void;
   stopSessionRecording: () => void;
@@ -262,6 +270,17 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
         reportHealth('replay_recording_failed', 'network_failed');
       }
     },
+    clearReplaySessionProperties(): void {
+      if (!client || disabled) return;
+      for (const key of REPLAY_SESSION_PROPERTY_KEYS) {
+        try {
+          client.unregister_for_session(key);
+        } catch {
+          // SDK/sessionStorage 故障不应阻断 Replay 状态转换或充值跳转。
+          log.warn('replay_session_property_clear_failed', { property: key });
+        }
+      }
+    },
     startNewRecording(replayContextId?: string): boolean {
       if (!client || disabled) return false;
       try {
@@ -272,6 +291,19 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
         client.sessionManager?.resetSessionId();
         client.startSessionRecording(START_RECORDING_OVERRIDE);
         // 调用成功不等于已经在录：recorder.js / remote config 仍可能未就绪。
+        return client.sessionRecordingStarted();
+      } catch {
+        reportHealth('replay_recording_failed', 'recording_failed', replayContextId);
+        return false;
+      }
+    },
+    resumeRecording(replayContextId?: string): boolean {
+      if (!client || disabled) return false;
+      try {
+        if (!client.sessionRecordingStarted()) {
+          // 外部支付返回仍属于同一 MiniApp 会话；不能 resetSessionId。
+          client.startSessionRecording(START_RECORDING_OVERRIDE);
+        }
         return client.sessionRecordingStarted();
       } catch {
         reportHealth('replay_recording_failed', 'recording_failed', replayContextId);
