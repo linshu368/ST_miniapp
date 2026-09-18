@@ -3,25 +3,31 @@ import type { PaymentOrder } from '@miniapp/shared';
 
 import {
   capturePaymentOrderStatusObserved,
+  captureRechargeEntryClicked,
+  captureRechargeViewed,
   forgetPaymentReturnMemoryForTests,
   markExternalPaymentOpened,
   noteExternalPaymentBackgrounded,
   observePaymentReturn,
+  resumePaymentReplayFromPending,
   resetPaymentFlowTelemetryForTests,
   safePaymentReturnRoute,
 } from './flow-telemetry';
-import { EXTERNAL_PAYMENT_PENDING_TTL_MS } from './external-payment-pending';
+import {
+  EXTERNAL_PAYMENT_PENDING_TTL_MS,
+  writeExternalPaymentPending,
+} from './external-payment-pending';
 import { setReplaySessionStorageForTests } from './session-storage';
 import { writePaywallContinuation } from './paywall-continuation';
 
 type Snapshot = {
-  state: 'idle' | 'chat' | 'paywall_followup' | 'external_payment_pending' | 'ended';
+  state: 'idle' | 'chat' | 'recharge' | 'paywall_followup' | 'external_payment_pending' | 'ended';
   replayContextId: string | null;
   telemetryReady: boolean;
   streaming: boolean;
 };
 
-const capture = vi.fn();
+const capture = vi.fn((_draft: unknown) => true);
 const getSnapshot = vi.fn(
   (): Snapshot => ({
     state: 'external_payment_pending',
@@ -31,10 +37,25 @@ const getSnapshot = vi.fn(
   })
 );
 
+const startRechargeReplay = vi.fn((_: string | undefined) => {
+  getSnapshot.mockReturnValue({
+    state: 'recharge',
+    replayContextId: '11111111-1111-4111-8111-111111111111',
+    telemetryReady: true,
+    streaming: false,
+  });
+  return '11111111-1111-4111-8111-111111111111';
+});
+const resumePaymentReplay = vi.fn();
+const restorePaymentReplay = vi.fn();
+
 vi.mock('@/lib/telemetry', () => ({
   getReplayLifecycle: () => ({
     capture,
     getSnapshot,
+    startRechargeReplay,
+    resumePaymentReplay,
+    restorePaymentReplay,
     enterPaywallFollowup: vi.fn(),
   }),
 }));
@@ -87,6 +108,9 @@ function capturedPayload(): string {
 
 beforeEach(() => {
   capture.mockClear();
+  startRechargeReplay.mockClear();
+  resumePaymentReplay.mockClear();
+  restorePaymentReplay.mockClear();
   getSnapshot.mockReturnValue({
     state: 'external_payment_pending',
     replayContextId: '11111111-1111-4111-8111-111111111111',
@@ -110,6 +134,12 @@ afterEach(() => {
 });
 
 describe('payment flow telemetry', () => {
+  it('does not mark a status as seen until capture accepts it', () => {
+    capture.mockReturnValueOnce(false);
+    capturePaymentOrderStatusObserved(order);
+    capturePaymentOrderStatusObserved(order);
+    expect(capture).toHaveBeenCalledTimes(2);
+  });
   it('records order status once per order_id + state + settled_by', () => {
     capturePaymentOrderStatusObserved(order);
     capturePaymentOrderStatusObserved(order);
@@ -293,6 +323,31 @@ describe('payment return observed', () => {
     expect(capture).not.toHaveBeenCalled();
   });
 
+  it('does not resume on the initial order page before MiniApp actually backgrounds', () => {
+    markExternalPaymentOpened({ orderId: 'TG_1', paymentType: 'wxpay' });
+    expect(resumePaymentReplayFromPending('TG_1')).toBe(false);
+    expect(resumePaymentReplay).not.toHaveBeenCalled();
+    noteExternalPaymentBackgrounded();
+    forgetPaymentReturnMemoryForTests();
+    expect(resumePaymentReplayFromPending('TG_1')).toBe(true);
+    expect(resumePaymentReplay).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a persisted payment context from another Telegram user', () => {
+    writeExternalPaymentPending({
+      orderId: 'TG_1',
+      paymentType: 'wxpay',
+      replayContextId: '11111111-1111-4111-8111-111111111111',
+      telegramUserId: '999999999',
+      openedAt: Date.now(),
+      leftMiniApp: true,
+    });
+    forgetPaymentReturnMemoryForTests();
+    expect(resumePaymentReplayFromPending('TG_1')).toBe(false);
+    expect(observePaymentReturn({ source: 'query_param', orderId: 'TG_1' })).toBe(false);
+    expect(resumePaymentReplay).not.toHaveBeenCalled();
+  });
+
   it('drops query strings so pay_url never appears on return_route', () => {
     expect(
       safePaymentReturnRoute(
@@ -335,5 +390,59 @@ describe('payment return observed', () => {
       })
     ).toBe(true);
     expect(capture).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('recharge entry clicked', () => {
+  it('reserves a recharge context before capturing the entry draft', () => {
+    getSnapshot.mockReturnValue({
+      state: 'idle',
+      replayContextId: null,
+      telemetryReady: false,
+      streaming: false,
+    });
+
+    captureRechargeEntryClicked({ telegramUserId: '123456789' });
+    expect(startRechargeReplay).toHaveBeenCalledWith('123456789');
+    expect(startRechargeReplay.mock.invocationCallOrder[0]).toBeLessThan(
+      capture.mock.invocationCallOrder[0] ?? 0
+    );
+    expect(capture.mock.calls[0]?.[0]).toEqual({
+      event: 'recharge_entry_clicked',
+      occurred_at: expect.any(String),
+      entry_source: 'profile_balance',
+    });
+    expect(capturedPayload()).not.toContain('pay_url');
+    expect(capturedPayload()).not.toContain('/profile');
+  });
+
+  it('reuses an active replay context', () => {
+    captureRechargeEntryClicked({ telegramUserId: '123456789' });
+    expect(startRechargeReplay).toHaveBeenCalledTimes(1);
+    expect(capture.mock.calls[0]?.[0]).toMatchObject({
+      event: 'recharge_entry_clicked',
+      entry_source: 'profile_balance',
+    });
+  });
+
+  it('does not wait for SDK readiness in the click handler', () => {
+    captureRechargeEntryClicked({ telegramUserId: '123456789' });
+    expect(startRechargeReplay).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows the lifecycle to resolve a missing click user id from SDK identity', () => {
+    captureRechargeEntryClicked({ telegramUserId: null });
+    expect(startRechargeReplay).toHaveBeenCalledWith(undefined);
+  });
+
+  it('keeps recharge_viewed gated on replay context', () => {
+    getSnapshot.mockReturnValue({
+      state: 'idle',
+      replayContextId: null,
+      telemetryReady: false,
+      streaming: false,
+    });
+    captureRechargeViewed();
+    expect(capture).not.toHaveBeenCalled();
   });
 });

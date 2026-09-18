@@ -8,7 +8,7 @@ import { z } from 'zod';
  */
 
 /** 图片 prompt 的用户可见中文短文上限。前端提示和后端受理/送模型前校验共用。 */
-export const MAX_IMAGE_PROMPT_CHARS = 200;
+export const MAX_IMAGE_PROMPT_CHARS = 1000;
 
 /** 用户确认图片生成时的输入来源。custom 不再进入默认分镜写稿链路。 */
 export type ImagePromptSource = 'generated' | 'custom';
