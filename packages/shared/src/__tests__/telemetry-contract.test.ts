@@ -72,6 +72,7 @@ describe('replay telemetry events', () => {
   it('exposes the closed event-name list from the discriminated union', () => {
     expect(REPLAY_TELEMETRY_EVENT_NAMES).toContain('replay_chat_started');
     expect(REPLAY_TELEMETRY_EVENT_NAMES).toContain('payment_order_settled');
+    expect(REPLAY_TELEMETRY_EVENT_NAMES).toContain('recharge_entry_clicked');
     expect(REPLAY_TELEMETRY_EVENT_NAMES).not.toContain('user_cohort_updated');
   });
 
@@ -233,5 +234,54 @@ describe('replay telemetry events', () => {
         failure_code: 'missing_config',
       }).event
     ).toBe('replay_sdk_init_failed');
+  });
+
+  it('accepts recharge_entry_clicked without replay_context_id', () => {
+    expect(
+      parseReplayTelemetryEvent({
+        event: 'recharge_entry_clicked',
+        telegram_user_id: '123456789',
+        occurred_at: occurredAt,
+        entry_source: 'profile_balance',
+      })
+    ).toEqual({
+      event: 'recharge_entry_clicked',
+      telegram_user_id: '123456789',
+      occurred_at: occurredAt,
+      entry_source: 'profile_balance',
+    });
+  });
+
+  it('attaches optional replay context on recharge_entry_clicked and rejects urls or pay_url', () => {
+    const base = {
+      event: 'recharge_entry_clicked' as const,
+      telegram_user_id: '123456789',
+      occurred_at: occurredAt,
+      entry_source: 'profile_balance' as const,
+    };
+    expect(
+      ReplayTelemetryEventSchema.safeParse({
+        ...base,
+        replay_context_id: replayContextId,
+      }).success
+    ).toBe(true);
+    expect(ReplayTelemetryEventSchema.safeParse({ ...base, entry_source: 'lobby' }).success).toBe(
+      false
+    );
+    expect(
+      ReplayTelemetryEventSchema.safeParse({ ...base, telegram_user_id: undefined }).success
+    ).toBe(false);
+    expect(
+      ReplayTelemetryEventSchema.safeParse({
+        ...base,
+        url: 'https://app.example/profile',
+      }).success
+    ).toBe(false);
+    expect(
+      ReplayTelemetryEventSchema.safeParse({
+        ...base,
+        pay_url: 'https://pay.example/checkout',
+      }).success
+    ).toBe(false);
   });
 });
