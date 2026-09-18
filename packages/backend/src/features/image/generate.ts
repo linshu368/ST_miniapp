@@ -82,50 +82,42 @@ export async function runImageGeneration(input: {
       });
     } catch (grokError) {
       if (!config.image.replicateToken || !config.image.zModel) throw grokError;
-      input.log.sys.warn(
-        {
-          event: 'image.provider.fallback',
-          attemptId: attempt.id,
-          fromProvider: 'liaobots_grok',
-          toProvider: 'replicate_z',
-          errorCode: grokError instanceof ImageUpstreamError ? grokError.code : 'unknown',
-          err: grokError,
-        },
-        'Grok 生图失败，降级到 Z 模型'
-      );
-      await images.markProviderFallback({
-        id: attempt.id,
-        provider: 'replicate_z',
-        model: config.image.zModel,
-        baseUrlHost: readUrlHost(config.image.replicateBase),
+      providerImage = await generateFallbackImage({
+        attempt,
+        images,
+        visualAnchor,
+        promptEn,
+        grokError,
+        log: input.log,
       });
-      const fallback = await generateZImage({
-        prompt: buildZProviderPrompt({ visualAnchor, promptEn }),
-        width: attempt.width,
-        height: attempt.height,
-      });
-      providerImage = fallback;
-      await images.recordProviderRequestId(attempt.id, fallback.requestId);
     }
 
     await images.markStoring(attempt.id);
-    const stored =
-      providerImage.source === 'bytes'
-        ? await storeGeneratedMessageImageBytes({
-          userId: attempt.user_id,
-          messageId: attempt.message_id,
-          attemptId: attempt.id,
-          bytes: providerImage.bytes,
-          mimeType: providerImage.mimeType,
-          maxBytes: input.imageConfig.maxOutputBytes,
-        })
-        : await storeGeneratedMessageImage({
-          userId: attempt.user_id,
-          messageId: attempt.message_id,
-          attemptId: attempt.id,
-          sourceUrl: providerImage.url,
-          maxBytes: input.imageConfig.maxOutputBytes,
-        });
+    let stored;
+    try {
+      stored = await storeProviderImage(providerImage, attempt, input.imageConfig.maxOutputBytes);
+    } catch (grokOutputError) {
+      // Grok 有时先返回临时 URL，真正下载时才以 HTTP/MIME/空响应表达内容拒绝。
+      // 这仍属于主 provider 明确失败；Storage 上传异常则不能重复购买另一张图。
+      if (
+        providerImage.provider !== 'liaobots_grok' ||
+        !config.image.replicateToken ||
+        !config.image.zModel ||
+        !isGrokOutputFailure(grokOutputError)
+      ) {
+        throw grokOutputError;
+      }
+      providerImage = await generateFallbackImage({
+        attempt,
+        images,
+        visualAnchor,
+        promptEn,
+        grokError: grokOutputError,
+        log: input.log,
+      });
+      await images.markStoring(attempt.id);
+      stored = await storeProviderImage(providerImage, attempt, input.imageConfig.maxOutputBytes);
+    }
 
     let settlement;
     try {
@@ -205,6 +197,77 @@ export async function runImageGeneration(input: {
       );
     }
   }
+}
+
+async function generateFallbackImage(input: {
+  attempt: ChatMessageImageRow;
+  images: ChatMessageImageRepository;
+  visualAnchor: string;
+  promptEn: string;
+  grokError: unknown;
+  log: ImageLogger;
+}): Promise<GeneratedProviderImage> {
+  input.log.sys.warn(
+    {
+      event: 'image.provider.fallback',
+      attemptId: input.attempt.id,
+      fromProvider: 'liaobots_grok',
+      toProvider: 'replicate_z',
+      errorCode: input.grokError instanceof ImageUpstreamError ? input.grokError.code : 'unknown',
+      err: input.grokError,
+    },
+    'Grok 生图失败，降级到 Z 模型'
+  );
+  await input.images.markProviderFallback({
+    id: input.attempt.id,
+    provider: 'replicate_z',
+    model: config.image.zModel,
+    baseUrlHost: readUrlHost(config.image.replicateBase),
+  });
+  const fallback = await generateZImage({
+    prompt: buildZProviderPrompt({ visualAnchor: input.visualAnchor, promptEn: input.promptEn }),
+    width: input.attempt.width,
+    height: input.attempt.height,
+  });
+  await input.images.recordProviderRequestId(input.attempt.id, fallback.requestId);
+  return fallback;
+}
+
+function storeProviderImage(
+  image: GeneratedProviderImage,
+  attempt: ChatMessageImageRow,
+  maxBytes: number
+) {
+  return image.source === 'bytes'
+    ? storeGeneratedMessageImageBytes({
+        userId: attempt.user_id,
+        messageId: attempt.message_id,
+        attemptId: attempt.id,
+        bytes: image.bytes,
+        mimeType: image.mimeType,
+        maxBytes,
+      })
+    : storeGeneratedMessageImage({
+        userId: attempt.user_id,
+        messageId: attempt.message_id,
+        attemptId: attempt.id,
+        sourceUrl: image.url,
+        maxBytes,
+      });
+}
+
+function isGrokOutputFailure(error: unknown): boolean {
+  if (!(error instanceof ImageUpstreamError) || error.stage !== 'download') return false;
+  return (
+    error.code.startsWith('image_storage_download_') ||
+    [
+      'image_storage_mime_type',
+      'image_storage_empty',
+      'image_storage_size',
+      'image_storage_url_rejected',
+      'image_storage_redirect',
+    ].includes(error.code)
+  );
 }
 
 function readUrlHost(value: string): string | null {
