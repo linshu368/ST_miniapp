@@ -1,7 +1,7 @@
 /**
  * backend / infrastructure / telemetry / posthog-capture.ts
  *
- * Node 22 原生 fetch 调 PostHog capture。不为非关键事件引入 posthog-node。
+ * Node 22 原生 fetch 调 PostHog capture。不为非关键服务端事件引入 posthog-node。
  * 配置来自 platform/config.ts（进程环境密钥），不是 runtime_config 表。
  */
 import {
@@ -26,14 +26,14 @@ export type PosthogCaptureConfig = {
 };
 
 const DEFAULT_TIMEOUT_MS = 3000;
-const seenPaymentTerminalKeys = new Set<string>();
+const seenTerminalKeys = new Set<string>();
 
 export function getPosthogCaptureConfig(): PosthogCaptureConfig {
   return config.posthog;
 }
 
 export function resetPosthogCaptureDedupeForTests(): void {
-  seenPaymentTerminalKeys.clear();
+  seenTerminalKeys.clear();
 }
 
 export function resolvePosthogCaptureUrl(host: string): string | null {
@@ -57,15 +57,22 @@ export function isPosthogCaptureConfigured(
   return cfg.apiKey.trim().length > 0 && resolvePosthogCaptureUrl(cfg.host) !== null;
 }
 
-function paymentTerminalDedupe(
-  event: ReplayTelemetryEvent
-): { key: string; orderId: string } | null {
+function terminalDedupe(event: ReplayTelemetryEvent): { key: string; entityId: string } | null {
   if (event.event !== 'payment_order_settled' && event.event !== 'payment_order_failed') {
-    return null;
+    if (event.event !== 'image_generation_completed' && event.event !== 'image_generation_failed') {
+      return null;
+    }
+    return {
+      key:
+        event.event === 'image_generation_completed'
+          ? `${event.attempt_id}:${event.event}:${event.charge_status}`
+          : `${event.attempt_id}:${event.event}:${event.terminal_status}`,
+      entityId: event.attempt_id,
+    };
   }
   return {
     key: `${event.order_id}:${event.order_status}:${event.settled_by ?? ''}`,
-    orderId: event.order_id,
+    entityId: event.order_id,
   };
 }
 
@@ -111,13 +118,13 @@ export async function captureReplayTelemetryEvent(
     return 'skipped';
   }
 
-  const dedupe = paymentTerminalDedupe(parsed);
-  if (dedupe && seenPaymentTerminalKeys.has(dedupe.key)) {
+  const dedupe = terminalDedupe(parsed);
+  if (dedupe && seenTerminalKeys.has(dedupe.key)) {
     log.biz.info(
       {
         event: 'posthog.capture.deduped',
         telemetryEvent: parsed.event,
-        orderId: dedupe.orderId,
+        entityId: dedupe.entityId,
       },
       'PostHog 终态事件已发送过，跳过'
     );
@@ -151,7 +158,7 @@ export async function captureReplayTelemetryEvent(
       );
       return 'failed';
     }
-    if (dedupe) seenPaymentTerminalKeys.add(dedupe.key);
+    if (dedupe) seenTerminalKeys.add(dedupe.key);
     log.biz.info(
       {
         event: 'posthog.capture.sent',

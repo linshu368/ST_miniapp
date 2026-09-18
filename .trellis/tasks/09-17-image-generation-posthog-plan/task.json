@@ -3,7 +3,7 @@
   "name": "image-generation-posthog-plan",
   "title": "图片生成 PostHog 接入规划",
   "description": "规划图片生成功能接入 PostHog 的事件契约、Frontend/Backend 埋点节点、配置边界、可靠性和验证方案，复用现有支付与 replay telemetry 模式。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "cross-package",
   "package": "cross-package",
