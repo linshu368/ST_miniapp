@@ -47,6 +47,7 @@ import {
   publishDraft,
   rollbackRelease,
   saveDraft,
+  testImageTextModelConfig,
   uploadInvitePoster,
   type AdminUser,
   type CharacterCard,
@@ -837,6 +838,9 @@ function AdminWorkspace(props: {
         charactersLoading={charactersLoading}
         charactersError={charactersError}
         onUploadInvitePoster={(file) => uploadInvitePoster(props.client, props.environment, file)}
+        onTestImageTextModel={(value) =>
+          testImageTextModelConfig(props.client, props.environment, value)
+        }
       />
       <Divider />
       <Space wrap>
