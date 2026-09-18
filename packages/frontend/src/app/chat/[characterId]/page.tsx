@@ -248,16 +248,19 @@ export default function SelfHostedChatPage() {
         quotaExhaustedNotice={quotaExhaustedNotice}
         renderFooter={(message) => {
           const showVoice = canGenerateVoice(message);
-          const showImage = canGenerateImage(message);
+          const messageImage = imageByMessage.get(message.id);
+          // 最新完整回复可首次出图；已经有图片记录的历史回复也保留重试/重新生成入口。
+          const canCreateImage = canGenerateImage(message) || Boolean(messageImage);
           const showRegenerate = canRegenerate && message.id === lastMessage?.id;
-          if (!showVoice && !showImage && !showRegenerate) return null;
+          if (!showVoice && !canCreateImage && !showRegenerate) return null;
 
           return (
             <ChatMessageImageFooter
               image={
-                showImage
+                canCreateImage
                   ? {
-                      image: imageByMessage.get(message.id),
+                      image: messageImage,
+                      canGenerate: canCreateImage,
                       config: imageConfigQuery.data,
                       describe: async () => {
                         const result = await describeImage.mutateAsync(message.id);
