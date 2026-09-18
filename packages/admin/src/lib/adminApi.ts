@@ -1,4 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type {
+  AdminImageTextModelTestRequest,
+  AdminImageTextModelTestResponse,
+  ApiResponse,
+} from '@miniapp/shared';
 import type { AdminEnvironment } from './environment';
 import { getAdminApiUrl } from './environment';
 import type { ManagedConfigKey } from './configSchemas';
@@ -307,6 +312,39 @@ export async function uploadInvitePoster(
     throw new Error(body.message || '邀请海报上传失败');
   }
   return body.posterUrl;
+}
+
+export async function testImageTextModelConfig(
+  client: SupabaseClient,
+  environment: AdminEnvironment,
+  input: AdminImageTextModelTestRequest
+): Promise<AdminImageTextModelTestResponse> {
+  const { data } = await client.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('登录状态已失效，请重新登录');
+
+  const response = await fetch(`${getAdminApiUrl(environment)}/api/admin/image-text-model/test`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const body = await readApiResponse<AdminImageTextModelTestResponse>(response);
+  if (!response.ok || !body?.success) {
+    throw new Error(readApiErrorMessage(body) ?? '模型调用测试失败');
+  }
+  return body.data;
+}
+
+async function readApiResponse<T>(response: Response): Promise<ApiResponse<T> | null> {
+  try {
+    return (await response.json()) as ApiResponse<T>;
+  } catch {
+    return null;
+  }
+}
+
+function readApiErrorMessage<T>(body: ApiResponse<T> | null): string | null {
+  return body && !body.success ? body.error.message : null;
 }
 
 export async function setCharacterEnabled(
