@@ -113,6 +113,10 @@ export const PaymentFlowLastObservedActionSchema = z.enum([
 ]);
 export type PaymentFlowLastObservedAction = z.infer<typeof PaymentFlowLastObservedActionSchema>;
 
+/** 用户主动点击充值入口的固定来源；本期仅个人中心余额卡。 */
+export const RechargeEntrySourceSchema = z.enum(['profile_balance']);
+export type RechargeEntrySource = z.infer<typeof RechargeEntrySourceSchema>;
+
 export const ReplaySdkFailureCodeSchema = z.enum([
   'missing_config',
   'invalid_host',
@@ -220,6 +224,17 @@ export const PaywallRechargeSelectedEventSchema = frontendEvent('paywall_recharg
 });
 
 export const RechargeViewedEventSchema = frontendEvent('recharge_viewed', {});
+
+/** 个人中心主动点击充值入口；允许没有 replay context，不得与 recharge_viewed 混用。 */
+export const RechargeEntryClickedEventSchema = z
+  .object({
+    event: z.literal('recharge_entry_clicked'),
+    telegram_user_id: TelegramUserIdSchema,
+    occurred_at: IsoDateTimeSchema,
+    replay_context_id: ReplayContextIdSchema.optional(),
+    entry_source: RechargeEntrySourceSchema,
+  })
+  .strict();
 export const PaymentMethodSelectedEventSchema = frontendEvent('payment_method_selected', {
   plan_id: z.string().trim().min(1),
   payment_type: PaymentTypeSchema,
@@ -322,6 +337,7 @@ export const ReplayTelemetryEventSchema = z.discriminatedUnion('event', [
   PaywallInviteSelectedEventSchema,
   PaywallRechargeSelectedEventSchema,
   RechargeViewedEventSchema,
+  RechargeEntryClickedEventSchema,
   PaymentMethodSelectedEventSchema,
   PaymentOrderCreatedEventSchema,
   ExternalPaymentOpenRequestedEventSchema,

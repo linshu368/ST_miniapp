@@ -21,7 +21,12 @@ function createMockAdapter(): Mocked<PostHogAdapter> & { captures: unknown[] } {
     identify: vi.fn(),
     setPersonProperties: vi.fn(),
     registerSessionProperties: vi.fn(),
+    clearReplaySessionProperties: vi.fn(),
     startNewRecording: vi.fn(() => {
+      recording = true;
+      return true;
+    }),
+    resumeRecording: vi.fn(() => {
       recording = true;
       return true;
     }),
@@ -39,6 +44,149 @@ function createMockAdapter(): Mocked<PostHogAdapter> & { captures: unknown[] } {
 }
 
 describe('replay lifecycle owner', () => {
+  it('starts direct recharge recording before releasing the clicked event, without chat identity', async () => {
+    const adapter = createMockAdapter();
+    let resolveReady: ((ready: boolean) => void) | undefined;
+    adapter.whenReady.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReady = resolve;
+      })
+    );
+    const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
+
+    expect(api.startRechargeReplay('123456789')).toBe(replayContextId);
+    expect(api.getState()).toBe('recharge');
+    expect(api.capture({ event: 'recharge_entry_clicked', entry_source: 'profile_balance' })).toBe(
+      true
+    );
+    expect(api.capture({ event: 'recharge_viewed' })).toBe(true);
+    expect(adapter.capture).not.toHaveBeenCalled();
+
+    resolveReady?.(true);
+    await vi.waitFor(() => expect(adapter.capture).toHaveBeenCalledTimes(2));
+    expect(adapter.startNewRecording).toHaveBeenCalledTimes(1);
+    expect(adapter.startNewRecording.mock.invocationCallOrder[0]).toBeLessThan(
+      adapter.capture.mock.invocationCallOrder[0] ?? 0
+    );
+    expect(adapter.registerSessionProperties).toHaveBeenCalledWith({
+      replay_context_id: replayContextId,
+    });
+    expect(adapter.captures).toEqual([
+      expect.objectContaining({
+        event: 'recharge_entry_clicked',
+        replay_context_id: replayContextId,
+        telegram_user_id: '123456789',
+      }),
+      expect.objectContaining({
+        event: 'recharge_viewed',
+        replay_context_id: replayContextId,
+        telegram_user_id: '123456789',
+      }),
+    ]);
+    expect(adapter.captures).not.toContainEqual(
+      expect.objectContaining({ event: 'replay_chat_started' })
+    );
+  });
+
+  it('stops before external payment and resumes without starting a new session', async () => {
+    const adapter = createMockAdapter();
+    const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
+    api.startRechargeReplay('123456789');
+    await vi.waitFor(() => expect(adapter.startNewRecording).toHaveBeenCalledTimes(1));
+    await api.enterExternalPaymentPending();
+    expect(api.getState()).toBe('external_payment_pending');
+    expect(adapter.stopRecording).toHaveBeenCalledTimes(1);
+    api.refreshTelemetryReady();
+    expect(adapter.startNewRecording).toHaveBeenCalledTimes(1);
+    api.resumePaymentReplay();
+    expect(api.getState()).toBe('recharge');
+    expect(adapter.resumeRecording).toHaveBeenCalledTimes(1);
+    expect(adapter.startNewRecording).toHaveBeenCalledTimes(1);
+    expect(api.getSnapshot().replayContextId).toBe(replayContextId);
+  });
+
+  it('drops queued recharge events if the user leaves before the SDK is ready', async () => {
+    const adapter = createMockAdapter();
+    let resolveReady: ((ready: boolean) => void) | undefined;
+    adapter.whenReady.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReady = resolve;
+      })
+    );
+    const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
+    api.startRechargeReplay('123456789');
+    api.capture({ event: 'recharge_entry_clicked', entry_source: 'profile_balance' });
+    const ending = api.endReplay('route_change');
+    resolveReady?.(true);
+    await ending;
+    expect(api.getState()).toBe('ended');
+    expect(adapter.startNewRecording).not.toHaveBeenCalled();
+    expect(adapter.capture).not.toHaveBeenCalled();
+  });
+
+  it('does not start a new recording in the payment gateway when SDK readiness arrives late', async () => {
+    const adapter = createMockAdapter();
+    let resolveReady: ((ready: boolean) => void) | undefined;
+    adapter.whenReady.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReady = resolve;
+      })
+    );
+    const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
+    api.startRechargeReplay('123456789');
+    api.capture({ event: 'recharge_entry_clicked', entry_source: 'profile_balance' });
+    await api.enterExternalPaymentPending();
+    resolveReady?.(true);
+    await vi.waitFor(() => expect(adapter.capture).toHaveBeenCalledTimes(1));
+    expect(adapter.startNewRecording).not.toHaveBeenCalled();
+    api.resumePaymentReplay();
+    expect(adapter.resumeRecording).toHaveBeenCalledTimes(1);
+    expect(adapter.startNewRecording).not.toHaveBeenCalled();
+  });
+
+  it('restores a persisted payment context without inventing chat fields', () => {
+    const adapter = createMockAdapter();
+    const api = createReplayLifecycle({ adapter });
+    api.restorePaymentReplay(replayContextId, '123456789');
+    expect(api.getState()).toBe('external_payment_pending');
+    expect(adapter.startNewRecording).not.toHaveBeenCalled();
+    api.resumePaymentReplay();
+    expect(adapter.resumeRecording).toHaveBeenCalledWith(replayContextId);
+    expect(adapter.registerSessionProperties).toHaveBeenCalledWith({
+      replay_context_id: replayContextId,
+    });
+    expect(adapter.capture).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'replay_chat_started' })
+    );
+  });
+
+  it('starts a normal chat after leaving an external standalone recharge', async () => {
+    const adapter = createMockAdapter();
+    const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
+    api.startRechargeReplay('123456789');
+    await vi.waitFor(() => expect(adapter.startNewRecording).toHaveBeenCalledTimes(1));
+    await api.enterExternalPaymentPending();
+    api.reenterChatFromFollowup();
+    expect(api.getState()).toBe('external_payment_pending');
+    await api.startChatReplay({ characterId, conversationSessionId, selectedModelId: null });
+    expect(api.getState()).toBe('chat');
+  });
+
+  it('keeps a chat context if the user clicks the profile recharge entry during chat', async () => {
+    const adapter = createMockAdapter();
+    const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
+    await api.startChatReplay({ characterId, conversationSessionId, selectedModelId: null });
+    expect(api.startRechargeReplay('123456789')).toBe(replayContextId);
+    expect(api.getState()).toBe('chat');
+    expect(adapter.startNewRecording).toHaveBeenCalledTimes(1);
+    api.capture({ event: 'recharge_entry_clicked', entry_source: 'profile_balance' });
+    expect(adapter.captures.at(-1)).toMatchObject({
+      event: 'recharge_entry_clicked',
+      replay_context_id: replayContextId,
+    });
+    expect(adapter.captures.at(-1)).not.toHaveProperty('character_id');
+  });
+
   it('is idle until chat replay starts and does not auto-record', () => {
     const adapter = createMockAdapter();
     const api = createReplayLifecycle({ adapter, createContextId: () => replayContextId });
@@ -107,9 +255,11 @@ describe('replay lifecycle owner', () => {
     await api.enterPaywallFollowup();
     expect(api.getState()).toBe('paywall_followup');
     expect(adapter.stopRecording).not.toHaveBeenCalled();
+    expect(adapter.clearReplaySessionProperties).not.toHaveBeenCalled();
 
     await api.enterExternalPaymentPending();
     expect(api.getState()).toBe('external_payment_pending');
+    expect(adapter.clearReplaySessionProperties).not.toHaveBeenCalled();
     for (const fn of timeouts) fn();
     await Promise.resolve();
     expect(api.getState()).toBe('external_payment_pending');
@@ -215,6 +365,7 @@ describe('replay lifecycle owner', () => {
     expect(api.getState()).toBe('paywall_followup');
     expect(api.getSnapshot().replayContextId).toBe(replayContextId);
     expect(adapter.stopRecording).not.toHaveBeenCalled();
+    expect(adapter.clearReplaySessionProperties).not.toHaveBeenCalled();
 
     await api.endReplay('pagehide');
     expect(api.getState()).toBe('paywall_followup');
@@ -265,5 +416,9 @@ describe('replay lifecycle owner', () => {
     await api.endReplay('route_change');
     expect(api.getState()).toBe('ended');
     expect(adapter.stopRecording).toHaveBeenCalledTimes(1);
+    expect(adapter.clearReplaySessionProperties).toHaveBeenCalledTimes(1);
+    expect(adapter.capture.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      adapter.clearReplaySessionProperties.mock.invocationCallOrder[0] ?? 0
+    );
   });
 });

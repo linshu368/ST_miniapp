@@ -41,6 +41,7 @@ import {
   useSetUserAvatarMutation,
   useUserSettingsQuery,
 } from '@/lib/api/settings';
+import { captureRechargeEntryClicked } from '@/lib/payment/flow-telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { formatNumber } from '@/lib/utils/payment';
 import { useUserProfileStore } from '@/stores/user-profile-store';
@@ -405,6 +406,9 @@ export default function ProfilePage() {
               href="/profile/recharge"
               aria-label="前往星尘充值"
               className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/15 px-3 py-1.5 text-[12px] font-bold text-primary transition hover:bg-primary/25"
+              onClick={() => {
+                captureRechargeEntryClicked({ telegramUserId });
+              }}
             >
               <Sparkles className="h-3.5 w-3.5" aria-hidden />
               星尘充值

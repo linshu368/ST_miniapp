@@ -16,6 +16,7 @@ import {
   capturePaymentOrderStatusObserved,
   markExternalPaymentOpened,
   observePaymentReturn,
+  resumePaymentReplayFromPending,
   retainPaywallFollowupIfActive,
 } from '@/lib/payment/flow-telemetry';
 import {
@@ -90,6 +91,7 @@ export default function PaymentPendingPage() {
       returnToFromQuery,
       getReplayLifecycle().getSnapshot().replayContextId
     );
+    resumePaymentReplayFromPending(orderId);
     setCanReopenPayment(hasPaymentOpenUrl(orderId));
     setStoredReturnTo(readPaymentOpenMeta(orderId)?.returnTo ?? null);
   }, [orderId, returnToFromQuery, search]);
@@ -175,7 +177,6 @@ export default function PaymentPendingPage() {
             onReopenPayment={() => {
               if (!orderId) return;
               void (async () => {
-                await getReplayLifecycle().enterExternalPaymentPending();
                 const payUrl = readPaymentOpenUrl(orderId);
                 if (!payUrl) {
                   captureExternalPaymentOpenRequested({
@@ -190,6 +191,7 @@ export default function PaymentPendingPage() {
                   orderId,
                   paymentType: order.payment_type,
                 });
+                await getReplayLifecycle().enterExternalPaymentPending();
                 markExternalPaymentOpened({
                   orderId,
                   paymentType: order.payment_type,
