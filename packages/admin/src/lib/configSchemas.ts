@@ -256,7 +256,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_default_art_style: z.string().trim().min(1, '画风说明不能为空').max(1000),
   image_width: positiveInteger.min(256).max(4096),
   image_height: positiveInteger.min(256).max(4096),
-  image_max_prompt_chars: z.literal(200),
+  image_max_prompt_chars: z.literal(1000),
   image_max_output_bytes: positiveInteger.min(1048576).max(52428800),
   image_prompt_over_limit_hint: z.string().trim().min(1).max(200),
   image_description_failed_hint: z.string().trim().min(1).max(200),
@@ -414,7 +414,7 @@ export const configMetadata: Record<
   image_text_model_config: {
     label: '图片文本模型',
     description:
-      '图片描述写稿与中译英共用的 OpenAI-compatible 模型。三项留空时回退当前 DeepSeek 配置；非空时必须整组填写。',
+      '图片描述写稿与中译英共用的 OpenRouter/OpenAI-compatible 模型。OpenRouter URL 使用 Authorization Bearer 鉴权并启用 reasoning；三项留空时回退当前 DeepSeek 配置。',
     defaultValue: { url: '', api_key: '', model: '' },
   },
   image_prompt_policy: {
@@ -439,8 +439,8 @@ export const configMetadata: Record<
   },
   image_max_prompt_chars: {
     label: '图片描述字数上限',
-    description: '必须固定为 200，与 shared 对外契约保持一致。',
-    defaultValue: 200,
+    description: '必须固定为 1000，与 shared 对外契约保持一致。',
+    defaultValue: 1000,
   },
   image_max_output_bytes: {
     label: '图片文件大小上限',
@@ -450,7 +450,7 @@ export const configMetadata: Record<
   image_prompt_over_limit_hint: {
     label: '描述超限提示',
     description: '用户图片描述超过字数限制时展示的提示。',
-    defaultValue: '描述最多 200 字，请删减后再生成。',
+    defaultValue: '描述最多 1000 字，请删减后再生成。',
   },
   image_description_failed_hint: {
     label: '写稿失败提示',

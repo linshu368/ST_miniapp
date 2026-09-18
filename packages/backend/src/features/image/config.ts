@@ -50,10 +50,7 @@ export async function getImageRuntimeConfig(): Promise<ImageRuntimeConfig> {
     enabled: readBoolean(entries.get('image_generation_enabled')?.value, false),
     creditsPerGeneration: readPositiveInteger(entries.get('image_generation_credits')?.value, 50),
     priceLabel: readString(entries.get('image_price_label')?.value, '50 星尘'),
-    defaultArtStyle: readString(
-      entries.get('image_default_art_style')?.value,
-      '精致二次元竖幅插画，柔和光影'
-    ),
+    defaultArtStyle: readString(entries.get('image_default_art_style')?.value, ''),
     width: readPositiveInteger(entries.get('image_width')?.value, 1024),
     height: readPositiveInteger(entries.get('image_height')?.value, 1536),
     maxPromptChars: readPositiveInteger(
@@ -61,13 +58,10 @@ export async function getImageRuntimeConfig(): Promise<ImageRuntimeConfig> {
       MAX_IMAGE_PROMPT_CHARS
     ),
     maxOutputBytes: readPositiveInteger(entries.get('image_max_output_bytes')?.value, 15728640),
-    promptPolicy: readString(
-      entries.get('image_prompt_policy')?.value,
-      '仅生成健康向、可公开发布的单人/场景竖图，不包含露骨、暴力或未成年人性化内容。'
-    ),
+    promptPolicy: readString(entries.get('image_prompt_policy')?.value, ''),
     promptOverLimitHint: readString(
       entries.get('image_prompt_over_limit_hint')?.value,
-      '描述最多 200 字，请删减后再生成。'
+      '描述最多 1000 字，请删减后再生成。'
     ),
     descriptionFailedHint: readString(
       entries.get('image_description_failed_hint')?.value,

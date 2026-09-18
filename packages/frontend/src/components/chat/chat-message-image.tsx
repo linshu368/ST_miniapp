@@ -18,6 +18,8 @@ type PromptSource = CreateMessageImageRequest['prompt_source'];
 
 export interface MessageImageUiState {
   image: MessageImageState | undefined;
+  /** 最新回复可首次生成；已有图片记录的历史回复也可重试或重新生成。 */
+  canGenerate: boolean;
   config: GetImageConfigData | undefined;
   describe: () => Promise<{ draftId: string; prompt: string }>;
   create: (request: CreateMessageImageRequest) => Promise<void>;
@@ -198,7 +200,7 @@ export function ChatMessageImageFooter({
       <Loader2 className="size-3.5 animate-spin" aria-hidden />
       正在出图
     </span>
-  ) : (
+  ) : image.canGenerate ? (
     <button
       type="button"
       onClick={() =>
@@ -211,7 +213,7 @@ export function ChatMessageImageFooter({
       <Eye className="size-3.5" aria-hidden />
       {latest?.status === 'failed' || latest?.status === 'failed_unknown' ? '重试出图' : '看看TA'}
     </button>
-  );
+  ) : null;
 
   return (
     <div className="space-y-2">
@@ -242,7 +244,7 @@ export function ChatMessageImageFooter({
         </button>
       ) : null}
 
-      {ready ? (
+      {ready && image.canGenerate ? (
         <div className="ml-2 space-y-1.5 text-[11px]">
           <button
             type="button"
