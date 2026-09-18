@@ -92,7 +92,7 @@ JOIN experience.chat_sessions AS s ON s.id = h.session_id
 JOIN app_core.characters AS c ON c.id = h.character_id
 WHERE h.user_input IS NOT NULL
   AND h.model IS NOT NULL
-  AND h.turn_index >= {{min_turn}}
+  AND h.turn_index >= :min_turn
   AND h.revision >= 0
   AND s.deleted_at IS NULL
 ORDER BY h.created_at DESC`;
@@ -889,7 +889,7 @@ function SamplesPage({
         template_key: template?.key ?? null,
         template_version: template?.version ?? null,
         sql: values.sql,
-        parameters: { ...parseSqlParameters(values.parameters_json), min_turn: values.min_turn },
+        parameters: { min_turn: values.min_turn },
         sample_limit: values.sample_limit,
       });
     },
@@ -1013,7 +1013,7 @@ function SamplesPage({
                 : 60,
             sample_limit: BATCH_LAB_DEFAULT_SAMPLE_LIMIT,
             parameters_json: JSON.stringify(
-              { min_turn: 60, ...(defaultTemplate?.default_parameters ?? {}) },
+              { ...(defaultTemplate?.default_parameters ?? {}) },
               null,
               2
             ),
@@ -1041,9 +1041,9 @@ function SamplesPage({
               <InputNumber min={1} max={10_000} className="full-width" />
             </Form.Item>
           </div>
-          <Form.Item name="parameters_json" label="参数 JSON">
+          {/* <Form.Item name="parameters_json" label="参数 JSON">
             <Input.TextArea rows={5} className="code-input" />
-          </Form.Item>
+          </Form.Item> */}
           <Form.Item name="sql" label="SQL" rules={[{ required: true }]}>
             <Input.TextArea rows={8} className="code-input" />
           </Form.Item>

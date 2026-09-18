@@ -21,6 +21,18 @@ describe('Batch Lab source SQL compiler', () => {
     expect(compiled.values).toEqual(["'; delete from x; --", 2]);
   });
 
+  it('also binds double-brace placeholders used by Batch Lab UI copy', () => {
+    const compiled = compileBatchLabSourceSql(
+      `select id as source_history_id
+       from experience.chat_history
+       where turn_index >= {{ min_turn }}`,
+      { min_turn: 10 }
+    );
+
+    expect(compiled.text).toContain('turn_index >= $1');
+    expect(compiled.values).toEqual([10]);
+  });
+
   it.each([
     'delete from experience.chat_history',
     'select * from experience.chat_history; select 1',
@@ -32,6 +44,7 @@ describe('Batch Lab source SQL compiler', () => {
     'select 1 into temporary unsafe_table from experience.chat_history',
     'select * from experience.chat_history where user_id in (select user_id from app_core.users)',
     'select $$unsafe$$ from experience.chat_history',
+    'select * from experience.chat_history where turn_index >= {{ min_turn',
   ])('rejects unsafe SQL: %s', (sql) => {
     expect(() => compileBatchLabSourceSql(sql, {})).toThrowError(BatchLabSourceQueryError);
   });
@@ -89,7 +102,11 @@ describe('Batch Lab bounded source query', () => {
     const client = { query, release: vi.fn() } as unknown as PoolClient;
     const pool = { connect: vi.fn().mockResolvedValue(client) };
 
-    const result = await executeBatchLabSourceQuery({ text: 'select 1 as id', values: [] }, 2, pool);
+    const result = await executeBatchLabSourceQuery(
+      { text: 'select 1 as id', values: [] },
+      2,
+      pool
+    );
 
     expect(result).toMatchObject({ rows: [{ id: 1 }, { id: 2 }], truncated: true });
     expect(query.mock.calls.map(([sql]) => sql)).toEqual([
@@ -113,12 +130,13 @@ describe('Batch Lab bounded source query', () => {
     const client = { query, release: vi.fn() } as unknown as PoolClient;
 
     await expect(
-      executeBatchLabSourceQuery(
-        { text: 'select * from experience.chat_history', values: [] },
-        1,
-        { connect: vi.fn().mockResolvedValue(client) }
-      )
-    ).rejects.toMatchObject({ code: 'BATCH_LAB_TIMEOUT', message: 'Batch Lab source query timed out' });
+      executeBatchLabSourceQuery({ text: 'select * from experience.chat_history', values: [] }, 1, {
+        connect: vi.fn().mockResolvedValue(client),
+      })
+    ).rejects.toMatchObject({
+      code: 'BATCH_LAB_TIMEOUT',
+      message: 'Batch Lab source query timed out',
+    });
     expect(query).toHaveBeenLastCalledWith('ROLLBACK');
     expect(client.release).toHaveBeenCalledOnce();
   });

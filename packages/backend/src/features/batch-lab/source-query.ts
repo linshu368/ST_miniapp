@@ -91,17 +91,23 @@ export function compileBatchLabSourceSql(
 
   const names = [...new Set(scanned.parameters)];
   const supplied = Object.keys(parameters);
-  if (names.some((name) => !(name in parameters)) || supplied.some((name) => !names.includes(name))) {
+  if (
+    names.some((name) => !(name in parameters)) ||
+    supplied.some((name) => !names.includes(name))
+  ) {
     throw invalidSql('SQL parameters do not match the template');
   }
 
   const positions = new Map(names.map((name, index) => [name, index + 1]));
   return {
-    text: scanned.sqlWithParameters.replace(/\u0000([A-Za-z_][A-Za-z0-9_]*)\u0000/g, (_, name: string) => {
-      const position = positions.get(name);
-      if (!position) throw invalidSql('SQL parameter is missing');
-      return `$${position}`;
-    }),
+    text: scanned.sqlWithParameters.replace(
+      /\u0000([A-Za-z_][A-Za-z0-9_]*)\u0000/g,
+      (_, name: string) => {
+        const position = positions.get(name);
+        if (!position) throw invalidSql('SQL parameter is missing');
+        return `$${position}`;
+      }
+    ),
     values: names.map((name) => parameters[name] as BatchLabSqlParameterValue),
   };
 }
@@ -111,7 +117,11 @@ export async function executeBatchLabSourceQuery<Row extends QueryResultRow = Qu
   sampleLimit: number,
   pool?: Pick<Pool, 'connect'>
 ): Promise<BatchLabSourceQueryResult<Row>> {
-  if (!Number.isInteger(sampleLimit) || sampleLimit < 1 || sampleLimit > BATCH_LAB_MAX_SAMPLE_LIMIT) {
+  if (
+    !Number.isInteger(sampleLimit) ||
+    sampleLimit < 1 ||
+    sampleLimit > BATCH_LAB_MAX_SAMPLE_LIMIT
+  ) {
     throw new BatchLabSourceQueryError('BATCH_LAB_CAPACITY_EXCEEDED', 'Sample limit is invalid');
   }
 
@@ -209,14 +219,24 @@ function scanSql(sql: string): ScanResult {
     }
     if (char === '$') hasDollarQuote = true;
     if (char === ';') semicolons.push(index);
-    if (char === ':' && sql[index - 1] !== ':' && sql[index + 1] !== ':') {
-      const match = sql.slice(index + 1).match(/^[A-Za-z_][A-Za-z0-9_]*/);
-      if (match) {
-        parameters.push(match[0]);
-        output += `\u0000${match[0]}\u0000`;
-        index += match[0].length + 1;
-        continue;
-      }
+    const braceParameter = sql.slice(index).match(/^\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/);
+    if (braceParameter) {
+      const parameterName = braceParameter[1];
+      if (!parameterName) throw invalidSql('SQL parameter placeholder is invalid');
+      parameters.push(parameterName);
+      output += `\u0000${parameterName}\u0000`;
+      index += braceParameter[0].length;
+      continue;
+    }
+    if (char === '{' && next === '{') throw invalidSql('SQL parameter placeholder is invalid');
+    const colonParameter = sql.slice(index).match(/^:([A-Za-z_][A-Za-z0-9_]*)/);
+    if (colonParameter && sql[index - 1] !== ':' && sql[index + 1] !== ':') {
+      const parameterName = colonParameter[1];
+      if (!parameterName) throw invalidSql('SQL parameter placeholder is invalid');
+      parameters.push(parameterName);
+      output += `\u0000${parameterName}\u0000`;
+      index += colonParameter[0].length;
+      continue;
     }
     const identifier = sql.slice(index).match(/^[A-Za-z_][A-Za-z0-9_$]*/);
     if (identifier) {
@@ -319,7 +339,9 @@ function mapQueryError(err: unknown): BatchLabSourceQueryError {
 }
 
 function isErrorWithCode(value: unknown): value is { code: string } {
-  return typeof value === 'object' && value !== null && 'code' in value && typeof value.code === 'string';
+  return (
+    typeof value === 'object' && value !== null && 'code' in value && typeof value.code === 'string'
+  );
 }
 
 function invalidSql(message: string): BatchLabSourceQueryError {
