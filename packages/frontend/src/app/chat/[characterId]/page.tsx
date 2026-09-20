@@ -273,7 +273,15 @@ export default function SelfHostedChatPage() {
                         redirectToRecharge(router, {
                           returnTo,
                           requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
+                          triggerSource: 'chat_image',
                         }),
+                      telemetry: {
+                        characterId,
+                        conversationSessionId: activeSessionId ?? '',
+                        selectedModelId,
+                        messageId: message.id,
+                        requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
+                      },
                     }
                   : null
               }

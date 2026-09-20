@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "Frontend package rules for chat UI and telemetry integration."}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "PostHog replay lifecycle, privacy boundary, and payment return telemetry conventions."}
+{"file": ".trellis/spec/frontend/app/testing-quality-and-deployment.md", "reason": "Frontend validation, PostHog env/static-read requirements, and Session Replay privacy checks."}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend route/config/observability gates and minimum checks."}
+{"file": ".trellis/spec/backend/app/routes-and-features.md", "reason": "Backend image route and generation chain placement rules."}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "PostHog server capture reliability/no-op/security requirements."}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Shared contract ownership and change rules."}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "Telemetry schema extension and compatibility rules."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer event and contract review guide."}
+{"file": ".trellis/tasks/09-17-image-generation-posthog-plan/research/posthog-image-generation-reuse.md", "reason": "Task-specific reuse research for PostHog, payment, and image generation."}
