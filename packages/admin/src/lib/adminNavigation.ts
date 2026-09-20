@@ -29,6 +29,7 @@ export const IMAGE_GENERATION_CONFIG_KEYS = [
   'image_text_model_config',
   'image_prompt_policy',
   'image_default_art_style',
+  'image_description_system_prompt',
   'image_width',
   'image_height',
   'image_max_prompt_chars',

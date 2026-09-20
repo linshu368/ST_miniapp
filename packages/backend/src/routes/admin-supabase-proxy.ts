@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import {
+  AdminImageTextModelTestRequestSchema,
+  fail,
+  ok,
+  type AdminImageTextModelTestRequest,
+  type AdminImageTextModelTestResponse,
+} from '@miniapp/shared';
 import { config } from '../platform/config.js';
 import { getSupabaseClient } from '../lib/supabase.js';
 
@@ -134,8 +141,155 @@ function sniffPosterImage(image: Buffer): { extension: string; contentType: stri
 
 const INVITE_POSTER_BUCKET = 'miniapp-invite-posters';
 const INVITE_POSTER_MAX_BYTES = 10 * 1024 * 1024;
+const IMAGE_TEXT_MODEL_TEST_TIMEOUT_MS = 15_000;
+
+interface ChatCompletionProbeResponse {
+  choices?: { message?: { content?: string } }[];
+  error?: { message?: string };
+  message?: string;
+}
+
+class ImageTextModelTestError extends Error {
+  constructor(
+    readonly statusCode: number,
+    readonly code: string,
+    message: string
+  ) {
+    super(message);
+    this.name = 'ImageTextModelTestError';
+  }
+}
+
+async function testImageTextModel(
+  input: AdminImageTextModelTestRequest
+): Promise<AdminImageTextModelTestResponse> {
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(input.url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.api_key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages: [
+          { role: 'system', content: 'Reply with OK only.' },
+          { role: 'user', content: 'Connectivity check.' },
+        ],
+        temperature: 0,
+        max_tokens: 8,
+        ...(isOpenRouterUrl(input.url)
+          ? { reasoning: { enabled: true } }
+          : { thinking: { type: 'disabled' } }),
+      }),
+      signal: AbortSignal.timeout(IMAGE_TEXT_MODEL_TEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new ImageTextModelTestError(
+      502,
+      'MODEL_TEST_NETWORK_ERROR',
+      isTimeoutError(error) ? '模型调用超时' : '模型调用网络失败'
+    );
+  }
+
+  const body = await readJsonBody(response);
+  if (!response.ok) {
+    throw new ImageTextModelTestError(
+      502,
+      'MODEL_TEST_UPSTREAM_ERROR',
+      `模型服务返回 HTTP ${response.status}${formatProviderMessage(body)}`
+    );
+  }
+
+  const content = body.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new ImageTextModelTestError(
+      502,
+      'MODEL_TEST_BAD_RESPONSE',
+      '模型服务响应格式异常，未返回 assistant 文本'
+    );
+  }
+
+  return {
+    ok: true,
+    model: input.model,
+    latency_ms: Date.now() - startedAt,
+  };
+}
+
+async function readJsonBody(response: Response): Promise<ChatCompletionProbeResponse> {
+  try {
+    const value = (await response.json()) as unknown;
+    return isRecord(value) ? (value as ChatCompletionProbeResponse) : {};
+  } catch {
+    return {};
+  }
+}
+
+function formatProviderMessage(body: ChatCompletionProbeResponse): string {
+  const message = body.error?.message ?? body.message;
+  return typeof message === 'string' && message.trim() ? `：${message.trim().slice(0, 300)}` : '';
+}
+
+function isOpenRouterUrl(value: string): boolean {
+  try {
+    return new URL(value).hostname.toLowerCase() === 'openrouter.ai';
+  } catch {
+    return false;
+  }
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
 
 export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
+  // @frontend-ready: true - admin tests image_text_model_config with an OpenAI-compatible text call
+  app.post('/api/admin/image-text-model/test', async (request, reply) => {
+    if (!(await authorizeAdminOperator(request, reply))) return reply;
+
+    const parsed = AdminImageTextModelTestRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send(fail('BAD_REQUEST', '请填写有效的 HTTPS URL、API Key 和模型名称'));
+    }
+
+    const startedAt = Date.now();
+    try {
+      const result = await testImageTextModel(parsed.data);
+      request.log.info(
+        {
+          event: 'admin.image_text_model.test.done',
+          model: parsed.data.model,
+          durationMs: Date.now() - startedAt,
+        },
+        'admin image text model test done'
+      );
+      return reply.send(ok(result));
+    } catch (error) {
+      const testError =
+        error instanceof ImageTextModelTestError
+          ? error
+          : new ImageTextModelTestError(500, 'MODEL_TEST_INTERNAL_ERROR', '模型测试失败');
+      request.log.warn(
+        {
+          event: 'admin.image_text_model.test.failed',
+          err: error,
+          model: parsed.data.model,
+          code: testError.code,
+          durationMs: Date.now() - startedAt,
+        },
+        'admin image text model test failed'
+      );
+      return reply.status(testError.statusCode).send(fail(testError.code, testError.message));
+    }
+  });
+
   // @frontend-ready: true —— admin 素材编辑器上传邀请海报，返回 public URL 由运营写进 poster_url
   app.post(
     '/api/admin/invite-poster',
