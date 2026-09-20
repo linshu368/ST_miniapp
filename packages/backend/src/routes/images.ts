@@ -7,6 +7,7 @@ import {
   type CreateMessageImageData,
   type GetImageConfigData,
   type GetSessionImagesData,
+  type ImageFailureKind,
   type ImageErrorCode,
   type InsufficientBalanceErrorResponse,
 } from '@miniapp/shared';
@@ -39,6 +40,11 @@ import {
   requireVisualAnchor,
 } from '../features/generation/image-upstream.js';
 import { getImageRuntimeConfig, toImageConfigData } from '../features/image/config.js';
+import {
+  observeImageDescriptionCompleted,
+  observeImageDescriptionFailed,
+  observeImageGenerationAccepted,
+} from '../features/image/ImageGenerationTelemetry.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -113,6 +119,8 @@ export default async function imageRoutes(app: FastifyInstance) {
       if (!prepared.ok) return prepared.reply(reply);
 
       let draftId: string | null = null;
+      let draftAttemptNo: number | null = null;
+      const startedAt = Date.now();
       try {
         const visualAnchor = requireVisualAnchor(prepared.character);
         const context = await history.getContextBeforeTurn(ids.sessionId, prepared.turn.turn_index);
@@ -136,10 +144,27 @@ export default async function imageRoutes(app: FastifyInstance) {
               priceLabel: imageConfig.priceLabel,
             });
             draftId = draft.id;
+            draftAttemptNo = draft.attempt_no;
           },
         });
         if (!draftId) throw new Error('图片描述草稿未创建');
         await images.markDescriptionDraftReady(draftId, promptCn);
+        if (draftAttemptNo !== null) {
+          void observeImageDescriptionCompleted(
+            {
+              userId: dbUser.id,
+              characterId: prepared.session.character_id,
+              conversationSessionId: ids.sessionId,
+              selectedModelId: prepared.turn.llm_billing_snapshot?.model_id ?? null,
+              messageId: ids.messageId,
+              attemptId: draftId,
+              attemptNo: draftAttemptNo,
+              promptChars: promptCn.length,
+              durationMs: Date.now() - startedAt,
+            },
+            log
+          );
+        }
         log.biz.info(
           {
             event: 'image.description.done',
@@ -159,6 +184,22 @@ export default async function imageRoutes(app: FastifyInstance) {
               error instanceof ImageUpstreamError
                 ? (error.code as ImageErrorCode)
                 : 'image_description_unusable'
+            );
+            void observeImageDescriptionFailed(
+              {
+                userId: dbUser.id,
+                characterId: prepared.session.character_id,
+                conversationSessionId: ids.sessionId,
+                selectedModelId: prepared.turn.llm_billing_snapshot?.model_id ?? null,
+                messageId: ids.messageId,
+                attemptId: draftId,
+                ...(draftAttemptNo !== null ? { attemptNo: draftAttemptNo } : {}),
+                errorCode:
+                  error instanceof ImageUpstreamError ? error.code : 'image_description_unusable',
+                durationMs: Date.now() - startedAt,
+                failureKind: imageFailureKind(error),
+              },
+              log
             );
           } catch (markError) {
             log.sys.error(
@@ -190,6 +231,7 @@ export default async function imageRoutes(app: FastifyInstance) {
     { preHandler: [requireTelegramAuth] },
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const log = requestLogger(request.log, 'image');
       const ids = readMessageRouteParams(request.params);
       if (!ids) return reply.status(400).send(fail('BAD_REQUEST', '这条内容不支持生成图片'));
 
@@ -253,6 +295,23 @@ export default async function imageRoutes(app: FastifyInstance) {
               priceCredits: imageConfig.creditsPerGeneration,
               priceLabel: imageConfig.priceLabel,
             });
+        void observeImageGenerationAccepted(
+          {
+            userId: dbUser.id,
+            characterId: prepared.session.character_id,
+            conversationSessionId: ids.sessionId,
+            selectedModelId: prepared.turn.llm_billing_snapshot?.model_id ?? null,
+            messageId: ids.messageId,
+            attemptId: pending.id,
+            attemptNo: pending.attempt_no,
+            promptSource: parsed.data.prompt_source,
+            promptChars: parsed.data.prompt_cn.length,
+            priceCredits: Number(pending.price_credits),
+            width: pending.width,
+            height: pending.height,
+          },
+          log
+        );
         return reply
           .status(202)
           .send(ok<CreateMessageImageData>({ attempt: toMessageImageAttempt(pending) }));
@@ -330,4 +389,13 @@ function readUrlHost(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+function imageFailureKind(error: unknown): ImageFailureKind {
+  if (!(error instanceof ImageUpstreamError)) return 'unknown';
+  if (error.code.includes('timeout')) return 'timeout';
+  if (error.code.includes('network')) return 'network';
+  if (error.stage === 'download') return 'storage';
+  if (error.stage === 'description') return 'provider';
+  return 'provider';
 }

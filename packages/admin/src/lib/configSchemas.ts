@@ -46,6 +46,7 @@ export const managedConfigKeys = [
   'image_text_model_config',
   'image_prompt_policy',
   'image_default_art_style',
+  'image_description_system_prompt',
   'image_width',
   'image_height',
   'image_max_prompt_chars',
@@ -59,7 +60,10 @@ export const managedConfigKeys = [
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 
 /** 存 runtime_config.text_value 的 managed key；草稿 value 为 null */
-export const TEXT_MANAGED_CONFIG_KEYS = ['system_instructions'] as const;
+export const TEXT_MANAGED_CONFIG_KEYS = [
+  'system_instructions',
+  'image_description_system_prompt',
+] as const;
 export type TextManagedConfigKey = (typeof TEXT_MANAGED_CONFIG_KEYS)[number];
 
 export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedConfigKey {
@@ -254,6 +258,11 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_text_model_config: ImageTextModelConfigSchema,
   image_prompt_policy: z.string().trim().min(1, '图片 prompt 策略不能为空').max(1000),
   image_default_art_style: z.string().trim().min(1, '画风说明不能为空').max(1000),
+  image_description_system_prompt: z
+    .string()
+    .trim()
+    .min(1, '图片描述 system prompt 不能为空')
+    .max(12000, '图片描述 system prompt 不能超过 12000 个字符'),
   image_width: positiveInteger.min(256).max(4096),
   image_height: positiveInteger.min(256).max(4096),
   image_max_prompt_chars: z.literal(1000),
@@ -426,6 +435,13 @@ export const configMetadata: Record<
     label: '默认画风说明',
     description: '默认分镜写稿输入及生图 prompt 使用的画风说明，最长 1000 字。',
     defaultValue: '精致二次元竖幅插画，柔和光影，健康公开发布',
+  },
+  image_description_system_prompt: {
+    label: '图片描述 System Prompt',
+    description:
+      '默认分镜写稿模型使用的 system prompt，保存到 runtime_config.text_value；缺失时后端回退内置版本。',
+    defaultValue:
+      '你是视觉分镜师。请根据角色视觉锚点和最近对话，输出一段自然流畅、适合生成图片的中文画面描述，不要输出解释或分析。',
   },
   image_width: {
     label: '图片宽度',

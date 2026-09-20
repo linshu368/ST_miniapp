@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import {
   Alert,
+  App as AntApp,
   Button,
   Card,
   Col,
@@ -25,12 +27,15 @@ import {
   type OpenRouterModelDirectory,
   type PaymentPlan,
   type WordCountTiersConfig,
+  type AdminImageTextModelTestRequest,
+  type AdminImageTextModelTestResponse,
 } from '@miniapp/shared';
 import {
   configMetadata,
   DEFAULT_INVITE_CENTER_CONFIG,
   DEFAULT_INVITE_REWARD_RULES,
   EditableModelCatalogSchema,
+  ImageTextModelConfigSchema,
   type InviteCenterConfig,
   type InviteRewardRulesConfig,
   type ImageTextModelConfig,
@@ -121,6 +126,84 @@ function asInviteCenterConfig(value: unknown): InviteCenterConfig {
   return structuredClone(DEFAULT_INVITE_CENTER_CONFIG);
 }
 
+function ImageTextModelConfigEditor(props: {
+  value: ImageTextModelConfig;
+  disabled?: boolean;
+  onChange: (value: ImageTextModelConfig) => void;
+  onTest: (value: AdminImageTextModelTestRequest) => Promise<AdminImageTextModelTestResponse>;
+}) {
+  const { message } = AntApp.useApp();
+  const [testing, setTesting] = useState(false);
+
+  const handleTest = async () => {
+    const parsed = ImageTextModelConfigSchema.safeParse(props.value);
+    if (!parsed.success) {
+      message.error(parsed.error.issues[0]?.message ?? '请先填写有效的模型配置');
+      return;
+    }
+    if (!parsed.data.url || !parsed.data.api_key || !parsed.data.model) {
+      message.warning('请先填写 URL、API Key 和模型名称');
+      return;
+    }
+
+    setTesting(true);
+    try {
+      const result = await props.onTest(parsed.data);
+      message.success(`模型调用成功：${result.model}（${result.latency_ms}ms）`);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '模型调用测试失败');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <Space direction="vertical" size="middle" className="editor-stack">
+      <Alert
+        type="warning"
+        showIcon
+        message="API Key 属于敏感配置"
+        description="仅在对应环境保存和发布；界面预览会隐藏具体值。测试与生产环境需分别配置。"
+      />
+      <div>
+        <Typography.Text strong>请求 URL</Typography.Text>
+        <Input
+          value={props.value.url}
+          placeholder="请输入完整的 HTTPS Chat Completions 请求地址"
+          disabled={props.disabled}
+          onChange={(event) => props.onChange({ ...props.value, url: event.target.value })}
+        />
+      </div>
+      <div>
+        <Typography.Text strong>API Key</Typography.Text>
+        <Input.Password
+          value={props.value.api_key}
+          autoComplete="new-password"
+          placeholder="留空时与其他两项一起回退 DeepSeek"
+          disabled={props.disabled}
+          onChange={(event) => props.onChange({ ...props.value, api_key: event.target.value })}
+        />
+      </div>
+      <div>
+        <Typography.Text strong>模型名称</Typography.Text>
+        <Input
+          value={props.value.model}
+          placeholder="模型 ID"
+          disabled={props.disabled}
+          onChange={(event) => props.onChange({ ...props.value, model: event.target.value })}
+        />
+      </div>
+      <Button
+        loading={testing}
+        disabled={props.disabled || testing}
+        onClick={() => void handleTest()}
+      >
+        测试模型调用
+      </Button>
+    </Space>
+  );
+}
+
 export function ConfigValueEditor(props: {
   configKey: ManagedConfigKey;
   value: unknown;
@@ -136,6 +219,9 @@ export function ConfigValueEditor(props: {
   charactersLoading: boolean;
   charactersError: string | null;
   onUploadInvitePoster: (file: File) => Promise<string>;
+  onTestImageTextModel: (
+    value: AdminImageTextModelTestRequest
+  ) => Promise<AdminImageTextModelTestResponse>;
 }) {
   if (props.configKey === 'image_text_model_config') {
     const record =
@@ -148,48 +234,19 @@ export function ConfigValueEditor(props: {
       model: typeof record.model === 'string' ? record.model : '',
     };
     return (
-      <Space direction="vertical" size="middle" className="editor-stack">
-        <Alert
-          type="warning"
-          showIcon
-          message="API Key 属于敏感配置"
-          description="仅在对应环境保存和发布；界面预览会隐藏具体值。测试与生产环境需分别配置。"
-        />
-        <div>
-          <Typography.Text strong>请求 URL</Typography.Text>
-          <Input
-            value={value.url}
-            placeholder="请输入完整的 HTTPS Chat Completions 请求地址"
-            disabled={props.disabled}
-            onChange={(event) => props.onChange({ ...value, url: event.target.value })}
-          />
-        </div>
-        <div>
-          <Typography.Text strong>API Key</Typography.Text>
-          <Input.Password
-            value={value.api_key}
-            autoComplete="new-password"
-            placeholder="留空时与其他两项一起回退 DeepSeek"
-            disabled={props.disabled}
-            onChange={(event) => props.onChange({ ...value, api_key: event.target.value })}
-          />
-        </div>
-        <div>
-          <Typography.Text strong>模型名称</Typography.Text>
-          <Input
-            value={value.model}
-            placeholder="模型 ID"
-            disabled={props.disabled}
-            onChange={(event) => props.onChange({ ...value, model: event.target.value })}
-          />
-        </div>
-      </Space>
+      <ImageTextModelConfigEditor
+        value={value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+        onTest={props.onTestImageTextModel}
+      />
     );
   }
 
   if (
     props.configKey === 'image_prompt_policy' ||
     props.configKey === 'image_default_art_style' ||
+    props.configKey === 'image_description_system_prompt' ||
     props.configKey === 'image_price_label' ||
     props.configKey === 'image_prompt_over_limit_hint' ||
     props.configKey === 'image_description_failed_hint' ||
@@ -201,9 +258,12 @@ export function ConfigValueEditor(props: {
         value={typeof props.value === 'string' ? props.value : ''}
         rows={6}
         maxLength={
-          props.configKey === 'image_prompt_policy' || props.configKey === 'image_default_art_style'
-            ? 1000
-            : 200
+          props.configKey === 'image_description_system_prompt'
+            ? 12000
+            : props.configKey === 'image_prompt_policy' ||
+                props.configKey === 'image_default_art_style'
+              ? 1000
+              : 200
         }
         showCount
         disabled={props.disabled}

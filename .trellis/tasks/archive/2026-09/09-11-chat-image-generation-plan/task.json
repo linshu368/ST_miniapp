@@ -3,7 +3,7 @@
   "name": "chat-image-generation-plan",
   "title": "角色对话图片生成功能规划",
   "description": "基于产品 PRD 与交互稿，规划角色回复图片生成的 frontend/backend/shared 全链路，并输出独立技术评审文档与功能 spec。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "packages/frontend, packages/backend, packages/shared, .trellis/spec, docs",
   "package": "backend",
@@ -11,7 +11,7 @@
   "creator": "cline",
   "assignee": "cline",
   "createdAt": "2026-09-11",
-  "completedAt": null,
+  "completedAt": "2026-09-18",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -25,14 +25,8 @@
   "meta": {
     "module_impact": {
       "schema_version": 1,
-      "mode": "changes",
-      "modules": [
-        "frontend.business.conversation-ui",
-        "backend.business.conversation-generation",
-        "shared.business.conversation-contracts",
-        "database.business.conversation-storage",
-        "database.business.billing-payment"
-      ]
+      "mode": "legacy_exempt",
+      "reason": "Archiving after later module knowledge updates superseded this stale payload; reapplying it would regress current specs."
     }
   }
 }
