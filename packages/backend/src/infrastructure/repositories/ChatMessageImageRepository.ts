@@ -168,6 +168,12 @@ export class ChatMessageImageRepository {
     priceCredits: number;
     priceLabel: string;
   }): Promise<ChatMessageImageRow> {
+    await this.deleteDescriptionDrafts({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      messageId: input.messageId,
+      includeInflight: false,
+    });
     const attemptNo = (await this.readMaxAttemptNo(input.messageId)) + 1;
     const { data, error } = await this.db
       .from('chat_message_images')
@@ -243,6 +249,13 @@ export class ChatMessageImageRepository {
     if (error?.code === '23505') throw new ImageConflictError();
     if (error) throw new Error(`确认图片描述草稿失败：${error.message}`);
     if (!data) throw new ImageConflictError();
+    await this.deleteDescriptionDrafts({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      messageId: input.messageId,
+      excludeId: input.id,
+      includeInflight: true,
+    });
     return data as ChatMessageImageRow;
   }
 
@@ -379,6 +392,30 @@ export class ChatMessageImageRepository {
     if (error) throw new Error(`查询图片生成次数失败：${error.message}`);
     const row = (data ?? [])[0] as { attempt_no?: unknown } | undefined;
     return typeof row?.attempt_no === 'number' ? row.attempt_no : 0;
+  }
+
+  private async deleteDescriptionDrafts(input: {
+    userId: string;
+    sessionId: string;
+    messageId: string;
+    excludeId?: string;
+    includeInflight: boolean;
+  }): Promise<void> {
+    let query = this.db
+      .from('chat_message_images')
+      .delete()
+      .eq('user_id', input.userId)
+      .eq('session_id', input.sessionId)
+      .eq('message_id', input.messageId)
+      .in(
+        'status',
+        input.includeInflight
+          ? ['draft_describing', 'draft_ready', 'draft_failed']
+          : ['draft_ready', 'draft_failed']
+      );
+    if (input.excludeId) query = query.neq('id', input.excludeId);
+    const { error } = await query;
+    if (error) throw new Error(`清理图片描述草稿失败：${error.message}`);
   }
 
   private async update(id: string, patch: Record<string, unknown>): Promise<void> {

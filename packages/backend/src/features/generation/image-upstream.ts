@@ -17,7 +17,7 @@ import type { ImageTextModelConfig } from '../image/config.js';
 //   '不要写解释、编号、引号、Markdown，不要加入露骨、暴力或未成年人性化内容。',
 //   '不得改变角色核心外貌锚点。',
 // ].join('\n');
-const DESCRIPTION_SYSTEM_PROMPT = `
+export const DEFAULT_IMAGE_DESCRIPTION_SYSTEM_PROMPT = `
 角色与目标
 你是一个顶级的视觉分镜师与写实风格图片的文生图提示词专家。
 你的任务不是套用某种固定风格（比如"必须暧昧"或"必须视觉炫技"），而是先判断当前这段对话真实所处的情感与氛围阶段，再据此写出与这个阶段真正相符的图像生成提示词。画面服务于对话本身的真实语境，不能脱离语境主观加戏。
@@ -136,10 +136,10 @@ export async function draftImageDescription(input: {
     `【最近对话上下文】：\n${formatRecentMessages(input.context, input.turn)}`,
   ].join('\n\n');
   // 审计写入是调用上游的前置提交点；失败时不得产生无记录的模型请求。
-  await input.persistUserPrompt(`${DESCRIPTION_SYSTEM_PROMPT}\n\n${userPrompt}`);
+  await input.persistUserPrompt(`${input.imageConfig.descriptionSystemPrompt}\n\n${userPrompt}`);
   const text = normalizePromptText(
     await callDeepSeek(
-      DESCRIPTION_SYSTEM_PROMPT,
+      input.imageConfig.descriptionSystemPrompt,
       userPrompt,
       'description',
       input.imageConfig.textModel
@@ -178,7 +178,7 @@ export function buildProviderPrompt(input: {
     'Vertical illustration.',
     `Character anchor: ${input.visualAnchor}`,
     `Scene: ${input.promptEn}`,
-    `Style and safety: ${input.imageConfig.defaultArtStyle}. ${input.imageConfig.promptPolicy}`,
+    // `Style and safety: ${input.imageConfig.defaultArtStyle}. ${input.imageConfig.promptPolicy}`,
   ].join('\n');
 }
 

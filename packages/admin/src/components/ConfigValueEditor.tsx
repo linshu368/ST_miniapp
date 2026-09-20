@@ -245,6 +245,7 @@ export function ConfigValueEditor(props: {
   if (
     props.configKey === 'image_prompt_policy' ||
     props.configKey === 'image_default_art_style' ||
+    props.configKey === 'image_description_system_prompt' ||
     props.configKey === 'image_price_label' ||
     props.configKey === 'image_prompt_over_limit_hint' ||
     props.configKey === 'image_description_failed_hint' ||
@@ -256,9 +257,12 @@ export function ConfigValueEditor(props: {
         value={typeof props.value === 'string' ? props.value : ''}
         rows={6}
         maxLength={
-          props.configKey === 'image_prompt_policy' || props.configKey === 'image_default_art_style'
-            ? 1000
-            : 200
+          props.configKey === 'image_description_system_prompt'
+            ? 12000
+            : props.configKey === 'image_prompt_policy' ||
+                props.configKey === 'image_default_art_style'
+              ? 1000
+              : 200
         }
         showCount
         disabled={props.disabled}
