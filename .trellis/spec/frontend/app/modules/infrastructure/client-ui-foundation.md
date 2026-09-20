@@ -25,15 +25,15 @@ API 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。业务侧 Po
 
 ## 涉及文件
 
-| 路径 | 职责 |
-| --- | --- |
-| `packages/frontend/src/lib/api/client.ts` | REST client |
-| `packages/frontend/src/lib/api/` | Query hooks |
-| `packages/frontend/src/lib/telemetry/` | PostHog adapter、lifecycle、masking 与 owner |
-| `packages/frontend/src/lib/payment/flow-telemetry.ts` | 支付/回流事件 helper |
-| `packages/frontend/src/lib/image-generation/telemetry.ts` | 图片生成事件 helper |
-| `packages/frontend/src/components/ui/` | 公共 UI |
-| `packages/frontend/src/stores/` | 跨组件客户端状态 |
+| 路径                                                      | 职责                                         |
+| --------------------------------------------------------- | -------------------------------------------- |
+| `packages/frontend/src/lib/api/client.ts`                 | REST client                                  |
+| `packages/frontend/src/lib/api/`                          | Query hooks                                  |
+| `packages/frontend/src/lib/telemetry/`                    | PostHog adapter、lifecycle、masking 与 owner |
+| `packages/frontend/src/lib/payment/flow-telemetry.ts`     | 支付/回流事件 helper                         |
+| `packages/frontend/src/lib/image-generation/telemetry.ts` | 图片生成事件 helper                          |
+| `packages/frontend/src/components/ui/`                    | 公共 UI                                      |
+| `packages/frontend/src/stores/`                           | 跨组件客户端状态                             |
 
 ## 关键实现链路
 

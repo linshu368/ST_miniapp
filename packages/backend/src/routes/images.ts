@@ -50,11 +50,11 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 type PreparedMessageContext =
   | {
-    ok: true;
-    session: ChatSessionRow;
-    turn: ConversationHistoryRow;
-    character: CharacterCardRow;
-  }
+      ok: true;
+      session: ChatSessionRow;
+      turn: ConversationHistoryRow;
+      character: CharacterCardRow;
+    }
   | { ok: false; reply: (reply: FastifyReply) => unknown };
 
 export default async function imageRoutes(app: FastifyInstance) {
@@ -173,7 +173,9 @@ export default async function imageRoutes(app: FastifyInstance) {
           },
           '图片描述生成完成'
         );
-        return reply.send(ok<CreateImageDescriptionData>({ draft_id: draftId, prompt_cn: promptCn }));
+        return reply.send(
+          ok<CreateImageDescriptionData>({ draft_id: draftId, prompt_cn: promptCn })
+        );
       } catch (error) {
         if (draftId) {
           try {
@@ -273,26 +275,26 @@ export default async function imageRoutes(app: FastifyInstance) {
       try {
         const pending = parsed.data.draft_id
           ? await images.confirmDescriptionDraft({
-            id: parsed.data.draft_id,
-            userId: dbUser.id,
-            sessionId: ids.sessionId,
-            messageId: ids.messageId,
-            promptCn: parsed.data.prompt_cn,
-            promptSource: parsed.data.prompt_source,
-          })
+              id: parsed.data.draft_id,
+              userId: dbUser.id,
+              sessionId: ids.sessionId,
+              messageId: ids.messageId,
+              promptCn: parsed.data.prompt_cn,
+              promptSource: parsed.data.prompt_source,
+            })
           : await images.createPending({
-            userId: dbUser.id,
-            sessionId: ids.sessionId,
-            messageId: ids.messageId,
-            promptCn: parsed.data.prompt_cn,
-            promptSource: parsed.data.prompt_source,
-            model: config.image.grokModel,
-            baseUrlHost: readUrlHost(config.image.liaobotsBase),
-            width: imageConfig.width,
-            height: imageConfig.height,
-            priceCredits: imageConfig.creditsPerGeneration,
-            priceLabel: imageConfig.priceLabel,
-          });
+              userId: dbUser.id,
+              sessionId: ids.sessionId,
+              messageId: ids.messageId,
+              promptCn: parsed.data.prompt_cn,
+              promptSource: parsed.data.prompt_source,
+              model: config.image.grokModel,
+              baseUrlHost: readUrlHost(config.image.liaobotsBase),
+              width: imageConfig.width,
+              height: imageConfig.height,
+              priceCredits: imageConfig.creditsPerGeneration,
+              priceLabel: imageConfig.priceLabel,
+            });
         void observeImageGenerationAccepted(
           {
             userId: dbUser.id,

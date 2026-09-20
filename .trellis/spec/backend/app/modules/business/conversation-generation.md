@@ -25,14 +25,14 @@ Frontend 调用 `/api/v1/conversations*`、generation config，以及 `/api/v1/i
 
 ## 涉及文件
 
-| 路径 | 职责 |
-| --- | --- |
-| `packages/backend/src/routes/conversations.ts` | HTTP/SSE 入口 |
-| `packages/backend/src/features/conversations/` | 轮次编排 |
-| `packages/backend/src/features/generation/` | 生成与计费出口 |
-| `packages/backend/src/features/image/` | 图片任务编排与 telemetry observer |
-| `packages/backend/src/features/image/ImageGenerationTelemetry.ts` | 图片生成安全事件 observer |
-| `packages/backend/src/routes/images.ts` | 图片 HTTP 入口 |
+| 路径                                                              | 职责                              |
+| ----------------------------------------------------------------- | --------------------------------- |
+| `packages/backend/src/routes/conversations.ts`                    | HTTP/SSE 入口                     |
+| `packages/backend/src/features/conversations/`                    | 轮次编排                          |
+| `packages/backend/src/features/generation/`                       | 生成与计费出口                    |
+| `packages/backend/src/features/image/`                            | 图片任务编排与 telemetry observer |
+| `packages/backend/src/features/image/ImageGenerationTelemetry.ts` | 图片生成安全事件 observer         |
+| `packages/backend/src/routes/images.ts`                           | 图片 HTTP 入口                    |
 
 ## 关键实现链路
 

@@ -25,17 +25,17 @@ last_verified_at: 2026-09-18
 
 ## 涉及文件
 
-| 路径 | 职责 |
-| --- | --- |
-| `packages/frontend/src/app/chat/[characterId]/page.tsx` | 会话页、图片 footer 接线、`chat_image` 充值来源 |
-| `packages/frontend/src/components/chat/` | 聊天组件 |
-| `packages/frontend/src/components/chat/chat-message-image.tsx` | 图片面板、结果卡、预览与图片事件调用 |
-| `packages/frontend/src/lib/image-generation/telemetry.ts` | 图片生成前端事件 helper 与去重 |
-| `packages/frontend/src/lib/api/conversation-stream.ts` | SSE client |
-| `packages/frontend/src/hooks/use-chat-session.ts` | 会话生命周期 |
-| `packages/frontend/src/hooks/use-conversation-turn.ts` | 发送/重生成编排 |
-| `packages/frontend/src/lib/recharge-redirect.ts` | 充值跳转收口 |
-| `packages/frontend/src/lib/api/images.ts` | 图片查询与 mutation |
+| 路径                                                           | 职责                                            |
+| -------------------------------------------------------------- | ----------------------------------------------- |
+| `packages/frontend/src/app/chat/[characterId]/page.tsx`        | 会话页、图片 footer 接线、`chat_image` 充值来源 |
+| `packages/frontend/src/components/chat/`                       | 聊天组件                                        |
+| `packages/frontend/src/components/chat/chat-message-image.tsx` | 图片面板、结果卡、预览与图片事件调用            |
+| `packages/frontend/src/lib/image-generation/telemetry.ts`      | 图片生成前端事件 helper 与去重                  |
+| `packages/frontend/src/lib/api/conversation-stream.ts`         | SSE client                                      |
+| `packages/frontend/src/hooks/use-chat-session.ts`              | 会话生命周期                                    |
+| `packages/frontend/src/hooks/use-conversation-turn.ts`         | 发送/重生成编排                                 |
+| `packages/frontend/src/lib/recharge-redirect.ts`               | 充值跳转收口                                    |
+| `packages/frontend/src/lib/api/images.ts`                      | 图片查询与 mutation                             |
 
 ## 关键实现链路
 

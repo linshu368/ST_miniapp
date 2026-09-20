@@ -354,15 +354,12 @@ export const ImageDescriptionRequestedEventSchema = frontendEvent(
   'image_description_requested',
   ImageBaseFields
 );
-export const ImageDescriptionPresentedEventSchema = frontendEvent(
-  'image_description_presented',
-  {
-    ...ImageBaseFields,
-    attempt_id: z.string().uuid(),
-    attempt_no: z.number().int().positive().optional(),
-    prompt_chars: NonNegativeIntSchema,
-  }
-);
+export const ImageDescriptionPresentedEventSchema = frontendEvent('image_description_presented', {
+  ...ImageBaseFields,
+  attempt_id: z.string().uuid(),
+  attempt_no: z.number().int().positive().optional(),
+  prompt_chars: NonNegativeIntSchema,
+});
 export const ImageDescriptionUiFailedEventSchema = frontendEvent('image_description_ui_failed', {
   ...ImageBaseFields,
   failure_kind: ImageFailureKindSchema,

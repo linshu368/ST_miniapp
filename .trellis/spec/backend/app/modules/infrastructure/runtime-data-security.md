@@ -25,14 +25,14 @@ Backend routes、features、jobs 统一消费。支付终态与图片生成终�
 
 ## 涉及文件
 
-| 路径 | 职责 |
-| --- | --- |
-| `packages/backend/src/platform/config.ts` | 环境配置解析 |
-| `packages/backend/src/platform/runtime-config.ts` | DB 运行配置入口 |
-| `packages/backend/src/platform/model-tiers.ts` | 模型目录读取/缓存 |
-| `packages/backend/src/middleware/auth.ts` | Telegram 鉴权 |
-| `packages/backend/src/lib/supabase.ts` | 按域数据库 client |
-| `packages/backend/src/infrastructure/repositories/` | 数据访问实现 |
+| 路径                                                               | 职责                                     |
+| ------------------------------------------------------------------ | ---------------------------------------- |
+| `packages/backend/src/platform/config.ts`                          | 环境配置解析                             |
+| `packages/backend/src/platform/runtime-config.ts`                  | DB 运行配置入口                          |
+| `packages/backend/src/platform/model-tiers.ts`                     | 模型目录读取/缓存                        |
+| `packages/backend/src/middleware/auth.ts`                          | Telegram 鉴权                            |
+| `packages/backend/src/lib/supabase.ts`                             | 按域数据库 client                        |
+| `packages/backend/src/infrastructure/repositories/`                | 数据访问实现                             |
 | `packages/backend/src/infrastructure/telemetry/posthog-capture.ts` | 服务端 PostHog capture、短超时、终态去重 |
 
 ## 关键实现链路

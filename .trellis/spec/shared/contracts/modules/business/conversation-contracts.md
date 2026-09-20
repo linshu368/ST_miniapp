@@ -25,14 +25,14 @@ Backend 与 Frontend 已共同消费统一契约；图片契约包含中文稿�
 
 ## 涉及文件
 
-| 路径 | 职责 |
-| --- | --- |
-| `packages/shared/src/api/conversations.ts` | 会话与 SSE DTO |
-| `packages/shared/src/api/voice.ts` | 语音 DTO |
-| `packages/shared/src/api/images.ts` | 图片 DTO 与校验 |
-| `packages/shared/src/api/telemetry.ts` | replay context、支付与图片生成事件契约 |
-| `packages/shared/src/api/models.ts` | 模型 catalog DTO |
-| `packages/shared/src/index.ts` | 公共出口 |
+| 路径                                       | 职责                                   |
+| ------------------------------------------ | -------------------------------------- |
+| `packages/shared/src/api/conversations.ts` | 会话与 SSE DTO                         |
+| `packages/shared/src/api/voice.ts`         | 语音 DTO                               |
+| `packages/shared/src/api/images.ts`        | 图片 DTO 与校验                        |
+| `packages/shared/src/api/telemetry.ts`     | replay context、支付与图片生成事件契约 |
+| `packages/shared/src/api/models.ts`        | 模型 catalog DTO                       |
+| `packages/shared/src/index.ts`             | 公共出口                               |
 
 ## 关键实现链路
 
