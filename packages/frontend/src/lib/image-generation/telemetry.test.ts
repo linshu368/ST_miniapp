@@ -20,10 +20,10 @@ type Snapshot = {
 const capture = vi.fn((_draft: unknown) => true);
 const getSnapshot = vi.fn(
   (): Snapshot => ({
-  state: 'chat' as const,
-  replayContextId: '11111111-1111-4111-8111-111111111111',
-  telemetryReady: true,
-  streaming: false,
+    state: 'chat' as const,
+    replayContextId: '11111111-1111-4111-8111-111111111111',
+    telemetryReady: true,
+    streaming: false,
   })
 );
 

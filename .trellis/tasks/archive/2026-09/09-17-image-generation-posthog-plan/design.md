@@ -22,14 +22,14 @@ Backend routes/images.ts + features/image/generate.ts
 
 ## 复用决策
 
-| 对象 | 结论 | 理由 |
-| --- | --- | --- |
-| `shared/src/api/telemetry.ts` | 扩展 | 现有 adapter/capture 只接受 shared schema 事件，安全边界集中。 |
-| `getReplayLifecycle().capture` | 复用 | 自动补 `telegram_user_id`、`replay_context_id`、`occurred_at` 和用户标签。 |
-| `frontend/lib/payment/flow-telemetry.ts` 模式 | 复用为图片 helper | 业务组件只调用语义函数，helper 负责活跃 context、去重、字段收敛。 |
-| `backend/infrastructure/telemetry/posthog-capture.ts` | 复用并泛化注释/去重 | 已有 HTTPS host 校验、短超时、no-op、敏感字段防护。 |
-| `PaymentOrderTelemetry.ts` 模式 | 复用为 `ImageGenerationTelemetry.ts` | 未配置时不查用户；配置后反查 Telegram identity，fire-and-forget。 |
-| 新 DB 表/队列 | 不采用 | PostHog 是非关键观测，现有 helper 已足够；增加持久队列超出需求。 |
+| 对象                                                  | 结论                                 | 理由                                                                       |
+| ----------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
+| `shared/src/api/telemetry.ts`                         | 扩展                                 | 现有 adapter/capture 只接受 shared schema 事件，安全边界集中。             |
+| `getReplayLifecycle().capture`                        | 复用                                 | 自动补 `telegram_user_id`、`replay_context_id`、`occurred_at` 和用户标签。 |
+| `frontend/lib/payment/flow-telemetry.ts` 模式         | 复用为图片 helper                    | 业务组件只调用语义函数，helper 负责活跃 context、去重、字段收敛。          |
+| `backend/infrastructure/telemetry/posthog-capture.ts` | 复用并泛化注释/去重                  | 已有 HTTPS host 校验、短超时、no-op、敏感字段防护。                        |
+| `PaymentOrderTelemetry.ts` 模式                       | 复用为 `ImageGenerationTelemetry.ts` | 未配置时不查用户；配置后反查 Telegram identity，fire-and-forget。          |
+| 新 DB 表/队列                                         | 不采用                               | PostHog 是非关键观测，现有 helper 已足够；增加持久队列超出需求。           |
 
 ## 事件契约
 
@@ -48,30 +48,30 @@ Backend routes/images.ts + features/image/generate.ts
 
 ### Frontend 事件
 
-| 事件名 | 触发点 | 关键字段 | 去重/说明 |
-| --- | --- | --- | --- |
-| `image_entry_selected` | 用户点击 `看看TA`、`重试出图`、ready 后重新生成入口 | `ImageBaseFields`、`entry_source`、`latest_status?`、`has_ready_image` | 不记录 impression，只记录点击。 |
-| `image_description_requested` | 默认流程开始调用 `image.describe()` 前 | `ImageBaseFields` | 只表示用户开始免费写稿。 |
-| `image_description_presented` | `describeImage.mutateAsync` 成功并展示中文描述 | `ImageBaseFields`、`attempt_id`、`attempt_no?`、`prompt_chars` | `prompt_chars` 只记录长度。 |
-| `image_description_failed` | 默认描述请求失败 | `ImageBaseFields`、`failure_kind`、`error_code?`、`duration_ms` | 不记录错误 body。 |
-| `image_custom_prompt_opened` | 用户点击“我来改改”或进入自定义描述 | `ImageBaseFields`、`entry_source` | 不记录输入内容。 |
-| `image_generation_submitted` | 用户确认生成，调用 `image.create()` 前 | `ImageBaseFields`、`prompt_source`、`prompt_chars`、`required_credits?` | 记录用户意图；允许后续失败。 |
-| `image_generation_submit_failed` | `image.create()` 受理前失败，如 402/409/503/400 | `ImageBaseFields`、`prompt_source`、`prompt_chars`、`failure_kind`、`error_code?`、`required_credits?`、`duration_ms` | 402 还应走 paywall。 |
-| `image_generation_status_observed` | session image query/poll 首次观察到 attempt 终态 | `ImageBaseFields`、`attempt_id`、`attempt_no`、`terminal_status`、`error_code?`、`credits_charged`、`duration_ms?`、`prompt_source` | 按 `attempt_id:status` 内存去重，表示用户端看见终态。 |
-| `image_preview_opened` | 用户打开 ready 图片预览 Dialog | `ImageBaseFields`、`attempt_id`、`attempt_no` | 不带 `image_url`。 |
-| `image_save_requested` | 用户点击保存图片 | `ImageBaseFields`、`attempt_id`、`attempt_no` | 不带文件名或 URL。 |
-| `image_save_completed` | Telegram download API 返回 true | `ImageBaseFields`、`attempt_id`、`attempt_no`、`duration_ms` | 仅客户端结果。 |
-| `image_save_failed` | download API 返回 false 或抛错 | `ImageBaseFields`、`attempt_id`、`attempt_no`、`failure_kind`、`duration_ms` | 不记录 Telegram 细节。 |
+| 事件名                             | 触发点                                              | 关键字段                                                                                                                            | 去重/说明                                             |
+| ---------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `image_entry_selected`             | 用户点击 `看看TA`、`重试出图`、ready 后重新生成入口 | `ImageBaseFields`、`entry_source`、`latest_status?`、`has_ready_image`                                                              | 不记录 impression，只记录点击。                       |
+| `image_description_requested`      | 默认流程开始调用 `image.describe()` 前              | `ImageBaseFields`                                                                                                                   | 只表示用户开始免费写稿。                              |
+| `image_description_presented`      | `describeImage.mutateAsync` 成功并展示中文描述      | `ImageBaseFields`、`attempt_id`、`attempt_no?`、`prompt_chars`                                                                      | `prompt_chars` 只记录长度。                           |
+| `image_description_failed`         | 默认描述请求失败                                    | `ImageBaseFields`、`failure_kind`、`error_code?`、`duration_ms`                                                                     | 不记录错误 body。                                     |
+| `image_custom_prompt_opened`       | 用户点击“我来改改”或进入自定义描述                  | `ImageBaseFields`、`entry_source`                                                                                                   | 不记录输入内容。                                      |
+| `image_generation_submitted`       | 用户确认生成，调用 `image.create()` 前              | `ImageBaseFields`、`prompt_source`、`prompt_chars`、`required_credits?`                                                             | 记录用户意图；允许后续失败。                          |
+| `image_generation_submit_failed`   | `image.create()` 受理前失败，如 402/409/503/400     | `ImageBaseFields`、`prompt_source`、`prompt_chars`、`failure_kind`、`error_code?`、`required_credits?`、`duration_ms`               | 402 还应走 paywall。                                  |
+| `image_generation_status_observed` | session image query/poll 首次观察到 attempt 终态    | `ImageBaseFields`、`attempt_id`、`attempt_no`、`terminal_status`、`error_code?`、`credits_charged`、`duration_ms?`、`prompt_source` | 按 `attempt_id:status` 内存去重，表示用户端看见终态。 |
+| `image_preview_opened`             | 用户打开 ready 图片预览 Dialog                      | `ImageBaseFields`、`attempt_id`、`attempt_no`                                                                                       | 不带 `image_url`。                                    |
+| `image_save_requested`             | 用户点击保存图片                                    | `ImageBaseFields`、`attempt_id`、`attempt_no`                                                                                       | 不带文件名或 URL。                                    |
+| `image_save_completed`             | Telegram download API 返回 true                     | `ImageBaseFields`、`attempt_id`、`attempt_no`、`duration_ms`                                                                        | 仅客户端结果。                                        |
+| `image_save_failed`                | download API 返回 false 或抛错                      | `ImageBaseFields`、`attempt_id`、`attempt_no`、`failure_kind`、`duration_ms`                                                        | 不记录 Telegram 细节。                                |
 
 ### Backend 事件
 
-| 事件名 | 触发点 | 关键字段 | 接入方式 |
-| --- | --- | --- | --- |
-| `image_description_completed` | `markDescriptionDraftReady` 成功之后 | `ImageBaseFields`、`attempt_id`、`attempt_no`、`prompt_chars`、`duration_ms` | route 中 fire-and-forget observer；使用 request user 或 user_id 反查 identity。 |
-| `image_description_failed` | `markDescriptionDraftFailed` 成功或描述阶段确定失败后 | `ImageBaseFields`、`attempt_id?`、`error_code`、`duration_ms`、`failure_kind` | 只在有足够身份/上下文时发送；无 draft id 也可跳过。 |
-| `image_generation_accepted` | `confirmDescriptionDraft/createPending` 成功并返回 202 前后 | `ImageBaseFields`、`attempt_id`、`attempt_no`、`prompt_source`、`prompt_chars`、`price_credits`、`width`、`height` | route 中 fire-and-forget；不影响 202。 |
-| `image_generation_completed` | worker `settleReady` 成功且 `charge_status` 为 `charged | already_charged` 后 | `ImageBaseFields`、`attempt_id`、`attempt_no`、`charge_status`、`credits_charged`、`provider`、`fallback_used`、`width`、`height`、`mime_type`、`byte_size`、`duration_ms` | worker 终态 observer；未配置 PostHog 时不反查用户。 |
-| `image_generation_failed` | worker `markFailed/markFailedUnknown` 成功后，或 `settleReady` 返回 `insufficient_balance` 并补偿后 | `ImageBaseFields`、`attempt_id`、`attempt_no`、`terminal_status`、`error_code`、`failure_kind`、`provider`、`fallback_used`、`duration_ms` | 结算响应未知不发送，避免误判。 |
+| 事件名                        | 触发点                                                                                              | 关键字段                                                                                                                                   | 接入方式                                                                                                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `image_description_completed` | `markDescriptionDraftReady` 成功之后                                                                | `ImageBaseFields`、`attempt_id`、`attempt_no`、`prompt_chars`、`duration_ms`                                                               | route 中 fire-and-forget observer；使用 request user 或 user_id 反查 identity。                                                                                            |
+| `image_description_failed`    | `markDescriptionDraftFailed` 成功或描述阶段确定失败后                                               | `ImageBaseFields`、`attempt_id?`、`error_code`、`duration_ms`、`failure_kind`                                                              | 只在有足够身份/上下文时发送；无 draft id 也可跳过。                                                                                                                        |
+| `image_generation_accepted`   | `confirmDescriptionDraft/createPending` 成功并返回 202 前后                                         | `ImageBaseFields`、`attempt_id`、`attempt_no`、`prompt_source`、`prompt_chars`、`price_credits`、`width`、`height`                         | route 中 fire-and-forget；不影响 202。                                                                                                                                     |
+| `image_generation_completed`  | worker `settleReady` 成功且 `charge_status` 为 `charged                                             | already_charged` 后                                                                                                                        | `ImageBaseFields`、`attempt_id`、`attempt_no`、`charge_status`、`credits_charged`、`provider`、`fallback_used`、`width`、`height`、`mime_type`、`byte_size`、`duration_ms` | worker 终态 observer；未配置 PostHog 时不反查用户。 |
+| `image_generation_failed`     | worker `markFailed/markFailedUnknown` 成功后，或 `settleReady` 返回 `insufficient_balance` 并补偿后 | `ImageBaseFields`、`attempt_id`、`attempt_no`、`terminal_status`、`error_code`、`failure_kind`、`provider`、`fallback_used`、`duration_ms` | 结算响应未知不发送，避免误判。                                                                                                                                             |
 
 说明：
 
@@ -176,16 +176,16 @@ Backend routes/images.ts + features/image/generate.ts
 
 ## 可靠性设计
 
-| 维度 | 设计 |
-| --- | --- |
-| 超时 | 前端沿用 SDK load timeout；后端 capture 沿用 `POSTHOG_TIMEOUT_MS`，默认短超时。 |
-| 重试 | 不新增重试。图片业务 provider/worker 重试策略不因 PostHog 改变。 |
-| 幂等/去重 | 前端按 `attempt_id:status`、save result 去重；后端按图片 attempt 终态去重。 |
-| 并发 | PostHog 事件不参与图片业务并发控制；attempt 状态仍由 DB/RPC 控制。 |
-| 事务 | 仅在终态落库成功后发后端事件；不把 capture 纳入事务。 |
-| 降级 | PostHog 未配置/失败/超时只记录安全摘要，不阻断描述、受理、worker、结算或充值跳转。 |
-| 容量 | 不采集轮询中的非终态状态，不采集 prompt 正文，避免事件量和敏感数据膨胀。 |
-| 恢复 | worker 崩溃由现有租约/状态收敛；PostHog 事件不补偿重放。终态观察可由前端再次看到时补一条用户可见事件。 |
+| 维度      | 设计                                                                                                   |
+| --------- | ------------------------------------------------------------------------------------------------------ |
+| 超时      | 前端沿用 SDK load timeout；后端 capture 沿用 `POSTHOG_TIMEOUT_MS`，默认短超时。                        |
+| 重试      | 不新增重试。图片业务 provider/worker 重试策略不因 PostHog 改变。                                       |
+| 幂等/去重 | 前端按 `attempt_id:status`、save result 去重；后端按图片 attempt 终态去重。                            |
+| 并发      | PostHog 事件不参与图片业务并发控制；attempt 状态仍由 DB/RPC 控制。                                     |
+| 事务      | 仅在终态落库成功后发后端事件；不把 capture 纳入事务。                                                  |
+| 降级      | PostHog 未配置/失败/超时只记录安全摘要，不阻断描述、受理、worker、结算或充值跳转。                     |
+| 容量      | 不采集轮询中的非终态状态，不采集 prompt 正文，避免事件量和敏感数据膨胀。                               |
+| 恢复      | worker 崩溃由现有租约/状态收敛；PostHog 事件不补偿重放。终态观察可由前端再次看到时补一条用户可见事件。 |
 
 ## 发布与回滚
 
