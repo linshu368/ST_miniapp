@@ -1,12 +1,14 @@
 import { MAX_IMAGE_PROMPT_CHARS, type GetImageConfigData } from '@miniapp/shared';
 import { fetchRuntimeConfigEntries } from '../../platform/runtime-config.js';
 import { config } from '../../platform/config.js';
+import { DEFAULT_IMAGE_DESCRIPTION_SYSTEM_PROMPT } from '../generation/image-upstream.js';
 
 const IMAGE_KEYS = [
   'image_generation_enabled',
   'image_generation_credits',
   'image_price_label',
   'image_default_art_style',
+  'image_description_system_prompt',
   'image_width',
   'image_height',
   'image_max_prompt_chars',
@@ -24,6 +26,7 @@ export interface ImageRuntimeConfig {
   creditsPerGeneration: number;
   priceLabel: string;
   defaultArtStyle: string;
+  descriptionSystemPrompt: string;
   width: number;
   height: number;
   maxPromptChars: number;
@@ -51,6 +54,10 @@ export async function getImageRuntimeConfig(): Promise<ImageRuntimeConfig> {
     creditsPerGeneration: readPositiveInteger(entries.get('image_generation_credits')?.value, 50),
     priceLabel: readString(entries.get('image_price_label')?.value, '50 星尘'),
     defaultArtStyle: readString(entries.get('image_default_art_style')?.value, ''),
+    descriptionSystemPrompt: readString(
+      entries.get('image_description_system_prompt')?.textValue,
+      DEFAULT_IMAGE_DESCRIPTION_SYSTEM_PROMPT
+    ),
     width: readPositiveInteger(entries.get('image_width')?.value, 1024),
     height: readPositiveInteger(entries.get('image_height')?.value, 1536),
     maxPromptChars: readPositiveInteger(

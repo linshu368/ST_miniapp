@@ -11,6 +11,7 @@ import {
   PaymentSettlementSourceSchema,
   PaymentTypeSchema,
 } from './payment';
+import { ImagePromptSourceSchema } from './images';
 
 /** 聊天无操作超时。流式生成与 external_payment_pending 不计时。 */
 export const REPLAY_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
@@ -46,6 +47,21 @@ export const TELEMETRY_FORBIDDEN_PROPERTY_KEYS = [
   'user_input',
   'user_cohort',
   'user_cohort_version',
+  'prompt',
+  'prompt_cn',
+  'promptCn',
+  'prompt_en',
+  'promptEn',
+  'provider_prompt',
+  'providerPrompt',
+  'description_user_prompt',
+  'descriptionUserPrompt',
+  'image_url',
+  'imageUrl',
+  'storage_path',
+  'storagePath',
+  'provider_request_id',
+  'providerRequestId',
 ] as const;
 
 export type TelemetryForbiddenPropertyKey = (typeof TELEMETRY_FORBIDDEN_PROPERTY_KEYS)[number];
@@ -81,6 +97,7 @@ export type ChatTurnFailureKind = z.infer<typeof ChatTurnFailureKindSchema>;
 export const PaywallTriggerSourceSchema = z.enum([
   'chat_sse',
   'chat_voice',
+  'chat_image',
   'custom_voice',
   'model_switch',
 ]);
@@ -128,6 +145,44 @@ export const ReplaySdkFailureCodeSchema = z.enum([
 ]);
 export type ReplaySdkFailureCode = z.infer<typeof ReplaySdkFailureCodeSchema>;
 
+export const ImageAttemptStatusSchema = z.enum([
+  'pending',
+  'generating',
+  'ready',
+  'failed',
+  'failed_unknown',
+]);
+export type ImageAttemptStatus = z.infer<typeof ImageAttemptStatusSchema>;
+
+export const ImageTerminalStatusSchema = z.enum(['ready', 'failed', 'failed_unknown']);
+export type ImageTerminalStatus = z.infer<typeof ImageTerminalStatusSchema>;
+
+export const ImageChargeStatusSchema = z.enum([
+  'charged',
+  'already_charged',
+  'insufficient_balance',
+]);
+export type ImageChargeStatus = z.infer<typeof ImageChargeStatusSchema>;
+
+export const ImageFailureKindSchema = z.enum([
+  'business',
+  'network',
+  'timeout',
+  'provider',
+  'storage',
+  'settlement',
+  'unknown',
+]);
+export type ImageFailureKind = z.infer<typeof ImageFailureKindSchema>;
+
+export const ImageEntrySourceSchema = z.enum([
+  'default',
+  'retry',
+  'regenerate_ready',
+  'custom_edit',
+]);
+export type ImageEntrySource = z.infer<typeof ImageEntrySourceSchema>;
+
 const OptionalUserTags = {
   is_paid_user: z.boolean().optional(),
   total_chat_rounds: NonNegativeIntSchema.optional(),
@@ -137,6 +192,16 @@ const ChatIdentityFields = {
   character_id: z.string().uuid(),
   conversation_session_id: z.string().uuid(),
   selected_model_id: StableModelIdSchema.nullable(),
+};
+
+const ImageBaseFields = {
+  ...ChatIdentityFields,
+  message_id: z.string().uuid(),
+};
+
+const ImageAttemptFields = {
+  attempt_id: z.string().uuid(),
+  attempt_no: z.number().int().positive(),
 };
 
 const TurnFields = {
@@ -279,6 +344,85 @@ export const PaymentFlowLeftObservedEventSchema = frontendEvent('payment_flow_le
   elapsed_ms: NonNegativeIntSchema,
 });
 
+export const ImageEntrySelectedEventSchema = frontendEvent('image_entry_selected', {
+  ...ImageBaseFields,
+  entry_source: ImageEntrySourceSchema,
+  latest_status: ImageAttemptStatusSchema.optional(),
+  has_ready_image: z.boolean(),
+});
+export const ImageDescriptionRequestedEventSchema = frontendEvent(
+  'image_description_requested',
+  ImageBaseFields
+);
+export const ImageDescriptionPresentedEventSchema = frontendEvent(
+  'image_description_presented',
+  {
+    ...ImageBaseFields,
+    attempt_id: z.string().uuid(),
+    attempt_no: z.number().int().positive().optional(),
+    prompt_chars: NonNegativeIntSchema,
+  }
+);
+export const ImageDescriptionUiFailedEventSchema = frontendEvent('image_description_ui_failed', {
+  ...ImageBaseFields,
+  failure_kind: ImageFailureKindSchema,
+  error_code: z.string().trim().min(1).max(128).optional(),
+  duration_ms: NonNegativeIntSchema,
+});
+export const ImageCustomPromptOpenedEventSchema = frontendEvent('image_custom_prompt_opened', {
+  ...ImageBaseFields,
+  entry_source: ImageEntrySourceSchema,
+});
+export const ImageGenerationSubmittedEventSchema = frontendEvent('image_generation_submitted', {
+  ...ImageBaseFields,
+  prompt_source: ImagePromptSourceSchema,
+  prompt_chars: NonNegativeIntSchema,
+  required_credits: z.number().int().positive().optional(),
+});
+export const ImageGenerationSubmitFailedEventSchema = frontendEvent(
+  'image_generation_submit_failed',
+  {
+    ...ImageBaseFields,
+    prompt_source: ImagePromptSourceSchema,
+    prompt_chars: NonNegativeIntSchema,
+    failure_kind: ImageFailureKindSchema,
+    error_code: z.string().trim().min(1).max(128).optional(),
+    required_credits: z.number().int().positive().optional(),
+    duration_ms: NonNegativeIntSchema,
+  }
+);
+export const ImageGenerationStatusObservedEventSchema = frontendEvent(
+  'image_generation_status_observed',
+  {
+    ...ImageBaseFields,
+    ...ImageAttemptFields,
+    terminal_status: ImageTerminalStatusSchema,
+    error_code: z.string().trim().min(1).max(128).nullable(),
+    credits_charged: NonNegativeIntSchema,
+    duration_ms: NonNegativeIntSchema.optional(),
+    prompt_source: ImagePromptSourceSchema,
+  }
+);
+export const ImagePreviewOpenedEventSchema = frontendEvent('image_preview_opened', {
+  ...ImageBaseFields,
+  ...ImageAttemptFields,
+});
+export const ImageSaveRequestedEventSchema = frontendEvent('image_save_requested', {
+  ...ImageBaseFields,
+  ...ImageAttemptFields,
+});
+export const ImageSaveCompletedEventSchema = frontendEvent('image_save_completed', {
+  ...ImageBaseFields,
+  ...ImageAttemptFields,
+  duration_ms: NonNegativeIntSchema,
+});
+export const ImageSaveFailedEventSchema = frontendEvent('image_save_failed', {
+  ...ImageBaseFields,
+  ...ImageAttemptFields,
+  failure_kind: ImageFailureKindSchema,
+  duration_ms: NonNegativeIntSchema,
+});
+
 function serverPaymentEvent<Name extends string, Shape extends z.ZodRawShape>(
   name: Name,
   shape: Shape
@@ -305,6 +449,59 @@ export const PaymentOrderFailedEventSchema = serverPaymentEvent('payment_order_f
   payment_type: PaymentTypeSchema,
   order_status: z.literal('failed'),
   settled_by: PaymentSettlementSourceSchema.nullable(),
+});
+
+export const ImageDescriptionCompletedEventSchema = serverPaymentEvent(
+  'image_description_completed',
+  {
+    ...ImageBaseFields,
+    ...ImageAttemptFields,
+    prompt_chars: NonNegativeIntSchema,
+    duration_ms: NonNegativeIntSchema,
+  }
+);
+export const ImageDescriptionFailedEventSchema = serverPaymentEvent('image_description_failed', {
+  ...ImageBaseFields,
+  attempt_id: z.string().uuid().optional(),
+  attempt_no: z.number().int().positive().optional(),
+  error_code: z.string().trim().min(1).max(128),
+  duration_ms: NonNegativeIntSchema,
+  failure_kind: ImageFailureKindSchema,
+});
+export const ImageGenerationAcceptedEventSchema = serverPaymentEvent('image_generation_accepted', {
+  ...ImageBaseFields,
+  ...ImageAttemptFields,
+  prompt_source: ImagePromptSourceSchema,
+  prompt_chars: NonNegativeIntSchema,
+  price_credits: z.number().int().positive(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+export const ImageGenerationCompletedEventSchema = serverPaymentEvent(
+  'image_generation_completed',
+  {
+    ...ImageBaseFields,
+    ...ImageAttemptFields,
+    charge_status: z.enum(['charged', 'already_charged']),
+    credits_charged: NonNegativeIntSchema,
+    provider: z.string().trim().min(1).max(64),
+    fallback_used: z.boolean(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    mime_type: z.enum(['image/webp', 'image/png', 'image/jpeg']),
+    byte_size: NonNegativeIntSchema,
+    duration_ms: NonNegativeIntSchema,
+  }
+);
+export const ImageGenerationFailedEventSchema = serverPaymentEvent('image_generation_failed', {
+  ...ImageBaseFields,
+  ...ImageAttemptFields,
+  terminal_status: z.enum(['failed', 'failed_unknown']),
+  error_code: z.string().trim().min(1).max(128),
+  failure_kind: ImageFailureKindSchema,
+  provider: z.string().trim().min(1).max(64),
+  fallback_used: z.boolean(),
+  duration_ms: NonNegativeIntSchema,
 });
 
 function sdkHealthEvent<Name extends string>(name: Name) {
@@ -344,8 +541,25 @@ export const ReplayTelemetryEventSchema = z.discriminatedUnion('event', [
   PaymentReturnObservedEventSchema,
   PaymentOrderStatusObservedEventSchema,
   PaymentFlowLeftObservedEventSchema,
+  ImageEntrySelectedEventSchema,
+  ImageDescriptionRequestedEventSchema,
+  ImageDescriptionPresentedEventSchema,
+  ImageDescriptionUiFailedEventSchema,
+  ImageCustomPromptOpenedEventSchema,
+  ImageGenerationSubmittedEventSchema,
+  ImageGenerationSubmitFailedEventSchema,
+  ImageGenerationStatusObservedEventSchema,
+  ImagePreviewOpenedEventSchema,
+  ImageSaveRequestedEventSchema,
+  ImageSaveCompletedEventSchema,
+  ImageSaveFailedEventSchema,
   PaymentOrderSettledEventSchema,
   PaymentOrderFailedEventSchema,
+  ImageDescriptionCompletedEventSchema,
+  ImageDescriptionFailedEventSchema,
+  ImageGenerationAcceptedEventSchema,
+  ImageGenerationCompletedEventSchema,
+  ImageGenerationFailedEventSchema,
   ReplaySdkInitFailedEventSchema,
   ReplayRecordingFailedEventSchema,
 ]);
