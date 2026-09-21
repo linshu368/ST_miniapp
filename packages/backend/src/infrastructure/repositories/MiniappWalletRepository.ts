@@ -129,6 +129,15 @@ export class MiniappWalletRepository {
     return data ? normalizeWallet(data as RawMiniappWalletRow) : null;
   }
 
+  /**
+   * 付费状态读钱包权威位：`first_paid_at` 由支付入账主路径在已完成订单结算时写入。
+   * 只读，不创建钱包行。
+   */
+  async hasCompletedPayment(userId: string): Promise<boolean> {
+    const wallet = await this.findByUserId(userId);
+    return wallet?.first_paid_at != null;
+  }
+
   async chargeLlmUsage(input: ChargeLlmUsageInput): Promise<{
     wallet: MiniappWalletRow;
     charge: LlmUsageChargeRow;
@@ -308,7 +317,35 @@ export class MiniappWalletRepository {
       };
     });
 
-    return [...llmRows, ...voiceRecords].sort(
+    const { data: imageRows, error: imageError } = await this.db
+      .from('wallet_ledger')
+      .select('reference_id,amount,metadata,created_at')
+      .eq('user_id', userId)
+      .eq('reference_type', 'image_generation')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (imageError) throw new Error(`查询图片消费明细失败：${imageError.message}`);
+
+    const imageRecords = (
+      (imageRows ?? []) as Array<{
+        reference_id: string | null;
+        amount: NumericValue;
+        metadata: Record<string, unknown> | null;
+        created_at: string;
+      }>
+    )?.map((row) => ({
+      id: row.reference_id ?? row.created_at,
+      model_id: null,
+      model_display_name: '图片消费',
+      charged_amount: Math.abs(toNumber(row.amount)),
+      status: 'charged' as const,
+      finish_reason: null,
+      reply_outcome: null,
+      status_label: '已扣费',
+      created_at: row.created_at,
+    }));
+
+    return [...llmRows, ...voiceRecords, ...imageRecords].sort(
       (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)
     );
   }

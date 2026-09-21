@@ -6,11 +6,22 @@
  * `INSUFFICIENT_CREDITS`。这里只统一前端谓词，不改 API。
  */
 
+import type { PaywallTriggerSource } from '@miniapp/shared';
+
+import {
+  chatIdentityFromReturnTo,
+  patchPaywallContinuation,
+  writePaywallContinuation,
+} from '@/lib/payment/paywall-continuation';
+import { getReplayLifecycle } from '@/lib/telemetry';
+
 const INSUFFICIENT_CREDIT_CODES = new Set(['insufficient_balance', 'INSUFFICIENT_CREDITS']);
 
 export interface RechargeRedirectInput {
   returnTo: string;
   requiredCredits?: number;
+  /** T5 四个调用点传入；缺省时仍跳转，但不发 paywall_triggered。 */
+  triggerSource?: PaywallTriggerSource;
 }
 
 interface RechargeRouter {
@@ -45,20 +56,72 @@ export function rechargePath(input: RechargeRedirectInput): string {
   return `/profile/recharge?${search.toString()}`;
 }
 
-export function redirectToRecharge(router: RechargeRouter, input: RechargeRedirectInput): void {
+function writePaywallContinuationNow(
+  input: RechargeRedirectInput,
+  replayContextId: string | null
+): void {
+  writePaywallContinuation({
+    triggerSource: input.triggerSource,
+    requiredCredits: input.requiredCredits,
+    returnTo: input.returnTo,
+    replayContextId,
+  });
+}
+
+function capturePaywallTriggered(input: RechargeRedirectInput): void {
+  if (!input.triggerSource) return;
+  const identity = chatIdentityFromReturnTo(input.returnTo);
+  if (!identity) return;
+  const lifecycle = getReplayLifecycle();
+  lifecycle.capture({
+    event: 'paywall_triggered',
+    trigger_source: input.triggerSource,
+    character_id: identity.characterId,
+    conversation_session_id: identity.conversationSessionId,
+    selected_model_id: null,
+    ...(input.requiredCredits !== undefined &&
+    Number.isInteger(input.requiredCredits) &&
+    input.requiredCredits > 0
+      ? { required_credits: input.requiredCredits }
+      : {}),
+  });
+  patchPaywallContinuation({ lastObservedAction: 'paywall_triggered' });
+}
+
+export async function redirectToRecharge(
+  router: RechargeRouter,
+  input: RechargeRedirectInput
+): Promise<void> {
+  const lifecycle = getReplayLifecycle();
+  // hold 必须在 push 前同步置位；await 队列会把导航绑到 startChatReplay/whenReady/SDK import。
+  const followup = lifecycle.enterPaywallFollowup();
+  writePaywallContinuationNow(input, lifecycle.getSnapshot().replayContextId);
   router.push(rechargePath(input));
+
+  try {
+    await followup;
+  } catch {
+    return;
+  }
+  const replayContextId = lifecycle.getSnapshot().replayContextId;
+  if (replayContextId) {
+    patchPaywallContinuation({ replayContextId });
+  }
+  capturePaywallTriggered(input);
 }
 
 /** 认出余额不足就跳充值并返回 true，否则 false，调用方继续走自己的失败分流。 */
 export function redirectToRechargeFromError(
   router: RechargeRouter,
   error: unknown,
-  returnTo: string
+  returnTo: string,
+  triggerSource?: PaywallTriggerSource
 ): boolean {
   if (!isInsufficientCreditsError(error)) return false;
-  redirectToRecharge(router, {
+  void redirectToRecharge(router, {
     returnTo,
     requiredCredits: requiredCreditsFromError(error),
+    triggerSource,
   });
   return true;
 }

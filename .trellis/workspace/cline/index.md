@@ -9,8 +9,8 @@
 <!-- @@@auto:current-status -->
 
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 1
-- **Last Active**: 2026-09-11
+- **Total Sessions**: 0
+- **Last Active**: -
 <!-- @@@/auto:current-status -->
 
 ---
@@ -21,7 +21,7 @@
 
 | File           | Lines | Status |
 | -------------- | ----- | ------ |
-| `journal-1.md` | ~45   | Active |
+| `journal-1.md` | ~0    | Active |
 
 <!-- @@@/auto:active-documents -->
 
@@ -31,9 +31,8 @@
 
 <!-- @@@auto:session-history -->
 
-| #   | Date       | Title                           | Commits | Branch                 |
-| --- | ---------- | ------------------------------- | ------- | ---------------------- |
-| 1   | 2026-09-11 | Batch Lab T3 来源凭据验证暂停点 | -       | `feat_preset_platform` |
+| #   | Date | Title | Commits | Branch |
+| --- | ---- | ----- | ------- | ------ |
 
 <!-- @@@/auto:session-history -->
 

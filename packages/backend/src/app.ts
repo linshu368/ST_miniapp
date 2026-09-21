@@ -15,6 +15,7 @@ import csPlatformRoutes from './routes/cs-platform.js';
 import modelsRoutes from './routes/models.js';
 import conversationRoutes from './routes/conversations.js';
 import voiceRoutes from './routes/voice.js';
+import imageRoutes from './routes/images.js';
 import botRoutes from './routes/bot.js';
 import growthRoutes from './routes/growth.js';
 import inviteRoutes from './routes/invite.js';
@@ -23,7 +24,9 @@ import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import batchLabRoutes from './routes/batch-lab.js';
+import telemetryRoutes from './routes/telemetry.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
+import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
 import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
@@ -114,6 +117,7 @@ export async function buildApp() {
   await app.register(modelsRoutes);
   await app.register(conversationRoutes);
   await app.register(voiceRoutes);
+  await app.register(imageRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
   await app.register(inviteRoutes);
@@ -122,6 +126,7 @@ export async function buildApp() {
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
   await app.register(batchLabRoutes);
+  await app.register(telemetryRoutes);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],
@@ -150,9 +155,12 @@ export async function buildApp() {
     app.log.info('[lobby-ranking] refresh job disabled by LOBBY_RANKING_REFRESH_ENABLED=false');
   }
 
+  startChatImageGenerationJob(app.log);
+
   app.addHook('onClose', async () => {
     stopChatHistorySyncJob();
     stopLobbyRankingRefreshJob();
+    stopChatImageGenerationJob();
   });
 
   return app;

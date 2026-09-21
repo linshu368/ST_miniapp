@@ -1,0 +1,39 @@
+{
+  "id": "user-behavior-replay",
+  "name": "user-behavior-replay",
+  "title": "用户行为回放系统",
+  "description": "规划 PostHog Session Replay 的聊天与付费墙行为回放，覆盖隐私边界、共享事件契约、支付事件关联、可靠性、验证和发布恢复。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-09-15",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": ["09-16-recharge-entry-clicked"],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.conversation-ui",
+        "frontend.business.wallet-payment",
+        "backend.infrastructure.runtime-data-security",
+        "backend.business.wallet-payment",
+        "shared.business.wallet-payment-contracts"
+      ]
+    }
+  }
+}

@@ -21,6 +21,22 @@ export async function getOrCreateDbUser(tgUser: TelegramUser): Promise<MiniappDb
   return getOrCreateMiniappUserByTgId(tgIdStr, null, true);
 }
 
+/** 支付 webhook/cron 没有 Telegram header，用内部 user UUID 反查 analytics identity。 */
+export async function findTelegramIdByUserId(userId: string): Promise<string | null> {
+  const { data, error } = await getDomainDb('app_core')
+    .from('users')
+    .select('tg_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`查询 MiniApp 用户 Telegram ID 失败：${error.message}`);
+  }
+
+  const tgId = data?.tg_id;
+  return typeof tgId === 'string' && tgId.length > 0 ? tgId : null;
+}
+
 export async function getOrCreateMiniappUserByTgId(
   tgId: string,
   sourceId: string | null = null,

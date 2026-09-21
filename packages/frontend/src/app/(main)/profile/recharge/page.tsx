@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -37,6 +37,20 @@ import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
+import {
+  captureExternalPaymentOpenRequested,
+  capturePaymentMethodSelected,
+  capturePaymentOrderCreated,
+  capturePaywallDismissed,
+  capturePaywallInviteSelected,
+  capturePaywallRechargeSelected,
+  captureRechargeViewed,
+  resumePaymentReplayFromPending,
+  markExternalPaymentOpened,
+  retainPaywallFollowupIfActive,
+} from '@/lib/payment/flow-telemetry';
+import { paymentOrderPagePath, persistPaymentOpen } from '@/lib/payment/open-storage';
+import { getReplayLifecycle } from '@/lib/telemetry';
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
@@ -64,11 +78,21 @@ function RechargePageContent() {
   const inviteEntry = useInviteEntryStatusQuery();
   const inviteEntryEnabled = inviteEntry.data?.entry_enabled === true;
 
-  const goInviteCenter = useCallback(() => router.push('/profile/invite'), [router]);
+  const goInviteCenter = useCallback(() => {
+    capturePaywallInviteSelected();
+    router.push('/profile/invite');
+  }, [router]);
+
+  useEffect(() => {
+    retainPaywallFollowupIfActive();
+    resumePaymentReplayFromPending();
+    captureRechargeViewed();
+  }, []);
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
+  const noticeChoiceRef = useRef<'invite' | 'recharge' | null>(null);
   const [paymentPromptOpen, setPaymentPromptOpen] = useState(false);
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
 
@@ -87,25 +111,41 @@ function RechargePageContent() {
     (id: string) => {
       whisper();
       setSelectedPlanId(id);
+      capturePaymentMethodSelected({ planId: id, paymentType });
     },
-    [whisper]
+    [paymentType, whisper]
   );
 
   const openCreatedPayment = useCallback(
-    (result: CreatePaymentOrderData) => {
-      const nextSearch = new URLSearchParams({
-        pay_url: result.pay_url,
-        payment_started: '1',
+    async (result: CreatePaymentOrderData) => {
+      const openFailureKind = persistPaymentOpen({
+        orderId: result.order.id,
+        payUrl: result.pay_url,
+        returnTo,
+        replayContextId: getReplayLifecycle().getSnapshot().replayContextId,
       });
-      if (returnTo) nextSearch.set('returnTo', returnTo);
-      // 必须在 router.push 之前：拉起若退化成本页导航，会被随后的客户端路由抢跑丢弃，
-      // 而等待页的自动拉起又被 payment_started=1 短路，结果是一次都没拉起。
-      openPaymentUrl(result.pay_url);
+      captureExternalPaymentOpenRequested({
+        orderId: result.order.id,
+        paymentType,
+        openFailureKind,
+      });
+      // 必须在 router.push 之前：拉起若退化成本页导航，会被随后的客户端路由抢跑丢弃。
+      if (openFailureKind !== 'invalid_url') {
+        await getReplayLifecycle().enterExternalPaymentPending();
+        markExternalPaymentOpened({
+          orderId: result.order.id,
+          paymentType,
+        });
+        openPaymentUrl(result.pay_url);
+      }
       router.push(
-        `/profile/recharge/${encodeURIComponent(result.order.id)}?${nextSearch.toString()}`
+        paymentOrderPagePath(result.order.id, {
+          paymentStarted: true,
+          returnTo,
+        })
       );
     },
-    [router, returnTo]
+    [paymentType, returnTo, router]
   );
 
   const handleSubmit = useCallback(async () => {
@@ -117,12 +157,18 @@ function RechargePageContent() {
         plan_id: selectedPlan.id,
         payment_type: paymentType,
       });
+      capturePaymentOrderCreated({
+        planId: selectedPlan.id,
+        paymentType,
+        orderId: result.order.id,
+        amountCents: result.order.amount_cents,
+      });
       if (paymentPromptConfig.enabled) {
         setPreparedPayment(result);
         setPaymentPromptOpen(true);
         return;
       }
-      openCreatedPayment(result);
+      await openCreatedPayment(result);
     } catch {
       notification('error');
     }
@@ -140,7 +186,7 @@ function RechargePageContent() {
     if (!preparedPayment) return;
     setPaymentPromptOpen(false);
     setPreparedPayment(null);
-    openCreatedPayment(preparedPayment);
+    void openCreatedPayment(preparedPayment);
   }, [preparedPayment, openCreatedPayment]);
 
   const handlePaymentPromptOpenChange = useCallback((open: boolean) => {
@@ -274,6 +320,9 @@ function RechargePageContent() {
                   onClick={() => {
                     whisper();
                     setPaymentType(t);
+                    if (selectedPlanId) {
+                      capturePaymentMethodSelected({ planId: selectedPlanId, paymentType: t });
+                    }
                   }}
                   className={cn(
                     'flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all',
@@ -365,7 +414,12 @@ function RechargePageContent() {
       <Dialog
         open={showInsufficientCreditsNotice}
         onOpenChange={(open) => {
-          if (!open) setNoticeDismissed(true);
+          if (open) return;
+          setNoticeDismissed(true);
+          if (noticeChoiceRef.current === 'invite' || noticeChoiceRef.current === 'recharge') {
+            return;
+          }
+          capturePaywallDismissed();
         }}
       >
         <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-border bg-popover text-popover-foreground">
@@ -389,6 +443,10 @@ function RechargePageContent() {
               <Button
                 className="w-full rounded-xl font-bold text-primary-foreground"
                 style={{ backgroundColor: pageConfig.button_color }}
+                onClick={() => {
+                  noticeChoiceRef.current = 'recharge';
+                  capturePaywallRechargeSelected();
+                }}
               >
                 选择套餐
               </Button>
@@ -399,6 +457,7 @@ function RechargePageContent() {
                 className="w-full rounded-xl border-rose/40 bg-transparent font-bold text-rose hover:bg-rose/10 hover:text-rose"
                 onClick={() => {
                   // PRD：关闭当前提示并直接进入邀请中心
+                  noticeChoiceRef.current = 'invite';
                   setNoticeDismissed(true);
                   goInviteCenter();
                 }}

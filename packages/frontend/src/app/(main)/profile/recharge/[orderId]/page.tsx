@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ChevronLeft, Clock, Loader2, XCircle } from 'lucide-react';
@@ -10,6 +10,23 @@ import { Button } from '@/components/ui/button';
 
 import { cn } from '@/lib/utils';
 import { paymentKeys, usePaymentOrderQuery, usePaymentPlansQuery } from '@/lib/api/payment';
+import {
+  captureExternalPaymentOpenRequested,
+  capturePaymentFlowLeftObserved,
+  capturePaymentOrderStatusObserved,
+  markExternalPaymentOpened,
+  observePaymentReturn,
+  resumePaymentReplayFromPending,
+  retainPaywallFollowupIfActive,
+} from '@/lib/payment/flow-telemetry';
+import {
+  adoptPayUrlQueryIntoStorage,
+  clearPaymentOpenIfTerminal,
+  hasPaymentOpenUrl,
+  readPaymentOpenMeta,
+  readPaymentOpenUrl,
+} from '@/lib/payment/open-storage';
+import { getReplayLifecycle } from '@/lib/telemetry';
 import {
   formatCountdown,
   formatNumber,
@@ -24,19 +41,36 @@ export default function PaymentPendingPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = params?.orderId ? decodeURIComponent(params.orderId) : undefined;
   const search = useSearchParams();
-  const payUrl = search?.get('pay_url') ?? null;
   const paymentStarted = search?.get('payment_started') === '1';
-  const returnTo = safePaymentReturnTo(search?.get('returnTo') ?? null);
+  const paymentReturned = search?.get('payment') === 'returned';
+  const returnToFromQuery = safePaymentReturnTo(search?.get('returnTo') ?? null);
+  const [storedReturnTo, setStoredReturnTo] = useState<string | null>(null);
+  const [canReopenPayment, setCanReopenPayment] = useState(false);
+  const returnTo = returnToFromQuery ?? storedReturnTo;
 
   const router = useRouter();
   const rechargePath = returnTo
     ? `/profile/recharge?returnTo=${encodeURIComponent(returnTo)}`
     : '/profile/recharge';
+  const queryClient = useQueryClient();
+  const { data, isLoading, isError } = usePaymentOrderQuery(orderId);
+  const { data: plansData } = usePaymentPlansQuery();
+  const order = data?.order;
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  const pendingArrivalHint =
+    plansData?.page_config.pending_arrival_hint ??
+    DEFAULT_RECHARGE_PAGE_CONFIG.pending_arrival_hint;
+
   // 返回不能用 push：那会把星尘商店压成新的历史条目，商店自己的返回键再 back
   // 回到本页，取消支付时就在两页之间死循环。
   // payment_started=1 只由充值页下单跳转时带上，所以它同时也是「上一格就是商店」的判据；
   // 支付回跳深链走的是 router.replace，栈里没有商店那一格，只能用 replace 顶掉本页。
   const goBack = useCallback(() => {
+    const current = orderRef.current;
+    if (current?.status === 'pending') {
+      capturePaymentFlowLeftObserved(current);
+    }
     if (paymentStarted) {
       router.back();
       return;
@@ -45,17 +79,42 @@ export default function PaymentPendingPage() {
   }, [paymentStarted, rechargePath, router]);
   useTelegramBackButton(goBack);
 
-  const queryClient = useQueryClient();
-  const { data, isLoading, isError } = usePaymentOrderQuery(orderId);
-  const { data: plansData } = usePaymentPlansQuery();
-  const order = data?.order;
-  const pendingArrivalHint =
-    plansData?.page_config.pending_arrival_hint ??
-    DEFAULT_RECHARGE_PAGE_CONFIG.pending_arrival_hint;
+  useEffect(() => {
+    retainPaywallFollowupIfActive();
+  }, []);
+
+  useEffect(() => {
+    if (!orderId) return;
+    adoptPayUrlQueryIntoStorage(
+      orderId,
+      search?.get('pay_url') ?? null,
+      returnToFromQuery,
+      getReplayLifecycle().getSnapshot().replayContextId
+    );
+    resumePaymentReplayFromPending(orderId);
+    setCanReopenPayment(hasPaymentOpenUrl(orderId));
+    setStoredReturnTo(readPaymentOpenMeta(orderId)?.returnTo ?? null);
+  }, [orderId, returnToFromQuery, search]);
+
+  useEffect(() => {
+    if (!paymentReturned || !orderId) return;
+    observePaymentReturn({
+      source: 'query_param',
+      orderId,
+      route: `/profile/recharge/${orderId}`,
+    });
+  }, [orderId, paymentReturned]);
+
+  useEffect(() => {
+    if (!order) return;
+    capturePaymentOrderStatusObserved(order);
+    if (!orderId) return;
+    clearPaymentOpenIfTerminal(orderId, order.status);
+    if (order.status !== 'pending') setCanReopenPayment(false);
+  }, [order, orderId]);
 
   const { notification } = useHaptic();
   const [congratsFired, setCongratsFired] = useState(false);
-  const [payUrlOpened, setPayUrlOpened] = useState(paymentStarted);
   useEffect(() => {
     if (order?.status === 'completed' && !congratsFired) {
       notification('success');
@@ -67,12 +126,6 @@ export default function PaymentPendingPage() {
     if (order?.status !== 'completed') return;
     void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
   }, [order?.status, queryClient]);
-
-  useEffect(() => {
-    if (!payUrl || payUrlOpened || order?.status !== 'pending') return;
-    setPayUrlOpened(true);
-    openPaymentUrl(payUrl);
-  }, [order?.status, payUrl, payUrlOpened]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -120,7 +173,32 @@ export default function PaymentPendingPage() {
           <PendingView
             order={order}
             remaining={remaining}
-            payUrl={payUrl}
+            canReopenPayment={canReopenPayment}
+            onReopenPayment={() => {
+              if (!orderId) return;
+              void (async () => {
+                const payUrl = readPaymentOpenUrl(orderId);
+                if (!payUrl) {
+                  captureExternalPaymentOpenRequested({
+                    orderId,
+                    paymentType: order.payment_type,
+                    openFailureKind: 'storage_unavailable',
+                  });
+                  setCanReopenPayment(false);
+                  return;
+                }
+                captureExternalPaymentOpenRequested({
+                  orderId,
+                  paymentType: order.payment_type,
+                });
+                await getReplayLifecycle().enterExternalPaymentPending();
+                markExternalPaymentOpened({
+                  orderId,
+                  paymentType: order.payment_type,
+                });
+                openPaymentUrl(payUrl);
+              })();
+            }}
             onBack={goBack}
             arrivalHint={pendingArrivalHint}
           />
@@ -177,13 +255,15 @@ function ErrorView({ onBack, message }: { onBack: () => void; message: string })
 function PendingView({
   order,
   remaining,
-  payUrl,
+  canReopenPayment,
+  onReopenPayment,
   onBack,
   arrivalHint,
 }: {
   order: PaymentOrder;
   remaining: number;
-  payUrl: string | null;
+  canReopenPayment: boolean;
+  onReopenPayment: () => void;
   onBack: () => void;
   arrivalHint: string;
 }) {
@@ -225,9 +305,9 @@ function PendingView({
         </div>
       </div>
 
-      {payUrl ? (
+      {canReopenPayment ? (
         <Button
-          onClick={() => openPaymentUrl(payUrl)}
+          onClick={onReopenPayment}
           className="h-12 w-full rounded-xl bg-primary font-bold text-primary-foreground shadow-lg shadow-[0_10px_30px_hsl(var(--glow)/0.4)] hover:opacity-90 border-0"
         >
           重新打开支付页
