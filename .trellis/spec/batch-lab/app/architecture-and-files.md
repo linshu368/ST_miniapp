@@ -22,7 +22,7 @@ packages/shared     ->  migrations and DTOs
 | `packages/backend/src/features/batch-lab/`                                        | 样本、processor、execution orchestration               |
 | `packages/backend/src/infrastructure/repositories/BatchLabExecutionRepository.ts` | `batch_lab` schema 持久化、lease、copy/reuse/export    |
 | `packages/shared/src/api/batch-lab.ts`                                            | 所有浏览器可见 DTO 和运行时 schema                     |
-| `packages/shared/migrations/110_batch_lab_samples.sql`                            | 历史样本冻结基础迁移，已冻结，不改名                   |
+| `packages/shared/migrations/20260920_batch_lab_samples.sql`                       | 历史样本冻结基础迁移，已冻结，不改名                   |
 | `packages/shared/migrations/20260916_batch_lab_execution.sql`                     | 实验与 attempt 状态机                                  |
 | `packages/shared/migrations/20260916_batch_lab_history_export.sql`                | copy/reuse lineage、annotation 和 JSONL 导出支撑       |
 

@@ -26,7 +26,7 @@
 | D1/R1 结果详情、配置差异、全部样本/轮次/来源浏览            | frontend-workbench / history-export                        | `packages/batch-lab/src/App.tsx`、experiment detail API                                       | 已实现；Playwright 未安装，人工浏览器渲染仅以本地 200 smoke 替代           |
 | E1/E2 JSONL 可解析、完整、失败项与复用来源准确              | history-export / shared                                    | `BATCH_LAB_JSONL_SCHEMA_VERSION`、export route、shared tests                                  | 已实现；导出仅读 `batch_lab` 冻结事实                                      |
 | 独立 Vercel SPA、API base、SPA rewrite、Backend CORS        | foundation / integration                                   | `packages/batch-lab/vercel.json`、README、ARCHITECTURE、Batch Lab spec                        | 已收口；Preview 需配置 `VITE_BATCH_LAB_API_URL` 与 backend `BATCH_LAB_URL` |
-| `batch_lab` 域、迁移、来源只读、平台写入隔离                | data-samples / postprocessing / execution / history-export | `110_batch_lab_samples.sql`、`20260916_*` migrations、module facts                            | 已实现；production 执行仍需手工 migration workflow 与 post-apply 记录      |
+| `batch_lab` 域、迁移、来源只读、平台写入隔离                | data-samples / postprocessing / execution / history-export | `20260920_batch_lab_samples.sql`、`20260916_*` migrations、module facts                       | 已实现；production 执行仍需手工 migration workflow 与 post-apply 记录      |
 | Spec/module facts、README、ARCHITECTURE                     | integration                                                | `.trellis/spec/batch-lab/app/*`、`module-updates.json`、README、ARCHITECTURE                  | 本任务完成                                                                 |
 
 ## 发布与恢复收口
@@ -53,4 +53,4 @@
 - 2026-09-17：确认六个前置子任务已归档；新增 `.trellis/spec/batch-lab/app/` 全套规范，更新 README 与 ARCHITECTURE。
 - 2026-09-17：生成并校验 `module-updates.json`，`python .\.trellis\scripts\module_knowledge.py check .trellis\tasks\09-11-batch-lab-integration-spec` 通过。
 - 2026-09-17：验证通过：`pnpm --filter @miniapp/shared test -- batch-lab-contract`、`pnpm --filter @miniapp/backend test -- batch-lab execution-service BatchLabExecutionRepository`、`pnpm --filter @miniapp/batch-lab test -- client query-keys workbench`、`pnpm --filter @miniapp/batch-lab build`、`pnpm -r typecheck`、`git diff --check`。
-- 2026-09-17：已知失败：`pnpm lint:migrations` 仅因历史已冻结 `110_batch_lab_samples.sql` 三位编号失败；`pnpm lint:imports` 因仓库 ESLint 命令 `--rule '{}'` 解析为字符串失败。
+- 2026-09-17：已知失败：`pnpm lint:migrations` 仅因历史已冻结 `20260920_batch_lab_samples.sql` 三位编号失败；`pnpm lint:imports` 因仓库 ESLint 命令 `--rule '{}'` 解析为字符串失败。

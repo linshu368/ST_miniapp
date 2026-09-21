@@ -49,7 +49,7 @@
 
 ## Database
 
-- `110_batch_lab_samples.sql`
+- `20260920_batch_lab_samples.sql`
   - Defines templates, previews, sample sets, sample snapshots and freeze function.
   - No deleted/archived fields.
 - `20260916_batch_lab_postprocessing.sql`

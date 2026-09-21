@@ -31,7 +31,7 @@ Backend conversation/voice/image repositories 通过按域 client/RPC 使用。B
 | `packages/shared/migrations/077_context_window.sql`                | 上下文水位                          |
 | `packages/shared/migrations/080_chat_message_voice.sql`            | 语音元数据                          |
 | `packages/shared/migrations/20260914_chat_message_images.sql`      | 图片 attempt、租约与 Storage bucket |
-| `packages/shared/migrations/110_batch_lab_samples.sql`             | Batch Lab 来源只读授权与样本冻结    |
+| `packages/shared/migrations/20260920_batch_lab_samples.sql`        | Batch Lab 来源只读授权与样本冻结    |
 | `packages/shared/migrations/20260916_batch_lab_execution.sql`      | Batch Lab 实验/attempt 状态机       |
 | `packages/shared/migrations/20260916_batch_lab_history_export.sql` | Batch Lab 历史血缘、备注与导出支持  |
 

@@ -22,7 +22,7 @@ SET LOCAL statement_timeout = '120s';
 DO $$
 BEGIN
   IF to_regclass('batch_lab.sample_sets') IS NULL THEN
-    RAISE EXCEPTION 'batch_lab.sample_sets is missing; run 110_batch_lab_samples.sql first';
+    RAISE EXCEPTION 'batch_lab.sample_sets is missing; run 20260920_batch_lab_samples.sql first';
   END IF;
   IF to_regclass('batch_lab.experiments') IS NULL THEN
     RAISE EXCEPTION 'batch_lab.experiments is missing; run 20260916_batch_lab_execution.sql first';

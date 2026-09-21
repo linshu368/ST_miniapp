@@ -17,7 +17,7 @@ last_verified_at: 2026-09-17
 
 ## 当前状态
 
-一阶段 schema 划分已生产落地，miniapp 空壳仍待收口。Batch Lab 使用独立内部调试域 `batch_lab`；`110_batch_lab_samples.sql` 管理样本 preview、冻结样本集、source reader/login 和 PostgREST service-role 访问边界。新增 `20260916_batch_lab_postprocessing.sql` 管理不可变 processor_versions、display_results、默认 none/v1 版本、RLS/ACL 和禁止 UPDATE/DELETE 的 trigger；`20260916_batch_lab_execution.sql` 与 `20260916_batch_lab_history_export.sql` 管理 experiment/attempt 状态机、copy/reuse 血缘、annotation 和 JSONL 导出事实。真实业务域不得依赖 `batch_lab`。
+一阶段 schema 划分已生产落地，miniapp 空壳仍待收口。Batch Lab 使用独立内部调试域 `batch_lab`；`20260920_batch_lab_samples.sql` 管理样本 preview、冻结样本集、source reader/login 和 PostgREST service-role 访问边界。新增 `20260916_batch_lab_postprocessing.sql` 管理不可变 processor_versions、display_results、默认 none/v1 版本、RLS/ACL 和禁止 UPDATE/DELETE 的 trigger；`20260916_batch_lab_execution.sql` 与 `20260916_batch_lab_history_export.sql` 管理 experiment/attempt 状态机、copy/reuse 血缘、annotation 和 JSONL 导出事实。真实业务域不得依赖 `batch_lab`。
 
 ## 入口与调用者
 
@@ -28,7 +28,7 @@ last_verified_at: 2026-09-17
 | 路径                                                               | 职责                                           |
 | ------------------------------------------------------------------ | ---------------------------------------------- |
 | `packages/shared/migrations/`                                      | migration 唯一来源                             |
-| `packages/shared/migrations/110_batch_lab_samples.sql`             | Batch Lab 样本域与只读授权                     |
+| `packages/shared/migrations/20260920_batch_lab_samples.sql`        | Batch Lab 样本域与只读授权                     |
 | `packages/shared/migrations/20260916_batch_lab_postprocessing.sql` | Batch Lab processor/display 存储与不可变约束   |
 | `packages/shared/migrations/20260916_batch_lab_execution.sql`      | Batch Lab experiment/attempt 状态机与 lease    |
 | `packages/shared/migrations/20260916_batch_lab_history_export.sql` | Batch Lab copy/reuse、annotation 与 JSONL 导出 |

@@ -2,7 +2,7 @@
 -- domain: batch_lab
 --
 -- Background:
--- 110_batch_lab_samples.sql grants SELECT on the three source tables used for sample
+-- 20260920_batch_lab_samples.sql grants SELECT on the three source tables used for sample
 -- assembly, but experience.chat_sessions and app_core.characters have RLS enabled.
 -- Without explicit SELECT policies, the restricted source login can read chat_history
 -- anchors but sees zero joined sessions/characters, so every preview is empty.
@@ -16,7 +16,7 @@ BEGIN;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'batch_lab_source_reader') THEN
-    RAISE EXCEPTION 'batch_lab_source_reader role is missing; run 110_batch_lab_samples.sql first';
+    RAISE EXCEPTION 'batch_lab_source_reader role is missing; run 20260920_batch_lab_samples.sql first';
   END IF;
   IF to_regclass('experience.chat_sessions') IS NULL THEN
     RAISE EXCEPTION 'experience.chat_sessions is missing';

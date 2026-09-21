@@ -18,7 +18,7 @@ import {
 } from './BatchLabSampleRepository.js';
 
 const MIGRATION_110_PATH = new URL(
-  '../../../../shared/migrations/110_batch_lab_samples.sql',
+  '../../../../shared/migrations/20260920_batch_lab_samples.sql',
   import.meta.url
 );
 
