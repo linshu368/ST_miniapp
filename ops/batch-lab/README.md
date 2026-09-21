@@ -30,8 +30,10 @@
 2. 通过 Supabase SQL Editor/受控 secret 流程执行：
    `ALTER ROLE batch_lab_source_login LOGIN PASSWORD '<secret>';`
 3. 将独立 direct/pooler URI 写入后端 secret `BATCH_LAB_SOURCE_DATABASE_URL`；URI 用户必须是
-   `batch_lab_source_login`（pooler 可为 `batch_lab_source_login.<ref>`），必须包含
-   `sslmode=require`，不得是 `postgres`/`service_role`，且不得进入浏览器 `VITE_*`。
+   `batch_lab_source_login`（pooler 可为 `batch_lab_source_login.<ref>`）。默认使用
+   `sslmode=require`；仅在证书链无法由运行时验证且风险已明确接受时使用
+   `sslmode=no-verify`。两者均不得使用 `postgres`/`service_role`，且连接串不得进入浏览器
+   `VITE_*`。
 4. 用新建的真实连接（不能用 postgres 后 `SET ROLE` 代替）验证：
    - `current_user = batch_lab_source_login`
    - `transaction_read_only = on`
