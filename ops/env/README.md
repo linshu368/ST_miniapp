@@ -31,4 +31,7 @@
 - **`PORT`（backend）**：必须与 Railway 路由到容器的端口一致，缺失/不符会 502。
 - **`NEXT_PUBLIC_API_URL` 留空**：没有 rewrites 兜底，浏览器会把 `/api/*` 打到 Vercel
   自身域名上并全部 404。
+- **Preview 残留上一轮 PR 地址**：Vercel Preview 的 `NEXT_PUBLIC_API_URL` 是项目级共享变量。
+  Feature PR 构建必须按当前 PR 号写成 `https://stminiapp-pr-{n}.up.railway.app`，不能沿用
+  `pr-322` 这类旧环境；解析逻辑在 `packages/frontend/resolve-public-api-url.mjs`。
 - **密钥不入仓**：模板里全是占位/说明，真实密钥只在控制台注入。
