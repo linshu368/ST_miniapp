@@ -307,6 +307,31 @@ describe('execute（失败路径）', () => {
     expect(savedHistory()).toHaveLength(0);
   });
 
+  it('internal_research policy skips wallet, free quota and chat_history settlement', async () => {
+    walletBalance = 0;
+    const fetchMock = stubUpstream(() =>
+      sseResponse([
+        DELTA('research reply'),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
+
+    const result = await execute(
+      request({ policy: { kind: 'internal_research' } }),
+      undefined,
+      fakeLogger()
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      status: 'success',
+      content: 'research reply',
+      chargeId: null,
+    });
+    expect(savedHistory()).toHaveLength(0);
+  });
+
   it('上游非 2xx：不扣费，落 upstream_error 并带上状态码', async () => {
     stubUpstream(() => new Response('rate limited', { status: 429 }));
 
