@@ -59,6 +59,20 @@ describe('resolveBatchLabSourceConfig', () => {
     expect(result).toMatchObject({ configured: true, projectRef: 'zoqelpfhurwehlvypryl' });
   });
 
+  it('accepts encrypted production access without certificate verification when explicitly requested', () => {
+    const result = resolveBatchLabSourceConfig({
+      ...base,
+      backendEnvironment: 'production',
+      sourceEnvironment: 'production',
+      env: {
+        BATCH_LAB_SOURCE_DATABASE_URL:
+          'postgresql://batch_lab_source_login.wbtsfzozlmurljvglhpn:secret@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=no-verify',
+        BATCH_LAB_ALLOW_PRODUCTION_SOURCE: 'true',
+      },
+    });
+    expect(result).toMatchObject({ configured: true, environment: 'production' });
+  });
+
   it('allows a non-TLS local development test source for poolers that reset TLS handshakes', () => {
     const result = resolveBatchLabSourceConfig({
       ...base,

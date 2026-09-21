@@ -39,10 +39,12 @@ export function resolveBatchLabSourceConfig(input: {
   if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
     return unavailable('Batch Lab source database URL must use PostgreSQL');
   }
+  const sslMode = url.searchParams.get('sslmode');
   const isDevelopmentTestSource =
     input.nodeEnv === 'development' && input.sourceEnvironment === 'test';
-  if (url.searchParams.get('sslmode') !== 'require' && !isDevelopmentTestSource) {
-    return unavailable('Batch Lab source database URL must require TLS');
+  // no-verify 只跳过证书身份校验，仍要求 PostgreSQL TLS；禁止 production 明文连接。
+  if (sslMode !== 'require' && sslMode !== 'no-verify' && !isDevelopmentTestSource) {
+    return unavailable('Batch Lab source database URL must enable TLS');
   }
   let username: string;
   try {
