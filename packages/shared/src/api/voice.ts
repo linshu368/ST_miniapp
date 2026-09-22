@@ -5,6 +5,33 @@
  * 用户消息、开场白不参与。音色与播放倍速是用户级偏好，对所有角色生效。
  */
 
+import type { FeatureFreeTrialQuotaView } from './feature-free-trials.js';
+import type { WalletDebitPolicy } from './wallet.js';
+
+export type MediaBillingMode = 'free_trial' | 'paid' | 'legacy_free';
+
+
+/**
+ * 媒体计费预览
+ * @returns 媒体计费预览
+ */
+export interface MediaBillingPreview {
+  /** 计费模式 */
+  billing_mode: MediaBillingMode;
+  /** 钱包扣费策略 */
+  wallet_policy: WalletDebitPolicy;
+  /** 价格星尘 */
+  price_credits: number;
+  /** 价格标签 */
+  price_label: string;
+  /** 免费体验次数限制 */
+  free_trial_limit: number | null;
+  /** 免费体验次数 */
+  free_trial_ordinal: number | null;
+  /** 免费体验剩余次数 */
+  free_trials_remaining: number | null;
+}
+
 /** 音色目录里的一项。id 是上游 voice_id，前端只做展示与回传，不解析。 */
 export interface VoiceOption {
   id: string;
@@ -41,9 +68,20 @@ export interface MessageVoice {
   last_error_code: string | null;
   /** 本次生成实扣星尘：成功为计费额度（默认 15），失败/未扣费为 0 */
   credits_charged: number;
+  /** 受理时固化的计费模式；旧行缺省按 legacy_free 兼容展示 */
+  billing_mode: MediaBillingMode;
+  /** 免费体验序号，仅 billing_mode=free_trial 时有值 */
+  free_trial_ordinal: number | null;
+  /** 本 attempt 的价格快照；免费体验也保留原价用于展示和审计 */
+  price_credits: number;
+  price_label: string;
   created_at: string;
 }
 
+/**
+ * 语音配置
+ * @returns 语音配置
+ */
 export interface VoiceConfig {
   /** 用户选定的音色；未设置过时后端已回落到目录默认项，前端拿到的一定是有效值 */
   voice_id: string;
@@ -51,6 +89,10 @@ export interface VoiceConfig {
   playback_rate: number;
 }
 
+/**
+ * 语音计费配置
+ * @returns 语音计费配置
+ */
 export interface VoiceBillingConfig {
   /** voice_billing_enabled：开关关闭时受理阶段不做 402 预检、后台不扣费，行为与现网一致 */
   enabled: boolean;
@@ -81,6 +123,10 @@ export interface GetVoiceConfigData {
   playback_rates: number[];
   /** 计费配置：价格、开关、入口旁文案。前端展示价格只读这份，改价不发版 */
   billing: VoiceBillingConfig;
+  /** 当前用户的语音免费体验状态；展示只读，最终以后端受理/结算为准 */
+  free_trial: FeatureFreeTrialQuotaView;
+  /** 入口下一次点击的服务端预览口径 */
+  next_billing: MediaBillingPreview;
   /** 长度上限：送进 TTS 的最终文本 ≤ max_spoken_chars */
   limits: VoiceLimitsConfig;
   /** 失败提示文案：按 error_code 选用，避免前端写死 */
