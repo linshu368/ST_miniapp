@@ -8,6 +8,7 @@ import type {
   PostDailyCheckinData,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
+import { requestLogger } from '../lib/logger.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import {
   MiniappWalletRepository,
@@ -86,9 +87,21 @@ export default async function walletRoutes(app: FastifyInstance) {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
     const dbUser = await getOrCreateDbUser(request.user);
+    const started = Date.now();
 
     try {
       const result = await wallets.claimDailyCheckin(dbUser.id);
+      requestLogger(request.log, 'wallet').biz.info(
+        {
+          event: 'wallet.checkin.claimed',
+          userId: dbUser.id,
+          rewardCredits: result.checkin.reward_credits,
+          baseRewardCredits: result.checkin.base_reward_credits,
+          vipRewardCredits: result.checkin.vip_reward_credits,
+          durationMs: Date.now() - started,
+        },
+        '签到奖励已领取'
+      );
       return reply.send(
         ok<PostDailyCheckinData>({
           wallet: toWalletBalance(result.wallet),
@@ -96,6 +109,8 @@ export default async function walletRoutes(app: FastifyInstance) {
             claimed_at: result.checkin.claimed_at,
             next_claim_at: result.checkin.next_claim_at,
             reward_credits: result.checkin.reward_credits,
+            base_reward_credits: result.checkin.base_reward_credits,
+            vip_reward_credits: result.checkin.vip_reward_credits,
           },
         })
       );
