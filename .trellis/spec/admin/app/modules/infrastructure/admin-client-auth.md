@@ -5,8 +5,8 @@ scope: admin
 category: infrastructure
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/09-11-batch-lab-frontend-workbench/
-last_verified_at: 2026-09-16
+last_verified_task: .trellis/tasks/09-17-batch-lab-prototype-alignment/
+last_verified_at: 2026-09-22
 ---
 
 # Admin API、鉴权与环境基建
@@ -16,6 +16,8 @@ last_verified_at: 2026-09-16
 提供 Supabase 会话、环境选择、统一 API helper、UI 状态和构建配置。Batch Lab 属于独立内部 SPA，不复用 Admin 登录/session 或 Refine 资源层；它只复用内部 Vite SPA 的公开配置边界与后端权威环境展示模式。
 
 ## 当前状态
+
+Batch Lab 原型对齐后的样本详情、实验操作、对比详情、手机宽度富文本预览和新建实验逐变体配置继续使用自身 API client/React Query；模型密钥仅由 Backend 的 `BATCH_LAB_MODEL_KEY` 提供，不进入 Vite 配置或浏览器请求。
 
 test/prod 配置隔离，Browser 只使用公开 anon 配置。Batch Lab V1 浏览器端只读取 `VITE_BATCH_LAB_API_URL`，通过 `/api/batch-lab/context` 获取 backend/source environment 和能力开关；应用内不提供登录、账号、角色或环境切换，不持有 Supabase anon key、service-role、数据库连接或供应商密钥。
 
@@ -61,3 +63,4 @@ Admin test/typecheck/build。Batch Lab 变更至少运行 `pnpm --filter @miniap
 ## 变更记录
 
 - 2026-09-16：任务 `Batch Lab 前端工作台功能`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-frontend-workbench/`）更新模块知识文档；提交前归档，见本任务后续 Git 提交。
+- 2026-09-22：任务 `Batch Lab 原型一致性修复规划`（`.trellis/tasks/archive/2026-09/09-17-batch-lab-prototype-alignment/`）补充 Batch Lab 原型对齐后的当前实现事实；commit：`212942339cb51b2419b01149828a1b4ec78074d7`。

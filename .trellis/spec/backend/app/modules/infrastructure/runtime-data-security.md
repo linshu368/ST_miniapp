@@ -5,8 +5,8 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
-last_verified_at: 2026-09-17
+last_verified_task: .trellis/tasks/09-17-batch-lab-prototype-alignment/
+last_verified_at: 2026-09-22
 ---
 
 # 运行时、鉴权与数据访问基建
@@ -16,6 +16,8 @@ last_verified_at: 2026-09-17
 提供配置、Telegram/运营鉴权、按域数据库 client、repository、日志和后台任务基座。Batch Lab 仅作为内部调试平台接入，不反向成为真实业务域依赖。
 
 ## 当前状态
+
+Batch Lab 原型对齐后，样本详情/软删除、实验级 purpose 与逐变体 provider/model/output preset、结果详情读取，以及草稿启动、协作停止、软删除、单次/至多 10 次批量执行均通过同一 feature route/service/repository 边界提供；浏览器不接触 `BATCH_LAB_MODEL_KEY`。
 
 配置由 runtime config 与 `platform/config.ts` 集中解析，Supabase 按域访问，服务日志使用 Pino。Batch Lab 入口由 feature flag、精确 CORS origin、权威数据库环境和来源只读连接共同 fail closed；样本 preview 使用专用 `pg` 只读来源连接补齐权威快照，平台写入只走 `batch_lab` repository/RPC。后处理包含不可变 processor version、display result 持久化和 worker-thread regex executor。Backend execution 新增 experiment/attempt repository、worker run-once lease runner、`SKIP LOCKED` 领取和有限重试；worker 只记录内部 ID、状态、耗时/计数摘要，不记录 prompt、回复正文、token 或 secret。
 Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/model-tiers.ts` 集中读取 `llm_model_catalog`，损坏时降级到 `DEFAULT_CATALOG`，不再读取旧 tiers key。PostHog capture 使用 `POSTHOG_API_KEY`/`POSTHOG_HOST`/`POSTHOG_TIMEOUT_MS`，缺 key 或非法 host 时 no-op。
@@ -77,3 +79,4 @@ Batch Lab spec、Vercel Preview API base、CORS、发布顺序、停止条件和
 - 2026-09-17：任务 `Batch Lab 集成验收、发布与 Spec 收口`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-integration-spec/`）收口 Batch Lab integration/spec、发布回滚、环境与剩余人工核验事实；提交前归档，见本任务后续 Git 提交。
   提供配置、Telegram/运营鉴权、域数据库 client、repository、日志、后台任务基座，以及非关键服务端 PostHog capture。不拥有具体业务状态机。
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）记录 PostHog capture 泛化为服务端非关键终态事件；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
+- 2026-09-22：任务 `Batch Lab 原型一致性修复规划`（`.trellis/tasks/archive/2026-09/09-17-batch-lab-prototype-alignment/`）补充 Batch Lab 原型对齐后的当前实现事实；commit：`212942339cb51b2419b01149828a1b4ec78074d7`。

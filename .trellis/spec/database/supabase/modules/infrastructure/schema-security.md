@@ -5,8 +5,8 @@ scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
-last_verified_at: 2026-09-17
+last_verified_task: .trellis/tasks/09-17-batch-lab-prototype-alignment/
+last_verified_at: 2026-09-22
 ---
 
 # Schema、RLS 与迁移执行基建
@@ -16,6 +16,8 @@ last_verified_at: 2026-09-17
 定义八域归属、跨域边界、RLS/grant、日期命名、账本治理和 `psql` 单文件迁移纪律。生产迁移必须测试优先、人工执行并记录 shape、权限、容量与回滚。
 
 ## 当前状态
+
+`20260917_batch_lab_prototype_alignment.sql`、`20260917_batch_lab_experiment_controls.sql` 与 `20260917_batch_lab_targeted_worker.sql` 以增量方式补齐原型字段、实验控制和定向执行 RPC；应用读路径对迁移未到位环境保留有限兼容降级，但写入与浏览器验收仍以前置迁移为准。
 
 一阶段 schema 划分已生产落地，miniapp 空壳仍待收口。Batch Lab 使用独立内部调试域 `batch_lab`；`20260920_batch_lab_samples.sql` 管理样本 preview、冻结样本集、source reader/login 和 PostgREST service-role 访问边界。新增 `20260916_batch_lab_postprocessing.sql` 管理不可变 processor_versions、display_results、默认 none/v1 版本、RLS/ACL 和禁止 UPDATE/DELETE 的 trigger；`20260916_batch_lab_execution.sql` 与 `20260916_batch_lab_history_export.sql` 管理 experiment/attempt 状态机、copy/reuse 血缘、annotation 和 JSONL 导出事实。真实业务域不得依赖 `batch_lab`。
 
@@ -65,3 +67,4 @@ Batch Lab postprocessing、execution 与 history/export migrations 尚需人工�
 - 2026-09-16：任务 `Batch Lab 后处理与富文本渲染`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-postprocessing/`）更新模块知识文档；commit：`1f41de3952d8b4bad42ea59fb4a439d08d2cab26`。
 - 2026-09-17：任务 `Batch Lab 集成验收、发布与 Spec 收口`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-integration-spec/`）收口 Batch Lab integration/spec、发布回滚、环境与剩余人工核验事实；提交前归档，见本任务后续 Git 提交。
   定义八域归属、跨域边界、RLS/grant，以及日期命名、账本治理和 `psql` 单文件迁移纪律。
+- 2026-09-22：任务 `Batch Lab 原型一致性修复规划`（`.trellis/tasks/archive/2026-09/09-17-batch-lab-prototype-alignment/`）补充 Batch Lab 原型对齐后的当前实现事实；commit：`212942339cb51b2419b01149828a1b4ec78074d7`。

@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
-last_verified_at: 2026-09-17
+last_verified_task: .trellis/tasks/09-17-batch-lab-prototype-alignment/
+last_verified_at: 2026-09-22
 ---
 
 # 会话与语音存储
@@ -16,6 +16,8 @@ last_verified_at: 2026-09-17
 维护 experience 域会话、轮次、Prompt 快照和语音图片 attempt 元数据。Batch Lab 可以读取冻结样本副本用于内部调试，但不得把实验输出写回真实会话存储。
 
 ## 当前状态
+
+Batch Lab 样本集支持最小轮次元数据、详情分页和软删除；实验记录保存 purpose、逐变体 provider/model/output preset，并以独立结果详情读取冻结样本、逐轮 raw/display 结果，仍不回写真实会话域。
 
 多会话、revision、软删、上下文水位与原子开轮 RPC 已落地；图片 attempt、单 message active/current 唯一约束与 SKIP LOCKED 租约领取已由 test migration 落地。Batch Lab 样本 preview 可通过专用只读角色读取 `experience.chat_history` 与 `experience.chat_sessions` 作为冻结样本来源；该读取不改变 conversation 真相源，也不允许写入 experience 域。Backend execution 使用冻结后的 `batch_lab.sample_snapshots` 和 `batch_lab.experiment_attempts`，不重新查询线上会话补事实。History/export migration 为 `batch_lab.experiments` 增加 copy/reuse 血缘列，并新增 `batch_lab.annotations` 保存轻量备注；JSONL 导出只读取 `batch_lab` 冻结事实。
 
@@ -66,3 +68,4 @@ Backend repository integration 与 MVP regression；Batch Lab 相关 preview/fre
 - 2026-09-17：任务 `Batch Lab 集成验收、发布与 Spec 收口`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-integration-spec/`）收口 Batch Lab integration/spec、发布回滚、环境与剩余人工核验事实；提交前归档，见本任务后续 Git 提交。
   last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
   last_verified_at: 2026-09-14
+- 2026-09-22：任务 `Batch Lab 原型一致性修复规划`（`.trellis/tasks/archive/2026-09/09-17-batch-lab-prototype-alignment/`）补充 Batch Lab 原型对齐后的当前实现事实；commit：`212942339cb51b2419b01149828a1b4ec78074d7`。

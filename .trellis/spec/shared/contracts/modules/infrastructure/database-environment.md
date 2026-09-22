@@ -5,8 +5,8 @@ scope: shared
 category: infrastructure
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
-last_verified_at: 2026-09-11
+last_verified_task: .trellis/tasks/09-17-batch-lab-prototype-alignment/
+last_verified_at: 2026-09-22
 ---
 
 # 数据库环境与迁移公共配置
@@ -16,6 +16,8 @@ last_verified_at: 2026-09-11
 提供 test/production 数据库配置解析与 migration 唯一来源约定。
 
 ## 当前状态
+
+Batch Lab 共享契约现已覆盖样本详情/删除、实验 purpose 与逐变体 provider/model/output preset、结果详情及实验控制；对应增量迁移仍遵循 test-first、单文件手工执行与浏览器零 secret 边界。
 
 迁移集中在 `packages/shared/migrations`，新文件使用日期命名；远端 workflow 通过 `psql` 执行并使用 `supabase_migrations.repo_migrations` 查重/记账，环境必须显式区分。Batch Lab 浏览器契约复用相同环境口径，公开 preview/sample-set DTO、source environment、digest 与容量上限，但不暴露数据库连接配置。
 
@@ -60,3 +62,4 @@ Shared tests 与 database spec 的手工门禁。
 
 - 2026-09-16：任务 `Batch Lab 数据库域、环境与样本集`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-data-samples/`）更新模块知识文档；commit：`14124a5b9df62627bb9fddfd722194206a0aa83b`。
 - 2026-09-17：任务 `Batch Lab 集成验收、发布与 Spec 收口`（`.trellis/tasks/archive/2026-09/09-11-batch-lab-integration-spec/`）收口 Batch Lab integration/spec、发布回滚、环境与剩余人工核验事实；提交前归档，见本任务后续 Git 提交。
+- 2026-09-22：任务 `Batch Lab 原型一致性修复规划`（`.trellis/tasks/archive/2026-09/09-17-batch-lab-prototype-alignment/`）补充 Batch Lab 原型对齐后的当前实现事实；commit：`212942339cb51b2419b01149828a1b4ec78074d7`。
