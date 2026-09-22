@@ -1,0 +1,48 @@
+{
+  "id": "miniapp-vip-model-ui",
+  "name": "miniapp-vip-model-ui",
+  "title": "MiniApp VIP 功能构建与模型显示 UI 更新",
+  "description": "构建 MiniApp VIP 时长权益、双钱包用途与原子扣退、支付履约、到期提醒、媒体免费体验，并将模型选择入口迁移到聊天页顶部。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P0",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-09-21",
+  "completedAt": null,
+  "branch": "dev_vip_0920",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": ["09-21-vip-voice-free-trials", "09-21-vip-image-free-trials"],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.business.engagement-support",
+        "frontend.business.wallet-payment",
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.business.conversation-generation",
+        "backend.business.engagement-support",
+        "backend.business.voice-message",
+        "backend.business.wallet-payment",
+        "backend.infrastructure.runtime-data-security",
+        "shared.business.conversation-contracts",
+        "shared.business.engagement-support-contracts",
+        "shared.business.wallet-payment-contracts",
+        "database.business.billing-payment",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}
