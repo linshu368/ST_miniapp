@@ -1,4 +1,11 @@
-import { MAX_IMAGE_PROMPT_CHARS, type GetImageConfigData } from '@miniapp/shared';
+import {
+  FEATURE_FREE_TRIAL_LIMIT,
+  MAX_IMAGE_PROMPT_CHARS,
+  type FeatureFreeTrialQuotaView,
+  type GetImageConfigData,
+  type ImageGenerationTier,
+  type VipEntitlementSummary,
+} from '@miniapp/shared';
 import { fetchRuntimeConfigEntries } from '../../platform/runtime-config.js';
 import { config } from '../../platform/config.js';
 import { DEFAULT_IMAGE_DESCRIPTION_SYSTEM_PROMPT } from '../generation/image-upstream.js';
@@ -19,6 +26,10 @@ const IMAGE_KEYS = [
   'image_generation_failed_hint',
   'image_failed_unknown_hint',
   'image_text_model_config',
+  'image_advanced_enabled',
+  'image_advanced_generation_credits',
+  'image_advanced_price_label',
+  'image_advanced_provider_config',
 ] as const;
 
 export interface ImageRuntimeConfig {
@@ -37,6 +48,7 @@ export interface ImageRuntimeConfig {
   generationFailedHint: string;
   failedUnknownHint: string;
   textModel: ImageTextModelConfig;
+  advanced: AdvancedImageRuntimeConfig;
 }
 
 export interface ImageTextModelConfig {
@@ -44,6 +56,15 @@ export interface ImageTextModelConfig {
   apiKey: string;
   model: string;
   source: 'runtime' | 'deepseek_default';
+}
+
+export interface AdvancedImageRuntimeConfig {
+  enabled: boolean;
+  creditsPerGeneration: number;
+  priceLabel: string;
+  provider: 'liaobots_grok' | 'replicate_z' | null;
+  model: string | null;
+  baseUrlHost: string | null;
 }
 
 /** 读取图片生成运营配置；缺失时仅回落到 migration 同款默认值，避免前端写死价格和限制。 */
@@ -83,6 +104,12 @@ export async function getImageRuntimeConfig(): Promise<ImageRuntimeConfig> {
       '本次没有消耗星尘。可以直接重试，或者把描述改一改再试。'
     ),
     textModel: resolveImageTextModelConfig(entries.get('image_text_model_config')?.value),
+    advanced: resolveAdvancedImageRuntimeConfig({
+      enabled: entries.get('image_advanced_enabled')?.value,
+      credits: entries.get('image_advanced_generation_credits')?.value,
+      priceLabel: entries.get('image_advanced_price_label')?.value,
+      providerConfig: entries.get('image_advanced_provider_config')?.value,
+    }),
   };
 }
 
@@ -103,26 +130,201 @@ export function resolveImageTextModelConfig(value: unknown): ImageTextModelConfi
 }
 
 export function toImageConfigData(config: ImageRuntimeConfig): GetImageConfigData {
-  return {
-    enabled: config.enabled,
-    billing: {
-      enabled: config.enabled,
-      credits_per_generation: config.creditsPerGeneration,
-      price_label: config.priceLabel,
+  return toUserImageConfigData({
+    config,
+    basicFreeTrial: emptyBasicImageFreeTrialQuota(),
+    vipStatus: {
+      active: false,
+      remaining_days: 0,
+      valid_until: null,
     },
+  });
+}
+
+export function toUserImageConfigData(input: {
+  config: ImageRuntimeConfig;
+  basicFreeTrial: FeatureFreeTrialQuotaView;
+  vipStatus: VipEntitlementSummary;
+}): GetImageConfigData {
+  const { config: imageConfig, basicFreeTrial, vipStatus } = input;
+  const basicProviderConfigured = Boolean(
+    imageConfig.enabled &&
+      config.image.liaobotsAuth &&
+      config.image.liaobotsBase &&
+      config.image.grokModel
+  );
+  const advancedConfigComplete = isAdvancedImageConfigured(imageConfig.advanced);
+  const advancedLockedReason =
+    !imageConfig.advanced.enabled || !advancedConfigComplete
+      ? 'ADVANCED_IMAGE_UNAVAILABLE'
+      : !vipStatus.active
+        ? 'VIP_REQUIRED'
+        : null;
+  return {
+    enabled: imageConfig.enabled,
+    billing: {
+      enabled: imageConfig.enabled,
+      credits_per_generation: imageConfig.creditsPerGeneration,
+      price_label: imageConfig.priceLabel,
+    },
+    tiers: {
+      basic: {
+        tier: 'basic',
+        enabled: imageConfig.enabled,
+        available: basicProviderConfigured,
+        billing: {
+          enabled: imageConfig.enabled,
+          credits_per_generation: imageConfig.creditsPerGeneration,
+          price_label: imageConfig.priceLabel,
+        },
+        wallet_policy: 'main_only',
+        requires_vip: false,
+        free_trial: basicFreeTrial,
+        next_billing: {
+          billing_mode: imageConfig.enabled
+            ? basicFreeTrial.free_trials_remaining > 0
+              ? 'free_trial'
+              : 'paid'
+            : 'legacy_free',
+          wallet_policy: 'main_only',
+          price_credits: imageConfig.creditsPerGeneration,
+          price_label: imageConfig.priceLabel,
+          free_trial_limit: basicFreeTrial.free_trial_limit,
+          free_trial_ordinal: imageConfig.enabled ? basicFreeTrial.next_trial_ordinal : null,
+          free_trials_remaining: imageConfig.enabled ? basicFreeTrial.free_trials_remaining : null,
+        },
+        locked_reason: null,
+      },
+      advanced: {
+        tier: 'advanced',
+        enabled: imageConfig.enabled && imageConfig.advanced.enabled,
+        available: imageConfig.enabled && advancedLockedReason === null,
+        billing: {
+          enabled: imageConfig.enabled && imageConfig.advanced.enabled,
+          credits_per_generation: imageConfig.advanced.creditsPerGeneration,
+          price_label: imageConfig.advanced.priceLabel,
+        },
+        wallet_policy: 'main_only',
+        requires_vip: true,
+        free_trial: null,
+        next_billing: {
+          billing_mode: 'paid',
+          wallet_policy: 'main_only',
+          price_credits: imageConfig.advanced.creditsPerGeneration,
+          price_label: imageConfig.advanced.priceLabel,
+          free_trial_limit: null,
+          free_trial_ordinal: null,
+          free_trials_remaining: null,
+        },
+        locked_reason: imageConfig.enabled ? advancedLockedReason : 'ADVANCED_IMAGE_UNAVAILABLE',
+      },
+    },
+    vip_status: vipStatus,
     limits: {
-      max_prompt_chars: config.maxPromptChars,
-      width: config.width,
-      height: config.height,
-      max_output_bytes: config.maxOutputBytes,
+      max_prompt_chars: imageConfig.maxPromptChars,
+      width: imageConfig.width,
+      height: imageConfig.height,
+      max_output_bytes: imageConfig.maxOutputBytes,
     },
     hints: {
-      prompt_policy: config.promptPolicy,
-      prompt_over_limit: config.promptOverLimitHint,
-      description_failed: config.descriptionFailedHint,
-      generation_failed: config.generationFailedHint,
-      failed_unknown: config.failedUnknownHint,
+      prompt_policy: imageConfig.promptPolicy,
+      prompt_over_limit: imageConfig.promptOverLimitHint,
+      description_failed: imageConfig.descriptionFailedHint,
+      generation_failed: imageConfig.generationFailedHint,
+      failed_unknown: imageConfig.failedUnknownHint,
     },
+  };
+}
+
+export function getImageTierRuntimeConfig(
+  imageConfig: ImageRuntimeConfig,
+  tier: ImageGenerationTier
+): {
+  tier: ImageGenerationTier;
+  creditsPerGeneration: number;
+  priceLabel: string;
+  provider: 'liaobots_grok' | 'replicate_z';
+  model: string;
+  baseUrlHost: string | null;
+  width: number;
+  height: number;
+} | null {
+  if (tier === 'basic') {
+    if (
+      !imageConfig.enabled ||
+      !config.image.liaobotsAuth ||
+      !config.image.liaobotsBase ||
+      !config.image.grokModel
+    ) {
+      return null;
+    }
+    return {
+      tier,
+      creditsPerGeneration: imageConfig.creditsPerGeneration,
+      priceLabel: imageConfig.priceLabel,
+      provider: 'liaobots_grok',
+      model: config.image.grokModel,
+      baseUrlHost: readUrlHost(config.image.liaobotsBase),
+      width: imageConfig.width,
+      height: imageConfig.height,
+    };
+  }
+  if (
+    !imageConfig.enabled ||
+    !imageConfig.advanced.enabled ||
+    !isAdvancedImageConfigured(imageConfig.advanced)
+  ) {
+    return null;
+  }
+  return {
+    tier,
+    creditsPerGeneration: imageConfig.advanced.creditsPerGeneration,
+    priceLabel: imageConfig.advanced.priceLabel,
+    provider: imageConfig.advanced.provider,
+    model: imageConfig.advanced.model,
+    baseUrlHost: imageConfig.advanced.baseUrlHost,
+    width: imageConfig.width,
+    height: imageConfig.height,
+  };
+}
+
+export function isAdvancedImageConfigured(value: AdvancedImageRuntimeConfig): value is AdvancedImageRuntimeConfig & {
+  provider: 'liaobots_grok' | 'replicate_z';
+  model: string;
+} {
+  if (!value.provider || !value.model) return false;
+  if (value.provider === 'liaobots_grok') return Boolean(config.image.liaobotsAuth && config.image.liaobotsBase);
+  return Boolean(config.image.replicateToken && config.image.replicateBase);
+}
+
+export function emptyBasicImageFreeTrialQuota(): FeatureFreeTrialQuotaView {
+  return {
+    feature: 'basic_image',
+    free_trial_limit: FEATURE_FREE_TRIAL_LIMIT,
+    free_trials_used: 0,
+    free_trials_reserved: 0,
+    free_trials_remaining: FEATURE_FREE_TRIAL_LIMIT,
+    next_trial_ordinal: 1,
+  };
+}
+
+function resolveAdvancedImageRuntimeConfig(input: {
+  enabled: unknown;
+  credits: unknown;
+  priceLabel: unknown;
+  providerConfig: unknown;
+}): AdvancedImageRuntimeConfig {
+  const providerConfig = isRecord(input.providerConfig) ? input.providerConfig : {};
+  const provider = readProvider(providerConfig.provider);
+  const model = readBoundedString(providerConfig.model, 256);
+  const base = provider === 'replicate_z' ? config.image.replicateBase : config.image.liaobotsBase;
+  return {
+    enabled: readBoolean(input.enabled, false),
+    creditsPerGeneration: readPositiveInteger(input.credits, 120),
+    priceLabel: readString(input.priceLabel, '120 星尘'),
+    provider,
+    model,
+    baseUrlHost: readUrlHost(base),
   };
 }
 
@@ -155,6 +357,18 @@ function readHttpUrl(value: unknown): string | null {
   try {
     const url = new URL(text);
     return url.protocol === 'https:' ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+function readProvider(value: unknown): 'liaobots_grok' | 'replicate_z' | null {
+  return value === 'liaobots_grok' || value === 'replicate_z' ? value : null;
+}
+
+function readUrlHost(value: string): string | null {
+  try {
+    return new URL(value).host;
   } catch {
     return null;
   }

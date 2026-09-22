@@ -1,11 +1,15 @@
 import type {
+  ImageGenerationTier,
   ImageErrorCode,
   ImagePromptSource,
+  MediaBillingMode,
   MessageImageAttempt,
   MessageImageState,
   MessageImageStatus,
+  WalletDebitPolicy,
 } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
+import { FeatureFreeTrialRepository } from './FeatureFreeTrialRepository.js';
 
 type NumericValue = string | number;
 
@@ -22,6 +26,8 @@ export interface ChatMessageImageRow {
   session_id: string;
   message_id: string;
   attempt_no: number;
+  /** 图片生成等级：basic、advanced */
+  image_tier: ImageGenerationTier | null;
   prompt_cn: string | null;
   prompt_source: ImagePromptSource | null;
   description_user_prompt: string | null;
@@ -35,6 +41,14 @@ export interface ChatMessageImageRow {
   output_format: string;
   price_credits: NumericValue;
   price_label: string;
+  /** 计费模式：免费体验、付费 */
+  billing_mode: MediaBillingMode | null;
+  /** 免费体验次数：1、2、3 */
+  free_trial_ordinal: number | null;
+  /** 计费额度：星尘 */
+  wallet_policy: WalletDebitPolicy | null;
+  /** 会员有效期：时间戳 */
+  vip_valid_until: string | null;
   status: ImageInternalStatus;
   is_current: boolean;
   lease_owner: string | null;
@@ -69,7 +83,13 @@ type ImageInternalStatus =
   | 'failed_unknown';
 
 interface SettlementResult {
-  charge_status?: 'charged' | 'already_charged' | 'insufficient_balance';
+  charge_status?:
+  | 'charged'
+  | 'already_charged'
+  | 'free_trial_consumed'
+  | 'already_free_trial_consumed'
+  | 'insufficient_balance'
+  | 'free_trial_invalid';
   ledger_id?: string | null;
   required?: NumericValue;
   available?: NumericValue;
@@ -78,6 +98,8 @@ interface SettlementResult {
 export class ChatMessageImageRepository {
   private readonly db = getDomainDb('experience');
   private readonly billingDb = getDomainDb('billing');
+  /** 免费体验仓库 */
+  private readonly freeTrials = new FeatureFreeTrialRepository();
 
   async listBySession(sessionId: string): Promise<MessageImageState[]> {
     const { data, error } = await this.db
@@ -111,17 +133,30 @@ export class ChatMessageImageRepository {
   }
 
   async createPending(input: {
+    id?: string;
     userId: string;
     sessionId: string;
     messageId: string;
+    /** 图片生成等级：basic、advanced */
+    tier: ImageGenerationTier;
     promptCn: string;
     promptSource: ImagePromptSource;
+    /** 图片生成提供商：liaobots_grok、replicate_z */
+    provider: 'liaobots_grok' | 'replicate_z';
     model: string;
     baseUrlHost: string | null;
     width: number;
     height: number;
     priceCredits: number;
     priceLabel: string;
+    /** 计费模式：免费体验、付费 */
+    billingMode: MediaBillingMode;
+    /** 免费体验次数：1、2、3 */
+    freeTrialOrdinal: number | null;
+    /** 钱包扣费策略：main_only、main_and_bonus */
+    walletPolicy: WalletDebitPolicy;
+    /** 会员有效期：时间戳 */
+    vipValidUntil: string | null;
   }): Promise<ChatMessageImageRow> {
     const inflight = await this.findInflightByMessage(input.messageId);
     if (inflight) throw new ImageConflictError();
@@ -130,13 +165,16 @@ export class ChatMessageImageRepository {
     const { data, error } = await this.db
       .from('chat_message_images')
       .insert({
+        ...(input.id ? { id: input.id } : {}),
         user_id: input.userId,
         session_id: input.sessionId,
         message_id: input.messageId,
         attempt_no: attemptNo,
+        /** 图片生成等级：basic、advanced */
+        image_tier: input.tier,
         prompt_cn: input.promptCn,
         prompt_source: input.promptSource,
-        provider: 'liaobots_grok',
+        provider: input.provider,
         model: input.model,
         base_url_host: input.baseUrlHost,
         width: input.width,
@@ -144,6 +182,14 @@ export class ChatMessageImageRepository {
         output_format: 'webp',
         price_credits: input.priceCredits,
         price_label: input.priceLabel,
+        /** 计费模式：免费体验、付费 */
+        billing_mode: input.billingMode,
+        /** 免费体验次数：1、2、3 */
+        free_trial_ordinal: input.freeTrialOrdinal,
+        /** 钱包扣费策略：main_only、main_and_bonus */
+        wallet_policy: input.walletPolicy,
+        /** 会员有效期：时间戳 */
+        vip_valid_until: input.vipValidUntil,
       })
       .select('*')
       .single();
@@ -161,6 +207,10 @@ export class ChatMessageImageRepository {
     sessionId: string;
     messageId: string;
     userPrompt: string;
+    /** 图片生成等级：basic、advanced */
+    tier: ImageGenerationTier;
+    /** 图片生成提供商：liaobots_grok、replicate_z */
+    provider: 'liaobots_grok' | 'replicate_z';
     model: string;
     baseUrlHost: string | null;
     width: number;
@@ -182,8 +232,10 @@ export class ChatMessageImageRepository {
         session_id: input.sessionId,
         message_id: input.messageId,
         attempt_no: attemptNo,
+        /** 图片生成等级：basic、advanced */
+        image_tier: input.tier,
         description_user_prompt: input.userPrompt,
-        provider: 'liaobots_grok',
+        provider: input.provider,
         model: input.model,
         base_url_host: input.baseUrlHost,
         width: input.width,
@@ -226,14 +278,50 @@ export class ChatMessageImageRepository {
     userId: string;
     sessionId: string;
     messageId: string;
+    /** 图片生成等级：basic、advanced */
+    tier: ImageGenerationTier;
     promptCn: string;
     promptSource: ImagePromptSource;
+    /** 图片生成提供商：liaobots_grok、replicate_z */
+    provider: 'liaobots_grok' | 'replicate_z';
+    /** 模型：grok、z */
+    model: string;
+    /** 图片生成提供商基础 URL 主机：https://grok.com、https://z.com */
+    baseUrlHost: string | null;
+    /** 图片宽度：1024、2048、4096 */
+    width: number;
+    /** 图片高度：1024、2048、4096 */
+    height: number;
+    /** 计费额度：星尘 */
+    priceCredits: number;
+    /** 计费标签：免费体验、付费 */
+    priceLabel: string;
+    /** 计费模式：免费体验、付费 */
+    billingMode: MediaBillingMode;
+    /** 免费体验次数：1、2、3 */
+    freeTrialOrdinal: number | null;
+    /** 钱包扣费策略：main_only、main_and_bonus */
+    walletPolicy: WalletDebitPolicy;
+    /** 会员有效期：时间戳 */
+    vipValidUntil: string | null;
   }): Promise<ChatMessageImageRow> {
     const { data, error } = await this.db
       .from('chat_message_images')
       .update({
+        image_tier: input.tier,
         prompt_cn: input.promptCn,
         prompt_source: input.promptSource,
+        provider: input.provider,
+        model: input.model,
+        base_url_host: input.baseUrlHost,
+        width: input.width,
+        height: input.height,
+        price_credits: input.priceCredits,
+        price_label: input.priceLabel,
+        billing_mode: input.billingMode,
+        free_trial_ordinal: input.freeTrialOrdinal,
+        wallet_policy: input.walletPolicy,
+        vip_valid_until: input.vipValidUntil,
         status: 'pending',
         stage: 'pending',
         next_attempt_at: new Date().toISOString(),
@@ -243,6 +331,7 @@ export class ChatMessageImageRepository {
       .eq('user_id', input.userId)
       .eq('session_id', input.sessionId)
       .eq('message_id', input.messageId)
+      .eq('image_tier', input.tier)
       .eq('status', 'draft_ready')
       .select('*')
       .maybeSingle();
@@ -322,6 +411,7 @@ export class ChatMessageImageRepository {
   }
 
   async markFailed(id: string, errorCode: ImageErrorCode, latencyMs: number): Promise<void> {
+    const row = await this.findById(id);
     await this.update(id, {
       status: 'failed',
       error_code: errorCode,
@@ -331,9 +421,12 @@ export class ChatMessageImageRepository {
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
+    // 免费体验：免费体验次数、免费体验额度、免费体验标签
+    await this.releaseFreeTrialIfNeeded(row);
   }
 
   async markFailedUnknown(id: string, errorCode: ImageErrorCode, latencyMs: number): Promise<void> {
+    const row = await this.findById(id);
     await this.update(id, {
       status: 'failed_unknown',
       error_code: errorCode,
@@ -343,6 +436,8 @@ export class ChatMessageImageRepository {
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
+    // 免费体验：免费体验次数、免费体验额度、免费体验标签
+    await this.releaseFreeTrialIfNeeded(row);
   }
 
   async settleReady(input: {
@@ -422,6 +517,26 @@ export class ChatMessageImageRepository {
     const { error } = await this.db.from('chat_message_images').update(patch).eq('id', id);
     if (error) throw new Error(`更新图片生成记录失败：${error.message}`);
   }
+
+  // 免费体验：免费体验次数、免费体验额度、免费体验标签
+  private async releaseFreeTrialIfNeeded(row: ChatMessageImageRow | null): Promise<void> {
+    if (
+      row?.image_tier !== 'basic' ||
+      row.billing_mode !== 'free_trial' ||
+      row.free_trial_ordinal === null
+    ) {
+      return;
+    }
+    try {
+      await this.freeTrials.release({
+        userId: row.user_id,
+        feature: 'basic_image',
+        referenceId: row.id,
+      });
+    } catch {
+      // 释放失败不覆盖原始失败原因；过期回收 RPC 会兜底释放名额。
+    }
+  }
 }
 
 export function toMessageImageAttempt(row: ChatMessageImageRow): MessageImageAttempt {
@@ -430,6 +545,7 @@ export function toMessageImageAttempt(row: ChatMessageImageRow): MessageImageAtt
     id: row.id,
     message_id: row.message_id,
     attempt_no: row.attempt_no,
+    tier: row.image_tier ?? 'basic',
     status: toPublicStatus(row.status),
     prompt_cn: row.prompt_cn,
     prompt_source: row.prompt_source,
@@ -442,6 +558,11 @@ export function toMessageImageAttempt(row: ChatMessageImageRow): MessageImageAtt
     price_credits: toNumber(row.price_credits),
     price_label: row.price_label,
     credits_charged: toNumber(row.credits_charged),
+    billing_mode: row.billing_mode ?? 'paid',
+    /** 免费体验次数：1、2、3 */
+    free_trial_ordinal: row.free_trial_ordinal ?? null,
+    wallet_policy: row.wallet_policy ?? 'main_only',
+    vip_valid_until: row.vip_valid_until ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     completed_at: row.completed_at,

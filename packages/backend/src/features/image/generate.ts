@@ -102,24 +102,43 @@ export async function runImageGeneration(input: {
       return;
     }
     const promptEn = await translateImagePrompt(attempt.prompt_cn, input.imageConfig.textModel);
-    const providerPrompt = buildProviderPrompt({
-      visualAnchor,
-      promptEn,
-      imageConfig: input.imageConfig,
-    });
+    const providerPrompt =
+      attempt.provider === 'replicate_z'
+        ? buildZProviderPrompt({ visualAnchor, promptEn })
+        : buildProviderPrompt({
+            visualAnchor,
+            promptEn,
+            imageConfig: input.imageConfig,
+          });
     // generating 是不可自动重领的 dispatch 边界；翻译失败或此前崩溃仍可由 leased 租约恢复。
     await images.markProviderDispatch(attempt.id, promptEn, providerPrompt);
 
     let providerImage: GeneratedProviderImage;
     try {
-      providerImage = await generateGrokImage({
-        prompt: providerPrompt,
-        width: attempt.width,
-        height: attempt.height,
-      });
+      providerImage =
+        attempt.provider === 'replicate_z'
+          ? await generateZImage({
+              prompt: providerPrompt,
+              width: attempt.width,
+              height: attempt.height,
+              model: attempt.model,
+            })
+          : await generateGrokImage({
+              prompt: providerPrompt,
+              width: attempt.width,
+              height: attempt.height,
+              model: attempt.model,
+            });
       terminalProvider = providerImage.provider;
     } catch (grokError) {
-      if (!config.image.replicateToken || !config.image.zModel) throw grokError;
+      if (
+        attempt.image_tier === 'advanced' ||
+        attempt.provider !== 'liaobots_grok' ||
+        !config.image.replicateToken ||
+        !config.image.zModel
+      ) {
+        throw grokError;
+      }
       terminalProvider = 'replicate_z';
       providerImage = await generateFallbackImage({
         attempt,
@@ -140,6 +159,7 @@ export async function runImageGeneration(input: {
       // 这仍属于主 provider 明确失败；Storage 上传异常则不能重复购买另一张图。
       if (
         providerImage.provider !== 'liaobots_grok' ||
+        attempt.image_tier === 'advanced' ||
         !config.image.replicateToken ||
         !config.image.zModel ||
         !isGrokOutputFailure(grokOutputError)
@@ -190,15 +210,34 @@ export async function runImageGeneration(input: {
         },
         input.log
       );
+    } else if (settlement.charge_status === 'free_trial_invalid') {
+      await compensateStoredImage(stored.path, attempt, input.log);
+      void observeImageGenerationFailed(
+        {
+          ...imageTelemetryBase(attempt, telemetryContext),
+          terminalStatus: 'failed',
+          errorCode: 'image_free_trial_invalid',
+          failureKind: 'settlement',
+          provider: providerImage.provider,
+          fallbackUsed: isFallbackProvider(providerImage.provider),
+          durationMs: Date.now() - startedAt,
+        },
+        input.log
+      );
     } else if (
       settlement.charge_status === 'charged' ||
-      settlement.charge_status === 'already_charged'
+      settlement.charge_status === 'already_charged' ||
+      settlement.charge_status === 'free_trial_consumed' ||
+      settlement.charge_status === 'already_free_trial_consumed'
     ) {
+      const freeTrial =
+        settlement.charge_status === 'free_trial_consumed' ||
+        settlement.charge_status === 'already_free_trial_consumed';
       void observeImageGenerationCompleted(
         {
           ...imageTelemetryBase(attempt, telemetryContext),
           chargeStatus: settlement.charge_status,
-          creditsCharged: Number(attempt.price_credits),
+          creditsCharged: freeTrial ? 0 : Number(attempt.price_credits),
           provider: providerImage.provider,
           fallbackUsed: isFallbackProvider(providerImage.provider),
           width: attempt.width,

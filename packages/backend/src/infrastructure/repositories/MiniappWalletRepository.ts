@@ -9,96 +9,195 @@ import { quoteDailyCheckinReward } from '../../features/vip/checkin-reward.js';
 
 type NumericValue = string | number;
 
+/**
+ * MiniApp 钱包行
+ */
 export interface MiniappWalletRow {
+  /** 用户 ID */
   user_id: string;
+  /** 主星尘 */
   main_credits: number;
+  /** 奖励星尘 */
   bonus_credits: number;
+  /** 总星尘 */
   total_credits: number | null;
+  /** 首次付费时间 */
   first_paid_at: string | null;
+  /** 最后一次付费时间 */
   last_paid_at: string | null;
+  /** 总付费金额 */
   total_paid_amount: string | number;
+  /** 创建时间 */
   created_at: string;
+  /** 更新时间 */
   updated_at: string;
 }
 
+/**
+ * 原始 MiniApp 钱包行
+ */
 type RawMiniappWalletRow = Omit<
   MiniappWalletRow,
   'main_credits' | 'bonus_credits' | 'total_credits'
 > & {
+  /** 主星尘 */
   main_credits: NumericValue;
+  /** 奖励星尘 */
   bonus_credits: NumericValue;
+  /** 总星尘 */
   total_credits: NumericValue | null;
 };
 
+/**
+ * 钱包 RPC 结果
+ */
 interface WalletRpcResult {
+  /** 钱包 */
   wallet?: RawMiniappWalletRow;
+  /** 签到 */
   checkin?: DailyCheckinRpcData;
+  /** 扣费 */
   charge?: LlmUsageChargeRow;
+  /** 扣费状态 */
   charge_status?: string;
+  /** 对账状态 */
   reconcile_status?: string;
+  /** 退款状态 */
   refund_status?: 'refunded' | 'already_refunded';
 }
 
+/**
+ * 媒体结算状态
+ */
+export type MediaSettlementStatus =
+  | 'charged'
+  | 'already_charged'
+  | 'free_trial_consumed'
+  | 'already_free_trial_consumed'
+  | 'insufficient_balance'
+  | 'free_trial_invalid';
+
+/**
+ * LLM 用量扣费行
+ */
 export interface LlmUsageChargeRow {
   charge_key: string;
+  /** 生成 ID */
   generation_id: string | null;
+  /** 用户 ID */
   user_id: string;
+  /** 模型 ID */
   model_id: string | null;
+  /** 模型 OpenRouter ID */
   model_openrouter_id: string;
+  /** 模型显示名称 */
   model_display_name: string;
+  /** 模型目录版本 */
   catalog_version: number;
+  /** 定价配置版本 */
   pricing_config_version: number;
+  /** 使用成本 USD */
   usage_cost_usd: NumericValue | null;
+  /** 汇率 */
   exchange_rate: NumericValue;
+  /** 模型标记 */
   model_markup: NumericValue;
+  /** 初始金额 */
   initial_amount: NumericValue;
+  /** 计算金额 */
   calculated_amount: NumericValue;
+  /** 扣费金额 */
   charged_amount: NumericValue;
+  /** 回退使用 */
   fallback_used: boolean;
+  /** 状态 */
   status: 'pending' | 'failed' | 'free' | 'charged' | 'partial' | 'reconciled' | 'historical';
+  /** 元数据 */
   metadata: Record<string, unknown>;
+  /** 创建时间 */
   created_at: string;
+  /** 对账时间 */
   reconciled_at: string | null;
 }
 
+
+/**
+ * 扣费 LLM 用量输入
+ */
 export interface ChargeLlmUsageInput {
+  /** 扣费 ID */
   chargeId: string;
+  /** 生成 ID */
   generationId: string | null;
+  /** 用户 ID */
   userId: string;
+  /** 模型 ID */
   modelId: string | null;
+  /** 模型 OpenRouter ID */
   modelOpenRouterId: string;
+  /** 模型显示名称 */
   modelDisplayName: string;
+  /** 模型目录版本 */
   catalogVersion: number;
+  /** 定价配置版本 */
   pricingConfigVersion: number;
+  /** 使用成本 USD */
   usageCostUsd: number | null;
+  /** 汇率 */
   exchangeRate: number;
+  /** 模型标记 */
   modelMarkup: number;
+  /** 计算金额 */
   calculatedAmount: number;
+  /** 回退使用 */
   fallbackUsed: boolean;
+  /** 元数据 */
   metadata?: Record<string, unknown>;
 }
 
+
+/**
+ * 签到 RPC 数据
+ */
 interface DailyCheckinRpcData {
+  /** 已领取时间 */
   claimed_at: string;
+  /** 下次领取时间 */
   next_claim_at: string;
+  /** 奖励星尘 */
   reward_credits: number;
+  /** 基础签到星尘 */
   base_reward_credits?: number;
+  /** VIP 签到星尘 */
   vip_reward_credits?: number;
+  /** 钱包 ledger ID */
   wallet_ledger_id?: string;
 }
 
 /** 配置缺失或无法解析时的基础签到额。线上发放仍以 runtime_config 为准。 */
 export const DEFAULT_DAILY_CHECKIN_BASE_CREDITS = 60;
 
+/**
+ * 签到状态
+ */
 export interface DailyCheckinStatus {
+  /** 可领取 */
   can_claim: boolean;
+  /** 上次领取时间 */
   last_claimed_at: string | null;
+  /** 下次领取时间 */
   next_claim_at: string | null;
+  /** 奖励星尘 */
   reward_credits: number;
+  /** 基础签到星尘 */
   base_reward_credits: number;
+  /** VIP 签到星尘 */
   vip_reward_credits: number;
 }
 
+/**
+ * MiniApp 钱包仓库
+ */
 export class MiniappWalletRepository {
   /**
    * 本 repository 横跨三个域，所以显式持有三个域客户端：
@@ -112,6 +211,11 @@ export class MiniappWalletRepository {
   private readonly appCoreDb = getDomainDb('app_core');
   private readonly featuresDb = getDomainDb('miniapp_features');
 
+  /**
+   * 创建或获取 MiniApp 钱包
+   * @param userId 用户 ID
+   * @returns MiniApp 钱包
+   */
   async getOrCreate(userId: string): Promise<MiniappWalletRow> {
     const existing = await this.findByUserId(userId);
     if (existing) return existing;
@@ -131,6 +235,11 @@ export class MiniappWalletRepository {
     return normalizeWallet(data as RawMiniappWalletRow);
   }
 
+  /**
+   * 查询 MiniApp 钱包
+   * @param userId 用户 ID
+   * @returns MiniApp 钱包
+   */
   private async findByUserId(userId: string): Promise<MiniappWalletRow | null> {
     const { data, error } = await this.db
       .from('user_wallets')
@@ -151,6 +260,32 @@ export class MiniappWalletRepository {
     return wallet?.first_paid_at != null;
   }
 
+  /**
+   * 预检查主星尘余额
+   * @param userId 用户 ID
+   * @param requiredAmount 所需星尘
+   * @returns 预检查结果
+   */
+  async precheckMainCredits(userId: string, requiredAmount: number): Promise<
+    | { ok: true; wallet: MiniappWalletRow }
+    | { ok: false; creditsRequired: number; creditsAvailable: number; wallet: MiniappWalletRow }
+  > {
+    const wallet = await this.getOrCreate(userId);
+    return wallet.main_credits < requiredAmount
+      ? {
+        ok: false,
+        creditsRequired: requiredAmount,
+        creditsAvailable: wallet.main_credits,
+        wallet,
+      }
+      : { ok: true, wallet };
+  }
+
+  /**
+   * 扣费 LLM 用量
+   * @param input 扣费 LLM 用量输入
+   * @returns 扣费 LLM 用量结果
+   */
   async chargeLlmUsage(input: ChargeLlmUsageInput): Promise<{
     wallet: MiniappWalletRow;
     charge: LlmUsageChargeRow;
@@ -185,6 +320,11 @@ export class MiniappWalletRepository {
     };
   }
 
+  /**
+   * 对账 LLM 用量扣费
+   * @param input 对账 LLM 用量扣费输入
+   * @returns 对账 LLM 用量扣费结果
+   */
   async reconcileLlmUsage(input: {
     chargeId: string;
     usageCostUsd: number;
@@ -205,6 +345,11 @@ export class MiniappWalletRepository {
     return { wallet: normalizeWallet(result.wallet), charge: result.charge };
   }
 
+  /**
+   * 查询 LLM 用量扣费
+   * @param chargeId 扣费 ID
+   * @returns LLM 用量扣费
+   */
   async findLlmUsageCharge(chargeId: string): Promise<LlmUsageChargeRow | null> {
     const { data, error } = await this.db
       .from('llm_usage_charges')
@@ -262,6 +407,49 @@ export class MiniappWalletRepository {
     };
   }
 
+  /**
+   * 语音生成结算
+   * @param input 语音生成结算输入
+   * @returns 语音生成结算结果
+   */
+  async settleVoiceGeneration(input: {
+    audioId: string;
+    userId: string;
+    amount: number;
+    metadata?: Record<string, unknown>;
+  }): Promise<{
+    wallet: MiniappWalletRow;
+    chargeStatus: MediaSettlementStatus;
+    charged: boolean;
+    freeTrialConsumed: boolean;
+  }> {
+    const { data, error } = await this.db.rpc('settle_voice_generation', {
+      p_audio_id: input.audioId,
+      p_user_id: input.userId,
+      p_amount: input.amount,
+      p_metadata: input.metadata ?? {},
+    });
+
+    if (error) throw new Error(`语音生成结算失败：${error.message}`);
+    const result = data as WalletRpcResult & {
+      charge_status?: MediaSettlementStatus;
+    };
+    if (!result.wallet) throw new Error('语音生成结算失败：返回结果不完整');
+    const status = result.charge_status ?? 'free_trial_invalid';
+    return {
+      wallet: normalizeWallet(result.wallet),
+      chargeStatus: status,
+      charged: status === 'charged' || status === 'already_charged',
+      freeTrialConsumed:
+        status === 'free_trial_consumed' || status === 'already_free_trial_consumed',
+    };
+  }
+
+  /**
+   * 查询消费明细
+   * @param userId 用户 ID
+   * @returns 消费明细
+   */
   async listSpending(userId: string): Promise<WalletSpendingRecord[]> {
     const { data, error } = await this.db
       .from('llm_usage_charges')
@@ -363,6 +551,11 @@ export class MiniappWalletRepository {
     );
   }
 
+  /**
+   * 查询签到状态
+   * @param userId 用户 ID
+   * @returns 签到状态
+   */
   async getDailyCheckinStatus(userId: string): Promise<DailyCheckinStatus> {
     const { data: configRow, error: configError } = await this.appCoreDb
       .from('runtime_config')
@@ -427,6 +620,11 @@ export class MiniappWalletRepository {
     };
   }
 
+  /**
+   * 领取签到奖励
+   * @param userId 用户 ID
+   * @returns 领取签到奖励结果
+   */
   async claimDailyCheckin(userId: string): Promise<{
     wallet: MiniappWalletRow;
     checkin: DailyCheckinRpcData;
@@ -472,6 +670,11 @@ export function toWalletBalance(row: MiniappWalletRow): GetWalletBalanceData {
   };
 }
 
+/**
+ * 转换为领取签到奖励结果
+ * @param raw 签到 RPC 数据
+ * @returns 领取签到奖励结果
+ */
 export function toClaimedCheckin(raw: DailyCheckinRpcData): {
   claimed_at: string;
   next_claim_at: string;
@@ -500,6 +703,11 @@ export function toClaimedCheckin(raw: DailyCheckinRpcData): {
   };
 }
 
+/**
+ * 转换为 MiniApp 钱包行
+ * @param row 原始 MiniApp 钱包行
+ * @returns MiniApp 钱包行
+ */
 function normalizeWallet(row: RawMiniappWalletRow): MiniappWalletRow {
   return {
     ...row,
@@ -509,12 +717,23 @@ function normalizeWallet(row: RawMiniappWalletRow): MiniappWalletRow {
   };
 }
 
+/**
+ * 转换为数字
+ * @param value 数值值
+ * @returns 数字
+ */
 function toNumber(value: NumericValue): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw new Error(`无效的数值字段：${String(value)}`);
   return parsed;
 }
 
+/**
+ * 转换为消费状态
+ * @param status 消费状态
+ * @param metadata 元数据
+ * @returns 消费状态
+ */
 export function formatSpendingStatus(
   status: WalletSpendingRecord['status'],
   metadata: Record<string, unknown>
@@ -540,6 +759,11 @@ export function formatSpendingStatus(
   return '未扣除';
 }
 
+/**
+ * 读取回复结果
+ * @param metadata 元数据
+ * @returns 回复结果
+ */
 function readReplyOutcome(
   metadata: Record<string, unknown>
 ): WalletSpendingRecord['reply_outcome'] {
@@ -547,6 +771,11 @@ function readReplyOutcome(
   return value === 'complete' || value === 'incomplete' || value === 'empty' ? value : null;
 }
 
+/**
+ * 读取签到奖励整数
+ * @param value 值
+ * @returns 签到奖励整数
+ */
 function readRewardInteger(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {
@@ -555,6 +784,12 @@ function readRewardInteger(value: unknown): number {
   return parsed;
 }
 
+/**
+ * 解析正整数
+ * @param value 值
+ * @param fallback 默认值
+ * @returns 正整数
+ */
 function parsePositiveInteger(value: unknown, fallback: number): number {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;

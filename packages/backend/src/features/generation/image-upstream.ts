@@ -192,8 +192,10 @@ export async function generateGrokImage(input: {
   prompt: string;
   width: number;
   height: number;
+  model?: string;
 }): Promise<GeneratedProviderImage> {
-  if (!config.image.liaobotsAuth || !config.image.liaobotsBase || !config.image.grokModel) {
+  const model = input.model?.trim() || config.image.grokModel;
+  if (!config.image.liaobotsAuth || !config.image.liaobotsBase || !model) {
     throw new ImageUpstreamError('provider', 'image_generation_not_allowed', '图片服务未配置');
   }
 
@@ -206,7 +208,7 @@ export async function generateGrokImage(input: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: config.image.grokModel,
+        model,
         prompt: input.prompt,
         n: 1,
         size: `${input.width}x${input.height}`,
@@ -238,7 +240,7 @@ export async function generateGrokImage(input: {
   const firstImage = body.data?.[0];
   const metadata = {
     provider: 'liaobots_grok' as const,
-    model: config.image.grokModel,
+    model,
     requestId: null,
   };
   const url = firstImage?.url;
@@ -268,9 +270,11 @@ export async function generateZImage(input: {
   prompt: string;
   width: number;
   height: number;
+  model?: string;
 }): Promise<GeneratedProviderImage> {
-  const { replicateToken, replicateBase, zModel } = config.image;
-  const [owner, name, ...extra] = zModel.split('/');
+  const { replicateToken, replicateBase } = config.image;
+  const model = input.model?.trim() || config.image.zModel;
+  const [owner, name, ...extra] = model.split('/');
   if (!replicateToken || !owner || !name || extra.length > 0) {
     throw new ImageUpstreamError('provider', 'image_generation_not_allowed', 'Z 图片服务未配置');
   }
@@ -339,7 +343,7 @@ export async function generateZImage(input: {
     source: 'url',
     url,
     provider: 'replicate_z',
-    model: zModel,
+    model,
     requestId: prediction.id ?? null,
   };
 }

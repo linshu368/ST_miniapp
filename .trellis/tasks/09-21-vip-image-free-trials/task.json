@@ -3,7 +3,7 @@
   "name": "vip-image-free-trials",
   "title": "MiniApp 图片免费体验与 VIP 门禁接入",
   "description": "在统一免费额度与钱包底座上接入初级图片前 3 次成功免费，并完成高级图片 VIP 与充值钱包门禁。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "cross-package",
   "package": "cross-package",
