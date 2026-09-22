@@ -15,7 +15,7 @@
 | T0  | Done   | 完成人工评审、test 环境与高级图片配置确认                      | task docs / env inventory                            | -                                           | 评审结论与环境证据齐全，满足停止条件检查         |
 | T1  | Done   | 定义 VIP、支付、钱包、模型、通知及媒体免费公共契约与价格纯函数 | `packages/shared/src/api/*`                          | T0                                          | shared test/typecheck；旧字段兼容                |
 | T2  | Done   | 添加会员/钱包/免费额度公共结构、RLS/grants、索引与原子 RPC     | `packages/shared/migrations/*`                       | T1                                          | test 单文件 migration、自检、守恒/并发/回滚演练  |
-| T3  | Doing  | 实现 VIP status、商品下单、支付原子履约与签到加成              | Backend VIP/payment/wallet routes + repositories     | T2                                          | 四路支付、续费、月卡赠送、60/120 与故障测试      |
+| T3  | Done   | 实现 VIP status、商品下单、支付原子履约与签到加成              | Backend VIP/payment/wallet routes + repositories     | T2                                          | 四路支付、续费、月卡赠送、60/120 与故障测试      |
 | T4  | Todo   | 改造 LLM 权限、95 折、钱包分配、明细与原路退款                 | Backend models/generation/billing/wallet             | T2,T3                                       | 钱包矩阵、快照、并发、重放、退款回归测试         |
 | T5  | Todo   | 向语音/图片子任务交付底座并完成跨模块集成验收                  | 两个 child task + parent integration                 | 语音等 T2；图片 basic 等 T2、advanced 等 T3 | 子任务证据、免费/钱包/权限联合矩阵               |
 | T6  | Todo   | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3                                       | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
@@ -104,6 +104,12 @@
     - `bash scripts/test-vip-billing-migrations.sh` → pass（含 T2 场景、新 migration、普通/VIP/临界签到、两次并发只入账一次）
   - 未做：正式 test apply 与只读 postflight；真实微信支付；Production 签到值采集。
   - 新 migration apply 顺序：已有 T2 四文件之后，单独 apply `20260922_daily_checkin_vip_bonus.sql`。Backend 必须在该文件 apply 并复核之后再发布，否则预览会按 60/120 计算而线上 RPC 仍是 40 且 VIP 加成为 0。
+- 2026-09-22 T3 远端复核完成，T3 → Done。MCP 目标仍是 `https://zoqelpfhurwehlvypryl.supabase.co`。只读配置与函数目录，未读业务行，未写 Production，未进 T4，未启动子任务，未改功能开关。
+  - 账本 checksum 与本地文件一致且均为 applied：`20260922_daily_checkin_vip_bonus.sql` = `bd1168500f8e70587693ee28a7e6c3d7f1cf0bf0da91fd0160453d1d0c21e875`；`20260922_invite_first_paid_vip_fulfillment.sql` = `4b42cc04be536392a4c5ccc35c3e53c064f14a098f0e2531fdf76cc0ba48cf11`。
+  - 签到配置值 = 60。`claim_daily_checkin(uuid)` 含 VIP 加成、`search_path=pg_catalog`、service_role 可执行；历史 anon/authenticated EXECUTE 仍在。
+  - `check_invite_first_paid_reward(uuid,text)` 含 `fulfillment_applied`、`search_path=pg_catalog`；anon/authenticated 不可执行，service_role 可执行。
+  - `complete_payment_order(text,text,text)` 仍含履约标志且 anon 不可执行。`vip_purchase_enabled` 与 `vip_reminders_enabled` 均为 false。
+  - 未在 test 用真实四路微信支付重放。Production 结构与签到值仍未核。`20260912_backfill_character_persona_and_style.sql` 与 `20260914_chat_message_images*.sql` 仍 absent，不属于本任务。
 - 2026-09-21：产品将三档文本模型折扣从 88 折改为 95 折。已同步 PRD/design/implement/task、校验清单、T0 research，以及 T1 契约常量 `VIP_TEXT_DISCOUNT_RATE = 0.95` 与对应测试期望（15→14、30→29、50→48）。月卡 28.88 元未改。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
