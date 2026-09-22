@@ -37,3 +37,4 @@
 {"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-environment-and-config-gate.md","reason":"T0 只读核验：test 目标未确认、签到配置差异、高级图片关闭、Railway/支付/Cron 入口与停止条件。"}
 {"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-test-db-collection.md","reason":"正式 test 只读结构采集：schema/函数/RLS/账本/签到40与图片关闭证据。"}
 {"file": ".trellis/tasks/09-21-miniapp-vip-model-ui/research/t2-reuse-and-db-primitives.md", "reason": "T2 复用核验、权限矩阵、migration 顺序与 test apply 门禁"}
+{"file": ".trellis/tasks/09-21-miniapp-vip-model-ui/research/t4-llm-billing-reuse.md", "reason": "T4 LLM 复用、快照、退款入口、迁移顺序与未 apply 门禁"}

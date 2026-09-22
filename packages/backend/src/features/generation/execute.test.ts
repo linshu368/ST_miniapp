@@ -67,6 +67,7 @@ function request(overrides: Partial<GenerationRequest> = {}): GenerationRequest 
       openRouterModelId: billingContext.openRouterModelId,
       tier: 'premium',
       isFree: false,
+      entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
     },
     messages: [
       { role: 'system', content: '角色卡 system_prompt' },
@@ -160,7 +161,7 @@ describe('execute（流式）', () => {
       model: 'anthropic/claude-sonnet-4.5',
       model_id: 'anthropic-claude-sonnet-4-5',
       model_markup: 1,
-      fixed_deduction: 50,
+      fixed_deduction: 48,
       fixed_deduction_category: 'premium',
       pricing_config_version: 7,
       exchange_rate: 1,
@@ -292,6 +293,31 @@ describe('execute（流式）', () => {
 });
 
 describe('execute（失败路径）', () => {
+  it('标准或旗舰在 VIP 无效时不调用上游', async () => {
+    const fetchMock = stubUpstream(() => sseResponse([]));
+    const result = await execute(
+      request({
+        model: {
+          modelId: billingContext.modelId,
+          openRouterModelId: billingContext.openRouterModelId,
+          tier: 'premium',
+          isFree: false,
+          entitlement: { active: false, validUntil: null },
+        },
+      }),
+      undefined,
+      fakeLogger()
+    );
+
+    expect(result).toMatchObject({
+      status: 'upstream_error',
+      denial: 'vip_required',
+      chargeId: null,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(savedHistory()).toHaveLength(0);
+  });
+
   it('余额不足在发请求前收口，不碰上游也不落库', async () => {
     walletBalance = 10;
     const fetchMock = stubUpstream(() => sseResponse([]));
@@ -301,7 +327,7 @@ describe('execute（失败路径）', () => {
     expect(result).toMatchObject({
       status: 'insufficient_balance',
       chargeId: null,
-      balance: { creditsRequired: 50, creditsAvailable: 10 },
+      balance: { creditsRequired: 48, creditsAvailable: 10 },
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(savedHistory()).toHaveLength(0);

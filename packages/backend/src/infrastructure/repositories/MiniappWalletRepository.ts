@@ -280,18 +280,7 @@ export class MiniappWalletRepository {
         metadata: Record<string, unknown> | null;
         created_at: string;
       }>
-    ).map((row) => ({
-      id: row.charge_key,
-      model_id: row.model_id,
-      model_display_name: row.model_display_name,
-      charged_amount: toNumber(row.charged_amount),
-      status: row.status,
-      finish_reason:
-        typeof row.metadata?.finish_reason === 'string' ? row.metadata.finish_reason : null,
-      reply_outcome: readReplyOutcome(row.metadata ?? {}),
-      status_label: formatSpendingStatus(row.status, row.metadata ?? {}),
-      created_at: row.created_at,
-    }));
+    ).map((row) => mapLlmSpendingRow(row));
 
     // 语音扣费走 wallet_ledger（reference_type='voice_usage'），不在 llm_usage_charges 里。
     // 客服对账要能看到「角色语音 15」，这里 UNION 一段拼到消费明细前端。
@@ -358,7 +347,29 @@ export class MiniappWalletRepository {
       created_at: row.created_at,
     }));
 
-    return [...llmRows, ...voiceRecords, ...imageRecords].sort(
+    const { data: refundRows, error: refundError } = await this.db
+      .from('wallet_ledger')
+      .select('reference_id,amount,main_delta,bonus_delta,metadata,created_at')
+      .eq('user_id', userId)
+      .eq('entry_type', 'refund')
+      .eq('reference_type', 'wallet_refund')
+      .contains('metadata', { reason: 'llm_usage' })
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (refundError) throw new Error(`查询文本退款明细失败：${refundError.message}`);
+
+    const refundRecords = (
+      (refundRows ?? []) as Array<{
+        reference_id: string | null;
+        amount: NumericValue;
+        main_delta: NumericValue;
+        bonus_delta: NumericValue;
+        metadata: Record<string, unknown> | null;
+        created_at: string;
+      }>
+    ).map((row) => mapLlmRefundSpendingRow(row));
+
+    return [...llmRows, ...voiceRecords, ...imageRecords, ...refundRecords].sort(
       (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)
     );
   }
@@ -424,6 +435,35 @@ export class MiniappWalletRepository {
       reward_credits: quote.reward_credits,
       base_reward_credits: quote.base_reward_credits,
       vip_reward_credits: quote.vip_reward_credits,
+    };
+  }
+
+  /**
+   * 已扣文本的补偿入口。余额只由 refund_llm_usage_charge 修改。
+   */
+  async refundLlmUsageCharge(input: { chargeId: string; reason: string }): Promise<{
+    status: 'refunded' | 'already_refunded' | 'not_debited' | 'not_refundable' | 'not_found';
+    wallet: MiniappWalletRow | null;
+  }> {
+    const { data, error } = await this.db.rpc('refund_llm_usage_charge', {
+      p_charge_key: input.chargeId,
+      p_reason: input.reason,
+    });
+    if (error) throw new Error(`退回 LLM 扣费失败：${error.message}`);
+    const result = data as WalletRpcResult & { ok?: boolean; status?: string };
+    const status = result.status;
+    if (
+      status !== 'refunded' &&
+      status !== 'already_refunded' &&
+      status !== 'not_debited' &&
+      status !== 'not_refundable' &&
+      status !== 'not_found'
+    ) {
+      throw new Error('退回 LLM 扣费失败：返回状态无法识别');
+    }
+    return {
+      status,
+      wallet: result.wallet ? normalizeWallet(result.wallet) : null,
     };
   }
 
@@ -515,6 +555,65 @@ function toNumber(value: NumericValue): number {
   return parsed;
 }
 
+export function mapLlmSpendingRow(row: {
+  charge_key: string;
+  model_id: string | null;
+  model_display_name: string;
+  charged_amount: NumericValue;
+  status: WalletSpendingRecord['status'];
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}): WalletSpendingRecord {
+  const metadata = row.metadata ?? {};
+  const record: WalletSpendingRecord = {
+    id: row.charge_key,
+    model_id: row.model_id,
+    model_display_name: row.model_display_name,
+    charged_amount: toNumber(row.charged_amount),
+    status: row.status,
+    finish_reason: typeof metadata.finish_reason === 'string' ? metadata.finish_reason : null,
+    reply_outcome: readReplyOutcome(metadata),
+    status_label: formatSpendingStatus(row.status, metadata),
+    created_at: row.created_at,
+  };
+  const mainDelta = readOptionalNumber(metadata.main_delta);
+  const bonusDelta = readOptionalNumber(metadata.bonus_delta);
+  const originalAmount = readOptionalNullableNumber(metadata, 'original_credits');
+  const discountRate = readOptionalNullableNumber(metadata, 'discount_rate');
+  if (mainDelta !== undefined) record.main_delta = mainDelta;
+  if (bonusDelta !== undefined) record.bonus_delta = bonusDelta;
+  if (originalAmount !== undefined) record.original_amount = originalAmount;
+  if (discountRate !== undefined) record.discount_rate = discountRate;
+  return record;
+}
+
+export function mapLlmRefundSpendingRow(row: {
+  reference_id: string | null;
+  amount: NumericValue;
+  main_delta: NumericValue;
+  bonus_delta: NumericValue;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}): WalletSpendingRecord {
+  const metadata = row.metadata ?? {};
+  const refundOf = typeof metadata.debit_key === 'string' ? metadata.debit_key : null;
+  return {
+    id: row.reference_id ?? row.created_at,
+    model_id: null,
+    model_display_name: '文本消费退款',
+    charged_amount: Math.abs(toNumber(row.amount)),
+    status: 'charged',
+    finish_reason: null,
+    reply_outcome: null,
+    status_label: '已原路退回',
+    created_at: row.created_at,
+    main_delta: toNumber(row.main_delta),
+    bonus_delta: toNumber(row.bonus_delta),
+    ...(refundOf ? { refund_of: refundOf } : {}),
+    source_label: '原路退款',
+  };
+}
+
 export function formatSpendingStatus(
   status: WalletSpendingRecord['status'],
   metadata: Record<string, unknown>
@@ -545,6 +644,25 @@ function readReplyOutcome(
 ): WalletSpendingRecord['reply_outcome'] {
   const value = metadata.reply_outcome;
   return value === 'complete' || value === 'incomplete' || value === 'empty' ? value : null;
+}
+
+function readOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function readOptionalNullableNumber(
+  metadata: Record<string, unknown>,
+  key: string
+): number | null | undefined {
+  if (!Object.prototype.hasOwnProperty.call(metadata, key)) return undefined;
+  const value = metadata[key];
+  if (value === null) return null;
+  return readOptionalNumber(value);
 }
 
 function readRewardInteger(value: unknown): number {

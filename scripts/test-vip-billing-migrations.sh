@@ -182,4 +182,42 @@ psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
   -f "$ROOT/packages/shared/migrations/tests/vip_invite_t3_scenarios.sql" \
   >/dev/null
 
-echo "All T2 and T3 VIP billing local checks passed."
+echo "prepare local llm charge shape"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_llm_t4_setup.sql" \
+  >/dev/null
+
+echo "apply 20260922_llm_vip_wallet_charge.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260922_llm_vip_wallet_charge.sql" \
+  >/dev/null
+
+echo "run t4 llm charge scenarios"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_llm_t4_scenarios.sql" \
+  >/dev/null
+
+LLM_USER="00000000-0000-4000-8000-0000000000c1"
+LLM_KEY="00000000-0000-4000-8000-000000000201"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<SQL
+INSERT INTO app_core.users (id) VALUES ('$LLM_USER');
+INSERT INTO billing.user_wallets (user_id, main_credits, bonus_credits) VALUES ('$LLM_USER', 100, 0);
+SQL
+
+echo "run concurrent llm charge replay"
+(
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT vip_t4_test.charge('$LLM_USER'::uuid, '$LLM_KEY'::uuid, 'gen-concur', 30, 'main_only', 'premium', 'stop');" >/dev/null
+) &
+(
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT vip_t4_test.charge('$LLM_USER'::uuid, '$LLM_KEY'::uuid, 'gen-concur', 30, 'main_only', 'premium', 'stop');" >/dev/null
+) &
+wait || true
+
+LLM_LEDGER="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM billing.wallet_ledger WHERE debit_key='$LLM_KEY';")"
+LLM_MAIN="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT main_credits FROM billing.user_wallets WHERE user_id='$LLM_USER';")"
+[[ "$LLM_LEDGER" == "1" ]] || fail "concurrent llm charge ledgers=$LLM_LEDGER"
+[[ "$LLM_MAIN" == "70.0" || "$LLM_MAIN" == "70" ]] || fail "concurrent llm wallet=$LLM_MAIN"
+
+echo "All T2, T3 and T4 VIP billing local checks passed."

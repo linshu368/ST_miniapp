@@ -121,12 +121,37 @@ export async function execute(
     billing,
     isFreeRound: reservation.isFreeRound,
     pricing,
+    entitlement: request.model.entitlement,
     log,
   });
+
+  if (plan.snapshot.requires_vip && !plan.snapshot.vip_active) {
+    await reservation.finalize(false);
+    log.biz.info(
+      {
+        event: 'llm.vip.rejected',
+        userId: request.userId,
+        model: billing.openRouterModelId,
+        tier: plan.snapshot.model_tier,
+      },
+      '标准或旗舰模型缺少有效 VIP，未调用上游'
+    );
+    return finish({
+      status: 'upstream_error',
+      content: '',
+      generationId: null,
+      finishReason: null,
+      chargeId: null,
+      modelId: billing.modelId,
+      modelOpenRouterId: billing.openRouterModelId,
+      denial: 'vip_required',
+    });
+  }
 
   const precheck = await checkWalletBalance({
     userId: request.userId,
     requiredAmount: plan.fixedDeduction.amount,
+    walletPolicy: plan.snapshot.wallet_policy,
     openRouterModelId: billing.openRouterModelId,
     log,
   });

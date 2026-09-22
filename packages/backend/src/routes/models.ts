@@ -1,12 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import {
-  fail,
-  ok,
-  resolveEffectiveSelectedModelId,
-  resolveEnabledCatalogModel,
-  SelectModelRequestSchema,
-  toPublicModelCatalog,
-} from '@miniapp/shared';
+import { fail, ok, resolveEnabledCatalogModel, SelectModelRequestSchema } from '@miniapp/shared';
 import type {
   GetModelCatalogData,
   OpenRouterModelDirectory,
@@ -19,11 +12,18 @@ import { getOrCreateDbUser } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
-import { resolveFixedDeduction } from '../features/billing/usage-pricing.js';
+import { VipStatusService } from '../features/vip/vip-status.js';
+import {
+  coverageForTextWallet,
+  presentTextModelCatalog,
+  quoteAcceptedTextUsage,
+  resolveTextModelSelection,
+} from '../features/generation/text-billing.js';
 
 export default async function modelsRoutes(app: FastifyInstance) {
   const settings = new MiniappUserSettingsRepository();
   const wallets = new MiniappWalletRepository();
+  const vip = new VipStatusService();
 
   // @frontend-ready: true
   app.get('/api/platform/openrouter/models', async (request, reply) => {
@@ -44,28 +44,64 @@ export default async function modelsRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
+      const log = requestLogger(request.log, 'models');
       const dbUser = await getOrCreateDbUser(request.user);
-      const [snapshot, userSettings] = await Promise.all([
+      const [snapshot, userSettings, entitlement, pricing] = await Promise.all([
         fetchModelCatalogSnapshot(),
         settings.getOrCreate(dbUser.id, request.user),
+        vip.getStatus(dbUser.id, log),
+        getPricingConfig(),
       ]);
-      const selectedModelId = resolveEffectiveSelectedModelId(
-        snapshot.catalog,
-        userSettings.selected_model_id
-      );
-      const selectedModel = resolveEnabledCatalogModel(snapshot.catalog, selectedModelId);
+      const selection = resolveTextModelSelection({
+        catalog: snapshot.catalog,
+        persistedModelId: userSettings.selected_model_id,
+        vipActive: entitlement.active,
+      });
+      const selectedModel = resolveEnabledCatalogModel(snapshot.catalog, selection.modelId);
 
-      if (userSettings.selected_model_id !== selectedModelId) {
-        await settings.setSelectedModelId(dbUser.id, request.user, selectedModelId);
+      if (userSettings.selected_model_id !== selectedModel.id) {
+        try {
+          await settings.setSelectedModelId(dbUser.id, request.user, selectedModel.id);
+          if (selection.vipFallback) {
+            log.biz.info(
+              {
+                event: 'models.config.vip_fallback',
+                userId: dbUser.id,
+                fromModelId: userSettings.selected_model_id,
+                toModelId: selectedModel.id,
+              },
+              'VIP 已失效，模型目录回落轻量'
+            );
+          }
+        } catch (err) {
+          log.sys.error(
+            {
+              err,
+              event: 'models.config.persist_failed',
+              userId: dbUser.id,
+              toModelId: selectedModel.id,
+            },
+            '回落轻量模型后写回选择失败'
+          );
+        }
       }
 
       reply.header('Cache-Control', 'private, no-cache');
       return reply.send(
         ok<GetModelCatalogData>({
-          catalog: toPublicModelCatalog(snapshot.catalog),
+          catalog: presentTextModelCatalog({
+            catalog: snapshot.catalog,
+            pricing: pricing.fixedDeduction,
+            vip: entitlement,
+          }),
           selected_model_id: selectedModel.id,
           selected_openrouter_model_id: selectedModel.openrouter_model_id,
           catalog_version: snapshot.version,
+          vip_status: {
+            active: entitlement.active,
+            remaining_days: entitlement.remaining_days,
+            valid_until: entitlement.valid_until,
+          },
         })
       );
     }
@@ -85,40 +121,72 @@ export default async function modelsRoutes(app: FastifyInstance) {
 
       const log = requestLogger(request.log, 'models');
       try {
-        const { catalog } = await fetchModelCatalogSnapshot();
-        const selectedModel = resolveEnabledCatalogModel(catalog, parsed.data.model_id);
+        const [snapshot, dbUser] = await Promise.all([
+          fetchModelCatalogSnapshot(),
+          getOrCreateDbUser(request.user),
+        ]);
+        const selectedModel = resolveEnabledCatalogModel(snapshot.catalog, parsed.data.model_id);
         const selectedTier =
-          catalog.tiers.find((tier) => tier.models.some((model) => model.id === selectedModel.id))
-            ?.tier ?? null;
-        const dbUser = await getOrCreateDbUser(request.user);
+          snapshot.catalog.tiers.find((tier) =>
+            tier.models.some((model) => model.id === selectedModel.id)
+          )?.tier ?? null;
+        const entitlement = await vip.getStatus(dbUser.id, log);
+        const selection = resolveTextModelSelection({
+          catalog: snapshot.catalog,
+          persistedModelId: selectedModel.id,
+          vipActive: entitlement.active,
+        });
+        if (selection.vipFallback || selection.modelId !== selectedModel.id) {
+          log.biz.info(
+            {
+              event: 'models.select.vip_required',
+              userId: dbUser.id,
+              modelId: selectedModel.id,
+              tier: selectedTier,
+            },
+            '标准或旗舰模型需要有效 VIP'
+          );
+          return reply.status(403).send(fail('VIP_REQUIRED', '标准/旗舰模型需要有效 VIP'));
+        }
 
+        const quotedTier = selectedTier ?? 'standard';
         if (!selectedModel.is_free) {
           const [wallet, pricing] = await Promise.all([
             wallets.getOrCreate(dbUser.id),
             getPricingConfig(),
           ]);
-          const fixedDeduction = resolveFixedDeduction({
-            isFreeModel: false,
+          const quote = quoteAcceptedTextUsage({
+            originalCredits: pricing.fixedDeduction[quotedTier],
+            tier: quotedTier,
+            isVip: entitlement.active,
             isFreeRound: false,
-            modelTier: selectedTier,
-            config: pricing.fixedDeduction,
+            vipValidUntil: entitlement.valid_until,
           });
-          const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-          if (balance < fixedDeduction.amount) {
+          const coverage = coverageForTextWallet({
+            policy: quote.wallet_policy,
+            payableCredits: quote.payable_credits,
+            mainCredits: wallet.main_credits,
+            bonusCredits: wallet.bonus_credits,
+          });
+          if (!coverage.ok) {
             log.biz.info(
               {
-                event: 'models.select.blocked_insufficient',
+                event: 'models.select.wallet_blocked',
                 userId: dbUser.id,
                 modelId: selectedModel.id,
-                model: selectedModel.openrouter_model_id,
-                balance,
-                required: fixedDeduction.amount,
+                tier: selectedTier,
+                policy: quote.wallet_policy,
+                code: coverage.code,
+                available: coverage.available,
+                required: quote.payable_credits,
               },
-              'paid model selection blocked by insufficient balance'
+              '模型切换被可用钱包拒绝'
             );
-            return reply
-              .status(402)
-              .send(fail('INSUFFICIENT_CREDITS', '星尘余额不足，请先充值后再切换付费模型'));
+            const message =
+              coverage.code === 'MAIN_CREDITS_INSUFFICIENT'
+                ? '充值星尘不足，标准/旗舰模型不能使用专项星尘'
+                : '星尘余额不足，请先充值后再切换付费模型';
+            return reply.status(402).send(fail(coverage.code, message));
           }
         }
 

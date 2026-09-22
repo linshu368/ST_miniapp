@@ -16,7 +16,7 @@
 | T1  | Done   | 定义 VIP、支付、钱包、模型、通知及媒体免费公共契约与价格纯函数 | `packages/shared/src/api/*`                          | T0                                          | shared test/typecheck；旧字段兼容                |
 | T2  | Done   | 添加会员/钱包/免费额度公共结构、RLS/grants、索引与原子 RPC     | `packages/shared/migrations/*`                       | T1                                          | test 单文件 migration、自检、守恒/并发/回滚演练  |
 | T3  | Done   | 实现 VIP status、商品下单、支付原子履约与签到加成              | Backend VIP/payment/wallet routes + repositories     | T2                                          | 四路支付、续费、月卡赠送、60/120 与故障测试      |
-| T4  | Todo   | 改造 LLM 权限、95 折、钱包分配、明细与原路退款                 | Backend models/generation/billing/wallet             | T2,T3                                       | 钱包矩阵、快照、并发、重放、退款回归测试         |
+| T4  | Doing  | 改造 LLM 权限、95 折、钱包分配、明细与原路退款                 | Backend models/generation/billing/wallet             | T2,T3                                       | 钱包矩阵、快照、并发、重放、退款回归测试         |
 | T5  | Todo   | 向语音/图片子任务交付底座并完成跨模块集成验收                  | 两个 child task + parent integration                 | 语音等 T2；图片 basic 等 T2、advanced 等 T3 | 子任务证据、免费/钱包/权限联合矩阵               |
 | T6  | Todo   | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3                                       | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
 | T7  | Todo   | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T4,T5,T6                              | 前端 test/lint/typecheck/build + 人工状态矩阵    |
@@ -111,6 +111,25 @@
   - `complete_payment_order(text,text,text)` 仍含履约标志且 anon 不可执行。`vip_purchase_enabled` 与 `vip_reminders_enabled` 均为 false。
   - 未在 test 用真实四路微信支付重放。Production 结构与签到值仍未核。`20260912_backfill_character_persona_and_style.sql` 与 `20260914_chat_message_images*.sql` 仍 absent，不属于本任务。
 - 2026-09-21：产品将三档文本模型折扣从 88 折改为 95 折。已同步 PRD/design/implement/task、校验清单、T0 research，以及 T1 契约常量 `VIP_TEXT_DISCOUNT_RATE = 0.95` 与对应测试期望（15→14、30→29、50→48）。月卡 28.88 元未改。
+- 2026-09-22 T4 开始：分支 `dev_vip_0920`，HEAD `2f2eb0e`，与 `origin/dev_vip_0920` 一致，工作区干净。父任务已是 `in_progress`。T0–T3 Done，T4 → Doing。未重复 `task.py start`（本会话无 session identity）。未改语音/图片子任务，未进 T5，未写 test/production，未 commit/push。复用、失败路径、迁移兼容和验证计划见 `research/t4-llm-billing-reuse.md`。
+- 2026-09-22 T4 本地实现完成，**停在 test apply 前，T4 保持 Doing**。未触发 GitHub Actions，未通过 MCP/SQL 写正式 test，未写 Production，未启用购买/提醒/高级图片，未进 T5，未改语音/图片实现，未 commit/push。
+  - 报价与资格：`quoteTextModelUsage`。原价来自 `getPricingConfig()`。免费轮实付 0。VIP 三档按运行时原价 × 0.95 四舍五入。标准/旗舰要有效 VIP；到期后 config 与生成都回落轻量，写回失败不阻断本轮。选择接口拒绝并返回 `VIP_REQUIRED`，不改已保存选择。
+  - 钱包：轻量 `main_then_bonus`，标准/旗舰 `main_only`。402 的可用余额按策略计算。目录 GET 不因余额不足返回 402。
+  - 受理快照写入 `fixed_deduction` 与原价/折扣/策略/VIP 截止时间。`charge_llm_usage` 优先读已落库的 `payable_credits`，再读 `fixed_deduction`。sync 重放同一快照。余额不足整笔回滚，不写新 partial；历史 partial 只读返回。
+  - 补偿入口：`compensateDebitedLlmCharge` → `billing.refund_llm_usage_charge` → `refund_wallet_debit`。charge 行保持 `charged`，metadata.`compensation_status=refunded`。没有 `debit_key` 的历史扣款返回 `not_refundable`，不改余额。history 写失败不自动退款，sync 按 `charge_key` 重放。
+  - 新 migration：`packages/shared/migrations/20260922_llm_vip_wallet_charge.sql`。只替换 `billing.charge_llm_usage` 并新增 `billing.refund_llm_usage_charge`。不改 T2/T3 文件，不新建表。本地 sha256 `99f63f2e523eb72ca66db12a0ec519973f4ac42b113d36de405a3d3c42f87241`。
+  - 发布顺序：该文件 apply 并复核之后才能发布 Backend。先发 Backend 时，旧函数仍会 bonus 优先且允许 partial，并忽略 wallet policy。
+  - 降级目录：运行时目录损坏而落到内置 `DEFAULT_CATALOG` 时没有轻量档。非 VIP 的标准/旗舰会失败关闭，不会用旗舰顶上。
+  - 本地验证：
+    - `bash scripts/test-vip-billing-migrations.sh` → pass（含 T2/T3、T4 免费/只有 bonus/main-only 拒绝/组合扣/快照不被 999 改写/pending 竞态不 partial/历史 partial 只读/无 debit_key 不退款/原路退款与重复退款，以及并发 charge 只入账一次）
+    - `pnpm --filter @miniapp/backend test` → 57 files / 498 tests passed。并行 typecheck 时曾有 6 个 route 用例 5s 超时；单独重跑 telemetry/vip/payment 47 tests passed，随后全量再跑通过。
+    - `pnpm --filter @miniapp/shared test` → 10 files / 88 tests passed
+    - `pnpm -r typecheck` → shared/admin/backend/frontend/cs-platform pass
+    - `pnpm --filter @miniapp/backend typecheck` → pass
+    - `pnpm lint:imports` / `pnpm lint:legacy` / `pnpm lint:migrations` → pass
+    - `pnpm test:migration-ledger` → pass（需本机 Postgres；沙箱里 socket 被拒，退出沙箱后通过）
+  - 未做：正式 test apply 与 apply 后的只读 postflight；真实 OpenRouter/SSE；Production。
+  - 给 T5 合并核对的共享文件：`MiniappWalletRepository.ts`（只加 LLM 退款 RPC 与消费明细字段，语音扣费签名未改）、`scripts/test-vip-billing-migrations.sh`、`features/generation` 下文本计费文件（未改 image）、`ConversationHistoryRepository.ts` 的可选快照字段、`routes/models.ts`、`routes/conversations.ts`、`features/conversations/generate.ts`、`MiniappUserSettingsRepository.ts` 的 `correctSelectedModelId`。未改 `packages/shared/src/index.ts`，未改语音/图片实现。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约

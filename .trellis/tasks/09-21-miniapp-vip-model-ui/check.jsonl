@@ -26,3 +26,4 @@
 {"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-environment-and-config-gate.md","reason":"检查后续实现是否在未确认 test 目标时连库、是否把高级图片猜开、是否用 test 结论冒充 production。"}
 {"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-test-db-collection.md","reason":"对照 test 实况检查 migration 前置、search_path 与 PUBLIC execute 不得复制旧 GAP。"}
 {"file": ".trellis/tasks/09-21-miniapp-vip-model-ui/research/t2-reuse-and-db-primitives.md", "reason": "T2 数据库对象归属、RLS/grant 与本地未能远端验证项"}
+{"file": ".trellis/tasks/09-21-miniapp-vip-model-ui/research/t4-llm-billing-reuse.md", "reason": "检查 T4 是否平行计费、是否改写 T2/T3 migration、是否提前标 Done"}
