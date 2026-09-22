@@ -144,9 +144,13 @@ export default function SelfHostedChatPage() {
     [sessionImagesQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
-  const voicePriceLabel = voiceConfigQuery.data?.billing?.enabled
-    ? voiceConfigQuery.data?.billing?.price_label
-    : '';
+  const voiceNextBilling = voiceConfigQuery.data?.next_billing;
+  const voicePriceLabel =
+    voiceNextBilling?.billing_mode === 'free_trial'
+      ? `免费体验 ${voiceNextBilling.free_trial_ordinal ?? 1}/${voiceNextBilling.free_trial_limit ?? 3}`
+      : voiceConfigQuery.data?.billing?.enabled
+        ? voiceConfigQuery.data?.billing?.price_label
+        : '';
 
   useEffect(() => {
     const charged = sessionVoiceQuery.data?.audio.some((item) => item.credits_charged > 0);
@@ -262,8 +266,11 @@ export default function SelfHostedChatPage() {
                       image: messageImage,
                       canGenerate: canCreateImage,
                       config: imageConfigQuery.data,
-                      describe: async () => {
-                        const result = await describeImage.mutateAsync(message.id);
+                      describe: async (tier) => {
+                        const result = await describeImage.mutateAsync({
+                          messageId: message.id,
+                          body: { tier },
+                        });
                         return { draftId: result.draft_id, prompt: result.prompt_cn };
                       },
                       create: async (body) => {

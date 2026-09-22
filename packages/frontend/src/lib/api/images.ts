@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateImageDescriptionData,
+  CreateImageDescriptionRequest,
   CreateMessageImageData,
   CreateMessageImageRequest,
   GetImageConfigData,
@@ -18,6 +19,11 @@ export const imageKeys = {
   session: (sessionId: string) => ['images', 'session', sessionId] as const,
 };
 
+/**
+ * 使用图片配置查询
+ * @param enabled 是否启用
+ * @returns 图片配置查询
+ */
 export function useImageConfigQuery(enabled = true) {
   return useQuery<GetImageConfigData>({
     queryKey: imageKeys.config,
@@ -47,20 +53,33 @@ export function useSessionImagesQuery(sessionId: string | undefined) {
   });
 }
 
+/**
+ * 创建图片描述
+ * @param sessionId 会话 ID
+ * @returns 创建图片描述
+ */
 export function useCreateImageDescriptionMutation(sessionId: string | undefined) {
   return useMutation({
-    mutationFn: async (messageId: string) => {
+    mutationFn: async (input: { messageId: string; body?: CreateImageDescriptionRequest }) => {
       if (!sessionId) throw new Error('session id is required');
       return apiClient<CreateImageDescriptionData>(
         `/api/v1/conversations/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(
-          messageId
+          input.messageId
         )}/image-description`,
-        { method: 'POST' }
+        {
+          method: 'POST',
+          ...(input.body ? { body: JSON.stringify(input.body) } : {}),
+        }
       );
     },
   });
 }
 
+/**
+ * 创建图片
+ * @param sessionId 会话 ID
+ * @returns 创建图片
+ */
 export function useCreateMessageImageMutation(sessionId: string | undefined) {
   const queryClient = useQueryClient();
 
@@ -89,6 +108,12 @@ export function useCreateMessageImageMutation(sessionId: string | undefined) {
   });
 }
 
+/**
+ * 合并图片尝试
+ * @param current 当前图片状态
+ * @param attempt 图片尝试
+ * @returns 合并图片状态
+ */
 function mergeImageAttempt(
   current: GetSessionImagesData | undefined,
   attempt: MessageImageAttempt
@@ -105,6 +130,11 @@ function mergeImageAttempt(
   return { images: [...rest, state] };
 }
 
+/**
+ * 转换为图片映射
+ * @param data 图片数据
+ * @returns 图片映射
+ */
 export function toImageMap(data: GetSessionImagesData | undefined): Map<string, MessageImageState> {
   return new Map((data?.images ?? []).map((item) => [item.message_id, item]));
 }

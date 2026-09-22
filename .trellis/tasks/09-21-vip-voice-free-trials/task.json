@@ -3,7 +3,7 @@
   "name": "vip-voice-free-trials",
   "title": "MiniApp 语音前 3 次免费接入",
   "description": "在统一免费额度与钱包底座上接入语音前 3 次成功免费、失败释放和第 4 次充值钱包扣费。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "cross-package",
   "package": "cross-package",
