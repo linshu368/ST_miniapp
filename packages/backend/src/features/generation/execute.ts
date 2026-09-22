@@ -25,11 +25,7 @@ import { getProviderPreferencesForModel } from '../../platform/provider-routing.
 import type { OpenRouterProviderPreferences } from '@miniapp/shared';
 import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
-import {
-  noFreeQuotaReservation,
-  reserveCharacterFreeQuota,
-  type FreeQuotaReservation,
-} from './quota.js';
+import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
 import {
   CHAT_COMPLETIONS_PATH,
@@ -93,12 +89,9 @@ export async function execute(
   hooks?: GenerationHooks,
   log: GenerationLogger = createLogger('generation')
 ): Promise<GenerationResult> {
-  const internalResearch = request.policy?.kind === 'internal_research';
-  const chargeId = internalResearch ? null : randomUUID();
-  const pricing = internalResearch ? null : await getPricingConfig();
-  const billing = internalResearch
-    ? internalResearchBilling(request)
-    : await getModelBillingContext(request.model.openRouterModelId);
+  const chargeId = randomUUID();
+  const pricing = await getPricingConfig();
+  const billing = await getModelBillingContext(request.model.openRouterModelId);
 
   const finish = (result: GenerationResult): GenerationResult => {
     hooks?.onDone?.(result);
@@ -115,28 +108,23 @@ export async function execute(
     ...overrides,
   });
 
-  const reservation = internalResearch
-    ? noFreeQuotaReservation()
-    : await reserveCharacterFreeQuota({
-        chargeId: chargeId ?? randomUUID(),
-        userId: request.userId,
-        characterId: request.characterId,
-        billing,
-        log,
-      });
+  const reservation = await reserveCharacterFreeQuota({
+    chargeId,
+    userId: request.userId,
+    characterId: request.characterId,
+    billing,
+    log,
+  });
 
-  const plan =
-    internalResearch || pricing === null || chargeId === null
-      ? null
-      : resolveBillingPlan({
-          chargeId,
-          billing,
-          isFreeRound: reservation.isFreeRound,
-          pricing,
-          log,
-        });
+  const plan = resolveBillingPlan({
+    chargeId,
+    billing,
+    isFreeRound: reservation.isFreeRound,
+    pricing,
+    log,
+  });
 
-  if (!internalResearch && plan) {
+  if (plan) {
     const precheck = await checkWalletBalance({
       userId: request.userId,
       requiredAmount: plan.fixedDeduction.amount,
@@ -161,10 +149,7 @@ export async function execute(
     }
   }
 
-  const saveHistory: SaveHistory =
-    internalResearch || plan === null
-      ? () => undefined
-      : createHistoryWriter({ request, billing, plan, log });
+  const saveHistory: SaveHistory = createHistoryWriter({ request, billing, plan, log });
 
   // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
   const providerPreferences = await getProviderPreferencesForModel(billing.openRouterModelId);
@@ -172,11 +157,10 @@ export async function execute(
   let upstreamRes: Response;
   try {
     upstreamRes = await forwardToUpstream({
-      url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH, request.upstream?.baseUrl),
+      url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH),
       method: 'POST',
       body: JSON.stringify(buildUpstreamBody(request, providerPreferences)),
       signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
-      apiKey: request.upstream?.apiKey,
     });
   } catch (err) {
     // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
@@ -324,17 +308,6 @@ export async function execute(
     modelId: billing.modelId,
     modelOpenRouterId: billing.openRouterModelId,
   });
-}
-
-function internalResearchBilling(request: GenerationRequest): ModelBillingContext {
-  return {
-    modelId: request.model.modelId,
-    modelDisplayName: request.model.modelId,
-    openRouterModelId: request.model.openRouterModelId,
-    modelTier: request.model.tier,
-    catalogVersion: 0,
-    isFree: request.model.isFree,
-  };
 }
 
 function toError(err: unknown): Error {
