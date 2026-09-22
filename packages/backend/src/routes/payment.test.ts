@@ -9,6 +9,7 @@ import { insertUserNotification } from '../lib/notifications.js';
 import { checkInviteFirstPaidReward } from '../lib/invite-rewards.js';
 import { handleZqPayWebhook } from './payment.js';
 import {
+  isOrderFulfilled,
   reconcileWithGateway,
   settlePaidOrder,
 } from '../features/payment/usecases/PaymentSettlement.js';
@@ -79,6 +80,12 @@ function createOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPa
     expires_at: '2026-08-21T09:15:00.000Z',
     paid_at: null,
     settled_by: null,
+    product_type: 'credits',
+    product_id: null,
+    vip_duration_days: null,
+    vip_bonus_credits: null,
+    fulfillment_applied: false,
+    vip_valid_until: null,
     next_reconcile_at: '2026-08-21T09:01:00.000Z',
     last_reconciled_at: null,
     reconcile_attempts: 0,
@@ -658,6 +665,237 @@ describe('toPaymentOrder', () => {
       paid_at: '2026-08-21T09:02:00.000Z',
       provider_transaction_id: null,
       settled_by: 'query',
+      product_type: 'credits',
+      product_id: null,
+      fulfillment_applied: false,
+      vip_duration_days: null,
+      vip_bonus_credits: null,
+      vip_valid_until: null,
     });
+  });
+
+  it('maps a fulfilled VIP order snapshot', () => {
+    const mapped = toPaymentOrder(
+      createOrder({
+        product_type: 'vip',
+        product_id: 'month',
+        amount_cents: 2888,
+        credits_amount: 0,
+        bonus_credits: 0,
+        vip_duration_days: 31,
+        vip_bonus_credits: 3000,
+        fulfillment_applied: true,
+        vip_valid_until: '2026-10-23T00:00:00.000Z',
+        credits_added: false,
+        status: 'completed',
+      })
+    );
+    expect(mapped.product_type).toBe('vip');
+    expect(mapped.product_id).toBe('month');
+    expect(mapped.fulfillment_applied).toBe(true);
+    expect(mapped.vip_duration_days).toBe(31);
+    expect(mapped.vip_bonus_credits).toBe(3000);
+    expect(mapped.vip_valid_until).toBe('2026-10-23T00:00:00.000Z');
+  });
+});
+
+describe('VIP payment settlement', () => {
+  function vipOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPaymentOrderRow {
+    return createOrder({
+      id: 'MA-vip-week',
+      amount_cents: 1399,
+      credits_amount: 0,
+      bonus_credits: 0,
+      product_type: 'vip',
+      product_id: 'week',
+      vip_duration_days: 7,
+      vip_bonus_credits: 0,
+      fulfillment_applied: false,
+      credits_added: false,
+      ...overrides,
+    });
+  }
+
+  it.each(['webhook', 'return', 'query', 'cron'] as const)(
+    'settles a VIP order through %s without a second fulfillment path',
+    async (source) => {
+      const order = vipOrder({ id: `MA-vip-${source}` });
+      const orders = createOrders(order);
+      orders.complete.mockImplementation(async (_id, _txid, settledBy) =>
+        vipOrder({
+          ...order,
+          status: 'completed',
+          fulfillment_applied: true,
+          credits_added: false,
+          settled_by: settledBy,
+          vip_valid_until: '2026-09-29T00:00:00.000Z',
+        })
+      );
+
+      const result = await settlePaidOrder(
+        { orderId: order.id, paidAmount: '13.99', providerTransactionId: `tx-${source}` },
+        orders,
+        createLog(),
+        source
+      );
+
+      expect(result).toBe('completed');
+      expect(orders.complete).toHaveBeenCalledWith(order.id, `tx-${source}`, source);
+      expect(checkInviteFirstPaidReward).toHaveBeenCalledWith(
+        { userId: order.user_id, orderId: order.id },
+        expect.anything()
+      );
+    }
+  );
+
+  it('writes a week notice and still runs the invite hook once', async () => {
+    const order = vipOrder();
+    const orders = createOrders(order);
+    await settlePaidOrder(
+      { orderId: order.id, paidAmount: '13.99', providerTransactionId: 'tx-w' },
+      orders,
+      createLog(),
+      'webhook'
+    );
+    expect(insertUserNotification).toHaveBeenCalledWith({
+      userId: order.user_id,
+      category: 'system',
+      title: 'VIP 周卡已生效',
+      body: `订单 ${order.id} 已完成，会员已顺延 7 天。`,
+    });
+    expect(checkInviteFirstPaidReward).toHaveBeenCalledOnce();
+  });
+
+  it('writes a month notice that includes the one-time 3000 bonus', async () => {
+    const order = vipOrder({
+      id: 'MA-vip-month',
+      amount_cents: 2888,
+      product_id: 'month',
+      vip_duration_days: 31,
+      vip_bonus_credits: 3000,
+    });
+    const orders = createOrders(order);
+    await settlePaidOrder(
+      { orderId: order.id, paidAmount: '28.88', providerTransactionId: 'tx-m' },
+      orders,
+      createLog(),
+      'return'
+    );
+    expect(insertUserNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'VIP 月卡已生效',
+        body: `订单 ${order.id} 已完成，会员已顺延 31 天，3000 专项星尘已到账。`,
+      })
+    );
+  });
+
+  it('keeps the credits notice for a star-dust order', async () => {
+    const orders = createOrders();
+    await settlePaidOrder(
+      { orderId: 'MA-order-1', paidAmount: '6.00', providerTransactionId: 'tx-c' },
+      orders,
+      createLog(),
+      'query'
+    );
+    expect(insertUserNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: '星尘充值到账',
+        body: '订单 MA-order-1 已完成，600 星尘已到账。',
+      })
+    );
+  });
+
+  it('does not notify again when the same VIP order is confirmed by every source', async () => {
+    const order = vipOrder({
+      status: 'completed',
+      fulfillment_applied: true,
+      settled_by: 'webhook',
+    });
+    const orders = {
+      findById: vi.fn(async () => order),
+      complete: vi.fn(async () => order),
+      reopenExpired: vi.fn(async () => undefined),
+    };
+    for (const source of ['webhook', 'return', 'query', 'cron'] as const) {
+      await settlePaidOrder(
+        { orderId: order.id, paidAmount: '13.99', providerTransactionId: 'tx-w' },
+        orders,
+        createLog(),
+        source
+      );
+    }
+    expect(orders.complete).toHaveBeenCalledTimes(4);
+    expect(orders.reopenExpired).not.toHaveBeenCalled();
+    expect(insertUserNotification).not.toHaveBeenCalled();
+    expect(checkInviteFirstPaidReward).toHaveBeenCalledTimes(4);
+  });
+
+  it('reopens an expired unpaid VIP order and leaves an already fulfilled one closed', async () => {
+    const expired = vipOrder({ status: 'expired' });
+    const unpaid = createOrders(expired);
+    await settlePaidOrder(
+      { orderId: expired.id, paidAmount: '13.99', providerTransactionId: 'tx-late' },
+      unpaid,
+      createLog(),
+      'cron'
+    );
+    expect(unpaid.reopenExpired).toHaveBeenCalledWith(expired.id);
+
+    const fulfilled = vipOrder({
+      status: 'expired',
+      fulfillment_applied: true,
+      credits_added: false,
+    });
+    const paid = createOrders(fulfilled);
+    await settlePaidOrder(
+      { orderId: fulfilled.id, paidAmount: '13.99', providerTransactionId: 'tx-late' },
+      paid,
+      createLog(),
+      'cron'
+    );
+    expect(paid.reopenExpired).not.toHaveBeenCalled();
+    expect(isOrderFulfilled(fulfilled)).toBe(true);
+  });
+
+  it('does not fulfill when the paid amount does not match the snapshotted price', async () => {
+    const orders = createOrders(vipOrder());
+    const result = await settlePaidOrder(
+      { orderId: 'MA-vip-week', paidAmount: '13.98', providerTransactionId: 'tx-bad' },
+      orders,
+      createLog(),
+      'webhook'
+    );
+    expect(result).toBe('amount_mismatch');
+    expect(orders.complete).not.toHaveBeenCalled();
+    expect(insertUserNotification).not.toHaveBeenCalled();
+    expect(checkInviteFirstPaidReward).not.toHaveBeenCalled();
+  });
+
+  it('returns failed and skips notice and invite when the database fulfillment errors', async () => {
+    const orders = createOrders(vipOrder());
+    orders.complete.mockRejectedValueOnce(new Error('db down'));
+    const result = await settlePaidOrder(
+      { orderId: 'MA-vip-week', paidAmount: '13.99', providerTransactionId: 'tx-w' },
+      orders,
+      createLog(),
+      'webhook'
+    );
+    expect(result).toBe('failed');
+    expect(insertUserNotification).not.toHaveBeenCalled();
+    expect(checkInviteFirstPaidReward).not.toHaveBeenCalled();
+  });
+
+  it('keeps the VIP fulfillment when the notice write fails', async () => {
+    vi.mocked(insertUserNotification).mockRejectedValueOnce(new Error('notify down'));
+    const orders = createOrders(vipOrder());
+    const result = await settlePaidOrder(
+      { orderId: 'MA-vip-week', paidAmount: '13.99', providerTransactionId: 'tx-w' },
+      orders,
+      createLog(),
+      'webhook'
+    );
+    expect(result).toBe('completed');
+    expect(orders.complete).toHaveBeenCalledOnce();
+    expect(checkInviteFirstPaidReward).toHaveBeenCalledOnce();
   });
 });

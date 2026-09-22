@@ -1,0 +1,39 @@
+{
+  "id": "vip-voice-free-trials",
+  "name": "vip-voice-free-trials",
+  "title": "MiniApp 语音前 3 次免费接入",
+  "description": "在统一免费额度与钱包底座上接入语音前 3 次成功免费、失败释放和第 4 次充值钱包扣费。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P0",
+  "creator": "linshu",
+  "assignee": "unassigned",
+  "createdAt": "2026-09-21",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev_vip_0920",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-21-miniapp-vip-model-ui",
+  "relatedFiles": [],
+  "notes": "实施前将 assignee=unassigned 替换为原语音模块工程师的 Trellis developer id。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "backend.business.voice-message",
+        "backend.business.wallet-payment",
+        "shared.business.conversation-contracts",
+        "database.business.billing-payment",
+        "database.business.conversation-storage"
+      ]
+    }
+  }
+}

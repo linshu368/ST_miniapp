@@ -135,6 +135,8 @@ const RULES = [
     allow: [
       'packages/backend/src/features/payment/usecases/PaymentSettlement.ts',
       'packages/backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts',
+      // 同一数据库履约出口的 VIP 兼容函数体，不是第二条应用入账路径。
+      'packages/shared/migrations/20260921_vip_payment_fulfillment.sql',
     ],
   },
   {

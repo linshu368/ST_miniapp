@@ -284,8 +284,8 @@ export const configMetadata: Record<
   },
   miniapp_daily_checkin_bonus_credits: {
     label: '每日签到奖励',
-    description: '用户每次满足签到间隔后获得的 bonus 星尘。',
-    defaultValue: 40,
+    description: '每次签到的基础专项星尘。有效 VIP 会在同一笔领取中再加同等数量。',
+    defaultValue: 60,
   },
   miniapp_character_free_chat_quota_limit: {
     label: '角色卡免费对话轮次',

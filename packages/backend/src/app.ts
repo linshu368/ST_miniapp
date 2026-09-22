@@ -9,6 +9,7 @@ import characterRoutes from './routes/characters.js';
 import favoriteRoutes from './routes/favorites.js';
 import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
+import vipRoutes from './routes/vip.js';
 import settingsRoutes from './routes/settings.js';
 import wishRoutes from './routes/wishes.js';
 import csPlatformRoutes from './routes/cs-platform.js';
@@ -111,6 +112,7 @@ export async function buildApp() {
   await app.register(favoriteRoutes);
   await app.register(paymentRoutes);
   await app.register(walletRoutes);
+  await app.register(vipRoutes);
   await app.register(settingsRoutes);
   await app.register(wishRoutes);
   await app.register(csPlatformRoutes);

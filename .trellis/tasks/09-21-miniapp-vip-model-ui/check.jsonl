@@ -1,0 +1,28 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 UI → shared → backend → DB 往返类型、校验与失败路径是否闭环。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查是否平行实现支付、计费、runtime-config 或客户端记账。"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 质量门禁与不可谈判规则。"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"检查组件层是否散落 fetch，以及支付回流状态一致性。"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"Frontend test/lint/typecheck/build 与人工状态矩阵。"}
+{"file":".trellis/spec/frontend/app/modules/business/wallet-payment.md","reason":"检查充值/VIP 互斥选择是否破坏现有支付等待链路。"}
+{"file":".trellis/spec/frontend/app/modules/business/conversation-ui.md","reason":"检查模型入口迁移后聊天生成状态是否回归。"}
+{"file":".trellis/spec/frontend/app/modules/business/engagement-support.md","reason":"检查消息列表不得再按 scope 批量已读。"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend 质量门禁、@frontend-ready 与 generation/runtime-config 唯一出口。"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"检查超时、幂等、并发、补偿、敏感日志。"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"检查 Railway test Cron/支付脚本与 Production 开关隔离。"}
+{"file":".trellis/spec/backend/app/modules/business/wallet-payment.md","reason":"检查四路结算仍收敛到 complete_payment_order。"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"检查 VIP 权限与 95 折不绕过 generation billing。"}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"检查配置读取与敏感字段日志。"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"检查公开 DTO 是否先定义于 shared 且无 any。"}
+{"file":".trellis/spec/shared/contracts/api-contracts.md","reason":"检查旧字段兼容与稳定错误码。"}
+{"file":".trellis/spec/shared/contracts/testing-and-change-management.md","reason":"契约变更必须 shared test + 全仓 typecheck。"}
+{"file":".trellis/spec/shared/contracts/modules/business/wallet-payment-contracts.md","reason":"检查支付/钱包新增字段是否向后兼容。"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"检查唯一 migration 源、八域归属与 test/production 证据标签。"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"检查单文件执行、自检、锁预算与回滚说明。"}
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"检查新表 RLS/grants 与 SECURITY DEFINER search_path。"}
+{"file":".trellis/spec/database/supabase/introspection-and-documentation.md","reason":"检查 T0 是否在未确认 test 目标时连接或读取业务行。"}
+{"file":".trellis/spec/database/supabase/modules/business/billing-payment.md","reason":"检查会员/履约/免费额度对象是否越权离开 billing。"}
+{"file":".trellis/spec/database/supabase/modules/infrastructure/schema-security.md","reason":"检查跨 schema reminder RPC 的权限模型。"}
+{"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/current-implementation-and-reuse.md","reason":"对照复用结论，检查是否重新发明支付、钱包或媒体状态机。"}
+{"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-environment-and-config-gate.md","reason":"检查后续实现是否在未确认 test 目标时连库、是否把高级图片猜开、是否用 test 结论冒充 production。"}
+{"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-test-db-collection.md","reason":"对照 test 实况检查 migration 前置、search_path 与 PUBLIC execute 不得复制旧 GAP。"}
+{"file": ".trellis/tasks/09-21-miniapp-vip-model-ui/research/t2-reuse-and-db-primitives.md", "reason": "T2 数据库对象归属、RLS/grant 与本地未能远端验证项"}

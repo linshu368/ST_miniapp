@@ -1,20 +1,29 @@
 import { getDomainDb } from '../../../lib/supabase.js';
 import {
+  canonicalVipPlanTerms,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  isVipPlanId,
   PaymentPlansSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
   type PaymentPlan,
+  type PaymentProductType,
   type PaymentPromptDialogConfig,
   type RechargePageConfig,
+  type VipPlan,
+  type VipPlanId,
 } from '@miniapp/shared';
+import { fetchRuntimeConfigEntry } from '../../../platform/runtime-config.js';
 
 export const PAYMENT_PLANS_CONFIG_KEY = 'miniapp_payment_plans';
 export const RECHARGE_PAGE_CONFIG_KEY = 'miniapp_recharge_page_config';
 export const PAYMENT_PROMPT_DIALOG_CONFIG_KEY = 'miniapp_payment_prompt_dialog_config';
 export const INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY = 'insufficient_credits_notice';
+export const VIP_PURCHASE_ENABLED_CONFIG_KEY = 'vip_purchase_enabled';
 export const ORDER_EXPIRE_MS = 15 * 60 * 1000;
+/** 星尘套餐沿用已验证的网关商品名，避免改回曾触发渠道拦截的文案。 */
+export const CREDITS_GATEWAY_PRODUCT_NAME = 'VIP会员';
 
 const DEFAULT_INSUFFICIENT_CREDITS_NOTICE = '当前星尘积分不足，需要先购买积分才能继续聊天。';
 
@@ -108,6 +117,109 @@ export async function getInsufficientCreditsNotice(): Promise<string> {
 
   const jsonValue = typeof data?.value === 'string' ? data.value.trim() : '';
   return jsonValue || DEFAULT_INSUFFICIENT_CREDITS_NOTICE;
+}
+
+export class UnknownPaymentPlanError extends Error {
+  constructor() {
+    super('支付套餐不存在');
+    this.name = 'UnknownPaymentPlanError';
+  }
+}
+
+export class VipPurchaseDisabledError extends Error {
+  constructor() {
+    super('VIP 购买未开放');
+    this.name = 'VipPurchaseDisabledError';
+  }
+}
+
+export interface PaymentProductSnapshot {
+  product_type: PaymentProductType;
+  product_id: string;
+  amount_cents: number;
+  credits_amount: number;
+  bonus_credits: number;
+  vip_duration_days: number | null;
+  vip_bonus_credits: number | null;
+  gateway_product_name: string;
+}
+
+const VIP_PLAN_COPY: Record<VipPlanId, { title: string; description: string }> = {
+  week: { title: '周卡', description: '7 天 VIP' },
+  month: { title: '月卡', description: '31 天 VIP，赠送 3000 专项星尘' },
+};
+
+/** 缺配置、读失败或非 true 都关闭购买。credits 充值不读这个开关。 */
+export function parseVipPurchaseEnabled(value: unknown): boolean {
+  return value === true;
+}
+
+export async function isVipPurchaseEnabled(): Promise<boolean> {
+  const entry = await fetchRuntimeConfigEntry(VIP_PURCHASE_ENABLED_CONFIG_KEY);
+  return parseVipPurchaseEnabled(entry?.value);
+}
+
+export function buildVipPlans(purchaseEnabled: boolean): VipPlan[] {
+  return (['week', 'month'] as const).map((planId) => {
+    const terms = canonicalVipPlanTerms(planId);
+    const copy = VIP_PLAN_COPY[planId];
+    return {
+      id: planId,
+      price_cents: terms.price_cents,
+      duration_days: terms.duration_days,
+      bonus_credits: terms.bonus_credits,
+      title: copy.title,
+      description: copy.description,
+      badge_text: null,
+      available: purchaseEnabled,
+    };
+  });
+}
+
+export function buildCreditsProductSnapshot(plan: PaymentPlan): PaymentProductSnapshot {
+  return {
+    product_type: 'credits',
+    product_id: plan.id,
+    amount_cents: plan.price_cents,
+    credits_amount: plan.credits_amount,
+    bonus_credits: plan.bonus_credits,
+    vip_duration_days: null,
+    vip_bonus_credits: null,
+    gateway_product_name: CREDITS_GATEWAY_PRODUCT_NAME,
+  };
+}
+
+export function buildVipProductSnapshot(planId: VipPlanId): PaymentProductSnapshot {
+  const terms = canonicalVipPlanTerms(planId);
+  return {
+    product_type: 'vip',
+    product_id: planId,
+    amount_cents: terms.price_cents,
+    credits_amount: 0,
+    bonus_credits: 0,
+    vip_duration_days: terms.duration_days,
+    vip_bonus_credits: terms.bonus_credits,
+    gateway_product_name: planId === 'week' ? 'VIP周卡' : 'VIP月卡',
+  };
+}
+
+export async function resolvePaymentProduct(
+  planId: string,
+  input: {
+    vipPurchaseEnabled: boolean;
+    findPlan: (planId: string) => Promise<PaymentPlan | undefined>;
+  }
+): Promise<PaymentProductSnapshot> {
+  if (isVipPlanId(planId)) {
+    if (!input.vipPurchaseEnabled) {
+      throw new VipPurchaseDisabledError();
+    }
+    return buildVipProductSnapshot(planId);
+  }
+
+  const plan = await input.findPlan(planId);
+  if (!plan) throw new UnknownPaymentPlanError();
+  return buildCreditsProductSnapshot(plan);
 }
 
 export function generateMiniappOrderId(userId: string): string {

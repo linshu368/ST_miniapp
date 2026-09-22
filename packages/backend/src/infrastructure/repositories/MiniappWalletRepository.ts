@@ -1,5 +1,11 @@
 import { getDomainDb } from '../../lib/supabase.js';
-import type { GetWalletBalanceData, WalletSpendingRecord } from '@miniapp/shared';
+import { createLogger } from '../../lib/logger.js';
+import {
+  createWalletAmountSplit,
+  type GetWalletBalanceData,
+  type WalletSpendingRecord,
+} from '@miniapp/shared';
+import { quoteDailyCheckinReward } from '../../features/vip/checkin-reward.js';
 
 type NumericValue = string | number;
 
@@ -76,14 +82,21 @@ interface DailyCheckinRpcData {
   claimed_at: string;
   next_claim_at: string;
   reward_credits: number;
+  base_reward_credits?: number;
+  vip_reward_credits?: number;
   wallet_ledger_id?: string;
 }
+
+/** 配置缺失或无法解析时的基础签到额。线上发放仍以 runtime_config 为准。 */
+export const DEFAULT_DAILY_CHECKIN_BASE_CREDITS = 60;
 
 export interface DailyCheckinStatus {
   can_claim: boolean;
   last_claimed_at: string | null;
   next_claim_at: string | null;
   reward_credits: number;
+  base_reward_credits: number;
+  vip_reward_credits: number;
 }
 
 export class MiniappWalletRepository {
@@ -361,7 +374,31 @@ export class MiniappWalletRepository {
       throw new Error(`查询签到配置失败：${configError.message}`);
     }
 
-    const rewardCredits = parsePositiveInteger(configRow?.value ?? configRow?.text_value, 40);
+    const now = new Date();
+    const baseRewardCredits = parsePositiveInteger(
+      configRow?.value ?? configRow?.text_value,
+      DEFAULT_DAILY_CHECKIN_BASE_CREDITS
+    );
+
+    const { data: membership, error: membershipError } = await this.db
+      .from('vip_memberships')
+      .select('valid_until')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (membershipError) {
+      createLogger('wallet').sys.error(
+        { err: membershipError, event: 'wallet.checkin.vip_read_failed', userId },
+        '签到预览读取 VIP 失败'
+      );
+    }
+    const validUntil = membershipError
+      ? null
+      : ((membership as { valid_until?: string } | null)?.valid_until ?? null);
+    const quote = quoteDailyCheckinReward({
+      baseRewardCredits,
+      validUntil,
+      now: now.toISOString(),
+    });
 
     const { data, error } = await this.featuresDb
       .from('daily_checkins')
@@ -381,10 +418,12 @@ export class MiniappWalletRepository {
       : null;
 
     return {
-      can_claim: !nextClaimAt || Date.now() >= new Date(nextClaimAt).getTime(),
+      can_claim: !nextClaimAt || now.getTime() >= new Date(nextClaimAt).getTime(),
       last_claimed_at: lastClaimedAt,
       next_claim_at: nextClaimAt,
-      reward_credits: rewardCredits,
+      reward_credits: quote.reward_credits,
+      base_reward_credits: quote.base_reward_credits,
+      vip_reward_credits: quote.vip_reward_credits,
     };
   }
 
@@ -407,7 +446,7 @@ export class MiniappWalletRepository {
 
     return {
       wallet: normalizeWallet(result.wallet),
-      checkin: result.checkin,
+      checkin: toClaimedCheckin(result.checkin),
     };
   }
 }
@@ -415,16 +454,49 @@ export class MiniappWalletRepository {
 export function toWalletBalance(row: MiniappWalletRow): GetWalletBalanceData {
   const mainCredits = toNumber(row.main_credits);
   const bonusCredits = toNumber(row.bonus_credits);
-  const credits =
-    row.total_credits === null ? mainCredits + bonusCredits : toNumber(row.total_credits);
+  const split = createWalletAmountSplit(mainCredits, bonusCredits);
+  if (!split.ok) {
+    throw new Error('钱包余额拆分无效');
+  }
+  if (row.total_credits !== null && toNumber(row.total_credits) !== split.value.total_credits) {
+    throw new Error('钱包余额不守恒');
+  }
   return {
-    credits,
-    main_credits: mainCredits,
-    bonus_credits: bonusCredits,
-    total_credits: credits,
+    credits: split.value.total_credits,
+    main_credits: split.value.main_credits,
+    bonus_credits: split.value.bonus_credits,
+    total_credits: split.value.total_credits,
     first_paid_at: row.first_paid_at,
     last_paid_at: row.last_paid_at,
     total_paid_amount: String(row.total_paid_amount ?? '0.00'),
+  };
+}
+
+export function toClaimedCheckin(raw: DailyCheckinRpcData): {
+  claimed_at: string;
+  next_claim_at: string;
+  reward_credits: number;
+  base_reward_credits?: number;
+  vip_reward_credits?: number;
+} {
+  const rewardCredits = readRewardInteger(raw.reward_credits);
+  const baseRewardCredits =
+    raw.base_reward_credits == null ? undefined : readRewardInteger(raw.base_reward_credits);
+  const vipRewardCredits =
+    raw.vip_reward_credits == null ? undefined : readRewardInteger(raw.vip_reward_credits);
+  if (
+    baseRewardCredits !== undefined &&
+    vipRewardCredits !== undefined &&
+    baseRewardCredits + vipRewardCredits !== rewardCredits
+  ) {
+    throw new Error('签到奖励拆分与总额不一致');
+  }
+  return {
+    claimed_at: raw.claimed_at,
+    next_claim_at: raw.next_claim_at,
+    reward_credits: rewardCredits,
+    base_reward_credits: baseRewardCredits,
+    vip_reward_credits: vipRewardCredits,
   };
 }
 
@@ -473,6 +545,14 @@ function readReplyOutcome(
 ): WalletSpendingRecord['reply_outcome'] {
   const value = metadata.reply_outcome;
   return value === 'complete' || value === 'incomplete' || value === 'empty' ? value : null;
+}
+
+function readRewardInteger(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error('签到奖励返回无效');
+  }
+  return parsed;
 }
 
 function parsePositiveInteger(value: unknown, fallback: number): number {
