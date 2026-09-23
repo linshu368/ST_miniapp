@@ -55,7 +55,7 @@ export class RechargeUseCase {
       amount: formatAmountCny(plan.price_cents),
       userId: input.userId,
       // 子千易 `name`。原「星尘充值 *」疑似命中支付宝禁售词，改为文档示例做验证。
-      productName: 'VIP会员',
+      productName: '星尘',
       clientIp: input.clientIp,
     });
 
