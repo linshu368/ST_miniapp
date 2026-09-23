@@ -62,3 +62,4 @@ Telegram WebView 差异需持续人工回归；打开 Production PostHog 是独�
 ## 变更记录
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）记录图片业务事件复用现有 replay lifecycle 与 shared schema；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
+- 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。

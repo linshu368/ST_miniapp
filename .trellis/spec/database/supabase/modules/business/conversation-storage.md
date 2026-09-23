@@ -69,3 +69,4 @@ Backend repository integration 与 MVP regression；Batch Lab 相关 preview/fre
   last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
   last_verified_at: 2026-09-14
 - 2026-09-22：任务 `Batch Lab 原型一致性修复规划`（`.trellis/tasks/archive/2026-09/09-17-batch-lab-prototype-alignment/`）补充 Batch Lab 原型对齐后的当前实现事实；commit：`212942339cb51b2419b01149828a1b4ec78074d7`。
+- 2026-09-23：任务 `Admin VIP media configuration`（`.trellis/tasks/archive/2026-09/09-23-admin-vip-media-config/`）Admin ?? VIP ??????????????????/????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。
