@@ -13,6 +13,7 @@
  * 计费开关 voice_billing_enabled 关闭时跳过预检与扣费，行为与现网一致。
  */
 
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { fail, MAX_CUSTOM_VOICE_CHARS, ok } from '@miniapp/shared';
 import type {
@@ -21,6 +22,7 @@ import type {
   GetSessionVoiceData,
   GetVoiceConfigData,
   InsufficientBalanceErrorResponse,
+  MediaBillingMode,
   PatchVoiceConfigData,
   PatchVoiceConfigRequest,
 } from '@miniapp/shared';
@@ -35,11 +37,16 @@ import {
 } from '../infrastructure/repositories/ChatMessageAudioRepository.js';
 import { ChatSessionRepository } from '../infrastructure/repositories/ChatSessionRepository.js';
 import { ConversationHistoryRepository } from '../infrastructure/repositories/ConversationHistoryRepository.js';
+import {
+  emptyFreeTrialQuota,
+  FeatureFreeTrialRepository,
+} from '../infrastructure/repositories/FeatureFreeTrialRepository.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { ConversationRepositoryError } from '../infrastructure/repositories/conversation-errors.js';
 import { runVoiceGeneration } from '../features/voice/generate.js';
 import { precheckVoiceCredits } from '../features/voice/billing.js';
 import { getVoiceBillingConfig } from '../features/voice/voice-billing-config.js';
+import { getMediaFeatureFreeTrialLimit } from '../features/billing/feature-free-trial-limit.js';
 import { normalizeCustomText } from '../features/voice/voice-text.js';
 import {
   DEFAULT_TTS_MODEL,
@@ -55,12 +62,16 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
  * 超长的多半是异常内容，截断比让上游按 token 计费跑一趟划算。
  */
 const MAX_SOURCE_CHARS = 4000;
+const VOICE_FREE_TRIAL_RESERVATION_TTL_SECONDS = Math.ceil(
+  (config.voice.timeoutMs * 3 + 60_000) / 1000
+);
 
 export default async function voiceRoutes(app: FastifyInstance) {
   const sessions = new ChatSessionRepository();
   const history = new ConversationHistoryRepository();
   const settings = new MiniappUserSettingsRepository();
   const audio = new ChatMessageAudioRepository();
+  const freeTrials = new FeatureFreeTrialRepository();
 
   // ── 用户级语音偏好 ────────────────────────────────────────────────────────
 
@@ -70,12 +81,31 @@ export default async function voiceRoutes(app: FastifyInstance) {
 
     const dbUser = await getOrCreateDbUser(request.user);
     const billing = await getVoiceBillingConfig();
+    const freeTrialLimit = await getMediaFeatureFreeTrialLimit();
+    /** 获取基础免费体验额度 */
+    const freeTrial = billing.enabled
+      ? await freeTrials.quota(dbUser.id, 'voice', freeTrialLimit)
+      : emptyFreeTrialQuota('voice', freeTrialLimit);
     return reply.send(
       ok<GetVoiceConfigData>({
         config: await settings.getVoiceConfig(dbUser.id),
         voices: [...VOICE_CATALOG],
         playback_rates: [...PLAYBACK_RATES],
         billing: billing.billing,
+        free_trial: freeTrial,
+        next_billing: {
+          billing_mode: billing.enabled
+            ? freeTrial.free_trials_remaining > 0
+              ? 'free_trial'
+              : 'paid'
+            : 'legacy_free',
+          wallet_policy: 'main_only',
+          price_credits: billing.creditsPerGeneration,
+          price_label: billing.priceLabel,
+          free_trial_limit: freeTrial.free_trial_limit,
+          free_trial_ordinal: billing.enabled ? freeTrial.next_trial_ordinal : null,
+          free_trials_remaining: billing.enabled ? freeTrial.free_trials_remaining : null,
+        },
         limits: billing.limits,
         hints: billing.hints,
       })
@@ -102,6 +132,11 @@ export default async function voiceRoutes(app: FastifyInstance) {
 
       const dbUser = await getOrCreateDbUser(request.user);
       const billing = await getVoiceBillingConfig();
+      const freeTrialLimit = await getMediaFeatureFreeTrialLimit();
+      /** 获取基础免费体验额度 */
+      const freeTrial = billing.enabled
+        ? await freeTrials.quota(dbUser.id, 'voice', freeTrialLimit)
+        : emptyFreeTrialQuota('voice', freeTrialLimit);
       try {
         const updated = await settings.setVoiceConfig(dbUser.id, request.user, {
           ...(body.voice_id !== undefined ? { voiceId: body.voice_id } : {}),
@@ -113,6 +148,20 @@ export default async function voiceRoutes(app: FastifyInstance) {
             voices: [...VOICE_CATALOG],
             playback_rates: [...PLAYBACK_RATES],
             billing: billing.billing,
+            free_trial: freeTrial,
+            next_billing: {
+              billing_mode: billing.enabled
+                ? freeTrial.free_trials_remaining > 0
+                  ? 'free_trial'
+                  : 'paid'
+                : 'legacy_free',
+              wallet_policy: 'main_only',
+              price_credits: billing.creditsPerGeneration,
+              price_label: billing.priceLabel,
+              free_trial_limit: freeTrial.free_trial_limit,
+              free_trial_ordinal: billing.enabled ? freeTrial.next_trial_ordinal : null,
+              free_trials_remaining: billing.enabled ? freeTrial.free_trials_remaining : null,
+            },
             limits: billing.limits,
             hints: billing.hints,
           })
@@ -214,23 +263,41 @@ export default async function voiceRoutes(app: FastifyInstance) {
         }
         throw error;
       }
-
-      // 计费预检：开关开且余额 < 单次扣费额 → 402，不建 pending。
-      // 复用对话链路的裸形状 InsufficientBalanceErrorResponse（标准 envelope 装不下两个金额），
-      // 前端 apiClient 据此跳充值页并带 required。开关关时跳过预检（现网行为）。
+      /** 获取语音计费配置 */
       const billing = await getVoiceBillingConfig();
+      /** 生成音频 ID */
+      const audioId = randomUUID();
+      /** 设置计费模式 */
+      let billingMode: MediaBillingMode = billing.enabled ? 'paid' : 'legacy_free';
+      /** 设置免费体验次数 */
+      let freeTrialOrdinal: number | null = null;
+      /** 如果计费启用 */
       if (billing.enabled) {
-        const precheck = await precheckVoiceCredits(dbUser.id, billing.creditsPerGeneration);
-        if (!precheck.ok) {
-          const response: InsufficientBalanceErrorResponse = {
-            error: {
-              message: `Insufficient credits: have ${precheck.creditsAvailable}, need ${precheck.creditsRequired}`,
-              type: 'insufficient_balance',
-              credits_required: billing.creditsPerGeneration,
-              credits_available: precheck.creditsAvailable,
-            },
-          };
-          return reply.status(402).send(response);
+        const reservation = await freeTrials.reserve({
+          userId: dbUser.id,
+          feature: 'voice',
+          referenceId: audioId,
+          ttlSeconds: VOICE_FREE_TRIAL_RESERVATION_TTL_SECONDS,
+        });
+        if (reservation.ok) {
+          billingMode = 'free_trial';
+          freeTrialOrdinal = reservation.fact.ordinal;
+        } else {
+          if (reservation.code !== 'FEATURE_FREE_TRIAL_EXHAUSTED') {
+            return reply.status(409).send(fail(reservation.code, reservation.message));
+          }
+          const precheck = await precheckVoiceCredits(dbUser.id, billing.creditsPerGeneration);
+          if (!precheck.ok) {
+            const response: InsufficientBalanceErrorResponse = {
+              error: {
+                message: `Insufficient credits: have ${precheck.creditsAvailable}, need ${precheck.creditsRequired}`,
+                type: 'insufficient_balance',
+                credits_required: billing.creditsPerGeneration,
+                credits_available: precheck.creditsAvailable,
+              },
+            };
+            return reply.status(402).send(response);
+          }
         }
       }
 
@@ -244,6 +311,7 @@ export default async function voiceRoutes(app: FastifyInstance) {
       let pending;
       try {
         pending = await audio.createPending({
+          id: audioId,
           messageId,
           sessionId,
           userId: dbUser.id,
@@ -251,8 +319,22 @@ export default async function voiceRoutes(app: FastifyInstance) {
           ttsModel: DEFAULT_TTS_MODEL,
           ttsSpeed: DEFAULT_TTS_SPEED,
           sourceChars: customText ? customText.length : sourceText.length,
+          billingMode,
+          freeTrialOrdinal,
+          priceCredits: billing.creditsPerGeneration,
+          priceLabel: billing.priceLabel,
         });
       } catch (error) {
+        if (billingMode === 'free_trial') {
+          try {
+            await freeTrials.release({ userId: dbUser.id, feature: 'voice', referenceId: audioId });
+          } catch (releaseError) {
+            log.sys.error(
+              { event: 'voice.free_trial.release_failed', audioId, err: releaseError },
+              '释放语音免费体验名额失败'
+            );
+          }
+        }
         if (error instanceof AudioConflictError) {
           return reply.status(409).send(fail('CONFLICT', '这条回复正在生成语音'));
         }

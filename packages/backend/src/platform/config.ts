@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { createDatabaseConfig, resolveDefaultUserAvatarUrl } from '@miniapp/shared';
+import { resolveBatchLabSourceConfig } from '../features/batch-lab/source-config.js';
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const databaseConfig = createDatabaseConfig({
@@ -14,11 +15,30 @@ const databaseConfig = createDatabaseConfig({
   ],
 });
 
+const batchLabSourceEnvironment = process.env.BATCH_LAB_SAMPLE_SOURCE_ENV || 'test';
+if (batchLabSourceEnvironment !== 'test' && batchLabSourceEnvironment !== 'production') {
+  throw new Error('BATCH_LAB_SAMPLE_SOURCE_ENV must be test or production');
+}
+const batchLabSourceConfig = resolveBatchLabSourceConfig({
+  env: process.env,
+  nodeEnv,
+  backendEnvironment: databaseConfig.environment,
+  sourceEnvironment: batchLabSourceEnvironment,
+  testProjectRef: databaseConfig.testProjectRef,
+  prodProjectRef: databaseConfig.prodProjectRef,
+});
+
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   csPlatformUrl: process.env.CS_PLATFORM_URL || 'https://st-cs-platform.vercel.app',
   adminPlatformUrl: process.env.ADMIN_PLATFORM_URL || 'https://st-admin-platform.vercel.app',
+  batchLab: {
+    enabled: process.env.BATCH_LAB_ENABLED === 'true',
+    url: process.env.BATCH_LAB_URL || '',
+    sourceEnvironment: batchLabSourceEnvironment,
+    source: batchLabSourceConfig,
+  },
   nodeEnv,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',

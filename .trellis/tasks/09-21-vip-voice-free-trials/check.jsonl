@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/tasks/09-21-vip-voice-free-trials/prd.md","reason":"语音免费体验验收口径"}
+{"file":".trellis/tasks/09-21-vip-voice-free-trials/design.md","reason":"语音预留、释放、结算与前端展示设计依据"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 验证与数据流边界"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend route、计费与日志边界"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"共享契约与消费者兼容边界"}

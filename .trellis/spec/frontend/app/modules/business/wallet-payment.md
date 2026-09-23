@@ -58,3 +58,7 @@ WebView 回跳和第三方页面兼容需真机验证。
 ## 关联模块
 
 `backend.business.wallet-payment`、`shared.business.wallet-payment-contracts`。
+
+## 变更记录
+
+- 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。

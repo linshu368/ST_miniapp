@@ -17,15 +17,11 @@ function wallets(): MiniappWalletRepository {
 }
 
 export async function precheckVoiceCredits(userId: string, requiredAmount: number) {
-  const wallet = await wallets().getOrCreate(userId);
-  const available = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-  return available < requiredAmount
-    ? { ok: false as const, creditsRequired: requiredAmount, creditsAvailable: available }
-    : { ok: true as const };
+  return wallets().precheckMainCredits(userId, requiredAmount);
 }
 
 export async function settleVoiceGeneration(
-  input: Parameters<MiniappWalletRepository['chargeVoiceUsage']>[0]
+  input: Parameters<MiniappWalletRepository['settleVoiceGeneration']>[0]
 ) {
-  return wallets().chargeVoiceUsage(input);
+  return wallets().settleVoiceGeneration(input);
 }

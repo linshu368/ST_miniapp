@@ -1,3 +1,11 @@
+/**
+ * @Author: whc 952987912@qq.com
+ * @Date: 2026-09-04 10:01:59
+ * @LastEditors: whc 952987912@qq.com
+ * @LastEditTime: 2026-09-21 10:12:30
+ * @Description:
+ * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
+ */
 export * from './api/envelope';
 export * from './api/characters';
 export * from './api/favorites';
@@ -23,6 +31,7 @@ export * from './api/models';
 export * from './api/provider-routing';
 export * from './api/notifications';
 export * from './api/support';
+export * from './api/batch-lab';
 export * from './api/telemetry';
 export * from './api/admin-model-test';
 export * from './config/database';

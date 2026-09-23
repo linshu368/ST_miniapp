@@ -6,6 +6,8 @@ import { Check, Download, Expand, Eye, ImageIcon, Loader2, RefreshCw, X } from '
 import type {
   CreateMessageImageRequest,
   GetImageConfigData,
+  ImageGenerationTier,
+  MediaBillingPreview,
   MessageImageState,
 } from '@miniapp/shared';
 import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
@@ -36,7 +38,7 @@ export interface MessageImageUiState {
   /** 最新回复可首次生成；已有图片记录的历史回复也可重试或重新生成。 */
   canGenerate: boolean;
   config: GetImageConfigData | undefined;
-  describe: () => Promise<{ draftId: string; prompt: string }>;
+  describe: (tier: ImageGenerationTier) => Promise<{ draftId: string; prompt: string }>;
   create: (request: CreateMessageImageRequest) => Promise<void>;
   onRecharge: () => void;
   telemetry: ImageTelemetryContext;
@@ -57,6 +59,7 @@ export function ChatMessageImageFooter({
   const [prompt, setPrompt] = useState('');
   const [draftId, setDraftId] = useState<string | null>(null);
   const [source, setSource] = useState<PromptSource>('generated');
+  const [tier, setTier] = useState<ImageGenerationTier>('basic');
   const [stage, setStage] = useState<
     'idle' | 'describing' | 'confirming' | 'creating' | 'failed' | 'insufficient'
   >('idle');
@@ -69,7 +72,10 @@ export function ChatMessageImageFooter({
   const current = image?.image?.current ?? null;
   const ready = current?.status === 'ready' ? current : null;
   const busy = latest?.status === 'pending' || latest?.status === 'generating';
-  const priceLabel = image?.config?.billing.enabled ? image.config.billing.price_label : '';
+  const selectedTierConfig = image?.config?.tiers[tier] ?? image?.config?.tiers.basic;
+  const priceLabel = selectedTierConfig
+    ? formatImageBillingLabel(selectedTierConfig.next_billing)
+    : '';
   const maxChars = image?.config?.limits.max_prompt_chars ?? MAX_IMAGE_PROMPT_CHARS;
   const telemetry = image?.telemetry ?? null;
 
@@ -114,7 +120,10 @@ export function ChatMessageImageFooter({
   // 非最后一条消息没有图片能力，但仍须把同一操作行里的语音/重生成渲染出来。
   if (!image) return children ? children(null) : null;
 
-  const openDefaultFlow = async (entrySource: 'default' | 'regenerate_ready' = 'default') => {
+  const openDefaultFlow = async (
+    entrySource: 'default' | 'regenerate_ready' = 'default',
+    nextTier: ImageGenerationTier = 'basic'
+  ) => {
     if (telemetry) {
       captureImageEntrySelected({
         context: telemetry,
@@ -130,6 +139,19 @@ export function ChatMessageImageFooter({
       setSheetOpen(true);
       return;
     }
+    const nextTierConfig = image.config?.tiers[nextTier];
+    if (nextTierConfig && !nextTierConfig.available) {
+      setTier(nextTier);
+      setError(
+        nextTierConfig.locked_reason === 'VIP_REQUIRED'
+          ? '高级图片需要 VIP'
+          : '这个图片档位暂不可用'
+      );
+      setStage('failed');
+      setSheetOpen(true);
+      return;
+    }
+    setTier(nextTier);
     generationStartedRef.current = false;
     setDraftId(null);
     setPrompt('');
@@ -139,7 +161,7 @@ export function ChatMessageImageFooter({
     const startedAt = Date.now();
     if (telemetry) captureImageDescriptionRequested(telemetry);
     try {
-      const description = await image.describe();
+      const description = await image.describe(nextTier);
       setDraftId(description.draftId);
       setPrompt(description.prompt);
       setSource('generated');
@@ -171,6 +193,7 @@ export function ChatMessageImageFooter({
     }
     generationStartedRef.current = false;
     setDraftId(null);
+    setTier(latest?.tier ?? 'basic');
     setPrompt(latest?.prompt_cn ?? '');
     setSource(latest?.prompt_source ?? 'custom');
     setError('');
@@ -249,6 +272,7 @@ export function ChatMessageImageFooter({
         ...(draftId ? { draft_id: draftId } : {}),
         prompt_cn: value,
         prompt_source: source,
+        tier,
       });
       // 202 只表示任务已受理；Sheet 保持生成中，直到会话图片轮询拿到终态。
       setStage('creating');
@@ -289,18 +313,30 @@ export function ChatMessageImageFooter({
       正在出图
     </span>
   ) : image.canGenerate ? (
-    <button
-      type="button"
-      onClick={() =>
-        latest?.status === 'failed' || latest?.status === 'failed_unknown'
-          ? openRetryFlow()
-          : void openDefaultFlow()
-      }
-      className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
-    >
-      <Eye className="size-3.5" aria-hidden />
-      {latest?.status === 'failed' || latest?.status === 'failed_unknown' ? '重试出图' : '看看TA'}
-    </button>
+    <span className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() =>
+          latest?.status === 'failed' || latest?.status === 'failed_unknown'
+            ? openRetryFlow()
+            : void openDefaultFlow('default', 'basic')
+        }
+        className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
+      >
+        <Eye className="size-3.5" aria-hidden />
+        {latest?.status === 'failed' || latest?.status === 'failed_unknown' ? '重试出图' : '看看TA'}
+      </button>
+      {image.config?.tiers.advanced.enabled ? (
+        <button
+          type="button"
+          onClick={() => void openDefaultFlow('default', 'advanced')}
+          className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
+        >
+          <ImageIcon className="size-3.5" aria-hidden />
+          高级图
+        </button>
+      ) : null}
+    </span>
   ) : null;
 
   return (
@@ -337,7 +373,7 @@ export function ChatMessageImageFooter({
         <div className="ml-2 space-y-1.5 text-[11px]">
           <button
             type="button"
-            onClick={() => void openDefaultFlow('regenerate_ready')}
+            onClick={() => void openDefaultFlow('regenerate_ready', ready.tier)}
             className="flex items-center gap-1.5 text-primary"
           >
             <Eye className="size-3.5" aria-hidden />
@@ -427,7 +463,9 @@ export function ChatMessageImageFooter({
                 </SheetDescription>
                 <button
                   type="button"
-                  onClick={() => (prompt.trim() ? void submit() : void openDefaultFlow())}
+                  onClick={() =>
+                    prompt.trim() ? void submit() : void openDefaultFlow('default', tier)
+                  }
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
                 >
                   <RefreshCw className="size-4" aria-hidden />
@@ -549,4 +587,13 @@ export function ChatMessageImageFooter({
       </Dialog>
     </div>
   );
+}
+
+function formatImageBillingLabel(billing: MediaBillingPreview): string {
+  if (billing.billing_mode === 'free_trial') {
+    const ordinal = billing.free_trial_ordinal ?? 1;
+    const limit = billing.free_trial_limit ?? 3;
+    return `免费体验 ${ordinal}/${limit}`;
+  }
+  return billing.price_label;
 }

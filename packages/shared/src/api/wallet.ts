@@ -1,7 +1,10 @@
 // MiniApp 钱包领域的前后端共享契约
 import { z } from 'zod';
 
-import { FEATURE_FREE_TRIAL_LIMIT, type FeatureFreeTrialFeature } from './feature-free-trials.js';
+import {
+  DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
+  type FeatureFreeTrialFeature,
+} from './feature-free-trials.js';
 
 /** runtime_config key：用户与单张角色卡的免费对话轮次上限。 */
 export const CHARACTER_FREE_CHAT_QUOTA_LIMIT_CONFIG_KEY = 'miniapp_character_free_chat_quota_limit';
@@ -194,7 +197,7 @@ export function resolveBillableCapabilityRules(
         wallet_policy: 'main_only',
         requires_vip: false,
         free_trial_feature: 'basic_image',
-        free_trial_limit: FEATURE_FREE_TRIAL_LIMIT,
+        free_trial_limit: DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
       };
     case 'voice':
       return {
@@ -202,7 +205,7 @@ export function resolveBillableCapabilityRules(
         wallet_policy: 'main_only',
         requires_vip: false,
         free_trial_feature: 'voice',
-        free_trial_limit: FEATURE_FREE_TRIAL_LIMIT,
+        free_trial_limit: DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
       };
     case 'image_advanced':
       return {

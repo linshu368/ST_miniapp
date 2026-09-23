@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "supabase-test-readonly": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=zoqelpfhurwehlvypryl&read_only=true&features=database%2Cdocs"
+    }
+  }
+}
