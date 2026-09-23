@@ -190,7 +190,42 @@ export default defineRailway((ctx) => {
     env: paymentCronEnv,
   });
 
+  // Production 不声明这个 Cron。development 也只跑 dry-run；
+  // 真实写入还要 vip_reminders_enabled 显式为 true，本文件不打开它。
+  // 每小时一次是因为漏掉上海日历日就无法补发该窗口，幂等键让重复跑是安全的。
+  const resources = [stminiapp, paymentReconcileWorker, paymentCron];
+  if (!production) {
+    resources.push(
+      fn('stminiapp-vip-reminder-cron', {
+        source: github(REPOSITORY, { branch }),
+        build: {
+          builder: 'DOCKERFILE',
+          buildCommand: 'pnpm install',
+          buildEnvironment: 'V3',
+          dockerfilePath: '/ops/docker/Dockerfile.backend',
+        },
+        start: 'tsx src/scripts/send-vip-expiry-reminders.ts --dry-run',
+        deploy: {
+          cronSchedule: '20 * * * *',
+          restartPolicyType: 'NEVER',
+        },
+        env: {
+          NODE_ENV: stminiapp.env.NODE_ENV,
+          DATABASE_ENV: stminiapp.env.DATABASE_ENV,
+          DATABASE_URL: stminiapp.env.DATABASE_URL,
+          DIRECT_URL: stminiapp.env.DIRECT_URL,
+          PROD_SUPABASE_PROJECT_REF: stminiapp.env.PROD_SUPABASE_PROJECT_REF,
+          TEST_DATABASE_URL: stminiapp.env.TEST_DATABASE_URL,
+          TEST_DIRECT_URL: stminiapp.env.TEST_DIRECT_URL,
+          TEST_SUPABASE_URL: stminiapp.env.TEST_SUPABASE_URL,
+          TEST_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.TEST_SUPABASE_SERVICE_ROLE_KEY,
+          TEST_SUPABASE_PROJECT_REF: stminiapp.env.TEST_SUPABASE_PROJECT_REF,
+        },
+      })
+    );
+  }
+
   return project('st-miniapp', {
-    resources: [stminiapp, paymentReconcileWorker, paymentCron],
+    resources,
   });
 });

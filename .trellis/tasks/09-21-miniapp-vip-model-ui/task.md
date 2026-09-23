@@ -16,10 +16,10 @@
 | T1  | Done   | 定义 VIP、支付、钱包、模型、通知及媒体免费公共契约与价格纯函数 | `packages/shared/src/api/*`                          | T0                                    | shared test/typecheck；旧字段兼容                |
 | T2  | Done   | 添加会员/钱包/免费额度公共结构、RLS/grants、索引与原子 RPC     | `packages/shared/migrations/*`                       | T1                                    | test 单文件 migration、自检、守恒/并发/回滚演练  |
 | T3  | Done   | 实现 VIP status、商品下单、支付原子履约与签到加成              | Backend VIP/payment/wallet routes + repositories     | T2                                    | 四路支付、续费、月卡赠送、60/120 与故障测试      |
-| T3A | Doing  | 新增 Admin“VIP策略”与动态商品/权益配置 forward-fix             | Shared + DB + Backend + Admin                        | T3                                    | 配置校验、快照、回滚、旧版本兼容、Admin build    |
+| T3A | Done   | 新增 Admin“VIP策略”与动态商品/权益配置 forward-fix             | Shared + DB + Backend + Admin                        | T3                                    | 配置校验、快照、回滚、旧版本兼容、Admin build    |
 | T4  | Done   | 改造 LLM 权限、折扣、钱包分配、明细与原路退款                  | Backend models/generation/billing/wallet             | T2,T3                                 | 钱包矩阵、配置快照、并发、重放、退款回归测试     |
 | T5  | Todo   | 向语音/图片子任务交付底座并完成跨模块集成验收                  | 两个 child task + parent integration                 | 语音/图片底座等 T2/T3；动态上限等 T3A | 子任务证据、免费/钱包/权限联合矩阵               |
-| T6  | Todo   | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3,T3A                             | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
+| T6  | Doing  | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3,T3A                             | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
 | T7  | Todo   | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T3A,T4,T5,T6                    | 前端 test/lint/typecheck/build + 人工状态矩阵    |
 | T8  | Todo   | 完成跨包回归、test 必验路径、文档与模块知识更新                | 全仓、README、ARCHITECTURE、spec/module facts        | T1-T7                                 | 全量命令、test 证据、`module_knowledge.py check` |
 | T9  | Todo   | 形成 Production 发布单并等待产品上线确认                       | migrations / Railway / feature flags                 | T8                                    | 未获明确确认保持 Production 关闭                 |
@@ -163,6 +163,35 @@
   - 未做：正式 test apply 与 apply 后只读 postflight；Admin 登录后的页面点击（运营台需要已登录会话，本轮不连 test）；旧 Backend 进程对新库的实跑（兼容结论来自 RPC 签名不变和 seed/缺失时的默认行为）；Production。
   - 剩余风险：test 上 `payment_orders` / `vip_purchase_grants` / `feature_free_trials` 的 CHECK 替换会锁表并重验已有行；Admin 在 migration apply 前发布新 key 会被数据库拒绝。
 - 2026-09-23 T3A 首次 test apply 失败并整段回滚，T3A 仍为 Doing。GitHub Actions 在 `feature_free_trials ordinal check missing` 处退出。test 目录里的序号 CHECK 已是 `ordinal <= 100`，查找条件仍要求字面量 `3`，因此找不到约束。`payment_orders_product_snapshot_check` 仍含 1399，账本未记录该文件。只读聚合：免费事实 5 行，ordinal 最小 1、最大 3，没有大于 20 的行。已改为按列名删除现有序号 CHECK，再添加 1..20。本地 `bash scripts/test-vip-billing-migrations.sh` 再次通过。未再次 apply test。
+- 2026-09-23 T3A test apply 与只读 postflight 完成，T3A → Done。MCP 目标 `https://zoqelpfhurwehlvypryl.supabase.co`。用户提供的 inspect 中 `20260923_vip_strategy_config.sql` checksum `7fe41b2b435c4cb33305c77acab720aee593105e167db46b23d99ef32ced5f3d` 与本地文件一致，verdict 为 `match / applied`。未读业务明细，未写 Production，未进 T5。
+  - 六个配置均等于首次 seed：购买/提醒为 false；折扣 0.95；签到 `same_as_base`；voice/basic_image 均为 3；周卡 1399 分/7 天/0 赠送，月卡 2888 分/31 天/3000。
+  - `feature_free_trials_ordinal_check` 为 `ordinal >= 1 AND ordinal <= 20`。订单与 purchase grant 的 CHECK 不再钉死 1399。草稿/发布白名单包含六个 VIP key，并保留 test 上已有的高级图片 key。
+  - `reserve_feature_free_trial(uuid,text,text,integer)`、`claim_daily_checkin(uuid)`、`complete_payment_order(text,text,text)` 均为 SECURITY DEFINER 且 `search_path=pg_catalog`。reserve 读取 `feature_free_trial_limits`，anon 不可执行，service_role 可执行。claim 读取 `vip_checkin_bonus_config`，并保留 anon/authenticated/service_role EXECUTE。complete_payment_order 不再含 `<> 1399`，anon 不可执行，service_role 可执行。
+  - 仍未在 test 用真实订单、签到或免费额度重放；并发与快照以本地 throwaway Postgres 为准。Admin「VIP策略」页未在已登录会话里点击。旧 Backend 进程未对新库实跑。Production 未核。
+- 2026-09-23 T6 开始：分支 `dev_vip_0920`。HEAD `b24fc6a`（`778fb2f` 的子提交，多出的是已随 T3A apply 的序号约束修复）。父任务已是 `in_progress`，未重复 `task.py start`。T5 保持 Todo，未改语音/图片子任务。T6 → Doing。本轮只做本地实现，不写 test/Production，不启用提醒开关，不配置 Production Cron，不进 T7，不 commit/push。
+  - 复用：T2 的 `notifications.kind/business_key/action_path/metadata`、`uq_notifications_business_key`、`miniapp_features.insert_vip_expiry_reminder(uuid,text,timestamptz,text,text,text)`，以及 `idx_vip_memberships_valid_until`。履约函数已经 `FOR UPDATE` 同一会员行。不新建表，不改历史 migration，不覆盖 `20260923_vip_strategy_config.sql`。
+  - 边界：T6 提供详情 API 和通知契约；消息详情页、卡片和续费按钮 UI 留给 T7。详情不内嵌 VIP 状态，当前状态继续走 `GET /api/vip/status`，避免续费改写历史正文。
+  - 环境：不连接 test/Production 做写入。正式 test migration apply、只读 postflight、test dry-run 和受控写入完成前，T6 保持 Doing。
+- 2026-09-23 T6 本地实现完成，**停在 test apply 前，T6 保持 Doing**。未触发 GitHub Actions，未通过 MCP/SQL 写正式 test，未写 Production，未把 `vip_reminders_enabled` 改成 true，未 `railway config apply`，未进 T5/T7，未改语音/图片子任务，未 commit/push。
+  - 复用决定：继续用 T2 的通知列、`uq_notifications_business_key` 和六参 `insert_vip_expiry_reminder`。新 migration 只增加窗口函数、有界候选列表和 `insert_due_vip_expiry_reminder(uuid)`，并让六参函数在 `FOR UPDATE` 之后按锁定的 `valid_until` 重算上海窗口。幂等键仍是 `user_id + observed_valid_until + reminder_kind`，不含执行时间。
+  - 对象：函数在 `miniapp_features`，读取 `billing.vip_memberships`，写入 `miniapp_features.notifications`。不新建表。SECURITY DEFINER 是因为两张表 RLS 开启且没有 anon policy，函数必须在表主权限下加锁写入。`search_path=pg_catalog`。PUBLIC/anon/authenticated 不可执行。单批上限 100，语句超时 5s。
+  - 脚本：`packages/backend/src/scripts/send-vip-expiry-reminders.ts`。无参数或 `--dry-run` 只计数。`--write` 只有在 `vip_reminders_enabled` 的 JSON 值恰好为 true 时才调用插入。缺失、false、非法值和读取异常都不写；读取异常记 `{ err }` 且不扫描。Railway development Cron `stminiapp-vip-reminder-cron` 为 `20 * * * *`，启动命令带 `--dry-run`。production 的 IaC 不声明该服务。
+  - 通知 API：列表不写已读。`POST /api/notifications/read` 必须带具体 `ids`，只传 `scope` 返回 400。`GET /api/notifications/:id` 对他人定向、未发布、已删除和未知 id 都返回同一个 404。详情不含实时 VIP 状态，当前状态仍走 `GET /api/vip/status`。
+  - 新 migration：`packages/shared/migrations/20260923_vip_expiry_reminder_dispatch.sql`。sha256 `364b17c747204cb02d61e381cf7a46f8a1148f84f9c5d9f4a1c540bb17760eb6`。
+  - 实际文件：上述 migration 与 `tests/vip_reminder_t6_scenarios.sql`；`scripts/test-vip-billing-migrations.sh`；`packages/backend/src/features/vip/vip-expiry-reminder.ts` 及测试；提醒脚本；`routes/notifications.ts` 及测试；`platform/runtime-config.ts` 的严格读取；`packages/shared/src/api/notifications.ts`；`.railway/railway.ts`；`docs/ARCHITECTURE.md`；`ops/railway/README.md`。
+  - 验证（本地，真实结果）：
+    - `bash scripts/test-vip-billing-migrations.sh` → pass。覆盖上海 3 天/当天、2 天/4 天/已过期、UTC 跨日、闰日、月末、年末、冬夏偏移仍为 +08、会话时区不影响窗口、同周期重跑、新旧周期各一条、已发送正文在续费后不变、未发送旧周期被跳过、批次上限与游标、limit 0/101 拒绝、重放 migration 被拒绝、两个会话并发只插入一行、续费先持锁得到 `skipped_window` 且 0 行、提醒先持锁写入「VIP 即将到期」后会员仍可被续费。并发签到输家的 `daily check-in is not ready` 仍是原有预期错误。
+    - `pnpm --filter @miniapp/shared test` → 11 files / 94 tests passed
+    - `pnpm --filter @miniapp/shared typecheck` → pass
+    - `pnpm --filter @miniapp/backend test` → 60 files / 520 tests passed
+    - `pnpm --filter @miniapp/backend typecheck` → pass
+    - `pnpm -r typecheck` → shared/admin/backend/frontend/cs-platform pass
+    - `pnpm lint:imports` → pass
+    - `pnpm lint:legacy` → pass
+    - `pnpm lint:migrations` → pass
+    - `pnpm test:migration-ledger` → pass（本机 Postgres；未连 test/Production）
+  - 未做：正式 test apply 与只读 postflight；对 test 库的 dry-run；受控写入；`railway config apply`；Production Cron 与 Production 开关。语句超时的脚本重试用模拟的 `57014` 锁定，没有在活库里取消一条真实查询。
+  - 剩余风险：当前前端打开消息列表仍会只提交 `scope`，新 API 会返回 400，红点要等 T7 改为提交单条 id 后才会清除。函数替换会短暂锁函数定义，不改业务行。旧 Backend 不调用新 RPC；六参签名仍在。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约

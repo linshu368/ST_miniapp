@@ -257,4 +257,91 @@ REPLAY_REF="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT reference_id FR
 REPLAY_A="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT billing.reserve_feature_free_trial('$LIMIT_USER'::uuid,'voice','${REPLAY_REF}')->>'status';")"
 [[ "$REPLAY_A" == "already_reserved" ]] || fail "replay status=$REPLAY_A ref=$REPLAY_REF"
 
-echo "All T2, T3, T4 and T3A VIP billing local checks passed."
+echo "apply 20260923_vip_expiry_reminder_dispatch.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260923_vip_expiry_reminder_dispatch.sql" \
+  >/dev/null
+
+echo "run t6 reminder scenarios"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_reminder_t6_scenarios.sql" \
+  >/dev/null
+
+echo "reject reminder migration replay"
+set +e
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260923_vip_expiry_reminder_dispatch.sql" \
+  >/tmp/vip-reminder-replay.out 2>/tmp/vip-reminder-replay.err
+REPLAY_CODE=$?
+set -e
+[[ "$REPLAY_CODE" -ne 0 ]] || fail "reminder migration replay was accepted"
+grep -q 'already applied' /tmp/vip-reminder-replay.err || fail "replay did not report already applied"
+
+LOCK_RENEW="00000000-0000-4000-8000-000000000641"
+LOCK_REMIND="00000000-0000-4000-8000-000000000642"
+RACE_USER="00000000-0000-4000-8000-000000000643"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<SQL
+INSERT INTO app_core.users (id) VALUES ('$LOCK_RENEW'), ('$LOCK_REMIND'), ('$RACE_USER');
+INSERT INTO billing.vip_memberships (user_id, valid_from, valid_until, last_plan_id)
+SELECT id,
+       ((now() AT TIME ZONE 'Asia/Shanghai')::date + time '15:00' - interval '7 days') AT TIME ZONE 'Asia/Shanghai',
+       ((now() AT TIME ZONE 'Asia/Shanghai')::date + 3 + time '15:00') AT TIME ZONE 'Asia/Shanghai',
+       'week'
+FROM app_core.users
+WHERE id IN ('$LOCK_RENEW', '$LOCK_REMIND', '$RACE_USER');
+SQL
+
+echo "run concurrent reminder inserts"
+(
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT miniapp_features.insert_due_vip_expiry_reminder('$RACE_USER');" >/dev/null
+) &
+(
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT miniapp_features.insert_due_vip_expiry_reminder('$RACE_USER');" >/dev/null
+) &
+wait
+RACE_N="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM miniapp_features.notifications WHERE user_id='$RACE_USER' AND kind='vip_expiry';")"
+[[ "$RACE_N" == "1" ]] || fail "concurrent reminder inserts produced $RACE_N rows"
+
+wait_for_lock() {
+  local marker="$1"
+  local tries=0
+  local found="0"
+  while [[ "$tries" -lt 25 ]]; do
+    found="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM pg_stat_activity WHERE query LIKE '%${marker}%' AND query NOT LIKE '%pg_stat_activity%' AND state = 'active';")"
+    [[ "$found" != "0" ]] && return 0
+    tries=$((tries + 1))
+    sleep 0.2
+  done
+  fail "lock holder $marker did not start"
+}
+
+echo "renewal lock is observed before reminder insert"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+  "BEGIN; SELECT user_id FROM billing.vip_memberships WHERE user_id='${LOCK_RENEW}' FOR UPDATE; SELECT pg_sleep(4) /* vip-reminder-lock-renew */; UPDATE billing.vip_memberships SET valid_until = now() + interval '40 days', valid_from = now() - interval '1 day' WHERE user_id='${LOCK_RENEW}'; COMMIT;" \
+  >/dev/null &
+wait_for_lock "vip-reminder-lock-renew"
+RENEW_STATUS="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT miniapp_features.insert_due_vip_expiry_reminder('${LOCK_RENEW}')->>'status';")"
+wait
+[[ "$RENEW_STATUS" == "skipped_window" ]] || fail "renewal-first status=$RENEW_STATUS"
+RENEW_N="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM miniapp_features.notifications WHERE user_id='${LOCK_RENEW}';")"
+[[ "$RENEW_N" == "0" ]] || fail "renewal-first wrote $RENEW_N reminders"
+
+echo "reminder lock writes the cycle it locked"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+  "BEGIN; SELECT user_id FROM billing.vip_memberships WHERE user_id='${LOCK_REMIND}' FOR UPDATE; SELECT pg_sleep(4) /* vip-reminder-lock-remind */; SELECT miniapp_features.insert_due_vip_expiry_reminder('${LOCK_REMIND}'); COMMIT;" \
+  >/dev/null &
+wait_for_lock "vip-reminder-lock-remind"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+  "UPDATE billing.vip_memberships SET valid_until = now() + interval '40 days', valid_from = now() - interval '1 day' WHERE user_id='${LOCK_REMIND}';" \
+  >/dev/null
+wait
+REMIND_N="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM miniapp_features.notifications WHERE user_id='${LOCK_REMIND}' AND kind='vip_expiry';")"
+REMIND_TITLE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT title FROM miniapp_features.notifications WHERE user_id='${LOCK_REMIND}' AND kind='vip_expiry';")"
+REMIND_UNTIL="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT valid_until > now() + interval '30 days' FROM billing.vip_memberships WHERE user_id='${LOCK_REMIND}';")"
+[[ "$REMIND_N" == "1" ]] || fail "reminder-first rows=$REMIND_N"
+[[ "$REMIND_TITLE" == "VIP 即将到期" ]] || fail "reminder-first title=$REMIND_TITLE"
+[[ "$REMIND_UNTIL" == "t" ]] || fail "reminder-first membership was not renewed"
+
+echo "All T2, T3, T4, T3A and T6 VIP billing local checks passed."

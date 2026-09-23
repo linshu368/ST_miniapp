@@ -94,6 +94,11 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
 | `stminiapp`                        | `ST_miniapp`：dev=`dev` / prod=`main` | 8080     | `/health`   | ✅ 绑 Railway 域名/自定义域名 | —   |
 | `stminiapp-payment-reconcile-cron` | 与 `stminiapp` 相同                   | —        | 关闭        | ❌ 不生成域名                 | —   |
 | `stminiapp-payment-cron`           | 与 `stminiapp` 相同                   | —        | 关闭        | ❌ 不生成域名                 | —   |
+| `stminiapp-vip-reminder-cron`      | 仅 development；production IaC 不声明 | —        | 关闭        | ❌ 不生成域名                 | —   |
+
+VIP 提醒 Cron 的启动命令固定为 `tsx src/scripts/send-vip-expiry-reminders.ts --dry-run`。
+它不会因为部署而写入通知；`vip_reminders_enabled` 仍须保持 false，直到单独授权真实写入。
+修改 `.railway/railway.ts` 后仍要 `railway config plan` / `apply` 才会出现在控制台。
 
 创建步骤：
 

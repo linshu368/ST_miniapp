@@ -628,3 +628,22 @@ describe('additive compatibility for existing DTOs', () => {
     ).not.toHaveProperty('vip_status');
   });
 });
+
+describe('vip expiry reminder copy', () => {
+  it('keeps the fixed titles, action path and send-time body', async () => {
+    const { VIP_EXPIRY_REMINDER_ACTION_PATH, VIP_EXPIRY_REMINDER_TITLES, vipExpiryReminderBody } =
+      await import('../index.js');
+    expect(VIP_EXPIRY_REMINDER_TITLES).toEqual({
+      expiring_soon: 'VIP 即将到期',
+      expires_today: 'VIP 今日到期',
+    });
+    expect(VIP_EXPIRY_REMINDER_ACTION_PATH).toBe('/vip');
+    expect(vipExpiryReminderBody('expiring_soon', '2026-09-26')).toBe(
+      '您的 VIP 将于 2026-09-26（北京时间）到期。'
+    );
+    expect(vipExpiryReminderBody('expires_today', '2026-09-23')).toBe(
+      '您的 VIP 于 2026-09-23（北京时间）到期。'
+    );
+    expect(() => vipExpiryReminderBody('expires_today', '09-23')).toThrow(/YYYY-MM-DD/);
+  });
+});
