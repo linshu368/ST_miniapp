@@ -221,6 +221,7 @@
   - 命令：`pnpm --filter @miniapp/frontend test` 30 files / 176 tests 通过。`pnpm --filter @miniapp/frontend lint` 无 warning。`pnpm --filter @miniapp/frontend typecheck` 通过。`pnpm --filter @miniapp/frontend build` 通过，路由含 `/vip`、`/profile/messages/[id]`。`pnpm lint:imports`、`pnpm lint:legacy` 通过。未改 Shared，未跑 shared test / 全仓 typecheck。
   - 构建之后的展示收尾：签到按钮仍用接口给出的合计预览，成功提示拆成两行并停留 3.2 秒；图片未知失败继续显示接口 message，跳转仍只看稳定 code。收尾后重新执行 `pnpm --filter @miniapp/frontend build`，通过，路由仍包含 `/vip` 与 `/profile/messages/[id]`。
   - 未操作 test/Production，未打开 VIP 购买、提醒或高级图片开关，未写数据库，未 commit/push，未进 T8/T9。
+- 2026-09-23 PR #345 冲突处理：将最新 `origin/dev`（`0a2f05b`）合入 `dev_vip_0920`。人工解决 8 个冲突文件：Backend 保留上游 Batch Lab 调用并补齐 VIP entitlement、动态折扣快照、VIP 门禁和钱包策略预检；规范/架构文档保留较新有效事实并清除上游残留冲突标记。验证：Shared 12 files / 109 tests、Backend 72 files / 640 tests、Frontend 30 files / 176 tests、`pnpm -r typecheck`、`pnpm lint:imports`、`pnpm lint:legacy`、Frontend build 均通过。未操作 test/Production 或功能开关。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约
