@@ -552,22 +552,26 @@ ALTER TABLE billing.payment_orders
     )
   );
 
+-- 仓库里的 20260921 文件声明 ordinal 1..3。test 目录当前已是 ordinal <= 100，
+-- 不能再按字面量 3 查找。按列名删掉现有序号 CHECK，再收成 1..20。
 DO $$
 DECLARE
   v_name TEXT;
+  v_dropped INTEGER := 0;
 BEGIN
-  SELECT conname INTO v_name
-  FROM pg_constraint
-  WHERE conrelid = 'billing.feature_free_trials'::regclass
-    AND contype = 'c'
-    AND pg_get_constraintdef(oid) ILIKE '%ordinal%'
-    AND pg_get_constraintdef(oid) LIKE '%1%'
-    AND pg_get_constraintdef(oid) LIKE '%3%'
-    AND conname <> 'feature_free_trials_status_shape_check';
-  IF v_name IS NULL THEN
+  FOR v_name IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'billing.feature_free_trials'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) ~* '\mordinal\M'
+  LOOP
+    EXECUTE format('ALTER TABLE billing.feature_free_trials DROP CONSTRAINT %I', v_name);
+    v_dropped := v_dropped + 1;
+  END LOOP;
+  IF v_dropped = 0 THEN
     RAISE EXCEPTION 'feature_free_trials ordinal check missing';
   END IF;
-  EXECUTE format('ALTER TABLE billing.feature_free_trials DROP CONSTRAINT %I', v_name);
 END;
 $$;
 

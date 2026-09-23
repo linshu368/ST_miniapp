@@ -161,7 +161,8 @@
     - `pnpm lint:imports` / `pnpm lint:legacy` / `pnpm lint:migrations` → pass
     - `pnpm test:migration-ledger` → pass（本机 Postgres；未连 test/Production）
   - 未做：正式 test apply 与 apply 后只读 postflight；Admin 登录后的页面点击（运营台需要已登录会话，本轮不连 test）；旧 Backend 进程对新库的实跑（兼容结论来自 RPC 签名不变和 seed/缺失时的默认行为）；Production。
-  - 剩余风险：test 上 `payment_orders` / `vip_purchase_grants` / `feature_free_trials` 的 CHECK 替换会锁表并重验已有行，行数未在本轮重新采集；Admin 在 migration apply 前发布新 key 会被数据库拒绝。
+  - 剩余风险：test 上 `payment_orders` / `vip_purchase_grants` / `feature_free_trials` 的 CHECK 替换会锁表并重验已有行；Admin 在 migration apply 前发布新 key 会被数据库拒绝。
+- 2026-09-23 T3A 首次 test apply 失败并整段回滚，T3A 仍为 Doing。GitHub Actions 在 `feature_free_trials ordinal check missing` 处退出。test 目录里的序号 CHECK 已是 `ordinal <= 100`，查找条件仍要求字面量 `3`，因此找不到约束。`payment_orders_product_snapshot_check` 仍含 1399，账本未记录该文件。只读聚合：免费事实 5 行，ordinal 最小 1、最大 3，没有大于 20 的行。已改为按列名删除现有序号 CHECK，再添加 1..20。本地 `bash scripts/test-vip-billing-migrations.sh` 再次通过。未再次 apply test。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约
