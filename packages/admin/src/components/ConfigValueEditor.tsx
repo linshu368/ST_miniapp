@@ -20,6 +20,7 @@ import {
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
+  MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
@@ -32,6 +33,7 @@ import {
 } from '@miniapp/shared';
 import {
   configMetadata,
+  AdvancedImageProviderConfigSchema,
   DEFAULT_INVITE_CENTER_CONFIG,
   DEFAULT_INVITE_REWARD_RULES,
   EditableModelCatalogSchema,
@@ -40,6 +42,7 @@ import {
   type InviteRewardRulesConfig,
   type ImageTextModelConfig,
   type ManagedConfigKey,
+  type AdvancedImageProviderConfig,
 } from '../lib/configSchemas';
 import type { CharacterCard } from '../lib/adminApi';
 import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
@@ -124,6 +127,90 @@ function asInviteCenterConfig(value: unknown): InviteCenterConfig {
     };
   }
   return structuredClone(DEFAULT_INVITE_CENTER_CONFIG);
+}
+
+type AdvancedImageProviderDraft = {
+  provider: '' | 'liaobots_grok' | 'replicate_z';
+  model: string;
+};
+
+function asAdvancedImageProviderDraft(value: unknown): AdvancedImageProviderDraft {
+  const parsed = AdvancedImageProviderConfigSchema.safeParse(value);
+  if (parsed.success && 'provider' in parsed.data) {
+    return {
+      provider: parsed.data.provider,
+      model: parsed.data.model,
+    };
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Partial<Record<'provider' | 'model', unknown>>;
+    const provider =
+      record.provider === 'liaobots_grok' || record.provider === 'replicate_z'
+        ? record.provider
+        : '';
+    return {
+      provider,
+      model: typeof record.model === 'string' ? record.model : '',
+    };
+  }
+  return { provider: '', model: '' };
+}
+
+function toAdvancedImageProviderConfig(
+  draft: AdvancedImageProviderDraft
+): AdvancedImageProviderConfig | Partial<AdvancedImageProviderDraft> {
+  const model = draft.model.trim();
+  if (!draft.provider && !model) return {};
+  return { provider: draft.provider, model };
+}
+
+function AdvancedImageProviderConfigEditor(props: {
+  value: unknown;
+  disabled?: boolean;
+  onChange: (value: unknown) => void;
+}) {
+  const draft = asAdvancedImageProviderDraft(props.value);
+  const setDraft = (next: AdvancedImageProviderDraft) => {
+    props.onChange(toAdvancedImageProviderConfig(next));
+  };
+
+  return (
+    <Space direction="vertical" size="middle" className="editor-stack">
+      <Alert
+        type="info"
+        showIcon
+        message="鉴权密钥不在运营台配置"
+        description="这里仅保存高级图片 provider 与 model。对应 API Key 仍通过后端环境变量配置。"
+      />
+      <Row gutter={[12, 12]}>
+        <Col xs={24} md={8}>
+          <Typography.Text strong>Provider</Typography.Text>
+          <Select
+            className="field-full"
+            value={draft.provider}
+            disabled={props.disabled}
+            options={[
+              { value: '', label: '未配置' },
+              { value: 'liaobots_grok', label: 'LiaoBots Grok' },
+              { value: 'replicate_z', label: 'Replicate Z' },
+            ]}
+            onChange={(provider) => setDraft({ ...draft, provider })}
+          />
+        </Col>
+        <Col xs={24} md={16}>
+          <Typography.Text strong>Model</Typography.Text>
+          <Input
+            value={draft.model}
+            maxLength={256}
+            showCount
+            placeholder="填写 provider 对应的模型 ID"
+            disabled={props.disabled}
+            onChange={(event) => setDraft({ ...draft, model: event.target.value })}
+          />
+        </Col>
+      </Row>
+    </Space>
+  );
 }
 
 function ImageTextModelConfigEditor(props: {
@@ -243,11 +330,22 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (props.configKey === 'image_advanced_provider_config') {
+    return (
+      <AdvancedImageProviderConfigEditor
+        value={props.value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
   if (
     props.configKey === 'image_prompt_policy' ||
     props.configKey === 'image_default_art_style' ||
     props.configKey === 'image_description_system_prompt' ||
     props.configKey === 'image_price_label' ||
+    props.configKey === 'image_advanced_price_label' ||
     props.configKey === 'image_prompt_over_limit_hint' ||
     props.configKey === 'image_description_failed_hint' ||
     props.configKey === 'image_generation_failed_hint' ||
@@ -272,6 +370,21 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (props.configKey === 'image_advanced_enabled') {
+    return (
+      <Space align="center" size="middle">
+        <Switch
+          checked={props.value === true}
+          disabled={props.disabled}
+          onChange={props.onChange}
+        />
+        <Typography.Text strong>
+          {props.value === true ? '高级图片入口已开启' : '高级图片入口已关闭'}
+        </Typography.Text>
+      </Space>
+    );
+  }
+
   if (props.configKey === 'image_generation_enabled') {
     return (
       <Space align="center" size="middle">
@@ -289,6 +402,8 @@ export function ConfigValueEditor(props: {
 
   if (
     props.configKey === 'image_generation_credits' ||
+    props.configKey === 'image_advanced_generation_credits' ||
+    props.configKey === 'media_feature_free_trial_limit' ||
     props.configKey === 'image_width' ||
     props.configKey === 'image_height' ||
     props.configKey === 'image_max_prompt_chars' ||
@@ -297,10 +412,21 @@ export function ConfigValueEditor(props: {
     const isDimension = props.configKey === 'image_width' || props.configKey === 'image_height';
     const isBytes = props.configKey === 'image_max_output_bytes';
     const isContractLimit = props.configKey === 'image_max_prompt_chars';
+    const isFreeTrialLimit = props.configKey === 'media_feature_free_trial_limit';
     return (
       <InputNumber
         min={isDimension ? 256 : isBytes ? 1048576 : 1}
-        max={isDimension ? 4096 : isBytes ? 52428800 : isContractLimit ? 200 : undefined}
+        max={
+          isDimension
+            ? 4096
+            : isBytes
+              ? 52428800
+              : isFreeTrialLimit
+                ? MAX_FEATURE_FREE_TRIAL_LIMIT
+                : isContractLimit
+                  ? 1000
+                  : undefined
+        }
         precision={0}
         value={typeof props.value === 'number' ? props.value : undefined}
         disabled={props.disabled || isContractLimit}

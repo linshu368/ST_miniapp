@@ -1,6 +1,7 @@
 import {
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   DEFAULT_LOBBY_PINNED_CHARACTERS,
   DEFAULT_LOBBY_RANKING_PARAMS,
@@ -17,6 +18,8 @@ import {
   LlmProviderRoutingConfigSchema,
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
+  MAX_FEATURE_FREE_TRIAL_LIMIT,
+  MediaFeatureFreeTrialLimitSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
   PaymentPlansSchema,
@@ -65,6 +68,11 @@ export const managedConfigKeys = [
   'image_description_failed_hint',
   'image_generation_failed_hint',
   'image_failed_unknown_hint',
+  'image_advanced_enabled',
+  'image_advanced_generation_credits',
+  'image_advanced_price_label',
+  'image_advanced_provider_config',
+  'media_feature_free_trial_limit',
   ...VIP_STRATEGY_CONFIG_KEYS,
 ] as const;
 
@@ -216,6 +224,20 @@ export const ImageTextModelConfigSchema = z
 
 export type ImageTextModelConfig = z.infer<typeof ImageTextModelConfigSchema>;
 
+export const AdvancedImageProviderConfigSchema = z
+  .union([
+    z.object({}).strict(),
+    z
+      .object({
+        provider: z.enum(['liaobots_grok', 'replicate_z']),
+        model: z.string().trim().min(1, '模型名称不能为空').max(256, '模型名称不能超过 256 个字符'),
+      })
+      .strict(),
+  ])
+  .describe('Advanced image provider config');
+
+export type AdvancedImageProviderConfig = z.infer<typeof AdvancedImageProviderConfigSchema>;
+
 /** 与 105 迁移的 runtime_config seed 完全一致。 */
 export const DEFAULT_INVITE_REWARD_RULES: InviteRewardRulesConfig = {
   total_cap_credits: 2200,
@@ -282,6 +304,11 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_description_failed_hint: z.string().trim().min(1).max(200),
   image_generation_failed_hint: z.string().trim().min(1).max(200),
   image_failed_unknown_hint: z.string().trim().min(1).max(200),
+  image_advanced_enabled: z.boolean(),
+  image_advanced_generation_credits: positiveInteger,
+  image_advanced_price_label: z.string().trim().min(1, '价格文案不能为空').max(200),
+  image_advanced_provider_config: AdvancedImageProviderConfigSchema,
+  media_feature_free_trial_limit: MediaFeatureFreeTrialLimitSchema,
   vip_purchase_enabled: VipFeatureSwitchSchema,
   vip_reminders_enabled: VipFeatureSwitchSchema,
   vip_plans_config: VipPlansConfigSchema,
@@ -499,6 +526,32 @@ export const configMetadata: Record<
     label: '图片模糊失败提示',
     description: '外部平台结果未知、禁止自动重试时展示的提示。',
     defaultValue: '外部平台没有确认成功，本次不消耗星尘。',
+  },
+  image_advanced_enabled: {
+    label: '高级图片入口开关',
+    description: '控制 C 端高级图片入口；关闭时高级图片请求会被后端拦截。',
+    defaultValue: false,
+  },
+  image_advanced_generation_credits: {
+    label: '高级图片单张价格',
+    description: '高级图片成功生成并结算后扣除的 main 星尘数。',
+    defaultValue: 120,
+  },
+  image_advanced_price_label: {
+    label: '高级图片价格文案',
+    description: '高级图片确认按钮展示的价格文案，需要与扣费额保持一致。',
+    defaultValue: '120 星尘',
+  },
+  image_advanced_provider_config: {
+    label: '高级图片 Provider 配置',
+    description:
+      '高级图片生成使用的 provider 与 model；留空表示高级图片不可用。鉴权密钥仍由后端环境变量提供。',
+    defaultValue: {},
+  },
+  media_feature_free_trial_limit: {
+    label: '媒体免费轮次次数',
+    description: `语音与基础图片各自可用的免费成功次数，范围 1~${MAX_FEATURE_FREE_TRIAL_LIMIT}。高级图片不参与免费轮次。`,
+    defaultValue: DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   },
   vip_purchase_enabled: {
     label: 'VIP 购买开关',

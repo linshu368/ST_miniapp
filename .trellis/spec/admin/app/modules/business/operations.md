@@ -56,3 +56,7 @@ Admin test/typecheck/build 与 test 环境人工 smoke。
 ## 关联模块
 
 `admin.infrastructure.admin-client-auth`、`backend.infrastructure.runtime-data-security`。
+
+## 变更记录
+
+- 2026-09-23：任务 `Admin VIP media configuration`（`.trellis/tasks/archive/2026-09/09-23-admin-vip-media-config/`）Admin ?? VIP ??????????????????/????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。

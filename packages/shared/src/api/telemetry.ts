@@ -16,17 +16,37 @@ import { ImagePromptSourceSchema } from './images';
 /** 聊天无操作超时。流式生成与 external_payment_pending 不计时。 */
 export const REPLAY_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
+/**
+ * Telegram 用户 ID
+ * @returns Telegram 用户 ID
+ */
 export const TelegramUserIdSchema = z
   .string()
   .trim()
   .regex(/^[0-9]+$/, 'telegram_user_id must be a numeric string');
 
+/**
+ * ISO 日期时间
+ * @returns ISO 日期时间
+ */
 export const IsoDateTimeSchema = z.string().datetime({ offset: true });
 
+/**
+ * 回放上下文 ID
+ * @returns 回放上下文 ID
+ */
 export const ReplayContextIdSchema = z.string().uuid();
 
+/**
+ * 非负整数
+ * @returns 非负整数
+ */
 const NonNegativeIntSchema = z.number().int().nonnegative();
 
+/**
+ * 禁止的属性键
+ * @returns 禁止的属性键
+ */
 export const TELEMETRY_FORBIDDEN_PROPERTY_KEYS = [
   'content',
   'text',
@@ -64,6 +84,7 @@ export const TELEMETRY_FORBIDDEN_PROPERTY_KEYS = [
   'providerRequestId',
 ] as const;
 
+
 export type TelemetryForbiddenPropertyKey = (typeof TELEMETRY_FORBIDDEN_PROPERTY_KEYS)[number];
 
 export function isForbiddenTelemetryPropertyKey(key: string): boolean {
@@ -81,8 +102,16 @@ export const GetReplayContextDataSchema = z
     total_chat_rounds: NonNegativeIntSchema,
   })
   .strict();
+/**
+ * 获取回放上下文数据
+ * @returns 获取回放上下文数据
+ */
 export type GetReplayContextData = z.infer<typeof GetReplayContextDataSchema>;
 
+/**
+ * 回放聊天结束原因
+ * @returns 回放聊天结束原因
+ */
 export const ReplayChatEndReasonSchema = z.enum([
   'route_change',
   'pagehide',
@@ -160,6 +189,8 @@ export type ImageTerminalStatus = z.infer<typeof ImageTerminalStatusSchema>;
 export const ImageChargeStatusSchema = z.enum([
   'charged',
   'already_charged',
+  'free_trial_consumed',
+  'already_free_trial_consumed',
   'insufficient_balance',
 ]);
 export type ImageChargeStatus = z.infer<typeof ImageChargeStatusSchema>;
@@ -479,7 +510,12 @@ export const ImageGenerationCompletedEventSchema = serverPaymentEvent(
   {
     ...ImageBaseFields,
     ...ImageAttemptFields,
-    charge_status: z.enum(['charged', 'already_charged']),
+    charge_status: z.enum([
+      'charged',
+      'already_charged',
+      'free_trial_consumed',
+      'already_free_trial_consumed',
+    ]),
     credits_charged: NonNegativeIntSchema,
     provider: z.string().trim().min(1).max(64),
     fallback_used: z.boolean(),

@@ -26,7 +26,11 @@ import { readVipStrategy } from '../../platform/vip-strategy.js';
 import type { OpenRouterProviderPreferences } from '@miniapp/shared';
 import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
-import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
+import {
+  noFreeQuotaReservation,
+  reserveCharacterFreeQuota,
+  type FreeQuotaReservation,
+} from './quota.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
 import {
   CHAT_COMPLETIONS_PATH,
@@ -90,12 +94,13 @@ export async function execute(
   hooks?: GenerationHooks,
   log: GenerationLogger = createLogger('generation')
 ): Promise<GenerationResult> {
-  const chargeId = randomUUID();
-  const [pricing, billing, strategy] = await Promise.all([
-    getPricingConfig(),
-    getModelBillingContext(request.model.openRouterModelId),
-    readVipStrategy(),
-  ]);
+  const internalResearch = request.policy?.kind === 'internal_research';
+  const chargeId = internalResearch ? null : randomUUID();
+  const pricing = internalResearch ? null : await getPricingConfig();
+  const billing = internalResearch
+    ? internalResearchBilling(request)
+    : await getModelBillingContext(request.model.openRouterModelId);
+  const vipStrategy = internalResearch ? null : await readVipStrategy();
 
   const finish = (result: GenerationResult): GenerationResult => {
     hooks?.onDone?.(result);
@@ -112,73 +117,64 @@ export async function execute(
     ...overrides,
   });
 
-  const reservation = await reserveCharacterFreeQuota({
-    chargeId,
-    userId: request.userId,
-    characterId: request.characterId,
-    billing,
-    log,
-  });
-
-  const plan = resolveBillingPlan({
-    chargeId,
-    billing,
-    isFreeRound: reservation.isFreeRound,
-    pricing,
-    entitlement: request.model.entitlement,
-    discountRate: strategy.discountRate,
-    discountConfigVersion: strategy.discountVersion,
-    log,
-  });
-
-  if (plan.snapshot.requires_vip && !plan.snapshot.vip_active) {
-    await reservation.finalize(false);
-    log.biz.info(
-      {
-        event: 'llm.vip.rejected',
+  const reservation = internalResearch
+    ? noFreeQuotaReservation()
+    : await reserveCharacterFreeQuota({
+        chargeId: chargeId ?? randomUUID(),
         userId: request.userId,
-        model: billing.openRouterModelId,
-        tier: plan.snapshot.model_tier,
-      },
-      '标准或旗舰模型缺少有效 VIP，未调用上游'
-    );
-    return finish({
-      status: 'upstream_error',
-      content: '',
-      generationId: null,
-      finishReason: null,
-      chargeId: null,
-      modelId: billing.modelId,
-      modelOpenRouterId: billing.openRouterModelId,
-      denial: 'vip_required',
+        characterId: request.characterId,
+        billing,
+        log,
+      });
+
+  const plan =
+    internalResearch || pricing === null || chargeId === null
+      ? null
+      : resolveBillingPlan({
+          chargeId,
+          billing,
+          isFreeRound: reservation.isFreeRound,
+          pricing,
+          entitlement: request.model.entitlement,
+          discountRate: vipStrategy?.discountRate,
+          discountConfigVersion: vipStrategy?.discountVersion,
+          log,
+        });
+
+  if (!internalResearch && plan) {
+    if (plan.snapshot.requires_vip && !plan.snapshot.vip_active) {
+      await reservation.finalize(false);
+      return finish(failed({ denial: 'vip_required' }));
+    }
+    const precheck = await checkWalletBalance({
+      userId: request.userId,
+      requiredAmount: plan.fixedDeduction.amount,
+      walletPolicy: plan.snapshot.wallet_policy,
+      openRouterModelId: billing.openRouterModelId,
+      log,
     });
+    if (!precheck.ok) {
+      await reservation.finalize(false);
+      return finish({
+        status: 'insufficient_balance',
+        content: '',
+        generationId: null,
+        finishReason: null,
+        chargeId: null,
+        modelId: billing.modelId,
+        modelOpenRouterId: billing.openRouterModelId,
+        balance: {
+          creditsRequired: precheck.creditsRequired,
+          creditsAvailable: precheck.creditsAvailable,
+        },
+      });
+    }
   }
 
-  const precheck = await checkWalletBalance({
-    userId: request.userId,
-    requiredAmount: plan.fixedDeduction.amount,
-    walletPolicy: plan.snapshot.wallet_policy,
-    openRouterModelId: billing.openRouterModelId,
-    log,
-  });
-  if (!precheck.ok) {
-    await reservation.finalize(false);
-    return finish({
-      status: 'insufficient_balance',
-      content: '',
-      generationId: null,
-      finishReason: null,
-      chargeId: null,
-      modelId: billing.modelId,
-      modelOpenRouterId: billing.openRouterModelId,
-      balance: {
-        creditsRequired: precheck.creditsRequired,
-        creditsAvailable: precheck.creditsAvailable,
-      },
-    });
-  }
-
-  const saveHistory = createHistoryWriter({ request, billing, plan, log });
+  const saveHistory: SaveHistory =
+    internalResearch || plan === null
+      ? () => undefined
+      : createHistoryWriter({ request, billing, plan, log });
 
   // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
   const providerPreferences = await getProviderPreferencesForModel(billing.openRouterModelId);
@@ -186,10 +182,11 @@ export async function execute(
   let upstreamRes: Response;
   try {
     upstreamRes = await forwardToUpstream({
-      url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH),
+      url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH, request.upstream?.baseUrl),
       method: 'POST',
       body: JSON.stringify(buildUpstreamBody(request, providerPreferences)),
       signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
+      apiKey: request.upstream?.apiKey,
     });
   } catch (err) {
     // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
@@ -339,6 +336,17 @@ export async function execute(
   });
 }
 
+function internalResearchBilling(request: GenerationRequest): ModelBillingContext {
+  return {
+    modelId: request.model.modelId,
+    modelDisplayName: request.model.modelId,
+    openRouterModelId: request.model.openRouterModelId,
+    modelTier: request.model.tier,
+    catalogVersion: 0,
+    isFree: request.model.isFree,
+  };
+}
+
 function toError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
 }
@@ -435,7 +443,7 @@ async function consumeNonStream(input: {
   request: GenerationRequest;
   upstreamRes: Response;
   billing: ModelBillingContext;
-  chargeId: string;
+  chargeId: string | null;
   reservation: FreeQuotaReservation;
   headerGenerationId: string | null;
   saveHistory: SaveHistory;

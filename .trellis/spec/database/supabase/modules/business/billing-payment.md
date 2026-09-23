@@ -13,7 +13,7 @@ last_verified_at: 2026-09-14
 
 ## 职责与边界
 
-维护 billing 域订单、钱包、流水、免费额度及 LLM/语音/图片计费原子函数。
+维护 billing 域订单、钱包、流水、免费额度及 LLM/语音计费原子函数。
 
 ## 当前状态
 
@@ -21,7 +21,8 @@ last_verified_at: 2026-09-14
 
 ## 入口与调用者
 
-Backend payment、wallet、generation、voice 和 image repositories/RPC 使用。
+Backend payment、wallet、generation 和 voice repositories/RPC 使用。
+维护 billing 域订单、钱包、流水、免费额度及 LLM/语音/图片计费原子函数。
 
 ## 涉及文件
 
@@ -55,3 +56,7 @@ Test migration shape/RPC、Backend 计费与支付回归。
 ## 关联模块
 
 `backend.business.wallet-payment`、`backend.business.conversation-generation`。
+
+## 变更记录
+
+- 2026-09-23：任务 `Admin VIP media configuration`（`.trellis/tasks/archive/2026-09/09-23-admin-vip-media-config/`）Admin ?? VIP ??????????????????/????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。

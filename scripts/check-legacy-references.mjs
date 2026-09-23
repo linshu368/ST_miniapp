@@ -111,6 +111,9 @@ const RULES = [
     allow: [
       'packages/backend/src/features/generation/upstream.ts',
       'packages/backend/src/features/generation/upstream.test.ts',
+      // Batch Lab 仅把实验供应商端点冻结为配置；实际请求仍由 backend 的
+      // internal_research policy 进入 features/generation/upstream.ts，不另建转发或计费出口。
+      'packages/batch-lab/src/App.tsx',
       // 语音写稿的 DeepSeek 端点：与聊天不同供应商、非流式、抽取任务、按次计费，
       // 业务上确实独立（理由见 features/voice/voice-draft.ts 与 features/voice/billing.ts）
       'packages/backend/src/platform/config.ts',

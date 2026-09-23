@@ -8,10 +8,12 @@
 // 本次失败码通过 resolveMessageVoice 组合进 last_error_code，在播放条下方提示。
 // 并发保护由 uq_chat_message_audio_pending（message_id where status='pending'）接手：
 // pending 行不再一定是 active，原 uq_chat_message_audio_active 拦不住连点。
-
-import type { MessageVoice, MessageVoiceStatus } from '@miniapp/shared';
+// 免费体验：免费体验次数、免费体验额度、免费体验标签
+import type { MediaBillingMode, MessageVoice, MessageVoiceStatus } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
 import { config } from '../../platform/config.js';
+// 免费体验仓库
+import { FeatureFreeTrialRepository } from './FeatureFreeTrialRepository.js';
 
 /** 最坏情况下串行发起的上游请求数：写稿两闸各一次，合成一次 */
 const MAX_UPSTREAM_CALLS = 3;
@@ -61,12 +63,22 @@ export interface ChatMessageAudioRow {
   /** 原子扣费对应的 wallet_ledger.id；NULL 表示未扣费 */
   debit_ledger_id: string | null;
   charged_at: string | null;
+  /** 计费模式：免费体验、付费 */
+  billing_mode: MediaBillingMode | null;
+  /** 免费体验次数：1、2、3 */
+  free_trial_ordinal: number | null;
+  /** 计费额度：星尘 */
+  price_credits: number | string | null;
+  /** 计费标签：免费体验、付费 */
+  price_label: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export class ChatMessageAudioRepository {
   private readonly db = getDomainDb('experience');
+  /** 免费体验仓库 */
+  private readonly freeTrials = new FeatureFreeTrialRepository();
 
   /**
    * 会话内全部语音（按消息聚合后呈现）。ownership 由调用方在校验会话归属时保证。
@@ -152,6 +164,7 @@ export class ChatMessageAudioRepository {
    * 卡死的 pending 先回写成 failed，腾出 pending 唯一索引槽位再插入。
    */
   async createPending(input: {
+    id?: string;
     messageId: string;
     sessionId: string;
     userId: string;
@@ -159,6 +172,14 @@ export class ChatMessageAudioRepository {
     ttsModel: string;
     ttsSpeed: number;
     sourceChars: number;
+    /** 计费模式：免费体验、付费 */
+    billingMode: MediaBillingMode;
+    /** 免费体验次数：1、2、3 */
+    freeTrialOrdinal: number | null;
+    /** 计费额度：星尘 */
+    priceCredits: number;
+    /** 计费标签：免费体验、付费 */
+    priceLabel: string;
   }): Promise<ChatMessageAudioRow> {
     const pending = await this.findPendingByMessage(input.messageId);
     if (pending && !isStalePending(pending)) {
@@ -185,6 +206,7 @@ export class ChatMessageAudioRepository {
     const { data, error } = await this.db
       .from('chat_message_audio')
       .insert({
+        ...(input.id ? { id: input.id } : {}),
         message_id: input.messageId,
         session_id: input.sessionId,
         user_id: input.userId,
@@ -195,6 +217,14 @@ export class ChatMessageAudioRepository {
         tts_model: input.ttsModel,
         tts_speed: input.ttsSpeed,
         source_chars: input.sourceChars,
+        /** 计费模式：免费体验、付费 */
+        billing_mode: input.billingMode,
+        /** 免费体验次数：1、2、3 */
+        free_trial_ordinal: input.freeTrialOrdinal,
+        /** 计费额度：星尘 */
+        price_credits: input.priceCredits,
+        /** 计费标签：免费体验、付费 */
+        price_label: input.priceLabel,
       })
       .select('*')
       .single();
@@ -292,6 +322,7 @@ export class ChatMessageAudioRepository {
    *     旧 ready 仍是唯一生效行，前端继续能播；本次失败码经 resolveMessageVoice 组合进 last_error_code。
    */
   async markFailed(id: string, errorCode: string, latencyMs: number): Promise<void> {
+    const row = await this.findById(id);
     const { error } = await this.db
       .from('chat_message_audio')
       .update({
@@ -303,6 +334,18 @@ export class ChatMessageAudioRepository {
       .eq('id', id);
 
     if (error) throw new Error(`标记语音生成失败失败：${error.message}`);
+    // 免费体验：免费体验次数、免费体验额度、免费体验标签
+    if (row?.billing_mode === 'free_trial' && row.free_trial_ordinal !== null) {
+      try {
+        await this.freeTrials.release({
+          userId: row.user_id,
+          feature: 'voice',
+          referenceId: row.id,
+        });
+      } catch {
+        // 失败释放不影响业务失败收口；过期回收 RPC 会兜底释放名额。
+      }
+    }
   }
 }
 
@@ -332,6 +375,14 @@ export function toMessageVoice(row: ChatMessageAudioRow): MessageVoice {
     error_code: stale ? 'voice_generation_stalled' : row.error_code,
     last_error_code: null,
     credits_charged: row.credits_charged ?? 0,
+    // 免费体验：免费体验次数、免费体验额度、免费体验标签
+    billing_mode: row.billing_mode ?? 'legacy_free',
+    /** 免费体验次数：1、2、3 */
+    free_trial_ordinal: row.free_trial_ordinal ?? null,
+    /** 计费额度：星尘 */
+    price_credits: toNumber(row.price_credits ?? 0),
+    /** 计费标签：免费体验、付费 */
+    price_label: row.price_label ?? '',
     created_at: row.created_at,
   };
 }
@@ -381,4 +432,10 @@ export function resolveMessageVoice(rows: ChatMessageAudioRow[]): MessageVoice |
     return { ...voice, last_error_code: newerFailure.code };
   }
   return voice;
+}
+
+// 免费体验：免费体验次数、免费体验额度、免费体验标签
+function toNumber(value: number | string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
