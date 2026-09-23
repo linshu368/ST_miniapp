@@ -11,6 +11,7 @@ import type {
   MessageImageState,
 } from '@miniapp/shared';
 import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
+import { formatFreeTrialBillingLabel } from '@/components/chat/media-billing-label';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
@@ -73,7 +74,9 @@ export function ChatMessageImageFooter({
   const ready = current?.status === 'ready' ? current : null;
   const busy = latest?.status === 'pending' || latest?.status === 'generating';
   const selectedTierConfig = image?.config?.tiers[tier] ?? image?.config?.tiers.basic;
-  const priceLabel = selectedTierConfig ? formatImageBillingLabel(selectedTierConfig.next_billing) : '';
+  const priceLabel = selectedTierConfig
+    ? formatImageBillingLabel(selectedTierConfig.next_billing)
+    : '';
   const maxChars = image?.config?.limits.max_prompt_chars ?? MAX_IMAGE_PROMPT_CHARS;
   const telemetry = image?.telemetry ?? null;
 
@@ -589,9 +592,7 @@ export function ChatMessageImageFooter({
 
 function formatImageBillingLabel(billing: MediaBillingPreview): string {
   if (billing.billing_mode === 'free_trial') {
-    const ordinal = billing.free_trial_ordinal ?? 1;
-    const limit = billing.free_trial_limit ?? 3;
-    return `免费体验 ${ordinal}/${limit}`;
+    return formatFreeTrialBillingLabel(billing.free_trial_ordinal, billing.free_trial_limit);
   }
   return billing.price_label;
 }

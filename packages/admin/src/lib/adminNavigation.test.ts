@@ -97,6 +97,8 @@ describe('admin navigation', () => {
     expect(resolveAdminMenuSelection('vip_media_config')).toEqual({
       view: 'vip_media_config',
     });
+    expect(VIP_MEDIA_CONFIG_KEYS).not.toContain('media_feature_free_trial_limit');
+    expect(sidebarManagedConfigKeys).not.toContain('media_feature_free_trial_limit');
   });
 
   it('keeps independent top-level pages separate', () => {

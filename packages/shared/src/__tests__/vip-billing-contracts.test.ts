@@ -4,6 +4,7 @@ import {
   ADVANCED_IMAGE_UNAVAILABLE_ERROR_CODE,
   BillingGatingErrorCodeSchema,
   FEATURE_FREE_TRIAL_LIMIT,
+  resolveFeatureFreeTrialLimit,
   GetModelCatalogDataSchema,
   PaymentProductTypeSchema,
   PublicModelCatalogSchema,
@@ -504,6 +505,13 @@ describe('media free-trial public semantics', () => {
         ],
       })
     ).toMatchObject({ ok: false, code: 'FEATURE_FREE_TRIAL_CONFLICT' });
+  });
+
+  it('keeps a published zero and falls back when the limit is outside 0..20', () => {
+    expect(resolveFeatureFreeTrialLimit(0)).toBe(0);
+    expect(resolveFeatureFreeTrialLimit(20)).toBe(20);
+    expect(resolveFeatureFreeTrialLimit(21)).toBe(3);
+    expect(resolveFeatureFreeTrialLimit('3')).toBe(3);
   });
 
   it('summarizes quota against the configured media free-trial limit', () => {

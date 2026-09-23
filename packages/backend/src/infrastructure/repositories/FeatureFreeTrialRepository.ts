@@ -6,8 +6,7 @@ import {
   DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   FeatureFreeTrialFactSchema,
   FeatureFreeTrialFeatureSchema,
-  MAX_FEATURE_FREE_TRIAL_LIMIT,
-  parseMediaFeatureFreeTrialLimit,
+  resolveFeatureFreeTrialLimit,
   summarizeFeatureFreeTrialQuota,
   type FeatureFreeTrialFeature,
   type FeatureFreeTrialQuotaView,
@@ -56,7 +55,7 @@ export class FeatureFreeTrialRepository {
     feature: FeatureFreeTrialFeature,
     limit = DEFAULT_FEATURE_FREE_TRIAL_LIMIT
   ): Promise<FeatureFreeTrialQuotaView> {
-    const resolvedLimit = parseMediaFeatureFreeTrialLimit(limit);
+    const resolvedLimit = resolveFeatureFreeTrialLimit(limit);
     await this.reclaimExpired(userId, feature);
     const { data, error } = await this.db
       .from('feature_free_trials')
@@ -72,7 +71,6 @@ export class FeatureFreeTrialRepository {
         status: 'reserved' | 'consumed' | 'released';
       }>,
       limit: resolvedLimit,
-      maxLimit: MAX_FEATURE_FREE_TRIAL_LIMIT,
     });
     if (!summarized.ok) {
       throw new Error(`免费体验额度状态异常：${summarized.code}`);
@@ -144,14 +142,14 @@ export function emptyFreeTrialQuota(
   feature: FeatureFreeTrialFeature,
   limit = DEFAULT_FEATURE_FREE_TRIAL_LIMIT
 ): FeatureFreeTrialQuotaView {
-  const resolvedLimit = parseMediaFeatureFreeTrialLimit(limit);
+  const resolvedLimit = resolveFeatureFreeTrialLimit(limit);
   return {
     feature,
     free_trial_limit: resolvedLimit,
     free_trials_used: 0,
     free_trials_reserved: 0,
     free_trials_remaining: resolvedLimit,
-    next_trial_ordinal: 1,
+    next_trial_ordinal: resolvedLimit > 0 ? 1 : null,
   };
 }
 
