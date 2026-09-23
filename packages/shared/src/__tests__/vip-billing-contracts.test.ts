@@ -430,6 +430,30 @@ describe('media free-trial public semantics', () => {
       })
     ).toMatchObject({ ok: false, code: 'FEATURE_FREE_TRIAL_CONFLICT' });
   });
+
+  it('summarizes quota against the configured media free-trial limit', () => {
+    const quota = summarizeFeatureFreeTrialQuota({
+      feature: 'basic_image',
+      limit: 5,
+      facts: [
+        { ordinal: 1, status: 'consumed' },
+        { ordinal: 3, status: 'reserved' },
+        { ordinal: 6, status: 'consumed' },
+      ],
+    });
+
+    expect(quota).toEqual({
+      ok: true,
+      quota: {
+        feature: 'basic_image',
+        free_trial_limit: 5,
+        free_trials_used: 1,
+        free_trials_reserved: 1,
+        free_trials_remaining: 3,
+        next_trial_ordinal: 2,
+      },
+    });
+  });
 });
 
 describe('additive compatibility for existing DTOs', () => {

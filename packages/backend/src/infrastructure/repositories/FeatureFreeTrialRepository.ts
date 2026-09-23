@@ -3,9 +3,10 @@
  */
 
 import {
-  FEATURE_FREE_TRIAL_LIMIT,
+  DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   FeatureFreeTrialFactSchema,
   FeatureFreeTrialFeatureSchema,
+  parseMediaFeatureFreeTrialLimit,
   summarizeFeatureFreeTrialQuota,
   type FeatureFreeTrialFeature,
   type FeatureFreeTrialQuotaView,
@@ -30,11 +31,11 @@ interface FreeTrialFactRow {
 
 export type FreeTrialReservationResult =
   | {
-    ok: true;
-    status: 'reserved' | 'already_reserved' | 'already_consumed';
-    fact: FreeTrialFactRow;
-    quota: FeatureFreeTrialQuotaView;
-  }
+      ok: true;
+      status: 'reserved' | 'already_reserved' | 'already_consumed';
+      fact: FreeTrialFactRow;
+      quota: FeatureFreeTrialQuotaView;
+    }
   | { ok: false; code: string; message: string };
 
 /**
@@ -51,8 +52,10 @@ export class FeatureFreeTrialRepository {
    */
   async quota(
     userId: string,
-    feature: FeatureFreeTrialFeature
+    feature: FeatureFreeTrialFeature,
+    limit = DEFAULT_FEATURE_FREE_TRIAL_LIMIT
   ): Promise<FeatureFreeTrialQuotaView> {
+    const resolvedLimit = parseMediaFeatureFreeTrialLimit(limit);
     await this.reclaimExpired(userId, feature);
     const { data, error } = await this.db
       .from('feature_free_trials')
@@ -63,7 +66,11 @@ export class FeatureFreeTrialRepository {
 
     const summarized = summarizeFeatureFreeTrialQuota({
       feature,
-      facts: (data ?? []) as Array<{ ordinal: number; status: 'reserved' | 'consumed' | 'released' }>,
+      facts: (data ?? []) as Array<{
+        ordinal: number;
+        status: 'reserved' | 'consumed' | 'released';
+      }>,
+      limit: resolvedLimit,
     });
     if (!summarized.ok) {
       throw new Error(`免费体验额度状态异常：${summarized.code}`);
@@ -131,13 +138,17 @@ export class FeatureFreeTrialRepository {
  * @param feature 免费体验特征
  * @returns 空免费体验额度
  */
-export function emptyFreeTrialQuota(feature: FeatureFreeTrialFeature): FeatureFreeTrialQuotaView {
+export function emptyFreeTrialQuota(
+  feature: FeatureFreeTrialFeature,
+  limit = DEFAULT_FEATURE_FREE_TRIAL_LIMIT
+): FeatureFreeTrialQuotaView {
+  const resolvedLimit = parseMediaFeatureFreeTrialLimit(limit);
   return {
     feature,
-    free_trial_limit: FEATURE_FREE_TRIAL_LIMIT,
+    free_trial_limit: resolvedLimit,
     free_trials_used: 0,
     free_trials_reserved: 0,
-    free_trials_remaining: FEATURE_FREE_TRIAL_LIMIT,
+    free_trials_remaining: resolvedLimit,
     next_trial_ordinal: 1,
   };
 }

@@ -49,12 +49,13 @@ import {
   requireVisualAnchor,
 } from '../features/generation/image-upstream.js';
 import {
-  emptyBasicImageFreeTrialQuota,
+  emptyBasicImageFreeTrialQuotaForLimit,
   getImageRuntimeConfig,
   getImageTierRuntimeConfig,
   toUserImageConfigData,
 } from '../features/image/config.js';
 import { VipStatusService } from '../features/vip/vip-status.js';
+import { getMediaFeatureFreeTrialLimit } from '../features/billing/feature-free-trial-limit.js';
 import {
   observeImageDescriptionCompleted,
   observeImageDescriptionFailed,
@@ -65,11 +66,11 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 type PreparedMessageContext =
   | {
-    ok: true;
-    session: ChatSessionRow;
-    turn: ConversationHistoryRow;
-    character: CharacterCardRow;
-  }
+      ok: true;
+      session: ChatSessionRow;
+      turn: ConversationHistoryRow;
+      character: CharacterCardRow;
+    }
   | { ok: false; reply: (reply: FastifyReply) => unknown };
 
 export default async function imageRoutes(app: FastifyInstance) {
@@ -91,9 +92,10 @@ export default async function imageRoutes(app: FastifyInstance) {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const dbUser = await getOrCreateDbUser(request.user);
       const imageConfig = await getImageRuntimeConfig();
+      const freeTrialLimit = await getMediaFeatureFreeTrialLimit();
       const basicFreeTrial = imageConfig.enabled
-        ? await freeTrials.quota(dbUser.id, 'basic_image')
-        : emptyBasicImageFreeTrialQuota();
+        ? await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit)
+        : emptyBasicImageFreeTrialQuotaForLimit(freeTrialLimit);
       const vipStatus = await vip.getStatus(dbUser.id, requestLogger(request.log, 'image'));
       return reply.send(
         ok<GetImageConfigData>(
@@ -162,10 +164,11 @@ export default async function imageRoutes(app: FastifyInstance) {
         return reply.status(403).send(fail('VIP_REQUIRED', '高级图片需要 VIP'));
       }
       /** 获取基础免费体验额度 */
+      const freeTrialLimit = await getMediaFeatureFreeTrialLimit();
       const basicFreeTrial =
         tier === 'basic'
-          ? await freeTrials.quota(dbUser.id, 'basic_image')
-          : emptyFreeTrialQuota('basic_image');
+          ? await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit)
+          : emptyFreeTrialQuota('basic_image', freeTrialLimit);
       /** 准备消息上下文 */
       const prepared = await prepareMessageContext(ids.sessionId, ids.messageId, dbUser.id);
       if (!prepared.ok) return prepared.reply(reply);
@@ -377,45 +380,45 @@ export default async function imageRoutes(app: FastifyInstance) {
       try {
         const pending = parsed.data.draft_id
           ? await images.confirmDescriptionDraft({
-            id: parsed.data.draft_id,
-            userId: dbUser.id,
-            sessionId: ids.sessionId,
-            messageId: ids.messageId,
-            tier,
-            promptCn: parsed.data.prompt_cn,
-            promptSource: parsed.data.prompt_source,
-            provider: tierConfig.provider,
-            model: tierConfig.model,
-            baseUrlHost: tierConfig.baseUrlHost,
-            width: tierConfig.width,
-            height: tierConfig.height,
-            priceCredits: tierConfig.creditsPerGeneration,
-            priceLabel: tierConfig.priceLabel,
-            billingMode,
-            freeTrialOrdinal,
-            walletPolicy: 'main_only',
-            vipValidUntil: tier === 'advanced' ? vipStatus.valid_until : null,
-          })
+              id: parsed.data.draft_id,
+              userId: dbUser.id,
+              sessionId: ids.sessionId,
+              messageId: ids.messageId,
+              tier,
+              promptCn: parsed.data.prompt_cn,
+              promptSource: parsed.data.prompt_source,
+              provider: tierConfig.provider,
+              model: tierConfig.model,
+              baseUrlHost: tierConfig.baseUrlHost,
+              width: tierConfig.width,
+              height: tierConfig.height,
+              priceCredits: tierConfig.creditsPerGeneration,
+              priceLabel: tierConfig.priceLabel,
+              billingMode,
+              freeTrialOrdinal,
+              walletPolicy: 'main_only',
+              vipValidUntil: tier === 'advanced' ? vipStatus.valid_until : null,
+            })
           : await images.createPending({
-            id: attemptId,
-            userId: dbUser.id,
-            sessionId: ids.sessionId,
-            messageId: ids.messageId,
-            tier,
-            promptCn: parsed.data.prompt_cn,
-            promptSource: parsed.data.prompt_source,
-            provider: tierConfig.provider,
-            model: tierConfig.model,
-            baseUrlHost: tierConfig.baseUrlHost,
-            width: tierConfig.width,
-            height: tierConfig.height,
-            priceCredits: tierConfig.creditsPerGeneration,
-            priceLabel: tierConfig.priceLabel,
-            billingMode,
-            freeTrialOrdinal,
-            walletPolicy: 'main_only',
-            vipValidUntil: tier === 'advanced' ? vipStatus.valid_until : null,
-          });
+              id: attemptId,
+              userId: dbUser.id,
+              sessionId: ids.sessionId,
+              messageId: ids.messageId,
+              tier,
+              promptCn: parsed.data.prompt_cn,
+              promptSource: parsed.data.prompt_source,
+              provider: tierConfig.provider,
+              model: tierConfig.model,
+              baseUrlHost: tierConfig.baseUrlHost,
+              width: tierConfig.width,
+              height: tierConfig.height,
+              priceCredits: tierConfig.creditsPerGeneration,
+              priceLabel: tierConfig.priceLabel,
+              billingMode,
+              freeTrialOrdinal,
+              walletPolicy: 'main_only',
+              vipValidUntil: tier === 'advanced' ? vipStatus.valid_until : null,
+            });
         void observeImageGenerationAccepted(
           {
             userId: dbUser.id,

@@ -46,6 +46,7 @@ import { ConversationRepositoryError } from '../infrastructure/repositories/conv
 import { runVoiceGeneration } from '../features/voice/generate.js';
 import { precheckVoiceCredits } from '../features/voice/billing.js';
 import { getVoiceBillingConfig } from '../features/voice/voice-billing-config.js';
+import { getMediaFeatureFreeTrialLimit } from '../features/billing/feature-free-trial-limit.js';
 import { normalizeCustomText } from '../features/voice/voice-text.js';
 import {
   DEFAULT_TTS_MODEL,
@@ -80,10 +81,11 @@ export default async function voiceRoutes(app: FastifyInstance) {
 
     const dbUser = await getOrCreateDbUser(request.user);
     const billing = await getVoiceBillingConfig();
+    const freeTrialLimit = await getMediaFeatureFreeTrialLimit();
     /** 获取基础免费体验额度 */
     const freeTrial = billing.enabled
-      ? await freeTrials.quota(dbUser.id, 'voice')
-      : emptyFreeTrialQuota('voice');
+      ? await freeTrials.quota(dbUser.id, 'voice', freeTrialLimit)
+      : emptyFreeTrialQuota('voice', freeTrialLimit);
     return reply.send(
       ok<GetVoiceConfigData>({
         config: await settings.getVoiceConfig(dbUser.id),
@@ -130,10 +132,11 @@ export default async function voiceRoutes(app: FastifyInstance) {
 
       const dbUser = await getOrCreateDbUser(request.user);
       const billing = await getVoiceBillingConfig();
+      const freeTrialLimit = await getMediaFeatureFreeTrialLimit();
       /** 获取基础免费体验额度 */
       const freeTrial = billing.enabled
-        ? await freeTrials.quota(dbUser.id, 'voice')
-        : emptyFreeTrialQuota('voice');
+        ? await freeTrials.quota(dbUser.id, 'voice', freeTrialLimit)
+        : emptyFreeTrialQuota('voice', freeTrialLimit);
       try {
         const updated = await settings.setVoiceConfig(dbUser.id, request.user, {
           ...(body.voice_id !== undefined ? { voiceId: body.voice_id } : {}),

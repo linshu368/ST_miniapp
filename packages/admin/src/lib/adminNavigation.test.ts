@@ -3,6 +3,7 @@ import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
+  VIP_MEDIA_CONFIG_KEYS,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
 } from './adminNavigation';
@@ -62,6 +63,19 @@ describe('admin navigation', () => {
     }
     expect(resolveAdminMenuSelection('image_generation_config')).toEqual({
       view: 'image_generation_config',
+    });
+  });
+
+  it('routes VIP media configs to one grouped menu and hides duplicate entries', () => {
+    for (const key of VIP_MEDIA_CONFIG_KEYS) {
+      expect(resolveAdminMenuSelection(configMenuKey(key))).toEqual({
+        view: 'vip_media_config',
+        configKey: key,
+      });
+      expect(sidebarManagedConfigKeys).not.toContain(key);
+    }
+    expect(resolveAdminMenuSelection('vip_media_config')).toEqual({
+      view: 'vip_media_config',
     });
   });
 

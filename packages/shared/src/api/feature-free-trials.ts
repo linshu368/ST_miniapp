@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
-/** 语音与基础图片各自独立的全局免费成功次数。高级图片不参与。 */
-export const FEATURE_FREE_TRIAL_LIMIT = 3;
+/** 语音与基础图片各自独立的默认免费成功次数。高级图片不参与。 */
+export const DEFAULT_FEATURE_FREE_TRIAL_LIMIT = 3;
+/** Admin 可配置额度的保守上限；数据库 ordinal 约束与这里保持一致。 */
+export const MAX_FEATURE_FREE_TRIAL_LIMIT = 100;
+/** 兼容旧调用方：表示缺配置时的默认额度，而不是不可变业务上限。 */
+export const FEATURE_FREE_TRIAL_LIMIT = DEFAULT_FEATURE_FREE_TRIAL_LIMIT;
+export const MEDIA_FEATURE_FREE_TRIAL_LIMIT_CONFIG_KEY = 'media_feature_free_trial_limit';
 
 export const FeatureFreeTrialFeatureSchema = z.enum(['voice', 'basic_image']);
 export type FeatureFreeTrialFeature = z.infer<typeof FeatureFreeTrialFeatureSchema>;
@@ -27,7 +32,24 @@ export const ADVANCED_IMAGE_UNAVAILABLE_ERROR_CODE = 'ADVANCED_IMAGE_UNAVAILABLE
 export const ImageGenerationTierSchema = z.enum(['basic', 'advanced']);
 export type ImageGenerationTier = z.infer<typeof ImageGenerationTierSchema>;
 
-export const FeatureFreeTrialOrdinalSchema = z.number().int().min(1).max(FEATURE_FREE_TRIAL_LIMIT);
+export const MediaFeatureFreeTrialLimitSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_FEATURE_FREE_TRIAL_LIMIT);
+export type MediaFeatureFreeTrialLimit = z.infer<typeof MediaFeatureFreeTrialLimitSchema>;
+
+export function parseMediaFeatureFreeTrialLimit(value: unknown): MediaFeatureFreeTrialLimit {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  const result = MediaFeatureFreeTrialLimitSchema.safeParse(parsed);
+  return result.success ? result.data : DEFAULT_FEATURE_FREE_TRIAL_LIMIT;
+}
+
+export const FeatureFreeTrialOrdinalSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_FEATURE_FREE_TRIAL_LIMIT);
 export type FeatureFreeTrialOrdinal = z.infer<typeof FeatureFreeTrialOrdinalSchema>;
 
 export const FeatureFreeTrialFactSchema = z.object({
@@ -41,7 +63,7 @@ export type FeatureFreeTrialFact = z.infer<typeof FeatureFreeTrialFactSchema>;
 
 export const FeatureFreeTrialQuotaViewSchema = z.object({
   feature: FeatureFreeTrialFeatureSchema,
-  free_trial_limit: z.literal(FEATURE_FREE_TRIAL_LIMIT),
+  free_trial_limit: MediaFeatureFreeTrialLimitSchema,
   free_trials_used: z.number().int().nonnegative(),
   free_trials_reserved: z.number().int().nonnegative(),
   free_trials_remaining: z.number().int().nonnegative(),
@@ -69,7 +91,9 @@ export type FeatureFreeTrialQuotaResult =
 export function summarizeFeatureFreeTrialQuota(input: {
   feature: FeatureFreeTrialFeature;
   facts: ReadonlyArray<Pick<FeatureFreeTrialFact, 'ordinal' | 'status'>>;
+  limit?: number;
 }): FeatureFreeTrialQuotaResult {
+  const limit = parseMediaFeatureFreeTrialLimit(input.limit);
   const occupying = new Map<number, FeatureFreeTrialStatus>();
   let used = 0;
   let reserved = 0;
@@ -86,6 +110,9 @@ export function summarizeFeatureFreeTrialQuota(input: {
     }
 
     if (!featureFreeTrialOccupiesSlot(statusParsed.data)) {
+      continue;
+    }
+    if (ordinalParsed.data > limit) {
       continue;
     }
 
@@ -105,7 +132,7 @@ export function summarizeFeatureFreeTrialQuota(input: {
     if (status === 'reserved') reserved += 1;
   }
 
-  const remaining = FEATURE_FREE_TRIAL_LIMIT - occupying.size;
+  const remaining = limit - occupying.size;
   if (remaining < 0) {
     return {
       ok: false,
@@ -115,7 +142,7 @@ export function summarizeFeatureFreeTrialQuota(input: {
   }
 
   let nextTrialOrdinal: FeatureFreeTrialOrdinal | null = null;
-  for (let ordinal = 1; ordinal <= FEATURE_FREE_TRIAL_LIMIT; ordinal += 1) {
+  for (let ordinal = 1; ordinal <= limit; ordinal += 1) {
     if (!occupying.has(ordinal)) {
       nextTrialOrdinal = ordinal as FeatureFreeTrialOrdinal;
       break;
@@ -126,7 +153,7 @@ export function summarizeFeatureFreeTrialQuota(input: {
     ok: true,
     quota: {
       feature: input.feature,
-      free_trial_limit: FEATURE_FREE_TRIAL_LIMIT,
+      free_trial_limit: limit,
       free_trials_used: used,
       free_trials_reserved: reserved,
       free_trials_remaining: remaining,

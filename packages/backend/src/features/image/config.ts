@@ -1,6 +1,7 @@
 import {
-  FEATURE_FREE_TRIAL_LIMIT,
+  DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   MAX_IMAGE_PROMPT_CHARS,
+  parseMediaFeatureFreeTrialLimit,
   type FeatureFreeTrialQuotaView,
   type GetImageConfigData,
   type ImageGenerationTier,
@@ -149,9 +150,9 @@ export function toUserImageConfigData(input: {
   const { config: imageConfig, basicFreeTrial, vipStatus } = input;
   const basicProviderConfigured = Boolean(
     imageConfig.enabled &&
-      config.image.liaobotsAuth &&
-      config.image.liaobotsBase &&
-      config.image.grokModel
+    config.image.liaobotsAuth &&
+    config.image.liaobotsBase &&
+    config.image.grokModel
   );
   const advancedConfigComplete = isAdvancedImageConfigured(imageConfig.advanced);
   const advancedLockedReason =
@@ -288,22 +289,32 @@ export function getImageTierRuntimeConfig(
   };
 }
 
-export function isAdvancedImageConfigured(value: AdvancedImageRuntimeConfig): value is AdvancedImageRuntimeConfig & {
+export function isAdvancedImageConfigured(
+  value: AdvancedImageRuntimeConfig
+): value is AdvancedImageRuntimeConfig & {
   provider: 'liaobots_grok' | 'replicate_z';
   model: string;
 } {
   if (!value.provider || !value.model) return false;
-  if (value.provider === 'liaobots_grok') return Boolean(config.image.liaobotsAuth && config.image.liaobotsBase);
+  if (value.provider === 'liaobots_grok')
+    return Boolean(config.image.liaobotsAuth && config.image.liaobotsBase);
   return Boolean(config.image.replicateToken && config.image.replicateBase);
 }
 
 export function emptyBasicImageFreeTrialQuota(): FeatureFreeTrialQuotaView {
+  return emptyBasicImageFreeTrialQuotaForLimit(DEFAULT_FEATURE_FREE_TRIAL_LIMIT);
+}
+
+export function emptyBasicImageFreeTrialQuotaForLimit(
+  limit = DEFAULT_FEATURE_FREE_TRIAL_LIMIT
+): FeatureFreeTrialQuotaView {
+  const resolvedLimit = parseMediaFeatureFreeTrialLimit(limit);
   return {
     feature: 'basic_image',
-    free_trial_limit: FEATURE_FREE_TRIAL_LIMIT,
+    free_trial_limit: resolvedLimit,
     free_trials_used: 0,
     free_trials_reserved: 0,
-    free_trials_remaining: FEATURE_FREE_TRIAL_LIMIT,
+    free_trials_remaining: resolvedLimit,
     next_trial_ordinal: 1,
   };
 }
