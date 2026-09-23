@@ -4,13 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, X } from 'lucide-react';
 import type { ChatMessage } from '@miniapp/shared';
-import { useQueryClient } from '@tanstack/react-query';
 
 import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatMessageImageFooter } from '@/components/chat/chat-message-image';
 import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
-import { formatFreeTrialBillingLabel } from '@/components/chat/media-billing-label';
+import { formatMediaBillingPreview } from '@/components/chat/media-billing-label';
 import { getChatReplyPresentation } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
@@ -30,7 +29,6 @@ import {
   useSessionImagesQuery,
 } from '@/lib/api/images';
 import { useModelCatalogQuery } from '@/lib/api/models';
-import { paymentKeys } from '@/lib/api/payment';
 import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import {
@@ -47,7 +45,6 @@ import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const router = useRouter();
-  const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState('');
   const [earlier, setEarlier] = useState<ChatMessage[]>([]);
@@ -155,32 +152,15 @@ export default function SelfHostedChatPage() {
     [sessionImagesQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
-  const voiceNextBilling = voiceConfigQuery.data?.next_billing;
-  const voicePriceLabel =
-    voiceNextBilling?.billing_mode === 'free_trial'
-      ? formatFreeTrialBillingLabel(
-          voiceNextBilling.free_trial_ordinal,
-          voiceNextBilling.free_trial_limit
-        )
-      : voiceConfigQuery.data?.billing?.enabled
-        ? voiceConfigQuery.data?.billing?.price_label
-        : '';
+  const voicePriceLabel = formatMediaBillingPreview(
+    voiceConfigQuery.data?.next_billing,
+    voiceConfigQuery.isFetching || generateVoice.isPending,
+    voiceConfigQuery.isError
+  );
   const freeQuota = useCharacterFreeQuotaQuery(characterId);
   const freeRoundActive = Boolean(
     freeQuota.data && !freeQuota.data.exhausted && selectedModelUsesFreeQuota
   );
-
-  useEffect(() => {
-    const charged = sessionVoiceQuery.data?.audio.some((item) => item.credits_charged > 0);
-    if (charged) void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-  }, [queryClient, sessionVoiceQuery.data]);
-
-  useEffect(() => {
-    const charged = sessionImagesQuery.data?.images.some(
-      (item) => (item.current?.credits_charged ?? 0) > 0
-    );
-    if (charged) void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-  }, [queryClient, sessionImagesQuery.data]);
 
   /**
    * 哪些消息能生成语音。turn_index > 0 排掉开场白，status 排掉正在写和没写完的——
@@ -287,6 +267,8 @@ export default function SelfHostedChatPage() {
                       image: messageImage,
                       canGenerate: canCreateImage,
                       config: imageConfigQuery.data,
+                      billingRefreshing: imageConfigQuery.isFetching || createImage.isPending,
+                      billingError: imageConfigQuery.isError,
                       describe: async (tier) => {
                         const result = await describeImage.mutateAsync({
                           messageId: message.id,

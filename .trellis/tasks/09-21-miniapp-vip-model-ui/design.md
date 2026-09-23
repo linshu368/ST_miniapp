@@ -216,7 +216,7 @@ Shared 提供 runtime schema、默认值与 browser-safe DTO；Admin 和 Backend
 ## 11. 前端页面与状态
 
 - Profile：复用 wallet/vip queries；总额下显示专项余额；VIP 按钮状态由服务端 status 决定，首次点击先幂等 mark-seen 再导航。
-- VIP 页面：新增窄页面和包内组件，复用 payment create/open/waiting 链路；静态权益图通过可替换 asset/config URL且失败有布局占位。
+- VIP 页面：新增窄页面和包内组件，复用 payment create/open/waiting 链路；权益头卡由 CSS 渐变、图标和文本直接渲染，无外部图片依赖。
 - Recharge：保持一个 `selectedProductKey`，credit/vip 共用互斥选择和支付按钮；不建立第二个结账状态机。
 - Chat：`ChatTopBar` 承载模型胶囊，现有 `ChatModelSwitcher` 放入 sheet/popover；`ChatToolsSheet` 删除模型行。
 - Notifications：列表卡变为可点击链接，点击只标记该 ID；详情页独立查询 notification 和 VIP status，返回后 query cache 保持一致。
@@ -280,3 +280,11 @@ Shared 提供 runtime schema、默认值与 browser-safe DTO；Admin 和 Backend
 同步更新 README、ARCHITECTURE、相关前后端/Shared/数据库 spec 和模块知识。当前缺失的 `docs/log_system.md` 引用需修正或补回，不能在本任务中继续留下无效入口。
 
 父任务保留支付履约、权益、钱包/免费额度公共底座、发布顺序和最终集成验收；语音与图片的领域状态机是可独立验证且由原模块工程师维护的交付物，因此拆为 `09-21-vip-voice-free-trials` 与 `09-21-vip-image-free-trials` 两个子任务。子任务不能自行改写公共计费规则：语音和 basic 图片在父 T2 稳定后即可开始，advanced 图片额外等待父 T3 权益接口，二者均不依赖父 T4 的 LLM 改造。
+
+## 2026-09-23 T7 修订设计
+
+复用 VipStatusService、runtime-config、现有 VIP queries、ChatModelSwitcher、支付 mutation/openCreatedPayment、voice/image session 轮询；不新增接口、状态库、媒体计数器或数据库对象。Shared 的 VIP status 兼容新增可选 benefits（text_discount_rate、checkin_base_credits、checkin_vip_credits），GET 和 mark-viewed 返回相同形状，避免写缓存丢失展示信息。模型计费 discount_rate 语义保持不变。
+
+媒体额度仍以后端为真相，在已有查询层观察受理与终态，失效 config/wallet 缓存；请求去重由 React Query 管理，不按消息组件各自轮询。失败释放后也刷新；加载/错误使用中性提示，不沿用过期免费承诺。继续使用既有请求超时、有限重试、免费预留及原子扣款，展示层不重试生成、不改计费事务。并发预估可能变化，最终以请求快照为准。
+
+发布 Backend 后 Frontend；旧 Backend 无 benefits 时只显示权益数据加载提示而不伪造数字。可回滚展示代码，不改会员、钱包、配置和历史订单。没有 migration、外部供应商、新限流/补偿需求；停止条件为显示价与权威报价不一致或重复请求。保留既有 pino 错误与 API 查询失败提示，不记录用户内容。

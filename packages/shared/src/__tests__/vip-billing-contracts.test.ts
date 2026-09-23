@@ -118,6 +118,32 @@ describe('VIP plans and membership', () => {
     ).toBe(true);
   });
 
+  it('accepts additive benefit previews for non-members and rejects invalid advertised values', () => {
+    const status = {
+      active: false,
+      valid_from: null,
+      valid_until: null,
+      remaining_days: 0,
+      last_plan_id: null,
+      entry_badge_visible: true,
+    };
+    const benefits = {
+      text_discount_rate: 0.95,
+      checkin_base_credits: 60,
+      checkin_vip_credits: 60,
+    };
+    expect(VipStatusSchema.parse(status).benefits).toBeUndefined();
+    expect(VipStatusSchema.parse({ ...status, benefits }).benefits).toEqual(benefits);
+    expect(
+      VipStatusSchema.safeParse({ ...status, benefits: { ...benefits, text_discount_rate: 0 } })
+        .success
+    ).toBe(false);
+    expect(
+      VipStatusSchema.safeParse({ ...status, benefits: { ...benefits, checkin_vip_credits: -1 } })
+        .success
+    ).toBe(false);
+  });
+
   it('classifies week/month plan ids as VIP products without assuming credit catalogs', () => {
     expect(isVipPlanId('week')).toBe(true);
     expect(isVipPlanId('month')).toBe(true);

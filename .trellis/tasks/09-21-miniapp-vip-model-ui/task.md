@@ -255,7 +255,7 @@ T2 只做 migration/RPC，必须使用这些名字，不得改语义。Producer�
 
 ### 关键 DTO 字段
 
-- `VipStatus`: `active`、`valid_from`、`valid_until`、`remaining_days`、`last_plan_id`、`entry_badge_visible`
+- `VipStatus`: `active`、`valid_from`、`valid_until`、`remaining_days`、`last_plan_id`、`entry_badge_visible`，以及可选的已发布权益预览 `benefits`
 - 权限只认 `valid_until > now()`；`remaining_days` 仅展示，用 `remainingVipDisplayDays` 对正剩余毫秒向上取整
 - `PaymentOrder` 可选快照：`product_type`、`product_id`、`fulfillment_applied`、`vip_duration_days`、`vip_bonus_credits`、`vip_valid_until`
 - `GetPaymentPlansData.vip_plans?: VipPlan[]`；`plans` 仍是星尘套餐
@@ -290,3 +290,16 @@ remainingVipDisplayDays(validUntil, now): number
 - advanced image：`main_only`，要求 VIP，无免费次数
 - 组合扣与退款必须 `main + bonus = total`；余额不足整笔失败，不得部分扣款
 - 退款按原始 debit 拆分原路返回，并用 `debit_key` / `refund_key` 做幂等关联
+
+## 2026-09-23 T7 真机修复（已审核，执行中）
+
+用户确认折扣为 95%，胶囊名称为轻量引擎/标准引擎/旗舰引擎，其余五项修复方案通过；先同步规划再实施。T7 保持 Doing，T8/T9 不自动推进。范围：VIP 展示契约、权益页及入口、顶部档位面板、媒体额度缓存。无环境配置或数据库写入。
+
+- [x] 非 VIP 可取得权益与首次角标（Shared/Backend route 回归通过）
+- [x] 三档引擎胶囊展开/收起（实现、typecheck、lint、build 通过）
+- [x] 语音/初级图片额度终态刷新与失败处理（缓存失效回归通过）
+- [x] Demo 布局与所有会员状态可见权益（组件实现与 build 通过）
+- [x] 既有验证与补充回归完成
+- [ ] PR 环境真机复验：角标跨刷新、胶囊手感/软键盘、媒体第 1 至 4 次与失败、VIP 页视觉
+
+执行结果：Shared 12 files / 110 tests、Backend 72 files / 644 tests、Frontend 31 files / 187 tests 通过；`pnpm -r typecheck`、Frontend lint/build、`pnpm lint:imports`、`pnpm lint:legacy`、Prettier 与 `git diff --check` 通过。未操作数据库、运行配置、test/Production 开关、提交或推送。浏览器安全策略阻止本地 `file://` 视觉预览，因此未把本地静态渲染当成真机证据；T7 继续保持 Doing，等待 PR 真机复验。

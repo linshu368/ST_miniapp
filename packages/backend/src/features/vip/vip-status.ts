@@ -2,6 +2,7 @@ import {
   isVipActiveAt,
   isVipPlanId,
   remainingVipDisplayDays,
+  vipCheckinBonusCredits,
   type VipStatus,
 } from '@miniapp/shared';
 
@@ -10,6 +11,36 @@ import {
   MiniappVipRepository,
   type VipStatusSnapshot,
 } from '../../infrastructure/repositories/MiniappVipRepository.js';
+import { readVipStrategy } from '../../platform/vip-strategy.js';
+import { fetchRuntimeConfigEntryStrict } from '../../platform/runtime-config.js';
+
+/** 营销展示读取已发布权益，而不是非会员实际计费时的空折扣。失败不影响会员状态。 */
+export async function readVipBenefits(log?: SettlementLogger): Promise<VipStatus['benefits']> {
+  try {
+    const [strategy, baseEntry] = await Promise.all([
+      readVipStrategy(),
+      fetchRuntimeConfigEntryStrict('miniapp_daily_checkin_bonus_credits'),
+    ]);
+    // 与签到预览兼容相同的数值/文本配置；缺失或损坏时不承诺奖励金额。
+    const base = Number(baseEntry?.value ?? baseEntry?.textValue);
+    if (!Number.isFinite(base) || Math.floor(base) <= 0) {
+      throw new Error('invalid published checkin base reward');
+    }
+    const baseCredits = Math.floor(base);
+    return {
+      text_discount_rate: strategy.discountRate,
+      checkin_base_credits: baseCredits,
+      checkin_vip_credits: vipCheckinBonusCredits({
+        config: strategy.checkin,
+        baseRewardCredits: baseCredits,
+        vipActive: true,
+      }),
+    };
+  } catch (err) {
+    log?.sys.error({ err, event: 'vip.benefits.read_failed' }, '读取 VIP 权益展示失败');
+    return undefined;
+  }
+}
 
 export interface VipStatusReader {
   readSnapshot(userId: string): Promise<VipStatusSnapshot>;

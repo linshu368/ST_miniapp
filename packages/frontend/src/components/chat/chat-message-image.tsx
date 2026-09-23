@@ -8,11 +8,10 @@ import type {
   CreateMessageImageRequest,
   GetImageConfigData,
   ImageGenerationTier,
-  MediaBillingPreview,
   MessageImageState,
 } from '@miniapp/shared';
 import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
-import { formatFreeTrialBillingLabel } from '@/components/chat/media-billing-label';
+import { formatMediaBillingPreview } from '@/components/chat/media-billing-label';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
@@ -45,6 +44,8 @@ export interface MessageImageUiState {
   /** 最新回复可首次生成；已有图片记录的历史回复也可重试或重新生成。 */
   canGenerate: boolean;
   config: GetImageConfigData | undefined;
+  billingRefreshing: boolean;
+  billingError: boolean;
   describe: (tier: ImageGenerationTier) => Promise<{ draftId: string; prompt: string }>;
   create: (request: CreateMessageImageRequest) => Promise<void>;
   onRecharge: () => void;
@@ -81,11 +82,12 @@ export function ChatMessageImageFooter({
   const ready = current?.status === 'ready' ? current : null;
   const busy = latest?.status === 'pending' || latest?.status === 'generating';
   const selectedTierConfig = image?.config?.tiers[tier] ?? image?.config?.tiers.basic;
-  const freeTrialLabel =
-    tier !== 'advanced' && selectedTierConfig?.next_billing.billing_mode === 'free_trial';
-  const priceLabel = selectedTierConfig
-    ? formatImageBillingLabel(selectedTierConfig.next_billing, tier)
-    : '';
+  const priceLabel = formatMediaBillingPreview(
+    selectedTierConfig?.next_billing,
+    image?.billingRefreshing ?? true,
+    image?.billingError ?? false,
+    tier !== 'advanced'
+  );
   const advancedEntry = advancedImageEntry(image?.config?.tiers.advanced);
   const maxChars = image?.config?.limits.max_prompt_chars ?? MAX_IMAGE_PROMPT_CHARS;
   const telemetry = image?.telemetry ?? null;
@@ -399,7 +401,13 @@ export function ChatMessageImageFooter({
             className="flex items-center gap-1.5 text-primary"
           >
             <Eye className="size-3.5" aria-hidden />
-            重新生成{priceLabel ? ` · ${priceLabel}` : ''}
+            重新生成 ·{' '}
+            {formatMediaBillingPreview(
+              image.config?.tiers[ready.tier].next_billing,
+              image.billingRefreshing,
+              image.billingError,
+              ready.tier !== 'advanced'
+            )}
           </button>
           <p className="border-l border-border pl-2 text-muted-foreground">
             已按你确认的描述生成，再点一次「看看TA」可以换一张。
@@ -441,7 +449,7 @@ export function ChatMessageImageFooter({
                   <div className="h-full w-3/5 animate-pulse rounded-full bg-primary" />
                 </div>
                 <div className="flex justify-between gap-3 text-[11px] text-muted-foreground">
-                  <span>{freeTrialLabel ? priceLabel : `本次消耗 ${priceLabel || '星尘'}`}</span>
+                  <span>生成完成后更新费用与额度</span>
                   <span>失败不消耗</span>
                 </div>
                 <button
@@ -621,11 +629,4 @@ export function ChatMessageImageFooter({
       </Dialog>
     </div>
   );
-}
-
-function formatImageBillingLabel(billing: MediaBillingPreview, tier: ImageGenerationTier): string {
-  if (tier !== 'advanced' && billing.billing_mode === 'free_trial') {
-    return formatFreeTrialBillingLabel(billing.free_trial_ordinal, billing.free_trial_limit);
-  }
-  return billing.price_label;
 }

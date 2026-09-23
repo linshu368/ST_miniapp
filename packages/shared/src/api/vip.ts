@@ -78,6 +78,14 @@ export const VipStatusSchema = z.object({
   remaining_days: nonnegativeInteger,
   last_plan_id: VipPlanIdSchema.nullable(),
   entry_badge_visible: z.boolean(),
+  /** 已发布的会员权益预览，非会员同样可读；与当前用户实际计费折扣分开。 */
+  benefits: z
+    .object({
+      text_discount_rate: z.number().finite().gt(0).max(1),
+      checkin_base_credits: z.number().int().positive(),
+      checkin_vip_credits: nonnegativeInteger,
+    })
+    .optional(),
 });
 
 export type VipStatus = z.infer<typeof VipStatusSchema>;

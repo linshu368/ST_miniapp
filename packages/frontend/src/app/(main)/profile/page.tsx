@@ -33,7 +33,6 @@ import {
   useDailyCheckinQuery,
   useWalletBalanceQuery,
 } from '@/lib/api/payment';
-import { useModelCatalogQuery } from '@/lib/api/models';
 import { useMarkVipEntryViewedMutation, useVipStatusQuery } from '@/lib/api/vip';
 import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import { notificationKeys, useNotificationUnreadCountQuery } from '@/lib/api/notifications';
@@ -51,7 +50,6 @@ import { formatNumber } from '@/lib/utils/payment';
 import {
   checkinRewardLines,
   formatDiscountLabel,
-  publishedDiscountRate,
   shouldShowVipEntryBadge,
   vipEntryLabel,
 } from '@/lib/vip/presentation';
@@ -77,7 +75,6 @@ export default function ProfilePage() {
   const claimCheckin = useDailyCheckinMutation();
   const vipStatus = useVipStatusQuery();
   const markVipSeen = useMarkVipEntryViewedMutation();
-  const modelCatalog = useModelCatalogQuery();
   const inviteEntry = useInviteEntryStatusQuery();
   const communityEntry = useCommunityEntryQuery();
   const previousCommunityStatus = useRef(communityEntry.data?.claim_status);
@@ -206,7 +203,7 @@ export default function ProfilePage() {
   };
 
   const discountLabel = formatDiscountLabel(
-    publishedDiscountRate(modelCatalog.data?.catalog.tiers) ?? Number.NaN
+    vipStatus.data?.benefits?.text_discount_rate ?? Number.NaN
   );
   const showVipBadge = shouldShowVipEntryBadge({
     statusKnown: Boolean(vipStatus.data) && !vipStatus.isError,

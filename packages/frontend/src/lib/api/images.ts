@@ -29,19 +29,36 @@ export function useImageConfigQuery(enabled = true) {
     queryKey: imageKeys.config,
     enabled,
     queryFn: async () => apiClient<GetImageConfigData>('/api/v1/images/config'),
-    staleTime: 5 * 60 * 1000,
+    // 配置含用户实时额度，重新进入页面时需重新确认。
+    staleTime: 0,
   });
 }
 
 export function useSessionImagesQuery(sessionId: string | undefined) {
+  const queryClient = useQueryClient();
   return useQuery<GetSessionImagesData>({
     queryKey: imageKeys.session(sessionId ?? ''),
     enabled: Boolean(sessionId),
     queryFn: async () => {
       if (!sessionId) throw new Error('session id is required');
-      return apiClient<GetSessionImagesData>(
+      const next = await apiClient<GetSessionImagesData>(
         `/api/v1/conversations/${encodeURIComponent(sessionId)}/images`
       );
+      const current = queryClient.getQueryData<GetSessionImagesData>(imageKeys.session(sessionId));
+      const previousByMessage = toImageMap(current);
+      // 在会话查询完成处收敛一次：包括失败释放额度，历史终态不随每轮轮询重复刷新。
+      if (
+        next.images.some(({ latest }) => {
+          if (!latest || latest.status === 'pending' || latest.status === 'generating')
+            return false;
+          const previous = previousByMessage.get(latest.message_id)?.latest;
+          return !previous || previous.id !== latest.id || previous.status !== latest.status;
+        })
+      ) {
+        void queryClient.invalidateQueries({ queryKey: imageKeys.config });
+        void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+      }
+      return next;
     },
     staleTime: 0,
     refetchInterval: (query) =>
@@ -98,12 +115,14 @@ export function useCreateMessageImageMutation(sessionId: string | undefined) {
       queryClient.setQueryData<GetSessionImagesData>(imageKeys.session(sessionId), (current) =>
         mergeImageAttempt(current, data.attempt)
       );
+      void queryClient.invalidateQueries({ queryKey: imageKeys.config });
       void queryClient.invalidateQueries({ queryKey: imageKeys.session(sessionId) });
       void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
     },
     onError: () => {
       if (!sessionId) return;
       void queryClient.invalidateQueries({ queryKey: imageKeys.session(sessionId) });
+      void queryClient.invalidateQueries({ queryKey: imageKeys.config });
     },
   });
 }

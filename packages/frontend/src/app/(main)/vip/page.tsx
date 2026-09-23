@@ -2,7 +2,15 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, ChevronLeft, Loader2 } from 'lucide-react';
+import {
+  AlertCircle,
+  ChevronLeft,
+  Gift,
+  Loader2,
+  Sparkles,
+  TicketPercent,
+  Zap,
+} from 'lucide-react';
 import {
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   type CreatePaymentOrderData,
@@ -14,7 +22,8 @@ import { VipPlanCard } from '@/components/payment/vip-plan-card';
 import { VipBenefitArt } from '@/components/vip/vip-benefit-art';
 import { Button } from '@/components/ui/button';
 import { ApiClientError } from '@/lib/api/client';
-import { useModelCatalogQuery } from '@/lib/api/models';
+import { WeChatPayIcon } from '@/components/icons';
+import { formatNumber, formatYuanShort } from '@/lib/utils/payment';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
@@ -27,18 +36,10 @@ import { cn } from '@/lib/utils';
 import {
   checkoutButtonLabel,
   formatDiscountLabel,
-  publishedDiscountRate,
   resolveCheckoutSelection,
   selectionKey,
   vipMembershipSummary,
 } from '@/lib/vip/presentation';
-
-const BENEFITS = [
-  '每日签到在基础奖励之外，另行到账 VIP 加成',
-  '有效期内可使用标准与旗舰文本模型',
-  '有效期内可使用高级图片，仍按价格扣费',
-  '三档文本模型按已发布折扣计费；免费轮次优先，不叠加折扣',
-];
 
 export default function VipPage() {
   const router = useRouter();
@@ -47,7 +48,6 @@ export default function VipPage() {
   const { impact, notification, whisper } = useHaptic();
   const plansQuery = usePaymentPlansQuery();
   const vipQuery = useVipStatusQuery();
-  const catalogQuery = useModelCatalogQuery();
   const createOrder = useCreatePaymentOrderMutation();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [paymentType] = useState<PaymentType>('wxpay');
@@ -59,27 +59,40 @@ export default function VipPage() {
   const vipPlans = plansQuery.data?.vip_plans ?? [];
   const promptConfig =
     plansQuery.data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
+  // 默认月卡只在用户尚未选择时推导，不覆盖其主动选择。
+  const effectiveSelectedKey =
+    selectedKey ??
+    (vipPlans.find((plan) => plan.id === 'month')
+      ? selectionKey('vip', 'month')
+      : vipPlans[0]
+        ? selectionKey('vip', vipPlans[0].id)
+        : null);
   const selection = useMemo(
     () =>
       resolveCheckoutSelection({
-        selectedKey,
+        selectedKey: effectiveSelectedKey,
         creditPlans: [],
         vipPlans: plansQuery.data?.vip_plans ?? [],
       }),
-    [plansQuery.data?.vip_plans, selectedKey]
+    [plansQuery.data?.vip_plans, effectiveSelectedKey]
   );
-  const discountLabel = formatDiscountLabel(
-    publishedDiscountRate(catalogQuery.data?.catalog.tiers) ?? Number.NaN
-  );
+  const benefits = vipQuery.data?.benefits;
+  const discountLabel = formatDiscountLabel(benefits?.text_discount_rate ?? Number.NaN);
+  const monthlyPlan = vipPlans.find((plan) => plan.id === 'month');
   const membership = vipQuery.data ? vipMembershipSummary(vipQuery.data) : null;
   const purchaseClosed = vipPlans.length > 0 && vipPlans.every((plan) => !plan.available);
-  const buttonLabel = checkoutButtonLabel({
+  const defaultButtonLabel = checkoutButtonLabel({
     pending: createOrder.isPending,
     selection,
     vipActive: vipQuery.data?.active === true,
     creditsButtonText: '立即支付',
     vipVerb: 'immediate',
   });
+
+  const buttonLabel =
+    selection?.available && !createOrder.isPending
+      ? `${vipQuery.data?.active ? '立即续费' : '快捷充值'} ¥${formatYuanShort(selection.priceCents)}`
+      : defaultButtonLabel;
 
   const openPrepared = useCallback(
     async (result: CreatePaymentOrderData) => {
@@ -141,12 +154,12 @@ export default function VipPage() {
 
   return (
     <main className="mx-auto flex h-[100dvh] max-w-md flex-col bg-background text-foreground">
-      <header className="flex shrink-0 items-center gap-2 px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+      <header className="relative flex min-h-14 shrink-0 items-center justify-center border-b border-border/60 px-3 pt-[env(safe-area-inset-top)]">
         <Button
           variant="ghost"
           size="icon"
           onClick={goBack}
-          className="rounded-full text-muted-foreground"
+          className="absolute left-3 rounded-full text-muted-foreground"
           aria-label="返回"
         >
           <ChevronLeft className="h-5 w-5" aria-hidden />
@@ -154,37 +167,62 @@ export default function VipPage() {
         <h1 className="text-base font-bold">VIP 会员</h1>
       </header>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        <section className="rounded-[24px] border border-primary/25 bg-card px-4 py-4">
-          {vipQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">正在确认会员状态</p>
-          ) : vipQuery.isError || !membership ? (
-            <p className="text-sm text-muted-foreground">会员状态暂时无法确认</p>
-          ) : (
-            <>
-              <p className="text-[11px] font-semibold tracking-[0.16em] text-primary">当前会员</p>
-              <h2 className="mt-1 text-lg font-black">{membership.title}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{membership.detail}</p>
-            </>
-          )}
-          <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
-            {discountLabel
-              ? `当前文本折扣 ${discountLabel}。免费轮次优先，不叠加折扣。`
-              : '文本折扣以服务端已发布的价格为准。免费轮次优先，不叠加折扣。'}
-          </p>
-        </section>
-
+      <div className="flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
         <VipBenefitArt />
 
+        <section className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] px-3 py-2.5 text-[11px]">
+          <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 font-bold text-emerald-400">
+            {discountLabel ? `有效期内 ${discountLabel}` : 'VIP 文本优惠'}
+          </span>
+          <span className="text-foreground/90">
+            {discountLabel
+              ? `全部文本档位 ${discountLabel}，到期即失效`
+              : '权益数据暂未加载，请稍后重试'}
+          </span>
+        </section>
+
         <ul className="space-y-2">
-          {BENEFITS.map((benefit) => (
-            <li
-              key={benefit}
-              className="rounded-2xl border border-border bg-card px-4 py-3 text-[13px] leading-relaxed text-foreground"
-            >
-              {benefit}
-            </li>
-          ))}
+          <li className="flex items-center gap-3 rounded-2xl border border-border bg-card px-3.5 py-3 text-xs">
+            <Gift className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="font-bold">
+                {benefits
+                  ? `每日签到额外 +${formatNumber(benefits.checkin_vip_credits)} 星尘`
+                  : '每日签到额外奖励'}
+              </span>
+              <span className="text-[10px] text-muted-foreground">
+                {benefits
+                  ? `基础 ${formatNumber(benefits.checkin_base_credits)} + 额外 ${formatNumber(benefits.checkin_vip_credits)}，共 ${formatNumber(benefits.checkin_base_credits + benefits.checkin_vip_credits)}`
+                  : '奖励数据暂未加载'}
+              </span>
+            </div>
+          </li>
+          <li className="flex items-center gap-3 rounded-2xl border border-border bg-card px-3.5 py-3 text-xs">
+            <Zap className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+            <div>
+              <span className="font-bold">标准与旗舰模型解锁</span>
+              <span className="ml-2 text-[10px] text-muted-foreground">
+                文本与高级图片均按价扣费
+              </span>
+            </div>
+          </li>
+          <li className="flex items-center gap-3 rounded-2xl border border-border bg-card px-3.5 py-3 text-xs">
+            <TicketPercent className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+            <div>
+              <span className="font-bold">
+                {discountLabel ? `全部文本档位 ${discountLabel}` : '全部文本档位享优惠'}
+              </span>
+              <span className="ml-2 text-[10px] text-muted-foreground">每轮按折后价计费</span>
+            </div>
+          </li>
+          <li className="flex items-center gap-3 rounded-2xl border border-border bg-card px-3.5 py-3 text-xs">
+            <Sparkles className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+            <span className="font-bold">
+              {monthlyPlan
+                ? `月卡赠送专项 ${formatNumber(monthlyPlan.bonus_credits)} 星尘`
+                : '月卡赠送专项星尘'}
+            </span>
+          </li>
         </ul>
 
         <section role="radiogroup" aria-label="VIP 套餐" className="space-y-3">
@@ -214,7 +252,8 @@ export default function VipPage() {
               <VipPlanCard
                 key={plan.id}
                 plan={plan}
-                selected={selectionKey('vip', plan.id) === selectedKey}
+                selected={selectionKey('vip', plan.id) === effectiveSelectedKey}
+                discountLabel={discountLabel}
                 onSelect={handleSelect}
               />
             ))
@@ -225,6 +264,24 @@ export default function VipPage() {
             </p>
           ) : null}
         </section>
+        <p className="text-center text-[10px] leading-relaxed text-muted-foreground">
+          免费轮次优先，不叠加折扣。专项星尘仅可用于轻量文本。
+        </p>
+        {vipQuery.isLoading ? (
+          <p className="text-center text-[11px] text-muted-foreground">正在确认会员状态</p>
+        ) : vipQuery.isError || !membership ? (
+          <button
+            type="button"
+            onClick={() => void vipQuery.refetch()}
+            className="w-full py-1 text-center text-xs text-primary"
+          >
+            会员信息暂未加载，点击重试
+          </button>
+        ) : vipQuery.data?.active || vipQuery.data?.last_plan_id ? (
+          <p className="text-center text-[11px] text-primary">
+            {membership.title} · {membership.detail}
+          </p>
+        ) : null}
       </div>
 
       <div
@@ -237,20 +294,26 @@ export default function VipPage() {
             {checkoutError}
           </p>
         ) : null}
-        <Button
-          disabled={
-            !selection || !selection.available || createOrder.isPending || plansQuery.isError
-          }
-          onClick={() => void handleSubmit()}
-          className={cn(
-            'h-11 w-full rounded-xl font-bold',
-            selection?.available && !createOrder.isPending
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-secondary text-muted-foreground'
-          )}
-        >
-          {buttonLabel}
-        </Button>
+        <div className="flex items-center gap-2.5">
+          <span className="flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-2 text-[11px] font-semibold text-emerald-400">
+            <WeChatPayIcon className="h-4 w-4" aria-hidden />
+            微信支付
+          </span>
+          <Button
+            disabled={
+              !selection || !selection.available || createOrder.isPending || plansQuery.isError
+            }
+            onClick={() => void handleSubmit()}
+            className={cn(
+              'h-11 min-w-0 flex-1 rounded-full font-bold',
+              selection?.available && !createOrder.isPending
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-muted-foreground'
+            )}
+          >
+            {buttonLabel}
+          </Button>
+        </div>
       </div>
 
       <PaymentVpnPromptDialog

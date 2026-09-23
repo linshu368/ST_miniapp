@@ -4,9 +4,60 @@ import type { SettlementLogger } from '../payment/usecases/PaymentSettlement.js'
 import {
   closedVipStatus,
   mapVipStatus,
+  readVipBenefits,
   VipStatusService,
   type VipStatusReader,
 } from './vip-status.js';
+import { readVipStrategy, interpretVipStrategy } from '../../platform/vip-strategy.js';
+import { fetchRuntimeConfigEntryStrict } from '../../platform/runtime-config.js';
+
+vi.mock('../../platform/vip-strategy.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../platform/vip-strategy.js')>()),
+  readVipStrategy: vi.fn(),
+}));
+vi.mock('../../platform/runtime-config.js', () => ({
+  fetchRuntimeConfigEntryStrict: vi.fn(),
+}));
+
+describe('published VIP benefits', () => {
+  it('previews 95% and the VIP signup reward even without membership', async () => {
+    vi.mocked(readVipStrategy).mockResolvedValue(interpretVipStrategy(new Map()));
+    vi.mocked(fetchRuntimeConfigEntryStrict).mockResolvedValue({
+      value: 60,
+      textValue: null,
+      version: 1,
+    });
+    expect(await readVipBenefits()).toEqual({
+      text_discount_rate: 0.95,
+      checkin_base_credits: 60,
+      checkin_vip_credits: 60,
+    });
+  });
+
+  it('uses the published fixed bonus instead of assuming a doubled reward', async () => {
+    const strategy = interpretVipStrategy(new Map());
+    vi.mocked(readVipStrategy).mockResolvedValue({
+      ...strategy,
+      checkin: { mode: 'fixed', fixed_credits: 20 },
+    });
+    vi.mocked(fetchRuntimeConfigEntryStrict).mockResolvedValue({
+      value: null,
+      textValue: '80',
+      version: 2,
+    });
+    expect(await readVipBenefits()).toMatchObject({
+      checkin_base_credits: 80,
+      checkin_vip_credits: 20,
+    });
+  });
+
+  it('does not invent benefit amounts when the configuration cannot be read', async () => {
+    vi.mocked(fetchRuntimeConfigEntryStrict).mockRejectedValue(new Error('unavailable'));
+    const logger = log();
+    expect(await readVipBenefits(logger)).toBeUndefined();
+    expect(logger.sys.error).toHaveBeenCalled();
+  });
+});
 
 const NOW = '2026-09-22T00:00:00.000Z';
 const USER = '00000000-0000-4000-8000-000000000001';

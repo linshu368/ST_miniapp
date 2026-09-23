@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ChevronDown, Lock, Sparkles } from 'lucide-react';
 import type { PublicModelCatalogTier } from '@miniapp/shared';
@@ -56,7 +56,15 @@ export function ChatModelSwitcher({
   const [lockedTierKey, setLockedTierKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSelectRef = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      latestSelectRef.current = null;
+    },
+    []
+  );
 
   const selectedId = data?.selected_model_id ?? '';
   const allModels = data?.catalog.tiers.flatMap((tier) => tier.models) ?? [];
@@ -68,7 +76,12 @@ export function ChatModelSwitcher({
   );
 
   const handleSelect = async (modelId: string) => {
-    if (modelId === selectedId) return;
+    if (selectModel.isPending) return;
+    if (modelId === selectedId) {
+      onSwitched?.();
+      return;
+    }
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     const tier = data?.catalog.tiers.find((item) =>
       item.models.some((model) => model.id === modelId)
     );
@@ -89,7 +102,7 @@ export function ChatModelSwitcher({
         // 属性更新失败不阻断选模型
       }
       setFeedback(modelSwitchFeedback(generating));
-      if (onSwitched) window.setTimeout(onSwitched, generating ? 1600 : 250);
+      if (onSwitched) closeTimerRef.current = setTimeout(onSwitched, generating ? 1600 : 250);
     } catch (err) {
       if (latestSelectRef.current !== modelId) return;
       const code = err instanceof ApiClientError ? err.code : undefined;
@@ -197,6 +210,7 @@ export function ChatModelSwitcher({
             tier={tier}
             collapsed={collapsed.has(tier.key)}
             selectedId={selectedId}
+            selecting={selectModel.isPending}
             onToggle={() =>
               setCollapsed((current) => {
                 const next = new Set(current);
@@ -215,7 +229,7 @@ export function ChatModelSwitcher({
           if (!open) setLockedTierKey(null);
         }}
       >
-        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-3xl">
+        <DialogContent data-model-vip-dialog className="w-[calc(100%-2rem)] max-w-sm rounded-3xl">
           <DialogHeader>
             <DialogTitle>标准与旗舰模型需要 VIP</DialogTitle>
             <DialogDescription>
@@ -253,12 +267,14 @@ function TierSection({
   tier,
   collapsed,
   selectedId,
+  selecting,
   onToggle,
   onSelect,
 }: {
   tier: PublicModelCatalogTier;
   collapsed: boolean;
   selectedId: string;
+  selecting: boolean;
   onToggle: () => void;
   onSelect: (modelId: string) => void;
 }) {
@@ -280,7 +296,7 @@ function TierSection({
         </span>
         <ChevronDown
           className={cn(
-            'size-4 shrink-0 text-muted-foreground transition-transform',
+            'size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none',
             collapsed && '-rotate-90'
           )}
           aria-hidden
@@ -296,8 +312,10 @@ function TierSection({
                 key={model.id}
                 type="button"
                 onClick={() => onSelect(model.id)}
+                disabled={selecting}
+                aria-pressed={active}
                 className={cn(
-                  'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors',
+                  'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none',
                   active ? 'bg-primary/10' : 'hover:bg-secondary'
                 )}
               >
