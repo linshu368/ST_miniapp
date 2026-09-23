@@ -19,7 +19,7 @@
 | T3A | Done   | 新增 Admin“VIP策略”与动态商品/权益配置 forward-fix             | Shared + DB + Backend + Admin                        | T3                                    | 配置校验、快照、回滚、旧版本兼容、Admin build    |
 | T4  | Done   | 改造 LLM 权限、折扣、钱包分配、明细与原路退款                  | Backend models/generation/billing/wallet             | T2,T3                                 | 钱包矩阵、配置快照、并发、重放、退款回归测试     |
 | T5  | Todo   | 向语音/图片子任务交付底座并完成跨模块集成验收                  | 两个 child task + parent integration                 | 语音/图片底座等 T2/T3；动态上限等 T3A | 子任务证据、免费/钱包/权限联合矩阵               |
-| T6  | Doing  | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3,T3A                             | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
+| T6  | Done   | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3,T3A                             | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
 | T7  | Todo   | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T3A,T4,T5,T6                    | 前端 test/lint/typecheck/build + 人工状态矩阵    |
 | T8  | Todo   | 完成跨包回归、test 必验路径、文档与模块知识更新                | 全仓、README、ARCHITECTURE、spec/module facts        | T1-T7                                 | 全量命令、test 证据、`module_knowledge.py check` |
 | T9  | Todo   | 形成 Production 发布单并等待产品上线确认                       | migrations / Railway / feature flags                 | T8                                    | 未获明确确认保持 Production 关闭                 |
@@ -198,6 +198,7 @@
   - inspect 里另有 13 个 `not_applied`，包括 batch lab、`20260922_media_feature_free_trials.sql` 和 `20260923_admin_vip_media_config.sql`。它们不属于 T6，本轮不 apply。
 - 2026-09-23 T6 test 只读 postflight 通过，T6 仍为 Doing。用户在 test SQL Editor 执行目录查询，未读业务明细。结果：`insert_due_vip_expiry_reminder(uuid)`、`list_vip_expiry_reminder_candidates(integer,uuid)`、六参 `insert_vip_expiry_reminder` 均存在；anon/authenticated 对 due 与 list 的 EXECUTE 均为 false；service_role 均为 true；两个新函数都是 SECURITY DEFINER 且 `search_path=pg_catalog`；`uq_notifications_business_key` 存在；`vip_reminders_enabled` 仍为 false。未跑 test dry-run，未 `--write`，未打开开关，未写 Production。
 - 2026-09-23 T6 test dry-run 完成，T6 仍为 Doing。`pnpm --filter` 会把 `--` 原样传给脚本，解析器原先把它当成非法参数。已让 `parseVipReminderArgs` 忽略单独的 `--`。`DATABASE_ENV=test`，项目 `zoqelpfhurwehlvypryl`。命令 `pnpm --filter @miniapp/backend vip:send-expiry-reminders -- --dry-run` 结果：`{"scanned":0,"eligible":0,"inserted":0,"skipped":0,"failed":0,"dry_run":true,"duration":643}`。当前没有落在上海今天或今天+3 天窗口内、且尚未发送的会员，所以计数为 0；没有调用插入。未打开 `vip_reminders_enabled`，未 `railway config apply`，未写 Production。参数修复随这次提交推送。随后按授权对 test 执行 `--write`，开关保持 false。
+- 2026-09-23 T6 受控写入校验通过，T6 → Done。授权仅限 `--write`，没有把 `vip_reminders_enabled` 改为 true。`DATABASE_ENV=test`，项目 `zoqelpfhurwehlvypryl`。命令 `pnpm --filter @miniapp/backend vip:send-expiry-reminders -- --write`。日志 `vip.reminder.write_blocked`，reason=`disabled`。结果：`{"scanned":0,"eligible":0,"inserted":0,"skipped":0,"failed":0,"dry_run":false,"duration":1429}`。开关关闭时写模式不插入。未 `railway config apply`，未配置 Production Cron，未写 Production。真实发送仍关闭；今天也没有落在提醒窗口内的会员，因此这次不能证明一条真实站内信。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约
