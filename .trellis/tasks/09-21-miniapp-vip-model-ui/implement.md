@@ -15,7 +15,7 @@
 ## 阶段 1：Shared 契约与纯规则
 
 1. 新增 VIP status/plan 契约；兼容扩展 payment order/plans、wallet/checkin/spending、models、notifications，并定义语音/图片共用的免费额度状态与稳定错误码。voice/images 领域 DTO 的实际接入由对应子任务完成。
-2. 实现并测试单一文本定价纯函数：免费优先、原价、VIP 95%、四舍五入整数、非法配置拒绝。
+2. 实现并测试单一文本定价纯函数：免费优先、原价、VIP 折扣率、四舍五入整数、非法配置拒绝；0.95 保留为首次 seed 与配置损坏时默认。
 3. 定义稳定错误码和可判别联合，保证 UI 可区分 VIP 门禁、充值钱包不足、总余额不足、免费额度耗尽和高级图片未配置。
 4. 保持旧响应字段；为新增字段提供向后兼容默认或可选策略，禁止 `any`。
 
@@ -63,9 +63,24 @@ pnpm test:migration-ledger
 
 **测试**：订单金额篡改、无效商品、支付创建失败、expired 迟到确认、四路竞态、数据库失败回滚、通知失败不回滚、周/月续费、签到过期边界。
 
+## 阶段 3A：Admin「VIP策略」与运行时配置 forward-fix
+
+> 这是 2026-09-22 新增需求。T2/T3 已在 test 落地，必须新增独立 migration 和兼容消费者，不得改写已应用文件。可与 T4 的本地实现并行，但 T4、T5、T6、T7 在最终验收前都必须消费该阶段稳定的配置契约。
+
+1. 在 Shared 定义 `vip_plans_config`、`vip_text_discount_rate`、`vip_checkin_bonus_config`、`feature_free_trial_limits` 的 runtime schema、默认值和类型；现有常量降级为首次迁移/配置损坏时的兼容默认。
+2. 新增 forward-fix migration：seed 新 key；把既有 `vip_purchase_enabled` / `vip_reminders_enabled` 与新 key 加入 Admin managed-key 白名单和数据库发布校验；演进 `feature_free_trials.ordinal` 的固定 1..3 约束以支持受控动态上限。一次只 apply 一个新文件，不修改历史 migration。
+3. Backend 统一通过 `platform/runtime-config.ts` 读取已发布策略：创建 VIP 订单时固化商品快照；文本受理固化折扣；签到 RPC 原子读取加成策略；免费预留 RPC 按 feature 读取上限。配置缺失/损坏时按 design 的 fail-closed/安全默认规则处理。
+4. Admin 新增业务 tab“VIP策略”，按功能开关、商品、文本折扣、签到加成、媒体免费次数分区；复用草稿/发布/版本/回滚和 test/production 环境隔离，不新增直写表路径。
+5. 语音/basic 图片免费上限分别配置，统一限制为 `0..20` 的整数并默认 3；0 表示关闭对应功能的免费体验。上限调低保留历史事实并停止新增，调高后从最小可用 ordinal 继续。
+6. 到期提醒提前天数、提醒文案、时区不进入 Admin；语音价格/开关/提示文案和高级图片完整配置也不在本阶段范围。
+
+**测试**：Shared/Admin/DB 三层非法值；首次 seed 等价于当前规则；开关 fail closed；商品改价后的新旧订单快照；折扣改值后的进行中生成；签到两种模式；免费上限调高/调低、并发与重放；配置回滚不改历史事实；旧 Backend 在新 migration 后继续工作。
+
+**门禁**：Shared、Admin 与数据库未统一执行 `0..20` 免费次数约束、Admin 发布 RPC 不能复用、配置读取会重定价历史业务、或新 migration 需要改写已应用 T2/T3 文件时停止。
+
 ## 阶段 4：Backend 统一计费、权限与退款
 
-1. 扩展 LLM billing plan 快照，加入 entitlement、原价、折扣、最终价和 wallet policy。
+1. T4 已按冻结的 0.95 兼容默认完成 LLM billing plan 快照、权限、钱包分配与原路退款；动态读取“VIP策略”折扣及配置版本由 T3A additive 接入，不重开或改写 T4 已验收语义。
 2. 模型 config/select/generation 三处均做后端 VIP 和可用钱包校验；到期选择解析为轻量，并 best-effort 修正设置。
 3. 改造 `charge_llm_usage`：保留 finish_reason 与 sync-job 行为，取消新 partial，轻量 main-first+bonus，标准/旗舰 main-only。
 4. 固化供媒体子任务调用的 allocator/refund 签名、测试夹具和失败语义；本阶段不进入 voice/image 状态机实现。
@@ -79,14 +94,14 @@ pnpm test:migration-ledger
 2. 同一节点可向 `09-21-vip-image-free-trials` 交付 basic 免费体验底座；图片工程师可先实现 basic。
 3. 父 T3 的 VIP status/entitlement 稳定后，再交付图片子任务的 advanced 门禁依赖；图片无需等待 T4。
 4. 子任务分别完成领域 contract、attempt/audio 快照、状态机、失败释放和 UI；父任务不重复修改媒体模块。
-5. 子任务交回 PR/commit、migration 与失败矩阵后，父任务执行语音/图片联合免费额度、钱包、权限和发布开关验收。
+5. 子任务交回 PR/commit、migration 与失败矩阵后，父任务按 `feature_free_trial_limits` 当前发布值执行语音/图片联合免费额度、钱包、权限和发布开关验收。
 
 **集成测试**：两能力免费计数隔离、第 1/2/3/4 次、并发第三次、上游/Storage/failed_unknown、重复 job/audio、只有 bonus、高级图片 VIP/配置/到期和原路退款。
 
 ## 阶段 6：到期提醒与消息详情
 
 1. 新增 reminder 脚本和数据库幂等插入 RPC，使用 `Asia/Shanghai` 日期窗口、有限批次和 advisory/row lock。
-2. 先实现 dry-run 指标，再由独立开关启用写入；接入 Railway test Cron 配置，Production 配置仍保持关闭。
+2. 先实现 dry-run 指标，再消费 Admin“VIP策略”中的 `vip_reminders_enabled` 启用写入；接入 Railway test Cron 配置，Production 配置仍保持关闭。提前天数、文案和时区不做运营配置。
 3. 扩展通知 list/detail/read API：可见性校验、kind/action metadata；点击单 ID 才已读。
 4. 增加消息详情页与实时 VIP 状态卡、续费入口；历史提醒正文不改写。
 
@@ -99,14 +114,14 @@ pnpm test:migration-ledger
 3. Recharge 把 credits/vip 归入同一选中状态，金额和续费文案正确，避免两个区同时选中。
 4. `ChatTopBar` 增加模型胶囊；复用并扩展 `ChatModelSwitcher`；从 `ChatToolsSheet` 移除模型行。
 5. 面板展示后端价格视图、VIP 锁定弹层、剩余天数和输出中切换提示；API 错误按稳定 code 导航，不解析文案。
-6. 语音/图片入口展示第 N/3 次或原价；余额和权限仅为提示，最终结果服从后端。
+6. 语音/图片入口展示第 N/已发布上限次或原价；余额和权限仅为提示，最终结果服从后端。
 7. 消息列表点击单条已读并进入详情；返回后 unread cache 一致。
 
 **人工体验**：安全区、软键盘、长角色名、长模型名、小屏、慢网、请求竞态、返回/刷新、支付外跳、静态图失败、非 VIP/VIP/刚过期三视角。
 
 ## 阶段 8：全量验证、文档与发布
 
-1. 运行受影响包测试、typecheck、lint、Frontend build、全仓 typecheck、import/legacy/migration guards。
+1. 运行受影响包测试、typecheck、lint、Admin/Frontend build、全仓 typecheck、import/legacy/migration guards。
 2. 在 test 执行 PRD 10 条必验路径和失败矩阵；分别核对 API、DB ledger、UI 与日志，不只验证 happy path。
 3. 执行钱包守恒 SQL、payment source 分布、重复 business key、free ordinal、会员期限和退款拆分审计。
 4. 更新 README、ARCHITECTURE、相关 spec 和模块知识；修复 Backend 规范中的失效 `docs/log_system.md` 引用。
@@ -133,7 +148,8 @@ python3 ./.trellis/scripts/module_knowledge.py check 09-21-miniapp-vip-model-ui
 
 ## Consumer 校验清单
 
-- Shared：新增联合类型、默认值、根出口和 runtime schema；Admin/CS 虽无 UI 改动仍需全仓 typecheck。
+- Shared：新增联合类型、默认值、根出口和 VIP runtime schema；Admin 与 Backend 必须消费同一校验，CS 虽无 UI 改动仍需全仓 typecheck。
+- Admin：新增“VIP策略”业务 tab，复用 managed config 草稿/发布/版本/回滚、鉴权与环境切换；不得直写 `runtime_config` 或展示密钥。
 - Backend：payment 四入口、model select/generation、LLM sync、voice/image workers、wallet/checkin、notification/reminder 都消费同一规则。
 - Frontend：profile、VIP、recharge/order、chat、voice/image、messages/detail 只通过 API hooks 获取服务端数据。
 - Database：billing/app_core/experience/miniapp_features 的跨 schema 依赖、RLS/grants、旧函数签名和 migration ledger。

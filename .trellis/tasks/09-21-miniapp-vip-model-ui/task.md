@@ -10,18 +10,19 @@
 
 ## Tasks
 
-| ID  | Status | Task                                                           | Files / Scope                                        | Depends On                                  | Verification                                     |
-| --- | ------ | -------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------- | ------------------------------------------------ |
-| T0  | Done   | 完成人工评审、test 环境与高级图片配置确认                      | task docs / env inventory                            | -                                           | 评审结论与环境证据齐全，满足停止条件检查         |
-| T1  | Done   | 定义 VIP、支付、钱包、模型、通知及媒体免费公共契约与价格纯函数 | `packages/shared/src/api/*`                          | T0                                          | shared test/typecheck；旧字段兼容                |
-| T2  | Done   | 添加会员/钱包/免费额度公共结构、RLS/grants、索引与原子 RPC     | `packages/shared/migrations/*`                       | T1                                          | test 单文件 migration、自检、守恒/并发/回滚演练  |
-| T3  | Done   | 实现 VIP status、商品下单、支付原子履约与签到加成              | Backend VIP/payment/wallet routes + repositories     | T2                                          | 四路支付、续费、月卡赠送、60/120 与故障测试      |
-| T4  | Doing  | 改造 LLM 权限、95 折、钱包分配、明细与原路退款                 | Backend models/generation/billing/wallet             | T2,T3                                       | 钱包矩阵、快照、并发、重放、退款回归测试         |
-| T5  | Todo   | 向语音/图片子任务交付底座并完成跨模块集成验收                  | 两个 child task + parent integration                 | 语音等 T2；图片 basic 等 T2、advanced 等 T3 | 子任务证据、免费/钱包/权限联合矩阵               |
-| T6  | Todo   | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3                                       | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
-| T7  | Todo   | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T4,T5,T6                              | 前端 test/lint/typecheck/build + 人工状态矩阵    |
-| T8  | Todo   | 完成跨包回归、test 必验路径、文档与模块知识更新                | 全仓、README、ARCHITECTURE、spec/module facts        | T1-T7                                       | 全量命令、test 证据、`module_knowledge.py check` |
-| T9  | Todo   | 形成 Production 发布单并等待产品上线确认                       | migrations / Railway / feature flags                 | T8                                          | 未获明确确认保持 Production 关闭                 |
+| ID  | Status | Task                                                           | Files / Scope                                        | Depends On                            | Verification                                     |
+| --- | ------ | -------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------- | ------------------------------------------------ |
+| T0  | Done   | 完成人工评审、test 环境与高级图片配置确认                      | task docs / env inventory                            | -                                     | 评审结论与环境证据齐全，满足停止条件检查         |
+| T1  | Done   | 定义 VIP、支付、钱包、模型、通知及媒体免费公共契约与价格纯函数 | `packages/shared/src/api/*`                          | T0                                    | shared test/typecheck；旧字段兼容                |
+| T2  | Done   | 添加会员/钱包/免费额度公共结构、RLS/grants、索引与原子 RPC     | `packages/shared/migrations/*`                       | T1                                    | test 单文件 migration、自检、守恒/并发/回滚演练  |
+| T3  | Done   | 实现 VIP status、商品下单、支付原子履约与签到加成              | Backend VIP/payment/wallet routes + repositories     | T2                                    | 四路支付、续费、月卡赠送、60/120 与故障测试      |
+| T3A | Doing  | 新增 Admin“VIP策略”与动态商品/权益配置 forward-fix             | Shared + DB + Backend + Admin                        | T3                                    | 配置校验、快照、回滚、旧版本兼容、Admin build    |
+| T4  | Done   | 改造 LLM 权限、折扣、钱包分配、明细与原路退款                  | Backend models/generation/billing/wallet             | T2,T3                                 | 钱包矩阵、配置快照、并发、重放、退款回归测试     |
+| T5  | Todo   | 向语音/图片子任务交付底座并完成跨模块集成验收                  | 两个 child task + parent integration                 | 语音/图片底座等 T2/T3；动态上限等 T3A | 子任务证据、免费/钱包/权限联合矩阵               |
+| T6  | Todo   | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3,T3A                             | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
+| T7  | Todo   | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T3A,T4,T5,T6                    | 前端 test/lint/typecheck/build + 人工状态矩阵    |
+| T8  | Todo   | 完成跨包回归、test 必验路径、文档与模块知识更新                | 全仓、README、ARCHITECTURE、spec/module facts        | T1-T7                                 | 全量命令、test 证据、`module_knowledge.py check` |
+| T9  | Todo   | 形成 Production 发布单并等待产品上线确认                       | migrations / Railway / feature flags                 | T8                                    | 未获明确确认保持 Production 关闭                 |
 
 ## Execution Log
 
@@ -111,6 +112,7 @@
   - `complete_payment_order(text,text,text)` 仍含履约标志且 anon 不可执行。`vip_purchase_enabled` 与 `vip_reminders_enabled` 均为 false。
   - 未在 test 用真实四路微信支付重放。Production 结构与签到值仍未核。`20260912_backfill_character_persona_and_style.sql` 与 `20260914_chat_message_images*.sql` 仍 absent，不属于本任务。
 - 2026-09-21：产品将三档文本模型折扣从 88 折改为 95 折。已同步 PRD/design/implement/task、校验清单、T0 research，以及 T1 契约常量 `VIP_TEXT_DISCOUNT_RATE = 0.95` 与对应测试期望（15→14、30→29、50→48）。月卡 28.88 元未改。
+- 2026-09-22 新增需求：Admin 新建“VIP策略”tab，纳管 VIP 购买开关、提醒开关、周/月卡价格与有效天数、月卡赠送专项星尘、文本折扣率、商品标题/说明/角标、签到加成方式/固定值、语音与 basic 图片各自免费次数。首次 seed 保持当前规则；到期提醒提前天数/文案/时区不进 Admin，语音价格/开关/提示与高级图片配置本次不纳入。新增 T3A；T2/T3 已 apply，后续只允许 forward-fix migration，不改历史文件。动态免费次数统一为 `0..20`，默认 3，0 表示关闭对应功能的免费体验。
 - 2026-09-22 T4 开始：分支 `dev_vip_0920`，HEAD `2f2eb0e`，与 `origin/dev_vip_0920` 一致，工作区干净。父任务已是 `in_progress`。T0–T3 Done，T4 → Doing。未重复 `task.py start`（本会话无 session identity）。未改语音/图片子任务，未进 T5，未写 test/production，未 commit/push。复用、失败路径、迁移兼容和验证计划见 `research/t4-llm-billing-reuse.md`。
 - 2026-09-22 T4 本地实现完成，**停在 test apply 前，T4 保持 Doing**。未触发 GitHub Actions，未通过 MCP/SQL 写正式 test，未写 Production，未启用购买/提醒/高级图片，未进 T5，未改语音/图片实现，未 commit/push。
   - 报价与资格：`quoteTextModelUsage`。原价来自 `getPricingConfig()`。免费轮实付 0。VIP 三档按运行时原价 × 0.95 四舍五入。标准/旗舰要有效 VIP；到期后 config 与生成都回落轻量，写回失败不阻断本轮。选择接口拒绝并返回 `VIP_REQUIRED`，不改已保存选择。
@@ -129,10 +131,18 @@
     - `pnpm lint:imports` / `pnpm lint:legacy` / `pnpm lint:migrations` → pass
     - `pnpm test:migration-ledger` → pass（需本机 Postgres；沙箱里 socket 被拒，退出沙箱后通过）
   - 未做：正式 test apply 与 apply 后的只读 postflight；真实 OpenRouter/SSE；Production。
+- 2026-09-22 T4 test apply 复核通过。用户提供的 inspect 账本中 `20260922_llm_vip_wallet_charge.sql` checksum `99f63f2e523eb72ca66db12a0ec519973f4ac42b113d36de405a3d3c42f87241` 与本地文件一致，verdict 为 `match / applied`。MCP 目标 `https://zoqelpfhurwehlvypryl.supabase.co`。只读函数目录，未读业务行，未写 Production。
+  - `billing.charge_llm_usage`：SECURITY DEFINER，`search_path=pg_catalog`，调用 `apply_wallet_debit`；anon/authenticated 不可执行，service_role 可执行。
+  - `billing.refund_llm_usage_charge`：SECURITY DEFINER，`search_path=pg_catalog`，调用 `refund_wallet_debit`；anon/authenticated 不可执行，service_role 可执行。
+  - `vip_purchase_enabled` 与 `vip_reminders_enabled` 仍为 false。
+  - 当时未标 Done：任务表曾要求 T4 在完成验收前接入 T3A 的已发布折扣配置；已推送的文本计价使用冻结的 0.95 默认。2026-09-23 用户确认 T4 按原范围完成，动态配置改由 T3A additive 接入，见后续日志。真实 OpenRouter/SSE 与 Production 仍未验。
   - 给 T5 合并核对的共享文件：`MiniappWalletRepository.ts`（只加 LLM 退款 RPC 与消费明细字段，语音扣费签名未改）、`scripts/test-vip-billing-migrations.sh`、`features/generation` 下文本计费文件（未改 image）、`ConversationHistoryRepository.ts` 的可选快照字段、`routes/models.ts`、`routes/conversations.ts`、`features/conversations/generate.ts`、`MiniappUserSettingsRepository.ts` 的 `correctSelectedModelId`。未改 `packages/shared/src/index.ts`，未改语音/图片实现。
+- 2026-09-23 规划收口：用户确认 T4 已由 commit `5f4ee24` 完成交付，T4 → Done；运行时动态折扣不再作为 T4 完成条件，由 T3A additive 接入。T3A → Doing，免费次数范围冻结为 voice/basic_image 各 `0..20`、默认 3、0 表示关闭。本次仅收口 PRD/design/implement/task/manifests/research，未写产品代码，未 apply 新 migration，未写 test/Production，未进入 T5；规划独立提交且不 push。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约
+
+> 2026-09-22 需求补丁：本节记录 T1/T2 当时已冻结并落库的兼容契约。T3A 将通过 additive Shared 变更与 forward-fix migration 把商品条款、折扣、签到加成和媒体免费上限演进为受校验的运行时配置；下列 13.99/7、28.88/31/3000、0.95、3 均保留为首次 seed/损坏降级默认值，不再代表运营不可修改的永久常量。状态枚举、钱包策略、VIP 判定、幂等与退款语义仍保持冻结。
 
 T2 只做 migration/RPC，必须使用这些名字，不得改语义。Producer（T3/T4）再写入 DTO；T1 为兼容把现有响应上的新字段做成可选。
 
