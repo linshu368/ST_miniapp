@@ -54,7 +54,7 @@ import { getReplayLifecycle } from '@/lib/telemetry';
 import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
 
-const PAYMENT_TYPES: PaymentType[] = ['wxpay'];
+const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
 
 export default function RechargePage() {
   return (
@@ -90,7 +90,7 @@ function RechargePageContent() {
   }, []);
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
+  const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const noticeChoiceRef = useRef<'invite' | 'recharge' | null>(null);
   const [paymentPromptOpen, setPaymentPromptOpen] = useState(false);
@@ -378,7 +378,12 @@ function RechargePageContent() {
                 {[
                   { id: 1, before: '第一步：请关闭VPN' },
                   { id: 2, before: '第二步：请', emphasis: '直接截图', after: '保存支付码' },
-                  { id: 3, before: '第三步：', emphasis: '手动打开', after: '微信扫码支付' },
+                  {
+                    id: 3,
+                    before: '第三步：',
+                    emphasis: '手动打开',
+                    after: paymentType === 'alipay' ? '支付宝扫码支付' : '微信扫码支付',
+                  },
                 ].map((step) => (
                   <div
                     key={step.id}
