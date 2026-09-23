@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 /** 语音与基础图片各自独立的默认免费成功次数。高级图片不参与。 */
 export const DEFAULT_FEATURE_FREE_TRIAL_LIMIT = 3;
+/** VIP 策略中按功能发布的额度范围；0 表示关闭对应功能的免费体验。 */
+export const FEATURE_FREE_TRIAL_LIMIT_MIN = 0;
+export const FEATURE_FREE_TRIAL_LIMIT_MAX = 20;
 /** Admin 可配置额度的保守上限；数据库 ordinal 约束与这里保持一致。 */
 export const MAX_FEATURE_FREE_TRIAL_LIMIT = 100;
 /** 兼容旧调用方：表示缺配置时的默认额度，而不是不可变业务上限。 */
@@ -31,6 +34,13 @@ export const ADVANCED_IMAGE_UNAVAILABLE_ERROR_CODE = 'ADVANCED_IMAGE_UNAVAILABLE
 
 export const ImageGenerationTierSchema = z.enum(['basic', 'advanced']);
 export type ImageGenerationTier = z.infer<typeof ImageGenerationTierSchema>;
+
+export const FeatureFreeTrialLimitSchema = z
+  .number()
+  .int()
+  .min(FEATURE_FREE_TRIAL_LIMIT_MIN)
+  .max(FEATURE_FREE_TRIAL_LIMIT_MAX);
+export type FeatureFreeTrialLimit = z.infer<typeof FeatureFreeTrialLimitSchema>;
 
 export const MediaFeatureFreeTrialLimitSchema = z
   .number()
@@ -63,7 +73,8 @@ export type FeatureFreeTrialFact = z.infer<typeof FeatureFreeTrialFactSchema>;
 
 export const FeatureFreeTrialQuotaViewSchema = z.object({
   feature: FeatureFreeTrialFeatureSchema,
-  free_trial_limit: MediaFeatureFreeTrialLimitSchema,
+  // 兼容两条已发布配置线：VIP 策略允许 0..20，旧媒体总开关允许 1..100。
+  free_trial_limit: z.number().int().min(0).max(MAX_FEATURE_FREE_TRIAL_LIMIT),
   free_trials_used: z.number().int().nonnegative(),
   free_trials_reserved: z.number().int().nonnegative(),
   free_trials_remaining: z.number().int().nonnegative(),
@@ -92,14 +103,31 @@ export function summarizeFeatureFreeTrialQuota(input: {
   feature: FeatureFreeTrialFeature;
   facts: ReadonlyArray<Pick<FeatureFreeTrialFact, 'ordinal' | 'status'>>;
   limit?: number;
+  /** 旧媒体配置允许到 100；省略时按 VIP 策略已发布的 0..20 校验。 */
+  maxLimit?: number;
 }): FeatureFreeTrialQuotaResult {
-  const limit = parseMediaFeatureFreeTrialLimit(input.limit);
+  const limitResult = input.maxLimit
+    ? z.number().int().min(1).max(input.maxLimit).safeParse(input.limit)
+    : FeatureFreeTrialLimitSchema.safeParse(input.limit ?? FEATURE_FREE_TRIAL_LIMIT);
+  if (!limitResult.success) {
+    return {
+      ok: false,
+      code: 'FEATURE_FREE_TRIAL_INVALID_STATE',
+      message: 'free trial limit is invalid',
+    };
+  }
+  const limit = limitResult.data;
+  const ordinalSchema = z
+    .number()
+    .int()
+    .min(1)
+    .max(input.maxLimit ?? FEATURE_FREE_TRIAL_LIMIT_MAX);
   const occupying = new Map<number, FeatureFreeTrialStatus>();
   let used = 0;
   let reserved = 0;
 
   for (const fact of input.facts) {
-    const ordinalParsed = FeatureFreeTrialOrdinalSchema.safeParse(fact.ordinal);
+    const ordinalParsed = ordinalSchema.safeParse(fact.ordinal);
     const statusParsed = FeatureFreeTrialStatusSchema.safeParse(fact.status);
     if (!ordinalParsed.success || !statusParsed.success) {
       return {
@@ -112,7 +140,8 @@ export function summarizeFeatureFreeTrialQuota(input: {
     if (!featureFreeTrialOccupiesSlot(statusParsed.data)) {
       continue;
     }
-    if (ordinalParsed.data > limit) {
+    // 发布值降到 0 时保留历史消费展示；正数额度仍只统计当前额度范围内的序号。
+    if (limit > 0 && ordinalParsed.data > limit) {
       continue;
     }
 
@@ -132,20 +161,15 @@ export function summarizeFeatureFreeTrialQuota(input: {
     if (status === 'reserved') reserved += 1;
   }
 
-  const remaining = limit - occupying.size;
-  if (remaining < 0) {
-    return {
-      ok: false,
-      code: 'FEATURE_FREE_TRIAL_INVALID_STATE',
-      message: 'free trial occupancy exceeds the account limit',
-    };
-  }
+  const remaining = Math.max(0, limit - occupying.size);
 
   let nextTrialOrdinal: FeatureFreeTrialOrdinal | null = null;
-  for (let ordinal = 1; ordinal <= limit; ordinal += 1) {
-    if (!occupying.has(ordinal)) {
-      nextTrialOrdinal = ordinal as FeatureFreeTrialOrdinal;
-      break;
+  if (remaining > 0) {
+    for (let ordinal = 1; ordinal <= limit; ordinal += 1) {
+      if (!occupying.has(ordinal)) {
+        nextTrialOrdinal = ordinal as FeatureFreeTrialOrdinal;
+        break;
+      }
     }
   }
 

@@ -6,6 +6,7 @@ import {
   DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   FeatureFreeTrialFactSchema,
   FeatureFreeTrialFeatureSchema,
+  MAX_FEATURE_FREE_TRIAL_LIMIT,
   parseMediaFeatureFreeTrialLimit,
   summarizeFeatureFreeTrialQuota,
   type FeatureFreeTrialFeature,
@@ -71,6 +72,7 @@ export class FeatureFreeTrialRepository {
         status: 'reserved' | 'consumed' | 'released';
       }>,
       limit: resolvedLimit,
+      maxLimit: MAX_FEATURE_FREE_TRIAL_LIMIT,
     });
     if (!summarized.ok) {
       throw new Error(`免费体验额度状态异常：${summarized.code}`);

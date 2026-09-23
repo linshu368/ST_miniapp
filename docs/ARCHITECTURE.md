@@ -527,19 +527,13 @@ packages/backend/src/
 | chat_history 列级瘦身          | ⏳   | `history` 列（TOAST ~10 GB）处置方案另立项；A 档 `llm_usage_cache`、B 档观测列待删（历史盘点：`git show b4491cd^:docs/schema划分专项.md` §2.5） |
 | 语音按次计费开启               | ⏳   | 链路已随 105 落地，`voice_billing_enabled` 默认关；开启是运营决定，且该 key 尚未纳入 admin managed key，目前只能走迁移改                        |
 | `llm_model_tiers` 回退分支删除 | ✅   | R1-B 已删除旧 key、旧契约、端点和双缓存；`model-tiers.ts` 只读 `llm_model_catalog`，故障时退到内置 `DEFAULT_CATALOG`，不是旧 tiers 回退         |
-
-# <<<<<<< HEAD
-
-| `llm_model_tiers` 回退分支删除 | ✅ | R1-B 已删除旧 key、旧契约、端点和双缓存；`model-tiers.ts` 只读 `llm_model_catalog`，故障时退到内置 `DEFAULT_CATALOG`，不是旧 tiers 回退 |
-
-> > > > > > > 93f130a72439e38382fde53dca2714a6bef07c97
-> > > > > > > | M4 自建预设格式 | ⏳ | 明确不沿用 ST 格式；旧预设数据已删（088），从零设计 |
-> > > > > > > | 角色卡人设字段进 prompt | ⏳ | v1 只用 `system_prompt`，待新卡写法定稿后决定 |
-> > > > > > > | 支付 remediation 遗留 | ⏳ | 补账护栏与审计项见历史文档 `git show 7541a54^:docs/payment-missing-credits-remediation.md` |
-> > > > > > > | Railway 控制台遗留清理 | ⏳ | `nginx-pro` / `st-bundle-pro` / `st-data-pro` / `ST_*` 变量 / `pr-276` 环境，人工确认删除 |
-> > > > > > > | `users.st_handle` 等遗留列 | ⏳ | 代码侧已停止写入、`st-bridge` 已删；剩迁移 111（DROP NOT NULL，**须先于代码上线**）与 112（DROP COLUMN，观察期后）。步骤见 `git show 7541a54^:docs/st_handle退场方案.md` |
-> > > > > > > | `Dockerfile.frontend` 取包层 | ⏳ | 与 backend 同款的构建卡死隐患，仅 `staging-*` 构建受影响 |
-> > > > > > > | `api-contract` 独立包 | ❌ | 不建，职责留在 `shared/api` |
+| M4 自建预设格式                | ⏳   | 明确不沿用 ST 格式；旧预设数据已删（088），从零设计                                                                                             |
+| 角色卡人设字段进 prompt        | ⏳   | v1 只用 `system_prompt`，待新卡写法定稿后决定                                                                                                   |
+| 支付 remediation 遗留          | ⏳   | 补账护栏与审计项见历史文档 `git show 7541a54^:docs/payment-missing-credits-remediation.md`                                                      |
+| Railway 控制台遗留清理         | ⏳   | `nginx-pro` / `st-bundle-pro` / `st-data-pro` / `ST_*` 变量 / `pr-276` 环境，人工确认删除                                                       |
+| `users.st_handle` 等遗留列     | ⏳   | 代码侧已停止写入、`st-bridge` 已删；剩迁移 111（DROP NOT NULL，**须先于代码上线**）与 112（DROP COLUMN，观察期后）                              |
+| `Dockerfile.frontend` 取包层   | ⏳   | 与 backend 同款的构建卡死隐患，仅 `staging-*` 构建受影响                                                                                        |
+| `api-contract` 独立包          | ❌   | 不建，职责留在 `shared/api`                                                                                                                     |
 
 ---
 

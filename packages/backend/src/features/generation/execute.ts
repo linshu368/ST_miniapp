@@ -100,6 +100,7 @@ export async function execute(
   const billing = internalResearch
     ? internalResearchBilling(request)
     : await getModelBillingContext(request.model.openRouterModelId);
+  const vipStrategy = internalResearch ? null : await readVipStrategy();
 
   const finish = (result: GenerationResult): GenerationResult => {
     hooks?.onDone?.(result);
@@ -134,13 +135,21 @@ export async function execute(
           billing,
           isFreeRound: reservation.isFreeRound,
           pricing,
+          entitlement: request.model.entitlement,
+          discountRate: vipStrategy?.discountRate,
+          discountConfigVersion: vipStrategy?.discountVersion,
           log,
         });
 
   if (!internalResearch && plan) {
+    if (plan.snapshot.requires_vip && !plan.snapshot.vip_active) {
+      await reservation.finalize(false);
+      return finish(failed({ denial: 'vip_required' }));
+    }
     const precheck = await checkWalletBalance({
       userId: request.userId,
       requiredAmount: plan.fixedDeduction.amount,
+      walletPolicy: plan.snapshot.wallet_policy,
       openRouterModelId: billing.openRouterModelId,
       log,
     });

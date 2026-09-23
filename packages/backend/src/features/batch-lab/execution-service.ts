@@ -168,6 +168,7 @@ export class BatchLabExecutionService {
             openRouterModelId: modelName,
             tier: null,
             isFree: false,
+            entitlement: { active: false, validUntil: null },
           },
           messages,
           sampling: {},
