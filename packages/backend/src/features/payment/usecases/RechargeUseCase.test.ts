@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_VIP_PLANS_CONFIG } from '@miniapp/shared';
 import type { MiniappPaymentOrderRow } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import { RechargeUseCase } from './RechargeUseCase.js';
-import { isVipPurchaseEnabled } from '../domain/rechargeRules.js';
 import { observePaymentOrderFailed } from './PaymentOrderTelemetry.js';
+import { readVipStrategy, type VipStrategy } from '../../../platform/vip-strategy.js';
 
 vi.mock('../../../platform/config.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../platform/config.js')>();
@@ -43,6 +44,27 @@ vi.mock('./PaymentOrderTelemetry.js', () => ({
   observePaymentOrderSettled: vi.fn(),
 }));
 
+vi.mock('../../../platform/vip-strategy.js', () => ({
+  readVipStrategy: vi.fn(),
+}));
+
+function publishedStrategy(overrides: Partial<VipStrategy> = {}): VipStrategy {
+  return {
+    purchaseEnabled: false,
+    remindersEnabled: false,
+    plans: structuredClone(DEFAULT_VIP_PLANS_CONFIG),
+    plansVersion: 1,
+    discountRate: 0.95,
+    discountVersion: 1,
+    checkin: { mode: 'same_as_base' },
+    checkinVersion: 1,
+    limits: { voice: 3, basic_image: 3 },
+    limitsVersion: 1,
+    fallbacks: [],
+    ...overrides,
+  };
+}
+
 function createOrder(): MiniappPaymentOrderRow {
   return {
     id: 'MA-order-1',
@@ -74,6 +96,8 @@ function createOrder(): MiniappPaymentOrderRow {
 describe('RechargeUseCase payment failure telemetry', () => {
   beforeEach(() => {
     vi.mocked(observePaymentOrderFailed).mockReset();
+    vi.mocked(readVipStrategy).mockReset();
+    vi.mocked(readVipStrategy).mockResolvedValue(publishedStrategy());
   });
 
   it('emits payment_order_failed only after markFailed persists', async () => {
@@ -142,8 +166,8 @@ describe('RechargeUseCase payment failure telemetry', () => {
 
 describe('RechargeUseCase product snapshots', () => {
   beforeEach(() => {
-    vi.mocked(isVipPurchaseEnabled).mockReset();
-    vi.mocked(isVipPurchaseEnabled).mockResolvedValue(false);
+    vi.mocked(readVipStrategy).mockReset();
+    vi.mocked(readVipStrategy).mockResolvedValue(publishedStrategy());
   });
 
   function harness() {
@@ -205,7 +229,7 @@ describe('RechargeUseCase product snapshots', () => {
   });
 
   it('snapshots week and month terms from the server catalog', async () => {
-    vi.mocked(isVipPurchaseEnabled).mockResolvedValue(true);
+    vi.mocked(readVipStrategy).mockResolvedValue(publishedStrategy({ purchaseEnabled: true }));
     const week = harness();
     await week.usecase.createOrder({
       userId: week.order.user_id,
@@ -264,8 +288,33 @@ describe('RechargeUseCase product snapshots', () => {
     expect(orders.create).not.toHaveBeenCalled();
   });
 
+  it('keeps an existing order snapshot when the published price changes later', async () => {
+    const plans = structuredClone(DEFAULT_VIP_PLANS_CONFIG);
+    vi.mocked(readVipStrategy).mockImplementation(async () =>
+      publishedStrategy({ purchaseEnabled: true, plans: structuredClone(plans) })
+    );
+    const { order, orders, usecase } = harness();
+    await usecase.createOrder({
+      userId: order.user_id,
+      planId: 'week',
+      paymentType: 'wxpay',
+      clientIp: '127.0.0.1',
+    });
+    const first = vi.mocked(orders.create).mock.calls[0]?.[0];
+    plans.week = { ...plans.week, price_cents: 2000, duration_days: 10 };
+    await usecase.createOrder({
+      userId: order.user_id,
+      planId: 'week',
+      paymentType: 'wxpay',
+      clientIp: '127.0.0.1',
+    });
+    const second = vi.mocked(orders.create).mock.calls[1]?.[0];
+    expect(first).toEqual(expect.objectContaining({ amount_cents: 1399, vip_duration_days: 7 }));
+    expect(second).toEqual(expect.objectContaining({ amount_cents: 2000, vip_duration_days: 10 }));
+  });
+
   it('marks the order failed when the gateway rejects a VIP order', async () => {
-    vi.mocked(isVipPurchaseEnabled).mockResolvedValue(true);
+    vi.mocked(readVipStrategy).mockResolvedValue(publishedStrategy({ purchaseEnabled: true }));
     const { order, orders } = harness();
     const gateway = {
       createPayment: vi.fn(async () => ({ success: false, errorMessage: 'gateway down' })),

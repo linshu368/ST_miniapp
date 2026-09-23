@@ -73,7 +73,7 @@ const legacyPaymentOrder: PaymentOrder = {
 };
 
 describe('VIP plans and membership', () => {
-  it('accepts only the canonical week and month commercial terms', () => {
+  it('keeps the canonical week and month terms as the safe default', () => {
     expect(VipPlanSchema.parse(weekPlan)).toMatchObject(VIP_PLAN_COMMERCIAL_TERMS.week);
     expect(VipPlanSchema.parse(monthPlan)).toMatchObject(VIP_PLAN_COMMERCIAL_TERMS.month);
     expect(canonicalVipPlanTerms('week').bonus_credits).toBe(0);
@@ -85,10 +85,15 @@ describe('VIP plans and membership', () => {
     });
   });
 
-  it('rejects forged VIP prices, durations or bonus credits', () => {
+  it('accepts published plan terms inside the shared bounds and still rejects week bonus', () => {
+    expect(
+      VipPlanSchema.safeParse({ ...monthPlan, duration_days: 30, price_cents: 100 }).success
+    ).toBe(true);
+    expect(VipPlanSchema.safeParse({ ...weekPlan, price_cents: 1 }).success).toBe(true);
     expect(VipPlanSchema.safeParse({ ...weekPlan, bonus_credits: 3000 }).success).toBe(false);
-    expect(VipPlanSchema.safeParse({ ...monthPlan, duration_days: 30 }).success).toBe(false);
-    expect(VipPlanSchema.safeParse({ ...weekPlan, price_cents: 1 }).success).toBe(false);
+    expect(VipPlanSchema.safeParse({ ...weekPlan, price_cents: 0 }).success).toBe(false);
+    expect(VipPlanSchema.safeParse({ ...monthPlan, duration_days: 0 }).success).toBe(false);
+    expect(VipPlanSchema.safeParse({ ...weekPlan, price_cents: 1.5 }).success).toBe(false);
   });
 
   it('treats remaining_days as display-only while activity uses valid_until', () => {
@@ -189,6 +194,38 @@ describe('text pricing quote', () => {
         requires_vip: true,
       },
     });
+  });
+
+  it('uses an explicit published discount and rejects rates outside (0, 1]', () => {
+    expect(
+      quoteTextModelUsage({
+        original_credits: 50,
+        is_vip: true,
+        is_free_round: false,
+        tier: 'premium',
+        discount_rate: 0.5,
+      })
+    ).toMatchObject({ ok: true, value: { discount_rate: 0.5, payable_credits: 25 } });
+    expect(
+      quoteTextModelUsage({
+        original_credits: 15,
+        is_vip: true,
+        is_free_round: false,
+        tier: 'light',
+        discount_rate: 1,
+      })
+    ).toMatchObject({ ok: true, value: { payable_credits: 15 } });
+    for (const discountRate of [0, 1.01, -0.1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        quoteTextModelUsage({
+          original_credits: 15,
+          is_vip: true,
+          is_free_round: false,
+          tier: 'light',
+          discount_rate: discountRate,
+        })
+      ).toMatchObject({ ok: false, code: 'INVALID_PRICE' });
+    }
   });
 
   it('prefers a free round over VIP discount', () => {
@@ -394,6 +431,44 @@ describe('media free-trial public semantics', () => {
       },
     });
     if (quota.ok) expect(isFeatureFreeTrialExhausted(quota.quota)).toBe(false);
+  });
+
+  it('keeps historical occupancy when the published limit moves between 0, 3 and 20', () => {
+    const facts = [
+      { ordinal: 1, status: 'consumed' as const },
+      { ordinal: 2, status: 'consumed' as const },
+      { ordinal: 3, status: 'consumed' as const },
+    ];
+    expect(summarizeFeatureFreeTrialQuota({ feature: 'voice', facts, limit: 0 })).toMatchObject({
+      ok: true,
+      quota: {
+        free_trial_limit: 0,
+        free_trials_used: 3,
+        free_trials_remaining: 0,
+        next_trial_ordinal: null,
+      },
+    });
+    expect(summarizeFeatureFreeTrialQuota({ feature: 'voice', facts, limit: 3 })).toMatchObject({
+      ok: true,
+      quota: { free_trial_limit: 3, free_trials_remaining: 0, next_trial_ordinal: null },
+    });
+    expect(
+      summarizeFeatureFreeTrialQuota({ feature: 'basic_image', facts, limit: 20 })
+    ).toMatchObject({
+      ok: true,
+      quota: { free_trial_limit: 20, free_trials_remaining: 17, next_trial_ordinal: 4 },
+    });
+    expect(summarizeFeatureFreeTrialQuota({ feature: 'voice', facts, limit: 21 })).toMatchObject({
+      ok: false,
+      code: 'FEATURE_FREE_TRIAL_INVALID_STATE',
+    });
+    expect(
+      summarizeFeatureFreeTrialQuota({
+        feature: 'voice',
+        facts: [{ ordinal: 21, status: 'consumed' }],
+        limit: 20,
+      })
+    ).toMatchObject({ ok: false, code: 'FEATURE_FREE_TRIAL_INVALID_STATE' });
   });
 
   it('treats advanced image as VIP-only with no free trials and exposes shared error codes', () => {

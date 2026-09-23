@@ -6,7 +6,12 @@ import {
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
+  DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+  DEFAULT_VIP_PLANS_CONFIG,
+  DEFAULT_VIP_TEXT_DISCOUNT_RATE,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  FeatureFreeTrialLimitsSchema,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   LlmProviderRoutingConfigSchema,
@@ -17,6 +22,11 @@ import {
   PaymentPlansSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
+  VIP_STRATEGY_CONFIG_KEYS,
+  VipCheckinBonusConfigSchema,
+  VipFeatureSwitchSchema,
+  VipPlansConfigSchema,
+  VipTextDiscountRateSchema,
   WordCountTiersConfigSchema,
 } from '@miniapp/shared';
 import { z } from 'zod';
@@ -55,6 +65,7 @@ export const managedConfigKeys = [
   'image_description_failed_hint',
   'image_generation_failed_hint',
   'image_failed_unknown_hint',
+  ...VIP_STRATEGY_CONFIG_KEYS,
 ] as const;
 
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
@@ -271,6 +282,12 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_description_failed_hint: z.string().trim().min(1).max(200),
   image_generation_failed_hint: z.string().trim().min(1).max(200),
   image_failed_unknown_hint: z.string().trim().min(1).max(200),
+  vip_purchase_enabled: VipFeatureSwitchSchema,
+  vip_reminders_enabled: VipFeatureSwitchSchema,
+  vip_plans_config: VipPlansConfigSchema,
+  vip_text_discount_rate: VipTextDiscountRateSchema,
+  vip_checkin_bonus_config: VipCheckinBonusConfigSchema,
+  feature_free_trial_limits: FeatureFreeTrialLimitsSchema,
 };
 
 export const configMetadata: Record<
@@ -284,7 +301,7 @@ export const configMetadata: Record<
   },
   miniapp_daily_checkin_bonus_credits: {
     label: '每日签到奖励',
-    description: '每次签到的基础专项星尘。有效 VIP 会在同一笔领取中再加同等数量。',
+    description: '每次签到的基础专项星尘。有效 VIP 的加成由「VIP策略」决定。',
     defaultValue: 60,
   },
   miniapp_character_free_chat_quota_limit: {
@@ -482,6 +499,36 @@ export const configMetadata: Record<
     label: '图片模糊失败提示',
     description: '外部平台结果未知、禁止自动重试时展示的提示。',
     defaultValue: '外部平台没有确认成功，本次不消耗星尘。',
+  },
+  vip_purchase_enabled: {
+    label: 'VIP 购买开关',
+    description: '关闭时不能创建新的 VIP 订单。已创建订单仍按自己的商品快照履约。',
+    defaultValue: false,
+  },
+  vip_reminders_enabled: {
+    label: 'VIP 到期提醒开关',
+    description: '只控制提醒是否写入。提前天数、文案和时区不在这里配置，默认保持关闭。',
+    defaultValue: false,
+  },
+  vip_plans_config: {
+    label: '周卡与月卡商品',
+    description: '价格使用整数分。周卡赠送固定为 0。发布后只影响新创建的订单。',
+    defaultValue: DEFAULT_VIP_PLANS_CONFIG,
+  },
+  vip_text_discount_rate: {
+    label: 'VIP 文本折扣率',
+    description: '大于 0 且不超过 1。生成受理时固化，不重算已经受理的请求。',
+    defaultValue: DEFAULT_VIP_TEXT_DISCOUNT_RATE,
+  },
+  vip_checkin_bonus_config: {
+    label: 'VIP 签到加成',
+    description: '与基础奖励相同，或在固定模式下填写非负整数。一次签到只读取一份策略。',
+    defaultValue: DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+  },
+  feature_free_trial_limits: {
+    label: '媒体免费次数',
+    description: '语音和初级图片分别配置，整数 0 到 20。0 表示关闭该功能的免费体验。',
+    defaultValue: DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
   },
 };
 

@@ -6,6 +6,7 @@ import type {
   SelectModelData,
 } from '@miniapp/shared';
 import { fetchModelCatalogSnapshot, getPricingConfig } from '../platform/model-tiers.js';
+import { readVipStrategy } from '../platform/vip-strategy.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { openRouterModelsClient } from '../platform/openrouter-models.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -46,11 +47,12 @@ export default async function modelsRoutes(app: FastifyInstance) {
 
       const log = requestLogger(request.log, 'models');
       const dbUser = await getOrCreateDbUser(request.user);
-      const [snapshot, userSettings, entitlement, pricing] = await Promise.all([
+      const [snapshot, userSettings, entitlement, pricing, strategy] = await Promise.all([
         fetchModelCatalogSnapshot(),
         settings.getOrCreate(dbUser.id, request.user),
         vip.getStatus(dbUser.id, log),
         getPricingConfig(),
+        readVipStrategy(),
       ]);
       const selection = resolveTextModelSelection({
         catalog: snapshot.catalog,
@@ -93,6 +95,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
             catalog: snapshot.catalog,
             pricing: pricing.fixedDeduction,
             vip: entitlement,
+            discountRate: strategy.discountRate,
           }),
           selected_model_id: selectedModel.id,
           selected_openrouter_model_id: selectedModel.openrouter_model_id,
@@ -151,9 +154,10 @@ export default async function modelsRoutes(app: FastifyInstance) {
 
         const quotedTier = selectedTier ?? 'standard';
         if (!selectedModel.is_free) {
-          const [wallet, pricing] = await Promise.all([
+          const [wallet, pricing, strategy] = await Promise.all([
             wallets.getOrCreate(dbUser.id),
             getPricingConfig(),
+            readVipStrategy(),
           ]);
           const quote = quoteAcceptedTextUsage({
             originalCredits: pricing.fixedDeduction[quotedTier],
@@ -161,6 +165,8 @@ export default async function modelsRoutes(app: FastifyInstance) {
             isVip: entitlement.active,
             isFreeRound: false,
             vipValidUntil: entitlement.valid_until,
+            discountRate: strategy.discountRate,
+            discountConfigVersion: strategy.discountVersion,
           });
           const coverage = coverageForTextWallet({
             policy: quote.wallet_policy,

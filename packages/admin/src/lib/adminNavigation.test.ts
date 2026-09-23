@@ -3,6 +3,7 @@ import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
+  VIP_STRATEGY_CONFIG_KEYS,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
 } from './adminNavigation';
@@ -63,6 +64,17 @@ describe('admin navigation', () => {
     expect(resolveAdminMenuSelection('image_generation_config')).toEqual({
       view: 'image_generation_config',
     });
+  });
+
+  it('routes VIP strategy configs to one tab and hides them from the generic list', () => {
+    for (const key of VIP_STRATEGY_CONFIG_KEYS) {
+      expect(resolveAdminMenuSelection(configMenuKey(key))).toEqual({
+        view: 'vip_strategy',
+        configKey: key,
+      });
+      expect(sidebarManagedConfigKeys).not.toContain(key);
+    }
+    expect(resolveAdminMenuSelection('vip_strategy')).toEqual({ view: 'vip_strategy' });
   });
 
   it('keeps independent top-level pages separate', () => {

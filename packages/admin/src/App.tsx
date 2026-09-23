@@ -37,6 +37,7 @@ import { CharacterCardsView } from './components/CharacterCardsView';
 import { AnnouncementsView } from './components/AnnouncementsView';
 import { InviteProgramView } from './components/InviteProgramView';
 import { OutreachCreditGrantView } from './components/OutreachCreditGrantView';
+import { VipStrategyView } from './components/VipStrategyView';
 import {
   discardDraft,
   getCharacters,
@@ -978,6 +979,7 @@ function AdminWorkspace(props: {
                 { key: 'outreach_credit_grant', label: '回访星尘赠送' },
                 { key: 'invite_program', label: '裂变邀请管理' },
                 { key: 'image_generation_config', label: '图片生成配置' },
+                { key: 'vip_strategy', label: 'VIP策略' },
               ],
             },
             { key: 'characters', label: '角色卡' },
@@ -1054,6 +1056,16 @@ function AdminWorkspace(props: {
                 if (tab !== 'records') setSelectedKey(tab);
               }}
               configEditor={configEditorCard}
+            />
+          ) : view === 'vip_strategy' ? (
+            <VipStrategyView
+              client={props.client}
+              environment={props.environment}
+              canWrite={canWrite}
+              configs={configs}
+              drafts={drafts}
+              releases={releases}
+              onReload={reload}
             />
           ) : view === 'image_generation_config' ? (
             <Space direction="vertical" size="middle" className="editor-stack">

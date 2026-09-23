@@ -53,12 +53,16 @@ export function quoteAcceptedTextUsage(input: {
   isVip: boolean;
   isFreeRound: boolean;
   vipValidUntil: string | null;
-}): AcceptedTextQuote {
+  /** 省略时使用 0.95。受理方传入已发布折扣，调用后不得再读取新配置重算。 */
+  discountRate?: number;
+  discountConfigVersion?: number | null;
+}): AcceptedTextQuote & { discount_config_version: number | null } {
   const quoted = quoteTextModelUsage({
     original_credits: input.originalCredits,
     is_vip: input.isVip,
     is_free_round: input.isFreeRound,
     tier: input.tier,
+    ...(input.discountRate === undefined ? {} : { discount_rate: input.discountRate }),
   });
   if (!quoted.ok) {
     throw new TextModelAccessError('INVALID_PRICE');
@@ -73,6 +77,7 @@ export function quoteAcceptedTextUsage(input: {
     vip_active: input.isVip,
     vip_valid_until: input.vipValidUntil,
     model_tier: input.tier,
+    discount_config_version: input.discountConfigVersion ?? null,
   };
 }
 
@@ -160,6 +165,7 @@ export function presentTextModelCatalog(input: {
   catalog: ModelCatalog;
   pricing: FixedDeductionConfig;
   vip: VipEntitlementSummary;
+  discountRate?: number;
 }): PublicModelCatalog {
   const catalog = toPublicModelCatalog(input.catalog);
   return {
@@ -172,6 +178,7 @@ export function presentTextModelCatalog(input: {
         isVip: input.vip.active,
         isFreeRound: false,
         vipValidUntil: input.vip.valid_until,
+        ...(input.discountRate === undefined ? {} : { discountRate: input.discountRate }),
       });
       return {
         ...tier,
@@ -200,6 +207,7 @@ export function frozenLlmChargeMetadata(snapshot: {
   vip_active?: boolean;
   vip_valid_until?: string | null;
   model_tier?: string | null;
+  vip_discount_config_version?: number | null;
 }): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
     billing_mode: 'fixed_tier',
@@ -217,6 +225,9 @@ export function frozenLlmChargeMetadata(snapshot: {
   if (snapshot.vip_active !== undefined) metadata.vip_active = snapshot.vip_active;
   if (snapshot.vip_valid_until !== undefined) metadata.vip_valid_until = snapshot.vip_valid_until;
   if (snapshot.model_tier !== undefined) metadata.model_tier = snapshot.model_tier;
+  if (snapshot.vip_discount_config_version !== undefined) {
+    metadata.vip_discount_config_version = snapshot.vip_discount_config_version;
+  }
   return metadata;
 }
 

@@ -19,9 +19,9 @@ import {
   getPaymentPlans,
   getPaymentPromptDialogConfig,
   getRechargePageConfig,
-  isVipPurchaseEnabled,
   PaymentPlansConfigError,
 } from '../features/payment/domain/rechargeRules.js';
+import { readVipStrategy } from '../platform/vip-strategy.js';
 import { RechargeUseCase } from '../features/payment/usecases/RechargeUseCase.js';
 import {
   reconcileWithGateway,
@@ -60,23 +60,18 @@ export default async function paymentRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
     try {
-      const [
-        plans,
-        insufficientCreditsNotice,
-        pageConfig,
-        paymentPromptDialogConfig,
-        vipPurchaseEnabled,
-      ] = await Promise.all([
-        getPaymentPlans(),
-        getInsufficientCreditsNotice(),
-        getRechargePageConfig(),
-        getPaymentPromptDialogConfig(),
-        isVipPurchaseEnabled(),
-      ]);
+      const [plans, insufficientCreditsNotice, pageConfig, paymentPromptDialogConfig, strategy] =
+        await Promise.all([
+          getPaymentPlans(),
+          getInsufficientCreditsNotice(),
+          getRechargePageConfig(),
+          getPaymentPromptDialogConfig(),
+          readVipStrategy(),
+        ]);
       return reply.send(
         ok<GetPaymentPlansData>({
           plans,
-          vip_plans: buildVipPlans(vipPurchaseEnabled),
+          vip_plans: buildVipPlans(strategy.purchaseEnabled, strategy.plans),
           page_config: pageConfig,
           payment_prompt_dialog_config: paymentPromptDialogConfig,
           insufficient_credits_notice: insufficientCreditsNotice,

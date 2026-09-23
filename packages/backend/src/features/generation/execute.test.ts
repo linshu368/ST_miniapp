@@ -28,6 +28,39 @@ vi.mock('../../platform/provider-routing.js', () => ({
   getProviderPreferencesForModel: async () => providerPreferences,
 }));
 
+vi.mock('../../platform/vip-strategy.js', () => ({
+  readVipStrategy: async () => ({
+    purchaseEnabled: false,
+    remindersEnabled: false,
+    plans: {
+      week: {
+        price_cents: 1399,
+        duration_days: 7,
+        bonus_credits: 0,
+        title: '周卡',
+        description: '7 天 VIP',
+        badge_text: null,
+      },
+      month: {
+        price_cents: 2888,
+        duration_days: 31,
+        bonus_credits: 3000,
+        title: '月卡',
+        description: '31 天 VIP，赠送 3000 专项星尘',
+        badge_text: null,
+      },
+    },
+    plansVersion: 1,
+    discountRate: 0.95,
+    discountVersion: 1,
+    checkin: { mode: 'same_as_base' as const },
+    checkinVersion: 1,
+    limits: { voice: 3, basic_image: 3 },
+    limitsVersion: 1,
+    fallbacks: [],
+  }),
+}));
+
 vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
   MiniappWalletRepository: class {
     async getOrCreate() {

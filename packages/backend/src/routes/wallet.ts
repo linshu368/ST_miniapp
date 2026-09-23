@@ -19,6 +19,7 @@ import {
   getCharacterFreeChatQuotaLimit,
   getFreeQuotaExhaustedDialogConfig,
 } from '../features/billing/free-quota.js';
+import { readVipStrategy } from '../platform/vip-strategy.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -77,7 +78,8 @@ export default async function walletRoutes(app: FastifyInstance) {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
     const dbUser = await getOrCreateDbUser(request.user);
-    const checkin = await wallets.getDailyCheckinStatus(dbUser.id);
+    const strategy = await readVipStrategy();
+    const checkin = await wallets.getDailyCheckinStatus(dbUser.id, strategy.checkin);
 
     return reply.send(ok<GetDailyCheckinData>({ checkin }));
   });
@@ -91,6 +93,12 @@ export default async function walletRoutes(app: FastifyInstance) {
 
     try {
       const result = await wallets.claimDailyCheckin(dbUser.id);
+      if (result.configFallback) {
+        requestLogger(request.log, 'wallet').sys.warn(
+          { event: 'wallet.checkin.config_fallback', userId: dbUser.id },
+          '签到加成配置不可用，已按与基础奖励相同发放'
+        );
+      }
       requestLogger(request.log, 'wallet').biz.info(
         {
           event: 'wallet.checkin.claimed',

@@ -138,6 +138,30 @@
   - 当时未标 Done：任务表曾要求 T4 在完成验收前接入 T3A 的已发布折扣配置；已推送的文本计价使用冻结的 0.95 默认。2026-09-23 用户确认 T4 按原范围完成，动态配置改由 T3A additive 接入，见后续日志。真实 OpenRouter/SSE 与 Production 仍未验。
   - 给 T5 合并核对的共享文件：`MiniappWalletRepository.ts`（只加 LLM 退款 RPC 与消费明细字段，语音扣费签名未改）、`scripts/test-vip-billing-migrations.sh`、`features/generation` 下文本计费文件（未改 image）、`ConversationHistoryRepository.ts` 的可选快照字段、`routes/models.ts`、`routes/conversations.ts`、`features/conversations/generate.ts`、`MiniappUserSettingsRepository.ts` 的 `correctSelectedModelId`。未改 `packages/shared/src/index.ts`，未改语音/图片实现。
 - 2026-09-23 规划收口：用户确认 T4 已由 commit `5f4ee24` 完成交付，T4 → Done；运行时动态折扣不再作为 T4 完成条件，由 T3A additive 接入。T3A → Doing，免费次数范围冻结为 voice/basic_image 各 `0..20`、默认 3、0 表示关闭。本次仅收口 PRD/design/implement/task/manifests/research，未写产品代码，未 apply 新 migration，未写 test/Production，未进入 T5；规划独立提交且不 push。
+- 2026-09-23 T3A 本地实现完成，**停在 test apply 前，T3A 保持 Doing**。分支 `dev_vip_0920`。父任务已是 `in_progress`，未重复 `task.py start`。未写 test/Production，未启用购买/提醒开关，未进 T5/T6，未改语音/图片子任务状态，未 commit/push。
+  - 复用：Admin managed-key 草稿/发布/回滚、`fetchRuntimeConfigEntries`、`quoteTextModelUsage`、`complete_payment_order(text,text,text)`、`claim_daily_checkin(uuid)`、`reserve_feature_free_trial(uuid,text,text,integer)`。不新增直写 `runtime_config` 的旁路，不新建设通用配置框架。
+  - 商品快照边界：已应用的订单 CHECK 和履约函数把周卡/月卡钉死在 1399/7/0 与 2888/31/3000。新文件只放宽为与 Shared 相同的范围，履约仍只读订单行，不读当前 `vip_plans_config`。三个 RPC 签名不变。
+  - 新 migration：`packages/shared/migrations/20260923_vip_strategy_config.sql`。sha256 `ad877b4c660d3d92886b1786bd5230720fb2310db23bc0227f223c5a4038c084`。seed 保持购买/提醒 false、周卡 1399 分/7 天/0、月卡 2888 分/31 天/3000、折扣 0.95、签到 `same_as_base`、免费次数各 3。ordinal CHECK 改为 1..20。本地 harness 额外文件 `fixtures/vip_strategy_admin_harness.sql` 禁止 apply 到 test/Production。
+  - 发布顺序：该文件 apply 并复核之后再发 Backend/Admin。先发 Backend 时，缺失的新 key 会按安全默认工作并打告警；购买/提醒已存在且保持 false。
+  - 实际文件：
+    - Shared：`packages/shared/src/api/vip-strategy.ts`、`vip.ts`、`feature-free-trials.ts`、`models.ts`、`index.ts` 及对应测试
+    - DB：上述 migration、`tests/vip_strategy_t3a_scenarios.sql`、`scripts/test-vip-billing-migrations.sh`、`scripts/check-legacy-references.mjs`（同一 `complete_payment_order` 函数体）
+    - Backend：`platform/vip-strategy.ts`；订单快照、文本折扣快照、签到预览、模型目录/选择读取已发布策略
+    - Admin：`VipStrategyView.tsx`、`vipStrategyForm.ts`、导航「VIP策略」、managed schema
+  - 验证（本地，真实结果）：
+    - `bash scripts/test-vip-billing-migrations.sh` → pass。覆盖非法发布值、缺失上限回退 3、0/4/20、调高调低后历史行保留、重放、并发上限 4、签到 same_as_base/fixed/损坏回退、改价后新旧订单快照、配置改回后订单/grant/签到/免费事实不变。脚本里并发签到输家的 `daily check-in is not ready` 是原有预期错误，最终计数通过。
+    - `pnpm --filter @miniapp/shared test` → 11 files / 93 tests passed
+    - `pnpm --filter @miniapp/shared typecheck` → pass
+    - `pnpm --filter @miniapp/backend test` → 58 files / 504 tests passed
+    - `pnpm --filter @miniapp/backend typecheck` → pass
+    - `pnpm --filter @miniapp/admin test` → 9 files / 52 tests passed
+    - `pnpm --filter @miniapp/admin typecheck` → pass
+    - `pnpm --filter @miniapp/admin build` → pass
+    - `pnpm -r typecheck` → shared/admin/backend/frontend/cs-platform pass
+    - `pnpm lint:imports` / `pnpm lint:legacy` / `pnpm lint:migrations` → pass
+    - `pnpm test:migration-ledger` → pass（本机 Postgres；未连 test/Production）
+  - 未做：正式 test apply 与 apply 后只读 postflight；Admin 登录后的页面点击（运营台需要已登录会话，本轮不连 test）；旧 Backend 进程对新库的实跑（兼容结论来自 RPC 签名不变和 seed/缺失时的默认行为）；Production。
+  - 剩余风险：test 上 `payment_orders` / `vip_purchase_grants` / `feature_free_trials` 的 CHECK 替换会锁表并重验已有行，行数未在本轮重新采集；Admin 在 migration apply 前发布新 key 会被数据库拒绝。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约

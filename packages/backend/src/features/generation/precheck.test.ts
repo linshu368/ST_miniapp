@@ -74,6 +74,7 @@ describe('resolveBillingPlan', () => {
       vip_active: false,
       vip_valid_until: null,
       model_tier: 'premium',
+      vip_discount_config_version: null,
     });
   });
 
@@ -91,6 +92,34 @@ describe('resolveBillingPlan', () => {
     expect(plan.snapshot.payable_credits).toBe(48);
     expect(plan.snapshot.discount_rate).toBe(0.95);
     expect(plan.snapshot.wallet_policy).toBe('main_only');
+  });
+
+  it('受理时固化折扣，之后改折扣不会改写这份快照', () => {
+    const accepted = resolveBillingPlan({
+      chargeId: 'charge-discount',
+      billing: PAID_MODEL,
+      isFreeRound: false,
+      pricing: PRICING,
+      entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
+      discountRate: 0.5,
+      discountConfigVersion: 4,
+      log: fakeLogger(),
+    });
+    const later = resolveBillingPlan({
+      chargeId: 'charge-discount-later',
+      billing: PAID_MODEL,
+      isFreeRound: false,
+      pricing: PRICING,
+      entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
+      discountRate: 0.8,
+      discountConfigVersion: 9,
+      log: fakeLogger(),
+    });
+    expect(accepted.snapshot.payable_credits).toBe(25);
+    expect(accepted.snapshot.discount_rate).toBe(0.5);
+    expect(accepted.snapshot.vip_discount_config_version).toBe(4);
+    expect(later.snapshot.payable_credits).toBe(40);
+    expect(accepted.snapshot.payable_credits).toBe(25);
   });
 
   it('快照用 0/1 标记本轮是否走免费额度', () => {

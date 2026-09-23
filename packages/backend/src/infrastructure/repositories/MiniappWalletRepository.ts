@@ -3,6 +3,7 @@ import { createLogger } from '../../lib/logger.js';
 import {
   createWalletAmountSplit,
   type GetWalletBalanceData,
+  type VipCheckinBonusConfig,
   type WalletSpendingRecord,
 } from '@miniapp/shared';
 import { quoteDailyCheckinReward } from '../../features/vip/checkin-reward.js';
@@ -85,6 +86,7 @@ interface DailyCheckinRpcData {
   base_reward_credits?: number;
   vip_reward_credits?: number;
   wallet_ledger_id?: string;
+  vip_checkin_config_fallback?: boolean;
 }
 
 /** 配置缺失或无法解析时的基础签到额。线上发放仍以 runtime_config 为准。 */
@@ -374,7 +376,10 @@ export class MiniappWalletRepository {
     );
   }
 
-  async getDailyCheckinStatus(userId: string): Promise<DailyCheckinStatus> {
+  async getDailyCheckinStatus(
+    userId: string,
+    bonus: VipCheckinBonusConfig = { mode: 'same_as_base' }
+  ): Promise<DailyCheckinStatus> {
     const { data: configRow, error: configError } = await this.appCoreDb
       .from('runtime_config')
       .select('value, text_value')
@@ -409,6 +414,7 @@ export class MiniappWalletRepository {
       baseRewardCredits,
       validUntil,
       now: now.toISOString(),
+      bonus,
     });
 
     const { data, error } = await this.featuresDb
@@ -469,7 +475,8 @@ export class MiniappWalletRepository {
 
   async claimDailyCheckin(userId: string): Promise<{
     wallet: MiniappWalletRow;
-    checkin: DailyCheckinRpcData;
+    checkin: ReturnType<typeof toClaimedCheckin>;
+    configFallback: boolean;
   }> {
     const { data, error } = await this.featuresDb.rpc('claim_daily_checkin', {
       p_user_id: userId,
@@ -487,6 +494,7 @@ export class MiniappWalletRepository {
     return {
       wallet: normalizeWallet(result.wallet),
       checkin: toClaimedCheckin(result.checkin),
+      configFallback: result.checkin.vip_checkin_config_fallback === true,
     };
   }
 }

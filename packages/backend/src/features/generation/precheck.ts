@@ -50,6 +50,7 @@ export interface BillingSnapshot {
   vip_active: boolean;
   vip_valid_until: string | null;
   model_tier: string;
+  vip_discount_config_version: number | null;
 }
 
 export interface BillingPlan {
@@ -69,6 +70,8 @@ export function resolveBillingPlan(input: {
   isFreeRound: boolean;
   pricing: LlmPricingConfig;
   entitlement: TextEntitlement;
+  discountRate?: number;
+  discountConfigVersion?: number | null;
   log: GenerationLogger;
 }): BillingPlan {
   const { chargeId, billing, isFreeRound, pricing, entitlement, log } = input;
@@ -103,6 +106,8 @@ export function resolveBillingPlan(input: {
     isVip: entitlement.active,
     isFreeRound: fixedDeduction.category === 'free_quota',
     vipValidUntil: entitlement.validUntil,
+    ...(input.discountRate === undefined ? {} : { discountRate: input.discountRate }),
+    discountConfigVersion: input.discountConfigVersion ?? null,
   });
 
   return {
@@ -127,6 +132,7 @@ export function resolveBillingPlan(input: {
       vip_active: quote.vip_active,
       vip_valid_until: quote.vip_valid_until,
       model_tier: quote.model_tier,
+      vip_discount_config_version: quote.discount_config_version,
     },
   };
 }
