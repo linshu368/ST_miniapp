@@ -55,6 +55,12 @@ export function parseMediaFeatureFreeTrialLimit(value: unknown): MediaFeatureFre
   return result.success ? result.data : DEFAULT_FEATURE_FREE_TRIAL_LIMIT;
 }
 
+/** 已发布 VIP 策略额度。非法值回退到默认 3；0 是关闭，不能再被抬回默认。 */
+export function resolveFeatureFreeTrialLimit(value: unknown): FeatureFreeTrialLimit {
+  const parsed = FeatureFreeTrialLimitSchema.safeParse(value);
+  return parsed.success ? parsed.data : DEFAULT_FEATURE_FREE_TRIAL_LIMIT;
+}
+
 export const FeatureFreeTrialOrdinalSchema = z
   .number()
   .int()

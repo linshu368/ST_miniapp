@@ -18,7 +18,6 @@ import {
   LlmProviderRoutingConfigSchema,
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
-  MAX_FEATURE_FREE_TRIAL_LIMIT,
   MediaFeatureFreeTrialLimitSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
@@ -550,7 +549,8 @@ export const configMetadata: Record<
   },
   media_feature_free_trial_limit: {
     label: '媒体免费轮次次数',
-    description: `语音与基础图片各自可用的免费成功次数，范围 1~${MAX_FEATURE_FREE_TRIAL_LIMIT}。高级图片不参与免费轮次。`,
+    description:
+      '已停用的旧键，运行时不再读取。语音和初级图片免费次数请在 VIP 策略的 feature_free_trial_limits 中分别配置，范围 0 到 20。',
     defaultValue: DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   },
   vip_purchase_enabled: {

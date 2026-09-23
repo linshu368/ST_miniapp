@@ -11,6 +11,7 @@ import type {
   MessageImageState,
 } from '@miniapp/shared';
 import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
+import { formatFreeTrialBillingLabel } from '@/components/chat/media-billing-label';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
@@ -591,9 +592,7 @@ export function ChatMessageImageFooter({
 
 function formatImageBillingLabel(billing: MediaBillingPreview): string {
   if (billing.billing_mode === 'free_trial') {
-    const ordinal = billing.free_trial_ordinal ?? 1;
-    const limit = billing.free_trial_limit ?? 3;
-    return `免费体验 ${ordinal}/${limit}`;
+    return formatFreeTrialBillingLabel(billing.free_trial_ordinal, billing.free_trial_limit);
   }
   return billing.price_label;
 }

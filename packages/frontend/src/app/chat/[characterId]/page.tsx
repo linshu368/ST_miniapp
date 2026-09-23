@@ -10,6 +10,7 @@ import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatMessageImageFooter } from '@/components/chat/chat-message-image';
 import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
+import { formatFreeTrialBillingLabel } from '@/components/chat/media-billing-label';
 import { getChatReplyPresentation } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
@@ -156,7 +157,10 @@ export default function SelfHostedChatPage() {
   const voiceNextBilling = voiceConfigQuery.data?.next_billing;
   const voicePriceLabel =
     voiceNextBilling?.billing_mode === 'free_trial'
-      ? `免费体验 ${voiceNextBilling.free_trial_ordinal ?? 1}/${voiceNextBilling.free_trial_limit ?? 3}`
+      ? formatFreeTrialBillingLabel(
+          voiceNextBilling.free_trial_ordinal,
+          voiceNextBilling.free_trial_limit
+        )
       : voiceConfigQuery.data?.billing?.enabled
         ? voiceConfigQuery.data?.billing?.price_label
         : '';

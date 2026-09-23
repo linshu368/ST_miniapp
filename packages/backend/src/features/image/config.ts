@@ -1,7 +1,7 @@
 import {
   DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   MAX_IMAGE_PROMPT_CHARS,
-  parseMediaFeatureFreeTrialLimit,
+  resolveFeatureFreeTrialLimit,
   type FeatureFreeTrialQuotaView,
   type GetImageConfigData,
   type ImageGenerationTier,
@@ -308,14 +308,14 @@ export function emptyBasicImageFreeTrialQuota(): FeatureFreeTrialQuotaView {
 export function emptyBasicImageFreeTrialQuotaForLimit(
   limit = DEFAULT_FEATURE_FREE_TRIAL_LIMIT
 ): FeatureFreeTrialQuotaView {
-  const resolvedLimit = parseMediaFeatureFreeTrialLimit(limit);
+  const resolvedLimit = resolveFeatureFreeTrialLimit(limit);
   return {
     feature: 'basic_image',
     free_trial_limit: resolvedLimit,
     free_trials_used: 0,
     free_trials_reserved: 0,
     free_trials_remaining: resolvedLimit,
-    next_trial_ordinal: 1,
+    next_trial_ordinal: resolvedLimit > 0 ? 1 : null,
   };
 }
 

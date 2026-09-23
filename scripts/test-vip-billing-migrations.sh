@@ -345,3 +345,65 @@ REMIND_UNTIL="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT valid_until >
 [[ "$REMIND_UNTIL" == "t" ]] || fail "reminder-first membership was not renewed"
 
 echo "All T2, T3, T4, T3A and T6 VIP billing local checks passed."
+
+echo "prepare experience ordinal stubs at 1..3"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<'SQL'
+CREATE SCHEMA IF NOT EXISTS experience;
+CREATE TABLE experience.chat_message_audio (
+  id uuid PRIMARY KEY,
+  free_trial_ordinal integer,
+  CONSTRAINT chat_message_audio_free_trial_ordinal_check
+    CHECK (free_trial_ordinal IS NULL OR free_trial_ordinal BETWEEN 1 AND 3)
+);
+CREATE TABLE experience.chat_message_images (
+  id uuid PRIMARY KEY,
+  is_current boolean NOT NULL DEFAULT false,
+  status text NOT NULL DEFAULT 'pending',
+  billing_mode text NOT NULL DEFAULT 'paid',
+  image_tier text NOT NULL DEFAULT 'basic',
+  debit_ledger_id uuid,
+  credits_charged numeric NOT NULL DEFAULT 0,
+  free_trial_ordinal integer,
+  CONSTRAINT chat_message_images_free_trial_ordinal_check
+    CHECK (free_trial_ordinal IS NULL OR free_trial_ordinal BETWEEN 1 AND 3),
+  CONSTRAINT chat_message_images_current_requires_charged_ready CHECK (
+    NOT is_current
+    OR (status = 'ready' AND free_trial_ordinal BETWEEN 1 AND 3)
+  )
+);
+SQL
+
+echo "apply 20260923_vip_strategy_media_limit_alignment.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260923_vip_strategy_media_limit_alignment.sql" \
+  >/dev/null
+
+AUDIO_ORDINAL="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'chat_message_audio_free_trial_ordinal_check';")"
+[[ "$AUDIO_ORDINAL" == *"<= 20"* ]] || fail "audio ordinal constraint=$AUDIO_ORDINAL"
+
+echo "run t5 voice/image free-trial scenarios"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_media_t5_scenarios.sql" \
+  >/dev/null
+
+T5_USER="00000000-0000-4000-8000-000000000509"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<SQL
+INSERT INTO app_core.users (id) VALUES ('$T5_USER');
+UPDATE app_core.runtime_config
+SET value = '{"voice":1,"basic_image":1}'::jsonb
+WHERE key = 'feature_free_trial_limits';
+SQL
+
+echo "run concurrent last voice ordinal"
+for n in 1 2; do
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT billing.reserve_feature_free_trial('$T5_USER'::uuid,'voice','t5-concur-$n');" >/dev/null &
+done
+wait
+
+T5_VOICE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM billing.feature_free_trials WHERE user_id='$T5_USER' AND feature='voice' AND status='reserved';")"
+T5_IMAGE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM billing.feature_free_trials WHERE user_id='$T5_USER' AND feature='basic_image';")"
+[[ "$T5_VOICE" == "1" ]] || fail "concurrent last voice occupancy=$T5_VOICE"
+[[ "$T5_IMAGE" == "0" ]] || fail "concurrent voice race touched image=$T5_IMAGE"
+
+echo "All T2, T3, T4, T3A, T6 and T5 VIP billing local checks passed."
