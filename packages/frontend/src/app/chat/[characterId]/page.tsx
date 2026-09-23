@@ -57,6 +57,14 @@ export default function SelfHostedChatPage() {
   const { activeSessionId, returnTo } = session;
   const modelCatalogQuery = useModelCatalogQuery();
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
+  const selectedModelUsesFreeQuota = useMemo(() => {
+    const catalog = modelCatalogQuery.data?.catalog;
+    if (!catalog || !selectedModelId) return null;
+    return (
+      catalog.tiers.flatMap((tier) => tier.models).find((model) => model.id === selectedModelId)
+        ?.is_free ?? null
+    );
+  }, [modelCatalogQuery.data?.catalog, selectedModelId]);
 
   useChatReplayBinding({
     characterId,
@@ -97,6 +105,7 @@ export default function SelfHostedChatPage() {
     characterName: character?.name,
     sessionId: activeSessionId,
     selectedModelId,
+    selectedModelUsesFreeQuota,
     persistedMessages: persisted,
     returnTo,
     onSessionGone: session.abandonSession,
