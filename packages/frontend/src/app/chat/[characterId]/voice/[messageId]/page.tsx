@@ -14,6 +14,7 @@ import {
   useSessionVoiceQuery,
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
+import { formatFreeTrialBillingLabel } from '@/components/chat/media-billing-label';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
@@ -54,9 +55,16 @@ export default function CustomVoicePage() {
   const sessionVoice = useSessionVoiceQuery(sessionId ?? undefined);
   const generateVoice = useGenerateVoiceMutation(sessionId ?? undefined);
   const voiceConfig = useVoiceConfigQuery();
-  const priceLabel = voiceConfig.data?.billing?.enabled
-    ? voiceConfig.data?.billing?.price_label
-    : '';
+  const voiceNextBilling = voiceConfig.data?.next_billing;
+  const priceLabel =
+    voiceNextBilling?.billing_mode === 'free_trial'
+      ? formatFreeTrialBillingLabel(
+          voiceNextBilling.free_trial_ordinal,
+          voiceNextBilling.free_trial_limit
+        )
+      : voiceConfig.data?.billing?.enabled
+        ? voiceConfig.data.billing.price_label
+        : '';
   const maxChars = Math.min(
     voiceConfig.data?.limits?.max_spoken_chars ?? MAX_CUSTOM_VOICE_CHARS,
     MAX_CUSTOM_VOICE_CHARS

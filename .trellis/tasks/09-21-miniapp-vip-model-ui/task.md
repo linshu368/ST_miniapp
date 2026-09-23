@@ -18,9 +18,9 @@
 | T3  | Done   | 实现 VIP status、商品下单、支付原子履约与签到加成              | Backend VIP/payment/wallet routes + repositories     | T2                                    | 四路支付、续费、月卡赠送、60/120 与故障测试      |
 | T3A | Done   | 新增 Admin“VIP策略”与动态商品/权益配置 forward-fix             | Shared + DB + Backend + Admin                        | T3                                    | 配置校验、快照、回滚、旧版本兼容、Admin build    |
 | T4  | Done   | 改造 LLM 权限、折扣、钱包分配、明细与原路退款                  | Backend models/generation/billing/wallet             | T2,T3                                 | 钱包矩阵、配置快照、并发、重放、退款回归测试     |
-| T5  | Doing  | 向语音/图片子任务交付底座并完成跨模块集成验收                  | 两个 child task + parent integration                 | 语音/图片底座等 T2/T3；动态上限等 T3A | 子任务证据、免费/钱包/权限联合矩阵               |
+| T5  | Done   | 向语音/图片子任务交付底座并完成跨模块集成验收                  | 两个 child task + parent integration                 | 语音/图片底座等 T2/T3；动态上限等 T3A | 子任务证据、免费/钱包/权限联合矩阵               |
 | T6  | Done   | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3,T3A                             | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
-| T7  | Todo   | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T3A,T4,T5,T6                    | 前端 test/lint/typecheck/build + 人工状态矩阵    |
+| T7  | Doing  | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T3A,T4,T5,T6                    | 前端 test/lint/typecheck/build + 人工状态矩阵    |
 | T8  | Todo   | 完成跨包回归、test 必验路径、文档与模块知识更新                | 全仓、README、ARCHITECTURE、spec/module facts        | T1-T7                                 | 全量命令、test 证据、`module_knowledge.py check` |
 | T9  | Todo   | 形成 Production 发布单并等待产品上线确认                       | migrations / Railway / feature flags                 | T8                                    | 未获明确确认保持 Production 关闭                 |
 
@@ -212,6 +212,15 @@
   - 未做：正式 test apply 与 apply 后只读 postflight；`20260922_media_feature_free_trials.sql` 与 `20260923_admin_vip_media_config.sql` 没有在带真实体验表的库上重放；媒体 settle/退款/failed_unknown/advanced VIP 快照没有在本轮新建端到端库，沿用子任务已有状态机。Production 未写。
   - 停止点：T5 不能标 Done。test 上若先单独 apply `20260923_admin_vip_media_config.sql`，会暂时盖掉 T3A 的 reserve；必须接着 apply alignment，且 alignment 之前不能有 ordinal > 20 的行。本轮没有执行这次 apply。
 - 2026-09-23 将 `task/vip-t5-integration`（`a29788f`）合入 `dev_vip_0920`。T6 保持 Done。T5 保持 Doing。未 apply test，未进 T7，未写 Production。
+- 2026-09-23 T5 test inspect 通过，T5 → Done。目标仍是 test `zoqelpfhurwehlvypryl`。三份文件均为 `match / applied`，checksum 与本地一致：`20260922_media_feature_free_trials.sql` `aa2fdca6d8402fc14e48f80eccfe64c9b58ba417b38b3a794a96fd4167f509f4`，`20260923_admin_vip_media_config.sql` `83d758e51c916d66422044e82164bc26759aa7eb701f5aea789333eba6339169`，`20260923_vip_strategy_media_limit_alignment.sql` `e309b460ed19efb3cd072d2775ca80aea148c97c8bdedd95f10013aba01e51cc`。`20260923_vip_strategy_config.sql` 仍是 `7fe41b2b435c4cb33305c77acab720aee593105e167db46b23d99ef32ced5f3d` / applied。alignment 在事务末尾自检 reserve 读取 `feature_free_trial_limits`、序号 1..20、voice 21 被拒绝；失败会整段回滚，因此 applied 表示 apply 当时这些检查已通过。apply 顺序是媒体免费额度、Admin 媒体配置、最后 alignment。未读业务行，未写 Production，未打开媒体或 VIP 开关，未进 T7。batch-lab 等 `not_applied` 不属于 T5。本地联合矩阵仍以 throwaway Postgres 为准，没有在 test 上重放用户额度。
+- 2026-09-23 T7 开始，状态 Doing。分支 `dev_vip_0920`，HEAD `6c20e4d`，`HEAD...origin/dev_vip_0920` 为 `0 0`。保留并延续既有 dirty：本文件里 T5 从 Doing 改为 Done 及 test inspect 证据。未 pull/merge/rebase/commit/push，未重复 `task.py start`，未进 T8/T9。未写 test/Production，未改 feature flag、migration、Backend、Admin、Railway。
+- 2026-09-23 T7 前端实现完成，**保持 Doing**。原因：非 VIP 的模型目录把 `discount_rate` 置空，`GET /api/vip/status` 和 `GET /api/payment/plans` 也不返回已发布文本折扣。一次性角标和未开通详情页因此不能展示服务端当前折扣；没有写死 88/95。需要 Shared/Backend 把已发布折扣率暴露给未开通用户后，角标才能收口。其余 T7 页面已接现有 hooks 和支付打开流程。
+  - 复用：`usePaymentPlansQuery`、`useCreatePaymentOrderMutation`、`useWalletBalanceQuery`、`useDailyCheckinMutation`、`useModelCatalogQuery`、`useSelectModelMutation`、`openCreatedPayment`（原充值页外链/停录/订单页跳转）、`PaymentVpnPromptDialog`、`ChatModelSwitcher`、`formatFreeTrialBillingLabel`、通知 list/unread hooks、`GET /api/vip/status`、`POST /api/vip/entry-viewed`、`GET /api/notifications/:id`。
+  - Demo 冲突：不照搬 88 折、语音 5 次、周卡 ¥13.99/月卡 ¥28.88、固定余额和日期；折扣、价格、天数、免费上限和提醒正文都只展示接口字段。原型外框、编号和说明文字没有进产品 UI。
+  - 人工验证：本环境没有已登录的 Telegram WebView，也没有可切换的非 VIP/VIP/过期账号，不能对 Demo 做真实页面并排截图。静态构建已包含 `/vip` 与 `/profile/messages/[id]`。
+  - 命令：`pnpm --filter @miniapp/frontend test` 30 files / 176 tests 通过。`pnpm --filter @miniapp/frontend lint` 无 warning。`pnpm --filter @miniapp/frontend typecheck` 通过。`pnpm --filter @miniapp/frontend build` 通过，路由含 `/vip`、`/profile/messages/[id]`。`pnpm lint:imports`、`pnpm lint:legacy` 通过。未改 Shared，未跑 shared test / 全仓 typecheck。
+  - 构建之后的展示收尾：签到按钮仍用接口给出的合计预览，成功提示拆成两行并停留 3.2 秒；图片未知失败继续显示接口 message，跳转仍只看稳定 code。收尾后重新执行 `pnpm --filter @miniapp/frontend build`，通过，路由仍包含 `/vip` 与 `/profile/messages/[id]`。
+  - 未操作 test/Production，未打开 VIP 购买、提醒或高级图片开关，未写数据库，未 commit/push，未进 T8/T9。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约

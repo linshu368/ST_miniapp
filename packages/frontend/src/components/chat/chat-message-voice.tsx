@@ -171,11 +171,17 @@ function VoiceAction({ voice, submitting, onGenerate, priceLabel }: MessageVoice
     <button
       type="button"
       onClick={onGenerate}
-      className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary hover:text-foreground"
+      className="flex max-w-full flex-col items-start gap-0.5 rounded-2xl px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary hover:text-foreground"
     >
-      <AudioLines className="h-3.5 w-3.5" aria-hidden />
-      {isRetry ? '重试语音' : '生成语音'}
-      {priceLabel ? <span className="text-primary/80">· {priceLabel}</span> : null}
+      <span className="flex items-center gap-1.5">
+        <AudioLines className="h-3.5 w-3.5" aria-hidden />
+        {isRetry ? '重试语音' : '生成语音'}
+      </span>
+      {priceLabel ? (
+        <span className="max-w-[12rem] whitespace-normal text-left text-[10px] leading-snug text-primary/80">
+          {priceLabel}
+        </span>
+      ) : null}
     </button>
   );
 }

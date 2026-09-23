@@ -36,6 +36,9 @@ import {
   safePaymentReturnTo,
 } from '@/lib/utils/payment';
 import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import { vipKeys } from '@/lib/api/vip';
+import { modelCatalogKeys } from '@/lib/api/models';
+import { isVipOrder, orderBenefitLabel } from '@/lib/vip/presentation';
 
 export default function PaymentPendingPage() {
   const params = useParams<{ orderId: string }>();
@@ -125,7 +128,11 @@ export default function PaymentPendingPage() {
   useEffect(() => {
     if (order?.status !== 'completed') return;
     void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-  }, [order?.status, queryClient]);
+    if (order.product_type === 'vip') {
+      void queryClient.invalidateQueries({ queryKey: vipKeys.status });
+      void queryClient.invalidateQueries({ queryKey: modelCatalogKeys.detail });
+    }
+  }, [order?.product_type, order?.status, queryClient]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -267,7 +274,6 @@ function PendingView({
   onBack: () => void;
   arrivalHint: string;
 }) {
-  const total = order.credits_amount + order.bonus_credits;
   return (
     <div className="flex flex-1 flex-col items-center gap-6 pt-6">
       <div className="relative flex h-24 w-24 items-center justify-center">
@@ -279,12 +285,14 @@ function PendingView({
 
       <div className="text-center">
         <h1 className="text-xl font-bold">正在等待支付</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{arrivalHint}</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {isVipOrder(order) ? '支付成功后会员时长会自动生效' : arrivalHint}
+        </p>
       </div>
 
       <div className="w-full rounded-2xl border border-border bg-card p-5">
         <Row label="实付金额" value={`¥ ${formatYuanShort(order.amount_cents)}`} bold />
-        <Row label="将到账" value={`${formatNumber(total)} 星尘`} />
+        <Row label={isVipOrder(order) ? '将获得' : '将到账'} value={orderBenefitLabel(order)} />
         <Row label="支付方式" value={paymentTypeLabel(order.payment_type)} />
         <Row
           label="订单号"
@@ -350,18 +358,28 @@ function CompletedView({
 
       <div className="text-center">
         <h1 className="text-2xl font-bold">支付成功</h1>
-        <p className="mt-2 text-sm text-muted-foreground">星尘已到账，尽情探索吧</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {isVipOrder(order) ? '会员已生效' : '星尘已到账，尽情探索吧'}
+        </p>
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <span className="text-xs text-muted-foreground">本次到账</span>
-        <div className="flex items-baseline gap-1">
-          <span className="bg-gradient-to-b from-foreground to-primary bg-clip-text text-4xl font-black text-transparent">
-            +{formatNumber(total)}
-          </span>
-          <span className="text-xs text-muted-foreground">星尘</span>
+        <span className="text-xs text-muted-foreground">
+          {isVipOrder(order) ? '本次获得' : '本次到账'}
+        </span>
+        <div className="px-6 text-center text-lg font-black text-foreground">
+          {isVipOrder(order) ? (
+            orderBenefitLabel(order)
+          ) : (
+            <span className="flex items-baseline justify-center gap-1">
+              <span className="bg-gradient-to-b from-foreground to-primary bg-clip-text text-4xl font-black text-transparent">
+                +{formatNumber(total)}
+              </span>
+              <span className="text-xs text-muted-foreground">星尘</span>
+            </span>
+          )}
         </div>
-        {order.bonus_credits > 0 ? (
+        {!isVipOrder(order) && order.bonus_credits > 0 ? (
           <span className="rounded border border-rose/50 bg-rose/10 px-2 py-0.5 text-[10px] font-bold text-rose">
             含赠送 {formatNumber(order.bonus_credits)}
           </span>

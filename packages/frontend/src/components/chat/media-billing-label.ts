@@ -6,7 +6,8 @@ export function formatFreeTrialBillingLabel(
   ordinal: number | null | undefined,
   limit: number | null | undefined
 ): string {
-  if (typeof limit !== 'number' || !Number.isInteger(limit)) return '免费体验';
+  const noCharge = '本次不消耗星尘';
+  if (typeof limit !== 'number' || !Number.isInteger(limit)) return `免费体验 · ${noCharge}`;
   const shownOrdinal = typeof ordinal === 'number' && Number.isInteger(ordinal) ? ordinal : 1;
-  return `免费体验 ${shownOrdinal}/${limit}`;
+  return `免费体验 第 ${shownOrdinal}/${limit} 次 · ${noCharge}`;
 }

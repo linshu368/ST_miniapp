@@ -24,6 +24,7 @@ import {
   requiredCreditsFromError,
 } from '@/lib/recharge-redirect';
 import { getReplayLifecycle } from '@/lib/telemetry';
+import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 
 const REPLY_STALLED_NOTICE_MS = 15_000;
 const FREE_QUOTA_REFRESH_DELAYS_MS = [0, 300, 900] as const;
@@ -341,6 +342,22 @@ export function useConversationTurn({
       }
 
       switch (error.code) {
+        case 'VIP_REQUIRED':
+          router.push('/vip');
+          restoreDraft(input);
+          return;
+        case 'MAIN_CREDITS_INSUFFICIENT':
+          setStreamError(MAIN_WALLET_NOTICE);
+          restoreDraft(input);
+          return;
+        case 'TOTAL_CREDITS_INSUFFICIENT':
+          void redirectToRecharge(router, {
+            returnTo,
+            requiredCredits: requiredCreditsFromError(error),
+            triggerSource: 'chat_sse',
+          });
+          restoreDraft(input);
+          return;
         case 'session_not_found':
           onSessionGone();
           setStreamError('这段对话已不存在，已为你开启新的对话');

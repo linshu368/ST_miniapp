@@ -2,14 +2,31 @@
 
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ChevronDown, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, Lock, Sparkles } from 'lucide-react';
 import type { PublicModelCatalogTier } from '@miniapp/shared';
 
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { ApiClientError } from '@/lib/api/client';
 import { useModelCatalogQuery, useSelectModelMutation } from '@/lib/api/models';
-import { isInsufficientCreditsError, redirectToRecharge } from '@/lib/recharge-redirect';
+import { redirectToRecharge } from '@/lib/recharge-redirect';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { cn } from '@/lib/utils';
+import {
+  billingFailureAction,
+  formatTierQuote,
+  MAIN_WALLET_NOTICE,
+  modelSwitchFeedback,
+  publishedDiscountRate,
+  formatDiscountLabel,
+} from '@/lib/vip/presentation';
 
 /**
  * 切换生成模型。版式照搬原版的 ModelTierSwitcher：当前引擎条、可折叠档位、
@@ -22,15 +39,21 @@ import { cn } from '@/lib/utils';
 export function ChatModelSwitcher({
   returnTo,
   onSwitched,
+  generating = false,
+  freeRoundActive = false,
 }: {
   returnTo: string;
-  /** 切换成功后通知外层收起工具箱，与原版一致 */
+  /** 切换成功后通知外层收起面板 */
   onSwitched?: () => void;
+  generating?: boolean;
+  freeRoundActive?: boolean;
 }) {
   const router = useRouter();
   const { data, isLoading, isFetching } = useModelCatalogQuery();
   const selectModel = useSelectModelMutation();
   const [error, setError] = useState<string | null>(null);
+  const [walletAction, setWalletAction] = useState<'recharge' | null>(null);
+  const [lockedTierKey, setLockedTierKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const latestSelectRef = useRef<string | null>(null);
@@ -46,8 +69,16 @@ export function ChatModelSwitcher({
 
   const handleSelect = async (modelId: string) => {
     if (modelId === selectedId) return;
+    const tier = data?.catalog.tiers.find((item) =>
+      item.models.some((model) => model.id === modelId)
+    );
+    if (tier?.locked) {
+      setLockedTierKey(tier.key);
+      return;
+    }
     latestSelectRef.current = modelId;
     setError(null);
+    setWalletAction(null);
     setFeedback(null);
     try {
       await selectModel.mutateAsync({ model_id: modelId });
@@ -57,16 +88,26 @@ export function ChatModelSwitcher({
       } catch {
         // 属性更新失败不阻断选模型
       }
-      setFeedback('模型已切换');
-      if (onSwitched) window.setTimeout(onSwitched, 250);
+      setFeedback(modelSwitchFeedback(generating));
+      if (onSwitched) window.setTimeout(onSwitched, generating ? 1600 : 250);
     } catch (err) {
       if (latestSelectRef.current !== modelId) return;
-      // 余额闸门拦下来的话，能做的只有去充值，直接把人送过去
-      if (err instanceof ApiClientError && isInsufficientCreditsError(err)) {
+      const code = err instanceof ApiClientError ? err.code : undefined;
+      const action = billingFailureAction(code);
+      if (action.type === 'vip') {
+        router.push('/vip');
+        return;
+      }
+      if (action.type === 'recharge') {
         void redirectToRecharge(router, { returnTo, triggerSource: 'model_switch' });
         return;
       }
-      setError(err instanceof Error ? err.message : '该模型暂不可用');
+      if (action.type === 'main_wallet') {
+        setWalletAction('recharge');
+        setError(MAIN_WALLET_NOTICE);
+        return;
+      }
+      setError('该模型暂不可用');
     }
   };
 
@@ -84,8 +125,26 @@ export function ChatModelSwitcher({
     return <p className="py-8 text-center text-[13px] text-muted-foreground">暂时没有可用模型</p>;
   }
 
+  const discountLabel = formatDiscountLabel(
+    publishedDiscountRate(data.catalog.tiers) ?? Number.NaN
+  );
+  const pricedTiers = data.catalog.tiers.filter(
+    (tier) => tier.key === 'standard' || tier.key === 'premium'
+  );
+
   return (
     <div className="space-y-4">
+      {data.vip_status?.active ? (
+        <p className="rounded-2xl border border-primary/30 bg-primary/10 px-3 py-2 text-[12px] leading-relaxed text-primary">
+          VIP 有效期剩余 {data.vip_status.remaining_days} 天
+          {discountLabel ? ` · 文本折扣 ${discountLabel} 已生效` : ''}
+        </p>
+      ) : null}
+      {freeRoundActive ? (
+        <p className="rounded-2xl border border-success/30 bg-success/10 px-3 py-2 text-[12px] leading-relaxed text-success">
+          当前角色仍有免费轮次。本轮免费，不叠加折扣。
+        </p>
+      ) : null}
       <div className="model-current-shimmer relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3.5">
         <div className="relative z-10 flex items-center gap-3">
           <span
@@ -107,9 +166,22 @@ export function ChatModelSwitcher({
       </div>
 
       {error ? (
-        <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
-          {error}
-        </p>
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+          <p>{error}</p>
+          {walletAction === 'recharge' ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={() =>
+                void redirectToRecharge(router, { returnTo, triggerSource: 'model_switch' })
+              }
+            >
+              去充值
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       {feedback ? (
@@ -137,6 +209,42 @@ export function ChatModelSwitcher({
           />
         ))}
       </div>
+      <Dialog
+        open={lockedTierKey !== null}
+        onOpenChange={(open) => {
+          if (!open) setLockedTierKey(null);
+        }}
+      >
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>标准与旗舰模型需要 VIP</DialogTitle>
+            <DialogDescription>
+              开通后可以使用这两个档位。权益只解锁使用资格，不代表免费。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {pricedTiers.map((tier) => {
+              const quote = formatTierQuote(tier);
+              return (
+                <p
+                  key={tier.key}
+                  className="rounded-2xl border border-border bg-card px-3 py-2 text-[12px] leading-relaxed"
+                >
+                  <span className="font-bold text-foreground">{tier.label}</span>
+                  <span className="mt-1 block text-muted-foreground">
+                    {quote?.summary ?? tier.cost_hint}
+                  </span>
+                </p>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button type="button" className="w-full" onClick={() => router.push('/vip')}>
+              前往 VIP
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -166,8 +274,9 @@ function TierSection({
             {tier.label}
           </span>
           <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-primary/90">
-            {tier.cost_hint}
+            {formatTierQuote(tier)?.summary ?? tier.cost_hint}
           </span>
+          {tier.locked ? <Lock className="size-3.5 shrink-0 text-primary" aria-hidden /> : null}
         </span>
         <ChevronDown
           className={cn(
@@ -207,6 +316,12 @@ function TierSection({
                     <span className="truncate text-[15px] font-medium text-foreground">
                       {model.display_name}
                     </span>
+                    {tier.locked ? (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                        <Lock className="size-3" aria-hidden />
+                        VIP
+                      </span>
+                    ) : null}
                     {model.is_free ? (
                       <span className="shrink-0 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success">
                         限量免费

@@ -31,6 +31,7 @@ import {
 } from '@/lib/api/images';
 import { useModelCatalogQuery } from '@/lib/api/models';
 import { paymentKeys } from '@/lib/api/payment';
+import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import {
   toVoiceMap,
@@ -164,6 +165,10 @@ export default function SelfHostedChatPage() {
       : voiceConfigQuery.data?.billing?.enabled
         ? voiceConfigQuery.data?.billing?.price_label
         : '';
+  const freeQuota = useCharacterFreeQuotaQuery(characterId);
+  const freeRoundActive = Boolean(
+    freeQuota.data && !freeQuota.data.exhausted && selectedModelUsesFreeQuota
+  );
 
   useEffect(() => {
     const charged = sessionVoiceQuery.data?.audio.some((item) => item.credits_charged > 0);
@@ -249,6 +254,9 @@ export default function SelfHostedChatPage() {
         characterId={characterId}
         title={title}
         onOpenSessions={() => setSessionsOpen(true)}
+        returnTo={returnTo}
+        generating={generating}
+        freeRoundActive={freeRoundActive}
       />
 
       <ChatMessageList
@@ -379,7 +387,6 @@ export default function SelfHostedChatPage() {
         disabled={!session.ready || serverBusy}
         leftSlot={
           <ChatToolsSheet
-            returnTo={returnTo}
             onCreateConversation={session.openNewConversation}
             creating={session.createConversation.isPending}
           />
