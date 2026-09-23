@@ -192,6 +192,12 @@
     - `pnpm test:migration-ledger` → pass（本机 Postgres；未连 test/Production）
   - 未做：正式 test apply 与只读 postflight；对 test 库的 dry-run；受控写入；`railway config apply`；Production Cron 与 Production 开关。语句超时的脚本重试用模拟的 `57014` 锁定，没有在活库里取消一条真实查询。
   - 剩余风险：当前前端打开消息列表仍会只提交 `scope`，新 API 会返回 400，红点要等 T7 改为提交单条 id 后才会清除。函数替换会短暂锁函数定义，不改业务行。旧 Backend 不调用新 RPC；六参签名仍在。
+- 2026-09-23 T6 test inspect 完成，T6 仍为 Doing。用户提供的 Database Migration inspect 目标是 test `zoqelpfhurwehlvypryl`。`20260923_vip_expiry_reminder_dispatch.sql` checksum `364b17c747204cb02d61e381cf7a46f8a1148f84f9c5d9f4a1c540bb17760eb6` 与本地文件一致，verdict 为 `match / applied`。全表 drift=0。未读业务行，未写 Production，未跑 test dry-run，未打开 `vip_reminders_enabled`。
+  - 该文件在事务末尾自带 postflight，失败会整段回滚，因此账本记为 applied 说明 apply 当时函数、`search_path`、DEFINER 和 anon/authenticated 不可执行这些检查已经通过。
+  - 本会话没有 Supabase MCP，不能把 apply 当时的检查写成当前目录实况。dry-run 前还要补一次只读目录核对。
+  - inspect 里另有 13 个 `not_applied`，包括 batch lab、`20260922_media_feature_free_trials.sql` 和 `20260923_admin_vip_media_config.sql`。它们不属于 T6，本轮不 apply。
+- 2026-09-23 T6 test 只读 postflight 通过，T6 仍为 Doing。用户在 test SQL Editor 执行目录查询，未读业务明细。结果：`insert_due_vip_expiry_reminder(uuid)`、`list_vip_expiry_reminder_candidates(integer,uuid)`、六参 `insert_vip_expiry_reminder` 均存在；anon/authenticated 对 due 与 list 的 EXECUTE 均为 false；service_role 均为 true；两个新函数都是 SECURITY DEFINER 且 `search_path=pg_catalog`；`uq_notifications_business_key` 存在；`vip_reminders_enabled` 仍为 false。未跑 test dry-run，未 `--write`，未打开开关，未写 Production。
+- 2026-09-23 T6 test dry-run 完成，T6 仍为 Doing。`pnpm --filter` 会把 `--` 原样传给脚本，解析器原先把它当成非法参数。已让 `parseVipReminderArgs` 忽略单独的 `--`。`DATABASE_ENV=test`，项目 `zoqelpfhurwehlvypryl`。命令 `pnpm --filter @miniapp/backend vip:send-expiry-reminders -- --dry-run` 结果：`{"scanned":0,"eligible":0,"inserted":0,"skipped":0,"failed":0,"dry_run":true,"duration":643}`。当前没有落在上海今天或今天+3 天窗口内、且尚未发送的会员，所以计数为 0；没有调用插入。未打开 `vip_reminders_enabled`，未 `railway config apply`，未写 Production。参数修复随这次提交推送。随后按授权对 test 执行 `--write`，开关保持 false。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约

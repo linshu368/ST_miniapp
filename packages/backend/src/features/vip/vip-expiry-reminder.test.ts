@@ -123,6 +123,7 @@ describe('vip expiry reminder windows', () => {
 describe('vip expiry reminder runner', () => {
   it('defaults to dry-run and refuses an ambiguous mode', () => {
     expect(parseVipReminderArgs([])).toEqual({ mode: 'dry-run', limit: 100 });
+    expect(parseVipReminderArgs(['--', '--dry-run'])).toEqual({ mode: 'dry-run', limit: 100 });
     expect(parseVipReminderArgs(['--dry-run', '--limit', '2'])).toEqual({
       mode: 'dry-run',
       limit: 2,

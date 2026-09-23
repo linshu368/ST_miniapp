@@ -71,6 +71,8 @@ export function parseVipReminderArgs(argv: readonly string[]): VipReminderArgs {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    // pnpm --filter 会把分隔符原样传给脚本：tsx script.ts -- --dry-run
+    if (arg === '--') continue;
     if (arg === '--dry-run') {
       if (mode === 'write') throw new Error('vip reminder mode is ambiguous');
       mode = 'dry-run';
