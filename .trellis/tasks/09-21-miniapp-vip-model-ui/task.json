@@ -27,6 +27,7 @@
       "schema_version": 1,
       "mode": "changes",
       "modules": [
+        "admin.business.operations",
         "frontend.business.conversation-ui",
         "frontend.business.engagement-support",
         "frontend.business.wallet-payment",

@@ -28,6 +28,39 @@ vi.mock('../../platform/provider-routing.js', () => ({
   getProviderPreferencesForModel: async () => providerPreferences,
 }));
 
+vi.mock('../../platform/vip-strategy.js', () => ({
+  readVipStrategy: async () => ({
+    purchaseEnabled: false,
+    remindersEnabled: false,
+    plans: {
+      week: {
+        price_cents: 1399,
+        duration_days: 7,
+        bonus_credits: 0,
+        title: '周卡',
+        description: '7 天 VIP',
+        badge_text: null,
+      },
+      month: {
+        price_cents: 2888,
+        duration_days: 31,
+        bonus_credits: 3000,
+        title: '月卡',
+        description: '31 天 VIP，赠送 3000 专项星尘',
+        badge_text: null,
+      },
+    },
+    plansVersion: 1,
+    discountRate: 0.95,
+    discountVersion: 1,
+    checkin: { mode: 'same_as_base' as const },
+    checkinVersion: 1,
+    limits: { voice: 3, basic_image: 3 },
+    limitsVersion: 1,
+    fallbacks: [],
+  }),
+}));
+
 vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
   MiniappWalletRepository: class {
     async getOrCreate() {
@@ -67,6 +100,7 @@ function request(overrides: Partial<GenerationRequest> = {}): GenerationRequest 
       openRouterModelId: billingContext.openRouterModelId,
       tier: 'premium',
       isFree: false,
+      entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
     },
     messages: [
       { role: 'system', content: '角色卡 system_prompt' },
@@ -160,7 +194,7 @@ describe('execute（流式）', () => {
       model: 'anthropic/claude-sonnet-4.5',
       model_id: 'anthropic-claude-sonnet-4-5',
       model_markup: 1,
-      fixed_deduction: 50,
+      fixed_deduction: 48,
       fixed_deduction_category: 'premium',
       pricing_config_version: 7,
       exchange_rate: 1,
@@ -292,6 +326,31 @@ describe('execute（流式）', () => {
 });
 
 describe('execute（失败路径）', () => {
+  it('标准或旗舰在 VIP 无效时不调用上游', async () => {
+    const fetchMock = stubUpstream(() => sseResponse([]));
+    const result = await execute(
+      request({
+        model: {
+          modelId: billingContext.modelId,
+          openRouterModelId: billingContext.openRouterModelId,
+          tier: 'premium',
+          isFree: false,
+          entitlement: { active: false, validUntil: null },
+        },
+      }),
+      undefined,
+      fakeLogger()
+    );
+
+    expect(result).toMatchObject({
+      status: 'upstream_error',
+      denial: 'vip_required',
+      chargeId: null,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(savedHistory()).toHaveLength(0);
+  });
+
   it('余额不足在发请求前收口，不碰上游也不落库', async () => {
     walletBalance = 10;
     const fetchMock = stubUpstream(() => sseResponse([]));
@@ -301,7 +360,7 @@ describe('execute（失败路径）', () => {
     expect(result).toMatchObject({
       status: 'insufficient_balance',
       chargeId: null,
-      balance: { creditsRequired: 50, creditsAvailable: 10 },
+      balance: { creditsRequired: 48, creditsAvailable: 10 },
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(savedHistory()).toHaveLength(0);

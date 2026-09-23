@@ -41,7 +41,7 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 
 新增 `api/vip.ts`：
 
-- `VipPlan`：`id`、`price_cents`、`duration_days`、`bonus_credits`、展示文案和可用状态。仅允许周卡 7/1399/0 与月卡 31/2888/3000 两个受控配置通过校验。
+- `VipPlan`：`id`、`price_cents`、`duration_days`、`bonus_credits`、展示文案和可用状态。周卡/月卡 ID 固定，条款改为读取已发布的 `vip_plans_config`；7/1399/0 与 31/2888/3000 是兼容默认值，不再作为永不可变的精确值校验。
 - `VipStatus`：`active`、`valid_from`、`valid_until`、`remaining_days`、`last_plan_id`、`entry_badge_visible`。
 - `GET /api/vip/status` 返回服务端时钟下的当前状态。
 - `POST /api/vip/entry-viewed` 幂等记录首次点击时间并返回最新状态。
@@ -59,16 +59,30 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 
 - 模型目录的档位视图增加 `requires_vip`、`locked`、`original_credits`、`discount_rate`、`discounted_exact`、`payable_credits`。
 - 模型配置响应增加当前 `vip_status` 摘要，供面板显示剩余天数；选择接口增加稳定错误码 `VIP_REQUIRED`、`MAIN_CREDITS_INSUFFICIENT`。
-- 统一纯函数计算文本价：免费轮先返回 0；否则读取同一 pricing snapshot，有效 VIP 时 `round(original * 0.95)`，否则原价。只接受非负有限值，最终文本实扣为整数。
+- 统一纯函数计算文本价：免费轮先返回 0；否则读取同一 pricing snapshot 与已发布 `vip_text_discount_rate`，有效 VIP 时 `round(original * discount_rate)`，否则原价。默认折扣率 0.95；只接受大于 0 且不超过 1 的有限值，最终文本实扣为整数。
 - 钱包明细增加 `main_delta`、`bonus_delta`、`original_amount`、`discount_rate`、`refund_of` 和展示标签；保留现有字段以兼容旧 UI。
 - 签到响应保留 `reward_credits` 作为总数，并增加 `base_reward_credits`、`vip_reward_credits`，避免旧客户端解析失败。
 
 ### 3.4 语音、图片与通知
 
-- 语音/图片配置响应增加 `free_trial_limit=3`、`free_trials_used`、`free_trials_remaining`、`next_trial_ordinal` 和本次价格展示。
+- 语音/图片配置响应增加按 feature 读取的 `free_trial_limit`、`free_trials_used`、`free_trials_remaining`、`next_trial_ordinal` 和本次价格展示；语音/basic 图片默认上限均为 3。
 - 图片请求增加 `tier: 'basic' | 'advanced'`，缺省为 `basic` 兼容旧调用；高级配置不可用时返回稳定的 `ADVANCED_IMAGE_UNAVAILABLE`。
 - 通知增加 `kind`、`action_path` 和只含非敏感展示数据的 metadata；新增 `GET /api/notifications/:id`。VIP 提醒使用 `kind='vip_expiry'`。
 - 列表页不再按 scope 自动已读；点击条目后仅用现有 `ids` 形状标记该条，再进入详情。
+
+### 3.5 Admin「VIP策略」配置契约
+
+复用现有 `app_core.runtime_config`、Admin managed-key 白名单、草稿/发布/版本/回滚 RPC 和编辑器框架。Admin 新增独立业务视图/tab“VIP策略”，不把这些 key 散落到通用配置列表：
+
+- 复用既有 key：`vip_purchase_enabled`、`vip_reminders_enabled`。
+- 新增 `vip_plans_config`：固定包含 `week`、`month`。两者均有 `price_cents`、`duration_days`、`title`、`description`、`badge_text`；month 另有可配置 `bonus_credits`，week 的 bonus 保持 0。
+- 新增 `vip_text_discount_rate`：默认 0.95，范围 `(0, 1]`。
+- 新增 `vip_checkin_bonus_config`：`mode='same_as_base'|'fixed'`；`fixed` 模式必须提供非负整数 `fixed_credits`，默认 `same_as_base`。
+- 新增 `feature_free_trial_limits`：分别保存 `voice` 与 `basic_image` 的整数上限，取值范围统一为 `0..20`，默认均为 3；0 表示关闭对应功能的免费体验。Shared、Admin 和数据库发布校验必须使用同一范围。
+
+Shared 提供 runtime schema、默认值与 browser-safe DTO；Admin 和 Backend 复用同一 schema。数据库发布 RPC再次校验同样的业务不变量，不能只依赖浏览器校验。配置内不包含 provider URL、token、密钥、任意 wallet policy 或 SQL。
+
+配置读取失败或值非法时：购买与提醒开关 fail closed；其余字段使用随代码发布且与首次迁移一致的安全默认值并记录允许字段告警。任何实际支付、签到、文本生成或媒体受理都要固化当次配置快照，避免运营修改导致进行中业务重定价。
 
 ## 4. 数据模型与对象归属
 
@@ -98,11 +112,11 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 
 新增 `billing.feature_free_trials`：
 
-- `user_id`、`feature in ('voice','basic_image')`、稳定 `reference_id`、`ordinal 1..3`、`status in ('reserved','consumed','released')`、`reserved_until`、`consumed_at`。
+- `user_id`、`feature in ('voice','basic_image')`、稳定 `reference_id`、正整数 `ordinal`、`status in ('reserved','consumed','released')`、`reserved_until`、`consumed_at`。已应用的 `ordinal 1..3` CHECK 通过独立 forward-fix migration 演进，禁止改写 T2 文件。
 - `reference_id` 全局幂等；同一用户/feature/ordinal 在 reserved 或 consumed 状态下唯一。
 - `reserve_feature_free_trial` 用用户+feature 事务级 advisory lock，先回收确定过期的 reservation，再分配最小可用 ordinal。预留 TTL 必须大于上游硬超时并由长任务续租。
 - 成功结算与业务 ready 在同一事务把 reservation 置 consumed；明确失败、取消和 failed_unknown 释放。已经过期且被其他请求占用的迟到成功不得静默转为付费，按失败收口，避免用户未同意的意外扣款。
-- 免费次数从功能启用后的成功事实开始，存量用户同样从 0 开始；不回溯历史媒体调用。
+- 免费次数从功能启用后的成功事实开始，存量用户同样从 0 开始；不回溯历史媒体调用。调低上限保留已有事实且停止继续分配，调高上限允许继续分配新的最小 ordinal。
 
 ### 4.5 原路退款事实
 
@@ -163,7 +177,7 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 1. 锁订单并验证状态、金额和快照；已履约直接回读。
 2. credits 商品执行现有主/赠送入账和 ledger 行为，并设置 fulfillment。
 3. vip 商品锁/创建会员投影，按 `greatest(now(), valid_until)` 顺延；写 purchase grant。
-4. 月卡在同一事务调用既有 bonus grant 原语，以 `payment_order + order_id` 为唯一引用写 3000 专项余额和 ledger；周卡为 0。
+4. 月卡在同一事务调用既有 bonus grant 原语，以 `payment_order + order_id` 为唯一引用写订单快照中的赠送专项星尘和 ledger；周卡为 0。运营后续改值不得改变已创建订单快照。
 5. 写订单 completed、settled_by、paid_at、fulfillment 和新截止时间；任一步失败整单回滚。
 
 应用层支付成功通知按商品类型生成文案。通知失败只记录 `{ err }`，不回滚已完成的资金/权益交易。邀请首次付费规则是否把 VIP 算作“首次付费”沿用现有“任意成功现金支付”口径，并在现有回归测试中锁定。
@@ -172,18 +186,18 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 
 `claim_daily_checkin` 增加用户级事务锁，解决首次签到没有既有行可锁的竞态。函数在同一 `now()` 快照下锁定/读取 VIP：
 
-- 普通或过期：总奖励 60。
-- 有效 VIP：总奖励 120，metadata 记录 base=60、vip=60 和 entitlement valid_until。
+- 普通或过期：只发当次基础奖励。
+- 有效 VIP：按已发布 `vip_checkin_bonus_config` 计算加成；`same_as_base` 取当次基础奖励，`fixed` 取发布的固定数值。metadata 记录 base、vip、配置模式/版本和 entitlement valid_until。
 
 一次 `grant_bonus_credits` 将总数进入专项钱包，一条 daily_checkin 记录完成 24 小时去重；响应拆出基础/VIP金额用于两行提示。重复、并发或任一写入失败都不会产生第二次/部分奖励。
 
-基础奖励收敛为 60。migration 前分别只读核验 test/production 的 runtime config；若 Production 不是 60，按需求变更记录影响后再单独应用，不把 test 值当作 Production 事实。
+基础奖励当前收敛为 60，VIP 策略首次迁移保持 `same_as_base`，因此当前仍为 60/120。migration 前分别只读核验 test/production 的 runtime config；不得把 test 值当作 Production 事实。
 
 ## 9. 高级图片与媒体免费体验
 
 - 现有图片产品兼容为 `basic`；请求不传 tier 时仍走 basic。
 - `advanced` 必须有完整 runtime config（enabled、provider/model、price、展示文案）且用户 VIP 有效。配置缺失时接口返回不可用，前端隐藏或禁用，不回退为 basic 冒充高级。
-- Basic image/voice 在调用上游前尝试预留免费 ordinal；无法预留说明三次已占用/消费，执行 main-only 余额预检。
+- Basic image/voice 在调用上游前按各自已发布上限尝试预留免费 ordinal；无法预留说明配置额度已占用/消费，执行 main-only 余额预检。
 - 上游和 Storage 失败释放 reservation；成功在 domain settlement 中消费。网络模糊结果遵循现有 failed_unknown“不扣费”口径。
 - Advanced 在受理时校验当前 VIP 并固化权益/配置快照；最终结算验证的是这份已受理快照及其完整性，而不是用结算时钟推翻处理中刚到期的请求。下一次请求再按最新会员状态判断。
 - 请求频率沿用现有媒体限流，并增加每用户同时 reserved 数量上限；不允许通过并发占用无限任务容量。
@@ -196,6 +210,7 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 - 数据库 reminder RPC 对候选会员行加锁，使用当前 `valid_until` 生成 business key 并插入定向 official 消息；续费若先完成，扫描只看到新周期；扫描若先拿锁，则消息代表发送时真实状态。
 - 唯一索引兜住脚本重跑、多实例和超时重试。每批有限条数并输出 scanned/inserted/skipped/failed，不记录正文或用户隐私。
 - `vip_reminders_enabled` 默认 false；先用 dry-run 统计验证窗口，再启用写入。
+- Admin 只管理该开关；提前 3 天、到期当天、提醒文案和 `Asia/Shanghai` 本期保持代码/需求固定值，不进入“VIP策略”。
 - 详情页实时请求当前 VIP 状态，因此历史提醒在续费后仍展示最新状态，而正文保持发送时事实。
 
 ## 11. 前端页面与状态
@@ -205,6 +220,7 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 - Recharge：保持一个 `selectedProductKey`，credit/vip 共用互斥选择和支付按钮；不建立第二个结账状态机。
 - Chat：`ChatTopBar` 承载模型胶囊，现有 `ChatModelSwitcher` 放入 sheet/popover；`ChatToolsSheet` 删除模型行。
 - Notifications：列表卡变为可点击链接，点击只标记该 ID；详情页独立查询 notification 和 VIP status，返回后 query cache 保持一致。
+- Admin：新增“VIP策略”业务视图，按“功能开关 / 商品 / 文本折扣 / 签到加成 / 媒体免费次数”分区；复用现有草稿、发布、版本、回滚和环境切换，不新增直写 `runtime_config` 的客户端路径。
 - 所有服务器数据继续通过 `src/lib/api/` React Query hooks，不在组件直接 fetch。
 
 ## 12. 故障模型与可靠性设计
@@ -232,11 +248,12 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 1. 冻结需求与审查本设计；确认 test 连接和高级图片配置来源。
 2. 在 test 只读采集相关表/函数/索引/RLS/grants/config shape，不读取业务行；记录双环境未知差异。
 3. 执行 additive migration：新表、nullable/default 列、唯一索引、兼容 RPC、开关默认关闭。验证旧 Backend 和旧 Frontend 仍可使用 credits 支付及现有能力。
-4. 发布 Shared + Backend，新功能入口和购买仍关闭；运行 DB/route/并发/故障测试。
-5. 执行受控行为切换 migration 或启用新版 RPC 路径，验证钱包矩阵、退款、签到、免费次数和四路支付。
-6. 发布 Frontend；先只对 test 打开 UI，完成全部人工场景和体验终审。
-7. 启用 test 的 VIP purchase、advanced image（仅配置完整时）与 reminder dry-run，再启用 reminder write。
-8. 测试通过后由产品明确批准 Production；Production 重复逐文件 migration → Backend → Frontend → smoke → 分项开关，不批量套用 test 结论。
+4. 由于 T2/T3 已在 test 应用，新增“VIP策略”必须使用新的 forward-fix migration：添加/纳管 managed keys、发布校验和动态免费 ordinal 约束，按当前规则 seed；不得修改 `20260921_*` 或 `20260922_daily_checkin_vip_bonus.sql`。
+5. 发布 Shared + Backend + Admin，新功能入口和购买仍关闭；验证旧 Backend 在配置 migration 后仍按默认规则工作，再运行 DB/route/并发/故障测试。
+6. 执行受控行为切换 migration 或启用新版 RPC 路径，验证钱包矩阵、退款、签到、免费次数和四路支付。
+7. 发布 Frontend；先只对 test 打开 UI，完成全部人工场景和体验终审。
+8. 启用 test 的 VIP purchase、advanced image（仅配置完整时）与 reminder dry-run，再启用 reminder write。
+9. 测试通过后由产品明确批准 Production；Production 重复逐文件 migration → Backend → Admin/Frontend → smoke → 分项开关，不批量套用 test 结论。
 
 ### 13.2 回滚与 forward-fix
 
@@ -245,6 +262,7 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 - 计费异常时暂停对应生成/媒体能力，按 ledger 查出受影响 debit 并用幂等退款 RPC恢复，不运行手工余额 UPDATE。
 - additive 列/表和真实支付数据不做紧急 down migration。待停止新写、备份并确认无消费者后，才可用独立审查的清理 migration。
 - migration 失败在提交前依靠事务回滚；已提交后优先 forward-fix。每个生产 migration 一次一个文件，记录前后 shape、权限、锁时间、关键读写与恢复点。
+- 配置发布错误先回滚到上一已发布版本并关闭 `vip_purchase_enabled`；已创建订单、已受理生成和已领取签到继续使用各自快照，禁止通过回滚配置改写历史事实。
 
 ## 14. 可验证性与文档同步
 
@@ -255,6 +273,7 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 - payment 四路竞态、两笔续费并发、月卡赠送一次、过期订单迟到确认。
 - 签到普通/VIP/到期边界、首次并发、重复请求。
 - 语音/图片免费 reservation 并发、失败释放、迟到成功、两能力隔离、高级图片门禁。
+- Admin“VIP策略”的字段校验、草稿/发布/回滚、旧 Backend 兼容、缺失/损坏降级、商品/折扣/签到/免费次数改值后只影响后续业务，以及免费上限调高/调低边界。
 - reminder 两窗口、时区边界、重跑、多实例、续费竞态、单条已读与详情鉴权。
 - 所有 Shared 消费者 typecheck，Frontend build，Backend 相关测试，migration pre/postflight 与 test 回滚演练。
 

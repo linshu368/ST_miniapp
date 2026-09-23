@@ -3,10 +3,10 @@ import {
   findPaymentPlan,
   formatAmountCny,
   generateMiniappOrderId,
-  isVipPurchaseEnabled,
   ORDER_EXPIRE_MS,
   resolvePaymentProduct,
 } from '../domain/rechargeRules.js';
+import { readVipStrategy } from '../../../platform/vip-strategy.js';
 import { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
 import {
   MiniappPaymentOrderRepository,
@@ -34,8 +34,10 @@ export class RechargeUseCase {
       throw new Error('支付功能未开启');
     }
 
+    const strategy = await readVipStrategy();
     const product = await resolvePaymentProduct(input.planId, {
-      vipPurchaseEnabled: await isVipPurchaseEnabled(),
+      vipPurchaseEnabled: strategy.purchaseEnabled,
+      plans: strategy.plans,
       findPlan: findPaymentPlan,
     });
 

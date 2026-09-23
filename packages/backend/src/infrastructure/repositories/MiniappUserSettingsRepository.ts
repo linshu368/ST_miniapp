@@ -136,6 +136,21 @@ export class MiniappUserSettingsRepository {
     return data as MiniappUserSettingsRow;
   }
 
+  /**
+   * 生成路径没有 Telegram 资料，只改模型选择，避免把展示名写成空。
+   * 没有设置行时更新 0 行，调用方照样用本轮解析结果。
+   */
+  async correctSelectedModelId(userId: string, selectedModelId: string): Promise<void> {
+    const { error } = await this.db
+      .from('miniapp_user_settings')
+      .update({
+        selected_model_id: selectedModelId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+    if (error) throw new Error(`修正模型选择失败：${error.message}`);
+  }
+
   async getSelectedModelId(userId: string): Promise<string | null> {
     const { data, error } = await this.db
       .from('miniapp_user_settings')

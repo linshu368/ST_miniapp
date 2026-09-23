@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { VIP_TEXT_DISCOUNT_RATE, VipEntitlementSummarySchema } from './vip.js';
+import { VipTextDiscountRateSchema } from './vip-strategy.js';
 import {
   WalletDebitPolicySchema,
   resolveBillableCapabilityRules,
@@ -355,14 +356,15 @@ export function roundHalfUpToInteger(value: number): number {
 }
 
 /**
- * 文本计价纯函数：免费轮优先返回 0；VIP 按调用方传入的运行时原价 × 0.95 再取整。
- * 不读取 runtime config，也不把 test 目录价写死。
+ * 文本计价纯函数：免费轮优先返回 0；VIP 按调用方传入的运行时原价 × 折扣率再取整。
+ * 省略折扣率时使用 0.95。不读取 runtime config，也不把 test 目录价写死。
  */
 export function quoteTextModelUsage(input: {
   original_credits: number;
   is_vip: boolean;
   is_free_round: boolean;
   tier: ModelCatalogTierKey;
+  discount_rate?: number;
 }): QuoteTextModelUsageResult {
   const tierParsed = ModelCatalogTierKeySchema.safeParse(input.tier);
   if (!tierParsed.success) {
@@ -385,6 +387,18 @@ export function quoteTextModelUsage(input: {
 
   const rules = resolveBillableCapabilityRules(textCapabilityForTier(tierParsed.data));
   const originalCredits = input.original_credits;
+  const discountRate =
+    input.discount_rate === undefined ? VIP_TEXT_DISCOUNT_RATE : input.discount_rate;
+  if (
+    input.discount_rate !== undefined &&
+    !VipTextDiscountRateSchema.safeParse(discountRate).success
+  ) {
+    return {
+      ok: false,
+      code: 'INVALID_PRICE',
+      message: 'discount rate must be greater than 0 and at most 1',
+    };
+  }
 
   if (input.is_free_round) {
     return {
@@ -416,13 +430,13 @@ export function quoteTextModelUsage(input: {
     };
   }
 
-  const discountedExact = originalCredits * VIP_TEXT_DISCOUNT_RATE;
+  const discountedExact = originalCredits * discountRate;
   return {
     ok: true,
     value: {
       original_credits: originalCredits,
       discount_applied: true,
-      discount_rate: VIP_TEXT_DISCOUNT_RATE,
+      discount_rate: discountRate,
       discounted_exact: discountedExact,
       payable_credits: roundHalfUpToInteger(discountedExact),
       wallet_policy: rules.wallet_policy,

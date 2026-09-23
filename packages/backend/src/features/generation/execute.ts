@@ -22,6 +22,7 @@ import {
   type ModelBillingContext,
 } from '../../platform/model-tiers.js';
 import { getProviderPreferencesForModel } from '../../platform/provider-routing.js';
+import { readVipStrategy } from '../../platform/vip-strategy.js';
 import type { OpenRouterProviderPreferences } from '@miniapp/shared';
 import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';

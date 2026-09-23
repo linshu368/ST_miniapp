@@ -415,9 +415,14 @@ export default async function conversationRoutes(app: FastifyInstance) {
   );
 }
 
-/** 流没开起来的两种终态：都要以 HTTP 状态码 + JSON 返回，前端处理成本比流内错误低一截 */
+/** 流没开起来的终态：都要以 HTTP 状态码 + JSON 返回，前端处理成本比流内错误低一截 */
 function finishTurn(reply: FastifyReply, outcome: ConversationTurnOutcome): void {
   if (outcome.kind === 'streamed') return;
+
+  if (outcome.kind === 'vip_required') {
+    void reply.status(403).send(fail('VIP_REQUIRED', '标准/旗舰模型需要有效 VIP'));
+    return;
+  }
 
   if (outcome.kind === 'insufficient_balance') {
     const response: InsufficientBalanceErrorResponse = {

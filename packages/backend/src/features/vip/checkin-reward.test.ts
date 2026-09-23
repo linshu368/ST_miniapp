@@ -52,4 +52,27 @@ describe('quoteDailyCheckinReward', () => {
       }).reward_credits
     ).toBe(120);
   });
+
+  it('uses a fixed published bonus only while VIP is active', () => {
+    expect(
+      quoteDailyCheckinReward({
+        baseRewardCredits: 60,
+        validUntil: '2026-10-01T00:00:00.000Z',
+        now: NOW,
+        bonus: { mode: 'fixed', fixed_credits: 10 },
+      })
+    ).toEqual({
+      base_reward_credits: 60,
+      vip_reward_credits: 10,
+      reward_credits: 70,
+    });
+    expect(
+      quoteDailyCheckinReward({
+        baseRewardCredits: 60,
+        validUntil: null,
+        now: NOW,
+        bonus: { mode: 'fixed', fixed_credits: 10 },
+      }).vip_reward_credits
+    ).toBe(0);
+  });
 });

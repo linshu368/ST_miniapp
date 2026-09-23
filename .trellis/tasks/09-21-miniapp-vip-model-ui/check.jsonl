@@ -26,3 +26,8 @@
 {"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-environment-and-config-gate.md","reason":"检查后续实现是否在未确认 test 目标时连库、是否把高级图片猜开、是否用 test 结论冒充 production。"}
 {"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-test-db-collection.md","reason":"对照 test 实况检查 migration 前置、search_path 与 PUBLIC execute 不得复制旧 GAP。"}
 {"file": ".trellis/tasks/09-21-miniapp-vip-model-ui/research/t2-reuse-and-db-primitives.md", "reason": "T2 数据库对象归属、RLS/grant 与本地未能远端验证项"}
+{"file": ".trellis/tasks/09-21-miniapp-vip-model-ui/research/t4-llm-billing-reuse.md", "reason": "检查 T4 是否平行计费、是否改写 T2/T3 migration、是否提前标 Done"}
+{"file":".trellis/spec/admin/app/testing-build-and-deployment.md","reason":"检查 VIP策略的 Admin test/typecheck/build、环境选择与部署门禁。"}
+{"file":".trellis/spec/admin/app/modules/business/operations.md","reason":"检查是否复用草稿/发布/版本/回滚以及 managed-key 双层校验。"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"检查已应用 T2/T3 后是否只新增 forward-fix、是否保持单文件 apply 与恢复说明。"}
+{"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t3a-vip-admin-strategy.md","reason":"检查 Admin 范围、默认值、排除项、快照语义和动态免费次数门禁。"}

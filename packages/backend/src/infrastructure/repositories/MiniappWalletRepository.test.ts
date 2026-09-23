@@ -3,6 +3,8 @@ import { VipPlansSchema } from '@miniapp/shared';
 
 import {
   formatSpendingStatus,
+  mapLlmRefundSpendingRow,
+  mapLlmSpendingRow,
   toClaimedCheckin,
   toWalletBalance,
   type MiniappWalletRow,
@@ -102,5 +104,68 @@ describe('VIP purchase catalog', () => {
       ['week', 1399, true],
       ['month', 2888, true],
     ]);
+  });
+});
+
+describe('LLM spending snapshot', () => {
+  it('keeps old rows valid when price fields are absent and still labels partial', () => {
+    const legacy = mapLlmSpendingRow({
+      charge_key: 'old',
+      model_id: 'm',
+      model_display_name: '旧模型',
+      charged_amount: 10,
+      status: 'partial',
+      metadata: { finish_reason: 'stop' },
+      created_at: '2026-09-01T00:00:00.000Z',
+    });
+    expect(legacy.status).toBe('partial');
+    expect(legacy.status_label).toBe('余额不足，部分扣费');
+    expect(legacy.main_delta).toBeUndefined();
+    expect(legacy.original_amount).toBeUndefined();
+  });
+
+  it('returns the wallet split and price snapshot for a new debit', () => {
+    const row = mapLlmSpendingRow({
+      charge_key: 'new',
+      model_id: 'premium',
+      model_display_name: '旗舰',
+      charged_amount: 48,
+      status: 'charged',
+      metadata: {
+        finish_reason: 'stop',
+        reply_outcome: 'complete',
+        main_delta: -20,
+        bonus_delta: -28,
+        original_credits: 50,
+        discount_rate: 0.95,
+      },
+      created_at: '2026-09-22T00:00:00.000Z',
+    });
+    expect(row).toMatchObject({
+      charged_amount: 48,
+      main_delta: -20,
+      bonus_delta: -28,
+      original_amount: 50,
+      discount_rate: 0.95,
+      status_label: '已扣费',
+    });
+  });
+
+  it('maps an original-path refund without dropping the debit reference', () => {
+    const row = mapLlmRefundSpendingRow({
+      reference_id: 'llm-refund:charge-1',
+      amount: 48,
+      main_delta: 20,
+      bonus_delta: 28,
+      metadata: { debit_key: 'charge-1', reason: 'llm_usage' },
+      created_at: '2026-09-22T00:01:00.000Z',
+    });
+    expect(row).toMatchObject({
+      refund_of: 'charge-1',
+      source_label: '原路退款',
+      main_delta: 20,
+      bonus_delta: 28,
+      status_label: '已原路退回',
+    });
   });
 });

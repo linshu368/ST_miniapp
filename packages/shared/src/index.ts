@@ -12,6 +12,7 @@ export * from './api/favorites';
 export * from './api/health';
 export * from './api/payment';
 export * from './api/vip';
+export * from './api/vip-strategy';
 export * from './api/settings';
 export * from './api/word-count-tiers';
 export * from './api/lobby-ranking-params';

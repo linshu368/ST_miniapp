@@ -24,6 +24,7 @@ import {
 } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import { MiniappWalletRepository } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import { applyLlmCharge } from './apply-charge.js';
+import { frozenLlmChargeMetadata } from './text-billing.js';
 import {
   buildGenerationMetadata,
   fetchGenerationData,
@@ -346,10 +347,23 @@ function buildFixedTierChargeCommand(input: {
     baseMetadata: {
       ...(originalCharge?.metadata ?? {}),
       requested_model: requestedModel,
-      billing_mode: 'fixed_tier' as const,
-      fixed_deduction_category:
-        snapshot?.fixed_deduction_category ?? originalCharge?.metadata?.fixed_deduction_category,
-      fixed_deduction: fixedDeduction,
+      ...frozenLlmChargeMetadata({
+        fixed_deduction: fixedDeduction,
+        fixed_deduction_category:
+          snapshot?.fixed_deduction_category ||
+          (typeof originalCharge?.metadata?.fixed_deduction_category === 'string'
+            ? originalCharge.metadata.fixed_deduction_category
+            : ''),
+        original_credits: snapshot?.original_credits,
+        discount_rate: snapshot?.discount_rate,
+        discounted_exact: snapshot?.discounted_exact,
+        payable_credits: snapshot?.payable_credits ?? fixedDeduction,
+        wallet_policy: snapshot?.wallet_policy,
+        requires_vip: snapshot?.requires_vip,
+        vip_active: snapshot?.vip_active,
+        vip_valid_until: snapshot?.vip_valid_until,
+        model_tier: snapshot?.model_tier,
+      }),
       source: 'chat_history_sync',
     },
   };
@@ -398,5 +412,48 @@ function readBillingSnapshot(value: unknown): LlmBillingSnapshot | null {
     pricing_config_version: pricingConfigVersion,
     exchange_rate: exchangeRate,
     billing_mode: 'fixed_tier',
+    ...readFrozenPriceFields(row),
   };
+}
+
+function readFrozenPriceFields(
+  row: Record<string, unknown>
+): Pick<
+  LlmBillingSnapshot,
+  | 'original_credits'
+  | 'discount_rate'
+  | 'discounted_exact'
+  | 'payable_credits'
+  | 'wallet_policy'
+  | 'requires_vip'
+  | 'vip_active'
+  | 'vip_valid_until'
+  | 'model_tier'
+> {
+  const originalCredits = readOptionalNumber(row.original_credits);
+  const payableCredits = readOptionalNumber(row.payable_credits);
+  const discountedExact = readOptionalNumber(row.discounted_exact);
+  const walletPolicy =
+    row.wallet_policy === 'main_only' || row.wallet_policy === 'main_then_bonus'
+      ? row.wallet_policy
+      : undefined;
+  return {
+    ...(originalCredits === undefined ? {} : { original_credits: originalCredits }),
+    ...(row.discount_rate === null || typeof row.discount_rate === 'number'
+      ? { discount_rate: row.discount_rate }
+      : {}),
+    ...(discountedExact === undefined ? {} : { discounted_exact: discountedExact }),
+    ...(payableCredits === undefined ? {} : { payable_credits: payableCredits }),
+    ...(walletPolicy === undefined ? {} : { wallet_policy: walletPolicy }),
+    ...(typeof row.requires_vip === 'boolean' ? { requires_vip: row.requires_vip } : {}),
+    ...(typeof row.vip_active === 'boolean' ? { vip_active: row.vip_active } : {}),
+    ...(row.vip_valid_until === null || typeof row.vip_valid_until === 'string'
+      ? { vip_valid_until: row.vip_valid_until }
+      : {}),
+    ...(typeof row.model_tier === 'string' ? { model_tier: row.model_tier } : {}),
+  };
+}
+
+function readOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }

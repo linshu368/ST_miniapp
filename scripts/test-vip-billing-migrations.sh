@@ -182,4 +182,79 @@ psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
   -f "$ROOT/packages/shared/migrations/tests/vip_invite_t3_scenarios.sql" \
   >/dev/null
 
-echo "All T2 and T3 VIP billing local checks passed."
+echo "prepare local llm charge shape"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_llm_t4_setup.sql" \
+  >/dev/null
+
+echo "apply 20260922_llm_vip_wallet_charge.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260922_llm_vip_wallet_charge.sql" \
+  >/dev/null
+
+echo "run t4 llm charge scenarios"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_llm_t4_scenarios.sql" \
+  >/dev/null
+
+LLM_USER="00000000-0000-4000-8000-0000000000c1"
+LLM_KEY="00000000-0000-4000-8000-000000000201"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<SQL
+INSERT INTO app_core.users (id) VALUES ('$LLM_USER');
+INSERT INTO billing.user_wallets (user_id, main_credits, bonus_credits) VALUES ('$LLM_USER', 100, 0);
+SQL
+
+echo "run concurrent llm charge replay"
+(
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT vip_t4_test.charge('$LLM_USER'::uuid, '$LLM_KEY'::uuid, 'gen-concur', 30, 'main_only', 'premium', 'stop');" >/dev/null
+) &
+(
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT vip_t4_test.charge('$LLM_USER'::uuid, '$LLM_KEY'::uuid, 'gen-concur', 30, 'main_only', 'premium', 'stop');" >/dev/null
+) &
+wait || true
+
+LLM_LEDGER="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM billing.wallet_ledger WHERE debit_key='$LLM_KEY';")"
+LLM_MAIN="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT main_credits FROM billing.user_wallets WHERE user_id='$LLM_USER';")"
+[[ "$LLM_LEDGER" == "1" ]] || fail "concurrent llm charge ledgers=$LLM_LEDGER"
+[[ "$LLM_MAIN" == "70.0" || "$LLM_MAIN" == "70" ]] || fail "concurrent llm wallet=$LLM_MAIN"
+
+echo "prepare local admin managed-config shape"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/fixtures/vip_strategy_admin_harness.sql" \
+  >/dev/null
+
+echo "apply 20260923_vip_strategy_config.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260923_vip_strategy_config.sql" \
+  >/dev/null
+
+echo "run t3a strategy scenarios"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_strategy_t3a_scenarios.sql" \
+  >/dev/null
+
+LIMIT_USER="00000000-0000-4000-8000-0000000000e1"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<SQL
+INSERT INTO app_core.users (id) VALUES ('$LIMIT_USER');
+UPDATE app_core.runtime_config
+SET value = '{"voice":4,"basic_image":3}'::jsonb
+WHERE key = 'feature_free_trial_limits';
+SQL
+
+echo "run concurrent free-trial reserve at published limit 4"
+for n in 1 2 3 4 5; do
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT billing.reserve_feature_free_trial('$LIMIT_USER'::uuid,'voice','concur-limit-$n');" >/dev/null &
+done
+wait
+
+LIMIT_OCCUPY="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM billing.feature_free_trials WHERE user_id='$LIMIT_USER' AND feature='voice' AND status='reserved';")"
+[[ "$LIMIT_OCCUPY" == "4" ]] || fail "concurrent published limit occupancy=$LIMIT_OCCUPY"
+
+REPLAY_REF="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT reference_id FROM billing.feature_free_trials WHERE user_id='$LIMIT_USER' AND feature='voice' AND status='reserved' ORDER BY reference_id LIMIT 1;")"
+REPLAY_A="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT billing.reserve_feature_free_trial('$LIMIT_USER'::uuid,'voice','${REPLAY_REF}')->>'status';")"
+[[ "$REPLAY_A" == "already_reserved" ]] || fail "replay status=$REPLAY_A ref=$REPLAY_REF"
+
+echo "All T2, T3, T4 and T3A VIP billing local checks passed."

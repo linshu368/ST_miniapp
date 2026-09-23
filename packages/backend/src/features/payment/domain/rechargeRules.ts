@@ -1,8 +1,8 @@
 import { getDomainDb } from '../../../lib/supabase.js';
 import {
-  canonicalVipPlanTerms,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  DEFAULT_VIP_PLANS_CONFIG,
   isVipPlanId,
   PaymentPlansSchema,
   PaymentPromptDialogConfigSchema,
@@ -13,8 +13,9 @@ import {
   type RechargePageConfig,
   type VipPlan,
   type VipPlanId,
+  type VipPlansConfig,
 } from '@miniapp/shared';
-import { fetchRuntimeConfigEntry } from '../../../platform/runtime-config.js';
+import { readVipStrategy } from '../../../platform/vip-strategy.js';
 
 export const PAYMENT_PLANS_CONFIG_KEY = 'miniapp_payment_plans';
 export const RECHARGE_PAGE_CONFIG_KEY = 'miniapp_recharge_page_config';
@@ -144,33 +145,29 @@ export interface PaymentProductSnapshot {
   gateway_product_name: string;
 }
 
-const VIP_PLAN_COPY: Record<VipPlanId, { title: string; description: string }> = {
-  week: { title: '周卡', description: '7 天 VIP' },
-  month: { title: '月卡', description: '31 天 VIP，赠送 3000 专项星尘' },
-};
-
 /** 缺配置、读失败或非 true 都关闭购买。credits 充值不读这个开关。 */
 export function parseVipPurchaseEnabled(value: unknown): boolean {
   return value === true;
 }
 
 export async function isVipPurchaseEnabled(): Promise<boolean> {
-  const entry = await fetchRuntimeConfigEntry(VIP_PURCHASE_ENABLED_CONFIG_KEY);
-  return parseVipPurchaseEnabled(entry?.value);
+  return (await readVipStrategy()).purchaseEnabled;
 }
 
-export function buildVipPlans(purchaseEnabled: boolean): VipPlan[] {
+export function buildVipPlans(
+  purchaseEnabled: boolean,
+  plans: VipPlansConfig = DEFAULT_VIP_PLANS_CONFIG
+): VipPlan[] {
   return (['week', 'month'] as const).map((planId) => {
-    const terms = canonicalVipPlanTerms(planId);
-    const copy = VIP_PLAN_COPY[planId];
+    const terms = plans[planId];
     return {
       id: planId,
       price_cents: terms.price_cents,
       duration_days: terms.duration_days,
       bonus_credits: terms.bonus_credits,
-      title: copy.title,
-      description: copy.description,
-      badge_text: null,
+      title: terms.title,
+      description: terms.description,
+      badge_text: terms.badge_text,
       available: purchaseEnabled,
     };
   });
@@ -189,8 +186,11 @@ export function buildCreditsProductSnapshot(plan: PaymentPlan): PaymentProductSn
   };
 }
 
-export function buildVipProductSnapshot(planId: VipPlanId): PaymentProductSnapshot {
-  const terms = canonicalVipPlanTerms(planId);
+export function buildVipProductSnapshot(
+  planId: VipPlanId,
+  plans: VipPlansConfig = DEFAULT_VIP_PLANS_CONFIG
+): PaymentProductSnapshot {
+  const terms = plans[planId];
   return {
     product_type: 'vip',
     product_id: planId,
@@ -207,6 +207,7 @@ export async function resolvePaymentProduct(
   planId: string,
   input: {
     vipPurchaseEnabled: boolean;
+    plans?: VipPlansConfig;
     findPlan: (planId: string) => Promise<PaymentPlan | undefined>;
   }
 ): Promise<PaymentProductSnapshot> {
@@ -214,7 +215,7 @@ export async function resolvePaymentProduct(
     if (!input.vipPurchaseEnabled) {
       throw new VipPurchaseDisabledError();
     }
-    return buildVipProductSnapshot(planId);
+    return buildVipProductSnapshot(planId, input.plans ?? DEFAULT_VIP_PLANS_CONFIG);
   }
 
   const plan = await input.findPlan(planId);

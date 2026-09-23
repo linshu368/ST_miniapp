@@ -1,10 +1,16 @@
 import { z } from 'zod';
 
 /**
- * VIP 周卡/月卡的商业条款是产品拍板事实，不是运行时目录。
+ * 1399/7/0、2888/31/3000 与 0.95 是首次 seed 和配置损坏时的安全默认。
+ * 已发布的 VIP 策略可以在下方范围内覆盖商品条款和折扣；周卡赠送仍固定为 0。
  * 文本模型原价仍由调用方传入，不得把 test 环境当前价写进本文件。
  */
 export const VIP_TEXT_DISCOUNT_RATE = 0.95;
+
+/** 与 Admin、数据库发布校验共用的商品边界。价格只使用整数分。 */
+export const VIP_PLAN_PRICE_CENTS_MAX = 1_000_000;
+export const VIP_PLAN_DURATION_DAYS_MAX = 3660;
+export const VIP_PLAN_BONUS_CREDITS_MAX = 1_000_000;
 
 export const VipPlanIdSchema = z.enum(['week', 'month']);
 export type VipPlanId = z.infer<typeof VipPlanIdSchema>;
@@ -32,24 +38,20 @@ const nonnegativeInteger = z.number().int().nonnegative();
 export const VipPlanSchema = z
   .object({
     id: VipPlanIdSchema,
-    price_cents: nonnegativeInteger,
-    duration_days: nonnegativeInteger,
-    bonus_credits: nonnegativeInteger,
+    price_cents: z.number().int().min(1).max(VIP_PLAN_PRICE_CENTS_MAX),
+    duration_days: z.number().int().min(1).max(VIP_PLAN_DURATION_DAYS_MAX),
+    bonus_credits: z.number().int().min(0).max(VIP_PLAN_BONUS_CREDITS_MAX),
     title: z.string().trim().min(1).max(40),
-    description: z.string().trim().min(1).max(200).nullable(),
+    description: z.string().trim().max(200).nullable(),
     badge_text: z.string().trim().min(1).max(40).nullable(),
     available: z.boolean(),
   })
   .superRefine((plan, ctx) => {
-    const canonical = VIP_PLAN_COMMERCIAL_TERMS[plan.id];
-    if (
-      plan.price_cents !== canonical.price_cents ||
-      plan.duration_days !== canonical.duration_days ||
-      plan.bonus_credits !== canonical.bonus_credits
-    ) {
+    if (plan.id === 'week' && plan.bonus_credits !== 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'vip plan commercial terms must match the canonical week/month products',
+        path: ['bonus_credits'],
+        message: 'week bonus credits must stay 0',
       });
     }
   });
@@ -106,6 +108,16 @@ export function canonicalVipPlanTerms(
   planId: VipPlanId
 ): (typeof VIP_PLAN_COMMERCIAL_TERMS)[VipPlanId] {
   return VIP_PLAN_COMMERCIAL_TERMS[planId];
+}
+
+/** 用整数分拼出页面展示金额，避免把浮点元写进支付契约。 */
+export function formatCentsAsYuan(priceCents: number): string {
+  if (!Number.isInteger(priceCents) || priceCents < 0) {
+    throw new Error('price cents must be a non-negative integer');
+  }
+  const yuan = Math.trunc(priceCents / 100);
+  const cents = priceCents % 100;
+  return `${yuan}.${String(cents).padStart(2, '0')}`;
 }
 
 function parseTimestamp(value: string, label: string): number {

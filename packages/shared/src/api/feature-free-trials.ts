@@ -157,7 +157,7 @@ export function summarizeFeatureFreeTrialQuota(input: {
       free_trials_used: used,
       free_trials_reserved: reserved,
       free_trials_remaining: remaining,
-      next_trial_ordinal: remaining === 0 ? null : nextTrialOrdinal,
+      next_trial_ordinal: nextTrialOrdinal,
     },
   };
 }
