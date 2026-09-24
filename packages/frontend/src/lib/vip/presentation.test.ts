@@ -16,6 +16,7 @@ import {
   shouldShowVipEntryBadge,
   supportsVipRenewal,
   vipExpiryImpactCopy,
+  vipExpiryDisplayWindow,
   vipExpiryMembershipDetail,
   vipEntryLabel,
   vipPlanTitle,
@@ -129,6 +130,16 @@ describe('entry badge and membership label', () => {
 
   it('uses remaining days from status only while the membership is active', () => {
     expect(vipEntryLabel({ active: true, remaining_days: 12 })).toBe('VIP · 剩 12 天');
+    expect(
+      vipEntryLabel(
+        {
+          active: true,
+          remaining_days: 1,
+          valid_until: '2026-09-24T16:00:00.000Z',
+        },
+        new Date('2026-09-24T06:30:00.000Z')
+      )
+    ).toBe('VIP · 今日到期');
     expect(vipEntryLabel({ active: false, remaining_days: 3 })).toBe('VIP');
     expect(vipEntryLabel(null)).toBe('VIP');
   });
@@ -184,6 +195,25 @@ describe('entry badge and membership label', () => {
         }
       )
     ).toBe('剩余 31 天');
+  });
+
+  it('treats next midnight as today 24:00 and switches stale reminder copy', () => {
+    const status = {
+      active: true,
+      remaining_days: 1,
+      last_plan_id: 'month' as const,
+      valid_until: '2026-09-24T16:00:00.000Z',
+    };
+    const notification = {
+      metadata: {
+        reminder_window: 'expiring_soon' as const,
+        observed_valid_until: '2026-09-27T16:00:00.000Z',
+      },
+    };
+    const now = new Date('2026-09-24T06:30:00.000Z');
+
+    expect(vipExpiryDisplayWindow(status, notification, now)).toBe('expires_today');
+    expect(vipExpiryMembershipDetail(status, notification, now)).toBe('今日到期（09-24 24:00）');
   });
 });
 

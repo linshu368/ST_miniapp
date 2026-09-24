@@ -20,8 +20,8 @@
 | T4  | Done   | 改造 LLM 权限、折扣、钱包分配、明细与原路退款                  | Backend models/generation/billing/wallet             | T2,T3                                 | 钱包矩阵、配置快照、并发、重放、退款回归测试     |
 | T5  | Done   | 向语音/图片子任务交付底座并完成跨模块集成验收                  | 两个 child task + parent integration                 | 语音/图片底座等 T2/T3；动态上限等 T3A | 子任务证据、免费/钱包/权限联合矩阵               |
 | T6  | Done   | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3,T3A                             | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
-| T7  | Doing  | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T3A,T4,T5,T6                    | 前端 test/lint/typecheck/build + 人工状态矩阵    |
-| T8  | Todo   | 完成跨包回归、test 必验路径、文档与模块知识更新                | 全仓、README、ARCHITECTURE、spec/module facts        | T1-T7                                 | 全量命令、test 证据、`module_knowledge.py check` |
+| T7  | Done   | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T3A,T4,T5,T6                    | 前端 test/lint/typecheck/build + 人工状态矩阵    |
+| T8  | Doing  | 完成跨包回归、test 必验路径、文档与模块知识更新                | 全仓、README、ARCHITECTURE、spec/module facts        | T1-T7                                 | 全量命令、test 证据、`module_knowledge.py check` |
 | T9  | Todo   | 形成 Production 发布单并等待产品上线确认                       | migrations / Railway / feature flags                 | T8                                    | 未获明确确认保持 Production 关闭                 |
 
 ## Execution Log
@@ -346,3 +346,13 @@ remainingVipDisplayDays(validUntil, now): number
 - [x] Frontend 测试、typecheck、lint、build、import/legacy guards 与 diff 检查通过
 
 执行结果：本轮仅修改 Frontend 的 VIP 到期消息详情展示和展示纯函数测试，没有改 Shared/Backend 契约、数据库、环境开关、调度器或支付逻辑。验证通过：`pnpm --filter @miniapp/frontend test`（31 files / 192 tests）、`pnpm --filter @miniapp/frontend build`、`pnpm lint:imports`、`pnpm lint:legacy`、`pnpm --filter @miniapp/frontend test -- src/lib/vip/presentation.test.ts`（1 file / 16 tests）、`pnpm --filter @miniapp/frontend typecheck`、`pnpm --filter @miniapp/frontend lint` 与 `git diff --check`。T7 保持 Doing，等待 PR 环境真机复验两类通知详情的窄屏布局、真实消息时间和续费入口；Production 未操作。
+
+### 2026-09-24 第五轮真机修正
+
+- [x] “我的”页 VIP 入口将次日 `00:00`（北京时间）按前一日 `24:00` 口径展示为“今日到期”
+- [x] 到期提醒详情在当前会员周期已进入当天到期时，统一切换为“VIP 今日到期”标题和当天文案
+- [x] `2026-09-25 00:00:00 Asia/Shanghai` 格式化为“今日到期（09-24 24:00）”，不再显示“剩余 1 天”
+- [x] 签到加成和模型折扣继续读取服务端已发布权益，保持当前 95 折口径
+- [x] Frontend 回归、typecheck、lint、build、import/legacy guards 与 diff 检查通过
+
+执行结果：本轮仅修改 Frontend 展示 helper、到期消息详情页和既有 helper 测试；未改 Shared/Backend 契约、`remaining_days` 服务端语义、数据库、调度器、计费或环境开关。验证通过：`pnpm --filter @miniapp/frontend test -- src/lib/vip/presentation.test.ts`（1 file / 17 tests）、`pnpm --filter @miniapp/frontend test`（31 files / 193 tests）、`pnpm --filter @miniapp/frontend typecheck`、`pnpm --filter @miniapp/frontend lint`、`pnpm --filter @miniapp/frontend build`、`pnpm lint:imports`、`pnpm lint:legacy` 与 `git diff --check`。T7 保持 Doing，等待 PR 环境用账号 `7779109481` 复验两个页面；Production 未操作。

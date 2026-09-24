@@ -39,8 +39,12 @@ export function shouldShowVipEntryBadge(input: {
   );
 }
 
-export function vipEntryLabel(status: { active: boolean; remaining_days: number } | null): string {
+export function vipEntryLabel(
+  status: { active: boolean; remaining_days: number; valid_until?: string | null } | null,
+  now: Date = new Date()
+): string {
   if (!status?.active) return 'VIP';
+  if (isVipExpiringToday(status, now)) return 'VIP · 今日到期';
   return `VIP · 剩 ${status.remaining_days} 天`;
 }
 
@@ -87,9 +91,15 @@ export function vipExpiryImpactCopy(benefits: VipStatus['benefits']): VipExpiryI
 
 export function vipExpiryMembershipDetail(
   status: Pick<VipStatus, 'active' | 'remaining_days' | 'last_plan_id' | 'valid_until'>,
-  item: Pick<NotificationItem, 'metadata'>
+  item: Pick<NotificationItem, 'metadata'>,
+  now: Date = new Date()
 ): string {
   const fallback = vipMembershipSummary(status).detail;
+  if (status.active && status.valid_until && isVipExpiringToday(status, now)) {
+    const currentExpiry = formatShanghaiExpiry(new Date(status.valid_until));
+    return currentExpiry ? `今日到期（${currentExpiry.date} ${currentExpiry.time}）` : fallback;
+  }
+
   const observedValidUntil = item.metadata?.observed_valid_until;
   if (!status.active || !status.valid_until || !observedValidUntil) return fallback;
   const currentAt = new Date(status.valid_until);
@@ -113,22 +123,87 @@ export function vipExpiryMembershipDetail(
   return fallback;
 }
 
+export function vipExpiryDisplayWindow(
+  status: Pick<VipStatus, 'active' | 'valid_until'> | null,
+  item: Pick<NotificationItem, 'metadata'>,
+  now: Date = new Date()
+): 'expiring_soon' | 'expires_today' | null {
+  if (status?.active && isVipExpiringToday(status, now)) return 'expires_today';
+  return item.metadata?.reminder_window ?? null;
+}
+
+function isVipExpiringToday(
+  status: { active: boolean; valid_until?: string | null },
+  now: Date
+): boolean {
+  if (!status.active || !status.valid_until) return false;
+  const expiry = new Date(status.valid_until);
+  if (!Number.isFinite(expiry.getTime()) || expiry.getTime() <= now.getTime()) return false;
+
+  const expiryParts = shanghaiDateTimeParts(expiry);
+  const nowParts = shanghaiDateTimeParts(now);
+  if (!expiryParts || !nowParts) return false;
+
+  // 产品口径把次日 00:00 视为当日 24:00，因此归入前一个上海日历日。
+  const effectiveExpiry = isExactMidnight(expiry, expiryParts)
+    ? shanghaiDateTimeParts(new Date(expiry.getTime() - 1))
+    : expiryParts;
+  return effectiveExpiry?.dateKey === nowParts.dateKey;
+}
+
 function formatShanghaiExpiry(value: Date): { date: string; time: string } | null {
+  const parts = shanghaiDateTimeParts(value);
+  if (!parts) return null;
+  if (isExactMidnight(value, parts)) {
+    const previousDay = shanghaiDateTimeParts(new Date(value.getTime() - 1));
+    return previousDay ? { date: previousDay.shortDate, time: '24:00' } : null;
+  }
+  return { date: parts.shortDate, time: `${parts.hour}:${parts.minute}` };
+}
+
+interface ShanghaiDateTimeParts {
+  dateKey: string;
+  shortDate: string;
+  hour: string;
+  minute: string;
+  second: string;
+}
+
+function shanghaiDateTimeParts(value: Date): ShanghaiDateTimeParts | null {
   const parts = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',
+    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     hourCycle: 'h23',
   }).formatToParts(value);
   const values = new Map(parts.map((part) => [part.type, part.value]));
+  const year = values.get('year');
   const month = values.get('month');
   const day = values.get('day');
   const hour = values.get('hour');
   const minute = values.get('minute');
-  if (!month || !day || !hour || !minute) return null;
-  return { date: `${month}-${day}`, time: `${hour}:${minute}` };
+  const second = values.get('second');
+  if (!year || !month || !day || !hour || !minute || !second) return null;
+  return {
+    dateKey: `${year}-${month}-${day}`,
+    shortDate: `${month}-${day}`,
+    hour,
+    minute,
+    second,
+  };
+}
+
+function isExactMidnight(value: Date, parts: ShanghaiDateTimeParts): boolean {
+  return (
+    parts.hour === '00' &&
+    parts.minute === '00' &&
+    parts.second === '00' &&
+    value.getUTCMilliseconds() === 0
+  );
 }
 
 export interface TierQuoteView {

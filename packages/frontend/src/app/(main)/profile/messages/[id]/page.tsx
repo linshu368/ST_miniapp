@@ -13,6 +13,7 @@ import { formatMessageTime } from '@/lib/utils/notifications';
 import {
   supportsVipRenewal,
   vipExpiryImpactCopy,
+  vipExpiryDisplayWindow,
   vipExpiryMembershipDetail,
   vipMembershipSummary,
   vipPlanTitle,
@@ -30,6 +31,7 @@ export default function NotificationDetailPage() {
   const showRenew = notification ? supportsVipRenewal(notification) : false;
   const impact = vipExpiryImpactCopy(vip.data?.benefits);
   const missing = isMissingNotification(detail.error);
+  const expiryWindow = notification ? vipExpiryDisplayWindow(vip.data ?? null, notification) : null;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background text-foreground">
@@ -71,7 +73,9 @@ export default function NotificationDetailPage() {
             <p className="text-[11px] font-semibold tracking-[0.16em] text-muted-foreground">
               {notification.scope === 'official' ? 'OFFICIAL NOTICE' : 'MESSAGE'}
             </p>
-            <h2 className="mt-2 text-lg font-black tracking-tight">{notification.title}</h2>
+            <h2 className="mt-2 text-lg font-black tracking-tight">
+              {expiryWindow === 'expires_today' ? 'VIP 今日到期' : notification.title}
+            </h2>
             <p className="mt-1 text-[12px] text-muted-foreground">
               <time dateTime={notification.published_at}>
                 {formatMessageTime(notification.published_at)}
@@ -103,7 +107,7 @@ export default function NotificationDetailPage() {
                 fallbackBody={notification.body}
                 checkin={impact.checkin}
                 discount={impact.discount}
-                window={notification.metadata?.reminder_window ?? null}
+                window={expiryWindow}
               />
             ) : (
               <p className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90">
