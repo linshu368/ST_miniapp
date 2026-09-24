@@ -7,6 +7,7 @@ import {
   checkoutButtonLabel,
   formatDiscountLabel,
   formatTierQuote,
+  formatTierVipNote,
   modelSwitchFeedback,
   orderBenefitLabel,
   publishedDiscountRate,
@@ -49,6 +50,33 @@ describe('discount and price display', () => {
       })?.summary
     ).toBe('当前价格 12 星尘/轮');
     expect(formatTierQuote({})).toBeNull();
+  });
+
+  it('adds the server quote to each tier without replacing its original description', () => {
+    expect(
+      formatTierVipNote({
+        key: 'light',
+        discount_rate: 0.95,
+        discounted_exact: 14.25,
+        payable_credits: 14,
+      })
+    ).toBe('免费优先，免费轮次不叠加 95折；付费轮次 VIP 95折 → 14.25，实扣 14 星尘/轮');
+    expect(
+      formatTierVipNote({
+        key: 'standard',
+        discount_rate: 0.95,
+        discounted_exact: 4.75,
+        payable_credits: 5,
+      })
+    ).toBe('VIP 95折 → 4.75，实扣 5 星尘/轮');
+    expect(
+      formatTierVipNote({
+        key: 'premium',
+        discount_rate: null,
+        discounted_exact: null,
+        payable_credits: 12,
+      })
+    ).toBeNull();
   });
 });
 

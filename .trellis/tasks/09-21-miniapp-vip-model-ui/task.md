@@ -315,3 +315,13 @@ remainingVipDisplayDays(validUntil, now): number
 - [x] TEST `vip_purchase_enabled` 开启并回读，Production 不变
 
 执行结果：新增 attempt 快照格式化并用于图片/语音成功与失败展示；下一次按钮仍读取 `next_billing`。VIP 详情和锁定弹窗改为动态权益/套餐数据，顶部胶囊增加绿色状态点。Frontend 31 files / 189 tests、typecheck、lint、build、`pnpm lint:imports`、`pnpm lint:legacy` 与 `git diff --check` 通过。TEST `zoqelpfhurwehlvypryl` 回读 `environment=test`，将 `vip_purchase_enabled` 从 `false/version 1` 条件更新为 `true/version 2`，再次回读为 true；周/月价格仍为 1399/2888 分。Production 未操作。T7 保持 Doing，等待本轮 PR 真机复验。
+
+### 2026-09-24 第三轮真机修正
+
+- [x] 图片成功态移除重复的“重新生成 · 免费体验”按钮，只保留本次 attempt 的免费说明和原“看看TA”入口
+- [x] VIP 详情权益卡边框与“VIP 会员”标题增加暗金流光，并支持 reduced motion 静态降级
+- [x] 充值页 VIP 区按 Demo 重排标题、套餐摘要、赠送标签和选中态；价格与权益继续读取接口
+- [x] 模型面板统一使用已发布 95 折：顶部改为“全部模型档位 95折已生效”，当前引擎显示折扣标识，每档保留原说明并追加服务端报价
+- [x] Frontend 测试、typecheck、lint、build、import/legacy guards 与 diff 检查通过
+
+执行结果：本轮仅修改 Frontend 展示与交互，没有改 Shared/Backend 契约、计费、支付、免费额度、数据库或环境开关。模型折扣率、计算值与最终实扣继续读取模型目录的服务端报价，未写死 88 折或示例金额。Frontend 31 files / 190 tests、typecheck、lint、build、`pnpm lint:imports`、`pnpm lint:legacy` 与 `git diff --check` 通过。T7 保持 Doing，等待 PR 环境真机复验流光观感、窄屏换行、图片入口和支付金额联动；Production 未操作。

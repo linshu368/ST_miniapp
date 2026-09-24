@@ -59,6 +59,27 @@ export interface TierQuoteView {
   payableLabel: string;
 }
 
+export function formatTierVipNote(
+  tier: Pick<
+    PublicModelCatalogTier,
+    'key' | 'discount_rate' | 'discounted_exact' | 'payable_credits'
+  >
+): string | null {
+  const rateLabel =
+    typeof tier.discount_rate === 'number' ? formatDiscountLabel(tier.discount_rate) : null;
+  const exact =
+    typeof tier.discounted_exact === 'number' ? formatServerNumber(tier.discounted_exact) : null;
+  const payable =
+    typeof tier.payable_credits === 'number' ? formatServerNumber(tier.payable_credits) : null;
+  if (!rateLabel || !exact || !payable) return null;
+
+  const price = exact === payable ? `${payable} 星尘/轮` : `${exact}，实扣 ${payable} 星尘/轮`;
+  const paidNote = `VIP ${rateLabel} → ${price}`;
+  return tier.key === 'light'
+    ? `免费优先，免费轮次不叠加 ${rateLabel}；付费轮次 ${paidNote}`
+    : paidNote;
+}
+
 /** 只拼接目录里已经算好的原价、折扣、计算值和实扣，不自己乘折扣。 */
 export function formatTierQuote(
   tier: Pick<

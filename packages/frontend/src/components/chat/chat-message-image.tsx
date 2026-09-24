@@ -145,14 +145,11 @@ export function ChatMessageImageFooter({
   // 非最后一条消息没有图片能力，但仍须把同一操作行里的语音/重生成渲染出来。
   if (!image) return children ? children(null) : null;
 
-  const openDefaultFlow = async (
-    entrySource: 'default' | 'regenerate_ready' = 'default',
-    nextTier: ImageGenerationTier = 'basic'
-  ) => {
+  const openDefaultFlow = async (nextTier: ImageGenerationTier = 'basic') => {
     if (telemetry) {
       captureImageEntrySelected({
         context: telemetry,
-        entrySource,
+        entrySource: 'default',
         latestStatus: latest?.status,
         hasReadyImage: Boolean(ready),
       });
@@ -351,7 +348,7 @@ export function ChatMessageImageFooter({
         onClick={() =>
           latest?.status === 'failed' || latest?.status === 'failed_unknown'
             ? openRetryFlow()
-            : void openDefaultFlow('default', 'basic')
+            : void openDefaultFlow('basic')
         }
         className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
       >
@@ -361,7 +358,7 @@ export function ChatMessageImageFooter({
       {image.config && advancedEntry !== 'hidden' ? (
         <button
           type="button"
-          onClick={() => void openDefaultFlow('default', 'advanced')}
+          onClick={() => void openDefaultFlow('advanced')}
           className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
         >
           {advancedEntry === 'vip_locked' ? (
@@ -414,20 +411,6 @@ export function ChatMessageImageFooter({
               ready.tier !== 'advanced'
             )}
           </p>
-          <button
-            type="button"
-            onClick={() => void openDefaultFlow('regenerate_ready', ready.tier)}
-            className="flex items-center gap-1.5 text-primary"
-          >
-            <Eye className="size-3.5" aria-hidden />
-            重新生成 ·{' '}
-            {formatMediaBillingPreview(
-              image.config?.tiers[ready.tier].next_billing,
-              image.billingRefreshing,
-              image.billingError,
-              ready.tier !== 'advanced'
-            )}
-          </button>
           <p className="border-l border-border pl-2 text-muted-foreground">
             已按你确认的描述生成，再点一次「看看TA」可以换一张。
           </p>
@@ -524,9 +507,7 @@ export function ChatMessageImageFooter({
                 </SheetDescription>
                 <button
                   type="button"
-                  onClick={() =>
-                    prompt.trim() ? void submit() : void openDefaultFlow('default', tier)
-                  }
+                  onClick={() => (prompt.trim() ? void submit() : void openDefaultFlow(tier))}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
                 >
                   <RefreshCw className="size-4" aria-hidden />

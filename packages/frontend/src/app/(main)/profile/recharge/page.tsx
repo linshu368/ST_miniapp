@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Gem,
   History,
+  Crown,
   Receipt,
   ShieldCheck,
   Sparkles,
@@ -55,6 +56,7 @@ import { paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import {
   checkoutButtonLabel,
+  formatDiscountLabel,
   resolveCheckoutSelection,
   selectionKey,
 } from '@/lib/vip/presentation';
@@ -107,6 +109,8 @@ function RechargePageContent() {
   const plans = data?.plans ?? [];
   const vipPlans = data?.vip_plans ?? [];
   const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
+  const vipBenefits = vipStatus.data?.benefits;
+  const discountLabel = formatDiscountLabel(vipBenefits?.text_discount_rate ?? Number.NaN);
   const paymentPromptConfig =
     data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
   const showInsufficientCreditsNotice =
@@ -283,12 +287,20 @@ function RechargePageContent() {
               ))}
               {vipPlans.length > 0 ? (
                 <div role="radiogroup" aria-label="VIP 套餐" className="mt-1 space-y-3">
-                  <p className="px-1 text-[12px] font-bold text-primary">VIP 会员</p>
+                  <div className="flex items-center gap-2 px-1 text-[12px] font-bold text-primary">
+                    <Crown className="h-3.5 w-3.5" aria-hidden />
+                    <span>VIP 会员</span>
+                    <span className="h-px flex-1 bg-gradient-to-r from-primary/55 to-transparent" />
+                  </div>
                   {vipPlans.map((plan) => (
                     <VipPlanCard
                       key={plan.id}
                       plan={plan}
                       selected={selectionKey('vip', plan.id) === selectedKey}
+                      discountLabel={discountLabel}
+                      checkinBaseCredits={vipBenefits?.checkin_base_credits}
+                      checkinVipCredits={vipBenefits?.checkin_vip_credits}
+                      variant="recharge"
                       onSelect={handleSelectVip}
                     />
                   ))}

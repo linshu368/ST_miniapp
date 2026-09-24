@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils';
 import { formatYuanShort } from '@/lib/utils/payment';
 import {
   billingFailureAction,
-  formatTierQuote,
+  formatTierVipNote,
   MAIN_WALLET_NOTICE,
   modelSwitchFeedback,
   publishedDiscountRate,
@@ -153,8 +153,8 @@ export function ChatModelSwitcher({
     <div className="space-y-4">
       {data.vip_status?.active ? (
         <p className="rounded-2xl border border-primary/30 bg-primary/10 px-3 py-2 text-[12px] leading-relaxed text-primary">
-          VIP 有效期剩余 {data.vip_status.remaining_days} 天
-          {discountLabel ? ` · 文本折扣 ${discountLabel} 已生效` : ''}
+          ♛ VIP 有效期剩余 {data.vip_status.remaining_days} 天
+          {discountLabel ? ` · 全部模型档位 ${discountLabel}已生效` : ''}
         </p>
       ) : null}
       {freeRoundActive ? (
@@ -178,6 +178,11 @@ export function ChatModelSwitcher({
           </div>
           {isFetching ? (
             <span className="shrink-0 text-[10px] text-muted-foreground">同步中</span>
+          ) : null}
+          {!isFetching && data.vip_status?.active && discountLabel ? (
+            <span className="shrink-0 rounded-full border border-success/40 bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
+              {discountLabel}
+            </span>
           ) : null}
         </div>
       </div>
@@ -215,6 +220,7 @@ export function ChatModelSwitcher({
             collapsed={collapsed.has(tier.key)}
             selectedId={selectedId}
             selecting={selectModel.isPending}
+            vipActive={data.vip_status?.active === true}
             onToggle={() =>
               setCollapsed((current) => {
                 const next = new Set(current);
@@ -286,6 +292,7 @@ function TierSection({
   collapsed,
   selectedId,
   selecting,
+  vipActive,
   onToggle,
   onSelect,
 }: {
@@ -293,9 +300,12 @@ function TierSection({
   collapsed: boolean;
   selectedId: string;
   selecting: boolean;
+  vipActive: boolean;
   onToggle: () => void;
   onSelect: (modelId: string) => void;
 }) {
+  const vipNote = vipActive ? formatTierVipNote(tier) : null;
+
   return (
     <section className="overflow-hidden rounded-2xl border border-border bg-card">
       <button type="button" onClick={onToggle} className="flex w-full items-center gap-2 px-4 py-3">
@@ -307,8 +317,9 @@ function TierSection({
           >
             {tier.label}
           </span>
-          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-primary/90">
-            {formatTierQuote(tier)?.summary ?? tier.cost_hint}
+          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug">
+            <span className="block text-foreground/80">{tier.cost_hint}</span>
+            {vipNote ? <span className="mt-1 block text-success">{vipNote}</span> : null}
           </span>
           {tier.locked ? <Lock className="size-3.5 shrink-0 text-primary" aria-hidden /> : null}
         </span>
