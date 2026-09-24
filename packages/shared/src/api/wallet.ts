@@ -33,9 +33,9 @@ export const DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG: FreeQuotaExhaustedDialo
 // ==== GET /api/wallet/balance ====
 export interface GetWalletBalanceData {
   credits: number;
-  /** 充值钱包 */
+  /** 充值钱包；兼容历史 NUMERIC(14,1) 余额 */
   main_credits: number;
-  /** 专项星尘钱包 */
+  /** 专项星尘钱包；兼容历史 NUMERIC(14,1) 余额 */
   bonus_credits: number;
   /** 展示用合计，必须等于 main_credits + bonus_credits */
   total_credits: number;
@@ -104,6 +104,7 @@ export type WalletContractResult<T, C extends string = WalletSplitErrorCode> =
   | { ok: false; code: C; message: string };
 
 const nonnegativeInteger = z.number().int().nonnegative();
+const WALLET_CREDIT_SCALE = 10;
 
 export const WalletAmountSplitSchema = z
   .object({
@@ -156,13 +157,66 @@ export function createWalletAmountSplit(
   };
 }
 
+function toWalletCreditUnits(value: number): number | null {
+  if (!Number.isFinite(value) || value < 0) return null;
+  const units = Math.round(value * WALLET_CREDIT_SCALE);
+  if (!Number.isSafeInteger(units)) return null;
+  return Math.abs(value - units / WALLET_CREDIT_SCALE) < Number.EPSILON * Math.max(1, value)
+    ? units
+    : null;
+}
+
+/**
+ * 校验并汇总数据库钱包余额。历史计费允许 0.1 星尘精度，不能复用新计费的整数拆分约束。
+ */
+export function createWalletBalanceSplit(
+  mainCredits: number,
+  bonusCredits: number,
+  totalCredits?: number
+): WalletContractResult<WalletAmountSplit> {
+  const mainUnits = toWalletCreditUnits(mainCredits);
+  const bonusUnits = toWalletCreditUnits(bonusCredits);
+  if (mainUnits === null || bonusUnits === null) {
+    return {
+      ok: false,
+      code: 'INVALID_WALLET_SPLIT',
+      message: 'wallet balances must be non-negative values with at most one decimal place',
+    };
+  }
+
+  const totalUnits = mainUnits + bonusUnits;
+  if (!Number.isSafeInteger(totalUnits)) {
+    return {
+      ok: false,
+      code: 'INVALID_WALLET_SPLIT',
+      message: 'wallet balance total exceeds the safe numeric range',
+    };
+  }
+  if (totalCredits !== undefined && toWalletCreditUnits(totalCredits) !== totalUnits) {
+    return {
+      ok: false,
+      code: 'INVALID_WALLET_SPLIT',
+      message: 'main_credits + bonus_credits must equal total_credits',
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      main_credits: mainUnits / WALLET_CREDIT_SCALE,
+      bonus_credits: bonusUnits / WALLET_CREDIT_SCALE,
+      total_credits: totalUnits / WALLET_CREDIT_SCALE,
+    },
+  };
+}
+
 export function isConsistentWalletBalance(
   balance: Pick<
     GetWalletBalanceData,
     'credits' | 'main_credits' | 'bonus_credits' | 'total_credits'
   >
 ): boolean {
-  const split = createWalletAmountSplit(
+  const split = createWalletBalanceSplit(
     balance.main_credits,
     balance.bonus_credits,
     balance.total_credits

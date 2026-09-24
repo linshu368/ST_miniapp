@@ -18,6 +18,7 @@ import {
   assertWalletPolicyForCapability,
   canonicalVipPlanTerms,
   createWalletAmountSplit,
+  createWalletBalanceSplit,
   isConsistentWalletBalance,
   isFeatureFreeTrialExhausted,
   isVipActiveAt,
@@ -363,6 +364,33 @@ describe('wallet policy and splits', () => {
         total_credits: 30,
       })
     ).toBe(false);
+  });
+
+  it('keeps legacy one-decimal wallet balances compatible without relaxing debit splits', () => {
+    expect(createWalletBalanceSplit(1786, 13719.6, 15505.6)).toEqual({
+      ok: true,
+      value: { main_credits: 1786, bonus_credits: 13719.6, total_credits: 15505.6 },
+    });
+    expect(createWalletBalanceSplit(0.1, 0.2)).toMatchObject({
+      ok: true,
+      value: { total_credits: 0.3 },
+    });
+    expect(createWalletBalanceSplit(1, 0.01)).toMatchObject({
+      ok: false,
+      code: 'INVALID_WALLET_SPLIT',
+    });
+    expect(createWalletAmountSplit(1, 0.5)).toMatchObject({
+      ok: false,
+      code: 'INVALID_WALLET_SPLIT',
+    });
+    expect(
+      isConsistentWalletBalance({
+        credits: 15505.6,
+        main_credits: 1786,
+        bonus_credits: 13719.6,
+        total_credits: 15505.6,
+      })
+    ).toBe(true);
   });
 
   it('allocates light-text combination debit atomically and refunds the same split', () => {

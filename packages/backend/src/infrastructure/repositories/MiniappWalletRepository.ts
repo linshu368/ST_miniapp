@@ -1,7 +1,7 @@
 import { getDomainDb } from '../../lib/supabase.js';
 import { createLogger } from '../../lib/logger.js';
 import {
-  createWalletAmountSplit,
+  createWalletBalanceSplit,
   type GetWalletBalanceData,
   type VipCheckinBonusConfig,
   type WalletSpendingRecord,
@@ -691,7 +691,7 @@ export class MiniappWalletRepository {
 export function toWalletBalance(row: MiniappWalletRow): GetWalletBalanceData {
   const mainCredits = toNumber(row.main_credits);
   const bonusCredits = toNumber(row.bonus_credits);
-  const split = createWalletAmountSplit(mainCredits, bonusCredits);
+  const split = createWalletBalanceSplit(mainCredits, bonusCredits);
   if (!split.ok) {
     throw new Error('钱包余额拆分无效');
   }
