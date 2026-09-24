@@ -4,7 +4,9 @@ import {
   formatAmountCny,
   generateMiniappOrderId,
   ORDER_EXPIRE_MS,
+  resolvePaymentProduct,
 } from '../domain/rechargeRules.js';
+import { readVipStrategy } from '../../../platform/vip-strategy.js';
 import { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
 import {
   MiniappPaymentOrderRepository,
@@ -32,10 +34,12 @@ export class RechargeUseCase {
       throw new Error('支付功能未开启');
     }
 
-    const plan = await findPaymentPlan(input.planId);
-    if (!plan) {
-      throw new Error('支付套餐不存在');
-    }
+    const strategy = await readVipStrategy();
+    const product = await resolvePaymentProduct(input.planId, {
+      vipPurchaseEnabled: strategy.purchaseEnabled,
+      plans: strategy.plans,
+      findPlan: findPaymentPlan,
+    });
 
     const now = Date.now();
     const orderId = generateMiniappOrderId(input.userId);
@@ -43,19 +47,23 @@ export class RechargeUseCase {
       id: orderId,
       user_id: input.userId,
       payment_type: input.paymentType,
-      amount_cents: plan.price_cents,
-      credits_amount: plan.credits_amount,
-      bonus_credits: plan.bonus_credits,
+      amount_cents: product.amount_cents,
+      credits_amount: product.credits_amount,
+      bonus_credits: product.bonus_credits,
       expires_at: new Date(now + ORDER_EXPIRE_MS).toISOString(),
+      product_type: product.product_type,
+      product_id: product.product_id,
+      vip_duration_days: product.vip_duration_days,
+      vip_bonus_credits: product.vip_bonus_credits,
     });
 
     const result = await this.gateway.createPayment({
       type: input.paymentType,
       outTradeNo: orderId,
-      amount: formatAmountCny(plan.price_cents),
+      amount: formatAmountCny(product.amount_cents),
       userId: input.userId,
-      // 子千易 `name`。原「星尘充值 *」疑似命中支付宝禁售词，改为文档示例做验证。
-      productName: '星尘',
+      // 网关商品名由服务端产品快照决定，避免前端改名影响渠道受理或历史订单语义。
+      productName: product.gateway_product_name,
       clientIp: input.clientIp,
     });
 

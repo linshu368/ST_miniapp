@@ -11,19 +11,20 @@
 
 ## App Router 页面
 
-| 路由                                     | 文件与职责                                                     |
-| ---------------------------------------- | -------------------------------------------------------------- |
-| `/`                                      | `(main)/page.tsx`，大厅；角色 gallery                          |
-| `/chats`                                 | `(main)/chats/page.tsx`，历史会话/收藏 tab                     |
-| `/create`                                | 创作入口；`/create/wish` 提交和跟踪许愿                        |
-| `/profile`                               | 我的页、余额/签到、设置、社区入口                              |
-| `/profile/recharge`                      | 套餐选择和下单；`/[orderId]` 支付等待/轮询/回跳                |
-| `/profile/orders` / `/profile/spending`  | 订单分页与消费流水                                             |
-| `/profile/messages` / `/profile/support` | 通知中心与站内客服                                             |
-| `/profile/invite`                        | 邀请中心、统计与分享                                           |
-| `/chat/[characterId]`                    | 自研聊天主页面；会话选择、历史分页、SSE 发送/重生成、工具/语音 |
-| `/chat/[characterId]/voice/[messageId]`  | 指定消息的自定义语音二级页                                     |
-| `/api/lobby-characters`                  | Next route handler；大厅角色代理/缓存边界，带就近测试          |
+| 路由                                                                | 文件与职责                                                     |
+| ------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `/`                                                                 | `(main)/page.tsx`，大厅；角色 gallery                          |
+| `/chats`                                                            | `(main)/chats/page.tsx`，历史会话/收藏 tab                     |
+| `/create`                                                           | 创作入口；`/create/wish` 提交和跟踪许愿                        |
+| `/profile`                                                          | 我的页、余额/签到、VIP 入口、设置、社区入口                    |
+| `/vip`                                                              | VIP 权益、周/月套餐与开通或续费                                |
+| `/profile/recharge`                                                 | 星尘与 VIP 套餐互斥选择和下单；`/[orderId]` 支付等待/轮询/回跳 |
+| `/profile/orders` / `/profile/spending`                             | 订单分页与消费流水                                             |
+| `/profile/messages` / `/profile/messages/[id]` / `/profile/support` | 通知列表、单条详情与站内客服                                   |
+| `/profile/invite`                                                   | 邀请中心、统计与分享                                           |
+| `/chat/[characterId]`                                               | 自研聊天主页面；会话选择、历史分页、SSE 发送/重生成、工具/语音 |
+| `/chat/[characterId]/voice/[messageId]`                             | 指定消息的自定义语音二级页                                     |
+| `/api/lobby-characters`                                             | Next route handler；大厅角色代理/缓存边界，带就近测试          |
 
 `(main)/layout.tsx` 负责主区底部导航可见性；聊天页在主布局外，避免底栏干扰沉浸交互。页面组件负责组装和路由状态，不复制 API client、数据转换或通用 UI。
 

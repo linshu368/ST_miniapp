@@ -22,6 +22,7 @@ import {
   type ModelBillingContext,
 } from '../../platform/model-tiers.js';
 import { getProviderPreferencesForModel } from '../../platform/provider-routing.js';
+import { readVipStrategy } from '../../platform/vip-strategy.js';
 import type { OpenRouterProviderPreferences } from '@miniapp/shared';
 import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
@@ -92,6 +93,7 @@ export async function execute(
   const chargeId = randomUUID();
   const pricing = await getPricingConfig();
   const billing = await getModelBillingContext(request.model.openRouterModelId);
+  const vipStrategy = await readVipStrategy();
 
   const finish = (result: GenerationResult): GenerationResult => {
     hooks?.onDone?.(result);
@@ -121,13 +123,21 @@ export async function execute(
     billing,
     isFreeRound: reservation.isFreeRound,
     pricing,
+    entitlement: request.model.entitlement,
+    discountRate: vipStrategy.discountRate,
+    discountConfigVersion: vipStrategy.discountVersion,
     log,
   });
 
   if (plan) {
+    if (plan.snapshot.requires_vip && !plan.snapshot.vip_active) {
+      await reservation.finalize(false);
+      return finish(failed({ denial: 'vip_required' }));
+    }
     const precheck = await checkWalletBalance({
       userId: request.userId,
       requiredAmount: plan.fixedDeduction.amount,
+      walletPolicy: plan.snapshot.wallet_policy,
       openRouterModelId: billing.openRouterModelId,
       log,
     });

@@ -1,0 +1,44 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"VIP 支付、钱包、模型、通知与媒体免费额度跨 UI/shared/backend/database 全链路。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"必须扩展现有支付结算、runtime-config、generation billing 与 React Query hooks，禁止平行实现。"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 入口：React Query、shared DTO、不可谈判规则。"}
+{"file":".trellis/spec/frontend/app/architecture-routes-and-files.md","reason":"VIP/充值/聊天/消息页的路由与文件职责。"}
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"我的页、VIP、充值、聊天胶囊与消息详情的 UI 约束。"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"服务器数据必须走 src/lib/api React Query；支付回流与状态职责。"}
+{"file":".trellis/spec/frontend/app/modules/business/wallet-payment.md","reason":"现有充值、外跳支付、轮询与回跳语义。"}
+{"file":".trellis/spec/frontend/app/modules/business/conversation-ui.md","reason":"聊天顶栏、模型切换、语音/图片入口现状。"}
+{"file":".trellis/spec/frontend/app/modules/business/engagement-support.md","reason":"消息中心列表/已读现状，需改为单条已读+详情。"}
+{"file":".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md","reason":"Provider、Telegram runtime 与公开浏览器配置边界。"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend 入口：契约先行、runtime-config、generation billing、@frontend-ready。"}
+{"file":".trellis/spec/backend/app/architecture-and-files.md","reason":"features/repositories 边界，避免另建支付或计费体系。"}
+{"file":".trellis/spec/backend/app/routes-and-features.md","reason":"payment/wallet/models/generation/voice/image/notifications 调用链。"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"超时、幂等、并发、事务、补偿、日志与配置读取。"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"Railway Cron、支付对账脚本与 test 发布顺序。"}
+{"file":".trellis/spec/backend/app/modules/business/wallet-payment.md","reason":"四路支付结算与钱包现状，VIP 履约必须收敛到同一出口。"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"模型选择、LLM 计费快照与权限校验入口。"}
+{"file":".trellis/spec/backend/app/modules/business/voice-message.md","reason":"语音成功后结算边界，供父任务交付免费额度底座。"}
+{"file":".trellis/spec/backend/app/modules/business/engagement-support.md","reason":"通知与签到现状，到期提醒复用官方定向消息。"}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"runtime config、鉴权、敏感日志与数据库访问约束。"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"跨应用 DTO 必须先落 packages/shared/src/api。"}
+{"file":".trellis/spec/shared/contracts/api-contracts.md","reason":"兼容扩展字段、稳定错误码与 runtime schema。"}
+{"file":".trellis/spec/shared/contracts/architecture-and-exports.md","reason":"根出口、browser-safe 与禁止泄露 DB 行类型。"}
+{"file":".trellis/spec/shared/contracts/testing-and-change-management.md","reason":"契约变更必须跑 shared test 与全仓 typecheck。"}
+{"file":".trellis/spec/shared/contracts/modules/business/wallet-payment-contracts.md","reason":"现有支付/钱包契约兼容扩展点。"}
+{"file":".trellis/spec/shared/contracts/modules/business/conversation-contracts.md","reason":"模型目录与生成契约兼容扩展点。"}
+{"file":".trellis/spec/shared/contracts/modules/business/engagement-support-contracts.md","reason":"通知/签到契约兼容扩展点。"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"唯一 migration 源、八域归属、test/production 不同构。"}
+{"file":".trellis/spec/database/supabase/schema-and-object-conventions.md","reason":"VIP/免费额度/退款对象八域判定与跨 schema 依赖。"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"单文件手工 migration、自检、回滚与 forward-fix。"}
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"新表 RLS、service_role grants 与 SECURITY DEFINER search_path。"}
+{"file":".trellis/spec/database/supabase/introspection-and-documentation.md","reason":"T0 只读采集门禁：确认 test 目标前不得连接，禁止读业务行。"}
+{"file":".trellis/spec/database/supabase/modules/business/billing-payment.md","reason":"现有钱包、支付订单与扣费函数事实。"}
+{"file":".trellis/spec/database/supabase/modules/business/conversation-storage.md","reason":"语音/图片 attempt 存储归属，子任务快照不得越权。"}
+{"file":".trellis/spec/database/supabase/modules/infrastructure/schema-security.md","reason":"RLS/grant 现状与跨 schema 函数安全约束。"}
+{"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/current-implementation-and-reuse.md","reason":"规划阶段复用/扩展/不复用结论与关键差异证据。"}
+{"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-environment-and-config-gate.md","reason":"T0 只读核验：test 目标未确认、签到配置差异、高级图片关闭、Railway/支付/Cron 入口与停止条件。"}
+{"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t0-test-db-collection.md","reason":"正式 test 只读结构采集：schema/函数/RLS/账本/签到40与图片关闭证据。"}
+{"file": ".trellis/tasks/09-21-miniapp-vip-model-ui/research/t2-reuse-and-db-primitives.md", "reason": "T2 复用核验、权限矩阵、migration 顺序与 test apply 门禁"}
+{"file": ".trellis/tasks/09-21-miniapp-vip-model-ui/research/t4-llm-billing-reuse.md", "reason": "T4 LLM 复用、快照、退款入口、迁移顺序与未 apply 门禁"}
+{"file":".trellis/spec/admin/app/index.md","reason":"Admin 入口规则、现有配置管理边界与验证命令。"}
+{"file":".trellis/spec/admin/app/modules/business/operations.md","reason":"复用 managed config 草稿、发布、版本、回滚和业务视图模式实现 VIP策略。"}
+{"file":".trellis/spec/admin/app/modules/infrastructure/admin-client-auth.md","reason":"VIP策略继续使用既有 Admin 鉴权与环境隔离，不新增直写 runtime_config 路径。"}
+{"file":".trellis/tasks/09-21-miniapp-vip-model-ui/research/t3a-vip-admin-strategy.md","reason":"已确认纳管范围、当前实现差异、forward-fix 与动态免费次数门禁。"}

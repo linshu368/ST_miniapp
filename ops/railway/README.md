@@ -94,6 +94,16 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
 | `stminiapp`                        | `ST_miniapp`：dev=`dev` / prod=`main` | 8080     | `/health`   | ✅ 绑 Railway 域名/自定义域名 | —   |
 | `stminiapp-payment-reconcile-cron` | 与 `stminiapp` 相同                   | —        | 关闭        | ❌ 不生成域名                 | —   |
 | `stminiapp-payment-cron`           | 与 `stminiapp` 相同                   | —        | 关闭        | ❌ 不生成域名                 | —   |
+| `stminiapp-vip-reminder-cron`      | dev=`dev` / prod=`main`               | —        | 关闭        | ❌ 不生成域名                 | —   |
+
+VIP 提醒 Cron 的启动命令固定为 `tsx src/scripts/send-vip-expiry-reminders.ts --write`，在
+development（TEST）和 production 分别运行；是否真正写入仍由目标环境的
+`vip_reminders_enabled` 开关控制，IaC 不负责打开该开关。
+PR 临时环境复制 development 后会立即删除该 Cron，避免多个调度器扫描同一个 TEST 库。
+部署 Cron 本身不会绕过业务开关；首次开启 `vip_reminders_enabled` 前须先在 TEST dry-run，
+确认候选规模符合预期。Production 首次启用同样先保持开关关闭、部署 Cron，再用 Production
+环境执行一次 `--dry-run`，确认候选规模后才打开开关。
+修改 `.railway/railway.ts` 后仍要 `railway config plan` / `apply` 才会出现在控制台。
 
 创建步骤：
 
@@ -197,9 +207,9 @@ Railway 控制台手动创建并逐项对齐：
 
 ## 自动部署流程
 
-1. development 的三个服务都连接 `dev`，production 的三个服务都连接 `main`。
-2. 对应分支 push 后，Railway 分别构建 API、快速对账 Worker 与过期 Cron；三者以同一 Git
-   commit 为发布基准，不需要人工同步 GHCR tag。
-3. 三个服务是独立 deployment，短时间内可能版本不一致；发布后需确认三边最新成功
+1. development 与 production 的四个服务分别连接 `dev` 与 `main`。
+2. 对应分支 push 后，Railway 分别构建 API、快速对账 Worker、支付过期 Cron 与 VIP 提醒
+   Cron；四者以同一 Git commit 为发布基准，不需要人工同步 GHCR tag。
+3. 四个服务是独立 deployment，短时间内可能版本不一致；发布后需确认四边最新成功
    deployment 的 commit SHA 相同。
 4. 回滚时在 Git 分支回滚对应 commit，三个服务会再次自动部署同一代码版本。

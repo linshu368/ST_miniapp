@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, X } from 'lucide-react';
 import type { ChatMessage } from '@miniapp/shared';
-import { useQueryClient } from '@tanstack/react-query';
 
 import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatMessageImageFooter } from '@/components/chat/chat-message-image';
 import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
+import { formatMediaBillingPreview } from '@/components/chat/media-billing-label';
 import { getChatReplyPresentation } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
@@ -29,7 +29,7 @@ import {
   useSessionImagesQuery,
 } from '@/lib/api/images';
 import { useModelCatalogQuery } from '@/lib/api/models';
-import { paymentKeys } from '@/lib/api/payment';
+import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import {
   toVoiceMap,
@@ -45,7 +45,6 @@ import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const router = useRouter();
-  const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState('');
   const [earlier, setEarlier] = useState<ChatMessage[]>([]);
@@ -57,6 +56,14 @@ export default function SelfHostedChatPage() {
   const { activeSessionId, returnTo } = session;
   const modelCatalogQuery = useModelCatalogQuery();
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
+  const selectedModelUsesFreeQuota = useMemo(() => {
+    const catalog = modelCatalogQuery.data?.catalog;
+    if (!catalog || !selectedModelId) return null;
+    return (
+      catalog.tiers.flatMap((tier) => tier.models).find((model) => model.id === selectedModelId)
+        ?.is_free ?? null
+    );
+  }, [modelCatalogQuery.data?.catalog, selectedModelId]);
 
   useChatReplayBinding({
     characterId,
@@ -97,6 +104,7 @@ export default function SelfHostedChatPage() {
     characterName: character?.name,
     sessionId: activeSessionId,
     selectedModelId,
+    selectedModelUsesFreeQuota,
     persistedMessages: persisted,
     returnTo,
     onSessionGone: session.abandonSession,
@@ -144,21 +152,15 @@ export default function SelfHostedChatPage() {
     [sessionImagesQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
-  const voicePriceLabel = voiceConfigQuery.data?.billing?.enabled
-    ? voiceConfigQuery.data?.billing?.price_label
-    : '';
-
-  useEffect(() => {
-    const charged = sessionVoiceQuery.data?.audio.some((item) => item.credits_charged > 0);
-    if (charged) void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-  }, [queryClient, sessionVoiceQuery.data]);
-
-  useEffect(() => {
-    const charged = sessionImagesQuery.data?.images.some(
-      (item) => (item.current?.credits_charged ?? 0) > 0
-    );
-    if (charged) void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-  }, [queryClient, sessionImagesQuery.data]);
+  const voicePriceLabel = formatMediaBillingPreview(
+    voiceConfigQuery.data?.next_billing,
+    voiceConfigQuery.isFetching || generateVoice.isPending,
+    voiceConfigQuery.isError
+  );
+  const freeQuota = useCharacterFreeQuotaQuery(characterId);
+  const freeRoundActive = Boolean(
+    freeQuota.data && !freeQuota.data.exhausted && selectedModelUsesFreeQuota
+  );
 
   /**
    * 哪些消息能生成语音。turn_index > 0 排掉开场白，status 排掉正在写和没写完的——
@@ -232,6 +234,9 @@ export default function SelfHostedChatPage() {
         characterId={characterId}
         title={title}
         onOpenSessions={() => setSessionsOpen(true)}
+        returnTo={returnTo}
+        generating={generating}
+        freeRoundActive={freeRoundActive}
       />
 
       <ChatMessageList
@@ -262,8 +267,13 @@ export default function SelfHostedChatPage() {
                       image: messageImage,
                       canGenerate: canCreateImage,
                       config: imageConfigQuery.data,
-                      describe: async () => {
-                        const result = await describeImage.mutateAsync(message.id);
+                      billingRefreshing: imageConfigQuery.isFetching || createImage.isPending,
+                      billingError: imageConfigQuery.isError,
+                      describe: async (tier) => {
+                        const result = await describeImage.mutateAsync({
+                          messageId: message.id,
+                          body: { tier },
+                        });
                         return { draftId: result.draft_id, prompt: result.prompt_cn };
                       },
                       create: async (body) => {
@@ -306,6 +316,8 @@ export default function SelfHostedChatPage() {
                               })
                             : null,
                           priceLabel: voicePriceLabel,
+                          freeTrialLimit:
+                            voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
                           hints: {
                             overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
                             draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
@@ -359,7 +371,6 @@ export default function SelfHostedChatPage() {
         disabled={!session.ready || serverBusy}
         leftSlot={
           <ChatToolsSheet
-            returnTo={returnTo}
             onCreateConversation={session.openNewConversation}
             creating={session.createConversation.isPending}
           />

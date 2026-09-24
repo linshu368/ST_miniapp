@@ -13,9 +13,10 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { ConversationStreamError, streamConversationTurn } from '@/lib/api/conversation-stream';
 import { conversationKeys } from '@/lib/api/conversations';
-import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
+import { freeQuotaKeys, useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { paymentKeys } from '@/lib/api/payment';
 import { formatFreeQuotaExhaustedNotice } from '@/lib/free-quota-dialog';
+import { createLogger } from '@/lib/logger';
 import { mergeStreamingMessages, type StreamingTurn } from '@/lib/merge-streaming-messages';
 import {
   isInsufficientCreditsError,
@@ -23,14 +24,18 @@ import {
   requiredCreditsFromError,
 } from '@/lib/recharge-redirect';
 import { getReplayLifecycle } from '@/lib/telemetry';
+import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 
 const REPLY_STALLED_NOTICE_MS = 15_000;
+const FREE_QUOTA_REFRESH_DELAYS_MS = [0, 300, 900] as const;
+const log = createLogger('conversation-turn');
 
 interface UseConversationTurnOptions {
   characterId: string;
   characterName?: string | null;
   sessionId: string | null;
   selectedModelId: string | null;
+  selectedModelUsesFreeQuota?: boolean | null;
   persistedMessages: ChatMessage[];
   returnTo: string;
   onSessionGone: () => void;
@@ -182,6 +187,7 @@ export function useConversationTurn({
   characterName,
   sessionId,
   selectedModelId,
+  selectedModelUsesFreeQuota,
   persistedMessages,
   returnTo,
   onSessionGone,
@@ -194,6 +200,7 @@ export function useConversationTurn({
   const refetchFreeQuota = freeQuotaQuery.refetch;
 
   const [streaming, setStreaming] = useState<StreamingTurn | null>(null);
+  const [quotaRefreshing, setQuotaRefreshing] = useState(false);
   const [replyStalled, setReplyStalled] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [freeQuotaExhaustedMessageId, setFreeQuotaExhaustedMessageId] = useState<string | null>(
@@ -216,6 +223,7 @@ export function useConversationTurn({
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(null);
+    setQuotaRefreshing(false);
     setStreamError(null);
     safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
   }, [sessionId]);
@@ -229,7 +237,7 @@ export function useConversationTurn({
   );
 
   const serverBusy = persistedMessages.some((message) => message.status === 'streaming');
-  const generating = streaming !== null;
+  const generating = streaming !== null || quotaRefreshing;
   const lastMessage = messages.at(-1);
   const replyProgressKey = streaming
     ? `local:${streaming.assistantMessageId ?? 'waiting'}:${streaming.text.length}`
@@ -271,19 +279,36 @@ export function useConversationTurn({
       assistantMessageId: string | null
     ): Promise<void> => {
       void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+      if (selectedModelUsesFreeQuota === false) return;
 
-      for (const delayMs of [0, 300, 900]) {
-        if (delayMs > 0) await new Promise((resolve) => window.setTimeout(resolve, delayMs));
-        const { data } = await refetchFreeQuota();
-        if (!data || !before) return;
-        if (before.used_rounds < data.quota_limit && data.used_rounds >= data.quota_limit) {
-          if (assistantMessageId) setFreeQuotaExhaustedMessageId(assistantMessageId);
-          return;
+      const freeQuotaKey = freeQuotaKeys.detail(characterId);
+
+      try {
+        for (const delayMs of FREE_QUOTA_REFRESH_DELAYS_MS) {
+          if (delayMs > 0) await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+          const { data } = await refetchFreeQuota();
+          if (!data) continue;
+
+          freeQuotaRef.current = data;
+          queryClient.setQueryData(freeQuotaKey, data);
+
+          if (!before) return;
+          if (before.used_rounds < data.quota_limit && data.used_rounds >= data.quota_limit) {
+            if (assistantMessageId) setFreeQuotaExhaustedMessageId(assistantMessageId);
+            return;
+          }
+          if (data.used_rounds > before.used_rounds || before.used_rounds >= before.quota_limit) {
+            return;
+          }
         }
-        if (data.used_rounds > before.used_rounds) return;
+
+        void queryClient.invalidateQueries({ queryKey: freeQuotaKey });
+      } catch (error) {
+        log.warn('free quota refresh failed after conversation turn', error);
+        void queryClient.invalidateQueries({ queryKey: freeQuotaKey });
       }
     },
-    [queryClient, refetchFreeQuota]
+    [characterId, queryClient, refetchFreeQuota, selectedModelUsesFreeQuota]
   );
 
   const handleTurnFailure = useCallback(
@@ -317,6 +342,22 @@ export function useConversationTurn({
       }
 
       switch (error.code) {
+        case 'VIP_REQUIRED':
+          router.push('/vip');
+          restoreDraft(input);
+          return;
+        case 'MAIN_CREDITS_INSUFFICIENT':
+          setStreamError(MAIN_WALLET_NOTICE);
+          restoreDraft(input);
+          return;
+        case 'TOTAL_CREDITS_INSUFFICIENT':
+          void redirectToRecharge(router, {
+            returnTo,
+            requiredCredits: requiredCreditsFromError(error),
+            triggerSource: 'chat_sse',
+          });
+          restoreDraft(input);
+          return;
         case 'session_not_found':
           onSessionGone();
           setStreamError('这段对话已不存在，已为你开启新的对话');
@@ -438,6 +479,7 @@ export function useConversationTurn({
 
         // 先等落库态回来再撤临时态，顺序反过来中间会闪一帧空白
         await queryClient.invalidateQueries({ queryKey: conversationKeys.detail(sessionId) });
+        setQuotaRefreshing(true);
         setStreaming(null);
         if (settledStatus && settledStatus !== 'complete') {
           captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
@@ -447,7 +489,7 @@ export function useConversationTurn({
         } else {
           captureTurnLifecycleEvent(sessionId, characterId, turnMeta, { type: 'completed' });
         }
-        void refreshQuotaAndBalance(quotaBefore, assistantMessageId);
+        await refreshQuotaAndBalance(quotaBefore, assistantMessageId);
       } catch (error) {
         const aborted = error instanceof Error && error.name === 'AbortError';
         if (!aborted) {
@@ -458,6 +500,7 @@ export function useConversationTurn({
         }
         await handleTurnFailure(error, input);
       } finally {
+        setQuotaRefreshing(false);
         safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
         if (abortRef.current === controller) abortRef.current = null;
       }

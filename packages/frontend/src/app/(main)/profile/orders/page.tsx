@@ -30,6 +30,7 @@ import {
   paymentTypeLabel,
 } from '@/lib/utils/payment';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import { isVipOrder, orderBenefitLabel } from '@/lib/vip/presentation';
 
 type TabKey = 'all' | 'completed' | 'pending' | 'expired';
 
@@ -216,7 +217,6 @@ function EmptyState({ tab }: { tab: TabKey }) {
 }
 
 function OrderRow({ order, onOpen }: { order: PaymentOrder; onOpen: () => void }) {
-  const total = order.credits_amount + order.bonus_credits;
   const { Icon, tone, badge } = statusVisual(order.status);
   return (
     <button
@@ -248,7 +248,7 @@ function OrderRow({ order, onOpen }: { order: PaymentOrder; onOpen: () => void }
             </span>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {paymentTypeLabel(order.payment_type)} · {formatNumber(total)} 星尘
+            {paymentTypeLabel(order.payment_type)} · {orderBenefitLabel(order)}
           </div>
           <div className="mt-0.5 text-[10px] text-muted-foreground/70 font-medium uppercase tracking-wider">
             {formatDateTime(order.created_at)}
@@ -328,19 +328,27 @@ function OrderDetail({ order, onClose }: { order: PaymentOrder; onClose: () => v
       </div>
 
       <div className="divide-y divide-border rounded-[20px] border border-border bg-card">
-        <DetailRow label="主积分" value={`${formatNumber(order.credits_amount)} 星尘`} />
-        {order.bonus_credits > 0 ? (
-          <DetailRow
-            label="赠送积分"
-            value={`+${formatNumber(order.bonus_credits)} 星尘`}
-            valueClass="text-rose"
-          />
-        ) : null}
-        <DetailRow
-          label="合计到账"
-          value={`${formatNumber(total)} 星尘`}
-          valueClass="font-bold text-primary"
-        />
+        {isVipOrder(order) ? (
+          <>
+            <DetailRow label="会员时长" value={orderBenefitLabel(order)} />
+          </>
+        ) : (
+          <>
+            <DetailRow label="主积分" value={`${formatNumber(order.credits_amount)} 星尘`} />
+            {order.bonus_credits > 0 ? (
+              <DetailRow
+                label="赠送积分"
+                value={`+${formatNumber(order.bonus_credits)} 星尘`}
+                valueClass="text-rose"
+              />
+            ) : null}
+            <DetailRow
+              label="合计到账"
+              value={`${formatNumber(total)} 星尘`}
+              valueClass="font-bold text-primary"
+            />
+          </>
+        )}
         <DetailRow label="创建时间" value={formatDateTime(order.created_at)} />
         {order.paid_at ? (
           <DetailRow label="支付时间" value={formatDateTime(order.paid_at)} />

@@ -1,8 +1,18 @@
+/**
+ * @Author: whc 952987912@qq.com
+ * @Date: 2026-09-23 14:57:53
+ * @LastEditors: whc 952987912@qq.com
+ * @LastEditTime: 2026-09-23 14:59:14
+ * @Description:
+ * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
+ */
 import { describe, expect, it } from 'vitest';
 import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
+  VIP_MEDIA_CONFIG_KEYS,
+  VIP_STRATEGY_CONFIG_KEYS,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
 } from './adminNavigation';
@@ -63,6 +73,32 @@ describe('admin navigation', () => {
     expect(resolveAdminMenuSelection('image_generation_config')).toEqual({
       view: 'image_generation_config',
     });
+  });
+
+  it('routes VIP strategy configs to one tab and hides them from the generic list', () => {
+    for (const key of VIP_STRATEGY_CONFIG_KEYS) {
+      expect(resolveAdminMenuSelection(configMenuKey(key))).toEqual({
+        view: 'vip_strategy',
+        configKey: key,
+      });
+      expect(sidebarManagedConfigKeys).not.toContain(key);
+    }
+    expect(resolveAdminMenuSelection('vip_strategy')).toEqual({ view: 'vip_strategy' });
+  });
+
+  it('routes VIP media configs to one grouped menu and hides duplicate entries', () => {
+    for (const key of VIP_MEDIA_CONFIG_KEYS) {
+      expect(resolveAdminMenuSelection(configMenuKey(key))).toEqual({
+        view: 'vip_media_config',
+        configKey: key,
+      });
+      expect(sidebarManagedConfigKeys).not.toContain(key);
+    }
+    expect(resolveAdminMenuSelection('vip_media_config')).toEqual({
+      view: 'vip_media_config',
+    });
+    expect(VIP_MEDIA_CONFIG_KEYS).not.toContain('media_feature_free_trial_limit');
+    expect(sidebarManagedConfigKeys).not.toContain('media_feature_free_trial_limit');
   });
 
   it('keeps independent top-level pages separate', () => {

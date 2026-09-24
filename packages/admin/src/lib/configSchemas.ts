@@ -1,22 +1,34 @@
 import {
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
   DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   DEFAULT_LOBBY_PINNED_CHARACTERS,
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
+  DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+  DEFAULT_VIP_PLANS_CONFIG,
+  DEFAULT_VIP_TEXT_DISCOUNT_RATE,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  FeatureFreeTrialLimitsSchema,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   LlmProviderRoutingConfigSchema,
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
+  MediaFeatureFreeTrialLimitSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
   PaymentPlansSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
+  VIP_STRATEGY_CONFIG_KEYS,
+  VipCheckinBonusConfigSchema,
+  VipFeatureSwitchSchema,
+  VipPlansConfigSchema,
+  VipTextDiscountRateSchema,
   WordCountTiersConfigSchema,
 } from '@miniapp/shared';
 import { z } from 'zod';
@@ -55,6 +67,12 @@ export const managedConfigKeys = [
   'image_description_failed_hint',
   'image_generation_failed_hint',
   'image_failed_unknown_hint',
+  'image_advanced_enabled',
+  'image_advanced_generation_credits',
+  'image_advanced_price_label',
+  'image_advanced_provider_config',
+  'media_feature_free_trial_limit',
+  ...VIP_STRATEGY_CONFIG_KEYS,
 ] as const;
 
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
@@ -205,6 +223,20 @@ export const ImageTextModelConfigSchema = z
 
 export type ImageTextModelConfig = z.infer<typeof ImageTextModelConfigSchema>;
 
+export const AdvancedImageProviderConfigSchema = z
+  .union([
+    z.object({}).strict(),
+    z
+      .object({
+        provider: z.enum(['liaobots_grok', 'replicate_z']),
+        model: z.string().trim().min(1, '模型名称不能为空').max(256, '模型名称不能超过 256 个字符'),
+      })
+      .strict(),
+  ])
+  .describe('Advanced image provider config');
+
+export type AdvancedImageProviderConfig = z.infer<typeof AdvancedImageProviderConfigSchema>;
+
 /** 与 105 迁移的 runtime_config seed 完全一致。 */
 export const DEFAULT_INVITE_REWARD_RULES: InviteRewardRulesConfig = {
   total_cap_credits: 2200,
@@ -271,6 +303,17 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_description_failed_hint: z.string().trim().min(1).max(200),
   image_generation_failed_hint: z.string().trim().min(1).max(200),
   image_failed_unknown_hint: z.string().trim().min(1).max(200),
+  image_advanced_enabled: z.boolean(),
+  image_advanced_generation_credits: positiveInteger,
+  image_advanced_price_label: z.string().trim().min(1, '价格文案不能为空').max(200),
+  image_advanced_provider_config: AdvancedImageProviderConfigSchema,
+  media_feature_free_trial_limit: MediaFeatureFreeTrialLimitSchema,
+  vip_purchase_enabled: VipFeatureSwitchSchema,
+  vip_reminders_enabled: VipFeatureSwitchSchema,
+  vip_plans_config: VipPlansConfigSchema,
+  vip_text_discount_rate: VipTextDiscountRateSchema,
+  vip_checkin_bonus_config: VipCheckinBonusConfigSchema,
+  feature_free_trial_limits: FeatureFreeTrialLimitsSchema,
 };
 
 export const configMetadata: Record<
@@ -284,8 +327,8 @@ export const configMetadata: Record<
   },
   miniapp_daily_checkin_bonus_credits: {
     label: '每日签到奖励',
-    description: '用户每次满足签到间隔后获得的 bonus 星尘。',
-    defaultValue: 40,
+    description: '每次签到的基础专项星尘。有效 VIP 的加成由「VIP策略」决定。',
+    defaultValue: 60,
   },
   miniapp_character_free_chat_quota_limit: {
     label: '角色卡免费对话轮次',
@@ -482,6 +525,63 @@ export const configMetadata: Record<
     label: '图片模糊失败提示',
     description: '外部平台结果未知、禁止自动重试时展示的提示。',
     defaultValue: '外部平台没有确认成功，本次不消耗星尘。',
+  },
+  image_advanced_enabled: {
+    label: '高级图片入口开关',
+    description: '控制 C 端高级图片入口；关闭时高级图片请求会被后端拦截。',
+    defaultValue: false,
+  },
+  image_advanced_generation_credits: {
+    label: '高级图片单张价格',
+    description: '高级图片成功生成并结算后扣除的 main 星尘数。',
+    defaultValue: 120,
+  },
+  image_advanced_price_label: {
+    label: '高级图片价格文案',
+    description: '高级图片确认按钮展示的价格文案，需要与扣费额保持一致。',
+    defaultValue: '120 星尘',
+  },
+  image_advanced_provider_config: {
+    label: '高级图片 Provider 配置',
+    description:
+      '高级图片生成使用的 provider 与 model；留空表示高级图片不可用。鉴权密钥仍由后端环境变量提供。',
+    defaultValue: {},
+  },
+  media_feature_free_trial_limit: {
+    label: '媒体免费轮次次数',
+    description:
+      '已停用的旧键，运行时不再读取。语音和初级图片免费次数请在 VIP 策略的 feature_free_trial_limits 中分别配置，范围 0 到 20。',
+    defaultValue: DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
+  },
+  vip_purchase_enabled: {
+    label: 'VIP 购买开关',
+    description: '关闭时不能创建新的 VIP 订单。已创建订单仍按自己的商品快照履约。',
+    defaultValue: false,
+  },
+  vip_reminders_enabled: {
+    label: 'VIP 到期提醒开关',
+    description: '只控制提醒是否写入。提前天数、文案和时区不在这里配置，默认保持关闭。',
+    defaultValue: false,
+  },
+  vip_plans_config: {
+    label: '周卡与月卡商品',
+    description: '价格使用整数分。周卡赠送固定为 0。发布后只影响新创建的订单。',
+    defaultValue: DEFAULT_VIP_PLANS_CONFIG,
+  },
+  vip_text_discount_rate: {
+    label: 'VIP 文本折扣率',
+    description: '大于 0 且不超过 1。生成受理时固化，不重算已经受理的请求。',
+    defaultValue: DEFAULT_VIP_TEXT_DISCOUNT_RATE,
+  },
+  vip_checkin_bonus_config: {
+    label: 'VIP 签到加成',
+    description: '与基础奖励相同，或在固定模式下填写非负整数。一次签到只读取一份策略。',
+    defaultValue: DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+  },
+  feature_free_trial_limits: {
+    label: '媒体免费次数',
+    description: '语音和初级图片分别配置，整数 0 到 20。0 表示关闭该功能的免费体验。',
+    defaultValue: DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
   },
 };
 

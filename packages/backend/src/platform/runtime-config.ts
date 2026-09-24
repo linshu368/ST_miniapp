@@ -31,6 +31,36 @@ function toEntry(row: {
   };
 }
 
+export class RuntimeConfigReadError extends Error {
+  readonly key: string;
+
+  constructor(key: string, cause: unknown) {
+    super(`runtime config read failed: ${key}`);
+    this.name = 'RuntimeConfigReadError';
+    this.key = key;
+    this.cause = cause;
+  }
+}
+
+/**
+ * 读取失败时抛出，而不是当成缺失。提醒写入用它做 fail closed，
+ * 避免把数据库故障误读成“开关不存在所以关闭”之外还吞掉原始错误。
+ */
+export async function fetchRuntimeConfigEntryStrict(
+  key: string
+): Promise<RuntimeConfigEntry | null> {
+  const db = getDomainDb('app_core');
+  const { data, error } = await db
+    .from('runtime_config')
+    .select(SELECT_COLUMNS)
+    .eq('key', key)
+    .maybeSingle();
+
+  if (error) throw new RuntimeConfigReadError(key, error);
+  if (!data) return null;
+  return toEntry(data);
+}
+
 export async function fetchRuntimeConfigEntry(key: string): Promise<RuntimeConfigEntry | null> {
   const db = getDomainDb('app_core');
   const { data, error } = await db
