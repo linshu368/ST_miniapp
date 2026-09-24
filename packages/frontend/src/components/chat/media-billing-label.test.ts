@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { formatFreeTrialBillingLabel, formatMediaBillingPreview } from './media-billing-label';
+import {
+  formatFreeTrialBillingLabel,
+  formatMediaAttemptBillingLabel,
+  formatMediaBillingPreview,
+} from './media-billing-label';
 
 describe('formatFreeTrialBillingLabel', () => {
   it('shows the published limit instead of a fixed count', () => {
@@ -37,5 +41,30 @@ describe('formatMediaBillingPreview', () => {
   });
   it('never advertises free trials for advanced images', () => {
     expect(formatMediaBillingPreview(billing, false, false, false)).toBe('15 星尘');
+  });
+});
+
+describe('formatMediaAttemptBillingLabel', () => {
+  it('keeps the accepted attempt ordinal after a success or failure', () => {
+    const attempt = {
+      billing_mode: 'free_trial' as const,
+      free_trial_ordinal: 1,
+      price_label: '15 星尘',
+    };
+
+    expect(formatMediaAttemptBillingLabel(attempt, 3)).toBe('免费体验 第 1/3 次 · 本次不消耗星尘');
+  });
+
+  it('shows the attempt price for paid media', () => {
+    expect(
+      formatMediaAttemptBillingLabel(
+        {
+          billing_mode: 'paid',
+          free_trial_ordinal: null,
+          price_label: '15 星尘',
+        },
+        3
+      )
+    ).toBe('15 星尘 · 从充值星尘扣除');
   });
 });

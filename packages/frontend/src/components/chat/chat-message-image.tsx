@@ -11,7 +11,10 @@ import type {
   MessageImageState,
 } from '@miniapp/shared';
 import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
-import { formatMediaBillingPreview } from '@/components/chat/media-billing-label';
+import {
+  formatMediaAttemptBillingLabel,
+  formatMediaBillingPreview,
+} from '@/components/chat/media-billing-label';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
@@ -82,12 +85,21 @@ export function ChatMessageImageFooter({
   const ready = current?.status === 'ready' ? current : null;
   const busy = latest?.status === 'pending' || latest?.status === 'generating';
   const selectedTierConfig = image?.config?.tiers[tier] ?? image?.config?.tiers.basic;
-  const priceLabel = formatMediaBillingPreview(
-    selectedTierConfig?.next_billing,
-    image?.billingRefreshing ?? true,
-    image?.billingError ?? false,
-    tier !== 'advanced'
-  );
+  const failedAttempt =
+    latest?.status === 'failed' || latest?.status === 'failed_unknown' ? latest : null;
+  const priceLabel =
+    failedAttempt && failedAttempt.tier === tier && (stage === 'failed' || stage === 'confirming')
+      ? formatMediaAttemptBillingLabel(
+          failedAttempt,
+          image?.config?.tiers[failedAttempt.tier].next_billing.free_trial_limit,
+          failedAttempt.tier !== 'advanced'
+        )
+      : formatMediaBillingPreview(
+          selectedTierConfig?.next_billing,
+          image?.billingRefreshing ?? true,
+          image?.billingError ?? false,
+          tier !== 'advanced'
+        );
   const advancedEntry = advancedImageEntry(image?.config?.tiers.advanced);
   const maxChars = image?.config?.limits.max_prompt_chars ?? MAX_IMAGE_PROMPT_CHARS;
   const telemetry = image?.telemetry ?? null;
@@ -395,6 +407,13 @@ export function ChatMessageImageFooter({
 
       {ready && image.canGenerate ? (
         <div className="ml-2 space-y-1.5 text-[11px]">
+          <p className="text-muted-foreground">
+            {formatMediaAttemptBillingLabel(
+              ready,
+              image.config?.tiers[ready.tier].next_billing.free_trial_limit,
+              ready.tier !== 'advanced'
+            )}
+          </p>
           <button
             type="button"
             onClick={() => void openDefaultFlow('regenerate_ready', ready.tier)}

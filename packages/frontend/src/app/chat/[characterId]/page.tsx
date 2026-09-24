@@ -316,6 +316,8 @@ export default function SelfHostedChatPage() {
                               })
                             : null,
                           priceLabel: voicePriceLabel,
+                          freeTrialLimit:
+                            voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
                           hints: {
                             overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
                             draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',

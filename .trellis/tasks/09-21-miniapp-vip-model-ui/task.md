@@ -303,3 +303,14 @@ remainingVipDisplayDays(validUntil, now): number
 - [ ] PR 环境真机复验：角标跨刷新、胶囊手感/软键盘、媒体第 1 至 4 次与失败、VIP 页视觉
 
 执行结果：Shared 12 files / 110 tests、Backend 72 files / 644 tests、Frontend 31 files / 187 tests 通过；`pnpm -r typecheck`、Frontend lint/build、`pnpm lint:imports`、`pnpm lint:legacy`、Prettier 与 `git diff --check` 通过。未操作数据库、运行配置、test/Production 开关、提交或推送。浏览器安全策略阻止本地 `file://` 视觉预览，因此未把本地静态渲染当成真机证据；T7 继续保持 Doing，等待 PR 真机复验。
+
+### 2026-09-24 第二轮真机修正
+
+- [x] 媒体终态使用 attempt 快照，失败不提前显示下一序号
+- [x] VIP 详情权益文案按 Demo 结构对齐并保留动态 95%
+- [x] 当前引擎胶囊增加绿色圆点
+- [x] 非 VIP VIP 专属弹窗按 Demo 结构对齐，价格和签到权益动态读取
+- [x] Frontend 验证与 diff 复核
+- [x] TEST `vip_purchase_enabled` 开启并回读，Production 不变
+
+执行结果：新增 attempt 快照格式化并用于图片/语音成功与失败展示；下一次按钮仍读取 `next_billing`。VIP 详情和锁定弹窗改为动态权益/套餐数据，顶部胶囊增加绿色状态点。Frontend 31 files / 189 tests、typecheck、lint、build、`pnpm lint:imports`、`pnpm lint:legacy` 与 `git diff --check` 通过。TEST `zoqelpfhurwehlvypryl` 回读 `environment=test`，将 `vip_purchase_enabled` 从 `false/version 1` 条件更新为 `true/version 2`，再次回读为 true；周/月价格仍为 1399/2888 分。Production 未操作。T7 保持 Doing，等待本轮 PR 真机复验。

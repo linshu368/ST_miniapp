@@ -170,3 +170,13 @@ python3 ./.trellis/scripts/module_knowledge.py check 09-21-miniapp-vip-model-ui
 4. 媒体查询层补额度/钱包刷新，避免旧免费报价。
 5. 对契约与错误报价风险，在既有测试中补回归；必要的媒体缓存回归可新增测试，不引入 DOM 测试依赖。运行 shared/backend/frontend tests、frontend lint/build、全仓 typecheck、import/legacy guards。
 6. 人工复验首次角标跨刷新消失、非 VIP/VIP/过期权益、月卡默认与金额联动、模型锁定/输出中切换、两类媒体连续 1..4 次/失败/跨会话/慢网。无登录真机时明确待验，不标成已通过。
+
+## 2026-09-24 PR 真机修正执行计划
+
+1. 将媒体文案格式化拆为下一次报价与 attempt 快照两类；图片成功内容显示本次快照，图片/语音失败重试显示未消耗的本次序号。
+2. 调整 VIP 详情四条权益文案，保留动态 95% 配置与动态签到、月卡赠送值。
+3. 给顶部当前引擎胶囊增加绿色圆点；重做非 VIP VIP 专属弹窗，复用 VIP 状态及支付套餐 hooks。
+4. 运行 Frontend 相关单测、typecheck、lint、build、仓库静态检查，并由质量检查代理复核 diff。
+5. 在已确认 TEST 项目回读环境及旧 value/version 后，以旧值为条件开启 `vip_purchase_enabled` 并再次回读；Production 不操作。
+
+失败路径：接口未返回权益或套餐时不伪造价格；媒体配置刷新失败时不把下一次报价当成本次消耗；TEST 配置发布任一步失败则停止并保留原值。此轮不改计费、免费额度或支付数据库结构。

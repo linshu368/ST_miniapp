@@ -176,7 +176,7 @@ export default function VipPage() {
           </span>
           <span className="text-foreground/90">
             {discountLabel
-              ? `全部文本档位 ${discountLabel}，到期即失效`
+              ? `全部模型档位 ${discountLabel}，随有效期生效、到期即失效`
               : '权益数据暂未加载，请稍后重试'}
           </span>
         </section>
@@ -192,7 +192,7 @@ export default function VipPage() {
               </span>
               <span className="text-[10px] text-muted-foreground">
                 {benefits
-                  ? `基础 ${formatNumber(benefits.checkin_base_credits)} + 额外 ${formatNumber(benefits.checkin_vip_credits)}，共 ${formatNumber(benefits.checkin_base_credits + benefits.checkin_vip_credits)}`
+                  ? `基础 ${formatNumber(benefits.checkin_base_credits)} + 额外 ${formatNumber(benefits.checkin_vip_credits)}，每日共 ${formatNumber(benefits.checkin_base_credits + benefits.checkin_vip_credits)}`
                   : '奖励数据暂未加载'}
               </span>
             </div>
@@ -200,28 +200,31 @@ export default function VipPage() {
           <li className="flex items-center gap-3 rounded-2xl border border-border bg-card px-3.5 py-3 text-xs">
             <Zap className="h-4 w-4 shrink-0 text-primary" aria-hidden />
             <div>
-              <span className="font-bold">标准与旗舰模型解锁</span>
-              <span className="ml-2 text-[10px] text-muted-foreground">
-                文本与高级图片均按价扣费
-              </span>
+              <span className="font-bold">标准与旗舰模型畅用</span>
+              <span className="ml-2 text-[10px] text-muted-foreground">切换即时生效</span>
             </div>
           </li>
           <li className="flex items-center gap-3 rounded-2xl border border-border bg-card px-3.5 py-3 text-xs">
             <TicketPercent className="h-4 w-4 shrink-0 text-primary" aria-hidden />
             <div>
               <span className="font-bold">
-                {discountLabel ? `全部文本档位 ${discountLabel}` : '全部文本档位享优惠'}
+                {discountLabel ? `全部模型档位 ${discountLabel}` : '全部模型档位享优惠'}
               </span>
-              <span className="ml-2 text-[10px] text-muted-foreground">每轮按折后价计费</span>
+              <span className="ml-2 text-[10px] text-muted-foreground">
+                轻量 / 标准 / 旗舰，每轮消耗均按折后计
+              </span>
             </div>
           </li>
           <li className="flex items-center gap-3 rounded-2xl border border-border bg-card px-3.5 py-3 text-xs">
             <Sparkles className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-            <span className="font-bold">
-              {monthlyPlan
-                ? `月卡赠送专项 ${formatNumber(monthlyPlan.bonus_credits)} 星尘`
-                : '月卡赠送专项星尘'}
-            </span>
+            <div>
+              <span className="font-bold">
+                {monthlyPlan
+                  ? `月卡赠轻量专属 ${formatNumber(monthlyPlan.bonus_credits)} 星尘`
+                  : '月卡赠轻量专属星尘'}
+              </span>
+              <span className="ml-2 text-[10px] text-muted-foreground">仅轻量模型对话可消耗</span>
+            </div>
           </li>
         </ul>
 

@@ -69,6 +69,10 @@ export function ChatTopBar({
                 aria-label={`当前${modelLabel}，${modelOpen ? '收起' : '展开'}引擎选择`}
                 className="mt-1 inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border border-primary/70 bg-primary/10 px-3 text-[11px] font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
+                <span
+                  className="size-1.5 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"
+                  aria-hidden
+                />
                 <span className="truncate">{modelLabel}</span>
                 <ChevronDown
                   className={cn(

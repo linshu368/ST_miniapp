@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ChevronDown, Lock, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, Gift, Lock, Sparkles } from 'lucide-react';
 import type { PublicModelCatalogTier } from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
@@ -16,9 +16,12 @@ import {
 } from '@/components/ui/dialog';
 import { ApiClientError } from '@/lib/api/client';
 import { useModelCatalogQuery, useSelectModelMutation } from '@/lib/api/models';
+import { usePaymentPlansQuery } from '@/lib/api/payment';
+import { useVipStatusQuery } from '@/lib/api/vip';
 import { redirectToRecharge } from '@/lib/recharge-redirect';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { cn } from '@/lib/utils';
+import { formatYuanShort } from '@/lib/utils/payment';
 import {
   billingFailureAction,
   formatTierQuote,
@@ -50,6 +53,8 @@ export function ChatModelSwitcher({
 }) {
   const router = useRouter();
   const { data, isLoading, isFetching } = useModelCatalogQuery();
+  const paymentPlans = usePaymentPlansQuery();
+  const vipStatus = useVipStatusQuery();
   const selectModel = useSelectModelMutation();
   const [error, setError] = useState<string | null>(null);
   const [walletAction, setWalletAction] = useState<'recharge' | null>(null);
@@ -141,9 +146,8 @@ export function ChatModelSwitcher({
   const discountLabel = formatDiscountLabel(
     publishedDiscountRate(data.catalog.tiers) ?? Number.NaN
   );
-  const pricedTiers = data.catalog.tiers.filter(
-    (tier) => tier.key === 'standard' || tier.key === 'premium'
-  );
+  const vipPlans = paymentPlans.data?.vip_plans ?? [];
+  const vipBenefits = vipStatus.data?.benefits;
 
   return (
     <div className="space-y-4">
@@ -229,32 +233,46 @@ export function ChatModelSwitcher({
           if (!open) setLockedTierKey(null);
         }}
       >
-        <DialogContent data-model-vip-dialog className="w-[calc(100%-2rem)] max-w-sm rounded-3xl">
-          <DialogHeader>
-            <DialogTitle>标准与旗舰模型需要 VIP</DialogTitle>
-            <DialogDescription>
-              开通后可以使用这两个档位。权益只解锁使用资格，不代表免费。
+        <DialogContent
+          data-model-vip-dialog
+          className="w-[calc(100%-2rem)] max-w-sm rounded-[24px] border-primary/20 bg-card px-5 pb-5 pt-6"
+        >
+          <DialogHeader className="text-center sm:text-center">
+            <DialogTitle className="text-[17px]">标准与旗舰模型为 VIP 专属</DialogTitle>
+            <DialogDescription className="mx-auto max-w-[19rem] text-[13px] leading-relaxed">
+              {vipBenefits
+                ? `开通 VIP 即可畅用全部模型，每日签到还额外得 ${vipBenefits.checkin_vip_credits} 星尘（共 ${vipBenefits.checkin_base_credits + vipBenefits.checkin_vip_credits}）`
+                : '开通 VIP 即可畅用全部模型，并享受会员签到加成。'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            {pricedTiers.map((tier) => {
-              const quote = formatTierQuote(tier);
-              return (
-                <p
-                  key={tier.key}
-                  className="rounded-2xl border border-border bg-card px-3 py-2 text-[12px] leading-relaxed"
+          {vipPlans.length > 0 ? (
+            <div className="flex flex-wrap justify-center gap-2">
+              {vipPlans.map((plan) => (
+                <span
+                  key={plan.id}
+                  className="inline-flex items-center gap-1 rounded-full border border-primary/80 px-3 py-1.5 text-[11px] font-bold text-primary"
                 >
-                  <span className="font-bold text-foreground">{tier.label}</span>
-                  <span className="mt-1 block text-muted-foreground">
-                    {quote?.summary ?? tier.cost_hint}
-                  </span>
-                </p>
-              );
-            })}
-          </div>
-          <DialogFooter>
-            <Button type="button" className="w-full" onClick={() => router.push('/vip')}>
+                  <Gift className="size-3" aria-hidden />
+                  VIP {plan.title} ¥{formatYuanShort(plan.price_cents)}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <DialogFooter className="flex-col gap-1.5 sm:flex-col">
+            <Button
+              type="button"
+              className="h-11 w-full rounded-2xl"
+              onClick={() => router.push('/vip')}
+            >
               前往 VIP
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-muted-foreground"
+              onClick={() => setLockedTierKey(null)}
+            >
+              暂不需要
             </Button>
           </DialogFooter>
         </DialogContent>

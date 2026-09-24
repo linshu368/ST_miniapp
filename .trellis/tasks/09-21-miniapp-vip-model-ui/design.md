@@ -288,3 +288,21 @@ Shared 提供 runtime schema、默认值与 browser-safe DTO；Admin 和 Backend
 媒体额度仍以后端为真相，在已有查询层观察受理与终态，失效 config/wallet 缓存；请求去重由 React Query 管理，不按消息组件各自轮询。失败释放后也刷新；加载/错误使用中性提示，不沿用过期免费承诺。继续使用既有请求超时、有限重试、免费预留及原子扣款，展示层不重试生成、不改计费事务。并发预估可能变化，最终以请求快照为准。
 
 发布 Backend 后 Frontend；旧 Backend 无 benefits 时只显示权益数据加载提示而不伪造数字。可回滚展示代码，不改会员、钱包、配置和历史订单。没有 migration、外部供应商、新限流/补偿需求；停止条件为显示价与权威报价不一致或重复请求。保留既有 pino 错误与 API 查询失败提示，不记录用户内容。
+
+## 2026-09-24 真机反馈修正设计
+
+### 免费体验展示状态
+
+`next_billing` 只用于尚未提交的下一次动作。语音 `MessageVoice` 和图片 `MessageImageAttempt` 已包含受理时固化的 `billing_mode`、`free_trial_ordinal`、`price_label`，终态内容必须使用这些快照。失败 attempt 已由后端释放额度，重试入口在额度刷新完成前也使用失败 attempt 的序号，避免短暂显示下一序号；刷新完成后服务端下一次报价仍应返回同一序号。
+
+不新增状态源，不改变预留、结算或退款状态机。前端只补充一个 attempt 快照格式化函数，并在语音/图片现有组件中区分“本次结果”和“下一次操作”。
+
+### VIP 说明与权益
+
+复用 `useVipStatusQuery` 和 `usePaymentPlansQuery`。弹窗的签到数、套餐名称和价格来自接口；加载失败时保留基础 VIP 说明和跳转，不写死运营价格。详情页继续读取 `VipStatus.benefits` 与套餐数据，调整为 Demo 的四条信息结构，当前折扣仍由运行时配置产生。
+
+顶部胶囊只增加一个 `aria-hidden` 的绿色状态点，原有文本、展开状态、焦点与动画逻辑不变。
+
+### TEST 开关
+
+使用已确认 TEST Supabase 项目 `zoqelpfhurwehlvypryl`，先回读 `admin.current_environment()` 与 `vip_purchase_enabled` 的 key/value/version，再以旧 value/version 为条件原子更新这一行。不新增 migration，不改商品条款。更新后再次回读；异常时停止，不触碰 Production。恢复方案是对同一 TEST key 做相同条件保护的 `false` 更新。

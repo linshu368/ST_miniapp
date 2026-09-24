@@ -1,4 +1,4 @@
-import type { MediaBillingPreview } from '@miniapp/shared';
+import type { MediaBillingMode, MediaBillingPreview } from '@miniapp/shared';
 
 /**
  * 免费次数文案只展示接口里的已发布上限。
@@ -29,4 +29,22 @@ export function formatMediaBillingPreview(
   return billing.billing_mode === 'paid'
     ? `${billing.price_label} · 从充值星尘扣除`
     : billing.price_label;
+}
+
+/** 已受理 attempt 的固化计费文案；不能用 next_billing 反推本次结果。 */
+export function formatMediaAttemptBillingLabel(
+  attempt: {
+    billing_mode: MediaBillingMode;
+    free_trial_ordinal: number | null;
+    price_label: string;
+  },
+  freeTrialLimit: number | null | undefined,
+  allowFreeTrial = true
+): string {
+  if (allowFreeTrial && attempt.billing_mode === 'free_trial') {
+    return formatFreeTrialBillingLabel(attempt.free_trial_ordinal, freeTrialLimit);
+  }
+  return attempt.billing_mode === 'paid'
+    ? `${attempt.price_label} · 从充值星尘扣除`
+    : attempt.price_label;
 }
