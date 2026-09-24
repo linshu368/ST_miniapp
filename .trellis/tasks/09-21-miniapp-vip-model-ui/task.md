@@ -223,6 +223,7 @@
   - 未操作 test/Production，未打开 VIP 购买、提醒或高级图片开关，未写数据库，未 commit/push，未进 T8/T9。
 - 2026-09-23 PR #345 冲突处理：将最新 `origin/dev`（`0a2f05b`）合入 `dev_vip_0920`。人工解决 8 个冲突文件：Backend 保留上游 Batch Lab 调用并补齐 VIP entitlement、动态折扣快照、VIP 门禁和钱包策略预检；规范/架构文档保留较新有效事实并清除上游残留冲突标记。验证：Shared 12 files / 109 tests、Backend 72 files / 640 tests、Frontend 30 files / 176 tests、`pnpm -r typecheck`、`pnpm lint:imports`、`pnpm lint:legacy`、Frontend build 均通过。未操作 test/Production 或功能开关。
 - 2026-09-24：产品将 VIP 两档价格改为周卡 1.00 元、月卡 2.00 元。更新 `VIP_PLAN_COMMERCIAL_TERMS` 与损坏回退默认值；新增 forward-fix `20260924_vip_plans_price_1_and_2_yuan.sql` 覆盖已发布 `vip_plans_config` 及未发布草稿的 `price_cents`。不改历史 migration，不重写订单快照。需在确认环境单文件 apply 后，页面和下单才会从 13.99/28.88 变成 1.00/2.00。
+- 2026-09-24 T7 真机验收修正：Profile 星尘余额卡改为余额在左、VIP/星尘充值入口在右侧纵向排列；VIP 到期消息详情按 Demo 重组标题、时间、会员状态卡和到期影响说明，保留续费入口。到期说明的签到基础值、VIP 加成与文本折扣仍只读取 `GET /api/vip/status` 的已发布 `benefits`，当前 0.95 展示为 95 折；字段缺失时不猜测数值。今日/提前提醒首句由通知 metadata 格式化，历史通知正文未改写。验证：Frontend 31 files / 191 tests、typecheck、lint、build 通过，`pnpm lint:imports`、`pnpm lint:legacy` 通过。未改 Backend/Shared 契约/数据库/功能开关，未写 test 或 Production；真实 Telegram WebView 的窄屏视觉仍需部署后复验，T7 保持 Doing。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约

@@ -15,7 +15,10 @@ import {
   selectionKey,
   shouldShowVipEntryBadge,
   supportsVipRenewal,
+  vipExpiryImpactCopy,
+  vipExpiryLeadCopy,
   vipEntryLabel,
+  vipPlanTitle,
 } from './presentation';
 
 describe('discount and price display', () => {
@@ -128,6 +131,41 @@ describe('entry badge and membership label', () => {
     expect(vipEntryLabel({ active: true, remaining_days: 12 })).toBe('VIP · 剩 12 天');
     expect(vipEntryLabel({ active: false, remaining_days: 3 })).toBe('VIP');
     expect(vipEntryLabel(null)).toBe('VIP');
+  });
+
+  it('formats the plan and expiry impact from server-owned benefits', () => {
+    expect(vipPlanTitle('week')).toBe('VIP 周卡');
+    expect(vipPlanTitle('month')).toBe('VIP 月卡');
+    expect(vipPlanTitle(null)).toBe('VIP 会员');
+    expect(
+      vipExpiryImpactCopy({
+        text_discount_rate: 0.95,
+        checkin_base_credits: 60,
+        checkin_vip_credits: 60,
+      })
+    ).toEqual({
+      checkin: { extra: '+60 星尘', fallback: '每日 60' },
+      discount: '95折',
+    });
+    expect(vipExpiryImpactCopy(undefined)).toEqual({ checkin: null, discount: null });
+    expect(
+      vipExpiryLeadCopy({
+        body: '旧正文',
+        metadata: {
+          reminder_window: 'expires_today',
+          observed_valid_until: '2026-09-19T16:00:00.000Z',
+        },
+      })
+    ).toBe('你的 VIP 会员将于今日到期。');
+    expect(
+      vipExpiryLeadCopy({
+        body: '旧正文',
+        metadata: {
+          reminder_window: 'expiring_soon',
+          observed_valid_until: '2026-09-26T16:00:00.000Z',
+        },
+      })
+    ).toBe('你的 VIP 会员将于 2026-09-27 到期。');
   });
 });
 

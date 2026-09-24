@@ -10,7 +10,13 @@ import { useNotificationDetailQuery } from '@/lib/api/notifications';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { formatMessageTime } from '@/lib/utils/notifications';
-import { supportsVipRenewal, vipMembershipSummary } from '@/lib/vip/presentation';
+import {
+  supportsVipRenewal,
+  vipExpiryImpactCopy,
+  vipExpiryLeadCopy,
+  vipMembershipSummary,
+  vipPlanTitle,
+} from '@/lib/vip/presentation';
 
 export default function NotificationDetailPage() {
   const params = useParams<{ id: string }>();
@@ -22,6 +28,7 @@ export default function NotificationDetailPage() {
   const vip = useVipStatusQuery();
   const notification = detail.data?.notification;
   const showRenew = notification ? supportsVipRenewal(notification) : false;
+  const impact = vipExpiryImpactCopy(vip.data?.benefits);
   const missing = isMissingNotification(detail.error);
 
   return (
@@ -60,12 +67,12 @@ export default function NotificationDetailPage() {
         </div>
       ) : (
         <>
-          <article className="flex-1 space-y-4 px-4 py-5 pb-28">
+          <article className="flex-1 px-4 py-5 pb-28">
             <p className="text-[11px] font-semibold tracking-[0.16em] text-muted-foreground">
               {notification.scope === 'official' ? 'OFFICIAL NOTICE' : 'MESSAGE'}
             </p>
-            <h2 className="text-2xl font-black tracking-tight">{notification.title}</h2>
-            <p className="text-[12px] text-muted-foreground">
+            <h2 className="mt-2 text-lg font-black tracking-tight">{notification.title}</h2>
+            <p className="mt-1 text-[12px] text-muted-foreground">
               <time dateTime={notification.published_at}>
                 {formatMessageTime(notification.published_at)}
               </time>
@@ -73,23 +80,36 @@ export default function NotificationDetailPage() {
             </p>
 
             {showRenew ? (
-              <section className="rounded-[22px] border border-border bg-card px-4 py-3">
+              <section className="mt-3 rounded-2xl border border-border bg-card px-3.5 py-3">
                 {vip.isLoading ? (
                   <p className="text-sm text-muted-foreground">正在读取当前会员状态</p>
                 ) : vip.isError || !vip.data ? (
                   <p className="text-sm text-muted-foreground">当前会员状态暂时无法确认</p>
                 ) : (
                   <MembershipRows
-                    title={vipMembershipSummary(vip.data).title}
+                    title={
+                      vip.data.active
+                        ? vipPlanTitle(vip.data.last_plan_id)
+                        : vipMembershipSummary(vip.data).title
+                    }
                     detail={vipMembershipSummary(vip.data).detail}
                   />
                 )}
               </section>
             ) : null}
 
-            <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90">
-              {notification.body}
-            </p>
+            {showRenew ? (
+              <VipExpiryBody
+                lead={vipExpiryLeadCopy(notification)}
+                checkin={impact.checkin}
+                discount={impact.discount}
+                expiresToday={notification.metadata?.reminder_window === 'expires_today'}
+              />
+            ) : (
+              <p className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90">
+                {notification.body}
+              </p>
+            )}
           </article>
 
           {showRenew ? (
@@ -108,6 +128,44 @@ export default function NotificationDetailPage() {
         </>
       )}
     </main>
+  );
+}
+
+function VipExpiryBody({
+  lead,
+  checkin,
+  discount,
+  expiresToday,
+}: {
+  lead: string;
+  checkin: { extra: string; fallback: string } | null;
+  discount: string | null;
+  expiresToday: boolean;
+}) {
+  return (
+    <section className="mt-4 space-y-2.5 text-[14px] font-medium leading-relaxed text-foreground/90">
+      <p>
+        <span className="font-bold text-foreground">{lead}</span> 到期后：
+      </p>
+      <ul className="space-y-1.5">
+        {checkin ? (
+          <li>
+            · 每日签到额外 <strong className="font-black text-primary">{checkin.extra}</strong>{' '}
+            停止发放（签到奖励回落为{checkin.fallback}）
+          </li>
+        ) : null}
+        <li>
+          · 标准与旗舰模型将不可用，正在使用的模型
+          <strong className="font-black text-primary">自动回落轻量模型</strong>
+        </li>
+        {discount ? (
+          <li>
+            · 全部模型档位 <strong className="font-black text-primary">{discount}</strong> 恢复原价
+          </li>
+        ) : null}
+      </ul>
+      <p>想继续使用可{expiresToday ? '在今日内' : '提前'}续费，续费后有效期顺延。</p>
+    </section>
   );
 }
 

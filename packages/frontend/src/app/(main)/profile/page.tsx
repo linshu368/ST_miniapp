@@ -432,14 +432,14 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      {/* 星尘余额：首屏最强视觉层级，只讲余额和充值，不出现会员信息 */}
+      {/* 星尘余额：余额在左、VIP 与充值入口在右，保持窄屏下一眼可见 */}
       <section className="relative z-10 mt-7 px-5">
         <div className="relative overflow-hidden rounded-[26px] border border-primary/20 bg-card p-5 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
           <div
             aria-hidden
             className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-[radial-gradient(circle,hsl(var(--glow)/0.28),transparent_68%)]"
           />
-          <div className="relative flex flex-col gap-4">
+          <div className="relative flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold tracking-[0.2em] text-muted-foreground">
                 星尘余额
@@ -456,12 +456,12 @@ export default function ProfilePage() {
                 </p>
               ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 flex-col items-end gap-2">
               <button
                 type="button"
                 onClick={() => void openVip()}
                 disabled={vipStatus.isLoading || markVipSeen.isPending}
-                className="relative inline-flex min-h-10 items-center gap-1.5 rounded-full bg-primary px-3.5 py-2 text-[13px] font-black text-primary-foreground shadow-[0_8px_24px_hsl(var(--glow)/0.35)] disabled:opacity-60"
+                className="relative inline-flex min-h-9 items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[12px] font-black text-primary-foreground shadow-[0_8px_24px_hsl(var(--glow)/0.35)] disabled:opacity-60"
                 aria-label={vipEntryLabel(vipStatus.data ?? null)}
               >
                 <Crown className="h-3.5 w-3.5" aria-hidden />
@@ -475,7 +475,7 @@ export default function ProfilePage() {
               <Link
                 href="/profile/recharge"
                 aria-label="前往星尘充值"
-                className="inline-flex min-h-10 items-center gap-1 rounded-full border border-border bg-background/40 px-3 py-2 text-[12px] font-bold text-foreground transition hover:bg-secondary"
+                className="inline-flex min-h-9 items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-[12px] font-bold text-primary transition hover:bg-primary/15"
                 onClick={() => {
                   captureRechargeEntryClicked({ telegramUserId });
                 }}
@@ -484,15 +484,15 @@ export default function ProfilePage() {
                 星尘充值
               </Link>
             </div>
-            {vipStatus.isError ? (
-              <p className="text-[12px] text-muted-foreground">会员状态暂时无法确认</p>
-            ) : null}
-            {vipError ? (
-              <p role="alert" className="text-[12px] text-destructive">
-                {vipError}
-              </p>
-            ) : null}
           </div>
+          {vipStatus.isError ? (
+            <p className="relative mt-3 text-[12px] text-muted-foreground">会员状态暂时无法确认</p>
+          ) : null}
+          {vipError ? (
+            <p role="alert" className="relative mt-3 text-[12px] text-destructive">
+              {vipError}
+            </p>
+          ) : null}
         </div>
       </section>
 

@@ -1,4 +1,9 @@
-import type { NotificationItem, PaymentOrder, PublicModelCatalogTier } from '@miniapp/shared';
+import type {
+  NotificationItem,
+  PaymentOrder,
+  PublicModelCatalogTier,
+  VipStatus,
+} from '@miniapp/shared';
 
 import { formatNumber, formatYuanShort } from '@/lib/utils/payment';
 
@@ -51,6 +56,52 @@ export function vipMembershipSummary(status: {
     return { title: '会员已到期', detail: '续费后有效期会在新订单上顺延' };
   }
   return { title: '尚未开通', detail: '开通后解锁标准、旗舰模型和高级图片资格' };
+}
+
+export function vipPlanTitle(planId: string | null): string {
+  if (planId === 'week') return 'VIP 周卡';
+  if (planId === 'month') return 'VIP 月卡';
+  return 'VIP 会员';
+}
+
+export interface VipExpiryImpactCopy {
+  checkin: { extra: string; fallback: string } | null;
+  discount: string | null;
+}
+
+/** 到期影响只使用服务端已发布权益，接口缺字段时宁可省略，也不猜测折扣或签到奖励。 */
+export function vipExpiryImpactCopy(benefits: VipStatus['benefits']): VipExpiryImpactCopy {
+  if (!benefits) return { checkin: null, discount: null };
+  const discount = formatDiscountLabel(benefits.text_discount_rate);
+  return {
+    checkin:
+      benefits.checkin_vip_credits > 0
+        ? {
+            extra: `+${formatNumber(benefits.checkin_vip_credits)} 星尘`,
+            fallback: `每日 ${formatNumber(benefits.checkin_base_credits)}`,
+          }
+        : null,
+    discount,
+  };
+}
+
+export function vipExpiryLeadCopy(item: Pick<NotificationItem, 'body' | 'metadata'>): string {
+  const metadata = item.metadata;
+  if (!metadata) return item.body;
+  if (metadata.reminder_window === 'expires_today') {
+    return '你的 VIP 会员将于今日到期。';
+  }
+  const observedAt = new Date(metadata.observed_valid_until);
+  if (!Number.isFinite(observedAt.getTime())) return item.body;
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(observedAt);
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+  const date = `${values.get('year')}-${values.get('month')}-${values.get('day')}`;
+  return `你的 VIP 会员将于 ${date} 到期。`;
 }
 
 export interface TierQuoteView {
