@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link';
 import { AudioLines, Loader2, Pause, Pencil, Play, RefreshCw } from 'lucide-react';
 import type { MessageVoice } from '@miniapp/shared';
+import { formatMediaAttemptBillingLabel } from '@/components/chat/media-billing-label';
 
 /**
  * 同一时刻只让一段语音在响。
@@ -30,6 +31,8 @@ export interface MessageVoiceState {
   customHref: string | null;
   /** 入口旁价格文案（voice_price_label），前端只读不写死 */
   priceLabel: string;
+  /** 已发布的语音免费体验上限，用于格式化本次 attempt 快照。 */
+  freeTrialLimit: number | null;
   /** 失败提示文案，按 error_code 选用（来自 voice config hints） */
   hints: {
     overLimit: string;
@@ -83,6 +86,9 @@ export function ChatMessageVoiceFooter({
         ? voice.hints.ttsFailed
         : voice.hints.draftFailed
       : null;
+  const attemptPriceLabel = current
+    ? formatMediaAttemptBillingLabel(current, voice.freeTrialLimit)
+    : null;
 
   return (
     <div className="space-y-1.5">
@@ -105,6 +111,9 @@ export function ChatMessageVoiceFooter({
             playbackRate={voice.playbackRate}
             onRegenerate={voice.onGenerate}
           />
+          {attemptPriceLabel ? (
+            <p className="text-[10px] leading-snug text-muted-foreground">{attemptPriceLabel}</p>
+          ) : null}
           <SpokenTextPanel text={current?.spoken_text ?? ''} customHref={voice.customHref} />
         </>
       ) : null}
@@ -153,7 +162,13 @@ function SpokenTextPanel({ text, customHref }: { text: string; customHref: strin
   );
 }
 
-function VoiceAction({ voice, submitting, onGenerate, priceLabel }: MessageVoiceState) {
+function VoiceAction({
+  voice,
+  submitting,
+  onGenerate,
+  priceLabel,
+  freeTrialLimit,
+}: MessageVoiceState) {
   const generating = submitting || voice?.status === 'pending';
 
   if (generating) {
@@ -167,15 +182,23 @@ function VoiceAction({ voice, submitting, onGenerate, priceLabel }: MessageVoice
 
   // ready 态由 ChatMessageVoiceFooter 直接渲染语音条，走不到这里
   const isRetry = voice?.status === 'failed';
+  const actionPriceLabel =
+    isRetry && voice ? formatMediaAttemptBillingLabel(voice, freeTrialLimit) : priceLabel;
   return (
     <button
       type="button"
       onClick={onGenerate}
-      className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary hover:text-foreground"
+      className="flex max-w-full flex-col items-start gap-0.5 rounded-2xl px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary hover:text-foreground"
     >
-      <AudioLines className="h-3.5 w-3.5" aria-hidden />
-      {isRetry ? '重试语音' : '生成语音'}
-      {priceLabel ? <span className="text-primary/80">· {priceLabel}</span> : null}
+      <span className="flex items-center gap-1.5">
+        <AudioLines className="h-3.5 w-3.5" aria-hidden />
+        {isRetry ? '重试语音' : '生成语音'}
+      </span>
+      {actionPriceLabel ? (
+        <span className="max-w-[12rem] whitespace-normal text-left text-[10px] leading-snug text-primary/80">
+          {actionPriceLabel}
+        </span>
+      ) : null}
     </button>
   );
 }

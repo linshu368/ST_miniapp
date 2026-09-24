@@ -1,0 +1,10 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend package rules, React Query/API boundaries and UI implementation constraints."}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend route, service, logging and runtime-config requirements."}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Shared API contract ownership and cross-package contract rules."}
+{"file":".trellis/spec/shared/contracts/api-contracts.md","reason":"API response envelope and schema conventions for shared contracts."}
+{"file":".trellis/spec/database/supabase/index.md","reason":"Migration, RLS/grants and manual database verification requirements."}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"Timeout, retry, idempotency, logging and sensitive-data constraints."}
+{"file":".trellis/tasks/archive/2026-09/09-11-batch-lab-platform-planning/prd.md","reason":"Archived Batch Lab V1 umbrella requirements."}
+{"file":".trellis/tasks/archive/2026-09/09-11-batch-lab-platform-planning/design.md","reason":"Archived architecture and intended API/data model coverage."}
+{"file":".trellis/tasks/09-17-batch-lab-prototype-alignment/research/prototype-prd-gap-map.md","reason":"Authoritative prototype/PRD gap map for implementation."}
+{"file":".trellis/tasks/09-17-batch-lab-prototype-alignment/research/current-implementation-inventory.md","reason":"Current code and data inventory to avoid duplicate or conflicting designs."}

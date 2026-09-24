@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Gem,
   History,
+  Crown,
   Receipt,
   ShieldCheck,
   Sparkles,
@@ -21,6 +22,8 @@ import {
 } from '@miniapp/shared';
 
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
+import { PaymentVpnPromptDialog } from '@/components/payment/payment-vpn-prompt-dialog';
+import { VipPlanCard } from '@/components/payment/vip-plan-card';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -37,8 +40,8 @@ import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
+import { useVipStatusQuery } from '@/lib/api/vip';
 import {
-  captureExternalPaymentOpenRequested,
   capturePaymentMethodSelected,
   capturePaymentOrderCreated,
   capturePaywallDismissed,
@@ -46,13 +49,17 @@ import {
   capturePaywallRechargeSelected,
   captureRechargeViewed,
   resumePaymentReplayFromPending,
-  markExternalPaymentOpened,
   retainPaywallFollowupIfActive,
 } from '@/lib/payment/flow-telemetry';
-import { paymentOrderPagePath, persistPaymentOpen } from '@/lib/payment/open-storage';
-import { getReplayLifecycle } from '@/lib/telemetry';
-import { formatYuanShort, paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
-import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import { openCreatedPayment } from '@/lib/payment/open-created-payment';
+import { paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
+import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import {
+  checkoutButtonLabel,
+  formatDiscountLabel,
+  resolveCheckoutSelection,
+  selectionKey,
+} from '@/lib/vip/presentation';
 
 const PAYMENT_TYPES: PaymentType[] = ['wxpay'];
 
@@ -74,6 +81,7 @@ function RechargePageContent() {
   useTelegramBackButton(goBack);
 
   const { data, isLoading, isError, refetch } = usePaymentPlansQuery();
+  const vipStatus = useVipStatusQuery();
   const createOrder = useCreatePaymentOrderMutation();
   const inviteEntry = useInviteEntryStatusQuery();
   const inviteEntryEnabled = inviteEntry.data?.entry_enabled === true;
@@ -89,76 +97,82 @@ function RechargePageContent() {
     captureRechargeViewed();
   }, []);
 
-  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const noticeChoiceRef = useRef<'invite' | 'recharge' | null>(null);
   const [paymentPromptOpen, setPaymentPromptOpen] = useState(false);
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const submitLock = useRef(false);
 
   const plans = data?.plans ?? [];
+  const vipPlans = data?.vip_plans ?? [];
   const pageConfig = data?.page_config ?? DEFAULT_RECHARGE_PAGE_CONFIG;
+  const vipBenefits = vipStatus.data?.benefits;
+  const discountLabel = formatDiscountLabel(vipBenefits?.text_discount_rate ?? Number.NaN);
   const paymentPromptConfig =
     data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
   const showInsufficientCreditsNotice =
     searchParams.get('reason') === 'insufficient_credits' && !!data && !noticeDismissed;
-  const selectedPlan = useMemo(
-    () => (data?.plans ?? []).find((p) => p.id === selectedPlanId) ?? null,
-    [data, selectedPlanId]
+  const selection = useMemo(
+    () =>
+      resolveCheckoutSelection({
+        selectedKey,
+        creditPlans: data?.plans ?? [],
+        vipPlans: data?.vip_plans ?? [],
+      }),
+    [data?.plans, data?.vip_plans, selectedKey]
   );
 
-  const handleSelect = useCallback(
+  const handleSelectCredits = useCallback(
     (id: string) => {
       whisper();
-      setSelectedPlanId(id);
+      setCheckoutError(null);
+      setSelectedKey(selectionKey('credits', id));
       capturePaymentMethodSelected({ planId: id, paymentType });
     },
     [paymentType, whisper]
   );
 
-  const openCreatedPayment = useCallback(
+  const handleSelectVip = useCallback(
+    (id: string) => {
+      whisper();
+      setCheckoutError(null);
+      setSelectedKey(selectionKey('vip', id));
+      capturePaymentMethodSelected({ planId: id, paymentType });
+    },
+    [paymentType, whisper]
+  );
+
+  const launchPayment = useCallback(
     async (result: CreatePaymentOrderData) => {
-      const openFailureKind = persistPaymentOpen({
-        orderId: result.order.id,
-        payUrl: result.pay_url,
+      await openCreatedPayment({
+        router,
+        result,
         returnTo,
-        replayContextId: getReplayLifecycle().getSnapshot().replayContextId,
-      });
-      captureExternalPaymentOpenRequested({
-        orderId: result.order.id,
         paymentType,
-        openFailureKind,
       });
-      // 必须在 router.push 之前：拉起若退化成本页导航，会被随后的客户端路由抢跑丢弃。
-      if (openFailureKind !== 'invalid_url') {
-        await getReplayLifecycle().enterExternalPaymentPending();
-        markExternalPaymentOpened({
-          orderId: result.order.id,
-          paymentType,
-        });
-        openPaymentUrl(result.pay_url);
-      }
-      router.push(
-        paymentOrderPagePath(result.order.id, {
-          paymentStarted: true,
-          returnTo,
-        })
-      );
     },
     [paymentType, returnTo, router]
   );
 
   const handleSubmit = useCallback(async () => {
-    if (!selectedPlan || createOrder.isPending) return;
+    if (!selection || createOrder.isPending || submitLock.current) return;
+    if (!selection.available) {
+      setCheckoutError('VIP 购买暂未开放，请稍后再试。');
+      return;
+    }
+    submitLock.current = true;
     impact('light');
+    setCheckoutError(null);
     try {
-      // 用户关闭 VPN 前先完成下单；弹窗出现即表示支付地址已经准备好。
       const result = await createOrder.mutateAsync({
-        plan_id: selectedPlan.id,
+        plan_id: selection.id,
         payment_type: paymentType,
       });
       capturePaymentOrderCreated({
-        planId: selectedPlan.id,
+        planId: selection.id,
         paymentType,
         orderId: result.order.id,
         amountCents: result.order.amount_cents,
@@ -168,26 +182,30 @@ function RechargePageContent() {
         setPaymentPromptOpen(true);
         return;
       }
-      await openCreatedPayment(result);
+      await launchPayment(result);
     } catch {
       notification('error');
+      setCheckoutError('暂时无法创建订单，请稍后重试。');
+    } finally {
+      submitLock.current = false;
     }
   }, [
-    selectedPlan,
+    selection,
     createOrder,
     impact,
     paymentPromptConfig.enabled,
     paymentType,
-    openCreatedPayment,
+    launchPayment,
     notification,
   ]);
 
   const handleConfirmPayment = useCallback(() => {
     if (!preparedPayment) return;
+    const result = preparedPayment;
     setPaymentPromptOpen(false);
     setPreparedPayment(null);
-    void openCreatedPayment(preparedPayment);
-  }, [preparedPayment, openCreatedPayment]);
+    void launchPayment(result);
+  }, [preparedPayment, launchPayment]);
 
   const handlePaymentPromptOpenChange = useCallback((open: boolean) => {
     setPaymentPromptOpen(open);
@@ -216,7 +234,7 @@ function RechargePageContent() {
 
       {/* 主区域：story / cards / trust 三段走 justify-between，
           小屏紧凑、大屏自然呼吸 */}
-      <div className="flex flex-1 flex-col justify-between px-4 py-4">
+      <div className="flex min-h-0 flex-1 flex-col justify-between overflow-y-auto px-4 py-4">
         <section className="px-1">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-medium text-foreground/90">{pageConfig.description}</p>
@@ -256,16 +274,39 @@ function RechargePageContent() {
               <Skeleton key={i} className="h-[68px] rounded-xl border border-border bg-card" />
             ))
           ) : (
-            plans.map((plan) => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                selected={plan.id === selectedPlanId}
-                selectedColor={pageConfig.selected_plan_color}
-                badgeColor={pageConfig.badge_color}
-                onSelect={handleSelect}
-              />
-            ))
+            <>
+              {plans.map((plan) => (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  selected={selectionKey('credits', plan.id) === selectedKey}
+                  selectedColor={pageConfig.selected_plan_color}
+                  badgeColor={pageConfig.badge_color}
+                  onSelect={handleSelectCredits}
+                />
+              ))}
+              {vipPlans.length > 0 ? (
+                <div role="radiogroup" aria-label="VIP 套餐" className="mt-1 space-y-3">
+                  <div className="flex items-center gap-2 px-1 text-[12px] font-bold text-primary">
+                    <Crown className="h-3.5 w-3.5" aria-hidden />
+                    <span>VIP 会员</span>
+                    <span className="h-px flex-1 bg-gradient-to-r from-primary/55 to-transparent" />
+                  </div>
+                  {vipPlans.map((plan) => (
+                    <VipPlanCard
+                      key={plan.id}
+                      plan={plan}
+                      selected={selectionKey('vip', plan.id) === selectedKey}
+                      discountLabel={discountLabel}
+                      checkinBaseCredits={vipBenefits?.checkin_base_credits}
+                      checkinVipCredits={vipBenefits?.checkin_vip_credits}
+                      variant="recharge"
+                      onSelect={handleSelectVip}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </>
           )}
 
           {/* 邀请快捷入口：紧挨着套餐列表，保持相同的 gap-3，并对齐高档套餐卡高度 */}
@@ -304,6 +345,11 @@ function RechargePageContent() {
         className="shrink-0 border-t border-border bg-background/95 backdrop-blur-md"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
+        {checkoutError ? (
+          <p role="alert" className="px-4 pt-2 text-[12px] text-destructive">
+            {checkoutError}
+          </p>
+        ) : null}
         <div className="flex items-center gap-3 px-4 py-3">
           <div role="radiogroup" aria-label="支付方式" className="flex shrink-0 gap-2">
             {PAYMENT_TYPES.map((t) => {
@@ -320,8 +366,8 @@ function RechargePageContent() {
                   onClick={() => {
                     whisper();
                     setPaymentType(t);
-                    if (selectedPlanId) {
-                      capturePaymentMethodSelected({ planId: selectedPlanId, paymentType: t });
+                    if (selection) {
+                      capturePaymentMethodSelected({ planId: selection.id, paymentType: t });
                     }
                   }}
                   className={cn(
@@ -341,76 +387,36 @@ function RechargePageContent() {
             })}
           </div>
           <Button
-            disabled={!selectedPlan || createOrder.isPending}
-            onClick={handleSubmit}
+            disabled={!selection?.available || createOrder.isPending}
+            onClick={() => void handleSubmit()}
             className={cn(
               'flex-1 h-10 rounded-xl font-bold transition-all',
-              selectedPlan && !createOrder.isPending
+              selection?.available && !createOrder.isPending
                 ? 'text-primary-foreground hover:opacity-90 border-0'
                 : 'bg-secondary text-muted-foreground'
             )}
             style={
-              selectedPlan && !createOrder.isPending
+              selection?.available && !createOrder.isPending
                 ? { backgroundColor: pageConfig.button_color }
                 : undefined
             }
           >
-            {createOrder.isPending
-              ? '创建中...'
-              : selectedPlan
-                ? `${pageConfig.button_text} ¥${formatYuanShort(selectedPlan.price_cents)}`
-                : '请选择套餐'}
+            {checkoutButtonLabel({
+              pending: createOrder.isPending,
+              selection,
+              vipActive: vipStatus.data?.active === true,
+              creditsButtonText: pageConfig.button_text,
+            })}
           </Button>
         </div>
       </div>
-      <Dialog open={paymentPromptOpen} onOpenChange={handlePaymentPromptOpenChange}>
-        <DialogContent
-          className="w-[calc(100%-2rem)] max-w-sm overflow-hidden rounded-3xl border-2 bg-popover p-0 text-popover-foreground"
-          style={{ borderColor: paymentPromptConfig.accent_color }}
-        >
-          <div
-            className="h-1.5 w-full"
-            style={{ backgroundColor: paymentPromptConfig.accent_color }}
-          />
-          <div className="px-5 pb-6 pt-5">
-            <DialogHeader className="items-center text-center">
-              <div className="flex w-full flex-col gap-3">
-                {[
-                  { id: 1, before: '第一步：请关闭VPN' },
-                  { id: 2, before: '第二步：请', emphasis: '直接截图', after: '保存支付码' },
-                  { id: 3, before: '第三步：', emphasis: '手动打开', after: '微信扫码支付' },
-                ].map((step) => (
-                  <div
-                    key={step.id}
-                    className="w-full rounded-xl border border-[#3f3f46] bg-[#262626] px-[14px] py-[15px] text-center text-[15px] font-[750] leading-[22px] text-[#fde68a] dark:text-[#b45309]"
-                  >
-                    {step.before}
-                    {step.emphasis ? (
-                      <span
-                        className="font-[900]"
-                        style={{ color: paymentPromptConfig.accent_color }}
-                      >
-                        {step.emphasis}
-                      </span>
-                    ) : null}
-                    {step.after}
-                  </div>
-                ))}
-              </div>
-            </DialogHeader>
-            <DialogFooter className="mt-4 border-t border-[#3f3f46] pt-4">
-              <Button
-                className="mx-auto min-h-[46px] w-fit rounded-xl border-0 px-6 font-black text-[#171717] hover:opacity-90"
-                style={{ backgroundColor: paymentPromptConfig.accent_color }}
-                disabled={!preparedPayment}
-                onClick={handleConfirmPayment}
-              >
-                已关闭VPN，去截图保存二维码
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PaymentVpnPromptDialog
+        open={paymentPromptOpen}
+        config={paymentPromptConfig}
+        canConfirm={Boolean(preparedPayment)}
+        onOpenChange={handlePaymentPromptOpenChange}
+        onConfirm={handleConfirmPayment}
+      />
       <Dialog
         open={showInsufficientCreditsNotice}
         onOpenChange={(open) => {

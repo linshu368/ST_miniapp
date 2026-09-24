@@ -32,6 +32,7 @@ import {
   type FixedDeductionCategory,
 } from '../billing/usage-pricing.js';
 import { applyLlmCharge } from './apply-charge.js';
+import { frozenLlmChargeMetadata } from './text-billing.js';
 import {
   buildGenerationMetadata,
   fetchGenerationDataForSettlement,
@@ -56,6 +57,15 @@ export interface GenerationSettlementEntry {
   catalog_version: number;
   pricing_config_version: number;
   exchange_rate: number;
+  original_credits?: number;
+  discount_rate?: number | null;
+  discounted_exact?: number;
+  payable_credits?: number;
+  wallet_policy?: 'main_only' | 'main_then_bonus';
+  requires_vip?: boolean;
+  vip_active?: boolean;
+  vip_valid_until?: string | null;
+  model_tier?: string | null;
   user_input: string;
   assistant_reply: string | null;
   history: unknown[];
@@ -327,9 +337,7 @@ async function chargeRound(input: {
       assistantReply: entry.assistant_reply,
       baseMetadata: {
         requested_model: entry.model,
-        billing_mode: 'fixed_tier',
-        fixed_deduction_category: entry.fixed_deduction_category,
-        fixed_deduction: entry.fixed_deduction,
+        ...frozenLlmChargeMetadata(entry),
       },
     });
 
@@ -373,5 +381,14 @@ function billingSnapshotFromEntry(entry: GenerationSettlementEntry): LlmBillingS
     pricing_config_version: entry.pricing_config_version,
     exchange_rate: entry.exchange_rate,
     billing_mode: 'fixed_tier',
+    original_credits: entry.original_credits,
+    discount_rate: entry.discount_rate,
+    discounted_exact: entry.discounted_exact,
+    payable_credits: entry.payable_credits,
+    wallet_policy: entry.wallet_policy,
+    requires_vip: entry.requires_vip,
+    vip_active: entry.vip_active,
+    vip_valid_until: entry.vip_valid_until,
+    model_tier: entry.model_tier,
   };
 }

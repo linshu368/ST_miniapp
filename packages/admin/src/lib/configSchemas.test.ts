@@ -48,6 +48,48 @@ describe('LlmPricingConfigSchema', () => {
   });
 });
 
+describe('VIP media config registration', () => {
+  it('exposes advanced image and media free-trial configs with valid defaults', () => {
+    const keys = [
+      'image_advanced_enabled',
+      'image_advanced_generation_credits',
+      'image_advanced_price_label',
+      'image_advanced_provider_config',
+      'media_feature_free_trial_limit',
+    ] as const;
+
+    for (const key of keys) {
+      expect(managedConfigKeys).toContain(key);
+      expect(configSchemas[key].safeParse(configMetadata[key].defaultValue).success).toBe(true);
+    }
+  });
+
+  it('validates advanced image provider config as empty or complete', () => {
+    const key = 'image_advanced_provider_config';
+
+    expect(configSchemas[key].safeParse({}).success).toBe(true);
+    expect(
+      configSchemas[key].safeParse({
+        provider: 'liaobots_grok',
+        model: 'grok-4-image',
+      }).success
+    ).toBe(true);
+    expect(configSchemas[key].safeParse({ provider: 'liaobots_grok' }).success).toBe(false);
+    expect(configSchemas[key].safeParse({ provider: 'unknown', model: 'model' }).success).toBe(
+      false
+    );
+  });
+
+  it('bounds media free-trial limits', () => {
+    const key = 'media_feature_free_trial_limit';
+
+    expect(configSchemas[key].safeParse(1).success).toBe(true);
+    expect(configSchemas[key].safeParse(100).success).toBe(true);
+    expect(configSchemas[key].safeParse(0).success).toBe(false);
+    expect(configSchemas[key].safeParse(101).success).toBe(false);
+  });
+});
+
 describe('recharge page config registration', () => {
   it('exposes the recharge page in the managed config directory with a valid default', () => {
     const key = 'miniapp_recharge_page_config';

@@ -195,7 +195,7 @@ pnpm supabase:link:test
 
 - [系统架构](docs/ARCHITECTURE.md)
 - [运维总览](ops/README.md)
-- [日志系统](docs/log_system.md)
+- [后端日志与可观测性](.trellis/spec/backend/app/data-reliability-and-security.md)
 - [数据库域与归属](docs/ARCHITECTURE.md#51-数据库八域布局099-之后test-与生产一致)
 - [Trellis 工作流](.trellis/workflow.md)
 - [Admin spec](.trellis/spec/admin/app/index.md)

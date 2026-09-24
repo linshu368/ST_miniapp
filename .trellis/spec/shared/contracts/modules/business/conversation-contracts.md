@@ -1,10 +1,11 @@
-﻿---
+---
 module_id: shared.business.conversation-contracts
 title: 会话、语音与图片共享契约
 scope: shared
 category: business
 status: active
 owners: [shared]
+last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
 last_verified_at: 2026-09-17
 ---
 
@@ -47,3 +48,5 @@ Shared 只定义浏览器可见 DTO、错误码、容量上限和 runtime valida
 ## 变更记录
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）写入图片生成 telemetry 事件契约与禁止字段；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
+- 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。
+- 2026-09-23：任务 `Admin VIP media configuration`（`.trellis/tasks/archive/2026-09/09-23-admin-vip-media-config/`）Admin ?? VIP ??????????????????/????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。

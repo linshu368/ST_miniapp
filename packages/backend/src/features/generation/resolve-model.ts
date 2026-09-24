@@ -13,12 +13,20 @@
 import { resolveEffectiveSelectedModelId, resolveEnabledCatalogModel } from '@miniapp/shared';
 import { fetchModelCatalogSnapshot, getModelBillingContext } from '../../platform/model-tiers.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
+import { createLogger } from '../../lib/logger.js';
+import { VipStatusService } from '../vip/vip-status.js';
+import { resolveTextModelSelection } from './text-billing.js';
 import type { ResolvedModel } from './types.js';
 
 let userSettingsRepository: MiniappUserSettingsRepository | null = null;
+let vipStatusService: VipStatusService | null = null;
 
 function userSettings(): MiniappUserSettingsRepository {
   return (userSettingsRepository ??= new MiniappUserSettingsRepository());
+}
+
+function vipStatus(): VipStatusService {
+  return (vipStatusService ??= new VipStatusService());
 }
 
 export interface AuthoritativeModel {
@@ -47,14 +55,53 @@ export async function resolveAuthoritativeModel(
  * 对话链路的模型解析入口：在权威模型之上补齐计费所需的档位与免费属性。
  */
 export async function resolveModelForUser(userId: string): Promise<ResolvedModel> {
-  const persistedModelId = await userSettings().getSelectedModelId(userId);
-  const authoritative = await resolveAuthoritativeModel(persistedModelId);
-  const billing = await getModelBillingContext(authoritative.openRouterModelId);
+  const log = createLogger('generation');
+  const [persistedModelId, snapshot, entitlement] = await Promise.all([
+    userSettings().getSelectedModelId(userId),
+    fetchModelCatalogSnapshot(),
+    vipStatus().getStatus(userId, log),
+  ]);
+  const selection = resolveTextModelSelection({
+    catalog: snapshot.catalog,
+    persistedModelId,
+    vipActive: entitlement.active,
+  });
+  if (selection.vipFallback && selection.modelId !== persistedModelId) {
+    try {
+      await userSettings().correctSelectedModelId(userId, selection.modelId);
+      log.biz.info(
+        {
+          event: 'llm.model.vip_fallback',
+          userId,
+          fromModelId: persistedModelId,
+          toModelId: selection.modelId,
+          vipActive: entitlement.active,
+        },
+        'VIP 已失效，本轮回落轻量模型'
+      );
+    } catch (err) {
+      log.sys.error(
+        {
+          err,
+          event: 'llm.model.vip_fallback_persist_failed',
+          userId,
+          fromModelId: persistedModelId,
+          toModelId: selection.modelId,
+        },
+        '回落轻量模型后写回选择失败，本轮仍使用轻量'
+      );
+    }
+  }
 
+  const billing = await getModelBillingContext(selection.openRouterModelId);
   return {
-    modelId: billing.modelId ?? authoritative.modelId,
-    openRouterModelId: authoritative.openRouterModelId,
+    modelId: billing.modelId ?? selection.modelId,
+    openRouterModelId: selection.openRouterModelId,
     tier: billing.modelTier,
     isFree: billing.isFree,
+    entitlement: {
+      active: entitlement.active,
+      validUntil: entitlement.valid_until,
+    },
   };
 }

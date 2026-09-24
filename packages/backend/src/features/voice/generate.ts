@@ -99,8 +99,7 @@ export async function runVoiceGeneration(input: {
     let chargeId: string | null = null;
     if (input.billingEnabled) {
       try {
-        const charge = await settleVoiceGeneration({
-          chargeKey: input.audioId,
+        const settlement = await settleVoiceGeneration({
           userId: input.userId,
           audioId: input.audioId,
           amount: input.creditsPerGeneration,
@@ -117,7 +116,7 @@ export async function runVoiceGeneration(input: {
             spoken_text: spoken,
           },
         });
-        if (charge.charged) {
+        if (settlement.charged) {
           creditsCharged = input.creditsPerGeneration;
           chargeId = input.audioId;
           input.log.biz.info(
@@ -129,7 +128,7 @@ export async function runVoiceGeneration(input: {
             },
             '语音扣费成功'
           );
-        } else if (charge.chargeStatus === 'already_charged') {
+        } else if (settlement.chargeStatus === 'already_charged') {
           // 幂等命中：轮询重试、进程重复收口不得扣第二次。仍按已扣记账。
           creditsCharged = input.creditsPerGeneration;
           chargeId = input.audioId;
@@ -141,7 +140,17 @@ export async function runVoiceGeneration(input: {
             },
             '语音扣费幂等命中，跳过'
           );
-        } else if (charge.chargeStatus === 'insufficient_balance') {
+        } else if (settlement.freeTrialConsumed) {
+          input.log.biz.info(
+            {
+              event: 'voice.free_trial.consumed',
+              audioId: input.audioId,
+              chargeStatus: settlement.chargeStatus,
+              latencyMs: Date.now() - startedAt,
+            },
+            '语音免费体验已消耗'
+          );
+        } else if (settlement.chargeStatus === 'insufficient_balance') {
           await deleteMessageVoice(stored.path);
           storedPath = null;
           await audio.markFailed(
@@ -149,6 +158,11 @@ export async function runVoiceGeneration(input: {
             'voice_insufficient_balance',
             Date.now() - startedAt
           );
+          return;
+        } else if (settlement.chargeStatus === 'free_trial_invalid') {
+          await deleteMessageVoice(stored.path);
+          storedPath = null;
+          await audio.markFailed(input.audioId, 'voice_free_trial_invalid', Date.now() - startedAt);
           return;
         }
       } catch (chargeError) {

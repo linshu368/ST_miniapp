@@ -132,6 +132,10 @@ const RULES = [
     allow: [
       'packages/backend/src/features/payment/usecases/PaymentSettlement.ts',
       'packages/backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts',
+      // 同一数据库履约出口的 VIP 兼容函数体，不是第二条应用入账路径。
+      'packages/shared/migrations/20260921_vip_payment_fulfillment.sql',
+      // T3A 只替换同一函数体，让履约读取订单快照而不是写死 1399/2888。
+      'packages/shared/migrations/20260923_vip_strategy_config.sql',
     ],
   },
   {

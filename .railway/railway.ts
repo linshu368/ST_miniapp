@@ -44,6 +44,11 @@ import { defineRailway, fn, github, preserve, project, service } from 'railway/i
 const REPOSITORY = process.env.RAILWAY_GITHUB_REPO ?? 'linshu368/ST_miniapp';
 const COMMON_API_VARIABLES = [
   'ADMIN_PLATFORM_URL',
+  'BATCH_LAB_ENABLED',
+  'BATCH_LAB_MODEL_KEY',
+  'BATCH_LAB_SAMPLE_SOURCE_ENV',
+  'BATCH_LAB_SOURCE_DATABASE_URL',
+  'BATCH_LAB_URL',
   'BOT_INTERNAL_SECRET',
   'CS_ADMIN_TOKEN',
   'CS_TELEGRAM_BOT_TOKEN',
@@ -54,10 +59,15 @@ const COMMON_API_VARIABLES = [
   'DEFAULT_LLM_MODEL',
   'DIRECT_URL',
   'FRONTEND_URL',
+  'GROK_MODEL',
+  'LIAOBOTS_AUTH',
+  'LIAOBOTS_BASE',
   'LLM_API_KEY',
   'MINIMAX_API_KEY',
   'NODE_ENV',
   'OPENAI_API_KEY',
+  'OPENAI_API_BASE_URL',
+  'OPENAI_MODEL',
   'PAYMENT_BASE_URL',
   'PAYMENT_ENABLED',
   'PAYMENT_MERCHANT_ID',
@@ -66,12 +76,18 @@ const COMMON_API_VARIABLES = [
   'PAYMENT_PLATFORM_PUBLIC_KEY',
   'PAYMENT_RETURN_URL',
   'PROD_SUPABASE_PROJECT_REF',
+  'POSTHOG_API_KEY',
+  'POSTHOG_HOST',
+  'POSTHOG_TIMEOUT_MS',
+  'REPLICATE_TOKEN',
   'SENTRY_DSN',
   'SENTRY_ENVIRONMENT',
   'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_COMMUNITY_BOT_TOKEN',
   'TELEGRAM_WEBHOOK_SECRET',
   'UPSTASH_REDIS_REST_TOKEN',
   'UPSTASH_REDIS_REST_URL',
+  'Z_MODEL',
 ] as const;
 const DEVELOPMENT_API_VARIABLES = [
   'DEV_AUTH_BYPASS',
@@ -190,7 +206,44 @@ export default defineRailway((ctx) => {
     env: paymentCronEnv,
   });
 
+  // Production 不声明这个 Cron。development 允许写入 TEST；
+  // 真实写入仍要 vip_reminders_enabled 显式为 true，本文件不打开它。
+  // PR 临时环境会复制 development，但 workflow 会立刻删除该 Cron，避免多个调度器
+  // 同时扫描同一个 TEST 库。
+  // 每小时一次是因为漏掉上海日历日就无法补发该窗口，幂等键让重复跑是安全的。
+  const resources = [stminiapp, paymentReconcileWorker, paymentCron];
+  if (!production) {
+    resources.push(
+      fn('stminiapp-vip-reminder-cron', {
+        source: github(REPOSITORY, { branch }),
+        build: {
+          builder: 'DOCKERFILE',
+          buildCommand: 'pnpm install',
+          buildEnvironment: 'V3',
+          dockerfilePath: '/ops/docker/Dockerfile.backend',
+        },
+        start: 'tsx src/scripts/send-vip-expiry-reminders.ts --write',
+        deploy: {
+          cronSchedule: '20 * * * *',
+          restartPolicyType: 'NEVER',
+        },
+        env: {
+          NODE_ENV: stminiapp.env.NODE_ENV,
+          DATABASE_ENV: stminiapp.env.DATABASE_ENV,
+          DATABASE_URL: stminiapp.env.DATABASE_URL,
+          DIRECT_URL: stminiapp.env.DIRECT_URL,
+          PROD_SUPABASE_PROJECT_REF: stminiapp.env.PROD_SUPABASE_PROJECT_REF,
+          TEST_DATABASE_URL: stminiapp.env.TEST_DATABASE_URL,
+          TEST_DIRECT_URL: stminiapp.env.TEST_DIRECT_URL,
+          TEST_SUPABASE_URL: stminiapp.env.TEST_SUPABASE_URL,
+          TEST_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.TEST_SUPABASE_SERVICE_ROLE_KEY,
+          TEST_SUPABASE_PROJECT_REF: stminiapp.env.TEST_SUPABASE_PROJECT_REF,
+        },
+      })
+    );
+  }
+
   return project('st-miniapp', {
-    resources: [stminiapp, paymentReconcileWorker, paymentCron],
+    resources,
   });
 });

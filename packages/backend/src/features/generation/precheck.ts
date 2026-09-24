@@ -8,11 +8,19 @@
  * 本模块只做判定、不构造响应。
  */
 
+import type { WalletDebitPolicy } from '@miniapp/shared';
 import { resolveFixedDeduction, type FixedDeductionDecision } from '../billing/usage-pricing.js';
 import type { FixedDeductionCategory } from '../billing/usage-pricing.js';
 import type { LlmPricingConfig, ModelBillingContext } from '../../platform/model-tiers.js';
 import { MiniappWalletRepository } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import type { GenerationLogger } from './types.js';
+import {
+  coverageForTextWallet,
+  originalCreditsForDecision,
+  quoteAcceptedTextUsage,
+  tierForTextQuote,
+  type TextEntitlement,
+} from './text-billing.js';
 
 let walletRepository: MiniappWalletRepository | null = null;
 
@@ -33,6 +41,16 @@ export interface BillingSnapshot {
   pricing_config_version: number;
   /** charge_llm_usage 仍要求正数；定档扣费不再使用汇率。 */
   exchange_rate: number;
+  original_credits: number;
+  discount_rate: number | null;
+  discounted_exact: number;
+  payable_credits: number;
+  wallet_policy: WalletDebitPolicy;
+  requires_vip: boolean;
+  vip_active: boolean;
+  vip_valid_until: string | null;
+  model_tier: string;
+  vip_discount_config_version: number | null;
 }
 
 export interface BillingPlan {
@@ -51,9 +69,12 @@ export function resolveBillingPlan(input: {
   billing: ModelBillingContext;
   isFreeRound: boolean;
   pricing: LlmPricingConfig;
+  entitlement: TextEntitlement;
+  discountRate?: number;
+  discountConfigVersion?: number | null;
   log: GenerationLogger;
 }): BillingPlan {
-  const { chargeId, billing, isFreeRound, pricing, log } = input;
+  const { chargeId, billing, isFreeRound, pricing, entitlement, log } = input;
 
   const fixedDeduction = resolveFixedDeduction({
     isFreeModel: billing.isFree,
@@ -73,19 +94,45 @@ export function resolveBillingPlan(input: {
     );
   }
 
+  const tier = tierForTextQuote(billing.modelTier);
+  // 免费轮把原价记在快照里，实付为 0，避免和 VIP 折扣叠在一起。
+  const quote = quoteAcceptedTextUsage({
+    originalCredits: originalCreditsForDecision({
+      category: fixedDeduction.category,
+      undiscountedAmount: fixedDeduction.amount,
+      config: pricing.fixedDeduction,
+    }),
+    tier,
+    isVip: entitlement.active,
+    isFreeRound: fixedDeduction.category === 'free_quota',
+    vipValidUntil: entitlement.validUntil,
+    ...(input.discountRate === undefined ? {} : { discountRate: input.discountRate }),
+    discountConfigVersion: input.discountConfigVersion ?? null,
+  });
+
   return {
     chargeId,
-    fixedDeduction,
+    fixedDeduction: { amount: quote.payable_credits, category: fixedDeduction.category },
     snapshot: {
       charge_id: chargeId,
       model_id: billing.modelId,
       model_display_name: billing.modelDisplayName,
       model_markup: isFreeRound ? 0 : 1,
-      fixed_deduction: fixedDeduction.amount,
+      fixed_deduction: quote.payable_credits,
       fixed_deduction_category: fixedDeduction.category,
       catalog_version: billing.catalogVersion,
       pricing_config_version: pricing.version,
       exchange_rate: 1,
+      original_credits: quote.original_credits,
+      discount_rate: quote.discount_rate,
+      discounted_exact: quote.discounted_exact,
+      payable_credits: quote.payable_credits,
+      wallet_policy: quote.wallet_policy,
+      requires_vip: quote.requires_vip,
+      vip_active: quote.vip_active,
+      vip_valid_until: quote.vip_valid_until,
+      model_tier: quote.model_tier,
+      vip_discount_config_version: quote.discount_config_version,
     },
   };
 }
@@ -102,10 +149,11 @@ export type BalancePrecheck =
 export async function checkWalletBalance(input: {
   userId: string;
   requiredAmount: number;
+  walletPolicy: WalletDebitPolicy;
   openRouterModelId: string;
   log: GenerationLogger;
 }): Promise<BalancePrecheck> {
-  const { userId, requiredAmount, openRouterModelId, log } = input;
+  const { userId, requiredAmount, walletPolicy, openRouterModelId, log } = input;
 
   if (requiredAmount === 0) {
     log.biz.debug(
@@ -116,19 +164,30 @@ export async function checkWalletBalance(input: {
   }
 
   const wallet = await wallets().getOrCreate(userId);
-  const balance = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-  if (balance < requiredAmount) {
+  const coverage = coverageForTextWallet({
+    policy: walletPolicy,
+    payableCredits: requiredAmount,
+    mainCredits: wallet.main_credits,
+    bonusCredits: wallet.bonus_credits,
+  });
+  if (!coverage.ok) {
     log.biz.info(
       {
         event: 'llm.balance.insufficient',
         userId,
-        balance,
+        policy: walletPolicy,
+        code: coverage.code,
+        available: coverage.available,
         required: requiredAmount,
         model: openRouterModelId,
       },
       'insufficient balance'
     );
-    return { ok: false, creditsRequired: requiredAmount, creditsAvailable: balance };
+    return {
+      ok: false,
+      creditsRequired: requiredAmount,
+      creditsAvailable: coverage.available,
+    };
   }
 
   return { ok: true };

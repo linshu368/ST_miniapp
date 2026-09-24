@@ -4,6 +4,8 @@
 
 import { z } from 'zod';
 
+import { isVipPlanId, type VipPlan } from './vip.js';
+
 export type PaymentType = 'alipay' | 'wxpay';
 export const PaymentTypeSchema = z.enum(['alipay', 'wxpay']);
 
@@ -17,6 +19,9 @@ export const PaymentOrderStatusSchema = z.enum(['pending', 'completed', 'expired
  */
 export type PaymentSettlementSource = 'webhook' | 'return' | 'query' | 'cron';
 export const PaymentSettlementSourceSchema = z.enum(['webhook', 'return', 'query', 'cron']);
+
+export type PaymentProductType = 'credits' | 'vip';
+export const PaymentProductTypeSchema = z.enum(['credits', 'vip']);
 
 /** 套餐视觉变体，驱动 4 档层级样式（entry 降权 / standard / recommended 主推 / premium 大户） */
 export type PaymentPlanVariant = 'entry' | 'standard' | 'recommended' | 'premium';
@@ -159,11 +164,23 @@ export interface PaymentOrder {
    * 订单详情与订单列表必须使用同一映射，不得只在其中一个透出。
    */
   settled_by: PaymentSettlementSource | null;
+  /**
+   * Additive VIP/credits 商品快照。旧订单与旧 mapper 可以省略；
+   * 新 producer 应写出 product_type / product_id，VIP 单再写时长、赠送与履约截止时间。
+   */
+  product_type?: PaymentProductType;
+  product_id?: string | null;
+  fulfillment_applied?: boolean;
+  vip_duration_days?: number | null;
+  vip_bonus_credits?: number | null;
+  vip_valid_until?: string | null;
 }
 
 // ==== GET /api/payment/plans ====
 export interface GetPaymentPlansData {
   plans: PaymentPlan[];
+  /** 旧客户端忽略即可；未部署 VIP 商品的 producer 可以省略。 */
+  vip_plans?: VipPlan[];
   page_config: RechargePageConfig;
   payment_prompt_dialog_config: PaymentPromptDialogConfig;
   /** 因余额不足进入充值页时展示的运营提示语 */
@@ -199,4 +216,9 @@ export interface GetPaymentOrdersData {
   items: PaymentOrder[];
   /** null 代表没有下一页 */
   next_cursor: string | null;
+}
+
+export function paymentProductTypeForPlanId(planId: string): PaymentProductType | null {
+  if (isVipPlanId(planId)) return 'vip';
+  return null;
 }

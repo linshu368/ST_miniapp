@@ -147,6 +147,53 @@
   animation: model-tier-pulse 1.8s ease-out infinite;
 }
 
+@keyframes vip-gold-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.vip-benefit-frame {
+  background: linear-gradient(
+    112deg,
+    #9a6a24 0%,
+    #ffe9a3 18%,
+    #bd8430 38%,
+    #fff3bd 55%,
+    #aa7428 76%,
+    #f1c968 100%
+  );
+  background-size: 220% 100%;
+  animation: vip-gold-flow 4.8s linear infinite;
+}
+
+.vip-benefit-title {
+  background-image: linear-gradient(
+    105deg,
+    #c8943f 0%,
+    #ffe9a4 22%,
+    #fff8d5 42%,
+    #d3a24c 62%,
+    #fff0b2 82%,
+    #c58c35 100%
+  );
+  background-size: 220% auto;
+  animation: vip-gold-flow 4s linear infinite;
+  filter: drop-shadow(0 0 8px rgb(231 184 90 / 18%));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-current-shimmer::after,
+  .model-tier-pulse,
+  .vip-benefit-frame,
+  .vip-benefit-title {
+    animation: none;
+  }
+}
+
 /*
   聊天消息区：滚动条整条藏掉。原版是在 ST iframe 里对 #chat 做的同一件事，
   移动端本来也不显示，留着只会在桌面调试时多出一条压住气泡右边缘的灰条。
