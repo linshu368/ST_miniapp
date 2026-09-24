@@ -17,7 +17,6 @@
     "vip:send-expiry-reminders": "tsx src/scripts/send-vip-expiry-reminders.ts",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:integration": "vitest run src/infrastructure/repositories/conversations.integration.test.ts",
-    "batch-lab:verify-source": "tsx src/scripts/verify-batch-lab-source-access.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

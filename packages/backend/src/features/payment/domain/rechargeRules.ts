@@ -23,8 +23,8 @@ export const PAYMENT_PROMPT_DIALOG_CONFIG_KEY = 'miniapp_payment_prompt_dialog_c
 export const INSUFFICIENT_CREDITS_NOTICE_CONFIG_KEY = 'insufficient_credits_notice';
 export const VIP_PURCHASE_ENABLED_CONFIG_KEY = 'vip_purchase_enabled';
 export const ORDER_EXPIRE_MS = 15 * 60 * 1000;
-/** 星尘套餐沿用已验证的网关商品名，避免改回曾触发渠道拦截的文案。 */
-export const CREDITS_GATEWAY_PRODUCT_NAME = 'VIP会员';
+/** 星尘套餐沿用 dev 当前网关商品名，避免回退到渠道曾拦截的旧文案。 */
+export const CREDITS_GATEWAY_PRODUCT_NAME = '星尘';
 
 const DEFAULT_INSUFFICIENT_CREDITS_NOTICE = '当前星尘积分不足，需要先购买积分才能继续聊天。';
 
@@ -199,7 +199,7 @@ export function buildVipProductSnapshot(
     bonus_credits: 0,
     vip_duration_days: terms.duration_days,
     vip_bonus_credits: terms.bonus_credits,
-    gateway_product_name: planId === 'week' ? 'VIP周卡' : 'VIP月卡',
+    gateway_product_name: planId === 'week' ? '周卡' : '月卡',
   };
 }
 

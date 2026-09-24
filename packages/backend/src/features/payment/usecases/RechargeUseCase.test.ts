@@ -210,7 +210,7 @@ describe('RechargeUseCase product snapshots', () => {
       })
     );
     expect(gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '6.00', productName: 'VIP会员' })
+      expect.objectContaining({ amount: '6.00', productName: '星尘' })
     );
   });
 
@@ -249,7 +249,7 @@ describe('RechargeUseCase product snapshots', () => {
       })
     );
     expect(week.gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '13.99', productName: 'VIP周卡' })
+      expect.objectContaining({ amount: '13.99', productName: '周卡' })
     );
 
     const month = harness();
@@ -271,7 +271,7 @@ describe('RechargeUseCase product snapshots', () => {
       })
     );
     expect(month.gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '28.88', productName: 'VIP月卡' })
+      expect.objectContaining({ amount: '28.88', productName: '月卡' })
     );
   });
 

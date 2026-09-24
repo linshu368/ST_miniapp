@@ -57,19 +57,6 @@ export interface GenerationRequest {
    * 由自研链路单独启用，避免污染 M3a 的「纯重构」判据。
    */
   promptCaching: boolean;
-  /**
-   * Backend-only upstream override for internal tooling such as Batch Lab. Public generation
-   * requests continue using the process-wide LLM upstream configuration.
-   */
-  upstream?: {
-    baseUrl?: string;
-    apiKey?: string;
-  };
-  /**
-   * Internal research calls reuse the upstream generation transport but skip wallet, quota and
-   * chat_history settlement. Do not expose this switch through public/shared request contracts.
-   */
-  policy?: { kind: 'standard' } | { kind: 'internal_research' };
 }
 
 export interface GenerationHooks {
