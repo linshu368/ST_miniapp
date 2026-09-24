@@ -11,13 +11,15 @@
  *
  * 方案 Y 拓扑（网关收敛后）：对外域名绑 Vercel（前端在边缘，不在 Railway）。
  * ST 退场后 nginx 已无分发对象，st-bundle 整包退场；Railway 运行 backend API、
- * 一个常驻支付对账 Worker，以及一个无公网入口的支付过期 Cron。三个服务都跟随
+ * 一个常驻支付对账 Worker、一个无公网入口的支付过期 Cron，以及 VIP 到期提醒 Cron。
+ * 四个服务都跟随
  * 同一 GitHub 分支自动部署：
  *
  *   浏览器 ──▶ Vercel (页面) ──▶ stminiapp (backend, 对外域名) ──▶ Supabase / OpenRouter
  *                                      ▲
  *   常驻 Worker ──▶ stminiapp-payment-reconcile-cron（进程内每 30 秒查一轮）
  *   Railway Cron ──▶ stminiapp-payment-cron（每 5 分钟运行一次后退出）
+ *   Railway Cron ──▶ stminiapp-vip-reminder-cron（每小时运行一次后退出）
  *
  * 前端通过 build 期固化的 NEXT_PUBLIC_API_URL 直连 backend 的 Railway 公网域名，
  * 没有中间反代；跨域由 backend 的 FRONTEND_URL（CORS allow-origin）放行。
@@ -63,6 +65,7 @@ const COMMON_API_VARIABLES = [
   'LIAOBOTS_AUTH',
   'LIAOBOTS_BASE',
   'LLM_API_KEY',
+  'LLM_PROXY_TOKEN_SECRET',
   'MINIMAX_API_KEY',
   'NODE_ENV',
   'OPENAI_API_KEY',
@@ -82,6 +85,9 @@ const COMMON_API_VARIABLES = [
   'REPLICATE_TOKEN',
   'SENTRY_DSN',
   'SENTRY_ENVIRONMENT',
+  'ST_BASE_URL',
+  'ST_PROVISION_URL',
+  'ST_USER_PASSWORD_SECRET',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_COMMUNITY_BOT_TOKEN',
   'TELEGRAM_WEBHOOK_SECRET',
@@ -206,42 +212,48 @@ export default defineRailway((ctx) => {
     env: paymentCronEnv,
   });
 
-  // Production 不声明这个 Cron。development 允许写入 TEST；
-  // 真实写入仍要 vip_reminders_enabled 显式为 true，本文件不打开它。
+  // 两个环境都声明 Cron，但真实写入仍要各环境的 vip_reminders_enabled 显式为 true；
+  // 本文件只创建调度器，不打开业务开关。
   // PR 临时环境会复制 development，但 workflow 会立刻删除该 Cron，避免多个调度器
   // 同时扫描同一个 TEST 库。
   // 每小时一次是因为漏掉上海日历日就无法补发该窗口，幂等键让重复跑是安全的。
-  const resources = [stminiapp, paymentReconcileWorker, paymentCron];
-  if (!production) {
-    resources.push(
-      fn('stminiapp-vip-reminder-cron', {
-        source: github(REPOSITORY, { branch }),
-        build: {
-          builder: 'DOCKERFILE',
-          buildCommand: 'pnpm install',
-          buildEnvironment: 'V3',
-          dockerfilePath: '/ops/docker/Dockerfile.backend',
-        },
-        start: 'tsx src/scripts/send-vip-expiry-reminders.ts --write',
-        deploy: {
-          cronSchedule: '20 * * * *',
-          restartPolicyType: 'NEVER',
-        },
-        env: {
-          NODE_ENV: stminiapp.env.NODE_ENV,
-          DATABASE_ENV: stminiapp.env.DATABASE_ENV,
-          DATABASE_URL: stminiapp.env.DATABASE_URL,
-          DIRECT_URL: stminiapp.env.DIRECT_URL,
-          PROD_SUPABASE_PROJECT_REF: stminiapp.env.PROD_SUPABASE_PROJECT_REF,
-          TEST_DATABASE_URL: stminiapp.env.TEST_DATABASE_URL,
-          TEST_DIRECT_URL: stminiapp.env.TEST_DIRECT_URL,
-          TEST_SUPABASE_URL: stminiapp.env.TEST_SUPABASE_URL,
-          TEST_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.TEST_SUPABASE_SERVICE_ROLE_KEY,
-          TEST_SUPABASE_PROJECT_REF: stminiapp.env.TEST_SUPABASE_PROJECT_REF,
-        },
-      })
-    );
-  }
+  const vipReminderCron = fn('stminiapp-vip-reminder-cron', {
+    source: github(REPOSITORY, { branch }),
+    build: {
+      builder: 'DOCKERFILE',
+      buildCommand: 'pnpm install',
+      buildEnvironment: 'V3',
+      dockerfilePath: '/ops/docker/Dockerfile.backend',
+    },
+    start: 'tsx src/scripts/send-vip-expiry-reminders.ts --write',
+    deploy: {
+      cronSchedule: '20 * * * *',
+      restartPolicyType: 'NEVER',
+    },
+    env: {
+      NODE_ENV: stminiapp.env.NODE_ENV,
+      DATABASE_ENV: stminiapp.env.DATABASE_ENV,
+      DATABASE_URL: stminiapp.env.DATABASE_URL,
+      DIRECT_URL: stminiapp.env.DIRECT_URL,
+      PROD_SUPABASE_PROJECT_REF: stminiapp.env.PROD_SUPABASE_PROJECT_REF,
+      ...(production
+        ? {
+            PROD_DATABASE_URL: stminiapp.env.PROD_DATABASE_URL,
+            PROD_DIRECT_URL: stminiapp.env.PROD_DIRECT_URL,
+            PROD_SUPABASE_URL: stminiapp.env.PROD_SUPABASE_URL,
+            PROD_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.PROD_SUPABASE_SERVICE_ROLE_KEY,
+          }
+        : {
+            TEST_DATABASE_URL: stminiapp.env.TEST_DATABASE_URL,
+            TEST_DIRECT_URL: stminiapp.env.TEST_DIRECT_URL,
+            TEST_SUPABASE_URL: stminiapp.env.TEST_SUPABASE_URL,
+            TEST_SUPABASE_SERVICE_ROLE_KEY: stminiapp.env.TEST_SUPABASE_SERVICE_ROLE_KEY,
+            TEST_SUPABASE_PROJECT_REF: stminiapp.env.TEST_SUPABASE_PROJECT_REF,
+          }),
+    },
+  });
+
+  const resources = [stminiapp, paymentReconcileWorker, paymentCron, vipReminderCron];
 
   return project('st-miniapp', {
     resources,

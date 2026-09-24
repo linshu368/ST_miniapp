@@ -30,8 +30,15 @@ psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
   -f "$ROOT/packages/shared/migrations/fixtures/vip_billing_t2_harness.sql" \
   >/dev/null
 
+# Production already has pg_cron for unrelated operations. The compatibility
+# migration must create the VIP schema without modifying that scheduler.
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<'SQL'
+CREATE SCHEMA cron;
+CREATE TABLE cron.job (jobid BIGINT PRIMARY KEY);
+SQL
+
 for file in \
-  20260921_vip_billing_schema.sql \
+  20260924_vip_billing_schema_pg_cron_compat.sql \
   20260921_wallet_debit_refund.sql \
   20260921_vip_payment_fulfillment.sql \
   20260921_feature_free_trial_checkin_reminder.sql

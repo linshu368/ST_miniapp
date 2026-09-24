@@ -306,3 +306,11 @@ Shared 提供 runtime schema、默认值与 browser-safe DTO；Admin 和 Backend
 ### TEST 开关
 
 使用已确认 TEST Supabase 项目 `zoqelpfhurwehlvypryl`，先回读 `admin.current_environment()` 与 `vip_purchase_enabled` 的 key/value/version，再以旧 value/version 为条件原子更新这一行。不新增 migration，不改商品条款。更新后再次回读；异常时停止，不触碰 Production。恢复方案是对同一 TEST key 做相同条件保护的 `false` 更新。
+
+## 2026-09-24 Production migration 兼容修订
+
+Production 的 `20260914_chat_message_images.sql` 和 `20260921_vip_billing_schema.sql` 均未留下 ledger，但首次单文件事务 apply 证明前者的对象已存在、后者会因既有 `cron.job` 的历史 postflight 失败。两项失败均已回滚；不得改写历史 migration、删除 `image_text_model_config`，或卸载与 VIP 无关的 pg_cron。
+
+新增 `20260924_vip_billing_schema_pg_cron_compat.sql` 只替代未记账的 `20260921` 语义：沿用既定的 billing、app_core、miniapp_features 归属和所有表/RLS/grant/订单钱包约束，不新建业务域、RPC 或 Cron job。它先检查 099+ 依赖、`settled_by` 和 `grant_bonus_credits`，并要求四张 VIP 表均不存在；任何已有/部分 schema 直接停止，避免用 `CREATE IF NOT EXISTS` 覆盖未知事实。它不会读取或修改 `cron.job`。
+
+发布前先只读核实已存在的图片对象、Storage bucket shape 和 `image_text_model_config` 的 key/count；任何差异另开图片 forward-fix。结构一致时先单独 apply 兼容 migration，再按原有下游 12 个 VIP migration 顺序执行。最终 inspect 必须明确把未记账的 `20260914`、`20260921` 作为历史例外，而不是使用 force rerun 掩盖账本差异。兼容 migration 失败依靠整文件事务回滚；提交后仅允许新的 forward-fix，且所有 feature flag 继续 fail closed。

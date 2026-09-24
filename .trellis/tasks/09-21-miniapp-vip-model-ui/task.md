@@ -22,7 +22,7 @@
 | T6  | Done   | 实现 VIP 到期提醒、单条已读和消息详情 API                      | Backend reminder/notifications + Railway test config | T2,T3,T3A                             | 时间窗口、续费竞态、去重、越权和 dry-run 验证    |
 | T7  | Done   | 更新我的页、VIP/充值、聊天模型、媒体与消息 UI                  | Frontend pages/components/hooks                      | T1,T3,T3A,T4,T5,T6                    | 前端 test/lint/typecheck/build + 人工状态矩阵    |
 | T8  | Done   | 完成跨包回归、test 必验路径、文档与模块知识更新                | 全仓、README、ARCHITECTURE、spec/module facts        | T1-T7                                 | 全量命令、test 证据、`module_knowledge.py check` |
-| T9  | Todo   | 形成 Production 发布单并等待产品上线确认                       | migrations / Railway / feature flags                 | T8                                    | 未获明确确认保持 Production 关闭                 |
+| T9  | Doing  | 形成 Production 发布单并等待产品上线确认                       | migrations / Railway / feature flags                 | T8                                    | 未获明确确认保持 Production 关闭                 |
 
 ## Execution Log
 
@@ -361,3 +361,18 @@ remainingVipDisplayDays(validUntil, now): number
 
 - 2026-09-24：产品确认 TEST 真机 VIP 验收全部通过。T7 → Done。T8 开始。未进 T9，未写 Production，未补执行 `20260924_vip_plans_price_1_and_2_yuan.sql`，未读取业务行。
 - 2026-09-24 T8 → Done。跨包回归、文档和模块载荷校验完成。证据见 `research/t8-acceptance.md`。`module-updates.json` 已通过 `module_knowledge.py check`，尚未 apply，也未归档。Production 保持关闭。
+
+## 2026-09-24 T9
+
+- 产品确认 TEST 真机 VIP 验收通过并要求进入 Production 发布准备。PR #345 已于 2026-09-24 合入 `dev`；T9 核验时 `dev` / `origin/dev` 为 `0282db762b6a24980b2678b29a3ee15251816c66`，包含 PR #345 后两笔聊天入口提示修正。
+- Production `wbtsfzozlmurljvglhpn` 只读 migration inspect 成功：[run 35986272758](https://github.com/linshu368/ST_miniapp/actions/runs/35986272758)。结果 `dated=34 / not_applied=25 / drift=0`；13 个原始 VIP migration 全部未应用。其后首次 apply 证实 `20260914_chat_message_images.sql` 的对象已存在但 ledger 缺失，不能作为第 0 项重跑。未读业务行，未写 Production。
+- 新增 `research/t9-production-release.md`：先冻结过 14 个单文件 migration；首次 Production apply 后改为兼容路径 13 个文件，明确 migration → main 部署 → smoke → Railway reminder Cron → 分项开关顺序，以及停止/恢复和证据模板。rollback、Batch Lab 与其他不相关 absent migration 明确排除。
+- Railway IaC 改为 development/production 都声明 `stminiapp-vip-reminder-cron`，按环境引用对应数据库变量；业务写入仍由目标环境 `vip_reminders_enabled` fail-closed。PR 临时环境仍由既有 workflow 删除复制出来的 Cron。同步更新 `ops/railway/README.md`。
+- Production Railway 只读 plan 首次结果为 `1 add / 8 change / 4 destroy`，未 apply。4 个将被误删的既有变量 `LLM_PROXY_TOKEN_SECRET`、`ST_BASE_URL`、`ST_PROVISION_URL`、`ST_USER_PASSWORD_SECRET` 已补入 API `preserve()` 清单；8 个 change 是支付 Worker/Cron 的数据库变量从保留值对齐为 `stminiapp` 引用，上线前仍须确认引用解析值一致。
+- 补齐 preserve 后重跑 Production Railway plan，结果收敛为 `1 add / 8 change / 0 destroy`，仍未 apply。新增项仅为 `stminiapp-vip-reminder-cron`；8 个既有变量引用对齐已作为上线前人工确认门禁写入发布单。
+- `dev -> main` 当前不是 VIP-only 发布，包含 preset platform、Batch Lab 移除、支付商品名等 dev 累积差异；发布单要求 PR 按完整 diff 审核。T9 只完成可执行发布准备，不代替 main PR 审核或上线执行。
+- T9 → Done。本轮未 apply Production migration、未执行 Railway production apply、未修改 Production feature flag，未创建或合并 `dev -> main` PR。任务保持 `in_progress`，待 main 合并与 Production 发布证据补录后再归档。
+- Production 首次 apply 失败后，T9 → Doing。失败均在单文件事务内回滚：`20260914_chat_message_images.sql` 在重建 `admin.config_drafts/config_releases` 白名单时拒绝了现存 `image_text_model_config`；`20260921_vip_billing_schema.sql` 的历史 postflight 错误地拒绝已存在的 `cron.job`。Production 未留下半套 VIP schema。
+- 用户提供的只读 key/count 结果显示 drafts 与 releases 的唯一未被 `20260914` 旧白名单允许的键均为 `image_text_model_config`；不读取配置值，不删除草稿或发布记录。已获授权在 dev 新增兼容 migration，不执行 Production apply。
+- 新增 `20260924_vip_billing_schema_pg_cron_compat.sql`：复用原 billing/app_core/miniapp_features 对象归属、RLS/grant、事务、锁与订单/钱包不变量；Production 仅在零 VIP 表且保留既有 pg_cron 时创建 VIP schema。它不创建或写入 `cron.job`，已有任一 VIP 表即 fail closed，避免把它误用为 schema reconciler。
+- 本地 throwaway Postgres 验证：模拟 `cron.job` 后从无 VIP schema apply 兼容 migration；`pnpm lint:migrations`、`pnpm test:migration-ledger` 与 `bash scripts/test-vip-billing-migrations.sh` 均通过。后者覆盖钱包、四路 VIP 履约、签到、LLM、免费额度、提醒、媒体上限和价格 forward-fix；输出中的既有并发签到 `daily check-in is not ready` 是脚本预期失败分支，断言通过。
