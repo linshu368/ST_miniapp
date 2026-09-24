@@ -60,7 +60,7 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const telegramUserId = useMemo(readTelegramUserId, []);
   const wallet = useWalletBalanceQuery();
-  const credits = wallet.data?.total_credits ?? wallet.data?.credits ?? 0;
+  const credits = wallet.data?.total_credits ?? wallet.data?.credits;
   const bonusCredits = wallet.data?.bonus_credits;
   const unread = useNotificationUnreadCountQuery();
   const supportUnread = useSupportUnreadQuery();
@@ -446,11 +446,20 @@ export default function ProfilePage() {
               </p>
               <p className="mt-2 flex items-baseline gap-1.5">
                 <span className="text-[34px] font-black leading-none tabular-nums tracking-tight text-foreground">
-                  {formatNumber(credits)}
+                  {typeof credits === 'number' ? formatNumber(credits) : '—'}
                 </span>
                 <span className="text-xs font-medium text-muted-foreground">星尘</span>
               </p>
-              {typeof bonusCredits === 'number' ? (
+              {wallet.isError ? (
+                <button
+                  type="button"
+                  onClick={() => void wallet.refetch()}
+                  disabled={wallet.isFetching}
+                  className="mt-2 text-left text-[12px] font-medium text-destructive underline-offset-2 hover:underline disabled:opacity-60"
+                >
+                  {wallet.isFetching ? '正在重试…' : '余额加载失败，点击重试'}
+                </button>
+              ) : typeof bonusCredits === 'number' ? (
                 <p className="mt-2 text-[12px] font-medium text-muted-foreground">
                   内含专项星尘 {formatNumber(bonusCredits)}
                 </p>
