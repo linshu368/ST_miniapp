@@ -336,3 +336,13 @@ remainingVipDisplayDays(validUntil, now): number
 - [x] Production 不声明 Reminder Cron，未改 Production 开关或数据
 
 根因：Railway Development 未创建 Reminder Cron；仓库期望态仍是 `--dry-run`；TEST `vip_reminders_enabled=false`。修复前 TEST dry-run 为 `scanned=2 / eligible=2 / failed=0`。Railway plan 先发现 16 个未纳入 IaC 的现有变量会被删除，因此补入 `preserve()` 清单后重新 plan，结果收敛为 `1 add / 0 change / 0 destroy`，再执行 apply。TEST `zoqelpfhurwehlvypryl` 回读 `environment=test`，将 `vip_reminders_enabled` 从 `false/version 1` 条件更新为 `true/version 2`。受控 `--write` 结果为 `scanned=2 / inserted=2 / failed=0`；立即复跑结果为 `scanned=0 / inserted=0 / failed=0`，未重复生成。Railway Reminder Cron 部署状态回读为 `SUCCESS`。未读取业务用户明细，账号 `7779109481` 的前端消息中心展示仍由真机验收确认。
+
+### 2026-09-24 第四轮真机修正
+
+- [x] VIP 到期提醒详情按 `expiring_soon` / `expires_today` 分为“VIP 即将到期”和“VIP 今日到期”两套 Demo 文案结构
+- [x] 会员状态卡放大并增强外边框、内部分割线和右侧重点值，展示“3 天（至 MM-DD 到期）”或“今日到期（MM-DD HH:mm）”
+- [x] 到期权益说明继续读取 `GET /api/vip/status` 的动态签到加成与模型折扣，保持当前 95 折口径，不照搬 Demo 的 88 折
+- [x] 若用户已续费导致当前 `valid_until` 与通知 `observed_valid_until` 不一致，详情卡回退为实时会员剩余天数，避免旧通知覆盖新周期
+- [x] Frontend 测试、typecheck、lint、build、import/legacy guards 与 diff 检查通过
+
+执行结果：本轮仅修改 Frontend 的 VIP 到期消息详情展示和展示纯函数测试，没有改 Shared/Backend 契约、数据库、环境开关、调度器或支付逻辑。验证通过：`pnpm --filter @miniapp/frontend test`（31 files / 192 tests）、`pnpm --filter @miniapp/frontend build`、`pnpm lint:imports`、`pnpm lint:legacy`、`pnpm --filter @miniapp/frontend test -- src/lib/vip/presentation.test.ts`（1 file / 16 tests）、`pnpm --filter @miniapp/frontend typecheck`、`pnpm --filter @miniapp/frontend lint` 与 `git diff --check`。T7 保持 Doing，等待 PR 环境真机复验两类通知详情的窄屏布局、真实消息时间和续费入口；Production 未操作。

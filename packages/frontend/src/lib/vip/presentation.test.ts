@@ -16,7 +16,7 @@ import {
   shouldShowVipEntryBadge,
   supportsVipRenewal,
   vipExpiryImpactCopy,
-  vipExpiryLeadCopy,
+  vipExpiryMembershipDetail,
   vipEntryLabel,
   vipPlanTitle,
 } from './presentation';
@@ -148,24 +148,42 @@ describe('entry badge and membership label', () => {
       discount: '95折',
     });
     expect(vipExpiryImpactCopy(undefined)).toEqual({ checkin: null, discount: null });
+  });
+
+  it('uses reminder-specific membership detail only while the notification is current', () => {
+    const status = {
+      active: true,
+      remaining_days: 3,
+      last_plan_id: 'month' as const,
+      valid_until: '2026-09-19T02:30:00.000Z',
+    };
     expect(
-      vipExpiryLeadCopy({
-        body: '旧正文',
-        metadata: {
-          reminder_window: 'expires_today',
-          observed_valid_until: '2026-09-19T16:00:00.000Z',
-        },
-      })
-    ).toBe('你的 VIP 会员将于今日到期。');
-    expect(
-      vipExpiryLeadCopy({
-        body: '旧正文',
+      vipExpiryMembershipDetail(status, {
         metadata: {
           reminder_window: 'expiring_soon',
-          observed_valid_until: '2026-09-26T16:00:00.000Z',
+          observed_valid_until: '2026-09-19T02:30:00.000Z',
         },
       })
-    ).toBe('你的 VIP 会员将于 2026-09-27 到期。');
+    ).toBe('3 天（至 09-19 到期）');
+    expect(
+      vipExpiryMembershipDetail(status, {
+        metadata: {
+          reminder_window: 'expires_today',
+          observed_valid_until: '2026-09-19T02:30:00.000Z',
+        },
+      })
+    ).toBe('今日到期（09-19 10:30）');
+    expect(
+      vipExpiryMembershipDetail(
+        { ...status, remaining_days: 31, valid_until: '2026-10-17T02:30:00.000Z' },
+        {
+          metadata: {
+            reminder_window: 'expiring_soon',
+            observed_valid_until: '2026-09-19T02:30:00.000Z',
+          },
+        }
+      )
+    ).toBe('剩余 31 天');
   });
 });
 

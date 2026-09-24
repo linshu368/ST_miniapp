@@ -13,7 +13,7 @@ import { formatMessageTime } from '@/lib/utils/notifications';
 import {
   supportsVipRenewal,
   vipExpiryImpactCopy,
-  vipExpiryLeadCopy,
+  vipExpiryMembershipDetail,
   vipMembershipSummary,
   vipPlanTitle,
 } from '@/lib/vip/presentation';
@@ -80,7 +80,7 @@ export default function NotificationDetailPage() {
             </p>
 
             {showRenew ? (
-              <section className="mt-3 rounded-2xl border border-border bg-card px-3.5 py-3">
+              <section className="mt-4 rounded-[20px] border border-border/90 bg-card px-4 py-4 shadow-sm ring-1 ring-border/25">
                 {vip.isLoading ? (
                   <p className="text-sm text-muted-foreground">正在读取当前会员状态</p>
                 ) : vip.isError || !vip.data ? (
@@ -92,7 +92,7 @@ export default function NotificationDetailPage() {
                         ? vipPlanTitle(vip.data.last_plan_id)
                         : vipMembershipSummary(vip.data).title
                     }
-                    detail={vipMembershipSummary(vip.data).detail}
+                    detail={vipExpiryMembershipDetail(vip.data, notification)}
                   />
                 )}
               </section>
@@ -100,10 +100,10 @@ export default function NotificationDetailPage() {
 
             {showRenew ? (
               <VipExpiryBody
-                lead={vipExpiryLeadCopy(notification)}
+                fallbackBody={notification.body}
                 checkin={impact.checkin}
                 discount={impact.discount}
-                expiresToday={notification.metadata?.reminder_window === 'expires_today'}
+                window={notification.metadata?.reminder_window ?? null}
               />
             ) : (
               <p className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90">
@@ -132,20 +132,54 @@ export default function NotificationDetailPage() {
 }
 
 function VipExpiryBody({
-  lead,
+  fallbackBody,
   checkin,
   discount,
-  expiresToday,
+  window,
 }: {
-  lead: string;
+  fallbackBody: string;
   checkin: { extra: string; fallback: string } | null;
   discount: string | null;
-  expiresToday: boolean;
+  window: 'expiring_soon' | 'expires_today' | null;
 }) {
+  if (window === 'expiring_soon') {
+    return (
+      <section className="mt-4 space-y-2.5 text-[14px] font-medium leading-relaxed text-foreground/90">
+        <p>
+          你的 VIP 会员将在 <strong className="font-black text-primary">3 天后到期</strong>
+          。到期后以下权益将同时失效：
+        </p>
+        <ul className="space-y-1.5">
+          {checkin ? (
+            <li>
+              · 每日签到额外 <strong className="font-black text-primary">{checkin.extra}</strong>
+              （签到奖励回落为{checkin.fallback}）
+            </li>
+          ) : null}
+          <li>· 标准与旗舰模型使用权限</li>
+          {discount ? (
+            <li>
+              · 全部模型档位 <strong className="font-black text-primary">{discount}</strong>
+            </li>
+          ) : null}
+        </ul>
+        <p>续费后有效期将在现有基础上顺延，剩余天数不会作废。</p>
+      </section>
+    );
+  }
+
+  if (window !== 'expires_today') {
+    return (
+      <p className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90">
+        {fallbackBody}
+      </p>
+    );
+  }
+
   return (
     <section className="mt-4 space-y-2.5 text-[14px] font-medium leading-relaxed text-foreground/90">
       <p>
-        <span className="font-bold text-foreground">{lead}</span> 到期后：
+        你的 VIP 会员将于<strong className="font-black text-primary">今日到期</strong>。到期后：
       </p>
       <ul className="space-y-1.5">
         {checkin ? (
@@ -164,21 +198,21 @@ function VipExpiryBody({
           </li>
         ) : null}
       </ul>
-      <p>想继续使用可{expiresToday ? '在今日内' : '提前'}续费，续费后有效期顺延。</p>
+      <p>想继续使用可在今日内续费，续费后有效期顺延。</p>
     </section>
   );
 }
 
 function MembershipRows({ title, detail }: { title: string; detail: string }) {
   return (
-    <dl className="space-y-2 text-sm">
-      <div className="flex items-center justify-between gap-3">
+    <dl className="text-sm">
+      <div className="flex min-h-10 items-center justify-between gap-3 pb-3">
         <dt className="text-muted-foreground">当前会员</dt>
-        <dd className="font-semibold text-primary">{title}</dd>
+        <dd className="font-black text-primary">{title}</dd>
       </div>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex min-h-10 items-center justify-between gap-3 border-t border-border/90 pt-3">
         <dt className="text-muted-foreground">剩余有效期</dt>
-        <dd className="text-right font-semibold">{detail}</dd>
+        <dd className="text-right font-black text-primary">{detail}</dd>
       </div>
     </dl>
   );

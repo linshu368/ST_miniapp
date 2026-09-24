@@ -85,23 +85,50 @@ export function vipExpiryImpactCopy(benefits: VipStatus['benefits']): VipExpiryI
   };
 }
 
-export function vipExpiryLeadCopy(item: Pick<NotificationItem, 'body' | 'metadata'>): string {
-  const metadata = item.metadata;
-  if (!metadata) return item.body;
-  if (metadata.reminder_window === 'expires_today') {
-    return '你的 VIP 会员将于今日到期。';
+export function vipExpiryMembershipDetail(
+  status: Pick<VipStatus, 'active' | 'remaining_days' | 'last_plan_id' | 'valid_until'>,
+  item: Pick<NotificationItem, 'metadata'>
+): string {
+  const fallback = vipMembershipSummary(status).detail;
+  const observedValidUntil = item.metadata?.observed_valid_until;
+  if (!status.active || !status.valid_until || !observedValidUntil) return fallback;
+  const currentAt = new Date(status.valid_until);
+  const observedAt = new Date(observedValidUntil);
+  if (
+    !Number.isFinite(currentAt.getTime()) ||
+    !Number.isFinite(observedAt.getTime()) ||
+    currentAt.getTime() !== observedAt.getTime()
+  ) {
+    return fallback;
   }
-  const observedAt = new Date(metadata.observed_valid_until);
-  if (!Number.isFinite(observedAt.getTime())) return item.body;
+
+  const expiry = formatShanghaiExpiry(observedAt);
+  if (!expiry) return fallback;
+  if (item.metadata?.reminder_window === 'expiring_soon') {
+    return `3 天（至 ${expiry.date} 到期）`;
+  }
+  if (item.metadata?.reminder_window === 'expires_today') {
+    return `今日到期（${expiry.date} ${expiry.time}）`;
+  }
+  return fallback;
+}
+
+function formatShanghaiExpiry(value: Date): { date: string; time: string } | null {
   const parts = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',
-    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(observedAt);
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(value);
   const values = new Map(parts.map((part) => [part.type, part.value]));
-  const date = `${values.get('year')}-${values.get('month')}-${values.get('day')}`;
-  return `你的 VIP 会员将于 ${date} 到期。`;
+  const month = values.get('month');
+  const day = values.get('day');
+  const hour = values.get('hour');
+  const minute = values.get('minute');
+  if (!month || !day || !hour || !minute) return null;
+  return { date: `${month}-${day}`, time: `${hour}:${minute}` };
 }
 
 export interface TierQuoteView {
