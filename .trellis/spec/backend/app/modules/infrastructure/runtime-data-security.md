@@ -1,10 +1,11 @@
-﻿---
+---
 module_id: backend.infrastructure.runtime-data-security
 title: 运行时、鉴权与数据访问基建
 scope: backend
 category: infrastructure
 status: active
 owners: [backend]
+last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
 last_verified_at: 2026-09-17
 ---
 
