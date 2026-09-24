@@ -5,7 +5,6 @@
     "dev:frontend": "pnpm --filter @miniapp/frontend dev",
     "dev:cs-platform": "pnpm --filter @miniapp/cs-platform dev",
     "dev:admin": "pnpm --filter @miniapp/admin dev",
-    "dev:batch-lab": "pnpm --filter @miniapp/batch-lab dev",
     "dev:backend": "pnpm --filter @miniapp/backend dev",
     "dev": "pnpm run --parallel dev:frontend dev:backend",
     "dev:all": "pnpm run --parallel dev:frontend dev:backend",

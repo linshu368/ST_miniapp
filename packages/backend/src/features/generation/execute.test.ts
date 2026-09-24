@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
 
@@ -304,31 +304,6 @@ describe('execute（失败路径）', () => {
       balance: { creditsRequired: 50, creditsAvailable: 10 },
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(savedHistory()).toHaveLength(0);
-  });
-
-  it('internal_research policy skips wallet, free quota and chat_history settlement', async () => {
-    walletBalance = 0;
-    const fetchMock = stubUpstream(() =>
-      sseResponse([
-        DELTA('research reply'),
-        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
-        'data: [DONE]\n\n',
-      ])
-    );
-
-    const result = await execute(
-      request({ policy: { kind: 'internal_research' } }),
-      undefined,
-      fakeLogger()
-    );
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(result).toMatchObject({
-      status: 'success',
-      content: 'research reply',
-      chargeId: null,
-    });
     expect(savedHistory()).toHaveLength(0);
   });
 

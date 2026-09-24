@@ -23,7 +23,6 @@ import communityRoutes from './routes/community.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
-import batchLabRoutes from './routes/batch-lab.js';
 import telemetryRoutes from './routes/telemetry.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
@@ -57,12 +56,9 @@ export async function buildApp() {
       }
 
       if (
-        [
-          config.frontendUrl,
-          config.csPlatformUrl,
-          config.adminPlatformUrl,
-          config.batchLab.url,
-        ].some((allowedOrigin) => allowedOrigin.length > 0 && allowedOrigin === origin)
+        [config.frontendUrl, config.csPlatformUrl, config.adminPlatformUrl].some(
+          (allowedOrigin) => allowedOrigin.length > 0 && allowedOrigin === origin
+        )
       ) {
         callback(null, true);
         return;
@@ -125,7 +121,6 @@ export async function buildApp() {
   await app.register(adminSupabaseProxyRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
-  await app.register(batchLabRoutes);
   await app.register(telemetryRoutes);
 
   app.addContentTypeParser(
