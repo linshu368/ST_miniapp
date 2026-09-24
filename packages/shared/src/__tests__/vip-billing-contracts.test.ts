@@ -39,7 +39,7 @@ import type {
 
 const weekPlan = {
   id: 'week' as const,
-  price_cents: 1399,
+  price_cents: 100,
   duration_days: 7,
   bonus_credits: 0,
   title: '周卡',
@@ -50,7 +50,7 @@ const weekPlan = {
 
 const monthPlan = {
   id: 'month' as const,
-  price_cents: 2888,
+  price_cents: 200,
   duration_days: 31,
   bonus_credits: 3000,
   title: '月卡',
@@ -80,7 +80,7 @@ describe('VIP plans and membership', () => {
     expect(canonicalVipPlanTerms('week').bonus_credits).toBe(0);
     expect(canonicalVipPlanTerms('month')).toEqual({
       id: 'month',
-      price_cents: 2888,
+      price_cents: 200,
       duration_days: 31,
       bonus_credits: 3000,
     });

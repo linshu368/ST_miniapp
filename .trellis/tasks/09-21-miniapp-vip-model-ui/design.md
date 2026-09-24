@@ -41,7 +41,7 @@ VIP 资格以请求被后端接受的时刻为准。本轮生成一旦形成权�
 
 新增 `api/vip.ts`：
 
-- `VipPlan`：`id`、`price_cents`、`duration_days`、`bonus_credits`、展示文案和可用状态。周卡/月卡 ID 固定，条款改为读取已发布的 `vip_plans_config`；7/1399/0 与 31/2888/3000 是兼容默认值，不再作为永不可变的精确值校验。
+- `VipPlan`：`id`、`price_cents`、`duration_days`、`bonus_credits`、展示文案和可用状态。周卡/月卡 ID 固定，条款改为读取已发布的 `vip_plans_config`；7/100/0 与 31/200/3000 是当前兼容默认值，不再作为永不可变的精确值校验。20260923 首次 seed 为 1399/2888。
 - `VipStatus`：`active`、`valid_from`、`valid_until`、`remaining_days`、`last_plan_id`、`entry_badge_visible`。
 - `GET /api/vip/status` 返回服务端时钟下的当前状态。
 - `POST /api/vip/entry-viewed` 幂等记录首次点击时间并返回最新状态。

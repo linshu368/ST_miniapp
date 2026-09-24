@@ -406,4 +406,19 @@ T5_IMAGE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM bil
 [[ "$T5_VOICE" == "1" ]] || fail "concurrent last voice occupancy=$T5_VOICE"
 [[ "$T5_IMAGE" == "0" ]] || fail "concurrent voice race touched image=$T5_IMAGE"
 
+echo "apply 20260924_vip_plans_price_1_and_2_yuan.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260924_vip_plans_price_1_and_2_yuan.sql" \
+  >/dev/null
+
+WEEK_PRICE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT value#>>'{week,price_cents}' FROM app_core.runtime_config WHERE key='vip_plans_config';")"
+MONTH_PRICE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT value#>>'{month,price_cents}' FROM app_core.runtime_config WHERE key='vip_plans_config';")"
+[[ "$WEEK_PRICE" == "100" ]] || fail "week price_cents=$WEEK_PRICE"
+[[ "$MONTH_PRICE" == "200" ]] || fail "month price_cents=$MONTH_PRICE"
+
+echo "replay 20260924_vip_plans_price_1_and_2_yuan.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260924_vip_plans_price_1_and_2_yuan.sql" \
+  >/dev/null
+
 echo "All T2, T3, T4, T3A, T6 and T5 VIP billing local checks passed."

@@ -222,19 +222,20 @@
   - 构建之后的展示收尾：签到按钮仍用接口给出的合计预览，成功提示拆成两行并停留 3.2 秒；图片未知失败继续显示接口 message，跳转仍只看稳定 code。收尾后重新执行 `pnpm --filter @miniapp/frontend build`，通过，路由仍包含 `/vip` 与 `/profile/messages/[id]`。
   - 未操作 test/Production，未打开 VIP 购买、提醒或高级图片开关，未写数据库，未 commit/push，未进 T8/T9。
 - 2026-09-23 PR #345 冲突处理：将最新 `origin/dev`（`0a2f05b`）合入 `dev_vip_0920`。人工解决 8 个冲突文件：Backend 保留上游 Batch Lab 调用并补齐 VIP entitlement、动态折扣快照、VIP 门禁和钱包策略预检；规范/架构文档保留较新有效事实并清除上游残留冲突标记。验证：Shared 12 files / 109 tests、Backend 72 files / 640 tests、Frontend 30 files / 176 tests、`pnpm -r typecheck`、`pnpm lint:imports`、`pnpm lint:legacy`、Frontend build 均通过。未操作 test/Production 或功能开关。
+- 2026-09-24：产品将 VIP 两档价格改为周卡 1.00 元、月卡 2.00 元。更新 `VIP_PLAN_COMMERCIAL_TERMS` 与损坏回退默认值；新增 forward-fix `20260924_vip_plans_price_1_and_2_yuan.sql` 覆盖已发布 `vip_plans_config` 及未发布草稿的 `price_cents`。不改历史 migration，不重写订单快照。需在确认环境单文件 apply 后，页面和下单才会从 13.99/28.88 变成 1.00/2.00。
 - 后续执行时每完成一个 Task，补充实际文件、命令、结果、失败路径、环境和剩余风险；不得只改 Status。
 
 ## T1 冻结给 T2 的公共契约
 
-> 2026-09-22 需求补丁：本节记录 T1/T2 当时已冻结并落库的兼容契约。T3A 将通过 additive Shared 变更与 forward-fix migration 把商品条款、折扣、签到加成和媒体免费上限演进为受校验的运行时配置；下列 13.99/7、28.88/31/3000、0.95、3 均保留为首次 seed/损坏降级默认值，不再代表运营不可修改的永久常量。状态枚举、钱包策略、VIP 判定、幂等与退款语义仍保持冻结。
+> 2026-09-22 需求补丁：本节记录 T1/T2 当时已冻结并落库的兼容契约。T3A 将通过 additive Shared 变更与 forward-fix migration 把商品条款、折扣、签到加成和媒体免费上限演进为受校验的运行时配置；下列 13.99/7、28.88/31/3000、0.95、3 是 20260923 首次 seed。2026-09-24 将损坏降级默认值改为 1.00/7、2.00/31/3000；已创建订单仍以快照为准。状态枚举、钱包策略、VIP 判定、幂等与退款语义仍保持冻结。
 
 T2 只做 migration/RPC，必须使用这些名字，不得改语义。Producer（T3/T4）再写入 DTO；T1 为兼容把现有响应上的新字段做成可选。
 
 ### 枚举与常量
 
 - `VipPlanId`: `'week' | 'month'`
-- 周卡：`price_cents=1399`，`duration_days=7`，`bonus_credits=0`
-- 月卡：`price_cents=2888`，`duration_days=31`，`bonus_credits=3000`
+- 周卡：`price_cents=100`，`duration_days=7`，`bonus_credits=0`
+- 月卡：`price_cents=200`，`duration_days=31`，`bonus_credits=3000`
 - `PaymentProductType`: `'credits' | 'vip'`
 - `WalletDebitPolicy`: `'main_only' | 'main_then_bonus'`
 - `BillableCapability`: `'text_light' | 'text_standard' | 'text_premium' | 'image_basic' | 'image_advanced' | 'voice'`

@@ -241,7 +241,7 @@ describe('RechargeUseCase product snapshots', () => {
       expect.objectContaining({
         product_type: 'vip',
         product_id: 'week',
-        amount_cents: 1399,
+        amount_cents: 100,
         credits_amount: 0,
         bonus_credits: 0,
         vip_duration_days: 7,
@@ -249,7 +249,7 @@ describe('RechargeUseCase product snapshots', () => {
       })
     );
     expect(week.gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '13.99', productName: '周卡' })
+      expect.objectContaining({ amount: '1.00', productName: '周卡' })
     );
 
     const month = harness();
@@ -263,7 +263,7 @@ describe('RechargeUseCase product snapshots', () => {
       expect.objectContaining({
         product_type: 'vip',
         product_id: 'month',
-        amount_cents: 2888,
+        amount_cents: 200,
         credits_amount: 0,
         bonus_credits: 0,
         vip_duration_days: 31,
@@ -271,7 +271,7 @@ describe('RechargeUseCase product snapshots', () => {
       })
     );
     expect(month.gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '28.88', productName: '月卡' })
+      expect.objectContaining({ amount: '2.00', productName: '月卡' })
     );
   });
 
@@ -309,7 +309,7 @@ describe('RechargeUseCase product snapshots', () => {
       clientIp: '127.0.0.1',
     });
     const second = vi.mocked(orders.create).mock.calls[1]?.[0];
-    expect(first).toEqual(expect.objectContaining({ amount_cents: 1399, vip_duration_days: 7 }));
+    expect(first).toEqual(expect.objectContaining({ amount_cents: 100, vip_duration_days: 7 }));
     expect(second).toEqual(expect.objectContaining({ amount_cents: 2000, vip_duration_days: 10 }));
   });
 
