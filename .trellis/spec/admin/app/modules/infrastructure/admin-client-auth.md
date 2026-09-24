@@ -1,11 +1,10 @@
----
+﻿---
 module_id: admin.infrastructure.admin-client-auth
 title: Admin API、鉴权与环境基建
 scope: admin
 category: infrastructure
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/09-11-batch-lab-frontend-workbench/
 last_verified_at: 2026-09-16
 ---
 

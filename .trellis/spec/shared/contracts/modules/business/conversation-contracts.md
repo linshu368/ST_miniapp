@@ -1,11 +1,10 @@
----
+﻿---
 module_id: shared.business.conversation-contracts
 title: 会话、语音与图片共享契约
 scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
 last_verified_at: 2026-09-17
 ---
 

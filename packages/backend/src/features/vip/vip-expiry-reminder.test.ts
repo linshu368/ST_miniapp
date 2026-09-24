@@ -289,18 +289,18 @@ describe('vip expiry reminder runner', () => {
 });
 
 describe('railway vip reminder cron', () => {
-  it('configures only the non-production write cron', () => {
+  it('configures the write cron for both managed environments', () => {
     const source = readFileSync(
       resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../.railway/railway.ts'),
       'utf8'
     );
-    const gateAt = source.indexOf('if (!production)');
     const cronAt = source.indexOf('stminiapp-vip-reminder-cron');
-    expect(gateAt).toBeGreaterThan(-1);
-    expect(cronAt).toBeGreaterThan(gateAt);
-    expect(source.slice(0, gateAt)).not.toContain('stminiapp-vip-reminder-cron');
+    expect(cronAt).toBeGreaterThan(-1);
+    expect(source).not.toContain('if (!production)');
     expect(source).toContain('tsx src/scripts/send-vip-expiry-reminders.ts --write');
     expect(source).toContain("cronSchedule: '20 * * * *'");
+    expect(source).toContain('PROD_SUPABASE_SERVICE_ROLE_KEY');
+    expect(source).toContain('TEST_SUPABASE_SERVICE_ROLE_KEY');
   });
 
   it('removes the reminder cron from duplicated PR environments', () => {

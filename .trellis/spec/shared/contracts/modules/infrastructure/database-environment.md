@@ -1,4 +1,4 @@
----
+﻿---
 module_id: shared.infrastructure.database-environment
 title: 数据库环境与迁移公共配置
 scope: shared

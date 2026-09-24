@@ -1,11 +1,10 @@
----
+﻿---
 module_id: database.infrastructure.schema-security
 title: Schema、RLS 与迁移执行基建
 scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
 last_verified_at: 2026-09-17
 ---
 

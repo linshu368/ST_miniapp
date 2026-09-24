@@ -1,11 +1,10 @@
----
+﻿---
 module_id: database.business.conversation-storage
 title: 会话、语音与图片存储
 scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/09-11-batch-lab-integration-spec/
 last_verified_at: 2026-09-17
 ---
 
