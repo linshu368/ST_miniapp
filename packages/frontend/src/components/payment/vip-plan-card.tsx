@@ -81,7 +81,7 @@ export function VipPlanCard({
           {plan.bonus_credits > 0
             ? `赠 ${formatNumber(plan.bonus_credits)} 专项星尘`
             : '不赠送星尘'}
-          {discountLabel ? ` · 有效期内文本 ${discountLabel}` : ''}
+          {discountLabel ? ` · 有效期内全部模型 ${discountLabel}` : ''}
         </p>
       )}
       {plan.bonus_credits > 0 ? (

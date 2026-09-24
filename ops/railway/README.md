@@ -96,8 +96,11 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
 | `stminiapp-payment-cron`           | 与 `stminiapp` 相同                   | —        | 关闭        | ❌ 不生成域名                 | —   |
 | `stminiapp-vip-reminder-cron`      | 仅 development；production IaC 不声明 | —        | 关闭        | ❌ 不生成域名                 | —   |
 
-VIP 提醒 Cron 的启动命令固定为 `tsx src/scripts/send-vip-expiry-reminders.ts --dry-run`。
-它不会因为部署而写入通知；`vip_reminders_enabled` 仍须保持 false，直到单独授权真实写入。
+VIP 提醒 Cron 的启动命令固定为 `tsx src/scripts/send-vip-expiry-reminders.ts --write`，仅在
+development（TEST）运行；是否真正写入仍由 TEST `vip_reminders_enabled` 开关控制。
+PR 临时环境复制 development 后会立即删除该 Cron，避免多个调度器扫描同一个 TEST 库。
+部署 Cron 本身不会绕过业务开关；首次开启 `vip_reminders_enabled` 前须先在 TEST dry-run，
+确认候选规模符合预期，再执行受控写入。
 修改 `.railway/railway.ts` 后仍要 `railway config plan` / `apply` 才会出现在控制台。
 
 创建步骤：

@@ -325,3 +325,13 @@ remainingVipDisplayDays(validUntil, now): number
 - [x] Frontend 测试、typecheck、lint、build、import/legacy guards 与 diff 检查通过
 
 执行结果：本轮仅修改 Frontend 展示与交互，没有改 Shared/Backend 契约、计费、支付、免费额度、数据库或环境开关。模型折扣率、计算值与最终实扣继续读取模型目录的服务端报价，未写死 88 折或示例金额。Frontend 31 files / 190 tests、typecheck、lint、build、`pnpm lint:imports`、`pnpm lint:legacy` 与 `git diff --check` 通过。T7 保持 Doing，等待 PR 环境真机复验流光观感、窄屏换行、图片入口和支付金额联动；Production 未操作。
+
+### 2026-09-24 到期提醒 TEST 调度修复
+
+- [x] VIP 详情周卡/月卡文案由“有效期内文本 95 折”改为“有效期内全部模型 95 折”
+- [x] Railway Development 新建单实例 `stminiapp-vip-reminder-cron`，`20 * * * *` 以 `--write` 运行
+- [x] PR 临时环境复制 Development 后删除 Reminder Cron，避免多个调度器扫描同一 TEST 库
+- [x] TEST 开关条件更新并执行 dry-run、受控写入和幂等复跑
+- [x] Production 不声明 Reminder Cron，未改 Production 开关或数据
+
+根因：Railway Development 未创建 Reminder Cron；仓库期望态仍是 `--dry-run`；TEST `vip_reminders_enabled=false`。修复前 TEST dry-run 为 `scanned=2 / eligible=2 / failed=0`。Railway plan 先发现 16 个未纳入 IaC 的现有变量会被删除，因此补入 `preserve()` 清单后重新 plan，结果收敛为 `1 add / 0 change / 0 destroy`，再执行 apply。TEST `zoqelpfhurwehlvypryl` 回读 `environment=test`，将 `vip_reminders_enabled` 从 `false/version 1` 条件更新为 `true/version 2`。受控 `--write` 结果为 `scanned=2 / inserted=2 / failed=0`；立即复跑结果为 `scanned=0 / inserted=0 / failed=0`，未重复生成。Railway Reminder Cron 部署状态回读为 `SUCCESS`。未读取业务用户明细，账号 `7779109481` 的前端消息中心展示仍由真机验收确认。

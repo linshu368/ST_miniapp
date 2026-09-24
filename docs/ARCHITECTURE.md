@@ -87,7 +87,7 @@
 │  ├ miniapp_features 收藏/签到/许愿/  │      ⑤ Telegram Bot webhook
 │  │               通知/排序分         │      → /api/telegram/webhook
 │  ├ cs_platform   回访画像/客服       │
-│  ├ miniapp_traffic  渠道归因         │  Railway 另有支付任务；development 另有提醒 dry-run：
+│  ├ miniapp_traffic  渠道归因         │  Railway 另有支付任务；development 另有提醒 Cron：
 │  ├ miniapp_analytics 看数视图        │   · payment-reconcile-cron（常驻对账）
 │  ├ admin         运营台账号/审计     │   · payment-cron（*/5 过期任务）
 │                                    │   · vip-reminder-cron（仅 development）
@@ -459,22 +459,22 @@ packages/backend/src/
 
 ## 8. 部署
 
-| 单元         | 包 / 镜像                       | 说明                                                                                                                                                    | 平台           |
-| ------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| 平台前端     | `packages/frontend`             | Vercel 构建部署，对外域名绑定 Vercel                                                                                                                    | Vercel         |
-| CS 运营平台  | `packages/cs-platform`          | 独立 Vercel 项目（Vite 静态构建）                                                                                                                       | Vercel         |
-| 运营后台     | `packages/admin`                | 独立 Vercel 项目（Vite 静态构建）                                                                                                                       | Vercel         |
-| miniapp 后端 | `ops/docker/Dockerfile.backend` | Railway 服务 **`stminiapp`**（唯一对外 HTTP），容器内 :8080                                                                                             | Railway        |
-| 支付快速对账 | 同上镜像                        | Railway 服务 `stminiapp-payment-reconcile-cron`：常驻 worker，进程内约 30 秒一轮按 `next_reconcile_at` 领单查厂商                                       | Railway        |
-| 支付过期任务 | 同上镜像                        | Railway Cron `stminiapp-payment-cron`：`*/5 * * * *` 跑过期前回溯对账 + 判过期                                                                          | Railway        |
-| VIP 到期提醒 | 同上镜像                        | Railway Cron `stminiapp-vip-reminder-cron`：仅 development，`20 * * * *` 执行 `--dry-run`；production IaC 不声明。写入还要 `vip_reminders_enabled=true` | Railway        |
-| 数据与存储   | 托管                            | PostgreSQL + Storage；test 与 production 两个项目                                                                                                       | Supabase Cloud |
+| 单元         | 包 / 镜像                       | 说明                                                                                                                                                       | 平台           |
+| ------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| 平台前端     | `packages/frontend`             | Vercel 构建部署，对外域名绑定 Vercel                                                                                                                       | Vercel         |
+| CS 运营平台  | `packages/cs-platform`          | 独立 Vercel 项目（Vite 静态构建）                                                                                                                          | Vercel         |
+| 运营后台     | `packages/admin`                | 独立 Vercel 项目（Vite 静态构建）                                                                                                                          | Vercel         |
+| miniapp 后端 | `ops/docker/Dockerfile.backend` | Railway 服务 **`stminiapp`**（唯一对外 HTTP），容器内 :8080                                                                                                | Railway        |
+| 支付快速对账 | 同上镜像                        | Railway 服务 `stminiapp-payment-reconcile-cron`：常驻 worker，进程内约 30 秒一轮按 `next_reconcile_at` 领单查厂商                                          | Railway        |
+| 支付过期任务 | 同上镜像                        | Railway Cron `stminiapp-payment-cron`：`*/5 * * * *` 跑过期前回溯对账 + 判过期                                                                             | Railway        |
+| VIP 到期提醒 | 同上镜像                        | Railway Cron `stminiapp-vip-reminder-cron`：仅 development，`20 * * * *` 执行 `--write`；production IaC 不声明。写入还要 TEST `vip_reminders_enabled=true` | Railway        |
+| 数据与存储   | 托管                            | PostgreSQL + Storage；test 与 production 两个项目                                                                                                          | Supabase Cloud |
 
 **流量路径**：用户或内部使用者 → Vercel（页面 / SPA）→ backend 公网域名 → Supabase / OpenRouter / MiniMax。浏览器直接把 `/api/*` 发往 backend 域名，中间**没有任何反代**（ST 时代的 nginx 网关已随收敛退场）。
 
 > 跨域直连要求变量成对配好，任一侧配错即浏览器侧请求全挂：Frontend Vercel 的 `NEXT_PUBLIC_API_URL` = backend 公网域名（build 期固化，改后需 redeploy）；backend 的 `FRONTEND_URL` allowlist 对应 Vercel origin。
 
-**Railway IaC**：`.railway/railway.ts` 声明 `development`（跟 `dev` 分支）与 `production`（跟 `main` 分支）。production 是上述三个常驻/支付服务；development 额外声明 VIP 提醒 Cron，且启动命令只有 `--dry-run`。改动需 `railway config plan/apply`，且渲染 production 必须显式 `RAILWAY_CONFIG_ENV=production`。**`main` 分支自动部署生产**（三个服务的 deployment trigger 均为 `branch=main`）——合并进 `main` 即上线，数据库迁移需在合并前按 §7.4 手动执行。对 `dev` 的 PR 会由 `railway-pr-env.yml` 拉起 `pr-{N}` 临时环境（变量继承 development，指向 test 库）。
+**Railway IaC**：`.railway/railway.ts` 声明 `development`（跟 `dev` 分支）与 `production`（跟 `main` 分支）。production 是上述三个常驻/支付服务；development 额外声明 VIP 提醒 Cron，以 `--write` 运行但仍受 TEST `vip_reminders_enabled` 开关保护。改动需 `railway config plan/apply`，且渲染 production 必须显式 `RAILWAY_CONFIG_ENV=production`。**`main` 分支自动部署生产**（三个服务的 deployment trigger 均为 `branch=main`）——合并进 `main` 即上线，数据库迁移需在合并前按 §7.4 手动执行。对 `dev` 的 PR 会由 `railway-pr-env.yml` 拉起 `pr-{N}` 临时环境（变量继承 development，指向 test 库），复制完成后删除 VIP 提醒 Cron，保证 TEST 只有 development 的单一调度器。
 
 **支付入账的四条路径**（唯一出口 `features/payment/usecases/PaymentSettlement.settlePaidOrder`，幂等靠 `credits_added`，先到者写 `payment_orders.settled_by`）：`webhook`（网关异步回调）→ `return`（同步回跳）→ `query`（订单页轮询时对账）→ `cron`（上述两个 Railway 任务兜底）。四路兜底的由来见历史文档 `git show 7541a54^:docs/payment-missing-credits-remediation.md`（生产曾因 cron 未部署漏账）。
 

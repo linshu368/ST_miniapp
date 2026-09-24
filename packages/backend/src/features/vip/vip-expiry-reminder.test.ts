@@ -289,7 +289,7 @@ describe('vip expiry reminder runner', () => {
 });
 
 describe('railway vip reminder cron', () => {
-  it('configures only the non-production dry-run cron', () => {
+  it('configures only the non-production write cron', () => {
     const source = readFileSync(
       resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../.railway/railway.ts'),
       'utf8'
@@ -299,8 +299,20 @@ describe('railway vip reminder cron', () => {
     expect(gateAt).toBeGreaterThan(-1);
     expect(cronAt).toBeGreaterThan(gateAt);
     expect(source.slice(0, gateAt)).not.toContain('stminiapp-vip-reminder-cron');
-    expect(source).toContain('tsx src/scripts/send-vip-expiry-reminders.ts --dry-run');
-    expect(source).not.toContain('--write');
+    expect(source).toContain('tsx src/scripts/send-vip-expiry-reminders.ts --write');
     expect(source).toContain("cronSchedule: '20 * * * *'");
+  });
+
+  it('removes the reminder cron from duplicated PR environments', () => {
+    const workflow = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        '../../../../../.github/workflows/railway-pr-env.yml'
+      ),
+      'utf8'
+    );
+    expect(workflow).toContain('railway service delete');
+    expect(workflow).toContain('--service stminiapp-vip-reminder-cron');
+    expect(workflow).toContain('--environment "$ENV_NAME"');
   });
 });

@@ -56,17 +56,32 @@ jobs:
           sys.exit(0 if any(e.get('name') == name for e in envs) else 1)
           "; then
             echo "Railway environment ${ENV_NAME} already exists"
-            exit 0
+          else
+            railway environment new "$ENV_NAME" \
+              --duplicate "$RAILWAY_DEVELOPMENT_ENV_ID" \
+              --service-config "$RAILWAY_SERVICE" source.branch "$HEAD_REF" \
+              --service-config "$RAILWAY_SERVICE" variables.PORT.value "8080" \
+              --service-config "$RAILWAY_SERVICE" variables.SENTRY_ENVIRONMENT.value "preview" \
+              --service-config "$RAILWAY_SERVICE" variables.PAYMENT_NOTIFY_URL.value "${BACKEND_URL}/api/payment/webhook/zqpay" \
+              --service-config "$RAILWAY_SERVICE" variables.PAYMENT_RETURN_URL.value "${BACKEND_URL}/api/payment/return" \
+              --json
           fi
 
-          railway environment new "$ENV_NAME" \
-            --duplicate "$RAILWAY_DEVELOPMENT_ENV_ID" \
-            --service-config "$RAILWAY_SERVICE" source.branch "$HEAD_REF" \
-            --service-config "$RAILWAY_SERVICE" variables.PORT.value "8080" \
-            --service-config "$RAILWAY_SERVICE" variables.SENTRY_ENVIRONMENT.value "preview" \
-            --service-config "$RAILWAY_SERVICE" variables.PAYMENT_NOTIFY_URL.value "${BACKEND_URL}/api/payment/webhook/zqpay" \
-            --service-config "$RAILWAY_SERVICE" variables.PAYMENT_RETURN_URL.value "${BACKEND_URL}/api/payment/return" \
-            --json
+          # PR 环境与 development 共用 TEST 数据库，不能复制到期提醒调度器；否则每个
+          # 活跃 PR 都会重复扫描。数据库幂等只是兜底，调度拓扑仍保持单实例。
+          if railway service list --environment "$ENV_NAME" --json | python3 -c "
+          import json, sys
+          services = json.load(sys.stdin)
+          sys.exit(0 if any(s.get('name') == 'stminiapp-vip-reminder-cron' for s in services) else 1)
+          "; then
+            railway service delete \
+              --service stminiapp-vip-reminder-cron \
+              --environment "$ENV_NAME" \
+              --yes \
+              --json
+          else
+            echo "PR environment has no VIP reminder cron"
+          fi
 
       - name: Comment backend URL
         env:
