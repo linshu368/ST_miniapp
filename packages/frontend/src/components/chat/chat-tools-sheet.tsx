@@ -126,6 +126,10 @@ export function ChatToolsSheet({ onCreateConversation, creating }: ChatToolsShee
               ) : (
                 <ComingSoon label="图片设置" />
               )}
+
+              <p className="mt-3 rounded-2xl border border-dashed border-border px-3 py-2.5 text-center text-[12px] text-muted-foreground">
+                模型选择已移至聊天页顶部角色名下方，点那里即可切换
+              </p>
             </>
           ) : (
             <>
