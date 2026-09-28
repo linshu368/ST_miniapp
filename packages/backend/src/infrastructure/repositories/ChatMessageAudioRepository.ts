@@ -71,6 +71,11 @@ export interface ChatMessageAudioRow {
   price_credits: number | string | null;
   /** 计费标签：免费体验、付费 */
   price_label: string | null;
+  original_price_credits?: number | string | null;
+  vip_discount_rate?: number | string | null;
+  vip_discounted_exact?: number | string | null;
+  vip_valid_until?: string | null;
+  vip_discount_config_version?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -180,6 +185,11 @@ export class ChatMessageAudioRepository {
     priceCredits: number;
     /** 计费标签：免费体验、付费 */
     priceLabel: string;
+    originalPriceCredits: number;
+    vipDiscountRate: number | null;
+    vipDiscountedExact: number | null;
+    vipValidUntil: string | null;
+    vipDiscountConfigVersion: number | null;
   }): Promise<ChatMessageAudioRow> {
     const pending = await this.findPendingByMessage(input.messageId);
     if (pending && !isStalePending(pending)) {
@@ -225,6 +235,11 @@ export class ChatMessageAudioRepository {
         price_credits: input.priceCredits,
         /** 计费标签：免费体验、付费 */
         price_label: input.priceLabel,
+        original_price_credits: input.originalPriceCredits,
+        vip_discount_rate: input.vipDiscountRate,
+        vip_discounted_exact: input.vipDiscountedExact,
+        vip_valid_until: input.vipValidUntil,
+        vip_discount_config_version: input.vipDiscountConfigVersion,
       })
       .select('*')
       .single();

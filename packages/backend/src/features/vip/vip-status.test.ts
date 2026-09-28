@@ -180,6 +180,7 @@ describe('VipStatusService', () => {
     };
     const service = new VipStatusService(reader, () => new Date(NOW));
     await expect(service.getStatus(USER, log())).resolves.toEqual(closedVipStatus());
+    await expect(service.getStatusStrict(USER)).rejects.toThrow('db down');
   });
 
   it('does not report entry viewed when the write fails', async () => {
