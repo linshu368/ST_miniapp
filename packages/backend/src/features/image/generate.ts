@@ -132,7 +132,6 @@ export async function runImageGeneration(input: {
       terminalProvider = providerImage.provider;
     } catch (grokError) {
       if (
-        attempt.image_tier === 'advanced' ||
         attempt.provider !== 'liaobots_grok' ||
         !config.image.replicateToken ||
         !config.image.zModel
@@ -159,7 +158,6 @@ export async function runImageGeneration(input: {
       // 这仍属于主 provider 明确失败；Storage 上传异常则不能重复购买另一张图。
       if (
         providerImage.provider !== 'liaobots_grok' ||
-        attempt.image_tier === 'advanced' ||
         !config.image.replicateToken ||
         !config.image.zModel ||
         !isGrokOutputFailure(grokOutputError)

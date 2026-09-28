@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"核对 Backend 路由、测试及跨层规则"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"核对 Frontend 数据流、UI 与构建门禁"}
+{"file":".trellis/spec/admin/app/index.md","reason":"核对 Admin 环境、发布和质量门禁"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"核对公开契约兼容和消费者一致性"}
+{"file":".trellis/spec/shared/contracts/testing-and-change-management.md","reason":"核对跨包 typecheck、测试、发布顺序和回滚"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对端到端请求/响应与失败路径"}
+{"file":".trellis/tasks/09-28-remove-advanced-image-generation/research/commit-scope-analysis.md","reason":"确认最终 diff 未越过指定 images 范围"}

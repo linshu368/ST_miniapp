@@ -1,12 +1,7 @@
 import { z } from 'zod';
-import {
-  ImageGenerationTierSchema,
-  type FeatureFreeTrialQuotaView,
-  type ImageGenerationTier,
-} from './feature-free-trials.js';
+import { type FeatureFreeTrialQuotaView, type ImageGenerationTier } from './feature-free-trials.js';
 import type { MediaBillingMode, MediaBillingPreview } from './voice.js';
 import type { BillingGatingErrorCode, WalletDebitPolicy } from './wallet.js';
-import type { VipEntitlementSummary } from './vip.js';
 
 /**
  * 聊天页角色图片生成。
@@ -45,7 +40,6 @@ export type ImageErrorCode =
   | 'image_insufficient_balance'
   | 'image_main_credits_insufficient'
   | 'image_vip_required'
-  | 'image_advanced_unavailable'
   | 'image_free_trial_invalid'
   | 'image_settlement_insufficient_balance'
   | 'image_generation_not_allowed'
@@ -68,23 +62,28 @@ export const ImagePromptCnSchema = z.string().trim().min(1).max(MAX_IMAGE_PROMPT
  * 创建图片描述请求
  * @returns 创建图片描述请求
  */
-export const CreateImageDescriptionRequestSchema = z.object({
-  tier: ImageGenerationTierSchema.optional().default('basic'),
-});
+export const CreateImageDescriptionRequestSchema = z
+  .object({
+    // 兼容旧客户端仍发送的 tier；服务端统一归一为普通图片。
+    tier: z.unknown().optional(),
+  })
+  .transform(() => ({}));
 /**
  * 创建图片请求
  * @returns 创建图片请求
  */
-export const CreateMessageImageRequestSchema = z.object({
-  /** 草稿 ID */
-  draft_id: z.string().uuid().optional(),
-  /** 图片 prompt 中文 */
-  prompt_cn: ImagePromptCnSchema,
-  /** 图片 prompt 来源 */
-  prompt_source: ImagePromptSourceSchema,
-  /** 图片档位 */
-  tier: ImageGenerationTierSchema.optional().default('basic'),
-});
+export const CreateMessageImageRequestSchema = z
+  .object({
+    /** 草稿 ID */
+    draft_id: z.string().uuid().optional(),
+    /** 图片 prompt 中文 */
+    prompt_cn: ImagePromptCnSchema,
+    /** 图片 prompt 来源 */
+    prompt_source: ImagePromptSourceSchema,
+    // 兼容旧客户端仍发送的 tier；服务端统一归一为普通图片。
+    tier: z.unknown().optional(),
+  })
+  .transform(({ tier: _legacyTier, ...value }) => value);
 
 /**
  * 图片计费配置
@@ -165,13 +164,8 @@ export interface GetImageConfigData {
   enabled: boolean;
   /** 图片计费配置 */
   billing: ImageBillingConfig;
-  /** 图片档位配置 */
-  tiers: {
-    basic: ImageTierConfig;
-    advanced: ImageTierConfig;
-  };
-  /** VIP 状态 */
-  vip_status: VipEntitlementSummary;
+  /** 唯一的普通图片配置。 */
+  tier: ImageTierConfig;
   /** 图片限制配置 */
   limits: ImageLimitsConfig;
   /** 图片提示配置 */

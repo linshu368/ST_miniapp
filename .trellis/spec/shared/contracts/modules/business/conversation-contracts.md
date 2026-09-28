@@ -1,11 +1,12 @@
-﻿---
+---
 module_id: shared.business.conversation-contracts
 title: 会话、语音与图片共享契约
 scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_at: 2026-09-17
+last_verified_task: .trellis/tasks/09-28-remove-advanced-image-generation/
+last_verified_at: 2026-09-28
 ---
 
 # 会话与语音共享契约
@@ -33,6 +34,7 @@ last_verified_at: 2026-09-17
 
 仅依赖 Zod；不得暴露数据库 row。`TELEMETRY_FORBIDDEN_PROPERTY_KEYS` 拒绝正文、`pay_url`、initData、token、图片 prompt、图片 URL、Storage path 和 provider request id 的 snake_case/camelCase 变体。
 Shared 只定义浏览器可见 DTO、错误码、容量上限和 runtime validation schema，不包含数据库 row、连接串、service-role key、供应商 secret 或原始错误。
+图片契约只公开普通图片配置与 `basic_image` 免费次数/结算预览；旧客户端携带的 tier 输入会被兼容剥离。历史 attempt 的 tier 字段暂留只读兼容，不再公开高级图片 capability、门禁错误或双档位配置。
 
 ## 关键节点与约束
 

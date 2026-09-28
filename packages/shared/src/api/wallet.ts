@@ -52,7 +52,6 @@ export const BillableCapabilitySchema = z.enum([
   'text_standard',
   'text_premium',
   'image_basic',
-  'image_advanced',
   'voice',
 ]);
 export type BillableCapability = z.infer<typeof BillableCapabilitySchema>;
@@ -62,7 +61,6 @@ export const BillingGatingErrorCodeSchema = z.enum([
   'MAIN_CREDITS_INSUFFICIENT',
   'TOTAL_CREDITS_INSUFFICIENT',
   'FEATURE_FREE_TRIAL_EXHAUSTED',
-  'ADVANCED_IMAGE_UNAVAILABLE',
 ]);
 export type BillingGatingErrorCode = z.infer<typeof BillingGatingErrorCodeSchema>;
 
@@ -260,14 +258,6 @@ export function resolveBillableCapabilityRules(
         requires_vip: false,
         free_trial_feature: 'voice',
         free_trial_limit: DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
-      };
-    case 'image_advanced':
-      return {
-        capability,
-        wallet_policy: 'main_only',
-        requires_vip: true,
-        free_trial_feature: null,
-        free_trial_limit: null,
       };
   }
 }

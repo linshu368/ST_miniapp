@@ -84,6 +84,7 @@ export const TELEMETRY_FORBIDDEN_PROPERTY_KEYS = [
   'providerRequestId',
 ] as const;
 
+
 export type TelemetryForbiddenPropertyKey = (typeof TELEMETRY_FORBIDDEN_PROPERTY_KEYS)[number];
 
 export function isForbiddenTelemetryPropertyKey(key: string): boolean {
