@@ -122,7 +122,7 @@ describe('entry badge and membership label', () => {
   it('uses a separate Shanghai expiry label for an active VIP entry', () => {
     expect(vipEntryLabel({ active: true, remaining_days: 12 })).toBe('VIP');
     expect(vipEntryExpiryLabel({ active: true, valid_until: '2026-09-24T16:00:00.000Z' })).toBe(
-      '截止至 09-24 24:00'
+      '截止至 9月24日 24:00'
     );
     expect(
       vipEntryExpiryLabel({ active: false, valid_until: '2026-09-24T16:00:00.000Z' })

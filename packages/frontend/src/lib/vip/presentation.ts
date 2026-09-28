@@ -52,7 +52,7 @@ export function vipEntryExpiryLabel(
 ): string | null {
   if (!status?.active || !status.valid_until) return null;
   const expiry = formatShanghaiExpiry(new Date(status.valid_until));
-  return expiry ? `截止至 ${expiry.date} ${expiry.time}` : null;
+  return expiry ? `截止至 ${expiry.monthDay} ${expiry.time}` : null;
 }
 
 export function vipMembershipSummary(status: {
@@ -158,19 +158,24 @@ function isVipExpiringToday(
   return effectiveExpiry?.dateKey === nowParts.dateKey;
 }
 
-function formatShanghaiExpiry(value: Date): { date: string; time: string } | null {
+function formatShanghaiExpiry(
+  value: Date
+): { date: string; monthDay: string; time: string } | null {
   const parts = shanghaiDateTimeParts(value);
   if (!parts) return null;
   if (isExactMidnight(value, parts)) {
     const previousDay = shanghaiDateTimeParts(new Date(value.getTime() - 1));
-    return previousDay ? { date: previousDay.shortDate, time: '24:00' } : null;
+    return previousDay
+      ? { date: previousDay.shortDate, monthDay: previousDay.monthDay, time: '24:00' }
+      : null;
   }
-  return { date: parts.shortDate, time: `${parts.hour}:${parts.minute}` };
+  return { date: parts.shortDate, monthDay: parts.monthDay, time: `${parts.hour}:${parts.minute}` };
 }
 
 interface ShanghaiDateTimeParts {
   dateKey: string;
   shortDate: string;
+  monthDay: string;
   hour: string;
   minute: string;
   second: string;
@@ -198,6 +203,7 @@ function shanghaiDateTimeParts(value: Date): ShanghaiDateTimeParts | null {
   return {
     dateKey: `${year}-${month}-${day}`,
     shortDate: `${month}-${day}`,
+    monthDay: `${Number(month)}月${Number(day)}日`,
     hour,
     minute,
     second,
