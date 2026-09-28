@@ -26,7 +26,7 @@ import {
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 
-const REPLY_STALLED_NOTICE_MS = 15_000;
+const REPLY_STALLED_NOTICE_MS = 8_000;
 const FREE_QUOTA_REFRESH_DELAYS_MS = [0, 300, 900] as const;
 const log = createLogger('conversation-turn');
 

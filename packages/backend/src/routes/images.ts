@@ -182,8 +182,7 @@ export default async function imageRoutes(app: FastifyInstance) {
       /** 获取基础免费体验额度 */
       const freeTrialLimit = await getPublishedFeatureFreeTrialLimit('basic_image');
       const basicFreeTrial = await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit);
-      const previewBillingMode =
-        basicFreeTrial.free_trials_remaining > 0 ? 'free_trial' : 'paid';
+      const previewBillingMode = basicFreeTrial.free_trials_remaining > 0 ? 'free_trial' : 'paid';
       const previewQuote = quoteVipMediaPrice({
         originalCredits: tierConfig.creditsPerGeneration,
         originalPriceLabel: tierConfig.priceLabel,
@@ -426,6 +425,11 @@ export default async function imageRoutes(app: FastifyInstance) {
               freeTrialOrdinal,
               walletPolicy: 'main_only',
               vipValidUntil: vipStatus.active ? vipStatus.valid_until : null,
+              originalPriceCredits: quote.originalCredits,
+              vipDiscountRate: quote.discountRate,
+              vipDiscountedExact: quote.discountedExact,
+              vipDiscountConfigVersion:
+                quote.discountRate === null ? null : strategy.discountVersion,
             })
           : await images.createPending({
               id: attemptId,
@@ -446,6 +450,11 @@ export default async function imageRoutes(app: FastifyInstance) {
               freeTrialOrdinal,
               walletPolicy: 'main_only',
               vipValidUntil: vipStatus.active ? vipStatus.valid_until : null,
+              originalPriceCredits: quote.originalCredits,
+              vipDiscountRate: quote.discountRate,
+              vipDiscountedExact: quote.discountedExact,
+              vipDiscountConfigVersion:
+                quote.discountRate === null ? null : strategy.discountVersion,
             });
         void observeImageGenerationAccepted(
           {
