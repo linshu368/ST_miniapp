@@ -151,12 +151,6 @@ export function ChatModelSwitcher({
 
   return (
     <div className="space-y-4">
-      {data.vip_status?.active ? (
-        <p className="rounded-2xl border border-primary/30 bg-primary/10 px-3 py-2 text-[12px] leading-relaxed text-primary">
-          ♛ VIP 有效期剩余 {data.vip_status.remaining_days} 天
-          {discountLabel ? ` · 全部模型档位 ${discountLabel}已生效` : ''}
-        </p>
-      ) : null}
       {freeRoundActive ? (
         <p className="rounded-2xl border border-success/30 bg-success/10 px-3 py-2 text-[12px] leading-relaxed text-success">
           当前角色仍有免费轮次。本轮免费，不叠加折扣。
@@ -181,7 +175,7 @@ export function ChatModelSwitcher({
           ) : null}
           {!isFetching && data.vip_status?.active && discountLabel ? (
             <span className="shrink-0 rounded-full border border-success/40 bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
-              {discountLabel}
+              VIP · {discountLabel}
             </span>
           ) : null}
         </div>

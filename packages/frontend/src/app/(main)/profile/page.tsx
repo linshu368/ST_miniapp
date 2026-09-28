@@ -51,6 +51,7 @@ import {
   checkinRewardLines,
   formatDiscountLabel,
   shouldShowVipEntryBadge,
+  vipEntryExpiryLabel,
   vipEntryLabel,
 } from '@/lib/vip/presentation';
 import { useUserProfileStore } from '@/stores/user-profile-store';
@@ -211,6 +212,7 @@ export default function ProfilePage() {
     entryBadgeVisible: vipStatus.data?.entry_badge_visible === true,
     discountLabel,
   });
+  const vipEntryExpiry = vipEntryExpiryLabel(vipStatus.data ?? null);
 
   const openVip = async () => {
     if (openingVip.current || vipStatus.isLoading || markVipSeen.isPending) return;
@@ -432,18 +434,31 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      {/* 星尘余额：余额在左、VIP 与充值入口在右，保持窄屏下一眼可见 */}
+      {/* 星尘余额：充值紧邻标题，VIP 入口与有效期独立置于右侧。 */}
       <section className="relative z-10 mt-7 px-5">
         <div className="relative overflow-hidden rounded-[26px] border border-primary/20 bg-card p-5 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
           <div
             aria-hidden
             className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-[radial-gradient(circle,hsl(var(--glow)/0.28),transparent_68%)]"
           />
-          <div className="relative flex items-center justify-between gap-4">
+          <div className="relative flex items-center justify-between gap-2 sm:gap-4">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold tracking-[0.2em] text-muted-foreground">
-                星尘余额
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-[11px] font-semibold tracking-[0.2em] text-muted-foreground">
+                  星尘余额
+                </p>
+                <Link
+                  href="/profile/recharge"
+                  aria-label="前往星尘充值"
+                  className="inline-flex min-h-7 items-center gap-1 rounded-full bg-[#f3ecbf] px-2.5 py-1 text-[11px] font-bold text-[#322b1b] transition hover:bg-[#eee5ad]"
+                  onClick={() => {
+                    captureRechargeEntryClicked({ telegramUserId });
+                  }}
+                >
+                  <Sparkles className="h-3 w-3" aria-hidden />
+                  星尘充值
+                </Link>
+              </div>
               <p className="mt-2 flex items-baseline gap-1.5">
                 <span className="text-[34px] font-black leading-none tabular-nums tracking-tight text-foreground">
                   {typeof credits === 'number' ? formatNumber(credits) : '—'}
@@ -465,12 +480,12 @@ export default function ProfilePage() {
                 </p>
               ) : null}
             </div>
-            <div className="flex shrink-0 flex-col items-end gap-2">
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
               <button
                 type="button"
                 onClick={() => void openVip()}
                 disabled={vipStatus.isLoading || markVipSeen.isPending}
-                className="relative inline-flex min-h-9 items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[12px] font-black text-primary-foreground shadow-[0_8px_24px_hsl(var(--glow)/0.35)] disabled:opacity-60"
+                className="relative inline-flex min-h-9 w-24 items-center justify-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[12px] font-black text-primary-foreground shadow-[0_8px_24px_hsl(var(--glow)/0.35)] disabled:opacity-60 sm:min-h-10 sm:w-28"
                 aria-label={vipEntryLabel(vipStatus.data ?? null)}
               >
                 <Crown className="h-3.5 w-3.5" aria-hidden />
@@ -481,17 +496,11 @@ export default function ProfilePage() {
                   </span>
                 ) : null}
               </button>
-              <Link
-                href="/profile/recharge"
-                aria-label="前往星尘充值"
-                className="inline-flex min-h-9 items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-[12px] font-bold text-primary transition hover:bg-primary/15"
-                onClick={() => {
-                  captureRechargeEntryClicked({ telegramUserId });
-                }}
-              >
-                <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
-                星尘充值
-              </Link>
+              {vipEntryExpiry ? (
+                <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
+                  {vipEntryExpiry}
+                </span>
+              ) : null}
             </div>
           </div>
           {vipStatus.isError ? (

@@ -8,6 +8,7 @@ import {
 import { fetchRuntimeConfigEntries } from '../../platform/runtime-config.js';
 import { config } from '../../platform/config.js';
 import { DEFAULT_IMAGE_DESCRIPTION_SYSTEM_PROMPT } from '../generation/image-upstream.js';
+import { quoteVipMediaPrice } from '../vip/media-pricing.js';
 
 const IMAGE_KEYS = [
   'image_generation_enabled',
@@ -112,14 +113,30 @@ export function toImageConfigData(config: ImageRuntimeConfig): GetImageConfigDat
   return toUserImageConfigData({
     config,
     basicFreeTrial: emptyBasicImageFreeTrialQuota(),
+    vipActive: false,
+    discountRate: 1,
   });
 }
 
 export function toUserImageConfigData(input: {
   config: ImageRuntimeConfig;
   basicFreeTrial: FeatureFreeTrialQuotaView;
+  vipActive: boolean;
+  discountRate: number;
 }): GetImageConfigData {
-  const { config: imageConfig, basicFreeTrial } = input;
+  const { config: imageConfig, basicFreeTrial, vipActive, discountRate } = input;
+  const basicBillingMode = imageConfig.enabled
+    ? basicFreeTrial.free_trials_remaining > 0
+      ? 'free_trial'
+      : 'paid'
+    : 'legacy_free';
+  const basicQuote = quoteVipMediaPrice({
+    originalCredits: imageConfig.creditsPerGeneration,
+    originalPriceLabel: imageConfig.priceLabel,
+    vipActive,
+    discountRate,
+    isFreeTrial: basicBillingMode !== 'paid',
+  });
   const basicProviderConfigured = Boolean(
     imageConfig.enabled &&
     config.image.liaobotsAuth &&
@@ -139,21 +156,17 @@ export function toUserImageConfigData(input: {
       available: basicProviderConfigured,
       billing: {
         enabled: imageConfig.enabled,
-        credits_per_generation: imageConfig.creditsPerGeneration,
-        price_label: imageConfig.priceLabel,
+        credits_per_generation: basicQuote.payableCredits,
+        price_label: basicQuote.priceLabel,
       },
       wallet_policy: 'main_only',
       requires_vip: false,
       free_trial: basicFreeTrial,
       next_billing: {
-        billing_mode: imageConfig.enabled
-          ? basicFreeTrial.free_trials_remaining > 0
-            ? 'free_trial'
-            : 'paid'
-          : 'legacy_free',
+        billing_mode: basicBillingMode,
         wallet_policy: 'main_only',
-        price_credits: imageConfig.creditsPerGeneration,
-        price_label: imageConfig.priceLabel,
+        price_credits: basicQuote.payableCredits,
+        price_label: basicQuote.priceLabel,
         free_trial_limit: basicFreeTrial.free_trial_limit,
         free_trial_ordinal: imageConfig.enabled ? basicFreeTrial.next_trial_ordinal : null,
         free_trials_remaining: imageConfig.enabled ? basicFreeTrial.free_trials_remaining : null,

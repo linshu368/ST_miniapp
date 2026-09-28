@@ -398,7 +398,7 @@ export function VipStrategyView(props: {
       <Card title="VIP策略">
         <Typography.Paragraph type="secondary">
           管理当前{props.environment === 'production' ? '生产' : '测试'}
-          环境的 VIP 购买、商品、文本折扣、签到加成和媒体免费次数。保存草稿不会立即生效。
+          环境的 VIP 购买、商品、生成折扣、签到加成和媒体免费次数。保存草稿不会立即生效。
           价格只按整数分发布，页面上的元仅用于对照。
         </Typography.Paragraph>
         {!props.canWrite ? (
@@ -462,7 +462,7 @@ export function VipStrategyView(props: {
         }}
       </StrategyKeyCard>
 
-      <Typography.Title level={4}>文本折扣</Typography.Title>
+      <Typography.Title level={4}>生成折扣</Typography.Title>
       <StrategyKeyCard {...shared} configKey="vip_text_discount_rate">
         {(value, onChange) => {
           const rate = VipTextDiscountRateSchema.safeParse(value).success
