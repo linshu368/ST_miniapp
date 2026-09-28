@@ -40,12 +40,19 @@ export function shouldShowVipEntryBadge(input: {
 }
 
 export function vipEntryLabel(
-  status: { active: boolean; remaining_days: number; valid_until?: string | null } | null,
-  now: Date = new Date()
+  status: { active: boolean; remaining_days: number; valid_until?: string | null } | null
 ): string {
-  if (!status?.active) return 'VIP';
-  if (isVipExpiringToday(status, now)) return 'VIP · 今日到期';
-  return `VIP · 剩 ${status.remaining_days} 天`;
+  void status;
+  return 'VIP';
+}
+
+/** VIP 入口只展示服务端有效期，缺失或无效时不猜测日期。 */
+export function vipEntryExpiryLabel(
+  status: { active: boolean; valid_until?: string | null } | null
+): string | null {
+  if (!status?.active || !status.valid_until) return null;
+  const expiry = formatShanghaiExpiry(new Date(status.valid_until));
+  return expiry ? `截止至 ${expiry.monthDay} ${expiry.time}` : null;
 }
 
 export function vipMembershipSummary(status: {
@@ -151,19 +158,24 @@ function isVipExpiringToday(
   return effectiveExpiry?.dateKey === nowParts.dateKey;
 }
 
-function formatShanghaiExpiry(value: Date): { date: string; time: string } | null {
+function formatShanghaiExpiry(
+  value: Date
+): { date: string; monthDay: string; time: string } | null {
   const parts = shanghaiDateTimeParts(value);
   if (!parts) return null;
   if (isExactMidnight(value, parts)) {
     const previousDay = shanghaiDateTimeParts(new Date(value.getTime() - 1));
-    return previousDay ? { date: previousDay.shortDate, time: '24:00' } : null;
+    return previousDay
+      ? { date: previousDay.shortDate, monthDay: previousDay.monthDay, time: '24:00' }
+      : null;
   }
-  return { date: parts.shortDate, time: `${parts.hour}:${parts.minute}` };
+  return { date: parts.shortDate, monthDay: parts.monthDay, time: `${parts.hour}:${parts.minute}` };
 }
 
 interface ShanghaiDateTimeParts {
   dateKey: string;
   shortDate: string;
+  monthDay: string;
   hour: string;
   minute: string;
   second: string;
@@ -191,6 +203,7 @@ function shanghaiDateTimeParts(value: Date): ShanghaiDateTimeParts | null {
   return {
     dateKey: `${year}-${month}-${day}`,
     shortDate: `${month}-${day}`,
+    monthDay: `${Number(month)}月${Number(day)}日`,
     hour,
     minute,
     second,
@@ -213,24 +226,11 @@ export interface TierQuoteView {
 }
 
 export function formatTierVipNote(
-  tier: Pick<
-    PublicModelCatalogTier,
-    'key' | 'discount_rate' | 'discounted_exact' | 'payable_credits'
-  >
+  tier: Pick<PublicModelCatalogTier, 'payable_credits'>
 ): string | null {
-  const rateLabel =
-    typeof tier.discount_rate === 'number' ? formatDiscountLabel(tier.discount_rate) : null;
-  const exact =
-    typeof tier.discounted_exact === 'number' ? formatServerNumber(tier.discounted_exact) : null;
   const payable =
     typeof tier.payable_credits === 'number' ? formatServerNumber(tier.payable_credits) : null;
-  if (!rateLabel || !exact || !payable) return null;
-
-  const price = exact === payable ? `${payable} 星尘/轮` : `${exact}，实扣 ${payable} 星尘/轮`;
-  const paidNote = `VIP ${rateLabel} → ${price}`;
-  return tier.key === 'light'
-    ? `免费优先，免费轮次不叠加 ${rateLabel}；付费轮次 ${paidNote}`
-    : paidNote;
+  return payable === null ? null : `实扣 ${payable} 星尘/轮`;
 }
 
 /** 只拼接目录里已经算好的原价、折扣、计算值和实扣，不自己乘折扣。 */

@@ -47,6 +47,9 @@ import { runVoiceGeneration } from '../features/voice/generate.js';
 import { precheckVoiceCredits } from '../features/voice/billing.js';
 import { getVoiceBillingConfig } from '../features/voice/voice-billing-config.js';
 import { getPublishedFeatureFreeTrialLimit } from '../features/billing/feature-free-trial-limit.js';
+import { quoteVipMediaPrice } from '../features/vip/media-pricing.js';
+import { VipStatusService } from '../features/vip/vip-status.js';
+import { readVipStrategy } from '../platform/vip-strategy.js';
 import { normalizeCustomText } from '../features/voice/voice-text.js';
 import {
   DEFAULT_TTS_MODEL,
@@ -72,6 +75,7 @@ export default async function voiceRoutes(app: FastifyInstance) {
   const settings = new MiniappUserSettingsRepository();
   const audio = new ChatMessageAudioRepository();
   const freeTrials = new FeatureFreeTrialRepository();
+  const vip = new VipStatusService();
 
   // ── 用户级语音偏好 ────────────────────────────────────────────────────────
 
@@ -80,12 +84,40 @@ export default async function voiceRoutes(app: FastifyInstance) {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
     const dbUser = await getOrCreateDbUser(request.user);
-    const billing = await getVoiceBillingConfig();
-    const freeTrialLimit = await getPublishedFeatureFreeTrialLimit('voice');
+    const log = requestLogger(request.log, 'voice');
+    let vipStatus;
+    try {
+      vipStatus = await vip.getStatusStrict(dbUser.id);
+    } catch (err) {
+      log.sys.error(
+        { err, event: 'voice.vip_status.read_failed', userId: dbUser.id },
+        '读取 VIP 状态失败'
+      );
+      return reply
+        .status(503)
+        .send(fail('VIP_STATUS_UNAVAILABLE', 'VIP 状态暂时无法确认，请稍后重试'));
+    }
+    const [billing, freeTrialLimit, strategy] = await Promise.all([
+      getVoiceBillingConfig(),
+      getPublishedFeatureFreeTrialLimit('voice'),
+      readVipStrategy(),
+    ]);
     /** 获取基础免费体验额度 */
     const freeTrial = billing.enabled
       ? await freeTrials.quota(dbUser.id, 'voice', freeTrialLimit)
       : emptyFreeTrialQuota('voice', freeTrialLimit);
+    const billingMode = billing.enabled
+      ? freeTrial.free_trials_remaining > 0
+        ? 'free_trial'
+        : 'paid'
+      : 'legacy_free';
+    const quote = quoteVipMediaPrice({
+      originalCredits: billing.creditsPerGeneration,
+      originalPriceLabel: billing.priceLabel,
+      vipActive: vipStatus.active,
+      discountRate: strategy.discountRate,
+      isFreeTrial: billingMode !== 'paid',
+    });
     return reply.send(
       ok<GetVoiceConfigData>({
         config: await settings.getVoiceConfig(dbUser.id),
@@ -94,14 +126,10 @@ export default async function voiceRoutes(app: FastifyInstance) {
         billing: billing.billing,
         free_trial: freeTrial,
         next_billing: {
-          billing_mode: billing.enabled
-            ? freeTrial.free_trials_remaining > 0
-              ? 'free_trial'
-              : 'paid'
-            : 'legacy_free',
+          billing_mode: billingMode,
           wallet_policy: 'main_only',
-          price_credits: billing.creditsPerGeneration,
-          price_label: billing.priceLabel,
+          price_credits: quote.payableCredits,
+          price_label: quote.priceLabel,
           free_trial_limit: freeTrial.free_trial_limit,
           free_trial_ordinal: billing.enabled ? freeTrial.next_trial_ordinal : null,
           free_trials_remaining: billing.enabled ? freeTrial.free_trials_remaining : null,
@@ -131,12 +159,40 @@ export default async function voiceRoutes(app: FastifyInstance) {
       }
 
       const dbUser = await getOrCreateDbUser(request.user);
-      const billing = await getVoiceBillingConfig();
-      const freeTrialLimit = await getPublishedFeatureFreeTrialLimit('voice');
+      const log = requestLogger(request.log, 'voice');
+      let vipStatus;
+      try {
+        vipStatus = await vip.getStatusStrict(dbUser.id);
+      } catch (err) {
+        log.sys.error(
+          { err, event: 'voice.vip_status.read_failed', userId: dbUser.id },
+          '读取 VIP 状态失败'
+        );
+        return reply
+          .status(503)
+          .send(fail('VIP_STATUS_UNAVAILABLE', 'VIP 状态暂时无法确认，请稍后重试'));
+      }
+      const [billing, freeTrialLimit, strategy] = await Promise.all([
+        getVoiceBillingConfig(),
+        getPublishedFeatureFreeTrialLimit('voice'),
+        readVipStrategy(),
+      ]);
       /** 获取基础免费体验额度 */
       const freeTrial = billing.enabled
         ? await freeTrials.quota(dbUser.id, 'voice', freeTrialLimit)
         : emptyFreeTrialQuota('voice', freeTrialLimit);
+      const billingMode = billing.enabled
+        ? freeTrial.free_trials_remaining > 0
+          ? 'free_trial'
+          : 'paid'
+        : 'legacy_free';
+      const quote = quoteVipMediaPrice({
+        originalCredits: billing.creditsPerGeneration,
+        originalPriceLabel: billing.priceLabel,
+        vipActive: vipStatus.active,
+        discountRate: strategy.discountRate,
+        isFreeTrial: billingMode !== 'paid',
+      });
       try {
         const updated = await settings.setVoiceConfig(dbUser.id, request.user, {
           ...(body.voice_id !== undefined ? { voiceId: body.voice_id } : {}),
@@ -150,14 +206,10 @@ export default async function voiceRoutes(app: FastifyInstance) {
             billing: billing.billing,
             free_trial: freeTrial,
             next_billing: {
-              billing_mode: billing.enabled
-                ? freeTrial.free_trials_remaining > 0
-                  ? 'free_trial'
-                  : 'paid'
-                : 'legacy_free',
+              billing_mode: billingMode,
               wallet_policy: 'main_only',
-              price_credits: billing.creditsPerGeneration,
-              price_label: billing.priceLabel,
+              price_credits: quote.payableCredits,
+              price_label: quote.priceLabel,
               free_trial_limit: freeTrial.free_trial_limit,
               free_trial_ordinal: billing.enabled ? freeTrial.next_trial_ordinal : null,
               free_trials_remaining: billing.enabled ? freeTrial.free_trials_remaining : null,
@@ -263,8 +315,20 @@ export default async function voiceRoutes(app: FastifyInstance) {
         }
         throw error;
       }
-      /** 获取语音计费配置 */
-      const billing = await getVoiceBillingConfig();
+      /** 扣款报价必须基于受理时会员快照，读取失败不能按非会员原价受理。 */
+      let vipStatus;
+      try {
+        vipStatus = await vip.getStatusStrict(dbUser.id);
+      } catch (err) {
+        log.sys.error(
+          { err, event: 'voice.vip_status.read_failed', userId: dbUser.id },
+          '读取 VIP 状态失败'
+        );
+        return reply
+          .status(503)
+          .send(fail('VIP_STATUS_UNAVAILABLE', 'VIP 状态暂时无法确认，请稍后重试'));
+      }
+      const [billing, strategy] = await Promise.all([getVoiceBillingConfig(), readVipStrategy()]);
       /** 生成音频 ID */
       const audioId = randomUUID();
       /** 设置计费模式 */
@@ -282,22 +346,29 @@ export default async function voiceRoutes(app: FastifyInstance) {
         if (reservation.ok) {
           billingMode = 'free_trial';
           freeTrialOrdinal = reservation.fact.ordinal;
-        } else {
-          if (reservation.code !== 'FEATURE_FREE_TRIAL_EXHAUSTED') {
-            return reply.status(409).send(fail(reservation.code, reservation.message));
-          }
-          const precheck = await precheckVoiceCredits(dbUser.id, billing.creditsPerGeneration);
-          if (!precheck.ok) {
-            const response: InsufficientBalanceErrorResponse = {
-              error: {
-                message: `Insufficient credits: have ${precheck.creditsAvailable}, need ${precheck.creditsRequired}`,
-                type: 'insufficient_balance',
-                credits_required: billing.creditsPerGeneration,
-                credits_available: precheck.creditsAvailable,
-              },
-            };
-            return reply.status(402).send(response);
-          }
+        } else if (reservation.code !== 'FEATURE_FREE_TRIAL_EXHAUSTED') {
+          return reply.status(409).send(fail(reservation.code, reservation.message));
+        }
+      }
+      const quote = quoteVipMediaPrice({
+        originalCredits: billing.creditsPerGeneration,
+        originalPriceLabel: billing.priceLabel,
+        vipActive: vipStatus.active,
+        discountRate: strategy.discountRate,
+        isFreeTrial: billingMode !== 'paid',
+      });
+      if (billingMode === 'paid') {
+        const precheck = await precheckVoiceCredits(dbUser.id, quote.payableCredits);
+        if (!precheck.ok) {
+          const response: InsufficientBalanceErrorResponse = {
+            error: {
+              message: `Insufficient credits: have ${precheck.creditsAvailable}, need ${precheck.creditsRequired}`,
+              type: 'insufficient_balance',
+              credits_required: quote.payableCredits,
+              credits_available: precheck.creditsAvailable,
+            },
+          };
+          return reply.status(402).send(response);
         }
       }
 
@@ -321,8 +392,13 @@ export default async function voiceRoutes(app: FastifyInstance) {
           sourceChars: customText ? customText.length : sourceText.length,
           billingMode,
           freeTrialOrdinal,
-          priceCredits: billing.creditsPerGeneration,
-          priceLabel: billing.priceLabel,
+          priceCredits: quote.payableCredits,
+          priceLabel: quote.priceLabel,
+          originalPriceCredits: quote.originalCredits,
+          vipDiscountRate: quote.discountRate,
+          vipDiscountedExact: quote.discountedExact,
+          vipValidUntil: vipStatus.active ? vipStatus.valid_until : null,
+          vipDiscountConfigVersion: quote.discountRate === null ? null : strategy.discountVersion,
         });
       } catch (error) {
         if (billingMode === 'free_trial') {
@@ -352,9 +428,9 @@ export default async function voiceRoutes(app: FastifyInstance) {
         ttsModel: pending.tts_model,
         ttsSpeed: Number(pending.tts_speed),
         billingEnabled: billing.enabled,
-        creditsPerGeneration: billing.creditsPerGeneration,
+        creditsPerGeneration: Number(pending.price_credits),
         maxSpokenChars: billing.maxSpokenChars,
-        priceLabel: billing.priceLabel,
+        priceLabel: pending.price_label ?? quote.priceLabel,
         log,
       });
 

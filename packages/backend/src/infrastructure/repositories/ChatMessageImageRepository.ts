@@ -41,6 +41,10 @@ export interface ChatMessageImageRow {
   output_format: string;
   price_credits: NumericValue;
   price_label: string;
+  original_price_credits?: NumericValue | null;
+  vip_discount_rate?: NumericValue | null;
+  vip_discounted_exact?: NumericValue | null;
+  vip_discount_config_version?: number | null;
   /** 计费模式：免费体验、付费 */
   billing_mode: MediaBillingMode | null;
   /** 免费体验次数：1、2、3 */
@@ -149,6 +153,10 @@ export class ChatMessageImageRepository {
     height: number;
     priceCredits: number;
     priceLabel: string;
+    originalPriceCredits: number;
+    vipDiscountRate: number | null;
+    vipDiscountedExact: number | null;
+    vipDiscountConfigVersion: number | null;
     /** 计费模式：免费体验、付费 */
     billingMode: MediaBillingMode;
     /** 免费体验次数：1、2、3 */
@@ -182,6 +190,10 @@ export class ChatMessageImageRepository {
         output_format: 'webp',
         price_credits: input.priceCredits,
         price_label: input.priceLabel,
+        original_price_credits: input.originalPriceCredits,
+        vip_discount_rate: input.vipDiscountRate,
+        vip_discounted_exact: input.vipDiscountedExact,
+        vip_discount_config_version: input.vipDiscountConfigVersion,
         /** 计费模式：免费体验、付费 */
         billing_mode: input.billingMode,
         /** 免费体验次数：1、2、3 */
@@ -296,6 +308,10 @@ export class ChatMessageImageRepository {
     priceCredits: number;
     /** 计费标签：免费体验、付费 */
     priceLabel: string;
+    originalPriceCredits: number;
+    vipDiscountRate: number | null;
+    vipDiscountedExact: number | null;
+    vipDiscountConfigVersion: number | null;
     /** 计费模式：免费体验、付费 */
     billingMode: MediaBillingMode;
     /** 免费体验次数：1、2、3 */
@@ -318,6 +334,10 @@ export class ChatMessageImageRepository {
         height: input.height,
         price_credits: input.priceCredits,
         price_label: input.priceLabel,
+        original_price_credits: input.originalPriceCredits,
+        vip_discount_rate: input.vipDiscountRate,
+        vip_discounted_exact: input.vipDiscountedExact,
+        vip_discount_config_version: input.vipDiscountConfigVersion,
         billing_mode: input.billingMode,
         free_trial_ordinal: input.freeTrialOrdinal,
         wallet_policy: input.walletPolicy,

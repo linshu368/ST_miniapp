@@ -526,8 +526,9 @@ export const configMetadata: Record<
     defaultValue: DEFAULT_VIP_PLANS_CONFIG,
   },
   vip_text_discount_rate: {
-    label: 'VIP 文本折扣率',
-    description: '大于 0 且不超过 1。生成受理时固化，不重算已经受理的请求。',
+    label: 'VIP 生成折扣率',
+    description:
+      '适用于文本、语音和图片付费生成。大于 0 且不超过 1；受理时固化，不重算已受理请求。',
     defaultValue: DEFAULT_VIP_TEXT_DISCOUNT_RATE,
   },
   vip_checkin_bonus_config: {
