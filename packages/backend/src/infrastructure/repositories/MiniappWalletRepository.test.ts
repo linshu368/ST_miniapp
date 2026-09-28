@@ -55,6 +55,19 @@ describe('toWalletBalance', () => {
     });
   });
 
+  it('preserves legacy one-decimal balances from NUMERIC(14,1)', () => {
+    expect(
+      toWalletBalance(
+        wallet({ main_credits: 1786, bonus_credits: 13719.6, total_credits: 15505.6 })
+      )
+    ).toMatchObject({
+      main_credits: 1786,
+      bonus_credits: 13719.6,
+      total_credits: 15505.6,
+      credits: 15505.6,
+    });
+  });
+
   it('does not invent a total when the stored split is inconsistent', () => {
     expect(() => toWalletBalance(wallet({ total_credits: 999 }))).toThrow('钱包余额不守恒');
   });
