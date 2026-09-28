@@ -466,8 +466,8 @@ export function ChatMessageImageFooter({
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div>
+              <div className="flex max-h-[calc(86vh-44px)] flex-col gap-3">
+                <div className="shrink-0">
                   <SheetTitle className="text-[17px] font-bold">
                     {source === 'generated' ? 'TA 此刻的样子' : '改成你想要的样子'}
                   </SheetTitle>
@@ -475,53 +475,57 @@ export function ChatMessageImageFooter({
                     {source === 'generated' ? '' : '写完直接出图，系统不会替换或补充你写的内容。'}
                   </SheetDescription>
                 </div>
-                {source === 'generated' ? (
-                  <p className="min-h-[78px] rounded-xl border border-border bg-background/40 px-3 py-3 text-[14px] leading-relaxed text-foreground">
-                    {prompt}
-                  </p>
-                ) : (
-                  <Textarea
-                    value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    maxLength={maxChars}
-                    rows={5}
-                    autoFocus
-                    className="resize-none bg-background/40 text-[14px] leading-relaxed"
-                  />
-                )}
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>{source === 'custom' ? `共 ${prompt.trim().length} 字` : ''}</span>
-                  <span>上限 {maxChars} 字</span>
-                </div>
-                {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
-                {priceLabel ? (
-                  <div className="flex min-h-8 w-full items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] font-semibold leading-snug text-emerald-400">
-                    <Check className="size-3.5 shrink-0" aria-hidden />
-                    <span>{priceLabel}</span>
-                  </div>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => void submit()}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
-                >
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                   {source === 'generated' ? (
-                    <Check className="size-4" aria-hidden />
+                    <p className="min-h-[78px] rounded-xl border border-border bg-background/40 px-3 py-3 text-[14px] leading-relaxed text-foreground">
+                      {prompt}
+                    </p>
                   ) : (
-                    <ImageIcon className="size-4" aria-hidden />
+                    <Textarea
+                      value={prompt}
+                      onChange={(event) => setPrompt(event.target.value)}
+                      maxLength={maxChars}
+                      rows={5}
+                      autoFocus
+                      className="min-h-[148px] resize-none bg-background/40 text-[14px] leading-relaxed"
+                    />
                   )}
-                  {source === 'generated' ? '确认，生成图片' : '按我写的生成图片'}
-                </button>
-                {source === 'generated' ? (
+                </div>
+                <div className="shrink-0 space-y-3">
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>{source === 'custom' ? `共 ${prompt.trim().length} 字` : ''}</span>
+                    <span>上限 {maxChars} 字</span>
+                  </div>
+                  {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
+                  {priceLabel ? (
+                    <div className="flex min-h-8 w-full items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] font-semibold leading-snug text-emerald-400">
+                      <Check className="size-3.5 shrink-0" aria-hidden />
+                      <span>{priceLabel}</span>
+                    </div>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={openCustomFlow}
-                    className="w-full rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground"
+                    onClick={() => void submit()}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
                   >
-                    我来改改
+                    {source === 'generated' ? (
+                      <Check className="size-4" aria-hidden />
+                    ) : (
+                      <ImageIcon className="size-4" aria-hidden />
+                    )}
+                    {source === 'generated' ? '确认，生成图片' : '按我写的生成图片'}
                   </button>
-                ) : null}
-                <p className="text-center text-[11px] text-muted-foreground">出图失败不消耗</p>
+                  {source === 'generated' ? (
+                    <button
+                      type="button"
+                      onClick={openCustomFlow}
+                      className="w-full rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground"
+                    >
+                      我来改改
+                    </button>
+                  ) : null}
+                  <p className="text-center text-[11px] text-muted-foreground">出图失败不消耗</p>
+                </div>
               </div>
             )}
           </div>
