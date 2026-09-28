@@ -269,10 +269,9 @@ export default function SelfHostedChatPage() {
                       config: imageConfigQuery.data,
                       billingRefreshing: imageConfigQuery.isFetching || createImage.isPending,
                       billingError: imageConfigQuery.isError,
-                      describe: async (tier) => {
+                      describe: async () => {
                         const result = await describeImage.mutateAsync({
                           messageId: message.id,
-                          body: { tier },
                         });
                         return { draftId: result.draft_id, prompt: result.prompt_cn };
                       },

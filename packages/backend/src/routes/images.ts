@@ -11,7 +11,6 @@ import {
   type GetSessionImagesData,
   type ImageFailureKind,
   type ImageErrorCode,
-  type ImageGenerationTier,
   type InsufficientBalanceErrorResponse,
   type MediaBillingMode,
   type MediaBillingPreview,
@@ -34,10 +33,7 @@ import {
 } from '../infrastructure/repositories/CharacterCardRepository.js';
 import { ConversationRepositoryError } from '../infrastructure/repositories/conversation-errors.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
-import {
-  emptyFreeTrialQuota,
-  FeatureFreeTrialRepository,
-} from '../infrastructure/repositories/FeatureFreeTrialRepository.js';
+import { FeatureFreeTrialRepository } from '../infrastructure/repositories/FeatureFreeTrialRepository.js';
 import {
   ChatMessageImageRepository,
   ImageConflictError,
@@ -50,11 +46,10 @@ import {
 } from '../features/generation/image-upstream.js';
 import {
   emptyBasicImageFreeTrialQuotaForLimit,
+  getBasicImageRuntimeConfig,
   getImageRuntimeConfig,
-  getImageTierRuntimeConfig,
   toUserImageConfigData,
 } from '../features/image/config.js';
-import { VipStatusService } from '../features/vip/vip-status.js';
 import { getPublishedFeatureFreeTrialLimit } from '../features/billing/feature-free-trial-limit.js';
 import {
   observeImageDescriptionCompleted,
@@ -81,8 +76,6 @@ export default async function imageRoutes(app: FastifyInstance) {
   const images = new ChatMessageImageRepository();
   /** 免费体验仓库 */
   const freeTrials = new FeatureFreeTrialRepository();
-  /** VIP 状态服务 */
-  const vip = new VipStatusService();
 
   // @frontend-ready: true
   app.get(
@@ -96,11 +89,8 @@ export default async function imageRoutes(app: FastifyInstance) {
       const basicFreeTrial = imageConfig.enabled
         ? await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit)
         : emptyBasicImageFreeTrialQuotaForLimit(freeTrialLimit);
-      const vipStatus = await vip.getStatus(dbUser.id, requestLogger(request.log, 'image'));
       return reply.send(
-        ok<GetImageConfigData>(
-          toUserImageConfigData({ config: imageConfig, basicFreeTrial, vipStatus })
-        )
+        ok<GetImageConfigData>(toUserImageConfigData({ config: imageConfig, basicFreeTrial }))
       );
     }
   );
@@ -151,24 +141,13 @@ export default async function imageRoutes(app: FastifyInstance) {
       }
       /** 获取用户 */
       const dbUser = await getOrCreateDbUser(request.user);
-      /** 获取 VIP 状态 */
-      const vipStatus = await vip.getStatus(dbUser.id, log);
-      /** 获取图片档位 */
-      const tier = parsed.data.tier;
-      /** 获取图片档位配置 */
-      const tierConfig = getImageTierRuntimeConfig(imageConfig, tier);
+      const tierConfig = getBasicImageRuntimeConfig(imageConfig);
       if (!tierConfig) {
-        return reply.status(503).send(fail('IMAGE_ADVANCED_UNAVAILABLE', '图片档位暂不可用'));
-      }
-      if (tier === 'advanced' && !vipStatus.active) {
-        return reply.status(403).send(fail('VIP_REQUIRED', '高级图片需要 VIP'));
+        return reply.status(503).send(fail('IMAGE_UNAVAILABLE', '图片生成功能暂不可用'));
       }
       /** 获取基础免费体验额度 */
       const freeTrialLimit = await getPublishedFeatureFreeTrialLimit('basic_image');
-      const basicFreeTrial =
-        tier === 'basic'
-          ? await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit)
-          : emptyFreeTrialQuota('basic_image', freeTrialLimit);
+      const basicFreeTrial = await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit);
       /** 准备消息上下文 */
       const prepared = await prepareMessageContext(ids.sessionId, ids.messageId, dbUser.id);
       if (!prepared.ok) return prepared.reply(reply);
@@ -191,7 +170,7 @@ export default async function imageRoutes(app: FastifyInstance) {
               sessionId: ids.sessionId,
               messageId: ids.messageId,
               userPrompt,
-              tier,
+              tier: 'basic',
               provider: tierConfig.provider,
               model: tierConfig.model,
               baseUrlHost: tierConfig.baseUrlHost,
@@ -234,16 +213,12 @@ export default async function imageRoutes(app: FastifyInstance) {
           ok<CreateImageDescriptionData>({
             draft_id: draftId,
             prompt_cn: promptCn,
-            tier,
+            tier: 'basic',
             billing: buildImageBillingPreview({
-              tier,
-              billingMode:
-                tier === 'basic' && basicFreeTrial.free_trials_remaining > 0
-                  ? 'free_trial'
-                  : 'paid',
-              freeTrialOrdinal: tier === 'basic' ? basicFreeTrial.next_trial_ordinal : null,
-              freeTrialsRemaining: tier === 'basic' ? basicFreeTrial.free_trials_remaining : null,
-              freeTrialLimit: tier === 'basic' ? basicFreeTrial.free_trial_limit : null,
+              billingMode: basicFreeTrial.free_trials_remaining > 0 ? 'free_trial' : 'paid',
+              freeTrialOrdinal: basicFreeTrial.next_trial_ordinal,
+              freeTrialsRemaining: basicFreeTrial.free_trials_remaining,
+              freeTrialLimit: basicFreeTrial.free_trial_limit,
               priceCredits: tierConfig.creditsPerGeneration,
               priceLabel: tierConfig.priceLabel,
             }),
@@ -323,14 +298,9 @@ export default async function imageRoutes(app: FastifyInstance) {
       }
 
       const dbUser = await getOrCreateDbUser(request.user);
-      const vipStatus = await vip.getStatus(dbUser.id, log);
-      const tier = parsed.data.tier;
-      const tierConfig = getImageTierRuntimeConfig(imageConfig, tier);
+      const tierConfig = getBasicImageRuntimeConfig(imageConfig);
       if (!tierConfig) {
-        return reply.status(503).send(fail('IMAGE_ADVANCED_UNAVAILABLE', '图片档位暂不可用'));
-      }
-      if (tier === 'advanced' && !vipStatus.active) {
-        return reply.status(403).send(fail('VIP_REQUIRED', '高级图片需要 VIP'));
+        return reply.status(503).send(fail('IMAGE_UNAVAILABLE', '图片生成功能暂不可用'));
       }
       const prepared = await prepareMessageContext(ids.sessionId, ids.messageId, dbUser.id);
       if (!prepared.ok) return prepared.reply(reply);
@@ -345,19 +315,17 @@ export default async function imageRoutes(app: FastifyInstance) {
       const attemptId = parsed.data.draft_id ?? randomUUID();
       let billingMode: MediaBillingMode = 'paid';
       let freeTrialOrdinal: number | null = null;
-      if (tier === 'basic') {
-        const reservation = await freeTrials.reserve({
-          userId: dbUser.id,
-          feature: 'basic_image',
-          referenceId: attemptId,
-          ttlSeconds: config.image.workerLeaseSeconds + 900,
-        });
-        if (reservation.ok) {
-          billingMode = 'free_trial';
-          freeTrialOrdinal = reservation.fact.ordinal;
-        } else if (reservation.code !== 'FEATURE_FREE_TRIAL_EXHAUSTED') {
-          return reply.status(409).send(fail(reservation.code, reservation.message));
-        }
+      const reservation = await freeTrials.reserve({
+        userId: dbUser.id,
+        feature: 'basic_image',
+        referenceId: attemptId,
+        ttlSeconds: config.image.workerLeaseSeconds + 900,
+      });
+      if (reservation.ok) {
+        billingMode = 'free_trial';
+        freeTrialOrdinal = reservation.fact.ordinal;
+      } else if (reservation.code !== 'FEATURE_FREE_TRIAL_EXHAUSTED') {
+        return reply.status(409).send(fail(reservation.code, reservation.message));
       }
       if (billingMode === 'paid') {
         const precheck = await wallets.precheckMainCredits(
@@ -384,7 +352,7 @@ export default async function imageRoutes(app: FastifyInstance) {
               userId: dbUser.id,
               sessionId: ids.sessionId,
               messageId: ids.messageId,
-              tier,
+              tier: 'basic',
               promptCn: parsed.data.prompt_cn,
               promptSource: parsed.data.prompt_source,
               provider: tierConfig.provider,
@@ -397,14 +365,14 @@ export default async function imageRoutes(app: FastifyInstance) {
               billingMode,
               freeTrialOrdinal,
               walletPolicy: 'main_only',
-              vipValidUntil: tier === 'advanced' ? vipStatus.valid_until : null,
+              vipValidUntil: null,
             })
           : await images.createPending({
               id: attemptId,
               userId: dbUser.id,
               sessionId: ids.sessionId,
               messageId: ids.messageId,
-              tier,
+              tier: 'basic',
               promptCn: parsed.data.prompt_cn,
               promptSource: parsed.data.prompt_source,
               provider: tierConfig.provider,
@@ -417,7 +385,7 @@ export default async function imageRoutes(app: FastifyInstance) {
               billingMode,
               freeTrialOrdinal,
               walletPolicy: 'main_only',
-              vipValidUntil: tier === 'advanced' ? vipStatus.valid_until : null,
+              vipValidUntil: null,
             });
         void observeImageGenerationAccepted(
           {
@@ -545,7 +513,6 @@ function imageFailureKind(error: unknown): ImageFailureKind {
  * @returns 图片计费预览
  */
 function buildImageBillingPreview(input: {
-  tier: ImageGenerationTier;
   billingMode: MediaBillingMode;
   freeTrialOrdinal: number | null;
   freeTrialsRemaining: number | null;
@@ -558,8 +525,8 @@ function buildImageBillingPreview(input: {
     wallet_policy: 'main_only',
     price_credits: input.priceCredits,
     price_label: input.priceLabel,
-    free_trial_limit: input.tier === 'basic' ? input.freeTrialLimit : null,
-    free_trial_ordinal: input.tier === 'basic' ? input.freeTrialOrdinal : null,
-    free_trials_remaining: input.tier === 'basic' ? input.freeTrialsRemaining : null,
+    free_trial_limit: input.freeTrialLimit,
+    free_trial_ordinal: input.freeTrialOrdinal,
+    free_trials_remaining: input.freeTrialsRemaining,
   };
 }

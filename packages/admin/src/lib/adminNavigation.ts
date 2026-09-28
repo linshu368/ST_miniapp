@@ -6,7 +6,6 @@ export type AdminViewKey =
   | 'outreach_credit_grant'
   | 'invite_program'
   | 'image_generation_config'
-  | 'vip_media_config'
   | 'vip_strategy'
   | 'characters'
   | 'announcements'
@@ -50,20 +49,8 @@ export function isImageGenerationConfigKey(key: ManagedConfigKey): key is ImageG
   return (IMAGE_GENERATION_CONFIG_KEYS as readonly string[]).includes(key);
 }
 
-export const VIP_MEDIA_CONFIG_KEYS = [
-  'image_advanced_enabled',
-  'image_advanced_generation_credits',
-  'image_advanced_price_label',
-  'image_advanced_provider_config',
-] as const satisfies readonly ManagedConfigKey[];
-
 /** 旧的单一免费次数键。额度改由 VIP 策略的 feature_free_trial_limits 发布，不再给运营入口。 */
 const LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY = 'media_feature_free_trial_limit';
-export type VipMediaConfigKey = (typeof VIP_MEDIA_CONFIG_KEYS)[number];
-
-export function isVipMediaConfigKey(key: ManagedConfigKey): key is VipMediaConfigKey {
-  return (VIP_MEDIA_CONFIG_KEYS as readonly string[]).includes(key);
-}
 
 export function isInviteProgramConfigKey(key: ManagedConfigKey): key is InviteProgramConfigKey {
   return (INVITE_PROGRAM_CONFIG_KEYS as readonly string[]).includes(key);
@@ -78,7 +65,6 @@ export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConf
   (key) =>
     !isInviteProgramConfigKey(key) &&
     !isImageGenerationConfigKey(key) &&
-    !isVipMediaConfigKey(key) &&
     !isVipStrategyConfigKey(key) &&
     key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
 );
@@ -101,7 +87,6 @@ export function resolveAdminMenuSelection(key: string): {
       if (isImageGenerationConfigKey(configKey)) {
         return { view: 'image_generation_config', configKey };
       }
-      if (isVipMediaConfigKey(configKey)) return { view: 'vip_media_config', configKey };
       if (isVipStrategyConfigKey(configKey)) return { view: 'vip_strategy', configKey };
       return { view: 'configs', configKey };
     }
@@ -110,7 +95,6 @@ export function resolveAdminMenuSelection(key: string): {
     key === 'outreach_credit_grant' ||
     key === 'invite_program' ||
     key === 'image_generation_config' ||
-    key === 'vip_media_config' ||
     key === 'vip_strategy' ||
     key === 'characters' ||
     key === 'announcements' ||

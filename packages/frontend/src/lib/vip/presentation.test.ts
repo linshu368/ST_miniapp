@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  advancedImageEntry,
   billingFailureAction,
   checkinRewardLines,
   checkoutButtonLabel,
@@ -305,11 +304,9 @@ describe('check-in, model switch, and billing codes', () => {
 
   it('maps stable error codes without reading the message', () => {
     expect(billingFailureAction('VIP_REQUIRED')).toEqual({ type: 'vip' });
-    expect(billingFailureAction('image_vip_required')).toEqual({ type: 'vip' });
     expect(billingFailureAction('MAIN_CREDITS_INSUFFICIENT')).toEqual({ type: 'main_wallet' });
     expect(billingFailureAction('insufficient_balance')).toEqual({ type: 'recharge' });
     expect(billingFailureAction('TOTAL_CREDITS_INSUFFICIENT')).toEqual({ type: 'recharge' });
-    expect(billingFailureAction('ADVANCED_IMAGE_UNAVAILABLE')).toEqual({ type: 'unavailable' });
     expect(billingFailureAction('标准模型需要会员')).toEqual({ type: 'unknown' });
     expect(billingFailureAction(undefined)).toEqual({ type: 'unknown' });
   });
@@ -339,24 +336,5 @@ describe('notifications, orders, and advanced image entry', () => {
         bonus_credits: 20,
       })
     ).toBe('120 星尘');
-  });
-
-  it('hides advanced image unless the server opened it or only locked it for vip', () => {
-    expect(advancedImageEntry({ enabled: false, available: false, locked_reason: null })).toBe(
-      'hidden'
-    );
-    expect(
-      advancedImageEntry({
-        enabled: true,
-        available: false,
-        locked_reason: 'ADVANCED_IMAGE_UNAVAILABLE',
-      })
-    ).toBe('hidden');
-    expect(
-      advancedImageEntry({ enabled: true, available: false, locked_reason: 'VIP_REQUIRED' })
-    ).toBe('vip_locked');
-    expect(advancedImageEntry({ enabled: true, available: true, locked_reason: null })).toBe(
-      'open'
-    );
   });
 });
