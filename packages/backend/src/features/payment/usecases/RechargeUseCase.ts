@@ -62,7 +62,7 @@ export class RechargeUseCase {
       outTradeNo: orderId,
       amount: formatAmountCny(product.amount_cents),
       userId: input.userId,
-      // 星尘套餐继续用已验证的「VIP会员」。VIP 商品用周卡/月卡名，金额仍只来自服务端快照。
+      // 网关商品名由服务端产品快照决定，避免前端改名影响渠道受理或历史订单语义。
       productName: product.gateway_product_name,
       clientIp: input.clientIp,
     });

@@ -1,7 +1,0 @@
-{
-  "framework": null,
-  "installCommand": "pnpm install",
-  "buildCommand": "pnpm --filter @miniapp/batch-lab build",
-  "outputDirectory": "dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-}

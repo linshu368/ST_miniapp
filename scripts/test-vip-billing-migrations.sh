@@ -30,8 +30,15 @@ psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
   -f "$ROOT/packages/shared/migrations/fixtures/vip_billing_t2_harness.sql" \
   >/dev/null
 
+# Production already has pg_cron for unrelated operations. The compatibility
+# migration must create the VIP schema without modifying that scheduler.
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<'SQL'
+CREATE SCHEMA cron;
+CREATE TABLE cron.job (jobid BIGINT PRIMARY KEY);
+SQL
+
 for file in \
-  20260921_vip_billing_schema.sql \
+  20260924_vip_billing_schema_pg_cron_compat.sql \
   20260921_wallet_debit_refund.sql \
   20260921_vip_payment_fulfillment.sql \
   20260921_feature_free_trial_checkin_reminder.sql
@@ -257,4 +264,168 @@ REPLAY_REF="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT reference_id FR
 REPLAY_A="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT billing.reserve_feature_free_trial('$LIMIT_USER'::uuid,'voice','${REPLAY_REF}')->>'status';")"
 [[ "$REPLAY_A" == "already_reserved" ]] || fail "replay status=$REPLAY_A ref=$REPLAY_REF"
 
-echo "All T2, T3, T4 and T3A VIP billing local checks passed."
+echo "apply 20260923_vip_expiry_reminder_dispatch.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260923_vip_expiry_reminder_dispatch.sql" \
+  >/dev/null
+
+echo "run t6 reminder scenarios"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_reminder_t6_scenarios.sql" \
+  >/dev/null
+
+echo "reject reminder migration replay"
+set +e
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260923_vip_expiry_reminder_dispatch.sql" \
+  >/tmp/vip-reminder-replay.out 2>/tmp/vip-reminder-replay.err
+REPLAY_CODE=$?
+set -e
+[[ "$REPLAY_CODE" -ne 0 ]] || fail "reminder migration replay was accepted"
+grep -q 'already applied' /tmp/vip-reminder-replay.err || fail "replay did not report already applied"
+
+LOCK_RENEW="00000000-0000-4000-8000-000000000641"
+LOCK_REMIND="00000000-0000-4000-8000-000000000642"
+RACE_USER="00000000-0000-4000-8000-000000000643"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<SQL
+INSERT INTO app_core.users (id) VALUES ('$LOCK_RENEW'), ('$LOCK_REMIND'), ('$RACE_USER');
+INSERT INTO billing.vip_memberships (user_id, valid_from, valid_until, last_plan_id)
+SELECT id,
+       ((now() AT TIME ZONE 'Asia/Shanghai')::date + time '15:00' - interval '7 days') AT TIME ZONE 'Asia/Shanghai',
+       ((now() AT TIME ZONE 'Asia/Shanghai')::date + 3 + time '15:00') AT TIME ZONE 'Asia/Shanghai',
+       'week'
+FROM app_core.users
+WHERE id IN ('$LOCK_RENEW', '$LOCK_REMIND', '$RACE_USER');
+SQL
+
+echo "run concurrent reminder inserts"
+(
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT miniapp_features.insert_due_vip_expiry_reminder('$RACE_USER');" >/dev/null
+) &
+(
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT miniapp_features.insert_due_vip_expiry_reminder('$RACE_USER');" >/dev/null
+) &
+wait
+RACE_N="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM miniapp_features.notifications WHERE user_id='$RACE_USER' AND kind='vip_expiry';")"
+[[ "$RACE_N" == "1" ]] || fail "concurrent reminder inserts produced $RACE_N rows"
+
+wait_for_lock() {
+  local marker="$1"
+  local tries=0
+  local found="0"
+  while [[ "$tries" -lt 25 ]]; do
+    found="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM pg_stat_activity WHERE query LIKE '%${marker}%' AND query NOT LIKE '%pg_stat_activity%' AND state = 'active';")"
+    [[ "$found" != "0" ]] && return 0
+    tries=$((tries + 1))
+    sleep 0.2
+  done
+  fail "lock holder $marker did not start"
+}
+
+echo "renewal lock is observed before reminder insert"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+  "BEGIN; SELECT user_id FROM billing.vip_memberships WHERE user_id='${LOCK_RENEW}' FOR UPDATE; SELECT pg_sleep(4) /* vip-reminder-lock-renew */; UPDATE billing.vip_memberships SET valid_until = now() + interval '40 days', valid_from = now() - interval '1 day' WHERE user_id='${LOCK_RENEW}'; COMMIT;" \
+  >/dev/null &
+wait_for_lock "vip-reminder-lock-renew"
+RENEW_STATUS="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT miniapp_features.insert_due_vip_expiry_reminder('${LOCK_RENEW}')->>'status';")"
+wait
+[[ "$RENEW_STATUS" == "skipped_window" ]] || fail "renewal-first status=$RENEW_STATUS"
+RENEW_N="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM miniapp_features.notifications WHERE user_id='${LOCK_RENEW}';")"
+[[ "$RENEW_N" == "0" ]] || fail "renewal-first wrote $RENEW_N reminders"
+
+echo "reminder lock writes the cycle it locked"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+  "BEGIN; SELECT user_id FROM billing.vip_memberships WHERE user_id='${LOCK_REMIND}' FOR UPDATE; SELECT pg_sleep(4) /* vip-reminder-lock-remind */; SELECT miniapp_features.insert_due_vip_expiry_reminder('${LOCK_REMIND}'); COMMIT;" \
+  >/dev/null &
+wait_for_lock "vip-reminder-lock-remind"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+  "UPDATE billing.vip_memberships SET valid_until = now() + interval '40 days', valid_from = now() - interval '1 day' WHERE user_id='${LOCK_REMIND}';" \
+  >/dev/null
+wait
+REMIND_N="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM miniapp_features.notifications WHERE user_id='${LOCK_REMIND}' AND kind='vip_expiry';")"
+REMIND_TITLE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT title FROM miniapp_features.notifications WHERE user_id='${LOCK_REMIND}' AND kind='vip_expiry';")"
+REMIND_UNTIL="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT valid_until > now() + interval '30 days' FROM billing.vip_memberships WHERE user_id='${LOCK_REMIND}';")"
+[[ "$REMIND_N" == "1" ]] || fail "reminder-first rows=$REMIND_N"
+[[ "$REMIND_TITLE" == "VIP 即将到期" ]] || fail "reminder-first title=$REMIND_TITLE"
+[[ "$REMIND_UNTIL" == "t" ]] || fail "reminder-first membership was not renewed"
+
+echo "All T2, T3, T4, T3A and T6 VIP billing local checks passed."
+
+echo "prepare experience ordinal stubs at 1..3"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<'SQL'
+CREATE SCHEMA IF NOT EXISTS experience;
+CREATE TABLE experience.chat_message_audio (
+  id uuid PRIMARY KEY,
+  free_trial_ordinal integer,
+  CONSTRAINT chat_message_audio_free_trial_ordinal_check
+    CHECK (free_trial_ordinal IS NULL OR free_trial_ordinal BETWEEN 1 AND 3)
+);
+CREATE TABLE experience.chat_message_images (
+  id uuid PRIMARY KEY,
+  is_current boolean NOT NULL DEFAULT false,
+  status text NOT NULL DEFAULT 'pending',
+  billing_mode text NOT NULL DEFAULT 'paid',
+  image_tier text NOT NULL DEFAULT 'basic',
+  debit_ledger_id uuid,
+  credits_charged numeric NOT NULL DEFAULT 0,
+  free_trial_ordinal integer,
+  CONSTRAINT chat_message_images_free_trial_ordinal_check
+    CHECK (free_trial_ordinal IS NULL OR free_trial_ordinal BETWEEN 1 AND 3),
+  CONSTRAINT chat_message_images_current_requires_charged_ready CHECK (
+    NOT is_current
+    OR (status = 'ready' AND free_trial_ordinal BETWEEN 1 AND 3)
+  )
+);
+SQL
+
+echo "apply 20260923_vip_strategy_media_limit_alignment.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260923_vip_strategy_media_limit_alignment.sql" \
+  >/dev/null
+
+AUDIO_ORDINAL="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'chat_message_audio_free_trial_ordinal_check';")"
+[[ "$AUDIO_ORDINAL" == *"<= 20"* ]] || fail "audio ordinal constraint=$AUDIO_ORDINAL"
+
+echo "run t5 voice/image free-trial scenarios"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/tests/vip_media_t5_scenarios.sql" \
+  >/dev/null
+
+T5_USER="00000000-0000-4000-8000-000000000509"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 >/dev/null <<SQL
+INSERT INTO app_core.users (id) VALUES ('$T5_USER');
+UPDATE app_core.runtime_config
+SET value = '{"voice":1,"basic_image":1}'::jsonb
+WHERE key = 'feature_free_trial_limits';
+SQL
+
+echo "run concurrent last voice ordinal"
+for n in 1 2; do
+  psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
+    "SELECT billing.reserve_feature_free_trial('$T5_USER'::uuid,'voice','t5-concur-$n');" >/dev/null &
+done
+wait
+
+T5_VOICE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM billing.feature_free_trials WHERE user_id='$T5_USER' AND feature='voice' AND status='reserved';")"
+T5_IMAGE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM billing.feature_free_trials WHERE user_id='$T5_USER' AND feature='basic_image';")"
+[[ "$T5_VOICE" == "1" ]] || fail "concurrent last voice occupancy=$T5_VOICE"
+[[ "$T5_IMAGE" == "0" ]] || fail "concurrent voice race touched image=$T5_IMAGE"
+
+echo "apply 20260924_vip_plans_price_1_and_2_yuan.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260924_vip_plans_price_1_and_2_yuan.sql" \
+  >/dev/null
+
+WEEK_PRICE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT value#>>'{week,price_cents}' FROM app_core.runtime_config WHERE key='vip_plans_config';")"
+MONTH_PRICE="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT value#>>'{month,price_cents}' FROM app_core.runtime_config WHERE key='vip_plans_config';")"
+[[ "$WEEK_PRICE" == "100" ]] || fail "week price_cents=$WEEK_PRICE"
+[[ "$MONTH_PRICE" == "200" ]] || fail "month price_cents=$MONTH_PRICE"
+
+echo "replay 20260924_vip_plans_price_1_and_2_yuan.sql"
+psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 \
+  -f "$ROOT/packages/shared/migrations/20260924_vip_plans_price_1_and_2_yuan.sql" \
+  >/dev/null
+
+echo "All T2, T3, T4, T3A, T6 and T5 VIP billing local checks passed."

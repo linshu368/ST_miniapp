@@ -55,7 +55,7 @@ import {
   toUserImageConfigData,
 } from '../features/image/config.js';
 import { VipStatusService } from '../features/vip/vip-status.js';
-import { getMediaFeatureFreeTrialLimit } from '../features/billing/feature-free-trial-limit.js';
+import { getPublishedFeatureFreeTrialLimit } from '../features/billing/feature-free-trial-limit.js';
 import {
   observeImageDescriptionCompleted,
   observeImageDescriptionFailed,
@@ -92,7 +92,7 @@ export default async function imageRoutes(app: FastifyInstance) {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const dbUser = await getOrCreateDbUser(request.user);
       const imageConfig = await getImageRuntimeConfig();
-      const freeTrialLimit = await getMediaFeatureFreeTrialLimit();
+      const freeTrialLimit = await getPublishedFeatureFreeTrialLimit('basic_image');
       const basicFreeTrial = imageConfig.enabled
         ? await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit)
         : emptyBasicImageFreeTrialQuotaForLimit(freeTrialLimit);
@@ -164,7 +164,7 @@ export default async function imageRoutes(app: FastifyInstance) {
         return reply.status(403).send(fail('VIP_REQUIRED', '高级图片需要 VIP'));
       }
       /** 获取基础免费体验额度 */
-      const freeTrialLimit = await getMediaFeatureFreeTrialLimit();
+      const freeTrialLimit = await getPublishedFeatureFreeTrialLimit('basic_image');
       const basicFreeTrial =
         tier === 'basic'
           ? await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit)

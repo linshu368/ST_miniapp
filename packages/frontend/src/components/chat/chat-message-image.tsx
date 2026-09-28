@@ -2,15 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Image from 'next/image';
-import { Check, Download, Expand, Eye, ImageIcon, Loader2, RefreshCw, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Check, Download, Expand, Eye, ImageIcon, Loader2, Lock, RefreshCw, X } from 'lucide-react';
 import type {
   CreateMessageImageRequest,
   GetImageConfigData,
   ImageGenerationTier,
-  MediaBillingPreview,
   MessageImageState,
 } from '@miniapp/shared';
 import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
+import {
+  formatMediaAttemptBillingLabel,
+  formatMediaBillingPreview,
+} from '@/components/chat/media-billing-label';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
@@ -30,6 +34,11 @@ import {
   type ImageTelemetryContext,
 } from '@/lib/image-generation/telemetry';
 import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
+import {
+  advancedImageEntry,
+  billingFailureAction,
+  MAIN_WALLET_NOTICE,
+} from '@/lib/vip/presentation';
 
 type PromptSource = CreateMessageImageRequest['prompt_source'];
 
@@ -38,6 +47,8 @@ export interface MessageImageUiState {
   /** 最新回复可首次生成；已有图片记录的历史回复也可重试或重新生成。 */
   canGenerate: boolean;
   config: GetImageConfigData | undefined;
+  billingRefreshing: boolean;
+  billingError: boolean;
   describe: (tier: ImageGenerationTier) => Promise<{ draftId: string; prompt: string }>;
   create: (request: CreateMessageImageRequest) => Promise<void>;
   onRecharge: () => void;
@@ -52,6 +63,7 @@ export function ChatMessageImageFooter({
   /** 将图片入口交给消息操作行渲染，同时由本组件保留 Sheet 状态。 */
   children?: (imageAction: ReactNode) => ReactNode;
 }) {
+  const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
@@ -61,7 +73,7 @@ export function ChatMessageImageFooter({
   const [source, setSource] = useState<PromptSource>('generated');
   const [tier, setTier] = useState<ImageGenerationTier>('basic');
   const [stage, setStage] = useState<
-    'idle' | 'describing' | 'confirming' | 'creating' | 'failed' | 'insufficient'
+    'idle' | 'describing' | 'confirming' | 'creating' | 'failed' | 'insufficient' | 'vip_required'
   >('idle');
   const [error, setError] = useState('');
   // 只让“本次从 Sheet 发起”的任务终态驱动 Sheet；否则打开已有 ready/failed 图片时，
@@ -73,7 +85,22 @@ export function ChatMessageImageFooter({
   const ready = current?.status === 'ready' ? current : null;
   const busy = latest?.status === 'pending' || latest?.status === 'generating';
   const selectedTierConfig = image?.config?.tiers[tier] ?? image?.config?.tiers.basic;
-  const priceLabel = selectedTierConfig ? formatImageBillingLabel(selectedTierConfig.next_billing) : '';
+  const failedAttempt =
+    latest?.status === 'failed' || latest?.status === 'failed_unknown' ? latest : null;
+  const priceLabel =
+    failedAttempt && failedAttempt.tier === tier && (stage === 'failed' || stage === 'confirming')
+      ? formatMediaAttemptBillingLabel(
+          failedAttempt,
+          image?.config?.tiers[failedAttempt.tier].next_billing.free_trial_limit,
+          failedAttempt.tier !== 'advanced'
+        )
+      : formatMediaBillingPreview(
+          selectedTierConfig?.next_billing,
+          image?.billingRefreshing ?? true,
+          image?.billingError ?? false,
+          tier !== 'advanced'
+        );
+  const advancedEntry = advancedImageEntry(image?.config?.tiers.advanced);
   const maxChars = image?.config?.limits.max_prompt_chars ?? MAX_IMAGE_PROMPT_CHARS;
   const telemetry = image?.telemetry ?? null;
 
@@ -118,14 +145,11 @@ export function ChatMessageImageFooter({
   // 非最后一条消息没有图片能力，但仍须把同一操作行里的语音/重生成渲染出来。
   if (!image) return children ? children(null) : null;
 
-  const openDefaultFlow = async (
-    entrySource: 'default' | 'regenerate_ready' = 'default',
-    nextTier: ImageGenerationTier = 'basic'
-  ) => {
+  const openDefaultFlow = async (nextTier: ImageGenerationTier = 'basic') => {
     if (telemetry) {
       captureImageEntrySelected({
         context: telemetry,
-        entrySource,
+        entrySource: 'default',
         latestStatus: latest?.status,
         hasReadyImage: Boolean(ready),
       });
@@ -138,16 +162,16 @@ export function ChatMessageImageFooter({
       return;
     }
     const nextTierConfig = image.config?.tiers[nextTier];
-    if (nextTierConfig && !nextTierConfig.available) {
-      setTier(nextTier);
-      setError(
-        nextTierConfig.locked_reason === 'VIP_REQUIRED'
-          ? '高级图片需要 VIP'
-          : '这个图片档位暂不可用'
-      );
-      setStage('failed');
-      setSheetOpen(true);
-      return;
+    if (nextTier === 'advanced') {
+      const entry = advancedImageEntry(nextTierConfig);
+      if (entry === 'hidden') return;
+      if (entry === 'vip_locked') {
+        setTier(nextTier);
+        setError('高级图片需要有效 VIP。开通后仍按价格扣费。');
+        setStage('vip_required');
+        setSheetOpen(true);
+        return;
+      }
     }
     setTier(nextTier);
     generationStartedRef.current = false;
@@ -277,22 +301,7 @@ export function ChatMessageImageFooter({
     } catch (err) {
       generationStartedRef.current = false;
       const candidate = err as { code?: string; status?: number; message?: string };
-      if (candidate.status === 402 || candidate.code === 'insufficient_balance') {
-        setStage('insufficient');
-        setError('星尘余额不足，请先充值后再生成。');
-        if (telemetry) {
-          captureImageGenerationSubmitFailed({
-            context: telemetry,
-            promptSource: source,
-            promptChars: value.length,
-            error: err,
-            startedAt,
-          });
-        }
-        return;
-      }
-      setStage('failed');
-      setError(candidate.message ?? '图片生成没能开始，请重试');
+      const action = billingFailureAction(candidate.code);
       if (telemetry) {
         captureImageGenerationSubmitFailed({
           context: telemetry,
@@ -302,6 +311,28 @@ export function ChatMessageImageFooter({
           startedAt,
         });
       }
+      if (action.type === 'vip') {
+        setStage('vip_required');
+        setError('高级图片需要有效 VIP。开通后仍按价格扣费。');
+        return;
+      }
+      if (action.type === 'main_wallet') {
+        setStage('failed');
+        setError(MAIN_WALLET_NOTICE);
+        return;
+      }
+      if (action.type === 'unavailable') {
+        setStage('failed');
+        setError('这个图片档位暂不可用');
+        return;
+      }
+      if (candidate.status === 402 || action.type === 'recharge') {
+        setStage('insufficient');
+        setError('星尘余额不足，请先充值后再生成。');
+        return;
+      }
+      setStage('failed');
+      setError(candidate.message ?? '图片生成没能开始，请重试');
     }
   };
 
@@ -317,20 +348,24 @@ export function ChatMessageImageFooter({
         onClick={() =>
           latest?.status === 'failed' || latest?.status === 'failed_unknown'
             ? openRetryFlow()
-            : void openDefaultFlow('default', 'basic')
+            : void openDefaultFlow('basic')
         }
         className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
       >
         <Eye className="size-3.5" aria-hidden />
         {latest?.status === 'failed' || latest?.status === 'failed_unknown' ? '重试出图' : '看看TA'}
       </button>
-      {image.config?.tiers.advanced.enabled ? (
+      {image.config && advancedEntry !== 'hidden' ? (
         <button
           type="button"
-          onClick={() => void openDefaultFlow('default', 'advanced')}
+          onClick={() => void openDefaultFlow('advanced')}
           className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
         >
-          <ImageIcon className="size-3.5" aria-hidden />
+          {advancedEntry === 'vip_locked' ? (
+            <Lock className="size-3.5" aria-hidden />
+          ) : (
+            <ImageIcon className="size-3.5" aria-hidden />
+          )}
           高级图
         </button>
       ) : null}
@@ -369,14 +404,13 @@ export function ChatMessageImageFooter({
 
       {ready && image.canGenerate ? (
         <div className="ml-2 space-y-1.5 text-[11px]">
-          <button
-            type="button"
-            onClick={() => void openDefaultFlow('regenerate_ready', ready.tier)}
-            className="flex items-center gap-1.5 text-primary"
-          >
-            <Eye className="size-3.5" aria-hidden />
-            重新生成{priceLabel ? ` · ${priceLabel}` : ''}
-          </button>
+          <p className="text-muted-foreground">
+            {formatMediaAttemptBillingLabel(
+              ready,
+              image.config?.tiers[ready.tier].next_billing.free_trial_limit,
+              ready.tier !== 'advanced'
+            )}
+          </p>
           <p className="border-l border-border pl-2 text-muted-foreground">
             已按你确认的描述生成，再点一次「看看TA」可以换一张。
           </p>
@@ -416,8 +450,8 @@ export function ChatMessageImageFooter({
                 <div className="h-1 overflow-hidden rounded-full bg-secondary">
                   <div className="h-full w-3/5 animate-pulse rounded-full bg-primary" />
                 </div>
-                <div className="flex justify-between text-[11px] text-muted-foreground">
-                  <span>本次消耗 {priceLabel || '星尘'}</span>
+                <div className="flex justify-between gap-3 text-[11px] text-muted-foreground">
+                  <span>生成完成后更新费用与额度</span>
                   <span>失败不消耗</span>
                 </div>
                 <button
@@ -426,6 +460,18 @@ export function ChatMessageImageFooter({
                   className="w-full rounded-xl bg-secondary px-4 py-3 text-sm font-semibold text-muted-foreground"
                 >
                   生成中…
+                </button>
+              </div>
+            ) : stage === 'vip_required' ? (
+              <div className="space-y-3">
+                <SheetTitle className="text-[18px] font-bold">高级图片需要 VIP</SheetTitle>
+                <SheetDescription>{error}</SheetDescription>
+                <button
+                  type="button"
+                  onClick={() => router.push('/vip')}
+                  className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
+                >
+                  前往 VIP
                 </button>
               </div>
             ) : stage === 'insufficient' ? (
@@ -461,9 +507,7 @@ export function ChatMessageImageFooter({
                 </SheetDescription>
                 <button
                   type="button"
-                  onClick={() =>
-                    prompt.trim() ? void submit() : void openDefaultFlow('default', tier)
-                  }
+                  onClick={() => (prompt.trim() ? void submit() : void openDefaultFlow(tier))}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
                 >
                   <RefreshCw className="size-4" aria-hidden />
@@ -585,13 +629,4 @@ export function ChatMessageImageFooter({
       </Dialog>
     </div>
   );
-}
-
-function formatImageBillingLabel(billing: MediaBillingPreview): string {
-  if (billing.billing_mode === 'free_trial') {
-    const ordinal = billing.free_trial_ordinal ?? 1;
-    const limit = billing.free_trial_limit ?? 3;
-    return `免费体验 ${ordinal}/${limit}`;
-  }
-  return billing.price_label;
 }

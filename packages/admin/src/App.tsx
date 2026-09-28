@@ -1109,7 +1109,8 @@ function AdminWorkspace(props: {
               <Card title="VIP 信息配置">
                 <Typography.Paragraph type="secondary">
                   管理当前{props.environment === 'production' ? '生产' : '测试'}
-                  环境的高级图片入口、扣费展示、provider 快照，以及语音/基础图片的免费轮次次数。
+                  环境的高级图片入口、扣费展示和 provider 快照。语音和初级图片的免费次数在 VIP
+                  策略里分开配置。
                 </Typography.Paragraph>
                 <Tabs
                   activeKey={vipMediaConfigTab}

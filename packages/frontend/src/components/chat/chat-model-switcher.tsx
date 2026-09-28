@@ -1,15 +1,35 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ChevronDown, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, Gift, Lock, Sparkles } from 'lucide-react';
 import type { PublicModelCatalogTier } from '@miniapp/shared';
 
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { ApiClientError } from '@/lib/api/client';
 import { useModelCatalogQuery, useSelectModelMutation } from '@/lib/api/models';
-import { isInsufficientCreditsError, redirectToRecharge } from '@/lib/recharge-redirect';
+import { usePaymentPlansQuery } from '@/lib/api/payment';
+import { useVipStatusQuery } from '@/lib/api/vip';
+import { redirectToRecharge } from '@/lib/recharge-redirect';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { cn } from '@/lib/utils';
+import { formatYuanShort } from '@/lib/utils/payment';
+import {
+  billingFailureAction,
+  formatTierVipNote,
+  MAIN_WALLET_NOTICE,
+  modelSwitchFeedback,
+  publishedDiscountRate,
+  formatDiscountLabel,
+} from '@/lib/vip/presentation';
 
 /**
  * 切换生成模型。版式照搬原版的 ModelTierSwitcher：当前引擎条、可折叠档位、
@@ -22,18 +42,34 @@ import { cn } from '@/lib/utils';
 export function ChatModelSwitcher({
   returnTo,
   onSwitched,
+  generating = false,
+  freeRoundActive = false,
 }: {
   returnTo: string;
-  /** 切换成功后通知外层收起工具箱，与原版一致 */
+  /** 切换成功后通知外层收起面板 */
   onSwitched?: () => void;
+  generating?: boolean;
+  freeRoundActive?: boolean;
 }) {
   const router = useRouter();
   const { data, isLoading, isFetching } = useModelCatalogQuery();
+  const paymentPlans = usePaymentPlansQuery();
+  const vipStatus = useVipStatusQuery();
   const selectModel = useSelectModelMutation();
   const [error, setError] = useState<string | null>(null);
+  const [walletAction, setWalletAction] = useState<'recharge' | null>(null);
+  const [lockedTierKey, setLockedTierKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSelectRef = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      latestSelectRef.current = null;
+    },
+    []
+  );
 
   const selectedId = data?.selected_model_id ?? '';
   const allModels = data?.catalog.tiers.flatMap((tier) => tier.models) ?? [];
@@ -45,9 +81,22 @@ export function ChatModelSwitcher({
   );
 
   const handleSelect = async (modelId: string) => {
-    if (modelId === selectedId) return;
+    if (selectModel.isPending) return;
+    if (modelId === selectedId) {
+      onSwitched?.();
+      return;
+    }
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    const tier = data?.catalog.tiers.find((item) =>
+      item.models.some((model) => model.id === modelId)
+    );
+    if (tier?.locked) {
+      setLockedTierKey(tier.key);
+      return;
+    }
     latestSelectRef.current = modelId;
     setError(null);
+    setWalletAction(null);
     setFeedback(null);
     try {
       await selectModel.mutateAsync({ model_id: modelId });
@@ -57,16 +106,26 @@ export function ChatModelSwitcher({
       } catch {
         // 属性更新失败不阻断选模型
       }
-      setFeedback('模型已切换');
-      if (onSwitched) window.setTimeout(onSwitched, 250);
+      setFeedback(modelSwitchFeedback(generating));
+      if (onSwitched) closeTimerRef.current = setTimeout(onSwitched, generating ? 1600 : 250);
     } catch (err) {
       if (latestSelectRef.current !== modelId) return;
-      // 余额闸门拦下来的话，能做的只有去充值，直接把人送过去
-      if (err instanceof ApiClientError && isInsufficientCreditsError(err)) {
+      const code = err instanceof ApiClientError ? err.code : undefined;
+      const action = billingFailureAction(code);
+      if (action.type === 'vip') {
+        router.push('/vip');
+        return;
+      }
+      if (action.type === 'recharge') {
         void redirectToRecharge(router, { returnTo, triggerSource: 'model_switch' });
         return;
       }
-      setError(err instanceof Error ? err.message : '该模型暂不可用');
+      if (action.type === 'main_wallet') {
+        setWalletAction('recharge');
+        setError(MAIN_WALLET_NOTICE);
+        return;
+      }
+      setError('该模型暂不可用');
     }
   };
 
@@ -84,8 +143,25 @@ export function ChatModelSwitcher({
     return <p className="py-8 text-center text-[13px] text-muted-foreground">暂时没有可用模型</p>;
   }
 
+  const discountLabel = formatDiscountLabel(
+    publishedDiscountRate(data.catalog.tiers) ?? Number.NaN
+  );
+  const vipPlans = paymentPlans.data?.vip_plans ?? [];
+  const vipBenefits = vipStatus.data?.benefits;
+
   return (
     <div className="space-y-4">
+      {data.vip_status?.active ? (
+        <p className="rounded-2xl border border-primary/30 bg-primary/10 px-3 py-2 text-[12px] leading-relaxed text-primary">
+          ♛ VIP 有效期剩余 {data.vip_status.remaining_days} 天
+          {discountLabel ? ` · 全部模型档位 ${discountLabel}已生效` : ''}
+        </p>
+      ) : null}
+      {freeRoundActive ? (
+        <p className="rounded-2xl border border-success/30 bg-success/10 px-3 py-2 text-[12px] leading-relaxed text-success">
+          当前角色仍有免费轮次。本轮免费，不叠加折扣。
+        </p>
+      ) : null}
       <div className="model-current-shimmer relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3.5">
         <div className="relative z-10 flex items-center gap-3">
           <span
@@ -103,13 +179,31 @@ export function ChatModelSwitcher({
           {isFetching ? (
             <span className="shrink-0 text-[10px] text-muted-foreground">同步中</span>
           ) : null}
+          {!isFetching && data.vip_status?.active && discountLabel ? (
+            <span className="shrink-0 rounded-full border border-success/40 bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
+              {discountLabel}
+            </span>
+          ) : null}
         </div>
       </div>
 
       {error ? (
-        <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
-          {error}
-        </p>
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+          <p>{error}</p>
+          {walletAction === 'recharge' ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={() =>
+                void redirectToRecharge(router, { returnTo, triggerSource: 'model_switch' })
+              }
+            >
+              去充值
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       {feedback ? (
@@ -125,6 +219,8 @@ export function ChatModelSwitcher({
             tier={tier}
             collapsed={collapsed.has(tier.key)}
             selectedId={selectedId}
+            selecting={selectModel.isPending}
+            vipActive={data.vip_status?.active === true}
             onToggle={() =>
               setCollapsed((current) => {
                 const next = new Set(current);
@@ -137,6 +233,56 @@ export function ChatModelSwitcher({
           />
         ))}
       </div>
+      <Dialog
+        open={lockedTierKey !== null}
+        onOpenChange={(open) => {
+          if (!open) setLockedTierKey(null);
+        }}
+      >
+        <DialogContent
+          data-model-vip-dialog
+          className="w-[calc(100%-2rem)] max-w-sm rounded-[24px] border-primary/20 bg-card px-5 pb-5 pt-6"
+        >
+          <DialogHeader className="text-center sm:text-center">
+            <DialogTitle className="text-[17px]">标准与旗舰模型为 VIP 专属</DialogTitle>
+            <DialogDescription className="mx-auto max-w-[19rem] text-[13px] leading-relaxed">
+              {vipBenefits
+                ? `开通 VIP 即可畅用全部模型，每日签到还额外得 ${vipBenefits.checkin_vip_credits} 星尘（共 ${vipBenefits.checkin_base_credits + vipBenefits.checkin_vip_credits}）`
+                : '开通 VIP 即可畅用全部模型，并享受会员签到加成。'}
+            </DialogDescription>
+          </DialogHeader>
+          {vipPlans.length > 0 ? (
+            <div className="flex flex-wrap justify-center gap-2">
+              {vipPlans.map((plan) => (
+                <span
+                  key={plan.id}
+                  className="inline-flex items-center gap-1 rounded-full border border-primary/80 px-3 py-1.5 text-[11px] font-bold text-primary"
+                >
+                  <Gift className="size-3" aria-hidden />
+                  VIP {plan.title} ¥{formatYuanShort(plan.price_cents)}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <DialogFooter className="flex-col gap-1.5 sm:flex-col">
+            <Button
+              type="button"
+              className="h-11 w-full rounded-2xl"
+              onClick={() => router.push('/vip')}
+            >
+              前往 VIP
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-muted-foreground"
+              onClick={() => setLockedTierKey(null)}
+            >
+              暂不需要
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -145,15 +291,21 @@ function TierSection({
   tier,
   collapsed,
   selectedId,
+  selecting,
+  vipActive,
   onToggle,
   onSelect,
 }: {
   tier: PublicModelCatalogTier;
   collapsed: boolean;
   selectedId: string;
+  selecting: boolean;
+  vipActive: boolean;
   onToggle: () => void;
   onSelect: (modelId: string) => void;
 }) {
+  const vipNote = vipActive ? formatTierVipNote(tier) : null;
+
   return (
     <section className="overflow-hidden rounded-2xl border border-border bg-card">
       <button type="button" onClick={onToggle} className="flex w-full items-center gap-2 px-4 py-3">
@@ -165,13 +317,15 @@ function TierSection({
           >
             {tier.label}
           </span>
-          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug text-primary/90">
-            {tier.cost_hint}
+          <span className="min-w-0 flex-1 text-left text-[11px] font-medium leading-snug">
+            <span className="block text-foreground/80">{tier.cost_hint}</span>
+            {vipNote ? <span className="mt-1 block text-success">{vipNote}</span> : null}
           </span>
+          {tier.locked ? <Lock className="size-3.5 shrink-0 text-primary" aria-hidden /> : null}
         </span>
         <ChevronDown
           className={cn(
-            'size-4 shrink-0 text-muted-foreground transition-transform',
+            'size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none',
             collapsed && '-rotate-90'
           )}
           aria-hidden
@@ -187,8 +341,10 @@ function TierSection({
                 key={model.id}
                 type="button"
                 onClick={() => onSelect(model.id)}
+                disabled={selecting}
+                aria-pressed={active}
                 className={cn(
-                  'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors',
+                  'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none',
                   active ? 'bg-primary/10' : 'hover:bg-secondary'
                 )}
               >
@@ -207,6 +363,12 @@ function TierSection({
                     <span className="truncate text-[15px] font-medium text-foreground">
                       {model.display_name}
                     </span>
+                    {tier.locked ? (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                        <Lock className="size-3" aria-hidden />
+                        VIP
+                      </span>
+                    ) : null}
                     {model.is_free ? (
                       <span className="shrink-0 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success">
                         限量免费

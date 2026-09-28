@@ -10,7 +10,6 @@ import type { WalletDebitPolicy } from './wallet.js';
 
 export type MediaBillingMode = 'free_trial' | 'paid' | 'legacy_free';
 
-
 /**
  * 媒体计费预览
  * @returns 媒体计费预览

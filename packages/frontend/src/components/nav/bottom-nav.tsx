@@ -22,6 +22,7 @@ const HIDDEN_PREFIXES = [
   '/profile/messages',
   '/profile/support',
   '/create/wish',
+  '/vip',
 ];
 
 export function BottomNav() {

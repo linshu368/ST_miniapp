@@ -55,8 +55,10 @@ export const VIP_MEDIA_CONFIG_KEYS = [
   'image_advanced_generation_credits',
   'image_advanced_price_label',
   'image_advanced_provider_config',
-  'media_feature_free_trial_limit',
 ] as const satisfies readonly ManagedConfigKey[];
+
+/** 旧的单一免费次数键。额度改由 VIP 策略的 feature_free_trial_limits 发布，不再给运营入口。 */
+const LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY = 'media_feature_free_trial_limit';
 export type VipMediaConfigKey = (typeof VIP_MEDIA_CONFIG_KEYS)[number];
 
 export function isVipMediaConfigKey(key: ManagedConfigKey): key is VipMediaConfigKey {
@@ -77,7 +79,8 @@ export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConf
     !isInviteProgramConfigKey(key) &&
     !isImageGenerationConfigKey(key) &&
     !isVipMediaConfigKey(key) &&
-    !isVipStrategyConfigKey(key)
+    !isVipStrategyConfigKey(key) &&
+    key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
 );
 
 const CONFIG_PREFIX = 'config:';

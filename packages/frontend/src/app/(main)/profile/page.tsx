@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ChevronRight,
   Bell,
   Check,
+  Crown,
   Gem,
   Gift,
   Headphones,
@@ -29,8 +31,9 @@ import {
   paymentKeys,
   useDailyCheckinMutation,
   useDailyCheckinQuery,
-  useWalletCredits,
+  useWalletBalanceQuery,
 } from '@/lib/api/payment';
+import { useMarkVipEntryViewedMutation, useVipStatusQuery } from '@/lib/api/vip';
 import { useInviteEntryStatusQuery } from '@/lib/api/invite';
 import { notificationKeys, useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
@@ -44,12 +47,21 @@ import {
 import { captureRechargeEntryClicked } from '@/lib/payment/flow-telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { formatNumber } from '@/lib/utils/payment';
+import {
+  checkinRewardLines,
+  formatDiscountLabel,
+  shouldShowVipEntryBadge,
+  vipEntryLabel,
+} from '@/lib/vip/presentation';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
 export default function ProfilePage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const telegramUserId = useMemo(readTelegramUserId, []);
-  const credits = useWalletCredits();
+  const wallet = useWalletBalanceQuery();
+  const credits = wallet.data?.total_credits ?? wallet.data?.credits ?? 0;
+  const bonusCredits = wallet.data?.bonus_credits;
   const unread = useNotificationUnreadCountQuery();
   const supportUnread = useSupportUnreadQuery();
   const displayName = useUserProfileStore((s) => s.displayName);
@@ -61,17 +73,21 @@ export default function ProfilePage() {
   const checkinQ = useDailyCheckinQuery();
   const checkin = checkinQ.data?.checkin;
   const claimCheckin = useDailyCheckinMutation();
+  const vipStatus = useVipStatusQuery();
+  const markVipSeen = useMarkVipEntryViewedMutation();
   const inviteEntry = useInviteEntryStatusQuery();
   const communityEntry = useCommunityEntryQuery();
   const previousCommunityStatus = useRef(communityEntry.data?.claim_status);
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  const [checkinToast, setCheckinToast] = useState<{ reward: number } | null>(null);
+  const [checkinToast, setCheckinToast] = useState<string[] | null>(null);
+  const [vipError, setVipError] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [communityOpen, setCommunityOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const openingVip = useRef(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const avatarMenuRef = useRef<HTMLDivElement>(null);
 
@@ -84,7 +100,10 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!checkinToast) return;
-    const timer = window.setTimeout(() => setCheckinToast(null), 1500);
+    const timer = window.setTimeout(
+      () => setCheckinToast(null),
+      checkinToast.length > 1 ? 3200 : 1500
+    );
     return () => window.clearTimeout(timer);
   }, [checkinToast]);
 
@@ -133,7 +152,7 @@ export default function ProfilePage() {
   const claimDailyCheckin = async () => {
     try {
       const data = await claimCheckin.mutateAsync();
-      setCheckinToast({ reward: data.checkin.reward_credits });
+      setCheckinToast(checkinRewardLines(data.checkin));
     } catch {
       // Mutation state already carries the error; keep the click handler quiet.
     }
@@ -183,6 +202,32 @@ export default function ProfilePage() {
     }
   };
 
+  const discountLabel = formatDiscountLabel(
+    vipStatus.data?.benefits?.text_discount_rate ?? Number.NaN
+  );
+  const showVipBadge = shouldShowVipEntryBadge({
+    statusKnown: Boolean(vipStatus.data) && !vipStatus.isError,
+    active: vipStatus.data?.active === true,
+    entryBadgeVisible: vipStatus.data?.entry_badge_visible === true,
+    discountLabel,
+  });
+
+  const openVip = async () => {
+    if (openingVip.current || vipStatus.isLoading || markVipSeen.isPending) return;
+    openingVip.current = true;
+    setVipError(null);
+    try {
+      if (vipStatus.data?.entry_badge_visible) {
+        await markVipSeen.mutateAsync();
+      }
+      router.push('/vip');
+    } catch {
+      setVipError('暂时无法打开 VIP，请重试');
+    } finally {
+      openingVip.current = false;
+    }
+  };
+
   return (
     <main
       data-app-shell="profile"
@@ -221,8 +266,12 @@ export default function ProfilePage() {
                 <h2 className="mt-1 text-base font-black tracking-tight text-foreground">
                   签到成功
                 </h2>
-                <p className="mt-1 text-sm font-medium text-muted-foreground">
-                  星尘 +{checkinToast.reward} 已到账。
+                <p className="mt-1 space-y-0.5 text-sm font-medium text-muted-foreground">
+                  {checkinToast.map((line) => (
+                    <span key={line} className="block">
+                      {line}
+                    </span>
+                  ))}
                 </p>
               </div>
             </div>
@@ -383,14 +432,14 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      {/* 星尘余额：首屏最强视觉层级，只讲余额和充值，不出现会员信息 */}
+      {/* 星尘余额：余额在左、VIP 与充值入口在右，保持窄屏下一眼可见 */}
       <section className="relative z-10 mt-7 px-5">
         <div className="relative overflow-hidden rounded-[26px] border border-primary/20 bg-card p-5 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
           <div
             aria-hidden
             className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-[radial-gradient(circle,hsl(var(--glow)/0.28),transparent_68%)]"
           />
-          <div className="relative flex items-start justify-between gap-3">
+          <div className="relative flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold tracking-[0.2em] text-muted-foreground">
                 星尘余额
@@ -401,19 +450,49 @@ export default function ProfilePage() {
                 </span>
                 <span className="text-xs font-medium text-muted-foreground">星尘</span>
               </p>
+              {typeof bonusCredits === 'number' ? (
+                <p className="mt-2 text-[12px] font-medium text-muted-foreground">
+                  内含专项星尘 {formatNumber(bonusCredits)}
+                </p>
+              ) : null}
             </div>
-            <Link
-              href="/profile/recharge"
-              aria-label="前往星尘充值"
-              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/15 px-3 py-1.5 text-[12px] font-bold text-primary transition hover:bg-primary/25"
-              onClick={() => {
-                captureRechargeEntryClicked({ telegramUserId });
-              }}
-            >
-              <Sparkles className="h-3.5 w-3.5" aria-hidden />
-              星尘充值
-            </Link>
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <button
+                type="button"
+                onClick={() => void openVip()}
+                disabled={vipStatus.isLoading || markVipSeen.isPending}
+                className="relative inline-flex min-h-9 items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[12px] font-black text-primary-foreground shadow-[0_8px_24px_hsl(var(--glow)/0.35)] disabled:opacity-60"
+                aria-label={vipEntryLabel(vipStatus.data ?? null)}
+              >
+                <Crown className="h-3.5 w-3.5" aria-hidden />
+                {vipEntryLabel(vipStatus.data ?? null)}
+                {showVipBadge && discountLabel ? (
+                  <span className="absolute -right-1 -top-2 rounded-full bg-success px-1.5 py-0.5 text-[10px] font-black text-primary-foreground">
+                    {discountLabel}
+                  </span>
+                ) : null}
+              </button>
+              <Link
+                href="/profile/recharge"
+                aria-label="前往星尘充值"
+                className="inline-flex min-h-9 items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-[12px] font-bold text-primary transition hover:bg-primary/15"
+                onClick={() => {
+                  captureRechargeEntryClicked({ telegramUserId });
+                }}
+              >
+                <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
+                星尘充值
+              </Link>
+            </div>
           </div>
+          {vipStatus.isError ? (
+            <p className="relative mt-3 text-[12px] text-muted-foreground">会员状态暂时无法确认</p>
+          ) : null}
+          {vipError ? (
+            <p role="alert" className="relative mt-3 text-[12px] text-destructive">
+              {vipError}
+            </p>
+          ) : null}
         </div>
       </section>
 

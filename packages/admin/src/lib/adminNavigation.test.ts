@@ -2,7 +2,7 @@
  * @Author: whc 952987912@qq.com
  * @Date: 2026-09-23 14:57:53
  * @LastEditors: whc 952987912@qq.com
- * @LastEditTime: 2026-09-23 14:59:14
+ * @LastEditTime: 2026-09-28 16:04:08
  * @Description:
  * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
  */
@@ -97,6 +97,8 @@ describe('admin navigation', () => {
     expect(resolveAdminMenuSelection('vip_media_config')).toEqual({
       view: 'vip_media_config',
     });
+    expect(VIP_MEDIA_CONFIG_KEYS).not.toContain('media_feature_free_trial_limit');
+    expect(sidebarManagedConfigKeys).not.toContain('media_feature_free_trial_limit');
   });
 
   it('keeps independent top-level pages separate', () => {

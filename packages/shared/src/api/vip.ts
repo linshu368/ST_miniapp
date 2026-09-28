@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * 1399/7/0、2888/31/3000 与 0.95 是首次 seed 和配置损坏时的安全默认。
+ * 100/7/0、200/31/3000 与 0.95 是当前安全默认，也用于配置损坏时回退。
  * 已发布的 VIP 策略可以在下方范围内覆盖商品条款和折扣；周卡赠送仍固定为 0。
  * 文本模型原价仍由调用方传入，不得把 test 环境当前价写进本文件。
  */
@@ -18,13 +18,13 @@ export type VipPlanId = z.infer<typeof VipPlanIdSchema>;
 export const VIP_PLAN_COMMERCIAL_TERMS = {
   week: {
     id: 'week',
-    price_cents: 1399,
+    price_cents: 100,
     duration_days: 7,
     bonus_credits: 0,
   },
   month: {
     id: 'month',
-    price_cents: 2888,
+    price_cents: 200,
     duration_days: 31,
     bonus_credits: 3000,
   },
@@ -78,6 +78,14 @@ export const VipStatusSchema = z.object({
   remaining_days: nonnegativeInteger,
   last_plan_id: VipPlanIdSchema.nullable(),
   entry_badge_visible: z.boolean(),
+  /** 已发布的会员权益预览，非会员同样可读；与当前用户实际计费折扣分开。 */
+  benefits: z
+    .object({
+      text_discount_rate: z.number().finite().gt(0).max(1),
+      checkin_base_credits: z.number().int().positive(),
+      checkin_vip_credits: nonnegativeInteger,
+    })
+    .optional(),
 });
 
 export type VipStatus = z.infer<typeof VipStatusSchema>;

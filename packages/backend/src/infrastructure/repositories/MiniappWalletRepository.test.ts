@@ -101,8 +101,8 @@ describe('VIP purchase catalog', () => {
     expect(
       VipPlansSchema.parse(open).map((plan) => [plan.id, plan.price_cents, plan.available])
     ).toEqual([
-      ['week', 1399, true],
-      ['month', 2888, true],
+      ['week', 100, true],
+      ['month', 200, true],
     ]);
   });
 });

@@ -84,12 +84,12 @@ type ImageInternalStatus =
 
 interface SettlementResult {
   charge_status?:
-  | 'charged'
-  | 'already_charged'
-  | 'free_trial_consumed'
-  | 'already_free_trial_consumed'
-  | 'insufficient_balance'
-  | 'free_trial_invalid';
+    | 'charged'
+    | 'already_charged'
+    | 'free_trial_consumed'
+    | 'already_free_trial_consumed'
+    | 'insufficient_balance'
+    | 'free_trial_invalid';
   ledger_id?: string | null;
   required?: NumericValue;
   available?: NumericValue;

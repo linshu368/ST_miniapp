@@ -31,7 +31,6 @@ export * from './api/models';
 export * from './api/provider-routing';
 export * from './api/notifications';
 export * from './api/support';
-export * from './api/batch-lab';
 export * from './api/telemetry';
 export * from './api/admin-model-test';
 export * from './config/database';

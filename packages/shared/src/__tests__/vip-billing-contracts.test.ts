@@ -4,6 +4,7 @@ import {
   ADVANCED_IMAGE_UNAVAILABLE_ERROR_CODE,
   BillingGatingErrorCodeSchema,
   FEATURE_FREE_TRIAL_LIMIT,
+  resolveFeatureFreeTrialLimit,
   GetModelCatalogDataSchema,
   PaymentProductTypeSchema,
   PublicModelCatalogSchema,
@@ -38,7 +39,7 @@ import type {
 
 const weekPlan = {
   id: 'week' as const,
-  price_cents: 1399,
+  price_cents: 100,
   duration_days: 7,
   bonus_credits: 0,
   title: '周卡',
@@ -49,7 +50,7 @@ const weekPlan = {
 
 const monthPlan = {
   id: 'month' as const,
-  price_cents: 2888,
+  price_cents: 200,
   duration_days: 31,
   bonus_credits: 3000,
   title: '月卡',
@@ -79,7 +80,7 @@ describe('VIP plans and membership', () => {
     expect(canonicalVipPlanTerms('week').bonus_credits).toBe(0);
     expect(canonicalVipPlanTerms('month')).toEqual({
       id: 'month',
-      price_cents: 2888,
+      price_cents: 200,
       duration_days: 31,
       bonus_credits: 3000,
     });
@@ -115,6 +116,32 @@ describe('VIP plans and membership', () => {
         entry_badge_visible: true,
       }).entry_badge_visible
     ).toBe(true);
+  });
+
+  it('accepts additive benefit previews for non-members and rejects invalid advertised values', () => {
+    const status = {
+      active: false,
+      valid_from: null,
+      valid_until: null,
+      remaining_days: 0,
+      last_plan_id: null,
+      entry_badge_visible: true,
+    };
+    const benefits = {
+      text_discount_rate: 0.95,
+      checkin_base_credits: 60,
+      checkin_vip_credits: 60,
+    };
+    expect(VipStatusSchema.parse(status).benefits).toBeUndefined();
+    expect(VipStatusSchema.parse({ ...status, benefits }).benefits).toEqual(benefits);
+    expect(
+      VipStatusSchema.safeParse({ ...status, benefits: { ...benefits, text_discount_rate: 0 } })
+        .success
+    ).toBe(false);
+    expect(
+      VipStatusSchema.safeParse({ ...status, benefits: { ...benefits, checkin_vip_credits: -1 } })
+        .success
+    ).toBe(false);
   });
 
   it('classifies week/month plan ids as VIP products without assuming credit catalogs', () => {
@@ -506,6 +533,13 @@ describe('media free-trial public semantics', () => {
     ).toMatchObject({ ok: false, code: 'FEATURE_FREE_TRIAL_CONFLICT' });
   });
 
+  it('keeps a published zero and falls back when the limit is outside 0..20', () => {
+    expect(resolveFeatureFreeTrialLimit(0)).toBe(0);
+    expect(resolveFeatureFreeTrialLimit(20)).toBe(20);
+    expect(resolveFeatureFreeTrialLimit(21)).toBe(3);
+    expect(resolveFeatureFreeTrialLimit('3')).toBe(3);
+  });
+
   it('summarizes quota against the configured media free-trial limit', () => {
     const quota = summarizeFeatureFreeTrialQuota({
       feature: 'basic_image',
@@ -650,5 +684,24 @@ describe('additive compatibility for existing DTOs', () => {
         catalog_version: 1,
       })
     ).not.toHaveProperty('vip_status');
+  });
+});
+
+describe('vip expiry reminder copy', () => {
+  it('keeps the fixed titles, action path and send-time body', async () => {
+    const { VIP_EXPIRY_REMINDER_ACTION_PATH, VIP_EXPIRY_REMINDER_TITLES, vipExpiryReminderBody } =
+      await import('../index.js');
+    expect(VIP_EXPIRY_REMINDER_TITLES).toEqual({
+      expiring_soon: 'VIP 即将到期',
+      expires_today: 'VIP 今日到期',
+    });
+    expect(VIP_EXPIRY_REMINDER_ACTION_PATH).toBe('/vip');
+    expect(vipExpiryReminderBody('expiring_soon', '2026-09-26')).toBe(
+      '您的 VIP 将于 2026-09-26（北京时间）到期。'
+    );
+    expect(vipExpiryReminderBody('expires_today', '2026-09-23')).toBe(
+      '您的 VIP 于 2026-09-23（北京时间）到期。'
+    );
+    expect(() => vipExpiryReminderBody('expires_today', '09-23')).toThrow(/YYYY-MM-DD/);
   });
 });
