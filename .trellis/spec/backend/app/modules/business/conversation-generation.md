@@ -1,12 +1,12 @@
-﻿---
+---
 module_id: backend.business.conversation-generation
 title: 会话与生成
 scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-17-image-generation-posthog-plan/
-last_verified_at: 2026-09-18
+last_verified_task: .trellis/tasks/09-28-remove-advanced-image-generation/
+last_verified_at: 2026-09-28
 ---
 
 # 会话与生成
@@ -15,7 +15,7 @@ last_verified_at: 2026-09-18
 
 ## 当前状态
 
-自研会话链路已上线。图片生成代码已落地但 runtime 开关默认关闭：默认路径由 DeepSeek 写中文分镜，自定义路径保留用户中文稿，两路均在 worker 中直译英文后优先调用 Grok/Liaobots；主通道失败时以相同内容降级到 Replicate Z 模型，成功转存 Storage 后才原子结算。图片描述完成/失败、出图受理、worker 成功/失败终态经 `ImageGenerationTelemetry` 异步发送安全事件；结算响应未知不发送成功或失败事件。真实上游与生产开放仍待环境验收。
+自研会话链路已上线。图片生成代码已落地但 runtime 开关默认关闭：当前只保留单一普通图片路径，由 DeepSeek 写中文分镜或保留用户中文稿，在 worker 中直译英文后优先调用 Grok/Liaobots，主通道失败时以相同内容降级到 Replicate Z。普通图片继续使用 `basic_image` 免费次数，耗尽后按普通价格结算；高级图片入口、provider 分流、VIP 门禁与高级价格已退场。图片 telemetry 与结算未知语义保持不变。
 
 ## 入口与调用者
 
@@ -32,7 +32,7 @@ last_verified_at: 2026-09-18
 
 ## 关键实现链路
 
-聊天链路保持“鉴权 → 原子开轮 → SSE → history/计费收口”。图片链路为“ownership/回复资格 → 中文稿 → pending attempt → DB 租约 → DeepSeek 直译 → provider dispatch 边界 → Grok（失败则 Z 降级）→ Storage → `settle_image_generation` 原子扣费与 current ready”；同一 provider 写请求不重试，Replicate 只轮询已创建 prediction。PostHog observer 只在状态写入成功后 fire-and-forget。
+图片链路为“ownership/回复资格 → 普通图片免费名额预留或付费预检 → 中文稿 → pending attempt → DB 租约 → DeepSeek 直译 → Grok（失败则 Z 降级）→ Storage → `settle_image_generation` 原子消费免费次数或扣费并置 current ready”。旧客户端的 tier 输入被兼容忽略，新 attempt 固定为 basic。
 
 ## 数据、契约与外部依赖
 

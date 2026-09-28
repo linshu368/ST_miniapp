@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** 语音与基础图片各自独立的默认免费成功次数。高级图片不参与。 */
+/** 语音与普通图片各自独立的默认免费成功次数。 */
 export const DEFAULT_FEATURE_FREE_TRIAL_LIMIT = 3;
 /** VIP 策略中按功能发布的额度范围；0 表示关闭对应功能的免费体验。 */
 export const FEATURE_FREE_TRIAL_LIMIT_MIN = 0;
@@ -29,8 +29,6 @@ export const FeatureFreeTrialErrorCodeSchema = z.enum([
   'FEATURE_FREE_TRIAL_INVALID_STATE',
 ]);
 export type FeatureFreeTrialErrorCode = z.infer<typeof FeatureFreeTrialErrorCodeSchema>;
-
-export const ADVANCED_IMAGE_UNAVAILABLE_ERROR_CODE = 'ADVANCED_IMAGE_UNAVAILABLE' as const;
 
 export const ImageGenerationTierSchema = z.enum(['basic', 'advanced']);
 export type ImageGenerationTier = z.infer<typeof ImageGenerationTierSchema>;

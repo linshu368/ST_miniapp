@@ -59,7 +59,7 @@ export function vipMembershipSummary(status: {
   if (status.last_plan_id) {
     return { title: '会员已到期', detail: '续费后有效期会在新订单上顺延' };
   }
-  return { title: '尚未开通', detail: '开通后解锁标准、旗舰模型和高级图片资格' };
+  return { title: '尚未开通', detail: '开通后解锁标准、旗舰模型等会员权益' };
 }
 
 export function vipPlanTitle(planId: string | null): string {
@@ -359,7 +359,7 @@ export type BillingFailureAction =
   | { type: 'unavailable' }
   | { type: 'unknown' };
 
-const VIP_CODES = new Set(['VIP_REQUIRED', 'image_vip_required']);
+const VIP_CODES = new Set(['VIP_REQUIRED']);
 const RECHARGE_CODES = new Set([
   'insufficient_balance',
   'INSUFFICIENT_CREDITS',
@@ -367,18 +367,11 @@ const RECHARGE_CODES = new Set([
   'image_insufficient_balance',
 ]);
 const MAIN_WALLET_CODES = new Set(['MAIN_CREDITS_INSUFFICIENT', 'image_main_credits_insufficient']);
-const UNAVAILABLE_CODES = new Set([
-  'ADVANCED_IMAGE_UNAVAILABLE',
-  'IMAGE_ADVANCED_UNAVAILABLE',
-  'image_advanced_unavailable',
-]);
-
 export function billingFailureAction(code: string | undefined): BillingFailureAction {
   if (!code) return { type: 'unknown' };
   if (VIP_CODES.has(code)) return { type: 'vip' };
   if (MAIN_WALLET_CODES.has(code)) return { type: 'main_wallet' };
   if (RECHARGE_CODES.has(code)) return { type: 'recharge' };
-  if (UNAVAILABLE_CODES.has(code)) return { type: 'unavailable' };
   return { type: 'unknown' };
 }
 
@@ -407,23 +400,4 @@ export function orderBenefitLabel(
     return bonus > 0 ? `${duration} · 赠送 ${formatNumber(bonus)} 专项星尘` : duration;
   }
   return `${formatNumber(order.credits_amount + order.bonus_credits)} 星尘`;
-}
-
-export type AdvancedImageEntry = 'hidden' | 'open' | 'vip_locked';
-
-export function advancedImageEntry(
-  tier:
-    | {
-        enabled: boolean;
-        available: boolean;
-        locked_reason: string | null;
-      }
-    | null
-    | undefined
-): AdvancedImageEntry {
-  if (!tier?.enabled) return 'hidden';
-  if (tier.locked_reason === 'ADVANCED_IMAGE_UNAVAILABLE') return 'hidden';
-  if (!tier.available && tier.locked_reason === 'VIP_REQUIRED') return 'vip_locked';
-  if (!tier.available) return 'hidden';
-  return 'open';
 }

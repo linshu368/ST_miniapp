@@ -5,8 +5,8 @@ scope: admin
 category: business
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/09-08-feature-module-spec-sync/
-last_verified_at: 2026-09-08
+last_verified_task: .trellis/tasks/09-28-remove-advanced-image-generation/
+last_verified_at: 2026-09-28
 ---
 
 # 配置、内容与增长运营
@@ -17,7 +17,7 @@ last_verified_at: 2026-09-08
 
 ## 当前状态
 
-主要运营页面已集中在 Admin SPA。
+主要运营页面已集中在 Admin SPA。图片运营只管理普通图片配置；`image_advanced_*` 与独立 VIP 媒体配置页已删除。VIP 策略仍管理 `feature_free_trial_limits.basic_image`，普通图片免费次数不受影响。
 
 ## 入口与调用者
 

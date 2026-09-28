@@ -1,0 +1,11 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend 图片 route/feature/repository 硬规则与质量门禁"}
+{"file":".trellis/spec/backend/app/routes-and-features.md","reason":"图片 API、生成链路、错误与日志边界"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"外部调用、幂等、事务、恢复和发布规则"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend API/组件与跨包契约硬规则"}
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"聊天图片交互与移动端状态要求"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"React Query、mutation、轮询与恢复规范"}
+{"file":".trellis/spec/admin/app/index.md","reason":"Admin 配置、环境、发布与验证边界"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Shared 契约兼容与公开出口规则"}
+{"file":".trellis/spec/shared/contracts/testing-and-change-management.md","reason":"跨消费者契约变更、兼容和验证要求"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"四包端到端链路核对"}
+{"file":".trellis/tasks/09-28-remove-advanced-image-generation/research/commit-scope-analysis.md","reason":"指定 commits 的 image/non-image 边界与必须保留能力"}

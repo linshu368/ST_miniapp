@@ -49,35 +49,8 @@ describe('LlmPricingConfigSchema', () => {
 });
 
 describe('VIP media config registration', () => {
-  it('exposes advanced image and media free-trial configs with valid defaults', () => {
-    const keys = [
-      'image_advanced_enabled',
-      'image_advanced_generation_credits',
-      'image_advanced_price_label',
-      'image_advanced_provider_config',
-      'media_feature_free_trial_limit',
-    ] as const;
-
-    for (const key of keys) {
-      expect(managedConfigKeys).toContain(key);
-      expect(configSchemas[key].safeParse(configMetadata[key].defaultValue).success).toBe(true);
-    }
-  });
-
-  it('validates advanced image provider config as empty or complete', () => {
-    const key = 'image_advanced_provider_config';
-
-    expect(configSchemas[key].safeParse({}).success).toBe(true);
-    expect(
-      configSchemas[key].safeParse({
-        provider: 'liaobots_grok',
-        model: 'grok-4-image',
-      }).success
-    ).toBe(true);
-    expect(configSchemas[key].safeParse({ provider: 'liaobots_grok' }).success).toBe(false);
-    expect(configSchemas[key].safeParse({ provider: 'unknown', model: 'model' }).success).toBe(
-      false
-    );
+  it('does not expose removed advanced image configs', () => {
+    expect(managedConfigKeys.some((key) => key.startsWith('image_advanced_'))).toBe(false);
   });
 
   it('bounds media free-trial limits', () => {

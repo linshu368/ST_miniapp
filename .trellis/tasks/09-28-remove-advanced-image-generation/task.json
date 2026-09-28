@@ -1,0 +1,38 @@
+{
+  "id": "remove-advanced-image-generation",
+  "name": "remove-advanced-image-generation",
+  "title": "移除高级图片生成并还原普通图片生成",
+  "description": "规划从 Backend、Frontend、Shared、Admin 精确移除 advanced 高级图片入口、调用、结算和配置，保留普通图片及 VIP 图片免费调用次数全链路。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "packages/backend,packages/frontend,packages/shared,packages/admin (images-only)",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-28",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts",
+        "admin.business.operations",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}
