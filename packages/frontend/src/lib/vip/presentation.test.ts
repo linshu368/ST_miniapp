@@ -17,6 +17,7 @@ import {
   vipExpiryImpactCopy,
   vipExpiryDisplayWindow,
   vipExpiryMembershipDetail,
+  vipEntryExpiryLabel,
   vipEntryLabel,
   vipPlanTitle,
 } from './presentation';
@@ -55,31 +56,22 @@ describe('discount and price display', () => {
     expect(formatTierQuote({})).toBeNull();
   });
 
-  it('adds the server quote to each tier without replacing its original description', () => {
+  it('shows only the server-provided payable amount beside each tier description', () => {
     expect(
       formatTierVipNote({
-        key: 'light',
-        discount_rate: 0.95,
-        discounted_exact: 14.25,
         payable_credits: 14,
       })
-    ).toBe('免费优先，免费轮次不叠加 95折；付费轮次 VIP 95折 → 14.25，实扣 14 星尘/轮');
+    ).toBe('实扣 14 星尘/轮');
     expect(
       formatTierVipNote({
-        key: 'standard',
-        discount_rate: 0.95,
-        discounted_exact: 4.75,
         payable_credits: 5,
       })
-    ).toBe('VIP 95折 → 4.75，实扣 5 星尘/轮');
+    ).toBe('实扣 5 星尘/轮');
     expect(
       formatTierVipNote({
-        key: 'premium',
-        discount_rate: null,
-        discounted_exact: null,
         payable_credits: 12,
       })
-    ).toBeNull();
+    ).toBe('实扣 12 星尘/轮');
   });
 });
 
@@ -127,18 +119,14 @@ describe('entry badge and membership label', () => {
     ).toBe(false);
   });
 
-  it('uses remaining days from status only while the membership is active', () => {
-    expect(vipEntryLabel({ active: true, remaining_days: 12 })).toBe('VIP · 剩 12 天');
+  it('uses a separate Shanghai expiry label for an active VIP entry', () => {
+    expect(vipEntryLabel({ active: true, remaining_days: 12 })).toBe('VIP');
+    expect(vipEntryExpiryLabel({ active: true, valid_until: '2026-09-24T16:00:00.000Z' })).toBe(
+      '截止至 09-24 24:00'
+    );
     expect(
-      vipEntryLabel(
-        {
-          active: true,
-          remaining_days: 1,
-          valid_until: '2026-09-24T16:00:00.000Z',
-        },
-        new Date('2026-09-24T06:30:00.000Z')
-      )
-    ).toBe('VIP · 今日到期');
+      vipEntryExpiryLabel({ active: false, valid_until: '2026-09-24T16:00:00.000Z' })
+    ).toBeNull();
     expect(vipEntryLabel({ active: false, remaining_days: 3 })).toBe('VIP');
     expect(vipEntryLabel(null)).toBe('VIP');
   });

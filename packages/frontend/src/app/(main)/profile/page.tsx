@@ -51,6 +51,7 @@ import {
   checkinRewardLines,
   formatDiscountLabel,
   shouldShowVipEntryBadge,
+  vipEntryExpiryLabel,
   vipEntryLabel,
 } from '@/lib/vip/presentation';
 import { useUserProfileStore } from '@/stores/user-profile-store';
@@ -211,6 +212,7 @@ export default function ProfilePage() {
     entryBadgeVisible: vipStatus.data?.entry_badge_visible === true,
     discountLabel,
   });
+  const vipEntryExpiry = vipEntryExpiryLabel(vipStatus.data ?? null);
 
   const openVip = async () => {
     if (openingVip.current || vipStatus.isLoading || markVipSeen.isPending) return;
@@ -466,6 +468,9 @@ export default function ProfilePage() {
               >
                 <Crown className="h-3.5 w-3.5" aria-hidden />
                 {vipEntryLabel(vipStatus.data ?? null)}
+                {vipEntryExpiry ? (
+                  <span className="font-medium text-primary-foreground/65">{vipEntryExpiry}</span>
+                ) : null}
                 {showVipBadge && discountLabel ? (
                   <span className="absolute -right-1 -top-2 rounded-full bg-success px-1.5 py-0.5 text-[10px] font-black text-primary-foreground">
                     {discountLabel}
