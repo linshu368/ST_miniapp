@@ -494,6 +494,12 @@ export function ChatMessageImageFooter({
                   <span>上限 {maxChars} 字</span>
                 </div>
                 {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
+                {priceLabel ? (
+                  <div className="flex min-h-8 w-full items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] font-semibold leading-snug text-emerald-400">
+                    <Check className="size-3.5 shrink-0" aria-hidden />
+                    <span>{priceLabel}</span>
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void submit()}
@@ -505,7 +511,6 @@ export function ChatMessageImageFooter({
                     <ImageIcon className="size-4" aria-hidden />
                   )}
                   {source === 'generated' ? '确认，生成图片' : '按我写的生成图片'}
-                  {priceLabel ? ` · ${priceLabel}` : ''}
                 </button>
                 {source === 'generated' ? (
                   <button
