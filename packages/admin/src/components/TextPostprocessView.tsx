@@ -1156,12 +1156,9 @@ function PreviewColumn(props: {
   const total = [...sample].length;
   const streaming = stream.phase === 'running';
   const content = stream.phase === 'idle' ? sample : visibleSample(sample, stream.visibleUnits);
-  // 流式期间安全地显示原文；复位或完整终态需要新的 renderer 生命周期，
-  // 使同一 artifact 再次处理完整正文，而非保留流式的原文降级结果。
-  const previewRendererKey =
-    stream.phase === 'idle' || stream.visibleUnits >= total
-      ? 'admin-text-postprocess-preview-final'
-      : 'admin-text-postprocess-preview-stream';
+  // 模拟逐字到达期间不调度 Worker。否则每个片段都会取代同一消息的上一个任务，
+  // 最后一个完整任务也可能落在共享 Worker 的时间预算之后。
+  const isStreamTerminal = stream.phase === 'idle' || stream.visibleUnits >= total;
   useEffect(() => {
     if (stream.phase !== 'running') return undefined;
     const timer = window.setInterval(() => {
@@ -1262,17 +1259,24 @@ function PreviewColumn(props: {
             }
             data-theme={theme}
           >
-            <ReplyRenderer
-              key={previewRendererKey}
-              content={content}
-              artifact={preview?.artifact ?? undefined}
-              streaming={streaming}
-              displayName={displayName}
-              theme={theme}
-              choiceDisabled={streaming || choice.text !== null}
-              messageKey={previewRendererKey}
-              onChoice={(next) => setChoice((current) => applyLocalChoice(current, next.text))}
-            />
+            {isStreamTerminal ? (
+              <ReplyRenderer
+                content={content}
+                artifact={preview?.artifact ?? undefined}
+                displayName={displayName}
+                theme={theme}
+                choiceDisabled={choice.text !== null}
+                messageKey="admin-text-postprocess-preview"
+                onChoice={(next) => setChoice((current) => applyLocalChoice(current, next.text))}
+              />
+            ) : (
+              <div
+                className="reply-markdown text-postprocess-streaming-raw"
+                data-reply-state="pending"
+              >
+                {content}
+              </div>
+            )}
           </div>
         </div>
         <PreviewDiagnostics state={preview} compact />

@@ -1283,6 +1283,10 @@ body {
   --border: #34504a;
 }
 
+.text-postprocess-streaming-raw {
+  white-space: pre-wrap;
+}
+
 .text-postprocess-release {
   display: grid;
   gap: 8px;
