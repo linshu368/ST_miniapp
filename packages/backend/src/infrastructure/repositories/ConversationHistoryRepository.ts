@@ -54,6 +54,15 @@ export interface LlmBillingSnapshot {
   pricing_config_version: number;
   exchange_rate: number;
   billing_mode: 'fixed_tier';
+  original_credits?: number;
+  discount_rate?: number | null;
+  discounted_exact?: number;
+  payable_credits?: number;
+  wallet_policy?: 'main_only' | 'main_then_bonus';
+  requires_vip?: boolean;
+  vip_active?: boolean;
+  vip_valid_until?: string | null;
+  model_tier?: string | null;
 }
 
 export interface ChatHistorySyncRow {

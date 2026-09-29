@@ -14,12 +14,14 @@ import type {
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import {
+  buildVipPlans,
   getInsufficientCreditsNotice,
   getPaymentPlans,
   getPaymentPromptDialogConfig,
   getRechargePageConfig,
   PaymentPlansConfigError,
 } from '../features/payment/domain/rechargeRules.js';
+import { readVipStrategy } from '../platform/vip-strategy.js';
 import { RechargeUseCase } from '../features/payment/usecases/RechargeUseCase.js';
 import {
   reconcileWithGateway,
@@ -58,16 +60,18 @@ export default async function paymentRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
     try {
-      const [plans, insufficientCreditsNotice, pageConfig, paymentPromptDialogConfig] =
+      const [plans, insufficientCreditsNotice, pageConfig, paymentPromptDialogConfig, strategy] =
         await Promise.all([
           getPaymentPlans(),
           getInsufficientCreditsNotice(),
           getRechargePageConfig(),
           getPaymentPromptDialogConfig(),
+          readVipStrategy(),
         ]);
       return reply.send(
         ok<GetPaymentPlansData>({
           plans,
+          vip_plans: buildVipPlans(strategy.purchaseEnabled, strategy.plans),
           page_config: pageConfig,
           payment_prompt_dialog_config: paymentPromptDialogConfig,
           insufficient_credits_notice: insufficientCreditsNotice,
@@ -109,6 +113,7 @@ export default async function paymentRoutes(app: FastifyInstance) {
           userId: dbUser.id,
           orderId: data.order.id,
           planId: body.plan_id,
+          productType: data.order.product_type,
           paymentType: body.payment_type,
           // 记下交给厂商的回调地址和收银台域名：星尘不到账时第一个要排除的就是
           // 「我们报给厂商的 notify_url 到底是哪个环境」。

@@ -1,0 +1,39 @@
+{
+  "id": "vip-image-free-trials",
+  "name": "vip-image-free-trials",
+  "title": "MiniApp 图片免费体验与 VIP 门禁接入",
+  "description": "在统一免费额度与钱包底座上接入初级图片前 3 次成功免费，并完成高级图片 VIP 与充值钱包门禁。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "cross-package",
+  "priority": "P0",
+  "creator": "linshu",
+  "assignee": "unassigned",
+  "createdAt": "2026-09-21",
+  "completedAt": "2026-09-23",
+  "branch": null,
+  "base_branch": "dev_vip_0920",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-21-miniapp-vip-model-ui",
+  "relatedFiles": [],
+  "notes": "实施前将 assignee=unassigned 替换为原图片模块工程师的 Trellis developer id。初级图片接入依赖父 T2；高级图片门禁依赖父 T3，不依赖父 T4。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "backend.business.conversation-generation",
+        "backend.business.wallet-payment",
+        "shared.business.conversation-contracts",
+        "database.business.billing-payment",
+        "database.business.conversation-storage"
+      ]
+    }
+  }
+}

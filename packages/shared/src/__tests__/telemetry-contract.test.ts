@@ -73,6 +73,8 @@ describe('replay telemetry events', () => {
     expect(REPLAY_TELEMETRY_EVENT_NAMES).toContain('replay_chat_started');
     expect(REPLAY_TELEMETRY_EVENT_NAMES).toContain('payment_order_settled');
     expect(REPLAY_TELEMETRY_EVENT_NAMES).toContain('recharge_entry_clicked');
+    expect(REPLAY_TELEMETRY_EVENT_NAMES).toContain('image_generation_completed');
+    expect(REPLAY_TELEMETRY_EVENT_NAMES).toContain('image_generation_status_observed');
     expect(REPLAY_TELEMETRY_EVENT_NAMES).not.toContain('user_cohort_updated');
   });
 
@@ -113,7 +115,7 @@ describe('replay telemetry events', () => {
       ReplayTelemetryEventSchema.safeParse({
         event: 'paywall_triggered',
         ...chatIdentity,
-        trigger_source: 'chat_sse',
+        trigger_source: 'chat_image',
         required_credits: 80,
       }).success
     ).toBe(true);
@@ -154,6 +156,31 @@ describe('replay telemetry events', () => {
     for (const key of ['content', 'pay_url', 'initData', 'user_cohort'] as const) {
       expect(isForbiddenTelemetryPropertyKey(key)).toBe(true);
       expect(ReplayTelemetryEventSchema.safeParse({ ...started, [key]: 'secret' }).success).toBe(
+        false
+      );
+    }
+  });
+
+  it('rejects image prompt/url/provider sensitive keys on events', () => {
+    const event = {
+      event: 'image_generation_submitted' as const,
+      ...chatIdentity,
+      message_id: '44444444-4444-4444-8444-444444444444',
+      prompt_source: 'generated' as const,
+      prompt_chars: 12,
+    };
+    for (const key of [
+      'prompt',
+      'prompt_cn',
+      'prompt_en',
+      'provider_prompt',
+      'description_user_prompt',
+      'image_url',
+      'storage_path',
+      'provider_request_id',
+    ] as const) {
+      expect(isForbiddenTelemetryPropertyKey(key)).toBe(true);
+      expect(ReplayTelemetryEventSchema.safeParse({ ...event, [key]: 'secret' }).success).toBe(
         false
       );
     }
@@ -250,6 +277,74 @@ describe('replay telemetry events', () => {
       occurred_at: occurredAt,
       entry_source: 'profile_balance',
     });
+  });
+
+  it('accepts frontend image telemetry without prompt text or image urls', () => {
+    const messageId = '44444444-4444-4444-8444-444444444444';
+    expect(
+      parseReplayTelemetryEvent({
+        event: 'image_description_presented',
+        ...chatIdentity,
+        message_id: messageId,
+        attempt_id: '55555555-5555-4555-8555-555555555555',
+        attempt_no: 1,
+        prompt_chars: 24,
+      })
+    ).toMatchObject({ event: 'image_description_presented', prompt_chars: 24 });
+    expect(
+      parseReplayTelemetryEvent({
+        event: 'image_generation_status_observed',
+        ...chatIdentity,
+        message_id: messageId,
+        attempt_id: '55555555-5555-4555-8555-555555555555',
+        attempt_no: 1,
+        terminal_status: 'ready',
+        error_code: null,
+        credits_charged: 10,
+        duration_ms: 12_000,
+        prompt_source: 'generated',
+      })
+    ).toMatchObject({ terminal_status: 'ready', credits_charged: 10 });
+  });
+
+  it('accepts backend image terminal telemetry and rejects ambiguous success fields', () => {
+    const base = {
+      telegram_user_id: '123456789',
+      occurred_at: occurredAt,
+      character_id: characterId,
+      conversation_session_id: sessionId,
+      selected_model_id: 'gpt-4o',
+      message_id: '44444444-4444-4444-8444-444444444444',
+      attempt_id: '55555555-5555-4555-8555-555555555555',
+      attempt_no: 1,
+    };
+    expect(
+      ReplayTelemetryEventSchema.safeParse({
+        event: 'image_generation_completed',
+        ...base,
+        charge_status: 'charged',
+        credits_charged: 10,
+        provider: 'liaobots_grok',
+        fallback_used: false,
+        width: 768,
+        height: 1152,
+        mime_type: 'image/webp',
+        byte_size: 2048,
+        duration_ms: 20_000,
+      }).success
+    ).toBe(true);
+    expect(
+      ReplayTelemetryEventSchema.safeParse({
+        event: 'image_generation_failed',
+        ...base,
+        terminal_status: 'ready',
+        error_code: 'image_provider_failed',
+        failure_kind: 'provider',
+        provider: 'liaobots_grok',
+        fallback_used: false,
+        duration_ms: 20_000,
+      }).success
+    ).toBe(false);
   });
 
   it('attaches optional replay context on recharge_entry_clicked and rejects urls or pay_url', () => {

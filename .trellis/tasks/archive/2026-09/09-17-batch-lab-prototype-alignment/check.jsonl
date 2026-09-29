@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Check frontend API usage, component boundaries and UI behavior."}
+{"file":".trellis/spec/backend/app/index.md","reason":"Check backend route comments, logging, service boundaries and validation."}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Check shared contracts are defined before consumers."}
+{"file":".trellis/spec/database/supabase/index.md","reason":"Check migrations, RLS/grants, rollback and manual verification notes."}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"Check reliability and sensitive-data handling."}
+{"file":".trellis/tasks/09-17-batch-lab-prototype-alignment/prd.md","reason":"Check implementation satisfies all accepted requirements."}
+{"file":".trellis/tasks/09-17-batch-lab-prototype-alignment/design.md","reason":"Check implementation follows planned design or records deviations."}
+{"file":".trellis/tasks/09-17-batch-lab-prototype-alignment/research/prototype-prd-gap-map.md","reason":"Check final UI/API against prototype gaps."}

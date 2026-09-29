@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/admin/app/index.md", "reason": "Admin managed config UI and write flow rules"}
+{"file": ".trellis/spec/admin/app/features-and-components.md", "reason": "Admin component and high-risk write operation guidance"}
+{"file": ".trellis/spec/admin/app/data-auth-and-environments.md", "reason": "Admin environment separation and RPC/helper boundaries"}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend runtime config and route constraints"}
+{"file": ".trellis/spec/backend/app/routes-and-features.md", "reason": "Voice/image route and feature flow constraints"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Runtime config, reliability, and wallet consistency constraints"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Shared contract change requirements"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "API compatibility and schema guidance"}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "Migration and schema ownership rules"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "Migration design, execution, and rollback requirements"}

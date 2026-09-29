@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
+  CreateImageDescriptionRequestSchema,
   CreateMessageImageRequestSchema,
   fail,
   ok,
@@ -7,8 +9,11 @@ import {
   type CreateMessageImageData,
   type GetImageConfigData,
   type GetSessionImagesData,
+  type ImageFailureKind,
   type ImageErrorCode,
   type InsufficientBalanceErrorResponse,
+  type MediaBillingMode,
+  type MediaBillingPreview,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -28,6 +33,7 @@ import {
 } from '../infrastructure/repositories/CharacterCardRepository.js';
 import { ConversationRepositoryError } from '../infrastructure/repositories/conversation-errors.js';
 import { MiniappWalletRepository } from '../infrastructure/repositories/MiniappWalletRepository.js';
+import { FeatureFreeTrialRepository } from '../infrastructure/repositories/FeatureFreeTrialRepository.js';
 import {
   ChatMessageImageRepository,
   ImageConflictError,
@@ -38,17 +44,31 @@ import {
   ImageUpstreamError,
   requireVisualAnchor,
 } from '../features/generation/image-upstream.js';
-import { getImageRuntimeConfig, toImageConfigData } from '../features/image/config.js';
+import {
+  emptyBasicImageFreeTrialQuotaForLimit,
+  getBasicImageRuntimeConfig,
+  getImageRuntimeConfig,
+  toUserImageConfigData,
+} from '../features/image/config.js';
+import { quoteVipMediaPrice } from '../features/vip/media-pricing.js';
+import { VipStatusService } from '../features/vip/vip-status.js';
+import { getPublishedFeatureFreeTrialLimit } from '../features/billing/feature-free-trial-limit.js';
+import { readVipStrategy } from '../platform/vip-strategy.js';
+import {
+  observeImageDescriptionCompleted,
+  observeImageDescriptionFailed,
+  observeImageGenerationAccepted,
+} from '../features/image/ImageGenerationTelemetry.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type PreparedMessageContext =
   | {
-    ok: true;
-    session: ChatSessionRow;
-    turn: ConversationHistoryRow;
-    character: CharacterCardRow;
-  }
+      ok: true;
+      session: ChatSessionRow;
+      turn: ConversationHistoryRow;
+      character: CharacterCardRow;
+    }
   | { ok: false; reply: (reply: FastifyReply) => unknown };
 
 export default async function imageRoutes(app: FastifyInstance) {
@@ -57,6 +77,9 @@ export default async function imageRoutes(app: FastifyInstance) {
   const characters = new CharacterCardRepository();
   const wallets = new MiniappWalletRepository();
   const images = new ChatMessageImageRepository();
+  /** 免费体验仓库 */
+  const freeTrials = new FeatureFreeTrialRepository();
+  const vip = new VipStatusService();
 
   // @frontend-ready: true
   app.get(
@@ -64,7 +87,32 @@ export default async function imageRoutes(app: FastifyInstance) {
     { preHandler: [requireTelegramAuth] },
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
-      return reply.send(ok<GetImageConfigData>(toImageConfigData(await getImageRuntimeConfig())));
+      const dbUser = await getOrCreateDbUser(request.user);
+      let vipStatus;
+      try {
+        vipStatus = await vip.getStatusStrict(dbUser.id);
+      } catch (err) {
+        request.log.error({ err, event: 'image.vip_status.read_failed', userId: dbUser.id });
+        return reply
+          .status(503)
+          .send(fail('VIP_STATUS_UNAVAILABLE', 'VIP 状态暂时无法确认，请稍后重试'));
+      }
+      const strategy = await readVipStrategy();
+      const imageConfig = await getImageRuntimeConfig();
+      const freeTrialLimit = await getPublishedFeatureFreeTrialLimit('basic_image');
+      const basicFreeTrial = imageConfig.enabled
+        ? await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit)
+        : emptyBasicImageFreeTrialQuotaForLimit(freeTrialLimit);
+      return reply.send(
+        ok<GetImageConfigData>(
+          toUserImageConfigData({
+            config: imageConfig,
+            basicFreeTrial,
+            vipActive: vipStatus.active,
+            discountRate: strategy.discountRate,
+          })
+        )
+      );
     }
   );
 
@@ -107,12 +155,48 @@ export default async function imageRoutes(app: FastifyInstance) {
       const imageConfig = await getImageRuntimeConfig();
       const unavailable = imageUnavailable(imageConfig);
       if (unavailable) return reply.status(503).send(fail('IMAGE_UNAVAILABLE', unavailable));
-
+      /** 解析图片描述请求 */
+      const parsed = CreateImageDescriptionRequestSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send(fail('BAD_REQUEST', '图片档位格式不正确'));
+      }
+      /** 获取用户 */
       const dbUser = await getOrCreateDbUser(request.user);
+      let vipStatus;
+      try {
+        vipStatus = await vip.getStatusStrict(dbUser.id);
+      } catch (err) {
+        log.sys.error(
+          { err, event: 'image.vip_status.read_failed', userId: dbUser.id },
+          '读取 VIP 状态失败'
+        );
+        return reply
+          .status(503)
+          .send(fail('VIP_STATUS_UNAVAILABLE', 'VIP 状态暂时无法确认，请稍后重试'));
+      }
+      const strategy = await readVipStrategy();
+      const tierConfig = getBasicImageRuntimeConfig(imageConfig);
+      if (!tierConfig) {
+        return reply.status(503).send(fail('IMAGE_UNAVAILABLE', '图片生成功能暂不可用'));
+      }
+      /** 获取基础免费体验额度 */
+      const freeTrialLimit = await getPublishedFeatureFreeTrialLimit('basic_image');
+      const basicFreeTrial = await freeTrials.quota(dbUser.id, 'basic_image', freeTrialLimit);
+      const previewBillingMode = basicFreeTrial.free_trials_remaining > 0 ? 'free_trial' : 'paid';
+      const previewQuote = quoteVipMediaPrice({
+        originalCredits: tierConfig.creditsPerGeneration,
+        originalPriceLabel: tierConfig.priceLabel,
+        vipActive: vipStatus.active,
+        discountRate: strategy.discountRate,
+        isFreeTrial: previewBillingMode === 'free_trial',
+      });
+      /** 准备消息上下文 */
       const prepared = await prepareMessageContext(ids.sessionId, ids.messageId, dbUser.id);
       if (!prepared.ok) return prepared.reply(reply);
 
       let draftId: string | null = null;
+      let draftAttemptNo: number | null = null;
+      const startedAt = Date.now();
       try {
         const visualAnchor = requireVisualAnchor(prepared.character);
         const context = await history.getContextBeforeTurn(ids.sessionId, prepared.turn.turn_index);
@@ -128,18 +212,37 @@ export default async function imageRoutes(app: FastifyInstance) {
               sessionId: ids.sessionId,
               messageId: ids.messageId,
               userPrompt,
-              model: config.image.grokModel,
-              baseUrlHost: readUrlHost(config.image.liaobotsBase),
-              width: imageConfig.width,
-              height: imageConfig.height,
-              priceCredits: imageConfig.creditsPerGeneration,
-              priceLabel: imageConfig.priceLabel,
+              tier: 'basic',
+              provider: tierConfig.provider,
+              model: tierConfig.model,
+              baseUrlHost: tierConfig.baseUrlHost,
+              width: tierConfig.width,
+              height: tierConfig.height,
+              priceCredits: previewQuote.payableCredits,
+              priceLabel: previewQuote.priceLabel,
             });
             draftId = draft.id;
+            draftAttemptNo = draft.attempt_no;
           },
         });
         if (!draftId) throw new Error('图片描述草稿未创建');
         await images.markDescriptionDraftReady(draftId, promptCn);
+        if (draftAttemptNo !== null) {
+          void observeImageDescriptionCompleted(
+            {
+              userId: dbUser.id,
+              characterId: prepared.session.character_id,
+              conversationSessionId: ids.sessionId,
+              selectedModelId: prepared.turn.llm_billing_snapshot?.model_id ?? null,
+              messageId: ids.messageId,
+              attemptId: draftId,
+              attemptNo: draftAttemptNo,
+              promptChars: promptCn.length,
+              durationMs: Date.now() - startedAt,
+            },
+            log
+          );
+        }
         log.biz.info(
           {
             event: 'image.description.done',
@@ -148,15 +251,47 @@ export default async function imageRoutes(app: FastifyInstance) {
           },
           '图片描述生成完成'
         );
-        return reply.send(ok<CreateImageDescriptionData>({ draft_id: draftId, prompt_cn: promptCn }));
+        return reply.send(
+          ok<CreateImageDescriptionData>({
+            draft_id: draftId,
+            prompt_cn: promptCn,
+            tier: 'basic',
+            billing: buildImageBillingPreview({
+              billingMode: previewBillingMode,
+              freeTrialOrdinal: basicFreeTrial.next_trial_ordinal,
+              freeTrialsRemaining: basicFreeTrial.free_trials_remaining,
+              freeTrialLimit: basicFreeTrial.free_trial_limit,
+              priceCredits: previewQuote.payableCredits,
+              priceLabel: previewQuote.priceLabel,
+            }),
+          })
+        );
       } catch (error) {
         if (draftId) {
           try {
+            /** 标记图片描述草稿失败 */
             await images.markDescriptionDraftFailed(
               draftId,
               error instanceof ImageUpstreamError
                 ? (error.code as ImageErrorCode)
                 : 'image_description_unusable'
+            );
+            /** 观察图片描述失败 */
+            void observeImageDescriptionFailed(
+              {
+                userId: dbUser.id,
+                characterId: prepared.session.character_id,
+                conversationSessionId: ids.sessionId,
+                selectedModelId: prepared.turn.llm_billing_snapshot?.model_id ?? null,
+                messageId: ids.messageId,
+                attemptId: draftId,
+                ...(draftAttemptNo !== null ? { attemptNo: draftAttemptNo } : {}),
+                errorCode:
+                  error instanceof ImageUpstreamError ? error.code : 'image_description_unusable',
+                durationMs: Date.now() - startedAt,
+                failureKind: imageFailureKind(error),
+              },
+              log
             );
           } catch (markError) {
             log.sys.error(
@@ -188,6 +323,7 @@ export default async function imageRoutes(app: FastifyInstance) {
     { preHandler: [requireTelegramAuth] },
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const log = requestLogger(request.log, 'image');
       const ids = readMessageRouteParams(request.params);
       if (!ids) return reply.status(400).send(fail('BAD_REQUEST', '这条内容不支持生成图片'));
 
@@ -204,6 +340,23 @@ export default async function imageRoutes(app: FastifyInstance) {
       }
 
       const dbUser = await getOrCreateDbUser(request.user);
+      let vipStatus;
+      try {
+        vipStatus = await vip.getStatusStrict(dbUser.id);
+      } catch (err) {
+        log.sys.error(
+          { err, event: 'image.vip_status.read_failed', userId: dbUser.id },
+          '读取 VIP 状态失败'
+        );
+        return reply
+          .status(503)
+          .send(fail('VIP_STATUS_UNAVAILABLE', 'VIP 状态暂时无法确认，请稍后重试'));
+      }
+      const strategy = await readVipStrategy();
+      const tierConfig = getBasicImageRuntimeConfig(imageConfig);
+      if (!tierConfig) {
+        return reply.status(503).send(fail('IMAGE_UNAVAILABLE', '图片生成功能暂不可用'));
+      }
       const prepared = await prepareMessageContext(ids.sessionId, ids.messageId, dbUser.id);
       if (!prepared.ok) return prepared.reply(reply);
       try {
@@ -214,47 +367,130 @@ export default async function imageRoutes(app: FastifyInstance) {
           .send(fail('IMAGE_CHARACTER_UNAVAILABLE', '这个角色暂时缺少出图设定'));
       }
 
-      const wallet = await wallets.getOrCreate(dbUser.id);
-      const available = wallet.total_credits ?? wallet.main_credits + wallet.bonus_credits;
-      if (available < imageConfig.creditsPerGeneration) {
-        const response: InsufficientBalanceErrorResponse = {
-          error: {
-            message: `Insufficient credits: have ${available}, need ${imageConfig.creditsPerGeneration}`,
-            type: 'insufficient_balance',
-            credits_required: imageConfig.creditsPerGeneration,
-            credits_available: available,
-          },
-        };
-        return reply.status(402).send(response);
+      const attemptId = parsed.data.draft_id ?? randomUUID();
+      let billingMode: MediaBillingMode = 'paid';
+      let freeTrialOrdinal: number | null = null;
+      const reservation = await freeTrials.reserve({
+        userId: dbUser.id,
+        feature: 'basic_image',
+        referenceId: attemptId,
+        ttlSeconds: config.image.workerLeaseSeconds + 900,
+      });
+      if (reservation.ok) {
+        billingMode = 'free_trial';
+        freeTrialOrdinal = reservation.fact.ordinal;
+      } else if (reservation.code !== 'FEATURE_FREE_TRIAL_EXHAUSTED') {
+        return reply.status(409).send(fail(reservation.code, reservation.message));
+      }
+      const quote = quoteVipMediaPrice({
+        originalCredits: tierConfig.creditsPerGeneration,
+        originalPriceLabel: tierConfig.priceLabel,
+        vipActive: vipStatus.active,
+        discountRate: strategy.discountRate,
+        isFreeTrial: billingMode === 'free_trial',
+      });
+      if (billingMode === 'paid') {
+        const precheck = await wallets.precheckMainCredits(dbUser.id, quote.payableCredits);
+        if (!precheck.ok) {
+          const response: InsufficientBalanceErrorResponse = {
+            error: {
+              message: `Insufficient credits: have ${precheck.creditsAvailable}, need ${precheck.creditsRequired}`,
+              type: 'insufficient_balance',
+              credits_required: quote.payableCredits,
+              credits_available: precheck.creditsAvailable,
+            },
+          };
+          return reply.status(402).send(response);
+        }
       }
 
       try {
         const pending = parsed.data.draft_id
           ? await images.confirmDescriptionDraft({
-            id: parsed.data.draft_id,
-            userId: dbUser.id,
-            sessionId: ids.sessionId,
-            messageId: ids.messageId,
-            promptCn: parsed.data.prompt_cn,
-            promptSource: parsed.data.prompt_source,
-          })
+              id: parsed.data.draft_id,
+              userId: dbUser.id,
+              sessionId: ids.sessionId,
+              messageId: ids.messageId,
+              tier: 'basic',
+              promptCn: parsed.data.prompt_cn,
+              promptSource: parsed.data.prompt_source,
+              provider: tierConfig.provider,
+              model: tierConfig.model,
+              baseUrlHost: tierConfig.baseUrlHost,
+              width: tierConfig.width,
+              height: tierConfig.height,
+              priceCredits: quote.payableCredits,
+              priceLabel: quote.priceLabel,
+              billingMode,
+              freeTrialOrdinal,
+              walletPolicy: 'main_only',
+              vipValidUntil: vipStatus.active ? vipStatus.valid_until : null,
+              originalPriceCredits: quote.originalCredits,
+              vipDiscountRate: quote.discountRate,
+              vipDiscountedExact: quote.discountedExact,
+              vipDiscountConfigVersion:
+                quote.discountRate === null ? null : strategy.discountVersion,
+            })
           : await images.createPending({
+              id: attemptId,
+              userId: dbUser.id,
+              sessionId: ids.sessionId,
+              messageId: ids.messageId,
+              tier: 'basic',
+              promptCn: parsed.data.prompt_cn,
+              promptSource: parsed.data.prompt_source,
+              provider: tierConfig.provider,
+              model: tierConfig.model,
+              baseUrlHost: tierConfig.baseUrlHost,
+              width: tierConfig.width,
+              height: tierConfig.height,
+              priceCredits: quote.payableCredits,
+              priceLabel: quote.priceLabel,
+              billingMode,
+              freeTrialOrdinal,
+              walletPolicy: 'main_only',
+              vipValidUntil: vipStatus.active ? vipStatus.valid_until : null,
+              originalPriceCredits: quote.originalCredits,
+              vipDiscountRate: quote.discountRate,
+              vipDiscountedExact: quote.discountedExact,
+              vipDiscountConfigVersion:
+                quote.discountRate === null ? null : strategy.discountVersion,
+            });
+        void observeImageGenerationAccepted(
+          {
             userId: dbUser.id,
-            sessionId: ids.sessionId,
+            characterId: prepared.session.character_id,
+            conversationSessionId: ids.sessionId,
+            selectedModelId: prepared.turn.llm_billing_snapshot?.model_id ?? null,
             messageId: ids.messageId,
-            promptCn: parsed.data.prompt_cn,
+            attemptId: pending.id,
+            attemptNo: pending.attempt_no,
             promptSource: parsed.data.prompt_source,
-            model: config.image.grokModel,
-            baseUrlHost: readUrlHost(config.image.liaobotsBase),
-            width: imageConfig.width,
-            height: imageConfig.height,
-            priceCredits: imageConfig.creditsPerGeneration,
-            priceLabel: imageConfig.priceLabel,
-          });
+            promptChars: parsed.data.prompt_cn.length,
+            priceCredits: Number(pending.price_credits),
+            width: pending.width,
+            height: pending.height,
+          },
+          log
+        );
         return reply
           .status(202)
           .send(ok<CreateMessageImageData>({ attempt: toMessageImageAttempt(pending) }));
       } catch (error) {
+        if (billingMode === 'free_trial') {
+          try {
+            await freeTrials.release({
+              userId: dbUser.id,
+              feature: 'basic_image',
+              referenceId: attemptId,
+            });
+          } catch (releaseError) {
+            log.sys.error(
+              { event: 'image.free_trial.release_failed', attemptId, err: releaseError },
+              '释放图片免费体验名额失败'
+            );
+          }
+        }
         if (error instanceof ImageConflictError) {
           return reply.status(409).send(fail('CONFLICT', '这条回复正在生成图片'));
         }
@@ -299,6 +535,11 @@ export default async function imageRoutes(app: FastifyInstance) {
   }
 }
 
+/**
+ * 读取消息路由参数
+ * @param params 参数
+ * @returns 消息路由参数
+ */
 function readMessageRouteParams(params: unknown): { sessionId: string; messageId: string } | null {
   const value = params as { sessionId?: unknown; messageId?: unknown };
   if (typeof value.sessionId !== 'string' || typeof value.messageId !== 'string') return null;
@@ -306,26 +547,55 @@ function readMessageRouteParams(params: unknown): { sessionId: string; messageId
   return { sessionId: value.sessionId, messageId: value.messageId };
 }
 
+/**
+ * 获取图片不可用原因
+ * @param imageConfig 图片配置
+ * @returns 图片不可用原因
+ */
 function imageUnavailable(
   imageConfig: Awaited<ReturnType<typeof getImageRuntimeConfig>>
 ): string | null {
   if (!imageConfig.enabled) return '图片生成功能暂未开放';
-  if (
-    !imageConfig.textModel.apiKey ||
-    !imageConfig.textModel.url ||
-    !imageConfig.textModel.model ||
-    !config.image.liaobotsAuth ||
-    !config.image.grokModel
-  ) {
+  if (!imageConfig.textModel.apiKey || !imageConfig.textModel.url || !imageConfig.textModel.model) {
     return '图片生成功能暂不可用';
   }
   return null;
 }
 
-function readUrlHost(value: string): string | null {
-  try {
-    return new URL(value).host;
-  } catch {
-    return null;
-  }
+/**
+ * 获取图片失败类型
+ * @param error 错误
+ * @returns 图片失败类型
+ */
+function imageFailureKind(error: unknown): ImageFailureKind {
+  if (!(error instanceof ImageUpstreamError)) return 'unknown';
+  if (error.code.includes('timeout')) return 'timeout';
+  if (error.code.includes('network')) return 'network';
+  if (error.stage === 'download') return 'storage';
+  if (error.stage === 'description') return 'provider';
+  return 'provider';
+}
+
+/**
+ * 构建图片计费预览
+ * @param input 图片计费预览输入
+ * @returns 图片计费预览
+ */
+function buildImageBillingPreview(input: {
+  billingMode: MediaBillingMode;
+  freeTrialOrdinal: number | null;
+  freeTrialsRemaining: number | null;
+  freeTrialLimit: number | null;
+  priceCredits: number;
+  priceLabel: string;
+}): MediaBillingPreview {
+  return {
+    billing_mode: input.billingMode,
+    wallet_policy: 'main_only',
+    price_credits: input.priceCredits,
+    price_label: input.priceLabel,
+    free_trial_limit: input.freeTrialLimit,
+    free_trial_ordinal: input.freeTrialOrdinal,
+    free_trials_remaining: input.freeTrialsRemaining,
+  };
 }

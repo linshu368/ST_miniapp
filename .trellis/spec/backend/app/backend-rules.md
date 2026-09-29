@@ -8,7 +8,7 @@
 
 - 阅读根 `AGENTS.md`、本目录入口与相关专题，尤其核对路由标注、shared 契约、seed UUID 与跨包边界。
 - 阅读 `docs/ARCHITECTURE.md` 的第 1、4、6、7、11 节。
-- 涉及日志、错误、请求流或外部集成时，阅读 `docs/log_system.md`。
+- 涉及日志、错误、请求流或外部集成时，阅读 [数据、可靠性、安全与可观测性](./data-reliability-and-security.md)。
 - 先搜索现有 routes、features、repositories、tests，再决定是否新增实现。
 - 如果会改动对外请求/响应数据形状，必须先检查 `packages/shared/src/api/*` 是否已有契约；没有就先补 shared。
 - 规划与实现时结合项目现有组件、能力与功能流，优先复用现有实现，不要脱离仓库结构另起一套。

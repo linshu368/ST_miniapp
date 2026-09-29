@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/admin/app/index.md", "reason": "Admin quality gates"}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend quality gates"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Shared quality gates"}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "Migration quality gates"}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "Migration rollback and verification requirements"}

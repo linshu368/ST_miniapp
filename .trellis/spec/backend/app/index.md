@@ -25,7 +25,7 @@
 
 ## 开发前硬门禁
 
-1. 阅读本入口、对应专题、根 `AGENTS.md` 和 `docs/ARCHITECTURE.md`；日志任务再读 `docs/log_system.md`。
+1. 阅读本入口、对应专题、根 `AGENTS.md` 和 `docs/ARCHITECTURE.md`；日志任务再读 [数据、可靠性、安全与可观测性](./data-reliability-and-security.md)。
 2. 搜索现有 route、feature、repository、helper、shared contract 和测试，说明复用/扩展决策。
 3. 对外数据形状必须先定义于 `packages/shared/src/api/*`，再写 handler；不得暴露 Prisma/Supabase 行类型。
 4. 外部调用必须明确超时；只对安全可重试操作做有限退避重试。关键写入必须评估幂等、并发、事务、补偿和重复回调。

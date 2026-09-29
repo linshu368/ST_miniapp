@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "Check Frontend package boundary and quality rules."}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "Check PostHog/replay privacy and no-op behavior."}
+{"file": ".trellis/spec/frontend/app/testing-quality-and-deployment.md", "reason": "Check required frontend validation and env handling."}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Check Backend route/config/observability rules."}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Check server telemetry reliability and sensitive data boundaries."}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Check shared contract ownership."}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "Check telemetry contract compatibility and schema rules."}
+{"file": ".trellis/tasks/09-17-image-generation-posthog-plan/research/posthog-image-generation-reuse.md", "reason": "Check implementation against recorded research and reuse decisions."}

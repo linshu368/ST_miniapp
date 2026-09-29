@@ -20,6 +20,27 @@ const settledEvent = {
   settled_by: 'webhook',
 } satisfies ReplayTelemetryEvent;
 
+const imageCompletedEvent = {
+  event: 'image_generation_completed',
+  telegram_user_id: '123456789',
+  occurred_at: '2026-09-15T10:00:00.000Z',
+  character_id: '22222222-2222-4222-8222-222222222222',
+  conversation_session_id: '33333333-3333-4333-8333-333333333333',
+  selected_model_id: 'gpt-4o',
+  message_id: '44444444-4444-4444-8444-444444444444',
+  attempt_id: '55555555-5555-4555-8555-555555555555',
+  attempt_no: 1,
+  charge_status: 'charged',
+  credits_charged: 10,
+  provider: 'liaobots_grok',
+  fallback_used: false,
+  width: 768,
+  height: 1152,
+  mime_type: 'image/webp',
+  byte_size: 2048,
+  duration_ms: 20_000,
+} satisfies ReplayTelemetryEvent;
+
 function createLog(): PosthogCaptureLogger {
   return {
     biz: { info: vi.fn() },
@@ -122,6 +143,20 @@ describe('captureReplayTelemetryEvent', () => {
 
     expect(await captureReplayTelemetryEvent(settledEvent, createLog(), deps)).toBe('sent');
     expect(await captureReplayTelemetryEvent(settledEvent, createLog(), deps)).toBe('skipped');
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it('dedupes the same image attempt terminal event after a successful send', async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+    const deps = {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getConfig: () => enabledConfig(),
+    };
+
+    expect(await captureReplayTelemetryEvent(imageCompletedEvent, createLog(), deps)).toBe('sent');
+    expect(await captureReplayTelemetryEvent(imageCompletedEvent, createLog(), deps)).toBe(
+      'skipped'
+    );
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 

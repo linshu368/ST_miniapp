@@ -3,7 +3,7 @@
 import { BottomNav } from '@/components/nav/bottom-nav';
 import { usePathname } from 'next/navigation';
 
-const NAV_HIDDEN_PREFIXES = ['/profile/recharge', '/create/wish'];
+const NAV_HIDDEN_PREFIXES = ['/profile/recharge', '/create/wish', '/vip'];
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

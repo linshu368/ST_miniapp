@@ -7,30 +7,25 @@ import {
   MessagesSquare,
   Mic,
   SlidersHorizontal,
-  Sparkles,
   WandSparkles,
 } from 'lucide-react';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import { useModelCatalogQuery } from '@/lib/api/models';
 import { ChatGenerationSettings } from './chat-generation-settings';
-import { ChatModelSwitcher } from './chat-model-switcher';
 import { ToolRow } from './chat-tool-row';
 import { ChatVoicePicker, ChatVoiceSettings } from './chat-voice-settings';
 
 type ToolsTab = 'chat' | 'voice' | 'image';
 /** null = 停在一级页；非空时整个抽屉换成对应的二级页，带返回 */
-type ToolsPanel = 'model' | 'generation' | 'voice' | null;
+type ToolsPanel = 'generation' | 'voice' | null;
 
 const PANEL_TITLES: Record<Exclude<ToolsPanel, null>, string> = {
-  model: '模型选择',
   generation: '生成偏好',
   voice: '默认声音',
 };
 
 const PANEL_DESCRIPTIONS: Record<Exclude<ToolsPanel, null>, string> = {
-  model: '选择驱动对话的模型',
   generation: '调整回复长度与自定义指令',
   voice: '选择角色说话的声音',
 };
@@ -42,8 +37,6 @@ const TABS: { key: ToolsTab; label: string; icon: ComponentType<{ className?: st
 ];
 
 interface ChatToolsSheetProps {
-  /** 充值页返回时要回到的地址，带上当前会话 */
-  returnTo: string;
   onCreateConversation: () => void;
   creating: boolean;
 }
@@ -52,11 +45,10 @@ interface ChatToolsSheetProps {
  * 输入框左侧的工具箱。按钮和抽屉放在同一个组件里：开合状态没有第二个使用者，
  * 抽屉自己走 portal，挂在输入框的左槽里不会被胶囊的圆角裁掉。
  */
-export function ChatToolsSheet({ returnTo, onCreateConversation, creating }: ChatToolsSheetProps) {
+export function ChatToolsSheet({ onCreateConversation, creating }: ChatToolsSheetProps) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<ToolsTab>('chat');
   const [panel, setPanel] = useState<ToolsPanel>(null);
-  const { data: catalog } = useModelCatalogQuery();
 
   // 关上再打开应当回到一级页，否则下次进来会直接落在上次翻到的二级页里
   useEffect(() => {
@@ -67,10 +59,6 @@ export function ChatToolsSheet({ returnTo, onCreateConversation, creating }: Cha
     }, 200);
     return () => window.clearTimeout(timer);
   }, [open]);
-
-  const selectedModelName = catalog?.catalog.tiers
-    .flatMap((tier) => tier.models)
-    .find((model) => model.id === catalog.selected_model_id)?.display_name;
 
   return (
     <>
@@ -92,7 +80,7 @@ export function ChatToolsSheet({ returnTo, onCreateConversation, creating }: Cha
             <>
               <SheetTitle className="text-[16px] font-bold text-foreground">工具箱</SheetTitle>
               <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
-                模型与生成偏好对你的所有角色生效
+                语音、图片和生成偏好
               </SheetDescription>
 
               <div className="my-4 flex gap-1 rounded-full bg-muted p-1">
@@ -117,12 +105,6 @@ export function ChatToolsSheet({ returnTo, onCreateConversation, creating }: Cha
               {tab === 'chat' ? (
                 <div className="space-y-2">
                   <ToolRow
-                    icon={Sparkles}
-                    title="模型选择"
-                    hint={selectedModelName ?? '选择驱动这段对话的模型'}
-                    onClick={() => setPanel('model')}
-                  />
-                  <ToolRow
                     icon={MessagesSquare}
                     title="开启新对话"
                     hint="保留当前这段，另起一段从头开始"
@@ -144,6 +126,12 @@ export function ChatToolsSheet({ returnTo, onCreateConversation, creating }: Cha
               ) : (
                 <ComingSoon label="图片设置" />
               )}
+
+              <p className="mt-3 rounded-2xl border border-dashed border-border px-3 py-2.5 text-center text-[12px] text-muted-foreground">
+                模型选择已移至
+                <span className="text-primary">聊天页顶部角色名下方</span>
+                ，点那里即可切换
+              </p>
             </>
           ) : (
             <>
@@ -162,9 +150,7 @@ export function ChatToolsSheet({ returnTo, onCreateConversation, creating }: Cha
               </div>
               <SheetDescription className="sr-only">{PANEL_DESCRIPTIONS[panel]}</SheetDescription>
 
-              {panel === 'model' ? (
-                <ChatModelSwitcher returnTo={returnTo} onSwitched={() => setOpen(false)} />
-              ) : panel === 'voice' ? (
+              {panel === 'voice' ? (
                 // 选完音色回一级页，而不是关掉整个抽屉：用户接着可能要调倍速
                 <ChatVoicePicker onPicked={() => setPanel(null)} />
               ) : (

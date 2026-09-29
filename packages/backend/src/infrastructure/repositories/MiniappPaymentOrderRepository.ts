@@ -2,6 +2,7 @@ import { getDomainDb } from '../../lib/supabase.js';
 import type {
   PaymentOrder,
   PaymentOrderStatus,
+  PaymentProductType,
   PaymentSettlementSource,
   PaymentType,
 } from '@miniapp/shared';
@@ -21,6 +22,12 @@ export interface MiniappPaymentOrderRow {
   paid_at: string | null;
   /** 入账获胜路径；migration 103 之前入账的历史订单为 null */
   settled_by: PaymentSettlementSource | null;
+  product_type: PaymentProductType;
+  product_id: string | null;
+  vip_duration_days: number | null;
+  vip_bonus_credits: number | null;
+  fulfillment_applied: boolean;
+  vip_valid_until: string | null;
   next_reconcile_at: string;
   last_reconciled_at: string | null;
   reconcile_attempts: number;
@@ -35,6 +42,10 @@ export interface CreateMiniappPaymentOrderInput {
   credits_amount: number;
   bonus_credits: number;
   expires_at: string;
+  product_type: PaymentProductType;
+  product_id: string;
+  vip_duration_days: number | null;
+  vip_bonus_credits: number | null;
 }
 
 /** 日报按天全量取，单页上限只是为了不把一天的订单压成一次超大响应。 */
@@ -160,6 +171,7 @@ export class MiniappPaymentOrderRepository {
       .select('*')
       .in('status', ['pending', 'expired'])
       .eq('credits_added', false)
+      .eq('fulfillment_applied', false)
       .gte('expires_at', input.since)
       .lte('expires_at', input.until)
       .order('expires_at', { ascending: true })
@@ -178,6 +190,7 @@ export class MiniappPaymentOrderRepository {
       .select('*')
       .eq('status', 'pending')
       .eq('credits_added', false)
+      .eq('fulfillment_applied', false)
       .gt('expires_at', input.now)
       .lte('next_reconcile_at', input.now)
       .or(`reconcile_locked_until.is.null,reconcile_locked_until.lt.${input.now}`)
@@ -204,6 +217,7 @@ export class MiniappPaymentOrderRepository {
       .eq('id', candidate.id)
       .eq('status', 'pending')
       .eq('credits_added', false)
+      .eq('fulfillment_applied', false)
       .eq('next_reconcile_at', candidate.next_reconcile_at)
       .eq('reconcile_attempts', candidate.reconcile_attempts)
       .or(`reconcile_locked_until.is.null,reconcile_locked_until.lt.${input.now}`)
@@ -248,16 +262,17 @@ export class MiniappPaymentOrderRepository {
     if (error) throw new Error(`过期支付订单失败：${error.message}`);
   }
 
-  /** 把已超时但没入账的订单放回 pending，让迟到的已验签回调还能补账。
-   *  complete_payment_order 只接受 pending，没有这一步，回调晚于 15 分钟到达
-   *  就等于用户付了钱而星尘永久拿不到。 */
+  /** 把已超时但未履约的订单放回 pending，让迟到的已验签回调还能补账。
+   *  履约 RPC 只接受 pending。VIP 的 credits_added 恒为 false，所以还必须看 fulfillment_applied，
+   *  避免把已经发过会员的过期行重新打开。 */
   async reopenExpired(id: string): Promise<void> {
     const { error } = await this.db
       .from('payment_orders')
       .update({ status: 'pending' })
       .eq('id', id)
       .eq('status', 'expired')
-      .eq('credits_added', false);
+      .eq('credits_added', false)
+      .eq('fulfillment_applied', false);
 
     if (error) throw new Error(`恢复超时支付订单失败：${error.message}`);
   }
@@ -298,5 +313,11 @@ export function toPaymentOrder(row: MiniappPaymentOrderRow): PaymentOrder {
     paid_at: row.paid_at,
     provider_transaction_id: row.provider_transaction_id,
     settled_by: row.settled_by,
+    product_type: row.product_type,
+    product_id: row.product_id,
+    fulfillment_applied: row.fulfillment_applied,
+    vip_duration_days: row.vip_duration_days,
+    vip_bonus_credits: row.vip_bonus_credits,
+    vip_valid_until: row.vip_valid_until,
   };
 }

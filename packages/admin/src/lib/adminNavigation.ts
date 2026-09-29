@@ -1,13 +1,17 @@
 import { managedConfigKeys, type ManagedConfigKey } from './configSchemas';
+import { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey } from '@miniapp/shared';
 
 export type AdminViewKey =
   | 'configs'
   | 'outreach_credit_grant'
   | 'invite_program'
   | 'image_generation_config'
+  | 'vip_strategy'
   | 'characters'
   | 'announcements'
   | 'releases';
+
+export { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey };
 
 /**
  * 裂变邀请的三个 managed config 不在侧栏单独成目录，
@@ -29,6 +33,7 @@ export const IMAGE_GENERATION_CONFIG_KEYS = [
   'image_text_model_config',
   'image_prompt_policy',
   'image_default_art_style',
+  'image_description_system_prompt',
   'image_width',
   'image_height',
   'image_max_prompt_chars',
@@ -44,13 +49,24 @@ export function isImageGenerationConfigKey(key: ManagedConfigKey): key is ImageG
   return (IMAGE_GENERATION_CONFIG_KEYS as readonly string[]).includes(key);
 }
 
+/** 旧的单一免费次数键。额度改由 VIP 策略的 feature_free_trial_limits 发布，不再给运营入口。 */
+const LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY = 'media_feature_free_trial_limit';
+
 export function isInviteProgramConfigKey(key: ManagedConfigKey): key is InviteProgramConfigKey {
   return (INVITE_PROGRAM_CONFIG_KEYS as readonly string[]).includes(key);
 }
 
+export function isVipStrategyConfigKey(key: ManagedConfigKey): key is VipStrategyConfigKey {
+  return (VIP_STRATEGY_CONFIG_KEYS as readonly string[]).includes(key);
+}
+
 /** 侧栏「运营配置」子菜单实际展示的 config 目录（invite 三项已收进「裂变邀请管理」）。 */
 export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConfigKeys.filter(
-  (key) => !isInviteProgramConfigKey(key) && !isImageGenerationConfigKey(key)
+  (key) =>
+    !isInviteProgramConfigKey(key) &&
+    !isImageGenerationConfigKey(key) &&
+    !isVipStrategyConfigKey(key) &&
+    key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
 );
 
 const CONFIG_PREFIX = 'config:';
@@ -71,6 +87,7 @@ export function resolveAdminMenuSelection(key: string): {
       if (isImageGenerationConfigKey(configKey)) {
         return { view: 'image_generation_config', configKey };
       }
+      if (isVipStrategyConfigKey(configKey)) return { view: 'vip_strategy', configKey };
       return { view: 'configs', configKey };
     }
   }
@@ -78,6 +95,7 @@ export function resolveAdminMenuSelection(key: string): {
     key === 'outreach_credit_grant' ||
     key === 'invite_program' ||
     key === 'image_generation_config' ||
+    key === 'vip_strategy' ||
     key === 'characters' ||
     key === 'announcements' ||
     key === 'releases'

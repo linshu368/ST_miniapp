@@ -20,6 +20,7 @@ import {
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
+  MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
@@ -48,6 +49,7 @@ import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
 import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEditor';
+import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
 import { WordCountTiersEditor } from './WordCountTiersEditor';
@@ -245,6 +247,7 @@ export function ConfigValueEditor(props: {
   if (
     props.configKey === 'image_prompt_policy' ||
     props.configKey === 'image_default_art_style' ||
+    props.configKey === 'image_description_system_prompt' ||
     props.configKey === 'image_price_label' ||
     props.configKey === 'image_prompt_over_limit_hint' ||
     props.configKey === 'image_description_failed_hint' ||
@@ -256,9 +259,12 @@ export function ConfigValueEditor(props: {
         value={typeof props.value === 'string' ? props.value : ''}
         rows={6}
         maxLength={
-          props.configKey === 'image_prompt_policy' || props.configKey === 'image_default_art_style'
-            ? 1000
-            : 200
+          props.configKey === 'image_description_system_prompt'
+            ? 12000
+            : props.configKey === 'image_prompt_policy' ||
+                props.configKey === 'image_default_art_style'
+              ? 1000
+              : 200
         }
         showCount
         disabled={props.disabled}
@@ -284,6 +290,7 @@ export function ConfigValueEditor(props: {
 
   if (
     props.configKey === 'image_generation_credits' ||
+    props.configKey === 'media_feature_free_trial_limit' ||
     props.configKey === 'image_width' ||
     props.configKey === 'image_height' ||
     props.configKey === 'image_max_prompt_chars' ||
@@ -292,10 +299,21 @@ export function ConfigValueEditor(props: {
     const isDimension = props.configKey === 'image_width' || props.configKey === 'image_height';
     const isBytes = props.configKey === 'image_max_output_bytes';
     const isContractLimit = props.configKey === 'image_max_prompt_chars';
+    const isFreeTrialLimit = props.configKey === 'media_feature_free_trial_limit';
     return (
       <InputNumber
         min={isDimension ? 256 : isBytes ? 1048576 : 1}
-        max={isDimension ? 4096 : isBytes ? 52428800 : isContractLimit ? 200 : undefined}
+        max={
+          isDimension
+            ? 4096
+            : isBytes
+              ? 52428800
+              : isFreeTrialLimit
+                ? MAX_FEATURE_FREE_TRIAL_LIMIT
+                : isContractLimit
+                  ? 1000
+                  : undefined
+        }
         precision={0}
         value={typeof props.value === 'number' ? props.value : undefined}
         disabled={props.disabled || isContractLimit}
@@ -551,6 +569,17 @@ export function ConfigValueEditor(props: {
         plans={props.paymentPlans}
         disabled={props.disabled}
         onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'llm_provider_routing_config') {
+    return (
+      <ProviderRoutingConfigEditor
+        value={props.value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+        openRouterDirectory={props.openRouterDirectory}
       />
     );
   }

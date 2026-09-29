@@ -1,0 +1,6 @@
+{"file":".trellis/spec/admin/app/index.md","reason":"复用内部 SPA、身份与环境模式时遵守 Admin 边界"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Batch Lab API、任务与生成接缝的 Backend 总规范"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"新增跨应用 DTO 和 JSONL schema"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"新增 batch_lab 域、迁移、权限和回滚"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"覆盖 UI 到数据库的完整跨层链路"}
+{"file":".trellis/tasks/09-11-batch-lab-platform-planning/research/current-state.md","reason":"现有能力、原型功能和复用/差距结论"}

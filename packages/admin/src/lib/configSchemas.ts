@@ -1,20 +1,34 @@
 import {
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
+  DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   DEFAULT_LOBBY_PINNED_CHARACTERS,
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
+  DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+  DEFAULT_VIP_PLANS_CONFIG,
+  DEFAULT_VIP_TEXT_DISCOUNT_RATE,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  FeatureFreeTrialLimitsSchema,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
+  LlmProviderRoutingConfigSchema,
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
+  MediaFeatureFreeTrialLimitSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
   PaymentPlansSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
+  VIP_STRATEGY_CONFIG_KEYS,
+  VipCheckinBonusConfigSchema,
+  VipFeatureSwitchSchema,
+  VipPlansConfigSchema,
+  VipTextDiscountRateSchema,
   WordCountTiersConfigSchema,
 } from '@miniapp/shared';
 import { z } from 'zod';
@@ -29,6 +43,7 @@ export const managedConfigKeys = [
   'miniapp_free_quota_exhausted_dialog_config',
   'llm_model_catalog',
   'llm_pricing_config',
+  'llm_provider_routing_config',
   'system_fallback_character_id',
   'system_instructions',
   'pref_word_count_tiers',
@@ -43,6 +58,7 @@ export const managedConfigKeys = [
   'image_text_model_config',
   'image_prompt_policy',
   'image_default_art_style',
+  'image_description_system_prompt',
   'image_width',
   'image_height',
   'image_max_prompt_chars',
@@ -51,12 +67,17 @@ export const managedConfigKeys = [
   'image_description_failed_hint',
   'image_generation_failed_hint',
   'image_failed_unknown_hint',
+  'media_feature_free_trial_limit',
+  ...VIP_STRATEGY_CONFIG_KEYS,
 ] as const;
 
 export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 
 /** 存 runtime_config.text_value 的 managed key；草稿 value 为 null */
-export const TEXT_MANAGED_CONFIG_KEYS = ['system_instructions'] as const;
+export const TEXT_MANAGED_CONFIG_KEYS = [
+  'system_instructions',
+  'image_description_system_prompt',
+] as const;
 export type TextManagedConfigKey = (typeof TEXT_MANAGED_CONFIG_KEYS)[number];
 
 export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedConfigKey {
@@ -236,6 +257,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_free_quota_exhausted_dialog_config: FreeQuotaExhaustedDialogConfigSchema,
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
+  llm_provider_routing_config: LlmProviderRoutingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
   system_instructions: SystemInstructionsSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
@@ -250,6 +272,11 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_text_model_config: ImageTextModelConfigSchema,
   image_prompt_policy: z.string().trim().min(1, '图片 prompt 策略不能为空').max(1000),
   image_default_art_style: z.string().trim().min(1, '画风说明不能为空').max(1000),
+  image_description_system_prompt: z
+    .string()
+    .trim()
+    .min(1, '图片描述 system prompt 不能为空')
+    .max(12000, '图片描述 system prompt 不能超过 12000 个字符'),
   image_width: positiveInteger.min(256).max(4096),
   image_height: positiveInteger.min(256).max(4096),
   image_max_prompt_chars: z.literal(1000),
@@ -258,6 +285,13 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_description_failed_hint: z.string().trim().min(1).max(200),
   image_generation_failed_hint: z.string().trim().min(1).max(200),
   image_failed_unknown_hint: z.string().trim().min(1).max(200),
+  media_feature_free_trial_limit: MediaFeatureFreeTrialLimitSchema,
+  vip_purchase_enabled: VipFeatureSwitchSchema,
+  vip_reminders_enabled: VipFeatureSwitchSchema,
+  vip_plans_config: VipPlansConfigSchema,
+  vip_text_discount_rate: VipTextDiscountRateSchema,
+  vip_checkin_bonus_config: VipCheckinBonusConfigSchema,
+  feature_free_trial_limits: FeatureFreeTrialLimitsSchema,
 };
 
 export const configMetadata: Record<
@@ -271,8 +305,8 @@ export const configMetadata: Record<
   },
   miniapp_daily_checkin_bonus_credits: {
     label: '每日签到奖励',
-    description: '用户每次满足签到间隔后获得的 bonus 星尘。',
-    defaultValue: 40,
+    description: '每次签到的基础专项星尘。有效 VIP 的加成由「VIP策略」决定。',
+    defaultValue: 60,
   },
   miniapp_character_free_chat_quota_limit: {
     label: '角色卡免费对话轮次',
@@ -338,6 +372,12 @@ export const configMetadata: Record<
         premium: 50,
       },
     },
+  },
+  llm_provider_routing_config: {
+    label: '模型供应商路由',
+    description:
+      '按「模型 × 供应商」控制 OpenRouter 路由：屏蔽列表写入 provider.ignore；优先列表写入 provider.order 并允许兜底回落。规则只作用于所填模型，未配置的模型不受影响。',
+    defaultValue: DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   },
   system_fallback_character_id: {
     label: '系统兜底角色',
@@ -417,6 +457,13 @@ export const configMetadata: Record<
     description: '默认分镜写稿输入及生图 prompt 使用的画风说明，最长 1000 字。',
     defaultValue: '精致二次元竖幅插画，柔和光影，健康公开发布',
   },
+  image_description_system_prompt: {
+    label: '图片描述 System Prompt',
+    description:
+      '默认分镜写稿模型使用的 system prompt，保存到 runtime_config.text_value；缺失时后端回退内置版本。',
+    defaultValue:
+      '你是视觉分镜师。请根据角色视觉锚点和最近对话，输出一段自然流畅、适合生成图片的中文画面描述，不要输出解释或分析。',
+  },
   image_width: {
     label: '图片宽度',
     description: '生成图片宽度（像素），范围 256~4096。',
@@ -456,6 +503,43 @@ export const configMetadata: Record<
     label: '图片模糊失败提示',
     description: '外部平台结果未知、禁止自动重试时展示的提示。',
     defaultValue: '外部平台没有确认成功，本次不消耗星尘。',
+  },
+  media_feature_free_trial_limit: {
+    label: '媒体免费轮次次数',
+    description:
+      '已停用的旧键，运行时不再读取。语音和初级图片免费次数请在 VIP 策略的 feature_free_trial_limits 中分别配置，范围 0 到 20。',
+    defaultValue: DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
+  },
+  vip_purchase_enabled: {
+    label: 'VIP 购买开关',
+    description: '关闭时不能创建新的 VIP 订单。已创建订单仍按自己的商品快照履约。',
+    defaultValue: false,
+  },
+  vip_reminders_enabled: {
+    label: 'VIP 到期提醒开关',
+    description: '只控制提醒是否写入。提前天数、文案和时区不在这里配置，默认保持关闭。',
+    defaultValue: false,
+  },
+  vip_plans_config: {
+    label: '周卡与月卡商品',
+    description: '价格使用整数分。周卡赠送固定为 0。发布后只影响新创建的订单。',
+    defaultValue: DEFAULT_VIP_PLANS_CONFIG,
+  },
+  vip_text_discount_rate: {
+    label: 'VIP 生成折扣率',
+    description:
+      '适用于文本、语音和图片付费生成。大于 0 且不超过 1；受理时固化，不重算已受理请求。',
+    defaultValue: DEFAULT_VIP_TEXT_DISCOUNT_RATE,
+  },
+  vip_checkin_bonus_config: {
+    label: 'VIP 签到加成',
+    description: '与基础奖励相同，或在固定模式下填写非负整数。一次签到只读取一份策略。',
+    defaultValue: DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
+  },
+  feature_free_trial_limits: {
+    label: '媒体免费次数',
+    description: '语音和初级图片分别配置，整数 0 到 20。0 表示关闭该功能的免费体验。',
+    defaultValue: DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
   },
 };
 

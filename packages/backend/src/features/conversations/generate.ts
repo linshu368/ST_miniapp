@@ -43,6 +43,8 @@ export type ConversationTurnOutcome =
   | { kind: 'streamed'; status: SettledMessageStatus }
   /** 预检未通过，响应头还没写，调用方返回 402 JSON */
   | { kind: 'insufficient_balance'; creditsRequired: number; creditsAvailable: number }
+  /** 调用方把已失效的标准/旗舰直接送进生成出口 */
+  | { kind: 'vip_required' }
   /** 上游连不上或非 2xx，响应头还没写，调用方返回 502 JSON */
   | { kind: 'upstream_error'; upstreamStatus: number | null };
 
@@ -185,6 +187,9 @@ export async function runConversationTurn(
   });
 
   if (!sink.opened) {
+    if (result.denial === 'vip_required') {
+      return { kind: 'vip_required' };
+    }
     if (result.status === 'insufficient_balance') {
       return {
         kind: 'insufficient_balance',

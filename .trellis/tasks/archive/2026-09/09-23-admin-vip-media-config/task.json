@@ -1,0 +1,42 @@
+{
+  "id": "admin-vip-media-config",
+  "name": "admin-vip-media-config",
+  "title": "Admin VIP media configuration",
+  "description": "Expose VIP media runtime configuration in Admin, including advanced image settings and configurable media free-trial count.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "admin,backend,shared,database",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-23",
+  "completedAt": "2026-09-23",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "admin.business.operations",
+        "backend.business.voice-message",
+        "backend.business.wallet-payment",
+        "backend.infrastructure.runtime-data-security",
+        "database.business.billing-payment",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security",
+        "shared.business.conversation-contracts",
+        "shared.business.wallet-payment-contracts"
+      ]
+    }
+  }
+}

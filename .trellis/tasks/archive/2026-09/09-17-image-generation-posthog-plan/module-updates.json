@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "operation": "update",
+      "module_id": "frontend.business.conversation-ui",
+      "target": ".trellis/spec/frontend/app/modules/business/conversation-ui.md",
+      "expected_sha256": "7bd00386190da65b2b7fa9738cdc74420fbc037d6949bdaaf6ff5c417163ebd1",
+      "change_summary": "写入图片生成 UI PostHog 安全事件 helper 与 chat_image 付费墙来源",
+      "content": "---\nmodule_id: frontend.business.conversation-ui\ntitle: 用户会话、语音与图片界面\nscope: frontend\ncategory: business\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/09-17-image-generation-posthog-plan/\nlast_verified_at: 2026-09-18\n---\n\n# 用户会话、语音与图片界面\n\n## 职责与边界\n\n负责会话列表、流式聊天、重生成、模型/生成偏好、语音、角色回复图片交互展示，以及图片生成用户侧 PostHog 事件。不拥有 PostHog SDK 初始化、后端图片生成或支付结算。\n\n## 当前状态\n\n自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片入口只面向最后完整回复，支持免费描述、确认/自定义、生成中、失败、余额不足、消息下 ready 卡和 Dialog 预览；图片入口、描述、提交、终态观察、预览和保存经 `lib/image-generation/telemetry.ts` 发送安全事件，只记录 ID、状态、长度、耗时、价格/尺寸摘要和错误码，不记录 prompt 正文或图片 URL。真实 Telegram WebView 与图稿逐项验收尚未完成。\n\n## 入口与调用者\n\n用户从 `/chats` 和 `/chat/[characterId]` 进入。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/frontend/src/app/chat/[characterId]/page.tsx` | 会话页、图片 footer 接线、`chat_image` 充值来源 |\n| `packages/frontend/src/components/chat/` | 聊天组件 |\n| `packages/frontend/src/components/chat/chat-message-image.tsx` | 图片面板、结果卡、预览与图片事件调用 |\n| `packages/frontend/src/lib/image-generation/telemetry.ts` | 图片生成前端事件 helper 与去重 |\n| `packages/frontend/src/lib/api/conversation-stream.ts` | SSE client |\n| `packages/frontend/src/hooks/use-chat-session.ts` | 会话生命周期 |\n| `packages/frontend/src/hooks/use-conversation-turn.ts` | 发送/重生成编排 |\n| `packages/frontend/src/lib/recharge-redirect.ts` | 充值跳转收口 |\n| `packages/frontend/src/lib/api/images.ts` | 图片查询与 mutation |\n\n## 关键实现链路\n\n页面接线 → session/turn hooks → SSE 与气泡收敛；图片 query 在存在非终态 attempt 时按 1.8 秒轮询，message footer 按图片在上、语音在下注入，成功后刷新图片与钱包。图片 402 跳充值传入 `triggerSource: 'chat_image'`，复用付费墙/充值回流链路。\n\n## 数据、契约与外部依赖\n\n消费 shared conversations/voice/images/telemetry 契约和 Backend HTTP/SSE。图片 telemetry helper 只接收业务 ID、attempt 摘要、状态和错误码；实际保存图片仍使用 URL 调 Telegram 下载，但 URL 不进入事件属性。\n\n## 关键节点与约束\n\n服务端状态走 React Query；组件不直接 fetch；图片组件只持有局部面板状态，不接收内部英文 prompt，不把中文 prompt、图片 URL、Storage path、provider request id 或完整错误 body 送入 PostHog。\n\n## 验证方式\n\n`pnpm --filter @miniapp/frontend typecheck && pnpm --filter @miniapp/frontend test && pnpm --filter @miniapp/frontend lint && pnpm --filter @miniapp/frontend build`。\n\n## 已知缺口与待核验项\n\n图片 runtime 开关默认关闭；图 1~9、Telegram 长按保存、safe area/软键盘、PostHog Preview 真机事件和真实后端联调仍待 test 环境人工验收。\n\n## 关联模块\n\n`frontend.infrastructure.client-ui-foundation`、`backend.business.conversation-generation`、`shared.business.conversation-contracts`。\n",
+      "evidence": [
+        ".trellis/tasks/09-17-image-generation-posthog-plan/design.md",
+        ".trellis/tasks/09-17-image-generation-posthog-plan/task.md",
+        "packages/frontend/src/lib/image-generation/telemetry.ts",
+        "packages/frontend/src/components/chat/chat-message-image.tsx",
+        "packages/frontend/src/app/chat/[characterId]/page.tsx"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "frontend.infrastructure.client-ui-foundation",
+      "target": ".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md",
+      "expected_sha256": "cdda1044e43f6a2fc6724d0a1ef6ada86cfe13bf0c24bc62542170da48256328",
+      "change_summary": "记录图片业务事件复用现有 replay lifecycle 与 shared schema",
+      "content": "---\nmodule_id: frontend.infrastructure.client-ui-foundation\ntitle: API、Telegram 与 UI 基建\nscope: frontend\ncategory: infrastructure\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/09-17-image-generation-posthog-plan/\nlast_verified_at: 2026-09-18\n---\n\n# API、Telegram 与 UI 基建\n\n## 职责与边界\n\n提供统一 REST client、Query provider、Telegram runtime、Zustand 状态、通用 UI，以及受控 PostHog Session Replay adapter。不拥有业务生成或支付结算。\n\n## 当前状态\n\nAPI 与 server state 已集中，Tailwind/shadcn 作为 UI 基础。业务侧 PostHog 事件复用 `getReplayLifecycle().capture` 与 shared telemetry schema；缺 PostHog 公开配置、host 非 HTTPS 或 SDK 失败时前端 telemetry no-op。\n\n## 入口与调用者\n\n所有 Frontend 页面和业务组件使用。聊天、支付、图片生成 helper 通过 replay lifecycle capture 发送安全事件。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/frontend/src/lib/api/client.ts` | REST client |\n| `packages/frontend/src/lib/api/` | Query hooks |\n| `packages/frontend/src/lib/telemetry/` | PostHog adapter、lifecycle、masking 与 owner |\n| `packages/frontend/src/lib/payment/flow-telemetry.ts` | 支付/回流事件 helper |\n| `packages/frontend/src/lib/image-generation/telemetry.ts` | 图片生成事件 helper |\n| `packages/frontend/src/components/ui/` | 公共 UI |\n| `packages/frontend/src/stores/` | 跨组件客户端状态 |\n\n## 关键实现链路\n\nProvider 初始化 → Telegram 上下文 → query/client → 通用 loading/error/UI。业务 helper 先判断 active replay context，再通过 lifecycle capture，由 adapter 对 shared schema 和 forbidden keys 做运行时校验。\n\n## 数据、契约与外部依赖\n\n依赖 Telegram SDK、React Query、Zustand、shared DTO 和 `posthog-js`。浏览器公开变量不存 secret。\n\n## 关键节点与约束\n\n浏览器公开变量必须静态读取 `NEXT_PUBLIC_*`。server state 不复制到 Zustand。事件属性禁止 initData、token、支付 URL、聊天正文、图片 prompt、图片 URL、Storage path 和 provider request id。\n\n## 验证方式\n\nFrontend typecheck、test、lint、build 与真机检查。\n\n## 已知缺口与待核验项\n\nTelegram WebView 差异需持续人工回归；打开 Production PostHog 是独立运维步骤。\n\n## 关联模块\n\n`frontend.business.conversation-ui`、`frontend.business.wallet-payment`、`backend.infrastructure.runtime-data-security`。\n",
+      "evidence": [
+        ".trellis/tasks/09-17-image-generation-posthog-plan/design.md",
+        ".trellis/tasks/09-17-image-generation-posthog-plan/research/posthog-image-generation-reuse.md",
+        "packages/frontend/src/lib/image-generation/telemetry.ts",
+        "packages/frontend/src/lib/telemetry/lifecycle.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "backend.business.conversation-generation",
+      "target": ".trellis/spec/backend/app/modules/business/conversation-generation.md",
+      "expected_sha256": "1b8cb7bf800b0d1ef1e0e76e8371b6bddfcf8a075126c2ecbdbe2869b65d4a79",
+      "change_summary": "写入图片描述/受理/worker 终态 PostHog observer",
+      "content": "---\nmodule_id: backend.business.conversation-generation\ntitle: 会话与生成\nscope: backend\ncategory: business\nstatus: active\nowners: [backend]\nlast_verified_task: .trellis/tasks/09-17-image-generation-posthog-plan/\nlast_verified_at: 2026-09-18\n---\n\n# 会话与生成\n\n## 职责与边界\n\n负责会话、消息、Prompt、SSE、LLM 生成计费及角色回复图片生成，不承载前端展示。图片生成 PostHog 终态事件是业务收口后的非关键观测，不改变状态机或扣费结果。\n\n## 当前状态\n\n自研会话链路已上线。图片生成代码已落地但 runtime 开关默认关闭：默认路径由 DeepSeek 写中文分镜，自定义路径保留用户中文稿，两路均在 worker 中直译英文后优先调用 Grok/Liaobots；主通道失败时以相同内容降级到 Replicate Z 模型，成功转存 Storage 后才原子结算。图片描述完成/失败、出图受理、worker 成功/失败终态经 `ImageGenerationTelemetry` 异步发送安全事件；结算响应未知不发送成功或失败事件。真实上游与生产开放仍待环境验收。\n\n## 入口与调用者\n\nFrontend 调用 `/api/v1/conversations*`、generation config，以及 `/api/v1/images/config`、会话图片查询、描述和图片创建端点。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/backend/src/routes/conversations.ts` | HTTP/SSE 入口 |\n| `packages/backend/src/features/conversations/` | 轮次编排 |\n| `packages/backend/src/features/generation/` | 生成与计费出口 |\n| `packages/backend/src/features/image/` | 图片任务编排与 telemetry observer |\n| `packages/backend/src/features/image/ImageGenerationTelemetry.ts` | 图片生成安全事件 observer |\n| `packages/backend/src/routes/images.ts` | 图片 HTTP 入口 |\n\n## 关键实现链路\n\n聊天链路保持“鉴权 → 原子开轮 → SSE → history/计费收口”。图片链路为“ownership/回复资格 → 中文稿 → pending attempt → DB 租约 → DeepSeek 直译 → provider dispatch 边界 → Grok（失败则 Z 降级）→ Storage → `settle_image_generation` 原子扣费与 current ready”；同一 provider 写请求不重试，Replicate 只轮询已创建 prediction。PostHog observer 只在状态写入成功后 fire-and-forget。\n\n## 数据、契约与外部依赖\n\n消费 shared conversations/images/telemetry 契约、experience 会话与图片 attempt、OpenRouter、DeepSeek、Grok/Liaobots、Replicate Z、Supabase Storage 和服务端 PostHog capture。\n\n## 关键节点与约束\n\n流前错误使用 HTTP；响应头发出后使用流内 error。聊天与图片上游适配不得旁路 `features/generation`。图片 provider 前租约可恢复；Grok 失败只允许切换一次 Z，Z dispatch 后结果未知必须失败关闭。结算明确余额不足删除对象，结算响应未知则保留对象和 storing 状态待幂等对账，且不发送 PostHog 终态事件。事件不得包含 prompt 正文、图片 URL、Storage path、provider request id 或错误 body。\n\n## 验证方式\n\n`pnpm --filter @miniapp/backend typecheck && pnpm --filter @miniapp/backend test`；真实上游、PostHog Preview 和 SSE 缓冲使用可重复人工回归，已删除的 `mvp:regression` 不再使用。\n\n## 已知缺口与待核验项\n\n角色卡更多人设字段和自建预设格式仍待后续任务；图片真实 DeepSeek/Grok、Storage、重启/并发、PostHog Preview 事件与发布观测仍待 test 环境验收。\n\n## 关联模块\n\n`frontend.business.conversation-ui`、`backend.infrastructure.runtime-data-security`、`shared.business.conversation-contracts`、`database.business.conversation-storage`。\n",
+      "evidence": [
+        ".trellis/tasks/09-17-image-generation-posthog-plan/design.md",
+        ".trellis/tasks/09-17-image-generation-posthog-plan/task.md",
+        "packages/backend/src/features/image/ImageGenerationTelemetry.ts",
+        "packages/backend/src/routes/images.ts",
+        "packages/backend/src/features/image/generate.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "backend.infrastructure.runtime-data-security",
+      "target": ".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md",
+      "expected_sha256": "c0dea293fafd33cb3d461f92da3e3530d4471a1955d7883c50895a184ba071ee",
+      "change_summary": "记录 PostHog capture 泛化为服务端非关键终态事件",
+      "content": "---\nmodule_id: backend.infrastructure.runtime-data-security\ntitle: 运行时、鉴权与数据访问基建\nscope: backend\ncategory: infrastructure\nstatus: active\nowners: [backend]\nlast_verified_task: .trellis/tasks/09-17-image-generation-posthog-plan/\nlast_verified_at: 2026-09-18\n---\n\n# 运行时、鉴权与数据访问基建\n\n## 职责与边界\n\n提供配置、Telegram/运营鉴权、域数据库 client、repository、日志、后台任务基座，以及非关键服务端 PostHog capture。不拥有具体业务状态机。\n\n## 当前状态\n\n配置与 runtime config 已集中，Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/model-tiers.ts` 集中读取 `llm_model_catalog`，损坏时降级到 `DEFAULT_CATALOG`，不再读取旧 tiers key。PostHog capture 使用 `POSTHOG_API_KEY`/`POSTHOG_HOST`/`POSTHOG_TIMEOUT_MS`，缺 key 或非法 host 时 no-op。\n\n## 入口与调用者\n\nBackend routes、features、jobs 统一消费。支付终态与图片生成终态 observer 调用 `infrastructure/telemetry/posthog-capture.ts`。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/backend/src/platform/config.ts` | 环境配置解析 |\n| `packages/backend/src/platform/runtime-config.ts` | DB 运行配置入口 |\n| `packages/backend/src/platform/model-tiers.ts` | 模型目录读取/缓存 |\n| `packages/backend/src/middleware/auth.ts` | Telegram 鉴权 |\n| `packages/backend/src/lib/supabase.ts` | 按域数据库 client |\n| `packages/backend/src/infrastructure/repositories/` | 数据访问实现 |\n| `packages/backend/src/infrastructure/telemetry/posthog-capture.ts` | 服务端 PostHog capture、短超时、终态去重 |\n\n## 关键实现链路\n\n启动解析配置 → route 鉴权 → feature → repository/domain client → Pino 结果摘要。PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order_id:status:settled_by` 去重，图片按 `attempt_id:event:terminal_status|charge_status` 去重。\n\n## 数据、契约与外部依赖\n\n连接 Supabase、Redis/Sentry/PostHog 等；secret 仅服务端读取。PostHog 事件必须先通过 shared telemetry schema 和 forbidden-key 检查。\n\n## 关键节点与约束\n\n外部调用必须超时；日志禁止 token/敏感正文/`pay_url`/initData。未配置 PostHog 时 observer 不反查 Telegram 用户。服务端 telemetry 超时、失败或重复跳过不得延迟、回滚或改变业务终态。\n\n## 验证方式\n\n`pnpm --filter @miniapp/backend typecheck && pnpm --filter @miniapp/backend test`。\n\n## 已知缺口与待核验项\n\n部署控制台遗留资源仍需人工清理；打开生产 PostHog 是独立运维步骤。\n\n## 关联模块\n\n`backend.business.conversation-generation`、`backend.business.wallet-payment`、`database.infrastructure.schema-security`。\n",
+      "evidence": [
+        ".trellis/tasks/09-17-image-generation-posthog-plan/design.md",
+        ".trellis/tasks/09-17-image-generation-posthog-plan/research/posthog-image-generation-reuse.md",
+        "packages/backend/src/infrastructure/telemetry/posthog-capture.ts",
+        "packages/backend/src/features/image/ImageGenerationTelemetry.ts"
+      ]
+    },
+    {
+      "operation": "update",
+      "module_id": "shared.business.conversation-contracts",
+      "target": ".trellis/spec/shared/contracts/modules/business/conversation-contracts.md",
+      "expected_sha256": "4bce3787d6a3203cbf8a8763b0d1950f78a14c9ccfa1ed4581f0cd576b087138",
+      "change_summary": "写入图片生成 telemetry 事件契约与禁止字段",
+      "content": "---\nmodule_id: shared.business.conversation-contracts\ntitle: 会话、语音与图片共享契约\nscope: shared\ncategory: business\nstatus: active\nowners: [shared]\nlast_verified_task: .trellis/tasks/09-17-image-generation-posthog-plan/\nlast_verified_at: 2026-09-18\n---\n\n# 会话、语音与图片共享契约\n\n## 职责与边界\n\n定义会话、SSE、生成配置、语音、图片 attempt 和图片生成 telemetry 的跨进程数据形状，不包含业务执行。\n\n## 当前状态\n\nBackend 与 Frontend 已共同消费统一契约；图片契约包含中文稿上限、配置、描述、创建、会话聚合状态与稳定错误码，不暴露英文/provider prompt。`api/telemetry.ts` 扩展图片生成事件 union 与 `chat_image` 付费墙来源，覆盖前端用户操作、描述展示/失败、提交/受理、终态观察、预览、保存，以及后端描述/worker 终态事件。\n\n## 入口与调用者\n\n由 shared 根出口导出，供两个消费者编译期与运行时校验。前后端 PostHog 事件都必须先通过 `parseReplayTelemetryEvent`。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/shared/src/api/conversations.ts` | 会话与 SSE DTO |\n| `packages/shared/src/api/voice.ts` | 语音 DTO |\n| `packages/shared/src/api/images.ts` | 图片 DTO 与校验 |\n| `packages/shared/src/api/telemetry.ts` | replay context、支付与图片生成事件契约 |\n| `packages/shared/src/api/models.ts` | 模型 catalog DTO |\n| `packages/shared/src/index.ts` | 公共出口 |\n\n## 关键实现链路\n\nZod/schema 与类型 → Backend 校验/响应/observer → Frontend client、状态处理与 telemetry helper。事件属性只允许 ID、枚举、耗时、状态、计数和价格/尺寸摘要。\n\n## 数据、契约与外部依赖\n\n仅依赖 Zod；不得暴露数据库 row。`TELEMETRY_FORBIDDEN_PROPERTY_KEYS` 拒绝正文、`pay_url`、initData、token、图片 prompt、图片 URL、Storage path 和 provider request id 的 snake_case/camelCase 变体。\n\n## 关键节点与约束\n\n流事件 start/delta/done/error 语义必须保持消费者兼容；图片内部 leased/storing 不进入公开状态，中文稿由 shared schema 与后端共同执行。新增 telemetry 事件必须保持 browser-safe，不能把 provider 成功等同业务成功。\n\n## 验证方式\n\n`pnpm --filter @miniapp/shared test` 与消费者 typecheck。\n\n## 已知缺口与待核验项\n\n自建预设契约尚未定义；PostHog Preview 中 forbidden 字段为空仍需人工验收。\n\n## 关联模块\n\n`backend.business.conversation-generation`、`frontend.business.conversation-ui`、`frontend.infrastructure.client-ui-foundation`。\n",
+      "evidence": [
+        ".trellis/tasks/09-17-image-generation-posthog-plan/design.md",
+        ".trellis/tasks/09-17-image-generation-posthog-plan/task.md",
+        "packages/shared/src/api/telemetry.ts",
+        "packages/shared/src/__tests__/telemetry-contract.test.ts"
+      ]
+    }
+  ]
+}

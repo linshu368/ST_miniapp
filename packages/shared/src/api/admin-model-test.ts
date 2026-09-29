@@ -19,9 +19,7 @@ export const AdminImageTextModelTestRequestSchema = z
     }
   });
 
-export type AdminImageTextModelTestRequest = z.infer<
-  typeof AdminImageTextModelTestRequestSchema
->;
+export type AdminImageTextModelTestRequest = z.infer<typeof AdminImageTextModelTestRequestSchema>;
 
 export interface AdminImageTextModelTestResponse {
   ok: true;

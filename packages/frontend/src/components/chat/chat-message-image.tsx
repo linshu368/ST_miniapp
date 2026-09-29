@@ -9,10 +9,30 @@ import type {
   MessageImageState,
 } from '@miniapp/shared';
 import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
+import {
+  formatMediaAttemptBillingLabel,
+  formatMediaBillingPreview,
+} from '@/components/chat/media-billing-label';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  captureImageCustomPromptOpened,
+  captureImageDescriptionFailed,
+  captureImageDescriptionPresented,
+  captureImageDescriptionRequested,
+  captureImageEntrySelected,
+  captureImageGenerationSubmitFailed,
+  captureImageGenerationSubmitted,
+  captureImagePreviewOpened,
+  captureImageSaveCompleted,
+  captureImageSaveFailed,
+  captureImageSaveRequested,
+  useImageStatusTelemetry,
+  type ImageTelemetryContext,
+} from '@/lib/image-generation/telemetry';
 import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
+import { billingFailureAction, MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 
 type PromptSource = CreateMessageImageRequest['prompt_source'];
 
@@ -21,9 +41,12 @@ export interface MessageImageUiState {
   /** 最新回复可首次生成；已有图片记录的历史回复也可重试或重新生成。 */
   canGenerate: boolean;
   config: GetImageConfigData | undefined;
+  billingRefreshing: boolean;
+  billingError: boolean;
   describe: () => Promise<{ draftId: string; prompt: string }>;
   create: (request: CreateMessageImageRequest) => Promise<void>;
   onRecharge: () => void;
+  telemetry: ImageTelemetryContext;
 }
 
 export function ChatMessageImageFooter({
@@ -53,8 +76,26 @@ export function ChatMessageImageFooter({
   const current = image?.image?.current ?? null;
   const ready = current?.status === 'ready' ? current : null;
   const busy = latest?.status === 'pending' || latest?.status === 'generating';
-  const priceLabel = image?.config?.billing.enabled ? image.config.billing.price_label : '';
+  const generationEnabled = image?.config?.enabled !== false;
+  const failedAttempt =
+    latest?.status === 'failed' || latest?.status === 'failed_unknown' ? latest : null;
+  const priceLabel =
+    failedAttempt && (stage === 'failed' || stage === 'confirming')
+      ? formatMediaAttemptBillingLabel(
+          failedAttempt,
+          image?.config?.tier.next_billing.free_trial_limit,
+          true
+        )
+      : formatMediaBillingPreview(
+          image?.config?.tier.next_billing,
+          image?.billingRefreshing ?? true,
+          image?.billingError ?? false,
+          true
+        );
   const maxChars = image?.config?.limits.max_prompt_chars ?? MAX_IMAGE_PROMPT_CHARS;
+  const telemetry = image?.telemetry ?? null;
+
+  useImageStatusTelemetry(telemetry, latest);
 
   const failureHint = useMemo(() => {
     const code = latest?.error_code;
@@ -96,6 +137,14 @@ export function ChatMessageImageFooter({
   if (!image) return children ? children(null) : null;
 
   const openDefaultFlow = async () => {
+    if (telemetry) {
+      captureImageEntrySelected({
+        context: telemetry,
+        entrySource: 'default',
+        latestStatus: latest?.status,
+        hasReadyImage: Boolean(ready),
+      });
+    }
     // config 尚在加载时不能误判为关闭；真正是否受理由后端继续做权威校验。
     if (image.config?.enabled === false) {
       setError('图片生成功能暂未开放');
@@ -109,19 +158,39 @@ export function ChatMessageImageFooter({
     setSheetOpen(true);
     setError('');
     setStage('describing');
+    const startedAt = Date.now();
+    if (telemetry) captureImageDescriptionRequested(telemetry);
     try {
       const description = await image.describe();
       setDraftId(description.draftId);
       setPrompt(description.prompt);
       setSource('generated');
       setStage('confirming');
+      if (telemetry) {
+        captureImageDescriptionPresented({
+          context: telemetry,
+          attemptId: description.draftId,
+          promptChars: description.prompt.length,
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '这次没有写出合适的画面描述');
       setStage('failed');
+      if (telemetry) {
+        captureImageDescriptionFailed({ context: telemetry, error: err, startedAt });
+      }
     }
   };
 
   const openRetryFlow = () => {
+    if (telemetry) {
+      captureImageEntrySelected({
+        context: telemetry,
+        entrySource: 'retry',
+        latestStatus: latest?.status,
+        hasReadyImage: Boolean(ready),
+      });
+    }
     generationStartedRef.current = false;
     setDraftId(null);
     setPrompt(latest?.prompt_cn ?? '');
@@ -132,6 +201,9 @@ export function ChatMessageImageFooter({
   };
 
   const openCustomFlow = () => {
+    if (telemetry) {
+      captureImageCustomPromptOpened({ context: telemetry, entrySource: 'custom_edit' });
+    }
     setSource('custom');
     setError('');
     setStage('confirming');
@@ -140,8 +212,10 @@ export function ChatMessageImageFooter({
   const saveImage = async () => {
     if (!ready?.image_url || saveState === 'saving') return;
 
+    if (telemetry) captureImageSaveRequested({ context: telemetry, attempt: ready });
     setSaveState('saving');
     setSaveError('');
+    const startedAt = Date.now();
     try {
       const pathname = new URL(ready.image_url).pathname;
       const extension = pathname.match(/\.(png|jpe?g|webp)$/i)?.[1]?.toLowerCase() ?? 'png';
@@ -152,12 +226,22 @@ export function ChatMessageImageFooter({
       if (!requested) {
         setSaveState('failed');
         setSaveError('当前 Telegram 版本暂不支持文件下载，请升级后重试');
+        if (telemetry) {
+          captureImageSaveFailed({
+            context: telemetry,
+            attempt: ready,
+            startedAt,
+            failureKind: 'business',
+          });
+        }
         return;
       }
       setSaveState('saved');
+      if (telemetry) captureImageSaveCompleted({ context: telemetry, attempt: ready, startedAt });
     } catch {
       setSaveState('failed');
       setSaveError('图片保存未完成，请重试');
+      if (telemetry) captureImageSaveFailed({ context: telemetry, attempt: ready, startedAt });
     }
   };
 
@@ -174,6 +258,14 @@ export function ChatMessageImageFooter({
     setError('');
     generationStartedRef.current = true;
     setStage('creating');
+    const startedAt = Date.now();
+    if (telemetry) {
+      captureImageGenerationSubmitted({
+        context: telemetry,
+        promptSource: source,
+        promptChars: value.length,
+      });
+    }
     try {
       await image.create({
         ...(draftId ? { draft_id: draftId } : {}),
@@ -185,7 +277,27 @@ export function ChatMessageImageFooter({
     } catch (err) {
       generationStartedRef.current = false;
       const candidate = err as { code?: string; status?: number; message?: string };
-      if (candidate.status === 402 || candidate.code === 'insufficient_balance') {
+      const action = billingFailureAction(candidate.code);
+      if (telemetry) {
+        captureImageGenerationSubmitFailed({
+          context: telemetry,
+          promptSource: source,
+          promptChars: value.length,
+          error: err,
+          startedAt,
+        });
+      }
+      if (action.type === 'main_wallet') {
+        setStage('failed');
+        setError(MAIN_WALLET_NOTICE);
+        return;
+      }
+      if (action.type === 'unavailable') {
+        setStage('failed');
+        setError('这个图片档位暂不可用');
+        return;
+      }
+      if (candidate.status === 402 || action.type === 'recharge') {
         setStage('insufficient');
         setError('星尘余额不足，请先充值后再生成。');
         return;
@@ -200,19 +312,21 @@ export function ChatMessageImageFooter({
       <Loader2 className="size-3.5 animate-spin" aria-hidden />
       正在出图
     </span>
-  ) : image.canGenerate ? (
-    <button
-      type="button"
-      onClick={() =>
-        latest?.status === 'failed' || latest?.status === 'failed_unknown'
-          ? openRetryFlow()
-          : void openDefaultFlow()
-      }
-      className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
-    >
-      <Eye className="size-3.5" aria-hidden />
-      {latest?.status === 'failed' || latest?.status === 'failed_unknown' ? '重试出图' : '看看TA'}
-    </button>
+  ) : image.canGenerate && generationEnabled ? (
+    <span className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() =>
+          latest?.status === 'failed' || latest?.status === 'failed_unknown'
+            ? openRetryFlow()
+            : void openDefaultFlow()
+        }
+        className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-secondary"
+      >
+        <Eye className="size-3.5" aria-hidden />
+        {latest?.status === 'failed' || latest?.status === 'failed_unknown' ? '重试出图' : '看看TA'}
+      </button>
+    </span>
   ) : null;
 
   return (
@@ -225,6 +339,7 @@ export function ChatMessageImageFooter({
           onClick={() => {
             setSaveState('idle');
             setSaveError('');
+            if (telemetry) captureImagePreviewOpened({ context: telemetry, attempt: ready });
             setViewerOpen(true);
           }}
           className="group relative ml-2 block w-full max-w-[224px] overflow-hidden rounded-xl border border-border bg-card text-left"
@@ -244,16 +359,15 @@ export function ChatMessageImageFooter({
         </button>
       ) : null}
 
-      {ready && image.canGenerate ? (
+      {ready && image.canGenerate && generationEnabled ? (
         <div className="ml-2 space-y-1.5 text-[11px]">
-          <button
-            type="button"
-            onClick={() => void openDefaultFlow()}
-            className="flex items-center gap-1.5 text-primary"
-          >
-            <Eye className="size-3.5" aria-hidden />
-            重新生成{priceLabel ? ` · ${priceLabel}` : ''}
-          </button>
+          <p className="text-muted-foreground">
+            {formatMediaAttemptBillingLabel(
+              ready,
+              image.config?.tier.next_billing.free_trial_limit,
+              true
+            )}
+          </p>
           <p className="border-l border-border pl-2 text-muted-foreground">
             已按你确认的描述生成，再点一次「看看TA」可以换一张。
           </p>
@@ -293,8 +407,8 @@ export function ChatMessageImageFooter({
                 <div className="h-1 overflow-hidden rounded-full bg-secondary">
                   <div className="h-full w-3/5 animate-pulse rounded-full bg-primary" />
                 </div>
-                <div className="flex justify-between text-[11px] text-muted-foreground">
-                  <span>本次消耗 {priceLabel || '星尘'}</span>
+                <div className="flex justify-between gap-3 text-[11px] text-muted-foreground">
+                  <span>生成完成后更新费用与额度</span>
                   <span>失败不消耗</span>
                 </div>
                 <button
@@ -353,8 +467,8 @@ export function ChatMessageImageFooter({
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div>
+              <div className="flex max-h-[calc(86vh-44px)] flex-col gap-3">
+                <div className="shrink-0">
                   <SheetTitle className="text-[17px] font-bold">
                     {source === 'generated' ? 'TA 此刻的样子' : '改成你想要的样子'}
                   </SheetTitle>
@@ -362,48 +476,57 @@ export function ChatMessageImageFooter({
                     {source === 'generated' ? '' : '写完直接出图，系统不会替换或补充你写的内容。'}
                   </SheetDescription>
                 </div>
-                {source === 'generated' ? (
-                  <p className="min-h-[78px] rounded-xl border border-border bg-background/40 px-3 py-3 text-[14px] leading-relaxed text-foreground">
-                    {prompt}
-                  </p>
-                ) : (
-                  <Textarea
-                    value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    maxLength={maxChars}
-                    rows={5}
-                    autoFocus
-                    className="resize-none bg-background/40 text-[14px] leading-relaxed"
-                  />
-                )}
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>{source === 'custom' ? `共 ${prompt.trim().length} 字` : ''}</span>
-                  <span>上限 {maxChars} 字</span>
-                </div>
-                {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
-                <button
-                  type="button"
-                  onClick={() => void submit()}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
-                >
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                   {source === 'generated' ? (
-                    <Check className="size-4" aria-hidden />
+                    <p className="min-h-[78px] rounded-xl border border-border bg-background/40 px-3 py-3 text-[14px] leading-relaxed text-foreground">
+                      {prompt}
+                    </p>
                   ) : (
-                    <ImageIcon className="size-4" aria-hidden />
+                    <Textarea
+                      value={prompt}
+                      onChange={(event) => setPrompt(event.target.value)}
+                      maxLength={maxChars}
+                      rows={5}
+                      autoFocus
+                      className="min-h-[148px] resize-none bg-background/40 text-[14px] leading-relaxed"
+                    />
                   )}
-                  {source === 'generated' ? '确认，生成图片' : '按我写的生成图片'}
-                  {priceLabel ? ` · ${priceLabel}` : ''}
-                </button>
-                {source === 'generated' ? (
+                </div>
+                <div className="shrink-0 space-y-3">
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>{source === 'custom' ? `共 ${prompt.trim().length} 字` : ''}</span>
+                    <span>上限 {maxChars} 字</span>
+                  </div>
+                  {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
+                  {priceLabel ? (
+                    <div className="flex min-h-8 w-full items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] font-semibold leading-snug text-emerald-400">
+                      <Check className="size-3.5 shrink-0" aria-hidden />
+                      <span>{priceLabel}</span>
+                    </div>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={openCustomFlow}
-                    className="w-full rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground"
+                    onClick={() => void submit()}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
                   >
-                    我来改改
+                    {source === 'generated' ? (
+                      <Check className="size-4" aria-hidden />
+                    ) : (
+                      <ImageIcon className="size-4" aria-hidden />
+                    )}
+                    {source === 'generated' ? '确认，生成图片' : '按我写的生成图片'}
                   </button>
-                ) : null}
-                <p className="text-center text-[11px] text-muted-foreground">出图失败不消耗</p>
+                  {source === 'generated' ? (
+                    <button
+                      type="button"
+                      onClick={openCustomFlow}
+                      className="w-full rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground"
+                    >
+                      我来改改
+                    </button>
+                  ) : null}
+                  <p className="text-center text-[11px] text-muted-foreground">出图失败不消耗</p>
+                </div>
               </div>
             )}
           </div>

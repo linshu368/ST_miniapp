@@ -1,0 +1,6 @@
+{"file":".trellis/spec/admin/app/index.md","reason":"检查新内部 SPA 的鉴权、环境、UI与构建"}
+{"file":".trellis/spec/backend/app/index.md","reason":"检查生成、任务、错误、日志和测试规则"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"检查契约兼容、校验和消费者影响"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"检查 schema、RLS/grants、迁移与恢复"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查跨层失败路径和边界完整性"}
+{"file":".trellis/tasks/09-11-batch-lab-platform-planning/research/current-state.md","reason":"核对规划依据与明确不存在的能力"}

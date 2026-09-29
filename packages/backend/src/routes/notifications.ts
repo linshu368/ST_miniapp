@@ -2,10 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import {
   fail,
   ok,
+  VipExpiryNotificationMetadataSchema,
+  type GetNotificationDetailData,
   type GetNotificationsData,
   type MarkNotificationsReadData,
   type MarkNotificationsReadRequest,
   type NotificationItem,
+  type NotificationKind,
   type NotificationScope,
   type NotificationUnreadCountData,
 } from '@miniapp/shared';
@@ -19,6 +22,9 @@ import { getOrCreateDbUser } from '../lib/user.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const READ_ID_LIMIT = 20;
+const NOTIFICATION_COLUMNS =
+  'id,scope,category,title,body,published_at,created_at,user_id,kind,action_path,metadata';
 
 interface NotificationRow {
   id: string;
@@ -28,9 +34,14 @@ interface NotificationRow {
   body: string;
   published_at: string | null;
   created_at: string;
+  user_id: string | null;
+  kind: string | null;
+  action_path: string | null;
+  metadata: unknown;
 }
 
 export default async function notificationRoutes(app: FastifyInstance) {
+  // @frontend-ready: true
   app.get('/api/notifications', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     const query = request.query as { scope?: string; cursor?: string };
@@ -41,7 +52,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
     const db = getDomainDb('miniapp_features');
     let builder = db
       .from('notifications')
-      .select('id,scope,category,title,body,published_at,created_at')
+      .select(NOTIFICATION_COLUMNS)
       .eq('scope', scope)
       .eq('is_published', true)
       .is('deleted_at', null)
@@ -55,7 +66,10 @@ export default async function notificationRoutes(app: FastifyInstance) {
     if (query.cursor) builder = builder.lt('created_at', query.cursor);
 
     const { data, error } = await builder;
-    if (error) throw new Error(`读取消息失败：${error.message}`);
+    if (error) {
+      request.log.error({ err: error, event: 'notification.list_failed' }, '读取消息失败');
+      throw new Error('读取消息失败');
+    }
     const rows = (data ?? []) as NotificationRow[];
     const page = rows.slice(0, 20);
     const readIds = await listReadIds(
@@ -71,6 +85,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
     );
   });
 
+  // @frontend-ready: true
   app.get(
     '/api/notifications/unread-count',
     { preHandler: [requireTelegramAuth] },
@@ -87,6 +102,8 @@ export default async function notificationRoutes(app: FastifyInstance) {
     }
   );
 
+  // @frontend-ready: true
+  // 打开列表不能批量已读。ids 是唯一写入目标，重复调用只保持已读。
   app.post(
     '/api/notifications/read',
     { preHandler: [requireTelegramAuth] },
@@ -99,12 +116,8 @@ export default async function notificationRoutes(app: FastifyInstance) {
         if (!parsed) return reply.status(400).send(fail('INVALID_SCOPE', '消息分类无效'));
         scope = parsed;
       }
-      const ids = Array.isArray(body.ids)
-        ? [...new Set(body.ids.filter((id) => UUID_RE.test(id)))]
-        : [];
-      if (!scope && ids.length === 0) {
-        return reply.status(400).send(fail('INVALID_READ_TARGET', '请选择要标记的消息'));
-      }
+      const ids = normalizeReadIds(body.ids);
+      if (!ids) return reply.status(400).send(fail('INVALID_READ_TARGET', '请选择要标记的消息'));
 
       const user = await getOrCreateDbUser(request.user);
       const visibleIds = await listVisibleIds(user.id, scope, ids);
@@ -119,10 +132,56 @@ export default async function notificationRoutes(app: FastifyInstance) {
           })),
           { onConflict: 'notification_id,user_id' }
         );
-      if (error) throw new Error(`标记消息已读失败：${error.message}`);
+      if (error) {
+        request.log.error({ err: error, event: 'notification.read_failed' }, '标记消息已读失败');
+        throw new Error('标记消息已读失败');
+      }
       return reply.send(ok<MarkNotificationsReadData>({ marked: visibleIds.length }));
     }
   );
+
+  // @frontend-ready: true
+  app.get(
+    '/api/notifications/:id',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const { id } = request.params as { id: string };
+      if (!UUID_RE.test(id)) {
+        return reply.status(400).send(fail('INVALID_NOTIFICATION_ID', '消息不存在'));
+      }
+
+      const user = await getOrCreateDbUser(request.user);
+      const { data, error } = await getDomainDb('miniapp_features')
+        .from('notifications')
+        .select(NOTIFICATION_COLUMNS)
+        .eq('id', id)
+        .eq('is_published', true)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (error) {
+        request.log.error({ err: error, event: 'notification.detail_failed' }, '读取消息详情失败');
+        throw new Error('读取消息详情失败');
+      }
+      const row = data as NotificationRow | null;
+      if (!row || !isNotificationVisibleToUser(row, user.id)) {
+        return reply.status(404).send(fail('NOTIFICATION_NOT_FOUND', '消息不存在'));
+      }
+      const readIds = await listReadIds(user.id, [row.id]);
+      return reply.send(
+        ok<GetNotificationDetailData>({
+          notification: mapNotification(row, readIds.has(row.id)),
+        })
+      );
+    }
+  );
+}
+
+function normalizeReadIds(ids: MarkNotificationsReadRequest['ids']): string[] | null {
+  if (!Array.isArray(ids)) return null;
+  const unique = [...new Set(ids.filter((id) => UUID_RE.test(id)))];
+  if (unique.length === 0 || unique.length > READ_ID_LIMIT) return null;
+  return unique;
 }
 
 async function listReadIds(userId: string, ids: string[]): Promise<Set<string>> {
@@ -132,7 +191,7 @@ async function listReadIds(userId: string, ids: string[]): Promise<Set<string>> 
     .select('notification_id')
     .eq('user_id', userId)
     .in('notification_id', ids);
-  if (error) throw new Error(`读取消息状态失败：${error.message}`);
+  if (error) throw new Error('读取消息状态失败');
   return new Set((data ?? []).map((row) => String(row.notification_id)));
 }
 
@@ -149,7 +208,7 @@ async function countUnread(userId: string, scope: NotificationScope): Promise<nu
       ? query.or(`user_id.is.null,user_id.eq.${userId}`)
       : query.eq('user_id', userId);
   const { data, error } = await query;
-  if (error) throw new Error(`读取未读消息失败：${error.message}`);
+  if (error) throw new Error('读取未读消息失败');
   const ids = (data ?? []).map((row) => String(row.id));
   return selectUnreadIds(ids, await listReadIds(userId, ids)).length;
 }
@@ -164,11 +223,11 @@ async function listVisibleIds(
     .from('notifications')
     .select('id,scope,user_id')
     .eq('is_published', true)
-    .is('deleted_at', null);
+    .is('deleted_at', null)
+    .in('id', ids);
   if (scope) query = query.eq('scope', scope);
-  if (ids.length > 0) query = query.in('id', ids);
   const { data, error } = await query;
-  if (error) throw new Error(`读取消息失败：${error.message}`);
+  if (error) throw new Error('读取消息失败');
   return (data ?? [])
     .filter((row) =>
       isNotificationVisibleToUser(
@@ -180,9 +239,19 @@ async function listVisibleIds(
 }
 
 function mapNotification(row: NotificationRow, isRead: boolean): NotificationItem {
+  const metadata = VipExpiryNotificationMetadataSchema.safeParse(row.metadata);
+  const kind: NotificationKind | null = row.kind === 'vip_expiry' ? 'vip_expiry' : null;
   return {
-    ...row,
+    id: row.id,
+    scope: row.scope,
+    category: row.category,
+    title: row.title,
+    body: row.body,
     published_at: row.published_at ?? row.created_at,
+    created_at: row.created_at,
     is_read: isRead,
+    kind,
+    action_path: typeof row.action_path === 'string' ? row.action_path : null,
+    metadata: metadata.success ? metadata.data : null,
   };
 }

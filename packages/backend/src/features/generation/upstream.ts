@@ -20,8 +20,8 @@ export const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY
 /** OpenAI 兼容子路径，聊天生成固定打这一条 */
 export const CHAT_COMPLETIONS_PATH = '/chat/completions';
 
-export function resolveUpstreamUrl(subPath: string): string {
-  return `${LLM_UPSTREAM_URL}${subPath}`;
+export function resolveUpstreamUrl(subPath: string, baseUrl = LLM_UPSTREAM_URL): string {
+  return `${baseUrl.replace(/\/+$/, '')}${subPath}`;
 }
 
 /** 注入平台真实 API key 后转发。失败原样抛出，由调用方决定是 502 还是 upstream_error。 */
@@ -30,10 +30,11 @@ export async function forwardToUpstream(input: {
   method: string;
   body?: BodyInit | undefined;
   signal?: AbortSignal;
+  apiKey?: string;
 }): Promise<Response> {
   const forwardHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${LLM_API_KEY}`,
+    Authorization: `Bearer ${input.apiKey ?? LLM_API_KEY}`,
     'HTTP-Referer': 'http://localhost:3000',
     'X-Title': 'ST_miniAPP',
   };

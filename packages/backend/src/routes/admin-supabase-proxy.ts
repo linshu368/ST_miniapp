@@ -256,7 +256,9 @@ export default async function adminSupabaseProxyRoutes(app: FastifyInstance) {
 
     const parsed = AdminImageTextModelTestRequestSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.status(400).send(fail('BAD_REQUEST', '请填写有效的 HTTPS URL、API Key 和模型名称'));
+      return reply
+        .status(400)
+        .send(fail('BAD_REQUEST', '请填写有效的 HTTPS URL、API Key 和模型名称'));
     }
 
     const startedAt = Date.now();

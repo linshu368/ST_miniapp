@@ -12,6 +12,12 @@ import type { RequestLogger } from '../../lib/logger.js';
  */
 export type GenerationLogger = RequestLogger;
 
+/** 受理这一轮时读到的 VIP 资格。之后的报价和 sync 都用它，不再重读。 */
+export interface ResolvedTextEntitlement {
+  active: boolean;
+  validUntil: string | null;
+}
+
 /** 已解析的权威模型。 */
 export interface ResolvedModel {
   /** 模型目录的 stable id */
@@ -20,6 +26,7 @@ export interface ResolvedModel {
   openRouterModelId: string;
   tier: 'light' | 'standard' | 'premium' | null;
   isFree: boolean;
+  entitlement: ResolvedTextEntitlement;
 }
 
 export interface GenerationMessage {
@@ -92,6 +99,11 @@ export interface GenerationResult {
     creditsRequired: number;
     creditsAvailable: number;
   };
+  /**
+   * 调用方绕过解析、直接拿着已过期的标准/旗舰进来时失败关闭。
+   * 正常对话会在开轮前把选择改回轻量，走不到这里。
+   */
+  denial?: 'vip_required';
 }
 
 export interface GenerationService {

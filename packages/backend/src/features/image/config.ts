@@ -1,12 +1,21 @@
-import { MAX_IMAGE_PROMPT_CHARS, type GetImageConfigData } from '@miniapp/shared';
+import {
+  DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
+  MAX_IMAGE_PROMPT_CHARS,
+  resolveFeatureFreeTrialLimit,
+  type FeatureFreeTrialQuotaView,
+  type GetImageConfigData,
+} from '@miniapp/shared';
 import { fetchRuntimeConfigEntries } from '../../platform/runtime-config.js';
 import { config } from '../../platform/config.js';
+import { DEFAULT_IMAGE_DESCRIPTION_SYSTEM_PROMPT } from '../generation/image-upstream.js';
+import { quoteVipMediaPrice } from '../vip/media-pricing.js';
 
 const IMAGE_KEYS = [
   'image_generation_enabled',
   'image_generation_credits',
   'image_price_label',
   'image_default_art_style',
+  'image_description_system_prompt',
   'image_width',
   'image_height',
   'image_max_prompt_chars',
@@ -24,6 +33,7 @@ export interface ImageRuntimeConfig {
   creditsPerGeneration: number;
   priceLabel: string;
   defaultArtStyle: string;
+  descriptionSystemPrompt: string;
   width: number;
   height: number;
   maxPromptChars: number;
@@ -51,6 +61,10 @@ export async function getImageRuntimeConfig(): Promise<ImageRuntimeConfig> {
     creditsPerGeneration: readPositiveInteger(entries.get('image_generation_credits')?.value, 50),
     priceLabel: readString(entries.get('image_price_label')?.value, '50 星尘'),
     defaultArtStyle: readString(entries.get('image_default_art_style')?.value, ''),
+    descriptionSystemPrompt: readString(
+      entries.get('image_description_system_prompt')?.textValue,
+      DEFAULT_IMAGE_DESCRIPTION_SYSTEM_PROMPT
+    ),
     width: readPositiveInteger(entries.get('image_width')?.value, 1024),
     height: readPositiveInteger(entries.get('image_height')?.value, 1536),
     maxPromptChars: readPositiveInteger(
@@ -96,26 +110,130 @@ export function resolveImageTextModelConfig(value: unknown): ImageTextModelConfi
 }
 
 export function toImageConfigData(config: ImageRuntimeConfig): GetImageConfigData {
+  return toUserImageConfigData({
+    config,
+    basicFreeTrial: emptyBasicImageFreeTrialQuota(),
+    vipActive: false,
+    discountRate: 1,
+  });
+}
+
+export function toUserImageConfigData(input: {
+  config: ImageRuntimeConfig;
+  basicFreeTrial: FeatureFreeTrialQuotaView;
+  vipActive: boolean;
+  discountRate: number;
+}): GetImageConfigData {
+  const { config: imageConfig, basicFreeTrial, vipActive, discountRate } = input;
+  const basicBillingMode = imageConfig.enabled
+    ? basicFreeTrial.free_trials_remaining > 0
+      ? 'free_trial'
+      : 'paid'
+    : 'legacy_free';
+  const basicQuote = quoteVipMediaPrice({
+    originalCredits: imageConfig.creditsPerGeneration,
+    originalPriceLabel: imageConfig.priceLabel,
+    vipActive,
+    discountRate,
+    isFreeTrial: basicBillingMode !== 'paid',
+  });
+  const basicProviderConfigured = Boolean(
+    imageConfig.enabled &&
+    config.image.liaobotsAuth &&
+    config.image.liaobotsBase &&
+    config.image.grokModel
+  );
   return {
-    enabled: config.enabled,
+    enabled: imageConfig.enabled,
     billing: {
-      enabled: config.enabled,
-      credits_per_generation: config.creditsPerGeneration,
-      price_label: config.priceLabel,
+      enabled: imageConfig.enabled,
+      credits_per_generation: imageConfig.creditsPerGeneration,
+      price_label: imageConfig.priceLabel,
+    },
+    tier: {
+      tier: 'basic',
+      enabled: imageConfig.enabled,
+      available: basicProviderConfigured,
+      billing: {
+        enabled: imageConfig.enabled,
+        credits_per_generation: basicQuote.payableCredits,
+        price_label: basicQuote.priceLabel,
+      },
+      wallet_policy: 'main_only',
+      requires_vip: false,
+      free_trial: basicFreeTrial,
+      next_billing: {
+        billing_mode: basicBillingMode,
+        wallet_policy: 'main_only',
+        price_credits: basicQuote.payableCredits,
+        price_label: basicQuote.priceLabel,
+        free_trial_limit: basicFreeTrial.free_trial_limit,
+        free_trial_ordinal: imageConfig.enabled ? basicFreeTrial.next_trial_ordinal : null,
+        free_trials_remaining: imageConfig.enabled ? basicFreeTrial.free_trials_remaining : null,
+      },
+      locked_reason: null,
     },
     limits: {
-      max_prompt_chars: config.maxPromptChars,
-      width: config.width,
-      height: config.height,
-      max_output_bytes: config.maxOutputBytes,
+      max_prompt_chars: imageConfig.maxPromptChars,
+      width: imageConfig.width,
+      height: imageConfig.height,
+      max_output_bytes: imageConfig.maxOutputBytes,
     },
     hints: {
-      prompt_policy: config.promptPolicy,
-      prompt_over_limit: config.promptOverLimitHint,
-      description_failed: config.descriptionFailedHint,
-      generation_failed: config.generationFailedHint,
-      failed_unknown: config.failedUnknownHint,
+      prompt_policy: imageConfig.promptPolicy,
+      prompt_over_limit: imageConfig.promptOverLimitHint,
+      description_failed: imageConfig.descriptionFailedHint,
+      generation_failed: imageConfig.generationFailedHint,
+      failed_unknown: imageConfig.failedUnknownHint,
     },
+  };
+}
+
+export function getBasicImageRuntimeConfig(imageConfig: ImageRuntimeConfig): {
+  tier: 'basic';
+  creditsPerGeneration: number;
+  priceLabel: string;
+  provider: 'liaobots_grok' | 'replicate_z';
+  model: string;
+  baseUrlHost: string | null;
+  width: number;
+  height: number;
+} | null {
+  if (
+    !imageConfig.enabled ||
+    !config.image.liaobotsAuth ||
+    !config.image.liaobotsBase ||
+    !config.image.grokModel
+  ) {
+    return null;
+  }
+  return {
+    tier: 'basic',
+    creditsPerGeneration: imageConfig.creditsPerGeneration,
+    priceLabel: imageConfig.priceLabel,
+    provider: 'liaobots_grok',
+    model: config.image.grokModel,
+    baseUrlHost: readUrlHost(config.image.liaobotsBase),
+    width: imageConfig.width,
+    height: imageConfig.height,
+  };
+}
+
+export function emptyBasicImageFreeTrialQuota(): FeatureFreeTrialQuotaView {
+  return emptyBasicImageFreeTrialQuotaForLimit(DEFAULT_FEATURE_FREE_TRIAL_LIMIT);
+}
+
+export function emptyBasicImageFreeTrialQuotaForLimit(
+  limit = DEFAULT_FEATURE_FREE_TRIAL_LIMIT
+): FeatureFreeTrialQuotaView {
+  const resolvedLimit = resolveFeatureFreeTrialLimit(limit);
+  return {
+    feature: 'basic_image',
+    free_trial_limit: resolvedLimit,
+    free_trials_used: 0,
+    free_trials_reserved: 0,
+    free_trials_remaining: resolvedLimit,
+    next_trial_ordinal: resolvedLimit > 0 ? 1 : null,
   };
 }
 
@@ -148,6 +266,14 @@ function readHttpUrl(value: unknown): string | null {
   try {
     const url = new URL(text);
     return url.protocol === 'https:' ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+function readUrlHost(value: string): string | null {
+  try {
+    return new URL(value).host;
   } catch {
     return null;
   }

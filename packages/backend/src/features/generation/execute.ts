@@ -21,6 +21,9 @@ import {
   getPricingConfig,
   type ModelBillingContext,
 } from '../../platform/model-tiers.js';
+import { getProviderPreferencesForModel } from '../../platform/provider-routing.js';
+import { readVipStrategy } from '../../platform/vip-strategy.js';
+import type { OpenRouterProviderPreferences } from '@miniapp/shared';
 import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
 import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
@@ -62,7 +65,10 @@ function isBillableReply(result: Pick<SseTapResult, 'completed' | 'content' | 'f
   return isDeliveredReply(result) && result.finishReason === 'stop';
 }
 
-function buildUpstreamBody(request: GenerationRequest): Record<string, unknown> {
+function buildUpstreamBody(
+  request: GenerationRequest,
+  providerPreferences: OpenRouterProviderPreferences | null
+): Record<string, unknown> {
   const messages: UpstreamMessage[] = request.promptCaching
     ? applyPromptCaching(request.messages, request.model.openRouterModelId)
     : request.messages.map((message) => ({ role: message.role, content: message.content }));
@@ -71,6 +77,9 @@ function buildUpstreamBody(request: GenerationRequest): Record<string, unknown> 
     model: request.model.openRouterModelId,
     messages,
     stream: request.stream,
+    // 「模型 × 供应商」路由：屏蔽 -> ignore，优先 -> order + allow_fallbacks（运营在 admin 配置）。
+    // 未命中规则的模型不带 provider 字段，交给 OpenRouter 默认路由。
+    ...(providerPreferences ? { provider: providerPreferences } : {}),
     // v1 恒为空对象（引擎不消费预设、不传采样参数），留着是为了后续接入预设采样参数时不改这里
     ...request.sampling,
   };
@@ -84,6 +93,7 @@ export async function execute(
   const chargeId = randomUUID();
   const pricing = await getPricingConfig();
   const billing = await getModelBillingContext(request.model.openRouterModelId);
+  const vipStrategy = await readVipStrategy();
 
   const finish = (result: GenerationResult): GenerationResult => {
     hooks?.onDone?.(result);
@@ -113,40 +123,53 @@ export async function execute(
     billing,
     isFreeRound: reservation.isFreeRound,
     pricing,
+    entitlement: request.model.entitlement,
+    discountRate: vipStrategy.discountRate,
+    discountConfigVersion: vipStrategy.discountVersion,
     log,
   });
 
-  const precheck = await checkWalletBalance({
-    userId: request.userId,
-    requiredAmount: plan.fixedDeduction.amount,
-    openRouterModelId: billing.openRouterModelId,
-    log,
-  });
-  if (!precheck.ok) {
-    await reservation.finalize(false);
-    return finish({
-      status: 'insufficient_balance',
-      content: '',
-      generationId: null,
-      finishReason: null,
-      chargeId: null,
-      modelId: billing.modelId,
-      modelOpenRouterId: billing.openRouterModelId,
-      balance: {
-        creditsRequired: precheck.creditsRequired,
-        creditsAvailable: precheck.creditsAvailable,
-      },
+  if (plan) {
+    if (plan.snapshot.requires_vip && !plan.snapshot.vip_active) {
+      await reservation.finalize(false);
+      return finish(failed({ denial: 'vip_required' }));
+    }
+    const precheck = await checkWalletBalance({
+      userId: request.userId,
+      requiredAmount: plan.fixedDeduction.amount,
+      walletPolicy: plan.snapshot.wallet_policy,
+      openRouterModelId: billing.openRouterModelId,
+      log,
     });
+    if (!precheck.ok) {
+      await reservation.finalize(false);
+      return finish({
+        status: 'insufficient_balance',
+        content: '',
+        generationId: null,
+        finishReason: null,
+        chargeId: null,
+        modelId: billing.modelId,
+        modelOpenRouterId: billing.openRouterModelId,
+        balance: {
+          creditsRequired: precheck.creditsRequired,
+          creditsAvailable: precheck.creditsAvailable,
+        },
+      });
+    }
   }
 
-  const saveHistory = createHistoryWriter({ request, billing, plan, log });
+  const saveHistory: SaveHistory = createHistoryWriter({ request, billing, plan, log });
+
+  // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
+  const providerPreferences = await getProviderPreferencesForModel(billing.openRouterModelId);
 
   let upstreamRes: Response;
   try {
     upstreamRes = await forwardToUpstream({
       url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH),
       method: 'POST',
-      body: JSON.stringify(buildUpstreamBody(request)),
+      body: JSON.stringify(buildUpstreamBody(request, providerPreferences)),
       signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
     });
   } catch (err) {
@@ -393,7 +416,7 @@ async function consumeNonStream(input: {
   request: GenerationRequest;
   upstreamRes: Response;
   billing: ModelBillingContext;
-  chargeId: string;
+  chargeId: string | null;
   reservation: FreeQuotaReservation;
   headerGenerationId: string | null;
   saveHistory: SaveHistory;

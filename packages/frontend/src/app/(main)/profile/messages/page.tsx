@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell, ChevronLeft, Inbox, Loader2, RefreshCw } from 'lucide-react';
 import type { NotificationItem, NotificationScope } from '@miniapp/shared';
@@ -29,24 +29,30 @@ export default function MessageCenterPage() {
   useTelegramBackButton(goBack);
 
   const [scope, setScope] = useState<NotificationScope>('official');
+  const [openError, setOpenError] = useState<string | null>(null);
   const query = useNotificationsQuery(scope);
   const markRead = useMarkNotificationsReadMutation();
   const notifications = query.data?.notifications ?? [];
+  const openingId = useRef<string | null>(null);
 
-  // 打开某个分页即视为读过该分页。按消息 id 记账而不是按分页记账：页面开着时轮询到
-  // 新公告也会被标记，否则它会一直挂着未读、把红点留在导航上。
-  const requestedRef = useRef(new Set<string>());
-  const unmarkedIds = notifications
-    .filter((item) => !item.is_read && !requestedRef.current.has(item.id))
-    .map((item) => item.id);
-  const unmarkedKey = unmarkedIds.join(',');
-  useEffect(() => {
-    if (!unmarkedKey) return;
-    for (const id of unmarkedKey.split(',')) requestedRef.current.add(id);
-    markRead.mutate({ scope });
-    // markRead 的引用每次渲染都会变，只依赖待标记集合和分页即可。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unmarkedKey, scope]);
+  const openMessage = useCallback(
+    async (item: NotificationItem) => {
+      if (openingId.current) return;
+      openingId.current = item.id;
+      setOpenError(null);
+      try {
+        if (!item.is_read) {
+          await markRead.mutateAsync({ ids: [item.id] });
+        }
+        router.push(`/profile/messages/${item.id}`);
+      } catch {
+        setOpenError('暂时无法打开这条消息');
+      } finally {
+        openingId.current = null;
+      }
+    },
+    [markRead, router]
+  );
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col bg-background text-foreground">
@@ -117,16 +123,43 @@ export default function MessageCenterPage() {
         ) : notifications.length === 0 ? (
           <EmptyState scope={scope} />
         ) : (
-          notifications.map((item) => <MessageCard key={item.id} item={item} />)
+          <>
+            {openError ? (
+              <p role="alert" className="text-center text-[12px] text-destructive">
+                {openError}
+              </p>
+            ) : null}
+            {notifications.map((item) => (
+              <MessageCard
+                key={item.id}
+                item={item}
+                pending={markRead.isPending && markRead.variables?.ids?.[0] === item.id}
+                onOpen={() => void openMessage(item)}
+              />
+            ))}
+          </>
         )}
       </section>
     </main>
   );
 }
 
-function MessageCard({ item }: { item: NotificationItem }) {
+function MessageCard({
+  item,
+  pending,
+  onOpen,
+}: {
+  item: NotificationItem;
+  pending: boolean;
+  onOpen: () => void;
+}) {
   return (
-    <article className="rounded-[22px] border border-border bg-card px-4 py-3.5">
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={pending}
+      className="rounded-[22px] border border-border bg-card px-4 py-3.5 text-left transition hover:border-primary/25 disabled:opacity-70"
+    >
       <div className="flex items-center justify-between gap-3">
         <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
           {CATEGORY_LABELS[item.category]}
@@ -147,10 +180,10 @@ function MessageCard({ item }: { item: NotificationItem }) {
         )}
         <span>{item.title}</span>
       </h2>
-      <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground">
+      <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground">
         {item.body}
       </p>
-    </article>
+    </button>
   );
 }
 

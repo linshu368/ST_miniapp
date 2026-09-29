@@ -8,9 +8,9 @@
 | `conversations.ts`                         | 会话 CRUD、消息 SSE、重生成、generation config；conversation/engine/generation |
 | `voice.ts` / `models.ts`                   | 语音配置、会话音频、语音生成；模型档位/目录/选择                               |
 | `settings.ts` / `wallet.ts`                | 用户昵称头像偏好；余额、流水、签到                                             |
-| `payment.ts` / `wishes.ts`                 | 套餐、下单、订单查询/回调；许愿状态、创建、完成                                |
+| `payment.ts` / `vip.ts` / `wishes.ts`      | 套餐、下单、订单查询/回调；VIP 状态与入口角标；许愿状态、创建、完成            |
 | `telemetry.ts`                             | 受鉴权 replay context；支付终态事件在 feature 层异步发送                       |
-| `notifications.ts` / `support.ts`          | 消息中心；MiniApp 客服会话、消息、已读/未读                                    |
+| `notifications.ts` / `support.ts`          | 消息列表、单条详情和按 id 已读；MiniApp 客服会话、消息、已读/未读              |
 | `cs-platform.ts`                           | Telegram 回访、画像、群发、导出等内部 API                                      |
 | `invite.ts` / `growth.ts` / `community.ts` | 邀请绑定/统计；渠道归因；官方群验证与奖励                                      |
 | `bot.ts`                                   | Telegram webhook、start 与回复回流                                             |
@@ -37,7 +37,7 @@
 
 ### 支付、语音与增长
 
-- 支付：`route → RechargeUseCase → repository + gateway`；回调/主动查询统一进入 `PaymentSettlement`。业务/provider transaction id 是幂等键；状态迁移和钱包入账必须原子或可安全重放。
+- 支付：`route → RechargeUseCase → repository + gateway`；回调/主动查询统一进入 `PaymentSettlement`。VIP 与星尘订单都在这里履约，商品条款取下单时快照。业务/provider transaction id 是幂等键；状态迁移和钱包入账必须原子或可安全重放。
 - 语音：`route → ownership → draft/text/prompt → DeepSeek（按需）→ MiniMax → Storage → audio repository`。上游有超时；同消息并发生成不得产生不受控重复写入。
 - 邀请/归因/社群：入口码先校验，绑定和奖励依赖原子 RPC；Telegram webhook 校验 secret，处理重复 update，区分业务终态与可重试网络失败。
 
