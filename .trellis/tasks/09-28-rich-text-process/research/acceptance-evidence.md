@@ -43,4 +43,9 @@
 - 自动验证：Admin typecheck 通过；Admin Vitest 12 文件/87 测试通过；Admin production build 通过（仅有 Vite 大 chunk 警告）；`pnpm lint:imports`、定向 Prettier 与 `git diff --check` 通过。
 - 已验证边界：快捷键与顶部保存复用既有 mutation gate；发布仍在本地未保存时禁用；预览继续使用现有 Worker/ReplyRenderer，选项仅本地模拟，不调用模型或业务写接口。现有 store/session、环境隔离、viewer 只读、CAS/未知请求查询与错误保留逻辑未替换。
 - 未验：本地 Vite 页面只确认可达登录页，未输入凭据或绕过登录，故未完成登录后 DOM、键盘焦点、实际 1440/900/375/320 布局与 viewer/环境切换的人机检查；真实保存、发布、回滚、历史分页、CAS/超时/结果未知的远端行为仍未授权。Demo 本地 URL 的浏览器安全策略拒绝仍未绕过，只有源码对照，不能声称像素级视觉验收通过。T6R 保持 Doing，待合法受控 Admin 会话或用户提供的截图/验收环境后完成这些项。
+
+## T6R Vercel Preview 增量验收（2026-09-29，TEST）
+
+- 已在 PR #364 的已登录 Admin Preview 核验：正式版本 v2、四条规则的顺序/启停/匹配数、解析 flags（含 u）、首处匹配和捕获组、五类模板 Modal、Escape 关闭与焦点返回、新版历史 Drawer、375px 预览模式及本地流式工具均可见。期间未执行保存、发布、回滚或任何业务写入。
+- 发现并修复：开始本地流式后立即重置会保留流式原文，不会再次应用同一 compiled artifact。原因是预览使用固定 `messageKey`，流式安全降级的 renderer 生命周期未在复位或完整终态切换。Admin 仅按本地流状态派生 `ReplyRenderer` key；复位或完整终态会重新渲染完整正文，不改 renderer、协议或配置状态。修复后的远端 Preview 验收待新的部署完成。
 - T7 记为主链路真机验收通过、覆盖记录待最终收口；Production 迁移与发布为独立门禁，T8 文档交付待完成。

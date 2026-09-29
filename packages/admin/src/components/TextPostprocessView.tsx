@@ -1156,6 +1156,12 @@ function PreviewColumn(props: {
   const total = [...sample].length;
   const streaming = stream.phase === 'running';
   const content = stream.phase === 'idle' ? sample : visibleSample(sample, stream.visibleUnits);
+  // 流式期间安全地显示原文；复位或完整终态需要新的 renderer 生命周期，
+  // 使同一 artifact 再次处理完整正文，而非保留流式的原文降级结果。
+  const previewRendererKey =
+    stream.phase === 'idle' || stream.visibleUnits >= total
+      ? 'admin-text-postprocess-preview-final'
+      : 'admin-text-postprocess-preview-stream';
   useEffect(() => {
     if (stream.phase !== 'running') return undefined;
     const timer = window.setInterval(() => {
@@ -1257,13 +1263,14 @@ function PreviewColumn(props: {
             data-theme={theme}
           >
             <ReplyRenderer
+              key={previewRendererKey}
               content={content}
               artifact={preview?.artifact ?? undefined}
               streaming={streaming}
               displayName={displayName}
               theme={theme}
               choiceDisabled={streaming || choice.text !== null}
-              messageKey="admin-text-postprocess-preview"
+              messageKey={previewRendererKey}
               onChoice={(next) => setChoice((current) => applyLocalChoice(current, next.text))}
             />
           </div>
