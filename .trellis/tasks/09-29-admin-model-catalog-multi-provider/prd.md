@@ -28,11 +28,19 @@
 
 ## Acceptance Criteria
 
-- [ ] 规划文件覆盖 PRD、技术设计、实施计划、任务分解和研究记录。
-- [ ] 设计列出已检索的组件、hooks、helpers、contracts、features/repositories、DB 函数和迁移校验，并说明复用/扩展/不复用理由。
-- [ ] 设计覆盖超时、有限重试、幂等、并发、事务、降级、补偿、限流、容量和可观测性，且说明不适用项。
-- [ ] 设计给出兼容旧 `openrouter_model_id` 配置的迁移与回滚/forward-fix 方案。
-- [ ] 实施计划覆盖 Admin、shared、backend、migration、Railway/env 文档、自动验证和人工回归场景。
+- [x] 规划文件覆盖 PRD、技术设计、实施计划、任务分解和研究记录。
+- [x] 设计列出已检索的组件、hooks、helpers、contracts、features/repositories、DB 函数和迁移校验，并说明复用/扩展/不复用理由。
+- [x] 设计覆盖超时、有限重试、幂等、并发、事务、降级、补偿、限流、容量和可观测性，且说明不适用项。
+- [x] 设计给出兼容旧 `openrouter_model_id` 配置的迁移与回滚/forward-fix 方案。
+- [x] 实施计划覆盖 Admin、shared、backend、migration、Railway/env 文档、自动验证和人工回归场景。
 - [ ] TEST migration 验证 Venice 明细表 shape、FK/unique、grant/RLS、级联删除、重复写幂等和回滚。
-- [ ] Venice 流式与非流式回归覆盖 prompt/completion/cached/reasoning token、价格快照、成本计算、延迟、完整元数据以及 usage 缺失降级。
-- [ ] 任务保持 `planning` 状态，不修改产品代码、不执行 `task.py start`。
+- [ ] Venice 流式与非流式回归覆盖 prompt/completion/cached/reasoning token、价格快照、成本计算、延迟、完整元数据以及 usage 缺失降级。（流式及 metadata/cost 已覆盖；非流式和 usage 缺失自动回归待补）
+- [x] 规划经确认后已执行 `task.py start` 并进入实现；原“保持 planning、不改产品代码”门禁已完成其阶段性职责。
+
+## Progress Snapshot (2026-09-29)
+
+- **总体判断：代码实现与自动验证约 90%，发布验收约 60%；任务继续保持 `in_progress`。**
+- 已完成：provider-neutral shared 契约、旧 OpenRouter 配置兼容、Admin 双 provider 编辑/目录入口、Backend Venice 目录与生成路由、provider-aware 结算、Venice 独立明细表及 usage/token/成本映射、env/架构文档。
+- 已通过：shared 100 tests；Admin 55 tests + build；Backend 全量 63 files / 533 tests，最终相关回归 4 files / 36 tests；受影响包 typecheck、root lint、legacy guard、migration filename check、`git diff --check`。
+- 尚未完成：两个 migration 在 TEST 的单文件执行与证据留档、真实 Admin OpenRouter/Venice 目录同步、真实 Venice SSE/非流式 smoke、失败场景和日志脱敏人工验收。
+- 自动测试缺口：provider directory adapter 的 401/429/5xx/invalid JSON/stale fallback 专项测试、Admin provider 切换与跨 provider 同 ID UI 回归、Venice 非流式和 usage 缺失回归；这些缺口不否定现有实现，但完成前不得把任务标记为 Done。
