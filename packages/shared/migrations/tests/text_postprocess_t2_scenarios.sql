@@ -143,6 +143,31 @@ BEGIN
     (c_viewer, 'viewer@example.com', 'viewer', true, false),
     (c_blocked, 'blocked@example.com', 'operator', false, false);
 
+  -- Supabase's postgres role is not a superuser: the dedicated SECURITY DEFINER publisher needs
+  -- an explicit INSERT grant, while the Backend's service role must still be unable to write.
+  PERFORM text_postprocess_t2.assert(
+    EXISTS (
+      SELECT 1
+      FROM pg_class AS relation
+      CROSS JOIN LATERAL aclexplode(relation.relacl) AS privilege
+      WHERE relation.oid = 'app_core.text_postprocess_versions'::regclass
+        AND privilege.grantee = 'postgres'::regrole
+        AND privilege.privilege_type = 'INSERT'
+    ),
+    'publisher owner has explicit snapshot INSERT privilege'
+  );
+  PERFORM text_postprocess_t2.assert(
+    NOT EXISTS (
+      SELECT 1
+      FROM pg_class AS relation
+      CROSS JOIN LATERAL aclexplode(relation.relacl) AS privilege
+      WHERE relation.oid = 'app_core.text_postprocess_versions'::regclass
+        AND privilege.grantee = 'service_role'::regrole
+        AND privilege.privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')
+    ),
+    'service role remains snapshot read-only'
+  );
+
   PERFORM text_postprocess_t2.expect_sqlstate(
     format(
       $q$SELECT admin.save_text_postprocess_draft(%L, %L, %L, NULL, NULL, NULL, %L, %L::jsonb)$q$,
@@ -339,8 +364,10 @@ BEGIN
     'generic upsert still writes another key'
   );
 
-  -- 专用 RPC 的写保护只活在当前事务。提交后临时表消失；这里删掉它，模拟下一条独立语句。
+  -- 专用 RPC 的写保护只活在当前事务。该场景函数把多次 RPC 放进同一事务，显式
+  -- 清掉事务本地设置以模拟下一条独立请求，再验证直接写仍被拒绝。
   DROP TABLE IF EXISTS pg_temp.text_postprocess_writer_guard;
+  PERFORM pg_catalog.set_config('admin.text_postprocess_writer_guard', 'off', true);
   PERFORM text_postprocess_t2.expect_sqlstate(
     $q$INSERT INTO app_core.text_postprocess_versions (version, source, schema_version, policy_version, published_at)
       VALUES (99, '{"schema_version":1,"policy_version":1,"rules":[]}'::jsonb, 1, 1, now())$q$,

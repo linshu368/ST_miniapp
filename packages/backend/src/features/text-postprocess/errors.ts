@@ -70,7 +70,6 @@ export function mapTextPostprocessRpcError(
   const prefix = (error.message ?? '').split(':', 1)[0]?.trim() ?? '';
   if (MUTATION_CODES.has(prefix)) return prefix as TextPostprocessMutationErrorCode;
   if (error.code === '40001') return 'cas_conflict';
-  if (error.code === '42501') return 'forbidden';
   if (error.code === 'P0002' && (error.message ?? '').includes('target_version_unavailable')) {
     return 'target_version_unavailable';
   }

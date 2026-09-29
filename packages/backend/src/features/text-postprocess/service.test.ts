@@ -306,13 +306,13 @@ describe('text postprocess mutations', () => {
     expect(fake.publish).toHaveBeenCalledTimes(2);
   });
 
-  it('hides unknown SQL text and creates rollback as a new version', async () => {
+  it('does not mistake a database privilege failure for an admin-role denial', async () => {
     const fake = use(repo());
     fake.saveDraft.mockResolvedValue({
       kind: 'database',
       error: {
-        code: '55000',
-        message: 'text postprocess version invariant broken: SECRET_TEMPLATE',
+        code: '42501',
+        message: 'permission denied for table text_postprocess_versions: SECRET_TEMPLATE',
       },
     });
     await expect(
@@ -327,6 +327,20 @@ describe('text postprocess mutations', () => {
       code: 'TEXT_POSTPROCESS_FAILED',
       message: 'Text postprocess request failed.',
     });
+
+    fake.saveDraft.mockResolvedValue({
+      kind: 'database',
+      error: { code: '42501', message: 'forbidden: operator access required' },
+    });
+    await expect(
+      saveTextPostprocessDraft(ACTOR, {
+        request_id: REQUEST,
+        expected_runtime_version: null,
+        expected_draft_updated_at: null,
+        expected_draft_digest: null,
+        source: SOURCE,
+      })
+    ).rejects.toMatchObject({ code: 'forbidden', statusCode: 403 });
 
     fake.getRequest.mockResolvedValue({ kind: 'ok', value: null });
     fake.readSnapshotSource.mockResolvedValue({

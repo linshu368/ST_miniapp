@@ -113,3 +113,10 @@ inline 模式顺序实施，不默认派发子代理。shared/index.ts、convers
 - T2/T3/T5 compiled artifact P1 阻塞已解决，证据见 `research/t2-t3-t5-artifact-evidence.md`。T3 Backend 565、T5 Frontend 216、T6 Admin 86、Shared 114、renderer 17 测试通过；全部本窗口要求的合并态命令通过。
 - T2/T3/T5/T6 保持上述 Doing 环境待办状态；总任务 in_progress。T7 可以开始离线验收准备，尚未执行 T7 功能或 TEST 验收。TEST migration/联调及 Production 仍需独立授权。
 - 当前已复核 package/lock/eslint 初始摘要未变、原 tracked/untracked 修改保留；未 commit/push/连接远端。其他窗口停止写入的确认尚待用户回复，本地进程清单不能证明远端窗口绝无写入。
+
+## 发布权限 forward-fix（2026-09-29）
+
+- TEST-DB 只读诊断：PR-364 的同一 Admin actor 能保存草稿，但发布 RPC 在 `INSERT app_core.text_postprocess_versions` 处收到 `42501 permission denied`。`20260929_fix_text_postprocess_writer_guard.sql` 已在 TEST 成功执行，问题不是 writer guard 或 Admin 角色；表 ACL 明确缺少 `postgres` 的 `INSERT`，而专用 `SECURITY DEFINER` 发布函数 owner 为 `postgres`。
+- 最小 forward-fix：新增 `20260929_grant_text_postprocess_snapshot_insert.sql`，仅授予 `postgres` 此表 `INSERT`，维持 `service_role` 的 SELECT-only 和既有不可变 trigger；不改历史 migration、不变更数据、不增加公开 API/角色或表权限。
+- Backend 只把自有 SQL 前缀 `forbidden:` 映射为 403。其他 `42501` 留在安全的通用失败边界，避免把数据库部署/ACL 故障误报成 Admin 身份不足。
+- 离线验证：PostgreSQL 17 临时集群的完整 text-postprocess migration harness 通过（fresh/replay/CAS/发布/回滚/事务/权限/直写拒绝）；Backend 568、Shared 115 测试和 Backend typecheck 通过；migration lint、ledger protocol 和 `git diff --check` 通过。默认本机 PostgreSQL 14 因不支持已有 `security_invoker` view 不用于本项。TEST 尚未执行新 forward-fix，Production 未触及。
