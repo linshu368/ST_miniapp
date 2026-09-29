@@ -4,6 +4,7 @@
 // → 上游转发与 SSE tap → 终态结算（实扣与落库）。顺序不能换：预留结果决定本轮是否免费，
 // 而定档扣费额又由该结果决定，余额预检再吃这个额度。
 
+import type { SseTapResult } from './upstream.js';
 import type { RequestLogger } from '../../lib/logger.js';
 
 /**
@@ -51,6 +52,8 @@ export interface GenerationRequest {
    */
   historyId?: string | null;
   stream: boolean;
+  /** Explicit user cancellation and the conversation deadline; disconnects do not abort. */
+  signal?: AbortSignal;
   /**
    * 是否为 Anthropic Claude 注入 OpenRouter 的 cache_control 断点（system 段 + 历史尾部），
    * 命中缓存可显著降低上游成本。这是相对现状的行为变更，因此 ST 链路必须传 false，
@@ -60,6 +63,13 @@ export interface GenerationRequest {
 }
 
 export interface GenerationHooks {
+  /** Persist the quota identity and reject a turn cancelled before quota reservation. */
+  onBeforeReserve?: (chargeId: string) => Promise<void>;
+  /** Claim persisted terminal status before any wallet/free-quota settlement. */
+  onBeforeSettle?: (
+    result: SseTapResult,
+    releaseReservation: () => Promise<void>
+  ) => Promise<SseTapResult>;
   /**
    * 上游返回 2xx、即将开始消费响应体时恰好调用一次。
    *
@@ -108,4 +118,12 @@ export interface GenerationResult {
 
 export interface GenerationService {
   execute(request: GenerationRequest, hooks?: GenerationHooks): Promise<GenerationResult>;
+}
+
+/** Quota outcome is uncertain; keep the session busy until persisted recovery succeeds. */
+export class GenerationCleanupPendingError extends Error {
+  constructor(options?: ErrorOptions) {
+    super('生成额度收口待恢复', options);
+    this.name = 'GenerationCleanupPendingError';
+  }
 }

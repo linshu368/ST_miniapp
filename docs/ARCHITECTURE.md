@@ -174,6 +174,7 @@
 | `DELETE /api/v1/conversations/:id`          | 软删（`deleted_at`）                                                         |
 | `POST /api/v1/conversations/:id/messages`   | **发消息 + SSE 流式回复**                                                    |
 | `POST /api/v1/conversations/:id/regenerate` | 重生成最后一轮，同样 SSE                                                     |
+| `POST /api/v1/conversations/:id/cancel`     | 绑定具体 assistant_message_id 取消回复，返回服务端实际终态；待确认可重试     |
 | `GET` · `PATCH /api/v1/generation-config`   | 用户生成配置读写（三个 `pref_*` + 档位表；改模型走 `/api/v1/models/select`） |
 
 SSE 事件契约定义在 `shared/src/api/conversations.ts`：`start`（带 message id / turn_index / revision）→ `delta`（增量片段，非累积）→ `done`（终态 + finish_reason），流开始后才发生的错误走 `error` 事件。
@@ -196,12 +197,19 @@ SSE 事件契约定义在 `shared/src/api/conversations.ts`：`start`（带 mess
    · 预检不过 → 收口成 insufficient_balance，路由返回 HTTP 402 JSON
    · 上游非 2xx / 连不上 → 路由返回 HTTP 502 JSON
    · 上游 2xx → onStreamOpen 回调，此时才写 SSE 响应头并下发 start 事件
-7. 边转发 delta 边累积；客户端断开不终止后端，继续 drain 到 [DONE]
-8. 终态：同步更新同一条 chat_history 的正文与状态；实扣与 OpenRouter 元数据异步补齐
+7. 边转发 delta 边累积；客户端断开不终止后端，继续 drain 到 [DONE]；显式取消通过持久化标记停止上游
+8. 终态：计费前以数据库条件更新竞争取消/正常完成；取消须先释放免费额度预留再收口
+   同一条 chat_history 的正文与状态；实扣与 OpenRouter 元数据异步补齐
    （`generation/settle.ts` 即时写 + `generation/sync-job.ts` 30 秒轮询回捞 24h 内元数据不全或结算未完成的行）
 ```
 
 **硬约束**：SSE 首字节写出之前不能有任何可能失败的判定。402（余额不足）、409（会话忙 / 不可重生成）、404 全部以 HTTP 状态码 + JSON 返回；响应头一旦发出就只能降级成流内 `error` 事件。所以响应头推迟到上游已 2xx 的 `onStreamOpen` 才写——不是等第一个 token，否则客户端要白等一整个上游首 token 延迟才能挂上占位气泡。
+
+取消契约为 `{ assistant_message_id: string }` → `{ message: ChatMessage }`（统一 envelope），只允许本人会话内对应当前回复。取消先设置 `streaming.llm_finish_reason=cancelled`，正常完成只能在没有取消标记时抢占终态；取消确认后为 `stream_interrupted`，已有正文保留，计费回捞不得覆盖取消标记并恢复扣费。取消接口有限等待；暂未确认不释放 UI 占用，允许重试。活跃生成整体截止 110 秒，预留清理余量；详情查询与开轮前按 120 秒回收残留生成并释放对应额度预留；开轮 RPC 传入较长陈旧阈值，防止历史 guard 绕过额度释放；不会把旧请求成功结果覆盖到新 revision。
+
+新客户端 send/regenerate 携带可选 `request_id` UUID，后端将其作为辅助属性保留在 `chat_history.history` 首条快照记录，`ChatMessage.request_id` 可选公开给客户端。它只关联本次取消，不是计费或生成幂等键；上游 prompt 不包含该属性。首字前发现 ID 必须同时匹配 request_id/turn_index/revision，防止多端并发误取消；旧客户端/旧记录兼容。
+
+前端 8 秒提示与真正终止分开；SSE 读流有客户端期限，取消/详情请求有超时。最新失败或取消回复下提供“重新生成”，复用数据库的 user_input；请求身份隔离保证切会话、取消后旧 delta/done/finally 不影响新回复。无需 migration，Backend 先发布；真实 TEST/Preview 和 Telegram/钱包验收仍需执行。
 
 ### 4.4 Prompt 组装（`features/engine`）
 

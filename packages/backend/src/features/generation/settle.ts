@@ -166,6 +166,13 @@ export async function runSettlement(
     }
   }
 
+  // User cancellation/deadline is a local business outcome, never replaced by
+  // upstream stop metadata; otherwise later reconciliation could reopen billing.
+  if (entry.finish_reason === 'cancelled' || entry.finish_reason === 'timeout') {
+    finishReason = entry.finish_reason;
+    llmMetadata.llm_finish_reason = entry.finish_reason;
+  }
+
   if (!entry.user_id) {
     throw new Error('production chat history requires user_id');
   }

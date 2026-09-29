@@ -178,6 +178,8 @@ pnpm supabase:link:test
 
 详细规则见根 [`AGENTS.md`](AGENTS.md) 与 [`.trellis/spec/`](.trellis/spec/)。
 
+文字回复等待超过 8 秒显示等待提示；“取消本次回复”调用受鉴权的服务端取消接口，确认该轮终态后恢复发送，并在最新未成功回复下显示“重新生成”，复用原用户输入。断网/离页只停止本地读流。取消与正常完成以数据库条件更新决定先后，取消待确认时保留重试入口；详情读取负责回收超过 120 秒的残留生成状态。此修复不需要数据库迁移，发布顺序为 Backend → Frontend，TEST/Preview 的真机、SSE 与钱包/免费额度验收通过后才能规划生产发布。
+
 ## 9. Trellis 开发流程
 
 非琐碎任务：创建 task → 编写/审核 PRD → 复杂任务补 design/implement/task → 配置 context → `task.py start` → 实施/检查 → spec 更新 → 提交/归档。
