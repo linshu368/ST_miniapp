@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-28-remove-advanced-image-generation/
-last_verified_at: 2026-09-28
+last_verified_task: .trellis/tasks/09-29-chat-stall-cancel/
+last_verified_at: 2026-09-29
 ---
 
 # 会话与语音共享契约
@@ -14,6 +14,8 @@ last_verified_at: 2026-09-28
 ## 职责与边界
 
 ## 当前状态
+
+取消契约 CancelConversationTurnRequest {assistant_message_id:string} 与 CancelConversationTurnData {message:ChatMessage}；新 POST /api/v1/conversations/:id/cancel 采用既有 envelope，返回实际终态，待确认以错误表示。原 SSE 字段和消息状态兼容保留，producer-first 发布。
 
 ## 入口与调用者
 

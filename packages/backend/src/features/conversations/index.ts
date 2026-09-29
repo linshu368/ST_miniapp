@@ -17,6 +17,7 @@ export { conversationErrorStatus, sendConversationError } from './errors.js';
 
 export {
   runConversationTurn,
+  withConversationPreparationDeadline,
   toEngineCharacter,
   toMessageStatus,
   type ConversationTurnMode,

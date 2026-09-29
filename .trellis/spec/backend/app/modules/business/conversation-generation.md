@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-28-remove-advanced-image-generation/
-last_verified_at: 2026-09-28
+last_verified_task: .trellis/tasks/09-29-chat-stall-cancel/
+last_verified_at: 2026-09-29
 ---
 
 # 会话与生成
@@ -14,6 +14,8 @@ last_verified_at: 2026-09-28
 ## 职责与边界
 
 ## 当前状态
+
+文字回复新增基于数据库标记的显式取消；生成计费前抢占没有取消标记的 streaming 终态。取消先释放免费额度，再确认 interrupted；上下文/上游异常统一恢复，详情读取回收过期生成。执行副本未确认时取消返回可重试待确认。无需 migration，真实 TEST/Preview SSE、钱包/额度及真机验收仍未执行。
 
 自研会话链路已上线。图片生成代码已落地但 runtime 开关默认关闭：当前只保留单一普通图片路径，由 DeepSeek 写中文分镜或保留用户中文稿，在 worker 中直译英文后优先调用 Grok/Liaobots，主通道失败时以相同内容降级到 Replicate Z。普通图片继续使用 `basic_image` 免费次数，耗尽后按普通价格结算；高级图片入口、provider 分流、VIP 门禁与高级价格已退场。图片 telemetry 与结算未知语义保持不变。
 
