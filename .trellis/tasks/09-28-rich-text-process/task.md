@@ -119,4 +119,11 @@ inline 模式顺序实施，不默认派发子代理。shared/index.ts、convers
 - TEST-DB 只读诊断：PR-364 的同一 Admin actor 能保存草稿，但发布 RPC 在 `INSERT app_core.text_postprocess_versions` 处收到 `42501 permission denied`。`20260929_fix_text_postprocess_writer_guard.sql` 已在 TEST 成功执行，问题不是 writer guard 或 Admin 角色；表 ACL 明确缺少 `postgres` 的 `INSERT`，而专用 `SECURITY DEFINER` 发布函数 owner 为 `postgres`。
 - 最小 forward-fix：新增 `20260929_grant_text_postprocess_snapshot_insert.sql`，仅授予 `postgres` 此表 `INSERT`，维持 `service_role` 的 SELECT-only 和既有不可变 trigger；不改历史 migration、不变更数据、不增加公开 API/角色或表权限。
 - Backend 只把自有 SQL 前缀 `forbidden:` 映射为 403。其他 `42501` 留在安全的通用失败边界，避免把数据库部署/ACL 故障误报成 Admin 身份不足。
-- 离线验证：PostgreSQL 17 临时集群的完整 text-postprocess migration harness 通过（fresh/replay/CAS/发布/回滚/事务/权限/直写拒绝）；Backend 568、Shared 115 测试和 Backend typecheck 通过；migration lint、ledger protocol 和 `git diff --check` 通过。默认本机 PostgreSQL 14 因不支持已有 `security_invoker` view 不用于本项。TEST 尚未执行新 forward-fix，Production 未触及。
+- 离线验证：PostgreSQL 17 临时集群的完整 text-postprocess migration harness 通过（fresh/replay/CAS/发布/回滚/事务/权限/直写拒绝）；Backend 568、Shared 115 测试和 Backend typecheck 通过；migration lint、ledger protocol 和 `git diff --check` 通过。默认本机 PostgreSQL 14 因不支持已有 `security_invoker` view 不用于本项。该记录是 INSERT forward-fix 创建时的环境状态；后续 TEST 事实见下节，Production 未触及。
+
+## PR-364 对话开轮权限 forward-fix（2026-09-29）
+
+- TEST 实况：用户已执行 `20260929_grant_text_postprocess_snapshot_insert.sql`。但 PR-364 Railway 后端在 `POST /api/v1/conversations/:id/messages` 的开轮阶段仍持续返回 500；安全日志为 `permission denied for table text_postprocess_versions`，LLM 尚未调用。
+- 根因与范围：`experience.start_chat_history_*_with_postprocess` 会以 `SECURITY DEFINER` 的 `postgres` owner 核验已发布版本。原 migration 声明的 snapshot `SELECT` ACL 在 TEST 实际状态中缺失或漂移；仅补 publisher 的 `INSERT` 不能恢复此读取路径。
+- 最小 forward-fix：新增 `20260929_grant_text_postprocess_snapshot_read.sql`。它要求两个 wrapper 均仍为 `postgres` owner 的 `SECURITY DEFINER`，只授予 `postgres` 和既有 server-only `service_role` 对 `app_core.text_postprocess_versions` 的 `SELECT`，并明确拒绝 `service_role` 的四类写权限。未知 owner/非 definer 直接停止，不用 schema 级宽泛授权掩盖漂移。
+- 发布与恢复：TEST 使用 Database Migration workflow 单文件执行，先查账本和 preflight；postflight 必须同时确认两角色 `SELECT`、`service_role` 无写权限，再真机发送及重生成各一次。该文件只改 ACL metadata、无业务行/表重写/回填；失败即停止并核验函数 owner/ACL，后续仅以新的 reviewed forward migration 恢复。Production 未获授权。

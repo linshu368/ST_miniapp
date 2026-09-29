@@ -157,6 +157,11 @@ BEGIN
     'publisher owner has explicit snapshot INSERT privilege'
   );
   PERFORM text_postprocess_t2.assert(
+    has_table_privilege('postgres', 'app_core.text_postprocess_versions', 'SELECT')
+      AND has_table_privilege('service_role', 'app_core.text_postprocess_versions', 'SELECT'),
+    'conversation wrappers and Backend can read snapshots'
+  );
+  PERFORM text_postprocess_t2.assert(
     NOT EXISTS (
       SELECT 1
       FROM pg_class AS relation
