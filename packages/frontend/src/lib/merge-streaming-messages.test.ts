@@ -26,6 +26,7 @@ const assistant = message({ id: 'a1', role: 'assistant', content: '旧回复', t
 function streaming(overrides: Partial<StreamingTurn> = {}): StreamingTurn {
   return {
     mode: 'send',
+    requestId: 'request-A',
     userMessage: message({
       id: 'local:1',
       role: 'user',
@@ -63,7 +64,13 @@ describe('mergeStreamingMessages', () => {
   it('重生成时藏起落库的最后一条 assistant，避免并排两条', () => {
     const merged = mergeStreamingMessages(
       [user, assistant],
-      streaming({ mode: 'regenerate', userMessage: null, assistantMessageId: 'a1b', text: '新稿' }),
+      streaming({
+        mode: 'regenerate',
+        revision: 1,
+        userMessage: null,
+        assistantMessageId: 'a1b',
+        text: '新稿',
+      }),
       's1'
     );
     expect(merged.map((item) => item.id)).toEqual(['u1', 'a1b']);
@@ -79,4 +86,88 @@ describe('mergeStreamingMessages', () => {
     expect(merged).toHaveLength(3);
     expect(merged.at(-1)?.id).toBe('local:1');
   });
+});
+
+it('详情轮询先拿到当前消息时不重复用户和 assistant 气泡', () => {
+  const currentUser = message({ id: 'u2', role: 'user', turn_index: 2 });
+  const currentAssistant = message({ id: 'a2', turn_index: 2, status: 'streaming' });
+  const result = mergeStreamingMessages(
+    [user, assistant, currentUser, currentAssistant],
+    streaming({ userMessage: currentUser }),
+    's1'
+  );
+  expect(result.map((item) => item.id)).toEqual(['u1', 'a1', 'u2', 'a2']);
+  expect(result.at(-1)?.content).toBe('正在写');
+});
+
+it('服务端已确认取消/完成时本地占位不能覆盖终态', () => {
+  const terminal = message({
+    id: 'a2',
+    turn_index: 2,
+    status: 'interrupted',
+    finish_reason: 'cancelled',
+    content: '保留正文',
+  });
+  const persisted = [user, assistant, terminal];
+  expect(mergeStreamingMessages(persisted, streaming(), 's1')).toBe(persisted);
+});
+
+it('start 被缓冲但详情已拿到预期轮次时只展示一组真实消息', () => {
+  const currentUser = message({ id: 'a2:user', role: 'user', turn_index: 2, revision: 0 });
+  const currentAssistant = message({
+    id: 'a2',
+    turn_index: 2,
+    revision: 0,
+    status: 'streaming',
+    content: '已落库部分',
+    request_id: 'request-A',
+  });
+  const result = mergeStreamingMessages(
+    [user, assistant, currentUser, currentAssistant],
+    streaming({ assistantMessageId: null, text: '' }),
+    's1'
+  );
+  expect(result.map((item) => item.id)).toEqual(['u1', 'a1', 'a2:user', 'a2']);
+  expect(result.at(-1)?.content).toBe('已落库部分');
+});
+
+it('start 前不能把其他设备同轮次/版本的回复与用户气泡当作自己的', () => {
+  const otherUser = message({ id: 'B:user', role: 'user', turn_index: 2, content: 'other input' });
+  const otherAssistant = message({
+    id: 'B',
+    turn_index: 2,
+    status: 'streaming',
+    request_id: 'request-B',
+    content: 'other output',
+  });
+  const result = mergeStreamingMessages(
+    [user, assistant, otherUser, otherAssistant],
+    streaming({ assistantMessageId: null, text: '' }),
+    's1'
+  );
+  expect(result.map((item) => item.id)).toEqual(['u1', 'a1', 'B:user', 'B', 'local:1']);
+  expect(result.at(-1)?.content).toBe('新问题');
+  expect(result.find((item) => item.id === 'B')?.content).toBe('other output');
+});
+
+it('重生成等待 start 时不会隐藏另一设备新接受的同版本回复', () => {
+  const otherAssistant = message({
+    id: 'B',
+    turn_index: 1,
+    revision: 1,
+    status: 'streaming',
+    request_id: 'request-B',
+  });
+  const result = mergeStreamingMessages(
+    [user, otherAssistant],
+    streaming({
+      mode: 'regenerate',
+      turnIndex: 1,
+      revision: 1,
+      assistantMessageId: null,
+      userMessage: null,
+    }),
+    's1'
+  );
+  expect(result.map((item) => item.id)).toEqual(['u1', 'B']);
 });

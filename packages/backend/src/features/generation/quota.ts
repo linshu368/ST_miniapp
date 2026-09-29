@@ -17,7 +17,7 @@ import {
   isQuotaTrackableCharacterId,
 } from '../billing/free-quota.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
-import type { GenerationLogger } from './types.js';
+import { GenerationCleanupPendingError, type GenerationLogger } from './types.js';
 
 let freeQuotaRepository: MiniappCharacterFreeQuotaRepository | null = null;
 
@@ -53,6 +53,7 @@ export async function reserveCharacterFreeQuota(input: {
   characterId: string | null;
   billing: Pick<ModelBillingContext, 'isFree'>;
   log: GenerationLogger;
+  signal?: AbortSignal;
 }): Promise<FreeQuotaReservation> {
   const { chargeId, userId, billing, log } = input;
 
@@ -76,13 +77,24 @@ export async function reserveCharacterFreeQuota(input: {
 
   const characterId = input.characterId;
   try {
-    const quotaLimit = await getCharacterFreeChatQuotaLimit();
-    const quotaDecision = await freeQuotas().reserve({
-      chargeId,
-      userId,
-      characterId,
-      quotaLimit,
-    });
+    const configSignal = input.signal
+      ? AbortSignal.any([input.signal, AbortSignal.timeout(5_000)])
+      : AbortSignal.timeout(5_000);
+    const quotaLimit = await withConfigDeadline(getCharacterFreeChatQuotaLimit(), configSignal);
+    // A late read must not create a reservation after cancellation/stale recovery
+    // has already unlocked the conversation. Never race the reservation write.
+    configSignal.throwIfAborted();
+    input.signal?.throwIfAborted();
+    const quotaDecision = await freeQuotas()
+      .reserve({
+        chargeId,
+        userId,
+        characterId,
+        quotaLimit,
+      })
+      .catch((err: unknown) => {
+        throw new GenerationCleanupPendingError({ cause: err });
+      });
     const isFreeRound = quotaDecision.grantedFree;
     log.biz.info(
       {
@@ -146,4 +158,13 @@ async function finalizeReservation(input: {
     );
     return null;
   }
+}
+
+function withConfigDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
 }

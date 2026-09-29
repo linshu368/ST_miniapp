@@ -4,7 +4,13 @@ import type {
   ConversationStreamEvent,
   ConversationStreamStartEvent,
 } from '@miniapp/shared';
-import { ConversationStreamError, streamConversationTurn } from './conversation-stream';
+import {
+  ConversationStreamError,
+  streamConversationTurn,
+  createConversationRequestId,
+  CONVERSATION_STREAM_IDLE_TIMEOUT_MS,
+  CONVERSATION_STREAM_DEADLINE_MS,
+} from './conversation-stream';
 
 // 真实实现会 import @telegram-apps/sdk-react，在 node 环境下没必要拉起来
 vi.mock('@/lib/telegram/auth', () => ({
@@ -74,6 +80,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('streamConversationTurn — 正常流', () => {
@@ -302,6 +309,96 @@ describe('streamConversationTurn — abort', () => {
     });
     controller.abort();
 
-    await expect(promise).rejects.toThrow('AbortError');
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
   });
+});
+
+describe('streamConversationTurn — 有界恢复', () => {
+  it('首字前 fetch 永不返回时仍有限时间结束', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(() => new Promise(() => undefined));
+    const sink = collector();
+    const result = streamConversationTurn({ sessionId: 's1', ...sink.options }).catch(
+      (error: unknown) => error
+    );
+    await vi.advanceTimersByTimeAsync(CONVERSATION_STREAM_IDLE_TIMEOUT_MS);
+    expect(await result).toMatchObject({ status: 408 });
+    expect(sink.done).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('首字后只有心跳，不能无限挂流；超时后忽略迟到正文', async () => {
+    vi.useFakeTimers();
+    let source!: ReadableStreamDefaultController<Uint8Array>;
+    fetchMock.mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            source = controller;
+            controller.enqueue(
+              encoder.encode(frame(START) + frame({ type: 'delta', text: '半句话' }))
+            );
+          },
+        })
+      )
+    );
+    const sink = collector();
+    const result = streamConversationTurn({ sessionId: 's1', ...sink.options }).catch(
+      (error: unknown) => error
+    );
+    await vi.advanceTimersByTimeAsync(20);
+    source.enqueue(encoder.encode(': heartbeat\n\n'));
+    await vi.advanceTimersByTimeAsync(CONVERSATION_STREAM_IDLE_TIMEOUT_MS);
+    expect(await result).toMatchObject({ status: 408 });
+    expect(sink.deltas.join('')).toBe('半句话');
+    expect(sink.done).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('正文持续增长但始终没有 done 时仍受总截止时间约束', async () => {
+    vi.useFakeTimers();
+    let source!: ReadableStreamDefaultController<Uint8Array>;
+    fetchMock.mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            source = controller;
+            controller.enqueue(encoder.encode(frame(START)));
+          },
+        })
+      )
+    );
+    const sink = collector();
+    const result = streamConversationTurn({ sessionId: 's1', ...sink.options }).catch(
+      (error: unknown) => error
+    );
+    await vi.advanceTimersByTimeAsync(100_000);
+    source.enqueue(encoder.encode(frame({ type: 'delta', text: '继续写' })));
+    await vi.advanceTimersByTimeAsync(CONVERSATION_STREAM_DEADLINE_MS - 100_000);
+    expect(await result).toMatchObject({ status: 408 });
+    expect(sink.deltas.join('')).toBe('继续写');
+    expect(sink.done).toHaveLength(0);
+  });
+});
+
+it('调用方提供的请求 UUID 同时发送到消息/重生成 body 与跟踪 header', async () => {
+  fetchMock.mockImplementation(() => Promise.resolve(sseResponse([frame(START), frame(DONE)])));
+  const requestId = '11111111-1111-4111-8111-111111111111';
+  for (const content of ['hello', undefined]) {
+    const sink = collector();
+    await streamConversationTurn({ sessionId: 's1', content, requestId, ...sink.options });
+    const [, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      ...(content ? { content } : {}),
+      request_id: requestId,
+    });
+    expect(new Headers(init.headers).get('X-Request-Id')).toBe(requestId);
+  }
+});
+
+it('randomUUID 不可用时仍生成符合 v4 格式的请求 UUID', () => {
+  vi.stubGlobal('crypto', undefined);
+  expect(createConversationRequestId()).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+  );
 });

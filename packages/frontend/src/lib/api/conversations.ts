@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  CancelConversationTurnData,
+  CancelConversationTurnRequest,
   CreateConversationData,
   DeleteConversationData,
   GetConversationData,
@@ -50,16 +52,58 @@ export function useConversationQuery(sessionId: string | undefined) {
     enabled: Boolean(sessionId),
     queryFn: async () => {
       if (!sessionId) throw new Error('session id is required');
-      return apiClient<GetConversationData>(
-        `/api/v1/conversations/${encodeURIComponent(sessionId)}`
-      );
+      return fetchConversationDetail(sessionId);
     },
     staleTime: 0,
     // 库里还有一条没收口的 assistant 消息时轮询到它收口为止。
-    // 两种情况会走到这里：本端点了停止（后端不因客户端断开而终止，仍会写完），
-    // 以及另一端正在生成。不轮询的话这条消息会一直停在半截，且此时发新消息必吃 409。
+    // 断流或另一端生成后仍以服务端终态为准；不能把浏览器 abort 当成取消成功。
     refetchInterval: (query) =>
       query.state.data?.messages.some((message) => message.status === 'streaming') ? 1_500 : false,
+  });
+}
+
+/** 有限等待，供详情 query 与取消前精确定位当前 revision 复用。 */
+export function fetchConversationDetail(
+  sessionId: string,
+  timeoutMs = 10_000
+): Promise<GetConversationData> {
+  return apiClient<GetConversationData>(`/api/v1/conversations/${encodeURIComponent(sessionId)}`, {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
+
+export function useCancelConversationTurnMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    retry: false,
+    mutationFn: ({
+      sessionId,
+      assistantMessageId,
+    }: {
+      sessionId: string;
+      assistantMessageId: string;
+    }) => {
+      const body: CancelConversationTurnRequest = { assistant_message_id: assistantMessageId };
+      return apiClient<CancelConversationTurnData>(
+        `/api/v1/conversations/${encodeURIComponent(sessionId)}/cancel`,
+        { method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) }
+      );
+    },
+    onSuccess: (data, { sessionId }) => {
+      queryClient.setQueryData<GetConversationData>(
+        conversationKeys.detail(sessionId),
+        (current) =>
+          current
+            ? {
+                ...current,
+                messages: current.messages.map((message) =>
+                  message.id === data.message.id ? data.message : message
+                ),
+              }
+            : current
+      );
+      void queryClient.invalidateQueries({ queryKey: conversationKeys.detail(sessionId) });
+    },
   });
 }
 
