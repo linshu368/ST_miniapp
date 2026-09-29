@@ -3,7 +3,7 @@
   "name": "lobby-list-position-restore-plan",
   "title": "大厅角色卡列表返回位置保持规划",
   "description": "规划大厅角色卡列表在进入聊天并退出后的浏览现场恢复，保持列表条件、已加载内容、锚点卡与滚动位置。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "frontend",
   "package": "frontend",

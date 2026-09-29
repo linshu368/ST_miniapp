@@ -38,6 +38,7 @@ import {
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
 import { customVoicePath } from '@/lib/chat-entry';
+import { returnToLobby } from '@/lib/lobby-return';
 import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
@@ -76,8 +77,12 @@ export default function SelfHostedChatPage() {
     [earlier, session.conversationQuery.data?.messages]
   );
 
-  const goBack = useCallback(() => router.push('/'), [router]);
+  const goBack = useCallback(() => returnToLobby((href) => router.push(href)), [router]);
   useTelegramBackButton(goBack);
+
+  useEffect(() => {
+    router.prefetch('/');
+  }, [router]);
 
   const restoreSendContent = useCallback((content: string) => {
     setDraft((current) => (current.trim() ? current : content));
