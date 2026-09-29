@@ -20,7 +20,8 @@ function repository(handler: (name: string, args: Record<string, unknown>) => Rp
   const db = {
     rpc(name: string, args: Record<string, unknown>) {
       calls.push({ name, args });
-      return Promise.resolve(handler(name, args));
+      const request = Promise.resolve(handler(name, args));
+      return Object.assign(request, { abortSignal: () => request });
     },
     from() {
       tableReads += 1;

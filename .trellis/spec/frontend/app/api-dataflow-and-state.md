@@ -185,3 +185,11 @@ void followup.then(() => {
   lifecycle.capture({ event: 'paywall_triggered', ... });
 });
 ```
+
+## Scenario: 显式取消文字回复与重新生成
+
+取消经 `lib/api/conversations.ts` 的 React Query mutation 调用服务端；浏览器 AbortController 只负责停止本地读流。生成入口同时检查本地请求身份、取消待确认与服务端 streaming，后者不能只禁用发送却隐藏取消按钮。
+
+start 尚未到达时，按本次 request_id UUID 及预期 turn_index/revision 定位消息再提交 assistant_message_id；禁止盲目取消最后一条或另一设备的同轮请求；没有匹配关联 ID 的旧行不能作为本次未 start 请求的发现结果。取消暂未确认保留占用与重试，服务端确认终态后保留用户输入和已收到正文，最新失败回复下显示“重新生成”，复用最后一轮 regeneration。
+
+所有 SSE 回调与异步刷新必须检查请求/会话身份。详情轮询可能先看到当前 revision，临时消息合并须去重并以已持久化终态为准。SSE、取消请求、详情刷新与额度刷新都有有限等待，不能因后台请求卡住永久保留 generating。实现断网/超时错误时先回查服务端，不把已经持久化的原输入再次恢复并重复发送。

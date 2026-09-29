@@ -13,6 +13,8 @@ export type ChatMessageStatus = 'streaming' | 'complete' | 'interrupted' | 'fail
 
 export interface ChatMessage {
   id: string;
+  /** Optional caller correlation UUID; identifies a pending request before SSE start. */
+  request_id?: string;
   session_id: string;
   /** 用户主动发起的逻辑轮次从 1 递增；开场白是 API 虚拟消息，使用 turn_index = 0 */
   turn_index: number;
@@ -154,11 +156,15 @@ export interface DeleteConversationData {
 // ==== POST /api/v1/conversations/:id/regenerate ====
 
 export interface SendMessageRequest {
+  /** Correlation only; not an idempotency key or a billing identifier. */
+  request_id?: string;
   content: string;
 }
 
 /** 重生成只作用于最后一轮，轮次由后端判定，无需入参 */
-export type RegenerateRequest = Record<string, never>;
+export interface RegenerateRequest {
+  request_id?: string;
+}
 
 // ==== SSE 事件契约 ====
 // 上面两条路由的响应体是 text/event-stream，每个 data: 行是一个序列化后的
@@ -236,4 +242,14 @@ export interface PatchGenerationConfigRequest {
 export interface PatchGenerationConfigData {
   config: UserGenerationConfig;
   word_count_tiers: PublicWordCountTiers;
+}
+
+/** POST /api/v1/conversations/:id/cancel. The ID binds cancellation to one revision. */
+export interface CancelConversationTurnRequest {
+  assistant_message_id: string;
+}
+
+/** Returns the authoritative state; a reply completed before cancellation stays complete. */
+export interface CancelConversationTurnData {
+  message: ChatMessage;
 }

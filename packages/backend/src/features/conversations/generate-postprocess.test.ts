@@ -7,9 +7,11 @@ import type { ConversationStreamSink } from './sse.js';
 const mocks = vi.hoisted(() => ({
   startTurn: vi.fn(),
   startRegeneration: vi.fn(),
+  recoverStaleStreaming: vi.fn(),
   getContextBeforeTurn: vi.fn(),
   setPromptHistory: vi.fn(),
   finalizeTurn: vi.fn(),
+  requireTurnById: vi.fn(),
   readVersion: vi.fn(),
   execute: vi.fn(),
   buildPrompt: vi.fn(),
@@ -25,9 +27,11 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
   ConversationHistoryRepository: class {
     startTurn = mocks.startTurn;
     startRegeneration = mocks.startRegeneration;
+    recoverStaleStreaming = mocks.recoverStaleStreaming;
     getContextBeforeTurn = mocks.getContextBeforeTurn;
     setPromptHistory = mocks.setPromptHistory;
     finalizeTurn = mocks.finalizeTurn;
+    requireTurnById = mocks.requireTurnById;
   },
 }));
 
@@ -104,9 +108,11 @@ describe('runConversationTurn postprocess binding', () => {
   beforeEach(() => {
     mocks.startTurn.mockReset();
     mocks.startRegeneration.mockReset();
+    mocks.recoverStaleStreaming.mockReset();
     mocks.getContextBeforeTurn.mockReset();
     mocks.setPromptHistory.mockReset();
     mocks.finalizeTurn.mockReset();
+    mocks.requireTurnById.mockReset();
     mocks.readVersion.mockReset();
     mocks.execute.mockReset();
     mocks.buildPrompt.mockReset();
@@ -157,8 +163,10 @@ describe('runConversationTurn postprocess binding', () => {
         };
       }
     );
-    mocks.finalizeTurn.mockResolvedValue({});
+    mocks.finalizeTurn.mockResolvedValue({ status: 'success', llm_finish_reason: 'stop' });
+    mocks.requireTurnById.mockResolvedValue({ llm_finish_reason: null });
     mocks.setPromptHistory.mockResolvedValue(undefined);
+    mocks.recoverStaleStreaming.mockResolvedValue(undefined);
   });
 
   it('binds the wrapper result into SSE start and keeps the raw prompt input', async () => {

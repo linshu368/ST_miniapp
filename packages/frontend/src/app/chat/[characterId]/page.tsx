@@ -104,6 +104,7 @@ export default function SelfHostedChatPage() {
   const {
     abort,
     canRegenerate,
+    cancelling,
     generating,
     lastMessage,
     messages,
@@ -326,7 +327,16 @@ export default function SelfHostedChatPage() {
         hasMore={hasMoreEarlier}
         loadingEarlier={loadingEarlier}
         onLoadEarlier={() => void handleLoadEarlier()}
-        awaitingFirstToken={generating && streaming?.assistantMessageId === null}
+        awaitingFirstToken={
+          generating &&
+          streaming?.assistantMessageId === null &&
+          !(
+            lastMessage?.role === 'assistant' &&
+            lastMessage.turn_index === streaming.turnIndex &&
+            lastMessage.revision === streaming.revision &&
+            lastMessage.request_id === streaming.requestId
+          )
+        }
         replyStalled={replyStalled}
         streamingMessageId={streaming?.assistantMessageId ?? null}
         quotaExhaustedNotice={quotaExhaustedNotice}
@@ -424,7 +434,7 @@ export default function SelfHostedChatPage() {
                         label={
                           getChatReplyPresentation(message) === 'complete'
                             ? '换一个回复'
-                            : '重新回复'
+                            : '重新生成'
                         }
                       />
                     ) : null
@@ -455,7 +465,8 @@ export default function SelfHostedChatPage() {
         value={draft}
         onChange={setDraft}
         onSend={handleSend}
-        onStop={abort}
+        onStop={() => void abort()}
+        cancelling={cancelling}
         generating={generating}
         disabled={!session.ready || serverBusy}
         leftSlot={

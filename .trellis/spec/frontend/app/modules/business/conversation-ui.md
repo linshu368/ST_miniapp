@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/09-28-remove-advanced-image-generation/
-last_verified_at: 2026-09-28
+last_verified_task: .trellis/tasks/09-29-chat-stall-cancel/
+last_verified_at: 2026-09-29
 ---
 
 # 用户会话、语音与图片界面
@@ -16,6 +16,8 @@ last_verified_at: 2026-09-28
 负责会话列表、流式聊天、重生成、模型/生成偏好、语音、角色回复图片交互展示，以及图片生成用户侧 PostHog 事件。不拥有 PostHog SDK 初始化、后端图片生成或支付结算。
 
 ## 当前状态
+
+文字回复等待 8 秒保留提示；本地或服务端 streaming 均展示“取消本次回复”，终态确认后在最新未成功回复下显示“重新生成”，复用原输入。客户端读流/取消/刷新均有限等待；旧请求身份隔离、消息去重防止切会话或取消后旧状态覆盖新回复。Telegram/移动设备验收仍未执行。
 
 自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片只保留普通“看看TA”入口，支持免费描述、普通图片免费次数/付费预览、确认/自定义、生成中、失败、余额不足、ready 卡和 Dialog 预览；高级图按钮与 VIP 锁定交互已删除。图片 telemetry 继续只记录安全摘要。
 

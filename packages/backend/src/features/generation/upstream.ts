@@ -135,9 +135,12 @@ export function createSseTap(options: {
         consumeDataLine(sseBuffer);
       }
 
-      void (async () => {
-        await options.onEnd(snapshot());
-      })().finally(() => callback());
+      Promise.resolve()
+        .then(() => options.onEnd(snapshot()))
+        .then(
+          () => callback(),
+          (err: unknown) => callback(err instanceof Error ? err : new Error(String(err)))
+        );
     },
   });
 
