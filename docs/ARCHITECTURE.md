@@ -197,8 +197,10 @@ SSE 事件契约定义在 `shared/src/api/conversations.ts`：`start`（带 mess
    · 上游非 2xx / 连不上 → 路由返回 HTTP 502 JSON
    · 上游 2xx → onStreamOpen 回调，此时才写 SSE 响应头并下发 start 事件
 7. 边转发 delta 边累积；客户端断开不终止后端，继续 drain 到 [DONE]
-8. 终态：同步更新同一条 chat_history 的正文与状态；实扣与 OpenRouter 元数据异步补齐
-   （`generation/settle.ts` 即时写 + `generation/sync-job.ts` 30 秒轮询回捞 24h 内元数据不全或结算未完成的行）
+8. 终态：同步更新同一条 chat_history 的正文与状态；实扣与 provider 元数据异步补齐。
+   OpenRouter 元数据仍写主表并由 `generation/sync-job.ts` 回捞；Venice 终态 usage、token、时延和估算成本
+   在 `20260929_venice_chat_history.sql` 执行后写一对一 `experience.venice_chat_history`，不把正文、prompt 或 Venice 元数据复制进主表。
+   （`generation/settle.ts` 即时写 + OpenRouter `generation/sync-job.ts` 30 秒轮询回捞 24h 内元数据不全或结算未完成的行）
 ```
 
 **硬约束**：SSE 首字节写出之前不能有任何可能失败的判定。402（余额不足）、409（会话忙 / 不可重生成）、404 全部以 HTTP 状态码 + JSON 返回；响应头一旦发出就只能降级成流内 `error` 事件。所以响应头推迟到上游已 2xx 的 `onStreamOpen` 才写——不是等第一个 token，否则客户端要白等一整个上游首 token 延迟才能挂上占位气泡。
@@ -239,6 +241,7 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 | `settle.ts`              | 先落请求时定价快照 → 补用量元数据 → `applyLlmCharge` → 回写计费列与 `llm_billing_settled_at`；fire-and-forget。成功结算后顺带调 `check_invite_chat_rounds_reward`（邀请聊天轮数发奖判定，失败只打日志） |
 | `sync-job.ts`            | 计费的第二条到达路径：30 秒轮询回捞 24h 内用量元数据不全**或结算未完成**的行。无 charge 行按快照补建；定档 pending / charged / free 都走 `applyLlmCharge`（历史 usage 对账仍走 `reconcileLlmUsage`）    |
 | `openrouter-metadata.ts` | OpenRouter 用量统计（`/generation?id=`）的唯一读取与字段映射入口，settle / sync-job 共用                                                                                                                |
+| `venice-metadata.ts`     | Venice chat completion 终态 usage/token/时延映射与目录价格成本估算；结果由 `VeniceChatHistoryRepository` 幂等写独立明细表                                                                               |
 
 `settle.ts` 是 fire-and-forget 的：它第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），挂在请求里会让用户在回复已经流完之后继续等。它与请求内同步的 `finalizeTurn` 写同一行 `chat_history` 的**不同列**，列归属见 `ConversationHistoryRepository` 头注释，因此谁先落地都不会互相覆盖。
 
@@ -299,7 +302,7 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 | Schema              | 归属域       | 内容                                                                                                                                                                                                                                      |
 | ------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app_core`          | 跨模块根数据 | `users` / `miniapp_user_settings` / `characters` / `runtime_config`                                                                                                                                                                       |
-| `experience`        | 核心互动内容 | `chat_sessions` / `chat_history` / `chat_message_audio` / `chat_message_images`（图片 attempt 与租约）/ 视图 `current_chat_history`                                                                                                       |
+| `experience`        | 核心互动内容 | `chat_sessions` / `chat_history` / `chat_message_audio` / `chat_message_images`（图片 attempt 与租约）/ 视图 `current_chat_history`；待执行 `20260929_venice_chat_history.sql` 后新增 Venice 一对一调用明细表                             |
 | `billing`           | 钱           | `payment_orders` / `wallet_ledger` / `user_wallets` / `llm_usage_charges` / `llm_usage_charge_dedup` / `character_free_chat_quotas` / `vip_memberships` / `vip_purchase_grants` / `feature_free_trials` / `wallet_refunds` / `_decisions` |
 | `miniapp_features`  | 产品功能状态 | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `wish_roles` / `notifications` / `notification_reads` / `community_reward_claims` / `telegram_community_update_receipts`（108）                                   |
 | `cs_platform`       | 客服与触达   | CS 回访画像与会话 + 迁入的 `support_conversations` / `support_messages`                                                                                                                                                                   |

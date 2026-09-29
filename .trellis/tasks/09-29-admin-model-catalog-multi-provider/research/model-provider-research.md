@@ -115,3 +115,10 @@ Provider routing：Venice chat completions 文档未提供 OpenRouter `provider.
 - `llm_usage_charges.model_openrouter_id`、`chat_history.model`、日志字段和元数据字段短期可能沿用旧命名；设计需说明其语义过渡，避免一次性大改计费表。
 - OpenRouter provider routing 与 metadata sync 只适用于 OpenRouter；Venice 首期不能套用。
 - Venice prompt caching 可接，但不能直接复用 OpenRouter Anthropic `cache_control` 断点逻辑。
+
+## Venice usage 明细补充研究（2026-09-29）
+
+- 用户确认主对话仍写 `experience.chat_history`，仅 Venice provider 回传/usage 写独立一对一明细表。
+- Venice chat completions 是 OpenAI-compatible；实现通过流式请求 `stream_options.include_usage=true` 读取终态 chunk 的 `usage.prompt_tokens`、`completion_tokens`、token details，并从已同步 `/models` 目录价格计算观测成本。
+- 官方文档站与 GitHub raw 在本次会话网络超时，无法现场重新下载 schema；因此 parser 对 usage/details 全部采用可空、非负、失败降级设计，并要求 TEST/真实 Venice smoke 核对实际字段。
+- `llm_generation_data` 仅保留 id/object/created/model/usage/venice_parameters 等白名单，明确剔除 choices、message、content，避免把正文复制到 provider 明细。

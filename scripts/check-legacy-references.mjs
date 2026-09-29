@@ -111,6 +111,8 @@ const RULES = [
     allow: [
       'packages/backend/src/features/generation/upstream.ts',
       'packages/backend/src/features/generation/upstream.test.ts',
+      // Shared provider capability data declares the relative path; only upstream.ts executes it.
+      'packages/shared/src/api/models.ts',
       // 语音写稿的 DeepSeek 端点：与聊天不同供应商、非流式、抽取任务、按次计费，
       // 业务上确实独立（理由见 features/voice/voice-draft.ts 与 features/voice/billing.ts）
       'packages/backend/src/platform/config.ts',

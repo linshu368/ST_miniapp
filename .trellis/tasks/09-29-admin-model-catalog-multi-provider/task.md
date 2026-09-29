@@ -19,6 +19,7 @@
 | T5  | Doing  | Admin provider directory helper/config and editor UI           | `ModelCatalogEditor.tsx`, `src/lib/*model*`, diff/schema/tests             | T1, T3            | automated checks pass; manual Admin smoke still required |
 | T6  | Done   | Docs, env and Railway rollout notes                            | `ops/railway/README.md`, backend env examples                              | T4                | doc review; no secrets committed                         |
 | T7  | Doing  | Full cross-layer validation and release checklist              | all affected packages                                                      | T1-T6             | automated checks pass; manual scenarios remain           |
+| T8  | Doing  | Venice 独立 provider history 与 usage/价格解析                 | `experience.venice_chat_history`, generation parser/repository             | T2, T4            | backend tests + TEST migration/manual Venice smoke       |
 
 ## Execution Log
 
@@ -28,3 +29,4 @@
 - 2026-09-29: Started implementation and completed the shared contract, provider-aware Admin/backend paths, Venice directory/generation routing, billing metadata handling, env/docs, and the DB migration draft.
 - 2026-09-29: Automated verification passed: shared 100 tests, Admin 55 tests/build, backend 531 tests, affected package typechecks, root lint, migration filename check, and `git diff --check` (line-ending warnings only).
 - 2026-09-29: Remaining release gates are intentionally manual: execute the migration against TEST with pre/post shape and rollback capture, then run Admin directory sync and real OpenRouter/Venice SSE smoke scenarios. No production migration or external API smoke was performed in this session.
+- 2026-09-29: Scope expanded by user: main turns remain in `experience.chat_history`, while Venice provider responses/usages move to a dedicated one-to-one `experience.venice_chat_history` table with OpenRouter-equivalent metadata fields. Planning gate updated before implementation.

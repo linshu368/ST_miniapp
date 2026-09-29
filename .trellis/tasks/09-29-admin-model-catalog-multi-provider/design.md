@@ -4,7 +4,7 @@
 
 本任务规划覆盖 Admin 模型目录编辑、shared 契约、backend 模型目录同步、backend 文本生成上游选择、DB 配置校验、Railway 环境变量和验证方案。首个新增平台为 Venice。
 
-不覆盖：用户端 UI 改版、按供应商用量成本精算、Venice 以外的第二个新增平台、Venice 图片/音频/视频 API、OpenRouter provider routing 的平台化改造。
+不覆盖：用户端 UI 改版、按用户扣费改成 Venice 实际成本、Venice 以外的第二个新增平台、Venice 图片/音频/视频 API、OpenRouter provider routing 的平台化改造。
 
 ## 当前链路
 
@@ -168,13 +168,16 @@ Backend route：
 ### Metadata sync and billing
 
 - OpenRouter metadata sync 保持只处理 OpenRouter 行。
-- Venice 首期不调用 OpenRouter `/generation`；固定档位扣费依赖 SSE tap 的 `finish_reason === 'stop'`。
+- Venice 不调用 OpenRouter `/generation`；固定档位扣费仍依赖 SSE tap 的 `finish_reason === 'stop'`。
+- Venice 请求增加 OpenAI-compatible `stream_options.include_usage=true`。SSE tap 从最终 chunk 读取 `usage.prompt_tokens`、`usage.completion_tokens`、`usage.total_tokens` 及 details 中的 cached/reasoning token，并保留不含 `choices`/正文的响应元数据白名单。
+- 应用侧记录请求发出到首个 content delta 的 latency 和完整收流 generation time；非流式响应记录完整耗时，首字延迟为空。
+- 结算后台从 Venice provider directory 的缓存/受限刷新读取该模型 input/output 单 token价格，用 token 数计算成本；目录失败时明细仍落库，费用为 null，不阻断固定档位扣费。
 - 若 Venice 流式响应没有 OpenRouter `x-generation-id`，`generationId` 可来自 SSE JSON `id`；缺失时现有 settlement 是否要求 generation id 需要实现时核查。若必须有，使用 deterministic synthetic id 不可行会影响外部对账；更稳妥是允许 fixed-tier charge 在 provider 无 generation id 时以 `chargeId` 作为内部幂等 key，但这需要检查 `charge_llm_usage` RPC 对 generation id 的约束。
 - `sync-job.ts` 的 DB 查询如果按缺 metadata 拉所有 success 行，必须过滤 provider 或在 metadata 中记录 `provider: 'venice'` 后跳过，避免永远回捞 Venice。
 
 ## Database / migration 设计
 
-不新增表。新增一个 `YYYYMMDD_llm_model_provider_catalog.sql` migration：
+provider catalog migration 继续更新校验函数；另新增一个日期 migration 创建 Venice 调用明细表。
 
 - 更新 `admin.validate_model_catalog_core(jsonb)`：
   - 允许旧模型只有 `openrouter_model_id`。
@@ -192,19 +195,30 @@ Backend route：
   - 若尚未发布 Venice 配置，可恢复旧 validate 函数。
   - 若已经发布 Venice 配置，旧 backend 不理解；回滚代码前必须先在 Admin 发布全 OpenRouter catalog 或执行 forward-fix 禁用 Venice 模型。
 
-归属：只改 `admin` schema 校验函数和 `app_core.runtime_config` JSON 兼容数据，属于现有运营配置发布链路，不创建新对象/表。
+### 新表归属与不变量
+
+- 建议对象：`experience.venice_chat_history`，含义是“每个 Venice 主对话轮次唯一一条 provider 回传与 usage 明细”。
+- 业务不变量：`chat_history_id` 唯一且引用 `experience.chat_history(id) ON DELETE CASCADE`；`llm_provider_name` 恒为 `venice`；只存上游标识、usage、价格计算结果和时延，不存 prompt/reply 正文。
+- 归属理由：它是用户核心文本互动的 provider 处理产物，按八域地图属于 `experience`；不是金额扣减权威事实，真实扣费仍由 `billing.llm_usage_charges` 维护。
+- 权威写入方：仅 backend `features/generation/settle.ts` 经专用 repository upsert；`chat_history_id` 作为幂等键，异步重入不得产生重复行。
+- 生命周期：跟随主对话级联删除；历史保留期默认跟随主对话。运行时生成不读取该表决定业务，只用于运营排障、成本观察和后续分析。
+- 跨域依赖：同 schema FK 到 `experience.chat_history`；不直接 FK billing charge，charge id/generation id 作为可空观测字段留在归一化元数据中。无触发器、无跨 schema 事务。
+- 权限：表 owner 沿用迁移执行者；仅 `service_role`/`postgres`，显式 revoke `anon`/`authenticated`；当前 experience schema 不向浏览器角色暴露，因此不创建客户端 RLS policy。
+- 索引/容量：唯一索引 `chat_history_id`，按 `llm_generation_id` 和 `created_at` 排障的普通索引；每个 Venice turn 一行，小型 JSON 元数据且禁止 choices/正文，容量与 Venice 调用量线性增长。
+- 避免双重事实源：主对话状态、正文、扣费结果继续只在现有表；Venice 的 `llm_provider_name/usage/token/latency/generation_data` 不再写入主表。主表只保留计费闸门所需 `llm_generation_id`/`llm_finish_reason`。
+- 发布顺序：先在 TEST 创建表并验证权限/FK，再部署会写表的 backend，最后启用 Venice catalog。回滚 backend 前可保留空闲表；彻底回滚时先停 Venice 流量再 drop 表，无需迁移主对话数据。
 
 ## Reliability design
 
 - 超时：目录同步沿用 8 秒 provider HTTP timeout；生成沿用 120 秒整体上游 timeout。Venice 调用必须使用同一 deadline，不因 provider 选择重置。
 - 重试：目录读取只复用缓存/手动刷新，不自动无限重试；生成写操作不自动重试，因为可能产生重复上游生成与重复扣费。
-- 幂等：生成计费仍以 `chargeId` 和现有 RPC 幂等语义为准；目录同步是只读，可安全重复。
+- 幂等：生成计费仍以 `chargeId` 和现有 RPC 幂等语义为准；Venice 明细以 `chat_history_id` upsert，settle 重入安全；目录同步是只读，可安全重复。
 - 并发：目录 client 保留 in-flight 去重；配置发布继续走现有 Admin 草稿/发布并发控制。模型选择和生成继续以后端持久化 selected model 为权威。
-- 事务：不新增跨外部系统事务。发布 config 的 DB 原子性仍由现有 Admin 发布 RPC/流程保证；生成外部成功后按现有 settlement 路径写 DB。
+- 事务：不做 `chat_history`、Venice 明细与 billing 的跨 schema 原子事务；三者均有独立幂等键，明细失败记录日志但不回滚已完成的主对话或扣费，后续可 forward-fix 补写。
 - 降级：目录同步失败返回 stale 缓存；runtime catalog 损坏继续降级 `DEFAULT_CATALOG`；Venice key 缺失时目录同步和生成返回可行动错误，不回退到 OpenRouter 以免错用模型。
-- 补偿：Venice 生成若在 2xx 后流中断，按现有 `stream_interrupted` 不扣费；若 provider 无 metadata，不能用 sync job 补 finish_reason，需依赖 SSE 收口并记录人工观察缺口。
+- 补偿：Venice 生成若在 2xx 后流中断，按现有 `stream_interrupted` 不扣费，但仍记录已观察到的 usage/时延（如有）；Venice 没有等价 generation 查询接口，不虚构回捞。明细写失败靠日志和 chat history id 定位 forward-fix。
 - 限流：首期不加队列；依赖 provider 429 返回错误并安全不扣费。目录手动刷新可缓存 15 分钟降低压力。
-- 容量：目录只保存内存缓存，不落库；Admin 表格分页。runtime config JSON 仍是少量运营数据，不引入大响应正文。
+- 容量：目录只保存内存缓存；每个 Venice turn 新增一行 provider 元数据，`llm_generation_data` 严格移除 choices/content，避免大响应正文复制。
 - 可观测性：日志记录 provider、providerModelId、stable model id、status、upstreamStatus、stale、耗时；禁止记录 API key、完整 provider error body、用户消息正文。
 - 缓存风险：Venice `prompt_cache_key` 只作为缓存亲和提示，不参与业务正确性；生成失败或缓存未命中不得影响扣费/收口判断。不要把用户输入、token 或敏感正文放入 cache key。
 
@@ -215,12 +229,12 @@ Backend route：
 - shared provider/model catalog schema 与纯配置。
 - Admin 一个 provider directory helper/config + 现有 editor 小范围改造。
 - Backend 一个 provider directory abstraction + generation upstream provider selection。
-- 一个 DB migration 更新 validate 函数。
+- provider catalog validate migration + 一个最小 Venice 明细表 migration。
 - env/example/docs 更新。
 
 拒绝的过度设计：
 
-- 不新建 `model_providers` 数据表。
+- 不新建 `model_providers` 数据表，也不复制主对话整行。
 - 不做通用插件化 provider SDK。
 - 不在用户端暴露 provider 选择。
 - 不把 OpenRouter provider routing 泛化到所有平台。

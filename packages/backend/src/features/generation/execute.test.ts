@@ -489,11 +489,13 @@ describe('execute（请求体）', () => {
       provider?: unknown;
       prompt_cache_key?: unknown;
       venice_parameters?: unknown;
+      stream_options?: unknown;
     };
     expect(body.model).toBe('venice-uncensored');
     expect(body.provider).toBeUndefined();
     expect(body.messages.every((message) => typeof message.content === 'string')).toBe(true);
     expect(body.venice_parameters).toEqual({ include_venice_system_prompt: false });
     expect(body.prompt_cache_key).toBe('session:session-1');
+    expect(body.stream_options).toEqual({ include_usage: true });
   });
 });

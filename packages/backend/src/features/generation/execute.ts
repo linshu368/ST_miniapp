@@ -46,7 +46,12 @@ import type {
 /** 一次生成里只有这五个字段随终态变化，其余结算入参全程固定。 */
 type HistoryOutcome = Pick<
   GenerationSettlementEntry,
-  'assistant_reply' | 'status' | 'upstream_status' | 'generation_id' | 'finish_reason'
+  | 'assistant_reply'
+  | 'status'
+  | 'upstream_status'
+  | 'generation_id'
+  | 'finish_reason'
+  | 'provider_response'
 >;
 
 type SaveHistory = (outcome: HistoryOutcome) => void;
@@ -82,7 +87,10 @@ function buildUpstreamBody(
     // 未命中规则的模型不带 provider 字段，交给 OpenRouter 默认路由。
     ...(providerPreferences ? { provider: providerPreferences } : {}),
     ...(request.model.provider === 'venice'
-      ? { venice_parameters: { include_venice_system_prompt: false } }
+      ? {
+          venice_parameters: { include_venice_system_prompt: false },
+          ...(request.stream ? { stream_options: { include_usage: true } } : {}),
+        }
       : {}),
     ...(request.promptCaching &&
     capability.promptCachingMode === 'venice_prompt_cache_key' &&
@@ -199,6 +207,7 @@ export async function execute(
   }
 
   let upstreamRes: Response;
+  const upstreamStartedAt = Date.now();
   try {
     upstreamRes = await forwardToUpstream({
       url: upstream.url,
@@ -269,6 +278,7 @@ export async function execute(
         saveHistory,
         hooks,
         log,
+        upstreamStartedAt,
       })
     );
   }
@@ -295,16 +305,28 @@ export async function execute(
   }
 
   let firstTokenSeen = false;
+  let firstTokenAt: number | null = null;
   const tap = createSseTap({
     generationId: headerGenerationId,
     onDelta: (delta) => {
       if (!firstTokenSeen) {
         firstTokenSeen = true;
+        firstTokenAt = Date.now();
         hooks?.onFirstToken?.();
       }
       hooks?.onDelta?.(delta);
     },
-    onEnd: (result) => settleStream({ result, request, billing, reservation, saveHistory, log }),
+    onEnd: (result) =>
+      settleStream({
+        result,
+        request,
+        billing,
+        reservation,
+        saveHistory,
+        log,
+        upstreamStartedAt,
+        firstTokenAt,
+      }),
   });
 
   try {
@@ -330,7 +352,16 @@ export async function execute(
       },
       'upstream stream aborted'
     );
-    await settleStream({ result: partial, request, billing, reservation, saveHistory, log });
+    await settleStream({
+      result: partial,
+      request,
+      billing,
+      reservation,
+      saveHistory,
+      log,
+      upstreamStartedAt,
+      firstTokenAt,
+    });
     hooks?.onError?.(toError(err));
     return finish({
       status: 'stream_interrupted',
@@ -401,6 +432,8 @@ async function settleStream(input: {
   reservation: FreeQuotaReservation;
   saveHistory: SaveHistory;
   log: GenerationLogger;
+  upstreamStartedAt: number;
+  firstTokenAt: number | null;
 }): Promise<void> {
   const { result, request, billing, reservation, saveHistory, log } = input;
   const delivered = isDeliveredReply(result);
@@ -430,6 +463,7 @@ async function settleStream(input: {
       upstream_status: null,
       generation_id: result.generationId,
       finish_reason: result.finishReason,
+      provider_response: providerResponse(input),
     });
     return;
   }
@@ -451,7 +485,26 @@ async function settleStream(input: {
     upstream_status: null,
     generation_id: result.generationId,
     finish_reason: result.finishReason,
+    provider_response: providerResponse(input),
   });
+}
+
+function providerResponse(input: {
+  result: SseTapResult;
+  billing: ModelBillingContext;
+  upstreamStartedAt: number;
+  firstTokenAt: number | null;
+}): GenerationSettlementEntry['provider_response'] {
+  if (input.billing.provider !== 'venice') return undefined;
+  return {
+    usage: input.result.usage,
+    responseMetadata: input.result.responseMetadata,
+    latencyMs:
+      input.firstTokenAt === null
+        ? null
+        : Math.max(0, input.firstTokenAt - input.upstreamStartedAt),
+    generationTimeMs: Math.max(0, Date.now() - input.upstreamStartedAt),
+  };
 }
 
 /** 非流式生成。MVP 的对话路径全走流式，这条分支只是让出口对 stream=false 也完整。 */
@@ -465,6 +518,7 @@ async function consumeNonStream(input: {
   saveHistory: SaveHistory;
   hooks?: GenerationHooks;
   log: GenerationLogger;
+  upstreamStartedAt: number;
 }): Promise<GenerationResult> {
   const { request, upstreamRes, billing, chargeId, reservation, saveHistory, hooks, log } = input;
   let generationId = input.headerGenerationId;
@@ -493,6 +547,8 @@ async function consumeNonStream(input: {
   let assistantReply: string | null = null;
   let finishReason: string | null = null;
   let responseParsed = false;
+  let usage: Record<string, unknown> | null = null;
+  let responseMetadata: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(responseBody);
     responseParsed = true;
@@ -500,6 +556,14 @@ async function consumeNonStream(input: {
     const choice = parsed?.choices?.[0];
     if (typeof choice?.message?.content === 'string') assistantReply = choice.message.content;
     if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
+    if (parsed?.usage && typeof parsed.usage === 'object' && !Array.isArray(parsed.usage)) {
+      usage = parsed.usage as Record<string, unknown>;
+    }
+    responseMetadata = Object.fromEntries(
+      ['id', 'object', 'created', 'model', 'usage', 'venice_parameters'].flatMap((key) =>
+        key in parsed ? [[key, parsed[key]]] : []
+      )
+    );
   } catch {
     log.sys.warn(
       { event: 'llm.upstream.invalid_non_stream_response', userId: request.userId },
@@ -546,6 +610,15 @@ async function consumeNonStream(input: {
     upstream_status: null,
     generation_id: generationId,
     finish_reason: finishReason,
+    provider_response:
+      billing.provider === 'venice'
+        ? {
+            usage,
+            responseMetadata,
+            latencyMs: null,
+            generationTimeMs: Math.max(0, Date.now() - input.upstreamStartedAt),
+          }
+        : undefined,
   });
   if (assistantReply) {
     hooks?.onFirstToken?.();

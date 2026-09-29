@@ -39,6 +39,8 @@ import {
   fetchGenerationDataForSettlement,
   type GenerationData,
 } from './openrouter-metadata.js';
+import { VeniceChatHistoryRepository } from '../../infrastructure/repositories/VeniceChatHistoryRepository.js';
+import { buildVeniceMetadata } from './venice-metadata.js';
 
 /**
  * 一轮生成结算所需的全部输入。
@@ -80,12 +82,23 @@ export interface GenerationSettlementEntry {
   upstream_status?: number | null;
   generation_id?: string | null;
   finish_reason?: string | null;
+  provider_response?: {
+    usage: Record<string, unknown> | null;
+    responseMetadata: Record<string, unknown>;
+    latencyMs: number | null;
+    generationTimeMs: number;
+  };
 }
 
 let historyRepository: ConversationHistoryRepository | null = null;
+let veniceHistoryRepository: VeniceChatHistoryRepository | null = null;
 
 function history(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
+}
+
+function veniceHistory(): VeniceChatHistoryRepository {
+  return (veniceHistoryRepository ??= new VeniceChatHistoryRepository());
 }
 
 async function checkInviteChatRoundsReward(userId: string, log: FastifyBaseLogger): Promise<void> {
@@ -154,19 +167,8 @@ export async function runSettlement(
   const wantsUsageData =
     provider === 'openrouter' && Boolean(entry.generation_id) && entry.fixed_deduction > 0;
   let finishReason = entry.finish_reason ?? null;
-  let llmMetadata: Record<string, unknown> =
-    provider === 'openrouter'
-      ? {}
-      : {
-          llm_provider_name: provider,
-          llm_model: entry.provider_model_id ?? entry.model,
-          llm_finish_reason: finishReason,
-          llm_generation_data: {
-            provider,
-            model: entry.provider_model_id ?? entry.model,
-            finish_reason: finishReason,
-          },
-        };
+  // Main chat_history keeps OpenRouter metadata only. Venice metadata has a dedicated table.
+  let llmMetadata: Record<string, unknown> = {};
 
   if (wantsUsageData) {
     const genData = await fetchUsageData(entry.generation_id as string, clog);
@@ -227,6 +229,31 @@ export async function runSettlement(
       'missing history_id'
     );
     return;
+  }
+
+  if (provider === 'venice' && entry.provider_response) {
+    try {
+      await veniceHistory().upsert(
+        await buildVeniceMetadata({
+          chatHistoryId: entry.history_id,
+          model: entry.provider_model_id ?? entry.model,
+          generationId: entry.generation_id ?? null,
+          finishReason,
+          ...entry.provider_response,
+        })
+      );
+    } catch (err) {
+      clog.error(
+        {
+          kind: 'sys',
+          event: 'chathistory.venice_metadata.failed',
+          err,
+          historyId: entry.history_id,
+          generationId: entry.generation_id ?? null,
+        },
+        'failed to persist Venice provider metadata'
+      );
+    }
   }
 
   try {

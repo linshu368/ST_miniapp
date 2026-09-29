@@ -78,6 +78,10 @@ export interface SseTapResult {
   deltaCount: number;
   generationId: string | null;
   finishReason: string | null;
+  /** OpenAI-compatible usage from the terminal chunk, when requested by the provider. */
+  usage: Record<string, unknown> | null;
+  /** Bounded response metadata. choices/content are deliberately excluded. */
+  responseMetadata: Record<string, unknown>;
 }
 
 export type SseTap = Transform & {
@@ -99,6 +103,8 @@ export function createSseTap(options: {
   let generationId = options.generationId ?? null;
   let streamCompleted = false;
   let finishReason: string | null = null;
+  let usage: Record<string, unknown> | null = null;
+  let responseMetadata: Record<string, unknown> = {};
   const replyChunks: string[] = [];
   let sseBuffer = '';
 
@@ -108,6 +114,8 @@ export function createSseTap(options: {
     deltaCount: replyChunks.length,
     generationId,
     finishReason,
+    usage,
+    responseMetadata,
   });
 
   const consumeDataLine = (line: string) => {
@@ -116,6 +124,10 @@ export function createSseTap(options: {
       if (!generationId && typeof json?.id === 'string') {
         generationId = json.id;
       }
+      if (json?.usage && typeof json.usage === 'object' && !Array.isArray(json.usage)) {
+        usage = json.usage as Record<string, unknown>;
+      }
+      responseMetadata = { ...responseMetadata, ...boundedResponseMetadata(json) };
       const choice = json?.choices?.[0];
       const delta = choice?.delta?.content;
       if (typeof delta === 'string') {
@@ -163,4 +175,11 @@ export function createSseTap(options: {
   });
 
   return Object.assign(tap, { snapshot });
+}
+
+function boundedResponseMetadata(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const safeKeys = ['id', 'object', 'created', 'model', 'usage', 'venice_parameters'];
+  return Object.fromEntries(safeKeys.flatMap((key) => (key in source ? [[key, source[key]]] : [])));
 }

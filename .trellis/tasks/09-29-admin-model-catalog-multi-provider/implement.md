@@ -56,6 +56,16 @@
    - Venice 行不进入 OpenRouter metadata retry；必要时在 charge metadata/chat history snapshot 标记 provider。
 5. 核查 `charge_llm_usage` RPC generation id 约束；若 Venice 无 generation id，给出兼容处理并测试。
 6. 后端测试覆盖 OpenRouter 不变、Venice 走 Venice base/key、OpenRouter-only routing 不污染 Venice、Venice system prompt 被禁用、Venice prompt cache key 不带敏感正文、stream interrupted 不扣费。
+7. Venice 请求加入 `stream_options.include_usage=true`；扩展 SSE/non-stream parser，收集 usage、无正文响应元数据、首 token 延迟和总耗时。
+8. 从 provider directory 读取 Venice 模型单 token 价格，计算 input/output/total USD；目录失败时保存 token、费用留空。
+9. 新增 `VeniceChatHistoryRepository`，以主 `chat_history_id` 幂等 upsert provider 明细；Venice usage 不再写主表的 OpenRouter metadata 列。
+
+## Phase 4b: Venice provider history migration
+
+1. 新增 `packages/shared/migrations/YYYYMMDD_venice_chat_history.sql`，创建 `experience.venice_chat_history`。
+2. LLM 字段与现有 `chat_history.llm_*` 同口径，另加 `chat_history_id` 唯一 FK 和 `created_at/updated_at`。
+3. 显式 grant/revoke，验证浏览器角色不可访问；不复制 prompt、history 或 assistant reply。
+4. TEST 单文件验证 shape、unique/FK、cascade、service role upsert、锁/容量和 drop-table 回滚。
 
 ## Phase 5: Admin
 
@@ -95,6 +105,7 @@ pnpm --filter @miniapp/admin test
 pnpm --filter @miniapp/admin build
 pnpm -r typecheck
 git diff --check
+node scripts/check-migration-filenames.mjs
 ```
 
 人工：
