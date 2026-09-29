@@ -1,6 +1,7 @@
 -- Local scenarios for the text-postprocess migrations. Never apply this file to test or production.
 
 CREATE SCHEMA IF NOT EXISTS text_postprocess_t2;
+GRANT USAGE ON SCHEMA text_postprocess_t2 TO postgres, service_role;
 
 CREATE OR REPLACE FUNCTION text_postprocess_t2.assert(p_ok boolean, p_msg text)
 RETURNS void
@@ -145,6 +146,16 @@ BEGIN
 
   -- Supabase's postgres role is not a superuser: the dedicated SECURITY DEFINER publisher needs
   -- an explicit INSERT grant, while the Backend's service role must still be unable to write.
+  PERFORM text_postprocess_t2.assert(
+    EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres' AND NOT rolsuper),
+    'postgres must be a non-superuser so FK locking privilege failures are visible'
+  );
+  PERFORM text_postprocess_t2.assert(
+    has_column_privilege('postgres', 'app_core.text_postprocess_versions', 'version', 'UPDATE')
+      AND NOT has_table_privilege('postgres', 'app_core.text_postprocess_versions', 'UPDATE')
+      AND NOT has_column_privilege('postgres', 'app_core.text_postprocess_versions', 'artifact', 'UPDATE'),
+    'snapshot owner has only the column UPDATE privilege needed by foreign-key row locks'
+  );
   PERFORM text_postprocess_t2.assert(
     EXISTS (
       SELECT 1
@@ -330,8 +341,9 @@ BEGIN
   PERFORM text_postprocess_t2.expect_sqlstate('UPDATE app_core.text_postprocess_versions SET artifact=''{}''::jsonb WHERE version=1','55000','artifact cannot be replaced');
   PERFORM text_postprocess_t2.expect_sqlstate('SELECT text_postprocess_t2.overwrite_artifact()','55000','SECURITY DEFINER cannot clear artifact');
   SET LOCAL ROLE postgres;
-  PERFORM text_postprocess_t2.expect_sqlstate('UPDATE app_core.text_postprocess_versions SET artifact=NULL WHERE version=1','55000','postgres DML cannot clear artifact');
-  PERFORM text_postprocess_t2.expect_sqlstate('TRUNCATE app_core.text_postprocess_versions CASCADE','55000','postgres cannot truncate artifacts');
+  PERFORM text_postprocess_t2.expect_sqlstate('UPDATE app_core.text_postprocess_versions SET artifact=NULL WHERE version=1','42501','postgres has no artifact UPDATE privilege');
+  PERFORM text_postprocess_t2.expect_sqlstate('UPDATE app_core.text_postprocess_versions SET version=version WHERE version=1','55000','lock column UPDATE still reaches the immutable trigger');
+  PERFORM text_postprocess_t2.expect_sqlstate('TRUNCATE app_core.text_postprocess_versions CASCADE','42501','postgres has no snapshot TRUNCATE privilege');
   RESET ROLE;
   SET LOCAL session_replication_role = replica;
   PERFORM text_postprocess_t2.expect_sqlstate('UPDATE app_core.text_postprocess_versions SET artifact=NULL WHERE version=1','55000','replica session cannot clear artifact');

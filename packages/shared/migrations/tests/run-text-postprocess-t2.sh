@@ -43,8 +43,25 @@ run_sql -f "$MIG/20260928_chat_history_postprocess_version.sql"
 run_sql -f "$MIG/20260929_fix_text_postprocess_writer_guard.sql"
 run_sql -f "$MIG/20260929_grant_text_postprocess_snapshot_insert.sql"
 run_sql -f "$MIG/20260929_grant_text_postprocess_snapshot_read.sql"
-run_sql -f "$MIG/tests/text_postprocess_t2_scenarios.sql"
-run_sql -c "SELECT text_postprocess_t2.run();"
+run_sql <<'SQL'
+DO $$
+BEGIN
+  BEGIN
+    EXECUTE 'EXPLAIN SELECT version FROM app_core.text_postprocess_versions WHERE false FOR KEY SHARE';
+    RAISE EXCEPTION 'FK lock regression: missing owner UPDATE was not detected';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END $$;
+-- Simulate emergency table and column grants, including privileges inherited by postgres.
+GRANT ALL ON TABLE app_core.text_postprocess_versions TO anon, authenticated, service_role;
+GRANT UPDATE (artifact) ON TABLE app_core.text_postprocess_versions TO service_role;
+SQL
+run_sql -f "$MIG/20260929_fix_text_postprocess_snapshot_fk_lock.sql"
+run_sql -f "$MIG/20260929_fix_text_postprocess_snapshot_fk_lock.sql"
+# Migrations/wrappers use a non-superuser postgres. Only adversarial scenarios need a separate
+# local superuser to exercise the ALWAYS guards under replica mode and deliberate fixture drift.
+PGUSER="${TEXT_POSTPROCESS_TEST_ADMIN:-${PGUSER:-}}" run_sql -f "$MIG/tests/text_postprocess_t2_scenarios.sql"
+PGUSER="${TEXT_POSTPROCESS_TEST_ADMIN:-${PGUSER:-}}" run_sql -c "SELECT text_postprocess_t2.run();"
 
 # Two sessions: the first holds the config advisory lock, the second must time out.
 LOCK_SQL=$(cat <<'SQL'
@@ -116,6 +133,8 @@ CREATE FUNCTION admin.rollback_text_postprocess(uuid,uuid,text,integer,integer) 
 SQL
 psql -v ON_ERROR_STOP=1 -q -d "$LEGACY_DB" -f "$MIG/20260928_text_postprocess_versions.sql"
 psql -v ON_ERROR_STOP=1 -q -d "$LEGACY_DB" -f "$MIG/20260928_text_postprocess_versions.sql"
+psql -v ON_ERROR_STOP=1 -q -d "$LEGACY_DB" -f "$MIG/20260929_fix_text_postprocess_writer_guard.sql"
+psql -v ON_ERROR_STOP=1 -q -d "$LEGACY_DB" -f "$MIG/20260929_grant_text_postprocess_snapshot_insert.sql"
 psql -v ON_ERROR_STOP=1 -q -d "$LEGACY_DB" <<'SQL'
 DO $$
 BEGIN

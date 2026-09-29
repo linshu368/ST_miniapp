@@ -155,6 +155,8 @@ pnpm supabase:link:test
 - 测试库与生产库不保证同构。数据库结构参考必须标注环境、时间和证据，不能拿 migration 当实库快照。
 - 详细规则见 [Supabase spec](.trellis/spec/database/supabase/index.md)。
 
+文本后处理快照的版本外键需要 `postgres` 执行 `SELECT FOR KEY SHARE`。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 仅授予 owner `UPDATE(version)` 以满足行锁检查，同时恢复 API 角色最小权限；快照仍由 `ENABLE ALWAYS` 触发器禁止直接修改。账本 `applied` 不代替权限、开轮/重生成及回复回读验收，新迁移仍须逐环境手工执行。
+
 ## 7. 部署拓扑
 
 | 单元        | 平台/配置                                                     | 注意事项                                                                  |

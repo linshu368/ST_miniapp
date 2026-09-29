@@ -1,5 +1,19 @@
 # 执行计划
 
+## 2026-09-29 开轮权限修复与 API 验收
+
+用户授权本地验证当前 PR #364 生成 API，成功后提交推送最小修复。复用现有快照表、外键、开轮 wrapper 和 ENABLE ALWAYS 不可变触发器，不新增业务对象、API、状态源或依赖。已在隔离 PG17 复现：SELECT 成功，但被引用表 owner 缺少 UPDATE 时，外键的 SELECT FOR KEY SHARE 报 42501。
+
+新增单文件 forward migration：仅给 postgres UPDATE(version)，收回 PUBLIC/anon/authenticated/service_role 的额外表和列授权，再给 service_role SELECT；保留 postgres INSERT 与 SELECT。表仍属 app_core，experience.chat_history 的版本 FK 和两个 postgres SECURITY DEFINER wrapper 是消费者；专用发布 RPC 仍是快照唯一写入方，历史快照永久保留。直接 UPDATE/DELETE/TRUNCATE 继续由现有 ALWAYS trigger 拒绝。
+
+可靠性：ACL 操作同一事务，lock_timeout=5s、statement_timeout=60s，不扫描/回填业务行，不增加重试、并发写或容量消耗；重复执行幂等。未知 owner、缺少 FK/RLS/ALWAYS trigger 时停止并回滚事务，不自动改函数或放宽 schema 权限。远端执行仍须独立经 Database Migration 单文件流程；本次不执行远端迁移。回退应用保留新增 ACL 与快照，通过 reviewed forward-fix 恢复权限，不删除历史对象或恢复宽泛授权。
+
+验证：隔离本地非 superuser postgres 及 Supabase 角色继承，执行新 migration 两次，实际触发 FK 的非空绑定和 NULL 兼容均成功；postgres/service_role 直接修改快照、匿名读写拒绝；既有 SQL 场景、shared 测试、Backend typecheck/相关测试和迁移 lint。真实 API 使用 TEST 开发身份新建测试会话，检查 start/delta/done、非空回复和 GET 回读 complete/版本一致；失败时不提交推送，不把本地 SQL 结果当成远端迁移已应用。
+
+实测（2026-09-29，TEST/PR #364）：本地脚本调用 `https://stminiapp-pr-364.up.railway.app` 的真实 HTTP API，使用已启用的 DEV_AUTH_BYPASS 开发测试身份。新生成 HTTP 200，start/delta/done、finish_reason=stop、7 字非空回复、postprocess_version=1；重生成 HTTP 200，同样完整 SSE、245 字非空回复，GET 回读 status=complete、版本 1。无模型/数据库 mock。首个 seed 角色未在 TEST 上架返回 character_not_found，改用公开列表中的有效角色；首次回读脚本误用 completed，按 shared 契约纠正为 complete。测试保留新建会话供核查，不修改业务用户原会话，不打印正文/凭据。
+
+本地 PG17 隔离实例使用 NOSUPERUSER/BYPASSRLS 的 postgres，继承 anon/authenticated/service_role；旧 SELECT-only ACL 下 EXPLAIN FOR KEY SHARE 必须报 42501，模拟额外表/列授权后新迁移收敛权限并重跑成功，全部既有 T2 场景（非空/NULL/FK/重生成/不可变/replica/CAS/并发/旧表/漂移恢复）通过。shared 12 文件/115 测试、Backend 相关 3 文件/14 测试及 Backend typecheck 通过。真实 API 测的是当前额外授权下的 TEST；新 forward migration 尚未在远端执行，后续须单文件 apply 后再做同样 API 验收。
+
 ## 规划与授权门禁
 
 本任务已获用户批准并 start，保持 in_progress。2026-09-29 本窗口获授权修订 T2/T3/T5 artifact 最小方案并离线实现；产品代码前已更新 design/implement/task 并通过 task.py validate。环境门禁独立保留；不 commit/push/部署/操作远端数据库。
