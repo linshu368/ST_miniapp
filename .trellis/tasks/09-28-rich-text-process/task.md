@@ -66,9 +66,9 @@ Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。�
 
 - 状态：Doing（2026-09-29）；依赖：已完成 T6、追加规划审阅与实施授权。当前按已批准的 T6R-A/B/C 实施本地 Admin 页面与验证；不撤销 T6 已完成的运行链路事实。
 - 目标：复现 Demo 的视觉与交互，仅在 Admin 外壳/身份/环境、真实草稿发布、历史恢复、共用安全 renderer、现有指令入口、协议兼容和已有模拟工具处做必要适配。以 PRD R5 补充、design 第 10 节和 implement T6R 专节为执行基准。
-- T6R-A（Todo）：页头和紫色视觉、白色连体三栏、紧凑列表卡片、编辑工具栏/开关/三页签；宽屏/中屏/窄屏和短屏适配。无需重建 Demo 顶栏品牌或改变 Admin 全局主题。
-- T6R-B（Todo）：五类模板起点弹窗、flags 勾选兼容 u、稳定 ID 次级编辑、单一预览结果分发到匹配列表/捕获卡/效果区；原文/示例下拉/字符数/375px/自适应/底部状态；顶部保存/发布/快捷键/恢复，历史 Drawer，独立 System Instructions 入口。继续复用已有 helpers/state/renderer/API。
-- T6R-C（Todo）：Admin typecheck/test/build、imports、定向格式与 diff 检查；按 implement 专节完成人工视觉/键盘/响应式、错误保留、快速切换旧结果、viewer/环境隔离、未保存/已保存/正式状态、模拟无业务写验证。真实保存/发布/回滚仅在另行授权的 Preview/TEST 中验证。
+- T6R-A（Doing）：页头和紫色视觉、白色连体三栏、紧凑列表卡片、编辑工具栏/开关/三页签已实现并在 TEST Preview 桌面画面核验；宽屏/中屏/窄屏和短屏的实际视口逐项验收未完成。无需重建 Demo 顶栏品牌或改变 Admin 全局主题。
+- T6R-B（Doing）：五类模板起点弹窗、flags 勾选兼容 u、稳定 ID 次级编辑、单一预览结果分发到匹配列表/捕获卡/效果区；原文/示例下拉/字符数/375px/自适应/底部状态；顶部保存/发布/快捷键/恢复，历史 Drawer，独立 System Instructions 入口均已实现。TEST Preview 已读验并验证流式完成/重置重新应用效果；真实写入和其余权限/错误路径不在本轮授权内。继续复用已有 helpers/state/renderer/API。
+- T6R-C（Doing）：Admin typecheck/test/build、imports、定向格式与 diff 检查通过；TEST Preview 已做视觉、Modal Escape/焦点、读失败后的请求恢复和本地模拟无业务写验证。实际多视口、viewer/环境隔离、未保存/已保存/正式状态、历史分页/回滚、CAS/超时/未知结果仍待后续受控验收。真实保存/发布/回滚仅在另行授权的 Preview/TEST 中验证。
 - 范围：Admin TextPostprocessView/styles 和必要 helper 小范围调整；不新增依赖/API/migration/状态真相，不改 Backend、Frontend 或共用 renderer 的安全/运行语义。默认不创建测试文件，确有逻辑变化优先扩展现有相关测试。
 - 视觉证据边界：Demo 源码已阅读；本地浏览器 URL 被安全策略拒绝，未完成渲染/像素对照，不绕过。后续逐项记录复现结果、必要差异、合法参考及未验项，不能将 UI 未实施写成已通过。
 - 回退：只撤回本次 Admin UI，保留真实草稿/已发布快照/原运行链路；需要扩大到协议/服务端/数据库/安全约束时返回设计审阅。
@@ -97,6 +97,7 @@ inline 模式顺序实施，不默认派发子代理。shared/index.ts、convers
 
 - 2026-09-29：用户明确授权按 T6R-A/B/C 实施本地代码与验证。已核对分支 `dev_rich_text_process`、受保护的既有任务文档脏改和 Trellis 绑定状态；开始在既有 Admin store、API、Worker 预览和 ReplyRenderer 边界内复现 Demo。未授权远端保存/发布/回滚、部署、数据库或运行配置写入。
 - 2026-09-29：T6R-A/B 本地实现及 T6R-C 自动检查完成。只改 Admin `TextPostprocessView.tsx`/`styles.css`：Demo 风格三栏、模板 Modal、flags/稳定 ID/匹配诊断、预览工具、顶部真实操作入口和历史 Drawer 均复用既有状态机/Worker/renderer。Admin typecheck、12 文件/87 测试、build、imports、定向格式与 diff 检查通过；未登录、不触发真实 mutation，Demo URL 仍不绕过安全拒绝，因此像素对照、受保护页面键盘/响应式、viewer/环境和远端写入场景未验。详见 `research/acceptance-evidence.md`；T6R 保持 Doing，T8 未推进。
+- 2026-09-29：用户完成 TEST Preview 登录后，已核验新版本界面、规则/诊断、模板 Modal 的 Escape 焦点返回、历史 Drawer、375px 控件和流式工具；未执行远端写。发现流式模拟导致共享 Worker 任务超时，改为流式中仅展示原文、在完整或重置终态才调用既有 ReplyRenderer/Worker。`b0f558df` 推送后，Preview 资源已切换且流式完成/重置均重新应用规则；一次读取失败可由既有“请求恢复”恢复。复跑 Admin typecheck、12 文件/87 测试、build、imports、格式和 diff 检查均通过。像素级 Demo 对照、真实多视口和其余受控验收仍未完成，T6R 保持 Doing，T8 未推进。
 - 2026-09-29：用户将 Admin 优化方向明确为“复现 Demo，只做必要适配”，授权补充本任务规划。更新 PRD/design/implement/task 的复现要求、差异理由、复用/可靠性/恢复和增量验收，追加 T6R Todo；本轮未改产品代码、未实施 UI、未提交推送或操作环境，保留已有 T6/T7 真机结论。
 - 2026-09-28：分支已为 dev_rich_text_process。发现既有同名 planning 骨架并原地补全，保留 creator/assignee；本轮未执行 task.py start。
 - 2026-09-28：用户决定受限 HTML + 隔离 CSS，强调运营自由和便利；本轮仅规划/研究文档，未连接数据库、运行模型、提交或部署。
