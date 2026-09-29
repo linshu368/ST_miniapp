@@ -76,6 +76,7 @@ export function ChatMessageImageFooter({
   const current = image?.image?.current ?? null;
   const ready = current?.status === 'ready' ? current : null;
   const busy = latest?.status === 'pending' || latest?.status === 'generating';
+  const generationEnabled = image?.config?.enabled !== false;
   const failedAttempt =
     latest?.status === 'failed' || latest?.status === 'failed_unknown' ? latest : null;
   const priceLabel =
@@ -311,7 +312,7 @@ export function ChatMessageImageFooter({
       <Loader2 className="size-3.5 animate-spin" aria-hidden />
       正在出图
     </span>
-  ) : image.canGenerate ? (
+  ) : image.canGenerate && generationEnabled ? (
     <span className="flex items-center gap-1">
       <button
         type="button"
@@ -358,7 +359,7 @@ export function ChatMessageImageFooter({
         </button>
       ) : null}
 
-      {ready && image.canGenerate ? (
+      {ready && image.canGenerate && generationEnabled ? (
         <div className="ml-2 space-y-1.5 text-[11px]">
           <p className="text-muted-foreground">
             {formatMediaAttemptBillingLabel(
