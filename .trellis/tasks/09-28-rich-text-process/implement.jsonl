@@ -1,0 +1,29 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 入口与应用边界"}
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"消息展示、交互和 SSE 状态"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"React Query、SSE、日志隐私"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"真机、DOM 与 consumer 验证"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend 路由、生成、统一配置入口"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"超时、幂等、并发、降级和审计"}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"生成既有验证与发布前置"}
+{"file":".trellis/spec/admin/app/index.md","reason":"Admin 页面与数据职责"}
+{"file":".trellis/spec/admin/app/data-auth-and-environments.md","reason":"角色、环境隔离、写入一致性"}
+{"file":".trellis/spec/admin/app/ui-state-and-validation.md","reason":"草稿 UI、Zod 和错误反馈"}
+{"file":".trellis/spec/admin/app/testing-build-and-deployment.md","reason":"Admin 写入失败和 consumer 验证"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"共享契约与纯逻辑边界"}
+{"file":".trellis/spec/shared/contracts/architecture-and-exports.md","reason":"共用 renderer 不进入 shared UI"}
+{"file":".trellis/spec/shared/contracts/schemas-utilities-and-fixtures.md","reason":"纯编译、runtime 校验、fixture 安全"}
+{"file":".trellis/spec/shared/contracts/testing-and-change-management.md","reason":"兼容字段与全部消费者验证"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"数据库结构证据与单文件迁移"}
+{"file":".trellis/spec/database/supabase/schema-and-object-conventions.md","reason":"八域对象归属与跨 schema"}
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"快照和发布 RPC 的最小权限"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"旧数据、锁、回滚和环境门禁"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"端到端生产者/消费者边界"}
+{"file":".trellis/tasks/09-28-rich-text-process/research/repository-evidence.md","reason":"实际复用证据与已知缺口"}
+{"file":".trellis/tasks/09-28-rich-text-process/research/decisions-and-validation.md","reason":"产品决定、规划默认与技术待验证"}
+{"file":".trellis/tasks/09-28-rich-text-process/research/t0-technical-validation.md","reason":"T0 锁定依赖、可信槽位、allowlist、预算与 T1 接口边界"}
+{"file":".trellis/tasks/09-28-rich-text-process/research/t1-shared-parser-evidence.md","reason":"T1 公开契约、runtime 出口与 compiler 依赖边界"}
+{"file":".trellis/tasks/09-28-rich-text-process/research/t2-database-evidence.md","reason":"T2 migration、事务、权限、wrapper 与环境门禁"}
+{"file":".trellis/tasks/09-28-rich-text-process/research/t4-renderer-evidence.md","reason":"T4 信任边界、Worker 生命周期与 consumer build 证据"}
+{"file":".trellis/tasks/09-28-rich-text-process/research/t2-t4-closure-review.md","reason":"收口 findings、修复、合并态验证与后续依赖门禁"}
+{"file":".trellis/tasks/09-28-rich-text-process/research/t3-backend-evidence.md","reason":"T3 Backend 配置读取、Admin 发布、开轮绑定、离线验证与 TEST 门禁"}
+{"file":".trellis/tasks/09-28-rich-text-process/research/t2-t3-t5-artifact-evidence.md","reason":"artifact ownership/RPC/DTO/consumer implementation and offline gates"}

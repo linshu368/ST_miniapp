@@ -40,6 +40,11 @@ describe('applyUserPlaceholderToMessages', () => {
       plain,
     ]);
   });
+
+  it('keeps the raw assistant text when a postprocess version is bound', () => {
+    const versioned: ChatMessage = { ...MESSAGE, postprocess_version: 3 };
+    expect(applyUserPlaceholderToMessages([versioned], '路人甲')).toEqual([versioned]);
+  });
 });
 
 describe('applyUserPlaceholderToSession', () => {

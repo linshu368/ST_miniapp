@@ -8,6 +8,7 @@ export type AdminViewKey =
   | 'image_generation_config'
   | 'vip_media_config'
   | 'vip_strategy'
+  | 'text_postprocess'
   | 'characters'
   | 'announcements'
   | 'releases';
@@ -112,6 +113,7 @@ export function resolveAdminMenuSelection(key: string): {
     key === 'image_generation_config' ||
     key === 'vip_media_config' ||
     key === 'vip_strategy' ||
+    key === 'text_postprocess' ||
     key === 'characters' ||
     key === 'announcements' ||
     key === 'releases'

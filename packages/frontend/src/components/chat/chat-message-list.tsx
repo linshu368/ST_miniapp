@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { ChatMessage } from '@miniapp/shared';
+import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
+
+import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 
 import { cn } from '@/lib/utils';
 import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
@@ -29,6 +32,10 @@ interface ChatMessageListProps {
   /** 挂在指定消息下方的操作区 */
   renderFooter?: (message: ChatMessage) => ReactNode;
   streamingMessageId?: string | null;
+  displayName?: string;
+  replyPlanFor?: (message: ChatMessage) => AssistantBodyPlan;
+  choiceDisabledFor?: (message: ChatMessage) => boolean;
+  onChoice?: (message: ChatMessage, choice: ReplyChoicePayload) => void;
 }
 
 export function ChatMessageList({
@@ -44,6 +51,10 @@ export function ChatMessageList({
   quotaExhaustedNotice,
   renderFooter,
   streamingMessageId,
+  displayName,
+  replyPlanFor,
+  choiceDisabledFor,
+  onChoice,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -118,6 +129,14 @@ export function ChatMessageList({
             quotaExhaustedNotice?.messageId === message.id ? quotaExhaustedNotice.text : undefined
           }
           footer={renderFooter?.(message)}
+          replyPlan={message.role === 'assistant' ? replyPlanFor?.(message) : undefined}
+          displayName={displayName}
+          choiceDisabled={choiceDisabledFor?.(message) !== false}
+          onChoice={
+            onChoice && message.role === 'assistant'
+              ? (choice) => onChoice(message, choice)
+              : undefined
+          }
         />
       ))}
 

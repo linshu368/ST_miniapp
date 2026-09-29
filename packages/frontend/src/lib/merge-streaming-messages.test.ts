@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '@miniapp/shared';
 
-import { mergeStreamingMessages, type StreamingTurn } from './merge-streaming-messages';
+import {
+  appendStreamText,
+  applyStreamStart,
+  mergeStreamingMessages,
+  type StreamingTurn,
+} from './merge-streaming-messages';
 
 function message(overrides: Partial<ChatMessage>): ChatMessage {
   return {
@@ -36,6 +41,7 @@ function streaming(overrides: Partial<StreamingTurn> = {}): StreamingTurn {
     turnIndex: 2,
     revision: 0,
     text: '正在写',
+    postprocessVersion: null,
     ...overrides,
   };
 }
@@ -68,6 +74,40 @@ describe('mergeStreamingMessages', () => {
     );
     expect(merged.map((item) => item.id)).toEqual(['u1', 'a1b']);
     expect(merged.at(-1)).toMatchObject({ content: '新稿', status: 'streaming' });
+  });
+
+  it('把 start 里的 postprocess_version 写到正在生成的 assistant 上', () => {
+    const turn = applyStreamStart(streaming({ assistantMessageId: null, text: '' }), {
+      type: 'start',
+      turn_index: 4,
+      user_message_id: 'u4',
+      assistant_message_id: 'a4',
+      revision: 0,
+      postprocess_version: 7,
+    });
+    const merged = mergeStreamingMessages([user, assistant], turn, 's1');
+    expect(merged.at(-1)).toMatchObject({
+      id: 'a4',
+      content: '',
+      postprocess_version: 7,
+      status: 'streaming',
+    });
+  });
+
+  it('缺失版本按 null 保留，增量不会改成别的版本', () => {
+    const started = applyStreamStart(streaming({ text: '原' }), {
+      type: 'start',
+      turn_index: 2,
+      user_message_id: 'u2',
+      assistant_message_id: 'a2',
+      revision: 1,
+    });
+    const appended = appendStreamText(started, '文');
+    expect(appended.postprocessVersion).toBeNull();
+    expect(appended.text).toBe('原文');
+    const merged = mergeStreamingMessages([user], appended, 's1');
+    expect(merged.at(-1)?.postprocess_version).toBeNull();
+    expect(merged.at(-1)?.content).toBe('原文');
   });
 
   it('start 还没到时只展示本地用户气泡，不造假 assistant', () => {
