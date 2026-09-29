@@ -24,16 +24,18 @@ const catalog: ModelCatalog = {
   tiers: [
     {
       tier: 'light',
-      label: '轻量',
+      label: 'Light',
       color: '#4ade80',
-      cost_hint: '日常对话',
+      cost_hint: 'Daily chat',
       sort_order: 1,
       models: [
         {
           id: 'flash',
+          provider: 'openrouter',
+          provider_model_id: upstream.id,
           openrouter_model_id: upstream.id,
           display_name: 'Gemini Flash',
-          tagline: '轻巧流畅',
+          tagline: 'Fast model',
           is_free: false,
           enabled: true,
           sort_order: 1,
@@ -50,7 +52,7 @@ describe('OpenRouter admin helpers', () => {
     const unknown = structuredClone(catalog);
     unknown.tiers[0]!.models[0]!.openrouter_model_id = 'vendor/missing';
     expect(getOpenRouterCatalogIssues(unknown, directory)).toEqual([
-      'Gemini Flash：OpenRouter ID 不存在',
+      'Gemini Flash: OpenRouter ID does not exist',
     ]);
   });
 
@@ -60,6 +62,6 @@ describe('OpenRouter admin helpers', () => {
 
     expect(
       getOpenRouterCatalogIssues(catalog, expiredDirectory, Date.parse('2026-07-17T00:00:00.000Z'))
-    ).toEqual(['Gemini Flash：OpenRouter 模型已过期']);
+    ).toEqual(['Gemini Flash: OpenRouter model is expired']);
   });
 });

@@ -4,6 +4,7 @@
 // → 上游转发与 SSE tap → 终态结算（实扣与落库）。顺序不能换：预留结果决定本轮是否免费，
 // 而定档扣费额又由该结果决定，余额预检再吃这个额度。
 
+import type { LlmModelProvider } from '@miniapp/shared';
 import type { RequestLogger } from '../../lib/logger.js';
 
 /**
@@ -23,6 +24,8 @@ export interface ResolvedModel {
   /** 模型目录的 stable id */
   modelId: string;
   /** 实际路由到的上游模型 */
+  provider: LlmModelProvider;
+  providerModelId: string;
   openRouterModelId: string;
   tier: 'light' | 'standard' | 'premium' | null;
   isFree: boolean;

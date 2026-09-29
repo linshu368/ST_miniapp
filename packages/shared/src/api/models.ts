@@ -10,6 +10,11 @@ import {
 } from './wallet.js';
 
 export const ModelCatalogTierKeySchema = z.enum(['light', 'standard', 'premium']);
+export const LlmModelProviderSchema = z.enum(['openrouter', 'venice']);
+export const LLM_MODEL_PROVIDER_LABELS: Record<z.infer<typeof LlmModelProviderSchema>, string> = {
+  openrouter: 'OpenRouter',
+  venice: 'Venice',
+};
 export const StableModelIdSchema = z
   .string()
   .trim()
@@ -27,27 +32,42 @@ export const HexColorSchema = z
 export function normalizeCatalogModelInput(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const record = value as Record<string, unknown>;
+  const provider =
+    typeof record.provider === 'string' && LlmModelProviderSchema.safeParse(record.provider).success
+      ? record.provider
+      : 'openrouter';
+  const legacyOpenRouterId =
+    typeof record.openrouter_model_id === 'string' ? record.openrouter_model_id.trim() : '';
+  const providerModelId =
+    typeof record.provider_model_id === 'string' && record.provider_model_id.trim()
+      ? record.provider_model_id.trim()
+      : legacyOpenRouterId;
+  const normalizedProviderFields: Record<string, unknown> = {
+    ...record,
+    provider,
+    provider_model_id: providerModelId,
+    openrouter_model_id: legacyOpenRouterId || providerModelId,
+  };
   if (typeof record.is_free === 'boolean') {
-    const { markup: _markup, deduct_markup: _deductMarkup, ...rest } = record;
+    const { markup: _markup, deduct_markup: _deductMarkup, ...rest } = normalizedProviderFields;
     return rest;
   }
   if (typeof record.markup === 'number') {
-    const { markup, deduct_markup: _deductMarkup, ...rest } = record;
+    const { markup, deduct_markup: _deductMarkup, ...rest } = normalizedProviderFields;
     return { ...rest, is_free: markup === 0 };
   }
-  return value;
+  return normalizedProviderFields;
 }
 
 export const ModelCatalogModelSchema = z.object({
   /** Stable application-facing identifier. */
   id: StableModelIdSchema,
-  /** Provider-facing model identifier passed to the OpenRouter bridge. */
-  openrouter_model_id: z
-    .string()
-    .trim()
-    .min(3)
-    .max(200)
-    .regex(/^[^\s/]+\/[^\s/]+$/),
+  /** Model platform that owns provider_model_id. Legacy configs default to OpenRouter. */
+  provider: LlmModelProviderSchema.default('openrouter'),
+  /** Provider-facing model identifier passed to the selected model platform. */
+  provider_model_id: z.string().trim().min(1).max(200),
+  /** Legacy compatibility field. For new code prefer provider + provider_model_id. */
+  openrouter_model_id: z.string().trim().min(1).max(200),
   display_name: z.string().trim().min(1).max(40),
   /** 介绍语：说明模型适用场景的短句，展示在模型名称下方。 */
   tagline: z.string().trim().min(1).max(40),
@@ -93,12 +113,28 @@ export const ModelCatalogSchema = z
       });
     }
 
-    const openRouterModelIds = models.map((model) => model.openrouter_model_id);
-    if (new Set(openRouterModelIds).size !== openRouterModelIds.length) {
+    const providerModelIds = models.map((model) => `${model.provider}:${model.provider_model_id}`);
+    if (new Set(providerModelIds).size !== providerModelIds.length) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['tiers'],
-        message: 'openrouter_model_id values must be unique',
+        message: 'provider model mappings must be unique',
+      });
+    }
+
+    const openRouterModels = models.filter((model) => model.provider === 'openrouter');
+    if (
+      openRouterModels.some(
+        (model) =>
+          !/^[^\s/]+\/[^\s/]+$/.test(model.provider_model_id) ||
+          model.openrouter_model_id !== model.provider_model_id
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tiers'],
+        message:
+          'OpenRouter models must use provider_model_id vendor/model and mirror openrouter_model_id',
       });
     }
 
@@ -119,11 +155,14 @@ export const ModelCatalogSchema = z
   });
 
 export type ModelCatalogTierKey = z.infer<typeof ModelCatalogTierKeySchema>;
+export type LlmModelProvider = z.infer<typeof LlmModelProviderSchema>;
 export type ModelCatalogModel = z.infer<typeof ModelCatalogModelSchema>;
 export type ModelCatalogTier = z.infer<typeof ModelCatalogTierSchema>;
 export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
 
 export const PublicModelCatalogModelSchema = ModelCatalogModelSchema.omit({
+  provider: true,
+  provider_model_id: true,
   openrouter_model_id: true,
   enabled: true,
 });
@@ -153,6 +192,8 @@ export const GetModelCatalogDataSchema = z.object({
   catalog: PublicModelCatalogSchema,
   selected_model_id: z.string().trim().min(1),
   selected_openrouter_model_id: z.string().trim().min(1),
+  selected_provider: LlmModelProviderSchema.optional(),
+  selected_provider_model_id: z.string().trim().min(1).optional(),
   catalog_version: z.number().int().nonnegative(),
   vip_status: VipEntitlementSummarySchema.optional(),
 });
@@ -164,6 +205,8 @@ export const SelectModelRequestSchema = z.object({
 export const SelectModelDataSchema = z.object({
   model_id: z.string().trim().min(1),
   openrouter_model_id: z.string().trim().min(1),
+  provider: LlmModelProviderSchema.optional(),
+  provider_model_id: z.string().trim().min(1).optional(),
 });
 
 export type PublicModelCatalogModel = z.infer<typeof PublicModelCatalogModelSchema>;
@@ -175,7 +218,9 @@ export type SelectModelData = z.infer<typeof SelectModelDataSchema>;
 
 const RuntimeCatalogModelSchema = z.object({
   id: z.string().trim().min(1),
-  openrouter_model_id: z.string().trim().min(1),
+  provider: LlmModelProviderSchema.optional().default('openrouter'),
+  provider_model_id: z.string().trim().min(1).optional(),
+  openrouter_model_id: z.string().trim().min(1).optional(),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -193,6 +238,8 @@ const RuntimeModelCatalogSchema = z.object({
 export interface RuntimeCatalogModel {
   id: string;
   openrouter_model_id: string;
+  provider: LlmModelProvider;
+  provider_model_id: string;
 }
 
 /**
@@ -218,7 +265,15 @@ export function resolveRuntimeCatalogModel(
   if (!requestedId) return null;
 
   const model = models.find((candidate) => candidate.id === requestedId && candidate.enabled);
-  return model ? { id: model.id, openrouter_model_id: model.openrouter_model_id } : null;
+  if (!model) return null;
+  const providerModelId = model.provider_model_id ?? model.openrouter_model_id ?? '';
+  if (!providerModelId) return null;
+  return {
+    id: model.id,
+    provider: model.provider,
+    provider_model_id: providerModelId,
+    openrouter_model_id: model.openrouter_model_id ?? providerModelId,
+  };
 }
 
 export function toPublicModelCatalog(catalog: ModelCatalog): PublicModelCatalog {
@@ -289,6 +344,70 @@ export const OpenRouterModelDirectorySchema = z.object({
 export type OpenRouterModel = z.infer<typeof OpenRouterModelSchema>;
 export type OpenRouterModelSummary = z.infer<typeof OpenRouterModelSummarySchema>;
 export type OpenRouterModelDirectory = z.infer<typeof OpenRouterModelDirectorySchema>;
+
+export const ProviderModelSummarySchema = z.object({
+  provider: LlmModelProviderSchema,
+  id: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  description: z.string().nullable(),
+  context_length: z.number().int().nonnegative().nullable(),
+  prompt_usd_per_token: z.number().finite().nonnegative(),
+  completion_usd_per_token: z.number().finite().nonnegative(),
+  status: z.enum(['available', 'unavailable', 'expired']),
+  raw_status_label: z.string().trim().min(1).nullable(),
+});
+
+export const ProviderModelDirectorySchema = z.object({
+  provider: LlmModelProviderSchema,
+  models: z.array(ProviderModelSummarySchema),
+  fetched_at: z.string().datetime(),
+  stale: z.boolean(),
+});
+
+export type ProviderModelSummary = z.infer<typeof ProviderModelSummarySchema>;
+export type ProviderModelDirectory = z.infer<typeof ProviderModelDirectorySchema>;
+
+export interface LlmProviderCapability {
+  id: LlmModelProvider;
+  label: string;
+  defaultBaseUrl: string;
+  apiKeyEnv: string;
+  baseUrlEnv?: string;
+  chatCompletionsPath: '/chat/completions';
+  modelsPath: '/models';
+  supportsOpenRouterProviderRouting: boolean;
+  supportsOpenRouterGenerationMetadata: boolean;
+  promptCachingMode: 'openrouter_anthropic_cache_control' | 'venice_prompt_cache_key' | 'none';
+}
+
+export const LLM_PROVIDER_CAPABILITIES: Record<LlmModelProvider, LlmProviderCapability> = {
+  openrouter: {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    apiKeyEnv: 'LLM_API_KEY',
+    baseUrlEnv: 'LLM_UPSTREAM_URL',
+    chatCompletionsPath: '/chat/completions',
+    modelsPath: '/models',
+    supportsOpenRouterProviderRouting: true,
+    supportsOpenRouterGenerationMetadata: true,
+    promptCachingMode: 'openrouter_anthropic_cache_control',
+  },
+  venice: {
+    id: 'venice',
+    label: 'Venice',
+    defaultBaseUrl: 'https://api.venice.ai/api/v1',
+    apiKeyEnv: 'VENICE_API_KEY',
+    baseUrlEnv: 'VENICE_BASE_URL',
+    chatCompletionsPath: '/chat/completions',
+    modelsPath: '/models',
+    supportsOpenRouterProviderRouting: false,
+    supportsOpenRouterGenerationMetadata: false,
+    promptCachingMode: 'venice_prompt_cache_key',
+  },
+};
+
+export const LLM_MODEL_PROVIDERS = Object.keys(LLM_PROVIDER_CAPABILITIES) as LlmModelProvider[];
 
 export const FixedDeductionConfigSchema = z.object({
   freeQuotaExhausted: z.number().finite().nonnegative(),

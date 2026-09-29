@@ -26,9 +26,10 @@ import { dataProvider } from '@refinedev/supabase';
 import {
   ModelCatalogSchema,
   PaymentPlansSchema,
+  type LlmModelProvider,
   type ModelCatalog,
-  type OpenRouterModelDirectory,
   type PaymentPlan,
+  type ProviderModelDirectory,
 } from '@miniapp/shared';
 import { LoginPage } from './components/LoginPage';
 import { ConfigValueEditor } from './components/ConfigValueEditor';
@@ -64,7 +65,7 @@ import {
   type ManagedConfigKey,
 } from './lib/configSchemas';
 import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
-import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRouterModels';
+import { fetchModelProviderDirectory, getCatalogProviderIssues } from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
 import {
   configMenuKey,
@@ -406,11 +407,15 @@ function AdminWorkspace(props: {
   const [workingValue, setWorkingValue] = useState<unknown>(
     configMetadata.llm_model_catalog.defaultValue
   );
-  const [openRouterDirectory, setOpenRouterDirectory] = useState<OpenRouterModelDirectory | null>(
-    null
-  );
-  const [openRouterLoading, setOpenRouterLoading] = useState(false);
-  const [openRouterError, setOpenRouterError] = useState<string | null>(null);
+  const [providerDirectories, setProviderDirectories] = useState<
+    Partial<Record<LlmModelProvider, ProviderModelDirectory>>
+  >({});
+  const [providerLoading, setProviderLoading] = useState<
+    Partial<Record<LlmModelProvider, boolean>>
+  >({});
+  const [providerErrors, setProviderErrors] = useState<
+    Partial<Record<LlmModelProvider, string | null>>
+  >({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<
@@ -459,30 +464,35 @@ function AdminWorkspace(props: {
     }
   }, [reloadCharacters, selectedKey, view]);
 
-  const reloadOpenRouter = useCallback(
-    async (forceRefresh = false) => {
-      setOpenRouterLoading(true);
-      setOpenRouterError(null);
+  const reloadProviderDirectory = useCallback(
+    async (provider: LlmModelProvider, forceRefresh = false) => {
+      setProviderLoading((current) => ({ ...current, [provider]: true }));
+      setProviderErrors((current) => ({ ...current, [provider]: null }));
       try {
-        const directory = await fetchOpenRouterModels(props.environment, forceRefresh);
-        setOpenRouterDirectory(directory);
+        const directory = await fetchModelProviderDirectory(
+          props.environment,
+          provider,
+          forceRefresh
+        );
+        setProviderDirectories((current) => ({ ...current, [provider]: directory }));
         if (forceRefresh) {
-          message.success(`OpenRouter 模型目录同步成功，共 ${directory.models.length} 个模型`);
+          message.success(`${provider} 模型目录同步成功，共 ${directory.models.length} 个模型`);
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'OpenRouter 模型同步失败';
-        setOpenRouterError(errorMessage);
+        const errorMessage = error instanceof Error ? error.message : `${provider} 模型同步失败`;
+        setProviderErrors((current) => ({ ...current, [provider]: errorMessage }));
         if (forceRefresh) message.error(errorMessage);
       } finally {
-        setOpenRouterLoading(false);
+        setProviderLoading((current) => ({ ...current, [provider]: false }));
       }
     },
     [message, props.environment]
   );
 
   useEffect(() => {
-    void reloadOpenRouter();
-  }, [reloadOpenRouter]);
+    void reloadProviderDirectory('openrouter');
+    void reloadProviderDirectory('venice');
+  }, [reloadProviderDirectory]);
 
   const currentConfig = useMemo(
     () => configs.find((config) => config.key === selectedKey),
@@ -544,20 +554,16 @@ function AdminWorkspace(props: {
     setAutoSaveStatus('idle');
   }, [currentConfig, latestDraft, selectedKey]);
 
-  const validateOpenRouterConfig = useCallback(
+  const validateModelProviderConfig = useCallback(
     (key: ManagedConfigKey, value: unknown): void => {
       if (key !== 'llm_model_catalog') return;
-      if (!openRouterDirectory) {
-        throw new Error('OpenRouter 模型目录尚未同步，无法校验模型配置');
-      }
-
       const catalog = ModelCatalogSchema.parse(value) as ModelCatalog;
-      const issues = getOpenRouterCatalogIssues(catalog, openRouterDirectory);
+      const issues = getCatalogProviderIssues(catalog, providerDirectories);
       if (issues.length > 0) {
-        throw new Error(`模型配置未通过 OpenRouter 校验：${issues.join('；')}`);
+        throw new Error(`模型配置未通过平台目录校验：${issues.join('；')}`);
       }
     },
-    [openRouterDirectory]
+    [providerDirectories]
   );
 
   useEffect(() => {
@@ -570,7 +576,7 @@ function AdminWorkspace(props: {
       let parsed: unknown;
       try {
         parsed = parseManagedConfig(selectedKey, workingValue);
-        validateOpenRouterConfig(selectedKey, parsed);
+        validateModelProviderConfig(selectedKey, parsed);
       } catch {
         setAutoSaveStatus('invalid');
         return;
@@ -611,7 +617,7 @@ function AdminWorkspace(props: {
     props.client,
     props.environment,
     selectedKey,
-    validateOpenRouterConfig,
+    validateModelProviderConfig,
     workingValue,
   ]);
 
@@ -666,7 +672,7 @@ function AdminWorkspace(props: {
     setSaving(true);
     try {
       const parsed = parseManagedConfig(selectedKey, workingValue);
-      validateOpenRouterConfig(selectedKey, parsed);
+      validateModelProviderConfig(selectedKey, parsed);
       const beforeValue = resolveManagedWorkingValue({
         key: selectedKey,
         draft: latestDraft,
@@ -703,7 +709,7 @@ function AdminWorkspace(props: {
         draft: null,
         config: currentConfig,
       });
-      validateOpenRouterConfig(selectedKey, draftValue);
+      validateModelProviderConfig(selectedKey, draftValue);
       if (!(await requireWriteConfirmation('发布配置', publishedValue, draftValue))) {
         return;
       }
@@ -758,7 +764,7 @@ function AdminWorkspace(props: {
         draft: null,
         config: currentConfig,
       });
-      validateOpenRouterConfig(selectedKey, targetValue);
+      validateModelProviderConfig(selectedKey, targetValue);
       if (!(await requireWriteConfirmation('回滚配置', publishedValue, targetValue))) {
         return;
       }
@@ -829,11 +835,11 @@ function AdminWorkspace(props: {
         value={workingValue}
         onChange={setWorkingValue}
         disabled={!canWrite}
-        openRouterDirectory={openRouterDirectory}
+        providerDirectories={providerDirectories}
         publishedModelIds={publishedModelIds}
-        syncLoading={openRouterLoading}
-        syncError={openRouterError}
-        onRefreshOpenRouter={() => void reloadOpenRouter(true)}
+        syncLoading={providerLoading}
+        syncError={providerErrors}
+        onRefreshProvider={(provider) => void reloadProviderDirectory(provider, true)}
         paymentPlans={paymentPlans}
         characters={characters}
         charactersLoading={charactersLoading}

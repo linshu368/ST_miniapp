@@ -12,6 +12,7 @@ import {
   resolveEnabledCatalogModel,
   toPublicModelCatalog,
   type FixedDeductionConfig,
+  type LlmModelProvider,
   type ModelCatalog,
   type ModelCatalogTierKey,
   type PublicModelCatalog,
@@ -123,6 +124,8 @@ export function coverageForTextWallet(input: {
 
 export interface ResolvedTextModelSelection {
   modelId: string;
+  provider: LlmModelProvider;
+  providerModelId: string;
   openRouterModelId: string;
   tier: ModelCatalogTierKey | null;
   isFree: boolean;
@@ -146,6 +149,8 @@ export function resolveTextModelSelection(input: {
     if (!light) throw new TextModelAccessError('NO_LIGHT_MODEL');
     return {
       modelId: light.model.id,
+      provider: light.model.provider,
+      providerModelId: light.model.provider_model_id,
       openRouterModelId: light.model.openrouter_model_id,
       tier: 'light',
       isFree: light.model.is_free,
@@ -154,6 +159,8 @@ export function resolveTextModelSelection(input: {
   }
   return {
     modelId: located.model.id,
+    provider: located.model.provider,
+    providerModelId: located.model.provider_model_id,
     openRouterModelId: located.model.openrouter_model_id,
     tier: located.tier,
     isFree: located.model.is_free,

@@ -12,16 +12,33 @@
  */
 
 import { Transform } from 'node:stream';
+import { LLM_PROVIDER_CAPABILITIES, type LlmModelProvider } from '@miniapp/shared';
+import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
 
-const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
+const LLM_UPSTREAM_URL = getLlmProviderRuntimeConfig('openrouter').baseUrl;
 
-export const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
+export const LLM_API_KEY = getLlmProviderRuntimeConfig('openrouter').apiKey;
 
 /** OpenAI 兼容子路径，聊天生成固定打这一条 */
 export const CHAT_COMPLETIONS_PATH = '/chat/completions';
 
 export function resolveUpstreamUrl(subPath: string, baseUrl = LLM_UPSTREAM_URL): string {
   return `${baseUrl.replace(/\/+$/, '')}${subPath}`;
+}
+
+export function resolveProviderUpstream(provider: LlmModelProvider): {
+  provider: LlmModelProvider;
+  url: string;
+  apiKey: string;
+} {
+  const capability = LLM_PROVIDER_CAPABILITIES[provider];
+  const runtime = getLlmProviderRuntimeConfig(provider);
+  const baseUrl = runtime.baseUrl.replace(/\/+$/, '');
+  return {
+    provider,
+    url: resolveUpstreamUrl(capability.chatCompletionsPath, baseUrl),
+    apiKey: runtime.apiKey,
+  };
 }
 
 /** 注入平台真实 API key 后转发。失败原样抛出，由调用方决定是 502 还是 upstream_error。 */
@@ -31,13 +48,17 @@ export async function forwardToUpstream(input: {
   body?: BodyInit | undefined;
   signal?: AbortSignal;
   apiKey?: string;
+  provider?: LlmModelProvider;
 }): Promise<Response> {
+  const provider = input.provider ?? 'openrouter';
   const forwardHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${input.apiKey ?? LLM_API_KEY}`,
-    'HTTP-Referer': 'http://localhost:3000',
-    'X-Title': 'ST_miniAPP',
   };
+  if (provider === 'openrouter') {
+    forwardHeaders['HTTP-Referer'] = 'http://localhost:3000';
+    forwardHeaders['X-Title'] = 'ST_miniAPP';
+  }
 
   return await fetch(input.url, {
     method: input.method,

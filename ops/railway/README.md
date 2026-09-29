@@ -199,6 +199,12 @@ Railway 控制台手动创建并逐项对齐：
 - backend（服务 `stminiapp`）→ [`ops/env/backend.env.production.example`](../env/backend.env.production.example)
 - Vercel（前端）→ [`ops/env/vercel.env.production.example`](../env/vercel.env.production.example)
 
+若运营模型目录启用 Venice，必须在 `stminiapp` 的对应 Railway 环境单独配置
+`VENICE_API_KEY`；可选的 `VENICE_API_BASE_URL` 默认是 `https://api.venice.ai/api/v1`。
+密钥只属于 backend，不得放入 Vercel/Admin 浏览器变量。先配置密钥并 redeploy backend，
+确认 `/api/platform/model-providers/venice/models` 可读取目录后，再发布含 Venice 模型的目录；
+回滚时先把目录发布回 OpenRouter 模型，再移除 Venice 密钥。
+
 ⚠️ **两侧必须对齐**（配错即浏览器侧请求全挂）：backend 的 `FRONTEND_URL` = Vercel 对外
 域名；Vercel 的 `NEXT_PUBLIC_API_URL` = backend 公网域名（改后需 redeploy 前端）。
 

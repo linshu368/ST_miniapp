@@ -1,3 +1,11 @@
+/**
+ * @Author: whc 952987912@qq.com
+ * @Date: 2026-09-04 10:01:59
+ * @LastEditors: whc 952987912@qq.com
+ * @LastEditTime: 2026-09-29 16:42:39
+ * @Description:
+ * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
+ */
 import { describe, expect, it } from 'vitest';
 import type { ModelCatalog } from '@miniapp/shared';
 import { configMetadata } from './configSchemas';
@@ -11,6 +19,8 @@ describe('getModelCatalogChangeSummary', () => {
     after.tiers[0]!.models[0]!.is_free = true;
     after.tiers[0]!.models.push({
       id: 'new-model',
+      provider: 'openrouter',
+      provider_model_id: 'vendor/new-model',
       openrouter_model_id: 'vendor/new-model',
       display_name: 'New Model',
       tagline: '全新体验',

@@ -22,6 +22,8 @@ const catalog: ModelCatalog = {
       models: [
         {
           id: 'flash',
+          provider: 'openrouter',
+          provider_model_id: 'vendor/flash',
           openrouter_model_id: 'vendor/flash',
           display_name: 'Flash',
           tagline: '快速响应',
@@ -31,6 +33,8 @@ const catalog: ModelCatalog = {
         },
         {
           id: 'economy',
+          provider: 'openrouter',
+          provider_model_id: 'vendor/economy',
           openrouter_model_id: 'vendor/economy',
           display_name: 'Economy',
           tagline: '节省星尘',
@@ -49,6 +53,8 @@ const catalog: ModelCatalog = {
       models: [
         {
           id: 'pro',
+          provider: 'openrouter',
+          provider_model_id: 'vendor/pro',
           openrouter_model_id: 'vendor/pro',
           display_name: 'Pro',
           tagline: '细腻演绎',
@@ -141,12 +147,25 @@ describe('filterOpenRouterModels', () => {
 describe('findDuplicateOpenRouterAssignments', () => {
   it('reports every card sharing the same OpenRouter model across tiers', () => {
     const duplicateCatalog = structuredClone(catalog);
+    duplicateCatalog.tiers[1]!.models[0]!.provider_model_id = 'vendor/flash';
     duplicateCatalog.tiers[1]!.models[0]!.openrouter_model_id = 'vendor/flash';
 
     expect(findDuplicateOpenRouterAssignments(duplicateCatalog)).toEqual({
-      'vendor/flash': [
-        { stableId: 'flash', displayName: 'Flash', tier: 'light' },
-        { stableId: 'pro', displayName: 'Pro', tier: 'premium' },
+      'openrouter:vendor/flash': [
+        {
+          stableId: 'flash',
+          displayName: 'Flash',
+          tier: 'light',
+          provider: 'openrouter',
+          providerModelId: 'vendor/flash',
+        },
+        {
+          stableId: 'pro',
+          displayName: 'Pro',
+          tier: 'premium',
+          provider: 'openrouter',
+          providerModelId: 'vendor/flash',
+        },
       ],
     });
   });

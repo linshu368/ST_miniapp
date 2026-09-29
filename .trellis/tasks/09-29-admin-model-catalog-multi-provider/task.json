@@ -3,7 +3,7 @@
   "name": "admin-model-catalog-multi-provider",
   "title": "Admin model catalog multi-provider access planning",
   "description": "Plan a provider-neutral model catalog so Admin can sync/select Venice models in addition to OpenRouter and published config can drive backend generation.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "admin shared backend database ops",
   "package": "backend",
@@ -27,26 +27,11 @@
       "schema_version": 1,
       "mode": "changes",
       "modules": [
-        {
-          "module_id": "admin.business.operations",
-          "reason": "Admin 模型目录编辑器、目录同步与发布差异会从 OpenRouter-only 演进为 provider-aware。"
-        },
-        {
-          "module_id": "backend.business.conversation-generation",
-          "reason": "文本生成链路需要按模型 provider 选择 OpenRouter 或 Venice 上游，同时保持计费收口。"
-        },
-        {
-          "module_id": "backend.infrastructure.runtime-data-security",
-          "reason": "runtime model catalog 读取、provider API key/env 解析、目录缓存与日志安全都在该基础设施边界内。"
-        },
-        {
-          "module_id": "shared.business.conversation-contracts",
-          "reason": "模型 catalog shared DTO/schema 需要新增 provider-neutral 字段并兼容旧 openrouter_model_id。"
-        },
-        {
-          "module_id": "database.infrastructure.schema-security",
-          "reason": "需要迁移 admin.validate_model_catalog_* 函数以允许多 provider catalog JSON，并记录 test-first/rollback。"
-        }
+        "admin.business.operations",
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "shared.business.conversation-contracts",
+        "database.infrastructure.schema-security"
       ]
     }
   }

@@ -7,9 +7,11 @@ const pricing = {
   fixedDeduction: { freeQuotaExhausted: 10, light: 15, standard: 30, premium: 50 },
 };
 
-const billingContext = {
+const defaultBillingContext = {
   modelId: 'anthropic-claude-sonnet-4-5',
   modelDisplayName: 'Claude Sonnet 4.5',
+  provider: 'openrouter' as 'openrouter' | 'venice',
+  providerModelId: 'anthropic/claude-sonnet-4.5',
   openRouterModelId: 'anthropic/claude-sonnet-4.5',
   modelTier: 'premium' as const,
   catalogVersion: 12,
@@ -18,6 +20,7 @@ const billingContext = {
 
 let walletBalance = 1000;
 let providerPreferences: Record<string, unknown> | null = null;
+let billingContext = { ...defaultBillingContext };
 
 vi.mock('../../platform/model-tiers.js', () => ({
   getPricingConfig: async () => pricing,
@@ -97,6 +100,8 @@ function request(overrides: Partial<GenerationRequest> = {}): GenerationRequest 
     characterId: '11111111-2222-4333-8444-555555555555',
     model: {
       modelId: billingContext.modelId,
+      provider: billingContext.provider,
+      providerModelId: billingContext.providerModelId,
       openRouterModelId: billingContext.openRouterModelId,
       tier: 'premium',
       isFree: false,
@@ -147,11 +152,13 @@ function requestBodyOf(fetchMock: ReturnType<typeof stubUpstream>): Record<strin
 beforeEach(() => {
   walletBalance = 1000;
   providerPreferences = null;
+  billingContext = { ...defaultBillingContext };
   vi.mocked(settleGeneration).mockClear();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('execute（流式）', () => {
@@ -332,6 +339,8 @@ describe('execute（失败路径）', () => {
       request({
         model: {
           modelId: billingContext.modelId,
+          provider: billingContext.provider,
+          providerModelId: billingContext.providerModelId,
           openRouterModelId: billingContext.openRouterModelId,
           tier: 'premium',
           isFree: false,
@@ -442,5 +451,49 @@ describe('execute（请求体）', () => {
       { type: 'text', text: '角色卡 system_prompt', cache_control: { type: 'ephemeral' } },
     ]);
     expect(body.messages[2]?.content).toBe('平台规则 + 你好');
+  });
+
+  it('Venice 请求禁用 Venice system prompt，并使用 prompt_cache_key 而不是 OpenRouter routing/cache_control', async () => {
+    providerPreferences = { ignore: ['alibaba'], order: ['friendli'], allow_fallbacks: true };
+    billingContext = {
+      ...defaultBillingContext,
+      modelId: 'venice-model',
+      modelDisplayName: 'Venice Model',
+      provider: 'venice',
+      providerModelId: 'venice-uncensored',
+      openRouterModelId: 'venice-uncensored',
+    };
+    vi.stubEnv('VENICE_API_KEY', 'test-venice-key');
+    const fetchMock = stubUpstream(() => sseResponse(['data: [DONE]\n\n']));
+
+    await execute(
+      request({
+        model: {
+          modelId: 'venice-model',
+          provider: 'venice',
+          providerModelId: 'venice-uncensored',
+          openRouterModelId: 'venice-uncensored',
+          tier: 'premium',
+          isFree: false,
+          entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
+        },
+        promptCaching: true,
+      }),
+      undefined,
+      fakeLogger()
+    );
+
+    const body = requestBodyOf(fetchMock) as {
+      model: unknown;
+      messages: Array<{ content: unknown }>;
+      provider?: unknown;
+      prompt_cache_key?: unknown;
+      venice_parameters?: unknown;
+    };
+    expect(body.model).toBe('venice-uncensored');
+    expect(body.provider).toBeUndefined();
+    expect(body.messages.every((message) => typeof message.content === 'string')).toBe(true);
+    expect(body.venice_parameters).toEqual({ include_venice_system_prompt: false });
+    expect(body.prompt_cache_key).toBe('session:session-1');
   });
 });
