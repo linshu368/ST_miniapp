@@ -1,5 +1,46 @@
 # 执行计划
 
+## T6R：Admin Demo 复现追加计划（2026-09-29，待实施）
+
+用户授权调整并写入规划，本轮只写文档；总任务仍 in_progress，T6 已完成事实保留，追加 T6R Todo。产品代码须待本补充规划审阅并获实施授权后执行。复现目标与必要差异以 PRD R5 补充和 design 第 10 节为准，优先 Demo 的布局/颜色/操作位置，而非沿用现有 Card 视觉。
+
+### 执行顺序
+
+1. T6R-A：复核现有 dirty scope 和 Admin 主内容宽度；以 Demo CSS/结构为参考，复现页头、连体三栏、列表卡片/紫色选中态、编辑工具栏/页签和响应式。仅修改本页作用域样式，不重复品牌外壳、不覆盖全局主题。
+2. T6R-B：接入新增模板弹窗、flags 勾选/稳定编号次级编辑、当前规则匹配卡片；将既有预览 runner 的单一结果共享到左/中/右栏。复现原文/示例下拉/字符数/375px/自适应/底部状态，紧凑保留主题/用户名/模拟流式。顶部真实保存/发布/请求恢复，历史 Drawer 复用现有分页/回滚，System Instructions 保留现有独立入口。
+3. T6R-C：执行本次 Admin 增量验证及人工复现检查，逐项记录与 Demo 的差异/原因和已验/未验情况。完成后补充 research/acceptance-evidence.md 的 Admin 新界面覆盖记录，再推进 T8 规范交付；不重做已获用户豁免的旧 T7 离线验收，也不把新页面未验证项计为通过。
+
+所有步骤由主会话 inline 执行，不派发代理。默认产品文件范围为 TextPostprocessView.tsx、styles.css 及必要的 Admin 预览/工作台 helper；模板/样例只有确有必要时小范围适配，不自动改现有 source。无需改 shared/Backend/renderer/Frontend/数据库或 package/lock。新 API、依赖或范围扩大须返回设计审阅。
+
+### 本次验证与测试范围
+
+本轮文档修改执行定向格式检查、task.py validate 和 git diff --check，不运行或宣称产品代码测试通过。后续实施后执行：
+
+```bash
+pnpm --filter @miniapp/admin typecheck
+pnpm --filter @miniapp/admin test
+pnpm --filter @miniapp/admin build
+pnpm lint:imports
+git diff --check
+```
+
+Prettier 仅检查本次编辑文件。优先扩展已有 textPostprocessWorkbench.test.ts / textPostprocessPreview.test.ts 的确有逻辑变化场景，不默认创建新测试文件或截图框架，不写布局镜像测试。如实际触及跨包契约/依赖/部署，先审阅范围，再按原 AC10 增加 shared/consumer 验证与 pnpm -r typecheck；不能默认免除相关门禁。
+
+### 可重复人工验收
+
+- 按 design 10.2 八项对照源码尺寸/颜色/间距和可获得的合法参考画面；先记录 Admin 外壳、真实写入、renderer、指令入口、额外模板/u flag/模拟工具等必要差异。原型本地 URL 被安全策略拒绝，不绕过；缺少原型渲染参考时，明确像素级对照未完成，可使用用户后续提供的截图校准。实现页自身可正常验证。
+- 1440/1280 宽屏、约 900px 中屏、375/320px 窄屏及短屏，覆盖 Admin 侧栏展开/收起；检查三种布局、独立滚动、长代码/说明、预览可见、无页面横向溢出。复现 Demo 的层次和操作位置，不以“功能相同”代替视觉验收。
+- 从空列表创建五类起点、取消创建、复制默认停用、删除取消/确认、首尾排序禁用、搜索/状态筛选；保持真实全局顺序，筛选隐藏选中项时指明当前编辑对象。键盘操作图标/开关/页签/Modal/Drawer、Escape 关闭、焦点恢复。
+- 选中规则与全部启用规则分别观察：匹配数量/首处匹配/捕获组与舞台来自同一预览；快速输入/切规则/切原文/删除规则后旧结果不回流。无匹配、停用、非法正则/flags/HTML/CSS、Worker 失败均保留输入和可读正文、错误不被工具栏或滚动区遮挡。
+- 既有含 u 的 flags、非 global、规则 ID 修改校验、现有 choice 模板和长 CSS 来回切页后保持原值；页面加载、样例切换、主题/用户名/宽度切换不把 Demo 默认值写入草稿或发布配置。
+- 完整/普通/残缺/选项示例，开始/暂停/继续/重置模拟流式，状态卡展开、选项一次本地模拟及明确发送文本；网络检查不得因预览、Modal/Drawer 或示例操作出现模型/会话写请求。
+- 保存按钮与 ⌘/Ctrl+S 共用 mutation gate；未保存禁止发布已保存草稿，保存后正式版本不变，明确发布目标才切换。CAS 冲突/超时/结果未知保持输入与查询入口；history 分页/回滚形成新版本。真实写入验证只在另行授权的 Preview/TEST 中执行，未授权时记录未验，不写 Production。
+- viewer、环境切换/迟到响应、离页未保存处理、System Instructions 导航确认，确保复现未削弱既有状态/权限边界。
+
+### 恢复与交付
+
+失败只回退本次 Admin 视图/样式；不修改已发布 source、草稿记录或旧快照，不引入数据迁移。最终交付文件清单、定向验证结果与必要差异，再走既有提交/推送授权流程。本轮只补规划，不提前更新模块现状为已实现。
+
 ## 2026-09-29 开轮权限修复与 API 验收
 
 用户授权本地验证当前 PR #364 生成 API，成功后提交推送最小修复。复用现有快照表、外键、开轮 wrapper 和 ENABLE ALWAYS 不可变触发器，不新增业务对象、API、状态源或依赖。已在隔离 PG17 复现：SELECT 成功，但被引用表 owner 缺少 UPDATE 时，外键的 SELECT FOR KEY SHARE 报 42501。

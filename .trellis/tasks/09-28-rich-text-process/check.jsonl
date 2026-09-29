@@ -27,3 +27,4 @@
 {"file":".trellis/tasks/09-28-rich-text-process/research/t2-t4-closure-review.md","reason":"复核本轮 findings、回归验证、状态和剩余门禁"}
 {"file":".trellis/tasks/09-28-rich-text-process/research/t3-backend-evidence.md","reason":"复核 T3 降级、CAS、worker、版本绑定和未执行的数据库联调"}
 {"file":".trellis/tasks/09-28-rich-text-process/research/t2-t3-t5-artifact-evidence.md","reason":"artifact SQL/consumer regression results and remaining environment gates"}
+{"file": ".trellis/spec/admin/app/features-and-components.md", "reason": "复核 T6R 弹窗与写操作复现未削弱既有输入、权限和发布语义"}

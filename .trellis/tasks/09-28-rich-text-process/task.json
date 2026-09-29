@@ -36,9 +36,10 @@
     ".trellis/tasks/09-28-rich-text-process/research/t5-miniapp-evidence.md",
     ".trellis/tasks/09-28-rich-text-process/research/t6-admin-evidence.md",
     ".trellis/tasks/09-28-rich-text-process/research/t5-t6-closure-review.md",
-    ".trellis/tasks/09-28-rich-text-process/research/t2-t3-t5-artifact-evidence.md"
+    ".trellis/tasks/09-28-rich-text-process/research/t2-t3-t5-artifact-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/research/acceptance-evidence.md"
   ],
-  "notes": "2026-09-29：T0/T1/T4 Done。T2/T3/T5 artifact P1 已离线解决；PG17 本地新安装/旧行/重跑/漂移恢复与全部合并验证通过。T2 Doing（Implementation complete / environment pending）；T3 Doing（Implementation and offline verification complete / database integration pending）；T5/T6 Doing（Implementation and offline verification complete / environment integration pending）。总任务 in_progress，T7 仅可开始离线验收准备；TEST migration/联调及 Production 保留独立授权门禁。未 commit/push/连接远端。",
+  "notes": "2026-09-29：T0–T6 Done。T2/T3/T5/T6 的 TEST／PR 集成待办已关闭：正式 v2 指针与快照一致，PR-364 实际保存／发布／版本读取成功，用户真机确认选项发送一次、状态折叠、双击防重复及新回复使用新版本通过。T7 Doing：主链路真机验收通过，按实际覆盖范围收口，用户决定不再补做离线验收；未覆盖项见 research/acceptance-evidence.md。T8 Todo，总任务 in_progress；Production 迁移／发布保留独立门禁。本次仅更新任务记录，未提交或推送。 2026-09-29 追加：用户要求复现 Admin Demo、仅做必要适配，并授权补充规划；新增 T6R Todo（布局视觉、交互接线、增量验证），T8 同时依赖 T7 与 T6R。详见 PRD R5 补充、design 第 10 节及 implement T6R 专节；本轮未实施产品代码，实施授权与远端环境门禁保留。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

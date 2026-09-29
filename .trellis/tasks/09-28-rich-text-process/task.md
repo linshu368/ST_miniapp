@@ -2,7 +2,7 @@
 
 ## 状态与总门禁
 
-Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。任务已在用户审核并批准规划后进入 in_progress；T0/T1/T4 已完成，T2/T3/T5/T6 离线实现完成但保留环境门禁，T7/T8 仍按依赖顺序推进。基线分支 dev_rich_text_process / PR base dev。T0–T8 同属一个完整任务，不使用父子关系冒充依赖。
+Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。任务已在用户审核并批准规划后进入 in_progress；T0–T6 已完成，T2/T3/T5/T6 的 TEST／PR 环境集成待办已关闭。2026-09-29 追加 T6R：按用户要求复现 Admin Demo，状态 Todo，本轮仅补规划、尚未实施。T7 真机主链路验收通过，按实际覆盖范围收口，不再补做旧离线验收；新增 Admin 界面仍须完成 T6R 增量验证；T8 待推进。证据见 `research/acceptance-evidence.md`；Production 发布与迁移仍为独立门禁。基线分支 dev_rich_text_process / PR base dev。T0–T8 及 T6R 同属一个完整任务，不使用父子关系冒充依赖。
 
 ## T0 — 安全与共用渲染技术验证
 
@@ -23,7 +23,7 @@ Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。�
 
 ## T2 — 数据版本与运营事务
 
-- 状态：Doing（Implementation complete / environment pending）；依赖：T1；离线实现和 PostgreSQL 17.11 临时库验证已完成，未连接 TEST/Production，未执行远端 migration。
+- 状态：Done（2026-09-29，TEST／PR 集成完成）；依赖：T1；既有 PostgreSQL 17.11 离线证据保留，TEST 正式发布快照与运行指针一致，真实发布和对话消费成功。见 `research/acceptance-evidence.md`；不表示 Production 已迁移或验收。
 - 范围：shared/migrations/YYYYMMDD\_\* 两文件、必要 fixtures/tests、迁移 README。
 - 对象：app_core.text_postprocess_versions/runtime_config；admin 既有 draft/release/audit 新 key/CAS/service-only 发布；experience.chat_history 新 FK/开轮 wrapper。
 - 保留其他配置 key 的旧 RPC 行为，删除不要求 artifact 的本 key 专用旧重载；不改写已发布历史 migration；核对 view 固定列、测试前置权限和现存函数签名。source/artifact/指针/release/audit/draft 发布原子，通用 RPC 不可绕过本 key。
@@ -32,11 +32,11 @@ Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。�
 
 ## T3 — Backend 配置、发布、消息绑定
 
-- 状态：Doing（Implementation and offline verification complete / database integration pending）；依赖：T1；数据库联调仍等待 T2 TEST 门禁。没有连接 TEST/Production，没有把 mock 写成远端事实。
+- 状态：Done（2026-09-29，TEST／PR 集成完成）；依赖：T1；PR-364 实际保存、发布、正式状态读取和版本批次读取成功，新回复消费新版本经用户真机确认。见 `research/acceptance-evidence.md`。
 - 范围：routes/text-postprocess.ts、features/text-postprocess/、repository、conversations/generate.ts、history row 映射、server route 注册；窄提取现有 Admin session 授权。证据见 `research/t3-backend-evidence.md`。
 - runtime-config.ts 统一读取、短超时原文降级；版本批次有界；后台隔离验证 worker + CAS 发布；SSE start 固定 wrapper 返回的版本。
-- 验证：shared 114、backend 562、全仓 typecheck、imports/migrations/ledger 和定向 Prettier 通过。真实 RPC 集成未做。
-- 对应：AC1/6/7/8 的 Backend 离线部分。T5/T6 已完成离线实现，仍等待环境联调。
+- 验证：既有 shared/backend、全仓 typecheck、imports/migrations/ledger 和格式验证结果见历史执行记录；真实 TEST 发布 RPC 与版本读取联调已完成。本次状态收口不重跑离线验收。
+- 对应：AC1/6/7/8 的 Backend 实现及已覆盖的 TEST 集成；未覆盖的环境失败路径由 T7 单独记录。
 
 ## T4 — 两端共用 renderer
 
@@ -48,7 +48,7 @@ Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。�
 
 ## T5 — MiniApp 接线
 
-- 状态：Doing（Implementation and offline verification complete / environment integration pending）；依赖：T3/T4。证据见 `research/t5-miniapp-evidence.md` 与 artifact 收口证据。
+- 状态：Done（2026-09-29，TEST／PR 真机集成完成）；依赖：T3/T4。用户确认实际渲染、选项正确发送一次、双击防重复、状态折叠和发布后新回复使用新版本通过。证据见 `research/acceptance-evidence.md`，既有离线证据保留。
 - 范围：lib/api/text-postprocess.ts、conversation-stream.ts、merge-streaming-messages.ts、use-conversation-turn.ts、chat 页面与 bubble/list/markdown。
 - 正确传版、批次加载、null 原始展示、历史稳定、流中按钮禁用、最后完整回复选项经正常 runTurn；保持输入恢复/402/余额回查。
 - 验证：既有 frontend tests/lint/typecheck/build，版本切换与 reload、双击、流中发布、余额/网络故障。
@@ -56,22 +56,34 @@ Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。�
 
 ## T6 — Admin 工作台
 
-- 状态：Doing（Implementation and offline verification complete / environment integration pending）；依赖：T3/T4。证据见 `research/t6-admin-evidence.md` 与 `research/t5-t6-closure-review.md`。
+- 状态：Done（2026-09-29，TEST／PR 集成完成）；依赖：T3/T4。实际保存、发布 v2、正式状态回读和 MiniApp 消费已确认。证据见 `research/acceptance-evidence.md`，既有离线证据保留。
 - 范围：components/TextPostprocessView/必要编辑子组件、lib/textPostprocessApi.ts、导航/App 小型接线、styles.css。
 - 三栏/窄屏、正则模板样式编辑、诊断/示例/模拟流、草稿/正式值分开、保存/发布/CAS/分页历史/回滚，System Instructions 已有入口。
 - 验证：admin tests/typecheck/build；viewer/跨环境/迟到响应、异常输入保留、发布对象准确、旧分页回退、模拟无模型请求。
 - 对应：AC3/5/6/7/9。
 
+## T6R — Admin 工作台复现 Demo（2026-09-29 追加）
+
+- 状态：Doing（2026-09-29）；依赖：已完成 T6、追加规划审阅与实施授权。当前按已批准的 T6R-A/B/C 实施本地 Admin 页面与验证；不撤销 T6 已完成的运行链路事实。
+- 目标：复现 Demo 的视觉与交互，仅在 Admin 外壳/身份/环境、真实草稿发布、历史恢复、共用安全 renderer、现有指令入口、协议兼容和已有模拟工具处做必要适配。以 PRD R5 补充、design 第 10 节和 implement T6R 专节为执行基准。
+- T6R-A（Todo）：页头和紫色视觉、白色连体三栏、紧凑列表卡片、编辑工具栏/开关/三页签；宽屏/中屏/窄屏和短屏适配。无需重建 Demo 顶栏品牌或改变 Admin 全局主题。
+- T6R-B（Todo）：五类模板起点弹窗、flags 勾选兼容 u、稳定 ID 次级编辑、单一预览结果分发到匹配列表/捕获卡/效果区；原文/示例下拉/字符数/375px/自适应/底部状态；顶部保存/发布/快捷键/恢复，历史 Drawer，独立 System Instructions 入口。继续复用已有 helpers/state/renderer/API。
+- T6R-C（Todo）：Admin typecheck/test/build、imports、定向格式与 diff 检查；按 implement 专节完成人工视觉/键盘/响应式、错误保留、快速切换旧结果、viewer/环境隔离、未保存/已保存/正式状态、模拟无业务写验证。真实保存/发布/回滚仅在另行授权的 Preview/TEST 中验证。
+- 范围：Admin TextPostprocessView/styles 和必要 helper 小范围调整；不新增依赖/API/migration/状态真相，不改 Backend、Frontend 或共用 renderer 的安全/运行语义。默认不创建测试文件，确有逻辑变化优先扩展现有相关测试。
+- 视觉证据边界：Demo 源码已阅读；本地浏览器 URL 被安全策略拒绝，未完成渲染/像素对照，不绕过。后续逐项记录复现结果、必要差异、合法参考及未验项，不能将 UI 未实施写成已通过。
+- 回退：只撤回本次 Admin UI，保留真实草稿/已发布快照/原运行链路；需要扩大到协议/服务端/数据库/安全约束时返回设计审阅。
+- 对应：AC5/7/9/11/12。新增 UI 验证不等于重做用户已豁免的旧 T7 离线验收；完成后追加 acceptance-evidence.md，不覆盖此前实证。
+
 ## T7 — 集成与交付验证
 
-- 状态：Todo；依赖：T2–T6。
-- 范围：必要测试修正、research/acceptance-evidence.md（实施时创建，记录安全摘要，无业务正文）。
-- 执行 implement.md 全部门禁和人工失败路径；TEST/Production 证据分开，Telegram 真机记录未覆盖项。
+- 状态：Doing（真机主链路验收通过，覆盖记录待最终收口）；依赖：T2–T6。
+- 范围：`research/acceptance-evidence.md`，记录安全摘要，无业务正文。
+- 按用户决定不再补做离线验收，复用既有离线验证并记录 PR 环境真机结果；未覆盖项明确保留，不由主链路成功推定通过。TEST/Production 证据分开。
 - 对应：AC1–AC10；任一核心失败项禁止开放。
 
 ## T8 — 规范与交付
 
-- 状态：Todo；依赖：T7。
+- 状态：Todo；依赖：T7 与 T6R。
 - 范围：README、ARCHITECTURE、Admin README、受影响 spec、module-updates.json、任务状态/执行记录。
 - 更新六包拓扑与运行事实、运营帮助/策略边界、发布/恢复说明；模块更新采用当前 index 既有 IDs，必要新模块届时按门禁申报。
 - 验证：格式、路径/context/module 校验、diff；给出最终文件清单和 commit message，等用户提交授权。
@@ -83,6 +95,9 @@ inline 模式顺序实施，不默认派发子代理。shared/index.ts、convers
 
 ## 执行记录
 
+- 2026-09-29：用户明确授权按 T6R-A/B/C 实施本地代码与验证。已核对分支 `dev_rich_text_process`、受保护的既有任务文档脏改和 Trellis 绑定状态；开始在既有 Admin store、API、Worker 预览和 ReplyRenderer 边界内复现 Demo。未授权远端保存/发布/回滚、部署、数据库或运行配置写入。
+- 2026-09-29：T6R-A/B 本地实现及 T6R-C 自动检查完成。只改 Admin `TextPostprocessView.tsx`/`styles.css`：Demo 风格三栏、模板 Modal、flags/稳定 ID/匹配诊断、预览工具、顶部真实操作入口和历史 Drawer 均复用既有状态机/Worker/renderer。Admin typecheck、12 文件/87 测试、build、imports、定向格式与 diff 检查通过；未登录、不触发真实 mutation，Demo URL 仍不绕过安全拒绝，因此像素对照、受保护页面键盘/响应式、viewer/环境和远端写入场景未验。详见 `research/acceptance-evidence.md`；T6R 保持 Doing，T8 未推进。
+- 2026-09-29：用户将 Admin 优化方向明确为“复现 Demo，只做必要适配”，授权补充本任务规划。更新 PRD/design/implement/task 的复现要求、差异理由、复用/可靠性/恢复和增量验收，追加 T6R Todo；本轮未改产品代码、未实施 UI、未提交推送或操作环境，保留已有 T6/T7 真机结论。
 - 2026-09-28：分支已为 dev_rich_text_process。发现既有同名 planning 骨架并原地补全，保留 creator/assignee；本轮未执行 task.py start。
 - 2026-09-28：用户决定受限 HTML + 隔离 CSS，强调运营自由和便利；本轮仅规划/研究文档，未连接数据库、运行模型、提交或部署。
 - 2026-09-28：用户确认全部规划文档并批准实施；已运行 task.py start，状态切换为 in_progress。用户随后确认先完成 T0，再把 T1 交接给新窗口。
@@ -127,3 +142,10 @@ inline 模式顺序实施，不默认派发子代理。shared/index.ts、convers
 - 根因与范围：`experience.start_chat_history_*_with_postprocess` 会以 `SECURITY DEFINER` 的 `postgres` owner 核验已发布版本。原 migration 声明的 snapshot `SELECT` ACL 在 TEST 实际状态中缺失或漂移；仅补 publisher 的 `INSERT` 不能恢复此读取路径。
 - 最小 forward-fix：新增 `20260929_grant_text_postprocess_snapshot_read.sql`。它要求两个 wrapper 均仍为 `postgres` owner 的 `SECURITY DEFINER`，只授予 `postgres` 和既有 server-only `service_role` 对 `app_core.text_postprocess_versions` 的 `SELECT`，并明确拒绝 `service_role` 的四类写权限。未知 owner/非 definer 直接停止，不用 schema 级宽泛授权掩盖漂移。
 - 发布与恢复：TEST 使用 Database Migration workflow 单文件执行，先查账本和 preflight；postflight 必须同时确认两角色 `SELECT`、`service_role` 无写权限，再真机发送及重生成各一次。该文件只改 ACL metadata、无业务行/表重写/回填；失败即停止并核验函数 owner/ACL，后续仅以新的 reviewed forward migration 恢复。Production 未获授权。
+
+## TEST／PR 真机集成收口（2026-09-29）
+
+- 本节更新当前状态；前文离线实现、权限故障与环境待办记录保留为发生时的历史事实。
+- 已只读确认 TEST `testdb` 当前正式版本为 v2，运行指针与版本快照一致；PR-364 日志记录真实保存、发布、状态回读及版本批次读取成功。
+- 用户确认选项正确发送一次、状态折叠、双击防重复及发布后新回复使用新版本均通过。T2/T3/T5/T6 标为 Done；详细证据和未覆盖项见 `research/acceptance-evidence.md`。
+- T7 不再补做离线验收；主链路真机通过不代表所有失败路径或 Production 验收通过。总任务保持 in_progress，T8 尚未完成。

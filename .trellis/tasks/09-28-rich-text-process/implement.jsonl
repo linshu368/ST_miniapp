@@ -27,3 +27,4 @@
 {"file":".trellis/tasks/09-28-rich-text-process/research/t2-t4-closure-review.md","reason":"收口 findings、修复、合并态验证与后续依赖门禁"}
 {"file":".trellis/tasks/09-28-rich-text-process/research/t3-backend-evidence.md","reason":"T3 Backend 配置读取、Admin 发布、开轮绑定、离线验证与 TEST 门禁"}
 {"file":".trellis/tasks/09-28-rich-text-process/research/t2-t3-t5-artifact-evidence.md","reason":"artifact ownership/RPC/DTO/consumer implementation and offline gates"}
+{"file": ".trellis/spec/admin/app/features-and-components.md", "reason": "T6R Demo 复现的受控编辑、弹窗、写操作和最小复用边界"}

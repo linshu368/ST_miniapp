@@ -6,6 +6,7 @@ import {
   Alert,
   Button,
   Card,
+  Drawer,
   Empty,
   Input,
   Modal,
@@ -492,30 +493,42 @@ export function TextPostprocessView(props: {
 
   const environmentLabel = props.environment === 'production' ? '生产环境' : '测试环境';
   const rule = selectedRule(session.local, session.selectedRuleId);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [preview, setPreview] = useState<PreviewViewState | null>(null);
+
+  useEffect(() => {
+    const save = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
+      if (!allowWrite || session.mutation?.phase === 'inflight') return;
+      event.preventDefault();
+      void startWrite('save');
+    };
+    window.addEventListener('keydown', save);
+    return () => window.removeEventListener('keydown', save);
+  }, [allowWrite, session.mutation?.phase, session.local]);
 
   return (
-    <Space direction="vertical" size="middle" className="text-postprocess-page">
-      <Card>
-        <Space direction="vertical" size="small" className="field-full">
-          <Space wrap>
+    <div className="text-postprocess-page">
+      <header className="text-postprocess-head">
+        <div>
+          <Typography.Title level={3}>回复富文本规则</Typography.Title>
+          <Typography.Text type="secondary">
+            当前{environmentLabel}的回复后处理。保存草稿不会切换正式版本。
+          </Typography.Text>
+        </div>
+        <div className="text-postprocess-head-actions">
+          <Space wrap size={6}>
             <Tag color={props.environment === 'production' ? 'red' : 'blue'}>
               {environmentLabel}
             </Tag>
-            <Tag>{dirty ? '本地未保存' : '本地与已保存基线一致'}</Tag>
-            <Tag>{session.server?.draft ? '有已保存草稿' : '没有已保存草稿'}</Tag>
+            <Tag color={dirty ? 'gold' : undefined}>{dirty ? '未保存' : '草稿已同步'}</Tag>
             {published.status === 'available' ? (
-              <Tag color="green">正式版本 {published.version}</Tag>
+              <Tag color="green">正式 v{published.version}</Tag>
             ) : null}
-            {published.status === 'unavailable' ? (
-              <Tag color="orange">当前正式配置不可用</Tag>
-            ) : null}
+            {published.status === 'unavailable' ? <Tag color="orange">正式配置不可用</Tag> : null}
             {published.status === 'none' ? <Tag>尚未发布</Tag> : null}
             {!allowWrite ? <Tag>只读</Tag> : null}
           </Space>
-          <Typography.Paragraph type="secondary">
-            这里管理当前{environmentLabel}
-            的回复富文本规则。保存草稿不会切换线上版本。规则和平台规则模板分开发布。
-          </Typography.Paragraph>
           <Space wrap>
             <Button
               onClick={() => {
@@ -533,7 +546,7 @@ export function TextPostprocessView(props: {
                 })();
               }}
             >
-              重新读取
+              请求恢复
             </Button>
             <Button
               onClick={() =>
@@ -541,7 +554,7 @@ export function TextPostprocessView(props: {
               }
               disabled={!dirty}
             >
-              放弃未保存修改
+              放弃修改
             </Button>
             <Button
               onClick={() => {
@@ -559,16 +572,25 @@ export function TextPostprocessView(props: {
                 })();
               }}
             >
-              打开平台规则模板
+              System Instructions
+            </Button>
+            <Button onClick={() => setHistoryOpen(true)}>发布历史</Button>
+            <Button
+              type="primary"
+              disabled={!allowWrite || session.mutation?.phase === 'inflight'}
+              onClick={() => void startWrite('save')}
+            >
+              保存草稿
+            </Button>
+            <Button
+              disabled={!allowWrite || session.mutation?.phase === 'inflight' || dirty}
+              onClick={() => void startWrite('publish')}
+            >
+              发布
             </Button>
           </Space>
-          {dirty ? (
-            <Typography.Text type="secondary">
-              有未保存修改时，重新读取会先要求放弃这些修改。
-            </Typography.Text>
-          ) : null}
-        </Space>
-      </Card>
+        </div>
+      </header>
       {session.notice ? (
         <Alert
           showIcon
@@ -593,6 +615,7 @@ export function TextPostprocessView(props: {
         <RuleList
           session={session}
           disabled={!allowWrite || session.mutation?.phase === 'inflight'}
+          preview={preview}
           onSelect={(ruleId) =>
             props.onStoreChange((store) => selectRule(store, props.environment, ruleId))
           }
@@ -602,6 +625,7 @@ export function TextPostprocessView(props: {
           session={session}
           rule={rule}
           disabled={!allowWrite || session.mutation?.phase === 'inflight'}
+          preview={preview}
           onEdit={edit}
           onIdDraft={(value) => {
             if (!rule) return;
@@ -643,30 +667,25 @@ export function TextPostprocessView(props: {
             );
           }}
         />
-        <PreviewColumn source={session.local} />
+        <PreviewColumn source={session.local} onPreviewChange={setPreview} />
       </div>
-      <HistoryColumn
-        session={session}
-        currentVersion={currentVersion}
-        allowWrite={allowWrite && session.mutation?.phase !== 'inflight'}
-        onRollback={(version) => void startWrite('rollback', version)}
-        onLoadMore={() => void loadMore()}
-      />
-      <Card title="草稿与发布">
+      <Drawer title="发布历史" open={historyOpen} onClose={() => setHistoryOpen(false)} width={480}>
+        <HistoryColumn
+          session={session}
+          currentVersion={currentVersion}
+          allowWrite={allowWrite && session.mutation?.phase !== 'inflight'}
+          onRollback={(version) => void startWrite('rollback', version)}
+          onLoadMore={() => void loadMore()}
+        />
+      </Drawer>
+      <div className="text-postprocess-footer">
+        <Typography.Text type="secondary">
+          {session.server?.draft
+            ? `已保存草稿修订 ${session.server.draft.draft_revision}`
+            : '没有已保存草稿'}
+          ；{dirty ? '本地修改尚未保存' : '本地与草稿基线一致'}。
+        </Typography.Text>
         <Space wrap>
-          <Button
-            type="primary"
-            disabled={!allowWrite || session.mutation?.phase === 'inflight'}
-            onClick={() => void startWrite('save')}
-          >
-            保存草稿
-          </Button>
-          <Button
-            disabled={!allowWrite || session.mutation?.phase === 'inflight' || dirty}
-            onClick={() => void startWrite('publish')}
-          >
-            发布已保存草稿
-          </Button>
           <Button
             danger
             disabled={!allowWrite || session.mutation?.phase === 'inflight'}
@@ -685,34 +704,58 @@ export function TextPostprocessView(props: {
             </Button>
           ) : null}
         </Space>
-        <Typography.Paragraph type="secondary">
-          发布只提交已经保存的草稿修订。本地还没保存的修改不会一起发布。
-          {session.server?.draft
-            ? ` 已保存修订 ${session.server.draft.draft_revision}。`
-            : ' 当前没有可发布的已保存草稿。'}
-        </Typography.Paragraph>
-      </Card>
-    </Space>
+      </div>
+    </div>
   );
 }
 
 function RuleList(props: {
   session: EnvSession;
   disabled: boolean;
+  preview: PreviewViewState | null;
   onSelect: (ruleId: string) => void;
   onEdit: (local: EditableSource, selectedRuleId: string | null) => void;
 }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [newRuleOpen, setNewRuleOpen] = useState(false);
+  const [templateId, setTemplateId] = useState('dialogue');
+  const [newName, setNewName] = useState('对白');
   const visible = filterRules(props.session.local.rules, query, status);
   const selected = props.session.selectedRuleId;
 
   const add = (rule: EditableRule) => {
     props.onEdit(insertRule(props.session.local, rule, selected), rule.id);
   };
+  const create = () => {
+    const template = STARTER_RULES.find((item) => item.id === templateId);
+    const id =
+      template && !props.session.local.rules.some((item) => item.id === template.id)
+        ? template.id
+        : createRuleId(props.session.local.rules.map((item) => item.id));
+    const base = template ? { ...template } : blankRule(id);
+    add({ ...base, id, name: newName.trim() || base.name, enabled: false });
+    setNewRuleOpen(false);
+  };
 
   return (
-    <Card title="规则" className="text-postprocess-column">
+    <section className="text-postprocess-column text-postprocess-rules-column">
+      <div className="text-postprocess-column-head">
+        <div>
+          <strong>规则</strong>
+          <Typography.Text type="secondary">
+            {props.session.local.rules.length} 条 · 按顺序执行
+          </Typography.Text>
+        </div>
+        <Button
+          type="primary"
+          size="small"
+          disabled={props.disabled}
+          onClick={() => setNewRuleOpen(true)}
+        >
+          + 新建
+        </Button>
+      </div>
       <Space direction="vertical" className="field-full">
         <Input
           aria-label="搜索规则"
@@ -730,101 +773,49 @@ function RuleList(props: {
             { value: 'disabled', label: '只看停用' },
           ]}
         />
-        <Space wrap>
-          <Button
-            disabled={props.disabled}
-            onClick={() =>
-              add(blankRule(createRuleId(props.session.local.rules.map((rule) => rule.id))))
-            }
-          >
-            新建
-          </Button>
-          <Button
-            disabled={props.disabled || !selected}
-            onClick={() => {
-              if (!selected) return;
-              const copied = duplicateRule(props.session.local, selected);
-              if (copied) props.onEdit(copied.local, copied.selectedRuleId);
-            }}
-          >
-            复制
-          </Button>
-          <Select
-            aria-label="从模板新建"
-            placeholder="从模板新建"
-            disabled={props.disabled}
-            onChange={(id: string) => {
-              const template = STARTER_RULES.find((rule) => rule.id === id);
-              if (!template) return;
-              const nextId = props.session.local.rules.some((rule) => rule.id === template.id)
-                ? createRuleId(props.session.local.rules.map((rule) => rule.id))
-                : template.id;
-              add({ ...template, id: nextId, enabled: false });
-            }}
-            options={STARTER_RULES.map((rule) => ({ value: rule.id, label: rule.name }))}
-          />
-        </Space>
         {visible.length === 0 ? <Empty description="没有匹配的规则" /> : null}
         <div className="text-postprocess-rules">
-          {visible.map((rule) => (
-            <div
-              key={rule.id}
-              className={
-                rule.id === selected ? 'text-postprocess-rule is-selected' : 'text-postprocess-rule'
-              }
-            >
-              <button type="button" onClick={() => props.onSelect(rule.id)}>
-                <strong>{rule.name || rule.id}</strong>
-                <small>{rule.id}</small>
-              </button>
-              <Space>
+          {visible.map((rule) => {
+            const stat = props.preview?.apply?.rules.find((item) => item.ruleId === rule.id);
+            return (
+              <div
+                key={rule.id}
+                className={
+                  rule.id === selected
+                    ? 'text-postprocess-rule is-selected'
+                    : 'text-postprocess-rule'
+                }
+              >
+                <button type="button" onClick={() => props.onSelect(rule.id)}>
+                  <span className="text-postprocess-rule-top">
+                    <strong>{rule.name || rule.id}</strong>
+                    <small>
+                      #{String(props.session.local.rules.indexOf(rule) + 1).padStart(2, '0')}
+                    </small>
+                  </span>
+                  <span className="text-postprocess-rule-description">
+                    {rule.description || '自定义后处理规则'}
+                  </span>
+                  <span className="text-postprocess-rule-bottom">
+                    <span>{rule.enabled ? '已启用' : '已停用'}</span>
+                    <span>
+                      {rule.enabled ? (stat ? `${stat.count} 处匹配` : '等待处理') : '不参与处理'}
+                    </span>
+                  </span>
+                </button>
                 <Switch
-                  aria-label={`${rule.name} 启用`}
+                  className="text-postprocess-rule-switch"
+                  size="small"
+                  aria-label={`${rule.name || rule.id} 启用`}
                   checked={rule.enabled}
                   disabled={props.disabled}
                   onChange={(enabled) =>
                     props.onEdit(setRuleEnabled(props.session.local, rule.id, enabled), selected)
                   }
                 />
-                <Button
-                  size="small"
-                  disabled={props.disabled}
-                  onClick={() =>
-                    props.onEdit(moveRule(props.session.local, rule.id, 'up'), selected)
-                  }
-                >
-                  上移
-                </Button>
-                <Button
-                  size="small"
-                  disabled={props.disabled}
-                  onClick={() =>
-                    props.onEdit(moveRule(props.session.local, rule.id, 'down'), selected)
-                  }
-                >
-                  下移
-                </Button>
-                <Button
-                  size="small"
-                  danger
-                  disabled={props.disabled}
-                  onClick={() => {
-                    void confirmAction(
-                      `删除规则 ${rule.name}？`,
-                      '删除后还需要保存草稿才会写到服务器。',
-                      true
-                    ).then((ok) => {
-                      if (!ok) return;
-                      const next = deleteRule(props.session.local, rule.id);
-                      props.onEdit(next.local, next.selectedRuleId);
-                    });
-                  }}
-                >
-                  删除
-                </Button>
-              </Space>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
         {selected && !visible.some((rule) => rule.id === selected) ? (
           <Typography.Text type="secondary">
@@ -832,7 +823,45 @@ function RuleList(props: {
           </Typography.Text>
         ) : null}
       </Space>
-    </Card>
+      <Modal
+        title="新建回复规则"
+        open={newRuleOpen}
+        onCancel={() => setNewRuleOpen(false)}
+        onOk={create}
+        okText="创建"
+        okButtonProps={{ disabled: props.disabled }}
+      >
+        <Space direction="vertical" className="field-full">
+          <Typography.Text type="secondary">选择起点后创建；新规则默认停用。</Typography.Text>
+          <div className="text-postprocess-template-grid">
+            {[...STARTER_RULES, null].map((item) => {
+              const id = item?.id ?? 'custom';
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={templateId === id ? 'is-selected' : ''}
+                  onClick={() => {
+                    setTemplateId(id);
+                    setNewName(item?.name ?? '自定义规则');
+                  }}
+                  aria-pressed={templateId === id}
+                >
+                  <strong>{item?.name ?? '自定义'}</strong>
+                  <span>{item?.description ?? '从空白规则开始'}</span>
+                </button>
+              );
+            })}
+          </div>
+          <Input
+            aria-label="新规则名称"
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            placeholder="规则名称"
+          />
+        </Space>
+      </Modal>
+    </section>
   );
 }
 
@@ -840,15 +869,19 @@ function RuleEditor(props: {
   session: EnvSession;
   rule: EditableRule | null;
   disabled: boolean;
+  preview: PreviewViewState | null;
   onEdit: (local: EditableSource, selectedRuleId: string | null) => void;
   onIdDraft: (value: string) => void;
   onCommitId: () => void;
 }) {
   if (!props.rule) {
     return (
-      <Card title="编辑" className="text-postprocess-column">
+      <section className="text-postprocess-column text-postprocess-editor">
+        <div className="text-postprocess-column-head">
+          <strong>编辑规则</strong>
+        </div>
         <Empty description="选择或新建一条规则" />
-      </Card>
+      </section>
     );
   }
   const rule = props.rule;
@@ -862,27 +895,103 @@ function RuleEditor(props: {
   ) => {
     props.onEdit(updateRuleField(props.session.local, rule.id, field, value), rule.id);
   };
+  const position = props.session.local.rules.findIndex((item) => item.id === rule.id);
+  const stat = props.preview?.apply?.rules.find((item) => item.ruleId === rule.id);
+  const toggleFlag = (flag: string, enabled: boolean) => {
+    const flags = new Set(rule.flags.split(''));
+    if (enabled) flags.add(flag);
+    else flags.delete(flag);
+    change('flags', ['g', 'i', 'm', 's', 'u'].filter((item) => flags.has(item)).join(''));
+  };
 
   return (
-    <Card title="编辑" className="text-postprocess-column" extra={rule.enabled ? '启用' : '停用'}>
+    <section className="text-postprocess-column text-postprocess-editor">
+      <div className="text-postprocess-column-head">
+        <div>
+          <strong>编辑规则</strong>
+          <Typography.Text type="secondary">
+            #{String(position + 1).padStart(2, '0')} · {rule.enabled ? '已启用' : '已停用'}
+          </Typography.Text>
+        </div>
+        <Space size={2}>
+          <Button
+            aria-label="上移规则"
+            size="small"
+            disabled={props.disabled || position <= 0}
+            onClick={() => props.onEdit(moveRule(props.session.local, rule.id, 'up'), rule.id)}
+          >
+            ↑
+          </Button>
+          <Button
+            aria-label="下移规则"
+            size="small"
+            disabled={props.disabled || position === props.session.local.rules.length - 1}
+            onClick={() => props.onEdit(moveRule(props.session.local, rule.id, 'down'), rule.id)}
+          >
+            ↓
+          </Button>
+          <Button
+            aria-label="复制规则"
+            size="small"
+            disabled={props.disabled}
+            onClick={() => {
+              const copied = duplicateRule(props.session.local, rule.id);
+              if (copied) props.onEdit(copied.local, copied.selectedRuleId);
+            }}
+          >
+            ⧉
+          </Button>
+          <Button
+            aria-label="删除规则"
+            size="small"
+            danger
+            disabled={props.disabled}
+            onClick={() => {
+              void confirmAction(
+                `删除规则 ${rule.name}？`,
+                '删除后还需要保存草稿才会写到服务器。',
+                true
+              ).then((ok) => {
+                if (!ok) return;
+                const next = deleteRule(props.session.local, rule.id);
+                props.onEdit(next.local, next.selectedRuleId);
+              });
+            }}
+          >
+            ×
+          </Button>
+        </Space>
+      </div>
       <Space direction="vertical" className="field-full">
+        <div className="text-postprocess-name-row">
+          <label className="text-postprocess-field">
+            <span>名称</span>
+            <Input
+              aria-label="规则名称"
+              value={rule.name}
+              disabled={props.disabled}
+              onChange={(event) => change('name', event.target.value)}
+            />
+          </label>
+          <Switch
+            checked={rule.enabled}
+            disabled={props.disabled}
+            checkedChildren="启用"
+            unCheckedChildren="停用"
+            aria-label="启用规则"
+            onChange={(enabled) =>
+              props.onEdit(setRuleEnabled(props.session.local, rule.id, enabled), rule.id)
+            }
+          />
+        </div>
         <label className="text-postprocess-field">
-          <span>编号</span>
+          <span>稳定规则 ID（次级编辑）</span>
           <Input
             aria-label="规则编号"
             value={idValue}
             disabled={props.disabled}
             onChange={(event) => props.onIdDraft(event.target.value)}
             onBlur={props.onCommitId}
-          />
-        </label>
-        <label className="text-postprocess-field">
-          <span>名称</span>
-          <Input
-            aria-label="规则名称"
-            value={rule.name}
-            disabled={props.disabled}
-            onChange={(event) => change('name', event.target.value)}
           />
         </label>
         <Tabs
@@ -901,16 +1010,21 @@ function RuleEditor(props: {
                     field="pattern"
                     onChange={(value) => change('pattern', value)}
                   />
-                  <Field
-                    label="标志"
-                    help={RULE_FIELD_HELP.flags}
-                    value={rule.flags}
-                    disabled={props.disabled}
-                    diagnostics={diagnostics}
-                    field="flags"
-                    rows={1}
-                    onChange={(value) => change('flags', value)}
-                  />
+                  <div className="text-postprocess-flags">
+                    <Typography.Text>flags</Typography.Text>
+                    {['g', 'i', 'm', 's', 'u'].map((flag) => (
+                      <label key={flag}>
+                        <input
+                          type="checkbox"
+                          checked={rule.flags.includes(flag)}
+                          disabled={props.disabled}
+                          onChange={(event) => toggleFlag(flag, event.target.checked)}
+                        />{' '}
+                        {flag}
+                      </label>
+                    ))}
+                    <Typography.Text type="secondary">{RULE_FIELD_HELP.flags}</Typography.Text>
+                  </div>
                   <Field
                     label="模板"
                     help={RULE_FIELD_HELP.replacement}
@@ -966,8 +1080,28 @@ function RuleEditor(props: {
             },
           ]}
         />
+        <div className="text-postprocess-match-card">
+          <strong>
+            {rule.enabled ? (stat ? `${stat.count} 处匹配` : '正在处理') : '规则已停用'}
+          </strong>
+          {stat?.firstMatch ? (
+            <>
+              <Typography.Text type="secondary">首处匹配</Typography.Text>
+              <code>{stat.firstMatch}</code>
+              {stat.firstCaptures.map((capture) => (
+                <code key={`${capture.index}-${capture.name ?? ''}`}>
+                  ${capture.name ?? capture.index} = {capture.text}
+                </code>
+              ))}
+            </>
+          ) : (
+            <Typography.Text type="secondary">
+              {rule.enabled ? '当前原文没有可显示的首处匹配。' : '停用规则不参与预览。'}
+            </Typography.Text>
+          )}
+        </div>
       </Space>
-    </Card>
+    </section>
   );
 }
 
@@ -1006,7 +1140,10 @@ function Field(props: {
   );
 }
 
-function PreviewColumn(props: { source: EditableSource }) {
+function PreviewColumn(props: {
+  source: EditableSource;
+  onPreviewChange: (state: PreviewViewState | null) => void;
+}) {
   const [sampleKey, setSampleKey] = useState<PreviewSampleKey>('full');
   const [custom, setCustom] = useState<string | null>(null);
   const sample = custom ?? PREVIEW_SAMPLES[sampleKey];
@@ -1032,32 +1169,43 @@ function PreviewColumn(props: { source: EditableSource }) {
     setChoice({ text: null, networkCalls: 0 });
   }, [sample, props.source]);
 
+  useEffect(() => {
+    props.onPreviewChange(preview);
+  }, [preview, props.onPreviewChange]);
+
   return (
-    <Card title="诊断与预览" className="text-postprocess-column">
+    <section className="text-postprocess-column text-postprocess-preview-column">
+      <div className="text-postprocess-column-head">
+        <div>
+          <strong>实时预览</strong>
+          <Typography.Text type="secondary">全部启用规则的效果</Typography.Text>
+        </div>
+        <Typography.Text type="secondary">{[...sample].length} 字</Typography.Text>
+      </div>
       <Space direction="vertical" className="field-full">
-        <Alert
-          type="info"
-          showIcon
-          message="选项是本地模拟"
-          description={
-            choice.text
-              ? `模拟发送：${choice.text}。没有调用模型，也没有写入会话。`
-              : '点击选项只会显示将要发送的文本，不会调用模型或写入会话。'
-          }
-        />
         <Space wrap>
-          {(Object.keys(PREVIEW_SAMPLES) as PreviewSampleKey[]).map((key) => (
-            <Button
-              key={key}
-              type={custom === null && sampleKey === key ? 'primary' : 'default'}
-              onClick={() => {
+          <Select
+            aria-label="选择预览示例"
+            value={custom === null ? sampleKey : 'custom'}
+            onChange={(value: PreviewSampleKey | 'custom') => {
+              if (value !== 'custom') {
                 setCustom(null);
-                setSampleKey(key);
-              }}
-            >
-              {sampleLabel(key)}
-            </Button>
-          ))}
+                setSampleKey(value);
+              }
+            }}
+            options={(Object.keys(PREVIEW_SAMPLES) as PreviewSampleKey[]).map((key) => ({
+              value: key,
+              label: sampleLabel(key),
+            }))}
+          />
+          <Segmented
+            value={width}
+            onChange={(value) => setWidth(value as 'mobile' | 'full')}
+            options={[
+              { label: '自适应', value: 'full' },
+              { label: '375px', value: 'mobile' },
+            ]}
+          />
         </Space>
         <Input.TextArea
           aria-label="预览原文"
@@ -1065,7 +1213,7 @@ function PreviewColumn(props: { source: EditableSource }) {
           value={sample}
           onChange={(event) => setCustom(event.target.value)}
         />
-        <Space wrap>
+        <Space wrap size={4}>
           <Button onClick={() => setStream((current) => reduceStreamSim(current, 'start', total))}>
             开始模拟流式
           </Button>
@@ -1082,28 +1230,21 @@ function PreviewColumn(props: { source: EditableSource }) {
             重置
           </Button>
         </Space>
-        <Input
-          aria-label="预览用户名"
-          value={displayName}
-          onChange={(event) => setDisplayName(event.target.value)}
-        />
-        <Segmented
-          value={theme}
-          onChange={(value) => setTheme(value as 'light' | 'dark')}
-          options={[
-            { label: '浅色', value: 'light' },
-            { label: '深色', value: 'dark' },
-          ]}
-        />
-        <Segmented
-          value={width}
-          onChange={(value) => setWidth(value as 'mobile' | 'full')}
-          options={[
-            { label: '移动宽度', value: 'mobile' },
-            { label: '全宽', value: 'full' },
-          ]}
-        />
-        <PreviewDiagnostics state={preview} />
+        <div className="text-postprocess-preview-tools">
+          <Input
+            aria-label="预览用户名"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+          />
+          <Segmented
+            value={theme}
+            onChange={(value) => setTheme(value as 'light' | 'dark')}
+            options={[
+              { label: '浅色', value: 'light' },
+              { label: '深色', value: 'dark' },
+            ]}
+          />
+        </div>
         <div
           className={
             width === 'mobile' ? 'text-postprocess-stage is-mobile' : 'text-postprocess-stage'
@@ -1127,12 +1268,18 @@ function PreviewColumn(props: { source: EditableSource }) {
             />
           </div>
         </div>
+        <PreviewDiagnostics state={preview} compact />
+        <Typography.Text type="secondary">
+          {choice.text
+            ? `本地模拟发送：${choice.text}；未调用模型或写入会话。`
+            : '选项仅本地模拟；不会调用模型或业务写请求。'}
+        </Typography.Text>
       </Space>
-    </Card>
+    </section>
   );
 }
 
-function PreviewDiagnostics(props: { state: PreviewViewState | null }) {
+function PreviewDiagnostics(props: { state: PreviewViewState | null; compact?: boolean }) {
   if (!props.state) return <Typography.Text type="secondary">正在准备预览。</Typography.Text>;
   const failure = props.state.failure;
   return (
@@ -1158,14 +1305,15 @@ function PreviewDiagnostics(props: { state: PreviewViewState | null }) {
           description={diagnosticText(item)}
         />
       ))}
-      {props.state.apply?.rules.map((rule) => (
-        <Typography.Paragraph key={rule.ruleId}>
-          {rule.ruleId}：{rule.count} 处{rule.firstMatch ? `，首处匹配 ${rule.firstMatch}` : ''}
-          {rule.firstCaptures.length
-            ? `，捕获 ${rule.firstCaptures.map((capture) => `${capture.name ?? capture.index}=${capture.text}`).join('，')}`
-            : ''}
-        </Typography.Paragraph>
-      ))}
+      {!props.compact &&
+        props.state.apply?.rules.map((rule) => (
+          <Typography.Paragraph key={rule.ruleId}>
+            {rule.ruleId}：{rule.count} 处{rule.firstMatch ? `，首处匹配 ${rule.firstMatch}` : ''}
+            {rule.firstCaptures.length
+              ? `，捕获 ${rule.firstCaptures.map((capture) => `${capture.name ?? capture.index}=${capture.text}`).join('，')}`
+              : ''}
+          </Typography.Paragraph>
+        ))}
       {props.state.apply?.skipped.map((item) => (
         <Typography.Text key={`${item.ruleId}-${item.code}`}>
           {item.ruleId} 被跳过：{item.code}
