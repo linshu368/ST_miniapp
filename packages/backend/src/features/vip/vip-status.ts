@@ -107,6 +107,15 @@ export class VipStatusService {
     }
   }
 
+  /**
+   * 涉及扣款的报价不能把会员读取失败降级为非 VIP，否则会按原价受理有效会员。
+   * 调用方负责将异常映射为可重试的 503，并且不得创建媒体任务。
+   */
+  async getStatusStrict(userId: string): Promise<VipStatus> {
+    const snapshot = await this.memberships.readSnapshot(userId);
+    return mapVipStatus(snapshot, this.now().toISOString());
+  }
+
   async markEntryViewed(userId: string, log?: SettlementLogger): Promise<VipStatus> {
     const started = Date.now();
     const seenAt = this.now().toISOString();

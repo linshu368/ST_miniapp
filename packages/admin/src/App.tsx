@@ -71,16 +71,13 @@ import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
-  VIP_MEDIA_CONFIG_KEYS,
   isInviteProgramConfigKey,
   isImageGenerationConfigKey,
-  isVipMediaConfigKey,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
   type AdminViewKey,
   type InviteProgramTabKey,
   type ImageGenerationConfigKey,
-  type VipMediaConfigKey,
 } from './lib/adminNavigation';
 import {
   createWorkbenchStore,
@@ -406,9 +403,6 @@ function AdminWorkspace(props: {
   const [inviteTab, setInviteTab] = useState<InviteProgramTabKey>(INVITE_PROGRAM_CONFIG_KEYS[0]);
   const [imageConfigTab, setImageConfigTab] = useState<ImageGenerationConfigKey>(
     IMAGE_GENERATION_CONFIG_KEYS[0]
-  );
-  const [vipMediaConfigTab, setVipMediaConfigTab] = useState<VipMediaConfigKey>(
-    VIP_MEDIA_CONFIG_KEYS[0]
   );
   const textStoreRef = useRef(createWorkbenchStore());
   const [textStore, setTextStore] = useState<WorkbenchStore>(textStoreRef.current);
@@ -999,13 +993,6 @@ function AdminWorkspace(props: {
                     : imageConfigTab;
                 setImageConfigTab(nextTab);
                 setSelectedKey(nextTab);
-              } else if (selection.view === 'vip_media_config') {
-                const nextTab =
-                  selection.configKey && isVipMediaConfigKey(selection.configKey)
-                    ? selection.configKey
-                    : vipMediaConfigTab;
-                setVipMediaConfigTab(nextTab);
-                setSelectedKey(nextTab);
               } else if (selection.configKey) {
                 setSelectedKey(selection.configKey);
               }
@@ -1025,7 +1012,6 @@ function AdminWorkspace(props: {
                 { key: 'invite_program', label: '裂变邀请管理' },
                 { key: 'image_generation_config', label: '图片生成配置' },
                 { key: 'vip_strategy', label: 'VIP策略' },
-                { key: 'vip_media_config', label: 'VIP 信息配置' },
                 { key: 'text_postprocess', label: '回复富文本规则' },
               ],
             },
@@ -1151,29 +1137,6 @@ function AdminWorkspace(props: {
                   onChange={(key) => {
                     const nextKey = key as ImageGenerationConfigKey;
                     setImageConfigTab(nextKey);
-                    setSelectedKey(nextKey);
-                  }}
-                />
-              </Card>
-              {configEditorCard}
-            </Space>
-          ) : view === 'vip_media_config' ? (
-            <Space direction="vertical" size="middle" className="editor-stack">
-              <Card title="VIP 信息配置">
-                <Typography.Paragraph type="secondary">
-                  管理当前{props.environment === 'production' ? '生产' : '测试'}
-                  环境的高级图片入口、扣费展示和 provider 快照。语音和初级图片的免费次数在 VIP
-                  策略里分开配置。
-                </Typography.Paragraph>
-                <Tabs
-                  activeKey={vipMediaConfigTab}
-                  items={VIP_MEDIA_CONFIG_KEYS.map((key) => ({
-                    key,
-                    label: configMetadata[key].label,
-                  }))}
-                  onChange={(key) => {
-                    const nextKey = key as VipMediaConfigKey;
-                    setVipMediaConfigTab(nextKey);
                     setSelectedKey(nextKey);
                   }}
                 />

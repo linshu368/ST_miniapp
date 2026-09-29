@@ -5,7 +5,8 @@ scope: database
 category: infrastructure
 status: active
 owners: [database]
-last_verified_at: 2026-09-17
+last_verified_task: .trellis/tasks/09-28-remove-advanced-image-generation/
+last_verified_at: 2026-09-28
 ---
 
 # Schema、RLS 与迁移执行基建
@@ -16,15 +17,18 @@ last_verified_at: 2026-09-17
 
 ## 当前状态
 
+高级图片应用退场后，`20260928_remove_advanced_image_config.sql` 作为待人工执行的 forward migration，删除四个 `image_advanced_*` runtime/Admin 配置并以 managed-key、validator 和 CHECK 三层阻止回写；普通图片 `feature_free_trial_limits.basic_image`、历史图片 attempt 与结算对象不变。
+
 ## 入口与调用者
 
 ## 涉及文件
 
-| 路径                               | 职责               |
-| ---------------------------------- | ------------------ |
-| `packages/shared/migrations/`      | migration 唯一来源 |
-| `docs/ARCHITECTURE.md`             | 现行域归属说明     |
-| `.github/workflows/db-migrate.yml` | 手工执行入口       |
+| 路径                                                                   | 职责                               |
+| ---------------------------------------------------------------------- | ---------------------------------- |
+| `packages/shared/migrations/`                                          | migration 唯一来源                 |
+| `docs/ARCHITECTURE.md`                                                 | 现行域归属说明                     |
+| `.github/workflows/db-migrate.yml`                                     | 手工执行入口                       |
+| `packages/shared/migrations/20260928_remove_advanced_image_config.sql` | 高级图片配置退场 forward migration |
 
 ## 关键实现链路
 

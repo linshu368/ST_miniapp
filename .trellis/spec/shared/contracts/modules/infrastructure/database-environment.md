@@ -5,8 +5,8 @@ scope: shared
 category: infrastructure
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
-last_verified_at: 2026-09-11
+last_verified_task: .trellis/tasks/09-17-batch-lab-prototype-alignment/
+last_verified_at: 2026-09-22
 ---
 
 # 数据库环境与迁移公共配置

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  ADVANCED_IMAGE_UNAVAILABLE_ERROR_CODE,
   BillingGatingErrorCodeSchema,
   FEATURE_FREE_TRIAL_LIMIT,
   resolveFeatureFreeTrialLimit,
@@ -18,6 +17,7 @@ import {
   assertWalletPolicyForCapability,
   canonicalVipPlanTerms,
   createWalletAmountSplit,
+  createWalletBalanceSplit,
   isConsistentWalletBalance,
   isFeatureFreeTrialExhausted,
   isVipActiveAt,
@@ -305,10 +305,6 @@ describe('wallet policy and splits', () => {
       wallet_policy: 'main_then_bonus',
       requires_vip: false,
     });
-    expect(resolveBillableCapabilityRules('text_standard')).toMatchObject({
-      wallet_policy: 'main_only',
-      requires_vip: true,
-    });
     expect(resolveBillableCapabilityRules('text_premium')).toMatchObject({
       wallet_policy: 'main_only',
       requires_vip: true,
@@ -323,12 +319,6 @@ describe('wallet policy and splits', () => {
       wallet_policy: 'main_only',
       requires_vip: false,
       free_trial_feature: 'voice',
-    });
-    expect(resolveBillableCapabilityRules('image_advanced')).toMatchObject({
-      wallet_policy: 'main_only',
-      requires_vip: true,
-      free_trial_feature: null,
-      free_trial_limit: null,
     });
     expect(assertWalletPolicyForCapability('text_premium', 'main_then_bonus').ok).toBe(false);
     expect(assertWalletPolicyForCapability('text_light', 'main_then_bonus').ok).toBe(true);
@@ -363,6 +353,33 @@ describe('wallet policy and splits', () => {
         total_credits: 30,
       })
     ).toBe(false);
+  });
+
+  it('keeps legacy one-decimal wallet balances compatible without relaxing debit splits', () => {
+    expect(createWalletBalanceSplit(1786, 13719.6, 15505.6)).toEqual({
+      ok: true,
+      value: { main_credits: 1786, bonus_credits: 13719.6, total_credits: 15505.6 },
+    });
+    expect(createWalletBalanceSplit(0.1, 0.2)).toMatchObject({
+      ok: true,
+      value: { total_credits: 0.3 },
+    });
+    expect(createWalletBalanceSplit(1, 0.01)).toMatchObject({
+      ok: false,
+      code: 'INVALID_WALLET_SPLIT',
+    });
+    expect(createWalletAmountSplit(1, 0.5)).toMatchObject({
+      ok: false,
+      code: 'INVALID_WALLET_SPLIT',
+    });
+    expect(
+      isConsistentWalletBalance({
+        credits: 15505.6,
+        main_credits: 1786,
+        bonus_credits: 13719.6,
+        total_credits: 15505.6,
+      })
+    ).toBe(true);
   });
 
   it('allocates light-text combination debit atomically and refunds the same split', () => {
@@ -498,7 +515,7 @@ describe('media free-trial public semantics', () => {
     ).toMatchObject({ ok: false, code: 'FEATURE_FREE_TRIAL_INVALID_STATE' });
   });
 
-  it('treats advanced image as VIP-only with no free trials and exposes shared error codes', () => {
+  it('marks an exhausted basic image quota and exposes shared error codes', () => {
     const exhausted = summarizeFeatureFreeTrialQuota({
       feature: 'basic_image',
       facts: [
@@ -517,11 +534,7 @@ describe('media free-trial public semantics', () => {
       },
     });
     if (exhausted.ok) expect(isFeatureFreeTrialExhausted(exhausted.quota)).toBe(true);
-    expect(resolveBillableCapabilityRules('image_advanced').free_trial_feature).toBeNull();
     expect(BillingGatingErrorCodeSchema.parse('VIP_REQUIRED')).toBe('VIP_REQUIRED');
-    expect(BillingGatingErrorCodeSchema.parse(ADVANCED_IMAGE_UNAVAILABLE_ERROR_CODE)).toBe(
-      'ADVANCED_IMAGE_UNAVAILABLE'
-    );
     expect(
       summarizeFeatureFreeTrialQuota({
         feature: 'voice',
