@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/admin/app/testing-build-and-deployment.md", "reason": "Admin validation commands and manual smoke expectations."}
+{"file": ".trellis/spec/backend/app/testing-scripts-and-deployment.md", "reason": "Backend generation, route, and deployment validation expectations."}
+{"file": ".trellis/spec/shared/contracts/testing-and-change-management.md", "reason": "Shared contract validation and consumer typecheck requirements."}
+{"file": ".trellis/spec/database/supabase/migrations-and-rollbacks.md", "reason": "Migration execution, rollback, and production/test separation checks."}
+{"file": ".trellis/spec/database/supabase/security-rls-and-grants.md", "reason": "DB function permissions and grants must remain correct after validate function migration."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Review cross-layer contract and failure cases end to end."}
+{"file": ".trellis/tasks/09-29-admin-model-catalog-multi-provider/research/model-provider-research.md", "reason": "Check implementation against task-specific current-code findings and Venice docs."}
