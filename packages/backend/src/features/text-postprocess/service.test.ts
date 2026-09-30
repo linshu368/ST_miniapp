@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { publishRequestDigest, rollbackRequestDigest, textPostprocessDigest } from './digest.js';
 import { TextPostprocessRequestError } from './errors.js';
 import type { TextPostprocessRepository } from './repository.js';
+import {
+  primeCurrentPostprocessVersion,
+  readCurrentPostprocessVersion,
+  resetCurrentPostprocessVersionCacheForTests,
+} from './config.js';
 
 const validate = vi.hoisted(() => vi.fn());
 
@@ -93,6 +98,7 @@ describe('text postprocess mutations', () => {
       artifact: ARTIFACT,
     });
     setTextPostprocessRepositoryForTests(null);
+    resetCurrentPostprocessVersionCacheForTests();
   });
 
   it('reads a version batch through one repository call', async () => {
@@ -225,6 +231,7 @@ describe('text postprocess mutations', () => {
   });
 
   it('replays the same request and conflicts when the digest differs', async () => {
+    primeCurrentPostprocessVersion(9);
     const fake = use(repo());
     fake.getRequest.mockResolvedValue({
       kind: 'ok',
@@ -251,6 +258,7 @@ describe('text postprocess mutations', () => {
       })
     ).resolves.toMatchObject({ replayed: true, version: 2 });
     expect(validate).not.toHaveBeenCalled();
+    await expect(readCurrentPostprocessVersion()).resolves.toBe(9);
 
     fake.publish.mockResolvedValueOnce({
       kind: 'database',
@@ -292,6 +300,7 @@ describe('text postprocess mutations', () => {
       })
     ).resolves.toMatchObject({ version: 5 });
     expect(fake.publish).toHaveBeenCalledTimes(1);
+    await expect(readCurrentPostprocessVersion()).resolves.toBe(5);
 
     fake.getRequest.mockResolvedValue({ kind: 'ok', value: null });
     await expect(
@@ -360,6 +369,7 @@ describe('text postprocess mutations', () => {
     });
     expect(rolled.version).toBe(6);
     expect(rolled.version).not.toBe(2);
+    await expect(readCurrentPostprocessVersion()).resolves.toBe(6);
     expect(fake.rollback).toHaveBeenCalledTimes(1);
     expect(fake.rollback.mock.calls[0]?.[0]).toMatchObject({
       p_source: SOURCE,

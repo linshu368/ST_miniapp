@@ -157,6 +157,8 @@ pnpm supabase:link:test
 
 文本后处理快照的版本外键需要 `postgres` 执行 `SELECT FOR KEY SHARE`。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 仅授予 owner `UPDATE(version)` 以满足行锁检查，同时恢复 API 角色最小权限；快照仍由 `ENABLE ALWAYS` 触发器禁止直接修改。账本 `applied` 不代替权限、开轮/重生成及回复回读验收，新迁移仍须逐环境手工执行。
 
+Backend 在开始监听前有界预热当前文本后处理版本，开轮热路径只读进程内快照，并以 5 秒后台单飞刷新使实例收敛。刷新超时、数据库异常或配置非法时保留最近有效版本；从未取得有效版本时静默回到原 Markdown，不阻断聊天或流式输出。发布/回滚成功会立即更新当前实例缓存。
+
 ## 7. 部署拓扑
 
 | 单元        | 平台/配置                                                     | 注意事项                                                                  |

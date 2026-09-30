@@ -25,7 +25,7 @@ import {
   mutationError,
   TextPostprocessRequestError,
 } from './errors.js';
-import { readAdminPostprocessVersion } from './config.js';
+import { primeCurrentPostprocessVersion, readAdminPostprocessVersion } from './config.js';
 import { TextPostprocessRepository, type RpcCall, type StoredDraft } from './repository.js';
 import { validateTextPostprocessSource } from './validate-pool.js';
 
@@ -108,7 +108,7 @@ export async function publishTextPostprocess(
   assertPublishTarget(draft, input);
   const artifact = await assertCompilable(draft.source);
   const payload = { source: draft.source, artifact };
-  return settle(
+  const outcome = await settle(
     await records().publish({
       ...publishArgs(actorUserId, input, publishRequestDigest(input, payload)),
       p_source: draft.source,
@@ -116,6 +116,8 @@ export async function publishTextPostprocess(
     }),
     () => records().getRequest(actorUserId, input.request_id)
   );
+  primeCommittedVersion(outcome);
+  return outcome;
 }
 
 export async function rollbackTextPostprocess(
@@ -140,7 +142,7 @@ export async function rollbackTextPostprocess(
   if (row.schema_version !== TEXT_POSTPROCESS_SCHEMA_VERSION) throw mutationError('invalid_source');
   const artifact = await assertCompilable(row.source);
   const payload = { source: row.source, artifact };
-  return settle(
+  const outcome = await settle(
     await records().rollback({
       ...rollbackArgs(actorUserId, input, rollbackRequestDigest(input, payload)),
       p_source: row.source,
@@ -148,6 +150,8 @@ export async function rollbackTextPostprocess(
     }),
     () => records().getRequest(actorUserId, input.request_id)
   );
+  primeCommittedVersion(outcome);
+  return outcome;
 }
 
 export async function discardTextPostprocessDraft(
@@ -197,6 +201,10 @@ async function confirmedReplay(
   }
   if (!existing.value) return null;
   return settle(await confirm(existing.value), () => records().getRequest(actorUserId, requestId));
+}
+
+function primeCommittedVersion(outcome: TextPostprocessMutationOutcome): void {
+  if (!outcome.replayed && outcome.version) primeCurrentPostprocessVersion(outcome.version);
 }
 
 /** 重放读取已提交的明确版本，不依赖已关闭的 draft 或 current，也不重新编译。 */

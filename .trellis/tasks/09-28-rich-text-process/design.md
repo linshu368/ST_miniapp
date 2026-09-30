@@ -160,6 +160,16 @@ TEST Admin 保存 `system_instructions` 草稿返回 `system_instructions must n
 
 可靠性与恢复：单事务设置 5 秒锁超时和 60 秒语句超时；preflight 要求外层函数、历史委托函数、owner 和运行时基线存在且形状正确，不符合即整文件回滚。migration 内自检合法 text_value、错误 value、空文本、缺失占位符以及既有 VIP 分支；无重试、无业务行输出、无表扫描或 backfill。提交后若发现非预期分支回归，保留数据并用 reviewed forward migration 修正函数，不恢复已知错误的“禁止 text_value”行为。TEST 单文件执行、Admin 保存/发布/回读通过后才继续 MiniApp 验收；Production 不在本修复授权范围。
 
+## 12. 当前富文本版本的预热与静默容错（2026-09-30）
+
+- 根因：现有开轮每次读数据库，固定 1 秒超时后把超时、读取异常、非法配置和真实缺失都折叠成 `NULL`。冷连接偶发超过 1 秒时，首条回复永久失去版本绑定。
+- 复用：继续通过 `platform/runtime-config.ts` 的 strict reader 读取权威指针；在 `features/text-postprocess/config.ts` 内增加唯一的进程级版本缓存，不增加 Redis、队列、契约或数据库对象。
+- 启动：服务监听前最多 3 秒预热；成功缓存明确版本或确认缺失。失败只记录安全告警并继续启动，不影响聊天可用性。
+- 热路径：开轮只同步读取内存快照；缓存到期只触发后台单飞刷新，不等待数据库，因此不增加首字和流式 delta 延迟。
+- 降级：刷新成功才替换缓存；超时、数据库错误或非法值保留最近一次有效/明确缺失快照。进程从未取得快照时返回 `NULL`，继续正常生成原 Markdown，不向用户暴露内部错误。
+- 收敛：短周期后台刷新使多实例收敛；Admin 发布/回滚成功后立即 prime 当前实例。短窗口允许沿用上一不可变正式版本，不允许最大版本替代、草稿替代或读路径编译。
+- 恢复：改动仅为 Backend 进程内状态和生命周期；回退代码即可恢复原读取方式，不涉及数据迁移或业务数据补偿。
+
 ## T2/T3/T5 artifact 契约修订（2026-09-29，已获本窗口授权）
 
 - 不变量：compiled artifact 是 app_core.text_postprocess_versions 不可变发布快照的一部分，与 source/schema/policy/version/published_at 一次写入。沿用 app_core 运行配置历史归属及永久保留生命周期；admin 专用 RPC 是唯一权威写入方，跨 schema 发布审计依赖不变。

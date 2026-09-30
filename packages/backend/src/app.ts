@@ -27,6 +27,7 @@ import supportRoutes from './routes/support.js';
 import telemetryRoutes from './routes/telemetry.js';
 import textPostprocessRoutes from './routes/text-postprocess.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
+import { stopCurrentPostprocessVersionRefresh } from './features/text-postprocess/config.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
 import {
@@ -161,6 +162,7 @@ export async function buildApp() {
     stopChatHistorySyncJob();
     stopLobbyRankingRefreshJob();
     stopChatImageGenerationJob();
+    stopCurrentPostprocessVersionRefresh();
     shutdownTextPostprocessValidation();
   });
 

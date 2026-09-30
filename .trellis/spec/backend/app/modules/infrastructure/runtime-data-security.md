@@ -5,7 +5,8 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_at: 2026-09-17
+last_verified_task: .trellis/tasks/09-28-rich-text-process/
+last_verified_at: 2026-09-30
 ---
 
 # 运行时、鉴权与数据访问基建
@@ -15,6 +16,8 @@ last_verified_at: 2026-09-17
 ## 当前状态
 
 Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/model-tiers.ts` 集中读取 `llm_model_catalog`，损坏时降级到 `DEFAULT_CATALOG`，不再读取旧 tiers key。PostHog capture 使用 `POSTHOG_API_KEY`/`POSTHOG_HOST`/`POSTHOG_TIMEOUT_MS`，缺 key 或非法 host 时 no-op。
+
+`runtime-config.ts` 的单键读取支持调用方传入取消信号。文本后处理在功能模块内维护唯一进程缓存：启动有界预热、5 秒后台单飞刷新、最近有效版本保留；用户请求不等待配置数据库，失败只影响展示增强。
 
 ## 入口与调用者
 
@@ -33,6 +36,8 @@ Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/mode
 ## 关键实现链路
 
 PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order_id:status:settled_by` 去重，图片按 `attempt_id:event:terminal_status|charge_status` 去重。
+
+文本后处理版本链路为“监听前 strict read 预热 → 开轮内存读取 → 定时 strict read 刷新”；Admin 发布/回滚成功后 prime 当前实例，其他实例通过刷新收敛。超时会取消 PostgREST 请求，失败不覆盖最近有效快照。
 
 ## 数据、契约与外部依赖
 

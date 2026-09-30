@@ -95,6 +95,8 @@ inline 模式顺序实施，不默认派发子代理。shared/index.ts、convers
 
 ## 执行记录
 
+- 2026-09-30：用户确认修复首次回复因 1 秒版本读取超时而绑定 `NULL`，并明确富文本故障不得阻断聊天或向用户报错。已实现 Backend 监听前 3 秒有界预热、热路径内存读取、5 秒后台单飞刷新、最近成功版本保留、无缓存静默 Markdown 降级、发布/回滚 prime 和可取消 strict read；不新增数据库对象/API/依赖，未操作远端环境。Backend 72 文件/601 测试、定向 17 测试、Backend 与全仓 typecheck、imports、Prettier、Trellis validate、diff check 均通过；待用户确认提交/推送后再做 TEST 冷启动首条回复真机验收。
+
 - 2026-09-30：TEST Admin 保存 System Instructions 测试协议时返回 `system_instructions must not use text_value`；页面仍为 TEST、正式版本 2、本地未保存编辑保留。用户授权直接修复、推送并继续保存。按既有 R8/AC9 在本任务内增加最小数据库 forward-fix：恢复外层 validator 的 text_value 专用分支，保留其他配置分支，不改 Admin payload、不操作 Production；完成本地验证后仍按提交前文件范围门禁和 TEST 单文件 Database Migration 流程执行。
 - 2026-09-30：新增 `20260930_fix_system_instructions_text_value_validation.sql` 并完成本地验证。临时 PostgreSQL 14 中迁移连续执行两次通过，合法 text_value、四条拒绝路径、既有 VIP 分支、历史委托探针和 service_role 无直接 EXECUTE 均通过；首次沙箱实例因共享内存权限失败，不计代码失败，获准在本机临时实例重跑成功。`lint:migrations`、migration-ledger、shared 12 文件/115 测试、全仓 6 包 typecheck、imports、Trellis validate、定向 Prettier 与 diff check 全部通过。尚未提交/推送或执行 TEST migration，Admin 本地未保存编辑仍保留。
 

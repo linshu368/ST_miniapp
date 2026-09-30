@@ -445,6 +445,8 @@ packages/backend/src/
 
 文本后处理开轮 wrapper 以 `postgres` 身份绑定 `experience.chat_history.postprocess_version`，其外键检查会对 `app_core.text_postprocess_versions` 执行 `SELECT FOR KEY SHARE`，除 SELECT 外还需至少一列 UPDATE 权限。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 授予 owner `UPDATE(version)`，恢复 `service_role` 只读并撤销匿名/登录角色额外授权；现有 `ENABLE ALWAYS` 触发器继续拒绝快照 UPDATE/DELETE/TRUNCATE。该文件只改变 ACL，不回填、不改函数/外键，执行与部署仍分离。
 
+当前正式版本指针由 Backend 在监听前最多 3 秒预热，并每 5 秒后台单飞刷新；会话开轮只读内存快照，不把配置数据库读取放入用户请求关键路径。后台读取失败保留最近有效版本，无有效版本时绑定 `NULL` 并继续原 Markdown；Admin 新发布/回滚成功后 prime 当前实例。该缓存只保存已验证的不可变版本号，不保存草稿、source 或 artifact，也不以最大版本替代运行指针。
+
 - 位置 `packages/shared/migrations/`（`archive/` 另存 087 删除的 admin RPC 定义备查）。
 - **命名规则（2026-09-10 起）**：新迁移一律 `YYYYMMDD_描述.sql`。三位数字编号已停用并由 CI 拦截（`pnpm lint:migrations`，冻结清单在 `scripts/check-migration-filenames.mjs`）——历史上 021/030/031/032/053/065/086/088/092/093/095 撞号，100 号立规后 105/108/109 又各撞一对。
 - **迁移账本**：`supabase_migrations.repo_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by / applied_at）。这是平台 schema 上的仓库账本，不是八个业务域的表，也不是 CLI 的 `schema_migrations`。`Database Migration` workflow 的 `apply` 把查账本、执行 SQL、写账本放在同一次调用（`scripts/apply-repo-migration.sh`）：已记录且 checksum 一致则拒绝重跑；checksum 不一致报 `MIGRATION_CHECKSUM_DRIFT`（不要改旧文件再跑，写新迁移）；账本表不存在时除 `20260910_schema_migrations_ledger.sql` 外直接失败，不再静默放行。`force_rerun` 只允许文件未改时再执行一遍 SQL，**不覆盖**首次 `applied_at` / checksum，历史写在 `repo_migration_events`（`20260914_repo_migration_ledger_events.sql`）。Apply 与 Record 之间用 `repo_migration_claims` 认领，避免「库已变、账本没有」。`mode=inspect` 用仓库日期命名文件的 sha256 对账本，并探 R3 `grant_bonus_credits`、111 `st_handle` 可空、A 的结算两列。账本只覆盖 2026-09-10 后的新迁移，存量不回填。生产环境拒绝 `104_rollback_voice_billing.sql`。本地协议回归：`pnpm test:migration-ledger`。

@@ -141,6 +141,15 @@ reply-renderer test/typecheck 脚本须在新包内新增；这是拟新增命�
 
 更新根 README/ARCHITECTURE、Admin README、相关 Frontend/Backend/Admin/shared/database spec；记录渲染包依赖边界、规则允许范围、运营发布方式、容量、旧消息和 emergency fallback。module_impact 列明既有模块，模块事实仅在实现完成与验证后更新；本轮不把计划写成现状。
 
+## 2026-09-30 首次回复版本缓存修复
+
+1. 扩展 runtime-config strict reader 支持取消信号，保证有界预热/刷新不会留下重叠悬挂查询。
+2. 在既有 text-postprocess config 模块实现启动预热、最近成功快照、短 TTL、后台单飞刷新、定时器启停和发布 prime；无缓存失败静默返回 `NULL`。
+3. 在 Backend 启动/关闭生命周期接入预热与刷新，不把数据库读取放进开轮热路径。
+4. 发布与回滚确认成功后 prime 当前实例；草稿保存、丢弃和失败/未知结果不得改缓存。
+5. 扩展既有 `config.test.ts` 和 `service.test.ts`，覆盖冷启动、慢读、异常保留、无缓存降级、单飞、prime、发布/回滚边界；不新增测试文件。
+6. 运行 Backend 定向测试、完整测试、typecheck、全仓 typecheck、imports、格式与 `git diff --check`；远端 TEST/Production 与提交推送保留独立授权。
+
 ## T2/T3/T5 artifact 契约修订（2026-09-29，已获本窗口授权）
 
 - 不变量：compiled artifact 是 app_core.text_postprocess_versions 不可变发布快照的一部分，与 source/schema/policy/version/published_at 一次写入。沿用 app_core 运行配置历史归属及永久保留生命周期；admin 专用 RPC 是唯一权威写入方，跨 schema 发布审计依赖不变。
