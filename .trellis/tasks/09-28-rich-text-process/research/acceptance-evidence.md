@@ -58,3 +58,9 @@
 - 代码复现确认流式 delta 会持续改变 `ReplyRenderer` 签名，使渲染在 pending/applied 间替换并重复调度 Worker。修复后流式阶段使用既有 `ChatMarkdown`，服务端终态才首次挂载 `ReplyRenderer`；不改规则、artifact、发送 API 或选项同步锁。
 - TEST Admin 只读核对：正式富文本 v4 的选项规则为成对 `\[choice\]([\s\S]+?)\[/choice\]` 和 `<button>$1</button>`；System Instructions v3 要求两个成对选项。未执行保存、发布、回滚或模型请求。
 - 回归测试从红到绿：流式阶段没有 `ReplyRenderer`/choice button；同一气泡切换到终态后可信按钮启用，双击只接受一次。Frontend 36 文件/237 测试、typecheck、lint、production build、全仓 typecheck、imports lint、Prettier 和 `git diff --check` 均通过。真实 TEST 部署与 Telegram WebView 复验仍待提交、推送和部署后执行；Production 未触及。
+
+## T6R / T7 最终真机收口（2026-09-30）
+
+- 用户确认 T6R Admin Demo 复现任务已通过真机验收，T6R-A/B/C 收口为 Done。
+- 用户随后确认 T7「集成与交付验证」可标记为 Done。此前已记录的主链路、流式稳定、终态 choice 与双击防重复证据继续有效，不重复补做用户已豁免的旧离线验收。
+- Done 仅代表本任务经用户确认的 TEST/PR 真机验收范围完成；未逐项确认的 viewer/环境隔离、历史分页/回滚、CAS/超时/未知结果、完整权限审计和 Production migration/发布不得由此推定为通过。

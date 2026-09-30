@@ -2,7 +2,7 @@
   "id": "rich-text-process",
   "name": "rich-text-process",
   "title": "AI 回复全局后处理与运营配置平台",
-  "description": "AI 回复原文保留、受限 HTML/CSS 后处理、共用真实渲染与 Admin 草稿/发布/回滚；规划已批准，T0 技术验证完成。",
+  "description": "AI 回复原文保留、受限 HTML/CSS 后处理、共用真实渲染与 Admin 草稿/发布/回滚；T0–T8 与 T6R 已完成，等待最终审阅、提交和归档。",
   "status": "in_progress",
   "dev_type": null,
   "scope": "cross-package",
@@ -37,9 +37,11 @@
     ".trellis/tasks/09-28-rich-text-process/research/t6-admin-evidence.md",
     ".trellis/tasks/09-28-rich-text-process/research/t5-t6-closure-review.md",
     ".trellis/tasks/09-28-rich-text-process/research/t2-t3-t5-artifact-evidence.md",
-    ".trellis/tasks/09-28-rich-text-process/research/acceptance-evidence.md"
+    ".trellis/tasks/09-28-rich-text-process/research/acceptance-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/module-updates.json",
+    ".trellis/tasks/09-28-rich-text-process/research/build_t8_module_updates.py"
   ],
-  "notes": "2026-09-29：T0–T6 Done。T2/T3/T5/T6 的 TEST／PR 集成待办已关闭：正式 v2 指针与快照一致，PR-364 实际保存／发布／版本读取成功，用户真机确认选项发送一次、状态折叠、双击防重复及新回复使用新版本通过。T7 Doing：主链路真机验收通过，按实际覆盖范围收口，用户决定不再补做离线验收；未覆盖项见 research/acceptance-evidence.md。T8 Todo，总任务 in_progress；Production 迁移／发布保留独立门禁。本次仅更新任务记录，未提交或推送。 2026-09-29 追加：用户要求复现 Admin Demo、仅做必要适配，并授权补充规划；新增 T6R Todo（布局视觉、交互接线、增量验证），T8 同时依赖 T7 与 T6R。详见 PRD R5 补充、design 第 10 节及 implement T6R 专节；本轮未实施产品代码，实施授权与远端环境门禁保留。",
+  "notes": "2026-09-30：T0–T8 与 T6R 均已完成。用户确认 T6R Admin Demo 复现及 T7 集成与交付真机验收通过；T8 已同步 README、ARCHITECTURE、Admin README、相关专题 spec 和 9 个声明模块的 module-updates.json。未逐项确认的失败路径与 Production migration／发布仍为独立门禁。任务保持 in_progress，等待最终人工审阅、提交、PR 合并与 Trellis 归档；本轮未操作远端环境、未提交或推送。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

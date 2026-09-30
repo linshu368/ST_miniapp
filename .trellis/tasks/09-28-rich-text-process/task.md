@@ -2,7 +2,7 @@
 
 ## 状态与总门禁
 
-Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。任务已在用户审核并批准规划后进入 in_progress；T0–T6 已完成，T2/T3/T5/T6 的 TEST／PR 环境集成待办已关闭。2026-09-29 追加 T6R：按用户要求复现 Admin Demo，状态 Todo，本轮仅补规划、尚未实施。T7 真机主链路验收通过，按实际覆盖范围收口，不再补做旧离线验收；新增 Admin 界面仍须完成 T6R 增量验证；T8 待推进。证据见 `research/acceptance-evidence.md`；Production 发布与迁移仍为独立门禁。基线分支 dev_rich_text_process / PR base dev。T0–T8 及 T6R 同属一个完整任务，不使用父子关系冒充依赖。
+Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。T0–T8 及追加 T6R 均已完成；用户于 2026-09-30 确认 T6R 与 T7 真机验收通过，T8 已同步当前文档、规范与模块知识载荷。任务继续保持 in_progress，等待最终人工审阅、提交/PR 合并与 Trellis 归档；Production 发布与迁移仍为独立门禁。证据见 `research/acceptance-evidence.md`。基线分支 dev_rich_text_process / PR base dev。T0–T8 及 T6R 同属一个完整任务，不使用父子关系冒充依赖。
 
 ## T0 — 安全与共用渲染技术验证
 
@@ -64,11 +64,11 @@ Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。�
 
 ## T6R — Admin 工作台复现 Demo（2026-09-29 追加）
 
-- 状态：Doing（2026-09-29）；依赖：已完成 T6、追加规划审阅与实施授权。当前按已批准的 T6R-A/B/C 实施本地 Admin 页面与验证；不撤销 T6 已完成的运行链路事实。
+- 状态：Done（2026-09-30，用户真机验收通过）；依赖：已完成 T6、追加规划审阅与实施授权。不撤销 T6 已完成的运行链路事实。
 - 目标：复现 Demo 的视觉与交互，仅在 Admin 外壳/身份/环境、真实草稿发布、历史恢复、共用安全 renderer、现有指令入口、协议兼容和已有模拟工具处做必要适配。以 PRD R5 补充、design 第 10 节和 implement T6R 专节为执行基准。
-- T6R-A（Doing）：页头和紫色视觉、白色连体三栏、紧凑列表卡片、编辑工具栏/开关/三页签已实现并在 TEST Preview 桌面画面核验；宽屏/中屏/窄屏和短屏的实际视口逐项验收未完成。无需重建 Demo 顶栏品牌或改变 Admin 全局主题。
-- T6R-B（Doing）：五类模板起点弹窗、flags 勾选兼容 u、稳定 ID 次级编辑、单一预览结果分发到匹配列表/捕获卡/效果区；原文/示例下拉/字符数/375px/自适应/底部状态；顶部保存/发布/快捷键/恢复，历史 Drawer，独立 System Instructions 入口均已实现。TEST Preview 已读验并验证流式完成/重置重新应用效果；真实写入和其余权限/错误路径不在本轮授权内。继续复用已有 helpers/state/renderer/API。
-- T6R-C（Doing）：Admin typecheck/test/build、imports、定向格式与 diff 检查通过；TEST Preview 已做视觉、Modal Escape/焦点、读失败后的请求恢复和本地模拟无业务写验证。实际多视口、viewer/环境隔离、未保存/已保存/正式状态、历史分页/回滚、CAS/超时/未知结果仍待后续受控验收。真实保存/发布/回滚仅在另行授权的 Preview/TEST 中验证。
+- T6R-A（Done）：页头和紫色视觉、白色连体三栏、紧凑列表卡片、编辑工具栏/开关/三页签已实现，并纳入本次用户真机验收。无需重建 Demo 顶栏品牌或改变 Admin 全局主题。
+- T6R-B（Done）：五类模板起点弹窗、flags 勾选兼容 u、稳定 ID 次级编辑、单一预览结果分发到匹配列表/捕获卡/效果区；原文/示例下拉/字符数/375px/自适应/底部状态；顶部保存/发布/快捷键/恢复，历史 Drawer，独立 System Instructions 入口均已实现，并纳入本次用户真机验收。继续复用已有 helpers/state/renderer/API。
+- T6R-C（Done）：Admin typecheck/test/build、imports、定向格式与 diff 检查通过；此前 TEST Preview 的视觉、Modal Escape/焦点、读失败后的请求恢复和本地模拟无业务写验证已完成，本次用户真机验收完成 T6R 收口。未覆盖的 viewer/环境隔离、历史分页/回滚、CAS/超时/未知结果及 Production 行为仍不得由本结论推定为通过。
 - 范围：Admin TextPostprocessView/styles 和必要 helper 小范围调整；不新增依赖/API/migration/状态真相，不改 Backend、Frontend 或共用 renderer 的安全/运行语义。默认不创建测试文件，确有逻辑变化优先扩展现有相关测试。
 - 视觉证据边界：Demo 源码已阅读；本地浏览器 URL 被安全策略拒绝，未完成渲染/像素对照，不绕过。后续逐项记录复现结果、必要差异、合法参考及未验项，不能将 UI 未实施写成已通过。
 - 回退：只撤回本次 Admin UI，保留真实草稿/已发布快照/原运行链路；需要扩大到协议/服务端/数据库/安全约束时返回设计审阅。
@@ -76,14 +76,14 @@ Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。�
 
 ## T7 — 集成与交付验证
 
-- 状态：Doing（真机主链路验收通过，覆盖记录待最终收口）；依赖：T2–T6。
+- 状态：Done（2026-09-30，用户确认真机验收通过）；依赖：T2–T6。
 - 范围：`research/acceptance-evidence.md`，记录安全摘要，无业务正文。
 - 按用户决定不再补做离线验收，复用既有离线验证并记录 PR 环境真机结果；未覆盖项明确保留，不由主链路成功推定通过。TEST/Production 证据分开。
 - 对应：AC1–AC10；任一核心失败项禁止开放。
 
 ## T8 — 规范与交付
 
-- 状态：Todo；依赖：T7 与 T6R。
+- 状态：Done（2026-09-30）；依赖：T7 与 T6R。
 - 范围：README、ARCHITECTURE、Admin README、受影响 spec、module-updates.json、任务状态/执行记录。
 - 更新六包拓扑与运行事实、运营帮助/策略边界、发布/恢复说明；模块更新采用当前 index 既有 IDs，必要新模块届时按门禁申报。
 - 验证：格式、路径/context/module 校验、diff；给出最终文件清单和 commit message，等用户提交授权。
@@ -95,7 +95,10 @@ inline 模式顺序实施，不默认派发子代理。shared/index.ts、convers
 
 ## 执行记录
 
+- 2026-09-30：用户确认 T7 可标记为 Done。按实际 TEST/PR 真机覆盖范围收口，不补做用户已豁免的旧离线验收；未逐项确认的 viewer/环境隔离、历史分页/回滚、CAS/超时/未知结果、完整权限审计和 Production 行为继续保留为未验，不由 Done 状态推定通过。
+- 2026-09-30：T8 规范与交付完成。更新根 README、ARCHITECTURE、新增 Admin README，并同步 Frontend/Backend/Admin/Shared/Database 相关专题 spec；补齐六包拓扑、source/artifact/消息版本契约、Admin 发布恢复、renderer 边界、current-postprocess 原子开轮和 Production 门禁。生成覆盖 task.json 声明 9 个模块的 `module-updates.json` 及可重复构建脚本，`module_knowledge.py check` 通过；修复 4 个既有 module spec 的 BOM 基线问题，并补齐 Admin 模块缺失的 `last_verified_task`。本轮只改文档/Trellis 交付物，未改产品代码、未操作环境、未提交或推送。
 - 2026-09-30：T7A 本地实现与验证完成。新增 `20260930_bind_current_text_postprocess_on_turn_start.sql`，两个 current-postprocess RPC 在同一事务读取权威指针、校验 artifact 快照并委托旧 wrapper；Backend 发送/重生成只调用新 RPC，成功响应缺少非空版本也拒绝，移除不再作为正确性来源的预热/后台刷新/prime 状态。PostgreSQL 17 隔离 harness 覆盖 migration 重入、v2 发送/重生成自动绑定、非法协议/指针错版零半写和旧 NULL 兼容并通过；临时实例/目录已清理。Backend 72 文件/597 测试、Shared 12 文件/115 测试、全仓 typecheck、Frontend/Admin/CS build、lint/imports/legacy/migration、ledger、Trellis、格式与 diff 检查通过。未连接或写入 TEST/Production，未部署、commit 或 push；T7A 保持环境待办。
+- 2026-09-30：用户确认 T6R 已通过真机验收。T6R-A/B/C 均收口为 Done；该结论仅覆盖用户确认的真机验收范围，不替代此前已明确保留的 viewer/环境隔离、历史分页/回滚、CAS/超时/未知结果或 Production 门禁。
 - 2026-09-30：用户确认将冷启动首轮正确性从 Backend 进程缓存提升为数据库开轮事务保证。新增 T7A 规划：以新的 experience current-postprocess RPC 读取 `runtime_config` 权威指针并校验不可变快照，再委托既有显式版本 wrapper；旧 `NULL=不绑定` 语义保留，新 Backend 不允许 migration 缺失时回退。授权仅含本地 migration/Backend/测试/文档实施与验证，不含 TEST/Production、部署、commit 或 push。
 
 - 2026-09-30：用户确认修复首次回复因 1 秒版本读取超时而绑定 `NULL`，并明确富文本故障不得阻断聊天或向用户报错。已实现 Backend 监听前 3 秒有界预热、热路径内存读取、5 秒后台单飞刷新、最近成功版本保留、无缓存静默 Markdown 降级、发布/回滚 prime 和可取消 strict read；不新增数据库对象/API/依赖，未操作远端环境。Backend 72 文件/601 测试、定向 17 测试、Backend 与全仓 typecheck、imports、Prettier、Trellis validate、diff check 均通过；待用户确认提交/推送后再做 TEST 冷启动首条回复真机验收。

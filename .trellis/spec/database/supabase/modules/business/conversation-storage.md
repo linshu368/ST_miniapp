@@ -1,4 +1,4 @@
-﻿---
+---
 module_id: database.business.conversation-storage
 title: 会话、语音与图片存储
 scope: database

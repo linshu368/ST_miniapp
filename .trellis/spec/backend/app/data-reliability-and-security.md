@@ -72,3 +72,50 @@ CAS 取消先赢/完成先赢、重复/错误/非本人 ID、取消等待失败�
 Wrong：`controller.abort(); setGenerating(false)`，仍留下服务端 streaming。
 
 Correct：绑定具体回复调用服务端取消，只有响应真实终态才清除本地占位；生成在计费前争抢没有取消标记的 streaming，取消先释放预留再收口。
+
+## Scenario: AI 回复后处理版本发布与消费
+
+### 1. Scope / Trigger
+
+跨 Admin、Backend、Shared、Frontend 与数据库的文本后处理会改变回复展示，并包含正则、受限 HTML/CSS、并发发布和历史版本稳定性；必须把 source、compiled artifact、正式指针和消息版本作为显式契约处理。
+
+### 2. Signatures
+
+- Admin：`GET /api/admin/text-postprocess`、`PUT /draft`、`DELETE /draft`、`POST /publish`、`POST /rollback`、`GET /requests/:requestId`。
+- MiniApp：`POST /api/v1/text-postprocess/versions`，请求最多 20 个去重正整数版本，响应逐版本返回 snapshot 或 unavailable。
+- DB：`experience.start_chat_history_turn_with_current_postprocess` 与 `experience.start_chat_history_regeneration_with_current_postprocess`；成功返回非空 `postprocess_version`。
+
+### 3. Contracts
+
+- source/artifact 固定 `schema_version` 与 `policy_version`；发布快照不可变。runtime config 只保存当前正式版本/source identity 指针，不保存 artifact。
+- 发布/回滚请求携带 UUID `request_id`、当前版本和草稿/目标 CAS 前提。回滚重新编译目标 source 并创建新版本，不修改目标版本。
+- `ChatMessage` 与 SSE `start` 的 `postprocess_version` 向后兼容可选；新开轮成功必须非空，旧行可为 `NULL` 且不回填。
+- 日志只记录环境、版本、request id、规则/诊断计数、耗时和结果；禁止 source、artifact 正文、聊天正文、token 或原始数据库错误。
+
+### 4. Validation & Error Matrix
+
+- source/flags/HTML/CSS/预算非法 → validation error，保留草稿，不创建发布版本。
+- 编译 Worker 超时/崩溃 → `VALIDATION_UNAVAILABLE`，不进入发布事务。
+- 草稿或当前版本 CAS 冲突 → conflict，客户端重新读取并人工处理，不覆盖。
+- mutation 响应超时/断开 → `RESULT_UNKNOWN`，按原 `request_id` 查询 outcome，禁止盲重试。
+- runtime 指针缺失/协议错版/快照缺 artifact/新 RPC 未部署 → 开轮整事务失败，不调用 LLM、不计费、不发 SSE、不留 history 半写。
+- 批次中的单个 artifact 非法/不存在 → 仅该版本 unavailable，其他版本正常返回。
+
+### 5. Good/Base/Bad Cases
+
+- Good：发布 v2 时旧轮继续绑定 v1，新轮原子绑定 v2；reload 后每条消息仍按自身版本展示。
+- Base：旧 `NULL` 消息或 unavailable snapshot 展示完整原始 Markdown。
+- Bad：Frontend 编译 source、使用 `MAX(version)`、发布时先切指针后写 artifact、结果未知自动重复发布。
+
+### 6. Tests Required
+
+- Shared：source/artifact schema、恶意 HTML/CSS、正则边界、预算与确定性。
+- Backend：Admin 鉴权/CAS/request replay/unknown lookup、Worker 终止、批次好坏隔离、日志不泄露。
+- SQL：发布原子性/不可变/最小授权、开轮发送与重生成、非法指针零半写、旧显式 `NULL` 兼容。
+- Consumers：Frontend/Admin/renderer typecheck、测试与 build；真机验证流式稳定、终态 choice、双击和版本切换。
+
+### 7. Wrong vs Correct
+
+Wrong：Backend 超时后传 `NULL` 开轮，或客户端拿 source 即时编译并选择最新版本。
+
+Correct：数据库开轮事务读取权威指针并绑定不可变 artifact 版本；消费者只读消息自身版本，任何不可用都退化为完整原文。

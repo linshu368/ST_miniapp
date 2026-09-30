@@ -8,3 +8,4 @@
 - 敏感列最小化暴露；日志和文档只记录结构/计数，不记录业务行或个人信息。
 - 跨 schema FK/function/view 会扩大权限与发布耦合，设计必须列出依赖和回滚顺序。
 - 不可变表被外键引用时，检查被引用表 owner 的行锁权限：`SELECT FOR KEY SHARE` 除 SELECT 外还需至少一列 UPDATE。可用最小列级授权配合既有不可变触发器，不能只验证 SELECT 就认为开轮/写入可用。本地回归用非 superuser owner，并覆盖角色继承及 API 角色表/列授权漂移。
+- `app_core.text_postprocess_versions` 只允许发布 RPC 写入，直接 UPDATE/DELETE/TRUNCATE 由 `ENABLE ALWAYS` 触发器拒绝。current-postprocess RPC 必须由 `postgres` 拥有、`SECURITY DEFINER`、固定安全 `search_path`，仅授予 `service_role`/`postgres` EXECUTE；`anon`、`authenticated` 与 PUBLIC 不得读取快照或执行 Admin/开轮内部 RPC。
