@@ -27,7 +27,12 @@ import { freeQuotaKeys, useCharacterFreeQuotaQuery } from '@/lib/api/free-quota'
 import { paymentKeys } from '@/lib/api/payment';
 import { formatFreeQuotaExhaustedNotice } from '@/lib/free-quota-dialog';
 import { createLogger } from '@/lib/logger';
-import { mergeStreamingMessages, type StreamingTurn } from '@/lib/merge-streaming-messages';
+import {
+  appendStreamText,
+  applyStreamStart,
+  mergeStreamingMessages,
+  type StreamingTurn,
+} from '@/lib/merge-streaming-messages';
 import {
   isInsufficientCreditsError,
   redirectToRecharge,
@@ -556,6 +561,7 @@ export function useConversationTurn({
         turnIndex: pendingRef.current.turnIndex,
         revision: pendingRef.current.revision,
         text: '',
+        postprocessVersion: null,
       });
 
       let assistantMessageId: string | null = null;
@@ -582,30 +588,11 @@ export function useConversationTurn({
             captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
               type: 'stream_opened',
             });
-            setStreaming((current) =>
-              current
-                ? {
-                    ...current,
-                    assistantMessageId: event.assistant_message_id,
-                    turnIndex: event.turn_index,
-                    revision: event.revision,
-                    userMessage: current.userMessage
-                      ? {
-                          ...current.userMessage,
-                          id: event.user_message_id ?? current.userMessage.id,
-                          turn_index: event.turn_index,
-                          revision: event.revision,
-                        }
-                      : null,
-                  }
-                : current
-            );
+            setStreaming((current) => (current ? applyStreamStart(current, event) : current));
           },
           onDelta: (text) => {
             if (!isCurrent()) return;
-            setStreaming((current) =>
-              current ? { ...current, text: current.text + text } : current
-            );
+            setStreaming((current) => (current ? appendStreamText(current, text) : current));
           },
           onDone: (event) => {
             if (!isCurrent()) return;

@@ -1,0 +1,62 @@
+{
+  "id": "rich-text-process",
+  "name": "rich-text-process",
+  "title": "AI 回复全局后处理与运营配置平台",
+  "description": "AI 回复原文保留、受限 HTML/CSS 后处理、共用真实渲染与 Admin 草稿/发布/回滚；T0–T8 与 T6R 已完成，等待最终审阅、提交和归档。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "frontend,backend,admin,shared,reply-renderer,database",
+  "priority": "P0",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-09-28",
+  "completedAt": null,
+  "branch": "dev_rich_text_process",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/09-28-rich-text-process/prd.md",
+    ".trellis/tasks/09-28-rich-text-process/design.md",
+    ".trellis/tasks/09-28-rich-text-process/implement.md",
+    ".trellis/tasks/09-28-rich-text-process/task.md",
+    ".trellis/tasks/09-28-rich-text-process/research/repository-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/research/decisions-and-validation.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t0-technical-validation.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t1-shared-parser-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t2-database-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t4-renderer-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t2-t4-closure-review.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t3-backend-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t5-miniapp-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t6-admin-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t5-t6-closure-review.md",
+    ".trellis/tasks/09-28-rich-text-process/research/t2-t3-t5-artifact-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/research/acceptance-evidence.md",
+    ".trellis/tasks/09-28-rich-text-process/module-updates.json",
+    ".trellis/tasks/09-28-rich-text-process/research/build_t8_module_updates.py"
+  ],
+  "notes": "2026-09-30：T0–T8 与 T6R 均已完成。用户确认 T6R Admin Demo 复现及 T7 集成与交付真机验收通过；T8 已同步 README、ARCHITECTURE、Admin README、相关专题 spec 和 9 个声明模块的 module-updates.json。未逐项确认的失败路径与 Production migration／发布仍为独立门禁。任务保持 in_progress，等待最终人工审阅、提交、PR 合并与 Trellis 归档；本轮未操作远端环境、未提交或推送。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "admin.business.operations",
+        "admin.infrastructure.admin-client-auth",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}

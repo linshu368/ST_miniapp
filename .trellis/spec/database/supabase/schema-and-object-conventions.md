@@ -55,6 +55,7 @@
 
 - 签到行为记录属于 `miniapp_features`，由签到发放的星尘变化必须进入 `billing.wallet_ledger`。
 - 运营配置的草稿、发布记录和审计属于 `admin`，发布后供产品运行读取的配置真相属于 `app_core.runtime_config`。
+- 文本后处理的草稿、发布请求与审计属于 `admin`；已发布且被历史消息长期引用的 source/artifact 快照属于 `app_core.text_postprocess_versions`，当前正式选择只由 `app_core.runtime_config.miniapp_text_postprocess_config` 指向；消息自身版本 FK 属于 `experience.chat_history`。三者不得合并成一张跨生命周期表或复制成多个权威源。
 - 渠道链接、点击和邀请过程属于 `miniapp_traffic`，用户身份和最终渠道归属字段可以属于 `app_core.users`。
 - 分析报表和离线快照属于 `miniapp_analytics`；若某个计算结果被线上请求直接读取并决定产品行为，应迁回拥有该功能状态的运行时 schema。
 

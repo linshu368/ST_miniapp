@@ -1,4 +1,8 @@
-import type { ChatMessage } from '@miniapp/shared';
+import {
+  readPostprocessVersion,
+  type ChatMessage,
+  type ConversationStreamStartEvent,
+} from '@miniapp/shared';
 
 /** 流式期间叠在落库态之上的临时态。刻意不进 query cache，理由见 lib/api/conversations.ts */
 export interface StreamingTurn {
@@ -12,6 +16,37 @@ export interface StreamingTurn {
   turnIndex: number;
   revision: number;
   text: string;
+  /**
+   * 只来自本轮 start。缺失按 null。增量到达时不能改写，也不能改读当前配置。
+   * start 之前还没有 assistant 气泡，这个 null 不会被展示成另一条规则。
+   */
+  postprocessVersion: number | null;
+}
+
+export function applyStreamStart(
+  turn: StreamingTurn,
+  event: ConversationStreamStartEvent
+): StreamingTurn {
+  return {
+    ...turn,
+    assistantMessageId: event.assistant_message_id,
+    turnIndex: event.turn_index,
+    revision: event.revision,
+    postprocessVersion: readPostprocessVersion(event.postprocess_version),
+    userMessage: turn.userMessage
+      ? {
+          ...turn.userMessage,
+          id: event.user_message_id ?? turn.userMessage.id,
+          turn_index: event.turn_index,
+          revision: event.revision,
+        }
+      : null,
+  };
+}
+
+/** 只追加原文。版本停留在 start 写下来的那一个。 */
+export function appendStreamText(turn: StreamingTurn, text: string): StreamingTurn {
+  return { ...turn, text: turn.text + text };
 }
 
 export function mergeStreamingMessages(
@@ -75,6 +110,7 @@ export function mergeStreamingMessages(
       error_code: null,
       finish_reason: null,
       model_id: null,
+      postprocess_version: streaming.postprocessVersion,
       created_at: new Date().toISOString(),
     });
   }

@@ -66,6 +66,7 @@ import {
 import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
 import { fetchOpenRouterModels, getOpenRouterCatalogIssues } from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
+import { TextPostprocessView } from './components/TextPostprocessView';
 import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
@@ -78,6 +79,12 @@ import {
   type InviteProgramTabKey,
   type ImageGenerationConfigKey,
 } from './lib/adminNavigation';
+import {
+  createWorkbenchStore,
+  isDirty,
+  resetLocalEdits,
+  type WorkbenchStore,
+} from './lib/textPostprocessWorkbench';
 
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
@@ -397,6 +404,26 @@ function AdminWorkspace(props: {
   const [imageConfigTab, setImageConfigTab] = useState<ImageGenerationConfigKey>(
     IMAGE_GENERATION_CONFIG_KEYS[0]
   );
+  const textStoreRef = useRef(createWorkbenchStore());
+  const [textStore, setTextStore] = useState<WorkbenchStore>(textStoreRef.current);
+  const syncTextStore = useCallback((updater: (current: WorkbenchStore) => WorkbenchStore) => {
+    const next = updater(textStoreRef.current);
+    textStoreRef.current = next;
+    setTextStore(next);
+    return next;
+  }, []);
+  const confirmDiscardTextEdits = async (): Promise<boolean> => {
+    const session = textStoreRef.current.sessions[props.environment];
+    if (!isDirty(session)) return true;
+    const confirmed = await confirmAction(
+      '放弃未保存的富文本规则？',
+      '当前环境还有未保存编辑。离开或切换环境前需要先处理这些修改。',
+      true
+    );
+    if (!confirmed) return false;
+    syncTextStore((store) => resetLocalEdits(store, props.environment));
+    return true;
+  };
   const [configs, setConfigs] = useState<ManagedConfig[]>([]);
   const [drafts, setDrafts] = useState<ConfigDraft[]>([]);
   const [releases, setReleases] = useState<ConfigRelease[]>([]);
@@ -946,26 +973,31 @@ function AdminWorkspace(props: {
           defaultOpenKeys={['configs']}
           selectedKeys={[view === 'configs' ? configMenuKey(selectedKey) : view]}
           onClick={({ key }) => {
-            const selection = resolveAdminMenuSelection(key);
-            if (selection.view === 'invite_program') {
-              // 从菜单进入「裂变邀请管理」时，把编辑器同步到当前激活的 config tab
-              const nextTab =
-                selection.configKey && isInviteProgramConfigKey(selection.configKey)
-                  ? selection.configKey
-                  : inviteTab;
-              setInviteTab(nextTab);
-              if (nextTab !== 'records') setSelectedKey(nextTab);
-            } else if (selection.view === 'image_generation_config') {
-              const nextTab =
-                selection.configKey && isImageGenerationConfigKey(selection.configKey)
-                  ? selection.configKey
-                  : imageConfigTab;
-              setImageConfigTab(nextTab);
-              setSelectedKey(nextTab);
-            } else if (selection.configKey) {
-              setSelectedKey(selection.configKey);
-            }
-            setView(selection.view);
+            void (async () => {
+              const selection = resolveAdminMenuSelection(key);
+              if (view === 'text_postprocess' && selection.view !== 'text_postprocess') {
+                if (!(await confirmDiscardTextEdits())) return;
+              }
+              if (selection.view === 'invite_program') {
+                // 从菜单进入「裂变邀请管理」时，把编辑器同步到当前激活的 config tab
+                const nextTab =
+                  selection.configKey && isInviteProgramConfigKey(selection.configKey)
+                    ? selection.configKey
+                    : inviteTab;
+                setInviteTab(nextTab);
+                if (nextTab !== 'records') setSelectedKey(nextTab);
+              } else if (selection.view === 'image_generation_config') {
+                const nextTab =
+                  selection.configKey && isImageGenerationConfigKey(selection.configKey)
+                    ? selection.configKey
+                    : imageConfigTab;
+                setImageConfigTab(nextTab);
+                setSelectedKey(nextTab);
+              } else if (selection.configKey) {
+                setSelectedKey(selection.configKey);
+              }
+              setView(selection.view);
+            })();
           }}
           items={[
             {
@@ -980,6 +1012,7 @@ function AdminWorkspace(props: {
                 { key: 'invite_program', label: '裂变邀请管理' },
                 { key: 'image_generation_config', label: '图片生成配置' },
                 { key: 'vip_strategy', label: 'VIP策略' },
+                { key: 'text_postprocess', label: '回复富文本规则' },
               ],
             },
             { key: 'characters', label: '角色卡' },
@@ -997,7 +1030,14 @@ function AdminWorkspace(props: {
                 { label: '测试环境', value: 'test' },
                 { label: '生产环境', value: 'production' },
               ]}
-              onChange={(value) => void props.onEnvironmentChange(value as AdminEnvironment)}
+              onChange={(value) => {
+                void (async () => {
+                  const next = value as AdminEnvironment;
+                  if (next === props.environment) return;
+                  if (view === 'text_postprocess' && !(await confirmDiscardTextEdits())) return;
+                  await props.onEnvironmentChange(next);
+                })();
+              }}
             />
             <Tag color={props.environment === 'production' ? 'red' : 'blue'}>
               {props.environment === 'production' ? '生产环境' : '测试环境'}
@@ -1038,6 +1078,19 @@ function AdminWorkspace(props: {
               client={props.client}
               environment={props.environment}
               canWrite={canWrite}
+            />
+          ) : view === 'text_postprocess' ? (
+            <TextPostprocessView
+              client={props.client}
+              environment={props.environment}
+              role={props.admin.role}
+              canWrite={canWrite}
+              store={textStore}
+              onStoreChange={syncTextStore}
+              onOpenSystemInstructions={() => {
+                setSelectedKey('system_instructions');
+                setView('configs');
+              }}
             />
           ) : view === 'outreach_credit_grant' ? (
             <OutreachCreditGrantView

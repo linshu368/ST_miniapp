@@ -29,6 +29,7 @@
 | `components/LoginPage.tsx`                       | 运营登录交互与错误反馈                                                 |
 | `components/ConfigValueEditor.tsx`               | 配置值通用编辑入口和草稿交互                                           |
 | `components/SystemInstructionsEditor.tsx`        | 系统指令配置编辑                                                       |
+| `components/TextPostprocessView.tsx`             | 回复富文本三栏工作台、草稿/发布/历史/预览编排                          |
 | `components/ModelCatalogEditor.tsx`              | 模型目录表单、排序和差异显示                                           |
 | `components/WordCountTiersEditor.tsx`            | 回复长度档位编辑与排序                                                 |
 | `components/LobbyPinnedCharactersEditor.tsx`     | 大厅置顶角色配置                                                       |
@@ -47,6 +48,10 @@
 | `lib/outreachCreditsApi.ts`                      | 赠送 API、输入和响应处理                                               |
 | `lib/environment.ts`                             | 测试/生产环境模型、URL 和切换规则                                      |
 | `lib/adminNavigation.ts`                         | 导航项与 view 纯逻辑                                                   |
+| `lib/textPostprocessApi.ts`                      | 文本后处理 Admin API、超时、结果未知与 request lookup                  |
+| `lib/textPostprocessWorkbench.ts`                | 草稿/session/CAS/差异/历史纯逻辑                                       |
+| `lib/textPostprocessPreview.ts` / `.worker.ts`   | 有界预览任务、Worker 编译/执行与迟到结果隔离                           |
+| `lib/textPostprocessSamples.ts`                  | 五类模板起点与预览样例                                                 |
 | `lib/configSchemas.ts`                           | 运营配置的 Zod 组合与校验                                              |
 | `lib/characterCards.ts`                          | 角色卡转换/排序等纯逻辑                                                |
 | `lib/modelCatalogDiff.ts`                        | 模型目录差异计算                                                       |
