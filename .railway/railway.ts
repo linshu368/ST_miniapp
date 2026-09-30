@@ -189,7 +189,8 @@ export default defineRailway((ctx) => {
       buildEnvironment: 'V3',
       dockerfilePath: '/ops/docker/Dockerfile.backend',
     },
-    start: 'tsx src/scripts/reconcile-payment-orders.ts',
+    // The Docker runtime no longer installs tsx globally; keep this service override aligned with CMD.
+    start: './node_modules/.bin/tsx src/scripts/reconcile-payment-orders.ts',
     deploy: {
       restartPolicyType: 'ALWAYS',
     },
