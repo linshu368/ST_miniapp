@@ -19,6 +19,7 @@ export function buildWorkerResponse(request: WorkerRequest): WorkerResponse {
     });
     if (result.status !== 'applied') {
       return {
+        type: 'result',
         jobId: request.jobId,
         generation: request.generation,
         result,
@@ -28,15 +29,17 @@ export function buildWorkerResponse(request: WorkerRequest): WorkerResponse {
     const css = scopedCss(request);
     if (css === null) {
       return {
+        type: 'result',
         jobId: request.jobId,
         generation: request.generation,
         result: originalPostprocess(request.content, 'CSS_REJECTED'),
         css: '',
       };
     }
-    return { jobId: request.jobId, generation: request.generation, result, css };
+    return { type: 'result', jobId: request.jobId, generation: request.generation, result, css };
   } catch {
     return {
+      type: 'result',
       jobId: request.jobId,
       generation: request.generation,
       result: originalPostprocess(request.content, 'WORKER_EXCEPTION'),

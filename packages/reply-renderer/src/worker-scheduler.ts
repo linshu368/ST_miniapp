@@ -2,12 +2,13 @@ import { TEXT_POSTPROCESS_LIMITS } from '@miniapp/shared';
 
 import {
   originalOutcome,
+  type WorkerMessage,
   type WorkerOutcome,
   type WorkerRequest,
-  type WorkerResponse,
 } from './worker-protocol';
 
 export const POSTPROCESS_TIMEOUT_MS = TEXT_POSTPROCESS_LIMITS.messageBudgetMs;
+export const WORKER_START_TIMEOUT_MS = 5_000;
 
 interface Task {
   jobId: number;
@@ -22,6 +23,7 @@ interface ActiveTask {
   task: Task;
   generation: number;
   timer: ReturnType<typeof setTimeout>;
+  phase: 'starting' | 'running';
 }
 
 type WorkerFactory = () => Worker;
@@ -32,6 +34,7 @@ function defaultWorkerFactory(): Worker {
 
 let createWorker: WorkerFactory = defaultWorkerFactory;
 let worker: Worker | null = null;
+let workerReady = false;
 let generation = 0;
 let jobSeq = 0;
 let users = 0;
@@ -147,24 +150,37 @@ function start(task: Task): void {
   const workerGeneration = generation;
   const timer = setTimeout(() => {
     if (active?.task.jobId !== task.jobId) return;
-    settle(originalOutcome(task.content, 'TIMEOUT'), true);
-  }, task.timeoutMs);
-  active = { task, generation: workerGeneration, timer };
+    settle(originalOutcome(task.content, 'WORKER_START_TIMEOUT'), true);
+  }, WORKER_START_TIMEOUT_MS);
+  active = { task, generation: workerGeneration, timer, phase: 'starting' };
+
+  if (workerReady) startActiveExecution(instance);
+}
+
+function startActiveExecution(instance: Worker): void {
+  const current = active;
+  if (!current || current.phase !== 'starting') return;
+  clearTimeout(current.timer);
+  current.phase = 'running';
+  current.timer = setTimeout(() => {
+    if (active?.task.jobId !== current.task.jobId) return;
+    settle(originalOutcome(current.task.content, 'TIMEOUT'), true);
+  }, current.task.timeoutMs);
 
   const request: WorkerRequest = {
-    jobId: task.jobId,
-    generation: workerGeneration,
-    content: task.content,
-    artifact: task.artifact,
-    messageKey: task.messageKey,
-    deadlineAt: Date.now() + task.timeoutMs,
+    jobId: current.task.jobId,
+    generation: current.generation,
+    content: current.task.content,
+    artifact: current.task.artifact,
+    messageKey: current.task.messageKey,
+    deadlineAt: Date.now() + current.task.timeoutMs,
   };
 
   try {
     instance.postMessage(request);
   } catch {
-    if (active?.task.jobId === task.jobId) {
-      settle(originalOutcome(task.content, 'WORKER_ERROR'), true);
+    if (active?.task.jobId === current.task.jobId) {
+      settle(originalOutcome(current.task.content, 'WORKER_ERROR'), true);
     }
   }
 }
@@ -195,9 +211,15 @@ function ensureWorker(): Worker {
   generation += 1;
   const next = createWorker();
   const workerGeneration = generation;
-  next.onmessage = (event: MessageEvent<WorkerResponse>) => {
-    if (workerGeneration !== generation || !active) return;
+  next.onmessage = (event: MessageEvent<WorkerMessage>) => {
+    if (workerGeneration !== generation) return;
     const response = event.data;
+    if (response.type === 'ready') {
+      workerReady = true;
+      if (active?.generation === workerGeneration) startActiveExecution(next);
+      return;
+    }
+    if (!active) return;
     if (response.jobId !== active.task.jobId || response.generation !== active.generation) return;
     settle({ result: response.result, css: response.css }, false);
   };
@@ -212,6 +234,7 @@ function ensureWorker(): Worker {
 function disposeWorker(): void {
   const current = worker;
   worker = null;
+  workerReady = false;
   generation += 1;
   current?.terminate();
 }
