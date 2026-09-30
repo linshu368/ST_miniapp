@@ -17,7 +17,7 @@ last_verified_at: 2026-09-30
 
 Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/model-tiers.ts` 集中读取 `llm_model_catalog`，损坏时降级到 `DEFAULT_CATALOG`，不再读取旧 tiers key。PostHog capture 使用 `POSTHOG_API_KEY`/`POSTHOG_HOST`/`POSTHOG_TIMEOUT_MS`，缺 key 或非法 host 时 no-op。
 
-`runtime-config.ts` 的单键读取支持调用方传入取消信号。文本后处理在功能模块内维护唯一进程缓存：启动有界预热、5 秒后台单飞刷新、最近有效版本保留；用户请求不等待配置数据库，失败只影响展示增强。
+`runtime-config.ts` 的单键读取支持调用方传入取消信号，供 Admin 状态读取等严格查询使用。对话的文本后处理版本不再由进程缓存维护，而由数据库开轮事务读取权威指针并绑定。
 
 ## 入口与调用者
 
@@ -37,7 +37,7 @@ Supabase 按域访问，服务日志使用 Pino；模型目录由 `platform/mode
 
 PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order_id:status:settled_by` 去重，图片按 `attempt_id:event:terminal_status|charge_status` 去重。
 
-文本后处理版本链路为“监听前 strict read 预热 → 开轮内存读取 → 定时 strict read 刷新”；Admin 发布/回滚成功后 prime 当前实例，其他实例通过刷新收敛。超时会取消 PostgREST 请求，失败不覆盖最近有效快照。
+文本后处理版本链路为“current-postprocess RPC 读取 runtime 指针与不可变快照 → 委托显式版本 wrapper → 同事务写入消息版本”。新 RPC 不可用或当前配置非法时不回退旧 RPC；Admin 的独立严格读取超时会取消 PostgREST 请求。
 
 ## 数据、契约与外部依赖
 

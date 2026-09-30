@@ -25,7 +25,7 @@ import {
   mutationError,
   TextPostprocessRequestError,
 } from './errors.js';
-import { primeCurrentPostprocessVersion, readAdminPostprocessVersion } from './config.js';
+import { readAdminPostprocessVersion } from './config.js';
 import { TextPostprocessRepository, type RpcCall, type StoredDraft } from './repository.js';
 import { validateTextPostprocessSource } from './validate-pool.js';
 
@@ -116,7 +116,6 @@ export async function publishTextPostprocess(
     }),
     () => records().getRequest(actorUserId, input.request_id)
   );
-  primeCommittedVersion(outcome);
   return outcome;
 }
 
@@ -150,7 +149,6 @@ export async function rollbackTextPostprocess(
     }),
     () => records().getRequest(actorUserId, input.request_id)
   );
-  primeCommittedVersion(outcome);
   return outcome;
 }
 
@@ -201,10 +199,6 @@ async function confirmedReplay(
   }
   if (!existing.value) return null;
   return settle(await confirm(existing.value), () => records().getRequest(actorUserId, requestId));
-}
-
-function primeCommittedVersion(outcome: TextPostprocessMutationOutcome): void {
-  if (!outcome.replayed && outcome.version) primeCurrentPostprocessVersion(outcome.version);
 }
 
 /** 重放读取已提交的明确版本，不依赖已关闭的 draft 或 current，也不重新编译。 */

@@ -30,7 +30,6 @@ import {
 } from '../../infrastructure/repositories/CharacterCardRepository.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
-import { readCurrentPostprocessVersion } from '../text-postprocess/config.js';
 import { fetchContextWindowLimits } from './context-window.js';
 import { buildEngineHistory } from './history.js';
 import type { ConversationStreamSink } from './sse.js';
@@ -115,7 +114,7 @@ export async function runConversationTurn(
   // ── 取数 ──────────────────────────────────────────────────────────────────
   // 六个读之间互不依赖，串行发会把一轮生成的启动时延叠成六个 RTT。
   // 都放在写入之前：这里抛异常时会话还没被动过，不会留下没有回复的孤儿 user 行。
-  const [model, card, userConfig, displayName, instructions, windowLimits, postprocessVersion] =
+  const [model, card, userConfig, displayName, instructions, windowLimits] =
     await withConversationPreparationDeadline(
       Promise.all([
         resolveModelForUser(userId),
@@ -124,7 +123,6 @@ export async function runConversationTurn(
         userSettings().getDisplayName(userId),
         fetchPlatformInstructions(),
         fetchContextWindowLimits(),
-        readCurrentPostprocessVersion(),
       ]),
       preparationSignal
     );
@@ -142,13 +140,7 @@ export async function runConversationTurn(
   preparationSignal.throwIfAborted();
   await historyRecords().recoverStaleStreaming(session.id);
   preparationSignal.throwIfAborted();
-  const turn = await startTurn(
-    session.id,
-    mode,
-    model.openRouterModelId,
-    windowLimits,
-    postprocessVersion
-  );
+  const turn = await startTurn(session.id, mode, model.openRouterModelId, windowLimits);
 
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -381,15 +373,14 @@ interface StartedTurn {
   historyId: string;
   revision: number;
   userInput: string;
-  postprocessVersion: number | null;
+  postprocessVersion: number;
 }
 
 async function startTurn(
   sessionId: string,
   mode: ConversationTurnMode,
   model: string,
-  windowLimits: { maxTurns: number; retainTurns: number },
-  postprocessVersion: number | null
+  windowLimits: { maxTurns: number; retainTurns: number }
 ): Promise<StartedTurn> {
   if (mode.kind === 'send') {
     const started = await historyRecords().startTurn({
@@ -401,7 +392,6 @@ async function startTurn(
       staleAfterSeconds: 24 * 60 * 60,
       maxContextTurns: windowLimits.maxTurns,
       retainContextTurns: windowLimits.retainTurns,
-      postprocessVersion,
     });
     return {
       turnIndex: started.turnIndex,
@@ -418,7 +408,6 @@ async function startTurn(
     staleAfterSeconds: 24 * 60 * 60,
     maxContextTurns: windowLimits.maxTurns,
     retainContextTurns: windowLimits.retainTurns,
-    postprocessVersion,
   });
   return {
     turnIndex: started.turnIndex,

@@ -445,7 +445,7 @@ packages/backend/src/
 
 文本后处理开轮 wrapper 以 `postgres` 身份绑定 `experience.chat_history.postprocess_version`，其外键检查会对 `app_core.text_postprocess_versions` 执行 `SELECT FOR KEY SHARE`，除 SELECT 外还需至少一列 UPDATE 权限。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 授予 owner `UPDATE(version)`，恢复 `service_role` 只读并撤销匿名/登录角色额外授权；现有 `ENABLE ALWAYS` 触发器继续拒绝快照 UPDATE/DELETE/TRUNCATE。该文件只改变 ACL，不回填、不改函数/外键，执行与部署仍分离。
 
-当前正式版本指针由 Backend 在监听前最多 3 秒预热，并每 5 秒后台单飞刷新；会话开轮只读内存快照，不把配置数据库读取放入用户请求关键路径。后台读取失败保留最近有效版本，无有效版本时绑定 `NULL` 并继续原 Markdown；Admin 新发布/回滚成功后 prime 当前实例。该缓存只保存已验证的不可变版本号，不保存草稿、source 或 artifact，也不以最大版本替代运行指针。
+新发送和重生成不再由 Backend 进程缓存决定版本。`experience.start_chat_history_*_with_current_postprocess` 在既有开轮事务内读取 `app_core.runtime_config.miniapp_text_postprocess_config` 权威指针，联结并校验对应不可变 artifact 快照，再委托显式版本 wrapper 绑定 `chat_history.postprocess_version`。同一发布并发下可见完整旧版或完整新版，不使用 `MAX(version)`；成功必返回非空版本，配置/RPC/快照异常则整轮失败且不留下半写。旧显式 wrapper 和 `NULL=不绑定` 语义继续服务兼容旧 Backend，应用顺序必须是 migration → Backend。
 
 - 位置 `packages/shared/migrations/`（`archive/` 另存 087 删除的 admin RPC 定义备查）。
 - **命名规则（2026-09-10 起）**：新迁移一律 `YYYYMMDD_描述.sql`。三位数字编号已停用并由 CI 拦截（`pnpm lint:migrations`，冻结清单在 `scripts/check-migration-filenames.mjs`）——历史上 021/030/031/032/053/065/086/088/092/093/095 撞号，100 号立规后 105/108/109 又各撞一对。

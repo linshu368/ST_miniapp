@@ -76,6 +76,7 @@ pnpm supabase:db:query -- --db-url "$DATABASE_URL" --file packages/shared/migrat
 5. `20260929_grant_text_postprocess_snapshot_read.sql`：恢复对话开轮 wrapper owner `postgres` 和 Backend `service_role` 对版本快照的最小 `SELECT` 权限；要求两个 wrapper 仍为 `postgres` 所有的 `SECURITY DEFINER` 函数，拒绝未知 owner。必须在第 1、2 个文件成功之后执行。
 6. `20260929_fix_text_postprocess_snapshot_fk_lock.sql`：补 owner `postgres` 的 `UPDATE(version)`，满足版本外键的 `SELECT FOR KEY SHARE` 权限检查；撤销 API 角色额外的表/列写权限，恢复 `service_role` 只读。保留 RLS、FK 和 ALWAYS 不可变触发器，无回填。要求第 1、2 个文件和既有授权修复完成；失败事务回滚，提交后采用 forward-fix，不恢复宽泛授权。
 7. `20260930_fix_system_instructions_text_value_validation.sql`：恢复 Admin 平台规则模板使用 `text_value`、`value=NULL` 的既有契约，修复后续 validator 包装链把它误送入 JSON-only 守卫的问题。只替换最外层校验函数，不改配置数据、草稿、正式版本、RLS/grant 或富文本快照；迁移内验证合法文本、错误存储列、空值、缺失占位符及既有 VIP 分支。TEST 单文件执行和 Admin 保存/发布回读通过后才能继续 MiniApp 验收；Production 独立审批。
+8. `20260930_bind_current_text_postprocess_on_turn_start.sql`：新增发送/重生成 current-postprocess RPC，在既有开轮事务内读取 `runtime_config` 权威指针、校验不可变 artifact 快照并绑定非空版本。保留旧显式 wrapper 的 `NULL=不绑定` 语义；新 Backend 必须在本文件之后发布，RPC 缺失或当前配置非法时不得降级开轮。无 backfill/表重写；TEST 冷启动首发通过后才规划 Production。
 
 本地 SQL 回归应使用非 superuser 的 `postgres` 执行迁移（具备本地建库/建角色权限），另设隔离实例的 superuser `TEXT_POSTPROCESS_TEST_ADMIN` 执行恶意写入/replica 场景。例如在明确的本地 Unix socket 上运行 `PGHOST=/path/to/local/socket PGUSER=postgres TEXT_POSTPROCESS_TEST_ADMIN=local_test_admin bash packages/shared/migrations/tests/run-text-postprocess-t2.sh`。不要降权或修改共享开发实例已有角色；使用临时隔离实例。runner 覆盖缺失行锁权限、额外授权收敛、迁移重跑、非空/NULL 开轮、重生成、不可变快照、CAS、事务回滚和并发锁。
 

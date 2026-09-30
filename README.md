@@ -157,7 +157,7 @@ pnpm supabase:link:test
 
 文本后处理快照的版本外键需要 `postgres` 执行 `SELECT FOR KEY SHARE`。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 仅授予 owner `UPDATE(version)` 以满足行锁检查，同时恢复 API 角色最小权限；快照仍由 `ENABLE ALWAYS` 触发器禁止直接修改。账本 `applied` 不代替权限、开轮/重生成及回复回读验收，新迁移仍须逐环境手工执行。
 
-Backend 在开始监听前有界预热当前文本后处理版本，开轮热路径只读进程内快照，并以 5 秒后台单飞刷新使实例收敛。刷新超时、数据库异常或配置非法时保留最近有效版本；从未取得有效版本时静默回到原 Markdown，不阻断聊天或流式输出。发布/回滚成功会立即更新当前实例缓存。
+新发送和重生成通过数据库 current-postprocess RPC，在既有开轮事务内读取 `app_core.runtime_config` 的正式指针、校验对应不可变 artifact 快照并写入 `chat_history.postprocess_version`。开轮成功必返回非空版本；配置缺失、协议错版、快照不可用或新 RPC 未部署时拒绝开轮且不调用 LLM，不再因 Backend 冷启动生成永久无版本消息。旧显式 wrapper 的 `NULL=不绑定` 兼容语义保留，旧消息不回填；应用发布顺序为 migration → Backend。
 
 ## 7. 部署拓扑
 

@@ -150,6 +150,15 @@ reply-renderer test/typecheck 脚本须在新包内新增；这是拟新增命�
 5. 扩展既有 `config.test.ts` 和 `service.test.ts`，覆盖冷启动、慢读、异常保留、无缓存降级、单飞、prime、发布/回滚边界；不新增测试文件。
 6. 运行 Backend 定向测试、完整测试、typecheck、全仓 typecheck、imports、格式与 `git diff --check`；远端 TEST/Production 与提交推送保留独立授权。
 
+## T7A — 冷启动首轮原子绑定正式版本（2026-09-30）
+
+- 状态：Doing（Implementation complete / environment pending）；用户已确认实施。范围仅限任务文档、一个 shared forward migration、既有本地 SQL harness、Backend repository/generate/config 生命周期及对应既有测试和规范文档；不改 Frontend renderer/规则，不连接或写入 TEST/Production，不 commit/push。
+- migration：新增 `20260930_bind_current_text_postprocess_on_turn_start.sql`，创建两个 `experience.*_with_current_postprocess` RPC。preflight 校验 runtime/snapshot/旧 wrapper shape、owner、definer、search_path 与最小权限；函数解析权威指针并调用旧显式 wrapper；ACL 仅 service_role/postgres；自检函数正文、owner/definer/search_path/grants，支持重跑。
+- Backend：`ConversationHistoryRepository` 的发送和重生成只调用新 RPC，不再接收/传入进程缓存版本，不回退旧 RPC；`generate.ts` 从准备并行读取中移除当前版本读取，以 RPC 返回值作为 SSE/日志唯一版本。删除不再承担运行消费者的版本预热/刷新/prime 状态，Admin strict read 保留。
+- SQL 验证：本地隔离 PostgreSQL 17 完整迁移链中加入新 migration；验证正式 v2 自动绑定、发送与重生成、旧显式 NULL 兼容、缺配置/非法协议/指针错版/缺 artifact 均拒绝且零历史半写、会话忙语义、service_role 可执行而 anon/authenticated/PUBLIC 不可执行。
+- 应用验证：定向 Backend repository/generate/config/service 测试；Backend 全测与 typecheck；shared 既有测试；`pnpm -r typecheck`、`pnpm lint:imports`、`pnpm lint:migrations`、`pnpm test:migration-ledger`、Trellis validate、定向 Prettier、`git diff --check`。
+- 环境门禁：本地通过后只报告文件范围、验证和 migration/Backend 发布顺序。TEST migration、Railway/Vercel 部署、真机请求、Production、commit/push 均需另行授权。
+
 ## T2/T3/T5 artifact 契约修订（2026-09-29，已获本窗口授权）
 
 - 不变量：compiled artifact 是 app_core.text_postprocess_versions 不可变发布快照的一部分，与 source/schema/policy/version/published_at 一次写入。沿用 app_core 运行配置历史归属及永久保留生命周期；admin 专用 RPC 是唯一权威写入方，跨 schema 发布审计依赖不变。

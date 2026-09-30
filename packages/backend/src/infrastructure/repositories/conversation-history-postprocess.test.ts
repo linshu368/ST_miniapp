@@ -45,7 +45,7 @@ const started = {
 };
 
 describe('postprocess turn binding', () => {
-  it('calls the send and regeneration wrappers with an explicit version and window args', async () => {
+  it('calls the current-version send and regeneration RPCs with window args', async () => {
     const send = repository(() => ({ data: started, error: null }));
     const turn = await send.history.startTurn({
       sessionId: 'session',
@@ -53,14 +53,12 @@ describe('postprocess turn binding', () => {
       model: 'model-a',
       maxContextTurns: 75,
       retainContextTurns: 50,
-      postprocessVersion: 4,
     });
     expect(send.calls.map((call) => call.name)).toEqual([
-      'start_chat_history_turn_with_postprocess',
+      'start_chat_history_turn_with_current_postprocess',
     ]);
     expect(send.calls[0]?.args).toMatchObject({
       p_user_content: 'raw-user',
-      p_postprocess_version: 4,
       p_max_context_turns: 75,
       p_retain_context_turns: 50,
     });
@@ -71,11 +69,10 @@ describe('postprocess turn binding', () => {
     const next = await regenerate.history.startRegeneration({
       sessionId: 'session',
       model: 'model-a',
-      postprocessVersion: null,
     });
     expect(regenerate.calls[0]).toMatchObject({
-      name: 'start_chat_history_regeneration_with_postprocess',
-      args: { p_postprocess_version: null, p_model: 'model-a' },
+      name: 'start_chat_history_regeneration_with_current_postprocess',
+      args: { p_model: 'model-a' },
     });
     expect(next.userContent).toBe('stored-user');
     expect(next.postprocessVersion).toBe(4);
@@ -91,73 +88,60 @@ describe('postprocess turn binding', () => {
         sessionId: 'session',
         userContent: 'raw-user',
         model: 'model-a',
-        postprocessVersion: 4,
       })
     ).rejects.toBeInstanceOf(ConversationRepositoryError);
     expect(busy.calls).toHaveLength(1);
   });
 
-  it('falls back to the old RPC only when the wrapper is missing and nothing is bound', async () => {
-    const missing = repository((name) => {
-      if (name.includes('with_postprocess')) {
-        return {
-          data: null,
-          error: {
-            code: 'PGRST202',
-            message: 'Could not find start_chat_history_turn_with_postprocess in the schema cache',
-          },
-        };
-      }
-      return { data: { ...started, postprocess_version: undefined }, error: null };
-    });
-    const turn = await missing.history.startTurn({
-      sessionId: 'session',
-      userContent: 'raw-user',
-      model: 'model-a',
-    });
-    expect(missing.calls.map((call) => call.name)).toEqual([
-      'start_chat_history_turn_with_postprocess',
-      'start_chat_history_turn',
-    ]);
-    expect(turn.postprocessVersion).toBeNull();
-
-    const blocked = repository(() => ({
+  it('fails closed without a legacy fallback when the new RPC is unavailable', async () => {
+    const missing = repository(() => ({
       data: null,
       error: {
         code: 'PGRST202',
-        message: 'Could not find start_chat_history_turn_with_postprocess in the schema cache',
+        message:
+          'Could not find start_chat_history_turn_with_current_postprocess in the schema cache',
       },
     }));
     await expect(
-      blocked.history.startTurn({
+      missing.history.startTurn({
         sessionId: 'session',
         userContent: 'raw-user',
         model: 'model-a',
-        postprocessVersion: 4,
       })
     ).rejects.toThrow(/创建对话轮次失败/);
-    expect(blocked.calls).toHaveLength(1);
+    expect(missing.calls.map((call) => call.name)).toEqual([
+      'start_chat_history_turn_with_current_postprocess',
+    ]);
   });
 
-  it('retries the same wrapper with null when the configured version is not published', async () => {
-    const unpublished = repository((_name, args) => {
-      if (args.p_postprocess_version === 9) {
-        return {
-          data: null,
-          error: { code: 'P0002', message: 'postprocess version 9 is not published' },
-        };
-      }
-      return { data: { ...started, postprocess_version: null }, error: null };
-    });
-    const turn = await unpublished.history.startTurn({
-      sessionId: 'session',
-      userContent: 'raw-user',
-      model: 'model-a',
-      postprocessVersion: 9,
-    });
-    expect(unpublished.calls).toHaveLength(2);
-    expect(unpublished.calls[1]?.args.p_postprocess_version).toBeNull();
-    expect(turn.postprocessVersion).toBeNull();
+  it('does not retry a mutation when the current version is unavailable', async () => {
+    const unavailable = repository(() => ({
+      data: null,
+      error: { code: 'P0001', message: 'current text postprocess version is unavailable' },
+    }));
+    await expect(
+      unavailable.history.startTurn({
+        sessionId: 'session',
+        userContent: 'raw-user',
+        model: 'model-a',
+      })
+    ).rejects.toThrow(/current text postprocess version is unavailable/);
+    expect(unavailable.calls).toHaveLength(1);
+  });
+
+  it('rejects a successful RPC payload that omits the bound version', async () => {
+    const malformed = repository(() => ({
+      data: { ...started, postprocess_version: null },
+      error: null,
+    }));
+    await expect(
+      malformed.history.startTurn({
+        sessionId: 'session',
+        userContent: 'raw-user',
+        model: 'model-a',
+      })
+    ).rejects.toThrow(/结果字段不完整/);
+    expect(malformed.calls).toHaveLength(1);
   });
 });
 

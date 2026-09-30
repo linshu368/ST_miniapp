@@ -170,6 +170,19 @@ TEST Admin 保存 `system_instructions` 草稿返回 `system_instructions must n
 - 收敛：短周期后台刷新使多实例收敛；Admin 发布/回滚成功后立即 prime 当前实例。短窗口允许沿用上一不可变正式版本，不允许最大版本替代、草稿替代或读路径编译。
 - 恢复：改动仅为 Backend 进程内状态和生命周期；回退代码即可恢复原读取方式，不涉及数据迁移或业务数据补偿。
 
+## 13. 开轮事务内绑定当前正式版本（2026-09-30，已确认实施）
+
+- 根因与替代关系：§12 的进程预热能降低冷读概率，但首次预热失败时仍可能产生永久 `postprocess_version=NULL` 的消息，不能满足“冷启动首条必定生效”。本节把正确性移到数据库开轮事务，进程缓存不再是开轮版本真相。
+- 复用调研：复用 `app_core.runtime_config` 权威指针、不可变 `app_core.text_postprocess_versions`、现有两个显式版本 wrapper、会话锁/陈旧流/水位线、bind guard、FK 与 SSE 返回值。拒绝 `MAX(version)`、Frontend latest fallback、读路径编译、Redis/新表/队列以及改写旧 wrapper 的 `NULL` 语义。
+- 对象归属：新增 `experience.start_chat_history_turn_with_current_postprocess` 和 `experience.start_chat_history_regeneration_with_current_postprocess`。函数维护“每个新 conversation revision 绑定当时正式展示版本”的 experience 不变量；权威配置仍由 `app_core.runtime_config` 拥有，历史快照仍由 `app_core.text_postprocess_versions` 拥有。运行消费者只有 Backend service role，生命周期与现有开轮 wrapper 一致。
+- 跨 schema：两个 `experience` RPC 以单条 point lookup 联结 `app_core.runtime_config` 与 `app_core.text_postprocess_versions`，要求 key、版本列、value 内 version/schema/policy、快照 schema/policy 和非空 artifact 一致，再把明确版本传给旧 wrapper。发布事务先原子写快照和指针，因此并发开轮只会看到完整旧版或完整新版；已选版本不可变，不需要锁住 runtime row。
+- 权限：函数为 `SECURITY DEFINER`、owner `postgres`、`search_path=pg_catalog`、全限定对象；撤销 PUBLIC/anon/authenticated，只授予 service_role/postgres。preflight 要求旧 wrapper 仍为 postgres owner/definer，postgres 对 runtime_config/snapshot 有 SELECT 且能执行旧 wrapper；未知 shape/owner/ACL 停止。
+- 失败模型：配置缺失、JSON 类型/协议不符、指针与快照错版、artifact 缺失统一以安全数据库错误拒绝开轮；不泄露 source/artifact。旧 wrapper 的 session_busy、regenerate_not_allowed、锁超时和水位线语义原样传播。无自动 mutation retry，避免一次用户动作开两轮。
+- 性能与容量：开轮本来已有一次数据库 RPC；新增两次主键/唯一键 point lookup 在同一 RPC/事务内，无额外网络 RTT、无表扫描、无新索引。函数事务沿用开轮写入，migration 仅创建函数和 ACL，无 backfill、表重写或业务行写入。
+- 兼容与发布：新增 forward migration，不修改已执行历史文件。顺序为 TEST preflight → 单文件 migration → Backend 切换新 RPC → 冷启动真机验收；Frontend 无需改。旧显式 wrapper 保留供旧 Backend 使用。新 Backend 遇到新 RPC 缺失必须失败，防止错误发布顺序静默降级。
+- 恢复：应用回退可继续调用旧显式 wrapper；新函数可保留，不影响旧调用方。已绑定消息和快照不回滚。若函数存在缺陷，停止 Backend 发布并用新 reviewed migration forward-fix；不 DROP 被运行中版本依赖的旧 wrapper。
+- 可验证性：扩展本地 PostgreSQL 17 harness 覆盖当前 v2 自动绑定、发送/重生成、配置缺失/非法/指针错版/快照 artifact 缺失的零半写、旧 NULL 语义、ACL/owner/search_path 和迁移重入；Backend repository/generate 测试覆盖新 RPC 唯一路径、无 legacy fallback、SSE 非空版本。执行 migration lint/ledger、Backend 测试/typecheck、全仓 typecheck、imports、格式和 diff 检查。
+
 ## T2/T3/T5 artifact 契约修订（2026-09-29，已获本窗口授权）
 
 - 不变量：compiled artifact 是 app_core.text_postprocess_versions 不可变发布快照的一部分，与 source/schema/policy/version/published_at 一次写入。沿用 app_core 运行配置历史归属及永久保留生命周期；admin 专用 RPC 是唯一权威写入方，跨 schema 发布审计依赖不变。

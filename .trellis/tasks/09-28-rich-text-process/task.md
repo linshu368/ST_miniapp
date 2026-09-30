@@ -95,6 +95,9 @@ inline 模式顺序实施，不默认派发子代理。shared/index.ts、convers
 
 ## 执行记录
 
+- 2026-09-30：T7A 本地实现与验证完成。新增 `20260930_bind_current_text_postprocess_on_turn_start.sql`，两个 current-postprocess RPC 在同一事务读取权威指针、校验 artifact 快照并委托旧 wrapper；Backend 发送/重生成只调用新 RPC，成功响应缺少非空版本也拒绝，移除不再作为正确性来源的预热/后台刷新/prime 状态。PostgreSQL 17 隔离 harness 覆盖 migration 重入、v2 发送/重生成自动绑定、非法协议/指针错版零半写和旧 NULL 兼容并通过；临时实例/目录已清理。Backend 72 文件/597 测试、Shared 12 文件/115 测试、全仓 typecheck、Frontend/Admin/CS build、lint/imports/legacy/migration、ledger、Trellis、格式与 diff 检查通过。未连接或写入 TEST/Production，未部署、commit 或 push；T7A 保持环境待办。
+- 2026-09-30：用户确认将冷启动首轮正确性从 Backend 进程缓存提升为数据库开轮事务保证。新增 T7A 规划：以新的 experience current-postprocess RPC 读取 `runtime_config` 权威指针并校验不可变快照，再委托既有显式版本 wrapper；旧 `NULL=不绑定` 语义保留，新 Backend 不允许 migration 缺失时回退。授权仅含本地 migration/Backend/测试/文档实施与验证，不含 TEST/Production、部署、commit 或 push。
+
 - 2026-09-30：用户确认修复首次回复因 1 秒版本读取超时而绑定 `NULL`，并明确富文本故障不得阻断聊天或向用户报错。已实现 Backend 监听前 3 秒有界预热、热路径内存读取、5 秒后台单飞刷新、最近成功版本保留、无缓存静默 Markdown 降级、发布/回滚 prime 和可取消 strict read；不新增数据库对象/API/依赖，未操作远端环境。Backend 72 文件/601 测试、定向 17 测试、Backend 与全仓 typecheck、imports、Prettier、Trellis validate、diff check 均通过；待用户确认提交/推送后再做 TEST 冷启动首条回复真机验收。
 
 - 2026-09-30：TEST Admin 保存 System Instructions 测试协议时返回 `system_instructions must not use text_value`；页面仍为 TEST、正式版本 2、本地未保存编辑保留。用户授权直接修复、推送并继续保存。按既有 R8/AC9 在本任务内增加最小数据库 forward-fix：恢复外层 validator 的 text_value 专用分支，保留其他配置分支，不改 Admin payload、不操作 Production；完成本地验证后仍按提交前文件范围门禁和 TEST 单文件 Database Migration 流程执行。

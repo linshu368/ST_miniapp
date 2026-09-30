@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   setPromptHistory: vi.fn(),
   finalizeTurn: vi.fn(),
   requireTurnById: vi.fn(),
-  readVersion: vi.fn(),
   execute: vi.fn(),
   buildPrompt: vi.fn(),
   fetchInstructions: vi.fn(),
@@ -56,10 +55,6 @@ vi.mock('../generation/index.js', () => ({
 vi.mock('../engine/index.js', () => ({
   buildPrompt: mocks.buildPrompt,
   fetchPlatformInstructions: mocks.fetchInstructions,
-}));
-
-vi.mock('../text-postprocess/config.js', () => ({
-  readCurrentPostprocessVersion: mocks.readVersion,
 }));
 
 vi.mock('./context-window.js', () => ({
@@ -113,7 +108,6 @@ describe('runConversationTurn postprocess binding', () => {
     mocks.setPromptHistory.mockReset();
     mocks.finalizeTurn.mockReset();
     mocks.requireTurnById.mockReset();
-    mocks.readVersion.mockReset();
     mocks.execute.mockReset();
     mocks.buildPrompt.mockReset();
     mocks.requireCard.mockResolvedValue({
@@ -170,7 +164,6 @@ describe('runConversationTurn postprocess binding', () => {
   });
 
   it('binds the wrapper result into SSE start and keeps the raw prompt input', async () => {
-    mocks.readVersion.mockResolvedValue(4);
     mocks.startTurn.mockResolvedValue({
       turnIndex: 2,
       historyId: 'history',
@@ -189,7 +182,6 @@ describe('runConversationTurn postprocess binding', () => {
     expect(mocks.startTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         userContent: 'raw-user',
-        postprocessVersion: 4,
         maxContextTurns: 75,
         retainContextTurns: 50,
       })
@@ -213,32 +205,24 @@ describe('runConversationTurn postprocess binding', () => {
     expect(JSON.stringify(mocks.setPromptHistory.mock.calls)).not.toContain('SECRET_TEMPLATE');
   });
 
-  it('still starts a turn when the published version is null', async () => {
-    mocks.readVersion.mockResolvedValue(null);
-    mocks.startTurn.mockResolvedValue({
-      turnIndex: 1,
-      historyId: 'history',
-      revision: 0,
-      userContent: 'raw-user',
-      contextWindowStartTurn: 1,
-      postprocessVersion: null,
-    });
-    const events = sink();
-    await runConversationTurn({
-      session: SESSION,
-      mode: { kind: 'send', content: 'raw-user' },
-      sink: events,
-      log: { sys: { error() {} }, biz: { info() {} } } as unknown as RequestLogger,
-    });
-    expect(mocks.startTurn).toHaveBeenCalledWith(
-      expect.objectContaining({ postprocessVersion: null })
+  it('does not call the model when the database cannot bind a current version', async () => {
+    mocks.startTurn.mockRejectedValue(
+      new Error('创建对话轮次失败：current text postprocess version is unavailable')
     );
-    expect(events.events[0]).toMatchObject({ type: 'start', postprocess_version: null });
-    expect(mocks.execute).toHaveBeenCalledTimes(1);
+    const events = sink();
+    await expect(
+      runConversationTurn({
+        session: SESSION,
+        mode: { kind: 'send', content: 'raw-user' },
+        sink: events,
+        log: { sys: { error() {} }, biz: { info() {} } } as unknown as RequestLogger,
+      })
+    ).rejects.toThrow(/current text postprocess version is unavailable/);
+    expect(events.events).toEqual([]);
+    expect(mocks.execute).not.toHaveBeenCalled();
   });
 
   it('uses the regeneration wrapper and does not bypass session_busy', async () => {
-    mocks.readVersion.mockResolvedValue(4);
     mocks.startRegeneration.mockResolvedValue({
       turnIndex: 2,
       historyId: 'history',
@@ -254,7 +238,7 @@ describe('runConversationTurn postprocess binding', () => {
       log: { sys: { error() {} }, biz: { info() {} } } as unknown as RequestLogger,
     });
     expect(mocks.startRegeneration).toHaveBeenCalledWith(
-      expect.objectContaining({ postprocessVersion: 4 })
+      expect.not.objectContaining({ postprocessVersion: expect.anything() })
     );
     expect(mocks.startTurn).not.toHaveBeenCalled();
     expect(mocks.buildPrompt).toHaveBeenCalledWith(

@@ -85,8 +85,8 @@ export interface StartedHistoryTurn {
   revision: number;
   userContent: string;
   contextWindowStartTurn: number;
-  /** wrapper 实际写入的版本。旧 RPC 回退或未绑定为 null。 */
-  postprocessVersion: number | null;
+  /** current-version RPC 实际写入的非空正式版本。 */
+  postprocessVersion: number;
 }
 
 export interface ConversationContext {
@@ -107,11 +107,9 @@ export class ConversationHistoryRepository {
     staleAfterSeconds?: number;
     maxContextTurns?: number;
     retainContextTurns?: number;
-    postprocessVersion?: number | null;
   }): Promise<StartedHistoryTurn> {
-    const version = input.postprocessVersion ?? null;
     const windowArgs = contextWindowRpcArgs(input);
-    const legacyArgs = {
+    const args = {
       p_session_id: input.sessionId,
       p_user_content: input.userContent,
       p_model: input.model,
@@ -119,11 +117,8 @@ export class ConversationHistoryRepository {
       ...windowArgs,
     };
     const data = await this.callStartRpc({
-      wrapper: 'start_chat_history_turn_with_postprocess',
-      legacy: 'start_chat_history_turn',
-      version,
-      args: { ...legacyArgs, p_postprocess_version: version },
-      legacyArgs,
+      rpc: 'start_chat_history_turn_with_current_postprocess',
+      args,
       fallbackMessage: '创建对话轮次失败',
     });
     return mapStartedTurn(data, input.userContent);
@@ -136,11 +131,9 @@ export class ConversationHistoryRepository {
     staleAfterSeconds?: number;
     maxContextTurns?: number;
     retainContextTurns?: number;
-    postprocessVersion?: number | null;
   }): Promise<StartedHistoryTurn> {
-    const version = input.postprocessVersion ?? null;
     const windowArgs = contextWindowRpcArgs(input);
-    const legacyArgs = {
+    const args = {
       p_session_id: input.sessionId,
       p_turn_index: input.turnIndex ?? null,
       p_model: input.model,
@@ -148,11 +141,8 @@ export class ConversationHistoryRepository {
       ...windowArgs,
     };
     const data = await this.callStartRpc({
-      wrapper: 'start_chat_history_regeneration_with_postprocess',
-      legacy: 'start_chat_history_regeneration',
-      version,
-      args: { ...legacyArgs, p_postprocess_version: version },
-      legacyArgs,
+      rpc: 'start_chat_history_regeneration_with_current_postprocess',
+      args,
       fallbackMessage: '发起重生成失败',
     });
     const result = data as (StartedHistoryTurnRpc & { user_content?: string }) | null;
@@ -162,38 +152,15 @@ export class ConversationHistoryRepository {
     return mapStartedTurn(result, result.user_content);
   }
 
-  /**
-   * 显式传入 postprocess_version。NULL 表示不绑定。
-   * wrapper 缺失且本次本来就不绑定时，才回退旧 RPC，避免在迁移前挡住普通生成。
-   * 配置指向一个不存在的版本时，同一 wrapper 再用 NULL 开一轮；不改旧 RPC，也不直接改行。
-   */
+  /** 新 Backend 只调用事务内解析正式版本的 RPC；缺 migration 或配置异常必须拒绝开轮。 */
   private async callStartRpc(input: {
-    wrapper: string;
-    legacy: string;
-    version: number | null;
+    rpc: string;
     args: Record<string, unknown>;
-    legacyArgs: Record<string, unknown>;
     fallbackMessage: string;
   }): Promise<StartedHistoryTurnRpc> {
-    const first = await this.db
-      .rpc(input.wrapper, input.args)
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (!first.error) return first.data as StartedHistoryTurnRpc;
-    if (isMissingPostprocessRpc(first.error, input.wrapper) && input.version === null) {
-      const legacy = await this.db
-        .rpc(input.legacy, input.legacyArgs)
-        .abortSignal(AbortSignal.timeout(5_000));
-      if (legacy.error) throwConversationRpcError(legacy.error, input.fallbackMessage);
-      return legacy.data as StartedHistoryTurnRpc;
-    }
-    if (isUnpublishedPostprocessVersion(first.error) && input.version !== null) {
-      const second = await this.db
-        .rpc(input.wrapper, { ...input.args, p_postprocess_version: null })
-        .abortSignal(AbortSignal.timeout(5_000));
-      if (second.error) throwConversationRpcError(second.error, input.fallbackMessage);
-      return second.data as StartedHistoryTurnRpc;
-    }
-    throwConversationRpcError(first.error, input.fallbackMessage);
+    const result = await this.db.rpc(input.rpc, input.args).abortSignal(AbortSignal.timeout(5_000));
+    if (result.error) throwConversationRpcError(result.error, input.fallbackMessage);
+    return result.data as StartedHistoryTurnRpc;
   }
 
   async setPendingRequestId(historyId: string, requestId: string): Promise<void> {
@@ -589,19 +556,16 @@ interface StartedHistoryTurnRpc {
   postprocess_version?: number | null;
 }
 
-interface RpcErrorLike {
-  code?: string | null;
-  message?: string | null;
-}
-
 function mapStartedTurn(
   result: StartedHistoryTurnRpc | null,
   userContent: string
 ): StartedHistoryTurn {
+  const postprocessVersion = readPostprocessVersion(result?.postprocess_version);
   if (
     typeof result?.turn_index !== 'number' ||
     !result.history_id ||
-    typeof result.revision !== 'number'
+    typeof result.revision !== 'number' ||
+    postprocessVersion === null
   ) {
     throw new Error('创建对话轮次结果字段不完整');
   }
@@ -611,17 +575,8 @@ function mapStartedTurn(
     revision: result.revision,
     userContent,
     contextWindowStartTurn: readWindowStart(result.context_window_start_turn),
-    postprocessVersion: readPostprocessVersion(result.postprocess_version),
+    postprocessVersion,
   };
-}
-
-function isMissingPostprocessRpc(error: RpcErrorLike, wrapper: string): boolean {
-  const message = error.message ?? '';
-  return (error.code === 'PGRST202' || error.code === '42883') && message.includes(wrapper);
-}
-
-function isUnpublishedPostprocessVersion(error: RpcErrorLike): boolean {
-  return (error.message ?? '').startsWith('postprocess version ');
 }
 
 function contextWindowRpcArgs(input: { maxContextTurns?: number; retainContextTurns?: number }): {

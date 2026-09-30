@@ -80,6 +80,8 @@ DECLARE
   c_blocked uuid := '00000000-0000-4000-8000-0000000000a3';
   c_session uuid := '00000000-0000-4000-8000-0000000000b1';
   c_session_null uuid := '00000000-0000-4000-8000-0000000000b2';
+  c_session_current uuid := '00000000-0000-4000-8000-0000000000b3';
+  c_session_invalid uuid := '00000000-0000-4000-8000-0000000000b4';
   c_user uuid := '00000000-0000-4000-8000-0000000000c1';
   c_save uuid := '00000000-0000-4000-8000-000000000101';
   c_save_replay uuid := '00000000-0000-4000-8000-000000000102';
@@ -479,7 +481,76 @@ BEGIN
   );
 
   INSERT INTO experience.chat_sessions (id, user_id)
-  VALUES (c_session, c_user), (c_session_null, c_user);
+  VALUES
+    (c_session, c_user),
+    (c_session_null, c_user),
+    (c_session_current, c_user),
+    (c_session_invalid, c_user);
+
+  v_started := experience.start_chat_history_turn_with_current_postprocess(
+    c_session_current, 'current', 'model', 120, 75, 50
+  );
+  PERFORM text_postprocess_t2.assert(
+    (v_started ->> 'postprocess_version') = '2'
+      AND (
+        SELECT postprocess_version
+        FROM experience.chat_history
+        WHERE id = (v_started ->> 'history_id')::uuid
+      ) = 2,
+    'current-version turn binds the runtime pointer atomically'
+  );
+  UPDATE experience.chat_history
+  SET status = 'success'
+  WHERE id = (v_started ->> 'history_id')::uuid;
+
+  v_started := experience.start_chat_history_regeneration_with_current_postprocess(
+    c_session_current, NULL, 'model', 120, 75, 50
+  );
+  PERFORM text_postprocess_t2.assert(
+    (v_started ->> 'postprocess_version') = '2'
+      AND (v_started ->> 'user_content') = 'current',
+    'current-version regeneration binds the same authoritative pointer'
+  );
+  UPDATE experience.chat_history
+  SET status = 'success'
+  WHERE id = (v_started ->> 'history_id')::uuid;
+
+  PERFORM admin.text_postprocess_writer_enter();
+  UPDATE app_core.runtime_config
+  SET value = jsonb_set(value, '{policy_version}', '9'::jsonb)
+  WHERE key = 'miniapp_text_postprocess_config';
+  PERFORM text_postprocess_t2.expect_sqlstate(
+    format(
+      $q$SELECT experience.start_chat_history_turn_with_current_postprocess(%L, 'invalid', 'model', 120, 75, 50)$q$,
+      c_session_invalid
+    ),
+    'P0001',
+    'invalid runtime protocol does not start a turn'
+  );
+  PERFORM text_postprocess_t2.assert(
+    NOT EXISTS (
+      SELECT 1 FROM experience.chat_history WHERE session_id = c_session_invalid
+    ),
+    'invalid current version leaves no history row'
+  );
+  UPDATE app_core.runtime_config
+  SET value = jsonb_set(value, '{policy_version}', '1'::jsonb)
+  WHERE key = 'miniapp_text_postprocess_config';
+
+  UPDATE app_core.runtime_config
+  SET value = jsonb_set(value, '{version}', '1'::jsonb)
+  WHERE key = 'miniapp_text_postprocess_config';
+  PERFORM text_postprocess_t2.expect_sqlstate(
+    format(
+      $q$SELECT experience.start_chat_history_turn_with_current_postprocess(%L, 'mismatch', 'model', 120, 75, 50)$q$,
+      c_session_invalid
+    ),
+    'P0001',
+    'runtime pointer mismatch does not start a turn'
+  );
+  UPDATE app_core.runtime_config
+  SET value = jsonb_set(value, '{version}', '2'::jsonb)
+  WHERE key = 'miniapp_text_postprocess_config';
 
   v_hook := (SELECT hook_calls FROM experience.chat_sessions WHERE id = c_session);
   PERFORM text_postprocess_t2.expect_sqlstate(

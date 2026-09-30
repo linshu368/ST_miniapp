@@ -17,7 +17,7 @@ last_verified_at: 2026-09-30
 
 文字回复新增基于数据库标记的显式取消；生成计费前抢占没有取消标记的 streaming 终态。取消先释放免费额度，再确认 interrupted；上下文/上游异常统一恢复，详情读取回收过期生成。执行副本未确认时取消返回可重试待确认。无需 migration，真实 TEST/Preview SSE、钱包/额度及真机验收仍未执行。
 
-AI 回复后处理版本在 Backend 监听前预热，开轮只读进程缓存并绑定明确版本；后台刷新失败时沿用最近有效版本，无缓存时静默绑定 `NULL` 并保留原 Markdown。富文本配置故障不阻断生成、计费或流式输出。
+AI 回复后处理版本由数据库 current-postprocess RPC 在开轮事务内读取正式指针、校验不可变快照并绑定；成功必返回非空版本。配置/RPC/快照异常在 LLM、计费和 SSE 之前拒绝开轮，不再由 Backend 冷启动缓存降级成永久 `NULL` 消息。
 
 自研会话链路已上线。图片生成代码已落地但 runtime 开关默认关闭：当前只保留单一普通图片路径，由 DeepSeek 写中文分镜或保留用户中文稿，在 worker 中直译英文后优先调用 Grok/Liaobots，主通道失败时以相同内容降级到 Replicate Z。普通图片继续使用 `basic_image` 免费次数，耗尽后按普通价格结算；高级图片入口、provider 分流、VIP 门禁与高级价格已退场。图片 telemetry 与结算未知语义保持不变。
 
@@ -25,15 +25,16 @@ AI 回复后处理版本在 Backend 监听前预热，开轮只读进程缓存�
 
 ## 涉及文件
 
-| 路径                                                              | 职责                              |
-| ----------------------------------------------------------------- | --------------------------------- |
-| `packages/backend/src/routes/conversations.ts`                    | HTTP/SSE 入口                     |
-| `packages/backend/src/features/conversations/`                    | 轮次编排                          |
-| `packages/backend/src/features/generation/`                       | 生成与计费出口                    |
-| `packages/backend/src/features/text-postprocess/config.ts`        | 回复后处理版本预热与后台刷新      |
-| `packages/backend/src/features/image/`                            | 图片任务编排与 telemetry observer |
-| `packages/backend/src/features/image/ImageGenerationTelemetry.ts` | 图片生成安全事件 observer         |
-| `packages/backend/src/routes/images.ts`                           | 图片 HTTP 入口                    |
+| 路径                                                                                | 职责                              |
+| ----------------------------------------------------------------------------------- | --------------------------------- |
+| `packages/backend/src/routes/conversations.ts`                                      | HTTP/SSE 入口                     |
+| `packages/backend/src/features/conversations/`                                      | 轮次编排                          |
+| `packages/backend/src/features/generation/`                                         | 生成与计费出口                    |
+| `packages/backend/src/features/text-postprocess/config.ts`                          | Admin 正式版本指针严格读取        |
+| `packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts` | current-postprocess 开轮 RPC      |
+| `packages/backend/src/features/image/`                                              | 图片任务编排与 telemetry observer |
+| `packages/backend/src/features/image/ImageGenerationTelemetry.ts`                   | 图片生成安全事件 observer         |
+| `packages/backend/src/routes/images.ts`                                             | 图片 HTTP 入口                    |
 
 ## 关键实现链路
 

@@ -4,17 +4,9 @@ import * as Sentry from '@sentry/node';
 import { buildApp } from './app.js';
 import { config } from './platform/config.js';
 import { logger } from './lib/logger.js';
-import {
-  startCurrentPostprocessVersionRefresh,
-  warmCurrentPostprocessVersion,
-} from './features/text-postprocess/config.js';
 
 async function main() {
   const app = await buildApp();
-
-  // 预热发生在接流量前；失败会在模块内静默降级，不能阻止聊天服务启动。
-  await warmCurrentPostprocessVersion();
-  startCurrentPostprocessVersionRefresh();
 
   await app.listen({
     port: config.port,
