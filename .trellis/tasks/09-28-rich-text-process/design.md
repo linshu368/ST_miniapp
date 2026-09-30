@@ -152,6 +152,14 @@ T0 在实施获批后验证 HTML/CSS AST 依赖、模板/Markdown 合成、可�
 
 验证命令及可重复场景见 implement.md 的 T6R 专节、task.md 的 T6R-A/B/C；本节所有界面改动均为待实施设计。
 
+## 11. System Instructions text_value 校验恢复（2026-09-30）
+
+TEST Admin 保存 `system_instructions` 草稿返回 `system_instructions must not use text_value`。Admin 与既有 076 契约均明确长文本必须写 `text_value`、`value` 必须为 null，因此不改前端 payload，也不把正文塞回 JSONB。根因按运行时错误归类为 `admin.validate_managed_config_value` 后续包装链漂移；源码链和远端生效定义必须区分，迁移前只声明运行时行为不符合契约，不把静态推断写成远端函数全文事实。
+
+最小 forward-fix 只替换最外层 `admin.validate_managed_config_value(text,jsonb,text)`：在任何委托前恢复 `system_instructions` 专用校验并立即返回，其余 VIP、媒体、图片 prompt、provider routing 和历史委托分支保持当前仓库最新定义。它不新建表、不改数据、不改变 RPC、RLS、grant 或发布事务；目标函数继续属于 `admin`，服务于 Admin 草稿/发布校验，运行时正文仍由 `app_core.runtime_config` 持有。
+
+可靠性与恢复：单事务设置 5 秒锁超时和 60 秒语句超时；preflight 要求外层函数、历史委托函数、owner 和运行时基线存在且形状正确，不符合即整文件回滚。migration 内自检合法 text_value、错误 value、空文本、缺失占位符以及既有 VIP 分支；无重试、无业务行输出、无表扫描或 backfill。提交后若发现非预期分支回归，保留数据并用 reviewed forward migration 修正函数，不恢复已知错误的“禁止 text_value”行为。TEST 单文件执行、Admin 保存/发布/回读通过后才继续 MiniApp 验收；Production 不在本修复授权范围。
+
 ## T2/T3/T5 artifact 契约修订（2026-09-29，已获本窗口授权）
 
 - 不变量：compiled artifact 是 app_core.text_postprocess_versions 不可变发布快照的一部分，与 source/schema/policy/version/published_at 一次写入。沿用 app_core 运行配置历史归属及永久保留生命周期；admin 专用 RPC 是唯一权威写入方，跨 schema 发布审计依赖不变。

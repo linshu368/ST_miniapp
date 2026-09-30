@@ -95,6 +95,9 @@ inline 模式顺序实施，不默认派发子代理。shared/index.ts、convers
 
 ## 执行记录
 
+- 2026-09-30：TEST Admin 保存 System Instructions 测试协议时返回 `system_instructions must not use text_value`；页面仍为 TEST、正式版本 2、本地未保存编辑保留。用户授权直接修复、推送并继续保存。按既有 R8/AC9 在本任务内增加最小数据库 forward-fix：恢复外层 validator 的 text_value 专用分支，保留其他配置分支，不改 Admin payload、不操作 Production；完成本地验证后仍按提交前文件范围门禁和 TEST 单文件 Database Migration 流程执行。
+- 2026-09-30：新增 `20260930_fix_system_instructions_text_value_validation.sql` 并完成本地验证。临时 PostgreSQL 14 中迁移连续执行两次通过，合法 text_value、四条拒绝路径、既有 VIP 分支、历史委托探针和 service_role 无直接 EXECUTE 均通过；首次沙箱实例因共享内存权限失败，不计代码失败，获准在本机临时实例重跑成功。`lint:migrations`、migration-ledger、shared 12 文件/115 测试、全仓 6 包 typecheck、imports、Trellis validate、定向 Prettier 与 diff check 全部通过。尚未提交/推送或执行 TEST migration，Admin 本地未保存编辑仍保留。
+
 - 2026-09-29：用户明确授权按 T6R-A/B/C 实施本地代码与验证。已核对分支 `dev_rich_text_process`、受保护的既有任务文档脏改和 Trellis 绑定状态；开始在既有 Admin store、API、Worker 预览和 ReplyRenderer 边界内复现 Demo。未授权远端保存/发布/回滚、部署、数据库或运行配置写入。
 - 2026-09-29：T6R-A/B 本地实现及 T6R-C 自动检查完成。只改 Admin `TextPostprocessView.tsx`/`styles.css`：Demo 风格三栏、模板 Modal、flags/稳定 ID/匹配诊断、预览工具、顶部真实操作入口和历史 Drawer 均复用既有状态机/Worker/renderer。Admin typecheck、12 文件/87 测试、build、imports、定向格式与 diff 检查通过；未登录、不触发真实 mutation，Demo URL 仍不绕过安全拒绝，因此像素对照、受保护页面键盘/响应式、viewer/环境和远端写入场景未验。详见 `research/acceptance-evidence.md`；T6R 保持 Doing，T8 未推进。
 - 2026-09-29：用户完成 TEST Preview 登录后，已核验新版本界面、规则/诊断、模板 Modal 的 Escape 焦点返回、历史 Drawer、375px 控件和流式工具；未执行远端写。发现流式模拟导致共享 Worker 任务超时，改为流式中仅展示原文、在完整或重置终态才调用既有 ReplyRenderer/Worker。`b0f558df` 推送后，Preview 资源已切换且流式完成/重置均重新应用规则；一次读取失败可由既有“请求恢复”恢复。复跑 Admin typecheck、12 文件/87 测试、build、imports、格式和 diff 检查均通过。像素级 Demo 对照、真实多视口和其余受控验收仍未完成，T6R 保持 Doing，T8 未推进。

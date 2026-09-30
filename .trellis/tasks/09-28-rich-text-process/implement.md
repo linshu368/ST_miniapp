@@ -55,6 +55,14 @@ Prettier 仅检查本次编辑文件。优先扩展已有 textPostprocessWorkben
 
 本地 PG17 隔离实例使用 NOSUPERUSER/BYPASSRLS 的 postgres，继承 anon/authenticated/service_role；旧 SELECT-only ACL 下 EXPLAIN FOR KEY SHARE 必须报 42501，模拟额外表/列授权后新迁移收敛权限并重跑成功，全部既有 T2 场景（非空/NULL/FK/重生成/不可变/replica/CAS/并发/旧表/漂移恢复）通过。shared 12 文件/115 测试、Backend 相关 3 文件/14 测试及 Backend typecheck 通过。真实 API 测的是当前额外授权下的 TEST；新 forward migration 尚未在远端执行，后续须单文件 apply 后再做同样 API 验收。
 
+## 2026-09-30 System Instructions 保存阻塞修复
+
+1. 新增一个 `packages/shared/migrations/20260930_*.sql` forward migration，只恢复 `system_instructions` 的 `text_value` 专用校验，并逐字保留当前最外层 validator 的其他分支与委托。
+2. 在 migration preflight 核对函数 owner/依赖和 `app_core.runtime_config` 基线；postflight 覆盖合法 text_value、错误 value、空文本、缺失占位符和既有 VIP 分支。任何失败回滚整文件。
+3. 更新 migration README 与任务证据；运行定向 SQL harness、migration lint/ledger、shared 测试、全仓 typecheck、格式和 diff 检查。
+4. 呈交最终文件范围、验证结果和提交信息，经确认后提交并推送当前分支。通过 GitHub Actions `Database Migration` 只对 TEST 单文件 apply，核对账本与运行结果；不操作 Production。
+5. 回到已登录 TEST Admin，确认本地编辑仍在、环境与正式版本未变后保存草稿；保存成功后再发布并回读版本。结果未知时不重复 mutation，先请求恢复/回读权威状态。
+
 ## 规划与授权门禁
 
 本任务已获用户批准并 start，保持 in_progress。2026-09-29 本窗口获授权修订 T2/T3/T5 artifact 最小方案并离线实现；产品代码前已更新 design/implement/task 并通过 task.py validate。环境门禁独立保留；不 commit/push/部署/操作远端数据库。
