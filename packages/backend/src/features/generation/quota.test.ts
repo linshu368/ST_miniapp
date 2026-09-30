@@ -1,6 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { noFreeQuotaReservation, reserveCharacterFreeQuota } from './quota.js';
 import type { GenerationLogger } from './types.js';
+
+const quotaMocks = vi.hoisted(() => ({ limit: vi.fn(), reserve: vi.fn(), finalize: vi.fn() }));
+vi.mock('../billing/free-quota.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../billing/free-quota.js')>()),
+  getCharacterFreeChatQuotaLimit: quotaMocks.limit,
+}));
+vi.mock('../../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js', () => ({
+  MiniappCharacterFreeQuotaRepository: class {
+    reserve = quotaMocks.reserve;
+    finalize = quotaMocks.finalize;
+  },
+}));
+beforeEach(() => {
+  quotaMocks.limit.mockReset().mockResolvedValue(50);
+  quotaMocks.reserve
+    .mockReset()
+    .mockResolvedValue({ grantedFree: true, status: 'reserved', remainingRounds: 49 });
+  quotaMocks.finalize.mockReset();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 function fakeLogger(): GenerationLogger {
   const sink = {
@@ -60,5 +83,60 @@ describe('reserveCharacterFreeQuota', () => {
       expect.objectContaining({ event: 'llm.free_quota.skipped_untrackable_character' }),
       expect.any(String)
     );
+  });
+});
+
+describe('quota reservation cancellation boundary', () => {
+  const request = (signal?: AbortSignal) => ({
+    chargeId: 'charge',
+    userId: 'user',
+    characterId: CHARACTER_ID,
+    billing: { isFree: true },
+    log: fakeLogger(),
+    signal,
+  });
+
+  it('aborted delayed config read never creates a late reservation', async () => {
+    const controller = new AbortController();
+    let resolveLimit: ((value: number) => void) | undefined;
+    quotaMocks.limit.mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          resolveLimit = resolve;
+        })
+    );
+    const result = reserveCharacterFreeQuota(request(controller.signal));
+    const rejected = expect(result).rejects.toThrow('cancelled');
+    controller.abort(new Error('cancelled'));
+    await rejected;
+    resolveLimit?.(50);
+    await Promise.resolve();
+    expect(quotaMocks.reserve).not.toHaveBeenCalled();
+  });
+
+  it('configuration timeout is ordinary failure without an uncertain quota write', async () => {
+    vi.useFakeTimers();
+    // Native AbortSignal.timeout uses Node internal timers, not Vitest fake timers.
+    const controller = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds) => {
+      setTimeout(() => controller.abort(new Error('configuration timeout')), milliseconds);
+      return controller.signal;
+    });
+    quotaMocks.limit.mockReturnValue(new Promise<number>(() => {}));
+    const result = reserveCharacterFreeQuota(request());
+    const rejected = expect(result).rejects.not.toMatchObject({
+      name: 'GenerationCleanupPendingError',
+    });
+    await vi.advanceTimersByTimeAsync(5_001);
+    await rejected;
+    expect(quotaMocks.reserve).not.toHaveBeenCalled();
+  });
+
+  it('actual reserve RPC failure is flagged for persisted recovery', async () => {
+    quotaMocks.reserve.mockRejectedValue(new Error('RPC outcome uncertain'));
+    await expect(reserveCharacterFreeQuota(request())).rejects.toMatchObject({
+      name: 'GenerationCleanupPendingError',
+    });
+    expect(quotaMocks.reserve).toHaveBeenCalledTimes(1);
   });
 });

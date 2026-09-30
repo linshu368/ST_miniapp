@@ -13,6 +13,8 @@ export type ChatMessageStatus = 'streaming' | 'complete' | 'interrupted' | 'fail
 
 export interface ChatMessage {
   id: string;
+  /** Optional caller correlation UUID; identifies a pending request before SSE start. */
+  request_id?: string;
   session_id: string;
   /** 用户主动发起的逻辑轮次从 1 递增；开场白是 API 虚拟消息，使用 turn_index = 0 */
   turn_index: number;
@@ -25,6 +27,11 @@ export interface ChatMessage {
   finish_reason: string | null;
   /** 生成时的模型快照，仅 assistant 消息有值。改配置后历史输出仍可解释（总方案决策 10） */
   model_id: string | null;
+  /**
+   * 展示规则发布版本。缺失或 null 都表示这条消息继续用原来的 Markdown；
+   * 旧 producer 不写该字段时不能拿当前线上版本顶上。
+   */
+  postprocess_version?: number | null;
   created_at: string;
 }
 
@@ -149,11 +156,15 @@ export interface DeleteConversationData {
 // ==== POST /api/v1/conversations/:id/regenerate ====
 
 export interface SendMessageRequest {
+  /** Correlation only; not an idempotency key or a billing identifier. */
+  request_id?: string;
   content: string;
 }
 
 /** 重生成只作用于最后一轮，轮次由后端判定，无需入参 */
-export type RegenerateRequest = Record<string, never>;
+export interface RegenerateRequest {
+  request_id?: string;
+}
 
 // ==== SSE 事件契约 ====
 // 上面两条路由的响应体是 text/event-stream，每个 data: 行是一个序列化后的
@@ -174,6 +185,8 @@ export interface ConversationStreamStartEvent {
   user_message_id: string | null;
   assistant_message_id: string;
   revision: number;
+  /** 本轮开轮时绑定的规则版本。旧 start 事件没有该字段时按 null 解释。 */
+  postprocess_version?: number | null;
 }
 
 /** 增量：text 是本次新增的片段，不是累积全文 */
@@ -229,4 +242,14 @@ export interface PatchGenerationConfigRequest {
 export interface PatchGenerationConfigData {
   config: UserGenerationConfig;
   word_count_tiers: PublicWordCountTiers;
+}
+
+/** POST /api/v1/conversations/:id/cancel. The ID binds cancellation to one revision. */
+export interface CancelConversationTurnRequest {
+  assistant_message_id: string;
+}
+
+/** Returns the authoritative state; a reply completed before cancellation stays complete. */
+export interface CancelConversationTurnData {
+  message: ChatMessage;
 }

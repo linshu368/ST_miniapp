@@ -43,6 +43,8 @@ export class ConversationStreamError extends Error {
 
 export interface StreamTurnOptions {
   sessionId: string;
+  /** 本次提交的 UUID，持久化后用于 start 前安全定位本请求。 */
+  requestId?: string;
   /** 有值 = 发消息；省略 = 重生成（后端自行判定轮次，无入参） */
   content?: string;
   signal?: AbortSignal;
@@ -140,11 +142,20 @@ function createDeltaBatcher(onDelta: (text: string) => void) {
   };
 }
 
-function createRequestId(): string {
+export function createConversationRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  return `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function')
+    crypto.getRandomValues(bytes);
+  else
+    for (let index = 0; index < bytes.length; index += 1)
+      bytes[index] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /**
@@ -154,7 +165,7 @@ function createRequestId(): string {
  * 仍会跑到 [DONE] 并落库、照常扣费。所以 abort 之后必须让会话详情失效重取，
  * 否则用户看到的是半截内容而库里已经是完整的。
  */
-export async function streamConversationTurn(options: StreamTurnOptions): Promise<void> {
+async function readConversationStream(options: StreamTurnOptions): Promise<void> {
   const { sessionId, content, signal, onStart, onDelta, onDone } = options;
 
   const path =
@@ -165,7 +176,7 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
   const headers = new Headers({
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
-    'X-Request-Id': createRequestId(),
+    'X-Request-Id': options.requestId ?? createConversationRequestId(),
   });
   const initData = getRawInitData();
   if (initData) headers.set(INIT_DATA_HEADER, initData);
@@ -173,7 +184,10 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
   const response = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(content === undefined ? {} : { content }),
+    body: JSON.stringify({
+      ...(content === undefined ? {} : { content }),
+      ...(options.requestId ? { request_id: options.requestId } : {}),
+    }),
     signal,
     cache: 'no-store',
   });
@@ -184,6 +198,10 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
   }
 
   const reader = response.body.getReader();
+  const stopReader = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal?.addEventListener('abort', stopReader, { once: true });
   const decoder = new TextDecoder('utf-8');
   const batcher = createDeltaBatcher(onDelta);
 
@@ -242,6 +260,7 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
     }
   } finally {
     batcher.flush();
+    signal?.removeEventListener('abort', stopReader);
     reader.releaseLock();
     // 提前收口时主动断开，避免后端继续往一个没人读的连接里写
     if (finished) await response.body.cancel().catch(() => undefined);
@@ -249,5 +268,61 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
 
   if (!finished) {
     throw new ConversationStreamError('生成中断，请稍后重试', response.status, 'upstream_error');
+  }
+}
+
+// 后端 110 秒内终止活跃生成、120 秒回收残留；前端留出收口余量，心跳不延长无正文等待。
+export const CONVERSATION_STREAM_IDLE_TIMEOUT_MS = 130_000;
+export const CONVERSATION_STREAM_DEADLINE_MS = 150_000;
+
+export async function streamConversationTurn(options: StreamTurnOptions): Promise<void> {
+  const controller = new AbortController();
+  let idleTimer: ReturnType<typeof setTimeout>;
+  let deadlineTimer: ReturnType<typeof setTimeout>;
+  let rejectStopped: (reason: unknown) => void = () => undefined;
+  const stopped = new Promise<never>((_resolve, reject) => {
+    rejectStopped = reject;
+  });
+  const timeout = () => {
+    rejectStopped(
+      new ConversationStreamError('回复等待超时，请取消本次回复后重新生成', 408, 'upstream_error')
+    );
+    controller.abort();
+  };
+  const resetIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(timeout, CONVERSATION_STREAM_IDLE_TIMEOUT_MS);
+  };
+  const abort = () => {
+    rejectStopped(new DOMException('Stream disconnected', 'AbortError'));
+    controller.abort();
+  };
+  options.signal?.addEventListener('abort', abort, { once: true });
+  resetIdle();
+  deadlineTimer = setTimeout(timeout, CONVERSATION_STREAM_DEADLINE_MS);
+  if (options.signal?.aborted) abort();
+  try {
+    await Promise.race([
+      stopped,
+      readConversationStream({
+        ...options,
+        signal: controller.signal,
+        onStart: (event) => {
+          if (!controller.signal.aborted) options.onStart(event);
+        },
+        onDelta: (text) => {
+          if (controller.signal.aborted) return;
+          if (text) resetIdle();
+          options.onDelta(text);
+        },
+        onDone: (event) => {
+          if (!controller.signal.aborted) options.onDone(event);
+        },
+      }),
+    ]);
+  } finally {
+    clearTimeout(idleTimer!);
+    clearTimeout(deadlineTimer);
+    options.signal?.removeEventListener('abort', abort);
   }
 }

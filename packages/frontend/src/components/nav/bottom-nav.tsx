@@ -8,6 +8,7 @@ import { Home, MessageCircle, Sparkles, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
+import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
 
 const NAV_ITEMS = [
   { href: '/', label: '大厅', Icon: Home },
@@ -22,6 +23,7 @@ const HIDDEN_PREFIXES = [
   '/profile/messages',
   '/profile/support',
   '/create/wish',
+  '/vip',
 ];
 
 export function BottomNav() {
@@ -79,7 +81,10 @@ export function BottomNav() {
             <Link
               key={href}
               href={href}
-              onClick={() => setPendingHref(href)}
+              onClick={() => {
+                if (href === '/') clearLobbyReturnSnapshot();
+                setPendingHref(href);
+              }}
               aria-current={pathname === href ? 'page' : undefined}
               aria-label={label}
               className={cn(

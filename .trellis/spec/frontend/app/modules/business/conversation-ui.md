@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/09-17-image-generation-posthog-plan/
-last_verified_at: 2026-09-18
+last_verified_task: .trellis/tasks/09-29-chat-stall-cancel/
+last_verified_at: 2026-09-29
 ---
 
 # 用户会话、语音与图片界面
@@ -17,7 +17,9 @@ last_verified_at: 2026-09-18
 
 ## 当前状态
 
-自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片入口只面向最后完整回复，支持免费描述、确认/自定义、生成中、失败、余额不足、消息下 ready 卡和 Dialog 预览；图片入口、描述、提交、终态观察、预览和保存经 `lib/image-generation/telemetry.ts` 发送安全事件，只记录 ID、状态、长度、耗时、价格/尺寸摘要和错误码，不记录 prompt 正文或图片 URL。真实 Telegram WebView 与图稿逐项验收尚未完成。
+文字回复等待 8 秒保留提示；本地或服务端 streaming 均展示“取消本次回复”，终态确认后在最新未成功回复下显示“重新生成”，复用原输入。客户端读流/取消/刷新均有限等待；旧请求身份隔离、消息去重防止切会话或取消后旧状态覆盖新回复。Telegram/移动设备验收仍未执行。
+
+自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片只保留普通“看看TA”入口，支持免费描述、普通图片免费次数/付费预览、确认/自定义、生成中、失败、余额不足、ready 卡和 Dialog 预览；高级图按钮与 VIP 锁定交互已删除。图片 telemetry 继续只记录安全摘要。
 
 ## 入口与调用者
 
@@ -64,3 +66,4 @@ last_verified_at: 2026-09-18
 ## 变更记录
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）写入图片生成 UI PostHog 安全事件 helper 与 chat_image 付费墙来源；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
+- 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。

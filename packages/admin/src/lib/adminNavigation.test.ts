@@ -1,8 +1,17 @@
+/**
+ * @Author: whc 952987912@qq.com
+ * @Date: 2026-09-23 14:57:53
+ * @LastEditors: whc 952987912@qq.com
+ * @LastEditTime: 2026-09-28 16:52:45
+ * @Description:
+ * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
+ */
 import { describe, expect, it } from 'vitest';
 import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
+  VIP_STRATEGY_CONFIG_KEYS,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
 } from './adminNavigation';
@@ -65,9 +74,25 @@ describe('admin navigation', () => {
     });
   });
 
+  it('routes VIP strategy configs to one tab and hides them from the generic list', () => {
+    for (const key of VIP_STRATEGY_CONFIG_KEYS) {
+      expect(resolveAdminMenuSelection(configMenuKey(key))).toEqual({
+        view: 'vip_strategy',
+        configKey: key,
+      });
+      expect(sidebarManagedConfigKeys).not.toContain(key);
+    }
+    expect(resolveAdminMenuSelection('vip_strategy')).toEqual({ view: 'vip_strategy' });
+  });
+
+  it('keeps the retired media limit hidden while VIP strategy owns per-feature limits', () => {
+    expect(sidebarManagedConfigKeys).not.toContain('media_feature_free_trial_limit');
+  });
+
   it('keeps independent top-level pages separate', () => {
     expect(resolveAdminMenuSelection('characters')).toEqual({ view: 'characters' });
     expect(resolveAdminMenuSelection('announcements')).toEqual({ view: 'announcements' });
     expect(resolveAdminMenuSelection('releases')).toEqual({ view: 'releases' });
+    expect(resolveAdminMenuSelection('text_postprocess')).toEqual({ view: 'text_postprocess' });
   });
 });

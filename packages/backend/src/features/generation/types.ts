@@ -4,6 +4,7 @@
 // → 上游转发与 SSE tap → 终态结算（实扣与落库）。顺序不能换：预留结果决定本轮是否免费，
 // 而定档扣费额又由该结果决定，余额预检再吃这个额度。
 
+import type { SseTapResult } from './upstream.js';
 import type { RequestLogger } from '../../lib/logger.js';
 
 /**
@@ -11,6 +12,12 @@ import type { RequestLogger } from '../../lib/logger.js';
  * 没有 Fastify 上下文时退化成进程级 createLogger()，服务层因此不必绑死请求上下文。
  */
 export type GenerationLogger = RequestLogger;
+
+/** 受理这一轮时读到的 VIP 资格。之后的报价和 sync 都用它，不再重读。 */
+export interface ResolvedTextEntitlement {
+  active: boolean;
+  validUntil: string | null;
+}
 
 /** 已解析的权威模型。 */
 export interface ResolvedModel {
@@ -20,6 +27,7 @@ export interface ResolvedModel {
   openRouterModelId: string;
   tier: 'light' | 'standard' | 'premium' | null;
   isFree: boolean;
+  entitlement: ResolvedTextEntitlement;
 }
 
 export interface GenerationMessage {
@@ -44,28 +52,24 @@ export interface GenerationRequest {
    */
   historyId?: string | null;
   stream: boolean;
+  /** Explicit user cancellation and the conversation deadline; disconnects do not abort. */
+  signal?: AbortSignal;
   /**
    * 是否为 Anthropic Claude 注入 OpenRouter 的 cache_control 断点（system 段 + 历史尾部），
    * 命中缓存可显著降低上游成本。这是相对现状的行为变更，因此 ST 链路必须传 false，
    * 由自研链路单独启用，避免污染 M3a 的「纯重构」判据。
    */
   promptCaching: boolean;
-  /**
-   * Backend-only upstream override for internal tooling such as Batch Lab. Public generation
-   * requests continue using the process-wide LLM upstream configuration.
-   */
-  upstream?: {
-    baseUrl?: string;
-    apiKey?: string;
-  };
-  /**
-   * Internal research calls reuse the upstream generation transport but skip wallet, quota and
-   * chat_history settlement. Do not expose this switch through public/shared request contracts.
-   */
-  policy?: { kind: 'standard' } | { kind: 'internal_research' };
 }
 
 export interface GenerationHooks {
+  /** Persist the quota identity and reject a turn cancelled before quota reservation. */
+  onBeforeReserve?: (chargeId: string) => Promise<void>;
+  /** Claim persisted terminal status before any wallet/free-quota settlement. */
+  onBeforeSettle?: (
+    result: SseTapResult,
+    releaseReservation: () => Promise<void>
+  ) => Promise<SseTapResult>;
   /**
    * 上游返回 2xx、即将开始消费响应体时恰好调用一次。
    *
@@ -105,8 +109,21 @@ export interface GenerationResult {
     creditsRequired: number;
     creditsAvailable: number;
   };
+  /**
+   * 调用方绕过解析、直接拿着已过期的标准/旗舰进来时失败关闭。
+   * 正常对话会在开轮前把选择改回轻量，走不到这里。
+   */
+  denial?: 'vip_required';
 }
 
 export interface GenerationService {
   execute(request: GenerationRequest, hooks?: GenerationHooks): Promise<GenerationResult>;
+}
+
+/** Quota outcome is uncertain; keep the session busy until persisted recovery succeeds. */
+export class GenerationCleanupPendingError extends Error {
+  constructor(options?: ErrorOptions) {
+    super('生成额度收口待恢复', options);
+    this.name = 'GenerationCleanupPendingError';
+  }
 }

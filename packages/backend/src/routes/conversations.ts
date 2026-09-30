@@ -13,6 +13,8 @@
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from 'fastify';
 import { fail, ok } from '@miniapp/shared';
 import type {
+  CancelConversationTurnRequest,
+  CancelConversationTurnData,
   CreateConversationData,
   CreateConversationRequest,
   DeleteConversationData,
@@ -26,6 +28,7 @@ import type {
   UpdateConversationRequest,
   UpdateConversationData,
   SendMessageRequest,
+  RegenerateRequest,
 } from '@miniapp/shared';
 import { requireTelegramAuth, type TelegramUser } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -34,13 +37,17 @@ import {
   ChatSessionRepository,
   toChatSession,
 } from '../infrastructure/repositories/ChatSessionRepository.js';
-import { ConversationHistoryRepository } from '../infrastructure/repositories/ConversationHistoryRepository.js';
+import {
+  ConversationHistoryRepository,
+  toChatMessages,
+} from '../infrastructure/repositories/ConversationHistoryRepository.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import {
   applyUserPlaceholderToMessages,
   applyUserPlaceholderToSession,
   createReplyStreamSink,
   runConversationTurn,
+  withConversationPreparationDeadline,
   sendConversationError,
   type ConversationStreamSink,
   type ConversationTurnMode,
@@ -70,6 +77,60 @@ export default async function conversationRoutes(app: FastifyInstance) {
   const sessions = new ChatSessionRepository();
   const history = new ConversationHistoryRepository();
   const settings = new MiniappUserSettingsRepository();
+
+  // @frontend-ready: true
+  app.post(
+    '/api/v1/conversations/:id/cancel',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const sessionId = (request.params as { id?: string }).id;
+      const body = (request.body ?? {}) as Partial<CancelConversationTurnRequest>;
+      if (
+        !sessionId ||
+        !UUID_PATTERN.test(sessionId) ||
+        typeof body.assistant_message_id !== 'string' ||
+        !UUID_PATTERN.test(body.assistant_message_id)
+      ) {
+        return reply.status(400).send(fail('BAD_REQUEST', '会话或回复 ID 无效'));
+      }
+      const log = requestLogger(request.log, 'conversations');
+      const dbUser = await getOrCreateDbUser(request.user);
+      const startedAt = Date.now();
+      try {
+        await sessions.requireSession(sessionId, dbUser.id);
+        const row = await history.cancelTurn(sessionId, body.assistant_message_id);
+        if (!row) return reply.status(404).send(fail('NOT_FOUND', '回复不存在'));
+        if (row.status === 'streaming')
+          return reply.status(409).send(fail('CANCEL_PENDING', '正在取消本次回复，请稍后重试'));
+        log.biz.info(
+          {
+            event: 'conversation.turn.cancelled',
+            userId: dbUser.id,
+            sessionId,
+            historyId: row.id,
+            status: row.status,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '取消回复请求已收口'
+        );
+        return reply.send(ok<CancelConversationTurnData>({ message: toChatMessages(row)[1]! }));
+      } catch (err) {
+        if (sendConversationError(reply, err)) return;
+        log.sys.error(
+          {
+            event: 'conversation.turn.cancel_failed',
+            err,
+            userId: dbUser.id,
+            sessionId,
+            elapsedMs: Date.now() - startedAt,
+          },
+          '取消回复失败'
+        );
+        return reply.status(500).send(fail('INTERNAL_ERROR', '取消回复失败，请稍后重试'));
+      }
+    }
+  );
 
   // ── 会话 CRUD ─────────────────────────────────────────────────────────────
 
@@ -180,6 +241,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
           sessions.requireSession(sessionId, dbUser.id),
           settings.getDisplayName(dbUser.id),
         ]);
+        await history.recoverStaleStreaming(sessionId);
         const openingMessage = await sessions.getCharacterFirstMes(session.character_id);
         const page = await history.listMessages(sessionId, openingMessage, {
           limit: parsePositiveInt(query.limit),
@@ -284,6 +346,9 @@ export default async function conversationRoutes(app: FastifyInstance) {
       }
 
       const body = (request.body ?? {}) as Partial<SendMessageRequest>;
+      if (!isValidConversationRequestId(body.request_id)) {
+        return reply.status(400).send(fail('BAD_REQUEST', '请求 ID 无效'));
+      }
       const content = typeof body.content === 'string' ? body.content.trim() : '';
       if (!content) {
         return reply.status(400).send(fail('BAD_REQUEST', '消息内容不能为空'));
@@ -298,6 +363,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         reply,
         sessionId,
         mode: { kind: 'send', content },
+        requestId: body.request_id,
         tgUser: request.user,
         baseLog: request.log,
       });
@@ -316,10 +382,15 @@ export default async function conversationRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('BAD_REQUEST', '会话 ID 无效'));
       }
 
+      const body = (request.body ?? {}) as Partial<RegenerateRequest>;
+      if (!isValidConversationRequestId(body.request_id)) {
+        return reply.status(400).send(fail('BAD_REQUEST', '请求 ID 无效'));
+      }
       return await streamTurn({
         reply,
         sessionId,
         mode: { kind: 'regenerate' },
+        requestId: body.request_id,
         tgUser: request.user,
         baseLog: request.log,
       });
@@ -333,16 +404,36 @@ export default async function conversationRoutes(app: FastifyInstance) {
     mode: ConversationTurnMode;
     tgUser: TelegramUser;
     baseLog: FastifyBaseLogger;
+    requestId?: string;
   }): Promise<undefined> {
     const { reply, sessionId, mode, tgUser, baseLog } = input;
     const log = requestLogger(baseLog, 'conversations');
     // 必须在任何可能耗时的 await 之前建好：客户端断开的监听要尽早挂上
     const sink = createReplyStreamSink(reply);
+    const receivedAt = Date.now();
+    const preparationSignal = AbortSignal.timeout(20_000);
 
     try {
-      const dbUser = await getOrCreateDbUser(tgUser);
-      const session = await sessions.requireSession(sessionId, dbUser.id);
-      const outcome = await runConversationTurn({ session, mode, sink, log });
+      // A late identity/ownership read must not open a turn after the client gave up.
+      // Race each preparation await, never a block containing generation or quota writes.
+      const dbUser = await withConversationPreparationDeadline(
+        getOrCreateDbUser(tgUser),
+        preparationSignal
+      );
+      preparationSignal.throwIfAborted();
+      const session = await withConversationPreparationDeadline(
+        sessions.requireSession(sessionId, dbUser.id),
+        preparationSignal
+      );
+      preparationSignal.throwIfAborted();
+      const outcome = await runConversationTurn({
+        session,
+        mode,
+        sink,
+        log,
+        receivedAt,
+        requestId: input.requestId,
+      });
       finishTurn(reply, outcome);
       return undefined;
     } catch (error) {
@@ -415,9 +506,14 @@ export default async function conversationRoutes(app: FastifyInstance) {
   );
 }
 
-/** 流没开起来的两种终态：都要以 HTTP 状态码 + JSON 返回，前端处理成本比流内错误低一截 */
+/** 流没开起来的终态：都要以 HTTP 状态码 + JSON 返回，前端处理成本比流内错误低一截 */
 function finishTurn(reply: FastifyReply, outcome: ConversationTurnOutcome): void {
   if (outcome.kind === 'streamed') return;
+
+  if (outcome.kind === 'vip_required') {
+    void reply.status(403).send(fail('VIP_REQUIRED', '标准/旗舰模型需要有效 VIP'));
+    return;
+  }
 
   if (outcome.kind === 'insufficient_balance') {
     const response: InsufficientBalanceErrorResponse = {
@@ -460,4 +556,8 @@ function failTurn(
 
   log.sys.error({ event: 'conversation.turn.failed', err: error }, '一轮生成失败');
   void reply.status(500).send(fail('INTERNAL_ERROR', '生成失败，请稍后再试'));
+}
+
+export function isValidConversationRequestId(value: unknown): value is string | undefined {
+  return value === undefined || (typeof value === 'string' && UUID_PATTERN.test(value));
 }

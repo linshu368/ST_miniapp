@@ -6,6 +6,7 @@
 - `query-client.ts`：QueryClient 单例/SSR 策略；query defaults 在此统一。
 - `characters.ts`、`favorites.ts`：大厅角色/最新标记/收藏。
 - `conversations.ts`：列表、详情、向前分页、创建/更新/删除、标题规则；`conversation-stream.ts`：发送/重生成 SSE parser。
+- `text-postprocess.ts`：按消息实际 `postprocess_version` 批量读取不可变 artifact 快照；query key 按环境/版本集合隔离，单批最多 20 个去重版本。
 - `generation-config.ts`、`models.ts`、`model-cache-policy.ts`：生成偏好、模型目录/选择和缓存 freshness。
 - `voice.ts`：用户语音配置、会话音频、生成 mutation 和 audio map。
 - `payment.ts`：套餐、下单、订单状态轮询、余额、流水、签到、订单 infinite query。
@@ -20,6 +21,8 @@
 `Telegram SDK init → getRawInitData → apiClient header → Backend auth → shared envelope → queryFn → React Query cache → page/component`。所有 URL/path/request/response 类型来自 shared。401/403、业务错误、网络错误和 abort 需保留可区分语义。
 
 SSE：`page → streamConversationTurn(AbortSignal, callbacks) → fetch ReadableStream → shared event parser → 临时消息 state → done 后 cache 收敛`。parser 处理跨 chunk 行、未知/非法事件、HTTP JSON 错误、流中 error 和 EOF；不得在组件另写第二套 parser。
+
+回复后处理：`ChatMessage/SSE start.postprocess_version → 批量 snapshot query → 边界 Zod 校验并冻结 artifact → ReplyRenderer`。缺版本、缺快照、协议不支持、source/artifact 错配或单行非法时只让对应消息退化为完整原始 Markdown，不得用 `latest/MAX(version)`、客户端 source 编译或其他版本替代。流式 delta 不触发 Worker；终态才运行 renderer。
 
 ## 四类状态的唯一归属
 
@@ -185,3 +188,11 @@ void followup.then(() => {
   lifecycle.capture({ event: 'paywall_triggered', ... });
 });
 ```
+
+## Scenario: 显式取消文字回复与重新生成
+
+取消经 `lib/api/conversations.ts` 的 React Query mutation 调用服务端；浏览器 AbortController 只负责停止本地读流。生成入口同时检查本地请求身份、取消待确认与服务端 streaming，后者不能只禁用发送却隐藏取消按钮。
+
+start 尚未到达时，按本次 request_id UUID 及预期 turn_index/revision 定位消息再提交 assistant_message_id；禁止盲目取消最后一条或另一设备的同轮请求；没有匹配关联 ID 的旧行不能作为本次未 start 请求的发现结果。取消暂未确认保留占用与重试，服务端确认终态后保留用户输入和已收到正文，最新失败回复下显示“重新生成”，复用最后一轮 regeneration。
+
+所有 SSE 回调与异步刷新必须检查请求/会话身份。详情轮询可能先看到当前 revision，临时消息合并须去重并以已持久化终态为准。SSE、取消请求、详情刷新与额度刷新都有有限等待，不能因后台请求卡住永久保留 generating。实现断网/超时错误时先回查服务端，不把已经持久化的原输入再次恢复并重复发送。

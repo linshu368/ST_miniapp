@@ -25,7 +25,7 @@ const nextConfig = {
   experimental: {
     outputFileTracingRoot: join(__dirname, '../..'),
   },
-  transpilePackages: ['@miniapp/shared'],
+  transpilePackages: ['@miniapp/shared', '@miniapp/reply-renderer'],
   webpack: (config) => {
     config.resolve.extensionAlias = {
       '.js': ['.ts', '.tsx', '.js', '.jsx'],

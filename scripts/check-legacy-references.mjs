@@ -111,9 +111,6 @@ const RULES = [
     allow: [
       'packages/backend/src/features/generation/upstream.ts',
       'packages/backend/src/features/generation/upstream.test.ts',
-      // Batch Lab 仅把实验供应商端点冻结为配置；实际请求仍由 backend 的
-      // internal_research policy 进入 features/generation/upstream.ts，不另建转发或计费出口。
-      'packages/batch-lab/src/App.tsx',
       // 语音写稿的 DeepSeek 端点：与聊天不同供应商、非流式、抽取任务、按次计费，
       // 业务上确实独立（理由见 features/voice/voice-draft.ts 与 features/voice/billing.ts）
       'packages/backend/src/platform/config.ts',
@@ -135,6 +132,10 @@ const RULES = [
     allow: [
       'packages/backend/src/features/payment/usecases/PaymentSettlement.ts',
       'packages/backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts',
+      // 同一数据库履约出口的 VIP 兼容函数体，不是第二条应用入账路径。
+      'packages/shared/migrations/20260921_vip_payment_fulfillment.sql',
+      // T3A 只替换同一函数体，让履约读取订单快照而不是写死 1399/2888。
+      'packages/shared/migrations/20260923_vip_strategy_config.sql',
     ],
   },
   {

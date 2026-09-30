@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/09-21-vip-image-free-trials/prd.md","reason":"图片免费体验与高级图片 VIP 门禁验收口径"}
+{"file":".trellis/tasks/09-21-vip-image-free-trials/design.md","reason":"图片链路复用、结算、并发与门禁设计依据"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 验证与数据流边界"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend route、计费与日志边界"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"共享契约与消费者兼容边界"}

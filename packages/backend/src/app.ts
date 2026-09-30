@@ -9,6 +9,7 @@ import characterRoutes from './routes/characters.js';
 import favoriteRoutes from './routes/favorites.js';
 import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
+import vipRoutes from './routes/vip.js';
 import settingsRoutes from './routes/settings.js';
 import wishRoutes from './routes/wishes.js';
 import csPlatformRoutes from './routes/cs-platform.js';
@@ -23,8 +24,9 @@ import communityRoutes from './routes/community.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
-import batchLabRoutes from './routes/batch-lab.js';
 import telemetryRoutes from './routes/telemetry.js';
+import textPostprocessRoutes from './routes/text-postprocess.js';
+import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
 import {
@@ -57,12 +59,9 @@ export async function buildApp() {
       }
 
       if (
-        [
-          config.frontendUrl,
-          config.csPlatformUrl,
-          config.adminPlatformUrl,
-          config.batchLab.url,
-        ].some((allowedOrigin) => allowedOrigin.length > 0 && allowedOrigin === origin)
+        [config.frontendUrl, config.csPlatformUrl, config.adminPlatformUrl].some(
+          (allowedOrigin) => allowedOrigin.length > 0 && allowedOrigin === origin
+        )
       ) {
         callback(null, true);
         return;
@@ -111,6 +110,7 @@ export async function buildApp() {
   await app.register(favoriteRoutes);
   await app.register(paymentRoutes);
   await app.register(walletRoutes);
+  await app.register(vipRoutes);
   await app.register(settingsRoutes);
   await app.register(wishRoutes);
   await app.register(csPlatformRoutes);
@@ -125,8 +125,8 @@ export async function buildApp() {
   await app.register(adminSupabaseProxyRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
-  await app.register(batchLabRoutes);
   await app.register(telemetryRoutes);
+  await app.register(textPostprocessRoutes);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],
@@ -161,6 +161,7 @@ export async function buildApp() {
     stopChatHistorySyncJob();
     stopLobbyRankingRefreshJob();
     stopChatImageGenerationJob();
+    shutdownTextPostprocessValidation();
   });
 
   return app;

@@ -10,19 +10,21 @@ import type {
   PatchVoiceConfigRequest,
 } from '@miniapp/shared';
 import { apiClient } from './client';
+import { paymentKeys } from './payment';
 
 export const voiceKeys = {
   config: ['voice-config'] as const,
   session: (sessionId: string) => ['voice', 'session', sessionId] as const,
 };
 
-/** 音色与播放倍速是用户级的，切会话不必重取 */
+/** 用户级音色、播放倍速及下一次生成的实时费用。 */
 export function useVoiceConfigQuery(enabled = true) {
   return useQuery<GetVoiceConfigData>({
     queryKey: voiceKeys.config,
     enabled,
     queryFn: async () => apiClient<GetVoiceConfigData>('/api/v1/voice/config'),
-    staleTime: 5 * 60 * 1000,
+    // 配置含用户实时额度，重新进入页面时需重新确认。
+    staleTime: 0,
   });
 }
 
@@ -48,14 +50,33 @@ export function usePatchVoiceConfigMutation() {
  * 全部收口后自动停下——否则每个开着的聊天页都会一直在打这个接口。
  */
 export function useSessionVoiceQuery(sessionId: string | undefined) {
+  const queryClient = useQueryClient();
   return useQuery<GetSessionVoiceData>({
     queryKey: voiceKeys.session(sessionId ?? ''),
     enabled: Boolean(sessionId),
     queryFn: async () => {
       if (!sessionId) throw new Error('session id is required');
-      return apiClient<GetSessionVoiceData>(
+      const next = await apiClient<GetSessionVoiceData>(
         `/api/v1/conversations/${encodeURIComponent(sessionId)}/voice`
       );
+      const current = queryClient.getQueryData<GetSessionVoiceData>(voiceKeys.session(sessionId));
+      const previousByMessage = toVoiceMap(current);
+      // 在会话查询完成处收敛一次：包括失败释放额度，历史终态不随每轮轮询重复刷新。
+      if (
+        next.audio.some((item) => {
+          const previous = previousByMessage.get(item.message_id);
+          return (
+            item.status !== 'pending' &&
+            (!previous ||
+              previous.status !== item.status ||
+              previous.created_at !== item.created_at)
+          );
+        })
+      ) {
+        void queryClient.invalidateQueries({ queryKey: voiceKeys.config });
+        void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+      }
+      return next;
     },
     staleTime: 0,
     refetchInterval: (query) =>
@@ -94,11 +115,16 @@ export function useGenerateVoiceMutation(sessionId: string | undefined) {
       queryClient.setQueryData<GetSessionVoiceData>(voiceKeys.session(sessionId), (current) =>
         mergeAudio(current, data.audio)
       );
+      void queryClient.invalidateQueries({ queryKey: voiceKeys.config });
+      if (data.audio.status !== 'pending') {
+        void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
+      }
     },
     onError: () => {
       // 失败态由后端记录，重取一次拿准确的错误码，别让 UI 卡在「生成中」
       if (!sessionId) return;
       void queryClient.invalidateQueries({ queryKey: voiceKeys.session(sessionId) });
+      void queryClient.invalidateQueries({ queryKey: voiceKeys.config });
     },
   });
 }

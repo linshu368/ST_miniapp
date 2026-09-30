@@ -56,3 +56,7 @@ Test migration shape/RPC、Backend 计费与支付回归。
 ## 关联模块
 
 `backend.business.wallet-payment`、`backend.business.conversation-generation`。
+
+## 变更记录
+
+- 2026-09-23：任务 `Admin VIP media configuration`（`.trellis/tasks/archive/2026-09/09-23-admin-vip-media-config/`）Admin ?? VIP ??????????????????/????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。

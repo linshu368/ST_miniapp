@@ -43,7 +43,7 @@ export function getSupabaseClient(): SupabaseClient {
 /**
  * 归属域对应的物理 schema。
  *
- * 既有八域由 migration 099 收口；batch_lab 由 migration 110 新建并保持业务反向零依赖。
+ * 既有八域由 migration 099 收口。
  * 一个 repository 横跨多个域时必须显式取多个域客户端，不要图省事共用一个。
  */
 export const DOMAIN_SCHEMAS = [
@@ -55,7 +55,6 @@ export const DOMAIN_SCHEMAS = [
   'cs_platform',
   'miniapp_traffic',
   'miniapp_analytics',
-  'batch_lab',
 ] as const;
 
 export type DomainSchema = (typeof DOMAIN_SCHEMAS)[number];

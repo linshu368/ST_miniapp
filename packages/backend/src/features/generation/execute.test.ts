@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
 
@@ -18,6 +18,20 @@ const billingContext = {
 
 let walletBalance = 1000;
 let providerPreferences: Record<string, unknown> | null = null;
+const quotaState = vi.hoisted(() => ({ granted: false, finalize: vi.fn(), reserveFailure: false }));
+vi.mock('./quota.js', () => ({
+  reserveCharacterFreeQuota: async () => {
+    if (quotaState.reserveFailure) {
+      const { GenerationCleanupPendingError } = await import('./types.js');
+      throw new GenerationCleanupPendingError({ cause: new Error('reserve uncertain') });
+    }
+    return {
+      isFreeRound: quotaState.granted,
+      granted: quotaState.granted,
+      finalize: quotaState.granted ? quotaState.finalize : async () => null,
+    };
+  },
+}));
 
 vi.mock('../../platform/model-tiers.js', () => ({
   getPricingConfig: async () => pricing,
@@ -26,6 +40,39 @@ vi.mock('../../platform/model-tiers.js', () => ({
 
 vi.mock('../../platform/provider-routing.js', () => ({
   getProviderPreferencesForModel: async () => providerPreferences,
+}));
+
+vi.mock('../../platform/vip-strategy.js', () => ({
+  readVipStrategy: async () => ({
+    purchaseEnabled: false,
+    remindersEnabled: false,
+    plans: {
+      week: {
+        price_cents: 1399,
+        duration_days: 7,
+        bonus_credits: 0,
+        title: '周卡',
+        description: '7 天 VIP',
+        badge_text: null,
+      },
+      month: {
+        price_cents: 2888,
+        duration_days: 31,
+        bonus_credits: 3000,
+        title: '月卡',
+        description: '31 天 VIP，赠送 3000 专项星尘',
+        badge_text: null,
+      },
+    },
+    plansVersion: 1,
+    discountRate: 0.95,
+    discountVersion: 1,
+    checkin: { mode: 'same_as_base' as const },
+    checkinVersion: 1,
+    limits: { voice: 3, basic_image: 3 },
+    limitsVersion: 1,
+    fallbacks: [],
+  }),
 }));
 
 vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
@@ -67,6 +114,7 @@ function request(overrides: Partial<GenerationRequest> = {}): GenerationRequest 
       openRouterModelId: billingContext.openRouterModelId,
       tier: 'premium',
       isFree: false,
+      entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
     },
     messages: [
       { role: 'system', content: '角色卡 system_prompt' },
@@ -111,6 +159,11 @@ function requestBodyOf(fetchMock: ReturnType<typeof stubUpstream>): Record<strin
 }
 
 beforeEach(() => {
+  quotaState.granted = false;
+  quotaState.reserveFailure = false;
+  quotaState.finalize.mockReset().mockImplementation(async (success: boolean) => ({
+    status: success ? 'consumed' : 'released',
+  }));
   walletBalance = 1000;
   providerPreferences = null;
   vi.mocked(settleGeneration).mockClear();
@@ -160,7 +213,7 @@ describe('execute（流式）', () => {
       model: 'anthropic/claude-sonnet-4.5',
       model_id: 'anthropic-claude-sonnet-4-5',
       model_markup: 1,
-      fixed_deduction: 50,
+      fixed_deduction: 48,
       fixed_deduction_category: 'premium',
       pricing_config_version: 7,
       exchange_rate: 1,
@@ -292,6 +345,31 @@ describe('execute（流式）', () => {
 });
 
 describe('execute（失败路径）', () => {
+  it('标准或旗舰在 VIP 无效时不调用上游', async () => {
+    const fetchMock = stubUpstream(() => sseResponse([]));
+    const result = await execute(
+      request({
+        model: {
+          modelId: billingContext.modelId,
+          openRouterModelId: billingContext.openRouterModelId,
+          tier: 'premium',
+          isFree: false,
+          entitlement: { active: false, validUntil: null },
+        },
+      }),
+      undefined,
+      fakeLogger()
+    );
+
+    expect(result).toMatchObject({
+      status: 'upstream_error',
+      denial: 'vip_required',
+      chargeId: null,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(savedHistory()).toHaveLength(0);
+  });
+
   it('余额不足在发请求前收口，不碰上游也不落库', async () => {
     walletBalance = 10;
     const fetchMock = stubUpstream(() => sseResponse([]));
@@ -301,34 +379,9 @@ describe('execute（失败路径）', () => {
     expect(result).toMatchObject({
       status: 'insufficient_balance',
       chargeId: null,
-      balance: { creditsRequired: 50, creditsAvailable: 10 },
+      balance: { creditsRequired: 48, creditsAvailable: 10 },
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(savedHistory()).toHaveLength(0);
-  });
-
-  it('internal_research policy skips wallet, free quota and chat_history settlement', async () => {
-    walletBalance = 0;
-    const fetchMock = stubUpstream(() =>
-      sseResponse([
-        DELTA('research reply'),
-        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
-        'data: [DONE]\n\n',
-      ])
-    );
-
-    const result = await execute(
-      request({ policy: { kind: 'internal_research' } }),
-      undefined,
-      fakeLogger()
-    );
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(result).toMatchObject({
-      status: 'success',
-      content: 'research reply',
-      chargeId: null,
-    });
     expect(savedHistory()).toHaveLength(0);
   });
 
@@ -408,5 +461,103 @@ describe('execute（请求体）', () => {
       { type: 'text', text: '角色卡 system_prompt', cache_control: { type: 'ephemeral' } },
     ]);
     expect(body.messages[2]?.content).toBe('平台规则 + 你好');
+  });
+});
+
+describe('cancellation, deadlines and billing arbitration', () => {
+  it('cancel winner suppresses success even after all upstream tokens and DONE arrive', async () => {
+    stubUpstream(sseResponse([DELTA('late complete'), 'data: [DONE]\n\n']));
+    const gate = vi.fn(async (observed) => ({
+      ...observed,
+      completed: false,
+      finishReason: 'cancelled',
+    }));
+    const result = await execute(request(), { onBeforeSettle: gate }, fakeLogger());
+    expect(result).toMatchObject({
+      status: 'stream_interrupted',
+      finishReason: 'cancelled',
+      content: 'late complete',
+    });
+    expect(gate).toHaveBeenCalledTimes(1);
+    expect(savedHistory()).toHaveLength(1);
+    expect(savedHistory()[0]).toMatchObject({
+      status: 'stream_interrupted',
+      finish_reason: 'cancelled',
+    });
+  });
+
+  it('failed terminal claim does not send a normal success to billing', async () => {
+    stubUpstream(sseResponse([DELTA('reply'), 'data: [DONE]\n\n']));
+    const gate = vi.fn(async () => {
+      throw new Error('CAS DB unavailable');
+    });
+    await expect(execute(request(), { onBeforeSettle: gate }, fakeLogger())).rejects.toThrow(
+      'CAS DB unavailable'
+    );
+    expect(gate).toHaveBeenCalledTimes(1);
+    expect(savedHistory()).toHaveLength(0);
+  });
+
+  it('DONE followed by a socket that stays open is interrupted by the deadline with one settlement', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(DELTA('reply') + 'data: [DONE]\n\n'));
+      },
+    });
+    stubUpstream(new Response(body));
+    const gate = vi.fn(async (observed) => observed);
+    const result = await execute(
+      request({ signal: AbortSignal.timeout(30) }),
+      { onBeforeSettle: gate },
+      fakeLogger()
+    );
+    expect(result).toMatchObject({ status: 'stream_interrupted', finishReason: 'timeout' });
+    expect(gate).toHaveBeenCalledTimes(1);
+    expect(savedHistory()).toHaveLength(1);
+    expect(savedHistory()[0]?.status).toBe('stream_interrupted');
+  });
+
+  it('cancellation releases the free reservation before terminal acknowledgement', async () => {
+    quotaState.granted = true;
+    stubUpstream(sseResponse([DELTA('partial')]));
+    const result = await execute(
+      request(),
+      {
+        onBeforeSettle: async (observed, release) => {
+          await release();
+          expect(quotaState.finalize).toHaveBeenCalledWith(false);
+          return { ...observed, completed: false, finishReason: 'cancelled' };
+        },
+      },
+      fakeLogger()
+    );
+    expect(result.finishReason).toBe('cancelled');
+    expect(quotaState.finalize.mock.calls.every(([success]) => success === false)).toBe(true);
+  });
+
+  it('failed free-quota release stays pending and never starts billing', async () => {
+    quotaState.granted = true;
+    quotaState.finalize.mockResolvedValue(null);
+    stubUpstream(sseResponse([DELTA('partial')]));
+    await expect(
+      execute(
+        request(),
+        {
+          onBeforeSettle: async (observed, release) => {
+            await release();
+            return observed;
+          },
+        },
+        fakeLogger()
+      )
+    ).rejects.toThrow('生成额度收口待恢复');
+    expect(savedHistory()).toHaveLength(0);
+  });
+
+  it('uncertain reserve failure is surfaced as cleanup pending before contacting upstream', async () => {
+    quotaState.reserveFailure = true;
+    const fetchMock = stubUpstream(sseResponse([]));
+    await expect(execute(request(), undefined, fakeLogger())).rejects.toThrow('生成额度收口待恢复');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

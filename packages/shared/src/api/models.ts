@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+import { VIP_TEXT_DISCOUNT_RATE, VipEntitlementSummarySchema } from './vip.js';
+import { VipTextDiscountRateSchema } from './vip-strategy.js';
+import {
+  WalletDebitPolicySchema,
+  resolveBillableCapabilityRules,
+  type WalletDebitPolicy,
+  type WalletContractResult,
+} from './wallet.js';
+
 export const ModelCatalogTierKeySchema = z.enum(['light', 'standard', 'premium']);
 export const StableModelIdSchema = z
   .string()
@@ -126,6 +135,13 @@ export const PublicModelCatalogTierSchema = z.object({
   cost_hint: z.string(),
   sort_order: z.number().finite(),
   models: z.array(PublicModelCatalogModelSchema),
+  requires_vip: z.boolean().optional(),
+  locked: z.boolean().optional(),
+  original_credits: z.number().finite().nonnegative().optional(),
+  discount_rate: z.number().finite().nonnegative().nullable().optional(),
+  discounted_exact: z.number().finite().nonnegative().nullable().optional(),
+  payable_credits: z.number().int().nonnegative().optional(),
+  wallet_policy: WalletDebitPolicySchema.optional(),
 });
 
 export const PublicModelCatalogSchema = z.object({
@@ -138,6 +154,7 @@ export const GetModelCatalogDataSchema = z.object({
   selected_model_id: z.string().trim().min(1),
   selected_openrouter_model_id: z.string().trim().min(1),
   catalog_version: z.number().int().nonnegative(),
+  vip_status: VipEntitlementSummarySchema.optional(),
 });
 
 export const SelectModelRequestSchema = z.object({
@@ -306,5 +323,124 @@ export interface InsufficientBalanceErrorResponse {
     type: 'insufficient_balance';
     credits_required: number;
     credits_available: number;
+  };
+}
+
+export interface TextModelUsageQuote {
+  original_credits: number;
+  discount_applied: boolean;
+  discount_rate: number | null;
+  discounted_exact: number;
+  payable_credits: number;
+  wallet_policy: WalletDebitPolicy;
+  requires_vip: boolean;
+}
+
+export type QuoteTextModelUsageResult = WalletContractResult<
+  TextModelUsageQuote,
+  'INVALID_PRICE' | 'UNSUPPORTED_TIER'
+>;
+
+function textCapabilityForTier(tier: ModelCatalogTierKey) {
+  if (tier === 'light') return 'text_light' as const;
+  if (tier === 'standard') return 'text_standard' as const;
+  return 'text_premium' as const;
+}
+
+/** 非负有限值的四舍五入（0.5 进位）；文本实扣必须是整数。 */
+export function roundHalfUpToInteger(value: number): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error('payable credits must be a non-negative finite number');
+  }
+  return Math.round(value);
+}
+
+/**
+ * 文本计价纯函数：免费轮优先返回 0；VIP 按调用方传入的运行时原价 × 折扣率再取整。
+ * 省略折扣率时使用 0.95。不读取 runtime config，也不把 test 目录价写死。
+ */
+export function quoteTextModelUsage(input: {
+  original_credits: number;
+  is_vip: boolean;
+  is_free_round: boolean;
+  tier: ModelCatalogTierKey;
+  discount_rate?: number;
+}): QuoteTextModelUsageResult {
+  const tierParsed = ModelCatalogTierKeySchema.safeParse(input.tier);
+  if (!tierParsed.success) {
+    return { ok: false, code: 'UNSUPPORTED_TIER', message: 'text model tier is not supported' };
+  }
+  if (!Number.isFinite(input.original_credits) || input.original_credits < 0) {
+    return {
+      ok: false,
+      code: 'INVALID_PRICE',
+      message: 'original credits must be a non-negative finite number',
+    };
+  }
+  if (!Number.isInteger(input.original_credits)) {
+    return {
+      ok: false,
+      code: 'INVALID_PRICE',
+      message: 'original credits must be an integer snapshot',
+    };
+  }
+
+  const rules = resolveBillableCapabilityRules(textCapabilityForTier(tierParsed.data));
+  const originalCredits = input.original_credits;
+  const discountRate =
+    input.discount_rate === undefined ? VIP_TEXT_DISCOUNT_RATE : input.discount_rate;
+  if (
+    input.discount_rate !== undefined &&
+    !VipTextDiscountRateSchema.safeParse(discountRate).success
+  ) {
+    return {
+      ok: false,
+      code: 'INVALID_PRICE',
+      message: 'discount rate must be greater than 0 and at most 1',
+    };
+  }
+
+  if (input.is_free_round) {
+    return {
+      ok: true,
+      value: {
+        original_credits: originalCredits,
+        discount_applied: false,
+        discount_rate: null,
+        discounted_exact: 0,
+        payable_credits: 0,
+        wallet_policy: rules.wallet_policy,
+        requires_vip: rules.requires_vip,
+      },
+    };
+  }
+
+  if (!input.is_vip) {
+    return {
+      ok: true,
+      value: {
+        original_credits: originalCredits,
+        discount_applied: false,
+        discount_rate: null,
+        discounted_exact: originalCredits,
+        payable_credits: originalCredits,
+        wallet_policy: rules.wallet_policy,
+        requires_vip: rules.requires_vip,
+      },
+    };
+  }
+
+  const discountedExact = originalCredits * discountRate;
+  return {
+    ok: true,
+    value: {
+      original_credits: originalCredits,
+      discount_applied: true,
+      discount_rate: discountRate,
+      discounted_exact: discountedExact,
+      payable_credits: roundHalfUpToInteger(discountedExact),
+      wallet_policy: rules.wallet_policy,
+      requires_vip: rules.requires_vip,
+    },
   };
 }

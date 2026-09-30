@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 不可谈判规则与最低质量门禁"}
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"大厅角色组件职责、图片布局与交互约束"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"React Query、客户端 UI 状态、缓存与恢复归属"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"现有测试基础、人工矩阵与发布回滚要求"}
+{"file":".trellis/tasks/09-20-lobby-list-position-restore-plan/research/current-lobby-flow.md","reason":"当前大厅数据/导航链路、复用结论与分页事实"}

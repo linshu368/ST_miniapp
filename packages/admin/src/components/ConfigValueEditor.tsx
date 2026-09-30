@@ -20,6 +20,7 @@ import {
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
+  MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
@@ -289,6 +290,7 @@ export function ConfigValueEditor(props: {
 
   if (
     props.configKey === 'image_generation_credits' ||
+    props.configKey === 'media_feature_free_trial_limit' ||
     props.configKey === 'image_width' ||
     props.configKey === 'image_height' ||
     props.configKey === 'image_max_prompt_chars' ||
@@ -297,10 +299,21 @@ export function ConfigValueEditor(props: {
     const isDimension = props.configKey === 'image_width' || props.configKey === 'image_height';
     const isBytes = props.configKey === 'image_max_output_bytes';
     const isContractLimit = props.configKey === 'image_max_prompt_chars';
+    const isFreeTrialLimit = props.configKey === 'media_feature_free_trial_limit';
     return (
       <InputNumber
         min={isDimension ? 256 : isBytes ? 1048576 : 1}
-        max={isDimension ? 4096 : isBytes ? 52428800 : isContractLimit ? 200 : undefined}
+        max={
+          isDimension
+            ? 4096
+            : isBytes
+              ? 52428800
+              : isFreeTrialLimit
+                ? MAX_FEATURE_FREE_TRIAL_LIMIT
+                : isContractLimit
+                  ? 1000
+                  : undefined
+        }
         precision={0}
         value={typeof props.value === 'number' ? props.value : undefined}
         disabled={props.disabled || isContractLimit}

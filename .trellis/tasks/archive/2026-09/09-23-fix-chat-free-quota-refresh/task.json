@@ -1,0 +1,40 @@
+{
+  "id": "fix-chat-free-quota-refresh",
+  "name": "fix-chat-free-quota-refresh",
+  "title": "Fix live free quota refresh in chat",
+  "description": "Fix stale text-chat free quota display/decision state after a free turn completes in the current chat session.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend,backend,shared",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-09-23",
+  "completedAt": "2026-09-23",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.business.wallet-payment",
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.business.conversation-generation",
+        "backend.business.wallet-payment",
+        "shared.business.conversation-contracts",
+        "shared.business.wallet-payment-contracts"
+      ]
+    }
+  }
+}

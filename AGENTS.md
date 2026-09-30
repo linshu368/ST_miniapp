@@ -78,6 +78,7 @@
 ### 4. 数据库与环境
 
 - test 与 production 不保证同构，必须明确当前操作环境；不得用测试库结论代替生产实况。
+- 新建表、视图、物化视图或数据库函数前，必须按 `.trellis/spec/database/supabase/schema-and-object-conventions.md` 判断八域归属，并在任务 PRD/design 中记录业务不变量、权威写入方、生命周期、运行时消费者和跨 schema 依赖；归属未完成不得创建 migration，也不得把对象暂放 `public`。
 - `packages/shared/migrations/` 是唯一 migration 源，不得创建 `supabase/migrations/` 平行来源或改写历史 migration。
 - migration 一次执行一个文件，记录前后 shape、权限/RLS、关键读写、锁/容量和回滚。
 - Supabase MCP 只允许在确认连接目标后执行只读结构采集；禁止读取业务行或将敏感导出提交 Git。

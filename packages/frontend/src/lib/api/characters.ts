@@ -75,7 +75,10 @@ function persistCharacters(sort: LobbySort, data: GetCharactersData): void {
 
 // ==== React Query hooks（业务层唯一入口）====
 
-export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT) {
+export function useCharactersQuery(
+  sort: LobbySort = DEFAULT_LOBBY_SORT,
+  options: { skipMountRefetch?: boolean } = {}
+) {
   return useQuery<GetCharactersData>({
     queryKey: characterKeys.list(sort),
     queryFn: () => fetchCharacters(sort),
@@ -83,7 +86,7 @@ export function useCharactersQuery(sort: LobbySort = DEFAULT_LOBBY_SORT) {
     // Persisted data keeps the lobby instant, but every mount must reconcile with
     // the database so reordering, delisting, and archival appear immediately.
     staleTime: 0,
-    refetchOnMount: 'always',
+    refetchOnMount: options.skipMountRefetch ? false : 'always',
     gcTime: CHARACTER_CACHE_MAX_AGE_MS,
   });
 }

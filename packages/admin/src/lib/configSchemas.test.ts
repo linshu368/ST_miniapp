@@ -48,6 +48,21 @@ describe('LlmPricingConfigSchema', () => {
   });
 });
 
+describe('VIP media config registration', () => {
+  it('does not expose removed advanced image configs', () => {
+    expect(managedConfigKeys.some((key) => key.startsWith('image_advanced_'))).toBe(false);
+  });
+
+  it('bounds media free-trial limits', () => {
+    const key = 'media_feature_free_trial_limit';
+
+    expect(configSchemas[key].safeParse(1).success).toBe(true);
+    expect(configSchemas[key].safeParse(100).success).toBe(true);
+    expect(configSchemas[key].safeParse(0).success).toBe(false);
+    expect(configSchemas[key].safeParse(101).success).toBe(false);
+  });
+});
+
 describe('recharge page config registration', () => {
   it('exposes the recharge page in the managed config directory with a valid default', () => {
     const key = 'miniapp_recharge_page_config';

@@ -1,15 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, X } from 'lucide-react';
-import type { ChatMessage } from '@miniapp/shared';
-import { useQueryClient } from '@tanstack/react-query';
+import { TEXT_POSTPROCESS_LIMITS, type ChatMessage } from '@miniapp/shared';
+import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
-import { ChatComposer } from '@/components/chat/chat-composer';
+import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-composer';
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatMessageImageFooter } from '@/components/chat/chat-message-image';
 import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
+import { formatMediaBillingPreview } from '@/components/chat/media-billing-label';
 import { getChatReplyPresentation } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
@@ -20,6 +21,7 @@ import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatReplayBinding, useChatSession } from '@/hooks/use-chat-session';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useCharacterQuery } from '@/lib/api/characters';
+import { useTextPostprocessVersions } from '@/lib/api/text-postprocess';
 import { fetchConversationPage, resolveSessionTitle } from '@/lib/api/conversations';
 import {
   toImageMap,
@@ -29,7 +31,7 @@ import {
   useSessionImagesQuery,
 } from '@/lib/api/images';
 import { useModelCatalogQuery } from '@/lib/api/models';
-import { paymentKeys } from '@/lib/api/payment';
+import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import {
   toVoiceMap,
@@ -38,6 +40,17 @@ import {
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
 import { customVoicePath } from '@/lib/chat-entry';
+import {
+  choiceButtonsDisabled,
+  emptyChoiceLock,
+  markChoiceAwaitingConfirmation,
+  settleChoiceLock,
+  tryAdoptChoice,
+  type ChoiceLockState,
+} from '@/lib/text-postprocess/choice-gate';
+import { planMessageReply } from '@/lib/text-postprocess/reply-plan';
+import { useUserProfileStore } from '@/stores/user-profile-store';
+import { returnToLobby } from '@/lib/lobby-return';
 import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
@@ -45,18 +58,28 @@ import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const router = useRouter();
-  const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState('');
   const [earlier, setEarlier] = useState<ChatMessage[]>([]);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [hasMoreEarlier, setHasMoreEarlier] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const choiceLockRef = useRef<ChoiceLockState>(emptyChoiceLock());
+  const [choiceLock, setChoiceLock] = useState<ChoiceLockState>(emptyChoiceLock());
+  const displayName = useUserProfileStore((state) => state.displayName);
 
   const session = useChatSession(characterId);
   const { activeSessionId, returnTo } = session;
   const modelCatalogQuery = useModelCatalogQuery();
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
+  const selectedModelUsesFreeQuota = useMemo(() => {
+    const catalog = modelCatalogQuery.data?.catalog;
+    if (!catalog || !selectedModelId) return null;
+    return (
+      catalog.tiers.flatMap((tier) => tier.models).find((model) => model.id === selectedModelId)
+        ?.is_free ?? null
+    );
+  }, [modelCatalogQuery.data?.catalog, selectedModelId]);
 
   useChatReplayBinding({
     characterId,
@@ -69,8 +92,12 @@ export default function SelfHostedChatPage() {
     [earlier, session.conversationQuery.data?.messages]
   );
 
-  const goBack = useCallback(() => router.push('/'), [router]);
+  const goBack = useCallback(() => returnToLobby((href) => router.push(href)), [router]);
   useTelegramBackButton(goBack);
+
+  useEffect(() => {
+    router.prefetch('/');
+  }, [router]);
 
   const restoreSendContent = useCallback((content: string) => {
     setDraft((current) => (current.trim() ? current : content));
@@ -82,6 +109,7 @@ export default function SelfHostedChatPage() {
   const {
     abort,
     canRegenerate,
+    cancelling,
     generating,
     lastMessage,
     messages,
@@ -97,6 +125,7 @@ export default function SelfHostedChatPage() {
     characterName: character?.name,
     sessionId: activeSessionId,
     selectedModelId,
+    selectedModelUsesFreeQuota,
     persistedMessages: persisted,
     returnTo,
     onSessionGone: session.abandonSession,
@@ -144,21 +173,15 @@ export default function SelfHostedChatPage() {
     [sessionImagesQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
-  const voicePriceLabel = voiceConfigQuery.data?.billing?.enabled
-    ? voiceConfigQuery.data?.billing?.price_label
-    : '';
-
-  useEffect(() => {
-    const charged = sessionVoiceQuery.data?.audio.some((item) => item.credits_charged > 0);
-    if (charged) void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-  }, [queryClient, sessionVoiceQuery.data]);
-
-  useEffect(() => {
-    const charged = sessionImagesQuery.data?.images.some(
-      (item) => (item.current?.credits_charged ?? 0) > 0
-    );
-    if (charged) void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-  }, [queryClient, sessionImagesQuery.data]);
+  const voicePriceLabel = formatMediaBillingPreview(
+    voiceConfigQuery.data?.next_billing,
+    voiceConfigQuery.isFetching || generateVoice.isPending,
+    voiceConfigQuery.isError
+  );
+  const freeQuota = useCharacterFreeQuotaQuery(characterId);
+  const freeRoundActive = Boolean(
+    freeQuota.data && !freeQuota.data.exhausted && selectedModelUsesFreeQuota
+  );
 
   /**
    * 哪些消息能生成语音。turn_index > 0 排掉开场白，status 排掉正在写和没写完的——
@@ -197,6 +220,70 @@ export default function SelfHostedChatPage() {
     [generateVoice, returnTo, router, setStreamError]
   );
 
+  const versionStates = useTextPostprocessVersions(messages);
+  const choiceLimit = Math.min(MAX_USER_INPUT_LENGTH, TEXT_POSTPROCESS_LIMITS.maxOptionUnits);
+  const choiceGates = useMemo(
+    () => ({
+      generating,
+      serverBusy,
+      sessionReady: session.ready,
+    }),
+    [generating, serverBusy, session.ready]
+  );
+
+  const commitChoiceLock = useCallback((next: ChoiceLockState) => {
+    choiceLockRef.current = next;
+    setChoiceLock(next);
+  }, []);
+
+  useEffect(() => {
+    commitChoiceLock(emptyChoiceLock());
+  }, [activeSessionId, commitChoiceLock]);
+
+  useEffect(() => {
+    const next = settleChoiceLock(choiceLockRef.current, {
+      messages,
+      refreshing: generating || session.conversationQuery.isFetching,
+      querySettled: session.conversationQuery.isSuccess,
+      dataUpdatedAt: session.conversationQuery.dataUpdatedAt,
+    });
+    if (next === choiceLockRef.current) return;
+    commitChoiceLock(next);
+  }, [
+    activeSessionId,
+    commitChoiceLock,
+    generating,
+    messages,
+    session.conversationQuery.dataUpdatedAt,
+    session.conversationQuery.isFetching,
+    session.conversationQuery.isSuccess,
+    choiceLock,
+  ]);
+
+  const handleChoice = useCallback(
+    (message: ChatMessage, choice: ReplyChoicePayload) => {
+      const adopted = tryAdoptChoice(choiceLockRef.current, {
+        message,
+        messages,
+        text: choice.text,
+        gates: choiceGates,
+        maxLength: choiceLimit,
+        baselineUpdatedAt: session.conversationQuery.dataUpdatedAt,
+      });
+      if (!adopted.text) return;
+      // 先同步占用，再进入 runTurn。同一轮事件里的第二次点击读到的是已占用状态。
+      choiceLockRef.current = adopted.state;
+      setChoiceLock(adopted.state);
+      void runTurn({ mode: 'send', content: adopted.text }).finally(() => {
+        const next = markChoiceAwaitingConfirmation(choiceLockRef.current);
+        if (next === choiceLockRef.current) return;
+        choiceLockRef.current = next;
+        setChoiceLock(next);
+      });
+    },
+    [choiceGates, choiceLimit, messages, runTurn, session.conversationQuery.dataUpdatedAt]
+  );
+
   const handleSend = () => {
     const content = draft.trim();
     if (!content) return;
@@ -232,6 +319,9 @@ export default function SelfHostedChatPage() {
         characterId={characterId}
         title={title}
         onOpenSessions={() => setSessionsOpen(true)}
+        returnTo={returnTo}
+        generating={generating}
+        freeRoundActive={freeRoundActive}
       />
 
       <ChatMessageList
@@ -242,10 +332,30 @@ export default function SelfHostedChatPage() {
         hasMore={hasMoreEarlier}
         loadingEarlier={loadingEarlier}
         onLoadEarlier={() => void handleLoadEarlier()}
-        awaitingFirstToken={generating && streaming?.assistantMessageId === null}
+        awaitingFirstToken={
+          generating &&
+          streaming?.assistantMessageId === null &&
+          !(
+            lastMessage?.role === 'assistant' &&
+            lastMessage.turn_index === streaming.turnIndex &&
+            lastMessage.revision === streaming.revision &&
+            lastMessage.request_id === streaming.requestId
+          )
+        }
         replyStalled={replyStalled}
         streamingMessageId={streaming?.assistantMessageId ?? null}
         quotaExhaustedNotice={quotaExhaustedNotice}
+        displayName={displayName}
+        replyPlanFor={(message) => planMessageReply(message, versionStates)}
+        choiceDisabledFor={(message) =>
+          choiceButtonsDisabled({
+            message,
+            messages,
+            gates: choiceGates,
+            lock: choiceLock,
+          })
+        }
+        onChoice={handleChoice}
         renderFooter={(message) => {
           const showVoice = canGenerateVoice(message);
           const messageImage = imageByMessage.get(message.id);
@@ -262,8 +372,12 @@ export default function SelfHostedChatPage() {
                       image: messageImage,
                       canGenerate: canCreateImage,
                       config: imageConfigQuery.data,
+                      billingRefreshing: imageConfigQuery.isFetching || createImage.isPending,
+                      billingError: imageConfigQuery.isError,
                       describe: async () => {
-                        const result = await describeImage.mutateAsync(message.id);
+                        const result = await describeImage.mutateAsync({
+                          messageId: message.id,
+                        });
                         return { draftId: result.draft_id, prompt: result.prompt_cn };
                       },
                       create: async (body) => {
@@ -306,6 +420,8 @@ export default function SelfHostedChatPage() {
                               })
                             : null,
                           priceLabel: voicePriceLabel,
+                          freeTrialLimit:
+                            voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
                           hints: {
                             overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
                             draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
@@ -323,7 +439,7 @@ export default function SelfHostedChatPage() {
                         label={
                           getChatReplyPresentation(message) === 'complete'
                             ? '换一个回复'
-                            : '重新回复'
+                            : '重新生成'
                         }
                       />
                     ) : null
@@ -354,12 +470,12 @@ export default function SelfHostedChatPage() {
         value={draft}
         onChange={setDraft}
         onSend={handleSend}
-        onStop={abort}
+        onStop={() => void abort()}
+        cancelling={cancelling}
         generating={generating}
         disabled={!session.ready || serverBusy}
         leftSlot={
           <ChatToolsSheet
-            returnTo={returnTo}
             onCreateConversation={session.openNewConversation}
             creating={session.createConversation.isPending}
           />

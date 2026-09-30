@@ -183,6 +183,40 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
     expect(lastCharge().calculatedAmount).toBe(50);
   });
 
+  it('replays the accepted payable snapshot instead of a later catalog price', async () => {
+    findLlmUsageCharge.mockResolvedValue(
+      pendingFixedCharge({
+        metadata: {
+          billing_mode: 'fixed_tier',
+          fixed_deduction: 999,
+          payable_credits: 999,
+          fixed_deduction_category: 'premium',
+        },
+      })
+    );
+    await reconcileCharge(
+      syncInput({
+        finishReason: 'stop',
+        assistantReply: '完整回复',
+        snapshot: billingSnapshot({
+          fixed_deduction: 48,
+          payable_credits: 48,
+          original_credits: 50,
+          discount_rate: 0.95,
+          wallet_policy: 'main_only',
+          vip_active: true,
+        }),
+      })
+    );
+    expect(lastCharge().calculatedAmount).toBe(48);
+    expect(lastCharge().metadata).toMatchObject({
+      payable_credits: 48,
+      fixed_deduction: 48,
+      wallet_policy: 'main_only',
+      original_credits: 50,
+    });
+  });
+
   it('charge failure does not finalize quota (keeps reserved for retry)', async () => {
     chargeLlmUsage.mockRejectedValueOnce(new Error('rpc failed'));
     await expect(reconcileCharge(syncInput({ finishReason: 'stop' }))).rejects.toThrow(

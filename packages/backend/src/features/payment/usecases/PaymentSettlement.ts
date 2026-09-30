@@ -15,8 +15,12 @@ import type { PaymentOrderStatus, PaymentSettlementSource } from '@miniapp/share
 import type { RequestLogger } from '../../../lib/logger.js';
 import { checkInviteFirstPaidReward } from '../../../lib/invite-rewards.js';
 import { insertUserNotification } from '../../../lib/notifications.js';
-import type { MiniappPaymentOrderRepository } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
+import type {
+  MiniappPaymentOrderRepository,
+  MiniappPaymentOrderRow,
+} from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
+import { paymentSuccessNotice } from '../domain/paymentNotice.js';
 import { observePaymentOrderSettled } from './PaymentOrderTelemetry.js';
 
 /** 同时接受 requestLogger()（带 reqId，路由用）和 createLogger()（脚本用）。 */
@@ -31,9 +35,19 @@ type SettlementOrders = Pick<
   'findById' | 'complete' | 'reopenExpired'
 >;
 
+/** credits 历史行在回填前仍认 credits_added；VIP 只认 fulfillment_applied。 */
+export function isOrderFulfilled(
+  order: Pick<MiniappPaymentOrderRow, 'product_type' | 'credits_added' | 'fulfillment_applied'>
+): boolean {
+  if (order.fulfillment_applied) return true;
+  return order.product_type !== 'vip' && order.credits_added;
+}
+
 /**
  * 已确认支付成功的订单入账。
- * 谁先确认由谁入账，重复由 complete_payment_order 的 credits_added 幂等兜住。
+ * 谁先确认由谁入账。重复履约由数据库订单锁和 fulfillment_applied 兜住。
+ * 邀请是否算首次现金支付由数据库判定：已履约订单认 fulfillment_applied，
+ * credits 历史行在回填前仍认 credits_added。同一订单重放由邀请日志去重。
  */
 export async function settlePaidOrder(
   input: {
@@ -67,9 +81,9 @@ export async function settlePaidOrder(
     return 'amount_mismatch';
   }
 
-  // 确认迟于 15 分钟到达时订单已被判过期，但钱是真收了：先放回 pending 再入账，
-  // 否则 complete_payment_order 会拒绝非 pending 订单，用户永久拿不到星尘。
-  if (order.status === 'expired' && !order.credits_added) {
+  // 确认迟于过期任务时订单已是 expired，但钱是真收了：先放回 pending 再履约。
+  // VIP 已履约订单的 credits_added 仍是 false，必须同时看 fulfillment_applied。
+  if (order.status === 'expired' && !isOrderFulfilled(order)) {
     await orders.reopenExpired(order.id);
     log.sys.warn(
       { event: 'payment.settle.expired_order_reopened', orderId: order.id, source },
@@ -77,6 +91,7 @@ export async function settlePaidOrder(
     );
   }
 
+  const started = Date.now();
   try {
     const completed = await orders.complete(order.id, input.providerTransactionId, source);
     // 终态事件是非关键观测：必须在 complete 成功之后触发，且不得 delay/回滚入账。
@@ -98,12 +113,12 @@ export async function settlePaidOrder(
     }
     if (order.status !== 'completed') {
       try {
-        const totalCredits = order.credits_amount + order.bonus_credits;
+        const notice = paymentSuccessNotice(order);
         await insertUserNotification({
           userId: order.user_id,
           category: 'system',
-          title: '星尘充值到账',
-          body: `订单 ${order.id} 已完成，${totalCredits} 星尘已到账。`,
+          title: notice.title,
+          body: notice.body,
         });
       } catch (notificationError) {
         log.sys.error(
@@ -121,8 +136,15 @@ export async function settlePaidOrder(
       {
         event: 'payment.settle.completed',
         orderId: order.id,
+        userId: order.user_id,
         source,
+        productType: order.product_type,
+        planId: order.product_id,
         amountCents: order.amount_cents,
+        fulfillmentApplied: completed.fulfillment_applied,
+        vipValidUntilBefore: order.vip_valid_until,
+        vipValidUntilAfter: completed.vip_valid_until,
+        durationMs: Date.now() - started,
       },
       '支付订单完成'
     );
