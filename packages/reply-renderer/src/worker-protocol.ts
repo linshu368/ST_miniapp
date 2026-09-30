@@ -10,11 +10,18 @@ export interface WorkerRequest {
 }
 
 export interface WorkerResponse {
+  type: 'result';
   jobId: number;
   generation: number;
   result: TextPostprocessApplyResult;
   css: string;
 }
+
+export interface WorkerReady {
+  type: 'ready';
+}
+
+export type WorkerMessage = WorkerReady | WorkerResponse;
 
 export interface WorkerOutcome {
   result: TextPostprocessApplyResult;

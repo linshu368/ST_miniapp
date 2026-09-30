@@ -22,8 +22,9 @@ import {
   resetReplyWorkerForTests,
   runReplyPostprocess,
   setWorkerFactoryForTests,
+  WORKER_START_TIMEOUT_MS,
 } from '../worker-scheduler';
-import type { WorkerRequest } from '../worker-protocol';
+import type { WorkerMessage, WorkerRequest } from '../worker-protocol';
 
 const sourceRoot = path.join(process.cwd(), 'src');
 
@@ -59,6 +60,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   resetReplyWorkerForTests();
   vi.unstubAllGlobals();
@@ -77,6 +79,7 @@ describe('reply renderer boundaries', () => {
     expect(mainSource).not.toContain('css-tree');
     expect(mainSource).not.toContain('compileTextPostprocessSource');
     expect(POSTPROCESS_TIMEOUT_MS).toBe(1000);
+    expect(WORKER_START_TIMEOUT_MS).toBe(5000);
   });
 
   it('does not import app packages, parsers, or dangerouslySetInnerHTML', () => {
@@ -421,6 +424,36 @@ describe('choice and details interaction', () => {
 });
 
 describe('worker lifecycle', () => {
+  it('starts the message budget only after a slow worker becomes ready', async () => {
+    setWorkerFactoryForTests(
+      () => new SlowStartingWorker(80, 'see alphaInline') as unknown as Worker
+    );
+    const started = Date.now();
+    const result = await runReplyPostprocess({
+      content: 'see alphaInline',
+      artifact: mustValidate({ schema_version: 1, policy_version: 1, rules: [inlineRule()] }),
+      messageKey: 'cold-start',
+      timeoutMs: 40,
+    }).promise;
+    expect(result.result.status).toBe('applied');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(70);
+  });
+
+  it('fails open when a worker never becomes ready', async () => {
+    vi.useFakeTimers();
+    setWorkerFactoryForTests(() => new NeverReadyWorker() as unknown as Worker);
+    const pending = runReplyPostprocess({
+      content: 'see alphaInline',
+      artifact: mustValidate({ schema_version: 1, policy_version: 1, rules: [inlineRule()] }),
+      messageKey: 'startup-timeout',
+    }).promise;
+    await vi.advanceTimersByTimeAsync(WORKER_START_TIMEOUT_MS);
+    await expect(pending).resolves.toMatchObject({
+      result: { status: 'original', reason: 'WORKER_START_TIMEOUT' },
+    });
+    vi.useRealTimers();
+  });
+
   it('terminates a slow task, ignores its late result, and runs the next task on a new worker', async () => {
     const events: string[] = [];
     let created = 0;
@@ -460,7 +493,7 @@ describe('worker lifecycle', () => {
     const content = `SENTINEL ${'a'.repeat(28)}!`;
     const started = Date.now();
     const view = render(element(content, multiSlowArtifact()));
-    await waitForState(view.container, 'original');
+    await waitForState(view.container, 'original', 4_000);
     expect(
       view.container
         .querySelector('[data-reply-state="original"]')
@@ -543,10 +576,17 @@ function element(
   );
 }
 
-async function waitForState(container: HTMLElement, state: string): Promise<void> {
-  await waitFor(() => {
-    expect(container.querySelector(`[data-reply-state="${state}"]`)).not.toBeNull();
-  });
+async function waitForState(
+  container: HTMLElement,
+  state: string,
+  timeout?: number
+): Promise<void> {
+  await waitFor(
+    () => {
+      expect(container.querySelector(`[data-reply-state="${state}"]`)).not.toBeNull();
+    },
+    { timeout }
+  );
 }
 
 function inlineRule(): CompiledTextPostprocessRule {
@@ -750,12 +790,17 @@ class LateWorker {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
 
-  constructor(private events: string[]) {}
+  constructor(private events: string[]) {
+    queueMicrotask(() => {
+      this.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+    });
+  }
 
   postMessage(data: WorkerRequest): void {
     setTimeout(() => {
       this.onmessage?.({
         data: {
+          type: 'result',
           jobId: data.jobId,
           generation: data.generation,
           css: '',
@@ -773,6 +818,52 @@ class LateWorker {
   terminate(): void {
     this.events.push('terminated');
   }
+}
+
+class SlowStartingWorker {
+  onmessage: ((event: MessageEvent<WorkerMessage>) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  private terminated = false;
+
+  constructor(
+    delayMs: number,
+    private readonly content: string
+  ) {
+    setTimeout(() => {
+      if (!this.terminated) this.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+    }, delayMs);
+  }
+
+  postMessage(data: WorkerRequest): void {
+    queueMicrotask(() => {
+      if (this.terminated) return;
+      this.onmessage?.({
+        data: {
+          type: 'result',
+          jobId: data.jobId,
+          generation: data.generation,
+          css: '',
+          result: {
+            status: 'applied',
+            segments: [{ type: 'text', text: this.content, start: 0, end: this.content.length }],
+            skipped_rules: [],
+            stats: { matches: 0, slots: 0, nodes: 0, text_units: this.content.length },
+          },
+        },
+      } as unknown as MessageEvent<WorkerMessage>);
+    });
+  }
+
+  terminate(): void {
+    this.terminated = true;
+  }
+}
+
+class NeverReadyWorker {
+  onmessage: ((event: MessageEvent<WorkerMessage>) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  postMessage(): void {}
+  terminate(): void {}
 }
 
 function visibleText(container: HTMLElement): string {
