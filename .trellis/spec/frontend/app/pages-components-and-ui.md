@@ -18,6 +18,8 @@
 
 SSE 流消息是临时客户端状态：`start` 建占位，`delta` 追加增量（不是替换累计包），`done` 用服务端终态收敛并更新/invalidate cache，`error` 保留可恢复 UI。发送中阻止同会话重复提交；用户取消与网络断开要区分。
 
+带回复后处理版本的消息在流式阶段仍走稳定的安全 Markdown 增量展示，不为每个 delta 重跑后处理 Worker 或替换整棵富文本 DOM；服务端终态收敛后再一次性挂载 `ReplyRenderer` 并开放可信交互。这样既保留原有打字机效果，也避免流式按钮从禁用态残留到终态。
+
 ## 个人中心、支付、通知与客服
 
 - Profile 组合 settings/wallet/checkin/invite/community/support unread，并展示总额、专项余额和 VIP 入口。VIP 页与充值页的价格、权益和剩余天数只读服务端契约，不写死折扣或金额。编辑成功同时更新 React Query cache 与相应 Zustand 展示镜像，避免双状态漂移。

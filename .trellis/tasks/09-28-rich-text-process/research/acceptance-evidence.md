@@ -51,3 +51,10 @@
 - 已核验 Preview 已切换至含 `b0f558df` 的新资源版本：完整示例初始高亮/状态效果正确；本地流式完成后效果正确；点击“重置”后仍保留高亮/状态效果。期间一次规则读取短暂失败，使用页面既有“请求恢复”后读取成功；未执行保存、发布、回滚或环境切换。此项通过只证明受控 TEST Preview 的读与本地模拟，不证明远端写入、权限或 Production 行为。
 - 尚未完成合法 Demo 渲染画面的像素级对照；未以实际 1440×900、375×844、320px 视口逐一验收；未覆盖 viewer、环境切换、未保存/已保存草稿、历史分页/回滚、CAS/超时/未知结果等需避免真实写入或需额外身份的场景。T6R 保持 Doing，T8 不推进。
 - T7 记为主链路真机验收通过、覆盖记录待最终收口；Production 迁移与发布为独立门禁，T8 文档交付待完成。
+
+## MiniApp 流式稳定与终态选项回归（2026-09-30，本地）
+
+- 用户在 TEST 真机发现：带后处理版本的回复流式期间已出现正文持续抖动，终态选项未能点击发送。截图证明高亮和状态交互已应用，但截图本身不提供消息 `status`、`finish_reason` 或 DOM `disabled` 属性，因此不把图片推断成服务端终态事实。
+- 代码复现确认流式 delta 会持续改变 `ReplyRenderer` 签名，使渲染在 pending/applied 间替换并重复调度 Worker。修复后流式阶段使用既有 `ChatMarkdown`，服务端终态才首次挂载 `ReplyRenderer`；不改规则、artifact、发送 API 或选项同步锁。
+- TEST Admin 只读核对：正式富文本 v4 的选项规则为成对 `\[choice\]([\s\S]+?)\[/choice\]` 和 `<button>$1</button>`；System Instructions v3 要求两个成对选项。未执行保存、发布、回滚或模型请求。
+- 回归测试从红到绿：流式阶段没有 `ReplyRenderer`/choice button；同一气泡切换到终态后可信按钮启用，双击只接受一次。Frontend 36 文件/237 测试、typecheck、lint、production build、全仓 typecheck、imports lint、Prettier 和 `git diff --check` 均通过。真实 TEST 部署与 Telegram WebView 复验仍待提交、推送和部署后执行；Production 未触及。

@@ -160,7 +160,9 @@ function AssistantReplyBody({
 }) {
   const [node, setNode] = useState<HTMLDivElement | null>(null);
   const onScreen = useStayOnScreen(node, plan.kind === 'renderer');
-  const showRenderer = plan.kind === 'renderer' && onScreen;
+  // 流式增量必须保留原来的稳定 Markdown DOM；逐片重跑 Worker 会让已出现正文
+  // 在 pending/applied 之间整棵替换。终态再一次性挂 renderer，交互也只此时开放。
+  const showRenderer = plan.kind === 'renderer' && onScreen && !streaming;
 
   return (
     <div ref={setNode}>

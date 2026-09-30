@@ -130,38 +130,40 @@ async function mount(streaming = false) {
   node = document.createElement('div');
   document.body.append(node);
   root = createRoot(node);
-  await act(async () => {
-    root?.render(
-      React.createElement(ChatMessageBubble, {
-        message: MESSAGE,
-        characterName: 'Test',
-        characterAvatarUrl: null,
-        userAvatarUrl: null,
-        replyPlan: plan,
-        displayName: 'Alex {{user}}',
-        choiceDisabled: false,
-        streaming,
-        onChoice: (choice) => {
-          const adopted = tryAdoptChoice(lock, {
-            message: MESSAGE,
-            messages: [MESSAGE],
-            text: choice.text,
-            gates: { generating: false, serverBusy: false, sessionReady: true },
-            baselineUpdatedAt: 10,
-          });
-          lock = adopted.state;
-          if (adopted.text) sent.push(adopted.text);
-        },
-      })
-    );
-  });
+  const render = async (nextStreaming: boolean) => {
+    await act(async () => {
+      root?.render(
+        React.createElement(ChatMessageBubble, {
+          message: MESSAGE,
+          characterName: 'Test',
+          characterAvatarUrl: null,
+          userAvatarUrl: null,
+          replyPlan: plan,
+          displayName: 'Alex {{user}}',
+          choiceDisabled: false,
+          streaming: nextStreaming,
+          onChoice: (choice) => {
+            const adopted = tryAdoptChoice(lock, {
+              message: MESSAGE,
+              messages: [MESSAGE],
+              text: choice.text,
+              gates: { generating: false, serverBusy: false, sessionReady: true },
+              baselineUpdatedAt: 10,
+            });
+            lock = adopted.state;
+            if (adopted.text) sent.push(adopted.text);
+          },
+        })
+      );
+    });
+  };
+  await render(streaming);
   const deadline = Date.now() + 3000;
-  while (!node.querySelector('button') && Date.now() < deadline)
+  while (!node.querySelector(streaming ? '.reply-markdown' : 'button') && Date.now() < deadline)
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
-  expect(node.querySelector('button')).not.toBeNull();
-  return { sent, getLock: () => lock };
+  return { sent, getLock: () => lock, render };
 }
 
 describe('stored artifact -> MiniApp bubble -> actual ReplyRenderer', () => {
@@ -192,11 +194,25 @@ describe('stored artifact -> MiniApp bubble -> actual ReplyRenderer', () => {
       }).text
     ).toBeNull();
   });
-  it('keeps the same artifact while streaming and disables its actual button', async () => {
+  it('keeps streaming on the stable Markdown path, then enables the terminal choice once', async () => {
     const view = await mount(true);
-    const button = node.querySelector('button') as HTMLButtonElement | null;
-    expect(button?.disabled).toBe(true);
-    button?.click();
+    expect(node.querySelector('[data-reply-state]')).toBeNull();
+    expect(node.querySelector('button')).toBeNull();
     expect(view.sent).toEqual([]);
+
+    await view.render(false);
+    const deadline = Date.now() + 3000;
+    while (!node.querySelector('button') && Date.now() < deadline) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    }
+    const button = node.querySelector('button') as HTMLButtonElement | null;
+    expect(button?.disabled).toBe(false);
+    await act(async () => {
+      button?.click();
+      button?.click();
+    });
+    expect(view.sent).toEqual(['Yes {{user}}']);
   });
 });
