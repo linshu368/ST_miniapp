@@ -22,7 +22,7 @@ import { VipPlanCard } from '@/components/payment/vip-plan-card';
 import { VipBenefitArt } from '@/components/vip/vip-benefit-art';
 import { Button } from '@/components/ui/button';
 import { ApiClientError } from '@/lib/api/client';
-import { WeChatPayIcon } from '@/components/icons';
+import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { formatNumber, formatYuanShort } from '@/lib/utils/payment';
 import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
@@ -33,6 +33,7 @@ import {
 } from '@/lib/payment/flow-telemetry';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import { cn } from '@/lib/utils';
+import { paymentTypeLabel } from '@/lib/utils/payment';
 import {
   checkoutButtonLabel,
   formatDiscountLabel,
@@ -40,6 +41,8 @@ import {
   selectionKey,
   vipMembershipSummary,
 } from '@/lib/vip/presentation';
+
+const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
 
 export default function VipPage() {
   const router = useRouter();
@@ -50,7 +53,7 @@ export default function VipPage() {
   const vipQuery = useVipStatusQuery();
   const createOrder = useCreatePaymentOrderMutation();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [paymentType] = useState<PaymentType>('wxpay');
+  const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
@@ -298,10 +301,40 @@ export default function VipPage() {
           </p>
         ) : null}
         <div className="flex items-center gap-2.5">
-          <span className="flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-2 text-[11px] font-semibold text-emerald-400">
-            <WeChatPayIcon className="h-4 w-4" aria-hidden />
-            微信支付
-          </span>
+          <div role="radiogroup" aria-label="支付方式" className="flex shrink-0 gap-2">
+            {PAYMENT_TYPES.map((type) => {
+              const active = paymentType === type;
+              const isAlipay = type === 'alipay';
+              const Icon = isAlipay ? AlipayIcon : WeChatPayIcon;
+
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    whisper();
+                    setPaymentType(type);
+                    if (selection) {
+                      capturePaymentMethodSelected({ planId: selection.id, paymentType: type });
+                    }
+                  }}
+                  className={cn(
+                    'flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all',
+                    active
+                      ? isAlipay
+                        ? 'border-[#1677FF] bg-[#1677FF]/15 text-[#1677FF]'
+                        : 'border-[#09B83E] bg-[#09B83E]/15 text-[#09B83E]'
+                      : 'border-border bg-card text-muted-foreground hover:bg-secondary'
+                  )}
+                >
+                  <Icon className="h-4 w-4" aria-hidden />
+                  {paymentTypeLabel(type)}
+                </button>
+              );
+            })}
+          </div>
           <Button
             disabled={
               !selection || !selection.available || createOrder.isPending || plansQuery.isError

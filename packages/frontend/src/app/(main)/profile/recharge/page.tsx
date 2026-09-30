@@ -61,7 +61,7 @@ import {
   selectionKey,
 } from '@/lib/vip/presentation';
 
-const PAYMENT_TYPES: PaymentType[] = ['wxpay'];
+const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
 
 export default function RechargePage() {
   return (
@@ -98,7 +98,7 @@ function RechargePageContent() {
   }, []);
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [paymentType, setPaymentType] = useState<PaymentType>('wxpay');
+  const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const noticeChoiceRef = useRef<'invite' | 'recharge' | null>(null);
   const [paymentPromptOpen, setPaymentPromptOpen] = useState(false);
