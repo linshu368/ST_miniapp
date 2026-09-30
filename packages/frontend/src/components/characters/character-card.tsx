@@ -144,8 +144,10 @@ export function CharacterCard({
   );
 
   return (
-    <FeaturedFrame featured={character.is_featured} className="h-full rounded-[18px]">
-      {card}
-    </FeaturedFrame>
+    <div className="h-full" data-lobby-character-id={character.id}>
+      <FeaturedFrame featured={character.is_featured} className="h-full rounded-[18px]">
+        {card}
+      </FeaturedFrame>
+    </div>
   );
 }
