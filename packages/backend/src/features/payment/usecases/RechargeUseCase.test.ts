@@ -210,7 +210,7 @@ describe('RechargeUseCase product snapshots', () => {
       })
     );
     expect(gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '6.00', productName: '星尘' })
+      expect.objectContaining({ amount: '6.00', productName: '秘境' })
     );
   });
 
