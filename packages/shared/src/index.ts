@@ -32,6 +32,15 @@ export * from './api/provider-routing';
 export * from './api/notifications';
 export * from './api/support';
 export * from './api/telemetry';
+export * from './api/text-postprocess';
+export {
+  applyTextPostprocess,
+  prepareSlotTransport,
+  resolveTransportedTextNodes,
+  resolveTrustedTree,
+  serializeScopedCss,
+  validateCompiledArtifact,
+} from './text-postprocess/runtime';
 export * from './api/admin-model-test';
 export * from './config/database';
 export * from './png-parser';

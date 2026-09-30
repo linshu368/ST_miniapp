@@ -7,6 +7,7 @@ export type AdminViewKey =
   | 'invite_program'
   | 'image_generation_config'
   | 'vip_strategy'
+  | 'text_postprocess'
   | 'characters'
   | 'announcements'
   | 'releases';
@@ -96,6 +97,7 @@ export function resolveAdminMenuSelection(key: string): {
     key === 'invite_program' ||
     key === 'image_generation_config' ||
     key === 'vip_strategy' ||
+    key === 'text_postprocess' ||
     key === 'characters' ||
     key === 'announcements' ||
     key === 'releases'

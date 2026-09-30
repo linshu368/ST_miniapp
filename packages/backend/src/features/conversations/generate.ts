@@ -196,6 +196,7 @@ export async function runConversationTurn(
         user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
         assistant_message_id: turn.historyId,
         revision: turn.revision,
+        postprocess_version: turn.postprocessVersion,
       });
     };
 
@@ -307,6 +308,7 @@ export async function runConversationTurn(
         sessionId: session.id,
         turnIndex: turn.turnIndex,
         revision: turn.revision,
+        postprocessVersion: turn.postprocessVersion,
         mode: mode.kind,
         status,
         model: model.openRouterModelId,
@@ -371,6 +373,7 @@ interface StartedTurn {
   historyId: string;
   revision: number;
   userInput: string;
+  postprocessVersion: number;
 }
 
 async function startTurn(
@@ -395,6 +398,7 @@ async function startTurn(
       historyId: started.historyId,
       revision: started.revision,
       userInput: started.userContent,
+      postprocessVersion: started.postprocessVersion,
     };
   }
 
@@ -410,6 +414,7 @@ async function startTurn(
     historyId: started.historyId,
     revision: started.revision,
     userInput: started.userContent,
+    postprocessVersion: started.postprocessVersion,
   };
 }
 

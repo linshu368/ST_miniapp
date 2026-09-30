@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   AdminImageTextModelTestRequestSchema,
   fail,
@@ -7,6 +7,7 @@ import {
   type AdminImageTextModelTestRequest,
   type AdminImageTextModelTestResponse,
 } from '@miniapp/shared';
+import { authorizeAdminOperator } from '../features/admin-access/session.js';
 import { config } from '../platform/config.js';
 import { getSupabaseClient } from '../lib/supabase.js';
 
@@ -71,53 +72,6 @@ function serializeBody(request: FastifyRequest): BodyInit | undefined {
   if (typeof request.body === 'string') return request.body;
   if (Buffer.isBuffer(request.body)) return request.body as unknown as BodyInit;
   return JSON.stringify(request.body);
-}
-
-/**
- * 校验请求携带的 admin session 属于当前环境的 owner/operator。
- * 校验失败时已向 reply 写入 401/403，调用方直接 return reply 即可。
- */
-async function authorizeAdminOperator(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<boolean> {
-  const authorization = request.headers.authorization;
-  const token = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!token) {
-    await reply.status(401).send({ message: 'Admin session is required' });
-    return false;
-  }
-
-  const supabase = getSupabaseClient();
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser(token);
-  if (userError || !user) {
-    await reply.status(401).send({ message: 'Admin session is invalid' });
-    return false;
-  }
-
-  const { data: adminUser, error: adminError } = await supabase
-    .schema('admin')
-    .from('admin_users')
-    .select('role,can_access_test,can_access_prod')
-    .eq('user_id', user.id)
-    .maybeSingle();
-  const canAccessEnvironment =
-    config.database.target === 'production'
-      ? adminUser?.can_access_prod
-      : adminUser?.can_access_test;
-  if (
-    adminError ||
-    !adminUser ||
-    !['owner', 'operator'].includes(adminUser.role) ||
-    !canAccessEnvironment
-  ) {
-    await reply.status(403).send({ message: 'Operator access is required' });
-    return false;
-  }
-  return true;
 }
 
 /** 只认文件本体的魔数，不信客户端声明的 MIME（与 character-assets 的 PNG 签名校验同思路）。 */

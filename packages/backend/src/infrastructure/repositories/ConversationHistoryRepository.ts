@@ -13,10 +13,10 @@
 // 第 3 段的实现见 features/generation/settle.ts 与 features/generation/sync-job.ts。
 // 用量元数据补齐 ≠ 结算完成：llm_billing_settled_at 有值才算扣费行、额度收口、金额回写都齐。
 
-import type { ChatMessage, ChatMessageStatus } from '@miniapp/shared';
+import { readPostprocessVersion, type ChatMessage, type ChatMessageStatus } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
 import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
-import { getDomainDb } from '../../lib/supabase.js';
+import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { throwConversationRpcError } from './conversation-errors.js';
 
 export const STREAMING_STALE_SECONDS = 120;
@@ -41,6 +41,8 @@ export interface ConversationHistoryRow {
   session_id: string;
   turn_index: number;
   revision: number;
+  /** 迁移未执行时视图没有这一列。缺失按 null，不用当前配置顶上。 */
+  postprocess_version?: number | null;
 }
 
 /** 请求时定价快照。回捞按此重建 charge，不重新定价。 */
@@ -83,6 +85,8 @@ export interface StartedHistoryTurn {
   revision: number;
   userContent: string;
   contextWindowStartTurn: number;
+  /** current-version RPC 实际写入的非空正式版本。 */
+  postprocessVersion: number;
 }
 
 export interface ConversationContext {
@@ -94,7 +98,7 @@ export interface ConversationContext {
 }
 
 export class ConversationHistoryRepository {
-  private readonly db = getDomainDb('experience');
+  constructor(private readonly db: DomainDb = getDomainDb('experience')) {}
 
   async startTurn(input: {
     sessionId: string;
@@ -104,32 +108,20 @@ export class ConversationHistoryRepository {
     maxContextTurns?: number;
     retainContextTurns?: number;
   }): Promise<StartedHistoryTurn> {
-    const { data, error } = await this.db
-      .rpc('start_chat_history_turn', {
-        p_session_id: input.sessionId,
-        p_user_content: input.userContent,
-        p_model: input.model,
-        p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
-        ...contextWindowRpcArgs(input),
-      })
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throwConversationRpcError(error, '创建对话轮次失败');
-
-    const result = data as StartedHistoryTurnRpc | null;
-    if (
-      typeof result?.turn_index !== 'number' ||
-      !result.history_id ||
-      typeof result.revision !== 'number'
-    ) {
-      throw new Error('创建对话轮次结果字段不完整');
-    }
-    return {
-      turnIndex: result.turn_index,
-      historyId: result.history_id,
-      revision: result.revision,
-      userContent: input.userContent,
-      contextWindowStartTurn: readWindowStart(result.context_window_start_turn),
+    const windowArgs = contextWindowRpcArgs(input);
+    const args = {
+      p_session_id: input.sessionId,
+      p_user_content: input.userContent,
+      p_model: input.model,
+      p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
+      ...windowArgs,
     };
+    const data = await this.callStartRpc({
+      rpc: 'start_chat_history_turn_with_current_postprocess',
+      args,
+      fallbackMessage: '创建对话轮次失败',
+    });
+    return mapStartedTurn(data, input.userContent);
   }
 
   async startRegeneration(input: {
@@ -140,33 +132,35 @@ export class ConversationHistoryRepository {
     maxContextTurns?: number;
     retainContextTurns?: number;
   }): Promise<StartedHistoryTurn> {
-    const { data, error } = await this.db
-      .rpc('start_chat_history_regeneration', {
-        p_session_id: input.sessionId,
-        p_turn_index: input.turnIndex ?? null,
-        p_model: input.model,
-        p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
-        ...contextWindowRpcArgs(input),
-      })
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throwConversationRpcError(error, '发起重生成失败');
-
+    const windowArgs = contextWindowRpcArgs(input);
+    const args = {
+      p_session_id: input.sessionId,
+      p_turn_index: input.turnIndex ?? null,
+      p_model: input.model,
+      p_stale_after_seconds: input.staleAfterSeconds ?? STREAMING_STALE_SECONDS,
+      ...windowArgs,
+    };
+    const data = await this.callStartRpc({
+      rpc: 'start_chat_history_regeneration_with_current_postprocess',
+      args,
+      fallbackMessage: '发起重生成失败',
+    });
     const result = data as (StartedHistoryTurnRpc & { user_content?: string }) | null;
-    if (
-      typeof result?.turn_index !== 'number' ||
-      !result.history_id ||
-      typeof result.revision !== 'number' ||
-      typeof result.user_content !== 'string'
-    ) {
+    if (typeof result?.user_content !== 'string') {
       throw new Error('发起重生成结果字段不完整');
     }
-    return {
-      turnIndex: result.turn_index,
-      historyId: result.history_id,
-      revision: result.revision,
-      userContent: result.user_content,
-      contextWindowStartTurn: readWindowStart(result.context_window_start_turn),
-    };
+    return mapStartedTurn(result, result.user_content);
+  }
+
+  /** 新 Backend 只调用事务内解析正式版本的 RPC；缺 migration 或配置异常必须拒绝开轮。 */
+  private async callStartRpc(input: {
+    rpc: string;
+    args: Record<string, unknown>;
+    fallbackMessage: string;
+  }): Promise<StartedHistoryTurnRpc> {
+    const result = await this.db.rpc(input.rpc, input.args).abortSignal(AbortSignal.timeout(5_000));
+    if (result.error) throwConversationRpcError(result.error, input.fallbackMessage);
+    return result.data as StartedHistoryTurnRpc;
   }
 
   async setPendingRequestId(historyId: string, requestId: string): Promise<void> {
@@ -559,6 +553,30 @@ interface StartedHistoryTurnRpc {
   history_id?: string;
   revision?: number;
   context_window_start_turn?: number;
+  postprocess_version?: number | null;
+}
+
+function mapStartedTurn(
+  result: StartedHistoryTurnRpc | null,
+  userContent: string
+): StartedHistoryTurn {
+  const postprocessVersion = readPostprocessVersion(result?.postprocess_version);
+  if (
+    typeof result?.turn_index !== 'number' ||
+    !result.history_id ||
+    typeof result.revision !== 'number' ||
+    postprocessVersion === null
+  ) {
+    throw new Error('创建对话轮次结果字段不完整');
+  }
+  return {
+    turnIndex: result.turn_index,
+    historyId: result.history_id,
+    revision: result.revision,
+    userContent,
+    contextWindowStartTurn: readWindowStart(result.context_window_start_turn),
+    postprocessVersion,
+  };
 }
 
 function contextWindowRpcArgs(input: { maxContextTurns?: number; retainContextTurns?: number }): {
@@ -633,6 +651,7 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
       error_code: null,
       finish_reason: null,
       model_id: null,
+      postprocess_version: null,
       created_at: row.created_at,
     },
     {
@@ -647,6 +666,7 @@ export function toChatMessages(row: ConversationHistoryRow): ChatMessage[] {
       error_code: toErrorCode(row.status),
       finish_reason: row.llm_finish_reason,
       model_id: row.model,
+      postprocess_version: readPostprocessVersion(row.postprocess_version),
       created_at: row.created_at,
     },
   ];
@@ -664,6 +684,7 @@ export function toOpeningMessage(sessionId: string, content: string, createdAt =
     error_code: null,
     finish_reason: null,
     model_id: null,
+    postprocess_version: null,
     created_at: createdAt,
   };
 }

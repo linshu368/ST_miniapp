@@ -27,6 +27,11 @@ export interface ChatMessage {
   finish_reason: string | null;
   /** 生成时的模型快照，仅 assistant 消息有值。改配置后历史输出仍可解释（总方案决策 10） */
   model_id: string | null;
+  /**
+   * 展示规则发布版本。缺失或 null 都表示这条消息继续用原来的 Markdown；
+   * 旧 producer 不写该字段时不能拿当前线上版本顶上。
+   */
+  postprocess_version?: number | null;
   created_at: string;
 }
 
@@ -180,6 +185,8 @@ export interface ConversationStreamStartEvent {
   user_message_id: string | null;
   assistant_message_id: string;
   revision: number;
+  /** 本轮开轮时绑定的规则版本。旧 start 事件没有该字段时按 null 解释。 */
+  postprocess_version?: number | null;
 }
 
 /** 增量：text 是本次新增的片段，不是累积全文 */
