@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "operation": "update",
+      "module_id": "frontend.business.character-lobby",
+      "target": ".trellis/spec/frontend/app/modules/business/character-lobby.md",
+      "expected_sha256": "708f8d37bfaecdbf61a2d4c49f88f6790f685ecb3fa9470acb2d66d7adf0e02e",
+      "content": "---\nmodule_id: frontend.business.character-lobby\ntitle: 大厅角色发现与收藏\nscope: frontend\ncategory: business\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/09-20-lobby-list-position-restore-plan/\nlast_verified_at: 2026-09-29\n---\n\n# 大厅角色发现与收藏\n\n## 职责与边界\n\n展示角色大厅、详情、推荐顺序、最新标记和收藏交互。\n\n## 当前状态\n\n大厅主入口和收藏状态已通过 React Query 接入 Backend。从大厅角色卡进入聊天前会记录一次同文档短生命周期返回快照，返回大厅时恢复排序、搜索词、已渲染角色 ID 顺序摘要、锚点卡和滚动位置；快照读入大厅组件 state 后立即清理共享存储，后续恢复只使用本次挂载持有的副本。收藏状态仍只读取 React Query/favorite cache。\n\n## 入口与调用者\n\n用户从主导航大厅进入、打开角色详情并跳转会话；聊天页挂载后预取大厅路由，聊天顶部返回和 Telegram BackButton 返回大厅时复用同一返回语义，系统 history 返回由进入前快照恢复现场。主导航主动点击大厅会清除旧快照，不触发恢复。\n\n## 涉及文件\n\n| 路径                                                     | 职责                         |\n| -------------------------------------------------------- | ---------------------------- |\n| `packages/frontend/src/app/(main)/page.tsx`              | 大厅页面                     |\n| `packages/frontend/src/components/characters/`           | 大厅卡片、详情与返回快照接线 |\n| `packages/frontend/src/components/chat/chat-top-bar.tsx` | 聊天顶部返回大厅入口         |\n| `packages/frontend/src/components/nav/bottom-nav.tsx`    | 主导航大厅主动入口           |\n| `packages/frontend/src/lib/api/characters.ts`            | 角色 query                   |\n| `packages/frontend/src/lib/api/favorites.ts`             | 收藏 query/mutation          |\n| `packages/frontend/src/lib/lobby-return.ts`              | 大厅返回快照 helper          |\n\n## 关键实现链路\n\n页面参数 → lobby/character query → 卡片渲染 → 进入聊天前写入一次性返回快照 → 聊天页预取 `/` → 聊天返回大厅 → Gallery 初始条件读取快照并立即清理共享存储、跳过一次强制 mount refetch → layout effect 以锚点/邻卡/scrollY 恢复 → 结束恢复态。收藏 mutation 与缓存失效仍走 favorites 现有链路。\n\n## 数据、契约与外部依赖\n\n消费 shared 角色/收藏契约与 Backend。\n\n## 关键节点与约束\n\n组件不得直接 fetch；空态、错误重试和图片降级需明确。返回快照只能保存 UI 条件、角色 ID 顺序摘要和定位标量，不保存完整角色 DTO、收藏状态、initData、token 或聊天正文；快照损坏、过期、刷新后 document token 不匹配或 sessionStorage 不可用时安全降级。\n\n## 验证方式\n\n`pnpm --filter @miniapp/frontend typecheck && pnpm --filter @miniapp/frontend test && pnpm --filter @miniapp/frontend lint && pnpm --filter @miniapp/frontend build`；人工 smoke 需覆盖推荐/最新/搜索、顶部返回/Telegram 返回/history 返回、锚点下架兜底与主导航主动进大厅不恢复。\n\n## 已知缺口与待核验项\n\n真实数据排序观感需上线环境观察。大厅当前仍非分页接口；返回快照保存已加载 ID 摘要以便后续 infinite query 分支复用，但本模块未新增后端分页。\n\n## 关联模块\n\n`backend.business.character-lobby`、`shared.business.character-lobby-contracts`。\n",
+      "change_summary": "Implemented one-shot lobby return restoration after entering chat, preserving UI conditions, loaded ID summary, anchor card and scroll position while keeping favorites in React Query.",
+      "evidence": [
+        ".trellis/tasks/09-20-lobby-list-position-restore-plan/prd.md",
+        ".trellis/tasks/09-20-lobby-list-position-restore-plan/design.md",
+        ".trellis/tasks/09-20-lobby-list-position-restore-plan/implement.md",
+        "packages/frontend/src/lib/lobby-return.ts",
+        "packages/frontend/src/components/characters/character-gallery.tsx",
+        "packages/frontend/src/components/characters/character-card.tsx",
+        "packages/frontend/src/components/chat/chat-top-bar.tsx",
+        "packages/frontend/src/app/chat/[characterId]/page.tsx",
+        "packages/frontend/src/components/nav/bottom-nav.tsx",
+        "packages/frontend/src/lib/api/characters.ts"
+      ]
+    }
+  ]
+}
