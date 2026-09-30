@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"检查 Frontend 边界与最低质量门禁"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"检查服务器缓存与恢复状态没有形成双真相"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"检查失败路径、移动端矩阵与发布恢复"}
+{"file":".trellis/tasks/09-20-lobby-list-position-restore-plan/research/current-lobby-flow.md","reason":"按当前真实实现核验最小改动与分页声明"}

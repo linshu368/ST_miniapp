@@ -7,6 +7,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { FavoriteButton } from '@/components/characters/favorite-button';
 import { useModelCatalogQuery } from '@/lib/api/models';
+import { returnToLobby } from '@/lib/lobby-return';
 import { cn } from '@/lib/utils';
 
 import { ChatModelSwitcher } from './chat-model-switcher';
@@ -51,7 +52,7 @@ export function ChatTopBar({
       <header className="sticky top-0 z-20 border-b border-border/60 bg-background/95 px-2 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl">
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1">
           <div className="flex items-center">
-            <IconButton label="返回大厅" onClick={() => router.push('/')}>
+            <IconButton label="返回大厅" onClick={() => returnToLobby((href) => router.push(href))}>
               <ChevronLeft className="size-5" strokeWidth={2.2} aria-hidden />
             </IconButton>
             <IconButton label="对话记录" onClick={onOpenSessions} muted>
