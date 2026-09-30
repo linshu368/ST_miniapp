@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { withSentryConfig } from '@sentry/nextjs';
+import { resolvePublicApiUrl } from './resolve-public-api-url.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sentryRelease = process.env.SENTRY_RELEASE || process.env.VERCEL_GIT_COMMIT_SHA;
@@ -8,30 +9,14 @@ const hasSentryUploadConfig = Boolean(
   process.env.SENTRY_ORG && process.env.SENTRY_PROJECT && process.env.SENTRY_AUTH_TOKEN
 );
 
-/** Preview feature PRs talk to Railway env `pr-{number}` → stminiapp-pr-{n}.up.railway.app */
-function resolvePublicApiUrl() {
-  const configured = process.env.NEXT_PUBLIC_API_URL;
-  const vercelEnv = process.env.VERCEL_ENV;
-  const target = process.env.VERCEL_TARGET_ENV;
-  const gitRef = process.env.VERCEL_GIT_COMMIT_REF;
-  const prId = process.env.VERCEL_GIT_PULL_REQUEST_ID;
-
-  if (vercelEnv === 'production') {
-    return configured || 'https://stminiapp-production.up.railway.app';
-  }
-  if (target === 'dev' || gitRef === 'dev') {
-    return configured || 'https://stminiapp-development.up.railway.app';
-  }
-  if (vercelEnv === 'preview' && prId) {
-    return `https://stminiapp-pr-${prId}.up.railway.app`;
-  }
-  return configured || 'https://stminiapp-development.up.railway.app';
-}
+const publicApiUrl = resolvePublicApiUrl();
+// Next 不会覆盖 Vercel 已注入的 NEXT_PUBLIC_*，必须先写回 process.env 才能内联进 bundle。
+process.env.NEXT_PUBLIC_API_URL = publicApiUrl;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
-    NEXT_PUBLIC_API_URL: resolvePublicApiUrl(),
+    NEXT_PUBLIC_API_URL: publicApiUrl,
   },
   // M4 容器化：产出 .next/standalone 自包含运行时（含 server.js + 最小 node_modules）。
   output: 'standalone',
