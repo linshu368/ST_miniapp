@@ -226,7 +226,8 @@ export default defineRailway((ctx) => {
       buildEnvironment: 'V3',
       dockerfilePath: '/ops/docker/Dockerfile.backend',
     },
-    start: 'tsx src/scripts/send-vip-expiry-reminders.ts --write',
+    // The Docker runtime does not install tsx globally; use the package-local binary.
+    start: './node_modules/.bin/tsx src/scripts/send-vip-expiry-reminders.ts --write',
     deploy: {
       cronSchedule: '20 * * * *',
       restartPolicyType: 'NEVER',

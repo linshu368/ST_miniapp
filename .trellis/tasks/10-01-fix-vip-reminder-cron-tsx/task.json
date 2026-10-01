@@ -1,0 +1,32 @@
+{
+  "id": "fix-vip-reminder-cron-tsx",
+  "name": "fix-vip-reminder-cron-tsx",
+  "title": "修复 VIP 提醒 Cron 本地 tsx 启动",
+  "description": "修复 Railway VIP 到期提醒 Cron 依赖不存在的全局 tsx，统一使用镜像内项目级可执行文件。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-01",
+  "completedAt": null,
+  "branch": "codex/fix-vip-reminder-cron-tsx",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "仅修正 Railway 进程启动路径及其文档/断言，不改变 Backend 业务模块契约或行为。"
+    }
+  }
+}
