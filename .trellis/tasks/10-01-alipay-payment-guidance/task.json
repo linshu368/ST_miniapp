@@ -1,0 +1,32 @@
+{
+  "id": "alipay-payment-guidance",
+  "name": "alipay-payment-guidance",
+  "title": "支付宝支付前置提示弹窗",
+  "description": "支付宝在订单创建后、外部付款跳转前展示独立的 VPN 指引弹窗；微信保留既有截图付款提示。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend payment pre-open UI only; reuse shared payment config and existing external-payment flow; no backend, contract, migration, or telemetry changes",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu368",
+  "assignee": "linshu368",
+  "createdAt": "2026-10-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev_alipay",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.wallet-payment"]
+    }
+  }
+}

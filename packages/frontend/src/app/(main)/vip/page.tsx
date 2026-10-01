@@ -18,6 +18,7 @@ import {
 } from '@miniapp/shared';
 
 import { PaymentVpnPromptDialog } from '@/components/payment/payment-vpn-prompt-dialog';
+import { AlipayPaymentGuidanceDialog } from '@/components/payment/alipay-payment-guidance-dialog';
 import { VipPlanCard } from '@/components/payment/vip-plan-card';
 import { VipBenefitArt } from '@/components/vip/vip-benefit-art';
 import { Button } from '@/components/ui/button';
@@ -55,7 +56,8 @@ export default function VipPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [promptOpen, setPromptOpen] = useState(false);
+  const [alipayPromptOpen, setAlipayPromptOpen] = useState(false);
+  const [wechatPromptOpen, setWechatPromptOpen] = useState(false);
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const submitLock = useRef(false);
 
@@ -137,9 +139,14 @@ export default function VipPage() {
         orderId: result.order.id,
         amountCents: result.order.amount_cents,
       });
+      if (paymentType === 'alipay') {
+        setPreparedPayment(result);
+        setAlipayPromptOpen(true);
+        return;
+      }
       if (promptConfig.enabled) {
         setPreparedPayment(result);
-        setPromptOpen(true);
+        setWechatPromptOpen(true);
         return;
       }
       await openPrepared(result);
@@ -352,18 +359,32 @@ export default function VipPage() {
         </div>
       </div>
 
-      <PaymentVpnPromptDialog
-        open={promptOpen}
-        config={promptConfig}
-        canConfirm={Boolean(preparedPayment)}
+      <AlipayPaymentGuidanceDialog
+        open={alipayPromptOpen}
         onOpenChange={(open) => {
-          setPromptOpen(open);
+          setAlipayPromptOpen(open);
           if (!open) setPreparedPayment(null);
         }}
         onConfirm={() => {
           if (!preparedPayment) return;
           const result = preparedPayment;
-          setPromptOpen(false);
+          setAlipayPromptOpen(false);
+          setPreparedPayment(null);
+          void openPrepared(result);
+        }}
+      />
+      <PaymentVpnPromptDialog
+        open={wechatPromptOpen}
+        config={promptConfig}
+        canConfirm={Boolean(preparedPayment)}
+        onOpenChange={(open) => {
+          setWechatPromptOpen(open);
+          if (!open) setPreparedPayment(null);
+        }}
+        onConfirm={() => {
+          if (!preparedPayment) return;
+          const result = preparedPayment;
+          setWechatPromptOpen(false);
           setPreparedPayment(null);
           void openPrepared(result);
         }}
