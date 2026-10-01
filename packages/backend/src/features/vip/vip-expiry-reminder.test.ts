@@ -325,4 +325,23 @@ describe('railway vip reminder cron', () => {
     expect(workflow).toContain('--service stminiapp-vip-reminder-cron');
     expect(workflow).toContain('--environment "$ENV_NAME"');
   });
+
+  it('keeps the payment expiry cron runnable in new and existing PR environments', () => {
+    const workflow = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        '../../../../../.github/workflows/railway-pr-env.yml'
+      ),
+      'utf8'
+    );
+    expect(workflow).toContain(
+      'PAYMENT_CRON_START_COMMAND: ./node_modules/.bin/tsx src/scripts/expire-payment-orders.ts'
+    );
+    expect(workflow).toContain(
+      '--service-config "$RAILWAY_PAYMENT_CRON_SERVICE_ID" deploy.startCommand "$PAYMENT_CRON_START_COMMAND"'
+    );
+    expect(workflow).toContain('serviceInstanceUpdate');
+    expect(workflow).toContain('serviceInstanceDeployV2');
+    expect(workflow).toContain('--raw-var environmentId="$ENV_ID"');
+  });
 });

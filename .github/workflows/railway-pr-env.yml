@@ -22,6 +22,8 @@ env:
   RAILWAY_WORKSPACE_ID: 2af5f2b0-e86e-4099-81d0-c2fc8af50c35
   RAILWAY_DEVELOPMENT_ENV_ID: a184d734-11e3-4b20-a114-1868f4c5f4d3
   RAILWAY_SERVICE: stminiapp
+  RAILWAY_PAYMENT_CRON_SERVICE_ID: 4be1ca31-21fb-4c2d-9a44-aec7335a7471
+  PAYMENT_CRON_START_COMMAND: ./node_modules/.bin/tsx src/scripts/expire-payment-orders.ts
 
 jobs:
   upsert:
@@ -64,7 +66,38 @@ jobs:
               --service-config "$RAILWAY_SERVICE" variables.SENTRY_ENVIRONMENT.value "preview" \
               --service-config "$RAILWAY_SERVICE" variables.PAYMENT_NOTIFY_URL.value "${BACKEND_URL}/api/payment/webhook/zqpay" \
               --service-config "$RAILWAY_SERVICE" variables.PAYMENT_RETURN_URL.value "${BACKEND_URL}/api/payment/return" \
+              --service-config "$RAILWAY_PAYMENT_CRON_SERVICE_ID" deploy.startCommand "$PAYMENT_CRON_START_COMMAND" \
               --json
+          fi
+
+          # PR 环境可能在 development 修复前已经复制出来；每次 upsert 都校准一次，
+          # 同时避免未来因源环境快照漂移再次使用镜像中不存在的全局 tsx。
+          ENV_ID="$(railway environment list --json | python3 -c "
+          import json, os, sys
+          name = os.environ['ENV_NAME']
+          envs = json.load(sys.stdin).get('environments') or []
+          print(next(e['id'] for e in envs if e.get('name') == name))
+          ")"
+          CURRENT_PAYMENT_CRON_START_COMMAND="$(railway api \
+            'query($serviceId:String!,$environmentId:String!){serviceInstance(serviceId:$serviceId,environmentId:$environmentId){startCommand}}' \
+            --raw-var serviceId="$RAILWAY_PAYMENT_CRON_SERVICE_ID" \
+            --raw-var environmentId="$ENV_ID" \
+            --compact | python3 -c "
+          import json, sys
+          print(json.load(sys.stdin)['data']['serviceInstance'].get('startCommand') or '')
+          ")"
+          if [ "$CURRENT_PAYMENT_CRON_START_COMMAND" = "$PAYMENT_CRON_START_COMMAND" ]; then
+            echo "PR environment payment cron command is already aligned"
+          else
+            railway api \
+              'mutation($serviceId:String!,$environmentId:String!,$startCommand:String!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:{startCommand:$startCommand})}' \
+              --raw-var serviceId="$RAILWAY_PAYMENT_CRON_SERVICE_ID" \
+              --raw-var environmentId="$ENV_ID" \
+              --raw-var startCommand="$PAYMENT_CRON_START_COMMAND"
+            railway api \
+              'mutation($serviceId:String!,$environmentId:String!){serviceInstanceDeployV2(serviceId:$serviceId,environmentId:$environmentId)}' \
+              --raw-var serviceId="$RAILWAY_PAYMENT_CRON_SERVICE_ID" \
+              --raw-var environmentId="$ENV_ID"
           fi
 
           # PR 环境与 development 共用 TEST 数据库，不能复制到期提醒调度器；否则每个
