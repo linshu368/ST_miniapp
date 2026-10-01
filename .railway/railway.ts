@@ -205,7 +205,8 @@ export default defineRailway((ctx) => {
       buildEnvironment: 'V3',
       dockerfilePath: '/ops/docker/Dockerfile.backend',
     },
-    start: 'tsx src/scripts/expire-payment-orders.ts',
+    // Keep one-shot cron overrides aligned with the image CMD: tsx is package-local, not global.
+    start: './node_modules/.bin/tsx src/scripts/expire-payment-orders.ts',
     deploy: {
       cronSchedule: '*/5 * * * *',
       restartPolicyType: 'NEVER',

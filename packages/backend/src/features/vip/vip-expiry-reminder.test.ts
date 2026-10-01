@@ -289,6 +289,16 @@ describe('vip expiry reminder runner', () => {
 });
 
 describe('railway vip reminder cron', () => {
+  it('starts the payment expiry cron with the package-local tsx binary', () => {
+    const source = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../.railway/railway.ts'),
+      'utf8'
+    );
+    expect(source).toContain(
+      "start: './node_modules/.bin/tsx src/scripts/expire-payment-orders.ts'"
+    );
+  });
+
   it('configures the write cron for both managed environments', () => {
     const source = readFileSync(
       resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../.railway/railway.ts'),
