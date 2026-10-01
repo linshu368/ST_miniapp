@@ -1,5 +1,7 @@
 import Fastify from 'fastify';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const NOW = '2026-09-22T00:00:00.000Z';
 
 const snapshots = {
   readSnapshot: vi.fn(),
@@ -42,6 +44,8 @@ async function buildApp() {
 
 describe('VIP status routes', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
     snapshots.readSnapshot.mockReset();
     snapshots.markEntryViewed.mockReset();
     snapshots.readSnapshot.mockResolvedValue({
@@ -52,6 +56,10 @@ describe('VIP status routes', () => {
     });
     snapshots.markEntryViewed.mockResolvedValue(undefined);
     vi.stubEnv('DEV_AUTH_BYPASS', '1');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('reads status for the authenticated user and ignores a client user id', async () => {
