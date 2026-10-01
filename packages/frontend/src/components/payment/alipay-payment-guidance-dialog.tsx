@@ -3,18 +3,11 @@
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 
 const PAYMENT_STEPS = [
   '第一步：请关闭VPN',
-  '第二步：点击「打开支付宝APP付款」',
+  '第二步：点击「打开支付宝APP付款」，跳转后完成付款',
   '第三步：完成付款后再次开启VPN返回到秘境。',
 ] as const;
 
@@ -45,16 +38,8 @@ export function AlipayPaymentGuidanceDialog({
       >
         <div className="mx-auto mt-3 h-1.5 w-12 rounded-full bg-muted-foreground/45" aria-hidden />
         <div className="max-h-[calc(100dvh-env(safe-area-inset-top)-1rem)] overflow-y-auto px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5">
-          <DialogHeader className="items-start text-left">
-            <DialogTitle className="text-xl font-black tracking-tight">
-              使用支付宝付款前，请注意
-            </DialogTitle>
-            <DialogDescription className="pt-1 text-left leading-5">
-              为顺利完成付款，请按以下顺序操作：
-            </DialogDescription>
-          </DialogHeader>
-
-          <ol className="mt-4 divide-y divide-border border-y border-border">
+          <DialogTitle className="sr-only">支付宝付款指引</DialogTitle>
+          <ol className="divide-y divide-border border-y border-border">
             {PAYMENT_STEPS.map((step, index) => (
               <li key={step} className="flex items-start gap-3 py-3.5">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1677FF] text-xs font-black text-white">
