@@ -307,7 +307,9 @@ describe('railway vip reminder cron', () => {
     const cronAt = source.indexOf('stminiapp-vip-reminder-cron');
     expect(cronAt).toBeGreaterThan(-1);
     expect(source).not.toContain('if (!production)');
-    expect(source).toContain('tsx src/scripts/send-vip-expiry-reminders.ts --write');
+    expect(source).toContain(
+      "start: './node_modules/.bin/tsx src/scripts/send-vip-expiry-reminders.ts --write'"
+    );
     expect(source).toContain("cronSchedule: '20 * * * *'");
     expect(source).toContain('PROD_SUPABASE_SERVICE_ROLE_KEY');
     expect(source).toContain('TEST_SUPABASE_SERVICE_ROLE_KEY');
