@@ -289,6 +289,16 @@ describe('vip expiry reminder runner', () => {
 });
 
 describe('railway vip reminder cron', () => {
+  it('starts the payment expiry cron with the package-local tsx binary', () => {
+    const source = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../.railway/railway.ts'),
+      'utf8'
+    );
+    expect(source).toContain(
+      "start: './node_modules/.bin/tsx src/scripts/expire-payment-orders.ts'"
+    );
+  });
+
   it('configures the write cron for both managed environments', () => {
     const source = readFileSync(
       resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../.railway/railway.ts'),
@@ -314,5 +324,24 @@ describe('railway vip reminder cron', () => {
     expect(workflow).toContain('railway service delete');
     expect(workflow).toContain('--service stminiapp-vip-reminder-cron');
     expect(workflow).toContain('--environment "$ENV_NAME"');
+  });
+
+  it('keeps the payment expiry cron runnable in new and existing PR environments', () => {
+    const workflow = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        '../../../../../.github/workflows/railway-pr-env.yml'
+      ),
+      'utf8'
+    );
+    expect(workflow).toContain(
+      'PAYMENT_CRON_START_COMMAND: ./node_modules/.bin/tsx src/scripts/expire-payment-orders.ts'
+    );
+    expect(workflow).toContain(
+      '--service-config "$RAILWAY_PAYMENT_CRON_SERVICE_ID" deploy.startCommand "$PAYMENT_CRON_START_COMMAND"'
+    );
+    expect(workflow).toContain('serviceInstanceUpdate');
+    expect(workflow).toContain('serviceInstanceDeployV2');
+    expect(workflow).toContain('--raw-var environmentId="$ENV_ID"');
   });
 });
