@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "updates": [
+    {
+      "operation": "update",
+      "module_id": "frontend.business.wallet-payment",
+      "target": ".trellis/spec/frontend/app/modules/business/wallet-payment.md",
+      "expected_sha256": "9ecd252168c88034a720c5722a682821e2bfe9dc446a55ac55a52d809148c8f2",
+      "content": "---\nmodule_id: frontend.business.wallet-payment\ntitle: 钱包、签到与充值\nscope: frontend\ncategory: business\nstatus: active\nowners: [frontend]\nlast_verified_task: .trellis/tasks/10-01-alipay-payment-guidance/\nlast_verified_at: 2026-10-01\n---\n\n# 钱包、签到与充值\n\n## 职责与边界\n\n展示余额、消费、签到、充值套餐、订单状态和支付回跳。\n\n## 当前状态\n\n钱包与支付页面使用统一 API hooks；结算真相在服务端。支付宝订单创建后会先显示固定三步 VPN 指引，用户确认关闭 VPN 后才打开支付宝；微信仍使用独立的、运行时配置驱动的截图付款提示。两种弹窗关闭都不会触发外部支付。\n\n## 入口与调用者\n\n用户从个人中心进入钱包/充值流程。个人中心「星尘充值」点击同步建立独立充值 Replay context，SDK 启动尝试后发送 `recharge_entry_clicked`；不会伪造聊天会话。外部支付前暂停 MiniApp 录制，可信回流后恢复；主动充值启动时清除旧聊天会话属性，防止误归因。\n\n## 涉及文件\n\n| 路径 | 职责 |\n| --- | --- |\n| `packages/frontend/src/app/(main)/profile/page.tsx` | 个人中心充值入口点击埋点 |\n| `packages/frontend/src/app/(main)/profile/recharge/` | 充值页面、支付方式分流 |\n| `packages/frontend/src/app/(main)/vip/page.tsx` | VIP 购买页、支付方式分流 |\n| `packages/frontend/src/components/payment/alipay-payment-guidance-dialog.tsx` | 支付宝固定三步 VPN 指引 |\n| `packages/frontend/src/components/payment/payment-vpn-prompt-dialog.tsx` | 微信截图付款提示 |\n| `packages/frontend/src/app/(main)/profile/orders/` | 订单页面 |\n| `packages/frontend/src/app/(main)/profile/spending/` | 消费明细 |\n| `packages/frontend/src/lib/payment/flow-telemetry.ts` | 支付漏斗与入口点击事件 |\n| `packages/frontend/src/lib/api/free-quota.ts` | 额度 hooks |\n| `packages/frontend/src/lib/api/payment.ts` | 支付 hooks |\n\n## 关键实现链路\n\n套餐/余额 query → 创建订单 → 按渠道显示支付宝或微信前置提示 → 用户确认后外部支付 → 订单轮询/回跳 → 缓存刷新。\n\n## 数据、契约与外部依赖\n\n消费 shared wallet/payment 契约、Backend 和外部支付页。\n\n## 关键节点与约束\n\n前端轮询不执行入账真相；支付成功后以服务端订单/余额为准。支付宝 VPN 确认只是本地 UX 门槛，不产生支付成功或失败事实；外部链接、pending 记录、回放停录和回流观察统一由 `openCreatedPayment` 保持。\n\n## 验证方式\n\nFrontend tests/build 与 test 支付人工 smoke。\n\n## 已知缺口与待核验项\n\nWebView 回跳和第三方页面兼容需真机验证。\n\n## 关联模块\n\n`backend.business.wallet-payment`、`shared.business.wallet-payment-contracts`。\n\n## 变更记录\n\n- 2026-10-01：任务 `支付宝支付前置提示弹窗`（`.trellis/tasks/10-01-alipay-payment-guidance/`）补充支付宝独立 VPN 引导，微信提示与外部支付状态机不变。\n- 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。\n",
+      "change_summary": "记录充值与 VIP 页按支付渠道分流的支付宝 VPN 引导行为",
+      "evidence": [
+        "packages/frontend/src/components/payment/alipay-payment-guidance-dialog.tsx",
+        "packages/frontend/src/app/(main)/profile/recharge/page.tsx",
+        "packages/frontend/src/app/(main)/vip/page.tsx"
+      ]
+    }
+  ]
+}
