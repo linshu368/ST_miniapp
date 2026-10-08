@@ -35,6 +35,7 @@ import {
   type SseTapResult,
 } from './upstream.js';
 import { applyPromptCaching, type UpstreamMessage } from './prompt-caching.js';
+import { GenerationCleanupPendingError } from './types.js';
 import type {
   GenerationHooks,
   GenerationLogger,
@@ -107,13 +108,21 @@ export async function execute(
   hooks?: GenerationHooks,
   log: GenerationLogger = createLogger('generation')
 ): Promise<GenerationResult> {
+  const signal = request.signal
+    ? AbortSignal.any([request.signal, AbortSignal.timeout(GENERATION_TIMEOUT_MS)])
+    : AbortSignal.timeout(GENERATION_TIMEOUT_MS);
   const chargeId = randomUUID();
-  const pricing = await getPricingConfig();
-  const billing = await getModelBillingContext({
-    provider: request.model.provider,
-    providerModelId: request.model.providerModelId,
-  });
-  const vipStrategy = await readVipStrategy();
+  const [pricing, billing, vipStrategy] = await withAbort(
+    Promise.all([
+      getPricingConfig(),
+      getModelBillingContext({
+        provider: request.model.provider,
+        providerModelId: request.model.providerModelId,
+      }),
+      readVipStrategy(),
+    ]),
+    signal
+  );
 
   const finish = (result: GenerationResult): GenerationResult => {
     hooks?.onDone?.(result);
@@ -130,263 +139,296 @@ export async function execute(
     ...overrides,
   });
 
+  await hooks?.onBeforeReserve?.(chargeId);
+  signal.throwIfAborted();
   const reservation = await reserveCharacterFreeQuota({
     chargeId,
     userId: request.userId,
     characterId: request.characterId,
     billing,
     log,
+    signal,
   });
+  let released: Promise<void> | undefined;
+  const releaseReservation = (): Promise<void> =>
+    (released ??= (async () => {
+      const decision = await reservation.finalize(false);
+      if (reservation.granted && decision?.status !== 'released')
+        throw new GenerationCleanupPendingError();
+    })());
 
-  const plan = resolveBillingPlan({
-    chargeId,
-    billing,
-    isFreeRound: reservation.isFreeRound,
-    pricing,
-    entitlement: request.model.entitlement,
-    discountRate: vipStrategy.discountRate,
-    discountConfigVersion: vipStrategy.discountVersion,
-    log,
-  });
-
-  if (plan) {
-    if (plan.snapshot.requires_vip && !plan.snapshot.vip_active) {
-      await reservation.finalize(false);
-      return finish(failed({ denial: 'vip_required' }));
-    }
-    const precheck = await checkWalletBalance({
-      userId: request.userId,
-      requiredAmount: plan.fixedDeduction.amount,
-      walletPolicy: plan.snapshot.wallet_policy,
-      openRouterModelId: billing.openRouterModelId,
+  try {
+    signal.throwIfAborted();
+    const plan = resolveBillingPlan({
+      chargeId,
+      billing,
+      isFreeRound: reservation.isFreeRound,
+      pricing,
+      entitlement: request.model.entitlement,
+      discountRate: vipStrategy.discountRate,
+      discountConfigVersion: vipStrategy.discountVersion,
       log,
     });
-    if (!precheck.ok) {
-      await reservation.finalize(false);
+
+    if (plan) {
+      if (plan.snapshot.requires_vip && !plan.snapshot.vip_active) {
+        await releaseReservation();
+        return finish(failed({ denial: 'vip_required' }));
+      }
+      const precheck = await withAbort(
+        checkWalletBalance({
+          userId: request.userId,
+          requiredAmount: plan.fixedDeduction.amount,
+          walletPolicy: plan.snapshot.wallet_policy,
+          openRouterModelId: billing.openRouterModelId,
+          log,
+        }),
+        signal
+      );
+      if (!precheck.ok) {
+        await releaseReservation();
+        return finish({
+          status: 'insufficient_balance',
+          content: '',
+          generationId: null,
+          finishReason: null,
+          chargeId: null,
+          modelId: billing.modelId,
+          modelOpenRouterId: billing.openRouterModelId,
+          balance: {
+            creditsRequired: precheck.creditsRequired,
+            creditsAvailable: precheck.creditsAvailable,
+          },
+        });
+      }
+    }
+
+    const saveHistory: SaveHistory = createHistoryWriter({ request, billing, plan, log });
+
+    // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
+    const providerPreferences =
+      billing.provider === 'openrouter'
+        ? await withAbort(getProviderPreferencesForModel(billing.providerModelId), signal)
+        : null;
+    const upstream = resolveProviderUpstream(billing.provider);
+    if (!upstream.apiKey) {
+      await releaseReservation();
+      const apiKeyEnv = LLM_PROVIDER_CAPABILITIES[billing.provider].apiKeyEnv;
+      const err = new Error(`${apiKeyEnv} is required for ${billing.provider} generation`);
+      log.sys.error(
+        {
+          event: 'llm.upstream.missing_key',
+          err,
+          userId: request.userId,
+          sessionId: request.sessionId ?? null,
+          provider: billing.provider,
+          model: billing.providerModelId,
+        },
+        'upstream provider API key is missing'
+      );
+      hooks?.onError?.(err);
+      return finish(failed());
+    }
+
+    let upstreamRes: Response;
+    const upstreamStartedAt = Date.now();
+    try {
+      upstreamRes = await forwardToUpstream({
+        url: upstream.url,
+        method: 'POST',
+        body: JSON.stringify(buildUpstreamBody(request, providerPreferences)),
+        signal,
+        apiKey: upstream.apiKey,
+        provider: billing.provider,
+      });
+    } catch (err) {
+      // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
+      await releaseReservation();
+      log.sys.error(
+        {
+          event: 'llm.upstream.error',
+          err,
+          userId: request.userId,
+          sessionId: request.sessionId ?? null,
+          provider: billing.provider,
+          model: billing.providerModelId,
+        },
+        'upstream request failed'
+      );
+      hooks?.onError?.(toError(err));
+      return finish(failed());
+    }
+
+    // 上游非 2xx → 不扣费，记录失败
+    if (!upstreamRes.ok) {
+      await releaseReservation();
+      const detail = await upstreamRes.text().catch(() => '');
+      log.sys.error(
+        {
+          event: 'llm.upstream.rejected',
+          userId: request.userId,
+          sessionId: request.sessionId ?? null,
+          provider: billing.provider,
+          model: billing.providerModelId,
+          upstreamStatus: upstreamRes.status,
+        },
+        'upstream rejected generation'
+      );
+      saveHistory({
+        assistant_reply: null,
+        status: 'upstream_error',
+        upstream_status: upstreamRes.status,
+        generation_id: null,
+        finish_reason: null,
+      });
+      hooks?.onError?.(new Error(`upstream ${upstreamRes.status}: ${detail.slice(0, 200)}`));
+      return finish(failed({ upstreamStatus: upstreamRes.status }));
+    }
+
+    // 过了这一行就不会再有 HTTP 状态码级别的失败，调用方可以安全地写出响应头。
+    hooks?.onStreamOpen?.();
+
+    const headerGenerationId = upstreamRes.headers.get('x-generation-id');
+
+    if (!request.stream) {
+      return finish(
+        await consumeNonStream({
+          request,
+          upstreamRes,
+          billing,
+          chargeId,
+          reservation,
+          headerGenerationId,
+          saveHistory,
+          hooks,
+          log,
+          upstreamStartedAt,
+        })
+      );
+    }
+
+    if (!upstreamRes.body) {
+      // 2xx 但没有正文属于 empty：不扣费，并给前端一个可重试的异常终态。
+      await releaseReservation();
+      saveHistory({
+        assistant_reply: null,
+        status: 'stream_interrupted',
+        upstream_status: null,
+        generation_id: headerGenerationId,
+        finish_reason: null,
+      });
       return finish({
-        status: 'insufficient_balance',
+        status: 'stream_interrupted',
         content: '',
-        generationId: null,
+        generationId: headerGenerationId,
         finishReason: null,
-        chargeId: null,
+        chargeId,
         modelId: billing.modelId,
         modelOpenRouterId: billing.openRouterModelId,
-        balance: {
-          creditsRequired: precheck.creditsRequired,
-          creditsAvailable: precheck.creditsAvailable,
-        },
       });
     }
-  }
 
-  const saveHistory: SaveHistory = createHistoryWriter({ request, billing, plan, log });
-
-  // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
-  const providerPreferences =
-    billing.provider === 'openrouter'
-      ? await getProviderPreferencesForModel(billing.providerModelId)
-      : null;
-  const upstream = resolveProviderUpstream(billing.provider);
-  if (!upstream.apiKey) {
-    await reservation.finalize(false);
-    const apiKeyEnv = LLM_PROVIDER_CAPABILITIES[billing.provider].apiKeyEnv;
-    const err = new Error(`${apiKeyEnv} is required for ${billing.provider} generation`);
-    log.sys.error(
-      {
-        event: 'llm.upstream.missing_key',
-        err,
-        userId: request.userId,
-        sessionId: request.sessionId ?? null,
-        provider: billing.provider,
-        model: billing.providerModelId,
-      },
-      'upstream provider API key is missing'
-    );
-    hooks?.onError?.(err);
-    return finish(failed());
-  }
-
-  let upstreamRes: Response;
-  const upstreamStartedAt = Date.now();
-  try {
-    upstreamRes = await forwardToUpstream({
-      url: upstream.url,
-      method: 'POST',
-      body: JSON.stringify(buildUpstreamBody(request, providerPreferences)),
-      signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
-      apiKey: upstream.apiKey,
-      provider: billing.provider,
-    });
-  } catch (err) {
-    // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
-    await reservation.finalize(false);
-    log.sys.error(
-      {
-        event: 'llm.upstream.error',
-        err,
-        userId: request.userId,
-        sessionId: request.sessionId ?? null,
-        provider: billing.provider,
-        model: billing.providerModelId,
-      },
-      'upstream request failed'
-    );
-    hooks?.onError?.(toError(err));
-    return finish(failed());
-  }
-
-  // 上游非 2xx → 不扣费，记录失败
-  if (!upstreamRes.ok) {
-    await reservation.finalize(false);
-    const detail = await upstreamRes.text().catch(() => '');
-    log.sys.error(
-      {
-        event: 'llm.upstream.rejected',
-        userId: request.userId,
-        sessionId: request.sessionId ?? null,
-        provider: billing.provider,
-        model: billing.providerModelId,
-        upstreamStatus: upstreamRes.status,
-      },
-      'upstream rejected generation'
-    );
-    saveHistory({
-      assistant_reply: null,
-      status: 'upstream_error',
-      upstream_status: upstreamRes.status,
-      generation_id: null,
-      finish_reason: null,
-    });
-    hooks?.onError?.(new Error(`upstream ${upstreamRes.status}: ${detail.slice(0, 200)}`));
-    return finish(failed({ upstreamStatus: upstreamRes.status }));
-  }
-
-  // 过了这一行就不会再有 HTTP 状态码级别的失败，调用方可以安全地写出响应头。
-  hooks?.onStreamOpen?.();
-
-  const headerGenerationId = upstreamRes.headers.get('x-generation-id');
-
-  if (!request.stream) {
-    return finish(
-      await consumeNonStream({
-        request,
-        upstreamRes,
-        billing,
-        chargeId,
-        reservation,
-        headerGenerationId,
-        saveHistory,
-        hooks,
-        log,
-        upstreamStartedAt,
-      })
-    );
-  }
-
-  if (!upstreamRes.body) {
-    // 2xx 但没有正文属于 empty：不扣费，并给前端一个可重试的异常终态。
-    await reservation.finalize(false);
-    saveHistory({
-      assistant_reply: null,
-      status: 'stream_interrupted',
-      upstream_status: null,
-      generation_id: headerGenerationId,
-      finish_reason: null,
-    });
-    return finish({
-      status: 'stream_interrupted',
-      content: '',
+    // The flush path and pipeline error path share one settlement promise. In particular,
+    // a deadline during a slow CAS/quota finalize must never trigger another settlement.
+    let settlement: Promise<void> | undefined;
+    let settledResult: SseTapResult | undefined;
+    let firstTokenAt: number | null = null;
+    const settleOnce = (observed: SseTapResult): Promise<void> => {
+      settlement ??= (async () => {
+        const interrupted = signal.aborted
+          ? { ...observed, completed: false, finishReason: 'timeout' }
+          : observed;
+        try {
+          settledResult = hooks?.onBeforeSettle
+            ? await hooks.onBeforeSettle(interrupted, releaseReservation)
+            : interrupted;
+        } catch (err) {
+          // A failed persisted claim cannot be charged based only on locally observed [DONE].
+          await releaseReservation();
+          throw err;
+        }
+        await settleStream({
+          result: settledResult,
+          request,
+          billing,
+          reservation,
+          saveHistory,
+          log,
+          upstreamStartedAt,
+          firstTokenAt,
+        });
+      })();
+      return settlement;
+    };
+    let firstTokenSeen = false;
+    const tap = createSseTap({
       generationId: headerGenerationId,
-      finishReason: null,
-      chargeId,
-      modelId: billing.modelId,
-      modelOpenRouterId: billing.openRouterModelId,
-    });
-  }
-
-  let firstTokenSeen = false;
-  let firstTokenAt: number | null = null;
-  const tap = createSseTap({
-    generationId: headerGenerationId,
-    onDelta: (delta) => {
-      if (!firstTokenSeen) {
-        firstTokenSeen = true;
-        firstTokenAt = Date.now();
-        hooks?.onFirstToken?.();
-      }
-      hooks?.onDelta?.(delta);
-    },
-    onEnd: (result) =>
-      settleStream({
-        result,
-        request,
-        billing,
-        reservation,
-        saveHistory,
-        log,
-        upstreamStartedAt,
-        firstTokenAt,
-      }),
-  });
-
-  try {
-    await pipeline(
-      Readable.fromWeb(upstreamRes.body as import('stream/web').ReadableStream),
-      tap,
-      new Writable({
-        write(_chunk, _encoding, callback) {
-          callback();
-        },
-      })
-    );
-  } catch (err) {
-    // 流被上游或网络打断时 flush 不触发，终态要在这里补齐，否则预留的免费轮会一直挂着
-    const partial = tap.snapshot();
-    log.sys.error(
-      {
-        event: 'llm.stream.failed',
-        err,
-        userId: request.userId,
-        sessionId: request.sessionId ?? null,
-        generationId: partial.generationId,
+      onDelta: (delta) => {
+        if (!firstTokenSeen) {
+          firstTokenSeen = true;
+          firstTokenAt = Date.now();
+          hooks?.onFirstToken?.();
+        }
+        hooks?.onDelta?.(delta);
       },
-      'upstream stream aborted'
-    );
-    await settleStream({
-      result: partial,
-      request,
-      billing,
-      reservation,
-      saveHistory,
-      log,
-      upstreamStartedAt,
-      firstTokenAt,
+      onEnd: settleOnce,
     });
-    hooks?.onError?.(toError(err));
+
+    try {
+      await pipeline(
+        Readable.fromWeb(upstreamRes.body as import('stream/web').ReadableStream),
+        tap,
+        new Writable({
+          write(_chunk, _encoding, callback) {
+            callback();
+          },
+        }),
+        { signal }
+      );
+    } catch (err) {
+      // 流被上游或网络打断时 flush 不触发，终态要在这里补齐，否则预留的免费轮会一直挂着
+      const partial = tap.snapshot();
+      log.sys.error(
+        {
+          event: 'llm.stream.failed',
+          err,
+          userId: request.userId,
+          sessionId: request.sessionId ?? null,
+          generationId: partial.generationId,
+        },
+        'upstream stream aborted'
+      );
+      await settleOnce({ ...partial, completed: false });
+      const actual = settledResult ?? partial;
+      hooks?.onError?.(toError(err));
+      return finish({
+        status: 'stream_interrupted',
+        content: actual.content,
+        generationId: actual.generationId,
+        finishReason: actual.finishReason,
+        chargeId,
+        modelId: billing.modelId,
+        modelOpenRouterId: billing.openRouterModelId,
+      });
+    }
+
+    const tapped = settledResult ?? tap.snapshot();
     return finish({
-      status: 'stream_interrupted',
-      content: partial.content,
-      generationId: partial.generationId,
-      finishReason: partial.finishReason,
+      status:
+        isDeliveredReply(tapped) && (tapped.finishReason === 'stop' || tapped.finishReason === null)
+          ? 'success'
+          : 'stream_interrupted',
+      content: tapped.content,
+      generationId: tapped.generationId,
+      finishReason: tapped.finishReason,
       chargeId,
       modelId: billing.modelId,
       modelOpenRouterId: billing.openRouterModelId,
     });
+  } catch (err) {
+    await releaseReservation();
+    throw err;
   }
-
-  const tapped = tap.snapshot();
-  return finish({
-    status:
-      isDeliveredReply(tapped) && (tapped.finishReason === 'stop' || tapped.finishReason === null)
-        ? 'success'
-        : 'stream_interrupted',
-    content: tapped.content,
-    generationId: tapped.generationId,
-    finishReason: tapped.finishReason,
-    chargeId,
-    modelId: billing.modelId,
-    modelOpenRouterId: billing.openRouterModelId,
-  });
 }
 
 function toError(err: unknown): Error {
@@ -636,3 +678,13 @@ async function consumeNonStream(input: {
 }
 
 export const generationService: GenerationService = { execute };
+
+/** Race only non-generation preparation; quota/CAS writes retain their real completion. */
+function withAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}

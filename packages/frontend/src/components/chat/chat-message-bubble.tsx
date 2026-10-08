@@ -1,10 +1,12 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { ChatMessage } from '@miniapp/shared';
+import { ReplyRenderer, type ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import { cn } from '@/lib/utils';
-import { ChatMarkdown } from './chat-markdown';
+import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
+import { CHAT_MARKDOWN_CLASS, ChatMarkdown } from './chat-markdown';
 import { getChatReplyPresentation } from './chat-reply-presentation';
 
 /**
@@ -37,6 +39,11 @@ interface ChatMessageBubbleProps {
   quotaExhaustedNotice?: string;
   /** 挂在正文下方的操作区，目前只有重生成按钮 */
   footer?: ReactNode;
+  /** 有校验过的 artifact 才走 ReplyRenderer。否则保持原来的 Markdown。 */
+  replyPlan?: AssistantBodyPlan;
+  displayName?: string;
+  choiceDisabled?: boolean;
+  onChoice?: (choice: ReplyChoicePayload) => void;
 }
 
 export function ChatMessageBubble({
@@ -48,6 +55,10 @@ export function ChatMessageBubble({
   stalled,
   quotaExhaustedNotice,
   footer,
+  replyPlan,
+  displayName,
+  choiceDisabled,
+  onChoice,
 }: ChatMessageBubbleProps) {
   if (message.role === 'user') {
     return (
@@ -70,7 +81,16 @@ export function ChatMessageBubble({
           {characterName}
         </div>
         <div className={cn('pt-1 text-foreground', BODY_TEXT_CLASS)}>
-          {message.content ? <ChatMarkdown content={message.content} /> : null}
+          {message.content ? (
+            <AssistantReplyBody
+              message={message}
+              plan={replyPlan ?? { kind: 'original' }}
+              streaming={Boolean(streaming)}
+              displayName={displayName}
+              choiceDisabled={choiceDisabled !== false}
+              onChoice={onChoice}
+            />
+          ) : null}
           {streaming ? (
             <span
               className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-primary align-middle"
@@ -121,6 +141,74 @@ export function ChatTypingBubble({
       </div>
     </div>
   );
+}
+
+function AssistantReplyBody({
+  message,
+  plan,
+  streaming,
+  displayName,
+  choiceDisabled,
+  onChoice,
+}: {
+  message: ChatMessage;
+  plan: AssistantBodyPlan;
+  streaming: boolean;
+  displayName?: string;
+  choiceDisabled: boolean;
+  onChoice?: (choice: ReplyChoicePayload) => void;
+}) {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const onScreen = useStayOnScreen(node, plan.kind === 'renderer');
+  // 流式增量必须保留原来的稳定 Markdown DOM；逐片重跑 Worker 会让已出现正文
+  // 在 pending/applied 之间整棵替换。终态再一次性挂 renderer，交互也只此时开放。
+  const showRenderer = plan.kind === 'renderer' && onScreen && !streaming;
+
+  return (
+    <div ref={setNode}>
+      {showRenderer ? (
+        <ReplyRenderer
+          content={message.content}
+          artifact={plan.artifact}
+          streaming={streaming}
+          displayName={displayName}
+          theme="dark"
+          choiceDisabled={choiceDisabled || streaming}
+          onChoice={choiceDisabled || streaming ? undefined : onChoice}
+          messageKey={`${message.id}:${message.revision}`}
+          className={CHAT_MARKDOWN_CLASS}
+        />
+      ) : (
+        <ChatMarkdown content={message.content} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 视口外先留着原来的 Markdown，进入视口后再挂渲染器。
+ * 一旦挂上就保持挂载，避免滚走以后丢掉状态卡的展开状态。
+ * 观察放在 effect 里，模块加载和 SSR 都不碰 window / Worker。
+ */
+function useStayOnScreen(node: HTMLDivElement | null, enabled: boolean): boolean {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!enabled || visible) return;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setVisible(true);
+      },
+      { rootMargin: '240px 0px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enabled, node, visible]);
+  return visible;
 }
 
 function ReplyNotice({ children }: { children: ReactNode }) {

@@ -96,10 +96,14 @@ Railway 的 `railway.json` / `railway.toml` 是**单服务部署配置**，只�
 | `stminiapp-payment-cron`           | 与 `stminiapp` 相同                   | —        | 关闭        | ❌ 不生成域名                 | —   |
 | `stminiapp-vip-reminder-cron`      | dev=`dev` / prod=`main`               | —        | 关闭        | ❌ 不生成域名                 | —   |
 
-VIP 提醒 Cron 的启动命令固定为 `tsx src/scripts/send-vip-expiry-reminders.ts --write`，在
-development（TEST）和 production 分别运行；是否真正写入仍由目标环境的
+VIP 提醒 Cron 的启动命令固定为
+`./node_modules/.bin/tsx src/scripts/send-vip-expiry-reminders.ts --write`，不得依赖镜像中不存在的
+全局 `tsx`。它在 development（TEST）和 production 分别运行；是否真正写入仍由目标环境的
 `vip_reminders_enabled` 开关控制，IaC 不负责打开该开关。
 PR 临时环境复制 development 后会立即删除该 Cron，避免多个调度器扫描同一个 TEST 库。
+`railway-pr-env.yml` 还会在创建及后续 upsert 时校准 `stminiapp-payment-cron`，固定使用
+`./node_modules/.bin/tsx src/scripts/expire-payment-orders.ts`；检测到旧命令时更新配置并部署，
+避免复制历史快照后因镜像没有全局 `tsx` 而启动失败。
 部署 Cron 本身不会绕过业务开关；首次开启 `vip_reminders_enabled` 前须先在 TEST dry-run，
 确认候选规模符合预期。Production 首次启用同样先保持开关关闭、部署 Cron，再用 Production
 环境执行一次 `--dry-run`，确认候选规模后才打开开关。
@@ -144,7 +148,7 @@ Railway 控制台手动创建并逐项对齐：
 2. Source 连接与 `stminiapp` 相同的 GitHub 仓库和分支：development 用 `dev`，
    production 用 `main`。Build 的 Dockerfile Path 使用 `/ops/docker/Dockerfile.backend`。
 3. 快速查单服务（常驻 Worker）：
-   - Start Command：`tsx src/scripts/reconcile-payment-orders.ts`
+   - Start Command：`./node_modules/.bin/tsx src/scripts/reconcile-payment-orders.ts`
    - **清空 Cron Schedule**（不要填 `* * * * *`，平台会拒绝）
    - Restart Policy：`Always`（或 `On Failure`）
    - 进程保持 Online，日志约每 30 秒一轮 `Fast payment reconciliation: checked=…`。
@@ -152,7 +156,7 @@ Railway 控制台手动创建并逐项对齐：
    - 新订单默认创建约 60 秒后可领取，因此 webhook / 回跳都失败时，首次查单通常落在
      创建后 60–90 秒。
 4. 过期服务（一次性 Cron）保持不变：Start Command
-   `tsx src/scripts/expire-payment-orders.ts`，Cron Schedule `*/5 * * * *`，
+   `./node_modules/.bin/tsx src/scripts/expire-payment-orders.ts`，Cron Schedule `*/5 * * * *`，
    Restart Policy `Never`。它只回溯已到期订单，并在查单健康时执行判过期。
 5. 两个服务都关闭 healthcheck，不生成 Railway domain，不配置 TCP proxy。不要给
    Worker 加会打 `/health` 的 HTTP 探活（镜像 Dockerfile 的 HEALTHCHECK 针对 API；

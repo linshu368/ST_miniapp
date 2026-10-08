@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@miniapp/reply-renderer": "workspace:*",
     "@miniapp/shared": "workspace:*",
     "@radix-ui/react-avatar": "^1.2.0",
     "@radix-ui/react-dialog": "^1.1.15",

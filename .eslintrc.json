@@ -144,6 +144,51 @@
       }
     },
     {
+      "files": ["packages/reply-renderer/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@miniapp/frontend",
+                  "@miniapp/frontend/*",
+                  "@miniapp/admin",
+                  "@miniapp/admin/*",
+                  "@miniapp/backend",
+                  "@miniapp/backend/*",
+                  "@miniapp/cs-platform",
+                  "@miniapp/cs-platform/*",
+                  "parse5",
+                  "parse5/*",
+                  "css-tree",
+                  "css-tree/*"
+                ],
+                "message": "reply-renderer 只依赖 shared 的浏览器安全出口，不引用应用包或 HTML/CSS 编译器"
+              },
+              {
+                "group": [
+                  "**/frontend/**",
+                  "**/admin/**",
+                  "**/backend/**",
+                  "**/cs-platform/**",
+                  "**/packages/frontend/**",
+                  "**/packages/admin/**",
+                  "**/packages/backend/**",
+                  "**/packages/cs-platform/**",
+                  "**/text-postprocess/compile",
+                  "**/text-postprocess/compile-*",
+                  "**/text-postprocess/compile.ts"
+                ],
+                "message": "reply-renderer 不引用应用包或 compile 入口"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["packages/shared/**/*.ts"],
       "rules": {
         "no-restricted-imports": [

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toEngineCharacter, toMessageStatus } from './generate.js';
+import { toEngineCharacter, toMessageStatus, normalizePersistedOutcome } from './generate.js';
 import type { CharacterCardRow } from '../../infrastructure/repositories/CharacterCardRepository.js';
 
 describe('toMessageStatus', () => {
@@ -37,5 +37,30 @@ describe('toEngineCharacter', () => {
       system_prompt: '你是测试角色。',
       post_history_instructions: '历史后指令',
     });
+  });
+});
+
+describe('cancelled persisted status protects settlement', () => {
+  const observed = {
+    completed: true,
+    content: 'late full reply',
+    deltaCount: 1,
+    generationId: 'gen',
+    finishReason: 'stop',
+    usage: null,
+    responseMetadata: {},
+  };
+  it('cancelled / stale outcomes cannot turn into a billable success', () => {
+    expect(normalizePersistedOutcome(observed, 'stream_interrupted', 'cancelled')).toMatchObject({
+      completed: false,
+      finishReason: 'cancelled',
+    });
+    expect(normalizePersistedOutcome(observed, 'stream_interrupted', null)).toMatchObject({
+      completed: false,
+      finishReason: 'timeout',
+    });
+  });
+  it('success claimed before cancellation retains natural completion', () => {
+    expect(normalizePersistedOutcome(observed, 'success', 'stop')).toBe(observed);
   });
 });

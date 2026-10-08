@@ -182,7 +182,6 @@ describe('runSettlement', () => {
     expect(applyLlmCharge).toHaveBeenCalledOnce();
     expect(recordBillingOutcome.mock.calls[0]?.[0]).not.toHaveProperty('billingSettledAt');
   });
-
   it('writes Venice response metadata to the provider table, not chat_history metadata columns', async () => {
     await runSettlement(
       entry({
@@ -203,6 +202,25 @@ describe('runSettlement', () => {
     );
     expect(recordBillingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ historyId: 'row-1', metadata: { llm_intended_deduction: 50 } })
+    );
+  });
+
+  it('upstream stop stats cannot replace user cancellation in charge metadata', async () => {
+    fetchGenerationDataForSettlement.mockResolvedValue({ finish_reason: 'stop', usage: 0.001 });
+    await runSettlement(
+      entry({ status: 'stream_interrupted', finish_reason: 'cancelled' }),
+      fakeLog()
+    );
+    expect(applyLlmCharge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationStatus: 'stream_interrupted',
+        finishReason: 'cancelled',
+      })
+    );
+    expect(recordBillingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ llm_finish_reason: 'cancelled' }),
+      })
     );
   });
 });

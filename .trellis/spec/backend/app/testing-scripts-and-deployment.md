@@ -26,4 +26,5 @@ pnpm --filter @miniapp/backend test
 - start 先 `prisma generate`，再 `tsx --import ./src/instrumentation.ts src/server.ts`；当前没有传统 `dist` build。
 - 支付过期/对账可能为独立 Railway 服务/任务。部署不执行 DB migration，禁止把迁移塞进启动命令。
 - route/feature：typecheck + 现有相关 tests + 契约和 `@frontend-ready`；contract：shared test + 所有 consumers typecheck；生成：SSE/扣费失败路径与必要人工回归；支付：状态机/重复回调/原子入账/恢复；DB：test-first、RLS/锁/回滚；deploy：fail-fast、health、日志脱敏。
+- 文本后处理发布顺序为相关 migrations → Backend → Frontend/Admin；新 Backend 不兼容缺少 current-postprocess RPC 的数据库。发布前核对 migration 账本/shape/grants，发布后验证 Admin 状态读取、一次受控发布、新发送与重生成版本绑定、Frontend 终态渲染；Production 需独立批准。
 - 最终执行 `git diff --check`，不提交 `.env`、报告或测试业务数据；不自动 push。

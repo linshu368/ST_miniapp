@@ -2,11 +2,18 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export type AdminEnvironment = 'test' | 'production';
 
+export function resolveAdminTestApiUrl(configuredApiUrl: string, previewApiUrl: string): string {
+  return previewApiUrl || configuredApiUrl;
+}
+
 const configs: Record<AdminEnvironment, { url: string; anonKey: string; apiUrl: string }> = {
   test: {
     url: import.meta.env.VITE_ADMIN_TEST_SUPABASE_URL || '',
     anonKey: import.meta.env.VITE_ADMIN_TEST_SUPABASE_ANON_KEY || '',
-    apiUrl: import.meta.env.VITE_ADMIN_TEST_API_URL || '',
+    apiUrl: resolveAdminTestApiUrl(
+      import.meta.env.VITE_ADMIN_TEST_API_URL || '',
+      import.meta.env.VITE_ADMIN_PREVIEW_TEST_API_URL || ''
+    ),
   },
   production: {
     url: import.meta.env.VITE_ADMIN_PROD_SUPABASE_URL || '',

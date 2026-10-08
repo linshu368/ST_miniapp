@@ -45,21 +45,25 @@ export class MiniappCharacterFreeQuotaRepository {
     characterId: string;
     quotaLimit: number;
   }): Promise<CharacterFreeQuotaDecision> {
-    const { data, error } = await this.db.rpc('reserve_character_free_chat_round', {
-      p_charge_key: input.chargeId,
-      p_user_id: input.userId,
-      p_character_id: input.characterId,
-      p_quota_limit: input.quotaLimit,
-    });
+    const { data, error } = await this.db
+      .rpc('reserve_character_free_chat_round', {
+        p_charge_key: input.chargeId,
+        p_user_id: input.userId,
+        p_character_id: input.characterId,
+        p_quota_limit: input.quotaLimit,
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`预留角色卡免费轮次失败：${error.message}`);
     return normalizeDecision(data);
   }
 
   async finalize(chargeId: string, success: boolean): Promise<CharacterFreeQuotaDecision> {
-    const { data, error } = await this.db.rpc('finalize_character_free_chat_round', {
-      p_charge_key: chargeId,
-      p_success: success,
-    });
+    const { data, error } = await this.db
+      .rpc('finalize_character_free_chat_round', {
+        p_charge_key: chargeId,
+        p_success: success,
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`确认角色卡免费轮次失败：${error.message}`);
     return normalizeDecision(data);
   }
@@ -76,6 +80,7 @@ export class MiniappCharacterFreeQuotaRepository {
       .from('character_free_chat_quota_decisions')
       .select('status')
       .eq('charge_key', chargeId)
+      .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
     if (error) throw new Error(`查询角色卡免费轮次决定失败：${error.message}`);
     if ((data as { status?: string } | null)?.status !== 'reserved') return null;

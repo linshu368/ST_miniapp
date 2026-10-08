@@ -28,3 +28,4 @@ GitHub Actions 操作前再次核对 workflow 版本、目标 environment secret
 - 大表索引/约束评估 concurrent、NOT VALID/VALIDATE、statement/lock timeout 和 Railway/Supabase 连接影响。
 - migration 应可重复检测目标 shape；不能真正幂等时明确“一次性”及安全失败条件。
 - 回滚可能丢数据时优先 forward-fix；任何恢复步骤都写明数据损失边界和备份前提。
+- 文本后处理迁移/应用顺序固定为版本/草稿与显式 wrapper → artifact/权限 forward-fix → current-postprocess 开轮 RPC → Backend → Frontend/Admin。已发布快照和被 history 引用的版本不得 DROP/改写；应用回退保留数据对象，配置恢复通过发布新版本，数据库缺陷使用 reviewed forward-fix。

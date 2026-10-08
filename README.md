@@ -1,6 +1,6 @@
 # ST_miniapp
 
-ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、两个内部运营 SPA，以及共享契约/迁移包。
+ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、两个内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；生产运维入口见 [`ops/README.md`](ops/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 
@@ -38,21 +38,22 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 
 ```text
 packages/frontend    ─┐
-packages/backend     ─┼──> packages/shared
-packages/admin       ─┤
+packages/admin       ─┼──> packages/reply-renderer ──> packages/shared
+packages/backend     ─┼──────────────────────────────> packages/shared
 packages/cs-platform ─┘
 
 ```
 
 `pnpm-workspace.yaml` 只包含 `packages/*`。四个应用包可以依赖 `@miniapp/shared`，但彼此不得直接 import；跨应用通信使用 HTTP。Shared 不依赖应用包。
 
-| 目录                   | 包名/形态                           | 主要职责                                                    | 默认开发端口 |
-| ---------------------- | ----------------------------------- | ----------------------------------------------------------- | ------------ |
-| `packages/frontend`    | `@miniapp/frontend` / Next.js 14    | Telegram MiniApp 用户界面、聊天、钱包、支付、语音、社区等   | 3000         |
-| `packages/backend`     | `@miniapp/backend` / Fastify 5      | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服 | 3001         |
-| `packages/admin`       | `@miniapp/admin` / Vite React       | 配置、模型、角色卡、公告、裂变和运营赠送                    | 3003         |
-| `packages/cs-platform` | `@miniapp/cs-platform` / Vite React | Telegram 回访与 MiniApp 客服工作台                          | 3002         |
-| `packages/shared`      | `@miniapp/shared` / TS 源码包       | API DTO、Zod schema、常量、纯工具和 SQL migrations          | -            |
+| 目录                      | 包名/形态                                | 主要职责                                                         | 默认开发端口 |
+| ------------------------- | ---------------------------------------- | ---------------------------------------------------------------- | ------------ |
+| `packages/frontend`       | `@miniapp/frontend` / Next.js 14         | Telegram MiniApp 用户界面、聊天、钱包、支付、语音、社区等        | 3000         |
+| `packages/backend`        | `@miniapp/backend` / Fastify 5           | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服      | 3001         |
+| `packages/admin`          | `@miniapp/admin` / Vite React            | 配置、模型、角色卡、公告、裂变和运营赠送                         | 3003         |
+| `packages/cs-platform`    | `@miniapp/cs-platform` / Vite React      | Telegram 回访与 MiniApp 客服工作台                               | 3002         |
+| `packages/shared`         | `@miniapp/shared` / TS 源码包            | API DTO、Zod schema、文本后处理编译/执行纯工具和 SQL migrations  | -            |
+| `packages/reply-renderer` | `@miniapp/reply-renderer` / React 源码包 | Frontend/Admin 共用的安全 Markdown、受限 HTML/CSS 和可信交互渲染 | -            |
 
 Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产物；修改公开出口会直接影响所有消费者。
 
@@ -62,7 +63,8 @@ Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产�
 - **Backend**：Node.js、Fastify 5、TypeScript/tsx、Prisma、Supabase JS、Pino、Vitest、Sentry、WebSocket。
 - **Admin**：Vite、React 18、Ant Design 6、Refine、Supabase JS、Zod、dnd-kit、Vitest。
 - **CS Platform**：Vite、React 18、TanStack React Query、原生 CSS；当前无自动测试脚本。
-- **Shared/Database**：TypeScript + Zod + Vitest；PostgreSQL/Supabase migrations 位于 `packages/shared/migrations/`。
+- **Reply Renderer**：React 18 peer dependency、Showdown、DOMPurify、隔离 Worker、Vitest/jsdom。
+- **Shared/Database**：TypeScript + Zod + parse5 + css-tree + Vitest；PostgreSQL/Supabase migrations 位于 `packages/shared/migrations/`。
 
 ## 4. 安装与开发
 
@@ -94,10 +96,12 @@ pnpm --filter @miniapp/shared test
 pnpm --filter @miniapp/backend test
 pnpm --filter @miniapp/frontend test
 pnpm --filter @miniapp/admin test
+pnpm --filter @miniapp/reply-renderer test
 
 pnpm --filter @miniapp/frontend build
 pnpm --filter @miniapp/admin build
 pnpm --filter @miniapp/cs-platform build
+pnpm --filter @miniapp/reply-renderer typecheck
 ```
 
 CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记录人工回归。
@@ -155,6 +159,19 @@ pnpm supabase:link:test
 - 测试库与生产库不保证同构。数据库结构参考必须标注环境、时间和证据，不能拿 migration 当实库快照。
 - 详细规则见 [Supabase spec](.trellis/spec/database/supabase/index.md)。
 
+文本后处理快照的版本外键需要 `postgres` 执行 `SELECT FOR KEY SHARE`。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 仅授予 owner `UPDATE(version)` 以满足行锁检查，同时恢复 API 角色最小权限；快照仍由 `ENABLE ALWAYS` 触发器禁止直接修改。账本 `applied` 不代替权限、开轮/重生成及回复回读验收，新迁移仍须逐环境手工执行。
+
+新发送和重生成通过数据库 current-postprocess RPC，在既有开轮事务内读取 `app_core.runtime_config` 的正式指针、校验对应不可变 artifact 快照并写入 `chat_history.postprocess_version`。开轮成功必返回非空版本；配置缺失、协议错版、快照不可用或新 RPC 未部署时拒绝开轮且不调用 LLM，不再因 Backend 冷启动生成永久无版本消息。旧显式 wrapper 的 `NULL=不绑定` 兼容语义保留，旧消息不回填；应用发布顺序为 migration → Backend。
+
+### AI 回复后处理
+
+- `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/text-postprocess/` 负责确定性编译与分段处理，不执行网络或数据库 IO。
+- Admin「回复富文本规则」使用独立草稿、发布版本和历史恢复流程。保存不切换正式版本；发布/回滚使用 CAS 与 `request_id`，结果未知先查询请求结果，禁止盲目重试写操作。
+- 已发布的 source 与 compiled artifact 作为 `app_core.text_postprocess_versions` 不可变快照原子保存；`app_core.runtime_config.miniapp_text_postprocess_config` 只保存当前正式指针。
+- 每条 assistant 消息绑定自己的 `postprocess_version`。Frontend 按版本批量读取 artifact；缺失、非法、旧消息 `NULL` 或 Worker 失败时只展示完整原始 Markdown，不在客户端编译 source，也不选择最新版本替代。
+- 流式阶段继续显示安全 Markdown；服务端终态后才挂载共用 `ReplyRenderer`。可信 choice 只在最新完整回复上调用正常发送链路，并有同步防双击。
+- TEST/PR 的 Admin 工作台与 Telegram 真机链路已验收；这不代表 Production migration、发布或未覆盖失败场景已完成。
+
 ## 7. 部署拓扑
 
 | 单元        | 平台/配置                                                     | 注意事项                                                                  |
@@ -177,6 +194,8 @@ pnpm supabase:link:test
 - 设计优先复用稳定能力和最小充分实现。可靠性基于真实故障模型；重试有限且只用于安全操作，关键写入评估幂等、并发和补偿。
 
 详细规则见根 [`AGENTS.md`](AGENTS.md) 与 [`.trellis/spec/`](.trellis/spec/)。
+
+文字回复等待超过 8 秒显示等待提示；“取消本次回复”调用受鉴权的服务端取消接口，确认该轮终态后恢复发送，并在最新未成功回复下显示“重新生成”，复用原用户输入。断网/离页只停止本地读流。取消与正常完成以数据库条件更新决定先后，取消待确认时保留重试入口；详情读取负责回收超过 120 秒的残留生成状态。此修复不需要数据库迁移，发布顺序为 Backend → Frontend，TEST/Preview 的真机、SSE 与钱包/免费额度验收通过后才能规划生产发布。
 
 ## 9. Trellis 开发流程
 

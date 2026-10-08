@@ -20,6 +20,7 @@ interface ChatComposerProps {
   onStop: () => void;
   /** 有一轮正在生成 */
   generating: boolean;
+  cancelling?: boolean;
   /** 会话还没就绪等原因导致不能发 */
   disabled: boolean;
   /** 胶囊左端的工具位，原版这里是唤起工具箱的按钮 */
@@ -32,6 +33,7 @@ export function ChatComposer({
   onSend,
   onStop,
   generating,
+  cancelling = false,
   disabled,
   leftSlot,
 }: ChatComposerProps) {
@@ -132,10 +134,16 @@ export function ChatComposer({
             <button
               type="button"
               onClick={onStop}
-              aria-label="停止生成"
+              aria-label={cancelling ? '正在取消' : '取消本次回复'}
+              title={cancelling ? '正在取消' : '取消本次回复'}
+              disabled={cancelling}
               className="flex size-10 items-center justify-center rounded-full bg-secondary text-primary shadow-[inset_0_0_0_1px_hsl(var(--border))]"
             >
-              <span className="size-[15px] rounded-[4px] bg-current" aria-hidden />
+              {cancelling ? (
+                <Loader2 className="size-5 animate-spin" aria-hidden />
+              ) : (
+                <span className="size-[15px] rounded-[4px] bg-current" aria-hidden />
+              )}
             </button>
           ) : (
             <button

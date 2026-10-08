@@ -93,5 +93,6 @@ describe('admin navigation', () => {
     expect(resolveAdminMenuSelection('characters')).toEqual({ view: 'characters' });
     expect(resolveAdminMenuSelection('announcements')).toEqual({ view: 'announcements' });
     expect(resolveAdminMenuSelection('releases')).toEqual({ view: 'releases' });
+    expect(resolveAdminMenuSelection('text_postprocess')).toEqual({ view: 'text_postprocess' });
   });
 });

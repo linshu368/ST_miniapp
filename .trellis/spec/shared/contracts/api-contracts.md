@@ -15,6 +15,7 @@
 | `lobby-pinned-characters.ts` | 大厅置顶角色                                                                                                                                                       |
 | `wallet.ts`                  | 钱包余额、流水和计费结果                                                                                                                                           |
 | `conversations.ts`           | 会话/消息 DTO                                                                                                                                                      |
+| `text-postprocess.ts`        | 后处理 source/artifact、Admin 草稿/发布/回滚/request lookup、版本批次与诊断                                                                                        |
 | `voice.ts`                   | 语音生成请求、状态和计费响应                                                                                                                                       |
 | `wishes.ts`                  | 心愿功能                                                                                                                                                           |
 | `cs-platform.ts`             | Telegram 回访后台 DTO                                                                                                                                              |
@@ -37,3 +38,11 @@
 ## 可靠性与演进
 
 design 必须列 producer/consumer、旧客户端、部分部署、重试/幂等语义和发布顺序。优先新增可选字段/新联合成员；必须破坏时采用版本化或双读写过渡，并给出回滚。
+
+## 文本后处理契约
+
+- `ChatMessage.postprocess_version` 与 SSE `start.postprocess_version` 为向后兼容可选字段；旧消息缺失按 `NULL`，不得推断为当前版本。
+- source 与 compiled artifact 各自固定 schema/policy version。artifact 是发布快照的一部分，不得由 Frontend/Admin renderer 从 source 临时生成。
+- Admin mutation 使用 UUID `request_id`、明确 CAS 前提和稳定错误码；`RESULT_UNKNOWN` 表示提交结果未知，不等于失败，也不授权自动重试。
+- 版本批次一次最多 20 个去重正整数；每个结果独立为 snapshot/unavailable，单个坏版本不得污染整批，也不得返回 source 或内部诊断正文。
+- choice payload 是 renderer 输出的可信纯文本，但 consumer 仍负责“最新完整回复”资格、长度与防双击。

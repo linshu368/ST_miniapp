@@ -7,3 +7,4 @@
 - 变更计划列公开出口增减、受影响包、部署顺序、旧数据/旧客户端、回滚和观察指标。
 - 禁止用 `any`、双重断言或宽泛 index signature 掩盖契约不确定性；未知外部数据先 `unknown` 再解析。
 - 高可用仅在契约层表达必要语义（幂等键、状态、错误码），重试/队列实现归所有者包；保持 shared 简洁和无 I/O。
+- 文本后处理变更必须覆盖合法/非法 schema 与 flags、捕获组转义、HTML/CSS 逃逸、空匹配/重叠/non-global、节点/输出/诊断预算、artifact/source 身份和旧 `postprocess_version` 缺失兼容；并运行 renderer、Backend、Frontend、Admin 消费者 typecheck。

@@ -189,7 +189,8 @@ export default defineRailway((ctx) => {
       buildEnvironment: 'V3',
       dockerfilePath: '/ops/docker/Dockerfile.backend',
     },
-    start: 'tsx src/scripts/reconcile-payment-orders.ts',
+    // The Docker runtime no longer installs tsx globally; keep this service override aligned with CMD.
+    start: './node_modules/.bin/tsx src/scripts/reconcile-payment-orders.ts',
     deploy: {
       restartPolicyType: 'ALWAYS',
     },
@@ -204,7 +205,8 @@ export default defineRailway((ctx) => {
       buildEnvironment: 'V3',
       dockerfilePath: '/ops/docker/Dockerfile.backend',
     },
-    start: 'tsx src/scripts/expire-payment-orders.ts',
+    // Keep one-shot cron overrides aligned with the image CMD: tsx is package-local, not global.
+    start: './node_modules/.bin/tsx src/scripts/expire-payment-orders.ts',
     deploy: {
       cronSchedule: '*/5 * * * *',
       restartPolicyType: 'NEVER',
@@ -225,7 +227,8 @@ export default defineRailway((ctx) => {
       buildEnvironment: 'V3',
       dockerfilePath: '/ops/docker/Dockerfile.backend',
     },
-    start: 'tsx src/scripts/send-vip-expiry-reminders.ts --write',
+    // The Docker runtime does not install tsx globally; use the package-local binary.
+    start: './node_modules/.bin/tsx src/scripts/send-vip-expiry-reminders.ts --write',
     deploy: {
       cronSchedule: '20 * * * *',
       restartPolicyType: 'NEVER',

@@ -68,27 +68,27 @@ export class RuntimeConfigReadError extends Error {
  * 避免把数据库故障误读成“开关不存在所以关闭”之外还吞掉原始错误。
  */
 export async function fetchRuntimeConfigEntryStrict(
-  key: string
+  key: string,
+  signal?: AbortSignal
 ): Promise<RuntimeConfigEntry | null> {
   const db = getDomainDb('app_core');
-  const { data, error } = await db
-    .from('runtime_config')
-    .select(SELECT_COLUMNS)
-    .eq('key', key)
-    .maybeSingle();
+  const request = db.from('runtime_config').select(SELECT_COLUMNS).eq('key', key);
+  const bounded = signal ? request.abortSignal(signal) : request;
+  const { data, error } = await bounded.maybeSingle();
 
   if (error) throw new RuntimeConfigReadError(key, error);
   if (!data) return null;
   return toEntry(data);
 }
 
-export async function fetchRuntimeConfigEntry(key: string): Promise<RuntimeConfigEntry | null> {
+export async function fetchRuntimeConfigEntry(
+  key: string,
+  signal?: AbortSignal
+): Promise<RuntimeConfigEntry | null> {
   const db = getDomainDb('app_core');
-  const { data, error } = await db
-    .from('runtime_config')
-    .select(SELECT_COLUMNS)
-    .eq('key', key)
-    .maybeSingle();
+  const request = db.from('runtime_config').select(SELECT_COLUMNS).eq('key', key);
+  const bounded = signal ? request.abortSignal(signal) : request;
+  const { data, error } = await bounded.maybeSingle();
 
   if (error) {
     console.error(`[runtime-config] Failed to fetch ${key}:`, error);
