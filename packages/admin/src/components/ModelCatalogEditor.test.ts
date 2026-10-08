@@ -83,6 +83,23 @@ describe('reorderCatalog', () => {
 });
 
 describe('editable model catalog additions', () => {
+  it('preserves a Venice provider mapping while parsing editable state', () => {
+    const veniceCatalog = structuredClone(catalog);
+    Object.assign(veniceCatalog.tiers[0]!.models[0]!, {
+      provider: 'venice',
+      provider_model_id: 'venice-uncensored',
+      openrouter_model_id: 'venice-uncensored',
+    });
+
+    const parsed = EditableModelCatalogSchema.parse(veniceCatalog);
+
+    expect(parsed.tiers[0]?.models[0]).toMatchObject({
+      provider: 'venice',
+      provider_model_id: 'venice-uncensored',
+      openrouter_model_id: 'venice-uncensored',
+    });
+  });
+
   it('keeps a newly added incomplete model editable', () => {
     const result = appendDraftModel(catalog, 0, 123);
     expect(result.tiers[0]?.models.at(-1)?.id).toBe('model-123-2');
