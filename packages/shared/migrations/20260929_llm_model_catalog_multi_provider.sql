@@ -125,7 +125,7 @@ END;
 $$;
 
 -- Existing rows are OpenRouter rows. Backfill all three managed surfaces before validation is tightened.
-UPDATE infrastructure.runtime_config
+UPDATE app_core.runtime_config
 SET value = jsonb_set(
   value,
   '{tiers}',
@@ -168,7 +168,7 @@ DO $$
 DECLARE v_value JSONB;
 BEGIN
   FOR v_value IN
-    SELECT value FROM infrastructure.runtime_config WHERE key = 'llm_model_catalog'
+    SELECT value FROM app_core.runtime_config WHERE key = 'llm_model_catalog'
     UNION ALL SELECT value FROM admin.config_drafts
       WHERE config_key = 'llm_model_catalog' AND value IS NOT NULL
     UNION ALL SELECT value FROM admin.config_releases
