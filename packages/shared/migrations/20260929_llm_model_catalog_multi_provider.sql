@@ -104,12 +104,9 @@ BEGIN
       OR model ->> 'openrouter_model_id' <> model ->> 'provider_model_id'
       OR COALESCE(char_length(trim(model ->> 'display_name')), 0) NOT BETWEEN 1 AND 40
       OR COALESCE(char_length(trim(model ->> 'tagline')), 0) NOT BETWEEN 1 AND 40
-      OR jsonb_typeof(model -> 'markup') IS DISTINCT FROM 'number'
-      OR (model ->> 'markup')::NUMERIC NOT IN (0, 1, 1.5, 2, 2.5, 3, 3.5, 4)
-      OR ((model ->> 'markup')::NUMERIC = 0 AND (
-        jsonb_typeof(model -> 'deduct_markup') IS DISTINCT FROM 'number'
-        OR (model ->> 'deduct_markup')::NUMERIC NOT IN (1, 1.5, 2, 2.5, 3, 3.5, 4)))
-      OR ((model ->> 'markup')::NUMERIC <> 0 AND model ? 'deduct_markup')
+      OR jsonb_typeof(model -> 'is_free') IS DISTINCT FROM 'boolean'
+      OR model ? 'markup'
+      OR model ? 'deduct_markup'
       OR (model ->> 'sort_order')::NUMERIC < 0
       OR (model ->> 'sort_order')::NUMERIC <> trunc((model ->> 'sort_order')::NUMERIC)
   ) THEN
