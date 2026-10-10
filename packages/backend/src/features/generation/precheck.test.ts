@@ -26,6 +26,8 @@ const PRICING: LlmPricingConfig = {
 const PAID_MODEL: ModelBillingContext = {
   modelId: 'anthropic-claude-sonnet-4-5',
   modelDisplayName: 'Claude Sonnet 4.5',
+  provider: 'openrouter',
+  providerModelId: 'anthropic/claude-sonnet-4.5',
   openRouterModelId: 'anthropic/claude-sonnet-4.5',
   modelTier: 'premium',
   catalogVersion: 12,
@@ -36,6 +38,7 @@ const FREE_MODEL: ModelBillingContext = {
   ...PAID_MODEL,
   modelId: 'gemini-flash-lite',
   modelDisplayName: 'Gemini Flash Lite',
+  providerModelId: 'google/gemini-3.1-flash-lite',
   openRouterModelId: 'google/gemini-3.1-flash-lite',
   modelTier: 'light',
   isFree: true,

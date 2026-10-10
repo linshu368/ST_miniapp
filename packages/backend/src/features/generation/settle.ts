@@ -26,6 +26,7 @@ import {
   ConversationHistoryRepository,
   type LlmBillingSnapshot,
 } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import type { LlmModelProvider } from '@miniapp/shared';
 import {
   getInitialBillingDecision,
   shouldRecordUsageCharge,
@@ -38,6 +39,8 @@ import {
   fetchGenerationDataForSettlement,
   type GenerationData,
 } from './openrouter-metadata.js';
+import { VeniceChatHistoryRepository } from '../../infrastructure/repositories/VeniceChatHistoryRepository.js';
+import { buildVeniceMetadata } from './venice-metadata.js';
 
 /**
  * 一轮生成结算所需的全部输入。
@@ -48,6 +51,8 @@ import {
 export interface GenerationSettlementEntry {
   user_id: string | null;
   model: string;
+  provider?: LlmModelProvider;
+  provider_model_id?: string;
   charge_id: string;
   model_id: string | null;
   model_display_name: string;
@@ -77,12 +82,23 @@ export interface GenerationSettlementEntry {
   upstream_status?: number | null;
   generation_id?: string | null;
   finish_reason?: string | null;
+  provider_response?: {
+    usage: Record<string, unknown> | null;
+    responseMetadata: Record<string, unknown>;
+    latencyMs: number | null;
+    generationTimeMs: number;
+  };
 }
 
 let historyRepository: ConversationHistoryRepository | null = null;
+let veniceHistoryRepository: VeniceChatHistoryRepository | null = null;
 
 function history(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
+}
+
+function veniceHistory(): VeniceChatHistoryRepository {
+  return (veniceHistoryRepository ??= new VeniceChatHistoryRepository());
 }
 
 async function checkInviteChatRoundsReward(userId: string, log: FastifyBaseLogger): Promise<void> {
@@ -147,9 +163,12 @@ export async function runSettlement(
   clog: FastifyBaseLogger
 ): Promise<void> {
   // 只有可能扣费的轮次才值得等上游统计；免费轮拿了也用不上。
-  const wantsUsageData = Boolean(entry.generation_id) && entry.fixed_deduction > 0;
-  let llmMetadata: Record<string, unknown> = {};
+  const provider = entry.provider ?? 'openrouter';
+  const wantsUsageData =
+    provider === 'openrouter' && Boolean(entry.generation_id) && entry.fixed_deduction > 0;
   let finishReason = entry.finish_reason ?? null;
+  // Main chat_history keeps OpenRouter metadata only. Venice metadata has a dedicated table.
+  let llmMetadata: Record<string, unknown> = {};
 
   if (wantsUsageData) {
     const genData = await fetchUsageData(entry.generation_id as string, clog);
@@ -217,6 +236,31 @@ export async function runSettlement(
       'missing history_id'
     );
     return;
+  }
+
+  if (provider === 'venice' && entry.provider_response) {
+    try {
+      await veniceHistory().upsert(
+        await buildVeniceMetadata({
+          chatHistoryId: entry.history_id,
+          model: entry.provider_model_id ?? entry.model,
+          generationId: entry.generation_id ?? null,
+          finishReason,
+          ...entry.provider_response,
+        })
+      );
+    } catch (err) {
+      clog.error(
+        {
+          kind: 'sys',
+          event: 'chathistory.venice_metadata.failed',
+          err,
+          historyId: entry.history_id,
+          generationId: entry.generation_id ?? null,
+        },
+        'failed to persist Venice provider metadata'
+      );
+    }
   }
 
   try {
@@ -305,6 +349,10 @@ async function chargeRound(input: {
   clog: FastifyBaseLogger;
 }): Promise<{ chargedAmount: number; settled: boolean }> {
   const { entry, llmMetadata, finishReason, clog } = input;
+  if ((entry.provider ?? 'openrouter') !== 'openrouter' && finishReason === null) {
+    llmMetadata.llm_intended_deduction = 0;
+    return { chargedAmount: 0, settled: true };
+  }
   const userId = entry.user_id as string;
   const usageCost = llmMetadata.llm_usage;
   const billingDecision = getInitialBillingDecision({
@@ -321,7 +369,10 @@ async function chargeRound(input: {
     typeof llmMetadata.llm_model === 'string' && llmMetadata.llm_model.trim()
       ? llmMetadata.llm_model
       : null;
-  const waitingForFinishReason = finishReason === null && Boolean(entry.generation_id);
+  const waitingForFinishReason =
+    (entry.provider ?? 'openrouter') === 'openrouter' &&
+    finishReason === null &&
+    Boolean(entry.generation_id);
 
   try {
     const result = await applyLlmCharge({
@@ -344,6 +395,8 @@ async function chargeRound(input: {
       assistantReply: entry.assistant_reply,
       baseMetadata: {
         requested_model: entry.model,
+        provider: entry.provider ?? 'openrouter',
+        provider_model_id: entry.provider_model_id ?? entry.model,
         ...frozenLlmChargeMetadata(entry),
       },
     });
@@ -380,6 +433,8 @@ function billingSnapshotFromEntry(entry: GenerationSettlementEntry): LlmBillingS
   return {
     charge_id: entry.charge_id,
     model_id: entry.model_id,
+    provider: entry.provider ?? 'openrouter',
+    provider_model_id: entry.provider_model_id ?? entry.model,
     model_display_name: entry.model_display_name,
     model_markup: entry.model_markup,
     fixed_deduction: entry.fixed_deduction,

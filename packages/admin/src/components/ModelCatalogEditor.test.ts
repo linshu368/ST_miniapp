@@ -22,6 +22,8 @@ const catalog: ModelCatalog = {
       models: [
         {
           id: 'flash',
+          provider: 'openrouter',
+          provider_model_id: 'vendor/flash',
           openrouter_model_id: 'vendor/flash',
           display_name: 'Flash',
           tagline: '快速响应',
@@ -31,6 +33,8 @@ const catalog: ModelCatalog = {
         },
         {
           id: 'economy',
+          provider: 'openrouter',
+          provider_model_id: 'vendor/economy',
           openrouter_model_id: 'vendor/economy',
           display_name: 'Economy',
           tagline: '节省星尘',
@@ -49,6 +53,8 @@ const catalog: ModelCatalog = {
       models: [
         {
           id: 'pro',
+          provider: 'openrouter',
+          provider_model_id: 'vendor/pro',
           openrouter_model_id: 'vendor/pro',
           display_name: 'Pro',
           tagline: '细腻演绎',
@@ -77,6 +83,23 @@ describe('reorderCatalog', () => {
 });
 
 describe('editable model catalog additions', () => {
+  it('preserves a Venice provider mapping while parsing editable state', () => {
+    const veniceCatalog = structuredClone(catalog);
+    Object.assign(veniceCatalog.tiers[0]!.models[0]!, {
+      provider: 'venice',
+      provider_model_id: 'venice-uncensored',
+      openrouter_model_id: 'venice-uncensored',
+    });
+
+    const parsed = EditableModelCatalogSchema.parse(veniceCatalog);
+
+    expect(parsed.tiers[0]?.models[0]).toMatchObject({
+      provider: 'venice',
+      provider_model_id: 'venice-uncensored',
+      openrouter_model_id: 'venice-uncensored',
+    });
+  });
+
   it('keeps a newly added incomplete model editable', () => {
     const result = appendDraftModel(catalog, 0, 123);
     expect(result.tiers[0]?.models.at(-1)?.id).toBe('model-123-2');
@@ -141,12 +164,25 @@ describe('filterOpenRouterModels', () => {
 describe('findDuplicateOpenRouterAssignments', () => {
   it('reports every card sharing the same OpenRouter model across tiers', () => {
     const duplicateCatalog = structuredClone(catalog);
+    duplicateCatalog.tiers[1]!.models[0]!.provider_model_id = 'vendor/flash';
     duplicateCatalog.tiers[1]!.models[0]!.openrouter_model_id = 'vendor/flash';
 
     expect(findDuplicateOpenRouterAssignments(duplicateCatalog)).toEqual({
-      'vendor/flash': [
-        { stableId: 'flash', displayName: 'Flash', tier: 'light' },
-        { stableId: 'pro', displayName: 'Pro', tier: 'premium' },
+      'openrouter:vendor/flash': [
+        {
+          stableId: 'flash',
+          displayName: 'Flash',
+          tier: 'light',
+          provider: 'openrouter',
+          providerModelId: 'vendor/flash',
+        },
+        {
+          stableId: 'pro',
+          displayName: 'Pro',
+          tier: 'premium',
+          provider: 'openrouter',
+          providerModelId: 'vendor/flash',
+        },
       ],
     });
   });

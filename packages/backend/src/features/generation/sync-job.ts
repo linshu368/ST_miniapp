@@ -16,6 +16,7 @@
  */
 
 import type { FastifyBaseLogger } from 'fastify';
+import { LlmModelProviderSchema, type LlmModelProvider } from '@miniapp/shared';
 import { calculateUsageDeduction } from '../billing/usage-pricing.js';
 import {
   ConversationHistoryRepository,
@@ -124,6 +125,19 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       const generationId = record.llm_generation_id;
       if (typeof generationId !== 'string' || generationId.length === 0) continue;
 
+      const provider = readProviderFromSnapshot(record.llm_billing_snapshot);
+      if (provider !== 'openrouter') {
+        const reconciled = await reconcileNonOpenRouterRecord({
+          record,
+          generationId,
+          provider,
+          log,
+        });
+        if (reconciled === 'settled') completedCount++;
+        else notReadyCount++;
+        continue;
+      }
+
       const genData = await fetchGenerationData(generationId);
       if (!genData) {
         notReadyCount++;
@@ -200,6 +214,77 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
   } finally {
     isRunning = false;
   }
+}
+
+async function reconcileNonOpenRouterRecord(input: {
+  record: ChatHistorySyncRow;
+  generationId: string;
+  provider: Exclude<LlmModelProvider, 'openrouter'>;
+  log: FastifyBaseLogger;
+}): Promise<'settled' | 'not_ready'> {
+  const { record, generationId, provider, log } = input;
+  const finishReason = record.llm_finish_reason;
+  if (typeof finishReason !== 'string') return 'not_ready';
+
+  const model =
+    typeof record.llm_billing_snapshot?.provider_model_id === 'string'
+      ? record.llm_billing_snapshot.provider_model_id
+      : record.model;
+  const llmMetadata: Record<string, unknown> = {
+    llm_provider_name: provider,
+    llm_model: model,
+    llm_finish_reason: finishReason,
+    llm_generation_data: { provider, model, finish_reason: finishReason },
+  };
+
+  let settled = false;
+  try {
+    const reconciled = await reconcileCharge({
+      record,
+      generationId,
+      genData: { model, finish_reason: finishReason },
+      finishReason,
+      llmMetadata,
+    });
+    settled = reconciled.settled;
+  } catch (err) {
+    log.error(
+      {
+        kind: 'sys',
+        event: 'chathistory_sync.non_openrouter_reconcile_failed',
+        err,
+        id: record.id,
+        provider,
+        generationId,
+        chargeId: record.llm_charge_id,
+      },
+      'failed to reconcile non-OpenRouter LLM usage charge'
+    );
+    return 'not_ready';
+  }
+
+  try {
+    await history().applyGenerationMetadata(
+      record.id,
+      llmMetadata,
+      settled ? new Date().toISOString() : undefined
+    );
+  } catch (err) {
+    log.error(
+      {
+        kind: 'sys',
+        event: 'chathistory_sync.non_openrouter_update_failed',
+        err,
+        id: record.id,
+        provider,
+        generationId,
+      },
+      'failed to update non-OpenRouter chat history'
+    );
+    return 'not_ready';
+  }
+
+  return settled ? 'settled' : 'not_ready';
 }
 
 /**
@@ -347,6 +432,16 @@ function buildFixedTierChargeCommand(input: {
     baseMetadata: {
       ...(originalCharge?.metadata ?? {}),
       requested_model: requestedModel,
+      provider:
+        snapshot?.provider ||
+        (typeof originalCharge?.metadata?.provider === 'string'
+          ? originalCharge.metadata.provider
+          : 'openrouter'),
+      provider_model_id:
+        snapshot?.provider_model_id ||
+        (typeof originalCharge?.metadata?.provider_model_id === 'string'
+          ? originalCharge.metadata.provider_model_id
+          : requestedModel),
       ...frozenLlmChargeMetadata({
         fixed_deduction: fixedDeduction,
         fixed_deduction_category:
@@ -403,6 +498,11 @@ function readBillingSnapshot(value: unknown): LlmBillingSnapshot | null {
   return {
     charge_id: typeof row.charge_id === 'string' ? row.charge_id : '',
     model_id: typeof row.model_id === 'string' ? row.model_id : null,
+    provider: readProviderFromSnapshot(row),
+    provider_model_id:
+      typeof row.provider_model_id === 'string' && row.provider_model_id.trim()
+        ? row.provider_model_id
+        : undefined,
     model_display_name: modelDisplayName,
     model_markup: modelMarkup,
     fixed_deduction: fixedDeduction,
@@ -414,6 +514,13 @@ function readBillingSnapshot(value: unknown): LlmBillingSnapshot | null {
     billing_mode: 'fixed_tier',
     ...readFrozenPriceFields(row),
   };
+}
+
+function readProviderFromSnapshot(value: unknown): LlmModelProvider {
+  if (!value || typeof value !== 'object') return 'openrouter';
+  const row = value as Record<string, unknown>;
+  const parsed = LlmModelProviderSchema.safeParse(row.provider);
+  return parsed.success ? parsed.data : 'openrouter';
 }
 
 function readFrozenPriceFields(

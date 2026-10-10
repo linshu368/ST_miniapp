@@ -72,6 +72,11 @@ const validCatalog = {
 describe('ModelCatalogSchema', () => {
   it('accepts a catalog whose default identifies a model', () => {
     expect(ModelCatalogSchema.safeParse(validCatalog).success).toBe(true);
+    expect(ModelCatalogSchema.parse(validCatalog).tiers[0]!.models[0]).toMatchObject({
+      provider: 'openrouter',
+      provider_model_id: 'google/gemini-flash',
+      openrouter_model_id: 'google/gemini-flash',
+    });
   });
 
   it('rejects an unknown default model id', () => {
@@ -108,7 +113,7 @@ describe('ModelCatalogSchema', () => {
     expect(ModelCatalogSchema.safeParse(invalidCatalog).success).toBe(false);
   });
 
-  it('rejects duplicate OpenRouter model mappings', () => {
+  it('rejects duplicate provider model mappings', () => {
     const duplicateMapping = structuredClone(validCatalog);
     duplicateMapping.tiers[0]!.models.push({
       ...structuredClone(duplicateMapping.tiers[0]!.models[0]!),
@@ -116,6 +121,38 @@ describe('ModelCatalogSchema', () => {
     });
 
     expect(ModelCatalogSchema.safeParse(duplicateMapping).success).toBe(false);
+  });
+
+  it('accepts Venice model mappings and scopes duplicate checks by provider', () => {
+    const catalog = structuredClone(validCatalog) as {
+      tiers: Array<{ models: Array<Record<string, unknown>> }>;
+    };
+    catalog.tiers[0]!.models.push({
+      id: 'venice-flash',
+      provider: 'venice',
+      provider_model_id: 'google/gemini-flash',
+      openrouter_model_id: 'google/gemini-flash',
+      display_name: 'Venice Flash',
+      tagline: 'Venice',
+      is_free: false,
+      enabled: true,
+      sort_order: 1,
+    });
+
+    const parsed = ModelCatalogSchema.parse(catalog);
+    expect(parsed.tiers[0]!.models[1]).toMatchObject({
+      provider: 'venice',
+      provider_model_id: 'google/gemini-flash',
+    });
+  });
+
+  it('rejects OpenRouter provider ids that are not OpenRouter slugs', () => {
+    const catalog = structuredClone(validCatalog) as {
+      tiers: Array<{ models: Array<Record<string, unknown>> }>;
+    };
+    catalog.tiers[0]!.models[0]!.provider_model_id = 'venice-uncensored';
+    catalog.tiers[0]!.models[0]!.openrouter_model_id = 'venice-uncensored';
+    expect(ModelCatalogSchema.safeParse(catalog).success).toBe(false);
   });
 
   it('enforces stable ids, required taglines and hex colors', () => {
@@ -180,6 +217,8 @@ describe('OpenRouter model helpers', () => {
 
     expect(publicCatalog.tiers[0]?.key).toBe('light');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('openrouter_model_id');
+    expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('provider');
+    expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('provider_model_id');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('enabled');
     expect(publicCatalog.tiers[0]?.models[0]?.is_free).toBe(false);
   });
@@ -207,6 +246,8 @@ describe('OpenRouter model helpers', () => {
     expect(ModelCatalogSchema.safeParse(legacyDisplayCatalog).success).toBe(false);
     expect(resolveRuntimeCatalogModel(legacyDisplayCatalog, 'flash', false)).toEqual({
       id: 'flash',
+      provider: 'openrouter',
+      provider_model_id: 'google/gemini-flash',
       openrouter_model_id: 'google/gemini-flash',
     });
   });
@@ -215,6 +256,8 @@ describe('OpenRouter model helpers', () => {
     expect(resolveRuntimeCatalogModel(validCatalog, 'vendor/unknown', false)).toBeNull();
     expect(resolveRuntimeCatalogModel(validCatalog, 'vendor/unknown')).toEqual({
       id: 'flash',
+      provider: 'openrouter',
+      provider_model_id: 'google/gemini-flash',
       openrouter_model_id: 'google/gemini-flash',
     });
   });

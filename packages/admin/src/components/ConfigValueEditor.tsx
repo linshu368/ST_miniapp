@@ -25,8 +25,10 @@ import {
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
   type ModelCatalog,
+  type LlmModelProvider,
   type OpenRouterModelDirectory,
   type PaymentPlan,
+  type ProviderModelDirectory,
   type WordCountTiersConfig,
   type AdminImageTextModelTestRequest,
   type AdminImageTextModelTestResponse,
@@ -210,11 +212,11 @@ export function ConfigValueEditor(props: {
   value: unknown;
   onChange: (value: unknown) => void;
   disabled?: boolean;
-  openRouterDirectory: OpenRouterModelDirectory | null;
+  providerDirectories: Partial<Record<LlmModelProvider, ProviderModelDirectory>>;
   publishedModelIds: ReadonlySet<string>;
-  syncLoading: boolean;
-  syncError: string | null;
-  onRefreshOpenRouter: () => void;
+  syncLoading: Partial<Record<LlmModelProvider, boolean>>;
+  syncError: Partial<Record<LlmModelProvider, string | null>>;
+  onRefreshProvider: (provider: LlmModelProvider) => void;
   paymentPlans: PaymentPlan[];
   characters: CharacterCard[];
   charactersLoading: boolean;
@@ -224,6 +226,23 @@ export function ConfigValueEditor(props: {
     value: AdminImageTextModelTestRequest
   ) => Promise<AdminImageTextModelTestResponse>;
 }) {
+  const openRouterDirectory: OpenRouterModelDirectory | null = props.providerDirectories.openrouter
+    ? {
+        models: props.providerDirectories.openrouter.models.map((model) => ({
+          id: model.id,
+          canonical_slug: null,
+          name: model.name,
+          description: model.description,
+          context_length: model.context_length,
+          prompt_usd_per_token: model.prompt_usd_per_token,
+          completion_usd_per_token: model.completion_usd_per_token,
+          expiration_date: null,
+        })),
+        fetched_at: props.providerDirectories.openrouter.fetched_at,
+        stale: props.providerDirectories.openrouter.stale,
+      }
+    : null;
+
   if (props.configKey === 'image_text_model_config') {
     const record =
       props.value && typeof props.value === 'object' && !Array.isArray(props.value)
@@ -579,7 +598,7 @@ export function ConfigValueEditor(props: {
         value={props.value}
         disabled={props.disabled}
         onChange={props.onChange}
-        openRouterDirectory={props.openRouterDirectory}
+        openRouterDirectory={openRouterDirectory}
       />
     );
   }
@@ -657,11 +676,11 @@ export function ConfigValueEditor(props: {
         value={modelCatalog}
         onChange={props.onChange}
         disabled={props.disabled}
-        openRouterDirectory={props.openRouterDirectory}
+        providerDirectories={props.providerDirectories}
         publishedModelIds={props.publishedModelIds}
         syncLoading={props.syncLoading}
         syncError={props.syncError}
-        onRefreshOpenRouter={props.onRefreshOpenRouter}
+        onRefreshProvider={props.onRefreshProvider}
       />
     </Space>
   );

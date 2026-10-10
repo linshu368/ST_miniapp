@@ -23,16 +23,15 @@ import {
 } from '../../platform/model-tiers.js';
 import { getProviderPreferencesForModel } from '../../platform/provider-routing.js';
 import { readVipStrategy } from '../../platform/vip-strategy.js';
-import type { OpenRouterProviderPreferences } from '@miniapp/shared';
+import { LLM_PROVIDER_CAPABILITIES, type OpenRouterProviderPreferences } from '@miniapp/shared';
 import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
 import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
 import {
-  CHAT_COMPLETIONS_PATH,
   createSseTap,
   forwardToUpstream,
-  resolveUpstreamUrl,
+  resolveProviderUpstream,
   type SseTapResult,
 } from './upstream.js';
 import { applyPromptCaching, type UpstreamMessage } from './prompt-caching.js';
@@ -48,7 +47,12 @@ import type {
 /** 一次生成里只有这五个字段随终态变化，其余结算入参全程固定。 */
 type HistoryOutcome = Pick<
   GenerationSettlementEntry,
-  'assistant_reply' | 'status' | 'upstream_status' | 'generation_id' | 'finish_reason'
+  | 'assistant_reply'
+  | 'status'
+  | 'upstream_status'
+  | 'generation_id'
+  | 'finish_reason'
+  | 'provider_response'
 >;
 
 type SaveHistory = (outcome: HistoryOutcome) => void;
@@ -70,17 +74,30 @@ function buildUpstreamBody(
   request: GenerationRequest,
   providerPreferences: OpenRouterProviderPreferences | null
 ): Record<string, unknown> {
-  const messages: UpstreamMessage[] = request.promptCaching
-    ? applyPromptCaching(request.messages, request.model.openRouterModelId)
-    : request.messages.map((message) => ({ role: message.role, content: message.content }));
+  const capability = LLM_PROVIDER_CAPABILITIES[request.model.provider];
+  const messages: UpstreamMessage[] =
+    request.promptCaching && capability.promptCachingMode === 'openrouter_anthropic_cache_control'
+      ? applyPromptCaching(request.messages, request.model.openRouterModelId)
+      : request.messages.map((message) => ({ role: message.role, content: message.content }));
 
   return {
-    model: request.model.openRouterModelId,
+    model: request.model.providerModelId,
     messages,
     stream: request.stream,
     // 「模型 × 供应商」路由：屏蔽 -> ignore，优先 -> order + allow_fallbacks（运营在 admin 配置）。
     // 未命中规则的模型不带 provider 字段，交给 OpenRouter 默认路由。
     ...(providerPreferences ? { provider: providerPreferences } : {}),
+    ...(request.model.provider === 'venice'
+      ? {
+          venice_parameters: { include_venice_system_prompt: false },
+          ...(request.stream ? { stream_options: { include_usage: true } } : {}),
+        }
+      : {}),
+    ...(request.promptCaching &&
+    capability.promptCachingMode === 'venice_prompt_cache_key' &&
+    request.sessionId
+      ? { prompt_cache_key: `session:${request.sessionId}` }
+      : {}),
     // v1 恒为空对象（引擎不消费预设、不传采样参数），留着是为了后续接入预设采样参数时不改这里
     ...request.sampling,
   };
@@ -98,7 +115,10 @@ export async function execute(
   const [pricing, billing, vipStrategy] = await withAbort(
     Promise.all([
       getPricingConfig(),
-      getModelBillingContext(request.model.openRouterModelId),
+      getModelBillingContext({
+        provider: request.model.provider,
+        providerModelId: request.model.providerModelId,
+      }),
       readVipStrategy(),
     ]),
     signal
@@ -186,18 +206,40 @@ export async function execute(
     const saveHistory: SaveHistory = createHistoryWriter({ request, billing, plan, log });
 
     // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
-    const providerPreferences = await withAbort(
-      getProviderPreferencesForModel(billing.openRouterModelId),
-      signal
-    );
+    const providerPreferences =
+      billing.provider === 'openrouter'
+        ? await withAbort(getProviderPreferencesForModel(billing.providerModelId), signal)
+        : null;
+    const upstream = resolveProviderUpstream(billing.provider);
+    if (!upstream.apiKey) {
+      await releaseReservation();
+      const apiKeyEnv = LLM_PROVIDER_CAPABILITIES[billing.provider].apiKeyEnv;
+      const err = new Error(`${apiKeyEnv} is required for ${billing.provider} generation`);
+      log.sys.error(
+        {
+          event: 'llm.upstream.missing_key',
+          err,
+          userId: request.userId,
+          sessionId: request.sessionId ?? null,
+          provider: billing.provider,
+          model: billing.providerModelId,
+        },
+        'upstream provider API key is missing'
+      );
+      hooks?.onError?.(err);
+      return finish(failed());
+    }
 
     let upstreamRes: Response;
+    const upstreamStartedAt = Date.now();
     try {
       upstreamRes = await forwardToUpstream({
-        url: resolveUpstreamUrl(CHAT_COMPLETIONS_PATH),
+        url: upstream.url,
         method: 'POST',
         body: JSON.stringify(buildUpstreamBody(request, providerPreferences)),
         signal,
+        apiKey: upstream.apiKey,
+        provider: billing.provider,
       });
     } catch (err) {
       // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
@@ -208,7 +250,8 @@ export async function execute(
           err,
           userId: request.userId,
           sessionId: request.sessionId ?? null,
-          model: billing.openRouterModelId,
+          provider: billing.provider,
+          model: billing.providerModelId,
         },
         'upstream request failed'
       );
@@ -225,7 +268,8 @@ export async function execute(
           event: 'llm.upstream.rejected',
           userId: request.userId,
           sessionId: request.sessionId ?? null,
-          model: billing.openRouterModelId,
+          provider: billing.provider,
+          model: billing.providerModelId,
           upstreamStatus: upstreamRes.status,
         },
         'upstream rejected generation'
@@ -258,6 +302,7 @@ export async function execute(
           saveHistory,
           hooks,
           log,
+          upstreamStartedAt,
         })
       );
     }
@@ -287,6 +332,7 @@ export async function execute(
     // a deadline during a slow CAS/quota finalize must never trigger another settlement.
     let settlement: Promise<void> | undefined;
     let settledResult: SseTapResult | undefined;
+    let firstTokenAt: number | null = null;
     const settleOnce = (observed: SseTapResult): Promise<void> => {
       settlement ??= (async () => {
         const interrupted = signal.aborted
@@ -308,6 +354,8 @@ export async function execute(
           reservation,
           saveHistory,
           log,
+          upstreamStartedAt,
+          firstTokenAt,
         });
       })();
       return settlement;
@@ -318,6 +366,7 @@ export async function execute(
       onDelta: (delta) => {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
+          firstTokenAt = Date.now();
           hooks?.onFirstToken?.();
         }
         hooks?.onDelta?.(delta);
@@ -399,6 +448,8 @@ function createHistoryWriter(input: {
       {
         user_id: request.userId,
         model: billing.openRouterModelId,
+        provider: billing.provider,
+        provider_model_id: billing.providerModelId,
         ...plan.snapshot,
         user_input: request.userInput,
         history: request.messages,
@@ -423,11 +474,14 @@ async function settleStream(input: {
   reservation: FreeQuotaReservation;
   saveHistory: SaveHistory;
   log: GenerationLogger;
+  upstreamStartedAt: number;
+  firstTokenAt: number | null;
 }): Promise<void> {
   const { result, request, billing, reservation, saveHistory, log } = input;
   const delivered = isDeliveredReply(result);
   const billable = isBillableReply(result);
-  const waitingForFinishReason = delivered && result.finishReason === null;
+  const waitingForFinishReason =
+    billing.provider === 'openrouter' && delivered && result.finishReason === null;
   if (!waitingForFinishReason) {
     await reservation.finalize(billable);
   }
@@ -438,7 +492,8 @@ async function settleStream(input: {
         event: 'llm.generation.completed',
         userId: request.userId,
         sessionId: request.sessionId ?? null,
-        model: billing.openRouterModelId,
+        provider: billing.provider,
+        model: billing.providerModelId,
         generationId: result.generationId,
         replyChars: result.content.length,
       },
@@ -450,6 +505,7 @@ async function settleStream(input: {
       upstream_status: null,
       generation_id: result.generationId,
       finish_reason: result.finishReason,
+      provider_response: providerResponse(input),
     });
     return;
   }
@@ -459,7 +515,8 @@ async function settleStream(input: {
       event: 'llm.generation.interrupted',
       userId: request.userId,
       sessionId: request.sessionId ?? null,
-      model: billing.openRouterModelId,
+      provider: billing.provider,
+      model: billing.providerModelId,
       generationId: result.generationId,
     },
     'generation produced an incomplete or empty reply, skipping deduction'
@@ -470,7 +527,26 @@ async function settleStream(input: {
     upstream_status: null,
     generation_id: result.generationId,
     finish_reason: result.finishReason,
+    provider_response: providerResponse(input),
   });
+}
+
+function providerResponse(input: {
+  result: SseTapResult;
+  billing: ModelBillingContext;
+  upstreamStartedAt: number;
+  firstTokenAt: number | null;
+}): GenerationSettlementEntry['provider_response'] {
+  if (input.billing.provider !== 'venice') return undefined;
+  return {
+    usage: input.result.usage,
+    responseMetadata: input.result.responseMetadata,
+    latencyMs:
+      input.firstTokenAt === null
+        ? null
+        : Math.max(0, input.firstTokenAt - input.upstreamStartedAt),
+    generationTimeMs: Math.max(0, Date.now() - input.upstreamStartedAt),
+  };
 }
 
 /** 非流式生成。MVP 的对话路径全走流式，这条分支只是让出口对 stream=false 也完整。 */
@@ -484,6 +560,7 @@ async function consumeNonStream(input: {
   saveHistory: SaveHistory;
   hooks?: GenerationHooks;
   log: GenerationLogger;
+  upstreamStartedAt: number;
 }): Promise<GenerationResult> {
   const { request, upstreamRes, billing, chargeId, reservation, saveHistory, hooks, log } = input;
   let generationId = input.headerGenerationId;
@@ -512,6 +589,8 @@ async function consumeNonStream(input: {
   let assistantReply: string | null = null;
   let finishReason: string | null = null;
   let responseParsed = false;
+  let usage: Record<string, unknown> | null = null;
+  let responseMetadata: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(responseBody);
     responseParsed = true;
@@ -519,6 +598,14 @@ async function consumeNonStream(input: {
     const choice = parsed?.choices?.[0];
     if (typeof choice?.message?.content === 'string') assistantReply = choice.message.content;
     if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
+    if (parsed?.usage && typeof parsed.usage === 'object' && !Array.isArray(parsed.usage)) {
+      usage = parsed.usage as Record<string, unknown>;
+    }
+    responseMetadata = Object.fromEntries(
+      ['id', 'object', 'created', 'model', 'usage', 'venice_parameters'].flatMap((key) =>
+        key in parsed ? [[key, parsed[key]]] : []
+      )
+    );
   } catch {
     log.sys.warn(
       { event: 'llm.upstream.invalid_non_stream_response', userId: request.userId },
@@ -550,7 +637,8 @@ async function consumeNonStream(input: {
   const hasContent = typeof assistantReply === 'string' && assistantReply.trim().length > 0;
   const delivered = responseParsed && hasContent;
   const billable = delivered && finishReason === 'stop';
-  const waitingForFinishReason = delivered && finishReason === null;
+  const waitingForFinishReason =
+    billing.provider === 'openrouter' && delivered && finishReason === null;
   if (!waitingForFinishReason) {
     await reservation.finalize(billable);
   }
@@ -564,6 +652,15 @@ async function consumeNonStream(input: {
     upstream_status: null,
     generation_id: generationId,
     finish_reason: finishReason,
+    provider_response:
+      billing.provider === 'venice'
+        ? {
+            usage,
+            responseMetadata,
+            latencyMs: null,
+            generationTimeMs: Math.max(0, Date.now() - input.upstreamStartedAt),
+          }
+        : undefined,
   });
   if (assistantReply) {
     hooks?.onFirstToken?.();

@@ -19,6 +19,7 @@ import {
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
   MediaFeatureFreeTrialLimitSchema,
+  LlmModelProviderSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
   PaymentPlansSchema,
@@ -113,6 +114,8 @@ const EditableModelCatalogModelSchema = z.preprocess(
   normalizeCatalogModelInput,
   z.object({
     id: z.string(),
+    provider: LlmModelProviderSchema,
+    provider_model_id: z.string(),
     openrouter_model_id: z.string(),
     display_name: z.string(),
     tagline: z.string(),

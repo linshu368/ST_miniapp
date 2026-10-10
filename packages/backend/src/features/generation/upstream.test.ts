@@ -79,6 +79,28 @@ describe('createSseTap', () => {
     expect(result.finishReason).toBe('stop');
   });
 
+  it('解析终态 usage 并只保留无正文响应元数据', async () => {
+    const usage = {
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      total_tokens: 120,
+      prompt_tokens_details: { cached_tokens: 40 },
+      completion_tokens_details: { reasoning_tokens: 5 },
+    };
+    const terminal = sseChunk({
+      id: 'gen-1',
+      model: 'venice-model',
+      choices: [{ delta: {}, finish_reason: 'stop' }],
+      usage,
+    });
+
+    const { result } = await runTap([DELTA_A, terminal, 'data: [DONE]\n\n']);
+
+    expect(result.usage).toEqual(usage);
+    expect(result.responseMetadata).toEqual({ id: 'gen-1', model: 'venice-model', usage });
+    expect(result.responseMetadata).not.toHaveProperty('choices');
+  });
+
   it('deltaCount 区分「没有 delta」和「delta 全是空串」', async () => {
     const empty = await runTap([sseChunk({ choices: [{ delta: { content: '' } }] })]);
     expect(empty.result.content).toBe('');

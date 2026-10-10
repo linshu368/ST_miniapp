@@ -10,7 +10,11 @@
  * 而计费上下文又要按同一个模型取；两处各解析一次必然漂移。
  */
 
-import { resolveEffectiveSelectedModelId, resolveEnabledCatalogModel } from '@miniapp/shared';
+import {
+  resolveEffectiveSelectedModelId,
+  resolveEnabledCatalogModel,
+  type LlmModelProvider,
+} from '@miniapp/shared';
 import { fetchModelCatalogSnapshot, getModelBillingContext } from '../../platform/model-tiers.js';
 import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { createLogger } from '../../lib/logger.js';
@@ -33,6 +37,8 @@ export interface AuthoritativeModel {
   /** 模型目录的 stable id */
   modelId: string;
   /** 实际路由到的上游模型 */
+  provider: LlmModelProvider;
+  providerModelId: string;
   openRouterModelId: string;
 }
 
@@ -48,7 +54,12 @@ export async function resolveAuthoritativeModel(
   const snapshot = await fetchModelCatalogSnapshot();
   const effectiveModelId = resolveEffectiveSelectedModelId(snapshot.catalog, persistedModelId);
   const model = resolveEnabledCatalogModel(snapshot.catalog, effectiveModelId);
-  return { modelId: model.id, openRouterModelId: model.openrouter_model_id };
+  return {
+    modelId: model.id,
+    provider: model.provider,
+    providerModelId: model.provider_model_id,
+    openRouterModelId: model.openrouter_model_id,
+  };
 }
 
 /**
@@ -93,9 +104,14 @@ export async function resolveModelForUser(userId: string): Promise<ResolvedModel
     }
   }
 
-  const billing = await getModelBillingContext(selection.openRouterModelId);
+  const billing = await getModelBillingContext({
+    provider: selection.provider,
+    providerModelId: selection.providerModelId,
+  });
   return {
     modelId: billing.modelId ?? selection.modelId,
+    provider: billing.provider,
+    providerModelId: billing.providerModelId,
     openRouterModelId: selection.openRouterModelId,
     tier: billing.modelTier,
     isFree: billing.isFree,

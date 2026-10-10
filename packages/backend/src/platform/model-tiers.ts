@@ -12,6 +12,7 @@ import { fetchRuntimeConfigEntry, type RuntimeConfigEntry } from './runtime-conf
 import {
   ModelCatalogSchema,
   LlmPricingConfigSchema,
+  type LlmModelProvider,
   type LlmPricingRuntimeConfig,
   type ModelCatalog,
   type ModelCatalogTier,
@@ -147,6 +148,8 @@ export async function fetchModelCatalogSnapshot(): Promise<{
 export interface ModelBillingContext {
   modelId: string | null;
   modelDisplayName: string;
+  provider: LlmModelProvider;
+  providerModelId: string;
   openRouterModelId: string;
   modelTier: ModelCatalogTierKey | null;
   catalogVersion: number;
@@ -154,21 +157,30 @@ export interface ModelBillingContext {
 }
 
 export async function getModelBillingContext(
-  openRouterModelId: string
+  modelRef: string | { provider: LlmModelProvider; providerModelId: string }
 ): Promise<ModelBillingContext> {
   const snapshot = await fetchModelCatalogSnapshot();
+  const provider = typeof modelRef === 'string' ? 'openrouter' : modelRef.provider;
+  const providerModelId = typeof modelRef === 'string' ? modelRef : modelRef.providerModelId;
   const catalogTier =
     snapshot.catalog.tiers.find((tier) =>
-      tier.models.some((candidate) => candidate.openrouter_model_id === openRouterModelId)
+      tier.models.some(
+        (candidate) =>
+          candidate.provider === provider && candidate.provider_model_id === providerModelId
+      )
     ) ?? null;
   const model =
-    catalogTier?.models.find((candidate) => candidate.openrouter_model_id === openRouterModelId) ??
-    null;
+    catalogTier?.models.find(
+      (candidate) =>
+        candidate.provider === provider && candidate.provider_model_id === providerModelId
+    ) ?? null;
 
   return {
     modelId: model?.id ?? null,
-    modelDisplayName: model?.display_name ?? (openRouterModelId || 'Unknown Model'),
-    openRouterModelId,
+    modelDisplayName: model?.display_name ?? (providerModelId || 'Unknown Model'),
+    provider,
+    providerModelId,
+    openRouterModelId: model?.openrouter_model_id ?? providerModelId,
     modelTier: catalogTier?.tier ?? null,
     catalogVersion: snapshot.version,
     isFree: model?.is_free ?? false,
