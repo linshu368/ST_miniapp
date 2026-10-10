@@ -68,6 +68,22 @@ describe('AlertDeliveryWorker', () => {
     expect(state.executeRaw).toHaveBeenCalledTimes(1);
   });
 
+  it('does not call Feishu for a P1 card', async () => {
+    state.row = {
+      id: 1n,
+      notification_key: 'development:payment:p1-05:all:firing:x',
+      payload: {
+        severity: 'P1',
+        incident_fingerprint: 'development:payment:p1-05:all',
+      },
+      attempt_count: 1,
+    };
+    const sink = { deliver: vi.fn() };
+    const worker = new AlertDeliveryWorker(sink as never, log, async () => config);
+    await expect(worker.deliverOne()).resolves.toBe('abandoned');
+    expect(sink.deliver).not.toHaveBeenCalled();
+  });
+
   it('does not claim or call Feishu while notifications are disabled', async () => {
     const sink = { deliver: vi.fn() };
     const worker = new AlertDeliveryWorker(sink as never, log, async () => ({

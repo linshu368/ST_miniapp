@@ -10,6 +10,8 @@ export interface AlertPersistence {
   persist(input: {
     evaluation: AlertEvaluation;
     cards: Record<AlertTransition, SafeAlertCard>;
+    /** false 时仍更新事故，但不写飞书 outbox。缺省保持投递。 */
+    notify?: boolean;
   }): Promise<PersistResult>;
 }
 
@@ -25,6 +27,7 @@ export class PrismaAlertPersistence implements AlertPersistence {
   async persist(input: {
     evaluation: AlertEvaluation;
     cards: Record<AlertTransition, SafeAlertCard>;
+    notify?: boolean;
   }): Promise<PersistResult> {
     return prisma.$transaction(async (tx) => {
       const existing = await tx.$queryRaw<IncidentRow[]>(Prisma.sql`
@@ -52,9 +55,8 @@ export class PrismaAlertPersistence implements AlertPersistence {
             ${JSON.stringify(input.evaluation.samples)}::jsonb
           ) RETURNING id
         `);
-        const key = notificationKey(input.evaluation, 'firing');
-        await this.insertOutbox(tx, inserted[0]!.id, key, 'firing', input.cards.firing);
-        return { kind: 'accepted', notificationKey: key };
+        const key = await this.enqueue(tx, input, inserted[0]!.id, 'firing', input.cards.firing);
+        return key ? { kind: 'accepted', notificationKey: key } : { kind: 'accepted' };
       }
 
       if (
@@ -83,10 +85,22 @@ export class PrismaAlertPersistence implements AlertPersistence {
         WHERE id = ${row.id}
       `);
       if (!transition) return { kind: 'accepted' };
-      const key = notificationKey(input.evaluation, transition);
-      await this.insertOutbox(tx, row.id, key, transition, input.cards[transition]);
-      return { kind: 'accepted', notificationKey: key };
+      const key = await this.enqueue(tx, input, row.id, transition, input.cards[transition]);
+      return key ? { kind: 'accepted', notificationKey: key } : { kind: 'accepted' };
     });
+  }
+
+  private async enqueue(
+    tx: Prisma.TransactionClient,
+    input: { evaluation: AlertEvaluation; notify?: boolean },
+    incidentId: bigint,
+    transition: AlertTransition,
+    card: SafeAlertCard
+  ): Promise<string | null> {
+    if (input.notify === false) return null;
+    const key = notificationKey(input.evaluation, transition);
+    await this.insertOutbox(tx, incidentId, key, transition, card);
+    return key;
   }
 
   private async insertOutbox(
