@@ -103,4 +103,9 @@ export const config = {
     host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
     timeoutMs: parseInt(process.env.POSTHOG_TIMEOUT_MS || '3000', 10),
   },
+
+  // Webhook 是部署 secret；是否发送、重试和限流属于 runtime_config.alerting，默认关闭。
+  alerting: {
+    feishuWebhookUrl: process.env.FEISHU_ALERT_WEBHOOK_URL || '',
+  },
 } as const;
