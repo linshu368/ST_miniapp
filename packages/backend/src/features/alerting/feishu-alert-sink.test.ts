@@ -85,11 +85,11 @@ describe('FeishuAlertSink', () => {
       severity: 'P0',
       title: 'P0 同一用户5分钟内至少2单未支付成功',
       summary:
-        'tg-id: 888001\n过去5分钟未成功支付: 2 单\n订单号: MA-1\n时间: 2026-10-10 17:59:00 +08:00',
+        '【tg-id】888001\n【未支付订单】2 单\n【订单号】MA-1\n【时间】2026-10-10 17:59:00 +08:00',
     });
     expect(message.card.header.title.content).toBe('P0 同一用户5分钟内至少2单未支付成功');
-    expect(message.card.elements[0]?.text.content).toContain('tg-id: 888001');
-    expect(message.card.elements[0]?.text.content).toContain('\n订单号: MA-1');
+    expect(message.card.elements[0]?.text.content).toContain('【tg-id】888001');
+    expect(message.card.elements[0]?.text.content).toContain('\n【订单号】MA-1');
     expect(message.card.elements[0]?.text.content).not.toContain('firing');
   });
 

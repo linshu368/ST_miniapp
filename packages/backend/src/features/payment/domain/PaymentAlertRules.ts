@@ -401,10 +401,10 @@ function repeatUnpaidSummary(
     .map((user) => {
       const sample = user.orders[0];
       return [
-        `tg-id: ${user.telegramId ?? '未知'}`,
-        `过去5分钟未成功支付: ${user.orders.length} 单`,
-        `订单号: ${sample?.orderId ?? '-'}`,
-        `时间: ${sample ? formatTimestamp(sample.confirmedAt) : '-'}`,
+        `【tg-id】${user.telegramId ?? '未知'}`,
+        `【未支付订单】${user.orders.length} 单`,
+        `【订单号】${sample?.orderId ?? '-'}`,
+        `【时间】${sample ? formatTimestamp(sample.confirmedAt) : '-'}`,
       ].join('\n');
     })
     .join('\n\n');
@@ -429,12 +429,23 @@ function latestConsecutiveOrders(
 }
 
 function consecutiveUnpaidSummary(orders: PaymentAlertOrderSnapshot[]): string {
-  return orders
-    .map(
-      (order, index) =>
-        `${index + 1}. tg-id: ${order.telegramId ?? '未知'} 订单号: ${order.orderId}`
+  const byUser = new Map<string, { telegramId: string | null; orderIds: string[] }>();
+  for (const order of orders) {
+    const group = byUser.get(order.userId) ?? {
+      telegramId: order.telegramId ?? null,
+      orderIds: [],
+    };
+    group.orderIds.push(order.orderId);
+    byUser.set(order.userId, group);
+  }
+  return [...byUser.values()]
+    .map((group) =>
+      [
+        `【tg-id】${group.telegramId ?? '未知'}`,
+        ...group.orderIds.map((orderId) => `【订单】${orderId}`),
+      ].join('\n')
     )
-    .join('\n');
+    .join('\n\n');
 }
 
 function formatTimestamp(iso: string): string {

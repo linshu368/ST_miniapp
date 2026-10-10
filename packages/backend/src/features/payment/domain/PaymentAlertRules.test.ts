@@ -43,10 +43,10 @@ describe('V2 payment alert rules', () => {
     const repeat = fired.find((x) => x.rule_id === 'p0-user-unpaid-5m');
     expect(repeat?.state).toBe('firing');
     expect(repeat?.title).toBe('P0 同一用户5分钟内至少2单未支付成功');
-    expect(repeat?.summary).toContain('tg-id: 888001');
-    expect(repeat?.summary).toContain('过去5分钟未成功支付: 2 单');
-    expect(repeat?.summary).toContain('订单号: order-a');
-    expect(repeat?.summary).toContain('时间: 2026-10-10 17:59:00 +08:00');
+    expect(repeat?.summary).toContain('【tg-id】888001');
+    expect(repeat?.summary).toContain('【未支付订单】2 单');
+    expect(repeat?.summary).toContain('【订单号】order-a');
+    expect(repeat?.summary).toContain('【时间】2026-10-10 17:59:00 +08:00');
     expect(repeat?.summary).not.toContain('888002');
     expect(
       evaluatePaymentAlertRules(
@@ -90,10 +90,42 @@ describe('V2 payment alert rules', () => {
     expect(streak?.title).toBe('P0 连续4个订单均未支付成功');
     expect(streak?.summary).toBe(
       [
-        '1. tg-id: 1001 订单号: o1',
-        '2. tg-id: 1002 订单号: o2',
-        '3. tg-id: 1003 订单号: o3',
-        '4. tg-id: 1004 订单号: o4',
+        '【tg-id】1001',
+        '【订单】o1',
+        '',
+        '【tg-id】1002',
+        '【订单】o2',
+        '',
+        '【tg-id】1003',
+        '【订单】o3',
+        '',
+        '【tg-id】1004',
+        '【订单】o4',
+      ].join('\n')
+    );
+    const grouped = evaluatePaymentAlertRules(
+      {
+        orders: [],
+        latestOrders: [
+          at('2026-01-01T00:00:00.000Z', 'a1', 'u1', 'pending', '1001'),
+          at('2026-02-01T00:00:00.000Z', 'b1', 'u2', 'pending', '1002'),
+          at('2026-03-01T00:00:00.000Z', 'a2', 'u1', 'pending', '1001'),
+          at('2026-04-01T00:00:00.000Z', 'b2', 'u2', 'pending', '1002'),
+        ],
+        operations: [],
+        productionWebhookBaseline: false,
+      },
+      now
+    ).find((x) => x.rule_id === 'p0-consecutive-unpaid');
+    expect(grouped?.summary).toBe(
+      [
+        '【tg-id】1001',
+        '【订单】a1',
+        '【订单】a2',
+        '',
+        '【tg-id】1002',
+        '【订单】b1',
+        '【订单】b2',
       ].join('\n')
     );
     expect(
