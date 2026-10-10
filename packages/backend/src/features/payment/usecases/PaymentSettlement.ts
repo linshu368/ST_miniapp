@@ -22,6 +22,10 @@ import type {
 import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
 import { paymentSuccessNotice } from '../domain/paymentNotice.js';
 import { observePaymentOrderSettled } from './PaymentOrderTelemetry.js';
+import {
+  recordPaymentOperationEvent,
+  type PaymentEventRecorder,
+} from './PaymentOperationEvents.js';
 
 /** 同时接受 requestLogger()（带 reqId，路由用）和 createLogger()（脚本用）。 */
 export type SettlementLogger = Pick<RequestLogger, 'biz' | 'sys'>;
@@ -57,12 +61,18 @@ export async function settlePaidOrder(
   },
   orders: SettlementOrders,
   log: SettlementLogger,
-  source: SettlementSource
+  source: SettlementSource,
+  events?: PaymentEventRecorder
 ): Promise<SettlementOutcome> {
   const { orderId } = input;
   const order = await orders.findById(orderId);
   if (!order) {
     log.sys.warn({ event: 'payment.settle.order_not_found', orderId, source }, '支付订单不存在');
+    recordPaymentOperationEvent(
+      events,
+      log,
+      settlementEvent(input, source, null, 'failed', 'order_not_found')
+    );
     return 'order_not_found';
   }
 
@@ -77,6 +87,11 @@ export async function settlePaidOrder(
         actual: paidAmountCents,
       },
       '支付金额与订单金额不匹配'
+    );
+    recordPaymentOperationEvent(
+      events,
+      log,
+      settlementEvent(input, source, order, 'failed', 'amount_mismatch')
     );
     return 'amount_mismatch';
   }
@@ -148,11 +163,21 @@ export async function settlePaidOrder(
       },
       '支付订单完成'
     );
+    recordPaymentOperationEvent(
+      events,
+      log,
+      settlementEvent(input, source, order, 'succeeded', null)
+    );
     return 'completed';
   } catch (error) {
     log.sys.error(
       { event: 'payment.settle.failed', err: error, orderId: order.id, source },
       '支付订单完成处理失败'
+    );
+    recordPaymentOperationEvent(
+      events,
+      log,
+      settlementEvent(input, source, order, 'failed', 'settlement_failed')
     );
     return 'failed';
   }
@@ -171,14 +196,21 @@ export async function reconcileWithGateway(
   gateway: Pick<ZqPaymentGateway, 'queryOrder'>,
   orders: SettlementOrders,
   log: SettlementLogger,
-  source: SettlementSource = 'query'
+  source: SettlementSource = 'query',
+  events?: PaymentEventRecorder
 ): Promise<boolean> {
   const settleable = order.status === 'pending' || order.status === 'expired';
-  if (!settleable) return false;
+  if (!settleable) {
+    recordPaymentOperationEvent(events, log, queryEvent(order, source, 'skipped', null));
+    return false;
+  }
 
   const now = Date.now();
   const previous = lastQueryAt.get(order.id);
-  if (previous !== undefined && now - previous < QUERY_MIN_INTERVAL_MS) return false;
+  if (previous !== undefined && now - previous < QUERY_MIN_INTERVAL_MS) {
+    recordPaymentOperationEvent(events, log, queryEvent(order, source, 'skipped', 'rate_limited'));
+    return false;
+  }
   if (lastQueryAt.size > 1_000) {
     for (const [key, at] of lastQueryAt) {
       if (now - at > 60 * 60 * 1000) lastQueryAt.delete(key);
@@ -186,20 +218,35 @@ export async function reconcileWithGateway(
   }
   lastQueryAt.set(order.id, now);
 
+  const startedAt = Date.now();
   const result = await gateway.queryOrder(order.id);
   if (!result.success) {
     log.sys.warn(
       { event: 'payment.query.failed', orderId: order.id, source, reason: result.errorMessage },
       '主动查单失败'
     );
+    recordPaymentOperationEvent(events, log, {
+      ...queryEvent(order, source, 'failed', result.errorClass ?? 'gateway_failed'),
+      duration_ms: Date.now() - startedAt,
+    });
     return false;
   }
-  if (!result.paid) return false;
+  if (!result.paid) {
+    recordPaymentOperationEvent(events, log, {
+      ...queryEvent(order, source, 'unpaid', null),
+      duration_ms: Date.now() - startedAt,
+    });
+    return false;
+  }
 
   log.biz.info(
     { event: 'payment.query.paid', orderId: order.id, source },
     '主动查单发现订单已支付'
   );
+  recordPaymentOperationEvent(events, log, {
+    ...queryEvent(order, source, 'paid', null),
+    duration_ms: Date.now() - startedAt,
+  });
   const settlement = await settlePaidOrder(
     {
       orderId: order.id,
@@ -208,9 +255,52 @@ export async function reconcileWithGateway(
     },
     orders,
     log,
-    source
+    source,
+    events
   );
   return settlement === 'completed';
+}
+
+function queryEvent(
+  order: { id: string },
+  source: SettlementSource,
+  outcome: 'failed' | 'unpaid' | 'paid' | 'skipped',
+  errorClass: string | null
+) {
+  const trigger = source === 'cron' ? 'expiry_reconcile' : 'user_poll';
+  return {
+    event_key: `payment_query:${source}:${outcome}:${order.id}:${Date.now()}`,
+    order_id: order.id,
+    user_id: null,
+    event_kind: 'payment_query' as const,
+    stage: 'query' as const,
+    outcome,
+    source: 'gateway' as const,
+    trigger: trigger as 'expiry_reconcile' | 'user_poll',
+    error_class: errorClass,
+    occurred_at: new Date().toISOString(),
+  };
+}
+
+function settlementEvent(
+  input: { orderId: string; providerTransactionId: string | null },
+  source: SettlementSource,
+  order: MiniappPaymentOrderRow | null,
+  outcome: 'succeeded' | 'failed',
+  errorClass: string | null
+) {
+  return {
+    event_key: `settlement:${source}:${outcome}:${input.orderId}:${input.providerTransactionId ?? 'none'}`,
+    order_id: input.orderId,
+    user_id: order?.user_id ?? null,
+    event_kind: 'settlement' as const,
+    stage: 'settlement' as const,
+    outcome,
+    source: 'backend' as const,
+    trigger: 'settlement' as const,
+    error_class: errorClass,
+    occurred_at: new Date().toISOString(),
+  };
 }
 
 /** 厂商金额是「元」字符串，本地订单是「分」整数。非法格式返回 NaN，让金额校验必然失败。 */
