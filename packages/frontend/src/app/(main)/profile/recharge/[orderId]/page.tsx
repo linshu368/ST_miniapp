@@ -9,23 +9,29 @@ import { DEFAULT_RECHARGE_PAGE_CONFIG, type PaymentOrder } from '@miniapp/shared
 import { Button } from '@/components/ui/button';
 
 import { cn } from '@/lib/utils';
-import { paymentKeys, usePaymentOrderQuery, usePaymentPlansQuery } from '@/lib/api/payment';
+import {
+  paymentKeys,
+  useCheckoutConfirmationMutation,
+  usePaymentOrderQuery,
+  usePaymentPlansQuery,
+} from '@/lib/api/payment';
 import {
   captureExternalPaymentOpenRequested,
   capturePaymentFlowLeftObserved,
   capturePaymentOrderStatusObserved,
-  markExternalPaymentOpened,
   observePaymentReturn,
   resumePaymentReplayFromPending,
   retainPaywallFollowupIfActive,
 } from '@/lib/payment/flow-telemetry';
 import {
   adoptPayUrlQueryIntoStorage,
+  clearCheckoutConfirmation,
   clearPaymentOpenIfTerminal,
   hasPaymentOpenUrl,
   readPaymentOpenMeta,
-  readPaymentOpenUrl,
+  takePendingCheckoutConfirmation,
 } from '@/lib/payment/open-storage';
+import { reopenStoredPayment } from '@/lib/payment/open-created-payment';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import {
   formatCountdown,
@@ -35,7 +41,7 @@ import {
   remainingSeconds,
   safePaymentReturnTo,
 } from '@/lib/utils/payment';
-import { openPaymentUrl, useHaptic, useTelegramBackButton } from '@/lib/telegram';
+import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import { vipKeys } from '@/lib/api/vip';
 import { modelCatalogKeys } from '@/lib/api/models';
 import { isVipOrder, orderBenefitLabel } from '@/lib/vip/presentation';
@@ -58,12 +64,32 @@ export default function PaymentPendingPage() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = usePaymentOrderQuery(orderId);
   const { data: plansData } = usePaymentPlansQuery();
+  const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const order = data?.order;
   const orderRef = useRef(order);
+  const backfilledRequestIds = useRef(new Set<string>());
   orderRef.current = order;
   const pendingArrivalHint =
     plansData?.page_config.pending_arrival_hint ??
     DEFAULT_RECHARGE_PAGE_CONFIG.pending_arrival_hint;
+
+  const reportCheckoutConfirmation = useCallback(
+    ({ orderId: confirmationOrderId, request }: Parameters<typeof confirmCheckout>[0]) => {
+      confirmCheckout(
+        { orderId: confirmationOrderId, request },
+        { onSuccess: () => clearCheckoutConfirmation(confirmationOrderId, request.request_id) }
+      );
+    },
+    [confirmCheckout]
+  );
+
+  const backfillPendingConfirmation = useCallback(() => {
+    if (!orderId) return;
+    const request = takePendingCheckoutConfirmation(orderId);
+    if (!request || backfilledRequestIds.current.has(request.request_id)) return;
+    backfilledRequestIds.current.add(request.request_id);
+    reportCheckoutConfirmation({ orderId, request });
+  }, [orderId, reportCheckoutConfirmation]);
 
   // 返回不能用 push：那会把星尘商店压成新的历史条目，商店自己的返回键再 back
   // 回到本页，取消支付时就在两页之间死循环。
@@ -98,6 +124,21 @@ export default function PaymentPendingPage() {
     setCanReopenPayment(hasPaymentOpenUrl(orderId));
     setStoredReturnTo(readPaymentOpenMeta(orderId)?.returnTo ?? null);
   }, [orderId, returnToFromQuery, search]);
+
+  useEffect(() => {
+    if (!orderId || paymentStarted) return;
+    backfillPendingConfirmation();
+  }, [backfillPendingConfirmation, orderId, paymentStarted]);
+
+  useEffect(() => {
+    let leftMiniApp = false;
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') leftMiniApp = true;
+      if (document.visibilityState === 'visible' && leftMiniApp) backfillPendingConfirmation();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [backfillPendingConfirmation]);
 
   useEffect(() => {
     if (!paymentReturned || !orderId) return;
@@ -184,26 +225,19 @@ export default function PaymentPendingPage() {
             onReopenPayment={() => {
               if (!orderId) return;
               void (async () => {
-                const payUrl = readPaymentOpenUrl(orderId);
-                if (!payUrl) {
+                const opened = await reopenStoredPayment({
+                  orderId,
+                  paymentType: order.payment_type,
+                  reportCheckoutConfirmation,
+                });
+                if (!opened) {
                   captureExternalPaymentOpenRequested({
                     orderId,
                     paymentType: order.payment_type,
                     openFailureKind: 'storage_unavailable',
                   });
                   setCanReopenPayment(false);
-                  return;
                 }
-                captureExternalPaymentOpenRequested({
-                  orderId,
-                  paymentType: order.payment_type,
-                });
-                await getReplayLifecycle().enterExternalPaymentPending();
-                markExternalPaymentOpened({
-                  orderId,
-                  paymentType: order.payment_type,
-                });
-                openPaymentUrl(payUrl);
               })();
             }}
             onBack={goBack}
