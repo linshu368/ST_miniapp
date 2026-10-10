@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-10: 规划已确认且先不实施；Q9看看TA不改；Q10广场前后端独立于聊天图业务",
+  "notes": "2026-10-10: 规划已确认且先不实施；Q7-rev有参考图也走Admin上架星尘价；Q9/Q10/Q11已定",
   "meta": {
     "module_impact": {
       "schema_version": 1,
