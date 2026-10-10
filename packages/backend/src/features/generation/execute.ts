@@ -90,6 +90,10 @@ function buildUpstreamBody(
     ...(request.model.provider === 'venice'
       ? {
           venice_parameters: { include_venice_system_prompt: false },
+          // Chat is optimized for immediate visible replies. Venice reasoning models may emit a
+          // long reasoning_content stream before content, so keep reasoning off unless a future
+          // product setting explicitly opts in.
+          reasoning: { enabled: false },
           ...(request.stream ? { stream_options: { include_usage: true } } : {}),
         }
       : {}),
