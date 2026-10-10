@@ -146,11 +146,20 @@ function attributesOf(node: ResolvedElement): Record<string, unknown> {
     if (attribute.name === 'class') result.className = attribute.tokens.join(' ');
     else if (attribute.name === 'title') result.title = attribute.text;
     else if (attribute.name === 'aria-label') result['aria-label'] = attribute.text;
-    else if (attribute.name === 'aria-hidden') result['aria-hidden'] = true;
+    else if (attribute.name === 'aria-hidden') result['aria-hidden'] = attribute.value;
     else if (attribute.name === 'colspan') result.colSpan = attribute.value;
     else if (attribute.name === 'rowspan') result.rowSpan = attribute.value;
+    else if (attribute.name === 'attribute')
+      result[reactAttributeName(attribute.key)] = attribute.value;
   }
   return result;
+}
+
+function reactAttributeName(name: string): string {
+  if (name === 'tabindex') return 'tabIndex';
+  if (name === 'spellcheck') return 'spellCheck';
+  if (name === 'autocapitalize') return 'autoCapitalize';
+  return name;
 }
 
 function countButtonsBefore(nodes: ResolvedNode[], path: string): number {

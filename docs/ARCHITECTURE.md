@@ -240,7 +240,7 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 后处理不改变模型输入、生成计费或原始回复正文。Admin 编辑的是版本化 source；Backend 发布时在可终止 Worker 中编译，并把 source 与 compiled artifact 原子写入 `app_core.text_postprocess_versions`。Frontend 与 Admin 的最终展示都复用 `@miniapp/reply-renderer`，renderer 只消费已校验 artifact 和原文，不接触发布 API、数据库或 source compiler。
 
-规则 source 固定 schema/policy version，支持有界正则匹配、可信 capture/slot、受限 HTML AST 和作用域 CSS。禁止脚本、事件属性、外部资源和任意 URL。单条规则与整条消息都有节点、输出、诊断和执行时限；Worker 超时/不可用、artifact 非法或版本缺失时，消费者展示完整原始 Markdown，不读时编译、不伪造 artifact、不回退到最新版本。
+规则 source 固定 schema/policy version，支持有界正则匹配、可信 capture/slot、受控 HTML AST 和作用域 CSS。HTML 模板不使用正向标签/展示属性枚举，普通语义结构默认可用；脚本、文档级/表单/媒体标签、事件属性、内联样式、外部资源和任意 URL 仍被明确拒绝。单条规则与整条消息都有属性、节点、输出、诊断和执行时限；Worker 超时/不可用、artifact 非法或版本缺失时，消费者展示完整原始 Markdown，不读时编译、不伪造 artifact、不回退到最新版本。
 
 新发送和重生成由 `experience.start_chat_history_*_with_current_postprocess` 在开轮事务内读取正式指针并绑定不可变版本；SSE `start` 与历史 DTO 都携带可选 `postprocess_version`。Frontend 按消息实际版本批量读取快照，流式期间保持安全 Markdown，终态后才挂载 renderer。可信 choice 只允许最新完整 assistant 回复通过正常 `runTurn` 发送纯文本，并以同步锁防双击。
 

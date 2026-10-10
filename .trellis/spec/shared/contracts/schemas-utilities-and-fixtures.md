@@ -19,5 +19,5 @@
 - sanitization 采用 allowlist/明确敏感键规则，并测试嵌套、数组、循环/异常输入；不得把脱敏当成可记录任意对象的许可。
 - helper 只共享稳定语义，不把应用 UI 文案、组件、数据库连接或 provider SDK 放入 shared。
 - ST bridge、iframe/postMessage 协议与已退场包不得重新加入 shared。
-- 文本后处理只允许经 schema/policy 版本化的正则、受限 HTML AST、作用域 CSS 和可信 slot。禁止脚本、事件属性、外部资源、任意 URL、Raw AST 与未绑定捕获组；规则数、输入/输出、节点、诊断和时间预算必须有界。
+- 文本后处理只允许经 schema/policy 版本化的正则、受控 HTML AST、作用域 CSS 和可信 slot。HTML 普通语义标签及无执行能力的展示属性默认可用，不维护正向枚举；脚本/文档级/表单/媒体标签、事件属性、内联样式、外部资源、任意 URL、Raw AST 与未绑定捕获组必须拒绝。规则数、输入/输出、属性、节点、诊断和时间预算必须有界。
 - compiler 输出必须确定；同一 source 生成相同 canonical artifact。运行时 apply 只消费 artifact，不读 source，不做网络请求；失败返回完整原文和结构化诊断，不返回部分污染结果。

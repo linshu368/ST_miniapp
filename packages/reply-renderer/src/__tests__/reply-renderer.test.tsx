@@ -303,6 +303,39 @@ describe('trust boundaries', () => {
     expect(forged.container.textContent).toContain('nope');
   });
 
+  it('renders compiler-approved semantic tags and inert attributes', () => {
+    const view = render(
+      <TrustedTree
+        nodes={[
+          {
+            type: 'element',
+            tag: 'article',
+            attributes: [
+              { name: 'attribute', key: 'role', value: 'note' },
+              { name: 'attribute', key: 'data-layout', value: 'story' },
+              { name: 'attribute', key: 'aria-expanded', value: 'false' },
+            ],
+            action: null,
+            children: [{ type: 'text', text: 'semantic content' }],
+          },
+        ]}
+        messageKey="semantic-message"
+        ruleId="semantic"
+        start={0}
+        end={16}
+        choices={[]}
+        interactive={false}
+        openStore={new Map()}
+      />
+    );
+
+    const article = view.container.querySelector('article');
+    expect(article).not.toBeNull();
+    expect(article?.getAttribute('role')).toBe('note');
+    expect(article?.getAttribute('data-layout')).toBe('story');
+    expect(article?.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('shows the full original text for unknown schema, policy, and invalid artifacts', async () => {
     const content = 'SENTINEL keep the whole reply';
     for (const artifact of [
