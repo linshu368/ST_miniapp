@@ -8,11 +8,8 @@ const pricing = {
 };
 
 const defaultBillingContext = {
-const defaultBillingContext = {
   modelId: 'anthropic-claude-sonnet-4-5',
   modelDisplayName: 'Claude Sonnet 4.5',
-  provider: 'openrouter' as 'openrouter' | 'venice',
-  providerModelId: 'anthropic/claude-sonnet-4.5',
   provider: 'openrouter' as 'openrouter' | 'venice',
   providerModelId: 'anthropic/claude-sonnet-4.5',
   openRouterModelId: 'anthropic/claude-sonnet-4.5',
@@ -23,13 +20,6 @@ const defaultBillingContext = {
 
 let walletBalance = 1000;
 let providerPreferences: Record<string, unknown> | null = null;
-let billingContext = { ...defaultBillingContext };
-const quotaState = vi.hoisted(() => ({
-  granted: false,
-  finalize: vi.fn(),
-  reserveFailure: false,
-}));
-
 let billingContext = { ...defaultBillingContext };
 const quotaState = vi.hoisted(() => ({
   granted: false,
@@ -131,8 +121,6 @@ function request(overrides: Partial<GenerationRequest> = {}): GenerationRequest 
       modelId: billingContext.modelId,
       provider: billingContext.provider,
       providerModelId: billingContext.providerModelId,
-      provider: billingContext.provider,
-      providerModelId: billingContext.providerModelId,
       openRouterModelId: billingContext.openRouterModelId,
       tier: 'premium',
       isFree: false,
@@ -189,17 +177,13 @@ beforeEach(() => {
   walletBalance = 1000;
   providerPreferences = null;
   billingContext = { ...defaultBillingContext };
-  billingContext = { ...defaultBillingContext };
   vi.mocked(settleGeneration).mockClear();
-  // CI 无真实密钥；多供应商合并后缺 key 会提前 upstream_error，单测自备占位值。
-  vi.stubEnv('LLM_API_KEY', 'test-llm-key');
   // CI 无真实密钥；多供应商合并后缺 key 会提前 upstream_error，单测自备占位值。
   vi.stubEnv('LLM_API_KEY', 'test-llm-key');
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
   vi.unstubAllEnvs();
 });
 
@@ -381,8 +365,6 @@ describe('execute（失败路径）', () => {
       request({
         model: {
           modelId: billingContext.modelId,
-          provider: billingContext.provider,
-          providerModelId: billingContext.providerModelId,
           provider: billingContext.provider,
           providerModelId: billingContext.providerModelId,
           openRouterModelId: billingContext.openRouterModelId,

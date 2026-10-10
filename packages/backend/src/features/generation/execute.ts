@@ -24,7 +24,6 @@ import {
 import { getProviderPreferencesForModel } from '../../platform/provider-routing.js';
 import { readVipStrategy } from '../../platform/vip-strategy.js';
 import { LLM_PROVIDER_CAPABILITIES, type OpenRouterProviderPreferences } from '@miniapp/shared';
-import { LLM_PROVIDER_CAPABILITIES, type OpenRouterProviderPreferences } from '@miniapp/shared';
 import { createLogger } from '../../lib/logger.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
 import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
@@ -32,7 +31,6 @@ import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './prec
 import {
   createSseTap,
   forwardToUpstream,
-  resolveProviderUpstream,
   resolveProviderUpstream,
   type SseTapResult,
 } from './upstream.js';
@@ -49,12 +47,6 @@ import type {
 /** 一次生成里只有这五个字段随终态变化，其余结算入参全程固定。 */
 type HistoryOutcome = Pick<
   GenerationSettlementEntry,
-  | 'assistant_reply'
-  | 'status'
-  | 'upstream_status'
-  | 'generation_id'
-  | 'finish_reason'
-  | 'provider_response'
   | 'assistant_reply'
   | 'status'
   | 'upstream_status'
@@ -87,14 +79,8 @@ function buildUpstreamBody(
     request.promptCaching && capability.promptCachingMode === 'openrouter_anthropic_cache_control'
       ? applyPromptCaching(request.messages, request.model.openRouterModelId)
       : request.messages.map((message) => ({ role: message.role, content: message.content }));
-  const capability = LLM_PROVIDER_CAPABILITIES[request.model.provider];
-  const messages: UpstreamMessage[] =
-    request.promptCaching && capability.promptCachingMode === 'openrouter_anthropic_cache_control'
-      ? applyPromptCaching(request.messages, request.model.openRouterModelId)
-      : request.messages.map((message) => ({ role: message.role, content: message.content }));
 
   return {
-    model: request.model.providerModelId,
     model: request.model.providerModelId,
     messages,
     stream: request.stream,
@@ -133,10 +119,6 @@ export async function execute(
   const [pricing, billing, vipStrategy] = await withAbort(
     Promise.all([
       getPricingConfig(),
-      getModelBillingContext({
-        provider: request.model.provider,
-        providerModelId: request.model.providerModelId,
-      }),
       getModelBillingContext({
         provider: request.model.provider,
         providerModelId: request.model.providerModelId,
@@ -251,42 +233,14 @@ export async function execute(
       hooks?.onError?.(err);
       return finish(failed());
     }
-    const providerPreferences =
-      billing.provider === 'openrouter'
-        ? await withAbort(getProviderPreferencesForModel(billing.providerModelId), signal)
-        : null;
-    const upstream = resolveProviderUpstream(billing.provider);
-    if (!upstream.apiKey) {
-      await releaseReservation();
-      const apiKeyEnv = LLM_PROVIDER_CAPABILITIES[billing.provider].apiKeyEnv;
-      const err = new Error(`${apiKeyEnv} is required for ${billing.provider} generation`);
-      log.sys.error(
-        {
-          event: 'llm.upstream.missing_key',
-          err,
-          userId: request.userId,
-          sessionId: request.sessionId ?? null,
-          provider: billing.provider,
-          model: billing.providerModelId,
-        },
-        'upstream provider API key is missing'
-      );
-      hooks?.onError?.(err);
-      return finish(failed());
-    }
-
     let upstreamRes: Response;
-    const upstreamStartedAt = Date.now();
     const upstreamStartedAt = Date.now();
     try {
       upstreamRes = await forwardToUpstream({
         url: upstream.url,
-        url: upstream.url,
         method: 'POST',
         body: JSON.stringify(buildUpstreamBody(request, providerPreferences)),
         signal,
-        apiKey: upstream.apiKey,
-        provider: billing.provider,
         apiKey: upstream.apiKey,
         provider: billing.provider,
       });
@@ -299,8 +253,6 @@ export async function execute(
           err,
           userId: request.userId,
           sessionId: request.sessionId ?? null,
-          provider: billing.provider,
-          model: billing.providerModelId,
           provider: billing.provider,
           model: billing.providerModelId,
         },
@@ -319,8 +271,6 @@ export async function execute(
           event: 'llm.upstream.rejected',
           userId: request.userId,
           sessionId: request.sessionId ?? null,
-          provider: billing.provider,
-          model: billing.providerModelId,
           provider: billing.provider,
           model: billing.providerModelId,
           upstreamStatus: upstreamRes.status,
@@ -356,7 +306,6 @@ export async function execute(
           hooks,
           log,
           upstreamStartedAt,
-          upstreamStartedAt,
         })
       );
     }
@@ -387,7 +336,6 @@ export async function execute(
     let settlement: Promise<void> | undefined;
     let settledResult: SseTapResult | undefined;
     let firstTokenAt: number | null = null;
-    let firstTokenAt: number | null = null;
     const settleOnce = (observed: SseTapResult): Promise<void> => {
       settlement ??= (async () => {
         const interrupted = signal.aborted
@@ -411,8 +359,6 @@ export async function execute(
           log,
           upstreamStartedAt,
           firstTokenAt,
-          upstreamStartedAt,
-          firstTokenAt,
         });
       })();
       return settlement;
@@ -423,7 +369,6 @@ export async function execute(
       onDelta: (delta) => {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
-          firstTokenAt = Date.now();
           firstTokenAt = Date.now();
           hooks?.onFirstToken?.();
         }
@@ -508,8 +453,6 @@ function createHistoryWriter(input: {
         model: billing.openRouterModelId,
         provider: billing.provider,
         provider_model_id: billing.providerModelId,
-        provider: billing.provider,
-        provider_model_id: billing.providerModelId,
         ...plan.snapshot,
         user_input: request.userInput,
         history: request.messages,
@@ -536,14 +479,10 @@ async function settleStream(input: {
   log: GenerationLogger;
   upstreamStartedAt: number;
   firstTokenAt: number | null;
-  upstreamStartedAt: number;
-  firstTokenAt: number | null;
 }): Promise<void> {
   const { result, request, billing, reservation, saveHistory, log } = input;
   const delivered = isDeliveredReply(result);
   const billable = isBillableReply(result);
-  const waitingForFinishReason =
-    billing.provider === 'openrouter' && delivered && result.finishReason === null;
   const waitingForFinishReason =
     billing.provider === 'openrouter' && delivered && result.finishReason === null;
   if (!waitingForFinishReason) {
@@ -558,8 +497,6 @@ async function settleStream(input: {
         sessionId: request.sessionId ?? null,
         provider: billing.provider,
         model: billing.providerModelId,
-        provider: billing.provider,
-        model: billing.providerModelId,
         generationId: result.generationId,
         replyChars: result.content.length,
       },
@@ -572,7 +509,6 @@ async function settleStream(input: {
       generation_id: result.generationId,
       finish_reason: result.finishReason,
       provider_response: providerResponse(input),
-      provider_response: providerResponse(input),
     });
     return;
   }
@@ -582,8 +518,6 @@ async function settleStream(input: {
       event: 'llm.generation.interrupted',
       userId: request.userId,
       sessionId: request.sessionId ?? null,
-      provider: billing.provider,
-      model: billing.providerModelId,
       provider: billing.provider,
       model: billing.providerModelId,
       generationId: result.generationId,
@@ -596,26 +530,6 @@ async function settleStream(input: {
     upstream_status: null,
     generation_id: result.generationId,
     finish_reason: result.finishReason,
-    provider_response: providerResponse(input),
-  });
-}
-
-function providerResponse(input: {
-  result: SseTapResult;
-  billing: ModelBillingContext;
-  upstreamStartedAt: number;
-  firstTokenAt: number | null;
-}): GenerationSettlementEntry['provider_response'] {
-  if (input.billing.provider !== 'venice') return undefined;
-  return {
-    usage: input.result.usage,
-    responseMetadata: input.result.responseMetadata,
-    latencyMs:
-      input.firstTokenAt === null
-        ? null
-        : Math.max(0, input.firstTokenAt - input.upstreamStartedAt),
-    generationTimeMs: Math.max(0, Date.now() - input.upstreamStartedAt),
-  };
     provider_response: providerResponse(input),
   });
 }
@@ -650,7 +564,6 @@ async function consumeNonStream(input: {
   hooks?: GenerationHooks;
   log: GenerationLogger;
   upstreamStartedAt: number;
-  upstreamStartedAt: number;
 }): Promise<GenerationResult> {
   const { request, upstreamRes, billing, chargeId, reservation, saveHistory, hooks, log } = input;
   let generationId = input.headerGenerationId;
@@ -681,8 +594,6 @@ async function consumeNonStream(input: {
   let responseParsed = false;
   let usage: Record<string, unknown> | null = null;
   let responseMetadata: Record<string, unknown> = {};
-  let usage: Record<string, unknown> | null = null;
-  let responseMetadata: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(responseBody);
     responseParsed = true;
@@ -690,14 +601,6 @@ async function consumeNonStream(input: {
     const choice = parsed?.choices?.[0];
     if (typeof choice?.message?.content === 'string') assistantReply = choice.message.content;
     if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
-    if (parsed?.usage && typeof parsed.usage === 'object' && !Array.isArray(parsed.usage)) {
-      usage = parsed.usage as Record<string, unknown>;
-    }
-    responseMetadata = Object.fromEntries(
-      ['id', 'object', 'created', 'model', 'usage', 'venice_parameters'].flatMap((key) =>
-        key in parsed ? [[key, parsed[key]]] : []
-      )
-    );
     if (parsed?.usage && typeof parsed.usage === 'object' && !Array.isArray(parsed.usage)) {
       usage = parsed.usage as Record<string, unknown>;
     }
@@ -739,8 +642,6 @@ async function consumeNonStream(input: {
   const billable = delivered && finishReason === 'stop';
   const waitingForFinishReason =
     billing.provider === 'openrouter' && delivered && finishReason === null;
-  const waitingForFinishReason =
-    billing.provider === 'openrouter' && delivered && finishReason === null;
   if (!waitingForFinishReason) {
     await reservation.finalize(billable);
   }
@@ -754,15 +655,6 @@ async function consumeNonStream(input: {
     upstream_status: null,
     generation_id: generationId,
     finish_reason: finishReason,
-    provider_response:
-      billing.provider === 'venice'
-        ? {
-            usage,
-            responseMetadata,
-            latencyMs: null,
-            generationTimeMs: Math.max(0, Date.now() - input.upstreamStartedAt),
-          }
-        : undefined,
     provider_response:
       billing.provider === 'venice'
         ? {
