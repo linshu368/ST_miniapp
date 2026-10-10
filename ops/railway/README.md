@@ -126,6 +126,13 @@ PR 临时环境复制 development 后会立即删除该 Cron，避免多个调�
 
 ### 支付对账（快速 Worker + 过期 Cron）
 
+支付告警另有独立常驻服务 `stminiapp-payment-alert-monitor`：Start Command 为
+`./node_modules/.bin/tsx src/scripts/payment-alert-monitor.ts`，Restart Policy 为 `Always`，
+不设 Cron Schedule、healthcheck、域名或 TCP proxy。它以数据库 advisory lock 防止重叠，
+每分钟运行 P0、每五分钟运行 P1；只读支付订单/操作事件并通过公共 outbox 发布。缺失或非法
+`alerting` runtime config 时通知保持关闭。这里仅描述目标运行面，不授权 Railway apply、部署、
+环境变量或通知开关写入。
+
 两个任务都必须是独立服务；不能在 `stminiapp` 上设置 Cron Schedule，否则 Railway
 会按周期启动并终止 API deployment。上线前必须先对目标数据库执行
 `packages/shared/migrations/100_payment_reconciliation_schedule.sql`。
