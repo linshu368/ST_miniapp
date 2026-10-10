@@ -4,6 +4,10 @@ import type {
 } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
 import { settlePaidOrder, type SettlementLogger } from './PaymentSettlement.js';
+import {
+  recordPaymentOperationEvent,
+  type PaymentEventRecorder,
+} from './PaymentOperationEvents.js';
 
 const RECONCILE_BATCH_SIZE = 10;
 const RECONCILE_CONCURRENCY = 5;
@@ -37,6 +41,7 @@ export async function runFastPaymentReconciliation(input: {
   log: SettlementLogger;
   paymentEnabled: boolean;
   now?: number;
+  events?: PaymentEventRecorder;
 }): Promise<FastPaymentReconciliationResult> {
   const result: FastPaymentReconciliationResult = {
     checked: 0,
@@ -88,6 +93,7 @@ async function reconcileCandidate(
     orders: FastReconciliationOrders;
     gateway: Pick<ZqPaymentGateway, 'queryOrder'>;
     log: SettlementLogger;
+    events?: PaymentEventRecorder;
   },
   result: FastPaymentReconciliationResult
 ): Promise<void> {
@@ -104,6 +110,13 @@ async function reconcileCandidate(
 
     const query = await input.gateway.queryOrder(claimed.id);
     if (!query.success) {
+      recordFastReconcileEvent(
+        input.events,
+        input.log,
+        claimed,
+        'failed',
+        query.errorClass ?? 'gateway_failed'
+      );
       input.log.sys.warn(
         {
           event: 'payment.query.failed',
@@ -120,6 +133,7 @@ async function reconcileCandidate(
     }
 
     if (!query.paid) {
+      recordFastReconcileEvent(input.events, input.log, claimed, 'unpaid', null);
       result.unpaid += 1;
       input.log.biz.info(
         { event: 'payment.query.unpaid', orderId: claimed.id, source: 'cron' },
@@ -134,6 +148,7 @@ async function reconcileCandidate(
       { event: 'payment.query.paid', orderId: claimed.id, source: 'cron' },
       '快速对账发现订单已支付'
     );
+    recordFastReconcileEvent(input.events, input.log, claimed, 'paid', null);
     const settlement = await settlePaidOrder(
       {
         orderId: claimed.id,
@@ -142,7 +157,8 @@ async function reconcileCandidate(
       },
       input.orders,
       input.log,
-      'cron'
+      'cron',
+      input.events
     );
     if (settlement === 'completed') {
       result.settled += 1;
@@ -158,6 +174,8 @@ async function reconcileCandidate(
       { event: 'payment.fast_cron.reconcile_failed', orderId: candidate.id, err: error },
       '支付订单快速对账失败'
     );
+    if (claimed)
+      recordFastReconcileEvent(input.events, input.log, claimed, 'failed', 'reconcile_exception');
     if (claimed && shouldReleaseOnError) {
       try {
         await releaseForRetry(claimed, lockedUntil, now, input);
@@ -173,6 +191,27 @@ async function reconcileCandidate(
       }
     }
   }
+}
+
+function recordFastReconcileEvent(
+  events: PaymentEventRecorder | undefined,
+  log: SettlementLogger,
+  order: MiniappPaymentOrderRow,
+  outcome: 'failed' | 'unpaid' | 'paid',
+  errorClass: string | null
+): void {
+  recordPaymentOperationEvent(events, log, {
+    event_key: `fast_reconcile:${outcome}:${order.id}:${Date.now()}`,
+    order_id: order.id,
+    user_id: order.user_id,
+    event_kind: 'fast_reconcile',
+    stage: 'query',
+    outcome,
+    source: 'cron',
+    trigger: 'fast_reconcile',
+    error_class: errorClass,
+    occurred_at: new Date().toISOString(),
+  });
 }
 
 async function releaseForRetry(

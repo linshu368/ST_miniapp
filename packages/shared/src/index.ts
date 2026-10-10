@@ -11,6 +11,7 @@ export * from './api/characters';
 export * from './api/favorites';
 export * from './api/health';
 export * from './api/payment';
+export * from './api/alerting';
 export * from './api/vip';
 export * from './api/vip-strategy';
 export * from './api/settings';

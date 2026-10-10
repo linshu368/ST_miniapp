@@ -48,6 +48,46 @@ export interface CreateMiniappPaymentOrderInput {
   vip_bonus_credits: number | null;
 }
 
+export interface PaymentOperationEventInput {
+  event_key: string;
+  order_id: string | null;
+  user_id: string | null;
+  event_kind:
+    | 'checkout_confirmation'
+    | 'order_creation'
+    | 'gateway_create'
+    | 'webhook'
+    | 'return'
+    | 'payment_query'
+    | 'settlement'
+    | 'fast_reconcile'
+    | 'expiry_reconcile';
+  stage: 'order' | 'checkout' | 'gateway' | 'callback' | 'query' | 'settlement';
+  outcome: 'started' | 'succeeded' | 'failed' | 'unpaid' | 'paid' | 'skipped';
+  source: 'client' | 'backend' | 'gateway' | 'cron';
+  trigger:
+    | 'initial_open'
+    | 'reopen'
+    | 'webhook'
+    | 'return'
+    | 'user_poll'
+    | 'fast_reconcile'
+    | 'expiry_reconcile'
+    | 'create_order'
+    | 'settlement';
+  error_class?: string | null;
+  duration_ms?: number | null;
+  occurred_at: string;
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface CheckoutConfirmationRecord {
+  recorded: boolean;
+  checkout_confirmed_at: string | null;
+  last_checkout_confirmed_at: string | null;
+  checkout_confirm_count: number;
+}
+
 /** 日报按天全量取，单页上限只是为了不把一天的订单压成一次超大响应。 */
 const REPORT_PAGE_SIZE = 500;
 
@@ -79,6 +119,36 @@ export class MiniappPaymentOrderRepository {
       .maybeSingle();
     if (error) throw new Error(`查询用户支付订单失败：${error.message}`);
     return (data as MiniappPaymentOrderRow | null) ?? null;
+  }
+
+  async recordCheckoutConfirmation(input: {
+    orderId: string;
+    userId: string;
+    requestId: string;
+    occurredAt: string;
+    action: 'initial_open' | 'reopen';
+  }): Promise<CheckoutConfirmationRecord> {
+    const { data, error } = await this.db.rpc('record_checkout_confirmation', {
+      p_order_id: input.orderId,
+      p_user_id: input.userId,
+      p_request_id: input.requestId,
+      p_occurred_at: input.occurredAt,
+      p_action: input.action,
+    });
+    if (error) throw new Error(`记录收银台确认失败：${error.message}`);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || typeof row !== 'object') throw new Error('记录收银台确认失败：RPC 返回为空');
+    return row as CheckoutConfirmationRecord;
+  }
+
+  async recordOperationEvent(input: PaymentOperationEventInput): Promise<void> {
+    const { error } = await this.db.from('payment_operation_events').insert({
+      ...input,
+      error_class: input.error_class ?? null,
+      duration_ms: input.duration_ms ?? null,
+      metadata: input.metadata ?? {},
+    });
+    if (error) throw new Error(`记录支付操作事件失败：${error.message}`);
   }
 
   async listByUser(input: {

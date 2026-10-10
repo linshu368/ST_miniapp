@@ -11,6 +11,10 @@
 import type { MiniappPaymentOrderRepository } from '../../../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { ZqPaymentGateway } from '../../../infrastructure/payment/ZqPaymentGateway.js';
 import { reconcileWithGateway, type SettlementLogger } from './PaymentSettlement.js';
+import {
+  recordPaymentOperationEvent,
+  type PaymentEventRecorder,
+} from './PaymentOperationEvents.js';
 
 /** 回溯窗口：也覆盖上一轮 cron 已经判过期、但当时没查单的订单。 */
 const RECONCILE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -36,6 +40,7 @@ export async function runExpirePaymentOrders(input: {
   log: SettlementLogger;
   paymentEnabled: boolean;
   now?: number;
+  events?: PaymentEventRecorder;
 }): Promise<ExpirePaymentOrdersResult> {
   const { orders, gateway, log, paymentEnabled } = input;
   const now = input.now ?? Date.now();
@@ -58,10 +63,24 @@ export async function runExpirePaymentOrders(input: {
           queryOrder: async (orderId: string) => {
             const result = await gateway.queryOrder(orderId);
             if (!result.success) failed += 1;
+            recordPaymentOperationEvent(input.events, log, {
+              event_key: `expiry_reconcile:${result.success ? (result.paid ? 'paid' : 'unpaid') : 'failed'}:${candidate.id}:${Date.now()}`,
+              order_id: candidate.id,
+              user_id: candidate.user_id,
+              event_kind: 'expiry_reconcile',
+              stage: 'query',
+              outcome: result.success ? (result.paid ? 'paid' : 'unpaid') : 'failed',
+              source: 'cron',
+              trigger: 'expiry_reconcile',
+              error_class: result.success ? null : (result.errorClass ?? 'gateway_failed'),
+              occurred_at: new Date().toISOString(),
+            });
             return result;
           },
         };
-        if (await reconcileWithGateway(candidate, monitoredGateway, orders, log, 'cron')) {
+        if (
+          await reconcileWithGateway(candidate, monitoredGateway, orders, log, 'cron', input.events)
+        ) {
           settled += 1;
         }
       } catch (error) {
