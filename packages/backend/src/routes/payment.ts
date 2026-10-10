@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyReply } from 'fastify';
-import { ok, fail } from '@miniapp/shared';
+import { ok, fail, PostCheckoutConfirmationRequestSchema } from '@miniapp/shared';
 import { requestLogger, type RequestLogger } from '../lib/logger.js';
 import type {
   CreatePaymentOrderRequest,
@@ -7,6 +7,7 @@ import type {
   GetPaymentOrdersData,
   GetPaymentOrdersQuery,
   GetPaymentPlansData,
+  PostCheckoutConfirmationData,
   PaymentOrder,
   PaymentOrderStatus,
   PaymentType,
@@ -37,6 +38,11 @@ import {
 } from '../infrastructure/payment/ZqPaymentGateway.js';
 import { config } from '../platform/config.js';
 import { insertUserNotification } from '../lib/notifications.js';
+import {
+  CheckoutConfirmationError,
+  CheckoutConfirmationUseCase,
+} from '../features/payment/usecases/CheckoutConfirmation.js';
+import { recordPaymentOperationEvent } from '../features/payment/usecases/PaymentOperationEvents.js';
 
 const PAYMENT_STATUSES: PaymentOrderStatus[] = ['pending', 'completed', 'expired', 'failed'];
 const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
@@ -53,9 +59,10 @@ export default async function paymentRoutes(app: FastifyInstance) {
     );
   }
 
-  const recharge = new RechargeUseCase();
   const orders = new MiniappPaymentOrderRepository();
   const gateway = new ZqPaymentGateway();
+  const recharge = new RechargeUseCase(orders, gateway, orders);
+  const checkoutConfirmations = new CheckoutConfirmationUseCase(orders);
 
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
@@ -139,6 +146,56 @@ export default async function paymentRoutes(app: FastifyInstance) {
   });
 
   // @frontend-ready: true
+  app.post(
+    '/api/payment/orders/:id/checkout-confirmations',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+
+      const body = PostCheckoutConfirmationRequestSchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.status(400).send(fail('BAD_REQUEST', 'Invalid checkout confirmation request'));
+      }
+
+      const { id } = request.params as { id: string };
+      const log = requestLogger(request.log, 'payment');
+      try {
+        const dbUser = await getOrCreateDbUser(request.user);
+        const data = await checkoutConfirmations.record({
+          orderId: id,
+          userId: dbUser.id,
+          requestId: body.data.request_id,
+          occurredAt: body.data.occurred_at,
+          action: body.data.action,
+        });
+        log.biz.info(
+          {
+            event: 'payment.checkout_confirmation.recorded',
+            orderId: id,
+            action: body.data.action,
+            recorded: data.recorded,
+            confirmationCount: data.checkout_confirm_count,
+          },
+          '收银台确认已记录'
+        );
+        return reply.send(ok<PostCheckoutConfirmationData>(data));
+      } catch (error) {
+        if (error instanceof CheckoutConfirmationError) {
+          const status = error.code === 'NOT_FOUND' ? 404 : 422;
+          return reply.status(status).send(fail(error.code, error.message));
+        }
+        log.sys.error(
+          { event: 'payment.checkout_confirmation.failed', err: error, orderId: id },
+          '记录收银台确认失败'
+        );
+        return reply
+          .status(500)
+          .send(fail('CHECKOUT_CONFIRMATION_FAILED', 'Unable to record checkout'));
+      }
+    }
+  );
+
+  // @frontend-ready: true
   app.get(
     '/api/payment/orders/:id',
     { preHandler: [requireTelegramAuth] },
@@ -157,7 +214,14 @@ export default async function paymentRoutes(app: FastifyInstance) {
       // 在这里补一次查单，到账就不再依赖对方推送。
       if (
         config.payment.enabled &&
-        (await reconcileWithGateway(order, gateway, orders, requestLogger(request.log, 'payment')))
+        (await reconcileWithGateway(
+          order,
+          gateway,
+          orders,
+          requestLogger(request.log, 'payment'),
+          'query',
+          orders
+        ))
       ) {
         order = (await recharge.getOrderForUser(id, dbUser.id)) ?? order;
       }
@@ -201,6 +265,19 @@ export default async function paymentRoutes(app: FastifyInstance) {
     const orderId =
       verification.ok && isSafePaymentOrderId(verification.orderId) ? verification.orderId : null;
 
+    recordPaymentOperationEvent(orders, log, {
+      event_key: `return:${verification.ok ? 'verified' : verification.reason}:${orderId ?? Date.now()}`,
+      order_id: orderId,
+      user_id: null,
+      event_kind: 'return',
+      stage: 'callback',
+      outcome: verification.ok ? 'succeeded' : 'failed',
+      source: 'gateway',
+      trigger: 'return',
+      error_class: verification.ok ? null : verification.reason,
+      occurred_at: new Date().toISOString(),
+    });
+
     // 厂商《支付结果通知》把 notify_url 和 return_url 都定义为「支付结果通知」，
     // 参数与签名完全相同。异步通知不保证送达（实测就有整条没推的订单），所以验签通过的
     // 同步回跳同样入账；重复入账由 credits_added 幂等兜住。
@@ -213,7 +290,8 @@ export default async function paymentRoutes(app: FastifyInstance) {
         },
         orders,
         log,
-        'return'
+        'return',
+        orders
       ).catch((error: unknown) => {
         // 回跳的首要职责是把用户送回 MiniApp，入账失败不能卡住导航。
         log.sys.error(
@@ -258,7 +336,8 @@ export default async function paymentRoutes(app: FastifyInstance) {
       reply,
       gateway,
       orders,
-      requestLogger(request.log, 'payment')
+      requestLogger(request.log, 'payment'),
+      orders
     );
   });
 
@@ -269,7 +348,8 @@ export default async function paymentRoutes(app: FastifyInstance) {
       reply,
       gateway,
       orders,
-      requestLogger(request.log, 'payment')
+      requestLogger(request.log, 'payment'),
+      orders
     );
   });
 }
@@ -306,12 +386,25 @@ export async function handleZqPayWebhook(
   reply: FastifyReply,
   gateway: Pick<ZqPaymentGateway, 'isExpectedMerchant' | 'verifyNotifySign'>,
   orders: Pick<MiniappPaymentOrderRepository, 'findById' | 'complete' | 'reopenExpired'>,
-  log: RequestLogger
+  log: RequestLogger,
+  events?: import('../features/payment/usecases/PaymentOperationEvents.js').PaymentEventRecorder
 ) {
   const notifyData = normalizeNotifyData(payload);
   const verification = verifyNotify(gateway, notifyData);
 
   if (!verification.ok) {
+    recordPaymentOperationEvent(events, log, {
+      event_key: `webhook:failed:${verification.reason}:${Date.now()}`,
+      order_id: null,
+      user_id: null,
+      event_kind: 'webhook',
+      stage: 'callback',
+      outcome: 'failed',
+      source: 'gateway',
+      trigger: 'webhook',
+      error_class: verification.reason,
+      occurred_at: new Date().toISOString(),
+    });
     log.sys.warn(
       {
         event: 'payment.webhook.verify_failed',
@@ -327,6 +420,17 @@ export async function handleZqPayWebhook(
   }
 
   const orderId = verification.orderId;
+  recordPaymentOperationEvent(events, log, {
+    event_key: `webhook:succeeded:${orderId}:${notifyData.trade_no ?? 'none'}`,
+    order_id: orderId,
+    user_id: null,
+    event_kind: 'webhook',
+    stage: 'callback',
+    outcome: 'succeeded',
+    source: 'gateway',
+    trigger: 'webhook',
+    occurred_at: new Date().toISOString(),
+  });
   log.biz.info({ event: 'payment.webhook.received', orderId }, '收到子千易支付回调');
 
   if (notifyData.trade_status !== 'TRADE_SUCCESS') {
@@ -337,7 +441,8 @@ export async function handleZqPayWebhook(
     { orderId, paidAmount: notifyData.money, providerTransactionId: notifyData.trade_no ?? null },
     orders,
     log,
-    'webhook'
+    'webhook',
+    events
   );
 
   switch (settlement) {
