@@ -73,18 +73,36 @@ Admin 草稿发布 → 用户端读已发布配置
 
 与聊天图链路并行存在、互不调用业务层。分享与返利绑定**具体广场产物 + 实扣事实**。
 
-### 4.1 分享弹窗状态机（已确认 · 方案 C）
+### 4.1 分享弹窗 UI（最新设计稿 + Q11-B）
 
-服务端权威事实：`tip_enabled`（Admin 弹窗开关）+ 账号 `has_completed_first_share`（仅在分享 RPC 成功时置真）。
+```
+┌─────────────────────────┐
+│ [✕]                     │
+│ ┌─────────────────────┐ │
+│ │  用户本次生成作品图  │ │  ← 上：具体产物图，非运营配图
+│ └─────────────────────┘ │
+│   运营配置主文案        │  ← 中：如「分享返还 {rate}」+ 说明
+│   （无「不再提示」）     │  ← Q11-B
+│ ┌─────────────────────┐ │
+│ │    分享至广场        │ │  ← 下：唯一主按钮
+│ └─────────────────────┘ │
+└─────────────────────────┘
+```
+
+Admin 配置中部文案与弹窗总开关；`{rate}` 运行时替换；顶图始终绑当前待分享 artifact。实现时忽略设计稿中的「不再提示」勾选。
+
+### 4.2 分享弹窗状态机（Q1-C + Q11-B）
+
+服务端权威事实：`tip_enabled` + 账号 `has_completed_first_share`（仅分享 RPC 成功时置真）。**无** `tip_suppressed` /「不再提示」。
 
 ```
 点击未分享产物的分享入口
   ├─ tip_enabled == false → 直接 share RPC → 轻提示
   ├─ has_completed_first_share == true → 直接 share RPC → 轻提示
   └─ tip_enabled && !has_completed_first_share
-        → 展示引导弹窗
+        → 展示引导弹窗（顶图=该产物）
               ├─ 确认「分享至广场」→ share RPC 成功 → 置 has_completed_first_share → 轻提示
-              └─ ✕ / 遮罩 → 关闭，不分享；下次点击仍走弹窗分支
+              └─ ✕ / 遮罩 → 关闭，不分享；下次点击仍弹
 ```
 
 生成成功不得自动弹窗。「返 N%」在账号首次点击分享入口后消失。并发分享须幂等。
@@ -128,7 +146,7 @@ Admin 草稿发布 → 用户端读已发布配置
 
 仅在 **image-plaza** 包内抽组件，避免与聊天 UI 共享：
 
-- `PlazaCard` / `PlazaFeed`、`WorkDetail`、`StudioShell`、`BottomSheet`、`ShareTipModal`
+- `PlazaCard` / `PlazaFeed`、`WorkDetail`、`StudioShell`、`BottomSheet`、`ShareTipModal`（上用户成图 + 中运营文案 + 下分享；无「不再提示」）
 - `usePlazaFeed` / `useStudioConversation` / `useShareWork`
 
 ## 9. 与原型差异的工程强制项
@@ -144,4 +162,4 @@ Admin 草稿发布 → 用户端读已发布配置
 
 ## 10. Open Design Dependencies
 
-产品决策见 `prd.md` Key Decisions（含 Q9/Q10）。实施前：八域 migration 终审；Anime 上游 id → `anime-wai` 映射；敲定 `image-plaza` 路由前缀与 Storage 路径前缀。
+产品决策见 `prd.md` Key Decisions（含 Q9–Q11）。实施前：八域 migration 终审；Anime 上游 id → `anime-wai` 映射；敲定 `image-plaza` 路由前缀与 Storage 路径前缀。
