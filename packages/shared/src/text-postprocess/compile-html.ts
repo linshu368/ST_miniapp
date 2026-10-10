@@ -2,8 +2,9 @@ import { parseFragment, type DefaultTreeAdapterTypes } from 'parse5';
 
 import {
   TEXT_POSTPROCESS_CLASS_TOKEN,
-  TEXT_POSTPROCESS_HTML_TAGS,
   TEXT_POSTPROCESS_LIMITS,
+  isTextPostprocessHtmlAttribute,
+  isTextPostprocessHtmlTag,
   type TextPostprocessDiagnostic,
   type TextPostprocessHtmlTag,
   type TrustedAttribute,
@@ -14,8 +15,6 @@ import { diagnostic, lineColumn } from './diagnostics';
 import { inspectTemplateTree, placementOf } from './template-model';
 
 const XHTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
-const HTML_TAGS = new Set<string>(TEXT_POSTPROCESS_HTML_TAGS);
-
 type HtmlNode = DefaultTreeAdapterTypes.ChildNode;
 type HtmlElement = DefaultTreeAdapterTypes.Element;
 
@@ -111,12 +110,12 @@ function convertNode(
     );
     return null;
   }
-  if (element.namespaceURI !== XHTML_NAMESPACE || !HTML_TAGS.has(element.tagName)) {
+  if (element.namespaceURI !== XHTML_NAMESPACE || !isTextPostprocessHtmlTag(element.tagName)) {
     diagnostics.push(
       issue(
         input.ruleId,
         'FORBIDDEN_TAG',
-        'HTML tag is not in the allowlist.',
+        'HTML tag has unsafe browser capabilities.',
         locationOf(input.replacement, encoded.toOriginal, element.sourceCodeLocation)
       )
     );
@@ -253,13 +252,13 @@ function convertAttributes(
       continue;
     }
     if (name === 'aria-hidden') {
-      if (attribute.value !== 'true') {
+      if (attribute.value !== 'true' && attribute.value !== 'false') {
         diagnostics.push(
-          issue(input.ruleId, 'FORBIDDEN_ATTRIBUTE', 'aria-hidden must be true.', location)
+          issue(input.ruleId, 'FORBIDDEN_ATTRIBUTE', 'aria-hidden must be true or false.', location)
         );
         continue;
       }
-      attributes.push({ name: 'aria-hidden', value: 'true' });
+      attributes.push({ name: 'aria-hidden', value: attribute.value });
       continue;
     }
     if (name === 'colspan' || name === 'rowspan') {
@@ -279,14 +278,23 @@ function convertAttributes(
       attributes.push({ name, value });
       continue;
     }
-    diagnostics.push(
-      issue(
-        input.ruleId,
-        'FORBIDDEN_ATTRIBUTE',
-        'HTML attribute is not in the allowlist.',
-        location
-      )
-    );
+    if (
+      attribute.namespace !== undefined ||
+      attribute.prefix !== undefined ||
+      !isTextPostprocessHtmlAttribute(name) ||
+      attribute.value.length > TEXT_POSTPROCESS_LIMITS.maxAttributeValueUnits
+    ) {
+      diagnostics.push(
+        issue(
+          input.ruleId,
+          'FORBIDDEN_ATTRIBUTE',
+          'HTML attribute has unsafe browser capabilities.',
+          location
+        )
+      );
+      continue;
+    }
+    attributes.push({ name: 'attribute', key: name, value: attribute.value });
   }
   return attributes;
 }

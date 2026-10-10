@@ -93,6 +93,10 @@ const COMMON_API_VARIABLES = [
   'TELEGRAM_WEBHOOK_SECRET',
   'UPSTASH_REDIS_REST_TOKEN',
   'UPSTASH_REDIS_REST_URL',
+  // Existing API variables not consumed by the payment monitor must remain
+  // preserved when applying IaC for the monitor service.
+  'VENICE_API_BASE_URL',
+  'VENICE_API_KEY',
   'Z_MODEL',
 ] as const;
 const DEVELOPMENT_API_VARIABLES = [
@@ -197,6 +201,21 @@ export default defineRailway((ctx) => {
     env: paymentCronEnv,
   });
 
+  // P0 rules require a minute-level, always-on process; Railway Cron cannot provide that cadence.
+  // This only declares desired state. Deployment and notification enablement remain release-gated.
+  const paymentAlertMonitorWorker = service('stminiapp-payment-alert-monitor', {
+    source: github(REPOSITORY, { branch }),
+    build: {
+      builder: 'DOCKERFILE',
+      buildCommand: 'pnpm install',
+      buildEnvironment: 'V3',
+      dockerfilePath: '/ops/docker/Dockerfile.backend',
+    },
+    start: './node_modules/.bin/tsx src/scripts/payment-alert-monitor.ts',
+    deploy: { restartPolicyType: 'ALWAYS' },
+    env: paymentCronEnv,
+  });
+
   const paymentCron = fn('stminiapp-payment-cron', {
     source: github(REPOSITORY, { branch }),
     build: {
@@ -256,7 +275,13 @@ export default defineRailway((ctx) => {
     },
   });
 
-  const resources = [stminiapp, paymentReconcileWorker, paymentCron, vipReminderCron];
+  const resources = [
+    stminiapp,
+    paymentReconcileWorker,
+    paymentAlertMonitorWorker,
+    paymentCron,
+    vipReminderCron,
+  ];
 
   return project('st-miniapp', {
     resources,

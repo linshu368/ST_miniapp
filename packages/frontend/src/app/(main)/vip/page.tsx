@@ -25,9 +25,14 @@ import { Button } from '@/components/ui/button';
 import { ApiClientError } from '@/lib/api/client';
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { formatNumber, formatYuanShort } from '@/lib/utils/payment';
-import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
+import {
+  useCheckoutConfirmationMutation,
+  useCreatePaymentOrderMutation,
+  usePaymentPlansQuery,
+} from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
+import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
 import {
   capturePaymentMethodSelected,
   capturePaymentOrderCreated,
@@ -53,6 +58,7 @@ export default function VipPage() {
   const plansQuery = usePaymentPlansQuery();
   const vipQuery = useVipStatusQuery();
   const createOrder = useCreatePaymentOrderMutation();
+  const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -60,6 +66,16 @@ export default function VipPage() {
   const [wechatPromptOpen, setWechatPromptOpen] = useState(false);
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const submitLock = useRef(false);
+
+  const reportCheckoutConfirmation = useCallback(
+    ({ orderId, request }: Parameters<typeof confirmCheckout>[0]) => {
+      confirmCheckout(
+        { orderId, request },
+        { onSuccess: () => clearCheckoutConfirmation(orderId, request.request_id) }
+      );
+    },
+    [confirmCheckout]
+  );
 
   const vipPlans = plansQuery.data?.vip_plans ?? [];
   const promptConfig =
@@ -106,9 +122,10 @@ export default function VipPage() {
         result,
         returnTo: '/vip',
         paymentType,
+        reportCheckoutConfirmation,
       });
     },
-    [paymentType, router]
+    [paymentType, reportCheckoutConfirmation, router]
   );
 
   const handleSelect = (planId: string) => {

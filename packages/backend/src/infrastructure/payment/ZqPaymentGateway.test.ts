@@ -141,9 +141,10 @@ describe('ZqPaymentGateway', () => {
         productName: '星尘充值 3000',
         clientIp: '127.0.0.1',
       })
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       success: false,
       errorMessage: '支付平台响应验签失败',
+      errorClass: 'response_verification',
     });
   });
 
@@ -171,9 +172,10 @@ describe('ZqPaymentGateway', () => {
         productName: '星尘充值 600',
         clientIp: '127.0.0.1',
       })
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       success: false,
       errorMessage: '支付平台返回了无效跳转地址',
+      errorClass: 'response_invalid',
     });
   });
 
@@ -257,9 +259,10 @@ describe('ZqPaymentGateway', () => {
       vi.fn(async () => new Response(JSON.stringify({ code: 1, msg: '订单不存在' })))
     );
 
-    await expect(createGateway().queryOrder('MA-order-missing')).resolves.toEqual({
+    await expect(createGateway().queryOrder('MA-order-missing')).resolves.toMatchObject({
       success: false,
       errorMessage: '订单不存在',
+      errorClass: 'provider_rejected',
     });
   });
 

@@ -15,6 +15,8 @@ export interface PaymentResult {
   success: boolean;
   paymentUrl?: string;
   errorMessage?: string;
+  /** Stable monitoring value; never derive rules from provider prose. */
+  errorClass?: PaymentGatewayErrorClass;
 }
 
 export interface PaymentQueryResult {
@@ -25,7 +27,16 @@ export interface PaymentQueryResult {
   amount?: string;
   tradeNo?: string | null;
   errorMessage?: string;
+  errorClass?: PaymentGatewayErrorClass;
 }
+
+export type PaymentGatewayErrorClass =
+  | 'configuration'
+  | 'provider_rejected'
+  | 'response_verification'
+  | 'response_invalid'
+  | 'timeout'
+  | 'network';
 
 export interface ZqPaymentNotifyData {
   pid?: string;
@@ -99,7 +110,7 @@ export class ZqPaymentGateway {
 
   async createPayment(params: CreatePaymentParams): Promise<PaymentResult> {
     if (!this.isConfigured()) {
-      return { success: false, errorMessage: '支付参数未配置' };
+      return { success: false, errorMessage: '支付参数未配置', errorClass: 'configuration' };
     }
 
     const paymentParams: Record<string, string | undefined> = {
@@ -128,27 +139,44 @@ export class ZqPaymentGateway {
       const result = (await response.json()) as ZqCreateResponse;
 
       if (Number(result.code) !== 0) {
-        return { success: false, errorMessage: result.msg || '创建支付订单失败' };
+        return {
+          success: false,
+          errorMessage: result.msg || '创建支付订单失败',
+          errorClass: 'provider_rejected',
+        };
       }
       if (result.sign && !this.verifySign(result, result.sign)) {
-        return { success: false, errorMessage: '支付平台响应验签失败' };
+        return {
+          success: false,
+          errorMessage: '支付平台响应验签失败',
+          errorClass: 'response_verification',
+        };
       }
       if (result.pay_type?.toLowerCase() !== 'jump') {
         return {
           success: false,
           errorMessage: `支付平台未返回跳转支付地址（${result.pay_type || 'unknown'}）`,
+          errorClass: 'response_invalid',
         };
       }
 
       const paymentUrl = typeof result.pay_info === 'string' ? result.pay_info.trim() : '';
       if (!isSafePaymentUrl(paymentUrl)) {
-        return { success: false, errorMessage: '支付平台返回了无效跳转地址' };
+        return {
+          success: false,
+          errorMessage: '支付平台返回了无效跳转地址',
+          errorClass: 'response_invalid',
+        };
       }
 
       return { success: true, paymentUrl };
     } catch (error) {
-      console.error('[payment] ZqPay createPayment failed', error);
-      return { success: false, errorMessage: '支付系统暂时不可用' };
+      return {
+        success: false,
+        errorMessage: '支付系统暂时不可用',
+        errorClass:
+          error instanceof DOMException && error.name === 'TimeoutError' ? 'timeout' : 'network',
+      };
     }
   }
 
@@ -156,7 +184,7 @@ export class ZqPaymentGateway {
    *  文档：POST {baseUrl}/api/pay/query */
   async queryOrder(outTradeNo: string): Promise<PaymentQueryResult> {
     if (!this.isConfigured()) {
-      return { success: false, errorMessage: '支付参数未配置' };
+      return { success: false, errorMessage: '支付参数未配置', errorClass: 'configuration' };
     }
 
     const queryParams: Record<string, string | undefined> = {
@@ -177,10 +205,18 @@ export class ZqPaymentGateway {
       const result = (await response.json()) as ZqQueryResponse;
 
       if (Number(result.code) !== 0) {
-        return { success: false, errorMessage: result.msg || '查询支付订单失败' };
+        return {
+          success: false,
+          errorMessage: result.msg || '查询支付订单失败',
+          errorClass: 'provider_rejected',
+        };
       }
       if (result.sign && !this.verifySign(result, result.sign)) {
-        return { success: false, errorMessage: '支付平台响应验签失败' };
+        return {
+          success: false,
+          errorMessage: '支付平台响应验签失败',
+          errorClass: 'response_verification',
+        };
       }
 
       return {
@@ -190,8 +226,12 @@ export class ZqPaymentGateway {
         tradeNo: result.trade_no ?? null,
       };
     } catch (error) {
-      console.error('[payment] ZqPay queryOrder failed', error);
-      return { success: false, errorMessage: '支付系统暂时不可用' };
+      return {
+        success: false,
+        errorMessage: '支付系统暂时不可用',
+        errorClass:
+          error instanceof DOMException && error.name === 'TimeoutError' ? 'timeout' : 'network',
+      };
     }
   }
 

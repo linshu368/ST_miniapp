@@ -7,37 +7,111 @@ import { z } from 'zod';
 export const TEXT_POSTPROCESS_SCHEMA_VERSION = 1;
 export const TEXT_POSTPROCESS_POLICY_VERSION = 1;
 
-export const TEXT_POSTPROCESS_HTML_TAGS = [
-  'p',
-  'div',
-  'span',
-  'mark',
-  'strong',
-  'em',
-  'b',
-  'i',
-  'del',
-  'br',
-  'hr',
-  'section',
-  'details',
-  'summary',
-  'ul',
-  'ol',
-  'li',
-  'table',
-  'thead',
-  'tbody',
-  'tr',
-  'td',
-  'th',
-  'button',
-  'pre',
-  'code',
-  'blockquote',
-  'h3',
-  'h4',
+/**
+ * 运营模板不再依赖正向标签白名单。这里只拒绝会执行代码、加载外部资源、
+ * 创建独立浏览上下文或伪造表单输入的能力；普通语义标签默认可用。
+ */
+export const TEXT_POSTPROCESS_FORBIDDEN_HTML_TAGS = [
+  'applet',
+  'area',
+  'audio',
+  'base',
+  'body',
+  'canvas',
+  'dialog',
+  'embed',
+  'fieldset',
+  'form',
+  'frame',
+  'frameset',
+  'head',
+  'html',
+  'iframe',
+  'img',
+  'input',
+  'link',
+  'map',
+  'marquee',
+  'meta',
+  'noscript',
+  'object',
+  'optgroup',
+  'option',
+  'picture',
+  'portal',
+  'script',
+  'select',
+  'source',
+  'style',
+  'template',
+  'textarea',
+  'track',
+  'video',
 ] as const;
+
+export const TEXT_POSTPROCESS_HTML_TAG = /^[a-z][a-z0-9]{0,63}$/;
+export const TEXT_POSTPROCESS_HTML_ATTRIBUTE = /^[a-z][a-z0-9_.:-]{0,63}$/;
+
+export const TEXT_POSTPROCESS_FORBIDDEN_HTML_ATTRIBUTES = [
+  'accesskey',
+  'action',
+  'anchor',
+  'archive',
+  'autofocus',
+  'background',
+  'cite',
+  'classid',
+  'codebase',
+  'command',
+  'commandfor',
+  'contenteditable',
+  'data',
+  'data-action',
+  'dynsrc',
+  'for',
+  'form',
+  'formaction',
+  'href',
+  'id',
+  'integrity',
+  'key',
+  'longdesc',
+  'lowsrc',
+  'manifest',
+  'nonce',
+  'ping',
+  'poster',
+  'popovertarget',
+  'popovertargetaction',
+  'profile',
+  'ref',
+  'slot',
+  'src',
+  'srcdoc',
+  'srcset',
+  'style',
+  'usemap',
+  'xlink:href',
+  'xmlns',
+] as const;
+
+const FORBIDDEN_HTML_TAGS = new Set<string>(TEXT_POSTPROCESS_FORBIDDEN_HTML_TAGS);
+const FORBIDDEN_HTML_ATTRIBUTES = new Set<string>(TEXT_POSTPROCESS_FORBIDDEN_HTML_ATTRIBUTES);
+
+export type TextPostprocessHtmlTag = string;
+
+export function isTextPostprocessHtmlTag(value: string): value is TextPostprocessHtmlTag {
+  return TEXT_POSTPROCESS_HTML_TAG.test(value) && !FORBIDDEN_HTML_TAGS.has(value);
+}
+
+export function isTextPostprocessHtmlAttribute(value: string): boolean {
+  return (
+    TEXT_POSTPROCESS_HTML_ATTRIBUTE.test(value) &&
+    !FORBIDDEN_HTML_ATTRIBUTES.has(value) &&
+    !value.startsWith('on') &&
+    !value.startsWith('xmlns')
+  );
+}
 
 export const TEXT_POSTPROCESS_CSS_PROPERTIES = [
   'color',
@@ -163,6 +237,8 @@ export const TEXT_POSTPROCESS_LIMITS = {
   ruleBudgetMs: 100,
   messageBudgetMs: 1_000,
   maxClassTokens: 8,
+  maxTemplateAttributes: 32,
+  maxAttributeValueUnits: 1_000,
   maxVersionsPerBatch: 20,
   maxDiagnostics: 100,
 } as const;
@@ -186,7 +262,6 @@ const RULE_FIELDS = [
 export const TEXT_POSTPROCESS_FIELDS = [...RULE_FIELDS, 'source', 'version', 'request'] as const;
 
 export type TextPostprocessField = (typeof TEXT_POSTPROCESS_FIELDS)[number];
-export type TextPostprocessHtmlTag = (typeof TEXT_POSTPROCESS_HTML_TAGS)[number];
 export type TextPostprocessCssProperty = (typeof TEXT_POSTPROCESS_CSS_PROPERTIES)[number];
 
 export interface TextPostprocessLocation {
@@ -223,7 +298,7 @@ export const TextPostprocessDiagnosticSchema = z
   })
   .strict();
 
-const HtmlTagSchema = z.enum(TEXT_POSTPROCESS_HTML_TAGS);
+const HtmlTagSchema = z.string().refine(isTextPostprocessHtmlTag);
 const CssPropertySchema = z.enum(TEXT_POSTPROCESS_CSS_PROPERTIES);
 
 export const CaptureRefSchema = z.discriminatedUnion('kind', [
@@ -259,9 +334,16 @@ export const TrustedAttributeSchema = z.discriminatedUnion('name', [
   z.object({ name: z.literal('open') }).strict(),
   z.object({ name: z.literal('title'), text: z.string().max(200) }).strict(),
   z.object({ name: z.literal('aria-label'), text: z.string().max(200) }).strict(),
-  z.object({ name: z.literal('aria-hidden'), value: z.literal('true') }).strict(),
+  z.object({ name: z.literal('aria-hidden'), value: z.enum(['true', 'false']) }).strict(),
   z.object({ name: z.literal('colspan'), value: z.number().int().min(1).max(20) }).strict(),
   z.object({ name: z.literal('rowspan'), value: z.number().int().min(1).max(20) }).strict(),
+  z
+    .object({
+      name: z.literal('attribute'),
+      key: z.string().refine(isTextPostprocessHtmlAttribute),
+      value: z.string().max(TEXT_POSTPROCESS_LIMITS.maxAttributeValueUnits),
+    })
+    .strict(),
 ]);
 
 export const SendMessageActionSchema = z
@@ -303,7 +385,9 @@ export const TrustedNodeSchema: z.ZodType<TrustedNode> = z.lazy(() =>
       .object({
         type: z.literal('element'),
         tag: HtmlTagSchema,
-        attributes: z.array(TrustedAttributeSchema).max(8),
+        attributes: z
+          .array(TrustedAttributeSchema)
+          .max(TEXT_POSTPROCESS_LIMITS.maxTemplateAttributes),
         children: z.array(TrustedNodeSchema).max(TEXT_POSTPROCESS_LIMITS.maxTemplateNodes),
         action: SendMessageActionSchema.nullable(),
       })

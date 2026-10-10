@@ -479,7 +479,7 @@ describe('execute（请求体）', () => {
     expect(body.messages[2]?.content).toBe('平台规则 + 你好');
   });
 
-  it('Venice 请求禁用 Venice system prompt，并使用 prompt_cache_key 而不是 OpenRouter routing/cache_control', async () => {
+  it('Venice 请求禁用 system prompt 和推理，并使用 prompt_cache_key 而不是 OpenRouter routing/cache_control', async () => {
     providerPreferences = { ignore: ['alibaba'], order: ['friendli'], allow_fallbacks: true };
     billingContext = {
       ...defaultBillingContext,
@@ -515,12 +515,14 @@ describe('execute（请求体）', () => {
       provider?: unknown;
       prompt_cache_key?: unknown;
       venice_parameters?: unknown;
+      reasoning?: unknown;
       stream_options?: unknown;
     };
     expect(body.model).toBe('venice-uncensored');
     expect(body.provider).toBeUndefined();
     expect(body.messages.every((message) => typeof message.content === 'string')).toBe(true);
     expect(body.venice_parameters).toEqual({ include_venice_system_prompt: false });
+    expect(body.reasoning).toEqual({ enabled: false });
     expect(body.prompt_cache_key).toBe('session:session-1');
     expect(body.stream_options).toEqual({ include_usage: true });
   });
