@@ -1,7 +1,9 @@
-import '../platform/config.js';
+import { config } from '../platform/config.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { prisma } from '../lib/db.js';
 import { createLogger } from '../lib/logger.js';
+import { AlertDeliveryWorker } from '../features/alerting/delivery-worker.js';
+import { FeishuAlertSink } from '../features/alerting/feishu-alert-sink.js';
 import { AlertPublisher } from '../features/alerting/publisher.js';
 import { PrismaAlertPersistence } from '../features/alerting/repository.js';
 import {
@@ -15,6 +17,10 @@ const monitor = new PaymentAlertMonitor(
   new AlertPublisher(new PrismaAlertPersistence(), log),
   log
 );
+const deliveryWorker = new AlertDeliveryWorker(
+  new FeishuAlertSink(config.alerting.feishuWebhookUrl),
+  log
+);
 const shutdown = new AbortController();
 for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => shutdown.abort());
 // Advisory locking is database-scoped, so duplicate Railway instances skip rather than overlap.
@@ -26,6 +32,15 @@ while (!shutdown.signal.aborted) {
     if (rows[0]?.locked) {
       try {
         await monitor.runOnce();
+        // Delivery is non-critical: a failed drain must not make an otherwise successful monitor run fail.
+        try {
+          await deliveryWorker.deliverOne();
+        } catch (err) {
+          log.sys.error(
+            { event: 'payment.alert_monitor.delivery_failed', err },
+            '支付告警通知投递本轮失败；监控将在下一轮继续'
+          );
+        }
       } finally {
         await prisma.$executeRaw`SELECT pg_advisory_unlock(731006)`;
       }
