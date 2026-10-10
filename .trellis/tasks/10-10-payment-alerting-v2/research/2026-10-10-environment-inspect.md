@@ -40,3 +40,12 @@
 
 - TEST 与 Production 已分别记录 migration ledger、对象前置 shape、RLS/grant、受保护结算 RPC、对象归属、锁/容量与 forward-fix 边界。
 - 以上为 migration 编写前的只读基线，不替代 T2 的 TEST 单文件 apply/postflight，也不授权 Production apply。
+
+## TEST migration postflight
+
+- `20261010_payment_alerting_foundation.sql`：GitHub Actions `Database Migration` run `38042781412` 在 TEST 成功执行，head `a6f98202`。账本记录 checksum `dfd8e072462eaddce6a134b362a8d68133c0856d318101a242797e4f9086ef9f`。
+- 仅 catalog/权限 postflight：三项确认列类型、默认值和 nullable 形状符合预期；三张新表已启用 RLS、无 policy，仅 `postgres`/`service_role` 有表 DML；确认 RPC 为 `postgres` owner、`SECURITY DEFINER`、`search_path=pg_catalog`，且 `anon`/`authenticated` 无 EXECUTE。两 schema 均向 `service_role` 提供 `USAGE`。
+- Advisor 提示 `alert_delivery_attempts.incident_id` 外键缺少覆盖索引；这是本次新增对象的有效性能缺口，未忽略。
+- `20261010_alert_delivery_attempts_incident_index.sql`：作为 forward-fix 在 TEST run `38043012878`、head `240ad5a0` 成功执行并记账。`app_core.idx_alert_delivery_attempts_incident_id` 定义为 `btree (incident_id)`；不改写已记账的 foundation migration。
+- 受控行为验证在显式 `BEGIN … ROLLBACK` 中完成：仅插入随机假用户与 pending 假订单，首个确认记录成功，使用同一 request ID 的重放不再记录；事务内订单确认计数和事件数均为 1，随后回滚。未读取真实业务行、未留下测试数据。
+- TEST 结果不代表 Production 已执行或已启用通知；Production 仍需 T7/T8 的独立发布授权。
