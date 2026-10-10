@@ -36,6 +36,7 @@ try {
         gateway,
         log,
         paymentEnabled: config.payment.enabled,
+        events: orders,
       }),
     sleep: async (milliseconds, signal) => {
       try {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PENDING_ARRIVAL_HINT,
+  PostCheckoutConfirmationRequestSchema,
   PaymentPlansSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
@@ -116,6 +117,31 @@ describe('PaymentPromptDialogConfigSchema', () => {
         ...config,
         description: '',
         accent_color: 'yellow',
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe('PostCheckoutConfirmationRequestSchema', () => {
+  const request = {
+    request_id: '9df083c5-77ae-4edb-a50c-92afba1ebd3c',
+    occurred_at: '2026-10-10T09:00:00.000Z',
+    action: 'initial_open' as const,
+  };
+
+  it('accepts an idempotency key and a timezone-aware action time', () => {
+    expect(PostCheckoutConfirmationRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it('rejects invalid client times and unknown fields', () => {
+    expect(
+      PostCheckoutConfirmationRequestSchema.safeParse({ ...request, occurred_at: '2026-10-10' })
+        .success
+    ).toBe(false);
+    expect(
+      PostCheckoutConfirmationRequestSchema.safeParse({
+        ...request,
+        pay_url: 'https://example.test',
       }).success
     ).toBe(false);
   });

@@ -1,8 +1,8 @@
 import {
   TEXT_POSTPROCESS_CLASS_TOKEN,
-  TEXT_POSTPROCESS_HTML_TAGS,
   TEXT_POSTPROCESS_THEME_COLOR_VARS,
   TEXT_POSTPROCESS_THEME_RADIUS_VAR,
+  isTextPostprocessHtmlTag,
   type CssDeclaration,
   type CssRule,
   type CssSelector,
@@ -757,7 +757,7 @@ function numeric(raw: string): number | null {
 }
 
 function isHtmlTag(value: string): value is TextPostprocessHtmlTag {
-  return (TEXT_POSTPROCESS_HTML_TAGS as readonly string[]).includes(value);
+  return isTextPostprocessHtmlTag(value);
 }
 
 export function scopeProbeSelector(selector: CssSelector): string {

@@ -16,12 +16,21 @@ import type { CreatePaymentOrderData, PaymentOrder, PaymentType } from '@miniapp
 import { createLogger } from '../../../lib/logger.js';
 import type { SettlementLogger } from './PaymentSettlement.js';
 import { observePaymentOrderFailed } from './PaymentOrderTelemetry.js';
+import {
+  recordPaymentOperationEvent,
+  type PaymentEventRecorder,
+} from './PaymentOperationEvents.js';
 
 export class RechargeUseCase {
+  private readonly events: PaymentEventRecorder | undefined;
+
   constructor(
     private readonly orders = new MiniappPaymentOrderRepository(),
-    private readonly gateway = new ZqPaymentGateway()
-  ) {}
+    private readonly gateway = new ZqPaymentGateway(),
+    events?: PaymentEventRecorder
+  ) {
+    this.events = events;
+  }
 
   async createOrder(input: {
     userId: string;
@@ -57,6 +66,20 @@ export class RechargeUseCase {
       vip_bonus_credits: product.vip_bonus_credits,
     });
 
+    const log = input.log ?? createLogger('payment');
+    recordPaymentOperationEvent(this.events, log, {
+      event_key: `order_creation:${row.id}`,
+      order_id: row.id,
+      user_id: row.user_id,
+      event_kind: 'order_creation',
+      stage: 'order',
+      outcome: 'succeeded',
+      source: 'backend',
+      trigger: 'create_order',
+      occurred_at: new Date().toISOString(),
+    });
+
+    const gatewayStartedAt = Date.now();
     const result = await this.gateway.createPayment({
       type: input.paymentType,
       outTradeNo: orderId,
@@ -69,7 +92,19 @@ export class RechargeUseCase {
 
     if (!result.success || !result.paymentUrl) {
       await this.orders.markFailed(orderId);
-      const log = input.log ?? createLogger('payment');
+      recordPaymentOperationEvent(this.events, log, {
+        event_key: `gateway_create:${row.id}`,
+        order_id: row.id,
+        user_id: row.user_id,
+        event_kind: 'gateway_create',
+        stage: 'gateway',
+        outcome: 'failed',
+        source: 'gateway',
+        trigger: 'create_order',
+        error_class: result.errorClass ?? 'response_invalid',
+        duration_ms: Date.now() - gatewayStartedAt,
+        occurred_at: new Date().toISOString(),
+      });
       try {
         void observePaymentOrderFailed(
           {
@@ -88,6 +123,19 @@ export class RechargeUseCase {
       }
       throw new Error(result.errorMessage || '创建支付订单失败');
     }
+
+    recordPaymentOperationEvent(this.events, log, {
+      event_key: `gateway_create:${row.id}`,
+      order_id: row.id,
+      user_id: row.user_id,
+      event_kind: 'gateway_create',
+      stage: 'gateway',
+      outcome: 'succeeded',
+      source: 'gateway',
+      trigger: 'create_order',
+      duration_ms: Date.now() - gatewayStartedAt,
+      occurred_at: new Date().toISOString(),
+    });
 
     return {
       order: toPaymentOrder(row),

@@ -257,6 +257,51 @@ describe('html and css policy', () => {
     expect(implicit.diagnostics.some((item) => item.code === 'HTML_IMPLICIT_NODE')).toBe(true);
   });
 
+  it('accepts semantic tags and inert presentation attributes without a positive allowlist', () => {
+    const compiled = compileTextPostprocessSource(
+      source([
+        rule({
+          replacement:
+            '<article role="note" data-layout="story"><header aria-expanded="false">Title</header><footer>$&</footer></article>',
+          css: 'article > header { color: red; }',
+        }),
+      ])
+    );
+
+    expect(compiled.ok).toBe(true);
+    expect(compiled.diagnostics).toEqual([]);
+    expect(compiled.artifact?.rules[0]?.tree).toMatchObject([
+      {
+        type: 'element',
+        tag: 'article',
+        attributes: [
+          { name: 'attribute', key: 'role', value: 'note' },
+          { name: 'attribute', key: 'data-layout', value: 'story' },
+        ],
+      },
+    ]);
+  });
+
+  it('still rejects URL, inline-style, event, and form capabilities', () => {
+    for (const replacement of [
+      '<a href="https://example.com">link</a>',
+      '<section style="position:fixed">overlay</section>',
+      '<div onmouseover="alert(1)">event</div>',
+      '<form><button>submit</button></form>',
+      '<img src="https://example.com/a.png">',
+      '<label for="app-login">redirect focus</label>',
+      '<button popovertarget="app-menu">open external UI</button>',
+    ]) {
+      const compiled = compileTextPostprocessSource(source([rule({ replacement })]));
+      expect(compiled.ok).toBe(false);
+      expect(
+        compiled.diagnostics.some(
+          (item) => item.code === 'FORBIDDEN_TAG' || item.code === 'FORBIDDEN_ATTRIBUTE'
+        )
+      ).toBe(true);
+    }
+  });
+
   it('keeps model-authored actions as text and only trusts compiler-built buttons', () => {
     const artifact = compileOk([
       rule({

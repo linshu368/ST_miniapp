@@ -40,7 +40,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { PlanCard } from '@/components/payment/plan-card';
 import { useInviteEntryStatusQuery } from '@/lib/api/invite';
-import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
+import {
+  useCheckoutConfirmationMutation,
+  useCreatePaymentOrderMutation,
+  usePaymentPlansQuery,
+} from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import {
   capturePaymentMethodSelected,
@@ -53,6 +57,7 @@ import {
   retainPaywallFollowupIfActive,
 } from '@/lib/payment/flow-telemetry';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
+import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
 import { paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import {
@@ -84,6 +89,7 @@ function RechargePageContent() {
   const { data, isLoading, isError, refetch } = usePaymentPlansQuery();
   const vipStatus = useVipStatusQuery();
   const createOrder = useCreatePaymentOrderMutation();
+  const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const inviteEntry = useInviteEntryStatusQuery();
   const inviteEntryEnabled = inviteEntry.data?.entry_enabled === true;
 
@@ -107,6 +113,16 @@ function RechargePageContent() {
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const submitLock = useRef(false);
+
+  const reportCheckoutConfirmation = useCallback(
+    ({ orderId, request }: Parameters<typeof confirmCheckout>[0]) => {
+      confirmCheckout(
+        { orderId, request },
+        { onSuccess: () => clearCheckoutConfirmation(orderId, request.request_id) }
+      );
+    },
+    [confirmCheckout]
+  );
 
   const plans = data?.plans ?? [];
   const vipPlans = data?.vip_plans ?? [];
@@ -154,9 +170,10 @@ function RechargePageContent() {
         result,
         returnTo,
         paymentType,
+        reportCheckoutConfirmation,
       });
     },
-    [paymentType, returnTo, router]
+    [paymentType, reportCheckoutConfirmation, returnTo, router]
   );
 
   const handleSubmit = useCallback(async () => {

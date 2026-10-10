@@ -198,6 +198,33 @@ export interface CreatePaymentOrderData {
   pay_url: string;
 }
 
+// ==== POST /api/payment/orders/:id/checkout-confirmations ====
+
+/** 用户确认交给外部收银台的动作；不代表第三方页面已展示或付款完成。 */
+export const CheckoutConfirmationActionSchema = z.enum(['initial_open', 'reopen']);
+export type CheckoutConfirmationAction = z.infer<typeof CheckoutConfirmationActionSchema>;
+
+export const PostCheckoutConfirmationRequestSchema = z
+  .object({
+    /** 同一次浏览器动作重试时保持不变，后端据此原子去重。 */
+    request_id: z.string().uuid(),
+    /** 浏览器记录的用户动作时间；后端另存 recorded_at，拒绝不可信时间。 */
+    occurred_at: z.string().datetime({ offset: true }),
+    action: CheckoutConfirmationActionSchema,
+  })
+  .strict();
+export type PostCheckoutConfirmationRequest = z.infer<typeof PostCheckoutConfirmationRequestSchema>;
+
+export const PostCheckoutConfirmationDataSchema = z
+  .object({
+    recorded: z.boolean(),
+    checkout_confirmed_at: z.string().datetime({ offset: true }).nullable(),
+    last_checkout_confirmed_at: z.string().datetime({ offset: true }).nullable(),
+    checkout_confirm_count: z.number().int().nonnegative(),
+  })
+  .strict();
+export type PostCheckoutConfirmationData = z.infer<typeof PostCheckoutConfirmationDataSchema>;
+
 // ==== GET /api/payment/orders/:id ====
 export interface GetPaymentOrderData {
   order: PaymentOrder;
