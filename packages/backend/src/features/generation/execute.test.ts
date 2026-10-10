@@ -178,6 +178,8 @@ beforeEach(() => {
   providerPreferences = null;
   billingContext = { ...defaultBillingContext };
   vi.mocked(settleGeneration).mockClear();
+  // CI 无真实密钥；多供应商合并后缺 key 会提前 upstream_error，单测自备占位值。
+  vi.stubEnv('LLM_API_KEY', 'test-llm-key');
 });
 
 afterEach(() => {
