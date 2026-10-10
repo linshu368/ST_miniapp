@@ -6,18 +6,18 @@
 
 ## Tasks
 
-| ID  | Status  | Task                          | Files / Scope                       | Depends On  | Verification                           |
-| --- | ------- | ----------------------------- | ----------------------------------- | ----------- | -------------------------------------- |
-| T0  | Done    | 规划收口：原型对齐 + 冲突确认 | `prd.md` `design.md` `implement.md` | -           | Q1–Q8 已拍板；摘要已确认；**实施暂缓** |
-| T1  | Blocked | 契约与 migration 设计冻结     | shared + migrations                 | T0          | 八域评审通过                           |
-| T2  | Todo    | Backend 创作/报价/结算        | backend features/routes             | T1          | 失败不扣；quote 一致                   |
-| T3  | Todo    | Backend 广场/分享返利         | backend + billing RPC               | T1          | 幂等返利；即时上架                     |
-| T4  | Todo    | Frontend 广场+详情+用同款     | frontend                            | T3 契约可用 | 对照原型 AC01–05                       |
-| T5  | Todo    | Frontend 创作流+操作          | frontend                            | T2          | AC06–09                                |
-| T6  | Todo    | 分享弹窗状态机                | frontend+backend                    | T0 Q1, T3   | AC12                                   |
-| T7  | Todo    | Admin 三页                    | admin                               | T1          | AC13–14                                |
-| T8  | Todo    | 聊天入口移除与兼容            | frontend+backend                    | T2          | AC15                                   |
-| T9  | Todo    | 探索环境验收与记录            | 全栈                                | T4–T8       | AC16                                   |
+| ID  | Status  | Task                               | Files / Scope                          | Depends On  | Verification                       |
+| --- | ------- | ---------------------------------- | -------------------------------------- | ----------- | ---------------------------------- |
+| T0  | Done    | 规划收口：原型对齐 + 冲突确认      | `prd.md` `design.md` `implement.md`    | -           | Q1–Q10；摘要已确认；**实施暂缓**   |
+| T1  | Blocked | 独立契约 image-plaza + migration   | shared `api/image-plaza*` + migrations | T0          | 八域评审；不改 `api/images.ts`     |
+| T2  | Todo    | Backend image-plaza 创作/报价/结算 | `features/image-plaza` + routes        | T1          | 失败不扣；与 `features/image` 隔离 |
+| T3  | Todo    | Backend 广场/分享返利              | image-plaza + billing RPC              | T1          | 幂等返利；即时上架                 |
+| T4  | Todo    | Frontend 广场+详情+用同款          | `lib/api/image-plaza` + 页面           | T3 契约可用 | 对照原型；不复用 chat-image        |
+| T5  | Todo    | Frontend 创作流+操作               | 同上独立模块                           | T2          | AC06–09                            |
+| T6  | Todo    | 分享弹窗状态机                     | frontend+backend                       | T0 Q1, T3   | AC12                               |
+| T7  | Todo    | Admin 三页                         | admin                                  | T1          | AC13–14                            |
+| T8  | Skipped | 聊天看看TA（入口已配置关闭）       | —                                      | —           | Q9：本期不处理                     |
+| T9  | Todo    | 探索环境验收与记录                 | 全栈                                   | T4–T7       | AC15–AC16                          |
 
 ## Execution Log
 
@@ -31,3 +31,5 @@
 - 2026-10-10：Q7 确认按需求——文生图 3.12 档 + edit 固定上架价；不用原型 +10/+20。
 - 2026-10-10：Q8 确认 A——10 模型全上；Anime 业务 ID anime-wai；风格先 None；PRD 收敛并提交最终规划摘要。
 - 2026-10-10：用户确认规划，**先不实施**；保持 `planning`，不 `task.py start`。
+- 2026-10-10：Q9——角色聊天「看看TA」本期不处理（入口已配置关闭）；移出 R10/AC15 实施项。
+- 2026-10-10：Q10——图片创作广场前后端业务独立成块，不与既有聊天图片生成混用。

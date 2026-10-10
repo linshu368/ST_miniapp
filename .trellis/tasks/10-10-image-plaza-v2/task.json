@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-10: 规划已确认；用户要求先不实施；保持planning，待另行授权再task.py start",
+  "notes": "2026-10-10: 规划已确认且先不实施；Q9看看TA不改；Q10广场前后端独立于聊天图业务",
   "meta": {
     "module_impact": {
       "schema_version": 1,
