@@ -5,8 +5,8 @@ import generate from 'css-tree/generator';
 import {
   TEXT_POSTPROCESS_CLASS_TOKEN,
   TEXT_POSTPROCESS_CSS_PROPERTIES,
-  TEXT_POSTPROCESS_HTML_TAGS,
   TEXT_POSTPROCESS_LIMITS,
+  isTextPostprocessHtmlTag,
   type CssDeclaration,
   type CssMediaCondition,
   type CssRule,
@@ -18,7 +18,6 @@ import {
 import { checkCssRule, checkDeclaration, scopeProbeSelector } from './css-model';
 import { diagnostic } from './diagnostics';
 
-const HTML_TAGS = new Set<string>(TEXT_POSTPROCESS_HTML_TAGS);
 const CSS_PROPERTIES = new Set<string>(TEXT_POSTPROCESS_CSS_PROPERTIES);
 const ALLOWED_NODE_TYPES = new Set([
   'StyleSheet',
@@ -311,7 +310,7 @@ function readSelector(
     if (
       child.type === 'TypeSelector' &&
       child.name &&
-      HTML_TAGS.has(child.name) &&
+      isTextPostprocessHtmlTag(child.name) &&
       current.tag === null
     ) {
       current.tag = child.name as TextPostprocessHtmlTag;
