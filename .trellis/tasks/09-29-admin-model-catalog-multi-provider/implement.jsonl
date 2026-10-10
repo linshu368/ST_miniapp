@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/admin/app/index.md", "reason": "Admin package entry rules for configuration editors and validation."}
+{"file": ".trellis/spec/admin/app/features-and-components.md", "reason": "Model catalog is an Admin runtime configuration editor with high-risk publish semantics."}
+{"file": ".trellis/spec/admin/app/data-auth-and-environments.md", "reason": "Admin API/helper boundary and environment isolation apply to provider directory sync."}
+{"file": ".trellis/spec/admin/app/ui-state-and-validation.md", "reason": "Provider/model select state and runtime config validation must remain controlled and accessible."}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "Backend generation and runtime-config hard rules."}
+{"file": ".trellis/spec/backend/app/routes-and-features.md", "reason": "Models route and generation flow must keep shared contracts and frontend-ready comments."}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "Provider HTTP timeout, retry, secrets, logging, and failure model requirements."}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "Shared contract pre-development rules and quality gates."}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "Model catalog DTO/schema evolution and compatibility requirements."}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "Migration source, test-first validation, and rollback requirements for DB validation functions."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer UI -> shared -> backend -> runtime config -> generation flow checklist."}
+{"file": ".trellis/tasks/09-29-admin-model-catalog-multi-provider/research/model-provider-research.md", "reason": "Task-specific current-code and Venice API research."}

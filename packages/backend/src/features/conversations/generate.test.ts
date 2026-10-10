@@ -47,6 +47,8 @@ describe('cancelled persisted status protects settlement', () => {
     deltaCount: 1,
     generationId: 'gen',
     finishReason: 'stop',
+    usage: null,
+    responseMetadata: {},
   };
   it('cancelled / stale outcomes cannot turn into a billable success', () => {
     expect(normalizePersistedOutcome(observed, 'stream_interrupted', 'cancelled')).toMatchObject({

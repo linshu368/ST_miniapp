@@ -10,6 +10,27 @@
 
 import { getDomainDb } from '../lib/supabase.js';
 
+export interface LlmProviderRuntimeConfig {
+  baseUrl: string;
+  apiKey: string;
+}
+
+/** Provider credentials stay in backend runtime config; catalogs only store public provider IDs. */
+export function getLlmProviderRuntimeConfig(
+  provider: 'openrouter' | 'venice'
+): LlmProviderRuntimeConfig {
+  if (provider === 'openrouter') {
+    return {
+      baseUrl: process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1',
+      apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '',
+    };
+  }
+  return {
+    baseUrl: process.env.VENICE_API_BASE_URL || 'https://api.venice.ai/api/v1',
+    apiKey: process.env.VENICE_API_KEY || '',
+  };
+}
+
 export interface RuntimeConfigEntry {
   value: unknown;
   /** 长文本类配置存这一列，JSON 类配置为 NULL（见 migrations 019 / 057 / 071 的存法） */

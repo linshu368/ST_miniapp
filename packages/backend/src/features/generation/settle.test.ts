@@ -11,6 +11,10 @@ const { saveBillingSnapshot, recordBillingOutcome } = vi.hoisted(() => ({
   recordBillingOutcome: vi.fn(),
 }));
 
+const { upsertVeniceHistory } = vi.hoisted(() => ({
+  upsertVeniceHistory: vi.fn(),
+}));
+
 const { fetchGenerationDataForSettlement } = vi.hoisted(() => ({
   fetchGenerationDataForSettlement: vi.fn(),
 }));
@@ -24,6 +28,21 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     saveBillingSnapshot = saveBillingSnapshot;
     recordBillingOutcome = recordBillingOutcome;
   },
+}));
+
+vi.mock('../../infrastructure/repositories/VeniceChatHistoryRepository.js', () => ({
+  VeniceChatHistoryRepository: class {
+    upsert = upsertVeniceHistory;
+  },
+}));
+
+vi.mock('./venice-metadata.js', () => ({
+  buildVeniceMetadata: async (input: Record<string, unknown>) => ({
+    chat_history_id: input.chatHistoryId,
+    llm_provider_name: 'venice',
+    llm_finish_reason: input.finishReason,
+    llm_usage: 0.00014,
+  }),
 }));
 
 vi.mock('./openrouter-metadata.js', () => ({
@@ -84,10 +103,12 @@ describe('runSettlement', () => {
     saveBillingSnapshot.mockReset();
     recordBillingOutcome.mockReset();
     fetchGenerationDataForSettlement.mockReset();
+    upsertVeniceHistory.mockReset();
     applyLlmCharge.mockResolvedValue({ chargedAmount: 50, calculatedAmount: 50 });
     saveBillingSnapshot.mockResolvedValue(undefined);
     recordBillingOutcome.mockResolvedValue(undefined);
     fetchGenerationDataForSettlement.mockResolvedValue(null);
+    upsertVeniceHistory.mockResolvedValue(undefined);
   });
 
   it('persists the request-time snapshot before charging and stamps settlement complete', async () => {
@@ -161,6 +182,29 @@ describe('runSettlement', () => {
     expect(applyLlmCharge).toHaveBeenCalledOnce();
     expect(recordBillingOutcome.mock.calls[0]?.[0]).not.toHaveProperty('billingSettledAt');
   });
+  it('writes Venice response metadata to the provider table, not chat_history metadata columns', async () => {
+    await runSettlement(
+      entry({
+        provider: 'venice',
+        provider_model_id: 'venice-model',
+        provider_response: {
+          usage: { prompt_tokens: 100, completion_tokens: 20 },
+          responseMetadata: { id: 'gen-1', model: 'venice-model' },
+          latencyMs: 10,
+          generationTimeMs: 20,
+        },
+      }),
+      fakeLog()
+    );
+
+    expect(upsertVeniceHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ chat_history_id: 'row-1', llm_provider_name: 'venice' })
+    );
+    expect(recordBillingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ historyId: 'row-1', metadata: { llm_intended_deduction: 50 } })
+    );
+  });
+
   it('upstream stop stats cannot replace user cancellation in charge metadata', async () => {
     fetchGenerationDataForSettlement.mockResolvedValue({ finish_reason: 'stop', usage: 0.001 });
     await runSettlement(

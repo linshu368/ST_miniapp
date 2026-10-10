@@ -12,16 +12,33 @@
  */
 
 import { Transform } from 'node:stream';
+import { LLM_PROVIDER_CAPABILITIES, type LlmModelProvider } from '@miniapp/shared';
+import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
 
-const LLM_UPSTREAM_URL = process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1';
+const LLM_UPSTREAM_URL = getLlmProviderRuntimeConfig('openrouter').baseUrl;
 
-export const LLM_API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
+export const LLM_API_KEY = getLlmProviderRuntimeConfig('openrouter').apiKey;
 
 /** OpenAI 兼容子路径，聊天生成固定打这一条 */
 export const CHAT_COMPLETIONS_PATH = '/chat/completions';
 
 export function resolveUpstreamUrl(subPath: string, baseUrl = LLM_UPSTREAM_URL): string {
   return `${baseUrl.replace(/\/+$/, '')}${subPath}`;
+}
+
+export function resolveProviderUpstream(provider: LlmModelProvider): {
+  provider: LlmModelProvider;
+  url: string;
+  apiKey: string;
+} {
+  const capability = LLM_PROVIDER_CAPABILITIES[provider];
+  const runtime = getLlmProviderRuntimeConfig(provider);
+  const baseUrl = runtime.baseUrl.replace(/\/+$/, '');
+  return {
+    provider,
+    url: resolveUpstreamUrl(capability.chatCompletionsPath, baseUrl),
+    apiKey: runtime.apiKey,
+  };
 }
 
 /** 注入平台真实 API key 后转发。失败原样抛出，由调用方决定是 502 还是 upstream_error。 */
@@ -31,13 +48,17 @@ export async function forwardToUpstream(input: {
   body?: BodyInit | undefined;
   signal?: AbortSignal;
   apiKey?: string;
+  provider?: LlmModelProvider;
 }): Promise<Response> {
+  const provider = input.provider ?? 'openrouter';
   const forwardHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${input.apiKey ?? LLM_API_KEY}`,
-    'HTTP-Referer': 'http://localhost:3000',
-    'X-Title': 'ST_miniAPP',
   };
+  if (provider === 'openrouter') {
+    forwardHeaders['HTTP-Referer'] = 'http://localhost:3000';
+    forwardHeaders['X-Title'] = 'ST_miniAPP';
+  }
 
   return await fetch(input.url, {
     method: input.method,
@@ -57,6 +78,10 @@ export interface SseTapResult {
   deltaCount: number;
   generationId: string | null;
   finishReason: string | null;
+  /** OpenAI-compatible usage from the terminal chunk, when requested by the provider. */
+  usage: Record<string, unknown> | null;
+  /** Bounded response metadata. choices/content are deliberately excluded. */
+  responseMetadata: Record<string, unknown>;
 }
 
 export type SseTap = Transform & {
@@ -78,6 +103,8 @@ export function createSseTap(options: {
   let generationId = options.generationId ?? null;
   let streamCompleted = false;
   let finishReason: string | null = null;
+  let usage: Record<string, unknown> | null = null;
+  let responseMetadata: Record<string, unknown> = {};
   const replyChunks: string[] = [];
   let sseBuffer = '';
 
@@ -87,6 +114,8 @@ export function createSseTap(options: {
     deltaCount: replyChunks.length,
     generationId,
     finishReason,
+    usage,
+    responseMetadata,
   });
 
   const consumeDataLine = (line: string) => {
@@ -95,6 +124,10 @@ export function createSseTap(options: {
       if (!generationId && typeof json?.id === 'string') {
         generationId = json.id;
       }
+      if (json?.usage && typeof json.usage === 'object' && !Array.isArray(json.usage)) {
+        usage = json.usage as Record<string, unknown>;
+      }
+      responseMetadata = { ...responseMetadata, ...boundedResponseMetadata(json) };
       const choice = json?.choices?.[0];
       const delta = choice?.delta?.content;
       if (typeof delta === 'string') {
@@ -145,4 +178,11 @@ export function createSseTap(options: {
   });
 
   return Object.assign(tap, { snapshot });
+}
+
+function boundedResponseMetadata(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const safeKeys = ['id', 'object', 'created', 'model', 'usage', 'venice_parameters'];
+  return Object.fromEntries(safeKeys.flatMap((key) => (key in source ? [[key, source[key]]] : [])));
 }

@@ -1,14 +1,22 @@
 import { FastifyInstance } from 'fastify';
-import { fail, ok, resolveEnabledCatalogModel, SelectModelRequestSchema } from '@miniapp/shared';
+import {
+  fail,
+  LlmModelProviderSchema,
+  ok,
+  resolveEnabledCatalogModel,
+  SelectModelRequestSchema,
+} from '@miniapp/shared';
 import type {
   GetModelCatalogData,
   OpenRouterModelDirectory,
+  ProviderModelDirectory,
   SelectModelData,
 } from '@miniapp/shared';
 import { fetchModelCatalogSnapshot, getPricingConfig } from '../platform/model-tiers.js';
 import { readVipStrategy } from '../platform/vip-strategy.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { openRouterModelsClient } from '../platform/openrouter-models.js';
+import { getProviderModelDirectory } from '../platform/model-provider-directory.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
@@ -36,6 +44,24 @@ export default async function modelsRoutes(app: FastifyInstance) {
       forceRefresh ? 'no-store' : 'public, max-age=300, stale-while-revalidate=900'
     );
     return reply.send(ok<OpenRouterModelDirectory>(directory));
+  });
+
+  // @frontend-ready: true
+  app.get('/api/platform/model-providers/:provider/models', async (request, reply) => {
+    const params = request.params as { provider?: string };
+    const parsedProvider = LlmModelProviderSchema.safeParse(params.provider);
+    if (!parsedProvider.success) {
+      return reply.status(400).send(fail('INVALID_PROVIDER', 'Unsupported model provider'));
+    }
+
+    const query = request.query as { refresh?: string };
+    const forceRefresh = query.refresh === '1';
+    const directory = await getProviderModelDirectory(parsedProvider.data, { forceRefresh });
+    reply.header(
+      'Cache-Control',
+      forceRefresh ? 'no-store' : 'public, max-age=300, stale-while-revalidate=900'
+    );
+    return reply.send(ok<ProviderModelDirectory>(directory));
   });
 
   // @frontend-ready: true
@@ -99,6 +125,8 @@ export default async function modelsRoutes(app: FastifyInstance) {
           }),
           selected_model_id: selectedModel.id,
           selected_openrouter_model_id: selectedModel.openrouter_model_id,
+          selected_provider: selectedModel.provider,
+          selected_provider_model_id: selectedModel.provider_model_id,
           catalog_version: snapshot.version,
           vip_status: {
             active: entitlement.active,
@@ -202,7 +230,8 @@ export default async function modelsRoutes(app: FastifyInstance) {
             event: 'models.select.done',
             userId: dbUser.id,
             modelId: selectedModel.id,
-            model: selectedModel.openrouter_model_id,
+            provider: selectedModel.provider,
+            model: selectedModel.provider_model_id,
           },
           '用户切换模型'
         );
@@ -210,6 +239,8 @@ export default async function modelsRoutes(app: FastifyInstance) {
           ok<SelectModelData>({
             model_id: selectedModel.id,
             openrouter_model_id: selectedModel.openrouter_model_id,
+            provider: selectedModel.provider,
+            provider_model_id: selectedModel.provider_model_id,
           })
         );
       } catch (error) {

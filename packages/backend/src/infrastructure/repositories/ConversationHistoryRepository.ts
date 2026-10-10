@@ -14,6 +14,7 @@
 // 用量元数据补齐 ≠ 结算完成：llm_billing_settled_at 有值才算扣费行、额度收口、金额回写都齐。
 
 import { readPostprocessVersion, type ChatMessage, type ChatMessageStatus } from '@miniapp/shared';
+import type { LlmModelProvider } from '@miniapp/shared';
 import type { GenerationMessage, GenerationStatus } from '../../features/generation/types.js';
 import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
@@ -49,6 +50,8 @@ export interface ConversationHistoryRow {
 export interface LlmBillingSnapshot {
   charge_id: string;
   model_id: string | null;
+  provider?: LlmModelProvider;
+  provider_model_id?: string;
   model_display_name: string;
   model_markup: number;
   fixed_deduction: number;
@@ -73,6 +76,7 @@ export interface ChatHistorySyncRow {
   user_id: string;
   model: string;
   llm_generation_id: string | null;
+  llm_finish_reason: string | null;
   llm_charge_id: string | null;
   assistant_reply: string | null;
   status: string;
@@ -413,7 +417,7 @@ export class ConversationHistoryRepository {
     const { data, error } = await this.db
       .from('chat_history')
       .select(
-        'id, user_id, model, llm_generation_id, llm_charge_id, assistant_reply, status, llm_billing_snapshot'
+        'id, user_id, model, llm_generation_id, llm_finish_reason, llm_charge_id, assistant_reply, status, llm_billing_snapshot'
       )
       .not('llm_generation_id', 'is', null)
       .gte('created_at', input.since)
