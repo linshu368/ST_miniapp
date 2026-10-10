@@ -21,8 +21,10 @@ function retryAfterMs(value: string | null): number | undefined {
   return Math.min(Math.round(seconds * 1_000), 60_000);
 }
 
-function clip(value: string, max: number): string {
-  const text = value.replace(/\s+/g, ' ').trim();
+function clip(value: string, max: number, preserveLines = false): string {
+  const text = (
+    preserveLines ? value.replace(/[^\S\n]+/g, ' ') : value.replace(/\s+/g, ' ')
+  ).trim();
   if (text.length <= max) return text || '-';
   return `${text.slice(0, max - 1)}…`;
 }
@@ -34,7 +36,15 @@ function templateFor(card: SafeAlertCard): 'red' | 'orange' | 'yellow' | 'green'
   return 'orange';
 }
 
+function headerTitle(card: SafeAlertCard): string {
+  if (card.title.startsWith(`${card.severity} `)) return clip(card.title, 100);
+  return clip(`${card.severity} ${card.transition} ${card.title}`, 100);
+}
+
 function cardText(card: SafeAlertCard): string {
+  if (card.summary !== '支付监控规则满足触发条件' && card.summary !== '支付监控窗口健康') {
+    return card.summary;
+  }
   const lines = [
     card.summary,
     `fingerprint: ${card.incident_fingerprint}`,
@@ -68,10 +78,12 @@ export function feishuInteractiveMessage(card: SafeAlertCard): {
         template: templateFor(card),
         title: {
           tag: 'plain_text',
-          content: clip(`${card.severity} ${card.transition} ${card.title}`, 100),
+          content: headerTitle(card),
         },
       },
-      elements: [{ tag: 'div', text: { tag: 'plain_text', content: clip(cardText(card), 1500) } }],
+      elements: [
+        { tag: 'div', text: { tag: 'plain_text', content: clip(cardText(card), 1500, true) } },
+      ],
     },
   };
 }

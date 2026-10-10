@@ -55,7 +55,9 @@ describe('FeishuAlertSink', () => {
   it('accepts only Feishu code 0 on HTTP 200', async () => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValue(new Response(JSON.stringify({ code: 0, msg: 'success' }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ code: 0, msg: 'success' }), { status: 200 })
+      );
     await expect(
       new FeishuAlertSink('https://example.invalid/hook', fetchImpl).deliver(card, 1000)
     ).resolves.toEqual({ kind: 'succeeded' });
@@ -75,6 +77,20 @@ describe('FeishuAlertSink', () => {
       errorClass: 'not_configured',
     });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('uses a prepared P0 title and keeps detail lines', () => {
+    const message = feishuInteractiveMessage({
+      ...card,
+      severity: 'P0',
+      title: 'P0 同一用户5分钟内至少2单未支付成功',
+      summary:
+        'tg-id: 888001\n过去5分钟未成功支付: 2 单\n订单号: MA-1\n时间: 2026-10-10 17:59:00 +08:00',
+    });
+    expect(message.card.header.title.content).toBe('P0 同一用户5分钟内至少2单未支付成功');
+    expect(message.card.elements[0]?.text.content).toContain('tg-id: 888001');
+    expect(message.card.elements[0]?.text.content).toContain('\n订单号: MA-1');
+    expect(message.card.elements[0]?.text.content).not.toContain('firing');
   });
 
   it('uses bounded retry delays and honours the server retry floor', () => {

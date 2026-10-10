@@ -42,6 +42,7 @@ type Rule = {
   location: AlertEvaluation['location'];
   confidence: AlertEvaluation['confidence'];
   title: string;
+  summary?: string;
 };
 
 /** Pure V2 evaluator. It deliberately emits one independently-versioned evaluation per rule. */
@@ -85,32 +86,34 @@ export function evaluatePaymentAlertRules(
     ),
     0.95
   );
-  const repeatUnpaid = countRepeatUnpaid(snapshot.orders, nowMs, 5 * 60_000);
-  const consecutiveUnpaid = latestConsecutiveUnpaid(snapshot.latestOrders ?? []);
+  const repeatUnpaid = repeatUnpaidUsers(snapshot.orders, nowMs, 5 * 60_000);
+  const consecutiveOrders = latestConsecutiveOrders(snapshot.latestOrders ?? []);
   const rules: Rule[] = [
     rule(
       P0_USER_UNPAID_RULE_ID,
       'P0',
       5,
-      repeatUnpaid.users >= 1,
+      repeatUnpaid.length >= 1,
       [
-        ['unpaid_count', repeatUnpaid.orders, 'count'],
-        ['affected_users', repeatUnpaid.users, 'count'],
+        ['unpaid_count', repeatUnpaid.reduce((sum, user) => sum + user.orders.length, 0), 'count'],
+        ['affected_users', repeatUnpaid.length, 'count'],
       ],
       { kind: 'unknown' },
       'suspected',
-      '同一用户短时重复未支付'
+      'P0 同一用户5分钟内至少2单未支付成功',
+      repeatUnpaidSummary(repeatUnpaid)
     ),
     // 观察窗口记为 0：是否触发只看最近连续订单，不看它们相距多久。
     rule(
       P0_CONSECUTIVE_UNPAID_RULE_ID,
       'P0',
       0,
-      consecutiveUnpaid,
-      [['consecutive_count', consecutiveUnpaid ? 4 : 0, 'count']],
+      consecutiveOrders !== null,
+      [['consecutive_count', consecutiveOrders ? 4 : 0, 'count']],
       { kind: 'unknown' },
       'suspected',
-      '连续订单未支付成功'
+      'P0 连续4个订单均未支付成功',
+      consecutiveOrders ? consecutiveUnpaidSummary(consecutiveOrders) : undefined
     ),
     /*
     rule(
@@ -303,9 +306,20 @@ function rule(
   metrics: Rule['metrics'],
   location: Rule['location'],
   confidence: Rule['confidence'],
-  title: string
+  title: string,
+  summary?: string
 ): Rule {
-  return { id, severity, windowMs: minutes * 60_000, firing, metrics, location, confidence, title };
+  return {
+    id,
+    severity,
+    windowMs: minutes * 60_000,
+    firing,
+    metrics,
+    location,
+    confidence,
+    title,
+    ...(summary ? { summary } : {}),
+  };
 }
 function evaluation(rule: Rule, now: Date): AlertEvaluation {
   const ended = now.toISOString();
@@ -328,42 +342,78 @@ function evaluation(rule: Rule, now: Date): AlertEvaluation {
     window_started_at: new Date(now.getTime() - rule.windowMs).toISOString(),
     window_ended_at: ended,
     title: rule.title,
-    summary: rule.firing ? '支付监控规则满足触发条件' : '支付监控窗口健康',
+    summary: rule.firing
+      ? boundText(rule.summary ?? '支付监控规则满足触发条件', 500)
+      : '支付监控窗口健康',
     metrics: rule.metrics.map(([name, value, unit]) => ({ name, value, unit })),
     samples: [],
     recommended_action: '核对支付事件聚合与支付服务日志。',
   };
 }
-function countRepeatUnpaid(
+type UnpaidHit = {
+  orderId: string;
+  telegramId: string | null;
+  confirmedAt: string;
+};
+
+function repeatUnpaidUsers(
   orders: PaymentAlertOrderSnapshot[],
   nowMs: number,
   windowMs: number
-): { users: number; orders: number } {
-  const unpaidByUser = new Map<string, number>();
+): Array<{ telegramId: string | null; orders: UnpaidHit[] }> {
+  const byUser = new Map<string, { telegramId: string | null; orders: UnpaidHit[] }>();
   for (const order of orders) {
     const confirmedAt = confirmationMs(order);
     if (
       !order.userId ||
+      !order.checkoutConfirmedAt ||
       confirmedAt === null ||
       confirmedAt < nowMs - windowMs ||
-      confirmedAt > nowMs
-    )
+      confirmedAt > nowMs ||
+      paidSuccessfully(order)
+    ) {
       continue;
-    if (paidSuccessfully(order)) continue;
-    unpaidByUser.set(order.userId, (unpaidByUser.get(order.userId) ?? 0) + 1);
+    }
+    const current = byUser.get(order.userId) ?? {
+      telegramId: order.telegramId ?? null,
+      orders: [],
+    };
+    current.orders.push({
+      orderId: order.orderId,
+      telegramId: order.telegramId ?? null,
+      confirmedAt: order.checkoutConfirmedAt,
+    });
+    byUser.set(order.userId, current);
   }
-  let users = 0;
-  let unpaidOrders = 0;
-  for (const count of unpaidByUser.values()) {
-    if (count < 2) continue;
-    users += 1;
-    unpaidOrders += count;
-  }
-  return { users, orders: unpaidOrders };
+  return [...byUser.values()]
+    .filter((user) => user.orders.length >= 2)
+    .map((user) => ({
+      telegramId: user.telegramId,
+      orders: user.orders.sort((a, b) => Date.parse(b.confirmedAt) - Date.parse(a.confirmedAt)),
+    }));
 }
 
-/** 最近 4 笔已确认订单全部未支付成功。不足 4 笔不触发，中间隔了多久不参与判断。 */
-function latestConsecutiveUnpaid(orders: PaymentAlertOrderSnapshot[]): boolean {
+function repeatUnpaidSummary(
+  users: Array<{ telegramId: string | null; orders: UnpaidHit[] }>
+): string {
+  return users
+    .slice(0, 5)
+    .map((user) => {
+      const sample = user.orders[0];
+      return [
+        `tg-id: ${user.telegramId ?? '未知'}`,
+        `过去5分钟未成功支付: ${user.orders.length} 单`,
+        `订单号: ${sample?.orderId ?? '-'}`,
+        `时间: ${sample ? formatTimestamp(sample.confirmedAt) : '-'}`,
+      ].join('\n');
+    })
+    .join('\n\n');
+}
+
+/** 最近 4 笔已确认订单全部未支付成功时返回这 4 笔，按时间从早到晚。不足 4 笔或其中有成功单则不触发。 */
+function latestConsecutiveOrders(
+  orders: PaymentAlertOrderSnapshot[]
+): PaymentAlertOrderSnapshot[] | null {
   const latest = orders
     .filter((order) => confirmationMs(order) !== null)
     .sort(
@@ -371,7 +421,33 @@ function latestConsecutiveUnpaid(orders: PaymentAlertOrderSnapshot[]): boolean {
         (confirmationMs(b) ?? 0) - (confirmationMs(a) ?? 0) || b.orderId.localeCompare(a.orderId)
     )
     .slice(0, 4);
-  return latest.length === 4 && latest.every((order) => !paidSuccessfully(order));
+  if (latest.length !== 4 || latest.some((order) => paidSuccessfully(order))) return null;
+  return latest.sort(
+    (a, b) =>
+      (confirmationMs(a) ?? 0) - (confirmationMs(b) ?? 0) || a.orderId.localeCompare(b.orderId)
+  );
+}
+
+function consecutiveUnpaidSummary(orders: PaymentAlertOrderSnapshot[]): string {
+  return orders
+    .map(
+      (order, index) =>
+        `${index + 1}. tg-id: ${order.telegramId ?? '未知'} 订单号: ${order.orderId}`
+    )
+    .join('\n');
+}
+
+function formatTimestamp(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  const shifted = new Date(ms + 8 * 60 * 60 * 1000);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())} +08:00`;
+}
+
+function boundText(value: string, max: number): string {
+  const text = value.trim();
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
 function paidSuccessfully(order: PaymentAlertOrderSnapshot): boolean {

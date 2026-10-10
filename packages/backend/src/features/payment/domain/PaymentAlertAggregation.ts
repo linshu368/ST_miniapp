@@ -4,6 +4,8 @@ export const PAYMENT_ATTEMPT_GAP_MS = 15 * 60 * 1000;
 export interface PaymentAlertOrderSnapshot {
   orderId: string;
   userId: string;
+  /** Telegram 用户 ID。缺失时卡片写「未知」，不把内部 user id 当作 tg-id。 */
+  telegramId?: string | null;
   checkoutConfirmedAt: string | null;
   status: PaymentOrderStatus;
   paidAt: string | null;

@@ -31,7 +31,7 @@ type EventRow = {
   user_id: string | null;
 };
 
-/** Read-only, bounded monitor repository. It never reads gateway payloads or customer identifiers into evidence. */
+/** Read-only, bounded monitor repository. It does not read gateway payloads. Telegram ID is attached only so the two P0 cards can name the user. */
 export class PaymentAlertMonitorRepository {
   private readonly db = getDomainDb('billing');
   async snapshot(now: Date): Promise<PaymentAlertSnapshot> {
@@ -74,9 +74,19 @@ export class PaymentAlertMonitorRepository {
       );
     if (eventsResult.error)
       throw new Error(`payment alert event scan failed: ${eventsResult.error.message}`);
+    const orders = ((ordersResult.data ?? []) as Row[]).map(toOrderSnapshot);
+    const latestOrders = ((latestOrdersResult.data ?? []) as Row[]).map(toOrderSnapshot);
+    const telegramIds = await withTimeout(
+      lookupTelegramIds([...orders, ...latestOrders].map((order) => order.userId)),
+      QUERY_TIMEOUT_MS
+    );
+    const withTelegramId = (order: PaymentAlertSnapshot['orders'][number]) => ({
+      ...order,
+      telegramId: telegramIds.get(order.userId) ?? null,
+    });
     return {
-      orders: ((ordersResult.data ?? []) as Row[]).map(toOrderSnapshot),
-      latestOrders: ((latestOrdersResult.data ?? []) as Row[]).map(toOrderSnapshot),
+      orders: orders.map(withTelegramId),
+      latestOrders: latestOrders.map(withTelegramId),
       operations: (eventsResult.data ?? []) as EventRow[],
       productionWebhookBaseline: false,
     };
@@ -116,6 +126,25 @@ export class PaymentAlertMonitor {
     );
     return { published };
   }
+}
+async function lookupTelegramIds(userIds: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(userIds.filter((id) => id.length > 0))];
+  const telegramIds = new Map<string, string>();
+  if (unique.length === 0) return telegramIds;
+  const db = getDomainDb('app_core');
+  for (let index = 0; index < unique.length; index += 100) {
+    const chunk = unique.slice(index, index + 100);
+    const { data, error } = await db.from('users').select('id,tg_id').in('id', chunk);
+    if (error) throw new Error(`payment alert telegram id lookup failed: ${error.message}`);
+    for (const row of data ?? []) {
+      const id = (row as { id?: unknown }).id;
+      const tgId = (row as { tg_id?: unknown }).tg_id;
+      if (typeof id === 'string' && typeof tgId === 'string' && tgId.length > 0) {
+        telegramIds.set(id, tgId);
+      }
+    }
+  }
+  return telegramIds;
 }
 function toOrderSnapshot(row: Row): PaymentAlertSnapshot['orders'][number] {
   return {
