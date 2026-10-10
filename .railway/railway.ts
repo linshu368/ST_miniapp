@@ -93,6 +93,10 @@ const COMMON_API_VARIABLES = [
   'TELEGRAM_WEBHOOK_SECRET',
   'UPSTASH_REDIS_REST_TOKEN',
   'UPSTASH_REDIS_REST_URL',
+  // Existing API variables not consumed by the payment monitor must remain
+  // preserved when applying IaC for the monitor service.
+  'VENICE_API_BASE_URL',
+  'VENICE_API_KEY',
   'Z_MODEL',
 ] as const;
 const DEVELOPMENT_API_VARIABLES = [
