@@ -97,7 +97,8 @@ export class PrismaAlertPersistence implements AlertPersistence {
     transition: AlertTransition,
     card: SafeAlertCard
   ): Promise<string | null> {
-    if (input.notify === false) return null;
+    // 恢复只更新事故，便于下次再次告警；飞书只发告警和升级。
+    if (input.notify === false || transition === 'recovered') return null;
     const key = notificationKey(input.evaluation, transition);
     await this.insertOutbox(tx, incidentId, key, transition, card);
     return key;

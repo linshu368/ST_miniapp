@@ -6,9 +6,9 @@ import { readAlertingRuntimeConfig, type AlertingRuntimeConfig } from './runtime
 import type { SafeAlertCard } from './safe-card.js';
 import { backoffMs } from './semantics.js';
 
-/** P1 飞书通知关闭；已注释的旧 P0 即使还在队列里也不再发送。 */
+/** P1 与恢复通知关闭；已注释的旧 P0 即使还在队列里也不再发送。 */
 function feishuNotificationSuppressed(card: SafeAlertCard): boolean {
-  if (card.severity === 'P1') return true;
+  if (card.transition === 'recovered' || card.severity === 'P1') return true;
   return (
     typeof card.incident_fingerprint === 'string' &&
     /:payment:p0-0[1-5]:all$/.test(card.incident_fingerprint)
