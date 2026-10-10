@@ -14,30 +14,96 @@ const order = (
   paidAt: status === 'completed' ? iso(1) : null,
   fulfillmentApplied: status === 'completed',
 });
+const at = (
+  isoText: string,
+  id: string,
+  user: string,
+  status: 'pending' | 'completed' = 'pending'
+) => ({
+  orderId: id,
+  userId: user,
+  checkoutConfirmedAt: isoText,
+  status,
+  paidAt: status === 'completed' ? isoText : null,
+  fulfillmentApplied: status === 'completed',
+});
 describe('V2 payment alert rules', () => {
-  it('fires P0-01 only at the exact low-volume and failure thresholds', () => {
-    const operations = Array.from({ length: 5 }, (_, i) => ({
-      event_kind: 'gateway_create',
-      outcome: 'failed',
-      trigger: 'create_order',
-      occurred_at: iso(i),
-      error_class: 'timeout',
-      order_id: `o${i}`,
-      user_id: `u${i % 2}`,
-    }));
+  it('fires when one user has two unpaid orders inside five minutes', () => {
+    const orders = [at(iso(1), 'a', 'same'), at(iso(2), 'b', 'same'), at(iso(1), 'c', 'other')];
     const fired = evaluatePaymentAlertRules(
-      { orders: [], operations, productionWebhookBaseline: false },
+      { orders, operations: [], productionWebhookBaseline: false },
       now
     );
-    expect(fired.find((x) => x.rule_id === 'p0-01')?.state).toBe('firing');
+    expect(fired.find((x) => x.rule_id === 'p0-user-unpaid-5m')?.state).toBe('firing');
     expect(
       evaluatePaymentAlertRules(
-        { orders: [], operations: operations.slice(1), productionWebhookBaseline: false },
+        { orders: orders.slice(0, 1), operations: [], productionWebhookBaseline: false },
         now
-      ).find((x) => x.rule_id === 'p0-01')?.state
+      ).find((x) => x.rule_id === 'p0-user-unpaid-5m')?.state
+    ).toBe('healthy');
+    expect(
+      evaluatePaymentAlertRules(
+        {
+          orders: [at(iso(1), 'paid', 'same', 'completed'), at(iso(2), 'open', 'same')],
+          operations: [],
+          productionWebhookBaseline: false,
+        },
+        now
+      ).find((x) => x.rule_id === 'p0-user-unpaid-5m')?.state
+    ).toBe('healthy');
+    expect(
+      evaluatePaymentAlertRules(
+        {
+          orders: [at(iso(30), 'old-a', 'same'), at(iso(40), 'old-b', 'same')],
+          operations: [],
+          productionWebhookBaseline: false,
+        },
+        now
+      ).find((x) => x.rule_id === 'p0-user-unpaid-5m')?.state
     ).toBe('healthy');
   });
-  it('keeps zero webhook baseline healthy and makes paid-but-unfulfilled P0 independently firing', () => {
+  it('fires four consecutive unpaid orders without a time window', () => {
+    const latestOrders = [
+      at('2026-01-01T00:00:00.000Z', 'o1', 'u1'),
+      at('2026-02-01T00:00:00.000Z', 'o2', 'u2'),
+      at('2026-03-01T00:00:00.000Z', 'o3', 'u3'),
+      at('2026-04-01T00:00:00.000Z', 'o4', 'u4'),
+    ];
+    expect(
+      evaluatePaymentAlertRules(
+        { orders: [], latestOrders, operations: [], productionWebhookBaseline: false },
+        now
+      ).find((x) => x.rule_id === 'p0-consecutive-unpaid')?.state
+    ).toBe('firing');
+    expect(
+      evaluatePaymentAlertRules(
+        {
+          orders: [],
+          latestOrders: [
+            latestOrders[0]!,
+            latestOrders[1]!,
+            latestOrders[2]!,
+            at('2026-05-01T00:00:00.000Z', 'paid', 'u5', 'completed'),
+          ],
+          operations: [],
+          productionWebhookBaseline: false,
+        },
+        now
+      ).find((x) => x.rule_id === 'p0-consecutive-unpaid')?.state
+    ).toBe('healthy');
+    expect(
+      evaluatePaymentAlertRules(
+        {
+          orders: [],
+          latestOrders: latestOrders.slice(0, 3),
+          operations: [],
+          productionWebhookBaseline: false,
+        },
+        now
+      ).find((x) => x.rule_id === 'p0-consecutive-unpaid')?.state
+    ).toBe('healthy');
+  });
+  it('keeps paused P0 rules from firing and leaves the webhook baseline healthy', () => {
     const paid = {
       ...order('paid', 'u', 'completed'),
       fulfillmentApplied: false,
@@ -48,8 +114,10 @@ describe('V2 payment alert rules', () => {
       { orders: [paid], operations: [], productionWebhookBaseline: false },
       now
     );
-    expect(values.find((x) => x.rule_id === 'p0-04')?.state).toBe('firing');
+    expect(values.find((x) => x.rule_id === 'p0-04')).toBeUndefined();
+    expect(values.find((x) => x.rule_id === 'p0-01')).toBeUndefined();
     expect(values.find((x) => x.rule_id === 'p1-02')?.state).toBe('healthy');
+    expect(values.find((x) => x.rule_id === 'p1-05')).toBeDefined();
   });
   it('uses a stable fingerprint without rule version, time, severity, or user identifiers', () => {
     const value = evaluatePaymentAlertRules(
@@ -60,7 +128,7 @@ describe('V2 payment alert rules', () => {
       },
       now
     )[0]!;
-    expect(value.fingerprint).toBe('test:payment:p0-01:all');
+    expect(value.fingerprint).toBe('test:payment:p0-user-unpaid-5m:all');
     expect(value.fingerprint).not.toContain('secret');
   });
 });

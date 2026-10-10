@@ -18,9 +18,21 @@ export type PaymentOperation = {
 };
 export interface PaymentAlertSnapshot {
   orders: PaymentAlertOrderSnapshot[];
+  /**
+   * 最近确认的订单，不按时间窗口截断。只给「连续未支付」使用，避免放宽 60 分钟扫描后改变 P1。
+   * 缺省为空，规则不触发。
+   */
+  latestOrders?: PaymentAlertOrderSnapshot[];
   operations: PaymentOperation[];
   productionWebhookBaseline: boolean;
 }
+export const P0_USER_UNPAID_RULE_ID = 'p0-user-unpaid-5m';
+export const P0_CONSECUTIVE_UNPAID_RULE_ID = 'p0-consecutive-unpaid';
+/** 暂时只有这两条 P0 可以进入飞书。P1 仍会计算和记录事故，但不投递。 */
+export const FEISHU_NOTIFY_RULE_IDS = new Set([
+  P0_USER_UNPAID_RULE_ID,
+  P0_CONSECUTIVE_UNPAID_RULE_ID,
+]);
 type Rule = {
   id: string;
   severity: AlertSeverity;
@@ -54,12 +66,10 @@ export function evaluatePaymentAlertRules(
         Date.parse(o.occurred_at) >= nowMs - ms &&
         Date.parse(o.occurred_at) <= nowMs
     );
-  const create5 = ops('gateway_create', 5 * 60_000);
-  const createFailed = create5.filter((x) => x.outcome === 'failed').length;
+  // P0-01 暂时停用，建单失败计数保留在下方注释中，恢复规则时一并恢复。
   const query10 = ops('payment_query', 10 * 60_000).filter((x) => x.outcome !== 'skipped');
   const queryFailed = query10.filter((x) => x.outcome === 'failed').length;
-  const settlement5 = ops('settlement', 5 * 60_000);
-  const settlementFailed = settlement5.filter((x) => x.outcome === 'failed');
+  // P0-04 暂时停用，本地结算失败计数保留在注释规则中。
   const completed60 = snapshot.orders.filter(
     (o) =>
       o.status === 'completed' &&
@@ -75,7 +85,34 @@ export function evaluatePaymentAlertRules(
     ),
     0.95
   );
+  const repeatUnpaid = countRepeatUnpaid(snapshot.orders, nowMs, 5 * 60_000);
+  const consecutiveUnpaid = latestConsecutiveUnpaid(snapshot.latestOrders ?? []);
   const rules: Rule[] = [
+    rule(
+      P0_USER_UNPAID_RULE_ID,
+      'P0',
+      5,
+      repeatUnpaid.users >= 1,
+      [
+        ['unpaid_count', repeatUnpaid.orders, 'count'],
+        ['affected_users', repeatUnpaid.users, 'count'],
+      ],
+      { kind: 'unknown' },
+      'suspected',
+      '同一用户短时重复未支付'
+    ),
+    // 观察窗口记为 0：是否触发只看最近连续订单，不看它们相距多久。
+    rule(
+      P0_CONSECUTIVE_UNPAID_RULE_ID,
+      'P0',
+      0,
+      consecutiveUnpaid,
+      [['consecutive_count', consecutiveUnpaid ? 4 : 0, 'count']],
+      { kind: 'unknown' },
+      'suspected',
+      '连续订单未支付成功'
+    ),
+    /*
     rule(
       'p0-01',
       'P0',
@@ -159,6 +196,7 @@ export function evaluatePaymentAlertRules(
       'suspected',
       '确认能力整体失效'
     ),
+    */
     rule(
       'p1-01',
       'P1',
@@ -296,6 +334,56 @@ function evaluation(rule: Rule, now: Date): AlertEvaluation {
     recommended_action: '核对支付事件聚合与支付服务日志。',
   };
 }
+function countRepeatUnpaid(
+  orders: PaymentAlertOrderSnapshot[],
+  nowMs: number,
+  windowMs: number
+): { users: number; orders: number } {
+  const unpaidByUser = new Map<string, number>();
+  for (const order of orders) {
+    const confirmedAt = confirmationMs(order);
+    if (
+      !order.userId ||
+      confirmedAt === null ||
+      confirmedAt < nowMs - windowMs ||
+      confirmedAt > nowMs
+    )
+      continue;
+    if (paidSuccessfully(order)) continue;
+    unpaidByUser.set(order.userId, (unpaidByUser.get(order.userId) ?? 0) + 1);
+  }
+  let users = 0;
+  let unpaidOrders = 0;
+  for (const count of unpaidByUser.values()) {
+    if (count < 2) continue;
+    users += 1;
+    unpaidOrders += count;
+  }
+  return { users, orders: unpaidOrders };
+}
+
+/** 最近 4 笔已确认订单全部未支付成功。不足 4 笔不触发，中间隔了多久不参与判断。 */
+function latestConsecutiveUnpaid(orders: PaymentAlertOrderSnapshot[]): boolean {
+  const latest = orders
+    .filter((order) => confirmationMs(order) !== null)
+    .sort(
+      (a, b) =>
+        (confirmationMs(b) ?? 0) - (confirmationMs(a) ?? 0) || b.orderId.localeCompare(a.orderId)
+    )
+    .slice(0, 4);
+  return latest.length === 4 && latest.every((order) => !paidSuccessfully(order));
+}
+
+function paidSuccessfully(order: PaymentAlertOrderSnapshot): boolean {
+  return order.status === 'completed' || order.paidAt !== null;
+}
+
+function confirmationMs(order: PaymentAlertOrderSnapshot): number | null {
+  if (!order.checkoutConfirmedAt) return null;
+  const ms = Date.parse(order.checkoutConfirmedAt);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 function ratio(a: number, b: number) {
   return b === 0 ? 0 : a / b;
 }

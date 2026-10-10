@@ -4,6 +4,7 @@ import type { Logger } from '../../../lib/logger.js';
 import { AlertPublisher } from '../../alerting/publisher.js';
 import {
   evaluatePaymentAlertRules,
+  FEISHU_NOTIFY_RULE_IDS,
   type PaymentAlertSnapshot,
 } from '../domain/PaymentAlertRules.js';
 
@@ -35,15 +36,26 @@ export class PaymentAlertMonitorRepository {
   private readonly db = getDomainDb('billing');
   async snapshot(now: Date): Promise<PaymentAlertSnapshot> {
     const since = new Date(now.getTime() - 60 * 60_000).toISOString();
-    const [ordersResult, eventsResult] = await withTimeout(
+    const orderColumns =
+      'id,user_id,checkout_confirmed_at,status,paid_at,fulfillment_applied,settled_by';
+    const [ordersResult, latestOrdersResult, eventsResult] = await withTimeout(
       Promise.all([
         this.db
           .from('payment_orders')
-          .select('id,user_id,checkout_confirmed_at,status,paid_at,fulfillment_applied,settled_by')
+          .select(orderColumns)
           .gte('checkout_confirmed_at', since)
           .lte('checkout_confirmed_at', now.toISOString())
           .order('checkout_confirmed_at', { ascending: true })
           .limit(MAX_ORDERS),
+        // 连续未支付不看时间窗口，只取最近 4 笔已确认订单。
+        this.db
+          .from('payment_orders')
+          .select(orderColumns)
+          .not('checkout_confirmed_at', 'is', null)
+          .lte('checkout_confirmed_at', now.toISOString())
+          .order('checkout_confirmed_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(4),
         this.db
           .from('payment_operation_events')
           .select('event_kind,outcome,trigger,occurred_at,error_class,order_id,user_id')
@@ -56,18 +68,15 @@ export class PaymentAlertMonitorRepository {
     );
     if (ordersResult.error)
       throw new Error(`payment alert order scan failed: ${ordersResult.error.message}`);
+    if (latestOrdersResult.error)
+      throw new Error(
+        `payment alert latest order scan failed: ${latestOrdersResult.error.message}`
+      );
     if (eventsResult.error)
       throw new Error(`payment alert event scan failed: ${eventsResult.error.message}`);
     return {
-      orders: ((ordersResult.data ?? []) as Row[]).map((row) => ({
-        orderId: row.id,
-        userId: row.user_id,
-        checkoutConfirmedAt: row.checkout_confirmed_at,
-        status: row.status,
-        paidAt: row.paid_at,
-        fulfillmentApplied: row.fulfillment_applied,
-        settledBy: row.settled_by,
-      })),
+      orders: ((ordersResult.data ?? []) as Row[]).map(toOrderSnapshot),
+      latestOrders: ((latestOrdersResult.data ?? []) as Row[]).map(toOrderSnapshot),
       operations: (eventsResult.data ?? []) as EventRow[],
       productionWebhookBaseline: false,
     };
@@ -96,7 +105,9 @@ export class PaymentAlertMonitor {
       });
     let published = 0;
     for (const evaluation of evaluations) {
-      const result = await this.publisher.publish(evaluation);
+      const result = await this.publisher.publish(evaluation, {
+        notify: FEISHU_NOTIFY_RULE_IDS.has(evaluation.rule_id),
+      });
       if (result.kind === 'accepted') published++;
     }
     this.log.biz.info(
@@ -105,6 +116,17 @@ export class PaymentAlertMonitor {
     );
     return { published };
   }
+}
+function toOrderSnapshot(row: Row): PaymentAlertSnapshot['orders'][number] {
+  return {
+    orderId: row.id,
+    userId: row.user_id,
+    checkoutConfirmedAt: row.checkout_confirmed_at,
+    status: row.status,
+    paidAt: row.paid_at,
+    fulfillmentApplied: row.fulfillment_applied,
+    settledBy: row.settled_by,
+  };
 }
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return await Promise.race([

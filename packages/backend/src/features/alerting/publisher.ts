@@ -15,7 +15,7 @@ export class AlertPublisher {
     private readonly log: Pick<Logger, 'biz' | 'sys'>
   ) {}
 
-  async publish(input: unknown): Promise<AlertPublishResult> {
+  async publish(input: unknown, options?: { notify?: boolean }): Promise<AlertPublishResult> {
     const parsed = AlertEvaluationSchema.safeParse(input);
     if (!parsed.success) return { kind: 'failed', reason: 'invalid_evaluation' };
     const evaluation = parsed.data;
@@ -46,7 +46,11 @@ export class AlertPublisher {
       return { kind: 'failed', reason: 'unsafe_card' };
     }
     try {
-      const result = await this.persistence.persist({ evaluation, cards });
+      const result = await this.persistence.persist({
+        evaluation,
+        cards,
+        notify: options?.notify,
+      });
       this.log.biz.info(
         { event: 'alert.publish', result: result.kind, fingerprint: evaluation.fingerprint },
         '告警评估已处理'

@@ -6,6 +6,15 @@ import { readAlertingRuntimeConfig, type AlertingRuntimeConfig } from './runtime
 import type { SafeAlertCard } from './safe-card.js';
 import { backoffMs } from './semantics.js';
 
+/** P1 飞书通知关闭；已注释的旧 P0 即使还在队列里也不再发送。 */
+function feishuNotificationSuppressed(card: SafeAlertCard): boolean {
+  if (card.severity === 'P1') return true;
+  return (
+    typeof card.incident_fingerprint === 'string' &&
+    /:payment:p0-0[1-5]:all$/.test(card.incident_fingerprint)
+  );
+}
+
 type DeliveryRow = {
   id: bigint;
   notification_key: string;
@@ -31,6 +40,22 @@ export class AlertDeliveryWorker {
     const row = await this.claim();
     if (!row) return 'idle';
     const card = row.payload as SafeAlertCard;
+    if (feishuNotificationSuppressed(card)) {
+      await prisma.$executeRaw(Prisma.sql`
+        UPDATE app_core.alert_delivery_attempts
+        SET state = 'abandoned', next_attempt_at = NULL, last_error_class = 'notify_suppressed', updated_at = now()
+        WHERE id = ${row.id} AND state = 'sending'
+      `);
+      this.log.biz.info(
+        {
+          event: 'alert.delivery.suppressed',
+          notificationKey: row.notification_key,
+          severity: card.severity,
+        },
+        '告警通知已按当前规则关闭'
+      );
+      return 'abandoned';
+    }
     const result = await this.sink.deliver(card, config.feishu_timeout_ms);
     this.nextAllowedAt = Date.now() + config.min_delivery_interval_ms;
     if (result.kind === 'succeeded') {
