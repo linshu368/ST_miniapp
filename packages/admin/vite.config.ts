@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => {
     configuredTestApiUrl: env.VITE_ADMIN_TEST_API_URL ?? '',
     vercelEnv: process.env.VERCEL_ENV,
     pullRequestId: process.env.VERCEL_GIT_PULL_REQUEST_ID,
+    gitCommitRef: process.env.VERCEL_GIT_COMMIT_REF,
   };
 
   // Preview values are compiled into the SPA. Fail during the deployment build instead of
