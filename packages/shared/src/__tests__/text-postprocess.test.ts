@@ -346,8 +346,7 @@ describe('html and css policy', () => {
     const cases: Array<[string, string]> = [
       ['body { color: red }', 'FORBIDDEN_SELECTOR'],
       ['.card { position: fixed }', 'FORBIDDEN_PROPERTY'],
-      ['.card { z-index: 3 }', 'FORBIDDEN_PROPERTY'],
-      ['.card { margin: -4px }', 'FORBIDDEN_VALUE'],
+      ['.card { z-index: 99 }', 'FORBIDDEN_PROPERTY'],
       ['.card { background: url(https://evil.example/a.png) }', 'EXTERNAL_RESOURCE'],
       ['@import "https://evil.example/a.css";', 'EXTERNAL_RESOURCE'],
       ['.card { color: red !important }', 'CSS_IMPORTANT'],
@@ -369,6 +368,20 @@ describe('html and css policy', () => {
       }),
     ]);
     expect(safe.rules[0]?.css[0]).toMatchObject({ type: 'media' });
+  });
+
+  it('accepts ordinary scoped CSS while retaining capability boundaries', () => {
+    const artifact = compileOk([
+      rule({
+        replacement: '<details class="rp-card" open><summary>Title</summary><p>$&</p></details>',
+        css: `/* Operators may add presentation comments. */
+.rp-card[open] > summary::after { content: "•"; font: italic 600 14px/1.4 system-ui; cursor: pointer; }
+.rp-card + .rp-card, .rp-card ~ .rp-card { border-left: 2px solid currentColor; transform: translateX(1px); opacity: .9; transition: opacity 120ms ease; }
+.rp-card::-webkit-details-marker { display: none; }
+@media (max-width: 480px) { .rp-card { color: light-dark(black, white); } }`,
+      }),
+    ]);
+    expect(artifact.rules[0]?.css).toHaveLength(4);
   });
 });
 

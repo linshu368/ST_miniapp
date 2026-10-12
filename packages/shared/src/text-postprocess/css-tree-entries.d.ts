@@ -28,6 +28,8 @@ declare module 'css-tree/parser' {
     modifier?: string | null;
     mediaType?: string | null;
     kind?: string;
+    matcher?: string | null;
+    flags?: string | null;
   }
 
   export interface CssParseError extends Error {

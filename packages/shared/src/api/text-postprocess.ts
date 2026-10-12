@@ -262,7 +262,7 @@ const RULE_FIELDS = [
 export const TEXT_POSTPROCESS_FIELDS = [...RULE_FIELDS, 'source', 'version', 'request'] as const;
 
 export type TextPostprocessField = (typeof TEXT_POSTPROCESS_FIELDS)[number];
-export type TextPostprocessCssProperty = (typeof TEXT_POSTPROCESS_CSS_PROPERTIES)[number];
+export type TextPostprocessCssProperty = string;
 
 export interface TextPostprocessLocation {
   line: number;
@@ -299,7 +299,7 @@ export const TextPostprocessDiagnosticSchema = z
   .strict();
 
 const HtmlTagSchema = z.string().refine(isTextPostprocessHtmlTag);
-const CssPropertySchema = z.enum(TEXT_POSTPROCESS_CSS_PROPERTIES);
+const CssPropertySchema = z.string().regex(/^(?:--[a-z][a-z0-9-]{0,63}|[a-z][a-z0-9-]{0,63})$/);
 
 export const CaptureRefSchema = z.discriminatedUnion('kind', [
   z
@@ -400,11 +400,11 @@ export type CssToken =
   | { t: 'hash'; v: string }
   | { t: 'string'; v: string }
   | { t: 'number'; v: string }
-  | { t: 'dimension'; v: string; u: 'px' | 'rem' | 'em' | 'ms' | 's' | 'deg' | 'fr' }
+  | { t: 'dimension'; v: string; u: string }
   | { t: 'percentage'; v: string }
   | {
       t: 'function';
-      name: 'rgb' | 'rgba' | 'hsl' | 'hsla' | 'linear-gradient' | 'var' | 'repeat' | 'minmax';
+      name: string;
       args: CssToken[];
     }
   | { t: 'operator'; v: ',' | '/' };
@@ -421,7 +421,7 @@ export const CssTokenSchema: z.ZodType<CssToken> = z.lazy(() =>
       .object({
         t: z.literal('dimension'),
         v: z.string().regex(/^[+-]?(?:\d+\.?\d*|\.\d+)$/),
-        u: z.enum(['px', 'rem', 'em', 'ms', 's', 'deg', 'fr']),
+        u: z.string().regex(/^[a-z][a-z0-9-]{0,15}$/),
       })
       .strict(),
     z
@@ -433,7 +433,7 @@ export const CssTokenSchema: z.ZodType<CssToken> = z.lazy(() =>
     z
       .object({
         t: z.literal('function'),
-        name: z.enum(['rgb', 'rgba', 'hsl', 'hsla', 'linear-gradient', 'var', 'repeat', 'minmax']),
+        name: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
         args: z.array(CssTokenSchema).max(32),
       })
       .strict(),
@@ -451,7 +451,16 @@ const NthPseudoSchema = z
 
 const NamedPseudoSchema = z
   .object({
-    kind: z.enum(['first-child', 'last-child', 'hover', 'focus-visible']),
+    kind: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+  })
+  .strict();
+
+const AttributeSelectorSchema = z
+  .object({
+    name: z.string().refine(isTextPostprocessHtmlAttribute),
+    matcher: z.enum(['=', '~=', '|=', '^=', '$=', '*=']).nullable(),
+    value: z.string().max(256).nullable(),
+    case_sensitive: z.boolean().nullable(),
   })
   .strict();
 
@@ -461,10 +470,17 @@ export const CssSelectorSchema = z
       .array(
         z
           .object({
-            combinator: z.enum(['descendant', 'child']).nullable(),
-            tag: HtmlTagSchema.nullable(),
+            combinator: z.enum(['descendant', 'child', 'adjacent', 'sibling']).nullable(),
+            tag: z.union([HtmlTagSchema, z.literal('*')]).nullable(),
             classes: z.array(z.string().regex(TEXT_POSTPROCESS_CLASS_TOKEN)).max(8),
+            attributes: z.array(AttributeSelectorSchema).max(8).optional().default([]),
             pseudos: z.array(z.union([NamedPseudoSchema, NthPseudoSchema])).max(4),
+            pseudo_element: z
+              .string()
+              .regex(/^-?[a-z][a-z0-9-]{0,63}$/)
+              .nullable()
+              .optional()
+              .default(null),
           })
           .strict()
       )
@@ -480,7 +496,7 @@ export const CssDeclarationSchema = z
   })
   .strict();
 
-export type CssSelector = z.infer<typeof CssSelectorSchema>;
+export type CssSelector = z.input<typeof CssSelectorSchema>;
 export type CssDeclaration = z.infer<typeof CssDeclarationSchema>;
 
 export type CssStyleRule = {
@@ -567,8 +583,8 @@ export const CompiledTextPostprocessArtifactSchema = z
   })
   .strict();
 
-export type CompiledTextPostprocessRule = z.infer<typeof CompiledTextPostprocessRuleSchema>;
-export type CompiledTextPostprocessArtifact = z.infer<typeof CompiledTextPostprocessArtifactSchema>;
+export type CompiledTextPostprocessRule = z.input<typeof CompiledTextPostprocessRuleSchema>;
+export type CompiledTextPostprocessArtifact = z.input<typeof CompiledTextPostprocessArtifactSchema>;
 
 const RuleIdSchema = z.string().regex(TEXT_POSTPROCESS_RULE_ID);
 

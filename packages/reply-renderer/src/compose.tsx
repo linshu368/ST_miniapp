@@ -273,7 +273,15 @@ function renderSlot(
     onChoice: input.onChoice,
     openStore: input.openStore,
   });
-  return createElement(placement === 'block' ? 'div' : 'span', { className: scope }, tree);
+  return createElement(
+    placement === 'block' ? 'div' : 'span',
+    {
+      className: scope,
+      // The compiler bans viewport overlays; this local boundary additionally confines paint and stacking.
+      style: { contain: 'paint style', isolation: 'isolate', position: 'relative' },
+    },
+    tree
+  );
 }
 
 function mapText<T extends ReturnType<typeof resolveTrustedTree>[number]>(
