@@ -6,7 +6,6 @@ import {
   type ImagePlazaShareTipConfig,
   type ImagePlazaTagConfig,
 } from '@miniapp/shared';
-import { z } from 'zod';
 import { fetchRuntimeConfigEntries } from '../../platform/runtime-config.js';
 
 const CONFIG_KEYS = [
@@ -16,8 +15,6 @@ const CONFIG_KEYS = [
   'image_plaza_tags',
   'image_plaza_share_rebate_rate',
 ] as const;
-
-const RebateRateSchema = z.number().min(0).max(1);
 
 export interface ImagePlazaRuntimeConfig {
   enabled: boolean;
@@ -38,11 +35,16 @@ export async function getImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeCon
     entries.get('image_plaza_share_tip')?.value
   );
   const tags = ImagePlazaTagConfigSchema.safeParse(entries.get('image_plaza_tags')?.value);
-  const rebateRate = RebateRateSchema.safeParse(
-    entries.get('image_plaza_share_rebate_rate')?.value
-  );
+  const rebateValue = entries.get('image_plaza_share_rebate_rate')?.value;
+  const rebateRate =
+    typeof rebateValue === 'number' &&
+    Number.isFinite(rebateValue) &&
+    rebateValue >= 0 &&
+    rebateValue <= 1
+      ? rebateValue
+      : null;
 
-  if (!catalog.success || !shareTip.success || !tags.success || !rebateRate.success) {
+  if (!catalog.success || !shareTip.success || !tags.success || rebateRate === null) {
     throw new Error('image_plaza_runtime_config_invalid');
   }
   return {
@@ -51,6 +53,6 @@ export async function getImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeCon
     catalogVersion: catalogEntry?.version ?? 0,
     shareTip: shareTip.data,
     tags: tags.data,
-    rebateRate: rebateRate.data,
+    rebateRate,
   };
 }

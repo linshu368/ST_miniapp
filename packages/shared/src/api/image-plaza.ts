@@ -291,6 +291,16 @@ export const SetImagePlazaLikeDataSchema = z.object({
 });
 export type SetImagePlazaLikeData = z.infer<typeof SetImagePlazaLikeDataSchema>;
 
+export const SetImagePlazaLikeRequestSchema = z.object({ liked: z.boolean() });
+export type SetImagePlazaLikeRequest = z.infer<typeof SetImagePlazaLikeRequestSchema>;
+
+export const ShareImagePlazaWorkRequestSchema = z.object({
+  artifact_id: z.string().uuid(),
+  title: z.string().trim().min(1).max(80),
+  tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
+});
+export type ShareImagePlazaWorkRequest = z.infer<typeof ShareImagePlazaWorkRequestSchema>;
+
 export const ShareImagePlazaWorkDataSchema = z.object({
   work: ImagePlazaWorkSchema,
   already_shared: z.boolean(),

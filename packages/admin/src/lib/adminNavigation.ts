@@ -6,6 +6,7 @@ export type AdminViewKey =
   | 'outreach_credit_grant'
   | 'invite_program'
   | 'image_generation_config'
+  | 'image_plaza'
   | 'vip_strategy'
   | 'text_postprocess'
   | 'characters'
@@ -46,6 +47,17 @@ export const IMAGE_GENERATION_CONFIG_KEYS = [
 ] as const satisfies readonly ManagedConfigKey[];
 export type ImageGenerationConfigKey = (typeof IMAGE_GENERATION_CONFIG_KEYS)[number];
 
+export const IMAGE_PLAZA_CONFIG_KEYS = [
+  'image_plaza_model_catalog',
+  'image_plaza_share_tip',
+  'image_plaza_tags',
+] as const satisfies readonly ManagedConfigKey[];
+export type ImagePlazaConfigKey = (typeof IMAGE_PLAZA_CONFIG_KEYS)[number];
+
+export function isImagePlazaConfigKey(key: ManagedConfigKey): key is ImagePlazaConfigKey {
+  return (IMAGE_PLAZA_CONFIG_KEYS as readonly string[]).includes(key);
+}
+
 export function isImageGenerationConfigKey(key: ManagedConfigKey): key is ImageGenerationConfigKey {
   return (IMAGE_GENERATION_CONFIG_KEYS as readonly string[]).includes(key);
 }
@@ -66,6 +78,7 @@ export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConf
   (key) =>
     !isInviteProgramConfigKey(key) &&
     !isImageGenerationConfigKey(key) &&
+    !isImagePlazaConfigKey(key) &&
     !isVipStrategyConfigKey(key) &&
     key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
 );
@@ -88,6 +101,7 @@ export function resolveAdminMenuSelection(key: string): {
       if (isImageGenerationConfigKey(configKey)) {
         return { view: 'image_generation_config', configKey };
       }
+      if (isImagePlazaConfigKey(configKey)) return { view: 'image_plaza', configKey };
       if (isVipStrategyConfigKey(configKey)) return { view: 'vip_strategy', configKey };
       return { view: 'configs', configKey };
     }
@@ -96,6 +110,7 @@ export function resolveAdminMenuSelection(key: string): {
     key === 'outreach_credit_grant' ||
     key === 'invite_program' ||
     key === 'image_generation_config' ||
+    key === 'image_plaza' ||
     key === 'vip_strategy' ||
     key === 'text_postprocess' ||
     key === 'characters' ||

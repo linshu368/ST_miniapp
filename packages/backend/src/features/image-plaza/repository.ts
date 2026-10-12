@@ -12,10 +12,22 @@ import {
 import { getDomainDb } from '../../lib/supabase.js';
 import {
   deletePlazaImage,
+  downloadPlazaImage,
   signPlazaImagePath,
   uploadPlazaImage,
   type PlazaMimeType,
 } from './storage.js';
+
+export interface ImagePlazaWorkerAttempt {
+  id: string;
+  userId: string;
+  prompt: string;
+  providerModelId: string;
+  mode: 't2i' | 'i2i' | 'edit';
+  aspectRatio: string;
+  resolution: '1K' | '2K' | 'fixed';
+  referenceArtifactId: string | null;
+}
 
 interface WorkRow {
   id: string;
@@ -141,41 +153,16 @@ export class ImagePlazaRepository {
     workId: string,
     liked: boolean
   ): Promise<{ liked: boolean; likeCount: number }> {
-    const { data: work, error: workError } = await this.experience
-      .from('image_plaza_works')
-      .select('id,like_count')
-      .eq('id', workId)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (workError || !work) throw new Error('image_plaza_work_not_found');
-
-    if (liked) {
-      const { error } = await this.features
-        .from('image_plaza_likes')
-        .upsert(
-          { user_id: userId, work_id: workId },
-          { onConflict: 'user_id,work_id', ignoreDuplicates: true }
-        );
-      if (error) throw new Error(`image plaza like failed: ${error.message}`);
-    } else {
-      const { error } = await this.features
-        .from('image_plaza_likes')
-        .delete()
-        .eq('user_id', userId)
-        .eq('work_id', workId);
-      if (error) throw new Error(`image plaza unlike failed: ${error.message}`);
+    const { data, error } = await this.experience.rpc('set_image_plaza_like', {
+      p_user_id: userId,
+      p_work_id: workId,
+      p_liked: liked,
+    });
+    if (error || !data || typeof data !== 'object') {
+      throw new Error(`image plaza like failed: ${error?.message ?? 'invalid result'}`);
     }
-    const { count, error: countError } = await this.features
-      .from('image_plaza_likes')
-      .select('work_id', { count: 'exact', head: true })
-      .eq('work_id', workId);
-    if (countError) throw new Error(`image plaza like count failed: ${countError.message}`);
-    const likeCount = count ?? 0;
-    await this.experience
-      .from('image_plaza_works')
-      .update({ like_count: likeCount })
-      .eq('id', workId);
-    return { liked, likeCount };
+    const result = data as Record<string, unknown>;
+    return { liked: result.liked === true, likeCount: Number(result.like_count ?? 0) };
   }
 
   async createQuote(input: {
@@ -192,6 +179,9 @@ export class ImagePlazaRepository {
     }
     if (input.mode !== 't2i' && !input.model.supports_i2i) {
       throw new Error('image_plaza_model_does_not_support_reference');
+    }
+    if (input.mode === 'edit' && !input.model.supports_edit) {
+      throw new Error('image_plaza_model_does_not_support_edit');
     }
     const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
     const { data, error } = await this.experience
@@ -345,6 +335,7 @@ export class ImagePlazaRepository {
       throw new Error('image_plaza_quote_expired');
     if (
       quote.model_id !== input.body.model_id ||
+      quote.provider_model_id !== input.model.provider_model_id ||
       quote.aspect_ratio !== input.body.aspect_ratio ||
       quote.resolution !== input.body.resolution ||
       quote.mode !== input.body.mode
@@ -392,7 +383,7 @@ export class ImagePlazaRepository {
         idempotency_key: input.body.idempotency_key,
         prompt: input.body.prompt,
         model_id: input.model.id,
-        provider_model_id: input.model.provider_model_id,
+        provider_model_id: quote.provider_model_id,
         mode: input.body.mode,
         aspect_ratio: input.body.aspect_ratio,
         resolution: input.body.resolution,
@@ -460,6 +451,151 @@ export class ImagePlazaRepository {
       alreadyShared: result.already_shared === true,
       rewardCredits: Number(result.reward_credits ?? 0),
     };
+  }
+
+  async getArtifactModelId(artifactId: string, userId: string): Promise<string> {
+    const { data: artifact, error: artifactError } = await this.experience
+      .from('image_plaza_artifacts')
+      .select('attempt_id')
+      .eq('id', artifactId)
+      .maybeSingle();
+    if (artifactError || !artifact) throw new Error('image_plaza_artifact_not_found');
+    const { data: attempt, error: attemptError } = await this.experience
+      .from('image_plaza_attempts')
+      .select('model_id')
+      .eq('id', String(artifact.attempt_id))
+      .eq('user_id', userId)
+      .eq('status', 'ready')
+      .maybeSingle();
+    if (attemptError || !attempt) throw new Error('image_plaza_artifact_not_found');
+    return String(attempt.model_id);
+  }
+
+  async claimJobs(
+    workerId: string,
+    limit: number,
+    leaseSeconds: number
+  ): Promise<ImagePlazaWorkerAttempt[]> {
+    const { data, error } = await this.experience.rpc('claim_image_plaza_jobs', {
+      p_worker_id: workerId,
+      p_limit: limit,
+      p_lease_seconds: leaseSeconds,
+    });
+    if (error) throw new Error(`image plaza claim failed: ${error.message}`);
+    return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: String(row.id),
+      userId: String(row.user_id),
+      prompt: String(row.prompt),
+      providerModelId: String(row.provider_model_id),
+      mode: row.mode as ImagePlazaWorkerAttempt['mode'],
+      aspectRatio: String(row.aspect_ratio),
+      resolution: row.resolution as ImagePlazaWorkerAttempt['resolution'],
+      referenceArtifactId:
+        typeof row.reference_artifact_id === 'string' ? row.reference_artifact_id : null,
+    }));
+  }
+
+  async markGenerating(attemptId: string, providerRequestId?: string | null): Promise<void> {
+    const { error } = await this.experience
+      .from('image_plaza_attempts')
+      .update({
+        status: 'generating',
+        provider_request_id: providerRequestId ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', attemptId)
+      .eq('status', 'leased');
+    if (error) throw new Error(`image plaza attempt update failed: ${error.message}`);
+  }
+
+  async markFailed(attemptId: string, code: string, outcomeUnknown: boolean): Promise<void> {
+    const { error } = await this.experience
+      .from('image_plaza_attempts')
+      .update({
+        status: outcomeUnknown ? 'failed_unknown' : 'failed',
+        error_code: code.slice(0, 120),
+        lease_owner: null,
+        lease_expires_at: null,
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', attemptId)
+      .in('status', ['leased', 'generating', 'storing']);
+    if (error) throw new Error(`image plaza failure update failed: ${error.message}`);
+  }
+
+  async markStaleDispatchedUnknown(olderThanIso: string): Promise<void> {
+    const { error } = await this.experience
+      .from('image_plaza_attempts')
+      .update({
+        status: 'failed_unknown',
+        error_code: 'image_plaza_worker_interrupted',
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .in('status', ['generating', 'storing'])
+      .lt('lease_expires_at', olderThanIso);
+    if (error) throw new Error(`image plaza stale reconciliation failed: ${error.message}`);
+  }
+
+  async loadReference(
+    referenceId: string,
+    userId: string
+  ): Promise<{ bytes: Buffer; mimeType: PlazaMimeType }> {
+    const { data, error } = await this.experience
+      .from('image_plaza_reference_assets')
+      .select('storage_path,mime_type')
+      .eq('id', referenceId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error || !data) throw new Error('image_plaza_reference_not_found');
+    return {
+      bytes: await downloadPlazaImage(String(data.storage_path)),
+      mimeType: String(data.mime_type) as PlazaMimeType,
+    };
+  }
+
+  async settleGeneratedImage(input: {
+    attempt: ImagePlazaWorkerAttempt;
+    bytes: Buffer;
+    mimeType: PlazaMimeType;
+  }): Promise<void> {
+    const stored = await uploadPlazaImage({
+      userId: input.attempt.userId,
+      namespace: 'attempts',
+      ownerId: input.attempt.id,
+      position: 0,
+      bytes: input.bytes,
+      declaredMimeType: input.mimeType,
+    });
+    await this.experience
+      .from('image_plaza_attempts')
+      .update({ status: 'storing', updated_at: new Date().toISOString() })
+      .eq('id', input.attempt.id)
+      .eq('status', 'generating');
+    const { data, error } = await this.billing.rpc('settle_image_plaza_generation', {
+      p_attempt_id: input.attempt.id,
+      p_user_id: input.attempt.userId,
+      p_artifacts: [
+        {
+          position: 0,
+          storage_path: stored.storagePath,
+          mime_type: stored.mimeType,
+          byte_size: stored.byteSize,
+          width: stored.width,
+          height: stored.height,
+        },
+      ],
+    });
+    const status =
+      data && typeof data === 'object'
+        ? String((data as Record<string, unknown>).status ?? '')
+        : '';
+    if (error || !['settled', 'already_settled'].includes(status)) {
+      await deletePlazaImage(stored.storagePath).catch(() => undefined);
+      if (status === 'insufficient_balance') return;
+      throw new Error(`image plaza settle failed: ${error?.message ?? status}`);
+    }
   }
 
   private async hydrateWorks(rows: WorkRow[], userId: string): Promise<ImagePlazaWork[]> {

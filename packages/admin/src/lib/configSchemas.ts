@@ -16,6 +16,9 @@ import {
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   LlmProviderRoutingConfigSchema,
+  ImagePlazaModelCatalogSchema,
+  ImagePlazaShareTipConfigSchema,
+  ImagePlazaTagConfigSchema,
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
   MediaFeatureFreeTrialLimitSchema,
@@ -68,6 +71,9 @@ export const managedConfigKeys = [
   'image_description_failed_hint',
   'image_generation_failed_hint',
   'image_failed_unknown_hint',
+  'image_plaza_model_catalog',
+  'image_plaza_share_tip',
+  'image_plaza_tags',
   'media_feature_free_trial_limit',
   ...VIP_STRATEGY_CONFIG_KEYS,
 ] as const;
@@ -288,6 +294,9 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_description_failed_hint: z.string().trim().min(1).max(200),
   image_generation_failed_hint: z.string().trim().min(1).max(200),
   image_failed_unknown_hint: z.string().trim().min(1).max(200),
+  image_plaza_model_catalog: ImagePlazaModelCatalogSchema,
+  image_plaza_share_tip: ImagePlazaShareTipConfigSchema,
+  image_plaza_tags: ImagePlazaTagConfigSchema,
   media_feature_free_trial_limit: MediaFeatureFreeTrialLimitSchema,
   vip_purchase_enabled: VipFeatureSwitchSchema,
   vip_reminders_enabled: VipFeatureSwitchSchema,
@@ -506,6 +515,83 @@ export const configMetadata: Record<
     label: '图片模糊失败提示',
     description: '外部平台结果未知、禁止自动重试时展示的提示。',
     defaultValue: '外部平台没有确认成功，本次不消耗星尘。',
+  },
+  image_plaza_model_catalog: {
+    label: '模型管理',
+    description: '管理图片广场模型、能力、画幅和各分辨率上架星尘价；用户端只读取已发布版本。',
+    defaultValue: {
+      default_model_id: 'seedream-v5-pro',
+      models: [
+        ['qwen-image-3', 'Qwen Image 3', 60],
+        ['qwen-image-3-pro', 'Qwen Image 3 Pro', 80],
+        ['seedream-v5-pro', 'Seedream V5 Pro', 90],
+        ['krea-2-turbo', 'Krea 2 Turbo', 60],
+        ['lustify-v8', 'Lustify v8', 20],
+        ['seedream-v5-lite', 'Seedream V5 Lite', 80],
+        ['chroma', 'Chroma', 20],
+        ['lustify-sdxl', 'Lustify SDXL', 20],
+        ['anime-wai', 'Anime (WAI)', 20],
+        ['venice-sd35', 'Venice SD35', 20],
+      ].map(([id, name, credits], sortOrder) => ({
+        id,
+        provider_model_id: id === 'anime-wai' ? 'wai-Illustrious' : id,
+        name,
+        description: '适合多种图片创作场景',
+        supports_i2i: [
+          'qwen-image-3',
+          'qwen-image-3-pro',
+          'seedream-v5-pro',
+          'seedream-v5-lite',
+        ].includes(String(id)),
+        supports_edit: [
+          'qwen-image-3',
+          'qwen-image-3-pro',
+          'seedream-v5-pro',
+          'seedream-v5-lite',
+        ].includes(String(id)),
+        aspect_ratios: ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'],
+        resolutions: [
+          {
+            id: [
+              'lustify-v8',
+              'seedream-v5-lite',
+              'chroma',
+              'lustify-sdxl',
+              'anime-wai',
+              'venice-sd35',
+            ].includes(String(id))
+              ? 'fixed'
+              : '1K',
+            label: '标准',
+            credits,
+          },
+        ],
+        enabled: true,
+        sort_order: sortOrder,
+        internal_tags: [],
+      })),
+    },
+  },
+  image_plaza_share_tip: {
+    label: '弹窗配置',
+    description:
+      '配置首次分享确认弹窗的中部文案与开关；顶图始终使用用户作品。仅支持 {rate} 与 {model}。',
+    defaultValue: {
+      enabled: true,
+      title: '分享返还 {rate}',
+      description: '让更多人看到你的 {model} 作品。',
+      reference_note: '如使用参考图，参考图也会同时公开。',
+      button_label: '分享至广场',
+    },
+  },
+  image_plaza_tags: {
+    label: '内容标签',
+    description: '管理广场筛选标签；“全部”为系统固定项，删除标签不会删除历史作品。',
+    defaultValue: [
+      { id: 'portrait', label: '人像', enabled: true, sort_order: 0 },
+      { id: 'anime', label: '动漫', enabled: true, sort_order: 1 },
+      { id: 'poster', label: '海报', enabled: true, sort_order: 2 },
+    ],
   },
   media_feature_free_trial_limit: {
     label: '媒体免费轮次次数',

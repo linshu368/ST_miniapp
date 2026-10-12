@@ -1,16 +1,16 @@
 # 图片广场与图片创作第二版 — 技术设计
 
-> 状态：规划已确认（含 Q9–Q12-rev），2026-10-12 已获实施授权。创作 Tab 打开即广场瀑布流，见 `prd.md`。
+> 状态：规划已确认（含 Q9–Q12-rev3），2026-10-12 已获实施授权。创作 Tab 打开即广场瀑布流；许愿池功能保留但入口暂时隐藏，见 `prd.md`。
 
 ## 1. 架构边界（Q10：与聊天图生成业务隔离）
 
-| 包         | 职责                                                                                                                                                                               |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shared`   | **新建**广场/创作/分享契约（建议 `packages/shared/src/api/image-plaza*.ts`）；**不**把广场 DTO 塞进既有 `api/images.ts`                                                            |
-| `backend`  | **新建**路由与 feature 目录（建议 `routes/image-plaza*.ts`、`features/image-plaza/`）；**不**在 `routes/images.ts` / `features/image/*`（聊天看看TA）上叠广场业务方法              |
-| `frontend` | **`/create` = 广场瀑布流**（Q12-rev）：吸顶「图片广场」+「✦ 去创作」，底栏保留；**移除**创作下许愿入口与 `/create/wish` 依赖；hooks 用 `src/lib/api/image-plaza*`；不复用聊天图 UI |
-| `admin`    | 模型/弹窗/标签三页可新建视图文件；配置发布链复用 Admin 基建                                                                                                                        |
-| `database` | **新建**广场/创作/分享相关表与 RPC；**不**扩展 `chat_message_images` 承载 V2 attempt                                                                                               |
+| 包         | 职责                                                                                                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared`   | **新建**广场/创作/分享契约（建议 `packages/shared/src/api/image-plaza*.ts`）；**不**把广场 DTO 塞进既有 `api/images.ts`                                                     |
+| `backend`  | **新建**路由与 feature 目录（建议 `routes/image-plaza*.ts`、`features/image-plaza/`）；**不**在 `routes/images.ts` / `features/image/*`（聊天看看TA）上叠广场业务方法       |
+| `frontend` | **`/create` = 广场瀑布流**（Q12-rev3）：吸顶「图片广场」+「✦ 去创作」，底栏保留；保留 `/create/wish` 原流程但隐藏入口；hooks 用 `src/lib/api/image-plaza*`；不复用聊天图 UI |
+| `admin`    | 模型/弹窗/标签三页可新建视图文件；配置发布链复用 Admin 基建                                                                                                                 |
+| `database` | **新建**广场/创作/分享相关表与 RPC；**不**扩展 `chat_message_images` 承载 V2 attempt                                                                                        |
 
 跨应用仅 HTTP。出图与扣费须走统一平台能力时：
 
@@ -29,7 +29,7 @@ packages/backend/src/routes/image-plaza.ts      # 路由注册 + @frontend-ready
 packages/backend/src/features/image-plaza/      # quote、studio job、plaza feed、share…
 packages/frontend/src/lib/api/image-plaza/      # React Query hooks
 packages/frontend/src/app/(main)/create/       # /create = 广场瀑布流；子路由 studio/详情等
-# 删除或停用 create/wish；layout 中 NAV_HIDDEN 的 /create/wish、大厅「许愿池」文案一并清理
+# 保留 create/wish 与沉浸式导航隐藏；当前不提供可见许愿池入口
 packages/admin/.../ImagePlaza*.tsx              # 三页运营
 packages/shared/migrations/*_image_plaza_*.sql  # 新表/RPC
 ```

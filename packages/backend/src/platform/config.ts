@@ -84,6 +84,16 @@ export const config = {
     workerLeaseSeconds: parseInt(process.env.IMAGE_WORKER_LEASE_SECONDS || '180', 10),
   },
 
+  // 图片广场使用独立 Venice 图片链路；密钥只从服务端环境读取。
+  imagePlaza: {
+    apiKey: process.env.VENICE_API_KEY || '',
+    baseUrl: process.env.VENICE_API_BASE || 'https://api.venice.ai/api/v1',
+    timeoutMs: parseInt(process.env.IMAGE_PLAZA_TIMEOUT_MS || '180000', 10),
+    workerEnabled: process.env.IMAGE_PLAZA_WORKER_ENABLED !== 'false',
+    workerIntervalMs: parseInt(process.env.IMAGE_PLAZA_WORKER_INTERVAL_MS || '3000', 10),
+    workerLeaseSeconds: parseInt(process.env.IMAGE_PLAZA_WORKER_LEASE_SECONDS || '240', 10),
+  },
+
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {
     enabled: process.env.PAYMENT_ENABLED === 'true',

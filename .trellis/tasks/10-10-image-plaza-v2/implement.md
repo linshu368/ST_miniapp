@@ -16,7 +16,7 @@
 | A    | **独立** `shared/api/image-plaza*` + 返利 runtime_config key + migration 草案（不改 `api/images.ts`）              | shared test / typecheck |
 | B    | **独立** `features/image-plaza` + `routes/image-plaza*`：quote/会话 job/settle（不调用 `features/image` 业务入口） | 失败不扣；与聊天图隔离  |
 | C    | 同模块：广场 feed/详情/点赞/用同款、分享返利                                                                       | AC10–AC11               |
-| D    | frontend：`/create` 直接广场瀑布流 + 吸顶去创作；底栏保留；清许愿路径；详情/用同款                                 | AC01–AC05               |
+| D    | frontend：`/create` 直接广场瀑布流 + 吸顶去创作；底栏保留；保留原许愿流程但隐藏入口；详情/用同款                   | AC01–AC05               |
 | E    | 同模块：创作壳、抽屉、就地生成、四图标                                                                             | AC06–AC09               |
 | F    | 分享弹窗与角标（Q1-C）                                                                                             | AC12                    |
 | G    | Admin 三页 + 用户端读已发布配置                                                                                    | AC13–AC14               |

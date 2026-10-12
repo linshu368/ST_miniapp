@@ -440,7 +440,7 @@ export function CharacterGallery() {
         >
           <p className="text-center text-[13px] text-muted-foreground">没有匹配「{query}」的角色</p>
           <p className="text-center text-[11px] text-muted-foreground/80">
-            可以到「创作」页右上角的许愿池告诉我们你想要的角色。
+            可以先去「创作」页浏览图片灵感，或开始一轮新的图片创作。
           </p>
         </div>
       ) : (

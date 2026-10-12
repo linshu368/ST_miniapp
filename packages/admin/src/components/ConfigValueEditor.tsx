@@ -19,6 +19,9 @@ import {
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
+  ImagePlazaModelCatalogSchema,
+  ImagePlazaShareTipConfigSchema,
+  ImagePlazaTagConfigSchema,
   LlmPricingConfigSchema,
   MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
@@ -47,6 +50,11 @@ import {
 import type { CharacterCard } from '../lib/adminApi';
 import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
 import { InviteRewardRulesEditor } from './InviteRewardRulesEditor';
+import {
+  ImagePlazaModelCatalogEditor,
+  ImagePlazaShareTipEditor,
+  ImagePlazaTagsEditor,
+} from './ImagePlazaConfigEditors';
 import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
@@ -242,6 +250,46 @@ export function ConfigValueEditor(props: {
         stale: props.providerDirectories.openrouter.stale,
       }
     : null;
+
+  if (props.configKey === 'image_plaza_model_catalog') {
+    const parsed = ImagePlazaModelCatalogSchema.safeParse(props.value);
+    const fallback = ImagePlazaModelCatalogSchema.parse(
+      configMetadata.image_plaza_model_catalog.defaultValue
+    );
+    return (
+      <ImagePlazaModelCatalogEditor
+        value={parsed.success ? parsed.data : fallback}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'image_plaza_share_tip') {
+    const parsed = ImagePlazaShareTipConfigSchema.safeParse(props.value);
+    const fallback = ImagePlazaShareTipConfigSchema.parse(
+      configMetadata.image_plaza_share_tip.defaultValue
+    );
+    return (
+      <ImagePlazaShareTipEditor
+        value={parsed.success ? parsed.data : fallback}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'image_plaza_tags') {
+    const parsed = ImagePlazaTagConfigSchema.safeParse(props.value);
+    const fallback = ImagePlazaTagConfigSchema.parse(configMetadata.image_plaza_tags.defaultValue);
+    return (
+      <ImagePlazaTagsEditor
+        value={parsed.success ? parsed.data : fallback}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
 
   if (props.configKey === 'image_text_model_config') {
     const record =

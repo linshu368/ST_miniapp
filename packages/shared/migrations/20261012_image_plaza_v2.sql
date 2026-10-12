@@ -261,6 +261,48 @@ REVOKE ALL ON FUNCTION experience.claim_image_plaza_jobs(TEXT, INTEGER, INTEGER)
 GRANT EXECUTE ON FUNCTION experience.claim_image_plaza_jobs(TEXT, INTEGER, INTEGER)
   TO service_role, postgres;
 
+CREATE OR REPLACE FUNCTION experience.set_image_plaza_like(
+  p_user_id UUID,
+  p_work_id UUID,
+  p_liked BOOLEAN
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  PERFORM 1
+  FROM experience.image_plaza_works
+  WHERE id = p_work_id AND deleted_at IS NULL
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'image plaza work not found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF p_liked THEN
+    INSERT INTO miniapp_features.image_plaza_likes(user_id, work_id)
+    VALUES (p_user_id, p_work_id)
+    ON CONFLICT (user_id, work_id) DO NOTHING;
+  ELSE
+    DELETE FROM miniapp_features.image_plaza_likes
+    WHERE user_id = p_user_id AND work_id = p_work_id;
+  END IF;
+
+  SELECT count(*)::INTEGER INTO v_count
+  FROM miniapp_features.image_plaza_likes
+  WHERE work_id = p_work_id;
+  UPDATE experience.image_plaza_works SET like_count = v_count WHERE id = p_work_id;
+  RETURN jsonb_build_object('liked', p_liked, 'like_count', v_count);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION experience.set_image_plaza_like(UUID, UUID, BOOLEAN)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION experience.set_image_plaza_like(UUID, UUID, BOOLEAN)
+  TO service_role, postgres;
+
 -- 账本取值为已部署集合的向后兼容超集；reference_type 使用图片广场专用命名空间。
 ALTER TABLE billing.wallet_ledger DROP CONSTRAINT IF EXISTS wallet_ledger_entry_type_check;
 ALTER TABLE billing.wallet_ledger ADD CONSTRAINT wallet_ledger_entry_type_check CHECK (entry_type IN (
@@ -471,6 +513,102 @@ GRANT EXECUTE ON FUNCTION billing.share_image_plaza_artifact(UUID, UUID, TEXT, T
   TO service_role, postgres;
 
 -- 在不复制旧校验逻辑的前提下扩展既有 managed-config 发布链。
+CREATE OR REPLACE FUNCTION admin.validate_image_plaza_model_catalog(p_value JSONB)
+RETURNS VOID LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog AS $$
+DECLARE
+  v_model JSONB;
+  v_resolution JSONB;
+  v_default TEXT;
+  v_ids TEXT[] := ARRAY[]::TEXT[];
+BEGIN
+  IF jsonb_typeof(p_value) IS DISTINCT FROM 'object'
+     OR jsonb_typeof(p_value->'models') IS DISTINCT FROM 'array'
+     OR jsonb_array_length(p_value->'models') NOT BETWEEN 1 AND 30 THEN
+    RAISE EXCEPTION 'image_plaza_model_catalog has invalid shape' USING ERRCODE = '22023';
+  END IF;
+  v_default := btrim(COALESCE(p_value->>'default_model_id', ''));
+  IF v_default = '' THEN
+    RAISE EXCEPTION 'image plaza default model is required' USING ERRCODE = '22023';
+  END IF;
+  FOR v_model IN SELECT value FROM jsonb_array_elements(p_value->'models') LOOP
+    IF btrim(COALESCE(v_model->>'id', '')) = ''
+       OR btrim(COALESCE(v_model->>'provider_model_id', '')) = ''
+       OR btrim(COALESCE(v_model->>'name', '')) = ''
+       OR jsonb_typeof(v_model->'enabled') IS DISTINCT FROM 'boolean'
+       OR jsonb_typeof(v_model->'supports_i2i') IS DISTINCT FROM 'boolean'
+       OR jsonb_typeof(v_model->'supports_edit') IS DISTINCT FROM 'boolean'
+       OR jsonb_typeof(v_model->'aspect_ratios') IS DISTINCT FROM 'array'
+       OR jsonb_array_length(v_model->'aspect_ratios') < 1
+       OR jsonb_typeof(v_model->'resolutions') IS DISTINCT FROM 'array'
+       OR jsonb_array_length(v_model->'resolutions') < 1 THEN
+      RAISE EXCEPTION 'image plaza model has invalid shape' USING ERRCODE = '22023';
+    END IF;
+    IF (v_model->>'id') = ANY(v_ids) THEN
+      RAISE EXCEPTION 'image plaza model id is duplicated' USING ERRCODE = '22023';
+    END IF;
+    v_ids := array_append(v_ids, v_model->>'id');
+    FOR v_resolution IN SELECT value FROM jsonb_array_elements(v_model->'resolutions') LOOP
+      IF COALESCE(v_resolution->>'id', '') NOT IN ('1K', '2K', 'fixed')
+         OR COALESCE(v_resolution->>'credits', '') !~ '^[1-9][0-9]*$' THEN
+        RAISE EXCEPTION 'image plaza resolution price is invalid' USING ERRCODE = '22023';
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(p_value->'models') AS model
+    WHERE model->>'id' = v_default AND model->'enabled' = 'true'::JSONB
+  ) THEN
+    RAISE EXCEPTION 'image plaza default model must be enabled' USING ERRCODE = '22023';
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION admin.validate_image_plaza_share_tip(p_value JSONB)
+RETURNS VOID LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog AS $$
+DECLARE
+  v_text TEXT;
+BEGIN
+  IF jsonb_typeof(p_value) IS DISTINCT FROM 'object'
+     OR jsonb_typeof(p_value->'enabled') IS DISTINCT FROM 'boolean'
+     OR btrim(COALESCE(p_value->>'title', '')) = ''
+     OR btrim(COALESCE(p_value->>'description', '')) = ''
+     OR btrim(COALESCE(p_value->>'button_label', '')) = '' THEN
+    RAISE EXCEPTION 'image_plaza_share_tip has invalid shape' USING ERRCODE = '22023';
+  END IF;
+  FOREACH v_text IN ARRAY ARRAY[
+    p_value->>'title', p_value->>'description', COALESCE(p_value->>'reference_note', ''),
+    p_value->>'button_label'
+  ] LOOP
+    IF regexp_replace(v_text, '\{(rate|model)\}', '', 'g') ~ '\{[^}]+\}' THEN
+      RAISE EXCEPTION 'image plaza share tip placeholder is invalid' USING ERRCODE = '22023';
+    END IF;
+  END LOOP;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION admin.validate_image_plaza_tags(p_value JSONB)
+RETURNS VOID LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog AS $$
+DECLARE
+  v_tag JSONB;
+  v_ids TEXT[] := ARRAY[]::TEXT[];
+BEGIN
+  IF jsonb_typeof(p_value) IS DISTINCT FROM 'array' OR jsonb_array_length(p_value) > 80 THEN
+    RAISE EXCEPTION 'image_plaza_tags has invalid shape' USING ERRCODE = '22023';
+  END IF;
+  FOR v_tag IN SELECT value FROM jsonb_array_elements(p_value) LOOP
+    IF btrim(COALESCE(v_tag->>'id', '')) = '' OR v_tag->>'id' = 'all'
+       OR btrim(COALESCE(v_tag->>'label', '')) = ''
+       OR jsonb_typeof(v_tag->'enabled') IS DISTINCT FROM 'boolean' THEN
+      RAISE EXCEPTION 'image plaza tag is invalid' USING ERRCODE = '22023';
+    END IF;
+    IF (v_tag->>'id') = ANY(v_ids) THEN
+      RAISE EXCEPTION 'image plaza tag id is duplicated' USING ERRCODE = '22023';
+    END IF;
+    v_ids := array_append(v_ids, v_tag->>'id');
+  END LOOP;
+END;
+$$;
+
 ALTER FUNCTION admin.is_managed_config_key(TEXT) RENAME TO is_managed_config_key_before_image_plaza;
 CREATE FUNCTION admin.is_managed_config_key(p_config_key TEXT)
 RETURNS BOOLEAN LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog AS $$
@@ -496,11 +634,33 @@ BEGIN
     IF p_config_key <> 'image_plaza_enabled' AND jsonb_typeof(p_value) NOT IN ('object', 'array') THEN
       RAISE EXCEPTION '% has invalid shape', p_config_key USING ERRCODE = '22023';
     END IF;
+    IF p_config_key = 'image_plaza_model_catalog' THEN
+      PERFORM admin.validate_image_plaza_model_catalog(p_value);
+    ELSIF p_config_key = 'image_plaza_share_tip' THEN
+      PERFORM admin.validate_image_plaza_share_tip(p_value);
+    ELSIF p_config_key = 'image_plaza_tags' THEN
+      PERFORM admin.validate_image_plaza_tags(p_value);
+    END IF;
     RETURN;
   END IF;
   PERFORM admin.validate_managed_config_value_before_image_plaza(p_config_key, p_value, p_text_value);
 END;
 $$;
+
+REVOKE ALL ON FUNCTION admin.validate_image_plaza_model_catalog(JSONB)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin.validate_image_plaza_share_tip(JSONB)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin.validate_image_plaza_tags(JSONB)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin.is_managed_config_key_before_image_plaza(TEXT)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin.is_managed_config_key(TEXT)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin.validate_managed_config_value_before_image_plaza(TEXT, JSONB, TEXT)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION admin.validate_managed_config_value(TEXT, JSONB, TEXT)
+  FROM PUBLIC, anon, authenticated, service_role;
 
 ALTER TABLE admin.config_drafts DROP CONSTRAINT IF EXISTS config_drafts_config_key_check;
 ALTER TABLE admin.config_drafts ADD CONSTRAINT config_drafts_config_key_check
