@@ -1,17 +1,26 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { assertAdminPreviewApiUrl, resolveAdminPreviewApiUrl } from './src/lib/preview-api';
 
-function previewTestApiUrl(): string {
-  const pullRequestId = process.env.VERCEL_GIT_PULL_REQUEST_ID?.trim() ?? '';
-  if (process.env.VERCEL_ENV !== 'preview' || !/^[1-9]\d*$/.test(pullRequestId)) return '';
-  return `https://stminiapp-pr-${pullRequestId}.up.railway.app`;
-}
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const previewInput = {
+    configuredTestApiUrl: env.VITE_ADMIN_TEST_API_URL ?? '',
+    vercelEnv: process.env.VERCEL_ENV,
+    pullRequestId: process.env.VERCEL_GIT_PULL_REQUEST_ID,
+  };
 
-export default defineConfig({
-  plugins: [react()],
-  // Vite only exposes VITE_* variables to browser code. Preserve the configured TEST API for
-  // local/development builds, but bind each Vercel PR Preview to its isolated Railway backend.
-  define: {
-    'import.meta.env.VITE_ADMIN_PREVIEW_TEST_API_URL': JSON.stringify(previewTestApiUrl()),
-  },
+  // Preview values are compiled into the SPA. Fail during the deployment build instead of
+  // releasing a login page that can only report the unhelpful browser-level fetch failure.
+  const previewApiUrl =
+    previewInput.vercelEnv === 'preview'
+      ? assertAdminPreviewApiUrl(previewInput)
+      : resolveAdminPreviewApiUrl(previewInput);
+
+  return {
+    plugins: [react()],
+    define: {
+      'import.meta.env.VITE_ADMIN_PREVIEW_TEST_API_URL': JSON.stringify(previewApiUrl),
+    },
+  };
 });

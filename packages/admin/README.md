@@ -25,6 +25,6 @@ pnpm --filter @miniapp/admin build
 
 ## 部署与验证
 
-Vercel 配置可能来自包内 `vercel.json` 或根 `vercel.admin.json`，取决于项目 Root Directory，两者不会自动合并。发布前核对环境变量作用域、API/CORS、SPA rewrite 和 Node 版本。
+Vercel 配置可能来自包内 `vercel.json` 或根 `vercel.admin.json`，取决于项目 Root Directory，两者不会自动合并。发布前核对环境变量作用域、API/CORS、SPA rewrite 和 Node 版本。普通 branch Preview 使用 `VITE_ADMIN_TEST_API_URL` 指向稳定 TEST；带有效 `VERCEL_GIT_PULL_REQUEST_ID` 的 PR Preview 自动绑定 `stminiapp-pr-<PR号>`。前者缺失或不是 HTTPS 时，Preview 构建会失败，避免发布登录后才报网络错误的页面。
 
 适用门禁是 Admin typecheck/test/build、`pnpm lint:imports` 和 `git diff --check`。涉及 shared 契约或 `reply-renderer` 时，追加 shared/renderer 测试与所有消费者 typecheck。发布后在目标环境验证登录、环境标识、草稿保存、明确发布、历史恢复、错误保留和只读 viewer；TEST 结果不能代替 Production 验收。
