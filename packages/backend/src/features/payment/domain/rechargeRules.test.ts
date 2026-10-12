@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG } from '@miniapp/shared';
 import {
   parsePaymentPlansConfig,
+  parsePaymentPlansRuntimeConfig,
   parsePaymentPromptDialogConfig,
   PaymentPlansConfigError,
 } from './rechargeRules.js';
@@ -27,6 +28,22 @@ describe('parsePaymentPlansConfig', () => {
     expect(() => parsePaymentPlansConfig(undefined)).toThrow(PaymentPlansConfigError);
     expect(() => parsePaymentPlansConfig([])).toThrow(PaymentPlansConfigError);
     expect(() => parsePaymentPlansConfig([{ id: 'incomplete' }])).toThrow(PaymentPlansConfigError);
+  });
+
+  it('returns the configured entry channels without changing legacy plan lookup', () => {
+    expect(
+      parsePaymentPlansRuntimeConfig({
+        plans: [validPlan],
+        payment_channels: {
+          alipay_enabled: true,
+          wxpay_enabled: true,
+          default_payment_type: 'wxpay',
+        },
+      })
+    ).toMatchObject({
+      plans: [validPlan],
+      payment_channels: { default_payment_type: 'wxpay' },
+    });
   });
 });
 

@@ -17,7 +17,7 @@ import { getOrCreateDbUser } from '../lib/user.js';
 import {
   buildVipPlans,
   getInsufficientCreditsNotice,
-  getPaymentPlans,
+  getPaymentPlansConfig,
   getPaymentPromptDialogConfig,
   getRechargePageConfig,
   PaymentPlansConfigError,
@@ -67,17 +67,23 @@ export default async function paymentRoutes(app: FastifyInstance) {
   // @frontend-ready: true
   app.get('/api/payment/plans', async (request, reply) => {
     try {
-      const [plans, insufficientCreditsNotice, pageConfig, paymentPromptDialogConfig, strategy] =
-        await Promise.all([
-          getPaymentPlans(),
-          getInsufficientCreditsNotice(),
-          getRechargePageConfig(),
-          getPaymentPromptDialogConfig(),
-          readVipStrategy(),
-        ]);
+      const [
+        paymentPlansConfig,
+        insufficientCreditsNotice,
+        pageConfig,
+        paymentPromptDialogConfig,
+        strategy,
+      ] = await Promise.all([
+        getPaymentPlansConfig(),
+        getInsufficientCreditsNotice(),
+        getRechargePageConfig(),
+        getPaymentPromptDialogConfig(),
+        readVipStrategy(),
+      ]);
       return reply.send(
         ok<GetPaymentPlansData>({
-          plans,
+          plans: paymentPlansConfig.plans,
+          payment_channels: paymentPlansConfig.paymentChannels,
           vip_plans: buildVipPlans(strategy.purchaseEnabled, strategy.plans),
           page_config: pageConfig,
           payment_prompt_dialog_config: paymentPromptDialogConfig,

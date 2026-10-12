@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
@@ -48,8 +48,6 @@ import {
   vipMembershipSummary,
 } from '@/lib/vip/presentation';
 
-const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
-
 export default function VipPage() {
   const router = useRouter();
   const goBack = useCallback(() => router.back(), [router]);
@@ -80,6 +78,18 @@ export default function VipPage() {
   const vipPlans = plansQuery.data?.vip_plans ?? [];
   const promptConfig =
     plansQuery.data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
+  const paymentChannels = plansQuery.data?.payment_channels;
+  const paymentTypes = useMemo<PaymentType[]>(() => {
+    if (!paymentChannels) return ['alipay'];
+    return (['alipay', 'wxpay'] as const).filter((type) =>
+      type === 'alipay' ? paymentChannels.alipay_enabled : paymentChannels.wxpay_enabled
+    );
+  }, [paymentChannels]);
+  const defaultPaymentType = paymentChannels?.default_payment_type ?? 'alipay';
+
+  useEffect(() => {
+    if (!paymentTypes.includes(paymentType)) setPaymentType(defaultPaymentType);
+  }, [defaultPaymentType, paymentType, paymentTypes]);
   // 默认月卡只在用户尚未选择时推导，不覆盖其主动选择。
   const effectiveSelectedKey =
     selectedKey ??
@@ -326,7 +336,7 @@ export default function VipPage() {
         ) : null}
         <div className="flex items-center gap-2.5">
           <div role="radiogroup" aria-label="支付方式" className="flex shrink-0 gap-2">
-            {PAYMENT_TYPES.map((type) => {
+            {paymentTypes.map((type) => {
               const active = paymentType === type;
               const isAlipay = type === 'alipay';
               const Icon = isAlipay ? AlipayIcon : WeChatPayIcon;
