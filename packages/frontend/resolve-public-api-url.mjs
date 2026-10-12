@@ -17,6 +17,13 @@ export function resolvePublicApiUrl(env = process.env) {
     return configured || PRODUCTION_API_URL;
   }
 
+  // A deployment from the stable `dev` branch can retain the PR id that
+  // originally triggered it (for example after a merge/redeploy). The branch
+  // and custom environment are authoritative in that case.
+  if (gitRef === 'dev') {
+    return DEVELOPMENT_API_URL;
+  }
+
   if (prId) {
     return `https://stminiapp-pr-${prId}.up.railway.app`;
   }
