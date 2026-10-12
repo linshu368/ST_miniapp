@@ -18,7 +18,12 @@ import {
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ImagePlazaArtifact, ImagePlazaMode, ImagePlazaModel } from '@miniapp/shared';
+import type {
+  ImagePlazaArtifact,
+  ImagePlazaAspectRatio,
+  ImagePlazaMode,
+  ImagePlazaModel,
+} from '@miniapp/shared';
 import {
   fileToImagePlazaPayload,
   useImagePlazaConfigQuery,
@@ -41,7 +46,7 @@ export default function ImagePlazaStudioPage() {
   const fileInput = useRef<HTMLInputElement | null>(null);
   const [prompt, setPrompt] = useState('');
   const [modelId, setModelId] = useState('seedream-v5-pro');
-  const [aspectRatio, setAspectRatio] = useState('2:3');
+  const [aspectRatio, setAspectRatio] = useState<ImagePlazaAspectRatio>('2:3');
   const [resolution, setResolution] = useState<'1K' | '2K' | 'fixed'>('1K');
   const [mode, setMode] = useState<ImagePlazaMode>('t2i');
   const [reference, setReference] = useState<ImagePlazaArtifact | null>(null);
@@ -53,7 +58,7 @@ export default function ImagePlazaStudioPage() {
   const [rewardBadgeVisible, setRewardBadgeVisible] = useState(true);
 
   const data = conversation.data?.conversation;
-  const models = config.data?.models ?? [];
+  const models = useMemo(() => config.data?.models ?? [], [config.data?.models]);
   const model = models.find((item) => item.id === modelId) ?? models[0];
   const activeAttempts = useMemo(
     () => data?.messages.flatMap((message) => (message.attempt ? [message.attempt] : [])) ?? [],
@@ -90,7 +95,7 @@ export default function ImagePlazaStudioPage() {
     const actualMode = referenceArtifactId ? mode : 't2i';
     quote.mutate({
       model_id: model.id,
-      aspect_ratio: aspectRatio as never,
+      aspect_ratio: aspectRatio,
       resolution,
       mode: actualMode,
     });
@@ -101,9 +106,7 @@ export default function ImagePlazaStudioPage() {
   const selectModel = (next: ImagePlazaModel) => {
     setModelId(next.id);
     setAspectRatio(
-      next.aspect_ratios.includes(aspectRatio as never)
-        ? aspectRatio
-        : (next.aspect_ratios[0] ?? '1:1')
+      next.aspect_ratios.includes(aspectRatio) ? aspectRatio : (next.aspect_ratios[0] ?? '1:1')
     );
     setResolution(
       next.resolutions.some((item) => item.id === resolution)
@@ -600,11 +603,11 @@ function IconButton(props: { label: string; onClick: () => void; children: React
     </button>
   );
 }
-function SettingSelect(props: {
+function SettingSelect<T extends string>(props: {
   label: string;
-  value: string;
-  values: readonly string[];
-  onChange: (value: string) => void;
+  value: T;
+  values: readonly T[];
+  onChange: (value: T) => void;
 }) {
   return (
     <div className="mb-3 last:mb-0">
