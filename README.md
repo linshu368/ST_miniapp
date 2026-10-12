@@ -139,6 +139,8 @@ CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记�
 
 anon key 是浏览器公开配置，但仍应按环境隔离；service-role 绝不能放入 Admin。
 
+Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `dev -> main` 发布 PR 必须配置 HTTPS 的 `VITE_ADMIN_TEST_API_URL`；目标分支为 `dev` 的功能 PR 固定使用 `https://stminiapp-pr-<PR号>.up.railway.app`。构建会拒绝缺失或非 HTTPS 的稳定 TEST 映射；PR Railway workflow 同时验证后端健康和 Admin 代理的 Vercel CORS 预检。
+
 ### CS Platform
 
 `VITE_API_URL`、`VITE_CS_TEST_API_URL`、`VITE_CS_PROD_API_URL` 控制回访默认 API 和 MiniApp 客服环境。当前没有 `.env.example`，部署时必须显式核对，后续新增/修改变量应同步补模板。

@@ -1,0 +1,36 @@
+{
+  "id": "admin-preview-api-guard",
+  "name": "admin-preview-api-guard",
+  "title": "根治 Admin Preview API 映射失效",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "packages/admin environment resolution; Vercel/Railway PR deployment validation",
+  "package": "admin",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-12",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "admin.infrastructure.admin-client-auth",
+        "backend.infrastructure.runtime-data-security"
+      ],
+      "reason": "Admin Preview API resolution and the Railway-side CORS/proxy reachability gate are changed together."
+    }
+  }
+}

@@ -1,4 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+export {
+  assertAdminPreviewApiUrl,
+  resolveAdminPreviewApiUrl,
+  type AdminPreviewApiInput,
+} from './preview-api';
 
 export type AdminEnvironment = 'test' | 'production';
 
@@ -110,4 +115,22 @@ export function getAdminApiUrl(environment: AdminEnvironment): string {
 
 export function getAdminSupabaseUrl(environment: AdminEnvironment): string {
   return configs[environment].url.replace(/\/+$/, '');
+}
+
+export async function checkAdminApiReachability(
+  environment: AdminEnvironment,
+  fetchImpl: typeof fetch = fetch
+): Promise<string | null> {
+  const apiUrl = getAdminApiUrl(environment);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5_000);
+  try {
+    const response = await fetchImpl(`${apiUrl}/health`, { signal: controller.signal });
+    if (response.ok) return null;
+    return `${environment === 'test' ? '测试' : '生产'}环境后端暂时不可用（健康检查 HTTP ${response.status}）。`;
+  } catch {
+    return `${environment === 'test' ? '测试' : '生产'}环境后端无法连接。请确认当前 Preview 对应的 Railway 服务仍在运行后刷新页面。`;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }

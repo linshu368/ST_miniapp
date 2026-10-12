@@ -41,6 +41,18 @@ describe('resolvePublicApiUrl', () => {
     ).toBe(DEVELOPMENT_API_URL);
   });
 
+  it('keeps a merged dev redeploy on development when Vercel retains the source PR id', () => {
+    expect(
+      resolvePublicApiUrl({
+        NEXT_PUBLIC_API_URL: 'https://stminiapp-pr-322.up.railway.app',
+        VERCEL_ENV: 'preview',
+        VERCEL_TARGET_ENV: 'dev',
+        VERCEL_GIT_COMMIT_REF: 'dev',
+        VERCEL_GIT_PULL_REQUEST_ID: '387',
+      })
+    ).toBe(DEVELOPMENT_API_URL);
+  });
+
   it('does not let production inherit a Preview PR URL', () => {
     expect(
       resolvePublicApiUrl({

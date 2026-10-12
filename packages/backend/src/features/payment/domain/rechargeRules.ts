@@ -4,10 +4,11 @@ import {
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   isVipPlanId,
-  PaymentPlansSchema,
+  PaymentPlansRuntimeConfigSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
   type PaymentPlan,
+  type PaymentChannelsConfig,
   type PaymentProductType,
   type PaymentPromptDialogConfig,
   type RechargePageConfig,
@@ -36,6 +37,13 @@ export class PaymentPlansConfigError extends Error {
 }
 
 export async function getPaymentPlans(): Promise<PaymentPlan[]> {
+  return (await getPaymentPlansConfig()).plans;
+}
+
+export async function getPaymentPlansConfig(): Promise<{
+  plans: PaymentPlan[];
+  paymentChannels: PaymentChannelsConfig;
+}> {
   const db = getDomainDb('app_core');
   const { data, error } = await db
     .from('runtime_config')
@@ -47,11 +55,16 @@ export async function getPaymentPlans(): Promise<PaymentPlan[]> {
     throw new PaymentPlansConfigError(`读取套餐配置失败：${error.message}`);
   }
 
-  return parsePaymentPlansConfig(data?.value);
+  const config = parsePaymentPlansRuntimeConfig(data?.value);
+  return { plans: config.plans, paymentChannels: config.payment_channels };
 }
 
 export function parsePaymentPlansConfig(value: unknown): PaymentPlan[] {
-  const parsed = PaymentPlansSchema.safeParse(value);
+  return parsePaymentPlansRuntimeConfig(value).plans;
+}
+
+export function parsePaymentPlansRuntimeConfig(value: unknown) {
+  const parsed = PaymentPlansRuntimeConfigSchema.safeParse(value);
   if (!parsed.success) {
     throw new PaymentPlansConfigError('充值套餐未配置或配置无效，请在运营平台中发布套餐');
   }

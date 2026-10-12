@@ -25,7 +25,7 @@ import { Refine } from '@refinedev/core';
 import { dataProvider } from '@refinedev/supabase';
 import {
   ModelCatalogSchema,
-  PaymentPlansSchema,
+  PaymentPlansRuntimeConfigSchema,
   type LlmModelProvider,
   type ModelCatalog,
   type PaymentPlan,
@@ -64,7 +64,12 @@ import {
   resolveManagedWorkingValue,
   type ManagedConfigKey,
 } from './lib/configSchemas';
-import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
+import {
+  checkAdminApiReachability,
+  getAdminClient,
+  isEnvironmentConfigured,
+  type AdminEnvironment,
+} from './lib/environment';
 import { fetchModelProviderDirectory, getCatalogProviderIssues } from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
 import { TextPostprocessView } from './components/TextPostprocessView';
@@ -264,6 +269,8 @@ export function AdminApp() {
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [loadingIdentity, setLoadingIdentity] = useState(true);
   const [identityError, setIdentityError] = useState<string | null>(null);
+  const [checkingApi, setCheckingApi] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const refineDataProvider = useMemo(() => (client ? dataProvider(client) : undefined), [client]);
 
   const loadIdentity = useCallback(async (targetClient: SupabaseClient) => {
@@ -289,21 +296,43 @@ export function AdminApp() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     if (!isEnvironmentConfigured(environment)) {
       setClient(null);
       setUser(null);
       setAdmin(null);
       setLoadingIdentity(false);
+      setCheckingApi(false);
       return;
     }
-    try {
-      const nextClient = getAdminClient(environment);
-      setClient(nextClient);
-      void loadIdentity(nextClient);
-    } catch (error) {
-      setIdentityError(error instanceof Error ? error.message : 'Supabase 配置错误');
-      setLoadingIdentity(false);
-    }
+    setCheckingApi(true);
+    setApiError(null);
+    void (async () => {
+      const reachabilityError = await checkAdminApiReachability(environment);
+      if (cancelled) return;
+      if (reachabilityError) {
+        setClient(null);
+        setUser(null);
+        setAdmin(null);
+        setApiError(reachabilityError);
+        setLoadingIdentity(false);
+        setCheckingApi(false);
+        return;
+      }
+      try {
+        const nextClient = getAdminClient(environment);
+        setClient(nextClient);
+        setCheckingApi(false);
+        void loadIdentity(nextClient);
+      } catch (error) {
+        setIdentityError(error instanceof Error ? error.message : 'Supabase 配置错误');
+        setLoadingIdentity(false);
+        setCheckingApi(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [environment, loadIdentity]);
 
   const switchEnvironment = async (nextEnvironment: AdminEnvironment) => {
@@ -341,12 +370,36 @@ export function AdminApp() {
     );
   }
 
-  if (loadingIdentity || !client) {
+  if (checkingApi || loadingIdentity) {
     return (
       <div className="center-screen">
         <Spin size="large" />
       </div>
     );
+  }
+
+  if (apiError) {
+    return (
+      <Result
+        status="warning"
+        title="当前运营环境暂不可用"
+        subTitle={apiError}
+        extra={
+          <Segmented
+            value={environment}
+            options={[
+              { label: '测试环境', value: 'test' },
+              { label: '生产环境', value: 'production' },
+            ]}
+            onChange={(value) => void switchEnvironment(value as AdminEnvironment)}
+          />
+        }
+      />
+    );
+  }
+
+  if (!client) {
+    return null;
   }
 
   if (!user || !admin || !admin.display_name) {
@@ -550,8 +603,8 @@ function AdminWorkspace(props: {
       : props.admin.can_access_test);
   const paymentPlans = useMemo<PaymentPlan[]>(() => {
     const runtimeValue = configs.find((config) => config.key === 'miniapp_payment_plans')?.value;
-    const parsed = PaymentPlansSchema.safeParse(runtimeValue);
-    return parsed.success ? parsed.data : [];
+    const parsed = PaymentPlansRuntimeConfigSchema.safeParse(runtimeValue);
+    return parsed.success ? parsed.data.plans : [];
   }, [configs]);
   const publishedModelIds = useMemo(() => {
     const runtimeValue = configs.find((config) => config.key === 'llm_model_catalog')?.value;
