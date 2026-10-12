@@ -98,6 +98,31 @@ export function ImagePlazaModelCatalogEditor(props: {
                 onChange={(event) => patchModel(index, { provider_model_id: event.target.value })}
               />
             </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>编辑 Provider ID</Typography.Text>
+              <Input
+                value={model.edit_provider_model_id ?? ''}
+                disabled={props.disabled || !model.supports_edit}
+                placeholder="不支持编辑时留空"
+                onChange={(event) =>
+                  patchModel(index, { edit_provider_model_id: event.target.value.trim() || null })
+                }
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Typography.Text>尺寸参数模式</Typography.Text>
+              <Select
+                className="field-full"
+                value={model.sizing_mode}
+                disabled={props.disabled}
+                options={[
+                  { value: 'resolution', label: '画幅 + 分辨率档' },
+                  { value: 'aspect_ratio', label: '仅画幅' },
+                  { value: 'pixels', label: '像素宽高' },
+                ]}
+                onChange={(sizing_mode) => patchModel(index, { sizing_mode })}
+              />
+            </Col>
             <Col span={24}>
               <Typography.Text>适用场景</Typography.Text>
               <Input
@@ -112,7 +137,13 @@ export function ImagePlazaModelCatalogEditor(props: {
                 <Switch
                   checked={model.supports_i2i}
                   disabled={props.disabled}
-                  onChange={(supports_i2i) => patchModel(index, { supports_i2i })}
+                  onChange={(supports_i2i) =>
+                    patchModel(index, {
+                      supports_i2i,
+                      supports_edit: supports_i2i ? model.supports_edit : false,
+                      edit_provider_model_id: supports_i2i ? model.edit_provider_model_id : null,
+                    })
+                  }
                 />
                 <Typography.Text>参考图</Typography.Text>
               </Space>
@@ -122,7 +153,13 @@ export function ImagePlazaModelCatalogEditor(props: {
                 <Switch
                   checked={model.supports_edit}
                   disabled={props.disabled}
-                  onChange={(supports_edit) => patchModel(index, { supports_edit })}
+                  onChange={(supports_edit) =>
+                    patchModel(index, {
+                      supports_edit,
+                      supports_i2i: supports_edit ? true : model.supports_i2i,
+                      edit_provider_model_id: supports_edit ? model.edit_provider_model_id : null,
+                    })
+                  }
                 />
                 <Typography.Text>编辑</Typography.Text>
               </Space>

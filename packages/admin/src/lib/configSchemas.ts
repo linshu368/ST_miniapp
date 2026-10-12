@@ -535,6 +535,23 @@ export const configMetadata: Record<
       ].map(([id, name, credits], sortOrder) => ({
         id,
         provider_model_id: id === 'anime-wai' ? 'wai-Illustrious' : id,
+        edit_provider_model_id:
+          {
+            'qwen-image-3': 'qwen-image-3-edit',
+            'qwen-image-3-pro': 'qwen-image-3-pro-edit',
+            'seedream-v5-pro': 'seedream-v5-pro-edit',
+            'seedream-v5-lite': 'seedream-v5-lite-edit',
+          }[String(id)] ?? null,
+        sizing_mode: [
+          'qwen-image-3',
+          'qwen-image-3-pro',
+          'seedream-v5-pro',
+          'krea-2-turbo',
+        ].includes(String(id))
+          ? 'resolution'
+          : id === 'seedream-v5-lite'
+            ? 'aspect_ratio'
+            : 'pixels',
         name,
         description: '适合多种图片创作场景',
         supports_i2i: [

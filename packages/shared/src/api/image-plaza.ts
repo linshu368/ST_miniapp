@@ -39,9 +39,36 @@ export type ImagePlazaModel = z.infer<typeof ImagePlazaModelSchema>;
 
 const ProviderImagePlazaModelSchema = ImagePlazaModelSchema.extend({
   provider_model_id: z.string().trim().min(1).max(160),
+  edit_provider_model_id: z.string().trim().min(1).max(160).nullable(),
+  sizing_mode: z.enum(['aspect_ratio', 'resolution', 'pixels']),
   enabled: z.boolean(),
   sort_order: z.number().int().nonnegative(),
   internal_tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
+}).superRefine((model, ctx) => {
+  if (model.supports_edit && !model.edit_provider_model_id) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['edit_provider_model_id'],
+      message: '支持编辑的模型必须配置编辑 Provider ID',
+    });
+  }
+  if (model.supports_edit && !model.supports_i2i) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['supports_edit'],
+      message: '支持编辑的模型必须同时支持参考图',
+    });
+  }
+  if (
+    model.sizing_mode === 'resolution' &&
+    model.resolutions.some((resolution) => resolution.id === 'fixed')
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['resolutions'],
+      message: '分辨率档模型不能使用 fixed 档位',
+    });
+  }
 });
 export type ProviderImagePlazaModel = z.infer<typeof ProviderImagePlazaModelSchema>;
 

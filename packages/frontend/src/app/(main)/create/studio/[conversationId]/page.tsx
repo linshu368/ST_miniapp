@@ -9,6 +9,7 @@ import {
   History,
   ImagePlus,
   LoaderCircle,
+  Plus,
   RefreshCcw,
   Send,
   Settings2,
@@ -26,8 +27,10 @@ import type {
 } from '@miniapp/shared';
 import {
   fileToImagePlazaPayload,
+  useCreateImagePlazaConversationMutation,
   useImagePlazaConfigQuery,
   useImagePlazaConversationQuery,
+  useImagePlazaConversationsQuery,
   useImagePlazaQuoteMutation,
   useShareImagePlazaMutation,
   useSubmitImagePlazaAttemptMutation,
@@ -39,6 +42,8 @@ export default function ImagePlazaStudioPage() {
   const router = useRouter();
   const config = useImagePlazaConfigQuery();
   const conversation = useImagePlazaConversationQuery(params.conversationId);
+  const conversations = useImagePlazaConversationsQuery();
+  const createConversation = useCreateImagePlazaConversationMutation();
   const quote = useImagePlazaQuoteMutation();
   const submit = useSubmitImagePlazaAttemptMutation(params.conversationId);
   const upload = useUploadImagePlazaReferenceMutation();
@@ -60,11 +65,6 @@ export default function ImagePlazaStudioPage() {
   const data = conversation.data?.conversation;
   const models = useMemo(() => config.data?.models ?? [], [config.data?.models]);
   const model = models.find((item) => item.id === modelId) ?? models[0];
-  const activeAttempts = useMemo(
-    () => data?.messages.flatMap((message) => (message.attempt ? [message.attempt] : [])) ?? [],
-    [data]
-  );
-
   useEffect(() => {
     if (initialized || !data || models.length === 0) return;
     const snapshot = data.snapshot;
@@ -85,8 +85,13 @@ export default function ImagePlazaStudioPage() {
         : (target.resolutions[0]?.id ?? 'fixed')
     );
     setPrompt(snapshot?.prompt ?? '');
-    setReferenceArtifactId(snapshot?.reference_artifact_id ?? null);
-    setMode(snapshot?.reference_artifact_id ? snapshot.mode : 't2i');
+    const canKeepReference = Boolean(snapshot?.reference_artifact_id && target.supports_i2i);
+    setReferenceArtifactId(canKeepReference ? (snapshot?.reference_artifact_id ?? null) : null);
+    setMode(canKeepReference ? (snapshot?.mode ?? 'i2i') : 't2i');
+    if (snapshot?.reference_artifact_id && !target.supports_i2i) {
+      setNotice('原模型已不可用，当前模型不支持参考图，已改为文生图');
+      window.setTimeout(() => setNotice(''), 3200);
+    }
     setInitialized(true);
   }, [data, initialized, models]);
 
@@ -233,26 +238,53 @@ export default function ImagePlazaStudioPage() {
             </p>
           </div>
         </div>
-        <details className="relative">
-          <summary className="grid size-10 cursor-pointer list-none place-items-center rounded-full bg-card ring-1 ring-border">
-            <History className="size-4" />
-          </summary>
-          <div className="absolute right-0 top-12 z-40 max-h-72 w-72 overflow-auto rounded-2xl border border-border bg-card p-3 shadow-2xl">
-            <p className="mb-2 text-xs font-black">创作记录</p>
-            {activeAttempts.length ? (
-              activeAttempts.map((attempt) => (
-                <p
-                  key={attempt.id}
-                  className="border-t border-border py-2 text-xs text-muted-foreground"
-                >
-                  {new Date(attempt.created_at).toLocaleString()} · {attempt.status}
-                </p>
-              ))
-            ) : (
-              <p className="text-xs text-muted-foreground">还没有生成记录</p>
-            )}
-          </div>
-        </details>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={createConversation.isPending}
+            onClick={() =>
+              createConversation.mutate(
+                {},
+                {
+                  onSuccess: ({ conversation: created }) =>
+                    router.push(`/create/studio/${created.id}`),
+                }
+              )
+            }
+            aria-label="新建创作"
+            className="grid size-10 place-items-center rounded-full bg-card ring-1 ring-border disabled:opacity-60"
+          >
+            <Plus className="size-4" />
+          </button>
+          <details className="relative">
+            <summary
+              aria-label="创作历史"
+              className="grid size-10 cursor-pointer list-none place-items-center rounded-full bg-card ring-1 ring-border"
+            >
+              <History className="size-4" />
+            </summary>
+            <div className="absolute right-0 top-12 z-40 max-h-72 w-72 overflow-auto rounded-2xl border border-border bg-card p-2 shadow-2xl">
+              <p className="px-2 pb-2 text-xs font-black">创作历史</p>
+              {conversations.data?.conversations.length ? (
+                conversations.data.conversations.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => router.push(`/create/studio/${item.id}`)}
+                    className={`block w-full rounded-xl px-2 py-2 text-left ${item.id === data.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-background'}`}
+                  >
+                    <span className="block truncate text-xs font-bold">{item.title}</span>
+                    <span className="mt-1 block text-[10px]">
+                      {new Date(item.updated_at).toLocaleString()}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <p className="px-2 py-2 text-xs text-muted-foreground">还没有创作记录</p>
+              )}
+            </div>
+          </details>
+        </div>
       </header>
 
       <section className="flex-1 space-y-5 px-3 py-5">

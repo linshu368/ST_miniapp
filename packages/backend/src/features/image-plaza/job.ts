@@ -24,13 +24,18 @@ export function startImagePlazaGenerationJob(log: FastifyBaseLogger): void {
             : undefined;
           await repository.markGenerating(attempt.id);
           const generated = await generateImagePlazaImage({
-            providerModelId: attempt.providerModelId,
+            providerModelId:
+              attempt.mode === 't2i'
+                ? attempt.providerModelId
+                : (attempt.editProviderModelId ?? attempt.providerModelId),
             prompt: attempt.prompt,
             aspectRatio: attempt.aspectRatio,
             resolution: attempt.resolution,
+            sizingMode: attempt.sizingMode,
             mode: attempt.mode,
             ...(reference ? { reference } : {}),
           });
+          await repository.recordProviderRequestId(attempt.id, generated.providerRequestId);
           await repository.settleGeneratedImage({
             attempt,
             bytes: generated.bytes,

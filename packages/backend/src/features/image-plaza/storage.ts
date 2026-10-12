@@ -140,6 +140,16 @@ function readDimensions(
     if (kind === 'VP8 ' && bytes.length >= 30) {
       return { width: bytes.readUInt16LE(26) & 0x3fff, height: bytes.readUInt16LE(28) & 0x3fff };
     }
+    if (kind === 'VP8L' && bytes.length >= 25 && bytes[20] === 0x2f) {
+      return {
+        width: 1 + (((bytes[22] ?? 0) & 0x3f) << 8) + (bytes[21] ?? 0),
+        height:
+          1 +
+          (((bytes[24] ?? 0) & 0x0f) << 10) +
+          ((bytes[23] ?? 0) << 2) +
+          (((bytes[22] ?? 0) & 0xc0) >> 6),
+      };
+    }
   }
   return null;
 }

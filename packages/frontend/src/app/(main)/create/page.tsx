@@ -7,7 +7,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useCreateImagePlazaConversationMutation,
   useImagePlazaFeedQuery,
+  useSetImagePlazaLikeMutation,
 } from '@/lib/api/image-plaza';
+import type { ImagePlazaWork } from '@miniapp/shared';
 
 export default function CreatePage() {
   const router = useRouter();
@@ -127,38 +129,7 @@ export default function CreatePage() {
         ) : (
           <div className="columns-2 gap-3 sm:columns-3 lg:columns-4">
             {items.map((work) => (
-              <article
-                key={work.id}
-                className="group relative mb-3 break-inside-avoid overflow-hidden rounded-[1.35rem] bg-card ring-1 ring-border/70"
-              >
-                <Link
-                  href={`/create/work/${work.id}`}
-                  aria-label={`查看作品：${work.title}`}
-                  className="block"
-                >
-                  <img
-                    src={work.image_url}
-                    alt={work.title}
-                    loading="lazy"
-                    className="h-auto w-full object-cover transition duration-500 group-hover:scale-[1.02]"
-                  />
-                </Link>
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 pt-12 text-white">
-                  <span className="min-w-0 truncate text-xs font-bold">{work.title}</span>
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px]">
-                    <Heart className={`size-3.5 ${work.liked ? 'fill-current' : ''}`} />
-                    {work.like_count}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => startStudio(work.id)}
-                  aria-label={`用同款：${work.title}`}
-                  className="absolute right-2 top-2 grid size-9 place-items-center rounded-full bg-black/45 text-white backdrop-blur-md transition active:scale-95"
-                >
-                  <WandSparkles className="size-4" />
-                </button>
-              </article>
+              <PlazaCard key={work.id} work={work} onUseSame={() => startStudio(work.id)} />
             ))}
           </div>
         )}
@@ -179,6 +150,51 @@ export default function CreatePage() {
         </p>
       ) : null}
     </main>
+  );
+}
+
+function PlazaCard(props: { work: ImagePlazaWork; onUseSame: () => void }) {
+  const like = useSetImagePlazaLikeMutation(props.work.id);
+  return (
+    <article className="group relative mb-3 break-inside-avoid overflow-hidden rounded-[1.35rem] bg-card ring-1 ring-border/70">
+      <Link
+        href={`/create/work/${props.work.id}`}
+        aria-label={`查看作品：${props.work.title}`}
+        className="block"
+      >
+        <img
+          src={props.work.image_url}
+          alt={props.work.title}
+          loading="lazy"
+          className="h-auto w-full object-cover transition duration-500 group-hover:scale-[1.02]"
+        />
+      </Link>
+      <div className="absolute inset-x-0 bottom-0 flex items-end gap-1 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-2 pt-12 text-white">
+        <span className="pointer-events-none min-w-0 flex-1 truncate px-1 text-xs font-bold">
+          {props.work.title}
+        </span>
+        <button
+          type="button"
+          disabled={like.isPending}
+          onClick={() => like.mutate(!props.work.liked)}
+          aria-label={
+            props.work.liked ? `取消点赞：${props.work.title}` : `点赞：${props.work.title}`
+          }
+          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-black/35 px-2 text-[11px] backdrop-blur-md disabled:opacity-60"
+        >
+          <Heart className={`size-3.5 ${props.work.liked ? 'fill-current' : ''}`} />
+          {props.work.like_count}
+        </button>
+        <button
+          type="button"
+          onClick={props.onUseSame}
+          aria-label={`用同款：${props.work.title}`}
+          className="grid size-9 shrink-0 place-items-center rounded-full bg-black/35 backdrop-blur-md transition active:scale-95"
+        >
+          <WandSparkles className="size-4" />
+        </button>
+      </div>
+    </article>
   );
 }
 

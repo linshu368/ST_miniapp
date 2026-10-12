@@ -52,6 +52,8 @@ CREATE TABLE experience.image_plaza_quotes (
   user_id UUID NOT NULL REFERENCES app_core.users(id) ON DELETE CASCADE,
   model_id TEXT NOT NULL,
   provider_model_id TEXT NOT NULL,
+  edit_provider_model_id TEXT,
+  sizing_mode TEXT NOT NULL CHECK (sizing_mode IN ('aspect_ratio', 'resolution', 'pixels')),
   mode TEXT NOT NULL CHECK (mode IN ('t2i', 'i2i', 'edit')),
   aspect_ratio TEXT NOT NULL CHECK (aspect_ratio IN ('1:1','2:3','3:2','3:4','4:3','4:5','9:16','16:9','21:9')),
   resolution TEXT NOT NULL CHECK (resolution IN ('1K','2K','fixed')),
@@ -83,6 +85,8 @@ CREATE TABLE experience.image_plaza_attempts (
   prompt TEXT NOT NULL CHECK (char_length(trim(prompt)) BETWEEN 1 AND 600),
   model_id TEXT NOT NULL,
   provider_model_id TEXT NOT NULL,
+  edit_provider_model_id TEXT,
+  sizing_mode TEXT NOT NULL CHECK (sizing_mode IN ('aspect_ratio', 'resolution', 'pixels')),
   mode TEXT NOT NULL CHECK (mode IN ('t2i', 'i2i', 'edit')),
   aspect_ratio TEXT NOT NULL CHECK (aspect_ratio IN ('1:1','2:3','3:2','3:4','4:3','4:5','9:16','16:9','21:9')),
   resolution TEXT NOT NULL CHECK (resolution IN ('1K','2K','fixed')),
@@ -445,8 +449,17 @@ BEGIN
   END IF;
   IF v_attempt.reference_artifact_id IS NOT NULL THEN
     PERFORM 1
-    FROM experience.image_plaza_reference_assets
-    WHERE id = v_attempt.reference_artifact_id AND user_id = p_user_id;
+    FROM experience.image_plaza_reference_assets AS reference
+    WHERE reference.id = v_attempt.reference_artifact_id
+      AND (
+        reference.user_id = p_user_id
+        OR EXISTS (
+          SELECT 1
+          FROM experience.image_plaza_works AS source_work
+          WHERE source_work.deleted_at IS NULL
+            AND source_work.snapshot->>'reference_artifact_id' = reference.id::TEXT
+        )
+      );
     IF NOT FOUND THEN
       RAISE EXCEPTION 'reference artifact not accessible' USING ERRCODE = '42501';
     END IF;
@@ -518,8 +531,10 @@ RETURNS VOID LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog AS $$
 DECLARE
   v_model JSONB;
   v_resolution JSONB;
+  v_aspect JSONB;
   v_default TEXT;
   v_ids TEXT[] := ARRAY[]::TEXT[];
+  v_aspects TEXT[];
 BEGIN
   IF jsonb_typeof(p_value) IS DISTINCT FROM 'object'
      OR jsonb_typeof(p_value->'models') IS DISTINCT FROM 'array'
@@ -531,24 +546,48 @@ BEGIN
     RAISE EXCEPTION 'image plaza default model is required' USING ERRCODE = '22023';
   END IF;
   FOR v_model IN SELECT value FROM jsonb_array_elements(p_value->'models') LOOP
-    IF btrim(COALESCE(v_model->>'id', '')) = ''
-       OR btrim(COALESCE(v_model->>'provider_model_id', '')) = ''
-       OR btrim(COALESCE(v_model->>'name', '')) = ''
+    IF char_length(btrim(COALESCE(v_model->>'id', ''))) NOT BETWEEN 1 AND 80
+       OR char_length(btrim(COALESCE(v_model->>'provider_model_id', ''))) NOT BETWEEN 1 AND 160
+       OR char_length(btrim(COALESCE(v_model->>'name', ''))) NOT BETWEEN 1 AND 80
+       OR char_length(btrim(COALESCE(v_model->>'description', ''))) NOT BETWEEN 1 AND 240
+       OR COALESCE(v_model->>'sizing_mode', '') NOT IN ('aspect_ratio', 'resolution', 'pixels')
        OR jsonb_typeof(v_model->'enabled') IS DISTINCT FROM 'boolean'
        OR jsonb_typeof(v_model->'supports_i2i') IS DISTINCT FROM 'boolean'
        OR jsonb_typeof(v_model->'supports_edit') IS DISTINCT FROM 'boolean'
+       OR COALESCE(v_model->>'sort_order', '') !~ '^[0-9]+$'
        OR jsonb_typeof(v_model->'aspect_ratios') IS DISTINCT FROM 'array'
-       OR jsonb_array_length(v_model->'aspect_ratios') < 1
+       OR jsonb_array_length(v_model->'aspect_ratios') NOT BETWEEN 1 AND 9
        OR jsonb_typeof(v_model->'resolutions') IS DISTINCT FROM 'array'
-       OR jsonb_array_length(v_model->'resolutions') < 1 THEN
+       OR jsonb_array_length(v_model->'resolutions') NOT BETWEEN 1 AND 12
+       OR jsonb_typeof(v_model->'internal_tags') IS DISTINCT FROM 'array'
+       OR jsonb_array_length(v_model->'internal_tags') > 12 THEN
       RAISE EXCEPTION 'image plaza model has invalid shape' USING ERRCODE = '22023';
+    END IF;
+    IF v_model->'supports_edit' = 'true'::JSONB
+       AND v_model->'supports_i2i' IS DISTINCT FROM 'true'::JSONB THEN
+      RAISE EXCEPTION 'image plaza edit model must support references' USING ERRCODE = '22023';
+    END IF;
+    IF v_model->'supports_edit' = 'true'::JSONB
+       AND btrim(COALESCE(v_model->>'edit_provider_model_id', '')) = '' THEN
+      RAISE EXCEPTION 'image plaza edit model id is required' USING ERRCODE = '22023';
     END IF;
     IF (v_model->>'id') = ANY(v_ids) THEN
       RAISE EXCEPTION 'image plaza model id is duplicated' USING ERRCODE = '22023';
     END IF;
     v_ids := array_append(v_ids, v_model->>'id');
+    v_aspects := ARRAY[]::TEXT[];
+    FOR v_aspect IN SELECT value FROM jsonb_array_elements(v_model->'aspect_ratios') LOOP
+      IF jsonb_typeof(v_aspect) IS DISTINCT FROM 'string'
+         OR trim(BOTH '"' FROM v_aspect::TEXT) NOT IN
+           ('1:1','2:3','3:2','3:4','4:3','4:5','9:16','16:9','21:9')
+         OR trim(BOTH '"' FROM v_aspect::TEXT) = ANY(v_aspects) THEN
+        RAISE EXCEPTION 'image plaza aspect ratio is invalid' USING ERRCODE = '22023';
+      END IF;
+      v_aspects := array_append(v_aspects, trim(BOTH '"' FROM v_aspect::TEXT));
+    END LOOP;
     FOR v_resolution IN SELECT value FROM jsonb_array_elements(v_model->'resolutions') LOOP
       IF COALESCE(v_resolution->>'id', '') NOT IN ('1K', '2K', 'fixed')
+         OR char_length(btrim(COALESCE(v_resolution->>'label', ''))) NOT BETWEEN 1 AND 20
          OR COALESCE(v_resolution->>'credits', '') !~ '^[1-9][0-9]*$' THEN
         RAISE EXCEPTION 'image plaza resolution price is invalid' USING ERRCODE = '22023';
       END IF;
@@ -570,9 +609,10 @@ DECLARE
 BEGIN
   IF jsonb_typeof(p_value) IS DISTINCT FROM 'object'
      OR jsonb_typeof(p_value->'enabled') IS DISTINCT FROM 'boolean'
-     OR btrim(COALESCE(p_value->>'title', '')) = ''
-     OR btrim(COALESCE(p_value->>'description', '')) = ''
-     OR btrim(COALESCE(p_value->>'button_label', '')) = '' THEN
+     OR char_length(btrim(COALESCE(p_value->>'title', ''))) NOT BETWEEN 1 AND 80
+     OR char_length(btrim(COALESCE(p_value->>'description', ''))) NOT BETWEEN 1 AND 300
+     OR char_length(btrim(COALESCE(p_value->>'reference_note', ''))) > 160
+     OR char_length(btrim(COALESCE(p_value->>'button_label', ''))) NOT BETWEEN 1 AND 40 THEN
     RAISE EXCEPTION 'image_plaza_share_tip has invalid shape' USING ERRCODE = '22023';
   END IF;
   FOREACH v_text IN ARRAY ARRAY[
@@ -596,9 +636,11 @@ BEGIN
     RAISE EXCEPTION 'image_plaza_tags has invalid shape' USING ERRCODE = '22023';
   END IF;
   FOR v_tag IN SELECT value FROM jsonb_array_elements(p_value) LOOP
-    IF btrim(COALESCE(v_tag->>'id', '')) = '' OR v_tag->>'id' = 'all'
-       OR btrim(COALESCE(v_tag->>'label', '')) = ''
-       OR jsonb_typeof(v_tag->'enabled') IS DISTINCT FROM 'boolean' THEN
+    IF char_length(btrim(COALESCE(v_tag->>'id', ''))) NOT BETWEEN 1 AND 40
+       OR v_tag->>'id' = 'all'
+       OR char_length(btrim(COALESCE(v_tag->>'label', ''))) NOT BETWEEN 1 AND 40
+       OR jsonb_typeof(v_tag->'enabled') IS DISTINCT FROM 'boolean'
+       OR COALESCE(v_tag->>'sort_order', '') !~ '^[0-9]+$' THEN
       RAISE EXCEPTION 'image plaza tag is invalid' USING ERRCODE = '22023';
     END IF;
     IF (v_tag->>'id') = ANY(v_ids) THEN
@@ -621,7 +663,7 @@ ALTER FUNCTION admin.validate_managed_config_value(TEXT, JSONB, TEXT)
   RENAME TO validate_managed_config_value_before_image_plaza;
 CREATE FUNCTION admin.validate_managed_config_value(
   p_config_key TEXT, p_value JSONB, p_text_value TEXT DEFAULT NULL
-) RETURNS VOID LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog AS $$
+) RETURNS VOID LANGUAGE plpgsql STABLE SET search_path = pg_catalog AS $$
 BEGIN
   IF p_config_key IN ('image_plaza_enabled', 'image_plaza_model_catalog',
       'image_plaza_share_tip', 'image_plaza_tags') THEN
@@ -678,16 +720,16 @@ VALUES
   ('image_plaza_model_catalog', jsonb_build_object(
     'default_model_id', 'seedream-v5-pro',
     'models', jsonb_build_array(
-      jsonb_build_object('id','qwen-image-3','provider_model_id','qwen-image-3','name','Qwen Image 3','description','适合海报、信息图与画面内文字','supports_i2i',true,'supports_edit',true,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','1K','label','1K','credits',60),jsonb_build_object('id','2K','label','2K','credits',60)),'enabled',true,'sort_order',0,'internal_tags',jsonb_build_array('uncensored')),
-      jsonb_build_object('id','qwen-image-3-pro','provider_model_id','qwen-image-3-pro','name','Qwen Image 3 Pro','description','适合复杂排版、精细文字与高细节成片','supports_i2i',true,'supports_edit',true,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','1K','label','1K','credits',80),jsonb_build_object('id','2K','label','2K','credits',140)),'enabled',true,'sort_order',1,'internal_tags',jsonb_build_array('uncensored')),
-      jsonb_build_object('id','seedream-v5-pro','provider_model_id','seedream-v5-pro','name','Seedream V5 Pro','description','适合复杂构图、商业视觉与多语言排版','supports_i2i',true,'supports_edit',true,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','1K','label','1K','credits',90),jsonb_build_object('id','2K','label','2K','credits',170)),'enabled',true,'sort_order',2,'internal_tags',jsonb_build_array('uncensored')),
-      jsonb_build_object('id','krea-2-turbo','provider_model_id','krea-2-turbo','name','Krea 2 Turbo','description','适合快速灵感探索与风格化插画','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','1K','label','1K','credits',60),jsonb_build_object('id','2K','label','2K','credits',90)),'enabled',true,'sort_order',3,'internal_tags',jsonb_build_array('uncensored')),
-      jsonb_build_object('id','lustify-v8','provider_model_id','lustify-v8','name','Lustify v8','description','适合写实人物与氛围感画面','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',4,'internal_tags',jsonb_build_array('uncensored')),
-      jsonb_build_object('id','seedream-v5-lite','provider_model_id','seedream-v5-lite','name','Seedream V5 Lite','description','适合复杂提示、知识型画面与系列视觉','supports_i2i',true,'supports_edit',true,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',80)),'enabled',true,'sort_order',5,'internal_tags',jsonb_build_array('uncensored')),
-      jsonb_build_object('id','chroma','provider_model_id','chroma','name','Chroma','description','适合自然光影与质感人像','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',6,'internal_tags',jsonb_build_array('review-note')),
-      jsonb_build_object('id','lustify-sdxl','provider_model_id','lustify-sdxl','name','Lustify SDXL','description','适合经典 SDXL 风格创作','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',7,'internal_tags',jsonb_build_array('uncensored')),
-      jsonb_build_object('id','anime-wai','provider_model_id','wai-Illustrious','name','Anime (WAI)','description','适合动漫插画与角色立绘','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',8,'internal_tags',jsonb_build_array('uncensored','anime')),
-      jsonb_build_object('id','venice-sd35','provider_model_id','venice-sd35','name','Venice SD35','description','适合写实摄影与真实材质','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',9,'internal_tags',jsonb_build_array('private'))
+      jsonb_build_object('id','qwen-image-3','provider_model_id','qwen-image-3','edit_provider_model_id','qwen-image-3-edit','sizing_mode','resolution','name','Qwen Image 3','description','适合海报、信息图与画面内文字','supports_i2i',true,'supports_edit',true,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','1K','label','1K','credits',60),jsonb_build_object('id','2K','label','2K','credits',60)),'enabled',true,'sort_order',0,'internal_tags',jsonb_build_array('uncensored')),
+      jsonb_build_object('id','qwen-image-3-pro','provider_model_id','qwen-image-3-pro','edit_provider_model_id','qwen-image-3-pro-edit','sizing_mode','resolution','name','Qwen Image 3 Pro','description','适合复杂排版、精细文字与高细节成片','supports_i2i',true,'supports_edit',true,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','1K','label','1K','credits',80),jsonb_build_object('id','2K','label','2K','credits',140)),'enabled',true,'sort_order',1,'internal_tags',jsonb_build_array('uncensored')),
+      jsonb_build_object('id','seedream-v5-pro','provider_model_id','seedream-v5-pro','edit_provider_model_id','seedream-v5-pro-edit','sizing_mode','resolution','name','Seedream V5 Pro','description','适合复杂构图、商业视觉与多语言排版','supports_i2i',true,'supports_edit',true,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','1K','label','1K','credits',90),jsonb_build_object('id','2K','label','2K','credits',170)),'enabled',true,'sort_order',2,'internal_tags',jsonb_build_array('uncensored')),
+      jsonb_build_object('id','krea-2-turbo','provider_model_id','krea-2-turbo','edit_provider_model_id',NULL,'sizing_mode','resolution','name','Krea 2 Turbo','description','适合快速灵感探索与风格化插画','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','1K','label','1K','credits',60),jsonb_build_object('id','2K','label','2K','credits',90)),'enabled',true,'sort_order',3,'internal_tags',jsonb_build_array('uncensored')),
+      jsonb_build_object('id','lustify-v8','provider_model_id','lustify-v8','edit_provider_model_id',NULL,'sizing_mode','pixels','name','Lustify v8','description','适合写实人物与氛围感画面','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',4,'internal_tags',jsonb_build_array('uncensored')),
+      jsonb_build_object('id','seedream-v5-lite','provider_model_id','seedream-v5-lite','edit_provider_model_id','seedream-v5-lite-edit','sizing_mode','aspect_ratio','name','Seedream V5 Lite','description','适合复杂提示、知识型画面与系列视觉','supports_i2i',true,'supports_edit',true,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',80)),'enabled',true,'sort_order',5,'internal_tags',jsonb_build_array('uncensored')),
+      jsonb_build_object('id','chroma','provider_model_id','chroma','edit_provider_model_id',NULL,'sizing_mode','pixels','name','Chroma','description','适合自然光影与质感人像','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',6,'internal_tags',jsonb_build_array('review-note')),
+      jsonb_build_object('id','lustify-sdxl','provider_model_id','lustify-sdxl','edit_provider_model_id',NULL,'sizing_mode','pixels','name','Lustify SDXL','description','适合经典 SDXL 风格创作','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',7,'internal_tags',jsonb_build_array('uncensored')),
+      jsonb_build_object('id','anime-wai','provider_model_id','wai-Illustrious','edit_provider_model_id',NULL,'sizing_mode','pixels','name','Anime (WAI)','description','适合动漫插画与角色立绘','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',8,'internal_tags',jsonb_build_array('uncensored','anime')),
+      jsonb_build_object('id','venice-sd35','provider_model_id','venice-sd35','edit_provider_model_id',NULL,'sizing_mode','pixels','name','Venice SD35','description','适合写实摄影与真实材质','supports_i2i',false,'supports_edit',false,'aspect_ratios',jsonb_build_array('1:1','2:3','3:2','3:4','4:3','9:16','16:9'),'resolutions',jsonb_build_array(jsonb_build_object('id','fixed','label','固定','credits',20)),'enabled',true,'sort_order',9,'internal_tags',jsonb_build_array('private'))
     )), '图片广场已发布模型目录与上架星尘价')
 ON CONFLICT (key) DO NOTHING;
 

@@ -50,6 +50,8 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
               .map(
                 ({
                   provider_model_id: _providerId,
+                  edit_provider_model_id: _editProviderId,
+                  sizing_mode: _sizingMode,
                   enabled: _enabled,
                   sort_order: _sort,
                   internal_tags: _tags,
@@ -399,7 +401,7 @@ async function requireEnabled() {
 function routeError(request: FastifyRequest, reply: FastifyReply, err: unknown) {
   const message = err instanceof Error ? err.message : 'image plaza request failed';
   const expected =
-    /(?:not_found|expired|mismatch|invalid|insufficient|unavailable|disabled|does_not_support)/.test(
+    /(?:not_found|expired|mismatch|conflict|invalid|insufficient|unavailable|disabled|does_not_support)/.test(
       message
     );
   request.log[expected ? 'warn' : 'error'](

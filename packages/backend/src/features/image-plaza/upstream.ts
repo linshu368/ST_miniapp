@@ -19,6 +19,7 @@ export interface ImagePlazaGenerationInput {
   prompt: string;
   aspectRatio: string;
   resolution: '1K' | '2K' | 'fixed';
+  sizingMode: 'aspect_ratio' | 'resolution' | 'pixels';
   mode: 't2i' | 'i2i' | 'edit';
   reference?: { bytes: Buffer; mimeType: PlazaMimeType };
 }
@@ -41,18 +42,25 @@ export async function generateImagePlazaImage(
   }
 
   const isEdit = input.mode !== 't2i';
-  const body: Record<string, unknown> = {
-    model: input.providerModelId,
-    prompt: input.prompt,
-    aspect_ratio: input.aspectRatio,
-    resolution: input.resolution === 'fixed' ? '1K' : input.resolution,
-    variants: 1,
-    format: 'webp',
-  };
+  const body: Record<string, unknown> = { model: input.providerModelId, prompt: input.prompt };
   if (isEdit && input.reference) {
-    body.images = [
-      `data:${input.reference.mimeType};base64,${input.reference.bytes.toString('base64')}`,
-    ];
+    body.image = input.reference.bytes.toString('base64');
+    body.aspect_ratio = input.aspectRatio;
+    body.resolution = input.resolution === 'fixed' ? '1K' : input.resolution;
+    body.output_format = 'webp';
+  } else {
+    body.variants = 1;
+    body.format = 'webp';
+    if (input.sizingMode === 'pixels') {
+      const dimensions = pixelDimensions(input.aspectRatio);
+      body.width = dimensions.width;
+      body.height = dimensions.height;
+    } else {
+      body.aspect_ratio = input.aspectRatio;
+      if (input.sizingMode === 'resolution') {
+        body.resolution = input.resolution === 'fixed' ? '1K' : input.resolution;
+      }
+    }
   }
 
   let response: Response;
@@ -82,21 +90,82 @@ export async function generateImagePlazaImage(
     throw new ImagePlazaUpstreamError(`image_plaza_provider_http_${response.status}`, false);
   }
 
-  const payload = (await response.json()) as unknown;
+  if (isEdit) {
+    const contentLength = Number(response.headers.get('content-length') ?? 0);
+    if (contentLength > MAX_PROVIDER_IMAGE_BYTES) {
+      throw new ImagePlazaUpstreamError('image_plaza_provider_image_too_large', true);
+    }
+    let bytes: Buffer;
+    try {
+      bytes = Buffer.from(await response.arrayBuffer());
+    } catch (err) {
+      throw new ImagePlazaUpstreamError(
+        'image_plaza_provider_outcome_unknown',
+        true,
+        err instanceof Error ? err.message : 'provider response read failed'
+      );
+    }
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_PROVIDER_IMAGE_BYTES) {
+      throw new ImagePlazaUpstreamError('image_plaza_provider_image_invalid', true);
+    }
+    return {
+      bytes,
+      mimeType: responseMimeType(response.headers.get('content-type')),
+      providerRequestId: response.headers.get('x-request-id'),
+    };
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch (err) {
+    throw new ImagePlazaUpstreamError(
+      'image_plaza_provider_outcome_unknown',
+      true,
+      err instanceof Error ? err.message : 'provider response parse failed'
+    );
+  }
   if (!payload || typeof payload !== 'object') {
-    throw new ImagePlazaUpstreamError('image_plaza_provider_response_invalid', false);
+    throw new ImagePlazaUpstreamError('image_plaza_provider_response_invalid', true);
   }
   const record = payload as Record<string, unknown>;
   const images = Array.isArray(record.images) ? record.images : [];
   const encoded = images[0];
   if (typeof encoded !== 'string' || encoded.length === 0) {
-    throw new ImagePlazaUpstreamError('image_plaza_provider_image_missing', false);
+    throw new ImagePlazaUpstreamError('image_plaza_provider_image_missing', true);
   }
   const parsed = decodeProviderImage(encoded);
   return {
     ...parsed,
     providerRequestId: typeof record.id === 'string' ? record.id : null,
   };
+}
+
+function responseMimeType(contentType: string | null): PlazaMimeType {
+  const normalized = contentType?.split(';', 1)[0]?.trim().toLowerCase();
+  if (normalized === 'image/png' || normalized === 'image/jpeg' || normalized === 'image/webp') {
+    return normalized;
+  }
+  // Storage validation checks the magic bytes before persistence, so the fallback cannot smuggle
+  // another media type but still handles providers that omit Content-Type.
+  return 'image/webp';
+}
+
+function pixelDimensions(aspectRatio: string): { width: number; height: number } {
+  const dimensions: Record<string, { width: number; height: number }> = {
+    '1:1': { width: 1024, height: 1024 },
+    '2:3': { width: 832, height: 1248 },
+    '3:2': { width: 1248, height: 832 },
+    '3:4': { width: 960, height: 1280 },
+    '4:3': { width: 1280, height: 960 },
+    '4:5': { width: 1024, height: 1280 },
+    '9:16': { width: 720, height: 1280 },
+    '16:9': { width: 1280, height: 720 },
+    '21:9': { width: 1280, height: 552 },
+  };
+  const selected = dimensions[aspectRatio];
+  if (!selected) throw new ImagePlazaUpstreamError('image_plaza_aspect_ratio_invalid', false);
+  return selected;
 }
 
 function decodeProviderImage(value: string): { bytes: Buffer; mimeType: PlazaMimeType } {

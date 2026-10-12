@@ -23,6 +23,8 @@ export interface ImagePlazaWorkerAttempt {
   userId: string;
   prompt: string;
   providerModelId: string;
+  editProviderModelId: string | null;
+  sizingMode: ProviderImagePlazaModel['sizing_mode'];
   mode: 't2i' | 'i2i' | 'edit';
   aspectRatio: string;
   resolution: '1K' | '2K' | 'fixed';
@@ -64,6 +66,14 @@ interface AttemptRow {
   status: string;
   error_code: string | null;
   reference_artifact_id: string | null;
+  quote_id: string;
+  prompt: string;
+  model_id: string;
+  mode: 't2i' | 'i2i' | 'edit';
+  aspect_ratio: string;
+  resolution: '1K' | '2K' | 'fixed';
+  reasoning: boolean;
+  auto_optimize: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -190,6 +200,8 @@ export class ImagePlazaRepository {
         user_id: input.userId,
         model_id: input.model.id,
         provider_model_id: input.model.provider_model_id,
+        edit_provider_model_id: input.model.edit_provider_model_id,
+        sizing_mode: input.model.sizing_mode,
         mode: input.mode,
         aspect_ratio: input.aspectRatio,
         resolution: input.resolution,
@@ -309,7 +321,11 @@ export class ImagePlazaRepository {
     body: SubmitImagePlazaAttemptRequest;
     model: ProviderImagePlazaModel;
   }): Promise<ImagePlazaAttempt> {
-    const existing = await this.findAttemptByIdempotency(input.userId, input.body.idempotency_key);
+    const existing = await this.findAttemptByIdempotency(
+      input.userId,
+      input.body.idempotency_key,
+      input.body
+    );
     if (existing) return existing;
     const [{ data: conversation }, { data: quote }, wallet] = await Promise.all([
       this.experience
@@ -335,7 +351,6 @@ export class ImagePlazaRepository {
       throw new Error('image_plaza_quote_expired');
     if (
       quote.model_id !== input.body.model_id ||
-      quote.provider_model_id !== input.model.provider_model_id ||
       quote.aspect_ratio !== input.body.aspect_ratio ||
       quote.resolution !== input.body.resolution ||
       quote.mode !== input.body.mode
@@ -345,13 +360,9 @@ export class ImagePlazaRepository {
       Number(wallet.data?.main_credits ?? 0) + Number(wallet.data?.bonus_credits ?? 0);
     if (balance < Number(quote.credits)) throw new Error('image_plaza_insufficient_balance');
     if (input.body.reference_artifact_id) {
-      const { data: reference } = await this.experience
-        .from('image_plaza_reference_assets')
-        .select('id')
-        .eq('id', input.body.reference_artifact_id)
-        .eq('user_id', input.userId)
-        .maybeSingle();
-      if (!reference) throw new Error('image_plaza_reference_not_found');
+      if (!(await this.canAccessReference(input.body.reference_artifact_id, input.userId))) {
+        throw new Error('image_plaza_reference_not_found');
+      }
     }
     if ((input.body.mode !== 't2i') !== Boolean(input.body.reference_artifact_id)) {
       throw new Error('image_plaza_reference_mode_mismatch');
@@ -384,6 +395,8 @@ export class ImagePlazaRepository {
         prompt: input.body.prompt,
         model_id: input.model.id,
         provider_model_id: quote.provider_model_id,
+        edit_provider_model_id: quote.edit_provider_model_id,
+        sizing_mode: quote.sizing_mode,
         mode: input.body.mode,
         aspect_ratio: input.body.aspect_ratio,
         resolution: input.body.resolution,
@@ -399,7 +412,11 @@ export class ImagePlazaRepository {
         .from('image_plaza_messages')
         .delete()
         .in('id', [userMessage.id, assistantMessage.id]);
-      const raced = await this.findAttemptByIdempotency(input.userId, input.body.idempotency_key);
+      const raced = await this.findAttemptByIdempotency(
+        input.userId,
+        input.body.idempotency_key,
+        input.body
+      );
       if (raced) return raced;
       throw new Error(`image plaza attempt create failed: ${attemptError?.message}`);
     }
@@ -487,6 +504,9 @@ export class ImagePlazaRepository {
       userId: String(row.user_id),
       prompt: String(row.prompt),
       providerModelId: String(row.provider_model_id),
+      editProviderModelId:
+        typeof row.edit_provider_model_id === 'string' ? row.edit_provider_model_id : null,
+      sizingMode: row.sizing_mode as ImagePlazaWorkerAttempt['sizingMode'],
       mode: row.mode as ImagePlazaWorkerAttempt['mode'],
       aspectRatio: String(row.aspect_ratio),
       resolution: row.resolution as ImagePlazaWorkerAttempt['resolution'],
@@ -506,6 +526,19 @@ export class ImagePlazaRepository {
       .eq('id', attemptId)
       .eq('status', 'leased');
     if (error) throw new Error(`image plaza attempt update failed: ${error.message}`);
+  }
+
+  async recordProviderRequestId(
+    attemptId: string,
+    providerRequestId: string | null
+  ): Promise<void> {
+    if (!providerRequestId) return;
+    const { error } = await this.experience
+      .from('image_plaza_attempts')
+      .update({ provider_request_id: providerRequestId.slice(0, 240) })
+      .eq('id', attemptId)
+      .eq('status', 'generating');
+    if (error) throw new Error(`image plaza provider request update failed: ${error.message}`);
   }
 
   async markFailed(attemptId: string, code: string, outcomeUnknown: boolean): Promise<void> {
@@ -544,11 +577,13 @@ export class ImagePlazaRepository {
   ): Promise<{ bytes: Buffer; mimeType: PlazaMimeType }> {
     const { data, error } = await this.experience
       .from('image_plaza_reference_assets')
-      .select('storage_path,mime_type')
+      .select('storage_path,mime_type,user_id')
       .eq('id', referenceId)
-      .eq('user_id', userId)
       .maybeSingle();
     if (error || !data) throw new Error('image_plaza_reference_not_found');
+    if (String(data.user_id) !== userId && !(await this.canAccessReference(referenceId, userId))) {
+      throw new Error('image_plaza_reference_not_found');
+    }
     return {
       bytes: await downloadPlazaImage(String(data.storage_path)),
       mimeType: String(data.mime_type) as PlazaMimeType,
@@ -704,15 +739,55 @@ export class ImagePlazaRepository {
 
   private async findAttemptByIdempotency(
     userId: string,
-    key: string
+    key: string,
+    body: SubmitImagePlazaAttemptRequest
   ): Promise<ImagePlazaAttempt | null> {
-    const { data } = await this.experience
+    const { data, error } = await this.experience
       .from('image_plaza_attempts')
       .select('*')
       .eq('user_id', userId)
       .eq('idempotency_key', key)
       .maybeSingle();
-    return data ? mapAttemptRow(data as AttemptRow, []) : null;
+    if (error) throw new Error(`image plaza idempotency read failed: ${error.message}`);
+    if (!data) return null;
+    const row = data as AttemptRow;
+    if (
+      row.quote_id !== body.quote_id ||
+      row.prompt !== body.prompt ||
+      row.model_id !== body.model_id ||
+      row.mode !== body.mode ||
+      row.aspect_ratio !== body.aspect_ratio ||
+      row.resolution !== body.resolution ||
+      row.reasoning !== body.reasoning ||
+      row.auto_optimize !== body.auto_optimize ||
+      row.reference_artifact_id !== (body.reference_artifact_id ?? null)
+    ) {
+      throw new Error('image_plaza_idempotency_conflict');
+    }
+    const artifacts = await this.getArtifacts([row.id]);
+    return mapAttemptRow(row, artifacts.get(row.id) ?? []);
+  }
+
+  /** 公开作品使用过的参考图可被“用同款”复用；其他用户私有上传仍不可访问。 */
+  private async canAccessReference(referenceId: string, userId: string): Promise<boolean> {
+    const { data: owned, error: ownedError } = await this.experience
+      .from('image_plaza_reference_assets')
+      .select('id')
+      .eq('id', referenceId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (ownedError) throw new Error(`image plaza reference read failed: ${ownedError.message}`);
+    if (owned) return true;
+
+    const { data: publicWork, error: workError } = await this.experience
+      .from('image_plaza_works')
+      .select('id')
+      .contains('snapshot', { reference_artifact_id: referenceId })
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle();
+    if (workError) throw new Error(`image plaza reference access failed: ${workError.message}`);
+    return Boolean(publicWork);
   }
 }
 
