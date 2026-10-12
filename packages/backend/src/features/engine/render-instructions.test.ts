@@ -20,8 +20,7 @@ const TIERS: EngineWordCountTiers = {
 };
 
 const INSTRUCTIONS: EnginePlatformInstructions = {
-  template: '篇幅 {{WORD_COUNT}} 字。\n{{INTERACTION_MODE}}\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
-  interactionModeBlocks: { optionsOn: '给出选项。', optionsOff: '不要给出选项。' },
+  template: '篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
   wordCountTiers: TIERS,
 };
 
@@ -61,7 +60,7 @@ describe('resolveWordCountPromptValue', () => {
 });
 
 describe('renderPlatformInstructions', () => {
-  it('三个占位符全部被替换，产物里不留 {{...}}', () => {
+  it('两个占位符全部被替换，产物里不留 {{...}}', () => {
     const rendered = renderPlatformInstructions(
       INSTRUCTIONS,
       config({
@@ -71,17 +70,18 @@ describe('renderPlatformInstructions', () => {
       })
     );
 
-    expect(rendered).toBe('篇幅 800以上 字。\n给出选项。\n偏好：多写心理描写');
+    expect(rendered).toBe('篇幅 800以上 字。\n偏好：多写心理描写');
     expect(rendered).not.toMatch(/\{\{.+?\}\}/);
   });
 
-  it('pref_show_options 决定注入哪一块选项模式指令', () => {
-    expect(renderPlatformInstructions(INSTRUCTIONS, config({ pref_show_options: true }))).toContain(
-      '给出选项。'
+  it('旧快照中的废弃占位符会被移除，不再按用户偏好分叉', () => {
+    const legacy = { ...INSTRUCTIONS, template: '{{INTERACTION_MODE}}\n{{WORD_COUNT}}' };
+    expect(renderPlatformInstructions(legacy, config({ pref_show_options: true }))).toBe(
+      '\n300-500'
     );
-    expect(
-      renderPlatformInstructions(INSTRUCTIONS, config({ pref_show_options: false }))
-    ).toContain('不要给出选项。');
+    expect(renderPlatformInstructions(legacy, config({ pref_show_options: false }))).toBe(
+      '\n300-500'
+    );
   });
 
   it('pref_custom_instructions 为空或纯空白时注入「暂无」', () => {

@@ -17,8 +17,7 @@ const CHARACTER: EngineCharacter = {
 };
 
 const INSTRUCTIONS: EnginePlatformInstructions = {
-  template: '篇幅 {{WORD_COUNT}} 字。\n{{INTERACTION_MODE}}\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
-  interactionModeBlocks: { optionsOn: '给出选项。', optionsOff: '不要给出选项。' },
+  template: '篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
   wordCountTiers: {
     tiers: [
       { id: '100-300', uiLabel: '简短', promptValue: '100-300', enabled: true, sortOrder: 0 },
@@ -70,7 +69,7 @@ describe('buildPrompt', () => {
     expect(messages[1]?.content).toBe(FIRST_MES);
     expect(messages.at(-1)?.content).toBe(
       '##系统指令：以下为最高优先级指令。\n' +
-        '篇幅 300-500 字。\n不要给出选项。\n偏好：暂无\n' +
+        '篇幅 300-500 字。\n偏好：暂无\n' +
         '##用户指令:等很久了吗\n'
     );
   });
@@ -98,7 +97,7 @@ describe('buildPrompt', () => {
     expect(serialized).not.toContain('不该进 prompt 的字段');
   });
 
-  it('三个 pref_* 的取值确实改变输出', () => {
+  it('仍参与提示词的两个 pref_* 会改变输出，pref_show_options 不再分叉协议', () => {
     const base = buildPrompt(input()).messages.at(-1)?.content ?? '';
     const wordCount = buildPrompt(
       input({ userConfig: { ...USER_CONFIG, pref_word_count: '800+' } })
@@ -111,10 +110,9 @@ describe('buildPrompt', () => {
     ).messages.at(-1)?.content;
 
     expect(wordCount).not.toBe(base);
-    expect(showOptions).not.toBe(base);
+    expect(showOptions).toBe(base);
     expect(custom).not.toBe(base);
     expect(wordCount).toContain('篇幅 800以上 字');
-    expect(showOptions).toContain('给出选项。');
     expect(custom).toContain('偏好：多写环境描写');
   });
 
@@ -145,7 +143,7 @@ describe('buildPrompt', () => {
       '路人甲，你来了。',
       '我是 路人甲',
       '##系统指令：以下为最高优先级指令。\n' +
-        '篇幅 300-500 字。\n不要给出选项。\n偏好：暂无\n' +
+        '篇幅 300-500 字。\n偏好：暂无\n' +
         '##用户指令:路人甲 也在听\n',
     ]);
   });
@@ -210,10 +208,6 @@ function botEnhancedPrompt(
   userConfig: UserGenerationConfig,
   userInput: string
 ): string {
-  const interactionModeBlock = userConfig.pref_show_options
-    ? instructions.interactionModeBlocks.optionsOn
-    : instructions.interactionModeBlocks.optionsOff;
-
   const match = instructions.wordCountTiers.tiers.find(
     (t) => t.enabled && t.id === userConfig.pref_word_count
   );
@@ -232,7 +226,7 @@ function botEnhancedPrompt(
 
   const rendered = instructions.template
     .replace(/\{\{WORD_COUNT\}\}/g, wordCountValue)
-    .replace(/\{\{INTERACTION_MODE\}\}/g, interactionModeBlock)
+    .replace(/\{\{INTERACTION_MODE\}\}/g, '')
     .replace(/\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
 
   return `##系统指令：以下为最高优先级指令。\n${rendered}\n##用户指令:${userInput}\n`;

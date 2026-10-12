@@ -49,4 +49,5 @@ export * from './dev-fixtures';
 export * from './lobby-featured';
 export * from './telegram-avatar';
 export * from './user-placeholder';
+export * from './rich-reply-protocol';
 export * from './telemetry/sanitize';

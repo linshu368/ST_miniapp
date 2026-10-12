@@ -4,7 +4,7 @@
  * 平台规则的渲染（M2）。纯函数、无 IO、无 DB。
  *
  * 移植自旧 bot 的两处：
- *   src/features/chat/rules/renderSystemInstructions.ts —— 三个占位符的替换与字数档位查找
+ *   src/features/chat/rules/renderSystemInstructions.ts —— 占位符替换与字数档位查找
  *   src/features/chat/usecases/SimpleChat.ts 的 _buildEnhancedPrompt() —— 包装用户输入的格式
  *
  * 方案：docs/ST_remove-MVP实施方案.md §六。
@@ -47,17 +47,13 @@ function replaceAll(source: string, placeholder: RegExp, value: string): string 
 }
 
 /**
- * 渲染平台规则模板。三个占位符全局替换，替换顺序与 bot 一致
- * （先 WORD_COUNT、再 INTERACTION_MODE、最后 USER_CUSTOM_INSTRUCTIONS）。
+ * 渲染平台规则模板。只替换仍有真实运行时值的两个占位符。
+ * 富回复模块是固定协议，不能再随“是否显示选项”分叉成另一份提示词。
  */
 export function renderPlatformInstructions(
   instructions: EnginePlatformInstructions,
   userConfig: UserGenerationConfig
 ): string {
-  const interactionModeBlock = userConfig.pref_show_options
-    ? instructions.interactionModeBlocks.optionsOn
-    : instructions.interactionModeBlocks.optionsOff;
-
   const wordCountValue = resolveWordCountPromptValue(
     userConfig.pref_word_count,
     instructions.wordCountTiers
@@ -67,7 +63,9 @@ export function renderPlatformInstructions(
     userConfig.pref_custom_instructions?.trim() || EMPTY_CUSTOM_INSTRUCTIONS;
 
   let rendered = replaceAll(instructions.template, /\{\{WORD_COUNT\}\}/g, wordCountValue);
-  rendered = replaceAll(rendered, /\{\{INTERACTION_MODE\}\}/g, interactionModeBlock);
+  // Old published snapshots may still contain this retired token during the
+  // staged rollout. Drop it instead of leaking protocol syntax into a prompt.
+  rendered = replaceAll(rendered, /\{\{INTERACTION_MODE\}\}/g, '');
   return replaceAll(rendered, /\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
 }
 

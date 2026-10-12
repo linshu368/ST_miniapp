@@ -579,6 +579,11 @@ export const CompiledTextPostprocessArtifactSchema = z
   .object({
     schema_version: z.literal(TEXT_POSTPROCESS_SCHEMA_VERSION),
     policy_version: z.literal(TEXT_POSTPROCESS_POLICY_VERSION),
+    /** Fixed protocol parser; default keeps existing published artifacts compatible. */
+    rich_reply_protocol: z
+      .object({ version: z.literal(1), enabled: z.boolean() })
+      .strict()
+      .default({ version: 1, enabled: true }),
     rules: z.array(CompiledTextPostprocessRuleSchema).max(TEXT_POSTPROCESS_LIMITS.maxRules),
   })
   .strict();

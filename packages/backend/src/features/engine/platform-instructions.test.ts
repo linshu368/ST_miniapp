@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_WORD_COUNT_TIERS_CONFIG } from '@miniapp/shared';
 import {
   buildSnapshot,
-  parseInteractionModeBlocks,
   parseTemplate,
   parseWordCountTiers,
   toPublicWordCountTiersFromEngine,
@@ -26,15 +25,6 @@ describe('runtime_config 解析', () => {
     expect(parseTemplate({ value: '模板', textValue: null, version: 1 })).toBe('模板');
     expect(parseTemplate({ value: null, textValue: '  ', version: 1 })).toBeNull();
     expect(parseTemplate(undefined)).toBeNull();
-  });
-
-  it('选项模式块两块缺一不可', () => {
-    expect(parseInteractionModeBlocks({ options_on: '开', options_off: '关' })).toEqual({
-      optionsOn: '开',
-      optionsOff: '关',
-    });
-    expect(parseInteractionModeBlocks({ options_on: '开' })).toBeNull();
-    expect(parseInteractionModeBlocks('开')).toBeNull();
   });
 
   it('新 shape：id / ui_label / default_tier_id', () => {
@@ -118,15 +108,11 @@ describe('runtime_config 解析', () => {
 });
 
 describe('buildSnapshot：字数档位的契约校验与降级', () => {
-  const TEMPLATE = '{{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}';
+  const TEMPLATE = '{{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}';
 
   function entries(wordCountValue: unknown): Map<string, RuntimeConfigEntry> {
     return new Map<string, RuntimeConfigEntry>([
       ['system_instructions', { value: null, textValue: TEMPLATE, version: 1 }],
-      [
-        'interaction_mode_blocks',
-        { value: { options_on: '开', options_off: '关' }, textValue: null, version: 1 },
-      ],
       ['pref_word_count_tiers', { value: wordCountValue, textValue: null, version: 7 }],
     ]);
   }

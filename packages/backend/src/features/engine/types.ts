@@ -46,15 +46,11 @@ export interface EngineWordCountTiers {
 
 /**
  * 平台规则的权威来源，读自 app_core.runtime_config。
- * 对齐旧 bot 的 system_instructions 模板机制，三个占位符是 pref_* 得以生效的前提：
- * {{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}。
+ * 对齐平台 system_instructions 模板机制；仅保留真正由用户偏好渲染的两个占位符：
+ * {{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}。
  */
 export interface EnginePlatformInstructions {
   template: string;
-  interactionModeBlocks: {
-    optionsOn: string;
-    optionsOff: string;
-  };
   wordCountTiers: EngineWordCountTiers;
 }
 
