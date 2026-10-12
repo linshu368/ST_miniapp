@@ -116,6 +116,37 @@ jobs:
             echo "PR environment has no VIP reminder cron"
           fi
 
+      - name: Verify Admin Preview backend and CORS
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          BACKEND_URL="https://stminiapp-pr-${PR_NUMBER}.up.railway.app"
+          # Railway creates the environment before its deployment becomes routable. Waiting here
+          # prevents Vercel from advertising a Preview whose deterministic API target is absent.
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 10 "${BACKEND_URL}/health" >/dev/null; then
+              break
+            fi
+            if [ "${attempt}" = 30 ]; then
+              echo "Admin Preview backend did not become healthy: ${BACKEND_URL}" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          # This mirrors the browser's credential-free CORS preflight. The backend accepts all
+          # Vercel origins only outside Production; do not replace it with a wildcard in Production.
+          PREVIEW_ORIGIN="https://admin-preview-pr-${PR_NUMBER}.vercel.app"
+          HEADERS="$(curl --silent --show-error --max-time 10 -D - -o /dev/null \
+            -X OPTIONS "${BACKEND_URL}/api/admin/supabase/auth/v1/token" \
+            -H "Origin: ${PREVIEW_ORIGIN}" \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: apikey,authorization,content-type,x-client-info')"
+          NORMALIZED_HEADERS="$(printf '%s\n' "${HEADERS}" | tr -d '\r')"
+          printf '%s\n' "${NORMALIZED_HEADERS}" | grep -Eqi '^access-control-allow-origin: https://admin-preview-pr-[0-9]+\.vercel\.app$'
+          printf '%s\n' "${NORMALIZED_HEADERS}" | grep -Eqi '^access-control-allow-credentials: true$'
+
       - name: Comment backend URL
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
