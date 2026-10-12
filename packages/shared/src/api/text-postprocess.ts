@@ -694,7 +694,11 @@ export const TextPostprocessArtifactSnapshotSchema = z
     published_at: z.string().datetime(),
   })
   .strict();
-export type TextPostprocessArtifactSnapshot = z.infer<typeof TextPostprocessArtifactSnapshotSchema>;
+/**
+ * Consumers may still construct/read v1 artifacts that omit fields introduced with defaults.
+ * The schema normalizes those fields at the trust boundary before renderer use.
+ */
+export type TextPostprocessArtifactSnapshot = z.input<typeof TextPostprocessArtifactSnapshotSchema>;
 
 export const ReadTextPostprocessVersionsRequestSchema = z
   .object({
@@ -791,7 +795,7 @@ export type TextPostprocessVersionSnapshot = z.infer<typeof TextPostprocessVersi
 export type ReadTextPostprocessVersionsRequest = z.infer<
   typeof ReadTextPostprocessVersionsRequestSchema
 >;
-export type ReadTextPostprocessVersionsData = z.infer<typeof ReadTextPostprocessVersionsDataSchema>;
+export type ReadTextPostprocessVersionsData = z.input<typeof ReadTextPostprocessVersionsDataSchema>;
 export type SaveTextPostprocessDraftRequest = z.infer<typeof SaveTextPostprocessDraftRequestSchema>;
 export type PublishTextPostprocessRequest = z.infer<typeof PublishTextPostprocessRequestSchema>;
 export type RollbackTextPostprocessRequest = z.infer<typeof RollbackTextPostprocessRequestSchema>;
