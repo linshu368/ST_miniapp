@@ -1,7 +1,7 @@
 import { config } from '../platform/config.js';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { prisma } from '../lib/db.js';
 import { createLogger } from '../lib/logger.js';
+import { withSessionAdvisoryLock } from '../lib/postgres-advisory-lease.js';
 import { AlertDeliveryWorker } from '../features/alerting/delivery-worker.js';
 import { FeishuAlertSink } from '../features/alerting/feishu-alert-sink.js';
 import { AlertPublisher } from '../features/alerting/publisher.js';
@@ -23,14 +23,15 @@ const deliveryWorker = new AlertDeliveryWorker(
 );
 const shutdown = new AbortController();
 for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => shutdown.abort());
-// Advisory locking is database-scoped, so duplicate Railway instances skip rather than overlap.
+const ADVISORY_LOCK_KEY = 731_006;
+
+// The lease owns a direct PostgreSQL session for this complete round. Prisma's pooled connection
+// must not be used for session-level advisory locks because unlock could land on another session.
 while (!shutdown.signal.aborted) {
   try {
-    const rows = await prisma.$queryRaw<
-      Array<{ locked: boolean }>
-    >`SELECT pg_try_advisory_lock(731006) AS locked`;
-    if (rows[0]?.locked) {
-      try {
+    const result = await withSessionAdvisoryLock(
+      ADVISORY_LOCK_KEY,
+      async () => {
         await monitor.runOnce();
         // Delivery is non-critical: a failed drain must not make an otherwise successful monitor run fail.
         try {
@@ -41,10 +42,19 @@ while (!shutdown.signal.aborted) {
             '支付告警通知投递本轮失败；监控将在下一轮继续'
           );
         }
-      } finally {
-        await prisma.$executeRaw`SELECT pg_advisory_unlock(731006)`;
+      },
+      {
+        onCleanupError(stage, err) {
+          log.sys.error(
+            { event: 'payment.alert_monitor.lease_cleanup_failed', stage, err },
+            '支付告警监控租约清理失败；连接关闭后 PostgreSQL 将释放 session lock'
+          );
+        },
       }
-    } else log.sys.warn({ event: 'payment.alert_monitor.overlap' }, '支付告警监控轮次因租约被跳过');
+    );
+    if (!result.acquired) {
+      log.sys.warn({ event: 'payment.alert_monitor.overlap' }, '支付告警监控轮次因租约被跳过');
+    }
   } catch (err) {
     log.sys.error(
       { event: 'payment.alert_monitor.failed', err },
