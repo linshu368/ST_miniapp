@@ -9,8 +9,20 @@ describe('resolveAdminPreviewApiUrl', () => {
         configuredTestApiUrl: 'https://stminiapp-development.up.railway.app',
         vercelEnv: 'preview',
         pullRequestId: '364',
+        gitCommitRef: 'codex/feature-branch',
       })
     ).toBe('https://stminiapp-pr-364.up.railway.app');
+  });
+
+  it('uses stable TEST for the dev-to-main release PR', () => {
+    expect(
+      resolveAdminPreviewApiUrl({
+        configuredTestApiUrl: 'https://stminiapp-development.up.railway.app',
+        vercelEnv: 'preview',
+        pullRequestId: '391',
+        gitCommitRef: 'dev',
+      })
+    ).toBe('https://stminiapp-development.up.railway.app');
   });
 
   it('uses stable TEST for a branch Preview without pull-request metadata', () => {
@@ -19,6 +31,7 @@ describe('resolveAdminPreviewApiUrl', () => {
         configuredTestApiUrl: 'https://stminiapp-development.up.railway.app',
         vercelEnv: 'preview',
         pullRequestId: undefined,
+        gitCommitRef: 'dev',
       })
     ).toBe('https://stminiapp-development.up.railway.app');
   });
@@ -29,6 +42,7 @@ describe('resolveAdminPreviewApiUrl', () => {
         configuredTestApiUrl: 'https://stminiapp-development.up.railway.app',
         vercelEnv: 'preview',
         pullRequestId: '364/main',
+        gitCommitRef: 'codex/feature-branch',
       })
     ).toBe('https://stminiapp-development.up.railway.app');
   });
@@ -39,6 +53,7 @@ describe('resolveAdminPreviewApiUrl', () => {
         configuredTestApiUrl: '',
         vercelEnv: 'preview',
         pullRequestId: undefined,
+        gitCommitRef: 'dev',
       })
     ).toThrow('VITE_ADMIN_TEST_API_URL');
   });
@@ -49,6 +64,7 @@ describe('resolveAdminPreviewApiUrl', () => {
         configuredTestApiUrl: 'http://stminiapp-development.up.railway.app',
         vercelEnv: 'preview',
         pullRequestId: undefined,
+        gitCommitRef: 'dev',
       })
     ).toThrow('HTTPS');
   });

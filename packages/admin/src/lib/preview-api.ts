@@ -2,11 +2,17 @@ export interface AdminPreviewApiInput {
   configuredTestApiUrl: string;
   vercelEnv: string | undefined;
   pullRequestId: string | undefined;
+  gitCommitRef: string | undefined;
 }
 
 export function resolveAdminPreviewApiUrl(input: AdminPreviewApiInput): string {
   const pullRequestId = input.pullRequestId?.trim() ?? '';
-  if (input.vercelEnv === 'preview' && /^[1-9]\d*$/.test(pullRequestId)) {
+  const gitCommitRef = input.gitCommitRef?.trim() ?? '';
+
+  // Railway only provisions `pr-<number>` for feature PRs targeting `dev`.
+  // A release PR from `dev` to `main` still has Vercel PR metadata, but must
+  // use the stable TEST backend because no matching Railway environment exists.
+  if (input.vercelEnv === 'preview' && gitCommitRef !== 'dev' && /^[1-9]\d*$/.test(pullRequestId)) {
     return `https://stminiapp-pr-${pullRequestId}.up.railway.app`;
   }
   return input.configuredTestApiUrl.trim();
