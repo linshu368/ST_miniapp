@@ -1,16 +1,16 @@
 # 图片广场与图片创作第二版 — 技术设计
 
-> 状态：规划已确认（含 Q9/Q10）；先不实施。交互以原型为准，见 `prd.md`。
+> 状态：规划已确认（含 Q9–Q12-rev），2026-10-12 已获实施授权。创作 Tab 打开即广场瀑布流，见 `prd.md`。
 
 ## 1. 架构边界（Q10：与聊天图生成业务隔离）
 
-| 包         | 职责                                                                                                                                                                  |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shared`   | **新建**广场/创作/分享契约（建议 `packages/shared/src/api/image-plaza*.ts`）；**不**把广场 DTO 塞进既有 `api/images.ts`                                               |
-| `backend`  | **新建**路由与 feature 目录（建议 `routes/image-plaza*.ts`、`features/image-plaza/`）；**不**在 `routes/images.ts` / `features/image/*`（聊天看看TA）上叠广场业务方法 |
-| `frontend` | **新建**页面与 `src/lib/api/image-plaza*` hooks/组件目录；**不**复用 `lib/api/images.ts`、`chat-message-image.tsx` 作为创作/广场入口                                  |
-| `admin`    | 模型/弹窗/标签三页可新建视图文件；配置发布链复用 Admin 基建                                                                                                           |
-| `database` | **新建**广场/创作/分享相关表与 RPC；**不**扩展 `chat_message_images` 承载 V2 attempt                                                                                  |
+| 包         | 职责                                                                                                                                                                               |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared`   | **新建**广场/创作/分享契约（建议 `packages/shared/src/api/image-plaza*.ts`）；**不**把广场 DTO 塞进既有 `api/images.ts`                                                            |
+| `backend`  | **新建**路由与 feature 目录（建议 `routes/image-plaza*.ts`、`features/image-plaza/`）；**不**在 `routes/images.ts` / `features/image/*`（聊天看看TA）上叠广场业务方法              |
+| `frontend` | **`/create` = 广场瀑布流**（Q12-rev）：吸顶「图片广场」+「✦ 去创作」，底栏保留；**移除**创作下许愿入口与 `/create/wish` 依赖；hooks 用 `src/lib/api/image-plaza*`；不复用聊天图 UI |
+| `admin`    | 模型/弹窗/标签三页可新建视图文件；配置发布链复用 Admin 基建                                                                                                                        |
+| `database` | **新建**广场/创作/分享相关表与 RPC；**不**扩展 `chat_message_images` 承载 V2 attempt                                                                                               |
 
 跨应用仅 HTTP。出图与扣费须走统一平台能力时：
 
@@ -28,7 +28,8 @@ packages/shared/src/api/image-plaza.ts          # 契约（可拆分 plaza / stu
 packages/backend/src/routes/image-plaza.ts      # 路由注册 + @frontend-ready
 packages/backend/src/features/image-plaza/      # quote、studio job、plaza feed、share…
 packages/frontend/src/lib/api/image-plaza/      # React Query hooks
-packages/frontend/src/app/.../image-plaza/      # 广场/详情/创作路由（具体路径实施定）
+packages/frontend/src/app/(main)/create/       # /create = 广场瀑布流；子路由 studio/详情等
+# 删除或停用 create/wish；layout 中 NAV_HIDDEN 的 /create/wish、大厅「许愿池」文案一并清理
 packages/admin/.../ImagePlaza*.tsx              # 三页运营
 packages/shared/migrations/*_image_plaza_*.sql  # 新表/RPC
 ```
@@ -122,17 +123,19 @@ Admin 配置中部文案与弹窗总开关；`{rate}` 运行时替换；顶图�
 | 限流/容量         | feed 游标；广场自有 claim/worker（可同进程不同队列名）       |
 | 可观测            | pino 规范；禁敏感字段                                        |
 
-## 6. 八域归属（实施前终审）
+## 6. 八域归属（2026-10-12 终审通过）
 
-| 对象                       | 建议域                                | 权威写入              | 生命周期       |
-| -------------------------- | ------------------------------------- | --------------------- | -------------- |
-| 创作会话/消息/生成 attempt | experience                            | backend worker + user | 另定删除策略   |
-| 广场作品                   | experience / miniapp_features（终审） | 分享动作              | 软删不追回返利 |
-| 点赞                       | experience 或 features                | user                  | 可取消         |
-| 标签 / 模型目录 / 弹窗文案 | app_core（已发布）+ admin（草稿）     | admin 发布            | 版本化         |
-| 返利比例                   | app_core.runtime_config               | 技术改库              | 分享快照       |
-| 返利/分享 ledger           | billing                               | share RPC             | 不可变成功行   |
-| 账号首次分享完成           | experience 用户标志                   | 仅分享成功置真        | 账号生命周期   |
+| 对象                                                | 归属                                                        | 权威写入                     | 生命周期                                   |
+| --------------------------------------------------- | ----------------------------------------------------------- | ---------------------------- | ------------------------------------------ |
+| `image_plaza_conversations/messages/attempts/works` | `experience`                                                | Backend / worker / share RPC | 核心互动内容与图片产物；保留审计，作品软删 |
+| `image_plaza_likes`                                 | `miniapp_features`                                          | 用户动作                     | 可随广场功能下线删除                       |
+| `image_plaza_share_rewards`                         | `billing`                                                   | share RPC                    | 不可变账务与幂等事实，长期保留             |
+| 标签 / 模型目录 / 弹窗文案                          | `app_core.runtime_config`（正式）+ 既有 `admin` 草稿/发布表 | Admin 发布                   | 版本化                                     |
+| 返利比例                                            | `app_core.runtime_config`                                   | 技术改库                     | 分享时快照                                 |
+| 首次分享完成事实                                    | `app_core.miniapp_user_settings` 扩展字段                   | 仅分享成功事务               | 账号生命周期                               |
+
+完整的不变量、消费者、跨 schema 依赖、RLS/grant、容量、迁移顺序与恢复见
+`research/implementation-readiness.md`。对象不进入 `public` 或旧 `miniapp` schema。
 
 ## 7. 兼容与演进
 
@@ -162,4 +165,4 @@ Admin 配置中部文案与弹窗总开关；`{rate}` 运行时替换；顶图�
 
 ## 10. Open Design Dependencies
 
-产品决策见 `prd.md` Key Decisions（含 Q7-rev、Q9–Q11）。quote 服务只读已发布模型目录的上架星尘价；`mode=t2i|i2i|edit` 不改变价目，仅影响上游调用形态。实施前：八域 migration 终审；Anime 上游 id → `anime-wai` 映射；敲定 `image-plaza` 路由前缀与 Storage 路径前缀。
+产品决策见 `prd.md` Key Decisions（含 Q7-rev、Q9–Q12-rev）。quote 服务只读已发布模型目录的上架星尘价；`mode=t2i|i2i|edit` 不改变价目，仅影响上游调用形态。业务 ID `anime-wai` 映射 Venice provider id `wai-Illustrious`（2026-10-12 官方模型页核验）；映射只存在于已发布模型配置。API 前缀固定 `/api/image-plaza`，Storage 前缀固定 `image-plaza/{userId}/{attemptId}/`。

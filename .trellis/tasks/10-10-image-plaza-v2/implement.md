@@ -1,13 +1,13 @@
 # 图片广场与图片创作第二版 — 执行计划
 
-> Q1–Q8 已拍板；最终规划摘要**已确认**；用户要求**先不实施**——暂不 `task.py start`、不写产品代码。
+> Q1–Q12-rev 已拍板；最终规划摘要**已确认**；用户于 2026-10-12 明确授权开始实施。
 
 ## 0. 规划收口
 
 1. [x] Q1–Q8 回写 PRD/AC；PRD 收敛。
 2. [x] design 草案 + implement/check JSONL。
-3. [x] 用户确认最终规划摘要（2026-10-10）；**实施暂缓**。
-4. 下次启动前：声明 `module_impact`（changes + module-updates）→ `task.py start`；八域 migration 终审；Anime 上游 id 核验映射。
+3. [x] 用户确认最终规划摘要（2026-10-10）。
+4. [x] 声明 `module_impact`；八域归属终审；核验 `anime-wai -> wai-Illustrious`；2026-10-12 获实施授权。
 
 ## 1. 建议实施顺序
 
@@ -16,7 +16,7 @@
 | A    | **独立** `shared/api/image-plaza*` + 返利 runtime_config key + migration 草案（不改 `api/images.ts`）              | shared test / typecheck |
 | B    | **独立** `features/image-plaza` + `routes/image-plaza*`：quote/会话 job/settle（不调用 `features/image` 业务入口） | 失败不扣；与聊天图隔离  |
 | C    | 同模块：广场 feed/详情/点赞/用同款、分享返利                                                                       | AC10–AC11               |
-| D    | **独立** frontend `lib/api/image-plaza` + 页面：广场/详情/用同款（不复用 chat-image）                              | AC01–AC05               |
+| D    | frontend：`/create` 直接广场瀑布流 + 吸顶去创作；底栏保留；清许愿路径；详情/用同款                                 | AC01–AC05               |
 | E    | 同模块：创作壳、抽屉、就地生成、四图标                                                                             | AC06–AC09               |
 | F    | 分享弹窗与角标（Q1-C）                                                                                             | AC12                    |
 | G    | Admin 三页 + 用户端读已发布配置                                                                                    | AC13–AC14               |
@@ -27,11 +27,11 @@
 ## 2. 验证命令（实施期）
 
 ```bash
-pnpm --filter @st/shared test
-pnpm --filter @st/shared typecheck
-pnpm --filter @st/backend typecheck
-pnpm --filter @st/frontend typecheck
-pnpm --filter @st/admin typecheck
+pnpm --filter @miniapp/shared test
+pnpm --filter @miniapp/shared typecheck
+pnpm --filter @miniapp/backend typecheck
+pnpm --filter @miniapp/frontend typecheck
+pnpm --filter @miniapp/admin typecheck
 # 视改动范围：
 pnpm -r typecheck
 ```
