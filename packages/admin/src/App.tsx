@@ -25,7 +25,7 @@ import { Refine } from '@refinedev/core';
 import { dataProvider } from '@refinedev/supabase';
 import {
   ModelCatalogSchema,
-  PaymentPlansSchema,
+  PaymentPlansRuntimeConfigSchema,
   type LlmModelProvider,
   type ModelCatalog,
   type PaymentPlan,
@@ -550,8 +550,8 @@ function AdminWorkspace(props: {
       : props.admin.can_access_test);
   const paymentPlans = useMemo<PaymentPlan[]>(() => {
     const runtimeValue = configs.find((config) => config.key === 'miniapp_payment_plans')?.value;
-    const parsed = PaymentPlansSchema.safeParse(runtimeValue);
-    return parsed.success ? parsed.data : [];
+    const parsed = PaymentPlansRuntimeConfigSchema.safeParse(runtimeValue);
+    return parsed.success ? parsed.data.plans : [];
   }, [configs]);
   const publishedModelIds = useMemo(() => {
     const runtimeValue = configs.find((config) => config.key === 'llm_model_catalog')?.value;

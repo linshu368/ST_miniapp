@@ -9,6 +9,48 @@ import { isVipPlanId, type VipPlan } from './vip.js';
 export type PaymentType = 'alipay' | 'wxpay';
 export const PaymentTypeSchema = z.enum(['alipay', 'wxpay']);
 
+/**
+ * Controls which checkout entries are presented to new purchasers. It deliberately does not
+ * change gateway support: pending and historic orders continue to use their stored payment type.
+ */
+export interface PaymentChannelsConfig {
+  alipay_enabled: boolean;
+  wxpay_enabled: boolean;
+  default_payment_type: PaymentType;
+}
+
+export const DEFAULT_PAYMENT_CHANNELS_CONFIG: PaymentChannelsConfig = {
+  alipay_enabled: true,
+  wxpay_enabled: false,
+  default_payment_type: 'alipay',
+};
+
+export const PaymentChannelsConfigSchema: z.ZodType<PaymentChannelsConfig> = z
+  .object({
+    alipay_enabled: z.boolean(),
+    wxpay_enabled: z.boolean(),
+    default_payment_type: PaymentTypeSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (!value.alipay_enabled && !value.wxpay_enabled) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'at least one payment channel must be enabled',
+      });
+    }
+    if (
+      (value.default_payment_type === 'alipay' && !value.alipay_enabled) ||
+      (value.default_payment_type === 'wxpay' && !value.wxpay_enabled)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['default_payment_type'],
+        message: 'default payment channel must be enabled',
+      });
+    }
+  });
+
 /** 与老 Bot 后端 payment_orders.payment_status 保持一致：pending → completed / expired / failed */
 export type PaymentOrderStatus = 'pending' | 'completed' | 'expired' | 'failed';
 export const PaymentOrderStatusSchema = z.enum(['pending', 'completed', 'expired', 'failed']);
@@ -74,6 +116,28 @@ export const PaymentPlansSchema = z
       });
     }
   });
+
+/** The published runtime shape. The legacy array remains readable during staged deployment. */
+export interface PaymentPlansConfig {
+  plans: PaymentPlan[];
+  payment_channels: PaymentChannelsConfig;
+}
+
+export const PaymentPlansConfigSchema: z.ZodType<PaymentPlansConfig> = z
+  .object({
+    plans: PaymentPlansSchema,
+    payment_channels: PaymentChannelsConfigSchema,
+  })
+  .strict();
+
+export const PaymentPlansRuntimeConfigSchema = z
+  .union([PaymentPlansConfigSchema, PaymentPlansSchema])
+  .transform(
+    (value): PaymentPlansConfig =>
+      Array.isArray(value)
+        ? { plans: value, payment_channels: DEFAULT_PAYMENT_CHANNELS_CONFIG }
+        : value
+  );
 
 export const DEFAULT_PENDING_ARRIVAL_HINT = '完成付款后积分将自动到账，通常不超过 3 分钟';
 
@@ -179,6 +243,8 @@ export interface PaymentOrder {
 // ==== GET /api/payment/plans ====
 export interface GetPaymentPlansData {
   plans: PaymentPlan[];
+  /** Channels visible for creating new orders; all historical order types remain displayable. */
+  payment_channels?: PaymentChannelsConfig;
   /** 旧客户端忽略即可；未部署 VIP 商品的 producer 可以省略。 */
   vip_plans?: VipPlan[];
   page_config: RechargePageConfig;

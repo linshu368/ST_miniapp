@@ -67,8 +67,6 @@ import {
   selectionKey,
 } from '@/lib/vip/presentation';
 
-const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
-
 export default function RechargePage() {
   return (
     <Suspense fallback={<RechargePageSkeleton />}>
@@ -131,6 +129,18 @@ function RechargePageContent() {
   const discountLabel = formatDiscountLabel(vipBenefits?.text_discount_rate ?? Number.NaN);
   const paymentPromptConfig =
     data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
+  const paymentChannels = data?.payment_channels;
+  const paymentTypes = useMemo<PaymentType[]>(() => {
+    if (!paymentChannels) return ['alipay'];
+    return (['alipay', 'wxpay'] as const).filter((type) =>
+      type === 'alipay' ? paymentChannels.alipay_enabled : paymentChannels.wxpay_enabled
+    );
+  }, [paymentChannels]);
+  const defaultPaymentType = paymentChannels?.default_payment_type ?? 'alipay';
+
+  useEffect(() => {
+    if (!paymentTypes.includes(paymentType)) setPaymentType(defaultPaymentType);
+  }, [defaultPaymentType, paymentType, paymentTypes]);
   const showInsufficientCreditsNotice =
     searchParams.get('reason') === 'insufficient_credits' && !!data && !noticeDismissed;
   const selection = useMemo(
@@ -382,7 +392,7 @@ function RechargePageContent() {
         ) : null}
         <div className="flex items-center gap-3 px-4 py-3">
           <div role="radiogroup" aria-label="支付方式" className="flex shrink-0 gap-2">
-            {PAYMENT_TYPES.map((t) => {
+            {paymentTypes.map((t) => {
               const active = paymentType === t;
               const isAlipay = t === 'alipay';
               const Icon = isAlipay ? AlipayIcon : WeChatPayIcon;

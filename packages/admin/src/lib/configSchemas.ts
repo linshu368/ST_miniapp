@@ -22,7 +22,7 @@ import {
   LlmModelProviderSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
-  PaymentPlansSchema,
+  PaymentPlansRuntimeConfigSchema,
   PaymentPromptDialogConfigSchema,
   RechargePageConfigSchema,
   VIP_STRATEGY_CONFIG_KEYS,
@@ -254,7 +254,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
   miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
   miniapp_character_free_chat_quota_limit: positiveInteger,
-  miniapp_payment_plans: PaymentPlansSchema,
+  miniapp_payment_plans: PaymentPlansRuntimeConfigSchema,
   miniapp_recharge_page_config: RechargePageConfigSchema,
   miniapp_payment_prompt_dialog_config: PaymentPromptDialogConfigSchema,
   miniapp_free_quota_exhausted_dialog_config: FreeQuotaExhaustedDialogConfigSchema,
@@ -318,7 +318,7 @@ export const configMetadata: Record<
   },
   miniapp_payment_plans: {
     label: '充值套餐',
-    description: '星尘商店展示并用于下单校验的正式套餐。',
+    description: '星尘商店展示并用于下单校验的正式套餐，以及用户端可见的支付通道和默认通道。',
     defaultValue: [],
   },
   miniapp_recharge_page_config: {
