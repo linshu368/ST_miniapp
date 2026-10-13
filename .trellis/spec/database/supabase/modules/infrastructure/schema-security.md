@@ -48,7 +48,7 @@ last_verified_at: 2026-10-13
 
 图片广场对象按 experience、miniapp_features、billing、app_core 四域归属；表启用 RLS 并撤销浏览器角色权限，SECURITY DEFINER RPC 固定 `search_path` 且只授权 service_role/postgres。Storage bucket 保持私有；Admin 发布链扩展深层 JSON 校验。迁移仍需在明确 test 目标后单文件人工执行并验证。
 
-`20261013_image_plaza_seed_catalog.sql` 提供 `experience.import_image_plaza_seed_work` SECURITY DEFINER RPC，固定 `search_path`，撤销 public/anon/authenticated 并仅授予 service_role/postgres；导入以来源 ID advisory transaction lock 保证幂等并检测漂移。该迁移仍需在确认连接目标后执行 SQL、权限/RLS、并发和回滚验证。
+`20261013_image_plaza_seed_catalog.sql` 提供 `experience.import_image_plaza_seed_work` SECURITY DEFINER RPC，固定 `search_path`，撤销 public/anon/authenticated 并仅授予 service_role/postgres；导入以来源 ID advisory transaction lock 保证幂等并检测漂移。`20261013_image_plaza_seed_large_assets.sql` 前向同步 RPC、artifact CHECK 与私有 bucket 的 50 MiB seed 容量；三份 migration 的 SQL、权限/RLS、幂等和容量 shape 已在 test 项目验证，production 仍需独立发布确认。
 
 ## 变更记录
 

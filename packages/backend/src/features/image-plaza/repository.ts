@@ -656,6 +656,8 @@ export class ImagePlazaRepository {
         const artifact = artifacts.get(row.artifact_id);
         const snapshot = ImagePlazaSnapshotSchema.safeParse(row.snapshot);
         if (!artifact || !snapshot.success) throw new Error('image_plaza_work_shape_invalid');
+        const publishedAt = new Date(row.published_at);
+        if (Number.isNaN(publishedAt.getTime())) throw new Error('image_plaza_work_shape_invalid');
         let referenceImageUrl: string | null = null;
         if (snapshot.data.reference_artifact_id) {
           const { data: reference } = await this.experience
@@ -678,7 +680,7 @@ export class ImagePlazaRepository {
           tags: row.tags,
           like_count: row.like_count,
           liked: liked.has(row.id),
-          published_at: row.published_at,
+          published_at: publishedAt.toISOString(),
           snapshot: snapshot.data,
         };
       })

@@ -14,7 +14,7 @@ const SOURCE_HEADERS = [
   'Civitai Image ID（内部续爬去重）',
   '热度（Like + Heart）',
 ] as const;
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 30_000;
 const DOWNLOAD_ATTEMPTS = 3;
 const MAX_REDIRECTS = 3;
@@ -65,7 +65,8 @@ export interface SeedImportResult {
 export async function closeSeedImportResources(): Promise<void> {
   const proxyAgent = seedDownloadProxyAgent;
   seedDownloadProxyAgent = undefined;
-  if (proxyAgent) await proxyAgent.close();
+  // CLI 已完成全部行处理后直接销毁 keep-alive socket，避免代理连接让 graceful close 永久等待。
+  if (proxyAgent) await proxyAgent.destroy();
 }
 
 export async function readSeedApprovalManifest(path: string): Promise<SeedApprovalManifest> {

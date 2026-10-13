@@ -318,7 +318,7 @@ Admin `/api/admin/text-postprocess*` 提供状态/历史、草稿保存/丢弃�
 
 `experience.image_plaza_works` 是公开作品投影，`experience.image_plaza_artifacts` 保存自有 Storage 元数据。`origin=generated` 必须关联真实用户和已结算 attempt；`origin=civitai_seed` 不得伪造用户、会话、attempt 或账务，只在内部保存 Civitai source ID/URL/heat，公开 DTO 仅返回自有签名 URL、模型和作品快照。本地 `like_count` 始终只由 `miniapp_features.image_plaza_likes` 重算，不能混入来源热度。分享返利仍只允许 generated artifact，并通过 `billing.grant_bonus_credits` 发放。
 
-初始目录只允许用 `image-plaza:seed` 离线命令导入：默认 dry-run；真实 apply 必须有逐 ID 权利/内容/元数据审核清单、明确数据库目标、原图存储确认和 1–500 条显式批次。下载固定 HTTPS `image.civitai.com`、有限重定向/超时/重试、20 MiB 流式上限和真实 MIME/尺寸校验，随后转存私有 `image-plaza` bucket 并通过 `experience.import_image_plaza_seed_work` 原子写 artifact/work。当前 8,227 条源数据仅完成本地 dry-run（8,054 可进入审核、173 超长隔离），尚未写入 test/production。
+初始目录只允许用 `image-plaza:seed` 离线命令导入：默认 dry-run；真实 apply 必须有逐 ID 权利/内容/元数据审核清单、明确数据库目标、原图存储确认和 1–500 条显式批次。下载固定 HTTPS `image.civitai.com`，重定向仅允许 Civitai 精确主机白名单，并有有限超时/重试、普通图 20 MiB/seed 原图 50 MiB 上限和真实 MIME/尺寸校验；需要代理时显式使用 ProxyAgent，TLS 校验关闭则拒绝执行。图片转存私有 `image-plaza` bucket，并通过 `experience.import_image_plaza_seed_work` 原子写 artifact/work。8,227 条源数据中 8,054 条通过 2,000 字长度门禁，test 已导入 8,032 条，22 条源站和官方 API 均不可用记录隔离；production 未写入。
 
 ---
 
@@ -585,7 +585,7 @@ packages/backend/src/
 | 项                             | 状态 | 说明                                                                                                                                            |
 | ------------------------------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | VIP Production 发布            | ⏳   | 代码与 TEST 验收已完成。Production migration、购买开关、提醒 Cron 和提醒开关仍关闭，需产品在 T9 明确批准后逐项打开                              |
-| 图片广场 test/Production 发布  | ⏳   | 20261012/20261013 migration 尚待明确 test 环境实库验证；初始数据还缺逐 ID 审核 allowlist、canary 和容量批准，Production 另行授权                |
+| 图片广场 test/Production 发布  | ⏳   | 三份 migration 已在 test 验证；8,032 条初始作品已导入，22 条不可用源资源隔离；真实 UI/provider canary 待完成，Production 另行授权               |
 | Schema 划分批次 D 收口         | ⏳   | 观察期后删空壳 `miniapp` schema；补做需登录态的 7 项应用层验证（交接文档 §一）                                                                  |
 | chat_history 列级瘦身          | ⏳   | `history` 列（TOAST ~10 GB）处置方案另立项；A 档 `llm_usage_cache`、B 档观测列待删（历史盘点：`git show b4491cd^:docs/schema划分专项.md` §2.5） |
 | 语音按次计费开启               | ⏳   | 链路已随 105 落地，`voice_billing_enabled` 默认关；开启是运营决定，且该 key 尚未纳入 admin managed key，目前只能走迁移改                        |

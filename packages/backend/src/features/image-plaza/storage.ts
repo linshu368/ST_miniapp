@@ -3,6 +3,7 @@ import { getSupabaseClient } from '../../lib/supabase.js';
 
 const BUCKET = 'image-plaza';
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_SEED_IMAGE_BYTES = 50 * 1024 * 1024;
 
 export type PlazaMimeType = 'image/png' | 'image/jpeg' | 'image/webp';
 
@@ -18,7 +19,15 @@ export function validatePlazaImage(
   bytes: Buffer,
   declaredMimeType?: string
 ): { mimeType: PlazaMimeType; width: number; height: number } {
-  if (bytes.byteLength === 0 || bytes.byteLength > MAX_IMAGE_BYTES) {
+  return validatePlazaImageWithLimit(bytes, declaredMimeType, MAX_IMAGE_BYTES);
+}
+
+function validatePlazaImageWithLimit(
+  bytes: Buffer,
+  declaredMimeType: string | undefined,
+  maxBytes: number
+): { mimeType: PlazaMimeType; width: number; height: number } {
+  if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) {
     throw new Error('image_plaza_image_size_invalid');
   }
   const detected = detectMimeType(bytes);
@@ -74,7 +83,11 @@ export async function uploadSeedPlazaImage(input: {
   if (!/^\d+$/.test(input.sourceImageId)) {
     throw new Error('image_plaza_seed_source_id_invalid');
   }
-  const validated = validatePlazaImage(input.bytes, input.declaredMimeType);
+  const validated = validatePlazaImageWithLimit(
+    input.bytes,
+    input.declaredMimeType,
+    MAX_SEED_IMAGE_BYTES
+  );
   const extension = validated.mimeType === 'image/jpeg' ? 'jpg' : validated.mimeType.split('/')[1];
   const storagePath = `image-plaza/imports/civitai/${input.sourceImageId}.${extension}`;
   const { error } = await getSupabaseClient()

@@ -1,6 +1,6 @@
 # 图片广场与图片创作第二版 — 执行计划
 
-> Q1–Q12-rev3 已拍板并于 2026-10-12 获实施授权；Q13 初始数据扩展于 2026-10-13 获代码实施授权。兼容层和离线 importer 已完成，真实数据写入仍受来源/内容审核、明确环境与 test canary 门禁约束。
+> Q1–Q12-rev3 已拍板并于 2026-10-12 获实施授权；Q13 初始数据扩展于 2026-10-13 获代码实施授权。兼容层和离线 importer 已完成；用户随后确认 test 目标及批次审核，8,032 条已写入 test，22 条源资源不可用记录隔离，production 仍需单独授权。
 
 ## 0. 规划收口
 
@@ -41,7 +41,7 @@ pnpm -r typecheck
 
 人工：对照原型默认广场路径走 `prd.md` 4.1 必验路径（以拍板后的 Q1 替换弹窗步骤）；故障：断网分享、重复点击、离页恢复、余额不足、模型下架后用同款。
 
-初始数据扩展另需：运行 importer dry-run；对重复/断点续跑、超限 prompt、源图 404、重定向越界、MIME 欺骗、超 20 MiB/8,192 px、上传成功写库失败、模型下架、source 字段泄漏执行故障注入；在 test canary 中人工打开列表/详情并完成“用同款”提交。不得用生产库或生产 Storage 代替 test 验证。
+初始数据扩展另需：运行 importer dry-run；对重复/断点续跑、超限 prompt、源图 404、重定向越界、MIME 欺骗、普通图超 20 MiB/seed 超 50 MiB、8,192 px、上传成功写库失败、模型下架、source 字段泄漏执行故障注入；在 test canary 中人工打开列表/详情并完成“用同款”提交。不得用生产库或生产 Storage 代替 test 验证。
 
 ## 3. 风险文件 / 回滚点
 
@@ -54,4 +54,4 @@ pnpm -r typecheck
 
 ## 4. task.md 映射（拍板后细化）
 
-阶段 A–H 已映射到 `task.md` T1–T9（T8 Skipped）；初始数据规划审计为 T10；阶段 I/J 已映射并完成 T11/T12；阶段 K 对应 T13，等待审核 allowlist、明确 test 环境和实库 migration/canary。
+阶段 A–H 已映射到 `task.md` T1–T9（T8 Skipped）；初始数据规划审计为 T10；阶段 I/J 已映射并完成 T11/T12；阶段 K 对应 T13，test migration、批量导入、feed/detail consumer 校验已完成，仍待真实 UI“用同款”/provider canary 和 22 个不可用源资源的替代输入。

@@ -6,22 +6,22 @@
 
 ## Tasks
 
-| ID  | Status  | Task                               | Files / Scope                          | Depends On    | Verification                         |
-| --- | ------- | ---------------------------------- | -------------------------------------- | ------------- | ------------------------------------ |
-| T0  | Done    | 规划收口：原型对齐 + 冲突确认      | `prd.md` `design.md` `implement.md`    | -             | Q1–Q12-rev；已获实施授权             |
-| T1  | Done    | 独立契约 image-plaza + migration   | shared `api/image-plaza*` + migrations | T0            | 八域已终审；不改 `api/images.ts`     |
-| T2  | Done    | Backend image-plaza 创作/报价/结算 | `features/image-plaza` + routes        | T1            | 失败不扣；与 `features/image` 隔离   |
-| T3  | Done    | Backend 广场/分享返利              | image-plaza + billing RPC              | T1            | 幂等返利；即时上架                   |
-| T4  | Done    | Frontend 广场瀑布流+详情+用同款    | `/create` 直接广场；隐藏 wish 入口     | T3 契约可用   | AC01；吸顶去创作                     |
-| T5  | Done    | Frontend 创作流+操作               | 同上独立模块                           | T2            | AC06–09                              |
-| T6  | Done    | 分享弹窗状态机                     | frontend+backend                       | T0 Q1, T3     | AC12                                 |
-| T7  | Done    | Admin 三页                         | admin                                  | T1            | AC13–14                              |
-| T8  | Skipped | 聊天看看TA（入口已配置关闭）       | —                                      | —             | Q9：本期不处理                       |
-| T9  | Doing   | 探索环境验收与记录                 | 全栈                                   | T4–T7         | 静态验证完成；待 test DB/真机联调    |
-| T10 | Done    | 初始广场数据只读审计与规划补充     | PRD/design/implement/research          | T1–T7         | 8,227 行聚合审计；未改产品代码/数据  |
-| T11 | Done    | 初始数据 schema/契约/同款兼容层    | shared/backend/frontend/database       | T10、单独授权 | 本地验证完成；migration 待 test 执行 |
-| T12 | Done    | 离线 importer 与来源/内容门禁      | backend tooling/Storage/导入清单       | T11、门禁关闭 | 8,227 行 dry-run；无数据写入         |
-| T13 | Blocked | test canary 与分批初始数据导入     | test DB/Storage/人工回归               | T12           | 缺审核 allowlist/test 环境确认       |
+| ID  | Status  | Task                               | Files / Scope                          | Depends On    | Verification                        |
+| --- | ------- | ---------------------------------- | -------------------------------------- | ------------- | ----------------------------------- |
+| T0  | Done    | 规划收口：原型对齐 + 冲突确认      | `prd.md` `design.md` `implement.md`    | -             | Q1–Q12-rev；已获实施授权            |
+| T1  | Done    | 独立契约 image-plaza + migration   | shared `api/image-plaza*` + migrations | T0            | 八域已终审；不改 `api/images.ts`    |
+| T2  | Done    | Backend image-plaza 创作/报价/结算 | `features/image-plaza` + routes        | T1            | 失败不扣；与 `features/image` 隔离  |
+| T3  | Done    | Backend 广场/分享返利              | image-plaza + billing RPC              | T1            | 幂等返利；即时上架                  |
+| T4  | Done    | Frontend 广场瀑布流+详情+用同款    | `/create` 直接广场；隐藏 wish 入口     | T3 契约可用   | AC01；吸顶去创作                    |
+| T5  | Done    | Frontend 创作流+操作               | 同上独立模块                           | T2            | AC06–09                             |
+| T6  | Done    | 分享弹窗状态机                     | frontend+backend                       | T0 Q1, T3     | AC12                                |
+| T7  | Done    | Admin 三页                         | admin                                  | T1            | AC13–14                             |
+| T8  | Skipped | 聊天看看TA（入口已配置关闭）       | —                                      | —             | Q9：本期不处理                      |
+| T9  | Doing   | 探索环境验收与记录                 | 全栈                                   | T4–T7         | 静态验证完成；待 test DB/真机联调   |
+| T10 | Done    | 初始广场数据只读审计与规划补充     | PRD/design/implement/research          | T1–T7         | 8,227 行聚合审计；未改产品代码/数据 |
+| T11 | Done    | 初始数据 schema/契约/同款兼容层    | shared/backend/frontend/database       | T10、单独授权 | 三份 migration 已在 test 验证       |
+| T12 | Done    | 离线 importer 与来源/内容门禁      | backend tooling/Storage/导入清单       | T11、门禁关闭 | 8,227 行 dry-run；无数据写入        |
+| T13 | Doing   | test canary 与分批初始数据导入     | test DB/Storage/人工回归               | T12           | 8,032 已导入；22 个 404 隔离        |
 
 ## Execution Log
 
@@ -61,3 +61,7 @@
 - 2026-10-13：发现基础分享 RPC 直接加钱包会触发 legacy guard；在新 migration 中 forward-fix 为唯一 `billing.grant_bonus_credits` 入口，并显式拒绝 seed artifact 进入返利。验证：Shared 124、Backend 607、Frontend 242 项测试通过；全仓 typecheck、Frontend lint/build、import/legacy/migration guards、`git diff --check` 通过。Frontend 仅有既有签名图 `<img>` 警告；本机无 WSL/psql，migration ledger/实库 SQL 尚不能执行。
 - 2026-10-13：T13 阻塞于外部门禁：尚无逐 ID 的来源权利/内容审核/元数据核验 allowlist，也未确认并连接 test 数据库执行两份 migration，因此未进行 canary 或任何 test/production 数据写入；production 仍需另行授权。
 - 2026-10-13：已应用并补充 Trellis 模块知识，23 个模块文档基线校验通过；迁移命名、legacy guard 与 `git diff --check` 再次通过。所有可在本地安全完成的实现和静态验证已收口，T9/T13 继续等待明确 test 环境与人工审核资料。
+- 2026-10-13：用户确认 test 目标及 8,054 条候选的来源权利、内容和元数据审核，本次指令作为批次审核依据。只在 test 项目 `zoqelpfhurwehlvypryl` 执行导入；production 未连接、未写入。
+- 2026-10-13：test migration/RLS/grant/bucket/RPC 结构复核通过；Civitai 下载经显式 HTTPS ProxyAgent，重定向仅允许官方精确主机，TLS 校验关闭时 fail closed。1/10/20/100/200 条 canary、幂等重放和容量测试通过；16 并发触发停止条件，最终 CLI 上限回落到 4。
+- 2026-10-13：8,054 条候选中 8,032 条完成私有 Storage、artifact/work 原子导入。10 条 20.49–45.11 MiB 原图通过新 `20261013_image_plaza_seed_large_assets.sql` 将 seed 专用上限前向扩到 50 MiB 后补齐；普通用户图片仍为 20 MiB。22 条经两轮下载和 Civitai 官方 imageId API 复核均不可用，已记录隔离 ID。
+- 2026-10-13：最终核验为 8,032 work / 8,032 artifact / 8,032 Storage 对象且来源 ID 全部唯一；prompt 7–2,000 字，六模型数据齐全。默认 feed、详情 DTO、短期签名 URL和来源字段脱敏通过；修复 Postgres offset timestamp 到标准 ISO `Z` 的 DTO 映射。Backend 607 项测试、typecheck 与专项 lint 通过。T13 仅余真实 UI“用同款”提交/provider canary 和 22 个源资源替换输入。

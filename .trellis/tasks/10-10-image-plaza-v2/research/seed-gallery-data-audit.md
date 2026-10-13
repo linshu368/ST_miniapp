@@ -104,7 +104,7 @@
 1. **dry-run**：校验精确表头、必填字段、模型白名单、唯一 ID/URL、HTTPS 主机、热度、提示词不超过 2,000 字；长度阶段预期 8,054 条通过、173 条隔离，并生成仅含 ID/状态/原因的结果清单。
 2. **来源与内容门禁**：取得来源使用授权/归属证据和审核后的 allowlist；文件名及样本表明数据包含成人内容，须排除未成年人或年龄模糊、真实人物/深度伪造、非自愿及违法内容。未完成门禁则停止，不上传、不写库。
 3. **元数据核验**：匿名 Civitai API 对 NSFW 样本可能返回空结果，实施时使用经批准的访问方式核验 image ID、NSFW/browsing level、尺寸及可追溯来源；缺失或删除项进入隔离。
-4. **下载/转存**：显式超时、有限退避重试、并发/速率限制；限制重定向和最终主机以防 SSRF；流式限制 20 MiB、8,192 px；按字节识别格式并解码。
+4. **下载/转存**：显式超时、有限退避重试、并发/速率限制；限制重定向和最终主机以防 SSRF；普通图片限制 20 MiB，经审核 seed 原图限制 50 MiB，像素边长限制 8,192 px；按字节识别格式并解码。
 5. **写入**：先以确定性路径 `upsert=false` 上传；随后以单条/小批事务写 artifact+work；`source_image_id` 唯一约束保证重复执行幂等。
 6. **排序**：首次导入按 `source_heat DESC, source_image_id` 物化稳定 `published_at`，保留现有游标；后续重跑不改已有 `published_at`。新 UGC 自然排在初始数据之前。
 7. **补偿**：DB 失败时删除本次新上传对象；删除失败登记 orphan 清单供 reconciliation。日志只记批次、source ID、状态、计数、耗时和错误，不记录提示词、完整源 URL、token 或图片正文。
@@ -121,11 +121,11 @@
 ### 6.1 已实现的离线命令
 
 - dry-run（默认不连接数据库、不上传）：`pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>`。
-- apply 必须额外提供 `--apply --manifest <审核清单> --target test|production --limit 1..500 --confirm-original-storage`；通过 `--offset` 分批和断点续跑，可用 `--concurrency 1..8` 设置同一进程内的有界并发，默认 1。
+- apply 必须额外提供 `--apply --manifest <审核清单> --target test|production --limit 1..500 --confirm-original-storage`；通过 `--offset` 分批和断点续跑，可用 `--concurrency 1..4` 设置同一进程内的有界并发，默认 1。
 - production 还必须显式提供 `--confirm-production`，且 CLI 目标必须与 Backend 已解析的数据库环境一致。
 - 审核清单格式见 `seed-approval-manifest.example.json`。批次必须注明审核批次号和内容政策版本；每条必须同时确认来源权利、内容审核和元数据核验，并记录审核人、UTC 审核时间、权利证据引用和元数据证据引用；示例 ID 不可用于真实导入。
-- importer 保持单进程，内部并发显式限制为 1–8；源 URL 固定为 `image.civitai.com`，每条下载最多三次、每次 30 秒、最多三次重定向，逐跳主机只允许 Civitai 精确白名单 `image.civitai.com`、`blobs-b2.civitai.com`，响应流上限 20 MiB。需要代理时显式使用 HTTPS ProxyAgent，TLS 校验被关闭时拒绝执行。不要并行运行多个 importer 实例；提高并发前必须先用小批次验证当前网络、内存、Storage 和数据库容量。test 容量验证表明 16 并发会增加超时/TLS 中断，故运行上限保持 8。
-- test/production apply 前必须先手动执行并验证 `packages/shared/migrations/20261013_image_plaza_seed_catalog.sql`。当前会话只完成本地 dry-run，未写数据库或 Storage。
+- importer 保持单进程，内部并发显式限制为 1–4；源 URL 固定为 `image.civitai.com`，每条下载最多三次、每次 30 秒、最多三次重定向，逐跳主机只允许 Civitai 精确白名单 `image.civitai.com`、`blobs-b2.civitai.com`。普通图片仍限制 20 MiB；经审核的 Civitai 种子原图上限为 50 MiB，批量导入的理论峰值缓冲不超过约 200 MiB。需要代理时显式使用 HTTPS ProxyAgent，TLS 校验被关闭时拒绝执行。不要并行运行多个 importer 实例；提高并发前必须先用小批次验证当前网络、内存、Storage 和数据库容量。test 容量验证表明 16 并发会增加超时/TLS 中断，故最终运行上限回落到 4。
+- apply 前必须依次执行并验证 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql`。test 已导入 8,032 条并隔离 22 条不可用源资源；详细结果见 `seed-import-test-report.md`。production 未写入且仍需单独授权。
 
 ## 7. 外部依据
 

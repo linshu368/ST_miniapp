@@ -186,8 +186,8 @@ function parseArgs(args: string[]): CliOptions {
       options.limit = limit;
     } else if (arg === '--concurrency') {
       const concurrency = parseNonNegativeInteger(requireValue(args, ++index, arg), arg);
-      if (concurrency < 1 || concurrency > 8)
-        throw new Error('concurrency_must_be_between_1_and_8');
+      if (concurrency < 1 || concurrency > 4)
+        throw new Error('concurrency_must_be_between_1_and_4');
       options.concurrency = concurrency;
     } else {
       throw new Error(`unknown_argument:${arg ?? ''}`);
