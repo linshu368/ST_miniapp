@@ -62,11 +62,16 @@ $fn$;
 -- 固定离线 fixture，不是 SQL compiler：只覆盖本文件的 p/button 文本样例。
 CREATE OR REPLACE FUNCTION text_postprocess_t2.artifact(p_source jsonb)
 RETURNS jsonb LANGUAGE sql AS $fn$
-  SELECT jsonb_build_object('schema_version',1,'policy_version',1,'rules',COALESCE(jsonb_agg(
+  SELECT jsonb_build_object(
+    'schema_version', 1,
+    'policy_version', 1,
+    'rich_reply_protocol', jsonb_build_object('version', 2, 'enabled', true),
+    'rules', COALESCE(jsonb_agg(
     jsonb_build_object('id',r->'id','enabled',r->'enabled','pattern',r->'pattern','flags',r->'flags',
       'groups',jsonb_build_object('count',0,'names','[]'::jsonb,'name_by_index','[]'::jsonb),
       'placement','block','tree',jsonb_build_array(jsonb_build_object('type','text','text','fixture')),'css','[]'::jsonb)
-    ORDER BY ordinal), '[]'::jsonb))
+    ORDER BY ordinal), '[]'::jsonb)
+  )
   FROM jsonb_array_elements(p_source->'rules') WITH ORDINALITY AS rules(r,ordinal);
 $fn$;
 
