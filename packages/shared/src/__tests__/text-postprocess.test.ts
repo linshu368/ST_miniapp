@@ -185,6 +185,10 @@ describe('rich reply protocol', () => {
       (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-status'
     );
     expect(JSON.stringify(status?.type === 'slot' ? status.tree : [])).not.toContain('```markdown');
+    const memory = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-memory'
+    );
+    expect(JSON.stringify(memory?.type === 'slot' ? memory.tree : [])).toContain('rp-memory-list');
 
     const malformedText = '[choices][choice]一[/choice][choice]二[/choice][/choices]';
     const malformed = applyTextPostprocess({ text: malformedText, artifact });
