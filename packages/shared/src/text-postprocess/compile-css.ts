@@ -351,7 +351,8 @@ function readPseudo(node: CssNode): CssSelector['compounds'][number]['pseudos'][
     name === 'first-child' ||
     name === 'last-child' ||
     name === 'hover' ||
-    name === 'focus-visible'
+    name === 'focus-visible' ||
+    name === 'disabled'
   ) {
     if (hasChild(node)) return null;
     return { kind: name };
@@ -389,7 +390,11 @@ function readDeclarations(
       );
       return;
     }
-    if (!/^(?:--[a-z][a-z0-9-]{0,63}|[a-z][a-z0-9-]{0,63})$/.test(child.property)) {
+    if (
+      !/^(?:-webkit-[a-z][a-z0-9-]{0,63}|--[a-z][a-z0-9-]{0,63}|[a-z][a-z0-9-]{0,63})$/.test(
+        child.property
+      )
+    ) {
       failed = true;
       diagnostics.push(
         issue(ruleId, 'FORBIDDEN_PROPERTY', 'CSS property is not allowed.', nodeLocation(child))

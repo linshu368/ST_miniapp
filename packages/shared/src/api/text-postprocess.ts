@@ -299,7 +299,9 @@ export const TextPostprocessDiagnosticSchema = z
   .strict();
 
 const HtmlTagSchema = z.string().refine(isTextPostprocessHtmlTag);
-const CssPropertySchema = z.string().regex(/^(?:--[a-z][a-z0-9-]{0,63}|[a-z][a-z0-9-]{0,63})$/);
+const CssPropertySchema = z
+  .string()
+  .regex(/^(?:-webkit-[a-z][a-z0-9-]{0,63}|--[a-z][a-z0-9-]{0,63}|[a-z][a-z0-9-]{0,63})$/);
 
 export const CaptureRefSchema = z.discriminatedUnion('kind', [
   z
@@ -581,7 +583,7 @@ export const CompiledTextPostprocessArtifactSchema = z
     policy_version: z.literal(TEXT_POSTPROCESS_POLICY_VERSION),
     /** Fixed protocol parser; default keeps existing published artifacts compatible. */
     rich_reply_protocol: z
-      .object({ version: z.literal(1), enabled: z.boolean() })
+      .object({ version: z.union([z.literal(1), z.literal(2)]), enabled: z.boolean() })
       .strict()
       .default({ version: 1, enabled: true }),
     rules: z.array(CompiledTextPostprocessRuleSchema).max(TEXT_POSTPROCESS_LIMITS.maxRules),
