@@ -71,6 +71,38 @@ remains rejected.
 isolated PostgreSQL 17 cluster with eight historical special-key drafts and
 releases, applies the T6 migration, preserves those rows, proves the generic
 allowlist remains false for the special key, and rejects an arbitrary key in
-both tables. It passed locally. TEST must first confirm the failed apply did
-not produce a ledger row, then rerun the same file; no remote retry was made
-by this task.
+both tables. It passed locally.
+
+The failed transaction did leave a `repo_migration_claims` row, because the
+repository runner claims a file before submitting its SQL transaction. The
+claim therefore keeps the original checksum even though the SQL rollback left
+no T6 schema changes. The corrected same-name T6 file must not be retried
+directly: that would correctly raise `MIGRATION_CHECKSUM_DRIFT`.
+
+`20261013_repo_migration_claim_recovery.sql` adds the minimal platform-ledger
+support for a controlled recovery: `repo_migration_events.details` and the
+`abandon_claim` event action. The `Database Migration` workflow now has an
+explicit `abandon_claim` mode. It requires a non-empty reason, a missing
+ledger row, an existing claim whose checksum differs from the current file,
+and the recovery-ledger migration. In one transaction it locks the claim,
+rechecks those invariants, records the old checksum, replacement checksum and
+reason, then deletes the claim. It does not execute the target migration SQL.
+
+Local `pnpm test:migration-ledger` passed with a simulated failed record,
+subsequent fixture checksum change, failure without a reason, audited
+abandonment, and normal corrected-file apply. The recovery migration itself
+was applied only to the local temporary test database. No TEST/Production
+database write or retry was performed.
+
+### Required TEST recovery order
+
+1. Apply `packages/shared/migrations/20261013_repo_migration_claim_recovery.sql`
+   through the normal `apply` workflow and retain its ledger/postflight output.
+2. Run the workflow in `abandon_claim` mode for
+   `packages/shared/migrations/20261013_admin_platform_instruction_slots.sql`,
+   with a factual failure reason. Verify the resulting event has action
+   `abandon_claim`, the old and replacement checksums, and no ledger row for
+   T6.
+3. Apply the corrected T6 migration normally, then perform its SQL postflight
+   and the planned Admin draft/publish/rollback acceptance. Do not use
+   `force_rerun`; it cannot bypass checksum drift.
