@@ -33,20 +33,37 @@ export const RULE_FIELD_HELP = {
 
 export const PREVIEW_SAMPLES = {
   full: [
-    '她低声说：「今晚见」。',
+    '她低声说：“今晚见”。',
     '',
-    '[highlight]这是重点[/highlight]',
+    '[choices]',
+    '[choice]握住她的手[/choice]',
+    '[choice]再问一次[/choice]',
+    '[choice]安静等待[/choice]',
+    '[/choices]',
     '',
-    '[status]天气晴，风很小[/status]',
+    '[status]',
+    '<details><summary>此刻</summary>',
+    '```markdown',
+    '地点：花园',
+    '时间：深夜',
+    '```',
+    '</details>',
+    '[/status]',
     '',
-    '[choice]留下',
-    '[choice]离开',
+    '[memory]',
+    '<details><summary>工作记忆</summary>',
+    '```markdown',
+    '当前记忆数目：1/7',
+    '```',
+    '</details>',
+    '[/memory]',
     '',
     '普通 **markdown** 与 `code`。',
   ].join('\n'),
   plain: '这是一段没有规则标记的普通回复。\n\n- 列表一\n- 列表二',
   broken: '这里有未闭合的 [highlight]只有开头',
-  choice: '[choice]接受邀请\n[choice]再考虑一下',
+  choice:
+    '[choices]\n[choice]接受邀请[/choice]\n[choice]再考虑一下[/choice]\n[choice]先观察[/choice]\n[/choices]',
 } as const;
 
 export type PreviewSampleKey = keyof typeof PREVIEW_SAMPLES;

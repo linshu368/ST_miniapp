@@ -1,0 +1,6 @@
+{"file":".trellis/spec/admin/app/data-auth-and-environments.md","reason":"System Instructions draft/publish environment and auth boundary"}
+{"file":".trellis/spec/admin/app/ui-state-and-validation.md","reason":"Admin validation, preview, dirty-state and publish UX"}
+{"file":".trellis/spec/shared/contracts/api-contracts.md","reason":"Versioned RichReply and compiled artifact contract"}
+{"file":".trellis/spec/shared/contracts/schemas-utilities-and-fixtures.md","reason":"Deterministic parser, canonical fixtures, budgets and fallback"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"Forward migration source, environment and execution constraints"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Admin to Backend to Shared to Frontend round-trip design"}

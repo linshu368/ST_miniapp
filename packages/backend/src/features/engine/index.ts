@@ -29,7 +29,6 @@ export {
   engineWordCountTiersToConfig,
   fetchPlatformInstructions,
   invalidatePlatformInstructionsCache,
-  INTERACTION_MODE_BLOCKS_KEY,
   parseWordCountTiers,
   PLATFORM_INSTRUCTIONS_TEMPLATE_KEY,
   toPublicWordCountTiersFromEngine,

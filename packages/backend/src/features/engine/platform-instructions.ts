@@ -2,7 +2,7 @@
  * backend / features / engine / platform-instructions.ts
  *
  * 平台规则三件套的读取通道：app_core.runtime_config 的
- * system_instructions / interaction_mode_blocks / pref_word_count_tiers 三个 key
+ * system_instructions / pref_word_count_tiers 两个 key
  * → 引擎接缝的 EnginePlatformInstructions。正文由 migration 071 落库，076 起可由 Admin 发布。
  *
  * 这是本模块里唯一有 IO 的文件；渲染与组装（render-instructions.ts / prompt-engine.ts）保持纯函数。
@@ -13,6 +13,7 @@
 
 import {
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  RICH_REPLY_SYSTEM_INSTRUCTIONS,
   toPublicWordCountTiers,
   WordCountTiersConfigSchema,
   type PublicWordCountTiers,
@@ -25,35 +26,17 @@ import {
 import type { EnginePlatformInstructions, EngineWordCountTiers } from './types.js';
 
 export const PLATFORM_INSTRUCTIONS_TEMPLATE_KEY = 'system_instructions';
-export const INTERACTION_MODE_BLOCKS_KEY = 'interaction_mode_blocks';
 export const WORD_COUNT_TIERS_KEY = 'pref_word_count_tiers';
 
-const CONFIG_KEYS = [
-  PLATFORM_INSTRUCTIONS_TEMPLATE_KEY,
-  INTERACTION_MODE_BLOCKS_KEY,
-  WORD_COUNT_TIERS_KEY,
-] as const;
+const CONFIG_KEYS = [PLATFORM_INSTRUCTIONS_TEMPLATE_KEY, WORD_COUNT_TIERS_KEY] as const;
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
- * 三个 key 全部缺失/损坏时的最后兜底。刻意写得很短——它只保证生成不中断，
+ * 两个 key 全部缺失/损坏时的最后兜底。刻意写得很短——它只保证生成不中断，
  * 输出质量一定是降级的，靠 degraded 标记和日志把问题暴露出来，而不是让它悄悄跑下去。
  */
-const FALLBACK_TEMPLATE = [
-  '你正在进行沉浸式角色扮演。只输出剧情正文，不要输出状态栏、系统提示或思考过程；',
-  '不要替用户决定行动或说话；不要打破第四面墙提及自己是 AI。',
-  '{{INTERACTION_MODE}}',
-  '输出篇幅为 {{WORD_COUNT}} 字，段落之间使用空行隔开，仅使用简体中文。',
-  '用户个人偏好为：',
-  '{{USER_CUSTOM_INSTRUCTIONS}}',
-].join('\n');
-
-const FALLBACK_INTERACTION_MODE_BLOCKS = {
-  optionsOn:
-    '正文结束后，另起一行，生成 2-3 个选项供用户参考。选项是建议而非限制，用户可以完全忽略。',
-  optionsOff: '不要在回复末尾生成任何选项。用户自行决定下一步行动。',
-} as const;
+const FALLBACK_TEMPLATE = RICH_REPLY_SYSTEM_INSTRUCTIONS;
 
 const FALLBACK_WORD_COUNT_TIERS: EngineWordCountTiers = configToEngineWordCountTiers(
   DEFAULT_WORD_COUNT_TIERS_CONFIG
@@ -77,16 +60,6 @@ function nonEmptyString(value: unknown): string | null {
 export function parseTemplate(entry: RuntimeConfigEntry | undefined): string | null {
   if (!entry) return null;
   return nonEmptyString(entry.textValue) ?? nonEmptyString(entry.value);
-}
-
-export function parseInteractionModeBlocks(
-  value: unknown
-): EnginePlatformInstructions['interactionModeBlocks'] | null {
-  if (!isRecord(value)) return null;
-  const optionsOn = nonEmptyString(value.options_on);
-  const optionsOff = nonEmptyString(value.options_off);
-  if (!optionsOn || !optionsOff) return null;
-  return { optionsOn, optionsOff };
 }
 
 function layoutColumns(value: unknown): 2 | 3 | 4 {
@@ -214,16 +187,6 @@ export function buildSnapshot(
     degraded = true;
   }
 
-  const interactionModeBlocks = parseInteractionModeBlocks(
-    entries.get(INTERACTION_MODE_BLOCKS_KEY)?.value
-  );
-  if (!interactionModeBlocks) {
-    console.error(
-      `[engine] runtime_config ${INTERACTION_MODE_BLOCKS_KEY} 缺失或格式非法，选项模式已降级到内置兜底`
-    );
-    degraded = true;
-  }
-
   const wordCountEntry = entries.get(WORD_COUNT_TIERS_KEY);
   let wordCountTiers = parseWordCountTiers(wordCountEntry?.value);
   if (!wordCountTiers) {
@@ -254,7 +217,6 @@ export function buildSnapshot(
   return {
     instructions: {
       template: template ?? FALLBACK_TEMPLATE,
-      interactionModeBlocks: interactionModeBlocks ?? FALLBACK_INTERACTION_MODE_BLOCKS,
       wordCountTiers: wordCountTiers ?? FALLBACK_WORD_COUNT_TIERS,
     },
     degraded,
@@ -263,7 +225,7 @@ export function buildSnapshot(
 
 /**
  * 读取平台规则，按 version 判活缓存（与模型目录同款策略）。
- * 三个 key 任一 version 变化即重建，运营改文案后无需重启。
+ * 任一 key 的 version 变化即重建，运营改文案后无需重启。
  */
 export async function fetchPlatformInstructions(): Promise<PlatformInstructionsSnapshot> {
   let entries: Map<string, RuntimeConfigEntry>;

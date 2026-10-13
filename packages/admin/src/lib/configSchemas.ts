@@ -12,6 +12,7 @@ import {
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  RICH_REPLY_SYSTEM_INSTRUCTIONS,
   FeatureFreeTrialLimitsSchema,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
@@ -91,7 +92,6 @@ export { LlmPricingConfigSchema };
 
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
   '{{WORD_COUNT}}',
-  '{{INTERACTION_MODE}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
 ] as const;
 
@@ -239,16 +239,8 @@ export const DEFAULT_INVITE_CENTER_CONFIG: InviteCenterConfig = {
   ],
 };
 
-export const DEFAULT_SYSTEM_INSTRUCTIONS = [
-  'Roleplay System Instructions',
-  '',
-  '{{INTERACTION_MODE}}',
-  '',
-  '输出篇幅为 {{WORD_COUNT}} 字，段落之间使用空行隔开，仅使用简体中文。',
-  '',
-  '用户个人偏好为：',
-  '{{USER_CUSTOM_INSTRUCTIONS}}',
-].join('\n');
+/** 与 shared 的协议源保持同一份文本，禁止在 Admin 再维护副本。 */
+export const DEFAULT_SYSTEM_INSTRUCTIONS = RICH_REPLY_SYSTEM_INSTRUCTIONS;
 
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
@@ -390,7 +382,7 @@ export const configMetadata: Record<
   system_instructions: {
     label: '平台规则模板',
     description:
-      '自研引擎每轮注入的平台规则（markdown）。须含 {{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
+      '自研引擎每轮注入的平台规则（markdown）。须含 {{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
     defaultValue: DEFAULT_SYSTEM_INSTRUCTIONS,
   },
   pref_word_count_tiers: {

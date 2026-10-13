@@ -168,7 +168,7 @@ export class MiniappUserSettingsRepository {
    * 自研引擎的用户生成配置读取通道（M1）。
    *
    * 三个 pref_* 字段自 migration 015 就已存在，此前从未被任何生成路径消费；
-   * 引擎侧的用法见 M2（{{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}）。
+   * 引擎侧的用法见 M2（{{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}）。
    * 配置属于用户层、对该用户所有会话生效（总方案决策 10），因此不接受 session 维度入参。
    *
    * 用户还没有设置行、或存档档位为 NULL（从未选过，见 086）时，回复长度回落到运营台当前的

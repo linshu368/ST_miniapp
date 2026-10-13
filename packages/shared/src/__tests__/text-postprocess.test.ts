@@ -159,6 +159,47 @@ describe('capture compilation', () => {
   });
 });
 
+describe('rich reply protocol', () => {
+  it('turns complete fixed modules into trusted slots and preserves malformed modules as text', () => {
+    const artifact = compileOk([]);
+    const complete = [
+      '她轻声说：“我会留下。”',
+      '[choices][choice]握住她的手[/choice][choice]再问一次[/choice][choice]安静等待[/choice][/choices]',
+      '[status]<details><summary>此刻</summary>```markdown\n地点：花园\n时间：深夜\n```</details>[/status]',
+      '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：1/7\n```</details>[/memory]',
+    ].join('\n\n');
+
+    const applied = applyTextPostprocess({ text: complete, artifact });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    expect(applied.segments.filter((segment) => segment.type === 'slot')).toHaveLength(4);
+    const choices = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-choices'
+    );
+    expect(choices?.type === 'slot' ? choices.choices.map((choice) => choice.text) : []).toEqual([
+      '握住她的手',
+      '再问一次',
+      '安静等待',
+    ]);
+    const status = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-status'
+    );
+    expect(JSON.stringify(status?.type === 'slot' ? status.tree : [])).not.toContain('```markdown');
+
+    const malformedText = '[choices][choice]一[/choice][choice]二[/choice][/choices]';
+    const malformed = applyTextPostprocess({ text: malformedText, artifact });
+    expect(malformed.status).toBe('applied');
+    expect(malformed.segments).toEqual([
+      {
+        type: 'text',
+        text: malformedText,
+        start: 0,
+        end: malformedText.length,
+      },
+    ]);
+  });
+});
+
 describe('segment application', () => {
   it('applies order, overlap, non-global, multiline, misses, and empty-match rejection', () => {
     const artifact = compileOk([

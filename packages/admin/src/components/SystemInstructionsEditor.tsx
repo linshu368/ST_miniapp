@@ -1,11 +1,7 @@
 import { Alert, Input, Space, Tag, Typography } from 'antd';
 import { SystemInstructionsSchema } from '../lib/configSchemas';
 
-const PLACEHOLDERS = [
-  '{{WORD_COUNT}}',
-  '{{INTERACTION_MODE}}',
-  '{{USER_CUSTOM_INSTRUCTIONS}}',
-] as const;
+const PLACEHOLDERS = ['{{WORD_COUNT}}', '{{USER_CUSTOM_INSTRUCTIONS}}'] as const;
 
 export function SystemInstructionsEditor(props: {
   value: string;
@@ -21,7 +17,7 @@ export function SystemInstructionsEditor(props: {
         type="info"
         showIcon
         message="Markdown 平台规则"
-        description="保存/发布为新快照，不覆盖历史。三个占位符会在每轮生成时按用户偏好替换。"
+        description="保存/发布为新快照，不覆盖历史。两个占位符会在每轮生成时按用户偏好替换；富回复协议由平台唯一事实源提供。"
       />
       <div>
         <Typography.Text>占位符</Typography.Text>
