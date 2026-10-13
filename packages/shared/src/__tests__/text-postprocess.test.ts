@@ -206,6 +206,26 @@ describe('rich reply protocol', () => {
 });
 
 describe('segment application', () => {
+  it('renders legacy bare choices and plain memory after ordinary rules leave them untouched', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: [
+        '[choice]留下[/choice]',
+        '[choice]离开[/choice]',
+        '[choice]等待[/choice]',
+        '',
+        '[memory]工作记忆：已抵达花园\n里程碑：第一次见面[/memory]',
+      ].join('\n'),
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    const slots = applied.segments.filter((segment) => segment.type === 'slot');
+    expect(slots.map((slot) => slot.rule_id)).toEqual(['choice', 'memory']);
+    expect(slots[0]?.choices.map((choice) => choice.text)).toEqual(['留下', '离开', '等待']);
+    expect(slots[1]?.match_text).toContain('工作记忆');
+  });
+
   it('applies order, overlap, non-global, multiline, misses, and empty-match rejection', () => {
     const artifact = compileOk([
       rule({ id: 'first', pattern: 'ab', replacement: '<mark>$&</mark>' }),
