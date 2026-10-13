@@ -65,3 +65,4 @@
 - 2026-10-13：test migration/RLS/grant/bucket/RPC 结构复核通过；Civitai 下载经显式 HTTPS ProxyAgent，重定向仅允许官方精确主机，TLS 校验关闭时 fail closed。1/10/20/100/200 条 canary、幂等重放和容量测试通过；16 并发触发停止条件，最终 CLI 上限回落到 4。
 - 2026-10-13：8,054 条候选中 8,032 条完成私有 Storage、artifact/work 原子导入。10 条 20.49–45.11 MiB 原图通过新 `20261013_image_plaza_seed_large_assets.sql` 将 seed 专用上限前向扩到 50 MiB 后补齐；普通用户图片仍为 20 MiB。22 条经两轮下载和 Civitai 官方 imageId API 复核均不可用，已记录隔离 ID。
 - 2026-10-13：最终核验为 8,032 work / 8,032 artifact / 8,032 Storage 对象且来源 ID 全部唯一；prompt 7–2,000 字，六模型数据齐全。默认 feed、详情 DTO、短期签名 URL和来源字段脱敏通过；修复 Postgres offset timestamp 到标准 ISO `Z` 的 DTO 映射。Backend 607 项测试、typecheck 与专项 lint 通过。T13 仅余真实 UI“用同款”提交/provider canary 和 22 个源资源替换输入。
+- 2026-10-13：`20261013_image_plaza_seed_large_assets.sql` 手工重放曾因函数参数文本精确匹配及仅接受 20 MiB 旧定义而抛出 P0001，事务整体回滚。迁移已改为通过完整签名解析 OID，并同时接受“待从 20 MiB 升级”和“已经是 50 MiB”状态；在明确 test 项目重放通过，artifact CHECK、Storage bucket 与 seed RPC 三项 50 MiB 自检均为 true。

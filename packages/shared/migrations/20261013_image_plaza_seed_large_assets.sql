@@ -9,13 +9,17 @@ SET LOCAL statement_timeout = '120s';
 DO $$
 DECLARE
   v_definition TEXT;
+  v_function_oid OID;
+  v_old_occurrences INTEGER;
   v_old_fragment CONSTANT TEXT := 'p_byte_size NOT BETWEEN 1 AND 20971520';
   v_new_fragment CONSTANT TEXT := 'p_byte_size NOT BETWEEN 1 AND 52428800';
 BEGIN
+  v_function_oid := to_regprocedure(
+    'experience.import_image_plaza_seed_work(text,text,integer,text,text,integer,integer,integer,text,text,text,jsonb,timestamp with time zone)'
+  )::OID;
+
   IF to_regclass('experience.image_plaza_artifacts') IS NULL
-     OR to_regprocedure(
-       'experience.import_image_plaza_seed_work(text,text,integer,text,text,integer,integer,integer,text,text,text,jsonb,timestamp with time zone)'
-     ) IS NULL THEN
+     OR v_function_oid IS NULL THEN
     RAISE EXCEPTION 'image plaza seed catalog migration must be applied first';
   END IF;
 
@@ -29,23 +33,31 @@ BEGIN
     RAISE EXCEPTION 'existing image plaza artifact exceeds 50 MiB';
   END IF;
 
-  SELECT pg_get_functiondef(p.oid)
+  SELECT pg_get_functiondef(v_function_oid)
   INTO v_definition
-  FROM pg_proc AS p
-  JOIN pg_namespace AS n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'experience'
-    AND p.proname = 'import_image_plaza_seed_work'
-    AND pg_get_function_identity_arguments(p.oid) =
-      'p_source_image_id text, p_source_image_url text, p_source_heat integer, p_storage_path text, p_mime_type text, p_byte_size integer, p_width integer, p_height integer, p_title text, p_model_id text, p_model_name text, p_snapshot jsonb, p_published_at timestamp with time zone';
+  WHERE v_function_oid IS NOT NULL;
 
-  IF v_definition IS NULL OR strpos(v_definition, v_old_fragment) = 0 THEN
+  IF v_definition IS NULL THEN
     RAISE EXCEPTION 'unexpected image plaza seed import function definition';
   END IF;
-  IF strpos(replace(v_definition, v_old_fragment, ''), v_old_fragment) > 0 THEN
-    RAISE EXCEPTION 'ambiguous image plaza seed byte limit definition';
-  END IF;
 
-  EXECUTE replace(v_definition, v_old_fragment, v_new_fragment);
+  IF strpos(v_definition, v_new_fragment) > 0 THEN
+    IF strpos(v_definition, v_old_fragment) > 0 THEN
+      RAISE EXCEPTION 'ambiguous image plaza seed byte limit definition';
+    END IF;
+  ELSIF strpos(v_definition, v_old_fragment) > 0 THEN
+    v_old_occurrences := (
+      char_length(v_definition) - char_length(replace(v_definition, v_old_fragment, ''))
+    ) / char_length(v_old_fragment);
+
+    IF v_old_occurrences <> 1 THEN
+      RAISE EXCEPTION 'ambiguous image plaza seed byte limit definition';
+    END IF;
+
+    EXECUTE replace(v_definition, v_old_fragment, v_new_fragment);
+  ELSE
+    RAISE EXCEPTION 'unexpected image plaza seed import byte limit definition';
+  END IF;
 END;
 $$;
 
@@ -63,12 +75,15 @@ DO $$
 DECLARE
   v_definition TEXT;
 BEGIN
-  SELECT pg_get_functiondef(p.oid)
+  SELECT pg_get_functiondef(
+    to_regprocedure(
+      'experience.import_image_plaza_seed_work(text,text,integer,text,text,integer,integer,integer,text,text,text,jsonb,timestamp with time zone)'
+    )::OID
+  )
   INTO v_definition
-  FROM pg_proc AS p
-  JOIN pg_namespace AS n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'experience'
-    AND p.proname = 'import_image_plaza_seed_work';
+  WHERE to_regprocedure(
+    'experience.import_image_plaza_seed_work(text,text,integer,text,text,integer,integer,integer,text,text,text,jsonb,timestamp with time zone)'
+  ) IS NOT NULL;
 
   IF v_definition IS NULL
      OR strpos(v_definition, 'p_byte_size NOT BETWEEN 1 AND 52428800') = 0 THEN
