@@ -12,6 +12,7 @@ import {
 } from '@miniapp/shared';
 
 import { composeAppliedView } from '../compose';
+import { BASE_CSS } from '../base-css';
 import { createAlphanumericNonce } from '../nonce';
 import { isSafeCss } from '../css-safety';
 import { ReplyRenderer } from '../ReplyRenderer';
@@ -67,6 +68,12 @@ afterEach(() => {
 });
 
 describe('reply renderer boundaries', () => {
+  it('ships the fixed rich-reply visual classes with the renderer', () => {
+    expect(BASE_CSS).toContain('.reply-markdown .rp-unit');
+    expect(BASE_CSS).toContain('.reply-markdown .rp-memory-list pre');
+    expect(BASE_CSS).toContain('.reply-markdown .rp-dialogue');
+  });
+
   it('keeps the main bundle off the compiler and runs apply inside the worker bundle', () => {
     const workerSource = readFileSync(workerBundlePath, 'utf8');
     const mainSource = readFileSync(mainBundlePath, 'utf8');
@@ -433,6 +440,8 @@ describe('choice and details interaction', () => {
     const view = render(element('StatusCard', artifact, { messageKey: 'status' }));
     await waitForState(view.container, 'applied');
     const summary = view.getByText('Status');
+    expect(summary.closest('details')?.classList.contains('rp-unit')).toBe(true);
+    expect(summary.closest('details')?.classList.contains('rp-unit--status')).toBe(true);
     expect(summary.closest('details')?.hasAttribute('open')).toBe(false);
     expect((summary as HTMLElement).style.minHeight).toBe('44px');
     await user.click(summary);
@@ -686,7 +695,7 @@ function detailsRule(): CompiledTextPostprocessRule {
       {
         type: 'element',
         tag: 'details',
-        attributes: [],
+        attributes: [{ name: 'class', tokens: ['rp-unit', 'rp-unit--status'] }],
         action: null,
         children: [
           {

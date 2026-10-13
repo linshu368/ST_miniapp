@@ -182,7 +182,16 @@ function memorySlot(
   end: number,
   match: string
 ): TextPostprocessSlotSegment | null {
-  return panelModuleSlot(body, start, end, match, '故事记忆', '已记住这段经历', 'rp-unit--memory');
+  return panelModuleSlot(
+    body,
+    start,
+    end,
+    match,
+    '故事记忆',
+    '已记住这段经历',
+    'rp-unit--memory',
+    'rp-memory-list'
+  );
 }
 
 function panelModuleSlot(
@@ -192,7 +201,8 @@ function panelModuleSlot(
   match: string,
   heading: string,
   subtitle: string,
-  className: string
+  className: string,
+  bodyClassName?: string
 ): TextPostprocessSlotSegment | null {
   const panels = capturePanels(body);
   if (!panels) return null;
@@ -220,7 +230,7 @@ function panelModuleSlot(
         ),
         element(
           'div',
-          ['rp-unit__body', 'rp-panel-list'],
+          ['rp-unit__body', 'rp-panel-list', ...(bodyClassName ? [bodyClassName] : [])],
           panels.map(({ title, content }) =>
             element(
               'details',
