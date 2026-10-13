@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-12 用户授权开始实施；Q12-rev创作Tab直接广场瀑布流、无许愿路径、底栏保留；八域与Anime映射已核验",
+  "notes": "2026-10-12 用户授权开始实施；Q12-rev3 创作 Tab 直接广场瀑布流，许愿池功能保留但入口隐藏；2026-10-13 已补充 8,227 条 Civitai/Venice 初始数据规划，Frontend 输入框、契约、作品快照、数据库和模型调用统一上限 2,000 字（8,054 条通过本地长度校验、173 条隔离），仅完成只读审计，待单独实施授权及来源权利、内容 allowlist、存储策略门禁",
   "meta": {
     "module_impact": {
       "schema_version": 1,

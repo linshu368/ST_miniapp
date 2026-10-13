@@ -7,3 +7,4 @@
 {"file": ".trellis/spec/database/supabase/schema-and-object-conventions.md", "reason": "新表八域归属"}
 {"file": ".trellis/spec/guides/chat-image-generation-feature.md", "reason": "现有聊天图边界与兼容"}
 {"file": ".trellis/tasks/10-10-image-plaza-v2/research/implementation-readiness.md", "reason": "实施授权、八域终审、Anime 映射与最小方案"}
+{"file": ".trellis/tasks/10-10-image-plaza-v2/research/seed-gallery-data-audit.md", "reason": "初始广场数据字段映射、容量、提示词限制、来源门禁、幂等导入与恢复方案"}

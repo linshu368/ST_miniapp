@@ -4,3 +4,4 @@
 {"file": ".trellis/spec/admin/app/index.md", "reason": "Admin 规范验收"}
 {"file": ".trellis/spec/database/supabase/index.md", "reason": "migration、权限与恢复验收"}
 {"file": ".trellis/tasks/10-10-image-plaza-v2/research/implementation-readiness.md", "reason": "核验八域、上游映射和最小实现边界"}
+{"file": ".trellis/tasks/10-10-image-plaza-v2/research/seed-gallery-data-audit.md", "reason": "核验初始数据不变量、脱敏、来源/内容门禁、失败路径、容量与回滚"}

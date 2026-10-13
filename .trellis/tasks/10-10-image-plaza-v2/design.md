@@ -141,7 +141,7 @@ Admin 配置中部文案与弹窗总开关；`{rate}` 运行时替换；顶图�
 
 1. **聊天图（Q9）**：不改 frontend；旧表保持；与广场模块零业务耦合。
 2. **独立模块（Q10）**：广场下线不影响聊天图代码路径；反之亦然。
-3. **Prompt**：V2 创作 600，独立契约字段。
+3. **Prompt**：Frontend 输入框、请求契约、作品快照、数据库与服务端模型调用链统一由 600 调整为 2,000 字。初始作品“用同款”把不超过 2,000 字的完整来源提示词恢复到输入框并关闭自动改写。
 4. **发布**：仅探索环境；关广场入口即可停新受理。
 5. **回滚**：停广场 job + 隐藏路由；不删 ledger；不碰聊天图 settle。
 
@@ -165,4 +165,64 @@ Admin 配置中部文案与弹窗总开关；`{rate}` 运行时替换；顶图�
 
 ## 10. Open Design Dependencies
 
-产品决策见 `prd.md` Key Decisions（含 Q7-rev、Q9–Q12-rev）。quote 服务只读已发布模型目录的上架星尘价；`mode=t2i|i2i|edit` 不改变价目，仅影响上游调用形态。业务 ID `anime-wai` 映射 Venice provider id `wai-Illustrious`（2026-10-12 官方模型页核验）；映射只存在于已发布模型配置。API 前缀固定 `/api/image-plaza`，Storage 前缀固定 `image-plaza/{userId}/{attemptId}/`。
+产品决策见 `prd.md` Key Decisions（含 Q7-rev、Q9–Q13-rev3）。quote 服务只读已发布模型目录的上架星尘价；`mode=t2i|i2i|edit` 不改变价目，仅影响上游调用形态。业务 ID `anime-wai` 映射 Venice provider id `wai-Illustrious`（2026-10-12 官方模型页核验）；映射只存在于已发布模型配置。API 前缀固定 `/api/image-plaza`；generated Storage 使用现有用户/attempt 路径，seed 扩展采用独立内部导入路径。
+
+## 11. 初始广场数据扩展（Q13-rev3）
+
+详细输入审计、字段统计、来源限制与导入故障模型见 `research/seed-gallery-data-audit.md`。本节是后续实施设计，本轮不修改代码或数据。
+
+### 11.1 方案选择与拒绝项
+
+选择扩展现有 `experience.image_plaza_works` 与 `experience.image_plaza_artifacts`，让初始作品继续使用同一 feed/detail/like/use-same API；以 `origin` 约束区分用户生成和 `civitai_seed`，并为 seed 允许无 user/attempt 的合法状态。
+
+拒绝：
+
+- 不伪造系统用户、conversation、quote、attempt 或 billing ledger；这些对象代表真实用户生成/计费事实。
+- 不另建第二张公开 feed 表或在 service 层 union 两套游标；会增加详情、点赞、搜索、签名 URL 和分页一致性成本。
+- 不把来源热度写入 `like_count`；本地点赞 RPC 会从 likes 事实重算。
+- 不在 migration 中嵌入 8,227 行或远程下载；migration 保持结构变更，数据通过可恢复的离线 importer 分批进入。
+- 不依赖 Civitai 热链，不按 URL `.jpeg` 后缀推断真实格式，不静默截断提示词。
+
+### 11.2 数据不变量与八域归属
+
+扩展对象仍归 `experience` 域，Backend/importer 是权威写入方，Frontend 只消费脱敏 DTO。核心约束：
+
+- `origin=generated`：现有 `user_id/attempt_id` 必填且来源字段为空。
+- `origin=civitai_seed`：`user_id/attempt_id` 为空，`source_platform=civitai`、`source_image_id/source_image_url/source_heat` 必填，artifact 必须存在；禁止进入分享返利/账务写路径。
+- `source_image_id` 在 Civitai seed 范围唯一；字段用 TEXT 保留外部标识语义，不假定数据库整数范围。
+- `source_heat >= 0` 且只参与初始顺序物化；`like_count` 仅表示本地用户点赞。
+- seed artifact 的 `attempt_id` 可空，但存储路径必须属于 `image-plaza/imports/civitai/`；generated artifact 保持用户/attempt 路径。
+- public/shared work DTO 不暴露 source ID、source URL、source heat。分享 RPC 显式拒绝 seed artifact，避免未来路由误用。
+
+不得修改已部署的 `20261012_image_plaza_v2.sql` 追加该扩展；使用新的向前兼容 migration。先在 test 采集实际 shape/constraint/RLS/grant，再执行并记录前后差异。
+
+### 11.3 快照与“用同款”
+
+导入快照：`model_id/name` 按白名单映射；`mode=t2i`；`reference_artifact_id=null`；`reasoning=false`；`auto_optimize=false`；`style=None`；aspect ratio 从实图尺寸映射为模型支持的最近比例；resolution 取已发布安全默认档。
+
+提示词采用单一 2,000 字上限：Frontend textarea、手工提交 DTO、snapshot/attempt/message、Backend 校验和数据库约束同源，不新增双层 prompt 字段或服务端绕过输入框的特殊提交协议。“用同款”仍按现有 source work snapshot 创建会话，并把完整提示词恢复到 textarea；提交时携带 `auto_optimize=false`，任一层都不得静默截断。
+
+工作簿中 8,054 条可通过 2,000 字本地长度校验，超过 2,000 字的 173 条先隔离；如以后人工提供经批准的缩短版本，须保留变更审计且不覆盖源数据。部分 Venice 模型公开限制可能低于 2,000，故“本地可接纳”不等于“上游已证明可调用”：实施日须按模型 canary 实测，拒绝项继续隔离，不能通过截断绕过。
+
+seed 的“用同款”只复制模型、提示词和快照参数，不引用源图；Studio 必须从 conversation snapshot 恢复并提交 `auto_optimize=false`，不能继续使用当前固定 `true`。模型下架/参数失效时返回明确错误，不静默换模。
+
+### 11.4 导入编排、容量与可观测性
+
+离线 importer 顺序：XLSX dry-run → 来源/内容 allowlist → Civitai 元数据核验 → 有界并发下载 → 字节/MIME/尺寸/解码校验 → 可选转码 → 确定性 Storage 上传（不覆盖）→ 小事务写 artifact/work → checkpoint。
+
+外部调用有显式超时；仅 GET 做有限退避重试；限制重定向和最终主机；限制 20 MiB/8,192 px；按批次限流。上传成功而 DB 失败时立即补偿删除本次对象，补偿失败写 orphan reconciliation 清单。日志只允许批次、source ID、状态、摘要计数、耗时和 `{ err }`，禁止提示词、完整 URL、响应正文和凭据。
+
+60 条分层样本推算原图存储约 19.4 GiB。建议产品在实施授权前确认单份优化 WebP（长边 2,048 px）或保留原图；未确认不得以样本估算替代容量批准。
+
+### 11.5 排序、兼容和恢复
+
+首次导入按 `source_heat DESC, source_image_id` 生成稳定 `published_at`，继续使用现有 `(published_at,id)` 游标；幂等重跑不得更新时间。新用户作品按真实发布时间自然位于初始数据之前。搜索仍按现有公开字段，不因内部 ID/URL 扩大搜索面。
+
+发布顺序：基础 migration 在 test 成功 → 新兼容 migration → shared/backend/frontend 兼容发布 → dry-run → 小批 canary → feed/详情/同款/点赞人工回归 → 分批全量。停止条件与逐项验收见审计文档。回滚以 `origin=civitai_seed` 软删除为先，确认无引用后清理 Storage；不影响 generated UGC、账务和本地点赞。production 仍需单独授权。
+
+### 11.6 尚未关闭的依赖
+
+- 来源使用/再托管权利、署名和撤回要求。
+- 成人内容安全 allowlist 与审核责任人；现有“UGC 无审核页”不能替代第三方批量初始内容的离线准入。
+- 图片转码/分辨率/容量选择。
+- 共享抓取会话正文目前不可访问，其中可能存在的额外规则尚未纳入已验证事实。
