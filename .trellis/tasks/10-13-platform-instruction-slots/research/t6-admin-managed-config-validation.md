@@ -49,3 +49,28 @@ T7 still owns the separately authorized TEST then Production single-file
 migration evidence and live managed-config draft/publish/rollback checks. T1-P
 also remains: Production's published postprocess tag protocol must be verified
 read-only before Production release.
+
+## TEST apply failure recovery — 2026-10-13
+
+The first TEST apply of `20261013_admin_platform_instruction_slots.sql` stopped
+at the replacement `admin.config_drafts` key CHECK: eight existing draft rows
+and eight release rows use `miniapp_text_postprocess_config`. This is the
+current immutable text-postprocess version pointer and its dedicated release
+history, not an obsolete generic managed-config key. The migration transaction
+rolled back, so no partial validator, constraint, or runtime-config change was
+left behind.
+
+The corrected CHECKs accept either the generic
+`admin.is_managed_config_key(config_key)` allowlist or exactly
+`miniapp_text_postprocess_config`. The special key remains outside the generic
+allowlist, preserving its dedicated-RPC write guard and preventing generic
+Admin configuration from gaining a new write path. `interaction_mode_blocks`
+remains rejected.
+
+`bash scripts/test-admin-platform-instruction-slots-local.sh` now creates an
+isolated PostgreSQL 17 cluster with eight historical special-key drafts and
+releases, applies the T6 migration, preserves those rows, proves the generic
+allowlist remains false for the special key, and rejects an arbitrary key in
+both tables. It passed locally. TEST must first confirm the failed apply did
+not produce a ledger row, then rerun the same file; no remote retry was made
+by this task.

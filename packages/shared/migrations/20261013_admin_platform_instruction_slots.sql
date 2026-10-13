@@ -116,13 +116,22 @@ END;
 $fn$;
 
 -- Existing constraints are an explicit defense-in-depth allowlist in addition
--- to the RPC validator.  Keep interaction_mode_blocks outside this list.
+-- to the RPC validator. `miniapp_text_postprocess_config` is deliberately
+-- outside the generic allowlist: its immutable version pointer and history are
+-- owned by dedicated text-postprocess RPCs, but existing drafts/releases must
+-- remain valid. Keep interaction_mode_blocks outside both paths.
 ALTER TABLE admin.config_drafts
   DROP CONSTRAINT IF EXISTS config_drafts_config_key_check,
-  ADD CONSTRAINT config_drafts_config_key_check CHECK (admin.is_managed_config_key(config_key));
+  ADD CONSTRAINT config_drafts_config_key_check CHECK (
+    admin.is_managed_config_key(config_key)
+    OR config_key = 'miniapp_text_postprocess_config'
+  );
 ALTER TABLE admin.config_releases
   DROP CONSTRAINT IF EXISTS config_releases_config_key_check,
-  ADD CONSTRAINT config_releases_config_key_check CHECK (admin.is_managed_config_key(config_key));
+  ADD CONSTRAINT config_releases_config_key_check CHECK (
+    admin.is_managed_config_key(config_key)
+    OR config_key = 'miniapp_text_postprocess_config'
+  );
 
 INSERT INTO app_core.runtime_config(key, value, description, version, updated_at)
 VALUES
