@@ -15,6 +15,8 @@ import { ruleScopeClass } from './scope-class';
 import { TrustedTree } from './trusted-tree';
 import type { ReplyChoicePayload } from './types';
 
+const THEME_BOUNDARY_CSS = '.reply-markdown[data-theme] .rp-unit { color-scheme: inherit; }';
+
 type AppliedSegments = Extract<
   { status: 'applied'; segments: TextPostprocessSegment[] },
   { status: 'applied' }
@@ -136,7 +138,7 @@ function buildMarkdown(
     body: createElement(
       Fragment,
       null,
-      createElement('style', null, `${BASE_CSS}\n${input.css}`),
+      createElement('style', null, `${BASE_CSS}\n${input.css}\n${THEME_BOUNDARY_CSS}`),
       nodes
     ),
   };

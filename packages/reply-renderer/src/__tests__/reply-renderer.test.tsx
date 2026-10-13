@@ -170,6 +170,7 @@ describe('markdown and trusted slots', () => {
     expect(view.container.textContent ?? '').not.toMatch(/[A-Za-z0-9]{22,}/);
     const style = view.container.querySelector('style')?.textContent ?? '';
     expect(style).toContain('color: red');
+    expect(style).toContain('color-scheme: inherit');
     expect(style).not.toMatch(/url\s*\(|@import|http:|data:/i);
     const scope = view.container.querySelector('mark.card')?.parentElement?.className ?? '';
     expect(scope.length).toBeGreaterThan(1);
