@@ -22,6 +22,7 @@ import {
   type TextPostprocessRule,
   type TextPostprocessSource,
 } from '../api/text-postprocess';
+import { RICH_REPLY_RULE_STYLES } from '../text-postprocess/rich-reply-styles';
 import { applyTextPostprocess } from '../text-postprocess/apply';
 import { compileTextPostprocessSource } from '../text-postprocess/compile';
 import { resolveTrustedTree } from '../text-postprocess/resolve-tree';
@@ -413,6 +414,14 @@ describe('html and css policy', () => {
       }),
     ]);
     expect(safe.rules[0]?.css[0]).toMatchObject({ type: 'media' });
+
+    const richReply = compileOk([
+      rule({ id: 'choice', css: RICH_REPLY_RULE_STYLES.choice }),
+      rule({ id: 'status', css: RICH_REPLY_RULE_STYLES.status }),
+      rule({ id: 'memory', css: RICH_REPLY_RULE_STYLES.memory }),
+      rule({ id: 'dialogue', css: RICH_REPLY_RULE_STYLES.dialogue }),
+    ]);
+    expect(richReply.rich_reply_protocol).toEqual({ version: 2, enabled: true });
   });
 
   it('accepts ordinary scoped CSS while retaining capability boundaries', () => {

@@ -42,6 +42,10 @@ export {
   serializeScopedCss,
   validateCompiledArtifact,
 } from './text-postprocess/runtime';
+export {
+  LEGACY_RICH_REPLY_CSS,
+  RICH_REPLY_RULE_STYLES,
+} from './text-postprocess/rich-reply-styles';
 export * from './api/admin-model-test';
 export * from './config/database';
 export * from './png-parser';
