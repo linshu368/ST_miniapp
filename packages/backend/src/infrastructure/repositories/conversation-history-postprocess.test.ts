@@ -41,6 +41,9 @@ const started = {
   revision: 1,
   context_window_start_turn: 1,
   postprocess_version: 4,
+  choice_rules_mode: 'full',
+  status_rules_mode: 'concise',
+  memory_rules_mode: 'off',
   user_content: 'stored-user',
 };
 
@@ -62,7 +65,11 @@ describe('postprocess turn binding', () => {
       p_max_context_turns: 75,
       p_retain_context_turns: 50,
     });
-    expect(turn).toMatchObject({ userContent: 'raw-user', postprocessVersion: 4 });
+    expect(turn).toMatchObject({
+      userContent: 'raw-user',
+      postprocessVersion: 4,
+      slotModes: { choice: 'full', status: 'concise', memory: 'off' },
+    });
     expect(send.tableReads()).toBe(0);
 
     const regenerate = repository(() => ({ data: started, error: null }));
@@ -76,6 +83,7 @@ describe('postprocess turn binding', () => {
     });
     expect(next.userContent).toBe('stored-user');
     expect(next.postprocessVersion).toBe(4);
+    expect(next.slotModes).toEqual({ choice: 'full', status: 'concise', memory: 'off' });
   });
 
   it('keeps session_busy on the wrapper and does not start a second write', async () => {
@@ -140,6 +148,17 @@ describe('postprocess turn binding', () => {
         userContent: 'raw-user',
         model: 'model-a',
       })
+    ).rejects.toThrow(/结果字段不完整/);
+    expect(malformed.calls).toHaveLength(1);
+  });
+
+  it('fails closed when a turn RPC omits or corrupts a persisted slot mode', async () => {
+    const malformed = repository(() => ({
+      data: { ...started, memory_rules_mode: null },
+      error: null,
+    }));
+    await expect(
+      malformed.history.startRegeneration({ sessionId: 'session', model: 'model-a' })
     ).rejects.toThrow(/结果字段不完整/);
     expect(malformed.calls).toHaveLength(1);
   });

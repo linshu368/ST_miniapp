@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: apply = 执行 SQL 并记账；inspect = 只读互证，不改库
+        description: apply = 执行 SQL 并记账；inspect = 只读互证；abandon_claim = 审计后废弃失败认领
         type: choice
         required: true
         default: apply
         options:
           - apply
           - inspect
+          - abandon_claim
       environment:
         description: Target database environment
         type: choice
@@ -34,6 +35,11 @@ on:
         type: boolean
         required: false
         default: false
+      claim_abandon_reason:
+        description: abandon_claim 时必填：失败认领废弃原因（最多 500 字符）
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -44,7 +50,7 @@ concurrency:
 
 jobs:
   migrate:
-    name: ${{ inputs.mode == 'inspect' && 'Inspect SQL migrations' || 'Apply SQL Migration' }}
+    name: ${{ inputs.mode == 'inspect' && 'Inspect SQL migrations' || inputs.mode == 'abandon_claim' && 'Abandon failed migration claim' || 'Apply SQL Migration' }}
     runs-on: ubuntu-latest
 
     env:
@@ -111,12 +117,14 @@ jobs:
             cat "$RUNNER_TEMP/inspect.md"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Apply migration
-        if: ${{ inputs.mode == 'apply' }}
+      - name: Apply migration or abandon failed claim
+        if: ${{ inputs.mode == 'apply' || inputs.mode == 'abandon_claim' }}
         id: apply
         env:
           MIGRATION_FILE: ${{ inputs.migration_file }}
           FORCE_RERUN: ${{ inputs.force_rerun }}
+          ABANDON_CLAIM: ${{ inputs.mode == 'abandon_claim' }}
+          CLAIM_ABANDON_REASON: ${{ inputs.claim_abandon_reason }}
           APPLIED_BY: ${{ github.actor }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
@@ -140,6 +148,8 @@ jobs:
           DATABASE_URL="$DB_URL" \
             MIGRATION_FILE="$MIGRATION_FILE" \
             FORCE_RERUN="$FORCE_RERUN" \
+            ABANDON_CLAIM="$ABANDON_CLAIM" \
+            CLAIM_ABANDON_REASON="$CLAIM_ABANDON_REASON" \
             APPLIED_BY="$APPLIED_BY" \
             ENVIRONMENT="$ENVIRONMENT" \
             bash scripts/apply-repo-migration.sh
@@ -149,13 +159,14 @@ jobs:
         run: rm -f "$RUNNER_TEMP/db_url"
 
       - name: Migration summary
-        if: ${{ inputs.mode == 'apply' && success() }}
+        if: ${{ (inputs.mode == 'apply' || inputs.mode == 'abandon_claim') && success() }}
         run: |
           {
-            echo "### Database migration completed"
+            echo "### Database migration operation completed"
             echo ""
             echo "- Environment: \`${{ inputs.environment }}\`"
             echo "- Project ref: \`${{ steps.target.outputs.project_ref }}\`"
             echo "- Migration file: \`${{ inputs.migration_file }}\`"
+            echo "- Mode: \`${{ inputs.mode }}\`"
             echo "- force_rerun: \`${{ inputs.force_rerun }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

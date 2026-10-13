@@ -1,4 +1,5 @@
 // MiniApp 用户设置领域的前后端共享契约
+import { z } from 'zod';
 
 /**
  * 回复长度档位 id。权威列表来自 runtime_config.pref_word_count_tiers，
@@ -36,9 +37,26 @@ export interface UserSettings {
   avatar_source: AvatarSource;
   pref_word_count: StoredPreferredWordCount;
   pref_show_options: boolean;
+  pref_show_status: boolean;
+  pref_show_memory: boolean;
   pref_custom_instructions: string | null;
   updated_at: string;
 }
+
+/** 浏览器可见的用户设置；不包含数据库内部的规则窗口计数。 */
+export const UserSettingsSchema: z.ZodType<UserSettings> = z
+  .object({
+    display_name: z.string().nullable(),
+    avatar_url: z.string(),
+    avatar_source: z.enum(['custom', 'telegram', 'default']),
+    pref_word_count: z.string().nullable(),
+    pref_show_options: z.boolean(),
+    pref_show_status: z.boolean(),
+    pref_show_memory: z.boolean(),
+    pref_custom_instructions: z.string().nullable(),
+    updated_at: z.string(),
+  })
+  .strict();
 
 // ==== GET /api/users/settings ====
 export interface GetUserSettingsData {
@@ -51,8 +69,23 @@ export interface PatchUserSettingsRequest {
   avatar_url?: string | null;
   pref_word_count?: PreferredWordCount;
   pref_show_options?: boolean;
+  pref_show_status?: boolean;
+  pref_show_memory?: boolean;
   pref_custom_instructions?: string | null;
 }
+
+/** PATCH 只接受显式的用户可编辑字段，未知字段不能静默写入。 */
+export const PatchUserSettingsRequestSchema: z.ZodType<PatchUserSettingsRequest> = z
+  .object({
+    display_name: z.string().nullable().optional(),
+    avatar_url: z.string().nullable().optional(),
+    pref_word_count: z.string().optional(),
+    pref_show_options: z.boolean().optional(),
+    pref_show_status: z.boolean().optional(),
+    pref_show_memory: z.boolean().optional(),
+    pref_custom_instructions: z.string().nullable().optional(),
+  })
+  .strict();
 
 export interface PatchUserSettingsData {
   settings: UserSettings;

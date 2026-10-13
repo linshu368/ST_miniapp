@@ -6,7 +6,11 @@ import {
   resolveWordCountPromptValue,
   wrapUserInput,
 } from './render-instructions.js';
-import type { EnginePlatformInstructions, EngineWordCountTiers } from './types.js';
+import type {
+  EnginePlatformInstructions,
+  EngineWordCountTiers,
+  InstructionSlotModes,
+} from './types.js';
 
 const TIERS: EngineWordCountTiers = {
   tiers: [
@@ -20,15 +24,23 @@ const TIERS: EngineWordCountTiers = {
 };
 
 const INSTRUCTIONS: EnginePlatformInstructions = {
-  template: '篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
+  template:
+    '{{CHOICE_RULES}}|{{STATUS_RULES}}|{{MEMORY_RULES}}|篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
   wordCountTiers: TIERS,
+  choiceRules: { on_first_two_turns: '选择完整', on_later_turns: '选择简洁', off: '选择关闭' },
+  statusRules: { on_first_two_turns: '状态完整', on_later_turns: '状态简洁', off: '状态关闭' },
+  memoryRules: { on_first_two_turns: '记忆完整', on_later_turns: '记忆简洁', off: '记忆关闭' },
 };
+
+const MODES: InstructionSlotModes = { choice: 'full', status: 'concise', memory: 'off' };
 
 function config(overrides: Partial<UserGenerationConfig> = {}): UserGenerationConfig {
   return {
     selected_model_id: 'anthropic-claude-sonnet-4-5',
     pref_word_count: '300-500',
     pref_show_options: false,
+    pref_show_status: true,
+    pref_show_memory: true,
     pref_custom_instructions: null,
     ...overrides,
   };
@@ -67,36 +79,39 @@ describe('renderPlatformInstructions', () => {
         pref_word_count: '800+',
         pref_show_options: true,
         pref_custom_instructions: '多写心理描写',
-      })
+      }),
+      MODES
     );
 
-    expect(rendered).toBe('篇幅 800以上 字。\n偏好：多写心理描写');
+    expect(rendered).toBe('选择完整|状态简洁|记忆关闭|篇幅 800以上 字。\n偏好：多写心理描写');
     expect(rendered).not.toMatch(/\{\{.+?\}\}/);
   });
 
-  it('旧快照中的废弃占位符会被移除，不再按用户偏好分叉', () => {
+  it('不再消费废弃 INTERACTION_MODE；旧模板必须由读取层拒绝', () => {
     const legacy = { ...INSTRUCTIONS, template: '{{INTERACTION_MODE}}\n{{WORD_COUNT}}' };
-    expect(renderPlatformInstructions(legacy, config({ pref_show_options: true }))).toBe(
-      '\n300-500'
-    );
-    expect(renderPlatformInstructions(legacy, config({ pref_show_options: false }))).toBe(
-      '\n300-500'
+    expect(renderPlatformInstructions(legacy, config({ pref_show_options: true }), MODES)).toBe(
+      '{{INTERACTION_MODE}}\n300-500'
     );
   });
 
   it('pref_custom_instructions 为空或纯空白时注入「暂无」', () => {
-    expect(renderPlatformInstructions(INSTRUCTIONS, config())).toContain(
+    expect(renderPlatformInstructions(INSTRUCTIONS, config(), MODES)).toContain(
       `偏好：${EMPTY_CUSTOM_INSTRUCTIONS}`
     );
     expect(
-      renderPlatformInstructions(INSTRUCTIONS, config({ pref_custom_instructions: '   \n ' }))
+      renderPlatformInstructions(
+        INSTRUCTIONS,
+        config({ pref_custom_instructions: '   \n ' }),
+        MODES
+      )
     ).toContain(`偏好：${EMPTY_CUSTOM_INSTRUCTIONS}`);
   });
 
   it('同一个占位符出现多次时全部替换', () => {
     const rendered = renderPlatformInstructions(
       { ...INSTRUCTIONS, template: '{{WORD_COUNT}} / {{WORD_COUNT}}' },
-      config({ pref_word_count: '500-800' })
+      config({ pref_word_count: '500-800' }),
+      MODES
     );
     expect(rendered).toBe('500-800 / 500-800');
   });
@@ -104,9 +119,19 @@ describe('renderPlatformInstructions', () => {
   it('自定义指令里的 $& 等替换模式按字面量注入', () => {
     const rendered = renderPlatformInstructions(
       { ...INSTRUCTIONS, template: '偏好：{{USER_CUSTOM_INSTRUCTIONS}}' },
-      config({ pref_custom_instructions: "$& $` $' $1" })
+      config({ pref_custom_instructions: "$& $` $' $1" }),
+      MODES
     );
     expect(rendered).toBe("偏好：$& $` $' $1");
+  });
+
+  it('三个槽位按已持久化模式独立选择规则', () => {
+    const rendered = renderPlatformInstructions(INSTRUCTIONS, config(), {
+      choice: 'off',
+      status: 'full',
+      memory: 'concise',
+    });
+    expect(rendered).toContain('选择关闭|状态完整|记忆简洁');
   });
 });
 

@@ -41,7 +41,11 @@ export function buildPrompt(input: EngineInput): EngineOutput {
     messages.push({ role: message.role, content: message.content });
   }
 
-  const renderedInstructions = renderPlatformInstructions(input.instructions, input.userConfig);
+  const renderedInstructions = renderPlatformInstructions(
+    input.instructions,
+    input.userConfig,
+    input.slotModes
+  );
   messages.push({ role: 'user', content: wrapUserInput(input.userInput, renderedInstructions) });
 
   const displayName = input.persona.displayName;

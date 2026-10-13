@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"Review concurrency, transactions, fallback and safe logging"}
+{"file":".trellis/spec/admin/app/data-auth-and-environments.md","reason":"Review environment isolation and mutation recovery"}
+{"file":".trellis/spec/admin/app/features-and-components.md","reason":"Review managed editor behavior and high-risk writes"}
+{"file":".trellis/spec/shared/contracts/testing-and-change-management.md","reason":"Review contract compatibility and consumer checks"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"Review migration execution and forward-fix plan"}
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"Review RPC ownership, grants and RLS"}
+{"file":".trellis/tasks/10-13-platform-instruction-slots/research/current-platform-instruction-facts.md","reason":"Check implementation against verified baseline and live evidence gaps"}

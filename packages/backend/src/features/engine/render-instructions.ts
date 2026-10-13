@@ -11,7 +11,12 @@
  */
 
 import type { UserGenerationConfig } from '@miniapp/shared';
-import type { EnginePlatformInstructions, EngineWordCountTiers } from './types.js';
+import type {
+  EnginePlatformInstructions,
+  EngineWordCountTiers,
+  InstructionSlotMode,
+  InstructionSlotModes,
+} from './types.js';
 
 /** pref_custom_instructions 为空时注入模板的占位文案，与 bot 一致 */
 export const EMPTY_CUSTOM_INSTRUCTIONS = '暂无';
@@ -46,13 +51,28 @@ function replaceAll(source: string, placeholder: RegExp, value: string): string 
   return source.replace(placeholder, () => value);
 }
 
+function selectSlotRules(
+  rules: EnginePlatformInstructions['choiceRules'],
+  mode: InstructionSlotMode
+): string {
+  switch (mode) {
+    case 'full':
+      return rules.on_first_two_turns;
+    case 'concise':
+      return rules.on_later_turns;
+    case 'off':
+      return rules.off;
+  }
+}
+
 /**
- * 渲染平台规则模板。只替换仍有真实运行时值的两个占位符。
- * 富回复模块是固定协议，不能再随“是否显示选项”分叉成另一份提示词。
+ * 渲染平台规则模板。模式来自同一逻辑轮持久化的 RPC 结果；不得读取当前开关
+ * 或重新消耗窗口，以确保同轮重生成稳定。
  */
 export function renderPlatformInstructions(
   instructions: EnginePlatformInstructions,
-  userConfig: UserGenerationConfig
+  userConfig: UserGenerationConfig,
+  slotModes: InstructionSlotModes
 ): string {
   const wordCountValue = resolveWordCountPromptValue(
     userConfig.pref_word_count,
@@ -62,10 +82,22 @@ export function renderPlatformInstructions(
   const customInstructions =
     userConfig.pref_custom_instructions?.trim() || EMPTY_CUSTOM_INSTRUCTIONS;
 
-  let rendered = replaceAll(instructions.template, /\{\{WORD_COUNT\}\}/g, wordCountValue);
-  // Old published snapshots may still contain this retired token during the
-  // staged rollout. Drop it instead of leaking protocol syntax into a prompt.
-  rendered = replaceAll(rendered, /\{\{INTERACTION_MODE\}\}/g, '');
+  let rendered = replaceAll(
+    instructions.template,
+    /\{\{CHOICE_RULES\}\}/g,
+    selectSlotRules(instructions.choiceRules, slotModes.choice)
+  );
+  rendered = replaceAll(
+    rendered,
+    /\{\{STATUS_RULES\}\}/g,
+    selectSlotRules(instructions.statusRules, slotModes.status)
+  );
+  rendered = replaceAll(
+    rendered,
+    /\{\{MEMORY_RULES\}\}/g,
+    selectSlotRules(instructions.memoryRules, slotModes.memory)
+  );
+  rendered = replaceAll(rendered, /\{\{WORD_COUNT\}\}/g, wordCountValue);
   return replaceAll(rendered, /\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
 }
 
