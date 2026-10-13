@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  IMAGE_PLAZA_PROMPT_MAX_CHARS,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
+  ImagePlazaSnapshotSchema,
   ImagePlazaTagConfigSchema,
+  SubmitImagePlazaAttemptRequestSchema,
 } from '../api/image-plaza.js';
 
 function model(overrides: Record<string, unknown> = {}) {
@@ -76,6 +79,48 @@ describe('image plaza managed config schemas', () => {
         { id: 'portrait', label: '人像', enabled: true, sort_order: 0 },
         { id: 'portrait', label: '肖像', enabled: true, sort_order: 1 },
       ]).success
+    ).toBe(false);
+  });
+});
+
+describe('image plaza prompt limit', () => {
+  const prompt = 'a'.repeat(IMAGE_PLAZA_PROMPT_MAX_CHARS);
+  const snapshot = {
+    prompt,
+    model_id: 'seedream-v5-pro',
+    aspect_ratio: '2:3',
+    resolution: '1K',
+    reasoning: false,
+    auto_optimize: false,
+    mode: 't2i',
+    reference_artifact_id: null,
+    style: 'None',
+  };
+
+  it('accepts 2000 characters across snapshots and attempt submissions', () => {
+    expect(IMAGE_PLAZA_PROMPT_MAX_CHARS).toBe(2_000);
+    expect(ImagePlazaSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    expect(
+      SubmitImagePlazaAttemptRequestSchema.safeParse({
+        ...snapshot,
+        quote_id: '11111111-1111-4111-8111-111111111111',
+        idempotency_key: '22222222-2222-4222-8222-222222222222',
+      }).success
+    ).toBe(true);
+  });
+
+  it('rejects 2001 characters across snapshots and attempt submissions', () => {
+    const overLimit = `${prompt}a`;
+    expect(ImagePlazaSnapshotSchema.safeParse({ ...snapshot, prompt: overLimit }).success).toBe(
+      false
+    );
+    expect(
+      SubmitImagePlazaAttemptRequestSchema.safeParse({
+        ...snapshot,
+        prompt: overLimit,
+        quote_id: '11111111-1111-4111-8111-111111111111',
+        idempotency_key: '22222222-2222-4222-8222-222222222222',
+      }).success
     ).toBe(false);
   });
 });

@@ -6,22 +6,22 @@
 
 ## Tasks
 
-| ID  | Status  | Task                               | Files / Scope                          | Depends On    | Verification                        |
-| --- | ------- | ---------------------------------- | -------------------------------------- | ------------- | ----------------------------------- |
-| T0  | Done    | 规划收口：原型对齐 + 冲突确认      | `prd.md` `design.md` `implement.md`    | -             | Q1–Q12-rev；已获实施授权            |
-| T1  | Done    | 独立契约 image-plaza + migration   | shared `api/image-plaza*` + migrations | T0            | 八域已终审；不改 `api/images.ts`    |
-| T2  | Done    | Backend image-plaza 创作/报价/结算 | `features/image-plaza` + routes        | T1            | 失败不扣；与 `features/image` 隔离  |
-| T3  | Done    | Backend 广场/分享返利              | image-plaza + billing RPC              | T1            | 幂等返利；即时上架                  |
-| T4  | Done    | Frontend 广场瀑布流+详情+用同款    | `/create` 直接广场；隐藏 wish 入口     | T3 契约可用   | AC01；吸顶去创作                    |
-| T5  | Done    | Frontend 创作流+操作               | 同上独立模块                           | T2            | AC06–09                             |
-| T6  | Done    | 分享弹窗状态机                     | frontend+backend                       | T0 Q1, T3     | AC12                                |
-| T7  | Done    | Admin 三页                         | admin                                  | T1            | AC13–14                             |
-| T8  | Skipped | 聊天看看TA（入口已配置关闭）       | —                                      | —             | Q9：本期不处理                      |
-| T9  | Doing   | 探索环境验收与记录                 | 全栈                                   | T4–T7         | 静态验证完成；待 test DB/真机联调   |
-| T10 | Done    | 初始广场数据只读审计与规划补充     | PRD/design/implement/research          | T1–T7         | 8,227 行聚合审计；未改产品代码/数据 |
-| T11 | Todo    | 初始数据 schema/契约/同款兼容层    | shared/backend/frontend/database       | T10、单独授权 | AC17–AC21；迁移先在 test 验证       |
-| T12 | Todo    | 离线 importer 与来源/内容门禁      | backend tooling/Storage/导入清单       | T11、门禁关闭 | dry-run、幂等、补偿、脱敏           |
-| T13 | Todo    | test canary 与分批初始数据导入     | test DB/Storage/人工回归               | T12           | AC18–AC24；production 另行授权      |
+| ID  | Status  | Task                               | Files / Scope                          | Depends On    | Verification                         |
+| --- | ------- | ---------------------------------- | -------------------------------------- | ------------- | ------------------------------------ |
+| T0  | Done    | 规划收口：原型对齐 + 冲突确认      | `prd.md` `design.md` `implement.md`    | -             | Q1–Q12-rev；已获实施授权             |
+| T1  | Done    | 独立契约 image-plaza + migration   | shared `api/image-plaza*` + migrations | T0            | 八域已终审；不改 `api/images.ts`     |
+| T2  | Done    | Backend image-plaza 创作/报价/结算 | `features/image-plaza` + routes        | T1            | 失败不扣；与 `features/image` 隔离   |
+| T3  | Done    | Backend 广场/分享返利              | image-plaza + billing RPC              | T1            | 幂等返利；即时上架                   |
+| T4  | Done    | Frontend 广场瀑布流+详情+用同款    | `/create` 直接广场；隐藏 wish 入口     | T3 契约可用   | AC01；吸顶去创作                     |
+| T5  | Done    | Frontend 创作流+操作               | 同上独立模块                           | T2            | AC06–09                              |
+| T6  | Done    | 分享弹窗状态机                     | frontend+backend                       | T0 Q1, T3     | AC12                                 |
+| T7  | Done    | Admin 三页                         | admin                                  | T1            | AC13–14                              |
+| T8  | Skipped | 聊天看看TA（入口已配置关闭）       | —                                      | —             | Q9：本期不处理                       |
+| T9  | Doing   | 探索环境验收与记录                 | 全栈                                   | T4–T7         | 静态验证完成；待 test DB/真机联调    |
+| T10 | Done    | 初始广场数据只读审计与规划补充     | PRD/design/implement/research          | T1–T7         | 8,227 行聚合审计；未改产品代码/数据  |
+| T11 | Done    | 初始数据 schema/契约/同款兼容层    | shared/backend/frontend/database       | T10、单独授权 | 本地验证完成；migration 待 test 执行 |
+| T12 | Done    | 离线 importer 与来源/内容门禁      | backend tooling/Storage/导入清单       | T11、门禁关闭 | 8,227 行 dry-run；无数据写入         |
+| T13 | Blocked | test canary 与分批初始数据导入     | test DB/Storage/人工回归               | T12           | 缺审核 allowlist/test 环境确认       |
 
 ## Execution Log
 
@@ -55,3 +55,9 @@
 - 2026-10-13：用户将提示词规划上限修订为统一 1,000 字，不采用模型级动态放宽。工作簿中 6,742 条（82.0%）可保留完整提示词进入后续校验，超过 1,000 字的 1,485 条隔离且不截断；本轮仍仅修改规划文档。
 - 2026-10-13：用户再次修订为 Frontend 手工输入 1,000 字、作品快照/数据库/模型调用链 2,000 字。长度阶段可覆盖 8,054 条（97.9%），超过 2,000 字的 173 条隔离；1,001–2,000 字的原样用同款由 Backend 按 `source_work_id` 读取权威快照，避免经过前端输入框截断。上游模型仍需 canary 实测，本轮未改代码或数据。
 - 2026-10-13：用户最终将 Frontend 手工输入框也放大到 2,000 字，形成 textarea/shared/Backend/snapshot/DB/model call 全链路统一上限；撤销 1,000/2,000 双层契约及只读长提示词特殊路径。“用同款”可直接恢复、编辑和提交不超过 2,000 字的完整提示词。本轮仍未改代码或数据。
+- 2026-10-13：用户授权继续实施。T11 完成：shared/textarea/DB 统一 2,000 字；seed work/artifact 使用 `origin` 与内部 source 字段，不伪造用户、attempt 或账务；详情/点赞/用同款复用现有链路；Studio 继承快照 `auto_optimize=false`。新增独立 `20261013_image_plaza_seed_catalog.sql`，不改历史 migration。
+- 2026-10-13：T12 完成：新增 XLSX importer、精确表头与模型映射、审核 manifest 四重门禁、test/production 目标确认、1–500 显式批次、确定性 Storage 路径、主机/重定向/30 秒超时/三次重试/20 MiB 流式上限、MIME/尺寸校验、RPC 事务、幂等和失败补偿；公开 DTO/日志不返回 prompt、源 URL 或完整图片正文。
+- 2026-10-13：源工作簿最终 dry-run：8,227 总数，8,054 可进入审核，173 超 2,000 字隔离，字段非法/重复 ID/重复 URL 均 0；未连接数据库、未上传 Storage。示例 manifest dry-run 验证 8,054 条未批准且未知示例 ID 被识别。
+- 2026-10-13：发现基础分享 RPC 直接加钱包会触发 legacy guard；在新 migration 中 forward-fix 为唯一 `billing.grant_bonus_credits` 入口，并显式拒绝 seed artifact 进入返利。验证：Shared 124、Backend 607、Frontend 242 项测试通过；全仓 typecheck、Frontend lint/build、import/legacy/migration guards、`git diff --check` 通过。Frontend 仅有既有签名图 `<img>` 警告；本机无 WSL/psql，migration ledger/实库 SQL 尚不能执行。
+- 2026-10-13：T13 阻塞于外部门禁：尚无逐 ID 的来源权利/内容审核/元数据核验 allowlist，也未确认并连接 test 数据库执行两份 migration，因此未进行 canary 或任何 test/production 数据写入；production 仍需另行授权。
+- 2026-10-13：已应用并补充 Trellis 模块知识，23 个模块文档基线校验通过；迁移命名、legacy guard 与 `git diff --check` 再次通过。所有可在本地安全完成的实现和静态验证已收口，T9/T13 继续等待明确 test 环境与人工审核资料。

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const IMAGE_PLAZA_PROMPT_MAX_CHARS = 600;
+export const IMAGE_PLAZA_PROMPT_MAX_CHARS = 2_000;
 export const IMAGE_PLAZA_PAGE_SIZE = 20;
 
 export const ImagePlazaModeSchema = z.enum(['t2i', 'i2i', 'edit']);

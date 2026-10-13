@@ -5,8 +5,8 @@ scope: admin
 category: business
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/09-28-remove-advanced-image-generation/
-last_verified_at: 2026-09-28
+last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_at: 2026-10-12
 ---
 
 # 配置、内容与增长运营
@@ -56,6 +56,10 @@ Admin test/typecheck/build 与 test 环境人工 smoke。
 ## 关联模块
 
 `admin.infrastructure.admin-client-auth`、`backend.infrastructure.runtime-data-security`。
+
+## 图片创作广场 V2（2026-10-12）
+
+Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型目录、首次分享提示与标签管理；模型页包含上架星尘价计算器，但最终发布值仍是服务端权威 credits。配置 schema 同时在 shared 和数据库发布校验器中约束。
 
 ## 变更记录
 

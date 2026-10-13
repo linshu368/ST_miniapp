@@ -15,6 +15,7 @@
     "payment:diagnose-query": "tsx src/scripts/diagnose-zqpay-query.ts",
     "payment:callback-report": "tsx src/scripts/payment-callback-report.ts",
     "vip:send-expiry-reminders": "tsx src/scripts/send-vip-expiry-reminders.ts",
+    "image-plaza:seed": "tsx src/scripts/import-image-plaza-seed.ts",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:integration": "vitest run src/infrastructure/repositories/conversations.integration.test.ts",
     "typecheck": "tsc --noEmit"
@@ -30,6 +31,7 @@
     "pg": "^8.23.0",
     "pino": "^10.3.1",
     "tsx": "^4.19.0",
+    "undici": "7.16.0",
     "ws": "^8.21.0",
     "xlsx": "^0.18.5"
   },

@@ -118,6 +118,15 @@
 
 必须验证：重复运行、断点续跑、部分上传/写库失败、源图删除、MIME 与扩展名不一致、超大图、模型下架、provider 拒绝超限 prompt、签名 URL、详情完整展示、用同款不自动改写、本地点赞不覆盖 source heat、公开响应与日志不泄露 source ID/URL、来源撤回后的定向下架。
 
+### 6.1 已实现的离线命令
+
+- dry-run（默认不连接数据库、不上传）：`pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>`。
+- apply 必须额外提供 `--apply --manifest <审核清单> --target test|production --limit 1..500 --confirm-original-storage`；通过 `--offset` 分批和断点续跑，可用 `--concurrency 1..8` 设置同一进程内的有界并发，默认 1。
+- production 还必须显式提供 `--confirm-production`，且 CLI 目标必须与 Backend 已解析的数据库环境一致。
+- 审核清单格式见 `seed-approval-manifest.example.json`。批次必须注明审核批次号和内容政策版本；每条必须同时确认来源权利、内容审核和元数据核验，并记录审核人、UTC 审核时间、权利证据引用和元数据证据引用；示例 ID 不可用于真实导入。
+- importer 保持单进程，内部并发显式限制为 1–8；源 URL 固定为 `image.civitai.com`，每条下载最多三次、每次 30 秒、最多三次重定向，逐跳主机只允许 Civitai 精确白名单 `image.civitai.com`、`blobs-b2.civitai.com`，响应流上限 20 MiB。需要代理时显式使用 HTTPS ProxyAgent，TLS 校验被关闭时拒绝执行。不要并行运行多个 importer 实例；提高并发前必须先用小批次验证当前网络、内存、Storage 和数据库容量。test 容量验证表明 16 并发会增加超时/TLS 中断，故运行上限保持 8。
+- test/production apply 前必须先手动执行并验证 `packages/shared/migrations/20261013_image_plaza_seed_catalog.sql`。当前会话只完成本地 dry-run，未写数据库或 Storage。
+
 ## 7. 外部依据
 
 - Venice 原生图片生成接口：prompt 总体 1–7,500 字符，并提示同时受模型约束：<https://docs.venice.ai/api-reference/endpoint/image/generate>

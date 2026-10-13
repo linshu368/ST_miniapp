@@ -19,11 +19,12 @@ import {
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  ImagePlazaArtifact,
-  ImagePlazaAspectRatio,
-  ImagePlazaMode,
-  ImagePlazaModel,
+import {
+  IMAGE_PLAZA_PROMPT_MAX_CHARS,
+  type ImagePlazaArtifact,
+  type ImagePlazaAspectRatio,
+  type ImagePlazaMode,
+  type ImagePlazaModel,
 } from '@miniapp/shared';
 import {
   fileToImagePlazaPayload,
@@ -54,6 +55,7 @@ export default function ImagePlazaStudioPage() {
   const [aspectRatio, setAspectRatio] = useState<ImagePlazaAspectRatio>('2:3');
   const [resolution, setResolution] = useState<'1K' | '2K' | 'fixed'>('1K');
   const [mode, setMode] = useState<ImagePlazaMode>('t2i');
+  const [autoOptimize, setAutoOptimize] = useState(true);
   const [reference, setReference] = useState<ImagePlazaArtifact | null>(null);
   const [referenceArtifactId, setReferenceArtifactId] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
@@ -85,6 +87,7 @@ export default function ImagePlazaStudioPage() {
         : (target.resolutions[0]?.id ?? 'fixed')
     );
     setPrompt(snapshot?.prompt ?? '');
+    setAutoOptimize(snapshot?.auto_optimize ?? true);
     const canKeepReference = Boolean(snapshot?.reference_artifact_id && target.supports_i2i);
     setReferenceArtifactId(canKeepReference ? (snapshot?.reference_artifact_id ?? null) : null);
     setMode(canKeepReference ? (snapshot?.mode ?? 'i2i') : 't2i');
@@ -142,7 +145,7 @@ export default function ImagePlazaStudioPage() {
         aspect_ratio: aspectRatio as never,
         resolution,
         reasoning: false,
-        auto_optimize: true,
+        auto_optimize: autoOptimize,
         reference_artifact_id: referenceArtifactId,
         mode: actualMode,
         quote_id: freshQuote.quote_id,
@@ -380,7 +383,10 @@ export default function ImagePlazaStudioPage() {
         <div className="rounded-[1.5rem] border border-border bg-card p-2 shadow-[0_-12px_50px_rgba(0,0,0,0.18)]">
           <textarea
             value={prompt}
-            onChange={(event) => setPrompt(event.target.value.slice(0, 600))}
+            maxLength={IMAGE_PLAZA_PROMPT_MAX_CHARS}
+            onChange={(event) =>
+              setPrompt(event.target.value.slice(0, IMAGE_PLAZA_PROMPT_MAX_CHARS))
+            }
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
@@ -473,7 +479,7 @@ export default function ImagePlazaStudioPage() {
             </button>
           </div>
           <div className="mt-1 px-2 text-right text-[10px] text-muted-foreground">
-            {prompt.length}/600
+            {prompt.length}/{IMAGE_PLAZA_PROMPT_MAX_CHARS}
           </div>
         </div>
       </div>

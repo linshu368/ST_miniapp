@@ -66,6 +66,34 @@ export async function uploadPlazaImage(input: {
   };
 }
 
+export async function uploadSeedPlazaImage(input: {
+  sourceImageId: string;
+  bytes: Buffer;
+  declaredMimeType?: string;
+}): Promise<StoredPlazaImage> {
+  if (!/^\d+$/.test(input.sourceImageId)) {
+    throw new Error('image_plaza_seed_source_id_invalid');
+  }
+  const validated = validatePlazaImage(input.bytes, input.declaredMimeType);
+  const extension = validated.mimeType === 'image/jpeg' ? 'jpg' : validated.mimeType.split('/')[1];
+  const storagePath = `image-plaza/imports/civitai/${input.sourceImageId}.${extension}`;
+  const { error } = await getSupabaseClient()
+    .storage.from(BUCKET)
+    .upload(storagePath, input.bytes, {
+      contentType: validated.mimeType,
+      cacheControl: '31536000',
+      upsert: false,
+    });
+  if (error) throw new Error(`image_plaza_storage_upload_failed:${error.message}`);
+  return {
+    storagePath,
+    mimeType: validated.mimeType,
+    byteSize: input.bytes.byteLength,
+    width: validated.width,
+    height: validated.height,
+  };
+}
+
 export async function signPlazaImagePath(path: string, expiresInSeconds = 900): Promise<string> {
   assertPlazaPath(path);
   const { data, error } = await getSupabaseClient()
@@ -94,7 +122,8 @@ function assertPlazaPath(path: string): void {
   if (
     !/^image-plaza\/[0-9a-f-]+\/(?:references|attempts)\/[0-9a-f-]+\/\d+\.(?:png|jpg|webp)$/i.test(
       path
-    )
+    ) &&
+    !/^image-plaza\/imports\/civitai\/\d+\.(?:png|jpg|webp)$/i.test(path)
   ) {
     throw new Error('image_plaza_storage_path_rejected');
   }

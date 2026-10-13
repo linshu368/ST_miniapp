@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
-last_verified_at: 2026-09-14
+last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_at: 2026-10-13
 ---
 
 # 钱包、订单与生成计费数据
@@ -57,6 +57,14 @@ Test migration shape/RPC、Backend 计费与支付回归。
 
 `backend.business.wallet-payment`、`backend.business.conversation-generation`。
 
+## 图片创作广场 V2（2026-10-12）
+
+`billing.settle_image_plaza_generation` 在同一事务内校验任务、扣减钱包并写 ledger；`billing.share_image_plaza_artifact` 原子创建公开作品、记录首次分享事实与返利，重复/并发请求返回既有事实且不重复奖励。
+
+`20261013_image_plaza_seed_catalog.sql` 前向重建 `billing.share_image_plaza_artifact`：分享奖励只调用 canonical `billing.grant_bonus_credits`，不再直接更新钱包；`civitai_seed` artifact 被明确拒绝进入分享返利链。数据库行为仍需在 test 环境验证。
+
 ## 变更记录
+
+- 2026-10-13：任务 `10-10-image-plaza-v2` 将分享奖励收敛到 canonical grant RPC，并排除种子 artifact。
 
 - 2026-09-23：任务 `Admin VIP media configuration`（`.trellis/tasks/archive/2026-09/09-23-admin-vip-media-config/`）Admin ?? VIP ??????????????????/????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。
