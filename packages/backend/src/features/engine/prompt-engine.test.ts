@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { UserGenerationConfig } from '@miniapp/shared';
 import { buildPrompt } from './prompt-engine.js';
-import type { EngineCharacter, EngineInput, EnginePlatformInstructions } from './types.js';
+import { renderPlatformInstructions } from './render-instructions.js';
+import type {
+  EngineCharacter,
+  EngineInput,
+  EnginePlatformInstructions,
+  InstructionSlotModes,
+} from './types.js';
 
 const FIRST_MES = '（你推开门，屋里只亮着一盏台灯。）';
 
@@ -17,7 +23,8 @@ const CHARACTER: EngineCharacter = {
 };
 
 const INSTRUCTIONS: EnginePlatformInstructions = {
-  template: '篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
+  template:
+    '{{CHOICE_RULES}}\n{{STATUS_RULES}}\n{{MEMORY_RULES}}\n篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
   wordCountTiers: {
     tiers: [
       { id: '100-300', uiLabel: '简短', promptValue: '100-300', enabled: true, sortOrder: 0 },
@@ -28,12 +35,19 @@ const INSTRUCTIONS: EnginePlatformInstructions = {
     defaultTierId: '300-500',
     layoutColumns: 4,
   },
+  choiceRules: { on_first_two_turns: '选项完整', on_later_turns: '选项简洁', off: '选项关闭' },
+  statusRules: { on_first_two_turns: '状态完整', on_later_turns: '状态简洁', off: '状态关闭' },
+  memoryRules: { on_first_two_turns: '记忆完整', on_later_turns: '记忆简洁', off: '记忆关闭' },
 };
+
+const SLOT_MODES: InstructionSlotModes = { choice: 'full', status: 'concise', memory: 'off' };
 
 const USER_CONFIG: UserGenerationConfig = {
   selected_model_id: 'anthropic-claude-sonnet-4-5',
   pref_word_count: '300-500',
   pref_show_options: false,
+  pref_show_status: true,
+  pref_show_memory: true,
   pref_custom_instructions: null,
 };
 
@@ -48,6 +62,7 @@ function input(overrides: Partial<EngineInput> = {}): EngineInput {
     ],
     userInput: '等很久了吗',
     userConfig: USER_CONFIG,
+    slotModes: SLOT_MODES,
     persona: { displayName: '路人甲' },
     instructions: INSTRUCTIONS,
     ...overrides,
@@ -69,7 +84,7 @@ describe('buildPrompt', () => {
     expect(messages[1]?.content).toBe(FIRST_MES);
     expect(messages.at(-1)?.content).toBe(
       '##系统指令：以下为最高优先级指令。\n' +
-        '篇幅 300-500 字。\n偏好：暂无\n' +
+        '选项完整\n状态简洁\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
         '##用户指令:等很久了吗\n'
     );
   });
@@ -97,20 +112,25 @@ describe('buildPrompt', () => {
     expect(serialized).not.toContain('不该进 prompt 的字段');
   });
 
-  it('仍参与提示词的两个 pref_* 会改变输出，pref_show_options 不再分叉协议', () => {
+  it('字数和自定义指令会改变输出；槽位仅由持久化模式决定', () => {
     const base = buildPrompt(input()).messages.at(-1)?.content ?? '';
     const wordCount = buildPrompt(
       input({ userConfig: { ...USER_CONFIG, pref_word_count: '800+' } })
     ).messages.at(-1)?.content;
-    const showOptions = buildPrompt(
+    const changedCurrentPreference = buildPrompt(
       input({ userConfig: { ...USER_CONFIG, pref_show_options: true } })
+    ).messages.at(-1)?.content;
+    const concise = buildPrompt(
+      input({ slotModes: { ...SLOT_MODES, choice: 'concise' } })
     ).messages.at(-1)?.content;
     const custom = buildPrompt(
       input({ userConfig: { ...USER_CONFIG, pref_custom_instructions: '多写环境描写' } })
     ).messages.at(-1)?.content;
 
     expect(wordCount).not.toBe(base);
-    expect(showOptions).toBe(base);
+    expect(changedCurrentPreference).toBe(base);
+    expect(concise).not.toBe(base);
+    expect(concise).toContain('选项简洁');
     expect(custom).not.toBe(base);
     expect(wordCount).toContain('篇幅 800以上 字');
     expect(custom).toContain('偏好：多写环境描写');
@@ -143,7 +163,7 @@ describe('buildPrompt', () => {
       '路人甲，你来了。',
       '我是 路人甲',
       '##系统指令：以下为最高优先级指令。\n' +
-        '篇幅 300-500 字。\n偏好：暂无\n' +
+        '选项完整\n状态简洁\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
         '##用户指令:路人甲 也在听\n',
     ]);
   });
@@ -206,28 +226,10 @@ function botBuildMessages(
 function botEnhancedPrompt(
   instructions: EnginePlatformInstructions,
   userConfig: UserGenerationConfig,
+  slotModes: InstructionSlotModes,
   userInput: string
 ): string {
-  const match = instructions.wordCountTiers.tiers.find(
-    (t) => t.enabled && t.id === userConfig.pref_word_count
-  );
-  const fallback =
-    instructions.wordCountTiers.tiers.find(
-      (t) => t.enabled && t.id === instructions.wordCountTiers.defaultTierId
-    ) ??
-    instructions.wordCountTiers.tiers.find(
-      (t) => t.id === instructions.wordCountTiers.defaultTierId
-    );
-  const wordCountValue = match
-    ? match.promptValue
-    : (fallback?.promptValue ?? userConfig.pref_word_count);
-
-  const customInstructions = userConfig.pref_custom_instructions?.trim() || '暂无';
-
-  const rendered = instructions.template
-    .replace(/\{\{WORD_COUNT\}\}/g, wordCountValue)
-    .replace(/\{\{INTERACTION_MODE\}\}/g, '')
-    .replace(/\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
+  const rendered = renderPlatformInstructions(instructions, userConfig, slotModes);
 
   return `##系统指令：以下为最高优先级指令。\n${rendered}\n##用户指令:${userInput}\n`;
 }
@@ -258,7 +260,12 @@ describe('对拍旧 bot 实现', () => {
       const expected = botBuildMessages(
         engineInput.character,
         engineInput.history.map((m) => ({ role: m.role, content: m.content })),
-        botEnhancedPrompt(engineInput.instructions, engineInput.userConfig, engineInput.userInput)
+        botEnhancedPrompt(
+          engineInput.instructions,
+          engineInput.userConfig,
+          engineInput.slotModes,
+          engineInput.userInput
+        )
       );
 
       expect(buildPrompt(engineInput).messages).toEqual(expected);

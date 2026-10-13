@@ -9,6 +9,7 @@ import {
   useGenerationConfigQuery,
   usePatchGenerationConfigMutation,
 } from '@/lib/api/generation-config';
+import { isInstructionSlotEnabled } from './chat-generation-settings-state';
 
 const MAX_CUSTOM_INSTRUCTIONS = 500;
 
@@ -101,12 +102,48 @@ export function ChatGenerationSettings() {
           </p>
         </div>
         <Switch
-          checked={config.pref_show_options}
+          checked={isInstructionSlotEnabled(config.pref_show_options)}
           disabled={patch.isPending}
           onCheckedChange={(checked) => patch.mutate({ pref_show_options: checked })}
           aria-label="结尾给出选项"
         />
       </section>
+
+      <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-foreground">状态栏</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+            在回复末尾显示当前状态信息
+          </p>
+        </div>
+        <Switch
+          checked={isInstructionSlotEnabled(config.pref_show_status)}
+          disabled={patch.isPending}
+          onCheckedChange={(checked) => patch.mutate({ pref_show_status: checked })}
+          aria-label="状态栏"
+        />
+      </section>
+
+      <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-foreground">记忆区</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+            在回复末尾显示当前剧情记忆
+          </p>
+        </div>
+        <Switch
+          checked={isInstructionSlotEnabled(config.pref_show_memory)}
+          disabled={patch.isPending}
+          onCheckedChange={(checked) => patch.mutate({ pref_show_memory: checked })}
+          aria-label="记忆区"
+        />
+      </section>
+
+      {patch.isError ? (
+        <p className="text-[12px] text-destructive" role="alert">
+          保存失败，请重试
+        </p>
+      ) : null}
 
       <section>
         <h3 className="mb-1 text-[13px] font-semibold text-foreground">自定义指令</h3>

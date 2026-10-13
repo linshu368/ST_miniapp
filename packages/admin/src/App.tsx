@@ -76,14 +76,17 @@ import { TextPostprocessView } from './components/TextPostprocessView';
 import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
+  PLATFORM_INSTRUCTION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
   isInviteProgramConfigKey,
   isImageGenerationConfigKey,
+  isPlatformInstructionConfigKey,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
   type AdminViewKey,
   type InviteProgramTabKey,
   type ImageGenerationConfigKey,
+  type PlatformInstructionConfigKey,
 } from './lib/adminNavigation';
 import {
   createWorkbenchStore,
@@ -458,6 +461,8 @@ function AdminWorkspace(props: {
   const [imageConfigTab, setImageConfigTab] = useState<ImageGenerationConfigKey>(
     IMAGE_GENERATION_CONFIG_KEYS[0]
   );
+  const [platformInstructionTab, setPlatformInstructionTab] =
+    useState<PlatformInstructionConfigKey>(PLATFORM_INSTRUCTION_CONFIG_KEYS[0]);
   const textStoreRef = useRef(createWorkbenchStore());
   const [textStore, setTextStore] = useState<WorkbenchStore>(textStoreRef.current);
   const syncTextStore = useCallback((updater: (current: WorkbenchStore) => WorkbenchStore) => {
@@ -1052,6 +1057,13 @@ function AdminWorkspace(props: {
                     : imageConfigTab;
                 setImageConfigTab(nextTab);
                 setSelectedKey(nextTab);
+              } else if (selection.view === 'platform_instructions') {
+                const nextTab =
+                  selection.configKey && isPlatformInstructionConfigKey(selection.configKey)
+                    ? selection.configKey
+                    : platformInstructionTab;
+                setPlatformInstructionTab(nextTab);
+                setSelectedKey(nextTab);
               } else if (selection.configKey) {
                 setSelectedKey(selection.configKey);
               }
@@ -1070,6 +1082,7 @@ function AdminWorkspace(props: {
                 { key: 'outreach_credit_grant', label: '回访星尘赠送' },
                 { key: 'invite_program', label: '裂变邀请管理' },
                 { key: 'image_generation_config', label: '图片生成配置' },
+                { key: 'platform_instructions', label: '平台规则' },
                 { key: 'vip_strategy', label: 'VIP策略' },
                 { key: 'text_postprocess', label: '回复富文本规则' },
               ],
@@ -1196,6 +1209,28 @@ function AdminWorkspace(props: {
                   onChange={(key) => {
                     const nextKey = key as ImageGenerationConfigKey;
                     setImageConfigTab(nextKey);
+                    setSelectedKey(nextKey);
+                  }}
+                />
+              </Card>
+              {configEditorCard}
+            </Space>
+          ) : view === 'platform_instructions' ? (
+            <Space direction="vertical" size="middle" className="editor-stack">
+              <Card title="平台规则">
+                <Typography.Paragraph type="secondary">
+                  四个区域共享当前环境的 managed-config
+                  草稿、发布、历史和回滚链路；选项、状态栏、记忆区位于主体模板之前，彼此独立发布。
+                </Typography.Paragraph>
+                <Tabs
+                  activeKey={platformInstructionTab}
+                  items={PLATFORM_INSTRUCTION_CONFIG_KEYS.map((key) => ({
+                    key,
+                    label: configMetadata[key].label,
+                  }))}
+                  onChange={(key) => {
+                    const nextKey = key as PlatformInstructionConfigKey;
+                    setPlatformInstructionTab(nextKey);
                     setSelectedKey(nextKey);
                   }}
                 />

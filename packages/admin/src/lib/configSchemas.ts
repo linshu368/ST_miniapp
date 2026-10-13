@@ -12,8 +12,8 @@ import {
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
-  RICH_REPLY_SYSTEM_INSTRUCTIONS,
   FeatureFreeTrialLimitsSchema,
+  InstructionSlotRulesSchema,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   LlmProviderRoutingConfigSchema,
@@ -48,6 +48,9 @@ export const managedConfigKeys = [
   'llm_provider_routing_config',
   'system_fallback_character_id',
   'system_instructions',
+  'choice_rules',
+  'status_rules',
+  'memory_rules',
   'pref_word_count_tiers',
   'lobby_ranking_params',
   'lobby_pinned_characters',
@@ -91,6 +94,9 @@ const positiveInteger = z.number().int().positive();
 export { LlmPricingConfigSchema };
 
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
+  '{{CHOICE_RULES}}',
+  '{{STATUS_RULES}}',
+  '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
 ] as const;
@@ -239,8 +245,30 @@ export const DEFAULT_INVITE_CENTER_CONFIG: InviteCenterConfig = {
   ],
 };
 
-/** 与 shared 的协议源保持同一份文本，禁止在 Admin 再维护副本。 */
-export const DEFAULT_SYSTEM_INSTRUCTIONS = RICH_REPLY_SYSTEM_INSTRUCTIONS;
+/**
+ * Safe Admin fallback only. The authoritative published template remains the
+ * managed runtime value; this fallback keeps a new/empty environment from
+ * offering the retired INTERACTION_MODE contract.
+ */
+export const DEFAULT_SYSTEM_INSTRUCTIONS = [
+  '# Roleplay System Instructions',
+  '',
+  '只输出最终展示内容；不得替用户决定行动。剧情正文始终先输出，开启模块按选项、状态栏、记忆区的固定顺序追加，关闭模块必须完整省略标签、标题和占位内容。',
+  '',
+  '## 选项槽位',
+  '{{CHOICE_RULES}}',
+  '',
+  '## 状态栏槽位',
+  '{{STATUS_RULES}}',
+  '',
+  '## 记忆区槽位',
+  '{{MEMORY_RULES}}',
+  '',
+  '## 用户个人偏好',
+  '{{USER_CUSTOM_INSTRUCTIONS}}',
+  '',
+  '剧情正文篇幅为 {{WORD_COUNT}} 字，仅使用简体中文。',
+].join('\n');
 
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
@@ -255,6 +283,9 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   llm_provider_routing_config: LlmProviderRoutingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
   system_instructions: SystemInstructionsSchema,
+  choice_rules: InstructionSlotRulesSchema,
+  status_rules: InstructionSlotRulesSchema,
+  memory_rules: InstructionSlotRulesSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   lobby_pinned_characters: LobbyPinnedCharactersSchema,
@@ -380,10 +411,43 @@ export const configMetadata: Record<
     defaultValue: '',
   },
   system_instructions: {
-    label: '平台规则模板',
+    label: '主体模板',
     description:
-      '自研引擎每轮注入的平台规则（markdown）。须含 {{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
+      '自研引擎每轮注入的平台规则（markdown）。须含三个规则槽位、{{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
     defaultValue: DEFAULT_SYSTEM_INSTRUCTIONS,
+  },
+  choice_rules: {
+    label: '选项规则',
+    description: '选项槽位的完整、简洁和关闭文案；三个阶段独立保存、发布、查看历史与回滚。',
+    defaultValue: {
+      on_first_two_turns:
+        '本轮需要输出选项。正文结束后另起三行，每行使用一组小写且完整闭合的 [choice]...[/choice]；选项只提供下一步输入建议，不替用户决定行动，也不预演选择结果。',
+      on_later_turns:
+        '在正文后输出三条可选的下一步输入建议；每条使用一组完整的小写 [choice]...[/choice]，不替用户作决定。',
+      off: '本轮不输出选项，不得输出 [choice]、[/choice]、选项标题或占位内容。',
+    },
+  },
+  status_rules: {
+    label: '状态栏规则',
+    description: '状态栏槽位的完整、简洁和关闭文案；三个阶段独立保存、发布、查看历史与回滚。',
+    defaultValue: {
+      on_first_two_turns:
+        '本轮需要输出状态栏。正文之后（选项开启时位于选项之后、记忆开启时位于记忆之前）只输出一组小写 [status]...[/status]。内部用一个或多个并列 <details><summary>面板名称</summary> 和 markdown 代码块；仅记录本轮结束时值得持续追踪的状态。',
+      on_later_turns:
+        '在正确输出顺序中输出一组完整的小写 [status]...[/status]，用并列 details 面板简洁记录当前可持续追踪状态。',
+      off: '本轮不输出状态栏，不得输出 [status]、[/status]、状态栏标题或占位内容。',
+    },
+  },
+  memory_rules: {
+    label: '记忆区规则',
+    description: '记忆区槽位的完整、简洁和关闭文案；三个阶段独立保存、发布、查看历史与回滚。',
+    defaultValue: {
+      on_first_two_turns:
+        '本轮需要在整条回复最后输出一组小写 [memory]...[/memory]。内部以工作记忆、历史档案、里程碑三个 details 折叠区记录已发生事实；保持时间线连续，历史档案与既有里程碑不得擅自改写；[/memory] 后不得追加任何文字。',
+      on_later_turns:
+        '在整条回复最后输出一组完整的小写 [memory]...[/memory]，简洁更新工作记忆、历史档案和里程碑中的已发生事实；结束标签后不得追加文字。',
+      off: '本轮不输出记忆区，不得输出 [memory]、[/memory]、记忆标题或占位内容。',
+    },
   },
   pref_word_count_tiers: {
     label: '回复长度档位',

@@ -35,6 +35,8 @@ export interface MiniappUserSettingsRow {
   /** NULL = 从未选择，跟随 runtime_config 的 default_tier_id（086） */
   pref_word_count: StoredPreferredWordCount;
   pref_show_options: boolean;
+  pref_show_status: boolean;
+  pref_show_memory: boolean;
   pref_custom_instructions: string | null;
   selected_model_id: string | null;
   characters_last_seen_at: string | null;
@@ -43,6 +45,24 @@ export interface MiniappUserSettingsRow {
   created_at: string;
   updated_at: string;
 }
+
+type MutableUserSettingsFields = Partial<
+  Pick<
+    MiniappUserSettingsRow,
+    | 'display_name'
+    | 'custom_avatar_url'
+    | 'pref_word_count'
+    | 'pref_show_options'
+    | 'pref_show_status'
+    | 'pref_show_memory'
+    | 'pref_custom_instructions'
+  >
+>;
+
+type InstructionSlotPreferencePatch = Pick<
+  MutableUserSettingsFields,
+  'pref_show_options' | 'pref_show_status' | 'pref_show_memory'
+>;
 
 export class MiniappUserSettingsRepository {
   private readonly db = getDomainDb('app_core');
@@ -80,19 +100,39 @@ export class MiniappUserSettingsRepository {
     await this.getOrCreate(userId, tgUser);
 
     const update = await this.normalizePatch(patch);
-    const { data, error } = await this.db
-      .from('miniapp_user_settings')
-      .update({
-        ...this.telegramProfileFields(tgUser),
-        ...update,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-      .select('*')
-      .single();
+    const slotPreferences = pickInstructionSlotPreferences(update);
+    const otherFields = omitInstructionSlotPreferences(update);
 
-    if (error) throw new Error(`更新 MiniApp 用户设置失败：${error.message}`);
-    return data as MiniappUserSettingsRow;
+    // The migration owns false -> true window resets in this RPC. Keeping these
+    // fields out of any normal update prevents a concurrent profile write from
+    // replacing a just-reset counter with a stale direct write.
+    if (Object.keys(slotPreferences).length > 0) {
+      const { error } = await this.db
+        .rpc('update_instruction_slot_preferences', {
+          p_user_id: userId,
+          p_pref_show_options: slotPreferences.pref_show_options ?? null,
+          p_pref_show_status: slotPreferences.pref_show_status ?? null,
+          p_pref_show_memory: slotPreferences.pref_show_memory ?? null,
+        })
+        .abortSignal(AbortSignal.timeout(5_000));
+      if (error) throw new Error(`原子更新生成偏好失败：${error.message}`);
+    }
+
+    if (Object.keys(otherFields).length > 0) {
+      const { error } = await this.db
+        .from('miniapp_user_settings')
+        .update({
+          ...this.telegramProfileFields(tgUser),
+          ...otherFields,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId);
+      if (error) throw new Error(`更新 MiniApp 用户设置失败：${error.message}`);
+    }
+
+    const row = await this.findByUserId(userId);
+    if (!row) throw new Error('更新 MiniApp 用户设置后未找到用户设置');
+    return row;
   }
 
   async setCustomAvatar(
@@ -178,7 +218,9 @@ export class MiniappUserSettingsRepository {
   async getGenerationConfig(userId: string): Promise<UserGenerationConfig> {
     const { data, error } = await this.db
       .from('miniapp_user_settings')
-      .select('selected_model_id, pref_word_count, pref_show_options, pref_custom_instructions')
+      .select(
+        'selected_model_id, pref_word_count, pref_show_options, pref_show_status, pref_show_memory, pref_custom_instructions'
+      )
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -186,7 +228,12 @@ export class MiniappUserSettingsRepository {
 
     const row = data as Pick<
       MiniappUserSettingsRow,
-      'selected_model_id' | 'pref_word_count' | 'pref_show_options' | 'pref_custom_instructions'
+      | 'selected_model_id'
+      | 'pref_word_count'
+      | 'pref_show_options'
+      | 'pref_show_status'
+      | 'pref_show_memory'
+      | 'pref_custom_instructions'
     > | null;
 
     const publicTiers = toPublicWordCountTiersFromEngine(
@@ -202,6 +249,8 @@ export class MiniappUserSettingsRepository {
       selected_model_id: row?.selected_model_id ?? null,
       pref_word_count,
       pref_show_options: row?.pref_show_options ?? true,
+      pref_show_status: row?.pref_show_status ?? true,
+      pref_show_memory: row?.pref_show_memory ?? true,
       pref_custom_instructions: row?.pref_custom_instructions ?? null,
     };
   }
@@ -346,28 +395,8 @@ export class MiniappUserSettingsRepository {
 
   private async normalizePatch(
     patch: PatchUserSettingsRequest
-  ): Promise<
-    Partial<
-      Pick<
-        MiniappUserSettingsRow,
-        | 'display_name'
-        | 'custom_avatar_url'
-        | 'pref_word_count'
-        | 'pref_show_options'
-        | 'pref_custom_instructions'
-      >
-    >
-  > {
-    const update: Partial<
-      Pick<
-        MiniappUserSettingsRow,
-        | 'display_name'
-        | 'custom_avatar_url'
-        | 'pref_word_count'
-        | 'pref_show_options'
-        | 'pref_custom_instructions'
-      >
-    > = {};
+  ): Promise<MutableUserSettingsFields> {
+    const update: MutableUserSettingsFields = {};
 
     if ('display_name' in patch) {
       update.display_name = normalizeNullableText(patch.display_name, 32);
@@ -391,12 +420,42 @@ export class MiniappUserSettingsRepository {
     if ('pref_show_options' in patch) {
       update.pref_show_options = Boolean(patch.pref_show_options);
     }
+    if ('pref_show_status' in patch) {
+      update.pref_show_status = Boolean(patch.pref_show_status);
+    }
+    if ('pref_show_memory' in patch) {
+      update.pref_show_memory = Boolean(patch.pref_show_memory);
+    }
     if ('pref_custom_instructions' in patch) {
       update.pref_custom_instructions = normalizeNullableText(patch.pref_custom_instructions, 2000);
     }
 
     return update;
   }
+}
+
+function pickInstructionSlotPreferences(
+  update: MutableUserSettingsFields
+): InstructionSlotPreferencePatch {
+  return {
+    ...(update.pref_show_options !== undefined
+      ? { pref_show_options: update.pref_show_options }
+      : {}),
+    ...(update.pref_show_status !== undefined ? { pref_show_status: update.pref_show_status } : {}),
+    ...(update.pref_show_memory !== undefined ? { pref_show_memory: update.pref_show_memory } : {}),
+  };
+}
+
+function omitInstructionSlotPreferences(
+  update: MutableUserSettingsFields
+): Omit<MutableUserSettingsFields, keyof InstructionSlotPreferencePatch> {
+  const {
+    pref_show_options: _choice,
+    pref_show_status: _status,
+    pref_show_memory: _memory,
+    ...rest
+  } = update;
+  return rest;
 }
 
 export function toUserSettings(row: MiniappUserSettingsRow): UserSettings {
@@ -407,7 +466,9 @@ export function toUserSettings(row: MiniappUserSettingsRow): UserSettings {
     avatar_url: customAvatar || telegramAvatar || config.defaultUserAvatarUrl,
     avatar_source: customAvatar ? 'custom' : telegramAvatar ? 'telegram' : 'default',
     pref_word_count: row.pref_word_count,
-    pref_show_options: row.pref_show_options,
+    pref_show_options: row.pref_show_options ?? true,
+    pref_show_status: row.pref_show_status ?? true,
+    pref_show_memory: row.pref_show_memory ?? true,
     pref_custom_instructions: row.pref_custom_instructions,
     updated_at: row.updated_at,
   };

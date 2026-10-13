@@ -13,10 +13,11 @@
 
 import {
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
-  RICH_REPLY_SYSTEM_INSTRUCTIONS,
+  InstructionSlotRulesSchema,
   toPublicWordCountTiers,
   WordCountTiersConfigSchema,
   type PublicWordCountTiers,
+  type InstructionSlotRules,
   type WordCountTiersConfig,
 } from '@miniapp/shared';
 import {
@@ -27,8 +28,17 @@ import type { EnginePlatformInstructions, EngineWordCountTiers } from './types.j
 
 export const PLATFORM_INSTRUCTIONS_TEMPLATE_KEY = 'system_instructions';
 export const WORD_COUNT_TIERS_KEY = 'pref_word_count_tiers';
+export const CHOICE_RULES_KEY = 'choice_rules';
+export const STATUS_RULES_KEY = 'status_rules';
+export const MEMORY_RULES_KEY = 'memory_rules';
 
-const CONFIG_KEYS = [PLATFORM_INSTRUCTIONS_TEMPLATE_KEY, WORD_COUNT_TIERS_KEY] as const;
+const CONFIG_KEYS = [
+  PLATFORM_INSTRUCTIONS_TEMPLATE_KEY,
+  WORD_COUNT_TIERS_KEY,
+  CHOICE_RULES_KEY,
+  STATUS_RULES_KEY,
+  MEMORY_RULES_KEY,
+] as const;
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -36,7 +46,30 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * 两个 key 全部缺失/损坏时的最后兜底。刻意写得很短——它只保证生成不中断，
  * 输出质量一定是降级的，靠 degraded 标记和日志把问题暴露出来，而不是让它悄悄跑下去。
  */
-const FALLBACK_TEMPLATE = RICH_REPLY_SYSTEM_INSTRUCTIONS;
+const REQUIRED_TEMPLATE_PLACEHOLDERS = [
+  '{{CHOICE_RULES}}',
+  '{{STATUS_RULES}}',
+  '{{MEMORY_RULES}}',
+  '{{WORD_COUNT}}',
+  '{{USER_CUSTOM_INSTRUCTIONS}}',
+] as const;
+
+const FALLBACK_TEMPLATE = [
+  'Roleplay System Instructions',
+  '',
+  '{{CHOICE_RULES}}',
+  '{{STATUS_RULES}}',
+  '{{MEMORY_RULES}}',
+  '输出篇幅为 {{WORD_COUNT}} 字，仅使用简体中文。',
+  '用户个人偏好为：{{USER_CUSTOM_INSTRUCTIONS}}',
+].join('\n');
+
+/** A broken operator config must not make the model emit unverified markup. */
+const FALLBACK_SLOT_RULES: InstructionSlotRules = {
+  on_first_two_turns: '不要输出该模块的标签、标题或占位内容。',
+  on_later_turns: '不要输出该模块的标签、标题或占位内容。',
+  off: '不要输出该模块的标签、标题或占位内容。',
+};
 
 const FALLBACK_WORD_COUNT_TIERS: EngineWordCountTiers = configToEngineWordCountTiers(
   DEFAULT_WORD_COUNT_TIERS_CONFIG
@@ -60,6 +93,19 @@ function nonEmptyString(value: unknown): string | null {
 export function parseTemplate(entry: RuntimeConfigEntry | undefined): string | null {
   if (!entry) return null;
   return nonEmptyString(entry.textValue) ?? nonEmptyString(entry.value);
+}
+
+function isCurrentTemplate(template: string): boolean {
+  return (
+    !template.includes('{{INTERACTION_MODE}}') &&
+    REQUIRED_TEMPLATE_PLACEHOLDERS.every((placeholder) => template.includes(placeholder))
+  );
+}
+
+/** Strict Shared schema keeps Backend and Admin on the same config contract. */
+export function parseInstructionSlotRules(value: unknown): InstructionSlotRules | null {
+  const parsed = InstructionSlotRulesSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 function layoutColumns(value: unknown): 2 | 3 | 4 {
@@ -180,9 +226,11 @@ export function buildSnapshot(
   let degraded = false;
 
   const template = parseTemplate(entries.get(PLATFORM_INSTRUCTIONS_TEMPLATE_KEY));
-  if (!template) {
+  if (!template || !isCurrentTemplate(template)) {
     console.error(
-      `[engine] runtime_config ${PLATFORM_INSTRUCTIONS_TEMPLATE_KEY} 缺失或为空，平台规则已降级到内置兜底模板`
+      `[engine] runtime_config ${PLATFORM_INSTRUCTIONS_TEMPLATE_KEY} (version ${
+        entries.get(PLATFORM_INSTRUCTIONS_TEMPLATE_KEY)?.version ?? -1
+      }) 缺失、非法或包含废弃占位符；平台规则已降级到内置兜底模板`
     );
     degraded = true;
   }
@@ -214,13 +262,44 @@ export function buildSnapshot(
     }
   }
 
+  const slotRules = {
+    choiceRules: readSlotRules(entries, CHOICE_RULES_KEY),
+    statusRules: readSlotRules(entries, STATUS_RULES_KEY),
+    memoryRules: readSlotRules(entries, MEMORY_RULES_KEY),
+  };
+  if (
+    slotRules.choiceRules.degraded ||
+    slotRules.statusRules.degraded ||
+    slotRules.memoryRules.degraded
+  ) {
+    degraded = true;
+  }
+
   return {
     instructions: {
-      template: template ?? FALLBACK_TEMPLATE,
+      template: template && isCurrentTemplate(template) ? template : FALLBACK_TEMPLATE,
       wordCountTiers: wordCountTiers ?? FALLBACK_WORD_COUNT_TIERS,
+      choiceRules: slotRules.choiceRules.rules,
+      statusRules: slotRules.statusRules.rules,
+      memoryRules: slotRules.memoryRules.rules,
     },
     degraded,
   };
+}
+
+function readSlotRules(
+  entries: Map<string, RuntimeConfigEntry>,
+  key: typeof CHOICE_RULES_KEY | typeof STATUS_RULES_KEY | typeof MEMORY_RULES_KEY
+): { rules: InstructionSlotRules; degraded: boolean } {
+  const entry = entries.get(key);
+  const rules = parseInstructionSlotRules(entry?.value);
+  if (rules) return { rules, degraded: false };
+
+  // Do not include validation issues or a JSON value here: both can contain operator rule text.
+  console.error(
+    `[engine] runtime_config ${key} (version ${entry?.version ?? -1}) 缺失或不满足 instruction-slot schema；已使用安全兜底`
+  );
+  return { rules: FALLBACK_SLOT_RULES, degraded: true };
 }
 
 /**

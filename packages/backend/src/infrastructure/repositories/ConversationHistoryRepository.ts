@@ -19,6 +19,7 @@ import type { GenerationMessage, GenerationStatus } from '../../features/generat
 import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { throwConversationRpcError } from './conversation-errors.js';
+import type { InstructionSlotModes } from '../../features/engine/types.js';
 
 export const STREAMING_STALE_SECONDS = 120;
 
@@ -91,6 +92,8 @@ export interface StartedHistoryTurn {
   contextWindowStartTurn: number;
   /** current-version RPC 实际写入的非空正式版本。 */
   postprocessVersion: number;
+  /** Immutable modes chosen by the same database transaction that created this revision. */
+  slotModes: InstructionSlotModes;
 }
 
 export interface ConversationContext {
@@ -558,6 +561,9 @@ interface StartedHistoryTurnRpc {
   revision?: number;
   context_window_start_turn?: number;
   postprocess_version?: number | null;
+  choice_rules_mode?: unknown;
+  status_rules_mode?: unknown;
+  memory_rules_mode?: unknown;
 }
 
 function mapStartedTurn(
@@ -565,11 +571,13 @@ function mapStartedTurn(
   userContent: string
 ): StartedHistoryTurn {
   const postprocessVersion = readPostprocessVersion(result?.postprocess_version);
+  const slotModes = readInstructionSlotModes(result);
   if (
     typeof result?.turn_index !== 'number' ||
     !result.history_id ||
     typeof result.revision !== 'number' ||
-    postprocessVersion === null
+    postprocessVersion === null ||
+    slotModes === null
   ) {
     throw new Error('创建对话轮次结果字段不完整');
   }
@@ -580,7 +588,18 @@ function mapStartedTurn(
     userContent,
     contextWindowStartTurn: readWindowStart(result.context_window_start_turn),
     postprocessVersion,
+    slotModes,
   };
+}
+
+function readInstructionSlotModes(
+  result: StartedHistoryTurnRpc | null
+): InstructionSlotModes | null {
+  const values = [result?.choice_rules_mode, result?.status_rules_mode, result?.memory_rules_mode];
+  if (!values.every((value) => value === 'full' || value === 'concise' || value === 'off')) {
+    return null;
+  }
+  return { choice: values[0], status: values[1], memory: values[2] } as InstructionSlotModes;
 }
 
 function contextWindowRpcArgs(input: { maxContextTurns?: number; retainContextTurns?: number }): {
