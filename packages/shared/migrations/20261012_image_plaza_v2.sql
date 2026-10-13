@@ -704,12 +704,94 @@ REVOKE ALL ON FUNCTION admin.validate_managed_config_value_before_image_plaza(TE
 REVOKE ALL ON FUNCTION admin.validate_managed_config_value(TEXT, JSONB, TEXT)
   FROM PUBLIC, anon, authenticated, service_role;
 
-ALTER TABLE admin.config_drafts DROP CONSTRAINT IF EXISTS config_drafts_config_key_check;
-ALTER TABLE admin.config_drafts ADD CONSTRAINT config_drafts_config_key_check
-  CHECK (admin.is_managed_config_key(config_key));
-ALTER TABLE admin.config_releases DROP CONSTRAINT IF EXISTS config_releases_config_key_check;
-ALTER TABLE admin.config_releases ADD CONSTRAINT config_releases_config_key_check
-  CHECK (admin.is_managed_config_key(config_key));
+-- 目标环境的静态 CHECK 与 managed-key 函数曾由多条并行 migration 独立演进。必须在目标库
+-- 当前表达式上单调追加，不能用函数当前名单重建整条 CHECK，否则会误删仍有历史行的合法 key。
+DO $widen_managed_config_checks$
+DECLARE
+  v_table REGCLASS;
+  v_constraint_name TEXT;
+  v_existing_expression TEXT;
+  v_was_validated BOOLEAN;
+  v_keys CONSTANT TEXT[] := ARRAY[
+    'image_plaza_enabled',
+    'image_plaza_model_catalog',
+    'image_plaza_share_tip',
+    'image_plaza_tags'
+  ];
+BEGIN
+  FOREACH v_table IN ARRAY ARRAY[
+    'admin.config_drafts'::REGCLASS,
+    'admin.config_releases'::REGCLASS
+  ] LOOP
+    v_constraint_name := CASE v_table
+      WHEN 'admin.config_drafts'::REGCLASS THEN 'config_drafts_config_key_check'
+      ELSE 'config_releases_config_key_check'
+    END;
+
+    SELECT pg_get_expr(c.conbin, c.conrelid), c.convalidated
+      INTO v_existing_expression, v_was_validated
+    FROM pg_constraint AS c
+    WHERE c.conrelid = v_table
+      AND c.conname = v_constraint_name
+      AND c.contype = 'c';
+
+    IF v_existing_expression IS NULL THEN
+      RAISE EXCEPTION 'missing expected constraint %.%', v_table, v_constraint_name;
+    END IF;
+    IF v_keys <@ regexp_split_to_array(v_existing_expression, '[^a-z0-9_]+') THEN
+      CONTINUE;
+    END IF;
+
+    EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', v_table, v_constraint_name);
+    EXECUTE format(
+      'ALTER TABLE %s ADD CONSTRAINT %I CHECK ((%s) OR config_key = ANY (%L::text[]))%s',
+      v_table,
+      v_constraint_name,
+      v_existing_expression,
+      v_keys::TEXT,
+      CASE WHEN v_was_validated THEN '' ELSE ' NOT VALID' END
+    );
+  END LOOP;
+END
+$widen_managed_config_checks$;
+
+DO $check_managed_config_checks$
+DECLARE
+  v_table REGCLASS;
+  v_constraint_name TEXT;
+  v_definition TEXT;
+  v_key TEXT;
+  v_keys CONSTANT TEXT[] := ARRAY[
+    'image_plaza_enabled',
+    'image_plaza_model_catalog',
+    'image_plaza_share_tip',
+    'image_plaza_tags'
+  ];
+BEGIN
+  FOREACH v_table IN ARRAY ARRAY[
+    'admin.config_drafts'::REGCLASS,
+    'admin.config_releases'::REGCLASS
+  ] LOOP
+    v_constraint_name := CASE v_table
+      WHEN 'admin.config_drafts'::REGCLASS THEN 'config_drafts_config_key_check'
+      ELSE 'config_releases_config_key_check'
+    END;
+    SELECT pg_get_constraintdef(c.oid)
+      INTO v_definition
+    FROM pg_constraint AS c
+    WHERE c.conrelid = v_table
+      AND c.conname = v_constraint_name
+      AND c.contype = 'c';
+
+    FOREACH v_key IN ARRAY v_keys LOOP
+      IF v_definition IS NULL OR position(v_key IN v_definition) = 0 THEN
+        RAISE EXCEPTION 'self-check failed: %.% missing key %',
+          v_table, v_constraint_name, v_key;
+      END IF;
+    END LOOP;
+  END LOOP;
+END
+$check_managed_config_checks$;
 
 INSERT INTO app_core.runtime_config(key, value, description)
 VALUES

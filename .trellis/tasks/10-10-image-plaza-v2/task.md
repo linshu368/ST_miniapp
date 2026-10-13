@@ -44,3 +44,6 @@
 - 2026-10-12：T1–T7 本地实现完成；trellis-check 修正 Venice edit 协议、模型尺寸策略、报价映射快照、幂等冲突、公开参考图授权与数据库深层校验。
 - 2026-10-12：Shared/Backend/Frontend/Admin 共 1050 项现有测试通过；全仓 typecheck、Frontend/Admin build、lint、migration 文件名、import 边界和模块知识载荷通过。Frontend 仅保留签名图片 `<img>` 性能警告，Admin 仅保留既有大 chunk 警告。
 - 2026-10-12：本机无 Docker/psql，且会话无可用 Browser；migration 仅静态审查，尚未在明确 test 环境执行，Telegram WebView/移动端与真实 Venice/Storage/钱包链路待人工联调，因此 T9 保持 Doing。
+- 2026-10-13：补充图片广场专项回归：Shared 模型/配置契约 5 项、Backend Venice generate/edit 协议与未知结果 4 项；完整 Shared 122 项、Backend 607 项通过。
+- 2026-10-13：目标库首次执行 migration 在重建 `config_drafts_config_key_check` 时触发 23514，事务整体回滚。根因为用 managed-key 函数重建静态 CHECK 会收窄目标库历史白名单；已改为读取目标库当前约束表达式后单调 OR 追加四个新 key，并保留原 `convalidated` 状态和增加自检，等待目标 test 环境重试。
+- 2026-10-13：兼容修复后 migration lint、`git diff --check`、Trellis context/module knowledge、全仓 typecheck 通过；Shared 122 项与 Backend 607 项全量测试再次通过。目标 test DB 尚未重跑，T9 继续保持 Doing。
