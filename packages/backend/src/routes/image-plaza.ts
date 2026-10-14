@@ -24,6 +24,7 @@ import {
 } from '@miniapp/shared';
 import { getImagePlazaRuntimeConfig } from '../features/image-plaza/config.js';
 import { ImagePlazaRepository } from '../features/image-plaza/repository.js';
+import { classifyImagePlazaTags, waitForImagePlazaTags } from '../features/image-plaza/tagging.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { config } from '../platform/config.js';
@@ -362,14 +363,76 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
         const modelId = await repository.getArtifactModelId(body.data.artifact_id, context.id);
         const modelName =
           runtime.catalog.models.find((model) => model.id === modelId)?.name ?? modelId;
+        const taggingStartedAt = Date.now();
+        const pendingTags =
+          body.data.tags.length === 0
+            ? repository
+                .loadSharePrompt(body.data.artifact_id, context.id)
+                .then((prompt) =>
+                  classifyImagePlazaTags({ prompt, tags: runtime.tags, log: request.log })
+                )
+                .catch(() => {
+                  request.log.warn(
+                    {
+                      event: 'image_plaza.tagging.failed',
+                      err: new Error('image_plaza_tagging_prompt_unavailable'),
+                      durationMs: Date.now() - taggingStartedAt,
+                    },
+                    'Image plaza tagging prompt unavailable'
+                  );
+                  return [];
+                })
+            : null;
+        const classifiedTags = pendingTags ? await waitForImagePlazaTags(pendingTags) : null;
+        const deferred = pendingTags !== null && classifiedTags === null;
+        if (pendingTags) {
+          request.log.info(
+            {
+              event: 'image_plaza.tagging.share_ready',
+              artifactId: body.data.artifact_id,
+              mode: deferred ? 'async' : 'sync',
+              durationMs: Date.now() - taggingStartedAt,
+              tagCount: classifiedTags?.length ?? 0,
+            },
+            'Image plaza share tagging ready'
+          );
+        }
         const result = await repository.shareArtifact({
           userId: context.id,
           artifactId: body.data.artifact_id,
           title: body.data.title,
           modelName,
-          tags: body.data.tags,
+          tags: pendingTags ? (classifiedTags ?? []) : body.data.tags,
           rebateRate: runtime.rebateRate,
         });
+        // 重复分享保留首次快照；仅新分享允许续接同一次分类结果，不重复触发返利。
+        if (deferred && pendingTags && !result.alreadyShared) {
+          void pendingTags
+            .then(async (tags) => {
+              if (tags.length === 0) return;
+              const updated = await repository.updateWorkTagsIfEmpty(
+                result.workId,
+                context.id,
+                tags
+              );
+              request.log.info(
+                {
+                  event: 'image_plaza.tagging.backfilled',
+                  workId: result.workId,
+                  updated,
+                  tagCount: tags.length,
+                  durationMs: Date.now() - taggingStartedAt,
+                },
+                'Image plaza work tagging backfill completed'
+              );
+            })
+            .catch((err: unknown) => {
+              request.log.warn(
+                { err, event: 'image_plaza.tagging.backfill_failed', workId: result.workId },
+                'Image plaza work tagging backfill failed'
+              );
+            });
+        }
         const work = await repository.getWork(result.workId, context.id);
         if (!work) throw new Error('image_plaza_shared_work_missing');
         return reply.send(

@@ -492,6 +492,41 @@ export class ImagePlazaRepository {
     return String(attempt.model_id);
   }
 
+  async loadSharePrompt(artifactId: string, userId: string): Promise<string> {
+    const { data: artifact, error: artifactError } = await this.experience
+      .from('image_plaza_artifacts')
+      .select('attempt_id')
+      .eq('id', artifactId)
+      .maybeSingle();
+    if (artifactError || !artifact) throw new Error('image_plaza_artifact_not_found');
+    const { data: attempt, error: attemptError } = await this.experience
+      .from('image_plaza_attempts')
+      .select('prompt')
+      .eq('id', String(artifact.attempt_id))
+      .eq('user_id', userId)
+      .eq('status', 'ready')
+      .maybeSingle();
+    if (attemptError || !attempt || typeof attempt.prompt !== 'string') {
+      throw new Error('image_plaza_artifact_not_found');
+    }
+    return attempt.prompt;
+  }
+
+  async updateWorkTagsIfEmpty(workId: string, userId: string, tags: string[]): Promise<boolean> {
+    if (tags.length === 0) return false;
+    // 单次条件写保持并发安全；不调用分享 RPC，因此不会再次发放返利。
+    const { data, error } = await this.experience
+      .from('image_plaza_works')
+      .update({ tags })
+      .eq('id', workId)
+      .eq('user_id', userId)
+      .eq('tags', '{}')
+      .is('deleted_at', null)
+      .select('id');
+    if (error) throw new Error('image_plaza_tagging_update_failed');
+    return (data?.length ?? 0) > 0;
+  }
+
   async claimJobs(
     workerId: string,
     limit: number,

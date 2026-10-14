@@ -3,7 +3,7 @@
   "name": "image-plaza-share-auto-tags",
   "title": "图片广场分享自动打标签",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "backend",
@@ -25,7 +25,8 @@
   "meta": {
     "module_impact": {
       "schema_version": 1,
-      "mode": "pending"
+      "mode": "changes",
+      "modules": ["backend.business.conversation-generation"]
     }
   }
 }
