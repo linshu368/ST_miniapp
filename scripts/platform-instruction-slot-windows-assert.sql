@@ -18,7 +18,8 @@ INSERT INTO experience.chat_sessions (id, user_id) VALUES
   ('10000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001'),
   ('10000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002'),
   ('10000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000003'),
-  ('10000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000004');
+  ('10000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000004'),
+  ('10000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000001');
 
 -- Three logical turns consume full/full/concise independently for every slot.
 SELECT experience.start_chat_history_turn_with_current_postprocess('10000000-0000-0000-0000-000000000001', 'one', 'local');
@@ -31,38 +32,46 @@ SELECT pg_temp.assert_true(
    FROM experience.current_chat_history WHERE session_id = '10000000-0000-0000-0000-000000000001'),
   'full/full/concise snapshots');
 
--- Regeneration uses the original snapshot and does not consume another count.
+-- A second session belonging to the same user receives its own full/full window.
+SELECT experience.start_chat_history_turn_with_current_postprocess('10000000-0000-0000-0000-000000000005', 'one-b', 'local');
+SELECT experience.start_chat_history_turn_with_current_postprocess('10000000-0000-0000-0000-000000000005', 'two-b', 'local');
+SELECT experience.start_chat_history_turn_with_current_postprocess('10000000-0000-0000-0000-000000000005', 'three-b', 'local');
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(choice_rules_mode ORDER BY turn_index) = ARRAY['full','full','concise']
+       AND array_agg(status_rules_mode ORDER BY turn_index) = ARRAY['full','full','concise']
+       AND array_agg(memory_rules_mode ORDER BY turn_index) = ARRAY['full','full','concise']
+   FROM experience.current_chat_history WHERE session_id = '10000000-0000-0000-0000-000000000005'),
+  'same user has an independent window in each session');
+
+-- Regeneration uses the original snapshot and does not consume any user counter.
 SELECT experience.start_chat_history_regeneration_with_current_postprocess('10000000-0000-0000-0000-000000000001', 1, 'local');
 SELECT pg_temp.assert_true(
   (SELECT count(*) = 2 AND count(DISTINCT choice_rules_mode) = 1 AND count(DISTINCT status_rules_mode) = 1 AND count(DISTINCT memory_rules_mode) = 1
    FROM experience.chat_history WHERE session_id = '10000000-0000-0000-0000-000000000001' AND turn_index = 1),
   'regeneration reuses a stable snapshot');
 SELECT pg_temp.assert_true(
-  (SELECT choice_full_rules_remaining = 0 AND status_full_rules_remaining = 0 AND memory_full_rules_remaining = 0
+  (SELECT choice_full_rules_remaining = 2 AND status_full_rules_remaining = 2 AND memory_full_rules_remaining = 2
    FROM app_core.miniapp_user_settings WHERE user_id = '10000000-0000-0000-0000-000000000001'),
-  'regeneration does not consume counts');
+  'turns and regeneration do not consume legacy user counters');
 
--- Only the slot actually toggled false -> true is reset; off never consumes and reopen gets full again.
+-- Off follows the live preference. Reopening after turn two stays concise because
+-- it does not grant a new per-user or per-session allowance.
 SELECT * FROM app_core.update_instruction_slot_preferences('10000000-0000-0000-0000-000000000001', false, NULL, NULL);
-SELECT pg_temp.assert_true((SELECT choice_full_rules_remaining = 0 AND status_full_rules_remaining = 0 AND memory_full_rules_remaining = 0
-  FROM app_core.miniapp_user_settings WHERE user_id = '10000000-0000-0000-0000-000000000001'), 'turning choice off leaves other counts unchanged');
 SELECT experience.start_chat_history_turn_with_current_postprocess('10000000-0000-0000-0000-000000000001', 'off', 'local');
 SELECT pg_temp.assert_true((SELECT choice_rules_mode = 'off' FROM experience.current_chat_history WHERE session_id = '10000000-0000-0000-0000-000000000001' AND turn_index = 4), 'off mode');
 SELECT * FROM app_core.update_instruction_slot_preferences('10000000-0000-0000-0000-000000000001', true, NULL, NULL);
-SELECT pg_temp.assert_true((SELECT choice_full_rules_remaining = 2 AND status_full_rules_remaining = 0 AND memory_full_rules_remaining = 0
-  FROM app_core.miniapp_user_settings WHERE user_id = '10000000-0000-0000-0000-000000000001'), 'only reopened choice resets');
 SELECT experience.start_chat_history_turn_with_current_postprocess('10000000-0000-0000-0000-000000000001', 'reopen', 'local');
-SELECT pg_temp.assert_true((SELECT choice_rules_mode = 'full' AND status_rules_mode = 'concise' AND memory_rules_mode = 'concise'
-  FROM experience.current_chat_history WHERE session_id = '10000000-0000-0000-0000-000000000001' AND turn_index = 5), 'reopen starts full while untouched slots stay concise');
+SELECT pg_temp.assert_true((SELECT choice_rules_mode = 'concise' AND status_rules_mode = 'concise' AND memory_rules_mode = 'concise'
+  FROM experience.current_chat_history WHERE session_id = '10000000-0000-0000-0000-000000000001' AND turn_index = 5), 'reopen after turn two remains concise');
 
--- A failed turn occurs after claim but its statement transaction must restore both count and history.
+-- A failed turn rolls back history and leaves legacy counters untouched.
 INSERT INTO app_core.miniapp_user_settings (user_id) VALUES ('10000000-0000-0000-0000-000000000002');
 DO $$ BEGIN
   PERFORM experience.start_chat_history_turn_with_current_postprocess('10000000-0000-0000-0000-000000000002', '__fail_after_claim__', 'local');
   RAISE EXCEPTION 'expected injected failure';
 EXCEPTION WHEN SQLSTATE 'P0001' THEN NULL; END $$;
 SELECT pg_temp.assert_true((SELECT choice_full_rules_remaining = 2 AND status_full_rules_remaining = 2 AND memory_full_rules_remaining = 2
-  FROM app_core.miniapp_user_settings WHERE user_id = '10000000-0000-0000-0000-000000000002'), 'failed turn rolls back counts');
+  FROM app_core.miniapp_user_settings WHERE user_id = '10000000-0000-0000-0000-000000000002'), 'failed turn leaves legacy counters untouched');
 SELECT pg_temp.assert_true((SELECT count(*) = 0 FROM experience.chat_history WHERE session_id = '10000000-0000-0000-0000-000000000002'), 'failed turn leaves no history');
 
 -- Snapshot guard and claim guard reject direct writes.
@@ -71,7 +80,7 @@ DO $$ BEGIN
   RAISE EXCEPTION 'expected mode guard failure';
 EXCEPTION WHEN insufficient_privilege THEN NULL; END $$;
 DO $$ BEGIN
-  UPDATE app_core.miniapp_user_settings SET choice_full_rules_remaining = 2 WHERE user_id = '10000000-0000-0000-0000-000000000001';
+  UPDATE app_core.miniapp_user_settings SET choice_full_rules_remaining = 1 WHERE user_id = '10000000-0000-0000-0000-000000000001';
   RAISE EXCEPTION 'expected claim guard failure';
 EXCEPTION WHEN insufficient_privilege THEN NULL; END $$;
 

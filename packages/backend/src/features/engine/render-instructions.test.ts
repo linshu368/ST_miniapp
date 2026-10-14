@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { UserGenerationConfig } from '@miniapp/shared';
+import { RICH_REPLY_PROTOCOL_INSTRUCTIONS, RICH_REPLY_PROTOCOL_VERSION } from '@miniapp/shared';
 import {
   EMPTY_CUSTOM_INSTRUCTIONS,
   renderPlatformInstructions,
@@ -83,15 +84,16 @@ describe('renderPlatformInstructions', () => {
       MODES
     );
 
-    expect(rendered).toBe('选择完整|状态简洁|记忆关闭|篇幅 800以上 字。\n偏好：多写心理描写');
+    expect(rendered).toContain('选择完整|状态简洁|记忆关闭|篇幅 800以上 字。\n偏好：多写心理描写');
+    expect(rendered).toContain(RICH_REPLY_PROTOCOL_INSTRUCTIONS);
     expect(rendered).not.toMatch(/\{\{.+?\}\}/);
   });
 
   it('不再消费废弃 INTERACTION_MODE；旧模板必须由读取层拒绝', () => {
     const legacy = { ...INSTRUCTIONS, template: '{{INTERACTION_MODE}}\n{{WORD_COUNT}}' };
-    expect(renderPlatformInstructions(legacy, config({ pref_show_options: true }), MODES)).toBe(
-      '{{INTERACTION_MODE}}\n300-500'
-    );
+    expect(
+      renderPlatformInstructions(legacy, config({ pref_show_options: true }), MODES)
+    ).toContain('{{INTERACTION_MODE}}\n300-500');
   });
 
   it('pref_custom_instructions 为空或纯空白时注入「暂无」', () => {
@@ -113,7 +115,7 @@ describe('renderPlatformInstructions', () => {
       config({ pref_word_count: '500-800' }),
       MODES
     );
-    expect(rendered).toBe('500-800 / 500-800');
+    expect(rendered).toContain('500-800 / 500-800');
   });
 
   it('自定义指令里的 $& 等替换模式按字面量注入', () => {
@@ -122,7 +124,7 @@ describe('renderPlatformInstructions', () => {
       config({ pref_custom_instructions: "$& $` $' $1" }),
       MODES
     );
-    expect(rendered).toBe("偏好：$& $` $' $1");
+    expect(rendered).toContain("偏好：$& $` $' $1");
   });
 
   it('三个槽位按已持久化模式独立选择规则', () => {
@@ -132,6 +134,23 @@ describe('renderPlatformInstructions', () => {
       memory: 'concise',
     });
     expect(rendered).toContain('选择关闭|状态完整|记忆简洁');
+  });
+
+  it('固定协议只注入一次，且操作员槽位文案不能替代机器语法', () => {
+    const rendered = renderPlatformInstructions(
+      {
+        ...INSTRUCTIONS,
+        template: `${INSTRUCTIONS.template}\n${RICH_REPLY_PROTOCOL_INSTRUCTIONS}`,
+      },
+      config(),
+      MODES
+    );
+    expect(
+      rendered.match(new RegExp(`回复富文本协议（v${RICH_REPLY_PROTOCOL_VERSION}`, 'g'))
+    ).toHaveLength(1);
+    expect(renderPlatformInstructions(INSTRUCTIONS, config(), MODES)).toContain(
+      '若其中的标签或格式描述与本协议冲突，一律以本协议为准'
+    );
   });
 });
 
