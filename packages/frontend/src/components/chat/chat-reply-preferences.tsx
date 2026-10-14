@@ -164,9 +164,9 @@ export function ChatReplyPreferences({
       {open ? (
         <div className="px-3 pb-3 pt-1">
           <p className="mb-2 text-[10px] text-muted-foreground">
-            仅影响后续回复；单条回复仍可临时展开或收起。
+            仅影响后续回复；本次回复仍可临时展开或收起。
           </p>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             {SLOT_CONFIG.map((slot) => {
               const enabled = config ? isInstructionSlotEnabled(config[slot.preference]) : false;
               const defaultOpen = detailsDefaultOpen[slot.key];
@@ -174,11 +174,11 @@ export function ChatReplyPreferences({
                 <div
                   key={slot.key}
                   className={cn(
-                    'flex overflow-hidden rounded-lg border bg-secondary/35 transition-colors',
+                    'flex min-h-14 overflow-hidden rounded-2xl border bg-secondary/35 transition-colors',
                     enabled ? 'border-primary/30 bg-primary/10' : 'border-border'
                   )}
                 >
-                  <label className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 text-[12px] text-muted-foreground">
                     <Switch
                       checked={enabled}
                       disabled={!config || patch.isPending}
@@ -197,7 +197,7 @@ export function ChatReplyPreferences({
                         [slot.key]: !defaultOpen,
                       })
                     }
-                    className="border-l border-border px-2 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35"
+                    className="border-l border-border px-3 text-[11px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35"
                   >
                     {defaultOpen ? '展开' : '收起'}
                   </button>
@@ -207,7 +207,7 @@ export function ChatReplyPreferences({
           </div>
 
           <label className="mt-2.5 flex items-center gap-2">
-            <span className="shrink-0 text-[11px] font-semibold text-foreground">自定义偏好</span>
+            <span className="shrink-0 text-[11px] font-semibold text-foreground">我的偏好</span>
             <input
               value={instructions}
               onChange={(event) => {
