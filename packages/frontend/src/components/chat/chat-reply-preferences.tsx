@@ -132,24 +132,26 @@ export function ChatReplyPreferences({
         onPointerCancel={() => {
           pointerStartY.current = null;
         }}
-        className="relative grid min-h-9 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
+        className="relative grid min-h-9 w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
       >
         <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
         <span className="min-w-0 text-[11px] font-semibold text-foreground">回复偏好</span>
-        <span
-          className={cn(
-            'pointer-events-none min-w-0 max-w-full justify-self-center truncate text-[10px] font-medium text-primary transition-opacity duration-300 motion-safe:animate-in motion-safe:fade-in-0',
-            !guideVisible && 'invisible',
-            guideFading && 'opacity-0'
-          )}
-          aria-hidden={!guideVisible}
-          aria-live={guideVisible ? 'polite' : undefined}
-        >
-          可以在这里开关 状态栏，记忆栏，选项等设置
-        </span>
-        <span className="justify-self-end whitespace-nowrap text-[10px] text-muted-foreground">
-          状态栏 · 记忆栏 · 可选项
-        </span>
+        {guideVisible ? (
+          <span
+            className={cn(
+              'pointer-events-none min-w-0 max-w-[calc(100vw-8.5rem)] justify-self-end truncate text-[10px] font-medium text-primary transition-opacity duration-300 motion-safe:animate-in motion-safe:fade-in-0',
+              guideFading && 'opacity-0'
+            )}
+            aria-live="polite"
+          >
+            可以在这里开关 状态栏，记忆栏，选项等设置
+          </span>
+        ) : null}
+        {!guideVisible ? (
+          <span className="justify-self-end truncate text-[10px] text-muted-foreground">
+            状态栏 · 记忆栏 · 可选项
+          </span>
+        ) : null}
         <ChevronDown
           className={cn(
             'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
@@ -162,9 +164,9 @@ export function ChatReplyPreferences({
       {open ? (
         <div className="px-3 pb-3 pt-1">
           <p className="mb-2 text-[10px] text-muted-foreground">
-            仅影响后续回复；单条回复仍可临时展开或收起。
+            仅影响后续回复；本次回复仍可临时展开或收起。
           </p>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             {SLOT_CONFIG.map((slot) => {
               const enabled = config ? isInstructionSlotEnabled(config[slot.preference]) : false;
               const defaultOpen = detailsDefaultOpen[slot.key];
@@ -172,11 +174,11 @@ export function ChatReplyPreferences({
                 <div
                   key={slot.key}
                   className={cn(
-                    'flex overflow-hidden rounded-lg border bg-secondary/35 transition-colors',
+                    'flex min-h-14 overflow-hidden rounded-2xl border bg-secondary/35 transition-colors',
                     enabled ? 'border-primary/30 bg-primary/10' : 'border-border'
                   )}
                 >
-                  <label className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 text-[12px] text-muted-foreground">
                     <Switch
                       checked={enabled}
                       disabled={!config || patch.isPending}
@@ -195,7 +197,7 @@ export function ChatReplyPreferences({
                         [slot.key]: !defaultOpen,
                       })
                     }
-                    className="border-l border-border px-2 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35"
+                    className="border-l border-border px-3 text-[11px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35"
                   >
                     {defaultOpen ? '展开' : '收起'}
                   </button>
@@ -205,7 +207,7 @@ export function ChatReplyPreferences({
           </div>
 
           <label className="mt-2.5 flex items-center gap-2">
-            <span className="shrink-0 text-[11px] font-semibold text-foreground">自定义偏好</span>
+            <span className="shrink-0 text-[11px] font-semibold text-foreground">我的偏好</span>
             <input
               value={instructions}
               onChange={(event) => {
