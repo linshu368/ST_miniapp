@@ -10,7 +10,6 @@ import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-comp
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatMessageImageFooter } from '@/components/chat/chat-message-image';
 import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
-import { formatMediaBillingPreview } from '@/components/chat/media-billing-label';
 import { getChatReplyPresentation } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
@@ -191,11 +190,6 @@ export default function SelfHostedChatPage() {
     [sessionImagesQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
-  const voicePriceLabel = formatMediaBillingPreview(
-    voiceConfigQuery.data?.next_billing,
-    voiceConfigQuery.isFetching || generateVoice.isPending,
-    voiceConfigQuery.isError
-  );
   const freeQuota = useCharacterFreeQuotaQuery(characterId);
   const freeRoundActive = Boolean(
     freeQuota.data && !freeQuota.data.exhausted && selectedModelUsesFreeQuota
@@ -438,7 +432,6 @@ export default function SelfHostedChatPage() {
                                 returnTo,
                               })
                             : null,
-                          priceLabel: voicePriceLabel,
                           freeTrialLimit:
                             voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
                           hints: {
