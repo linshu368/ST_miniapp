@@ -208,6 +208,40 @@ describe('markdown and trusted slots', () => {
     expect(style).toContain(`.${scope}`);
   });
 
+  it('keeps a valid memory block renderable when recovering an unclosed status block', async () => {
+    const content = [
+      '[status]',
+      '<details><summary>当前状态</summary>',
+      '```markdown',
+      '你的状态：心跳仍快',
+      '```',
+      '</details>',
+      '',
+      '[memory]',
+      '<details><summary>工作记忆</summary>',
+      '```markdown',
+      '当前档案数目：0',
+      '```',
+      '</details>',
+      '[/memory]',
+    ].join('\n');
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [],
+    });
+
+    const view = render(element(content, artifact, { messageKey: 'recovered-status' }));
+    await waitForState(view.container, 'applied');
+
+    expect(view.container.querySelector('.rp-unit--status')).not.toBeNull();
+    expect(view.container.querySelector('.rp-unit--memory')).not.toBeNull();
+    expect(view.container.textContent).toContain('你的状态：心跳仍快');
+    expect(view.container.textContent).toContain('当前档案数目：0');
+    expect(view.container.textContent).not.toMatch(/\[\/?(?:status|memory)\]/);
+  });
+
   it('retries a colliding nonce and drops the token', () => {
     const content = 'see alphaInline';
     const colliding = 'a'.repeat(22);
