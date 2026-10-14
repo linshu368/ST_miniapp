@@ -44,6 +44,7 @@ interface ChatMessageBubbleProps {
   displayName?: string;
   choiceDisabled?: boolean;
   onChoice?: (choice: ReplyChoicePayload) => void;
+  detailsDefaultOpen?: Readonly<Record<string, boolean>>;
 }
 
 export function ChatMessageBubble({
@@ -59,6 +60,7 @@ export function ChatMessageBubble({
   displayName,
   choiceDisabled,
   onChoice,
+  detailsDefaultOpen,
 }: ChatMessageBubbleProps) {
   if (message.role === 'user') {
     return (
@@ -89,6 +91,7 @@ export function ChatMessageBubble({
               displayName={displayName}
               choiceDisabled={choiceDisabled !== false}
               onChoice={onChoice}
+              detailsDefaultOpen={detailsDefaultOpen}
             />
           ) : null}
           {streaming ? (
@@ -150,6 +153,7 @@ function AssistantReplyBody({
   displayName,
   choiceDisabled,
   onChoice,
+  detailsDefaultOpen,
 }: {
   message: ChatMessage;
   plan: AssistantBodyPlan;
@@ -157,6 +161,7 @@ function AssistantReplyBody({
   displayName?: string;
   choiceDisabled: boolean;
   onChoice?: (choice: ReplyChoicePayload) => void;
+  detailsDefaultOpen?: Readonly<Record<string, boolean>>;
 }) {
   const [node, setNode] = useState<HTMLDivElement | null>(null);
   const onScreen = useStayOnScreen(node, plan.kind === 'renderer');
@@ -177,6 +182,7 @@ function AssistantReplyBody({
           onChoice={choiceDisabled || streaming ? undefined : onChoice}
           messageKey={`${message.id}:${message.revision}`}
           className={CHAT_MARKDOWN_CLASS}
+          detailsDefaultOpen={detailsDefaultOpen}
         />
       ) : (
         <ChatMarkdown content={message.content} />

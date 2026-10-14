@@ -36,6 +36,7 @@ interface ChatMessageListProps {
   replyPlanFor?: (message: ChatMessage) => AssistantBodyPlan;
   choiceDisabledFor?: (message: ChatMessage) => boolean;
   onChoice?: (message: ChatMessage, choice: ReplyChoicePayload) => void;
+  detailsDefaultOpen?: Readonly<Record<string, boolean>>;
 }
 
 export function ChatMessageList({
@@ -55,6 +56,7 @@ export function ChatMessageList({
   replyPlanFor,
   choiceDisabledFor,
   onChoice,
+  detailsDefaultOpen,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -137,6 +139,7 @@ export function ChatMessageList({
               ? (choice) => onChoice(message, choice)
               : undefined
           }
+          detailsDefaultOpen={detailsDefaultOpen}
         />
       ))}
 

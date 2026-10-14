@@ -488,6 +488,26 @@ describe('choice and details interaction', () => {
       expect(view.container.querySelector('details')?.hasAttribute('open')).toBe(false);
     });
   });
+
+  it('uses a display preference only for a details rule initial state', async () => {
+    const user = userEvent.setup();
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rules: [detailsRule()],
+    });
+    const view = render(
+      element('StatusCard', artifact, {
+        messageKey: 'status-default-open',
+        detailsDefaultOpen: { status: true },
+      })
+    );
+    await waitForState(view.container, 'applied');
+    const summary = view.getByText('Status');
+    expect(summary.closest('details')?.hasAttribute('open')).toBe(true);
+    await user.click(summary);
+    expect(summary.closest('details')?.hasAttribute('open')).toBe(false);
+  });
 });
 
 describe('worker lifecycle', () => {
@@ -628,6 +648,7 @@ function element(
     choiceDisabled?: boolean;
     streaming?: boolean;
     messageKey?: string;
+    detailsDefaultOpen?: Readonly<Record<string, boolean>>;
   } = {}
 ): ReactElement {
   return (
@@ -639,6 +660,7 @@ function element(
       choiceDisabled={extra.choiceDisabled}
       streaming={extra.streaming}
       messageKey={extra.messageKey ?? 'message'}
+      detailsDefaultOpen={extra.detailsDefaultOpen}
     />
   );
 }

@@ -38,6 +38,7 @@ interface TreeContext {
   interactive: boolean;
   onChoice?: (choice: ReplyChoicePayload) => void;
   openStore: Map<string, boolean>;
+  detailsDefaultOpen?: Readonly<Record<string, boolean>>;
 }
 
 export function TrustedTree(props: TreeContext) {
@@ -92,7 +93,11 @@ function renderResolved(node: ResolvedNode, path: string, context: TreeContext):
 
 function TrustedDetails(input: { node: ResolvedElement; path: string; context: TreeContext }) {
   const stateKey = `${input.context.messageKey}:${input.context.ruleId}:${input.context.start}:${input.context.end}:${input.path}`;
-  const defaultOpen = input.node.attributes.some((attribute) => attribute.name === 'open');
+  const configuredDefaultOpen = input.context.detailsDefaultOpen?.[input.context.ruleId];
+  const defaultOpen =
+    typeof configuredDefaultOpen === 'boolean'
+      ? configuredDefaultOpen
+      : input.node.attributes.some((attribute) => attribute.name === 'open');
   const [open, setOpen] = useState(() => input.context.openStore.get(stateKey) ?? defaultOpen);
   const fromKeyboard = useRef(false);
   const toggle = () => {

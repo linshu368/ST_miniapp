@@ -41,6 +41,7 @@ export interface ComposeInput {
   interactive: boolean;
   onChoice?: (choice: ReplyChoicePayload) => void;
   openStore: Map<string, boolean>;
+  detailsDefaultOpen?: Readonly<Record<string, boolean>>;
   createNonce?: () => string;
 }
 
@@ -274,6 +275,7 @@ function renderSlot(
     interactive: input.interactive,
     onChoice: input.onChoice,
     openStore: input.openStore,
+    detailsDefaultOpen: input.detailsDefaultOpen,
   });
   return createElement(
     placement === 'block' ? 'div' : 'span',
