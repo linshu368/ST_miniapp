@@ -508,6 +508,31 @@ describe('choice and details interaction', () => {
     await user.click(summary);
     expect(summary.closest('details')?.hasAttribute('open')).toBe(false);
   });
+
+  it('uses display preferences for fixed rich-reply protocol slot ids', async () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [],
+    });
+    const content = [
+      '[choices][choice]握住她的手[/choice][choice]再问一次[/choice][choice]安静等待[/choice][/choices]',
+      '[status]<details><summary>此刻</summary>```markdown\n地点：花园\n```</details>[/status]',
+      '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：1/7\n```</details>[/memory]',
+    ].join('\n\n');
+    const view = render(
+      element(content, artifact, {
+        messageKey: 'fixed-protocol-default-open',
+        detailsDefaultOpen: { status: true, memory: false, choice: true },
+      })
+    );
+
+    await waitForState(view.container, 'applied');
+    expect(view.container.querySelector('.rp-unit--choices')?.hasAttribute('open')).toBe(true);
+    expect(view.container.querySelector('.rp-unit--status')?.hasAttribute('open')).toBe(true);
+    expect(view.container.querySelector('.rp-unit--memory')?.hasAttribute('open')).toBe(false);
+  });
 });
 
 describe('worker lifecycle', () => {

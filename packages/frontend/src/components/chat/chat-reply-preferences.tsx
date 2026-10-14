@@ -130,21 +130,26 @@ export function ChatReplyPreferences({
         onPointerCancel={() => {
           pointerStartY.current = null;
         }}
-        className="relative grid min-h-9 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
+        className="relative grid min-h-9 w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
       >
         <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
-        <span className="text-[11px] font-semibold text-foreground">回复偏好</span>
+        <span className="min-w-0 text-[11px] font-semibold text-foreground">回复偏好</span>
         {guideVisible ? (
           <span
             className={cn(
-              'pointer-events-none absolute left-1/2 top-1/2 max-w-[calc(100%-12rem)] -translate-x-1/2 -translate-y-[28%] truncate text-[10px] font-medium text-primary transition-opacity duration-300 motion-safe:animate-in motion-safe:fade-in-0',
+              'pointer-events-none min-w-0 max-w-[calc(100vw-8.5rem)] justify-self-end truncate text-[10px] font-medium text-primary transition-opacity duration-300 motion-safe:animate-in motion-safe:fade-in-0',
               guideFading && 'opacity-0'
             )}
+            aria-live="polite"
           >
             可以在这里开关 状态栏，记忆栏，选项等设置
           </span>
         ) : null}
-        <span className="truncate text-[10px] text-muted-foreground">状态栏 · 记忆栏 · 可选项</span>
+        {!guideVisible ? (
+          <span className="justify-self-end truncate text-[10px] text-muted-foreground">
+            状态栏 · 记忆栏 · 可选项
+          </span>
+        ) : null}
         <ChevronDown
           className={cn(
             'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
