@@ -12,9 +12,6 @@ import { isInstructionSlotEnabled } from './chat-generation-settings-state';
 import type { ReplyDetailsDefaultOpen } from './reply-preference-display';
 
 const MAX_CUSTOM_INSTRUCTIONS = 500;
-const GUIDE_STORAGE_KEY = 'st.chat.reply-preferences-guide-seen.v1';
-const GUIDE_VISIBLE_DURATION_MS = 5_000;
-const GUIDE_FADE_DURATION_MS = 300;
 
 type SlotKey = 'status' | 'memory' | 'choice';
 type PendingSlotValues = Partial<Record<SlotKey, boolean>>;
@@ -45,8 +42,7 @@ export function ChatReplyPreferences({
   });
   const config = query.data?.config;
   const [open, setOpen] = useState(false);
-  const [guideVisible, setGuideVisible] = useState(false);
-  const [guideFading, setGuideFading] = useState(false);
+  const [guideDismissed, setGuideDismissed] = useState(false);
   const [instructions, setInstructions] = useState('');
   const [instructionsDirty, setInstructionsDirty] = useState(false);
   const [pendingSlotValues, setPendingSlotValues] = useState<PendingSlotValues>({});
@@ -55,41 +51,15 @@ export function ChatReplyPreferences({
   ).map((slot) => slot.label);
   const pointerStartY = useRef<number | null>(null);
   const suppressClick = useRef(false);
-  const guideShown = useRef(false);
-  const guideTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (instructionsDirty) return;
     setInstructions(config?.pref_custom_instructions ?? '');
   }, [config?.pref_custom_instructions, instructionsDirty]);
 
-  useEffect(
-    () => () => {
-      if (guideTimer.current !== null) window.clearTimeout(guideTimer.current);
-    },
-    []
-  );
-
-  const showFirstOpenGuide = () => {
-    if (guideShown.current) return;
-    guideShown.current = true;
-    try {
-      if (window.localStorage.getItem(GUIDE_STORAGE_KEY)) return;
-      window.localStorage.setItem(GUIDE_STORAGE_KEY, '1');
-    } catch {
-      // 存储不可用时仍展示当前会话的一次提示。
-    }
-    setGuideFading(false);
-    setGuideVisible(true);
-    guideTimer.current = window.setTimeout(() => {
-      setGuideFading(true);
-      guideTimer.current = window.setTimeout(() => setGuideVisible(false), GUIDE_FADE_DURATION_MS);
-    }, GUIDE_VISIBLE_DURATION_MS - GUIDE_FADE_DURATION_MS);
-  };
-
   const changeOpen = (next: boolean) => {
     setOpen(next);
-    if (next) showFirstOpenGuide();
+    if (next) setGuideDismissed(true);
   };
 
   const saveInstructions = () => {
@@ -160,26 +130,22 @@ export function ChatReplyPreferences({
         onPointerCancel={() => {
           pointerStartY.current = null;
         }}
-        className="relative grid min-h-9 w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
+        className="relative grid min-h-9 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
       >
         <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
-        <span className="min-w-0 text-[11px] font-semibold text-foreground">回复偏好</span>
-        {guideVisible ? (
-          <span
-            className={cn(
-              'pointer-events-none min-w-0 max-w-[calc(100vw-8.5rem)] justify-self-end truncate text-[10px] font-medium text-primary transition-opacity duration-300 motion-safe:animate-in motion-safe:fade-in-0',
-              guideFading && 'opacity-0'
-            )}
-            aria-live="polite"
-          >
-            可以在这里开关 状态栏，记忆栏，选项等设置
-          </span>
-        ) : null}
-        {!guideVisible ? (
-          <span className="justify-self-end truncate text-[10px] text-muted-foreground">
-            {enabledSlotLabels.join(' · ')}
-          </span>
-        ) : null}
+        <span className="text-[11px] font-semibold text-foreground">回复偏好</span>
+        <span
+          className={cn(
+            'pointer-events-none min-w-0 truncate text-[10px] font-medium text-primary',
+            guideDismissed && 'invisible'
+          )}
+          aria-hidden={guideDismissed}
+        >
+          点击这里进行偏好开关设置
+        </span>
+        <span className="justify-self-end whitespace-nowrap text-[10px] text-muted-foreground">
+          {enabledSlotLabels.join(' · ')}
+        </span>
         <ChevronDown
           className={cn(
             'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
@@ -270,7 +236,7 @@ export function ChatReplyPreferences({
             </p>
           ) : (
             <p className="mt-1.5 text-right text-[10px] text-muted-foreground">
-              {instructionsDirty ? '离开输入框后自动保存' : patch.isPending ? '保存中…' : ''}
+              {instructionsDirty ? '离开输入框后自动保存' : ''}
             </p>
           )}
         </div>
