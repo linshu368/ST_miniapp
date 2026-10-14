@@ -84,6 +84,11 @@ export const config = {
     workerLeaseSeconds: parseInt(process.env.IMAGE_WORKER_LEASE_SECONDS || '180', 10),
   },
 
+  // Venice 出站可选代理：仅本地开发填写 VENICE_HTTPS_PROXY；Railway/生产留空直连。
+  venice: {
+    httpsProxy: process.env.VENICE_HTTPS_PROXY?.trim() || '',
+  },
+
   // 图片广场使用独立 Venice 图片链路；密钥只从服务端环境读取。
   imagePlaza: {
     apiKey: process.env.VENICE_API_KEY || '',

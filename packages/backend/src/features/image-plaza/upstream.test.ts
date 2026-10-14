@@ -3,6 +3,7 @@ import { config } from '../../platform/config.js';
 import { generateImagePlazaImage } from './upstream.js';
 
 const originalProviderConfig = { ...config.imagePlaza };
+const originalVeniceConfig = { ...config.venice };
 
 beforeEach(() => {
   Object.assign(config.imagePlaza, {
@@ -11,10 +12,13 @@ beforeEach(() => {
     baseUrl: 'https://images.example.test/api/v1',
     timeoutMs: 5_000,
   });
+  // 单测走全局 fetch stub；清空代理避免误入 undici ProxyAgent 路径
+  Object.assign(config.venice, { ...originalVeniceConfig, httpsProxy: '' });
 });
 
 afterEach(() => {
   Object.assign(config.imagePlaza, originalProviderConfig);
+  Object.assign(config.venice, originalVeniceConfig);
   vi.unstubAllGlobals();
 });
 

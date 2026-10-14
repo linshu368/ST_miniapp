@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { config } from '../../platform/config.js';
+import { veniceFetch } from '../../platform/venice-http.js';
 import type { PlazaMimeType } from './storage.js';
 
 const MAX_PROVIDER_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -65,7 +66,7 @@ export async function generateImagePlazaImage(
 
   let response: Response;
   try {
-    response = await fetch(
+    response = await veniceFetch(
       `${config.imagePlaza.baseUrl.replace(/\/$/, '')}/image/${isEdit ? 'edit' : 'generate'}`,
       {
         method: 'POST',
