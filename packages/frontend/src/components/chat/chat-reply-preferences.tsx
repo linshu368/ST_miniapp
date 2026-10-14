@@ -17,6 +17,7 @@ const GUIDE_VISIBLE_DURATION_MS = 5_000;
 const GUIDE_FADE_DURATION_MS = 300;
 
 type SlotKey = 'status' | 'memory' | 'choice';
+type PendingSlotValues = Partial<Record<SlotKey, boolean>>;
 
 const SLOT_CONFIG: ReadonlyArray<{
   key: SlotKey;
@@ -43,14 +44,15 @@ export function ChatReplyPreferences({
     shouldOptimisticallyUpdate: (request) => SLOT_CONFIG.some((slot) => slot.preference in request),
   });
   const config = query.data?.config;
-  const enabledSlotLabels = SLOT_CONFIG.filter((slot) =>
-    isInstructionSlotEnabled(config?.[slot.preference])
-  ).map((slot) => slot.label);
   const [open, setOpen] = useState(false);
   const [guideVisible, setGuideVisible] = useState(false);
   const [guideFading, setGuideFading] = useState(false);
   const [instructions, setInstructions] = useState('');
   const [instructionsDirty, setInstructionsDirty] = useState(false);
+  const [pendingSlotValues, setPendingSlotValues] = useState<PendingSlotValues>({});
+  const enabledSlotLabels = SLOT_CONFIG.filter((slot) =>
+    isInstructionSlotEnabled(pendingSlotValues[slot.key] ?? config?.[slot.preference])
+  ).map((slot) => slot.label);
   const pointerStartY = useRef<number | null>(null);
   const suppressClick = useRef(false);
   const guideShown = useRef(false);
@@ -96,6 +98,28 @@ export function ChatReplyPreferences({
     setInstructionsDirty(false);
     if (next === (config.pref_custom_instructions ?? '')) return;
     patch.mutate({ pref_custom_instructions: next.length > 0 ? next : null });
+  };
+
+  const toggleSlot = (slot: (typeof SLOT_CONFIG)[number]) => {
+    if (!config || Object.prototype.hasOwnProperty.call(pendingSlotValues, slot.key)) return;
+
+    const enabled =
+      pendingSlotValues[slot.key] ?? isInstructionSlotEnabled(config[slot.preference]);
+    const next = !enabled;
+    setPendingSlotValues((current) => ({ ...current, [slot.key]: next }));
+
+    patch.mutate(
+      { [slot.preference]: next },
+      {
+        onSettled: () => {
+          setPendingSlotValues((current) => {
+            if (current[slot.key] !== next) return current;
+            const { [slot.key]: _completed, ...remaining } = current;
+            return remaining;
+          });
+        },
+      }
+    );
   };
 
   return (
@@ -172,7 +196,10 @@ export function ChatReplyPreferences({
           </p>
           <div className="flex min-w-0 items-stretch gap-1" aria-label="回复模块显示偏好">
             {SLOT_CONFIG.map((slot) => {
-              const enabled = config ? isInstructionSlotEnabled(config[slot.preference]) : false;
+              const slotPending = Object.prototype.hasOwnProperty.call(pendingSlotValues, slot.key);
+              const enabled = config
+                ? (pendingSlotValues[slot.key] ?? isInstructionSlotEnabled(config[slot.preference]))
+                : false;
               const defaultOpen = detailsDefaultOpen[slot.key];
               return (
                 <div
@@ -185,10 +212,11 @@ export function ChatReplyPreferences({
                   <button
                     type="button"
                     aria-pressed={enabled}
-                    disabled={!config || patch.isPending}
-                    onClick={() => patch.mutate({ [slot.preference]: !enabled })}
+                    aria-busy={slotPending}
+                    disabled={!config || slotPending}
+                    onClick={() => toggleSlot(slot)}
                     className={cn(
-                      'flex min-w-0 flex-1 items-center justify-center gap-1 px-1.5 py-2 text-muted-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50',
+                      'flex min-w-0 flex-1 items-center justify-center gap-1 px-1.5 py-2 text-muted-foreground transition-colors hover:bg-secondary disabled:cursor-wait',
                       enabled && 'text-primary'
                     )}
                   >
