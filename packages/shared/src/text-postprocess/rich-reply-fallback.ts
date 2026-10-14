@@ -168,6 +168,7 @@ function sanitizeProtocolText(value: string): string {
   return value
     .replace(/```(?:markdown)?\s*/gi, '')
     .replace(/<\/?(?:details|summary)(?:\s[^>]*)?>/gi, '')
+    .replace(/<\/\s*choice\s*>/gi, '')
     .replace(/\[\/?(?:choices?|status|memory)\]/gi, '')
     .trim()
     .slice(0, TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits);

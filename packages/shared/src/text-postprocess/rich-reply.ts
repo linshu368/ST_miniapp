@@ -11,7 +11,11 @@ const PANEL =
   /<details>\s*<summary>\s*([^<>\r\n]{1,40})\s*<\/summary>\s*```markdown\s*\r?\n?([\s\S]*?)\r?\n?```\s*<\/details>/g;
 const LOOSE_PANEL =
   /<details(?:\s[^>]*)?>\s*<summary(?:\s[^>]*)?>\s*([\s\S]*?)\s*<\/summary>\s*([\s\S]*?)\s*<\/details>/gi;
-const CHOICE = /\[choice\]\s*([\s\S]*?)\s*\[\/choice\]/g;
+// Keep the opening marker strict, but accept the common HTML-style closing
+// typo inside an otherwise unambiguous choices envelope. This never parses
+// arbitrary HTML as an action because captureChoiceBodies still requires
+// exactly three contiguous [choice] entries.
+const CHOICE = /\[choice\]\s*([\s\S]*?)\s*(?:\[\/choice\]|<\/\s*choice\s*>)/g;
 const DIALOGUE = /“([^”\r\n]{1,500})”/g;
 type RichReplyModule = 'choices' | 'status' | 'memory';
 
@@ -92,6 +96,10 @@ export function diagnoseRichReplyProtocol(
     if (raw !== 'exact') {
       recovered = true;
       issues.push(raw);
+    }
+    if (tag === 'choices' && /<\/\s*choice\s*>/.test(slot.match_text)) {
+      recovered = true;
+      issues.push('NORMALIZED_HTML_CHOICE_CLOSE');
     }
   }
   if (issues.some((issue) => issue.startsWith('INVALID_') || issue.endsWith('_MODULE')))
@@ -489,6 +497,7 @@ function protocolText(value: string): string {
   return value
     .replace(/```(?:markdown)?\s*/gi, '')
     .replace(/<\/?(?:details|summary)(?:\s[^>]*)?>/gi, '')
+    .replace(/<\/\s*choice\s*>/gi, '')
     .replace(/\[\/?(?:choices?|status|memory)\]/gi, '')
     .trim();
 }

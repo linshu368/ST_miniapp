@@ -189,6 +189,34 @@ describe('rich reply protocol', () => {
     });
   });
 
+  it('recovers an unambiguous HTML-style choice close without treating it as exact', () => {
+    const source = [
+      '[choices]',
+      '[choice]握住她的手</choice>',
+      '[choice]再问一次</\nchoice>',
+      '[choice]安静等待</choice>',
+      '[/choices]',
+    ].join('\n');
+    const enabled = { choices: true, status: false, memory: false };
+
+    expect(diagnoseRichReplyProtocol(source, enabled)).toEqual({
+      rich_reply_result: 'recovered',
+      rich_reply_issues: ['NORMALIZED_HTML_CHOICE_CLOSE'],
+    });
+
+    const applied = applyTextPostprocess({ text: source, artifact: compileOk([]) });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    const choices = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-choices'
+    );
+    expect(choices?.type === 'slot' ? choices.choices.map((choice) => choice.text) : []).toEqual([
+      '握住她的手',
+      '再问一次',
+      '安静等待',
+    ]);
+  });
+
   it('turns complete fixed modules into trusted slots and safely contains malformed modules', () => {
     const artifact = compileOk([]);
     const complete = [
@@ -230,6 +258,21 @@ describe('rich reply protocol', () => {
     expect(JSON.stringify(malformedSlot?.type === 'slot' ? malformedSlot.tree : [])).not.toContain(
       'send-message'
     );
+  });
+
+  it('removes HTML-style choice close markers from an inert malformed choices card', () => {
+    const artifact = compileOk([]);
+    const malformed = applyTextPostprocess({
+      text: '[choices][choice]一</choice>[choice]二</choice>[/choices]',
+      artifact,
+    });
+    expect(malformed.status).toBe('applied');
+    if (malformed.status !== 'applied') return;
+    const malformedSlot = malformed.segments.find((segment) => segment.type === 'slot');
+    const rendered = JSON.stringify(malformedSlot?.type === 'slot' ? malformedSlot.tree : []);
+    expect(malformedSlot?.type === 'slot' ? malformedSlot.choices : []).toEqual([]);
+    expect(rendered).not.toContain('</choice>');
+    expect(rendered).not.toContain('send-message');
   });
 
   it('normalizes complete status and memory envelopes when panel formatting drifts', () => {
