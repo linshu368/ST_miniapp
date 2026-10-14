@@ -147,9 +147,9 @@ export default function CreatePage() {
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索作品灵感"
+            placeholder="搜索作品灵感、图片内容"
             className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            aria-label="搜索图片广场"
+            aria-label="按作品灵感、内容搜索图片广场"
           />
         </label>
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">

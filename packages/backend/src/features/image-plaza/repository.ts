@@ -127,7 +127,11 @@ export class ImagePlazaRepository {
       .order('published_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(input.limit + 1);
-    if (input.search) query = query.ilike('title', `%${input.search.slice(0, 80)}%`);
+    if (input.search) {
+      // 前后模糊匹配作品快照中的提示词（snapshot.prompt），不是标题。
+      const term = escapeIlikePattern(input.search.trim().slice(0, 80));
+      if (term) query = query.filter('snapshot->>prompt', 'ilike', `%${term}%`);
+    }
     if (input.tag) query = query.contains('tags', [input.tag]);
     const cursor = decodeCursor(input.cursor);
     if (cursor) {
@@ -887,6 +891,11 @@ function mapConversationRow(
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+/** ILIKE 通配符与 PostgREST 过滤分隔符需转义，避免用户输入扩大或破坏过滤条件。 */
+function escapeIlikePattern(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
 function encodeCursor(likeCount: number, publishedAt: string, id: string): string {
