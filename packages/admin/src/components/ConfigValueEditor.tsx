@@ -302,6 +302,28 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (props.configKey === 'image_plaza_tags_feature_enabled') {
+    const enabled = props.value === true;
+    return (
+      <Space align="center" size="middle">
+        <Switch
+          checked={enabled}
+          disabled={props.disabled}
+          onChange={(next) => props.onChange(next)}
+        />
+        <div>
+          <Typography.Text strong>
+            {enabled ? '标签筛选与自动打标已开启' : '标签筛选与自动打标已关闭'}
+          </Typography.Text>
+          <br />
+          <Typography.Text type="secondary">
+            关闭后广场不展示业务标签，分享也不会调用模型自动打标。
+          </Typography.Text>
+        </div>
+      </Space>
+    );
+  }
+
   if (props.configKey === 'image_plaza_tags') {
     const parsed = ImagePlazaTagConfigSchema.safeParse(props.value);
     const fallback = ImagePlazaTagConfigSchema.parse(configMetadata.image_plaza_tags.defaultValue);

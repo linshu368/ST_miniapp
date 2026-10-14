@@ -109,6 +109,18 @@ describe('image plaza prompt limit', () => {
     ).toBe(true);
   });
 
+  it('accepts optional prompt_zh within the same length limit', () => {
+    expect(
+      ImagePlazaSnapshotSchema.safeParse({ ...snapshot, prompt_zh: '中文提示词' }).success
+    ).toBe(true);
+    expect(
+      ImagePlazaSnapshotSchema.safeParse({
+        ...snapshot,
+        prompt_zh: '中'.repeat(IMAGE_PLAZA_PROMPT_MAX_CHARS + 1),
+      }).success
+    ).toBe(false);
+  });
+
   it('rejects 2001 characters across snapshots and attempt submissions', () => {
     const overLimit = `${prompt}a`;
     expect(ImagePlazaSnapshotSchema.safeParse({ ...snapshot, prompt: overLimit }).success).toBe(

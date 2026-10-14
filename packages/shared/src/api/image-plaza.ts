@@ -154,6 +154,8 @@ export type ImagePlazaTagConfig = z.infer<typeof ImagePlazaTagConfigSchema>;
 
 export const ImagePlazaSnapshotSchema = z.object({
   prompt: z.string().max(IMAGE_PLAZA_PROMPT_MAX_CHARS),
+  /** 可选中文译文：详情展示与列表搜索；同款/出图仍只用 prompt 英文原文。 */
+  prompt_zh: z.string().max(IMAGE_PLAZA_PROMPT_MAX_CHARS).optional(),
   model_id: z.string(),
   aspect_ratio: ImagePlazaAspectRatioSchema,
   resolution: z.enum(['1K', '2K', 'fixed']),

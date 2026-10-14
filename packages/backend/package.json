@@ -16,6 +16,7 @@
     "payment:callback-report": "tsx src/scripts/payment-callback-report.ts",
     "vip:send-expiry-reminders": "tsx src/scripts/send-vip-expiry-reminders.ts",
     "image-plaza:seed": "tsx src/scripts/import-image-plaza-seed.ts",
+    "image-plaza:translate-seed-prompts": "tsx src/scripts/translate-image-plaza-seed-prompts.ts",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:integration": "vitest run src/infrastructure/repositories/conversations.integration.test.ts",
     "typecheck": "tsc --noEmit"

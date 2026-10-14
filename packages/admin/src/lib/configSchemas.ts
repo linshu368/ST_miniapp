@@ -78,6 +78,7 @@ export const managedConfigKeys = [
   'image_plaza_model_catalog',
   'image_plaza_share_tip',
   'image_plaza_tags',
+  'image_plaza_tags_feature_enabled',
   'media_feature_free_trial_limit',
   ...VIP_STRATEGY_CONFIG_KEYS,
 ] as const;
@@ -320,6 +321,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_plaza_model_catalog: ImagePlazaModelCatalogSchema,
   image_plaza_share_tip: ImagePlazaShareTipConfigSchema,
   image_plaza_tags: ImagePlazaTagConfigSchema,
+  image_plaza_tags_feature_enabled: z.boolean(),
   media_feature_free_trial_limit: MediaFeatureFreeTrialLimitSchema,
   vip_purchase_enabled: VipFeatureSwitchSchema,
   vip_reminders_enabled: VipFeatureSwitchSchema,
@@ -668,6 +670,12 @@ export const configMetadata: Record<
       { id: 'anime', label: '动漫', enabled: true, sort_order: 1 },
       { id: 'poster', label: '海报', enabled: true, sort_order: 2 },
     ],
+  },
+  image_plaza_tags_feature_enabled: {
+    label: '标签功能开关',
+    description:
+      '关闭后广场不展示业务标签筛选，分享也不再自动调用模型打标；标签目录本身可继续编辑。',
+    defaultValue: true,
   },
   media_feature_free_trial_limit: {
     label: '媒体免费轮次次数',

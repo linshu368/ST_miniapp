@@ -1233,7 +1233,7 @@ function AdminWorkspace(props: {
             <Space direction="vertical" size="middle" className="editor-stack">
               <Card title="图片广场">
                 <Typography.Paragraph type="secondary">
-                  模型、首次分享弹窗和内容标签均复用现有草稿 → 发布 →
+                  模型、首次分享弹窗、内容标签与标签功能开关均复用现有草稿 → 发布 →
                   回滚链路；未发布草稿不会影响用户端。
                 </Typography.Paragraph>
                 <Tabs

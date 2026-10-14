@@ -128,9 +128,14 @@ export class ImagePlazaRepository {
       .order('id', { ascending: false })
       .limit(input.limit + 1);
     if (input.search) {
-      // 前后模糊匹配作品快照中的提示词（snapshot.prompt），不是标题。
+      // 前后模糊匹配英文 prompt 或中文 prompt_zh，不是标题。
       const term = escapeIlikePattern(input.search.trim().slice(0, 80));
-      if (term) query = query.filter('snapshot->>prompt', 'ilike', `%${term}%`);
+      if (term) {
+        const pattern = `%${term}%`;
+        query = query.or(
+          `snapshot->>prompt.ilike.${quotePostgrestFilterValue(pattern)},snapshot->>prompt_zh.ilike.${quotePostgrestFilterValue(pattern)}`
+        );
+      }
     }
     if (input.tag) query = query.contains('tags', [input.tag]);
     const cursor = decodeCursor(input.cursor);
@@ -290,7 +295,9 @@ export class ImagePlazaRepository {
       const parsed = ImagePlazaSnapshotSchema.safeParse(data.snapshot);
       if (!parsed.success) throw new Error('image_plaza_source_snapshot_invalid');
       title = `同款 · ${String(data.title).slice(0, 68)}`;
-      snapshot = parsed.data;
+      // 同款会话只保留英文 prompt；中文译文仅用于作品详情展示与列表搜索。
+      const { prompt_zh: _promptZh, ...useSameSnapshot } = parsed.data;
+      snapshot = useSameSnapshot;
     }
     const { data, error } = await this.experience
       .from('image_plaza_conversations')
@@ -896,6 +903,11 @@ function mapConversationRow(
 /** ILIKE 通配符与 PostgREST 过滤分隔符需转义，避免用户输入扩大或破坏过滤条件。 */
 function escapeIlikePattern(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+/** PostgREST `.or()` 值含逗号/点号等时需双引号包裹，并转义内部引号与反斜杠。 */
+function quotePostgrestFilterValue(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 function encodeCursor(likeCount: number, publishedAt: string, id: string): string {

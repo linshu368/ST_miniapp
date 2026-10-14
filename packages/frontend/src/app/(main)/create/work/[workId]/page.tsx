@@ -71,7 +71,7 @@ export default function ImagePlazaWorkPage() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary/70">Prompt</p>
           <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground/90">
-            {work.snapshot.prompt}
+            {work.snapshot.prompt_zh?.trim() || work.snapshot.prompt}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

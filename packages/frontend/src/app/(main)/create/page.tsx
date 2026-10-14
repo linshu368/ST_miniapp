@@ -42,6 +42,12 @@ export default function CreatePage() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
+  const tags = feed.data?.pages[0]?.tags ?? [{ id: 'all', label: '全部' }];
+
+  useEffect(() => {
+    if (tag !== 'all' && !tags.some((item) => item.id === tag)) setTag('all');
+  }, [tag, tags]);
+
   useEffect(() => {
     const node = sentinel.current;
     if (!node) return;
@@ -60,7 +66,6 @@ export default function CreatePage() {
   const items = useMemo(() => feed.data?.pages.flatMap((page) => page.items) ?? [], [feed.data]);
   // 行优先分列：1 2 / 3 4，避免 CSS columns 的竖向填充（1 3 / 2 4）
   const feedColumns = useMemo(() => splitIntoColumns(items, 2), [items]);
-  const tags = feed.data?.pages[0]?.tags ?? [{ id: 'all', label: '全部' }];
 
   const startStudio = (sourceWorkId?: string) => {
     setPendingSourceWorkId(sourceWorkId ?? 'new');
@@ -152,18 +157,20 @@ export default function CreatePage() {
             aria-label="按作品灵感、内容搜索图片广场"
           />
         </label>
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-          {tags.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setTag(item.id)}
-              className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold transition ${tag === item.id ? 'bg-foreground text-background' : 'bg-card text-muted-foreground ring-1 ring-border'}`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {tags.some((item) => item.id !== 'all') ? (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+            {tags.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTag(item.id)}
+                className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold transition ${tag === item.id ? 'bg-foreground text-background' : 'bg-card text-muted-foreground ring-1 ring-border'}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </header>
 
       <section className="px-3 py-4">

@@ -39,9 +39,11 @@ pnpm --filter @miniapp/frontend typecheck
 pnpm --filter @miniapp/backend image-plaza:translate-seed-prompts -- --target test
 ```
 
-## `task.py start` 前检查
+## 实施后状态（2026-10-14）
 
-- [x] prd / design / implement / task 齐备
-- [x] Open Questions 为空
-- [x] implement.jsonl / check.jsonl 已填真实条目
-- [ ] 用户确认下方最终规划摘要
+- [x] 代码与 migration 文件已写入
+- [x] `pnpm --filter @miniapp/shared test -- image-plaza-contracts` 通过
+- [x] backend `config` / `routes/image-plaza` / `tagging` 共 21 tests 通过；`backend typecheck` 通过
+- [ ] test 库手工执行 `20261014_image_plaza_tags_feature_and_prompt_zh.sql`
+- [ ] test 库运行翻译脚本（先 dry-run 再小批 `--apply --target test --limit N`）
+- [ ] 人工：开关关/开、详情中文、同款英文、中文搜索

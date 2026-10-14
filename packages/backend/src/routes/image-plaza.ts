@@ -22,7 +22,10 @@ import {
   type SubmitImagePlazaAttemptData,
   type UploadImagePlazaReferenceData,
 } from '@miniapp/shared';
-import { getImagePlazaRuntimeConfig } from '../features/image-plaza/config.js';
+import {
+  getImagePlazaRuntimeConfig,
+  publicImagePlazaFeedTags,
+} from '../features/image-plaza/config.js';
 import { ImagePlazaRepository } from '../features/image-plaza/repository.js';
 import { classifyImagePlazaTags, waitForImagePlazaTags } from '../features/image-plaza/tagging.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
@@ -60,13 +63,7 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
                   ...model
                 }) => model
               ),
-            tags: [
-              { id: 'all', label: '全部' },
-              ...runtime.tags
-                .filter((tag) => tag.enabled)
-                .sort((a, b) => a.sort_order - b.sort_order)
-                .map(({ id, label }) => ({ id, label })),
-            ],
+            tags: publicImagePlazaFeedTags(runtime),
             share_tip: runtime.shareTip,
             share_rebate_rate: runtime.rebateRate,
             has_completed_first_share: await repository.hasCompletedFirstShare(context.id),
@@ -92,8 +89,13 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
         const search =
           typeof query.search === 'string' ? query.search.trim().slice(0, 80) : undefined;
         const cursor = typeof query.cursor === 'string' ? query.cursor : undefined;
-        if (tag && !runtime.tags.some((item) => item.enabled && item.id === tag)) {
-          return reply.status(400).send(fail('BAD_REQUEST', '标签无效'));
+        if (tag) {
+          if (!runtime.tagsFeatureEnabled) {
+            return reply.status(400).send(fail('BAD_REQUEST', '标签筛选未启用'));
+          }
+          if (!runtime.tags.some((item) => item.enabled && item.id === tag)) {
+            return reply.status(400).send(fail('BAD_REQUEST', '标签无效'));
+          }
         }
         const page = await repository.listWorks({
           userId: context.id,
@@ -106,13 +108,7 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
           ok<GetImagePlazaFeedData>({
             items: page.works,
             next_cursor: page.nextCursor,
-            tags: [
-              { id: 'all', label: '全部' },
-              ...runtime.tags
-                .filter((item) => item.enabled)
-                .sort((a, b) => a.sort_order - b.sort_order)
-                .map(({ id, label }) => ({ id, label })),
-            ],
+            tags: publicImagePlazaFeedTags(runtime),
           })
         );
       } catch (err) {
@@ -364,8 +360,9 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
         const modelName =
           runtime.catalog.models.find((model) => model.id === modelId)?.name ?? modelId;
         const taggingStartedAt = Date.now();
+        // 标签功能关时跳过自动打标；客户端显式传 tags 仍按启用集合校验后写入。
         const pendingTags =
-          body.data.tags.length === 0
+          body.data.tags.length === 0 && runtime.tagsFeatureEnabled
             ? repository
                 .loadSharePrompt(body.data.artifact_id, context.id)
                 .then((prompt) =>
