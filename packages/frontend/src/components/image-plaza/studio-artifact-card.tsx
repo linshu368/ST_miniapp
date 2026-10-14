@@ -1,18 +1,21 @@
 'use client';
 
-import { Copy, Download, RefreshCcw, Share2 } from 'lucide-react';
+import { Copy, Download, LoaderCircle, RefreshCcw, Share2 } from 'lucide-react';
 import type { ImagePlazaArtifact } from '@miniapp/shared';
 
 interface StudioArtifactCardProps {
   artifact: ImagePlazaArtifact;
   prompt: string;
   rewardBadge: string | null;
+  sharing?: boolean;
   onRefresh: (prompt: string) => void;
   onShare: (artifact: ImagePlazaArtifact) => void;
   onNotice: (message: string) => void;
 }
 
 export function StudioArtifactCard(props: StudioArtifactCardProps) {
+  const sharing = props.sharing === true;
+
   const copyPrompt = async () => {
     try {
       await navigator.clipboard.writeText(props.prompt);
@@ -24,12 +27,22 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
 
   return (
     <article>
-      <div className="flex aspect-[4/5] items-center justify-center overflow-hidden rounded-[1.75rem] border border-border bg-[#151115] shadow-inner">
+      <div className="relative flex aspect-[4/5] items-center justify-center overflow-hidden rounded-[1.75rem] border border-border bg-[#151115] shadow-inner">
         <img
           src={props.artifact.image_url}
           alt="生成结果"
-          className="max-h-full w-full object-contain"
+          className={`max-h-full w-full object-contain transition ${sharing ? 'opacity-40' : ''}`}
         />
+        {sharing ? (
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label="正在分享"
+            className="absolute inset-0 grid place-items-center bg-black/35 backdrop-blur-[1px]"
+          >
+            <LoaderCircle className="size-9 animate-spin text-white drop-shadow" />
+          </div>
+        ) : null}
       </div>
       <div className="mt-3 flex justify-end gap-2.5">
         <ArtifactButton label="重新生成" onClick={() => props.onRefresh(props.prompt)}>
@@ -45,8 +58,13 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
           <Download />
         </ArtifactButton>
         <div className="relative">
-          <ArtifactButton label="分享作品" accent onClick={() => props.onShare(props.artifact)}>
-            <Share2 />
+          <ArtifactButton
+            label="分享作品"
+            accent
+            disabled={sharing}
+            onClick={() => props.onShare(props.artifact)}
+          >
+            {sharing ? <LoaderCircle className="animate-spin" /> : <Share2 />}
           </ArtifactButton>
           {props.rewardBadge ? (
             <span className="pointer-events-none absolute -right-2 -top-2 rounded-full bg-[#f2d49d] px-2 py-0.5 text-[10px] font-black text-[#3b2918] shadow-[0_0_16px_rgba(242,212,157,0.45)]">
@@ -62,6 +80,7 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
 function ArtifactButton(props: {
   label: string;
   accent?: boolean;
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -69,8 +88,9 @@ function ArtifactButton(props: {
     <button
       type="button"
       aria-label={props.label}
+      disabled={props.disabled}
       onClick={props.onClick}
-      className={`grid size-12 place-items-center rounded-2xl border text-muted-foreground shadow-sm transition active:scale-95 [&_svg]:size-5 ${
+      className={`grid size-12 place-items-center rounded-2xl border text-muted-foreground shadow-sm transition active:scale-95 disabled:pointer-events-none disabled:opacity-60 [&_svg]:size-5 ${
         props.accent
           ? 'border-primary/50 bg-primary/5 text-primary'
           : 'border-border bg-card hover:text-foreground'

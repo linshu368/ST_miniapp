@@ -118,10 +118,12 @@ export class ImagePlazaRepository {
     cursor?: string;
     limit: number;
   }): Promise<{ works: ImagePlazaWork[]; nextCursor: string | null }> {
+    // Feed 排序：点赞数 ↓ → 分享时间 ↓ → id ↓（稳定游标）
     let query = this.experience
       .from('image_plaza_works')
       .select('*')
       .is('deleted_at', null)
+      .order('like_count', { ascending: false })
       .order('published_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(input.limit + 1);
@@ -129,8 +131,15 @@ export class ImagePlazaRepository {
     if (input.tag) query = query.contains('tags', [input.tag]);
     const cursor = decodeCursor(input.cursor);
     if (cursor) {
+      const like = cursor.likeCount;
+      const published = cursor.publishedAt;
+      const id = cursor.id;
       query = query.or(
-        `published_at.lt.${cursor.publishedAt},and(published_at.eq.${cursor.publishedAt},id.lt.${cursor.id})`
+        [
+          `like_count.lt.${like}`,
+          `and(like_count.eq.${like},published_at.lt.${published})`,
+          `and(like_count.eq.${like},published_at.eq.${published},id.lt.${id})`,
+        ].join(',')
       );
     }
     const { data, error } = await query;
@@ -145,7 +154,9 @@ export class ImagePlazaRepository {
     return {
       works,
       nextCursor:
-        rows.length > input.limit && last ? encodeCursor(last.published_at, last.id) : null,
+        rows.length > input.limit && last
+          ? encodeCursor(Number(last.like_count), last.published_at, last.id)
+          : null,
     };
   }
 
@@ -878,18 +889,27 @@ function mapConversationRow(
   };
 }
 
-function encodeCursor(publishedAt: string, id: string): string {
-  return Buffer.from(JSON.stringify({ publishedAt, id })).toString('base64url');
+function encodeCursor(likeCount: number, publishedAt: string, id: string): string {
+  return Buffer.from(JSON.stringify({ likeCount, publishedAt, id })).toString('base64url');
 }
 
-function decodeCursor(cursor?: string): { publishedAt: string; id: string } | null {
+function decodeCursor(
+  cursor?: string
+): { likeCount: number; publishedAt: string; id: string } | null {
   if (!cursor) return null;
   try {
     const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as unknown;
     if (!value || typeof value !== 'object') return null;
     const record = value as Record<string, unknown>;
-    if (typeof record.publishedAt !== 'string' || typeof record.id !== 'string') return null;
-    return { publishedAt: record.publishedAt, id: record.id };
+    if (
+      typeof record.likeCount !== 'number' ||
+      !Number.isFinite(record.likeCount) ||
+      typeof record.publishedAt !== 'string' ||
+      typeof record.id !== 'string'
+    ) {
+      return null;
+    }
+    return { likeCount: record.likeCount, publishedAt: record.publishedAt, id: record.id };
   } catch {
     return null;
   }

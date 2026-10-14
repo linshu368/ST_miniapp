@@ -90,12 +90,14 @@ export const config = {
   },
 
   // 图片广场使用独立 Venice 图片链路；密钥只从服务端环境读取。
+  // 分享自动打标复用同一组 VENICE_*，默认模型 deepseek-v4-1-flash（可用 IMAGE_PLAZA_TAGGING_MODEL 覆盖）。
   imagePlaza: {
     apiKey: process.env.VENICE_API_KEY || '',
     baseUrl:
       process.env.VENICE_API_BASE_URL ||
       process.env.VENICE_API_BASE ||
       'https://api.venice.ai/api/v1',
+    taggingModel: process.env.IMAGE_PLAZA_TAGGING_MODEL?.trim() || 'deepseek-v4-1-flash',
     timeoutMs: parseInt(process.env.IMAGE_PLAZA_TIMEOUT_MS || '180000', 10),
     workerEnabled: process.env.IMAGE_PLAZA_WORKER_ENABLED !== 'false',
     workerIntervalMs: parseInt(process.env.IMAGE_PLAZA_WORKER_INTERVAL_MS || '3000', 10),

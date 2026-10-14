@@ -49,6 +49,8 @@ export default function ImagePlazaStudioPage() {
   const upload = useUploadImagePlazaReferenceMutation();
   const share = useShareImagePlazaMutation();
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const followLatestRef = useRef(false);
   const [prompt, setPrompt] = useState('');
   const [modelId, setModelId] = useState('seedream-v5-pro');
   const [aspectRatio, setAspectRatio] = useState<ImagePlazaAspectRatio>('2:3');
@@ -143,6 +145,10 @@ export default function ImagePlazaStudioPage() {
     setAutoOptimize(true);
   };
 
+  const scrollToLatest = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
+  };
+
   const generate = async (nextPrompt = prompt) => {
     if (!model || !nextPrompt.trim() || submit.isPending) return;
     try {
@@ -166,10 +172,24 @@ export default function ImagePlazaStudioPage() {
         idempotency_key: crypto.randomUUID(),
       });
       setPrompt('');
+      // 提交成功后跟随最新消息；生成轮询更新时继续滚到底，直到本轮结束。
+      followLatestRef.current = true;
+      requestAnimationFrame(() => scrollToLatest());
     } catch (error) {
       showNotice(error instanceof Error ? error.message : '提交失败，请重试');
     }
   };
+
+  useEffect(() => {
+    if (!followLatestRef.current || !data?.messages.length) return;
+    requestAnimationFrame(() => scrollToLatest());
+    const stillRunning = data.messages.some((message) =>
+      message.attempt
+        ? message.attempt.status === 'pending' || message.attempt.status === 'generating'
+        : false
+    );
+    if (!stillRunning) followLatestRef.current = false;
+  }, [data?.messages]);
 
   const chooseReference = async (file?: File) => {
     if (!file || !model) return;
@@ -335,6 +355,7 @@ export default function ImagePlazaStudioPage() {
                     onRefresh={(value) => void generate(value)}
                     onShare={requestShare}
                     onNotice={showNotice}
+                    sharingArtifactId={share.isPending && shareArtifact ? shareArtifact.id : null}
                     rewardBadge={
                       rewardBadgeVisible && !config.data.has_completed_first_share ? rate : null
                     }
@@ -349,6 +370,7 @@ export default function ImagePlazaStudioPage() {
             </div>
           ))
         )}
+        <div ref={messagesEndRef} aria-hidden className="h-px w-full" />
       </section>
 
       <div className="sticky bottom-0 z-20 bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl">
@@ -581,6 +603,7 @@ function AttemptCard(props: {
   onRefresh: (prompt: string) => void;
   onShare: (artifact: ImagePlazaArtifact) => void;
   onNotice: (message: string) => void;
+  sharingArtifactId: string | null;
   rewardBadge: string | null;
 }) {
   const attempt = props.attempt;
@@ -621,6 +644,7 @@ function AttemptCard(props: {
           artifact={artifact}
           prompt={props.prompt}
           rewardBadge={props.rewardBadge}
+          sharing={props.sharingArtifactId === artifact.id}
           onRefresh={props.onRefresh}
           onShare={props.onShare}
           onNotice={props.onNotice}

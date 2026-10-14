@@ -58,6 +58,8 @@ export default function CreatePage() {
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const items = useMemo(() => feed.data?.pages.flatMap((page) => page.items) ?? [], [feed.data]);
+  // 行优先分列：1 2 / 3 4，避免 CSS columns 的竖向填充（1 3 / 2 4）
+  const feedColumns = useMemo(() => splitIntoColumns(items, 2), [items]);
   const tags = feed.data?.pages[0]?.tags ?? [{ id: 'all', label: '全部' }];
 
   const startStudio = (sourceWorkId?: string) => {
@@ -188,20 +190,24 @@ export default function CreatePage() {
           />
         ) : (
           <div
-            className={`columns-2 gap-3 sm:columns-3 lg:columns-4 ${
+            className={`grid grid-cols-2 items-start gap-3 ${
               feed.isPlaceholderData && feed.isFetching ? 'opacity-70 transition-opacity' : ''
             }`}
           >
-            {items.map((work, index) => (
-              <PlazaCard
-                key={work.id}
-                work={work}
-                priority={index < 4}
-                useSamePending={pendingSourceWorkId === work.id}
-                interactionDisabled={createConversation.isPending}
-                onPrefetch={() => router.prefetch(`/create/work/${work.id}`)}
-                onUseSame={() => startStudio(work.id)}
-              />
+            {feedColumns.map((column, columnIndex) => (
+              <div key={columnIndex} className="flex min-w-0 flex-col gap-3">
+                {column.map((work, rowIndex) => (
+                  <PlazaCard
+                    key={work.id}
+                    work={work}
+                    priority={columnIndex + rowIndex * 2 < 4}
+                    useSamePending={pendingSourceWorkId === work.id}
+                    interactionDisabled={createConversation.isPending}
+                    onPrefetch={() => router.prefetch(`/create/work/${work.id}`)}
+                    onUseSame={() => startStudio(work.id)}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         )}
@@ -248,7 +254,7 @@ function PlazaCard(props: {
   }, [props.work.image_url]);
 
   return (
-    <article className="group relative mb-3 break-inside-avoid overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70">
+    <article className="group relative overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70">
       <Link
         href={`/create/work/${props.work.id}`}
         aria-label={`查看作品：${props.work.title}`}
@@ -311,18 +317,31 @@ function PlazaCard(props: {
 
 function FeedSkeleton() {
   const ratios = ['2 / 3', '3 / 4', '1 / 1', '3 / 4', '2 / 3', '4 / 5', '2 / 3', '3 / 4'];
+  const columns = splitIntoColumns(ratios, 2);
   return (
-    <div className="columns-2 gap-3 sm:columns-3 lg:columns-4" aria-busy="true" aria-label="加载中">
-      {ratios.map((ratio, index) => (
-        <div
-          key={index}
-          className="mb-3 break-inside-avoid overflow-hidden rounded-[1.5rem] bg-muted/50 ring-1 ring-border/50"
-        >
-          <div className="w-full animate-pulse bg-muted" style={{ aspectRatio: ratio }} />
+    <div className="grid grid-cols-2 items-start gap-3" aria-busy="true" aria-label="加载中">
+      {columns.map((column, columnIndex) => (
+        <div key={columnIndex} className="flex min-w-0 flex-col gap-3">
+          {column.map((ratio, rowIndex) => (
+            <div
+              key={`${columnIndex}-${rowIndex}`}
+              className="overflow-hidden rounded-[1.5rem] bg-muted/50 ring-1 ring-border/50"
+            >
+              <div className="w-full animate-pulse bg-muted" style={{ aspectRatio: ratio }} />
+            </div>
+          ))}
         </div>
       ))}
     </div>
   );
+}
+
+function splitIntoColumns<T>(items: readonly T[], columnCount: number): T[][] {
+  const columns = Array.from({ length: columnCount }, () => [] as T[]);
+  for (const [index, item] of items.entries()) {
+    columns[index % columnCount]!.push(item);
+  }
+  return columns;
 }
 
 function EmptyState(props: {

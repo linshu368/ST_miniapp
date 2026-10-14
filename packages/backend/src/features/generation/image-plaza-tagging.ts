@@ -2,36 +2,38 @@
  * @Author: whc 952987912@qq.com
  * @Date: 2026-10-14 14:33:41
  * @LastEditors: whc 952987912@qq.com
- * @LastEditTime: 2026-10-14 14:33:57
+ * @LastEditTime: 2026-10-14 15:47:00
  * @Description:
  * @Copyright (c) 2026 by git config user.name, All Rights Reserved.
  */
-import type { ImageTextModelConfig } from '../image/config.js';
+import { veniceFetch } from '../../platform/venice-http.js';
 
 const MODEL_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 32_768;
 
-/** 平台辅助分类不进入用户生成/计费闸门；只提交提示词，不读取图片。 */
+/** 平台辅助分类不进入用户生成/计费闸门；走 Venice 文本模型，只提交提示词，不读取图片。 */
 export async function requestImagePlazaTags(input: {
   prompt: string;
   tags: Array<{ id: string; label: string }>;
-  textModel: ImageTextModelConfig;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
 }): Promise<unknown> {
-  const { textModel } = input;
-  if (!textModel.url || !textModel.apiKey || !textModel.model) {
+  if (!input.apiKey || !input.baseUrl || !input.model) {
     throw new Error('image_plaza_tagging_unconfigured');
   }
   const signal = AbortSignal.timeout(MODEL_TIMEOUT_MS);
+  const url = `${input.baseUrl.replace(/\/$/, '')}/chat/completions`;
   let response: Response;
   try {
-    response = await fetch(textModel.url, {
+    response = await veniceFetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${textModel.apiKey}`,
+        Authorization: `Bearer ${input.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: textModel.model,
+        model: input.model,
         messages: [
           {
             role: 'system',
@@ -45,9 +47,8 @@ export async function requestImagePlazaTags(input: {
         ],
         temperature: 0,
         max_tokens: 256,
-        ...(new URL(textModel.url).hostname.toLowerCase() === 'openrouter.ai'
-          ? { reasoning: { enabled: false } }
-          : { thinking: { type: 'disabled' } }),
+        venice_parameters: { include_venice_system_prompt: false },
+        reasoning: { enabled: false },
       }),
       signal,
     });
