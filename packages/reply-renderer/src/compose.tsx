@@ -15,6 +15,8 @@ import { ruleScopeClass } from './scope-class';
 import { TrustedTree } from './trusted-tree';
 import type { ReplyChoicePayload } from './types';
 
+const THEME_BOUNDARY_CSS = '.reply-markdown[data-theme] .rp-unit { color-scheme: inherit; }';
+
 type AppliedSegments = Extract<
   { status: 'applied'; segments: TextPostprocessSegment[] },
   { status: 'applied' }
@@ -39,6 +41,7 @@ export interface ComposeInput {
   interactive: boolean;
   onChoice?: (choice: ReplyChoicePayload) => void;
   openStore: Map<string, boolean>;
+  detailsDefaultOpen?: Readonly<Record<string, boolean>>;
   createNonce?: () => string;
 }
 
@@ -136,7 +139,7 @@ function buildMarkdown(
     body: createElement(
       Fragment,
       null,
-      createElement('style', null, `${BASE_CSS}\n${input.css}`),
+      createElement('style', null, `${BASE_CSS}\n${input.css}\n${THEME_BOUNDARY_CSS}`),
       nodes
     ),
   };
@@ -272,6 +275,7 @@ function renderSlot(
     interactive: input.interactive,
     onChoice: input.onChoice,
     openStore: input.openStore,
+    detailsDefaultOpen: input.detailsDefaultOpen,
   });
   return createElement(
     placement === 'block' ? 'div' : 'span',

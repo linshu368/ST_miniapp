@@ -167,7 +167,7 @@ pnpm supabase:link:test
 
 ### AI 回复后处理
 
-- `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/text-postprocess/` 负责确定性编译与分段处理，不执行网络或数据库 IO。
+- `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/rich-reply-protocol.ts` 是模型富回复协议的唯一事实源，`packages/shared/src/text-postprocess/` 负责确定性编译、固定模块解析与分段处理，不执行网络或数据库 IO。
 - Admin「回复富文本规则」使用独立草稿、发布版本和历史恢复流程。保存不切换正式版本；发布/回滚使用 CAS 与 `request_id`，结果未知先查询请求结果，禁止盲目重试写操作。
 - 已发布的 source 与 compiled artifact 作为 `app_core.text_postprocess_versions` 不可变快照原子保存；`app_core.runtime_config.miniapp_text_postprocess_config` 只保存当前正式指针。
 - 每条 assistant 消息绑定自己的 `postprocess_version`。Frontend 按版本批量读取 artifact；缺失、非法、旧消息 `NULL` 或 Worker 失败时只展示完整原始 Markdown，不在客户端编译 source，也不选择最新版本替代。

@@ -21,3 +21,4 @@
 
 - 2026-10-10：从 `origin/dev@b3bc63ce` 创建 `codex/hotfix-rich-text-css-policy`；完成当前 compiler/artifact/renderer 复用调研和设计。
 - 2026-10-12：任务启动后完成 T1–T3；Shared typecheck 与 20 项测试、ReplyRenderer typecheck 通过。全量跨消费者 build/测试留在 T4。
+- 2026-10-13：Admin TEST 完整样例复测发现 `TrustedDetails` 丢弃已编译 `<details>` 的受控属性，且固定记忆模块缺少 `rp-memory-list`。已保留这些受控类，并补齐内置 `rp-*` 的记忆、对白、hover 与小屏样式；Shared 21 项定向测试、ReplyRenderer 21 项定向测试、两包 typecheck、Prettier 与 diff check 通过。未保存或发布 Admin 草稿；跨消费者全量验证仍留在 T4。

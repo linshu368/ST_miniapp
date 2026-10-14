@@ -4,14 +4,19 @@
  * 平台规则的渲染（M2）。纯函数、无 IO、无 DB。
  *
  * 移植自旧 bot 的两处：
- *   src/features/chat/rules/renderSystemInstructions.ts —— 三个占位符的替换与字数档位查找
+ *   src/features/chat/rules/renderSystemInstructions.ts —— 占位符替换与字数档位查找
  *   src/features/chat/usecases/SimpleChat.ts 的 _buildEnhancedPrompt() —— 包装用户输入的格式
  *
  * 方案：docs/ST_remove-MVP实施方案.md §六。
  */
 
-import type { UserGenerationConfig } from '@miniapp/shared';
-import type { EnginePlatformInstructions, EngineWordCountTiers } from './types.js';
+import { RICH_REPLY_PROTOCOL_INSTRUCTIONS, type UserGenerationConfig } from '@miniapp/shared';
+import type {
+  EnginePlatformInstructions,
+  EngineWordCountTiers,
+  InstructionSlotMode,
+  InstructionSlotModes,
+} from './types.js';
 
 /** pref_custom_instructions 为空时注入模板的占位文案，与 bot 一致 */
 export const EMPTY_CUSTOM_INSTRUCTIONS = '暂无';
@@ -46,18 +51,29 @@ function replaceAll(source: string, placeholder: RegExp, value: string): string 
   return source.replace(placeholder, () => value);
 }
 
+function selectSlotRules(
+  rules: EnginePlatformInstructions['choiceRules'],
+  mode: InstructionSlotMode
+): string {
+  switch (mode) {
+    case 'full':
+      return rules.on_first_two_turns;
+    case 'concise':
+      return rules.on_later_turns;
+    case 'off':
+      return rules.off;
+  }
+}
+
 /**
- * 渲染平台规则模板。三个占位符全局替换，替换顺序与 bot 一致
- * （先 WORD_COUNT、再 INTERACTION_MODE、最后 USER_CUSTOM_INSTRUCTIONS）。
+ * 渲染平台规则模板。模式来自同一逻辑轮持久化的 RPC 结果；不得读取当前开关
+ * 或重新消耗窗口，以确保同轮重生成稳定。
  */
 export function renderPlatformInstructions(
   instructions: EnginePlatformInstructions,
-  userConfig: UserGenerationConfig
+  userConfig: UserGenerationConfig,
+  slotModes: InstructionSlotModes
 ): string {
-  const interactionModeBlock = userConfig.pref_show_options
-    ? instructions.interactionModeBlocks.optionsOn
-    : instructions.interactionModeBlocks.optionsOff;
-
   const wordCountValue = resolveWordCountPromptValue(
     userConfig.pref_word_count,
     instructions.wordCountTiers
@@ -66,9 +82,29 @@ export function renderPlatformInstructions(
   const customInstructions =
     userConfig.pref_custom_instructions?.trim() || EMPTY_CUSTOM_INSTRUCTIONS;
 
-  let rendered = replaceAll(instructions.template, /\{\{WORD_COUNT\}\}/g, wordCountValue);
-  rendered = replaceAll(rendered, /\{\{INTERACTION_MODE\}\}/g, interactionModeBlock);
-  return replaceAll(rendered, /\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
+  let rendered = replaceAll(
+    instructions.template,
+    /\{\{CHOICE_RULES\}\}/g,
+    selectSlotRules(instructions.choiceRules, slotModes.choice)
+  );
+  rendered = replaceAll(
+    rendered,
+    /\{\{STATUS_RULES\}\}/g,
+    selectSlotRules(instructions.statusRules, slotModes.status)
+  );
+  rendered = replaceAll(
+    rendered,
+    /\{\{MEMORY_RULES\}\}/g,
+    selectSlotRules(instructions.memoryRules, slotModes.memory)
+  );
+  rendered = replaceAll(rendered, /\{\{WORD_COUNT\}\}/g, wordCountValue);
+  rendered = replaceAll(rendered, /\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
+
+  // Admin controls content depth, while this versioned constant remains the
+  // single machine grammar. Avoid duplicating it for the built-in template.
+  return rendered.includes(RICH_REPLY_PROTOCOL_INSTRUCTIONS)
+    ? rendered
+    : `${rendered}\n\n${RICH_REPLY_PROTOCOL_INSTRUCTIONS}`;
 }
 
 /**

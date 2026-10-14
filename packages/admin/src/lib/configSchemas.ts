@@ -13,6 +13,7 @@ import {
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FeatureFreeTrialLimitsSchema,
+  InstructionSlotRulesSchema,
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   LlmProviderRoutingConfigSchema,
@@ -47,6 +48,9 @@ export const managedConfigKeys = [
   'llm_provider_routing_config',
   'system_fallback_character_id',
   'system_instructions',
+  'choice_rules',
+  'status_rules',
+  'memory_rules',
   'pref_word_count_tiers',
   'lobby_ranking_params',
   'lobby_pinned_characters',
@@ -90,8 +94,10 @@ const positiveInteger = z.number().int().positive();
 export { LlmPricingConfigSchema };
 
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
+  '{{CHOICE_RULES}}',
+  '{{STATUS_RULES}}',
+  '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
-  '{{INTERACTION_MODE}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
 ] as const;
 
@@ -239,15 +245,29 @@ export const DEFAULT_INVITE_CENTER_CONFIG: InviteCenterConfig = {
   ],
 };
 
+/**
+ * Safe Admin fallback only. The authoritative published template remains the
+ * managed runtime value; this fallback keeps a new/empty environment from
+ * offering the retired INTERACTION_MODE contract.
+ */
 export const DEFAULT_SYSTEM_INSTRUCTIONS = [
-  'Roleplay System Instructions',
+  '# Roleplay System Instructions',
   '',
-  '{{INTERACTION_MODE}}',
+  '只输出最终展示内容；不得替用户决定行动。剧情正文始终先输出，开启模块按选项、状态栏、记忆区的固定顺序追加，关闭模块必须完整省略标签、标题和占位内容。',
   '',
-  '输出篇幅为 {{WORD_COUNT}} 字，段落之间使用空行隔开，仅使用简体中文。',
+  '## 选项槽位',
+  '{{CHOICE_RULES}}',
   '',
-  '用户个人偏好为：',
+  '## 状态栏槽位',
+  '{{STATUS_RULES}}',
+  '',
+  '## 记忆区槽位',
+  '{{MEMORY_RULES}}',
+  '',
+  '## 用户个人偏好',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
+  '',
+  '剧情正文篇幅为 {{WORD_COUNT}} 字，仅使用简体中文。',
 ].join('\n');
 
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
@@ -263,6 +283,9 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   llm_provider_routing_config: LlmProviderRoutingConfigSchema,
   system_fallback_character_id: z.string().uuid(),
   system_instructions: SystemInstructionsSchema,
+  choice_rules: InstructionSlotRulesSchema,
+  status_rules: InstructionSlotRulesSchema,
+  memory_rules: InstructionSlotRulesSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   lobby_pinned_characters: LobbyPinnedCharactersSchema,
@@ -388,10 +411,46 @@ export const configMetadata: Record<
     defaultValue: '',
   },
   system_instructions: {
-    label: '平台规则模板',
+    label: '主体模板',
     description:
-      '自研引擎每轮注入的平台规则（markdown）。须含 {{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
+      '自研引擎每轮注入的平台规则（markdown）。须含三个规则槽位、{{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
     defaultValue: DEFAULT_SYSTEM_INSTRUCTIONS,
+  },
+  choice_rules: {
+    label: '选项规则',
+    description:
+      '选项槽位的完整、简洁和关闭文案；机器标签格式由系统固定协议统一注入，三种模式可独立发布与回滚。',
+    defaultValue: {
+      on_first_two_turns:
+        '本轮需要输出选项。提供三条具体且有区分度的下一步输入建议，不替用户决定行动，也不预演选择结果；严格遵守系统固定富文本协议。',
+      on_later_turns:
+        '本轮需要输出选项。简洁提供三条下一步输入建议，不替用户作决定；严格遵守系统固定富文本协议。',
+      off: '本轮不输出选项，不得输出 [choice]、[/choice]、选项标题或占位内容。',
+    },
+  },
+  status_rules: {
+    label: '状态栏规则',
+    description:
+      '状态栏槽位的完整、简洁和关闭文案；机器标签格式由系统固定协议统一注入，三种模式可独立发布与回滚。',
+    defaultValue: {
+      on_first_two_turns:
+        '本轮需要输出状态栏。完整记录本轮结束时值得持续追踪的状态，不要空面板或复述剧情；严格遵守系统固定富文本协议。',
+      on_later_turns:
+        '本轮需要输出状态栏。简洁记录当前可持续追踪状态；严格遵守系统固定富文本协议。',
+      off: '本轮不输出状态栏，不得输出 [status]、[/status]、状态栏标题或占位内容。',
+    },
+  },
+  memory_rules: {
+    label: '记忆区规则',
+    description:
+      '记忆区槽位的完整、简洁和关闭文案；机器标签格式由系统固定协议统一注入，三种模式可独立发布与回滚。',
+    defaultValue: {
+      on_first_two_turns:
+        '本轮需要输出记忆区。完整更新工作记忆、历史档案和里程碑中的已发生事实，保持时间线连续，既有事实不得擅自改写；严格遵守系统固定富文本协议。',
+      on_later_turns:
+        '本轮需要输出记忆区。简洁更新工作记忆、历史档案和里程碑中的已发生事实；严格遵守系统固定富文本协议。',
+      off: '本轮不输出记忆区，不得输出 [memory]、[/memory]、记忆标题或占位内容。',
+    },
   },
   pref_word_count_tiers: {
     label: '回复长度档位',

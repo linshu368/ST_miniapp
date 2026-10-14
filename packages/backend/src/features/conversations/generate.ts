@@ -14,8 +14,9 @@
 
 import { GenerationCleanupPendingError } from '../generation/types.js';
 import type { SseTapResult } from '../generation/upstream.js';
-import type { ChatMessageStatus } from '@miniapp/shared';
+import { diagnoseRichReplyProtocol, type ChatMessageStatus } from '@miniapp/shared';
 import { buildPrompt, fetchPlatformInstructions, type EngineCharacter } from '../engine/index.js';
+import type { InstructionSlotModes } from '../engine/types.js';
 import {
   execute,
   resolveModelForUser,
@@ -23,6 +24,7 @@ import {
   type GenerationStatus,
 } from '../generation/index.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import { TextPostprocessRepository } from '../text-postprocess/repository.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import {
   CharacterCardRepository,
@@ -141,6 +143,16 @@ export async function runConversationTurn(
   await historyRecords().recoverStaleStreaming(session.id);
   preparationSignal.throwIfAborted();
   const turn = await startTurn(session.id, mode, model.openRouterModelId, windowLimits);
+  log.biz.info(
+    {
+      event: 'conversation.instruction_slots.resolved',
+      sessionId: session.id,
+      turnIndex: turn.turnIndex,
+      revision: turn.revision,
+      slotModes: turn.slotModes,
+    },
+    '已使用持久化的平台规则槽位模式'
+  );
 
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -182,6 +194,7 @@ export async function runConversationTurn(
       truncatedTurns: context.truncatedTurns,
       userInput: turn.userInput,
       userConfig,
+      slotModes: turn.slotModes,
       persona: { displayName },
       instructions: instructions.instructions,
     });
@@ -301,6 +314,16 @@ export async function runConversationTurn(
     });
     sink.close();
 
+    if (persisted.status === 'success') {
+      await persistRichReplyDiagnosis({
+        historyId: turn.historyId,
+        postprocessVersion: turn.postprocessVersion,
+        slotModes: turn.slotModes,
+        content: persisted.assistant_reply ?? result.content,
+        log,
+      });
+    }
+
     log.biz.info(
       {
         event: 'conversation.turn.done',
@@ -358,6 +381,48 @@ export async function runConversationTurn(
   }
 }
 
+async function persistRichReplyDiagnosis(input: {
+  historyId: string;
+  postprocessVersion: number;
+  slotModes: InstructionSlotModes;
+  content: string;
+  log: RequestLogger;
+}): Promise<void> {
+  try {
+    const snapshots = await new TextPostprocessRepository().readSnapshots([
+      input.postprocessVersion,
+    ]);
+    const artifact = snapshots.found[0]?.artifact;
+    if (!artifact) throw new Error('bound text postprocess artifact is unavailable');
+    const enabled = {
+      choices: input.slotModes.choice !== 'off',
+      status: input.slotModes.status !== 'off',
+      memory: input.slotModes.memory !== 'off',
+    };
+    const diagnosis = diagnoseRichReplyProtocol(
+      input.content,
+      enabled,
+      artifact.rich_reply_protocol?.enabled !== false
+    );
+    await historyRecords().saveRichReplyMetadata(input.historyId, {
+      rich_reply_mode:
+        input.slotModes.choice === 'full' ||
+        input.slotModes.status === 'full' ||
+        input.slotModes.memory === 'full'
+          ? 'full'
+          : 'concise',
+      ...diagnosis,
+    });
+  } catch (err) {
+    // A completed reply must remain successful when this advisory snapshot cannot
+    // be persisted. The next RPC treats missing metadata as full.
+    input.log.sys.warn(
+      { event: 'conversation.rich_reply.diagnosis_failed', err, historyId: input.historyId },
+      '富文本协议诊断未写入；下一轮将保守使用完整规则'
+    );
+  }
+}
+
 /** A stale RPC may have no reason; explicitly close the billing pending-reason gate. */
 export function normalizePersistedOutcome(
   observed: SseTapResult,
@@ -374,6 +439,7 @@ interface StartedTurn {
   revision: number;
   userInput: string;
   postprocessVersion: number;
+  slotModes: InstructionSlotModes;
 }
 
 async function startTurn(
@@ -399,6 +465,7 @@ async function startTurn(
       revision: started.revision,
       userInput: started.userContent,
       postprocessVersion: started.postprocessVersion,
+      slotModes: started.slotModes,
     };
   }
 
@@ -415,6 +482,7 @@ async function startTurn(
     revision: started.revision,
     userInput: started.userContent,
     postprocessVersion: started.postprocessVersion,
+    slotModes: started.slotModes,
   };
 }
 

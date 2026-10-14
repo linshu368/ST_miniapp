@@ -22,7 +22,9 @@ import {
   type TextPostprocessRule,
   type TextPostprocessSource,
 } from '../api/text-postprocess';
+import { RICH_REPLY_RULE_STYLES } from '../text-postprocess/rich-reply-styles';
 import { applyTextPostprocess } from '../text-postprocess/apply';
+import { diagnoseRichReplyProtocol } from '../text-postprocess/rich-reply';
 import { compileTextPostprocessSource } from '../text-postprocess/compile';
 import { resolveTrustedTree } from '../text-postprocess/resolve-tree';
 import {
@@ -159,7 +161,221 @@ describe('capture compilation', () => {
   });
 });
 
+describe('rich reply protocol', () => {
+  it('classifies exact, deterministic recovery, and unrecoverable protocols without retaining reply text', () => {
+    const enabled = { choices: true, status: true, memory: true };
+    const exact = diagnoseRichReplyProtocol(
+      '[choices][choice]一[/choice][choice]二[/choice][choice]三[/choice][/choices][status]状态[/status][memory]记忆[/memory]',
+      enabled
+    );
+    expect(exact).toEqual({ rich_reply_result: 'exact', rich_reply_issues: [] });
+
+    const recovered = diagnoseRichReplyProtocol(
+      '[choices][choice]一[/choice][choice]二[/choice][choice]三[/choice][status]状态[/status][memory]记忆',
+      enabled
+    );
+    expect(recovered).toEqual({
+      rich_reply_result: 'recovered',
+      rich_reply_issues: ['MISSING_CHOICES_CLOSE_BEFORE_STATUS', 'MISSING_MEMORY_CLOSE_AT_EOF'],
+    });
+
+    expect(diagnoseRichReplyProtocol('[status]无边界', enabled)).toMatchObject({
+      rich_reply_result: 'failed',
+      rich_reply_issues: expect.arrayContaining(['INVALID_CHOICES_MODULE']),
+    });
+    expect(diagnoseRichReplyProtocol('', enabled, false)).toEqual({
+      rich_reply_result: 'failed',
+      rich_reply_issues: ['RICH_REPLY_PROTOCOL_DISABLED'],
+    });
+  });
+
+  it('recovers an unambiguous HTML-style choice close without treating it as exact', () => {
+    const source = [
+      '[choices]',
+      '[choice]握住她的手</choice>',
+      '[choice]再问一次</\nchoice>',
+      '[choice]安静等待</choice>',
+      '[/choices]',
+    ].join('\n');
+    const enabled = { choices: true, status: false, memory: false };
+
+    expect(diagnoseRichReplyProtocol(source, enabled)).toEqual({
+      rich_reply_result: 'recovered',
+      rich_reply_issues: ['NORMALIZED_HTML_CHOICE_CLOSE'],
+    });
+
+    const applied = applyTextPostprocess({ text: source, artifact: compileOk([]) });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    const choices = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-choices'
+    );
+    expect(choices?.type === 'slot' ? choices.choices.map((choice) => choice.text) : []).toEqual([
+      '握住她的手',
+      '再问一次',
+      '安静等待',
+    ]);
+  });
+
+  it('turns complete fixed modules into trusted slots and safely contains malformed modules', () => {
+    const artifact = compileOk([]);
+    const complete = [
+      '她轻声说：“我会留下。”',
+      '[choices][choice]握住她的手[/choice][choice]再问一次[/choice][choice]安静等待[/choice][/choices]',
+      '[status]<details><summary>此刻</summary>```markdown\n地点：花园\n时间：深夜\n```</details>[/status]',
+      '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：1/7\n```</details>[/memory]',
+    ].join('\n\n');
+
+    const applied = applyTextPostprocess({ text: complete, artifact });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    expect(applied.segments.filter((segment) => segment.type === 'slot')).toHaveLength(4);
+    const choices = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-choices'
+    );
+    expect(choices?.type === 'slot' ? choices.choices.map((choice) => choice.text) : []).toEqual([
+      '握住她的手',
+      '再问一次',
+      '安静等待',
+    ]);
+    const status = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-status'
+    );
+    expect(JSON.stringify(status?.type === 'slot' ? status.tree : [])).not.toContain('```markdown');
+    const memory = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-memory'
+    );
+    expect(JSON.stringify(memory?.type === 'slot' ? memory.tree : [])).toContain('rp-memory-list');
+
+    const malformedText = '[choices][choice]一[/choice][choice]二[/choice][/choices]';
+    const malformed = applyTextPostprocess({ text: malformedText, artifact });
+    expect(malformed.status).toBe('applied');
+    const malformedSlot = malformed.segments.find((segment) => segment.type === 'slot');
+    expect(malformedSlot?.type === 'slot' ? malformedSlot.choices : []).toEqual([]);
+    expect(JSON.stringify(malformedSlot?.type === 'slot' ? malformedSlot.tree : [])).not.toContain(
+      '[choices]'
+    );
+    expect(JSON.stringify(malformedSlot?.type === 'slot' ? malformedSlot.tree : [])).not.toContain(
+      'send-message'
+    );
+  });
+
+  it('removes HTML-style choice close markers from an inert malformed choices card', () => {
+    const artifact = compileOk([]);
+    const malformed = applyTextPostprocess({
+      text: '[choices][choice]一</choice>[choice]二</choice>[/choices]',
+      artifact,
+    });
+    expect(malformed.status).toBe('applied');
+    if (malformed.status !== 'applied') return;
+    const malformedSlot = malformed.segments.find((segment) => segment.type === 'slot');
+    const rendered = JSON.stringify(malformedSlot?.type === 'slot' ? malformedSlot.tree : []);
+    expect(malformedSlot?.type === 'slot' ? malformedSlot.choices : []).toEqual([]);
+    expect(rendered).not.toContain('</choice>');
+    expect(rendered).not.toContain('send-message');
+  });
+
+  it('normalizes complete status and memory envelopes when panel formatting drifts', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: [
+        '[status]角色状态栏\n\n### 林小满\n- 好感度：60/100[/status]',
+        '[memory]<details><summary>工作记忆</summary>当前记忆数目：3/7\n第一轮事实</details><details><summary>历史档案</summary>暂无</details>[/memory]',
+      ].join('\n\n'),
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    expect(
+      applied.segments
+        .filter((segment) => segment.type === 'slot')
+        .map((segment) => segment.rule_id)
+    ).toEqual(['rich-reply-status', 'rich-reply-memory']);
+    const rendered = JSON.stringify(
+      applied.segments.flatMap((segment) => (segment.type === 'slot' ? segment.tree : [segment]))
+    );
+    expect(rendered).not.toContain('[status]');
+    expect(rendered).not.toContain('[memory]');
+    expect(rendered).not.toContain('<details>');
+    expect(rendered).toContain('好感度：60/100');
+    expect(rendered).toContain('第一轮事实');
+  });
+
+  it('recovers missing outer close tags only at deterministic module boundaries', () => {
+    const artifact = compileOk([]);
+    const text = [
+      '剧情正文。',
+      '[choices][choice]靠近她[/choice][choice]保持距离[/choice][choice]换个话题[/choice]',
+      '[status]<details><summary>当前状态</summary>```markdown\n地点：操场\n```</details>',
+      '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：3/7\n```</details>',
+    ].join('\n');
+    const applied = applyTextPostprocess({
+      artifact,
+      text,
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+
+    const slots = applied.segments.filter((segment) => segment.type === 'slot');
+    expect(slots.map((slot) => slot.rule_id)).toEqual([
+      'rich-reply-choices',
+      'rich-reply-status',
+      'rich-reply-memory',
+    ]);
+    expect(slots[0]?.choices).toEqual([
+      { text: '靠近她', sendable: true },
+      { text: '保持距离', sendable: true },
+      { text: '换个话题', sendable: true },
+    ]);
+    expect(slots[1]?.match_text).not.toContain('[memory]');
+    expect(slots[0]?.match_text).not.toContain('[status]');
+    expect(slots[1]?.end).toBeLessThan(slots[2]?.start ?? 0);
+    expect(text.slice(slots[1]?.end, slots[2]?.start)).toBe('\n');
+    expect(
+      applied.segments
+        .filter((segment) => segment.type === 'text')
+        .map((segment) => segment.text)
+        .join('')
+    ).not.toMatch(/\[(?:\/?choices|\/?status|\/?memory)\]/);
+  });
+
+  it('does not infer a boundary for repeated or conflicting outer envelopes', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: '[status]第一段[status]第二段[memory]工作记忆',
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    expect(
+      applied.segments.some(
+        (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-status'
+      )
+    ).toBe(false);
+  });
+});
+
 describe('segment application', () => {
+  it('renders legacy bare choices and plain memory after ordinary rules leave them untouched', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: [
+        '[choice]留下[/choice]',
+        '[choice]离开[/choice]',
+        '[choice]等待[/choice]',
+        '',
+        '[memory]工作记忆：已抵达花园\n里程碑：第一次见面[/memory]',
+      ].join('\n'),
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    const slots = applied.segments.filter((segment) => segment.type === 'slot');
+    expect(slots.map((slot) => slot.rule_id)).toEqual(['choice', 'rich-reply-memory']);
+    expect(slots[0]?.choices.map((choice) => choice.text)).toEqual(['留下', '离开', '等待']);
+    expect(slots[1]?.match_text).toContain('工作记忆');
+  });
+
   it('applies order, overlap, non-global, multiline, misses, and empty-match rejection', () => {
     const artifact = compileOk([
       rule({ id: 'first', pattern: 'ab', replacement: '<mark>$&</mark>' }),
@@ -368,6 +584,14 @@ describe('html and css policy', () => {
       }),
     ]);
     expect(safe.rules[0]?.css[0]).toMatchObject({ type: 'media' });
+
+    const richReply = compileOk([
+      rule({ id: 'choice', css: RICH_REPLY_RULE_STYLES.choice }),
+      rule({ id: 'status', css: RICH_REPLY_RULE_STYLES.status }),
+      rule({ id: 'memory', css: RICH_REPLY_RULE_STYLES.memory }),
+      rule({ id: 'dialogue', css: RICH_REPLY_RULE_STYLES.dialogue }),
+    ]);
+    expect(richReply.rich_reply_protocol).toEqual({ version: 2, enabled: true });
   });
 
   it('accepts ordinary scoped CSS while retaining capability boundaries', () => {

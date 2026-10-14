@@ -10,6 +10,8 @@ import {
 } from '../api/text-postprocess';
 import { captureText } from './resolve-tree';
 import { validateCompiledArtifact } from './validate-artifact';
+import { applyRichReplyProtocol } from './rich-reply';
+import { applyRichReplyFallback } from './rich-reply-fallback';
 
 export interface ApplyTextPostprocessInput {
   text: string;
@@ -35,7 +37,13 @@ export function applyTextPostprocess(input: ApplyTextPostprocessInput): TextPost
     { type: 'text', text: input.text, start: 0, end: input.text.length },
   ];
   const skipped: Array<{ rule_id: string; code: string }> = [];
+  const protocol = validated.artifact.rich_reply_protocol;
   let matches = 0;
+  if (protocol?.enabled !== false) {
+    const applied = applyRichReplyProtocol(segments);
+    segments = applied.segments;
+    matches = applied.matches;
+  }
   for (const rule of validated.artifact.rules) {
     if (!rule.enabled) continue;
     if (pastDeadline(input)) return original(input.text, 'DEADLINE');
@@ -53,6 +61,12 @@ export function applyTextPostprocess(input: ApplyTextPostprocessInput): TextPost
     segments = outcome.segments;
     matches += outcome.matches;
   }
+  const compatibility = applyRichReplyFallback(segments);
+  if (matches + compatibility.matches > TEXT_POSTPROCESS_LIMITS.maxMatchesPerMessage) {
+    return original(input.text, 'MATCH_LIMIT');
+  }
+  segments = compatibility.segments;
+  matches += compatibility.matches;
   const stats = measure(segments, input.text.length);
   return {
     status: 'applied',

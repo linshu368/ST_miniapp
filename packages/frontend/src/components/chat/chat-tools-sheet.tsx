@@ -26,7 +26,7 @@ const PANEL_TITLES: Record<Exclude<ToolsPanel, null>, string> = {
 };
 
 const PANEL_DESCRIPTIONS: Record<Exclude<ToolsPanel, null>, string> = {
-  generation: '调整回复长度与自定义指令',
+  generation: '调整回复长度',
   voice: '选择角色说话的声音',
 };
 
@@ -117,7 +117,7 @@ export function ChatToolsSheet({ onCreateConversation, creating }: ChatToolsShee
                   <ToolRow
                     icon={SlidersHorizontal}
                     title="生成偏好"
-                    hint="回复长度、结尾选项、自定义指令"
+                    hint="调整角色回复的篇幅"
                     onClick={() => setPanel('generation')}
                   />
                 </div>

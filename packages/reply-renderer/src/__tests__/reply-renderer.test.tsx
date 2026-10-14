@@ -7,14 +7,19 @@ import { Worker as NodeWorker } from 'node:worker_threads';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   validateCompiledArtifact,
+  LEGACY_RICH_REPLY_CSS,
+  RICH_REPLY_RULE_STYLES,
   type CompiledTextPostprocessArtifact,
   type CompiledTextPostprocessRule,
 } from '@miniapp/shared';
 
 import { composeAppliedView } from '../compose';
+import { BASE_CSS } from '../base-css';
 import { createAlphanumericNonce } from '../nonce';
 import { isSafeCss } from '../css-safety';
 import { ReplyRenderer } from '../ReplyRenderer';
+import { buildWorkerResponse } from '../postprocess-job';
+import { ruleScopeClass } from '../scope-class';
 import { mainBundlePath, workerBundlePath } from '../test-bundle-paths';
 import { TrustedTree } from '../trusted-tree';
 import {
@@ -67,6 +72,32 @@ afterEach(() => {
 });
 
 describe('reply renderer boundaries', () => {
+  it('keeps rich-reply visuals in rule defaults and only retains a v1 compatibility skin', () => {
+    expect(BASE_CSS).not.toContain('.rp-unit');
+    expect(RICH_REPLY_RULE_STYLES.choice).toContain('.rp-choice:disabled');
+    expect(RICH_REPLY_RULE_STYLES.dialogue).toContain('-webkit-box-decoration-break');
+    expect(LEGACY_RICH_REPLY_CSS).toContain('.reply-markdown .rp-unit');
+  });
+
+  it('routes v2 rule CSS to the fixed rich-reply slot it styles', () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [inlineRule({ id: 'dialogue' })],
+    });
+    const response = buildWorkerResponse({
+      jobId: 1,
+      generation: 1,
+      content: '“hello”',
+      artifact,
+      messageKey: 'message',
+      deadlineAt: Date.now() + 1000,
+    });
+    expect(response.css).toContain(`.${ruleScopeClass('message', 'rich-reply-dialogue')}`);
+    expect(response.css).not.toContain(LEGACY_RICH_REPLY_CSS);
+  });
+
   it('keeps the main bundle off the compiler and runs apply inside the worker bundle', () => {
     const workerSource = readFileSync(workerBundlePath, 'utf8');
     const mainSource = readFileSync(mainBundlePath, 'utf8');
@@ -170,10 +201,45 @@ describe('markdown and trusted slots', () => {
     expect(view.container.textContent ?? '').not.toMatch(/[A-Za-z0-9]{22,}/);
     const style = view.container.querySelector('style')?.textContent ?? '';
     expect(style).toContain('color: red');
+    expect(style).toContain('color-scheme: inherit');
     expect(style).not.toMatch(/url\s*\(|@import|http:|data:/i);
     const scope = view.container.querySelector('mark.card')?.parentElement?.className ?? '';
     expect(scope.length).toBeGreaterThan(1);
     expect(style).toContain(`.${scope}`);
+  });
+
+  it('keeps a valid memory block renderable when recovering an unclosed status block', async () => {
+    const content = [
+      '[status]',
+      '<details><summary>当前状态</summary>',
+      '```markdown',
+      '你的状态：心跳仍快',
+      '```',
+      '</details>',
+      '',
+      '[memory]',
+      '<details><summary>工作记忆</summary>',
+      '```markdown',
+      '当前档案数目：0',
+      '```',
+      '</details>',
+      '[/memory]',
+    ].join('\n');
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [],
+    });
+
+    const view = render(element(content, artifact, { messageKey: 'recovered-status' }));
+    await waitForState(view.container, 'applied');
+
+    expect(view.container.querySelector('.rp-unit--status')).not.toBeNull();
+    expect(view.container.querySelector('.rp-unit--memory')).not.toBeNull();
+    expect(view.container.textContent).toContain('你的状态：心跳仍快');
+    expect(view.container.textContent).toContain('当前档案数目：0');
+    expect(view.container.textContent).not.toMatch(/\[\/?(?:status|memory)\]/);
   });
 
   it('retries a colliding nonce and drops the token', () => {
@@ -433,6 +499,8 @@ describe('choice and details interaction', () => {
     const view = render(element('StatusCard', artifact, { messageKey: 'status' }));
     await waitForState(view.container, 'applied');
     const summary = view.getByText('Status');
+    expect(summary.closest('details')?.classList.contains('rp-unit')).toBe(true);
+    expect(summary.closest('details')?.classList.contains('rp-unit--status')).toBe(true);
     expect(summary.closest('details')?.hasAttribute('open')).toBe(false);
     expect((summary as HTMLElement).style.minHeight).toBe('44px');
     await user.click(summary);
@@ -453,6 +521,51 @@ describe('choice and details interaction', () => {
     await waitFor(() => {
       expect(view.container.querySelector('details')?.hasAttribute('open')).toBe(false);
     });
+  });
+
+  it('uses a display preference only for a details rule initial state', async () => {
+    const user = userEvent.setup();
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rules: [detailsRule()],
+    });
+    const view = render(
+      element('StatusCard', artifact, {
+        messageKey: 'status-default-open',
+        detailsDefaultOpen: { status: true },
+      })
+    );
+    await waitForState(view.container, 'applied');
+    const summary = view.getByText('Status');
+    expect(summary.closest('details')?.hasAttribute('open')).toBe(true);
+    await user.click(summary);
+    expect(summary.closest('details')?.hasAttribute('open')).toBe(false);
+  });
+
+  it('uses display preferences for fixed rich-reply protocol slot ids', async () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [],
+    });
+    const content = [
+      '[choices][choice]握住她的手[/choice][choice]再问一次[/choice][choice]安静等待[/choice][/choices]',
+      '[status]<details><summary>此刻</summary>```markdown\n地点：花园\n```</details>[/status]',
+      '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：1/7\n```</details>[/memory]',
+    ].join('\n\n');
+    const view = render(
+      element(content, artifact, {
+        messageKey: 'fixed-protocol-default-open',
+        detailsDefaultOpen: { status: true, memory: false, choice: true },
+      })
+    );
+
+    await waitForState(view.container, 'applied');
+    expect(view.container.querySelector('.rp-unit--choices')?.hasAttribute('open')).toBe(true);
+    expect(view.container.querySelector('.rp-unit--status')?.hasAttribute('open')).toBe(true);
+    expect(view.container.querySelector('.rp-unit--memory')?.hasAttribute('open')).toBe(false);
   });
 });
 
@@ -594,6 +707,7 @@ function element(
     choiceDisabled?: boolean;
     streaming?: boolean;
     messageKey?: string;
+    detailsDefaultOpen?: Readonly<Record<string, boolean>>;
   } = {}
 ): ReactElement {
   return (
@@ -605,6 +719,7 @@ function element(
       choiceDisabled={extra.choiceDisabled}
       streaming={extra.streaming}
       messageKey={extra.messageKey ?? 'message'}
+      detailsDefaultOpen={extra.detailsDefaultOpen}
     />
   );
 }
@@ -622,7 +737,9 @@ async function waitForState(
   );
 }
 
-function inlineRule(): CompiledTextPostprocessRule {
+function inlineRule(
+  overrides: Partial<CompiledTextPostprocessRule> = {}
+): CompiledTextPostprocessRule {
   return {
     id: 'highlight',
     enabled: true,
@@ -650,6 +767,7 @@ function inlineRule(): CompiledTextPostprocessRule {
         declarations: [{ property: 'color', tokens: [{ t: 'ident', v: 'red' }] }],
       },
     ],
+    ...overrides,
   };
 }
 
@@ -686,7 +804,7 @@ function detailsRule(): CompiledTextPostprocessRule {
       {
         type: 'element',
         tag: 'details',
-        attributes: [],
+        attributes: [{ name: 'class', tokens: ['rp-unit', 'rp-unit--status'] }],
         action: null,
         children: [
           {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_WORD_COUNT_TIERS_CONFIG } from '@miniapp/shared';
 import {
   buildSnapshot,
-  parseInteractionModeBlocks,
+  parseInstructionSlotRules,
   parseTemplate,
   parseWordCountTiers,
   toPublicWordCountTiersFromEngine,
@@ -21,20 +21,16 @@ const MIGRATION_076_PATH = new URL(
 );
 
 describe('runtime_config 解析', () => {
+  const RULES = {
+    on_first_two_turns: '完整规则',
+    on_later_turns: '简洁规则',
+    off: '关闭规则',
+  };
   it('模板优先取 text_value，兼容存在 value 里的写法', () => {
     expect(parseTemplate({ value: null, textValue: '模板', version: 1 })).toBe('模板');
     expect(parseTemplate({ value: '模板', textValue: null, version: 1 })).toBe('模板');
     expect(parseTemplate({ value: null, textValue: '  ', version: 1 })).toBeNull();
     expect(parseTemplate(undefined)).toBeNull();
-  });
-
-  it('选项模式块两块缺一不可', () => {
-    expect(parseInteractionModeBlocks({ options_on: '开', options_off: '关' })).toEqual({
-      optionsOn: '开',
-      optionsOff: '关',
-    });
-    expect(parseInteractionModeBlocks({ options_on: '开' })).toBeNull();
-    expect(parseInteractionModeBlocks('开')).toBeNull();
   });
 
   it('新 shape：id / ui_label / default_tier_id', () => {
@@ -115,19 +111,27 @@ describe('runtime_config 解析', () => {
       layoutColumns: 4,
     });
   });
+
+  it('槽位规则必须严格包含三段非空文本', () => {
+    expect(parseInstructionSlotRules(RULES)).toEqual(RULES);
+    expect(parseInstructionSlotRules({ ...RULES, extra: true })).toBeNull();
+    expect(parseInstructionSlotRules({ ...RULES, off: '  ' })).toBeNull();
+    expect(parseInstructionSlotRules({ on_first_two_turns: '完整规则' })).toBeNull();
+  });
 });
 
 describe('buildSnapshot：字数档位的契约校验与降级', () => {
-  const TEMPLATE = '{{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}';
+  const TEMPLATE =
+    '{{CHOICE_RULES}} {{STATUS_RULES}} {{MEMORY_RULES}} {{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}';
+  const RULES = { on_first_two_turns: '完整', on_later_turns: '简洁', off: '关闭' };
 
   function entries(wordCountValue: unknown): Map<string, RuntimeConfigEntry> {
     return new Map<string, RuntimeConfigEntry>([
       ['system_instructions', { value: null, textValue: TEMPLATE, version: 1 }],
-      [
-        'interaction_mode_blocks',
-        { value: { options_on: '开', options_off: '关' }, textValue: null, version: 1 },
-      ],
       ['pref_word_count_tiers', { value: wordCountValue, textValue: null, version: 7 }],
+      ['choice_rules', { value: RULES, textValue: null, version: 2 }],
+      ['status_rules', { value: RULES, textValue: null, version: 3 }],
+      ['memory_rules', { value: RULES, textValue: null, version: 4 }],
     ]);
   }
 
@@ -164,6 +168,28 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
     expect(publicTiers.default_tier_id).toBe('500-800');
     expect(publicTiers.tiers.map((tier) => tier.id)).toEqual(['300-500', '500-800']);
     expect(publicTiers.layout.columns).toBe(3);
+  });
+
+  it('模板或任一槽位非法时只使用安全 fallback，并且日志不含规则正文', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const invalidSlots = entries(VALID);
+    invalidSlots.set('choice_rules', {
+      value: { on_first_two_turns: 'secret rule' },
+      textValue: null,
+      version: 9,
+    });
+    invalidSlots.set('system_instructions', {
+      value: null,
+      textValue: '{{INTERACTION_MODE}}',
+      version: 8,
+    });
+
+    const snapshot = buildSnapshot(invalidSlots);
+
+    expect(snapshot.degraded).toBe(true);
+    expect(snapshot.instructions.template).not.toContain('{{INTERACTION_MODE}}');
+    expect(snapshot.instructions.choiceRules).not.toContain('secret rule');
+    expect(logged.mock.calls.flat().join(' ')).not.toContain('secret rule');
   });
 
   // 回归：宽松解析放过、shared 契约拦下的配置，过去会静默把整张档位表换成内置默认档，
@@ -237,11 +263,12 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
 });
 
 describe('migration 正文', () => {
-  it('071 模板含三个占位符', () => {
+  it('071 的旧模板仍记录旧占位符；T4 读取层不会把它当作现行模板', () => {
     const sql = readFileSync(MIGRATION_071_PATH, 'utf8');
     expect(sql).toContain('{{WORD_COUNT}}');
     expect(sql).toContain('{{INTERACTION_MODE}}');
     expect(sql).toContain('{{USER_CUSTOM_INSTRUCTIONS}}');
+    expect(buildSnapshot(new Map()).instructions.template).not.toContain('{{INTERACTION_MODE}}');
   });
 
   it('076 把档位表升到可增删 shape，且默认档可命中', () => {

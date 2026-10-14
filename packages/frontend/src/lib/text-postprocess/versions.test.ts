@@ -37,6 +37,7 @@ function snapshot(version: number): TextPostprocessArtifactSnapshot {
     artifact: {
       schema_version: TEXT_POSTPROCESS_SCHEMA_VERSION,
       policy_version: TEXT_POSTPROCESS_POLICY_VERSION,
+      rich_reply_protocol: { version: 1, enabled: true },
       rules: [],
     },
   };

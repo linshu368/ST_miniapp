@@ -9,3 +9,8 @@ export {
   type TransportDecision,
 } from './slot-transport';
 export { validateCompiledArtifact, type ArtifactValidation } from './validate-artifact';
+export {
+  diagnoseRichReplyProtocol,
+  type RichReplyDiagnosis,
+  type RichReplyResult,
+} from './rich-reply';

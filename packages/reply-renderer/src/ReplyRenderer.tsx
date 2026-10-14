@@ -88,6 +88,7 @@ export function ReplyRenderer(props: ReplyRendererProps) {
     interactive: props.streaming !== true && props.choiceDisabled !== true,
     onChoice: props.onChoice,
     openStore: openStore.current,
+    detailsDefaultOpen: props.detailsDefaultOpen,
   });
   if (!view.ok) {
     return shell(

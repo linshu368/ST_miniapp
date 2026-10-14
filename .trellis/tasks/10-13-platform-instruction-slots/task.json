@@ -1,0 +1,40 @@
+{
+  "id": "platform-instruction-slots",
+  "name": "platform-instruction-slots",
+  "title": "平台规则模板槽位与动态完整规则",
+  "description": "升级平台 instruction prompt 为选项、状态栏、记忆区三个独立槽位，并支持会话级动态 full/concise 选择与 Admin 独立运营管理。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "database,shared,backend,frontend,admin",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-13",
+  "completedAt": null,
+  "branch": "codex/platform-instruction-slots",
+  "base_branch": "dev",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_platform_instruction_slots",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "admin.business.operations",
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security",
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts"
+      ]
+    }
+  }
+}

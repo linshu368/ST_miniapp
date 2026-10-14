@@ -8,6 +8,8 @@
 #   APPLIED_BY            选填。默认当前 OS 用户；Actions 传 github.actor。
 #   ENVIRONMENT           选填。test | production。production 会拒绝 104。
 #   FORCE_RERUN           选填。true 时允许对 checksum 一致的已记录文件再跑一遍 SQL。
+#   ABANDON_CLAIM          选填。true 时仅废弃 checksum 已漂移、且尚未记账的失败认领。
+#   CLAIM_ABANDON_REASON   ABANDON_CLAIM=true 时必填，写入不可变事件审计。
 #   REPO_MIGRATION_FAIL_RECORD  测试用。1 时故意在 SQL 成功后不记账，验证续跑。
 #
 # 退出码：0 成功；其余失败。stderr 带 MIGRATION_* 前缀，方便日志检索。
@@ -18,6 +20,8 @@ FORBIDDEN_PROD_FILE="104_rollback_voice_billing.sql"
 
 ENVIRONMENT="${ENVIRONMENT:-}"
 FORCE_RERUN="${FORCE_RERUN:-false}"
+ABANDON_CLAIM="${ABANDON_CLAIM:-false}"
+CLAIM_ABANDON_REASON="${CLAIM_ABANDON_REASON:-}"
 APPLIED_BY="${APPLIED_BY:-$(id -un)}"
 MIGRATION_FILE="${MIGRATION_FILE:-}"
 DATABASE_URL="${DATABASE_URL:-}"
@@ -139,6 +143,59 @@ insert_event() {
     >/dev/null || echo "warning: failed to append repo_migration_events (${action})" >&2
 }
 
+abandon_claim() {
+  local claimed_checksum="$1"
+  local claimed_lit reason_lit
+  claimed_lit="$(sql_literal "$claimed_checksum")"
+  reason_lit="$(sql_literal "$CLAIM_ABANDON_REASON")"
+
+  # 锁住 claim 后在同一事务里二次确认前置条件，避免检查与删除之间被并发 apply 穿透。
+  psql_cmd -c "
+    BEGIN;
+    DO \$\$
+    DECLARE
+      v_claimed text;
+    BEGIN
+      SELECT checksum INTO v_claimed
+      FROM supabase_migrations.repo_migration_claims
+      WHERE filename = ${NAME_LIT}
+      FOR UPDATE;
+
+      IF v_claimed IS NULL THEN
+        RAISE EXCEPTION 'MIGRATION_CLAIM_ABANDON_UNAVAILABLE: no unfinished claim for %', ${NAME_LIT};
+      END IF;
+      IF v_claimed <> ${claimed_lit} THEN
+        RAISE EXCEPTION 'MIGRATION_CLAIM_ABANDON_UNAVAILABLE: claim checksum changed for %', ${NAME_LIT};
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM supabase_migrations.repo_migrations WHERE filename = ${NAME_LIT}
+      ) THEN
+        RAISE EXCEPTION 'MIGRATION_CLAIM_ABANDON_UNAVAILABLE: ledger row exists for %', ${NAME_LIT};
+      END IF;
+      IF v_claimed = ${SUM_LIT} THEN
+        RAISE EXCEPTION 'MIGRATION_CLAIM_ABANDON_UNAVAILABLE: matching claim must resume normally for %', ${NAME_LIT};
+      END IF;
+
+      INSERT INTO supabase_migrations.repo_migration_events
+        (filename, checksum, applied_by, action, details)
+      VALUES (
+        ${NAME_LIT},
+        v_claimed,
+        ${BY_LIT},
+        'abandon_claim',
+        jsonb_build_object(
+          'reason', ${reason_lit},
+          'replacement_checksum', ${SUM_LIT}
+        )
+      );
+
+      DELETE FROM supabase_migrations.repo_migration_claims
+      WHERE filename = ${NAME_LIT} AND checksum = v_claimed;
+    END
+    \$\$;
+    COMMIT;" >/dev/null
+}
+
 record_ledger_with_retry() {
   local attempt
   for attempt in 1 2 3 4 5; do
@@ -157,6 +214,30 @@ apply_sql() {
 
 LEDGER_EXISTS="$(has_column supabase_migrations repo_migrations filename)"
 CLAIMS_EXIST="$(has_column supabase_migrations repo_migration_claims filename)"
+EVENTS_EXIST="$(has_column supabase_migrations repo_migration_events filename)"
+EVENT_DETAILS_EXIST="$(has_column supabase_migrations repo_migration_events details)"
+
+if [[ "$ABANDON_CLAIM" != "true" && "$ABANDON_CLAIM" != "false" ]]; then
+  die "MIGRATION_USAGE: ABANDON_CLAIM must be true or false"
+fi
+
+if [[ "$ABANDON_CLAIM" == "true" ]]; then
+  [[ "$FORCE_RERUN" != "true" ]] || die "MIGRATION_CLAIM_ABANDON_UNAVAILABLE: force_rerun cannot be combined with abandon_claim"
+  [[ -n "$CLAIM_ABANDON_REASON" ]] || die "MIGRATION_CLAIM_ABANDON_UNAVAILABLE: CLAIM_ABANDON_REASON is required"
+  [[ "${#CLAIM_ABANDON_REASON}" -le 500 ]] || die "MIGRATION_CLAIM_ABANDON_UNAVAILABLE: CLAIM_ABANDON_REASON must be at most 500 characters"
+  [[ "$LEDGER_EXISTS" == "t" && "$CLAIMS_EXIST" == "t" && "$EVENTS_EXIST" == "t" && "$EVENT_DETAILS_EXIST" == "t" ]] \
+    || die "MIGRATION_CLAIM_ABANDON_UNAVAILABLE: apply the claim-recovery ledger migration first"
+
+  STORED_CHECKSUM="$(existing_checksum || true)"
+  [[ -z "$STORED_CHECKSUM" ]] || die "MIGRATION_CLAIM_ABANDON_UNAVAILABLE: ledger row already exists for ${MIGRATION_NAME}"
+  CLAIMED="$(claim_checksum || true)"
+  [[ -n "$CLAIMED" ]] || die "MIGRATION_CLAIM_ABANDON_UNAVAILABLE: no unfinished claim for ${MIGRATION_NAME}"
+  [[ "$CLAIMED" != "$CHECKSUM" ]] || die "MIGRATION_CLAIM_ABANDON_UNAVAILABLE: matching claim must resume normally for ${MIGRATION_NAME}"
+
+  abandon_claim "$CLAIMED"
+  echo "Abandoned stale claim for ${MIGRATION_NAME}; no migration SQL was executed."
+  exit 0
+fi
 
 if [[ "$LEDGER_EXISTS" != "t" && "$MIGRATION_NAME" != "$LEDGER_FILE" ]]; then
   die "MIGRATION_LEDGER_MISSING: 先执行 packages/shared/migrations/${LEDGER_FILE}，不要在账本表不存在时静默放行"

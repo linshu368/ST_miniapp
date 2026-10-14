@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ReplyRenderer } from '@miniapp/reply-renderer';
-import { canonicalTextPostprocessJson, type TextPostprocessDiagnostic } from '@miniapp/shared';
+import {
+  canonicalTextPostprocessJson,
+  RICH_REPLY_RULE_STYLES,
+  type TextPostprocessDiagnostic,
+} from '@miniapp/shared';
 import {
   Alert,
   Button,
@@ -897,6 +901,7 @@ function RuleEditor(props: {
   };
   const position = props.session.local.rules.findIndex((item) => item.id === rule.id);
   const stat = props.preview?.apply?.rules.find((item) => item.ruleId === rule.id);
+  const richReplyDefault = RICH_REPLY_RULE_STYLES[rule.id as keyof typeof RICH_REPLY_RULE_STYLES];
   const toggleFlag = (flag: string, enabled: boolean) => {
     const flags = new Set(rule.flags.split(''));
     if (enabled) flags.add(flag);
@@ -1041,15 +1046,34 @@ function RuleEditor(props: {
               key: 'css',
               label: '样式',
               children: (
-                <Field
-                  label="样式"
-                  help={RULE_FIELD_HELP.css}
-                  value={rule.css}
-                  disabled={props.disabled}
-                  diagnostics={diagnostics}
-                  field="css"
-                  onChange={(value) => change('css', value)}
-                />
+                <Space direction="vertical" className="field-full">
+                  {richReplyDefault ? (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="富回复独立样式"
+                      description="此规则的样式只会作用于对应的选项、状态、记忆或对白组件。恢复默认不会影响其他三条规则。"
+                      action={
+                        <Button
+                          size="small"
+                          disabled={props.disabled}
+                          onClick={() => change('css', richReplyDefault)}
+                        >
+                          恢复默认样式
+                        </Button>
+                      }
+                    />
+                  ) : null}
+                  <Field
+                    label="样式"
+                    help={RULE_FIELD_HELP.css}
+                    value={rule.css}
+                    disabled={props.disabled}
+                    diagnostics={diagnostics}
+                    field="css"
+                    onChange={(value) => change('css', value)}
+                  />
+                </Space>
               ),
             },
             {

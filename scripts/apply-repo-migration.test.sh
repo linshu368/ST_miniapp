@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 本地账本协议回归。对着本机 Postgres 建临时库，不连 test / production。
-# 覆盖 C 的三条：同一文件重跑拒绝、checksum 漂移拒绝、Apply 成功 Record 失败后续跑能补记账。
+# 覆盖 C 的四条：同一文件重跑拒绝、checksum 漂移拒绝、Apply 成功 Record 失败后续跑能补记账、
+# 审计后废弃变更过的失败认领。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -36,6 +37,9 @@ psql --no-psqlrc -d "$DATABASE_URL" --set ON_ERROR_STOP=1 -c \
 
 cleanup() {
   dropdb --if-exists "$DB_NAME" >/dev/null 2>&1 || true
+  if [[ -n "${FIXTURE_DIR:-}" ]]; then
+    rm -rf "$FIXTURE_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -105,9 +109,14 @@ EVENT_KINDS="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT string_agg(act
 [[ "$EVENT_KINDS" == "apply,force_rerun" ]] || fail "expected apply,force_rerun events, got $EVENT_KINDS"
 pass "force_rerun appends events and keeps first 20260914 row"
 
-# 7. Apply/Record 中断后续跑。
+# 7. 新的审计字段/动作：只供 checksum 漂移但未记账的失败认领恢复使用。
+run_apply 0 env APPLIED_BY=c-test MIGRATION_FILE="$ROOT/packages/shared/migrations/20261013_repo_migration_claim_recovery.sql" DATABASE_URL="$DATABASE_URL" "${APPLY[@]}"
+pass "claim recovery ledger migration applies"
 
-FIXTURE="$(mktemp "${TMPDIR:-/tmp}/c-fixture.XXXXXX.sql")"
+# 8. Apply/Record 中断后续跑；若文件随后被修订，只能先审计废弃旧认领。
+
+FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/c-fixture.XXXXXX")"
+FIXTURE="$FIXTURE_DIR/fixture.sql"
 cat >"$FIXTURE" <<'SQL'
 BEGIN;
 CREATE SCHEMA IF NOT EXISTS c_fixture;
@@ -125,6 +134,22 @@ LEDGER_ROW="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM s
 CLAIM_ROW="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM supabase_migrations.repo_migration_claims WHERE filename = '$(basename "$FIXTURE")';")"
 [[ "$CLAIM_ROW" == "1" ]] || fail "claim should remain after record failure"
 
+CLAIMED_SUM="$(shasum -a 256 "$FIXTURE" | awk '{print $1}')"
+printf '\n-- corrected after the failed SQL transaction\n' >>"$FIXTURE"
+CURRENT_SUM="$(shasum -a 256 "$FIXTURE" | awk '{print $1}')"
+run_apply 1 env APPLIED_BY=c-test MIGRATION_FILE="$FIXTURE" DATABASE_URL="$DATABASE_URL" "${APPLY[@]}"
+grep -q 'MIGRATION_CHECKSUM_DRIFT' "$err" || fail "changed unfinished claim was not rejected"
+run_apply 1 env ABANDON_CLAIM=true APPLIED_BY=c-test MIGRATION_FILE="$FIXTURE" DATABASE_URL="$DATABASE_URL" "${APPLY[@]}"
+grep -q 'CLAIM_ABANDON_REASON is required' "$err" || fail "claim abandonment allowed without reason"
+run_apply 0 env ABANDON_CLAIM=true CLAIM_ABANDON_REASON='fixture SQL rolled back before correction' APPLIED_BY=c-test MIGRATION_FILE="$FIXTURE" DATABASE_URL="$DATABASE_URL" "${APPLY[@]}"
+CLAIM_ROW="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM supabase_migrations.repo_migration_claims WHERE filename = '$(basename "$FIXTURE")';")"
+[[ "$CLAIM_ROW" == "0" ]] || fail "abandoned claim was not removed"
+LEDGER_ROW="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM supabase_migrations.repo_migrations WHERE filename = '$(basename "$FIXTURE")';")"
+[[ "$LEDGER_ROW" == "0" ]] || fail "abandonment must not create a ledger row"
+ABANDON_EVENT="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT checksum || '|' || (details->>'reason') || '|' || (details->>'replacement_checksum') FROM supabase_migrations.repo_migration_events WHERE filename = '$(basename "$FIXTURE")' AND action = 'abandon_claim';")"
+[[ "$ABANDON_EVENT" == "${CLAIMED_SUM}|fixture SQL rolled back before correction|${CURRENT_SUM}" ]] || fail "claim abandonment event missing audit details"
+pass "checksum-drifted unfinished claim requires and records abandonment"
+
 run_apply 0 env APPLIED_BY=c-test MIGRATION_FILE="$FIXTURE" DATABASE_URL="$DATABASE_URL" "${APPLY[@]}"
 MARKER="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c 'SELECT count(*) FROM c_fixture.marker;')"
 [[ "$MARKER" == "1" ]] || fail "resume re-apply double-inserted fixture"
@@ -132,7 +157,7 @@ LEDGER_ROW="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM s
 [[ "$LEDGER_ROW" == "1" ]] || fail "resume did not record ledger"
 CLAIM_ROW="$(psql --no-psqlrc -d "$DATABASE_URL" -At -c "SELECT count(*) FROM supabase_migrations.repo_migration_claims WHERE filename = '$(basename "$FIXTURE")';")"
 [[ "$CLAIM_ROW" == "0" ]] || fail "claim should be cleared after successful record"
-pass "interrupted record can resume without double-inserting"
+pass "interrupted record can resume or recover without double-inserting"
 
 # 8. inspect 能列出日期命名文件，漂移时非 0。
 run_apply 0 env DATABASE_URL="$DATABASE_URL" MIGRATIONS_DIR="$ROOT/packages/shared/migrations" "${INSPECT[@]}"
@@ -144,5 +169,5 @@ run_apply 1 env DATABASE_URL="$DATABASE_URL" MIGRATIONS_DIR="$ROOT/packages/shar
 grep -q 'DRIFT' "$out" || grep -q 'MIGRATION_CHECKSUM_DRIFT' "$err" || fail "inspect did not flag drift"
 pass "inspect reports object probes and drift"
 
-rm -f "$FIXTURE" "$out" "$err"
+rm -f "$out" "$err"
 echo "All repo-migration ledger protocol checks passed."

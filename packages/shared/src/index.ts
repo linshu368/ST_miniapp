@@ -15,6 +15,7 @@ export * from './api/alerting';
 export * from './api/vip';
 export * from './api/vip-strategy';
 export * from './api/settings';
+export * from './api/instruction-slot-rules';
 export * from './api/word-count-tiers';
 export * from './api/lobby-ranking-params';
 export * from './api/lobby-pinned-characters';
@@ -36,12 +37,18 @@ export * from './api/telemetry';
 export * from './api/text-postprocess';
 export {
   applyTextPostprocess,
+  diagnoseRichReplyProtocol,
   prepareSlotTransport,
   resolveTransportedTextNodes,
   resolveTrustedTree,
   serializeScopedCss,
   validateCompiledArtifact,
 } from './text-postprocess/runtime';
+export type { RichReplyDiagnosis, RichReplyResult } from './text-postprocess/runtime';
+export {
+  LEGACY_RICH_REPLY_CSS,
+  RICH_REPLY_RULE_STYLES,
+} from './text-postprocess/rich-reply-styles';
 export * from './api/admin-model-test';
 export * from './config/database';
 export * from './png-parser';
@@ -49,4 +56,5 @@ export * from './dev-fixtures';
 export * from './lobby-featured';
 export * from './telegram-avatar';
 export * from './user-placeholder';
+export * from './rich-reply-protocol';
 export * from './telemetry/sanitize';

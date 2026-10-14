@@ -54,6 +54,12 @@ import { returnToLobby } from '@/lib/lobby-return';
 import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import {
+  DEFAULT_REPLY_DETAILS_OPEN,
+  readReplyDetailsDefaultOpen,
+  writeReplyDetailsDefaultOpen,
+  type ReplyDetailsDefaultOpen,
+} from '@/components/chat/reply-preference-display';
 
 export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -66,6 +72,9 @@ export default function SelfHostedChatPage() {
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const choiceLockRef = useRef<ChoiceLockState>(emptyChoiceLock());
   const [choiceLock, setChoiceLock] = useState<ChoiceLockState>(emptyChoiceLock());
+  const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<ReplyDetailsDefaultOpen>(
+    DEFAULT_REPLY_DETAILS_OPEN
+  );
   const displayName = useUserProfileStore((state) => state.displayName);
 
   const session = useChatSession(characterId);
@@ -149,6 +158,15 @@ export default function SelfHostedChatPage() {
   useEffect(() => {
     setEarlier([]);
   }, [activeSessionId]);
+
+  useEffect(() => {
+    setDetailsDefaultOpen(readReplyDetailsDefaultOpen());
+  }, []);
+
+  const handleDetailsDefaultOpenChange = useCallback((next: ReplyDetailsDefaultOpen) => {
+    setDetailsDefaultOpen(next);
+    writeReplyDetailsDefaultOpen(next);
+  }, []);
 
   useEffect(() => {
     if (
@@ -356,6 +374,7 @@ export default function SelfHostedChatPage() {
           })
         }
         onChoice={handleChoice}
+        detailsDefaultOpen={detailsDefaultOpen}
         renderFooter={(message) => {
           const showVoice = canGenerateVoice(message);
           const messageImage = imageByMessage.get(message.id);
@@ -474,6 +493,8 @@ export default function SelfHostedChatPage() {
         cancelling={cancelling}
         generating={generating}
         disabled={!session.ready || serverBusy}
+        detailsDefaultOpen={detailsDefaultOpen}
+        onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
         leftSlot={
           <ChatToolsSheet
             onCreateConversation={session.openNewConversation}

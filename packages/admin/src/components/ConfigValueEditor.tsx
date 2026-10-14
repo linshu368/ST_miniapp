@@ -32,6 +32,7 @@ import {
   type PaymentPlansConfig,
   type ProviderModelDirectory,
   type WordCountTiersConfig,
+  type InstructionSlotRules,
   type AdminImageTextModelTestRequest,
   type AdminImageTextModelTestResponse,
 } from '@miniapp/shared';
@@ -56,6 +57,7 @@ import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEdit
 import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
+import { PlatformInstructionSlotRulesEditor } from './PlatformInstructionSlotRulesEditor';
 import { WordCountTiersEditor } from './WordCountTiersEditor';
 
 function asWordCountTiersConfig(value: unknown): WordCountTiersConfig {
@@ -366,6 +368,29 @@ export function ConfigValueEditor(props: {
     return (
       <SystemInstructionsEditor
         value={typeof props.value === 'string' ? props.value : ''}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (
+    props.configKey === 'choice_rules' ||
+    props.configKey === 'status_rules' ||
+    props.configKey === 'memory_rules'
+  ) {
+    const fallback = configMetadata[props.configKey].defaultValue as InstructionSlotRules;
+    const parsed =
+      props.value && typeof props.value === 'object' && !Array.isArray(props.value)
+        ? (props.value as Partial<InstructionSlotRules>)
+        : {};
+    return (
+      <PlatformInstructionSlotRulesEditor
+        value={{
+          on_first_two_turns: parsed.on_first_two_turns ?? fallback.on_first_two_turns,
+          on_later_turns: parsed.on_later_turns ?? fallback.on_later_turns,
+          off: parsed.off ?? fallback.off,
+        }}
         disabled={props.disabled}
         onChange={props.onChange}
       />

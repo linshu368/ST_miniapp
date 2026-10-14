@@ -38,6 +38,7 @@ interface TreeContext {
   interactive: boolean;
   onChoice?: (choice: ReplyChoicePayload) => void;
   openStore: Map<string, boolean>;
+  detailsDefaultOpen?: Readonly<Record<string, boolean>>;
 }
 
 export function TrustedTree(props: TreeContext) {
@@ -92,7 +93,14 @@ function renderResolved(node: ResolvedNode, path: string, context: TreeContext):
 
 function TrustedDetails(input: { node: ResolvedElement; path: string; context: TreeContext }) {
   const stateKey = `${input.context.messageKey}:${input.context.ruleId}:${input.context.start}:${input.context.end}:${input.path}`;
-  const defaultOpen = input.node.attributes.some((attribute) => attribute.name === 'open');
+  const preferenceKey = detailsPreferenceKey(input.context.ruleId);
+  const configuredDefaultOpen = preferenceKey
+    ? input.context.detailsDefaultOpen?.[preferenceKey]
+    : undefined;
+  const defaultOpen =
+    typeof configuredDefaultOpen === 'boolean'
+      ? configuredDefaultOpen
+      : input.node.attributes.some((attribute) => attribute.name === 'open');
   const [open, setOpen] = useState(() => input.context.openStore.get(stateKey) ?? defaultOpen);
   const fromKeyboard = useRef(false);
   const toggle = () => {
@@ -104,7 +112,9 @@ function TrustedDetails(input: { node: ResolvedElement; path: string; context: T
   };
   return createElement(
     'details',
-    { open },
+    // details 本身也可以承载已编译模板中的受控 class/title/aria 属性。
+    // 不能在这里丢弃它们，否则外层 rp-unit 样式无法命中。
+    { ...attributesOf(input.node), open },
     input.node.children.map((child, index) => {
       const childPath = `${input.path}.${index}`;
       if (child.type === 'element' && child.tag === 'summary') {
@@ -138,6 +148,27 @@ function TrustedDetails(input: { node: ResolvedElement; path: string; context: T
       return renderResolved(child, childPath, input.context);
     })
   );
+}
+
+/**
+ * The fixed rich-reply protocol emits internal slot ids, while legacy and
+ * Admin-managed artifacts retain the human-facing ids. Display preferences are
+ * intentionally keyed by the stable user-facing module rather than either id.
+ */
+function detailsPreferenceKey(ruleId: string): 'status' | 'memory' | 'choice' | null {
+  switch (ruleId) {
+    case 'rich-reply-status':
+    case 'status':
+      return 'status';
+    case 'rich-reply-memory':
+    case 'memory':
+      return 'memory';
+    case 'rich-reply-choices':
+    case 'choice':
+      return 'choice';
+    default:
+      return null;
+  }
 }
 
 function attributesOf(node: ResolvedElement): Record<string, unknown> {

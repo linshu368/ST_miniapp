@@ -3,6 +3,7 @@
 // 路由前缀 /api/v1/conversations 由 M3b 实现、M5 消费；鉴权统一走 requireTelegramAuth（X-Init-Data）
 
 import type { PreferredWordCount } from './settings';
+import { z } from 'zod';
 import type { PublicWordCountTiers } from './word-count-tiers';
 
 // ==== 领域对象 ====
@@ -62,8 +63,22 @@ export interface UserGenerationConfig {
   selected_model_id: string | null;
   pref_word_count: PreferredWordCount;
   pref_show_options: boolean;
+  pref_show_status: boolean;
+  pref_show_memory: boolean;
   pref_custom_instructions: string | null;
 }
+
+/** 生成链路可见的用户偏好；规则窗口计数和单轮模式永不下发。 */
+export const UserGenerationConfigSchema: z.ZodType<UserGenerationConfig> = z
+  .object({
+    selected_model_id: z.string().nullable(),
+    pref_word_count: z.string(),
+    pref_show_options: z.boolean(),
+    pref_show_status: z.boolean(),
+    pref_show_memory: z.boolean(),
+    pref_custom_instructions: z.string().nullable(),
+  })
+  .strict();
 
 /**
  * 本域的业务错误码，配合 envelope 的 fail(code, message) 使用。
@@ -230,14 +245,27 @@ export interface GetGenerationConfigData {
 // ==== PATCH /api/v1/generation-config ====
 
 /**
- * 只收三个 pref_* 字段。selected_model_id 是只读镜像，改模型走 POST /api/v1/models/select——
+ * 只收五个 pref_* 字段。selected_model_id 是只读镜像，改模型走 POST /api/v1/models/select——
  * 那条路由带着「切到付费模型前先查余额」的业务闸门，从这里旁路改会绕过它。
  */
 export interface PatchGenerationConfigRequest {
   pref_word_count?: PreferredWordCount;
   pref_show_options?: boolean;
+  pref_show_status?: boolean;
+  pref_show_memory?: boolean;
   pref_custom_instructions?: string | null;
 }
+
+/** PATCH 字段全可选，但未知字段和非布尔开关必须拒绝。 */
+export const PatchGenerationConfigRequestSchema: z.ZodType<PatchGenerationConfigRequest> = z
+  .object({
+    pref_word_count: z.string().optional(),
+    pref_show_options: z.boolean().optional(),
+    pref_show_status: z.boolean().optional(),
+    pref_show_memory: z.boolean().optional(),
+    pref_custom_instructions: z.string().nullable().optional(),
+  })
+  .strict();
 
 export interface PatchGenerationConfigData {
   config: UserGenerationConfig;
