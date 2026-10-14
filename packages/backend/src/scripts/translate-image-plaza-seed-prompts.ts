@@ -265,8 +265,9 @@ async function runDeepseekBatch(
 async function runVeniceRetryBatch(
   input: CliOptions
 ): Promise<{ translated: number; skipped: number; failed: number; marked: number }> {
+  // 多进程并行时用不同 --offset 分片，避免全挤在 ORDER BY id 队头重复打同一批。
   const pending = await listCivitaiSeedWorksForVeniceRetry({
-    offset: 0,
+    offset: input.offset,
     limit: input.limit ?? 50,
   });
 
