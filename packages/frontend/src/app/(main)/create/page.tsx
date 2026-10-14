@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, ImageIcon, LoaderCircle, Search, Sparkles, WandSparkles } from 'lucide-react';
+import { Copy, Heart, ImageIcon, LoaderCircle, Search, Sparkles, WandSparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useCreateImagePlazaConversationMutation,
@@ -156,7 +156,7 @@ export default function CreatePage() {
 function PlazaCard(props: { work: ImagePlazaWork; onUseSame: () => void }) {
   const like = useSetImagePlazaLikeMutation(props.work.id);
   return (
-    <article className="group relative mb-3 break-inside-avoid overflow-hidden rounded-[1.35rem] bg-card ring-1 ring-border/70">
+    <article className="group relative mb-3 break-inside-avoid overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70">
       <Link
         href={`/create/work/${props.work.id}`}
         aria-label={`查看作品：${props.work.title}`}
@@ -169,10 +169,7 @@ function PlazaCard(props: { work: ImagePlazaWork; onUseSame: () => void }) {
           className="h-auto w-full object-cover transition duration-500 group-hover:scale-[1.02]"
         />
       </Link>
-      <div className="absolute inset-x-0 bottom-0 flex items-end gap-1 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-2 pt-12 text-white">
-        <span className="pointer-events-none min-w-0 flex-1 truncate px-1 text-xs font-bold">
-          {props.work.title}
-        </span>
+      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/90 via-black/35 to-transparent p-2 pt-16 text-white sm:p-3 sm:pt-16">
         <button
           type="button"
           disabled={like.isPending}
@@ -180,18 +177,19 @@ function PlazaCard(props: { work: ImagePlazaWork; onUseSame: () => void }) {
           aria-label={
             props.work.liked ? `取消点赞：${props.work.title}` : `点赞：${props.work.title}`
           }
-          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-black/35 px-2 text-[11px] backdrop-blur-md disabled:opacity-60"
+          className="inline-flex h-10 shrink-0 items-center gap-1 rounded-full text-xs font-black drop-shadow-md disabled:opacity-60"
         >
-          <Heart className={`size-3.5 ${props.work.liked ? 'fill-current' : ''}`} />
+          <Heart className={`size-4 ${props.work.liked ? 'fill-current' : ''}`} />
           {props.work.like_count}
         </button>
         <button
           type="button"
           onClick={props.onUseSame}
           aria-label={`用同款：${props.work.title}`}
-          className="grid size-9 shrink-0 place-items-center rounded-full bg-black/35 backdrop-blur-md transition active:scale-95"
+          className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl border border-white/10 bg-black/45 px-2 text-[11px] font-black text-[#d8c1aa] shadow-lg backdrop-blur-md transition active:scale-95 sm:h-11 sm:gap-1.5 sm:px-3 sm:text-xs"
         >
-          <WandSparkles className="size-4" />
+          <Copy className="size-4" />
+          用同款
         </button>
       </div>
     </article>

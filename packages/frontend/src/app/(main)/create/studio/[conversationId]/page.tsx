@@ -1,19 +1,16 @@
 'use client';
 
 import {
+  ArrowUp,
   ArrowLeft,
   Check,
-  ChevronDown,
-  Copy,
-  Download,
   History,
   ImagePlus,
   LoaderCircle,
   Plus,
-  RefreshCcw,
-  Send,
   Settings2,
   Share2,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -37,6 +34,8 @@ import {
   useSubmitImagePlazaAttemptMutation,
   useUploadImagePlazaReferenceMutation,
 } from '@/lib/api/image-plaza';
+import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
+import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
 
 export default function ImagePlazaStudioPage() {
   const params = useParams<{ conversationId: string }>();
@@ -55,6 +54,7 @@ export default function ImagePlazaStudioPage() {
   const [aspectRatio, setAspectRatio] = useState<ImagePlazaAspectRatio>('2:3');
   const [resolution, setResolution] = useState<'1K' | '2K' | 'fixed'>('1K');
   const [mode, setMode] = useState<ImagePlazaMode>('t2i');
+  const [reasoning, setReasoning] = useState(false);
   const [autoOptimize, setAutoOptimize] = useState(true);
   const [reference, setReference] = useState<ImagePlazaArtifact | null>(null);
   const [referenceArtifactId, setReferenceArtifactId] = useState<string | null>(null);
@@ -63,6 +63,7 @@ export default function ImagePlazaStudioPage() {
   const [shareArtifact, setShareArtifact] = useState<ImagePlazaArtifact | null>(null);
   const [shareTipOpen, setShareTipOpen] = useState(false);
   const [rewardBadgeVisible, setRewardBadgeVisible] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const data = conversation.data?.conversation;
   const models = useMemo(() => config.data?.models ?? [], [config.data?.models]);
@@ -87,6 +88,7 @@ export default function ImagePlazaStudioPage() {
         : (target.resolutions[0]?.id ?? 'fixed')
     );
     setPrompt(snapshot?.prompt ?? '');
+    setReasoning(snapshot?.reasoning ?? false);
     setAutoOptimize(snapshot?.auto_optimize ?? true);
     const canKeepReference = Boolean(snapshot?.reference_artifact_id && target.supports_i2i);
     setReferenceArtifactId(canKeepReference ? (snapshot?.reference_artifact_id ?? null) : null);
@@ -129,6 +131,18 @@ export default function ImagePlazaStudioPage() {
     }
   };
 
+  const resetSettings = () => {
+    if (!model) return;
+    setAspectRatio(model.aspect_ratios.includes('2:3') ? '2:3' : (model.aspect_ratios[0] ?? '1:1'));
+    setResolution(
+      model.resolutions.some((item) => item.id === '1K')
+        ? '1K'
+        : (model.resolutions[0]?.id ?? 'fixed')
+    );
+    setReasoning(false);
+    setAutoOptimize(true);
+  };
+
   const generate = async (nextPrompt = prompt) => {
     if (!model || !nextPrompt.trim() || submit.isPending) return;
     try {
@@ -144,7 +158,7 @@ export default function ImagePlazaStudioPage() {
         model_id: model.id,
         aspect_ratio: aspectRatio as never,
         resolution,
-        reasoning: false,
+        reasoning,
         auto_optimize: autoOptimize,
         reference_artifact_id: referenceArtifactId,
         mode: actualMode,
@@ -305,32 +319,39 @@ export default function ImagePlazaStudioPage() {
           data.messages.map((message, messageIndex) => (
             <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : ''}>
               {message.role === 'user' ? (
-                <p className="max-w-[82%] rounded-[1.35rem] rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground">
+                <p className="max-w-[86%] rounded-[1.35rem] rounded-br-md border border-border bg-card px-4 py-3 text-sm leading-6 text-foreground shadow-sm">
                   {message.content}
                 </p>
               ) : message.attempt ? (
-                <AttemptCard
-                  prompt={
-                    data.messages
-                      .slice(0, messageIndex)
-                      .reverse()
-                      .find((item) => item.role === 'user')?.content ?? ''
-                  }
-                  attempt={message.attempt}
-                  onRefresh={(value) => void generate(value)}
-                  onShare={requestShare}
-                  onNotice={showNotice}
-                  rewardBadge={
-                    rewardBadgeVisible && !config.data.has_completed_first_share ? rate : null
-                  }
-                />
+                <div className="space-y-5">
+                  <AttemptCard
+                    prompt={
+                      data.messages
+                        .slice(0, messageIndex)
+                        .reverse()
+                        .find((item) => item.role === 'user')?.content ?? ''
+                    }
+                    attempt={message.attempt}
+                    onRefresh={(value) => void generate(value)}
+                    onShare={requestShare}
+                    onNotice={showNotice}
+                    rewardBadge={
+                      rewardBadgeVisible && !config.data.has_completed_first_share ? rate : null
+                    }
+                  />
+                  <div className="flex items-center gap-4 text-[11px] text-muted-foreground/70">
+                    <span className="h-px flex-1 bg-border" />
+                    <span>新一轮生成</span>
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                </div>
               ) : null}
             </div>
           ))
         )}
       </section>
 
-      <div className="sticky bottom-0 z-20 border-t border-border/60 bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl">
+      <div className="sticky bottom-0 z-20 bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl">
         {reference || referenceArtifactId ? (
           <div className="mb-2 flex items-center gap-2 rounded-2xl bg-card p-2 ring-1 ring-border">
             {reference ? (
@@ -380,7 +401,7 @@ export default function ImagePlazaStudioPage() {
           </div>
         ) : null}
 
-        <div className="rounded-[1.5rem] border border-border bg-card p-2 shadow-[0_-12px_50px_rgba(0,0,0,0.18)]">
+        <div className="rounded-[2rem] border border-border bg-card p-4 shadow-[0_-12px_50px_rgba(0,0,0,0.2)]">
           <textarea
             value={prompt}
             maxLength={IMAGE_PLAZA_PROMPT_MAX_CHARS}
@@ -393,11 +414,11 @@ export default function ImagePlazaStudioPage() {
                 void generate();
               }
             }}
-            rows={3}
+            rows={4}
             placeholder="描述你想生成的画面…"
-            className="w-full resize-none bg-transparent px-2 py-2 text-sm leading-6 outline-none placeholder:text-muted-foreground"
+            className="min-h-24 w-full resize-none bg-transparent text-base leading-7 outline-none placeholder:text-muted-foreground"
           />
-          <div className="flex items-center gap-1.5">
+          <div className="mt-3 flex items-center gap-2.5">
             <input
               ref={fileInput}
               type="file"
@@ -413,36 +434,26 @@ export default function ImagePlazaStudioPage() {
               onClick={() => fileInput.current?.click()}
               disabled={upload.isPending}
               aria-label="添加参考图"
-              className="grid size-10 place-items-center rounded-xl bg-background text-muted-foreground ring-1 ring-border"
+              className="grid size-12 place-items-center rounded-2xl border border-border bg-background/45 text-muted-foreground disabled:opacity-60"
             >
-              <ImagePlus className="size-4" />
+              <Plus className="size-5" />
             </button>
-            <details className="relative">
-              <summary className="flex h-10 cursor-pointer list-none items-center gap-1 rounded-xl bg-background px-3 text-xs font-bold ring-1 ring-border">
-                <Settings2 className="size-3.5" />
-                设置
-              </summary>
-              <div className="absolute bottom-12 left-0 z-40 w-72 rounded-2xl border border-border bg-card p-3 shadow-2xl">
-                <SettingSelect
-                  label="画幅"
-                  value={aspectRatio}
-                  values={model.aspect_ratios}
-                  onChange={setAspectRatio}
-                />
-                <SettingSelect
-                  label="分辨率"
-                  value={resolution}
-                  values={model.resolutions.map((item) => item.id)}
-                  onChange={(value) => setResolution(value as typeof resolution)}
-                />
-              </div>
-            </details>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="打开生成设置"
+              className="grid size-12 place-items-center rounded-2xl border border-border bg-background/45 text-muted-foreground"
+            >
+              <Settings2 className="size-5" />
+            </button>
             <details className="relative min-w-0">
-              <summary className="flex h-10 max-w-32 cursor-pointer list-none items-center gap-1 truncate rounded-xl bg-background px-3 text-xs font-bold ring-1 ring-border">
-                {model.name}
-                <ChevronDown className="size-3" />
+              <summary
+                aria-label={`选择模型，当前为 ${model.name}`}
+                className="grid size-12 cursor-pointer list-none place-items-center rounded-2xl border border-primary/35 bg-primary/5 text-primary"
+              >
+                <Sparkles className="size-5" />
               </summary>
-              <div className="absolute bottom-12 left-0 z-40 max-h-80 w-72 overflow-auto rounded-2xl border border-border bg-card p-2 shadow-2xl">
+              <div className="absolute bottom-14 left-0 z-40 max-h-80 w-72 overflow-auto rounded-2xl border border-border bg-card p-2 shadow-2xl">
                 {models.map((item) => (
                   <button
                     key={item.id}
@@ -461,28 +472,40 @@ export default function ImagePlazaStudioPage() {
                 ))}
               </div>
             </details>
-            <span className="ml-auto shrink-0 text-[11px] font-bold text-primary">
-              {quote.data ? `${quote.data.credits} 星尘` : quote.isPending ? '报价中' : '--'}
+            <span className="ml-auto shrink-0 text-sm font-black text-muted-foreground">
+              {quote.data ? `✦ ${quote.data.credits}` : quote.isPending ? '报价中' : '✦ --'}
             </span>
             <button
               type="button"
               onClick={() => void generate()}
               disabled={!prompt.trim() || submit.isPending || quote.isPending}
               aria-label="发送生成"
-              className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground disabled:opacity-40"
+              className="grid size-14 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_8px_24px_hsl(var(--primary)/0.22)] disabled:opacity-40"
             >
               {submit.isPending ? (
-                <LoaderCircle className="size-4 animate-spin" />
+                <LoaderCircle className="size-5 animate-spin" />
               ) : (
-                <Send className="size-4" />
+                <ArrowUp className="size-6" />
               )}
             </button>
           </div>
-          <div className="mt-1 px-2 text-right text-[10px] text-muted-foreground">
-            {prompt.length}/{IMAGE_PLAZA_PROMPT_MAX_CHARS}
-          </div>
         </div>
       </div>
+
+      <StudioSettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        model={model}
+        aspectRatio={aspectRatio}
+        onAspectRatioChange={setAspectRatio}
+        resolution={resolution}
+        onResolutionChange={setResolution}
+        reasoning={reasoning}
+        onReasoningChange={setReasoning}
+        autoOptimize={autoOptimize}
+        onAutoOptimizeChange={setAutoOptimize}
+        onReset={resetSettings}
+      />
 
       {shareTipOpen && shareArtifact ? (
         <div
@@ -586,82 +609,18 @@ function AttemptCard(props: {
       </div>
     );
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-5 sm:grid-cols-2">
       {attempt.artifacts.map((artifact) => (
-        <div
+        <StudioArtifactCard
           key={artifact.id}
-          className="overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border"
-        >
-          <img src={artifact.image_url} alt="生成结果" className="h-auto w-full object-cover" />
-          <div className="grid grid-cols-4 p-2">
-            <IconButton label="刷新" onClick={() => props.onRefresh(props.prompt)}>
-              <RefreshCcw />
-            </IconButton>
-            <IconButton
-              label="复制提示词"
-              onClick={() => {
-                void navigator.clipboard.writeText(props.prompt);
-                props.onNotice('已复制');
-              }}
-            >
-              <Copy />
-            </IconButton>
-            <IconButton
-              label="下载"
-              onClick={() => window.open(artifact.image_url, '_blank', 'noopener,noreferrer')}
-            >
-              <Download />
-            </IconButton>
-            <div className="relative">
-              <IconButton label="分享" onClick={() => props.onShare(artifact)}>
-                <Share2 />
-              </IconButton>
-              {props.rewardBadge ? (
-                <span className="absolute -right-1 -top-2 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-black text-primary-foreground">
-                  返{props.rewardBadge}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
+          artifact={artifact}
+          prompt={props.prompt}
+          rewardBadge={props.rewardBadge}
+          onRefresh={props.onRefresh}
+          onShare={props.onShare}
+          onNotice={props.onNotice}
+        />
       ))}
-    </div>
-  );
-}
-
-function IconButton(props: { label: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-label={props.label}
-      onClick={props.onClick}
-      className="mx-auto grid size-10 place-items-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground [&_svg]:size-4"
-    >
-      {props.children}
-    </button>
-  );
-}
-function SettingSelect<T extends string>(props: {
-  label: string;
-  value: T;
-  values: readonly T[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="mb-3 last:mb-0">
-      <p className="mb-2 text-[11px] font-bold text-muted-foreground">{props.label}</p>
-      <div className="flex flex-wrap gap-2">
-        {props.values.map((value) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => props.onChange(value)}
-            className={`rounded-full px-3 py-1.5 text-xs font-bold ${props.value === value ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground'}`}
-          >
-            {value}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

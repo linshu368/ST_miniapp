@@ -22,6 +22,7 @@
 | T11 | Done    | 初始数据 schema/契约/同款兼容层    | shared/backend/frontend/database       | T10、单独授权 | 三份 migration 已在 test 验证       |
 | T12 | Done    | 离线 importer 与来源/内容门禁      | backend tooling/Storage/导入清单       | T11、门禁关闭 | 8,227 行 dry-run；无数据写入        |
 | T13 | Doing   | test canary 与分批初始数据导入     | test DB/Storage/人工回归               | T12           | 8,032 已导入；22 个 404 隔离        |
+| T14 | Done    | latest badge 容错与创作 UI 对齐    | backend characters + frontend create   | T4–T5         | 四张参考图 + API 降级验证           |
 
 ## Execution Log
 
@@ -66,3 +67,4 @@
 - 2026-10-13：8,054 条候选中 8,032 条完成私有 Storage、artifact/work 原子导入。10 条 20.49–45.11 MiB 原图通过新 `20261013_image_plaza_seed_large_assets.sql` 将 seed 专用上限前向扩到 50 MiB 后补齐；普通用户图片仍为 20 MiB。22 条经两轮下载和 Civitai 官方 imageId API 复核均不可用，已记录隔离 ID。
 - 2026-10-13：最终核验为 8,032 work / 8,032 artifact / 8,032 Storage 对象且来源 ID 全部唯一；prompt 7–2,000 字，六模型数据齐全。默认 feed、详情 DTO、短期签名 URL和来源字段脱敏通过；修复 Postgres offset timestamp 到标准 ISO `Z` 的 DTO 映射。Backend 607 项测试、typecheck 与专项 lint 通过。T13 仅余真实 UI“用同款”提交/provider canary 和 22 个源资源替换输入。
 - 2026-10-13：`20261013_image_plaza_seed_large_assets.sql` 手工重放曾因函数参数文本精确匹配及仅接受 20 MiB 旧定义而抛出 P0001，事务整体回滚。迁移已改为通过完整签名解析 OID，并同时接受“待从 20 MiB 升级”和“已经是 50 MiB”状态；在明确 test 项目重放通过，artifact CHECK、Storage bucket 与 seed RPC 三项 50 MiB 自检均为 true。
+- 2026-10-14：T14 完成。`latest-badge` 由 Prisma aggregate 改为按 `last_listed_at DESC` 取首行，异常记录 `{ err }` 后关闭非关键 New 角标，避免拖垮首页；确认 test 库字段存在且 API smoke 返回 200。广场卡片、Studio 产物框/四操作按钮/返利角标、输入工具区和设置 Dialog 按四张参考图收口，推理与自动优化均进入真实提交状态。Frontend 37 文件/242 测试、typecheck、lint、production build，Backend 74 文件/607 测试与 typecheck 均通过；自动浏览器实例不可用，Telegram WebView/移动端像素级确认仍归 T9 人工验收。
