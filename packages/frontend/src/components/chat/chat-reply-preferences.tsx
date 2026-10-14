@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-import { Switch } from '@/components/ui/switch';
 import {
   useGenerationConfigQuery,
   usePatchGenerationConfigMutation,
@@ -166,7 +165,7 @@ export function ChatReplyPreferences({
           <p className="mb-2 text-[10px] text-muted-foreground">
             仅影响后续回复；本次回复仍可临时展开或收起。
           </p>
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="flex min-w-0 items-stretch gap-1" aria-label="回复模块显示偏好">
             {SLOT_CONFIG.map((slot) => {
               const enabled = config ? isInstructionSlotEnabled(config[slot.preference]) : false;
               const defaultOpen = detailsDefaultOpen[slot.key];
@@ -174,19 +173,29 @@ export function ChatReplyPreferences({
                 <div
                   key={slot.key}
                   className={cn(
-                    'flex min-h-14 overflow-hidden rounded-2xl border bg-secondary/35 transition-colors',
-                    enabled ? 'border-primary/30 bg-primary/10' : 'border-border'
+                    'flex min-w-0 flex-1 overflow-hidden rounded-lg border text-[11px] transition-colors',
+                    enabled ? 'border-primary/35 bg-primary/10' : 'border-border bg-secondary/35'
                   )}
                 >
-                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 text-[12px] text-muted-foreground">
-                    <Switch
-                      checked={enabled}
-                      disabled={!config || patch.isPending}
-                      onCheckedChange={(checked) => patch.mutate({ [slot.preference]: checked })}
-                      aria-label={`开启${slot.label}`}
+                  <button
+                    type="button"
+                    aria-pressed={enabled}
+                    disabled={!config || patch.isPending}
+                    onClick={() => patch.mutate({ [slot.preference]: !enabled })}
+                    className={cn(
+                      'flex min-w-0 flex-1 items-center justify-center gap-1 px-1.5 py-2 text-muted-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50',
+                      enabled && 'text-primary'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'size-1.5 shrink-0 rounded-full bg-muted-foreground/50',
+                        enabled && 'bg-primary'
+                      )}
+                      aria-hidden
                     />
-                    <span className={enabled ? 'text-primary' : undefined}>{slot.label}</span>
-                  </label>
+                    <span className="truncate">{slot.label}</span>
+                  </button>
                   <button
                     type="button"
                     disabled={!enabled}
@@ -197,7 +206,7 @@ export function ChatReplyPreferences({
                         [slot.key]: !defaultOpen,
                       })
                     }
-                    className="border-l border-border px-3 text-[11px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35"
+                    className="shrink-0 border-l border-border px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35"
                   >
                     {defaultOpen ? '展开' : '收起'}
                   </button>
@@ -206,9 +215,9 @@ export function ChatReplyPreferences({
             })}
           </div>
 
-          <label className="mt-2.5 flex items-center gap-2">
-            <span className="shrink-0 text-[11px] font-semibold text-foreground">我的偏好</span>
-            <input
+          <label className="mt-3 block">
+            <span className="mb-1.5 block text-[11px] font-semibold text-foreground">我的偏好</span>
+            <textarea
               value={instructions}
               onChange={(event) => {
                 setInstructionsDirty(true);
@@ -218,7 +227,8 @@ export function ChatReplyPreferences({
               maxLength={MAX_CUSTOM_INSTRUCTIONS}
               disabled={!config || patch.isPending}
               placeholder="例如：保持克制，少用修辞"
-              className="min-w-0 flex-1 rounded-lg border border-transparent bg-secondary/60 px-2.5 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:outline-none disabled:opacity-50"
+              rows={3}
+              className="block min-h-[76px] w-full resize-none rounded-xl border border-transparent bg-secondary/60 px-3 py-2 text-[13px] leading-5 text-foreground placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:outline-none disabled:opacity-50"
             />
           </label>
           {patch.isError ? (
