@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -64,6 +65,8 @@ export function useImagePlazaFeedQuery(search: string, tag: string) {
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
     staleTime: 60_000,
+    // 切 tag/搜索时保留上一页结构，避免瀑布流整页卸载再重排闪动
+    placeholderData: keepPreviousData,
   });
 }
 

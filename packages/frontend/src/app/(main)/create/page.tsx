@@ -166,10 +166,8 @@ export default function CreatePage() {
 
       <section className="px-3 py-4">
         {feed.isLoading ? (
-          <div className="flex min-h-[45vh] items-center justify-center text-muted-foreground">
-            <LoaderCircle className="size-6 animate-spin" />
-          </div>
-        ) : feed.isError ? (
+          <FeedSkeleton />
+        ) : feed.isError && items.length === 0 ? (
           <EmptyState
             icon={<ImageIcon />}
             title="广场暂时走丢了"
@@ -189,7 +187,11 @@ export default function CreatePage() {
             }}
           />
         ) : (
-          <div className="columns-2 gap-3 sm:columns-3 lg:columns-4">
+          <div
+            className={`columns-2 gap-3 sm:columns-3 lg:columns-4 ${
+              feed.isPlaceholderData && feed.isFetching ? 'opacity-70 transition-opacity' : ''
+            }`}
+          >
             {items.map((work, index) => (
               <PlazaCard
                 key={work.id}
@@ -209,7 +211,7 @@ export default function CreatePage() {
         >
           {feed.isFetchingNextPage ? (
             <LoaderCircle className="size-5 animate-spin" />
-          ) : !feed.hasNextPage && items.length > 0 ? (
+          ) : !feed.hasNextPage && items.length > 0 && !feed.isPlaceholderData ? (
             '已经到底啦'
           ) : null}
         </div>
@@ -232,6 +234,19 @@ function PlazaCard(props: {
   onUseSame: () => void;
 }) {
   const like = useSetImagePlazaLikeMutation(props.work.id);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const aspectRatio =
+    props.work.width > 0 && props.work.height > 0
+      ? `${props.work.width} / ${props.work.height}`
+      : '2 / 3';
+
+  useEffect(() => {
+    setImageLoaded(false);
+    const node = imageRef.current;
+    if (node?.complete && node.naturalWidth > 0) setImageLoaded(true);
+  }, [props.work.image_url]);
+
   return (
     <article className="group relative mb-3 break-inside-avoid overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70">
       <Link
@@ -242,16 +257,25 @@ function PlazaCard(props: {
         onTouchStart={props.onPrefetch}
         className="block"
       >
-        <img
-          src={props.work.image_url}
-          alt={props.work.title}
-          width={props.work.width}
-          height={props.work.height}
-          loading={props.priority ? 'eager' : 'lazy'}
-          fetchPriority={props.priority ? 'high' : 'auto'}
-          decoding="async"
-          className="h-auto w-full object-cover transition duration-500 group-hover:scale-[1.02]"
-        />
+        <div className="relative w-full overflow-hidden bg-muted/50" style={{ aspectRatio }}>
+          {!imageLoaded ? (
+            <div aria-hidden className="absolute inset-0 animate-pulse bg-muted" />
+          ) : null}
+          <img
+            ref={imageRef}
+            src={props.work.image_url}
+            alt={props.work.title}
+            width={props.work.width}
+            height={props.work.height}
+            loading={props.priority ? 'eager' : 'lazy'}
+            fetchPriority={props.priority ? 'high' : 'auto'}
+            decoding="async"
+            onLoad={() => setImageLoaded(true)}
+            className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02] ${
+              imageLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+        </div>
       </Link>
       <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/90 via-black/35 to-transparent p-2 pt-16 text-white sm:p-3 sm:pt-16">
         <button
@@ -282,6 +306,22 @@ function PlazaCard(props: {
         </button>
       </div>
     </article>
+  );
+}
+
+function FeedSkeleton() {
+  const ratios = ['2 / 3', '3 / 4', '1 / 1', '3 / 4', '2 / 3', '4 / 5', '2 / 3', '3 / 4'];
+  return (
+    <div className="columns-2 gap-3 sm:columns-3 lg:columns-4" aria-busy="true" aria-label="加载中">
+      {ratios.map((ratio, index) => (
+        <div
+          key={index}
+          className="mb-3 break-inside-avoid overflow-hidden rounded-[1.5rem] bg-muted/50 ring-1 ring-border/50"
+        >
+          <div className="w-full animate-pulse bg-muted" style={{ aspectRatio: ratio }} />
+        </div>
+      ))}
+    </div>
   );
 }
 
