@@ -17,6 +17,7 @@
     "vip:send-expiry-reminders": "tsx src/scripts/send-vip-expiry-reminders.ts",
     "image-plaza:seed": "tsx src/scripts/import-image-plaza-seed.ts",
     "image-plaza:translate-seed-prompts": "tsx src/scripts/translate-image-plaza-seed-prompts.ts",
+    "image-plaza:retry-failed-prompts-venice": "tsx src/scripts/translate-image-plaza-seed-prompts.ts --retry-failed --venice-model qwen-3-8-27b",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:integration": "vitest run src/infrastructure/repositories/conversations.integration.test.ts",
     "typecheck": "tsc --noEmit"

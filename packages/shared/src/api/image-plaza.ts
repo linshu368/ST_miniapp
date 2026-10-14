@@ -158,6 +158,8 @@ export const ImagePlazaSnapshotSchema = z.object({
   prompt_zh: z.string().max(IMAGE_PLAZA_PROMPT_MAX_CHARS).optional(),
   /** 批量翻译永久失败（如上游拒答）；待译队列跳过，详情回退英文。 */
   prompt_zh_failed: z.boolean().optional(),
+  /** DeepSeek 失败后 Venice/Gemini 重试仍失败；失败重试队列跳过。 */
+  prompt_zh_venice_retry_failed: z.boolean().optional(),
   model_id: z.string(),
   aspect_ratio: ImagePlazaAspectRatioSchema,
   resolution: z.enum(['1K', '2K', 'fixed']),
