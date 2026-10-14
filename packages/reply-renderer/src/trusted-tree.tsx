@@ -93,7 +93,10 @@ function renderResolved(node: ResolvedNode, path: string, context: TreeContext):
 
 function TrustedDetails(input: { node: ResolvedElement; path: string; context: TreeContext }) {
   const stateKey = `${input.context.messageKey}:${input.context.ruleId}:${input.context.start}:${input.context.end}:${input.path}`;
-  const configuredDefaultOpen = input.context.detailsDefaultOpen?.[input.context.ruleId];
+  const preferenceKey = detailsPreferenceKey(input.context.ruleId);
+  const configuredDefaultOpen = preferenceKey
+    ? input.context.detailsDefaultOpen?.[preferenceKey]
+    : undefined;
   const defaultOpen =
     typeof configuredDefaultOpen === 'boolean'
       ? configuredDefaultOpen
@@ -145,6 +148,27 @@ function TrustedDetails(input: { node: ResolvedElement; path: string; context: T
       return renderResolved(child, childPath, input.context);
     })
   );
+}
+
+/**
+ * The fixed rich-reply protocol emits internal slot ids, while legacy and
+ * Admin-managed artifacts retain the human-facing ids. Display preferences are
+ * intentionally keyed by the stable user-facing module rather than either id.
+ */
+function detailsPreferenceKey(ruleId: string): 'status' | 'memory' | 'choice' | null {
+  switch (ruleId) {
+    case 'rich-reply-status':
+    case 'status':
+      return 'status';
+    case 'rich-reply-memory':
+    case 'memory':
+      return 'memory';
+    case 'rich-reply-choices':
+    case 'choice':
+      return 'choice';
+    default:
+      return null;
+  }
 }
 
 function attributesOf(node: ResolvedElement): Record<string, unknown> {
