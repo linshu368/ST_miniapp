@@ -303,14 +303,15 @@ describe('rich reply protocol', () => {
 
   it('recovers missing outer close tags only at deterministic module boundaries', () => {
     const artifact = compileOk([]);
+    const text = [
+      '剧情正文。',
+      '[choices][choice]靠近她[/choice][choice]保持距离[/choice][choice]换个话题[/choice]',
+      '[status]<details><summary>当前状态</summary>```markdown\n地点：操场\n```</details>',
+      '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：3/7\n```</details>',
+    ].join('\n');
     const applied = applyTextPostprocess({
       artifact,
-      text: [
-        '剧情正文。',
-        '[choices][choice]靠近她[/choice][choice]保持距离[/choice][choice]换个话题[/choice]',
-        '[status]<details><summary>当前状态</summary>```markdown\n地点：操场\n```</details>',
-        '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：3/7\n```</details>',
-      ].join('\n'),
+      text,
     });
     expect(applied.status).toBe('applied');
     if (applied.status !== 'applied') return;
@@ -328,6 +329,8 @@ describe('rich reply protocol', () => {
     ]);
     expect(slots[1]?.match_text).not.toContain('[memory]');
     expect(slots[0]?.match_text).not.toContain('[status]');
+    expect(slots[1]?.end).toBeLessThan(slots[2]?.start ?? 0);
+    expect(text.slice(slots[1]?.end, slots[2]?.start)).toBe('\n');
     expect(
       applied.segments
         .filter((segment) => segment.type === 'text')

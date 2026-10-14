@@ -204,8 +204,12 @@ function findModuleBoundary(
   }
 
   if (boundaryStart >= 0) {
-    const body = value.slice(contentStart, boundaryStart);
-    return isRecoverableBody(body) ? { endStart: boundaryStart, end: boundaryStart } : null;
+    // Keep the original inter-module whitespace outside the recovered slot.
+    // Block slots rely on that Markdown separation to mount independently, so
+    // consuming it here would also make the following valid module render inert.
+    const recoveredEnd = trailingWhitespaceStart(value, contentStart, boundaryStart);
+    const body = value.slice(contentStart, recoveredEnd);
+    return isRecoverableBody(body) ? { endStart: recoveredEnd, end: recoveredEnd } : null;
   }
 
   // memory is the final protocol module, so EOF is a deterministic boundary.
@@ -214,6 +218,12 @@ function findModuleBoundary(
     return isRecoverableBody(body) ? { endStart: value.length, end: value.length } : null;
   }
   return null;
+}
+
+function trailingWhitespaceStart(value: string, minimum: number, end: number): number {
+  let cursor = end;
+  while (cursor > minimum && /\s/.test(value[cursor - 1] ?? '')) cursor -= 1;
+  return cursor;
 }
 
 function nextModuleStart(value: string, tag: RichReplyModule, from: number): number {
