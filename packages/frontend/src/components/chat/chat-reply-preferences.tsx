@@ -39,8 +39,13 @@ export function ChatReplyPreferences({
   onDetailsDefaultOpenChange,
 }: ChatReplyPreferencesProps) {
   const query = useGenerationConfigQuery();
-  const patch = usePatchGenerationConfigMutation();
+  const patch = usePatchGenerationConfigMutation({
+    shouldOptimisticallyUpdate: (request) => SLOT_CONFIG.some((slot) => slot.preference in request),
+  });
   const config = query.data?.config;
+  const enabledSlotLabels = SLOT_CONFIG.filter((slot) =>
+    isInstructionSlotEnabled(config?.[slot.preference])
+  ).map((slot) => slot.label);
   const [open, setOpen] = useState(false);
   const [guideVisible, setGuideVisible] = useState(false);
   const [guideFading, setGuideFading] = useState(false);
@@ -148,7 +153,7 @@ export function ChatReplyPreferences({
         ) : null}
         {!guideVisible ? (
           <span className="justify-self-end truncate text-[10px] text-muted-foreground">
-            状态栏 · 记忆栏 · 可选项
+            {enabledSlotLabels.join(' · ')}
           </span>
         ) : null}
         <ChevronDown
