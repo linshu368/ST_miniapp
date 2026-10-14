@@ -37,12 +37,14 @@ export * from './api/telemetry';
 export * from './api/text-postprocess';
 export {
   applyTextPostprocess,
+  diagnoseRichReplyProtocol,
   prepareSlotTransport,
   resolveTransportedTextNodes,
   resolveTrustedTree,
   serializeScopedCss,
   validateCompiledArtifact,
 } from './text-postprocess/runtime';
+export type { RichReplyDiagnosis, RichReplyResult } from './text-postprocess/runtime';
 export {
   LEGACY_RICH_REPLY_CSS,
   RICH_REPLY_RULE_STYLES,

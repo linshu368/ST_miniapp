@@ -13,6 +13,14 @@ const LOOSE_PANEL =
   /<details(?:\s[^>]*)?>\s*<summary(?:\s[^>]*)?>\s*([\s\S]*?)\s*<\/summary>\s*([\s\S]*?)\s*<\/details>/gi;
 const CHOICE = /\[choice\]\s*([\s\S]*?)\s*\[\/choice\]/g;
 const DIALOGUE = /“([^”\r\n]{1,500})”/g;
+type RichReplyModule = 'choices' | 'status' | 'memory';
+
+export type RichReplyResult = 'exact' | 'recovered' | 'failed';
+
+export interface RichReplyDiagnosis {
+  rich_reply_result: RichReplyResult;
+  rich_reply_issues: string[];
+}
 
 /**
  * Parses the fixed v1 model protocol into the same trusted-slot transport used
@@ -47,9 +55,71 @@ export function applyRichReplyProtocol(source: TextPostprocessSegment[]): {
   return { segments: dialogue.segments, matches: matches + dialogue.matches };
 }
 
+/**
+ * Produces the small, persistence-safe protocol diagnostic used to select the
+ * next turn's prompt. It deliberately records neither source text nor parsed
+ * slot contents. A recovered envelope is acceptable only when the same
+ * deterministic parser produced every enabled module.
+ */
+export function diagnoseRichReplyProtocol(
+  text: string,
+  enabled: Readonly<Record<RichReplyModule, boolean>>,
+  protocolEnabled = true
+): RichReplyDiagnosis {
+  const expected = (Object.keys(enabled) as RichReplyModule[]).filter((tag) => enabled[tag]);
+  if (expected.length === 0) return { rich_reply_result: 'exact', rich_reply_issues: [] };
+  if (!protocolEnabled)
+    return { rich_reply_result: 'failed', rich_reply_issues: ['RICH_REPLY_PROTOCOL_DISABLED'] };
+
+  const applied = applyRichReplyProtocol([{ type: 'text', text, start: 0, end: text.length }]);
+  const slots = new Map<string, TextPostprocessSlotSegment>();
+  for (const segment of applied.segments) {
+    if (segment.type === 'slot') slots.set(segment.rule_id, segment);
+  }
+  const issues: string[] = [];
+  let recovered = false;
+  for (const tag of expected) {
+    const slot = slots.get(`rich-reply-${tag}`);
+    if (!slot || (tag === 'choices' && slot.choices.length !== 3)) {
+      issues.push(`INVALID_${tag.toUpperCase()}_MODULE`);
+      continue;
+    }
+    const raw = classifyRawEnvelope(text, tag);
+    if (raw === 'missing') {
+      issues.push(`MISSING_${tag.toUpperCase()}_MODULE`);
+      continue;
+    }
+    if (raw !== 'exact') {
+      recovered = true;
+      issues.push(raw);
+    }
+  }
+  if (issues.some((issue) => issue.startsWith('INVALID_') || issue.endsWith('_MODULE')))
+    return { rich_reply_result: 'failed', rich_reply_issues: issues };
+  return { rich_reply_result: recovered ? 'recovered' : 'exact', rich_reply_issues: issues };
+}
+
+function classifyRawEnvelope(text: string, tag: RichReplyModule): 'exact' | 'missing' | string {
+  const open = `[${tag}]`;
+  const start = text.indexOf(open);
+  if (start < 0) return 'missing';
+  const contentStart = start + open.length;
+  const close = `[/${tag}]`;
+  const explicitEnd = text.indexOf(close, contentStart);
+  const boundary = nextModuleStart(text, tag, contentStart);
+  if (explicitEnd >= 0 && (boundary < 0 || explicitEnd < boundary)) return 'exact';
+  if (boundary >= 0) {
+    const next = (['choices', 'status', 'memory'] as RichReplyModule[]).find(
+      (candidate) => text.indexOf(`[${candidate}]`, contentStart) === boundary
+    );
+    return `MISSING_${tag.toUpperCase()}_CLOSE_BEFORE_${(next ?? 'MODULE').toUpperCase()}`;
+  }
+  return `MISSING_${tag.toUpperCase()}_CLOSE_AT_EOF`;
+}
+
 function replaceModules(
   segments: TextPostprocessSegment[],
-  tag: 'choices' | 'status' | 'memory',
+  tag: RichReplyModule,
   ruleId: string,
   build: (
     body: string,
@@ -61,7 +131,6 @@ function replaceModules(
 ): { segments: TextPostprocessSegment[]; matches: number } {
   if (allowance <= 0) return { segments, matches: 0 };
   const open = `[${tag}]`;
-  const close = `[/${tag}]`;
   const next: TextPostprocessSegment[] = [];
   let matches = 0;
   for (const segment of segments) {
@@ -74,9 +143,13 @@ function replaceModules(
     while (scan < segment.text.length && matches < allowance) {
       const start = segment.text.indexOf(open, scan);
       if (start < 0) break;
-      const endStart = segment.text.indexOf(close, start + open.length);
-      if (endStart < 0) break;
-      const end = endStart + close.length;
+      const boundary = findModuleBoundary(segment.text, tag, start);
+      if (!boundary) {
+        // No close tag and no unambiguous next-module boundary means this is
+        // ordinary text as far as the protocol parser is concerned.
+        break;
+      }
+      const { endStart, end } = boundary;
       const match = segment.text.slice(start, end);
       const slot = build(
         segment.text.slice(start + open.length, endStart),
@@ -101,6 +174,56 @@ function replaceModules(
       next.push(sliceText(segment, cursor, segment.text.length));
   }
   return { segments: next, matches };
+}
+
+/**
+ * Recover only a missing *outer* close tag when the protocol itself supplies
+ * one deterministic boundary. This intentionally does not guess from prose,
+ * HTML, or a later closing tag: an ambiguous reply remains ordinary Markdown.
+ */
+function findModuleBoundary(
+  value: string,
+  tag: RichReplyModule,
+  start: number
+): { endStart: number; end: number } | null {
+  const contentStart = start + tag.length + 2;
+  const close = `[/${tag}]`;
+  const explicitEndStart = value.indexOf(close, contentStart);
+  const boundaryStart = nextModuleStart(value, tag, contentStart);
+
+  if (explicitEndStart >= 0 && (boundaryStart < 0 || explicitEndStart < boundaryStart)) {
+    return { endStart: explicitEndStart, end: explicitEndStart + close.length };
+  }
+
+  if (boundaryStart >= 0) {
+    const body = value.slice(contentStart, boundaryStart);
+    return isRecoverableBody(body) ? { endStart: boundaryStart, end: boundaryStart } : null;
+  }
+
+  // memory is the final protocol module, so EOF is a deterministic boundary.
+  if (tag === 'memory' && explicitEndStart < 0) {
+    const body = value.slice(contentStart);
+    return isRecoverableBody(body) ? { endStart: value.length, end: value.length } : null;
+  }
+  return null;
+}
+
+function nextModuleStart(value: string, tag: RichReplyModule, from: number): number {
+  const candidates =
+    tag === 'choices' ? ['[status]', '[memory]'] : tag === 'status' ? ['[memory]'] : [];
+  let next = -1;
+  for (const marker of candidates) {
+    const index = value.indexOf(marker, from);
+    if (index >= 0 && (next < 0 || index < next)) next = index;
+  }
+  return next;
+}
+
+function isRecoverableBody(body: string): boolean {
+  if (body.trim().length === 0) return false;
+  // A repeated outer envelope or a stray close makes the intended boundary
+  // uncertain. [choice] remains allowed inside the choices envelope.
+  return !/\[\/?(?:choices|status|memory)\]/.test(body);
 }
 
 function choicesSlot(

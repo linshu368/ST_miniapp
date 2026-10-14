@@ -24,6 +24,7 @@ import {
 } from '../api/text-postprocess';
 import { RICH_REPLY_RULE_STYLES } from '../text-postprocess/rich-reply-styles';
 import { applyTextPostprocess } from '../text-postprocess/apply';
+import { diagnoseRichReplyProtocol } from '../text-postprocess/rich-reply';
 import { compileTextPostprocessSource } from '../text-postprocess/compile';
 import { resolveTrustedTree } from '../text-postprocess/resolve-tree';
 import {
@@ -161,6 +162,33 @@ describe('capture compilation', () => {
 });
 
 describe('rich reply protocol', () => {
+  it('classifies exact, deterministic recovery, and unrecoverable protocols without retaining reply text', () => {
+    const enabled = { choices: true, status: true, memory: true };
+    const exact = diagnoseRichReplyProtocol(
+      '[choices][choice]一[/choice][choice]二[/choice][choice]三[/choice][/choices][status]状态[/status][memory]记忆[/memory]',
+      enabled
+    );
+    expect(exact).toEqual({ rich_reply_result: 'exact', rich_reply_issues: [] });
+
+    const recovered = diagnoseRichReplyProtocol(
+      '[choices][choice]一[/choice][choice]二[/choice][choice]三[/choice][status]状态[/status][memory]记忆',
+      enabled
+    );
+    expect(recovered).toEqual({
+      rich_reply_result: 'recovered',
+      rich_reply_issues: ['MISSING_CHOICES_CLOSE_BEFORE_STATUS', 'MISSING_MEMORY_CLOSE_AT_EOF'],
+    });
+
+    expect(diagnoseRichReplyProtocol('[status]无边界', enabled)).toMatchObject({
+      rich_reply_result: 'failed',
+      rich_reply_issues: expect.arrayContaining(['INVALID_CHOICES_MODULE']),
+    });
+    expect(diagnoseRichReplyProtocol('', enabled, false)).toEqual({
+      rich_reply_result: 'failed',
+      rich_reply_issues: ['RICH_REPLY_PROTOCOL_DISABLED'],
+    });
+  });
+
   it('turns complete fixed modules into trusted slots and safely contains malformed modules', () => {
     const artifact = compileOk([]);
     const complete = [
@@ -228,6 +256,56 @@ describe('rich reply protocol', () => {
     expect(rendered).not.toContain('<details>');
     expect(rendered).toContain('好感度：60/100');
     expect(rendered).toContain('第一轮事实');
+  });
+
+  it('recovers missing outer close tags only at deterministic module boundaries', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: [
+        '剧情正文。',
+        '[choices][choice]靠近她[/choice][choice]保持距离[/choice][choice]换个话题[/choice]',
+        '[status]<details><summary>当前状态</summary>```markdown\n地点：操场\n```</details>',
+        '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：3/7\n```</details>',
+      ].join('\n'),
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+
+    const slots = applied.segments.filter((segment) => segment.type === 'slot');
+    expect(slots.map((slot) => slot.rule_id)).toEqual([
+      'rich-reply-choices',
+      'rich-reply-status',
+      'rich-reply-memory',
+    ]);
+    expect(slots[0]?.choices).toEqual([
+      { text: '靠近她', sendable: true },
+      { text: '保持距离', sendable: true },
+      { text: '换个话题', sendable: true },
+    ]);
+    expect(slots[1]?.match_text).not.toContain('[memory]');
+    expect(slots[0]?.match_text).not.toContain('[status]');
+    expect(
+      applied.segments
+        .filter((segment) => segment.type === 'text')
+        .map((segment) => segment.text)
+        .join('')
+    ).not.toMatch(/\[(?:\/?choices|\/?status|\/?memory)\]/);
+  });
+
+  it('does not infer a boundary for repeated or conflicting outer envelopes', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: '[status]第一段[status]第二段[memory]工作记忆',
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    expect(
+      applied.segments.some(
+        (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-status'
+      )
+    ).toBe(false);
   });
 });
 
