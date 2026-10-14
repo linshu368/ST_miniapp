@@ -9,13 +9,17 @@ import {
 const MODULE_LIMIT = 32;
 const PANEL =
   /<details>\s*<summary>\s*([^<>\r\n]{1,40})\s*<\/summary>\s*```markdown\s*\r?\n?([\s\S]*?)\r?\n?```\s*<\/details>/g;
+const LOOSE_PANEL =
+  /<details(?:\s[^>]*)?>\s*<summary(?:\s[^>]*)?>\s*([\s\S]*?)\s*<\/summary>\s*([\s\S]*?)\s*<\/details>/gi;
 const CHOICE = /\[choice\]\s*([\s\S]*?)\s*\[\/choice\]/g;
 const DIALOGUE = /“([^”\r\n]{1,500})”/g;
 
 /**
  * Parses the fixed v1 model protocol into the same trusted-slot transport used
  * by custom rules.  This keeps all rendering inside the existing trusted-tree
- * boundary while ensuring that malformed model output remains ordinary text.
+ * boundary. Complete protocol envelopes always become trusted slots: exact
+ * grammar gets the rich structure, while format drift is rendered as inert
+ * text so control markers never leak into the conversation.
  */
 export function applyRichReplyProtocol(source: TextPostprocessSegment[]): {
   segments: TextPostprocessSegment[];
@@ -112,7 +116,15 @@ function choicesSlot(
       (choice) => choice.length === 0 || choice.length > TEXT_POSTPROCESS_LIMITS.maxOptionUnits
     )
   ) {
-    return null;
+    return plainModuleSlot(
+      start,
+      end,
+      match,
+      '选项内容',
+      '格式异常，已安全展示',
+      'rp-unit--choices',
+      protocolText(body).slice(0, TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits) || '暂无'
+    );
   }
   const result = slot(start, end, match, [
     element(
@@ -204,8 +216,7 @@ function panelModuleSlot(
   className: string,
   bodyClassName?: string
 ): TextPostprocessSlotSegment | null {
-  const panels = capturePanels(body);
-  if (!panels) return null;
+  const panels = capturePanels(body, heading);
   return slot(start, end, match, [
     element(
       'details',
@@ -298,21 +309,106 @@ function captureChoiceBodies(body: string): string[] | null {
   return choices;
 }
 
-function capturePanels(body: string): Array<{ title: string; content: string }> | null {
+function capturePanels(
+  body: string,
+  fallbackTitle: string
+): Array<{ title: string; content: string }> {
   const panels: Array<{ title: string; content: string }> = [];
   let cursor = 0;
   PANEL.lastIndex = 0;
   let found: RegExpExecArray | null;
   while ((found = PANEL.exec(body))) {
-    if (body.slice(cursor, found.index).trim().length > 0) return null;
+    if (body.slice(cursor, found.index).trim().length > 0)
+      return captureLoosePanels(body, fallbackTitle);
     const title = found[1]?.trim() ?? '';
     const content = found[2]?.trim() ?? '';
     if (!title || !content || content.length > TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits)
-      return null;
+      return captureLoosePanels(body, fallbackTitle);
     panels.push({ title, content });
     cursor = found.index + found[0].length;
   }
-  return panels.length > 0 && body.slice(cursor).trim().length === 0 ? panels : null;
+  return panels.length > 0 && body.slice(cursor).trim().length === 0
+    ? panels
+    : captureLoosePanels(body, fallbackTitle);
+}
+
+function captureLoosePanels(
+  body: string,
+  fallbackTitle: string
+): Array<{ title: string; content: string }> {
+  const panels: Array<{ title: string; content: string }> = [];
+  let cursor = 0;
+  LOOSE_PANEL.lastIndex = 0;
+  let found: RegExpExecArray | null;
+  while ((found = LOOSE_PANEL.exec(body))) {
+    if (protocolText(body.slice(cursor, found.index)).length > 0) {
+      return fallbackPanel(body, fallbackTitle);
+    }
+    const title = protocolText(found[1] ?? '').slice(0, 40);
+    const content = protocolText(found[2] ?? '');
+    if (!title || !content || content.length > TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits) {
+      return fallbackPanel(body, fallbackTitle);
+    }
+    panels.push({ title, content });
+    cursor = found.index + found[0].length;
+  }
+  return panels.length > 0 && protocolText(body.slice(cursor)).length === 0
+    ? panels
+    : fallbackPanel(body, fallbackTitle);
+}
+
+function fallbackPanel(body: string, title: string): Array<{ title: string; content: string }> {
+  const content = protocolText(body).slice(0, TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits);
+  return [{ title, content: content || '暂无' }];
+}
+
+function protocolText(value: string): string {
+  return value
+    .replace(/```(?:markdown)?\s*/gi, '')
+    .replace(/<\/?(?:details|summary)(?:\s[^>]*)?>/gi, '')
+    .replace(/\[\/?(?:choices?|status|memory)\]/gi, '')
+    .trim();
+}
+
+function plainModuleSlot(
+  start: number,
+  end: number,
+  match: string,
+  heading: string,
+  subtitle: string,
+  className: string,
+  content: string
+): TextPostprocessSlotSegment {
+  return slot(start, end, match, [
+    element(
+      'details',
+      ['rp-unit', className],
+      [
+        element(
+          'summary',
+          [],
+          [
+            element(
+              'span',
+              ['rp-unit__heading'],
+              [element('strong', [], [text(heading)]), element('small', [], [text(subtitle)])]
+            ),
+            element(
+              'span',
+              ['rp-unit__chevron'],
+              [text('›')],
+              [{ name: 'aria-hidden', value: 'true' }]
+            ),
+          ]
+        ),
+        element(
+          'div',
+          ['rp-unit__body', 'rp-panel-list'],
+          [element('pre', [], [element('code', [], [text(content)])])]
+        ),
+      ]
+    ),
+  ]);
 }
 
 function slot(

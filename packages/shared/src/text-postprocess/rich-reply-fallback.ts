@@ -4,6 +4,7 @@ import type {
   TextPostprocessTextSegment,
   TrustedNode,
 } from '../api/text-postprocess';
+import { TEXT_POSTPROCESS_LIMITS } from '../api/text-postprocess';
 
 /**
  * Compatibility handling for replies emitted by the earlier prompt variants.
@@ -18,8 +19,12 @@ export function applyRichReplyFallback(source: TextPostprocessSegment[]): {
   matches: number;
 } {
   const choices = replaceLegacyChoices(source);
-  const memory = replaceLegacyMemory(choices.segments);
-  return { segments: memory.segments, matches: choices.matches + memory.matches };
+  const status = replaceLegacyPanel(choices.segments, 'status', '人物近况', '这一刻的变化');
+  const memory = replaceLegacyPanel(status.segments, 'memory', '故事记忆', '已记住这段经历');
+  return {
+    segments: memory.segments,
+    matches: choices.matches + status.matches + memory.matches,
+  };
 }
 
 function replaceLegacyChoices(source: TextPostprocessSegment[]): {
@@ -27,10 +32,18 @@ function replaceLegacyChoices(source: TextPostprocessSegment[]): {
   matches: number;
 } {
   const expression =
-    /\[choice\]\s*([^\r\n]+?)\s*\[\/choice\]\s*(?:\r?\n\s*)?\[choice\]\s*([^\r\n]+?)\s*\[\/choice\]\s*(?:\r?\n\s*)?\[choice\]\s*([^\r\n]+?)\s*\[\/choice\]/g;
+    /\[choice\]\s*([\s\S]*?)\s*\[\/choice\]\s*\[choice\]\s*([\s\S]*?)\s*\[\/choice\]\s*\[choice\]\s*([\s\S]*?)\s*\[\/choice\]/g;
   return replaceTextSegments(source, expression, (match, segment) => {
     const choices = [match[1], match[2], match[3]].map((value) => value?.trim() ?? '');
-    if (choices.some((choice) => choice.length === 0)) return null;
+    if (
+      choices.some(
+        (choice) =>
+          choice.length === 0 ||
+          choice.length > TEXT_POSTPROCESS_LIMITS.maxOptionUnits ||
+          /\[(?:\/?choice|\/?choices|\/?status|\/?memory)\]/i.test(choice)
+      )
+    )
+      return null;
     return slot(
       'choice',
       segment.start + match.index,
@@ -90,23 +103,28 @@ function replaceLegacyChoices(source: TextPostprocessSegment[]): {
   });
 }
 
-function replaceLegacyMemory(source: TextPostprocessSegment[]): {
+function replaceLegacyPanel(
+  source: TextPostprocessSegment[],
+  tag: 'status' | 'memory',
+  heading: string,
+  subtitle: string
+): {
   segments: TextPostprocessSegment[];
   matches: number;
 } {
-  const expression = /\[memory\]\s*([\s\S]*?)\s*\[\/memory\]/g;
+  const expression = new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)\\s*\\[\\/${tag}\\]`, 'g');
   return replaceTextSegments(source, expression, (match, segment) => {
-    const body = match[1]?.trim() ?? '';
-    if (!body || /<details\b/i.test(body)) return null;
+    const body = sanitizeProtocolText(match[1] ?? '');
+    if (!body) return null;
     return slot(
-      'memory',
+      tag,
       segment.start + match.index,
       segment.start + match.index + match[0].length,
       match[0],
       [
         element(
           'details',
-          ['rp-unit', 'rp-unit--memory'],
+          ['rp-unit', `rp-unit--${tag}`],
           [
             element(
               'summary',
@@ -115,10 +133,7 @@ function replaceLegacyMemory(source: TextPostprocessSegment[]): {
                 element(
                   'span',
                   ['rp-unit__heading'],
-                  [
-                    element('strong', [], [text('故事记忆')]),
-                    element('small', [], [text('已记住这段经历')]),
-                  ]
+                  [element('strong', [], [text(heading)]), element('small', [], [text(subtitle)])]
                 ),
                 element(
                   'span',
@@ -130,13 +145,13 @@ function replaceLegacyMemory(source: TextPostprocessSegment[]): {
             ),
             element(
               'div',
-              ['rp-unit__body', 'rp-panel-list', 'rp-memory-list'],
+              ['rp-unit__body', 'rp-panel-list', ...(tag === 'memory' ? ['rp-memory-list'] : [])],
               [
                 element(
                   'details',
                   [],
                   [
-                    element('summary', [], [text('记忆内容')]),
+                    element('summary', [], [text(heading)]),
                     element('pre', [], [element('code', [], [text(body)])]),
                   ]
                 ),
@@ -147,6 +162,15 @@ function replaceLegacyMemory(source: TextPostprocessSegment[]): {
       ]
     );
   });
+}
+
+function sanitizeProtocolText(value: string): string {
+  return value
+    .replace(/```(?:markdown)?\s*/gi, '')
+    .replace(/<\/?(?:details|summary)(?:\s[^>]*)?>/gi, '')
+    .replace(/\[\/?(?:choices?|status|memory)\]/gi, '')
+    .trim()
+    .slice(0, TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits);
 }
 
 function replaceTextSegments(

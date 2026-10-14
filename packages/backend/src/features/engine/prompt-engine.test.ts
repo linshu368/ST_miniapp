@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { UserGenerationConfig } from '@miniapp/shared';
+import { RICH_REPLY_PROTOCOL_INSTRUCTIONS, type UserGenerationConfig } from '@miniapp/shared';
 import { buildPrompt } from './prompt-engine.js';
 import { renderPlatformInstructions } from './render-instructions.js';
 import type {
@@ -85,6 +85,7 @@ describe('buildPrompt', () => {
     expect(messages.at(-1)?.content).toBe(
       '##系统指令：以下为最高优先级指令。\n' +
         '选项完整\n状态简洁\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
+        `\n${RICH_REPLY_PROTOCOL_INSTRUCTIONS}\n` +
         '##用户指令:等很久了吗\n'
     );
   });
@@ -164,6 +165,7 @@ describe('buildPrompt', () => {
       '我是 路人甲',
       '##系统指令：以下为最高优先级指令。\n' +
         '选项完整\n状态简洁\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
+        `\n${RICH_REPLY_PROTOCOL_INSTRUCTIONS}\n` +
         '##用户指令:路人甲 也在听\n',
     ]);
   });

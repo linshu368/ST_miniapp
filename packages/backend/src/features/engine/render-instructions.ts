@@ -10,7 +10,7 @@
  * 方案：docs/ST_remove-MVP实施方案.md §六。
  */
 
-import type { UserGenerationConfig } from '@miniapp/shared';
+import { RICH_REPLY_PROTOCOL_INSTRUCTIONS, type UserGenerationConfig } from '@miniapp/shared';
 import type {
   EnginePlatformInstructions,
   EngineWordCountTiers,
@@ -98,7 +98,13 @@ export function renderPlatformInstructions(
     selectSlotRules(instructions.memoryRules, slotModes.memory)
   );
   rendered = replaceAll(rendered, /\{\{WORD_COUNT\}\}/g, wordCountValue);
-  return replaceAll(rendered, /\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
+  rendered = replaceAll(rendered, /\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
+
+  // Admin controls content depth, while this versioned constant remains the
+  // single machine grammar. Avoid duplicating it for the built-in template.
+  return rendered.includes(RICH_REPLY_PROTOCOL_INSTRUCTIONS)
+    ? rendered
+    : `${rendered}\n\n${RICH_REPLY_PROTOCOL_INSTRUCTIONS}`;
 }
 
 /**

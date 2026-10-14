@@ -161,7 +161,7 @@ describe('capture compilation', () => {
 });
 
 describe('rich reply protocol', () => {
-  it('turns complete fixed modules into trusted slots and preserves malformed modules as text', () => {
+  it('turns complete fixed modules into trusted slots and safely contains malformed modules', () => {
     const artifact = compileOk([]);
     const complete = [
       '她轻声说：“我会留下。”',
@@ -194,14 +194,40 @@ describe('rich reply protocol', () => {
     const malformedText = '[choices][choice]一[/choice][choice]二[/choice][/choices]';
     const malformed = applyTextPostprocess({ text: malformedText, artifact });
     expect(malformed.status).toBe('applied');
-    expect(malformed.segments).toEqual([
-      {
-        type: 'text',
-        text: malformedText,
-        start: 0,
-        end: malformedText.length,
-      },
-    ]);
+    const malformedSlot = malformed.segments.find((segment) => segment.type === 'slot');
+    expect(malformedSlot?.type === 'slot' ? malformedSlot.choices : []).toEqual([]);
+    expect(JSON.stringify(malformedSlot?.type === 'slot' ? malformedSlot.tree : [])).not.toContain(
+      '[choices]'
+    );
+    expect(JSON.stringify(malformedSlot?.type === 'slot' ? malformedSlot.tree : [])).not.toContain(
+      'send-message'
+    );
+  });
+
+  it('normalizes complete status and memory envelopes when panel formatting drifts', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: [
+        '[status]角色状态栏\n\n### 林小满\n- 好感度：60/100[/status]',
+        '[memory]<details><summary>工作记忆</summary>当前记忆数目：3/7\n第一轮事实</details><details><summary>历史档案</summary>暂无</details>[/memory]',
+      ].join('\n\n'),
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    expect(
+      applied.segments
+        .filter((segment) => segment.type === 'slot')
+        .map((segment) => segment.rule_id)
+    ).toEqual(['rich-reply-status', 'rich-reply-memory']);
+    const rendered = JSON.stringify(
+      applied.segments.flatMap((segment) => (segment.type === 'slot' ? segment.tree : [segment]))
+    );
+    expect(rendered).not.toContain('[status]');
+    expect(rendered).not.toContain('[memory]');
+    expect(rendered).not.toContain('<details>');
+    expect(rendered).toContain('好感度：60/100');
+    expect(rendered).toContain('第一轮事实');
   });
 });
 
@@ -221,7 +247,7 @@ describe('segment application', () => {
     expect(applied.status).toBe('applied');
     if (applied.status !== 'applied') return;
     const slots = applied.segments.filter((segment) => segment.type === 'slot');
-    expect(slots.map((slot) => slot.rule_id)).toEqual(['choice', 'memory']);
+    expect(slots.map((slot) => slot.rule_id)).toEqual(['choice', 'rich-reply-memory']);
     expect(slots[0]?.choices.map((choice) => choice.text)).toEqual(['留下', '离开', '等待']);
     expect(slots[1]?.match_text).toContain('工作记忆');
   });
