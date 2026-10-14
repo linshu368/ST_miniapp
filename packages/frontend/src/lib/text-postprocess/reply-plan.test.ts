@@ -41,6 +41,7 @@ function sourceSnapshot(version: number): TextPostprocessArtifactSnapshot {
 const ARTIFACT: CompiledTextPostprocessArtifact = {
   schema_version: 1,
   policy_version: 1,
+  rich_reply_protocol: { version: 1, enabled: true },
   rules: [
     {
       id: 'choice',

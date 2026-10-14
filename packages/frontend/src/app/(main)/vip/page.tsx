@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
@@ -25,9 +25,14 @@ import { Button } from '@/components/ui/button';
 import { ApiClientError } from '@/lib/api/client';
 import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
 import { formatNumber, formatYuanShort } from '@/lib/utils/payment';
-import { useCreatePaymentOrderMutation, usePaymentPlansQuery } from '@/lib/api/payment';
+import {
+  useCheckoutConfirmationMutation,
+  useCreatePaymentOrderMutation,
+  usePaymentPlansQuery,
+} from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
+import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
 import {
   capturePaymentMethodSelected,
   capturePaymentOrderCreated,
@@ -43,8 +48,6 @@ import {
   vipMembershipSummary,
 } from '@/lib/vip/presentation';
 
-const PAYMENT_TYPES: PaymentType[] = ['alipay', 'wxpay'];
-
 export default function VipPage() {
   const router = useRouter();
   const goBack = useCallback(() => router.back(), [router]);
@@ -53,6 +56,7 @@ export default function VipPage() {
   const plansQuery = usePaymentPlansQuery();
   const vipQuery = useVipStatusQuery();
   const createOrder = useCreatePaymentOrderMutation();
+  const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('alipay');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -61,9 +65,31 @@ export default function VipPage() {
   const [preparedPayment, setPreparedPayment] = useState<CreatePaymentOrderData | null>(null);
   const submitLock = useRef(false);
 
+  const reportCheckoutConfirmation = useCallback(
+    ({ orderId, request }: Parameters<typeof confirmCheckout>[0]) => {
+      confirmCheckout(
+        { orderId, request },
+        { onSuccess: () => clearCheckoutConfirmation(orderId, request.request_id) }
+      );
+    },
+    [confirmCheckout]
+  );
+
   const vipPlans = plansQuery.data?.vip_plans ?? [];
   const promptConfig =
     plansQuery.data?.payment_prompt_dialog_config ?? DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG;
+  const paymentChannels = plansQuery.data?.payment_channels;
+  const paymentTypes = useMemo<PaymentType[]>(() => {
+    if (!paymentChannels) return ['alipay'];
+    return (['alipay', 'wxpay'] as const).filter((type) =>
+      type === 'alipay' ? paymentChannels.alipay_enabled : paymentChannels.wxpay_enabled
+    );
+  }, [paymentChannels]);
+  const defaultPaymentType = paymentChannels?.default_payment_type ?? 'alipay';
+
+  useEffect(() => {
+    if (!paymentTypes.includes(paymentType)) setPaymentType(defaultPaymentType);
+  }, [defaultPaymentType, paymentType, paymentTypes]);
   // 默认月卡只在用户尚未选择时推导，不覆盖其主动选择。
   const effectiveSelectedKey =
     selectedKey ??
@@ -106,9 +132,10 @@ export default function VipPage() {
         result,
         returnTo: '/vip',
         paymentType,
+        reportCheckoutConfirmation,
       });
     },
-    [paymentType, router]
+    [paymentType, reportCheckoutConfirmation, router]
   );
 
   const handleSelect = (planId: string) => {
@@ -309,7 +336,7 @@ export default function VipPage() {
         ) : null}
         <div className="flex items-center gap-2.5">
           <div role="radiogroup" aria-label="支付方式" className="flex shrink-0 gap-2">
-            {PAYMENT_TYPES.map((type) => {
+            {paymentTypes.map((type) => {
               const active = paymentType === type;
               const isAlipay = type === 'alipay';
               const Icon = isAlipay ? AlipayIcon : WeChatPayIcon;

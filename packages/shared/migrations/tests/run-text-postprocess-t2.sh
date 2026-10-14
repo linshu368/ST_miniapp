@@ -60,6 +60,8 @@ run_sql -f "$MIG/20260929_fix_text_postprocess_snapshot_fk_lock.sql"
 run_sql -f "$MIG/20260929_fix_text_postprocess_snapshot_fk_lock.sql"
 run_sql -f "$MIG/20260930_bind_current_text_postprocess_on_turn_start.sql"
 run_sql -f "$MIG/20260930_bind_current_text_postprocess_on_turn_start.sql"
+run_sql -f "$MIG/20261013_accept_rich_reply_protocol_artifact.sql"
+run_sql -f "$MIG/20261013_accept_rich_reply_protocol_artifact.sql"
 # Migrations/wrappers use a non-superuser postgres. Only adversarial scenarios need a separate
 # local superuser to exercise the ALWAYS guards under replica mode and deliberate fixture drift.
 PGUSER="${TEXT_POSTPROCESS_TEST_ADMIN:-${PGUSER:-}}" run_sql -f "$MIG/tests/text_postprocess_t2_scenarios.sql"

@@ -12,7 +12,12 @@ import { postTextPostprocessVersions } from './text-postprocess';
 const SNAPSHOT = {
   version: 2,
   published_at: '2026-09-28T00:00:00.000Z',
-  artifact: { schema_version: 1, policy_version: 1, rules: [] },
+  artifact: {
+    schema_version: 1,
+    policy_version: 1,
+    rich_reply_protocol: { version: 1, enabled: true },
+    rules: [],
+  },
 };
 
 describe('postTextPostprocessVersions', () => {

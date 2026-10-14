@@ -138,6 +138,9 @@ const RULES = [
       'packages/shared/migrations/20260921_vip_payment_fulfillment.sql',
       // T3A 只替换同一函数体，让履约读取订单快照而不是写死 1399/2888。
       'packages/shared/migrations/20260923_vip_strategy_config.sql',
+      // 告警 foundation 仅在迁移 preflight 中确认既有履约出口仍存在，
+      // 不调用、替换或新增任何应用侧结算路径。
+      'packages/shared/migrations/20261010_payment_alerting_foundation.sql',
     ],
   },
   {

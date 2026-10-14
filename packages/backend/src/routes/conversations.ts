@@ -11,7 +11,7 @@
  */
 
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from 'fastify';
-import { fail, ok } from '@miniapp/shared';
+import { fail, ok, PatchGenerationConfigRequestSchema } from '@miniapp/shared';
 import type {
   CancelConversationTurnRequest,
   CancelConversationTurnData,
@@ -470,18 +470,26 @@ export default async function conversationRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
-      const body = (request.body ?? {}) as PatchGenerationConfigRequest & Record<string, unknown>;
-      if ('selected_model_id' in body) {
+      const rawBody = (request.body ?? {}) as Record<string, unknown>;
+      if ('selected_model_id' in rawBody) {
         // 切模型带着「付费模型先查余额」的闸门，从这里旁路改会绕过它
         return reply
           .status(400)
           .send(fail('BAD_REQUEST', '切换模型请使用 POST /api/v1/models/select'));
       }
 
-      // 只透传三个 pref_* 字段：display_name / avatar_url 归 /api/users/settings
+      const parsed = PatchGenerationConfigRequestSchema.safeParse(rawBody);
+      if (!parsed.success) {
+        return reply.status(400).send(fail('BAD_REQUEST', '生成配置字段无效'));
+      }
+      const body: PatchGenerationConfigRequest = parsed.data;
+
+      // 只透传五个 pref_* 字段：display_name / avatar_url 归 /api/users/settings
       const patch: PatchUserSettingsRequest = {};
       if ('pref_word_count' in body) patch.pref_word_count = body.pref_word_count;
       if ('pref_show_options' in body) patch.pref_show_options = body.pref_show_options;
+      if ('pref_show_status' in body) patch.pref_show_status = body.pref_show_status;
+      if ('pref_show_memory' in body) patch.pref_show_memory = body.pref_show_memory;
       if ('pref_custom_instructions' in body) {
         patch.pref_custom_instructions = body.pref_custom_instructions;
       }

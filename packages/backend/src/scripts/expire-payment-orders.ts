@@ -7,14 +7,16 @@ import { ZqPaymentGateway } from '../infrastructure/payment/ZqPaymentGateway.js'
 import { runExpirePaymentOrders } from '../features/payment/usecases/ExpirePaymentOrders.js';
 
 const log = createLogger('payment');
+const orders = new MiniappPaymentOrderRepository();
 let exitCode = 0;
 
 try {
   const result = await runExpirePaymentOrders({
-    orders: new MiniappPaymentOrderRepository(),
+    orders,
     gateway: new ZqPaymentGateway(),
     log,
     paymentEnabled: config.payment.enabled,
+    events: orders,
   });
 
   console.log(

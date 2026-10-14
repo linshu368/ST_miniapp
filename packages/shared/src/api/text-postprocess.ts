@@ -7,37 +7,111 @@ import { z } from 'zod';
 export const TEXT_POSTPROCESS_SCHEMA_VERSION = 1;
 export const TEXT_POSTPROCESS_POLICY_VERSION = 1;
 
-export const TEXT_POSTPROCESS_HTML_TAGS = [
-  'p',
-  'div',
-  'span',
-  'mark',
-  'strong',
-  'em',
-  'b',
-  'i',
-  'del',
-  'br',
-  'hr',
-  'section',
-  'details',
-  'summary',
-  'ul',
-  'ol',
-  'li',
-  'table',
-  'thead',
-  'tbody',
-  'tr',
-  'td',
-  'th',
-  'button',
-  'pre',
-  'code',
-  'blockquote',
-  'h3',
-  'h4',
+/**
+ * 运营模板不再依赖正向标签白名单。这里只拒绝会执行代码、加载外部资源、
+ * 创建独立浏览上下文或伪造表单输入的能力；普通语义标签默认可用。
+ */
+export const TEXT_POSTPROCESS_FORBIDDEN_HTML_TAGS = [
+  'applet',
+  'area',
+  'audio',
+  'base',
+  'body',
+  'canvas',
+  'dialog',
+  'embed',
+  'fieldset',
+  'form',
+  'frame',
+  'frameset',
+  'head',
+  'html',
+  'iframe',
+  'img',
+  'input',
+  'link',
+  'map',
+  'marquee',
+  'meta',
+  'noscript',
+  'object',
+  'optgroup',
+  'option',
+  'picture',
+  'portal',
+  'script',
+  'select',
+  'source',
+  'style',
+  'template',
+  'textarea',
+  'track',
+  'video',
 ] as const;
+
+export const TEXT_POSTPROCESS_HTML_TAG = /^[a-z][a-z0-9]{0,63}$/;
+export const TEXT_POSTPROCESS_HTML_ATTRIBUTE = /^[a-z][a-z0-9_.:-]{0,63}$/;
+
+export const TEXT_POSTPROCESS_FORBIDDEN_HTML_ATTRIBUTES = [
+  'accesskey',
+  'action',
+  'anchor',
+  'archive',
+  'autofocus',
+  'background',
+  'cite',
+  'classid',
+  'codebase',
+  'command',
+  'commandfor',
+  'contenteditable',
+  'data',
+  'data-action',
+  'dynsrc',
+  'for',
+  'form',
+  'formaction',
+  'href',
+  'id',
+  'integrity',
+  'key',
+  'longdesc',
+  'lowsrc',
+  'manifest',
+  'nonce',
+  'ping',
+  'poster',
+  'popovertarget',
+  'popovertargetaction',
+  'profile',
+  'ref',
+  'slot',
+  'src',
+  'srcdoc',
+  'srcset',
+  'style',
+  'usemap',
+  'xlink:href',
+  'xmlns',
+] as const;
+
+const FORBIDDEN_HTML_TAGS = new Set<string>(TEXT_POSTPROCESS_FORBIDDEN_HTML_TAGS);
+const FORBIDDEN_HTML_ATTRIBUTES = new Set<string>(TEXT_POSTPROCESS_FORBIDDEN_HTML_ATTRIBUTES);
+
+export type TextPostprocessHtmlTag = string;
+
+export function isTextPostprocessHtmlTag(value: string): value is TextPostprocessHtmlTag {
+  return TEXT_POSTPROCESS_HTML_TAG.test(value) && !FORBIDDEN_HTML_TAGS.has(value);
+}
+
+export function isTextPostprocessHtmlAttribute(value: string): boolean {
+  return (
+    TEXT_POSTPROCESS_HTML_ATTRIBUTE.test(value) &&
+    !FORBIDDEN_HTML_ATTRIBUTES.has(value) &&
+    !value.startsWith('on') &&
+    !value.startsWith('xmlns')
+  );
+}
 
 export const TEXT_POSTPROCESS_CSS_PROPERTIES = [
   'color',
@@ -163,6 +237,8 @@ export const TEXT_POSTPROCESS_LIMITS = {
   ruleBudgetMs: 100,
   messageBudgetMs: 1_000,
   maxClassTokens: 8,
+  maxTemplateAttributes: 32,
+  maxAttributeValueUnits: 1_000,
   maxVersionsPerBatch: 20,
   maxDiagnostics: 100,
 } as const;
@@ -186,8 +262,7 @@ const RULE_FIELDS = [
 export const TEXT_POSTPROCESS_FIELDS = [...RULE_FIELDS, 'source', 'version', 'request'] as const;
 
 export type TextPostprocessField = (typeof TEXT_POSTPROCESS_FIELDS)[number];
-export type TextPostprocessHtmlTag = (typeof TEXT_POSTPROCESS_HTML_TAGS)[number];
-export type TextPostprocessCssProperty = (typeof TEXT_POSTPROCESS_CSS_PROPERTIES)[number];
+export type TextPostprocessCssProperty = string;
 
 export interface TextPostprocessLocation {
   line: number;
@@ -223,8 +298,10 @@ export const TextPostprocessDiagnosticSchema = z
   })
   .strict();
 
-const HtmlTagSchema = z.enum(TEXT_POSTPROCESS_HTML_TAGS);
-const CssPropertySchema = z.enum(TEXT_POSTPROCESS_CSS_PROPERTIES);
+const HtmlTagSchema = z.string().refine(isTextPostprocessHtmlTag);
+const CssPropertySchema = z
+  .string()
+  .regex(/^(?:-webkit-[a-z][a-z0-9-]{0,63}|--[a-z][a-z0-9-]{0,63}|[a-z][a-z0-9-]{0,63})$/);
 
 export const CaptureRefSchema = z.discriminatedUnion('kind', [
   z
@@ -259,9 +336,16 @@ export const TrustedAttributeSchema = z.discriminatedUnion('name', [
   z.object({ name: z.literal('open') }).strict(),
   z.object({ name: z.literal('title'), text: z.string().max(200) }).strict(),
   z.object({ name: z.literal('aria-label'), text: z.string().max(200) }).strict(),
-  z.object({ name: z.literal('aria-hidden'), value: z.literal('true') }).strict(),
+  z.object({ name: z.literal('aria-hidden'), value: z.enum(['true', 'false']) }).strict(),
   z.object({ name: z.literal('colspan'), value: z.number().int().min(1).max(20) }).strict(),
   z.object({ name: z.literal('rowspan'), value: z.number().int().min(1).max(20) }).strict(),
+  z
+    .object({
+      name: z.literal('attribute'),
+      key: z.string().refine(isTextPostprocessHtmlAttribute),
+      value: z.string().max(TEXT_POSTPROCESS_LIMITS.maxAttributeValueUnits),
+    })
+    .strict(),
 ]);
 
 export const SendMessageActionSchema = z
@@ -303,7 +387,9 @@ export const TrustedNodeSchema: z.ZodType<TrustedNode> = z.lazy(() =>
       .object({
         type: z.literal('element'),
         tag: HtmlTagSchema,
-        attributes: z.array(TrustedAttributeSchema).max(8),
+        attributes: z
+          .array(TrustedAttributeSchema)
+          .max(TEXT_POSTPROCESS_LIMITS.maxTemplateAttributes),
         children: z.array(TrustedNodeSchema).max(TEXT_POSTPROCESS_LIMITS.maxTemplateNodes),
         action: SendMessageActionSchema.nullable(),
       })
@@ -316,11 +402,11 @@ export type CssToken =
   | { t: 'hash'; v: string }
   | { t: 'string'; v: string }
   | { t: 'number'; v: string }
-  | { t: 'dimension'; v: string; u: 'px' | 'rem' | 'em' | 'ms' | 's' | 'deg' | 'fr' }
+  | { t: 'dimension'; v: string; u: string }
   | { t: 'percentage'; v: string }
   | {
       t: 'function';
-      name: 'rgb' | 'rgba' | 'hsl' | 'hsla' | 'linear-gradient' | 'var' | 'repeat' | 'minmax';
+      name: string;
       args: CssToken[];
     }
   | { t: 'operator'; v: ',' | '/' };
@@ -337,7 +423,7 @@ export const CssTokenSchema: z.ZodType<CssToken> = z.lazy(() =>
       .object({
         t: z.literal('dimension'),
         v: z.string().regex(/^[+-]?(?:\d+\.?\d*|\.\d+)$/),
-        u: z.enum(['px', 'rem', 'em', 'ms', 's', 'deg', 'fr']),
+        u: z.string().regex(/^[a-z][a-z0-9-]{0,15}$/),
       })
       .strict(),
     z
@@ -349,7 +435,7 @@ export const CssTokenSchema: z.ZodType<CssToken> = z.lazy(() =>
     z
       .object({
         t: z.literal('function'),
-        name: z.enum(['rgb', 'rgba', 'hsl', 'hsla', 'linear-gradient', 'var', 'repeat', 'minmax']),
+        name: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
         args: z.array(CssTokenSchema).max(32),
       })
       .strict(),
@@ -367,7 +453,16 @@ const NthPseudoSchema = z
 
 const NamedPseudoSchema = z
   .object({
-    kind: z.enum(['first-child', 'last-child', 'hover', 'focus-visible']),
+    kind: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+  })
+  .strict();
+
+const AttributeSelectorSchema = z
+  .object({
+    name: z.string().refine(isTextPostprocessHtmlAttribute),
+    matcher: z.enum(['=', '~=', '|=', '^=', '$=', '*=']).nullable(),
+    value: z.string().max(256).nullable(),
+    case_sensitive: z.boolean().nullable(),
   })
   .strict();
 
@@ -377,10 +472,17 @@ export const CssSelectorSchema = z
       .array(
         z
           .object({
-            combinator: z.enum(['descendant', 'child']).nullable(),
-            tag: HtmlTagSchema.nullable(),
+            combinator: z.enum(['descendant', 'child', 'adjacent', 'sibling']).nullable(),
+            tag: z.union([HtmlTagSchema, z.literal('*')]).nullable(),
             classes: z.array(z.string().regex(TEXT_POSTPROCESS_CLASS_TOKEN)).max(8),
+            attributes: z.array(AttributeSelectorSchema).max(8).optional().default([]),
             pseudos: z.array(z.union([NamedPseudoSchema, NthPseudoSchema])).max(4),
+            pseudo_element: z
+              .string()
+              .regex(/^-?[a-z][a-z0-9-]{0,63}$/)
+              .nullable()
+              .optional()
+              .default(null),
           })
           .strict()
       )
@@ -396,7 +498,7 @@ export const CssDeclarationSchema = z
   })
   .strict();
 
-export type CssSelector = z.infer<typeof CssSelectorSchema>;
+export type CssSelector = z.input<typeof CssSelectorSchema>;
 export type CssDeclaration = z.infer<typeof CssDeclarationSchema>;
 
 export type CssStyleRule = {
@@ -479,12 +581,17 @@ export const CompiledTextPostprocessArtifactSchema = z
   .object({
     schema_version: z.literal(TEXT_POSTPROCESS_SCHEMA_VERSION),
     policy_version: z.literal(TEXT_POSTPROCESS_POLICY_VERSION),
+    /** Fixed protocol parser; default keeps existing published artifacts compatible. */
+    rich_reply_protocol: z
+      .object({ version: z.union([z.literal(1), z.literal(2)]), enabled: z.boolean() })
+      .strict()
+      .default({ version: 1, enabled: true }),
     rules: z.array(CompiledTextPostprocessRuleSchema).max(TEXT_POSTPROCESS_LIMITS.maxRules),
   })
   .strict();
 
-export type CompiledTextPostprocessRule = z.infer<typeof CompiledTextPostprocessRuleSchema>;
-export type CompiledTextPostprocessArtifact = z.infer<typeof CompiledTextPostprocessArtifactSchema>;
+export type CompiledTextPostprocessRule = z.input<typeof CompiledTextPostprocessRuleSchema>;
+export type CompiledTextPostprocessArtifact = z.input<typeof CompiledTextPostprocessArtifactSchema>;
 
 const RuleIdSchema = z.string().regex(TEXT_POSTPROCESS_RULE_ID);
 
@@ -594,7 +701,11 @@ export const TextPostprocessArtifactSnapshotSchema = z
     published_at: z.string().datetime(),
   })
   .strict();
-export type TextPostprocessArtifactSnapshot = z.infer<typeof TextPostprocessArtifactSnapshotSchema>;
+/**
+ * Consumers may still construct/read v1 artifacts that omit fields introduced with defaults.
+ * The schema normalizes those fields at the trust boundary before renderer use.
+ */
+export type TextPostprocessArtifactSnapshot = z.input<typeof TextPostprocessArtifactSnapshotSchema>;
 
 export const ReadTextPostprocessVersionsRequestSchema = z
   .object({
@@ -691,7 +802,7 @@ export type TextPostprocessVersionSnapshot = z.infer<typeof TextPostprocessVersi
 export type ReadTextPostprocessVersionsRequest = z.infer<
   typeof ReadTextPostprocessVersionsRequestSchema
 >;
-export type ReadTextPostprocessVersionsData = z.infer<typeof ReadTextPostprocessVersionsDataSchema>;
+export type ReadTextPostprocessVersionsData = z.input<typeof ReadTextPostprocessVersionsDataSchema>;
 export type SaveTextPostprocessDraftRequest = z.infer<typeof SaveTextPostprocessDraftRequestSchema>;
 export type PublishTextPostprocessRequest = z.infer<typeof PublishTextPostprocessRequestSchema>;
 export type RollbackTextPostprocessRequest = z.infer<typeof RollbackTextPostprocessRequestSchema>;

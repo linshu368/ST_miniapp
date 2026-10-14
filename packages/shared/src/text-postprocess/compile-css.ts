@@ -4,9 +4,8 @@ import generate from 'css-tree/generator';
 
 import {
   TEXT_POSTPROCESS_CLASS_TOKEN,
-  TEXT_POSTPROCESS_CSS_PROPERTIES,
-  TEXT_POSTPROCESS_HTML_TAGS,
   TEXT_POSTPROCESS_LIMITS,
+  isTextPostprocessHtmlTag,
   type CssDeclaration,
   type CssMediaCondition,
   type CssRule,
@@ -18,55 +17,14 @@ import {
 import { checkCssRule, checkDeclaration, scopeProbeSelector } from './css-model';
 import { diagnostic } from './diagnostics';
 
-const HTML_TAGS = new Set<string>(TEXT_POSTPROCESS_HTML_TAGS);
-const CSS_PROPERTIES = new Set<string>(TEXT_POSTPROCESS_CSS_PROPERTIES);
-const ALLOWED_NODE_TYPES = new Set([
-  'StyleSheet',
-  'Rule',
-  'Atrule',
-  'AtrulePrelude',
-  'Block',
-  'SelectorList',
-  'Selector',
-  'ClassSelector',
-  'TypeSelector',
-  'Combinator',
-  'PseudoClassSelector',
-  'Nth',
-  'Declaration',
-  'Value',
-  'Identifier',
-  'Hash',
-  'String',
-  'Number',
-  'Dimension',
-  'Percentage',
-  'Function',
-  'Operator',
-  'MediaQueryList',
-  'MediaQuery',
-  'Condition',
-  'Feature',
-]);
-const ALLOWED_FUNCTIONS = new Set([
-  'rgb',
-  'rgba',
-  'hsl',
-  'hsla',
-  'linear-gradient',
-  'var',
-  'repeat',
-  'minmax',
-]);
-const ALLOWED_UNITS = new Set(['px', 'rem', 'em', 'ms', 's', 'deg', 'fr']);
-const SELECTOR_PROBE_TYPES = new Set([
-  'Selector',
-  'SelectorList',
-  'ClassSelector',
-  'TypeSelector',
-  'Combinator',
-  'PseudoClassSelector',
-  'Nth',
+const FORBIDDEN_FUNCTIONS = new Set([
+  'url',
+  'src',
+  'image-set',
+  'cross-fade',
+  'element',
+  'paint',
+  'expression',
 ]);
 
 export function compileCss(input: { ruleId: string; css: string }): {
@@ -75,7 +33,6 @@ export function compileCss(input: { ruleId: string; css: string }): {
 } {
   if (input.css.trim().length === 0) return { rules: [], diagnostics: [] };
   const diagnostics: TextPostprocessDiagnostic[] = [];
-  let sawComment = false;
   let ast: CssNode;
   try {
     ast = parse(input.css, {
@@ -85,18 +42,13 @@ export function compileCss(input: { ruleId: string; css: string }): {
           issue(input.ruleId, 'CSS_PARSE_ERROR', 'CSS has a parse error.', locationFromError(error))
         );
       },
-      onComment() {
-        sawComment = true;
-      },
+      onComment() {},
     });
   } catch {
     return {
       rules: [],
       diagnostics: [issue(input.ruleId, 'CSS_PARSE_ERROR', 'CSS could not be parsed.', null)],
     };
-  }
-  if (sawComment) {
-    diagnostics.push(issue(input.ruleId, 'CSS_PARSE_ERROR', 'CSS comments are not allowed.', null));
   }
   let nodes = 0;
   let selectors = 0;
@@ -105,14 +57,9 @@ export function compileCss(input: { ruleId: string; css: string }): {
     nodes += 1;
     if (node.type === 'Selector') selectors += 1;
     if (node.type === 'Declaration') declarations += 1;
-    if (!ALLOWED_NODE_TYPES.has(node.type) || node.type === 'Raw') {
+    if (node.type === 'Raw') {
       diagnostics.push(
-        issue(
-          input.ruleId,
-          node.type === 'Url' ? 'EXTERNAL_RESOURCE' : 'CSS_PARSE_ERROR',
-          'CSS construct is not allowed.',
-          nodeLocation(node)
-        )
+        issue(input.ruleId, 'CSS_PARSE_ERROR', 'CSS construct is not allowed.', nodeLocation(node))
       );
     }
     if (node.type === 'Declaration' && node.important) {
@@ -120,7 +67,10 @@ export function compileCss(input: { ruleId: string; css: string }): {
         issue(input.ruleId, 'CSS_IMPORTANT', 'CSS !important is not allowed.', nodeLocation(node))
       );
     }
-    if (node.type === 'Url' || (node.type === 'Function' && node.name?.toLowerCase() === 'url')) {
+    if (
+      node.type === 'Url' ||
+      (node.type === 'Function' && FORBIDDEN_FUNCTIONS.has(node.name?.toLowerCase() ?? ''))
+    ) {
       diagnostics.push(
         issue(
           input.ruleId,
@@ -281,7 +231,9 @@ function readSelector(
     combinator: null,
     tag: null,
     classes: [],
+    attributes: [],
     pseudos: [],
+    pseudo_element: null,
   };
   let started = false;
   let failed = false;
@@ -293,16 +245,25 @@ function readSelector(
   };
   eachChild(node, (child) => {
     if (child.type === 'Combinator') {
-      if (!started || (child.name !== ' ' && child.name !== '>')) {
+      if (!started || ![' ', '>', '+', '~'].includes(child.name ?? '')) {
         fail(child);
         return;
       }
       compounds.push(current);
       current = {
-        combinator: child.name === '>' ? 'child' : 'descendant',
+        combinator:
+          child.name === '>'
+            ? 'child'
+            : child.name === '+'
+              ? 'adjacent'
+              : child.name === '~'
+                ? 'sibling'
+                : 'descendant',
         tag: null,
         classes: [],
+        attributes: [],
         pseudos: [],
+        pseudo_element: null,
       };
       started = false;
       return;
@@ -311,10 +272,10 @@ function readSelector(
     if (
       child.type === 'TypeSelector' &&
       child.name &&
-      HTML_TAGS.has(child.name) &&
+      (isTextPostprocessHtmlTag(child.name) || child.name === '*') &&
       current.tag === null
     ) {
-      current.tag = child.name as TextPostprocessHtmlTag;
+      current.tag = child.name as TextPostprocessHtmlTag | '*';
       return;
     }
     if (
@@ -331,11 +292,57 @@ function readSelector(
       else current.pseudos.push(pseudo);
       return;
     }
+    if (child.type === 'PseudoElementSelector' && child.name && current.pseudo_element === null) {
+      current.pseudo_element = child.name;
+      return;
+    }
+    if (child.type === 'AttributeSelector') {
+      const attribute = readAttribute(child);
+      if (!attribute) fail(child);
+      else (current.attributes ??= []).push(attribute);
+      return;
+    }
     fail(child);
   });
-  if (started || current.tag !== null || current.classes.length > 0) compounds.push(current);
+  if (
+    started ||
+    current.tag !== null ||
+    current.classes.length > 0 ||
+    (current.attributes?.length ?? 0) > 0
+  )
+    compounds.push(current);
   if (failed || compounds.length === 0) return null;
   return { compounds };
+}
+
+function readAttribute(
+  node: CssNode
+): NonNullable<CssSelector['compounds'][number]['attributes']>[number] | null {
+  const nameSource =
+    typeof node.name === 'string' ? node.name : (node.name as CssNode | undefined)?.name;
+  const name = typeof nameSource === 'string' ? nameSource.toLowerCase() : null;
+  if (!name || !/^[a-z][a-z0-9_.:-]{0,63}$/.test(name)) return null;
+  const raw = node as CssNode & { matcher?: string | null; flags?: string | null };
+  const matcher = raw.matcher ?? null;
+  if (matcher !== null && !['=', '~=', '|=', '^=', '$=', '*='].includes(matcher)) return null;
+  const valueNode = typeof node.value === 'object' ? node.value : null;
+  const value =
+    typeof node.value === 'string'
+      ? node.value
+      : typeof valueNode?.value === 'string'
+        ? valueNode.value
+        : typeof valueNode?.name === 'string'
+          ? valueNode.name
+          : null;
+  if ((matcher === null && value !== null) || (matcher !== null && value === null)) return null;
+  const flag = raw.flags?.toLowerCase() ?? null;
+  if (flag !== null && flag !== 'i' && flag !== 's') return null;
+  return {
+    name,
+    matcher: matcher as '=' | '~=' | '|=' | '^=' | '$=' | '*=' | null,
+    value,
+    case_sensitive: flag === null ? null : flag === 's',
+  };
 }
 
 function readPseudo(node: CssNode): CssSelector['compounds'][number]['pseudos'][number] | null {
@@ -344,7 +351,8 @@ function readPseudo(node: CssNode): CssSelector['compounds'][number]['pseudos'][
     name === 'first-child' ||
     name === 'last-child' ||
     name === 'hover' ||
-    name === 'focus-visible'
+    name === 'focus-visible' ||
+    name === 'disabled'
   ) {
     if (hasChild(node)) return null;
     return { kind: name };
@@ -383,9 +391,9 @@ function readDeclarations(
       return;
     }
     if (
-      child.property.startsWith('--') ||
-      child.property.startsWith('animation') ||
-      !CSS_PROPERTIES.has(child.property)
+      !/^(?:-webkit-[a-z][a-z0-9-]{0,63}|--[a-z][a-z0-9-]{0,63}|[a-z][a-z0-9-]{0,63})$/.test(
+        child.property
+      )
     ) {
       failed = true;
       diagnostics.push(
@@ -402,11 +410,18 @@ function readDeclarations(
       );
       return;
     }
-    const declaration = { property: child.property as CssDeclaration['property'], tokens };
+    const declaration = { property: child.property, tokens };
     if (!checkDeclaration(declaration, { mentionsButton })) {
       failed = true;
       diagnostics.push(
-        issue(ruleId, 'FORBIDDEN_VALUE', 'CSS value is outside the policy.', nodeLocation(child))
+        issue(
+          ruleId,
+          child.property === 'position' || child.property === 'z-index'
+            ? 'FORBIDDEN_PROPERTY'
+            : 'FORBIDDEN_VALUE',
+          'CSS value is outside the policy.',
+          nodeLocation(child)
+        )
       );
       return;
     }
@@ -524,15 +539,16 @@ function readToken(node: CssNode): CssToken | null {
     case 'Number':
       return value !== null ? { t: 'number', v: value } : null;
     case 'Dimension':
-      if (value === null || !node.unit || !ALLOWED_UNITS.has(node.unit)) return null;
-      return { t: 'dimension', v: value, u: node.unit as 'px' };
+      if (value === null || !node.unit || !/^[a-z][a-z0-9-]{0,15}$/.test(node.unit)) return null;
+      return { t: 'dimension', v: value, u: node.unit };
     case 'Percentage':
       return value !== null ? { t: 'percentage', v: value } : null;
     case 'Operator':
       return value === ',' || value === '/' ? { t: 'operator', v: value } : null;
     case 'Function': {
       const name = node.name?.toLowerCase();
-      if (!name || !ALLOWED_FUNCTIONS.has(name)) return null;
+      if (!name || !/^[a-z][a-z0-9-]{0,63}$/.test(name) || FORBIDDEN_FUNCTIONS.has(name))
+        return null;
       const args: CssToken[] = [];
       for (const child of children(node)) {
         const token = readToken(child);
@@ -541,7 +557,7 @@ function readToken(node: CssNode): CssToken | null {
       }
       return {
         t: 'function',
-        name: name as 'var',
+        name,
         args,
       };
     }
@@ -563,9 +579,6 @@ function reparseScopedSelector(selector: CssSelector): boolean {
     });
     if (failed) return false;
     generate(ast);
-    walk(ast, (node) => {
-      if (!SELECTOR_PROBE_TYPES.has(node.type)) failed = true;
-    });
     return !failed;
   } catch {
     return false;

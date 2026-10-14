@@ -1,6 +1,11 @@
 import { parseLobbySort } from '@miniapp/shared';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { resolvePublicApiUrl } from '../../../../resolve-public-api-url.mjs';
+
+// Resolve from Vercel's deployment context instead of reading the raw
+// NEXT_PUBLIC_API_URL at runtime, where a stale project-wide Preview value can
+// override the intended dev/PR target.
+const BACKEND_URL = resolvePublicApiUrl();
 
 export const revalidate = 0;
 export const dynamic = 'force-dynamic';

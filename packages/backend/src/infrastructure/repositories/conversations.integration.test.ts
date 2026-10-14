@@ -440,6 +440,8 @@ describe.skipIf(!canRunAgainstDatabase)(
         selected_model_id: null,
         pref_word_count: expectedDefault,
         pref_show_options: true,
+        pref_show_status: true,
+        pref_show_memory: true,
         pref_custom_instructions: null,
       });
     });

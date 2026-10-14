@@ -25,7 +25,7 @@ import { Refine } from '@refinedev/core';
 import { dataProvider } from '@refinedev/supabase';
 import {
   ModelCatalogSchema,
-  PaymentPlansSchema,
+  PaymentPlansRuntimeConfigSchema,
   type LlmModelProvider,
   type ModelCatalog,
   type PaymentPlan,
@@ -64,7 +64,12 @@ import {
   resolveManagedWorkingValue,
   type ManagedConfigKey,
 } from './lib/configSchemas';
-import { getAdminClient, isEnvironmentConfigured, type AdminEnvironment } from './lib/environment';
+import {
+  checkAdminApiReachability,
+  getAdminClient,
+  isEnvironmentConfigured,
+  type AdminEnvironment,
+} from './lib/environment';
 import { fetchModelProviderDirectory, getCatalogProviderIssues } from './lib/openRouterModels';
 import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
 import { TextPostprocessView } from './components/TextPostprocessView';
@@ -72,16 +77,19 @@ import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
   IMAGE_PLAZA_CONFIG_KEYS,
+  PLATFORM_INSTRUCTION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
   isInviteProgramConfigKey,
   isImageGenerationConfigKey,
   isImagePlazaConfigKey,
+  isPlatformInstructionConfigKey,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
   type AdminViewKey,
   type InviteProgramTabKey,
   type ImageGenerationConfigKey,
   type ImagePlazaConfigKey,
+  type PlatformInstructionConfigKey,
 } from './lib/adminNavigation';
 import {
   createWorkbenchStore,
@@ -267,6 +275,8 @@ export function AdminApp() {
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [loadingIdentity, setLoadingIdentity] = useState(true);
   const [identityError, setIdentityError] = useState<string | null>(null);
+  const [checkingApi, setCheckingApi] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const refineDataProvider = useMemo(() => (client ? dataProvider(client) : undefined), [client]);
 
   const loadIdentity = useCallback(async (targetClient: SupabaseClient) => {
@@ -292,21 +302,43 @@ export function AdminApp() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     if (!isEnvironmentConfigured(environment)) {
       setClient(null);
       setUser(null);
       setAdmin(null);
       setLoadingIdentity(false);
+      setCheckingApi(false);
       return;
     }
-    try {
-      const nextClient = getAdminClient(environment);
-      setClient(nextClient);
-      void loadIdentity(nextClient);
-    } catch (error) {
-      setIdentityError(error instanceof Error ? error.message : 'Supabase 配置错误');
-      setLoadingIdentity(false);
-    }
+    setCheckingApi(true);
+    setApiError(null);
+    void (async () => {
+      const reachabilityError = await checkAdminApiReachability(environment);
+      if (cancelled) return;
+      if (reachabilityError) {
+        setClient(null);
+        setUser(null);
+        setAdmin(null);
+        setApiError(reachabilityError);
+        setLoadingIdentity(false);
+        setCheckingApi(false);
+        return;
+      }
+      try {
+        const nextClient = getAdminClient(environment);
+        setClient(nextClient);
+        setCheckingApi(false);
+        void loadIdentity(nextClient);
+      } catch (error) {
+        setIdentityError(error instanceof Error ? error.message : 'Supabase 配置错误');
+        setLoadingIdentity(false);
+        setCheckingApi(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [environment, loadIdentity]);
 
   const switchEnvironment = async (nextEnvironment: AdminEnvironment) => {
@@ -344,12 +376,36 @@ export function AdminApp() {
     );
   }
 
-  if (loadingIdentity || !client) {
+  if (checkingApi || loadingIdentity) {
     return (
       <div className="center-screen">
         <Spin size="large" />
       </div>
     );
+  }
+
+  if (apiError) {
+    return (
+      <Result
+        status="warning"
+        title="当前运营环境暂不可用"
+        subTitle={apiError}
+        extra={
+          <Segmented
+            value={environment}
+            options={[
+              { label: '测试环境', value: 'test' },
+              { label: '生产环境', value: 'production' },
+            ]}
+            onChange={(value) => void switchEnvironment(value as AdminEnvironment)}
+          />
+        }
+      />
+    );
+  }
+
+  if (!client) {
+    return null;
   }
 
   if (!user || !admin || !admin.display_name) {
@@ -411,6 +467,8 @@ function AdminWorkspace(props: {
   const [imagePlazaTab, setImagePlazaTab] = useState<ImagePlazaConfigKey>(
     IMAGE_PLAZA_CONFIG_KEYS[0]
   );
+  const [platformInstructionTab, setPlatformInstructionTab] =
+    useState<PlatformInstructionConfigKey>(PLATFORM_INSTRUCTION_CONFIG_KEYS[0]);
   const textStoreRef = useRef(createWorkbenchStore());
   const [textStore, setTextStore] = useState<WorkbenchStore>(textStoreRef.current);
   const syncTextStore = useCallback((updater: (current: WorkbenchStore) => WorkbenchStore) => {
@@ -556,8 +614,8 @@ function AdminWorkspace(props: {
       : props.admin.can_access_test);
   const paymentPlans = useMemo<PaymentPlan[]>(() => {
     const runtimeValue = configs.find((config) => config.key === 'miniapp_payment_plans')?.value;
-    const parsed = PaymentPlansSchema.safeParse(runtimeValue);
-    return parsed.success ? parsed.data : [];
+    const parsed = PaymentPlansRuntimeConfigSchema.safeParse(runtimeValue);
+    return parsed.success ? parsed.data.plans : [];
   }, [configs]);
   const publishedModelIds = useMemo(() => {
     const runtimeValue = configs.find((config) => config.key === 'llm_model_catalog')?.value;
@@ -1012,6 +1070,13 @@ function AdminWorkspace(props: {
                     : imagePlazaTab;
                 setImagePlazaTab(nextTab);
                 setSelectedKey(nextTab);
+              } else if (selection.view === 'platform_instructions') {
+                const nextTab =
+                  selection.configKey && isPlatformInstructionConfigKey(selection.configKey)
+                    ? selection.configKey
+                    : platformInstructionTab;
+                setPlatformInstructionTab(nextTab);
+                setSelectedKey(nextTab);
               } else if (selection.configKey) {
                 setSelectedKey(selection.configKey);
               }
@@ -1031,6 +1096,7 @@ function AdminWorkspace(props: {
                 { key: 'invite_program', label: '裂变邀请管理' },
                 { key: 'image_generation_config', label: '图片生成配置' },
                 { key: 'image_plaza', label: '图片广场' },
+                { key: 'platform_instructions', label: '平台规则' },
                 { key: 'vip_strategy', label: 'VIP策略' },
                 { key: 'text_postprocess', label: '回复富文本规则' },
               ],
@@ -1179,6 +1245,28 @@ function AdminWorkspace(props: {
                   onChange={(key) => {
                     const nextKey = key as ImagePlazaConfigKey;
                     setImagePlazaTab(nextKey);
+                    setSelectedKey(nextKey);
+                  }}
+                />
+              </Card>
+              {configEditorCard}
+            </Space>
+          ) : view === 'platform_instructions' ? (
+            <Space direction="vertical" size="middle" className="editor-stack">
+              <Card title="平台规则">
+                <Typography.Paragraph type="secondary">
+                  四个区域共享当前环境的 managed-config
+                  草稿、发布、历史和回滚链路；选项、状态栏、记忆区位于主体模板之前，彼此独立发布。
+                </Typography.Paragraph>
+                <Tabs
+                  activeKey={platformInstructionTab}
+                  items={PLATFORM_INSTRUCTION_CONFIG_KEYS.map((key) => ({
+                    key,
+                    label: configMetadata[key].label,
+                  }))}
+                  onChange={(key) => {
+                    const nextKey = key as PlatformInstructionConfigKey;
+                    setPlatformInstructionTab(nextKey);
                     setSelectedKey(nextKey);
                   }}
                 />

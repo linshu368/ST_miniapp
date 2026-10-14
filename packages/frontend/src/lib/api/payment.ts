@@ -18,6 +18,8 @@ import type {
   GetWalletBalanceData,
   GetWalletSpendingData,
   PaymentOrderStatus,
+  PostCheckoutConfirmationData,
+  PostCheckoutConfirmationRequest,
   PostDailyCheckinData,
 } from '@miniapp/shared';
 
@@ -62,6 +64,19 @@ async function postCreateOrder(body: CreatePaymentOrderRequest): Promise<CreateP
   });
 }
 
+async function postCheckoutConfirmation(input: {
+  orderId: string;
+  request: PostCheckoutConfirmationRequest;
+}): Promise<PostCheckoutConfirmationData> {
+  return apiClient<PostCheckoutConfirmationData>(
+    `/api/payment/orders/${encodeURIComponent(input.orderId)}/checkout-confirmations`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input.request),
+    }
+  );
+}
+
 async function fetchWalletBalance(): Promise<GetWalletBalanceData> {
   return apiClient<GetWalletBalanceData>('/api/wallet/balance');
 }
@@ -103,6 +118,17 @@ export function useCreatePaymentOrderMutation() {
       });
       void qc.invalidateQueries({ queryKey: paymentKeys.orders() });
     },
+  });
+}
+
+/** Best-effort checkout intent recorder. The caller owns its order-keyed retry record. */
+export function useCheckoutConfirmationMutation() {
+  return useMutation<
+    PostCheckoutConfirmationData,
+    Error,
+    { orderId: string; request: PostCheckoutConfirmationRequest }
+  >({
+    mutationFn: postCheckoutConfirmation,
   });
 }
 

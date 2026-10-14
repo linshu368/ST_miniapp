@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { ok, fail } from '@miniapp/shared';
+import { ok, fail, PatchUserSettingsRequestSchema } from '@miniapp/shared';
 import type {
   GetUserSettingsData,
   PatchUserSettingsData,
@@ -42,12 +42,12 @@ export default async function settingsRoutes(app: FastifyInstance) {
 
       try {
         const dbUser = await getOrCreateDbUser(request.user);
-        const row = await settings.patch(
-          dbUser.id,
-          request.user,
-          (request.body ?? {}) as PatchUserSettingsRequest
-        );
-        const patch = (request.body ?? {}) as PatchUserSettingsRequest;
+        const parsed = PatchUserSettingsRequestSchema.safeParse(request.body ?? {});
+        if (!parsed.success) {
+          return reply.status(400).send(fail('BAD_REQUEST', '设置字段无效'));
+        }
+        const row = await settings.patch(dbUser.id, request.user, parsed.data);
+        const patch: PatchUserSettingsRequest = parsed.data;
         if ('avatar_url' in patch) {
           await deleteStoredUserAvatar(dbUser.id);
         }

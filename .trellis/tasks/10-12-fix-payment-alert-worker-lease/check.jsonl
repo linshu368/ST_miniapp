@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"Review concurrency, failure and log-safety invariants."}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"Review required test and deployment evidence."}

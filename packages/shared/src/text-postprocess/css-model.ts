@@ -1,8 +1,9 @@
 import {
   TEXT_POSTPROCESS_CLASS_TOKEN,
-  TEXT_POSTPROCESS_HTML_TAGS,
   TEXT_POSTPROCESS_THEME_COLOR_VARS,
   TEXT_POSTPROCESS_THEME_RADIUS_VAR,
+  isTextPostprocessHtmlAttribute,
+  isTextPostprocessHtmlTag,
   type CssDeclaration,
   type CssRule,
   type CssSelector,
@@ -47,6 +48,39 @@ const ALIGN = new Set([
 ]);
 const JUSTIFY = new Set([...ALIGN, 'space-between', 'space-around', 'space-evenly']);
 const ROOT_PX = 16;
+const FORBIDDEN_PROPERTIES = new Set([
+  'behavior',
+  'filter',
+  'zoom',
+  'animation',
+  'animation-name',
+  'animation-duration',
+  'animation-delay',
+  'animation-timing-function',
+  'animation-iteration-count',
+  'animation-direction',
+  'animation-fill-mode',
+  'animation-play-state',
+]);
+const FORBIDDEN_FUNCTIONS = new Set([
+  'url',
+  'src',
+  'image-set',
+  'cross-fade',
+  'element',
+  'paint',
+  'expression',
+]);
+const FORBIDDEN_PSEUDOS = new Set([
+  'has',
+  'host',
+  'host-context',
+  'root',
+  'scope',
+  'slotted',
+  'part',
+  'view-transition',
+]);
 
 export interface CssCheckContext {
   mentionsButton: boolean;
@@ -62,11 +96,32 @@ export function checkSelector(selector: CssSelector): boolean {
   if (selector.compounds.length === 0 || selector.compounds[0]?.combinator !== null) return false;
   return selector.compounds.every((compound, index) => {
     if (index > 0 && compound.combinator === null) return false;
-    if (compound.tag === null && compound.classes.length === 0) return false;
-    if (compound.tag !== null && !isHtmlTag(compound.tag)) return false;
+    if (
+      compound.tag === null &&
+      compound.classes.length === 0 &&
+      (compound.attributes?.length ?? 0) === 0
+    )
+      return false;
+    if (compound.tag !== null && compound.tag !== '*' && !isHtmlTag(compound.tag)) return false;
     if (!compound.classes.every((token) => TEXT_POSTPROCESS_CLASS_TOKEN.test(token))) return false;
+    if (
+      !(compound.attributes ?? []).every(
+        (attribute) =>
+          isTextPostprocessHtmlAttribute(attribute.name) &&
+          (attribute.matcher === null
+            ? attribute.value === null && attribute.case_sensitive === null
+            : attribute.value !== null)
+      )
+    )
+      return false;
+    if (
+      compound.pseudo_element != null &&
+      !/^-?[a-z][a-z0-9-]{0,63}$/.test(compound.pseudo_element)
+    )
+      return false;
     return compound.pseudos.every((pseudo) => {
-      if (pseudo.kind !== 'nth-child') return true;
+      if (pseudo.kind !== 'nth-child' && FORBIDDEN_PSEUDOS.has(pseudo.kind)) return false;
+      if (pseudo.kind !== 'nth-child' || !('a' in pseudo) || !('b' in pseudo)) return true;
       if (pseudo.a !== null && (!Number.isInteger(pseudo.a) || pseudo.a < -10 || pseudo.a > 10)) {
         return false;
       }
@@ -90,7 +145,28 @@ export function checkCssRule(rule: CssRule): boolean {
 }
 
 export function checkDeclaration(declaration: CssDeclaration, context: CssCheckContext): boolean {
-  return checkTokens(declaration.property, declaration.tokens, context) === null;
+  const property = declaration.property.toLowerCase();
+  if (FORBIDDEN_PROPERTIES.has(property) || property.startsWith('animation')) return false;
+  if (property === 'position') {
+    const value = declaration.tokens[0];
+    if (declaration.tokens.length !== 1 || value?.t !== 'ident') return false;
+    if (value.v === 'fixed' || value.v === 'sticky') return false;
+  }
+  if (property === 'z-index') {
+    const value = declaration.tokens[0];
+    if (declaration.tokens.length !== 1 || value?.t !== 'number') return false;
+    const parsed = Number(value.v);
+    if (!Number.isInteger(parsed) || parsed < -10 || parsed > 10) return false;
+  }
+  return tokensAreSafe(declaration.tokens, 0);
+}
+
+function tokensAreSafe(tokens: CssToken[], depth: number): boolean {
+  if (depth > 8 || tokens.length === 0 || tokens.length > 64) return false;
+  return tokens.every((token) => {
+    if (token.t !== 'function') return true;
+    return !FORBIDDEN_FUNCTIONS.has(token.name) && tokensAreSafe(token.args, depth + 1);
+  });
 }
 
 function checkTokens(
@@ -757,7 +833,7 @@ function numeric(raw: string): number | null {
 }
 
 function isHtmlTag(value: string): value is TextPostprocessHtmlTag {
-  return (TEXT_POSTPROCESS_HTML_TAGS as readonly string[]).includes(value);
+  return isTextPostprocessHtmlTag(value);
 }
 
 export function scopeProbeSelector(selector: CssSelector): string {
@@ -795,17 +871,36 @@ function serializeRule(rule: CssRule, scopeClass: string): string {
 function serializeSelector(selector: CssSelector): string {
   return selector.compounds
     .map((compound, index) => {
-      const prefix = index === 0 ? '' : compound.combinator === 'child' ? ' > ' : ' ';
+      const prefix =
+        index === 0
+          ? ''
+          : compound.combinator === 'child'
+            ? ' > '
+            : compound.combinator === 'adjacent'
+              ? ' + '
+              : compound.combinator === 'sibling'
+                ? ' ~ '
+                : ' ';
       const tag = compound.tag ?? '';
       const classes = compound.classes.map((token) => `.${token}`).join('');
+      const attributes = (compound.attributes ?? [])
+        .map((attribute) => {
+          if (attribute.matcher === null) return `[${attribute.name}]`;
+          const value = attribute.value ?? '';
+          const flag =
+            attribute.case_sensitive === null ? '' : attribute.case_sensitive ? ' s' : ' i';
+          return `[${attribute.name}${attribute.matcher}"${value.replace(/(["\\])/g, '\\$1')}"${flag}]`;
+        })
+        .join('');
       const pseudos = compound.pseudos
         .map((pseudo) =>
-          pseudo.kind === 'nth-child'
+          pseudo.kind === 'nth-child' && 'a' in pseudo && 'b' in pseudo
             ? `:nth-child(${formatNth(pseudo.a, pseudo.b)})`
             : `:${pseudo.kind}`
         )
         .join('');
-      return `${prefix}${tag}${classes}${pseudos}`;
+      const pseudoElement = compound.pseudo_element ? `::${compound.pseudo_element}` : '';
+      return `${prefix}${tag}${classes}${attributes}${pseudos}${pseudoElement}`;
     })
     .join('');
 }

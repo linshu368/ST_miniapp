@@ -7,9 +7,21 @@ import {
 import { findReplacementToken } from './captures';
 
 const BLOCK_TAGS = new Set<TextPostprocessHtmlTag>([
+  'address',
+  'article',
+  'aside',
   'p',
   'div',
   'section',
+  'header',
+  'footer',
+  'main',
+  'nav',
+  'figure',
+  'figcaption',
+  'dl',
+  'dt',
+  'dd',
   'ul',
   'ol',
   'li',
@@ -23,6 +35,10 @@ const BLOCK_TAGS = new Set<TextPostprocessHtmlTag>([
   'pre',
   'h3',
   'h4',
+  'h1',
+  'h2',
+  'h5',
+  'h6',
   'hr',
   'details',
 ]);
@@ -83,7 +99,11 @@ export function inspectTemplateTree(
       if (structure) return structure;
       const child = visit(node.children, node.tag, depth + 1);
       if (child) return child;
-      if (node.attributes.some((attribute) => attribute.name === 'aria-hidden')) {
+      if (
+        node.attributes.some(
+          (attribute) => attribute.name === 'aria-hidden' && attribute.value === 'true'
+        )
+      ) {
         if (
           node.action ||
           hasCapture(node) ||
@@ -128,8 +148,9 @@ function checkElement(
   }
   const names = new Set<string>();
   for (const attribute of node.attributes) {
-    if (names.has(attribute.name)) return 'FORBIDDEN_ATTRIBUTE';
-    names.add(attribute.name);
+    const attributeName = attribute.name === 'attribute' ? attribute.key : attribute.name;
+    if (names.has(attributeName)) return 'FORBIDDEN_ATTRIBUTE';
+    names.add(attributeName);
     if (attribute.name === 'class') {
       if (attribute.tokens.some((token) => !TEXT_POSTPROCESS_CLASS_TOKEN.test(token))) {
         return 'FORBIDDEN_ATTRIBUTE';

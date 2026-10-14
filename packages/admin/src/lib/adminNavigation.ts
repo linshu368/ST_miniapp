@@ -7,6 +7,7 @@ export type AdminViewKey =
   | 'invite_program'
   | 'image_generation_config'
   | 'image_plaza'
+  | 'platform_instructions'
   | 'vip_strategy'
   | 'text_postprocess'
   | 'characters'
@@ -58,6 +59,21 @@ export function isImagePlazaConfigKey(key: ManagedConfigKey): key is ImagePlazaC
   return (IMAGE_PLAZA_CONFIG_KEYS as readonly string[]).includes(key);
 }
 
+/** One workspace, four independently versioned managed-config keys. */
+export const PLATFORM_INSTRUCTION_CONFIG_KEYS = [
+  'choice_rules',
+  'status_rules',
+  'memory_rules',
+  'system_instructions',
+] as const satisfies readonly ManagedConfigKey[];
+export type PlatformInstructionConfigKey = (typeof PLATFORM_INSTRUCTION_CONFIG_KEYS)[number];
+
+export function isPlatformInstructionConfigKey(
+  key: ManagedConfigKey
+): key is PlatformInstructionConfigKey {
+  return (PLATFORM_INSTRUCTION_CONFIG_KEYS as readonly string[]).includes(key);
+}
+
 export function isImageGenerationConfigKey(key: ManagedConfigKey): key is ImageGenerationConfigKey {
   return (IMAGE_GENERATION_CONFIG_KEYS as readonly string[]).includes(key);
 }
@@ -79,6 +95,7 @@ export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConf
     !isInviteProgramConfigKey(key) &&
     !isImageGenerationConfigKey(key) &&
     !isImagePlazaConfigKey(key) &&
+    !isPlatformInstructionConfigKey(key) &&
     !isVipStrategyConfigKey(key) &&
     key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
 );
@@ -102,6 +119,9 @@ export function resolveAdminMenuSelection(key: string): {
         return { view: 'image_generation_config', configKey };
       }
       if (isImagePlazaConfigKey(configKey)) return { view: 'image_plaza', configKey };
+      if (isPlatformInstructionConfigKey(configKey)) {
+        return { view: 'platform_instructions', configKey };
+      }
       if (isVipStrategyConfigKey(configKey)) return { view: 'vip_strategy', configKey };
       return { view: 'configs', configKey };
     }
@@ -111,6 +131,7 @@ export function resolveAdminMenuSelection(key: string): {
     key === 'invite_program' ||
     key === 'image_generation_config' ||
     key === 'image_plaza' ||
+    key === 'platform_instructions' ||
     key === 'vip_strategy' ||
     key === 'text_postprocess' ||
     key === 'characters' ||

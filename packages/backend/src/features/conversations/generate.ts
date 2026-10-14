@@ -16,6 +16,7 @@ import { GenerationCleanupPendingError } from '../generation/types.js';
 import type { SseTapResult } from '../generation/upstream.js';
 import type { ChatMessageStatus } from '@miniapp/shared';
 import { buildPrompt, fetchPlatformInstructions, type EngineCharacter } from '../engine/index.js';
+import type { InstructionSlotModes } from '../engine/types.js';
 import {
   execute,
   resolveModelForUser,
@@ -141,6 +142,16 @@ export async function runConversationTurn(
   await historyRecords().recoverStaleStreaming(session.id);
   preparationSignal.throwIfAborted();
   const turn = await startTurn(session.id, mode, model.openRouterModelId, windowLimits);
+  log.biz.info(
+    {
+      event: 'conversation.instruction_slots.resolved',
+      sessionId: session.id,
+      turnIndex: turn.turnIndex,
+      revision: turn.revision,
+      slotModes: turn.slotModes,
+    },
+    '已使用持久化的平台规则槽位模式'
+  );
 
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -182,6 +193,7 @@ export async function runConversationTurn(
       truncatedTurns: context.truncatedTurns,
       userInput: turn.userInput,
       userConfig,
+      slotModes: turn.slotModes,
       persona: { displayName },
       instructions: instructions.instructions,
     });
@@ -374,6 +386,7 @@ interface StartedTurn {
   revision: number;
   userInput: string;
   postprocessVersion: number;
+  slotModes: InstructionSlotModes;
 }
 
 async function startTurn(
@@ -399,6 +412,7 @@ async function startTurn(
       revision: started.revision,
       userInput: started.userContent,
       postprocessVersion: started.postprocessVersion,
+      slotModes: started.slotModes,
     };
   }
 
@@ -415,6 +429,7 @@ async function startTurn(
     revision: started.revision,
     userInput: started.userContent,
     postprocessVersion: started.postprocessVersion,
+    slotModes: started.slotModes,
   };
 }
 

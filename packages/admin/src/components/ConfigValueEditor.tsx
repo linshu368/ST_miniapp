@@ -15,6 +15,7 @@ import {
 } from 'antd';
 import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
@@ -31,8 +32,10 @@ import {
   type LlmModelProvider,
   type OpenRouterModelDirectory,
   type PaymentPlan,
+  type PaymentPlansConfig,
   type ProviderModelDirectory,
   type WordCountTiersConfig,
+  type InstructionSlotRules,
   type AdminImageTextModelTestRequest,
   type AdminImageTextModelTestResponse,
 } from '@miniapp/shared';
@@ -62,6 +65,7 @@ import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEdit
 import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
 import { SystemInstructionsEditor } from './SystemInstructionsEditor';
+import { PlatformInstructionSlotRulesEditor } from './PlatformInstructionSlotRulesEditor';
 import { WordCountTiersEditor } from './WordCountTiersEditor';
 
 function asWordCountTiersConfig(value: unknown): WordCountTiersConfig {
@@ -135,6 +139,25 @@ function asInviteCenterConfig(value: unknown): InviteCenterConfig {
     };
   }
   return structuredClone(DEFAULT_INVITE_CENTER_CONFIG);
+}
+
+function asPaymentPlansConfig(value: unknown): PaymentPlansConfig {
+  if (Array.isArray(value)) {
+    return { plans: value as PaymentPlan[], payment_channels: DEFAULT_PAYMENT_CHANNELS_CONFIG };
+  }
+  if (value && typeof value === 'object' && Array.isArray((value as PaymentPlansConfig).plans)) {
+    const record = value as Partial<PaymentPlansConfig>;
+    return {
+      plans: record.plans ?? [],
+      payment_channels: {
+        alipay_enabled: record.payment_channels?.alipay_enabled === true,
+        wxpay_enabled: record.payment_channels?.wxpay_enabled === true,
+        default_payment_type:
+          record.payment_channels?.default_payment_type === 'wxpay' ? 'wxpay' : 'alipay',
+      },
+    };
+  }
+  return { plans: [], payment_channels: DEFAULT_PAYMENT_CHANNELS_CONFIG };
 }
 
 function ImageTextModelConfigEditor(props: {
@@ -399,6 +422,29 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (
+    props.configKey === 'choice_rules' ||
+    props.configKey === 'status_rules' ||
+    props.configKey === 'memory_rules'
+  ) {
+    const fallback = configMetadata[props.configKey].defaultValue as InstructionSlotRules;
+    const parsed =
+      props.value && typeof props.value === 'object' && !Array.isArray(props.value)
+        ? (props.value as Partial<InstructionSlotRules>)
+        : {};
+    return (
+      <PlatformInstructionSlotRulesEditor
+        value={{
+          on_first_two_turns: parsed.on_first_two_turns ?? fallback.on_first_two_turns,
+          on_later_turns: parsed.on_later_turns ?? fallback.on_later_turns,
+          off: parsed.off ?? fallback.off,
+        }}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
   if (props.configKey === 'pref_word_count_tiers') {
     return (
       <WordCountTiersEditor
@@ -519,7 +565,8 @@ export function ConfigValueEditor(props: {
   }
 
   if (props.configKey === 'miniapp_payment_plans') {
-    const plans = Array.isArray(props.value) ? (props.value as PaymentPlan[]) : [];
+    const paymentConfig = asPaymentPlansConfig(props.value);
+    const plans = paymentConfig.plans;
     return (
       <Space direction="vertical" size="middle" className="editor-stack">
         {plans.map((plan, index) => (
@@ -532,7 +579,12 @@ export function ConfigValueEditor(props: {
                 danger
                 size="small"
                 disabled={props.disabled}
-                onClick={() => props.onChange(plans.filter((_, itemIndex) => itemIndex !== index))}
+                onClick={() =>
+                  props.onChange({
+                    ...paymentConfig,
+                    plans: plans.filter((_, itemIndex) => itemIndex !== index),
+                  })
+                }
               >
                 删除
               </Button>
@@ -554,7 +606,7 @@ export function ConfigValueEditor(props: {
                       const next = structuredClone(plans);
                       (next[index] as unknown as Record<string, unknown>)[key] =
                         key === 'id' ? event.target.value : event.target.value || null;
-                      props.onChange(next);
+                      props.onChange({ ...paymentConfig, plans: next });
                     }}
                   />
                 </Col>
@@ -577,7 +629,7 @@ export function ConfigValueEditor(props: {
                       const next = structuredClone(plans);
                       (next[index] as unknown as Record<string, unknown>)[key] =
                         key === 'original_price_cents' ? number : (number ?? 0);
-                      props.onChange(next);
+                      props.onChange({ ...paymentConfig, plans: next });
                     }}
                   />
                 </Col>
@@ -595,7 +647,7 @@ export function ConfigValueEditor(props: {
                   onChange={(variant) => {
                     const next = structuredClone(plans);
                     next[index].variant = variant;
-                    props.onChange(next);
+                    props.onChange({ ...paymentConfig, plans: next });
                   }}
                 />
               </Col>
@@ -606,24 +658,99 @@ export function ConfigValueEditor(props: {
           block
           disabled={props.disabled}
           onClick={() =>
-            props.onChange([
-              ...plans,
-              {
-                id: `plan-${Date.now()}`,
-                price_cents: 0,
-                original_price_cents: null,
-                credits_amount: 0,
-                bonus_credits: 0,
-                variant: 'entry',
-                badge_text: null,
-                sub_copy: null,
-                highlight_text: null,
-              } satisfies PaymentPlan,
-            ])
+            props.onChange({
+              ...paymentConfig,
+              plans: [
+                ...plans,
+                {
+                  id: `plan-${Date.now()}`,
+                  price_cents: 0,
+                  original_price_cents: null,
+                  credits_amount: 0,
+                  bonus_credits: 0,
+                  variant: 'entry',
+                  badge_text: null,
+                  sub_copy: null,
+                  highlight_text: null,
+                } satisfies PaymentPlan,
+              ],
+            })
           }
         >
           添加充值套餐
         </Button>
+        <Card size="small" title="支付通道">
+          <Space direction="vertical" size="middle" className="editor-stack">
+            <Typography.Text type="secondary">
+              仅控制用户端新订单入口；已创建订单与微信支付的服务端处理保持不变。
+            </Typography.Text>
+            <Space wrap>
+              <Switch
+                checked={paymentConfig.payment_channels.alipay_enabled}
+                disabled={props.disabled}
+                checkedChildren="支付宝已开启"
+                unCheckedChildren="支付宝已关闭"
+                onChange={(alipay_enabled) => {
+                  const channels = { ...paymentConfig.payment_channels, alipay_enabled };
+                  if (
+                    !alipay_enabled &&
+                    channels.default_payment_type === 'alipay' &&
+                    channels.wxpay_enabled
+                  ) {
+                    channels.default_payment_type = 'wxpay';
+                  }
+                  props.onChange({ ...paymentConfig, payment_channels: channels });
+                }}
+              />
+              <Switch
+                checked={paymentConfig.payment_channels.wxpay_enabled}
+                disabled={props.disabled}
+                checkedChildren="微信已开启"
+                unCheckedChildren="微信已关闭"
+                onChange={(wxpay_enabled) => {
+                  const channels = { ...paymentConfig.payment_channels, wxpay_enabled };
+                  if (
+                    !wxpay_enabled &&
+                    channels.default_payment_type === 'wxpay' &&
+                    channels.alipay_enabled
+                  ) {
+                    channels.default_payment_type = 'alipay';
+                  }
+                  props.onChange({ ...paymentConfig, payment_channels: channels });
+                }}
+              />
+            </Space>
+            <div>
+              <Typography.Text>默认支付通道</Typography.Text>
+              <Select
+                className="field-full"
+                value={paymentConfig.payment_channels.default_payment_type}
+                disabled={props.disabled}
+                options={[
+                  {
+                    value: 'alipay',
+                    label: '支付宝',
+                    disabled: !paymentConfig.payment_channels.alipay_enabled,
+                  },
+                  {
+                    value: 'wxpay',
+                    label: '微信支付',
+                    disabled: !paymentConfig.payment_channels.wxpay_enabled,
+                  },
+                ]}
+                onChange={(default_payment_type) =>
+                  props.onChange({
+                    ...paymentConfig,
+                    payment_channels: {
+                      ...paymentConfig.payment_channels,
+                      default_payment_type,
+                    },
+                  })
+                }
+              />
+            </div>
+          </Space>
+        </Card>
       </Space>
     );
   }

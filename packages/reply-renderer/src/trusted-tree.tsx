@@ -104,7 +104,9 @@ function TrustedDetails(input: { node: ResolvedElement; path: string; context: T
   };
   return createElement(
     'details',
-    { open },
+    // details 本身也可以承载已编译模板中的受控 class/title/aria 属性。
+    // 不能在这里丢弃它们，否则外层 rp-unit 样式无法命中。
+    { ...attributesOf(input.node), open },
     input.node.children.map((child, index) => {
       const childPath = `${input.path}.${index}`;
       if (child.type === 'element' && child.tag === 'summary') {
@@ -146,11 +148,20 @@ function attributesOf(node: ResolvedElement): Record<string, unknown> {
     if (attribute.name === 'class') result.className = attribute.tokens.join(' ');
     else if (attribute.name === 'title') result.title = attribute.text;
     else if (attribute.name === 'aria-label') result['aria-label'] = attribute.text;
-    else if (attribute.name === 'aria-hidden') result['aria-hidden'] = true;
+    else if (attribute.name === 'aria-hidden') result['aria-hidden'] = attribute.value;
     else if (attribute.name === 'colspan') result.colSpan = attribute.value;
     else if (attribute.name === 'rowspan') result.rowSpan = attribute.value;
+    else if (attribute.name === 'attribute')
+      result[reactAttributeName(attribute.key)] = attribute.value;
   }
   return result;
+}
+
+function reactAttributeName(name: string): string {
+  if (name === 'tabindex') return 'tabIndex';
+  if (name === 'spellcheck') return 'spellCheck';
+  if (name === 'autocapitalize') return 'autoCapitalize';
+  return name;
 }
 
 function countButtonsBefore(nodes: ResolvedNode[], path: string): number {

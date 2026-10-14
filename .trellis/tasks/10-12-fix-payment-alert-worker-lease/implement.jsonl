@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"Locks, timeouts, failure isolation, logging and recovery constraints."}
+{"file":".trellis/spec/backend/app/testing-scripts-and-deployment.md","reason":"Backend regression and production verification requirements."}

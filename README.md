@@ -142,6 +142,8 @@ CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记�
 
 anon key 是浏览器公开配置，但仍应按环境隔离；service-role 绝不能放入 Admin。
 
+Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `dev -> main` 发布 PR 必须配置 HTTPS 的 `VITE_ADMIN_TEST_API_URL`；目标分支为 `dev` 的功能 PR 固定使用 `https://stminiapp-pr-<PR号>.up.railway.app`。构建会拒绝缺失或非 HTTPS 的稳定 TEST 映射；PR Railway workflow 同时验证后端健康和 Admin 代理的 Vercel CORS 预检。
+
 ### CS Platform
 
 `VITE_API_URL`、`VITE_CS_TEST_API_URL`、`VITE_CS_PROD_API_URL` 控制回访默认 API 和 MiniApp 客服环境。当前没有 `.env.example`，部署时必须显式核对，后续新增/修改变量应同步补模板。
@@ -170,7 +172,7 @@ pnpm supabase:link:test
 
 ### AI 回复后处理
 
-- `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/text-postprocess/` 负责确定性编译与分段处理，不执行网络或数据库 IO。
+- `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/rich-reply-protocol.ts` 是模型富回复协议的唯一事实源，`packages/shared/src/text-postprocess/` 负责确定性编译、固定模块解析与分段处理，不执行网络或数据库 IO。
 - Admin「回复富文本规则」使用独立草稿、发布版本和历史恢复流程。保存不切换正式版本；发布/回滚使用 CAS 与 `request_id`，结果未知先查询请求结果，禁止盲目重试写操作。
 - 已发布的 source 与 compiled artifact 作为 `app_core.text_postprocess_versions` 不可变快照原子保存；`app_core.runtime_config.miniapp_text_postprocess_config` 只保存当前正式指针。
 - 每条 assistant 消息绑定自己的 `postprocess_version`。Frontend 按版本批量读取 artifact；缺失、非法、旧消息 `NULL` 或 Worker 失败时只展示完整原始 Markdown，不在客户端编译 source，也不选择最新版本替代。

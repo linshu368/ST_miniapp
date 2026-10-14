@@ -1,0 +1,469 @@
+import {
+  TEXT_POSTPROCESS_LIMITS,
+  type TextPostprocessSegment,
+  type TextPostprocessSlotSegment,
+  type TextPostprocessTextSegment,
+  type TrustedNode,
+} from '../api/text-postprocess';
+
+const MODULE_LIMIT = 32;
+const PANEL =
+  /<details>\s*<summary>\s*([^<>\r\n]{1,40})\s*<\/summary>\s*```markdown\s*\r?\n?([\s\S]*?)\r?\n?```\s*<\/details>/g;
+const LOOSE_PANEL =
+  /<details(?:\s[^>]*)?>\s*<summary(?:\s[^>]*)?>\s*([\s\S]*?)\s*<\/summary>\s*([\s\S]*?)\s*<\/details>/gi;
+const CHOICE = /\[choice\]\s*([\s\S]*?)\s*\[\/choice\]/g;
+const DIALOGUE = /“([^”\r\n]{1,500})”/g;
+
+/**
+ * Parses the fixed v1 model protocol into the same trusted-slot transport used
+ * by custom rules.  This keeps all rendering inside the existing trusted-tree
+ * boundary. Complete protocol envelopes always become trusted slots: exact
+ * grammar gets the rich structure, while format drift is rendered as inert
+ * text so control markers never leak into the conversation.
+ */
+export function applyRichReplyProtocol(source: TextPostprocessSegment[]): {
+  segments: TextPostprocessSegment[];
+  matches: number;
+} {
+  let segments = source;
+  let matches = 0;
+  for (const spec of [
+    { tag: 'choices', ruleId: 'rich-reply-choices', build: choicesSlot },
+    { tag: 'status', ruleId: 'rich-reply-status', build: statusSlot },
+    { tag: 'memory', ruleId: 'rich-reply-memory', build: memorySlot },
+  ] as const) {
+    const applied = replaceModules(
+      segments,
+      spec.tag,
+      spec.ruleId,
+      spec.build,
+      MODULE_LIMIT - matches
+    );
+    segments = applied.segments;
+    matches += applied.matches;
+    if (matches >= MODULE_LIMIT) return { segments, matches };
+  }
+  const dialogue = replaceDialogue(segments, MODULE_LIMIT - matches);
+  return { segments: dialogue.segments, matches: matches + dialogue.matches };
+}
+
+function replaceModules(
+  segments: TextPostprocessSegment[],
+  tag: 'choices' | 'status' | 'memory',
+  ruleId: string,
+  build: (
+    body: string,
+    start: number,
+    end: number,
+    match: string
+  ) => TextPostprocessSlotSegment | null,
+  allowance: number
+): { segments: TextPostprocessSegment[]; matches: number } {
+  if (allowance <= 0) return { segments, matches: 0 };
+  const open = `[${tag}]`;
+  const close = `[/${tag}]`;
+  const next: TextPostprocessSegment[] = [];
+  let matches = 0;
+  for (const segment of segments) {
+    if (segment.type !== 'text' || matches >= allowance) {
+      next.push(segment);
+      continue;
+    }
+    let cursor = 0;
+    let scan = 0;
+    while (scan < segment.text.length && matches < allowance) {
+      const start = segment.text.indexOf(open, scan);
+      if (start < 0) break;
+      const endStart = segment.text.indexOf(close, start + open.length);
+      if (endStart < 0) break;
+      const end = endStart + close.length;
+      const match = segment.text.slice(start, end);
+      const slot = build(
+        segment.text.slice(start + open.length, endStart),
+        segment.start + start,
+        segment.start + end,
+        match
+      );
+      if (!slot) {
+        // Keep malformed protocol text verbatim, but continue scanning so a
+        // later complete module in the same reply can still render.
+        scan = end;
+        continue;
+      }
+      if (start > cursor) next.push(sliceText(segment, cursor, start));
+      next.push({ ...slot, rule_id: ruleId });
+      cursor = end;
+      scan = end;
+      matches += 1;
+    }
+    if (cursor === 0) next.push(segment);
+    else if (cursor < segment.text.length)
+      next.push(sliceText(segment, cursor, segment.text.length));
+  }
+  return { segments: next, matches };
+}
+
+function choicesSlot(
+  body: string,
+  start: number,
+  end: number,
+  match: string
+): TextPostprocessSlotSegment | null {
+  const choices = captureChoiceBodies(body);
+  if (
+    !choices ||
+    choices.some(
+      (choice) => choice.length === 0 || choice.length > TEXT_POSTPROCESS_LIMITS.maxOptionUnits
+    )
+  ) {
+    return plainModuleSlot(
+      start,
+      end,
+      match,
+      '选项内容',
+      '格式异常，已安全展示',
+      'rp-unit--choices',
+      protocolText(body).slice(0, TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits) || '暂无'
+    );
+  }
+  const result = slot(start, end, match, [
+    element(
+      'details',
+      ['rp-unit', 'rp-unit--choices'],
+      [
+        element(
+          'summary',
+          [],
+          [
+            element(
+              'span',
+              ['rp-unit__heading'],
+              [
+                element('strong', [], [text('接下来……')]),
+                element('small', [], [text('想怎么回应？ · 3 个选项')]),
+              ]
+            ),
+            element(
+              'span',
+              ['rp-unit__chevron'],
+              [text('›')],
+              [{ name: 'aria-hidden', value: 'true' }]
+            ),
+          ]
+        ),
+        element(
+          'div',
+          ['rp-unit__body', 'rp-choice-list'],
+          choices.map((choice) =>
+            element(
+              'button',
+              ['rp-choice'],
+              [
+                element('span', [], [text(choice)]),
+                element(
+                  'span',
+                  ['rp-choice__arrow'],
+                  [text('→')],
+                  [{ name: 'aria-hidden', value: 'true' }]
+                ),
+              ],
+              [],
+              { type: 'send-message' }
+            )
+          )
+        ),
+      ]
+    ),
+  ]);
+  result.choices = choices.map((text) => ({ text, sendable: true }));
+  return result;
+}
+
+function statusSlot(
+  body: string,
+  start: number,
+  end: number,
+  match: string
+): TextPostprocessSlotSegment | null {
+  return panelModuleSlot(body, start, end, match, '人物近况', '这一刻的变化', 'rp-unit--status');
+}
+
+function memorySlot(
+  body: string,
+  start: number,
+  end: number,
+  match: string
+): TextPostprocessSlotSegment | null {
+  return panelModuleSlot(
+    body,
+    start,
+    end,
+    match,
+    '故事记忆',
+    '已记住这段经历',
+    'rp-unit--memory',
+    'rp-memory-list'
+  );
+}
+
+function panelModuleSlot(
+  body: string,
+  start: number,
+  end: number,
+  match: string,
+  heading: string,
+  subtitle: string,
+  className: string,
+  bodyClassName?: string
+): TextPostprocessSlotSegment | null {
+  const panels = capturePanels(body, heading);
+  return slot(start, end, match, [
+    element(
+      'details',
+      ['rp-unit', className],
+      [
+        element(
+          'summary',
+          [],
+          [
+            element(
+              'span',
+              ['rp-unit__heading'],
+              [element('strong', [], [text(heading)]), element('small', [], [text(subtitle)])]
+            ),
+            element(
+              'span',
+              ['rp-unit__chevron'],
+              [text('›')],
+              [{ name: 'aria-hidden', value: 'true' }]
+            ),
+          ]
+        ),
+        element(
+          'div',
+          ['rp-unit__body', 'rp-panel-list', ...(bodyClassName ? [bodyClassName] : [])],
+          panels.map(({ title, content }) =>
+            element(
+              'details',
+              [],
+              [
+                element('summary', [], [text(title)]),
+                element('pre', [], [element('code', [], [text(content)])]),
+              ]
+            )
+          )
+        ),
+      ]
+    ),
+  ]);
+}
+
+function replaceDialogue(
+  segments: TextPostprocessSegment[],
+  allowance: number
+): { segments: TextPostprocessSegment[]; matches: number } {
+  if (allowance <= 0) return { segments, matches: 0 };
+  const next: TextPostprocessSegment[] = [];
+  let matches = 0;
+  for (const segment of segments) {
+    if (segment.type !== 'text' || matches >= allowance) {
+      next.push(segment);
+      continue;
+    }
+    DIALOGUE.lastIndex = 0;
+    let cursor = 0;
+    let found: RegExpExecArray | null;
+    while (matches < allowance && (found = DIALOGUE.exec(segment.text))) {
+      if (found.index > cursor) next.push(sliceText(segment, cursor, found.index));
+      next.push(
+        slot(
+          segment.start + found.index,
+          segment.start + found.index + found[0].length,
+          found[0],
+          [element('span', ['rp-dialogue'], [text(found[0])])],
+          'rich-reply-dialogue',
+          'inline'
+        )
+      );
+      cursor = found.index + found[0].length;
+      matches += 1;
+    }
+    if (cursor === 0) next.push(segment);
+    else if (cursor < segment.text.length)
+      next.push(sliceText(segment, cursor, segment.text.length));
+  }
+  return { segments: next, matches };
+}
+
+function captureChoiceBodies(body: string): string[] | null {
+  const choices: string[] = [];
+  let cursor = 0;
+  CHOICE.lastIndex = 0;
+  let found: RegExpExecArray | null;
+  while ((found = CHOICE.exec(body))) {
+    if (body.slice(cursor, found.index).trim().length > 0) return null;
+    choices.push(found[1]?.trim() ?? '');
+    cursor = found.index + found[0].length;
+  }
+  if (body.slice(cursor).trim().length > 0 || choices.length !== 3) return null;
+  return choices;
+}
+
+function capturePanels(
+  body: string,
+  fallbackTitle: string
+): Array<{ title: string; content: string }> {
+  const panels: Array<{ title: string; content: string }> = [];
+  let cursor = 0;
+  PANEL.lastIndex = 0;
+  let found: RegExpExecArray | null;
+  while ((found = PANEL.exec(body))) {
+    if (body.slice(cursor, found.index).trim().length > 0)
+      return captureLoosePanels(body, fallbackTitle);
+    const title = found[1]?.trim() ?? '';
+    const content = found[2]?.trim() ?? '';
+    if (!title || !content || content.length > TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits)
+      return captureLoosePanels(body, fallbackTitle);
+    panels.push({ title, content });
+    cursor = found.index + found[0].length;
+  }
+  return panels.length > 0 && body.slice(cursor).trim().length === 0
+    ? panels
+    : captureLoosePanels(body, fallbackTitle);
+}
+
+function captureLoosePanels(
+  body: string,
+  fallbackTitle: string
+): Array<{ title: string; content: string }> {
+  const panels: Array<{ title: string; content: string }> = [];
+  let cursor = 0;
+  LOOSE_PANEL.lastIndex = 0;
+  let found: RegExpExecArray | null;
+  while ((found = LOOSE_PANEL.exec(body))) {
+    if (protocolText(body.slice(cursor, found.index)).length > 0) {
+      return fallbackPanel(body, fallbackTitle);
+    }
+    const title = protocolText(found[1] ?? '').slice(0, 40);
+    const content = protocolText(found[2] ?? '');
+    if (!title || !content || content.length > TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits) {
+      return fallbackPanel(body, fallbackTitle);
+    }
+    panels.push({ title, content });
+    cursor = found.index + found[0].length;
+  }
+  return panels.length > 0 && protocolText(body.slice(cursor)).length === 0
+    ? panels
+    : fallbackPanel(body, fallbackTitle);
+}
+
+function fallbackPanel(body: string, title: string): Array<{ title: string; content: string }> {
+  const content = protocolText(body).slice(0, TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits);
+  return [{ title, content: content || '暂无' }];
+}
+
+function protocolText(value: string): string {
+  return value
+    .replace(/```(?:markdown)?\s*/gi, '')
+    .replace(/<\/?(?:details|summary)(?:\s[^>]*)?>/gi, '')
+    .replace(/\[\/?(?:choices?|status|memory)\]/gi, '')
+    .trim();
+}
+
+function plainModuleSlot(
+  start: number,
+  end: number,
+  match: string,
+  heading: string,
+  subtitle: string,
+  className: string,
+  content: string
+): TextPostprocessSlotSegment {
+  return slot(start, end, match, [
+    element(
+      'details',
+      ['rp-unit', className],
+      [
+        element(
+          'summary',
+          [],
+          [
+            element(
+              'span',
+              ['rp-unit__heading'],
+              [element('strong', [], [text(heading)]), element('small', [], [text(subtitle)])]
+            ),
+            element(
+              'span',
+              ['rp-unit__chevron'],
+              [text('›')],
+              [{ name: 'aria-hidden', value: 'true' }]
+            ),
+          ]
+        ),
+        element(
+          'div',
+          ['rp-unit__body', 'rp-panel-list'],
+          [element('pre', [], [element('code', [], [text(content)])])]
+        ),
+      ]
+    ),
+  ]);
+}
+
+function slot(
+  start: number,
+  end: number,
+  matchText: string,
+  tree: TrustedNode[],
+  ruleId = '',
+  placement: 'inline' | 'block' = 'block'
+): TextPostprocessSlotSegment {
+  return {
+    type: 'slot',
+    rule_id: ruleId,
+    start,
+    end,
+    placement,
+    match_text: matchText,
+    captures: [],
+    tree,
+    choices: [],
+  };
+}
+
+function text(value: string): TrustedNode {
+  return { type: 'text', text: value };
+}
+
+function element(
+  tag: string,
+  classes: string[],
+  children: TrustedNode[],
+  attributes: Array<{ name: 'aria-hidden'; value: 'true' }> = [],
+  action: { type: 'send-message' } | null = null
+): TrustedNode {
+  return {
+    type: 'element',
+    tag,
+    attributes: [
+      ...(classes.length > 0 ? [{ name: 'class' as const, tokens: classes }] : []),
+      ...attributes,
+    ],
+    children,
+    action,
+  };
+}
+
+function sliceText(
+  segment: TextPostprocessTextSegment,
+  from: number,
+  to: number
+): TextPostprocessTextSegment {
+  return {
+    type: 'text',
+    text: segment.text.slice(from, to),
+    start: segment.start + from,
+    end: segment.start + to,
+  };
+}

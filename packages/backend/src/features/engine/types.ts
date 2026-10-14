@@ -5,7 +5,16 @@
 // 与本模块的组装逻辑承担。
 // {{user}} 是唯一例外：组 prompt 时替换为 persona.displayName。
 
-import type { UserGenerationConfig } from '@miniapp/shared';
+import type { InstructionSlotRules, UserGenerationConfig } from '@miniapp/shared';
+
+/** Persisted by the turn-start RPC; never part of a public DTO. */
+export type InstructionSlotMode = 'full' | 'concise' | 'off';
+
+export interface InstructionSlotModes {
+  choice: InstructionSlotMode;
+  status: InstructionSlotMode;
+  memory: InstructionSlotMode;
+}
 
 /**
  * 角色卡基础字段组，取自 app_core.characters。
@@ -46,16 +55,15 @@ export interface EngineWordCountTiers {
 
 /**
  * 平台规则的权威来源，读自 app_core.runtime_config。
- * 对齐旧 bot 的 system_instructions 模板机制，三个占位符是 pref_* 得以生效的前提：
- * {{WORD_COUNT}} / {{INTERACTION_MODE}} / {{USER_CUSTOM_INSTRUCTIONS}}。
+ * 对齐平台 system_instructions 模板机制；槽位模式由已持久化的开轮结果决定，
+ * 不能在 prompt 层根据当前用户偏好重新判断。
  */
 export interface EnginePlatformInstructions {
   template: string;
-  interactionModeBlocks: {
-    optionsOn: string;
-    optionsOff: string;
-  };
   wordCountTiers: EngineWordCountTiers;
+  choiceRules: InstructionSlotRules;
+  statusRules: InstructionSlotRules;
+  memoryRules: InstructionSlotRules;
 }
 
 export interface EngineInput {
@@ -76,6 +84,7 @@ export interface EngineInput {
   /** 本轮用户输入原文。引擎负责把平台规则包装在它外面后作为最后一条 user 消息 */
   userInput: string;
   userConfig: UserGenerationConfig;
+  slotModes: InstructionSlotModes;
   persona: { displayName: string | null };
   instructions: EnginePlatformInstructions;
 }

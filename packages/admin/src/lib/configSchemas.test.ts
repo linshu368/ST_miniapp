@@ -126,3 +126,27 @@ describe('llm provider routing config registration', () => {
     ).toBe(false);
   });
 });
+
+describe('platform instruction slot registration', () => {
+  it('uses the Shared strict schema for each independently managed slot', () => {
+    for (const key of ['choice_rules', 'status_rules', 'memory_rules'] as const) {
+      expect(managedConfigKeys).toContain(key);
+      expect(configSchemas[key].safeParse(configMetadata[key].defaultValue).success).toBe(true);
+      expect(configSchemas[key].safeParse({ on_first_two_turns: 'full', off: 'off' }).success).toBe(
+        false
+      );
+    }
+  });
+
+  it('requires all current template placeholders instead of the retired mode token', () => {
+    expect(
+      configSchemas.system_instructions.safeParse(configMetadata.system_instructions.defaultValue)
+        .success
+    ).toBe(true);
+    expect(
+      configSchemas.system_instructions.safeParse(
+        '{{INTERACTION_MODE}} {{WORD_COUNT}} {{USER_CUSTOM_INSTRUCTIONS}}'
+      ).success
+    ).toBe(false);
+  });
+});

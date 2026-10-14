@@ -11,6 +11,7 @@ import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
+  PLATFORM_INSTRUCTION_CONFIG_KEYS,
   VIP_STRATEGY_CONFIG_KEYS,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
@@ -83,6 +84,19 @@ describe('admin navigation', () => {
       expect(sidebarManagedConfigKeys).not.toContain(key);
     }
     expect(resolveAdminMenuSelection('vip_strategy')).toEqual({ view: 'vip_strategy' });
+  });
+
+  it('routes the four platform-rule areas to one workspace and hides duplicate entries', () => {
+    for (const key of PLATFORM_INSTRUCTION_CONFIG_KEYS) {
+      expect(resolveAdminMenuSelection(configMenuKey(key))).toEqual({
+        view: 'platform_instructions',
+        configKey: key,
+      });
+      expect(sidebarManagedConfigKeys).not.toContain(key);
+    }
+    expect(resolveAdminMenuSelection('platform_instructions')).toEqual({
+      view: 'platform_instructions',
+    });
   });
 
   it('keeps the retired media limit hidden while VIP strategy owns per-feature limits', () => {

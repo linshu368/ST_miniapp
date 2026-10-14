@@ -7,14 +7,19 @@ import { Worker as NodeWorker } from 'node:worker_threads';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   validateCompiledArtifact,
+  LEGACY_RICH_REPLY_CSS,
+  RICH_REPLY_RULE_STYLES,
   type CompiledTextPostprocessArtifact,
   type CompiledTextPostprocessRule,
 } from '@miniapp/shared';
 
 import { composeAppliedView } from '../compose';
+import { BASE_CSS } from '../base-css';
 import { createAlphanumericNonce } from '../nonce';
 import { isSafeCss } from '../css-safety';
 import { ReplyRenderer } from '../ReplyRenderer';
+import { buildWorkerResponse } from '../postprocess-job';
+import { ruleScopeClass } from '../scope-class';
 import { mainBundlePath, workerBundlePath } from '../test-bundle-paths';
 import { TrustedTree } from '../trusted-tree';
 import {
@@ -67,6 +72,32 @@ afterEach(() => {
 });
 
 describe('reply renderer boundaries', () => {
+  it('keeps rich-reply visuals in rule defaults and only retains a v1 compatibility skin', () => {
+    expect(BASE_CSS).not.toContain('.rp-unit');
+    expect(RICH_REPLY_RULE_STYLES.choice).toContain('.rp-choice:disabled');
+    expect(RICH_REPLY_RULE_STYLES.dialogue).toContain('-webkit-box-decoration-break');
+    expect(LEGACY_RICH_REPLY_CSS).toContain('.reply-markdown .rp-unit');
+  });
+
+  it('routes v2 rule CSS to the fixed rich-reply slot it styles', () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [inlineRule({ id: 'dialogue' })],
+    });
+    const response = buildWorkerResponse({
+      jobId: 1,
+      generation: 1,
+      content: '“hello”',
+      artifact,
+      messageKey: 'message',
+      deadlineAt: Date.now() + 1000,
+    });
+    expect(response.css).toContain(`.${ruleScopeClass('message', 'rich-reply-dialogue')}`);
+    expect(response.css).not.toContain(LEGACY_RICH_REPLY_CSS);
+  });
+
   it('keeps the main bundle off the compiler and runs apply inside the worker bundle', () => {
     const workerSource = readFileSync(workerBundlePath, 'utf8');
     const mainSource = readFileSync(mainBundlePath, 'utf8');
@@ -170,6 +201,7 @@ describe('markdown and trusted slots', () => {
     expect(view.container.textContent ?? '').not.toMatch(/[A-Za-z0-9]{22,}/);
     const style = view.container.querySelector('style')?.textContent ?? '';
     expect(style).toContain('color: red');
+    expect(style).toContain('color-scheme: inherit');
     expect(style).not.toMatch(/url\s*\(|@import|http:|data:/i);
     const scope = view.container.querySelector('mark.card')?.parentElement?.className ?? '';
     expect(scope.length).toBeGreaterThan(1);
@@ -303,6 +335,39 @@ describe('trust boundaries', () => {
     expect(forged.container.textContent).toContain('nope');
   });
 
+  it('renders compiler-approved semantic tags and inert attributes', () => {
+    const view = render(
+      <TrustedTree
+        nodes={[
+          {
+            type: 'element',
+            tag: 'article',
+            attributes: [
+              { name: 'attribute', key: 'role', value: 'note' },
+              { name: 'attribute', key: 'data-layout', value: 'story' },
+              { name: 'attribute', key: 'aria-expanded', value: 'false' },
+            ],
+            action: null,
+            children: [{ type: 'text', text: 'semantic content' }],
+          },
+        ]}
+        messageKey="semantic-message"
+        ruleId="semantic"
+        start={0}
+        end={16}
+        choices={[]}
+        interactive={false}
+        openStore={new Map()}
+      />
+    );
+
+    const article = view.container.querySelector('article');
+    expect(article).not.toBeNull();
+    expect(article?.getAttribute('role')).toBe('note');
+    expect(article?.getAttribute('data-layout')).toBe('story');
+    expect(article?.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('shows the full original text for unknown schema, policy, and invalid artifacts', async () => {
     const content = 'SENTINEL keep the whole reply';
     for (const artifact of [
@@ -400,6 +465,8 @@ describe('choice and details interaction', () => {
     const view = render(element('StatusCard', artifact, { messageKey: 'status' }));
     await waitForState(view.container, 'applied');
     const summary = view.getByText('Status');
+    expect(summary.closest('details')?.classList.contains('rp-unit')).toBe(true);
+    expect(summary.closest('details')?.classList.contains('rp-unit--status')).toBe(true);
     expect(summary.closest('details')?.hasAttribute('open')).toBe(false);
     expect((summary as HTMLElement).style.minHeight).toBe('44px');
     await user.click(summary);
@@ -589,7 +656,9 @@ async function waitForState(
   );
 }
 
-function inlineRule(): CompiledTextPostprocessRule {
+function inlineRule(
+  overrides: Partial<CompiledTextPostprocessRule> = {}
+): CompiledTextPostprocessRule {
   return {
     id: 'highlight',
     enabled: true,
@@ -617,6 +686,7 @@ function inlineRule(): CompiledTextPostprocessRule {
         declarations: [{ property: 'color', tokens: [{ t: 'ident', v: 'red' }] }],
       },
     ],
+    ...overrides,
   };
 }
 
@@ -653,7 +723,7 @@ function detailsRule(): CompiledTextPostprocessRule {
       {
         type: 'element',
         tag: 'details',
-        attributes: [],
+        attributes: [{ name: 'class', tokens: ['rp-unit', 'rp-unit--status'] }],
         action: null,
         children: [
           {

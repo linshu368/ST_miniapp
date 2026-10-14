@@ -22,6 +22,7 @@ import {
   type TextPostprocessRule,
   type TextPostprocessSource,
 } from '../api/text-postprocess';
+import { RICH_REPLY_RULE_STYLES } from '../text-postprocess/rich-reply-styles';
 import { applyTextPostprocess } from '../text-postprocess/apply';
 import { compileTextPostprocessSource } from '../text-postprocess/compile';
 import { resolveTrustedTree } from '../text-postprocess/resolve-tree';
@@ -159,7 +160,98 @@ describe('capture compilation', () => {
   });
 });
 
+describe('rich reply protocol', () => {
+  it('turns complete fixed modules into trusted slots and safely contains malformed modules', () => {
+    const artifact = compileOk([]);
+    const complete = [
+      '她轻声说：“我会留下。”',
+      '[choices][choice]握住她的手[/choice][choice]再问一次[/choice][choice]安静等待[/choice][/choices]',
+      '[status]<details><summary>此刻</summary>```markdown\n地点：花园\n时间：深夜\n```</details>[/status]',
+      '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：1/7\n```</details>[/memory]',
+    ].join('\n\n');
+
+    const applied = applyTextPostprocess({ text: complete, artifact });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    expect(applied.segments.filter((segment) => segment.type === 'slot')).toHaveLength(4);
+    const choices = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-choices'
+    );
+    expect(choices?.type === 'slot' ? choices.choices.map((choice) => choice.text) : []).toEqual([
+      '握住她的手',
+      '再问一次',
+      '安静等待',
+    ]);
+    const status = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-status'
+    );
+    expect(JSON.stringify(status?.type === 'slot' ? status.tree : [])).not.toContain('```markdown');
+    const memory = applied.segments.find(
+      (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-memory'
+    );
+    expect(JSON.stringify(memory?.type === 'slot' ? memory.tree : [])).toContain('rp-memory-list');
+
+    const malformedText = '[choices][choice]一[/choice][choice]二[/choice][/choices]';
+    const malformed = applyTextPostprocess({ text: malformedText, artifact });
+    expect(malformed.status).toBe('applied');
+    const malformedSlot = malformed.segments.find((segment) => segment.type === 'slot');
+    expect(malformedSlot?.type === 'slot' ? malformedSlot.choices : []).toEqual([]);
+    expect(JSON.stringify(malformedSlot?.type === 'slot' ? malformedSlot.tree : [])).not.toContain(
+      '[choices]'
+    );
+    expect(JSON.stringify(malformedSlot?.type === 'slot' ? malformedSlot.tree : [])).not.toContain(
+      'send-message'
+    );
+  });
+
+  it('normalizes complete status and memory envelopes when panel formatting drifts', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: [
+        '[status]角色状态栏\n\n### 林小满\n- 好感度：60/100[/status]',
+        '[memory]<details><summary>工作记忆</summary>当前记忆数目：3/7\n第一轮事实</details><details><summary>历史档案</summary>暂无</details>[/memory]',
+      ].join('\n\n'),
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    expect(
+      applied.segments
+        .filter((segment) => segment.type === 'slot')
+        .map((segment) => segment.rule_id)
+    ).toEqual(['rich-reply-status', 'rich-reply-memory']);
+    const rendered = JSON.stringify(
+      applied.segments.flatMap((segment) => (segment.type === 'slot' ? segment.tree : [segment]))
+    );
+    expect(rendered).not.toContain('[status]');
+    expect(rendered).not.toContain('[memory]');
+    expect(rendered).not.toContain('<details>');
+    expect(rendered).toContain('好感度：60/100');
+    expect(rendered).toContain('第一轮事实');
+  });
+});
+
 describe('segment application', () => {
+  it('renders legacy bare choices and plain memory after ordinary rules leave them untouched', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: [
+        '[choice]留下[/choice]',
+        '[choice]离开[/choice]',
+        '[choice]等待[/choice]',
+        '',
+        '[memory]工作记忆：已抵达花园\n里程碑：第一次见面[/memory]',
+      ].join('\n'),
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    const slots = applied.segments.filter((segment) => segment.type === 'slot');
+    expect(slots.map((slot) => slot.rule_id)).toEqual(['choice', 'rich-reply-memory']);
+    expect(slots[0]?.choices.map((choice) => choice.text)).toEqual(['留下', '离开', '等待']);
+    expect(slots[1]?.match_text).toContain('工作记忆');
+  });
+
   it('applies order, overlap, non-global, multiline, misses, and empty-match rejection', () => {
     const artifact = compileOk([
       rule({ id: 'first', pattern: 'ab', replacement: '<mark>$&</mark>' }),
@@ -257,6 +349,51 @@ describe('html and css policy', () => {
     expect(implicit.diagnostics.some((item) => item.code === 'HTML_IMPLICIT_NODE')).toBe(true);
   });
 
+  it('accepts semantic tags and inert presentation attributes without a positive allowlist', () => {
+    const compiled = compileTextPostprocessSource(
+      source([
+        rule({
+          replacement:
+            '<article role="note" data-layout="story"><header aria-expanded="false">Title</header><footer>$&</footer></article>',
+          css: 'article > header { color: red; }',
+        }),
+      ])
+    );
+
+    expect(compiled.ok).toBe(true);
+    expect(compiled.diagnostics).toEqual([]);
+    expect(compiled.artifact?.rules[0]?.tree).toMatchObject([
+      {
+        type: 'element',
+        tag: 'article',
+        attributes: [
+          { name: 'attribute', key: 'role', value: 'note' },
+          { name: 'attribute', key: 'data-layout', value: 'story' },
+        ],
+      },
+    ]);
+  });
+
+  it('still rejects URL, inline-style, event, and form capabilities', () => {
+    for (const replacement of [
+      '<a href="https://example.com">link</a>',
+      '<section style="position:fixed">overlay</section>',
+      '<div onmouseover="alert(1)">event</div>',
+      '<form><button>submit</button></form>',
+      '<img src="https://example.com/a.png">',
+      '<label for="app-login">redirect focus</label>',
+      '<button popovertarget="app-menu">open external UI</button>',
+    ]) {
+      const compiled = compileTextPostprocessSource(source([rule({ replacement })]));
+      expect(compiled.ok).toBe(false);
+      expect(
+        compiled.diagnostics.some(
+          (item) => item.code === 'FORBIDDEN_TAG' || item.code === 'FORBIDDEN_ATTRIBUTE'
+        )
+      ).toBe(true);
+    }
+  });
+
   it('keeps model-authored actions as text and only trusts compiler-built buttons', () => {
     const artifact = compileOk([
       rule({
@@ -301,8 +438,7 @@ describe('html and css policy', () => {
     const cases: Array<[string, string]> = [
       ['body { color: red }', 'FORBIDDEN_SELECTOR'],
       ['.card { position: fixed }', 'FORBIDDEN_PROPERTY'],
-      ['.card { z-index: 3 }', 'FORBIDDEN_PROPERTY'],
-      ['.card { margin: -4px }', 'FORBIDDEN_VALUE'],
+      ['.card { z-index: 99 }', 'FORBIDDEN_PROPERTY'],
       ['.card { background: url(https://evil.example/a.png) }', 'EXTERNAL_RESOURCE'],
       ['@import "https://evil.example/a.css";', 'EXTERNAL_RESOURCE'],
       ['.card { color: red !important }', 'CSS_IMPORTANT'],
@@ -324,6 +460,28 @@ describe('html and css policy', () => {
       }),
     ]);
     expect(safe.rules[0]?.css[0]).toMatchObject({ type: 'media' });
+
+    const richReply = compileOk([
+      rule({ id: 'choice', css: RICH_REPLY_RULE_STYLES.choice }),
+      rule({ id: 'status', css: RICH_REPLY_RULE_STYLES.status }),
+      rule({ id: 'memory', css: RICH_REPLY_RULE_STYLES.memory }),
+      rule({ id: 'dialogue', css: RICH_REPLY_RULE_STYLES.dialogue }),
+    ]);
+    expect(richReply.rich_reply_protocol).toEqual({ version: 2, enabled: true });
+  });
+
+  it('accepts ordinary scoped CSS while retaining capability boundaries', () => {
+    const artifact = compileOk([
+      rule({
+        replacement: '<details class="rp-card" open><summary>Title</summary><p>$&</p></details>',
+        css: `/* Operators may add presentation comments. */
+.rp-card[open] > summary::after { content: "•"; font: italic 600 14px/1.4 system-ui; cursor: pointer; }
+.rp-card + .rp-card, .rp-card ~ .rp-card { border-left: 2px solid currentColor; transform: translateX(1px); opacity: .9; transition: opacity 120ms ease; }
+.rp-card::-webkit-details-marker { display: none; }
+@media (max-width: 480px) { .rp-card { color: light-dark(black, white); } }`,
+      }),
+    ]);
+    expect(artifact.rules[0]?.css).toHaveLength(4);
   });
 });
 

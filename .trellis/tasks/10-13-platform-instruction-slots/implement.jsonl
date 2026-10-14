@@ -1,0 +1,14 @@
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend prompt, routes, reliability and validation entry rules"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"Current conversation turn and generation ownership"}
+{"file":".trellis/spec/backend/app/modules/infrastructure/runtime-data-security.md","reason":"Runtime config and repository boundaries"}
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend React Query and validation rules"}
+{"file":".trellis/spec/frontend/app/modules/business/conversation-ui.md","reason":"Generation preferences UI ownership"}
+{"file":".trellis/spec/admin/app/index.md","reason":"Admin managed config and environment rules"}
+{"file":".trellis/spec/admin/app/modules/business/operations.md","reason":"Operations page and publish workflow ownership"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Cross-app DTO compatibility rules"}
+{"file":".trellis/spec/shared/contracts/modules/business/conversation-contracts.md","reason":"Conversation and user preference contract scope"}
+{"file":".trellis/spec/database/supabase/index.md","reason":"Migration, environment and database safety gates"}
+{"file":".trellis/spec/database/supabase/schema-and-object-conventions.md","reason":"app_core, experience and admin domain ownership"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"Single-file rollout and recovery requirements"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"End-to-end producer and consumer mapping"}
+{"file":".trellis/tasks/10-13-platform-instruction-slots/research/current-platform-instruction-facts.md","reason":"Verified code baseline, reuse inventory and live evidence gaps"}

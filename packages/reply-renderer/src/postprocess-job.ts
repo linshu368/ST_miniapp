@@ -2,6 +2,7 @@ import {
   serializeScopedCss,
   validateCompiledArtifact,
   applyTextPostprocess,
+  LEGACY_RICH_REPLY_CSS,
 } from '@miniapp/shared';
 
 import { isSafeCss } from './css-safety';
@@ -54,10 +55,35 @@ function scopedCss(request: WorkerRequest): string | null {
   try {
     const css = validated.artifact.rules
       .filter((rule) => rule.css.length > 0)
-      .map((rule) => serializeScopedCss(rule.css, ruleScopeClass(request.messageKey, rule.id)))
+      .map((rule) =>
+        serializeScopedCss(
+          rule.css,
+          ruleScopeClass(request.messageKey, richReplyScopeRuleId(rule.id))
+        )
+      )
       .join('\n');
-    return isSafeCss(css) ? css : null;
+    const withCompatibility =
+      validated.artifact.rich_reply_protocol?.version === 1
+        ? `${LEGACY_RICH_REPLY_CSS}\n${css}`
+        : css;
+    return isSafeCss(withCompatibility) ? withCompatibility : null;
   } catch {
     return null;
+  }
+}
+
+/** The fixed protocol emits stable internal slot ids while Admin owns the four source rules. */
+function richReplyScopeRuleId(ruleId: string): string {
+  switch (ruleId) {
+    case 'choice':
+      return 'rich-reply-choices';
+    case 'status':
+      return 'rich-reply-status';
+    case 'memory':
+      return 'rich-reply-memory';
+    case 'dialogue':
+      return 'rich-reply-dialogue';
+    default:
+      return ruleId;
   }
 }
