@@ -1,0 +1,230 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+
+import { Switch } from '@/components/ui/switch';
+import {
+  useGenerationConfigQuery,
+  usePatchGenerationConfigMutation,
+} from '@/lib/api/generation-config';
+import { cn } from '@/lib/utils';
+import { isInstructionSlotEnabled } from './chat-generation-settings-state';
+import type { ReplyDetailsDefaultOpen } from './reply-preference-display';
+
+const MAX_CUSTOM_INSTRUCTIONS = 500;
+const GUIDE_STORAGE_KEY = 'st.chat.reply-preferences-guide-seen.v1';
+
+type SlotKey = 'status' | 'memory' | 'choice';
+
+const SLOT_CONFIG: ReadonlyArray<{
+  key: SlotKey;
+  label: string;
+  preference: 'pref_show_status' | 'pref_show_memory' | 'pref_show_options';
+}> = [
+  { key: 'status', label: '状态栏', preference: 'pref_show_status' },
+  { key: 'memory', label: '记忆栏', preference: 'pref_show_memory' },
+  { key: 'choice', label: '可选项', preference: 'pref_show_options' },
+];
+
+interface ChatReplyPreferencesProps {
+  detailsDefaultOpen: ReplyDetailsDefaultOpen;
+  onDetailsDefaultOpenChange: (value: ReplyDetailsDefaultOpen) => void;
+}
+
+/** 输入框上方的轻量偏好抽屉；模型规则仍只经 generation-config 写入。 */
+export function ChatReplyPreferences({
+  detailsDefaultOpen,
+  onDetailsDefaultOpenChange,
+}: ChatReplyPreferencesProps) {
+  const query = useGenerationConfigQuery();
+  const patch = usePatchGenerationConfigMutation();
+  const config = query.data?.config;
+  const [open, setOpen] = useState(false);
+  const [guideVisible, setGuideVisible] = useState(false);
+  const [guideFading, setGuideFading] = useState(false);
+  const [instructions, setInstructions] = useState('');
+  const [instructionsDirty, setInstructionsDirty] = useState(false);
+  const pointerStartY = useRef<number | null>(null);
+  const suppressClick = useRef(false);
+  const guideShown = useRef(false);
+  const guideTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (instructionsDirty) return;
+    setInstructions(config?.pref_custom_instructions ?? '');
+  }, [config?.pref_custom_instructions, instructionsDirty]);
+
+  useEffect(
+    () => () => {
+      if (guideTimer.current !== null) window.clearTimeout(guideTimer.current);
+    },
+    []
+  );
+
+  const showFirstOpenGuide = () => {
+    if (guideShown.current) return;
+    guideShown.current = true;
+    try {
+      if (window.localStorage.getItem(GUIDE_STORAGE_KEY)) return;
+      window.localStorage.setItem(GUIDE_STORAGE_KEY, '1');
+    } catch {
+      // 存储不可用时仍展示当前会话的一次提示。
+    }
+    setGuideFading(false);
+    setGuideVisible(true);
+    guideTimer.current = window.setTimeout(() => {
+      setGuideFading(true);
+      guideTimer.current = window.setTimeout(() => setGuideVisible(false), 300);
+    }, 2_700);
+  };
+
+  const changeOpen = (next: boolean) => {
+    setOpen(next);
+    if (next) showFirstOpenGuide();
+  };
+
+  const saveInstructions = () => {
+    if (!config) return;
+    const next = instructions.trim();
+    setInstructionsDirty(false);
+    if (next === (config.pref_custom_instructions ?? '')) return;
+    patch.mutate({ pref_custom_instructions: next.length > 0 ? next : null });
+  };
+
+  return (
+    <section
+      className={cn(
+        'mb-1.5 overflow-hidden rounded-2xl border transition-colors motion-reduce:transition-none',
+        open ? 'border-border bg-card/95' : 'border-transparent bg-transparent'
+      )}
+      aria-label="回复偏好"
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => {
+          if (suppressClick.current) {
+            suppressClick.current = false;
+            return;
+          }
+          changeOpen(!open);
+        }}
+        onPointerDown={(event) => {
+          pointerStartY.current = event.clientY;
+        }}
+        onPointerUp={(event) => {
+          const start = pointerStartY.current;
+          pointerStartY.current = null;
+          if (start === null) return;
+          const distance = event.clientY - start;
+          if (distance <= -20) {
+            suppressClick.current = true;
+            changeOpen(true);
+          }
+          if (distance >= 20) {
+            suppressClick.current = true;
+            changeOpen(false);
+          }
+        }}
+        onPointerCancel={() => {
+          pointerStartY.current = null;
+        }}
+        className="relative grid min-h-9 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
+      >
+        <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
+        <span className="text-[11px] font-semibold text-foreground">回复偏好</span>
+        {guideVisible ? (
+          <span
+            className={cn(
+              'pointer-events-none absolute left-1/2 top-1/2 max-w-[calc(100%-12rem)] -translate-x-1/2 -translate-y-[28%] truncate text-[10px] font-medium text-primary transition-opacity duration-300 motion-safe:animate-in motion-safe:fade-in-0',
+              guideFading && 'opacity-0'
+            )}
+          >
+            可以在这里开关 状态栏，记忆栏，选项等设置
+          </span>
+        ) : null}
+        <span className="truncate text-[10px] text-muted-foreground">状态栏 · 记忆栏 · 可选项</span>
+        <ChevronDown
+          className={cn(
+            'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
+            open && 'rotate-180'
+          )}
+          aria-hidden
+        />
+      </button>
+
+      {open ? (
+        <div className="px-3 pb-3 pt-1">
+          <p className="mb-2 text-[10px] text-muted-foreground">
+            仅影响后续回复；单条回复仍可临时展开或收起。
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {SLOT_CONFIG.map((slot) => {
+              const enabled = config ? isInstructionSlotEnabled(config[slot.preference]) : false;
+              const defaultOpen = detailsDefaultOpen[slot.key];
+              return (
+                <div
+                  key={slot.key}
+                  className={cn(
+                    'flex overflow-hidden rounded-lg border bg-secondary/35 transition-colors',
+                    enabled ? 'border-primary/30 bg-primary/10' : 'border-border'
+                  )}
+                >
+                  <label className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+                    <Switch
+                      checked={enabled}
+                      disabled={!config || patch.isPending}
+                      onCheckedChange={(checked) => patch.mutate({ [slot.preference]: checked })}
+                      aria-label={`开启${slot.label}`}
+                    />
+                    <span className={enabled ? 'text-primary' : undefined}>{slot.label}</span>
+                  </label>
+                  <button
+                    type="button"
+                    disabled={!enabled}
+                    aria-pressed={defaultOpen}
+                    onClick={() =>
+                      onDetailsDefaultOpenChange({
+                        ...detailsDefaultOpen,
+                        [slot.key]: !defaultOpen,
+                      })
+                    }
+                    className="border-l border-border px-2 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35"
+                  >
+                    {defaultOpen ? '展开' : '收起'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <label className="mt-2.5 flex items-center gap-2">
+            <span className="shrink-0 text-[11px] font-semibold text-foreground">自定义偏好</span>
+            <input
+              value={instructions}
+              onChange={(event) => {
+                setInstructionsDirty(true);
+                setInstructions(event.target.value);
+              }}
+              onBlur={saveInstructions}
+              maxLength={MAX_CUSTOM_INSTRUCTIONS}
+              disabled={!config || patch.isPending}
+              placeholder="例如：保持克制，少用修辞"
+              className="min-w-0 flex-1 rounded-lg border border-transparent bg-secondary/60 px-2.5 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:outline-none disabled:opacity-50"
+            />
+          </label>
+          {patch.isError ? (
+            <p className="mt-1.5 text-[10px] text-destructive" role="alert">
+              保存失败，请重试
+            </p>
+          ) : (
+            <p className="mt-1.5 text-right text-[10px] text-muted-foreground">
+              {instructionsDirty ? '离开输入框后自动保存' : patch.isPending ? '保存中…' : ''}
+            </p>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
