@@ -139,10 +139,10 @@ describe('entry badge and membership label', () => {
       vipExpiryImpactCopy({
         text_discount_rate: 0.95,
         checkin_base_credits: 60,
-        checkin_vip_credits: 60,
+        checkin_vip_credits: 150,
       })
     ).toEqual({
-      checkin: { extra: '+60 星尘', fallback: '每日 60' },
+      checkin: { extra: '每日 150 星尘', fallback: '每日 60' },
       discount: '95折',
     });
     expect(vipExpiryImpactCopy(undefined)).toEqual({ checkin: null, discount: null });
@@ -278,10 +278,13 @@ describe('checkout selection', () => {
 });
 
 describe('check-in, model switch, and billing codes', () => {
-  it('splits base and vip rewards when the server sent both', () => {
+  it('shows absolute VIP or non-VIP check-in lines from the server split', () => {
     expect(
-      checkinRewardLines({ reward_credits: 120, base_reward_credits: 60, vip_reward_credits: 60 })
-    ).toEqual(['基础签到 +60 星尘', 'VIP 加成 +60 星尘']);
+      checkinRewardLines({ reward_credits: 150, base_reward_credits: 0, vip_reward_credits: 150 })
+    ).toEqual(['VIP 签到 +150 星尘']);
+    expect(
+      checkinRewardLines({ reward_credits: 60, base_reward_credits: 60, vip_reward_credits: 0 })
+    ).toEqual(['签到 +60 星尘']);
     expect(checkinRewardLines({ reward_credits: 40 })).toEqual(['星尘 +40 已到账。']);
   });
 

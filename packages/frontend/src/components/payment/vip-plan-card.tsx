@@ -12,7 +12,6 @@ export function VipPlanCard({
   onSelect,
   discountLabel,
   variant = 'detail',
-  checkinBaseCredits,
   checkinVipCredits,
 }: {
   plan: VipPlan;
@@ -20,14 +19,9 @@ export function VipPlanCard({
   onSelect: (planId: string) => void;
   discountLabel?: string | null;
   variant?: 'detail' | 'recharge';
-  checkinBaseCredits?: number;
   checkinVipCredits?: number;
 }) {
   const isRecharge = variant === 'recharge';
-  const checkinTotal =
-    typeof checkinBaseCredits === 'number' && typeof checkinVipCredits === 'number'
-      ? checkinBaseCredits + checkinVipCredits
-      : null;
 
   return (
     <button
@@ -69,8 +63,8 @@ export function VipPlanCard({
       {isRecharge ? (
         <p className="mt-1 text-[11px] leading-relaxed text-foreground/75">
           {plan.duration_days} 天
-          {checkinTotal !== null && typeof checkinVipCredits === 'number'
-            ? ` · 签到共 ${formatNumber(checkinTotal)}/天（额外 +${formatNumber(checkinVipCredits)}）`
+          {typeof checkinVipCredits === 'number'
+            ? ` · 签到 ${formatNumber(checkinVipCredits)}/天`
             : ''}
           {' · 标准/旗舰畅用'}
           {discountLabel ? ` · 全部模型 ${discountLabel}` : ''}

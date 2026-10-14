@@ -338,7 +338,6 @@ function RechargePageContent() {
                       plan={plan}
                       selected={selectionKey('vip', plan.id) === selectedKey}
                       discountLabel={discountLabel}
-                      checkinBaseCredits={vipBenefits?.checkin_base_credits}
                       checkinVipCredits={vipBenefits?.checkin_vip_credits}
                       variant="recharge"
                       onSelect={handleSelectVip}

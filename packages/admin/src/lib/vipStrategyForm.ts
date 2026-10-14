@@ -15,12 +15,8 @@ export function blankToNull(value: string): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-export function checkinConfig(
-  mode: VipCheckinBonusConfig['mode'],
-  fixedCredits: number
-): VipCheckinBonusConfig {
-  if (mode === 'same_as_base') return { mode: 'same_as_base' };
-  return VipCheckinBonusConfigSchema.parse({ mode: 'fixed', fixed_credits: fixedCredits });
+export function checkinAbsoluteCredits(credits: number): VipCheckinBonusConfig {
+  return VipCheckinBonusConfigSchema.parse(credits);
 }
 
 export function withPlanPatch(plan: VipPlanTerms, patch: Partial<VipPlanTerms>): VipPlanTerms {

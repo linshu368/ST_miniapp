@@ -299,9 +299,9 @@ Admin `/api/admin/text-postprocess*` 提供状态/历史、草稿保存/丢弃�
 
 ### 4.8 VIP 会员、策略与到期提醒
 
-资格真相在 `billing.vip_memberships`。`GET /api/vip/status` 与 `POST /api/vip/entry-viewed` 由 `routes/vip.ts` 提供；`active` 只比较服务端 `valid_until` 与当前时间。`benefits` 把已发布折扣、签到基础值和 VIP 加成给未开通用户展示，缺字段时前端不补数字。一次性角标由 `entry-viewed` 在服务端记住。
+资格真相在 `billing.vip_memberships`。`GET /api/vip/status` 与 `POST /api/vip/entry-viewed` 由 `routes/vip.ts` 提供；`active` 只比较服务端 `valid_until` 与当前时间。`benefits` 把已发布折扣、非 VIP 新用户签到档（对比用）和 VIP 签到绝对额给未开通用户展示，缺字段时前端不补数字。一次性角标由 `entry-viewed` 在服务端记住。
 
-商品、生成折扣、签到加成和媒体免费上限都在 Admin「VIP策略」里草稿/发布，经 `platform/runtime-config.ts` 读取。配置键是 `vip_purchase_enabled`、`vip_reminders_enabled`、`vip_plans_config`、`vip_text_discount_rate`、`vip_checkin_bonus_config`、`feature_free_trial_limits`；键名因兼容保留，但折扣同时适用于文本、语音与图片付费生成。代码损坏回退是周卡 100 分 / 7 天、月卡 200 分 / 31 天 / 3000 专项星尘、折扣 0.95、签到加成为与基础值相同的额外星尘、语音和初级图片各 3 次。周卡赠送固定为 0。已创建订单、已受理生成和已领取签到继续用各自快照。
+商品、生成折扣、VIP 签到绝对额和媒体免费上限都在 Admin「VIP策略」里草稿/发布，经 `platform/runtime-config.ts` 读取。配置键是 `vip_purchase_enabled`、`vip_reminders_enabled`、`vip_plans_config`、`vip_text_discount_rate`、`vip_checkin_bonus_config`、`feature_free_trial_limits`；键名因兼容保留，但折扣同时适用于文本、语音与图片付费生成。非 VIP 签到分档由通用配置 `miniapp_checkin_new_user_credits`（注册≤14 天）与 `miniapp_checkin_veteran_credits`（注册>14 天）控制；遗留键 `miniapp_daily_checkin_bonus_credits` 保留可编辑但发奖不再读取。代码损坏回退是周卡 100 分 / 7 天、月卡 200 分 / 31 天 / 3000 专项星尘、折扣 0.95、VIP 签到绝对额 150、语音和初级图片各 3 次。周卡赠送固定为 0。已创建订单、已受理生成和已领取签到继续用各自快照。
 
 `20260924_vip_plans_price_1_and_2_yuan.sql` 只改已发布配置和未发布草稿的 `price_cents`。任务日志没有记录该文件在 test 或 Production 的 apply；未执行前，页面价格仍是当时已发布值。T8 不补执行。
 

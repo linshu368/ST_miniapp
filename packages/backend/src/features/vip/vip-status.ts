@@ -1,6 +1,9 @@
 import {
+  CHECKIN_NEW_USER_CREDITS_CONFIG_KEY,
+  DEFAULT_CHECKIN_NEW_USER_CREDITS,
   isVipActiveAt,
   isVipPlanId,
+  parseCheckinTierCredits,
   remainingVipDisplayDays,
   vipCheckinBonusCredits,
   type VipStatus,
@@ -17,22 +20,20 @@ import { fetchRuntimeConfigEntryStrict } from '../../platform/runtime-config.js'
 /** 营销展示读取已发布权益，而不是非会员实际计费时的空折扣。失败不影响会员状态。 */
 export async function readVipBenefits(log?: SettlementLogger): Promise<VipStatus['benefits']> {
   try {
-    const [strategy, baseEntry] = await Promise.all([
+    const [strategy, newUserEntry] = await Promise.all([
       readVipStrategy(),
-      fetchRuntimeConfigEntryStrict('miniapp_daily_checkin_bonus_credits'),
+      fetchRuntimeConfigEntryStrict(CHECKIN_NEW_USER_CREDITS_CONFIG_KEY),
     ]);
-    // 与签到预览兼容相同的数值/文本配置；缺失或损坏时不承诺奖励金额。
-    const base = Number(baseEntry?.value ?? baseEntry?.textValue);
-    if (!Number.isFinite(base) || Math.floor(base) <= 0) {
-      throw new Error('invalid published checkin base reward');
-    }
-    const baseCredits = Math.floor(base);
+    // checkin_base_credits：非 VIP 新用户档，供营销对比；checkin_vip_credits：VIP 绝对额。
+    const baseCredits = parseCheckinTierCredits(
+      newUserEntry?.value ?? newUserEntry?.textValue,
+      DEFAULT_CHECKIN_NEW_USER_CREDITS
+    );
     return {
       text_discount_rate: strategy.discountRate,
       checkin_base_credits: baseCredits,
       checkin_vip_credits: vipCheckinBonusCredits({
         config: strategy.checkin,
-        baseRewardCredits: baseCredits,
         vipActive: true,
       }),
     };

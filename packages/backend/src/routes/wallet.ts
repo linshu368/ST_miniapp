@@ -79,7 +79,10 @@ export default async function walletRoutes(app: FastifyInstance) {
 
     const dbUser = await getOrCreateDbUser(request.user);
     const strategy = await readVipStrategy();
-    const checkin = await wallets.getDailyCheckinStatus(dbUser.id, strategy.checkin);
+    const checkin = await wallets.getDailyCheckinStatus(dbUser.id, {
+      createdAt: dbUser.created_at,
+      vipCredits: strategy.checkin,
+    });
 
     return reply.send(ok<GetDailyCheckinData>({ checkin }));
   });
@@ -96,7 +99,7 @@ export default async function walletRoutes(app: FastifyInstance) {
       if (result.configFallback) {
         requestLogger(request.log, 'wallet').sys.warn(
           { event: 'wallet.checkin.config_fallback', userId: dbUser.id },
-          '签到加成配置不可用，已按与基础奖励相同发放'
+          'VIP 签到配置不可用，已按默认绝对额发放'
         );
       }
       requestLogger(request.log, 'wallet').biz.info(

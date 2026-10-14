@@ -88,7 +88,7 @@ export function vipExpiryImpactCopy(benefits: VipStatus['benefits']): VipExpiryI
     checkin:
       benefits.checkin_vip_credits > 0
         ? {
-            extra: `+${formatNumber(benefits.checkin_vip_credits)} 星尘`,
+            extra: `每日 ${formatNumber(benefits.checkin_vip_credits)} 星尘`,
             fallback: `每日 ${formatNumber(benefits.checkin_base_credits)}`,
           }
         : null,
@@ -341,9 +341,12 @@ export function checkinRewardLines(checkin: {
   vip_reward_credits?: number;
 }): string[] {
   const base = checkin.base_reward_credits;
-  const extra = checkin.vip_reward_credits;
-  if (typeof base === 'number' && typeof extra === 'number' && extra > 0) {
-    return [`基础签到 +${formatNumber(base)} 星尘`, `VIP 加成 +${formatNumber(extra)} 星尘`];
+  const vip = checkin.vip_reward_credits;
+  if (typeof vip === 'number' && vip > 0) {
+    return [`VIP 签到 +${formatNumber(vip)} 星尘`];
+  }
+  if (typeof base === 'number' && base > 0) {
+    return [`签到 +${formatNumber(base)} 星尘`];
   }
   return [`星尘 +${formatNumber(checkin.reward_credits)} 已到账。`];
 }

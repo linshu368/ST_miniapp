@@ -74,16 +74,16 @@ describe('toWalletBalance', () => {
 });
 
 describe('toClaimedCheckin', () => {
-  it('passes through a 60 and 120 reward split', () => {
+  it('passes through a VIP absolute reward split', () => {
     expect(
       toClaimedCheckin({
         claimed_at: '2026-09-22T00:00:00.000Z',
         next_claim_at: '2026-09-23T00:00:00.000Z',
-        reward_credits: 120,
-        base_reward_credits: 60,
-        vip_reward_credits: 60,
+        reward_credits: 150,
+        base_reward_credits: 0,
+        vip_reward_credits: 150,
       })
-    ).toMatchObject({ reward_credits: 120, base_reward_credits: 60, vip_reward_credits: 60 });
+    ).toMatchObject({ reward_credits: 150, base_reward_credits: 0, vip_reward_credits: 150 });
   });
 
   it('refuses a split that does not add up to the granted total', () => {

@@ -7,10 +7,13 @@ import {
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_PAYMENT_PROMPT_DIALOG_CONFIG,
   DEFAULT_RECHARGE_PAGE_CONFIG,
+  DEFAULT_CHECKIN_NEW_USER_CREDITS,
+  DEFAULT_CHECKIN_VETERAN_CREDITS,
   DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
+  CheckinTierCreditsSchema,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FeatureFreeTrialLimitsSchema,
   InstructionSlotRulesSchema,
@@ -38,6 +41,8 @@ import { z } from 'zod';
 export const managedConfigKeys = [
   'miniapp_new_user_signup_bonus_credits',
   'miniapp_daily_checkin_bonus_credits',
+  'miniapp_checkin_new_user_credits',
+  'miniapp_checkin_veteran_credits',
   'miniapp_character_free_chat_quota_limit',
   'miniapp_payment_plans',
   'miniapp_recharge_page_config',
@@ -273,6 +278,8 @@ export const DEFAULT_SYSTEM_INSTRUCTIONS = [
 export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
   miniapp_daily_checkin_bonus_credits: nonnegativeInteger,
+  miniapp_checkin_new_user_credits: CheckinTierCreditsSchema,
+  miniapp_checkin_veteran_credits: CheckinTierCreditsSchema,
   miniapp_character_free_chat_quota_limit: positiveInteger,
   miniapp_payment_plans: PaymentPlansRuntimeConfigSchema,
   miniapp_recharge_page_config: RechargePageConfigSchema,
@@ -330,9 +337,20 @@ export const configMetadata: Record<
     defaultValue: 398,
   },
   miniapp_daily_checkin_bonus_credits: {
-    label: '每日签到奖励',
-    description: '每次签到的基础专项星尘。有效 VIP 的加成由「VIP策略」决定。',
-    defaultValue: 60,
+    label: '每日签到奖励（遗留）',
+    description:
+      '遗留全员基础签到星尘。发奖已改为分档配置，此键不再读取；保留可编辑以兼容历史运营。',
+    defaultValue: 0,
+  },
+  miniapp_checkin_new_user_credits: {
+    label: '新用户签到奖励',
+    description: '非 VIP 且注册≤14 天的每日签到专项星尘绝对额。',
+    defaultValue: DEFAULT_CHECKIN_NEW_USER_CREDITS,
+  },
+  miniapp_checkin_veteran_credits: {
+    label: '老用户签到奖励',
+    description: '非 VIP 且注册>14 天的每日签到专项星尘绝对额。',
+    defaultValue: DEFAULT_CHECKIN_VETERAN_CREDITS,
   },
   miniapp_character_free_chat_quota_limit: {
     label: '角色卡免费对话轮次',
@@ -594,8 +612,8 @@ export const configMetadata: Record<
     defaultValue: DEFAULT_VIP_TEXT_DISCOUNT_RATE,
   },
   vip_checkin_bonus_config: {
-    label: 'VIP 签到加成',
-    description: '与基础奖励相同，或在固定模式下填写非负整数。一次签到只读取一份策略。',
+    label: 'VIP 每日签到星尘',
+    description: '有效 VIP 每日签到发放的专项星尘绝对额（非加成）。',
     defaultValue: DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   },
   feature_free_trial_limits: {

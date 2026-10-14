@@ -224,12 +224,12 @@ export default function VipPage() {
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span className="font-bold">
                 {benefits
-                  ? `每日签到额外 +${formatNumber(benefits.checkin_vip_credits)} 星尘`
-                  : '每日签到额外奖励'}
+                  ? `每日签到 +${formatNumber(benefits.checkin_vip_credits)} 专属星尘`
+                  : '每日签到奖励'}
               </span>
               <span className="text-[10px] text-muted-foreground">
                 {benefits
-                  ? `基础 ${formatNumber(benefits.checkin_base_credits)} + 额外 ${formatNumber(benefits.checkin_vip_credits)}，每日共 ${formatNumber(benefits.checkin_base_credits + benefits.checkin_vip_credits)}`
+                  ? `非会员新用户每日 ${formatNumber(benefits.checkin_base_credits)}`
                   : '奖励数据暂未加载'}
               </span>
             </div>
