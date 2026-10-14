@@ -229,6 +229,56 @@ describe('rich reply protocol', () => {
     expect(rendered).toContain('好感度：60/100');
     expect(rendered).toContain('第一轮事实');
   });
+
+  it('recovers missing outer close tags only at deterministic module boundaries', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: [
+        '剧情正文。',
+        '[choices][choice]靠近她[/choice][choice]保持距离[/choice][choice]换个话题[/choice]',
+        '[status]<details><summary>当前状态</summary>```markdown\n地点：操场\n```</details>',
+        '[memory]<details><summary>工作记忆</summary>```markdown\n当前记忆数目：3/7\n```</details>',
+      ].join('\n'),
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+
+    const slots = applied.segments.filter((segment) => segment.type === 'slot');
+    expect(slots.map((slot) => slot.rule_id)).toEqual([
+      'rich-reply-choices',
+      'rich-reply-status',
+      'rich-reply-memory',
+    ]);
+    expect(slots[0]?.choices).toEqual([
+      { text: '靠近她', sendable: true },
+      { text: '保持距离', sendable: true },
+      { text: '换个话题', sendable: true },
+    ]);
+    expect(slots[1]?.match_text).not.toContain('[memory]');
+    expect(slots[0]?.match_text).not.toContain('[status]');
+    expect(
+      applied.segments
+        .filter((segment) => segment.type === 'text')
+        .map((segment) => segment.text)
+        .join('')
+    ).not.toMatch(/\[(?:\/?choices|\/?status|\/?memory)\]/);
+  });
+
+  it('does not infer a boundary for repeated or conflicting outer envelopes', () => {
+    const artifact = compileOk([]);
+    const applied = applyTextPostprocess({
+      artifact,
+      text: '[status]第一段[status]第二段[memory]工作记忆',
+    });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    expect(
+      applied.segments.some(
+        (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-status'
+      )
+    ).toBe(false);
+  });
 });
 
 describe('segment application', () => {
