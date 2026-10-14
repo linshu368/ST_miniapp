@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "10-14-image-plaza-tags-prompt-zh"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "2026-10-12 用户授权开始实施；Q12-rev3 创作 Tab 直接广场瀑布流，许愿池功能保留但入口隐藏；2026-10-13 全链路 prompt 统一 2,000 字，用户确认 test 目标和批次审核。test 已导入 8,032 个唯一 seed work/artifact/Storage 对象，10 个 20–50 MiB 原图通过 seed 专用前向 migration 补齐；22 个源站及官方 API 均不可用的 ID 隔离，173 个超 2,000 字记录隔离。feed/detail 契约和来源脱敏通过，production 未写入。2026-10-14 完成 latest-badge 降级与广场/Studio 四张参考图 UI 对齐；T13 仍待真实 UI 用同款/provider canary 及 22 个替代源图。",
