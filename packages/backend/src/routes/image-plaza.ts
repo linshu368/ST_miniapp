@@ -26,6 +26,7 @@ import { getImagePlazaRuntimeConfig } from '../features/image-plaza/config.js';
 import { ImagePlazaRepository } from '../features/image-plaza/repository.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
+import { config } from '../platform/config.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -172,6 +173,7 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
       if (!body.success) return reply.status(400).send(fail('BAD_REQUEST', '报价参数无效'));
       try {
         const runtime = await requireEnabled();
+        requireGenerationProvider();
         const model = runtime.catalog.models.find(
           (item) => item.enabled && item.id === body.data.model_id
         );
@@ -303,6 +305,7 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('BAD_REQUEST', '生成参数无效'));
       try {
         const runtime = await requireEnabled();
+        requireGenerationProvider();
         const model = runtime.catalog.models.find(
           (item) => item.enabled && item.id === body.data.model_id
         );
@@ -398,6 +401,13 @@ async function requireEnabled() {
   return runtime;
 }
 
+function requireGenerationProvider(): void {
+  // 没有 worker 或 provider key 时任务必然失败，必须在写消息/attempt 前同步拒绝。
+  if (!config.imagePlaza.workerEnabled || !config.imagePlaza.apiKey) {
+    throw new Error('image_plaza_provider_unavailable');
+  }
+}
+
 function routeError(request: FastifyRequest, reply: FastifyReply, err: unknown) {
   const message = err instanceof Error ? err.message : 'image plaza request failed';
   const expected =
@@ -411,7 +421,11 @@ function routeError(request: FastifyRequest, reply: FastifyReply, err: unknown) 
   if (message.includes('insufficient_balance'))
     return reply.status(409).send(fail('INSUFFICIENT_BALANCE', '星尘不足'));
   if (message.includes('not_found')) return reply.status(404).send(fail('NOT_FOUND', '内容不存在'));
-  if (message.includes('disabled') || message.includes('config_invalid'))
+  if (
+    message.includes('disabled') ||
+    message.includes('config_invalid') ||
+    message.includes('provider_unavailable')
+  )
     return reply.status(503).send(fail('IMAGE_PLAZA_UNAVAILABLE', '图片创作暂不可用'));
   if (expected)
     return reply.status(409).send(fail('REQUEST_REJECTED', '请求状态已变化，请刷新后重试'));

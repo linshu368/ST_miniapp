@@ -63,14 +63,27 @@ export function useImagePlazaFeedQuery(search: string, tag: string) {
       return apiClient<GetImagePlazaFeedData>(`/api/image-plaza/feed?${params.toString()}`);
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+    staleTime: 60_000,
   });
 }
 
 export function useImagePlazaWorkQuery(id: string) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: imagePlazaKeys.work(id),
     queryFn: () => apiClient<GetImagePlazaWorkData>(`/api/image-plaza/works/${id}`),
     enabled: Boolean(id),
+    staleTime: 60_000,
+    placeholderData: () => {
+      const feeds = client.getQueriesData<InfiniteData<GetImagePlazaFeedData>>({
+        queryKey: [...imagePlazaKeys.all, 'feed'],
+      });
+      for (const [, feed] of feeds) {
+        const work = feed?.pages.flatMap((page) => page.items).find((item) => item.id === id);
+        if (work) return { work };
+      }
+      return undefined;
+    },
   });
 }
 
@@ -105,7 +118,11 @@ export function useCreateImagePlazaConversationMutation() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: imagePlazaKeys.conversations() }),
+    onSuccess: (data) => {
+      // 创建接口已返回完整空会话，先写缓存可让“用同款”导航立即渲染，再后台维护列表。
+      client.setQueryData(imagePlazaKeys.conversation(data.conversation.id), data);
+      void client.invalidateQueries({ queryKey: imagePlazaKeys.conversations() });
+    },
   });
 }
 

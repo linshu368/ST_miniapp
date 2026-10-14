@@ -24,6 +24,7 @@
 | I    | 初始数据兼容层：origin/source 字段、seed artifact、全链路统一 2,000 字 prompt 契约、脱敏 DTO 与用同款快照          | AC17–AC21               |
 | J    | 离线 importer：XLSX dry-run、allowlist、元数据核验、下载/转存、幂等写入、checkpoint/补偿/reconciliation            | AC17–AC23               |
 | K    | test canary、容量/失败阈值、列表/详情/同款/点赞/泄漏回归；获单独授权后分批导入，production 仍另行确认              | AC18–AC24               |
+| L    | provider fail-fast、1009 设置 sheet、20 条缩略图分页/下拉刷新、详情与同款感知性能优化                              | AC25–AC28               |
 
 > Q9：不改会话「看看TA」frontend。Q10：广场前后端业务目录与聊天图生成完全独立，仅可复用平台基建。
 
@@ -43,6 +44,8 @@ pnpm -r typecheck
 
 初始数据扩展另需：运行 importer dry-run；对重复/断点续跑、超限 prompt、源图 404、重定向越界、MIME 欺骗、普通图超 20 MiB/seed 超 50 MiB、8,192 px、上传成功写库失败、模型下架、source 字段泄漏执行故障注入；在 test canary 中人工打开列表/详情并完成“用同款”提交。不得用生产库或生产 Storage 代替 test 验证。
 
+阶段 L 另需：缺少 `VENICE_API_KEY` 与 worker disabled 两种提交均同步 503；确认无新增 attempt/message；feed 首包 20 条且 URL 为 transform；上滑取下一游标、顶部下拉刷新、详情即时占位后切原图、同款单卡 loading；固定档模型设置内不显示分辨率。
+
 ## 3. 风险文件 / 回滚点
 
 - 勿改动聊天「看看TA」frontend；勿破坏既有 `chat_message_images` settle / claim。
@@ -54,4 +57,4 @@ pnpm -r typecheck
 
 ## 4. task.md 映射（拍板后细化）
 
-阶段 A–H 已映射到 `task.md` T1–T9（T8 Skipped）；初始数据规划审计为 T10；阶段 I/J 已映射并完成 T11/T12；阶段 K 对应 T13，test migration、批量导入、feed/detail consumer 校验已完成，仍待真实 UI“用同款”/provider canary 和 22 个不可用源资源的替代输入。
+阶段 A–H 已映射到 `task.md` T1–T9（T8 Skipped）；初始数据规划审计为 T10；阶段 I/J 已映射并完成 T11/T12；阶段 K 对应 T13，阶段 L 对应 T15。test migration、批量导入、feed/detail consumer 校验已完成，仍待配置真实 provider 后的 canary 和 22 个不可用源资源的替代输入。

@@ -1,6 +1,7 @@
 'use client';
 
-import { Sparkles, X } from 'lucide-react';
+import { ChevronDown, Sparkles, X } from 'lucide-react';
+import { useState } from 'react';
 import type { ImagePlazaAspectRatio, ImagePlazaModel } from '@miniapp/shared';
 import {
   Dialog,
@@ -9,9 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Switch } from '@/components/ui/switch';
 
 type ResolutionId = '1K' | '2K' | 'fixed';
+type ExpandedSetting = 'style' | 'ratio' | 'resolution' | null;
 
 interface StudioSettingsDialogProps {
   open: boolean;
@@ -31,112 +32,237 @@ interface StudioSettingsDialogProps {
 const ASPECT_LABELS: Record<ImagePlazaAspectRatio, string> = {
   '1:1': 'Square (1:1)',
   '2:3': 'Portrait (2:3)',
-  '3:2': 'Landscape (3:2)',
-  '3:4': 'Portrait (3:4)',
+  '3:2': 'Wide (3:2)',
+  '3:4': 'Classic (3:4)',
   '4:3': 'Landscape (4:3)',
-  '4:5': 'Portrait (4:5)',
-  '9:16': 'Portrait (9:16)',
+  '4:5': 'Poster (4:5)',
+  '9:16': 'Vertical (9:16)',
   '16:9': 'Landscape (16:9)',
-  '21:9': 'Wide (21:9)',
+  '21:9': 'Cinema (21:9)',
 };
 
 export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
+  const [expanded, setExpanded] = useState<ExpandedSetting>(null);
+  const showResolution = props.model.resolutions.length > 1;
+  const toggle = (setting: Exclude<ExpandedSetting, null>) =>
+    setExpanded((current) => (current === setting ? null : setting));
+
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="bottom-0 top-auto w-[calc(100%-1rem)] max-w-2xl translate-y-0 gap-0 overflow-hidden rounded-t-[2rem] border-border bg-card p-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 sm:rounded-[2rem]"
+        className="bottom-0 top-auto max-h-[76dvh] w-full max-w-3xl translate-y-0 gap-0 overflow-y-auto rounded-t-[1.25rem] border-x-0 border-b-0 border-border bg-card p-3 shadow-[0_-18px_42px_rgba(0,0,0,0.3)] sm:bottom-0 sm:top-auto sm:translate-y-0 sm:rounded-b-none sm:rounded-t-[1.25rem]"
       >
-        <DialogHeader className="flex-row items-center justify-between space-y-0 border-b border-border px-6 py-6 text-left">
-          <DialogTitle className="text-xl font-black">设置</DialogTitle>
-          <div className="flex items-center gap-5">
+        <div className="overflow-hidden rounded-2xl border border-border bg-card">
+          <DialogHeader className="flex-row items-center gap-2 space-y-0 border-b border-border px-4 py-3 text-left">
+            <DialogTitle className="flex-1 text-base font-extrabold tracking-tight">
+              设置
+            </DialogTitle>
             <button
               type="button"
-              onClick={props.onReset}
-              className="text-sm font-black text-primary underline decoration-primary/35 underline-offset-4"
+              onClick={() => {
+                props.onReset();
+                setExpanded(null);
+              }}
+              className="min-h-9 rounded-lg px-2 text-sm font-bold text-primary transition active:bg-background"
             >
               重置
             </button>
             <DialogClose
               aria-label="关闭设置"
-              className="grid size-10 place-items-center rounded-full text-muted-foreground transition hover:bg-background hover:text-foreground"
+              className="grid size-9 place-items-center rounded-lg text-muted-foreground transition active:bg-background"
             >
               <X className="size-5" />
             </DialogClose>
-          </div>
-        </DialogHeader>
+          </DialogHeader>
 
-        <div className="divide-y divide-border">
-          <SettingRow label="图片风格">
-            <div className="flex h-14 min-w-40 items-center gap-3 rounded-2xl border border-border bg-background/45 px-4 font-bold">
-              <span className="grid size-8 place-items-center rounded-xl bg-primary/10 text-primary">
-                <Sparkles className="size-4" />
-              </span>
-              <span>None</span>
-            </div>
-          </SettingRow>
+          <SettingSection
+            label="图片风格"
+            expanded={expanded === 'style'}
+            control={
+              <SelectorButton expanded={expanded === 'style'} onClick={() => toggle('style')}>
+                <StyleThumbnail />
+                <span>None</span>
+              </SelectorButton>
+            }
+          >
+            <ChoiceButton selected onClick={() => setExpanded(null)}>
+              None
+            </ChoiceButton>
+          </SettingSection>
 
-          <SettingRow label="长宽比">
-            <select
-              aria-label="长宽比"
-              value={props.aspectRatio}
-              onChange={(event) =>
-                props.onAspectRatioChange(event.target.value as ImagePlazaAspectRatio)
+          <SettingSection
+            label="长宽比"
+            expanded={expanded === 'ratio'}
+            control={
+              <SelectorButton expanded={expanded === 'ratio'} onClick={() => toggle('ratio')}>
+                <span>{ASPECT_LABELS[props.aspectRatio]}</span>
+              </SelectorButton>
+            }
+          >
+            {props.model.aspect_ratios.map((value) => (
+              <ChoiceButton
+                key={value}
+                selected={value === props.aspectRatio}
+                onClick={() => {
+                  props.onAspectRatioChange(value);
+                  setExpanded(null);
+                }}
+              >
+                {ASPECT_LABELS[value]}
+              </ChoiceButton>
+            ))}
+          </SettingSection>
+
+          {showResolution ? (
+            <SettingSection
+              label="分辨率"
+              expanded={expanded === 'resolution'}
+              control={
+                <SelectorButton
+                  expanded={expanded === 'resolution'}
+                  onClick={() => toggle('resolution')}
+                >
+                  <span>
+                    {props.model.resolutions.find((item) => item.id === props.resolution)?.label ??
+                      props.resolution}
+                    {props.model.resolutions[0]?.id === props.resolution ? '（默认）' : ''}
+                  </span>
+                </SelectorButton>
               }
-              className="h-14 min-w-44 rounded-2xl border border-border bg-background/45 px-4 text-right text-sm font-black outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              {props.model.aspect_ratios.map((value) => (
-                <option key={value} value={value}>
-                  {ASPECT_LABELS[value]}
-                </option>
-              ))}
-            </select>
-          </SettingRow>
-
-          <SettingRow label="分辨率">
-            <select
-              aria-label="分辨率"
-              value={props.resolution}
-              onChange={(event) => props.onResolutionChange(event.target.value as ResolutionId)}
-              className="h-14 min-w-40 rounded-2xl border border-border bg-background/45 px-4 text-right text-sm font-black outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               {props.model.resolutions.map((item, index) => (
-                <option key={item.id} value={item.id}>
+                <ChoiceButton
+                  key={item.id}
+                  selected={item.id === props.resolution}
+                  onClick={() => {
+                    props.onResolutionChange(item.id);
+                    setExpanded(null);
+                  }}
+                >
                   {item.label}
                   {index === 0 ? '（默认）' : ''}
-                </option>
+                </ChoiceButton>
               ))}
-            </select>
-          </SettingRow>
+            </SettingSection>
+          ) : null}
 
-          <SettingRow label="启用推理">
-            <Switch
-              aria-label="启用推理"
-              checked={props.reasoning}
-              onCheckedChange={props.onReasoningChange}
-              className="h-8 w-14 data-[state=checked]:bg-primary data-[state=unchecked]:bg-muted [&>span]:size-7 [&>span]:data-[state=checked]:translate-x-6"
-            />
-          </SettingRow>
-
-          <SettingRow label="自动优化提示词">
-            <Switch
-              aria-label="自动优化提示词"
-              checked={props.autoOptimize}
-              onCheckedChange={props.onAutoOptimizeChange}
-              className="h-8 w-14 data-[state=checked]:bg-primary data-[state=unchecked]:bg-muted [&>span]:size-7 [&>span]:data-[state=checked]:translate-x-6"
-            />
-          </SettingRow>
+          <ToggleRow
+            label="启用推理"
+            checked={props.reasoning}
+            onChange={props.onReasoningChange}
+          />
+          <ToggleRow
+            label="自动优化提示词"
+            checked={props.autoOptimize}
+            onChange={props.onAutoOptimizeChange}
+            last
+          />
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function SettingRow(props: { label: string; children: React.ReactNode }) {
+function SettingSection(props: {
+  label: string;
+  expanded: boolean;
+  control: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex min-h-28 items-center justify-between gap-4 px-6 py-5">
-      <span className="text-base font-black">{props.label}</span>
+    <section className="border-b border-border">
+      <div
+        className={`flex items-center justify-between gap-3 px-4 ${
+          props.expanded ? 'pb-2 pt-3.5' : 'py-3.5'
+        }`}
+      >
+        <span className="text-sm font-bold">{props.label}</span>
+        {props.control}
+      </div>
+      {props.expanded ? (
+        <div className="flex flex-wrap gap-2 px-4 pb-3.5">{props.children}</div>
+      ) : null}
+    </section>
+  );
+}
+
+function SelectorButton(props: {
+  expanded: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={props.expanded}
+      onClick={props.onClick}
+      className="inline-flex min-h-10 min-w-32 items-center justify-between gap-2 rounded-xl border border-border bg-background/45 px-3 text-xs font-bold text-foreground transition active:bg-background"
+    >
+      <span className="inline-flex items-center gap-2">{props.children}</span>
+      <ChevronDown
+        className={`size-3 text-muted-foreground transition ${props.expanded ? 'rotate-180' : ''}`}
+      />
+    </button>
+  );
+}
+
+function StyleThumbnail() {
+  return (
+    <span className="relative block size-6 shrink-0 overflow-hidden rounded-lg bg-[#28213d]">
+      <Sparkles className="absolute left-1 top-0.5 size-2.5 text-[#c59b2c]" />
+      <span className="absolute inset-x-0 bottom-0 h-2.5 rounded-[50%_50%_0_0] bg-[#665177]" />
+    </span>
+  );
+}
+
+function ChoiceButton(props: {
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      className={`rounded-full border px-3 py-1.5 text-xs transition ${
+        props.selected
+          ? 'border-primary bg-primary font-bold text-primary-foreground'
+          : 'border-border bg-background/45 text-muted-foreground'
+      }`}
+    >
       {props.children}
+    </button>
+  );
+}
+
+function ToggleRow(props: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  last?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 px-4 py-3.5 ${props.last ? '' : 'border-b border-border'}`}
+    >
+      <span className="text-sm font-bold">{props.label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-label={props.label}
+        aria-checked={props.checked}
+        onClick={() => props.onChange(!props.checked)}
+        className={`relative h-[27px] w-[46px] shrink-0 rounded-full border transition ${
+          props.checked ? 'border-primary bg-primary' : 'border-border bg-muted'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 size-[21px] rounded-full transition-all ${
+            props.checked ? 'left-[21px] bg-primary-foreground' : 'left-0.5 bg-foreground'
+          }`}
+        />
+      </button>
     </div>
   );
 }

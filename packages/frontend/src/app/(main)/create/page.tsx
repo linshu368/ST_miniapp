@@ -2,9 +2,20 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Copy, Heart, ImageIcon, LoaderCircle, Search, Sparkles, WandSparkles } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Copy,
+  Heart,
+  ImageIcon,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  Sparkles,
+  WandSparkles,
+} from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  imagePlazaKeys,
   useCreateImagePlazaConversationMutation,
   useImagePlazaFeedQuery,
   useSetImagePlazaLikeMutation,
@@ -13,12 +24,18 @@ import type { ImagePlazaWork } from '@miniapp/shared';
 
 export default function CreatePage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState('all');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const feed = useImagePlazaFeedQuery(debouncedSearch, tag);
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const createConversation = useCreateImagePlazaConversationMutation();
   const sentinel = useRef<HTMLDivElement | null>(null);
+  const pullStartY = useRef<number | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [pendingSourceWorkId, setPendingSourceWorkId] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 300);
@@ -30,30 +47,75 @@ export default function CreatePage() {
     if (!node) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting && feed.hasNextPage && !feed.isFetchingNextPage) {
-          void feed.fetchNextPage();
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          void fetchNextPage();
         }
       },
       { rootMargin: '240px' }
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [feed]);
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const items = useMemo(() => feed.data?.pages.flatMap((page) => page.items) ?? [], [feed.data]);
   const tags = feed.data?.pages[0]?.tags ?? [{ id: 'all', label: '全部' }];
 
   const startStudio = (sourceWorkId?: string) => {
+    setPendingSourceWorkId(sourceWorkId ?? 'new');
     createConversation.mutate(sourceWorkId ? { source_work_id: sourceWorkId } : {}, {
       onSuccess: ({ conversation }) => router.push(`/create/studio/${conversation.id}`),
+      onError: () => setPendingSourceWorkId(null),
     });
+  };
+
+  const refreshFeed = async () => {
+    if (isPullRefreshing || feed.isFetchingNextPage) return;
+    setIsPullRefreshing(true);
+    try {
+      await queryClient.resetQueries({
+        queryKey: imagePlazaKeys.feed(debouncedSearch, tag),
+        exact: true,
+      });
+    } finally {
+      setPullDistance(0);
+      setIsPullRefreshing(false);
+    }
+  };
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLElement>) => {
+    pullStartY.current = window.scrollY <= 0 ? (event.touches[0]?.clientY ?? null) : null;
+  };
+
+  const handleTouchMove = (event: React.TouchEvent<HTMLElement>) => {
+    if (pullStartY.current === null) return;
+    const delta = (event.touches[0]?.clientY ?? pullStartY.current) - pullStartY.current;
+    setPullDistance(delta > 0 ? Math.min(96, delta * 0.45) : 0);
+  };
+
+  const handleTouchEnd = () => {
+    pullStartY.current = null;
+    if (pullDistance >= 64) void refreshFeed();
+    else setPullDistance(0);
   };
 
   return (
     <main
       data-app-shell="image-plaza"
-      className="mx-auto min-h-screen w-full max-w-screen-xl bg-background text-foreground"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="mx-auto min-h-screen w-full max-w-screen-xl overscroll-y-contain bg-background text-foreground"
     >
+      {pullDistance > 0 || isPullRefreshing ? (
+        <div
+          role="status"
+          className="pointer-events-none fixed left-1/2 top-[calc(env(safe-area-inset-top)+0.5rem)] z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 py-2 text-[11px] font-bold shadow-xl backdrop-blur-xl transition-transform"
+          style={{ transform: `translate(-50%, ${isPullRefreshing ? 0 : pullDistance / 3}px)` }}
+        >
+          <RefreshCw className={`size-3.5 ${isPullRefreshing ? 'animate-spin' : ''}`} />
+          {isPullRefreshing ? '正在刷新' : pullDistance >= 64 ? '松开刷新' : '下拉刷新'}
+        </div>
+      ) : null}
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -128,8 +190,16 @@ export default function CreatePage() {
           />
         ) : (
           <div className="columns-2 gap-3 sm:columns-3 lg:columns-4">
-            {items.map((work) => (
-              <PlazaCard key={work.id} work={work} onUseSame={() => startStudio(work.id)} />
+            {items.map((work, index) => (
+              <PlazaCard
+                key={work.id}
+                work={work}
+                priority={index < 4}
+                useSamePending={pendingSourceWorkId === work.id}
+                interactionDisabled={createConversation.isPending}
+                onPrefetch={() => router.prefetch(`/create/work/${work.id}`)}
+                onUseSame={() => startStudio(work.id)}
+              />
             ))}
           </div>
         )}
@@ -153,19 +223,33 @@ export default function CreatePage() {
   );
 }
 
-function PlazaCard(props: { work: ImagePlazaWork; onUseSame: () => void }) {
+function PlazaCard(props: {
+  work: ImagePlazaWork;
+  priority: boolean;
+  useSamePending: boolean;
+  interactionDisabled: boolean;
+  onPrefetch: () => void;
+  onUseSame: () => void;
+}) {
   const like = useSetImagePlazaLikeMutation(props.work.id);
   return (
     <article className="group relative mb-3 break-inside-avoid overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70">
       <Link
         href={`/create/work/${props.work.id}`}
         aria-label={`查看作品：${props.work.title}`}
+        onPointerEnter={props.onPrefetch}
+        onFocus={props.onPrefetch}
+        onTouchStart={props.onPrefetch}
         className="block"
       >
         <img
           src={props.work.image_url}
           alt={props.work.title}
-          loading="lazy"
+          width={props.work.width}
+          height={props.work.height}
+          loading={props.priority ? 'eager' : 'lazy'}
+          fetchPriority={props.priority ? 'high' : 'auto'}
+          decoding="async"
           className="h-auto w-full object-cover transition duration-500 group-hover:scale-[1.02]"
         />
       </Link>
@@ -184,12 +268,17 @@ function PlazaCard(props: { work: ImagePlazaWork; onUseSame: () => void }) {
         </button>
         <button
           type="button"
+          disabled={props.interactionDisabled}
           onClick={props.onUseSame}
           aria-label={`用同款：${props.work.title}`}
           className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl border border-white/10 bg-black/45 px-2 text-[11px] font-black text-[#d8c1aa] shadow-lg backdrop-blur-md transition active:scale-95 sm:h-11 sm:gap-1.5 sm:px-3 sm:text-xs"
         >
-          <Copy className="size-4" />
-          用同款
+          {props.useSamePending ? (
+            <LoaderCircle className="size-4 animate-spin" />
+          ) : (
+            <Copy className="size-4" />
+          )}
+          {props.useSamePending ? '正在打开' : '用同款'}
         </button>
       </div>
     </article>

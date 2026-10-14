@@ -137,7 +137,10 @@ export class ImagePlazaRepository {
     if (error) throw new Error(`image plaza feed read failed: ${error.message}`);
     const rows = (data ?? []) as WorkRow[];
     const visible = rows.slice(0, input.limit);
-    const works = await this.hydrateWorks(visible, input.userId);
+    const works = await this.hydrateWorks(visible, input.userId, {
+      feedImages: true,
+      includeReferences: false,
+    });
     const last = visible.at(-1);
     return {
       works,
@@ -281,7 +284,8 @@ export class ImagePlazaRepository {
       .single();
     if (error || !data)
       throw new Error(`image plaza conversation create failed: ${error?.message}`);
-    return this.hydrateConversation(data as ConversationRow);
+    // 新建会话必然没有消息和任务，直接映射可省掉两次空表读取，缩短“用同款”跳转等待。
+    return mapConversationRow(data as ConversationRow, []);
   }
 
   async listConversations(
@@ -633,7 +637,11 @@ export class ImagePlazaRepository {
     }
   }
 
-  private async hydrateWorks(rows: WorkRow[], userId: string): Promise<ImagePlazaWork[]> {
+  private async hydrateWorks(
+    rows: WorkRow[],
+    userId: string,
+    options: { feedImages?: boolean; includeReferences?: boolean } = {}
+  ): Promise<ImagePlazaWork[]> {
     if (rows.length === 0) return [];
     const artifactIds = rows.map((row) => row.artifact_id);
     const workIds = rows.map((row) => row.id);
@@ -659,7 +667,7 @@ export class ImagePlazaRepository {
         const publishedAt = new Date(row.published_at);
         if (Number.isNaN(publishedAt.getTime())) throw new Error('image_plaza_work_shape_invalid');
         let referenceImageUrl: string | null = null;
-        if (snapshot.data.reference_artifact_id) {
+        if (options.includeReferences !== false && snapshot.data.reference_artifact_id) {
           const { data: reference } = await this.experience
             .from('image_plaza_reference_assets')
             .select('storage_path')
@@ -671,7 +679,11 @@ export class ImagePlazaRepository {
         return {
           id: row.id,
           title: row.title,
-          image_url: await signPlazaImagePath(artifact.storage_path),
+          image_url: await signPlazaImagePath(
+            artifact.storage_path,
+            900,
+            options.feedImages ? { width: 720, quality: 72 } : undefined
+          ),
           reference_image_url: referenceImageUrl,
           model_id: row.model_id,
           model_name: row.model_name,

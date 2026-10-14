@@ -23,6 +23,7 @@
 | T12 | Done    | 离线 importer 与来源/内容门禁      | backend tooling/Storage/导入清单       | T11、门禁关闭 | 8,227 行 dry-run；无数据写入        |
 | T13 | Doing   | test canary 与分批初始数据导入     | test DB/Storage/人工回归               | T12           | 8,032 已导入；22 个 404 隔离        |
 | T14 | Done    | latest badge 容错与创作 UI 对齐    | backend characters + frontend create   | T4–T5         | 四张参考图 + API 降级验证           |
+| T15 | Done    | 生成失败语义、设置与广场性能修订   | backend image-plaza + frontend create  | T4–T5, T13    | AC25–AC28                           |
 
 ## Execution Log
 
@@ -68,3 +69,4 @@
 - 2026-10-13：最终核验为 8,032 work / 8,032 artifact / 8,032 Storage 对象且来源 ID 全部唯一；prompt 7–2,000 字，六模型数据齐全。默认 feed、详情 DTO、短期签名 URL和来源字段脱敏通过；修复 Postgres offset timestamp 到标准 ISO `Z` 的 DTO 映射。Backend 607 项测试、typecheck 与专项 lint 通过。T13 仅余真实 UI“用同款”提交/provider canary 和 22 个源资源替换输入。
 - 2026-10-13：`20261013_image_plaza_seed_large_assets.sql` 手工重放曾因函数参数文本精确匹配及仅接受 20 MiB 旧定义而抛出 P0001，事务整体回滚。迁移已改为通过完整签名解析 OID，并同时接受“待从 20 MiB 升级”和“已经是 50 MiB”状态；在明确 test 项目重放通过，artifact CHECK、Storage bucket 与 seed RPC 三项 50 MiB 自检均为 true。
 - 2026-10-14：T14 完成。`latest-badge` 由 Prisma aggregate 改为按 `last_listed_at DESC` 取首行，异常记录 `{ err }` 后关闭非关键 New 角标，避免拖垮首页；确认 test 库字段存在且 API smoke 返回 200。广场卡片、Studio 产物框/四操作按钮/返利角标、输入工具区和设置 Dialog 按四张参考图收口，推理与自动优化均进入真实提交状态。Frontend 37 文件/242 测试、typecheck、lint、production build，Backend 74 文件/607 测试与 typecheck 均通过；自动浏览器实例不可用，Telegram WebView/移动端像素级确认仍归 T9 人工验收。
+- 2026-10-14：T15 完成。失败会话 `aed79e1a-9cbb-4dbc-85b1-db9b1ed71ade` 实际错误为 `image_plaza_provider_not_configured`；quote/attempt 在 worker 或 `VENICE_API_KEY` 缺失时改为写库前同步 503，实测 attempt 数保持 1→1。设置按 1009 原型改为底部 sheet、展开芯片、紧凑开关并隐藏固定分辨率行。Feed 保持 20 条稳定游标，改用 720px Storage transform、跳过参考图 N+1，增加上滑续页/下拉刷新；详情使用 feed 占位并预取路由，同款缓存新会话且移除空消息二次读取。两页各 20 条共 40 个唯一作品、Frontend 242/Backend 607 测试、全仓 typecheck、lint、production build 与本地 200 smoke 通过；真实 provider canary 仍需部署环境配置密钥。

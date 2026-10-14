@@ -599,6 +599,11 @@ function AttemptCard(props: {
             ? '结果暂时未知，未扣除星尘'
             : '生成失败，未消耗星尘'}
         </p>
+        {attempt.error_code ? (
+          <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+            {attemptFailureMessage(attempt.error_code)}
+          </p>
+        ) : null}
         <button
           type="button"
           onClick={() => props.onRefresh(props.prompt)}
@@ -624,6 +629,21 @@ function AttemptCard(props: {
     </div>
   );
 }
+
+function attemptFailureMessage(errorCode: string): string {
+  if (
+    errorCode === 'image_plaza_provider_not_configured' ||
+    errorCode === 'image_plaza_provider_unavailable'
+  ) {
+    return '图片生成服务尚未配置，请稍后再试';
+  }
+  if (errorCode.startsWith('image_plaza_provider_http_')) {
+    return '图片服务暂未接受本次生成，请调整后重试';
+  }
+  if (errorCode.includes('reference')) return '参考图当前不可用，请重新添加后再试';
+  return '图片服务未完成本次生成，请稍后重试';
+}
+
 function StudioMessage({ children }: { children: React.ReactNode }) {
   return (
     <main className="grid min-h-[100dvh] place-items-center bg-background text-sm font-bold text-muted-foreground">

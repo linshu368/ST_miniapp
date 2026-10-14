@@ -226,3 +226,21 @@ seed 的“用同款”只复制模型、提示词和快照参数，不引用源
 - 成人内容安全 allowlist 与审核责任人；现有“UGC 无审核页”不能替代第三方批量初始内容的离线准入。
 - 图片转码/分辨率/容量选择。
 - 共享抓取会话正文目前不可访问，其中可能存在的额外规则尚未纳入已验证事实。
+
+## 12. 2026-10-14 性能与失败语义修订
+
+### 12.1 复用与最小方案
+
+继续复用现有 cursor infinite query、React Query work key、Radix Dialog、Supabase Storage 签名和 `createConversation`；不增加分页状态源、缩略图表、图片代理或通用手势框架。Feed DTO 仍使用同一作品契约，只在列表读路径签发宽度受控的 Storage transform URL，并将列表不消费的 `reference_image_url` 置空；详情读路径继续签发原图和参考图。
+
+### 12.2 故障、并发与恢复
+
+- attempt 受理前检查进程内 Venice key 与 worker 开关；不可用时 503 fail-fast，避免产生必败任务。该检查不替代 worker 内防线，部署中途失效仍由原有失败不扣费逻辑收口。
+- 下拉刷新复用 infinite query refetch，只重置/刷新页链，不与下一页请求并行触发；触摸距离设上限且不阻止系统滚动。
+- 下一页仍以 `(published_at,id)` 游标和 20 条固定页长保证稳定；IntersectionObserver 有界触发，React Query 去重并发请求。
+- Storage transform 失败可通过详情原图路径诊断；不改原始对象和数据库，可直接 forward-fix 回退为原图签名。
+- “用同款”仍由数据库 insert 确认后导航，不做乐观伪造；仅移除新建空会话后必为空的 messages/attempts 二次读取。
+
+### 12.3 容量、可观测性与拒绝项
+
+20 张最高约 720px、质量 72 的 feed 图显著降低 20–50 MiB seed 原图的首屏传输/解码压力。后端沿用请求耗时日志与 `{ err }`；不记录 prompt、签名 URL 或 key。不引入 service worker、无限预取、客户端原图压缩或新 CDN 层，避免超出本次已证实瓶颈。

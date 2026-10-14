@@ -107,11 +107,15 @@ export async function uploadSeedPlazaImage(input: {
   };
 }
 
-export async function signPlazaImagePath(path: string, expiresInSeconds = 900): Promise<string> {
+export async function signPlazaImagePath(
+  path: string,
+  expiresInSeconds = 900,
+  transform?: { width: number; quality: number }
+): Promise<string> {
   assertPlazaPath(path);
   const { data, error } = await getSupabaseClient()
     .storage.from(BUCKET)
-    .createSignedUrl(path, expiresInSeconds);
+    .createSignedUrl(path, expiresInSeconds, transform ? { transform } : undefined);
   if (error || !data?.signedUrl) throw new Error('image_plaza_storage_sign_failed');
   return data.signedUrl;
 }
