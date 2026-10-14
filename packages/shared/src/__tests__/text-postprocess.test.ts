@@ -24,6 +24,7 @@ import {
 } from '../api/text-postprocess';
 import { RICH_REPLY_RULE_STYLES } from '../text-postprocess/rich-reply-styles';
 import { applyTextPostprocess } from '../text-postprocess/apply';
+import { diagnoseRichReplyProtocol } from '../text-postprocess/rich-reply';
 import { compileTextPostprocessSource } from '../text-postprocess/compile';
 import { resolveTrustedTree } from '../text-postprocess/resolve-tree';
 import {
@@ -161,6 +162,33 @@ describe('capture compilation', () => {
 });
 
 describe('rich reply protocol', () => {
+  it('classifies exact, deterministic recovery, and unrecoverable protocols without retaining reply text', () => {
+    const enabled = { choices: true, status: true, memory: true };
+    const exact = diagnoseRichReplyProtocol(
+      '[choices][choice]一[/choice][choice]二[/choice][choice]三[/choice][/choices][status]状态[/status][memory]记忆[/memory]',
+      enabled
+    );
+    expect(exact).toEqual({ rich_reply_result: 'exact', rich_reply_issues: [] });
+
+    const recovered = diagnoseRichReplyProtocol(
+      '[choices][choice]一[/choice][choice]二[/choice][choice]三[/choice][status]状态[/status][memory]记忆',
+      enabled
+    );
+    expect(recovered).toEqual({
+      rich_reply_result: 'recovered',
+      rich_reply_issues: ['MISSING_CHOICES_CLOSE_BEFORE_STATUS', 'MISSING_MEMORY_CLOSE_AT_EOF'],
+    });
+
+    expect(diagnoseRichReplyProtocol('[status]无边界', enabled)).toMatchObject({
+      rich_reply_result: 'failed',
+      rich_reply_issues: expect.arrayContaining(['INVALID_CHOICES_MODULE']),
+    });
+    expect(diagnoseRichReplyProtocol('', enabled, false)).toEqual({
+      rich_reply_result: 'failed',
+      rich_reply_issues: ['RICH_REPLY_PROTOCOL_DISABLED'],
+    });
+  });
+
   it('turns complete fixed modules into trusted slots and safely contains malformed modules', () => {
     const artifact = compileOk([]);
     const complete = [

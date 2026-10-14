@@ -15,6 +15,13 @@ const CHOICE = /\[choice\]\s*([\s\S]*?)\s*\[\/choice\]/g;
 const DIALOGUE = /“([^”\r\n]{1,500})”/g;
 type RichReplyModule = 'choices' | 'status' | 'memory';
 
+export type RichReplyResult = 'exact' | 'recovered' | 'failed';
+
+export interface RichReplyDiagnosis {
+  rich_reply_result: RichReplyResult;
+  rich_reply_issues: string[];
+}
+
 /**
  * Parses the fixed v1 model protocol into the same trusted-slot transport used
  * by custom rules.  This keeps all rendering inside the existing trusted-tree
@@ -46,6 +53,68 @@ export function applyRichReplyProtocol(source: TextPostprocessSegment[]): {
   }
   const dialogue = replaceDialogue(segments, MODULE_LIMIT - matches);
   return { segments: dialogue.segments, matches: matches + dialogue.matches };
+}
+
+/**
+ * Produces the small, persistence-safe protocol diagnostic used to select the
+ * next turn's prompt. It deliberately records neither source text nor parsed
+ * slot contents. A recovered envelope is acceptable only when the same
+ * deterministic parser produced every enabled module.
+ */
+export function diagnoseRichReplyProtocol(
+  text: string,
+  enabled: Readonly<Record<RichReplyModule, boolean>>,
+  protocolEnabled = true
+): RichReplyDiagnosis {
+  const expected = (Object.keys(enabled) as RichReplyModule[]).filter((tag) => enabled[tag]);
+  if (expected.length === 0) return { rich_reply_result: 'exact', rich_reply_issues: [] };
+  if (!protocolEnabled)
+    return { rich_reply_result: 'failed', rich_reply_issues: ['RICH_REPLY_PROTOCOL_DISABLED'] };
+
+  const applied = applyRichReplyProtocol([{ type: 'text', text, start: 0, end: text.length }]);
+  const slots = new Map<string, TextPostprocessSlotSegment>();
+  for (const segment of applied.segments) {
+    if (segment.type === 'slot') slots.set(segment.rule_id, segment);
+  }
+  const issues: string[] = [];
+  let recovered = false;
+  for (const tag of expected) {
+    const slot = slots.get(`rich-reply-${tag}`);
+    if (!slot || (tag === 'choices' && slot.choices.length !== 3)) {
+      issues.push(`INVALID_${tag.toUpperCase()}_MODULE`);
+      continue;
+    }
+    const raw = classifyRawEnvelope(text, tag);
+    if (raw === 'missing') {
+      issues.push(`MISSING_${tag.toUpperCase()}_MODULE`);
+      continue;
+    }
+    if (raw !== 'exact') {
+      recovered = true;
+      issues.push(raw);
+    }
+  }
+  if (issues.some((issue) => issue.startsWith('INVALID_') || issue.endsWith('_MODULE')))
+    return { rich_reply_result: 'failed', rich_reply_issues: issues };
+  return { rich_reply_result: recovered ? 'recovered' : 'exact', rich_reply_issues: issues };
+}
+
+function classifyRawEnvelope(text: string, tag: RichReplyModule): 'exact' | 'missing' | string {
+  const open = `[${tag}]`;
+  const start = text.indexOf(open);
+  if (start < 0) return 'missing';
+  const contentStart = start + open.length;
+  const close = `[/${tag}]`;
+  const explicitEnd = text.indexOf(close, contentStart);
+  const boundary = nextModuleStart(text, tag, contentStart);
+  if (explicitEnd >= 0 && (boundary < 0 || explicitEnd < boundary)) return 'exact';
+  if (boundary >= 0) {
+    const next = (['choices', 'status', 'memory'] as RichReplyModule[]).find(
+      (candidate) => text.indexOf(`[${candidate}]`, contentStart) === boundary
+    );
+    return `MISSING_${tag.toUpperCase()}_CLOSE_BEFORE_${(next ?? 'MODULE').toUpperCase()}`;
+  }
+  return `MISSING_${tag.toUpperCase()}_CLOSE_AT_EOF`;
 }
 
 function replaceModules(

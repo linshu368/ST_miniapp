@@ -45,6 +45,7 @@ export interface ConversationHistoryRow {
   revision: number;
   /** 迁移未执行时视图没有这一列。缺失按 null，不用当前配置顶上。 */
   postprocess_version?: number | null;
+  rich_reply_metadata?: unknown;
 }
 
 /** 请求时定价快照。回捞按此重建 charge，不重新定价。 */
@@ -172,6 +173,23 @@ export class ConversationHistoryRepository {
 
   async setPendingRequestId(historyId: string, requestId: string): Promise<void> {
     await this.setPromptHistory(historyId, [], requestId);
+  }
+
+  async saveRichReplyMetadata(
+    historyId: string,
+    metadata: {
+      rich_reply_mode: 'full' | 'concise';
+      rich_reply_result: 'exact' | 'recovered' | 'failed';
+      rich_reply_issues: string[];
+    }
+  ): Promise<void> {
+    const { error } = await this.db
+      .from('chat_history')
+      .update({ rich_reply_metadata: metadata })
+      .eq('id', historyId)
+      .eq('status', 'success')
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`写入富文本协议诊断失败：${error.message}`);
   }
 
   async setPromptHistory(
