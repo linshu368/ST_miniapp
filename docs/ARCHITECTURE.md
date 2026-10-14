@@ -228,12 +228,17 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 - **不做酒馆语义适配**：宏、世界书、正则、卡内嵌资源一律不支持，表现质量由 system prompt 与组装逻辑承担。
 - 角色卡只取 `system_prompt`；`description` / `personality` / `scenario` / `mes_example` / `post_history_instructions` 已在接缝里占位但 v1 不进 prompt。
 
-平台规则来自 `app_core.runtime_config` 三个 key，5 分钟 TTL 缓存、按 `version` 判活，缺失或格式损坏时降级到内置兜底并打 `degraded` 标记。三件套与档位表均可在 admin 运营配置里编辑发布：
+平台规则来自 `app_core.runtime_config` 五个 key，5 分钟 TTL 缓存、按 `version` 判活，缺失或格式损坏时逐 key 降级到内置兜底并打 `degraded` 标记。主体、三个富回复槽位和字数档位均可在 Admin 运营配置里编辑发布：
 
-| key                     | 内容                                                                                                                    |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `system_instructions`   | 平台规则模板，含 `{{WORD_COUNT}}` / `{{USER_CUSTOM_INSTRUCTIONS}}` 两个运行时占位符；富回复协议来自 shared 的唯一事实源 |
-| `pref_word_count_tiers` | 字数档位表（076 起可增删档位；`pref_word_count` 未选时跟随平台 default_tier）                                           |
+| key                     | 内容                                                                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system_instructions`   | 平台规则模板，必须包含 `{{CHOICE_RULES}}` / `{{STATUS_RULES}}` / `{{MEMORY_RULES}}` / `{{WORD_COUNT}}` / `{{USER_CUSTOM_INSTRUCTIONS}}`；富回复机器协议来自 shared 的唯一事实源 |
+| `choice_rules`          | 选项槽位的 full / concise / off 文案；`on_first_two_turns` 是兼容字段名，不代表当前固定两轮计数                                                                                 |
+| `status_rules`          | 状态栏槽位的 full / concise / off 文案                                                                                                                                          |
+| `memory_rules`          | 记忆区槽位的 full / concise / off 文案                                                                                                                                          |
+| `pref_word_count_tiers` | 字数档位表（076 起可增删档位；`pref_word_count` 未选时跟随平台 default_tier）                                                                                                   |
+
+三个槽位的开关是用户级偏好，模式选择是会话级事实并随 revision 持久化在 `experience.chat_history`。每个会话第 1～3 个逻辑轮使用 full；第 4 轮起仅当上一逻辑轮最新 revision 的 `rich_reply_metadata.rich_reply_result` 为 `exact` 时使用 concise，`recovered`、`failed` 或缺失时恢复 full。关闭槽位使用 off。重生成根据被替换 revision 的诊断重新选择模式，而不是消费用户级计数；旧 `*_full_rules_remaining` 字段仅保留作应用回滚兼容。
 
 ### 4.4.1 AI 回复后处理与展示
 
