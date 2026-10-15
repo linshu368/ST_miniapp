@@ -25,8 +25,9 @@ import { getChatReplyPresentation } from './chat-reply-presentation';
  * 两端对齐的效果被挤偏到右边，视觉上不居中。头像挪到上方后正文容器天然对称，
  * justify 才能展现出「正文整体居中、左右两端对齐」的效果。
  *
- * 容器左右各留出较宽的 `px-6`/`px-10`（而不是贴边的 `px-3.5`/`px-4`），
- * 正文区因此比屏幕窄一圈、形成左右留白，视觉上更像一张居中排版的卡片而不是通栏铺满。
+ * AI 正文区本身限制到 620px 并用 `mx-auto` 居中，而不是只给外层加 padding。
+ * 窄屏两侧各留 32px，521px 以上各留至少 48px；超过 620px 后两侧留白继续自然增加。
+ * 头像和标题也放进同一个容器，保证消息的各部分使用同一条对齐线。
  */
 const AVATAR_CLASS =
   'size-[34px] shrink-0 rounded-full border border-border object-cover min-[521px]:size-9';
@@ -37,6 +38,9 @@ const HEADER_AVATAR_CLASS =
 
 const BODY_TEXT_CLASS =
   'text-[14.5px] font-[440] leading-[1.76] min-[521px]:text-[15px] min-[521px]:leading-[1.72]';
+
+const ASSISTANT_CONTENT_CLASS =
+  'mx-auto w-[calc(100%-4rem)] max-w-[620px] min-w-0 min-[521px]:w-[calc(100%-6rem)]';
 
 /**
  * 角色名/会话标题：比正文小一档、颜色用 muted，做成一行轻提示而不是加粗的强标题，
@@ -96,39 +100,41 @@ export function ChatMessageBubble({
   const presentation = getChatReplyPresentation(message);
 
   return (
-    <div className="flex flex-col px-6 pb-3.5 pt-3 min-[521px]:px-10">
-      <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
-        <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
-        <span className={HEADER_TITLE_CLASS}>{characterName}</span>
-      </div>
-      <div className="min-w-0">
-        <div className={cn('text-foreground', BODY_TEXT_CLASS)}>
-          {message.content ? (
-            <AssistantReplyBody
-              message={message}
-              plan={replyPlan ?? { kind: 'original' }}
-              streaming={Boolean(streaming)}
-              displayName={displayName}
-              choiceDisabled={choiceDisabled !== false}
-              onChoice={onChoice}
-              detailsDefaultOpen={detailsDefaultOpen}
-            />
-          ) : null}
-          {streaming ? (
-            <span
-              className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-primary align-middle"
-              aria-hidden
-            />
-          ) : null}
-          {stalled ? <ReplyNotice>TA 回应得有点久，再等一会儿。</ReplyNotice> : null}
-          {presentation === 'incomplete' && message.finish_reason === 'content_filter' ? (
-            <ReplyNotice>回复停在这里了，可以重新回复。本次未扣星尘。</ReplyNotice>
-          ) : presentation === 'empty' ? (
-            <ReplyNotice>TA 刚才没能回应，可以再试一次。本次未扣星尘。</ReplyNotice>
-          ) : null}
-          {quotaExhaustedNotice ? <ReplyNotice>{quotaExhaustedNotice}</ReplyNotice> : null}
+    <div className="pb-3.5 pt-3">
+      <div className={ASSISTANT_CONTENT_CLASS}>
+        <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
+          <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
+          <span className={HEADER_TITLE_CLASS}>{characterName}</span>
         </div>
-        {footer ? <div className="pt-1.5">{footer}</div> : null}
+        <div className="min-w-0">
+          <div className={cn('text-foreground', BODY_TEXT_CLASS)}>
+            {message.content ? (
+              <AssistantReplyBody
+                message={message}
+                plan={replyPlan ?? { kind: 'original' }}
+                streaming={Boolean(streaming)}
+                displayName={displayName}
+                choiceDisabled={choiceDisabled !== false}
+                onChoice={onChoice}
+                detailsDefaultOpen={detailsDefaultOpen}
+              />
+            ) : null}
+            {streaming ? (
+              <span
+                className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-primary align-middle"
+                aria-hidden
+              />
+            ) : null}
+            {stalled ? <ReplyNotice>TA 回应得有点久，再等一会儿。</ReplyNotice> : null}
+            {presentation === 'incomplete' && message.finish_reason === 'content_filter' ? (
+              <ReplyNotice>回复停在这里了，可以重新回复。本次未扣星尘。</ReplyNotice>
+            ) : presentation === 'empty' ? (
+              <ReplyNotice>TA 刚才没能回应，可以再试一次。本次未扣星尘。</ReplyNotice>
+            ) : null}
+            {quotaExhaustedNotice ? <ReplyNotice>{quotaExhaustedNotice}</ReplyNotice> : null}
+          </div>
+          {footer ? <div className="pt-1.5">{footer}</div> : null}
+        </div>
       </div>
     </div>
   );
@@ -145,12 +151,12 @@ export function ChatTypingBubble({
   stalled?: boolean;
 }) {
   return (
-    <div className="flex flex-col px-6 pb-3.5 pt-3 min-[521px]:px-10">
-      <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
-        <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
-        <span className={HEADER_TITLE_CLASS}>{characterName}</span>
-      </div>
-      <div className="min-w-0">
+    <div className="pb-3.5 pt-3">
+      <div className={ASSISTANT_CONTENT_CLASS}>
+        <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
+          <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
+          <span className={HEADER_TITLE_CLASS}>{characterName}</span>
+        </div>
         <div className="flex items-center gap-1 pt-1">
           {[0, 1, 2].map((index) => (
             <span
