@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
   fail,
   ok,
@@ -9,6 +9,7 @@ import {
   type SupportMessage,
   type SupportUnreadData,
 } from '@miniapp/shared';
+import { callCsService, isCsServiceEnabled } from '../lib/cs-service.js';
 import { getDomainDb } from '../lib/supabase.js';
 import { hasUnreadAgentReply } from '../lib/support-unread.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -32,6 +33,9 @@ export default async function supportRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const user = await getOrCreateDbUser(request.user);
+      if (isCsServiceEnabled()) {
+        return proxyToCs(reply, 'GET', `/internal/app/users/${user.id}/conversation`);
+      }
       const conversation = await findConversation(user.id);
       if (!conversation) {
         return reply.send(ok<GetSupportConversationData>({ conversation: null }));
@@ -52,6 +56,9 @@ export default async function supportRoutes(app: FastifyInstance) {
   app.get('/api/support/unread', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     const user = await getOrCreateDbUser(request.user);
+    if (isCsServiceEnabled()) {
+      return proxyToCs(reply, 'GET', `/internal/app/users/${user.id}/unread`);
+    }
     const conversation = await findConversation(user.id);
     return reply.send(
       ok<SupportUnreadData>({
@@ -67,6 +74,9 @@ export default async function supportRoutes(app: FastifyInstance) {
   app.post('/api/support/read', { preHandler: [requireTelegramAuth] }, async (request, reply) => {
     if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
     const user = await getOrCreateDbUser(request.user);
+    if (isCsServiceEnabled()) {
+      return proxyToCs(reply, 'POST', `/internal/app/users/${user.id}/read`);
+    }
     const conversation = await findConversation(user.id);
     if (!conversation) return reply.send(ok<SupportUnreadData>({ has_unread: false }));
 
@@ -85,9 +95,13 @@ export default async function supportRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const user = await getOrCreateDbUser(request.user);
+      const { after } = request.query as { after?: string };
+      if (isCsServiceEnabled()) {
+        const query = after ? `?after=${encodeURIComponent(after)}` : '';
+        return proxyToCs(reply, 'GET', `/internal/app/users/${user.id}/messages${query}`);
+      }
       const conversation = await findConversation(user.id);
       if (!conversation) return reply.send(ok<GetSupportMessagesData>({ messages: [] }));
-      const { after } = request.query as { after?: string };
       return reply.send(
         ok<GetSupportMessagesData>({
           messages: await listMessages(conversation.id, after),
@@ -108,6 +122,12 @@ export default async function supportRoutes(app: FastifyInstance) {
       }
 
       const user = await getOrCreateDbUser(request.user);
+      if (isCsServiceEnabled()) {
+        return proxyToCs(reply, 'POST', `/internal/app/users/${user.id}/messages`, {
+          body: text,
+          client_msg_id: body.client_msg_id,
+        });
+      }
       const conversation = await getOrCreateConversation(user.id);
       const db = getDomainDb('cs_platform');
       const now = new Date().toISOString();
@@ -145,6 +165,17 @@ export default async function supportRoutes(app: FastifyInstance) {
       return reply.status(201).send(ok<SendSupportMessageData>({ message }));
     }
   );
+}
+
+/** 客服服务的响应形状与旧接口逐字段一致（见 ST_cs_platform contracts/app.ts），状态码和信封原样透传 */
+async function proxyToCs(
+  reply: FastifyReply,
+  method: 'GET' | 'POST',
+  path: string,
+  body?: unknown
+): Promise<FastifyReply> {
+  const { status, payload } = await callCsService(method, path, body);
+  return reply.status(status).send(payload);
 }
 
 async function findConversation(userId: string): Promise<ConversationRow | null> {
