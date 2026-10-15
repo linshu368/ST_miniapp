@@ -22,6 +22,8 @@ export interface ImagePlazaGenerationInput {
   resolution: '1K' | '2K' | 'fixed';
   sizingMode: 'aspect_ratio' | 'resolution' | 'pixels';
   mode: 't2i' | 'i2i' | 'edit';
+  /** 对应 Venice enhance_prompt；仅 generate 生效，edit 端点不接受该字段。 */
+  autoOptimize?: boolean;
   reference?: { bytes: Buffer; mimeType: PlazaMimeType };
 }
 
@@ -43,7 +45,12 @@ export async function generateImagePlazaImage(
   }
 
   const isEdit = input.mode !== 't2i';
-  const body: Record<string, unknown> = { model: input.providerModelId, prompt: input.prompt };
+  // Venice safe_mode 默认 true，成人内容会返回模糊图；广场按 uncensored 模型预期关闭。
+  const body: Record<string, unknown> = {
+    model: input.providerModelId,
+    prompt: input.prompt,
+    safe_mode: false,
+  };
   if (isEdit && input.reference) {
     body.image = input.reference.bytes.toString('base64');
     body.aspect_ratio = input.aspectRatio;
@@ -52,6 +59,8 @@ export async function generateImagePlazaImage(
   } else {
     body.variants = 1;
     body.format = 'webp';
+    // generate 支持 enhance_prompt；默认跟随 auto_optimize（缺省 true）。
+    body.enhance_prompt = input.autoOptimize !== false;
     if (input.sizingMode === 'pixels') {
       const dimensions = pixelDimensions(input.aspectRatio);
       body.width = dimensions.width;

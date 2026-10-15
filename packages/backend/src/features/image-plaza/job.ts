@@ -33,6 +33,7 @@ export function startImagePlazaGenerationJob(log: FastifyBaseLogger): void {
             resolution: attempt.resolution,
             sizingMode: attempt.sizingMode,
             mode: attempt.mode,
+            autoOptimize: attempt.autoOptimize,
             ...(reference ? { reference } : {}),
           });
           await repository.recordProviderRequestId(attempt.id, generated.providerRequestId);

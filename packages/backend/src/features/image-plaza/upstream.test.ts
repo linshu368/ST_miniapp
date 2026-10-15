@@ -45,6 +45,8 @@ describe('generateImagePlazaImage', () => {
     expect(body).toMatchObject({
       model: 'pixel-model',
       prompt: 'portrait',
+      safe_mode: false,
+      enhance_prompt: true,
       variants: 1,
       format: 'webp',
       width: 832,
@@ -52,6 +54,29 @@ describe('generateImagePlazaImage', () => {
     });
     expect(body).not.toHaveProperty('aspect_ratio');
     expect(result.providerRequestId).toBe('request-1');
+  });
+
+  it('maps autoOptimize=false to enhance_prompt=false on generate', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ id: 'request-2', images: [Buffer.from([1]).toString('base64')] })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await generateImagePlazaImage({
+      providerModelId: 'pixel-model',
+      prompt: 'portrait',
+      aspectRatio: '1:1',
+      resolution: 'fixed',
+      sizingMode: 'pixels',
+      mode: 't2i',
+      autoOptimize: false,
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({ safe_mode: false, enhance_prompt: false });
   });
 
   it('uses the Venice edit body and reads its binary response', async () => {
@@ -71,6 +96,7 @@ describe('generateImagePlazaImage', () => {
       resolution: '2K',
       sizingMode: 'resolution',
       mode: 'edit',
+      autoOptimize: true,
       reference: { bytes: Buffer.from([9, 8, 7]), mimeType: 'image/png' },
     });
 
@@ -80,11 +106,13 @@ describe('generateImagePlazaImage', () => {
     expect(body).toEqual({
       model: 'edit-model',
       prompt: 'edit portrait',
+      safe_mode: false,
       image: Buffer.from([9, 8, 7]).toString('base64'),
       aspect_ratio: '1:1',
       resolution: '2K',
       output_format: 'webp',
     });
+    expect(body).not.toHaveProperty('enhance_prompt');
     expect(result).toMatchObject({ mimeType: 'image/png', providerRequestId: 'edit-request' });
     expect(result.bytes).toEqual(Buffer.from(bytes));
   });

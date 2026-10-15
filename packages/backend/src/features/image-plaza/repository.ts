@@ -28,6 +28,7 @@ export interface ImagePlazaWorkerAttempt {
   mode: 't2i' | 'i2i' | 'edit';
   aspectRatio: string;
   resolution: '1K' | '2K' | 'fixed';
+  autoOptimize: boolean;
   referenceArtifactId: string | null;
 }
 
@@ -571,6 +572,7 @@ export class ImagePlazaRepository {
       mode: row.mode as ImagePlazaWorkerAttempt['mode'],
       aspectRatio: String(row.aspect_ratio),
       resolution: row.resolution as ImagePlazaWorkerAttempt['resolution'],
+      autoOptimize: row.auto_optimize !== false,
       referenceArtifactId:
         typeof row.reference_artifact_id === 'string' ? row.reference_artifact_id : null,
     }));
