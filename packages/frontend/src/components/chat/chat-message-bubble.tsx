@@ -24,13 +24,16 @@ import { getChatReplyPresentation } from './chat-reply-presentation';
  * 这会让 body 规则里的 `text-align: justify` 在一个左右不对称的容器里生效，
  * 两端对齐的效果被挤偏到右边，视觉上不居中。头像挪到上方后正文容器天然对称，
  * justify 才能展现出「正文整体居中、左右两端对齐」的效果。
+ *
+ * 容器左右各留出较宽的 `px-6`/`px-10`（而不是贴边的 `px-3.5`/`px-4`），
+ * 正文区因此比屏幕窄一圈、形成左右留白，视觉上更像一张居中排版的卡片而不是通栏铺满。
  */
 const AVATAR_CLASS =
   'size-[34px] shrink-0 rounded-full border border-border object-cover min-[521px]:size-9';
 
 /** 头像挪到正文上方后单独占一行，尺寸比行内嵌入时更大一些，和正文的视觉比例更协调 */
 const HEADER_AVATAR_CLASS =
-  'size-8 shrink-0 rounded-full border border-border object-cover min-[521px]:size-9';
+  'size-9 shrink-0 rounded-full border border-border object-cover min-[521px]:size-10';
 
 const BODY_TEXT_CLASS =
   'text-[14.5px] font-[440] leading-[1.76] min-[521px]:text-[15px] min-[521px]:leading-[1.72]';
@@ -81,9 +84,9 @@ export function ChatMessageBubble({
 }: ChatMessageBubbleProps) {
   if (message.role === 'user') {
     return (
-      <div className="flex flex-col items-end gap-1 px-3.5 pb-2.5 pt-1.5">
+      <div className="flex flex-col items-end gap-1 px-6 pb-2.5 pt-1.5 min-[521px]:px-10">
         <Avatar url={userAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
-        <div className="w-fit max-w-full whitespace-pre-wrap rounded-[20px_20px_6px_20px] border border-primary/[0.18] bg-bubble-user px-3.5 py-[11px] text-foreground min-[521px]:max-w-[34rem]">
+        <div className="w-fit max-w-full whitespace-pre-wrap rounded-[20px_20px_6px_20px] border border-primary/[0.18] bg-bubble-user px-3.5 py-[11px] text-foreground min-[521px]:max-w-[30rem]">
           <span className={BODY_TEXT_CLASS}>{message.content}</span>
         </div>
       </div>
@@ -93,7 +96,7 @@ export function ChatMessageBubble({
   const presentation = getChatReplyPresentation(message);
 
   return (
-    <div className="flex flex-col px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
+    <div className="flex flex-col px-6 pb-3.5 pt-3 min-[521px]:px-10">
       <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
         <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
         <span className={HEADER_TITLE_CLASS}>{characterName}</span>
@@ -142,7 +145,7 @@ export function ChatTypingBubble({
   stalled?: boolean;
 }) {
   return (
-    <div className="flex flex-col px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
+    <div className="flex flex-col px-6 pb-3.5 pt-3 min-[521px]:px-10">
       <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
         <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
         <span className={HEADER_TITLE_CLASS}>{characterName}</span>
