@@ -23,6 +23,7 @@ import {
   type ChatHistorySyncRow,
   type LlmBillingSnapshot,
 } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositories/OpenRouterChatHistoryRepository.js';
 import { MiniappWalletRepository } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import { applyLlmCharge } from './apply-charge.js';
 import { frozenLlmChargeMetadata } from './text-billing.js';
@@ -43,6 +44,7 @@ let startupTimerId: NodeJS.Timeout | null = null;
 let isRunning = false;
 let walletRepository: MiniappWalletRepository | null = null;
 let historyRepository: ConversationHistoryRepository | null = null;
+let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
 
 function wallets(): MiniappWalletRepository {
   return (walletRepository ??= new MiniappWalletRepository());
@@ -50,6 +52,10 @@ function wallets(): MiniappWalletRepository {
 
 function history(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
+}
+
+function openRouterHistory(): OpenRouterChatHistoryRepository {
+  return (openRouterHistoryRepository ??= new OpenRouterChatHistoryRepository());
 }
 
 export function startChatHistorySyncJob(log: FastifyBaseLogger): void {
@@ -102,7 +108,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
 
     let rows;
     try {
-      rows = await history().listRowsMissingGenerationData({ since, limit: BATCH_LIMIT });
+      rows = await openRouterHistory().listRowsMissingGenerationData({ since, limit: BATCH_LIMIT });
     } catch (err) {
       log.error(
         { kind: 'sys', event: 'chathistory_sync.fetch_failed', err },
@@ -189,6 +195,27 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
             generationId,
           },
           'failed to update chat history'
+        );
+        continue;
+      }
+
+      try {
+        await openRouterHistory().upsert({
+          chat_history_id: record.id,
+          llm_provider_name: 'openrouter',
+          llm_generation_id: generationId,
+          ...llmMetadata,
+        });
+      } catch (err) {
+        log.error(
+          {
+            kind: 'sys',
+            event: 'chathistory_sync.openrouter_metadata_failed',
+            err,
+            id: record.id,
+            generationId,
+          },
+          'failed to update OpenRouter generation metadata'
         );
         continue;
       }

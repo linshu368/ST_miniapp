@@ -1,0 +1,37 @@
+{
+  "id": "openrouter-history-extract",
+  "name": "openrouter-history-extract",
+  "title": "OpenRouter 元数据从 chat_history 拆表",
+  "description": "将 chat_history 的 OpenRouter 调用元数据迁至 experience 独立明细表，保留对话终态与计费事实。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend database docs",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-15",
+  "completedAt": null,
+  "branch": "dev_openrouter_migrate",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "仅完成规划，待人工审阅后执行 task.py start；TEST 结构与代码证据采于 2026-10-15，实施前须复核。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}

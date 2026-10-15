@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"生成、终态和计费链路"}
+{"file":".trellis/spec/database/supabase/schema-and-object-conventions.md","reason":"新表 experience 归属与约束"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"单文件迁移、发布与恢复"}
+{"file":".trellis/spec/database/supabase/modules/business/conversation-storage.md","reason":"会话数据权威来源"}

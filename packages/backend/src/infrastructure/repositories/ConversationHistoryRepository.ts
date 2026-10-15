@@ -7,7 +7,7 @@
 //   1. startTurn / startRegeneration  开轮 RPC 建行：身份与轮次列 + status='streaming'
 //   2. setPromptHistory → finalizeTurn 请求内同步收口：prompt 快照 + 用户可见终态
 //   3. saveBillingSnapshot / recordBillingOutcome / applyGenerationMetadata
-//      异步补齐：请求时定价快照、扣费额、结算完成时间、OpenRouter 用量元数据
+//      异步补齐：请求时定价快照、扣费额与结算完成时间；OpenRouter 用量元数据在其一对一表
 // 唯一共享的列是 llm_finish_reason：第 2 段写 SSE tap 观测值，第 3 段仅在真的从
 // OpenRouter 取到更权威的值时才覆盖（它要等用量统计，必然晚于第 2 段）。
 // 第 3 段的实现见 features/generation/settle.ts 与 features/generation/sync-job.ts。
@@ -357,9 +357,9 @@ export class ConversationHistoryRepository {
   }
 
   /**
-   * 生成终态结算：实扣金额 + OpenRouter 用量元数据 + 结算完成时间。
+   * 生成终态结算：实扣金额、计费意图与结算完成时间。
    * 由 features/generation/settle.ts 调用。
-   * metadata 的键由 generation/openrouter-metadata.ts 统一构造，这里不做字段映射。
+   * OpenRouter 元数据由专用 repository 写入；这里仅接受仍属主表的计费字段。
    * billingSettledAt 有值才表示扣费行、额度收口、金额回写都齐；不要用元数据是否齐全代替。
    */
   async recordBillingOutcome(input: {
@@ -372,7 +372,7 @@ export class ConversationHistoryRepository {
       .from('chat_history')
       .update({
         deduction_rate: input.deductionRate,
-        ...withoutFinishReason(input.metadata),
+        ...billingFields(input.metadata),
         ...(input.billingSettledAt ? { llm_billing_settled_at: input.billingSettledAt } : {}),
       })
       .eq('id', input.historyId);
@@ -393,7 +393,7 @@ export class ConversationHistoryRepository {
   }
 
   /**
-   * 回捞任务的元数据补齐：覆盖 llm_* 用量字段与（若已结算）扣费额、结算完成时间。
+   * 回捞任务的计费补齐：仅更新主表计费字段与（若已结算）结算完成时间。
    * 由 features/generation/sync-job.ts 调用。
    */
   async applyGenerationMetadata(
@@ -404,7 +404,7 @@ export class ConversationHistoryRepository {
     const { error } = await this.db
       .from('chat_history')
       .update({
-        ...withoutFinishReason(metadata),
+        ...billingFields(metadata),
         ...(billingSettledAt ? { llm_billing_settled_at: billingSettledAt } : {}),
       })
       .eq('id', historyId);
@@ -746,9 +746,12 @@ export function clampLimit(value: number | undefined, fallback: number, max: num
   return Math.min(Math.floor(value), max);
 }
 
-function withoutFinishReason(metadata: Record<string, unknown>): Record<string, unknown> {
-  const { llm_finish_reason: _finishReason, ...rest } = metadata;
-  return rest;
+function billingFields(metadata: Record<string, unknown>): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  if (typeof metadata.llm_intended_deduction === 'number')
+    fields.llm_intended_deduction = metadata.llm_intended_deduction;
+  if (typeof metadata.deduction_rate === 'number') fields.deduction_rate = metadata.deduction_rate;
+  return fields;
 }
 
 export function withStoredRequestId(

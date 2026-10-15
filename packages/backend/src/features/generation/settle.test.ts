@@ -15,6 +15,10 @@ const { upsertVeniceHistory } = vi.hoisted(() => ({
   upsertVeniceHistory: vi.fn(),
 }));
 
+const { upsertOpenRouterHistory } = vi.hoisted(() => ({
+  upsertOpenRouterHistory: vi.fn(),
+}));
+
 const { fetchGenerationDataForSettlement } = vi.hoisted(() => ({
   fetchGenerationDataForSettlement: vi.fn(),
 }));
@@ -33,6 +37,12 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
 vi.mock('../../infrastructure/repositories/VeniceChatHistoryRepository.js', () => ({
   VeniceChatHistoryRepository: class {
     upsert = upsertVeniceHistory;
+  },
+}));
+
+vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
+  OpenRouterChatHistoryRepository: class {
+    upsert = upsertOpenRouterHistory;
   },
 }));
 
@@ -104,11 +114,13 @@ describe('runSettlement', () => {
     recordBillingOutcome.mockReset();
     fetchGenerationDataForSettlement.mockReset();
     upsertVeniceHistory.mockReset();
+    upsertOpenRouterHistory.mockReset();
     applyLlmCharge.mockResolvedValue({ chargedAmount: 50, calculatedAmount: 50 });
     saveBillingSnapshot.mockResolvedValue(undefined);
     recordBillingOutcome.mockResolvedValue(undefined);
     fetchGenerationDataForSettlement.mockResolvedValue(null);
     upsertVeniceHistory.mockResolvedValue(undefined);
+    upsertOpenRouterHistory.mockResolvedValue(undefined);
   });
 
   it('persists the request-time snapshot before charging and stamps settlement complete', async () => {
@@ -220,6 +232,31 @@ describe('runSettlement', () => {
     expect(recordBillingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({ llm_finish_reason: 'cancelled' }),
+      })
+    );
+  });
+
+  it('writes OpenRouter raw metadata to the provider table after preserving parent billing facts', async () => {
+    fetchGenerationDataForSettlement.mockResolvedValue({
+      finish_reason: 'stop',
+      usage: 0.001,
+      model: 'routed/model',
+    });
+
+    await runSettlement(entry(), fakeLog());
+
+    expect(upsertOpenRouterHistory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chat_history_id: 'row-1',
+        llm_provider_name: 'openrouter',
+        llm_generation_id: 'gen-1',
+        llm_finish_reason: 'stop',
+        llm_usage: 0.001,
+      })
+    );
+    expect(recordBillingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ llm_usage: 0.001 }),
       })
     );
   });

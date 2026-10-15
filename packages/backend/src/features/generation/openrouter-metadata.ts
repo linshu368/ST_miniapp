@@ -56,8 +56,28 @@ export function buildGenerationMetadata(genData: GenerationData): Record<string,
     llm_latency: genData.latency ?? null,
     llm_generation_time: genData.generation_time ?? null,
     llm_model: genData.model ?? null,
-    llm_generation_data: genData,
+    llm_generation_data: safeGenerationData(genData),
   };
+}
+
+/** OpenRouter's response is diagnostic evidence, not a second prompt/archive store. */
+function safeGenerationData(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (typeof value === 'string') return value;
+  if (depth >= 6 || Array.isArray(value) || typeof value !== 'object') return null;
+
+  const result: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (
+      /^(?:prompt|messages?|input|content|assistant_reply|user_input|history|authorization|api_?key)$/i.test(
+        key
+      )
+    )
+      continue;
+    const safe = safeGenerationData(nested, depth + 1);
+    if (safe !== null) result[key] = safe;
+  }
+  return result;
 }
 
 /**
@@ -72,6 +92,7 @@ export async function fetchGenerationData(generationId: string): Promise<Generat
   try {
     const res = await fetch(`${GENERATION_API_URL}?id=${generationId}`, {
       headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}` },
+      signal: AbortSignal.timeout(5_000),
     });
 
     const body = await res.json().catch(() => null);

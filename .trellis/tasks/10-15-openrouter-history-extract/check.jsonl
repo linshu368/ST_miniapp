@@ -1,0 +1,3 @@
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"新表权限与 RLS 检查"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"TEST/Production 验证和回滚边界"}
+{"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"取消、计费与回捞回归"}
