@@ -169,6 +169,8 @@ pnpm supabase:link:test
 
 - `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/rich-reply-protocol.ts` 是模型富回复协议的唯一事实源，`packages/shared/src/text-postprocess/` 负责确定性编译、固定模块解析与分段处理，不执行网络或数据库 IO。
 - Admin「回复富文本规则」使用独立草稿、发布版本和历史恢复流程。保存不切换正式版本；发布/回滚使用 CAS 与 `request_id`，结果未知先查询请求结果，禁止盲目重试写操作。
+- 同页「解析与兜底」可启用版本化 `rich_reply` 配置：三模块 EOF 收口、标题/副标题与降级文案、标签别名/括号对、协议外层围栏兼容。新配置允许至少一个完整有效选项点击，损坏残余以文字展示；副标题 `{count}` 使用实际选项数。无配置的历史快照沿用 v1/v2 行为。
+- 发布前先逐环境执行 `20261015_rich_reply_recovery_config.sql`，再部署支持协议 artifact v3 的 Backend、Frontend 与 Admin，最后在 Admin 启用、保存、发布。旧客户端不支持 v3，会回退原文；需要回退应用时先发布不含 `rich_reply` 的旧 source。此迁移仅扩展既有 Admin validator，无新表/数据回填，不代表 TEST/Production 已执行。
 - 已发布的 source 与 compiled artifact 作为 `app_core.text_postprocess_versions` 不可变快照原子保存；`app_core.runtime_config.miniapp_text_postprocess_config` 只保存当前正式指针。
 - 每条 assistant 消息绑定自己的 `postprocess_version`。Frontend 按版本批量读取 artifact；缺失、非法、旧消息 `NULL` 或 Worker 失败时只展示完整原始 Markdown，不在客户端编译 source，也不选择最新版本替代。
 - 流式阶段继续显示安全 Markdown；服务端终态后才挂载共用 `ReplyRenderer`。可信 choice 只在最新完整回复上调用正常发送链路，并有同步防双击。
