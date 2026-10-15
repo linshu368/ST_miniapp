@@ -7,6 +7,32 @@ export const DEFAULT_REPLY_DETAILS_OPEN: ReplyDetailsDefaultOpen = {
 };
 
 const DETAILS_OPEN_STORAGE_KEY = 'st.chat.reply-details-default-open.v1';
+const GUIDE_SEEN_STORAGE_KEY = 'st.chat.reply-preference-guide-seen.v1';
+
+type ReplyPreferenceStorage = Pick<Storage, 'getItem' | 'setItem'>;
+
+function getLocalStorage(): ReplyPreferenceStorage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** 成功持久化后才展示，避免存储不可用时每次进入聊天页都重复提示。 */
+export function claimReplyPreferenceGuide(
+  storage: ReplyPreferenceStorage | null = getLocalStorage()
+): boolean {
+  if (!storage) return false;
+  try {
+    if (storage.getItem(GUIDE_SEEN_STORAGE_KEY) === '1') return false;
+    storage.setItem(GUIDE_SEEN_STORAGE_KEY, '1');
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** 纯展示偏好，不参与模型规则或服务端配置。 */
 export function readReplyDetailsDefaultOpen(): ReplyDetailsDefaultOpen {

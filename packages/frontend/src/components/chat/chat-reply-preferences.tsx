@@ -9,7 +9,10 @@ import {
 } from '@/lib/api/generation-config';
 import { cn } from '@/lib/utils';
 import { isInstructionSlotEnabled } from './chat-generation-settings-state';
-import type { ReplyDetailsDefaultOpen } from './reply-preference-display';
+import {
+  claimReplyPreferenceGuide,
+  type ReplyDetailsDefaultOpen,
+} from './reply-preference-display';
 
 const MAX_CUSTOM_INSTRUCTIONS = 500;
 
@@ -42,7 +45,7 @@ export function ChatReplyPreferences({
   });
   const config = query.data?.config;
   const [open, setOpen] = useState(false);
-  const [guideDismissed, setGuideDismissed] = useState(false);
+  const [guideVisible, setGuideVisible] = useState(false);
   const [instructions, setInstructions] = useState('');
   const [instructionsDirty, setInstructionsDirty] = useState(false);
   const [pendingSlotValues, setPendingSlotValues] = useState<PendingSlotValues>({});
@@ -51,6 +54,13 @@ export function ChatReplyPreferences({
   ).map((slot) => slot.label);
   const pointerStartY = useRef<number | null>(null);
   const suppressClick = useRef(false);
+  const guideClaimed = useRef(false);
+
+  useEffect(() => {
+    if (guideClaimed.current) return;
+    guideClaimed.current = true;
+    setGuideVisible(claimReplyPreferenceGuide());
+  }, []);
 
   useEffect(() => {
     if (instructionsDirty) return;
@@ -59,7 +69,7 @@ export function ChatReplyPreferences({
 
   const changeOpen = (next: boolean) => {
     setOpen(next);
-    if (next) setGuideDismissed(true);
+    if (next) setGuideVisible(false);
   };
 
   const saveInstructions = () => {
@@ -137,9 +147,9 @@ export function ChatReplyPreferences({
         <span
           className={cn(
             'pointer-events-none min-w-0 truncate text-[10px] font-medium text-primary',
-            guideDismissed && 'invisible'
+            !guideVisible && 'invisible'
           )}
-          aria-hidden={guideDismissed}
+          aria-hidden={!guideVisible}
         >
           点击这里进行偏好开关设置
         </span>
