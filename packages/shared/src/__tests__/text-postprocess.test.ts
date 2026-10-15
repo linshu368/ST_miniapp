@@ -22,7 +22,11 @@ import {
   type TextPostprocessRule,
   type TextPostprocessSource,
 } from '../api/text-postprocess';
-import { RICH_REPLY_RULE_STYLES } from '../text-postprocess/rich-reply-styles';
+import {
+  LEGACY_RICH_REPLY_CSS,
+  RICH_REPLY_RULE_STYLES,
+} from '../text-postprocess/rich-reply-styles';
+import { serializeScopedCss } from '../text-postprocess/css-model';
 import { applyTextPostprocess } from '../text-postprocess/apply';
 import { diagnoseRichReplyProtocol } from '../text-postprocess/rich-reply';
 import { compileTextPostprocessSource } from '../text-postprocess/compile';
@@ -590,8 +594,28 @@ describe('html and css policy', () => {
       rule({ id: 'status', css: RICH_REPLY_RULE_STYLES.status }),
       rule({ id: 'memory', css: RICH_REPLY_RULE_STYLES.memory }),
       rule({ id: 'dialogue', css: RICH_REPLY_RULE_STYLES.dialogue }),
+      rule({ id: 'body', css: RICH_REPLY_RULE_STYLES.body }),
     ]);
     expect(richReply.rich_reply_protocol).toEqual({ version: 2, enabled: true });
+    const bodyCss = richReply.rules.find((item) => item.id === 'body')?.css ?? [];
+    expect(serializeScopedCss(bodyCss, 'scope', 'child')).toMatch(/^\.scope > p \{/);
+    expect(serializeScopedCss(bodyCss, 'scope')).toMatch(/^\.scope p \{/);
+  });
+
+  it('keeps the body rule style-only even when its pattern matches', () => {
+    const artifact = compileOk([
+      rule({
+        id: 'body',
+        pattern: '正文',
+        replacement: '<mark>$&</mark>',
+        css: RICH_REPLY_RULE_STYLES.body,
+      }),
+    ]);
+    const text = '第一段正文。\n\n第二段正文。';
+    const applied = applyTextPostprocess({ text, artifact });
+    expect(applied.status).toBe('applied');
+    expect(applied.segments).toEqual([{ type: 'text', text, start: 0, end: text.length }]);
+    expect(LEGACY_RICH_REPLY_CSS).not.toContain('text-align: justify');
   });
 
   it('accepts ordinary scoped CSS while retaining capability boundaries', () => {

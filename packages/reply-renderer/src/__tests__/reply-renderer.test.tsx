@@ -98,6 +98,62 @@ describe('reply renderer boundaries', () => {
     expect(response.css).not.toContain(LEGACY_RICH_REPLY_CSS);
   });
 
+  it('keeps body styles out of the v1 compatibility skin', () => {
+    expect(RICH_REPLY_RULE_STYLES.body).toContain('line-height: 1.85');
+    expect(LEGACY_RICH_REPLY_CSS).not.toContain(RICH_REPLY_RULE_STYLES.body);
+    expect(LEGACY_RICH_REPLY_CSS).not.toContain('text-align: justify');
+  });
+
+  it('scopes enabled body CSS to direct paragraphs and skips it when disabled', () => {
+    const scope = ruleScopeClass('message', 'rich-reply-body');
+    const respond = (enabled: boolean) =>
+      buildWorkerResponse({
+        jobId: 1,
+        generation: 1,
+        content: '第一段\n\n第二段',
+        artifact: mustValidate({
+          schema_version: 1,
+          policy_version: 1,
+          rich_reply_protocol: { version: 2, enabled: true },
+          rules: [bodyRule({ enabled })],
+        }),
+        messageKey: 'message',
+        deadlineAt: Date.now() + 1000,
+      });
+
+    const enabled = respond(true);
+    expect(enabled.result.status).toBe('applied');
+    expect(enabled.css).toContain(`.${scope} > p { font-size: 16px; }`);
+    expect(enabled.result.segments.every((segment) => segment.type === 'text')).toBe(true);
+
+    const disabled = respond(false);
+    expect(disabled.result.status).toBe('applied');
+    expect(disabled.css).not.toContain(scope);
+  });
+
+  it('mounts the body scope on the applied reply root only', async () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [bodyRule()],
+    });
+    const content = [
+      '夜色很深。',
+      '[status]<details><summary>此刻</summary>```markdown\\n地点：花园\\n```</details>[/status]',
+      '她没有回头。',
+    ].join('\n\n');
+    const view = render(element(content, artifact, { messageKey: 'body-scope' }));
+    await waitForState(view.container, 'applied');
+
+    const scope = ruleScopeClass('body-scope', 'rich-reply-body');
+    const root = view.container.querySelector('.reply-markdown');
+    expect(root?.classList.contains(scope)).toBe(true);
+    expect(view.container.querySelectorAll(`.${scope} > p`)).toHaveLength(2);
+    expect(view.container.querySelector('style')?.textContent).toContain(`.${scope} > p`);
+    expect(view.container.querySelector('.rp-unit--status')).not.toBeNull();
+  });
+
   it('keeps the main bundle off the compiler and runs apply inside the worker bundle', () => {
     const workerSource = readFileSync(workerBundlePath, 'utf8');
     const mainSource = readFileSync(mainBundlePath, 'utf8');
@@ -735,6 +791,24 @@ async function waitForState(
     },
     { timeout }
   );
+}
+
+/** 「正文」规则：正则故意能命中测试正文，用来证明它不会被执行，只有样式生效。 */
+function bodyRule(
+  overrides: Partial<CompiledTextPostprocessRule> = {}
+): CompiledTextPostprocessRule {
+  return inlineRule({
+    id: 'body',
+    pattern: '(?:夜色很深)',
+    css: [
+      {
+        type: 'style',
+        selectors: [{ compounds: [{ combinator: null, tag: 'p', classes: [], pseudos: [] }] }],
+        declarations: [{ property: 'font-size', tokens: [{ t: 'dimension', v: '16', u: 'px' }] }],
+      },
+    ],
+    ...overrides,
+  });
 }
 
 function inlineRule(

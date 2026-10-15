@@ -7,7 +7,7 @@ import {
   type TextPostprocessRule,
 } from '@miniapp/shared';
 import { compileTextPostprocessSource } from '@miniapp/shared/src/text-postprocess/compile';
-import { STARTER_RULES } from './textPostprocessSamples';
+import { STARTER_RULES, isBodyStyleRule } from './textPostprocessSamples';
 import {
   acceptLoadedState,
   applyLocalChoice,
@@ -414,5 +414,21 @@ describe('text postprocess workbench', () => {
       rules: STARTER_RULES.map((item) => ({ ...item, enabled: true })),
     });
     expect(result.ok, JSON.stringify(result.diagnostics)).toBe(true);
+  });
+
+  it('offers a style-only body template alongside the four rich-reply rules', () => {
+    expect(STARTER_RULES.map((item) => item.id)).toEqual([
+      'choice',
+      'status',
+      'memory',
+      'dialogue',
+      'body',
+    ]);
+    const body = STARTER_RULES.find((item) => item.id === 'body');
+    expect(body?.name).toBe('正文');
+    expect(body?.enabled).toBe(false);
+    expect(body?.css).toContain('text-align: justify');
+    expect(isBodyStyleRule('body')).toBe(true);
+    expect(isBodyStyleRule('dialogue')).toBe(false);
   });
 });

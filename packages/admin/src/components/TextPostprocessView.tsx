@@ -34,6 +34,7 @@ import {
   PREVIEW_SAMPLES,
   RULE_FIELD_HELP,
   STARTER_RULES,
+  isBodyStyleRule,
   blankRule,
   type EditableRule,
   type EditableSource,
@@ -902,6 +903,8 @@ function RuleEditor(props: {
   const position = props.session.local.rules.findIndex((item) => item.id === rule.id);
   const stat = props.preview?.apply?.rules.find((item) => item.ruleId === rule.id);
   const richReplyDefault = RICH_REPLY_RULE_STYLES[rule.id as keyof typeof RICH_REPLY_RULE_STYLES];
+  const bodyOnly = isBodyStyleRule(rule.id);
+  const parseDisabled = props.disabled || bodyOnly;
   const toggleFlag = (flag: string, enabled: boolean) => {
     const flags = new Set(rule.flags.split(''));
     if (enabled) flags.add(flag);
@@ -1000,17 +1003,22 @@ function RuleEditor(props: {
           />
         </label>
         <Tabs
+          key={bodyOnly ? 'body' : 'regular'}
+          defaultActiveKey={bodyOnly ? 'css' : 'parse'}
           items={[
             {
               key: 'parse',
               label: '解析',
               children: (
                 <Space direction="vertical" className="field-full">
+                  {bodyOnly ? (
+                    <Alert type="info" showIcon message={RULE_FIELD_HELP.bodyOnly} />
+                  ) : null}
                   <Field
                     label="正则"
                     help={RULE_FIELD_HELP.pattern}
                     value={rule.pattern}
-                    disabled={props.disabled}
+                    disabled={parseDisabled}
                     diagnostics={diagnostics}
                     field="pattern"
                     onChange={(value) => change('pattern', value)}
@@ -1022,7 +1030,7 @@ function RuleEditor(props: {
                         <input
                           type="checkbox"
                           checked={rule.flags.includes(flag)}
-                          disabled={props.disabled}
+                          disabled={parseDisabled}
                           onChange={(event) => toggleFlag(flag, event.target.checked)}
                         />{' '}
                         {flag}
@@ -1034,7 +1042,7 @@ function RuleEditor(props: {
                     label="模板"
                     help={RULE_FIELD_HELP.replacement}
                     value={rule.replacement}
-                    disabled={props.disabled}
+                    disabled={parseDisabled}
                     diagnostics={diagnostics}
                     field="replacement"
                     onChange={(value) => change('replacement', value)}
@@ -1052,7 +1060,11 @@ function RuleEditor(props: {
                       type="info"
                       showIcon
                       message="富回复独立样式"
-                      description="此规则的样式只会作用于对应的选项、状态、记忆或对白组件。恢复默认不会影响其他三条规则。"
+                      description={
+                        bodyOnly
+                          ? '此规则的样式只会作用于普通正文段落，选项、状态、记忆卡片内部不受影响。恢复默认不会影响其他四条规则。'
+                          : '此规则的样式只会作用于对应的选项、状态、记忆或对白组件。恢复默认不会影响其他四条规则。'
+                      }
                       action={
                         <Button
                           size="small"
@@ -1066,7 +1078,7 @@ function RuleEditor(props: {
                   ) : null}
                   <Field
                     label="样式"
-                    help={RULE_FIELD_HELP.css}
+                    help={bodyOnly ? RULE_FIELD_HELP.bodyCss : RULE_FIELD_HELP.css}
                     value={rule.css}
                     disabled={props.disabled}
                     diagnostics={diagnostics}
@@ -1106,9 +1118,19 @@ function RuleEditor(props: {
         />
         <div className="text-postprocess-match-card">
           <strong>
-            {rule.enabled ? (stat ? `${stat.count} 处匹配` : '正在处理') : '规则已停用'}
+            {!rule.enabled
+              ? '规则已停用'
+              : bodyOnly
+                ? '样式已作用于正文'
+                : stat
+                  ? `${stat.count} 处匹配`
+                  : '正在处理'}
           </strong>
-          {stat?.firstMatch ? (
+          {bodyOnly ? (
+            <Typography.Text type="secondary">
+              {rule.enabled ? '正文规则不做匹配，样式直接作用于正文段落。' : '停用规则不参与预览。'}
+            </Typography.Text>
+          ) : stat?.firstMatch ? (
             <>
               <Typography.Text type="secondary">首处匹配</Typography.Text>
               <code>{stat.firstMatch}</code>

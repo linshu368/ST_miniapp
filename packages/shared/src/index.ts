@@ -47,6 +47,7 @@ export {
 export type { RichReplyDiagnosis, RichReplyResult } from './text-postprocess/runtime';
 export {
   LEGACY_RICH_REPLY_CSS,
+  RICH_REPLY_BODY_RULE_ID,
   RICH_REPLY_RULE_STYLES,
 } from './text-postprocess/rich-reply-styles';
 export * from './api/admin-model-test';

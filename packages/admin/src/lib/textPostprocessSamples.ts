@@ -1,6 +1,7 @@
 import {
   TEXT_POSTPROCESS_POLICY_VERSION,
   TEXT_POSTPROCESS_SCHEMA_VERSION,
+  RICH_REPLY_BODY_RULE_ID,
   RICH_REPLY_RULE_STYLES,
   type TextPostprocessRule,
 } from '@miniapp/shared';
@@ -29,12 +30,24 @@ export const RULE_FIELD_HELP = {
   replacement:
     '替换模板支持安全 HTML 语义标签和普通展示属性。$& 是整段匹配，$1 是编号捕获，$<name> 是命名捕获，$$ 是字面量 $。捕获不能放进属性，脚本、事件、链接和外部资源仍会被拒绝。',
   css: '样式只作用于本条规则生成的内容。不能写外部地址、动画、视口覆盖或 !important。',
+  bodyCss:
+    '样式作用于整条回复里的普通正文段落（选项、状态、记忆卡片内部不受影响）。用 p 选择段落；不能写外部地址、动画、视口覆盖或 !important。',
+  bodyOnly: '本规则只控制正文样式，正则和模板不参与替换，保留默认值即可。停用后正文恢复默认外观。',
   notes: '说明只保存在规则草稿里，不会写进 System Instructions，也不会进入模型原文。',
 } as const;
 
+/** 「正文」只提供样式，正则和模板只是满足编译要求的占位，不会被执行。 */
+export function isBodyStyleRule(ruleId: string): boolean {
+  return ruleId === RICH_REPLY_BODY_RULE_ID;
+}
+
 export const PREVIEW_SAMPLES = {
   full: [
+    '夜色压得很低，花园里只剩下虫鸣和远处隐约的水声。',
+    '',
     '她低声说：“今晚见”。',
+    '',
+    '她没有回头，指尖却在石栏上停了很久，像是在等一个迟迟不来的答复。',
     '',
     '[choices]',
     '[choice]握住她的手[/choice]',
@@ -114,6 +127,18 @@ export const STARTER_RULES: readonly TextPostprocessRule[] = [
     flags: 'g',
     replacement: '<span class="rp-dialogue">“$1”</span>',
     css: RICH_REPLY_RULE_STYLES.dialogue,
+    notes: '',
+  },
+  {
+    id: RICH_REPLY_BODY_RULE_ID,
+    name: '正文',
+    description: '只控制普通正文段落的字号、行距、颜色和段距，不做文字替换。',
+    enabled: false,
+    // 占位：正文规则不执行正则和模板，这两项只用于满足编译要求。
+    pattern: '(?:待填写)',
+    flags: 'g',
+    replacement: '<span>$&</span>',
+    css: RICH_REPLY_RULE_STYLES.body,
     notes: '',
   },
 ];
