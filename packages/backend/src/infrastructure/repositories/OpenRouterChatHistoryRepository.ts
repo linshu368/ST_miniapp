@@ -3,7 +3,7 @@ import { getDomainDb } from '../../lib/supabase.js';
 
 export type OpenRouterChatHistoryMetadata = Record<string, unknown> & {
   chat_history_id: string;
-  llm_provider_name: 'openrouter';
+  llm_provider_name?: string | null;
   llm_generation_id?: string | null;
 };
 
@@ -20,7 +20,6 @@ export class OpenRouterChatHistoryRepository {
     const { error } = await this.db.from('openrouter_chat_history').upsert(
       {
         chat_history_id: chatHistoryId,
-        llm_provider_name: 'openrouter',
         llm_generation_id: generationId,
         updated_at: new Date().toISOString(),
       },

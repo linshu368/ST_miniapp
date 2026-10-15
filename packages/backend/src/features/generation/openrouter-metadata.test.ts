@@ -7,6 +7,7 @@ describe('buildGenerationMetadata', () => {
       id: 'gen-1',
       finish_reason: 'stop',
       usage: 0.001,
+      provider_name: 'CoreWeave',
       prompt: 'private prompt',
       choices: [{ message: { content: 'private reply' } }],
       nested: { input: 'private input', model: 'routed/model' },
@@ -17,7 +18,9 @@ describe('buildGenerationMetadata', () => {
       id: 'gen-1',
       finish_reason: 'stop',
       usage: 0.001,
+      provider_name: 'CoreWeave',
       nested: { model: 'routed/model' },
     });
+    expect(metadata.llm_provider_name).toBe('CoreWeave');
   });
 });

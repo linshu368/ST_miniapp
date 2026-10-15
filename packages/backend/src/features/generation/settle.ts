@@ -175,11 +175,13 @@ export async function runSettlement(
   let finishReason = entry.finish_reason ?? null;
   // Main chat_history keeps OpenRouter metadata only. Venice metadata has a dedicated table.
   let llmMetadata: Record<string, unknown> = {};
+  let providerMetadata: Record<string, unknown> = {};
 
   if (wantsUsageData) {
     const genData = await fetchUsageData(entry.generation_id as string, clog);
     if (genData) {
-      llmMetadata = buildGenerationMetadata(genData);
+      providerMetadata = buildGenerationMetadata(genData);
+      llmMetadata = { ...providerMetadata };
       if (typeof genData.finish_reason === 'string') {
         // 上游的 finish_reason 比 SSE tap 的观测值权威，拿到就用它。
         finishReason = genData.finish_reason;
@@ -290,13 +292,17 @@ export async function runSettlement(
     return;
   }
 
-  if (provider === 'openrouter' && entry.generation_id && Object.keys(llmMetadata).length > 0) {
+  if (
+    provider === 'openrouter' &&
+    entry.generation_id &&
+    Object.keys(providerMetadata).length > 0
+  ) {
     try {
       await openRouterHistory().upsert({
         chat_history_id: entry.history_id,
-        llm_provider_name: 'openrouter',
         llm_generation_id: entry.generation_id,
-        ...llmMetadata,
+        // Billing mutations and the business terminal reason belong only to the parent.
+        ...providerMetadata,
       });
     } catch (err) {
       // The parent has already kept its business/billing facts. A missing detail row remains

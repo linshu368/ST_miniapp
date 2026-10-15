@@ -58,6 +58,7 @@ vi.mock('./venice-metadata.js', () => ({
 vi.mock('./openrouter-metadata.js', () => ({
   fetchGenerationDataForSettlement,
   buildGenerationMetadata: (genData: Record<string, unknown>) => ({
+    llm_provider_name: genData.provider_name ?? null,
     llm_model: genData.model ?? null,
     llm_usage: genData.usage ?? null,
     llm_finish_reason: genData.finish_reason ?? null,
@@ -234,6 +235,9 @@ describe('runSettlement', () => {
         metadata: expect.objectContaining({ llm_finish_reason: 'cancelled' }),
       })
     );
+    expect(upsertOpenRouterHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ llm_finish_reason: 'stop' })
+    );
   });
 
   it('writes OpenRouter raw metadata to the provider table after preserving parent billing facts', async () => {
@@ -241,6 +245,7 @@ describe('runSettlement', () => {
       finish_reason: 'stop',
       usage: 0.001,
       model: 'routed/model',
+      provider_name: 'CoreWeave',
     });
 
     await runSettlement(entry(), fakeLog());
@@ -248,12 +253,13 @@ describe('runSettlement', () => {
     expect(upsertOpenRouterHistory).toHaveBeenCalledWith(
       expect.objectContaining({
         chat_history_id: 'row-1',
-        llm_provider_name: 'openrouter',
+        llm_provider_name: 'CoreWeave',
         llm_generation_id: 'gen-1',
         llm_finish_reason: 'stop',
         llm_usage: 0.001,
       })
     );
+    expect(upsertOpenRouterHistory.mock.calls[0]?.[0]).not.toHaveProperty('llm_intended_deduction');
     expect(recordBillingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({ llm_usage: 0.001 }),

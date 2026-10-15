@@ -8,6 +8,8 @@
 - 已检索 `current_chat_history` 视图、`start_chat_history_*` 开轮 RPC、`billing.charge_llm_usage` 计费路径、`packages/shared/src/api/conversations.ts` 消费契约及 Prisma schema。开轮与钱包事实不移入新表；当前 DTO 无元数据字段，若保持不变无需新公开 API。实施时复核所有函数/视图/管理查询依赖。
 - `experience` 拥有对话调用产物；`billing` 仍拥有扣费流水，新表不成为第二套计费事实。`chat_history_id` 唯一 + FK cascade；provider 身份固定为 OpenRouter，底层 `llm_provider_name` 另存。仿 Venice 采用最小权限和字段约束，但应按 TEST 当前暴露/RLS 配置重新验证，不机械复制。
 
+2026-10-15 T3 归属补充：用户确认当前只有 OpenRouter 和 Venice 两条调用路径，且每次 Venice 调用均有 `experience.venice_chat_history.chat_history_id`。因此，对已有 `llm_generation_id`、且没有 Venice 明细的主表行，按排除法归属 OpenRouter。TEST 聚合审计未发现明细重叠或快照标记 Venice 却缺 Venice 明细的冲突。迁移增加冲突守卫，保留主表与原始 JSON 不动；无 generation ID 的行没有可转移的调用键，不在这次补迁移内。`llm_provider_name` 实际是 OpenRouter 路由厂商，不能约束为调用方常量；用 forward migration 放宽这一列，同时改 Backend 占位写入。若后续发现 Venice 明细滞后，应停止清理、审计冲突并另做 forward-fix。
+
 ## 写入与读取边界
 
 同步终态写主表业务结束原因；OpenRouter generation ID 应在拿到时落入新表占位行，供回捞定位。`/generation` 返回后 upsert 原始明细，只有成功态且上游给出合法原因才更新主表业务原因；取消/超时不可被晚到 `stop` 覆盖。计费快照、实际扣费和结算时间继续写主表。新表 `llm_generation_data` 新写入采用有界、安全字段；旧原始 JSON 回填须先审计内容并确定保留策略。

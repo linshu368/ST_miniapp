@@ -151,6 +151,7 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       }
 
       const llmMetadata = buildGenerationMetadata(genData);
+      const providerMetadata = { ...llmMetadata };
       const finishReason = typeof genData.finish_reason === 'string' ? genData.finish_reason : null;
 
       let settled = false;
@@ -202,9 +203,9 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       try {
         await openRouterHistory().upsert({
           chat_history_id: record.id,
-          llm_provider_name: 'openrouter',
           llm_generation_id: generationId,
-          ...llmMetadata,
+          // reconcileCharge mutates the parent billing metadata; do not copy it to the detail.
+          ...providerMetadata,
         });
       } catch (err) {
         log.error(
