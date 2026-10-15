@@ -85,22 +85,21 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
       try {
         const query = request.query as Record<string, unknown>;
         const runtime = await getImagePlazaRuntimeConfig();
-        const tag = typeof query.tag === 'string' && query.tag !== 'all' ? query.tag : undefined;
+        const tagId = typeof query.tag === 'string' && query.tag !== 'all' ? query.tag : undefined;
         const search =
           typeof query.search === 'string' ? query.search.trim().slice(0, 80) : undefined;
         const cursor = typeof query.cursor === 'string' ? query.cursor : undefined;
-        if (tag) {
-          if (!runtime.tagsFeatureEnabled) {
-            return reply.status(400).send(fail('BAD_REQUEST', '标签筛选未启用'));
-          }
-          if (!runtime.tags.some((item) => item.enabled && item.id === tag)) {
-            return reply.status(400).send(fail('BAD_REQUEST', '标签无效'));
-          }
+        // 「全部」或不传 tag：不做标签限制。业务 tag 校验目录后按中文 label 筛 prompt_zh。
+        const tagConfig = tagId
+          ? runtime.tags.find((item) => item.enabled && item.id === tagId)
+          : undefined;
+        if (tagId && !tagConfig) {
+          return reply.status(400).send(fail('BAD_REQUEST', '标签无效'));
         }
         const page = await repository.listWorks({
           userId: context.id,
           ...(search ? { search } : {}),
-          ...(tag ? { tag } : {}),
+          ...(tagConfig ? { tagLabel: tagConfig.label } : {}),
           ...(cursor ? { cursor } : {}),
           limit: IMAGE_PLAZA_PAGE_SIZE,
         });

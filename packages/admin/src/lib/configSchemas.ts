@@ -672,9 +672,9 @@ export const configMetadata: Record<
     ],
   },
   image_plaza_tags_feature_enabled: {
-    label: '标签功能开关',
+    label: '分享自动打标开关',
     description:
-      '关闭后广场不展示业务标签筛选，分享也不再自动调用模型打标；标签目录本身可继续编辑。',
+      '仅控制分享时空标签时是否调用模型自动打标；关闭后广场仍展示业务标签并按提示词中文译文筛选。标签目录可继续编辑。',
     defaultValue: true,
   },
   media_feature_free_trial_limit: {

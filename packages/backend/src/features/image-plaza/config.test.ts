@@ -8,17 +8,15 @@ const baseTags = [
 ] as ImagePlazaRuntimeConfig['tags'];
 
 describe('publicImagePlazaFeedTags', () => {
-  it('returns only all when tags feature is disabled', () => {
-    expect(publicImagePlazaFeedTags({ tagsFeatureEnabled: false, tags: baseTags })).toEqual([
-      { id: 'all', label: '全部' },
-    ]);
-  });
-
-  it('returns enabled tags sorted when feature is on', () => {
-    expect(publicImagePlazaFeedTags({ tagsFeatureEnabled: true, tags: baseTags })).toEqual([
+  it('returns enabled tags sorted regardless of auto-tagging switch', () => {
+    expect(publicImagePlazaFeedTags({ tags: baseTags })).toEqual([
       { id: 'all', label: '全部' },
       { id: 'anime', label: '动漫' },
       { id: 'portrait', label: '人像' },
     ]);
+  });
+
+  it('omits disabled tags and does not invent business tags when catalog is empty', () => {
+    expect(publicImagePlazaFeedTags({ tags: [] })).toEqual([{ id: 'all', label: '全部' }]);
   });
 });

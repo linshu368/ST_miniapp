@@ -19,7 +19,7 @@ const CONFIG_KEYS = [
 
 export interface ImagePlazaRuntimeConfig {
   enabled: boolean;
-  /** 标签筛选展示 + 分享自动打标；仅显式 false 关闭，缺失视为开。 */
+  /** 仅控制分享自动打标；显式 false 关闭，缺失视为开。不控制 feed 标签展示或筛选。 */
   tagsFeatureEnabled: boolean;
   catalog: ImagePlazaModelCatalog;
   catalogVersion: number;
@@ -62,12 +62,11 @@ export async function getImagePlazaRuntimeConfig(): Promise<ImagePlazaRuntimeCon
   };
 }
 
-/** Feed/bootstrap 对外标签：功能关时仅「全部」。 */
+/** Feed/bootstrap 对外标签：始终返回「全部」+ 启用且排序的目录，与自动打标开关无关。 */
 export function publicImagePlazaFeedTags(
-  runtime: Pick<ImagePlazaRuntimeConfig, 'tagsFeatureEnabled' | 'tags'>
+  runtime: Pick<ImagePlazaRuntimeConfig, 'tags'>
 ): Array<{ id: string; label: string }> {
   const all = { id: 'all', label: '全部' };
-  if (!runtime.tagsFeatureEnabled) return [all];
   return [
     all,
     ...runtime.tags

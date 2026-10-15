@@ -59,8 +59,10 @@ Admin test/typecheck/build 与 test 环境人工 smoke。
 
 ## 图片创作广场 V2（2026-10-12）
 
-Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型目录、首次分享提示与标签管理；模型页包含上架星尘价计算器，但最终发布值仍是服务端权威 credits。配置 schema 同时在 shared 和数据库发布校验器中约束。
+Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型目录、首次分享提示与标签管理；模型页包含上架星尘价计算器，但最终发布值仍是服务端权威 credits。配置 schema 同时在 shared 和数据库发布校验器中约束。`image_plaza_tags_feature_enabled` 文案仅描述分享自动打标，不描述广场标签展示。
 
 ## 变更记录
+
+- 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 将标签功能开关文案改为仅控制分享自动打标。
 
 - 2026-09-23：任务 `Admin VIP media configuration`（`.trellis/tasks/archive/2026-09/09-23-admin-vip-media-config/`）Admin ?? VIP ??????????????????/????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。

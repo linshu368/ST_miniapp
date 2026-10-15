@@ -313,11 +313,11 @@ export function ConfigValueEditor(props: {
         />
         <div>
           <Typography.Text strong>
-            {enabled ? '标签筛选与自动打标已开启' : '标签筛选与自动打标已关闭'}
+            {enabled ? '分享自动打标已开启' : '分享自动打标已关闭'}
           </Typography.Text>
           <br />
           <Typography.Text type="secondary">
-            关闭后广场不展示业务标签，分享也不会调用模型自动打标。
+            仅控制分享时空标签时是否调用模型自动打标；广场仍展示标签，并按提示词中文译文筛选。
           </Typography.Text>
         </div>
       </Space>

@@ -115,7 +115,8 @@ export class ImagePlazaRepository {
   async listWorks(input: {
     userId: string;
     search?: string;
-    tag?: string;
+    /** 业务标签中文 label；按 snapshot.prompt_zh 字面包含匹配。未传则不做标签限制。 */
+    tagLabel?: string;
     cursor?: string;
     limit: number;
   }): Promise<{ works: ImagePlazaWork[]; nextCursor: string | null }> {
@@ -138,7 +139,14 @@ export class ImagePlazaRepository {
         );
       }
     }
-    if (input.tag) query = query.contains('tags', [input.tag]);
+    if (input.tagLabel) {
+      // 仅匹配中文译文；无 prompt_zh 的作品不会命中。不按 works.tags 数组筛选。
+      const term = escapeIlikePattern(input.tagLabel.trim().slice(0, 80));
+      if (term) {
+        const pattern = `%${term}%`;
+        query = query.filter('snapshot->>prompt_zh', 'ilike', pattern);
+      }
+    }
     const cursor = decodeCursor(input.cursor);
     if (cursor) {
       const like = cursor.likeCount;
