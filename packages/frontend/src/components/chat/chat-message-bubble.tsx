@@ -10,7 +10,7 @@ import { CHAT_MARKDOWN_CLASS, ChatMarkdown } from './chat-markdown';
 import { getChatReplyPresentation } from './chat-reply-presentation';
 
 /**
- * 几何全部照搬原版聊天页注入 ST iframe 的那套样式
+ * 字号/行高/头像尺寸等取值照搬原版聊天页注入 ST iframe 的那套样式
  * （st-extension/src/patches/mobile-chat-theme.ts，本文件不引用它，只对齐取值）。
  *
  * 原版把桌面尺寸写成基准、520px 以下再覆盖；Tailwind 是移动优先，方向相反，
@@ -18,9 +18,18 @@ import { getChatReplyPresentation } from './chat-reply-presentation';
  *
  * 关键一点：AI 消息在原版里没有气泡——透明底、无边框，正文直接铺在背景上，
  * 只有用户消息才是气泡。带底色的卡片会让长回复看起来被关进框里，和原版差别很大。
+ *
+ * 布局上与原版有意不同：头像和标题/发送方单独占一行放在正文上方，正文自己独立成行，
+ * 左右 padding 完全对称。原版把头像和正文放在同一行、头像占掉左侧空间，
+ * 这会让 body 规则里的 `text-align: justify` 在一个左右不对称的容器里生效，
+ * 两端对齐的效果被挤偏到右边，视觉上不居中。头像挪到上方后正文容器天然对称，
+ * justify 才能展现出「正文整体居中、左右两端对齐」的效果。
  */
 const AVATAR_CLASS =
   'size-[34px] shrink-0 rounded-full border border-border object-cover min-[521px]:size-9';
+
+/** 头像挪到正文上方后体积可以收一档，和旁边的名字/标题比例更协调 */
+const HEADER_AVATAR_CLASS = 'size-5 shrink-0 rounded-full border border-border object-cover';
 
 const BODY_TEXT_CLASS =
   'text-[14.5px] font-[440] leading-[1.76] min-[521px]:text-[15px] min-[521px]:leading-[1.72]';
@@ -64,11 +73,11 @@ export function ChatMessageBubble({
 }: ChatMessageBubbleProps) {
   if (message.role === 'user') {
     return (
-      <div className="flex items-end justify-end gap-2 px-3.5 pb-2.5 pt-1.5">
-        <div className="w-fit max-w-[calc(100%-42px)] whitespace-pre-wrap rounded-[20px_20px_6px_20px] border border-primary/[0.18] bg-bubble-user px-3.5 py-[11px] text-foreground min-[521px]:max-w-[min(calc(100%-44px),34rem)]">
+      <div className="flex flex-col items-end gap-1 px-3.5 pb-2.5 pt-1.5">
+        <Avatar url={userAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
+        <div className="w-fit max-w-full whitespace-pre-wrap rounded-[20px_20px_6px_20px] border border-primary/[0.18] bg-bubble-user px-3.5 py-[11px] text-foreground min-[521px]:max-w-[34rem]">
           <span className={BODY_TEXT_CLASS}>{message.content}</span>
         </div>
-        <Avatar url={userAvatarUrl} alt="" />
       </div>
     );
   }
@@ -76,13 +85,13 @@ export function ChatMessageBubble({
   const presentation = getChatReplyPresentation(message);
 
   return (
-    <div className="flex items-start px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
-      <Avatar url={characterAvatarUrl} alt="" />
-      <div className="min-w-0 max-w-[calc(100%-42px)] flex-1 pl-2.5 min-[521px]:max-w-[calc(100%-46px)]">
-        <div className="min-h-[18px] truncate text-[13px] font-[650] text-foreground">
-          {characterName}
-        </div>
-        <div className={cn('pt-1 text-foreground', BODY_TEXT_CLASS)}>
+    <div className="flex flex-col px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
+      <div className="mb-1.5 flex min-h-[20px] items-center gap-1.5">
+        <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
+        <span className="truncate text-[13px] font-[650] text-foreground">{characterName}</span>
+      </div>
+      <div className="min-w-0">
+        <div className={cn('text-foreground', BODY_TEXT_CLASS)}>
           {message.content ? (
             <AssistantReplyBody
               message={message}
@@ -125,13 +134,13 @@ export function ChatTypingBubble({
   stalled?: boolean;
 }) {
   return (
-    <div className="flex items-start px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
-      <Avatar url={characterAvatarUrl} alt="" />
-      <div className="min-w-0 flex-1 pl-2.5">
-        <div className="min-h-[18px] truncate text-[13px] font-[650] text-foreground">
-          {characterName}
-        </div>
-        <div className="flex items-center gap-1 pt-2.5">
+    <div className="flex flex-col px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
+      <div className="mb-1.5 flex min-h-[20px] items-center gap-1.5">
+        <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
+        <span className="truncate text-[13px] font-[650] text-foreground">{characterName}</span>
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-1 pt-1">
           {[0, 1, 2].map((index) => (
             <span
               key={index}
@@ -228,10 +237,18 @@ function ReplyNotice({ children }: { children: ReactNode }) {
   );
 }
 
-function Avatar({ url, alt }: { url: string | null; alt: string }) {
-  if (!url) return <span className={cn(AVATAR_CLASS, 'bg-secondary')} aria-hidden />;
+function Avatar({
+  url,
+  alt,
+  className = AVATAR_CLASS,
+}: {
+  url: string | null;
+  alt: string;
+  className?: string;
+}) {
+  if (!url) return <span className={cn(className, 'bg-secondary')} aria-hidden />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt={alt} loading="lazy" className={AVATAR_CLASS} />
+    <img src={url} alt={alt} loading="lazy" className={className} />
   );
 }
