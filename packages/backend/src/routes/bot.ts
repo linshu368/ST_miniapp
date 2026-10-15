@@ -1,7 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { ok, fail } from '@miniapp/shared';
 import { config } from '../platform/config.js';
-import { recordBotStart } from '../lib/user.js';
+import { getOrCreateMiniappUserByTgId, recordBotStart } from '../lib/user.js';
+import { forwardBotMessageToCs, isCsServiceEnabled } from '../lib/cs-service.js';
+import { captureBackendException } from '../lib/sentry.js';
 import { CsPlatformRepository } from '../infrastructure/repositories/CsPlatformRepository.js';
 
 interface BotStartRequestBody {
@@ -15,6 +17,7 @@ interface TelegramWebhookUpdate {
     text?: string;
     from?: { id?: number };
     chat?: { id?: number };
+    reply_to_message?: { message_id?: number };
   };
 }
 
@@ -63,6 +66,29 @@ export default async function botRoutes(app: FastifyInstance) {
     const tgId = normalizeTelegramId(update.message?.from?.id ?? update.message?.chat?.id);
     if (!tgId) {
       return reply.send(ok({ ignored: true }));
+    }
+
+    if (startPayload === undefined && isCsServiceEnabled()) {
+      if (!text) return reply.send(ok({ ignored: true }));
+      // 转发失败也回 200：返回错误会让 Telegram 不断重投并卡住后面的 /start。
+      // 客服服务按 message_id 去重，所以重复转发是安全的，丢失则靠 Sentry 发现。
+      try {
+        const user = await getOrCreateMiniappUserByTgId(tgId, null, false);
+        await forwardBotMessageToCs({
+          userId: user.id,
+          telegramUserId: tgId,
+          messageId: String(update.message?.message_id ?? ''),
+          text,
+          replyToMessageId: update.message?.reply_to_message?.message_id
+            ? String(update.message.reply_to_message.message_id)
+            : null,
+        });
+        return reply.send(ok({ ignored: false, forwarded: true }));
+      } catch (error) {
+        request.log.error({ err: error }, '[bot] forward to cs service failed');
+        captureBackendException(error, request, 'bot.forward_cs', { tg_id: tgId });
+        return reply.send(ok({ ignored: false, forwarded: false }));
+      }
     }
 
     if (startPayload === undefined) {

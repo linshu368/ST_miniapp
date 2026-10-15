@@ -28,6 +28,13 @@ export const config = {
   csTelegramBotToken: process.env.TELEGRAM_BOT_TOKEN || process.env.CS_TELEGRAM_BOT_TOKEN || '',
   csAdminToken: process.env.CS_ADMIN_TOKEN || '',
   csTelegramWebhookSecret: process.env.CS_TELEGRAM_WEBHOOK_SECRET || '',
+  // 独立客服服务（ST_cs_platform）。开关打开后 Bot 私聊消息转发过去、/api/support/* 代理过去；
+  // 关掉即回到本仓库的旧客服逻辑，切换不需要发版。
+  csService: {
+    enabled: process.env.CS_SERVICE_ENABLED === '1',
+    url: (process.env.CS_SERVICE_URL || '').replace(/\/$/, ''),
+    secret: process.env.CS_SERVICE_SECRET || '',
+  },
 
   // ── 数据库环境隔离 ────────────────────────────────────────────────────────
   database: {
