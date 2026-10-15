@@ -83,9 +83,38 @@ describe('bot webhook → cs service', () => {
         telegramUserId: '123456',
         messageId: '77',
         text: '充值没到账',
+        photoFileId: null,
         replyToMessageId: '70',
       });
       expect(mocks.receiveTelegramMessage).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('图片：取最大尺寸的 file_id，说明文字当正文；以文件发送的截图也转；视频不转', async () => {
+    const app = await buildApp();
+    const send = (message: Record<string, unknown>) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/telegram/webhook',
+        headers: { 'x-telegram-bot-api-secret-token': SECRET },
+        payload: {
+          message: { message_id: 78, from: { id: 123456 }, chat: { id: 123456 }, ...message },
+        },
+      });
+    try {
+      await send({ photo: [{ file_id: 'small' }, { file_id: 'large' }], caption: ' 报错了 ' });
+      expect(mocks.forwardBotMessageToCs).toHaveBeenLastCalledWith(
+        expect.objectContaining({ text: '报错了', photoFileId: 'large' })
+      );
+      await send({ document: { file_id: 'doc', mime_type: 'image/png' } });
+      expect(mocks.forwardBotMessageToCs).toHaveBeenLastCalledWith(
+        expect.objectContaining({ text: '', photoFileId: 'doc' })
+      );
+      const video = await send({ document: { file_id: 'v', mime_type: 'video/mp4' } });
+      expect(video.json()).toEqual({ success: true, data: { ignored: true } });
+      expect(mocks.forwardBotMessageToCs).toHaveBeenCalledTimes(2);
     } finally {
       await app.close();
     }

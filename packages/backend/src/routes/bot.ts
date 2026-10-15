@@ -15,6 +15,11 @@ interface TelegramWebhookUpdate {
   message?: {
     message_id?: number;
     text?: string;
+    caption?: string;
+    /** 同一张图的多个尺寸，最后一个最大 */
+    photo?: Array<{ file_id?: string }>;
+    /** 用户「以文件发送」的截图会是 document */
+    document?: { file_id?: string; mime_type?: string };
     from?: { id?: number };
     chat?: { id?: number };
     reply_to_message?: { message_id?: number };
@@ -69,7 +74,9 @@ export default async function botRoutes(app: FastifyInstance) {
     }
 
     if (startPayload === undefined && isCsServiceEnabled()) {
-      if (!text) return reply.send(ok({ ignored: true }));
+      const photoFileId = pickPhotoFileId(update);
+      const content = photoFileId ? (update.message?.caption?.trim() ?? '') : text;
+      if (!content && !photoFileId) return reply.send(ok({ ignored: true }));
       // 转发失败也回 200：返回错误会让 Telegram 不断重投并卡住后面的 /start。
       // 客服服务按 message_id 去重，所以重复转发是安全的，丢失则靠 Sentry 发现。
       try {
@@ -78,7 +85,8 @@ export default async function botRoutes(app: FastifyInstance) {
           userId: user.id,
           telegramUserId: tgId,
           messageId: String(update.message?.message_id ?? ''),
-          text,
+          text: content,
+          photoFileId,
           replyToMessageId: update.message?.reply_to_message?.message_id
             ? String(update.message.reply_to_message.message_id)
             : null,
@@ -147,4 +155,16 @@ function parseStartPayload(text: string): string | null | undefined {
   const match = text.match(/^\/start(?:@\w+)?(?:\s+(.+))?$/i);
   if (!match) return undefined;
   return normalizeNullableText(match[1], 128);
+}
+
+/** 图片消息取最大尺寸；以文件发送的图片也算。其他文件（视频、文档）不转给客服 */
+function pickPhotoFileId(update: TelegramWebhookUpdate): string | null {
+  const message = update.message;
+  const largest = message?.photo?.at(-1)?.file_id;
+  if (largest) return largest;
+  const document = message?.document;
+  if (document?.file_id && /^image\/(jpeg|png|webp|gif)$/.test(document.mime_type ?? '')) {
+    return document.file_id;
+  }
+  return null;
 }

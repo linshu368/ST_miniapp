@@ -10,6 +10,7 @@ const cs = vi.hoisted(() => ({
 }));
 
 vi.mock('../lib/cs-service.js', () => ({
+  CS_SERVICE_IMAGE_TIMEOUT_MS: 20_000,
   isCsServiceEnabled: () => cs.enabled,
   callCsService: cs.callCsService,
 }));
@@ -87,9 +88,43 @@ describe('support routes → cs service proxy', () => {
         {
           body: '你好',
           client_msg_id: CLIENT_ID,
-        }
+        },
+        undefined
       );
       expect(getDomainDb).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('只发图片：图片原样转给客服服务并放宽超时；图片不是 base64 就拦下', async () => {
+    cs.callCsService.mockResolvedValue({ status: 201, payload: { success: true, data: {} } });
+    const app = await buildApp();
+    try {
+      const ok = await app.inject({
+        method: 'POST',
+        url: '/api/support/messages',
+        payload: { body: '', client_msg_id: CLIENT_ID, image: { data_base64: 'iVBORw0KGgo=' } },
+      });
+      expect(ok.statusCode).toBe(201);
+      expect(cs.callCsService).toHaveBeenLastCalledWith(
+        'POST',
+        `/internal/app/users/${ME}/messages`,
+        { body: '', client_msg_id: CLIENT_ID, image: { data_base64: 'iVBORw0KGgo=' } },
+        20_000
+      );
+
+      const bad = await app.inject({
+        method: 'POST',
+        url: '/api/support/messages',
+        payload: {
+          body: '',
+          client_msg_id: CLIENT_ID,
+          image: { data_base64: 'data:image/png;base64,xx' },
+        },
+      });
+      expect(bad.statusCode).toBe(400);
+      expect(cs.callCsService).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }
