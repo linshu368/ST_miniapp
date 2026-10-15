@@ -402,7 +402,8 @@ async function persistRichReplyDiagnosis(input: {
     const diagnosis = diagnoseRichReplyProtocol(
       input.content,
       enabled,
-      artifact.rich_reply_protocol?.enabled !== false
+      artifact.rich_reply_protocol?.enabled !== false,
+      artifact.rich_reply_protocol?.recovery
     );
     await historyRecords().saveRichReplyMetadata(input.historyId, {
       rich_reply_mode:

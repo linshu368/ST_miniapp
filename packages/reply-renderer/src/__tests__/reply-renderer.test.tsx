@@ -7,6 +7,8 @@ import { Worker as NodeWorker } from 'node:worker_threads';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   validateCompiledArtifact,
+  DEFAULT_RICH_REPLY_RECOVERY,
+  applyTextPostprocess,
   LEGACY_RICH_REPLY_CSS,
   RICH_REPLY_RULE_STYLES,
   type CompiledTextPostprocessArtifact,
@@ -1106,3 +1108,74 @@ function sourceFiles(directory: string): string[] {
   }
   return files;
 }
+
+describe('configured recovery through Markdown transport', () => {
+  it('renders fenced bracket variants as cards and sends the single recovered choice', async () => {
+    const content =
+      '```markdown\n【choices】\n［choice］继续［/choice］\n【status】地点：花园\n```';
+    const artifact: CompiledTextPostprocessArtifact = {
+      schema_version: 1,
+      policy_version: 1,
+      rules: [],
+      rich_reply_protocol: {
+        version: 3,
+        enabled: true,
+        recovery: structuredClone(DEFAULT_RICH_REPLY_RECOVERY),
+      },
+    };
+    const applied = applyTextPostprocess({ text: content, artifact });
+    if (applied.status !== 'applied') throw new Error(applied.reason);
+    const onChoice = vi.fn();
+    const view = composeAppliedView({
+      content,
+      segments: applied.segments,
+      css: '',
+      displayName: null,
+      messageKey: 'configured-recovery',
+      interactive: true,
+      onChoice,
+      openStore: new Map(),
+    });
+    if (!view.ok) throw new Error(view.reason);
+    const rendered = render(<div>{view.body}</div>);
+    expect(rendered.container.querySelectorAll('.rp-unit')).toHaveLength(2);
+    expect(rendered.container.textContent).not.toMatch(/choices|choice|status|```|【|［/);
+    const button = rendered.getByRole('button', { name: /继续/ });
+    await userEvent.click(button);
+    expect(onChoice).toHaveBeenCalledOnce();
+    expect(onChoice.mock.calls[0]?.[0]).toMatchObject({ text: '继续' });
+  });
+  it('keeps ordinary fenced code inert and renders EOF status separately from following prose', () => {
+    const artifact: CompiledTextPostprocessArtifact = {
+      schema_version: 1,
+      policy_version: 1,
+      rules: [],
+      rich_reply_protocol: {
+        version: 3,
+        enabled: true,
+        recovery: structuredClone(DEFAULT_RICH_REPLY_RECOVERY),
+      },
+    };
+    for (const content of [
+      '```js\nconst x = "[status]内容[/status]";\n```',
+      '```markdown\n这里是示例\n[choices][choice]继续[/choice][/choices]\n```',
+    ]) {
+      const result = applyTextPostprocess({ text: content, artifact });
+      if (result.status !== 'applied') throw new Error(result.reason);
+      const view = composeAppliedView({
+        content,
+        segments: result.segments,
+        css: '',
+        displayName: null,
+        messageKey: 'ordinary-code',
+        interactive: true,
+        openStore: new Map(),
+      });
+      if (!view.ok) throw new Error(view.reason);
+      const rendered = render(<div>{view.body}</div>);
+      expect(rendered.container.querySelector('pre code')).not.toBeNull();
+      expect(rendered.container.querySelector('button')).toBeNull();
+      rendered.unmount();
+    }
+  });
+});

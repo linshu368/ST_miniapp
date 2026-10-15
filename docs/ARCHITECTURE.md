@@ -242,13 +242,17 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 ### 4.4.1 AI 回复后处理与展示
 
-后处理不改变模型输入、生成计费或原始回复正文。模型输出协议以 `packages/shared/src/rich-reply-protocol.ts` 为唯一版本化事实源：固定 choices/status/memory 与中文引号对白先由 shared 解析为可信结构化 slot，畸形模块完整保留原文；运营规则只处理其余文本。Admin 编辑的是版本化 source；Backend 发布时在可终止 Worker 中编译，并把 source 与 compiled artifact 原子写入 `app_core.text_postprocess_versions`。Frontend 与 Admin 的最终展示都复用 `@miniapp/reply-renderer`，renderer 只消费已校验 artifact 和原文，不接触发布 API、数据库或 source compiler。
+后处理不改变模型输入、生成计费或原始回复正文。模型输出协议以 `packages/shared/src/rich-reply-protocol.ts` 为唯一版本化事实源：固定 choices/status/memory 与中文引号对白先由 shared 解析为可信结构化 slot；原始回复不回写，已识别的畸形模块安全降级，边界不明确时保留原文；运营规则只处理其余文本。Admin 编辑的是版本化 source；Backend 发布时在可终止 Worker 中编译，并把 source 与 compiled artifact 原子写入 `app_core.text_postprocess_versions`。Frontend 与 Admin 的最终展示都复用 `@miniapp/reply-renderer`，renderer 只消费已校验 artifact 和原文，不接触发布 API、数据库或 source compiler。
 
 规则 source 固定 schema/policy version，支持有界正则匹配、可信 capture/slot、受控 HTML AST 和作用域 CSS。HTML 模板不使用正向标签/展示属性枚举，普通语义结构默认可用；脚本、文档级/表单/媒体标签、事件属性、内联样式、外部资源和任意 URL 仍被明确拒绝。单条规则与整条消息都有属性、节点、输出、诊断和执行时限；Worker 超时/不可用、artifact 非法或版本缺失时，消费者展示完整原始 Markdown，不读时编译、不伪造 artifact、不回退到最新版本。
 
 新发送和重生成由 `experience.start_chat_history_*_with_current_postprocess` 在开轮事务内读取正式指针并绑定不可变版本；SSE `start` 与历史 DTO 都携带可选 `postprocess_version`。Frontend 按消息实际版本批量读取快照，流式期间保持安全 Markdown，终态后才挂载 renderer。可信 choice 只允许最新完整 assistant 回复通过正常 `runTurn` 发送纯文本，并以同步锁防双击。
 
 Admin `/api/admin/text-postprocess*` 提供状态/历史、草稿保存/丢弃、发布、回滚和 request lookup。保存不改变正式指针；发布/回滚使用 CAS 与 `request_id`，未知结果先查询权威 outcome。回滚基于目标 source 重新编译并创建新版本，绝不改写旧快照。TEST/PR 已完成工作台和 Telegram 真机验收；Production 迁移与发布尚未由该结论自动完成。
+
+可选 `source.rich_reply` 随草稿/发布快照保存，编译成 `artifact.rich_reply_protocol = {version:3, enabled:true, recovery:...}`；无该字段继续编译 v2，既有 v1/v2 解析语义不变。配置包含三模块 EOF 策略、正常/降级标题副标题、协议标签别名与括号对、协议外层代码围栏兼容。v3 允许一个或多个完整有效选项点击，坏项残余仅显示文字；只归一化明确协议标记，slot 坐标始终映射回原文。仅当围栏内容全部为已识别协议模块时去掉围栏，并通过受信 `isolate_block` 恢复段落分隔；一般 Markdown block-context 安全校验不放宽。Backend 诊断使用该回复绑定 artifact 的同份配置，恢复结果不视为 exact。
+
+`20261015_rich_reply_recovery_config.sql` 扩展 `admin.validate_text_postprocess_source/artifact`，保持私有权限并校验 recovery 与 source 身份绑定；不改历史快照、不回填业务数据。逐环境迁移 → Backend/Frontend/Admin 支持 v3 → 启用/保存/发布配置；旧客户端可能退回原文，必须先完成消费者部署再发布。回退应用前先发布不含新配置的旧 source；迁移保留兼容扩展。
 
 ### 4.5 生成与计费出口（`features/generation`）
 

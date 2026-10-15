@@ -577,18 +577,110 @@ export const CompiledTextPostprocessRuleSchema = z
   })
   .strict();
 
+/** Recovery is versioned with the immutable artifact; absent means legacy behavior. */
+const RichReplyCardSchema = z
+  .object({
+    recover_at_eof: z.boolean(),
+    title: z.string().max(80),
+    subtitle: z.string().max(160),
+    fallback_title: z.string().max(80),
+    fallback_subtitle: z.string().max(160),
+  })
+  .strict();
+const RichReplyAliasSchema = z.array(z.string().regex(/^[\p{L}_-]{1,32}$/u)).max(8);
+const RichReplyBracketSchema = z
+  .string()
+  .min(1)
+  .max(4)
+  .regex(/^[^\p{L}\p{N}\s/`~<>]+$/u);
+export const RichReplyRecoverySchema = z
+  .object({
+    unwrap_code_fences: z.boolean(),
+    bracket_pairs: z
+      .array(z.object({ open: RichReplyBracketSchema, close: RichReplyBracketSchema }).strict())
+      .max(8),
+    tag_aliases: z
+      .object({
+        choices: RichReplyAliasSchema,
+        choice: RichReplyAliasSchema,
+        status: RichReplyAliasSchema,
+        memory: RichReplyAliasSchema,
+      })
+      .strict(),
+    choices: RichReplyCardSchema,
+    status: RichReplyCardSchema,
+    memory: RichReplyCardSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const seen = new Set(['choices', 'choice', 'status', 'memory']);
+    for (const aliases of Object.values(value.tag_aliases)) {
+      for (const alias of aliases) {
+        const key = alias.toLowerCase();
+        if (seen.has(key))
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'DUPLICATE_TAG_ALIAS' });
+        seen.add(key);
+      }
+    }
+  });
+export type RichReplyRecovery = z.infer<typeof RichReplyRecoverySchema>;
+export const DEFAULT_RICH_REPLY_RECOVERY: RichReplyRecovery = {
+  unwrap_code_fences: true,
+  bracket_pairs: [
+    { open: '［', close: '］' },
+    { open: '【', close: '】' },
+  ],
+  tag_aliases: { choices: [], choice: [], status: [], memory: [] },
+  choices: {
+    recover_at_eof: true,
+    title: '接下来……',
+    subtitle: '想怎么回应？ · {count} 个选项',
+    fallback_title: '选项内容',
+    fallback_subtitle: '格式异常，已安全展示',
+  },
+  status: {
+    recover_at_eof: true,
+    title: '人物近况',
+    subtitle: '这一刻的变化',
+    fallback_title: '人物近况',
+    fallback_subtitle: '格式异常，已安全展示',
+  },
+  memory: {
+    recover_at_eof: true,
+    title: '故事记忆',
+    subtitle: '已记住这段经历',
+    fallback_title: '故事记忆',
+    fallback_subtitle: '格式异常，已安全展示',
+  },
+};
+
 export const CompiledTextPostprocessArtifactSchema = z
   .object({
     schema_version: z.literal(TEXT_POSTPROCESS_SCHEMA_VERSION),
     policy_version: z.literal(TEXT_POSTPROCESS_POLICY_VERSION),
     /** Fixed protocol parser; default keeps existing published artifacts compatible. */
     rich_reply_protocol: z
-      .object({ version: z.union([z.literal(1), z.literal(2)]), enabled: z.boolean() })
+      .object({
+        version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+        enabled: z.boolean(),
+        recovery: RichReplyRecoverySchema.optional(),
+      })
       .strict()
       .default({ version: 1, enabled: true }),
     rules: z.array(CompiledTextPostprocessRuleSchema).max(TEXT_POSTPROCESS_LIMITS.maxRules),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      (value.rich_reply_protocol.version === 3) !==
+      (value.rich_reply_protocol.recovery !== undefined)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['rich_reply_protocol'],
+        message: 'RECOVERY_VERSION_MISMATCH',
+      });
+  });
 
 export type CompiledTextPostprocessRule = z.input<typeof CompiledTextPostprocessRuleSchema>;
 export type CompiledTextPostprocessArtifact = z.input<typeof CompiledTextPostprocessArtifactSchema>;
@@ -665,6 +757,7 @@ function sourceSchema(checkFlags: boolean) {
     .object({
       schema_version: z.literal(TEXT_POSTPROCESS_SCHEMA_VERSION),
       policy_version: z.literal(TEXT_POSTPROCESS_POLICY_VERSION),
+      rich_reply: RichReplyRecoverySchema.optional(),
       rules: z.array(ruleShape(z.string().max(8))).max(TEXT_POSTPROCESS_LIMITS.maxRules),
     })
     .strict()
@@ -894,6 +987,8 @@ export interface TextPostprocessSlotSegment {
   start: number;
   end: number;
   placement: 'inline' | 'block';
+  /** Parser-verified protocol wrapper: restore paragraph separation after unwrapping. */
+  isolate_block?: true;
   match_text: string;
   captures: TextPostprocessCaptureValue[];
   tree: TrustedNode[];

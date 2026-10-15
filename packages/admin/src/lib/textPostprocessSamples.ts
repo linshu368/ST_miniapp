@@ -4,6 +4,7 @@ import {
   RICH_REPLY_BODY_RULE_ID,
   RICH_REPLY_RULE_STYLES,
   type TextPostprocessRule,
+  type RichReplyRecovery,
 } from '@miniapp/shared';
 
 export interface EditableRule {
@@ -21,6 +22,7 @@ export interface EditableRule {
 export interface EditableSource {
   schema_version: typeof TEXT_POSTPROCESS_SCHEMA_VERSION;
   policy_version: typeof TEXT_POSTPROCESS_POLICY_VERSION;
+  rich_reply?: RichReplyRecovery;
   rules: EditableRule[];
 }
 
@@ -76,6 +78,8 @@ export const PREVIEW_SAMPLES = {
   ].join('\n'),
   plain: '这是一段没有规则标记的普通回复。\n\n- 列表一\n- 列表二',
   broken: '这里有未闭合的 [highlight]只有开头',
+  recoveryEof: '正文。\n\n[choices]\n[choice]继续[/choice]\n\n[status]\n地点：花园',
+  recoveryFence: '```markdown\n【choices】\n［choice］继续［/choice］\n【status】\n地点：花园\n```',
   choice:
     '[choices]\n[choice]接受邀请[/choice]\n[choice]再考虑一下[/choice]\n[choice]先观察[/choice]\n[/choices]',
 } as const;
