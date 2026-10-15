@@ -28,11 +28,19 @@ import { getChatReplyPresentation } from './chat-reply-presentation';
 const AVATAR_CLASS =
   'size-[34px] shrink-0 rounded-full border border-border object-cover min-[521px]:size-9';
 
-/** 头像挪到正文上方后体积可以收一档，和旁边的名字/标题比例更协调 */
-const HEADER_AVATAR_CLASS = 'size-5 shrink-0 rounded-full border border-border object-cover';
+/** 头像挪到正文上方后单独占一行，尺寸比行内嵌入时更大一些，和正文的视觉比例更协调 */
+const HEADER_AVATAR_CLASS =
+  'size-8 shrink-0 rounded-full border border-border object-cover min-[521px]:size-9';
 
 const BODY_TEXT_CLASS =
   'text-[14.5px] font-[440] leading-[1.76] min-[521px]:text-[15px] min-[521px]:leading-[1.72]';
+
+/**
+ * 角色名/会话标题：比正文小一档、颜色用 muted，做成一行轻提示而不是加粗的强标题，
+ * 避免和正文抢视觉重心。
+ */
+const HEADER_TITLE_CLASS =
+  'truncate text-[13.5px] font-medium text-muted-foreground min-[521px]:text-[14px]';
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
@@ -86,9 +94,9 @@ export function ChatMessageBubble({
 
   return (
     <div className="flex flex-col px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
-      <div className="mb-1.5 flex min-h-[20px] items-center gap-1.5">
+      <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
         <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
-        <span className="truncate text-[13px] font-[650] text-foreground">{characterName}</span>
+        <span className={HEADER_TITLE_CLASS}>{characterName}</span>
       </div>
       <div className="min-w-0">
         <div className={cn('text-foreground', BODY_TEXT_CLASS)}>
@@ -135,9 +143,9 @@ export function ChatTypingBubble({
 }) {
   return (
     <div className="flex flex-col px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
-      <div className="mb-1.5 flex min-h-[20px] items-center gap-1.5">
+      <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
         <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
-        <span className="truncate text-[13px] font-[650] text-foreground">{characterName}</span>
+        <span className={HEADER_TITLE_CLASS}>{characterName}</span>
       </div>
       <div className="min-w-0">
         <div className="flex items-center gap-1 pt-1">
