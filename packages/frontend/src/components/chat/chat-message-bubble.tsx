@@ -33,7 +33,7 @@ const AVATAR_CLASS =
 
 /** 头像挪到正文上方后单独占一行，尺寸比行内嵌入时更大一些，和正文的视觉比例更协调 */
 const HEADER_AVATAR_CLASS =
-  'size-9 shrink-0 rounded-full border border-border object-cover min-[521px]:size-10';
+  'size-10 shrink-0 rounded-full border border-border object-cover min-[521px]:size-11';
 
 const BODY_TEXT_CLASS =
   'text-[14.5px] font-[440] leading-[1.76] min-[521px]:text-[15px] min-[521px]:leading-[1.72]';
