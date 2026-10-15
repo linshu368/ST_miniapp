@@ -3,6 +3,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { ReplyRenderer } from '@miniapp/reply-renderer';
 import {
   canonicalTextPostprocessJson,
+  DEFAULT_RICH_REPLY_RECOVERY,
+  RichReplyRecoverySchema,
+  type RichReplyRecovery,
   RICH_REPLY_RULE_STYLES,
   type TextPostprocessDiagnostic,
 } from '@miniapp/shared';
@@ -616,6 +619,11 @@ export function TextPostprocessView(props: {
       {!allowWrite ? (
         <Alert showIcon type="info" message="当前身份只能查看这个环境的富文本规则。" />
       ) : null}
+      <RecoveryEditor
+        value={session.local.rich_reply}
+        disabled={!allowWrite || session.mutation?.phase === 'inflight'}
+        onChange={(rich_reply) => edit({ ...session.local, rich_reply }, session.selectedRuleId)}
+      />
       <div className="text-postprocess-layout">
         <RuleList
           session={session}
@@ -1614,6 +1622,10 @@ function sampleLabel(key: PreviewSampleKey): string {
       return '残缺示例';
     case 'choice':
       return '选项示例';
+    case 'recoveryEof':
+      return '兜底：单选项与末尾缺闭合';
+    case 'recoveryFence':
+      return '兜底：括号变体与代码围栏';
   }
 }
 
@@ -1633,4 +1645,213 @@ function confirmAction(title: string, content: string, danger = false): Promise<
       onCancel: () => resolve(false),
     });
   });
+}
+
+function RecoveryEditor(props: {
+  value: RichReplyRecovery | undefined;
+  disabled: boolean;
+  onChange: (value: RichReplyRecovery | undefined) => void;
+}) {
+  const value = props.value;
+  const invalid = value !== undefined && !RichReplyRecoverySchema.safeParse(value).success;
+  const names = { choices: '选项', status: '状态栏', memory: '记忆区' } as const;
+  return (
+    <Card
+      size="small"
+      title="解析与兜底"
+      extra={
+        <Switch
+          aria-label="使用可配置兜底"
+          checked={value !== undefined}
+          disabled={props.disabled}
+          onChange={(checked) =>
+            props.onChange(checked ? structuredClone(DEFAULT_RICH_REPLY_RECOVERY) : undefined)
+          }
+        />
+      }
+    >
+      {invalid ? (
+        <Alert
+          type="error"
+          showIcon
+          message="解析配置无效"
+          description="别名只能包含字母、中文、下划线或连字符，不能与标准标签或其他别名重名，且每项最多 8 个。括号须为 1～4 个非字母数字、非空白的符号，不能含斜线、代码围栏或尖括号。请检查后再保存。"
+        />
+      ) : null}
+      {!value ? (
+        <Typography.Text type="secondary">
+          当前沿用旧版内置解析。启用后可配置结尾补全、卡片文案、标签变体与代码围栏兼容；保存并发布后用于新回复。
+        </Typography.Text>
+      ) : (
+        <Tabs
+          items={[
+            ...(['choices', 'status', 'memory'] as const).map((tag) => ({
+              key: tag,
+              label: names[tag],
+              children: (
+                <Space direction="vertical" className="field-full">
+                  <Space wrap>
+                    <Switch
+                      aria-label={`${names[tag]}末尾补全`}
+                      checked={value[tag].recover_at_eof}
+                      disabled={props.disabled}
+                      onChange={(checked) =>
+                        props.onChange({
+                          ...value,
+                          [tag]: { ...value[tag], recover_at_eof: checked },
+                        })
+                      }
+                    />
+                    <span>缺少结束标签时，在回复末尾收口为卡片</span>
+                  </Space>
+                  {tag === 'choices' ? (
+                    <Typography.Text type="secondary">
+                      至少一个完整有效选项即可点击；不完整或空选项不生成发送动作。副标题可用{' '}
+                      {'{count}'} 显示实际数量。
+                    </Typography.Text>
+                  ) : null}
+                  {(['title', 'subtitle', 'fallback_title', 'fallback_subtitle'] as const).map(
+                    (field) => (
+                      <label key={field} className="text-postprocess-field">
+                        <span>
+                          {
+                            {
+                              title: '标题',
+                              subtitle: '副标题',
+                              fallback_title: '降级标题',
+                              fallback_subtitle: '降级副标题',
+                            }[field]
+                          }
+                        </span>
+                        <Input
+                          aria-label={`${names[tag]}${field}`}
+                          value={value[tag][field]}
+                          disabled={props.disabled}
+                          maxLength={field.endsWith('subtitle') ? 160 : 80}
+                          onChange={(event) =>
+                            props.onChange({
+                              ...value,
+                              [tag]: { ...value[tag], [field]: event.target.value },
+                            })
+                          }
+                        />
+                      </label>
+                    )
+                  )}
+                  <label className="text-postprocess-field">
+                    <span>额外标签别名（保留标准标签 {tag}，最多 8 个）</span>
+                    <Select
+                      mode="tags"
+                      aria-label={`${names[tag]}标签别名`}
+                      value={value.tag_aliases[tag]}
+                      disabled={props.disabled}
+                      onChange={(aliases: string[]) =>
+                        props.onChange({
+                          ...value,
+                          tag_aliases: { ...value.tag_aliases, [tag]: aliases },
+                        })
+                      }
+                    />
+                  </label>
+                  {tag === 'choices' ? (
+                    <label className="text-postprocess-field">
+                      <span>单个选项的额外标签别名（保留 choice，最多 8 个）</span>
+                      <Select
+                        mode="tags"
+                        aria-label="单个选项标签别名"
+                        value={value.tag_aliases.choice}
+                        disabled={props.disabled}
+                        onChange={(aliases: string[]) =>
+                          props.onChange({
+                            ...value,
+                            tag_aliases: { ...value.tag_aliases, choice: aliases },
+                          })
+                        }
+                      />
+                    </label>
+                  ) : null}
+                </Space>
+              ),
+            })),
+            {
+              key: 'compatibility',
+              label: '格式兼容',
+              children: (
+                <Space direction="vertical" className="field-full">
+                  <Space wrap>
+                    <Switch
+                      aria-label="兼容外层代码围栏"
+                      checked={value.unwrap_code_fences}
+                      disabled={props.disabled}
+                      onChange={(checked) =>
+                        props.onChange({ ...value, unwrap_code_fences: checked })
+                      }
+                    />
+                    <span>识别整块包住协议模块的代码围栏</span>
+                  </Space>
+                  <Typography.Text type="secondary">
+                    仅移除协议模块外层的围栏，普通代码块保持原样。标准方括号始终可用；以下额外括号只用于识别协议标签。
+                  </Typography.Text>
+                  {value.bracket_pairs.map((pair, index) => (
+                    <Space key={index} wrap>
+                      <Input
+                        aria-label={`左括号 ${index + 1}`}
+                        value={pair.open}
+                        maxLength={4}
+                        disabled={props.disabled}
+                        onChange={(event) =>
+                          props.onChange({
+                            ...value,
+                            bracket_pairs: value.bracket_pairs.map((item, at) =>
+                              at === index ? { ...item, open: event.target.value } : item
+                            ),
+                          })
+                        }
+                      />
+                      <Input
+                        aria-label={`右括号 ${index + 1}`}
+                        value={pair.close}
+                        maxLength={4}
+                        disabled={props.disabled}
+                        onChange={(event) =>
+                          props.onChange({
+                            ...value,
+                            bracket_pairs: value.bracket_pairs.map((item, at) =>
+                              at === index ? { ...item, close: event.target.value } : item
+                            ),
+                          })
+                        }
+                      />
+                      <Button
+                        disabled={props.disabled}
+                        onClick={() =>
+                          props.onChange({
+                            ...value,
+                            bracket_pairs: value.bracket_pairs.filter((_, at) => at !== index),
+                          })
+                        }
+                      >
+                        删除括号对
+                      </Button>
+                    </Space>
+                  ))}
+                  <Button
+                    disabled={props.disabled || value.bracket_pairs.length >= 8}
+                    onClick={() =>
+                      props.onChange({
+                        ...value,
+                        bracket_pairs: [...value.bracket_pairs, { open: '（', close: '）' }],
+                      })
+                    }
+                  >
+                    添加括号对
+                  </Button>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      )}
+    </Card>
+  );
 }

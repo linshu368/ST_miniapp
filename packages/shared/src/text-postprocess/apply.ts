@@ -41,7 +41,7 @@ export function applyTextPostprocess(input: ApplyTextPostprocessInput): TextPost
   const protocol = validated.artifact.rich_reply_protocol;
   let matches = 0;
   if (protocol?.enabled !== false) {
-    const applied = applyRichReplyProtocol(segments);
+    const applied = applyRichReplyProtocol(segments, protocol?.recovery);
     segments = applied.segments;
     matches = applied.matches;
   }
@@ -64,7 +64,7 @@ export function applyTextPostprocess(input: ApplyTextPostprocessInput): TextPost
     segments = outcome.segments;
     matches += outcome.matches;
   }
-  const compatibility = applyRichReplyFallback(segments);
+  const compatibility = applyRichReplyFallback(segments, protocol?.recovery);
   if (matches + compatibility.matches > TEXT_POSTPROCESS_LIMITS.maxMatchesPerMessage) {
     return original(input.text, 'MATCH_LIMIT');
   }
