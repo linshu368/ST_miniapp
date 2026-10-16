@@ -28,6 +28,31 @@ function model(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ImagePlazaModelCatalogSchema', () => {
+  it('preserves optional standard prices across JSON round trips without changing models', () => {
+    const legacy = { default_model_id: 'seedream-v5-pro', models: [model()] };
+    const parsedLegacy = ImagePlazaModelCatalogSchema.parse(legacy);
+    expect(parsedLegacy.standard_prices).toBeUndefined();
+    const prices = { '["seedream-v5-pro","1K"]': 0.11, '["seedream-v5-pro","2K"]': null };
+    const saved = ImagePlazaModelCatalogSchema.parse({ ...legacy, standard_prices: prices });
+    const loaded = ImagePlazaModelCatalogSchema.parse(JSON.parse(JSON.stringify(saved)));
+    expect(loaded.standard_prices).toEqual(prices);
+    expect(loaded.models).toEqual(parsedLegacy.models);
+    expect(loaded.models[0]).not.toHaveProperty('standard_prices');
+  });
+
+  it.each([0, -1, Infinity, NaN, 1_000_001, 0.00001, '0.11'])(
+    'rejects invalid standard price %s',
+    (price) => {
+      expect(
+        ImagePlazaModelCatalogSchema.safeParse({
+          default_model_id: 'seedream-v5-pro',
+          models: [model()],
+          standard_prices: { '["seedream-v5-pro","1K"]': price },
+        }).success
+      ).toBe(false);
+    }
+  );
+
   it('requires an edit provider mapping for edit-capable models', () => {
     const result = ImagePlazaModelCatalogSchema.safeParse({
       default_model_id: 'seedream-v5-pro',

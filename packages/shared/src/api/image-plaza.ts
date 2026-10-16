@@ -76,6 +76,18 @@ export const ImagePlazaModelCatalogSchema = z
   .object({
     default_model_id: z.string().trim().min(1).max(80),
     models: z.array(ProviderImagePlazaModelSchema).min(1).max(30),
+    // 运营计算参考值随目录保存，不进入公开模型或服务端扣费输入。
+    standard_prices: z
+      .record(
+        z
+          .number()
+          .finite()
+          .positive()
+          .max(1_000_000)
+          .refine((value) => Number(value.toFixed(4)) === value, '标准价最多四位小数')
+          .nullable()
+      )
+      .optional(),
   })
   .superRefine((catalog, ctx) => {
     const ids = new Set<string>();

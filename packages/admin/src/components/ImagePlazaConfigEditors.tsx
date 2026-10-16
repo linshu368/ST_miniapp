@@ -53,7 +53,7 @@ export function ImagePlazaModelCatalogEditor(props: {
     markup: 2,
     ratio: 100,
   });
-  const [standardPrices, setStandardPrices] = useState<Record<string, number | null>>({});
+  const standardPrices = props.value.standard_prices ?? {};
   const recalculated = recalculateImagePlazaCatalog(props.value, standardPrices, factors);
   const exampleModel = props.value.models.find((model) =>
     model.resolutions.some((tier) =>
@@ -85,7 +85,7 @@ export function ImagePlazaModelCatalogEditor(props: {
         <Space direction="vertical" className="editor-stack">
           <Typography.Text type="secondary">
             请填写每个模型各档位的 USD
-            标准价（含下架模型）。标准价及以下参数不保存，离开或重新加载编辑器后需重新填写。
+            标准价（含下架模型）。标准价随“保存草稿”保存，刷新后可继续使用；以下统一参数仅本次页面有效。
           </Typography.Text>
           <Space wrap>
             <Typography.Text strong>原平台价 USD ×</Typography.Text>
@@ -301,10 +301,13 @@ export function ImagePlazaModelCatalogEditor(props: {
                     usd={standardPrices[imagePlazaPriceKey(model.id, tier.id)] ?? null}
                     factors={factors}
                     onUsdChange={(usd) =>
-                      setStandardPrices((current) => ({
-                        ...current,
-                        [imagePlazaPriceKey(model.id, tier.id)]: usd,
-                      }))
+                      props.onChange({
+                        ...props.value,
+                        standard_prices: {
+                          ...standardPrices,
+                          [imagePlazaPriceKey(model.id, tier.id)]: usd,
+                        },
+                      })
                     }
                     disabled={props.disabled}
                     onChange={(credits) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ImagePlazaModelCatalogSchema } from '@miniapp/shared';
-import { configMetadata } from './configSchemas';
+import { configMetadata, parseManagedConfig } from './configSchemas';
 import {
   calculateImagePlazaPrice,
   imagePlazaPriceKey,
@@ -10,6 +10,34 @@ import {
 const factors = { exchange: 7.3, markup: 2, ratio: 100 };
 
 describe('image plaza pricing calculator', () => {
+  it('keeps saved standard prices through managed config parsing and recalculation', () => {
+    const catalog = ImagePlazaModelCatalogSchema.parse(
+      configMetadata.image_plaza_model_catalog.defaultValue
+    );
+    const modelsBefore = structuredClone(catalog.models);
+    catalog.standard_prices = Object.fromEntries(
+      catalog.models.flatMap((model) =>
+        model.resolutions.map((tier) => [imagePlazaPriceKey(model.id, tier.id), 0.11])
+      )
+    );
+    const loaded = ImagePlazaModelCatalogSchema.parse(
+      parseManagedConfig('image_plaza_model_catalog', JSON.parse(JSON.stringify(catalog)))
+    );
+    expect(loaded.standard_prices).toEqual(catalog.standard_prices);
+    expect(loaded.models).toEqual(modelsBefore);
+    const recalculated = recalculateImagePlazaCatalog(loaded, loaded.standard_prices!, factors);
+    expect(recalculated.catalog?.standard_prices).toEqual(catalog.standard_prices);
+    expect(recalculated.issues).toEqual([]);
+
+    const key = imagePlazaPriceKey(loaded.models[0].id, loaded.models[0].resolutions[0].id);
+    loaded.standard_prices![key] = null;
+    const cleared = ImagePlazaModelCatalogSchema.parse(JSON.parse(JSON.stringify(loaded)));
+    expect(cleared.standard_prices?.[key]).toBeNull();
+    expect(
+      recalculateImagePlazaCatalog(cleared, cleared.standard_prices!, factors).catalog
+    ).toBeNull();
+  });
+
   it('matches the reference formula and rounds up to tens', () => {
     expect(calculateImagePlazaPrice(0.11, factors)).toEqual({ raw: 160.6, credits: 170 });
     expect(calculateImagePlazaPrice(0.11, { ...factors, markup: 3 })?.credits).toBe(250);
