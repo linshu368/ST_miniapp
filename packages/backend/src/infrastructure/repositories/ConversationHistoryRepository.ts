@@ -23,6 +23,11 @@ import type { InstructionSlotModes } from '../../features/engine/types.js';
 
 export const STREAMING_STALE_SECONDS = 120;
 
+// Explicit projections keep retiring call columns out of normal chat reads before DROP.
+const CURRENT_TURN_COLUMNS =
+  'id,user_id,model,user_input,assistant_reply,history,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata';
+const TURN_COLUMNS = `${CURRENT_TURN_COLUMNS},llm_billing_snapshot,llm_billing_settled_at`;
+
 export interface ConversationHistoryRow {
   id: string;
   user_id: string;
@@ -36,7 +41,6 @@ export interface ConversationHistoryRow {
   deduction_rate: number | null;
   created_at: string;
   llm_finish_reason: string | null;
-  llm_generation_id: string | null;
   llm_charge_id: string | null;
   llm_billing_snapshot: LlmBillingSnapshot | null;
   llm_billing_settled_at: string | null;
@@ -77,7 +81,9 @@ export interface ChatHistorySyncRow {
   id: string;
   user_id: string;
   model: string;
-  llm_generation_id: string | null;
+  generationId: string | null;
+  callProvider: LlmModelProvider | null;
+  session_id?: string;
   llm_finish_reason: string | null;
   llm_charge_id: string | null;
   assistant_reply: string | null;
@@ -210,7 +216,7 @@ export class ConversationHistoryRepository {
   }
 
   /**
-   * 请求内同步收口：写用户可见终态与本轮已知的 LLM 标识。
+   * 请求内同步收口：写正文与用户可见终态，调用身份只留在 provider 明细。
    * 计费金额归 recordBillingOutcome，OpenRouter 元数据归专表，避免两个写入方抢同一列。
    */
   async finalizeTurn(input: {
@@ -219,7 +225,6 @@ export class ConversationHistoryRepository {
     status: GenerationStatus;
     finishReason?: string | null;
     upstreamStatus?: number | null;
-    generationId?: string | null;
     chargeId?: string | null;
   }): Promise<ConversationHistoryRow> {
     let query = this.db
@@ -229,7 +234,6 @@ export class ConversationHistoryRepository {
         status: input.status,
         upstream_status: input.upstreamStatus ?? null,
         llm_finish_reason: input.finishReason ?? null,
-        ...(input.generationId !== undefined ? { llm_generation_id: input.generationId } : {}),
         ...(input.chargeId !== undefined ? { llm_charge_id: input.chargeId } : {}),
       })
       .eq('id', input.historyId)
@@ -237,7 +241,7 @@ export class ConversationHistoryRepository {
     // Cancellation first claims the reason while keeping the session busy until quota release.
     query = query.is('llm_finish_reason', null);
     const { data, error } = await query
-      .select('*')
+      .select(TURN_COLUMNS)
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
     if (error) throw new Error(`收口对话轮次失败：${error.message}`);
@@ -257,13 +261,12 @@ export class ConversationHistoryRepository {
           status: input.status,
           llm_finish_reason: current.llm_finish_reason,
           upstream_status: input.upstreamStatus ?? null,
-          ...(input.generationId !== undefined ? { llm_generation_id: input.generationId } : {}),
           ...(input.chargeId !== undefined ? { llm_charge_id: input.chargeId } : {}),
         })
         .eq('id', input.historyId)
         .eq('status', 'streaming')
         .eq('llm_finish_reason', current.llm_finish_reason)
-        .select('*')
+        .select(TURN_COLUMNS)
         .abortSignal(AbortSignal.timeout(5_000))
         .maybeSingle();
       if (claimed.error) throw new Error(`收口已取消对话失败：${claimed.error.message}`);
@@ -290,7 +293,7 @@ export class ConversationHistoryRepository {
   async requireTurnById(historyId: string): Promise<ConversationHistoryRow> {
     const { data, error } = await this.db
       .from('chat_history')
-      .select('*')
+      .select(TURN_COLUMNS)
       .eq('id', historyId)
       .abortSignal(AbortSignal.timeout(5_000))
       .single();
@@ -322,7 +325,7 @@ export class ConversationHistoryRepository {
     const cutoff = new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString();
     const { data, error } = await this.db
       .from('chat_history')
-      .select('*')
+      .select(TURN_COLUMNS)
       .eq('session_id', sessionId)
       .eq('status', 'streaming')
       .lt('created_at', cutoff)
@@ -377,7 +380,8 @@ export class ConversationHistoryRepository {
           : {}),
         ...(input.billingSettledAt ? { llm_billing_settled_at: input.billingSettledAt } : {}),
       })
-      .eq('id', input.historyId);
+      .eq('id', input.historyId)
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`回写生成计费结果失败：${error.message}`);
     await this.applySuccessfulFinishReason(input.historyId, input.finishReason);
   }
@@ -390,53 +394,99 @@ export class ConversationHistoryRepository {
     const { error } = await this.db
       .from('chat_history')
       .update({ llm_billing_snapshot: snapshot })
-      .eq('id', historyId);
+      .eq('id', historyId)
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`回写计费快照失败：${error.message}`);
   }
 
-  /** Billing recovery must remain independent of provider metadata completeness. */
+  /** Each provider gets its own budget so incomplete metadata cannot hide completed-call billing. */
   async listRowsPendingBilling(input: {
     since: string;
     limit: number;
+    provider: LlmModelProvider;
   }): Promise<ChatHistorySyncRow[]> {
+    const table =
+      input.provider === 'openrouter' ? 'openrouter_chat_history' : 'venice_chat_history';
+    const other =
+      table === 'openrouter_chat_history' ? 'venice_chat_history' : 'openrouter_chat_history';
     const { data, error } = await this.db
       .from('chat_history')
       .select(
-        'id,user_id,model,llm_generation_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot'
+        `id,user_id,model,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,${table}!inner(llm_generation_id),${other}!left(llm_generation_id)`
       )
-      .not('llm_generation_id', 'is', null)
+      .not(`${table}.llm_generation_id`, 'is', null)
       .not('llm_billing_snapshot', 'is', null)
       .is('llm_billing_settled_at', null)
+      .neq('status', 'streaming')
       .gte('created_at', input.since)
       .order('created_at', { ascending: true })
       .limit(input.limit)
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`扫描未完成计费的对话失败：${error.message}`);
-    return (data ?? []) as ChatHistorySyncRow[];
+    if (error) throw new Error('扫描未完成计费的对话失败', { cause: error });
+    return (data ?? []).map((row) => mapProviderSyncRow(row, table));
   }
 
-  /** Recover failed OpenRouter placeholders without treating Venice calls as OpenRouter. */
-  async listRowsMissingOpenRouterDetail(input: {
+  /** Missing identities remain observable after removing the legacy parent ID. */
+  async listRowsMissingProviderIdentity(input: {
     since: string;
     limit: number;
   }): Promise<ChatHistorySyncRow[]> {
     const { data, error } = await this.db
       .from('chat_history')
       .select(
-        'id,user_id,model,llm_generation_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,openrouter_chat_history!left(chat_history_id),venice_chat_history!left(chat_history_id)'
+        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,openrouter_chat_history!left(llm_generation_id),venice_chat_history!left(llm_generation_id),or_presence:openrouter_chat_history!left(chat_history_id),venice_presence:venice_chat_history!left(chat_history_id)'
       )
-      .not('llm_generation_id', 'is', null)
+      .not('openrouter_chat_history.llm_generation_id', 'is', null)
+      .not('venice_chat_history.llm_generation_id', 'is', null)
       .is('openrouter_chat_history', null)
       .is('venice_chat_history', null)
-      .or(
-        'llm_billing_snapshot.is.null,llm_billing_snapshot->>provider.is.null,llm_billing_snapshot->>provider.eq.openrouter'
-      )
+      .not('llm_billing_snapshot', 'is', null)
+      .is('llm_billing_settled_at', null)
       .gte('created_at', input.since)
+      .lt('created_at', new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString())
       .order('created_at', { ascending: true })
       .limit(input.limit)
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`扫描缺失 OpenRouter 明细的对话失败：${error.message}`);
-    return (data ?? []) as ChatHistorySyncRow[];
+    if (error) throw new Error('扫描缺失调用身份的对话失败', { cause: error });
+    return (data ?? []).map((row) => {
+      const provider = row.llm_billing_snapshot?.provider;
+      const conflict =
+        (row.or_presence && row.venice_presence) ||
+        (row.or_presence && provider !== 'openrouter') ||
+        (row.venice_presence && provider !== 'venice');
+      return {
+        ...row,
+        generationId: null,
+        callProvider: conflict
+          ? null
+          : provider === 'openrouter'
+            ? 'openrouter'
+            : provider === 'venice'
+              ? 'venice'
+              : null,
+      };
+    }) as ChatHistorySyncRow[];
+  }
+
+  /** A restarted execution owner must not leave a durable quota/session reservation busy. */
+  async listStaleStreaming(input: { since: string; limit: number }): Promise<ChatHistorySyncRow[]> {
+    const { data, error } = await this.db
+      .from('chat_history')
+      .select(
+        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot'
+      )
+      .eq('status', 'streaming')
+      .gte('created_at', input.since)
+      .lt('created_at', new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString())
+      .order('created_at', { ascending: true })
+      .limit(input.limit)
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error('扫描超时对话失败', { cause: error });
+    return (data ?? []).map((row) => ({
+      ...row,
+      generationId: null,
+      callProvider: null,
+    })) as ChatHistorySyncRow[];
   }
 
   private async applySuccessfulFinishReason(
@@ -449,6 +499,9 @@ export class ConversationHistoryRepository {
       .update({ llm_finish_reason: finishReason })
       .eq('id', historyId)
       .eq('status', 'success')
+      .or(
+        'llm_finish_reason.is.null,and(llm_finish_reason.neq.cancelled,llm_finish_reason.neq.timeout)'
+      )
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`补齐生成完成原因失败：${error.message}`);
   }
@@ -463,7 +516,7 @@ export class ConversationHistoryRepository {
 
     const windowQuery = this.db
       .from('current_chat_history')
-      .select('*')
+      .select(CURRENT_TURN_COLUMNS)
       .eq('session_id', sessionId)
       .gte('turn_index', windowStartTurn)
       .lt('turn_index', turnIndex)
@@ -524,7 +577,7 @@ export class ConversationHistoryRepository {
   ): Promise<ConversationHistoryRow | null> {
     const { data, error } = await this.db
       .from('current_chat_history')
-      .select('*')
+      .select(CURRENT_TURN_COLUMNS)
       .eq('id', historyId)
       .eq('session_id', sessionId)
       .abortSignal(AbortSignal.timeout(5_000))
@@ -544,7 +597,7 @@ export class ConversationHistoryRepository {
 
     let query = this.db
       .from('current_chat_history')
-      .select('*')
+      .select(CURRENT_TURN_COLUMNS)
       .eq('session_id', sessionId)
       .not('turn_index', 'is', null);
     if (typeof options.beforeTurnIndex === 'number') {
@@ -759,4 +812,23 @@ function extractRequestId(history: unknown[]): string | undefined {
   if (!first || typeof first !== 'object') return undefined;
   const requestId = (first as { request_id?: unknown }).request_id;
   return typeof requestId === 'string' ? requestId : undefined;
+}
+
+function mapProviderSyncRow(
+  value: unknown,
+  table: 'openrouter_chat_history' | 'venice_chat_history'
+): ChatHistorySyncRow {
+  const row = value as Omit<ChatHistorySyncRow, 'generationId' | 'callProvider'> & {
+    openrouter_chat_history?: { llm_generation_id: string | null };
+    venice_chat_history?: { llm_generation_id: string | null };
+  };
+  const provider = table === 'openrouter_chat_history' ? 'openrouter' : 'venice';
+  const conflict =
+    !!(row.openrouter_chat_history && row.venice_chat_history) ||
+    !!(row.llm_billing_snapshot?.provider && row.llm_billing_snapshot.provider !== provider);
+  return {
+    ...row,
+    generationId: row[table]?.llm_generation_id ?? null,
+    callProvider: conflict ? null : provider,
+  };
 }

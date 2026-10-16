@@ -161,3 +161,37 @@ Good：metadata complete、quota finalize 暂失败，独立 pending 扫描补�
 Wrong：`rows = detailRowsWithMissingMetadata` 后假设全部计费都会被修复；黑名单删掉 prompt 后保存剩余任意 JSON。
 
 Correct：独立扫描 `pendingBilling + missingDetail + incompleteMetadata` 并按 parent 去重；诊断字段用有界 allowlist，业务金额/终态显式写主表。
+
+## Scenario: Provider 调用身份清退主表
+
+### 1. Scope / Trigger
+
+清退 chat_history 的 12 个调用元数据列时，必须保持正常对话正文/历史/终态落表和计费/额度恢复；业务 llm_finish_reason 保留，不以调用专表原始结束原因取代。
+
+### 2. Signatures
+
+GenerationHooks.onBeforeDispatch(snapshot: LlmBillingSnapshot)、onGenerationId(generationId: string) 均为内部 async 接缝；ConversationHistoryRepository.finalizeTurn 不接收 generationId。listRowsPendingBilling({since,limit,provider}) 按两个具体 provider 专表取 ID，listRowsMissingProviderIdentity/listStaleStreaming 独立扫描；无新公开 API 或运行时 env。
+
+### 3. Contracts
+
+请求上游前 await 请求时快照和对应专表空占位；header/SSE/non-stream 首次 ID 持久化再转发该 delta。ensureGenerationId 仅写 NULL，已存在相同值为成功，不同值拒绝；每个请求 5s、总 10s，最多两次写及一次 100ms 退避，写超时读回确认，不重发生成请求。SSE 当前收到的文本先进入 snapshot，数据库异常通过 pipeline 清理，不吞进 JSON parse catch；已收到正文不因 metadata 失败丢失。OpenRouter NULL 统计不覆盖已有事实，0 保留，usage_cache 可缺失。
+
+### 4. Validation & Error Matrix
+
+- 快照/占位失败：不发送上游，按原清理释放预留并收口主表。
+- ID 写结果未知：同 parent 读回；不同 ID 拒绝；预算耗尽停止调用，保留已接收文本和已落表状态。
+- ID 持久化前崩溃：不能凭空找回上游 ID；超时 streaming 复用 120s/额度释放；成功但原因不足保留人工审计，不猜 stop、不重生成。
+- metadata 完整但账/额度/主表回写失败：用专表已存事实和原 charge_id/冻结快照重入。无 OpenRouter key 不停 Venice 或超时清理。
+- provider 专表交叠或与明确快照冲突：停止该记录、保留诊断，继续其他候选。Venice 明细证明来源但旧快照无 provider 时，用 Venice 来源标记恢复，不默认 OpenRouter。
+
+### 5. Good/Base/Bad Cases
+
+Good：五路（两个 provider pending、missing identity、metadata、stale）各限 50/24h/5s，去重和源/行错误隔离。Base：metadata 完整直接补计费，不额外依赖上游可用。Bad：删掉缺失扫描，或 SELECT \* 顺带读取待删列，或晚到 stop 覆盖业务取消/超时。
+
+### 6. Tests Required
+
+既有 generation/execute/upstream/sync/settle、生命周期和 repository 回归；本地隔离 PG17+PostgREST 实际删除 12 列后验证正文/上下文/终态、ID CAS/多请求、NULL/0、计费候选/缺失候选、业务取消与视图角色权限。真实钱包 RPC、上游与真机/多 Railway 副本仍独立验收，不能以本地 fixture 代替。
+
+### 7. Wrong vs Correct
+
+Wrong：finalizeTurn 写 parent.llm_generation_id，detail 写失败靠主表补救。Correct：上游前持久化意图/专表占位，首 ID 写专表并读回不确定结果，finalizeTurn 只维护主表正文与业务终态；失去调用键时明确收口或停止审计。

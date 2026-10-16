@@ -4,10 +4,14 @@ import type { LlmBillingSnapshot } from '../../infrastructure/repositories/Conve
 import type { FastifyBaseLogger } from 'fastify';
 
 const syncMocks = vi.hoisted(() => ({
+  keyAvailable: true,
   listRows: vi.fn(),
+  staleRows: vi.fn().mockResolvedValue([]),
+  recoverStale: vi.fn(),
   pendingRows: vi.fn().mockResolvedValue([]),
   missingRows: vi.fn().mockResolvedValue([]),
   upsert: vi.fn(),
+  readGenerationData: vi.fn().mockResolvedValue(null),
   recordBillingOutcome: vi.fn(),
   fetchGenerationData: vi.fn(),
 }));
@@ -15,19 +19,22 @@ const syncMocks = vi.hoisted(() => ({
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
   ConversationHistoryRepository: class {
     recordBillingOutcome = syncMocks.recordBillingOutcome;
+    listStaleStreaming = syncMocks.staleRows;
+    recoverStaleStreaming = syncMocks.recoverStale;
     listRowsPendingBilling = syncMocks.pendingRows;
-    listRowsMissingOpenRouterDetail = syncMocks.missingRows;
+    listRowsMissingProviderIdentity = syncMocks.missingRows;
   },
 }));
 vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
   OpenRouterChatHistoryRepository: class {
     listRowsMissingGenerationData = syncMocks.listRows;
     upsert = syncMocks.upsert;
+    readGenerationData = syncMocks.readGenerationData;
   },
 }));
 vi.mock('./openrouter-metadata.js', async () => ({
   ...(await vi.importActual<typeof import('./openrouter-metadata.js')>('./openrouter-metadata.js')),
-  hasOpenRouterKey: () => true,
+  hasOpenRouterKey: () => syncMocks.keyAvailable,
   fetchGenerationData: syncMocks.fetchGenerationData,
 }));
 
@@ -466,7 +473,12 @@ describe('OpenRouter sync original-field persistence', () => {
         generation_time: 20,
       });
       syncMocks.listRows.mockResolvedValue([
-        { ...input.record, llm_generation_id: 'gen-1', llm_finish_reason: businessReason },
+        {
+          ...input.record,
+          generationId: 'gen-1',
+          callProvider: 'openrouter',
+          llm_finish_reason: businessReason,
+        },
       ]);
       syncMocks.fetchGenerationData.mockResolvedValue(raw);
       syncMocks.recordBillingOutcome.mockResolvedValue(undefined);
@@ -527,7 +539,12 @@ describe('sync recovery sources', () => {
         finishReason: 'stop',
         snapshot: billingSnapshot({ provider: source === 'venice' ? 'venice' : 'openrouter' }),
       });
-      const record = { ...input.record, llm_generation_id: 'gen-1', llm_finish_reason: 'stop' };
+      const record = {
+        ...input.record,
+        generationId: 'gen-1',
+        callProvider: source === 'venice' ? 'venice' : 'openrouter',
+        llm_finish_reason: 'stop',
+      };
       if (source === 'openrouter')
         syncMocks.listRows.mockRejectedValue(new Error('metadata scan unavailable'));
       else syncMocks.listRows.mockResolvedValue([]);
@@ -576,4 +593,114 @@ describe('sync recovery sources', () => {
       }
     }
   );
+});
+
+describe('durable recovery without an upstream lookup', () => {
+  it.each(['openrouter', 'venice'] as const)(
+    'recovers %s when the OpenRouter key is unavailable',
+    async (provider) => {
+      vi.useFakeTimers();
+      vi.clearAllMocks();
+      syncMocks.keyAvailable = false;
+      const input = syncInput({ finishReason: 'stop', snapshot: billingSnapshot({ provider }) });
+      syncMocks.pendingRows.mockResolvedValue([
+        {
+          ...input.record,
+          generationId: 'stored-id',
+          callProvider: provider,
+          llm_finish_reason: 'stop',
+        },
+      ]);
+      syncMocks.listRows.mockResolvedValue([]);
+      syncMocks.missingRows.mockResolvedValue([]);
+      syncMocks.staleRows.mockResolvedValue([]);
+      syncMocks.readGenerationData.mockResolvedValue({
+        usage: 0,
+        latency: 0,
+        generation_time: 1,
+        finish_reason: 'stop',
+      });
+      findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
+      chargeLlmUsage.mockResolvedValue({ charge: { charged_amount: 50, calculated_amount: 50 } });
+      finalizePending.mockResolvedValue(null);
+      const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: vi.fn() };
+      log.child.mockReturnValue(log);
+      try {
+        startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+        await vi.advanceTimersByTimeAsync(5001);
+        expect(chargeLlmUsage).toHaveBeenCalledOnce();
+        expect(syncMocks.fetchGenerationData).not.toHaveBeenCalled();
+        expect(syncMocks.recordBillingOutcome).toHaveBeenCalledWith(
+          expect.objectContaining({ billingSettledAt: expect.any(String) })
+        );
+        expect(syncMocks.upsert).not.toHaveBeenCalled();
+      } finally {
+        stopChatHistorySyncJob();
+        syncMocks.keyAvailable = true;
+        syncMocks.readGenerationData.mockResolvedValue(null);
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('recovers a stale owner without an ID and leaves successful unknown calls for audit', async () => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    const input = syncInput();
+    syncMocks.pendingRows.mockResolvedValue([]);
+    syncMocks.listRows.mockResolvedValue([]);
+    syncMocks.missingRows.mockResolvedValue([
+      { ...input.record, status: 'success', generationId: null, callProvider: 'openrouter' },
+    ]);
+    syncMocks.staleRows.mockResolvedValue([
+      {
+        ...input.record,
+        id: 'stale-row',
+        status: 'streaming',
+        session_id: 'session-1',
+        generationId: null,
+        callProvider: null,
+      },
+    ]);
+    syncMocks.recoverStale.mockResolvedValue(undefined);
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5001);
+      expect(syncMocks.recoverStale).toHaveBeenCalledExactlyOnceWith('session-1');
+      expect(chargeLlmUsage).not.toHaveBeenCalled();
+      expect(syncMocks.fetchGenerationData).not.toHaveBeenCalled();
+      expect(log.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'chathistory_sync.identity_missing' }),
+        expect.any(String)
+      );
+    } finally {
+      stopChatHistorySyncJob();
+      syncMocks.staleRows.mockResolvedValue([]);
+      vi.useRealTimers();
+    }
+  });
+});
+
+it('closes a determined failed fixed-tier call with no generation ID using its original charge key', async () => {
+  const input = syncInput({ status: 'stream_interrupted', finishReason: 'cancelled' });
+  findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
+  chargeLlmUsage.mockResolvedValue({ charge: { charged_amount: 0, calculated_amount: 50 } });
+  finalizePending.mockResolvedValue(null);
+  await expect(reconcileCharge({ ...input, generationId: null })).resolves.toMatchObject({
+    settled: true,
+    deductionRate: 0,
+  });
+  expect(lastCharge()).toMatchObject({ chargeId: 'charge-1', generationId: null });
+  expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
+});
+
+it('uses a proven Venice detail source when a legacy snapshot omitted provider', async () => {
+  const input = syncInput({ finishReason: 'stop' });
+  findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
+  chargeLlmUsage.mockResolvedValue({ charge: { charged_amount: 50, calculated_amount: 50 } });
+  finalizePending.mockResolvedValue(null);
+  await reconcileCharge({ ...input, record: { ...input.record, callProvider: 'venice' } });
+  expect(lastCharge().metadata).toMatchObject({ provider: 'venice' });
 });

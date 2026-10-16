@@ -625,3 +625,56 @@ describe('cancellation, deadlines and billing arbitration', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('pre-dispatch recovery persistence', () => {
+  it('stops before upstream and releases quota when recovery facts cannot persist', async () => {
+    quotaState.granted = true;
+    quotaState.finalize.mockResolvedValue({ status: 'released' });
+    const upstream = stubUpstream(sseResponse([DELTA('reply'), 'data: [DONE]\n\n']));
+    const { execute } = await import('./execute.js');
+    await expect(
+      execute(
+        request(),
+        {
+          onBeforeDispatch: async () => {
+            throw new Error('snapshot storage failed');
+          },
+        },
+        fakeLogger()
+      )
+    ).rejects.toThrow('snapshot storage failed');
+    expect(upstream).not.toHaveBeenCalled();
+    expect(quotaState.finalize).toHaveBeenCalledWith(false);
+  });
+});
+
+it('preserves a fully read non-stream response when ID persistence fails', async () => {
+  stubUpstream(
+    new Response(
+      JSON.stringify({
+        id: 'body-id',
+        choices: [{ message: { content: 'received full reply' }, finish_reason: 'stop' }],
+      })
+    )
+  );
+  const onBeforeSettle = vi.fn(async (value: import('./upstream.js').SseTapResult) => value);
+  const result = await execute(
+    request({ stream: false }),
+    {
+      onGenerationId: async () => {
+        throw new Error('ID storage failed');
+      },
+      onBeforeSettle,
+    },
+    fakeLogger()
+  );
+  expect(result).toMatchObject({ status: 'stream_interrupted', content: 'received full reply' });
+  expect(onBeforeSettle).toHaveBeenCalledWith(
+    expect.objectContaining({ content: 'received full reply', completed: false }),
+    expect.any(Function)
+  );
+  expect(savedHistory().at(-1)).toMatchObject({
+    assistant_reply: 'received full reply',
+    status: 'stream_interrupted',
+  });
+});

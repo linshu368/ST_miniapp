@@ -233,6 +233,13 @@ export async function execute(
       hooks?.onError?.(err);
       return finish(failed());
     }
+    await hooks?.onBeforeDispatch?.({
+      ...plan.snapshot,
+      billing_mode: 'fixed_tier',
+      provider: billing.provider,
+      provider_model_id: billing.providerModelId,
+    });
+    signal.throwIfAborted();
     let upstreamRes: Response;
     const upstreamStartedAt = Date.now();
     try {
@@ -288,10 +295,16 @@ export async function execute(
       return finish(failed({ upstreamStatus: upstreamRes.status }));
     }
 
-    // 过了这一行就不会再有 HTTP 状态码级别的失败，调用方可以安全地写出响应头。
-    hooks?.onStreamOpen?.();
-
     const headerGenerationId = upstreamRes.headers.get('x-generation-id');
+    if (headerGenerationId) {
+      try {
+        await hooks?.onGenerationId?.(headerGenerationId);
+      } catch (err) {
+        await upstreamRes.body?.cancel().catch(() => undefined);
+        throw err;
+      }
+    }
+    hooks?.onStreamOpen?.();
 
     if (!request.stream) {
       return finish(
@@ -366,6 +379,7 @@ export async function execute(
     let firstTokenSeen = false;
     const tap = createSseTap({
       generationId: headerGenerationId,
+      onGenerationId: hooks?.onGenerationId,
       onDelta: (delta) => {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
@@ -635,6 +649,48 @@ async function consumeNonStream(input: {
       modelOpenRouterId: billing.openRouterModelId,
       upstreamStatus: upstreamRes.status,
     };
+  }
+
+  if (generationId && generationId !== input.headerGenerationId) {
+    try {
+      await hooks?.onGenerationId?.(generationId);
+    } catch (err) {
+      // The complete body has already been read. Preserve it even when identity
+      // storage fails; the local failure must not erase an observed response.
+      const release = async () => {
+        await reservation.finalize(false);
+      };
+      await release();
+      const observed: SseTapResult = {
+        completed: false,
+        content: assistantReply ?? '',
+        deltaCount: assistantReply ? 1 : 0,
+        generationId,
+        finishReason: 'error',
+        usage,
+        responseMetadata,
+      };
+      const outcome = hooks?.onBeforeSettle
+        ? await hooks.onBeforeSettle(observed, release)
+        : observed;
+      saveHistory({
+        assistant_reply: outcome.content || null,
+        status: 'stream_interrupted',
+        upstream_status: null,
+        generation_id: generationId,
+        finish_reason: outcome.finishReason,
+      });
+      hooks?.onError?.(toError(err));
+      return {
+        status: 'stream_interrupted',
+        content: outcome.content,
+        generationId,
+        finishReason: outcome.finishReason,
+        chargeId,
+        modelId: billing.modelId,
+        modelOpenRouterId: billing.openRouterModelId,
+      };
+    }
   }
 
   const hasContent = typeof assistantReply === 'string' && assistantReply.trim().length > 0;

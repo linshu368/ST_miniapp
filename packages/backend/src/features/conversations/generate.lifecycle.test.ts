@@ -14,10 +14,13 @@ const mocks = vi.hoisted(() => ({
   find: vi.fn(),
   execute: vi.fn(),
   ensureGenerationId: vi.fn(),
+  ensurePlaceholder: vi.fn(),
+  saveSnapshot: vi.fn(),
 }));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
   ConversationHistoryRepository: class {
     setPendingRequestId = mocks.pendingRequest;
+    saveBillingSnapshot = mocks.saveSnapshot;
     recoverStaleStreaming = mocks.recover;
     startTurn = mocks.start;
     startRegeneration = mocks.regenerate;
@@ -30,6 +33,7 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
 vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
   OpenRouterChatHistoryRepository: class {
     ensureGenerationId = mocks.ensureGenerationId;
+    ensurePlaceholder = mocks.ensurePlaceholder;
   },
 }));
 vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
@@ -207,7 +211,13 @@ describe('turn lifecycle recovery', () => {
 
     await runConversationTurn(input({ kind: 'send', content: 'original' }));
 
+    const hooks = mocks.execute.mock.calls[0]?.[1];
+    await hooks.onBeforeDispatch({ provider: 'openrouter' });
+    await hooks.onGenerationId('generation-1');
+    expect(mocks.saveSnapshot).toHaveBeenCalledWith('reply', { provider: 'openrouter' });
+    expect(mocks.ensurePlaceholder).toHaveBeenCalledWith('reply');
     expect(mocks.ensureGenerationId).toHaveBeenCalledWith('reply', 'generation-1');
+    expect(mocks.finalize.mock.calls.every(([value]) => !('generationId' in value))).toBe(true);
   });
 
   it('failed pending-identity storage terminally closes the new turn without generating', async () => {

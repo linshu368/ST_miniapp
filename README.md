@@ -161,7 +161,9 @@ pnpm supabase:link:test
 - 测试库与生产库不保证同构。数据库结构参考必须标注环境、时间和证据，不能拿 migration 当实库快照。
 - 详细规则见 [Supabase spec](.trellis/spec/database/supabase/index.md)。
 
-OpenRouter 调用明细由 `experience.openrouter_chat_history` 保存，11 个元数据字段与 Backend 消费者统一使用厂商原名（包括可选 `usage_cache`）；`llm_generation_id`、`llm_generation_data` 保持现名。部署本分支的新 Backend 前，须先逐环境执行 `20261016_openrouter_original_metadata_fields.sql`，再验证新发送/重生成与迟到回捞。该 expand migration 保留旧别名用于发布兼容，原名为新代码的权威字段；旧 writer 退出后须核对切换窗口并单独清理别名。主表业务终态与计费列仍由原仓储维护。远端执行状态以任务记录和目标库账本为准。生产逐文件顺序、容量停止条件、切换窗口和恢复见 [发布清单](.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md)。2026-10-16 核验：TEST 四份 migration 已记账，Production 尚无新表/四份账本；T4 本地修复未提交/部署，T3 失败场景未全部验收。旧列和依赖视图保留，不把旧列清理作为本次兼容发布条件。
+OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 11 个厂商原名字段（`usage_cache` 可缺失，0 保留），`llm_generation_id`/`llm_generation_data` 保持现名。本地 Backend 已停止读写主表 12 个调用列；正常对话读取显式业务投影，上游前保存快照/对应 provider 占位，首次 ID 持久化后再转发该 chunk；已收到正文不会因 metadata 写失败清空。主表业务 `llm_finish_reason`、正文/历史和计费事实继续保留，Venice 从自己的明细提供 ID，mapper/表结构不变。
+
+本轮新增 migration 的顺序为安全 catch-up → provider 视图 → 独立 DROP；先部署无旧列依赖 Backend、确认旧副本退出和窗口覆盖，再逐文件执行。专表旧别名不在本轮清理范围。隔离 PG17/PostgREST 真删列回归通过不等于真实 TEST/Production 验收；远端执行状态与恢复门禁见 [发布清单](.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md) 和 [T8 本地报告](.trellis/tasks/10-15-openrouter-history-extract/research/t8-local-retirement-verification-2026-10-16.md)。2026-10-16 交付前复核 PR429 仍 OPEN、Production 仍 c759f6de；两库四份历史 migration 已记账且 checksum 对齐，本轮三份未远端执行。未知历史、非空旧 raw JSON、运行/外部消费者/容量门禁未过时禁止 DROP。
 
 文本后处理快照的版本外键需要 `postgres` 执行 `SELECT FOR KEY SHARE`。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 仅授予 owner `UPDATE(version)` 以满足行锁检查，同时恢复 API 角色最小权限；快照仍由 `ENABLE ALWAYS` 触发器禁止直接修改。账本 `applied` 不代替权限、开轮/重生成及回复回读验收，新迁移仍须逐环境手工执行。
 
