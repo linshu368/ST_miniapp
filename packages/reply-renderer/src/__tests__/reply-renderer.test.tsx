@@ -266,6 +266,77 @@ describe('markdown and trusted slots', () => {
     expect(style).toContain(`.${scope}`);
   });
 
+  it('mounts block slots beside prose while preserving Markdown code and list contexts', async () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rules: [blockRule()],
+    });
+    const content = [
+      'before betaBlock after',
+      'betaBlock',
+      '',
+      '`betaBlock`',
+      '',
+      '```',
+      'betaBlock',
+      '```',
+      '',
+      '- betaBlock beside list text',
+      '',
+      '> betaBlock beside quoted text',
+    ].join('\n');
+    const view = render(element(content, artifact));
+    await waitForState(view.container, 'applied');
+    expect(view.container.querySelectorAll(`.${ruleScopeClass('message', 'block')}`)).toHaveLength(
+      2
+    );
+    expect(view.container.querySelector('code .rp-unit')).toBeNull();
+    expect(view.container.querySelector('code')?.textContent).toBe('betaBlock');
+    expect(view.container.querySelector('pre')?.textContent).toContain('betaBlock');
+    expect(view.container.querySelector('li div')).toBeNull();
+    expect(view.container.querySelector('li')?.textContent).toContain('betaBlock beside list text');
+    expect(view.container.querySelector('blockquote div')).toBeNull();
+    expect(view.container.querySelector('blockquote')?.textContent).toContain(
+      'betaBlock beside quoted text'
+    );
+    expect(view.container.textContent).toContain('before betaBlock after');
+  });
+
+  it('mounts status and memory separated by one newline without exposing protocol markers', async () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [],
+    });
+    const content = [
+      '正文',
+      '[status]',
+      '<details><summary>当前状态</summary>',
+      '```markdown',
+      '心跳仍快',
+      '```',
+      '</details>',
+      '[/status]',
+      '[memory]',
+      '<details><summary>工作记忆</summary>',
+      '```markdown',
+      '当前档案数目：0',
+      '```',
+      '</details>',
+      '[/memory]',
+      '后文',
+    ].join('\n');
+    const view = render(element(content, artifact));
+    await waitForState(view.container, 'applied');
+    expect(view.container.querySelector('.rp-unit--status')).not.toBeNull();
+    expect(view.container.querySelector('.rp-unit--memory')).not.toBeNull();
+    expect(view.container.textContent).toContain('正文');
+    expect(view.container.textContent).toContain('后文');
+    expect(view.container.textContent).not.toMatch(/\[\/?(?:status|memory)\]|<details>|```/);
+  });
+
   it('keeps a valid memory block renderable when recovering an unclosed status block', async () => {
     const content = [
       '[status]',
