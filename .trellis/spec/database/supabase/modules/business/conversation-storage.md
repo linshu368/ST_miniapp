@@ -35,11 +35,15 @@ last_verified_at: 2026-09-30
 
 ## 关键节点与约束
 
+`experience.openrouter_chat_history` 按唯一 `chat_history_id` + 父 FK `ON DELETE CASCADE` 保存 OpenRouter 调用元数据。`20261016_openrouter_original_metadata_fields.sql` 以 expand 方式将 11 列改用厂商原名；`llm_generation_id`、`llm_generation_data`、主键与审计字段保持现名。旧别名仅用于迁移窗口兼容；新 Backend 不读写别名，旧 writer 退出后需补核窗口数据，清理另交 contract migration。主表业务 `llm_finish_reason` 和计费事实保持原归属；Venice 表不调整。文件声明不等于目标环境已执行。
+
 “当前”只认 `miniapp_text_postprocess_config` 指针，不使用 `MAX(version)`。配置缺失、协议错版、artifact 快照不可用或 RPC 未部署时整轮失败，不留下 history 半写；发布顺序为 migration → Backend。
 
 ## 验证方式
 
 ## 已知缺口与待核验项
+
+已交付主表12调用列与专表11重复别名的独立contract，保留主表业务llm_finish_reason/计费及专表ID/data；PG17+PostgREST双处真删列后实际repository/视图读写通过。TEST catch-up/views已记账，两个DROP未执行；Production状态独立复核。旧raw JSON/历史分类及共享旧消费者退出仍是门禁，Venice旧账本漂移不修复。
 
 ## 关联模块
 
@@ -49,3 +53,7 @@ last_verified_at: 2026-09-30
 
 last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
 last_verified_at: 2026-09-14
+
+## T9 专表旧别名清理（本地实现，远端未执行）
+
+新增独立 `20261016_openrouter_chat_history_drop_legacy_aliases.sql`：删除11个重复别名，保留canonical原名列、llm_generation_id/data及UNIQUE/FK/ACL；仅填NULL原名安全字段、非空冲突/未知依赖/超过2000候选拒绝。显式删除8个旧别名CHECK，canonical CHECK保留。不把待回捞metadata空值判为失败，不改父行业务事实或Venice。可先清专表，主表DROP仍有独立历史JSON/结算和运行门禁；不搬raw JSON、不伪造结算。PG17/PostgREST双处真实删列回归见任务T9报告；真实环境覆盖与所有旧writer退出仍需独立验收。

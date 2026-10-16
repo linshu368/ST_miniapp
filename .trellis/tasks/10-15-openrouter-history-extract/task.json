@@ -1,0 +1,37 @@
+{
+  "id": "openrouter-history-extract",
+  "name": "openrouter-history-extract",
+  "title": "OpenRouter 元数据从 chat_history 拆表",
+  "description": "主表12个调用字段与OpenRouter专表11个重复别名清退；保留主表业务终态/计费及专表调用ID/受控诊断。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend database docs",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-15",
+  "completedAt": null,
+  "branch": "dev_openrouter_migrate",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/430",
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "PR430已合并f15fb73d，dev实际部署该SHA；T9用户授权本地实施及完成后提交推送。新增专表11旧别名独立contract、扩展双处真删列回归；最终测试/审阅结果见T9报告。远端SQL/其他环境停止未执行。主表DROP原JSON/历史结算守卫保留，PR425共享TEST旧writer与历史治理仍属远端门禁。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}

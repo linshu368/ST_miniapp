@@ -24,6 +24,8 @@ import {
   type GenerationStatus,
 } from '../generation/index.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import { VeniceChatHistoryRepository } from '../../infrastructure/repositories/VeniceChatHistoryRepository.js';
+import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositories/OpenRouterChatHistoryRepository.js';
 import { TextPostprocessRepository } from '../text-postprocess/repository.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import {
@@ -66,6 +68,8 @@ export interface RunConversationTurnInput {
 let historyRepository: ConversationHistoryRepository | null = null;
 let characterRepository: CharacterCardRepository | null = null;
 let userSettingsRepository: MiniappUserSettingsRepository | null = null;
+let veniceHistoryRepository: VeniceChatHistoryRepository | null = null;
+let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
 
 function historyRecords(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
@@ -75,6 +79,9 @@ function characters(): CharacterCardRepository {
 }
 function userSettings(): MiniappUserSettingsRepository {
   return (userSettingsRepository ??= new MiniappUserSettingsRepository());
+}
+function openRouterHistory(): OpenRouterChatHistoryRepository {
+  return (openRouterHistoryRepository ??= new OpenRouterChatHistoryRepository());
 }
 
 export function toMessageStatus(status: GenerationStatus): SettledMessageStatus {
@@ -232,6 +239,24 @@ export async function runConversationTurn(
     const result = await execute(
       request,
       {
+        onBeforeDispatch: async (snapshot) => {
+          controller.signal.throwIfAborted();
+          await historyRecords().saveBillingSnapshot(turn.historyId, snapshot);
+          if (model.provider === 'openrouter')
+            await openRouterHistory().ensurePlaceholder(turn.historyId);
+          else
+            await (veniceHistoryRepository ??= new VeniceChatHistoryRepository()).ensurePlaceholder(
+              turn.historyId
+            );
+          controller.signal.throwIfAborted();
+        },
+        onGenerationId: async (generationId) => {
+          if (model.provider === 'openrouter')
+            await openRouterHistory().ensureGenerationId(turn.historyId, generationId);
+          else
+            await (veniceHistoryRepository ??=
+              new VeniceChatHistoryRepository()).ensureGenerationId(turn.historyId, generationId);
+        },
         onBeforeReserve: async (chargeId) => {
           controller.signal.throwIfAborted();
           await historyRecords().registerChargeId(turn.historyId, chargeId);
@@ -248,7 +273,6 @@ export async function runConversationTurn(
             content: observed.content,
             status: success ? 'success' : 'stream_interrupted',
             finishReason: observed.finishReason,
-            generationId: observed.generationId,
           });
           if (row.status === 'streaming') {
             // A cancel marker won the completion CAS; free quota must be released before
@@ -259,7 +283,6 @@ export async function runConversationTurn(
               content: observed.content,
               status: 'stream_interrupted',
               finishReason: row.llm_finish_reason ?? 'timeout',
-              generationId: observed.generationId,
             });
           }
           return normalizePersistedOutcome(observed, row.status, row.llm_finish_reason);
@@ -277,7 +300,6 @@ export async function runConversationTurn(
       status: current.llm_finish_reason === 'cancelled' ? 'stream_interrupted' : result.status,
       finishReason: current.llm_finish_reason === 'cancelled' ? 'cancelled' : result.finishReason,
       upstreamStatus: result.upstreamStatus ?? null,
-      generationId: result.generationId,
       chargeId: result.chargeId,
     });
     const status =
