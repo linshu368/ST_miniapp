@@ -36,6 +36,7 @@ import { applyLlmCharge } from './apply-charge.js';
 import { frozenLlmChargeMetadata } from './text-billing.js';
 import {
   buildGenerationMetadata,
+  type OpenRouterGenerationMetadata,
   fetchGenerationDataForSettlement,
   type GenerationData,
 } from './openrouter-metadata.js';
@@ -173,22 +174,17 @@ export async function runSettlement(
   const wantsUsageData =
     provider === 'openrouter' && Boolean(entry.generation_id) && entry.fixed_deduction > 0;
   let finishReason = entry.finish_reason ?? null;
-  // Main chat_history keeps OpenRouter metadata only. Venice metadata has a dedicated table.
-  let llmMetadata: Record<string, unknown> = {};
-  let providerMetadata: Record<string, unknown> = {};
+  let providerMetadata: OpenRouterGenerationMetadata | null = null;
+  let businessFinishReason: string | undefined;
 
   if (wantsUsageData) {
     const genData = await fetchUsageData(entry.generation_id as string, clog);
     if (genData) {
       providerMetadata = buildGenerationMetadata(genData);
-      llmMetadata = { ...providerMetadata };
-      if (typeof genData.finish_reason === 'string') {
+      if (providerMetadata.finish_reason !== null) {
         // 上游的 finish_reason 比 SSE tap 的观测值权威，拿到就用它。
-        finishReason = genData.finish_reason;
-      } else {
-        // 上游统计还没给出 finish_reason。这一列归 finalizeTurn（写的是 tap 观测值），
-        // 这里不能把它覆盖成 null——那会抹掉一个已知正确的值，还会让本行反复被回捞。
-        delete llmMetadata.llm_finish_reason;
+        finishReason = providerMetadata.finish_reason;
+        businessFinishReason = providerMetadata.finish_reason;
       }
     }
   }
@@ -197,7 +193,7 @@ export async function runSettlement(
   // upstream stop metadata; otherwise later reconciliation could reopen billing.
   if (entry.finish_reason === 'cancelled' || entry.finish_reason === 'timeout') {
     finishReason = entry.finish_reason;
-    llmMetadata.llm_finish_reason = entry.finish_reason;
+    businessFinishReason = entry.finish_reason;
   }
 
   if (!entry.user_id) {
@@ -205,6 +201,7 @@ export async function runSettlement(
   }
 
   let actualDeduction = 0;
+  let intendedDeduction: number | undefined;
   let billingSettled = false;
   const willCharge = shouldRecordUsageCharge(entry.status);
 
@@ -228,8 +225,9 @@ export async function runSettlement(
 
   // 每轮生成都保留一条明细；只有 finish_reason=stop 的正常完整回复才扣星尘。
   if (willCharge) {
-    const round = await chargeRound({ entry, llmMetadata, finishReason, clog });
+    const round = await chargeRound({ entry, providerMetadata, finishReason, clog });
     actualDeduction = round.chargedAmount;
+    intendedDeduction = round.intendedDeduction;
     billingSettled = round.settled;
   }
 
@@ -275,7 +273,8 @@ export async function runSettlement(
     await history().recordBillingOutcome({
       historyId: entry.history_id,
       deductionRate: actualDeduction,
-      metadata: llmMetadata,
+      intendedDeduction,
+      finishReason: businessFinishReason,
       ...(billingSettled ? { billingSettledAt: new Date().toISOString() } : {}),
     });
   } catch (err) {
@@ -292,16 +291,12 @@ export async function runSettlement(
     return;
   }
 
-  if (
-    provider === 'openrouter' &&
-    entry.generation_id &&
-    Object.keys(providerMetadata).length > 0
-  ) {
+  if (provider === 'openrouter' && entry.generation_id && providerMetadata) {
     try {
       await openRouterHistory().upsert({
         chat_history_id: entry.history_id,
         llm_generation_id: entry.generation_id,
-        // Billing mutations and the business terminal reason belong only to the parent.
+        // Billing outcomes never mutate the provider's original response fields.
         ...providerMetadata,
       });
     } catch (err) {
@@ -380,17 +375,16 @@ async function fetchUsageData(
 /** 实扣与免费额度收口。settled 表示已不在等 finish_reason，可以打结算完成。 */
 async function chargeRound(input: {
   entry: GenerationSettlementEntry;
-  llmMetadata: Record<string, unknown>;
+  providerMetadata: OpenRouterGenerationMetadata | null;
   finishReason: string | null;
   clog: FastifyBaseLogger;
-}): Promise<{ chargedAmount: number; settled: boolean }> {
-  const { entry, llmMetadata, finishReason, clog } = input;
+}): Promise<{ chargedAmount: number; intendedDeduction: number; settled: boolean }> {
+  const { entry, providerMetadata, finishReason, clog } = input;
   if ((entry.provider ?? 'openrouter') !== 'openrouter' && finishReason === null) {
-    llmMetadata.llm_intended_deduction = 0;
-    return { chargedAmount: 0, settled: true };
+    return { chargedAmount: 0, intendedDeduction: 0, settled: true };
   }
   const userId = entry.user_id as string;
-  const usageCost = llmMetadata.llm_usage;
+  const usageCost = providerMetadata?.usage;
   const billingDecision = getInitialBillingDecision({
     usageCost,
     exchangeRate: entry.exchange_rate,
@@ -399,11 +393,10 @@ async function chargeRound(input: {
   });
   const { hasActualUsage } = billingDecision;
   const intendedDeduction = billingDecision.amount;
-  llmMetadata.llm_intended_deduction = intendedDeduction;
 
   const observedModel =
-    typeof llmMetadata.llm_model === 'string' && llmMetadata.llm_model.trim()
-      ? llmMetadata.llm_model
+    typeof providerMetadata?.model === 'string' && providerMetadata.model.trim()
+      ? providerMetadata.model
       : null;
   const waitingForFinishReason =
     (entry.provider ?? 'openrouter') === 'openrouter' &&
@@ -449,7 +442,11 @@ async function chargeRound(input: {
       },
       'LLM usage billing record created'
     );
-    return { chargedAmount: result.chargedAmount, settled: !waitingForFinishReason };
+    return {
+      chargedAmount: result.chargedAmount,
+      intendedDeduction,
+      settled: !waitingForFinishReason,
+    };
   } catch (chargeErr) {
     clog.error(
       {
@@ -461,7 +458,7 @@ async function chargeRound(input: {
       },
       'atomic LLM usage charge failed'
     );
-    return { chargedAmount: 0, settled: false };
+    return { chargedAmount: 0, intendedDeduction, settled: false };
   }
 }
 

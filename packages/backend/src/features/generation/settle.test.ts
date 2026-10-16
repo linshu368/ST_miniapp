@@ -55,14 +55,9 @@ vi.mock('./venice-metadata.js', () => ({
   }),
 }));
 
-vi.mock('./openrouter-metadata.js', () => ({
+vi.mock('./openrouter-metadata.js', async () => ({
+  ...(await vi.importActual<typeof import('./openrouter-metadata.js')>('./openrouter-metadata.js')),
   fetchGenerationDataForSettlement,
-  buildGenerationMetadata: (genData: Record<string, unknown>) => ({
-    llm_provider_name: genData.provider_name ?? null,
-    llm_model: genData.model ?? null,
-    llm_usage: genData.usage ?? null,
-    llm_finish_reason: genData.finish_reason ?? null,
-  }),
 }));
 
 vi.mock('../../lib/supabase.js', () => ({
@@ -214,7 +209,7 @@ describe('runSettlement', () => {
       expect.objectContaining({ chat_history_id: 'row-1', llm_provider_name: 'venice' })
     );
     expect(recordBillingOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({ historyId: 'row-1', metadata: { llm_intended_deduction: 50 } })
+      expect.objectContaining({ historyId: 'row-1', intendedDeduction: 50 })
     );
   });
 
@@ -232,11 +227,11 @@ describe('runSettlement', () => {
     );
     expect(recordBillingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: expect.objectContaining({ llm_finish_reason: 'cancelled' }),
+        finishReason: 'cancelled',
       })
     );
     expect(upsertOpenRouterHistory).toHaveBeenCalledWith(
-      expect.objectContaining({ llm_finish_reason: 'stop' })
+      expect.objectContaining({ finish_reason: 'stop' })
     );
   });
 
@@ -253,17 +248,29 @@ describe('runSettlement', () => {
     expect(upsertOpenRouterHistory).toHaveBeenCalledWith(
       expect.objectContaining({
         chat_history_id: 'row-1',
-        llm_provider_name: 'CoreWeave',
+        provider_name: 'CoreWeave',
         llm_generation_id: 'gen-1',
-        llm_finish_reason: 'stop',
-        llm_usage: 0.001,
+        finish_reason: 'stop',
+        usage: 0.001,
       })
     );
     expect(upsertOpenRouterHistory.mock.calls[0]?.[0]).not.toHaveProperty('llm_intended_deduction');
     expect(recordBillingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: expect.objectContaining({ llm_usage: 0.001 }),
+        intendedDeduction: 50,
+        finishReason: 'stop',
       })
+    );
+    expect(recordBillingOutcome.mock.calls[0]?.[0]).not.toHaveProperty('metadata');
+    expect(upsertOpenRouterHistory.mock.calls[0]?.[0]).not.toHaveProperty('llm_usage');
+  });
+
+  it('keeps free settlement separate from optional OpenRouter statistics', async () => {
+    await runSettlement(entry({ fixed_deduction: 0 }), fakeLog());
+    expect(fetchGenerationDataForSettlement).not.toHaveBeenCalled();
+    expect(upsertOpenRouterHistory).not.toHaveBeenCalled();
+    expect(recordBillingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ intendedDeduction: 0, billingSettledAt: expect.any(String) })
     );
   });
 });

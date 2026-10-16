@@ -1,9 +1,9 @@
-import type { ChatHistorySyncRow, LlmBillingSnapshot } from './ConversationHistoryRepository.js';
+import type { ChatHistorySyncRow } from './ConversationHistoryRepository.js';
+import type { OpenRouterGenerationMetadata } from '../../features/generation/openrouter-metadata.js';
 import { getDomainDb } from '../../lib/supabase.js';
 
-export type OpenRouterChatHistoryMetadata = Record<string, unknown> & {
+export type OpenRouterChatHistoryMetadata = Partial<OpenRouterGenerationMetadata> & {
   chat_history_id: string;
-  llm_provider_name?: string | null;
   llm_generation_id?: string | null;
 };
 
@@ -53,7 +53,7 @@ export class OpenRouterChatHistoryRepository {
       .not('llm_generation_id', 'is', null)
       .gte('created_at', input.since)
       .or(
-        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null'
+        'llm_generation_data.is.null,usage.is.null,latency.is.null,generation_time.is.null,finish_reason.is.null'
       )
       .order('created_at', { ascending: false })
       .limit(input.limit);

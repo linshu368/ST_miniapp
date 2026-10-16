@@ -268,6 +268,10 @@ Admin `/api/admin/text-postprocess*` 提供状态/历史、草稿保存/丢弃�
 
 `settle.ts` 是 fire-and-forget 的：它第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），挂在请求里会让用户在回复已经流完之后继续等。它与请求内同步的 `finalizeTurn` 写同一行 `chat_history` 的**不同列**，列归属见 `ConversationHistoryRepository` 头注释，因此谁先落地都不会互相覆盖。
 
+OpenRouter 的原始调用元数据写入 `experience.openrouter_chat_history`，通过唯一 `chat_history_id` 与主表一对一关联，父行删除时级联删除。获取 generation ID 后幂等建占位；结算和 24 小时回捞使用同一 mapper，并统一消费厂商原名：`provider_name`、`finish_reason`、`usage`、可选 `usage_cache`、四个 `native_tokens_*`、`latency`、`generation_time`、`model`。保留 `llm_generation_id` 与经过内容过滤的 `llm_generation_data`。计费函数单独返回金额/结算结果，主表仓储显式接收这些结果；上游 `finish_reason` 与主表业务 `llm_finish_reason` 各有归属，取消/超时优先。Venice 的字段映射与专表保持原有结构。
+
+字段发布依赖 `20261016_openrouter_original_metadata_fields.sql` 的 expand migration：新增原名列并复制已有值，保留旧别名与权限/FK；新 Backend 只使用原名。PR 自动部署前应先推送仅含 migration 的提交、在 TEST 单文件执行，再推 Backend；不能将两者同时推送后等待迁移补救。旧 writer 退出后核对并补齐切换窗口，再另行评估删除专表别名。主表旧列及视图切换仍有独立门禁；migration 文件存在不表示 TEST/Production 已执行。
+
 计费要点：
 
 - 定档扣费（`billing_mode: 'fixed_tier'`，配置在 `runtime_config.llm_pricing_config`；084/085 之后模型目录用 `is_free` 标免费模型，不再有展示价与 markup）。

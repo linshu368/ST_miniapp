@@ -16,6 +16,8 @@ TEST `zoqelpfhurwehlvypryl` 的 `experience.chat_history` 现存 13 个 OpenRout
 
 ## 验收标准
 
+2026-10-16 已审核追加要求：OpenRouter 专表中的 11 个调用元数据字段及 Backend 所有相应消费者统一采用厂商原名（移除 `llm_` 前缀）。`llm_generation_id`、`llm_generation_data`、内部主键与关联/审计字段保持不变。`usage_cache` 保留厂商原名，不新增 `cache_discount`。主表业务终态与计费列保持现有业务含义；OpenRouter 元数据对象不得被计费编排加入主表字段。Venice 的元数据结构和行为不变。旧别名仅用于发布窗口兼容，不能成为第二份权威模型。
+
 - [ ] TEST 上新表结构、唯一/FK/级联、索引、约束、授权和回填一致性经过前后核验；无法归属的历史行单独计数，不误迁移。
 - [ ] OpenRouter 新发送、重生成、免费/付费、成功/取消/超时/上游错误及用量迟到均保持原对话和计费行为；重复结算/回捞不产生重复明细或扣费。
 - [ ] 回捞扫描、`current_chat_history` 视图及所有消费者已切到新位置；主表旧列仅在应用和数据库无引用、目标环境无读写证据后清理。旧 Backend 的兼容边界和停止条件已记录。

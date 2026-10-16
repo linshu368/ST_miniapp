@@ -150,20 +150,21 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
         continue;
       }
 
-      const llmMetadata = buildGenerationMetadata(genData);
-      const providerMetadata = { ...llmMetadata };
-      const finishReason = typeof genData.finish_reason === 'string' ? genData.finish_reason : null;
+      const providerMetadata = buildGenerationMetadata(genData);
+      // Local cancellation/deadline remains the billing outcome even if upstream later stops.
+      const finishReason =
+        record.llm_finish_reason === 'cancelled' || record.llm_finish_reason === 'timeout'
+          ? record.llm_finish_reason
+          : providerMetadata.finish_reason;
 
-      let settled = false;
+      let reconciled: ReconciledChargeResult;
       try {
-        const reconciled = await reconcileCharge({
+        reconciled = await reconcileCharge({
           record,
           generationId,
-          genData,
+          genData: { usage: providerMetadata.usage, model: providerMetadata.model },
           finishReason,
-          llmMetadata,
         });
-        settled = reconciled.settled;
       } catch (reconcileErr) {
         // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
         log.error(
@@ -181,11 +182,13 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       }
 
       try {
-        await history().applyGenerationMetadata(
-          record.id,
-          llmMetadata,
-          settled ? new Date().toISOString() : undefined
-        );
+        await history().recordBillingOutcome({
+          historyId: record.id,
+          intendedDeduction: reconciled.intendedDeduction,
+          deductionRate: reconciled.deductionRate,
+          finishReason,
+          ...(reconciled.settled ? { billingSettledAt: new Date().toISOString() } : {}),
+        });
       } catch (err) {
         log.error(
           {
@@ -204,7 +207,6 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
         await openRouterHistory().upsert({
           chat_history_id: record.id,
           llm_generation_id: generationId,
-          // reconcileCharge mutates the parent billing metadata; do not copy it to the detail.
           ...providerMetadata,
         });
       } catch (err) {
@@ -258,23 +260,14 @@ async function reconcileNonOpenRouterRecord(input: {
     typeof record.llm_billing_snapshot?.provider_model_id === 'string'
       ? record.llm_billing_snapshot.provider_model_id
       : record.model;
-  const llmMetadata: Record<string, unknown> = {
-    llm_provider_name: provider,
-    llm_model: model,
-    llm_finish_reason: finishReason,
-    llm_generation_data: { provider, model, finish_reason: finishReason },
-  };
-
-  let settled = false;
+  let reconciled: ReconciledChargeResult;
   try {
-    const reconciled = await reconcileCharge({
+    reconciled = await reconcileCharge({
       record,
       generationId,
       genData: { model, finish_reason: finishReason },
       finishReason,
-      llmMetadata,
     });
-    settled = reconciled.settled;
   } catch (err) {
     log.error(
       {
@@ -292,11 +285,13 @@ async function reconcileNonOpenRouterRecord(input: {
   }
 
   try {
-    await history().applyGenerationMetadata(
-      record.id,
-      llmMetadata,
-      settled ? new Date().toISOString() : undefined
-    );
+    await history().recordBillingOutcome({
+      historyId: record.id,
+      intendedDeduction: reconciled.intendedDeduction,
+      deductionRate: reconciled.deductionRate,
+      finishReason,
+      ...(reconciled.settled ? { billingSettledAt: new Date().toISOString() } : {}),
+    });
   } catch (err) {
     log.error(
       {
@@ -312,11 +307,17 @@ async function reconcileNonOpenRouterRecord(input: {
     return 'not_ready';
   }
 
-  return settled ? 'settled' : 'not_ready';
+  return reconciled.settled ? 'settled' : 'not_ready';
+}
+
+interface ReconciledChargeResult {
+  settled: boolean;
+  intendedDeduction?: number;
+  deductionRate?: number;
 }
 
 /**
- * 结算这一行对应的计费记录，并把结算金额并进要回写的元数据。
+ * 结算这一行对应的计费记录，单独返回主表金额，保留上游元数据不变。
  *
  * 定档：finish_reason 到齐后走 applyLlmCharge（与 settle 同一套标签）。
  * 无 charge 行时按请求时快照重建；已 charged / free 的行也重入以补额度收口和金额回写。
@@ -338,9 +339,8 @@ export async function reconcileCharge(input: {
   generationId: string;
   genData: Record<string, unknown>;
   finishReason: string | null;
-  llmMetadata: Record<string, unknown>;
-}): Promise<{ settled: boolean }> {
-  const { record, generationId, genData, finishReason, llmMetadata } = input;
+}): Promise<ReconciledChargeResult> {
+  const { record, generationId, genData, finishReason } = input;
   const chargeId = record.llm_charge_id;
   if (typeof chargeId !== 'string' || chargeId.length === 0) return { settled: false };
 
@@ -361,9 +361,11 @@ export async function reconcileCharge(input: {
         calculatedAmount: intendedDeduction,
         metadata: { source: 'chat_history_sync' },
       });
-      llmMetadata.llm_intended_deduction = intendedDeduction;
-      llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
-      return { settled: true };
+      return {
+        settled: true,
+        intendedDeduction,
+        deductionRate: Number(reconciled.charge.charged_amount),
+      };
     }
     return { settled: false };
   }
@@ -383,9 +385,11 @@ export async function reconcileCharge(input: {
   if (!command) return { settled: false };
 
   const result = await applyLlmCharge(command);
-  llmMetadata.llm_intended_deduction = result.calculatedAmount;
-  llmMetadata.deduction_rate = result.chargedAmount;
-  return { settled: true };
+  return {
+    settled: true,
+    intendedDeduction: result.calculatedAmount,
+    deductionRate: result.chargedAmount,
+  };
 }
 
 function buildFixedTierChargeCommand(input: {

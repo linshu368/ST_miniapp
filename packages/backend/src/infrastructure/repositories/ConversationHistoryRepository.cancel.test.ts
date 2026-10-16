@@ -151,8 +151,9 @@ describe('persisted cancellation/completion arbitration', () => {
 
   it('upstream stats cannot overwrite a persisted cancellation reason', async () => {
     state.rows[0] = row({ status: 'stream_interrupted', llm_finish_reason: 'cancelled' });
-    await new ConversationHistoryRepository().applyGenerationMetadata('reply', {
-      llm_finish_reason: 'stop',
+    await new ConversationHistoryRepository().recordBillingOutcome({
+      historyId: 'reply',
+      finishReason: 'stop',
     });
     expect(state.rows[0]?.llm_finish_reason).toBe('cancelled');
   });

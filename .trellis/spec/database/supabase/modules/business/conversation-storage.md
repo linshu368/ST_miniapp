@@ -35,6 +35,8 @@ last_verified_at: 2026-09-30
 
 ## 关键节点与约束
 
+`experience.openrouter_chat_history` 按唯一 `chat_history_id` + 父 FK `ON DELETE CASCADE` 保存 OpenRouter 调用元数据。`20261016_openrouter_original_metadata_fields.sql` 以 expand 方式将 11 列改用厂商原名；`llm_generation_id`、`llm_generation_data`、主键与审计字段保持现名。旧别名仅用于迁移窗口兼容；新 Backend 不读写别名，旧 writer 退出后需补核窗口数据，清理另交 contract migration。主表业务 `llm_finish_reason` 和计费事实保持原归属；Venice 表不调整。文件声明不等于目标环境已执行。
+
 “当前”只认 `miniapp_text_postprocess_config` 指针，不使用 `MAX(version)`。配置缺失、协议错版、artifact 快照不可用或 RPC 未部署时整轮失败，不留下 history 半写；发布顺序为 migration → Backend。
 
 ## 验证方式

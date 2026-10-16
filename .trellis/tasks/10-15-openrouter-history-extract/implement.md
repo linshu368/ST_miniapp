@@ -1,5 +1,7 @@
 # 执行计划（待审阅）
 
+2026-10-16 字段名调整已由用户审核并授权实现。先完成现有任务内 T2R：新增 expand migration → OpenRouter 原名类型/仓储/结算/回捞消费者 → 计费输出与原始元数据分离 → 扩展现有回归与本地迁移验证 → 同步文档与结果。远端 migration、提交/推送和部署不在本次本地实现步骤中自动执行；新 Backend 依赖该 migration。T3/T4 状态按真实验收保留。
+
 1. 复核当前分支、目标库、迁移账本、全部 DB/代码消费者和历史行可归属规则；形成 TEST/Production 各自的前置结构记录。若归属或旧 Backend 兼容未明确，暂停删列阶段。
 2. 在 `packages/shared/migrations/` 新增一张 `experience.openrouter_chat_history` 的前向 migration，并在 Backend 生成/结算/回捞仓储接入占位与幂等补齐。主表业务结束原因及计费事实仍走原路径；不新增公开 DTO 或跨层依赖。
 3. 在 TEST 按文件逐一执行并验证 shape、权限/RLS、FK、唯一性、重复 upsert、失败与并发路径；安全分批回填已确认 OpenRouter 的历史行，核对缺失、空值、重复和 raw JSON 内容。改回捞及 `current_chat_history` 消费者后再评估旧列清理，清理另设停止点。
