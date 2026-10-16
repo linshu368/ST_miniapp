@@ -18,3 +18,56 @@
 4. 运行 Backend 全测试、Shared 测试、workspace typecheck/build、lint/import/legacy/migrations、本地迁移回归。人工 TEST 验收继续独立保留；本地修复不代表 PR/部署已包含。
 
 可靠性：DB 唯一键与 charge_id 仍是幂等事实；多实例可重复读取/收口；不引入跨网络事务、无限重试或队列。暂停/恢复仅回退本地补丁，保留 additive DB 与新旧字段；Production 仍需逐文件独立批准。超出 24h 的遗失占位/旧 writer 窗口需审查 catch-up，不宣称自动恢复。
+
+## T5–T8 清退执行计划（2026-10-16，取代前述兼容发布终点）
+
+用户已明确授权补齐两类历史处理和正常落表约束后直接实施。T5–T8 本地实施已完成；实际结果及真实环境缺口见 research/t8-local-retirement-verification-2026-10-16.md。
+
+1. **T5 只读与规划**：读取全部要求材料、记录 dirty baseline/分支；核验 PR424/429、实际两环境 deployment、四份账本/checksum、catalog/ACL/依赖和必要聚合，输出 research/t5-retirement-audit-2026-10-16.md。更新 PRD/design/task/manifests/release。生产快照冲突全量核验、外部消费者 owner 与实际日志观察仍是执行门禁。
+2. **T6A ID 和意图持久化**：先扩展现有 repository/upstream/execute/generate/types。预检后上游前 await snapshot+provider 占位，ID 首次观察时 async await 专表写入；有界重试/结果未知读回/不同 ID 拒绝。改 tap 不吞 DB 异常，header/SSE/non-stream 全覆盖。移除 finalizeTurn 的主表 generationId 参数和写入/主表 row 类型旧列。不让 fire-and-forget 作为唯一可恢复事实。
+3. **T6B 恢复**：pending 主表只投影业务/计费列，JOIN 各自专表 ID；metadata 与 missing/无 ID 诊断各有预算、独立失败隔离，provider 冲突不猜测。恢复 stale/no-ID 的终态和额度释放；完成 metadata 仍重试 charge/quota/回写。Venice-only 不因缺 OpenRouter key 停止。不改钱包语义/重新定价。清理相关 fixture，保留历史 SQL 和合法专表字段。
+4. **T7 migration**：按设计新增 catch-up → view → DROP 三文件。先本地验证 shape、历史/窗口守卫、安全标量 NULL/0、provider 冲突、view 类型/基数/最新 revision/权限；再隔离库真实 DROP 12 列。新增清退 harness 的必要性由不可逆 DDL+计费风险确认，扩展现有 upstream/execute/generate/repository/sync/settle 测试，避免镜像实现的无效测试。
+5. **T8 最终验证/交付**：全范围复查、必要缺陷修复，更新 README/ARCHITECTURE/Backend+DB spec、module-updates、task 与 release。远端门禁保持未勾选；交付本地完成情况、新 SQL 顺序/恢复、环境实况和未验收矩阵，不自动暂存/提交/推送/PR/部署。
+
+### 本地自动验证（本轮已执行，结果见 T8 报告）
+
+- Backend 既有全测试和 Shared 测试；优先 targeted test 快速定位，再各跑一次全量：
+  - pnpm --filter @miniapp/backend test
+  - pnpm --filter @miniapp/shared test
+  - pnpm -r typecheck
+  - pnpm -r --workspace-concurrency=2 --if-present build
+  - pnpm lint
+  - pnpm lint:imports
+  - pnpm lint:legacy
+  - pnpm lint:migrations
+  - pnpm test:migration-ledger
+  - OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/test-openrouter-original-fields-migration.sh
+  - 新清退 harness：隔离 PG17，无远端凭证，真实 repository SQL/读写在 DROP 后运行；失败 shape/锁/事务回滚、最小权限、重复执行安全失败和两个 provider fixture。
+  - python3 ./.trellis/scripts/task.py validate 10-15-openrouter-history-extract
+  - python3 ./.trellis/scripts/module_knowledge.py check .trellis/tasks/10-15-openrouter-history-extract
+  - git diff --check
+
+### 风险回归矩阵（AC2–AC4）
+
+- 付费/免费各发送及重生成；每 revision 唯一 detail、每 charge 唯一扣费/额度终结。
+- 取消先赢/完成先赢、超时、晚到 stop、上游 4xx/429/5xx/挂流/迟到 metadata；主表终态优先且不重开计费。
+- metadata 完整但 wallet/quota/主表回写分别失败；重复 worker 与多副本重入依旧同 charge_id。
+- 上游前 snapshot/占位失败不发请求；首 ID 写失败/结果未知/冲突；进程在 dispatch 前、ID 前后、charge 后/回写前退出；无法找回 ID 的调用明确停止并释放预留。
+- Venice ID 取自其专表，失败恢复不调用 OpenRouter、不丢额度/计费；无 OpenRouter key 时 Venice 恢复仍运行。
+- view 无明细/两表冲突、NULL/0、OpenRouter 与 Venice、旧 revision 和无 session 历史；列序/类型/基数/owner/ACL/security_invoker/RLS 不漂移。
+- 隔离库真正删列后开轮、finalize、取消/超时、billing outcome、专表 upsert、候选扫描、current/analytics SELECT 仍通过；明确真实 DB 验证范围，上游/钱包 mock 不宣称真实验收。
+
+### 真实环境门禁（仅记录，需之后授权/验收）
+
+分别按 TEST/Production 记录最终 SHA/所有副本退出/首末 writer 时间、ledger/checksum、权限、历史覆盖/快照冲突/无 ID 分类、窗口 catch-up、EXPLAIN/锁/复制/容量、外部分析 owner 与旧列读写日志。现有 T3 免费/取消/超时/错误/恢复/多副本真机矩阵仍未完；不由自动测试勾选。Production #429 尚未合入，不能假设现在已运行专表 writer。所有远端写操作都等单独授权。
+
+## 2026-10-16 用户补充确认与实施授权
+
+最高约束：本次改造不得影响正常发送、重生成、流式回复、取消/超时及对话正文/历史/终态/计费事实的正常落表。调用 metadata 与历史治理不得删除或改写对话正文；异常时保留已观察到的回复及原业务终态，不因诊断写入失败将已落表正文改为空。新增持久化接缝只保护恢复事实，须通过正常/失败落表回归与隔离库删列后真实 repository 验证。历史不明确记录阻断清理，不能影响新对话。
+
+用户已明确授权：补齐下列两类处理规划后直接本地实现，无需再次规划审批。远端迁移/提交推送/PR/部署仍未授权。
+
+- 41 条有 ID 缺 OpenRouter detail：旧 writer 退出后重新计数，核对无 Venice/归属冲突；新增 catch-up 只补安全标量与 ID，非空冲突停止，不复制 raw JSON/主表业务 finish reason。近窗回捞迟到 metadata，超窗保留已知事实；核对缺失与不一致归零，单独检查计费/额度。
+- 12942 条无 ID/无 detail：不能据此认定没有可迁移 metadata。聚合分类为“可靠归属+安全字段可迁移（NULL ID）”“无调用事实且业务计费已收口”“计费/额度未收口”“归属/值冲突未知”。只迁可证明 OpenRouter 的安全标量，不能仅因无 Venice 就给无 ID 历史猜 provider；没有信息不伪造 ID。未收口沿原 charge_id/冻结快照/已确定业务原因恢复，信息不足停止自动处理并人工核验。全部分类、可迁移信息已保留且未知项获确认前禁止 DROP。两类数字都是旧快照，切换时重新计算；TEST 165 不替代 Production。
+
+新增 migration 的分类守卫必须拒绝未保全的安全调用字段、不明确 provider、ID 冲突和未完成结算/额度；无法证明原始 JSON 可丢弃时阻断 DROP，由受控内容治理另审，不盲搬或静默删除。本地可用合成 fixture 验证拒绝路径，真实环境未知项不自动通过。

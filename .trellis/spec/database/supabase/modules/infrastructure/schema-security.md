@@ -40,6 +40,8 @@ last_verified_at: 2026-09-28
 
 ## 已知缺口与待核验项
 
+主表清退需四类证据与独立授权，三文件按 catch-up→view→DROP，事务/5s lock/60s statement/RESTRICT；视图保留 owner/ACL/invoker，原 reader 仅补 OpenRouter 所需列权限。未知旧 JSON、未保全事实或历史结算阻断；新专表调用不为历史清退被中断。无表重写/空间回收承诺，删列后旧 Backend 不可直接回退。
+
 ## 关联模块
 
 `backend.infrastructure.runtime-data-security`、`shared.business.conversation-contracts`,`shared.infrastructure.database-environment`。

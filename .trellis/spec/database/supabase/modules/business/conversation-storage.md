@@ -43,6 +43,8 @@ last_verified_at: 2026-09-30
 
 ## 已知缺口与待核验项
 
+本地新增 catch-up、provider view、独立 DROP 12 调用列 migration，保留业务 llm_finish_reason/计费/专表旧别名。PG17+PostgREST 真删列后实际 repository/视图读写通过；Production 两类历史与 raw JSON 处置仍未完成，三份新 SQL 未远端执行。四份历史两库 ledger/checksum 一致，Venice 旧账本漂移不修复。
+
 ## 关联模块
 
 `backend.business.conversation-generation`、`backend.infrastructure.runtime-data-security`。

@@ -31,3 +31,74 @@
 - **幂等/并发/事务**：`chat_history_id` 唯一 upsert；结算仍由既有 `charge_id` 幂等。主表业务终态与原始元数据分写，失败可回捞，不把跨网络调用包进 DB 事务。验证取消与晚到上游结果竞争，以及双实例重复回捞。
 - **降级/补偿/容量/观测**：元数据写失败不改变已交付回复，保留可回捞的 ID 和计费快照；按现有 pino 记录 ID、阶段、耗时和错误，禁止正文/密钥/完整原始 JSON。回填分批并核对数量、空值和尺寸；索引仅服务 generation ID 与回捞查询，先看查询计划和锁影响。
 - **发布顺序**：新增表/权限 → Backend 兼容读写 → 安全回填与核对 → 新读路径/视图 → 停旧写并证明无引用 → 单独清理旧列。若任一步校验失败，停止清理、保留旧列并 forward-fix；删列后不以回滚旧 Backend 作为恢复手段。每个 migration 单文件经手工 workflow 先 TEST 后 Production，Production 需另行审批与验收。
+
+## 2026-10-16 T5 主表清退设计（最新规划，用户已授权实施）
+
+本节取代上文“本轮只保留旧列/不交付清理 SQL”的范围限制；T1–T4 原文作为历史设计保留。业务终态和计费归属不变，移除的仅为 PRD R1 的 12 列。环境证据见 research/t5-retirement-audit-2026-10-16.md。
+
+### 1. 复用调研与最小范围
+
+- 扩展 ConversationHistoryRepository 的 finalizeTurn、pending billing、缺失 detail 扫描：主表只提供业务/计费事实，不再从物理主表取 generation ID；移除 ConversationHistoryRow 的旧 ID 与 finalizeTurn 入参/UPDATE。内部恢复结果改用 generationId/callProvider，避免把专表来源伪装成主表列。
+- 复用 OpenRouterChatHistoryRepository 的唯一 parent key、ensureGenerationId、mapper 和有界 metadata 扫描；ID 写入采用仅补空或相同值成功，不允许空占位/并发旧结果清空或替换已持久化非空 ID。
+- 复用 execute/upstream SSE tap、GenerationHooks 和 generate 编排；增加最小内部 async 持久化接缝，不新增 shared/API。复用 applyLlmCharge/charge_id 与 quota.finalize，不创建新的钱包/队列/租约系统。
+- Venice 仅扩展现有 repository 的占位/ID 持久化和恢复读取接线；不改 mapper、表结构、估价或免费额度规则。未到 metadata 时不写假 token/费用。
+- 已检索 Shared conversations DTO、Prisma 和 Frontend/Admin/CS 源码：未发现读取这 12 个主表调用字段的公开消费者；llm_model_catalog、billing.llm_usage_charges 等同名片段不是旧列。实施结束重搜全部代码/脚本，更新旧 fixture。
+- 复用既有两视图，CREATE OR REPLACE 显式列投影；复用隔离 PG17 测试脚本基础，但现有 fields 脚本只测 expand，无法代替删列后的真实 repository 验证。风险评估确认需新增一个本地清退专项 harness，并优先扩展已有 Vitest 文件。
+- 拒绝新 provider 抽象、第二份 ID/outbox 权威源、重建 Venice mapper、删除专表别名、盲搬历史 raw JSON、增加公开 DTO/依赖。无新业务表或运行时配置。
+
+### 2. 调用开始、ID 持久化与故障停止
+
+当前 settleGeneration 为 fire-and-forget，快照也在终态后保存，不能承担“崩溃前已持久化”的保证。新流程：
+
+1. 在已有 quota/定价/余额预检后、请求上游前，await 保存请求时 billing snapshot，并在对应专表 ensure 空占位。使用已有 parent/charge_id。占位或快照失败即不发送上游；释放预留，正常错误/清理路径收口。重试仅幂等 DB 写，至多 2 次、每次 5s、一次短退避，总体仍服从本轮 deadline。
+2. 响应头有 ID 时先 await 专表持久化；否则 SSE 首次解析出 ID 时在该 chunk 的 delta/后续消费之前 await。non-stream JSON 走同一接缝。async 持久化异常必须传出 tap，不可被 JSON parse catch 吞掉；保持 chunk 顺序、背压与取消行为。
+3. ID 写入超时属于结果未知：安全读取同一 parent 的专表 ID，相同则成功；NULL 可在有界预算内重试，不同非空 ID 为冲突，停止本轮且报警。禁止重复发送生成请求。失败耗尽后 abort 上游、释放额度、保留可审计占位和主表业务失败；不以主表 ID 兜底。
+4. 完成/中断前后可再次幂等补专表 ID，但不覆写已持久化元数据；finalizeTurn 仅写主表终态/正文/charge。取消/超时 CAS 仍权威，晚到 upstream stop 仅写专表。settle 与 sync 均从专表读 ID，不将历史 billing generation_id 作为新的调用事实权威来源。
+5. **无法消除的外部窗口**：上游接单后、ID 持久化前进程崩溃，DB 中只有占位/快照，无法通过上游 API 凭空找回 ID。新版本不宣称自动补回：主表 streaming 超过现有 120s 阈值时按既有取消/超时逻辑释放预留、CAS 收口、不扣未知调用；保留“有占位无 ID”的聚合观察。已交付但终态/原始原因不足的记录不猜测 stop、不重新生成，进入明确人工核验停止状态。不得用删除缺失扫描掩盖这些记录。
+6. 占位丢失但 ID 已保存是不可能的常规事务状态（同一行）；被外部删除/损坏后没有其他 ID 权威源，按缺失 detail 审计/停止而非制造 ID。拿到内存 ID 的当前请求仍可安全重建专表。历史缺失使用下述一次性窗口补齐。
+
+### 3. 计费与恢复读取
+
+- 保留独立 pending billing 扫描，条件以主表 snapshot/charge/settled_at 为准，不能只扫描 metadata 不全；显式投影业务列并 LEFT JOIN 两张 provider 表的 ID，按对应明细和 snapshot 判 provider，冲突停止且记录计数，Venice 不请求 OpenRouter API。
+- OpenRouter 元数据扫描继续直接从专表有界取候选，按 parent 唯一键取业务事实；调用 ID 仅来自专表。usage_cache 可缺失，0 不等于 NULL。metadata 完整但计费失败依然进入 pending 扫描。
+- 原 missing-detail 扫描改为检查预先持久化的调用意图/快照和明细缺失或 ID 缺失，不依赖已删主表 ID；不能简单删除。streaming 新记录不被后台提前结算，过期记录复用 stale-turn 终态/额度释放。
+- 有已持久化 ID 时沿原 OpenRouter 回捞；无 ID 的失败/取消/超时，已有定档计费可通过同 charge_id 和已确定业务原因收口/释放，不伪造 ID。成功但原始原因未知且无 ID 则停止等待人工核验；历史 usage 计费缺少可信 usage 同样停止，不重新定价。
+- Venice pending 从 venice_chat_history 读 ID，继续按主表业务 finish reason/冻结快照结算。重启/多副本重复处理靠 unique parent、固定 charge_id、钱包 RPC 与 quota 终结幂等；进程 isRunning 仅减少本进程重叠，非并发正确性来源。
+- 初始维持每源 50 条/24h、DB 5s/30s tick，独立失败隔离、按 parent 去重，明确缺失/冲突/超窗/推进计数；避免永久无 ID 阻塞正常 pending（分开候选预算）。不引入无限重试；超窗积压另行受审查 catch-up。hasOpenRouterKey 不应阻止 Venice-only 计费恢复；只跳过需要该 key 的上游读取。
+
+### 4. 历史与视图切换
+
+交付三份新 SQL（文件名为规划候选，实施后核定 checksum/顺序）：
+
+1. 20261016_openrouter_retirement_catchup.sql：最后旧 writer 退出后补窗口和安全字段。只将已证明 OpenRouter 的 parent ID/可控标量补入专表；有 Venice 明细的 ID 只核对/补其专表空 ID，不改变 mapper/结构。非空不一致、两明细重叠、Venice snapshot 无明细时拒绝。禁止迁入原始 generation_data 或将主表 finish reason 当上游原因。按实际缺口规模与 EXPLAIN 确定有界批次；超过已验证预算即失败停止，不能调大 timeout 硬跑。
+2. 20261016_chat_history_provider_metadata_views.sql：current view 的 12 个输出字段改来自 o canonical 或 v 既有列，按明细存在性选择对应 provider，禁止单纯 COALESCE 将两 provider 混合；业务 llm_finish_reason 始终 h.llm_finish_reason。无明细返回 typed NULL，不能继续引用 h 旧列。历史 raw JSON 不复制，只透出现有专表受控诊断。保持 DISTINCT ON(session_id,turn_index)/revision DESC、不新增过滤/放大行数、列序和类型显式检查/必要 cast。已有 base_chat_bj 一行一个 parent，latency 同样按 provider 选择，保留北京时间投影；TEST 未存在则跳过并在隔离 fixture 测试生产分支。
+3. 20261016_chat_history_drop_provider_metadata.sql：独立事务，前置断言 12 列 shape、允许的保留列、零 DB 依赖与覆盖守卫，ALTER TABLE DROP COLUMN 显式 12 列、RESTRICT、lock_timeout 5s/statement_timeout 60s。不 CASCADE、不改终态/计费/专表旧别名。应用与运行证据是外部门禁，SQL 不能伪造其通过。
+
+视图归属不变：current 属 experience 互动当前版本投影，base_chat_bj 属 miniapp_analytics 报表；Backend 为明细权威 writer，视图无独立生命周期/写入权威，依赖 experience 三表且与主表父行同生命周期。沿用 owner/security mode/现有 ACL，不复制主表 anon/authenticated grant 给专表。Production current 为 security_invoker=true，cs_persona_reader 需要对应专表的最小列级 SELECT（parent key、视图实际投影的 canonical/ID/受控诊断），仅该角色存在且既有 current view SELECT 时授权；不授表级 ALL、不切 definer 绕过 RLS。原 analytics view 保持其既有安全模式与 ACL。本地必须 SET ROLE 验证正反向读取，不只检查 has_table_privilege。
+
+### 5. 发布、容量与恢复
+
+- 实际顺序由当前结构决定：四份历史 migration 已在两库执行 → 本轮无旧列依赖 Backend 部署（单独授权）→ 确认所有旧副本/旧 job 退出与请求 drain → 独立 catch-up/历史覆盖 → 视图切换 → 四类无依赖门禁 → 最后独立 DROP。Backend 本轮不依赖新增表结构，可在旧列尚在时运行；在旧 writer 仍写入时过早切视图会丢失窗口可见性，因此不先机械改视图。
+- Production 本轮 catalog 主表约 34.7 万行、23.45 GB，专表约 24.65e7 bytes；精确数和覆盖见审计。包含 billing_snapshot 的全量聚合在 55s statement/60s client 预算中失败；必须优化为按 ID/时间有界扫描、与小表连接、单独审计快照冲突，不能扩大预算或把一次失败视为“无冲突”。旧表长行/TOAST 与统计误差均需考虑。
+- DDL 需 ACCESS EXCLUSIVE，元数据删列也会等待锁；执行前核对 pg_stat_activity 长事务、pg_locks、流量窗口和复制/磁盘余量。不将高开销覆盖扫描放进持有 DDL 锁的事务；预检与 DROP 紧邻、部署冻结后执行。锁超时整笔停止，不自动重跑；结果未知核对 shape 和 ledger/claim/events。
+- 删列前可经授权回退至支持旧结构的候选，但视图切换后的旧 writer 可能不写专表，回退须同步停止视图推进并重审窗口。删列后仅能回退到已验证“12 列不存在也可运行”的发布 SHA，或发布同等 schema-compatible forward-fix。若必须恢复旧应用，须另审补回列/投影与重建安全标量/ID的数据方案；原 raw JSON 不可凭专表还原，不承诺无损恢复。不把重新加 NULL 列当恢复成功。
+- 删除列不立即回收磁盘，无 VACUUM FULL/表重写。远端迁移、PR/部署/提交仍不在当前授权内。
+
+### 6. 规划自检
+
+复用、超时/重试、幂等/并发、事务、降级/补偿、限流/容量/观测、归属、兼容与 forward-fix、失败路径/消费者/真实删列验证均已列出。没有新 UI、公开 API、依赖或通用框架；不需要修改 Frontend/Admin/CS 产品代码，若复核发现新直接消费者先补证据与规划。用户已授权实施；本地实现与验证已完成，结果见 research/t8-local-retirement-verification-2026-10-16.md，真实环境门禁仍未通过。
+
+## 2026-10-16 用户补充确认与实施授权
+
+最高约束：本次改造不得影响正常发送、重生成、流式回复、取消/超时及对话正文/历史/终态/计费事实的正常落表。调用 metadata 与历史治理不得删除或改写对话正文；异常时保留已观察到的回复及原业务终态，不因诊断写入失败将已落表正文改为空。新增持久化接缝只保护恢复事实，须通过正常/失败落表回归与隔离库删列后真实 repository 验证。历史不明确记录阻断清理，不能影响新对话。
+
+用户已明确授权：补齐下列两类处理规划后直接本地实现，无需再次规划审批。远端迁移/提交推送/PR/部署仍未授权。
+
+- 41 条有 ID 缺 OpenRouter detail：旧 writer 退出后重新计数，核对无 Venice/归属冲突；新增 catch-up 只补安全标量与 ID，非空冲突停止，不复制 raw JSON/主表业务 finish reason。近窗回捞迟到 metadata，超窗保留已知事实；核对缺失与不一致归零，单独检查计费/额度。
+- 12942 条无 ID/无 detail：不能据此认定没有可迁移 metadata。聚合分类为“可靠归属+安全字段可迁移（NULL ID）”“无调用事实且业务计费已收口”“计费/额度未收口”“归属/值冲突未知”。只迁可证明 OpenRouter 的安全标量，不能仅因无 Venice 就给无 ID 历史猜 provider；没有信息不伪造 ID。未收口沿原 charge_id/冻结快照/已确定业务原因恢复，信息不足停止自动处理并人工核验。全部分类、可迁移信息已保留且未知项获确认前禁止 DROP。两类数字都是旧快照，切换时重新计算；TEST 165 不替代 Production。
+
+新增 migration 的分类守卫必须拒绝未保全的安全调用字段、不明确 provider、ID 冲突和未完成结算/额度；无法证明原始 JSON 可丢弃时阻断 DROP，由受控内容治理另审，不盲搬或静默删除。本地可用合成 fixture 验证拒绝路径，真实环境未知项不自动通过。
+
+## T8 最终实现校正
+
+最高约束落实为显式业务投影与已收到正文先入 snapshot，metadata 写失败不得清空 SSE 当前 chunk/此前正文或非流式完整 body；各 provider ID 操作每次 5s、总 10s、有界两次写和读回。恢复实际为五路：两个 provider pending 各 50、missing identity、metadata、stale streaming 各 50/24h；单源/单行隔离，无 OpenRouter key 仍处理 Venice/已存事实/超时清理。空上游字段不清既有 canonical 值，usage_cache=0 保留。DROP 的历史结算守卫只挡 legacy/missing-detail cohort，不要求中断专表已有占位且旧列为空的正常新 streaming 调用。旧 raw JSON 非空明确阻断 DROP，未新增自动清空/迁移 raw JSON 的脚本；其内容处置留待真实历史审阅。

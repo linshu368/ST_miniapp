@@ -3,6 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   from: vi.fn(),
   upsert: vi.fn(),
+  update: vi.fn(),
+  identity: {
+    eq: vi.fn(),
+    is: vi.fn(),
+    select: vi.fn(),
+    abortSignal: vi.fn(),
+    maybeSingle: vi.fn(),
+  },
   candidate: {
     select: vi.fn(),
     not: vi.fn(),
@@ -35,9 +43,17 @@ beforeEach(() => {
     data: [{ id: 'turn-1', status: 'success' }],
     error: null,
   });
+  for (const mock of Object.values(state.identity)) mock.mockReturnValue(state.identity);
+  state.identity.maybeSingle.mockResolvedValue({
+    data: { llm_generation_id: 'gen-1' },
+    error: null,
+  });
+  state.update.mockReturnValue(state.identity);
   state.upsert.mockReturnValue({ abortSignal: vi.fn().mockResolvedValue({ error: null }) });
   state.from.mockImplementation((name: string) =>
-    name === 'openrouter_chat_history' ? { ...state.candidate, upsert: state.upsert } : state.parent
+    name === 'openrouter_chat_history'
+      ? { ...state.candidate, upsert: state.upsert, update: state.update }
+      : state.parent
   );
 });
 
@@ -47,10 +63,8 @@ describe('OpenRouterChatHistoryRepository', () => {
     expect(state.upsert).toHaveBeenCalledWith(
       {
         chat_history_id: 'turn-1',
-        llm_generation_id: 'gen-1',
-        updated_at: expect.any(String),
       },
-      { onConflict: 'chat_history_id' }
+      { onConflict: 'chat_history_id', ignoreDuplicates: true }
     );
   });
 
@@ -65,18 +79,20 @@ describe('OpenRouterChatHistoryRepository', () => {
       llm_generation_id: 'gen-1',
       ...metadata,
     });
-    const payload = state.upsert.mock.calls[0]?.[0] as Record<string, unknown>;
+    const payload = state.upsert.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(payload).toMatchObject({
       usage: 0.01,
       usage_cache: 0,
       finish_reason: 'stop',
-      llm_generation_id: 'gen-1',
     });
+    expect(state.update).toHaveBeenCalledWith(
+      expect.objectContaining({ llm_generation_id: 'gen-1' })
+    );
     expect(
       Object.keys(payload)
         .filter((key) => key.startsWith('llm_'))
         .sort()
-    ).toEqual(['llm_generation_data', 'llm_generation_id']);
+    ).toEqual(['llm_generation_data']);
   });
 
   it('scans original columns without requiring optional usage_cache and joins billing facts by parent ID', async () => {
@@ -90,6 +106,53 @@ describe('OpenRouterChatHistoryRepository', () => {
     expect(state.candidate.gte).toHaveBeenCalledWith('created_at', '2026-10-16T00:00:00Z');
     expect(state.candidate.limit).toHaveBeenCalledWith(50);
     expect(state.parent.in).toHaveBeenCalledWith('id', ['turn-1']);
-    expect(rows).toEqual([{ id: 'turn-1', status: 'success', llm_generation_id: 'gen-1' }]);
+    expect(rows).toEqual([
+      { id: 'turn-1', status: 'success', generationId: 'gen-1', callProvider: 'openrouter' },
+    ]);
   });
+});
+
+it('reads back an uncertain committed identity without repeating the write', async () => {
+  state.from.mockReturnValue({
+    ...state.candidate,
+    update: state.update,
+    upsert: state.upsert,
+    select: () => state.identity,
+  });
+  state.identity.maybeSingle
+    .mockResolvedValueOnce({ data: null, error: { message: 'timeout' } })
+    .mockResolvedValueOnce({ data: { llm_generation_id: 'gen-1' }, error: null });
+  await new OpenRouterChatHistoryRepository().ensureGenerationId('turn-1', 'gen-1');
+  expect(state.update).toHaveBeenCalledOnce();
+});
+
+it('rejects a conflicting durable identity and never overwrites it', async () => {
+  state.from.mockReturnValue({
+    ...state.candidate,
+    update: state.update,
+    upsert: state.upsert,
+    select: () => state.identity,
+  });
+  state.identity.maybeSingle
+    .mockResolvedValueOnce({ data: null, error: null })
+    .mockResolvedValueOnce({ data: { llm_generation_id: 'another-call' }, error: null });
+  await expect(
+    new OpenRouterChatHistoryRepository().ensureGenerationId('turn-1', 'gen-1')
+  ).rejects.toThrow('冲突');
+  expect(state.identity.is).toHaveBeenCalledWith('llm_generation_id', null);
+  expect(state.update).toHaveBeenCalledOnce();
+});
+
+it('keeps zero values and omits late unknown/null metadata instead of erasing facts', async () => {
+  await new OpenRouterChatHistoryRepository().upsert({
+    chat_history_id: 'turn-1',
+    usage: 0,
+    usage_cache: 0,
+    latency: null,
+    model: null,
+  });
+  const payload = state.upsert.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+  expect(payload).toMatchObject({ usage: 0, usage_cache: 0 });
+  expect(payload).not.toHaveProperty('latency');
+  expect(payload).not.toHaveProperty('model');
 });

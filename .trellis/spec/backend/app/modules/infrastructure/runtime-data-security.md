@@ -47,6 +47,8 @@ PostHog capture 用 Node 原生 fetch、短超时、无重试；支付按 `order
 
 ## 已知缺口与待核验项
 
+调用 ID 使用各自专表 NULL-only CAS，相同 ID 幂等、不同拒绝，写超时读回；每操作 5s、总 10s、有界两次写。缺失身份/metadata/计费/超时恢复独立预算及行失败隔离；OpenRouter NULL 不清旧事实/0 保留，无 key 不停 Venice；无新公开 API/配置。仅本地验证，部署门禁未过。
+
 ## 关联模块
 
 `database.infrastructure.schema-security`、`database.business.conversation-storage`、`shared.business.conversation-contracts`、`backend.business.conversation-generation`,`backend.business.wallet-payment`。

@@ -24,6 +24,7 @@ import {
   type GenerationStatus,
 } from '../generation/index.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import { VeniceChatHistoryRepository } from '../../infrastructure/repositories/VeniceChatHistoryRepository.js';
 import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositories/OpenRouterChatHistoryRepository.js';
 import { TextPostprocessRepository } from '../text-postprocess/repository.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
@@ -67,6 +68,7 @@ export interface RunConversationTurnInput {
 let historyRepository: ConversationHistoryRepository | null = null;
 let characterRepository: CharacterCardRepository | null = null;
 let userSettingsRepository: MiniappUserSettingsRepository | null = null;
+let veniceHistoryRepository: VeniceChatHistoryRepository | null = null;
 let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
 
 function historyRecords(): ConversationHistoryRepository {
@@ -237,6 +239,24 @@ export async function runConversationTurn(
     const result = await execute(
       request,
       {
+        onBeforeDispatch: async (snapshot) => {
+          controller.signal.throwIfAborted();
+          await historyRecords().saveBillingSnapshot(turn.historyId, snapshot);
+          if (model.provider === 'openrouter')
+            await openRouterHistory().ensurePlaceholder(turn.historyId);
+          else
+            await (veniceHistoryRepository ??= new VeniceChatHistoryRepository()).ensurePlaceholder(
+              turn.historyId
+            );
+          controller.signal.throwIfAborted();
+        },
+        onGenerationId: async (generationId) => {
+          if (model.provider === 'openrouter')
+            await openRouterHistory().ensureGenerationId(turn.historyId, generationId);
+          else
+            await (veniceHistoryRepository ??=
+              new VeniceChatHistoryRepository()).ensureGenerationId(turn.historyId, generationId);
+        },
         onBeforeReserve: async (chargeId) => {
           controller.signal.throwIfAborted();
           await historyRecords().registerChargeId(turn.historyId, chargeId);
@@ -253,7 +273,6 @@ export async function runConversationTurn(
             content: observed.content,
             status: success ? 'success' : 'stream_interrupted',
             finishReason: observed.finishReason,
-            generationId: observed.generationId,
           });
           if (row.status === 'streaming') {
             // A cancel marker won the completion CAS; free quota must be released before
@@ -264,15 +283,8 @@ export async function runConversationTurn(
               content: observed.content,
               status: 'stream_interrupted',
               finishReason: row.llm_finish_reason ?? 'timeout',
-              generationId: observed.generationId,
             });
           }
-          await ensureOpenRouterGenerationId({
-            provider: model.provider,
-            historyId: turn.historyId,
-            generationId: observed.generationId,
-            log,
-          });
           return normalizePersistedOutcome(observed, row.status, row.llm_finish_reason);
         },
         onStreamOpen: emitStart,
@@ -288,14 +300,7 @@ export async function runConversationTurn(
       status: current.llm_finish_reason === 'cancelled' ? 'stream_interrupted' : result.status,
       finishReason: current.llm_finish_reason === 'cancelled' ? 'cancelled' : result.finishReason,
       upstreamStatus: result.upstreamStatus ?? null,
-      generationId: result.generationId,
       chargeId: result.chargeId,
-    });
-    await ensureOpenRouterGenerationId({
-      provider: model.provider,
-      historyId: turn.historyId,
-      generationId: result.generationId,
-      log,
     });
     const status =
       persisted.status === 'success'
@@ -395,30 +400,6 @@ export async function runConversationTurn(
     stopped = true;
     clearTimeout(timeout);
     if (pollTimer) clearTimeout(pollTimer);
-  }
-}
-
-async function ensureOpenRouterGenerationId(input: {
-  provider: string;
-  historyId: string;
-  generationId: string | null;
-  log: RequestLogger;
-}): Promise<void> {
-  if (input.provider !== 'openrouter' || !input.generationId) return;
-  try {
-    await openRouterHistory().ensureGenerationId(input.historyId, input.generationId);
-  } catch (err) {
-    // The legacy parent ID remains during T2 compatibility. Do not change a persisted
-    // conversation result if this recoverable provider-detail write is temporarily unavailable.
-    input.log.sys.error(
-      {
-        event: 'conversation.openrouter_metadata.id_persist_failed',
-        err,
-        historyId: input.historyId,
-        generationId: input.generationId,
-      },
-      '保存 OpenRouter generation ID 失败'
-    );
   }
 }
 

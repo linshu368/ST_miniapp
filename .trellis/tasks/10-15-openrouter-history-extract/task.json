@@ -2,7 +2,7 @@
   "id": "openrouter-history-extract",
   "name": "openrouter-history-extract",
   "title": "OpenRouter 元数据从 chat_history 拆表",
-  "description": "将 chat_history 的 OpenRouter 调用元数据迁至 experience 独立明细表，保留对话终态与计费事实。",
+  "description": "OpenRouter 专表接入后继续清退 chat_history 12 个调用字段，保留业务终态和计费事实；独立 DROP migration 与恢复/视图验证。",
   "status": "in_progress",
   "dev_type": null,
   "scope": "backend database docs",
@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "T4 审阅/生产清单及必要恢复/隐私修复已本地准备，未提交推送部署。TEST 四份 migration 实时记账一致，caebc0c6 部署后 3 条原名写入通过；T4 补丁和 T3 免费/取消/超时/错误/恢复验收未完成。Production 新表/四份账本均无，容量门禁未完成；旧列/视图保留，生产动作未授权。",
+  "notes": "T5–T8 本地适配/三份新 SQL/真实 PG17+PostgREST DROP 回归已完成，用户已授权直接本地实施。Backend 681 / Shared 139、workspace typecheck/build/lint 与 ledger/PG 回归通过。PR429 OPEN，Production c759f6de；本轮未远端迁移/提交推送/PR/部署/归档。41 与 12942 历史分类/覆盖、raw JSON 处置、真实业务/旧副本退出/运行无旧列读写/容量门禁仍未完，任务保持 in_progress。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

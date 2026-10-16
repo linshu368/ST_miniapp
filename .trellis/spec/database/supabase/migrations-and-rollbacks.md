@@ -34,6 +34,36 @@ GitHub Actions 操作前再次核对 workflow 版本、目标 environment secret
 
 `20261015_openrouter_chat_history.sql` → `20261015_openrouter_chat_history_backfill.sql` → `20261015_openrouter_chat_history_venice_exclusion_backfill.sql` → `20261016_openrouter_original_metadata_fields.sql` → 新 Backend。每个文件核验账本/checksum、shape/FK/unique/index、ACL、回填聚合与锁/容量后才能继续；初始表的 provider 常量约束会被第三份修正，中间态不可部署新 writer。
 
-旧主表列、专表别名、`current_chat_history` 与 Production `miniapp_analytics.base_chat_bj` 保留，清理/视图切换另审。新 writer 不持续反写别名；回退旧 Backend 不能使这些新数据自动同步回旧列。切换窗口须按最后旧 writer/首个新 writer 的实际时间审计，24h 回捞外的数据另审 catch-up。
+旧主表列/视图保留仅是兼容阶段，不能作为清退任务完成。2026-10-16 新增阶段须交付主表 12 列（不含业务 `llm_finish_reason`）的消费者切换及独立 DROP migration；专表旧别名不默认纳入。视图必须按对应 provider 专表取值并保留类型/基数/ACL/security_invoker，不能用 CASCADE 解决依赖。四类删列门禁为应用无引用、DB 无依赖、实际运行无旧读写及历史/窗口覆盖；删列后旧 Backend 不能直接回退，需已验证兼容 SHA 或受审阅 forward-fix。三份 SQL 已本地实现并通过真实 PG17/PostgREST 删列回归；未在远端执行，见本任务 T8 报告。新 writer 不持续反写别名；回退旧 Backend 不能使这些新数据自动同步回旧列。切换窗口须按最后旧 writer/首个新 writer 的实际时间审计，24h 回捞外的数据另审 catch-up。
 
 测试库小样本成功不代表大生产表可用相同单事务回填。先取得本环境候选规模/查询计划、锁与 WAL/磁盘预算；文件 1/2 无内置 timeout，未验证生产规模前停止执行。结果未知须互证 SQL 提交与 ledger/claim/event，禁止盲重跑或 force_rerun 修漂移。完整可审阅方案见 `.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md`；该路径是本任务方案，不是已执行证明。
+
+## Scenario: chat_history 12 列 contract
+
+### 1. Scope / Trigger
+
+只删除调用元数据，保留主表 llm_finish_reason/业务 model/计费事实；不清理专表别名，不重跑四份已记账历史 SQL，不改 Venice 表/mapper。
+
+### 2. Signatures
+
+新增 shared migrations：20261016_openrouter_retirement_catchup.sql → 20261016_chat_history_provider_metadata_views.sql → 20261016_chat_history_drop_provider_metadata.sql。先部署无旧列依赖 Backend/旧副本退出和窗口覆盖，再逐文件迁移；最后 DROP 独立审批。
+
+### 3. Contracts
+
+catch-up 只补经证明归属的安全标量/ID、只填 canonical 空值，不搬 raw JSON/正文/主表业务 finish reason，候选超过 2000 拒绝另审分批。current/已有 analytics view 保留列名/序/类型/基数、owner/ACL/security mode；按对应 provider 专表取值，current invoker 所需 reader 仅补最小列权限。新 streaming 调用若有专表占位且主表旧字段为空，不应被历史结算门禁强制中断。
+
+### 4. Validation & Error Matrix
+
+重叠/ID 冲突/未保全标量/未知 provider/DB 依赖/旧 raw JSON 未审阅/历史计费未收口 → 整笔拒绝；锁 5s、语句 60s，失败/结果未知先核对 shape 与 ledger/claims/events，不盲重跑。SQL 不能替代应用无依赖、DB 无依赖、运行无旧列读写、历史/切换窗口覆盖四类外部证据。
+
+### 5. Good/Base/Bad Cases
+
+Good：TEST/Production 分别记录覆盖与容量/锁证据，再独立 DROP RESTRICT 12 列。Base：无 ID 历史先分类；无信息不伪造 ID，有可靠归属/安全字段可建 NULL-ID 明细，未知阻断删除。Bad：把 TEST 165 当生产事实、旧 raw JSON 直接搬运/置空、DROP CASCADE 或为了删列暂停/破坏正常新对话落表。
+
+### 6. Tests Required
+
+scripts/test-openrouter-retirement-local.sh（PG17 + 显式本地 PostgREST 路径）证明物理 DROP 后实际 repository 读写、视图字段/基数/权限、未知/JSON/历史结算/依赖/重复执行拒绝，和正常新 streaming 状态保留；原 expand/ledger 回归继续通过。真实上游/钱包/额度/外部分析 owner 与所有旧副本退出仍单独核验。
+
+### 7. Wrong vs Correct
+
+Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：仅回退到已验证无 12 列也能运行的 SHA，或受审阅 forward-fix；恢复旧应用须另审列/安全事实重建，空列不等于数据恢复；无 VACUUM FULL/表重写。

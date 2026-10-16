@@ -1,3 +1,17 @@
+# T5–T8 本地清退阶段（2026-10-16 当前状态）
+
+用户已授权补齐两类历史方案后直接实施，最高约束为正常对话及正文/历史/终态/计费数据正常落表。已完成本地实现与验证，任务保持 in_progress，真实环境门禁未完成。
+
+- [x] T5：规范/现有任务/环境/消费者调查；两类历史分类和正常落表不变量补进规划，用户已授权实施。
+- [x] T6：业务字段显式投影、停止主表调用 ID 读写；上游前 snapshot/专表占位、首次 ID 持久化/10s 总预算/冲突保护；两 provider 恢复与 stale 收口。
+- [x] T7：新增 catch-up → provider views → 独立 DROP 三份 SQL，隔离 PG17/PostgREST 真实删列后关键 repository/视图/权限/失败门禁通过。
+- [x] T8 本地：Backend 681 / Shared 139、全 workspace typecheck/build、适用 lint/import/legacy/migration、ledger 协议、新旧 PG 回归；同步 README/架构/spec/发布清单和模块载荷。
+- [ ] T3/远端：真实 TEST 失败/免费/取消/超时/上游/钱包/额度/重启多副本；各环境新部署/旧副本退出、窗口覆盖、历史分类与 raw JSON 审阅、外部消费者和容量/锁/运行无旧列读写。
+
+详细代码、SQL 顺序、验证边界与恢复见 [T8 本地报告](research/t8-local-retirement-verification-2026-10-16.md)。没有远端写入/迁移、提交/推送、PR/部署/归档；保留无关文件。下方 T1–T4 记录为历史，旧“保留旧列即兼容发布完成”的范围不再是本任务完成条件。
+
+---
+
 # Task Breakdown
 
 | ID  | 状态             | 工作与文件范围                                                        | 验证/门禁                                                                                                               |
@@ -18,7 +32,7 @@
 - 2026-10-15：人工审阅后启动任务并完成 T1。确认 TEST/Production 的 13 列与 `current_chat_history` 依赖一致，Production 另有 `miniapp_analytics.base_chat_bj.llm_latency` 依赖；记录 Venice shape/账本漂移和主表终态、回捞、历史关联边界。未写入数据库或产品代码。
 - 2026-10-15：完成 T2。本地新增 `20261015_openrouter_chat_history.sql`：`experience.openrouter_chat_history` 以 `chat_history_id` 唯一、父 FK `ON DELETE CASCADE`、OpenRouter 常量约束、generation-ID/时间索引及仅 `service_role`/`postgres` 授权保存调用元数据；没有执行 TEST 或 Production migration，也没有回填历史数据。Backend 在获取 OpenRouter generation ID 时幂等创建/补齐明细占位，结算和 24 小时 sync job 从新表定位并写入元数据；`experience.chat_history.llm_finish_reason` 仍由业务终态路径裁决，计费事实仍留主表，旧 generation ID 继续兼容写入。新增/扩展回归覆盖 ID 占位、OpenRouter 明细写入、敏感调用内容排除及取消保护；`pnpm --filter @miniapp/backend test`（83 files / 651 tests）、`pnpm --filter @miniapp/backend typecheck`、`pnpm -r typecheck`、`pnpm lint:migrations` 与 `git diff --check` 通过。
 - 2026-10-15：T3 已在正式 TEST `zoqelpfhurwehlvypryl` 通过官方 Database Migration workflow 单文件执行并记账：`20261015_openrouter_chat_history.sql`（run `38719886735`）与 `20261015_openrouter_chat_history_backfill.sql`（run `38720229528`）。只读核验确认 17 列、父 FK/唯一/约束、`anon`/`authenticated` 无 SELECT、`service_role` 有 SELECT/INSERT，且两份账本记录存在。回填严格以 `llm_billing_snapshot.provider='openrouter'` 为归属证据：102 条 eligible parent rows 与 102 条 detail rows 一致；1,674 条归属不足或其他 provider 行未迁入；`llm_generation_data` 与 provider-table 的 `llm_finish_reason` 均为 0 条历史复制，避免带入未审计内容或把主表业务终态误当上游事实。未运行 Production migration、未删除/清理旧列、未修改 `current_chat_history` 或 `miniapp_analytics.base_chat_bj`。
-- 2026-10-15：用户补充并授权 T3 排除法：目前只有 OpenRouter/Venice，Venice 每次调用均有 `venice_chat_history.chat_history_id`；有 generation ID 且无 Venice 明细的主表行归 OpenRouter。TEST 只读审计无明细重叠、无 Venice 快照缺 Venice 明细；补迁移前剩余候选随活跃写入从 1,674 增至 1,680。发现新表错误地将 `llm_provider_name` 限制为常量 `openrouter`，而该列实际是路由厂商；新增 forward migration 修正约束、修复首批 102 条占位厂商名、按排除法补齐已有 generation ID 行。Backend 占位不再写假厂商，结算/回捞将上游明细与主表计费字段隔离，避免 `llm_intended_deduction` 等字段进入新表。历史 raw JSON 与主表业务终态不复制；无 generation ID 的 165 条非 Venice 行无上游关联键与元数据，不属本次明细回填。Backend 83 files / 651 tests、`pnpm -r typecheck`、migration 文件名检查与 `git diff --check` 已通过；TEST workflow、部署和人工场景结果待后续记录。
+- 2026-10-15：用户补充并授权 T3 排除法：目前只有 OpenRouter/Venice，Venice 每次调用均有 `venice_chat_history.chat_history_id`；有 generation ID 且无 Venice 明细的主表行归 OpenRouter。TEST 只读审计无明细重叠、无 Venice 快照缺 Venice 明细；补迁移前剩余候选随活跃写入从 1,674 增至 1,681。发现新表错误地将 `llm_provider_name` 限制为常量 `openrouter`，而该列实际是路由厂商；新增 forward migration 修正约束、修复首批 102 条占位厂商名、按排除法补齐已有 generation ID 行。Backend 占位不再写假厂商，结算/回捞将上游明细与主表计费字段隔离，避免 `llm_intended_deduction` 等字段进入新表。历史 raw JSON 与主表业务终态不复制；无 generation ID 的 165 条非 Venice 行无上游关联键与元数据，不属本次明细回填。Backend 83 files / 651 tests、`pnpm -r typecheck`、migration 文件名检查与 `git diff --check` 已通过；TEST workflow、部署和人工场景结果待后续记录。
 - 2026-10-15：上述补迁移以提交 `d355811f` 推送，官方 TEST Database Migration workflow run `38744963817` 成功执行并记账。执行后只读核验：有 generation ID 且无 Venice 明细的 parent 1,782 条，新表 1,782 条，缺失 0、Venice 重叠 0、厂商名与主表不符 0；历史 `llm_generation_data` 和 provider-table `llm_finish_reason` 均为 0 条复制。17 列保持不变，旧常量约束已移除，厂商列允许 NULL 且无默认值；`anon`/`authenticated` 无 SELECT、`service_role` 有 SELECT/INSERT/UPDATE。`pnpm test:migration-ledger`、`pnpm lint` 通过；Backend 无 build 脚本。TEST Backend 仍未部署，真实 SSE、结算与重复回捞未验收；Production 未执行，视图和主表旧列未动。活跃库的总数会继续变化，部署前新产生的旧路径行需再次核对补齐。
 - 2026-10-16：PR #424 的 Railway `pr-424` Backend 已部署提交 `b2bd58e0`，其数据库环境标识和连接 ref 均核对为正式 TEST。真机完成两轮发送并对第一轮重新生成，实际产生 3 条 revision。只读核验：3 条主表记录各有唯一 OpenRouter 明细，generation ID 一致、无 Venice 明细；主表均为 `success/stop`，每条各有 1 笔 `charged` 且已结算的 16 星尘流水，未见重复扣费。3 条新表明细的用量、路由厂商、上游 finish reason 仍为空；`llm_generation_data` 仅含 `error.code=404`，自动回捞截至北京时间 15:30 仍持续写入 404。PR 与 development 的 OpenRouter 凭证相同，同模型部署前近 24 小时的另外 2 条记录曾成功取得用量；因此可确认本次 ID 落表与计费关联正常，但元数据补齐未通过，404 根因尚未定位，不能判定是迁移或既有回捞缺陷。查询未读取或记录对话正文、完整 generation ID、密钥和原始响应。
 
@@ -59,3 +73,14 @@
 - `pnpm -r typecheck`、`pnpm -r --workspace-concurrency=2 --if-present build`、`pnpm lint`、`pnpm lint:imports`、`pnpm lint:legacy`、`pnpm lint:migrations`、`git diff --check` 通过。Backend 无独立 build script；build 覆盖有 build script 的消费者；Admin 既有 bundle size 提示不阻断构建。
 - `OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/test-openrouter-original-fields-migration.sh` 通过；`pnpm test:migration-ledger` 通过。沙箱分别阻止 PG 共享内存/本地 socket，按工具审批在沙箱外重跑隔离本地检查；未连接远端写库。
 - `module_knowledge.py check` 与 `task.py validate` 通过；没有执行 module apply/archive。TEST PostgREST HEAD 已验证 anti-join，但本地模拟不能证明多副本真实恢复/钱包/免费额度场景；这些仍属 T3 待办。
+
+## 2026-10-16 用户补充确认与实施授权
+
+最高约束：本次改造不得影响正常发送、重生成、流式回复、取消/超时及对话正文/历史/终态/计费事实的正常落表。调用 metadata 与历史治理不得删除或改写对话正文；异常时保留已观察到的回复及原业务终态，不因诊断写入失败将已落表正文改为空。新增持久化接缝只保护恢复事实，须通过正常/失败落表回归与隔离库删列后真实 repository 验证。历史不明确记录阻断清理，不能影响新对话。
+
+用户已明确授权：补齐下列两类处理规划后直接本地实现，无需再次规划审批。远端迁移/提交推送/PR/部署仍未授权。
+
+- 41 条有 ID 缺 OpenRouter detail：旧 writer 退出后重新计数，核对无 Venice/归属冲突；新增 catch-up 只补安全标量与 ID，非空冲突停止，不复制 raw JSON/主表业务 finish reason。近窗回捞迟到 metadata，超窗保留已知事实；核对缺失与不一致归零，单独检查计费/额度。
+- 12942 条无 ID/无 detail：不能据此认定没有可迁移 metadata。聚合分类为“可靠归属+安全字段可迁移（NULL ID）”“无调用事实且业务计费已收口”“计费/额度未收口”“归属/值冲突未知”。只迁可证明 OpenRouter 的安全标量，不能仅因无 Venice 就给无 ID 历史猜 provider；没有信息不伪造 ID。未收口沿原 charge_id/冻结快照/已确定业务原因恢复，信息不足停止自动处理并人工核验。全部分类、可迁移信息已保留且未知项获确认前禁止 DROP。两类数字都是旧快照，切换时重新计算；TEST 165 不替代 Production。
+
+新增 migration 的分类守卫必须拒绝未保全的安全调用字段、不明确 provider、ID 冲突和未完成结算/额度；无法证明原始 JSON 可丢弃时阻断 DROP，由受控内容治理另审，不盲搬或静默删除。本地可用合成 fixture 验证拒绝路径，真实环境未知项不自动通过。

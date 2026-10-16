@@ -63,14 +63,6 @@ export function startChatHistorySyncJob(log: FastifyBaseLogger): void {
 
   const jlog = log.child({ module: 'chat-history-sync' });
 
-  if (!hasOpenRouterKey()) {
-    jlog.warn(
-      { kind: 'sys', event: 'chathistory_sync.disabled' },
-      'missing API key, skipping chat history sync job'
-    );
-    return;
-  }
-
   timerId = setInterval(() => {
     void runSyncJob(jlog);
   }, SYNC_INTERVAL_MS);
@@ -110,9 +102,11 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
     // Separate budgets keep a metadata backlog from hiding billing recovery.
     // A failed metadata scan must not prevent the independent billing repair.
     const scans = await Promise.allSettled([
-      history().listRowsPendingBilling(input),
-      history().listRowsMissingOpenRouterDetail(input),
+      history().listRowsPendingBilling({ ...input, provider: 'openrouter' }),
+      history().listRowsPendingBilling({ ...input, provider: 'venice' }),
+      history().listRowsMissingProviderIdentity(input),
       openRouterHistory().listRowsMissingGenerationData(input),
+      history().listStaleStreaming(input),
     ]);
     const rowsById = new Map<string, ChatHistorySyncRow>();
     for (const [index, scan] of scans.entries()) {
@@ -122,7 +116,13 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
             kind: 'sys',
             event: 'chathistory_sync.fetch_failed',
             err: scan.reason,
-            source: ['billing', 'missing_detail', 'metadata'][index],
+            source: [
+              'openrouter_billing',
+              'venice_billing',
+              'missing_identity',
+              'metadata',
+              'stale_streaming',
+            ][index],
           },
           'failed to fetch incomplete chat history'
         );
@@ -143,110 +143,174 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
     log.info({ count: rows.length }, '[sync-job] found incomplete records to sync');
 
     for (const record of rows) {
-      const generationId = record.llm_generation_id;
-      if (typeof generationId !== 'string' || generationId.length === 0) continue;
-
-      const provider = readProviderFromSnapshot(record.llm_billing_snapshot);
-      if (provider !== 'openrouter') {
-        const reconciled = await reconcileNonOpenRouterRecord({
-          record,
-          generationId,
-          provider,
-          log,
-        });
-        if (reconciled === 'settled') completedCount++;
-        else notReadyCount++;
-        continue;
-      }
-
-      const genData = await fetchGenerationData(generationId);
-      if (!genData) {
-        notReadyCount++;
-        continue;
-      }
-
-      const providerMetadata = buildGenerationMetadata(genData);
-      // Local cancellation/deadline remains the billing outcome even if upstream later stops.
-      const finishReason =
-        record.llm_finish_reason === 'cancelled' || record.llm_finish_reason === 'timeout'
-          ? record.llm_finish_reason
-          : providerMetadata.finish_reason;
-
-      let reconciled: ReconciledChargeResult;
       try {
-        reconciled = await reconcileCharge({
-          record,
-          generationId,
-          genData: { usage: providerMetadata.usage, model: providerMetadata.model },
-          finishReason,
-        });
-      } catch (reconcileErr) {
-        // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
-        log.error(
-          {
-            kind: 'sys',
-            event: 'chathistory_sync.reconcile_failed',
-            err: reconcileErr,
-            id: record.id,
+        if (record.status === 'streaming') {
+          if (record.session_id) await history().recoverStaleStreaming(record.session_id);
+          continue;
+        }
+        const generationId = record.generationId;
+        const provider = record.callProvider;
+        if (
+          !provider ||
+          (record.llm_billing_snapshot?.provider &&
+            record.llm_billing_snapshot.provider !== provider)
+        ) {
+          log.error(
+            { event: 'chathistory_sync.provider_unresolved', id: record.id },
+            'call provider requires audit'
+          );
+          continue;
+        }
+        if (!generationId) {
+          // No upstream locator can be reconstructed after a crash. Only release an
+          // already-determined failed/cancelled call; never infer stop or regenerate.
+          if (record.status !== 'success' && record.llm_charge_id) {
+            try {
+              const result = await reconcileCharge({
+                record,
+                generationId: null,
+                genData: {},
+                finishReason: record.llm_finish_reason ?? 'error',
+              });
+              if (result.settled)
+                await history().recordBillingOutcome({
+                  historyId: record.id,
+                  intendedDeduction: result.intendedDeduction,
+                  deductionRate: result.deductionRate,
+                  billingSettledAt: new Date().toISOString(),
+                });
+            } catch (err) {
+              log.error(
+                { err, event: 'chathistory_sync.identity_cleanup_failed', id: record.id },
+                'failed call cleanup pending'
+              );
+            }
+          } else {
+            log.warn(
+              { event: 'chathistory_sync.identity_missing', id: record.id },
+              'call identity unavailable; manual audit required'
+            );
+          }
+          continue;
+        }
+        if (provider !== 'openrouter') {
+          const reconciled = await reconcileNonOpenRouterRecord({
+            record,
             generationId,
-            chargeId: record.llm_charge_id,
-          },
-          'failed to reconcile LLM usage charge'
-        );
-        continue;
-      }
+            provider,
+            log,
+          });
+          if (reconciled === 'settled') completedCount++;
+          else notReadyCount++;
+          continue;
+        }
 
-      try {
-        await history().recordBillingOutcome({
-          historyId: record.id,
-          intendedDeduction: reconciled.intendedDeduction,
-          deductionRate: reconciled.deductionRate,
-          finishReason,
-          ...(reconciled.settled ? { billingSettledAt: new Date().toISOString() } : {}),
-        });
+        const stored = await openRouterHistory().readGenerationData(record.id);
+        const storedComplete = isCompleteGenerationData(stored);
+        const fetched =
+          !storedComplete && hasOpenRouterKey() ? await fetchGenerationData(generationId) : null;
+        const genData = storedComplete ? stored : (fetched ?? stored);
+        if (!genData) {
+          notReadyCount++;
+          continue;
+        }
+
+        const providerMetadata = buildGenerationMetadata(genData);
+        // Local cancellation/deadline remains the billing outcome even if upstream later stops.
+        const finishReason =
+          record.llm_finish_reason === 'cancelled' || record.llm_finish_reason === 'timeout'
+            ? record.llm_finish_reason
+            : providerMetadata.finish_reason;
+
+        let reconciled: ReconciledChargeResult;
+        try {
+          reconciled = await reconcileCharge({
+            record,
+            generationId,
+            genData: { usage: providerMetadata.usage, model: providerMetadata.model },
+            finishReason,
+          });
+        } catch (reconcileErr) {
+          // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
+          log.error(
+            {
+              kind: 'sys',
+              event: 'chathistory_sync.reconcile_failed',
+              err: reconcileErr,
+              id: record.id,
+              generationId,
+              chargeId: record.llm_charge_id,
+            },
+            'failed to reconcile LLM usage charge'
+          );
+          continue;
+        }
+
+        try {
+          await history().recordBillingOutcome({
+            historyId: record.id,
+            intendedDeduction: reconciled.intendedDeduction,
+            deductionRate: reconciled.deductionRate,
+            finishReason,
+            ...(reconciled.settled ? { billingSettledAt: new Date().toISOString() } : {}),
+          });
+        } catch (err) {
+          log.error(
+            {
+              kind: 'sys',
+              event: 'chathistory_sync.update_failed',
+              err,
+              id: record.id,
+              generationId,
+            },
+            'failed to update chat history'
+          );
+          continue;
+        }
+
+        if (!fetched) {
+          if (storedComplete && reconciled.settled) completedCount++;
+          else notReadyCount++;
+          continue;
+        }
+        try {
+          await openRouterHistory().upsert({
+            chat_history_id: record.id,
+            llm_generation_id: generationId,
+            ...providerMetadata,
+          });
+        } catch (err) {
+          log.error(
+            {
+              kind: 'sys',
+              event: 'chathistory_sync.openrouter_metadata_failed',
+              err,
+              id: record.id,
+              generationId,
+            },
+            'failed to update OpenRouter generation metadata'
+          );
+          continue;
+        }
+
+        if (isCompleteGenerationData(genData)) {
+          completedCount++;
+          log.info(
+            { id: record.id, generationId },
+            '[sync-job] successfully synced generation data'
+          );
+        } else if (genData.error) {
+          errorDataCount++;
+          log.info({ id: record.id, generationId }, '[sync-job] saved generation error data');
+        } else {
+          notReadyCount++;
+          log.info({ id: record.id, generationId }, '[sync-job] saved incomplete generation data');
+        }
       } catch (err) {
         log.error(
-          {
-            kind: 'sys',
-            event: 'chathistory_sync.update_failed',
-            err,
-            id: record.id,
-            generationId,
-          },
-          'failed to update chat history'
+          { err, event: 'chathistory_sync.record_failed', id: record.id },
+          'record deferred; remaining candidates continue'
         );
-        continue;
-      }
-
-      try {
-        await openRouterHistory().upsert({
-          chat_history_id: record.id,
-          llm_generation_id: generationId,
-          ...providerMetadata,
-        });
-      } catch (err) {
-        log.error(
-          {
-            kind: 'sys',
-            event: 'chathistory_sync.openrouter_metadata_failed',
-            err,
-            id: record.id,
-            generationId,
-          },
-          'failed to update OpenRouter generation metadata'
-        );
-        continue;
-      }
-
-      if (isCompleteGenerationData(genData)) {
-        completedCount++;
-        log.info({ id: record.id, generationId }, '[sync-job] successfully synced generation data');
-      } else if (genData.error) {
-        errorDataCount++;
-        log.info({ id: record.id, generationId }, '[sync-job] saved generation error data');
-      } else {
-        notReadyCount++;
-        log.info({ id: record.id, generationId }, '[sync-job] saved incomplete generation data');
       }
     }
 
@@ -350,8 +414,8 @@ export async function reconcileCharge(input: {
     | 'assistant_reply'
     | 'status'
     | 'llm_billing_snapshot'
-  >;
-  generationId: string;
+  > & { callProvider?: LlmModelProvider | null };
+  generationId: string | null;
   genData: Record<string, unknown>;
   finishReason: string | null;
 }): Promise<ReconciledChargeResult> {
@@ -360,7 +424,10 @@ export async function reconcileCharge(input: {
   if (typeof chargeId !== 'string' || chargeId.length === 0) return { settled: false };
 
   const usageCost = genData.usage;
-  const snapshot = readBillingSnapshot(record.llm_billing_snapshot);
+  const snapshot = readBillingSnapshot(
+    record.llm_billing_snapshot,
+    record.callProvider ?? undefined
+  );
   const originalCharge = await wallets().findLlmUsageCharge(chargeId);
 
   if (originalCharge && originalCharge.metadata?.billing_mode !== 'fixed_tier') {
@@ -409,7 +476,7 @@ export async function reconcileCharge(input: {
 
 function buildFixedTierChargeCommand(input: {
   chargeId: string;
-  generationId: string;
+  generationId: string | null;
   record: Pick<ChatHistorySyncRow, 'user_id' | 'model' | 'assistant_reply' | 'status'>;
   genData: Record<string, unknown>;
   finishReason: string;
@@ -523,7 +590,10 @@ function resolveFixedDeductionAmount(
   return Number.isFinite(fromMeta) && fromMeta >= 0 ? fromMeta : 0;
 }
 
-function readBillingSnapshot(value: unknown): LlmBillingSnapshot | null {
+function readBillingSnapshot(
+  value: unknown,
+  provider?: LlmModelProvider
+): LlmBillingSnapshot | null {
   if (!value || typeof value !== 'object') return null;
   const row = value as Record<string, unknown>;
   if (row.billing_mode !== undefined && row.billing_mode !== 'fixed_tier') return null;
@@ -545,7 +615,7 @@ function readBillingSnapshot(value: unknown): LlmBillingSnapshot | null {
   return {
     charge_id: typeof row.charge_id === 'string' ? row.charge_id : '',
     model_id: typeof row.model_id === 'string' ? row.model_id : null,
-    provider: readProviderFromSnapshot(row),
+    provider: provider ?? readProviderFromSnapshot(row),
     provider_model_id:
       typeof row.provider_model_id === 'string' && row.provider_model_id.trim()
         ? row.provider_model_id
