@@ -25,7 +25,6 @@ export * from './api/conversations';
 export * from './api/voice';
 export * from './api/images';
 export * from './api/wishes';
-export * from './api/cs-platform';
 export * from './api/growth';
 export * from './api/invite';
 export * from './api/community';

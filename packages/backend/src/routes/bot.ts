@@ -2,9 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { ok, fail } from '@miniapp/shared';
 import { config } from '../platform/config.js';
 import { getOrCreateMiniappUserByTgId, recordBotStart } from '../lib/user.js';
-import { forwardBotMessageToCs, isCsServiceEnabled } from '../lib/cs-service.js';
+import { forwardBotMessageToCs } from '../lib/cs-service.js';
 import { captureBackendException } from '../lib/sentry.js';
-import { CsPlatformRepository } from '../infrastructure/repositories/CsPlatformRepository.js';
 
 interface BotStartRequestBody {
   tg_id?: unknown;
@@ -27,8 +26,6 @@ interface TelegramWebhookUpdate {
 }
 
 export default async function botRoutes(app: FastifyInstance) {
-  const csRepository = new CsPlatformRepository();
-
   // @frontend-ready: false - internal bot endpoint
   app.post('/api/internal/bot/start', async (request, reply) => {
     const secret = request.headers['x-bot-internal-secret'];
@@ -73,7 +70,8 @@ export default async function botRoutes(app: FastifyInstance) {
       return reply.send(ok({ ignored: true }));
     }
 
-    if (startPayload === undefined && isCsServiceEnabled()) {
+    // 非 /start 的私聊消息全部交给独立客服服务（linshu368/ST_cs_platform）
+    if (startPayload === undefined) {
       const photoFileId = pickPhotoFileId(update);
       const content = photoFileId ? (update.message?.caption?.trim() ?? '') : text;
       if (!content && !photoFileId) return reply.send(ok({ ignored: true }));
@@ -97,24 +95,6 @@ export default async function botRoutes(app: FastifyInstance) {
         captureBackendException(error, request, 'bot.forward_cs', { tg_id: tgId });
         return reply.send(ok({ ignored: false, forwarded: false }));
       }
-    }
-
-    if (startPayload === undefined) {
-      let message = null;
-      if (text) {
-        try {
-          message = await csRepository.receiveTelegramMessage({
-            telegramUserId: tgId,
-            content: text,
-            telegramMessageId: update.message?.message_id
-              ? String(update.message.message_id)
-              : undefined,
-          });
-        } catch (error) {
-          request.log.error({ err: error }, '[bot] receiveTelegramMessage failed');
-        }
-      }
-      return reply.send(ok({ ignored: !message, cs_message_id: message?.id ?? null }));
     }
 
     try {

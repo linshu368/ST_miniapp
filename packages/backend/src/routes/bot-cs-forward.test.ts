@@ -5,11 +5,9 @@ const SECRET = 'webhook-secret';
 const USER_ID = '00000000-0000-4000-8000-000000000042';
 
 const mocks = vi.hoisted(() => ({
-  enabled: true,
   forwardBotMessageToCs: vi.fn(),
   getOrCreateMiniappUserByTgId: vi.fn(),
   recordBotStart: vi.fn(),
-  receiveTelegramMessage: vi.fn(),
   captureBackendException: vi.fn(),
 }));
 
@@ -17,7 +15,6 @@ vi.mock('../platform/config.js', () => ({
   config: { telegramWebhookSecret: 'webhook-secret', botInternalSecret: 'internal' },
 }));
 vi.mock('../lib/cs-service.js', () => ({
-  isCsServiceEnabled: () => mocks.enabled,
   forwardBotMessageToCs: mocks.forwardBotMessageToCs,
 }));
 vi.mock('../lib/user.js', () => ({
@@ -25,11 +22,6 @@ vi.mock('../lib/user.js', () => ({
   recordBotStart: mocks.recordBotStart,
 }));
 vi.mock('../lib/sentry.js', () => ({ captureBackendException: mocks.captureBackendException }));
-vi.mock('../infrastructure/repositories/CsPlatformRepository.js', () => ({
-  CsPlatformRepository: class {
-    receiveTelegramMessage = mocks.receiveTelegramMessage;
-  },
-}));
 
 async function buildApp() {
   const { default: botRoutes } = await import('./bot.js');
@@ -59,12 +51,10 @@ const post = (app: Awaited<ReturnType<typeof buildApp>>, text: string) =>
 
 describe('bot webhook → cs service', () => {
   beforeEach(() => {
-    mocks.enabled = true;
     for (const fn of [
       mocks.forwardBotMessageToCs,
       mocks.getOrCreateMiniappUserByTgId,
       mocks.recordBotStart,
-      mocks.receiveTelegramMessage,
       mocks.captureBackendException,
     ])
       fn.mockReset();
@@ -72,7 +62,7 @@ describe('bot webhook → cs service', () => {
     mocks.recordBotStart.mockResolvedValue({ id: USER_ID, tg_id: '123456', bot_entered_at: null });
   });
 
-  it('普通文本：补建用户后转发，不碰旧回访表', async () => {
+  it('普通文本：补建用户后转发', async () => {
     const app = await buildApp();
     try {
       const response = await post(app, '充值没到账');
@@ -86,7 +76,6 @@ describe('bot webhook → cs service', () => {
         photoFileId: null,
         replyToMessageId: '70',
       });
-      expect(mocks.receiveTelegramMessage).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -139,19 +128,6 @@ describe('bot webhook → cs service', () => {
       expect(response.statusCode).toBe(200);
       expect(response.json().data.forwarded).toBe(false);
       expect(mocks.captureBackendException).toHaveBeenCalledOnce();
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('开关关闭时走旧回访入库', async () => {
-    mocks.enabled = false;
-    mocks.receiveTelegramMessage.mockResolvedValue({ id: 'old-1' });
-    const app = await buildApp();
-    try {
-      await post(app, '在吗');
-      expect(mocks.receiveTelegramMessage).toHaveBeenCalledOnce();
-      expect(mocks.forwardBotMessageToCs).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }

@@ -16,11 +16,6 @@
 - [钱包、签到与充值支付](backend/app/modules/business/wallet-payment.md) — `backend.business.wallet-payment` · `business` · `active`
 - [运行时、鉴权与数据访问基建](backend/app/modules/infrastructure/runtime-data-security.md) — `backend.infrastructure.runtime-data-security` · `infrastructure` · `active`
 
-## cs-platform
-
-- [Telegram 回访与站内客服](cs-platform/app/modules/business/customer-operations.md) — `cs-platform.business.customer-operations` · `business` · `active`
-- [CS API、鉴权与环境基建](cs-platform/app/modules/infrastructure/cs-client-auth.md) — `cs-platform.infrastructure.cs-client-auth` · `infrastructure` · `active`
-
 ## database
 
 - [钱包、订单与生成计费数据](database/supabase/modules/business/billing-payment.md) — `database.business.billing-payment` · `business` · `active`

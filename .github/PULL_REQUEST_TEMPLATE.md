@@ -16,7 +16,6 @@
 - [ ] frontend
 - [ ] backend
 - [ ] admin
-- [ ] cs-platform
 - [ ] shared/api
 - [ ] Supabase migration
 - [ ] 环境变量/部署
