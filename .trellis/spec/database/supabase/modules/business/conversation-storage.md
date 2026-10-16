@@ -43,7 +43,7 @@ last_verified_at: 2026-09-30
 
 ## 已知缺口与待核验项
 
-本地新增 catch-up、provider view、独立 DROP 12 调用列 migration，保留业务 llm_finish_reason/计费/专表旧别名。PG17+PostgREST 真删列后实际 repository/视图读写通过；Production 两类历史与 raw JSON 处置仍未完成，三份新 SQL 未远端执行。四份历史两库 ledger/checksum 一致，Venice 旧账本漂移不修复。
+已交付主表12调用列与专表11重复别名的独立contract，保留主表业务llm_finish_reason/计费及专表ID/data；PG17+PostgREST双处真删列后实际repository/视图读写通过。TEST catch-up/views已记账，两个DROP未执行；Production状态独立复核。旧raw JSON/历史分类及共享旧消费者退出仍是门禁，Venice旧账本漂移不修复。
 
 ## 关联模块
 
@@ -53,3 +53,7 @@ last_verified_at: 2026-09-30
 
 last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
 last_verified_at: 2026-09-14
+
+## T9 专表旧别名清理（本地实现，远端未执行）
+
+新增独立 `20261016_openrouter_chat_history_drop_legacy_aliases.sql`：删除11个重复别名，保留canonical原名列、llm_generation_id/data及UNIQUE/FK/ACL；仅填NULL原名安全字段、非空冲突/未知依赖/超过2000候选拒绝。显式删除8个旧别名CHECK，canonical CHECK保留。不把待回捞metadata空值判为失败，不改父行业务事实或Venice。可先清专表，主表DROP仍有独立历史JSON/结算和运行门禁；不搬raw JSON、不伪造结算。PG17/PostgREST双处真实删列回归见任务T9报告；真实环境覆盖与所有旧writer退出仍需独立验收。

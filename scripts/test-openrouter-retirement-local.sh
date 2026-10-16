@@ -43,6 +43,41 @@ expect_reject 'Legacy column database dependency remains'
 "${task_psql[@]}" -f "$task_sql/20261016_openrouter_retirement_catchup.sql" >/dev/null
 "${task_psql[@]}" -f "$task_sql/20261016_chat_history_provider_metadata_views.sql" >/dev/null
 expect_reject 'Unpreserved identity/scalars'
+# The provider contract is independent of the parent contract's historical gates.
+expect_alias_reject() {
+ if "${task_psql[@]}" -f "$task_sql/20261016_openrouter_chat_history_drop_legacy_aliases.sql" >"$task_dir/alias-reject.log" 2>&1; then
+  echo "FAIL: unsafe alias DROP was accepted ($1)" >&2; exit 1
+ fi
+ rg -q "$1" "$task_dir/alias-reject.log"
+}
+"${task_psql[@]}" -c "CREATE VIEW experience.alias_dependency_fixture AS SELECT llm_usage FROM experience.openrouter_chat_history;" >/dev/null
+expect_alias_reject 'OpenRouter alias database dependency remains'
+"${task_psql[@]}" -c "DROP VIEW experience.alias_dependency_fixture; UPDATE experience.openrouter_chat_history SET usage='1',llm_usage='0' WHERE chat_history_id='00000000-0000-0000-0000-000000000001';" >/dev/null
+expect_alias_reject 'Conflicting OpenRouter alias/canonical facts'
+"${task_psql[@]}" -c "UPDATE experience.openrouter_chat_history SET usage=llm_usage WHERE llm_usage IS NOT NULL; ALTER TABLE experience.openrouter_chat_history ADD CONSTRAINT fixture_mixed_check CHECK(llm_usage IS NULL OR usage IS NULL OR usage=llm_usage);" >/dev/null
+expect_alias_reject 'OpenRouter alias database dependency remains'
+"${task_psql[@]}" -c "ALTER TABLE experience.openrouter_chat_history DROP CONSTRAINT fixture_mixed_check; INSERT INTO experience.chat_history(model) SELECT 'alias-budget-fixture' FROM generate_series(1,2001); INSERT INTO experience.openrouter_chat_history(chat_history_id,llm_model) SELECT id,'budget-model' FROM experience.chat_history WHERE model='alias-budget-fixture';" >/dev/null
+expect_alias_reject 'OpenRouter alias catch-up exceeds reviewed 2000-row budget'
+"${task_psql[@]}" -c "DELETE FROM experience.chat_history WHERE model='alias-budget-fixture'; UPDATE experience.openrouter_chat_history SET llm_generation_data='{\"usage\":0}',llm_provider_name='AliasVendor',provider_name=NULL,llm_finish_reason='stop',finish_reason=NULL,llm_model='legacy-fixture-model',model=NULL,usage=NULL,llm_usage_cache='0',usage_cache=NULL,llm_native_tokens_cached=0,native_tokens_cached=NULL,llm_native_tokens_reasoning=0,native_tokens_reasoning=NULL,llm_native_tokens_completion=0,native_tokens_completion=NULL,llm_native_tokens_prompt=0,native_tokens_prompt=NULL,llm_latency=0,latency=NULL,llm_generation_time=0,generation_time=NULL WHERE chat_history_id='00000000-0000-0000-0000-000000000001'; CREATE TABLE experience.parent_before_alias_drop AS SELECT * FROM experience.chat_history;" >/dev/null
+"${task_psql[@]}" -f "$task_sql/20261016_openrouter_chat_history_drop_legacy_aliases.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS (SELECT * FROM experience.chat_history EXCEPT SELECT * FROM experience.parent_before_alias_drop) OR EXISTS (SELECT * FROM experience.parent_before_alias_drop EXCEPT SELECT * FROM experience.chat_history) THEN RAISE EXCEPTION 'alias contract changed parent facts'; END IF;
+ IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid='experience.openrouter_chat_history'::regclass AND NOT attisdropped AND left(attname,4)='llm_' AND attname NOT IN ('llm_generation_id','llm_generation_data')) THEN RAISE EXCEPTION 'legacy aliases remain'; END IF;
+ IF NOT EXISTS (SELECT 1 FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000001' AND provider_name='AliasVendor' AND finish_reason='stop' AND model='legacy-fixture-model' AND usage='0' AND usage_cache='0' AND native_tokens_cached=0 AND native_tokens_reasoning=0 AND native_tokens_completion=0 AND native_tokens_prompt=0 AND latency=0 AND generation_time=0 AND llm_generation_id='or-fixture' AND llm_generation_data='{"usage":0}'::jsonb) THEN RAISE EXCEPTION 'alias scalar/zero/identity not preserved'; END IF;
+ BEGIN
+  UPDATE experience.openrouter_chat_history SET native_tokens_prompt=-1;
+  RAISE EXCEPTION 'canonical negative tokens accepted';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+END $$;
+DROP TABLE experience.parent_before_alias_drop;
+SET ROLE cs_persona_reader;
+SELECT * FROM experience.current_chat_history;
+SELECT * FROM miniapp_analytics.base_chat_bj;
+RESET ROLE;
+SQL
+expect_alias_reject 'Unexpected OpenRouter alias/canonical shape'
 # Synthetic-only audit resolution: a fixture supplies reliable attribution, never done remotely.
 "${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_billing_snapshot='{\"provider\":\"openrouter\"}' WHERE id='00000000-0000-0000-0000-000000000004';" >/dev/null
 "${task_psql[@]}" -f "$task_sql/20261016_openrouter_retirement_catchup.sql" >/dev/null
@@ -91,4 +126,4 @@ env -i PATH="$PATH" HOME="$HOME" NODE_ENV=test DATABASE_ENV=test DOTENV_CONFIG_P
 "${task_psql[@]}" -c 'DROP VIEW miniapp_analytics.base_chat_bj; DROP OWNED BY cs_persona_reader; DROP ROLE cs_persona_reader;' >/dev/null
 "${task_psql[@]}" -f "$task_sql/20261016_chat_history_provider_metadata_views.sql" >/dev/null
 expect_reject 'Expected exactly 12 legacy columns'
-printf 'Retirement passed: real DROP, historical guards, provider views/ACL and real PostgREST repositories.\n'
+printf 'Retirement passed: real parent/alias DROP, catch-up/conflict/budget/dependency guards, provider views/ACL and real PostgREST repositories.\n'

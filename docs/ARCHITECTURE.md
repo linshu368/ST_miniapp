@@ -276,7 +276,9 @@ OpenRouter 的原始调用元数据写入 `experience.openrouter_chat_history`�
 
 回捞五路独立各限 50/24h/DB 5s：两个 provider 的未结算、无调用身份、OpenRouter 缺 metadata、超时 streaming；按 parent 去重，单源/单行失败隔离。metadata 完整但账/额度未结可直接用专表已存事实恢复；缺 OpenRouter key 不停 Venice。无 ID 且成功但原因不足的记录停止自动推断，已确定失败按原 charge_id 收口；重启超时沿既有终态/额度恢复。
 
-本轮三份新 SQL 是 catch-up → provider views → 独立 12 列 DROP。current/已有 base_chat_bj 保留输出类型/基数/业务语义/权限，从对应专表取原始事实；current 保持 invoker，原 reader 仅补必要列权限。先部署本轮 Backend、确认所有旧 writer 退出和窗口覆盖，再切视图/独立 DROP；主表业务 llm_finish_reason 和计费列、专表旧别名不删。DROP 拒绝依赖/未保全事实/未经审阅旧 raw JSON/未收口历史，不要求中断专表已就绪、旧列为空的新 streaming 调用。删列后只能用已验证兼容 SHA 或 forward-fix，不直接回退旧 Backend，不执行 VACUUM FULL。当前仅本地完成，实际环境与恢复见 [T8 报告](../.trellis/tasks/10-15-openrouter-history-extract/research/t8-local-retirement-verification-2026-10-16.md) 和 [发布清单](../.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md)。
+本轮三份新 SQL 是 catch-up → provider views → 独立 12 列 DROP。current/已有 base_chat_bj 保留输出类型/基数/业务语义/权限，从对应专表取原始事实；current 保持 invoker，原 reader 仅补必要列权限。先部署本轮 Backend、确认所有旧 writer 退出和窗口覆盖，再切视图/独立 DROP；该主表 DROP 保留业务 llm_finish_reason、计费列与专表旧别名；专表别名另由下方 T9 清理。DROP 拒绝依赖/未保全事实/未经审阅旧 raw JSON/未收口历史，不要求中断专表已就绪、旧列为空的新 streaming 调用。删列后只能用已验证兼容 SHA 或 forward-fix，不直接回退旧 Backend，不执行 VACUUM FULL。当前仅本地完成，实际环境与恢复见 [T8 报告](../.trellis/tasks/10-15-openrouter-history-extract/research/t8-local-retirement-verification-2026-10-16.md) 和 [发布清单](../.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md)。
+
+T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 独立删除 OpenRouter 表 11 个重复旧别名，仅在原名为空且无冲突时保全类型化字段，超过 2000 候选停止；定点移除 8 个旧 CHECK，保留 canonical CHECK、ID/data、唯一/FK/ACL。未知依赖/冲突停止，待回捞空 metadata 不算失败。可先清专表再执行主表 12 列 contract；主表非空旧 JSON 与历史结算守卫原样保留，旧 raw JSON 不进入专表。两处真实本地删列回归与远端治理/运行门禁独立，删列后只允许兼容 SHA/forward-fix。
 
 计费要点：
 

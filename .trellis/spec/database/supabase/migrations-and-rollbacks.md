@@ -34,7 +34,7 @@ GitHub Actions 操作前再次核对 workflow 版本、目标 environment secret
 
 `20261015_openrouter_chat_history.sql` → `20261015_openrouter_chat_history_backfill.sql` → `20261015_openrouter_chat_history_venice_exclusion_backfill.sql` → `20261016_openrouter_original_metadata_fields.sql` → 新 Backend。每个文件核验账本/checksum、shape/FK/unique/index、ACL、回填聚合与锁/容量后才能继续；初始表的 provider 常量约束会被第三份修正，中间态不可部署新 writer。
 
-旧主表列/视图保留仅是兼容阶段，不能作为清退任务完成。2026-10-16 新增阶段须交付主表 12 列（不含业务 `llm_finish_reason`）的消费者切换及独立 DROP migration；专表旧别名不默认纳入。视图必须按对应 provider 专表取值并保留类型/基数/ACL/security_invoker，不能用 CASCADE 解决依赖。四类删列门禁为应用无引用、DB 无依赖、实际运行无旧读写及历史/窗口覆盖；删列后旧 Backend 不能直接回退，需已验证兼容 SHA 或受审阅 forward-fix。三份 SQL 已本地实现并通过真实 PG17/PostgREST 删列回归；未在远端执行，见本任务 T8 报告。新 writer 不持续反写别名；回退旧 Backend 不能使这些新数据自动同步回旧列。切换窗口须按最后旧 writer/首个新 writer 的实际时间审计，24h 回捞外的数据另审 catch-up。
+旧主表列/视图保留仅是兼容阶段，不能作为清退任务完成。2026-10-16 新增阶段须交付主表 12 列（不含业务 `llm_finish_reason`）的消费者切换及独立 DROP migration；专表旧别名在用户T9明确扩展后纳入独立contract，保留ID/data现名。视图必须按对应 provider 专表取值并保留类型/基数/ACL/security_invoker，不能用 CASCADE 解决依赖。四类删列门禁为应用无引用、DB 无依赖、实际运行无旧读写及历史/窗口覆盖；删列后旧 Backend 不能直接回退，需已验证兼容 SHA 或受审阅 forward-fix。三份 SQL 已本地实现并通过真实 PG17/PostgREST 删列回归；未在远端执行，见本任务 T8 报告。新 writer 不持续反写别名；回退旧 Backend 不能使这些新数据自动同步回旧列。切换窗口须按最后旧 writer/首个新 writer 的实际时间审计，24h 回捞外的数据另审 catch-up。
 
 测试库小样本成功不代表大生产表可用相同单事务回填。先取得本环境候选规模/查询计划、锁与 WAL/磁盘预算；文件 1/2 无内置 timeout，未验证生产规模前停止执行。结果未知须互证 SQL 提交与 ledger/claim/event，禁止盲重跑或 force_rerun 修漂移。完整可审阅方案见 `.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md`；该路径是本任务方案，不是已执行证明。
 
@@ -42,7 +42,7 @@ GitHub Actions 操作前再次核对 workflow 版本、目标 environment secret
 
 ### 1. Scope / Trigger
 
-只删除调用元数据，保留主表 llm_finish_reason/业务 model/计费事实；不清理专表别名，不重跑四份已记账历史 SQL，不改 Venice 表/mapper。
+只删除调用元数据，保留主表 llm_finish_reason/业务 model/计费事实；专表11重复别名另用独立contract，不重跑已记账历史 SQL，不改 Venice 表/mapper。
 
 ### 2. Signatures
 
@@ -67,3 +67,11 @@ scripts/test-openrouter-retirement-local.sh（PG17 + 显式本地 PostgREST 路�
 ### 7. Wrong vs Correct
 
 Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：仅回退到已验证无 12 列也能运行的 SHA，或受审阅 forward-fix；恢复旧应用须另审列/安全事实重建，空列不等于数据恢复；无 VACUUM FULL/表重写。
+
+## Scenario: OpenRouter 专表 11 别名 contract
+
+`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 要求所有共享库旧 writer 退出、11组shape匹配、零非空冲突、NULL原名补齐候选不超过2000；仅移除8个已知单别名CHECK及11旧列，RESTRICT拒绝未知view/index/策略/混合约束依赖。canonical校验、ID/data、唯一/FK、ACL与业务父行不改。空占位/待回捞不是失败，不要求metadata齐全才能清理重复别名。无新对象，无并行迁移来源。
+
+单独事务与5s锁/60s语句预算，覆盖预检在获取DDL锁之前；锁超时停止、结果未知核对账本/shape，不自动重试。原名缺口补齐只取同一专表旧安全标量，0保留，非空新事实不覆盖，不搬历史raw JSON。可先执行专表contract，再在历史治理/四类门禁通过后执行主表contract；主表原拒绝未知JSON/历史结算守卫未改，不能通过伪造settled_at放行。
+
+扩展既有scripts/test-openrouter-retirement-local.sh与.mts，真实删除12+11列后验证实际repository读写/回捞/计费恢复/取消晚到/Venice及视图/权限；冲突/未知依赖/混合CHECK/2001候选/重复执行拒绝。原expand/ledger与所有消费者验证继续运行。Production需单独覆盖/锁/容量证据，不能沿用TEST零冲突。删列后禁止回退旧别名writer或用重建空列伪称数据恢复；无VACUUM FULL。

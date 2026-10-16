@@ -33,6 +33,8 @@ const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')
 const check = (result: { error: unknown }) => assert.equal(result.error, null);
 const absent = await db.from('chat_history').select('llm_generation_id');
 assert(absent.error, 'physical legacy column must be gone');
+const absentAlias = await db.from('openrouter_chat_history').select('llm_usage');
+assert(absentAlias.error, 'physical provider alias must be gone');
 
 for (const [n, provider] of [
   [10, 'openrouter'],
@@ -87,6 +89,13 @@ const pendingVenice = await histories.listRowsPendingBilling({
 });
 assert.equal(pendingVenice.find((row) => row.id === id(11))?.generationId, 'fixture-11');
 assert.equal(pendingVenice.find((row) => row.id === id(11))?.callProvider, 'venice');
+// Still-pending metadata is a valid durable call, not a failed conversation.
+assert.equal((await or.readGenerationData(id(10)))?.usage, null);
+assert(
+  (await or.listRowsMissingGenerationData({ since: '2020-01-01T00:00:00Z', limit: 50 })).some(
+    (row) => row.id === id(10) && row.generationId === 'fixture-10'
+  )
+);
 await or.upsert({
   chat_history_id: id(10),
   llm_generation_id: 'fixture-10',
@@ -173,6 +182,6 @@ assert(
   'Venice identity must not enter missing-identity recovery'
 );
 console.log(
-  'Real repositories passed: prompt/body/finalize, provider ID CAS/concurrency, pending/missing scans, billing outcome, cancel/late stop, context/latest revision after physical DROP.'
+  'Real repositories passed: prompt/body/finalize, provider ID CAS/concurrency, pending/missing scans, billing outcome, cancel/late stop, context/latest revision and pending metadata after both physical DROP operations.'
 );
 await client.removeAllChannels();
