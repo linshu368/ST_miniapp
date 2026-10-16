@@ -60,3 +60,16 @@ DROP 拟 lock_timeout 5s/statement_timeout 60s、显式 RESTRICT 12 列；排他
 ## 当前额外停止条件
 
 DROP 实现会拒绝任何非空主表 llm_generation_data；本轮没有证明其内容可以安全丢弃，不能盲迁或直接置空。仅合成 fixture 为验证拒绝路径而清除测试值，不是生产处置方案/授权。历史未结算 guard 区分 legacy/missing-detail 与专表已建、旧列为空的新 streaming 调用；正常新调用无需为历史清退被强制中断。ID 首次落库/metadata/正文与计费事实的正常路径已本地回归，仍需部署后真实业务验收。
+
+## T9 新增专表清退范围与当前操作顺序（本地实施）
+
+可先合并430使development部署无主表旧列依赖的Backend，但PR425仍共享TEST且旧代码有依赖，必须升级或停止/隔离，并核对所有旧进程退出。合并不等于可以执行现有DROP。前两份新SQL已在TEST记账，不能再次运行；停止旧writer后重新审计窗口，需要修补则新增受审阅forward migration。
+
+现有DROP仅删主表12列，不会清理OpenRouter专表。新增范围为专表11重复llm\_\*别名，保留canonical列与llm_generation_id/data现名，另交独立contract文件；两处DROP分别有本环境门禁。TEST旧JSON1797和历史守卫1281均须分类解决；不能因metadata空判新调用失败。原名覆盖/旧别名约束与消费者检查、隔离库双处物理删列回归完成后，再列最终文件顺序与checksum。专表删列文件现为 `packages/shared/migrations/20261016_openrouter_chat_history_drop_legacy_aliases.sql`；原主表DROP守卫保持，不自动处置旧JSON。
+
+### T9 已核验与执行边界
+
+- PR430已合并，merge f15fb73d；development部署de247e4f-7931-4702-b6e3-868b8e27e847 / f15fb73d SUCCESS，旧bc82947a REMOVED。TEST专表11对字段缺口及非空冲突均0，两份DROP账本均未执行（本次只读快照）。PR425共享TEST旧writer上次仍在线，执行前重查/升级或隔离，不能仅依据dev更新放行。
+- 新增专表contract可先执行，前提是本环境全部别名消费者退出、DB依赖和窗口覆盖通过。原名metadata为空允许待回捞，不要求为了删别名重新调用上游。先核对alias/canonical冲突和补齐候选预算，未知约束停止。
+- 顺序：已完成的catchup/views不重跑 → `packages/shared/migrations/20261016_openrouter_chat_history_drop_legacy_aliases.sql` → 验证 → 原JSON/历史分类/无主表旧消费者门禁通过后，单独执行 `packages/shared/migrations/20261016_chat_history_drop_provider_metadata.sql`。后者当前仍不能直接执行；本轮未授权或执行远端JSON清空/补账/停止PR425。
+- 回退只能到已通过主表12+专表11列不存在验证的canonical writer，不能回退旧别名writer；如需空列重建另审数据恢复，不执行表重写。Production未执行本轮专表preflight，不沿用TEST零冲突数值。

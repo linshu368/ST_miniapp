@@ -16,7 +16,7 @@ R1. 清退 experience.chat_history 恰好 12 列：llm_provider_name、llm_usage
 
 R2. 主表 llm_finish_reason 保持业务终态、取消/超时裁决、SSE 和计费闸门；专表 finish_reason 仅是上游原始结束原因，晚到 stop 不覆盖取消/超时。主表 model、llm_charge_id、llm_billing_snapshot、llm_billing_settled_at、llm_intended_deduction、deduction_rate 保留。
 
-R3. OpenRouter 调用事实唯一来源为 `experience.openrouter_chat_history`：provider*name、finish_reason、usage、usage_cache、四个 `native_tokens*\*`、latency、generation_time、model；llm_generation_id/data 保持现名。不新增 cache_discount，不清理专表旧别名，不保存 prompt、正文、凭证或不受控 raw JSON，不盲迁历史 raw JSON。
+R3. OpenRouter 调用事实唯一来源为 `experience.openrouter_chat_history`：provider*name、finish_reason、usage、usage_cache、四个 `native_tokens*\*`、latency、generation*time、model；llm_generation_id/data 保持现名。不新增 cache_discount；按本次新增范围清理专表 11 个重复 llm*\* 别名（见 T9），不保存 prompt、正文、凭证或不受控 raw JSON，不盲迁历史 raw JSON。
 
 R4. metadata 完整而 charge/quota/主表回写失败仍可恢复；占位/ID 写入失败、重启、多副本、重复回捞、超窗均有恢复或停止条件。各 provider 从各自专表提供调用 ID。保持 Venice 计费/额度语义，不引入通用 provider 框架，不重构 Venice mapper/表。
 
@@ -52,3 +52,14 @@ R7. 新增 SQL 仅位于 shared migrations；应用无依赖、DB 内部无依�
 - 12942 条无 ID/无 detail：不能据此认定没有可迁移 metadata。聚合分类为“可靠归属+安全字段可迁移（NULL ID）”“无调用事实且业务计费已收口”“计费/额度未收口”“归属/值冲突未知”。只迁可证明 OpenRouter 的安全标量，不能仅因无 Venice 就给无 ID 历史猜 provider；没有信息不伪造 ID。未收口沿原 charge_id/冻结快照/已确定业务原因恢复，信息不足停止自动处理并人工核验。全部分类、可迁移信息已保留且未知项获确认前禁止 DROP。两类数字都是旧快照，切换时重新计算；TEST 165 不替代 Production。
 
 新增 migration 的分类守卫必须拒绝未保全的安全调用字段、不明确 provider、ID 冲突和未完成结算/额度；无法证明原始 JSON 可丢弃时阻断 DROP，由受控内容治理另审，不盲搬或静默删除。本地可用合成 fixture 验证拒绝路径，真实环境未知项不自动通过。
+
+## T9 新增范围：OpenRouter 专表旧别名清退（已授权本地实施）
+
+用户要求主表旧调用列与专表重复旧别名均清理，前述排除专表旧别名的范围现被本节取代。主表仍删既定 12 列；专表新增删 11 列：llm_provider_name、llm_finish_reason、llm_usage、llm_usage_cache、llm_native_tokens_cached、llm_native_tokens_reasoning、llm_native_tokens_completion、llm_native_tokens_prompt、llm_latency、llm_generation_time、llm_model。保留对应 11 个原名列；按此前明确命名约定保留专表 llm_generation_id、llm_generation_data，不将调用身份或受控诊断误当冗余别名删除。若要求这两列也去前缀，需要单独确认 rename 契约及先部署兼容 writer，不可直接 DROP。
+
+- [x] AC8：本地物理删除主表 12 列和专表 11 别名后，生成落表、ID 持久化、metadata 回捞、计费恢复、取消/超时、Venice、视图及权限验证通过。
+- [ ] AC9：专表旧别名的安全值缺口/冲突、DB 与所有共享环境消费者依赖均核对；原名未回捞为空不是调用失败，但旧别名中仅存的有效事实不能静默丢弃。
+
+2026-10-16 PR430 只读核验：部署 272f144a / TEST；3 条新调用输入/回复/上下文/快照/结算齐全，专表 ID 齐全、主表 12 列为空；专表 usage/finish_reason 待回捞不算失败。TEST 两前序新 migration 账本/checksum 一致，主表列级依赖零，current 1307 行与预期一致。development 50c121f4、PR425 5856cc3 同连 TEST 且仍依赖主表旧列；旧 JSON 1797 条与历史结算守卫 1281 条（均无 snapshot）尚待分类，不将其自动判为业务失败。此为当次快照，执行前重查。
+
+用户随后确认PR430已合并，授权按本规划继续本地实现，并在完成后提交推送；不开新Trellis任务。本轮远端迁移、其他环境升级/停止及新PR创建仍不自动执行。专表旧别名清理不等于主表历史JSON处置已获授权；主表DROP原守卫保留。

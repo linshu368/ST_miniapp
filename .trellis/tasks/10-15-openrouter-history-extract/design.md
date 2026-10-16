@@ -102,3 +102,19 @@
 ## T8 最终实现校正
 
 最高约束落实为显式业务投影与已收到正文先入 snapshot，metadata 写失败不得清空 SSE 当前 chunk/此前正文或非流式完整 body；各 provider ID 操作每次 5s、总 10s、有界两次写和读回。恢复实际为五路：两个 provider pending 各 50、missing identity、metadata、stale streaming 各 50/24h；单源/单行隔离，无 OpenRouter key 仍处理 Venice/已存事实/超时清理。空上游字段不清既有 canonical 值，usage_cache=0 保留。DROP 的历史结算守卫只挡 legacy/missing-detail cohort，不要求中断专表已有占位且旧列为空的正常新 streaming 调用。旧 raw JSON 非空明确阻断 DROP，未新增自动清空/迁移 raw JSON 的脚本；其内容处置留待真实历史审阅。
+
+## T9 专表旧别名清退设计（已审阅授权，覆盖此前不清别名的边界）
+
+复用 OpenRouter 原名 mapper/repository、专表 UNIQUE(parent)/FK、既有视图及真实 PG17/PostgREST harness，不建新表/状态源/通用 provider 框架。主表原 12 列范围不变；专表仅清理 PRD T9 明列的 11 个重复别名，保留 llm_generation_id/data、canonical 字段及 parent key。
+
+两库已执行的六份相关历史 SQL 不修改/不重跑；专表 contract 必须另新增 migration，先做 canonical 缺口/冲突聚合，旧别名非空而 canonical 为空时仅补可信安全标量、不覆盖新事实。冲突停止；不把旧 llm_finish_reason 强行当上游原始终态。检查旧 CHECK 约束、视图、函数、触发器、RLS、索引与 ACL；对已确认的旧别名 CHECK 约束定点替换/清理，不能用 CASCADE。NULL metadata 允许正常回捞，不能要求所有 canonical 都非空。
+
+先合并430并确认 development 实际部署新 SHA；升级或停止/隔离 PR425 等所有同库旧 writer 后，重新审计切换窗口（catchup 已记账不能重跑）。主表与专表 contract 分文件执行，分别验证，不能把合并视为删列授权。现有主表 SQL 仍会拒绝1797条旧JSON/1281条历史记录，须先完成受审阅的分类/内容处置方案；无snapshot的历史不能直接按 settled_at NULL 宣判失败，也不能伪造已结算。
+
+每个 contract 独立事务、有限 lock/statement timeout、RESTRICT 与 shape/coverage 守卫；短锁窗口失败停止，不自动重试。容量与并发仍用原预检，不进行表重写。删列后只用两处列清退均验证过的兼容 SHA 或 forward-fix；旧Backend不可直接回滚。最小新增文件是专表 contract SQL，扩展既有测试/harness；若窗口审计证明需要新数据修复，再另审有界 forward migration，不预建批处理框架。
+
+### T9 实施校正
+
+新增 `20261016_openrouter_chat_history_drop_legacy_aliases.sql`，独立于主表contract：逐组核对11对列的类型、拒绝非空冲突、仅补NULL原名值（总候选最多2000），移除8个既定的单旧列CHECK后DROP11别名。未知依赖/混合CHECK/shape漂移/两provider重叠拒绝。canonical校验、ID/data、UNIQUE/FK、审计列和ACL保留，不新增对象。与原名字段完全空的占位/待回捞记录兼容，不新增计费或metadata完整性门禁。
+
+TEST两前序已记账、视图已适配，因此本轮实际可按“所有共享旧writer退出/覆盖核对 → 专表11别名contract → 验证 → 历史治理及主表门禁 → 主表12列contract”推进。先清专表不要求主表历史JSON处置，主表DROP则仍拒绝未知旧JSON和历史结算。主表SQL未修改，不通过伪造settled_at或复制不受控JSON绕过。原任务6份已执行SQL均未改动；原主表DROP未改动。
