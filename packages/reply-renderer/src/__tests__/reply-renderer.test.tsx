@@ -7,6 +7,8 @@ import { Worker as NodeWorker } from 'node:worker_threads';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   validateCompiledArtifact,
+  DEFAULT_RICH_REPLY_RECOVERY,
+  applyTextPostprocess,
   LEGACY_RICH_REPLY_CSS,
   RICH_REPLY_RULE_STYLES,
   type CompiledTextPostprocessArtifact,
@@ -96,6 +98,62 @@ describe('reply renderer boundaries', () => {
     });
     expect(response.css).toContain(`.${ruleScopeClass('message', 'rich-reply-dialogue')}`);
     expect(response.css).not.toContain(LEGACY_RICH_REPLY_CSS);
+  });
+
+  it('keeps body styles out of the v1 compatibility skin', () => {
+    expect(RICH_REPLY_RULE_STYLES.body).toContain('line-height: 1.85');
+    expect(LEGACY_RICH_REPLY_CSS).not.toContain(RICH_REPLY_RULE_STYLES.body);
+    expect(LEGACY_RICH_REPLY_CSS).not.toContain('text-align: justify');
+  });
+
+  it('scopes enabled body CSS to direct paragraphs and skips it when disabled', () => {
+    const scope = ruleScopeClass('message', 'rich-reply-body');
+    const respond = (enabled: boolean) =>
+      buildWorkerResponse({
+        jobId: 1,
+        generation: 1,
+        content: '第一段\n\n第二段',
+        artifact: mustValidate({
+          schema_version: 1,
+          policy_version: 1,
+          rich_reply_protocol: { version: 2, enabled: true },
+          rules: [bodyRule({ enabled })],
+        }),
+        messageKey: 'message',
+        deadlineAt: Date.now() + 1000,
+      });
+
+    const enabled = respond(true);
+    expect(enabled.result.status).toBe('applied');
+    expect(enabled.css).toContain(`.${scope} > p { font-size: 16px; }`);
+    expect(enabled.result.segments.every((segment) => segment.type === 'text')).toBe(true);
+
+    const disabled = respond(false);
+    expect(disabled.result.status).toBe('applied');
+    expect(disabled.css).not.toContain(scope);
+  });
+
+  it('mounts the body scope on the applied reply root only', async () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [bodyRule()],
+    });
+    const content = [
+      '夜色很深。',
+      '[status]<details><summary>此刻</summary>```markdown\\n地点：花园\\n```</details>[/status]',
+      '她没有回头。',
+    ].join('\n\n');
+    const view = render(element(content, artifact, { messageKey: 'body-scope' }));
+    await waitForState(view.container, 'applied');
+
+    const scope = ruleScopeClass('body-scope', 'rich-reply-body');
+    const root = view.container.querySelector('.reply-markdown');
+    expect(root?.classList.contains(scope)).toBe(true);
+    expect(view.container.querySelectorAll(`.${scope} > p`)).toHaveLength(2);
+    expect(view.container.querySelector('style')?.textContent).toContain(`.${scope} > p`);
+    expect(view.container.querySelector('.rp-unit--status')).not.toBeNull();
   });
 
   it('keeps the main bundle off the compiler and runs apply inside the worker bundle', () => {
@@ -206,6 +264,77 @@ describe('markdown and trusted slots', () => {
     const scope = view.container.querySelector('mark.card')?.parentElement?.className ?? '';
     expect(scope.length).toBeGreaterThan(1);
     expect(style).toContain(`.${scope}`);
+  });
+
+  it('mounts block slots beside prose while preserving Markdown code and list contexts', async () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rules: [blockRule()],
+    });
+    const content = [
+      'before betaBlock after',
+      'betaBlock',
+      '',
+      '`betaBlock`',
+      '',
+      '```',
+      'betaBlock',
+      '```',
+      '',
+      '- betaBlock beside list text',
+      '',
+      '> betaBlock beside quoted text',
+    ].join('\n');
+    const view = render(element(content, artifact));
+    await waitForState(view.container, 'applied');
+    expect(view.container.querySelectorAll(`.${ruleScopeClass('message', 'block')}`)).toHaveLength(
+      2
+    );
+    expect(view.container.querySelector('code .rp-unit')).toBeNull();
+    expect(view.container.querySelector('code')?.textContent).toBe('betaBlock');
+    expect(view.container.querySelector('pre')?.textContent).toContain('betaBlock');
+    expect(view.container.querySelector('li div')).toBeNull();
+    expect(view.container.querySelector('li')?.textContent).toContain('betaBlock beside list text');
+    expect(view.container.querySelector('blockquote div')).toBeNull();
+    expect(view.container.querySelector('blockquote')?.textContent).toContain(
+      'betaBlock beside quoted text'
+    );
+    expect(view.container.textContent).toContain('before betaBlock after');
+  });
+
+  it('mounts status and memory separated by one newline without exposing protocol markers', async () => {
+    const artifact = mustValidate({
+      schema_version: 1,
+      policy_version: 1,
+      rich_reply_protocol: { version: 2, enabled: true },
+      rules: [],
+    });
+    const content = [
+      '正文',
+      '[status]',
+      '<details><summary>当前状态</summary>',
+      '```markdown',
+      '心跳仍快',
+      '```',
+      '</details>',
+      '[/status]',
+      '[memory]',
+      '<details><summary>工作记忆</summary>',
+      '```markdown',
+      '当前档案数目：0',
+      '```',
+      '</details>',
+      '[/memory]',
+      '后文',
+    ].join('\n');
+    const view = render(element(content, artifact));
+    await waitForState(view.container, 'applied');
+    expect(view.container.querySelector('.rp-unit--status')).not.toBeNull();
+    expect(view.container.querySelector('.rp-unit--memory')).not.toBeNull();
+    expect(view.container.textContent).toContain('正文');
+    expect(view.container.textContent).toContain('后文');
+    expect(view.container.textContent).not.toMatch(/\[\/?(?:status|memory)\]|<details>|```/);
   });
 
   it('keeps a valid memory block renderable when recovering an unclosed status block', async () => {
@@ -737,6 +866,24 @@ async function waitForState(
   );
 }
 
+/** 「正文」规则：正则故意能命中测试正文，用来证明它不会被执行，只有样式生效。 */
+function bodyRule(
+  overrides: Partial<CompiledTextPostprocessRule> = {}
+): CompiledTextPostprocessRule {
+  return inlineRule({
+    id: 'body',
+    pattern: '(?:夜色很深)',
+    css: [
+      {
+        type: 'style',
+        selectors: [{ compounds: [{ combinator: null, tag: 'p', classes: [], pseudos: [] }] }],
+        declarations: [{ property: 'font-size', tokens: [{ t: 'dimension', v: '16', u: 'px' }] }],
+      },
+    ],
+    ...overrides,
+  });
+}
+
 function inlineRule(
   overrides: Partial<CompiledTextPostprocessRule> = {}
 ): CompiledTextPostprocessRule {
@@ -1032,3 +1179,74 @@ function sourceFiles(directory: string): string[] {
   }
   return files;
 }
+
+describe('configured recovery through Markdown transport', () => {
+  it('renders fenced bracket variants as cards and sends the single recovered choice', async () => {
+    const content =
+      '```markdown\n【choices】\n［choice］继续［/choice］\n【status】地点：花园\n```';
+    const artifact: CompiledTextPostprocessArtifact = {
+      schema_version: 1,
+      policy_version: 1,
+      rules: [],
+      rich_reply_protocol: {
+        version: 3,
+        enabled: true,
+        recovery: structuredClone(DEFAULT_RICH_REPLY_RECOVERY),
+      },
+    };
+    const applied = applyTextPostprocess({ text: content, artifact });
+    if (applied.status !== 'applied') throw new Error(applied.reason);
+    const onChoice = vi.fn();
+    const view = composeAppliedView({
+      content,
+      segments: applied.segments,
+      css: '',
+      displayName: null,
+      messageKey: 'configured-recovery',
+      interactive: true,
+      onChoice,
+      openStore: new Map(),
+    });
+    if (!view.ok) throw new Error(view.reason);
+    const rendered = render(<div>{view.body}</div>);
+    expect(rendered.container.querySelectorAll('.rp-unit')).toHaveLength(2);
+    expect(rendered.container.textContent).not.toMatch(/choices|choice|status|```|【|［/);
+    const button = rendered.getByRole('button', { name: /继续/ });
+    await userEvent.click(button);
+    expect(onChoice).toHaveBeenCalledOnce();
+    expect(onChoice.mock.calls[0]?.[0]).toMatchObject({ text: '继续' });
+  });
+  it('keeps ordinary fenced code inert and renders EOF status separately from following prose', () => {
+    const artifact: CompiledTextPostprocessArtifact = {
+      schema_version: 1,
+      policy_version: 1,
+      rules: [],
+      rich_reply_protocol: {
+        version: 3,
+        enabled: true,
+        recovery: structuredClone(DEFAULT_RICH_REPLY_RECOVERY),
+      },
+    };
+    for (const content of [
+      '```js\nconst x = "[status]内容[/status]";\n```',
+      '```markdown\n这里是示例\n[choices][choice]继续[/choice][/choices]\n```',
+    ]) {
+      const result = applyTextPostprocess({ text: content, artifact });
+      if (result.status !== 'applied') throw new Error(result.reason);
+      const view = composeAppliedView({
+        content,
+        segments: result.segments,
+        css: '',
+        displayName: null,
+        messageKey: 'ordinary-code',
+        interactive: true,
+        openStore: new Map(),
+      });
+      if (!view.ok) throw new Error(view.reason);
+      const rendered = render(<div>{view.body}</div>);
+      expect(rendered.container.querySelector('pre code')).not.toBeNull();
+      expect(rendered.container.querySelector('button')).toBeNull();
+      rendered.unmount();
+    }
+  });
+});

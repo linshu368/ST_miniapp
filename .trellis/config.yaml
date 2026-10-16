@@ -13,8 +13,6 @@ packages:
     path: packages/shared
   admin:
     path: packages/admin
-  cs-platform:
-    path: packages/cs-platform
   database:
     path: packages/shared/migrations
   docs:

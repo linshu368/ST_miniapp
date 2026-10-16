@@ -10,7 +10,7 @@ import { CHAT_MARKDOWN_CLASS, ChatMarkdown } from './chat-markdown';
 import { getChatReplyPresentation } from './chat-reply-presentation';
 
 /**
- * 几何全部照搬原版聊天页注入 ST iframe 的那套样式
+ * 字号/行高/头像尺寸等取值照搬原版聊天页注入 ST iframe 的那套样式
  * （st-extension/src/patches/mobile-chat-theme.ts，本文件不引用它，只对齐取值）。
  *
  * 原版把桌面尺寸写成基准、520px 以下再覆盖；Tailwind 是移动优先，方向相反，
@@ -18,12 +18,36 @@ import { getChatReplyPresentation } from './chat-reply-presentation';
  *
  * 关键一点：AI 消息在原版里没有气泡——透明底、无边框，正文直接铺在背景上，
  * 只有用户消息才是气泡。带底色的卡片会让长回复看起来被关进框里，和原版差别很大。
+ *
+ * 布局上与原版有意不同：头像和标题/发送方单独占一行放在正文上方，正文自己独立成行，
+ * 左右 padding 完全对称。原版把头像和正文放在同一行、头像占掉左侧空间，
+ * 这会让 body 规则里的 `text-align: justify` 在一个左右不对称的容器里生效，
+ * 两端对齐的效果被挤偏到右边，视觉上不居中。头像挪到上方后正文容器天然对称，
+ * justify 才能展现出「正文整体居中、左右两端对齐」的效果。
+ *
+ * AI 正文区本身限制到 620px 并用 `mx-auto` 居中，而不是只给外层加 padding。
+ * 窄屏两侧各留 32px，521px 以上各留至少 48px；超过 620px 后两侧留白继续自然增加。
+ * 头像和标题也放进同一个容器，保证消息的各部分使用同一条对齐线。
  */
 const AVATAR_CLASS =
   'size-[34px] shrink-0 rounded-full border border-border object-cover min-[521px]:size-9';
 
+/** 头像挪到正文上方后单独占一行，尺寸比行内嵌入时更大一些，和正文的视觉比例更协调 */
+const HEADER_AVATAR_CLASS =
+  'size-10 shrink-0 rounded-full border border-border object-cover min-[521px]:size-11';
+
 const BODY_TEXT_CLASS =
   'text-[14.5px] font-[440] leading-[1.76] min-[521px]:text-[15px] min-[521px]:leading-[1.72]';
+
+const ASSISTANT_CONTENT_CLASS =
+  'mx-auto w-[calc(100%-4rem)] max-w-[620px] min-w-0 min-[521px]:w-[calc(100%-6rem)]';
+
+/**
+ * 角色名/会话标题：比正文小一档、颜色用 muted，做成一行轻提示而不是加粗的强标题，
+ * 避免和正文抢视觉重心。
+ */
+const HEADER_TITLE_CLASS =
+  'truncate text-[13.5px] font-medium text-muted-foreground min-[521px]:text-[14px]';
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
@@ -64,11 +88,11 @@ export function ChatMessageBubble({
 }: ChatMessageBubbleProps) {
   if (message.role === 'user') {
     return (
-      <div className="flex items-end justify-end gap-2 px-3.5 pb-2.5 pt-1.5">
-        <div className="w-fit max-w-[calc(100%-42px)] whitespace-pre-wrap rounded-[20px_20px_6px_20px] border border-primary/[0.18] bg-bubble-user px-3.5 py-[11px] text-foreground min-[521px]:max-w-[min(calc(100%-44px),34rem)]">
+      <div className="flex flex-col items-end gap-1 px-6 pb-2.5 pt-1.5 min-[521px]:px-10">
+        <Avatar url={userAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
+        <div className="w-fit max-w-full whitespace-pre-wrap rounded-[20px_20px_6px_20px] border border-primary/[0.18] bg-bubble-user px-3.5 py-[11px] text-foreground min-[521px]:max-w-[30rem]">
           <span className={BODY_TEXT_CLASS}>{message.content}</span>
         </div>
-        <Avatar url={userAvatarUrl} alt="" />
       </div>
     );
   }
@@ -76,39 +100,41 @@ export function ChatMessageBubble({
   const presentation = getChatReplyPresentation(message);
 
   return (
-    <div className="flex items-start px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
-      <Avatar url={characterAvatarUrl} alt="" />
-      <div className="min-w-0 max-w-[calc(100%-42px)] flex-1 pl-2.5 min-[521px]:max-w-[calc(100%-46px)]">
-        <div className="min-h-[18px] truncate text-[13px] font-[650] text-foreground">
-          {characterName}
+    <div className="pb-3.5 pt-3">
+      <div className={ASSISTANT_CONTENT_CLASS}>
+        <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
+          <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
+          <span className={HEADER_TITLE_CLASS}>{characterName}</span>
         </div>
-        <div className={cn('pt-1 text-foreground', BODY_TEXT_CLASS)}>
-          {message.content ? (
-            <AssistantReplyBody
-              message={message}
-              plan={replyPlan ?? { kind: 'original' }}
-              streaming={Boolean(streaming)}
-              displayName={displayName}
-              choiceDisabled={choiceDisabled !== false}
-              onChoice={onChoice}
-              detailsDefaultOpen={detailsDefaultOpen}
-            />
-          ) : null}
-          {streaming ? (
-            <span
-              className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-primary align-middle"
-              aria-hidden
-            />
-          ) : null}
-          {stalled ? <ReplyNotice>TA 回应得有点久，再等一会儿。</ReplyNotice> : null}
-          {presentation === 'incomplete' && message.finish_reason === 'content_filter' ? (
-            <ReplyNotice>回复停在这里了，可以重新回复。本次未扣星尘。</ReplyNotice>
-          ) : presentation === 'empty' ? (
-            <ReplyNotice>TA 刚才没能回应，可以再试一次。本次未扣星尘。</ReplyNotice>
-          ) : null}
-          {quotaExhaustedNotice ? <ReplyNotice>{quotaExhaustedNotice}</ReplyNotice> : null}
+        <div className="min-w-0">
+          <div className={cn('text-foreground', BODY_TEXT_CLASS)}>
+            {message.content ? (
+              <AssistantReplyBody
+                message={message}
+                plan={replyPlan ?? { kind: 'original' }}
+                streaming={Boolean(streaming)}
+                displayName={displayName}
+                choiceDisabled={choiceDisabled !== false}
+                onChoice={onChoice}
+                detailsDefaultOpen={detailsDefaultOpen}
+              />
+            ) : null}
+            {streaming ? (
+              <span
+                className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-primary align-middle"
+                aria-hidden
+              />
+            ) : null}
+            {stalled ? <ReplyNotice>TA 回应得有点久，再等一会儿。</ReplyNotice> : null}
+            {presentation === 'incomplete' && message.finish_reason === 'content_filter' ? (
+              <ReplyNotice>回复停在这里了，可以重新回复。本次未扣星尘。</ReplyNotice>
+            ) : presentation === 'empty' ? (
+              <ReplyNotice>TA 刚才没能回应，可以再试一次。本次未扣星尘。</ReplyNotice>
+            ) : null}
+            {quotaExhaustedNotice ? <ReplyNotice>{quotaExhaustedNotice}</ReplyNotice> : null}
+          </div>
+          {footer ? <div className="pt-1.5">{footer}</div> : null}
         </div>
-        {footer ? <div className="pt-1.5">{footer}</div> : null}
       </div>
     </div>
   );
@@ -125,13 +151,13 @@ export function ChatTypingBubble({
   stalled?: boolean;
 }) {
   return (
-    <div className="flex items-start px-3.5 pb-3.5 pt-3 min-[521px]:px-4">
-      <Avatar url={characterAvatarUrl} alt="" />
-      <div className="min-w-0 flex-1 pl-2.5">
-        <div className="min-h-[18px] truncate text-[13px] font-[650] text-foreground">
-          {characterName}
+    <div className="pb-3.5 pt-3">
+      <div className={ASSISTANT_CONTENT_CLASS}>
+        <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
+          <Avatar url={characterAvatarUrl} alt="" className={HEADER_AVATAR_CLASS} />
+          <span className={HEADER_TITLE_CLASS}>{characterName}</span>
         </div>
-        <div className="flex items-center gap-1 pt-2.5">
+        <div className="flex items-center gap-1 pt-1">
           {[0, 1, 2].map((index) => (
             <span
               key={index}
@@ -228,10 +254,18 @@ function ReplyNotice({ children }: { children: ReactNode }) {
   );
 }
 
-function Avatar({ url, alt }: { url: string | null; alt: string }) {
-  if (!url) return <span className={cn(AVATAR_CLASS, 'bg-secondary')} aria-hidden />;
+function Avatar({
+  url,
+  alt,
+  className = AVATAR_CLASS,
+}: {
+  url: string | null;
+  alt: string;
+  className?: string;
+}) {
+  if (!url) return <span className={cn(className, 'bg-secondary')} aria-hidden />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt={alt} loading="lazy" className={AVATAR_CLASS} />
+    <img src={url} alt={alt} loading="lazy" className={className} />
   );
 }

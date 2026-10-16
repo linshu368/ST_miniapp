@@ -29,7 +29,7 @@
 - `payment/ZqPaymentGateway.ts`：支付供应商签名、请求/查询和响应适配，不决定业务结算规则。
 - `telemetry/posthog-capture.ts`：Node 原生 fetch 调 PostHog capture；短超时、无重试，失败不回滚业务。
 - `redis/UpstashConfigStore.ts`：远端配置缓存适配。
-- `repositories/CharacterCardRepository.ts`：角色卡；`ChatSessionRepository.ts`、`ConversationHistoryRepository.ts`：会话、历史、current-postprocess 原子开轮；`TextPostprocessRepository.ts`：草稿/发布/版本快照 RPC；`ChatMessageAudioRepository.ts`：音频；`CsPlatformRepository.ts`：CS。
+- `repositories/CharacterCardRepository.ts`：角色卡；`ChatSessionRepository.ts`、`ConversationHistoryRepository.ts`：会话、历史、current-postprocess 原子开轮；`TextPostprocessRepository.ts`：草稿/发布/版本快照 RPC；`ChatMessageAudioRepository.ts`：音频。
 - `MiniappCharacterFavoriteRepository.ts`、`MiniappCharacterFreeQuotaRepository.ts`、`MiniappPaymentOrderRepository.ts`、`MiniappUserSettingsRepository.ts`、`MiniappWalletRepository.ts`、`MiniappWishRoleRepository.ts`：各业务域持久化。
 - `conversation-errors.ts` 归一 repository 错误；`effective-display-name.ts` 计算展示昵称。
 
@@ -40,7 +40,7 @@ Repository 隐藏 schema client/Prisma 行形状，返回领域结果；跨 sche
 - `lib/db.ts`：Prisma 单例；`lib/supabase.ts`：按域 Supabase client。
 - `lib/logger.ts`/`log-pretty.ts`：pino；`lib/sentry.ts`：监控与脱敏。
 - `chat-history-logger.ts` + `chat-history-sync-job.ts`：终态即时记录与轮询补齐；`chat-voice-storage.ts`：语音 Storage。
-- `lobby-ranking-refresh-job.ts`/`lobby-latest-badge.ts`：大厅后台能力；`notifications.ts`/`notification-scope.ts`、`support-unread.ts`：通知/客服；`telegram-links.ts`、`user-avatar.ts`、`user.ts`：边界工具。
+- `lobby-ranking-refresh-job.ts`/`lobby-latest-badge.ts`：大厅后台能力；`notifications.ts`/`notification-scope.ts`：通知；`cs-service.ts`：调用独立客服服务（linshu368/ST_cs_platform）；`telegram-links.ts`、`user-avatar.ts`、`user.ts`：边界工具。
 - `platform/config.ts`：环境变量解析唯一中心；`runtime-config.ts`：DB 配置读取唯一入口；`model-tiers.ts`、`openrouter-models.ts`：模型档位和目录。
 - `prisma/schema.prisma` 是 Prisma 映射，不是共享契约；`prisma/migrations/` 是历史，当前 migration 唯一源仍是 `packages/shared/migrations/`；`seed.ts` 保护开发 fixture。
 - `scripts/payment-*` 执行支付诊断/对账/过期；`seed-config.ts` 初始化配置。阶段 `invite-uat/`、`mvp-regression/` 已删除，不得作为现行场景验证器。
