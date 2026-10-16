@@ -17,17 +17,17 @@ const databaseConfig = createDatabaseConfig({
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
-  csPlatformUrl: process.env.CS_PLATFORM_URL || 'https://st-cs-platform.vercel.app',
   adminPlatformUrl: process.env.ADMIN_PLATFORM_URL || 'https://st-admin-platform.vercel.app',
   nodeEnv,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   botInternalSecret: process.env.BOT_INTERNAL_SECRET || '',
   telegramCommunityBotToken: process.env.TELEGRAM_COMMUNITY_BOT_TOKEN || '',
-  // CS 必须使用当前数据库环境对应的 MiniApp Bot；否则同一 tg_id 对另一 Bot 会 chat not found。
-  csTelegramBotToken: process.env.TELEGRAM_BOT_TOKEN || process.env.CS_TELEGRAM_BOT_TOKEN || '',
-  csAdminToken: process.env.CS_ADMIN_TOKEN || '',
-  csTelegramWebhookSecret: process.env.CS_TELEGRAM_WEBHOOK_SECRET || '',
+  // 独立客服服务（linshu368/ST_cs_platform）：Bot 私聊消息转发过去、/api/support/* 代理过去。
+  csService: {
+    url: (process.env.CS_SERVICE_URL || '').replace(/\/$/, ''),
+    secret: process.env.CS_SERVICE_SECRET || '',
+  },
 
   // ── 数据库环境隔离 ────────────────────────────────────────────────────────
   database: {
