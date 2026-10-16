@@ -12,6 +12,9 @@ describe('buildGenerationMetadata', () => {
       choices: [{ message: { content: 'private reply' } }],
       nested: { input: 'private input', model: 'routed/model' },
       api_key: 'secret',
+      completion: 'private reply',
+      diagnostics: { prompt_text: 'private prompt', credentials: 'secret' },
+      error: { code: 404, message: 'private reply / secret', raw: 'private prompt' },
     });
 
     expect(metadata.llm_generation_data).toEqual({
@@ -19,7 +22,7 @@ describe('buildGenerationMetadata', () => {
       finish_reason: 'stop',
       usage: 0.001,
       provider_name: 'CoreWeave',
-      nested: { model: 'routed/model' },
+      error: { code: 404 },
     });
     expect(metadata.provider_name).toBe('CoreWeave');
     expect(Object.keys(metadata).filter((key) => key.startsWith('llm_'))).toEqual([

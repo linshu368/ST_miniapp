@@ -10,8 +10,9 @@ const state = vi.hoisted(() => ({
     or: vi.fn(),
     order: vi.fn(),
     limit: vi.fn(),
+    abortSignal: vi.fn(),
   },
-  parent: { select: vi.fn(), in: vi.fn() },
+  parent: { select: vi.fn(), in: vi.fn(), abortSignal: vi.fn() },
 }));
 
 vi.mock('../../lib/supabase.js', () => ({
@@ -24,13 +25,17 @@ import { buildGenerationMetadata } from '../../features/generation/openrouter-me
 beforeEach(() => {
   vi.clearAllMocks();
   for (const mock of Object.values(state.candidate)) mock.mockReturnValue(state.candidate);
-  state.candidate.limit.mockResolvedValue({
+  state.candidate.abortSignal.mockResolvedValue({
     data: [{ chat_history_id: 'turn-1', llm_generation_id: 'gen-1' }],
     error: null,
   });
   state.parent.select.mockReturnValue(state.parent);
-  state.parent.in.mockResolvedValue({ data: [{ id: 'turn-1', status: 'success' }], error: null });
-  state.upsert.mockResolvedValue({ error: null });
+  state.parent.in.mockReturnValue(state.parent);
+  state.parent.abortSignal.mockResolvedValue({
+    data: [{ id: 'turn-1', status: 'success' }],
+    error: null,
+  });
+  state.upsert.mockReturnValue({ abortSignal: vi.fn().mockResolvedValue({ error: null }) });
   state.from.mockImplementation((name: string) =>
     name === 'openrouter_chat_history' ? { ...state.candidate, upsert: state.upsert } : state.parent
   );

@@ -119,3 +119,45 @@ Correct：绑定具体回复调用服务端取消，只有响应真实终态才�
 Wrong：Backend 超时后传 `NULL` 开轮，或客户端拿 source 即时编译并选择最新版本。
 
 Correct：数据库开轮事务读取权威指针并绑定不可变 artifact 版本；消费者只读消息自身版本，任何不可用都退化为完整原文。
+
+## Scenario: OpenRouter 明细、计费恢复与原名字段
+
+### 1. Scope / Trigger
+
+OpenRouter 原始调用事实移入 `experience.openrouter_chat_history`；主表继续拥有业务终态、generation ID 兼容恢复键与计费事实。拆表不能缩小原有计费恢复覆盖面或改变 Venice 行为。
+
+### 2. Signatures
+
+- `OpenRouterChatHistoryRepository.ensureGenerationId(historyId, generationId)` / `upsert(metadata)`；唯一键 `chat_history_id`。
+- 主表 `listRowsPendingBilling({ since, limit })`、`listRowsMissingOpenRouterDetail({ since, limit })` 与专表 `listRowsMissingGenerationData({ since, limit })` 独立扫描，再按 parent ID 去重。
+- `recordBillingOutcome({ historyId, deductionRate?, intendedDeduction?, finishReason?, billingSettledAt? })` 只接受主表事实；不传入整个 provider metadata 对象。
+
+### 3. Contracts
+
+11 列使用厂商原名：provider_name、finish_reason、usage、usage_cache、native_tokens_cached/reasoning/completion/prompt、latency、generation_time、model。只保留 `llm_generation_id` / `llm_generation_data` 两个命名例外。usage_cache 可缺失且 0 有效，不新增 cache_discount。
+
+恢复窗口 24h，各来源最多 50、DB 调用 5s；独立扫描失败不阻断其他来源。pending billing 与 metadata 是否完整独立，包含 Venice；缺失占位恢复通过左右明细 anti-join，排除 Venice 明细及明确 Venice snapshot。只剩 parent ID 时仍可恢复，故兼容期不能删 parent generation ID。
+
+`llm_generation_data` 只允许 id 与原名 metadata 字段；字符串最多 512 字符，错误仅允许数值 code；不持久化任意嵌套对象、error message、正文或凭证。主表取消/超时与上游 finish_reason 独立。
+
+### 4. Validation & Error Matrix
+
+- metadata 已完整但 billingSettledAt 缺失 → 主表 pending 扫描重入同 charge_id，补 quota/金额收口。
+- placeholder 失败 → 24h 内通过 parent ID 恢复；超窗须审查 catch-up，不能声称自动恢复。
+- Venice pending → 既有本地业务 finish reason 结算，不请求 OpenRouter API、不写 OpenRouter detail。
+- 一路扫描失败 → 安全日志记录 source/err，其余来源继续；唯一/FK 与计费 RPC 幂等处理重复/多副本。
+- cancelled/timeout 后上游 stop → 专表可记 stop，主表终态与非计费结果不变。
+
+### 5. Good/Base/Bad Cases
+
+Good：metadata complete、quota finalize 暂失败，独立 pending 扫描补收口。Base：metadata 迟到，保留占位并有界回捞。Bad：只查专表 NULL 字段，把“metadata 完整”当作“结算完成”，或将 Venice 从恢复路径排除。
+
+### 6. Tests Required
+
+扩展既有 mapper/repository/sync/cancel 测试：原名/zero/NULL、未知嵌套内容排除、完整 metadata 的计费恢复、缺失占位、Venice、重复候选、单路扫描失败、取消/超时晚到 stop。既有测试与本地迁移检查不能替代 TEST 真机、钱包/quota、多副本/故障恢复及 Production 独立验收。
+
+### 7. Wrong vs Correct
+
+Wrong：`rows = detailRowsWithMissingMetadata` 后假设全部计费都会被修复；黑名单删掉 prompt 后保存剩余任意 JSON。
+
+Correct：独立扫描 `pendingBilling + missingDetail + incompleteMetadata` 并按 parent 去重；诊断字段用有界 allowlist，业务金额/终态显式写主表。

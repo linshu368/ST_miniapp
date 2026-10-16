@@ -85,21 +85,28 @@ function tokenCount(value: unknown): number | null {
 }
 
 /** OpenRouter's response is diagnostic evidence, not a second prompt/archive store. */
-function safeGenerationData(value: unknown, depth = 0): unknown {
-  if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
-  if (typeof value === 'string') return value;
-  if (depth >= 6 || Array.isArray(value) || typeof value !== 'object') return null;
-
-  const result: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-    if (
-      /^(?:prompt|messages?|input|content|assistant_reply|user_input|history|authorization|api_?key)$/i.test(
-        key
-      )
-    )
-      continue;
-    const safe = safeGenerationData(nested, depth + 1);
-    if (safe !== null) result[key] = safe;
+function safeGenerationData(value: GenerationData): GenerationData {
+  const result: GenerationData = {};
+  // Unknown response fields and free-form error messages can contain content or credentials.
+  for (const key of ['id', 'provider_name', 'finish_reason', 'model'] as const) {
+    if (typeof value[key] === 'string') result[key] = value[key].slice(0, 512);
+  }
+  for (const key of [
+    'usage',
+    'usage_cache',
+    'native_tokens_cached',
+    'native_tokens_reasoning',
+    'native_tokens_completion',
+    'native_tokens_prompt',
+    'latency',
+    'generation_time',
+  ] as const) {
+    const number = nonnegativeNumber(value[key]);
+    if (number !== null) result[key] = number;
+  }
+  if (value.error && typeof value.error === 'object') {
+    const code = (value.error as Record<string, unknown>).code;
+    result.error = typeof code === 'number' && Number.isFinite(code) ? { code } : {};
   }
   return result;
 }
@@ -121,18 +128,15 @@ export async function fetchGenerationData(generationId: string): Promise<Generat
 
     const body = await res.json().catch(() => null);
     const genData = body?.data ?? body;
+    if (!res.ok) return { error: { code: res.status } };
 
     if (genData && typeof genData === 'object') {
-      return genData as GenerationData;
-    }
-
-    if (!res.ok) {
-      return { error: { message: `OpenRouter API returned status ${res.status}` } };
+      return safeGenerationData(genData as GenerationData);
     }
 
     return null;
-  } catch (err) {
-    return { error: { message: String(err) } };
+  } catch {
+    return { error: {} };
   }
 }
 

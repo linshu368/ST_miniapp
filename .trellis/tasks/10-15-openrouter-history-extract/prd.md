@@ -12,7 +12,7 @@ TEST `zoqelpfhurwehlvypryl` 的 `experience.chat_history` 现存 13 个 OpenRout
 - `model`、`llm_charge_id`、`llm_billing_snapshot`、`llm_billing_settled_at`、`deduction_rate`、`llm_intended_deduction` 属于主表业务或计费事实，不纳入拆表。
 - 新表归 `experience`：业务不变量是“一条对话 revision 对应一次 OpenRouter 调用明细”；不随运营后台单独存续。权威写入方为 Backend；运行时消费者为结算、24 小时回捞和排障查询。新表以 `experience.chat_history(id)` 为父外键；视图、回捞与计费的既有依赖仍须核对，不新增跨 schema API。
 - 迁移只新增到 `packages/shared/migrations/`，不修改历史 migration；TEST 和 Production 分开验收。旧数据、兼容窗口、权限/RLS、容量/锁与回滚均须明确。原始 JSON 不应新增 prompt、回复正文、凭证或个人敏感数据。
-- 本轮仅规划，等待人工审阅；审阅前不执行 `task.py start`、产品代码、DB 写入、提交或推送。
+- 各阶段按已审核规划执行；Production migration、PR 合并和部署必须获得用户明确授权。本次允许保留旧列进行兼容发布，旧消费者切换与删列独立审阅。
 
 ## 验收标准
 
@@ -20,5 +20,5 @@ TEST `zoqelpfhurwehlvypryl` 的 `experience.chat_history` 现存 13 个 OpenRout
 
 - [ ] TEST 上新表结构、唯一/FK/级联、索引、约束、授权和回填一致性经过前后核验；无法归属的历史行单独计数，不误迁移。
 - [ ] OpenRouter 新发送、重生成、免费/付费、成功/取消/超时/上游错误及用量迟到均保持原对话和计费行为；重复结算/回捞不产生重复明细或扣费。
-- [ ] 回捞扫描、`current_chat_history` 视图及所有消费者已切到新位置；主表旧列仅在应用和数据库无引用、目标环境无读写证据后清理。旧 Backend 的兼容边界和停止条件已记录。
+- [ ] 回捞扫描消费原名明细，同时保留必要的主表计费与占位恢复；旧 Backend、`current_chat_history` 和分析消费者的兼容边界/停止条件已记录。旧视图与旧列可保留进行本次发布；仅在独立审阅及应用/数据库/环境无读写证据后清理。
 - [ ] 受影响包 typecheck、既有相关测试、lint/静态检查、跨包 build 与 `pnpm -r typecheck` 通过；TEST 手工验证和 migration 回滚/forward-fix 证据齐全。Production 不以 TEST 结果代替。

@@ -1,12 +1,16 @@
 # Task Breakdown
 
-| ID  | 状态         | 工作与文件范围                                                        | 验证/门禁                                                                                               |
-| --- | ------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| T1  | Done         | 复核 TEST/Production 结构、账本、应用/DB 消费者；定历史归属与兼容边界 | 只读 catalog/依赖/账本证据；未导出业务行，见 `research/t1-environment-and-consumer-audit-2026-10-15.md` |
-| T2  | Done         | 新表 migration 与 Backend 生成、结算、回捞仓储；必要的既有回归        | 本地静态与回归通过；远端 migration/人工场景留给 T3                                                      |
-| T2R | Done (local) | OpenRouter 11 字段改原名、显式计费结果与 expand migration             | 本地 PostgreSQL 17 迁移、结算/回捞/终态保护及消费者检查通过；TEST schema/部署待执行                     |
-| T3  | In progress  | TEST 单文件迁移、回填核对、视图/消费者切换、旧列清理门禁              | TEST 结构/回填、PR 424 真机发送/重生成及迟到元数据回捞已通过；其余场景与消费者切换门禁仍待验收          |
-| T4  | Todo         | 文档/spec 更新及最终审阅包                                            | diff、验证结果、forward-fix 和发布顺序                                                                  |
+| ID  | 状态             | 工作与文件范围                                                        | 验证/门禁                                                                                                               |
+| --- | ---------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| T1  | Done             | 复核 TEST/Production 结构、账本、应用/DB 消费者；定历史归属与兼容边界 | 只读 catalog/依赖/账本证据；未导出业务行，见 `research/t1-environment-and-consumer-audit-2026-10-15.md`                 |
+| T2  | Done             | 新表 migration 与 Backend 生成、结算、回捞仓储；必要的既有回归        | 本地静态与回归通过；远端 migration/人工场景留给 T3                                                                      |
+| T2R | Done (TEST)      | OpenRouter 11 字段改原名、显式计费结果与 expand migration             | 本地回归通过；TEST 原名 expand 已执行（run 38874596773 / 68bf9085）；Backend caebc0c6 已推送，PR-424 实际部署已实时复核 |
+| T3  | In progress      | TEST 迁移、真实业务验收与切换窗口核对；旧列/视图保留                  | TEST 结构/回填、PR 424 真机发送/重生成及迟到元数据回捞已通过；其余真实场景与切换窗口仍待验收，旧列/视图切换另审         |
+| T4  | Ready for review | 最终审阅、本地必要修复、文档与生产发布清单                            | diff、验证结果、forward-fix 和发布顺序                                                                                  |
+
+## 当前状态校正（2026-10-16 T4）
+
+用户交接证据：TEST 四个官方 migration 已执行，原名 expand 为 run `38874596773`、提交 `68bf9085`；Backend `caebc0c6` 已推送。下方按日期记录的“本地/未执行/未部署”是当时状态，不是当前待办；T4 实时核验见本文末尾与 research/t4-final-audit-2026-10-16.md。TEST 新旧字段都有值的反馈不证明部署后新调用已由原名 writer 写入。T3 未整体验收，Production 动作未授权。
 
 ## Execution Log
 
@@ -25,8 +29,33 @@
 
 - 2026-10-16 补充复核：用户反馈三条明细已补齐后，通过 PR 424 的 TEST 连接以只读事务核验，同一真机会话的 3 条 revision 均已有厂商、模型、usage、耗时、prompt/completion token 数和上游 `stop`；原始诊断对象已无 `error`。主表仍为 `success/stop`，generation ID 一致，已结算，每条各有一笔计费，无 Venice 明细。故先前 404 已恢复，发送/重新生成及迟到元数据回捞验收通过；此结果未确定此前 404 的根因，也不替代免费、取消、超时、上游错误和消费者切换验收。仅记录聚合结果，未导出业务行或原始 JSON。
 
-- 先由 Database Migration workflow 在 TEST 单文件执行 `packages/shared/migrations/20261015_openrouter_chat_history.sql`，逐项核对表 shape、FK/级联、唯一约束、索引、grant/RLS 与 service-role 读写；Production 需独立审批、目标复核与同样的执行记录。不可用本地验证替代任一远端环境。
+- TEST 四个 migration 已执行，详见当前状态及后续 T4 证据；不重复执行。Production 需独立审批、目标复核与逐文件执行记录。不可用本地或 TEST 验证替代 Production。
 - PR 424 已验证真实付费发送、重新生成的 generation ID 占位、一对一明细、迟到 usage/路由厂商/原始结束原因补齐，以及多次自动回捞后每调用仅一笔计费；还需覆盖免费、取消、超时、上游错误与业务终态保护。此前 404 已恢复，根因未确定，保留为观察风险。
 - 不得在 T3 前回填或删除主表旧列；`current_chat_history` 与 Production `miniapp_analytics.base_chat_bj` 仍依赖旧列。只有确认两环境的应用/视图/函数/分析查询及部署版本均无旧列读写后，才可另行评估 consumer 切换和清理。
 - TEST/Production 现有 `venice_chat_history` 与未记账 `20260929_venice_chat_history.sql` 的漂移保持已记录状态；本任务未重跑、未改写该 migration，不能据此推断新 migration 的账本状态。
 - PR 424 的 Backend 已在 `pr-424` 部署，但这次真机样本不足以完成全部 T3 验收；`current_chat_history` consumer 切换与旧列清理仍需单独授权和两环境无读写证据门禁，Production 迁移/部署仍未执行。TEST 作为活跃库，补迁移后新增的旧路径行也须在后续发布门禁重新核对。
+
+## T4 最终审阅与发布准备（2026-10-16）
+
+- 当前本地/远端/PR head 同为 `caebc0c6`，PR-424 实际 deployment `a6cd9603-13b7-49d3-98b8-03d00539d4c1` 运行该提交；Quality Gate/Docker 通过，最新 PR Review run `38875235561` 仍 HTTP 402。`origin/dev` 相对当前分叉 9/8 commits，未自动 merge/rebase，整合最终 base 后须重新验证。
+- TEST 四份 migration 实时账本与 checksum 均通过；原名 expand 官方 run `38874596773` SUCCESS / `68bf9085`。部署后新产生的 3 条（含一次重生成）原名 usage 完整、旧 llm_usage 均 NULL，ID 一致且每条一笔 charge/均已结算，已区分历史复制与新 writer。
+- TEST 近 24h 缺失 OpenRouter 明细的非 Venice parent 为 9；缺失明细 anti-join HEAD 验证 HTTP 200/count 9。本次未补写它们；不能宣称已恢复。metadata 完整但未结算为 0 仅是瞬时聚合，不能代替失败路径验收。
+- 最终审阅发现三项 P1 并完成本地修复：完整 metadata 的未结算/Venice 恢复入口丢失、占位失败后不可回捞、raw JSON 黑名单不保证内容隔离。恢复三路各 50/24h/5s、独立失败隔离/去重；诊断改有界 allowlist。没有新 migration、依赖、公开 DTO 或测试文件；扩展既有风险回归。当前远端/CI/部署不包含这些本地修复。
+- Production 已独立核实：新表不存在、四份 ledger/claims/events 无记录；current_chat_history/base_chat_bj 的旧列依赖保留。主表 catalog 约 346,623 行/23.4 GB，超过 TEST 规模依据；容量/锁/候选预检未完成前不可执行生产回填。Venice 旧 migration 未记账只记录漂移。
+- 发布方案见 [逐文件清单](production-release-checklist.md)，证据与审阅结论见 [T4 审计](research/t4-final-audit-2026-10-16.md)。README/架构/Backend 与 DB 专题 spec 已同步；四模块 `module-updates.json` 为待人工审阅的最终内容，未 archive/apply。
+
+### 仍未完成的 T3
+
+- [ ] 含 T4 修复版本的 TEST 部署/新发送/重生成复验；9 条缺失明细实际恢复、超窗分类及切换窗口 catch-up。
+- [ ] 免费模型/角色免费额度、取消先赢/完成先赢、超时、上游错误及晚到 stop 的真实 SSE/主表/钱包/额度验收。
+- [ ] generation API 404/429/5xx/超时，DB 占位/metadata/计费/quota 回写失败，重启/多副本/重复回捞；每调用唯一 charge 与对应钱包 ledger。
+- [ ] 分析/CS 外部消费者兼容确认与生产容量计划。旧列清理、视图切换独立审阅，不是本次兼容发布必做项。
+
+本任务保持 in_progress，不自动勾选 PRD 全部验收、不归档。未暂存/提交/推送，未执行任何 Production migration、PR 合并或部署。无关 Admin preview task 与问题汇总文件保留。
+
+### T4 本地最终验证
+
+- Backend：84 files / **669 tests**；Shared：15 files / **139 tests**，全部通过。
+- `pnpm -r typecheck`、`pnpm -r --workspace-concurrency=2 --if-present build`、`pnpm lint`、`pnpm lint:imports`、`pnpm lint:legacy`、`pnpm lint:migrations`、`git diff --check` 通过。Backend 无独立 build script；build 覆盖有 build script 的消费者；Admin 既有 bundle size 提示不阻断构建。
+- `OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/test-openrouter-original-fields-migration.sh` 通过；`pnpm test:migration-ledger` 通过。沙箱分别阻止 PG 共享内存/本地 socket，按工具审批在沙箱外重跑隔离本地检查；未连接远端写库。
+- `module_knowledge.py check` 与 `task.py validate` 通过；没有执行 module apply/archive。TEST PostgREST HEAD 已验证 anti-join，但本地模拟不能证明多副本真实恢复/钱包/免费额度场景；这些仍属 T3 待办。

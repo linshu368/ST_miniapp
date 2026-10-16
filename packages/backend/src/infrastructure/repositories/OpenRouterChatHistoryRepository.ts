@@ -17,25 +17,31 @@ export class OpenRouterChatHistoryRepository {
   private readonly db = getDomainDb('experience');
 
   async ensureGenerationId(chatHistoryId: string, generationId: string): Promise<void> {
-    const { error } = await this.db.from('openrouter_chat_history').upsert(
-      {
-        chat_history_id: chatHistoryId,
-        llm_generation_id: generationId,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'chat_history_id' }
-    );
+    const { error } = await this.db
+      .from('openrouter_chat_history')
+      .upsert(
+        {
+          chat_history_id: chatHistoryId,
+          llm_generation_id: generationId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'chat_history_id' }
+      )
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`保存 OpenRouter generation ID 失败：${error.message}`);
   }
 
   async upsert(metadata: OpenRouterChatHistoryMetadata): Promise<void> {
-    const { error } = await this.db.from('openrouter_chat_history').upsert(
-      {
-        ...metadata,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'chat_history_id' }
-    );
+    const { error } = await this.db
+      .from('openrouter_chat_history')
+      .upsert(
+        {
+          ...metadata,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'chat_history_id' }
+      )
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`回写 OpenRouter 调用明细失败：${error.message}`);
   }
 
@@ -56,7 +62,8 @@ export class OpenRouterChatHistoryRepository {
         'llm_generation_data.is.null,usage.is.null,latency.is.null,generation_time.is.null,finish_reason.is.null'
       )
       .order('created_at', { ascending: false })
-      .limit(input.limit);
+      .limit(input.limit)
+      .abortSignal(AbortSignal.timeout(5_000));
     if (candidateError)
       throw new Error(`扫描待补齐的 OpenRouter 调用明细失败：${candidateError.message}`);
 
@@ -70,7 +77,8 @@ export class OpenRouterChatHistoryRepository {
       .select(
         'id, user_id, model, llm_finish_reason, llm_charge_id, assistant_reply, status, llm_billing_snapshot'
       )
-      .in('id', ids);
+      .in('id', ids)
+      .abortSignal(AbortSignal.timeout(5_000));
     if (historyError)
       throw new Error(`读取待补齐 OpenRouter 对话轮次失败：${historyError.message}`);
 

@@ -394,6 +394,51 @@ export class ConversationHistoryRepository {
     if (error) throw new Error(`回写计费快照失败：${error.message}`);
   }
 
+  /** Billing recovery must remain independent of provider metadata completeness. */
+  async listRowsPendingBilling(input: {
+    since: string;
+    limit: number;
+  }): Promise<ChatHistorySyncRow[]> {
+    const { data, error } = await this.db
+      .from('chat_history')
+      .select(
+        'id,user_id,model,llm_generation_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot'
+      )
+      .not('llm_generation_id', 'is', null)
+      .not('llm_billing_snapshot', 'is', null)
+      .is('llm_billing_settled_at', null)
+      .gte('created_at', input.since)
+      .order('created_at', { ascending: true })
+      .limit(input.limit)
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`扫描未完成计费的对话失败：${error.message}`);
+    return (data ?? []) as ChatHistorySyncRow[];
+  }
+
+  /** Recover failed OpenRouter placeholders without treating Venice calls as OpenRouter. */
+  async listRowsMissingOpenRouterDetail(input: {
+    since: string;
+    limit: number;
+  }): Promise<ChatHistorySyncRow[]> {
+    const { data, error } = await this.db
+      .from('chat_history')
+      .select(
+        'id,user_id,model,llm_generation_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,openrouter_chat_history!left(chat_history_id),venice_chat_history!left(chat_history_id)'
+      )
+      .not('llm_generation_id', 'is', null)
+      .is('openrouter_chat_history', null)
+      .is('venice_chat_history', null)
+      .or(
+        'llm_billing_snapshot.is.null,llm_billing_snapshot->>provider.is.null,llm_billing_snapshot->>provider.eq.openrouter'
+      )
+      .gte('created_at', input.since)
+      .order('created_at', { ascending: true })
+      .limit(input.limit)
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`扫描缺失 OpenRouter 明细的对话失败：${error.message}`);
+    return (data ?? []) as ChatHistorySyncRow[];
+  }
+
   private async applySuccessfulFinishReason(
     historyId: string,
     finishReason: string | null | undefined

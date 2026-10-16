@@ -1,3 +1,5 @@
 {"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"新表权限与 RLS 检查"}
 {"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"TEST/Production 验证和回滚边界"}
 {"file":".trellis/spec/backend/app/modules/business/conversation-generation.md","reason":"取消、计费与回捞回归"}
+{"file": ".trellis/tasks/10-15-openrouter-history-extract/research/t4-final-audit-2026-10-16.md", "reason": "T4 环境证据、最终审阅发现和未完成验收"}
+{"file": ".trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md", "reason": "逐文件生产顺序、容量停止条件、切换窗口和恢复门禁"}

@@ -106,16 +106,31 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
   try {
     const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
 
-    let rows;
-    try {
-      rows = await openRouterHistory().listRowsMissingGenerationData({ since, limit: BATCH_LIMIT });
-    } catch (err) {
-      log.error(
-        { kind: 'sys', event: 'chathistory_sync.fetch_failed', err },
-        'failed to fetch incomplete chat history'
-      );
-      return;
+    const input = { since, limit: BATCH_LIMIT };
+    // Separate budgets keep a metadata backlog from hiding billing recovery.
+    // A failed metadata scan must not prevent the independent billing repair.
+    const scans = await Promise.allSettled([
+      history().listRowsPendingBilling(input),
+      history().listRowsMissingOpenRouterDetail(input),
+      openRouterHistory().listRowsMissingGenerationData(input),
+    ]);
+    const rowsById = new Map<string, ChatHistorySyncRow>();
+    for (const [index, scan] of scans.entries()) {
+      if (scan.status === 'rejected') {
+        log.error(
+          {
+            kind: 'sys',
+            event: 'chathistory_sync.fetch_failed',
+            err: scan.reason,
+            source: ['billing', 'missing_detail', 'metadata'][index],
+          },
+          'failed to fetch incomplete chat history'
+        );
+        continue;
+      }
+      for (const row of scan.value) if (!rowsById.has(row.id)) rowsById.set(row.id, row);
     }
+    const rows = [...rowsById.values()];
 
     if (rows.length === 0) {
       log.info('[sync-job] no incomplete chat history records found');
