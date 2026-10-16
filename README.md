@@ -161,6 +161,8 @@ pnpm supabase:link:test
 - 测试库与生产库不保证同构。数据库结构参考必须标注环境、时间和证据，不能拿 migration 当实库快照。
 - 详细规则见 [Supabase spec](.trellis/spec/database/supabase/index.md)。
 
+OpenRouter 调用明细由 `experience.openrouter_chat_history` 保存，11 个元数据字段与 Backend 消费者统一使用厂商原名（包括可选 `usage_cache`）；`llm_generation_id`、`llm_generation_data` 保持现名。部署本分支的新 Backend 前，须先逐环境执行 `20261016_openrouter_original_metadata_fields.sql`，再验证新发送/重生成与迟到回捞。该 expand migration 保留旧别名用于发布兼容，原名为新代码的权威字段；旧 writer 退出后须核对切换窗口并单独清理别名。主表业务终态与计费列仍由原仓储维护。远端执行状态以任务记录和目标库账本为准。生产逐文件顺序、容量停止条件、切换窗口和恢复见 [发布清单](.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md)。2026-10-16 核验：TEST 四份 migration 已记账，Production 尚无新表/四份账本；T4 本地修复未提交/部署，T3 失败场景未全部验收。旧列和依赖视图保留，不把旧列清理作为本次兼容发布条件。
+
 文本后处理快照的版本外键需要 `postgres` 执行 `SELECT FOR KEY SHARE`。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 仅授予 owner `UPDATE(version)` 以满足行锁检查，同时恢复 API 角色最小权限；快照仍由 `ENABLE ALWAYS` 触发器禁止直接修改。账本 `applied` 不代替权限、开轮/重生成及回复回读验收，新迁移仍须逐环境手工执行。
 
 新发送和重生成通过数据库 current-postprocess RPC，在既有开轮事务内读取 `app_core.runtime_config` 的正式指针、校验对应不可变 artifact 快照并写入 `chat_history.postprocess_version`。开轮成功必返回非空版本；配置缺失、协议错版、快照不可用或新 RPC 未部署时拒绝开轮且不调用 LLM，不再因 Backend 冷启动生成永久无版本消息。旧显式 wrapper 的 `NULL=不绑定` 兼容语义保留，旧消息不回填；应用发布顺序为 migration → Backend。

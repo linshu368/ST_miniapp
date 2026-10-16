@@ -6,8 +6,8 @@
 // 一轮生成会分三段写同一行，三段的列集合基本不重叠，所以谁先落地都不会覆盖对方：
 //   1. startTurn / startRegeneration  开轮 RPC 建行：身份与轮次列 + status='streaming'
 //   2. setPromptHistory → finalizeTurn 请求内同步收口：prompt 快照 + 用户可见终态
-//   3. saveBillingSnapshot / recordBillingOutcome / applyGenerationMetadata
-//      异步补齐：请求时定价快照、扣费额、结算完成时间、OpenRouter 用量元数据
+//   3. saveBillingSnapshot / recordBillingOutcome
+//      异步补齐：请求时定价快照、扣费额与结算完成时间；OpenRouter 用量元数据在其一对一表
 // 唯一共享的列是 llm_finish_reason：第 2 段写 SSE tap 观测值，第 3 段仅在真的从
 // OpenRouter 取到更权威的值时才覆盖（它要等用量统计，必然晚于第 2 段）。
 // 第 3 段的实现见 features/generation/settle.ts 与 features/generation/sync-job.ts。
@@ -211,8 +211,7 @@ export class ConversationHistoryRepository {
 
   /**
    * 请求内同步收口：写用户可见终态与本轮已知的 LLM 标识。
-   * 故意不碰计费金额与 OpenRouter 用量元数据，那些归 recordBillingOutcome /
-   * applyGenerationMetadata，避免两个写入方抢同一列。
+   * 计费金额归 recordBillingOutcome，OpenRouter 元数据归专表，避免两个写入方抢同一列。
    */
   async finalizeTurn(input: {
     historyId: string;
@@ -357,27 +356,30 @@ export class ConversationHistoryRepository {
   }
 
   /**
-   * 生成终态结算：实扣金额 + OpenRouter 用量元数据 + 结算完成时间。
-   * 由 features/generation/settle.ts 调用。
-   * metadata 的键由 generation/openrouter-metadata.ts 统一构造，这里不做字段映射。
+   * 生成终态结算：实扣金额、计费意图与结算完成时间。
+   * 由 features/generation/settle.ts 与 sync-job.ts 调用。
+   * OpenRouter 元数据由专用 repository 写入；这里仅接受仍属主表的计费字段。
    * billingSettledAt 有值才表示扣费行、额度收口、金额回写都齐；不要用元数据是否齐全代替。
    */
   async recordBillingOutcome(input: {
     historyId: string;
-    deductionRate: number;
-    metadata: Record<string, unknown>;
+    deductionRate?: number;
+    intendedDeduction?: number;
+    finishReason?: string | null;
     billingSettledAt?: string;
   }): Promise<void> {
     const { error } = await this.db
       .from('chat_history')
       .update({
-        deduction_rate: input.deductionRate,
-        ...withoutFinishReason(input.metadata),
+        ...(input.deductionRate !== undefined ? { deduction_rate: input.deductionRate } : {}),
+        ...(input.intendedDeduction !== undefined
+          ? { llm_intended_deduction: input.intendedDeduction }
+          : {}),
         ...(input.billingSettledAt ? { llm_billing_settled_at: input.billingSettledAt } : {}),
       })
       .eq('id', input.historyId);
     if (error) throw new Error(`回写生成计费结果失败：${error.message}`);
-    await this.applySuccessfulFinishReason(input.historyId, input.metadata);
+    await this.applySuccessfulFinishReason(input.historyId, input.finishReason);
   }
 
   /**
@@ -392,66 +394,63 @@ export class ConversationHistoryRepository {
     if (error) throw new Error(`回写计费快照失败：${error.message}`);
   }
 
-  /**
-   * 回捞任务的元数据补齐：覆盖 llm_* 用量字段与（若已结算）扣费额、结算完成时间。
-   * 由 features/generation/sync-job.ts 调用。
-   */
-  async applyGenerationMetadata(
-    historyId: string,
-    metadata: Record<string, unknown>,
-    billingSettledAt?: string
-  ): Promise<void> {
-    const { error } = await this.db
-      .from('chat_history')
-      .update({
-        ...withoutFinishReason(metadata),
-        ...(billingSettledAt ? { llm_billing_settled_at: billingSettledAt } : {}),
-      })
-      .eq('id', historyId);
-    if (error) throw new Error(`补齐 LLM 元数据失败：${error.message}`);
-    await this.applySuccessfulFinishReason(historyId, metadata);
-  }
-
-  private async applySuccessfulFinishReason(
-    historyId: string,
-    metadata: Record<string, unknown>
-  ): Promise<void> {
-    if (typeof metadata.llm_finish_reason !== 'string') return;
-    const { error } = await this.db
-      .from('chat_history')
-      .update({ llm_finish_reason: metadata.llm_finish_reason })
-      .eq('id', historyId)
-      .eq('status', 'success')
-      .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`补齐生成完成原因失败：${error.message}`);
-  }
-
-  /**
-   * 回捞任务的扫描口：24h 内有 generation_id，且用量字段不全或结算未完成的行。
-   * 结算未完成 = 已有请求时快照但还没有 llm_billing_settled_at。
-   * 没有快照的存量行仍只按用量字段不全扫描，避免把 24h 内已结清的历史行整批拖进来。
-   */
-  async listRowsMissingGenerationData(input: {
+  /** Billing recovery must remain independent of provider metadata completeness. */
+  async listRowsPendingBilling(input: {
     since: string;
     limit: number;
   }): Promise<ChatHistorySyncRow[]> {
     const { data, error } = await this.db
       .from('chat_history')
       .select(
-        'id, user_id, model, llm_generation_id, llm_finish_reason, llm_charge_id, assistant_reply, status, llm_billing_snapshot'
+        'id,user_id,model,llm_generation_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot'
       )
       .not('llm_generation_id', 'is', null)
+      .not('llm_billing_snapshot', 'is', null)
+      .is('llm_billing_settled_at', null)
       .gte('created_at', input.since)
-      // llm_usage_cache 不参与判定：OpenRouter 从不返回 usage_cache，把它算进来会让窗口内
-      // 每一行都恒为「不完整」，被反复重新拉取直到滚出 24h。
-      .or(
-        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null,and(llm_billing_snapshot.not.is.null,llm_billing_settled_at.is.null)'
-      )
-      .order('created_at', { ascending: false })
-      .limit(input.limit);
-
-    if (error) throw new Error(`扫描待补齐的对话轮次失败：${error.message}`);
+      .order('created_at', { ascending: true })
+      .limit(input.limit)
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`扫描未完成计费的对话失败：${error.message}`);
     return (data ?? []) as ChatHistorySyncRow[];
+  }
+
+  /** Recover failed OpenRouter placeholders without treating Venice calls as OpenRouter. */
+  async listRowsMissingOpenRouterDetail(input: {
+    since: string;
+    limit: number;
+  }): Promise<ChatHistorySyncRow[]> {
+    const { data, error } = await this.db
+      .from('chat_history')
+      .select(
+        'id,user_id,model,llm_generation_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,openrouter_chat_history!left(chat_history_id),venice_chat_history!left(chat_history_id)'
+      )
+      .not('llm_generation_id', 'is', null)
+      .is('openrouter_chat_history', null)
+      .is('venice_chat_history', null)
+      .or(
+        'llm_billing_snapshot.is.null,llm_billing_snapshot->>provider.is.null,llm_billing_snapshot->>provider.eq.openrouter'
+      )
+      .gte('created_at', input.since)
+      .order('created_at', { ascending: true })
+      .limit(input.limit)
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`扫描缺失 OpenRouter 明细的对话失败：${error.message}`);
+    return (data ?? []) as ChatHistorySyncRow[];
+  }
+
+  private async applySuccessfulFinishReason(
+    historyId: string,
+    finishReason: string | null | undefined
+  ): Promise<void> {
+    if (typeof finishReason !== 'string') return;
+    const { error } = await this.db
+      .from('chat_history')
+      .update({ llm_finish_reason: finishReason })
+      .eq('id', historyId)
+      .eq('status', 'success')
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`补齐生成完成原因失败：${error.message}`);
   }
 
   /**
@@ -744,11 +743,6 @@ function toErrorCode(status: string): string | null {
 export function clampLimit(value: number | undefined, fallback: number, max: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback;
   return Math.min(Math.floor(value), max);
-}
-
-function withoutFinishReason(metadata: Record<string, unknown>): Record<string, unknown> {
-  const { llm_finish_reason: _finishReason, ...rest } = metadata;
-  return rest;
 }
 
 export function withStoredRequestId(

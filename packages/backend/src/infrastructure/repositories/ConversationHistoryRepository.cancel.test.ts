@@ -29,6 +29,20 @@ vi.mock('../../lib/supabase.js', () => ({
           filters.push((row) => row[key] === value);
           return query;
         },
+        not(key: keyof ConversationHistoryRow, _operator: string, _value: null) {
+          filters.push((row) => row[key] !== null);
+          return query;
+        },
+        gte(key: 'created_at', value: string) {
+          filters.push((row) => row[key] >= value);
+          return query;
+        },
+        order() {
+          return query;
+        },
+        limit() {
+          return query;
+        },
         lt(key: 'created_at', value: string) {
           filters.push((row) => row[key] < value);
           return query;
@@ -151,8 +165,9 @@ describe('persisted cancellation/completion arbitration', () => {
 
   it('upstream stats cannot overwrite a persisted cancellation reason', async () => {
     state.rows[0] = row({ status: 'stream_interrupted', llm_finish_reason: 'cancelled' });
-    await new ConversationHistoryRepository().applyGenerationMetadata('reply', {
-      llm_finish_reason: 'stop',
+    await new ConversationHistoryRepository().recordBillingOutcome({
+      historyId: 'reply',
+      finishReason: 'stop',
     });
     expect(state.rows[0]?.llm_finish_reason).toBe('cancelled');
   });
@@ -222,5 +237,43 @@ describe('persisted cancellation/completion arbitration', () => {
 
   it('legacy stored prompts omit request identity instead of guessing it', () => {
     expect(toChatMessages(row())[1]).not.toHaveProperty('request_id');
+  });
+});
+
+describe('billing recovery candidate selection', () => {
+  it('selects unsettled OpenRouter and Venice rows independently of provider metadata', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-16T12:00:00Z'));
+    const snapshot = { provider: 'openrouter' } as ConversationHistoryRow['llm_billing_snapshot'];
+    state.rows = [
+      row({ id: 'openrouter', llm_generation_id: 'gen-1', llm_billing_snapshot: snapshot }),
+      row({
+        id: 'venice',
+        llm_generation_id: 'gen-2',
+        llm_billing_snapshot: {
+          ...snapshot,
+          provider: 'venice',
+        } as ConversationHistoryRow['llm_billing_snapshot'],
+      }),
+      row({
+        id: 'settled',
+        llm_generation_id: 'gen-3',
+        llm_billing_snapshot: snapshot,
+        llm_billing_settled_at: new Date().toISOString(),
+      }),
+      row({ id: 'no-id', llm_billing_snapshot: snapshot }),
+      row({ id: 'no-snapshot', llm_generation_id: 'gen-4' }),
+      row({
+        id: 'expired',
+        created_at: '2020-01-01T00:00:00Z',
+        llm_generation_id: 'gen-5',
+        llm_billing_snapshot: snapshot,
+      }),
+    ];
+    const rows = await new ConversationHistoryRepository().listRowsPendingBilling({
+      since: '2026-10-16T00:00:00Z',
+      limit: 50,
+    });
+    expect(rows.map((item) => item.id)).toEqual(['openrouter', 'venice']);
   });
 });

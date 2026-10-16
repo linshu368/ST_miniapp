@@ -23,6 +23,7 @@ import {
   type ChatHistorySyncRow,
   type LlmBillingSnapshot,
 } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositories/OpenRouterChatHistoryRepository.js';
 import { MiniappWalletRepository } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import { applyLlmCharge } from './apply-charge.js';
 import { frozenLlmChargeMetadata } from './text-billing.js';
@@ -43,6 +44,7 @@ let startupTimerId: NodeJS.Timeout | null = null;
 let isRunning = false;
 let walletRepository: MiniappWalletRepository | null = null;
 let historyRepository: ConversationHistoryRepository | null = null;
+let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
 
 function wallets(): MiniappWalletRepository {
   return (walletRepository ??= new MiniappWalletRepository());
@@ -50,6 +52,10 @@ function wallets(): MiniappWalletRepository {
 
 function history(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
+}
+
+function openRouterHistory(): OpenRouterChatHistoryRepository {
+  return (openRouterHistoryRepository ??= new OpenRouterChatHistoryRepository());
 }
 
 export function startChatHistorySyncJob(log: FastifyBaseLogger): void {
@@ -100,16 +106,31 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
   try {
     const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
 
-    let rows;
-    try {
-      rows = await history().listRowsMissingGenerationData({ since, limit: BATCH_LIMIT });
-    } catch (err) {
-      log.error(
-        { kind: 'sys', event: 'chathistory_sync.fetch_failed', err },
-        'failed to fetch incomplete chat history'
-      );
-      return;
+    const input = { since, limit: BATCH_LIMIT };
+    // Separate budgets keep a metadata backlog from hiding billing recovery.
+    // A failed metadata scan must not prevent the independent billing repair.
+    const scans = await Promise.allSettled([
+      history().listRowsPendingBilling(input),
+      history().listRowsMissingOpenRouterDetail(input),
+      openRouterHistory().listRowsMissingGenerationData(input),
+    ]);
+    const rowsById = new Map<string, ChatHistorySyncRow>();
+    for (const [index, scan] of scans.entries()) {
+      if (scan.status === 'rejected') {
+        log.error(
+          {
+            kind: 'sys',
+            event: 'chathistory_sync.fetch_failed',
+            err: scan.reason,
+            source: ['billing', 'missing_detail', 'metadata'][index],
+          },
+          'failed to fetch incomplete chat history'
+        );
+        continue;
+      }
+      for (const row of scan.value) if (!rowsById.has(row.id)) rowsById.set(row.id, row);
     }
+    const rows = [...rowsById.values()];
 
     if (rows.length === 0) {
       log.info('[sync-job] no incomplete chat history records found');
@@ -144,19 +165,21 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
         continue;
       }
 
-      const llmMetadata = buildGenerationMetadata(genData);
-      const finishReason = typeof genData.finish_reason === 'string' ? genData.finish_reason : null;
+      const providerMetadata = buildGenerationMetadata(genData);
+      // Local cancellation/deadline remains the billing outcome even if upstream later stops.
+      const finishReason =
+        record.llm_finish_reason === 'cancelled' || record.llm_finish_reason === 'timeout'
+          ? record.llm_finish_reason
+          : providerMetadata.finish_reason;
 
-      let settled = false;
+      let reconciled: ReconciledChargeResult;
       try {
-        const reconciled = await reconcileCharge({
+        reconciled = await reconcileCharge({
           record,
           generationId,
-          genData,
+          genData: { usage: providerMetadata.usage, model: providerMetadata.model },
           finishReason,
-          llmMetadata,
         });
-        settled = reconciled.settled;
       } catch (reconcileErr) {
         // 保留缺失的 generation 字段，让下一轮同步继续重试计费与免费额度终结。
         log.error(
@@ -174,11 +197,13 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
       }
 
       try {
-        await history().applyGenerationMetadata(
-          record.id,
-          llmMetadata,
-          settled ? new Date().toISOString() : undefined
-        );
+        await history().recordBillingOutcome({
+          historyId: record.id,
+          intendedDeduction: reconciled.intendedDeduction,
+          deductionRate: reconciled.deductionRate,
+          finishReason,
+          ...(reconciled.settled ? { billingSettledAt: new Date().toISOString() } : {}),
+        });
       } catch (err) {
         log.error(
           {
@@ -189,6 +214,26 @@ async function runSyncJob(log: FastifyBaseLogger): Promise<void> {
             generationId,
           },
           'failed to update chat history'
+        );
+        continue;
+      }
+
+      try {
+        await openRouterHistory().upsert({
+          chat_history_id: record.id,
+          llm_generation_id: generationId,
+          ...providerMetadata,
+        });
+      } catch (err) {
+        log.error(
+          {
+            kind: 'sys',
+            event: 'chathistory_sync.openrouter_metadata_failed',
+            err,
+            id: record.id,
+            generationId,
+          },
+          'failed to update OpenRouter generation metadata'
         );
         continue;
       }
@@ -230,23 +275,14 @@ async function reconcileNonOpenRouterRecord(input: {
     typeof record.llm_billing_snapshot?.provider_model_id === 'string'
       ? record.llm_billing_snapshot.provider_model_id
       : record.model;
-  const llmMetadata: Record<string, unknown> = {
-    llm_provider_name: provider,
-    llm_model: model,
-    llm_finish_reason: finishReason,
-    llm_generation_data: { provider, model, finish_reason: finishReason },
-  };
-
-  let settled = false;
+  let reconciled: ReconciledChargeResult;
   try {
-    const reconciled = await reconcileCharge({
+    reconciled = await reconcileCharge({
       record,
       generationId,
       genData: { model, finish_reason: finishReason },
       finishReason,
-      llmMetadata,
     });
-    settled = reconciled.settled;
   } catch (err) {
     log.error(
       {
@@ -264,11 +300,13 @@ async function reconcileNonOpenRouterRecord(input: {
   }
 
   try {
-    await history().applyGenerationMetadata(
-      record.id,
-      llmMetadata,
-      settled ? new Date().toISOString() : undefined
-    );
+    await history().recordBillingOutcome({
+      historyId: record.id,
+      intendedDeduction: reconciled.intendedDeduction,
+      deductionRate: reconciled.deductionRate,
+      finishReason,
+      ...(reconciled.settled ? { billingSettledAt: new Date().toISOString() } : {}),
+    });
   } catch (err) {
     log.error(
       {
@@ -284,11 +322,17 @@ async function reconcileNonOpenRouterRecord(input: {
     return 'not_ready';
   }
 
-  return settled ? 'settled' : 'not_ready';
+  return reconciled.settled ? 'settled' : 'not_ready';
+}
+
+interface ReconciledChargeResult {
+  settled: boolean;
+  intendedDeduction?: number;
+  deductionRate?: number;
 }
 
 /**
- * 结算这一行对应的计费记录，并把结算金额并进要回写的元数据。
+ * 结算这一行对应的计费记录，单独返回主表金额，保留上游元数据不变。
  *
  * 定档：finish_reason 到齐后走 applyLlmCharge（与 settle 同一套标签）。
  * 无 charge 行时按请求时快照重建；已 charged / free 的行也重入以补额度收口和金额回写。
@@ -310,9 +354,8 @@ export async function reconcileCharge(input: {
   generationId: string;
   genData: Record<string, unknown>;
   finishReason: string | null;
-  llmMetadata: Record<string, unknown>;
-}): Promise<{ settled: boolean }> {
-  const { record, generationId, genData, finishReason, llmMetadata } = input;
+}): Promise<ReconciledChargeResult> {
+  const { record, generationId, genData, finishReason } = input;
   const chargeId = record.llm_charge_id;
   if (typeof chargeId !== 'string' || chargeId.length === 0) return { settled: false };
 
@@ -333,9 +376,11 @@ export async function reconcileCharge(input: {
         calculatedAmount: intendedDeduction,
         metadata: { source: 'chat_history_sync' },
       });
-      llmMetadata.llm_intended_deduction = intendedDeduction;
-      llmMetadata.deduction_rate = Number(reconciled.charge.charged_amount);
-      return { settled: true };
+      return {
+        settled: true,
+        intendedDeduction,
+        deductionRate: Number(reconciled.charge.charged_amount),
+      };
     }
     return { settled: false };
   }
@@ -355,9 +400,11 @@ export async function reconcileCharge(input: {
   if (!command) return { settled: false };
 
   const result = await applyLlmCharge(command);
-  llmMetadata.llm_intended_deduction = result.calculatedAmount;
-  llmMetadata.deduction_rate = result.chargedAmount;
-  return { settled: true };
+  return {
+    settled: true,
+    intendedDeduction: result.calculatedAmount,
+    deductionRate: result.chargedAmount,
+  };
 }
 
 function buildFixedTierChargeCommand(input: {

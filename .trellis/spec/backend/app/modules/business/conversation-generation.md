@@ -42,6 +42,8 @@ AI 回复后处理版本由数据库 current-postprocess RPC 在开轮事务内�
 
 ## 数据、契约与外部依赖
 
+OpenRouter mapper、计费读取和回捞仓储统一使用专表的厂商原名字段；`llm_generation_id`、`llm_generation_data` 为明确保留的例外。主表 `recordBillingOutcome` 显式接收金额、结算时间和业务结束原因，禁止复用并修改 OpenRouter 元数据对象承载计费列。`usage_cache` 可缺失，不作为元数据完整性的必需条件。Venice 的 mapper/repository 不参与本次命名调整。原名代码需先执行 `20261016_openrouter_original_metadata_fields.sql`；远端未执行前不能部署。
+
 消费 shared conversations/images/telemetry 契约、experience 会话与图片 attempt、OpenRouter、DeepSeek、Grok/Liaobots、Replicate Z、Supabase Storage 和服务端 PostHog capture。
 
 ## 关键节点与约束

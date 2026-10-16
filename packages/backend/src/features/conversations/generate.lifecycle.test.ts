@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   finalize: vi.fn(),
   find: vi.fn(),
   execute: vi.fn(),
+  ensureGenerationId: vi.fn(),
 }));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
   ConversationHistoryRepository: class {
@@ -24,6 +25,11 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     setPromptHistory = mocks.prompt;
     finalizeTurn = mocks.finalize;
     requireTurnById = mocks.find;
+  },
+}));
+vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
+  OpenRouterChatHistoryRepository: class {
+    ensureGenerationId = mocks.ensureGenerationId;
   },
 }));
 vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
@@ -51,6 +57,7 @@ vi.mock('../generation/index.js', () => ({
   execute: mocks.execute,
   resolveModelForUser: async () => ({
     modelId: 'model',
+    provider: 'openrouter',
     openRouterModelId: 'model',
     isFree: false,
     tier: 'light',
@@ -105,6 +112,7 @@ beforeEach(() => {
     generationId: null,
     chargeId: null,
   });
+  mocks.ensureGenerationId.mockResolvedValue(undefined);
 });
 
 describe('turn lifecycle recovery', () => {
@@ -184,6 +192,22 @@ describe('turn lifecycle recovery', () => {
     expect(mocks.prompt).toHaveBeenCalledWith('reply', [], requestId);
     expect(mocks.execute.mock.calls[0]?.[0].messages).toEqual([]);
     expect(mocks.execute.mock.calls[0]?.[0]).not.toHaveProperty('request_id');
+  });
+
+  it('idempotently creates the OpenRouter metadata placeholder once a generation ID is known', async () => {
+    mocks.execute.mockResolvedValue({
+      status: 'stream_interrupted',
+      content: 'reply',
+      finishReason: 'stop',
+      generationId: 'generation-1',
+      chargeId: 'charge-1',
+    });
+    mocks.find.mockResolvedValue({ status: 'stream_interrupted', llm_finish_reason: 'stop' });
+    mocks.finalize.mockResolvedValue({ status: 'stream_interrupted', llm_finish_reason: 'stop' });
+
+    await runConversationTurn(input({ kind: 'send', content: 'original' }));
+
+    expect(mocks.ensureGenerationId).toHaveBeenCalledWith('reply', 'generation-1');
   });
 
   it('failed pending-identity storage terminally closes the new turn without generating', async () => {

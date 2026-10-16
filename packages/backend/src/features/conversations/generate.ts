@@ -24,6 +24,7 @@ import {
   type GenerationStatus,
 } from '../generation/index.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositories/OpenRouterChatHistoryRepository.js';
 import { TextPostprocessRepository } from '../text-postprocess/repository.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import {
@@ -66,6 +67,7 @@ export interface RunConversationTurnInput {
 let historyRepository: ConversationHistoryRepository | null = null;
 let characterRepository: CharacterCardRepository | null = null;
 let userSettingsRepository: MiniappUserSettingsRepository | null = null;
+let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
 
 function historyRecords(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
@@ -75,6 +77,9 @@ function characters(): CharacterCardRepository {
 }
 function userSettings(): MiniappUserSettingsRepository {
   return (userSettingsRepository ??= new MiniappUserSettingsRepository());
+}
+function openRouterHistory(): OpenRouterChatHistoryRepository {
+  return (openRouterHistoryRepository ??= new OpenRouterChatHistoryRepository());
 }
 
 export function toMessageStatus(status: GenerationStatus): SettledMessageStatus {
@@ -262,6 +267,12 @@ export async function runConversationTurn(
               generationId: observed.generationId,
             });
           }
+          await ensureOpenRouterGenerationId({
+            provider: model.provider,
+            historyId: turn.historyId,
+            generationId: observed.generationId,
+            log,
+          });
           return normalizePersistedOutcome(observed, row.status, row.llm_finish_reason);
         },
         onStreamOpen: emitStart,
@@ -279,6 +290,12 @@ export async function runConversationTurn(
       upstreamStatus: result.upstreamStatus ?? null,
       generationId: result.generationId,
       chargeId: result.chargeId,
+    });
+    await ensureOpenRouterGenerationId({
+      provider: model.provider,
+      historyId: turn.historyId,
+      generationId: result.generationId,
+      log,
     });
     const status =
       persisted.status === 'success'
@@ -378,6 +395,30 @@ export async function runConversationTurn(
     stopped = true;
     clearTimeout(timeout);
     if (pollTimer) clearTimeout(pollTimer);
+  }
+}
+
+async function ensureOpenRouterGenerationId(input: {
+  provider: string;
+  historyId: string;
+  generationId: string | null;
+  log: RequestLogger;
+}): Promise<void> {
+  if (input.provider !== 'openrouter' || !input.generationId) return;
+  try {
+    await openRouterHistory().ensureGenerationId(input.historyId, input.generationId);
+  } catch (err) {
+    // The legacy parent ID remains during T2 compatibility. Do not change a persisted
+    // conversation result if this recoverable provider-detail write is temporarily unavailable.
+    input.log.sys.error(
+      {
+        event: 'conversation.openrouter_metadata.id_persist_failed',
+        err,
+        historyId: input.historyId,
+        generationId: input.generationId,
+      },
+      '保存 OpenRouter generation ID 失败'
+    );
   }
 }
 

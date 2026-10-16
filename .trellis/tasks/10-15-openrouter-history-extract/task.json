@@ -1,0 +1,37 @@
+{
+  "id": "openrouter-history-extract",
+  "name": "openrouter-history-extract",
+  "title": "OpenRouter 元数据从 chat_history 拆表",
+  "description": "将 chat_history 的 OpenRouter 调用元数据迁至 experience 独立明细表，保留对话终态与计费事实。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend database docs",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-15",
+  "completedAt": null,
+  "branch": "dev_openrouter_migrate",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/424",
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "T4 审阅/生产清单及必要恢复/隐私修复已本地准备，未提交推送部署。TEST 四份 migration 实时记账一致，caebc0c6 部署后 3 条原名写入通过；T4 补丁和 T3 免费/取消/超时/错误/恢复验收未完成。Production 新表/四份账本均无，容量门禁未完成；旧列/视图保留，生产动作未授权。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security"
+      ]
+    }
+  }
+}
