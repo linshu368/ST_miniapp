@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/09-28-rich-text-process/
-last_verified_at: 2026-09-30
+last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_at: 2026-10-13
 ---
 
 # 会话与语音存储
@@ -45,7 +45,15 @@ last_verified_at: 2026-09-30
 
 `backend.business.conversation-generation`、`backend.infrastructure.runtime-data-security`。
 
+## 图片创作广场 V2（2026-10-12）
+
+图片广场持久化位于 `experience` 域，覆盖会话/消息、短期报价、参考资产、生成 attempt、artifact 和公开作品；生命周期由 Backend service-role 和受限 RPC 权威写入，客户端不直接读表。生成任务通过 `FOR UPDATE SKIP LOCKED` 租约领取，过期不确定任务可收口为 `failed_unknown`。
+
+`20261013_image_plaza_seed_catalog.sql` 将提示词约束前向扩至 2000 字，并为 artifact/work 增加互斥的 `generated`/`civitai_seed` 来源不变量。种子作品可无用户和 attempt，只能由 service-role 导入 RPC 原子创建；Civitai ID 唯一，源 URL/源热度仅内部保存，站内点赞从 0 独立累计。`20261013_image_plaza_seed_large_assets.sql` 仅将经审核 seed 所需的 artifact/bucket/RPC 容量扩至 50 MiB，普通用户图片仍由 Backend 限制为 20 MiB；三份 migration 已在 test 验证。
+
 ## 变更记录
+
+- 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
 last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
 last_verified_at: 2026-09-14

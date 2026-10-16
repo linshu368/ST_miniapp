@@ -4,6 +4,8 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；生产运维入口见 [`ops/README.md`](ops/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 
+> 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
+
 ## 0. 运行环境
 
 | 依赖         | 要求                                              |
@@ -102,6 +104,9 @@ pnpm --filter @miniapp/frontend build
 pnpm --filter @miniapp/admin build
 pnpm --filter @miniapp/cs-platform build
 pnpm --filter @miniapp/reply-renderer typecheck
+
+# 图片广场初始数据（默认只读 dry-run）
+pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 ```
 
 CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记录人工回归。
@@ -164,6 +169,8 @@ pnpm supabase:link:test
 文本后处理快照的版本外键需要 `postgres` 执行 `SELECT FOR KEY SHARE`。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 仅授予 owner `UPDATE(version)` 以满足行锁检查，同时恢复 API 角色最小权限；快照仍由 `ENABLE ALWAYS` 触发器禁止直接修改。账本 `applied` 不代替权限、开轮/重生成及回复回读验收，新迁移仍须逐环境手工执行。
 
 新发送和重生成通过数据库 current-postprocess RPC，在既有开轮事务内读取 `app_core.runtime_config` 的正式指针、校验对应不可变 artifact 快照并写入 `chat_history.postprocess_version`。开轮成功必返回非空版本；配置缺失、协议错版、快照不可用或新 RPC 未部署时拒绝开轮且不调用 LLM，不再因 Backend 冷启动生成永久无版本消息。旧显式 wrapper 的 `NULL=不绑定` 兼容语义保留，旧消息不回填；应用发布顺序为 migration → Backend。
+
+图片广场必须依次手动验证并执行 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql` 后才能运行初始数据 apply。`image-plaza:seed` 默认只做工作簿 dry-run；真实写入还要求审核 manifest、明确 `--target test|production`、`--limit 1..500`、原图存储确认，Production 另需显式确认。普通图片保持 20 MiB，已审核 seed 原图允许至 50 MiB；来源权利/内容/元数据审核、test canary 或容量门禁未完成时不得导入。test 导入结果见任务 `10-10-image-plaza-v2`。
 
 ### AI 回复后处理
 

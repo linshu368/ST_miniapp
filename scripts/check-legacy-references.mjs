@@ -161,7 +161,12 @@ const RULES = [
     pattern: /\bbonus_credits\s*=\s*(?:billing\.user_wallets\.)?bonus_credits\s*\+/g,
     message:
       '星尘发放只有一个入口：billing.grant_bonus_credits（钱包 upsert + 加值 + 流水）。发奖 RPC 组好 entry_type / reference / metadata 后调它，禁止再自己 UPDATE user_wallets',
-    allow: ['packages/shared/migrations/20260911_billing_grant_bonus_credits.sql'],
+    allow: [
+      'packages/shared/migrations/20260911_billing_grant_bonus_credits.sql',
+      // 20261012 已是仓库历史；20261013_image_plaza_seed_catalog.sql 会立即以
+      // billing.grant_bonus_credits 重建该 RPC，兼容已应用与未应用的环境。
+      'packages/shared/migrations/20261012_image_plaza_v2.sql',
+    ],
   },
 ];
 

@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/09-29-chat-stall-cancel/
-last_verified_at: 2026-09-29
+last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_at: 2026-10-13
 ---
 
 # 会话与语音共享契约
@@ -48,7 +48,15 @@ Shared 只定义浏览器可见 DTO、错误码、容量上限和 runtime valida
 
 `backend.infrastructure.runtime-data-security`、`database.infrastructure.schema-security`、`backend.business.conversation-generation`、`frontend.business.conversation-ui`、`frontend.infrastructure.client-ui-foundation`。
 
+## 图片创作广场 V2（2026-10-12）
+
+`api/image-plaza.ts` 定义模型目录、配置、瀑布流、作品、会话、报价、attempt、参考图、点赞与分享 DTO/Zod schema。公开模型不暴露 provider model id/internal tags，参考图请求只接受当前用户 artifact id，不接受任意远端 URL。
+
+图片广场提示词长度统一为最多 2000 字，快照、生成提交和前端输入共享同一常量。Civitai Image ID、源 URL 与源热度属于内部导入元数据，不进入公开 feed/detail DTO；对外热度仍使用站内 `like_count`。
+
 ## 变更记录
+
+- 2026-10-13：任务 `10-10-image-plaza-v2` 将提示词上限统一为 2000 字，并明确种子来源字段不公开。
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）写入图片生成 telemetry 事件契约与禁止字段；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
 - 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。

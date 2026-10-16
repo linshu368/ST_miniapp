@@ -26,9 +26,14 @@ import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import telemetryRoutes from './routes/telemetry.js';
 import textPostprocessRoutes from './routes/text-postprocess.js';
+import imagePlazaRoutes from './routes/image-plaza.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
+import {
+  startImagePlazaGenerationJob,
+  stopImagePlazaGenerationJob,
+} from './features/image-plaza/job.js';
 import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
@@ -127,6 +132,7 @@ export async function buildApp() {
   await app.register(supportRoutes);
   await app.register(telemetryRoutes);
   await app.register(textPostprocessRoutes);
+  await app.register(imagePlazaRoutes);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],
@@ -156,11 +162,13 @@ export async function buildApp() {
   }
 
   startChatImageGenerationJob(app.log);
+  startImagePlazaGenerationJob(app.log);
 
   app.addHook('onClose', async () => {
     stopChatHistorySyncJob();
     stopLobbyRankingRefreshJob();
     stopChatImageGenerationJob();
+    stopImagePlazaGenerationJob();
     shutdownTextPostprocessValidation();
   });
 

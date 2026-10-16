@@ -5,8 +5,8 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/09-17-image-generation-posthog-plan/
-last_verified_at: 2026-09-18
+last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_at: 2026-10-12
 ---
 
 # API、Telegram 与 UI 基建
@@ -58,6 +58,10 @@ Telegram WebView 差异需持续人工回归；打开 Production PostHog 是独�
 ## 关联模块
 
 `frontend.business.conversation-ui`、`frontend.business.wallet-payment`、`backend.infrastructure.runtime-data-security`。
+
+## 图片创作广场 V2（2026-10-12）
+
+图片广场的配置、瀑布流、会话、报价、生成、点赞与分享均通过统一 API client 和 React Query 缓存；Studio 与作品详情属于隐藏底栏的沉浸式路由，私有对象只消费后端签发的短期 URL。
 
 ## 变更记录
 

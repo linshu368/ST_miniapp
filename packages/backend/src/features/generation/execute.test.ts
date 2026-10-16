@@ -1,6 +1,9 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { config } from '../../platform/config.js';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
+
+const originalVeniceConfig = { ...config.venice };
 
 const pricing = {
   version: 7,
@@ -180,9 +183,12 @@ beforeEach(() => {
   vi.mocked(settleGeneration).mockClear();
   // CI 无真实密钥；多供应商合并后缺 key 会提前 upstream_error，单测自备占位值。
   vi.stubEnv('LLM_API_KEY', 'test-llm-key');
+  // Venice 单测 stub 全局 fetch；清空本地代理避免走 undici ProxyAgent
+  Object.assign(config.venice, { ...originalVeniceConfig, httpsProxy: '' });
 });
 
 afterEach(() => {
+  Object.assign(config.venice, originalVeniceConfig);
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
