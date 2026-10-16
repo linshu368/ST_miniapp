@@ -20,6 +20,8 @@
 
 ---
 
+⏳ **2026-10-16 图片广场配置兼容修复（MIGRATION，未部署）**：`20261016_reconcile_image_plaza_managed_config_keys.sql` 将 Admin managed-key 入口包装为“当前白名单 OR 四个图片广场 key”，两表 CHECK 保留原表达式并接入修复后的入口。避免平台规则槽位静态名单覆盖图片广场 key；保留现有 validator、专用后处理边界、RLS 和业务行。TEST 保存/发布及 Production 均需独立门禁。
+
 ## 1. 架构铁律（违反即拦截）
 
 1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。

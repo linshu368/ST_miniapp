@@ -4,6 +4,8 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 
 > 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；生产运维入口见 [`ops/README.md`](ops/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 
+> 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
+
 ## 0. 运行环境
 
 | 依赖         | 要求                                              |

@@ -90,6 +90,37 @@ artifact 修订（2026-09-29，仍未执行远端）：首个文件在版本表�
 
 不播种规则，不回填旧消息，不改历史 migration。已有引用时不要 DROP 快照或该列。本地协议场景是 `fixtures/text_postprocess_t2_harness.sql` 加 `tests/text_postprocess_t2_scenarios.sql`，只对临时库执行，不能当作远端发布。
 
+## 图片广场白名单恢复（2026-10-16，未部署）
+
+`20261016_reconcile_image_plaza_managed_config_keys.sql` 修复平台规则静态白名单覆盖图片广场四个 key 的回归，同时保留现有合法 key、CHECK 表达式、验证状态与 validator 链。前置为 `20261012_image_plaza_v2.sql`；若计划部署 10/13 平台规则、10/14 标签开关迁移，先完成这些文件，再执行本恢复文件，勿倒序覆盖。
+
+1. 在已确认 TEST 中只读核对三个相关 migration 的账本、函数定义/owner/ACL、两表 CHECK/验证状态与表大小；未知 shape 停止。当前 MCP 无 TEST 访问权限，仓库声明不代表实况。
+2. 经 `Database Migration` workflow 选择 TEST，单文件 apply 本迁移，不用 SQL Editor 改库。一次性执行，禁止 `force_rerun`；已存在恢复前置函数会拒绝。
+3. 内置自检检查四个 key、两表真实 CHECK、未知 key 拒绝、其他 key 行为不变、合法配置通过与非法配置拒绝。锁等待 5 秒/语句 60 秒，失败整笔回滚；不自动重试。锁超时先检查写流量/表容量。
+4. 只读复核以下 SQL；在 Admin 保存模型/标签/分享提示草稿并回读，确认保存不更改正式配置；分别验证发布、历史恢复、平台规则/标签功能开关与 viewer 拒写。生产独立审批。
+
+```sql
+SELECT key, admin.is_managed_config_key(key) AS allowed
+FROM unnest(ARRAY[
+  'image_plaza_enabled', 'image_plaza_model_catalog', 'image_plaza_share_tip',
+  'image_plaza_tags', 'image_plaza_tags_feature_enabled',
+  'system_instructions', 'choice_rules', 'status_rules', 'memory_rules',
+  'llm_model_catalog', '__unknown_config_key__'
+]) AS keys(key);
+-- 前置迁移齐全时合法 key 为 true，未知 key 必须 false。
+SELECT conrelid::regclass, conname, convalidated, pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conrelid IN ('admin.config_drafts'::regclass, 'admin.config_releases'::regclass)
+  AND conname IN ('config_drafts_config_key_check', 'config_releases_config_key_check');
+SELECT oid::regprocedure, pg_get_userbyid(proowner) AS owner, proacl,
+       pg_get_functiondef(oid)
+FROM pg_proc
+WHERE pronamespace = 'admin'::regnamespace
+  AND proname LIKE 'is_managed_config_key%';
+```
+
+无业务行写入/回填，RLS/表 grants 不变。重建已验证 CHECK 可能扫描历史行并持有 ACCESS EXCLUSIVE，低峰执行。提交后采用新 forward-fix 保留兼容范围，勿删历史记录或恢复旧窄白名单；应用回退无需回退此兼容迁移。
+
 ## Prisma
 
 ```bash
