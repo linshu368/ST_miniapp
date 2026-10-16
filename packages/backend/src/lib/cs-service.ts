@@ -11,10 +11,6 @@ export interface CsServiceResponse {
   payload: unknown;
 }
 
-export function isCsServiceEnabled(): boolean {
-  return config.csService.enabled;
-}
-
 export async function callCsService(
   method: 'GET' | 'POST',
   path: string,
