@@ -922,6 +922,7 @@ function AdminWorkspace(props: {
         />
       ) : null}
       <ConfigValueEditor
+        key={`${props.environment}:${selectedKey}`}
         configKey={selectedKey}
         value={workingValue}
         onChange={setWorkingValue}

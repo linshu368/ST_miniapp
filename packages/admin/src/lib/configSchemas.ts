@@ -152,6 +152,16 @@ export const EditableModelCatalogSchema = z.object({
   tiers: z.array(EditableModelCatalogTierSchema),
 });
 
+// 仅验证编辑结构，允许清空、重复 ID 等中间态；保存仍使用 shared 的严格 schema。
+export const EditableImagePlazaTagConfigSchema = z.array(
+  z.object({
+    id: z.string(),
+    label: z.string(),
+    enabled: z.boolean(),
+    sort_order: z.number(),
+  })
+);
+
 /**
  * 裂变邀请三个 config 的 zod 口径与 105 迁移的 DB 校验函数
  * （admin.validate_invite_reward_rules / validate_invite_center_config）保持一致：
