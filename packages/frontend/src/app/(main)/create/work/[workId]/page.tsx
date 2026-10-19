@@ -90,7 +90,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
 
       <section className="p-3">
         <div
-          className="relative overflow-hidden rounded-[1.75rem] bg-card ring-1 ring-border"
+          className="relative mx-auto overflow-hidden rounded-[1.75rem] bg-card ring-1 ring-border"
           style={{ aspectRatio: `${work.width} / ${work.height}`, maxHeight: '72vh' }}
         >
           <img
