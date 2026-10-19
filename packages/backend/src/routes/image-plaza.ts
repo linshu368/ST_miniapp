@@ -3,6 +3,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   CreateImagePlazaConversationRequestSchema,
   IMAGE_PLAZA_PAGE_SIZE,
+  IMAGE_PLAZA_INVALID_CURSOR,
+  ImagePlazaFeedQuerySchema,
   ImagePlazaQuoteRequestSchema,
   SetImagePlazaLikeRequestSchema,
   ShareImagePlazaWorkRequestSchema,
@@ -83,7 +85,10 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
       const context = await userContext(request, reply);
       if (!context) return;
       try {
-        const query = request.query as Record<string, unknown>;
+        const parsed = ImagePlazaFeedQuerySchema.safeParse(request.query);
+        if (!parsed.success) return reply.status(400).send(fail('BAD_REQUEST', '广场查询参数无效'));
+        const query = parsed.data;
+        const startedAt = performance.now();
         const runtime = await getImagePlazaRuntimeConfig();
         const tagId = typeof query.tag === 'string' && query.tag !== 'all' ? query.tag : undefined;
         const search =
@@ -101,8 +106,21 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
           ...(search ? { search } : {}),
           ...(tagConfig ? { tagLabel: tagConfig.label } : {}),
           ...(cursor ? { cursor } : {}),
+          ...(query.sort ? { sort: query.sort } : {}),
           limit: IMAGE_PLAZA_PAGE_SIZE,
         });
+        request.log.info(
+          {
+            event: 'image_plaza.feed.completed',
+            sort: query.sort ?? 'legacy',
+            count: page.works.length,
+            hasCursor: Boolean(cursor),
+            hasSearch: Boolean(search),
+            hasTag: Boolean(tagId),
+            durationMs: Math.round(performance.now() - startedAt),
+          },
+          'Image plaza feed completed'
+        );
         return reply.send(
           ok<GetImagePlazaFeedData>({
             items: page.works,
@@ -148,7 +166,16 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
       if (!UUID_PATTERN.test(workId) || !body.success)
         return reply.status(400).send(fail('BAD_REQUEST', '点赞参数无效'));
       try {
+        const startedAt = performance.now();
         const result = await repository.setLike(context.id, workId, body.data.liked);
+        request.log.info(
+          {
+            event: 'image_plaza.like.completed',
+            liked: result.liked,
+            durationMs: Math.round(performance.now() - startedAt),
+          },
+          'Image plaza like completed'
+        );
         return reply.send(
           ok<SetImagePlazaLikeData>({ liked: result.liked, like_count: result.likeCount })
         );
@@ -469,6 +496,10 @@ function requireGenerationProvider(): void {
 
 function routeError(request: FastifyRequest, reply: FastifyReply, err: unknown) {
   const message = err instanceof Error ? err.message : 'image plaza request failed';
+  if (message === IMAGE_PLAZA_INVALID_CURSOR) {
+    request.log.warn({ event: 'image_plaza.cursor_rejected' }, 'Image plaza cursor rejected');
+    return reply.status(400).send(fail(IMAGE_PLAZA_INVALID_CURSOR, '分页已失效，请刷新广场'));
+  }
   const expected =
     /(?:not_found|expired|mismatch|conflict|invalid|insufficient|unavailable|disabled|does_not_support)/.test(
       message

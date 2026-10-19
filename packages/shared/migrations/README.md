@@ -10,6 +10,18 @@
 
 ## 现行执行通道
 
+### 图片广场固定初始序位（2026-10-19，未执行）
+
+文件：`20261019_image_plaza_initial_feed_order.sql`。前置：V2、seed_catalog、feed_like_order 三份 migration 的目标环境 shape 已核实。
+
+- `experience.image_plaza_works` 加 nullable bigint、正数 CHECK 和 UNIQUE；一次编号所有未删除作品（包括有赞），模型内按源热度/时间/id，跨模型逐轮交错。不修改点赞、所有权、RLS/ACL 或生成/分享/导入流程；以后新增默认 NULL。
+- 单事务持有 ACCESS EXCLUSIVE 锁，5 秒锁等待、60 秒每语句预算、100000 active 作品上限；阻塞期间分享/点赞/导入可能等待，必须维护窗口与容量验证。超预算停止，不自动重试/扩大阈值。重复执行明确拒绝，不重新编号。
+- 保留既有点赞索引，新增零赞 partial 与最新索引。**候选索引还未得到真实 EXPLAIN/写成本验证**，本地无 PostgreSQL/Docker，不得将 unit mock 视为 SQL 验收。
+- TEST preflight：核对列、约束、源热度类型、RLS/grants、现有索引、活跃作品规模与空间；确认没有已有 initial_feed_order。先隔离环境验证初始化原子回滚/重跑拒绝/并发，再 workflow 单文件 apply。
+- postflight：比较前后权限；验证非空序位正数/唯一/覆盖，获赞与取消到零赞不重编号，新作品 NULL；实际 PostgREST `initial_feed_order::text` 与 NULL 混合方向游标、跨段 limit+1/字面搜索回归；1x/10x 合成规模首页/深页/搜索 EXPLAIN、点赞索引写成本与锁等待。仅保存结构/汇总，不提交业务行。
+- 发布：TEST migration → Backend → Frontend → 真机/性能 → 独立 Production 审批；各环境独立初始化，不能复制 TEST 序位。当前没有执行任何远端迁移。
+- 恢复：先回退 Frontend/Backend 到旧协议，保留新增列/索引（旧版本兼容）；初始迁移失败整笔回滚，结果未知先核对列/账本，禁止 force_rerun 重新编号。确认无消费者后才另审 DROP 索引/约束/列；错误初始化用独立 forward-fix 和新游标版本，不能删作品/点赞恢复。
+
 **改库只有 GitHub Actions `Database Migration` 一条路。** 它才会查、写 `supabase_migrations.repo_migrations` 账本。
 
 仓库 Secrets：

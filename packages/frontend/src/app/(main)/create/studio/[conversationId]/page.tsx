@@ -25,6 +25,7 @@ import {
 } from '@miniapp/shared';
 import {
   fileToImagePlazaPayload,
+  validateImagePlazaReference,
   useCreateImagePlazaConversationMutation,
   useImagePlazaConfigQuery,
   useImagePlazaConversationQuery,
@@ -36,6 +37,7 @@ import {
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
 import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
+import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import {
   Sheet,
   SheetClose,
@@ -47,18 +49,35 @@ import {
 
 export default function ImagePlazaStudioPage() {
   const params = useParams<{ conversationId: string }>();
+  // App Router may reuse the page when switching conversations; local uploads/settings must not survive.
+  return <ImagePlazaStudio key={params.conversationId} conversationId={params.conversationId} />;
+}
+
+function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const router = useRouter();
+  const viewportHeight = useVisualViewportHeight();
   const config = useImagePlazaConfigQuery();
-  const conversation = useImagePlazaConversationQuery(params.conversationId);
+  const conversation = useImagePlazaConversationQuery(conversationId);
   const conversations = useImagePlazaConversationsQuery();
   const createConversation = useCreateImagePlazaConversationMutation();
   const quote = useImagePlazaQuoteMutation();
-  const submit = useSubmitImagePlazaAttemptMutation(params.conversationId);
+  const submit = useSubmitImagePlazaAttemptMutation(conversationId);
   const upload = useUploadImagePlazaReferenceMutation();
   const share = useShareImagePlazaMutation();
   const fileInput = useRef<HTMLInputElement | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const followLatestRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+  const followLatestRef = useRef(true);
+  const scrollDimensions = useRef({ height: 0, content: 0 });
+  const scrollFrame = useRef<number | null>(null);
+  const uploadToken = useRef(0);
+  const localUrl = useRef<string | null>(null);
+  const referenceFile = useRef<File | null>(null);
+  const sending = useRef(false);
+  const [localPreview, setLocalPreview] = useState<string | null>(null);
+  const [referenceStatus, setReferenceStatus] = useState<
+    'idle' | 'reading' | 'uploading' | 'ready' | 'error'
+  >('idle');
   const [prompt, setPrompt] = useState('');
   const [modelId, setModelId] = useState('seedream-v5-pro');
   const [aspectRatio, setAspectRatio] = useState<ImagePlazaAspectRatio>('2:3');
@@ -124,6 +143,8 @@ export default function ImagePlazaStudioPage() {
   }, [initialized, model?.id, aspectRatio, resolution, mode, referenceArtifactId]);
 
   const selectModel = (next: ImagePlazaModel) => {
+    // A response started with another model must not silently restore its reference.
+    if (next.id !== model?.id && localPreview) clearReference();
     setModelId(next.id);
     setAspectRatio(
       next.aspect_ratios.includes(aspectRatio) ? aspectRatio : (next.aspect_ratios[0] ?? '1:1')
@@ -133,12 +154,11 @@ export default function ImagePlazaStudioPage() {
         ? resolution
         : (next.resolutions[0]?.id ?? 'fixed')
     );
-    if (referenceArtifactId && !next.supports_i2i) {
-      setReference(null);
-      setReferenceArtifactId(null);
-      setMode('t2i');
+    if ((referenceArtifactId || localPreview) && !next.supports_i2i) {
+      clearReference();
       showNotice('该模型不支持参考图，已改为文生图');
     }
+    if (mode === 'edit' && !next.supports_edit) setMode(next.supports_i2i ? 'i2i' : 't2i');
   };
 
   const resetSettings = () => {
@@ -153,12 +173,23 @@ export default function ImagePlazaStudioPage() {
     setAutoOptimize(true);
   };
 
-  const scrollToLatest = (behavior: ScrollBehavior = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
+  const scrollToLatest = () => {
+    const node = scrollRef.current;
+    if (node) {
+      scrollDimensions.current = { height: node.clientHeight, content: node.scrollHeight };
+      if (followLatestRef.current) node.scrollTop = node.scrollHeight;
+    }
   };
 
   const generate = async (nextPrompt = prompt) => {
-    if (!model || !nextPrompt.trim() || submit.isPending) return;
+    if (
+      !model ||
+      !nextPrompt.trim() ||
+      sending.current ||
+      (localPreview && referenceStatus !== 'ready')
+    )
+      return;
+    sending.current = true;
     try {
       const actualMode: ImagePlazaMode = referenceArtifactId ? mode : 't2i';
       const freshQuote = await quote.mutateAsync({
@@ -180,24 +211,57 @@ export default function ImagePlazaStudioPage() {
         idempotency_key: crypto.randomUUID(),
       });
       setPrompt('');
-      // 提交成功后跟随最新消息；生成轮询更新时继续滚到底，直到本轮结束。
+      // Explicit submission restores following; polling itself never changes user intent.
       followLatestRef.current = true;
-      requestAnimationFrame(() => scrollToLatest());
+      scrollToLatest();
     } catch (error) {
       showNotice(error instanceof Error ? error.message : '提交失败，请重试');
+    } finally {
+      sending.current = false;
     }
   };
 
   useEffect(() => {
-    if (!followLatestRef.current || !data?.messages.length) return;
-    requestAnimationFrame(() => scrollToLatest());
-    const stillRunning = data.messages.some((message) =>
-      message.attempt
-        ? message.attempt.status === 'pending' || message.attempt.status === 'generating'
-        : false
-    );
-    if (!stillRunning) followLatestRef.current = false;
-  }, [data?.messages]);
+    const node = scrollRef.current;
+    const content = messagesRef.current;
+    if (!node || !content) return;
+    const schedule = () => {
+      if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+      scrollFrame.current = requestAnimationFrame(() => {
+        scrollFrame.current = null;
+        scrollToLatest();
+      });
+    };
+    schedule();
+    const observer = new ResizeObserver(schedule);
+    observer.observe(node);
+    observer.observe(content);
+    return () => {
+      observer.disconnect();
+      if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+    };
+  }, [data?.id, config.isLoading, conversation.isLoading]);
+
+  useEffect(
+    () => () => {
+      uploadToken.current += 1;
+      if (localUrl.current) URL.revokeObjectURL(localUrl.current);
+      referenceFile.current = null;
+    },
+    []
+  );
+
+  const clearReference = () => {
+    uploadToken.current += 1;
+    if (localUrl.current) URL.revokeObjectURL(localUrl.current);
+    localUrl.current = null;
+    referenceFile.current = null;
+    setLocalPreview(null);
+    setReferenceStatus('idle');
+    setReference(null);
+    setReferenceArtifactId(null);
+    setMode('t2i');
+  };
 
   const chooseReference = async (file?: File) => {
     if (!file || !model) return;
@@ -205,13 +269,34 @@ export default function ImagePlazaStudioPage() {
       showNotice('当前模型不支持添加参考图');
       return;
     }
+    let token: number;
     try {
-      const payload = await fileToImagePlazaPayload(file);
-      const uploaded = await upload.mutateAsync(payload);
-      setReference(uploaded.artifact);
-      setReferenceArtifactId(uploaded.artifact.id);
+      validateImagePlazaReference(file);
+      const preview = URL.createObjectURL(file);
+      clearReference();
+      token = ++uploadToken.current;
+      localUrl.current = preview;
+      referenceFile.current = file;
+      setLocalPreview(preview);
+      setReferenceStatus('reading');
       setMode('i2i');
     } catch (error) {
+      showNotice(error instanceof Error ? error.message : '无法预览图片');
+      return;
+    }
+    try {
+      const payload = await fileToImagePlazaPayload(file);
+      if (token !== uploadToken.current) return;
+      setReferenceStatus('uploading');
+      const uploaded = await upload.mutateAsync(payload);
+      if (token !== uploadToken.current) return;
+      setReference(uploaded.artifact);
+      setReferenceArtifactId(uploaded.artifact.id);
+      setReferenceStatus('ready');
+      referenceFile.current = null;
+    } catch (error) {
+      if (token !== uploadToken.current) return;
+      setReferenceStatus('error');
       showNotice(error instanceof Error ? error.message : '上传失败');
     }
   };
@@ -265,7 +350,10 @@ export default function ImagePlazaStudioPage() {
     text.replaceAll('{rate}', rate).replaceAll('{model}', model.name);
 
   return (
-    <main className="mx-auto flex min-h-[100dvh] w-full max-w-3xl flex-col bg-background text-foreground">
+    <main
+      style={{ height: viewportHeight ?? '100dvh' }}
+      className="mx-auto flex w-full max-w-3xl flex-col overflow-hidden bg-background text-foreground"
+    >
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border/60 bg-background/90 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-2">
           <button
@@ -332,61 +420,75 @@ export default function ImagePlazaStudioPage() {
         </div>
       </header>
 
-      <section className="flex-1 space-y-5 px-3 py-5">
-        {data.messages.length === 0 ? (
-          <div className="mx-auto mt-16 max-w-sm text-center">
-            <div className="mx-auto grid size-16 place-items-center rounded-[1.5rem] bg-primary/10 text-primary">
-              <ImagePlus className="size-7" />
+      <section
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          // Layout/keyboard changes are not user intent; the observer preserves the previous mode.
+          if (
+            scrollDimensions.current.height !== node.clientHeight ||
+            scrollDimensions.current.content !== node.scrollHeight
+          )
+            return;
+          followLatestRef.current = node.scrollHeight - node.scrollTop - node.clientHeight <= 120;
+        }}
+      >
+        <div ref={messagesRef} className="space-y-5 px-3 py-5">
+          {data.messages.length === 0 ? (
+            <div className="mx-auto mt-16 max-w-sm text-center">
+              <div className="mx-auto grid size-16 place-items-center rounded-[1.5rem] bg-primary/10 text-primary">
+                <ImagePlus className="size-7" />
+              </div>
+              <h2 className="mt-5 text-xl font-black">把灵感变成图片</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                描述画面、选择模型，也可以添加一张参考图。
+              </p>
             </div>
-            <h2 className="mt-5 text-xl font-black">把灵感变成图片</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              描述画面、选择模型，也可以添加一张参考图。
-            </p>
-          </div>
-        ) : (
-          data.messages.map((message, messageIndex) => (
-            <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : ''}>
-              {message.role === 'user' ? (
-                <p className="max-w-[86%] rounded-[1.35rem] rounded-br-md border border-border bg-card px-4 py-3 text-sm leading-6 text-foreground shadow-sm">
-                  {message.content}
-                </p>
-              ) : message.attempt ? (
-                <div className="space-y-5">
-                  <AttemptCard
-                    prompt={
-                      data.messages
-                        .slice(0, messageIndex)
-                        .reverse()
-                        .find((item) => item.role === 'user')?.content ?? ''
-                    }
-                    attempt={message.attempt}
-                    onRefresh={(value) => void generate(value)}
-                    onShare={requestShare}
-                    onNotice={showNotice}
-                    sharingArtifactId={share.isPending && shareArtifact ? shareArtifact.id : null}
-                    rewardBadge={
-                      rewardBadgeVisible && !config.data.has_completed_first_share ? rate : null
-                    }
-                  />
-                  <div className="flex items-center gap-4 text-[11px] text-muted-foreground/70">
-                    <span className="h-px flex-1 bg-border" />
-                    <span>新一轮生成</span>
-                    <span className="h-px flex-1 bg-border" />
+          ) : (
+            data.messages.map((message, messageIndex) => (
+              <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : ''}>
+                {message.role === 'user' ? (
+                  <p className="max-w-[86%] rounded-[1.35rem] rounded-br-md border border-border bg-card px-4 py-3 text-sm leading-6 text-foreground shadow-sm">
+                    {message.content}
+                  </p>
+                ) : message.attempt ? (
+                  <div className="space-y-5">
+                    <AttemptCard
+                      prompt={
+                        data.messages
+                          .slice(0, messageIndex)
+                          .reverse()
+                          .find((item) => item.role === 'user')?.content ?? ''
+                      }
+                      attempt={message.attempt}
+                      onRefresh={(value) => void generate(value)}
+                      onShare={requestShare}
+                      onNotice={showNotice}
+                      sharingArtifactId={share.isPending && shareArtifact ? shareArtifact.id : null}
+                      rewardBadge={
+                        rewardBadgeVisible && !config.data.has_completed_first_share ? rate : null
+                      }
+                    />
+                    <div className="flex items-center gap-4 text-[11px] text-muted-foreground/70">
+                      <span className="h-px flex-1 bg-border" />
+                      <span>新一轮生成</span>
+                      <span className="h-px flex-1 bg-border" />
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </div>
-          ))
-        )}
-        <div ref={messagesEndRef} aria-hidden className="h-px w-full" />
+                ) : null}
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
-      <div className="sticky bottom-0 z-20 bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl">
-        {reference || referenceArtifactId ? (
+      <div className="z-20 shrink-0 bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl">
+        {localPreview || reference || referenceArtifactId ? (
           <div className="mb-2 flex items-center gap-2 rounded-2xl bg-card p-2 ring-1 ring-border">
-            {reference ? (
+            {localPreview || reference ? (
               <img
-                src={reference.image_url}
+                src={localPreview ?? reference?.image_url}
                 alt="参考图"
                 className="size-12 rounded-xl object-cover"
               />
@@ -396,7 +498,24 @@ export default function ImagePlazaStudioPage() {
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold">已添加参考图</p>
+              <p role="status" className="text-xs font-bold">
+                {referenceStatus === 'reading'
+                  ? '读取中…'
+                  : referenceStatus === 'uploading'
+                    ? '上传中…'
+                    : referenceStatus === 'error'
+                      ? '上传失败，请重试或移除'
+                      : '已添加参考图'}
+              </p>
+              {referenceStatus === 'error' ? (
+                <button
+                  type="button"
+                  className="text-xs text-primary"
+                  onClick={() => void chooseReference(referenceFile.current ?? undefined)}
+                >
+                  重试上传
+                </button>
+              ) : null}
               <div className="mt-1 flex gap-2 text-[11px]">
                 <button
                   type="button"
@@ -418,11 +537,7 @@ export default function ImagePlazaStudioPage() {
             </div>
             <button
               type="button"
-              onClick={() => {
-                setReference(null);
-                setReferenceArtifactId(null);
-                setMode('t2i');
-              }}
+              onClick={clearReference}
               aria-label="移除参考图"
               className="grid size-9 place-items-center rounded-full bg-background"
             >
@@ -462,7 +577,7 @@ export default function ImagePlazaStudioPage() {
             <button
               type="button"
               onClick={() => fileInput.current?.click()}
-              disabled={upload.isPending}
+              disabled={!model.supports_i2i}
               aria-label="添加参考图"
               className="grid size-12 place-items-center rounded-2xl border border-border bg-background/45 text-muted-foreground disabled:opacity-60"
             >
@@ -534,7 +649,12 @@ export default function ImagePlazaStudioPage() {
             <button
               type="button"
               onClick={() => void generate()}
-              disabled={!prompt.trim() || submit.isPending || quote.isPending}
+              disabled={
+                !prompt.trim() ||
+                submit.isPending ||
+                quote.isPending ||
+                Boolean(localPreview && referenceStatus !== 'ready')
+              }
               aria-label="发送生成"
               className="grid size-14 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_8px_24px_hsl(var(--primary)/0.22)] disabled:opacity-40"
             >
