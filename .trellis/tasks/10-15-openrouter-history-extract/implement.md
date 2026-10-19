@@ -81,3 +81,12 @@
 5. README/架构/spec/task/清单同步；最终diff人工审阅后方可提交。实际合并/升级/停止其他环境/远端SQL各需授权；逐库逐文件核验，不沿用本地或旧快照宣称通过。
 
 T9范围校正：本轮只读核验并提出历史分类策略，不对未审阅历史JSON做处置，不修改原主表DROP守卫。先完成可独立验证的专表contract；旧记录无snapshot/无settled_at仅表明旧契约缺乏证明，不算新调用失败，不生成补扣或假结算。真正的历史处置仍需独立可审阅方案和数据授权。
+
+## T10 执行计划（用户要求直接进行）
+
+1. TEST只读聚合JSON形状/字段名频次、provider/ID、账单与dedup/额度；Production仅核对治理账本确认原DROP未执行。输出必要计数不导出内容。
+2. 新增历史处置migration，2000预算、pg_temp白名单、typed原名补缺、清父表旧raw；保留正文/终态/账务，不能补扣。修改尚未执行的主表DROP账务守卫，依赖历史处置账本与旧schema边界/明确分类。
+3. 扩展既有隔离PG/PostgREST fixture/harness：新增billing治理最小合成结构，测试旧closed/dedup/paid-failure/pending、新snapshot/current-missing/reserved、raw身份冲突/unknownprovider/非法形状/预算/回滚；真实DROP后业务与账务不变。
+4. Backend/Shared tests、所有consumer typecheck/build、lint/import/legacy/migrations、ledger、旧expand、脚本类型/语法及diff检查。同步README/架构/spec/task/清单；最终人工审阅后才能提交，远端单文件执行由用户另行操作。
+
+T10补充证据：TEST专表自身有49条非白名单诊断；同一历史处置同时按现有mapper白名单规范化已有OR诊断，当前诊断优先，父表raw与专表诊断使用指纹CAS，变化则整笔回滚。Venice明细仍不写，缺少有效原名事实会停止。候选为旧父表JSON或已有OR诊断的并集，总数超过2000停止，不先清空再核对。

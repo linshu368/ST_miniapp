@@ -31,7 +31,7 @@
 3. **应用包互不 import**：`frontend` / `backend` / `admin` 之间没有 import 关系，跨进程一律走 HTTP。根目录 `.eslintrc.json` 拦包名与相对路径；已退场包由 `pnpm lint:legacy` 拦截。
 4. **DB 类型不进前端**：前端、运营台与内部 SPA 只消费 `shared/api/*` 契约，不接触数据库行类型。
 5. **前端不在组件里 fetch**：服务端数据统一走 `frontend/src/lib/api/` 的 React Query hooks；跨组件状态用 Zustand，局部状态用 `useState`。
-6. **生成与计费只有一个出口**：任何要调聊天 LLM 的路径都必须走 `backend/src/features/generation/`（**含实扣**：`settle.ts` 与 `sync-job.ts` 两条结算路径也都在这个模块里）。禁止在别处另起一套"转发 + 扣费 + 落库"，否则计费口径必然漂移。唯一的刻意例外是语音写稿（`features/voice/`）：不同供应商、非流式、抽取任务、按次计费，理由写在 `voice-draft.ts` 与 `voice/billing.ts` 头注释里。
+6. **生成与计费只有一个出口**：任何要调聊天 LLM 的路径都必须走 `backend/src/features/generation/`（**含实扣**：`settle.ts` 与 `sync-job.ts` 两条结算路径也都在这个模块里）。禁止在别处另起一套"转发 + 扣费 + 落库"，否则计费口径必然漂移。刻意例外包括语音写稿（`features/voice/`）：不同供应商、非流式、抽取任务、按次计费，理由写在 `voice-draft.ts` 与 `voice/billing.ts` 头注释里。 图片广场作品提示词翻译和标签分类也是独立的非流式辅助任务：统一位于 `generation/image-plaza-prompt-translate.ts` 与 `generation/image-plaza-tagging.ts`，不生成聊天回复、不读写聊天历史，也不进入用户聊天计费。legacy guard 仅按文件豁免这两个适配器及既有打标端点测试，不放开目录。
    同类纪律还有三条，一并由 CI 的 legacy guard 拦（见 §7.5）：`experience.chat_history` 只由 `ConversationHistoryRepository` 读写；支付到账只由 `PaymentSettlement.settlePaidOrder` 入账；OpenRouter 用量统计只由 `generation/openrouter-metadata.ts` 读取。
    **星尘发放（注册 / 签到 / 许愿 / 运营赠送 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**，且六个发奖 RPC 的「钱包 upsert + `bonus_credits` 加值 + `wallet_ledger` 记账」都收口在唯一入口 **`billing.grant_bonus_credits`**（`20260911_billing_grant_bonus_credits.sql`）；业务判定（配置、去重、上限、通知、审计）留在各 RPC。应用层只调 RPC、不做手动余额加减。CI 由 legacy guard `wallet-bonus-grant` 拦新迁移里再出现 `bonus_credits = bonus_credits + …`（见 §7.5）。充值入账（动 `main_credits` 与支付字段）是另一条已收口的路径，不走这个入口。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
@@ -280,7 +280,7 @@ OpenRouter 的原始调用元数据写入 `experience.openrouter_chat_history`�
 
 回捞五路独立各限 50/24h/DB 5s：两个 provider 的未结算、无调用身份、OpenRouter 缺 metadata、超时 streaming；按 parent 去重，单源/单行失败隔离。metadata 完整但账/额度未结可直接用专表已存事实恢复；缺 OpenRouter key 不停 Venice。无 ID 且成功但原因不足的记录停止自动推断，已确定失败按原 charge_id 收口；重启超时沿既有终态/额度恢复。
 
-本轮三份新 SQL 是 catch-up → provider views → 独立 12 列 DROP。current/已有 base_chat_bj 保留输出类型/基数/业务语义/权限，从对应专表取原始事实；current 保持 invoker，原 reader 仅补必要列权限。先部署本轮 Backend、确认所有旧 writer 退出和窗口覆盖，再切视图/独立 DROP；该主表 DROP 保留业务 llm_finish_reason、计费列与专表旧别名；专表别名另由下方 T9 清理。DROP 拒绝依赖/未保全事实/未经审阅旧 raw JSON/未收口历史，不要求中断专表已就绪、旧列为空的新 streaming 调用。删列后只能用已验证兼容 SHA 或 forward-fix，不直接回退旧 Backend，不执行 VACUUM FULL。当前仅本地完成，实际环境与恢复见 [T8 报告](../.trellis/tasks/10-15-openrouter-history-extract/research/t8-local-retirement-verification-2026-10-16.md) 和 [发布清单](../.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md)。
+本轮三份新 SQL 是 catch-up → provider views → 独立 12 列 DROP。current/已有 base_chat_bj 保留输出类型/基数/业务语义/权限，从对应专表取原始事实；current 保持 invoker，原 reader 仅补必要列权限。先部署本轮 Backend、确认所有旧 writer 退出和窗口覆盖，再切视图/独立 DROP；该主表 DROP 保留业务 llm_finish_reason、计费列与专表旧别名；专表别名另由下方 T9 清理。DROP 拒绝依赖/未保全事实/未经审阅旧 raw JSON/未分类账务或现代契约未收口旧字段，不要求中断专表已就绪、旧列为空的新 streaming 调用。删列后只能用已验证兼容 SHA 或 forward-fix，不直接回退旧 Backend，不执行 VACUUM FULL。当前仅本地完成，实际环境与恢复见 [T8 报告](../.trellis/tasks/10-15-openrouter-history-extract/research/t8-local-retirement-verification-2026-10-16.md) 和 [发布清单](../.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md)。
 
 T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 独立删除 OpenRouter 表 11 个重复旧别名，仅在原名为空且无冲突时保全类型化字段，超过 2000 候选停止；定点移除 8 个旧 CHECK，保留 canonical CHECK、ID/data、唯一/FK/ACL。未知依赖/冲突停止，待回捞空 metadata 不算失败。可先清专表再执行主表 12 列 contract；主表非空旧 JSON 与历史结算守卫原样保留，旧 raw JSON 不进入专表。两处真实本地删列回归与远端治理/运行门禁独立，删列后只允许兼容 SHA/forward-fix。
 
@@ -676,3 +676,9 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 | `docs/payment-missing-credits-remediation.md`                | 支付四路入账复盘                     | `git show 7541a54^:docs/payment-missing-credits-remediation.md` |
 | `docs/st_handle退场方案.md`                                  | st_handle 退场步骤                   | `git show 7541a54^:docs/st_handle退场方案.md`                   |
 | `packages/backend/CLAUDE.md` / `packages/frontend/CLAUDE.md` | 已删除的包级 AI 规则                 | git 历史                                                        |
+
+### OpenRouter T10 历史处置与账务契约边界
+
+新增历史处置SQL在同一事务内规范化OR受控诊断、仅补NULL厂商原名事实并清父表旧JSON。非白名单key、referer/外部用户/嵌套response及错误自由文本明确丢弃、不归档；类型/长度/非负数/整数范围、provider与ID验证，父表及专表JSON指纹CAS保护变化，最多2000候选且预算前不解TOAST。正文、业务finish_reason、计费快照/金额/charge/dedup/quota不写；Venice仅在既有明细事实保全后清父表冗余诊断，不改变mapper/表。
+
+主表DROP文件在两库未执行，T10修正原过宽账务守卫：以schema账本checksum+applied_at定义引入快照前历史，明确终态账单/持久dedup/失败未扣/旧pending分类。旧pending保留账单和专表ID、不伪造已结算；未知成功记录、新契约漏快照、身份/状态冲突、旧字段关联reserved继续停止。健康专表调用不因清理要求中断。账务跨域仅只读；历史归档表、后台补扣worker与通用搬运层均未新增。

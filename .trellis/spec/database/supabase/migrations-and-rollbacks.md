@@ -77,3 +77,11 @@ Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：�
 单独事务与5s锁/60s语句预算，覆盖预检在获取DDL锁之前；锁超时停止、结果未知核对账本/shape，不自动重试。原名缺口补齐只取同一专表旧安全标量，0保留，非空新事实不覆盖，不搬历史raw JSON。可先执行专表contract，再在历史治理/四类门禁通过后执行主表contract；主表原拒绝未知JSON/历史结算守卫未改，不能通过伪造settled_at放行。
 
 扩展既有scripts/test-openrouter-retirement-local.sh与.mts，真实删除12+11列后验证实际repository读写/回捞/计费恢复/取消晚到/Venice及视图/权限；冲突/未知依赖/混合CHECK/2001候选/重复执行拒绝。原expand/ledger与所有消费者验证继续运行。Production需单独覆盖/锁/容量证据，不能沿用TEST零冲突。删列后禁止回退旧别名writer或用重建空列伪称数据恢复；无VACUUM FULL。
+
+## Scenario: 诊断白名单处置与旧账务契约
+
+`20261016_openrouter_history_disposition.sql` 先保全受控字段，再清父表raw诊断；同批规范化已有OR诊断，不整份归档JSON、不复制未知动态key/错误文本。候选LIMIT2001先核对最多2000预算再读取TOAST；JSON对象/ID/provider/字符串512/非负数/整数边界与指纹CAS检查，失败全事务回滚。Venice只验证既有明细保全、不写其明细；业务正文/终态、钱包/账单/额度不改。明确未知诊断丢弃的不可恢复性，远端执行前审阅。
+
+仅两库尚未执行的主表DROP可修改；已执行SQL不变。要求处置成功账本、snapshot schema文件checksum和applied_at作为旧契约边界，再按实际billing.llm_usage_charges/llm_usage_charge_dedup及character_free_chat_quota_decisions只读分类。不把无快照历史的settled_at NULL全部当失败，不对旧pending伪造结算；它们的定价事实/幂等键/专表ID保留，超窗停止自动回捞、独立账务核验。未知成功、现代漏快照、身份/状态冲突及旧字段关联reserved仍拒绝，正常专表流式不阻断。
+
+同一既有PG/PostgREST harness验证两次删列和处置前后业务/账务不变，覆盖非白名单清除、NULL/0、新事实优先、Venice/身份/shape/预算/账本/现代pending/缺快照/NULL逻辑的拒绝及旧pending保留。Production数量/计划/容量另核，超过预算另审forward批次，不改文件或force_rerun扩容。

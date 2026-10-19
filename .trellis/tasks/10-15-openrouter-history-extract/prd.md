@@ -63,3 +63,16 @@ R7. 新增 SQL 仅位于 shared migrations；应用无依赖、DB 内部无依�
 2026-10-16 PR430 只读核验：部署 272f144a / TEST；3 条新调用输入/回复/上下文/快照/结算齐全，专表 ID 齐全、主表 12 列为空；专表 usage/finish_reason 待回捞不算失败。TEST 两前序新 migration 账本/checksum 一致，主表列级依赖零，current 1307 行与预期一致。development 50c121f4、PR425 5856cc3 同连 TEST 且仍依赖主表旧列；旧 JSON 1797 条与历史结算守卫 1281 条（均无 snapshot）尚待分类，不将其自动判为业务失败。此为当次快照，执行前重查。
 
 用户随后确认PR430已合并，授权按本规划继续本地实现，并在完成后提交推送；不开新Trellis任务。本轮远端迁移、其他环境升级/停止及新PR创建仍不自动执行。专表旧别名清理不等于主表历史JSON处置已获授权；主表DROP原守卫保留。
+
+## T10 历史诊断处置与主表 contract 守卫（用户授权直接推进）
+
+PR425已由用户明确判定作废并排除本轮门禁，不再要求处理该环境。用户授权本地形成处置方案和相应migration验证，未授权远端执行。
+
+R8：旧主表JSON仅保留现有mapper允许的类型化调用标量和受控诊断白名单（id/provider_name/finish_reason/model、usage/usage_cache/四token/latency/generation_time、error数值code）；非白名单字段如external_user/http_referer/provider_responses等明确不归档、不复制，丢弃；保全后清空主表旧诊断列，为最终DROP准备。先验证provider/ID/shape，非空canonical优先、只补缺失，不把主表业务finish_reason当上游原因。无安全归属、ID冲突、非法JSON或超预算停止。
+
+R9：按计费快照列实际引入前后区分历史与当前契约。无snapshot/无settled_at不能直接当未结算；终态账单/dedup、未产生账单的失败、真实pending分别分类。旧pending保留账单/去重/调用ID/metadata，不重新定价/扣款、不伪造settled_at；超24h停止自动恢复、待独立账务核验。新契约中仍关联待删旧字段/缺失detail的未完成结算或reserved额度继续阻断；纯专表的健康调用可并行，不以此放宽新故障恢复。
+
+- [x] AC10：隔离库历史JSON安全保全/非白名单丢弃、事务回滚/预算/身份拒绝通过；不改正文/终态/计费事实，Venice不误写OpenRouter。
+- [x] AC11：覆盖旧终态/留存dedup/失败无账单/真实pending与新契约缺快照、pending、reserved额度；删除主表后pending记录与幂等身份仍在，无补扣或假收口。
+
+T10补充证据：TEST专表自身有49条非白名单诊断；同一历史处置同时按现有mapper白名单规范化已有OR诊断，当前诊断优先，父表raw与专表诊断使用指纹CAS，变化则整笔回滚。Venice明细仍不写，缺少有效原名事实会停止。候选为旧父表JSON或已有OR诊断的并集，总数超过2000停止，不先清空再核对。
