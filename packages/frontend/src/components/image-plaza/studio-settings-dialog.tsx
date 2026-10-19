@@ -3,13 +3,7 @@
 import { ChevronDown, Sparkles, X } from 'lucide-react';
 import { useState } from 'react';
 import type { ImagePlazaAspectRatio, ImagePlazaModel } from '@miniapp/shared';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Sheet, SheetClose, SheetContent, SheetTitle } from '@/components/ui/sheet';
 
 type ResolutionId = '1K' | '2K' | 'fixed';
 type ExpandedSetting = 'style' | 'ratio' | 'resolution' | null;
@@ -48,16 +42,18 @@ export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
     setExpanded((current) => (current === setting ? null : setting));
 
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="bottom-0 top-auto max-h-[76dvh] w-full max-w-3xl translate-y-0 gap-0 overflow-y-auto rounded-t-[1.25rem] border-x-0 border-b-0 border-border bg-card p-3 shadow-[0_-18px_42px_rgba(0,0,0,0.3)] sm:bottom-0 sm:top-auto sm:translate-y-0 sm:rounded-b-none sm:rounded-t-[1.25rem]"
+    <Sheet open={props.open} onOpenChange={props.onOpenChange}>
+      <SheetContent
+        side="bottom"
+        aria-describedby={undefined}
+        overlayClassName="bg-black/80 backdrop-blur-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
+        className="mx-auto max-h-[76dvh] w-full max-w-3xl overflow-y-auto rounded-t-[1.25rem] border-border bg-card p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-18px_42px_rgba(0,0,0,0.3)] motion-reduce:transition-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
       >
         <div className="overflow-hidden rounded-2xl border border-border bg-card">
-          <DialogHeader className="flex-row items-center gap-2 space-y-0 border-b border-border px-4 py-3 text-left">
-            <DialogTitle className="flex-1 text-base font-extrabold tracking-tight">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-left">
+            <SheetTitle className="flex-1 text-base font-extrabold leading-none tracking-tight">
               设置
-            </DialogTitle>
+            </SheetTitle>
             <button
               type="button"
               onClick={() => {
@@ -68,13 +64,13 @@ export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
             >
               重置
             </button>
-            <DialogClose
+            <SheetClose
               aria-label="关闭设置"
               className="grid size-9 place-items-center rounded-lg text-muted-foreground transition active:bg-background"
             >
               <X className="size-5" />
-            </DialogClose>
-          </DialogHeader>
+            </SheetClose>
+          </div>
 
           <SettingSection
             label="图片风格"
@@ -159,8 +155,8 @@ export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
             last
           />
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
 
