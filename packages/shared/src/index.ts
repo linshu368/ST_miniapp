@@ -24,6 +24,7 @@ export * from './api/feature-free-trials';
 export * from './api/conversations';
 export * from './api/voice';
 export * from './api/images';
+export * from './api/image-plaza';
 export * from './api/wishes';
 export * from './api/growth';
 export * from './api/invite';

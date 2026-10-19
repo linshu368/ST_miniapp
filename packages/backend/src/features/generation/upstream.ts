@@ -14,6 +14,7 @@
 import { Transform } from 'node:stream';
 import { LLM_PROVIDER_CAPABILITIES, type LlmModelProvider } from '@miniapp/shared';
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
+import { veniceFetch } from '../../platform/venice-http.js';
 
 const LLM_UPSTREAM_URL = getLlmProviderRuntimeConfig('openrouter').baseUrl;
 
@@ -60,6 +61,16 @@ export async function forwardToUpstream(input: {
     forwardHeaders['X-Title'] = 'ST_miniAPP';
   }
 
+  // Venice 本地可走 VENICE_HTTPS_PROXY；OpenRouter 等其它上游保持直连。
+  if (provider === 'venice') {
+    return await veniceFetch(input.url, {
+      method: input.method,
+      headers: forwardHeaders,
+      body: input.body,
+      signal: input.signal,
+      duplex: 'half',
+    });
+  }
   return await fetch(input.url, {
     method: input.method,
     headers: forwardHeaders,

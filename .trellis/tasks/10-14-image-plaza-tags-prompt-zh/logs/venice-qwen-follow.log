@@ -1,0 +1,9 @@
+venice-retry round=1 model=qwen-3-8-27b deepseek_pending=6811 translated=842 failed=379 venice_retry_pending=375 venice_retry_failed=4 final_verify=no
+venice-retry round=1 batch complete: translated=50 skipped=0 marked=0 failed=0
+venice-retry round=2 model=qwen-3-8-27b deepseek_pending=6782 translated=913 failed=337 venice_retry_pending=333 venice_retry_failed=4 final_verify=no
+venice-retry round=2 batch complete: translated=50 skipped=0 marked=0 failed=0
+venice-retry round=3 model=qwen-3-8-27b deepseek_pending=6755 translated=976 failed=301 venice_retry_pending=297 venice_retry_failed=4 final_verify=no
+venice-retry round=3 batch complete: translated=50 skipped=0 marked=0 failed=0
+venice-retry round=4 model=qwen-3-8-27b deepseek_pending=6722 translated=1050 failed=260 venice_retry_pending=256 venice_retry_failed=4 final_verify=no
+venice-retry round=4 batch complete: translated=50 skipped=0 marked=0 failed=0
+venice-retry round=5 model=qwen-3-8-27b deepseek_pending=6693 translated=1116 failed=223 venice_retry_pending=219 venice_retry_failed=4 final_verify=no

@@ -24,6 +24,8 @@ GitHub Actions 操作前再次核对 workflow 版本、目标 environment secret
 
 ## 安全变更模式
 
+- managed-key 白名单不得用另一分支的静态名单覆盖当前支持集合；改名包装函数会保留 OID，既有 CHECK 可能仍绑定前置函数，因此必须同时验证 drafts/releases 的实际表达式与 RPC 入口。参考 `20261016_reconcile_image_plaza_managed_config_keys.sql`（MIGRATION，未部署）；保持 validator、专用配置例外和 convalidated，不用删 CHECK 绕过保存错误。
+
 - 破坏性字段采用 expand → 双兼容/回填 → consumer 切换 → contract；不得同次先删后发。
 - 大表索引/约束评估 concurrent、NOT VALID/VALIDATE、statement/lock timeout 和 Railway/Supabase 连接影响。
 - migration 应可重复检测目标 shape；不能真正幂等时明确“一次性”及安全失败条件。

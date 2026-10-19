@@ -23,6 +23,7 @@ const HIDDEN_PREFIXES = [
   '/profile/messages',
   '/profile/support',
   '/create/wish',
+  '/create/studio',
   '/vip',
 ];
 
