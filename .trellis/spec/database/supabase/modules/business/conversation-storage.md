@@ -57,6 +57,10 @@ last_verified_at: 2026-10-13
 
 ## 变更记录
 
+- 2026-10-19：增加离线 TEST seed 导出与目标初始化模板，复用既有 RPC，不增加永久对象；仅导出 active seed 内容与图片元数据，目标重新分配 UUID，排除用户行为。真实数据不入 Git，Storage 实体复制和生产执行独立审批。见 `ops/image-plaza-seed-migration.md`；未进行生产导入。
+
+- 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
+
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
 last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
