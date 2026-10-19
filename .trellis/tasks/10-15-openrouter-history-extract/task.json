@@ -16,12 +16,12 @@
   "base_branch": "dev",
   "worktree_path": null,
   "commit": null,
-  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/430",
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/431",
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "PR430已合并f15fb73d，dev实际部署该SHA；T9用户授权本地实施及完成后提交推送。新增专表11旧别名独立contract、扩展双处真删列回归；最终测试/审阅结果见T9报告。远端SQL/其他环境停止未执行。主表DROP原JSON/历史结算守卫保留，PR425共享TEST旧writer与历史治理仍属远端门禁。",
+  "notes": "PR431已合并，dev部署5ed1e217；用户明确PR425作废并排除门禁，授权T10直接本地历史处置方案/迁移验证。TEST历史JSON1797、OR自身49诊断需白名单规范化；1281无快照记录按1268终态/dedup、11失败无账单、2旧pending分类，不补扣/假结算。新处置SQL+尚未两库执行的主表DROP守卫修正本地实施，最终验证见T10报告；未远端写入。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

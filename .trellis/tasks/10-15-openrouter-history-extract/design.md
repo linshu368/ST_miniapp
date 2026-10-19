@@ -118,3 +118,15 @@
 新增 `20261016_openrouter_chat_history_drop_legacy_aliases.sql`，独立于主表contract：逐组核对11对列的类型、拒绝非空冲突、仅补NULL原名值（总候选最多2000），移除8个既定的单旧列CHECK后DROP11别名。未知依赖/混合CHECK/shape漂移/两provider重叠拒绝。canonical校验、ID/data、UNIQUE/FK、审计列和ACL保留，不新增对象。与原名字段完全空的占位/待回捞记录兼容，不新增计费或metadata完整性门禁。
 
 TEST两前序已记账、视图已适配，因此本轮实际可按“所有共享旧writer退出/覆盖核对 → 专表11别名contract → 验证 → 历史治理及主表门禁 → 主表12列contract”推进。先清专表不要求主表历史JSON处置，主表DROP则仍拒绝未知旧JSON和历史结算。主表SQL未修改，不通过伪造settled_at或复制不受控JSON绕过。原任务6份已执行SQL均未改动；原主表DROP未改动。
+
+## T10 最小充分历史处置方案（直接本地推进授权）
+
+复用现有OpenRouter mapper白名单、PG/PostgREST harness、repo_migrations、billing.llm_usage_charges/llm_usage_charge_dedup和character_free_chat_quota_decisions。不建历史归档表、常驻worker、通用JSON搬运器或新公开API。新migration只涉及experience的既有调用明细/旧诊断字段；跨域只读billing与治理账本，业务正文/终态、钱包/账单/额度均不写。临时函数/候选表只在pg_temp随事务消失，无持久新对象。
+
+新增历史处置SQL：原始JSON必须是对象、有唯一provider明细且调用ID匹配；同现有mapper白名单逐项验类型/长度/非负数/integer上界，未知字段与自由文本错误被丢弃，不整份迁移。OR仅补NULL canonical和NULL诊断，当前非空事实优先；Venice仅清父表已冗余JSON，不改其mapper/表/明细，原父表安全标量/ID须已保全。每文件最多2000条旧JSON，生产超限拒绝另审有界批次。锁/语句5s/60s，全部写同一事务，失败整笔回滚，不能自动重跑已记账文件。
+
+主表DROP在两库均未记账（TEST直接账本、Production MCP只读治理查询），允许修改此未执行文件；已执行历史文件不改。新守卫要求历史处置记账；以20260911快照migration真实ledger applied_at（checksum匹配）为旧契约边界，旧无快照只在账单/dedup身份一致、状态已分类且无reserved额度时允许元数据清退；旧pending需保留可追溯的原账单与专表调用ID，不能视为结算完成。新contract历史和未知/缺证明成功调用继续拒绝。执行前再次核对两库账本，不可用无快照日期猜测新记录。
+
+原DROP对业务列/ID/标量保全、DB依赖、raw JSON未处置的守卫保留；本次只区分旧账务契约，不清空其他旧标量来绕过原守卫。实际删除前仍核对应用/运行/历史覆盖，PR425按用户明确豁免，不再自动阻挡。恢复采用兼容forward-fix；丢弃的非白名单旧诊断无法靠新表恢复，用户需在远端执行前审阅明确这一边界。
+
+T10补充证据：TEST专表自身有49条非白名单诊断；同一历史处置同时按现有mapper白名单规范化已有OR诊断，当前诊断优先，父表raw与专表诊断使用指纹CAS，变化则整笔回滚。Venice明细仍不写，缺少有效原名事实会停止。候选为旧父表JSON或已有OR诊断的并集，总数超过2000停止，不先清空再核对。

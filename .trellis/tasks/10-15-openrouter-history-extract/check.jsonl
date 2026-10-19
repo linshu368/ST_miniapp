@@ -6,3 +6,4 @@
 {"file": ".trellis/tasks/10-15-openrouter-history-extract/research/t5-retirement-audit-2026-10-16.md", "reason": "T5 实时环境、消费者/权限/恢复缺口与删列规划证据"}
 {"file": ".trellis/tasks/10-15-openrouter-history-extract/research/t8-local-retirement-verification-2026-10-16.md", "reason": "T8 本地清退代码/三新 SQL/真 DROP 与真实环境边界"}
 {"file": ".trellis/tasks/10-15-openrouter-history-extract/research/t9-provider-alias-retirement-2026-10-16.md", "reason": "T9专表11别名contract、双处物理删列、TEST快照与主表历史门禁边界"}
+{"file": ".trellis/tasks/10-15-openrouter-history-extract/research/t10-history-disposition-2026-10-16.md", "reason": "T10历史JSON白名单处置/账单dedup分类、主表守卫修正及真实删列边界"}
