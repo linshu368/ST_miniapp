@@ -27,7 +27,7 @@
 ## Required Rules
 
 - 保持 `UI → src/lib helper → Supabase/backend` 单向依赖；组件不得复制 URL、RPC、token 或错误解包逻辑。
-- 不得导入 frontend、backend 或 cs-platform；不得使用数据库行类型作为 UI/API 契约。
+- 不得导入 frontend 或 backend；不得使用数据库行类型作为 UI/API 契约。
 - 环境切换必须同时切换 API base、Supabase client/session 和缓存上下文，不得混用环境数据。
 - 发布、回滚、赠送、删除、上下架等写操作必须防重复提交、展示明确结果并保留可恢复路径。
 - 新抽象必须基于稳定职责和真实复用场景；禁止为假设需求预建通用框架。

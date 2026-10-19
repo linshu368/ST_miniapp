@@ -11,7 +11,6 @@
 | `payment.ts` / `vip.ts` / `wishes.ts`      | 套餐、下单、订单查询/回调；VIP 状态与入口角标；许愿状态、创建、完成                              |
 | `telemetry.ts`                             | 受鉴权 replay context；支付终态事件在 feature 层异步发送                                         |
 | `notifications.ts` / `support.ts`          | 消息列表、单条详情和按 id 已读；MiniApp 客服会话、消息、已读/未读                                |
-| `cs-platform.ts`                           | Telegram 回访、画像、群发、导出等内部 API                                                        |
 | `invite.ts` / `growth.ts` / `community.ts` | 邀请绑定/统计；渠道归因；官方群验证与奖励                                                        |
 | `bot.ts`                                   | Telegram webhook、start 与回复回流                                                               |
 | `admin-supabase-proxy.ts`                  | Admin 受控代理；会话验证、白名单、审计，禁止演变为通用 SQL 代理                                  |

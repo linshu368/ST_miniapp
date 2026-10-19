@@ -66,7 +66,9 @@ export function compileTextPostprocessSource(input: unknown): CompileTextPostpro
   const artifact = {
     schema_version: TEXT_POSTPROCESS_SCHEMA_VERSION,
     policy_version: TEXT_POSTPROCESS_POLICY_VERSION,
-    rich_reply_protocol: { version: 2 as const, enabled: true },
+    rich_reply_protocol: parsed.source.rich_reply
+      ? { version: 3 as const, enabled: true, recovery: parsed.source.rich_reply }
+      : { version: 2 as const, enabled: true },
     rules,
   };
   const validated = validateCompiledArtifact(artifact);

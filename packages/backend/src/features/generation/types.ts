@@ -5,6 +5,7 @@
 // 而定档扣费额又由该结果决定，余额预检再吃这个额度。
 
 import type { LlmModelProvider } from '@miniapp/shared';
+import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { SseTapResult } from './upstream.js';
 import type { RequestLogger } from '../../lib/logger.js';
 
@@ -66,6 +67,10 @@ export interface GenerationRequest {
 }
 
 export interface GenerationHooks {
+  /** Durable recovery facts must exist before dispatch; never stores conversation content. */
+  onBeforeDispatch?: (snapshot: LlmBillingSnapshot) => Promise<void>;
+  /** Await the first observed provider identity before forwarding its chunk. */
+  onGenerationId?: (generationId: string) => Promise<void>;
   /** Persist the quota identity and reject a turn cancelled before quota reservation. */
   onBeforeReserve?: (chargeId: string) => Promise<void>;
   /** Claim persisted terminal status before any wallet/free-quota settlement. */

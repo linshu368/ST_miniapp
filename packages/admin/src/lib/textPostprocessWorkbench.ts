@@ -111,6 +111,7 @@ export function persistableSource(local: EditableSource): TextPostprocessDraftSo
   return {
     schema_version: TEXT_POSTPROCESS_SCHEMA_VERSION,
     policy_version: TEXT_POSTPROCESS_POLICY_VERSION,
+    ...(local.rich_reply ? { rich_reply: local.rich_reply } : {}),
     rules: local.rules.map((rule) => ({
       id: rule.id,
       name: rule.name,
@@ -129,6 +130,7 @@ export function editableFromSource(source: TextPostprocessDraftSource): Editable
   return {
     schema_version: TEXT_POSTPROCESS_SCHEMA_VERSION,
     policy_version: TEXT_POSTPROCESS_POLICY_VERSION,
+    ...(source.rich_reply ? { rich_reply: structuredClone(source.rich_reply) } : {}),
     rules: source.rules.map((rule) => ({ ...rule })),
   };
 }
@@ -604,6 +606,7 @@ export function updateRuleField(
 ): EditableSource {
   return {
     ...local,
+    ...(local.rich_reply ? { rich_reply: local.rich_reply } : {}),
     rules: local.rules.map((rule) => (rule.id === ruleId ? { ...rule, [field]: value } : rule)),
   };
 }
@@ -615,6 +618,7 @@ export function setRuleEnabled(
 ): EditableSource {
   return {
     ...local,
+    ...(local.rich_reply ? { rich_reply: local.rich_reply } : {}),
     rules: local.rules.map((rule) => (rule.id === ruleId ? { ...rule, enabled } : rule)),
   };
 }
@@ -688,6 +692,7 @@ export function commitRuleId(
   return {
     local: {
       ...local,
+      ...(local.rich_reply ? { rich_reply: local.rich_reply } : {}),
       rules: local.rules.map((rule) => (rule.id === ruleId ? { ...rule, id: nextId } : rule)),
     },
     selectedRuleId: selectedRuleId === ruleId ? nextId : selectedRuleId,
@@ -717,9 +722,14 @@ export function summarizeVersionChange(
   for (const id of before.keys()) {
     if (!after.has(id)) removed.push(id);
   }
-  if (added.length === 0 && removed.length === 0 && changed.length === 0) return '规则内容未变化';
+  const recoveryChanged =
+    canonicalTextPostprocessJson(current.source.rich_reply ?? null) !==
+    canonicalTextPostprocessJson(previous.source.rich_reply ?? null);
+  if (added.length === 0 && removed.length === 0 && changed.length === 0 && !recoveryChanged)
+    return '规则内容未变化';
   return clip(
     [
+      recoveryChanged ? '修改解析兜底配置' : '',
       added.length ? `新增 ${added.join('、')}` : '',
       removed.length ? `删除 ${removed.join('、')}` : '',
       changed.length ? `修改 ${changed.join('、')}` : '',

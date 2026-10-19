@@ -5,6 +5,7 @@ import { replaceUserPlaceholder } from '@miniapp/shared';
 
 import { BASE_CSS } from './base-css';
 import { composeAppliedView, renderOriginalBody } from './compose';
+import { RICH_REPLY_BODY_SCOPE_ID, ruleScopeClass } from './scope-class';
 import type { ReplyRendererProps } from './types';
 import type { WorkerOutcome } from './worker-protocol';
 import { retainReplyWorker, runReplyPostprocess } from './worker-scheduler';
@@ -88,6 +89,7 @@ export function ReplyRenderer(props: ReplyRendererProps) {
     interactive: props.streaming !== true && props.choiceDisabled !== true,
     onChoice: props.onChoice,
     openStore: openStore.current,
+    detailsDefaultOpen: props.detailsDefaultOpen,
   });
   if (!view.ok) {
     return shell(
@@ -100,16 +102,24 @@ export function ReplyRenderer(props: ReplyRendererProps) {
       </>
     );
   }
-  return shell(props, 'applied', undefined, view.body);
+  // 「正文」规则的样式以根节点为作用域，只在成功应用 artifact 时挂载。
+  return shell(
+    props,
+    'applied',
+    undefined,
+    view.body,
+    ruleScopeClass(scopeKey, RICH_REPLY_BODY_SCOPE_ID)
+  );
 }
 
 function shell(
   props: ReplyRendererProps,
   state: 'pending' | 'original' | 'applied',
   reason: string | undefined,
-  children: ReactNode
+  children: ReactNode,
+  bodyScope?: string
 ) {
-  const className = ['reply-markdown', props.className].filter(Boolean).join(' ');
+  const className = ['reply-markdown', bodyScope, props.className].filter(Boolean).join(' ');
   return (
     <div
       className={className}

@@ -12,6 +12,7 @@ import { captureText } from './resolve-tree';
 import { validateCompiledArtifact } from './validate-artifact';
 import { applyRichReplyProtocol } from './rich-reply';
 import { applyRichReplyFallback } from './rich-reply-fallback';
+import { RICH_REPLY_BODY_RULE_ID } from './rich-reply-styles';
 
 export interface ApplyTextPostprocessInput {
   text: string;
@@ -40,12 +41,14 @@ export function applyTextPostprocess(input: ApplyTextPostprocessInput): TextPost
   const protocol = validated.artifact.rich_reply_protocol;
   let matches = 0;
   if (protocol?.enabled !== false) {
-    const applied = applyRichReplyProtocol(segments);
+    const applied = applyRichReplyProtocol(segments, protocol?.recovery);
     segments = applied.segments;
     matches = applied.matches;
   }
   for (const rule of validated.artifact.rules) {
     if (!rule.enabled) continue;
+    // 「正文」只提供样式，正则和模板不参与替换，避免把段落切成片段。
+    if (rule.id === RICH_REPLY_BODY_RULE_ID) continue;
     if (pastDeadline(input)) return original(input.text, 'DEADLINE');
     const outcome = applyRule(segments, rule, input);
     if (outcome.kind === 'abort') return original(input.text, outcome.reason);
@@ -61,7 +64,7 @@ export function applyTextPostprocess(input: ApplyTextPostprocessInput): TextPost
     segments = outcome.segments;
     matches += outcome.matches;
   }
-  const compatibility = applyRichReplyFallback(segments);
+  const compatibility = applyRichReplyFallback(segments, protocol?.recovery);
   if (matches + compatibility.matches > TEXT_POSTPROCESS_LIMITS.maxMatchesPerMessage) {
     return original(input.text, 'MATCH_LIMIT');
   }

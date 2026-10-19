@@ -23,12 +23,11 @@
 
 ### 1. 项目与规范入口
 
-这是由五个 pnpm workspace 包组成的多应用项目。开始工作前先读根 `README.md` 和 `docs/ARCHITECTURE.md`，再按改动范围读取：
+这是由 pnpm workspace 包组成的多应用项目（客服平台已拆到独立仓库 `linshu368/ST_cs_platform`，本仓库只保留 Bot 转发和 `/api/support/*` 代理）。开始工作前先读根 `README.md` 和 `docs/ARCHITECTURE.md`，再按改动范围读取：
 
 - Frontend：`.trellis/spec/frontend/app/index.md`
 - Backend：`.trellis/spec/backend/app/index.md`
 - Admin：`.trellis/spec/admin/app/index.md`
-- CS Platform：`.trellis/spec/cs-platform/app/index.md`
 - Shared contracts：`.trellis/spec/shared/contracts/index.md`
 - Supabase/migrations：`.trellis/spec/database/supabase/index.md`
 - 跨层设计：`.trellis/spec/guides/cross-layer-thinking-guide.md`
@@ -60,9 +59,9 @@
 - 包管理器：`pnpm`；运行时：Node.js `>=22`。
 - TypeScript 严格模式；不要添加 `any`。
 - 外部数据契约必须在 `packages/shared/src/api/*` 中定义，然后才能被后端处理器或前端使用者使用。
-- `frontend`、`backend`、`admin` 和 `cs-platform` 之间不能互相导入；跨应用调用使用 HTTP。
-- 前端/管理端/CS 端代码不能直接使用数据库行类型。
-- Frontend 服务器数据必须通过 `src/lib/api/` 的 React Query hooks 获取；Admin/CS 按各自 spec 使用统一 helper/client。组件层不得散落直接 `fetch`。
+- `frontend`、`backend` 和 `admin` 之间不能互相导入；跨应用调用使用 HTTP。
+- 前端/管理端代码不能直接使用数据库行类型。
+- Frontend 服务器数据必须通过 `src/lib/api/` 的 React Query hooks 获取；Admin 按其 spec 使用统一 helper/client。组件层不得散落直接 `fetch`。
 - 每个 Fastify 路由注册都必须保留附近的 `@frontend-ready: true|false` 注释。
 - LLM 生成和计费必须通过 `packages/backend/src/features/generation/` 进行。
 - 运行时配置必须通过 `packages/backend/src/platform/runtime-config.ts` 读取。

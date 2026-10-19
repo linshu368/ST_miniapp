@@ -40,6 +40,8 @@ last_verified_at: 2026-10-13
 
 ## 已知缺口与待核验项
 
+主表清退需四类证据与独立授权，三文件按 catch-up→view→DROP，事务/5s lock/60s statement/RESTRICT；视图保留 owner/ACL/invoker，原 reader 仅补 OpenRouter 所需列权限。未知旧 JSON、未保全事实或历史结算阻断；新专表调用不为历史清退被中断。无表重写/空间回收承诺，删列后旧 Backend 不可直接回退。
+
 ## 关联模块
 
 `backend.infrastructure.runtime-data-security`、`shared.business.conversation-contracts`,`shared.infrastructure.database-environment`。
@@ -55,3 +57,7 @@ last_verified_at: 2026-10-13
 - 2026-10-13：任务 `10-10-image-plaza-v2` 记录种子导入 RPC 的权限和幂等边界。
 
 定义八域归属、跨域边界、RLS/grant，以及日期命名、账本治理和 `psql` 单文件迁移纪律。
+
+## T9 专表旧别名清理（本地实现，远端未执行）
+
+新增独立 `20261016_openrouter_chat_history_drop_legacy_aliases.sql`：删除11个重复别名，保留canonical原名列、llm_generation_id/data及UNIQUE/FK/ACL；仅填NULL原名安全字段、非空冲突/未知依赖/超过2000候选拒绝。显式删除8个旧别名CHECK，canonical CHECK保留。不把待回捞metadata空值判为失败，不改父行业务事实或Venice。可先清专表，主表DROP仍有独立历史JSON/结算和运行门禁；不搬raw JSON、不伪造结算。PG17/PostgREST双处真实删列回归见任务T9报告；真实环境覆盖与所有旧writer退出仍需独立验收。

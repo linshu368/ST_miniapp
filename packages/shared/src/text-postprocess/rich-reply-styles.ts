@@ -20,6 +20,12 @@ const PANEL = String.raw`.rp-panel-list { display: grid; gap: 8px; }
 
 const MOBILE_UNIT = String.raw`@media (max-width: 500px) { .rp-unit > summary { padding: 12px 14px; } .rp-unit__body { padding: 4px 14px 14px; } }`;
 
+/**
+ * 「正文」是只控制样式的规则：它不做正则替换，样式作用在整条回复的普通段落上。
+ * 规则编号固定为 body，渲染端据此把样式挂到回复根节点的 scope 上。
+ */
+export const RICH_REPLY_BODY_RULE_ID = 'body';
+
 export const RICH_REPLY_RULE_STYLES = {
   choice: `${UNIT}
 .rp-unit--choices { background: light-dark(#fbf3e7, #28221c); }
@@ -40,9 +46,18 @@ ${PANEL}
 .rp-memory-list pre { border-left: 2px solid light-dark(#d9bd96, #8f6f50); border-radius: 2px 10px 10px 2px; }
 ${MOBILE_UNIT}`,
   dialogue: String.raw`.rp-dialogue { padding: 0 0.06em; color: inherit; font-weight: 500; background: linear-gradient(transparent 62%, light-dark(rgb(217 189 150 / 48%), rgb(143 111 80 / 42%)) 62%); -webkit-box-decoration-break: clone; box-decoration-break: clone; }`,
+  body: String.raw`p { margin: 0 0 0.9em; color: light-dark(#3a332d, #d6cfc5); font-size: 16px; line-height: 1.85; letter-spacing: 0.03em; text-align: justify; }`,
 } as const;
 
-/** v1 artifacts had no per-rule styles, so preserve their already-published appearance. */
-export const LEGACY_RICH_REPLY_CSS = Object.values(RICH_REPLY_RULE_STYLES)
+/**
+ * v1 artifacts had no per-rule styles, so preserve their already-published appearance.
+ * 正文样式是 v2 新增的可选规则，不能混进旧版兼容皮肤，否则会改变已发布回复的外观。
+ */
+export const LEGACY_RICH_REPLY_CSS = [
+  RICH_REPLY_RULE_STYLES.choice,
+  RICH_REPLY_RULE_STYLES.status,
+  RICH_REPLY_RULE_STYLES.memory,
+  RICH_REPLY_RULE_STYLES.dialogue,
+]
   .join('\n')
   .replace(/(^|\n)(?!@)([^\n{]+)\{/g, '$1.reply-markdown $2{');

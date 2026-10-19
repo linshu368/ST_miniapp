@@ -99,6 +99,8 @@ const RULES = [
       'experience.chat_history 只能由 ConversationHistoryRepository 读写（列归属见该文件头注释）',
     allow: [
       'packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts',
+      // OpenRouter 元数据回填先从其专属表有界筛选候选 ID，再只读父记录；不写 chat_history。
+      'packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts',
       // 集成测试直连库造数据、断言与清理，不经业务链路
       'packages/backend/src/infrastructure/repositories/conversations.integration.test.ts',
     ],

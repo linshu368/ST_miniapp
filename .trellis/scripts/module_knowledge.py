@@ -18,7 +18,7 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 MODULE_ID_RE = re.compile(
-    r"^(frontend|backend|admin|cs-platform|shared|database)\.(business|infrastructure|shared)\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+    r"^(frontend|backend|admin|shared|database)\.(business|infrastructure|shared)\.[a-z0-9]+(?:-[a-z0-9]+)*$"
 )
 REQUIRED_SECTIONS = (
     "职责与边界",
@@ -178,7 +178,6 @@ def render_indexes(root: Path, docs: list[ModuleDoc]) -> dict[Path, bytes]:
         "frontend": ".trellis/spec/frontend/app/modules",
         "backend": ".trellis/spec/backend/app/modules",
         "admin": ".trellis/spec/admin/app/modules",
-        "cs-platform": ".trellis/spec/cs-platform/app/modules",
         "shared": ".trellis/spec/shared/contracts/modules",
         "database": ".trellis/spec/database/supabase/modules",
     }

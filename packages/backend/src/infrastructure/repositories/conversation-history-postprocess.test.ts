@@ -178,7 +178,6 @@ describe('postprocess history mapping', () => {
     deduction_rate: null,
     created_at: '2026-09-28T00:00:00.000Z',
     llm_finish_reason: 'stop',
-    llm_generation_id: null,
     llm_charge_id: null,
     llm_billing_snapshot: null,
     llm_billing_settled_at: null,

@@ -14,7 +14,7 @@
 - [x] seed 三个槽位 runtime key，扩展 Admin allowlist/CHECK/validator，并更新 `system_instructions` 占位符校验。
 - [ ] 保留 `interaction_mode_blocks` 兼容数据但停止新链路消费。
 - [ ] 更新 Prisma 映射和 Shared 用户设置/生成配置 DTO；不公开内部计数和模式字段。
-- [x] migration 内设计与 TEST/Production pre/postflight 记录覆盖 false->true、重复 true、独立槽位、两次 full、第三次 concise、关闭、重生成和并发分配；本轮不执行远端 SQL。
+- [x] migration 本地场景覆盖独立槽位、关闭、重生成、并发与固定窗口；后续 `20261013_session_scoped_instruction_slot_modes.sql`、`20261014_rich_reply_dynamic_mode.sql` 已将运行时演进为会话级动态选择。
 
 ## Phase 2: Backend
 
@@ -40,9 +40,9 @@
 - [x] `pnpm --filter @miniapp/frontend typecheck && pnpm --filter @miniapp/frontend test && pnpm --filter @miniapp/frontend lint && pnpm --filter @miniapp/frontend build`（T5）
 - [x] `pnpm --filter @miniapp/admin typecheck && pnpm --filter @miniapp/admin test && pnpm --filter @miniapp/admin build`
 - [x] T6 Admin/managed-config local validation record：`research/t6-admin-managed-config-validation.md`；远端 migration 与发布/回滚人工门禁保留给 T7。
-- [ ] `pnpm -r typecheck`
-- [ ] TEST 单文件 migration preflight/apply/postflight：列、默认值/check、RPC owner/search_path/execute、RLS/grants、managed key、草稿/发布/回滚、并发与回滚边界。
-- [ ] 人工矩阵：三个槽位各自关闭；开启后的当前/下一/第三轮；关闭再开启；同轮重生成；多会话并发；三槽位组合；刷新后偏好；标签 renderer 与真实正式规则。
+- [x] `pnpm -r typecheck`
+- [ ] TEST 单文件 migration preflight/apply/postflight：列、默认值/check、RPC owner/search_path/execute、RLS/grants、managed key、并发与回滚边界。Admin 草稿/发布/回滚写入验收已由用户于 2026-10-14 明确跳过。
+- [x] 人工矩阵：三个槽位各自关闭；两个新会话的第 1～4 轮；上一轮 `exact` / `recovered` / `failed` / 缺失后的模式；关闭再开启；同轮重生成；多会话并发；三槽位组合；刷新后偏好；标签 renderer 与真实正式规则。用户于 2026-10-14 确认已通过真机验收，本轮不重复执行。
 
 ## Stop conditions and rollback
 
