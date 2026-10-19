@@ -165,6 +165,8 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 
 图片广场必须依次手动验证并执行 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql` 后才能运行初始数据 apply。`image-plaza:seed` 默认只做工作簿 dry-run；真实写入还要求审核 manifest、明确 `--target test|production`、`--limit 1..500`、原图存储确认，Production 另需显式确认。普通图片保持 20 MiB，已审核 seed 原图允许至 50 MiB；来源权利/内容/元数据审核、test canary 或容量门禁未完成时不得导入。test 导入结果见任务 `10-10-image-plaza-v2`。
 
+图片广场 TEST seed 迁移另见 [离线 SQL 导出与 Storage 迁移方法](ops/image-plaza-seed-migration.md)：数据文件不入 Git，不随部署执行；必须先完成图片迁移、目标环境检查和独立审批。本次仅导出，未写生产。
+
 ### AI 回复后处理
 
 - `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/rich-reply-protocol.ts` 是模型富回复协议的唯一事实源，`packages/shared/src/text-postprocess/` 负责确定性编译、固定模块解析与分段处理，不执行网络或数据库 IO。
