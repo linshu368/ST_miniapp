@@ -37,14 +37,13 @@ import {
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
 import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 
 export default function ImagePlazaStudioPage() {
   const params = useParams<{ conversationId: string }>();
@@ -477,8 +476,8 @@ export default function ImagePlazaStudioPage() {
             >
               <Settings2 className="size-5" />
             </button>
-            <Dialog>
-              <DialogTrigger asChild>
+            <Sheet>
+              <SheetTrigger asChild>
                 <button
                   type="button"
                   aria-label={`选择模型，当前为 ${model.name}`}
@@ -486,29 +485,30 @@ export default function ImagePlazaStudioPage() {
                 >
                   <Sparkles className="size-5" />
                 </button>
-              </DialogTrigger>
-              <DialogContent
-                showCloseButton={false}
-                className="bottom-0 top-auto flex max-h-[76dvh] w-full max-w-3xl translate-y-0 flex-col gap-0 overflow-hidden rounded-t-[1.25rem] border-x-0 border-b-0 border-border bg-card p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-18px_42px_rgba(0,0,0,0.3)] sm:bottom-0 sm:top-auto sm:translate-y-0 sm:rounded-b-none sm:rounded-t-[1.25rem]"
+              </SheetTrigger>
+              <SheetContent
+                side="bottom"
+                overlayClassName="bg-black/80 backdrop-blur-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
+                className="mx-auto flex max-h-[76dvh] w-full max-w-3xl flex-col gap-0 overflow-hidden rounded-t-[1.25rem] border-border bg-card p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-18px_42px_rgba(0,0,0,0.3)] motion-reduce:transition-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
               >
-                <DialogHeader className="shrink-0 flex-row items-center gap-2 space-y-0 border-b border-border px-4 py-3 text-left">
-                  <DialogTitle className="flex-1 text-base font-extrabold tracking-tight">
+                <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3 text-left">
+                  <SheetTitle className="flex-1 text-base font-extrabold leading-none tracking-tight">
                     选择模型
-                  </DialogTitle>
-                  <DialogClose
+                  </SheetTitle>
+                  <SheetClose
                     type="button"
                     aria-label="关闭模型选择"
                     className="grid size-9 place-items-center rounded-lg text-muted-foreground transition active:bg-background"
                   >
                     <X className="size-5" />
-                  </DialogClose>
-                </DialogHeader>
-                <DialogDescription className="sr-only">
+                  </SheetClose>
+                </div>
+                <SheetDescription className="sr-only">
                   当前模型为 {model.name}，选择后自动关闭。
-                </DialogDescription>
+                </SheetDescription>
                 <div className="min-h-0 space-y-1 overflow-y-auto overscroll-contain pt-2">
                   {models.map((item) => (
-                    <DialogClose key={item.id} asChild>
+                    <SheetClose key={item.id} asChild>
                       <button
                         type="button"
                         aria-pressed={item.id === model.id}
@@ -523,11 +523,11 @@ export default function ImagePlazaStudioPage() {
                           {item.description}
                         </span>
                       </button>
-                    </DialogClose>
+                    </SheetClose>
                   ))}
                 </div>
-              </DialogContent>
-            </Dialog>
+              </SheetContent>
+            </Sheet>
             <span className="ml-auto shrink-0 text-sm font-black text-muted-foreground">
               {quote.data ? `✦ ${quote.data.credits}` : quote.isPending ? '报价中' : '✦ --'}
             </span>
