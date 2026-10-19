@@ -6,10 +6,18 @@ import {
   type ImagePlazaConversation,
   type ImagePlazaSnapshot,
   type ImagePlazaWork,
+  type ImagePlazaFeedSort,
   type ProviderImagePlazaModel,
   type SubmitImagePlazaAttemptRequest,
 } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
+import {
+  cursorFilter,
+  decodeFeedCursor,
+  encodeFeedCursor,
+  feedFilter,
+  type FeedCursor,
+} from './feed-cursor.js';
 import {
   deletePlazaImage,
   downloadPlazaImage,
@@ -47,6 +55,7 @@ interface WorkRow {
   like_count: number;
   published_at: string;
   deleted_at: string | null;
+  initial_feed_order?: string | null;
 }
 
 interface ArtifactRow {
@@ -118,8 +127,10 @@ export class ImagePlazaRepository {
     /** 业务标签中文 label；按 snapshot.prompt_zh 字面包含匹配。未传则不做标签限制。 */
     tagLabel?: string;
     cursor?: string;
+    sort?: ImagePlazaFeedSort;
     limit: number;
   }): Promise<{ works: ImagePlazaWork[]; nextCursor: string | null }> {
+    if (input.sort) return this.listSortedWorks({ ...input, sort: input.sort });
     // Feed 排序：点赞数 ↓ → 分享时间 ↓ → id ↓（稳定游标）
     let query = this.experience
       .from('image_plaza_works')
@@ -175,6 +186,101 @@ export class ImagePlazaRepository {
         rows.length > input.limit && last
           ? encodeCursor(Number(last.like_count), last.published_at, last.id)
           : null,
+    };
+  }
+
+  private async listSortedWorks(input: {
+    userId: string;
+    search?: string;
+    tagLabel?: string;
+    cursor?: string;
+    sort: ImagePlazaFeedSort;
+    limit: number;
+  }): Promise<{ works: ImagePlazaWork[]; nextCursor: string | null }> {
+    const filter = feedFilter(input.search, input.tagLabel);
+    const cursor = decodeFeedCursor(input.cursor, input.sort, filter);
+    const signal = AbortSignal.timeout(10_000);
+    const read = async (
+      partition: 'liked' | 'zero' | 'latest',
+      limit: number,
+      exclude: string[] = []
+    ) => {
+      // Cast bigint before JSON serialization; Number would silently lose deep cursor precision.
+      let query = this.experience
+        .from('image_plaza_works')
+        .select(
+          'id,user_id,attempt_id,artifact_id,title,model_id,model_name,width,height,tags,snapshot,like_count,published_at,deleted_at,initial_feed_order::text'
+        )
+        .is('deleted_at', null);
+      if (partition === 'liked')
+        query = query.gt('like_count', 0).order('like_count', { ascending: false });
+      if (partition === 'zero')
+        query = query
+          .eq('like_count', 0)
+          .order('initial_feed_order', { ascending: true, nullsFirst: false });
+      query = query.order('published_at', { ascending: false }).order('id', { ascending: false });
+      if (input.search?.trim()) {
+        const pattern = quotePostgrestFilterValue(
+          `%${escapeIlikePattern(input.search.trim().slice(0, 80))}%`
+        );
+        query = query.or(
+          `snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`
+        );
+      }
+      if (input.tagLabel?.trim())
+        query = query.filter(
+          'snapshot->>prompt_zh',
+          'ilike',
+          `%${escapeIlikePattern(input.tagLabel.trim().slice(0, 80))}%`
+        );
+      if (cursor?.partition === partition) query = query.or(cursorFilter(cursor));
+      // These IDs came from this bounded DB page, not arbitrary request filter syntax.
+      if (exclude.length) query = query.not('id', 'in', `(${exclude.join(',')})`);
+      const { data, error } = await query.limit(limit).abortSignal(signal);
+      if (error) throw new Error(`image plaza feed read failed: ${error.message}`);
+      return (data ?? []) as WorkRow[];
+    };
+    let rows: WorkRow[];
+    let likedRows = 0;
+    if (input.sort === 'latest') rows = await read('latest', input.limit + 1);
+    else {
+      rows = cursor?.partition === 'zero' ? [] : await read('liked', input.limit + 1);
+      likedRows = rows.length;
+      if (rows.length <= input.limit) {
+        rows.push(
+          ...(await read(
+            'zero',
+            input.limit + 1 - rows.length,
+            rows.map((row) => row.id)
+          ))
+        );
+      }
+    }
+    const visible = rows.slice(0, input.limit);
+    const last = visible.at(-1);
+    let nextCursor: string | null = null;
+    if (last && rows.length > input.limit) {
+      const base = { v: 1 as const, filter, publishedAt: last.published_at, id: last.id };
+      const next: FeedCursor =
+        input.sort === 'latest'
+          ? { ...base, sort: 'latest', partition: 'latest' }
+          : visible.length <= likedRows
+            ? { ...base, sort: 'recommended', partition: 'liked', likeCount: last.like_count }
+            : {
+                ...base,
+                sort: 'recommended',
+                partition: 'zero',
+                order: last.initial_feed_order ?? null,
+              };
+      nextCursor = encodeFeedCursor(next);
+    }
+    return {
+      works: await this.hydrateWorks(visible, input.userId, {
+        feedImages: true,
+        includeReferences: false,
+        signal,
+      }),
+      nextCursor,
     };
   }
 
@@ -707,19 +813,24 @@ export class ImagePlazaRepository {
   private async hydrateWorks(
     rows: WorkRow[],
     userId: string,
-    options: { feedImages?: boolean; includeReferences?: boolean } = {}
+    options: { feedImages?: boolean; includeReferences?: boolean; signal?: AbortSignal } = {}
   ): Promise<ImagePlazaWork[]> {
     if (rows.length === 0) return [];
     const artifactIds = rows.map((row) => row.artifact_id);
     const workIds = rows.map((row) => row.id);
     const [{ data: artifactData, error: artifactError }, { data: likeData, error: likeError }] =
       await Promise.all([
-        this.experience.from('image_plaza_artifacts').select('*').in('id', artifactIds),
+        this.experience
+          .from('image_plaza_artifacts')
+          .select('*')
+          .in('id', artifactIds)
+          .abortSignal(options.signal ?? AbortSignal.timeout(10_000)),
         this.features
           .from('image_plaza_likes')
           .select('work_id')
           .eq('user_id', userId)
-          .in('work_id', workIds),
+          .in('work_id', workIds)
+          .abortSignal(options.signal ?? AbortSignal.timeout(10_000)),
       ]);
     if (artifactError || likeError) throw new Error('image_plaza_work_hydration_failed');
     const artifacts = new Map(
@@ -934,9 +1045,12 @@ function decodeCursor(
     const record = value as Record<string, unknown>;
     if (
       typeof record.likeCount !== 'number' ||
-      !Number.isFinite(record.likeCount) ||
+      !Number.isSafeInteger(record.likeCount) ||
+      record.likeCount < 0 ||
       typeof record.publishedAt !== 'string' ||
-      typeof record.id !== 'string'
+      !/^\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})$/.test(record.publishedAt) ||
+      typeof record.id !== 'string' ||
+      !/^[a-f0-9-]{36}$/i.test(record.id)
     ) {
       return null;
     }

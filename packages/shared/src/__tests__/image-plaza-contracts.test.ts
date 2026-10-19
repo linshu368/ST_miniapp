@@ -1,12 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import {
   IMAGE_PLAZA_PROMPT_MAX_CHARS,
+  ImagePlazaFeedQuerySchema,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaSnapshotSchema,
   ImagePlazaTagConfigSchema,
   SubmitImagePlazaAttemptRequestSchema,
 } from '../api/image-plaza.js';
+
+describe('image plaza feed query compatibility', () => {
+  it('preserves omitted legacy sort and normalizes explicit sorts', () => {
+    expect(ImagePlazaFeedQuerySchema.parse({})).toEqual({});
+    expect(
+      ImagePlazaFeedQuerySchema.parse({ sort: 'recommended', search: '  portrait  ' })
+    ).toEqual({ sort: 'recommended', search: 'portrait' });
+    expect(ImagePlazaFeedQuerySchema.parse({ sort: 'latest' }).sort).toBe('latest');
+  });
+  it.each([
+    { sort: 'heat' },
+    { cursor: '' },
+    { cursor: 'x'.repeat(2049) },
+    { search: 'x'.repeat(81) },
+    { tag: ['all'] },
+  ])('rejects invalid query %j', (input) => {
+    expect(ImagePlazaFeedQuerySchema.safeParse(input).success).toBe(false);
+  });
+});
 
 function model(overrides: Record<string, unknown> = {}) {
   return {

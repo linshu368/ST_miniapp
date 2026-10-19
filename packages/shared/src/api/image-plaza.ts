@@ -3,6 +3,44 @@ import { z } from 'zod';
 export const IMAGE_PLAZA_PROMPT_MAX_CHARS = 2_000;
 export const IMAGE_PLAZA_PAGE_SIZE = 20;
 
+export const ImagePlazaFeedSortSchema = z.enum(['recommended', 'latest']);
+export type ImagePlazaFeedSort = z.infer<typeof ImagePlazaFeedSortSchema>;
+export const ImagePlazaFeedQuerySchema = z.object({
+  // Omitted sort preserves the legacy cursor/order during producer-first rollout.
+  sort: ImagePlazaFeedSortSchema.optional(),
+  search: z.string().trim().max(80).optional(),
+  tag: z.string().trim().min(1).max(40).optional(),
+  cursor: z.string().min(1).max(2048).optional(),
+});
+export type ImagePlazaFeedQuery = z.infer<typeof ImagePlazaFeedQuerySchema>;
+export const IMAGE_PLAZA_INVALID_CURSOR = 'IMAGE_PLAZA_INVALID_CURSOR';
+
+const feedCursorBase = z.object({
+  v: z.literal(1),
+  filter: z.string().regex(/^[a-f0-9]{64}$/),
+  publishedAt: z.string().datetime({ offset: true }),
+  id: z.string().uuid(),
+});
+// Opaque on HTTP; schema documents version/precision without exposing DB rows in work DTOs.
+export const ImagePlazaFeedCursorSchema = z.discriminatedUnion('partition', [
+  feedCursorBase.extend({ sort: z.literal('latest'), partition: z.literal('latest') }),
+  feedCursorBase.extend({
+    sort: z.literal('recommended'),
+    partition: z.literal('liked'),
+    likeCount: z.number().int().positive().max(2147483647),
+  }),
+  feedCursorBase.extend({
+    sort: z.literal('recommended'),
+    partition: z.literal('zero'),
+    order: z
+      .string()
+      .regex(/^[1-9][0-9]{0,18}$/)
+      .refine((value) => /^[1-9][0-9]{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n)
+      .nullable(),
+  }),
+]);
+export type ImagePlazaFeedCursor = z.infer<typeof ImagePlazaFeedCursorSchema>;
+
 export const ImagePlazaModeSchema = z.enum(['t2i', 'i2i', 'edit']);
 export type ImagePlazaMode = z.infer<typeof ImagePlazaModeSchema>;
 

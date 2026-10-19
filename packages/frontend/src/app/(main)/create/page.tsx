@@ -20,15 +20,16 @@ import {
   useImagePlazaFeedQuery,
   useSetImagePlazaLikeMutation,
 } from '@/lib/api/image-plaza';
-import type { ImagePlazaWork } from '@miniapp/shared';
+import type { ImagePlazaWork, ImagePlazaFeedSort } from '@miniapp/shared';
 
 export default function CreatePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState('all');
+  const [sort, setSort] = useState<ImagePlazaFeedSort>('recommended');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const feed = useImagePlazaFeedQuery(debouncedSearch, tag);
+  const feed = useImagePlazaFeedQuery(debouncedSearch, tag, sort);
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const createConversation = useCreateImagePlazaConversationMutation();
   const sentinel = useRef<HTMLDivElement | null>(null);
@@ -42,18 +43,29 @@ export default function CreatePage() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const tags = feed.data?.pages[0]?.tags ?? [{ id: 'all', label: '全部' }];
+  const tags = useMemo(
+    () => feed.data?.pages[0]?.tags ?? [{ id: 'all', label: '全部' }],
+    [feed.data]
+  );
 
   useEffect(() => {
-    if (tag !== 'all' && !tags.some((item) => item.id === tag)) setTag('all');
-  }, [tag, tags]);
+    if (feed.data && tag !== 'all' && !tags.some((item) => item.id === tag)) setTag('all');
+  }, [tag, tags, feed.data]);
 
   useEffect(() => {
     const node = sentinel.current;
     if (!node) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        if (
+          entries[0]?.isIntersecting &&
+          hasNextPage &&
+          !isFetchingNextPage &&
+          !feed.paginationInvalidated &&
+          !feed.isPlaceholderData &&
+          !feed.isError &&
+          !feed.isFetching
+        ) {
           void fetchNextPage();
         }
       },
@@ -61,9 +73,24 @@ export default function CreatePage() {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+  }, [
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    feed.paginationInvalidated,
+    feed.isPlaceholderData,
+    feed.isError,
+    feed.isFetching,
+  ]);
 
-  const items = useMemo(() => feed.data?.pages.flatMap((page) => page.items) ?? [], [feed.data]);
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    return (feed.data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [feed.data]);
   // 行优先分列：1 2 / 3 4，避免 CSS columns 的竖向填充（1 3 / 2 4）
   const feedColumns = useMemo(() => splitIntoColumns(items, 2), [items]);
 
@@ -80,7 +107,7 @@ export default function CreatePage() {
     setIsPullRefreshing(true);
     try {
       await queryClient.resetQueries({
-        queryKey: imagePlazaKeys.feed(debouncedSearch, tag),
+        queryKey: imagePlazaKeys.feed(debouncedSearch, tag, sort),
         exact: true,
       });
     } finally {
@@ -171,9 +198,34 @@ export default function CreatePage() {
             ))}
           </div>
         ) : null}
+        <div className="mt-3 flex gap-2" aria-label="作品排序">
+          {(['recommended', 'latest'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={sort === value}
+              onClick={() => {
+                setSort(value);
+                window.scrollTo({ top: 0, behavior: 'instant' });
+              }}
+              className={`rounded-full px-4 py-2 text-xs font-bold ${sort === value ? 'bg-foreground text-background' : 'bg-card text-muted-foreground'}`}
+            >
+              {value === 'recommended' ? '推荐' : '最新'}
+            </button>
+          ))}
+        </div>
       </header>
 
       <section className="px-3 py-4">
+        {feed.paginationInvalidated ? (
+          <button
+            type="button"
+            onClick={() => void refreshFeed()}
+            className="mb-3 w-full rounded-xl bg-card p-3 text-xs text-primary"
+          >
+            排序已更新，点击刷新后继续浏览
+          </button>
+        ) : null}
         {feed.isLoading ? (
           <FeedSkeleton />
         ) : feed.isError && items.length === 0 ? (
@@ -222,7 +274,11 @@ export default function CreatePage() {
           ref={sentinel}
           className="flex h-16 items-center justify-center text-xs text-muted-foreground"
         >
-          {feed.isFetchingNextPage ? (
+          {feed.isError && items.length > 0 ? (
+            <button type="button" onClick={() => void refreshFeed()}>
+              加载失败，点击刷新后继续
+            </button>
+          ) : feed.isFetchingNextPage ? (
             <LoaderCircle className="size-5 animate-spin" />
           ) : !feed.hasNextPage && items.length > 0 && !feed.isPlaceholderData ? (
             '已经到底啦'
@@ -262,6 +318,14 @@ function PlazaCard(props: {
 
   return (
     <article className="group relative overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70">
+      {like.isError ? (
+        <p
+          role="alert"
+          className="absolute inset-x-0 top-0 z-10 bg-destructive p-2 text-xs text-destructive-foreground"
+        >
+          点赞未确认，请刷新后重试
+        </p>
+      ) : null}
       <Link
         href={`/create/work/${props.work.id}`}
         aria-label={`查看作品：${props.work.title}`}
