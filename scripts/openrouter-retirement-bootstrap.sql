@@ -35,3 +35,12 @@ VALUES ('00000000-0000-0000-0000-000000000001',1,'success','or-fixture','Google'
  ('00000000-0000-0000-0000-000000000002',2,'success','venice-fixture','venice',7,'0', '{"provider":"venice"}','stop'),
  ('00000000-0000-0000-0000-000000000003',3,'upstream_error',NULL,'Google',12,NULL,'{"provider":"openrouter"}',NULL),
  ('00000000-0000-0000-0000-000000000004',4,'upstream_error',NULL,NULL,13,NULL,NULL,NULL);
+
+-- Minimal governance/billing fixtures for contract classification, never real balances.
+CREATE SCHEMA supabase_migrations;
+CREATE TABLE supabase_migrations.repo_migrations(filename text PRIMARY KEY,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now());
+INSERT INTO supabase_migrations.repo_migrations VALUES('20260911_chat_history_billing_settlement.sql','f32b5fcec327217bd6591066d1f7e1c758f8b9e372cda3adbc08b6758bf7e9ea','2026-09-14T11:04:05Z');
+CREATE SCHEMA billing;
+CREATE TABLE billing.llm_usage_charges(charge_key uuid PRIMARY KEY,generation_id text,user_id uuid NOT NULL,status text,charged_amount numeric DEFAULT 0);
+CREATE TABLE billing.llm_usage_charge_dedup(LIKE billing.llm_usage_charges INCLUDING ALL);
+CREATE TABLE billing.character_free_chat_quota_decisions(charge_key uuid PRIMARY KEY,status text);

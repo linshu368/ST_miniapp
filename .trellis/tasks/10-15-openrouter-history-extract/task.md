@@ -94,3 +94,12 @@
 - [ ] TEST所有共享旧writer升级/退出、窗口复核和逐文件远端门禁；Production独立核验授权。
 
 T9本地结果详见 [专表清退报告](research/t9-provider-alias-retirement-2026-10-16.md)。主表历史JSON处置及无snapshot历史分类只提出策略，未修改或伪造数据；远端仍阻断主表DROP，不把此项勾选为完成。
+
+## T10 历史处置（用户已授权直接本地推进）
+
+- [x] 用户明确PR425作废，本轮门禁排除该环境。
+- [x] TEST只读分类：1797旧JSON均有对应provider，1281无快照历史中1268终态账单/dedup、11失败无账单、2真实pending。Production只读账本确认原DROP未执行。
+- [x] 实现白名单历史处置与已确认未执行的主表DROP守卫修正；不新建任务、不补扣或假结算。
+- [x] 扩展隔离DB回归与consumer验证、同步文档；最终人工审阅待确认，远端未执行。
+
+T10详情见 [历史处置报告](research/t10-history-disposition-2026-10-16.md)。本地实现与验证完成不代表远端已处置/删列，Production业务分类/容量仍未知。

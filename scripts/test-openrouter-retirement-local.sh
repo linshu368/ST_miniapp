@@ -83,13 +83,100 @@ expect_alias_reject 'Unexpected OpenRouter alias/canonical shape'
 "${task_psql[@]}" -f "$task_sql/20261016_openrouter_retirement_catchup.sql" >/dev/null
 "${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_generation_data='{\"prompt\":\"synthetic-only\"}' WHERE id='00000000-0000-0000-0000-000000000004';" >/dev/null
 expect_reject 'Legacy diagnostic JSON requires'
-"${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_generation_data=NULL WHERE id='00000000-0000-0000-0000-000000000004';" >/dev/null
+# History disposal preserves controlled facts while discarding sensitive extras.
+expect_disposition_reject() {
+ if "${task_psql[@]}" -f "$task_sql/20261016_openrouter_history_disposition.sql" >"$task_dir/history-reject.log" 2>&1; then
+  echo "FAIL: unsafe historical disposition accepted ($1)" >&2; exit 1
+ fi
+ rg -q "$1" "$task_dir/history-reject.log"
+}
+"${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_generation_data='[]' WHERE id='00000000-0000-0000-0000-000000000004';" >/dev/null
+expect_disposition_reject 'Unresolved historical JSON shape/provider/identity'
+"${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_generation_data=jsonb_build_object('model',repeat('x',513)) WHERE id='00000000-0000-0000-0000-000000000004';" >/dev/null
+expect_disposition_reject 'Oversized historical metadata string'
+"${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_generation_data='{}' WHERE id='00000000-0000-0000-0000-000000000004'; INSERT INTO experience.venice_chat_history(chat_history_id) VALUES('00000000-0000-0000-0000-000000000004');" >/dev/null
+expect_disposition_reject 'Unresolved historical JSON shape/provider/identity'
+"${task_psql[@]}" -c "DELETE FROM experience.venice_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000004'; UPDATE experience.chat_history SET llm_generation_data='{\"model\":\"VeniceModel\",\"finish_reason\":\"stop\"}' WHERE id='00000000-0000-0000-0000-000000000002';" >/dev/null
+expect_disposition_reject 'Unpreserved Venice historical JSON fact'
+"${task_psql[@]}" -c "UPDATE experience.venice_chat_history SET llm_model='VeniceModel',llm_finish_reason='stop' WHERE chat_history_id='00000000-0000-0000-0000-000000000002';" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+UPDATE experience.chat_history SET llm_generation_data='{"id":"wrong-call"}' WHERE id='00000000-0000-0000-0000-000000000001';
+UPDATE experience.chat_history SET llm_generation_data='{"usage":0,"native_tokens_reasoning":3,"finish_reason":"stop","error":{"code":429,"message":"synthetic secret"},"external_user":"synthetic-only","provider_responses":{"prompt":"synthetic-only"}}' WHERE id='00000000-0000-0000-0000-000000000004';
+SQL
+expect_disposition_reject 'Unresolved historical JSON shape/provider/identity'
+"${task_psql[@]}" >/dev/null <<'SQL'
+UPDATE experience.chat_history SET llm_generation_data='{"id":"or-fixture","usage":9,"finish_reason":"stop","prompt":"synthetic-only"}' WHERE id='00000000-0000-0000-0000-000000000001';
+UPDATE experience.openrouter_chat_history SET llm_generation_data='{"usage":0,"headers":{"authorization":"synthetic-only"},"error":{"code":500,"message":"synthetic-only"}}' WHERE chat_history_id='00000000-0000-0000-0000-000000000001';
+INSERT INTO experience.chat_history(model,llm_generation_data) SELECT 'history-budget-fixture','{}'::jsonb FROM generate_series(1,2001);
+SQL
+expect_disposition_reject 'History disposition exceeds reviewed 2000-row budget'
+"${task_psql[@]}" -c "DELETE FROM experience.chat_history WHERE model='history-budget-fixture'; CREATE TABLE experience.parent_before_history AS SELECT id,user_input,assistant_reply,history,status,llm_finish_reason,llm_charge_id,llm_billing_snapshot,llm_billing_settled_at FROM experience.chat_history;" >/dev/null
+# Inject a competing rewrite at the final parent clear to verify CAS rollback.
+"${task_psql[@]}" >/dev/null <<'SQL'
+CREATE FUNCTION experience.disposition_race_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF NEW.llm_generation_data IS NULL AND OLD.llm_generation_data IS NOT NULL THEN NEW.llm_generation_data='{"changed":true}'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER disposition_race_fixture BEFORE UPDATE OF llm_generation_data ON experience.chat_history FOR EACH ROW EXECUTE FUNCTION experience.disposition_race_fixture();
+SQL
+expect_disposition_reject 'Historical JSON changed during disposition'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM experience.chat_history WHERE id='00000000-0000-0000-0000-000000000004' AND llm_generation_data ? 'external_user') OR EXISTS (SELECT 1 FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000004' AND native_tokens_reasoning IS NOT NULL) THEN RAISE EXCEPTION 'failed disposition leaked writes'; END IF;
+END $$;
+DROP TRIGGER disposition_race_fixture ON experience.chat_history;
+DROP FUNCTION experience.disposition_race_fixture();
+SQL
+"${task_psql[@]}" -f "$task_sql/20261016_openrouter_history_disposition.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS (SELECT 1 FROM experience.chat_history WHERE llm_generation_data IS NOT NULL) THEN RAISE EXCEPTION 'raw diagnostics remain'; END IF;
+ IF EXISTS (SELECT id,user_input,assistant_reply,history,status,llm_finish_reason,llm_charge_id,llm_billing_snapshot,llm_billing_settled_at FROM experience.chat_history EXCEPT SELECT * FROM experience.parent_before_history) THEN RAISE EXCEPTION 'history disposal changed business facts'; END IF;
+ IF NOT EXISTS (SELECT 1 FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000004' AND usage='0' AND native_tokens_reasoning=3 AND finish_reason='stop' AND llm_generation_data->'error'='{"code":429}'::jsonb AND NOT llm_generation_data ?| ARRAY['external_user','provider_responses']) THEN RAISE EXCEPTION 'whitelist facts not preserved'; END IF;
+ IF (SELECT usage FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000001')<>'0' THEN RAISE EXCEPTION 'old JSON replaced canonical fact'; END IF;
+ IF NOT EXISTS (SELECT 1 FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000001' AND llm_generation_data='{"usage":0,"error":{"code":500}}'::jsonb) THEN RAISE EXCEPTION 'existing unsafe detail diagnostic not normalized'; END IF;
+END $$;
+DROP TABLE experience.parent_before_history;
+SQL
+expect_reject 'Reviewed history disposition must be applied and recorded first'
+"${task_psql[@]}" -c "INSERT INTO supabase_migrations.repo_migrations(filename,checksum) VALUES('20261016_openrouter_history_disposition.sql','synthetic-local-ledger');" >/dev/null
+
 "${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_charge_id='00000000-0000-0000-0000-000000000201' WHERE id='00000000-0000-0000-0000-000000000001';" >/dev/null
 expect_reject 'Historical billing/quota closure not proven'
 # Synthetic-only closure of the fixture's legacy accounting, without any real wallet.
 "${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_billing_settled_at=now() WHERE id='00000000-0000-0000-0000-000000000001'; INSERT INTO experience.chat_history(id,llm_charge_id) VALUES('00000000-0000-0000-0000-000000000050','00000000-0000-0000-0000-000000000250'); INSERT INTO experience.openrouter_chat_history(chat_history_id) VALUES('00000000-0000-0000-0000-000000000050');" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+INSERT INTO experience.chat_history(id,turn_index,created_at,status,llm_generation_id,llm_charge_id) SELECT ('00000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,n,'2026-08-01','success','history-'||n,('00000000-0000-0000-0000-'||lpad((n+200)::text,12,'0'))::uuid FROM generate_series(40,43) n;
+UPDATE experience.chat_history SET status='upstream_error' WHERE id='00000000-0000-0000-0000-000000000042';
+INSERT INTO experience.openrouter_chat_history(chat_history_id,llm_generation_id) SELECT id,llm_generation_id FROM experience.chat_history WHERE turn_index BETWEEN 40 AND 43;
+INSERT INTO billing.llm_usage_charges(charge_key,generation_id,user_id,status,charged_amount) SELECT llm_charge_id,llm_generation_id,user_id,CASE WHEN turn_index=43 THEN 'pending' ELSE 'charged' END,CASE WHEN turn_index=43 THEN 0 ELSE 5 END FROM experience.chat_history WHERE turn_index IN (40,43);
+INSERT INTO billing.llm_usage_charge_dedup SELECT * FROM billing.llm_usage_charges;
+INSERT INTO billing.llm_usage_charge_dedup SELECT llm_charge_id,llm_generation_id,user_id,'free',0 FROM experience.chat_history WHERE turn_index=41;
+INSERT INTO billing.character_free_chat_quota_decisions VALUES('00000000-0000-0000-0000-000000000240','reserved'),('00000000-0000-0000-0000-000000000250','reserved');
+SQL
+expect_reject 'Historical billing/quota closure not proven'
+"${task_psql[@]}" -c "UPDATE billing.character_free_chat_quota_decisions SET status='consumed' WHERE charge_key='00000000-0000-0000-0000-000000000240'; UPDATE experience.chat_history SET created_at=now() WHERE turn_index=41;" >/dev/null
+expect_reject 'Historical billing/quota closure not proven'
+"${task_psql[@]}" -c "UPDATE experience.chat_history SET created_at='2026-08-01' WHERE turn_index=41; UPDATE billing.llm_usage_charge_dedup SET user_id='00000000-0000-0000-0000-000000000098' WHERE charge_key='00000000-0000-0000-0000-000000000241';" >/dev/null
+expect_reject 'Historical billing/quota closure not proven'
+"${task_psql[@]}" -c "UPDATE billing.llm_usage_charge_dedup SET user_id='00000000-0000-0000-0000-000000000099' WHERE charge_key='00000000-0000-0000-0000-000000000241'; DELETE FROM billing.llm_usage_charge_dedup WHERE charge_key='00000000-0000-0000-0000-000000000241';" >/dev/null
+expect_reject 'Historical billing/quota closure not proven'
+"${task_psql[@]}" -c "INSERT INTO billing.llm_usage_charge_dedup SELECT llm_charge_id,llm_generation_id,user_id,'free',0 FROM experience.chat_history WHERE turn_index=41; UPDATE experience.chat_history SET llm_billing_snapshot='{}' WHERE turn_index=43;" >/dev/null
+expect_reject 'Historical billing/quota closure not proven'
+"${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_billing_snapshot=NULL WHERE turn_index=43; UPDATE billing.llm_usage_charge_dedup SET status='charged' WHERE charge_key='00000000-0000-0000-0000-000000000243';" >/dev/null
+expect_reject 'Historical billing/quota closure not proven'
+"${task_psql[@]}" -c "UPDATE billing.llm_usage_charge_dedup SET status='pending' WHERE charge_key='00000000-0000-0000-0000-000000000243'; UPDATE supabase_migrations.repo_migrations SET checksum='drift' WHERE filename='20260911_chat_history_billing_settlement.sql';" >/dev/null
+expect_reject 'Billing schema boundary ledger missing or drifted'
+"${task_psql[@]}" -c "UPDATE supabase_migrations.repo_migrations SET checksum='f32b5fcec327217bd6591066d1f7e1c758f8b9e372cda3adbc08b6758bf7e9ea' WHERE filename='20260911_chat_history_billing_settlement.sql'; CREATE TABLE billing.charges_before AS TABLE billing.llm_usage_charges; CREATE TABLE billing.dedup_before AS TABLE billing.llm_usage_charge_dedup; CREATE TABLE billing.quota_before AS TABLE billing.character_free_chat_quota_decisions;" >/dev/null
 "${task_psql[@]}" -f "$task_sql/20261016_chat_history_drop_provider_metadata.sql" >/dev/null
 "${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS (SELECT * FROM billing.llm_usage_charges EXCEPT SELECT * FROM billing.charges_before) OR EXISTS (SELECT * FROM billing.charges_before EXCEPT SELECT * FROM billing.llm_usage_charges) THEN RAISE EXCEPTION 'charges changed'; END IF;
+ IF EXISTS (SELECT * FROM billing.llm_usage_charge_dedup EXCEPT SELECT * FROM billing.dedup_before) OR EXISTS (SELECT * FROM billing.dedup_before EXCEPT SELECT * FROM billing.llm_usage_charge_dedup) THEN RAISE EXCEPTION 'dedup changed'; END IF;
+ IF EXISTS (SELECT * FROM billing.character_free_chat_quota_decisions EXCEPT SELECT * FROM billing.quota_before) OR EXISTS (SELECT * FROM billing.quota_before EXCEPT SELECT * FROM billing.character_free_chat_quota_decisions) THEN RAISE EXCEPTION 'quota changed'; END IF;
+ IF NOT EXISTS (SELECT 1 FROM experience.chat_history WHERE turn_index=43 AND llm_billing_settled_at IS NULL) OR NOT EXISTS (SELECT 1 FROM billing.llm_usage_charges WHERE status='pending') THEN RAISE EXCEPTION 'old pending was fabricated as settled'; END IF;
+END $$;
+DELETE FROM experience.chat_history WHERE turn_index BETWEEN 40 AND 43;
 DO $$ BEGIN
  IF NOT EXISTS (SELECT 1 FROM experience.chat_history WHERE id='00000000-0000-0000-0000-000000000050' AND status='streaming' AND llm_charge_id IS NOT NULL) THEN RAISE EXCEPTION 'healthy active call was changed'; END IF;
 END $$;

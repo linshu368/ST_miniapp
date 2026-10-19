@@ -1,3 +1,24 @@
+# T10 当前推进顺序（2026-10-16，覆盖下方历史门禁记录）
+
+用户明确PR425作废并排除本轮门禁，不再等待该环境。PR431已合并、dev部署5ed1e217，专表11别名contract已在TEST执行；本轮历史处置与主表DROP均未执行远端。TEST不代表Production。
+
+## 当前两文件
+
+1. `packages/shared/migrations/20261016_openrouter_history_disposition.sql`：先保全11个白名单类型化调用事实，规范化已有OR诊断，丢弃非白名单旧诊断及自由文本错误，清父表旧JSON。最多2000候选，超过停止；指纹变化/身份/provider/shape/保全缺口停止，全部回滚。**丢弃的非白名单诊断不归档，无法从专表恢复；执行前审阅这个处置边界。** 不写正文/终态/账单/额度或Venice明细。
+2. `packages/shared/migrations/20261016_chat_history_drop_provider_metadata.sql`：使用本轮更新后的文件，先核对文件checksum；仅该文件两库均未执行，故本轮允许修正，其他已执行文件不改。必须先查到处置文件的成功账本。旧无snapshot历史按真实快照schema引入账本时间区分，校验原账单/dedup的身份/状态及额度；不伪造settled_at。旧pending保留原账务与可追溯ID，超24h停止自动回捞、独立账务核验；新契约未知/缺快照、身份冲突、reserved额度关联待删旧字段仍阻断，空旧列+已有专表的健康流式可并行。
+
+前序七份已执行文件（TEST含专表别名DROP）不要重跑。逐文件workflow、账本/claim/events、前后shape/权限/正文与专表ID/无新旧读写/锁复核后再下一文件；migration不自动部署。主表12列、业务终态及计费保留边界不变，DROP不做CASCADE/VACUUM FULL，不回收即时空间。
+
+## 当前真实证据与停止条件
+
+TEST旧父表JSON1797条（OR1792/Venice5）有对应detail，raw ID无冲突；OR既有49条非白名单诊断；白名单字符串无超512、Venice原名事实缺口0。1281无快照历史分为1268终态账单/dedup、11失败无账单、2真实pending，身份冲突/未结束reserved为0。SELECT复算新账务分类守卫0阻挡不代表迁移已执行；原raw JSON仍在，直接执行旧DROP仍失败。TEST正常三轮对话落表证据见前轮，空metadata待回捞不当失败。
+
+Production本轮仅核对治理账本：原主表DROP未记账，快照schema文件checksum匹配；未采集Production业务JSON/账务分类，不能沿用TEST数字或放行Production。预计超2000候选会被新文件主动拒绝，需另审按环境批次/容量方案，不能调大超时硬跑或重复已记账文件。
+
+本轮没有远端JSON清空/旧账补扣/状态改写或DDL。最终本地验证/文件校验值见 research/t10-history-disposition-2026-10-16.md；恢复只用无12+11列兼容SHA或forward-fix，不能直接回退旧Backend。
+
+---
+
 # OpenRouter 主表清退发布清单（2026-10-16 本地交付，远端待独立授权）
 
 本文件替代旧兼容发布清单。四份历史 SQL 已在 TEST/Production 执行且本轮 checksum 对齐，禁止重复执行；本次交付目标包括主表 12 列清退 migration。远端迁移、提交/推送、PR 创建/合并、部署均未授权。详细证据见 research/t5-retirement-audit-2026-10-16.md；三份新 SQL 已生成并通过本地真实 DROP 回归，详见 research/t8-local-retirement-verification-2026-10-16.md。
