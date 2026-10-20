@@ -24,7 +24,7 @@
 
 ## 1. 架构铁律（违反即拦截）
 
-离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出复用既有 `experience.import_image_plaza_seed_work` 初始化目标作品，不迁移测试用户/点赞/账务；图片实体必须独立迁移。该工具不改变运行时边界，不自动执行生产 SQL。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
+离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出复用既有 `experience.import_image_plaza_seed_work` 初始化目标作品，不迁移测试用户/点赞/账务；图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
 
 1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。
 2. **每条路由注册上方必须有 `@frontend-ready: true|false — 原因`**，半成品要写出带业务含义的原因。

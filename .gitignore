@@ -27,7 +27,7 @@ scripts/.env.*
 /模型选择器PRD.docx
 supabase.json
 supabase/.temp/
-# /ops/exports/
+/ops/exports/
 
 # vendor — 已归档到 legacy/st-removed/ 的 ST 依赖和构建产物不入库
 legacy/st-removed/vendor/sillytavern/node_modules/

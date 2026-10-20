@@ -1,5 +1,11 @@
 # 执行计划（待审核，禁止生产写入）
 
+## 2026-10-20 当前执行计划（覆盖历史禁止 Storage 写入条款）
+
+用户已明确授权 Storage 迁移和使用 `.env`/MCP，不再等待重复确认。执行顺序：恢复新暂存文件 Git 忽略 → task.py start → 实现单用途 Storage API 脚本与必要失败回归 → 语法/测试/typecheck → 6 并发 canary（12 张，含最大文件及各 MIME） → 同批全量 → 生产逐对象 SHA-256/MIME/大小验收。既有数据库演练及结构门禁仍阻塞 SQL，但不阻塞本次独立 Storage 搬迁。
+
+脚本日志和 checkpoint 仅写 `G:\JobLib\ST_miniapp\ops\exports\civitai-1792484619774\storage-staging`，禁止输出凭据、签名 URL 或业务内容。用环境明确选择 TEST 下载和 PROD 新增；只传 manifest 路径。6 个 worker 在首个永久失败/429 后停止派发；保留已完成对象以便续跑。不自动重试 SQL、不安装 rclone、不删除历史导出。
+
 2026-10-20 用户已选择 TEST 本地暂存方案，留到 2026-10-21 继续处理；本次只更新规划，不下载、不上传、不导入、不安排自动执行，任务保持 planning。
 
 ## 门禁与执行

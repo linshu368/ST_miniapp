@@ -1,6 +1,12 @@
 # 图片广场种子数据与 Storage 生产迁移
 
+## 2026-10-20 执行授权更新（优先于下方历史记录）
+
+用户明确授权使用本机 `G:\JobLib\ST_miniapp\packages\backend\.env` 和 Supabase MCP 直接迁移 Storage，无需再次审批；本阶段不执行 SQL。采用本地暂存、6 路有限并发、生产回读校验。MCP 仅确认目标及只读 catalog，图片通过 Storage API 搬迁。用户授权不代表 Dashboard 用量、来源审核或业务 SQL 前置条件已验证。
+
 ## Goal
+
+2026-10-21 用户明确要求不再重复生产回读已完成图片、直接补传剩余项。允许沿用同一清单的已验收 receipt；未完成对象仍必须上传并回读校验。报告必须区分历史验收与本轮验收，不代表本轮重新证明全部远端对象当前状态。SQL 仍未授权。
 
 将已审核的 TEST civitai_seed 快照及真实 Storage 图片迁移到 production，保留内容而不迁移用户行为。
 

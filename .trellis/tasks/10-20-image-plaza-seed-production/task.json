@@ -2,8 +2,8 @@
   "id": "image-plaza-seed-production",
   "name": "image-plaza-seed-production",
   "title": "图片广场种子数据与 Storage 生产迁移",
-  "description": "8032 条 TEST civitai_seed 及图片迁往 production；已选 TEST 本地暂存/hash → 上传 → 生产全量回读校验 → SQL，2026-10-21 继续处理；仅规划，凭据、工具和生产门禁待完成。",
-  "status": "planning",
+  "description": "8032 张 TEST 图片经本地暂存/hash → production 新增上传 → 全量回读校验；用户已授权 Storage 阶段，6 并发执行中，不执行 SQL。",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "backend",
@@ -21,12 +21,12 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-20 用户确认记录本地暂存方案，留到明天（2026-10-21）处理；不自动执行或预约。保持 planning，未授权下载或生产写入。",
+  "notes": "2026-10-20 用户明确授权使用本机 .env 和 MCP 立即迁移 Storage，无需重复审批；两端 bucket API 预检通过，系统本地代理可用，脚本失败路径回归 9 项通过，开始 canary。SQL 门禁独立，未导入业务数据。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
       "mode": "no_module_change",
-      "reason": "当前仅迁移规划和本地只读预检，无应用、契约或数据库对象变化；执行后重新评估运维事实记录。"
+      "reason": "仅增加离线 Storage 运维工具和本次对象复制，无应用、契约或数据库对象变化；执行事实记录于任务及运维文档。"
     }
   }
 }
