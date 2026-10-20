@@ -11,8 +11,8 @@
 - `voice.ts`：用户语音配置、会话音频、生成 mutation 和 audio map。
 - `payment.ts`：套餐、下单、订单状态轮询、余额、流水、签到、订单 infinite query。
 - `telemetry.ts`：`GET /api/telemetry/replay-context` 的 React Query hook；失败不得阻断 replay。
-- `settings.ts`、`notifications.ts`、`support.ts`、`wishes.ts`、`invite.ts`、`community.ts`：对应业务域。
-- `growth.ts`：Provider 上报使用的纯请求函数；`health.ts`：健康查询；`use-refetch-on-foreground.ts`：可见性恢复；`mock-registry*`：显式开发 mock，不得生产误启。
+- `settings.ts`、`notifications.ts`、`support.ts`、`invite.ts`、`community.ts`：对应业务域。
+- `growth.ts`：Provider 上报使用的纯请求函数；`use-refetch-on-foreground.ts`：可见性恢复。
 
 业务组件只能调用 hooks；Provider 等非组件启动流程可调用明确设计的纯 API 函数。新增 query key 必须集中成 domain key factory；mutation 成功后精确 `setQueryData`/invalidate，不做全局无差别刷新。
 

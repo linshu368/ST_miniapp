@@ -28,9 +28,8 @@
 
 - `payment/ZqPaymentGateway.ts`：支付供应商签名、请求/查询和响应适配，不决定业务结算规则。
 - `telemetry/posthog-capture.ts`：Node 原生 fetch 调 PostHog capture；短超时、无重试，失败不回滚业务。
-- `redis/UpstashConfigStore.ts`：远端配置缓存适配。
 - `repositories/CharacterCardRepository.ts`：角色卡；`ChatSessionRepository.ts`、`ConversationHistoryRepository.ts`：会话、历史、current-postprocess 原子开轮；`TextPostprocessRepository.ts`：草稿/发布/版本快照 RPC；`ChatMessageAudioRepository.ts`：音频。
-- `MiniappCharacterFavoriteRepository.ts`、`MiniappCharacterFreeQuotaRepository.ts`、`MiniappPaymentOrderRepository.ts`、`MiniappUserSettingsRepository.ts`、`MiniappWalletRepository.ts`、`MiniappWishRoleRepository.ts`：各业务域持久化。
+- `MiniappCharacterFavoriteRepository.ts`、`MiniappCharacterFreeQuotaRepository.ts`、`MiniappPaymentOrderRepository.ts`、`MiniappUserSettingsRepository.ts`、`MiniappWalletRepository.ts`：各业务域持久化。
 - `conversation-errors.ts` 归一 repository 错误；`effective-display-name.ts` 计算展示昵称。
 
 Repository 隐藏 schema client/Prisma 行形状，返回领域结果；跨 schema 行为优先 RPC/API，不在 handler 拼跨域查询。

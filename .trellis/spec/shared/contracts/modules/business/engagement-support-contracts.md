@@ -13,7 +13,7 @@ last_verified_at: 2026-09-08
 
 ## 职责与边界
 
-定义许愿、社区/邀请、通知、用户客服及 CS 运营接口形状。
+定义社区/邀请、通知、用户客服及 CS 运营接口形状。
 
 ## 当前状态
 
@@ -27,7 +27,6 @@ Frontend、Backend、Admin 与 CS Platform 按各自接口消费。
 
 | 路径                                       | 职责     |
 | ------------------------------------------ | -------- |
-| `packages/shared/src/api/wishes.ts`        | 许愿 DTO |
 | `packages/shared/src/api/community.ts`     | 社区 DTO |
 | `packages/shared/src/api/notifications.ts` | 通知 DTO |
 | `packages/shared/src/api/support.ts`       | 客服 DTO |
@@ -55,3 +54,7 @@ Shared tests 与四个消费者 typecheck。
 ## 关联模块
 
 `backend.business.engagement-support`、`frontend.business.engagement-support`。
+
+## 变更记录
+
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已退场许愿池的模块事实并保留其余互动能力边界；commit：`uncommitted-working-tree`。

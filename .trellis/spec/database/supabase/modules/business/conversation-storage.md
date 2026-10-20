@@ -61,10 +61,10 @@ last_verified_at: 2026-10-13
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
-- 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
-
 last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
 last_verified_at: 2026-09-14
+
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`uncommitted-working-tree`。
 
 ## T9 专表旧别名清理（本地实现，远端未执行）
 
