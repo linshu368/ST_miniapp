@@ -98,3 +98,7 @@ DROP 实现会拒绝任何非空主表 llm_generation_data；本轮没有证明�
 ## 2026-10-20 catch-up 超时恢复（T11，待正式执行）
 
 生产原catch-up失败回滚且保留同checksum claim，TEST原文件已记账并已删父表12列。改用新增恢复文件，最多两批各2000、总候选4001拒绝，事务60s/锁5s；TEST精确匹配原DROP账本后跳过。原文件/claim不改，不使用force_rerun/abandon_claim，不伪造旧成功ledger。成功只记新增文件；后续view/disposition/DROP仍独立验证预算、完整覆盖和四类门禁。证据、前置条件、恢复及执行命令见 [T11报告](research/t11-catchup-timeout-recovery-2026-10-20.md)。本地修复不代表远端已执行。
+
+## 2026-10-20 Grafana 旧字段依赖前置修复（T12）
+
+本次原alias DROP在更新/删列前被生产analytics_grafana依赖守卫拒绝；不是history_disposition失败。已成功的catch-up/provider views不重跑；下一步先逐环境apply `packages/shared/migrations/20261020_grafana_provider_metadata_dependencies.sql`（TEST无schema跳过，Production构建/切换既有报表），验证ledger/权限/索引/零旧列依赖/刷新后，再正常apply原`20261016_openrouter_chat_history_drop_legacy_aliases.sql`（force_rerun=false，同checksum claim无需abandon）。之后history_disposition和主表DROP仍各自预算与门禁，不由本次修复放行。源定义漂移、未知依赖、>2000 alias候选、构建/锁/容量失败停止。实际执行参数、cron元数据和恢复见[T12报告](research/t12-grafana-provider-dependency-repair-2026-10-20.md)。

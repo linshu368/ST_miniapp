@@ -114,6 +114,148 @@ expect_alias_reject() {
  fi
  rg -q "$1" "$task_dir/alias-reject.log"
 }
+# The production-only Grafana schema is absent in TEST; never create it there.
+"${task_psql[@]}" -f "$task_sql/20261020_grafana_provider_metadata_dependencies.sql" >/dev/null
+expect_grafana_reject() {
+ if "${task_psql[@]}" -f "$task_sql/20261020_grafana_provider_metadata_dependencies.sql" >"$task_dir/grafana-reject.log" 2>&1; then
+  echo "FAIL: unsafe Grafana repair accepted ($1)" >&2; exit 1
+ fi
+ rg -q "$1" "$task_dir/grafana-reject.log"
+}
+"${task_psql[@]}" -c 'CREATE SCHEMA analytics_grafana;' >/dev/null
+expect_grafana_reject 'Grafana provider repair requires all five known objects'
+"${task_psql[@]}" -c 'DROP SCHEMA analytics_grafana;' >/dev/null
+"${task_psql[@]}" -f "$task_root/scripts/openrouter-grafana-retirement-fixture.sql" >/dev/null
+expect_alias_reject 'OpenRouter alias database dependency remains'
+"${task_psql[@]}" -c "INSERT INTO experience.openrouter_chat_history(chat_history_id) VALUES('00000000-0000-0000-0000-000000000002');" >/dev/null
+expect_grafana_reject 'Grafana provider overlap'
+"${task_psql[@]}" -c "DELETE FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000002'; UPDATE experience.openrouter_chat_history SET usage='9',llm_usage='0' WHERE chat_history_id='00000000-0000-0000-0000-000000000001';" >/dev/null
+expect_grafana_reject 'Conflicting Grafana alias/canonical facts'
+"${task_psql[@]}" -c "UPDATE experience.openrouter_chat_history SET usage='0' WHERE chat_history_id='00000000-0000-0000-0000-000000000001';" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+CREATE TABLE experience.grafana_old_definitions AS SELECT c.oid,c.relname,pg_get_viewdef(c.oid,true) AS definition
+ FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='analytics_grafana' AND c.relkind IN ('v','m');
+DO $$ DECLARE original text; BEGIN
+ SELECT definition INTO original FROM experience.grafana_old_definitions WHERE relname='v_llm_calls';
+ EXECUTE 'CREATE OR REPLACE VIEW analytics_grafana.v_llm_calls AS SELECT * FROM ('||rtrim(original,';')||') drift WHERE false';
+END $$;
+SQL
+expect_grafana_reject 'Grafana definition drift'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ EXECUTE 'CREATE OR REPLACE VIEW analytics_grafana.v_llm_calls AS '||(SELECT definition FROM experience.grafana_old_definitions WHERE relname='v_llm_calls');
+END $$;
+CREATE VIEW analytics_grafana.unknown_mat_dependent AS SELECT * FROM analytics_grafana.mv_free_quota_daily;
+SQL
+expect_grafana_reject 'Unknown Grafana materialized-view dependent'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DROP VIEW analytics_grafana.unknown_mat_dependent;
+INSERT INTO experience.chat_history(model) SELECT 'grafana-budget-fixture' FROM generate_series(1,2001);
+INSERT INTO experience.openrouter_chat_history(chat_history_id,llm_native_tokens_cached)
+ SELECT id,0 FROM experience.chat_history WHERE model='grafana-budget-fixture';
+SQL
+expect_grafana_reject 'Grafana alias catch-up exceeds reviewed 2000-row budget'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DELETE FROM experience.chat_history WHERE model='grafana-budget-fixture';
+UPDATE experience.openrouter_chat_history SET llm_native_tokens_cached=0,native_tokens_cached=NULL
+ WHERE chat_history_id='00000000-0000-0000-0000-000000000001';
+CREATE FUNCTION experience.fail_second_grafana_stage() RETURNS event_trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF current_query() LIKE '%mv_free_quota_daily_or_new%' THEN RAISE EXCEPTION 'synthetic second Grafana MV build failure'; END IF;
+END $$;
+CREATE EVENT TRIGGER fail_second_grafana_stage ON ddl_command_start WHEN TAG IN ('CREATE MATERIALIZED VIEW')
+ EXECUTE FUNCTION experience.fail_second_grafana_stage();
+SQL
+expect_grafana_reject 'synthetic second Grafana MV build failure'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS (SELECT 1 FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000001' AND native_tokens_cached IS NOT NULL)
+ OR to_regclass('analytics_grafana.mv_card_unit_economics_30d_or_new') IS NOT NULL
+ OR EXISTS (SELECT 1 FROM experience.grafana_old_definitions d WHERE to_regclass('analytics_grafana.'||d.relname) IS DISTINCT FROM d.oid)
+ THEN RAISE EXCEPTION 'failed Grafana repair leaked writes or object changes'; END IF;
+END $$;
+DROP EVENT TRIGGER fail_second_grafana_stage;
+DROP FUNCTION experience.fail_second_grafana_stage();
+CREATE FUNCTION experience.change_grafana_during_stage() RETURNS event_trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF current_query() LIKE '%mv_free_quota_daily_or_new%' THEN
+  COMMENT ON MATERIALIZED VIEW analytics_grafana.mv_free_quota_daily IS 'synthetic metadata race';
+ END IF;
+END $$;
+CREATE EVENT TRIGGER change_grafana_during_stage ON ddl_command_end WHEN TAG IN ('CREATE MATERIALIZED VIEW')
+ EXECUTE FUNCTION experience.change_grafana_during_stage();
+SQL
+expect_grafana_reject 'Grafana definition changed during staging'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF obj_description('analytics_grafana.mv_free_quota_daily'::regclass) IS NOT NULL
+ OR to_regclass('analytics_grafana.mv_free_quota_daily_or_new') IS NOT NULL
+ THEN RAISE EXCEPTION 'Grafana staging metadata race did not roll back'; END IF;
+END $$;
+DROP EVENT TRIGGER change_grafana_during_stage;
+DROP FUNCTION experience.change_grafana_during_stage();
+-- The replacement MVs must revoke default grants that the old objects never had.
+ALTER DEFAULT PRIVILEGES IN SCHEMA analytics_grafana GRANT SELECT ON TABLES TO anon;
+UPDATE experience.venice_chat_history SET llm_usage='1000000' WHERE chat_history_id='00000000-0000-0000-0000-000000000002';
+INSERT INTO experience.chat_history(id,turn_index,status,llm_generation_id,llm_usage,llm_finish_reason,character_id,llm_charge_id)
+ VALUES('00000000-0000-0000-0000-000000000070',70,'success','grafana-paid-fixture','1.25','stop','00000000-0000-0000-0000-000000000080','00000000-0000-0000-0000-000000000270');
+INSERT INTO experience.openrouter_chat_history(chat_history_id,llm_generation_id,usage,llm_usage)
+ VALUES('00000000-0000-0000-0000-000000000070','grafana-paid-fixture','1.25','1.25');
+INSERT INTO billing.wallet_ledger VALUES('00000000-0000-0000-0000-000000000270',-115,-80,-35,'llm_usage','chat_debit');
+INSERT INTO billing.payment_orders VALUES('00000000-0000-0000-0000-000000000099','completed',now()-interval '1 day');
+INSERT INTO billing.character_free_chat_quota_decisions(charge_key,status,user_id,character_id,granted_free)
+ VALUES('00000000-0000-0000-0000-000000000270','consumed','00000000-0000-0000-0000-000000000099','00000000-0000-0000-0000-000000000080',true);
+CREATE TABLE experience.grafana_parent_before AS TABLE experience.chat_history;
+CREATE TABLE experience.grafana_billing_before AS TABLE billing.llm_usage_charges;
+CREATE TABLE experience.grafana_shape_before AS SELECT c.relname,
+ (SELECT jsonb_agg(jsonb_build_array(a.attname,a.atttypid,a.atttypmod,a.attnum) ORDER BY a.attnum)
+  FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) AS columns
+ FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='analytics_grafana';
+SQL
+"${task_psql[@]}" -f "$task_sql/20261020_grafana_provider_metadata_dependencies.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS (SELECT * FROM experience.chat_history EXCEPT SELECT * FROM experience.grafana_parent_before)
+ OR EXISTS (SELECT * FROM experience.grafana_parent_before EXCEPT SELECT * FROM experience.chat_history)
+ OR EXISTS (SELECT * FROM billing.llm_usage_charges EXCEPT SELECT * FROM experience.grafana_billing_before)
+ THEN RAISE EXCEPTION 'Grafana repair changed parent/billing facts'; END IF;
+ IF EXISTS (SELECT 1 FROM experience.grafana_shape_before d JOIN pg_class c ON c.oid=to_regclass('analytics_grafana.'||d.relname)
+ WHERE d.columns IS DISTINCT FROM (SELECT jsonb_agg(jsonb_build_array(a.attname,a.atttypid,a.atttypmod,a.attnum) ORDER BY a.attnum)
+  FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped))
+ THEN RAISE EXCEPTION 'Grafana output shape changed'; END IF;
+ IF EXISTS (SELECT 1 FROM experience.grafana_old_definitions d WHERE d.relname NOT IN ('mv_free_quota_daily','mv_card_unit_economics_30d')
+ AND to_regclass('analytics_grafana.'||d.relname) IS DISTINCT FROM d.oid) THEN RAISE EXCEPTION 'Grafana downstream OID changed'; END IF;
+ IF NOT has_table_privilege('grafana_cloud','analytics_grafana.v_card_unit_economics_30d','SELECT')
+ OR NOT has_table_privilege('grafana_reader','analytics_grafana.v_llm_calls','SELECT')
+ OR has_table_privilege('anon','analytics_grafana.mv_free_quota_daily','SELECT')
+ OR has_table_privilege('authenticated','analytics_grafana.v_llm_calls','SELECT')
+ THEN RAISE EXCEPTION 'Grafana reader grants changed or broadened'; END IF;
+ IF (SELECT count(*) FROM pg_indexes WHERE schemaname='analytics_grafana' AND indexname IN ('mv_free_quota_daily_uidx','mv_card_unit_economics_30d_character_label_idx'))<>2
+ THEN RAISE EXCEPTION 'Grafana refresh unique index missing'; END IF;
+ IF NOT EXISTS (SELECT 1 FROM analytics_grafana.v_llm_calls WHERE platform='openrouter' AND real_cost_usd=0 AND cached_tokens=0 AND finish_reason='cancelled' AND NOT is_clean_success)
+ THEN RAISE EXCEPTION 'Grafana zero/terminal facts changed'; END IF;
+ IF NOT EXISTS (SELECT 1 FROM analytics_grafana.v_llm_calls WHERE platform='venice' AND real_cost_usd=1 AND real_cost_cny=7 AND latency_ms=7)
+ OR NOT EXISTS (SELECT 1 FROM analytics_grafana.v_llm_calls WHERE platform='openrouter' AND real_cost_usd=1.25 AND real_cost_cny=8.75 AND stars_total=115 AND main_stars=80 AND bonus_stars=35 AND wallet_value_proxy_cny=1)
+ OR NOT EXISTS (SELECT 1 FROM analytics_grafana.mv_free_quota_daily WHERE cost_cny=8.75 AND decision_rows=1 AND matched_chat_rows=1)
+ THEN RAISE EXCEPTION 'Grafana provider cost/currency or wallet/quota formulas changed'; END IF;
+END $$;
+ALTER DEFAULT PRIVILEGES IN SCHEMA analytics_grafana REVOKE SELECT ON TABLES FROM anon;
+REFRESH MATERIALIZED VIEW CONCURRENTLY analytics_grafana.mv_free_quota_daily;
+REFRESH MATERIALIZED VIEW CONCURRENTLY analytics_grafana.mv_card_unit_economics_30d;
+REFRESH MATERIALIZED VIEW CONCURRENTLY analytics_grafana.mv_strategy_downstream_fixture;
+SET ROLE grafana_reader;
+SELECT * FROM analytics_grafana.v_llm_calls;
+SELECT * FROM analytics_grafana.v_card_downstream_fixture;
+SELECT * FROM analytics_grafana.v_free_quota_daily;
+RESET ROLE;
+DROP TABLE experience.grafana_parent_before,experience.grafana_billing_before,experience.grafana_shape_before,experience.grafana_old_definitions;
+DELETE FROM experience.chat_history WHERE id='00000000-0000-0000-0000-000000000070';
+DELETE FROM billing.wallet_ledger;
+DELETE FROM billing.payment_orders;
+DELETE FROM billing.character_free_chat_quota_decisions WHERE charge_key='00000000-0000-0000-0000-000000000270';
+UPDATE experience.venice_chat_history SET llm_usage='0' WHERE chat_history_id='00000000-0000-0000-0000-000000000002';
+SQL
+# Re-entry is harmless even after a committed SQL transaction whose ledger record was interrupted.
+"${task_psql[@]}" -f "$task_sql/20261020_grafana_provider_metadata_dependencies.sql" >/dev/null
+
 "${task_psql[@]}" -c "CREATE VIEW experience.alias_dependency_fixture AS SELECT llm_usage FROM experience.openrouter_chat_history;" >/dev/null
 expect_alias_reject 'OpenRouter alias database dependency remains'
 "${task_psql[@]}" -c "DROP VIEW experience.alias_dependency_fixture; UPDATE experience.openrouter_chat_history SET usage='1',llm_usage='0' WHERE chat_history_id='00000000-0000-0000-0000-000000000001';" >/dev/null
@@ -285,4 +427,16 @@ expect_catchup_reject 'Contracted history requires matching reviewed DROP ledger
 expect_catchup_reject 'Catch-up recovery requires exactly 12 legacy columns'
 "${task_psql[@]}" -c 'ALTER TABLE experience.chat_history DROP COLUMN llm_generation_id;' >/dev/null
 
+# Grafana queries and scheduled refresh names must still work after both real DROP operations.
+"${task_psql[@]}" -f "$task_sql/20261020_grafana_provider_metadata_dependencies.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+REFRESH MATERIALIZED VIEW CONCURRENTLY analytics_grafana.mv_free_quota_daily;
+REFRESH MATERIALIZED VIEW CONCURRENTLY analytics_grafana.mv_card_unit_economics_30d;
+REFRESH MATERIALIZED VIEW CONCURRENTLY analytics_grafana.mv_strategy_downstream_fixture;
+SET ROLE grafana_reader;
+SELECT * FROM analytics_grafana.v_llm_calls;
+SELECT * FROM analytics_grafana.v_card_downstream_fixture;
+SELECT * FROM analytics_grafana.v_free_quota_daily;
+RESET ROLE;
+SQL
 printf 'Retirement passed: real parent/alias DROP, catch-up/conflict/budget/dependency guards, provider views/ACL and real PostgREST repositories.\n'

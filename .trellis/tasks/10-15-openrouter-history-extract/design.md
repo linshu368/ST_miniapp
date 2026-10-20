@@ -140,3 +140,15 @@ T10补充证据：TEST专表自身有49条非白名单诊断；同一历史处�
 归属：无新持久化表/视图/函数；仅 pg_temp 候选清单，experience 调用事实仍由既有专表持有，事务结束即删除，无新运行时消费者或跨schema业务依赖。已删完12列且有原DROP账本的目标跳过；部分缺列、缺账本或表不存在拒绝。
 
 故障模型：候选超过4000、provider重叠、ID冲突、Venice快照无明细、非法类型/数据库约束、锁/执行超时均整笔回滚；无网络重试/补偿/队列。ON CONFLICT 仅补NULL，已存在canonical优先；最后复核身份/provider以拒绝并发冲突。旧writer退出仍为外部门禁，不以迁移替代。两批同一事务，无部分提交，失败修正后重新走workflow；成功保留additive事实，禁止回滚删除专表数据。拒绝永久索引、后台批处理框架、全局timeout和复制旧账本。
+
+## T12 设计：现有 Grafana 兼容对象的前向迁移
+
+复用：读取原alias DROP的pg_depend守卫、父表DROP、provider views、PG17/PostgREST harness、真实生产pg_get_viewdef/columns/ACL/comments/index/dependency图；仓库无analytics_grafana定义，不能从TEST推断生产。仅新增一个shared forward文件与必要的合成fixture，不改应用/HTTP/contracts/历史SQL/账本工具，不CASCADE，不建立通用报表迁移框架。用户明确直接修复并推送，无需再次等待规划/提交授权。
+
+归属：报表业务派生属于miniapp_analytics；analytics_grafana是现场既有外部报表兼容schema，范围只原地保留其已有对象名称，不新建schema/新的业务事实源，也不迁入public。暂存两张替代MV沿原schema兼容位置构建，成功切换后不留额外持久对象。权威writer仍experience/billing/app_core，报表只读；生命周期与既有Grafana看板一致，下游只用原查询名。跨schema只读依赖沿用，无新线上运行时依赖。若对象部分存在或定义不匹配所采样指纹，停止。无该schema的TEST只跳过，不制造一套生产报表。
+
+最小方案：临时表保存5对象的源定义/owner/ACL/options/comments/列契约及2个唯一索引；用精确已采样旧定义指纹约束有界替换，仅ch/o待删metadata引用改为o canonical，保留ch.llm_finish_reason和所有其他表达式。两张新MV先在暂存名称WITH DATA构建并建唯一索引，再短事务切换阶段将旧MV改名、新MV改为原名、CREATE OR REPLACE包装视图以更新引用并保留其OID/ACL及下游。v_llm_calls原地replace保留下游MV/视图OID；旧MV最后RESTRICT删除，索引恢复原名，原owner/表列权限/注释恢复，检查对象shape和无待删列依赖。每条耗时CREATE受60s、锁5s保护，所有步骤在同一事务；构建失败或未知下游依赖回滚到完整旧状态，不暴露空MV。正常refresh命令仍使用原MV名称。拒绝直接DROP CASCADE、修改pg_catalog、未填充MV上线、重建整个Grafana域或扩大超时。
+
+可靠性：前置源定义/索引指纹、shape与未知依赖守卫；构建只读业务表，旧MV和报表继续可用至短切换锁；限制每次迁移只重建两个MV。锁/超时/权限/DDL并发漂移/未知依赖均停止回滚，不自动重试。切换前再次复核原对象定义/OID，避免构建窗口被外部DDL改写。新对象撤销默认ACL后恢复原ACL（含grant option与列级权限），未知grantor情形停止；权限不扩大。单事务可能额外使用两张MV空间/WAL，生产容量和刷新调度窗口仍须执行前确认。本地不提供物理源表写入/补扣/清理。恢复优先forward-fix；失败rollback，成功后不回退到引用旧列的报表定义。后续alias/history/drop仍各自门禁。
+
+T12兼容补充：切视图前复用原alias contract的类型/非空冲突/最多2000行守卫，仅将OR同一行旧别名补入NULL canonical，避免旧字段尚有独占事实而报表先切空值。此为调用metadata补齐，主表/正文/账务不写；0与已有canonical优先。若主表metadata与canonical存在旧新差异，报表改取已确认的新专表权威事实，保留计量单位与公式，不承诺旧错误/滞后值完全不变。

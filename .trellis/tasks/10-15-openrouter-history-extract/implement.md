@@ -97,3 +97,10 @@ T10补充证据：TEST专表自身有49条非白名单诊断；同一历史处�
 2. 在既有in_progress任务内新增20261020 forward恢复SQL；最多两批各2000，4001拒绝，保留60s/5s、全部安全边界；不改原已执行SQL。已删列分支需核对账本。
 3. 扩展既有retirement harness（迁移/并发风险必须回归，无新测试文件），验证2815跨批、4001拒绝及失败全回滚、NULL/0/不覆盖、未知归属不写、冲突、重复执行、两处真删列后可跳过、无账本及部分shape拒绝；继续真实PostgREST消费者回归。
 4. pnpm lint:migrations、lint:legacy、test:migration-ledger、Shared test、pnpm -r typecheck、workspace build、git diff --check；检查历史SQL checksum不变。同步README/架构/DB spec/发布清单与报告。最终人审后才可提交/推送，远端迁移独立批准。
+
+## T12 执行计划（直接执行授权）
+
+1. 只读收集生产5目标的定义/shape/ACL/comments/index及直接下游；确认TEST是否有报表域。不采业务行，结构快照仅作为合成fixture依据。
+2. 实现有界forward迁移（现有schema缺失则跳过、部分/漂移拒绝；预构建已填充MV、保留名称/下游/权限、零旧列依赖），保留原alias DROP的守卫。
+3. 必须扩展现有PG/PostgREST回归：新增生产结构合成fixture确有必要，验证旧定义会阻断DROP、迁移后真实删除11+12列、各报表/物化刷新可运行；全量列契约/金额0/NULL/Venice/业务终态/权益与账务不改；grafana_reader/grafana_cloud权限、原view和下游OID、index/comment、未知依赖/定义漂移/第二MV失败全事务回滚/无schema与部分schema。
+4. Shared既有测试、typecheck/build、migration/legacy/lint/ledger和diff检查；README/架构/DB spec/module payload/发布清单和T12报告同步。最终复核只暂存本次文件，用户已明确授权直接commit/push现分支；不自动远端SQL/PR/合并/部署。

@@ -111,3 +111,11 @@ T10详情见 [历史处置报告](research/t10-history-disposition-2026-10-16.md
 - [x] 扩展既有隔离PG/PostgREST回归，完成跨批/拒绝/回滚/消费者/已删列分支检查。
 - [x] 类型/构建/既有测试/静态检查、文档和恢复清单同步，交付最终审阅。
 - [ ] 经独立批准在TEST/Production正式workflow逐文件执行；旧writer/流量/磁盘/复制/后续清理仍需本环境门禁。
+
+## T12 Grafana 旧字段依赖修复（2026-10-20）
+
+- [x] 用户授权直接修复、验证后提交推送；原无关dirty保留。生产catalog定位3个直接阻塞对象及下游。
+- [x] 生产结构/TEST差异/刷新证据收口；新增forward修复，不改原alias/history/drop文件。
+- [x] 合成真实定义fixture及双DROP/PostgREST/报表/物化刷新/ACL/回滚/漂移/依赖回归通过。
+- [x] 类型/构建/既有测试/静态检查与文档/module载荷同步，按用户授权直接提交推送；交付SHA以本轮Git/远端核对结果为准。
+- [ ] 正式TEST/Production文件执行（本轮不自动执行）；完成后再各自核验原alias/history/主表DROP。

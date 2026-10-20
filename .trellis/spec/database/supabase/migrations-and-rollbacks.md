@@ -87,3 +87,7 @@ Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：�
 ## Scenario: 已在另一环境执行的 catch-up 在生产超时
 
 已记账原文件不改；保留同checksum失败claim（不适用abandon_claim），新增forward恢复SQL只记自身ledger，文档明确替代关系。先EXPLAIN、再有界只读实测，LIMIT与最终候选数都不能证明扫描成本有界。20261020恢复文件在候选阶段局部使用hash join并恢复planner设置；每批2000、最多两批、4001拒绝，60s/5s全事务失败回滚，不以盲增timeout代替容量设计。只填NULL安全标量/ID、不搬raw JSON；竞争非空ID拒绝覆盖且写后复核provider/identity。已contract目标只在12列全缺且精确匹配原DROP账本时跳过，部分shape或缺账本拒绝。正式执行前按本环境复核容量/旧writer/覆盖，不自动放行后续JSON处置或DROP；既有隔离PG/PostgREST harness覆盖跨批、整笔回滚、预算、冲突和contract分支。
+
+## Scenario: 外部分析视图阻止 provider contract
+
+发现analytics_grafana等现场兼容报表引用旧字段时，不删依赖守卫、不CASCADE、不改已执行SQL。先明确既有兼容schema与miniapp_analytics业务归属，采集真实pg_get_viewdef/列/ACL/owner/options/comments/索引及下游/刷新，再新增前向修复。只对精确已核验指纹做有界源字段替换，保留业务finish_reason、币种/单位/账务公式；需补canonical时仅同OR行NULL-safe、冲突/provider重叠及2000预算守卫并固定候选ID。物化视图先在暂存名WITH DATA构建/建唯一索引，再取得短DDL锁、复核结构与权限漂移、原子切换名称/包装视图、RESTRICT删除旧对象并恢复ACL/comments/index；不得上线WITH NO DATA后等待异步刷新。每条语句60s、锁5s，失败包括metadata补齐全部回滚；无该外部schema安全跳过，部分/未知依赖/定义漂移拒绝。正式psql文件可用\gexec拆分两条有界CREATE，不新增数据库函数/API。既有PG/PostgREST回归必须覆盖默认ACL撤销、下游OID、第二MV失败/暂存漂移回滚及真正两处DROP后报表和并发刷新。源表与账务不因分析修复改写，生产容量/刷新窗口及后续清理仍各自门禁。
