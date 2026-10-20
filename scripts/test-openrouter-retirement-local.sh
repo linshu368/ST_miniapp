@@ -26,7 +26,7 @@ PY
 task_psql=("$task_pg_bin/psql" -X -h "$task_dir" -p "$task_pg_port" -U postgres -d postgres -v ON_ERROR_STOP=1)
 task_sql="$task_root/packages/shared/migrations"
 task_history_file=20261020_openrouter_history_disposition_recovery.sql
-task_drop_file=20261020_chat_history_drop_provider_metadata_closed_abandoned.sql
+task_drop_file=20261020_chat_history_drop_provider_metadata_data_guards.sql
 "${task_psql[@]}" -f "$task_root/scripts/openrouter-retirement-bootstrap.sql" >/dev/null
 "${task_psql[@]}" -f "$task_sql/20260929_venice_chat_history.sql" >/dev/null
 "${task_psql[@]}" -c "INSERT INTO experience.venice_chat_history(chat_history_id,llm_generation_id,llm_latency,llm_usage) VALUES('00000000-0000-0000-0000-000000000002','venice-fixture',7,'0'); GRANT SELECT ON experience.venice_chat_history TO cs_persona_reader;" >/dev/null
@@ -407,33 +407,19 @@ expect_reject 'Reviewed history disposition must be applied and recorded first'
 task_history_checksum="$(shasum -a 256 "$task_sql/$task_history_file" | cut -d ' ' -f 1)"
 "${task_psql[@]}" -c "UPDATE supabase_migrations.repo_migrations SET checksum='$task_history_checksum' WHERE filename='$task_history_file';" >/dev/null
 
-"${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_charge_id='00000000-0000-0000-0000-000000000201' WHERE id='00000000-0000-0000-0000-000000000001';" >/dev/null
-expect_reject 'Historical billing/quota closure not proven'
-# Synthetic-only closure of the fixture's legacy accounting, without any real wallet.
-"${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_billing_settled_at=now() WHERE id='00000000-0000-0000-0000-000000000001'; INSERT INTO experience.chat_history(id,llm_charge_id) VALUES('00000000-0000-0000-0000-000000000050','00000000-0000-0000-0000-000000000250'); INSERT INTO experience.openrouter_chat_history(chat_history_id) VALUES('00000000-0000-0000-0000-000000000050');" >/dev/null
+"${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_charge_id='00000000-0000-0000-0000-000000000201' WHERE id='00000000-0000-0000-0000-000000000001'; INSERT INTO experience.chat_history(id,llm_charge_id) VALUES('00000000-0000-0000-0000-000000000050','00000000-0000-0000-0000-000000000250'); INSERT INTO experience.openrouter_chat_history(chat_history_id) VALUES('00000000-0000-0000-0000-000000000050');" >/dev/null
+# Unreconciled history (success without charge, leaked reservation, post-boundary charged without
+# snapshot, pending) must not block the DROP, and the DROP must leave all of it untouched.
 "${task_psql[@]}" >/dev/null <<'SQL'
 INSERT INTO experience.chat_history(id,turn_index,created_at,status,llm_generation_id,llm_charge_id) SELECT ('00000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,n,'2026-08-01','success','history-'||n,('00000000-0000-0000-0000-'||lpad((n+200)::text,12,'0'))::uuid FROM generate_series(40,43) n;
 UPDATE experience.chat_history SET status='upstream_error' WHERE id='00000000-0000-0000-0000-000000000042';
+UPDATE experience.chat_history SET created_at=now() WHERE turn_index=40;
 INSERT INTO experience.openrouter_chat_history(chat_history_id,llm_generation_id) SELECT id,llm_generation_id FROM experience.chat_history WHERE turn_index BETWEEN 40 AND 43;
 INSERT INTO billing.llm_usage_charges(charge_key,generation_id,user_id,status,charged_amount) SELECT llm_charge_id,llm_generation_id,user_id,CASE WHEN turn_index=43 THEN 'pending' ELSE 'charged' END,CASE WHEN turn_index=43 THEN 0 ELSE 5 END FROM experience.chat_history WHERE turn_index IN (40,43);
 INSERT INTO billing.llm_usage_charge_dedup SELECT * FROM billing.llm_usage_charges;
-INSERT INTO billing.llm_usage_charge_dedup SELECT llm_charge_id,llm_generation_id,user_id,'free',0 FROM experience.chat_history WHERE turn_index=41;
 INSERT INTO billing.character_free_chat_quota_decisions VALUES('00000000-0000-0000-0000-000000000240','reserved'),('00000000-0000-0000-0000-000000000250','reserved');
 SQL
-expect_reject 'Historical billing/quota closure not proven'
-"${task_psql[@]}" -c "UPDATE billing.character_free_chat_quota_decisions SET status='consumed' WHERE charge_key='00000000-0000-0000-0000-000000000240'; UPDATE experience.chat_history SET created_at=now() WHERE turn_index=41;" >/dev/null
-expect_reject 'Historical billing/quota closure not proven'
-"${task_psql[@]}" -c "UPDATE experience.chat_history SET created_at='2026-08-01' WHERE turn_index=41; UPDATE billing.llm_usage_charge_dedup SET user_id='00000000-0000-0000-0000-000000000098' WHERE charge_key='00000000-0000-0000-0000-000000000241';" >/dev/null
-expect_reject 'Historical billing/quota closure not proven'
-"${task_psql[@]}" -c "UPDATE billing.llm_usage_charge_dedup SET user_id='00000000-0000-0000-0000-000000000099' WHERE charge_key='00000000-0000-0000-0000-000000000241'; DELETE FROM billing.llm_usage_charge_dedup WHERE charge_key='00000000-0000-0000-0000-000000000241';" >/dev/null
-expect_reject 'Historical billing/quota closure not proven'
-"${task_psql[@]}" -c "INSERT INTO billing.llm_usage_charge_dedup SELECT llm_charge_id,llm_generation_id,user_id,'free',0 FROM experience.chat_history WHERE turn_index=41; UPDATE experience.chat_history SET llm_billing_snapshot='{}' WHERE turn_index=43;" >/dev/null
-expect_reject 'Historical billing/quota closure not proven'
-"${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_billing_snapshot=NULL WHERE turn_index=43; UPDATE billing.llm_usage_charge_dedup SET status='charged' WHERE charge_key='00000000-0000-0000-0000-000000000243';" >/dev/null
-expect_reject 'Historical billing/quota closure not proven'
-"${task_psql[@]}" -c "UPDATE billing.llm_usage_charge_dedup SET status='pending' WHERE charge_key='00000000-0000-0000-0000-000000000243'; UPDATE supabase_migrations.repo_migrations SET checksum='drift' WHERE filename='20260911_chat_history_billing_settlement.sql';" >/dev/null
-expect_reject 'Billing schema boundary ledger missing or drifted'
-"${task_psql[@]}" -c "UPDATE supabase_migrations.repo_migrations SET checksum='f32b5fcec327217bd6591066d1f7e1c758f8b9e372cda3adbc08b6758bf7e9ea' WHERE filename='20260911_chat_history_billing_settlement.sql'; CREATE TABLE billing.charges_before AS TABLE billing.llm_usage_charges; CREATE TABLE billing.dedup_before AS TABLE billing.llm_usage_charge_dedup; CREATE TABLE billing.quota_before AS TABLE billing.character_free_chat_quota_decisions;" >/dev/null
+"${task_psql[@]}" -c "CREATE TABLE billing.charges_before AS TABLE billing.llm_usage_charges; CREATE TABLE billing.dedup_before AS TABLE billing.llm_usage_charge_dedup; CREATE TABLE billing.quota_before AS TABLE billing.character_free_chat_quota_decisions;" >/dev/null
 "${task_psql[@]}" -f "$task_sql/$task_drop_file" >/dev/null
 "${task_psql[@]}" >/dev/null <<'SQL'
 DO $$ BEGIN
