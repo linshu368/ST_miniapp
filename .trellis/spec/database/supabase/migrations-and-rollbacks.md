@@ -103,6 +103,8 @@ Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：�
 
 2026-10-20 Production（wbtsfzozlmurljvglhpn）只读 count 实测候选 295383；先前 4001 为截断聚合。总预算据此设为 300000，并在读取/指纹 JSON 前检查；候选阶段局部 hash join，避免 UUID 顺序访问大表。WAL/磁盘/复制余量、旧 writer 退出与执行窗口仍需本环境核验；若超过预算停止，不改已应用文件。结构已由新 DROP 收缩的环境无需重跑恢复文件。恢复后只能部署兼容 canonical 字段的 Backend，重加 NULL 列不能恢复已丢弃诊断。
 
-2026-10-20 Production 首次执行恢复文件在某批报 `Unresolved historical JSON shape/provider/identity`：只读聚合候选 294369，唯一命中为 3 条主表旧 JSON 无任何 provider detail、无调用 ID、无快照，且不含任何白名单键。已提交批次保留、失败批回滚，未记账。恢复文件不改（保持 claim 与 DROP 恢复 checksum）；先执行新增 `20261020_openrouter_history_orphan_json_disposition.sql`：仅清空“无 detail、无 ID、无快照、无白名单键（含 2 条卡死 streaming，经确认放弃，status 不改）”的主表旧 JSON，上限 100、指纹 CAS、不写 provider 表/正文/终态/计费，任一行有归属证据或事实即整体拒绝待人工分类；可重入。随后用同一 checksum 重跑恢复文件（续接 claim）。被清空的诊断不可恢复。
+2026-10-20 Production 首次执行恢复文件在某批报 `Unresolved historical JSON shape/provider/identity`：只读聚合候选 294369，唯一命中为 3 条主表旧 JSON 无任何 provider detail、无调用 ID、快照无 provider，且不含任何白名单键。已提交批次保留、失败批回滚，未记账。恢复文件不改（保持 claim 与 DROP 恢复 checksum）；先执行新增 `20261020_openrouter_history_orphan_json_disposition.sql`：仅清空“无 detail、无 ID、快照无 provider、无白名单键（含 2 条卡死 streaming，经确认放弃，status 不改）”的主表旧 JSON，上限 100、指纹 CAS、不写 provider 表/正文/终态/计费，任一行有归属证据或事实即整体拒绝待人工分类；可重入。随后用同一 checksum 重跑恢复文件（续接 claim）。被清空的诊断不可恢复。
+
+首个孤儿处置文件在 Production 以 `Orphan history JSON requires manual provider classification` 失败（未写数据）：这 3 行有不含 `provider` 键的旧 billing snapshot（`provider` 为可选字段），被误当归属证据。原文件与其 claim 保持不变；改为执行 `20261020_openrouter_history_orphan_json_disposition_recovery.sql`，仅把快照中显式 provider 视为证据，其余守卫相同。
 
 验证：既有隔离 PG17/PostgREST harness 覆盖 6001 行跨四批、末批失败保留前批进度且回滚当前批、重入不改写已规范化行、300001 预算拒绝、JSON/身份/Venice/CAS/账本 checksum 拒绝，以及真正删列后的 repository、报表和物化刷新。原处置 SQL 与原 DROP 文件未改。此为本地修复，未执行远端迁移或提交推送。
