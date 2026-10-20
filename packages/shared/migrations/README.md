@@ -134,4 +134,6 @@ npx prisma generate
 
 首个孤儿处置文件在 Production 以 `Orphan history JSON requires manual provider classification` 失败（未写数据）：这 3 行有不含 `provider` 键的旧 billing snapshot（`provider` 为可选字段），被误当归属证据。原文件与其 claim 保持不变；改为执行 `20261020_openrouter_history_orphan_json_disposition_recovery.sql`，仅把快照中显式 provider 视为证据，其余守卫相同。
 
+Production 执行 `20261020_chat_history_drop_provider_metadata_recovery.sql` 时，删列前的全表守卫（`Unpreserved identity/scalars…` 的 provider 事实扫描）触发 60s `statement_timeout`，整笔回滚、未执行 DDL、未记账。原文件与其 claim 不改；改为执行 `20261020_chat_history_drop_provider_metadata_bounded_guards.sql`：守卫阶段顶层 `SET LOCAL statement_timeout='900s'` 并局部关闭 merge join/nested loop（此时尚未持有排他锁），守卫结束后恢复 60s，仅 `ALTER TABLE … DROP COLUMN` 受严格预算。守卫内容与 DROP 列表与原文件完全一致。
+
 验证：既有隔离 PG17/PostgREST harness 覆盖 6001 行跨四批、末批失败保留前批进度且回滚当前批、重入不改写已规范化行、300001 预算拒绝、JSON/身份/Venice/CAS/账本 checksum 拒绝，以及真正删列后的 repository、报表和物化刷新。原处置 SQL 与原 DROP 文件未改。此为本地修复，未执行远端迁移或提交推送。

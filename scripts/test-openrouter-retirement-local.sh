@@ -26,7 +26,7 @@ PY
 task_psql=("$task_pg_bin/psql" -X -h "$task_dir" -p "$task_pg_port" -U postgres -d postgres -v ON_ERROR_STOP=1)
 task_sql="$task_root/packages/shared/migrations"
 task_history_file=20261020_openrouter_history_disposition_recovery.sql
-task_drop_file=20261020_chat_history_drop_provider_metadata_recovery.sql
+task_drop_file=20261020_chat_history_drop_provider_metadata_bounded_guards.sql
 "${task_psql[@]}" -f "$task_root/scripts/openrouter-retirement-bootstrap.sql" >/dev/null
 "${task_psql[@]}" -f "$task_sql/20260929_venice_chat_history.sql" >/dev/null
 "${task_psql[@]}" -c "INSERT INTO experience.venice_chat_history(chat_history_id,llm_generation_id,llm_latency,llm_usage) VALUES('00000000-0000-0000-0000-000000000002','venice-fixture',7,'0'); GRANT SELECT ON experience.venice_chat_history TO cs_persona_reader;" >/dev/null
