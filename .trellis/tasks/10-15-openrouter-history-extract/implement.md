@@ -90,3 +90,10 @@ T9范围校正：本轮只读核验并提出历史分类策略，不对未审阅
 4. Backend/Shared tests、所有consumer typecheck/build、lint/import/legacy/migrations、ledger、旧expand、脚本类型/语法及diff检查。同步README/架构/spec/task/清单；最终人工审阅后才能提交，远端单文件执行由用户另行操作。
 
 T10补充证据：TEST专表自身有49条非白名单诊断；同一历史处置同时按现有mapper白名单规范化已有OR诊断，当前诊断优先，父表raw与专表诊断使用指纹CAS，变化则整笔回滚。Venice明细仍不写，缺少有效原名事实会停止。候选为旧父表JSON或已有OR诊断的并集，总数超过2000停止，不先清空再核对。
+
+## T11 执行计划（用户本轮要求检查并修复）
+
+1. 只读核对Action/两库ledger+claims+catalog，EXPLAIN后以15s上限测量备选SELECT及聚合，不输出业务行/内容/凭证。记录来源与时间。
+2. 在既有in_progress任务内新增20261020 forward恢复SQL；最多两批各2000，4001拒绝，保留60s/5s、全部安全边界；不改原已执行SQL。已删列分支需核对账本。
+3. 扩展既有retirement harness（迁移/并发风险必须回归，无新测试文件），验证2815跨批、4001拒绝及失败全回滚、NULL/0/不覆盖、未知归属不写、冲突、重复执行、两处真删列后可跳过、无账本及部分shape拒绝；继续真实PostgREST消费者回归。
+4. pnpm lint:migrations、lint:legacy、test:migration-ledger、Shared test、pnpm -r typecheck、workspace build、git diff --check；检查历史SQL checksum不变。同步README/架构/DB spec/发布清单与报告。最终人审后才可提交/推送，远端迁移独立批准。

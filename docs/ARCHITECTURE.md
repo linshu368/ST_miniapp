@@ -665,3 +665,7 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 新增历史处置SQL在同一事务内规范化OR受控诊断、仅补NULL厂商原名事实并清父表旧JSON。非白名单key、referer/外部用户/嵌套response及错误自由文本明确丢弃、不归档；类型/长度/非负数/整数范围、provider与ID验证，父表及专表JSON指纹CAS保护变化，最多2000候选且预算前不解TOAST。正文、业务finish_reason、计费快照/金额/charge/dedup/quota不写；Venice仅在既有明细事实保全后清父表冗余诊断，不改变mapper/表。
 
 主表DROP文件在两库未执行，T10修正原过宽账务守卫：以schema账本checksum+applied_at定义引入快照前历史，明确终态账单/持久dedup/失败未扣/旧pending分类。旧pending保留账单和专表ID、不伪造已结算；未知成功记录、新契约漏快照、身份/状态冲突、旧字段关联reserved继续停止。健康专表调用不因清理要求中断。账务跨域仅只读；历史归档表、后台补扣worker与通用搬运层均未新增。
+
+### 2026-10-20 OpenRouter catch-up 超时恢复
+
+生产 `20261016_openrouter_retirement_catchup.sql` 候选查询超时；该文件已在 TEST 记账，不改历史文件。新增 `20261020_openrouter_retirement_catchup_recovery.sql`：候选阶段局部hash join、最多两批各2000、总量4001拒绝，仍为60s/5s单事务；只补安全标量/ID，canonical非空优先，正文/业务终态/计费/raw JSON不动。已删12列的目标须匹配原DROP账本才跳过；其他shape异常拒绝。生产原同checksum claim保留，正式workflow执行新增文件，不重跑原文件、不清claim/伪造原ledger。后续清理仍独立门禁。当前为本地修复，证据与验证见 `.trellis/tasks/10-15-openrouter-history-extract/research/t11-catchup-timeout-recovery-2026-10-20.md`。

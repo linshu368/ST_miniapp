@@ -220,3 +220,7 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 ### OpenRouter 历史诊断清退补充
 
 T10 新增 `20261016_openrouter_history_disposition.sql`，先按现有mapper白名单保全类型化调用事实/受控诊断，丢弃其余历史诊断并清父表旧JSON；不改正文/业务终态/账单/额度。已有OR诊断同样规范化，Venice明细不写。更新尚未在两库执行的主表DROP：依赖处置成功账本，将引入snapshot前的旧终态/dedup/失败/pending明确分类，保留旧pending和原幂等键，不以settled_at为空误判或补写假结算。现代未知/冲突/未收口旧字段仍拒绝。TEST先处置、验证后再DROP；超过2000候选拒绝，Production另审批次，不重跑已记账文件。用户已明确忽略作废PR425。详见任务发布清单与T10报告，代码声明不代表已在远端处置。
+
+### 2026-10-20 OpenRouter catch-up 超时恢复
+
+生产 `20261016_openrouter_retirement_catchup.sql` 候选查询超时；该文件已在 TEST 记账，不改历史文件。新增 `20261020_openrouter_retirement_catchup_recovery.sql`：候选阶段局部hash join、最多两批各2000、总量4001拒绝，仍为60s/5s单事务；只补安全标量/ID，canonical非空优先，正文/业务终态/计费/raw JSON不动。已删12列的目标须匹配原DROP账本才跳过；其他shape异常拒绝。生产原同checksum claim保留，正式workflow执行新增文件，不重跑原文件、不清claim/伪造原ledger。后续清理仍独立门禁。当前为本地修复，证据与验证见 `.trellis/tasks/10-15-openrouter-history-extract/research/t11-catchup-timeout-recovery-2026-10-20.md`。

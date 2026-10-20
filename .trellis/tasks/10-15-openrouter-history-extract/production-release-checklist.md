@@ -35,7 +35,7 @@ Production：PR #429 OPEN，Backend df7b4385-ce8f-4509-bea2-702a622eaefd / c759f
 
 1. 本地审阅并实现本轮不依赖主表 12 列的 Backend、三份新 SQL、真实 DROP 后验证和文档。先通过本地质量检查；用户最终审阅后才考虑提交/推送。
 2. TEST 部署本轮 Backend，记录精确 SHA/所有副本和 job/最后旧 writer 请求退出；复验发送/重生成/计费/免费/取消/超时/错误/迟到/重启多副本。
-3. 旧 writer 退出后执行新 catch-up（20261016_openrouter_retirement_catchup.sql），仅修已证明归属的安全标量/ID，不迁 raw JSON，不伪造上游 finish_reason。单文件检查 ledger/checksum/claims/events、前后聚合/锁/容量。超过已验证批次预算则停止另审。
+3. 旧 writer 退出后执行新增恢复 catch-up（20261020_openrouter_retirement_catchup_recovery.sql；2026-10-20 生产原文件超时，TEST已执行的20261016原文件保持不变），仅修已证明归属的安全标量/ID，不迁 raw JSON，不伪造上游 finish_reason。单文件检查 ledger/checksum/claims/events、前后聚合/锁/容量。超过已验证批次预算则停止另审。
 4. 覆盖通过后执行视图切换（20261016_chat_history_provider_metadata_views.sql）：current/已有 base_chat_bj 按对应 provider 表取值，核对列名/序/类型/基数/语义/权限。current 保持 security_invoker，既有 cs_persona_reader 只补最小列权限；TEST 没有 analytics view 不凭空新建，生产分支在本地 fixture 验证。
 5. 独立执行 20261016_chat_history_drop_provider_metadata.sql 前，以下门禁全部满足并获得该文件/目标/窗口明确授权。先 TEST，TEST 实际验证后再单独审批 Production。不得一次 workflow 跑多文件。
 6. Production 按同样顺序独立核验；当前 #429 是否先发布既有接入不代替本轮退休版本及旧副本退出证明。四份历史 migration 不再列为待执行。
@@ -94,3 +94,7 @@ DROP 实现会拒绝任何非空主表 llm_generation_data；本轮没有证明�
 - 新增专表contract可先执行，前提是本环境全部别名消费者退出、DB依赖和窗口覆盖通过。原名metadata为空允许待回捞，不要求为了删别名重新调用上游。先核对alias/canonical冲突和补齐候选预算，未知约束停止。
 - 顺序：已完成的catchup/views不重跑 → `packages/shared/migrations/20261016_openrouter_chat_history_drop_legacy_aliases.sql` → 验证 → 原JSON/历史分类/无主表旧消费者门禁通过后，单独执行 `packages/shared/migrations/20261016_chat_history_drop_provider_metadata.sql`。后者当前仍不能直接执行；本轮未授权或执行远端JSON清空/补账/停止PR425。
 - 回退只能到已通过主表12+专表11列不存在验证的canonical writer，不能回退旧别名writer；如需空列重建另审数据恢复，不执行表重写。Production未执行本轮专表preflight，不沿用TEST零冲突数值。
+
+## 2026-10-20 catch-up 超时恢复（T11，待正式执行）
+
+生产原catch-up失败回滚且保留同checksum claim，TEST原文件已记账并已删父表12列。改用新增恢复文件，最多两批各2000、总候选4001拒绝，事务60s/锁5s；TEST精确匹配原DROP账本后跳过。原文件/claim不改，不使用force_rerun/abandon_claim，不伪造旧成功ledger。成功只记新增文件；后续view/disposition/DROP仍独立验证预算、完整覆盖和四类门禁。证据、前置条件、恢复及执行命令见 [T11报告](research/t11-catchup-timeout-recovery-2026-10-20.md)。本地修复不代表远端已执行。

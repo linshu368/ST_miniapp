@@ -130,3 +130,13 @@ TEST两前序已记账、视图已适配，因此本轮实际可按“所有共�
 原DROP对业务列/ID/标量保全、DB依赖、raw JSON未处置的守卫保留；本次只区分旧账务契约，不清空其他旧标量来绕过原守卫。实际删除前仍核对应用/运行/历史覆盖，PR425按用户明确豁免，不再自动阻挡。恢复采用兼容forward-fix；丢弃的非白名单旧诊断无法靠新表恢复，用户需在远端执行前审阅明确这一边界。
 
 T10补充证据：TEST专表自身有49条非白名单诊断；同一历史处置同时按现有mapper白名单规范化已有OR诊断，当前诊断优先，父表raw与专表诊断使用指纹CAS，变化则整笔回滚。Venice明细仍不写，缺少有效原名事实会停止。候选为旧父表JSON或已有OR诊断的并集，总数超过2000停止，不先清空再核对。
+
+## T11 catch-up 恢复设计（2026-10-20）
+
+复用调研：读取原 catch-up/expand/alias contract、正式 ledger runner、retirement harness/bootstrap、views/drop 及各 repository 现有约束。复用既有映射与测试 harness，不改应用、HTTP 契约、mapper、索引、权限或迁移工具。新增一个 forward SQL，不改已执行文件，不清 claim、不伪造原文件成功记录。原 claim 同 checksum 不符合 abandon_claim 条件，保留作为失败审计。新文件取代本次生产 catch-up 步骤，后续视图/DROP仍独立。
+
+生产只读证据：原计划沿主键全表 merge join，Action 60s 超时；会话禁用 merge join 后同一候选 SELECT 7.403s 完成，2815 候选全有 ID、Venice snapshot 冲突零。需要另审分批而非只调大 2000 常量。本地方案每批2000、最多两批、总候选4001即停止；这是新增恢复文件的独立预算，不修改原2000预算。候选阶段只投影ID并先截到4001，明确 LIMIT 不是扫描成本上限；仅候选阶段采用hash join规避随机遍历，恢复原会话计划设置，不全局调参/增加work_mem。单事务60s与锁5s仍保留，不无限重试。
+
+归属：无新持久化表/视图/函数；仅 pg_temp 候选清单，experience 调用事实仍由既有专表持有，事务结束即删除，无新运行时消费者或跨schema业务依赖。已删完12列且有原DROP账本的目标跳过；部分缺列、缺账本或表不存在拒绝。
+
+故障模型：候选超过4000、provider重叠、ID冲突、Venice快照无明细、非法类型/数据库约束、锁/执行超时均整笔回滚；无网络重试/补偿/队列。ON CONFLICT 仅补NULL，已存在canonical优先；最后复核身份/provider以拒绝并发冲突。旧writer退出仍为外部门禁，不以迁移替代。两批同一事务，无部分提交，失败修正后重新走workflow；成功保留additive事实，禁止回滚删除专表数据。拒绝永久索引、后台批处理框架、全局timeout和复制旧账本。

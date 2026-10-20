@@ -40,6 +40,70 @@ expect_reject() {
  rg -q "$1" "$task_dir/reject.log"
 }
 expect_reject 'Legacy column database dependency remains'
+# Forward recovery must cover a real second batch and reject unsafe/oversize inputs atomically.
+expect_catchup_reject() {
+ if "${task_psql[@]}" -f "$task_sql/20261020_openrouter_retirement_catchup_recovery.sql" >"$task_dir/catchup-reject.log" 2>&1; then
+  echo "FAIL: unsafe catch-up recovery accepted ($1)" >&2; exit 1
+ fi
+ rg -q "$1" "$task_dir/catchup-reject.log"
+}
+"${task_psql[@]}" >/dev/null <<'SQL'
+INSERT INTO experience.chat_history(model,llm_generation_id)
+SELECT 'recovery-budget-fixture','budget-'||n FROM generate_series(1,4001) n;
+SQL
+expect_catchup_reject 'Catch-up recovery exceeds reviewed two-batch 4000-row budget'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS (SELECT 1 FROM experience.openrouter_chat_history o JOIN experience.chat_history h ON h.id=o.chat_history_id WHERE h.model='recovery-budget-fixture') THEN RAISE EXCEPTION 'oversize recovery leaked writes'; END IF;
+END $$;
+DELETE FROM experience.chat_history WHERE model='recovery-budget-fixture';
+INSERT INTO experience.openrouter_chat_history(chat_history_id,llm_generation_id) VALUES('00000000-0000-0000-0000-000000000001','wrong-call');
+SQL
+expect_catchup_reject 'OpenRouter identity conflict'
+"${task_psql[@]}" -c "DELETE FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000001'; INSERT INTO experience.openrouter_chat_history(chat_history_id) VALUES('00000000-0000-0000-0000-000000000002');" >/dev/null
+expect_catchup_reject 'Provider overlap'
+"${task_psql[@]}" -c "DELETE FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000002'; UPDATE experience.chat_history SET llm_billing_snapshot='{\"provider\":\"venice\"}' WHERE id='00000000-0000-0000-0000-000000000004';" >/dev/null
+expect_catchup_reject 'Venice snapshot without Venice detail'
+"${task_psql[@]}" >/dev/null <<'SQL'
+UPDATE experience.chat_history SET llm_billing_snapshot=NULL WHERE id='00000000-0000-0000-0000-000000000004';
+INSERT INTO experience.chat_history(id,model,llm_generation_id,llm_usage,llm_native_tokens_prompt)
+SELECT ('10000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,'recovery-batch-fixture','batch-'||n,'0',0 FROM generate_series(1,2815) n;
+CREATE TABLE experience.catchup_parent_before AS TABLE experience.chat_history;
+CREATE TABLE experience.catchup_detail_before AS TABLE experience.openrouter_chat_history;
+CREATE FUNCTION experience.catchup_second_batch_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF NEW.chat_history_id='10000000-0000-0000-0000-000000002815' THEN RAISE EXCEPTION 'synthetic second batch failure'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER catchup_second_batch_failure BEFORE INSERT ON experience.openrouter_chat_history FOR EACH ROW EXECUTE FUNCTION experience.catchup_second_batch_failure();
+SQL
+expect_catchup_reject 'synthetic second batch failure'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS (SELECT * FROM experience.openrouter_chat_history EXCEPT SELECT * FROM experience.catchup_detail_before) OR EXISTS (SELECT * FROM experience.catchup_detail_before EXCEPT SELECT * FROM experience.openrouter_chat_history) THEN RAISE EXCEPTION 'second batch failure leaked first batch'; END IF;
+END $$;
+DROP TRIGGER catchup_second_batch_failure ON experience.openrouter_chat_history;
+DROP FUNCTION experience.catchup_second_batch_failure();
+SQL
+"${task_psql[@]}" -f "$task_sql/20261020_openrouter_retirement_catchup_recovery.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF (SELECT count(*) FROM experience.openrouter_chat_history o JOIN experience.chat_history h ON h.id=o.chat_history_id WHERE h.model='recovery-batch-fixture' AND o.llm_generation_id=h.llm_generation_id AND o.usage='0' AND o.native_tokens_prompt=0)<>2815 THEN RAISE EXCEPTION 'recovery lost second batch or zero facts'; END IF;
+ IF EXISTS (SELECT * FROM experience.chat_history EXCEPT SELECT * FROM experience.catchup_parent_before) OR EXISTS (SELECT * FROM experience.catchup_parent_before EXCEPT SELECT * FROM experience.chat_history) THEN RAISE EXCEPTION 'recovery changed parent business facts'; END IF;
+ IF EXISTS (SELECT 1 FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000004') THEN RAISE EXCEPTION 'recovery guessed unknown provider'; END IF;
+END $$;
+DROP TABLE experience.catchup_parent_before,experience.catchup_detail_before;
+DELETE FROM experience.chat_history WHERE model='recovery-batch-fixture';
+UPDATE experience.openrouter_chat_history SET provider_name='current-vendor',usage='2',latency=NULL WHERE chat_history_id='00000000-0000-0000-0000-000000000001';
+SQL
+# Re-entry keeps newer non-NULL facts even when another scalar is still missing.
+"${task_psql[@]}" -f "$task_sql/20261020_openrouter_retirement_catchup_recovery.sql" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000001' AND provider_name='current-vendor' AND usage='2' AND latency=0) THEN RAISE EXCEPTION 're-entry replaced canonical facts'; END IF;
+END $$;
+UPDATE experience.openrouter_chat_history SET provider_name='Google',usage='0' WHERE chat_history_id='00000000-0000-0000-0000-000000000001';
+SQL
+
 "${task_psql[@]}" -f "$task_sql/20261016_openrouter_retirement_catchup.sql" >/dev/null
 "${task_psql[@]}" -f "$task_sql/20261016_chat_history_provider_metadata_views.sql" >/dev/null
 expect_reject 'Unpreserved identity/scalars'
@@ -213,4 +277,12 @@ env -i PATH="$PATH" HOME="$HOME" NODE_ENV=test DATABASE_ENV=test DOTENV_CONFIG_P
 "${task_psql[@]}" -c 'DROP VIEW miniapp_analytics.base_chat_bj; DROP OWNED BY cs_persona_reader; DROP ROLE cs_persona_reader;' >/dev/null
 "${task_psql[@]}" -f "$task_sql/20261016_chat_history_provider_metadata_views.sql" >/dev/null
 expect_reject 'Expected exactly 12 legacy columns'
+# A contracted target may skip only when the exact reviewed DROP is recorded.
+expect_catchup_reject 'Contracted history requires matching reviewed DROP ledger'
+"${task_psql[@]}" -c "INSERT INTO supabase_migrations.repo_migrations(filename,checksum) VALUES('20261016_chat_history_drop_provider_metadata.sql','d1b410064f06b63a40a9c15a9b8148e3e43cf3cfdbadaba198b60fcbd7766852');" >/dev/null
+"${task_psql[@]}" -f "$task_sql/20261020_openrouter_retirement_catchup_recovery.sql" >/dev/null
+"${task_psql[@]}" -c 'ALTER TABLE experience.chat_history ADD COLUMN llm_generation_id text;' >/dev/null
+expect_catchup_reject 'Catch-up recovery requires exactly 12 legacy columns'
+"${task_psql[@]}" -c 'ALTER TABLE experience.chat_history DROP COLUMN llm_generation_id;' >/dev/null
+
 printf 'Retirement passed: real parent/alias DROP, catch-up/conflict/budget/dependency guards, provider views/ACL and real PostgREST repositories.\n'

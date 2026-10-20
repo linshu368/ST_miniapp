@@ -83,3 +83,7 @@ Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：�
 仅两库尚未执行的主表DROP可修改；已执行SQL不变。要求处置成功账本、snapshot schema文件checksum和applied_at作为旧契约边界，再按实际billing.llm_usage_charges/llm_usage_charge_dedup及character_free_chat_quota_decisions只读分类。不把无快照历史的settled_at NULL全部当失败，不对旧pending伪造结算；它们的定价事实/幂等键/专表ID保留，超窗停止自动回捞、独立账务核验。未知成功、现代漏快照、身份/状态冲突及旧字段关联reserved仍拒绝，正常专表流式不阻断。
 
 同一既有PG/PostgREST harness验证两次删列和处置前后业务/账务不变，覆盖非白名单清除、NULL/0、新事实优先、Venice/身份/shape/预算/账本/现代pending/缺快照/NULL逻辑的拒绝及旧pending保留。Production数量/计划/容量另核，超过预算另审forward批次，不改文件或force_rerun扩容。
+
+## Scenario: 已在另一环境执行的 catch-up 在生产超时
+
+已记账原文件不改；保留同checksum失败claim（不适用abandon_claim），新增forward恢复SQL只记自身ledger，文档明确替代关系。先EXPLAIN、再有界只读实测，LIMIT与最终候选数都不能证明扫描成本有界。20261020恢复文件在候选阶段局部使用hash join并恢复planner设置；每批2000、最多两批、4001拒绝，60s/5s全事务失败回滚，不以盲增timeout代替容量设计。只填NULL安全标量/ID、不搬raw JSON；竞争非空ID拒绝覆盖且写后复核provider/identity。已contract目标只在12列全缺且精确匹配原DROP账本时跳过，部分shape或缺账本拒绝。正式执行前按本环境复核容量/旧writer/覆盖，不自动放行后续JSON处置或DROP；既有隔离PG/PostgREST harness覆盖跨批、整笔回滚、预算、冲突和contract分支。

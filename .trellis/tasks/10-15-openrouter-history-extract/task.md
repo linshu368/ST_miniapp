@@ -103,3 +103,11 @@ T9本地结果详见 [专表清退报告](research/t9-provider-alias-retirement-
 - [x] 扩展隔离DB回归与consumer验证、同步文档；最终人工审阅待确认，远端未执行。
 
 T10详情见 [历史处置报告](research/t10-history-disposition-2026-10-16.md)。本地实现与验证完成不代表远端已处置/删列，Production业务分类/容量仍未知。
+
+## T11 Production catch-up 失败恢复（2026-10-20）
+
+- [x] Action39367671410、两环境ledger/生产claim与索引/计划只读核对；hash候选实测7.403s，2815有ID候选，Venice快照冲突零。
+- [x] 新增forward恢复迁移：最多两批各2000、4001拒绝；不改旧SQL/账本/claim。
+- [x] 扩展既有隔离PG/PostgREST回归，完成跨批/拒绝/回滚/消费者/已删列分支检查。
+- [x] 类型/构建/既有测试/静态检查、文档和恢复清单同步，交付最终审阅。
+- [ ] 经独立批准在TEST/Production正式workflow逐文件执行；旧writer/流量/磁盘/复制/后续清理仍需本环境门禁。
