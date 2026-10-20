@@ -64,7 +64,7 @@ last_verified_at: 2026-10-13
 last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
 last_verified_at: 2026-09-14
 
-- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`uncommitted-working-tree`。
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 
 ## T9 专表旧别名清理（本地实现，远端未执行）
 
