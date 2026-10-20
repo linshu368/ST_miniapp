@@ -28,7 +28,6 @@ model MiniappUser {
   payment_orders        miniapp_payment_orders[]
   user_wallets          user_wallets?
   wallet_ledger         wallet_ledger[]
-  wish_roles            wish_roles[]
 
   @@map("users")
   @@schema("app_core")
@@ -227,25 +226,4 @@ model llm_usage_charge_dedup {
 
   @@index([user_id, processed_at(sort: Desc)], map: "idx_llm_usage_charge_dedup_user_processed")
   @@schema("billing")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model wish_roles {
-  id                          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id                     BigInt
-  db_user_id                  String?      @db.Uuid
-  wish_text                   String
-  extra_text                  String?
-  total_paid_amount_at_submit Decimal      @default(0) @db.Decimal(12, 2)
-  reward_credits              Int          @default(1)
-  status                      String       @default("awaiting_extra")
-  created_at                  DateTime     @default(now()) @db.Timestamptz(6)
-  closed_at                   DateTime?    @db.Timestamptz(6)
-  users                       MiniappUser? @relation(fields: [db_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-
-  @@index([status, created_at(sort: Desc)], map: "idx_miniapp_wish_roles_status_created")
-  @@index([user_id, created_at(sort: Desc)], map: "idx_miniapp_wish_roles_user_created")
-  @@schema("miniapp_features")
 }

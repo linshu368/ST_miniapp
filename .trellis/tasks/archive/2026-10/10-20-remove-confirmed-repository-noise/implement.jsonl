@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend 删除、路由与依赖规则"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend route、repository 与运行时配置删除规则"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"Shared wishes 契约和出口删除规则"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"许愿池跨层删除闭合性"}
+{"file":".trellis/spec/docs/process/index.md","reason":"文档与 Trellis spec 清理规则"}

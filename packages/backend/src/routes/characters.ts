@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, type FastifyBaseLogger } from 'fastify';
 import { prisma } from '../lib/db.js';
 import { config } from '../platform/config.js';
 import { LOBBY_FEATURED_POSITION_COUNT, ok, fail, parseLobbySort } from '@miniapp/shared';
@@ -36,12 +36,19 @@ export default async function characterRoutes(app: FastifyInstance) {
   const userSettings = new MiniappUserSettingsRepository();
 
   // 与首页列表用同一套可见性过滤：用户看不到的角色卡不该点亮 New。
-  async function findLatestListedAt(): Promise<Date | null> {
-    const listed = await prisma.character.aggregate({
-      where: { enabled: true, archived_at: null },
-      _max: { last_listed_at: true },
-    });
-    return listed._max.last_listed_at ?? null;
+  async function findLatestListedAt(log: FastifyBaseLogger): Promise<Date | null> {
+    try {
+      const listed = await prisma.character.findFirst({
+        where: { enabled: true, archived_at: null, last_listed_at: { not: null } },
+        orderBy: { last_listed_at: 'desc' },
+        select: { last_listed_at: true },
+      });
+      return listed?.last_listed_at ?? null;
+    } catch (err) {
+      // New 角标只是辅助提醒；角色聚合查询异常时关闭角标，不能让首页跟着不可用。
+      log.warn({ err }, 'Failed to resolve latest character listing timestamp');
+      return null;
+    }
   }
 
   // @frontend-ready: true
@@ -123,7 +130,7 @@ export default async function characterRoutes(app: FastifyInstance) {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const user = await getOrCreateDbUser(request.user);
       const [latestListedAt, lastSeenAt] = await Promise.all([
-        findLatestListedAt(),
+        findLatestListedAt(request.log),
         userSettings.getCharactersLastSeenAt(user.id),
       ]);
 

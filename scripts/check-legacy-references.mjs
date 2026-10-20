@@ -109,12 +109,18 @@ const RULES = [
     id: 'llm-chat-upstream',
     pattern: /['"`][^'"`]*\/chat\/completions/g,
     message:
-      '聊天 LLM 只有一个出口：features/generation/upstream.ts（架构铁律 6）。语音写稿是刻意的例外，见 features/voice/voice-draft.ts',
+      '聊天 LLM 只有一个出口：features/generation/upstream.ts（架构铁律 6）。语音写稿与图片广场辅助任务是按文件列明的例外',
     allow: [
       'packages/backend/src/features/generation/upstream.ts',
       'packages/backend/src/features/generation/upstream.test.ts',
       // Shared provider capability data declares the relative path; only upstream.ts executes it.
       'packages/shared/src/api/models.ts',
+      // 图片广场非流式辅助任务：作品提示词翻译/标签分类，不生成聊天回复、不读写聊天历史，
+      // 不进入用户聊天计费；调用仍归 generation/ 管理，不能豁免整个目录。
+      'packages/backend/src/features/generation/image-plaza-prompt-translate.ts',
+      'packages/backend/src/features/generation/image-plaza-tagging.ts',
+      // 验证同一辅助分类端点及失败降级，不是另一条运行时出口。
+      'packages/backend/src/features/image-plaza/tagging.test.ts',
       // 语音写稿的 DeepSeek 端点：与聊天不同供应商、非流式、抽取任务、按次计费，
       // 业务上确实独立（理由见 features/voice/voice-draft.ts 与 features/voice/billing.ts）
       'packages/backend/src/platform/config.ts',
@@ -163,7 +169,12 @@ const RULES = [
     pattern: /\bbonus_credits\s*=\s*(?:billing\.user_wallets\.)?bonus_credits\s*\+/g,
     message:
       '星尘发放只有一个入口：billing.grant_bonus_credits（钱包 upsert + 加值 + 流水）。发奖 RPC 组好 entry_type / reference / metadata 后调它，禁止再自己 UPDATE user_wallets',
-    allow: ['packages/shared/migrations/20260911_billing_grant_bonus_credits.sql'],
+    allow: [
+      'packages/shared/migrations/20260911_billing_grant_bonus_credits.sql',
+      // 20261012 已是仓库历史；20261013_image_plaza_seed_catalog.sql 会立即以
+      // billing.grant_bonus_credits 重建该 RPC，兼容已应用与未应用的环境。
+      'packages/shared/migrations/20261012_image_plaza_v2.sql',
+    ],
   },
 ];
 

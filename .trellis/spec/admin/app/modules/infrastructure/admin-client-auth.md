@@ -5,8 +5,8 @@ scope: admin
 category: infrastructure
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/09-28-rich-text-process/
-last_verified_at: 2026-09-16
+last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_at: 2026-10-12
 ---
 
 # Admin API、鉴权与环境基建
@@ -38,5 +38,9 @@ last_verified_at: 2026-09-16
 ## 关联模块
 
 `backend.infrastructure.runtime-data-security`、`shared.infrastructure.database-environment`。
+
+## 图片创作广场 V2（2026-10-12）
+
+图片广场配置页只复用 Admin 既有 session、环境切换与 config draft/publish/rollback helper；浏览器不直接访问数据库、不持有 Venice 密钥，也不新建平行鉴权或 API client。
 
 ## 变更记录

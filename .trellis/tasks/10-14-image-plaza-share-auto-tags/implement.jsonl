@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "backend entry"}
+{"file": "packages/backend/src/routes/image-plaza.ts", "reason": "share route"}
+{"file": "packages/backend/src/features/generation/image-upstream.ts", "reason": "text model call pattern"}
+{"file": "packages/shared/src/api/image-plaza.ts", "reason": "share contract"}
