@@ -25,6 +25,8 @@ PY
 "$task_pg_bin/pg_ctl" -D "$task_dir/data" -l "$task_dir/pg.log" -o "-k $task_dir -p $task_pg_port -c listen_addresses=127.0.0.1" -w start >/dev/null
 task_psql=("$task_pg_bin/psql" -X -h "$task_dir" -p "$task_pg_port" -U postgres -d postgres -v ON_ERROR_STOP=1)
 task_sql="$task_root/packages/shared/migrations"
+task_history_file=20261020_openrouter_history_disposition_recovery.sql
+task_drop_file=20261020_chat_history_drop_provider_metadata_recovery.sql
 "${task_psql[@]}" -f "$task_root/scripts/openrouter-retirement-bootstrap.sql" >/dev/null
 "${task_psql[@]}" -f "$task_sql/20260929_venice_chat_history.sql" >/dev/null
 "${task_psql[@]}" -c "INSERT INTO experience.venice_chat_history(chat_history_id,llm_generation_id,llm_latency,llm_usage) VALUES('00000000-0000-0000-0000-000000000002','venice-fixture',7,'0'); GRANT SELECT ON experience.venice_chat_history TO cs_persona_reader;" >/dev/null
@@ -34,7 +36,7 @@ done
 # A valid missing historical identity, a proven no-ID scalar, and an unknown no-ID scalar.
 "${task_psql[@]}" -c "DELETE FROM experience.openrouter_chat_history WHERE chat_history_id='00000000-0000-0000-0000-000000000001'; CREATE TABLE experience.view_shape AS SELECT attname,atttypid,atttypmod,attnum FROM pg_attribute WHERE attrelid='experience.current_chat_history'::regclass AND attnum>0;" >/dev/null
 expect_reject() {
- if "${task_psql[@]}" -f "$task_sql/20261016_chat_history_drop_provider_metadata.sql" >"$task_dir/reject.log" 2>&1; then
+ if "${task_psql[@]}" -f "$task_sql/$task_drop_file" >"$task_dir/reject.log" 2>&1; then
   echo 'FAIL: premature DROP was accepted' >&2; exit 1
  fi
  rg -q "$1" "$task_dir/reject.log"
@@ -291,7 +293,7 @@ expect_alias_reject 'Unexpected OpenRouter alias/canonical shape'
 expect_reject 'Legacy diagnostic JSON requires'
 # History disposal preserves controlled facts while discarding sensitive extras.
 expect_disposition_reject() {
- if "${task_psql[@]}" -f "$task_sql/20261016_openrouter_history_disposition.sql" >"$task_dir/history-reject.log" 2>&1; then
+ if "${task_psql[@]}" -f "$task_sql/$task_history_file" >"$task_dir/history-reject.log" 2>&1; then
   echo "FAIL: unsafe historical disposition accepted ($1)" >&2; exit 1
  fi
  rg -q "$1" "$task_dir/history-reject.log"
@@ -315,7 +317,9 @@ UPDATE experience.chat_history SET llm_generation_data='{"id":"or-fixture","usag
 UPDATE experience.openrouter_chat_history SET llm_generation_data='{"usage":0,"headers":{"authorization":"synthetic-only"},"error":{"code":500,"message":"synthetic-only"}}' WHERE chat_history_id='00000000-0000-0000-0000-000000000001';
 INSERT INTO experience.chat_history(model,llm_generation_data) SELECT 'history-budget-fixture','{}'::jsonb FROM generate_series(1,2001);
 SQL
+task_history_file=20261016_openrouter_history_disposition.sql
 expect_disposition_reject 'History disposition exceeds reviewed 2000-row budget'
+task_history_file=20261020_openrouter_history_disposition_recovery.sql
 "${task_psql[@]}" -c "DELETE FROM experience.chat_history WHERE model='history-budget-fixture'; CREATE TABLE experience.parent_before_history AS SELECT id,user_input,assistant_reply,history,status,llm_finish_reason,llm_charge_id,llm_billing_snapshot,llm_billing_settled_at FROM experience.chat_history;" >/dev/null
 # Inject a competing rewrite at the final parent clear to verify CAS rollback.
 "${task_psql[@]}" >/dev/null <<'SQL'
@@ -333,7 +337,7 @@ END $$;
 DROP TRIGGER disposition_race_fixture ON experience.chat_history;
 DROP FUNCTION experience.disposition_race_fixture();
 SQL
-"${task_psql[@]}" -f "$task_sql/20261016_openrouter_history_disposition.sql" >/dev/null
+"${task_psql[@]}" -f "$task_sql/$task_history_file" >/dev/null
 "${task_psql[@]}" >/dev/null <<'SQL'
 DO $$ BEGIN
  IF EXISTS (SELECT 1 FROM experience.chat_history WHERE llm_generation_data IS NOT NULL) THEN RAISE EXCEPTION 'raw diagnostics remain'; END IF;
@@ -344,8 +348,64 @@ DO $$ BEGIN
 END $$;
 DROP TABLE experience.parent_before_history;
 SQL
+# Multiple independently committed batches: failure preserves earlier progress and rolls back only the failing batch.
+"${task_psql[@]}" >/dev/null <<'SQL'
+INSERT INTO experience.chat_history(id,model,llm_generation_data)
+SELECT ('f0000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,
+ 'disposition-recovery-fixture','{"usage":0,"finish_reason":"stop","external_user":"synthetic-only"}'::jsonb
+FROM generate_series(1,300001) n;
+SQL
+expect_disposition_reject 'History disposition recovery exceeds 300000-row budget'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DELETE FROM experience.chat_history WHERE model='disposition-recovery-fixture' AND id>'f0000000-0000-0000-0000-000000006001';
+INSERT INTO experience.openrouter_chat_history(chat_history_id,llm_generation_data)
+SELECT id,'{"usage":0,"headers":{"authorization":"synthetic-only"}}'::jsonb
+FROM experience.chat_history WHERE model='disposition-recovery-fixture';
+CREATE TABLE experience.disposition_parent_before AS TABLE experience.chat_history;
+CREATE TABLE experience.disposition_detail_before AS TABLE experience.openrouter_chat_history;
+CREATE FUNCTION experience.disposition_second_batch_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF NEW.id='f0000000-0000-0000-0000-000000006001' THEN RAISE EXCEPTION 'synthetic history last batch failure'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER disposition_second_batch_failure BEFORE UPDATE OF llm_generation_data ON experience.chat_history
+ FOR EACH ROW EXECUTE FUNCTION experience.disposition_second_batch_failure();
+SQL
+expect_disposition_reject 'synthetic history last batch failure'
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS (SELECT 1 FROM experience.chat_history WHERE id='f0000000-0000-0000-0000-000000000001' AND llm_generation_data IS NOT NULL)
+ OR NOT EXISTS (SELECT 1 FROM experience.openrouter_chat_history WHERE chat_history_id='f0000000-0000-0000-0000-000000000001' AND usage='0')
+ OR NOT EXISTS (SELECT 1 FROM experience.chat_history WHERE id='f0000000-0000-0000-0000-000000006001' AND llm_generation_data IS NOT NULL)
+ OR EXISTS (SELECT 1 FROM experience.openrouter_chat_history WHERE chat_history_id='f0000000-0000-0000-0000-000000006001' AND usage IS NOT NULL)
+ THEN RAISE EXCEPTION 'disposition batch progress/rollback violated'; END IF;
+END $$;
+DROP TRIGGER disposition_second_batch_failure ON experience.chat_history;
+DROP FUNCTION experience.disposition_second_batch_failure();
+SQL
+"${task_psql[@]}" -f "$task_sql/$task_history_file" >/dev/null
+# Re-entry must visit the fixed manifest once, including already normalized provider JSON.
+"${task_psql[@]}" -c "CREATE TABLE experience.disposition_updated_before AS SELECT chat_history_id,updated_at FROM experience.openrouter_chat_history;" >/dev/null
+"${task_psql[@]}" -f "$task_sql/$task_history_file" >/dev/null
+"${task_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF EXISTS (SELECT chat_history_id,updated_at FROM experience.openrouter_chat_history EXCEPT SELECT * FROM experience.disposition_updated_before) THEN RAISE EXCEPTION 're-entry rewrote normalized provider rows'; END IF;
+ IF EXISTS (SELECT 1 FROM experience.chat_history WHERE llm_generation_data IS NOT NULL)
+ OR (SELECT count(*) FROM experience.openrouter_chat_history o JOIN experience.chat_history h ON h.id=o.chat_history_id
+ WHERE h.model='disposition-recovery-fixture' AND o.usage='0' AND o.finish_reason='stop'
+ AND o.llm_generation_data='{"usage":0}'::jsonb)<>6001
+ THEN RAISE EXCEPTION 'disposition recovery lost second batch, zeros, or whitelist'; END IF;
+ IF EXISTS (SELECT id,user_input,assistant_reply,history,status,llm_finish_reason,llm_charge_id,llm_billing_snapshot,llm_billing_settled_at FROM experience.chat_history
+ EXCEPT SELECT id,user_input,assistant_reply,history,status,llm_finish_reason,llm_charge_id,llm_billing_snapshot,llm_billing_settled_at FROM experience.disposition_parent_before)
+ THEN RAISE EXCEPTION 'disposition recovery changed business facts'; END IF;
+END $$;
+DELETE FROM experience.chat_history WHERE model='disposition-recovery-fixture';
+DROP TABLE experience.disposition_parent_before, experience.disposition_detail_before, experience.disposition_updated_before;
+SQL
 expect_reject 'Reviewed history disposition must be applied and recorded first'
-"${task_psql[@]}" -c "INSERT INTO supabase_migrations.repo_migrations(filename,checksum) VALUES('20261016_openrouter_history_disposition.sql','synthetic-local-ledger');" >/dev/null
+"${task_psql[@]}" -c "INSERT INTO supabase_migrations.repo_migrations(filename,checksum) VALUES('20261020_openrouter_history_disposition_recovery.sql','drift');" >/dev/null
+expect_reject 'Reviewed history disposition must be applied and recorded first'
+task_history_checksum="$(shasum -a 256 "$task_sql/$task_history_file" | cut -d ' ' -f 1)"
+"${task_psql[@]}" -c "UPDATE supabase_migrations.repo_migrations SET checksum='$task_history_checksum' WHERE filename='$task_history_file';" >/dev/null
 
 "${task_psql[@]}" -c "UPDATE experience.chat_history SET llm_charge_id='00000000-0000-0000-0000-000000000201' WHERE id='00000000-0000-0000-0000-000000000001';" >/dev/null
 expect_reject 'Historical billing/quota closure not proven'
@@ -374,7 +434,7 @@ expect_reject 'Historical billing/quota closure not proven'
 "${task_psql[@]}" -c "UPDATE billing.llm_usage_charge_dedup SET status='pending' WHERE charge_key='00000000-0000-0000-0000-000000000243'; UPDATE supabase_migrations.repo_migrations SET checksum='drift' WHERE filename='20260911_chat_history_billing_settlement.sql';" >/dev/null
 expect_reject 'Billing schema boundary ledger missing or drifted'
 "${task_psql[@]}" -c "UPDATE supabase_migrations.repo_migrations SET checksum='f32b5fcec327217bd6591066d1f7e1c758f8b9e372cda3adbc08b6758bf7e9ea' WHERE filename='20260911_chat_history_billing_settlement.sql'; CREATE TABLE billing.charges_before AS TABLE billing.llm_usage_charges; CREATE TABLE billing.dedup_before AS TABLE billing.llm_usage_charge_dedup; CREATE TABLE billing.quota_before AS TABLE billing.character_free_chat_quota_decisions;" >/dev/null
-"${task_psql[@]}" -f "$task_sql/20261016_chat_history_drop_provider_metadata.sql" >/dev/null
+"${task_psql[@]}" -f "$task_sql/$task_drop_file" >/dev/null
 "${task_psql[@]}" >/dev/null <<'SQL'
 DO $$ BEGIN
  IF EXISTS (SELECT * FROM billing.llm_usage_charges EXCEPT SELECT * FROM billing.charges_before) OR EXISTS (SELECT * FROM billing.charges_before EXCEPT SELECT * FROM billing.llm_usage_charges) THEN RAISE EXCEPTION 'charges changed'; END IF;
@@ -423,6 +483,7 @@ expect_reject 'Expected exactly 12 legacy columns'
 expect_catchup_reject 'Contracted history requires matching reviewed DROP ledger'
 "${task_psql[@]}" -c "INSERT INTO supabase_migrations.repo_migrations(filename,checksum) VALUES('20261016_chat_history_drop_provider_metadata.sql','d1b410064f06b63a40a9c15a9b8148e3e43cf3cfdbadaba198b60fcbd7766852');" >/dev/null
 "${task_psql[@]}" -f "$task_sql/20261020_openrouter_retirement_catchup_recovery.sql" >/dev/null
+"${task_psql[@]}" -f "$task_sql/$task_history_file" >/dev/null
 "${task_psql[@]}" -c 'ALTER TABLE experience.chat_history ADD COLUMN llm_generation_id text;' >/dev/null
 expect_catchup_reject 'Catch-up recovery requires exactly 12 legacy columns'
 "${task_psql[@]}" -c 'ALTER TABLE experience.chat_history DROP COLUMN llm_generation_id;' >/dev/null

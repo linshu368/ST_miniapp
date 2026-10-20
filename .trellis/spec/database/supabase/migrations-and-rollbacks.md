@@ -91,3 +91,16 @@ Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：�
 ## Scenario: 外部分析视图阻止 provider contract
 
 发现analytics_grafana等现场兼容报表引用旧字段时，不删依赖守卫、不CASCADE、不改已执行SQL。先明确既有兼容schema与miniapp_analytics业务归属，采集真实pg_get_viewdef/列/ACL/owner/options/comments/索引及下游/刷新，再新增前向修复。只对精确已核验指纹做有界源字段替换，保留业务finish_reason、币种/单位/账务公式；需补canonical时仅同OR行NULL-safe、冲突/provider重叠及2000预算守卫并固定候选ID。物化视图先在暂存名WITH DATA构建/建唯一索引，再取得短DDL锁、复核结构与权限漂移、原子切换名称/包装视图、RESTRICT删除旧对象并恢复ACL/comments/index；不得上线WITH NO DATA后等待异步刷新。每条语句60s、锁5s，失败包括metadata补齐全部回滚；无该外部schema安全跳过，部分/未知依赖/定义漂移拒绝。正式psql文件可用\gexec拆分两条有界CREATE，不新增数据库函数/API。既有PG/PostgREST回归必须覆盖默认ACL撤销、下游OID、第二MV失败/暂存漂移回滚及真正两处DROP后报表和并发刷新。源表与账务不因分析修复改写，生产容量/刷新窗口及后续清理仍各自门禁。
+
+### 2026-10-20 历史 JSON 处置超预算恢复
+
+生产原 `20261016_openrouter_history_disposition.sql` 在 `LIMIT 2001` 容量守卫处失败，尚未写业务表；2001 是截断结果，不代表真实总量。原文件及同 checksum 的失败 claim 保持不变，不清 claim、不伪造原成功账本，也不使用 force_rerun 扩容。
+
+替代执行顺序（仍通过 Database Migration workflow，一次一个文件，先 TEST 后 Production）：
+
+1. `packages/shared/migrations/20261020_openrouter_history_disposition_recovery.sql`：固定候选 ID 清单，每批最多 2000，总计最多 300000（最多 150 批）；300001 拒绝，5s 锁/每批语句 60s，每批独立事务提交。保留原 JSON 白名单、provider/ID、Venice 保全、canonical 非空优先与指纹 CAS；仅清主表旧 JSON 和规范化 OR 诊断，不改正文/终态/计费。非白名单诊断丢弃仍不可恢复。已规范化的非空 OR JSON 仍属于候选，所以必须按固定 ID 分页。失败仅回滚当前批，已提交批次保留；重入仍验证全部候选，但不改写已经规范化且 canonical 齐全的 OR 行。全部批次及主表 raw 归零复核成功后才记录新文件自己的账本。已删列的 TEST 只在原 DROP 精确 checksum 账本匹配时跳过。
+2. 核验恢复文件 ledger/checksum、主表旧 JSON 归零、OR 白名单、业务事实不变、锁/容量后，另行执行 `packages/shared/migrations/20261020_chat_history_drop_provider_metadata_recovery.sql`。它接受原处置账本或精确匹配恢复文件 checksum 的账本，保留原 DROP 的全部依赖/字段保全/账务/额度守卫；替代原主表 DROP，不再重跑原处置或原 DROP。
+
+2026-10-20 Production（wbtsfzozlmurljvglhpn）只读 count 实测候选 295383；先前 4001 为截断聚合。总预算据此设为 300000，并在读取/指纹 JSON 前检查；候选阶段局部 hash join，避免 UUID 顺序访问大表。WAL/磁盘/复制余量、旧 writer 退出与执行窗口仍需本环境核验；若超过预算停止，不改已应用文件。结构已由新 DROP 收缩的环境无需重跑恢复文件。恢复后只能部署兼容 canonical 字段的 Backend，重加 NULL 列不能恢复已丢弃诊断。
+
+验证：既有隔离 PG17/PostgREST harness 覆盖 6001 行跨四批、末批失败保留前批进度且回滚当前批、重入不改写已规范化行、300001 预算拒绝、JSON/身份/Venice/CAS/账本 checksum 拒绝，以及真正删列后的 repository、报表和物化刷新。原处置 SQL 与原 DROP 文件未改。此为本地修复，未执行远端迁移或提交推送。

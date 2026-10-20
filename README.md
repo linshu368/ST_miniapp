@@ -228,3 +228,5 @@ T10 新增 `20261016_openrouter_history_disposition.sql`，先按现有mapper白
 ### 2026-10-20 Grafana provider 元数据依赖修复
 
 生产analytics_grafana的v_llm_calls及两张成本/免费额度MV仍依赖旧字段，原alias DROP正确拒绝。先执行新增`20261020_grafana_provider_metadata_dependencies.sql`，再重试原alias DROP；旧文件不可改、无需清同checksum claim。修复仅维护既有分析兼容schema（归属miniapp_analytics派生分析），以精确源定义/依赖/预算守卫、预填充替代MV和单事务切换保留查询名称/权限/索引/注释/下游view OID及刷新调度，OR改读canonical并移除主表待删metadata引用，保留业务finish_reason/账务公式。TEST无该schema安全跳过；本地真实PG/PostgREST双DROP回归不替代远端执行。证据、验证与生产恢复见`.trellis/tasks/10-15-openrouter-history-extract/research/t12-grafana-provider-dependency-repair-2026-10-20.md`。
+
+2026-10-20 历史 JSON 处置恢复新增 `20261020_openrouter_history_disposition_recovery.sql`（固定 ID、每批 2000 独立提交、总上限 300000、安全重入）及独立 `20261020_chat_history_drop_provider_metadata_recovery.sql`（接受恢复文件精确 checksum 账本，保留原删列守卫）。旧文件/失败 claim 不改；生产只读候选实测 295383，超过 300000 预算拒绝。执行顺序、TEST/Production 门禁及不可恢复诊断清理边界见 [迁移说明](packages/shared/migrations/README.md)。

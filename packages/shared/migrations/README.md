@@ -118,3 +118,16 @@ npx prisma generate
 ### 2026-10-20 Grafana provider 元数据依赖修复
 
 生产analytics_grafana的v_llm_calls及两张成本/免费额度MV仍依赖旧字段，原alias DROP正确拒绝。先执行新增`20261020_grafana_provider_metadata_dependencies.sql`，再重试原alias DROP；旧文件不可改、无需清同checksum claim。修复仅维护既有分析兼容schema（归属miniapp_analytics派生分析），以精确源定义/依赖/预算守卫、预填充替代MV和单事务切换保留查询名称/权限/索引/注释/下游view OID及刷新调度，OR改读canonical并移除主表待删metadata引用，保留业务finish_reason/账务公式。TEST无该schema安全跳过；本地真实PG/PostgREST双DROP回归不替代远端执行。证据、验证与生产恢复见`.trellis/tasks/10-15-openrouter-history-extract/research/t12-grafana-provider-dependency-repair-2026-10-20.md`。
+
+### 2026-10-20 历史 JSON 处置超预算恢复
+
+生产原 `20261016_openrouter_history_disposition.sql` 在 `LIMIT 2001` 容量守卫处失败，尚未写业务表；2001 是截断结果，不代表真实总量。原文件及同 checksum 的失败 claim 保持不变，不清 claim、不伪造原成功账本，也不使用 force_rerun 扩容。
+
+替代执行顺序（仍通过 Database Migration workflow，一次一个文件，先 TEST 后 Production）：
+
+1. `packages/shared/migrations/20261020_openrouter_history_disposition_recovery.sql`：固定候选 ID 清单，每批最多 2000，总计最多 300000（最多 150 批）；300001 拒绝，5s 锁/每批语句 60s，每批独立事务提交。保留原 JSON 白名单、provider/ID、Venice 保全、canonical 非空优先与指纹 CAS；仅清主表旧 JSON 和规范化 OR 诊断，不改正文/终态/计费。非白名单诊断丢弃仍不可恢复。已规范化的非空 OR JSON 仍属于候选，所以必须按固定 ID 分页。失败仅回滚当前批，已提交批次保留；重入仍验证全部候选，但不改写已经规范化且 canonical 齐全的 OR 行。全部批次及主表 raw 归零复核成功后才记录新文件自己的账本。已删列的 TEST 只在原 DROP 精确 checksum 账本匹配时跳过。
+2. 核验恢复文件 ledger/checksum、主表旧 JSON 归零、OR 白名单、业务事实不变、锁/容量后，另行执行 `packages/shared/migrations/20261020_chat_history_drop_provider_metadata_recovery.sql`。它接受原处置账本或精确匹配恢复文件 checksum 的账本，保留原 DROP 的全部依赖/字段保全/账务/额度守卫；替代原主表 DROP，不再重跑原处置或原 DROP。
+
+2026-10-20 Production（wbtsfzozlmurljvglhpn）只读 count 实测候选 295383；先前 4001 为截断聚合。总预算据此设为 300000，并在读取/指纹 JSON 前检查；候选阶段局部 hash join，避免 UUID 顺序访问大表。WAL/磁盘/复制余量、旧 writer 退出与执行窗口仍需本环境核验；若超过预算停止，不改已应用文件。结构已由新 DROP 收缩的环境无需重跑恢复文件。恢复后只能部署兼容 canonical 字段的 Backend，重加 NULL 列不能恢复已丢弃诊断。
+
+验证：既有隔离 PG17/PostgREST harness 覆盖 6001 行跨四批、末批失败保留前批进度且回滚当前批、重入不改写已规范化行、300001 预算拒绝、JSON/身份/Venice/CAS/账本 checksum 拒绝，以及真正删列后的 repository、报表和物化刷新。原处置 SQL 与原 DROP 文件未改。此为本地修复，未执行远端迁移或提交推送。
