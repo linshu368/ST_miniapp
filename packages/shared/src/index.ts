@@ -26,7 +26,6 @@ export * from './api/voice';
 export * from './api/images';
 export * from './api/image-plaza';
 export * from './api/wishes';
-export * from './api/cs-platform';
 export * from './api/growth';
 export * from './api/invite';
 export * from './api/community';
@@ -38,14 +37,17 @@ export * from './api/telemetry';
 export * from './api/text-postprocess';
 export {
   applyTextPostprocess,
+  diagnoseRichReplyProtocol,
   prepareSlotTransport,
   resolveTransportedTextNodes,
   resolveTrustedTree,
   serializeScopedCss,
   validateCompiledArtifact,
 } from './text-postprocess/runtime';
+export type { RichReplyDiagnosis, RichReplyResult } from './text-postprocess/runtime';
 export {
   LEGACY_RICH_REPLY_CSS,
+  RICH_REPLY_BODY_RULE_ID,
   RICH_REPLY_RULE_STYLES,
 } from './text-postprocess/rich-reply-styles';
 export * from './api/admin-model-test';

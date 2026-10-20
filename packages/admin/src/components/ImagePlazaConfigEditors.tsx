@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import {
   Alert,
+  App as AntApp,
   Button,
   Card,
   Col,
+  Descriptions,
   Input,
   InputNumber,
   Row,
@@ -19,6 +21,14 @@ import type {
   ImagePlazaTagConfig,
   ProviderImagePlazaModel,
 } from '@miniapp/shared';
+import { ImagePlazaTagConfigSchema } from '@miniapp/shared';
+import {
+  calculateImagePlazaPrice,
+  imagePlazaPriceKey,
+  IMAGE_PLAZA_PRICING_INPUT_MAX,
+  recalculateImagePlazaCatalog,
+  type ImagePlazaPricingFactors,
+} from '../lib/imagePlazaPricing';
 
 const RATIOS: ImagePlazaAspectRatio[] = [
   '1:1',
@@ -37,6 +47,27 @@ export function ImagePlazaModelCatalogEditor(props: {
   disabled?: boolean;
   onChange: (value: ImagePlazaModelCatalog) => void;
 }) {
+  const { message } = AntApp.useApp();
+  const [factors, setFactors] = useState<ImagePlazaPricingFactors>({
+    exchange: 7.3,
+    markup: 2,
+    ratio: 100,
+  });
+  const standardPrices = props.value.standard_prices ?? {};
+  const recalculated = recalculateImagePlazaCatalog(props.value, standardPrices, factors);
+  const exampleModel = props.value.models.find((model) =>
+    model.resolutions.some((tier) =>
+      calculateImagePlazaPrice(standardPrices[imagePlazaPriceKey(model.id, tier.id)], factors)
+    )
+  );
+  const exampleTier = exampleModel?.resolutions.find((tier) =>
+    calculateImagePlazaPrice(standardPrices[imagePlazaPriceKey(exampleModel.id, tier.id)], factors)
+  );
+  const exampleUsd =
+    exampleModel && exampleTier
+      ? standardPrices[imagePlazaPriceKey(exampleModel.id, exampleTier.id)]
+      : null;
+  const examplePrice = calculateImagePlazaPrice(exampleUsd, factors);
   const patchModel = (index: number, patch: Partial<ProviderImagePlazaModel>) => {
     const models = structuredClone(props.value.models);
     models[index] = { ...models[index], ...patch };
@@ -50,6 +81,90 @@ export function ImagePlazaModelCatalogEditor(props: {
         message="用户端只读取已发布目录"
         description="业务 ID 发布后保持稳定；Anime 的 provider ID 为 wai-Illustrious。报价和扣费均读取各分辨率的上架星尘价，有参考图不加价。"
       />
+      <Card size="small" title="统一定价参数（仅本次页面有效）">
+        <Space direction="vertical" className="editor-stack">
+          <Typography.Text type="secondary">
+            请填写每个模型各档位的 USD
+            标准价（含下架模型）。标准价随“保存草稿”保存，刷新后可继续使用；以下统一参数仅本次页面有效。
+          </Typography.Text>
+          <Space wrap>
+            <Typography.Text strong>原平台价 USD ×</Typography.Text>
+            <InputNumber
+              aria-label="统一汇率"
+              addonBefore="汇率"
+              min={0.0001}
+              max={IMAGE_PLAZA_PRICING_INPUT_MAX}
+              precision={4}
+              value={factors.exchange}
+              disabled={props.disabled}
+              onChange={(exchange) => setFactors((current) => ({ ...current, exchange }))}
+            />
+            <Typography.Text>×</Typography.Text>
+            <InputNumber
+              aria-label="统一加价倍率"
+              addonBefore="加价倍率"
+              min={0.0001}
+              max={IMAGE_PLAZA_PRICING_INPUT_MAX}
+              precision={4}
+              value={factors.markup}
+              disabled={props.disabled}
+              onChange={(markup) => setFactors((current) => ({ ...current, markup }))}
+            />
+            <Typography.Text>×</Typography.Text>
+            <InputNumber
+              aria-label="每元星尘数"
+              addonAfter="星尘 = 1 元"
+              min={0.0001}
+              max={IMAGE_PLAZA_PRICING_INPUT_MAX}
+              precision={4}
+              value={factors.ratio}
+              disabled={props.disabled}
+              onChange={(ratio) => setFactors((current) => ({ ...current, ratio }))}
+            />
+            <Button
+              type="primary"
+              disabled={props.disabled || !recalculated.catalog}
+              onClick={() => {
+                if (props.disabled || !recalculated.catalog) return;
+                props.onChange(recalculated.catalog);
+                message.success('已重算所有模型档位的上架价；请保存草稿并发布后生效。');
+              }}
+            >
+              一键重算
+            </Button>
+          </Space>
+          <Typography.Text type="secondary">
+            尾数不足 10
+            星尘自动向上补整十。修改参数只更新预览，点击重算才会覆盖上架价草稿（包括手工价格）。
+          </Typography.Text>
+          {recalculated.issues.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              message={`暂不能批量重算：${recalculated.issues.length} 个档位缺少有效标准价、参数无效或结果超出安全范围`}
+              description={`请检查：${recalculated.issues.join('；')}。输入必须大于 0、不超过 1,000,000，最多四位小数。`}
+            />
+          )}
+        </Space>
+      </Card>
+      <Card size="small" title="定价公式预览">
+        <Descriptions column={1} size="small">
+          <Descriptions.Item label="公式">
+            星尘价 = 向上补整十（USD × 汇率 × 加价倍率 × 每元星尘数）
+          </Descriptions.Item>
+          <Descriptions.Item label="示例">
+            {examplePrice && exampleModel && exampleTier
+              ? `${exampleModel.name} / ${exampleTier.label} (${exampleTier.id})：${exampleUsd} × ${factors.exchange} × ${factors.markup} × ${factors.ratio} = ${examplePrice.raw} → ${examplePrice.credits} 星尘`
+              : '填写至少一个档位的有效 USD 标准价和统一参数后显示实时示例。'}
+          </Descriptions.Item>
+          <Descriptions.Item label="换算">
+            {factors.ratio ?? '—'} 星尘 = 1 元人民币；此比例仅用于本页计算，不修改钱包或充值配置。
+          </Descriptions.Item>
+          <Descriptions.Item label="生效">
+            重算仅修改当前草稿，保存并发布后供新生成使用；历史订单不回溯。
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
       <div>
         <Typography.Text strong>默认模型</Typography.Text>
         <Select
@@ -181,8 +296,19 @@ export function ImagePlazaModelCatalogEditor(props: {
                 {model.resolutions.map((tier, tierIndex) => (
                   <PricingRow
                     key={tier.id}
-                    label={tier.label}
+                    label={`${tier.label} (${tier.id})`}
                     credits={tier.credits}
+                    usd={standardPrices[imagePlazaPriceKey(model.id, tier.id)] ?? null}
+                    factors={factors}
+                    onUsdChange={(usd) =>
+                      props.onChange({
+                        ...props.value,
+                        standard_prices: {
+                          ...standardPrices,
+                          [imagePlazaPriceKey(model.id, tier.id)]: usd,
+                        },
+                      })
+                    }
                     disabled={props.disabled}
                     onChange={(credits) => {
                       const resolutions = structuredClone(model.resolutions);
@@ -203,55 +329,41 @@ export function ImagePlazaModelCatalogEditor(props: {
 function PricingRow(props: {
   label: string;
   credits: number;
+  usd: number | null;
+  factors: ImagePlazaPricingFactors;
+  onUsdChange: (value: number | null) => void;
   disabled?: boolean;
   onChange: (value: number) => void;
 }) {
-  const [usd, setUsd] = useState(1);
-  const [exchange, setExchange] = useState(7.2);
-  const [markup, setMarkup] = useState(1.5);
-  const [ratio, setRatio] = useState(10);
-  const calculate = () =>
-    props.onChange(Math.max(10, Math.ceil((usd * exchange * markup * ratio) / 10) * 10));
+  const price = calculateImagePlazaPrice(props.usd, props.factors);
   return (
     <Card size="small">
       <Space wrap>
         <Typography.Text strong>{props.label}</Typography.Text>
         <InputNumber
-          addonBefore="USD"
-          min={0}
+          aria-label={`${props.label} USD 标准价`}
+          addonBefore="USD 标准价"
+          placeholder="本次必填"
+          min={0.0001}
+          max={IMAGE_PLAZA_PRICING_INPUT_MAX}
           precision={4}
-          value={usd}
+          value={props.usd}
           disabled={props.disabled}
-          onChange={(value) => setUsd(value ?? 0)}
+          onChange={props.onUsdChange}
         />
-        <InputNumber
-          addonBefore="汇率"
-          min={0.01}
-          precision={4}
-          value={exchange}
-          disabled={props.disabled}
-          onChange={(value) => setExchange(value ?? 0.01)}
-        />
-        <InputNumber
-          addonBefore="倍率"
-          min={0.01}
-          precision={4}
-          value={markup}
-          disabled={props.disabled}
-          onChange={(value) => setMarkup(value ?? 0.01)}
-        />
-        <InputNumber
-          addonBefore="比例"
-          min={0.01}
-          precision={4}
-          value={ratio}
-          disabled={props.disabled}
-          onChange={(value) => setRatio(value ?? 0.01)}
-        />
-        <Button disabled={props.disabled} onClick={calculate}>
+        <Typography.Text type="secondary">
+          {price ? `预览：${price.raw} → ${price.credits} 星尘` : '请填写有效标准价及统一参数'}
+        </Typography.Text>
+        <Button
+          disabled={props.disabled || !price}
+          onClick={() => {
+            if (!props.disabled && price) props.onChange(price.credits);
+          }}
+        >
           重算
         </Button>
         <InputNumber
+          aria-label={`${props.label} 上架星尘价`}
           addonBefore="上架价"
           min={1}
           precision={0}
@@ -364,6 +476,12 @@ export function ImagePlazaTagsEditor(props: {
   disabled?: boolean;
   onChange: (value: ImagePlazaTagConfig) => void;
 }) {
+  // 业务 ID 可编辑，不能用作 React key；行标识只属于 UI，不进入保存的配置。
+  const [rowKeys, setRowKeys] = useState(() => props.value.map(() => crypto.randomUUID()));
+  if (rowKeys.length !== props.value.length) {
+    setRowKeys(props.value.map(() => crypto.randomUUID()));
+  }
+  const validation = ImagePlazaTagConfigSchema.safeParse(props.value);
   const update = (index: number, patch: Partial<ImagePlazaTagConfig[number]>) => {
     const next = structuredClone(props.value);
     next[index] = { ...next[index], ...patch };
@@ -377,6 +495,14 @@ export function ImagePlazaTagsEditor(props: {
         message="“全部”是系统固定标签"
         description="删除运营标签只影响后续筛选入口，不会删除作品或改写历史作品标签。"
       />
+      {!validation.success && (
+        <Alert
+          type="warning"
+          showIcon
+          message="请完善标签后保存，当前输入会保留"
+          description={validation.error.issues.map((issue) => issue.message).join('；')}
+        />
+      )}
       <Card size="small">
         <Row gutter={12}>
           <Col span={8}>
@@ -391,11 +517,12 @@ export function ImagePlazaTagsEditor(props: {
         </Row>
       </Card>
       {props.value.map((tag, index) => (
-        <Card key={`${tag.id}-${index}`} size="small">
+        <Card key={rowKeys[index]} size="small">
           <Row gutter={[12, 12]} align="middle">
             <Col xs={24} md={7}>
               <Input
                 addonBefore="ID"
+                aria-label={`标签 ${index + 1} ID`}
                 value={tag.id}
                 disabled={props.disabled}
                 onChange={(event) => update(index, { id: event.target.value })}
@@ -404,6 +531,7 @@ export function ImagePlazaTagsEditor(props: {
             <Col xs={24} md={7}>
               <Input
                 addonBefore="名称"
+                aria-label={`标签 ${index + 1} 名称`}
                 value={tag.label}
                 disabled={props.disabled}
                 onChange={(event) => update(index, { label: event.target.value })}
@@ -430,9 +558,10 @@ export function ImagePlazaTagsEditor(props: {
                 danger
                 block
                 disabled={props.disabled}
-                onClick={() =>
-                  props.onChange(props.value.filter((_, itemIndex) => itemIndex !== index))
-                }
+                onClick={() => {
+                  setRowKeys((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                  props.onChange(props.value.filter((_, itemIndex) => itemIndex !== index));
+                }}
               >
                 删除
               </Button>
@@ -443,7 +572,8 @@ export function ImagePlazaTagsEditor(props: {
       <Button
         block
         disabled={props.disabled}
-        onClick={() =>
+        onClick={() => {
+          setRowKeys((current) => [...current, crypto.randomUUID()]);
           props.onChange([
             ...props.value,
             {
@@ -452,8 +582,8 @@ export function ImagePlazaTagsEditor(props: {
               enabled: true,
               sort_order: props.value.length,
             },
-          ])
-        }
+          ]);
+        }}
       >
         添加标签
       </Button>

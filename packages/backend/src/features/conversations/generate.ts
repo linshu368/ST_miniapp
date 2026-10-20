@@ -14,7 +14,7 @@
 
 import { GenerationCleanupPendingError } from '../generation/types.js';
 import type { SseTapResult } from '../generation/upstream.js';
-import type { ChatMessageStatus } from '@miniapp/shared';
+import { diagnoseRichReplyProtocol, type ChatMessageStatus } from '@miniapp/shared';
 import { buildPrompt, fetchPlatformInstructions, type EngineCharacter } from '../engine/index.js';
 import type { InstructionSlotModes } from '../engine/types.js';
 import {
@@ -24,6 +24,9 @@ import {
   type GenerationStatus,
 } from '../generation/index.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
+import { VeniceChatHistoryRepository } from '../../infrastructure/repositories/VeniceChatHistoryRepository.js';
+import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositories/OpenRouterChatHistoryRepository.js';
+import { TextPostprocessRepository } from '../text-postprocess/repository.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import {
   CharacterCardRepository,
@@ -65,6 +68,8 @@ export interface RunConversationTurnInput {
 let historyRepository: ConversationHistoryRepository | null = null;
 let characterRepository: CharacterCardRepository | null = null;
 let userSettingsRepository: MiniappUserSettingsRepository | null = null;
+let veniceHistoryRepository: VeniceChatHistoryRepository | null = null;
+let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
 
 function historyRecords(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
@@ -74,6 +79,9 @@ function characters(): CharacterCardRepository {
 }
 function userSettings(): MiniappUserSettingsRepository {
   return (userSettingsRepository ??= new MiniappUserSettingsRepository());
+}
+function openRouterHistory(): OpenRouterChatHistoryRepository {
+  return (openRouterHistoryRepository ??= new OpenRouterChatHistoryRepository());
 }
 
 export function toMessageStatus(status: GenerationStatus): SettledMessageStatus {
@@ -231,6 +239,24 @@ export async function runConversationTurn(
     const result = await execute(
       request,
       {
+        onBeforeDispatch: async (snapshot) => {
+          controller.signal.throwIfAborted();
+          await historyRecords().saveBillingSnapshot(turn.historyId, snapshot);
+          if (model.provider === 'openrouter')
+            await openRouterHistory().ensurePlaceholder(turn.historyId);
+          else
+            await (veniceHistoryRepository ??= new VeniceChatHistoryRepository()).ensurePlaceholder(
+              turn.historyId
+            );
+          controller.signal.throwIfAborted();
+        },
+        onGenerationId: async (generationId) => {
+          if (model.provider === 'openrouter')
+            await openRouterHistory().ensureGenerationId(turn.historyId, generationId);
+          else
+            await (veniceHistoryRepository ??=
+              new VeniceChatHistoryRepository()).ensureGenerationId(turn.historyId, generationId);
+        },
         onBeforeReserve: async (chargeId) => {
           controller.signal.throwIfAborted();
           await historyRecords().registerChargeId(turn.historyId, chargeId);
@@ -247,7 +273,6 @@ export async function runConversationTurn(
             content: observed.content,
             status: success ? 'success' : 'stream_interrupted',
             finishReason: observed.finishReason,
-            generationId: observed.generationId,
           });
           if (row.status === 'streaming') {
             // A cancel marker won the completion CAS; free quota must be released before
@@ -258,7 +283,6 @@ export async function runConversationTurn(
               content: observed.content,
               status: 'stream_interrupted',
               finishReason: row.llm_finish_reason ?? 'timeout',
-              generationId: observed.generationId,
             });
           }
           return normalizePersistedOutcome(observed, row.status, row.llm_finish_reason);
@@ -276,7 +300,6 @@ export async function runConversationTurn(
       status: current.llm_finish_reason === 'cancelled' ? 'stream_interrupted' : result.status,
       finishReason: current.llm_finish_reason === 'cancelled' ? 'cancelled' : result.finishReason,
       upstreamStatus: result.upstreamStatus ?? null,
-      generationId: result.generationId,
       chargeId: result.chargeId,
     });
     const status =
@@ -312,6 +335,16 @@ export async function runConversationTurn(
       finish_reason: persisted.llm_finish_reason,
     });
     sink.close();
+
+    if (persisted.status === 'success') {
+      await persistRichReplyDiagnosis({
+        historyId: turn.historyId,
+        postprocessVersion: turn.postprocessVersion,
+        slotModes: turn.slotModes,
+        content: persisted.assistant_reply ?? result.content,
+        log,
+      });
+    }
 
     log.biz.info(
       {
@@ -367,6 +400,49 @@ export async function runConversationTurn(
     stopped = true;
     clearTimeout(timeout);
     if (pollTimer) clearTimeout(pollTimer);
+  }
+}
+
+async function persistRichReplyDiagnosis(input: {
+  historyId: string;
+  postprocessVersion: number;
+  slotModes: InstructionSlotModes;
+  content: string;
+  log: RequestLogger;
+}): Promise<void> {
+  try {
+    const snapshots = await new TextPostprocessRepository().readSnapshots([
+      input.postprocessVersion,
+    ]);
+    const artifact = snapshots.found[0]?.artifact;
+    if (!artifact) throw new Error('bound text postprocess artifact is unavailable');
+    const enabled = {
+      choices: input.slotModes.choice !== 'off',
+      status: input.slotModes.status !== 'off',
+      memory: input.slotModes.memory !== 'off',
+    };
+    const diagnosis = diagnoseRichReplyProtocol(
+      input.content,
+      enabled,
+      artifact.rich_reply_protocol?.enabled !== false,
+      artifact.rich_reply_protocol?.recovery
+    );
+    await historyRecords().saveRichReplyMetadata(input.historyId, {
+      rich_reply_mode:
+        input.slotModes.choice === 'full' ||
+        input.slotModes.status === 'full' ||
+        input.slotModes.memory === 'full'
+          ? 'full'
+          : 'concise',
+      ...diagnosis,
+    });
+  } catch (err) {
+    // A completed reply must remain successful when this advisory snapshot cannot
+    // be persisted. The next RPC treats missing metadata as full.
+    input.log.sys.warn(
+      { event: 'conversation.rich_reply.diagnosis_failed', err, historyId: input.historyId },
+      '富文本协议诊断未写入；下一轮将保守使用完整规则'
+    );
   }
 }
 

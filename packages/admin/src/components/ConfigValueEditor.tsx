@@ -44,6 +44,7 @@ import {
   DEFAULT_INVITE_CENTER_CONFIG,
   DEFAULT_INVITE_REWARD_RULES,
   EditableModelCatalogSchema,
+  EditableImagePlazaTagConfigSchema,
   ImageTextModelConfigSchema,
   type InviteCenterConfig,
   type InviteRewardRulesConfig,
@@ -325,7 +326,7 @@ export function ConfigValueEditor(props: {
   }
 
   if (props.configKey === 'image_plaza_tags') {
-    const parsed = ImagePlazaTagConfigSchema.safeParse(props.value);
+    const parsed = EditableImagePlazaTagConfigSchema.safeParse(props.value);
     const fallback = ImagePlazaTagConfigSchema.parse(configMetadata.image_plaza_tags.defaultValue);
     return (
       <ImagePlazaTagsEditor

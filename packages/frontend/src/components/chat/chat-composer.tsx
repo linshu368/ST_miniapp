@@ -5,7 +5,9 @@ import { Loader2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
+import { ChatReplyPreferences } from './chat-reply-preferences';
 import { shouldExpandComposer } from './composer-layout';
+import type { ReplyDetailsDefaultOpen } from './reply-preference-display';
 
 /** 与后端 routes/conversations.ts 的 MAX_USER_INPUT_LENGTH 对齐，前端先拦一道 */
 export const MAX_USER_INPUT_LENGTH = 8000;
@@ -25,6 +27,8 @@ interface ChatComposerProps {
   disabled: boolean;
   /** 胶囊左端的工具位，原版这里是唤起工具箱的按钮 */
   leftSlot?: ReactNode;
+  detailsDefaultOpen: ReplyDetailsDefaultOpen;
+  onDetailsDefaultOpenChange: (value: ReplyDetailsDefaultOpen) => void;
 }
 
 export function ChatComposer({
@@ -36,6 +40,8 @@ export function ChatComposer({
   cancelling = false,
   disabled,
   leftSlot,
+  detailsDefaultOpen,
+  onDetailsDefaultOpenChange,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -79,6 +85,10 @@ export function ChatComposer({
         PH_CHAT_REPLAY_VISIBLE_CLASS
       )}
     >
+      <ChatReplyPreferences
+        detailsDefaultOpen={detailsDefaultOpen}
+        onDetailsDefaultOpenChange={onDetailsDefaultOpenChange}
+      />
       <div
         className={cn(
           'relative min-h-[50px] rounded-[22px] border bg-card shadow-[0_8px_28px_rgb(16_13_15/40%)] transition-colors',

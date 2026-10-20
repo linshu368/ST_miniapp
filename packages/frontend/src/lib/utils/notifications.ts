@@ -21,6 +21,8 @@ export function formatMessageTime(iso: string, now: Date = new Date()): string {
 export interface PendingSupportMessage {
   clientMsgId: string;
   body: string;
+  /** 带图的消息：重试时原样再发，本地预览用 previewUrl */
+  image?: { base64: string; previewUrl: string };
   status: 'sending' | 'failed';
 }
 

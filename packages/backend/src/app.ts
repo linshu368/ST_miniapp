@@ -12,7 +12,6 @@ import walletRoutes from './routes/wallet.js';
 import vipRoutes from './routes/vip.js';
 import settingsRoutes from './routes/settings.js';
 import wishRoutes from './routes/wishes.js';
-import csPlatformRoutes from './routes/cs-platform.js';
 import modelsRoutes from './routes/models.js';
 import conversationRoutes from './routes/conversations.js';
 import voiceRoutes from './routes/voice.js';
@@ -64,7 +63,7 @@ export async function buildApp() {
       }
 
       if (
-        [config.frontendUrl, config.csPlatformUrl, config.adminPlatformUrl].some(
+        [config.frontendUrl, config.adminPlatformUrl].some(
           (allowedOrigin) => allowedOrigin.length > 0 && allowedOrigin === origin
         )
       ) {
@@ -118,7 +117,6 @@ export async function buildApp() {
   await app.register(vipRoutes);
   await app.register(settingsRoutes);
   await app.register(wishRoutes);
-  await app.register(csPlatformRoutes);
   await app.register(modelsRoutes);
   await app.register(conversationRoutes);
   await app.register(voiceRoutes);

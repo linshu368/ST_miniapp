@@ -20,15 +20,17 @@ import {
   useImagePlazaFeedQuery,
   useSetImagePlazaLikeMutation,
 } from '@/lib/api/image-plaza';
-import type { ImagePlazaWork } from '@miniapp/shared';
+import type { GetImagePlazaFeedData, ImagePlazaWork, ImagePlazaFeedSort } from '@miniapp/shared';
 
 export default function CreatePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState('all');
+  const [tags, setTags] = useState<GetImagePlazaFeedData['tags']>([{ id: 'all', label: '全部' }]);
+  const [sort, setSort] = useState<ImagePlazaFeedSort>('recommended');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const feed = useImagePlazaFeedQuery(debouncedSearch, tag);
+  const feed = useImagePlazaFeedQuery(debouncedSearch, tag, sort);
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const createConversation = useCreateImagePlazaConversationMutation();
   const sentinel = useRef<HTMLDivElement | null>(null);
@@ -42,18 +44,29 @@ export default function CreatePage() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const tags = feed.data?.pages[0]?.tags ?? [{ id: 'all', label: '全部' }];
+  const feedTags = feed.data?.pages[0]?.tags;
 
   useEffect(() => {
-    if (tag !== 'all' && !tags.some((item) => item.id === tag)) setTag('all');
-  }, [tag, tags]);
+    // 筛选请求期间只保留标签栏，避免卸载后闪烁、丢失横向滚动位置；不复用旧作品或游标。
+    if (!feedTags) return;
+    setTags(feedTags);
+    if (tag !== 'all' && !feedTags.some((item) => item.id === tag)) setTag('all');
+  }, [tag, feedTags]);
 
   useEffect(() => {
     const node = sentinel.current;
     if (!node) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        if (
+          entries[0]?.isIntersecting &&
+          hasNextPage &&
+          !isFetchingNextPage &&
+          !feed.paginationInvalidated &&
+          !feed.isPlaceholderData &&
+          !feed.isError &&
+          !feed.isFetching
+        ) {
           void fetchNextPage();
         }
       },
@@ -61,9 +74,24 @@ export default function CreatePage() {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+  }, [
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    feed.paginationInvalidated,
+    feed.isPlaceholderData,
+    feed.isError,
+    feed.isFetching,
+  ]);
 
-  const items = useMemo(() => feed.data?.pages.flatMap((page) => page.items) ?? [], [feed.data]);
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    return (feed.data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [feed.data]);
   // 行优先分列：1 2 / 3 4，避免 CSS columns 的竖向填充（1 3 / 2 4）
   const feedColumns = useMemo(() => splitIntoColumns(items, 2), [items]);
 
@@ -80,7 +108,7 @@ export default function CreatePage() {
     setIsPullRefreshing(true);
     try {
       await queryClient.resetQueries({
-        queryKey: imagePlazaKeys.feed(debouncedSearch, tag),
+        queryKey: imagePlazaKeys.feed(debouncedSearch, tag, sort),
         exact: true,
       });
     } finally {
@@ -123,20 +151,20 @@ export default function CreatePage() {
           {isPullRefreshing ? '正在刷新' : pullDistance >= 64 ? '松开刷新' : '下拉刷新'}
         </div>
       ) : null}
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-primary/70">
+            <p className="text-[10px] font-bold uppercase leading-3 tracking-[0.22em] text-primary/70">
               Discover
             </p>
-            <h1 className="text-2xl font-black tracking-tight">图片广场</h1>
+            <h1 className="text-xl font-black leading-7 tracking-tight">图片广场</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => startStudio()}
               disabled={createConversation.isPending}
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-4 text-xs font-black text-primary-foreground shadow-[0_8px_30px_hsl(var(--primary)/0.2)] disabled:opacity-60 sm:px-5 sm:text-sm"
+              className="inline-flex h-10 items-center gap-1.5 rounded-full bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-60 sm:px-4"
             >
               {createConversation.isPending ? (
                 <LoaderCircle className="size-4 animate-spin" />
@@ -147,7 +175,7 @@ export default function CreatePage() {
             </button>
           </div>
         </div>
-        <label className="mt-4 flex h-11 items-center gap-2 rounded-2xl border border-border bg-card px-3 text-muted-foreground">
+        <label className="mt-2 flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-3 text-muted-foreground">
           <Search className="size-4" aria-hidden />
           <input
             value={search}
@@ -157,23 +185,55 @@ export default function CreatePage() {
             aria-label="按作品灵感、内容搜索图片广场"
           />
         </label>
-        {tags.some((item) => item.id !== 'all') ? (
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-            {tags.map((item) => (
+        <div className="mt-1 space-y-1">
+          {tags.some((item) => item.id !== 'all') ? (
+            <div
+              className="flex min-w-0 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              role="group"
+              aria-label="作品标签"
+            >
+              {tags.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={tag === item.id}
+                  onClick={() => setTag(item.id)}
+                  className={`relative shrink-0 whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${tag === item.id ? 'border-primary/30 bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex items-center gap-2" role="group" aria-label="作品排序">
+            {(['recommended', 'latest'] as const).map((value) => (
               <button
-                key={item.id}
+                key={value}
                 type="button"
-                onClick={() => setTag(item.id)}
-                className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold transition ${tag === item.id ? 'bg-foreground text-background' : 'bg-card text-muted-foreground ring-1 ring-border'}`}
+                aria-pressed={sort === value}
+                onClick={() => {
+                  setSort(value);
+                  window.scrollTo({ top: 0, behavior: 'instant' });
+                }}
+                className={`relative shrink-0 whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${sort === value ? 'border-primary/30 bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'}`}
               >
-                {item.label}
+                {value === 'recommended' ? '推荐' : '最新'}
               </button>
             ))}
           </div>
-        ) : null}
+        </div>
       </header>
 
       <section className="px-3 py-4">
+        {feed.paginationInvalidated ? (
+          <button
+            type="button"
+            onClick={() => void refreshFeed()}
+            className="mb-3 w-full rounded-xl bg-card p-3 text-xs text-primary"
+          >
+            排序已更新，点击刷新后继续浏览
+          </button>
+        ) : null}
         {feed.isLoading ? (
           <FeedSkeleton />
         ) : feed.isError && items.length === 0 ? (
@@ -222,7 +282,11 @@ export default function CreatePage() {
           ref={sentinel}
           className="flex h-16 items-center justify-center text-xs text-muted-foreground"
         >
-          {feed.isFetchingNextPage ? (
+          {feed.isError && items.length > 0 ? (
+            <button type="button" onClick={() => void refreshFeed()}>
+              加载失败，点击刷新后继续
+            </button>
+          ) : feed.isFetchingNextPage ? (
             <LoaderCircle className="size-5 animate-spin" />
           ) : !feed.hasNextPage && items.length > 0 && !feed.isPlaceholderData ? (
             '已经到底啦'
@@ -262,6 +326,14 @@ function PlazaCard(props: {
 
   return (
     <article className="group relative overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70">
+      {like.isError ? (
+        <p
+          role="alert"
+          className="absolute inset-x-0 top-0 z-10 bg-destructive p-2 text-xs text-destructive-foreground"
+        >
+          点赞未确认，请刷新后重试
+        </p>
+      ) : null}
       <Link
         href={`/create/work/${props.work.id}`}
         aria-label={`查看作品：${props.work.title}`}

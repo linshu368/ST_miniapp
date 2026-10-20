@@ -10,7 +10,6 @@ import { ChatComposer, MAX_USER_INPUT_LENGTH } from '@/components/chat/chat-comp
 import { ChatMessageList } from '@/components/chat/chat-message-list';
 import { ChatMessageImageFooter } from '@/components/chat/chat-message-image';
 import { ChatMessageVoiceFooter } from '@/components/chat/chat-message-voice';
-import { formatMediaBillingPreview } from '@/components/chat/media-billing-label';
 import { getChatReplyPresentation } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
 import { ChatSessionDrawer } from '@/components/chat/chat-session-drawer';
@@ -54,6 +53,12 @@ import { returnToLobby } from '@/lib/lobby-return';
 import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import {
+  DEFAULT_REPLY_DETAILS_OPEN,
+  readReplyDetailsDefaultOpen,
+  writeReplyDetailsDefaultOpen,
+  type ReplyDetailsDefaultOpen,
+} from '@/components/chat/reply-preference-display';
 
 export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -66,6 +71,9 @@ export default function SelfHostedChatPage() {
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const choiceLockRef = useRef<ChoiceLockState>(emptyChoiceLock());
   const [choiceLock, setChoiceLock] = useState<ChoiceLockState>(emptyChoiceLock());
+  const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<ReplyDetailsDefaultOpen>(
+    DEFAULT_REPLY_DETAILS_OPEN
+  );
   const displayName = useUserProfileStore((state) => state.displayName);
 
   const session = useChatSession(characterId);
@@ -151,6 +159,15 @@ export default function SelfHostedChatPage() {
   }, [activeSessionId]);
 
   useEffect(() => {
+    setDetailsDefaultOpen(readReplyDetailsDefaultOpen());
+  }, []);
+
+  const handleDetailsDefaultOpenChange = useCallback((next: ReplyDetailsDefaultOpen) => {
+    setDetailsDefaultOpen(next);
+    writeReplyDetailsDefaultOpen(next);
+  }, []);
+
+  useEffect(() => {
     if (
       session.detailErrorCode !== 'session_not_found' &&
       session.detailErrorCode !== 'NOT_FOUND'
@@ -173,11 +190,6 @@ export default function SelfHostedChatPage() {
     [sessionImagesQuery.data]
   );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
-  const voicePriceLabel = formatMediaBillingPreview(
-    voiceConfigQuery.data?.next_billing,
-    voiceConfigQuery.isFetching || generateVoice.isPending,
-    voiceConfigQuery.isError
-  );
   const freeQuota = useCharacterFreeQuotaQuery(characterId);
   const freeRoundActive = Boolean(
     freeQuota.data && !freeQuota.data.exhausted && selectedModelUsesFreeQuota
@@ -356,6 +368,7 @@ export default function SelfHostedChatPage() {
           })
         }
         onChoice={handleChoice}
+        detailsDefaultOpen={detailsDefaultOpen}
         renderFooter={(message) => {
           const showVoice = canGenerateVoice(message);
           const messageImage = imageByMessage.get(message.id);
@@ -419,7 +432,6 @@ export default function SelfHostedChatPage() {
                                 returnTo,
                               })
                             : null,
-                          priceLabel: voicePriceLabel,
                           freeTrialLimit:
                             voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
                           hints: {
@@ -474,6 +486,8 @@ export default function SelfHostedChatPage() {
         cancelling={cancelling}
         generating={generating}
         disabled={!session.ready || serverBusy}
+        detailsDefaultOpen={detailsDefaultOpen}
+        onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
         leftSlot={
           <ChatToolsSheet
             onCreateConversation={session.openNewConversation}

@@ -3,7 +3,9 @@ import type {
   TextPostprocessSlotSegment,
   TextPostprocessTextSegment,
   TrustedNode,
+  RichReplyRecovery,
 } from '../api/text-postprocess';
+import { applyRichReplyProtocol } from './rich-reply';
 import { TEXT_POSTPROCESS_LIMITS } from '../api/text-postprocess';
 
 /**
@@ -14,10 +16,16 @@ import { TEXT_POSTPROCESS_LIMITS } from '../api/text-postprocess';
  * output cannot expose its control markers while arbitrary text never becomes
  * trusted HTML.
  */
-export function applyRichReplyFallback(source: TextPostprocessSegment[]): {
+export function applyRichReplyFallback(
+  source: TextPostprocessSegment[],
+  recovery?: RichReplyRecovery
+): {
   segments: TextPostprocessSegment[];
   matches: number;
 } {
+  // V3 uses the same configurable parser for bare legacy entries as envelopes.
+  // Keep legacy behavior untouched for historical v1/v2 snapshots.
+  if (recovery) return applyConfiguredFallback(source, recovery);
   const choices = replaceLegacyChoices(source);
   const status = replaceLegacyPanel(choices.segments, 'status', '人物近况', '这一刻的变化');
   const memory = replaceLegacyPanel(status.segments, 'memory', '故事记忆', '已记住这段经历');
@@ -168,6 +176,7 @@ function sanitizeProtocolText(value: string): string {
   return value
     .replace(/```(?:markdown)?\s*/gi, '')
     .replace(/<\/?(?:details|summary)(?:\s[^>]*)?>/gi, '')
+    .replace(/<\/\s*choice\s*>/gi, '')
     .replace(/\[\/?(?:choices?|status|memory)\]/gi, '')
     .trim()
     .slice(0, TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits);
@@ -261,4 +270,27 @@ function sliceText(
     start: segment.start + from,
     end: segment.start + to,
   };
+}
+
+function applyConfiguredFallback(
+  source: TextPostprocessSegment[],
+  recovery: RichReplyRecovery
+): { segments: TextPostprocessSegment[]; matches: number } {
+  const expression =
+    /(?:\[choice\][\s\S]*?(?:\[\/choice\]|<\/\s*choice\s*>)(?:[ \t\r\n]*(?=\[choice\]))?)+/g;
+  return replaceTextSegments(source, expression, (match, segment) => {
+    const wrapped = `[choices]${match[0]}[/choices]`;
+    const applied = applyRichReplyProtocol(
+      [{ type: 'text', text: wrapped, start: 0, end: wrapped.length }],
+      recovery
+    );
+    const built = applied.segments.find((item) => item.type === 'slot');
+    if (!built || built.choices.length === 0) return null;
+    return {
+      ...built,
+      start: segment.start + match.index,
+      end: segment.start + match.index + match[0].trimEnd().length,
+      match_text: match[0].trimEnd(),
+    };
+  });
 }

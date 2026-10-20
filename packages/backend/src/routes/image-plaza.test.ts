@@ -11,9 +11,11 @@ const mocks = vi.hoisted(() => ({
   work: vi.fn(),
   update: vi.fn(),
   user: vi.fn(),
+  list: vi.fn(),
 }));
 vi.mock('../features/image-plaza/config.js', () => ({
   getImagePlazaRuntimeConfig: mocks.runtime,
+  publicImagePlazaFeedTags: () => [{ id: 'all', label: '全部' }],
 }));
 vi.mock('../features/image-plaza/tagging.js', async (original) => ({
   ...(await original<typeof import('../features/image-plaza/tagging.js')>()),
@@ -26,6 +28,7 @@ vi.mock('../features/image-plaza/repository.js', () => ({
     shareArtifact = mocks.share;
     getWork = mocks.work;
     updateWorkTagsIfEmpty = mocks.update;
+    listWorks = mocks.list;
   },
 }));
 vi.mock('../middleware/auth.js', () => ({ requireTelegramAuth: vi.fn(async () => {}) }));
@@ -42,6 +45,7 @@ let storedTags: string[];
 beforeEach(async () => {
   vi.resetAllMocks();
   mocks.user.mockResolvedValue({ id: 'owner' });
+  mocks.list.mockResolvedValue({ works: [], nextCursor: null });
   storedTags = [];
   mocks.runtime.mockResolvedValue({
     enabled: true,
@@ -89,6 +93,32 @@ function deferClassification() {
   );
   return (tags: string[]) => resolve(tags);
 }
+
+describe('image plaza feed contract', () => {
+  it('passes explicit sort and normalized filters and preserves legacy omission', async () => {
+    expect(
+      (await app.inject('/api/image-plaza/feed?sort=recommended&tag=portrait&search=cat'))
+        .statusCode
+    ).toBe(200);
+    expect(mocks.list).toHaveBeenLastCalledWith({
+      userId: 'owner',
+      sort: 'recommended',
+      search: 'cat',
+      tagLabel: '肖像',
+      limit: 20,
+    });
+    expect((await app.inject('/api/image-plaza/feed')).statusCode).toBe(200);
+    expect(mocks.list).toHaveBeenLastCalledWith({ userId: 'owner', limit: 20 });
+  });
+  it('rejects invalid sort and translates rejected cursor into a refreshable 400', async () => {
+    expect((await app.inject('/api/image-plaza/feed?sort=heat')).statusCode).toBe(400);
+    expect(mocks.list).not.toHaveBeenCalled();
+    mocks.list.mockRejectedValueOnce(new Error('IMAGE_PLAZA_INVALID_CURSOR'));
+    const result = await app.inject('/api/image-plaza/feed?sort=latest&cursor=old');
+    expect(result.statusCode).toBe(400);
+    expect(result.json().error.code).toBe('IMAGE_PLAZA_INVALID_CURSOR');
+  });
+});
 
 describe('image plaza share auto tags', () => {
   it('preserves explicit client tags without loading prompt or calling LLM', async () => {

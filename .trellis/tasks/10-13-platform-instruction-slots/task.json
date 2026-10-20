@@ -1,8 +1,8 @@
 {
   "id": "platform-instruction-slots",
   "name": "platform-instruction-slots",
-  "title": "平台规则模板槽位与两轮完整规则",
-  "description": "升级平台 instruction prompt 为选项、状态栏、记忆区三个独立槽位，并支持每次开启后的两轮完整规则与 Admin 独立运营管理。",
+  "title": "平台规则模板槽位与动态完整规则",
+  "description": "升级平台 instruction prompt 为选项、状态栏、记忆区三个独立槽位，并支持会话级动态 full/concise 选择与 Admin 独立运营管理。",
   "status": "in_progress",
   "dev_type": null,
   "scope": "database,shared,backend,frontend,admin",

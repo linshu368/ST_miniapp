@@ -99,6 +99,8 @@ const RULES = [
       'experience.chat_history 只能由 ConversationHistoryRepository 读写（列归属见该文件头注释）',
     allow: [
       'packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts',
+      // OpenRouter 元数据回填先从其专属表有界筛选候选 ID，再只读父记录；不写 chat_history。
+      'packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts',
       // 集成测试直连库造数据、断言与清理，不经业务链路
       'packages/backend/src/infrastructure/repositories/conversations.integration.test.ts',
     ],
@@ -107,12 +109,18 @@ const RULES = [
     id: 'llm-chat-upstream',
     pattern: /['"`][^'"`]*\/chat\/completions/g,
     message:
-      '聊天 LLM 只有一个出口：features/generation/upstream.ts（架构铁律 6）。语音写稿是刻意的例外，见 features/voice/voice-draft.ts',
+      '聊天 LLM 只有一个出口：features/generation/upstream.ts（架构铁律 6）。语音写稿与图片广场辅助任务是按文件列明的例外',
     allow: [
       'packages/backend/src/features/generation/upstream.ts',
       'packages/backend/src/features/generation/upstream.test.ts',
       // Shared provider capability data declares the relative path; only upstream.ts executes it.
       'packages/shared/src/api/models.ts',
+      // 图片广场非流式辅助任务：作品提示词翻译/标签分类，不生成聊天回复、不读写聊天历史，
+      // 不进入用户聊天计费；调用仍归 generation/ 管理，不能豁免整个目录。
+      'packages/backend/src/features/generation/image-plaza-prompt-translate.ts',
+      'packages/backend/src/features/generation/image-plaza-tagging.ts',
+      // 验证同一辅助分类端点及失败降级，不是另一条运行时出口。
+      'packages/backend/src/features/image-plaza/tagging.test.ts',
       // 语音写稿的 DeepSeek 端点：与聊天不同供应商、非流式、抽取任务、按次计费，
       // 业务上确实独立（理由见 features/voice/voice-draft.ts 与 features/voice/billing.ts）
       'packages/backend/src/platform/config.ts',

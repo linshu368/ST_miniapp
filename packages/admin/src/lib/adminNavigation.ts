@@ -52,7 +52,7 @@ export const IMAGE_PLAZA_CONFIG_KEYS = [
   'image_plaza_model_catalog',
   'image_plaza_share_tip',
   'image_plaza_tags',
-  'image_plaza_tags_feature_enabled',
+  // 'image_plaza_tags_feature_enabled',
 ] as const satisfies readonly ManagedConfigKey[];
 export type ImagePlazaConfigKey = (typeof IMAGE_PLAZA_CONFIG_KEYS)[number];
 

@@ -50,7 +50,9 @@ export function prepareSlotTransport(input: {
     const slot = slots[index];
     const entry = entries[index];
     if (!slot || !entry) continue;
-    markdown = `${markdown.slice(0, slot.start)}${entry.token}${markdown.slice(slot.end)}`;
+    const replacement =
+      slot.isolate_block && slot.placement === 'block' ? `\n\n${entry.token}\n\n` : entry.token;
+    markdown = `${markdown.slice(0, slot.start)}${replacement}${markdown.slice(slot.end)}`;
   }
   return { ok: true, markdown, slots: entries };
 }

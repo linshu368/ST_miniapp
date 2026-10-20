@@ -27,3 +27,7 @@
 - 新组件 props 保持最小且领域化；避免将整个 App state 或 client 透传。
 - 文本后处理 source 是可编辑真相，compiled artifact 只用于预览/发布结果；不得把预览 artifact 写回草稿或建立第二套 source 状态。
 - 可读的显式分支优于高度参数化的“万能表单”；新增依赖需记录 bundle、维护和安全成本。
+
+## 回复富文本解析与兜底
+
+「解析与兜底」复用 source.rich_reply 单一编辑状态与现有保存/发布/回滚。persistableSource、editableFromSource、脏状态、预览和历史比较必须保留这个可选字段；停用可配置兜底表示恢复旧内置解析，不表示禁用所有安全降级。标题都是纯文字；选项副标题允许 {count} 占位。新配置发布前必须确认数据库 validator 和所有 artifact v3 消费者已部署。

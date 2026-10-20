@@ -31,7 +31,6 @@ Frontend、Backend、Admin 与 CS Platform 按各自接口消费。
 | `packages/shared/src/api/community.ts`     | 社区 DTO |
 | `packages/shared/src/api/notifications.ts` | 通知 DTO |
 | `packages/shared/src/api/support.ts`       | 客服 DTO |
-| `packages/shared/src/api/cs-platform.ts`   | CS DTO   |
 
 ## 关键实现链路
 
@@ -55,4 +54,4 @@ Shared tests 与四个消费者 typecheck。
 
 ## 关联模块
 
-`backend.business.engagement-support`、`frontend.business.engagement-support`、`cs-platform.business.telegram-outreach`。
+`backend.business.engagement-support`、`frontend.business.engagement-support`。

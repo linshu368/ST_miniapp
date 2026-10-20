@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_RICH_REPLY_RECOVERY,
   TEXT_POSTPROCESS_POLICY_VERSION,
   TEXT_POSTPROCESS_SCHEMA_VERSION,
   type TextPostprocessAdminState,
@@ -7,7 +8,7 @@ import {
   type TextPostprocessRule,
 } from '@miniapp/shared';
 import { compileTextPostprocessSource } from '@miniapp/shared/src/text-postprocess/compile';
-import { STARTER_RULES } from './textPostprocessSamples';
+import { STARTER_RULES, isBodyStyleRule } from './textPostprocessSamples';
 import {
   acceptLoadedState,
   applyLocalChoice,
@@ -19,6 +20,8 @@ import {
   describeRollbackOutcome,
   duplicateRule,
   editableFromSource,
+  persistableSource,
+  summarizeVersionChange,
   filterRules,
   finishRejected,
   historyCurrentVersion,
@@ -415,4 +418,60 @@ describe('text postprocess workbench', () => {
     });
     expect(result.ok, JSON.stringify(result.diagnostics)).toBe(true);
   });
+
+  it('offers a style-only body template alongside the four rich-reply rules', () => {
+    expect(STARTER_RULES.map((item) => item.id)).toEqual([
+      'choice',
+      'status',
+      'memory',
+      'dialogue',
+      'body',
+    ]);
+    const body = STARTER_RULES.find((item) => item.id === 'body');
+    expect(body?.name).toBe('正文');
+    expect(body?.enabled).toBe(false);
+    expect(body?.css).toContain('text-align: justify');
+    expect(isBodyStyleRule('body')).toBe(true);
+    expect(isBodyStyleRule('dialogue')).toBe(false);
+  });
+});
+
+it('preserves recovery settings through editing, save, compilation and version comparison', () => {
+  const configured = { ...source([]), rich_reply: structuredClone(DEFAULT_RICH_REPLY_RECOVERY) };
+  const local = editableFromSource(configured);
+  expect(persistableSource(local)).toEqual(configured);
+  expect(
+    compileTextPostprocessSource(persistableSource(local)).artifact?.rich_reply_protocol
+  ).toMatchObject({ version: 3, recovery: configured.rich_reply });
+  const store = createWorkbenchStore();
+  const state = serverState();
+  if (!state.draft) throw new Error('missing draft');
+  state.draft.source = configured;
+  const loaded = acceptLoadedState({
+    store,
+    environment: 'test',
+    generation: 0,
+    server: state,
+    mode: 'replace',
+    signatureAtStart: sessionEditSignature(store.sessions.test),
+    preferServerLocal: true,
+  });
+  if (!loaded) throw new Error('missing loaded store');
+  expect(isDirty(loaded.sessions.test)).toBe(false);
+  local.rich_reply!.choices.title = '你的选择';
+  const edited = replaceLocal(loaded, 'test', local, null);
+  expect(isDirty(edited.sessions.test)).toBe(true);
+  expect(isDirty(edited.sessions.production)).toBe(false);
+  const save = planSave(edited.sessions.test);
+  expect(save.ok && save.body.source.rich_reply?.choices.title).toBe('你的选择');
+  const previous = {
+    version: 1,
+    schema_version: 1 as const,
+    policy_version: 1 as const,
+    source: source([]),
+    published_at: '2026-10-15T00:00:00Z',
+  };
+  expect(
+    summarizeVersionChange({ ...previous, version: 2, source: configured }, previous)
+  ).toContain('解析兜底');
 });

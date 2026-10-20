@@ -4,7 +4,20 @@ import {
   configSchemas,
   LlmPricingConfigSchema,
   managedConfigKeys,
+  EditableImagePlazaTagConfigSchema,
 } from './configSchemas';
+
+describe('editable image plaza tags', () => {
+  it('preserves blank text, whitespace and duplicate IDs while strict save validation rejects them', () => {
+    const tags = [
+      { id: '', label: ' 新标签 ', enabled: true, sort_order: 0 },
+      { id: '', label: '', enabled: false, sort_order: 1 },
+    ];
+    expect(EditableImagePlazaTagConfigSchema.parse(tags)).toEqual(tags);
+    expect(configSchemas.image_plaza_tags.safeParse(tags).success).toBe(false);
+    expect(EditableImagePlazaTagConfigSchema.safeParse([{ id: 1 }]).success).toBe(false);
+  });
+});
 
 const validConfig = {
   fixedDeduction: {
