@@ -29,3 +29,57 @@ GitHub Actions 操作前再次核对 workflow 版本、目标 environment secret
 - migration 应可重复检测目标 shape；不能真正幂等时明确“一次性”及安全失败条件。
 - 回滚可能丢数据时优先 forward-fix；任何恢复步骤都写明数据损失边界和备份前提。
 - 文本后处理迁移/应用顺序固定为版本/草稿与显式 wrapper → artifact/权限 forward-fix → current-postprocess 开轮 RPC → Backend → Frontend/Admin。已发布快照和被 history 引用的版本不得 DROP/改写；应用回退保留数据对象，配置恢复通过发布新版本，数据库缺陷使用 reviewed forward-fix。
+
+## OpenRouter 兼容发布门禁
+
+`20261015_openrouter_chat_history.sql` → `20261015_openrouter_chat_history_backfill.sql` → `20261015_openrouter_chat_history_venice_exclusion_backfill.sql` → `20261016_openrouter_original_metadata_fields.sql` → 新 Backend。每个文件核验账本/checksum、shape/FK/unique/index、ACL、回填聚合与锁/容量后才能继续；初始表的 provider 常量约束会被第三份修正，中间态不可部署新 writer。
+
+旧主表列/视图保留仅是兼容阶段，不能作为清退任务完成。2026-10-16 新增阶段须交付主表 12 列（不含业务 `llm_finish_reason`）的消费者切换及独立 DROP migration；专表旧别名在用户T9明确扩展后纳入独立contract，保留ID/data现名。视图必须按对应 provider 专表取值并保留类型/基数/ACL/security_invoker，不能用 CASCADE 解决依赖。四类删列门禁为应用无引用、DB 无依赖、实际运行无旧读写及历史/窗口覆盖；删列后旧 Backend 不能直接回退，需已验证兼容 SHA 或受审阅 forward-fix。三份 SQL 已本地实现并通过真实 PG17/PostgREST 删列回归；未在远端执行，见本任务 T8 报告。新 writer 不持续反写别名；回退旧 Backend 不能使这些新数据自动同步回旧列。切换窗口须按最后旧 writer/首个新 writer 的实际时间审计，24h 回捞外的数据另审 catch-up。
+
+测试库小样本成功不代表大生产表可用相同单事务回填。先取得本环境候选规模/查询计划、锁与 WAL/磁盘预算；文件 1/2 无内置 timeout，未验证生产规模前停止执行。结果未知须互证 SQL 提交与 ledger/claim/event，禁止盲重跑或 force_rerun 修漂移。完整可审阅方案见 `.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md`；该路径是本任务方案，不是已执行证明。
+
+## Scenario: chat_history 12 列 contract
+
+### 1. Scope / Trigger
+
+只删除调用元数据，保留主表 llm_finish_reason/业务 model/计费事实；专表11重复别名另用独立contract，不重跑已记账历史 SQL，不改 Venice 表/mapper。
+
+### 2. Signatures
+
+新增 shared migrations：20261016_openrouter_retirement_catchup.sql → 20261016_chat_history_provider_metadata_views.sql → 20261016_chat_history_drop_provider_metadata.sql。先部署无旧列依赖 Backend/旧副本退出和窗口覆盖，再逐文件迁移；最后 DROP 独立审批。
+
+### 3. Contracts
+
+catch-up 只补经证明归属的安全标量/ID、只填 canonical 空值，不搬 raw JSON/正文/主表业务 finish reason，候选超过 2000 拒绝另审分批。current/已有 analytics view 保留列名/序/类型/基数、owner/ACL/security mode；按对应 provider 专表取值，current invoker 所需 reader 仅补最小列权限。新 streaming 调用若有专表占位且主表旧字段为空，不应被历史结算门禁强制中断。
+
+### 4. Validation & Error Matrix
+
+重叠/ID 冲突/未保全标量/未知 provider/DB 依赖/旧 raw JSON 未审阅/历史计费未收口 → 整笔拒绝；锁 5s、语句 60s，失败/结果未知先核对 shape 与 ledger/claims/events，不盲重跑。SQL 不能替代应用无依赖、DB 无依赖、运行无旧列读写、历史/切换窗口覆盖四类外部证据。
+
+### 5. Good/Base/Bad Cases
+
+Good：TEST/Production 分别记录覆盖与容量/锁证据，再独立 DROP RESTRICT 12 列。Base：无 ID 历史先分类；无信息不伪造 ID，有可靠归属/安全字段可建 NULL-ID 明细，未知阻断删除。Bad：把 TEST 165 当生产事实、旧 raw JSON 直接搬运/置空、DROP CASCADE 或为了删列暂停/破坏正常新对话落表。
+
+### 6. Tests Required
+
+scripts/test-openrouter-retirement-local.sh（PG17 + 显式本地 PostgREST 路径）证明物理 DROP 后实际 repository 读写、视图字段/基数/权限、未知/JSON/历史结算/依赖/重复执行拒绝，和正常新 streaming 状态保留；原 expand/ledger 回归继续通过。真实上游/钱包/额度/外部分析 owner 与所有旧副本退出仍单独核验。
+
+### 7. Wrong vs Correct
+
+Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：仅回退到已验证无 12 列也能运行的 SHA，或受审阅 forward-fix；恢复旧应用须另审列/安全事实重建，空列不等于数据恢复；无 VACUUM FULL/表重写。
+
+## Scenario: OpenRouter 专表 11 别名 contract
+
+`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 要求所有共享库旧 writer 退出、11组shape匹配、零非空冲突、NULL原名补齐候选不超过2000；仅移除8个已知单别名CHECK及11旧列，RESTRICT拒绝未知view/index/策略/混合约束依赖。canonical校验、ID/data、唯一/FK、ACL与业务父行不改。空占位/待回捞不是失败，不要求metadata齐全才能清理重复别名。无新对象，无并行迁移来源。
+
+单独事务与5s锁/60s语句预算，覆盖预检在获取DDL锁之前；锁超时停止、结果未知核对账本/shape，不自动重试。原名缺口补齐只取同一专表旧安全标量，0保留，非空新事实不覆盖，不搬历史raw JSON。可先执行专表contract，再在历史治理/四类门禁通过后执行主表contract；主表原拒绝未知JSON/历史结算守卫未改，不能通过伪造settled_at放行。
+
+扩展既有scripts/test-openrouter-retirement-local.sh与.mts，真实删除12+11列后验证实际repository读写/回捞/计费恢复/取消晚到/Venice及视图/权限；冲突/未知依赖/混合CHECK/2001候选/重复执行拒绝。原expand/ledger与所有消费者验证继续运行。Production需单独覆盖/锁/容量证据，不能沿用TEST零冲突。删列后禁止回退旧别名writer或用重建空列伪称数据恢复；无VACUUM FULL。
+
+## Scenario: 诊断白名单处置与旧账务契约
+
+`20261016_openrouter_history_disposition.sql` 先保全受控字段，再清父表raw诊断；同批规范化已有OR诊断，不整份归档JSON、不复制未知动态key/错误文本。候选LIMIT2001先核对最多2000预算再读取TOAST；JSON对象/ID/provider/字符串512/非负数/整数边界与指纹CAS检查，失败全事务回滚。Venice只验证既有明细保全、不写其明细；业务正文/终态、钱包/账单/额度不改。明确未知诊断丢弃的不可恢复性，远端执行前审阅。
+
+仅两库尚未执行的主表DROP可修改；已执行SQL不变。要求处置成功账本、snapshot schema文件checksum和applied_at作为旧契约边界，再按实际billing.llm_usage_charges/llm_usage_charge_dedup及character_free_chat_quota_decisions只读分类。不把无快照历史的settled_at NULL全部当失败，不对旧pending伪造结算；它们的定价事实/幂等键/专表ID保留，超窗停止自动回捞、独立账务核验。未知成功、现代漏快照、身份/状态冲突及旧字段关联reserved仍拒绝，正常专表流式不阻断。
+
+同一既有PG/PostgREST harness验证两次删列和处置前后业务/账务不变，覆盖非白名单清除、NULL/0、新事实优先、Venice/身份/shape/预算/账本/现代pending/缺快照/NULL逻辑的拒绝及旧pending保留。Production数量/计划/容量另核，超过预算另审forward批次，不改文件或force_rerun扩容。

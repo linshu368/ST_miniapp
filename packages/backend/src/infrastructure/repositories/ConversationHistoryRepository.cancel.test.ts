@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationHistoryRow } from './ConversationHistoryRepository.js';
 
-const state = vi.hoisted(() => ({ rows: [] as ConversationHistoryRow[], release: vi.fn() }));
+type FixtureRow = ConversationHistoryRow & {
+  openrouter_chat_history?: { llm_generation_id: string };
+  venice_chat_history?: { llm_generation_id: string };
+};
+
+const state = vi.hoisted(() => ({ rows: [] as FixtureRow[], release: vi.fn() }));
 vi.mock('./MiniappCharacterFreeQuotaRepository.js', () => ({
   MiniappCharacterFreeQuotaRepository: class {
     finalizePending = state.release;
@@ -18,7 +23,18 @@ vi.mock('../../lib/supabase.js', () => ({
           update = value;
           return query;
         },
-        select() {
+        select(columns = '') {
+          for (const table of ['openrouter_chat_history', 'venice_chat_history'] as const) {
+            if (columns.includes(table + '!inner'))
+              filters.push((row) => !!(row as FixtureRow)[table]);
+          }
+          return query;
+        },
+        neq(key: keyof ConversationHistoryRow, value: unknown) {
+          filters.push((row) => row[key] !== value);
+          return query;
+        },
+        or() {
           return query;
         },
         eq(key: keyof ConversationHistoryRow, value: unknown) {
@@ -27,6 +43,26 @@ vi.mock('../../lib/supabase.js', () => ({
         },
         is(key: keyof ConversationHistoryRow, value: unknown) {
           filters.push((row) => row[key] === value);
+          return query;
+        },
+        not(key: string, _operator: string, _value: null) {
+          filters.push((row) => {
+            const [a, b] = key.split('.');
+            const value = b
+              ? (row as unknown as Record<string, Record<string, unknown>>)[a!]?.[b]
+              : (row as unknown as Record<string, unknown>)[a!];
+            return value != null;
+          });
+          return query;
+        },
+        gte(key: 'created_at', value: string) {
+          filters.push((row) => row[key] >= value);
+          return query;
+        },
+        order() {
+          return query;
+        },
+        limit() {
           return query;
         },
         lt(key: 'created_at', value: string) {
@@ -71,7 +107,7 @@ vi.mock('../../lib/supabase.js', () => ({
 
 const { ConversationHistoryRepository, toChatMessages, extractOpeningMessage } =
   await import('./ConversationHistoryRepository.js');
-function row(overrides: Partial<ConversationHistoryRow> = {}): ConversationHistoryRow {
+function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
   return {
     id: 'reply',
     user_id: 'user',
@@ -85,7 +121,6 @@ function row(overrides: Partial<ConversationHistoryRow> = {}): ConversationHisto
     deduction_rate: null,
     created_at: new Date().toISOString(),
     llm_finish_reason: null,
-    llm_generation_id: null,
     llm_charge_id: 'charge',
     llm_billing_snapshot: null,
     llm_billing_settled_at: null,
@@ -151,8 +186,9 @@ describe('persisted cancellation/completion arbitration', () => {
 
   it('upstream stats cannot overwrite a persisted cancellation reason', async () => {
     state.rows[0] = row({ status: 'stream_interrupted', llm_finish_reason: 'cancelled' });
-    await new ConversationHistoryRepository().applyGenerationMetadata('reply', {
-      llm_finish_reason: 'stop',
+    await new ConversationHistoryRepository().recordBillingOutcome({
+      historyId: 'reply',
+      finishReason: 'stop',
     });
     expect(state.rows[0]?.llm_finish_reason).toBe('cancelled');
   });
@@ -222,5 +258,55 @@ describe('persisted cancellation/completion arbitration', () => {
 
   it('legacy stored prompts omit request identity instead of guessing it', () => {
     expect(toChatMessages(row())[1]).not.toHaveProperty('request_id');
+  });
+});
+
+describe('billing recovery candidate selection', () => {
+  it('selects unsettled OpenRouter and Venice rows independently of provider metadata', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-16T12:00:00Z'));
+    const snapshot = { provider: 'openrouter' } as ConversationHistoryRow['llm_billing_snapshot'];
+    state.rows = [
+      row({
+        id: 'openrouter',
+        openrouter_chat_history: { llm_generation_id: 'gen-1' },
+        llm_billing_snapshot: snapshot,
+      }),
+      row({
+        id: 'venice',
+        venice_chat_history: { llm_generation_id: 'gen-2' },
+        llm_billing_snapshot: {
+          ...snapshot,
+          provider: 'venice',
+        } as ConversationHistoryRow['llm_billing_snapshot'],
+      }),
+      row({
+        id: 'settled',
+        openrouter_chat_history: { llm_generation_id: 'gen-3' },
+        llm_billing_snapshot: snapshot,
+        llm_billing_settled_at: new Date().toISOString(),
+      }),
+      row({ id: 'no-id', llm_billing_snapshot: snapshot }),
+      row({ id: 'no-snapshot', openrouter_chat_history: { llm_generation_id: 'gen-4' } }),
+      row({
+        id: 'expired',
+        created_at: '2020-01-01T00:00:00Z',
+        openrouter_chat_history: { llm_generation_id: 'gen-5' },
+        llm_billing_snapshot: snapshot,
+      }),
+    ];
+    state.rows = state.rows.map((item) => ({ ...item, status: 'success' }));
+    const rows = (
+      await Promise.all(
+        (['openrouter', 'venice'] as const).map((provider) =>
+          new ConversationHistoryRepository().listRowsPendingBilling({
+            since: '2026-10-16T00:00:00Z',
+            limit: 50,
+            provider,
+          })
+        )
+      )
+    ).flat();
+    expect(rows.map((item) => item.id)).toEqual(['openrouter', 'venice']);
   });
 });

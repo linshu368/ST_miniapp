@@ -20,6 +20,22 @@ const FIRST_ATTEMPT_DELAY_MS = 1500;
 
 export type GenerationData = Record<string, unknown>;
 
+/** The provider's field names are also the OpenRouter table's canonical columns. */
+export interface OpenRouterGenerationMetadata {
+  provider_name: string | null;
+  finish_reason: string | null;
+  usage: number | null;
+  usage_cache: number | null;
+  native_tokens_cached: number | null;
+  native_tokens_reasoning: number | null;
+  native_tokens_completion: number | null;
+  native_tokens_prompt: number | null;
+  latency: number | null;
+  generation_time: number | null;
+  model: string | null;
+  llm_generation_data: unknown;
+}
+
 export function hasOpenRouterKey(): boolean {
   return OPENROUTER_API_KEY.length > 0;
 }
@@ -28,43 +44,78 @@ export function hasOpenRouterKey(): boolean {
  * 判定这份用量统计是否已经齐全。只用于回捞任务的日志计数，不作为任何写入的闸门。
  *
  * 注意别把它和「哪些行需要回捞」混为一谈：后者是 repository 里的 DB 过滤条件，
- * 且刻意不含 usage_cache（OpenRouter 从不返回该字段，算进去会让每一行恒为待补齐）。
+ * usage_cache 是可选统计，缺失不能使已齐全的调用一直处于待补齐状态。
  */
 export function isCompleteGenerationData(genData: GenerationData | null): boolean {
   return (
     !!genData &&
     !genData.error &&
-    typeof genData.usage !== 'undefined' &&
-    typeof genData.latency !== 'undefined' &&
-    typeof genData.generation_time !== 'undefined' &&
-    typeof genData.finish_reason !== 'undefined' &&
-    typeof genData.usage_cache !== 'undefined'
+    nonnegativeNumber(genData.usage) !== null &&
+    nonnegativeNumber(genData.latency) !== null &&
+    nonnegativeNumber(genData.generation_time) !== null &&
+    typeof genData.finish_reason === 'string'
   );
 }
 
-/** 把上游响应映射成 chat_history 的 llm_* 列。两个消费方共用，不要各自再写一份。 */
-export function buildGenerationMetadata(genData: GenerationData): Record<string, unknown> {
+/** Select bounded provider metadata without renaming the upstream fields. */
+export function buildGenerationMetadata(genData: GenerationData): OpenRouterGenerationMetadata {
   return {
-    llm_provider_name: genData.provider_name ?? null,
-    llm_finish_reason: genData.finish_reason ?? null,
-    llm_usage: genData.usage ?? null,
-    llm_usage_cache: genData.usage_cache ?? null,
-    llm_native_tokens_cached: genData.native_tokens_cached ?? null,
-    llm_native_tokens_reasoning: genData.native_tokens_reasoning ?? null,
-    llm_native_tokens_completion: genData.native_tokens_completion ?? null,
-    llm_native_tokens_prompt: genData.native_tokens_prompt ?? null,
-    llm_latency: genData.latency ?? null,
-    llm_generation_time: genData.generation_time ?? null,
-    llm_model: genData.model ?? null,
-    llm_generation_data: genData,
+    provider_name: typeof genData.provider_name === 'string' ? genData.provider_name : null,
+    finish_reason: typeof genData.finish_reason === 'string' ? genData.finish_reason : null,
+    usage: nonnegativeNumber(genData.usage),
+    usage_cache: nonnegativeNumber(genData.usage_cache),
+    native_tokens_cached: tokenCount(genData.native_tokens_cached),
+    native_tokens_reasoning: tokenCount(genData.native_tokens_reasoning),
+    native_tokens_completion: tokenCount(genData.native_tokens_completion),
+    native_tokens_prompt: tokenCount(genData.native_tokens_prompt),
+    latency: nonnegativeNumber(genData.latency),
+    generation_time: nonnegativeNumber(genData.generation_time),
+    model: typeof genData.model === 'string' ? genData.model : null,
+    llm_generation_data: safeGenerationData(genData),
   };
+}
+
+function nonnegativeNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function tokenCount(value: unknown): number | null {
+  const count = nonnegativeNumber(value);
+  return count !== null && Number.isInteger(count) ? count : null;
+}
+
+/** OpenRouter's response is diagnostic evidence, not a second prompt/archive store. */
+function safeGenerationData(value: GenerationData): GenerationData {
+  const result: GenerationData = {};
+  // Unknown response fields and free-form error messages can contain content or credentials.
+  for (const key of ['id', 'provider_name', 'finish_reason', 'model'] as const) {
+    if (typeof value[key] === 'string') result[key] = value[key].slice(0, 512);
+  }
+  for (const key of [
+    'usage',
+    'usage_cache',
+    'native_tokens_cached',
+    'native_tokens_reasoning',
+    'native_tokens_completion',
+    'native_tokens_prompt',
+    'latency',
+    'generation_time',
+  ] as const) {
+    const number = nonnegativeNumber(value[key]);
+    if (number !== null) result[key] = number;
+  }
+  if (value.error && typeof value.error === 'object') {
+    const code = (value.error as Record<string, unknown>).code;
+    result.error = typeof code === 'number' && Number.isFinite(code) ? { code } : {};
+  }
+  return result;
 }
 
 /**
  * 拉一次用量统计。
  *
  * 返回 null = 这次没拿到任何可记录的东西（无 key / 响应不可解析），调用方应当留待下一轮；
- * 返回带 `error` 的对象 = 上游明确报错，如实记录下来，不再重试。
+ * 返回带 `error` 的对象 = 记录本次失败，由有界 24h 回捞窗口继续补齐。
  */
 export async function fetchGenerationData(generationId: string): Promise<GenerationData | null> {
   if (!hasOpenRouterKey()) return null;
@@ -72,22 +123,20 @@ export async function fetchGenerationData(generationId: string): Promise<Generat
   try {
     const res = await fetch(`${GENERATION_API_URL}?id=${generationId}`, {
       headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}` },
+      signal: AbortSignal.timeout(5_000),
     });
 
     const body = await res.json().catch(() => null);
     const genData = body?.data ?? body;
+    if (!res.ok) return { error: { code: res.status } };
 
     if (genData && typeof genData === 'object') {
-      return genData as GenerationData;
-    }
-
-    if (!res.ok) {
-      return { error: { message: `OpenRouter API returned status ${res.status}` } };
+      return safeGenerationData(genData as GenerationData);
     }
 
     return null;
-  } catch (err) {
-    return { error: { message: String(err) } };
+  } catch {
+    return { error: {} };
   }
 }
 

@@ -270,6 +270,16 @@ Admin `/api/admin/text-postprocess*` 提供状态/历史、草稿保存/丢弃�
 
 `settle.ts` 是 fire-and-forget 的：它第一步要等 OpenRouter 的异步用量统计（约 1.5 秒起），挂在请求里会让用户在回复已经流完之后继续等。它与请求内同步的 `finalizeTurn` 写同一行 `chat_history` 的**不同列**，列归属见 `ConversationHistoryRepository` 头注释，因此谁先落地都不会互相覆盖。
 
+OpenRouter 的原始调用元数据写入 `experience.openrouter_chat_history`，通过唯一 `chat_history_id` 与主表一对一关联，父行删除时级联删除。获取 generation ID 后幂等建占位；结算和 24 小时回捞使用同一 mapper，并统一消费厂商原名：`provider_name`、`finish_reason`、`usage`、可选 `usage_cache`、四个 `native_tokens_*`、`latency`、`generation_time`、`model`。保留 `llm_generation_id` 与经过内容过滤的 `llm_generation_data`。计费函数单独返回金额/结算结果，主表仓储显式接收这些结果；上游 `finish_reason` 与主表业务 `llm_finish_reason` 各有归属，取消/超时优先。Venice 的字段映射与专表保持原有结构。
+
+四份历史 migration 提供原名结构，TEST/Production 已在 2026-10-16 T5 核验记账/checksum 一致；文件声明不等于部署证明。本地新增主表清退实现：生成前 await 请求快照/对应 provider 占位，header/SSE/non-stream 首次 ID 采用 NULL-only CAS 与结果未知读回，单操作 5s、总 10s、至多两次写；SSE 先保存已收到的文本快照，再 await ID，故障不清空已收到的正文。主表/current 读取显式业务列，finalizeTurn 不再接收 generation ID；业务 finish reason 与计费仍归主表。Venice mapper/表不变，ID 来自 Venice 明细。
+
+回捞五路独立各限 50/24h/DB 5s：两个 provider 的未结算、无调用身份、OpenRouter 缺 metadata、超时 streaming；按 parent 去重，单源/单行失败隔离。metadata 完整但账/额度未结可直接用专表已存事实恢复；缺 OpenRouter key 不停 Venice。无 ID 且成功但原因不足的记录停止自动推断，已确定失败按原 charge_id 收口；重启超时沿既有终态/额度恢复。
+
+本轮三份新 SQL 是 catch-up → provider views → 独立 12 列 DROP。current/已有 base_chat_bj 保留输出类型/基数/业务语义/权限，从对应专表取原始事实；current 保持 invoker，原 reader 仅补必要列权限。先部署本轮 Backend、确认所有旧 writer 退出和窗口覆盖，再切视图/独立 DROP；该主表 DROP 保留业务 llm_finish_reason、计费列与专表旧别名；专表别名另由下方 T9 清理。DROP 拒绝依赖/未保全事实/未经审阅旧 raw JSON/未分类账务或现代契约未收口旧字段，不要求中断专表已就绪、旧列为空的新 streaming 调用。删列后只能用已验证兼容 SHA 或 forward-fix，不直接回退旧 Backend，不执行 VACUUM FULL。当前仅本地完成，实际环境与恢复见 [T8 报告](../.trellis/tasks/10-15-openrouter-history-extract/research/t8-local-retirement-verification-2026-10-16.md) 和 [发布清单](../.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md)。
+
+T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 独立删除 OpenRouter 表 11 个重复旧别名，仅在原名为空且无冲突时保全类型化字段，超过 2000 候选停止；定点移除 8 个旧 CHECK，保留 canonical CHECK、ID/data、唯一/FK/ACL。未知依赖/冲突停止，待回捞空 metadata 不算失败。可先清专表再执行主表 12 列 contract；主表非空旧 JSON 与历史结算守卫原样保留，旧 raw JSON 不进入专表。两处真实本地删列回归与远端治理/运行门禁独立，删列后只允许兼容 SHA/forward-fix。
+
 计费要点：
 
 - 定档扣费（`billing_mode: 'fixed_tier'`，配置在 `runtime_config.llm_pricing_config`；084/085 之后模型目录用 `is_free` 标免费模型，不再有展示价与 markup）。
@@ -324,18 +334,18 @@ Admin `/api/admin/text-postprocess*` 提供状态/历史、草稿保存/丢弃�
 
 ### 5.1 数据库八域布局（099 之后，test 与生产一致）
 
-| Schema              | 归属域           | 内容                                                                                                                                                                                                                                      |
-| ------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app_core`          | 跨模块根数据     | `users` / `miniapp_user_settings` / `characters` / `runtime_config` / `text_postprocess_versions`                                                                                                                                         |
-| `experience`        | 核心互动内容     | `chat_sessions` / `chat_history` / `chat_message_audio` / `chat_message_images`（图片 attempt 与租约）/ 视图 `current_chat_history`；待执行 `20260929_venice_chat_history.sql` 后新增 Venice 一对一调用明细表                             |
-| `billing`           | 钱               | `payment_orders` / `wallet_ledger` / `user_wallets` / `llm_usage_charges` / `llm_usage_charge_dedup` / `character_free_chat_quotas` / `vip_memberships` / `vip_purchase_grants` / `feature_free_trials` / `wallet_refunds` / `_decisions` |
-| `miniapp_features`  | 产品功能状态     | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `wish_roles` / `notifications` / `notification_reads` / `community_reward_claims` / `telegram_community_update_receipts`（108）                                   |
-| `cs_platform`       | 旧客服（已停用） | 旧 CS 回访画像与会话、`support_conversations` / `support_messages` 历史；客服已迁到独立仓库 `linshu368/ST_cs_platform`（库里 `cs` schema），本表只读保留                                                                                  |
-| `admin`             | 运营管理         | 运营台账号、文本后处理草稿 / 发布请求 / 审计及其他运营配置过程事实                                                                                                                                                                        |
-| `miniapp_traffic`   | 渠道归因         | `botlinks` + 裂变邀请三表 `invite_codes` / `invite_relations` / `invite_reward_logs`（105，acquisition 域，名称不改）                                                                                                                     |
-| `miniapp_analytics` | 看数             | 只读视图；红线：不得成为任何运行时依赖                                                                                                                                                                                                    |
-| `miniapp`           | —                | **空壳**，批次 D 观察期后删除 ⏳                                                                                                                                                                                                          |
-| `public`            | —                | 旧 bot 残留函数（数据已迁出本库；函数存废另开评审）                                                                                                                                                                                       |
+| Schema              | 归属域           | 内容                                                                                                                                                                                                                                                                                                                                              |
+| ------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app_core`          | 跨模块根数据     | `users` / `miniapp_user_settings` / `characters` / `runtime_config` / `text_postprocess_versions`                                                                                                                                                                                                                                                 |
+| `experience`        | 核心互动内容     | `chat_sessions` / `chat_history` / `chat_message_audio` / `chat_message_images`（图片 attempt 与租约）/ 视图 `current_chat_history`；Venice 一对一调用明细表已存在（TEST/Production 的 20260929 文件未记账漂移不可重跑）；OpenRouter 明细表 TEST/Production 四份 migration 已于 2026-10-16 T5 核验记账且 checksum 一致，主表清退仍待独立实施/验收 |
+| `billing`           | 钱               | `payment_orders` / `wallet_ledger` / `user_wallets` / `llm_usage_charges` / `llm_usage_charge_dedup` / `character_free_chat_quotas` / `vip_memberships` / `vip_purchase_grants` / `feature_free_trials` / `wallet_refunds` / `_decisions`                                                                                                         |
+| `miniapp_features`  | 产品功能状态     | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `wish_roles` / `notifications` / `notification_reads` / `community_reward_claims` / `telegram_community_update_receipts`（108）                                                                                                                                           |
+| `cs_platform`       | 旧客服（已停用） | 旧 CS 回访画像与会话、`support_conversations` / `support_messages` 历史；客服已迁到独立仓库 `linshu368/ST_cs_platform`（库里 `cs` schema），本表只读保留                                                                                                                                                                                          |
+| `admin`             | 运营管理         | 运营台账号、文本后处理草稿 / 发布请求 / 审计及其他运营配置过程事实                                                                                                                                                                                                                                                                                |
+| `miniapp_traffic`   | 渠道归因         | `botlinks` + 裂变邀请三表 `invite_codes` / `invite_relations` / `invite_reward_logs`（105，acquisition 域，名称不改）                                                                                                                                                                                                                             |
+| `miniapp_analytics` | 看数             | 只读视图；红线：不得成为任何运行时依赖                                                                                                                                                                                                                                                                                                            |
+| `miniapp`           | —                | **空壳**，批次 D 观察期后删除 ⏳                                                                                                                                                                                                                                                                                                                  |
+| `public`            | —                | 旧 bot 残留函数（数据已迁出本库；函数存废另开评审）                                                                                                                                                                                                                                                                                               |
 
 已删除的 schema：`st_platform` / `st_users` / `st_infra`（088，含酒馆格式平台预设）、`growth`（089，归因功能收敛进 `miniapp_traffic`）、`miniapp_simulation`（090，保留 `characters.is_test`）。
 
@@ -649,3 +659,9 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 | `docs/payment-missing-credits-remediation.md`                | 支付四路入账复盘                     | `git show 7541a54^:docs/payment-missing-credits-remediation.md` |
 | `docs/st_handle退场方案.md`                                  | st_handle 退场步骤                   | `git show 7541a54^:docs/st_handle退场方案.md`                   |
 | `packages/backend/CLAUDE.md` / `packages/frontend/CLAUDE.md` | 已删除的包级 AI 规则                 | git 历史                                                        |
+
+### OpenRouter T10 历史处置与账务契约边界
+
+新增历史处置SQL在同一事务内规范化OR受控诊断、仅补NULL厂商原名事实并清父表旧JSON。非白名单key、referer/外部用户/嵌套response及错误自由文本明确丢弃、不归档；类型/长度/非负数/整数范围、provider与ID验证，父表及专表JSON指纹CAS保护变化，最多2000候选且预算前不解TOAST。正文、业务finish_reason、计费快照/金额/charge/dedup/quota不写；Venice仅在既有明细事实保全后清父表冗余诊断，不改变mapper/表。
+
+主表DROP文件在两库未执行，T10修正原过宽账务守卫：以schema账本checksum+applied_at定义引入快照前历史，明确终态账单/持久dedup/失败未扣/旧pending分类。旧pending保留账单和专表ID、不伪造已结算；未知成功记录、新契约漏快照、身份/状态冲突、旧字段关联reserved继续停止。健康专表调用不因清理要求中断。账务跨域仅只读；历史归档表、后台补扣worker与通用搬运层均未新增。
