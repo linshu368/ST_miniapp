@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { LOBBY_FEATURED_POSITION_COUNT, markLobbyFeaturedByPosition } from '../lobby-featured';
+import { LOBBY_FEATURED_POSITION_COUNT, markLobbyFeaturedByPosition } from '../api/lobby-featured';
 
 describe('lobby featured characters', () => {
   it('按当前排序位置标记前八个角色，不绑定固定 UUID', () => {

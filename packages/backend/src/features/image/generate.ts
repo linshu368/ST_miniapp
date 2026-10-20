@@ -9,7 +9,7 @@ import {
   deleteGeneratedMessageImage,
   storeGeneratedMessageImageBytes,
   storeGeneratedMessageImage,
-} from '../../lib/chat-image-storage.js';
+} from '../../lib/storage/chat-image-storage.js';
 import { config } from '../../platform/config.js';
 import type { ImageRuntimeConfig } from './config.js';
 import {

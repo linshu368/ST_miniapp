@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import { useConversationQuery, useCreateConversationMutation } from '@/lib/api/conversations';
-import { chatEntryPath } from '@/lib/chat-entry';
+import { chatEntryPath } from '@/lib/chat/chat-entry';
 import { getReplayLifecycle, useReplayLifecycle, type ReplayLifecycleState } from '@/lib/telemetry';
 
 function replaceChatUrl(characterId: string, sessionId: string | null): void {

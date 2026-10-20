@@ -35,7 +35,7 @@ import {
 import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
-} from './lib/lobby-ranking-refresh-job.js';
+} from './features/lobby/lobby-ranking-refresh-job.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
 
 export async function buildApp() {

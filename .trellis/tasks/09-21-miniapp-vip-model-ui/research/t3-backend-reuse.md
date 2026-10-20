@@ -18,7 +18,7 @@
 | 签到           | `claim_daily_checkin` + `getDailyCheckinStatus`                                                                                                | 发放仍只走该 RPC。预览与 RPC 使用同一公式：基础额来自配置，有效 VIP 再加同等基础额，一次 `grant_bonus_credits`            |
 | Runtime config | `platform/runtime-config.ts` 的 `fetchRuntimeConfigEntry`                                                                                      | 新开关 `vip_purchase_enabled` 走这个入口。读取失败视为 false。既有支付套餐读取保持原 `rechargeRules` 路径，不平行再包一层 |
 | Route 注册     | `app.ts` `app.register`                                                                                                                        | 增加 `vipRoutes`。每条注册旁保留 `@frontend-ready: true`                                                                  |
-| 测试           | Vitest mock repository/gateway；支付 SQL 用 `scripts/test-vip-billing-migrations.sh` 的一次性本地库                                            | 扩展现有用例。不连正式 test，不创建真实微信支付                                                                           |
+| 测试           | Vitest mock repository/gateway；支付 SQL 用 `scripts/database/test-vip-billing-migrations.sh` 的一次性本地库                                   | 扩展现有用例。不连正式 test，不创建真实微信支付                                                                           |
 | 日志           | `requestLogger` / `createLogger`，错误 `{ err }`                                                                                               | 只加 operation、内部 id、商品、source、履约摘要、奖励、耗时                                                               |
 
 拒绝：第二套支付网关、内存 VIP 缓存、route 内更新 `vip_memberships` 或钱包、把 0.88 写回任何计价常量、改语音/图片、启用购买或提醒开关。

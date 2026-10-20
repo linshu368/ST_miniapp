@@ -4,7 +4,7 @@ import type { MiniappPaymentOrderRow } from '../../../infrastructure/repositorie
 import { settlePaidOrder } from './PaymentSettlement.js';
 import type { SettlementLogger } from './PaymentSettlement.js';
 
-vi.mock('../../../lib/notifications.js', () => ({
+vi.mock('../../notifications/notifications.js', () => ({
   insertUserNotification: vi.fn(async () => undefined),
 }));
 vi.mock('../../../lib/invite-rewards.js', () => ({

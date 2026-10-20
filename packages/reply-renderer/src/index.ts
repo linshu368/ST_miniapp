@@ -1,4 +1,4 @@
 'use client';
 
-export { ReplyRenderer } from './ReplyRenderer';
-export type { ReplyChoicePayload, ReplyRendererProps } from './types';
+export { ReplyRenderer } from './rendering/ReplyRenderer';
+export type { ReplyChoicePayload, ReplyRendererProps } from './rendering/types';

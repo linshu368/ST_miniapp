@@ -15,8 +15,8 @@ import {
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
 import { formatMediaBillingPreview } from '@/components/chat/media-billing-label';
-import { chatEntryPath } from '@/lib/chat-entry';
-import { redirectToRechargeFromError } from '@/lib/recharge-redirect';
+import { chatEntryPath } from '@/lib/chat/chat-entry';
+import { redirectToRechargeFromError } from '@/lib/payment/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 
 /**

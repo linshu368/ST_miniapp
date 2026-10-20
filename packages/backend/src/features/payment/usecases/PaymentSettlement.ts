@@ -14,7 +14,7 @@
 import type { PaymentOrderStatus, PaymentSettlementSource } from '@miniapp/shared';
 import type { RequestLogger } from '../../../lib/logger.js';
 import { checkInviteFirstPaidReward } from '../../../lib/invite-rewards.js';
-import { insertUserNotification } from '../../../lib/notifications.js';
+import { insertUserNotification } from '../../notifications/notifications.js';
 import type {
   MiniappPaymentOrderRepository,
   MiniappPaymentOrderRow,

@@ -6,8 +6,8 @@
 
 本窗口只写了三个文件：
 
-- `packages/admin/src/components/TextPostprocessView.tsx`（P2 修复）
-- `packages/admin/src/lib/textPostprocessPreview.test.ts`（对应回归测试）
+- `packages/admin/src/components/views/TextPostprocessView.tsx`（P2 修复）
+- `packages/admin/src/lib/text-postprocess/textPostprocessPreview.test.ts`（对应回归测试）
 - 本文件
 
 `package.json`、`pnpm-lock.yaml`、`.eslintrc.json`、migration、shared、Backend、Frontend、reply-renderer 均未改动。Prisma Client 生成物没有进入工作区 diff。

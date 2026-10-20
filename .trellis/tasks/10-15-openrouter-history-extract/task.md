@@ -38,7 +38,7 @@
 
 ## T3 前置项与剩余风险
 
-- 2026-10-16 T2R 本地实现完成：新增 `20261016_openrouter_original_metadata_fields.sql`，在 OpenRouter 专表新增 11 个原名字段并从旧别名复制已有值；`llm_generation_id`、`llm_generation_data`、主键/FK/权限保持不变。新 Backend 的 mapper、仓储查询与写入、结算和回捞只使用原名，显式计费结果不再混入上游对象；主表取消/超时优先级保持，移除已无消费者的主表旧元数据扫描方法。Venice mapper/repository/表与业务逻辑未改；公共计费调用仅做等价参数调整。测试确认 `usage_cache=0` 和缺失语义、不引入 `cache_discount`、重复回捞及晚到 `stop` 的主表保护。Backend 84 files / 665 tests、Shared 15 files / 139 tests、`pnpm -r typecheck`、`pnpm -r --workspace-concurrency=2 --if-present build`、`pnpm lint`、`pnpm lint:imports`、`pnpm lint:legacy`、`pnpm lint:migrations`、`git diff --check` 通过。`OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/test-openrouter-original-fields-migration.sh` 在隔离本地 PG 17.11 通过 11 列值复制、零值/NULL、主表隔离、权限/约束、重放不覆盖原名值、FK 级联和错误 shape 拒绝；本机默认 PG 14 回归也通过。新增专项测试文件的依据是计费和 migration 兼容风险；README、架构及相关 spec 已同步本次字段约定和发布顺序。本轮未提交/推送、未执行远端 migration/回填或部署，T3/T4 未整体收尾。
+- 2026-10-16 T2R 本地实现完成：新增 `20261016_openrouter_original_metadata_fields.sql`，在 OpenRouter 专表新增 11 个原名字段并从旧别名复制已有值；`llm_generation_id`、`llm_generation_data`、主键/FK/权限保持不变。新 Backend 的 mapper、仓储查询与写入、结算和回捞只使用原名，显式计费结果不再混入上游对象；主表取消/超时优先级保持，移除已无消费者的主表旧元数据扫描方法。Venice mapper/repository/表与业务逻辑未改；公共计费调用仅做等价参数调整。测试确认 `usage_cache=0` 和缺失语义、不引入 `cache_discount`、重复回捞及晚到 `stop` 的主表保护。Backend 84 files / 665 tests、Shared 15 files / 139 tests、`pnpm -r typecheck`、`pnpm -r --workspace-concurrency=2 --if-present build`、`pnpm lint`、`pnpm lint:imports`、`pnpm lint:legacy`、`pnpm lint:migrations`、`git diff --check` 通过。`OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/database/test-openrouter-original-fields-migration.sh` 在隔离本地 PG 17.11 通过 11 列值复制、零值/NULL、主表隔离、权限/约束、重放不覆盖原名值、FK 级联和错误 shape 拒绝；本机默认 PG 14 回归也通过。新增专项测试文件的依据是计费和 migration 兼容风险；README、架构及相关 spec 已同步本次字段约定和发布顺序。本轮未提交/推送、未执行远端 migration/回填或部署，T3/T4 未整体收尾。
 - 原名版本发布新增前置项：由于 PR 分支推送会自动部署 Backend，先只提交/推送 migration 并在 TEST 经官方 workflow 单文件执行，再提交/推送 Backend 适配。新 Backend 不兼容缺少原名列的库。旧 writer 在 expand 后写出的旧别名仅能在切换窗口内通过回捞补齐；超过 24h 或上游失败的记录需窗口审计并另做受审查 catch-up。旧别名清理需后续单独 contract，不能据本轮本地通过直接删除。Production 仍须独立授权与逐环境核验。
 
 - 2026-10-16 补充复核：用户反馈三条明细已补齐后，通过 PR 424 的 TEST 连接以只读事务核验，同一真机会话的 3 条 revision 均已有厂商、模型、usage、耗时、prompt/completion token 数和上游 `stop`；原始诊断对象已无 `error`。主表仍为 `success/stop`，generation ID 一致，已结算，每条各有一笔计费，无 Venice 明细。故先前 404 已恢复，发送/重新生成及迟到元数据回捞验收通过；此结果未确定此前 404 的根因，也不替代免费、取消、超时、上游错误和消费者切换验收。仅记录聚合结果，未导出业务行或原始 JSON。
@@ -71,7 +71,7 @@
 
 - Backend：84 files / **669 tests**；Shared：15 files / **139 tests**，全部通过。
 - `pnpm -r typecheck`、`pnpm -r --workspace-concurrency=2 --if-present build`、`pnpm lint`、`pnpm lint:imports`、`pnpm lint:legacy`、`pnpm lint:migrations`、`git diff --check` 通过。Backend 无独立 build script；build 覆盖有 build script 的消费者；Admin 既有 bundle size 提示不阻断构建。
-- `OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/test-openrouter-original-fields-migration.sh` 通过；`pnpm test:migration-ledger` 通过。沙箱分别阻止 PG 共享内存/本地 socket，按工具审批在沙箱外重跑隔离本地检查；未连接远端写库。
+- `OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/database/test-openrouter-original-fields-migration.sh` 通过；`pnpm test:migration-ledger` 通过。沙箱分别阻止 PG 共享内存/本地 socket，按工具审批在沙箱外重跑隔离本地检查；未连接远端写库。
 - `module_knowledge.py check` 与 `task.py validate` 通过；没有执行 module apply/archive。TEST PostgREST HEAD 已验证 anti-join，但本地模拟不能证明多副本真实恢复/钱包/免费额度场景；这些仍属 T3 待办。
 
 ## 2026-10-16 用户补充确认与实施授权

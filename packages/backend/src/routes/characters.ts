@@ -13,7 +13,7 @@ import { loadCharacterRankingScores } from '../features/lobby/ranking-stats.js';
 import { applyPinnedOnly, buildRecommendedOrder } from '../features/lobby/recommended-ranking.js';
 import { resolveLobbyFeaturedIds } from '../features/lobby/featured.js';
 import { resolveLobbyPinnedCharacters } from '../features/lobby/pinned-characters.js';
-import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
+import { hasNewLobbyCharacters } from '../features/lobby/lobby-latest-badge.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requireTelegramAuth } from '../middleware/auth.js';

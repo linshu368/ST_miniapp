@@ -31,14 +31,14 @@ import {
   type PaymentPlan,
   type ProviderModelDirectory,
 } from '@miniapp/shared';
-import { LoginPage } from './components/LoginPage';
-import { ConfigValueEditor } from './components/ConfigValueEditor';
-import { findDuplicateOpenRouterAssignments } from './components/ModelCatalogEditor';
-import { CharacterCardsView } from './components/CharacterCardsView';
-import { AnnouncementsView } from './components/AnnouncementsView';
-import { InviteProgramView } from './components/InviteProgramView';
-import { OutreachCreditGrantView } from './components/OutreachCreditGrantView';
-import { VipStrategyView } from './components/VipStrategyView';
+import { LoginPage } from './components/views/LoginPage';
+import { ConfigValueEditor } from './components/config/ConfigValueEditor';
+import { findDuplicateOpenRouterAssignments } from './components/config/ModelCatalogEditor';
+import { CharacterCardsView } from './components/views/CharacterCardsView';
+import { AnnouncementsView } from './components/views/AnnouncementsView';
+import { InviteProgramView } from './components/views/InviteProgramView';
+import { OutreachCreditGrantView } from './components/views/OutreachCreditGrantView';
+import { VipStrategyView } from './components/views/VipStrategyView';
 import {
   discardDraft,
   getCharacters,
@@ -56,7 +56,7 @@ import {
   type ConfigDraft,
   type ConfigRelease,
   type ManagedConfig,
-} from './lib/adminApi';
+} from './lib/api/adminApi';
 import {
   configMetadata,
   isTextManagedConfig,
@@ -70,9 +70,12 @@ import {
   isEnvironmentConfigured,
   type AdminEnvironment,
 } from './lib/environment';
-import { fetchModelProviderDirectory, getCatalogProviderIssues } from './lib/openRouterModels';
-import { getModelCatalogChangeSummary } from './lib/modelCatalogDiff';
-import { TextPostprocessView } from './components/TextPostprocessView';
+import {
+  fetchModelProviderDirectory,
+  getCatalogProviderIssues,
+} from './lib/model-catalog/openRouterModels';
+import { getModelCatalogChangeSummary } from './lib/model-catalog/modelCatalogDiff';
+import { TextPostprocessView } from './components/views/TextPostprocessView';
 import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
@@ -96,7 +99,7 @@ import {
   isDirty,
   resetLocalEdits,
   type WorkbenchStore,
-} from './lib/textPostprocessWorkbench';
+} from './lib/text-postprocess/textPostprocessWorkbench';
 
 function confirmAction(title: string, content: React.ReactNode, danger = false): Promise<boolean> {
   return new Promise((resolve) => {

@@ -14,7 +14,7 @@
 
 ### 余额不足、充值与支付
 
-- `packages/frontend/src/lib/recharge-redirect.ts` 是聊天 SSE、语音和模型切换共同使用的余额不足入口；应作为“付费墙触发/跳转充值”事件的单一前端挂点。
+- `packages/frontend/src/lib/payment/recharge-redirect.ts` 是聊天 SSE、语音和模型切换共同使用的余额不足入口；应作为“付费墙触发/跳转充值”事件的单一前端挂点。
 - `packages/frontend/src/app/(main)/profile/recharge/page.tsx` 展示余额不足提示、邀请入口、套餐与可选 VPN 提示。它创建订单后先调用 Telegram `openLink`，再进入订单等待页。
 - `packages/frontend/src/app/(main)/profile/recharge/[orderId]/page.tsx` 在订单 `pending` 时轮询服务端状态。`packages/frontend/src/app/providers.tsx` 将 Telegram payment-return 深链恢复到该页。
 - `packages/backend/src/routes/payment.ts` 创建订单、查询/对账订单和处理 return/webhook；`packages/backend/src/features/payment/usecases/PaymentSettlement.ts` 是四条结算入口的唯一收口。前端回放不可替代这些服务端事实。

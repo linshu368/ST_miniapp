@@ -64,12 +64,12 @@ jobs:
         run: npx eslint --no-eslintrc -c .eslintrc.json 'packages/*/src/**/*.{ts,tsx}' --rule '{}' --no-inline-config
 
       # 禁止旧 schema / 已退场链路的新引用，以及在收口好的主路径之外另开出口。
-      # 规则与豁免清单在 scripts/check-legacy-references.mjs。
+      # 规则与豁免清单在 scripts/checks/check-legacy-references.mjs。
       - name: Guard against legacy references
         run: pnpm lint:legacy
 
       # 新迁移必须用 YYYYMMDD_描述.sql 命名（三位数字编号已停用，撞号惯犯）。
-      # 规则与冻结清单在 scripts/check-migration-filenames.mjs。
+      # 规则与冻结清单在 scripts/checks/check-migration-filenames.mjs。
       - name: Check migration filenames
         run: pnpm lint:migrations
 

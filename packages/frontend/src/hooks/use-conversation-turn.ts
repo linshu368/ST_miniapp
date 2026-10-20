@@ -25,19 +25,19 @@ import {
 } from '@/lib/api/conversations';
 import { freeQuotaKeys, useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { paymentKeys } from '@/lib/api/payment';
-import { formatFreeQuotaExhaustedNotice } from '@/lib/free-quota-dialog';
+import { formatFreeQuotaExhaustedNotice } from '@/lib/chat/free-quota-dialog';
 import { createLogger } from '@/lib/logger';
 import {
   appendStreamText,
   applyStreamStart,
   mergeStreamingMessages,
   type StreamingTurn,
-} from '@/lib/merge-streaming-messages';
+} from '@/lib/chat/merge-streaming-messages';
 import {
   isInsufficientCreditsError,
   redirectToRecharge,
   requiredCreditsFromError,
-} from '@/lib/recharge-redirect';
+} from '@/lib/payment/recharge-redirect';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 

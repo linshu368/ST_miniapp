@@ -64,7 +64,7 @@ Good：TEST/Production 分别记录覆盖与容量/锁证据，再独立 DROP RE
 
 ### 6. Tests Required
 
-scripts/test-openrouter-retirement-local.sh（PG17 + 显式本地 PostgREST 路径）证明物理 DROP 后实际 repository 读写、视图字段/基数/权限、未知/JSON/历史结算/依赖/重复执行拒绝，和正常新 streaming 状态保留；原 expand/ledger 回归继续通过。真实上游/钱包/额度/外部分析 owner 与所有旧副本退出仍单独核验。
+scripts/database/test-openrouter-retirement-local.sh（PG17 + 显式本地 PostgREST 路径）证明物理 DROP 后实际 repository 读写、视图字段/基数/权限、未知/JSON/历史结算/依赖/重复执行拒绝，和正常新 streaming 状态保留；原 expand/ledger 回归继续通过。真实上游/钱包/额度/外部分析 owner 与所有旧副本退出仍单独核验。
 
 ### 7. Wrong vs Correct
 
@@ -76,7 +76,7 @@ Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：�
 
 单独事务与5s锁/60s语句预算，覆盖预检在获取DDL锁之前；锁超时停止、结果未知核对账本/shape，不自动重试。原名缺口补齐只取同一专表旧安全标量，0保留，非空新事实不覆盖，不搬历史raw JSON。可先执行专表contract，再在历史治理/四类门禁通过后执行主表contract；主表原拒绝未知JSON/历史结算守卫未改，不能通过伪造settled_at放行。
 
-扩展既有scripts/test-openrouter-retirement-local.sh与.mts，真实删除12+11列后验证实际repository读写/回捞/计费恢复/取消晚到/Venice及视图/权限；冲突/未知依赖/混合CHECK/2001候选/重复执行拒绝。原expand/ledger与所有消费者验证继续运行。Production需单独覆盖/锁/容量证据，不能沿用TEST零冲突。删列后禁止回退旧别名writer或用重建空列伪称数据恢复；无VACUUM FULL。
+扩展既有 `scripts/database/test-openrouter-retirement-local.sh` 与 `scripts/database/openrouter-retirement-local.mts`，真实删除 12+11 列后验证实际 repository 读写/回捞/计费恢复/取消晚到/Venice 及视图/权限；冲突/未知依赖/混合 CHECK/2001 候选/重复执行拒绝。原 expand/ledger 与所有消费者验证继续运行。Production 需单独覆盖/锁/容量证据，不能沿用 TEST 零冲突。删列后禁止回退旧别名 writer 或用重建空列伪称数据恢复；无 VACUUM FULL。
 
 ## Scenario: 诊断白名单处置与旧账务契约
 

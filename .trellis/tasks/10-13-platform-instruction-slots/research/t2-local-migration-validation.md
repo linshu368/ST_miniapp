@@ -12,7 +12,7 @@ removes the cluster on exit. It does not read or write TEST or Production.
 Run from the repository root:
 
 ```bash
-scripts/test-platform-instruction-slot-windows-local.sh
+scripts/database/test-platform-instruction-slot-windows-local.sh
 ```
 
 `POSTGRES_BIN` may override the default PostgreSQL 17 binary directory. The

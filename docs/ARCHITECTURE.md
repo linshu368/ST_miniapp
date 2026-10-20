@@ -24,7 +24,7 @@
 
 ## 1. 架构铁律（违反即拦截）
 
-离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出复用既有 `experience.import_image_plaza_seed_work` 初始化目标作品，不迁移测试用户/点赞/账务；图片实体必须独立迁移。该工具不改变运行时边界，不自动执行生产 SQL。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
+离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出复用既有 `experience.import_image_plaza_seed_work` 初始化目标作品，不迁移测试用户/点赞/账务；图片实体必须独立迁移。该工具不改变运行时边界，不自动执行生产 SQL。操作方法见 [seed 迁移说明](../ops/image-plaza/README.md)。
 
 1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。
 2. **每条路由注册上方必须有 `@frontend-ready: true|false — 原因`**，半成品要写出带业务含义的原因。
@@ -244,7 +244,7 @@ v1 是旧 bot `SimplePromptEngine` 的忠实移植，最终形状：
 
 ### 4.4.1 AI 回复后处理与展示
 
-后处理不改变模型输入、生成计费或原始回复正文。模型输出协议以 `packages/shared/src/rich-reply-protocol.ts` 为唯一版本化事实源：固定 choices/status/memory 与中文引号对白先由 shared 解析为可信结构化 slot；原始回复不回写，已识别的畸形模块安全降级，边界不明确时保留原文；运营规则只处理其余文本。Admin 编辑的是版本化 source；Backend 发布时在可终止 Worker 中编译，并把 source 与 compiled artifact 原子写入 `app_core.text_postprocess_versions`。Frontend 与 Admin 的最终展示都复用 `@miniapp/reply-renderer`，renderer 只消费已校验 artifact 和原文，不接触发布 API、数据库或 source compiler。
+后处理不改变模型输入、生成计费或原始回复正文。模型输出协议以 `packages/shared/src/text-postprocess/rich-reply-protocol.ts` 为唯一版本化事实源：固定 choices/status/memory 与中文引号对白先由 shared 解析为可信结构化 slot；原始回复不回写，已识别的畸形模块安全降级，边界不明确时保留原文；运营规则只处理其余文本。Admin 编辑的是版本化 source；Backend 发布时在可终止 Worker 中编译，并把 source 与 compiled artifact 原子写入 `app_core.text_postprocess_versions`。Frontend 与 Admin 的最终展示都复用 `@miniapp/reply-renderer`，renderer 只消费已校验 artifact 和原文，不接触发布 API、数据库或 source compiler。
 
 规则 source 固定 schema/policy version，支持有界正则匹配、可信 capture/slot、受控 HTML AST 和作用域 CSS。HTML 模板不使用正向标签/展示属性枚举，普通语义结构默认可用；脚本、文档级/表单/媒体标签、事件属性、内联样式、外部资源和任意 URL 仍被明确拒绝。单条规则与整条消息都有属性、节点、输出、诊断和执行时限；Worker 超时/不可用、artifact 非法或版本缺失时，消费者展示完整原始 Markdown，不读时编译、不伪造 artifact、不回退到最新版本。
 
@@ -448,7 +448,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 
 **鉴权机制**：用户侧统一 `requireTelegramAuth`（`middleware/auth.ts`，读 `X-Init-Data` 做 HMAC-SHA256 校验；非生产可用 `MOCK_AUTH=1` / `DEV_AUTH_BYPASS=1` 旁路）。admin 用 Supabase 会话，客服服务调用靠共享密钥 `X-CS-Internal-Secret`（主后端 → 客服服务，见 `lib/cs-service.ts`），Bot 用 `X-Bot-Internal-Secret` 与 Telegram webhook secret。
 
-**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（OpenRouter 计费回捞）、`features/image/job.ts`（角色回复图片 DB 租约 worker，可由 `IMAGE_WORKER_ENABLED` 关闭）、`features/image-plaza/job.ts`（图片广场 Venice worker，可由 `IMAGE_PLAZA_WORKER_ENABLED` 关闭）、`lib/lobby-ranking-refresh-job.ts`（大厅排序重算）。支付对账与过期是独立 Railway 服务（见 §8）。
+**进程内定时任务**（`app.ts` 启动，不走 HTTP）：`features/generation/sync-job.ts`（OpenRouter 计费回捞）、`features/image/job.ts`（角色回复图片 DB 租约 worker，可由 `IMAGE_WORKER_ENABLED` 关闭）、`features/image-plaza/job.ts`（图片广场 Venice worker，可由 `IMAGE_PLAZA_WORKER_ENABLED` 关闭）、`features/lobby/lobby-ranking-refresh-job.ts`（大厅排序重算）。支付对账与过期是独立 Railway 服务（见 §8）。
 
 ---
 
@@ -457,7 +457,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 ### 7.1 前端
 
 - Next.js 14 App Router，`src/app/` 下 `(main)` 分组承载底部四 Tab（大厅 `/` / 聊天 `/chats` / 创作 `/create` / 我的 `/profile`），会话页是 **`/chat/[characterId]?session=...`**（不在分组内，无底部导航），另有自定义语音台词页 `/chat/[characterId]/voice/[messageId]`。
-- 自研聊天 UI（M5 已交付）：`components/chat/` 下消息列表 / 气泡 / markdown（showdown + DOMPurify）/ 输入区 / 重生成 / 语音播放条 / 会话抽屉 / 工具箱；SSE 客户端是 `lib/api/conversation-stream.ts` 的 `streamConversationTurn()`（旧 `apiStreamClient` 已删除）。会话页编排：`hooks/use-chat-session.ts` 管创建 / URL `?session=` / 失效重建，`hooks/use-conversation-turn.ts` 管发消息、重生成、abort、流式临时态与失败分流；语音生成仍留在 page。余额不足跳充值统一走 `lib/recharge-redirect.ts`（同时认 `insufficient_balance` 与 `INSUFFICIENT_CREDITS`）；`apiClient` 会把对话/语音的 402 裸形状收成带金额的 `ApiClientError`。
+- 自研聊天 UI（M5 已交付）：`components/chat/` 下消息列表 / 气泡 / markdown（showdown + DOMPurify）/ 输入区 / 重生成 / 语音播放条 / 会话抽屉 / 工具箱；SSE 客户端是 `lib/api/conversation-stream.ts` 的 `streamConversationTurn()`（旧 `apiStreamClient` 已删除）。会话页编排：`hooks/use-chat-session.ts` 管创建 / URL `?session=` / 失效重建，`hooks/use-conversation-turn.ts` 管发消息、重生成、abort、流式临时态与失败分流；语音生成仍留在 page。余额不足跳充值统一走 `lib/payment/recharge-redirect.ts`（同时认 `insufficient_balance` 与 `INSUFFICIENT_CREDITS`）；`apiClient` 会把对话/语音的 402 裸形状收成带金额的 `ApiClientError`。
 - 回复后处理快照由 `lib/api/text-postprocess.ts` 按消息版本批量读取；流式阶段保持 `ChatMarkdown`，终态由 `@miniapp/reply-renderer` 展示。缺失/非法 artifact、旧 `NULL` 版本或 Worker 失败均退化为完整原始 Markdown；不得在 Frontend 编译 source 或选择最新版本替代。
 - 用户生成配置有编辑界面：模型档位在 `ChatTopBar` 的引擎胶囊里，由 `ChatModelSwitcher` 展开；工具箱不再放模型入口。角色回复图片通过消息操作行与独立 Sheet 交互。VIP 详情在 `/vip`，和星尘套餐在充值页互斥选择。
 - 服务端数据一律 React Query，封装在 `src/lib/api/`；`client.ts` 是唯一 REST 客户端。
@@ -496,8 +496,8 @@ packages/backend/src/
 新发送和重生成不再由 Backend 进程缓存决定版本。`experience.start_chat_history_*_with_current_postprocess` 在既有开轮事务内读取 `app_core.runtime_config.miniapp_text_postprocess_config` 权威指针，联结并校验对应不可变 artifact 快照，再委托显式版本 wrapper 绑定 `chat_history.postprocess_version`。同一发布并发下可见完整旧版或完整新版，不使用 `MAX(version)`；成功必返回非空版本，配置/RPC/快照异常则整轮失败且不留下半写。旧显式 wrapper 和 `NULL=不绑定` 语义继续服务兼容旧 Backend，应用顺序必须是 migration → Backend。
 
 - 位置 `packages/shared/migrations/`（`archive/` 另存 087 删除的 admin RPC 定义备查）。
-- **命名规则（2026-09-10 起）**：新迁移一律 `YYYYMMDD_描述.sql`。三位数字编号已停用并由 CI 拦截（`pnpm lint:migrations`，冻结清单在 `scripts/check-migration-filenames.mjs`）——历史上 021/030/031/032/053/065/086/088/092/093/095 撞号，100 号立规后 105/108/109 又各撞一对。
-- **迁移账本**：`supabase_migrations.repo_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by / applied_at）。这是平台 schema 上的仓库账本，不是八个业务域的表，也不是 CLI 的 `schema_migrations`。`Database Migration` workflow 的 `apply` 把查账本、执行 SQL、写账本放在同一次调用（`scripts/apply-repo-migration.sh`）：已记录且 checksum 一致则拒绝重跑；checksum 不一致报 `MIGRATION_CHECKSUM_DRIFT`（不要改旧文件再跑，写新迁移）；账本表不存在时除 `20260910_schema_migrations_ledger.sql` 外直接失败，不再静默放行。`force_rerun` 只允许文件未改时再执行一遍 SQL，**不覆盖**首次 `applied_at` / checksum，历史写在 `repo_migration_events`（`20260914_repo_migration_ledger_events.sql`）。Apply 与 Record 之间用 `repo_migration_claims` 认领，避免「库已变、账本没有」。`mode=inspect` 用仓库日期命名文件的 sha256 对账本，并探 R3 `grant_bonus_credits`、111 `st_handle` 可空、A 的结算两列。账本只覆盖 2026-09-10 后的新迁移，存量不回填。生产环境拒绝 `104_rollback_voice_billing.sql`。本地协议回归：`pnpm test:migration-ledger`。
+- **命名规则（2026-09-10 起）**：新迁移一律 `YYYYMMDD_描述.sql`。三位数字编号已停用并由 CI 拦截（`pnpm lint:migrations`，冻结清单在 `scripts/checks/check-migration-filenames.mjs`）——历史上 021/030/031/032/053/065/086/088/092/093/095 撞号，100 号立规后 105/108/109 又各撞一对。
+- **迁移账本**：`supabase_migrations.repo_migrations` 记录每个环境实际执行过的文件（filename / checksum / applied_by / applied_at）。这是平台 schema 上的仓库账本，不是八个业务域的表，也不是 CLI 的 `schema_migrations`。`Database Migration` workflow 的 `apply` 把查账本、执行 SQL、写账本放在同一次调用（`scripts/database/apply-repo-migration.sh`）：已记录且 checksum 一致则拒绝重跑；checksum 不一致报 `MIGRATION_CHECKSUM_DRIFT`（不要改旧文件再跑，写新迁移）；账本表不存在时除 `20260910_schema_migrations_ledger.sql` 外直接失败，不再静默放行。`force_rerun` 只允许文件未改时再执行一遍 SQL，**不覆盖**首次 `applied_at` / checksum，历史写在 `repo_migration_events`（`20260914_repo_migration_ledger_events.sql`）。Apply 与 Record 之间用 `repo_migration_claims` 认领，避免「库已变、账本没有」。`mode=inspect` 用仓库日期命名文件的 sha256 对账本，并探 R3 `grant_bonus_credits`、111 `st_handle` 可空、A 的结算两列。账本只覆盖 2026-09-10 后的新迁移，存量不回填。生产环境拒绝 `104_rollback_voice_billing.sql`。本地协议回归：`pnpm test:migration-ledger`。
 - **历史存量编号必须小心**（均已冻结，仅供查档）：
   - 021 / 030 / 031 / 032 / 053 / 065 历史重号，同号无依赖，按文件名字母序执行；
   - 086 / 088 / 092 / 093 / 095 与 105 / 108 / 109 也各有两个文件，来自并行发布线，**同号但含义不同，不要按序号推断内容**；
@@ -509,7 +509,7 @@ packages/backend/src/
 
 ### 7.5 legacy guard（禁止旧链路的新引用）
 
-`scripts/check-legacy-references.mjs`，本地跑 `pnpm lint:legacy`，CI 在 import guard 之后强制执行。
+`scripts/checks/check-legacy-references.mjs`，本地跑 `pnpm lint:legacy`，CI 在 import guard 之后强制执行。
 
 它解决的问题是：本仓经历过 ST 退场、schema 拆八域、growth 下线、支付方案变更等多轮迁移，靠人 review 记不住哪条链路已经死了。每条规则都对应一个**已经收口完成**的决定，命中即说明有人又开了第二条：
 

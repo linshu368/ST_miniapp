@@ -23,7 +23,7 @@
 
 拟增加一个小型 workspace 包 packages/reply-renderer（@miniapp/reply-renderer），依赖 shared；Frontend/Admin 均依赖它，React 使用 peer dependency。它只提供回复正文渲染、交互回调、浏览器任务执行适配，不含登录、HTTP、业务状态、应用 store。新增包是两个实际消费者共用同一 React 渲染实现的最低边界，shared 继续只含 DTO/schema 和确定性纯编译/解析工具。不得把 React 组件放 shared，不允许应用间 import。README/ARCHITECTURE/导入守卫同步六包拓扑。
 
-shared 拟使用 src/api/text-postprocess.ts 与 src/text-postprocess/（schema 以 API 定义为准，算法放纯工具）；新渲染包不重复规则定义。Backend 增加 features/text-postprocess/、单一 repository 和领域 route；Admin 增加工作台组件及 lib/textPostprocessApi.ts；Frontend 增加 lib/api/text-postprocess.ts 和薄适配。
+shared 拟使用 src/api/text-postprocess.ts 与 src/text-postprocess/（schema 以 API 定义为准，算法放纯工具）；新渲染包不重复规则定义。Backend 增加 features/text-postprocess/、单一 repository 和领域 route；Admin 增加工作台组件及 lib/text-postprocess/textPostprocessApi.ts；Frontend 增加 lib/api/text-postprocess.ts 和薄适配。
 
 拒绝：万能插件框架、运营 JS、执行 eval、全量 AST 编辑器、额外全局状态库、队列/Redis、第二套聊天模型调用、同消息保存大份配置、每消息单独请求、无限历史页面读取。
 
@@ -118,7 +118,7 @@ T0 在实施获批后验证 HTML/CSS AST 依赖、模板/Markdown 合成、可�
 
 对照当前实现：TextPostprocessView 使用分离 Card、16px 间距、绿色选中边框；列表各行堆放上下移/删除，编辑区 flags 为文本框，预览顶部堆放工具和全部诊断，发布/历史在三栏之后。T6R 将页面组织和视觉替换为 Demo 的对应结构，不更改已验证的运行语义。
 
-产品改动限于 `packages/admin/src/components/TextPostprocessView.tsx`、`styles.css`，必要时少量扩展 `lib/textPostprocessPreview.ts`、`lib/textPostprocessWorkbench.ts` 和样例帮助；优先在原文件组织独立职责，只有明显提升可维护性时才拆小型子组件。默认不改 App 外壳、Backend、shared、reply-renderer、Frontend、migration、package/lock 或外部环境，不新增依赖/API/数据库对象。
+产品改动限于 `packages/admin/src/components/views/TextPostprocessView.tsx`、`styles.css`，必要时少量扩展 `lib/text-postprocess/textPostprocessPreview.ts`、`lib/text-postprocess/textPostprocessWorkbench.ts` 和样例帮助；优先在原文件组织独立职责，只有明显提升可维护性时才拆小型子组件。默认不改 App 外壳、Backend、shared、reply-renderer、Frontend、migration、package/lock 或外部环境，不新增依赖/API/数据库对象。
 
 ### 10.2 复现与必要适配
 

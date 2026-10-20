@@ -51,12 +51,12 @@
 
 - `packages/backend/src/infrastructure/repositories/MiniappWalletRepository.ts`：LLM 扣费错误仍原样抛出；新增退款 RPC；消费明细只扩展 LLM 与 `llm_usage` 退款行。
 - `packages/backend/src/features/generation/`：计费快照、预检、解析、settle/sync。不改 image 子目录。
-- `scripts/test-vip-billing-migrations.sh`：在 T3 之后追加 T4 本地场景。
+- `scripts/database/test-vip-billing-migrations.sh`：在 T3 之后追加 T4 本地场景。
 - 不改 `packages/shared/src/index.ts`，不改语音/图片实现。
 
 ## 验证
 
-本地：shared 测试、backend 相关测试、全消费者 typecheck、lint:imports / legacy / migrations、migration ledger、`scripts/test-vip-billing-migrations.sh`。
+本地：shared 测试、backend 相关测试、全消费者 typecheck、lint:imports / legacy / migrations、migration ledger、`scripts/database/test-vip-billing-migrations.sh`。
 
 SQL 场景覆盖：免费优先、只有 bonus、main-only 拒绝 bonus、余额竞态不 partial、快照不被后到价格改写、pending 后 sync、重复扣款、重复退款、历史 partial 只读、无 debit_key 不退款。
 

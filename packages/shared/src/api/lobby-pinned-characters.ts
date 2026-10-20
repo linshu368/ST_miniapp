@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { LOBBY_FEATURED_POSITION_COUNT } from '../lobby-featured';
+import { LOBBY_FEATURED_POSITION_COUNT } from './lobby-featured';
 
 /**
  * 首页「推荐」页的运营固定位。

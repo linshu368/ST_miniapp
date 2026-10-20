@@ -15,7 +15,7 @@ import {
   useLobbyLatestBadgeQuery,
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
-import { chatEntryPath } from '@/lib/chat-entry';
+import { chatEntryPath } from '@/lib/chat/chat-entry';
 import {
   clearLobbyReturnSnapshot,
   readLobbyReturnSnapshot,

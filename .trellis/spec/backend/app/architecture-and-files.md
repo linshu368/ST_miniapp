@@ -20,7 +20,8 @@
 - `text-postprocess/`：Admin 状态/草稿/发布/回滚编排、隔离编译 Worker、严格配置读取和版本批次查询；不进入 generation/计费出口。
 - `engine/`：`prompt-engine.ts` 组消息，`render-instructions.ts` 渲染模板，`platform-instructions.ts` 取平台规则，`types.ts/index.ts` 定义内部边界；除配置读取外尽量纯函数。
 - `generation/`：生成/计费唯一出口；`execute.ts` 编排，`precheck.ts` 余额预检，`quota.ts` 免费额度，`resolve-model.ts` 模型解析，`prompt-caching.ts` 缓存策略，`upstream.ts` OpenRouter 流，`voice-billing.ts` 语音策略。
-- `lobby/`：精选、置顶、推荐排序参数/分数/统计与刷新。
+- `lobby/`：精选、置顶、推荐排序参数/分数/统计，以及 `lobby-ranking-refresh-job.ts` 和 `lobby-latest-badge.ts` 等大厅后台能力。
+- `notifications/`：消息中心可见性/未读规则与用户通知写入。
 - `payment/domain/`：充值规则；`payment/usecases/`：下单、结算、回调报告、快速对账、订单过期、支付终态 telemetry observer。
 - `voice/`：语音文本/提示词/草稿、音色目录、MiniMax/DeepSeek 上游、生成编排与计费配置。
 
@@ -38,8 +39,8 @@ Repository 隐藏 schema client/Prisma 行形状，返回领域结果；跨 sche
 
 - `lib/db.ts`：Prisma 单例；`lib/supabase.ts`：按域 Supabase client。
 - `lib/logger.ts`/`log-pretty.ts`：pino；`lib/sentry.ts`：监控与脱敏。
-- `chat-history-logger.ts` + `chat-history-sync-job.ts`：终态即时记录与轮询补齐；`chat-voice-storage.ts`：语音 Storage。
-- `lobby-ranking-refresh-job.ts`/`lobby-latest-badge.ts`：大厅后台能力；`notifications.ts`/`notification-scope.ts`：通知；`cs-service.ts`：调用独立客服服务（linshu368/ST_cs_platform）；`telegram-links.ts`、`user-avatar.ts`、`user.ts`：边界工具。
+- `chat-history-logger.ts` + `chat-history-sync-job.ts`：终态即时记录与轮询补齐；`lib/storage/chat-image-storage.ts` 与 `lib/storage/chat-voice-storage.ts`：聊天图片/语音 Storage。
+- `cs-service.ts`：调用独立客服服务（linshu368/ST_cs_platform）；`telegram-links.ts`、`user-avatar.ts`、`user.ts`：边界工具。
 - `platform/config.ts`：环境变量解析唯一中心；`runtime-config.ts`：DB 配置读取唯一入口；`model-tiers.ts`、`openrouter-models.ts`：模型档位和目录。
 - `prisma/schema.prisma` 是 Prisma 映射，不是共享契约；`prisma/migrations/` 是历史，当前 migration 唯一源仍是 `packages/shared/migrations/`；`seed.ts` 保护开发 fixture。
 - `scripts/payment-*` 执行支付诊断/对账/过期；`seed-config.ts` 初始化配置。阶段 `invite-uat/`、`mvp-regression/` 已删除，不得作为现行场景验证器。

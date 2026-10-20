@@ -21,42 +21,44 @@
 
 ## `src` 文件地图
 
-| 路径/文件组                                      | 职责                                                                   |
-| ------------------------------------------------ | ---------------------------------------------------------------------- |
-| `main.tsx`                                       | 创建 Supabase client/provider、AntD 中文 locale/theme、Refine 和根渲染 |
-| `App.tsx`                                        | 登录态、环境、工作区导航和顶层编排；不应堆积领域解析算法               |
-| `styles.css`                                     | 全局布局、响应式和组件补充样式                                         |
-| `components/LoginPage.tsx`                       | 运营登录交互与错误反馈                                                 |
-| `components/ConfigValueEditor.tsx`               | 配置值通用编辑入口和草稿交互                                           |
-| `components/SystemInstructionsEditor.tsx`        | 系统指令配置编辑                                                       |
-| `components/TextPostprocessView.tsx`             | 回复富文本三栏工作台、草稿/发布/历史/预览编排                          |
-| `components/ModelCatalogEditor.tsx`              | 模型目录表单、排序和差异显示                                           |
-| `components/WordCountTiersEditor.tsx`            | 回复长度档位编辑与排序                                                 |
-| `components/LobbyPinnedCharactersEditor.tsx`     | 大厅置顶角色配置                                                       |
-| `components/LobbyRankingParamsEditor.tsx`        | 大厅排序参数配置                                                       |
-| `components/PaymentPromptDialogConfigEditor.tsx` | 支付提示弹窗配置                                                       |
-| `components/RechargePageConfigEditor.tsx`        | 充值页配置                                                             |
-| `components/InviteCenterConfigEditor.tsx`        | 邀请中心展示配置                                                       |
-| `components/InviteRewardRulesEditor.tsx`         | 邀请奖励规则配置                                                       |
-| `components/CharacterCardsView.tsx`              | 角色卡创建、布局、状态、删除/恢复和版本操作                            |
-| `components/AnnouncementsView.tsx`               | 公告查询、编辑、发布和删除                                             |
-| `components/InviteProgramView.tsx`               | 裂变计划配置与邀请关系查询                                             |
-| `components/OutreachCreditGrantView.tsx`         | 定向回访星尘赠送                                                       |
-| `lib/adminApi.ts`                                | admin 通用 HTTP/Supabase 管理调用                                      |
-| `lib/announcementsApi.ts`                        | 公告 API 边界                                                          |
-| `lib/inviteAdminApi.ts`                          | 裂变管理 API 边界                                                      |
-| `lib/outreachCreditsApi.ts`                      | 赠送 API、输入和响应处理                                               |
-| `lib/environment.ts`                             | 测试/生产环境模型、URL 和切换规则                                      |
-| `lib/adminNavigation.ts`                         | 导航项与 view 纯逻辑                                                   |
-| `lib/textPostprocessApi.ts`                      | 文本后处理 Admin API、超时、结果未知与 request lookup                  |
-| `lib/textPostprocessWorkbench.ts`                | 草稿/session/CAS/差异/历史纯逻辑                                       |
-| `lib/textPostprocessPreview.ts` / `.worker.ts`   | 有界预览任务、Worker 编译/执行与迟到结果隔离                           |
-| `lib/textPostprocessSamples.ts`                  | 五类模板起点与预览样例                                                 |
-| `lib/configSchemas.ts`                           | 运营配置的 Zod 组合与校验                                              |
-| `lib/characterCards.ts`                          | 角色卡转换/排序等纯逻辑                                                |
-| `lib/modelCatalogDiff.ts`                        | 模型目录差异计算                                                       |
-| `lib/openRouterModels.ts`                        | OpenRouter 模型归一化/筛选逻辑                                         |
-| `*.test.ts`                                      | 对应纯逻辑回归测试；与源文件邻近                                       |
+| 路径/文件组                                                     | 职责                                                                   |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `main.tsx`                                                      | 创建 Supabase client/provider、AntD 中文 locale/theme、Refine 和根渲染 |
+| `App.tsx`                                                       | 登录态、环境、工作区导航和顶层编排；不应堆积领域解析算法               |
+| `styles.css`                                                    | 全局布局、响应式和组件补充样式                                         |
+| `components/views/LoginPage.tsx`                                | 运营登录交互与错误反馈                                                 |
+| `components/config/ConfigValueEditor.tsx`                       | 配置值通用编辑入口和草稿交互                                           |
+| `components/config/SystemInstructionsEditor.tsx`                | 系统指令配置编辑                                                       |
+| `components/views/TextPostprocessView.tsx`                      | 回复富文本三栏工作台、草稿/发布/历史/预览编排                          |
+| `components/config/ModelCatalogEditor.tsx`                      | 模型目录表单、排序和差异显示                                           |
+| `components/config/WordCountTiersEditor.tsx`                    | 回复长度档位编辑与排序                                                 |
+| `components/config/LobbyPinnedCharactersEditor.tsx`             | 大厅置顶角色配置                                                       |
+| `components/config/LobbyRankingParamsEditor.tsx`                | 大厅排序参数配置                                                       |
+| `components/config/PaymentPromptDialogConfigEditor.tsx`         | 支付提示弹窗配置                                                       |
+| `components/config/RechargePageConfigEditor.tsx`                | 充值页配置                                                             |
+| `components/config/InviteCenterConfigEditor.tsx`                | 邀请中心展示配置                                                       |
+| `components/config/InviteRewardRulesEditor.tsx`                 | 邀请奖励规则配置                                                       |
+| `components/views/CharacterCardsView.tsx`                       | 角色卡创建、布局、状态、删除/恢复和版本操作                            |
+| `components/views/AnnouncementsView.tsx`                        | 公告查询、编辑、发布和删除                                             |
+| `components/views/InviteProgramView.tsx`                        | 裂变计划配置与邀请关系查询                                             |
+| `components/views/OutreachCreditGrantView.tsx`                  | 定向回访星尘赠送                                                       |
+| `lib/api/adminApi.ts`                                           | admin 通用 HTTP/Supabase 管理调用                                      |
+| `lib/api/announcementsApi.ts`                                   | 公告 API 边界                                                          |
+| `lib/api/inviteAdminApi.ts`                                     | 裂变管理 API 边界                                                      |
+| `lib/api/outreachCreditsApi.ts`                                 | 赠送 API、输入和响应处理                                               |
+| `lib/environment.ts`                                            | 测试/生产环境模型、URL 和切换规则                                      |
+| `lib/adminNavigation.ts`                                        | 导航项与 view 纯逻辑                                                   |
+| `lib/text-postprocess/textPostprocessApi.ts`                    | 文本后处理 Admin API、超时、结果未知与 request lookup                  |
+| `lib/text-postprocess/textPostprocessWorkbench.ts`              | 草稿/session/CAS/差异/历史纯逻辑                                       |
+| `lib/text-postprocess/textPostprocessPreview.ts` / `.worker.ts` | 有界预览任务、Worker 编译/执行与迟到结果隔离                           |
+| `lib/text-postprocess/textPostprocessSamples.ts`                | 五类模板起点与预览样例                                                 |
+| `lib/configSchemas.ts`                                          | 运营配置的 Zod 组合与校验                                              |
+| `lib/character-cards/characterCards.ts`                         | 角色卡转换/排序等纯逻辑                                                |
+| `lib/image-plaza/imagePlazaPricing.ts`                          | 图片广场定价计算                                                       |
+| `lib/model-catalog/modelCatalogDiff.ts`                         | 模型目录差异计算                                                       |
+| `lib/model-catalog/openRouterModels.ts`                         | OpenRouter 模型归一化/筛选逻辑                                         |
+| `lib/vip/vipStrategyForm.ts`                                    | VIP 策略表单纯逻辑                                                     |
+| `*.test.ts`                                                     | 对应纯逻辑回归测试；与源文件邻近                                       |
 
 ## 依赖与放置规则
 

@@ -23,15 +23,15 @@
 
 ### Admin
 
-- `packages/admin/src/components/ModelCatalogEditor.tsx`
+- `packages/admin/src/components/config/ModelCatalogEditor.tsx`
   - `Collapse.items` 目前写死 OpenRouter 模型目录。
   - 模型卡只有 `openrouter_model_id` 下拉，没有平台选择。
   - `filterOpenRouterModels`、`findDuplicateOpenRouterAssignments` 和重复提示均按 OpenRouter 字段工作。
-- `packages/admin/src/lib/openRouterModels.ts`
+- `packages/admin/src/lib/model-catalog/openRouterModels.ts`
   - 调 backend `GET /api/platform/openrouter/models`。
   - 使用 `OpenRouterModelDirectorySchema` 校验返回。
   - `getOpenRouterCatalogIssues` 检查模型缺失/过期。
-- `packages/admin/src/lib/modelCatalogDiff.ts`
+- `packages/admin/src/lib/model-catalog/modelCatalogDiff.ts`
   - 发布差异中显示“OpenRouter 映射”。
 - `packages/admin/src/lib/configSchemas.ts`
   - `llm_model_catalog` 使用 shared `ModelCatalogSchema`。

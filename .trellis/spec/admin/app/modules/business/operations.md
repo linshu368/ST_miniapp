@@ -25,13 +25,13 @@ last_verified_at: 2026-10-12
 
 ## 涉及文件
 
-| 路径                                                        | 职责     |
-| ----------------------------------------------------------- | -------- |
-| `packages/admin/src/components/ModelCatalogEditor.tsx`      | 模型配置 |
-| `packages/admin/src/components/CharacterCardsView.tsx`      | 角色卡   |
-| `packages/admin/src/components/AnnouncementsView.tsx`       | 公告     |
-| `packages/admin/src/components/InviteProgramView.tsx`       | 邀请计划 |
-| `packages/admin/src/components/OutreachCreditGrantView.tsx` | 回访赠送 |
+| 路径                                                              | 职责     |
+| ----------------------------------------------------------------- | -------- |
+| `packages/admin/src/components/config/ModelCatalogEditor.tsx`     | 模型配置 |
+| `packages/admin/src/components/views/CharacterCardsView.tsx`      | 角色卡   |
+| `packages/admin/src/components/views/AnnouncementsView.tsx`       | 公告     |
+| `packages/admin/src/components/views/InviteProgramView.tsx`       | 邀请计划 |
+| `packages/admin/src/components/views/OutreachCreditGrantView.tsx` | 回访赠送 |
 
 ## 关键实现链路
 
@@ -69,3 +69,4 @@ Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型�
 
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 将标签功能开关文案改为仅控制分享自动打标。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+- 2026-10-20：任务 `Reorganize project structure without behavior changes`（`.trellis/tasks/archive/2026-10/10-20-reorganize-project-structure/`）同步本次目录归纳后的现行文件路径，不改变模块职责或行为；commit：`9630b6eed9467dcc4c9c59cffba9272761889810`。

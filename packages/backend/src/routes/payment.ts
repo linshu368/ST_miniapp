@@ -37,7 +37,7 @@ import {
   type ZqPaymentNotifyData,
 } from '../infrastructure/payment/ZqPaymentGateway.js';
 import { config } from '../platform/config.js';
-import { insertUserNotification } from '../lib/notifications.js';
+import { insertUserNotification } from '../features/notifications/notifications.js';
 import {
   CheckoutConfirmationError,
   CheckoutConfirmationUseCase,

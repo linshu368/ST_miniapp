@@ -21,7 +21,7 @@ import {
   type PaymentType,
 } from '@miniapp/shared';
 
-import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
+import { AlipayIcon, WeChatPayIcon } from '@/components/payment/icons';
 import { AlipayPaymentGuidanceDialog } from '@/components/payment/alipay-payment-guidance-dialog';
 import { PaymentVpnPromptDialog } from '@/components/payment/payment-vpn-prompt-dialog';
 import { VipPlanCard } from '@/components/payment/vip-plan-card';

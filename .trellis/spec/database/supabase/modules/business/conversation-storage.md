@@ -57,7 +57,7 @@ last_verified_at: 2026-10-13
 
 ## 变更记录
 
-- 2026-10-19：增加离线 TEST seed 导出与目标初始化模板，复用既有 RPC，不增加永久对象；仅导出 active seed 内容与图片元数据，目标重新分配 UUID，排除用户行为。真实数据不入 Git，Storage 实体复制和生产执行独立审批。见 `ops/image-plaza-seed-migration.md`；未进行生产导入。
+- 2026-10-19：增加离线 TEST seed 导出与目标初始化模板，复用既有 RPC，不增加永久对象；仅导出 active seed 内容与图片元数据，目标重新分配 UUID，排除用户行为。真实数据不入 Git，Storage 实体复制和生产执行独立审批。见 `ops/image-plaza/README.md`；未进行生产导入。
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
@@ -65,6 +65,7 @@ last_verified_task: .trellis/tasks/09-11-chat-image-generation-plan/
 last_verified_at: 2026-09-14
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+- 2026-10-20：任务 `Reorganize project structure without behavior changes`（`.trellis/tasks/archive/2026-10/10-20-reorganize-project-structure/`）同步本次目录归纳后的现行文件路径，不改变模块职责或行为；commit：`9630b6eed9467dcc4c9c59cffba9272761889810`。
 
 ## T9 专表旧别名清理（本地实现，远端未执行）
 

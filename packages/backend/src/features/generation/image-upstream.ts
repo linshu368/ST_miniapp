@@ -1,6 +1,6 @@
 import { MAX_IMAGE_PROMPT_CHARS } from '@miniapp/shared';
 import { Buffer } from 'node:buffer';
-import type { StoredImageMimeType } from '../../lib/chat-image-storage.js';
+import type { StoredImageMimeType } from '../../lib/storage/chat-image-storage.js';
 import type { CharacterCardRow } from '../../infrastructure/repositories/CharacterCardRepository.js';
 import type {
   ConversationContext,

@@ -15,7 +15,7 @@
 
 ## 初始背景事实（2026-09-28 规划基线）
 
-当前 AI 正文为 Showdown + DOMPurify，无规则配置或发送选项，见 `packages/frontend/src/components/chat/chat-markdown.tsx:12`、`:20`、`:47`。Backend 已有原子开轮、SSE、原文落库，见 `packages/backend/src/features/conversations/generate.ts:125`、`:143`、`:169`、`:179`。Admin 已有运营鉴权、环境隔离、草稿、发布和回滚入口，见 `packages/admin/src/lib/adminApi.ts:135`、`:168`、`:187`、`:205`。源码和 migration 不证明 TEST/Production 实际结构相同。
+当前 AI 正文为 Showdown + DOMPurify，无规则配置或发送选项，见 `packages/frontend/src/components/chat/chat-markdown.tsx:12`、`:20`、`:47`。Backend 已有原子开轮、SSE、原文落库，见 `packages/backend/src/features/conversations/generate.ts:125`、`:143`、`:169`、`:179`。Admin 已有运营鉴权、环境隔离、草稿、发布和回滚入口，见 `packages/admin/src/lib/api/adminApi.ts:135`、`:168`、`:187`、`:205`。源码和 migration 不证明 TEST/Production 实际结构相同。
 
 ## 需求
 

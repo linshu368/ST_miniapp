@@ -62,8 +62,8 @@ SUMMARIES = {
 
 EVIDENCE = {
     "admin.business.operations": [
-        "packages/admin/src/components/VipStrategyView.tsx",
-        "packages/admin/src/lib/vipStrategyForm.ts",
+        "packages/admin/src/components/views/VipStrategyView.tsx",
+        "packages/admin/src/lib/vip/vipStrategyForm.ts",
         "packages/shared/src/api/vip-strategy.ts",
     ],
     "frontend.business.conversation-ui": [
@@ -208,13 +208,13 @@ SECTIONS: dict[str, dict[str, str]] = {
         "当前状态": "主要运营页面已集中在 Admin SPA。VIP策略复用现有草稿、发布、版本、回滚和环境隔离，发布前走 shared schema 校验。它不直写 `runtime_config`，也不配置提醒文案、提前天数、时区、语音价格或高级图片供应商。",
         "涉及文件": """| 路径                                                        | 职责           |
 | ----------------------------------------------------------- | -------------- |
-| `packages/admin/src/components/VipStrategyView.tsx`         | VIP策略表单    |
-| `packages/admin/src/lib/vipStrategyForm.ts`                 | VIP策略校验    |
-| `packages/admin/src/components/ModelCatalogEditor.tsx`      | 模型配置       |
-| `packages/admin/src/components/CharacterCardsView.tsx`      | 角色卡         |
-| `packages/admin/src/components/AnnouncementsView.tsx`       | 公告           |
-| `packages/admin/src/components/InviteProgramView.tsx`       | 邀请计划       |
-| `packages/admin/src/components/OutreachCreditGrantView.tsx` | 回访赠送       |""",
+| `packages/admin/src/components/views/VipStrategyView.tsx`         | VIP策略表单    |
+| `packages/admin/src/lib/vip/vipStrategyForm.ts`                 | VIP策略校验    |
+| `packages/admin/src/components/config/ModelCatalogEditor.tsx`      | 模型配置       |
+| `packages/admin/src/components/views/CharacterCardsView.tsx`      | 角色卡         |
+| `packages/admin/src/components/views/AnnouncementsView.tsx`       | 公告           |
+| `packages/admin/src/components/views/InviteProgramView.tsx`       | 邀请计划       |
+| `packages/admin/src/components/views/OutreachCreditGrantView.tsx` | 回访赠送       |""",
         "关键实现链路": "登录/环境 → VIP策略或既有表单校验 → Admin 发布链路 → 已发布 runtime config。已创建订单、已受理生成和已领取签到继续使用各自快照。",
         "已知缺口与待核验项": "Production 的 VIP 配置发布需要产品在 T9 明确批准。TEST 购买和提醒开关的最近回读记录在任务日志，本文件不把 test 当前价写成代码默认值。",
     },
@@ -232,7 +232,7 @@ SECTIONS: dict[str, dict[str, str]] = {
 | `packages/frontend/src/lib/api/conversation-stream.ts`         | SSE client                                      |
 | `packages/frontend/src/hooks/use-chat-session.ts`              | 会话生命周期                                    |
 | `packages/frontend/src/hooks/use-conversation-turn.ts`         | 发送/重生成编排                                 |
-| `packages/frontend/src/lib/recharge-redirect.ts`               | 充值跳转收口                                    |
+| `packages/frontend/src/lib/payment/recharge-redirect.ts`               | 充值跳转收口                                    |
 | `packages/frontend/src/lib/api/images.ts`                      | 图片查询与 mutation                             |""",
         "关键实现链路": "页面接线 → session/turn hooks → SSE 与气泡收敛。顶部胶囊读取模型目录和 VIP 状态；输出中的切换不影响当前回复。图片 query 在存在非终态 attempt 时轮询，成功、失败和额度变化后刷新配置与钱包。图片 402 跳充值传入 `triggerSource: 'chat_image'`。",
         "已知缺口与待核验项": "2026-09-24 VIP 真机验收已通过。图片 runtime 开关仍默认关闭；图稿逐项、Telegram 长按保存和 PostHog Preview 事件不因 VIP 验收视为完成。",

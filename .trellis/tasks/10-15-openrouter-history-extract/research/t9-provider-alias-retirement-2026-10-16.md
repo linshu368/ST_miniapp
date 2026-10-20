@@ -12,7 +12,7 @@
 - 保留 11 个对应原名字段、llm_generation_id/data、主键/parent key、审计列、UNIQUE/FK/canonical CHECK/ACL。
 - 逐组验证 alias/canonical 类型；非空冲突拒绝，最多2000候选仅填NULL canonical；NULL metadata/占位继续合法，0不丢失，不复制父表业务finish_reason或历史raw JSON。
 - 定点移除8个既有旧单列CHECK，再DROP11列，RESTRICT、不CASCADE。未知依赖/混合CHECK、shape漂移、provider重叠、超预算及重复执行拒绝。锁5s/语句60s、独立事务；覆盖检查在DDL锁之前，外部必须先证明所有旧writer退出。
-- 只扩展既有 scripts/test-openrouter-retirement-local.sh / openrouter-retirement-local.mts，不新建测试文件/状态源/通用框架。
+- 只扩展既有 `scripts/database/test-openrouter-retirement-local.sh` / `scripts/database/openrouter-retirement-local.mts`，不新建测试文件/状态源/通用框架。
 
 原主表 DROP 及其他历史 SQL 字节未改。本轮没有对1797条历史JSON自动复制/清空，也没有对1281条无snapshot历史行补扣、补写假settled_at或移除守卫。它们不被认定为新调用失败；原主表DROP仍会拒绝，需独立审阅分类/处置。此限制不阻止专表独立contract。
 
@@ -30,8 +30,8 @@
 可重复本机命令：
 
 ```sh
-OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin OPENROUTER_TEST_POSTGREST_BIN=/private/tmp/openrouter-retirement-tools/postgrest bash scripts/test-openrouter-retirement-local.sh
-OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/test-openrouter-original-fields-migration.sh
+OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin OPENROUTER_TEST_POSTGREST_BIN=/private/tmp/openrouter-retirement-tools/postgrest bash scripts/database/test-openrouter-retirement-local.sh
+OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/database/test-openrouter-original-fields-migration.sh
 pnpm test:migration-ledger
 ```
 

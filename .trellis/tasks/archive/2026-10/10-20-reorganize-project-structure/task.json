@@ -1,0 +1,38 @@
+{
+  "id": "reorganize-project-structure",
+  "name": "reorganize-project-structure",
+  "title": "Reorganize project structure without behavior changes",
+  "description": "只移动职责高度一致的文件并同步所有路径消费者，不改变运行行为、公开 API、路由、数据库或部署语义。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "cross-package-structure",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-20",
+  "completedAt": "2026-10-20",
+  "branch": "codex/reorganize-project-structure",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "admin.business.operations",
+        "admin.infrastructure.admin-client-auth",
+        "database.business.conversation-storage",
+        "frontend.business.conversation-ui"
+      ],
+      "reason": "Only four module documents contain path facts changed by the reorganization; module behavior and ownership stay unchanged."
+    }
+  }
+}

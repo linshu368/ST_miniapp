@@ -15,23 +15,23 @@ import {
   type CompiledTextPostprocessRule,
 } from '@miniapp/shared';
 
-import { composeAppliedView } from '../compose';
-import { BASE_CSS } from '../base-css';
-import { createAlphanumericNonce } from '../nonce';
-import { isSafeCss } from '../css-safety';
-import { ReplyRenderer } from '../ReplyRenderer';
-import { buildWorkerResponse } from '../postprocess-job';
-import { ruleScopeClass } from '../scope-class';
-import { mainBundlePath, workerBundlePath } from '../test-bundle-paths';
-import { TrustedTree } from '../trusted-tree';
+import { composeAppliedView } from '../rendering/compose';
+import { BASE_CSS } from '../rendering/base-css';
+import { createAlphanumericNonce } from '../rendering/nonce';
+import { isSafeCss } from '../rendering/css-safety';
+import { ReplyRenderer } from '../rendering/ReplyRenderer';
+import { buildWorkerResponse } from '../worker/postprocess-job';
+import { ruleScopeClass } from '../rendering/scope-class';
+import { mainBundlePath, workerBundlePath } from '../testing/test-bundle-paths';
+import { TrustedTree } from '../rendering/trusted-tree';
 import {
   POSTPROCESS_TIMEOUT_MS,
   resetReplyWorkerForTests,
   runReplyPostprocess,
   setWorkerFactoryForTests,
   WORKER_START_TIMEOUT_MS,
-} from '../worker-scheduler';
-import type { WorkerMessage, WorkerRequest } from '../worker-protocol';
+} from '../worker/worker-scheduler';
+import type { WorkerMessage, WorkerRequest } from '../worker/worker-protocol';
 
 const sourceRoot = path.join(process.cwd(), 'src');
 
@@ -184,7 +184,7 @@ describe('reply renderer boundaries', () => {
       expect(source).not.toMatch(/text-postprocess\/compile/);
       expect(source).not.toContain('dangerouslySetInnerHTML');
     }
-    const job = readFileSync(path.join(sourceRoot, 'postprocess-job.ts'), 'utf8');
+    const job = readFileSync(path.join(sourceRoot, 'worker', 'postprocess-job.ts'), 'utf8');
     expect(job).toContain('applyTextPostprocess');
     const others = files.filter((file) => !file.endsWith(`${path.sep}postprocess-job.ts`));
     for (const file of others) {

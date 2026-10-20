@@ -38,7 +38,7 @@ import {
   useSessionVoiceQuery,
   useVoiceConfigQuery,
 } from '@/lib/api/voice';
-import { customVoicePath } from '@/lib/chat-entry';
+import { customVoicePath } from '@/lib/chat/chat-entry';
 import {
   choiceButtonsDisabled,
   emptyChoiceLock,
@@ -50,9 +50,9 @@ import {
 import { planMessageReply } from '@/lib/text-postprocess/reply-plan';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 import { returnToLobby } from '@/lib/lobby-return';
-import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
+import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/payment/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
-import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import { useVisualViewportHeight } from '@/hooks/use-visual-viewport-height';
 import {
   DEFAULT_REPLY_DETAILS_OPEN,
   readReplyDetailsDefaultOpen,

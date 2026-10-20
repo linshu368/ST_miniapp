@@ -41,7 +41,7 @@
   - pnpm lint:legacy
   - pnpm lint:migrations
   - pnpm test:migration-ledger
-  - OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/test-openrouter-original-fields-migration.sh
+  - OPENROUTER_TEST_PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/database/test-openrouter-original-fields-migration.sh
   - 新清退 harness：隔离 PG17，无远端凭证，真实 repository SQL/读写在 DROP 后运行；失败 shape/锁/事务回滚、最小权限、重复执行安全失败和两个 provider fixture。
   - python3 ./.trellis/scripts/task.py validate 10-15-openrouter-history-extract
   - python3 ./.trellis/scripts/module_knowledge.py check .trellis/tasks/10-15-openrouter-history-extract

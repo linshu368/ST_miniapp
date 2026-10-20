@@ -3,13 +3,13 @@
 ## 当前模块
 
 - `dev-fixtures.ts`：开发 seed 的稳定 UUID；只能用于非生产 fixture。
-- `lobby-featured.ts`：大厅前八位金框等纯计算。
+- `api/lobby-featured.ts`：大厅前八位金框等纯计算。
 - `png-parser.ts`：PNG 角色卡相关纯类型；不包含 Node 二进制 I/O。
 - `telegram-avatar.ts`：头像 URL 归一化。
 - `user-placeholder.ts`：`{{user}}` 替换和默认称呼。
 - `config/database.ts`：环境到数据库配置的纯解析/校验。
 - `telemetry/sanitize.ts`：敏感信息清洗。
-- `text-postprocess/`：source schema、HTML/CSS AST 编译、结构化 capture/slot、确定性 artifact 校验与分段 apply；无 React、网络、数据库或隐藏 Worker 生命周期。
+- `text-postprocess/`：富回复协议常量、source schema、HTML/CSS AST 编译、结构化 capture/slot、确定性 artifact 校验与分段 apply；无 React、网络、数据库或隐藏 Worker 生命周期。
 
 ## 硬规则
 

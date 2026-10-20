@@ -163,11 +163,11 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 
 图片广场必须依次手动验证并执行 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql` 后才能运行初始数据 apply。`image-plaza:seed` 默认只做工作簿 dry-run；真实写入还要求审核 manifest、明确 `--target test|production`、`--limit 1..500`、原图存储确认，Production 另需显式确认。普通图片保持 20 MiB，已审核 seed 原图允许至 50 MiB；来源权利/内容/元数据审核、test canary 或容量门禁未完成时不得导入。test 导入结果见任务 `10-10-image-plaza-v2`。
 
-图片广场 TEST seed 迁移另见 [离线 SQL 导出与 Storage 迁移方法](ops/image-plaza-seed-migration.md)：数据文件不入 Git，不随部署执行；必须先完成图片迁移、目标环境检查和独立审批。本次仅导出，未写生产。
+图片广场 TEST seed 迁移另见 [离线 SQL 导出与 Storage 迁移方法](ops/image-plaza/README.md)：数据文件不入 Git，不随部署执行；必须先完成图片迁移、目标环境检查和独立审批。本次仅导出，未写生产。
 
 ### AI 回复后处理
 
-- `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/rich-reply-protocol.ts` 是模型富回复协议的唯一事实源，`packages/shared/src/text-postprocess/` 负责确定性编译、固定模块解析与分段处理，不执行网络或数据库 IO。
+- `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/text-postprocess/rich-reply-protocol.ts` 是模型富回复协议的唯一事实源，`packages/shared/src/text-postprocess/` 负责确定性编译、固定模块解析与分段处理，不执行网络或数据库 IO。
 - Admin「回复富文本规则」使用独立草稿、发布版本和历史恢复流程。保存不切换正式版本；发布/回滚使用 CAS 与 `request_id`，结果未知先查询请求结果，禁止盲目重试写操作。
 - 同页「解析与兜底」可启用版本化 `rich_reply` 配置：三模块 EOF 收口、标题/副标题与降级文案、标签别名/括号对、协议外层围栏兼容。新配置允许至少一个完整有效选项点击，损坏残余以文字展示；副标题 `{count}` 使用实际选项数。无配置的历史快照沿用 v1/v2 行为。
 - 发布前先逐环境执行 `20261015_rich_reply_recovery_config.sql`，再部署支持协议 artifact v3 的 Backend、Frontend 与 Admin，最后在 Admin 启用、保存、发布。旧客户端不支持 v3，会回退原文；需要回退应用时先发布不含 `rich_reply` 的旧 source。此迁移仅扩展既有 Admin validator，无新表/数据回填，不代表 TEST/Production 已执行。

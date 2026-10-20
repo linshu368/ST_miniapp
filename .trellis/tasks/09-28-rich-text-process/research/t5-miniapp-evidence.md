@@ -10,7 +10,7 @@
 - `packages/frontend/src/lib/text-postprocess/versions.ts`：去重、按 20 个分批、按版本写缓存。query key 含 `API_URL` 和排序后的版本集合。已成功的 ready/unavailable 不重复请求。
 - `packages/frontend/src/lib/text-postprocess/reply-plan.ts`：决定原文 Markdown 还是 `ReplyRenderer`。不编译 HTML/CSS。
 - `packages/frontend/src/lib/text-postprocess/choice-gate.ts`：最新完整 assistant、turn 0、流式/忙碌/会话未就绪、同步锁、刷新后的尾部确认。
-- `packages/frontend/src/lib/merge-streaming-messages.ts`：`StreamingTurn.postprocessVersion` 只从 SSE `start` 写入，delta 不改。
+- `packages/frontend/src/lib/chat/merge-streaming-messages.ts`：`StreamingTurn.postprocessVersion` 只从 SSE `start` 写入，delta 不改。
 - `packages/frontend/src/hooks/use-conversation-turn.ts`：发送和重生成都走原来的 `runTurn`。
 - `packages/frontend/src/app/chat/[characterId]/page.tsx`：批量加载、choice 提交、402/输入恢复仍由 `runTurn` 处理。
 - `packages/frontend/src/components/chat/chat-message-bubble.tsx` 与 `chat-message-list.tsx`：有校验通过的 artifact 才挂 `ReplyRenderer`。用户消息仍是纯文本。

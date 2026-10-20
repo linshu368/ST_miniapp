@@ -105,7 +105,7 @@ pnpm --filter @miniapp/admin test
 pnpm --filter @miniapp/admin build
 pnpm -r typecheck
 git diff --check
-node scripts/check-migration-filenames.mjs
+node scripts/checks/check-migration-filenames.mjs
 ```
 
 人工：

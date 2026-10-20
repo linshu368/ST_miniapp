@@ -28,7 +28,7 @@ import { useFavoritesQuery } from '@/lib/api/favorites';
 import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { FeaturedFrame } from '@/components/characters/featured-frame';
-import { chatEntryPath } from '@/lib/chat-entry';
+import { chatEntryPath } from '@/lib/chat/chat-entry';
 
 type ChatsTab = 'history' | 'favorites';
 

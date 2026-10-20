@@ -36,7 +36,7 @@ last_verified_at: 2026-10-13
 | `packages/frontend/src/lib/api/conversation-stream.ts`         | SSE client                                      |
 | `packages/frontend/src/hooks/use-chat-session.ts`              | 会话生命周期                                    |
 | `packages/frontend/src/hooks/use-conversation-turn.ts`         | 发送/重生成编排                                 |
-| `packages/frontend/src/lib/recharge-redirect.ts`               | 充值跳转收口                                    |
+| `packages/frontend/src/lib/payment/recharge-redirect.ts`       | 充值跳转收口                                    |
 | `packages/frontend/src/lib/api/images.ts`                      | 图片查询与 mutation                             |
 
 ## 关键实现链路
@@ -75,3 +75,4 @@ last_verified_at: 2026-10-13
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）写入图片生成 UI PostHog 安全事件 helper 与 chat_image 付费墙来源；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除许愿池残余说明并清理无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+- 2026-10-20：任务 `Reorganize project structure without behavior changes`（`.trellis/tasks/archive/2026-10/10-20-reorganize-project-structure/`）同步本次目录归纳后的现行文件路径，不改变模块职责或行为；commit：`9630b6eed9467dcc4c9c59cffba9272761889810`。

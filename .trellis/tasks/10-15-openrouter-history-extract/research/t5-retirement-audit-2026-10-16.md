@@ -59,7 +59,7 @@ Production OpenRouter 表只授权 postgres/service_role；Venice/main/current �
 - sync-job.ts 三路扫描/去重，:146 从恢复 row 取 ID，provider 主要由 snapshot 默认 OpenRouter；启动缺 OpenRouter key 即完全关闭（会阻止 Venice 计费恢复）。需要 provider 专表来源与缺失条件分离。
 - Venice 专表已有 ID/latency、唯一 parent/FK；当前 metadata upsert 在异步 settlement、charge 之后，删除主表 ID 前需保证最小 ID 持久化及 provider-specific 恢复；不改 mapper/表/计费算法。
 - Prisma 不映射 experience.chat_history；Shared API 没有这 12 个调用字段。Frontend/Admin/CS 没有找到直接旧列消费者；llm_model_catalog/钱包表名不属于清退列。ops/schema-split/snapshots 与冻结 migrations 有历史引用，不修改它们。
-- scripts/check-legacy-references.mjs 现有 OpenRouter repository 只读 parent allowlist 是按文件受限，不能因适配扩大为所有 writer 的通用豁免。现有 local fields harness 只测 expand，不能声称已删列验证。
+- scripts/checks/check-legacy-references.mjs 现有 OpenRouter repository 只读 parent allowlist 是按文件受限，不能因适配扩大为所有 writer 的通用豁免。现有 local fields harness 只测 expand，不能声称已删列验证。
 
 ## 调查限制与门禁
 

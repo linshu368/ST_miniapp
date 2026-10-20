@@ -12,12 +12,12 @@
 
 ## 实际实现
 
-- `packages/admin/src/lib/textPostprocessApi.ts`：专用 HTTP 客户端。复用 `getAdminApiUrl` 和 Supabase session Bearer token，请求/响应用 shared Zod schema 校验。
-- `packages/admin/src/lib/textPostprocessWorkbench.ts`：draft / published / local、CAS、request id、历史游标、权限和环境确认的纯状态机。
-- `packages/admin/src/lib/textPostprocessSamples.ts`：四类起始模板和示例文本。字段与 `TextPostprocessRule` 一致，没有新的持久化字段。
-- `packages/admin/src/lib/textPostprocessPreview.ts`：主线程 Worker 调度。超时后 `terminate()`，不回主线程执行正则。
-- `packages/admin/src/lib/textPostprocessPreview.worker.ts`：在 Worker 里编译 source 并应用样例。
-- `packages/admin/src/components/TextPostprocessView.tsx`：三栏工作台、窄屏单列、历史和回滚。
+- `packages/admin/src/lib/text-postprocess/textPostprocessApi.ts`：专用 HTTP 客户端。复用 `getAdminApiUrl` 和 Supabase session Bearer token，请求/响应用 shared Zod schema 校验。
+- `packages/admin/src/lib/text-postprocess/textPostprocessWorkbench.ts`：draft / published / local、CAS、request id、历史游标、权限和环境确认的纯状态机。
+- `packages/admin/src/lib/text-postprocess/textPostprocessSamples.ts`：四类起始模板和示例文本。字段与 `TextPostprocessRule` 一致，没有新的持久化字段。
+- `packages/admin/src/lib/text-postprocess/textPostprocessPreview.ts`：主线程 Worker 调度。超时后 `terminate()`，不回主线程执行正则。
+- `packages/admin/src/lib/text-postprocess/textPostprocessPreview.worker.ts`：在 Worker 里编译 source 并应用样例。
+- `packages/admin/src/components/views/TextPostprocessView.tsx`：三栏工作台、窄屏单列、历史和回滚。
 - `packages/admin/src/App.tsx`、`lib/adminNavigation.ts`、`styles.css`：现有导航上的最小接线。运营配置下增加「回复富文本规则」，并提供打开现有 System Instructions（`system_instructions`）的入口。
 - 回归测试：`textPostprocessApi.test.ts`、`textPostprocessWorkbench.test.ts`、`textPostprocessPreview.test.ts`，以及导航测试中的新菜单项。
 

@@ -23,7 +23,7 @@ import { VipPlanCard } from '@/components/payment/vip-plan-card';
 import { VipBenefitArt } from '@/components/vip/vip-benefit-art';
 import { Button } from '@/components/ui/button';
 import { ApiClientError } from '@/lib/api/client';
-import { AlipayIcon, WeChatPayIcon } from '@/components/icons';
+import { AlipayIcon, WeChatPayIcon } from '@/components/payment/icons';
 import { formatNumber, formatYuanShort } from '@/lib/utils/payment';
 import {
   useCheckoutConfirmationMutation,

@@ -31,8 +31,8 @@ UPDATES = {
         "target": ".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md",
         "summary": "记录 reply-renderer 共用 UI 边界与文本后处理查询职责",
         "evidence": [
-            "packages/reply-renderer/src/ReplyRenderer.tsx",
-            "packages/reply-renderer/src/postprocess.worker.ts",
+            "packages/reply-renderer/src/rendering/ReplyRenderer.tsx",
+            "packages/reply-renderer/src/worker/postprocess.worker.ts",
             "packages/frontend/src/lib/api/text-postprocess.ts",
         ],
         "body": """`@miniapp/reply-renderer` 是 Frontend/Admin 的共用 React 展示边界，内部以 Worker 有界执行 artifact、Showdown 渲染 Markdown、DOMPurify 清理输出并隔离 CSS/可信交互。它不拥有 API、React Query、草稿/发布状态或 source compiler。
@@ -68,9 +68,9 @@ Frontend 的版本快照查询仍位于 `src/lib/api/`；renderer 输入由调�
         "target": ".trellis/spec/admin/app/modules/business/operations.md",
         "summary": "记录 Demo 复现的回复富文本三栏工作台及草稿发布恢复语义",
         "evidence": [
-            "packages/admin/src/components/TextPostprocessView.tsx",
-            "packages/admin/src/lib/textPostprocessWorkbench.ts",
-            "packages/admin/src/lib/textPostprocessPreview.ts",
+            "packages/admin/src/components/views/TextPostprocessView.tsx",
+            "packages/admin/src/lib/text-postprocess/textPostprocessWorkbench.ts",
+            "packages/admin/src/lib/text-postprocess/textPostprocessPreview.ts",
         ],
         "body": """Admin 导航新增「回复富文本规则」三栏工作台：规则列表、编辑器与真实效果预览；支持五类模板、flags/稳定 ID、匹配/捕获诊断、受限 HTML/CSS、375px/自适应预览、模拟流式、历史 Drawer 和独立 System Instructions 入口。
 
@@ -80,7 +80,7 @@ Frontend 的版本快照查询仍位于 `src/lib/api/`；renderer 输入由调�
         "target": ".trellis/spec/admin/app/modules/infrastructure/admin-client-auth.md",
         "summary": "记录文本后处理 Admin API、环境隔离与结果未知恢复",
         "evidence": [
-            "packages/admin/src/lib/textPostprocessApi.ts",
+            "packages/admin/src/lib/text-postprocess/textPostprocessApi.ts",
             "packages/admin/src/lib/environment.ts",
             "packages/admin/src/App.tsx",
         ],

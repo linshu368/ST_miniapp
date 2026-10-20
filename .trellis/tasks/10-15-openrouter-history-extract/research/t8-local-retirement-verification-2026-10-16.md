@@ -35,7 +35,7 @@
 - pnpm -r typecheck：Shared、Backend、Reply Renderer、CS、Admin、Frontend 全通过。临时扩展 tsconfig 还对本地 .mts harness 与 Backend 一起执行 tsc --noEmit，通过。
 - pnpm -r --workspace-concurrency=2 --if-present build：Frontend/Admin/CS 通过；Backend/Shared/Renderer 无独立 build script。Admin 原有 bundle 大小提示不阻断。
 - pnpm lint、lint:imports、lint:legacy、lint:migrations、bash -n、新旧 migration 本地验证及 pnpm test:migration-ledger 通过。ledger 脚本仅连接本机测试 PG，未远端执行。
-- 新 scripts/test-openrouter-retirement-local.sh 在隔离 PG17 + 官方 PostgREST 16.4 通过：真正执行四前序及三新 migration，物理 DROP 12 列后，实际 Supabase client 和 repository 的 prompt/body/finalize、显式业务投影、两个 provider ID CAS/并发/冲突、NULL-ID 不清 ID、pending/missing 查询、billing outcome、cancel/late stop、上下文/最新 revision 都通过。
+- 新 scripts/database/test-openrouter-retirement-local.sh 在隔离 PG17 + 官方 PostgREST 16.4 通过：真正执行四前序及三新 migration，物理 DROP 12 列后，实际 Supabase client 和 repository 的 prompt/body/finalize、显式业务投影、两个 provider ID CAS/并发/冲突、NULL-ID 不清 ID、pending/missing 查询、billing outcome、cancel/late stop、上下文/最新 revision 都通过。
 - SQL 负向：视图依赖未切换拒绝 DROP；未知归属未保全标量拒绝；旧 raw JSON 拒绝；历史未结算拒绝；重复 DROP 拒绝。正向保留新 streaming 调用，current/base 形状/基数/类型/NULL/0/业务终态/角色权限正确；没有 production-only analytics view/reader role 时可重建。原名 expand harness 对 11 字段、NULL/0、父表隔离/权限/约束/重放/FK 和 shape guard 通过。
 - PG socket/共享内存受沙箱限制时按工具审批在沙箱外重跑，绑定本地 loopback，临时凭证环境清空。PostgREST 临时官方二进制不加入项目依赖。
 

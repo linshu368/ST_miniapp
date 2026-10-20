@@ -37,7 +37,7 @@ import {
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
 import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
-import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import { useVisualViewportHeight } from '@/hooks/use-visual-viewport-height';
 import {
   Sheet,
   SheetClose,

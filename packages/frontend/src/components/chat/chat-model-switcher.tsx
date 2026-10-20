@@ -18,7 +18,7 @@ import { ApiClientError } from '@/lib/api/client';
 import { useModelCatalogQuery, useSelectModelMutation } from '@/lib/api/models';
 import { usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
-import { redirectToRecharge } from '@/lib/recharge-redirect';
+import { redirectToRecharge } from '@/lib/payment/recharge-redirect';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { cn } from '@/lib/utils';
 import { formatYuanShort } from '@/lib/utils/payment';

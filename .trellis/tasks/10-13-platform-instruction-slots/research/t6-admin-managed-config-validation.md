@@ -67,7 +67,7 @@ allowlist, preserving its dedicated-RPC write guard and preventing generic
 Admin configuration from gaining a new write path. `interaction_mode_blocks`
 remains rejected.
 
-`bash scripts/test-admin-platform-instruction-slots-local.sh` now creates an
+`bash scripts/database/test-admin-platform-instruction-slots-local.sh` now creates an
 isolated PostgreSQL 17 cluster with eight historical special-key drafts and
 releases, applies the T6 migration, preserves those rows, proves the generic
 allowlist remains false for the special key, and rejects an arbitrary key in

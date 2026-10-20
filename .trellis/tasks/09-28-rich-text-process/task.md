@@ -57,7 +57,7 @@ Todo 未开始；Doing 实施中；Done 已验证；Blocked 需外部输入。T0
 ## T6 — Admin 工作台
 
 - 状态：Done（2026-09-29，TEST／PR 集成完成）；依赖：T3/T4。实际保存、发布 v2、正式状态回读和 MiniApp 消费已确认。证据见 `research/acceptance-evidence.md`，既有离线证据保留。
-- 范围：components/TextPostprocessView/必要编辑子组件、lib/textPostprocessApi.ts、导航/App 小型接线、styles.css。
+- 范围：components/views/TextPostprocessView/必要编辑子组件、lib/text-postprocess/textPostprocessApi.ts、导航/App 小型接线、styles.css。
 - 三栏/窄屏、正则模板样式编辑、诊断/示例/模拟流、草稿/正式值分开、保存/发布/CAS/分页历史/回滚，System Instructions 已有入口。
 - 验证：admin tests/typecheck/build；viewer/跨环境/迟到响应、异常输入保留、发布对象准确、旧分页回退、模拟无模型请求。
 - 对应：AC3/5/6/7/9。

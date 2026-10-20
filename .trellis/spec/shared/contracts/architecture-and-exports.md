@@ -2,17 +2,17 @@
 
 ## 目录职责
 
-| 路径                         | 职责                                                                   |
-| ---------------------------- | ---------------------------------------------------------------------- |
-| `src/index.ts`               | 包根公开出口，应用通过 workspace 源码消费                              |
-| `src/api/*`                  | HTTP/SSE DTO、枚举、跨端配置 schema；含 `api/telemetry.ts` replay 契约 |
-| `src/text-postprocess/*`     | 浏览器/Node 可用的纯编译、artifact 校验与分段 apply                    |
-| `src/config/database.ts`     | 数据库环境配置纯工具，不建立连接                                       |
-| `src/telemetry/sanitize.ts`  | 遥测脱敏纯函数；不能替代 PostHog DOM 屏蔽                              |
-| `src/logging/conventions.ts` | 日志字段约定；当前未从根出口导出                                       |
-| `src/*.ts`                   | 小型稳定纯函数、类型和 fixture                                         |
-| `src/__tests__/*`            | 契约与纯函数测试                                                       |
-| `migrations/*`               | 唯一 SQL migration 源，不属于 TS 出口                                  |
+| 路径                         | 职责                                                                                     |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `src/index.ts`               | 包根公开出口，应用通过 workspace 源码消费                                                |
+| `src/api/*`                  | HTTP/SSE DTO、枚举、跨端配置 schema 与大厅纯契约/计算；含 `api/telemetry.ts` replay 契约 |
+| `src/text-postprocess/*`     | 浏览器/Node 可用的纯编译、artifact 校验、分段 apply 与富回复协议常量                     |
+| `src/config/database.ts`     | 数据库环境配置纯工具，不建立连接                                                         |
+| `src/telemetry/sanitize.ts`  | 遥测脱敏纯函数；不能替代 PostHog DOM 屏蔽                                                |
+| `src/logging/conventions.ts` | 日志字段约定；当前未从根出口导出                                                         |
+| `src/*.ts`                   | 小型稳定纯函数、类型和 fixture                                                           |
+| `src/__tests__/*`            | 契约与纯函数测试                                                                         |
+| `migrations/*`               | 唯一 SQL migration 源，不属于 TS 出口                                                    |
 
 ## 根出口治理
 

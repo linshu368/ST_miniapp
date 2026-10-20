@@ -64,8 +64,8 @@
     - `packages/shared/migrations/20260921_feature_free_trial_checkin_reminder.sql`（第 4/4）
     - `packages/shared/migrations/fixtures/vip_billing_t2_harness.sql`（仅本地，禁止 apply 到 test/prod）
     - `packages/shared/migrations/tests/vip_billing_t2_scenarios.sql`（仅本地）
-    - `scripts/test-vip-billing-migrations.sh`
-    - `scripts/check-legacy-references.mjs`（allow 同一 `complete_payment_order` 函数体）
+    - `scripts/database/test-vip-billing-migrations.sh`
+    - `scripts/checks/check-legacy-references.mjs`（allow 同一 `complete_payment_order` 函数体）
     - 本文件与 T2 research
   - 未触碰：T1 契约、`AGENTS.md`、database spec、语音/图片 attempt 列、签到奖励 40、Backend 调用方。
   - 依赖顺序：1 schema → 2 debit/refund → 3 payment fulfillment → 4 free-trial/checkin/reminder。2 与 3、4 无互相 SQL 依赖，但正式 test 必须一次一个文件按 1→2→3→4。文件 1 与 3 之间不要创建 VIP 订单；文件 3 会回补窗口期内 credits 的 `fulfillment_applied`。
@@ -76,7 +76,7 @@
     - `pnpm lint:migrations` pass
     - `pnpm lint:legacy` pass
     - `pnpm test:migration-ledger` pass
-    - `bash scripts/test-vip-billing-migrations.sh` pass（含并发 debit、两张 VIP 续费、免费次数争用、迟到 consume 自动回收）
+    - `bash scripts/database/test-vip-billing-migrations.sh` pass（含并发 debit、两张 VIP 续费、免费次数争用、迟到 consume 自动回收）
     - `pnpm --filter @miniapp/shared test` 10 files / 88 tests pass
     - `pnpm --filter @miniapp/shared typecheck` pass
     - `pnpm -r typecheck` shared/admin/backend/frontend/cs-platform pass
@@ -102,7 +102,7 @@
     - `pnpm -r typecheck` → shared/admin/backend/frontend/cs-platform pass
     - `pnpm lint:imports` / `pnpm lint:legacy` / `pnpm lint:migrations` → pass
     - `pnpm test:migration-ledger` → pass
-    - `bash scripts/test-vip-billing-migrations.sh` → pass（含 T2 场景、新 migration、普通/VIP/临界签到、两次并发只入账一次）
+    - `bash scripts/database/test-vip-billing-migrations.sh` → pass（含 T2 场景、新 migration、普通/VIP/临界签到、两次并发只入账一次）
   - 未做：正式 test apply 与只读 postflight；真实微信支付；Production 签到值采集。
   - 新 migration apply 顺序：已有 T2 四文件之后，单独 apply `20260922_daily_checkin_vip_bonus.sql`。Backend 必须在该文件 apply 并复核之后再发布，否则预览会按 60/120 计算而线上 RPC 仍是 40 且 VIP 加成为 0。
 - 2026-09-22 T3 远端复核完成，T3 → Done。MCP 目标仍是 `https://zoqelpfhurwehlvypryl.supabase.co`。只读配置与函数目录，未读业务行，未写 Production，未进 T4，未启动子任务，未改功能开关。
@@ -123,7 +123,7 @@
   - 发布顺序：该文件 apply 并复核之后才能发布 Backend。先发 Backend 时，旧函数仍会 bonus 优先且允许 partial，并忽略 wallet policy。
   - 降级目录：运行时目录损坏而落到内置 `DEFAULT_CATALOG` 时没有轻量档。非 VIP 的标准/旗舰会失败关闭，不会用旗舰顶上。
   - 本地验证：
-    - `bash scripts/test-vip-billing-migrations.sh` → pass（含 T2/T3、T4 免费/只有 bonus/main-only 拒绝/组合扣/快照不被 999 改写/pending 竞态不 partial/历史 partial 只读/无 debit_key 不退款/原路退款与重复退款，以及并发 charge 只入账一次）
+    - `bash scripts/database/test-vip-billing-migrations.sh` → pass（含 T2/T3、T4 免费/只有 bonus/main-only 拒绝/组合扣/快照不被 999 改写/pending 竞态不 partial/历史 partial 只读/无 debit_key 不退款/原路退款与重复退款，以及并发 charge 只入账一次）
     - `pnpm --filter @miniapp/backend test` → 57 files / 498 tests passed。并行 typecheck 时曾有 6 个 route 用例 5s 超时；单独重跑 telemetry/vip/payment 47 tests passed，随后全量再跑通过。
     - `pnpm --filter @miniapp/shared test` → 10 files / 88 tests passed
     - `pnpm -r typecheck` → shared/admin/backend/frontend/cs-platform pass
@@ -136,7 +136,7 @@
   - `billing.refund_llm_usage_charge`：SECURITY DEFINER，`search_path=pg_catalog`，调用 `refund_wallet_debit`；anon/authenticated 不可执行，service_role 可执行。
   - `vip_purchase_enabled` 与 `vip_reminders_enabled` 仍为 false。
   - 当时未标 Done：任务表曾要求 T4 在完成验收前接入 T3A 的已发布折扣配置；已推送的文本计价使用冻结的 0.95 默认。2026-09-23 用户确认 T4 按原范围完成，动态配置改由 T3A additive 接入，见后续日志。真实 OpenRouter/SSE 与 Production 仍未验。
-  - 给 T5 合并核对的共享文件：`MiniappWalletRepository.ts`（只加 LLM 退款 RPC 与消费明细字段，语音扣费签名未改）、`scripts/test-vip-billing-migrations.sh`、`features/generation` 下文本计费文件（未改 image）、`ConversationHistoryRepository.ts` 的可选快照字段、`routes/models.ts`、`routes/conversations.ts`、`features/conversations/generate.ts`、`MiniappUserSettingsRepository.ts` 的 `correctSelectedModelId`。未改 `packages/shared/src/index.ts`，未改语音/图片实现。
+  - 给 T5 合并核对的共享文件：`MiniappWalletRepository.ts`（只加 LLM 退款 RPC 与消费明细字段，语音扣费签名未改）、`scripts/database/test-vip-billing-migrations.sh`、`features/generation` 下文本计费文件（未改 image）、`ConversationHistoryRepository.ts` 的可选快照字段、`routes/models.ts`、`routes/conversations.ts`、`features/conversations/generate.ts`、`MiniappUserSettingsRepository.ts` 的 `correctSelectedModelId`。未改 `packages/shared/src/index.ts`，未改语音/图片实现。
 - 2026-09-23 规划收口：用户确认 T4 已由 commit `5f4ee24` 完成交付，T4 → Done；运行时动态折扣不再作为 T4 完成条件，由 T3A additive 接入。T3A → Doing，免费次数范围冻结为 voice/basic_image 各 `0..20`、默认 3、0 表示关闭。本次仅收口 PRD/design/implement/task/manifests/research，未写产品代码，未 apply 新 migration，未写 test/Production，未进入 T5；规划独立提交且不 push。
 - 2026-09-23 T3A 本地实现完成，**停在 test apply 前，T3A 保持 Doing**。分支 `dev_vip_0920`。父任务已是 `in_progress`，未重复 `task.py start`。未写 test/Production，未启用购买/提醒开关，未进 T5/T6，未改语音/图片子任务状态，未 commit/push。
   - 复用：Admin managed-key 草稿/发布/回滚、`fetchRuntimeConfigEntries`、`quoteTextModelUsage`、`complete_payment_order(text,text,text)`、`claim_daily_checkin(uuid)`、`reserve_feature_free_trial(uuid,text,text,integer)`。不新增直写 `runtime_config` 的旁路，不新建设通用配置框架。
@@ -145,11 +145,11 @@
   - 发布顺序：该文件 apply 并复核之后再发 Backend/Admin。先发 Backend 时，缺失的新 key 会按安全默认工作并打告警；购买/提醒已存在且保持 false。
   - 实际文件：
     - Shared：`packages/shared/src/api/vip-strategy.ts`、`vip.ts`、`feature-free-trials.ts`、`models.ts`、`index.ts` 及对应测试
-    - DB：上述 migration、`tests/vip_strategy_t3a_scenarios.sql`、`scripts/test-vip-billing-migrations.sh`、`scripts/check-legacy-references.mjs`（同一 `complete_payment_order` 函数体）
+    - DB：上述 migration、`tests/vip_strategy_t3a_scenarios.sql`、`scripts/database/test-vip-billing-migrations.sh`、`scripts/checks/check-legacy-references.mjs`（同一 `complete_payment_order` 函数体）
     - Backend：`platform/vip-strategy.ts`；订单快照、文本折扣快照、签到预览、模型目录/选择读取已发布策略
     - Admin：`VipStrategyView.tsx`、`vipStrategyForm.ts`、导航「VIP策略」、managed schema
   - 验证（本地，真实结果）：
-    - `bash scripts/test-vip-billing-migrations.sh` → pass。覆盖非法发布值、缺失上限回退 3、0/4/20、调高调低后历史行保留、重放、并发上限 4、签到 same_as_base/fixed/损坏回退、改价后新旧订单快照、配置改回后订单/grant/签到/免费事实不变。脚本里并发签到输家的 `daily check-in is not ready` 是原有预期错误，最终计数通过。
+    - `bash scripts/database/test-vip-billing-migrations.sh` → pass。覆盖非法发布值、缺失上限回退 3、0/4/20、调高调低后历史行保留、重放、并发上限 4、签到 same_as_base/fixed/损坏回退、改价后新旧订单快照、配置改回后订单/grant/签到/免费事实不变。脚本里并发签到输家的 `daily check-in is not ready` 是原有预期错误，最终计数通过。
     - `pnpm --filter @miniapp/shared test` → 11 files / 93 tests passed
     - `pnpm --filter @miniapp/shared typecheck` → pass
     - `pnpm --filter @miniapp/backend test` → 58 files / 504 tests passed
@@ -162,7 +162,7 @@
     - `pnpm test:migration-ledger` → pass（本机 Postgres；未连 test/Production）
   - 未做：正式 test apply 与 apply 后只读 postflight；Admin 登录后的页面点击（运营台需要已登录会话，本轮不连 test）；旧 Backend 进程对新库的实跑（兼容结论来自 RPC 签名不变和 seed/缺失时的默认行为）；Production。
   - 剩余风险：test 上 `payment_orders` / `vip_purchase_grants` / `feature_free_trials` 的 CHECK 替换会锁表并重验已有行；Admin 在 migration apply 前发布新 key 会被数据库拒绝。
-- 2026-09-23 T3A 首次 test apply 失败并整段回滚，T3A 仍为 Doing。GitHub Actions 在 `feature_free_trials ordinal check missing` 处退出。test 目录里的序号 CHECK 已是 `ordinal <= 100`，查找条件仍要求字面量 `3`，因此找不到约束。`payment_orders_product_snapshot_check` 仍含 1399，账本未记录该文件。只读聚合：免费事实 5 行，ordinal 最小 1、最大 3，没有大于 20 的行。已改为按列名删除现有序号 CHECK，再添加 1..20。本地 `bash scripts/test-vip-billing-migrations.sh` 再次通过。未再次 apply test。
+- 2026-09-23 T3A 首次 test apply 失败并整段回滚，T3A 仍为 Doing。GitHub Actions 在 `feature_free_trials ordinal check missing` 处退出。test 目录里的序号 CHECK 已是 `ordinal <= 100`，查找条件仍要求字面量 `3`，因此找不到约束。`payment_orders_product_snapshot_check` 仍含 1399，账本未记录该文件。只读聚合：免费事实 5 行，ordinal 最小 1、最大 3，没有大于 20 的行。已改为按列名删除现有序号 CHECK，再添加 1..20。本地 `bash scripts/database/test-vip-billing-migrations.sh` 再次通过。未再次 apply test。
 - 2026-09-23 T3A test apply 与只读 postflight 完成，T3A → Done。MCP 目标 `https://zoqelpfhurwehlvypryl.supabase.co`。用户提供的 inspect 中 `20260923_vip_strategy_config.sql` checksum `7fe41b2b435c4cb33305c77acab720aee593105e167db46b23d99ef32ced5f3d` 与本地文件一致，verdict 为 `match / applied`。未读业务明细，未写 Production，未进 T5。
   - 六个配置均等于首次 seed：购买/提醒为 false；折扣 0.95；签到 `same_as_base`；voice/basic_image 均为 3；周卡 1399 分/7 天/0 赠送，月卡 2888 分/31 天/3000。
   - `feature_free_trials_ordinal_check` 为 `ordinal >= 1 AND ordinal <= 20`。订单与 purchase grant 的 CHECK 不再钉死 1399。草稿/发布白名单包含六个 VIP key，并保留 test 上已有的高级图片 key。
@@ -178,9 +178,9 @@
   - 脚本：`packages/backend/src/scripts/send-vip-expiry-reminders.ts`。无参数或 `--dry-run` 只计数。`--write` 只有在 `vip_reminders_enabled` 的 JSON 值恰好为 true 时才调用插入。缺失、false、非法值和读取异常都不写；读取异常记 `{ err }` 且不扫描。Railway development Cron `stminiapp-vip-reminder-cron` 为 `20 * * * *`，启动命令带 `--dry-run`。production 的 IaC 不声明该服务。
   - 通知 API：列表不写已读。`POST /api/notifications/read` 必须带具体 `ids`，只传 `scope` 返回 400。`GET /api/notifications/:id` 对他人定向、未发布、已删除和未知 id 都返回同一个 404。详情不含实时 VIP 状态，当前状态仍走 `GET /api/vip/status`。
   - 新 migration：`packages/shared/migrations/20260923_vip_expiry_reminder_dispatch.sql`。sha256 `364b17c747204cb02d61e381cf7a46f8a1148f84f9c5d9f4a1c540bb17760eb6`。
-  - 实际文件：上述 migration 与 `tests/vip_reminder_t6_scenarios.sql`；`scripts/test-vip-billing-migrations.sh`；`packages/backend/src/features/vip/vip-expiry-reminder.ts` 及测试；提醒脚本；`routes/notifications.ts` 及测试；`platform/runtime-config.ts` 的严格读取；`packages/shared/src/api/notifications.ts`；`.railway/railway.ts`；`docs/ARCHITECTURE.md`；`ops/railway/README.md`。
+  - 实际文件：上述 migration 与 `tests/vip_reminder_t6_scenarios.sql`；`scripts/database/test-vip-billing-migrations.sh`；`packages/backend/src/features/vip/vip-expiry-reminder.ts` 及测试；提醒脚本；`routes/notifications.ts` 及测试；`platform/runtime-config.ts` 的严格读取；`packages/shared/src/api/notifications.ts`；`.railway/railway.ts`；`docs/ARCHITECTURE.md`；`ops/railway/README.md`。
   - 验证（本地，真实结果）：
-    - `bash scripts/test-vip-billing-migrations.sh` → pass。覆盖上海 3 天/当天、2 天/4 天/已过期、UTC 跨日、闰日、月末、年末、冬夏偏移仍为 +08、会话时区不影响窗口、同周期重跑、新旧周期各一条、已发送正文在续费后不变、未发送旧周期被跳过、批次上限与游标、limit 0/101 拒绝、重放 migration 被拒绝、两个会话并发只插入一行、续费先持锁得到 `skipped_window` 且 0 行、提醒先持锁写入「VIP 即将到期」后会员仍可被续费。并发签到输家的 `daily check-in is not ready` 仍是原有预期错误。
+    - `bash scripts/database/test-vip-billing-migrations.sh` → pass。覆盖上海 3 天/当天、2 天/4 天/已过期、UTC 跨日、闰日、月末、年末、冬夏偏移仍为 +08、会话时区不影响窗口、同周期重跑、新旧周期各一条、已发送正文在续费后不变、未发送旧周期被跳过、批次上限与游标、limit 0/101 拒绝、重放 migration 被拒绝、两个会话并发只插入一行、续费先持锁得到 `skipped_window` 且 0 行、提醒先持锁写入「VIP 即将到期」后会员仍可被续费。并发签到输家的 `daily check-in is not ready` 仍是原有预期错误。
     - `pnpm --filter @miniapp/shared test` → 11 files / 94 tests passed
     - `pnpm --filter @miniapp/shared typecheck` → pass
     - `pnpm --filter @miniapp/backend test` → 60 files / 520 tests passed
@@ -205,10 +205,10 @@
   - 集成缺陷：语音/图片展示额度读 `media_feature_free_trial_limit`（单一 1..100），预留函数在 T3A 中读 `feature_free_trial_limits`（voice/basic_image 各 0..20）。`quota`/`emptyFreeTrialQuota` 用 1..100 解析，把 0 抬回 3。`20260923_admin_vip_media_config.sql` 若在已应用的 T3A 之后执行，会换掉 reserve 与 admin 校验，并把序号放宽到 100；体验表序号约束仍可能停在 1..3，上限调到 4 时写不进。未改已有 migration 文件。
   - 修复：运行时改为 `readVipStrategy().limits`。展示文案使用接口返回的上限，缺失时不补“3次”。新增 forward-fix `packages/shared/migrations/20260923_vip_strategy_media_limit_alignment.sql`，checksum `e309b460ed19efb3cd072d2775ca80aea148c97c8bdedd95f10013aba01e51cc`。它恢复按功能预留、把 `feature_free_trials` 与已有体验列序号收成 1..20，并让 admin 校验同时保住 VIP 策略键和高级图片键。旧键 `media_feature_free_trial_limit` 仍可被校验，但运营入口不再展示，运行时不读。
   - 已有 migration checksum：`20260922_media_feature_free_trials.sql` `aa2fdca6d8402fc14e48f80eccfe64c9b58ba417b38b3a794a96fd4167f509f4`；`20260923_admin_vip_media_config.sql` `83d758e51c916d66422044e82164bc26759aa7eb701f5aea789333eba6339169`；`20260923_vip_strategy_config.sql` `7fe41b2b435c4cb33305c77acab720aee593105e167db46b23d99ef32ced5f3d`。
-  - 实际修改：`feature-free-trials.ts`、`feature-free-trial-limit.ts`、`FeatureFreeTrialRepository.ts`、`routes/voice.ts`、`routes/images.ts`、`features/image/config.ts`、前端 `media-billing-label.ts` 与聊天页/图片标签、Admin 媒体配置入口、`vip-billing-contracts.test.ts`、`scripts/test-vip-billing-migrations.sh`、本 `task.md`，以及新 SQL `20260923_vip_strategy_media_limit_alignment.sql`、`tests/vip_media_t5_scenarios.sql` 和对应单测。语音/图片结算状态机、钱包扣退原语、VIP 快照没有重写。
+  - 实际修改：`feature-free-trials.ts`、`feature-free-trial-limit.ts`、`FeatureFreeTrialRepository.ts`、`routes/voice.ts`、`routes/images.ts`、`features/image/config.ts`、前端 `media-billing-label.ts` 与聊天页/图片标签、Admin 媒体配置入口、`vip-billing-contracts.test.ts`、`scripts/database/test-vip-billing-migrations.sh`、本 `task.md`，以及新 SQL `20260923_vip_strategy_media_limit_alignment.sql`、`tests/vip_media_t5_scenarios.sql` 和对应单测。语音/图片结算状态机、钱包扣退原语、VIP 快照没有重写。
   - 本地联合矩阵（throwaway 库 `st_vip_t2_billing_test`，脚本结束即删除）：voice 用 1 次后 basic_image 仍独立；两者上限不同；voice=0 且 basic_image>0；voice>0 且 basic_image=0；上限 3→4 后下一序号为 4；上限 3→1 保留 3 条 consumed 且不再新增；上限 20 拒绝第 21 次；损坏配置回退 3；相同 reference 重放不占第二个序号；过期 reservation 可被回收；并发争抢最后一个 voice 序号只成功一个，且不写入 basic_image。体验列序号 4 可写、21 被拒绝。
-  - 命令与结果：`bash scripts/test-vip-billing-migrations.sh` 通过（输出里并发签到仍有既有的 `daily check-in is not ready` 错误行，脚本断言仍通过）。`pnpm --filter @miniapp/shared test` 12 files / 108 tests 通过。`pnpm --filter @miniapp/backend test` 70 files / 624 tests 通过。`pnpm --filter @miniapp/backend typecheck` 在 `prisma generate` 后通过。`pnpm --filter @miniapp/frontend test` 28 files / 160 tests 通过；frontend typecheck 与 build 通过。`pnpm --filter @miniapp/admin` 的 navigation/config schema 测试通过。`pnpm -r typecheck` 通过。`pnpm lint:imports`、`pnpm lint:legacy`、`pnpm lint:migrations`、`pnpm test:migration-ledger` 通过。
-  - 与 T6 的潜在冲突：`scripts/test-vip-billing-migrations.sh`、`packages/shared/src/__tests__/vip-billing-contracts.test.ts`、本 `task.md`。未改 reminder 脚本、notification route/contract、Railway Cron、`runtime-config.ts`、`docs/ARCHITECTURE.md`、T6 migration。
+  - 命令与结果：`bash scripts/database/test-vip-billing-migrations.sh` 通过（输出里并发签到仍有既有的 `daily check-in is not ready` 错误行，脚本断言仍通过）。`pnpm --filter @miniapp/shared test` 12 files / 108 tests 通过。`pnpm --filter @miniapp/backend test` 70 files / 624 tests 通过。`pnpm --filter @miniapp/backend typecheck` 在 `prisma generate` 后通过。`pnpm --filter @miniapp/frontend test` 28 files / 160 tests 通过；frontend typecheck 与 build 通过。`pnpm --filter @miniapp/admin` 的 navigation/config schema 测试通过。`pnpm -r typecheck` 通过。`pnpm lint:imports`、`pnpm lint:legacy`、`pnpm lint:migrations`、`pnpm test:migration-ledger` 通过。
+  - 与 T6 的潜在冲突：`scripts/database/test-vip-billing-migrations.sh`、`packages/shared/src/__tests__/vip-billing-contracts.test.ts`、本 `task.md`。未改 reminder 脚本、notification route/contract、Railway Cron、`runtime-config.ts`、`docs/ARCHITECTURE.md`、T6 migration。
   - 未做：正式 test apply 与 apply 后只读 postflight；`20260922_media_feature_free_trials.sql` 与 `20260923_admin_vip_media_config.sql` 没有在带真实体验表的库上重放；媒体 settle/退款/failed_unknown/advanced VIP 快照没有在本轮新建端到端库，沿用子任务已有状态机。Production 未写。
   - 停止点：T5 不能标 Done。test 上若先单独 apply `20260923_admin_vip_media_config.sql`，会暂时盖掉 T3A 的 reserve；必须接着 apply alignment，且 alignment 之前不能有 ordinal > 20 的行。本轮没有执行这次 apply。
 - 2026-09-23 将 `task/vip-t5-integration`（`a29788f`）合入 `dev_vip_0920`。T6 保持 Done。T5 保持 Doing。未 apply test，未进 T7，未写 Production。
@@ -375,4 +375,4 @@ remainingVipDisplayDays(validUntil, now): number
 - Production 首次 apply 失败后，T9 → Doing。失败均在单文件事务内回滚：`20260914_chat_message_images.sql` 在重建 `admin.config_drafts/config_releases` 白名单时拒绝了现存 `image_text_model_config`；`20260921_vip_billing_schema.sql` 的历史 postflight 错误地拒绝已存在的 `cron.job`。Production 未留下半套 VIP schema。
 - 用户提供的只读 key/count 结果显示 drafts 与 releases 的唯一未被 `20260914` 旧白名单允许的键均为 `image_text_model_config`；不读取配置值，不删除草稿或发布记录。已获授权在 dev 新增兼容 migration，不执行 Production apply。
 - 新增 `20260924_vip_billing_schema_pg_cron_compat.sql`：复用原 billing/app_core/miniapp_features 对象归属、RLS/grant、事务、锁与订单/钱包不变量；Production 仅在零 VIP 表且保留既有 pg_cron 时创建 VIP schema。它不创建或写入 `cron.job`，已有任一 VIP 表即 fail closed，避免把它误用为 schema reconciler。
-- 本地 throwaway Postgres 验证：模拟 `cron.job` 后从无 VIP schema apply 兼容 migration；`pnpm lint:migrations`、`pnpm test:migration-ledger` 与 `bash scripts/test-vip-billing-migrations.sh` 均通过。后者覆盖钱包、四路 VIP 履约、签到、LLM、免费额度、提醒、媒体上限和价格 forward-fix；输出中的既有并发签到 `daily check-in is not ready` 是脚本预期失败分支，断言通过。
+- 本地 throwaway Postgres 验证：模拟 `cron.job` 后从无 VIP schema apply 兼容 migration；`pnpm lint:migrations`、`pnpm test:migration-ledger` 与 `bash scripts/database/test-vip-billing-migrations.sh` 均通过。后者覆盖钱包、四路 VIP 履约、签到、LLM、免费额度、提醒、媒体上限和价格 forward-fix；输出中的既有并发签到 `daily check-in is not ready` 是脚本预期失败分支，断言通过。

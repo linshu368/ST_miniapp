@@ -10,7 +10,7 @@ import {
 } from './FastPaymentReconciliation.js';
 import type { SettlementLogger } from './PaymentSettlement.js';
 
-vi.mock('../../../lib/notifications.js', () => ({
+vi.mock('../../notifications/notifications.js', () => ({
   insertUserNotification: vi.fn(async () => undefined),
 }));
 

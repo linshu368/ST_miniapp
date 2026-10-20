@@ -38,7 +38,7 @@
 
 ## T6R Admin Demo 复现增量（2026-09-29，本地）
 
-- 实施范围仅为 `packages/admin/src/components/TextPostprocessView.tsx` 和 `packages/admin/src/styles.css`。未改 Backend、Frontend、shared、reply-renderer、migration、package/lock；未调用真实保存、发布、回滚、数据库或运行配置写入。
+- 实施范围仅为 `packages/admin/src/components/views/TextPostprocessView.tsx` 和 `packages/admin/src/styles.css`。未改 Backend、Frontend、shared、reply-renderer、migration、package/lock；未调用真实保存、发布、回滚、数据库或运行配置写入。
 - 已实现并静态/构建验证：页内浅灰背景、白色连体三栏、紫色主操作与选中态；规则搜索/状态筛选/顺序号/说明/启停与同一 Worker 预览结果的匹配数；编辑图标工具栏、名称/启用、三页签、`g/i/m/s/u` 勾选和稳定 ID 次级编辑；当前规则首处匹配/捕获组；五类模板（对白、高亮、状态、选项、自定义）弹窗且新建/复制默认停用；原文、样例、字符数、自适应/375px、主题/用户名/流式模拟、主要效果区与紧凑状态；真实草稿保存/发布/请求恢复入口、复用分页/回滚的历史 Drawer 和独立 System Instructions 入口。
 - 自动验证：Admin typecheck 通过；Admin Vitest 12 文件/87 测试通过；Admin production build 通过（仅有 Vite 大 chunk 警告）；`pnpm lint:imports`、定向 Prettier 与 `git diff --check` 通过。
 - 已验证边界：快捷键与顶部保存复用既有 mutation gate；发布仍在本地未保存时禁用；预览继续使用现有 Worker/ReplyRenderer，选项仅本地模拟，不调用模型或业务写接口。现有 store/session、环境隔离、viewer 只读、CAS/未知请求查询与错误保留逻辑未替换。

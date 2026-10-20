@@ -107,7 +107,7 @@ jobs:
           set -euo pipefail
           DB_URL="$(<"$RUNNER_TEMP/db_url")"
           echo "::add-mask::$DB_URL"
-          DATABASE_URL="$DB_URL" bash scripts/inspect-repo-migrations.sh | tee "$RUNNER_TEMP/inspect.md"
+          DATABASE_URL="$DB_URL" bash scripts/database/inspect-repo-migrations.sh | tee "$RUNNER_TEMP/inspect.md"
           {
             echo "### Database migration inspect"
             echo ""
@@ -152,7 +152,7 @@ jobs:
             CLAIM_ABANDON_REASON="$CLAIM_ABANDON_REASON" \
             APPLIED_BY="$APPLIED_BY" \
             ENVIRONMENT="$ENVIRONMENT" \
-            bash scripts/apply-repo-migration.sh
+            bash scripts/database/apply-repo-migration.sh
 
       - name: Cleanup database URL
         if: always()

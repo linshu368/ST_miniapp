@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RequestLogger } from '../lib/logger.js';
 import type { MiniappPaymentOrderRow } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import type { PaymentQueryResult } from '../infrastructure/payment/ZqPaymentGateway.js';
-import { insertUserNotification } from '../lib/notifications.js';
+import { insertUserNotification } from '../features/notifications/notifications.js';
 import { checkInviteFirstPaidReward } from '../lib/invite-rewards.js';
 import { handleZqPayWebhook } from './payment.js';
 import {
@@ -16,7 +16,7 @@ import {
 import { toPaymentOrder } from '../infrastructure/repositories/MiniappPaymentOrderRepository.js';
 import { observePaymentOrderSettled } from '../features/payment/usecases/PaymentOrderTelemetry.js';
 
-vi.mock('../lib/notifications.js', () => ({
+vi.mock('../features/notifications/notifications.js', () => ({
   insertUserNotification: vi.fn(async () => undefined),
 }));
 

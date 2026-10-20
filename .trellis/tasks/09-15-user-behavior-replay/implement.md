@@ -22,7 +22,7 @@
 | 前端启动与身份 | `app/providers.tsx`、Sentry `setTelegramUser`                            | 扩展 Telegram 就绪后的初始化，不平行解析 initData。                                            |
 | 聊天会话       | `use-chat-session.ts`、`chat/[characterId]/page.tsx`                     | 在已有 session/character 生命周期挂录制 context，不重写路由会话语义。                          |
 | 流式对话       | `use-conversation-turn.ts`、`lib/api/conversation-stream.ts`             | 在 turn hook 的生命周期打点；不逐 delta 打点，不新增 SSE parser。                              |
-| 余额不足       | `lib/recharge-redirect.ts`                                               | 作为四个调用方共用的付费墙事件出口，避免散落同名事件。                                         |
+| 余额不足       | `lib/payment/recharge-redirect.ts`                                       | 作为四个调用方共用的付费墙事件出口，避免散落同名事件。                                         |
 | 订单流程       | `recharge/page.tsx`、`recharge/[orderId]/page.tsx`、`lib/api/payment.ts` | 复用 order ID、订单轮询和终态；不前端推断结算。                                                |
 | 支付结算       | `routes/payment.ts`、`PaymentSettlement.ts`、既有失败落库点              | 在既有订单终态持久化后发送非关键分析事件；不新建结算入口或改变订单状态机。                     |
 | 共享契约       | `shared/src/api/payment.ts`、`wallet.ts`                                 | 新跨进程 replay context、订单 `settled_by` 和受限事件枚举先定义在 shared；SDK 内部类型不外泄。 |
@@ -142,7 +142,7 @@ T8（2026-09-16，HEAD `bb0ee02`）复跑全部通过：shared typecheck + test�
 - `packages/frontend/src/lib/telemetry/*`（新增）
 - `packages/frontend/src/hooks/use-chat-session.ts`
 - `packages/frontend/src/hooks/use-conversation-turn.ts`
-- `packages/frontend/src/lib/recharge-redirect.ts`
+- `packages/frontend/src/lib/payment/recharge-redirect.ts`
 - `packages/frontend/src/app/chat/[characterId]/page.tsx`
 - `packages/frontend/src/app/chat/[characterId]/voice/[messageId]/page.tsx`
 - `packages/frontend/src/app/(main)/profile/recharge/page.tsx`

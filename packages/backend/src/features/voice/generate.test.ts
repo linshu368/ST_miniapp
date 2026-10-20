@@ -46,7 +46,7 @@ const storeMessageVoice = vi.fn(async () => ({
   url: 'https://storage.example/voice/u1/m1.mp3',
 }));
 
-vi.mock('../../lib/chat-voice-storage.js', () => ({
+vi.mock('../../lib/storage/chat-voice-storage.js', () => ({
   storeMessageVoice: (...args: unknown[]) =>
     storeMessageVoice(...(args as Parameters<typeof storeMessageVoice>)),
   deleteMessageVoice: vi.fn(async () => undefined),

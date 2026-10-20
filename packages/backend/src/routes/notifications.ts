@@ -17,7 +17,7 @@ import {
   isNotificationVisibleToUser,
   parseNotificationScope,
   selectUnreadIds,
-} from '../lib/notification-scope.js';
+} from '../features/notifications/notification-scope.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 
