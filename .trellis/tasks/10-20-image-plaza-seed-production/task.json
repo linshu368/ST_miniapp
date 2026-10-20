@@ -1,0 +1,32 @@
+{
+  "id": "image-plaza-seed-production",
+  "name": "image-plaza-seed-production",
+  "title": "图片广场种子数据与 Storage 生产迁移",
+  "description": "8032 条 TEST civitai_seed 及图片迁往 production；已选 TEST 本地暂存/hash → 上传 → 生产全量回读校验 → SQL，2026-10-21 继续处理；仅规划，凭据、工具和生产门禁待完成。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-20 用户确认记录本地暂存方案，留到明天（2026-10-21）处理；不自动执行或预约。保持 planning，未授权下载或生产写入。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "当前仅迁移规划和本地只读预检，无应用、契约或数据库对象变化；执行后重新评估运维事实记录。"
+    }
+  }
+}
