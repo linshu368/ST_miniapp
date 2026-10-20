@@ -20,13 +20,14 @@ import {
   useImagePlazaFeedQuery,
   useSetImagePlazaLikeMutation,
 } from '@/lib/api/image-plaza';
-import type { ImagePlazaWork, ImagePlazaFeedSort } from '@miniapp/shared';
+import type { GetImagePlazaFeedData, ImagePlazaWork, ImagePlazaFeedSort } from '@miniapp/shared';
 
 export default function CreatePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState('all');
+  const [tags, setTags] = useState<GetImagePlazaFeedData['tags']>([{ id: 'all', label: '全部' }]);
   const [sort, setSort] = useState<ImagePlazaFeedSort>('recommended');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const feed = useImagePlazaFeedQuery(debouncedSearch, tag, sort);
@@ -43,14 +44,14 @@ export default function CreatePage() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const tags = useMemo(
-    () => feed.data?.pages[0]?.tags ?? [{ id: 'all', label: '全部' }],
-    [feed.data]
-  );
+  const feedTags = feed.data?.pages[0]?.tags;
 
   useEffect(() => {
-    if (feed.data && tag !== 'all' && !tags.some((item) => item.id === tag)) setTag('all');
-  }, [tag, tags, feed.data]);
+    // 筛选请求期间只保留标签栏，避免卸载后闪烁、丢失横向滚动位置；不复用旧作品或游标。
+    if (!feedTags) return;
+    setTags(feedTags);
+    if (tag !== 'all' && !feedTags.some((item) => item.id === tag)) setTag('all');
+  }, [tag, feedTags]);
 
   useEffect(() => {
     const node = sentinel.current;
@@ -187,7 +188,7 @@ export default function CreatePage() {
         <div className="mt-1 space-y-1">
           {tags.some((item) => item.id !== 'all') ? (
             <div
-              className="flex min-w-0 gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="flex min-w-0 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               role="group"
               aria-label="作品标签"
             >
@@ -197,14 +198,14 @@ export default function CreatePage() {
                   type="button"
                   aria-pressed={tag === item.id}
                   onClick={() => setTag(item.id)}
-                  className={`inline-flex h-10 shrink-0 items-center rounded-full px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${tag === item.id ? 'bg-accent text-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.25)]' : 'text-muted-foreground hover:bg-card hover:text-foreground'}`}
+                  className={`relative shrink-0 whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${tag === item.id ? 'border-primary/30 bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'}`}
                 >
                   {item.label}
                 </button>
               ))}
             </div>
           ) : null}
-          <div className="flex gap-1" role="group" aria-label="作品排序">
+          <div className="flex items-center gap-2" role="group" aria-label="作品排序">
             {(['recommended', 'latest'] as const).map((value) => (
               <button
                 key={value}
@@ -214,7 +215,7 @@ export default function CreatePage() {
                   setSort(value);
                   window.scrollTo({ top: 0, behavior: 'instant' });
                 }}
-                className={`inline-flex h-10 items-center rounded-full px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${sort === value ? 'bg-accent text-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.25)]' : 'text-muted-foreground hover:bg-card hover:text-foreground'}`}
+                className={`relative shrink-0 whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${sort === value ? 'border-primary/30 bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'}`}
               >
                 {value === 'recommended' ? '推荐' : '最新'}
               </button>
