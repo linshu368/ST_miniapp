@@ -150,20 +150,20 @@ export default function CreatePage() {
           {isPullRefreshing ? '正在刷新' : pullDistance >= 64 ? '松开刷新' : '下拉刷新'}
         </div>
       ) : null}
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-primary/70">
+            <p className="text-[10px] font-bold uppercase leading-3 tracking-[0.22em] text-primary/70">
               Discover
             </p>
-            <h1 className="text-2xl font-black tracking-tight">图片广场</h1>
+            <h1 className="text-xl font-black leading-7 tracking-tight">图片广场</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => startStudio()}
               disabled={createConversation.isPending}
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-4 text-xs font-black text-primary-foreground shadow-[0_8px_30px_hsl(var(--primary)/0.2)] disabled:opacity-60 sm:px-5 sm:text-sm"
+              className="inline-flex h-10 items-center gap-1.5 rounded-full bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-60 sm:px-4"
             >
               {createConversation.isPending ? (
                 <LoaderCircle className="size-4 animate-spin" />
@@ -174,7 +174,7 @@ export default function CreatePage() {
             </button>
           </div>
         </div>
-        <label className="mt-4 flex h-11 items-center gap-2 rounded-2xl border border-border bg-card px-3 text-muted-foreground">
+        <label className="mt-2 flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-3 text-muted-foreground">
           <Search className="size-4" aria-hidden />
           <input
             value={search}
@@ -184,35 +184,42 @@ export default function CreatePage() {
             aria-label="按作品灵感、内容搜索图片广场"
           />
         </label>
-        {tags.some((item) => item.id !== 'all') ? (
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-            {tags.map((item) => (
+        <div className="mt-1 space-y-1">
+          {tags.some((item) => item.id !== 'all') ? (
+            <div
+              className="flex min-w-0 gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              role="group"
+              aria-label="作品标签"
+            >
+              {tags.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={tag === item.id}
+                  onClick={() => setTag(item.id)}
+                  className={`inline-flex h-10 shrink-0 items-center rounded-full px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${tag === item.id ? 'bg-accent text-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.25)]' : 'text-muted-foreground hover:bg-card hover:text-foreground'}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex gap-1" role="group" aria-label="作品排序">
+            {(['recommended', 'latest'] as const).map((value) => (
               <button
-                key={item.id}
+                key={value}
                 type="button"
-                onClick={() => setTag(item.id)}
-                className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold transition ${tag === item.id ? 'bg-foreground text-background' : 'bg-card text-muted-foreground ring-1 ring-border'}`}
+                aria-pressed={sort === value}
+                onClick={() => {
+                  setSort(value);
+                  window.scrollTo({ top: 0, behavior: 'instant' });
+                }}
+                className={`inline-flex h-10 items-center rounded-full px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${sort === value ? 'bg-accent text-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.25)]' : 'text-muted-foreground hover:bg-card hover:text-foreground'}`}
               >
-                {item.label}
+                {value === 'recommended' ? '推荐' : '最新'}
               </button>
             ))}
           </div>
-        ) : null}
-        <div className="mt-3 flex gap-2" aria-label="作品排序">
-          {(['recommended', 'latest'] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={sort === value}
-              onClick={() => {
-                setSort(value);
-                window.scrollTo({ top: 0, behavior: 'instant' });
-              }}
-              className={`rounded-full px-4 py-2 text-xs font-bold ${sort === value ? 'bg-foreground text-background' : 'bg-card text-muted-foreground'}`}
-            >
-              {value === 'recommended' ? '推荐' : '最新'}
-            </button>
-          ))}
         </div>
       </header>
 
