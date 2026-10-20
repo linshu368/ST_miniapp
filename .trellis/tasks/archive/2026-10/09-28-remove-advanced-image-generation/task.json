@@ -3,7 +3,7 @@
   "name": "remove-advanced-image-generation",
   "title": "移除高级图片生成并还原普通图片生成",
   "description": "规划从 Backend、Frontend、Shared、Admin 精确移除 advanced 高级图片入口、调用、结算和配置，保留普通图片及 VIP 图片免费调用次数全链路。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "packages/backend,packages/frontend,packages/shared,packages/admin (images-only)",
   "package": "cross-package",
@@ -11,7 +11,7 @@
   "creator": "cline",
   "assignee": "cline",
   "createdAt": "2026-09-28",
-  "completedAt": null,
+  "completedAt": "2026-10-20",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -25,6 +25,11 @@
   "meta": {
     "module_impact": {
       "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "用户确认功能全部完成，要求历史任务批量归档；原模块声明保存在 meta.archived_module_impact，已有载荷保留为 module-updates.historical.json。缺失或过期载荷不重新应用，不覆盖当前模块规范；原验收记录保留，归档不代表新增环境验收。"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
       "mode": "changes",
       "modules": [
         "backend.business.conversation-generation",
@@ -33,6 +38,10 @@
         "admin.business.operations",
         "database.infrastructure.schema-security"
       ]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-20",
+      "source": "用户确认：功能都已完成全部归档，客服图片双向收发任务移除"
     }
   }
 }
