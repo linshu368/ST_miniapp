@@ -68,5 +68,4 @@ Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型�
 - 2026-10-16：标签编辑采用独立 UI 行标识并保留空值/重复 ID 中间态，保存仍使用 shared 严格校验。模型定价增加本次页面有效的标准价、统一参数、公式预览和批量重算；缺失任一档位标准价时不部分覆盖，只更新 credits 草稿，不持久化计算参数。
 
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 将标签功能开关文案改为仅控制分享自动打标。
-
-- 2026-09-23：任务 `Admin VIP media configuration`（`.trellis/tasks/archive/2026-09/09-23-admin-vip-media-config/`）Admin ?? VIP ??????????????????/????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。

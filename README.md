@@ -2,7 +2,7 @@
 
 ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
-> 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；生产运维入口见 [`ops/README.md`](ops/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
+> 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
 
 > 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
 
@@ -26,7 +26,7 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 2. prisma generate 必须做一次。CI 也会跑；漏了的话 backend 启动会找不到 @prisma/client 生成物。
 3. 不要在本地对共享测试库执行 Prisma migrate / 乱跑 packages/shared/migrations/\*.sql。迁移由 GitHub Actions「Database Migration」手动触发，见 packages/shared/migrations/README.md
 4. copy backend env.example文件 根据railway配置本地env配置，DEV_AUTH_BYPASS强制为1不然本地浏览器不适配
-5. 配置frontend env.local文件 配置NEXT_PUBLIC_API_URL 指向本地服务地址，NEXT_PUBLIC_USE_MOCK强制为0
+5. 配置 frontend `.env.local` 文件，使 `NEXT_PUBLIC_API_URL` 指向本地 Backend。
 
 ### 1.2 feature开发步骤
 
@@ -59,7 +59,7 @@ Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产�
 
 ## 3. 技术栈
 
-- **Frontend**：Next.js 14、React 18、TypeScript、TanStack React Query、Zustand、React Hook Form、Zod、Radix UI、Tailwind CSS、Telegram SDK、Sentry。
+- **Frontend**：Next.js 14、React 18、TypeScript、TanStack React Query、Zustand、Radix UI、Tailwind CSS、Telegram SDK、Sentry。
 - **Backend**：Node.js、Fastify 5、TypeScript/tsx、Prisma、Supabase JS、Pino、Vitest、Sentry、WebSocket。
 - **Admin**：Vite、React 18、Ant Design 6、Refine、Supabase JS、Zod、dnd-kit、Vitest。
 - **Reply Renderer**：React 18 peer dependency、Showdown、DOMPurify、隔离 Worker、Vitest/jsdom。
@@ -71,7 +71,7 @@ Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产�
 corepack enable
 pnpm install --frozen-lockfile
 
-# 用户端与 API（根 dev/dev:all 当前都只启动这两个包）
+# 用户端与 API
 pnpm dev
 
 # 分别启动
@@ -79,8 +79,6 @@ pnpm dev:frontend
 pnpm dev:backend
 pnpm dev:admin
 ```
-
-注意：`pnpm dev:all` 当前与 `pnpm dev` 相同，只启动 Frontend 与 Backend；Admin 需要分别启动。
 
 常用检查：
 
@@ -110,23 +108,23 @@ pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
 
 ### Backend 主要变量组
 
-| 类别            | 变量                                                                                                                                                                    | 说明                                                                                                            |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Runtime/CORS    | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`                                                                                                                | 服务环境、端口和允许来源                                                                                        |
-| 数据库选择      | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                                                                          | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
-| Telegram        | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                                  | Bot、webhook 和内部调用鉴权                                                                                     |
-| CS 服务         | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                                                                                   | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
-| LLM             | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                | 生成上游与默认模型                                                                                              |
-| Voice           | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                               | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
-| Payment         | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL` | 支付开关、商户和签名/回调                                                                                       |
-| Cache/Telemetry | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                             | Redis、Sentry 和日志                                                                                            |
-| Feature/asset   | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`                                                     | 资源和运行开关                                                                                                  |
+| 类别          | 变量                                                                                                                                                                    | 说明                                                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`                                                                                                                | 服务环境、端口和允许来源                                                                                        |
+| 数据库选择    | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                                                                          | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
+| Telegram      | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                                  | Bot、webhook 和内部调用鉴权                                                                                     |
+| CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                                                                                   | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
+| LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                | 生成上游与默认模型                                                                                              |
+| Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                               | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
+| Payment       | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL` | 支付开关、商户和签名/回调                                                                                       |
+| Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                                                                                   | Sentry 和日志                                                                                                   |
+| Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`                                                     | 资源和运行开关                                                                                                  |
 
 开发 bypass（如 `MOCK_AUTH`、`DEV_AUTH_BYPASS`）禁止在 production 启用。
 
 ### Frontend
 
-主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_USE_MOCK`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
+主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
 
 ### Admin
 
@@ -218,7 +216,7 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 ## 11. 文档入口
 
 - [系统架构](docs/ARCHITECTURE.md)
-- [运维总览](ops/README.md)
+- [Railway 运维](ops/railway/README.md)
 - [后端日志与可观测性](.trellis/spec/backend/app/data-reliability-and-security.md)
 - [数据库域与归属](docs/ARCHITECTURE.md#51-数据库八域布局099-之后test-与生产一致)
 - [Trellis 工作流](.trellis/workflow.md)

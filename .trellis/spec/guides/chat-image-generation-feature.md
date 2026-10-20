@@ -1,6 +1,6 @@
 # 角色对话图片生成功能规范
 
-> 状态：**代码与 test migration 已实现，运行时开关默认关闭；真实上游、真机和生产发布尚未验收**。不得把代码落地表述为现网已开放。技术取舍与评审项见 [`docs/chat-image-generation-review.md`](../../../docs/chat-image-generation-review.md)。
+> 状态：**代码与 test migration 已实现，运行时开关默认关闭；真实上游、真机和生产发布尚未验收**。不得把代码落地表述为现网已开放。
 
 ## 功能边界
 

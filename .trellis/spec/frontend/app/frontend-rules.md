@@ -19,7 +19,7 @@
 - 组件层不得直接调用 `fetch` / `axios`。
 - 不使用 `useEffect` 做数据获取，统一使用 `useQuery` / `useMutation` 等既有数据层模式。
 - 局部状态优先 `useState`，跨组件共享状态使用 Zustand。
-- 表单统一使用 React Hook Form + Zod。
+- 表单按业务复杂度使用受控组件或本地状态；优先复用现有校验工具。
 - 样式统一使用 Tailwind 与现有 shadcn/ui 组件；除全局样式入口外，不新增本地 `.css` / `.scss` 文件。
 - 前端不得直接消费数据库行类型。
 - 未经 PRD 或需求明确要求，不修改 UX、文案、布局、视觉风格或页面交互结构。
