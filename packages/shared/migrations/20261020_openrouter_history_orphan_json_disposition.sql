@@ -48,13 +48,14 @@ BEGIN
   UPDATE orphan_history_candidates c SET fingerprint=md5(h.llm_generation_data::text)
   FROM experience.chat_history h WHERE h.id=c.id;
 
-  -- Any provider evidence, in-flight call or allowlisted key (by presence, regardless of type)
-  -- needs manual attribution; never guess a provider or fabricate an ID.
+  -- Any provider evidence or allowlisted key (by presence, regardless of type) needs manual
+  -- attribution; never guess a provider or fabricate an ID. The audited cohort includes 2 rows
+  -- stuck in 'streaming' that the owner chose to abandon; status is left untouched and a live
+  -- writer changing the JSON still fails the fingerprint CAS below.
   IF EXISTS (SELECT 1 FROM orphan_history_candidates c JOIN experience.chat_history h USING(id)
     WHERE jsonb_typeof(h.llm_generation_data)<>'object'
       OR h.llm_generation_id IS NOT NULL
       OR h.llm_billing_snapshot IS NOT NULL
-      OR h.status='streaming'
       OR h.llm_generation_data ?| ARRAY['id','provider_name','finish_reason','model','usage','usage_cache',
         'native_tokens_cached','native_tokens_reasoning','native_tokens_completion','native_tokens_prompt',
         'latency','generation_time'])
