@@ -1,0 +1,36 @@
+{
+  "id": "drama-archive-access",
+  "name": "drama-archive-access",
+  "title": "drama_archive 域授权与访问接入",
+  "description": "为 drama_archive（test 库）新增 service_role 只读授权、PostgREST 暴露与 DOMAIN_SCHEMAS 接入，解除 backend 读取该域的前置阻塞。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "database",
+  "priority": "P1",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-10-21",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-21-drama-video-integration",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "database.business.drama-archive",
+        "database.infrastructure.schema-security",
+        "backend.infrastructure.runtime-data-security"
+      ]
+    }
+  }
+}
