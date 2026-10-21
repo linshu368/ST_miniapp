@@ -51,6 +51,21 @@ Sentry MCP 没有创建看板的工具，看板需在 Sentry 界面 Dashboards �
 5. 点事件里的 trace 看后端耗时。前后端 trace 已串联；若只有前端 span，说明该请求未被采样（trace 0.2）——用 `requestId` 去 Railway 日志搜，后端慢请求（≥3 秒）会写 `slow request` 日志。
 6. **查不到事件 ≠ 用户没卡**：事件有每分钟去重，也可能被用户关闭页面打断。去看看板里同一时段、同一 `net_type`/`tg_platform` 的 p95 是否异常。
 
+## 可用性探测（T8，部分完成）
+
+| 监控                                | ID      | 状态         | 说明                                                                                                                                        |
+| ----------------------------------- | ------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `st-miniapp-frontend.vercel.app`    | 1682869 | active       | 原有。**探的是 Vercel 默认域名，不是用户访问的域名**：域名绑定/DNS 出问题时它照样显示正常                                                   |
+| `app.themijing.com`（用户实际入口） | 2485231 | **disabled** | 2026-10-21 新建。启用被 Sentry 挡下：`You don't have enough pay-as-you-go available to create a new seat`，需负责人在 Sentry 加量后手动启用 |
+| 后端 `/health`                      | -       | 未建         | Sentry 拒绝：`*.railway.app` 域名在该 Sentry ��域已达 1000 个 uptime 监控上限。需改用自有域名，或走外部探测                                 |
+
+两条待办：
+
+1. Sentry 额度恢复后启用 2485231（监控用户真正访问的域名）。
+2. 后端探测换一条不在 `*.railway.app` 下的地址（例如给后端绑自有域名），或用外部探测服务。
+
+定时任务心跳（Railway 支付/对账/VIP 提醒）依赖 Railway 可用，当前 Railway 部署暂停，未开始。
+
 ## 上线后要核对的事（T7）
 
 - development 环境先发，确认：事件能带出 Replay；发往后端的请求带上了 `sentry-trace` 头；一条 trace 里同时有前端 `http.client` 与后端 `http.server`；metrics 在 Explore 里能查到；事件里没有 initData/token/聊天正文。
