@@ -19,6 +19,7 @@ vi.mock('@telegram-apps/sdk-react', () => ({ retrieveLaunchParams: () => ({}) })
 import {
   ACTION_STALL_MS,
   completePendingAction,
+  discardPendingAction,
   feedbackAfterPaint,
   startAction,
   startPendingAction,
@@ -86,5 +87,23 @@ describe('action tracker', () => {
     frames[0]?.();
     vi.advanceTimersByTime(1);
     expect(distribution).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('discardPendingAction', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    distribution.mockClear();
+    captureMessage.mockClear();
+  });
+
+  it('stops the watchdog without recording a duration', () => {
+    startPendingAction('create_conversation');
+    vi.advanceTimersByTime(500);
+    discardPendingAction('create_conversation');
+    vi.advanceTimersByTime(ACTION_STALL_MS * 2);
+
+    expect(captureMessage).not.toHaveBeenCalled();
+    expect(distribution).not.toHaveBeenCalled();
   });
 });

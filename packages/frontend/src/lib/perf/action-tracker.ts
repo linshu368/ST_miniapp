@@ -11,8 +11,20 @@ const log = createLogger('perf');
 /** 初值（PRD 决策 2026-10-21）：点击后 2.5 秒界面仍无反应，记为 action_stall。 */
 export const ACTION_STALL_MS = 2_500;
 
-/** 只给这几个核心动作埋点（design §3.3），不做全局按钮自动采集。 */
-export type TrackedAction = 'select_character' | 'send_message' | 'recharge_create_order';
+/**
+ * 只给会触发请求的关键动作埋点（design §3.3），不做全局按钮自动采集：
+ * 纯前端交互本来就瞬时，全量采集只会把噪声灌进看板。
+ */
+export type TrackedAction =
+  | 'select_character'
+  | 'send_message'
+  | 'recharge_create_order'
+  | 'vip_create_order'
+  | 'daily_checkin'
+  | 'support_send_message'
+  | 'image_generate'
+  | 'voice_generate'
+  | 'create_conversation';
 
 export interface ActionHandle {
   /** 界面给出反馈（路由切换完成 / 控件进入处理中状态）时调用。幂等。 */
@@ -88,6 +100,11 @@ export function startPendingAction(name: TrackedAction): void {
   // 必须真正作废旧的那次，否则它的看门狗还会触发，把一次已被取代的点击误报成卡住。
   pending.get(name)?.discard();
   pending.set(name, startAction(name));
+}
+
+/** 动作已失败/被取消：停止看门狗，也不记耗时。 */
+export function discardPendingAction(name: TrackedAction): void {
+  pending.get(name)?.discard();
 }
 
 export function completePendingAction(name: TrackedAction): void {

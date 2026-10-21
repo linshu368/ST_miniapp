@@ -1,5 +1,6 @@
 'use client';
 
+import { usePageReady } from '@/lib/perf/page-ready';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -87,6 +88,7 @@ function OrdersPageContent() {
   }, [paymentReturned]);
 
   const query = usePaymentOrdersInfiniteQuery(tabToStatus(tab), 20);
+  usePageReady('/profile/orders', query.data !== undefined);
   const items = useMemo(() => (query.data?.pages ?? []).flatMap((p) => p.items), [query.data]);
 
   // 无限滚动触发器

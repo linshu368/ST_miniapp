@@ -23,6 +23,8 @@ import {
   markPageReady,
   PAGE_STALL_MS,
   resetPageTrackerForTest,
+  routeOf,
+  WATCHED_PAGES,
 } from './page-tracker';
 
 // 前端测试跑在 node 环境（项目暂无 jsdom），这里只需要 visibility 相关的最小 document。
@@ -70,8 +72,9 @@ describe('page tracker', () => {
     expect(captureMessage).toHaveBeenCalledWith('page_stall');
   });
 
-  it('does not watch pages without a defined ready moment', () => {
-    beginPage('/profile/orders');
+  it('does not watch routes that never report readiness', () => {
+    // 未知/新增但还没接 usePageReady 的路由只记路由耗时，不应该凭空告警。
+    beginPage('/some/unknown/route');
     vi.advanceTimersByTime(PAGE_STALL_MS * 3);
     expect(captureMessage).not.toHaveBeenCalled();
   });
@@ -110,5 +113,47 @@ describe('page tracker', () => {
       1,
       expect.objectContaining({ attributes: { route: '/', cold_start: 'true' } })
     );
+  });
+});
+
+describe('route templates', () => {
+  it('normalises real paths to the templates pages report', () => {
+    expect(routeOf('/')).toBe('/');
+    expect(routeOf('/chat/a5ea7a8d-9a4a-462f-af64-d304173b24c5')).toBe('/chat/:id');
+    expect(routeOf('/chat/some-character/voice/msg-123456789012345678')).toBe(
+      '/chat/:id/voice/:id'
+    );
+    expect(routeOf('/profile/recharge/550e8400-e29b-41d4-a716-446655440000')).toBe(
+      '/profile/recharge/:id'
+    );
+    expect(routeOf('/profile/messages/4821')).toBe('/profile/messages/:id');
+    expect(routeOf('/profile/orders/')).toBe('/profile/orders');
+  });
+
+  it('watches every page that reports readiness', async () => {
+    // 看门狗只认 WATCHED_PAGES 里的模板：页面报了而这里没列，就会静默不告警。
+    const { readFileSync, readdirSync } = await import('node:fs');
+    const { join } = await import('node:path');
+
+    const pages: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith('.tsx')) pages.push(full);
+      }
+    };
+    walk(join(process.cwd(), 'src/app'));
+    walk(join(process.cwd(), 'src/components'));
+
+    const reported = new Set<string>();
+    for (const file of pages) {
+      for (const match of readFileSync(file, 'utf8').matchAll(/usePageReady\(\s*'([^']+)'/g)) {
+        reported.add(match[1]!);
+      }
+    }
+
+    expect(reported.size).toBeGreaterThan(0);
+    expect([...reported].filter((route) => !WATCHED_PAGES.has(route))).toEqual([]);
   });
 });

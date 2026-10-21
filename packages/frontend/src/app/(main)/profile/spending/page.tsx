@@ -1,5 +1,6 @@
 'use client';
 
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, Loader2, ReceiptText, RefreshCw, Sparkles } from 'lucide-react';
@@ -15,6 +16,7 @@ export default function SpendingPage() {
   useTelegramBackButton(goBack);
 
   const query = useWalletSpendingQuery();
+  usePageReady('/profile/spending', query.data !== undefined);
   const items = useMemo(
     () =>
       [...(query.data?.items ?? [])].sort(

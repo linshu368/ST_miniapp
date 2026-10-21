@@ -1,5 +1,6 @@
 'use client';
 
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -49,6 +50,7 @@ export default function InviteCenterPage() {
 
   const [tab, setTab] = useState<InviteTab>('invite');
   const entryStatus = useInviteEntryStatusQuery();
+  usePageReady('/profile/invite', entryStatus.data !== undefined);
   // 入口开关关闭时不触发 center-view 副作用（不生成邀请码、不标记首次进入）。
   const centerEnabled = entryStatus.data?.entry_enabled === true;
   const center = useInviteCenterQuery(centerEnabled);

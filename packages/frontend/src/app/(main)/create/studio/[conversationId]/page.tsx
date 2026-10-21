@@ -1,5 +1,6 @@
 'use client';
 
+import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import {
   ArrowUp,
   ArrowLeft,
@@ -37,6 +38,7 @@ import {
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
 import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import {
   Sheet,
@@ -59,6 +61,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const config = useImagePlazaConfigQuery();
   const conversation = useImagePlazaConversationQuery(conversationId);
   const conversations = useImagePlazaConversationsQuery();
+  usePageReady('/create/studio/:id', conversation.data !== undefined);
   const createConversation = useCreateImagePlazaConversationMutation();
   const quote = useImagePlazaQuoteMutation();
   const submit = useSubmitImagePlazaAttemptMutation(conversationId);
@@ -190,6 +193,8 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     )
       return;
     sending.current = true;
+    // 反馈 = 提交被受理、界面进入生成中；真正出图是后台任务，耗时另由请求指标覆盖。
+    const action = startAction('image_generate');
     try {
       const actualMode: ImagePlazaMode = referenceArtifactId ? mode : 't2i';
       const freshQuote = await quote.mutateAsync({
@@ -214,7 +219,10 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       // Explicit submission restores following; polling itself never changes user intent.
       followLatestRef.current = true;
       scrollToLatest();
+      feedbackAfterPaint(action);
     } catch (error) {
+      // 失败也算有了反馈（出现了错误提示），不该再算成「点了没反应」。
+      action.feedback();
       showNotice(error instanceof Error ? error.message : '提交失败，请重试');
     } finally {
       sending.current = false;

@@ -17,10 +17,29 @@ export const PAGE_STALL_MS = 4_000;
 export const ENTRY_WINDOW_MS = 10_000;
 
 /**
- * 只对这几类页面定义「可用时刻」并开看门狗（design §3.2）；其余页面只记路由耗时。
- * key 为路由模板（不含动态段的具体值）。
+ * 每个页面都定义了「可用时刻」并开看门狗（design §3.2）。
+ * key 为路由模板（不含动态段的具体值），与页面里 usePageReady 传入的值一一对应：
+ * 对不上则该页只记路由耗时、不会告警，所以新增页面必须同时改这两处。
  */
-const WATCHED_PAGES = new Set(['/', '/chats', '/chat/:id', '/profile/recharge']);
+export const WATCHED_PAGES = new Set([
+  '/',
+  '/chats',
+  '/chat/:id',
+  '/chat/:id/voice/:id',
+  '/create',
+  '/create/studio/:id',
+  '/create/work/:id',
+  '/vip',
+  '/profile',
+  '/profile/recharge',
+  '/profile/recharge/:id',
+  '/profile/orders',
+  '/profile/spending',
+  '/profile/messages',
+  '/profile/messages/:id',
+  '/profile/invite',
+  '/profile/support',
+]);
 
 interface ActivePage {
   route: string;
@@ -42,10 +61,12 @@ let active: ActivePage | null = null;
 let isFirstPage = true;
 let visibilityBound = false;
 
-function routeOf(pathname: string): string {
-  // 与请求侧同一套归一规则，保证看板上 route 维度一致；聊天页的动态段统一成 :id。
+export function routeOf(pathname: string): string {
+  // 与请求侧同一套归一规则，保证看板上 route 维度一致。
+  // characterId 不一定是 uuid/数字，通用归一规则认不出来，单独处理。
   if (/^\/chat\/[^/]+\/?$/.test(pathname)) return '/chat/:id';
-  return toRouteTemplate(pathname) || '/';
+  if (/^\/chat\/[^/]+\/voice\/[^/]+\/?$/.test(pathname)) return '/chat/:id/voice/:id';
+  return toRouteTemplate(pathname.replace(/(.)\/$/, '$1')) || '/';
 }
 
 function elapsed(page: ActivePage, now: number): number {
@@ -139,6 +160,7 @@ export function beginPage(pathname: string): void {
     const route = routeOf(pathname);
     // 选角色的「反馈」就是进入会话页：路由已切换，用户不再对着大厅发呆。
     if (route === '/chat/:id') completePendingAction('select_character');
+    if (route === '/create/studio/:id') completePendingAction('create_conversation');
     const page: ActivePage = {
       route,
       startedAt: performance.now(),
