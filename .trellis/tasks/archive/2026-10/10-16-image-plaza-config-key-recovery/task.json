@@ -1,0 +1,43 @@
+{
+  "id": "image-plaza-config-key-recovery",
+  "name": "image-plaza-config-key-recovery",
+  "title": "恢复图片广场配置白名单",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "database",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-16",
+  "completedAt": "2026-10-20",
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "用户确认功能全部完成，要求历史任务批量归档；原模块声明保存在 meta.archived_module_impact，已有载荷保留为 module-updates.historical.json。缺失或过期载荷不重新应用，不覆盖当前模块规范；原验收记录保留，归档不代表新增环境验收。"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "database.infrastructure.schema-security"
+      ]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-20",
+      "source": "用户确认：功能都已完成全部归档，客服图片双向收发任务移除"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "id": "image-plaza-tags-prompt-zh",
+  "name": "image-plaza-tags-prompt-zh",
+  "title": "图片广场标签开关与种子提示词中文搜索",
+  "description": "runtime_config 控制标签显示与分享打标；civitai seed 提示词译中文供搜索；用户创作原样出图",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "cross-package",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-14",
+  "completedAt": "2026-10-20",
+  "branch": "feat_image_park",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-10-image-plaza-v2",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "legacy_exempt",
+      "reason": "用户确认功能全部完成，要求历史任务批量归档；原模块声明保存在 meta.archived_module_impact，已有载荷保留为 module-updates.historical.json。缺失或过期载荷不重新应用，不覆盖当前模块规范；原验收记录保留，归档不代表新增环境验收。"
+    },
+    "archived_module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "admin.business.operations",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage"
+      ]
+    },
+    "archive_confirmation": {
+      "date": "2026-10-20",
+      "source": "用户确认：功能都已完成全部归档，客服图片双向收发任务移除"
+    }
+  }
+}
