@@ -29,6 +29,7 @@ import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { FeaturedFrame } from '@/components/characters/featured-frame';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { usePageReady } from '@/lib/perf/page-ready';
 
 type ChatsTab = 'history' | 'favorites';
 
@@ -93,6 +94,7 @@ export default function ChatsPage() {
 
 function ConversationHistoryList() {
   const { data, isLoading, isError, refetch } = useConversationsQuery(undefined);
+  usePageReady('/chats', data !== undefined);
   const sessions = data?.sessions ?? [];
 
   return (
