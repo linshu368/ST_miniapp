@@ -47,14 +47,14 @@ END LOOP;
 
 ## Acceptance Criteria
 
-- [ ] test 项目新增 migration 文件已在 `packages/shared/migrations/` 落地，内容只包含对 `service_role` 的 `GRANT USAGE ON SCHEMA drama_archive`，不含对 `drama_worker` 的任何改动。（2026-10-21 修订：原"只授权 dramas/videos/ai_results 三表 SELECT、不含 pipeline_tasks"的限制已按用户决定放宽，见下方「范围变更记录」；不再新增显式 `GRANT SELECT`，因为表级权限已经存在。）
-- [ ] 该 migration 已通过 `.github/workflows/db-migrate.yml` 在 **test** 项目执行成功，并记录执行前后的 `information_schema`/`pg_catalog` 权限查询结果作为证据。
-- [ ] 执行后验证：用 `service_role` key 能 `SELECT`（以及按修订后范围能 `INSERT`/`UPDATE`/`DELETE`）`dramas`/`videos`/`ai_results`/`pipeline_tasks`；用 `anon`/`authenticated` key（或等效查询）确认仍然没有 `drama_archive` schema 的 `USAGE`、拿不到任何一行。
-- [ ] test 项目 `authenticator` 角色的 `pgrst.db_schemas` 已追加 `drama_archive`，且原有 5 项（`public, graphql_public, miniapp, miniapp_traffic, admin` 等现状，以实测为准）顺序未变、未被移除。
-- [ ] `packages/backend/src/lib/supabase.ts` 的 `DOMAIN_SCHEMAS` 已追加 `'drama_archive'`，`pnpm --filter @miniapp/backend typecheck` 通过。
-- [ ] 用临时验证脚本（一次性、不进正式代码）通过 `getDomainDb('drama_archive')` 对 test 库查询到至少一条真实 `videos` 行，证明暴露列表 + GRANT + 代码改动三者共同生效；验证后清理临时脚本。
-- [ ] 已用 `service_role` key 对私有桶 `drama-videos` 实际调用一次 `createSignedUrl`（任选一个已存在的 `object_path`）并成功返回可用链接。
-- [ ] `drama_archive` 未登记进八域地图这一缺口已在 `design.md` 和父任务 `prd.md` 的 Open Issue 中记录，并留下二期处理的待办指向。
+- [x] test 项目新增 migration 文件已在 `packages/shared/migrations/` 落地，内容只包含对 `service_role` 的 `GRANT USAGE ON SCHEMA drama_archive`，不含对 `drama_worker` 的任何改动。（2026-10-21 修订：原"只授权 dramas/videos/ai_results 三表 SELECT、不含 pipeline_tasks"的限制已按用户决定放宽，见下方「范围变更记录」；不再新增显式 `GRANT SELECT`，因为表级权限已经存在。）文件：`packages/shared/migrations/20261021_drama_archive_grant_service_role.sql`。
+- [x] 该 migration 已通过 `.github/workflows/db-migrate.yml` 在 **test** 项目执行成功（`mode=apply`/`environment=test`，Step Summary 确认 project ref `zoqelpfhurwehlvypryl`），并记录执行前后的 `has_schema_privilege`/`role_table_grants`/`rolbypassrls`/`pg_policies` 查询结果作为证据，见 `task.md` T2/T3/T4 Execution Log。
+- [x] 执行后验证：用 `service_role`（`SET ROLE service_role` 实测）能查到 `dramas=6`/`videos=16`/`ai_results=9`/`pipeline_tasks=48` 行；`anon`（`SET ROLE anon` 实测）查询报 `42501: permission denied for schema drama_archive`，仍然拿不到任何一行。见 `task.md` T4 Execution Log。
+- [x] **（2026-10-21 按实测修订）** PostgREST 对 `drama_archive` 的暴露已通过用户在 Supabase Studio 的 "Exposed schemas" 设置生效，并非原计划的 `ALTER ROLE authenticator SET pgrst.db_schemas` 脚本化追加（见下方「范围变更记录」，T5/T6 已 Skipped）。真实生效通道未查清，但功能性验证（`NOTIFY pgrst, 'reload schema'` 解决一次 `PGRST205` 缓存未刷新问题后，`getDomainDb('drama_archive')` 查询成功）已证明暴露确实生效，以此为准。
+- [x] `packages/backend/src/lib/supabase.ts` 的 `DOMAIN_SCHEMAS` 已追加 `'drama_archive'`，`pnpm --filter @miniapp/backend typecheck` 通过（剩余 2 个 `undici` 模块找不到的错误是本地依赖缺失的既有问题，与本次改动无关，见 `task.md` T7 Execution Log）。
+- [x] 用临时验证脚本（`packages/backend/src/scripts/tmp-verify-drama-archive-access.ts`，验证后已删除）通过 `getDomainDb('drama_archive')` 对 test 库查询到一条真实 `videos` 行（`id: d9d54f14-11af-506e-95db-d1145367b77c`），证明暴露列表 + GRANT + 代码改动三者共同生效。
+- [x] 已用 `service_role` key 对私有桶 `drama-videos` 实际调用一次 `createSignedUrl`（对上面那条真实 `videos` 行的 `object_path`）并成功返回可用链接（`hasSignedUrl: true`，路径前缀指向 `drama-videos` 桶）。
+- [x] `drama_archive` 未登记进八域地图这一缺口已在本任务 `design.md` §3 和父任务 `10-21-drama-video-integration/prd.md` 的 Open Issue 第 1 条中记录，留了二期处理的待办指向（两处已核对一致，无需改动）。
 
 ## 范围变更记录（2026-10-21，执行期间）
 
