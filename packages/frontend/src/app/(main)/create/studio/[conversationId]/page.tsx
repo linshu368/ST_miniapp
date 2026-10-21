@@ -685,7 +685,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
 
       {shareTipOpen && shareArtifact ? (
         <div
-          className="fixed inset-0 z-50 grid place-items-end bg-black/65 p-3 sm:place-items-center"
+          className="fixed inset-0 z-50 grid place-items-end bg-black/65"
           onClick={() => setShareTipOpen(false)}
         >
           <div
@@ -693,7 +693,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
             aria-modal="true"
             aria-label="分享作品"
             onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-sm overflow-hidden rounded-[1.75rem] bg-card shadow-2xl"
+            className="mx-auto w-full max-w-3xl overflow-hidden rounded-t-[1.75rem] bg-card shadow-[0_-18px_42px_rgba(0,0,0,0.3)]"
           >
             <div className="relative aspect-[4/3] bg-black">
               <img
@@ -710,7 +710,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 <X className="size-4" />
               </button>
             </div>
-            <div className="p-5 text-center">
+            <div className="p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] text-center">
               <h2 className="text-lg font-black">{formatTip(tip.title)}</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 {formatTip(tip.description)}
