@@ -31,6 +31,8 @@ Sentry MCP 没有创建看板的工具，看板需在 Sentry 界面 Dashboards �
 
 **事件**（Issues 里按标签搜）：`perf_event:page_stall`、`perf_event:action_stall`、`perf_event:slow_request`、`perf_event:asset_load_failed`。均为 warning 级，按「类型 + route/action」固定分组，同类问题合并为一个 issue。
 
+> 逐字可照抄的建图清单见 `dashboard-setup.md`。
+
 ## 看板建议（每条一张图）
 
 1. **页面可用耗时**：`page.ready.duration` p75/p95/p99，按 `route` 分组。再做一份按 `cold_start` 分组，直接回答"刚进去是不是更慢"。
