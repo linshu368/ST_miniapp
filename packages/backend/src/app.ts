@@ -11,7 +11,6 @@ import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
 import vipRoutes from './routes/vip.js';
 import settingsRoutes from './routes/settings.js';
-import wishRoutes from './routes/wishes.js';
 import modelsRoutes from './routes/models.js';
 import conversationRoutes from './routes/conversations.js';
 import voiceRoutes from './routes/voice.js';
@@ -116,7 +115,6 @@ export async function buildApp() {
   await app.register(walletRoutes);
   await app.register(vipRoutes);
   await app.register(settingsRoutes);
-  await app.register(wishRoutes);
   await app.register(modelsRoutes);
   await app.register(conversationRoutes);
   await app.register(voiceRoutes);

@@ -8,7 +8,7 @@
 | `conversations.ts`                         | 会话 CRUD、消息 SSE、重生成、generation config；conversation/engine/generation                   |
 | `voice.ts` / `models.ts`                   | 语音配置、会话音频、语音生成；模型档位/目录/选择                                                 |
 | `settings.ts` / `wallet.ts`                | 用户昵称头像偏好；余额、流水、签到                                                               |
-| `payment.ts` / `vip.ts` / `wishes.ts`      | 套餐、下单、订单查询/回调；VIP 状态与入口角标；许愿状态、创建、完成                              |
+| `payment.ts` / `vip.ts`                    | 套餐、下单、订单查询/回调；VIP 状态与入口角标                                                    |
 | `telemetry.ts`                             | 受鉴权 replay context；支付终态事件在 feature 层异步发送                                         |
 | `notifications.ts` / `support.ts`          | 消息列表、单条详情和按 id 已读；MiniApp 客服会话、消息、已读/未读                                |
 | `invite.ts` / `growth.ts` / `community.ts` | 邀请绑定/统计；渠道归因；官方群验证与奖励                                                        |

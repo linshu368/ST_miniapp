@@ -1,0 +1,48 @@
+{
+  "id": "remove-confirmed-repository-noise",
+  "name": "remove-confirmed-repository-noise",
+  "title": "Remove confirmed repository noise",
+  "description": "删除已确认的孤儿代码、资源、依赖、许愿池链路、过期文档及无消费者的 GHCR workflow。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "cross-package-cleanup",
+  "package": "cross-package",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-20",
+  "completedAt": "2026-10-20",
+  "branch": "codex/post-deploy-smoke",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": "63eee1e847f678f4b2c434f872425a40fc7f891a",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户已确认提交并推送清理分支；未部署。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "admin.business.operations",
+        "backend.business.conversation-generation",
+        "backend.business.engagement-support",
+        "backend.business.voice-message",
+        "backend.business.wallet-payment",
+        "backend.infrastructure.runtime-data-security",
+        "database.business.billing-payment",
+        "database.business.conversation-storage",
+        "frontend.business.conversation-ui",
+        "frontend.business.engagement-support",
+        "frontend.business.wallet-payment",
+        "frontend.infrastructure.client-ui-foundation",
+        "shared.business.conversation-contracts",
+        "shared.business.engagement-support-contracts",
+        "shared.business.wallet-payment-contracts"
+      ]
+    }
+  }
+}

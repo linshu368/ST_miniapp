@@ -95,24 +95,6 @@
   }
 }
 
-/* 流星 shimmer 动画:用于许愿池入口按钮的轻盈"划过"动效 */
-@keyframes meteor-shimmer {
-  0% {
-    transform: translateX(-60%) skewX(-12deg);
-    opacity: 0;
-  }
-  30% {
-    opacity: 1;
-  }
-  70% {
-    opacity: 0.8;
-  }
-  100% {
-    transform: translateX(260%) skewX(-12deg);
-    opacity: 0;
-  }
-}
-
 @keyframes model-current-shimmer {
   0% {
     transform: translateX(-140%) skewX(-18deg);
@@ -275,31 +257,6 @@
   }
 }
 
-/* 分隔线从中心展开 */
-@keyframes splash-line {
-  from {
-    opacity: 0;
-    transform: scaleX(0);
-  }
-  to {
-    opacity: 1;
-    transform: scaleX(1);
-  }
-}
-
-/* 海报外圈光晕呼吸 */
-@keyframes splash-glow {
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.95;
-    transform: scale(1.05);
-  }
-}
-
 /* 流光描边:渐变背景横向流动 */
 @keyframes splash-border-flow {
   from {
@@ -326,56 +283,6 @@
   }
 }
 
-/* 斜向高光扫过海报 */
-@keyframes splash-sheen {
-  0% {
-    transform: translateX(-180%) skewX(-16deg);
-    opacity: 0;
-  }
-  18% {
-    opacity: 1;
-  }
-  45%,
-  100% {
-    transform: translateX(420%) skewX(-16deg);
-    opacity: 0;
-  }
-}
-
-/* 背景极光气团漂移 */
-@keyframes splash-aurora-a {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(9vw, 6vh) scale(1.12);
-  }
-}
-
-@keyframes splash-aurora-b {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1.08);
-  }
-  50% {
-    transform: translate(-8vw, -5vh) scale(0.96);
-  }
-}
-
-/* 星尘粒子闪烁 */
-@keyframes splash-twinkle {
-  0%,
-  100% {
-    opacity: 0.15;
-    transform: scale(0.8);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.25);
-  }
-}
-
 /* 底部等待指示的三粒星尘跳动 */
 @keyframes splash-dot {
   0%,
@@ -386,16 +293,6 @@
   50% {
     opacity: 1;
     transform: translateY(-4px);
-  }
-}
-
-/* 进度条内的流光：即使曲线进入 90% 后慢速蠕动，也保持“仍在推进”的视觉信号 */
-@keyframes splash-progress-shimmer {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(22rem);
   }
 }
 

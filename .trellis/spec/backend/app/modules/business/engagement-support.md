@@ -1,6 +1,6 @@
 ---
 module_id: backend.business.engagement-support
-title: 许愿、社区、消息与客服
+title: 社区、消息与客服
 scope: backend
 category: business
 status: active
@@ -9,15 +9,15 @@ last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
 last_verified_at: 2026-09-11
 ---
 
-# 许愿、社区、消息与客服
+# 社区、消息与客服
 
 ## 职责与边界
 
-负责许愿池、邀请/社区奖励、站内通知和用户客服会话。
+负责邀请/社区奖励、站内通知和用户客服会话。
 
 ## 当前状态
 
-主要互动 API 已实现。许愿、邀请和官方社群等发奖 RPC 保留各自业务判定，但钱包加值与流水最终统一调用 `billing.grant_bonus_credits`。
+主要互动 API 已实现。邀请和官方社群等发奖 RPC 保留各自业务判定，但钱包加值与流水最终统一调用 `billing.grant_bonus_credits`。
 
 ## 入口与调用者
 
@@ -27,7 +27,6 @@ Frontend profile、通知与客服页面调用对应 `/api/*`。
 
 | 路径                                           | 职责     |
 | ---------------------------------------------- | -------- |
-| `packages/backend/src/routes/wishes.ts`        | 许愿 API |
 | `packages/backend/src/routes/community.ts`     | 社区奖励 |
 | `packages/backend/src/routes/notifications.ts` | 消息中心 |
 | `packages/backend/src/routes/support.ts`       | 用户客服 |
@@ -55,3 +54,7 @@ Frontend profile、通知与客服页面调用对应 `/api/*`。
 ## 关联模块
 
 `frontend.business.engagement-support`、`backend.business.wallet-payment`、`database.business.billing-payment`。
+
+## 变更记录
+
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已退场许愿池的模块事实并保留其余互动能力边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。

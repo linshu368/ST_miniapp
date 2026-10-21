@@ -60,8 +60,9 @@ nginx / st-bundle 之后，控制台里的残留服务需要手动清：
 2. 确认无流量后，删除 `nginx-pro`（及 dev 环境的 `nginx`）服务。
 3. 删除 `st-bundle-pro`（及 dev 环境的 `st-bundle`）服务；卷 `st-data-pro` /
    `st-bundle-data` 里是 ST 用户目录，**要留档的先导出再删卷**。
-4. GHCR 上 `st-miniapp-nginx` / `st-miniapp-st-backend` 两个 package 不再有新 tag
-   产出，可按需归档或删除。
+4. GHCR 上 `st-miniapp-nginx`、`st-miniapp-st-backend`、`st-miniapp-backend`、
+   `st-miniapp-frontend` 均无现行部署消费者，仓库也不再产出新 tag；既有
+   package 可按回滚保留周期归档或删除。
 
 > 历史拓扑（Vercel rewrites → nginx → backend / st-bundle，含 dev/prod 的
 > `-pro` 服务名对照表与各 upstream 变量取值）见 commit `c737294` 及其之前的本文件版本。
@@ -111,7 +112,7 @@ PR 临时环境复制 development 后会立即删除该 Cron，避免多个调�
 
 创建步骤：
 
-1. 控制台 New → Empty Service（或 Deploy from Image），命名为 `stminiapp`。
+1. 控制台 New → Empty Service，命名为 `stminiapp`。
 2. Service Settings → Source 连接 GitHub 仓库 `linshu368/ST_miniapp`；development 选择
    `dev`，production 选择 `main`。
 3. 变量按下方「环境变量」从 `ops/env/backend.env.production.example` 填入。⚠️ `PORT`
@@ -188,8 +189,8 @@ Railway 控制台手动创建并逐项对齐：
    `packages/shared/migrations/100_payment_reconciliation_schedule.sql`，再部署包含快速对账
    repository 的代码；顺序反过来会因缺少调度列导致快速任务失败。
    `103_payment_settled_by.sql`（入账来源，回调监控用）同理必须先于代码执行：它把入账函数换成
-   三参签名，迁移先跑不影响旧代码，反过来则四条入账路径一起失败。详见
-   [`docs/payment-missing-credits-remediation.md`](../../docs/payment-missing-credits-remediation.md) §3.1。
+   三参签名，迁移先跑不影响旧代码，反过来则四条入账路径一起失败。历史设计见
+   `git show 7541a54^:docs/payment-missing-credits-remediation.md` §3.1。
 2. 用生产测试账号创建并支付最低金额订单，支付后不返回 MiniApp，也不打开订单详情。
 3. Worker 应持续 Online；Railway 日志约每 30 秒一轮，并在订单 `created_at` 后约 60–90 秒
    出现同一 `orderId` 的 `payment.query.paid source=cron` 和
@@ -226,7 +227,7 @@ Railway 控制台手动创建并逐项对齐：
 
 1. development 与 production 的四个服务分别连接 `dev` 与 `main`。
 2. 对应分支 push 后，Railway 分别构建 API、快速对账 Worker、支付过期 Cron 与 VIP 提醒
-   Cron；四者以同一 Git commit 为发布基准，不需要人工同步 GHCR tag。
+   Cron；四者以同一 Git commit 为发布基准，不经过镜像仓库交接。
 3. 四个服务是独立 deployment，短时间内可能版本不一致；发布后需确认四边最新成功
    deployment 的 commit SHA 相同。
 4. 回滚时在 Git 分支回滚对应 commit，三个服务会再次自动部署同一代码版本。
