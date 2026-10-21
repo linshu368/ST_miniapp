@@ -1,1 +1,11 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "验收时核对后端规则与 @frontend-ready/日志边界"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "连接/超时/幂等/计费不得被性能改动削弱"}
+{"file": ".trellis/spec/backend/app/modules/business/character-lobby.md", "reason": "对照 characters 长尾与可见性不变量"}
+{"file": ".trellis/spec/backend/app/modules/business/conversation-generation.md", "reason": "对照 messages Consecutive HTTP 与结算边界"}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "前端验收 checklist"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "N+1 修复后仍走统一 hooks/client"}
+{"file": ".trellis/spec/frontend/app/modules/business/conversation-ui.md", "reason": "/chats 与 chat entry UX 验收"}
+{"file": ".trellis/spec/shared/contracts/modules/business/character-lobby-contracts.md", "reason": "确认未偷偷改契约"}
+{"file": ".trellis/spec/shared/contracts/modules/business/conversation-contracts.md", "reason": "确认未偷偷改会话契约"}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "若触及超时/连接/索引，对照 schema 约定"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层一致性与回滚检查"}

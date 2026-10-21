@@ -1,1 +1,15 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/app/index.md", "reason": "后端入口与 Pre-Development checklist；连接/超时/generation 边界"}
+{"file": ".trellis/spec/backend/app/modules/business/character-lobby.md", "reason": "大厅 characters/favorites/latest-badge 与 P1-L-TAIL、P1-N-DETAIL 相关"}
+{"file": ".trellis/spec/backend/app/modules/business/conversation-generation.md", "reason": "messages 准备期、计费与 P1-S-HTTP/P1-A 边界"}
+{"file": ".trellis/spec/backend/app/data-reliability-and-security.md", "reason": "超时、幂等、连接与关键路径可靠性门禁"}
+{"file": ".trellis/spec/backend/app/routes-and-features.md", "reason": "路由与 feature 归属；避免跨层乱改"}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "前端入口 checklist；P1-L-N1 /chats N+1 属前端"}
+{"file": ".trellis/spec/frontend/app/modules/business/character-lobby.md", "reason": "大厅列表加载与缓存约定"}
+{"file": ".trellis/spec/frontend/app/modules/business/conversation-ui.md", "reason": "会话入口、开屏与 chats 列表交互"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "React Query/请求去重与 N+1 修复约束"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "跨包契约；批次原则上不改公开 API"}
+{"file": ".trellis/spec/shared/contracts/modules/business/character-lobby-contracts.md", "reason": "characters/favorites 契约边界"}
+{"file": ".trellis/spec/shared/contracts/modules/business/conversation-contracts.md", "reason": "会话/消息契约与计费相关边界"}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "PostgREST/连接与八域；P0-C/P1-C 涉库时对照"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "前后端/DB 跨层排查与最小改动"}
+{"file": ".trellis/spec/guides/index.md", "reason": "共享指南索引"}

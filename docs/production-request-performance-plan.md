@@ -1,7 +1,8 @@
 # 大厅首载、进入会话、消息回复与 Prisma 连接治理规划
 
 > 2026-10-21；源码基线 `bf1d2893`；状态：待审核规划，未实施。
-> 本轮仅形成文档，不修改业务代码、生产配置、数据库或依赖。生产根因尚未确定；源码风险不等于生产事故证据。
+> 本轮仅形成文档，不修改业务代码、生产配置、数据库或依赖。源码风险不等于生产事故证据。
+> **2026-10-21 补充**：已用 Sentry MCP（org `wangqiao` / project `st-miniapp`，region `de`，production，近 7 天 traces）补齐生产延迟样本；采样与配额仍可能低估长尾，不能单独替代分段观测与连接容量表。
 
 ## 1. 范围与优先结论
 
@@ -16,11 +17,29 @@
 
 连接治理是此次**核心交付项，不再等到 P2 才处理**；连接满发生于 Prisma 本地池、Supavisor 还是 Postgres，仍需同窗口证据确认。
 
-1. **P0 定位与止损**：四主线分段观测，确认连接层级和全服务预算；补齐大厅有限等待，设计连接饱和时的资源保护与恢复。
-2. **P1 核心提速与连接修正**：大厅减少回源、进入会话减少阻塞、发送消息减少重复准备；落实预算内的连接参数和后台工作约束、异常清理。保留推荐随机化、运营更新和计费一致性。
-3. **P2 证据驱动的深度调优**：仅在核心批次不足且有实测依据时改具体 SQL/索引、部署拓扑或容量；不默认扩大池、拆服务或换 ORM。
+### 1.1 Sentry 生产归纳（近 7 天，2026-10-21 采样）
 
-非目标：大面积重构、统一全部数据库访问到 Prisma、取消 Next 代理、迁移供应商、全局 Redis/队列、升级 Prisma、重做 UI、修改计费政策、新建数据库对象。
+证据标签：`SENTRY`（见 §2 / E18）。单位毫秒原值已换算为秒便于阅读。
+
+| 优先级 | 现象（Sentry）                                                                                                      | 映射主线 | 规划处理批次                         | 说明                                                                                                              |
+| ------ | ------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| **高** | `GET /api/characters` p95≈60s，p50≈106ms；首页 `/` pageload p95≈12.6s                                                | L        | P0-B → P1-B → **P1-L-TAIL**          | 典型长尾/偶发超时，不是中位数慢；先有界等待，再查排序回源与下游卡住                                               |
+| **高** | `/chats` **N+1 API Call**（[ST-MINIAPP-1Y](https://wangqiao.sentry.io/issues/ST-MINIAPP-1Y)）→ `/api/characters/*`    | L / N    | **P1-L-N1**                          | 125 用户；会话列表页对角色详情批量打点，直接拖慢进入与列表可交互                                                  |
+| **高** | `GET /api/characters/:id` 7d≈21.5k 次，p95≈10s，p50≈80ms；**N+1 Query**（[ST-MINIAPP-3M](https://wangqiao.sentry.io/issues/ST-MINIAPP-3M)） | N        | **P1-N-DETAIL**                      | 最高频 API；长尾与 DB N+1 并存                                                                                    |
+| **高** | `GET /api/characters/latest-badge` p95≈13s（~4.6k 次）                                                              | L        | **P1-L-TAIL**                        | 旁路鉴权读；证明竞争后再延后/合并，不可凭空写成列表串行依赖                                                       |
+| **高** | Supabase REST >5s：`users` 817 次、`current_chat_history` 190 次、`runtime_config` 125 次；大量卡在 ≈300s            | C / S    | P0-C → **P1-C** / **P1-S-HTTP**      | 高度像客户端/代理超时上限；Prisma 池调参不能直接消掉 PostgREST 超时                                               |
+| **高** | `GET /api/favorites` p95≈60s（次数少）；`POST /api/growth/miniapp-entry`、`POST /api/telegram/webhook` p95≈60s       | L / 旁路 | **P1-L-TAIL**；webhook/entry → **P2-X** | favorites 进大厅旁路长尾；webhook/entry 中位数也高，不进四主线首批，另列                                           |
+| **中** | `POST .../messages` Consecutive HTTP（[ST-MINIAPP-2G](https://wangqiao.sentry.io/issues/ST-MINIAPP-2G)）→ `current_chat_history` | S        | **P1-S-HTTP** → P1-A                 | 与 LLM 生成耗时分开：先消连续 HTTP，再谈准备期只读复用                                                            |
+| **中** | `/chat/:characterId` pageload p95≈7s；`/chats` ≈3.9s                                                                | N / L    | P1-N + P1-L-N1                       | 前端加载与后端长尾叠加                                                                                            |
+| **低*** | `POST .../messages` p95≈66s / p50≈17.5s；`.../regenerate` p95≈93s                                                    | S        | P1-A / P1-S（有分段证据后）          | **\*LLM 生成耗时属业务特性**；不把供应商推理时间算进「可删代码路径」收益，除非产品硬 SLA                          |
+
+实施优先级（在原 P0/P1/P2 上叠加 Sentry 排序）：
+
+1. **P0 定位与止损**：把 Sentry 结论固化为基线快照（E18）；补四主线分段观测与连接容量表；大厅有界等待（防 60s 挂死）。
+2. **P1 核心提速（Sentry 驱动）**：先消 `/chats` N+1（P1-L-N1）与 characters 长尾/超时（P1-L-TAIL、P1-N-DETAIL）；并行处理 messages 连续 HTTP（P1-S-HTTP）与 PostgREST/连接预算（P1-C）；再做准备期只读复用与开屏退场。
+3. **P2 证据驱动深度调优**：慢 SQL/索引、webhook/growth 中位数偏高、部署拓扑或容量；不默认扩大池、拆服务或换 ORM。
+
+非目标：大面积重构、统一全部数据库访问到 Prisma、取消 Next 代理、迁移供应商、全局 Redis/队列、升级 Prisma、重做 UI、修改计费政策、新建数据库对象；**不以缩短模型输出或换便宜模型冒充回复变快**。
 
 ## 2. 证据口径及缺口
 
@@ -30,7 +49,8 @@
 | LOCAL   | 前轮本地命令记录，本次未重跑版本命令 | 前轮记录 Prisma/client 6.19.3、Node 24.15.0、pnpm 9.15.9；本次 package.json 确认 Prisma/client 声明为 ^6.19.3，不代表生产版本 |
 | DOC     | 历史文档，不替代现网实况             | 10-12 支付告警任务记录过 P2024；当前 helper 已采用专用 pg client，部署情况待核对                                              |
 | HISTORY | 前轮对话记录，非本轮重新采样         | Supabase 项目位于新加坡且 ACTIVE_HEALTHY；不能证明查询/连接正常                                                               |
-| GAP     | 未取得数据                           | Railway 实际区域、副本/进程数、资源曲线、连接参数、变慢起点、生产前端请求瀑布                                                 |
+| SENTRY  | 生产 traces/issues 聚合（近 7 天）   | 已采样 http.server / pageload / http.client(Supabase) 与性能 Issue；见 §1.1 / E18。采样率与丢弃事件未单独审计，长尾可能偏差 |
+| GAP     | 未取得数据                           | Railway 实际区域、副本/进程数、资源曲线、连接参数、变慢起点、**分段**请求瀑布（Sentry 有交易级 p95，缺同请求阶段拆解）       |
 
 历史 `/health` 本机小样本：经显式代理首次约 2.36s，连接复用约 0.48s，绕过显式代理单次约 1.02s。该端点不查数据库、不调用模型；样本少、网络条件不同，不是业务基线或应用耗时。`x-railway-edge: lax1` 不能用来判断应用部署区域。此前 Railway CLI 返回 `Project not found`，不尝试以仓库 IaC 推断实际拓扑。
 
@@ -53,6 +73,7 @@
 | E11 | `d:/codeReposity/wq/ST_miniapp/packages/backend/src/lib/postgres-advisory-lease.ts`；`d:/codeReposity/wq/ST_miniapp/packages/backend/src/scripts/payment-alert-monitor.ts`；`d:/codeReposity/wq/ST_miniapp/.trellis/tasks/10-12-fix-payment-alert-worker-lease/task.md`                                                                                                             |
 | E12 | `d:/codeReposity/wq/ST_miniapp/packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts`：开轮 RPC、CAS、abortSignal；`d:/codeReposity/wq/ST_miniapp/packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts`；`d:/codeReposity/wq/ST_miniapp/packages/backend/src/infrastructure/repositories/VeniceChatHistoryRepository.ts` |
 | E13 | `d:/codeReposity/wq/ST_miniapp/ops/railway/README.md`；`d:/codeReposity/wq/ST_miniapp/docs/ARCHITECTURE.md`                                                                                                                                                                                                                                                                         |
+| E18 | Sentry `wangqiao/st-miniapp`（region `https://de.sentry.io`）：[http.server p95](https://wangqiao.sentry.io/explore/traces/?query=is_transaction%3Atrue+span.op%3Ahttp.server+sentry.environment%3Aproduction&project=4511818663788624&aggregateField=%7B%22groupBy%22%3A%22transaction%22%7D&aggregateField=%7B%22yAxes%22%3A%5B%22p95%28span.duration%29%22%5D%7D&mode=aggregate&sort=-p95%28span.duration%29&statsPeriod=7d&table=span)、[pageload/navigation p95](https://wangqiao.sentry.io/explore/traces/?query=is_transaction%3Atrue+span.op%3A%5Bpageload%2Cnavigation%5D&project=4511818663788624&aggregateField=%7B%22groupBy%22%3A%22transaction%22%7D&aggregateField=%7B%22yAxes%22%3A%5B%22p95%28span.duration%29%22%5D%7D&mode=aggregate&sort=-p95%28span.duration%29&statsPeriod=7d&table=span)、[Supabase REST >5s](https://wangqiao.sentry.io/explore/traces/?query=span.op%3Ahttp.client+span.description%3A*supabase*rest*+span.duration%3A%3E5s&project=4511818663788624&aggregateField=%7B%22groupBy%22%3A%22span.description%22%7D&aggregateField=%7B%22yAxes%22%3A%5B%22p95%28span.duration%29%22%2C%22count%28%29%22%5D%7D&mode=aggregate&sort=-count%28%29&statsPeriod=7d&table=span)；Issues [ST-MINIAPP-1Y](https://wangqiao.sentry.io/issues/ST-MINIAPP-1Y)、[ST-MINIAPP-3M](https://wangqiao.sentry.io/issues/ST-MINIAPP-3M)、[ST-MINIAPP-2G](https://wangqiao.sentry.io/issues/ST-MINIAPP-2G)。采样日 2026-10-21，窗口 7d，environment=production |
 
 ## 3. 大厅链路与优化对比
 
@@ -79,6 +100,8 @@ CharacterGallery → useCharactersQuery → 浏览器 /api/lobby-characters
 首次加载必须在无 localStorage 快照、无 React Query 数据条件下测量；同时分离浏览器冷连接和后端缓存冷/热状态。记录代理耗时、后端列表/排序读取耗时、响应大小、JSON 解析与卡片提交、首屏图片完成。已有首屏 8 张图片预加载不能当作本次新增方案。
 
 优先改 E1–E4 的有界请求、排序刷新 single-flight（同进程同一次刷新共用 Promise，finally 清理，失败不永久缓存拒绝）及失败展示；这些分别解决失控等待、并发回源和可恢复性，**超时更早不等于首载成功更快**。若全量列表传输/渲染才是瓶颈，先评估响应中非必要字段；分页会影响搜索、推荐随机化和返回定位，须另审 shared 契约与消费者，不在首批直接改成分页或虚拟列表。latest-badge 等旁路请求只在证明竞争明显时延后，不把它写成列表的串行依赖。
+
+**Sentry 对 L 的约束（E18）**：`GET /api/characters` 中位数正常、p95≈60s，说明首批收益来自「消除偶发挂死/下游超时」多于「把常态 100ms 再砍一半」。`/chats` 的 N+1（ST-MINIAPP-1Y）是独立前端批请求问题，应与大厅列表 API 长尾分轨验收。favorites / latest-badge 的 60s/13s 长尾列入 P1-L-TAIL 同窗排查（用户查询、Prisma、PostgREST `users` 超时是否同因）。
 
 ### 3.2 点击列表进入会话：新增独立主线（N）
 
@@ -111,6 +134,8 @@ CharacterGallery → useCharactersQuery → 浏览器 /api/lobby-characters
 | 建会话内部读取角色→空会话→可能插入是串行路径；显示名已并行                                           | 对每段计时，优先请求内复用安全数据，消除无变化资料写；只有 SQL 证据才考虑查询/索引                                     | 角色可见性、用户归属和空会话复用保持；不为并行提前创建未授权会话                                                              |
 
 源码注释差异：E16 ChatSplash 仍有 ST/iframe/bridge 历史描述，但实际 ready 来自当前自研会话状态；此次以实现为准，不恢复已退场链路。实施时可同步修正该处误导注释。
+
+**Sentry 对 N 的约束（E18）**：`GET /api/characters/:id` 是最高频后端交易（7d≈21.5k），p50≈80ms 但 p95≈10s，并已有 N+1 Query Issue（ST-MINIAPP-3M）。进入会话优化不能只改开屏动画：必须把详情 API 长尾与前端预取/N+1 一并验收。`/chat/:characterId` pageload p95≈7s 作为入口前端基线快照，改后同窗口对照。
 
 ## 4. 消息发送后的首字、流式速度与完成速度（S）
 
@@ -145,6 +170,11 @@ CharacterGallery → useCharactersQuery → 浏览器 /api/lobby-characters
 主要改动先落在 E5–E8 的同轮规则、设置、模型只读快照复用，减少准备期 DB/HTTP 次数，不盲目再加 Promise.all。若耗时集中于上游，按 provider/model、输入/输出规模、网络分组比对首正文和正文速率；不能通过默认换便宜模型、减少用户要求字数或裁掉必要上下文冒充优化，模型策略变化另审质量与计费。若接收 delta 很快但绘制慢，再定位解析/React 提交成本，在现有流式 hook 内评估有界更新合并，不另造 SSE parser；终态必须立即正确收敛，不漏字、不乱序。若末正文后迟迟不完成，定位终态写入、结算及回读，不以提前 done 绕过权威终态。
 
 UI 可即时显示发送中，但不能把占位、SSE start、心跳、reasoning 或进度提示当成“回复首字”。验收同时覆盖首字、流中长停顿、完整回复时长和失败率。
+
+**Sentry 对 S 的约束（E18）**：
+
+- `POST .../messages` / `regenerate` 的高 p95/p50 **大部分可归因于 LLM 生成**；P1-A/P1-S 必须用分段计时证明「准备期」或「连续 HTTP」收益，禁止把供应商推理变短写成产品优化成功。
+- Consecutive HTTP（ST-MINIAPP-2G）指向对 `current_chat_history` 的连续 PostgREST 调用；与同窗 Supabase `current_chat_history` >5s（190 次）交叉验证，优先合并/缓存安全只读，不扩大并行峰值。
 
 ## 5. Prisma、Supavisor 与 PostgREST 必须分开排查（C）
 
@@ -193,6 +223,8 @@ P2024 表示获取 Prisma 池连接超时，并非自动证明 Postgres max_conn
 
 C1/C2/C4 必须证明是否保护了同库的 PostgREST 和其他服务，而不只看 Prisma 报错减少。客户端多开池不能隔离 Postgres CPU/I/O；若确需独立后台池/Worker，须在既定总连接预算内重新分配，并作为后置设计审核。不能以全部请求快速失败、延长 pool_timeout 或扩 API 副本来宣称连接满已解决。
 
+**Sentry 对 C 的约束（E18）**：近 7 天大量 `http.client` 到 Supabase REST 卡在 ≈300s（`users` / `runtime_config` / `current_chat_history`）。这更像 **HTTP 客户端超时上限被打满**，与「Prisma 本地池耗尽」不同层。P0-C 容量表必须同时列 Prisma 与 PostgREST/supabase-js 超时；P1-C 验收要看这两类慢调用次数与 p95 是否同降，不能只看 P2024 减少。
+
 **异常与止损顺序**：确认瓶颈层→经批准限制非关键新工作/减少重试放大→保存脱敏指标→修复占用/释放与预算→TEST 恢复验证→生产小批次对照。重启仅是独立批准的应急手段，不能作为长期修复或本轮执行动作。
 
 ## 6. 排查矩阵及只读验证顺序
@@ -214,12 +246,16 @@ C1/C2/C4 必须证明是否保护了同库的 PostgREST 和其他服务，而不
 | 发布后约 30s 明显变慢  | 排序 job 与请求竞争            | job start/completed/failed 对齐 CPU/I/O、连接与请求 p95                        | 相关不等于因果；TEST 对照运行/不运行 job             |
 | Prisma/HTTP 同时慢     | DB 资源或区域网络问题          | Railway 同运行环境分别测极小 Prisma 读与 PostgREST 读，配 CPU/I/O 曲线         | 两类 RTT 独立记录；不以本机结果替代容器结果          |
 | 旧数据刷新失败后变空白 | error UI 覆盖已有缓存          | 缓存预热后断网、推荐/最新切换与返回恢复                                        | 保留旧数据且明确陈旧状态，服务端继续校验可见性       |
+| p50 正常、p95≈60s      | 偶发超时/下游卡住/池等待       | Sentry 同交易 p50/p95/count；抽样慢 trace 看卡在 Prisma、PostgREST 还是上游    | 先有界等待与超时出口，再对症修下游；勿只优化中位数   |
+| `/chats` 卡顿          | 对 characters 的 N+1 HTTP      | 对照 ST-MINIAPP-1Y；Network 计 `/api/characters/*` 次数与并行度                | 批量化/缓存命中后 Issue 复发率下降                   |
+| messages 整体慢        | LLM vs 连续 PostgREST          | 对照 ST-MINIAPP-2G；分段 prepare vs provider vs history HTTP                   | 只把非 LLM 段计入可代码优化收益                      |
+| 多接口同现 ≈300s       | supabase-js/HTTP 超时打满      | 聚合 E18 Supabase >5s 表；核对 timeout 配置与 DB CPU/连接                      | 区分应用超时与 Postgres 慢查询                       |
 
 执行顺序：
 
 1. **身份/环境**：确认 Production 项目、服务、部署 SHA、前端构建目标、时区、区域、副本和 Worker 清单。当前未知项保持 GAP。
 2. **复现资料**：补充变慢起点、推荐/最新/聊天哪个页面、冷/热启动、用户网络、模型；提供脱敏 HAR/请求 ID，不收集 initData、cookies、正文或余额。
-3. **被动观测优先**：同一时间窗查看 Railway 请求/job 日志、CPU/内存/重启，Supabase CPU/I/O/连接/锁等待；现有指标优先，不默认部署新观测平台。
+3. **被动观测优先**：同一时间窗查看 **Sentry（E18）**、Railway 请求/job 日志、CPU/内存/重启，Supabase CPU/I/O/连接/锁等待；现有指标优先，不默认部署新观测平台。改前后用同一 Sentry 查询窗口对照。
 4. **安全低频探测**：另行确认环境后由运维在 Railway 内做两类极小只读探测，设连接/总超时、有限样本、不并发压生产、不触发生成/写入。Supabase MCP 本项目仅用于确认目标后的只读结构采集，业务行与运行态采样不通过 MCP 执行。
 5. **定位 SQL**：只提交脱敏聚合及查询标识；先 EXPLAIN 不执行实际查询，EXPLAIN ANALYZE 仅在 TEST 或明确批准的有界场景执行。慢 SQL 证据出现前不加索引。
 6. **TEST 对照**：用合成数据/假上游注入超时、池饱和和 job 重叠；实际模型及 Telegram 真机另行批准。每组至少报告样本量、窗口、环境、错误和失败率，不能只挑成功请求。
@@ -228,14 +264,19 @@ C1/C2/C4 必须证明是否保护了同库的 PostgREST 和其他服务，而不
 
 | 指标                                    | 定义                                                             | 目标性质                                                                            |
 | --------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| lobby_usable_ms                         | 用户打开大厅到首批卡片可交互，冷/热分组                          | 基线待采；建议候选优化后同负载 p95 降低 ≥30%，审核后才成为门禁                      |
+| lobby_usable_ms                         | 用户打开大厅到首批卡片可交互，冷/热分组                          | Sentry 快照：`/` pageload p95≈12.6s（E18）；候选优化后同负载 p95 降低 ≥30%，审核后门禁 |
+| lobby_api_p95_ms                        | `GET /api/characters` 服务端交易 p95                             | Sentry 快照：p95≈60s / p50≈106ms；目标先压长尾（候选：p95&lt;3s 或降 ≥50%），审核后定 |
 | lobby_fresh_ms                          | 列表请求发出到新数据应用；与旧快照可用时间分开                   | 不以显示旧卡冒充实时数据变快                                                        |
-| entry_ready_ms / entry_usable_ms        | 确认进入到会话数据 ready / 消息可见且输入可交互；新建与历史分组  | 基线待采；同条件 entry_usable p95 降低 ≥30% 为待审核目标；不含用户阅读详情停留      |
+| chats_n1_events                         | ST-MINIAPP-1Y 类 N+1 API 事件/影响用户                           | 快照：1337+ events / 125 users；改后同窗口显著下降且无功能回退                      |
+| entry_ready_ms / entry_usable_ms        | 确认进入到会话数据 ready / 消息可见且输入可交互；新建与历史分组  | Sentry 快照：`/chat/:characterId` pageload p95≈7s；entry_usable p95 降 ≥30% 待审    |
+| character_detail_api_p95_ms             | `GET /api/characters/:id` p95                                    | Sentry 快照：p95≈10s / count≈21.5k；长尾与 ST-MINIAPP-3M 同降                       |
 | entry_post_ready_ms                     | ready 到开屏不再阻挡；挂载已 ready 单列                          | 候选目标 ≤200ms（非忙碌场景，需产品审核）；现有 240+720ms 不当作实测基线            |
-| backend_prepare_ms                      | 后端收到发送请求到上游 dispatch                                  | 基线待采；同模型/输入规模下 p95 降低 ≥30% 为候选目标                                |
-| provider_first_content_ms               | dispatch 到上游首个非空正文 delta                                | 独立报告，不将心跳/role/reasoning 当正文                                            |
+| backend_prepare_ms                      | 后端收到发送请求到上游 dispatch（**不含** provider 推理）        | 基线待采；同模型/输入规模下 p95 降低 ≥30% 为候选目标；与 messages 总 p95 分开报告   |
+| provider_first_content_ms               | dispatch 到上游首个非空正文 delta                                | 独立报告，不将心跳/role/reasoning 当正文；messages 总 p95≈66s 多半落在此段          |
 | browser_first_text_ms                   | 点击发送到首个正文绘制                                           | 含网络/后端准备/供应商/渲染，不简单相加各分位数                                     |
 | reply_complete_ms / stream_gap_ms       | 点击发送到确认终态；正文 delta 间隔及绘制延迟分别记录            | 同模型/输入输出规模对照完整时长与长停顿；首字变快不能以流速或终态退化为代价         |
+| consecutive_http_events                 | ST-MINIAPP-2G / `current_chat_history` 连续调用                  | 快照：39+；改后同窗口下降，且不增加准备期并行峰值                                   |
+| supabase_rest_gt5s_count                | 对 Supabase REST duration&gt;5s 的 http.client 次数（按表）      | 快照：users 817 / current_chat_history 190 / runtime_config 125；P1-C 后同降        |
 | db/queue/transaction_ms                 | 每类 DB 调用、可观测池等待、事务持有时长                         | 不把 SQL 执行时间等同等待时间；无池指标时标记缺口                                   |
 | db_recovery_ms / unaffected_api_success | 过载撤去到稳态恢复；任务压力下其他 API 成功率和 p95              | TEST 审核负载下不持续连接拒绝、不无限排队；超预算流量可有界拒绝，正常流量不能被饿死 |
 | reliability                             | 超时、P2024/P2037、429/5xx、取消待确认、残留 streaming、结算失败 | 与延迟同时比较，不能靠更早报错降低成功请求 p95                                      |
@@ -250,17 +291,22 @@ C1/C2/C4 必须证明是否保护了同库的 PostgREST 和其他服务，而不
 
 ## 8. 最小改动批次、依赖和回滚
 
-| 批次 | 限定模块                                                    | 进入条件                                    | 交付/恢复                                                       |
-| ---- | ----------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------- |
-| P0-A | L/N/S/C 四主线阶段观测与运维证据，包括 E14–E17              | 审核日志字段和环境；不加新依赖              | 小提交，撤销新增采样即可；无 DB 变更                            |
-| P0-C | C1–C5 连接容量表、异常清理与饱和保护设计                    | P0-A 同窗口连接证据、TEST 故障方案          | 明确核心修复范围，批准后实施；不等待深度 SQL 调优               |
-| P0-B | E1/E2/E3 大厅等待/取消/失败出口；E5/E7/E12 必要 signal 传播 | 预算审核；先区分只读与关键写入              | 保持 shared envelope；独立回滚请求策略，不改变业务事实          |
-| P1-N | E14–E17 入口缓存/创建预算、旁路负载与开屏退场               | 新建/历史两分支证据，动画及写入未知方案审核 | 先小范围调整 ready 后等待，再按证据改请求策略；不改变会话所有权 |
-| P1-A | E5/E7/E8 请求内只读快照复用、资料条件更新                   | 分段耗时证明收益；审核配置生效语义          | 不新增公共 API；旧调用兼容，回滚恢复原读路径                    |
-| P1-B | E4 的现有排名缓存刷新合并，必要的有限 TTL                   | 确认回源峰值；运营同意陈旧窗口              | 保留旧快照/运营顺序兜底；回滚仅恢复读策略                       |
-| P1-C | E9/E10/E11 预算内池参数、后台竞争和异常清理修正             | P0-C 审核；按层定位、TEST 过载及恢复        | 一次只改一个池/并发/调度维度；保存旧值与部署 SHA                |
-| P1-S | E3/E6 的流速/绘制/终态定点优化                              | 分段证明首字之外的瓶颈；不默认全部实施      | 保留完整正文、done/取消/计费语义，独立回滚                      |
-| P2   | 被证实的具体慢 SQL/索引、隔离部署或容量                     | 核心批次仍不足，连接/锁/CPU 证据、TEST 复现 | 另审迁移或部署；不作为核心四主线交付的替代                      |
+| 批次         | 限定模块 / Sentry 驱动项                                                                 | 进入条件                                                         | 交付/恢复                                                                 |
+| ------------ | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| P0-A         | 固化 E18 基线快照 + L/N/S/C 分段观测字段；对照表写入本文件或运维笔记                     | 审核日志字段和环境；不加新依赖                                   | 小提交，撤销新增采样即可；无 DB 变更                                      |
+| P0-C         | C1–C5 连接容量表；**显式包含** supabase-js/PostgREST 超时与 ≈300s 慢调用                 | P0-A 同窗口连接证据、TEST 故障方案                               | 明确核心修复范围，批准后实施；不等待深度 SQL 调优                         |
+| P0-B         | E1/E2/E3 大厅等待/取消/失败出口（防 60s 挂死）；E5/E7/E12 必要 signal 传播               | 预算审核；先区分只读与关键写入                                   | 保持 shared envelope；独立回滚请求策略，不改变业务事实                    |
+| **P1-L-N1**  | **前端** `/chats` 对 `/api/characters/*` 的 N+1（ST-MINIAPP-1Y）                         | G1 审核；不改变角色可见性契约                                    | 批量/缓存/去重后 Issue 与请求次数下降；独立回滚前端                       |
+| **P1-L-TAIL**| **后端** characters / latest-badge / favorites 长尾（p95≈60s/13s）与 Supabase `users`    | P0-B 有界等待已规划；同窗慢 trace 抽样                           | 压 p95 长尾；不恶化 p50/错误率；回滚读路径                                |
+| **P1-N-DETAIL** | **后端** `GET /api/characters/:id` 长尾 + N+1 Query（ST-MINIAPP-3M）                  | 与 P1-L-N1 可并行；审核查询边界                                  | p95 与 Issue 同降；保留 ownership/可见性                                  |
+| P1-N         | E14–E17 入口缓存/创建预算、旁路负载与开屏退场                                             | 新建/历史两分支证据；建议在 P1-N-DETAIL 有进展后或并行审动画方案 | 先小范围调整 ready 后等待，再按证据改请求策略；不改变会话所有权           |
+| **P1-S-HTTP**| messages 路径 Consecutive HTTP → `current_chat_history`（ST-MINIAPP-2G）                 | 与 LLM 分段拆开；证明非推理段收益                                | 合并/复用安全只读；不增加并行峰值；独立回滚                               |
+| P1-A         | E5/E7/E8 请求内只读快照复用、资料条件更新                                                | 分段耗时证明 **prepare** 收益；审核配置生效语义                  | 不新增公共 API；旧调用兼容，回滚恢复原读路径                              |
+| P1-B         | E4 的现有排名缓存刷新合并，必要的有限 TTL                                                | 确认回源峰值；运营同意陈旧窗口                                   | 保留旧快照/运营顺序兜底；回滚仅恢复读策略                                 |
+| P1-C         | E9/E10/E11 预算内池参数、后台竞争、异常清理；**验收 supabase_rest_gt5s_count**           | P0-C 审核；按层定位、TEST 过载及恢复                             | 一次只改一个池/并发/调度/超时维度；保存旧值与部署 SHA                     |
+| P1-S         | E3/E6 的流速/绘制/终态定点优化                                                           | 分段证明首字之外、且非 LLM 供应商段的瓶颈；不默认全部实施        | 保留完整正文、done/取消/计费语义，独立回滚                                |
+| P2           | 被证实的具体慢 SQL/索引、隔离部署或容量                                                  | 核心批次仍不足，连接/锁/CPU 证据、TEST 复现                      | 另审迁移或部署；不作为核心四主线交付的替代                                |
+| **P2-X**     | `telegram/webhook`、`growth/miniapp-entry` 中位数/p95 偏高（E18）                        | 四主线核心批次后另审；可能跨 Bot/增长域                          | 不阻塞大厅/会话/回复主线；单独范围与回滚                                  |
 
 不默认给后台 job 新建池：独立池可隔离本地排队，但可能增加总连接且不能隔离 DB CPU。先评估低峰调度/限制重叠和聚合成本；事务级 advisory lock 与同连接聚合/落表不可随意拆开。暂停排序刷新须批准，已有汇总仍可读取，不是必然退回运营顺序；持续陈旧要有观察时限和恢复责任人。不得关闭关键结算/恢复任务来换取表面性能。
 
@@ -268,6 +314,24 @@ C1/C2/C4 必须证明是否保护了同库的 PostgREST 和其他服务，而不
 
 本方案无迁移、无新对象、无旧数据回填。若 P2 确认需要索引/函数，必须另补八域归属、权威写入方、不变量、消费者与跨 schema 依赖，使用唯一 migration 目录并逐文件 TEST 验证，再批准生产。回滚代码不得回滚已发生的账务事实；在途预留/结算继续由原幂等恢复路径收敛。
 
-## 9. 交付边界
+## 9. Sentry 驱动优化设计入口
 
-本轮只完成规划与静态文档检查，不代表任何性能指标已改善，也不代表生产根因已定位。后续实施必须先审核本文件及 Trellis 规划，补齐环境、基线与验收预算。生产取证、故障注入、真实 AI 生成、配置调整和迁移均不在此次执行范围。
+分批「改什么 / 不改什么 / 验收 / 回滚」的可实施设计已写在 Trellis：
+
+`.trellis/tasks/10-21-production-request-performance/design.md`
+
+源码回读结论摘要（细节以 design.md 为准）：
+
+| 批次 | 根因（CODE+SENTRY） | 首选改法 |
+| ---- | ------------------- | -------- |
+| P1-L-N1 | `/chats` 逐行 `useCharacterQuery` | 用大厅摘要缓存补头像；仅 miss 打详情；禁止 Summary 灌 Detail cache |
+| P1-N-DETAIL | 详情并行全量 id `findMany` + 多路 Prisma | 60s featured 快照 + 收窄 select |
+| P1-L-TAIL | favorites 为金框再扫全大厅；badge 受 users 超时拖累 | favorites `id in`；badge/列表配合 P1-C abort 与 single-flight |
+| P1-S-HTTP | 泄洪后 context 两次 `current_chat_history` GET | 合并为单次 OR 查询；复用 RPC 窗口起点 |
+| P1-C | supabase 无 `db.timeout` → undici ≈300s | 全局有界超时 + 热路径 signal；与 Prisma 池分列 |
+
+本文 §8 批次表与 design.md 顺序一致；**实施前须完成 design.md §7 审核门禁**，本轮仍不写产品代码。
+
+## 10. 交付边界
+
+本轮只完成规划与静态文档检查（含 Sentry 归纳与优化设计），不代表任何性能指标已改善，也不代表生产根因已全部定位。后续实施必须先审核本文件及 Trellis `design.md`，补齐环境、基线与验收预算。生产取证、故障注入、真实 AI 生成、配置调整和迁移均不在此次执行范围。

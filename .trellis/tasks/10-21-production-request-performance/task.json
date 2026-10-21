@@ -2,7 +2,7 @@
   "id": "production-request-performance",
   "name": "production-request-performance",
   "title": "Production lobby, chat entry, reply latency and connection reliability plan",
-  "description": "仅交付大厅首次加载、进入会话卡顿、消息回复慢及 Prisma 连接占满影响其他请求的排查与主要优化规划；未授权业务实现或生产操作。",
+  "description": "仅交付大厅首次加载、进入会话卡顿、消息回复慢及 Prisma/PostgREST 连接与超时治理的排查与主要优化规划；已纳入 Sentry E18 慢问题批次（P1-L-N1/TAIL、P1-N-DETAIL、P1-S-HTTP、P2-X）。未授权业务实现或生产操作。",
   "status": "planning",
   "dev_type": null,
   "scope": null,
@@ -20,13 +20,24 @@
   "subtasks": [],
   "children": [],
   "parent": null,
-  "relatedFiles": [],
-  "notes": "主文档：d:/codeReposity/wq/ST_miniapp/docs/production-request-performance-plan.md；保持 planning 等待审核。",
+  "relatedFiles": [
+    "docs/production-request-performance-plan.md"
+  ],
+  "notes": "主文档：docs/production-request-performance-plan.md（E18）；优化设计：.trellis/tasks/10-21-production-request-performance/design.md。保持 planning。高优先：1Y/3M/2G、featured 快照、supabase timeout。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
       "mode": "no_module_change",
-      "reason": "仅新增排查与任务规划文档，不改变运行时模块、公开契约或数据库对象。"
+      "reason": "仅新增/更新排查与任务规划文档，不改变运行时模块、公开契约或数据库对象。"
+    },
+    "sentry": {
+      "org": "wangqiao",
+      "project": "st-miniapp",
+      "region": "https://de.sentry.io",
+      "sampled_at": "2026-10-21",
+      "window": "7d",
+      "environment": "production",
+      "evidence_id": "E18"
     }
   }
 }
