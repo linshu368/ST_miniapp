@@ -1,0 +1,32 @@
+{
+  "id": "production-request-performance",
+  "name": "production-request-performance",
+  "title": "Production lobby, chat entry, reply latency and connection reliability plan",
+  "description": "仅交付大厅首次加载、进入会话卡顿、消息回复慢及 Prisma 连接占满影响其他请求的排查与主要优化规划；未授权业务实现或生产操作。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-10-21",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "主文档：d:/codeReposity/wq/ST_miniapp/docs/production-request-performance-plan.md；保持 planning 等待审核。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "仅新增排查与任务规划文档，不改变运行时模块、公开契约或数据库对象。"
+    }
+  }
+}
