@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Home, Sparkles, User } from 'lucide-react';
+import { Clapperboard, Home, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
@@ -17,6 +17,7 @@ import {
 
 const NAV_ITEMS = [
   { href: '/', label: '角色', Icon: Home },
+  { href: '/dramas', label: '短剧', Icon: Clapperboard },
   { href: '/create', label: '影像', Icon: Sparkles },
   { href: '/profile', label: '我的', Icon: User },
 ] as const;
@@ -79,7 +80,7 @@ export function BottomNav() {
           弱机 WebView 上会占满合成线程（大厅卡片去模糊同理），点按响应也会被拖慢。 */}
       <nav
         aria-label="主导航"
-        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-3 gap-1 rounded-[1.65rem] border border-border bg-card/[0.97] p-1.5 text-foreground shadow-[0_14px_38px_rgba(0,0,0,0.38)]"
+        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-4 gap-1 rounded-[1.65rem] border border-border bg-card/[0.97] p-1.5 text-foreground shadow-[0_14px_38px_rgba(0,0,0,0.38)]"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const targetHref = href === '/' ? (currentRoleplayPath ?? roleplayHref) : href;
