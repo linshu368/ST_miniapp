@@ -98,6 +98,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
             alt={showReference ? `${work.title}参考图` : work.title}
             width={work.width}
             height={work.height}
+            loading="lazy"
             decoding="async"
             className="h-full w-full object-contain"
           />

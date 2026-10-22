@@ -33,6 +33,7 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
           alt="生成结果"
           width={props.artifact.width}
           height={props.artifact.height}
+          loading="lazy"
           decoding="async"
           className={`max-h-full w-full object-contain transition ${sharing ? 'opacity-40' : ''}`}
         />
