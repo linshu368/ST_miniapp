@@ -6,9 +6,14 @@ const SECRET = 'shared-secret';
 const CLIENT_SECRET = 'client-secret';
 
 const mocks = vi.hoisted(() => ({
-  publish: vi.fn<(evaluation: unknown) => Promise<{ kind: 'accepted' }>>(async () => ({
-    kind: 'accepted' as const,
-  })),
+  publish: vi.fn<(evaluation: unknown) => Promise<{ kind: 'accepted' | 'duplicate' | 'failed' }>>(
+    async () => ({
+      kind: 'accepted' as const,
+    })
+  ),
+  deliver: vi.fn<(card: unknown, timeoutMs: number) => Promise<{ kind: 'succeeded' }>>(
+    async () => ({ kind: 'succeeded' as const })
+  ),
 }));
 
 vi.mock('../platform/config.js', () => ({
@@ -17,6 +22,7 @@ vi.mock('../platform/config.js', () => ({
     alerting: {
       sentryWebhookSecret: 'shared-secret',
       sentryClientSecret: 'client-secret',
+      feishuWebhookUrl: 'https://open.feishu.cn/open-apis/bot/v2/hook/test',
     },
   },
 }));
@@ -27,6 +33,12 @@ vi.mock('../features/alerting/publisher.js', () => ({
 }));
 vi.mock('../features/alerting/repository.js', () => ({
   PrismaAlertPersistence: class {},
+}));
+vi.mock('../features/alerting/feishu-alert-sink.js', () => ({
+  FeishuAlertSink: class {
+    configured = () => true;
+    deliver = mocks.deliver;
+  },
 }));
 vi.mock('../lib/logger.js', () => ({
   createLogger: () => ({
@@ -143,6 +155,60 @@ describe('POST /api/alerts/sentry', () => {
       payload: metricBody,
     });
     expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns 502 when publish fails, so Sentry gets a chance to retry', async () => {
+    const app = await buildApp();
+    mocks.publish.mockClear();
+    mocks.publish.mockResolvedValueOnce({ kind: 'failed' });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/alerts/sentry',
+      headers: {
+        'content-type': 'application/json',
+        'sentry-hook-signature': sign(metricBody),
+      },
+      payload: metricBody,
+    });
+    expect(response.statusCode).toBe(502);
+    expect(JSON.parse(response.body)).toMatchObject({ ok: false, result: 'failed' });
+    await app.close();
+  });
+
+  it('falls back to a direct Feishu send when publish fails (emergency path)', async () => {
+    const app = await buildApp();
+    mocks.publish.mockClear();
+    mocks.deliver.mockClear();
+    mocks.publish.mockResolvedValueOnce({ kind: 'failed' });
+    await app.inject({
+      method: 'POST',
+      url: '/api/alerts/sentry',
+      headers: {
+        'content-type': 'application/json',
+        'sentry-hook-signature': sign(metricBody),
+      },
+      payload: metricBody,
+    });
+    expect(mocks.deliver).toHaveBeenCalledTimes(1);
+    expect(mocks.deliver.mock.calls[0]?.[0]).toMatchObject({ severity: 'P0' });
+    await app.close();
+  });
+
+  it('does not touch Feishu directly when publish succeeds', async () => {
+    const app = await buildApp();
+    mocks.publish.mockClear();
+    mocks.deliver.mockClear();
+    await app.inject({
+      method: 'POST',
+      url: '/api/alerts/sentry',
+      headers: {
+        'content-type': 'application/json',
+        'sentry-hook-signature': sign(metricBody),
+      },
+      payload: metricBody,
+    });
+    expect(mocks.deliver).not.toHaveBeenCalled();
     await app.close();
   });
 
