@@ -387,3 +387,12 @@ git diff --check
 - **F4**：大厅 `latest-badge` 和 BottomNav 的 `notifications/unread-count`、`support/unread` 加 `enabled`，等首屏结束再请求；推迟期间切回前台也不补发。`/profile` 自己的读者不受影响。`favorites/ids` **没有**推迟：它决定首屏卡片的心形状态，推迟会出现空心→实心的闪烁。`users/settings` 也没动，它属于 Providers 的 hydrate。
 
 验证：frontend `typecheck`、`lint`（0 error）、`test` 41 files / 256 tests 通过。`build` 没能执行，原因是本机 `packages/frontend/node_modules/next/dist` 缺失（依赖安装损坏，和改动无关）；需要 `pnpm install` 之后补跑，并检查 `/` 预渲染 HTML 里有骨架、First Load JS 没有增长。
+
+
+### 步骤 8（2026-10-22）：CORS 预检缓存 + 读路径 history 窄投影
+
+- **CORS**：`app.ts` 的 cors 配置加 `maxAge: 600`。Vercel→Railway 跨域且带自定义头 `X-Init-Data`，每个请求都会预检；不设置时浏览器只缓存 5s。
+- **history 窄投影**：`ConversationHistoryRepository` 的读路径（`getContextBeforeTurn` / `findCurrentTurnById` / `listMessages`）改用 `CURRENT_TURN_HEAD_COLUMNS`，用 PostgREST 别名 `history_head:history->0,history_next:history->1` 只取 history 前两个元素，`restoreHistoryHead` 还原成 `history` 数组。消费者只用 `[0].request_id` 与开场白（[0] 或 [1]），契约不变。写路径（`TURN_COLUMNS`、finalize/require/recover）保持不变。
+- **局限**：jsonb 无法切片，库侧仍会 detoast，只省传输/反序列化；根治需 `chat_history.history` 列级瘦身（见 ARCHITECTURE 待办「chat_history 列级瘦身」）。
+- **验证**：backend `typecheck` 通过；vitest 因本机依赖损坏（`@jridgewell/sourcemap-codec` 缺失）无法运行，需 `pnpm install` 后补跑 `ConversationHistoryRepository.cancel.test.ts`、`features/conversations`；`history->0` 别名投影需在 TEST 环境真实请求一次确认 PostgREST 返回形状（含开场白、request_id 取消定位）。
+- **未做**：前端聊天页配置请求的 staleTime/去重。
