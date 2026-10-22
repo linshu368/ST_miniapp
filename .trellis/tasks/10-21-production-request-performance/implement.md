@@ -388,7 +388,6 @@ git diff --check
 
 验证：frontend `typecheck`、`lint`（0 error）、`test` 41 files / 256 tests 通过。`build` 没能执行，原因是本机 `packages/frontend/node_modules/next/dist` 缺失（依赖安装损坏，和改动无关）；需要 `pnpm install` 之后补跑，并检查 `/` 预渲染 HTML 里有骨架、First Load JS 没有增长。
 
-
 ### 步骤 8（2026-10-22）：CORS 预检缓存 + 读路径 history 窄投影
 
 - **CORS**：`app.ts` 的 cors 配置加 `maxAge: 600`。Vercel→Railway 跨域且带自定义头 `X-Init-Data`，每个请求都会预检；不设置时浏览器只缓存 5s。
@@ -396,3 +395,31 @@ git diff --check
 - **局限**：jsonb 无法切片，库侧仍会 detoast，只省传输/反序列化；根治需 `chat_history.history` 列级瘦身（见 ARCHITECTURE 待办「chat_history 列级瘦身」）。
 - **验证**：backend `typecheck` 通过；vitest 因本机依赖损坏（`@jridgewell/sourcemap-codec` 缺失）无法运行，需 `pnpm install` 后补跑 `ConversationHistoryRepository.cancel.test.ts`、`features/conversations`；`history->0` 别名投影需在 TEST 环境真实请求一次确认 PostgREST 返回形状（含开场白、request_id 取消定位）。
 - **未做**：前端聊天页配置请求的 staleTime/去重。
+
+### 步骤 9（2026-10-22，排查 E:/desk/1.txt 两个生产卡顿样本）
+
+**背景**：发布版本 `a106cc689fb2202cc6041a0217d0712f3aa8ada5`（PR #444/#446，Sentry 体验埋点）上线当晚 20:16 左右（北京时间），Sentry Metrics 记录到两条样本：`action.feedback.duration`（`select_character`，10,249ms，`stalled=true`）与 `page.ready.duration`（`/create`，8,746ms），均为 Android Telegram Mini App、4G 标签。
+
+**前置阻塞**：排查前发现本地 `fix_request_speed` 分支落后 `origin/main` 约 340+ 提交，`1.txt` 引用的 `lib/perf/page-tracker.ts`、`lib/perf/action-tracker.ts` 等文件在本地分支不存在。先 `git merge origin/dev`（6d4c4ba5）+ `git merge origin/main`（83b61800），解决 9 个文件冲突（均为"保留两侧真实修复"原则，无丢弃任何一侧逻辑），三包 `typecheck` 与现有相关 vitest 全部通过后才继续排查。
+
+**证据（Sentry trace，只读查询，未改动生产）**：
+
+- `select_character` 样本：Trace `9b8c0d4e811a48d594c00e2ce037eddf` 在 Sentry 侧查无 span（该指标关联 ID 当时就没有可读瀑布，与 1.txt 描述一致）。已确认 `action.feedback.duration` 只在 `completePendingAction`（真正路由切到 `/chat/:id`）时才打点，被 `discardPendingAction` 丢弃的动作不会产生这条记录——即这次 10.249s 代表路由切换确实等待了约 10 秒，不是"取消重进"被误记的假阳性。
+- `/create` 慢请求样本：Trace `e3bfc3116bf9498194926392ca87cf5a`。精确时间戳显示浏览器发起 `GET /api/image-plaza/feed` 在 `t=386.98s`，Railway 后端直到 `t=394.375s` 才开始处理（约 7.39s 纯空档），后端处理本身只用 624ms。该 span 状态为 `cancelled`（Sentry 自动埋点状态）。
+- 关键佐证（第二条同类慢样本，Trace `49141fdbecab42f9b76586eb3475e731`，同日更早时间）：**四个完全独立的接口**（`image-plaza/feed`、`notifications/unread-count`、`support/unread`、`users/settings`）在同一毫秒发出，全部卡住 7.3~8.0s，几乎同时恢复。四个接口互不调用、后端代码互不相关，不可能是某个端点自身的 bug。
+- 更大范围检索（`span.op:http.client span.description:*railway* span.duration:>5000`，14d）显示同类"整批请求/资源同时卡住 20~30 秒后一起恢复"的模式反复出现在不同时间、不同资源类型（JS chunk、图片、API），且全部关联 `os.name:Android`、`browser.name:Telegram`。
+- 结论：两个样本的根因一致——**Android Telegram Mini App WebView 切后台（或系统级网络/定时器冻结）期间，浏览器侧所有挂起的请求与定时器被整体冻结，回到前台后集体"解冻"**，不是 `image-plaza/feed` 这个端点或 `select_character` 这个动作本身的代码问题。`1.txt` 建议方向「同时核对切后台…该动作计时的后台处理口径需要与页面计时一起检查」命中要害。
+
+**根因 bug（已确认并修复）**：`page-tracker.ts` 早就有 `bindVisibility`/`hiddenMs`（切后台暂停看门狗、回前台按剩余时间续计时，`page_stall`/`page.ready.duration` 都已扣除后台时长），但 `action-tracker.ts`（管 `select_character`/`send_message`/`image_generate` 等全部 `TrackedAction`）**完全没有同款机制**：2.5 秒看门狗在后台期间继续计时，`action.feedback.duration` 的耗时计算也没有扣除后台停留时长。这会把「用户把 App 晾在后台几秒到几十秒」直接污染成「点击卡了 N 秒」，既产生假阳性 `action_stall` 告警，也让 `action.feedback.duration` 的 p95/p99 虚高，掩盖真实的卡顿信号。
+
+**修复**（`packages/frontend/src/lib/perf/action-tracker.ts`）：把 `page-tracker.ts` 已验证过的口径对齐过来——`startAction` 内部改用按 action 维护的 `ActiveAction`（`hiddenMs`/`hiddenSince`），监听 `visibilitychange`：切后台时清掉看门狗定时器并记录 `hiddenSince`；回前台时把隐藏时长累加进 `hiddenMs`，按剩余时间重新武装看门狗。`action.feedback.duration` 的计算也改为 `elapsed()`（已扣除 `hiddenMs`）。不引入新概念、不新建文件，只是把已有、已测试过的模式套用到遗漏的模块，属于最小充分修复。
+
+**回归测试**（`action-tracker.test.ts`，属于安全/监控数据正确性的高风险缺陷修复，已按规则补充）：新增 3 个用例，复用 `page-tracker.test.ts` 的 `fakeDocument`/`setVisibility` 模式——切后台期间看门狗不触发、回前台按剩余时间续计时；`feedback.duration` 扣除后台停留；后台期间 `discard()` 不产生任何上报。
+
+**验证**：`pnpm --filter @miniapp/frontend typecheck`（0 error）、`pnpm --filter @miniapp/frontend lint`（0 error，仅既有 `<img>` 告警与本次改动无关）、`pnpm --filter @miniapp/frontend vitest run`：45 files / 286 tests 全部通过（含新增 3 条）。
+
+**仍待做（超出本次只读排查+最小修复范围，需要后续任务跟进）**：
+
+1. `/create` 页面慢请求目前只证实「浏览器到 Railway 之间的整批冻结」，尚未实测验证 Android TG 内冷/热路由对比、弱网场景、退出/取消/重试（`1.txt` 要求的人工验证项）——需要真机或可控弱网环境，本次会话无法执行。
+2. `select_character` 侧的 `router.prefetch` 是否真正发出/完成、RSC 与 JS chunk 加载耗时拆解，仍需要结合 1 的真机验证一起做，本次未发现独立于"后台冻结"之外的额外瓶颈。
+3. 该修复只解决"监控数据被切后台污染"这一个确定的 bug；不代表「控制了全部偶发卡顿」——如实际体感卡顿频率仍高，需要另开任务评估是否要在前台恢复时对关键在途请求做一次主动重试/超时收敛（当前 `apiClient` 的 20s 默认超时在该场景下可能仍然偏长）。
