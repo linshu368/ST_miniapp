@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Home, MessageCircle, Sparkles, User } from 'lucide-react';
+import { Clapperboard, Home, MessageCircle, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
@@ -12,6 +12,7 @@ import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
 
 const NAV_ITEMS = [
   { href: '/', label: '大厅', Icon: Home },
+  { href: '/dramas', label: '短剧', Icon: Clapperboard },
   { href: '/chats', label: '聊天', Icon: MessageCircle },
   { href: '/create', label: '创作', Icon: Sparkles },
   { href: '/profile', label: '我的', Icon: User },
@@ -73,7 +74,7 @@ export function BottomNav() {
     >
       <nav
         aria-label="主导航"
-        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-4 gap-1 rounded-[1.65rem] border border-border bg-card/92 p-1.5 text-foreground shadow-[0_14px_38px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
+        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-5 gap-1 rounded-[1.65rem] border border-border bg-card/92 p-1.5 text-foreground shadow-[0_14px_38px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const active = href === '/' ? highlighted === href : highlighted?.startsWith(href);

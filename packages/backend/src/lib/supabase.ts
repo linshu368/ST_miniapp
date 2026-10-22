@@ -55,6 +55,11 @@ export const DOMAIN_SCHEMAS = [
   'cs_platform',
   'miniapp_traffic',
   'miniapp_analytics',
+  // 第九个域，游离于八域地图之外：telegram-video-archive 项目直接对 Supabase 建的短剧归档
+  // schema，不经本仓库迁移通道产生，暂未登记进
+  // .trellis/spec/database/supabase/schema-and-object-conventions.md 的八域地图（已知缺口，
+  // 见 .trellis/tasks/10-21-drama-archive-access/prd.md Open Issue，二期处理）。
+  'drama_archive',
 ] as const;
 
 export type DomainSchema = (typeof DOMAIN_SCHEMAS)[number];
