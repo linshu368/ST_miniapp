@@ -1,5 +1,6 @@
 'use client';
 
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell, ChevronLeft, Inbox, Loader2, RefreshCw } from 'lucide-react';
@@ -31,6 +32,7 @@ export default function MessageCenterPage() {
   const [scope, setScope] = useState<NotificationScope>('official');
   const [openError, setOpenError] = useState<string | null>(null);
   const query = useNotificationsQuery(scope);
+  usePageReady('/profile/messages', query.data !== undefined);
   const markRead = useMarkNotificationsReadMutation();
   const notifications = query.data?.notifications ?? [];
   const openingId = useRef<string | null>(null);

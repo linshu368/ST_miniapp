@@ -1,5 +1,7 @@
 'use client';
 
+import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, Loader2 } from 'lucide-react';
@@ -55,6 +57,10 @@ export default function CustomVoicePage() {
   const sessionVoice = useSessionVoiceQuery(sessionId ?? undefined);
   const generateVoice = useGenerateVoiceMutation(sessionId ?? undefined);
   const voiceConfig = useVoiceConfigQuery();
+  usePageReady(
+    '/chat/:id/voice/:id',
+    sessionVoice.data !== undefined && voiceConfig.data !== undefined
+  );
   const priceLabel = formatMediaBillingPreview(
     voiceConfig.data?.next_billing,
     voiceConfig.isFetching || generateVoice.isPending,
@@ -97,11 +103,16 @@ export default function CustomVoicePage() {
       return;
     }
     setError(null);
+    // 反馈是「受理成功并跳回聊天页」，不是语音生成完成（那是几十秒的后台任务）。
+    const action = startAction('voice_generate');
     generateVoice.mutate(
       { messageId, customText: custom },
       {
         // 受理成功就回聊天页：接下来是几十秒的后台生成，留在这里只能干等
-        onSuccess: goBack,
+        onSuccess: () => {
+          action.feedback();
+          goBack();
+        },
         onError: (mutationError) => {
           const code = (mutationError as { code?: string }).code;
           if (

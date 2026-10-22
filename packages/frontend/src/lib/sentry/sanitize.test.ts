@@ -60,4 +60,45 @@ describe('sanitizeTelemetry', () => {
     expect(output).not.toBe(input);
     expect(output.headers).not.toBe(input.headers);
   });
+
+  describe('bounded traversal', () => {
+    function nest(depth: number): Record<string, unknown> {
+      const root: Record<string, unknown> = {};
+      let cursor = root;
+      for (let i = 0; i < depth; i += 1) {
+        const child: Record<string, unknown> = {};
+        cursor.child = child;
+        cursor = child;
+      }
+      return root;
+    }
+
+    it('does not overflow the stack on pathologically deep input', () => {
+      expect(() => sanitizeTelemetry(nest(100_000))).not.toThrow();
+    });
+
+    it('truncates beyond the depth limit by default', () => {
+      const output = sanitizeTelemetry({ a: { b: { c: 'x' } } }, { maxDepth: 2 }) as {
+        a: { b: unknown };
+      };
+      expect(output.a.b).toBe('[Truncated]');
+    });
+
+    it('keeps deeper nodes untouched in passthrough mode while still redacting the shallow part', () => {
+      const deep = { tree: { token: 'kept-as-is' } };
+      const output = sanitizeTelemetry(
+        { url: 'https://x.test/?token=abc', data: { node: deep } },
+        { maxDepth: 2, beyondLimit: 'passthrough' }
+      ) as { url: string; data: { node: unknown } };
+
+      expect(output.url).toBe('https://x.test/?token=[Filtered]');
+      expect(output.data.node).toBe(deep);
+    });
+
+    it('stops expanding once the node budget is spent', () => {
+      const wide = Array.from({ length: 50 }, (_, i) => ({ i }));
+      const output: unknown[] = sanitizeTelemetry(wide, { maxNodes: 10 });
+      expect(output.filter((item) => item === '[Truncated]').length).toBeGreaterThan(0);
+    });
+  });
 });
