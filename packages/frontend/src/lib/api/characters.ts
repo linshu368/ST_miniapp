@@ -121,10 +121,13 @@ export function useMarkLobbyLatestSeenMutation() {
   });
 }
 
-export function useCharacterQuery(id: string | undefined) {
+/**
+ * `enabled: false` 供只在兜底时才需要详情的调用方使用（如 /chats 历史行先用大厅摘要）。
+ */
+export function useCharacterQuery(id: string | undefined, options: { enabled?: boolean } = {}) {
   return useQuery<GetCharacterByIdData>({
     queryKey: id ? characterKeys.detail(id) : characterKeys.all,
-    enabled: !!id,
+    enabled: !!id && options.enabled !== false,
     queryFn: async () => {
       if (!id) throw new Error('character id is required');
       return fetchCharacterById(id);
