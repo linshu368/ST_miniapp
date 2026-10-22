@@ -63,8 +63,9 @@ export default function ProfilePage() {
   const wallet = useWalletBalanceQuery();
   const credits = wallet.data?.total_credits ?? wallet.data?.credits;
   const bonusCredits = wallet.data?.bonus_credits;
-  const unread = useNotificationUnreadCountQuery();
-  const supportUnread = useSupportUnreadQuery();
+  // BottomNav 同屏常驻并负责轮询，这里只订阅缓存，避免同一端点两个 interval 各打一份。
+  const unread = useNotificationUnreadCountQuery({ poll: false });
+  const supportUnread = useSupportUnreadQuery({ poll: false });
   const displayName = useUserProfileStore((s) => s.displayName);
   const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);

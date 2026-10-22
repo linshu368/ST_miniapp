@@ -27,16 +27,19 @@ export function useSupportConversationQuery() {
   });
 }
 
-/** 「我的」页「联系客服」入口和底部导航的红点都读这个。 */
-export function useSupportUnreadQuery() {
+/**
+ * 「我的」页「联系客服」入口和底部导航的红点都读这个。
+ * `poll: false` 的含义同 useNotificationUnreadCountQuery：轮询由常驻的 BottomNav 负责。
+ */
+export function useSupportUnreadQuery({ poll = true }: { poll?: boolean } = {}) {
   const query = useQuery({
     queryKey: supportKeys.unread,
     queryFn: () => apiClient<SupportUnreadData>('/api/support/unread'),
     staleTime: 0,
     refetchOnMount: 'always',
-    refetchInterval: SUPPORT_UNREAD_POLL_MS,
+    refetchInterval: poll ? SUPPORT_UNREAD_POLL_MS : false,
   });
-  useRefetchOnForeground(query.refetch);
+  useRefetchOnForeground(query.refetch, poll);
   return query;
 }
 

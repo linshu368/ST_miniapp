@@ -36,15 +36,20 @@ export function useNotificationsQuery(scope: NotificationScope) {
   return query;
 }
 
-export function useNotificationUnreadCountQuery() {
+/**
+ * `poll: false` 给与 BottomNav 同屏的读者用：React Query 每个 observer 各起一个 interval，
+ * 相位不同就各自发请求，同一 key 不会自动合并。BottomNav 在 (main) 下常驻（隐藏时 hooks 也在跑），
+ * 由它负责轮询与回前台刷新；其他读者只订阅缓存，进页时仍刷新一次，红点延迟不变。
+ */
+export function useNotificationUnreadCountQuery({ poll = true }: { poll?: boolean } = {}) {
   const query = useQuery({
     queryKey: notificationKeys.unread,
     queryFn: () => apiClient<NotificationUnreadCountData>('/api/notifications/unread-count'),
     staleTime: 0,
     refetchOnMount: 'always',
-    refetchInterval: NOTIFICATION_POLL_MS,
+    refetchInterval: poll ? NOTIFICATION_POLL_MS : false,
   });
-  useRefetchOnForeground(query.refetch);
+  useRefetchOnForeground(query.refetch, poll);
   return query;
 }
 
