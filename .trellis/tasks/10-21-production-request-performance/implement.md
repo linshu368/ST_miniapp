@@ -423,3 +423,58 @@ git diff --check
 1. `/create` 页面慢请求目前只证实「浏览器到 Railway 之间的整批冻结」，尚未实测验证 Android TG 内冷/热路由对比、弱网场景、退出/取消/重试（`1.txt` 要求的人工验证项）——需要真机或可控弱网环境，本次会话无法执行。
 2. `select_character` 侧的 `router.prefetch` 是否真正发出/完成、RSC 与 JS chunk 加载耗时拆解，仍需要结合 1 的真机验证一起做，本次未发现独立于"后台冻结"之外的额外瓶颈。
 3. 该修复只解决"监控数据被切后台污染"这一个确定的 bug；不代表「控制了全部偶发卡顿」——如实际体感卡顿频率仍高，需要另开任务评估是否要在前台恢复时对关键在途请求做一次主动重试/超时收敛（当前 `apiClient` 的 20s 默认超时在该场景下可能仍然偏长）。
+
+## 步骤 10（2026-10-22 收尾，本次会话结束时）：剩余优化点汇总，供明天接续
+
+本节不改代码，只盘点截至 `ff42181b` 的任务全貌——哪些已经落地待发布后核对、哪些仍停在纯设计未授权实施、哪些是本次新发现待决策——避免明天凭记忆重新梳理。来源：本文档步骤 1–9、`design.md`、`task.md`、git log（`fix_request_speed` 分支）。
+
+### 10.1 已实施、等待「发布后对照」或「人工回归」确认的批次
+
+这些代码已合入 `fix_request_speed`（commit 见括号），本地 typecheck/test 已过，但生产灰度观察、真机人工项、或本地 `build` 尚未全部跑完，**不能视为已验证收尾**：
+
+| 批次 | commit | 已做 | 还缺什么 |
+| --- | --- | --- | --- |
+| 步骤 1（排序 job 移出共享池） | `888b616b` | `DIRECT_URL` 专用 `PrismaClient`（`connection_limit=1`），job 失败即跳过不回退共享池 | 发布后核对 3 项（§步骤1b 末尾）：日志应见 `lobby_ranking.completed`、`character_ranking_scores.computed_at` 晚于部署时间、若仍 `failed` 先人工 `VACUUM` 不再调大超时 |
+| 步骤 1b（库侧 statement_timeout 掐断） | 同上 | 事务内 `SET LOCAL statement_timeout=8min` | `8min` 是否够**未实测**（未跑 `EXPLAIN ANALYZE`），需以发布后第一轮 `durationMs` 为准；`chat_history` 表 `VACUUM (ANALYZE)` 仍是待执行的人工运维动作，不由代码触发 |
+| 步骤 1c（image_plaza 签名缓存） | `668754c6` | 进程内签名缓存 + 已发布作品图 TTL 15min→24h + `hydrateWorks` 并发化 | 发布后核对 4 项：二次进入瞬时出图、同一 artifact 的 `image_url` 多次请求逐字节相同、Storage 出网流量下降、studio 新产物仍 15min |
+| 步骤 2/4/P1-L-N1（详情/收藏/`/chats` 请求收敛） | `668754c6` | `loadLobbyFeaturedIdSet` 60s TTL + single-flight 快照；详情 `select` 收窄；favorites `id in`；`/chats` 方案 A | 4 项人工回归（§步骤2/4 末尾）未在真实环境跑：金框跨页一致性、下架卡占位、`/chats` 详情请求数、清空 localStorage 冷启动路径 |
+| P1-C / P1-S-HTTP（PostgREST 有界等待 + 上下文单查询） | `cf26c65a` | `db.timeout=30s`；`getOrCreateDbUser`/`fetchRuntimeConfigEntries` 5s signal；`getContextBeforeTurn` 合并为单次 OR 查询 | 3 项人工回归（新用户创建、泄洪会话开场白保留、未泄洪行为不变）+ 发布后 Sentry 对照（`users`/`runtime_config` 的 `span.duration:>290000` 应降到 0） |
+| 步骤 7（轮询收敛第一刀） | `8cfdd335`（CORS 提交内一并） | `refetch({cancelRefetch:false})`；未读 hook 加 `{poll}`；`/profile` 两个读者停止自轮询 | 4 项人工回归（停留 60s 请求计数、切后台/前台各 1 次、客服/公告红点延迟 ≤20s、已读后红点消失）+ 发布后 count 对照 |
+| 步骤 8 F1/F2/F4/F8（前端首屏） | `2ee36edb` | 首屏图片 8→6；Sentry replay/PostHog 延后到首屏结束；`/` 的 `telegramReady` 前骨架；latest-badge/未读角标延后 | **本地 `build` 未能执行**（`packages/frontend/node_modules/next/dist` 缺失，依赖安装损坏，与改动无关）——需要先 `pnpm install` 补跑 `build`，确认预渲染 HTML 含骨架、First Load JS 未增长，再做人工冷/热启动回归 |
+| 步骤 8（CORS 预检缓存 + history 窄投影） | `8cfdd335` | `app.ts` 加 `maxAge:600`；`ConversationHistoryRepository` 读路径改 `history->0/1` 别名投影 | 本机当时 vitest 因依赖损坏（`@jridgewell/sourcemap-codec` 缺失）**未跑**，需要补跑 `ConversationHistoryRepository.cancel.test.ts` 与 `features/conversations`；`history->0` 别名投影需在 TEST 环境真实请求一次，确认 PostgREST 返回形状（含开场白、`request_id` 取消定位）未被破坏 |
+| 本次步骤 9（action-tracker 切后台污染修复） | `ff42181b` | `ActiveAction` 加 `bindVisibility`/`hiddenMs`，看门狗与上报口径对齐 `page-tracker.ts` | 真机验证项见上方「仍待做」1–3 |
+
+> 共同待办：这些批次散落在 8 个不同 commit 里（`whc` 与 `linshu368` 两人并行推进），`implement.md` 顶部状态行（第 3 行）与 `task.md`/`design.md` 的批次表**均未随代码更新勾掉对应批次**——下面 10.3 单独列为治理问题。
+
+### 10.2 仍停留在纯设计、未授权写代码的批次
+
+按 `design.md` §3 推荐顺序，以下批次在 `task.md`/`design.md` 中仍是 `Todo`，且 git log 中找不到对应代码改动：
+
+| 批次 | 设计内容（design.md 锚点） | 依赖/门禁 |
+| --- | --- | --- |
+| P0-A | 固化 E18 对照表 + 分段日志字段（`phase=list\|detail\|featured\|ranking`） | G1 |
+| P0-B | 大厅浏览器侧 15s 总预算 + Next 代理更短 deadline + 失败可重试 UI | P0-A |
+| P0-C | 全服务连接容量表（含 PostgREST ≈300s）；**E21 已更正**不调大 `connection_limit`，池参数调整降级为观察项 | P0-A |
+| P1-A | 请求内规则/设置/模型目录同轮复用；验收用 `backend_prepare_ms`/`context_http_count`，不用 messages 总 p95 | G1、P0-A |
+| P1-B | 排名缓存刷新合并为显式 single-flight（注：`ranking-stats.ts` 当前仅有 60s TTL 缓存，**没有**像 `featured-snapshot.ts` 那样的 `inflight` 锁；过期瞬间的并发大厅请求仍可能触发多次聚合查询） | P0-A、运营审核陈旧窗 |
+| P1-N（其余项） | 开屏 240ms+720ms 定时器与创建 freshness；design.md 建议等 P1-N-DETAIL/P1-L-N1 有进展后再动，避免把入口卡顿全推给动画 | P0-A、交互方案审核 |
+| P1-S | 首字之外的流速/绘制/终态定点优化；仅在证明非 provider 瓶颈后动手 | P0-A |
+| 前端首屏 F3 | `/api/lobby-characters` 短 CDN 缓存（`s-maxage=15`）——**需决策**：与「每次挂载都对齐数据库，下架/重排立即生效」的现有注释冲突 | 产品决策 |
+| 前端首屏 F5 | 调低 `replaysSessionSampleRate`——**需决策**：影响排障可见性 | 产品决策 |
+| P2 / P2-X | 有证据的 SQL/索引优化；webhook/miniapp-entry 慢（旁路，不阻塞四主线） | 核心批次收口后另审 |
+
+### 10.3 本次新发现、尚未决策的跟进项（步骤 9 遗留）
+
+1. **真机/弱网人工验证缺口**：`1.txt` 要求的 Android TG 冷/热路由对比、弱网场景、取消/重试流程，本会话环境无法执行，需要真机或可控弱网环境排期。
+2. **`select_character` 的 `router.prefetch` 实际行为未证实**：是否真正发出、RSC/JS chunk 耗时占比，仍需结合 1 的真机抓包一起做。
+3. **前台恢复时的主动收敛策略未决策**：若真机验证后发现体感卡顿频率仍高，需要另开任务评估「前台恢复时对关键在途请求做一次主动重试/超时收敛」，并重新评估 `apiClient` 20s 默认超时在此场景下是否偏长。**这是否立项是决策项，不是本次隐含授权的实施项。**
+4. **chat 页配置请求的 staleTime/gcTime 调优（步骤 8 "未做"项的延续）**：核实现状——`voice/config`（`staleTime:0`）、`images/config`（`staleTime:0`，均标注"含用户实时额度，重进页面需重新确认"，为有意设计）、`models/config`（`staleTime:MODEL_CATALOG_STALE_TIME_MS=5min`，已有缓存策略）、`generation-config`（`staleTime:5min`，已有）。**结论**：四个请求中两个（models/generation-config）已有合理 staleTime，另两个（voice/images）的 `staleTime:0` 是代码注释里写明的有意选择（额度实时性），并非遗漏。是否仍要在此基础上去重/合并请求次数，还是该项已不构成性能问题、可从任务范围移除，**需与用户确认**后再决定是否继续排期。
+5. **文档与代码进度不同步**（治理问题，建议明天第一件事处理）：`implement.md` 第 3 行状态描述、`task.md` 的批次状态列（仍全部是 `Todo`/`in_progress` 的粗粒度标记）均未反映 10.1 列出的 8 个已合入 commit。`design.md` §7 审核门禁 5 项（G1 等）在 `task.md` 中仍是 `Blocked`，但大量「需要 G1 批准才能实施」的批次实际上已经被其他开发者（`whc`）直接写代码合入主分支——这与"未勾选不得 `task start` 写产品代码"的门禁声明存在事实冲突，需要向用户说明并决定：是现在补办 G1 审核、还是认定该门禁已被后续分支事实上绕过而需要更新 `task.json.status`/`task.md` 反映真实进度。
+
+### 10.4 明天建议的处理顺序
+
+1. 先处理 10.3.5 的文档/状态同步问题——不先理清"哪些已经合入主干"，容易在后续排查中重复劳动或误判未做。
+2. 按 10.1 表格逐项补跑「发布后对照」「人工回归」「本地 build/test 补跑」三类验证缺口，优先级：步骤 8 的 `build` 补跑（阻塞最久、原因明确是依赖损坏）> 步骤 1b 的 `8min` 超时实测 > 其余人工回归项。
+3. 10.3.1–10.3.3（真机验证相关）需要先确认是否有真机/弱网环境可用；若没有，向用户同步该限制并讨论是否接受"仅代码层面已修复、生产效果需等真实用户反馈"作为阶段性结论。
+4. 10.3.4（chat 配置 staleTime）已有明确结论（多数非遗漏），建议直接向用户汇报结论并确认是否从任务范围移除，而非继续排查。
+5. 10.2 的纯设计批次（P0-A 起）仍需 G1 审核放行，按 `design.md` §3 顺序推进；若 10.3.5 的治理问题导致 G1 被认定为事实失效，需要先和用户对齐新的审核/放行机制再继续。
