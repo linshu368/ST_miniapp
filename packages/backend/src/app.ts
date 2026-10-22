@@ -23,6 +23,7 @@ import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import telemetryRoutes from './routes/telemetry.js';
+import alertRoutes from './routes/alerts.js';
 import textPostprocessRoutes from './routes/text-postprocess.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
@@ -37,6 +38,7 @@ import {
   stopLobbyRankingRefreshJob,
 } from './lib/lobby-ranking-refresh-job.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
+import { registerRequestPerf, startRuntimeMetrics } from './lib/perf-metrics.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -50,9 +52,13 @@ export async function buildApp() {
     },
   });
 
-  app.addHook('onRequest', async (request) => {
+  app.addHook('onRequest', async (request, reply) => {
     bindRequestSentryContext(request);
+    // 让前端 http.client span 能拿到 DNS/连接/首字节拆分，用来区分慢在网络还是后端。
+    // 该头只允许单个 origin，所以只对配置的前端域名开放。
+    if (config.frontendUrl) reply.header('Timing-Allow-Origin', config.frontendUrl);
   });
+  registerRequestPerf(app);
 
   await app.register(cors, {
     origin: (origin, callback) => {
@@ -127,6 +133,7 @@ export async function buildApp() {
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
   await app.register(telemetryRoutes);
+  await app.register(alertRoutes);
   await app.register(textPostprocessRoutes);
   await app.register(imagePlazaRoutes);
 
@@ -160,7 +167,10 @@ export async function buildApp() {
   startChatImageGenerationJob(app.log);
   startImagePlazaGenerationJob(app.log);
 
+  const stopRuntimeMetrics = startRuntimeMetrics();
+
   app.addHook('onClose', async () => {
+    stopRuntimeMetrics();
     stopChatHistorySyncJob();
     stopLobbyRankingRefreshJob();
     stopChatImageGenerationJob();

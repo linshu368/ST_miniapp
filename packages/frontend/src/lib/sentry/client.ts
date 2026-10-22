@@ -38,7 +38,10 @@ export function loadSessionReplay(): Promise<void> {
         lazySentry.replayIntegration({
           maskAllText: false,
           blockAllMedia: false,
-          beforeAddRecordingEvent: (event) => sanitizeTelemetry(event),
+          // 录制事件里的 DOM 快照又大又深：只脱敏顶层 URL 类字段，更深的节点原样保留，
+          // 否则既拖慢主线程，又会在窄栈的 WebView 里递归爆栈。
+          beforeAddRecordingEvent: (event) =>
+            sanitizeTelemetry(event, { maxDepth: 4, beyondLimit: 'passthrough' }),
         })
       );
     })

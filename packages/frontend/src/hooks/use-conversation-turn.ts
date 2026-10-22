@@ -38,6 +38,7 @@ import {
   redirectToRecharge,
   requiredCreditsFromError,
 } from '@/lib/recharge-redirect';
+import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 
@@ -553,6 +554,8 @@ export function useConversationTurn({
             }
           : null;
 
+      // 发送动作的反馈是「用户消息出现在列表」；这里测的是界面是否被卡住，网络耗时另有请求指标。
+      const sendAction = input.mode === 'send' ? startAction('send_message') : null;
       setStreaming({
         mode: input.mode,
         requestId,
@@ -563,6 +566,7 @@ export function useConversationTurn({
         text: '',
         postprocessVersion: null,
       });
+      if (sendAction) feedbackAfterPaint(sendAction);
 
       let assistantMessageId: string | null = null;
       let settledStatus: ChatMessageStatus | null = null;
