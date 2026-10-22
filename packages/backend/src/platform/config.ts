@@ -127,5 +127,7 @@ export const config = {
   // Webhook 是部署 secret；是否发送、重试和限流属于 runtime_config.alerting，默认关闭。
   alerting: {
     feishuWebhookUrl: process.env.FEISHU_ALERT_WEBHOOK_URL || '',
+    // Sentry → 后端 webhook 的共享密钥；为空时该入口一律 401（安全默认）。
+    sentryWebhookSecret: process.env.SENTRY_ALERT_WEBHOOK_SECRET || '',
   },
 } as const;

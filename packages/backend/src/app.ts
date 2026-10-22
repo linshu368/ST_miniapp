@@ -23,6 +23,7 @@ import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import telemetryRoutes from './routes/telemetry.js';
+import alertRoutes from './routes/alerts.js';
 import textPostprocessRoutes from './routes/text-postprocess.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
@@ -132,6 +133,7 @@ export async function buildApp() {
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
   await app.register(telemetryRoutes);
+  await app.register(alertRoutes);
   await app.register(textPostprocessRoutes);
   await app.register(imagePlazaRoutes);
 

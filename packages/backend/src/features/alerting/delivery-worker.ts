@@ -6,8 +6,15 @@ import { readAlertingRuntimeConfig, type AlertingRuntimeConfig } from './runtime
 import type { SafeAlertCard } from './safe-card.js';
 import { backoffMs } from './semantics.js';
 
-/** P1 与恢复通知关闭；已注释的旧 P0 即使还在队列里也不再发送。 */
+/**
+ * 支付域的 P1 与恢复通知关闭；已注释的旧 P0 即使还在队列里也不再发送。
+ * 体验监控（domain=experience）不走这套抑制：卡顿/卡住本就是 P1，压掉等于不告警。
+ */
 function feishuNotificationSuppressed(card: SafeAlertCard): boolean {
+  const isExperience =
+    typeof card.incident_fingerprint === 'string' &&
+    card.incident_fingerprint.includes(':experience:');
+  if (isExperience) return card.transition === 'recovered';
   if (card.transition === 'recovered' || card.severity === 'P1') return true;
   return (
     typeof card.incident_fingerprint === 'string' &&
