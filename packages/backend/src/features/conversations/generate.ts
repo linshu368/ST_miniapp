@@ -192,7 +192,11 @@ export async function runConversationTurn(
     if (input.requestId)
       await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    const context = await historyRecords().getContextBeforeTurn(session.id, turn.turnIndex);
+    const context = await historyRecords().getContextBeforeTurn(
+      session.id,
+      turn.turnIndex,
+      turn.contextWindowStartTurn
+    );
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
 
     const prompt = buildPrompt({
@@ -461,6 +465,8 @@ interface StartedTurn {
   historyId: string;
   revision: number;
   userInput: string;
+  /** 开轮 RPC 在同一事务里算出的窗口起点，组上下文时直接用，不再回读会话 */
+  contextWindowStartTurn: number;
   postprocessVersion: number;
   slotModes: InstructionSlotModes;
 }
@@ -487,6 +493,7 @@ async function startTurn(
       historyId: started.historyId,
       revision: started.revision,
       userInput: started.userContent,
+      contextWindowStartTurn: started.contextWindowStartTurn,
       postprocessVersion: started.postprocessVersion,
       slotModes: started.slotModes,
     };
@@ -504,6 +511,7 @@ async function startTurn(
     historyId: started.historyId,
     revision: started.revision,
     userInput: started.userContent,
+    contextWindowStartTurn: started.contextWindowStartTurn,
     postprocessVersion: started.postprocessVersion,
     slotModes: started.slotModes,
   };

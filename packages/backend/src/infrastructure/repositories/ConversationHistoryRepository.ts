@@ -510,45 +510,49 @@ export class ConversationHistoryRepository {
    * 返回 current turn 之前、窗口起点之后的当前版本上下文。
    * 开场白始终从 turn 1 的 prompt 快照提取，不随泄洪丢掉。
    * listMessages 不加这个过滤。
+   *
+   * knownWindowStartTurn：开轮 RPC 刚返回的窗口起点。调用方有就传，省掉一次 chat_sessions 读；
+   * 没有（如生图按已存在的轮次组上下文）时仍回读会话。
    */
-  async getContextBeforeTurn(sessionId: string, turnIndex: number): Promise<ConversationContext> {
-    const windowStartTurn = await this.readWindowStartTurn(sessionId);
+  async getContextBeforeTurn(
+    sessionId: string,
+    turnIndex: number,
+    knownWindowStartTurn?: number
+  ): Promise<ConversationContext> {
+    const windowStartTurn =
+      knownWindowStartTurn === undefined
+        ? await this.readWindowStartTurn(sessionId)
+        : readWindowStart(knownWindowStartTurn);
 
-    const windowQuery = this.db
+    const base = this.db
       .from('current_chat_history')
       .select(CURRENT_TURN_COLUMNS)
-      .eq('session_id', sessionId)
-      .gte('turn_index', windowStartTurn)
-      .lt('turn_index', turnIndex)
+      .eq('session_id', sessionId);
+
+    // 已泄洪时窗口不含 turn 1，但开场白要从 turn 1 的 prompt 快照取。
+    // 用一条 OR 查询同时取回两者，而不是并发两次 GET：同一 session 连续打两次
+    // current_chat_history 正是 ST-MINIAPP-2G（Consecutive HTTP）报的问题。
+    const filtered =
+      windowStartTurn <= 1
+        ? base.gte('turn_index', windowStartTurn).lt('turn_index', turnIndex)
+        : base.or(
+            `turn_index.eq.1,and(turn_index.gte.${windowStartTurn},turn_index.lt.${turnIndex})`
+          );
+
+    const { data, error } = await filtered
       .order('turn_index', { ascending: true })
       .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`读取会话上下文失败：${error.message}`);
 
+    const rows = (data ?? []) as ConversationHistoryRow[];
     if (windowStartTurn <= 1) {
-      const { data, error } = await windowQuery;
-      if (error) throw new Error(`读取会话上下文失败：${error.message}`);
-      return assembleConversationContext({
-        windowStartTurn,
-        windowRows: (data ?? []) as ConversationHistoryRow[],
-      });
+      return assembleConversationContext({ windowStartTurn, windowRows: rows });
     }
-
-    const [windowResult, openingResult] = await Promise.all([
-      windowQuery,
-      this.db
-        .from('current_chat_history')
-        .select('history')
-        .eq('session_id', sessionId)
-        .eq('turn_index', 1)
-        .abortSignal(AbortSignal.timeout(5_000))
-        .maybeSingle(),
-    ]);
-    if (windowResult.error) throw new Error(`读取会话上下文失败：${windowResult.error.message}`);
-    if (openingResult.error) throw new Error(`读取开场白快照失败：${openingResult.error.message}`);
 
     return assembleConversationContext({
       windowStartTurn,
-      windowRows: (windowResult.data ?? []) as ConversationHistoryRow[],
-      openingHistory: (openingResult.data as { history?: unknown[] } | null)?.history,
+      windowRows: rows.filter((row) => row.turn_index >= windowStartTurn),
+      openingHistory: rows.find((row) => row.turn_index === 1)?.history,
     });
   }
 
