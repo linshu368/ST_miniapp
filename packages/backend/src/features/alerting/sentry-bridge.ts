@@ -12,18 +12,31 @@
 import type { AlertEvaluation } from '@miniapp/shared';
 
 /**
- * Sentry 有两种 webhook 形状，都兼容：
+ * Sentry 的 Internal Integration webhook 有三种形状，都兼容：
  * - 旧版 Alert Rule：{ action: 'triggered'|'resolved', data: { event: {...} } }
  * - 新版 Issue Alert：{ action: 'created'|'resolved', data: { issue: {...} } }
+ * - Metric Alert：{ action: 'critical'|'warning'|'resolved', data: { metric_alert: {...} } }
+ *
+ * 5xx 比例、p95 这类信号只有 Metric Alert 能表达（Issue 报表产生不了 error event），
+ * 所以第三种形状是主力，前两种只是兜底。
  */
 type SentryPayload = {
   action?: string;
   data?: {
     event?: SentryEventLike;
     issue?: SentryEventLike;
+    metric_alert?: SentryMetricAlertLike;
     triggered_rule?: string;
   };
   installation?: unknown;
+};
+
+type SentryMetricAlertLike = {
+  id?: string | number;
+  title?: string;
+  alert_rule?: { id?: string | number; name?: string; aggregate?: string };
+  date_started?: string;
+  web_url?: string;
 };
 
 type SentryEventLike = {
@@ -52,8 +65,17 @@ export type SentryAlertConversion =
 const ACTION_STATE: Record<string, AlertEvaluation['state']> = {
   triggered: 'firing',
   created: 'firing',
+  // Metric Alert 的两档触发都算 firing，严重级别由规则名的前缀决定。
+  critical: 'firing',
+  warning: 'firing',
   resolved: 'healthy',
 };
+
+/** 规则名以 P0-/P1-/P2- 开头时，直接采用命名里的级别，避免两处判断不一致。 */
+function severityFromRuleName(name: string | undefined): AlertEvaluation['severity'] | undefined {
+  const match = name?.trim().match(/^(P[012])[\s:_-]/i);
+  return match?.[1]?.toUpperCase() as AlertEvaluation['severity'] | undefined;
+}
 
 const PERF_EVENTS = new Set(['page_stall', 'action_stall', 'slow_request', 'asset_load_failed']);
 
@@ -100,6 +122,11 @@ export function convertSentryAlert(
   const state = action ? ACTION_STATE[action] : undefined;
   if (!action) return { kind: 'ignored', reason: 'not_an_alert' };
   if (!state) return { kind: 'ignored', reason: 'unsupported_action' };
+
+  const metricAlert = body?.data?.metric_alert;
+  if (metricAlert) {
+    return convertMetricAlert(metricAlert, state, ctx);
+  }
 
   const event = body?.data?.event ?? body?.data?.issue ?? {};
   const perfEvent = tagOf(event, 'perf_event');
@@ -162,4 +189,56 @@ export function convertSentryAlert(
   };
 
   return { kind: 'ok', evaluation };
+}
+
+/**
+ * Metric Alert 是 5xx 比例、p95、卡住人数这类聚合信号的唯一载体。
+ * 它的 payload 不带 tags，所以身份只能来自规则名和 alert_rule.id：
+ * 同一条规则反复触发必须合并成一条事故，否则每次触发都会刷一条飞书。
+ */
+function convertMetricAlert(
+  alert: SentryMetricAlertLike,
+  state: AlertEvaluation['state'],
+  ctx: SentryAlertContext
+): SentryAlertConversion {
+  const ruleName = alert.alert_rule?.name ?? alert.title ?? 'Sentry 指标告警';
+  // 规则名里带 stall 关键字时归为体验域，其余（5xx、p95）归为错误域。
+  const isExperience = /stall|卡住|卡顿/i.test(ruleName);
+  const domain = isExperience ? 'experience' : 'errors';
+  const identity = slug(ruleName, `metric-${String(alert.alert_rule?.id ?? 'unknown')}`);
+  const observedAt = alert.date_started ?? new Date().toISOString();
+
+  return {
+    kind: 'ok',
+    evaluation: {
+      schema_version: 1,
+      evaluation_id: ctx.producerRunId,
+      producer_run_id: ctx.producerRunId,
+      domain,
+      service: 'miniapp',
+      environment: ctx.environment,
+      rule_id: slug(`sentry-metric-${String(alert.alert_rule?.id ?? identity)}`, 'sentry-metric'),
+      rule_version: '1',
+      rule_group: 'experience',
+      // 只含规则名与规则 id，不含时间、用户或任何 URL。
+      fingerprint: `${ctx.environment}:${domain}:sentry:metric:${identity.slice(0, 160)}`,
+      state,
+      severity: severityFromRuleName(ruleName) ?? 'P1',
+      location: { kind: 'application' },
+      confidence: 'confirmed',
+      observed_at: observedAt,
+      window_started_at: observedAt,
+      window_ended_at: observedAt,
+      title: ruleName.slice(0, 140),
+      summary: (alert.alert_rule?.aggregate
+        ? `Sentry 指标告警触发：${alert.alert_rule.aggregate}。`
+        : 'Sentry 指标告警触发。'
+      ).slice(0, 500),
+      metrics: [],
+      samples: [],
+      recommended_action: isExperience
+        ? '到 Sentry 按 perf_event 与 route 查对应事件，并查看受影响用户的 Replay。'
+        : '到 Sentry 打开该 Alert 看当前值与触发曲线，再回看同一时间窗的慢请求与错误。',
+    },
+  };
 }

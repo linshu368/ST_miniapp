@@ -129,5 +129,7 @@ export const config = {
     feishuWebhookUrl: process.env.FEISHU_ALERT_WEBHOOK_URL || '',
     // Sentry → 后端 webhook 的共享密钥；为空时该入口一律 401（安全默认）。
     sentryWebhookSecret: process.env.SENTRY_ALERT_WEBHOOK_SECRET || '',
+    // Sentry Internal Integration 的 Client Secret，用于校验 sentry-hook-signature。
+    sentryClientSecret: process.env.SENTRY_CLIENT_SECRET || '',
   },
 } as const;

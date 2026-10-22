@@ -9,12 +9,14 @@ import { backoffMs } from './semantics.js';
 /**
  * 支付域的 P1 与恢复通知关闭；已注释的旧 P0 即使还在队列里也不再发送。
  * 体验监控（domain=experience）不走这套抑制：卡顿/卡住本就是 P1，压掉等于不告警。
+ * Sentry 转发来的告警同样不走：它们是用户侧已经在发生的事实，
+ * 而且 5xx 比例这类规则天然就是 P1；压掉会让整套体验监控形同不存在。
  */
 function feishuNotificationSuppressed(card: SafeAlertCard): boolean {
-  const isExperience =
-    typeof card.incident_fingerprint === 'string' &&
-    card.incident_fingerprint.includes(':experience:');
-  if (isExperience) return card.transition === 'recovered';
+  const fingerprint = card.incident_fingerprint;
+  const isExperience = typeof fingerprint === 'string' && fingerprint.includes(':experience:');
+  const isFromSentry = typeof fingerprint === 'string' && fingerprint.includes(':sentry:');
+  if (isExperience || isFromSentry) return card.transition === 'recovered';
   if (card.transition === 'recovered' || card.severity === 'P1') return true;
   return (
     typeof card.incident_fingerprint === 'string' &&

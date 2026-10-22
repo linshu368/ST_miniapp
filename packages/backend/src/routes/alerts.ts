@@ -6,8 +6,8 @@
  * 只负责鉴权和转换，投递仍走 features/alerting/ 的 outbox + delivery worker，
  * 所以 Sentry 侧超时不会卡住请求，也不会因为飞书故障丢告警。
  */
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { config } from '../platform/config.js';
 import { convertSentryAlert } from '../features/alerting/sentry-bridge.js';
@@ -16,10 +16,31 @@ import { PrismaAlertPersistence } from '../features/alerting/repository.js';
 import { createLogger } from '../lib/logger.js';
 
 const ALERT_SECRET_HEADER = 'x-alert-secret';
+/** Internal Integration 每次投递都会带上它，签名是 body 的 HMAC-SHA256。 */
+const SENTRY_SIGNATURE_HEADER = 'sentry-hook-signature';
+/** 原始 body 只对本路由生效：验签需要字节级原文，解析后的对象无法还原空白与键序。 */
+const RAW_JSON = 'sentry-webhook-raw-json';
 
 function secretMatches(provided: string | undefined): boolean {
   const expected = config.alerting.sentryWebhookSecret;
   if (!expected || !provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Sentry 用 `client secret` 对整段 body 做 HMAC-SHA256，以十六进制放在
+ * sentry-hook-signature 里。没配 client secret 时不做签名校验（但共享密钥仍然必需）。
+ */
+function signatureMatches(request: FastifyRequest): boolean {
+  const clientSecret = config.alerting.sentryClientSecret;
+  const provided = request.headers[SENTRY_SIGNATURE_HEADER] as string | undefined;
+  if (!clientSecret) return false;
+  if (!provided) return false;
+  const raw = (request as { rawBody?: string }).rawBody;
+  if (typeof raw !== 'string') return false;
+  const expected = createHmac('sha256', clientSecret).update(raw).digest('hex');
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
@@ -37,9 +58,25 @@ function stableRunId(payload: unknown): string {
 export default async function alertRoutes(app: FastifyInstance) {
   const publisher = new AlertPublisher(new PrismaAlertPersistence(), createLogger('alert'));
 
+  // 只在本插件作用域内替换 JSON 解析器，其他路由不受影响。
+  // 默认解析器会丢掉原始字节，验签就无从算起。
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
+    (request as { rawBody?: string }).rawBody = body as string;
+    try {
+      done(null, JSON.parse(body as string));
+    } catch {
+      // 畸形 JSON 交给下面的转换层降级处理，不在这里 400——避免对方重试风暴。
+      done(null, null);
+    }
+  });
+
   // @frontend-ready: false
   app.post('/api/alerts/sentry', async (request, reply) => {
-    if (!secretMatches(request.headers[ALERT_SECRET_HEADER] as string | undefined)) {
+    // 凭据二选一：Sentry 签名（推荐）或共享密钥头（手工 curl 调试用）。
+    // 两者都不成立时一律 401，包括两个 secret 都没配置的情况。
+    const signed = signatureMatches(request);
+    const shared = secretMatches(request.headers[ALERT_SECRET_HEADER] as string | undefined);
+    if (!signed && !shared) {
       return reply.status(401).send({ ok: false, error: 'unauthorized' });
     }
 

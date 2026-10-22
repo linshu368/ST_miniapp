@@ -110,6 +110,72 @@ describe('convertSentryAlert', () => {
     });
   });
 
+  it('maps a metric alert to an experience evaluation keyed on the rule name', () => {
+    const out = convertSentryAlert(
+      {
+        action: 'critical',
+        data: {
+          metric_alert: {
+            id: 42,
+            title: 'P1 页面卡住人数',
+            alert_rule: {
+              id: 9001,
+              name: 'P1 页面卡住人数',
+              aggregate: 'count_unique(user)',
+            },
+            date_started: '2026-10-22T06:00:00+00:00',
+          },
+        },
+      },
+      ctx
+    );
+    expect(out.kind).toBe('ok');
+    if (out.kind !== 'ok') return;
+
+    expect(AlertEvaluationSchema.safeParse(out.evaluation).success).toBe(true);
+    expect(out.evaluation.domain).toBe('experience');
+    expect(out.evaluation.severity).toBe('P1');
+    expect(out.evaluation.state).toBe('firing');
+    expect(out.evaluation.fingerprint).toContain('sentry:metric:');
+  });
+
+  it('keeps a non-stall metric alert in the errors domain and honours the P0 prefix', () => {
+    const out = convertSentryAlert(
+      {
+        action: 'critical',
+        data: {
+          metric_alert: {
+            title: 'P0 核心接口 5xx 比例',
+            alert_rule: { id: 1, name: 'P0 核心接口 5xx 比例' },
+          },
+        },
+      },
+      ctx
+    );
+    expect(out.kind === 'ok' && out.evaluation.domain).toBe('errors');
+    expect(out.kind === 'ok' && out.evaluation.severity).toBe('P0');
+  });
+
+  it('folds repeated triggers of the same metric rule into one fingerprint', () => {
+    const payload = (action: string) => ({
+      action,
+      data: {
+        metric_alert: {
+          title: 'P1 页面卡住人数',
+          alert_rule: { id: 9001, name: 'P1 页面卡住人数' },
+        },
+      },
+    });
+    const first = convertSentryAlert(payload('warning'), ctx);
+    const second = convertSentryAlert(payload('critical'), {
+      ...ctx,
+      producerRunId: '33333333-3333-4333-a333-333333333333',
+    });
+    expect(first.kind === 'ok' && first.evaluation.fingerprint).toBe(
+      second.kind === 'ok' ? second.evaluation.fingerprint : ''
+    );
+  });
+
   it('never carries URLs or user identifiers into the alert', () => {
     const out = convertSentryAlert(
       {
