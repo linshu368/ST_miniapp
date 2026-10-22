@@ -469,7 +469,7 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 ```
 packages/backend/src/
 ├── app.ts / server.ts      # Fastify 组装与启动（含进程内定时任务）
-├── instrumentation.ts      # Sentry 初始化
+├── instrumentation.ts      # Sentry 初始化（trace 采样 0.2，/health 不采）
 ├── middleware/auth.ts      # requireTelegramAuth
 ├── routes/                 # 路由（见 §6）
 ├── features/               # conversations / engine / generation / voice / image /
@@ -553,6 +553,8 @@ packages/backend/src/
 **Railway IaC**：`.railway/railway.ts` 声明 `development`（跟 `dev` 分支）与 `production`（跟 `main` 分支）。两个环境都包含上述三个常驻/支付服务与 VIP 提醒 Cron；提醒以 `--write` 运行，但各环境仍受自己的 `vip_reminders_enabled` 开关保护。改动需 `railway config plan/apply`，且渲染 production 必须显式 `RAILWAY_CONFIG_ENV=production`。**`main` 分支自动部署生产**（四个服务的 deployment trigger 均为 `branch=main`）——合并进 `main` 即上线，数据库迁移需在合并前按 §7.4 手动执行。对 `dev` 的 PR 会由 `railway-pr-env.yml` 拉起 `pr-{N}` 临时环境（变量继承 development，指向 test 库）；workflow 会把支付过期 Cron 校准为包内 `tsx` 启动命令，并删除 VIP 提醒 Cron，保证 TEST 只有 development 的单一提醒调度器。
 
 **支付入账的四条路径**（唯一出口 `features/payment/usecases/PaymentSettlement.settlePaidOrder`，幂等靠 `credits_added`，先到者写 `payment_orders.settled_by`）：`webhook`（网关异步回调）→ `return`（同步回跳）→ `query`（订单页轮询时对账）→ `cron`（上述两个 Railway 任务兜底）。四路兜底的由来见历史文档 `git show 7541a54^:docs/payment-missing-credits-remediation.md`（生产曾因 cron 未部署漏账）。
+
+**体验监控**（Sentry org `wangqiao` / project `st-miniapp`，前后端共用，靠 `service` 标签区分）：p95/p99 来自 Sentry Metrics（全量，不受 trace 采样影响），"卡了"以 warning 事件表达并自带 Replay。前端 `src/lib/perf/` 记录请求耗时与超时（`apiClient` 默认 20 秒超时，图片/语音生成等长耗时接口例外）、页面可用耗时与 4 秒卡住（大厅/聊天列表/会话页/充值）、三个核心按钮 2.5 秒无反馈、资源加载失败；后端 `lib/perf-metrics.ts` 记录每路由耗时（对话/语音/图片生成单独 `kind=generation`）、Prisma 操作耗时（连接池超时标 `pool_timeout`）、事件循环延迟。采样：trace 0.2、Replay 会话 0.05、Replay 报错 1.0。指标清单、看板与排查流程见 `.trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md`。阈值均为初值，待基线校准。
 
 **CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / **legacy guard** / 测试 / Docker 构建，矩阵仅 backend）、`db-migrate.yml`（手动迁移）、`pr-review.yml`、`railway-pr-env.yml`（PR 临时环境）。Vercel 和 Railway 都直接从 GitHub commit 构建；仓库不再发布 GHCR 镜像。
 

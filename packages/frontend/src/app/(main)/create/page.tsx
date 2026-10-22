@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { discardPendingAction, startPendingAction } from '@/lib/perf/action-tracker';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import {
   Copy,
@@ -31,6 +33,7 @@ export default function CreatePage() {
   const [sort, setSort] = useState<ImagePlazaFeedSort>('recommended');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const feed = useImagePlazaFeedQuery(debouncedSearch, tag, sort);
+  usePageReady('/create', feed.data !== undefined);
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const createConversation = useCreateImagePlazaConversationMutation();
   const sentinel = useRef<HTMLDivElement | null>(null);
@@ -97,9 +100,14 @@ export default function CreatePage() {
 
   const startStudio = (sourceWorkId?: string) => {
     setPendingSourceWorkId(sourceWorkId ?? 'new');
+    startPendingAction('create_conversation');
     createConversation.mutate(sourceWorkId ? { source_work_id: sourceWorkId } : {}, {
       onSuccess: ({ conversation }) => router.push(`/create/studio/${conversation.id}`),
-      onError: () => setPendingSourceWorkId(null),
+      onError: () => {
+        // 失败也算有了反馈（恢复按钮状态），不再计为「点了没反应」。
+        discardPendingAction('create_conversation');
+        setPendingSourceWorkId(null);
+      },
     });
   };
 

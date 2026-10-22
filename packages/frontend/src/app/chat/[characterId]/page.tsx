@@ -53,6 +53,7 @@ import { returnToLobby } from '@/lib/lobby-return';
 import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import { usePageReady } from '@/lib/perf/page-ready';
 import {
   DEFAULT_REPLY_DETAILS_OPEN,
   readReplyDetailsDefaultOpen,
@@ -78,6 +79,8 @@ export default function SelfHostedChatPage() {
 
   const session = useChatSession(characterId);
   const { activeSessionId, returnTo } = session;
+  // 可用 = 会话已建立且历史消息已加载（新会话的创建耗时也算在用户等待里）。
+  usePageReady('/chat/:id', session.ready);
   const modelCatalogQuery = useModelCatalogQuery();
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
   const selectedModelUsesFreeQuota = useMemo(() => {
