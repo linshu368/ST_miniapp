@@ -120,6 +120,32 @@ describe('POST /api/alerts/sentry', () => {
     await app.close();
   });
 
+  it('accepts the shared secret via the webhook URL query token', async () => {
+    const app = await buildApp();
+    mocks.publish.mockClear();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/alerts/sentry?token=${SECRET}`,
+      headers: { 'content-type': 'application/json' },
+      payload: metricBody,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(mocks.publish).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it('rejects a wrong query token', async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/alerts/sentry?token=wrong',
+      headers: { 'content-type': 'application/json' },
+      payload: metricBody,
+    });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
   it('acknowledges non-alert payloads without publishing', async () => {
     const app = await buildApp();
     mocks.publish.mockClear();

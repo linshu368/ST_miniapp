@@ -30,6 +30,16 @@ function secretMatches(provided: string | undefined): boolean {
 }
 
 /**
+ * Internal Integration 的 Webhook URL 字段只能填一个完整 URL，不能加自定义 header，
+ * 所以配置时把共享密钥放进了 query string（?token=...）。和 header 版共用同一个密钥，
+ * 校验逻辑完全一致，只是取值位置不同。
+ */
+function queryTokenMatches(request: FastifyRequest): boolean {
+  const provided = (request.query as Record<string, unknown> | undefined)?.token;
+  return typeof provided === 'string' && secretMatches(provided);
+}
+
+/**
  * Sentry 用 `client secret` 对整段 body 做 HMAC-SHA256，以十六进制放在
  * sentry-hook-signature 里。没配 client secret 时不做签名校验（但共享密钥仍然必需）。
  */
@@ -72,11 +82,13 @@ export default async function alertRoutes(app: FastifyInstance) {
 
   // @frontend-ready: false
   app.post('/api/alerts/sentry', async (request, reply) => {
-    // 凭据二选一：Sentry 签名（推荐）或共享密钥头（手工 curl 调试用）。
-    // 两者都不成立时一律 401，包括两个 secret 都没配置的情况。
+    // 三种凭据任一成立即可：Sentry 签名（主）、webhook URL 里的 ?token=（Sentry
+    // Internal Integration 不支持自定义 header，只能靠 URL 带密钥）、共享密钥头
+    // （手工 curl 调试用）。全部不成立时一律 401，包括三个都没配置的情况。
     const signed = signatureMatches(request);
+    const queryToken = queryTokenMatches(request);
     const shared = secretMatches(request.headers[ALERT_SECRET_HEADER] as string | undefined);
-    if (!signed && !shared) {
+    if (!signed && !queryToken && !shared) {
       return reply.status(401).send({ ok: false, error: 'unauthorized' });
     }
 
