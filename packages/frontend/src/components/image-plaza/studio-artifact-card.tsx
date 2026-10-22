@@ -11,6 +11,7 @@ interface StudioArtifactCardProps {
   onRefresh: (prompt: string) => void;
   onShare: (artifact: ImagePlazaArtifact) => void;
   onNotice: (message: string) => void;
+  onLoad?: () => void;
 }
 
 export function StudioArtifactCard(props: StudioArtifactCardProps) {
@@ -35,6 +36,7 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
           height={props.artifact.height}
           decoding="async"
           className={`max-h-full w-full object-contain transition ${sharing ? 'opacity-40' : ''}`}
+          onLoad={props.onLoad}
         />
         {sharing ? (
           <div
