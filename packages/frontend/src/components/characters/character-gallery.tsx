@@ -17,6 +17,8 @@ import {
 } from '@/lib/api/characters';
 import { useAfterFirstScreen } from '@/lib/after-first-screen';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { startPendingAction } from '@/lib/perf/action-tracker';
+import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import {
   clearLobbyReturnSnapshot,
   readLobbyReturnSnapshot,
@@ -93,9 +95,12 @@ export function CharacterGallery() {
   const [restoreSnapshot] = useState<LobbyReturnSnapshot | null>(() => readLobbyReturnSnapshot());
   const [isRestoring, setIsRestoring] = useState(() => restoreSnapshot !== null);
   const [sort, setSort] = useState<LobbySort>(restoreSnapshot?.sort ?? DEFAULT_LOBBY_SORT);
-  const { data, isLoading, isError } = useCharactersQuery(sort, {
+  const { data, isLoading, isError, isFetching } = useCharactersQuery(sort, {
     skipMountRefetch: isRestoring,
   });
+  // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
+  const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined);
+  usePageReady('/', data !== undefined, lobbyFresh);
   const [query, setQuery] = useState(restoreSnapshot?.query ?? '');
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [enteringId, setEnteringId] = useState<string | null>(null);
@@ -490,6 +495,7 @@ export function CharacterGallery() {
           enteringRef.current = true;
           captureReturnSnapshot(id);
           setEnteringId(id);
+          startPendingAction('select_character');
           router.push(chatEntryPath(id));
         }}
       />

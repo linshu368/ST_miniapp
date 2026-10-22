@@ -10,12 +10,19 @@ import type {
   LobbySort,
 } from '@miniapp/shared';
 
+import { createRequestId, timedFetch } from '@/lib/perf/request-timing';
+
 import { apiClient } from './client';
 import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
 async function fetchCharacters(sort: LobbySort): Promise<GetCharactersData> {
-  const response = await fetch(`/api/lobby-characters?sort=${sort}`, { cache: 'no-store' });
+  // 大厅经 Vercel 同源代理转发，多一跳（含函数冷启动），必须和直连后端的请求一样被计时。
+  const response = await timedFetch(
+    `/api/lobby-characters?sort=${sort}`,
+    { cache: 'no-store' },
+    { requestId: createRequestId() }
+  );
   const json = (await response.json().catch(() => null)) as ApiResponse<GetCharactersData> | null;
   if (!response.ok || !json?.success) {
     throw new Error(json && !json.success ? json.error.message : `API error: ${response.status}`);

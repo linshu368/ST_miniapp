@@ -18,6 +18,7 @@ import {
   attachPaymentReturnObserver,
   detachPaymentReturnObserver,
 } from '@/lib/payment/return-observer';
+import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
 import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { initReplayTelemetry, ReplayLifecycleOwner } from '@/lib/telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
@@ -55,6 +56,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {telegramReady ? <InviteBindReporter /> : null}
       {telegramReady ? <UserSettingsHydrator /> : null}
       {telegramReady ? <ReplayLifecycleOwner /> : null}
+      {telegramReady ? <PagePerfTracker /> : null}
       {telegramReady ? children : pathname === '/' ? <LobbyShellSkeleton /> : null}
       {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>

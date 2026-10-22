@@ -1,5 +1,6 @@
 'use client';
 
+import { usePageReady } from '@/lib/perf/page-ready';
 import { ArrowLeft, Heart, LoaderCircle, RotateCcw, WandSparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -18,6 +19,7 @@ export default function ImagePlazaWorkPage() {
 function ImagePlazaWorkDetail({ workId }: { workId: string }) {
   const router = useRouter();
   const query = useImagePlazaWorkQuery(workId);
+  usePageReady('/create/work/:id', query.data !== undefined);
   const like = useSetImagePlazaLikeMutation(workId);
   const createConversation = useCreateImagePlazaConversationMutation();
   const [showReference, setShowReference] = useState(false);

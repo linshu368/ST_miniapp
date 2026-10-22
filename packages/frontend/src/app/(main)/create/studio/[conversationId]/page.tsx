@@ -1,5 +1,6 @@
 'use client';
 
+import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import {
   ArrowUp,
   ArrowLeft,
@@ -37,6 +38,7 @@ import {
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
 import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import {
   Sheet,
@@ -59,6 +61,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const config = useImagePlazaConfigQuery();
   const conversation = useImagePlazaConversationQuery(conversationId);
   const conversations = useImagePlazaConversationsQuery();
+  usePageReady('/create/studio/:id', conversation.data !== undefined);
   const createConversation = useCreateImagePlazaConversationMutation();
   const quote = useImagePlazaQuoteMutation();
   const submit = useSubmitImagePlazaAttemptMutation(conversationId);
@@ -190,6 +193,8 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     )
       return;
     sending.current = true;
+    // 反馈 = 提交被受理、界面进入生成中；真正出图是后台任务，耗时另由请求指标覆盖。
+    const action = startAction('image_generate');
     try {
       const actualMode: ImagePlazaMode = referenceArtifactId ? mode : 't2i';
       const freshQuote = await quote.mutateAsync({
@@ -214,7 +219,10 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       // Explicit submission restores following; polling itself never changes user intent.
       followLatestRef.current = true;
       scrollToLatest();
+      feedbackAfterPaint(action);
     } catch (error) {
+      // 失败也算有了反馈（出现了错误提示），不该再算成「点了没反应」。
+      action.feedback();
       showNotice(error instanceof Error ? error.message : '提交失败，请重试');
     } finally {
       sending.current = false;
@@ -685,7 +693,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
 
       {shareTipOpen && shareArtifact ? (
         <div
-          className="fixed inset-0 z-50 grid place-items-end bg-black/65 p-3 sm:place-items-center"
+          className="fixed inset-0 z-50 grid place-items-end bg-black/65"
           onClick={() => setShareTipOpen(false)}
         >
           <div
@@ -693,7 +701,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
             aria-modal="true"
             aria-label="分享作品"
             onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-sm overflow-hidden rounded-[1.75rem] bg-card shadow-2xl"
+            className="mx-auto w-full max-w-3xl overflow-hidden rounded-t-[1.75rem] bg-card shadow-[0_-18px_42px_rgba(0,0,0,0.3)]"
           >
             <div className="relative aspect-[4/3] bg-black">
               <img
@@ -710,7 +718,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 <X className="size-4" />
               </button>
             </div>
-            <div className="p-5 text-center">
+            <div className="p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] text-center">
               <h2 className="text-lg font-black">{formatTip(tip.title)}</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 {formatTip(tip.description)}

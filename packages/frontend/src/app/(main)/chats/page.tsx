@@ -30,6 +30,7 @@ import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { FeaturedFrame } from '@/components/characters/featured-frame';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { usePageReady } from '@/lib/perf/page-ready';
 
 type ChatsTab = 'history' | 'favorites';
 
@@ -99,6 +100,7 @@ type LobbySummaryLookup =
 
 function ConversationHistoryList() {
   const { data, isLoading, isError, refetch } = useConversationsQuery(undefined);
+  usePageReady('/chats', data !== undefined);
   const sessions = data?.sessions ?? [];
   // 历史行只要头像和名字。原来每行各拉一次详情，20 行就是 20 个请求（Sentry ST-MINIAPP-1Y）。
   // 先查大厅摘要（通常已在 localStorage），只有查不到的卡（下架、或大厅读失败）才回退到详情。

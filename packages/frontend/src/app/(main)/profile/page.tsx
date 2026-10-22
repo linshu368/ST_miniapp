@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -61,6 +63,7 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const telegramUserId = useMemo(readTelegramUserId, []);
   const wallet = useWalletBalanceQuery();
+  usePageReady('/profile', wallet.data !== undefined);
   const credits = wallet.data?.total_credits ?? wallet.data?.credits;
   const bonusCredits = wallet.data?.bonus_credits;
   // BottomNav 同屏常驻并负责轮询，这里只订阅缓存，避免同一端点两个 interval 各打一份。
@@ -152,8 +155,11 @@ export default function ProfilePage() {
   };
 
   const claimDailyCheckin = async () => {
+    const action = startAction('daily_checkin');
     try {
-      const data = await claimCheckin.mutateAsync();
+      const claiming = claimCheckin.mutateAsync();
+      feedbackAfterPaint(action);
+      const data = await claiming;
       setCheckinToast(checkinRewardLines(data.checkin));
     } catch {
       // Mutation state already carries the error; keep the click handler quiet.

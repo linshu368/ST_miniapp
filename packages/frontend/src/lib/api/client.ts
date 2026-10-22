@@ -3,18 +3,17 @@ import type { ApiResponse } from '@miniapp/shared';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
 import { sendSentryLog } from '@/lib/sentry/client';
+import {
+  createRequestId,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  RequestTimeoutError,
+  timedFetch,
+} from '@/lib/perf/request-timing';
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL || 'https://stminiapp-development.up.railway.app';
 
 const log = createLogger('api');
-
-function createRequestId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 function recordFailedRequest(
   requestId: string,
@@ -85,8 +84,27 @@ export function toApiClientError(status: number, json: unknown): ApiClientError 
   return new ApiClientError(`API error: ${status}`, status);
 }
 
+/** 单次请求超时（毫秒）；不传则按路径取默认值。 */
+export type ApiRequestInit = RequestInit & { timeoutMs?: number };
+
+/** 普通接口 p95 偶发 10 秒，20 秒是「用户已经不会再等」的初值，需按基线校准。 */
+const DEFAULT_TIMEOUT_MS = DEFAULT_REQUEST_TIMEOUT_MS;
+/** 服务端上游（图片/语音生成、上传）本身最长 180 秒，客户端不能比服务端先放弃。 */
+const LONG_RUNNING_TIMEOUT_MS = 200_000;
+const LONG_RUNNING_PATHS = [
+  /\/messages\/[^/?]+\/(image|image-description|voice)(\?|$)/,
+  /\/image-plaza\/conversations\/[^/?]+\/attempts(\?|$)/,
+  /\/image-plaza\/references(\?|$)/,
+];
+
+function resolveTimeoutMs(path: string): number {
+  return LONG_RUNNING_PATHS.some((pattern) => pattern.test(path))
+    ? LONG_RUNNING_TIMEOUT_MS
+    : DEFAULT_TIMEOUT_MS;
+}
+
 /** 统一的 HTTP 客户端。仅在 lib/api/ 内部使用；业务层必须走 React Query hook 包装。 */
-export async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
+export async function apiClient<T>(path: string, options?: ApiRequestInit): Promise<T> {
   const url = `${API_URL}${path}`;
 
   const initData = getRawInitData();
@@ -100,8 +118,16 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
 
   log.debug(`Fetching ${url}`, { hasInitData: !!initData });
 
-  const res = await fetch(url, { ...options, headers }).catch((error: unknown) => {
+  const { timeoutMs, ...fetchOptions } = options ?? {};
+  const res = await timedFetch(
+    url,
+    { ...fetchOptions, headers },
+    { requestId, timeoutMs: timeoutMs ?? resolveTimeoutMs(path) }
+  ).catch((error: unknown) => {
     recordFailedRequest(requestId, path, options?.method ?? 'GET', 0);
+    if (error instanceof RequestTimeoutError) {
+      throw new ApiClientError('请求超时，请检查网络后重试', 0, 'client_timeout');
+    }
     throw error;
   });
   const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
