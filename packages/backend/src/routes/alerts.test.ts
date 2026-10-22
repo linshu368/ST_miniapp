@@ -6,9 +6,11 @@ const SECRET = 'shared-secret';
 const CLIENT_SECRET = 'client-secret';
 
 const mocks = vi.hoisted(() => ({
-  publish: vi.fn<(evaluation: unknown) => Promise<{ kind: 'accepted' }>>(async () => ({
-    kind: 'accepted' as const,
-  })),
+  publish: vi.fn<(evaluation: unknown) => Promise<{ kind: 'accepted' | 'duplicate' | 'failed' }>>(
+    async () => ({
+      kind: 'accepted' as const,
+    })
+  ),
 }));
 
 vi.mock('../platform/config.js', () => ({
@@ -143,6 +145,24 @@ describe('POST /api/alerts/sentry', () => {
       payload: metricBody,
     });
     expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns 502 when publish fails, so Sentry gets a chance to retry', async () => {
+    const app = await buildApp();
+    mocks.publish.mockClear();
+    mocks.publish.mockResolvedValueOnce({ kind: 'failed' });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/alerts/sentry',
+      headers: {
+        'content-type': 'application/json',
+        'sentry-hook-signature': sign(metricBody),
+      },
+      payload: metricBody,
+    });
+    expect(response.statusCode).toBe(502);
+    expect(JSON.parse(response.body)).toMatchObject({ ok: false, result: 'failed' });
     await app.close();
   });
 

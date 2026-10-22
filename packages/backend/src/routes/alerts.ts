@@ -111,6 +111,12 @@ export default async function alertRoutes(app: FastifyInstance) {
       },
       'Sentry 告警已转发'
     );
-    return reply.send({ ok: result.kind !== 'failed', result: result.kind });
+    // 之前这里不管成不成功都回 200：如果 publish 因为连接池这类瞬时问题失败，
+    // Sentry 看到的是「送达成功」，不会重试，告警就这么悄悄丢了——包括报连接池
+    // 本身爆了的那条告警，自己把自己的通知吃掉。失败回 502 换一次重试机会。
+    if (result.kind === 'failed') {
+      return reply.status(502).send({ ok: false, result: result.kind });
+    }
+    return reply.send({ ok: true, result: result.kind });
   });
 }
