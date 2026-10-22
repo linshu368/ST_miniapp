@@ -13,7 +13,10 @@ import { config } from '../platform/config.js';
 import { convertSentryAlert } from '../features/alerting/sentry-bridge.js';
 import { AlertPublisher } from '../features/alerting/publisher.js';
 import { PrismaAlertPersistence } from '../features/alerting/repository.js';
+import { createSafeAlertCard } from '../features/alerting/safe-card.js';
+import { FeishuAlertSink } from '../features/alerting/feishu-alert-sink.js';
 import { createLogger } from '../lib/logger.js';
+import type { AlertEvaluation } from '@miniapp/shared';
 
 const ALERT_SECRET_HEADER = 'x-alert-secret';
 /** Internal Integration 每次投递都会带上它，签名是 body 的 HMAC-SHA256。 */
@@ -65,8 +68,37 @@ function stableRunId(payload: unknown): string {
   return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
+/**
+ * 落库失败（典型是数据库自己出问题，比如连接池耗尽）时的最后一道保险：
+ * 跳过 outbox 和去重，直接拼一张简化卡片发飞书。没有重试、没有去重、
+ * 没有恢复态跟踪——纯粹是"至少让人知道出事了"，所以只在 publish 失败时
+ * 补发一次，绝不能让这条路径本身的失败影响主响应。
+ */
+async function emergencyNotify(
+  evaluation: AlertEvaluation,
+  log: ReturnType<typeof createLogger>
+): Promise<void> {
+  try {
+    const sink = new FeishuAlertSink(config.alerting.feishuWebhookUrl);
+    if (!sink.configured()) return;
+    const card = createSafeAlertCard(
+      evaluation,
+      evaluation.state === 'healthy' ? 'recovered' : 'firing',
+      `${evaluation.fingerprint}:emergency:${evaluation.evaluation_id}`
+    );
+    const result = await sink.deliver(card, 5_000);
+    log.biz.info(
+      { event: 'alert.emergency_notify', result: result.kind, fingerprint: evaluation.fingerprint },
+      '落库失败，已走应急直发通道'
+    );
+  } catch (err) {
+    log.sys.warn({ event: 'alert.emergency_notify.failed', err }, '应急直发也失败了，只能认了');
+  }
+}
+
 export default async function alertRoutes(app: FastifyInstance) {
-  const publisher = new AlertPublisher(new PrismaAlertPersistence(), createLogger('alert'));
+  const log = createLogger('alert');
+  const publisher = new AlertPublisher(new PrismaAlertPersistence(), log);
 
   // 只在本插件作用域内替换 JSON 解析器，其他路由不受影响。
   // 默认解析器会丢掉原始字节，验签就无从算起。
@@ -111,6 +143,14 @@ export default async function alertRoutes(app: FastifyInstance) {
       },
       'Sentry 告警已转发'
     );
-    return reply.send({ ok: result.kind !== 'failed', result: result.kind });
+    // 之前这里不管成不成功都回 200：如果 publish 因为连接池这类瞬时问题失败，
+    // Sentry 看到的是「送达成功」，不会重试，告警就这么悄悄丢了——包括报连接池
+    // 本身爆了的那条告警，自己把自己的通知吃掉。失败回 502 换一次重试机会，
+    // 同时不等 Sentry 重试，当场走应急直发，免得真遇到持续故障、重试也一直失败。
+    if (result.kind === 'failed') {
+      await emergencyNotify(converted.evaluation, log);
+      return reply.status(502).send({ ok: false, result: result.kind });
+    }
+    return reply.send({ ok: true, result: result.kind });
   });
 }

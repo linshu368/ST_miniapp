@@ -157,12 +157,15 @@ export default function ProfilePage() {
   const claimDailyCheckin = async () => {
     const action = startAction('daily_checkin');
     try {
-      const claiming = claimCheckin.mutateAsync();
-      feedbackAfterPaint(action);
-      const data = await claiming;
+      // 反馈必须等签到真正到账、状态同步完再给，不能在请求发出那一刻就算数——
+      // 否则测的只是「点击有没有反应」，不是「签到到底有没有成功、花了多久」。
+      const data = await claimCheckin.mutateAsync();
       setCheckinToast(checkinRewardLines(data.checkin));
+      feedbackAfterPaint(action);
     } catch {
       // Mutation state already carries the error; keep the click handler quiet.
+      // 但看门狗必须在这清掉，否则 2.5 秒后还会补发一条过期的 action_stall。
+      action.feedback();
     }
   };
 

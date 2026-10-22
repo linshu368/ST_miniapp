@@ -17,7 +17,7 @@ import {
 } from '@/lib/api/characters';
 import { useAfterFirstScreen } from '@/lib/after-first-screen';
 import { chatEntryPath } from '@/lib/chat-entry';
-import { startPendingAction } from '@/lib/perf/action-tracker';
+import { discardPendingAction, startPendingAction } from '@/lib/perf/action-tracker';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import {
   clearLobbyReturnSnapshot,
@@ -482,6 +482,8 @@ export function CharacterGallery() {
             setEnteringId(null);
             setPreviewId(null);
             clearLobbyReturnSnapshot();
+            // 用户主动取消进入，不是卡住；不清掉的话 2.5 秒后看门狗会补发一条假的 action_stall。
+            discardPendingAction('select_character');
             // 当前本来就在大厅，直接 replace('/') 可能被 Next.js 当成同路由而忽略。
             // 唯一查询参数会启动一笔新的 SPA 导航，并让 App Router 放弃在途角色导航，
             // 同时保留 query cache 与 Telegram SDK。
