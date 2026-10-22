@@ -95,14 +95,16 @@ export function useCharactersQuery(
  * 首页「最新」入口的 New 提醒。判定在服务端，所以离开首页再回来不会重复提示。
  * 不做轮询：上新是运营的低频动作，进页面和切回前台各拉一次就够，也避免和 ST 启动抢资源。
  */
-export function useLobbyLatestBadgeQuery() {
+export function useLobbyLatestBadgeQuery({ enabled = true }: { enabled?: boolean } = {}) {
   const query = useQuery<LobbyLatestBadgeData>({
     queryKey: characterKeys.latestBadge(),
     queryFn: () => apiClient<LobbyLatestBadgeData>('/api/characters/latest-badge'),
+    enabled,
     staleTime: 0,
     refetchOnMount: 'always',
   });
-  useRefetchOnForeground(query.refetch);
+  // refetch() 不受 enabled 约束，推迟期间切回前台也不能提前发。
+  useRefetchOnForeground(query.refetch, enabled);
   return query;
 }
 

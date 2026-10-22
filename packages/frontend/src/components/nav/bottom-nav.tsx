@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Home, MessageCircle, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { useAfterFirstScreen } from '@/lib/after-first-screen';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
 import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
@@ -29,8 +30,10 @@ const HIDDEN_PREFIXES = [
 export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const unread = useNotificationUnreadCountQuery();
-  const supportUnread = useSupportUnreadQuery();
+  // 红点不在首屏关键路径上；冷启动先让给首屏，之后照常轮询。/profile 页自己的读者不受影响。
+  const firstScreenDone = useAfterFirstScreen();
+  const unread = useNotificationUnreadCountQuery({ enabled: firstScreenDone });
+  const supportUnread = useSupportUnreadQuery({ enabled: firstScreenDone });
   // 「我的」页里公告和客服回复各有各的红点，导航上只汇总成一个。
   const hasUnread = (unread.data?.total ?? 0) > 0 || supportUnread.data?.has_unread === true;
 

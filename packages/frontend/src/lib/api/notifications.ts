@@ -41,15 +41,19 @@ export function useNotificationsQuery(scope: NotificationScope) {
  * 相位不同就各自发请求，同一 key 不会自动合并。BottomNav 在 (main) 下常驻（隐藏时 hooks 也在跑），
  * 由它负责轮询与回前台刷新；其他读者只订阅缓存，进页时仍刷新一次，红点延迟不变。
  */
-export function useNotificationUnreadCountQuery({ poll = true }: { poll?: boolean } = {}) {
+export function useNotificationUnreadCountQuery({
+  poll = true,
+  enabled = true,
+}: { poll?: boolean; enabled?: boolean } = {}) {
   const query = useQuery({
     queryKey: notificationKeys.unread,
     queryFn: () => apiClient<NotificationUnreadCountData>('/api/notifications/unread-count'),
+    enabled,
     staleTime: 0,
     refetchOnMount: 'always',
     refetchInterval: poll ? NOTIFICATION_POLL_MS : false,
   });
-  useRefetchOnForeground(query.refetch, poll);
+  useRefetchOnForeground(query.refetch, poll && enabled);
   return query;
 }
 

@@ -15,6 +15,7 @@ import {
   useLobbyLatestBadgeQuery,
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
+import { useAfterFirstScreen } from '@/lib/after-first-screen';
 import { chatEntryPath } from '@/lib/chat-entry';
 import {
   clearLobbyReturnSnapshot,
@@ -26,7 +27,8 @@ import {
 import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
 
-const FIRST_SCREEN_IMAGE_COUNT = 8;
+// 移动端两列首屏实际可见约 4–6 张；高优先级给多了会和 LCP 图抢带宽。
+const FIRST_SCREEN_IMAGE_COUNT = 6;
 
 const LOBBY_TABS: ReadonlyArray<{ value: LobbySort; label: string }> = [
   { value: 'recommended', label: '推荐' },
@@ -101,7 +103,9 @@ export function CharacterGallery() {
   const restoredAnchorIdRef = useRef<string | null>(null);
   const restoreCalibrationUsedRef = useRef(false);
 
-  const latestBadge = useLobbyLatestBadgeQuery();
+  // New 角标不在首屏关键路径上，冷启动时让给列表与首屏图片。
+  const firstScreenDone = useAfterFirstScreen();
+  const latestBadge = useLobbyLatestBadgeQuery({ enabled: firstScreenDone });
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
   const markedLatestRef = useRef(false);
   // 点「最新」当场收起，不等标记已看的请求回来；点推荐、搜索、卡片都不影响。

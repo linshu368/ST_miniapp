@@ -31,15 +31,19 @@ export function useSupportConversationQuery() {
  * 「我的」页「联系客服」入口和底部导航的红点都读这个。
  * `poll: false` 的含义同 useNotificationUnreadCountQuery：轮询由常驻的 BottomNav 负责。
  */
-export function useSupportUnreadQuery({ poll = true }: { poll?: boolean } = {}) {
+export function useSupportUnreadQuery({
+  poll = true,
+  enabled = true,
+}: { poll?: boolean; enabled?: boolean } = {}) {
   const query = useQuery({
     queryKey: supportKeys.unread,
     queryFn: () => apiClient<SupportUnreadData>('/api/support/unread'),
+    enabled,
     staleTime: 0,
     refetchOnMount: 'always',
     refetchInterval: poll ? SUPPORT_UNREAD_POLL_MS : false,
   });
-  useRefetchOnForeground(query.refetch, poll);
+  useRefetchOnForeground(query.refetch, poll && enabled);
   return query;
 }
 

@@ -323,3 +323,67 @@ git diff --check
 ## 停止与回滚
 
 权限/计费/取消异常立即停止。主文档候选性能阈值经审核后使用，结合失败率/样本量。回滚当前小批次代码或安全系统内旧参数；不关闭结算恢复，不回写账务，不把停止 timer 当终止在途事务。必要的新 migration 另审，附恢复方案。
+
+## 步骤 8 前端首屏：拆解与候选（待审核，未改代码）
+
+采集：2026-10-22，Sentry 生产 `span.op:pageload`，近 7 天，只读；本地 `pnpm --filter @miniapp/frontend build`（Next 14.2.35）。
+
+### 8.1 指标口径
+
+`pageload` 的 `span.duration`（`/` p75 7,404ms）要等页面内所有子 span 结束才收尾，包括懒加载图片和轮询请求，**不等于用户体感**。预算改用 Web Vitals：
+
+| 路由       | 样本  | TTFB p75 | FCP p75 | LCP p75 | pageload p75 |
+| ---------- | ----- | -------- | ------- | ------- | ------------ |
+| `/`        | 1,523 | 1,361ms  | 2,800ms | 4,297ms | 7,404ms      |
+| `/create`  | 6     | 1,004ms  | 1,883ms | 2,880ms | 7,578ms      |
+| `/chats`   | 5     | 3,085ms  | 3,897ms | 7,167ms | 7,304ms      |
+| `/profile` | 19    | 260ms    | 922ms   | 1,427ms | 3,071ms      |
+
+`/create`、`/chats` 样本过少，不能据此定预算，只看 `/`。
+
+### 8.2 `/` 的时间去向
+
+| 段              | 证据                                                                                                                                      | 结论                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| TTFB ≈1.36s     | `/` 是静态预渲染（○）；`browser.request` p75 447ms                                                                                        | 主要是 Telegram WebView 到 Vercel 的网络与连接建立，代码侧几乎不可控 |
+| TTFB→FCP ≈1.44s | `providers.tsx` 在 `useEffect` 设 `telegramReady` 之前**不渲染 children**，SSR HTML 是空壳                                                | FCP 必须等 JS 下载 + hydrate + effect；首屏 JS 217kB（共享 173kB）   |
+| FCP→LCP ≈1.5s   | LCP 元素多数是大厅卡片 `img`（358+69+63+40…）；其次是卡片标题 `h3`（147，LCP p75 5,629ms）                                                | 图片路径与列表数据路径各占一块                                       |
+| 图片            | `resource.img` 74,474 次 ≈ **每次 pageload 49 张**；p50 611ms、p75 1,539ms；全部来自 Supabase `render/image`                              | 首屏 8 张 `fetchPriority=high` preload 与其余懒加载图同时抢带宽      |
+| 列表数据        | `/api/lobby-characters` p50 869ms、p75 1,492ms；浏览器→Vercel Route Handler→Railway 两跳，且 `no-store`                                   | `h3` 成为 LCP 时说明当时无 localStorage 快照，首屏卡片要等这一跳     |
+| 并发请求        | 同屏还有 `latest-badge`、`support/unread`、`notifications/unread-count`、`favorites/ids`、`users/settings`，p50 均约 1s                   | 与首屏图片、列表争用连接和主线程                                     |
+| JS 资源         | `resource.script` p50 69ms；5.8s 级的长尾集中在少量发布切换时刻（`dpl` 不同，count 2–3）                                                  | 不是主瓶颈，暂不做拆包                                               |
+| 遥测            | `instrumentation-client.ts`：`tracesSampleRate`、`replaysSessionSampleRate` 均为 1.0；PostHog `/s/` p50 1,015ms；`ui.long-task` p50 126ms | 全量录屏占 CPU 与上行，是可量化的成本，但属于产品/运营决策           |
+
+### 8.3 候选改动（按收益/风险排序）
+
+| #   | 改动                                                                                                          | 预期                                 | 风险 / 需决策                                                                           |
+| --- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
+| F1  | 首屏高优先级图片从 8 张降到首屏实际可见数（移动端 2 列约 4–6 张），其余保持 lazy                              | LCP 图片独享带宽；不增请求           | 低。桌面宽屏首屏多于 6 张时，后几张稍晚                                                 |
+| F2  | `telegramReady` 之前先渲染不依赖 initData 的静态骨架（大厅标题栏 + 卡片占位），children 仍等 ready            | FCP 前移，接近 TTFB + CSS            | 中低。不得让任何发请求的组件提前挂载                                                    |
+| F3  | `/api/lobby-characters` 改为短 CDN 缓存（如 `s-maxage=15, stale-while-revalidate=60`），浏览器端仍 `no-store` | 冷启动列表从 ~0.9s 降到 CDN 命中时延 | **需决策**：现有注释要求每次挂载都对齐数据库，以便下架/重排立即生效；引入 ≤15s 陈旧窗口 |
+| F4  | 首屏期间延后 `latest-badge`、`favorites/ids` 等非首屏请求（等首屏图片 settle 或 idle）                        | 减少首屏争用                         | 中。角标晚出现约 1s                                                                     |
+| F5  | 调低 Sentry `replaysSessionSampleRate`（保留 `replaysOnErrorSampleRate=1.0`）                                 | 降 CPU 与上行                        | **需决策**：影响排障可见性与 PostHog/Sentry 用量                                        |
+
+拒绝：引入 `next/image`（Supabase render 已做缩放，换成 Vercel 优化会多一跳并产生费用）；拆包/动态导入（JS 证据不支持）；SSR 大厅数据（与 Telegram initData 与 localStorage 快照模型冲突，改动面过大）。
+
+### 8.4 预算候选（审核后生效）
+
+`/` p75：FCP ≤ 2.0s，LCP ≤ 3.0s（发布后 7 天、样本 ≥ 1,000 时判定）。TTFB 不设代码预算，只记录。
+
+### 8.5 验证与回滚
+
+- 本地：`pnpm --filter @miniapp/frontend typecheck`、`lint`、`test`、`build`，记录 First Load JS 不增长。
+- 人工：冷启动（清 localStorage）与热启动、推荐/最新切换、返回定位恢复、断网、Telegram 内与浏览器内。
+- 生产对照：复跑 8.1 / 8.2 的同一组查询，对比 FCP、LCP、LCP 元素分布、每次 pageload 图片数。
+- 回滚：每个 F 项独立提交，单独 revert；F3 回滚即恢复 `no-store`。
+
+### 8.6 已实施（F1 / F8 / F2 / F4，2026-10-22）
+
+共用信号 `src/lib/after-first-screen.ts`：`load` 之后第一个空闲帧（idle timeout 2s）算首屏结束，硬上限 4s；每个页面生命周期只结算一次，之后的 SPA 导航立即放行。
+
+- **F1**：`FIRST_SCREEN_IMAGE_COUNT` 8 → 6。preload 和 `fetchPriority=high` 一起收紧。
+- **F8**：Sentry `replayIntegration` 和 PostHog SDK 都等首屏结束再加载，采样率不变。PostHog 的推迟放在 adapter `init` 的 `initPromise` 内部（`beforeLoad`），所以 `whenReady()` 在推迟期间会等这个 promise，不会误判为未配置。代价：首屏最多约 4s 不在录。
+- **F2**：`telegramReady` 之前，`/` 渲染纯静态的 `LobbyShellSkeleton`（不发请求、不读 initData），其他路由仍然留空。
+- **F4**：大厅 `latest-badge` 和 BottomNav 的 `notifications/unread-count`、`support/unread` 加 `enabled`，等首屏结束再请求；推迟期间切回前台也不补发。`/profile` 自己的读者不受影响。`favorites/ids` **没有**推迟：它决定首屏卡片的心形状态，推迟会出现空心→实心的闪烁。`users/settings` 也没动，它属于 Providers 的 hydrate。
+
+验证：frontend `typecheck`、`lint`（0 error）、`test` 41 files / 256 tests 通过。`build` 没能执行，原因是本机 `packages/frontend/node_modules/next/dist` 缺失（依赖安装损坏，和改动无关）；需要 `pnpm install` 之后补跑，并检查 `/` 预渲染 HTML 里有骨架、First Load JS 没有增长。
