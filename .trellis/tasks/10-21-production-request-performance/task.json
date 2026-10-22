@@ -20,10 +20,8 @@
   "subtasks": [],
   "children": [],
   "parent": null,
-  "relatedFiles": [
-    "docs/production-request-performance-plan.md"
-  ],
-  "notes": "主文档：docs/production-request-performance-plan.md（E18）；优化设计：.trellis/tasks/10-21-production-request-performance/design.md。保持 planning。高优先：1Y/3M/2G、featured 快照、supabase timeout。",
+  "relatedFiles": ["docs/production-request-performance-plan.md"],
+  "notes": "主文档：docs/production-request-performance-plan.md（E18 + §1.1.1 E19）；优化设计：.trellis/tasks/10-21-production-request-performance/design.md（§8 为 E19 修订）。保持 planning。E19 结论：/api/characters/:id 的 p95=10s 为 Prisma 池等待超时常数（prisma:engine:connection sum≈77.4M ms，全站最大），排序聚合事务 p95≈120s 占共用池。E20（连接串到手）更正：pool_timeout=10 证实 10s 常数；但 49470 次连接获取中仅 7395 次(15%)超时且时间高度聚集，是部署后排序 job 长事务触发的雪崩，非稳态耗尽。实施顺序更正为：排序 job 移出共享池(DIRECT_URL) → P1-N-DETAIL → 池参数评估 → favorites → supabase 有界等待 → P1-L-N1 → 轮询合并 → 前端首屏。主验收指标为 span.duration:>9000 的 count(基线 7395)。E21：副本=3、max_connections=60 而实测 client backend 仅 15，后端余量充足——故「不调大 connection_limit」的理由更正为瓶颈在时间分布而非容量，池参数调整降级为观察项，待第 1、2 步复测后再定。仍不延长 pool_timeout。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -37,7 +35,40 @@
       "sampled_at": "2026-10-21",
       "window": "7d",
       "environment": "production",
-      "evidence_id": "E18"
+      "evidence_id": "E18",
+      "resampled_at": "2026-10-22",
+      "resample_evidence_id": "E19",
+      "ops_evidence_id": "E20",
+      "pool": {
+        "mode": "supavisor_transaction",
+        "port": 6543,
+        "pgbouncer": true,
+        "connection_limit": 10,
+        "pool_timeout_s": 10,
+        "source": "ops_provided_2026-10-22",
+        "note": "仅非秘密参数；connection_limit 为到 Supavisor 的客户端连接数，非 Postgres 后端连接数"
+      },
+      "deployment": {
+        "replicas": 3,
+        "source": "ops_provided_2026-10-22",
+        "theoretical_client_conns": 30
+      },
+      "db_capacity": {
+        "evidence_id": "E21",
+        "max_connections": 60,
+        "superuser_reserved_connections": 3,
+        "client_backends_observed": 15,
+        "postgrest_idle_conns": 8,
+        "postgres_version": "17.6.1",
+        "region": "ap-southeast-1",
+        "note": "后端余量充足，3x10=30 远低于 60。故不调大 connection_limit 的理由不是容量，而是瓶颈在时间分布（长事务+瞬时扇出）；池参数调整降级为观察项"
+      },
+      "baseline_metric": {
+        "query": "span.description:\"prisma:engine:connection\" span.duration:>9000",
+        "window": "7d",
+        "count": 7395,
+        "note": "主验收指标。总 prisma:engine:connection count 为 49470，其中仅约 15% 撞上 pool_timeout，呈时间聚集型雪崩"
+      }
     }
   }
 }
