@@ -72,11 +72,32 @@ function readPersistedCharacters(sort: LobbySort): GetCharactersData | undefined
   }
 }
 
+const pendingPersist = new Map<LobbySort, GetCharactersData>();
+let persistScheduled = false;
+
+function flushPersistedCharacters(): void {
+  persistScheduled = false;
+  for (const [sort, data] of pendingPersist) {
+    try {
+      window.localStorage.setItem(cacheKey(sort), JSON.stringify({ savedAt: Date.now(), data }));
+    } catch {
+      // 隐私模式或 quota 满时只使用 React Query 内存缓存。
+    }
+  }
+  pendingPersist.clear();
+}
+
+// 整表 stringify + 同步写 localStorage 是主线程长任务；放在响应回调里会和列表渲染、
+// tab 切换动画挤在同一帧（Sentry 里 Response.json.then 长帧 p50 约 190ms）。
+// 推迟到空闲帧，同一 sort 的多次响应只写最后一份。
 function persistCharacters(sort: LobbySort, data: GetCharactersData): void {
-  try {
-    window.localStorage.setItem(cacheKey(sort), JSON.stringify({ savedAt: Date.now(), data }));
-  } catch {
-    // 隐私模式或 quota 满时只使用 React Query 内存缓存。
+  pendingPersist.set(sort, data);
+  if (persistScheduled) return;
+  persistScheduled = true;
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(flushPersistedCharacters, { timeout: 3000 });
+  } else {
+    window.setTimeout(flushPersistedCharacters, 500);
   }
 }
 

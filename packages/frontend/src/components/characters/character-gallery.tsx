@@ -37,6 +37,13 @@ const LOBBY_TABS: ReadonlyArray<{ value: LobbySort; label: string }> = [
   { value: 'latest', label: '最新' },
 ];
 
+// 首帧只挂这么多张卡，其余在空闲帧分批补齐：每张卡带图片、收藏订阅和金框，
+// 一次挂几十张会让底部 tab 切回大厅时主线程被占满、转场掉帧。
+const INITIAL_RENDER_COUNT = 10;
+const RENDER_BATCH_SIZE = 10;
+// 返回大厅时锚点之后额外挂的卡数：两列约 4 行再留余量，其余交给空闲批次。
+const RESTORE_TAIL_COUNT = 12;
+
 const RESTORE_DEADLINE_MS = 1600;
 const NEIGHBOR_WINDOW = 4;
 
@@ -207,6 +214,42 @@ export function CharacterGallery() {
       .sort((a, b) => b.s - a.s)
       .map(({ c }) => c);
   }, [characters, query]);
+
+  const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_COUNT);
+  // 从详情返回靠锚点卡片还原滚动位置：锚点及其之前的卡必须已挂载，之后只需再多挂约一屏。
+  // 不能整表一次挂全：整页在 invisible 状态下同步挂几十上百张卡，返回时就是“闪一下再卡一下”。
+  // 该值只依赖挂载时持有的快照，恢复结束后不会回落，避免已显示的卡被卸载。
+  const restoreFloor = useMemo(() => {
+    if (!restoreSnapshot) return 0;
+    const candidateIds = [
+      restoreSnapshot.anchorCharacterId,
+      ...restoreSnapshot.neighborCharacterIds,
+    ];
+    for (const id of candidateIds) {
+      const index = filtered.findIndex((c) => c.id === id);
+      if (index >= 0) return index + RESTORE_TAIL_COUNT;
+    }
+    // 锚点和邻居都不在当前列表里（数据已变）：走 scrollY 兜底，需要足够高度，只能全量。
+    return filtered.length > 0 ? Number.POSITIVE_INFINITY : 0;
+  }, [filtered, restoreSnapshot]);
+  const effectiveLimit = Math.max(renderLimit, restoreFloor);
+  // 搜索时结果通常很少且用户在等结果，直接全量，不让命中的卡被分批延迟。
+  const renderAll = query.trim() !== '';
+  const visibleCharacters = useMemo(
+    () => (renderAll ? filtered : filtered.slice(0, effectiveLimit)),
+    [filtered, renderAll, effectiveLimit]
+  );
+
+  useEffect(() => {
+    if (renderAll || effectiveLimit >= filtered.length) return;
+    const grow = () => setRenderLimit((limit) => Math.max(limit, restoreFloor) + RENDER_BATCH_SIZE);
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(grow, { timeout: 300 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(grow, 80);
+    return () => window.clearTimeout(timer);
+  }, [effectiveLimit, filtered.length, renderAll, restoreFloor]);
 
   const finishRestore = useCallback(() => {
     clearLobbyReturnSnapshot();
@@ -481,7 +524,7 @@ export function CharacterGallery() {
             hiddenWhileRestoring
           )}
         >
-          {filtered.map((c, index) => (
+          {visibleCharacters.map((c, index) => (
             <CharacterCard
               key={c.id}
               character={c}
