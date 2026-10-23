@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { Clapperboard, RefreshCw } from 'lucide-react';
 import type { DramaSummary } from '@miniapp/shared';
@@ -9,6 +10,13 @@ import { characterRoomGradient } from '@/lib/utils/character-hue';
 import { useDramaListQuery, usePrefetchDramaPlayback } from '@/lib/api/drama';
 
 const TAG_DISPLAY_LIMIT = 3;
+
+/** 占位用：后端还没有排序/分类接口，这两组只做视觉切换，不影响实际列表数据 */
+const DRAMA_SORT_TABS = [
+  { value: 'recommended', label: '推荐' },
+  { value: 'latest', label: '最新' },
+] as const;
+const DRAMA_CATEGORIES = ['全部', '悬疑', '科幻', '古风', '恋爱', '喜剧', '治愈', '脑洞'] as const;
 
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -30,14 +38,66 @@ function dramaBadge(drama: DramaSummary): { position: 'left' | 'right'; text: st
 export default function DramasPage() {
   const { data, isLoading, isError, refetch } = useDramaListQuery();
   const dramas = data ?? [];
+  const [activeSort, setActiveSort] =
+    useState<(typeof DRAMA_SORT_TABS)[number]['value']>('recommended');
+  const [activeCategory, setActiveCategory] = useState<string>('全部');
 
   return (
     <main className="mx-auto min-h-dvh w-full max-w-screen-xl px-4 pb-8 pt-[calc(1.5rem+env(safe-area-inset-top))] text-foreground">
-      <header className="mb-4">
+      <header className="mb-3">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Dramas</p>
         <h1 className="mt-1 text-2xl font-bold">短剧</h1>
-        <p className="mt-1 text-sm text-muted-foreground">刷到喜欢的短剧，点开就能看。</p>
       </header>
+
+      <div role="tablist" aria-label="短剧排序" className="mb-2 flex items-center gap-2">
+        {DRAMA_SORT_TABS.map((tab) => {
+          const active = activeSort === tab.value;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveSort(tab.value)}
+              className={cn(
+                'rounded-full border px-4 py-1.5 text-[13px] transition-all',
+                active
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
+              )}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        role="tablist"
+        aria-label="短剧分类"
+        className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {DRAMA_CATEGORIES.map((category) => {
+          const active = activeCategory === category;
+          return (
+            <button
+              key={category}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveCategory(category)}
+              className={cn(
+                'shrink-0 rounded-full border px-3 py-1 text-[12px] transition-all',
+                active
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-border text-muted-foreground hover:bg-card hover:text-foreground'
+              )}
+            >
+              {category}
+            </button>
+          );
+        })}
+      </div>
 
       {isLoading ? <DramaGridSkeleton /> : null}
 
@@ -61,6 +121,9 @@ function DramaCard({ drama }: { drama: DramaSummary }) {
   const gradient = characterRoomGradient(drama.id);
   const badge = dramaBadge(drama);
   const tags = drama.tags.slice(0, TAG_DISPLAY_LIMIT);
+  // 封面加载失败就退回渐变占位，不影响卡片可用性
+  const [coverFailed, setCoverFailed] = useState(false);
+  const showCover = drama.cover_url !== null && !coverFailed;
 
   return (
     <Link
@@ -73,6 +136,16 @@ function DramaCard({ drama }: { drama: DramaSummary }) {
         className="relative aspect-[3/4] w-full shrink-0 overflow-hidden"
         style={{ background: gradient }}
       >
+        {showCover ? (
+          // eslint-disable-next-line @next/next/no-img-element -- 远程缩略图，走 next/image 要额外配置域名白名单，收益不大
+          <img
+            src={drama.cover_url!}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+            onError={() => setCoverFailed(true)}
+          />
+        ) : null}
         {badge ? (
           <span
             className={cn(

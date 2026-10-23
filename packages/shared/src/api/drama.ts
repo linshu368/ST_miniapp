@@ -13,15 +13,22 @@ export interface DramaSummary {
   /** 短剧名，库表 CHECK 保证非空 */
   title: string;
   /**
-   * 封面图。归档端补上预生成缩略图后才有值，
-   * 在此之前恒为 null，前端渲染占位。
+   * 封面图。取第一条可播视频的封面（cover_path 非空且 cover_upload 阶段已确认成功），
+   * drama-covers 是公开桶，这里直接是可访问的公开地址，不是签名链接。
+   * 封面还没归档完成时为 null，前端渲染占位。
    */
   cover_url: string | null;
   /**
    * 有效标签：原始标签优先，为空回退 AI 标签，都空为 []。
+   * 取第一条可播视频的标签代表整部剧，不跨集聚合。
    * 全量返回（实测 6-7 个），列表卡片由前端截断展示。
    */
   tags: string[];
+  /**
+   * 简介：取第一条可播视频的简介代表整部剧，不跨集聚合，也不随播放中的集数变化。
+   * 原始简介非空用原始，否则 AI 简介，都空则 ''。
+   */
+  description: string;
   /**
    * 可播放的集数，即 playable=true 的视频条数；0 表示暂无可用集数。
    * 与 DramaDetail.videos 的长度口径一致。
