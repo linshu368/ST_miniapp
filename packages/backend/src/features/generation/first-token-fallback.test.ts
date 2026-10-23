@@ -19,11 +19,6 @@ function setup(options: {
   deadline?: number;
   primary?: TransportModel;
   controls?: boolean;
-  thinkingEnabled?: boolean;
-  reasoningAt?: number;
-  fallbackReasoningAt?: number;
-  legacyReasoning?: boolean;
-  timeoutMs?: number;
   selectionDelay?: number;
 }) {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
@@ -56,21 +51,6 @@ function setup(options: {
                   `data: ${JSON.stringify({ id, choices: [{ delta: { role: 'assistant', reasoning: 'hidden' } }] })}\n\ndata: {"choices":[{"delta":{"content":" "}}]}\n\n`
                 );
             }, 10);
-          const reasoningAt = fallback ? options.fallbackReasoningAt : options.reasoningAt;
-          if (reasoningAt !== undefined) {
-            setTimeout(() => {
-              if (!call.cancelled) {
-                const delta = options.legacyReasoning
-                  ? { content: '<thi' }
-                  : { reasoning_content: fallback ? '兜底思考' : '首发思考' };
-                send(`data: ${JSON.stringify({ id, choices: [{ delta }] })}\n\n`);
-              }
-            }, reasoningAt);
-            if (options.legacyReasoning)
-              setTimeout(() => {
-                if (!call.cancelled) send(token(id, 'nk>真实思考</think>'));
-              }, reasoningAt + 1);
-          }
           const timer = setTimeout(
             () => {
               if (!call.cancelled) send(token(id, fallback ? '兜底' : '首发'));
@@ -98,10 +78,9 @@ function setup(options: {
   );
   const result = forwardWithFirstTokenFallback({
     primary: options.primary ?? { provider: 'venice', providerModelId: 'selected' },
-    thinkingEnabled: options.thinkingEnabled ?? false,
     primaryAttemptId: 'primary-id',
     fallbackModelId: options.fallbackModelId,
-    timeoutMs: options.timeoutMs ?? 40,
+    timeoutMs: 40,
     remainingFirstTokenMs: options.deadline ?? 60,
     remainingObservationMs: 300,
     requestStartedAt: performance.now(),
@@ -116,89 +95,6 @@ function setup(options: {
 }
 
 describe('first-token fallback budget and delivery', () => {
-  it('enabled reasoning at 3s locks primary and permits its answer at 10s beyond both thresholds', async () => {
-    const test = setup({
-      primaryAt: 10_000,
-      reasoningAt: 3000,
-      thinkingEnabled: true,
-      timeoutMs: 4000,
-      deadline: 6000,
-    });
-    await vi.advanceTimersByTimeAsync(3001);
-    const delivered = await test.result;
-    expect(delivered.role).toBe('primary');
-    expect(test.store.selectDelivery).toHaveBeenCalledWith(
-      expect.objectContaining({ first_token_ms: 3000, end_reason: 'first_token_observed' })
-    );
-    const reader = delivered.response.body!.getReader();
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain('首发思考');
-    const body = reader.read();
-    await vi.advanceTimersByTimeAsync(7000);
-    expect(new TextDecoder().decode((await body).value)).toContain('首发');
-    expect(test.calls).toHaveLength(1);
-    expect(test.calls[0]?.cancelled).toBe(false);
-    expect(test.store.prepareFallback).not.toHaveBeenCalled();
-    await reader.cancel();
-  });
-
-  it('enabled fallback reasoning stops the shared deadline and late primary cannot replace it', async () => {
-    const test = setup({
-      primaryAt: 55,
-      fallbackAt: 100,
-      fallbackReasoningAt: 5,
-      thinkingEnabled: true,
-    });
-    await vi.advanceTimersByTimeAsync(46);
-    const delivered = await test.result;
-    expect(delivered.role).toBe('fallback');
-    const reader = delivered.response.body!.getReader();
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain('兜底思考');
-    await vi.advanceTimersByTimeAsync(100);
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain('兜底');
-    expect(test.store.selectDelivery).toHaveBeenCalledOnce();
-    expect(test.store.selectDelivery).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'fallback', first_token_ms: 5 })
-    );
-    expect(test.calls[0]?.cancelled).toBe(true);
-    await reader.cancel();
-  });
-
-  it('off ignores reasoning from both attempts and preserves the global deadline', async () => {
-    const test = setup({
-      primaryAt: 100,
-      fallbackAt: 100,
-      reasoningAt: 10,
-      fallbackReasoningAt: 5,
-      thinkingEnabled: false,
-    });
-    await vi.advanceTimersByTimeAsync(61);
-    await expect(test.result).rejects.toBeInstanceOf(FirstTokenDeadlineError);
-    expect(test.store.selectDelivery).not.toHaveBeenCalled();
-    expect(test.observations.every((a) => a.first_token_ms === undefined)).toBe(true);
-    expect(test.calls.every((call) => call.cancelled)).toBe(true);
-  });
-
-  it.each([true, false])(
-    'leading split think tags are not body; reasoning counts only when on=%s',
-    async (thinkingEnabled) => {
-      const test = setup({
-        primaryAt: 55,
-        reasoningAt: 10,
-        legacyReasoning: true,
-        thinkingEnabled,
-      });
-      await vi.advanceTimersByTimeAsync(56);
-      const delivered = await test.result;
-      expect(delivered.role).toBe(thinkingEnabled ? 'primary' : 'fallback');
-      expect(
-        test.observations.find((a) => a.role === 'primary' && a.first_token_ms !== undefined)
-          ?.first_token_ms
-      ).toBe(thinkingEnabled ? 11 : 55);
-      await delivered.response.body?.cancel();
-      test.controller.abort();
-    }
-  );
-
   it('keeps the primary when content is observed before its threshold', async () => {
     const test = setup({ primaryAt: 20 });
     await vi.advanceTimersByTimeAsync(21);

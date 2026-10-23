@@ -45,8 +45,6 @@ export interface StreamTurnOptions {
   sessionId: string;
   /** 本次提交的 UUID，持久化后用于 start 前安全定位本请求。 */
   requestId?: string;
-  /** Captured when submitting; toggling later never changes an in-flight turn. */
-  thinkingEnabled?: boolean;
   /** 有值 = 发消息；省略 = 重生成（后端自行判定轮次，无入参） */
   content?: string;
   signal?: AbortSignal;
@@ -54,7 +52,6 @@ export interface StreamTurnOptions {
   onStart: (event: ConversationStreamStartEvent) => void;
   /** 已按帧攒批的增量文本，不是累积全文 */
   onDelta: (text: string) => void;
-  onReasoning?: (text: string) => void;
   onDone: (event: ConversationStreamDoneEvent) => void;
   onDispatched?: () => void;
   onFirstDeltaReceived?: () => void;
@@ -193,7 +190,6 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
     body: JSON.stringify({
       ...(content === undefined ? {} : { content }),
       ...(options.requestId ? { request_id: options.requestId } : {}),
-      thinking_enabled: options.thinkingEnabled ?? true,
     }),
     signal,
     cache: 'no-store',
@@ -211,7 +207,6 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   signal?.addEventListener('abort', stopReader, { once: true });
   const decoder = new TextDecoder('utf-8');
   const batcher = createDeltaBatcher(onDelta);
-  const reasoningBatcher = createDeltaBatcher((text) => options.onReasoning?.(text));
 
   let buffer = '';
   let finished = false;
@@ -222,29 +217,16 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
         onStart(event);
         return;
       case 'delta':
-        // Thinking and answer characters share the first-token contract; flush thinking first.
-        reasoningBatcher.flush();
-        if (typeof event.text === 'string') {
-          if (event.text.trim()) options.onFirstDeltaReceived?.();
-          batcher.push(event.text);
-        }
-        return;
-      case 'reasoning':
-        batcher.flush();
-        if (options.thinkingEnabled !== false && typeof event.text === 'string') {
-          if (event.text.trim()) options.onFirstDeltaReceived?.();
-          reasoningBatcher.push(event.text);
-        }
+        if (event.text.trim()) options.onFirstDeltaReceived?.();
+        batcher.push(event.text);
         return;
       case 'done':
         // 终态之前把攒着的增量放出去，否则最后一批会晚于 done 到达渲染层
-        reasoningBatcher.flush();
         batcher.flush();
         finished = true;
         onDone(event);
         return;
       case 'error':
-        reasoningBatcher.flush();
         batcher.flush();
         finished = true;
         throw new ConversationStreamError(event.message, response.status, event.code);
@@ -273,16 +255,14 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
           event = JSON.parse(payload) as ConversationStreamEvent;
         } catch {
           // 单帧解析失败不该毁掉整条流：漏一片增量远好于把已生成的内容全丢掉
-          log.warn('无法解析的 SSE 帧，已跳过');
+          log.warn('无法解析的 SSE 帧，已跳过', payload);
           continue;
         }
-        if (!isRecord(event)) continue;
         handle(event);
         if (finished) break;
       }
     }
   } finally {
-    reasoningBatcher.flush();
     batcher.flush();
     signal?.removeEventListener('abort', stopReader);
     reader.releaseLock();
@@ -338,11 +318,6 @@ export async function streamConversationTurn(options: StreamTurnOptions): Promis
           if (controller.signal.aborted) return;
           if (text) resetIdle();
           options.onDelta(text);
-        },
-        onReasoning: (text) => {
-          if (controller.signal.aborted) return;
-          if (text) resetIdle();
-          options.onReasoning?.(text);
         },
         onDone: (event) => {
           if (!controller.signal.aborted) options.onDone(event);

@@ -27,6 +27,15 @@ vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', 
     markServer = mocks.markServer;
   },
 }));
+vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
+  GenerationObservationRepository: class {
+    begin = vi.fn();
+    observe = vi.fn();
+    prepareFallback = vi.fn();
+    selectDelivery = vi.fn();
+    markServer = vi.fn().mockResolvedValue(undefined);
+  },
+}));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
   ConversationHistoryRepository: class {
     setPendingRequestId = mocks.pendingRequest;

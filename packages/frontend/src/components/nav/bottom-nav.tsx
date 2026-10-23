@@ -3,9 +3,12 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Home, Sparkles, User } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { useAfterFirstScreen } from '@/lib/after-first-screen';
+import { prefetchImagePlazaFeed } from '@/lib/api/image-plaza';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { useSupportUnreadQuery } from '@/lib/api/support';
 import { clearLobbyReturnSnapshot } from '@/lib/lobby-return';
@@ -33,6 +36,7 @@ const HIDDEN_PREFIXES = [
 export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const currentRoleplayPath = pathname === '/' || pathname === '/chats' ? pathname : null;
   const [roleplayHref, setRoleplayHref] = useState<'/' | '/chats'>('/');
 
@@ -44,8 +48,10 @@ export function BottomNav() {
     }
     setRoleplayHref(readRoleplayView());
   }, [currentRoleplayPath]);
-  const unread = useNotificationUnreadCountQuery();
-  const supportUnread = useSupportUnreadQuery();
+  // 红点不在首屏关键路径上；冷启动先让给首屏，之后照常轮询。/profile 页自己的读者不受影响。
+  const firstScreenDone = useAfterFirstScreen();
+  const unread = useNotificationUnreadCountQuery({ enabled: firstScreenDone });
+  const supportUnread = useSupportUnreadQuery({ enabled: firstScreenDone });
   // 「我的」页里公告和客服回复各有各的红点，导航上只汇总成一个。
   const hasUnread = (unread.data?.total ?? 0) > 0 || supportUnread.data?.has_unread === true;
 
@@ -75,6 +81,13 @@ export function BottomNav() {
     return () => window.clearTimeout(timer);
   }, [router]);
 
+  // 图片广场首页数据在首屏结束后预取：点进「创作」时直接有内容可画，而不是先骨架再等 feed。
+  // 导航栏随 (main) 布局常驻，这个 effect 每个会话只跑一次。
+  useEffect(() => {
+    if (!firstScreenDone) return;
+    void prefetchImagePlazaFeed(queryClient);
+  }, [firstScreenDone, queryClient]);
+
   if (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) {
     return null;
   }
@@ -86,9 +99,11 @@ export function BottomNav() {
       className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 sm:bottom-6"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
+      {/* 不用 backdrop-blur：导航悬浮在持续滚动、带流光动画的列表上方，模糊要每帧重采样背后内容，
+          弱机 WebView 上会占满合成线程（大厅卡片去模糊同理），点按响应也会被拖慢。 */}
       <nav
         aria-label="主导航"
-        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-3 gap-1 rounded-[1.65rem] border border-border bg-card/92 p-1.5 text-foreground shadow-[0_14px_38px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
+        className="pointer-events-auto grid w-full max-w-[390px] grid-cols-3 gap-1 rounded-[1.65rem] border border-border bg-card/[0.97] p-1.5 text-foreground shadow-[0_14px_38px_rgba(0,0,0,0.38)]"
       >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
           const targetHref = href === '/' ? (currentRoleplayPath ?? roleplayHref) : href;

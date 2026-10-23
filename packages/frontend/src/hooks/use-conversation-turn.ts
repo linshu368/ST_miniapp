@@ -46,11 +46,6 @@ import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getMetricDimensions } from '@/lib/perf/env-tags';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
-import {
-  appendMessageThinking,
-  messageThinkingKey,
-  type MessageThinkingMap,
-} from '@/lib/chat-thinking';
 
 import { FirstTokenObservation, type FirstTokenIdentity } from '@/lib/perf/first-token-observation';
 
@@ -86,7 +81,6 @@ interface UseConversationTurnOptions {
   sessionId: string | null;
   selectedModelId: string | null;
   selectedModelUsesFreeQuota?: boolean | null;
-  thinkingEnabled?: boolean;
   persistedMessages: ChatMessage[];
   returnTo: string;
   onSessionGone: () => void;
@@ -266,7 +260,6 @@ export function useConversationTurn({
   sessionId,
   selectedModelId,
   selectedModelUsesFreeQuota,
-  thinkingEnabled = true,
   persistedMessages,
   returnTo,
   onSessionGone,
@@ -281,11 +274,6 @@ export function useConversationTurn({
   const cancelTurn = cancelMutation.mutateAsync;
 
   const [streaming, setStreaming] = useState<StreamingTurn | null>(null);
-  const [thinkingState, setThinkingState] = useState<{
-    sessionId: string | null;
-    messages: MessageThinkingMap;
-  }>({ sessionId, messages: {} });
-  const thinkingByMessage = thinkingState.sessionId === sessionId ? thinkingState.messages : {};
   const [quotaRefreshing, setQuotaRefreshing] = useState(false);
   const [replyStalled, setReplyStalled] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -338,7 +326,6 @@ export function useConversationTurn({
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(null);
-    setThinkingState({ sessionId, messages: {} });
     setQuotaRefreshing(false);
     setStreamError(null);
     safelyRunTelemetry(() => getReplayLifecycle().setStreaming(false));
@@ -363,9 +350,8 @@ export function useConversationTurn({
   const serverBusy = persistedMessages.some((message) => message.status === 'streaming');
   const generating = streaming !== null || quotaRefreshing || serverBusy || cancelling;
   const lastMessage = messages.at(-1);
-  const lastThinking = lastMessage ? thinkingByMessage[messageThinkingKey(lastMessage)] : undefined;
   const replyProgressKey = streaming
-    ? `local:${streaming.assistantMessageId ?? 'waiting'}:${streaming.text.length}:${lastThinking?.length ?? 0}`
+    ? `local:${streaming.assistantMessageId ?? 'waiting'}:${streaming.text.length}`
     : serverBusy && lastMessage?.status === 'streaming'
       ? `server:${lastMessage.id}:${lastMessage.content.length}`
       : null;
@@ -650,20 +636,16 @@ export function useConversationTurn({
       if (sendAction) feedbackAfterPaint(sendAction);
 
       let assistantMessageId: string | null = null;
-      let assistantRevision = pendingRef.current.revision;
       let settledStatus: ChatMessageStatus | null = null;
 
       try {
         await streamConversationTurn({
           sessionId,
           requestId,
-          thinkingEnabled,
           content: input.content,
           signal: controller.signal,
           onDispatched: () => observation.dispatched(),
-          onFirstDeltaReceived: () => {
-            if (isCurrent()) observation.received();
-          },
+          onFirstDeltaReceived: () => observation.received(),
           onStart: (event) => {
             if (!isCurrent()) return;
             pendingRef.current = {
@@ -676,7 +658,6 @@ export function useConversationTurn({
             assistantMessageId = event.assistant_message_id;
             observation.identify(event.assistant_message_id, event.revision);
             if (!observation.timedOut) setFirstTokenObservation(observation.identity);
-            assistantRevision = event.revision;
             turnMeta.turnIndex = event.turn_index;
             turnMeta.revision = toTelemetryRevision(event.revision);
             captureTurnLifecycleEvent(sessionId, characterId, turnMeta, {
@@ -687,22 +668,6 @@ export function useConversationTurn({
           onDelta: (text) => {
             if (!isCurrent()) return;
             setStreaming((current) => (current ? appendStreamText(current, text) : current));
-          },
-          onReasoning: (text) => {
-            if (!isCurrent() || !thinkingEnabled || !assistantMessageId || !text) return;
-            const key = messageThinkingKey({
-              session_id: sessionId,
-              id: assistantMessageId,
-              revision: assistantRevision,
-            });
-            setThinkingState((current) => ({
-              sessionId,
-              messages: appendMessageThinking(
-                current.sessionId === sessionId ? current.messages : {},
-                key,
-                text
-              ),
-            }));
           },
           onDone: (event) => {
             if (!isCurrent()) return;
@@ -770,7 +735,6 @@ export function useConversationTurn({
       queryClient,
       refreshQuotaAndBalance,
       selectedModelId,
-      thinkingEnabled,
       serverBusy,
       quotaRefreshing,
       sessionId,
@@ -1001,6 +965,5 @@ export function useConversationTurn({
     setStreamError,
     streamError,
     streaming,
-    thinkingByMessage,
   };
 }

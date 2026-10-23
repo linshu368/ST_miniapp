@@ -1,6 +1,6 @@
 # 首 token 兜底与人工观察
 
-本期为自研会话的发送、重新生成增加可配置的单一兜底及体验数据。尚未执行远端迁移、上线或导入正式 Grafana；没有 AI 判断、定时调参、惩罚公式或自动改配置。
+本期为自研会话的发送、重新生成增加可配置的单一兜底及体验数据。应用与两份基础迁移已完成生产发布；Grafana按下述只读迁移与独立看板接入。没有 AI 判断、定时调参、惩罚公式或自动改配置。
 
 ## 运行规则
 
@@ -17,17 +17,17 @@
 
 旧目录缺少字段时也使用上述默认值；新增型号默认 4000ms。等待必须为正整数毫秒且小于全局上限。正常的草稿、发布、恢复链路保留这些值。当前不会随数据自动调整。
 
-首发实际派发后开始计该型号等待；超过等待仍未出现有效首字才启动一次兜底。开启深度思考时，真实非空思考文本与正文首字具有同等效力；关闭时只算正文。role、空白、加密思考占位和HTTP headers不算可显示token。启动后不再切回首发；首发迟到的内容只供观察，绝不混入回复。首发本身就是所配兜底型号时不再重复调用。上游提前报错沿用已有错误流程，本期不另加错误重试。
+首发实际派发后开始计该型号等待；超过等待仍未出现非空内容 token 才启动一次兜底。只有 role、reasoning、空白、HTTP headers 不算可显示 token。启动后不再切回首发；首发迟到的内容只供观察，绝不混入回复。首发本身就是所配兜底型号时不再重复调用。上游提前报错沿用已有错误流程，本期不另加错误重试。
 
-全局预算包含前置准备、首发等待、兜底准备、兜底首 token、传输和页面显示，不因切换重置。后端从路由入口计预算，前端从提交动作以同一个 `performance.now()` 计到实际正文或已开启的思考文本DOM有可见文字并获得绘制机会。达到上限仍没有显示则提示“这次响应有点慢，请重试。”，并走已有服务端确认取消流程。首次显示后，这个预算不再限制整条回复；原有整轮生命周期保护继续工作。
+全局预算包含前置准备、首发等待、兜底准备、兜底首 token、传输和页面显示，不因切换重置。后端从路由入口计预算，前端从提交动作以同一个 `performance.now()` 计到实际正文 DOM 有可见文字并获得绘制机会。达到上限仍没有显示则提示“这次响应有点慢，请重试。”，并走已有服务端确认取消流程。首次显示后，这个预算不再限制整条回复；原有整轮生命周期保护继续工作。
 
-客户端观测方法为 `visible_dom_after_frame_v1`：正文或思考文本节点、可见非空白文字、视口/滚动裁剪、两次 animation frame。它是浏览器能提供的显示近似，不是物理屏幕像素确认。隐藏页不记“已显示”，记录是否进入后台。浏览器冻结时无法保证客户端代码恰在第 6 秒运行，后端预算仍独立生效。
+客户端观测方法为 `visible_dom_after_frame_v1`：正文节点、可见非空白文字、视口/滚动裁剪、两次 animation frame。它是浏览器能提供的显示近似，不是物理屏幕像素确认。隐藏页不记“已显示”，记录是否进入后台。浏览器冻结时无法保证客户端代码恰在第 6 秒运行，后端预算仍独立生效。
 
 ## 原价、权益与观察
 
 一轮只有一个 chat history revision、一个 charge ID、一次免费额度预留及同一结算链。原型号报价、VIP、钱包政策和免费权益冻结；交付兜底只改变实际 provider/model 路由。账单展示仍为用户所选型号。旧 OpenRouter/Venice 明细表只绑定实际交付的尝试，观察首发不参与扣费同步。
 
-切换后的首发可以继续观察到它真正的首个有效正文/思考token，随后立即停止；不生成完整观察回复。观察最多到原请求 110 秒保护边界。若全局首 token 超时或用户明确取消，停止两边。进程消失或没有拿到真实 token 时记录删失/未知，不能把等待阈值当成其实际首 token 耗时。
+切换后的首发可以继续观察到它真正的首个内容 token，随后立即停止；不生成完整观察回复。观察最多到原请求 110 秒保护边界。若全局首 token 超时或用户明确取消，停止两边。进程消失或没有拿到真实 token 时记录删失/未知，不能把等待阈值当成其实际首 token 耗时。
 
 服务端可能已完成回复，而浏览器因后台、主线程或网络尚未显示。此时保留“客户端超时”和已经发生的服务端终态，取消不会改写已完成的回复；本期没有基于客户端回报退款。客户端时间是体验分析依据，不能作为可伪造的扣费授权信号。
 
@@ -35,15 +35,15 @@
 
 `experience.chat_generation_requests` 一行一轮 revision，记录所选型号/路由、目录版本、当轮兜底型号及阈值/上限/目标快照、兜底触发、最终交付身份、服务端首 token 写出时长和客户端结果。开轮后、读取 prompt 之前就建行，准备阶段失败也保留；余额/VIP 拒绝标记 `billing_rejected` 并从有效生成报表分母排除。开轮前鉴权、归属、配置失败及离线请求无法归属到这个 per-model 表，不应把此报表冒称为全部客户端点击覆盖。
 
-`experience.chat_generation_attempts` 每轮最多首发、兜底两条，记录准备身份、实际派发时间/相对入口偏移、headers、首 chunk、首个有效正文/思考token、观察截止、HTTP 状态、结束原因、generation ID 和供应商 metadata。明细不包含 prompt、回复正文、key 或 Telegram initData。
+`experience.chat_generation_attempts` 每轮最多首发、兜底两条，记录准备身份、实际派发时间/相对入口偏移、headers、首 chunk、首内容 token、观察截止、HTTP 状态、结束原因、generation ID 和供应商 metadata。明细不包含 prompt、回复正文、key 或 Telegram initData。
 
 所有业务耗时和 OpenRouter latency 统一以毫秒存储，但含义不替换：
 
 - **用户总首 token**：提交 → 文字 DOM 可见并获得绘制机会。只取客户端真实报告；缺报、未显示均为 NULL。
 - **首发等待**：真实首发派发 → 触发兜底；未切换则为真实首 token。
 - **兜底准备延迟**：触发兜底 → 兜底真正派发，包含持久化和路由准备。
-- **尝试首 token**：各自网络派发 → 后端实际观察到有效正文/思考token，在等待 generation ID 入库之前测量。
-- **服务端写出**：后端路由入口 → 首个有效正文/思考delta 交给 SSE sink，不代表客户端已显示。
+- **尝试首 token**：各自网络派发 → 后端实际观察到内容 token，在等待 generation ID 入库之前测量。
+- **服务端写出**：后端路由入口 → 首个内容 delta 交给 SSE sink，不代表客户端已显示。
 - **client/server residual**：用户总耗时减服务端写出时长，包含客户端提交前段、进出网络和显示等；不能全部归因于网络。
 - **provider latency**：OpenRouter `/generation` 上游自报毫秒，可能按 reasoning-first 定义，scope 单独保留。缺失不补零，不用业务时间冒充供应商值。Venice 当前业务测得的 latency 不冒充其供应商自报。
 
@@ -81,7 +81,7 @@ ORDER BY request_received_at, chat_history_id;
 ## 数据库、Grafana 与上线顺序
 
 1. 先审查、手动应用 `packages/shared/migrations/20261023_chat_first_token_fallback.sql` 到 TEST，按照仓库 migration ledger 流程记录。它添加事实表/RPC、analytics view/report 及模型配置校验；不删历史列、不回填业务数据。随后单独应用 `20261023_chat_first_token_fallback_config.sql`，使 begin/prepare RPC 与分析报表支持受理时冻结的可配置兜底型号；保持既有函数签名、权限与数据。
-2. 新增表及 RPC 默认只允许 service_role，经后端 API 写入；客户端角色没有直写权限。Grafana 用单独只读角色；可审查 `scripts/sql/grant-first-token-metrics-reader.sql`，再把已确认的 Grafana 登录角色加入该 NOLOGIN 角色。不能用 service_role key 给 Grafana。不要猜当前 datasource 的 DB role。
+2. 新增表及 RPC 默认只允许 service_role，经后端 API 写入；客户端角色没有直写权限。Grafana 用单独只读角色；通过正式 workflow 先TEST后production执行 `20261023_grafana_first_token_reader.sql`。它为既有 `grafana_cloud` 角色授予可继承的 NOLOGIN reader 会员关系，拒绝异常角色属性或既有正文权限。仅能读事实、报表和父表id/status/llm_finish_reason，不能读对话正文或写报告。旧手工脚本仅保留参考，线上使用版本化迁移；不能用 service_role key 给 Grafana。
 3. 通过 TEST Backend 验证新 RPC 可被 PostgREST 正确发现，发布后端；再发布前端、Admin。两份迁移与新后端部署完成前，不发布非默认兜底型号。旧前端不会上报显示数据，会如实记 missing；新前端需要新接口。数据库迁移必须先于新后端。
 4. 导入 `docs/grafana/chat-first-token.json`，选择 TEST PostgreSQL datasource，选择一个型号，核对窗界、单位、150 门槛和覆盖率。没有改线上现有 dashboard。
 5. TEST 验收真实 OpenRouter/Venice、Telegram WebView、网络慢/后台/取消和一次扣费，再单独批准生产迁移、配置发布和应用上线。本地 mock 不证明固定 fallback 型号在真实账号上的可用性。
@@ -90,4 +90,13 @@ ORDER BY request_received_at, chat_history_id;
 
 本地回归：`bash scripts/test-first-token-fallback-local.sh` 使用一次性 PG17 容器、实际新迁移和既有钱包/VIP/额度 SQL，并自动清理；不读取应用 env，不连远端，也不调用付费模型。
 
-2026-10-23深度思考接入：新UI默认显式开启，旧未携带thinking_enabled的HTTP请求保留关闭/正文首字路径，兼容未更新的常驻页面。思考满足首字不等于完成交付，计费仍只按有效正文判定。发布前后首字指标口径有变化，历史对比应以本次发布时间分段。
+## 直接查看业务看板
+
+新增看板“05｜用户首 token 与兜底体验”，绑定现有生产PostgreSQL数据源 `ST TelegramBot Supabase`（uid `fg1oltvmm56v4b`），不改其密码或旧看板。默认北京时间过去24小时，5分钟刷新，可选全部或部分型号。总览只列该时间内有有效请求的型号。
+
+- 用户总首token=P50/P90/P95的客户端实际显示时间，单位秒，包含首发等待与兜底全过程；只取前台observed样本，不筛整条回复成功，也不用后端/供应商数值补齐。
+- 兜底触发率=触发兜底请求/全部有效请求，触发后失败也计入；已看到样本中兜底占比另列，分母为前台已看到样本。
+- 前台已知结果超时率=前台timed_out/(前台observed+timed_out)。缺报、后台和其他未观测不算成功，同时显示回报覆盖率、可判定占比和样本数；没有该项样本显示“—”，不补0。
+- 下方人工对照保留同型号各配置版本/等待参数组；不平均各组百分比或P90，不进行自动调整。
+
+应用迁移后，以真实Grafana数据源执行所有面板并检查浏览器显示。撤销新读取权限可执行受审核的 `REVOKE first_token_metrics_reader FROM grafana_cloud`；保留事实数据和旧看板。

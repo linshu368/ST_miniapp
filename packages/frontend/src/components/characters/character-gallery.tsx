@@ -15,6 +15,7 @@ import {
   useLobbyLatestBadgeQuery,
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
+import { useAfterFirstScreen } from '@/lib/after-first-screen';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { useFavoriteIdsQuery } from '@/lib/api/favorites';
 import { useConversationsQuery } from '@/lib/api/conversations';
@@ -38,12 +39,22 @@ import { CharacterDetailSheet } from './character-detail-sheet';
 import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
 import { RecentConversationCard } from '@/components/roleplay/recent-conversation-card';
 
-const FIRST_SCREEN_IMAGE_COUNT = 8;
+// 移动端两列首屏实际可见约 4–6 张；高优先级给多了会和 LCP 图抢带宽。
+const FIRST_SCREEN_IMAGE_COUNT = 6;
 
 const LOBBY_TABS: ReadonlyArray<{ value: LobbySort; label: string }> = [
   { value: 'recommended', label: '推荐' },
   { value: 'latest', label: '最新' },
 ];
+
+// 首帧只挂这么多张卡，其余滚动到接近底部时再分批补齐：每张卡带图片、收藏订阅和金框，
+// 一次挂几十张会让底部 tab 切回大厅时主线程被占满、转场掉帧。
+const INITIAL_RENDER_COUNT = 10;
+const RENDER_BATCH_SIZE = 10;
+// 哨兵提前多远触发下一批；留足一屏以上，用户正常滚动时不会看到空白。
+const RENDER_MORE_ROOT_MARGIN = '400px';
+// 返回大厅时锚点之后额外挂的卡数：两列约 4 行再留余量，其余随滚动补齐。
+const RESTORE_TAIL_COUNT = 12;
 
 const RESTORE_DEADLINE_MS = 1600;
 const NEIGHBOR_WINDOW = 4;
@@ -138,7 +149,9 @@ export function CharacterGallery() {
   const restoredAnchorIdRef = useRef<string | null>(null);
   const restoreCalibrationUsedRef = useRef(false);
 
-  const latestBadge = useLobbyLatestBadgeQuery();
+  // New 角标不在首屏关键路径上，冷启动时让给列表与首屏图片。
+  const firstScreenDone = useAfterFirstScreen();
+  const latestBadge = useLobbyLatestBadgeQuery({ enabled: firstScreenDone });
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
   const markedLatestRef = useRef(false);
   // 点「最新」当场收起，不等标记已看的请求回来；点推荐、搜索、卡片都不影响。
@@ -157,6 +170,28 @@ export function CharacterGallery() {
   }, [previewId, router]);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
+
+  // 弹层用列表里已有的摘要即时打开，详情接口只补开场白。
+  const previewSummary = useMemo(
+    () => (previewId ? characters.find((c) => c.id === previewId) : undefined),
+    [characters, previewId]
+  );
+
+  // 引用必须稳定，CharacterCard 的 memo 才有意义：打开弹层不再重渲染整页卡片。
+  const handleSelectCharacter = useCallback(
+    (id: string) => {
+      if (!enteringId) setPreviewId(id);
+    },
+    [enteringId]
+  );
+
+  // 弹层盖住大厅期间暂停底下所有金框流光（弹层自己的金框不受影响，见 globals.css）。
+  useEffect(() => {
+    if (!previewId) return;
+    const root = document.documentElement;
+    root.classList.add('featured-paused');
+    return () => root.classList.remove('featured-paused');
+  }, [previewId]);
   const firstScreenCharacters = useMemo(
     () => characters.slice(0, FIRST_SCREEN_IMAGE_COUNT),
     [characters]
@@ -229,6 +264,56 @@ export function CharacterGallery() {
     generalScrollRestored.current = true;
     restoreRoleplayScroll('/');
   }, [data, restoreSnapshot, favoritesOnly, favoriteIds.isPending]);
+
+  const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_COUNT);
+  // 从详情返回靠锚点卡片还原滚动位置：锚点及其之前的卡必须已挂载，之后只需再多挂约一屏。
+  // 不能整表一次挂全：整页在 invisible 状态下同步挂几十上百张卡，返回时就是“闪一下再卡一下”。
+  // 该值只依赖挂载时持有的快照，恢复结束后不会回落，避免已显示的卡被卸载。
+  const restoreFloor = useMemo(() => {
+    if (!restoreSnapshot) return 0;
+    const candidateIds = [
+      restoreSnapshot.anchorCharacterId,
+      ...restoreSnapshot.neighborCharacterIds,
+    ];
+    for (const id of candidateIds) {
+      const index = filtered.findIndex((c) => c.id === id);
+      if (index >= 0) return index + RESTORE_TAIL_COUNT;
+    }
+    // 锚点和邻居都不在当前列表里（数据已变）：走 scrollY 兜底，需要足够高度，只能全量。
+    return filtered.length > 0 ? Number.POSITIVE_INFINITY : 0;
+  }, [filtered, restoreSnapshot]);
+  const effectiveLimit = Math.max(renderLimit, restoreFloor);
+  // 搜索时结果通常很少且用户在等结果，直接全量，不让命中的卡被分批延迟。
+  const renderAll = query.trim() !== '';
+  const visibleCharacters = useMemo(
+    () => (renderAll ? filtered : filtered.slice(0, effectiveLimit)),
+    [filtered, renderAll, effectiveLimit]
+  );
+
+  // 按滚动位置补齐，而不是在空闲帧定时补：定时补会在路由 transition 渲染让出主线程的间隙里
+  // 触发默认优先级的 setState，同步挂一批卡并打断导航，表现为底部 tab 高亮已变但页面不跳转。
+  // 哨兵只在用户接近列表底部时才触发；每批挂完 effectiveLimit 变化会重建观察器，
+  // 哨兵仍在范围内就继续补，直到它被推到范围之外。
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const hasMoreToRender = !renderAll && effectiveLimit < filtered.length;
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!hasMoreToRender || !node) return;
+    const grow = () => setRenderLimit((limit) => Math.max(limit, restoreFloor) + RENDER_BATCH_SIZE);
+    if (typeof IntersectionObserver === 'undefined') {
+      // 极老的 WebView 没有观察器：退回一次性全量，保证列表完整。
+      setRenderLimit(Number.POSITIVE_INFINITY);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) grow();
+      },
+      { rootMargin: RENDER_MORE_ROOT_MARGIN }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMoreToRender, effectiveLimit, restoreFloor]);
 
   const finishRestore = useCallback(() => {
     clearLobbyReturnSnapshot();
@@ -545,23 +630,26 @@ export function CharacterGallery() {
             hiddenWhileRestoring
           )}
         >
-          {filtered.map((c, index) => (
+          {visibleCharacters.map((c, index) => (
             <CharacterCard
               key={c.id}
               character={c}
               experienced={experiencedIds.has(c.id)}
               priority={index < FIRST_SCREEN_IMAGE_COUNT}
               onImageSettled={handleImageSettled}
-              onSelect={() => {
-                if (!enteringId) setPreviewId(c.id);
-              }}
+              onSelect={handleSelectCharacter}
             />
           ))}
         </div>
       )}
+      {/* 渲染哨兵放在网格外：恢复滚动期间网格带 invisible，哨兵不受影响。 */}
+      {hasMoreToRender ? (
+        <div ref={loadMoreRef} aria-hidden="true" className="h-px w-full" />
+      ) : null}
 
       <CharacterDetailSheet
         characterId={previewId}
+        summary={previewSummary}
         entering={enteringId !== null}
         onClose={() => {
           if (enteringId) {

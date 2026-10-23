@@ -133,3 +133,13 @@ request FK一对多、UUID主键、UNIQUE(request,role)限制至多primary/fallb
 每轮冻结 fallbackModelId，helper不再使用写死型号；同型号不重复调用。既有 experience 请求表已有 fallback_model_id；后续迁移原位替换 admin validator、experience begin/prepare，begin写冻结值，prepare读本轮记录；函数签名、权限、终态锁与单次结算不变。miniapp_analytics facts末尾增加该字段，report同型号按其分组。所有对象保留原业务归属/权威方/生命周期，不新增表或索引。
 
 可靠性复用现有超时、CAS/锁、发布审计与错误反馈；不增加重试/队列。迁移仅本地隔离验证，先TEST迁移再应用，应用部署前不能发布新型号。回滚先发布旧默认型号再回退应用，保留事实数据。验证仅扩展既有契约/路由/SQL/导航测试，执行受影响测试、跨包typecheck、Admin构建及界面检查。
+
+## 追加设计：接通生产 Grafana
+
+本轮用户已明确授权读取授权与新看板发布，扩展原离线交付范围。复用现有facts/report、只读脚本和生产数据源 `fg1oltvmm56v4b`，新增独立看板，不改旧看板或数据源凭据。生产已核实PG17.6，数据源DB角色grafana_cloud为非superuser/非bypassrls，当前无chat_history任何列读取权限。
+
+将原reader脚本通过唯一shared migration来源前向版本化，使用正式workflow先TEST后production。NOLOGIN reader仅能读取新事实、报表和父表id/status/llm_finish_reason；不能读正文或写报告。角色属性和既有敏感列权限漂移时停止；若grafana_cloud存在，显式授予可继承但不能SET ROLE/转授权的会员关系。RLS只增加reader的SELECT策略，不改现有策略或启停状态；不增加表/view/function、数据回填、cron或依赖。
+
+看板以全部型号总览和四张业务趋势为主，秒/%明确，缺报/前后台和可判定占比同屏。兜底触发含触发后失败；实际看到兜底的占比另注明分母。总耗时从提交到用户首token显示，只有observed前台样本可计算分位，不能用首发p90加兜底p90合成，也不筛整条回复成功。
+
+锁5秒/语句60秒预算、事务内幂等授权；失败回滚，不重置密码，不扩grant到anon/authenticated。恢复只需REVOKE reader FROM grafana_cloud并移除新看板，保留新增事实与旧看板。验证在隔离PG17实际SET ROLE读取、正文/写入拒绝、迁移重复执行、所有看板SQL；正式库采集ACL后用真实Grafana数据源执行并浏览器检查显示，不将空数据视为0。

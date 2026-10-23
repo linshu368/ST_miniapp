@@ -15,8 +15,11 @@ export {
   type StartChatReplayInput,
 } from './lifecycle';
 
-export async function initReplayTelemetry(telegramUserId: number | undefined): Promise<void> {
+export async function initReplayTelemetry(
+  telegramUserId: number | undefined,
+  beforeLoad?: () => Promise<void>
+): Promise<void> {
   if (telegramUserId === undefined) return;
-  await getPostHogAdapter().init(String(telegramUserId));
+  await getPostHogAdapter().init(String(telegramUserId), beforeLoad);
   getReplayLifecycle().refreshTelemetryReady();
 }

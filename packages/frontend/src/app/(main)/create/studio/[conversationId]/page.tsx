@@ -909,6 +909,9 @@ function attemptFailureMessage(errorCode: string): string {
   ) {
     return '图片生成服务尚未配置，请稍后再试';
   }
+  if (errorCode === 'image_plaza_provider_content_rejected') {
+    return '图片服务未完成本次生成，请修改描述后重试（勿粘贴 LoRA 等扩展标签）';
+  }
   if (errorCode.startsWith('image_plaza_provider_http_')) {
     return '图片服务暂未接受本次生成，请调整后重试';
   }

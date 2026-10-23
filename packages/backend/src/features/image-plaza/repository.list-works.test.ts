@@ -67,6 +67,7 @@ vi.mock('./storage.js', () => ({
   deletePlazaImage: vi.fn(),
   downloadPlazaImage: vi.fn(),
   signPlazaImagePath: vi.fn(async () => 'https://example.com/image.png'),
+  signSharedWorkImagePath: vi.fn(async () => 'https://example.com/image.png'),
   uploadPlazaImage: vi.fn(),
 }));
 

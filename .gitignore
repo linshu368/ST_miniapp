@@ -38,7 +38,7 @@ legacy/st-removed/vendor/sillytavern/public/scripts/extensions/third-party/minia
 # 本地接收的单机 ST 同步包；已适配后的资产进入 ops/ 与 sync-engine。
 SillyTavern-sync-package/
 
-
+mcp.json
 
 
 kk标签测试/

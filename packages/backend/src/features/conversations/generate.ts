@@ -77,7 +77,6 @@ export interface RunConversationTurnInput {
   firstTokenDeadlineMs?: number;
   /** Caller correlation, persisted for safe pre-start cancellation matching. */
   requestId?: string;
-  thinkingEnabled?: boolean;
 }
 
 let historyRepository: ConversationHistoryRepository | null = null;
@@ -124,8 +123,6 @@ export async function runConversationTurn(
   input: RunConversationTurnInput
 ): Promise<ConversationTurnOutcome> {
   const { session, mode, sink, log } = input;
-  // Old clients cannot display reasoning or cancel their legacy first-answer timer.
-  const thinkingEnabled = input.thinkingEnabled ?? false;
   const userId = session.user_id;
   const turnStartedAt = input.receivedAt ?? Date.now();
   const requestStartedAt =
@@ -252,7 +249,11 @@ export async function runConversationTurn(
     observationBegun = true;
     controller.signal.throwIfAborted();
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    const context = await historyRecords().getContextBeforeTurn(session.id, turn.turnIndex);
+    const context = await historyRecords().getContextBeforeTurn(
+      session.id,
+      turn.turnIndex,
+      turn.contextWindowStartTurn
+    );
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
 
     const prompt = buildPrompt({
@@ -276,7 +277,6 @@ export async function runConversationTurn(
         user_message_id: mode.kind === 'send' ? `${turn.historyId}:user` : null,
         assistant_message_id: turn.historyId,
         revision: turn.revision,
-        thinking_enabled: thinkingEnabled,
         postprocess_version: turn.postprocessVersion,
       });
     };
@@ -326,26 +326,9 @@ export async function runConversationTurn(
           selectDelivery: (attempt) => observations.selectDelivery(turn.historyId, attempt),
         },
       },
-      thinkingEnabled,
       signal: controller.signal,
       // Anthropic prompt cache 的 cache_control 断点，配合双水位线泄洪制造稳定前缀
       promptCaching: true,
-    };
-
-    const emitVisibleDelta = (type: 'delta' | 'reasoning', text: string): void => {
-      if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs)
-        controller.abort(new FirstTokenDeadlineError());
-      controller.signal.throwIfAborted();
-      sink.send({ type, text });
-      if (!emitted && text.trim()) {
-        emitted = true;
-        clearTimeout(firstTokenTimer);
-        void observations
-          .markServer(turn.historyId, {
-            first_token_emitted_ms: performance.now() - requestStartedAt,
-          })
-          .catch(observationError);
-      }
     };
 
     const result = await execute(
@@ -387,9 +370,20 @@ export async function runConversationTurn(
           return normalizePersistedOutcome(observed, row.status, row.llm_finish_reason);
         },
         onStreamOpen: emitStart,
-        onDelta: (text) => emitVisibleDelta('delta', text),
-        onReasoningDelta: (text) => {
-          if (thinkingEnabled) emitVisibleDelta('reasoning', text);
+        onDelta: (text) => {
+          if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs)
+            controller.abort(new FirstTokenDeadlineError());
+          controller.signal.throwIfAborted();
+          sink.send({ type: 'delta', text });
+          if (!emitted && text.trim()) {
+            emitted = true;
+            clearTimeout(firstTokenTimer);
+            void observations
+              .markServer(turn.historyId, {
+                first_token_emitted_ms: performance.now() - requestStartedAt,
+              })
+              .catch(observationError);
+          }
         },
       },
       log
@@ -578,6 +572,8 @@ interface StartedTurn {
   historyId: string;
   revision: number;
   userInput: string;
+  /** 开轮 RPC 在同一事务里算出的窗口起点，组上下文时直接用，不再回读会话 */
+  contextWindowStartTurn: number;
   postprocessVersion: number;
   slotModes: InstructionSlotModes;
 }
@@ -604,6 +600,7 @@ async function startTurn(
       historyId: started.historyId,
       revision: started.revision,
       userInput: started.userContent,
+      contextWindowStartTurn: started.contextWindowStartTurn,
       postprocessVersion: started.postprocessVersion,
       slotModes: started.slotModes,
     };
@@ -621,6 +618,7 @@ async function startTurn(
     historyId: started.historyId,
     revision: started.revision,
     userInput: started.userContent,
+    contextWindowStartTurn: started.contextWindowStartTurn,
     postprocessVersion: started.postprocessVersion,
     slotModes: started.slotModes,
   };

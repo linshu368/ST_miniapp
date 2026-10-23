@@ -683,10 +683,12 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 
 主表DROP文件在两库未执行，T10修正原过宽账务守卫：以schema账本checksum+applied_at定义引入快照前历史，明确终态账单/持久dedup/失败未扣/旧pending分类。旧pending保留账单和专表ID、不伪造已结算；未知成功记录、新契约漏快照、身份/状态冲突、旧字段关联reserved继续停止。健康专表调用不因清理要求中断。账务跨域仅只读；历史归档表、后台补扣worker与通用搬运层均未新增。
 
-### 首 token 兜底与业务体验数据（2026-10-23，本地实现）
+### 首 token 兜底与业务体验数据（2026-10-23）
 
-自研 send/regenerate 仍统一进入 generation/execute：冻结原型号计费/权益、预留同一个 charge ID，然后在内部等待首发内容 token；型号等待默认 4 秒，超时只派发一次运营配置的 OpenRouter 兜底型号（默认 DeepSeek V4.1 Flash）。进入兜底后首发只作有界观察，不得重回交付或进入旧 provider 账务同步。交付选择 RPC 与 provider 身份绑定、实际路由快照更新在同一事务内，原报价字段不变。
+自研 send/regenerate 仍统一进入 generation/execute：冻结原型号计费/权益、预留同一个 charge ID，然后在内部等待首发内容 token；型号等待默认 4 秒，超时只派发一次运营配置的 OpenRouter 兜底型号（默认 DeepSeek V4.1 Flash 1017，思考沿用型号默认）。进入兜底后首发只作有界观察，不得重回交付或进入旧 provider 账务同步。交付选择 RPC 与 provider 身份绑定、实际路由快照更新在同一事务内，原报价字段不变。
 
 `experience.chat_generation_requests/attempts` 拥有 revision/尝试事实，`miniapp_analytics.chat_first_token_facts/report` 仅派生投影。前端通过独立的真实可见正文 DOM 接缝报告用户总首 token；供应商 latency 和后端分段另外存。前后端共用目录中的全局上限（初始 6 秒），兜底不重置预算；超时率目标初始 1%，只供人工观察。原有整轮生命周期保护不变。
 
-Admin 在“运营配置 → 兜底配置”集中编辑兜底型号、每型号等待与全局上限/目标，复用模型目录的同一草稿/发布/恢复通路。每轮冻结兜底型号，prepare RPC 从请求快照读取，分析事实与报表保留该型号；不新增配置key或secret。新增迁移须先于后端部署，客户端只能经鉴权和精确身份校验 API 回报；Grafana 使用受限只读角色及离线导入文件。本期无 AI、自动调参或定时任务，TEST/生产迁移及真机验收均未执行。详见 [首 token 运行说明](first-token-fallback.md)。
+Admin 在“运营配置 → 兜底配置”集中编辑兜底型号、每型号等待与全局上限/目标，复用模型目录的同一草稿/发布/恢复通路。每轮冻结兜底型号，prepare RPC 从请求快照读取，分析事实与报表保留该型号；不新增配置key或secret。客户端只能经鉴权和精确身份校验 API 回报。应用与两份基础迁移已通过 #461 生产发布，Telegram 真机验收尚未完成。
+
+Grafana 通过 `20261023_grafana_first_token_reader.sql` 正式迁移为既有登录角色授予 NOLOGIN reader 会员关系，只读新事实/报表及父表三列，正文与写权限不开放；先 TEST 后 production。独立业务看板默认最近24h、全部有请求型号，主图只使用客户端实际显示总首token秒数、兜底触发率、前台已知结果超时率，并同时展示样本与覆盖率。供应商/后端耗时保留在原始事实中供排障，不进入该业务看板。本期无 AI、自动调参或定时任务。详见 [首 token 运行说明](first-token-fallback.md)。

@@ -1,4 +1,5 @@
 # Implementation
+
 1. 研究官方接口、映射仓库现有链路，确认最小无迁移方案。
 2. Shared先加可选开关与思考SSE事件；Backend route/generation/tap适配两平台并扩展相关回归。
 3. Frontend开关、SSE分流、请求身份隔离与临时思考缓存、折叠展示和滚动/停滞反馈。

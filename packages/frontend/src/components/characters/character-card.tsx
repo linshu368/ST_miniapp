@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { CharacterSummary } from '@miniapp/shared';
 import { Flame } from 'lucide-react';
 
@@ -35,7 +35,8 @@ export function lobbyImageUrl(source: string): string {
   }
 }
 
-export function CharacterCard({
+// memo：打开详情弹层只改 previewId，不该连带重渲染整页卡片（调用方保证 onSelect 引用稳定）。
+export const CharacterCard = memo(function CharacterCard({
   character,
   onSelect,
   disabled,
@@ -69,7 +70,7 @@ export function CharacterCard({
         ) : null}
         {character.is_featured && (
           <span
-            className="absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-primary/70 bg-black/55 shadow-[0_0_18px_hsl(var(--glow)/0.65)] backdrop-blur-sm"
+            className="absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-primary/70 bg-black/65 shadow-[0_0_18px_hsl(var(--glow)/0.65)]"
             title="热门角色"
             aria-label="热门角色"
           >
@@ -86,6 +87,11 @@ export function CharacterCard({
         {hasAvatar && !imageFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
+            // 从会话/详情返回时卡片重挂，图片多半已在内存缓存里：commit 阶段发现已解码完成就直接
+            // 显示，避免“渐变占位 → 300ms 淡入”再闪一次（此处 setState 会在首次绘制前同步重渲染）。
+            ref={(node) => {
+              if (node && node.complete && node.naturalWidth > 0) setImageLoaded(true);
+            }}
             src={lobbyImageUrl(character.avatar_url)}
             alt={character.name}
             width={360}
@@ -124,7 +130,7 @@ export function CharacterCard({
               {character.personality_tags.slice(0, 6).map((t) => (
                 <span
                   key={t}
-                  className="max-w-[calc(50%-0.125rem)] truncate rounded-full bg-white/12 px-1.5 py-[3px] text-[10px] font-medium leading-none text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur-[2px] sm:max-w-full"
+                  className="max-w-[calc(50%-0.125rem)] truncate rounded-full bg-white/12 px-1.5 py-[3px] text-[10px] font-medium leading-none text-white/90 ring-1 ring-inset ring-white/15 sm:max-w-full"
                 >
                   {t}
                 </span>
@@ -157,4 +163,4 @@ export function CharacterCard({
       </FeaturedFrame>
     </div>
   );
-}
+});
