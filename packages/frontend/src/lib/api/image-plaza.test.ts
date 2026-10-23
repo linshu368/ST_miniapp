@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, type InfiniteData } from '@tanstack/react-query';
 import type { GetImagePlazaFeedData, GetImagePlazaWorkData, ImagePlazaWork } from '@miniapp/shared';
 import {
@@ -7,6 +7,12 @@ import {
   restoreImagePlazaLike,
   validateImagePlazaReference,
 } from './image-plaza';
+import {
+  clearImagePlazaReturn,
+  readImagePlazaReturn,
+  restoreImagePlazaReturn,
+  saveImagePlazaReturn,
+} from '../image-plaza-return';
 
 vi.mock('./client', () => ({ apiClient: vi.fn(), ApiClientError: class extends Error {} }));
 
@@ -99,5 +105,75 @@ describe('reference validation before preview/read', () => {
         new File([new Uint8Array(20 * 1024 * 1024 + 1)], 'large', { type: 'image/png' })
       )
     ).toThrow('20MB');
+  });
+});
+
+describe('image plaza return continuity', () => {
+  afterEach(() => {
+    clearImagePlazaReturn();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function scene(entries: { id: string; top: number }[]) {
+    const visible = entries.map(({ id, top }) => ({
+      dataset: { imageWorkId: id },
+      getBoundingClientRect: () => ({ top, bottom: top + 200 }),
+    }));
+    const scrollTo = vi.fn();
+    vi.stubGlobal('window', { scrollY: 500, innerHeight: 800, scrollTo });
+    vi.stubGlobal('document', {
+      querySelector: () => ({ getBoundingClientRect: () => ({ bottom: 80 }) }),
+      querySelectorAll: () => visible,
+      documentElement: { scrollHeight: 2000 },
+    });
+    return scrollTo;
+  }
+
+  it('restores filters and the selected card without keeping DTOs or pagination cursors', () => {
+    scene([
+      { id: 'a', top: 100 },
+      { id: 'b', top: 600 },
+    ]);
+    saveImagePlazaReturn({ search: '山海', tag: 'landscape', sort: 'latest' }, 'b');
+    const saved = readImagePlazaReturn();
+    expect(saved).toMatchObject({
+      search: '山海',
+      tag: 'landscape',
+      sort: 'latest',
+      anchorId: 'b',
+    });
+    expect(saved).not.toHaveProperty('items');
+    expect(saved).not.toHaveProperty('cursor');
+    const scrollTo = scene([
+      { id: 'a', top: 200 },
+      { id: 'b', top: 900 },
+    ]);
+    restoreImagePlazaReturn(saved!);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 800, left: 0, behavior: 'auto' });
+  });
+
+  it('uses the neighbor own original position when the selected work is unavailable', () => {
+    scene([
+      { id: 'a', top: 100 },
+      { id: 'b', top: 600 },
+    ]);
+    saveImagePlazaReturn({ search: '', tag: 'all', sort: 'recommended' }, 'b');
+    const saved = readImagePlazaReturn();
+    const scrollTo = scene([{ id: 'a', top: 200 }]);
+    restoreImagePlazaReturn(saved!);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 600, left: 0, behavior: 'auto' });
+  });
+
+  it('clamps missing-anchor fallback and rejects expired state', () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    scene([{ id: 'a', top: 100 }]);
+    saveImagePlazaReturn({ search: '', tag: 'all', sort: 'recommended' });
+    const saved = readImagePlazaReturn();
+    const scrollTo = scene([]);
+    restoreImagePlazaReturn({ ...saved!, scrollY: 5000 });
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1200, left: 0, behavior: 'auto' });
+    clock.mockReturnValue(1000 + 2 * 60 * 60_000 + 1);
+    expect(readImagePlazaReturn()).toBeNull();
   });
 });

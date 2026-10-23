@@ -1,0 +1,36 @@
+{
+  "id": "roleplay-module-navigation",
+  "name": "roleplay-module-navigation",
+  "title": "角色模块导航与续聊体验预览",
+  "description": "用户试用角色模块发现/对话分区、续聊和返回体验；示例数据只用于本地预览。",
+  "status": "review",
+  "dev_type": "frontend",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-23",
+  "completedAt": null,
+  "branch": "codex/rename-create-to-media",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户追加回复长度已整合至回复偏好，旧工具箱入口移除。类型/lint、288测试、最终隔离build及正常/320px浏览器交互通过，截图已保存。等待产品体验；未commit/push/上线。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.character-lobby",
+        "frontend.business.conversation-ui",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    }
+  }
+}

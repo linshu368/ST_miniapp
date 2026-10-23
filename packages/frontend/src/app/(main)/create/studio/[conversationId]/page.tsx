@@ -4,21 +4,19 @@ import * as Sentry from '@sentry/nextjs';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getMetricDimensions } from '@/lib/perf/env-tags';
 import {
-  ArrowUp,
   ArrowLeft,
   Check,
-  History,
+  ChevronDown,
   ImagePlus,
   LoaderCircle,
   Plus,
   Settings2,
   Share2,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   IMAGE_PLAZA_PROMPT_MAX_CHARS,
   type ImagePlazaArtifact,
@@ -32,7 +30,6 @@ import {
   useCreateImagePlazaConversationMutation,
   useImagePlazaConfigQuery,
   useImagePlazaConversationQuery,
-  useImagePlazaConversationsQuery,
   useImagePlazaQuoteMutation,
   useShareImagePlazaMutation,
   useSubmitImagePlazaAttemptMutation,
@@ -40,6 +37,9 @@ import {
 } from '@/lib/api/image-plaza';
 import { StudioArtifactCard } from '@/components/image-plaza/studio-artifact-card';
 import { StudioSettingsDialog } from '@/components/image-plaza/studio-settings-dialog';
+import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
+import { useMemoryDraft } from '@/hooks/use-memory-draft';
+import { useTelegramBackButton } from '@/lib/telegram';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import {
@@ -62,7 +62,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const viewportHeight = useVisualViewportHeight();
   const config = useImagePlazaConfigQuery();
   const conversation = useImagePlazaConversationQuery(conversationId);
-  const conversations = useImagePlazaConversationsQuery();
+  const data = conversation.data?.conversation;
   usePageReady('/create/studio/:id', conversation.data !== undefined);
   const createConversation = useCreateImagePlazaConversationMutation();
   const quote = useImagePlazaQuoteMutation();
@@ -102,7 +102,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const [referenceStatus, setReferenceStatus] = useState<
     'idle' | 'reading' | 'uploading' | 'ready' | 'error'
   >('idle');
-  const [prompt, setPrompt] = useState('');
+  const {
+    value: prompt,
+    setValue: setPrompt,
+    clearIfUnchanged,
+  } = useMemoryDraft(`image-plaza:${conversationId}`, data?.snapshot?.prompt ?? '');
   const [modelId, setModelId] = useState('seedream-v5-pro');
   const [aspectRatio, setAspectRatio] = useState<ImagePlazaAspectRatio>('2:3');
   const [resolution, setResolution] = useState<'1K' | '2K' | 'fixed'>('1K');
@@ -117,8 +121,10 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const [shareTipOpen, setShareTipOpen] = useState(false);
   const [rewardBadgeVisible, setRewardBadgeVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [submittingSource, setSubmittingSource] = useState<string | null>(null);
+  const returnToGallery = useCallback(() => router.push('/create', { scroll: false }), [router]);
+  useTelegramBackButton(returnToGallery);
 
-  const data = conversation.data?.conversation;
   const models = useMemo(() => config.data?.models ?? [], [config.data?.models]);
   const model = models.find((item) => item.id === modelId) ?? models[0];
   useEffect(() => {
@@ -140,7 +146,6 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         ? snapshot.resolution
         : (target.resolutions[0]?.id ?? 'fixed')
     );
-    setPrompt(snapshot?.prompt ?? '');
     setReasoning(snapshot?.reasoning ?? false);
     setAutoOptimize(snapshot?.auto_optimize ?? true);
     const canKeepReference = Boolean(snapshot?.reference_artifact_id && target.supports_i2i);
@@ -205,7 +210,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     }
   };
 
-  const generate = async (nextPrompt = prompt) => {
+  const generate = async (nextPrompt = prompt, source = 'composer') => {
     if (
       !model ||
       !nextPrompt.trim() ||
@@ -214,6 +219,8 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     )
       return;
     sending.current = true;
+    setSubmittingSource(source);
+    const clearSubmittedDraft = clearIfUnchanged;
     // 反馈 = 提交被受理、界面进入生成中；真正出图是后台任务，耗时另由请求指标覆盖。
     const action = startAction('image_generate');
     genStartedAt.current = performance.now();
@@ -238,7 +245,8 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         quote_id: freshQuote.quote_id,
         idempotency_key: crypto.randomUUID(),
       });
-      setPrompt('');
+      // A historical retry must never replace the separate draft being edited below.
+      if (source === 'composer') clearSubmittedDraft(nextPrompt);
       // Explicit submission restores following; polling itself never changes user intent.
       followLatestRef.current = true;
       scrollToLatest();
@@ -251,6 +259,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       showNotice(error instanceof Error ? error.message : '提交失败，请重试');
     } finally {
       sending.current = false;
+      setSubmittingSource(null);
     }
   };
 
@@ -374,6 +383,23 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         <LoaderCircle className="size-7 animate-spin" />
       </StudioMessage>
     );
+  if ((!config.data && config.isError) || (!data && conversation.isError))
+    return (
+      <StudioMessage>
+        <p>生成记录暂时无法读取。</p>
+        <button
+          type="button"
+          disabled={config.isFetching || conversation.isFetching}
+          onClick={() => {
+            void config.refetch();
+            void conversation.refetch();
+          }}
+          className="mt-3 min-h-10 rounded-full bg-card px-4 text-primary disabled:opacity-50"
+        >
+          {config.isFetching || conversation.isFetching ? '正在读取…' : '重新读取'}
+        </button>
+      </StudioMessage>
+    );
   if (!config.data?.enabled || !data || !model)
     return <StudioMessage>图片创作暂不可用</StudioMessage>;
 
@@ -387,12 +413,12 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       style={{ height: viewportHeight ?? '100dvh' }}
       className="mx-auto flex w-full max-w-3xl flex-col overflow-hidden bg-background text-foreground"
     >
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border/60 bg-background/90 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
+      <header className="sticky top-0 z-30 flex shrink-0 items-center justify-between border-b border-border/60 bg-background/90 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => router.push('/create')}
-            aria-label="返回广场"
+            onClick={returnToGallery}
+            aria-label="返回影像广场"
             className="grid size-10 place-items-center rounded-full bg-card ring-1 ring-border"
           >
             <ArrowLeft className="size-5" />
@@ -418,44 +444,18 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
               )
             }
             aria-label="新建创作"
-            className="grid size-10 place-items-center rounded-full bg-card ring-1 ring-border disabled:opacity-60"
+            className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-xl bg-card px-2 text-[10px] font-semibold ring-1 ring-border disabled:opacity-60"
           >
-            <Plus className="size-4" />
+            <Plus className="size-4" aria-hidden />
+            新建
           </button>
-          <details className="relative">
-            <summary
-              aria-label="创作历史"
-              className="grid size-10 cursor-pointer list-none place-items-center rounded-full bg-card ring-1 ring-border"
-            >
-              <History className="size-4" />
-            </summary>
-            <div className="absolute right-0 top-12 z-40 max-h-72 w-72 overflow-auto rounded-2xl border border-border bg-card p-2 shadow-2xl">
-              <p className="px-2 pb-2 text-xs font-black">创作历史</p>
-              {conversations.data?.conversations.length ? (
-                conversations.data.conversations.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => router.push(`/create/studio/${item.id}`)}
-                    className={`block w-full rounded-xl px-2 py-2 text-left ${item.id === data.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-background'}`}
-                  >
-                    <span className="block truncate text-xs font-bold">{item.title}</span>
-                    <span className="mt-1 block text-[10px]">
-                      {new Date(item.updated_at).toLocaleString()}
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <p className="px-2 py-2 text-xs text-muted-foreground">还没有创作记录</p>
-              )}
-            </div>
-          </details>
+          <ImagePlazaHistorySheet activeId={conversationId} compact />
         </div>
       </header>
 
       <section
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        className="chat-scroll-area min-h-0 flex-1 overflow-y-auto overscroll-contain"
         onScroll={(event) => {
           const node = event.currentTarget;
           // Layout/keyboard changes are not user intent; the observer preserves the previous mode.
@@ -468,6 +468,22 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         }}
       >
         <div ref={messagesRef} className="space-y-5 px-3 py-5">
+          {conversation.isError ? (
+            <div
+              role="alert"
+              className="rounded-2xl border border-destructive/30 bg-destructive/5 p-3 text-xs"
+            >
+              <p>生成状态暂未同步，已有记录仍保留。</p>
+              <button
+                type="button"
+                disabled={conversation.isFetching}
+                onClick={() => void conversation.refetch()}
+                className="mt-2 min-h-10 rounded-full bg-card px-3 font-semibold text-primary disabled:opacity-50"
+              >
+                {conversation.isFetching ? '正在同步…' : '刷新状态'}
+              </button>
+            </div>
+          ) : null}
           {data.messages.length === 0 ? (
             <div className="mx-auto mt-16 max-w-sm text-center">
               <div className="mx-auto grid size-16 place-items-center rounded-[1.5rem] bg-primary/10 text-primary">
@@ -495,7 +511,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                           .find((item) => item.role === 'user')?.content ?? ''
                       }
                       attempt={message.attempt}
-                      onRefresh={(value) => void generate(value)}
+                      onRefresh={(value) => void generate(value, message.id)}
+                      regenerating={submittingSource === message.id}
+                      regenerateDisabled={
+                        submittingSource !== null || quote.isPending || submit.isPending
+                      }
                       onShare={requestShare}
                       onNotice={showNotice}
                       sharingArtifactId={share.isPending && shareArtifact ? shareArtifact.id : null}
@@ -505,7 +525,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                           : undefined
                       }
                       rewardBadge={
-                        rewardBadgeVisible && !config.data.has_completed_first_share ? rate : null
+                        rewardBadgeVisible &&
+                        !config.data.has_completed_first_share &&
+                        config.data.share_rebate_rate > 0
+                          ? rate
+                          : null
                       }
                     />
                     <div className="flex items-center gap-4 text-[11px] text-muted-foreground/70">
@@ -521,87 +545,96 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         </div>
       </section>
 
-      <div className="z-20 shrink-0 bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl">
-        {localPreview || reference || referenceArtifactId ? (
-          <div className="mb-2 flex items-center gap-2 rounded-2xl bg-card p-2 ring-1 ring-border">
-            {localPreview || reference ? (
-              <img
-                src={localPreview ?? reference?.image_url}
-                alt="参考图"
-                className="size-12 rounded-xl object-cover"
-              />
-            ) : (
-              <div className="grid size-12 place-items-center rounded-xl bg-primary/10 text-xs font-bold text-primary">
-                同款
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <p role="status" className="text-xs font-bold">
-                {referenceStatus === 'reading'
-                  ? '读取中…'
-                  : referenceStatus === 'uploading'
-                    ? '上传中…'
-                    : referenceStatus === 'error'
-                      ? '上传失败，请重试或移除'
-                      : '已添加参考图'}
-              </p>
-              {referenceStatus === 'error' ? (
+      <div
+        className="z-20 flex min-h-0 shrink flex-col bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl"
+        style={{ maxHeight: viewportHeight ? viewportHeight * 0.7 : '70dvh' }}
+      >
+        <div className="flex min-h-0 flex-col rounded-[2rem] border border-border bg-card p-3 shadow-[0_-12px_50px_rgba(0,0,0,0.2)] min-[360px]:p-4">
+          <div className="chat-scroll-area min-h-0 overflow-y-auto overscroll-contain">
+            {localPreview || reference || referenceArtifactId ? (
+              <div className="mb-2 flex items-center gap-2 rounded-2xl bg-card p-2 ring-1 ring-border">
+                {localPreview || reference ? (
+                  <img
+                    src={localPreview ?? reference?.image_url}
+                    alt="参考图"
+                    className="size-12 rounded-xl object-cover"
+                  />
+                ) : (
+                  <div className="grid size-12 place-items-center rounded-xl bg-primary/10 text-xs font-bold text-primary">
+                    同款
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p role="status" className="text-xs font-bold">
+                    {referenceStatus === 'reading'
+                      ? '读取中…'
+                      : referenceStatus === 'uploading'
+                        ? '上传中…'
+                        : referenceStatus === 'error'
+                          ? '上传失败，请重试或移除'
+                          : '已添加参考图'}
+                  </p>
+                  {referenceStatus === 'error' ? (
+                    <button
+                      type="button"
+                      className="text-xs text-primary"
+                      onClick={() => void chooseReference(referenceFile.current ?? undefined)}
+                    >
+                      重试上传
+                    </button>
+                  ) : null}
+                  <div className="mt-1 flex gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setMode('i2i')}
+                      className={mode === 'i2i' ? 'text-primary' : 'text-muted-foreground'}
+                    >
+                      参考生成
+                    </button>
+                    {model.supports_edit ? (
+                      <button
+                        type="button"
+                        onClick={() => setMode('edit')}
+                        className={mode === 'edit' ? 'text-primary' : 'text-muted-foreground'}
+                      >
+                        编辑图片
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
                 <button
                   type="button"
-                  className="text-xs text-primary"
-                  onClick={() => void chooseReference(referenceFile.current ?? undefined)}
+                  onClick={clearReference}
+                  aria-label="移除参考图"
+                  className="grid size-9 place-items-center rounded-full bg-background"
                 >
-                  重试上传
+                  <Trash2 className="size-4" />
                 </button>
-              ) : null}
-              <div className="mt-1 flex gap-2 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setMode('i2i')}
-                  className={mode === 'i2i' ? 'text-primary' : 'text-muted-foreground'}
-                >
-                  参考生成
-                </button>
-                {model.supports_edit ? (
-                  <button
-                    type="button"
-                    onClick={() => setMode('edit')}
-                    className={mode === 'edit' ? 'text-primary' : 'text-muted-foreground'}
-                  >
-                    编辑图片
-                  </button>
-                ) : null}
               </div>
-            </div>
-            <button
-              type="button"
-              onClick={clearReference}
-              aria-label="移除参考图"
-              className="grid size-9 place-items-center rounded-full bg-background"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </div>
-        ) : null}
+            ) : null}
 
-        <div className="rounded-[2rem] border border-border bg-card p-4 shadow-[0_-12px_50px_rgba(0,0,0,0.2)]">
-          <textarea
-            value={prompt}
-            maxLength={IMAGE_PLAZA_PROMPT_MAX_CHARS}
-            onChange={(event) =>
-              setPrompt(event.target.value.slice(0, IMAGE_PLAZA_PROMPT_MAX_CHARS))
-            }
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                void generate();
+            <textarea
+              value={prompt}
+              maxLength={IMAGE_PLAZA_PROMPT_MAX_CHARS}
+              onChange={(event) =>
+                setPrompt(event.target.value.slice(0, IMAGE_PLAZA_PROMPT_MAX_CHARS))
               }
-            }}
-            rows={4}
-            placeholder="描述你想生成的画面…"
-            className="min-h-24 w-full resize-none bg-transparent text-base leading-7 outline-none placeholder:text-muted-foreground"
-          />
-          <div className="mt-3 flex items-center gap-2.5">
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter' &&
+                  (event.ctrlKey || event.metaKey) &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault();
+                  void generate();
+                }
+              }}
+              rows={4}
+              placeholder="描述你想生成的画面…"
+              className="min-h-24 w-full resize-none overflow-y-auto bg-transparent text-base leading-7 outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1">
             <input
               ref={fileInput}
               type="file"
@@ -617,26 +650,30 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
               onClick={() => fileInput.current?.click()}
               disabled={!model.supports_i2i}
               aria-label="添加参考图"
-              className="grid size-12 place-items-center rounded-2xl border border-border bg-background/45 text-muted-foreground disabled:opacity-60"
+              title={model.supports_i2i ? '添加参考图' : '当前模型不支持参考图'}
+              className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
             >
-              <Plus className="size-5" />
+              <ImagePlus className="size-5" aria-hidden />
             </button>
             <button
               type="button"
               onClick={() => setSettingsOpen(true)}
               aria-label="打开生成设置"
-              className="grid size-12 place-items-center rounded-2xl border border-border bg-background/45 text-muted-foreground"
+              title="生成设置"
+              className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Settings2 className="size-5" />
+              <Settings2 className="size-5" aria-hidden />
             </button>
             <Sheet>
               <SheetTrigger asChild>
                 <button
                   type="button"
                   aria-label={`选择模型，当前为 ${model.name}`}
-                  className="grid size-12 shrink-0 place-items-center rounded-2xl border border-primary/35 bg-primary/5 text-primary"
+                  title={model.name}
+                  className="flex min-h-11 min-w-11 max-w-56 flex-1 items-center justify-center gap-0.5 rounded-full bg-background/45 px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-background/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <Sparkles className="size-5" />
+                  <span className="min-w-0 truncate">{model.name}</span>
+                  <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
                 </button>
               </SheetTrigger>
               <SheetContent
@@ -659,7 +696,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 <SheetDescription className="sr-only">
                   当前模型为 {model.name}，选择后自动关闭。
                 </SheetDescription>
-                <div className="min-h-0 space-y-1 overflow-y-auto overscroll-contain pt-2">
+                <div className="chat-scroll-area min-h-0 space-y-1 overflow-y-auto overscroll-contain pt-2">
                   {models.map((item) => (
                     <SheetClose key={item.id} asChild>
                       <button
@@ -681,26 +718,32 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 </div>
               </SheetContent>
             </Sheet>
-            <span className="ml-auto shrink-0 text-sm font-black text-muted-foreground">
-              {quote.data ? `✦ ${quote.data.credits}` : quote.isPending ? '报价中' : '✦ --'}
-            </span>
             <button
               type="button"
               onClick={() => void generate()}
               disabled={
                 !prompt.trim() ||
+                submittingSource !== null ||
                 submit.isPending ||
                 quote.isPending ||
                 Boolean(localPreview && referenceStatus !== 'ready')
               }
               aria-label="发送生成"
-              className="grid size-14 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_8px_24px_hsl(var(--primary)/0.22)] disabled:opacity-40"
+              aria-describedby="image-generation-quote"
+              className="ml-auto inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-2.5 text-sm font-semibold text-primary-foreground shadow-[0_5px_16px_hsl(var(--primary)/0.15)] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-40 min-[360px]:px-3"
             >
-              {submit.isPending ? (
-                <LoaderCircle className="size-5 animate-spin" />
-              ) : (
-                <ArrowUp className="size-6" />
-              )}
+              {submittingSource !== null ? (
+                <LoaderCircle className="size-4 animate-spin" aria-hidden />
+              ) : null}
+              <span className="whitespace-nowrap">
+                {submittingSource !== null ? '提交中' : '生成'}
+              </span>
+              <span
+                id="image-generation-quote"
+                className="whitespace-nowrap text-xs font-medium tabular-nums opacity-75"
+              >
+                {quote.isPending ? '报价中' : quote.data ? `✦ ${quote.data.credits}` : '✦ --'}
+              </span>
             </button>
           </div>
         </div>
@@ -797,14 +840,19 @@ function AttemptCard(props: {
   onNotice: (message: string) => void;
   sharingArtifactId: string | null;
   rewardBadge: string | null;
+  regenerating: boolean;
+  regenerateDisabled: boolean;
   onArtifactVisible?: () => void;
 }) {
   const attempt = props.attempt;
   if (attempt.status === 'pending' || attempt.status === 'generating')
     return (
-      <div className="flex min-h-44 items-center justify-center rounded-[1.5rem] bg-card text-sm text-muted-foreground ring-1 ring-border">
-        <LoaderCircle className="mr-2 size-5 animate-spin" />
-        正在生成…
+      <div className="flex min-h-44 flex-col items-center justify-center gap-3 rounded-[1.5rem] bg-card px-4 text-center text-sm text-muted-foreground ring-1 ring-border">
+        <p className="flex items-center gap-2">
+          <LoaderCircle className="size-5 animate-spin" aria-hidden />
+          正在生成…
+        </p>
+        <p className="text-xs leading-5">可返回广场，稍后从“我的生成”查看结果。</p>
       </div>
     );
   if (attempt.status === 'failed' || attempt.status === 'failed_unknown')
@@ -822,10 +870,14 @@ function AttemptCard(props: {
         ) : null}
         <button
           type="button"
+          disabled={props.regenerateDisabled}
           onClick={() => props.onRefresh(props.prompt)}
-          className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-black text-primary-foreground"
+          className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-black text-primary-foreground disabled:opacity-50"
         >
-          重新生成
+          {props.regenerating ? (
+            <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+          ) : null}
+          {props.regenerating ? '正在提交…' : '按当前设置再生成'}
         </button>
       </div>
     );
@@ -838,6 +890,8 @@ function AttemptCard(props: {
           prompt={props.prompt}
           rewardBadge={props.rewardBadge}
           sharing={props.sharingArtifactId === artifact.id}
+          regenerating={props.regenerating}
+          regenerateDisabled={props.regenerateDisabled}
           onRefresh={props.onRefresh}
           onShare={props.onShare}
           onNotice={props.onNotice}
@@ -863,9 +917,19 @@ function attemptFailureMessage(errorCode: string): string {
 }
 
 function StudioMessage({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   return (
     <main className="grid min-h-[100dvh] place-items-center bg-background text-sm font-bold text-muted-foreground">
-      {children}
+      <div className="flex flex-col items-center px-5 text-center">
+        {children}
+        <button
+          type="button"
+          onClick={() => router.push('/create', { scroll: false })}
+          className="mt-5 min-h-10 rounded-full border border-border px-4 text-xs text-foreground"
+        >
+          返回影像广场
+        </button>
+      </div>
     </main>
   );
 }

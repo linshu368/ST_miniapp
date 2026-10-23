@@ -18,6 +18,7 @@ import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatReplayBinding, useChatSession } from '@/hooks/use-chat-session';
+import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useTextPostprocessVersions } from '@/lib/api/text-postprocess';
@@ -49,7 +50,6 @@ import {
 } from '@/lib/text-postprocess/choice-gate';
 import { planMessageReply } from '@/lib/text-postprocess/reply-plan';
 import { useUserProfileStore } from '@/stores/user-profile-store';
-import { returnToLobby } from '@/lib/lobby-return';
 import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
@@ -65,7 +65,6 @@ export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const router = useRouter();
 
-  const [draft, setDraft] = useState('');
   const [earlier, setEarlier] = useState<ChatMessage[]>([]);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [hasMoreEarlier, setHasMoreEarlier] = useState(false);
@@ -78,7 +77,10 @@ export default function SelfHostedChatPage() {
   const displayName = useUserProfileStore((state) => state.displayName);
 
   const session = useChatSession(characterId);
-  const { activeSessionId, returnTo } = session;
+  const { activeSessionId, returnTo, abandonSession } = session;
+  const { value: draft, setValue: setDraft } = useMemoryDraft(
+    activeSessionId ? `chat:${activeSessionId}` : null
+  );
   // 可用 = 会话已建立且历史消息已加载（新会话的创建耗时也算在用户等待里）。
   usePageReady('/chat/:id', session.ready);
   const modelCatalogQuery = useModelCatalogQuery();
@@ -103,16 +105,61 @@ export default function SelfHostedChatPage() {
     [earlier, session.conversationQuery.data?.messages]
   );
 
-  const goBack = useCallback(() => returnToLobby((href) => router.push(href)), [router]);
+  const draftRecoveryRef = useRef<{
+    characterId: string;
+    fromSessionId: string | null;
+    text: string;
+  } | null>(null);
+  const latestDraftRef = useRef({ sessionId: activeSessionId, text: draft });
+  latestDraftRef.current = { sessionId: activeSessionId, text: draft };
+  const abandonSessionWithDraft = useCallback(() => {
+    const current = latestDraftRef.current;
+    draftRecoveryRef.current = {
+      characterId,
+      fromSessionId: activeSessionId,
+      text: current.sessionId === activeSessionId ? current.text : '',
+    };
+    abandonSession();
+  }, [activeSessionId, characterId, abandonSession]);
+
+  useEffect(() => {
+    const recovery = draftRecoveryRef.current;
+    if (
+      !recovery ||
+      !activeSessionId ||
+      recovery.fromSessionId === activeSessionId ||
+      activeSessionId !== session.createConversation.data?.session.id
+    )
+      return;
+    draftRecoveryRef.current = null;
+    if (recovery.characterId === characterId && recovery.text) {
+      setDraft((current) => (current.trim() ? current : recovery.text));
+    }
+  }, [activeSessionId, characterId, setDraft, session.createConversation.data?.session.id]);
+
+  const goBack = useCallback(
+    () => router.push(session.backHref, { scroll: false }),
+    [router, session.backHref]
+  );
   useTelegramBackButton(goBack);
 
   useEffect(() => {
     router.prefetch('/');
   }, [router]);
 
-  const restoreSendContent = useCallback((content: string) => {
-    setDraft((current) => (current.trim() ? current : content));
-  }, []);
+  const restoreSendContent = useCallback(
+    (content: string) => {
+      setDraft((current) => {
+        const recovered = current.trim() ? current : content;
+        const handoff = draftRecoveryRef.current;
+        if (handoff?.characterId === characterId && handoff.fromSessionId === activeSessionId) {
+          handoff.text = recovered;
+        }
+        return recovered;
+      });
+    },
+    [activeSessionId, characterId, setDraft]
+  );
 
   const characterQuery = useCharacterQuery(characterId);
   const character = characterQuery.data?.character;
@@ -139,7 +186,7 @@ export default function SelfHostedChatPage() {
     selectedModelUsesFreeQuota,
     persistedMessages: persisted,
     returnTo,
-    onSessionGone: session.abandonSession,
+    onSessionGone: abandonSessionWithDraft,
     goBack,
     onRestoreSendContent: restoreSendContent,
   });
@@ -177,8 +224,17 @@ export default function SelfHostedChatPage() {
     ) {
       return;
     }
+    // 查询发现旧会话已失效时，useChatSession 会重建；仅沿这条明确的恢复路径交接草稿。
+    if (activeSessionId && draftRecoveryRef.current?.fromSessionId !== activeSessionId) {
+      draftRecoveryRef.current = {
+        characterId,
+        fromSessionId: activeSessionId,
+        text:
+          latestDraftRef.current.sessionId === activeSessionId ? latestDraftRef.current.text : '',
+      };
+    }
     setEarlier([]);
-  }, [session.detailErrorCode]);
+  }, [session.detailErrorCode, activeSessionId, characterId]);
 
   useEffect(() => {
     setHasMoreEarlier(session.conversationQuery.data?.has_more ?? false);
@@ -331,6 +387,8 @@ export default function SelfHostedChatPage() {
       style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh' }}
     >
       <ChatTopBar
+        backLabel={session.backHref === '/chats' ? '返回对话' : '返回发现'}
+        onBack={goBack}
         characterId={characterId}
         title={title}
         onOpenSessions={() => setSessionsOpen(true)}
@@ -340,6 +398,7 @@ export default function SelfHostedChatPage() {
       />
 
       <ChatMessageList
+        key={activeSessionId ?? 'pending'}
         messages={messages}
         characterName={character?.name ?? ''}
         characterAvatarUrl={characterAvatarUrl}
@@ -482,6 +541,7 @@ export default function SelfHostedChatPage() {
       ) : null}
 
       <ChatComposer
+        viewportHeight={viewportHeight}
         value={draft}
         onChange={setDraft}
         onSend={handleSend}
@@ -493,7 +553,10 @@ export default function SelfHostedChatPage() {
         onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
         leftSlot={
           <ChatToolsSheet
-            onCreateConversation={session.openNewConversation}
+            onCreateConversation={() => {
+              draftRecoveryRef.current = null;
+              session.openNewConversation();
+            }}
             creating={session.createConversation.isPending}
           />
         }
@@ -505,11 +568,15 @@ export default function SelfHostedChatPage() {
         characterId={characterId}
         characterName={characterQuery.data?.character.name}
         activeSessionId={activeSessionId}
-        onSelect={session.selectSession}
+        onSelect={(nextSessionId) => {
+          draftRecoveryRef.current = null;
+          session.selectSession(nextSessionId);
+        }}
       />
 
       {/* 始终挂着：ChatSplash 自己负责收场动画并在结束后返回 null，条件卸载会把动画切掉 */}
       <ChatSplash
+        backHref={session.backHref}
         characterId={characterId}
         ready={session.ready}
         error={session.entryError}

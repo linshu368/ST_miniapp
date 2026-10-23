@@ -15,6 +15,7 @@ interface CharacterCardProps {
   onSelect: (id: string) => void;
   disabled?: boolean;
   priority?: boolean;
+  experienced?: boolean;
   onImageSettled?: (id: string) => void;
 }
 
@@ -40,6 +41,7 @@ export const CharacterCard = memo(function CharacterCard({
   onSelect,
   disabled,
   priority = false,
+  experienced = false,
   onImageSettled,
 }: CharacterCardProps) {
   const gradient = characterRoomGradient(character.id);
@@ -61,6 +63,11 @@ export const CharacterCard = memo(function CharacterCard({
     >
       {/* 图片区：3:4 + 渐变叠层 + 名字 / 标签 */}
       <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden">
+        {experienced ? (
+          <span className="absolute left-2 top-2 z-20 rounded-full border border-white/15 bg-black/45 px-2 py-1 text-[10px] font-medium leading-none text-white/90 backdrop-blur-sm">
+            聊过
+          </span>
+        ) : null}
         {character.is_featured && (
           <span
             className="absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-primary/70 bg-black/65 shadow-[0_0_18px_hsl(var(--glow)/0.65)]"

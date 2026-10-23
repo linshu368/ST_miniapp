@@ -6,7 +6,11 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { ChatReplyPreferences } from './chat-reply-preferences';
-import { shouldExpandComposer } from './composer-layout';
+import {
+  composerViewportLimits,
+  isComposerSubmitKey,
+  shouldExpandComposer,
+} from './composer-layout';
 import type { ReplyDetailsDefaultOpen } from './reply-preference-display';
 
 /** 与后端 routes/conversations.ts 的 MAX_USER_INPUT_LENGTH 对齐，前端先拦一道 */
@@ -16,6 +20,7 @@ export const MAX_USER_INPUT_LENGTH = 8000;
 const COUNTER_REVEAL_AT = MAX_USER_INPUT_LENGTH - 500;
 
 interface ChatComposerProps {
+  viewportHeight: number | null;
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
@@ -32,6 +37,7 @@ interface ChatComposerProps {
 }
 
 export function ChatComposer({
+  viewportHeight,
   value,
   onChange,
   onSend,
@@ -44,7 +50,12 @@ export function ChatComposer({
   onDetailsDefaultOpenChange,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const compositionActiveRef = useRef(false);
   const [expanded, setExpanded] = useState(false);
+  const limits = composerViewportLimits(
+    viewportHeight,
+    typeof window === 'undefined' ? 640 : window.innerHeight
+  );
 
   // 输入框跟着内容长高，上限半屏——再高就把消息区挤没了。
   // 先把高度放开再量，量到的才是真实内容高度，否则读回来的是上一次设进去的值。
@@ -54,16 +65,16 @@ export function ChatComposer({
     node.style.height = 'auto';
     const contentHeight = node.scrollHeight;
     setExpanded((current) => shouldExpandComposer(value, contentHeight, current));
-    node.style.height = `${Math.min(contentHeight, window.innerHeight * 0.5)}px`;
-  }, [value]);
+    node.style.height = `${Math.min(contentHeight, limits.textarea)}px`;
+  }, [value, limits.textarea]);
 
   // 单行与两栏两套版式的内边距不同，切换的那一帧要按新版式重新量一次高度
   useEffect(() => {
     const node = textareaRef.current;
     if (!node) return;
     node.style.height = 'auto';
-    node.style.height = `${Math.min(node.scrollHeight, window.innerHeight * 0.5)}px`;
-  }, [expanded]);
+    node.style.height = `${Math.min(node.scrollHeight, limits.textarea)}px`;
+  }, [expanded, limits.textarea]);
 
   const overLimit = value.length > MAX_USER_INPUT_LENGTH;
   const canSend = value.trim().length > 0 && !overLimit && !generating && !disabled;
@@ -81,21 +92,22 @@ export function ChatComposer({
   return (
     <div
       className={cn(
-        'bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2',
+        'flex min-h-0 max-h-full shrink flex-col bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2',
         PH_CHAT_REPLAY_VISIBLE_CLASS
       )}
     >
       <ChatReplyPreferences
+        maxContentHeight={limits.preferences}
         detailsDefaultOpen={detailsDefaultOpen}
         onDetailsDefaultOpenChange={onDetailsDefaultOpenChange}
       />
       <div
         className={cn(
-          'relative min-h-[50px] rounded-[22px] border bg-card shadow-[0_8px_28px_rgb(16_13_15/40%)] transition-colors',
+          'relative shrink rounded-[22px] border bg-card shadow-[0_8px_28px_rgb(16_13_15/40%)] transition-colors',
           'focus-within:outline focus-within:outline-2 focus-within:outline-primary/[0.12]',
           expanded
-            ? 'grid grid-cols-[48px_minmax(0,1fr)_48px] grid-rows-[auto_48px] items-center'
-            : 'flex items-center',
+            ? 'grid min-h-[92px] grid-cols-[48px_minmax(0,1fr)_48px] grid-rows-[minmax(42px,1fr)_48px] items-center'
+            : 'flex min-h-[50px] items-center',
           overLimit
             ? 'border-destructive'
             : 'border-border focus-within:border-[color-mix(in_srgb,hsl(var(--primary))_55%,hsl(var(--border)))]'
@@ -114,8 +126,25 @@ export function ChatComposer({
           ref={textareaRef}
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onCompositionStart={() => {
+            compositionActiveRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            compositionActiveRef.current = false;
+          }}
           onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.shiftKey) return;
+            if (
+              !isComposerSubmitKey(
+                {
+                  key: event.key,
+                  shiftKey: event.shiftKey,
+                  isComposing: event.nativeEvent.isComposing,
+                  keyCode: event.nativeEvent.keyCode,
+                },
+                compositionActiveRef.current
+              )
+            )
+              return;
             event.preventDefault();
             send();
           }}
@@ -124,7 +153,7 @@ export function ChatComposer({
           placeholder={generating ? '对方正在回复…' : '说点什么…'}
           aria-label="输入消息"
           className={cn(
-            'resize-none overflow-y-auto bg-transparent text-[15px] leading-[22px] text-foreground caret-primary',
+            'max-h-full min-w-0 resize-none overflow-y-auto bg-transparent text-[15px] leading-[22px] text-foreground caret-primary',
             'placeholder:text-muted-foreground focus-visible:outline-none disabled:opacity-60',
             'chat-scroll-area',
             expanded
@@ -176,7 +205,7 @@ export function ChatComposer({
       {value.length >= COUNTER_REVEAL_AT ? (
         <p
           className={cn(
-            'mt-1.5 pr-1 text-right text-[11px]',
+            'mt-1.5 shrink-0 pr-1 text-right text-[11px]',
             overLimit ? 'text-destructive' : 'text-muted-foreground'
           )}
         >

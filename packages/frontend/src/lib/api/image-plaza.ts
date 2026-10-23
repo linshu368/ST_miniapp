@@ -33,6 +33,7 @@ import type {
   UploadImagePlazaReferenceRequest,
 } from '@miniapp/shared';
 import { apiClient, ApiClientError } from './client';
+import { paymentKeys } from './payment';
 
 export const imagePlazaKeys = {
   all: ['image-plaza'] as const,
@@ -44,6 +45,8 @@ export const imagePlazaKeys = {
   conversation: (id: string) => [...imagePlazaKeys.all, 'conversation', id] as const,
   attempt: (id: string) => [...imagePlazaKeys.all, 'attempt', id] as const,
 };
+
+export const IMAGE_PLAZA_FEED_STALE_TIME_MS = 60_000;
 
 export function useImagePlazaConfigQuery() {
   return useQuery({
@@ -72,7 +75,7 @@ function imagePlazaFeedQueryOptions(search: string, tag: string, sort: ImagePlaz
       });
     },
     getNextPageParam: (page: GetImagePlazaFeedData) => page.next_cursor ?? undefined,
-    staleTime: 60_000,
+    staleTime: IMAGE_PLAZA_FEED_STALE_TIME_MS,
     // A different filter/order must never display or continue the previous cursor chain.
     retry: (count: number, error: Error) =>
       count < 1 && !(error instanceof ApiClientError && error.status < 500),
@@ -103,7 +106,8 @@ export function useImagePlazaFeedQuery(
     const key = imagePlazaKeys.feed(search, tag, sort);
     const state = client.getQueryState(key);
     const stale =
-      state?.isInvalidated || (state?.dataUpdatedAt && Date.now() - state.dataUpdatedAt > 60_000);
+      state?.isInvalidated ||
+      (state?.dataUpdatedAt && Date.now() - state.dataUpdatedAt > IMAGE_PLAZA_FEED_STALE_TIME_MS);
     if (!stale) return;
     // 不用 resetQueries：它会清空数据，每次回到这页都先看到整屏骨架。
     // 这里只保留第一页先展示（图片多半还在浏览器缓存里），再整体刷新；
@@ -160,9 +164,31 @@ export function useImagePlazaConversationsQuery() {
 }
 
 export function useImagePlazaConversationQuery(id: string) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: imagePlazaKeys.conversation(id),
-    queryFn: () => apiClient<GetImagePlazaConversationData>(`/api/image-plaza/conversations/${id}`),
+    queryFn: async () => {
+      const next = await apiClient<GetImagePlazaConversationData>(
+        `/api/image-plaza/conversations/${id}`
+      );
+      const current = client.getQueryData<GetImagePlazaConversationData>(
+        imagePlazaKeys.conversation(id)
+      );
+      const previousReady = new Set(
+        current?.conversation.messages.flatMap(({ attempt }) =>
+          attempt?.status === 'ready' ? [attempt.id] : []
+        ) ?? []
+      );
+      // Compare shared cache so completion while away is reconciled once on return.
+      if (
+        next.conversation.messages.some(
+          ({ attempt }) => attempt?.status === 'ready' && !previousReady.has(attempt.id)
+        )
+      ) {
+        void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
+      }
+      return next;
+    },
     enabled: Boolean(id),
     refetchInterval: (query) => {
       const conversation = query.state.data?.conversation;
@@ -379,6 +405,7 @@ export function useShareImagePlazaMutation() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: imagePlazaKeys.config() });
       void client.invalidateQueries({ queryKey: [...imagePlazaKeys.all, 'feed'] });
+      void client.invalidateQueries({ queryKey: paymentKeys.wallet() });
     },
   });
 }

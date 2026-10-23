@@ -7,6 +7,8 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { INVITE_START_PARAM_PREFIX } from '@miniapp/shared';
 
+import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedback-notice';
+
 import { LobbyShellSkeleton } from '@/components/characters/lobby-shell-skeleton';
 import { afterFirstScreen } from '@/lib/after-first-screen';
 import { getQueryClient } from '@/lib/api/query-client';
@@ -32,9 +34,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [telegramReady, setTelegramReady] = useState(false);
   // 只有大厅有对应骨架；其他路由就绪前仍然留空，避免闪一下不相干的布局。
   const pathname = usePathname();
+  const [showQueryDevtools, setShowQueryDevtools] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
 
   useEffect(() => {
+    // 调试浮标会挡住手机预览的发送按钮，开发时显式用 ?devtools=1 开启。
+    setShowQueryDevtools(
+      process.env.NODE_ENV === 'development' &&
+        new URLSearchParams(window.location.search).get('devtools') === '1'
+    );
     initTelegramSdk();
     const telegramUser = parseTelegramUser(getRawInitData());
     setTelegramUser(telegramUser.id);
@@ -58,7 +66,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {telegramReady ? <ReplayLifecycleOwner /> : null}
       {telegramReady ? <PagePerfTracker /> : null}
       {telegramReady ? children : pathname === '/' ? <LobbyShellSkeleton /> : null}
-      {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}
+      {telegramReady ? <FavoriteFeedbackNotice /> : null}
+      {showQueryDevtools ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );
 }
