@@ -541,6 +541,7 @@ export default function SelfHostedChatPage() {
       ) : null}
 
       <ChatComposer
+        viewportHeight={viewportHeight}
         value={draft}
         onChange={setDraft}
         onSend={handleSend}

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { isComposerSubmitKey, shouldExpandComposer } from './composer-layout';
+import {
+  composerViewportLimits,
+  isComposerSubmitKey,
+  shouldExpandComposer,
+} from './composer-layout';
 
 /**
  * 用例与原版 st-extension/tests/message-presentation.test.ts 里的同名分组逐条对齐。
@@ -39,5 +43,20 @@ describe('isComposerSubmitKey', () => {
     expect(isComposerSubmitKey(enter, false)).toBe(true);
     expect(isComposerSubmitKey({ ...enter, shiftKey: true }, false)).toBe(false);
     expect(isComposerSubmitKey({ ...enter, key: 'a', keyCode: 65 }, false)).toBe(false);
+  });
+});
+
+describe('composerViewportLimits', () => {
+  it('shrinks both regions when only the visual viewport becomes shorter', () => {
+    expect(composerViewportLimits(800, 800)).toEqual({ textarea: 400, preferences: 360 });
+    expect(composerViewportLimits(320, 800)).toEqual({ textarea: 160, preferences: 144 });
+    expect(composerViewportLimits(800, 800)).toEqual({ textarea: 400, preferences: 360 });
+  });
+
+  it('uses the layout fallback before hydration and bounds malformed dimensions', () => {
+    expect(composerViewportLimits(null, 320)).toEqual({ textarea: 160, preferences: 144 });
+    expect(composerViewportLimits(Number.NaN, 320)).toEqual({ textarea: 160, preferences: 144 });
+    expect(composerViewportLimits(0, 0)).toEqual({ textarea: 320, preferences: 288 });
+    expect(composerViewportLimits(60, 800).textarea).toBe(42);
   });
 });

@@ -30,3 +30,17 @@ export function isComposerSubmitKey(
     event.keyCode !== 229
   );
 }
+
+/** Both editable regions use the visible height, even when the layout viewport stays tall. */
+export function composerViewportLimits(visibleHeight: number | null, layoutHeight: number) {
+  const height =
+    visibleHeight !== null && Number.isFinite(visibleHeight) && visibleHeight > 0
+      ? visibleHeight
+      : Number.isFinite(layoutHeight) && layoutHeight > 0
+        ? layoutHeight
+        : 640;
+  return {
+    textarea: Math.max(42, Math.floor(height * 0.5)),
+    preferences: Math.max(0, Math.floor(height * 0.45)),
+  };
+}
