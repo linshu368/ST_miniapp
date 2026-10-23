@@ -34,7 +34,7 @@
           "type": "grafana-postgresql-datasource",
           "uid": "${DS_POSTGRES}"
         },
-        "query": "SELECT DISTINCT requested_model_id AS __text,requested_model_id AS __value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected ORDER BY 1",
+        "query": "SELECT COALESCE(NULLIF(string_agg(DISTINCT requested_provider_model_id, ' / ' ORDER BY requested_provider_model_id),''),requested_model_id) || ' [' || requested_model_id || ']' AS __text, requested_model_id AS __value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected GROUP BY requested_model_id ORDER BY 1",
         "refresh": 2,
         "multi": true,
         "includeAll": true,
@@ -84,7 +84,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT requested_model_id AS \"型号\", count(*) AS \"请求量\",\n percentile_cont(0.9) WITHIN GROUP(ORDER BY client_first_token_visible_ms) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false)/1000.0 AS \"用户总首 token P90\",\n 100.0*count(*) FILTER(WHERE fallback_started)/NULLIF(count(*),0) AS \"兜底触发率\",\n 100.0*count(*) FILTER(WHERE client_outcome='timed_out' AND client_backgrounded=false)/NULLIF(count(*) FILTER(WHERE client_outcome IN ('observed','timed_out') AND client_backgrounded=false),0) AS \"前台已知结果超时率\",\n 100.0*count(*) FILTER(WHERE client_outcome<>'missing')/NULLIF(count(*),0) AS \"回报覆盖率\",\n 100.0*count(*) FILTER(WHERE client_outcome IN ('observed','timed_out') AND client_backgrounded=false)/NULLIF(count(*),0) AS \"前台可判定占比\",\n count(*) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false) AS \"前台已看到样本\",\n count(*) FILTER(WHERE client_outcome='timed_out' AND client_backgrounded=false) AS \"前台超时样本\",\n percentile_cont(0.5) WITHIN GROUP(ORDER BY client_first_token_visible_ms) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false)/1000.0 AS \"用户总首 token P50\",\n percentile_cont(0.95) WITHIN GROUP(ORDER BY client_first_token_visible_ms) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false)/1000.0 AS \"用户总首 token P95\",\n 100.0*count(*) FILTER(WHERE delivery_role='fallback' AND client_outcome='observed' AND client_backgrounded=false)/NULLIF(count(*) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false),0) AS \"已看到样本中兜底占比\",\n count(*) FILTER(WHERE client_outcome='missing') AS \"缺报请求\",\n count(*) FILTER(WHERE client_outcome='not_observed') AS \"其他未观测请求\"\nFROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring}))\nGROUP BY requested_model_id ORDER BY count(*) DESC,requested_model_id",
+          "rawSql": "SELECT COALESCE(NULLIF(string_agg(DISTINCT requested_provider_model_id, ' / ' ORDER BY requested_provider_model_id),''),requested_model_id) AS \"型号\", count(*) AS \"请求量\",\n percentile_cont(0.9) WITHIN GROUP(ORDER BY client_first_token_visible_ms) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false)/1000.0 AS \"用户总首 token P90\",\n 100.0*count(*) FILTER(WHERE fallback_started)/NULLIF(count(*),0) AS \"兜底触发率\",\n 100.0*count(*) FILTER(WHERE client_outcome='timed_out' AND client_backgrounded=false)/NULLIF(count(*) FILTER(WHERE client_outcome IN ('observed','timed_out') AND client_backgrounded=false),0) AS \"前台已知结果超时率\",\n 100.0*count(*) FILTER(WHERE client_outcome<>'missing')/NULLIF(count(*),0) AS \"回报覆盖率\",\n 100.0*count(*) FILTER(WHERE client_outcome IN ('observed','timed_out') AND client_backgrounded=false)/NULLIF(count(*),0) AS \"前台可判定占比\",\n count(*) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false) AS \"前台已看到样本\",\n count(*) FILTER(WHERE client_outcome='timed_out' AND client_backgrounded=false) AS \"前台超时样本\",\n percentile_cont(0.5) WITHIN GROUP(ORDER BY client_first_token_visible_ms) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false)/1000.0 AS \"用户总首 token P50\",\n percentile_cont(0.95) WITHIN GROUP(ORDER BY client_first_token_visible_ms) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false)/1000.0 AS \"用户总首 token P95\",\n 100.0*count(*) FILTER(WHERE delivery_role='fallback' AND client_outcome='observed' AND client_backgrounded=false)/NULLIF(count(*) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false),0) AS \"已看到样本中兜底占比\",\n count(*) FILTER(WHERE client_outcome='missing') AS \"缺报请求\",\n count(*) FILTER(WHERE client_outcome='not_observed') AS \"其他未观测请求\", requested_model_id AS \"目录型号ID\"\nFROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring}))\nGROUP BY requested_model_id ORDER BY count(*) DESC,requested_model_id",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
@@ -107,8 +107,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byRegexp",
-              "options": "(P50|P90|P95|等待|上限)"
+              "id": "byName",
+              "options": "用户总首 token P50"
             },
             "properties": [
               {
@@ -118,13 +118,97 @@
               {
                 "id": "decimals",
                 "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 185
               }
             ]
           },
           {
             "matcher": {
-              "id": "byRegexp",
-              "options": "(率|占比)"
+              "id": "byName",
+              "options": "用户总首 token P90"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 185
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "用户总首 token P95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 185
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "首发等待"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "总等待上限"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "兜底触发率"
             },
             "properties": [
               {
@@ -134,6 +218,126 @@
               {
                 "id": "decimals",
                 "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "前台已知结果超时率"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "回报覆盖率"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "前台可判定占比"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "已看到样本中兜底占比"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "型号"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 350
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "目录型号ID"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 235
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "请求量"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 85
               }
             ]
           }
@@ -167,7 +371,7 @@
           "refId": "A",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), requested_model_id AS metric, percentile_cont(0.9) WITHIN GROUP(ORDER BY client_first_token_visible_ms) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false)/1000.0 AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1,2 ORDER BY 1,2",
+          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), concat(COALESCE(NULLIF(string_agg(DISTINCT requested_provider_model_id, ' / ' ORDER BY requested_provider_model_id),''),requested_model_id), ' [', requested_model_id, ']') AS metric, percentile_cont(0.9) WITHIN GROUP(ORDER BY client_first_token_visible_ms) FILTER(WHERE client_outcome='observed' AND client_backgrounded=false)/1000.0 AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1,requested_model_id ORDER BY 1,2",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
@@ -221,7 +425,7 @@
           "refId": "A",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), requested_model_id AS metric, 100.0*count(*) FILTER(WHERE fallback_started)/NULLIF(count(*),0) AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1,2 ORDER BY 1,2",
+          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), concat(COALESCE(NULLIF(string_agg(DISTINCT requested_provider_model_id, ' / ' ORDER BY requested_provider_model_id),''),requested_model_id), ' [', requested_model_id, ']') AS metric, 100.0*count(*) FILTER(WHERE fallback_started)/NULLIF(count(*),0) AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1,requested_model_id ORDER BY 1,2",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
@@ -275,7 +479,7 @@
           "refId": "A",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), requested_model_id AS metric, 100.0*count(*) FILTER(WHERE client_outcome='timed_out' AND client_backgrounded=false)/NULLIF(count(*) FILTER(WHERE client_outcome IN ('observed','timed_out') AND client_backgrounded=false),0) AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1,2 UNION ALL SELECT $__timeGroupAlias(request_received_at,'5m'), '监控目标' AS metric, 100.0*max(timeout_rate_target) AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1 ORDER BY 1,2",
+          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), concat(COALESCE(NULLIF(string_agg(DISTINCT requested_provider_model_id, ' / ' ORDER BY requested_provider_model_id),''),requested_model_id), ' [', requested_model_id, ']') AS metric, 100.0*count(*) FILTER(WHERE client_outcome='timed_out' AND client_backgrounded=false)/NULLIF(count(*) FILTER(WHERE client_outcome IN ('observed','timed_out') AND client_backgrounded=false),0) AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1,requested_model_id UNION ALL SELECT $__timeGroupAlias(request_received_at,'5m'), '监控目标' AS metric, 100.0*max(timeout_rate_target) AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1 ORDER BY 1,2",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
@@ -352,7 +556,7 @@
           "refId": "A",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), requested_model_id AS metric, 100.0*count(*) FILTER(WHERE client_outcome<>'missing')/NULLIF(count(*),0) AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1,2 ORDER BY 1,2",
+          "rawSql": "SELECT $__timeGroupAlias(request_received_at,'5m'), concat(COALESCE(NULLIF(string_agg(DISTINCT requested_provider_model_id, ' / ' ORDER BY requested_provider_model_id),''),requested_model_id), ' [', requested_model_id, ']') AS metric, 100.0*count(*) FILTER(WHERE client_outcome<>'missing')/NULLIF(count(*),0) AS value FROM miniapp_analytics.chat_first_token_facts WHERE $__timeFilter(request_received_at) AND NOT billing_rejected AND ('__all__' IN (${model:sqlstring}) OR requested_model_id IN (${model:sqlstring})) GROUP BY 1,requested_model_id ORDER BY 1,2",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
@@ -406,7 +610,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT j->>'model_id' AS \"型号\",(j->>'model_requests')::int AS \"型号总请求\",(j->>'sample_eligible')::boolean AS \"型号达到150样本\",(j->>'requests')::int AS \"本组请求\",(j->>'primary_timeout_ms')::numeric/1000.0 AS \"首发等待\",(j->>'first_token_deadline_ms')::numeric/1000.0 AS \"总等待上限\",j->>'fallback_model_id' AS \"兜底型号\",(j->>'user_first_token_p90_ms')::numeric/1000.0 AS \"用户总首 token P90\",100*(j->>'fallback_start_rate')::numeric AS \"兜底触发率\",100*(j->>'foreground_timeout_rate_observed')::numeric AS \"前台已知结果超时率\",100*(j->>'client_report_coverage')::numeric AS \"回报覆盖率\",(j->>'catalog_version')::int AS \"配置版本\" FROM miniapp_analytics.chat_first_token_report($__timeFrom(),$__timeTo()) j WHERE '__all__' IN (${model:sqlstring}) OR j->>'model_id' IN (${model:sqlstring}) ORDER BY j->>'model_id',(j->>'catalog_version')::int,(j->>'primary_timeout_ms')::int",
+          "rawSql": "SELECT COALESCE(NULLIF(j->>'provider_model_id',''),j->>'model_id') AS \"型号\",(j->>'model_requests')::int AS \"型号总请求\",(j->>'sample_eligible')::boolean AS \"型号达到150样本\",(j->>'requests')::int AS \"本组请求\",(j->>'primary_timeout_ms')::numeric/1000.0 AS \"首发等待\",(j->>'first_token_deadline_ms')::numeric/1000.0 AS \"总等待上限\",j->>'fallback_model_id' AS \"兜底型号\",(j->>'user_first_token_p90_ms')::numeric/1000.0 AS \"用户总首 token P90\",100*(j->>'fallback_start_rate')::numeric AS \"兜底触发率\",100*(j->>'foreground_timeout_rate_observed')::numeric AS \"前台已知结果超时率\",100*(j->>'client_report_coverage')::numeric AS \"回报覆盖率\",(j->>'catalog_version')::int AS \"配置版本\",j->>'model_id' AS \"目录型号ID\" FROM miniapp_analytics.chat_first_token_report($__timeFrom(),$__timeTo()) j WHERE '__all__' IN (${model:sqlstring}) OR j->>'model_id' IN (${model:sqlstring}) ORDER BY j->>'model_id',(j->>'catalog_version')::int,(j->>'primary_timeout_ms')::int",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
@@ -429,8 +633,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byRegexp",
-              "options": "(P50|P90|P95|等待|上限)"
+              "id": "byName",
+              "options": "用户总首 token P50"
             },
             "properties": [
               {
@@ -440,13 +644,97 @@
               {
                 "id": "decimals",
                 "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 185
               }
             ]
           },
           {
             "matcher": {
-              "id": "byRegexp",
-              "options": "(率|占比)"
+              "id": "byName",
+              "options": "用户总首 token P90"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 185
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "用户总首 token P95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 185
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "首发等待"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "总等待上限"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "兜底触发率"
             },
             "properties": [
               {
@@ -456,6 +744,126 @@
               {
                 "id": "decimals",
                 "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "前台已知结果超时率"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "回报覆盖率"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "前台可判定占比"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "已看到样本中兜底占比"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "型号"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 350
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "目录型号ID"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 235
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "请求量"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 85
               }
             ]
           }
