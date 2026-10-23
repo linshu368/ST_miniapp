@@ -37,11 +37,13 @@ const LOBBY_TABS: ReadonlyArray<{ value: LobbySort; label: string }> = [
   { value: 'latest', label: '最新' },
 ];
 
-// 首帧只挂这么多张卡，其余在空闲帧分批补齐：每张卡带图片、收藏订阅和金框，
+// 首帧只挂这么多张卡，其余滚动到接近底部时再分批补齐：每张卡带图片、收藏订阅和金框，
 // 一次挂几十张会让底部 tab 切回大厅时主线程被占满、转场掉帧。
 const INITIAL_RENDER_COUNT = 10;
 const RENDER_BATCH_SIZE = 10;
-// 返回大厅时锚点之后额外挂的卡数：两列约 4 行再留余量，其余交给空闲批次。
+// 哨兵提前多远触发下一批；留足一屏以上，用户正常滚动时不会看到空白。
+const RENDER_MORE_ROOT_MARGIN = '400px';
+// 返回大厅时锚点之后额外挂的卡数：两列约 4 行再留余量，其余随滚动补齐。
 const RESTORE_TAIL_COUNT = 12;
 
 const RESTORE_DEADLINE_MS = 1600;
@@ -240,16 +242,30 @@ export function CharacterGallery() {
     [filtered, renderAll, effectiveLimit]
   );
 
+  // 按滚动位置补齐，而不是在空闲帧定时补：定时补会在路由 transition 渲染让出主线程的间隙里
+  // 触发默认优先级的 setState，同步挂一批卡并打断导航，表现为底部 tab 高亮已变但页面不跳转。
+  // 哨兵只在用户接近列表底部时才触发；每批挂完 effectiveLimit 变化会重建观察器，
+  // 哨兵仍在范围内就继续补，直到它被推到范围之外。
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const hasMoreToRender = !renderAll && effectiveLimit < filtered.length;
   useEffect(() => {
-    if (renderAll || effectiveLimit >= filtered.length) return;
+    const node = loadMoreRef.current;
+    if (!hasMoreToRender || !node) return;
     const grow = () => setRenderLimit((limit) => Math.max(limit, restoreFloor) + RENDER_BATCH_SIZE);
-    if (typeof window.requestIdleCallback === 'function') {
-      const handle = window.requestIdleCallback(grow, { timeout: 300 });
-      return () => window.cancelIdleCallback?.(handle);
+    if (typeof IntersectionObserver === 'undefined') {
+      // 极老的 WebView 没有观察器：退回一次性全量，保证列表完整。
+      setRenderLimit(Number.POSITIVE_INFINITY);
+      return;
     }
-    const timer = window.setTimeout(grow, 80);
-    return () => window.clearTimeout(timer);
-  }, [effectiveLimit, filtered.length, renderAll, restoreFloor]);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) grow();
+      },
+      { rootMargin: RENDER_MORE_ROOT_MARGIN }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMoreToRender, effectiveLimit, restoreFloor]);
 
   const finishRestore = useCallback(() => {
     clearLobbyReturnSnapshot();
@@ -535,6 +551,10 @@ export function CharacterGallery() {
           ))}
         </div>
       )}
+      {/* 渲染哨兵放在网格外：恢复滚动期间网格带 invisible，哨兵不受影响。 */}
+      {hasMoreToRender ? (
+        <div ref={loadMoreRef} aria-hidden="true" className="h-px w-full" />
+      ) : null}
 
       <CharacterDetailSheet
         characterId={previewId}
