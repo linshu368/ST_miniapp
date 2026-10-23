@@ -14,6 +14,12 @@ vi.mock('../middleware/auth.js', () => ({
   },
 }));
 vi.mock('../lib/user.js', () => ({ getOrCreateDbUser: routing.user }));
+vi.mock('../platform/model-tiers.js', () => ({
+  fetchModelCatalogSnapshot: async () => ({
+    catalog: { first_token_deadline_ms: 6000 },
+    version: 1,
+  }),
+}));
 vi.mock('../infrastructure/repositories/ChatSessionRepository.js', () => ({
   ChatSessionRepository: class {
     requireSession = routing.requireSession;

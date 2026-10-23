@@ -825,10 +825,13 @@ async function consumeNonStream(input: {
           }
         : undefined,
   });
+  const reasoningIsFirstToken =
+    request.thinkingEnabled !== false && exposedReasoning.trim().length > 0;
+  if (reasoningIsFirstToken) hooks?.onFirstToken?.();
   if (request.thinkingEnabled !== false && exposedReasoning)
     hooks?.onReasoningDelta?.(exposedReasoning);
   if (assistantReply) {
-    hooks?.onFirstToken?.();
+    if (!reasoningIsFirstToken) hooks?.onFirstToken?.();
     hooks?.onDelta?.(assistantReply);
   }
   return {

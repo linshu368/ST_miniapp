@@ -569,6 +569,78 @@ describe('execute（请求体）', () => {
 });
 
 describe('reasoning is progress, never a roleplay answer or billing proof', () => {
+  it('enabled reasoning selects one attempt before forwarding and keeps its delayed answer/billing', async () => {
+    quotaState.granted = true;
+    const order: string[] = [];
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              setTimeout(
+                () =>
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      `data: ${JSON.stringify({ id: 'primary-gen', choices: [{ delta: { reasoning_content: '先思考' } }] })}\n\n`
+                    )
+                  ),
+                10
+              );
+              setTimeout(() => {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ id: 'primary-gen', choices: [{ delta: { content: '后回答' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+                  )
+                );
+                controller.close();
+              }, 100);
+            },
+          })
+        )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const req = request({ thinkingEnabled: true });
+    req.model.firstTokenPolicy = {
+      timeoutMs: 30,
+      deadlineMs: 60,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    const selectDelivery = vi.fn(async () => {
+      order.push('persist delivery');
+    });
+    const prepareFallback = vi.fn(async () => {});
+    req.firstToken = {
+      primaryAttemptId: 'attempt-primary',
+      requestStartedAt: performance.now(),
+      store: { observe: vi.fn(async () => {}), selectDelivery, prepareFallback },
+    };
+    const onFirstToken = vi.fn(() => {
+      order.push('first token');
+    });
+    const result = await execute(
+      req,
+      {
+        onFirstToken,
+        onReasoningDelta: (text) => order.push(text),
+        onDelta: (text) => order.push(text),
+      },
+      fakeLogger()
+    );
+    expect(result).toMatchObject({ status: 'success', content: '后回答' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(prepareFallback).not.toHaveBeenCalled();
+    expect(selectDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ generation_id: 'primary-gen', role: 'primary' })
+    );
+    expect(order).toEqual(['persist delivery', 'first token', '先思考', '后回答']);
+    expect(onFirstToken).toHaveBeenCalledTimes(1);
+    expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(true);
+    expect(savedHistory()).toHaveLength(1);
+    expect(savedHistory()[0]?.assistant_reply).toBe('后回答');
+    expect(JSON.stringify(savedHistory())).not.toContain('先思考');
+  });
+
   it('streams reasoning separately and persists only the final answer', async () => {
     const reasoning = vi.fn();
     const answer = vi.fn();

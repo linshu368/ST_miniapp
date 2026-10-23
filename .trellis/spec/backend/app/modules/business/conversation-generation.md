@@ -96,7 +96,7 @@ OpenRouter：`reasoning:{enabled,exclude:!enabled}`；Venice：`reasoning:{enabl
 
 ### 4. Validation & Error Matrix
 
-非法bool开轮前400；上游非2xx保留既有拒绝/释放预留，不传原始错误正文给hook；首次provider ID仍先持久化再转发。关闭不发送思考；每轮思考最多64Ki字符，不保存到snapshot.content/DB/日志。取消、超时与身份写失败不重放生成；只有思考不得触发交付或消费免费额度。
+非法bool开轮前400；上游非2xx保留既有拒绝/释放预留，不传原始错误正文给hook；首次provider ID仍先持久化再转发。关闭不发送思考；每轮思考最多64Ki字符，不保存到snapshot.content/DB/日志。取消、超时与身份写失败不重放生成；只有思考不得触发完成结算或消费免费额度；首字选择/放行独立于最终有效正文判定。
 
 ### 5. Good / Base / Bad Cases
 

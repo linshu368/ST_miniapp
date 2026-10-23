@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import type { RequestLogger } from '../../lib/logger.js';
 import type { ConversationStreamSink } from './sse.js';
@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   ensureGenerationId: vi.fn(),
   ensurePlaceholder: vi.fn(),
   saveSnapshot: vi.fn(),
+  markServer: vi.fn(),
 }));
 vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
   GenerationObservationRepository: class {
@@ -23,7 +24,7 @@ vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', 
     observe = vi.fn();
     prepareFallback = vi.fn();
     selectDelivery = vi.fn();
-    markServer = vi.fn().mockResolvedValue(undefined);
+    markServer = mocks.markServer;
   },
 }));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
@@ -126,9 +127,56 @@ beforeEach(() => {
     chargeId: null,
   });
   mocks.ensureGenerationId.mockResolvedValue(undefined);
+  mocks.markServer.mockResolvedValue(undefined);
 });
+afterEach(() => vi.useRealTimers());
 
 describe('turn lifecycle recovery', () => {
+  it('legacy missing flag is off and cannot emit unexpected reasoning', async () => {
+    const turnInput = input({ kind: 'send', content: 'original' });
+    await runConversationTurn(turnInput);
+    const [request, hooks] = mocks.execute.mock.calls[0]!;
+    expect(request.thinkingEnabled).toBe(false);
+    hooks.onStreamOpen();
+    hooks.onReasoningDelta('hidden');
+    expect(turnInput.sink.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'start', thinking_enabled: false })
+    );
+    expect(turnInput.sink.send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'reasoning' })
+    );
+  });
+
+  it('first reasoning at 3s clears the 6s server deadline and emits the existing metric only once', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    mocks.execute.mockImplementation(async (request, hooks) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      hooks.onStreamOpen();
+      hooks.onReasoningDelta('真实思考');
+      await new Promise((resolve) => setTimeout(resolve, 7000));
+      request.signal.throwIfAborted();
+      hooks.onDelta('正文');
+      return {
+        status: 'stream_interrupted',
+        content: '正文',
+        finishReason: 'length',
+        generationId: 'gen',
+        chargeId: 'charge',
+      };
+    });
+    const turnInput = { ...input({ kind: 'send', content: 'original' }), thinkingEnabled: true };
+    const result = runConversationTurn(turnInput);
+    await vi.advanceTimersByTimeAsync(3001);
+    expect(turnInput.sink.send).toHaveBeenCalledWith({ type: 'reasoning', text: '真实思考' });
+    expect(mocks.markServer).toHaveBeenCalledExactlyOnceWith('reply', {
+      first_token_emitted_ms: 3000,
+    });
+    await vi.advanceTimersByTimeAsync(7000);
+    await expect(result).resolves.toMatchObject({ kind: 'streamed' });
+    expect(turnInput.sink.send).toHaveBeenCalledWith({ type: 'delta', text: '正文' });
+    expect(mocks.markServer).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['send', 'regenerate'] as const)(
     'explicit thinking on for %s emits progress without changing saved content',
     async (kind) => {

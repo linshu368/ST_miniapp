@@ -73,7 +73,7 @@ Shared 只定义浏览器可见 DTO、错误码、容量上限和 runtime valida
 
 ### 3. Contracts
 
-新UI默认显式true，HTTP缺字段按false兼容旧客户端；`start` 表示请求设置，不保证模型执行或公开思考。每轮转发最多 `MAX_CONVERSATION_REASONING_LENGTH=65_536` 字符。ChatMessage 历史 DTO 不新增思考字段；无新数据库/环境变量。Backend先于Frontend部署，旧客户端忽略reasoning，新客户端遇旧服务仍可显示正文。
+新UI默认显式true，HTTP缺字段按false兼容旧客户端；`start` 表示请求设置，不保证模型执行或公开思考。每轮转发最多 `MAX_CONVERSATION_REASONING_LENGTH=65_536` 字符。ChatMessage 历史 DTO 不新增思考字段；无新数据库/环境变量。兼容滚动部署：旧客户端未传开关按正文首字处理；新客户端遇旧服务仍可显示正文。
 
 ### 4. Validation & Error Matrix
 
