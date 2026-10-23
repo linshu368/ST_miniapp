@@ -268,17 +268,64 @@
 }
 
 /* 大厅固定前八：金色流光外框，保留卡片自身圆角与交互。 */
+/* 流光只位移一整块渐变瓦片（首尾同色，位移 50% 恰好一个瓦片周期，循环无接缝），
+   这样动画完全在合成器线程完成，不触发布局和重绘。 */
+@keyframes featured-frame-flow {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
 .featured-character-frame {
+  position: relative;
+  /* 让流光层的 z-index:-1 留在框内：压在框背景之上、子内容之下 */
+  isolation: isolate;
+  /* 静态底色：流光层未就绪或减少动效时仍是完整金框 */
   background: linear-gradient(115deg, #8a5a05, #ffd76a, #fff3bd, #d69412, #ffdf7b, #8a5a05);
-  background-size: 300% 100%;
-  animation: splash-border-flow 3s linear infinite;
   box-shadow:
     0 0 12px rgb(245 182 37 / 42%),
     0 0 28px rgb(245 158 11 / 20%);
 }
 
+/* 裁剪层和流光层分开：裁剪（圆角 overflow）放在不动的父层，
+   不能给金框本体 overflow:hidden，否则卡片 hover 上浮会被裁掉。 */
+.featured-character-frame__clip {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  /* 修复部分 iOS WebView 里「圆角 + overflow + 子层 transform」不裁剪的问题 */
+  isolation: isolate;
+}
+
+.featured-character-frame__flow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 200%;
+  background-image: linear-gradient(115deg, #8a5a05, #ffd76a, #fff3bd, #d69412, #ffdf7b, #8a5a05);
+  background-size: 50% 100%;
+  background-repeat: repeat-x;
+  will-change: transform;
+  animation: featured-frame-flow 3s linear infinite;
+}
+
+/* 详情弹层打开时大厅被遮罩盖住，暂停底下的流光，省掉每帧合成；
+   弹层自己的金框带 --live 修饰类，继续流动。 */
+.featured-paused
+  .featured-character-frame:not(.featured-character-frame--live)
+  .featured-character-frame__flow {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .featured-character-frame {
+  .featured-character-frame__flow {
     animation: none;
   }
 }

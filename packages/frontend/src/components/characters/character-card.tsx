@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { CharacterSummary } from '@miniapp/shared';
 import { Flame } from 'lucide-react';
 
@@ -34,7 +34,8 @@ export function lobbyImageUrl(source: string): string {
   }
 }
 
-export function CharacterCard({
+// memo：打开详情弹层只改 previewId，不该连带重渲染整页卡片（调用方保证 onSelect 引用稳定）。
+export const CharacterCard = memo(function CharacterCard({
   character,
   onSelect,
   disabled,
@@ -150,4 +151,4 @@ export function CharacterCard({
       </FeaturedFrame>
     </div>
   );
-}
+});

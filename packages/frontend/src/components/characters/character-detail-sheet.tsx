@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Quote, Sparkles, X } from 'lucide-react';
 
+import type { CharacterSummary } from '@miniapp/shared';
+
 import { useCharacterQuery } from '@/lib/api/characters';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
+import { lobbyImageUrl } from './character-card';
 import { FavoriteButton } from './favorite-button';
 import { FeaturedFrame } from './featured-frame';
 
@@ -16,6 +19,8 @@ const DISMISS_THRESHOLD_Y = 90; // 下滑超过该值即关闭
 // ─── Props ───────────────────────────────────────────────────
 interface CharacterDetailSheetProps {
   characterId: string | null;
+  /** 大厅列表里已有的摘要：除开场白外弹层要展示的字段都在里面，用来即时打开。 */
+  summary?: CharacterSummary;
   onClose: () => void;
   onEnter: (characterId: string) => void;
   entering?: boolean;
@@ -24,12 +29,16 @@ interface CharacterDetailSheetProps {
 // ─── 主组件 ──────────────────────────────────────────────────
 export function CharacterDetailSheet({
   characterId,
+  summary,
   onClose,
   onEnter,
   entering = false,
 }: CharacterDetailSheetProps) {
-  const { data, isLoading } = useCharacterQuery(characterId ?? undefined);
-  const character = data?.character;
+  const { data } = useCharacterQuery(characterId ?? undefined);
+  // 详情接口（跨区代理 + 冷启动，生产 p95 十几秒）只补开场白；摘要先行，弹层不等网络。
+  const detail = data?.character;
+  const character = detail ?? summary;
+  const isLoading = !character;
 
   // ── 动画状态 ──────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
@@ -88,13 +97,14 @@ export function CharacterDetailSheet({
   const gradient = characterRoomGradient(character?.id ?? 'fallback');
   const hasAvatar = !!character?.avatar_url;
   const description = character?.description?.trim() ?? '';
-  const greeting = character?.greeting?.trim() ?? '';
+  const greeting = detail?.greeting?.trim() ?? '';
 
   return createPortal(
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
       {/* 背景遮罩：模糊 + 压暗，点击关闭 */}
       <div
-        className="absolute inset-0 bg-black/55 backdrop-blur-md transition-opacity duration-300"
+        // 不再用 backdrop-blur：模糊整页（含正在流动的金框）每帧重算，是打开弹层卡顿的主因之一。
+        className="absolute inset-0 bg-black/70 transition-opacity duration-300"
         style={{ opacity: visible ? 1 : 0 }}
         onClick={onClose}
         aria-hidden="true"
@@ -115,7 +125,10 @@ export function CharacterDetailSheet({
         onTouchEnd={handleTouchEnd}
       >
         {/* 面板下沿贴着屏幕边缘，pb-0 只描上沿与两侧，免得屏底多出一条 2px 金线 */}
-        <FeaturedFrame featured={!!character?.is_featured} className="h-full rounded-t-[32px] pb-0">
+        <FeaturedFrame
+          featured={!!character?.is_featured}
+          className="featured-character-frame--live h-full rounded-t-[32px] pb-0"
+        >
           <div className="flex h-full flex-col overflow-hidden rounded-t-[30px] border border-border bg-popover/95 shadow-[0_-20px_80px_rgba(0,0,0,0.55)]">
             {/* 拖拽把手 */}
             <div className="flex shrink-0 justify-center pb-1 pt-2.5">
@@ -129,12 +142,24 @@ export function CharacterDetailSheet({
                 {isLoading ? (
                   <div className="h-full w-full animate-pulse bg-secondary" />
                 ) : hasAvatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={character!.avatar_url}
-                    alt={character!.name}
-                    className="h-full w-full object-cover object-top"
-                  />
+                  <>
+                    {/* 底层是大厅已缓存的缩略图，立即可见；高清原图加载完成后覆盖在上面。 */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={lobbyImageUrl(character!.avatar_url)}
+                      alt=""
+                      aria-hidden="true"
+                      decoding="async"
+                      className="absolute inset-0 h-full w-full object-cover object-top"
+                    />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={character!.avatar_url}
+                      alt={character!.name}
+                      decoding="async"
+                      className="absolute inset-0 h-full w-full object-cover object-top"
+                    />
+                  </>
                 ) : (
                   <div className="h-full w-full" style={{ background: gradient }} />
                 )}

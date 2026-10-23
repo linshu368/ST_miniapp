@@ -129,6 +129,28 @@ export function CharacterGallery() {
   }, [previewId, router]);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
+
+  // 弹层用列表里已有的摘要即时打开，详情接口只补开场白。
+  const previewSummary = useMemo(
+    () => (previewId ? characters.find((c) => c.id === previewId) : undefined),
+    [characters, previewId]
+  );
+
+  // 引用必须稳定，CharacterCard 的 memo 才有意义：打开弹层不再重渲染整页卡片。
+  const handleSelectCharacter = useCallback(
+    (id: string) => {
+      if (!enteringId) setPreviewId(id);
+    },
+    [enteringId]
+  );
+
+  // 弹层盖住大厅期间暂停底下所有金框流光（弹层自己的金框不受影响，见 globals.css）。
+  useEffect(() => {
+    if (!previewId) return;
+    const root = document.documentElement;
+    root.classList.add('featured-paused');
+    return () => root.classList.remove('featured-paused');
+  }, [previewId]);
   const firstScreenCharacters = useMemo(
     () => characters.slice(0, FIRST_SCREEN_IMAGE_COUNT),
     [characters]
@@ -465,9 +487,7 @@ export function CharacterGallery() {
               character={c}
               priority={index < FIRST_SCREEN_IMAGE_COUNT}
               onImageSettled={handleImageSettled}
-              onSelect={() => {
-                if (!enteringId) setPreviewId(c.id);
-              }}
+              onSelect={handleSelectCharacter}
             />
           ))}
         </div>
@@ -475,6 +495,7 @@ export function CharacterGallery() {
 
       <CharacterDetailSheet
         characterId={previewId}
+        summary={previewSummary}
         entering={enteringId !== null}
         onClose={() => {
           if (enteringId) {
