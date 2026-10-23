@@ -442,12 +442,18 @@ it('上游请求带有服务端生成超时信号', async () => {
 });
 
 describe('execute（请求体）', () => {
-  it('只发 model / messages / stream，采样参数为空时不出现多余字段', async () => {
+  it('defaults OpenRouter reasoning on without adding sampling fields', async () => {
     const fetchMock = stubUpstream(() => sseResponse(['data: [DONE]\n\n']));
 
     await execute(request(), undefined, fakeLogger());
 
-    expect(Object.keys(requestBodyOf(fetchMock)).sort()).toEqual(['messages', 'model', 'stream']);
+    expect(Object.keys(requestBodyOf(fetchMock)).sort()).toEqual([
+      'messages',
+      'model',
+      'reasoning',
+      'stream',
+    ]);
+    expect(requestBodyOf(fetchMock).reasoning).toEqual({ enabled: true, exclude: false });
   });
 
   it('命中供应商路由规则时请求体带 provider 字段', async () => {
@@ -485,7 +491,7 @@ describe('execute（请求体）', () => {
     expect(body.messages[2]?.content).toBe('平台规则 + 你好');
   });
 
-  it('Venice 请求禁用 system prompt 和推理，并使用 prompt_cache_key 而不是 OpenRouter routing/cache_control', async () => {
+  it('Venice defaults reasoning on and uses its own flags/cache instead of OpenRouter routing', async () => {
     providerPreferences = { ignore: ['alibaba'], order: ['friendli'], allow_fallbacks: true };
     billingContext = {
       ...defaultBillingContext,
@@ -527,10 +533,245 @@ describe('execute（请求体）', () => {
     expect(body.model).toBe('venice-uncensored');
     expect(body.provider).toBeUndefined();
     expect(body.messages.every((message) => typeof message.content === 'string')).toBe(true);
-    expect(body.venice_parameters).toEqual({ include_venice_system_prompt: false });
-    expect(body.reasoning).toEqual({ enabled: false });
+    expect(body.venice_parameters).toEqual({
+      include_venice_system_prompt: false,
+      disable_thinking: false,
+      strip_thinking_response: false,
+    });
+    expect(body.reasoning).toEqual({ enabled: true });
     expect(body.prompt_cache_key).toBe('session:session-1');
     expect(body.stream_options).toEqual({ include_usage: true });
+  });
+
+  it.each(['openrouter', 'venice'] as const)(
+    '%s maps explicit off without platform parameter leakage',
+    async (provider) => {
+      billingContext = { ...defaultBillingContext, provider };
+      vi.stubEnv('VENICE_API_KEY', 'test-venice-key');
+      const fetchMock = stubUpstream(() => sseResponse(['data: [DONE]\n\n']));
+      await execute(request({ thinkingEnabled: false }), undefined, fakeLogger());
+      const body = requestBodyOf(fetchMock);
+      if (provider === 'openrouter') {
+        expect(body.reasoning).toEqual({ enabled: false, exclude: true });
+        expect(body.venice_parameters).toBeUndefined();
+      } else {
+        expect(body.reasoning).toEqual({ enabled: false });
+        expect(body.venice_parameters).toEqual({
+          include_venice_system_prompt: false,
+          disable_thinking: true,
+          strip_thinking_response: true,
+        });
+      }
+      expect(body.reasoning_effort).toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
+});
+
+describe('reasoning is progress, never a roleplay answer or billing proof', () => {
+  it('enabled reasoning selects one attempt before forwarding and keeps its delayed answer/billing', async () => {
+    quotaState.granted = true;
+    const order: string[] = [];
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              setTimeout(
+                () =>
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      `data: ${JSON.stringify({ id: 'primary-gen', choices: [{ delta: { reasoning_content: '先思考' } }] })}\n\n`
+                    )
+                  ),
+                10
+              );
+              setTimeout(() => {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ id: 'primary-gen', choices: [{ delta: { content: '后回答' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+                  )
+                );
+                controller.close();
+              }, 100);
+            },
+          })
+        )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const req = request({ thinkingEnabled: true });
+    req.model.firstTokenPolicy = {
+      timeoutMs: 30,
+      deadlineMs: 60,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    const selectDelivery = vi.fn(async () => {
+      order.push('persist delivery');
+    });
+    const prepareFallback = vi.fn(async () => {});
+    req.firstToken = {
+      primaryAttemptId: 'attempt-primary',
+      requestStartedAt: performance.now(),
+      store: { observe: vi.fn(async () => {}), selectDelivery, prepareFallback },
+    };
+    const onFirstToken = vi.fn(() => {
+      order.push('first token');
+    });
+    const result = await execute(
+      req,
+      {
+        onFirstToken,
+        onReasoningDelta: (text) => order.push(text),
+        onDelta: (text) => order.push(text),
+      },
+      fakeLogger()
+    );
+    expect(result).toMatchObject({ status: 'success', content: '后回答' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(prepareFallback).not.toHaveBeenCalled();
+    expect(selectDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ generation_id: 'primary-gen', role: 'primary' })
+    );
+    expect(order).toEqual(['persist delivery', 'first token', '先思考', '后回答']);
+    expect(onFirstToken).toHaveBeenCalledTimes(1);
+    expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(true);
+    expect(savedHistory()).toHaveLength(1);
+    expect(savedHistory()[0]?.assistant_reply).toBe('后回答');
+    expect(JSON.stringify(savedHistory())).not.toContain('先思考');
+  });
+
+  it('streams reasoning separately and persists only the final answer', async () => {
+    const reasoning = vi.fn();
+    const answer = vi.fn();
+    const logger = fakeLogger();
+    stubUpstream(
+      sseResponse([
+        `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: { reasoning: 'private test thought' } }] })}\n\n`,
+        DELTA('最终正文'),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
+    const result = await execute(
+      request(),
+      { onReasoningDelta: reasoning, onDelta: answer },
+      logger
+    );
+    expect(reasoning).toHaveBeenCalledExactlyOnceWith('private test thought');
+    expect(answer).toHaveBeenCalledExactlyOnceWith('最终正文');
+    expect(result).toMatchObject({ status: 'success', content: '最终正文' });
+    expect(JSON.stringify(savedHistory())).not.toContain('private test thought');
+    expect(JSON.stringify(vi.mocked(logger.biz.info).mock.calls)).not.toContain(
+      'private test thought'
+    );
+  });
+
+  it.each([true, false])(
+    'reasoning-only with switch %s releases free quota and cannot be charged',
+    async (thinkingEnabled) => {
+      quotaState.granted = true;
+      const reasoning = vi.fn();
+      stubUpstream(
+        sseResponse([
+          `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'provider thought' } }] })}\n\n`,
+          DELTA('<think>legacy thought</think>'),
+          `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+          'data: [DONE]\n\n',
+        ])
+      );
+      const result = await execute(
+        request({ thinkingEnabled }),
+        { onReasoningDelta: reasoning },
+        fakeLogger()
+      );
+      expect(result).toMatchObject({
+        status: 'stream_interrupted',
+        content: '',
+        finishReason: 'stop',
+      });
+      expect(quotaState.finalize).toHaveBeenCalledWith(false);
+      expect(savedHistory()[0]).toMatchObject({
+        assistant_reply: null,
+        status: 'stream_interrupted',
+      });
+      expect(JSON.stringify(savedHistory())).not.toContain('thought');
+      if (!thinkingEnabled) expect(reasoning).not.toHaveBeenCalled();
+    }
+  );
+
+  it('off suppresses even unexpected reasoning while still stripping leading legacy tags', async () => {
+    const reasoning = vi.fn();
+    stubUpstream(
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'unexpected thought' } }] })}\n\n`,
+        DELTA('<think>legacy thought</think>角色正文'),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ])
+    );
+    const result = await execute(
+      request({ thinkingEnabled: false }),
+      { onReasoningDelta: reasoning },
+      fakeLogger()
+    );
+    expect(reasoning).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'success', content: '角色正文' });
+    expect(savedHistory()[0]?.assistant_reply).toBe('角色正文');
+  });
+
+  it('non-streaming replies also keep thought out of content and await call identity before callbacks', async () => {
+    const order: string[] = [];
+    stubUpstream(
+      new Response(
+        JSON.stringify({
+          id: 'gen-1',
+          choices: [
+            {
+              message: {
+                reasoning_content: '非流式思考',
+                content: '<think>重复思考</think>正文',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+        })
+      )
+    );
+    const result = await execute(
+      request({ stream: false }),
+      {
+        onGenerationId: async () => {
+          order.push('persist');
+        },
+        onReasoningDelta: (text) => order.push(`reasoning:${text}`),
+        onDelta: (text) => order.push(`answer:${text}`),
+      },
+      fakeLogger()
+    );
+    expect(order).toEqual(['persist', 'reasoning:非流式思考', 'answer:正文']);
+    expect(result.content).toBe('正文');
+    expect(savedHistory()[0]?.assistant_reply).toBe('正文');
+  });
+
+  it('rejected off requests never retry or echo provider reasoning into errors/logs', async () => {
+    const fetchMock = stubUpstream(
+      new Response(
+        JSON.stringify({
+          error: { message: 'Reasoning cannot be disabled: private thought' },
+        }),
+        { status: 400 }
+      )
+    );
+    const error = vi.fn();
+    const result = await execute(
+      request({ thinkingEnabled: false }),
+      { onError: error },
+      fakeLogger()
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe('upstream_error');
+    expect(error.mock.calls[0]?.[0].message).toBe('upstream 400');
   });
 });
 

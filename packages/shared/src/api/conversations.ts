@@ -12,6 +12,9 @@ export type ChatMessageRole = 'user' | 'assistant';
 
 export type ChatMessageStatus = 'streaming' | 'complete' | 'interrupted' | 'failed';
 
+/** Maximum provider-exposed reasoning characters forwarded or retained for one turn. */
+export const MAX_CONVERSATION_REASONING_LENGTH = 65_536;
+
 export interface ChatMessage {
   id: string;
   /** Optional caller correlation UUID; identifies a pending request before SSE start. */
@@ -174,11 +177,14 @@ export interface SendMessageRequest {
   /** Correlation only; not an idempotency key or a billing identifier. */
   request_id?: string;
   content: string;
+  /** New UI defaults to true; omission keeps older clients on the content-only path. */
+  thinking_enabled?: boolean;
 }
 
 /** 重生成只作用于最后一轮，轮次由后端判定，无需入参 */
 export interface RegenerateRequest {
   request_id?: string;
+  thinking_enabled?: boolean;
 }
 
 // ==== SSE 事件契约 ====
@@ -200,6 +206,8 @@ export interface ConversationStreamStartEvent {
   user_message_id: string | null;
   assistant_message_id: string;
   revision: number;
+  /** Requested setting for this turn, not a guarantee that the model exposes reasoning. */
+  thinking_enabled?: boolean;
   /** 本轮开轮时绑定的规则版本。旧 start 事件没有该字段时按 null 解释。 */
   postprocess_version?: number | null;
 }
@@ -207,6 +215,12 @@ export interface ConversationStreamStartEvent {
 /** 增量：text 是本次新增的片段，不是累积全文 */
 export interface ConversationStreamDeltaEvent {
   type: 'delta';
+  text: string;
+}
+
+/** Provider-exposed progress only; never part of the saved roleplay answer or context. */
+export interface ConversationStreamReasoningEvent {
+  type: 'reasoning';
   text: string;
 }
 
@@ -231,6 +245,7 @@ export interface ConversationStreamErrorEvent {
 export type ConversationStreamEvent =
   | ConversationStreamStartEvent
   | ConversationStreamDeltaEvent
+  | ConversationStreamReasoningEvent
   | ConversationStreamDoneEvent
   | ConversationStreamErrorEvent;
 
