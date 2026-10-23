@@ -11,7 +11,16 @@
  */
 
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from 'fastify';
-import { fail, ok, PatchGenerationConfigRequestSchema } from '@miniapp/shared';
+import { FirstTokenDeadlineError } from '../features/generation/first-token-fallback.js';
+import { GenerationObservationRepository } from '../infrastructure/repositories/GenerationObservationRepository.js';
+import { fetchModelCatalogSnapshot } from '../platform/model-tiers.js';
+import {
+  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  ReportFirstTokenRequestSchema,
+  fail,
+  ok,
+  PatchGenerationConfigRequestSchema,
+} from '@miniapp/shared';
 import type {
   CancelConversationTurnRequest,
   CancelConversationTurnData,
@@ -129,6 +138,26 @@ export default async function conversationRoutes(app: FastifyInstance) {
         );
         return reply.status(500).send(fail('INTERNAL_ERROR', '取消回复失败，请稍后重试'));
       }
+    }
+  );
+
+  // @frontend-ready: true
+  app.post(
+    '/api/v1/conversations/:id/first-token',
+    { preHandler: [requireTelegramAuth] },
+    async (request, reply) => {
+      if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+      const sessionId = (request.params as { id?: string }).id;
+      const parsed = ReportFirstTokenRequestSchema.safeParse(request.body);
+      if (!sessionId || !UUID_PATTERN.test(sessionId) || !parsed.success)
+        return reply.status(400).send(fail('BAD_REQUEST', '首 token 观测字段无效'));
+      const dbUser = await getOrCreateDbUser(request.user);
+      const recorded = await new GenerationObservationRepository().report(
+        dbUser.id,
+        sessionId,
+        parsed.data
+      );
+      return reply.send(ok({ recorded }));
     }
   );
 
@@ -411,9 +440,19 @@ export default async function conversationRoutes(app: FastifyInstance) {
     // 必须在任何可能耗时的 await 之前建好：客户端断开的监听要尽早挂上
     const sink = createReplyStreamSink(reply);
     const receivedAt = Date.now();
-    const preparationSignal = AbortSignal.timeout(20_000);
+    const receivedMonotonicAt = performance.now();
+    let preparationSignal = AbortSignal.timeout(DEFAULT_FIRST_TOKEN_DEADLINE_MS);
 
     try {
+      const catalog = await withConversationPreparationDeadline(
+        fetchModelCatalogSnapshot(),
+        preparationSignal
+      );
+      const firstTokenDeadlineMs =
+        catalog.catalog.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS;
+      preparationSignal = AbortSignal.timeout(
+        Math.max(1, Math.ceil(firstTokenDeadlineMs - (performance.now() - receivedMonotonicAt)))
+      );
       // A late identity/ownership read must not open a turn after the client gave up.
       // Race each preparation await, never a block containing generation or quota writes.
       const dbUser = await withConversationPreparationDeadline(
@@ -432,6 +471,8 @@ export default async function conversationRoutes(app: FastifyInstance) {
         sink,
         log,
         receivedAt,
+        receivedMonotonicAt,
+        firstTokenDeadlineMs,
         requestId: input.requestId,
       });
       finishTurn(reply, outcome);
@@ -550,6 +591,16 @@ function failTurn(
   error: unknown,
   log: RequestLogger
 ): void {
+  if (
+    error instanceof FirstTokenDeadlineError ||
+    (error instanceof Error && error.name === 'TimeoutError')
+  ) {
+    if (sink.opened) {
+      sink.send({ type: 'error', code: 'upstream_error', message: '这次响应有点慢，请重试。' });
+      sink.close();
+    } else void reply.status(504).send(fail('first_token_timeout', '这次响应有点慢，请重试。'));
+    return;
+  }
   if (sink.opened) {
     log.sys.error(
       { event: 'conversation.turn.failed_mid_stream', err: error },

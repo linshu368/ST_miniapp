@@ -19,7 +19,7 @@
 1. React 18 函数组件 + Next.js App Router + TypeScript strict；禁止 class、Pages Router 和 `any`。
 2. 服务端数据通过 `src/lib/api/` 的 React Query query/mutation；业务组件不得直接 `fetch/axios`，不得用 `useEffect` 取服务端数据。
 3. 对外 DTO 来自 `@miniapp/shared`；不得使用数据库行类型或 import 其他应用包。
-4. 状态职责：局部交互 `useState/useReducer`；跨组件客户端状态 Zustand；服务器缓存 React Query；表单 React Hook Form + Zod；URL 可分享状态放路由/search params。
+4. 状态职责：局部交互 `useState/useReducer`；跨组件客户端状态 Zustand；服务器缓存 React Query；URL 可分享状态放路由/search params。
 5. 样式用 Tailwind 和现有 shadcn/Radix；除 `app/globals.css` 等既有全局入口外不新增 CSS/SCSS。先复用已有组件，不引入 Redux/MUI/AntD/styled-components/GraphQL/Socket.io 等替代栈。
 6. ST bridge 已退场。不得新增 iframe、`postMessage`、`platformAction`、`useSTEvent` 或 `@repo/bridge-protocol`。
 7. 未经需求明确，不重做 UX、文案、布局或视觉。关键交互必须覆盖 loading/error/empty/disabled/success 和移动端安全区。

@@ -1,12 +1,12 @@
 'use client';
 
-import { ChevronDown, Sparkles, X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import { useState } from 'react';
 import type { ImagePlazaAspectRatio, ImagePlazaModel } from '@miniapp/shared';
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '@/components/ui/sheet';
 
 type ResolutionId = '1K' | '2K' | 'fixed';
-type ExpandedSetting = 'style' | 'ratio' | 'resolution' | null;
+type ExpandedSetting = 'ratio' | 'resolution' | null;
 
 interface StudioSettingsDialogProps {
   open: boolean;
@@ -24,15 +24,15 @@ interface StudioSettingsDialogProps {
 }
 
 const ASPECT_LABELS: Record<ImagePlazaAspectRatio, string> = {
-  '1:1': 'Square (1:1)',
-  '2:3': 'Portrait (2:3)',
-  '3:2': 'Wide (3:2)',
-  '3:4': 'Classic (3:4)',
-  '4:3': 'Landscape (4:3)',
-  '4:5': 'Poster (4:5)',
-  '9:16': 'Vertical (9:16)',
-  '16:9': 'Landscape (16:9)',
-  '21:9': 'Cinema (21:9)',
+  '1:1': '方形 1:1',
+  '2:3': '竖版 2:3',
+  '3:2': '横版 3:2',
+  '3:4': '竖版 3:4',
+  '4:3': '横版 4:3',
+  '4:5': '海报 4:5',
+  '9:16': '竖屏 9:16',
+  '16:9': '宽屏 16:9',
+  '21:9': '超宽屏 21:9',
 };
 
 export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
@@ -47,7 +47,7 @@ export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
         side="bottom"
         aria-describedby={undefined}
         overlayClassName="bg-black/80 backdrop-blur-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
-        className="mx-auto max-h-[76dvh] w-full max-w-3xl overflow-y-auto rounded-t-[1.25rem] border-border bg-card p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-18px_42px_rgba(0,0,0,0.3)] motion-reduce:transition-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
+        className="chat-scroll-area mx-auto max-h-[76dvh] w-full max-w-3xl overflow-y-auto rounded-t-[1.25rem] border-border bg-card p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-18px_42px_rgba(0,0,0,0.3)] motion-reduce:transition-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none"
       >
         <div className="overflow-hidden rounded-2xl border border-border bg-card">
           <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-left">
@@ -73,25 +73,11 @@ export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
           </div>
 
           <SettingSection
-            label="图片风格"
-            expanded={expanded === 'style'}
-            control={
-              <SelectorButton expanded={expanded === 'style'} onClick={() => toggle('style')}>
-                <StyleThumbnail />
-                <span>None</span>
-              </SelectorButton>
-            }
-          >
-            <ChoiceButton selected onClick={() => setExpanded(null)}>
-              None
-            </ChoiceButton>
-          </SettingSection>
-
-          <SettingSection
-            label="长宽比"
+            label="画幅"
             expanded={expanded === 'ratio'}
             control={
               <SelectorButton expanded={expanded === 'ratio'} onClick={() => toggle('ratio')}>
+                <AspectShape value={props.aspectRatio} />
                 <span>{ASPECT_LABELS[props.aspectRatio]}</span>
               </SelectorButton>
             }
@@ -105,6 +91,7 @@ export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
                   setExpanded(null);
                 }}
               >
+                <AspectShape value={value} />
                 {ASPECT_LABELS[value]}
               </ChoiceButton>
             ))}
@@ -203,11 +190,15 @@ function SelectorButton(props: {
   );
 }
 
-function StyleThumbnail() {
+function AspectShape({ value }: { value: ImagePlazaAspectRatio }) {
+  const [width = 1, height = 1] = value.split(':').map(Number);
+  const scale = 22 / Math.max(width, height);
   return (
-    <span className="relative block size-6 shrink-0 overflow-hidden rounded-lg bg-[#28213d]">
-      <Sparkles className="absolute left-1 top-0.5 size-2.5 text-[#c59b2c]" />
-      <span className="absolute inset-x-0 bottom-0 h-2.5 rounded-[50%_50%_0_0] bg-[#665177]" />
+    <span aria-hidden className="flex size-6 shrink-0 items-center justify-center">
+      <span
+        className="block rounded-[2px] border border-current bg-primary/10"
+        style={{ width: width * scale, height: height * scale }}
+      />
     </span>
   );
 }
@@ -220,8 +211,9 @@ function ChoiceButton(props: {
   return (
     <button
       type="button"
+      aria-pressed={props.selected}
       onClick={props.onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs transition ${
+      className={`inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition ${
         props.selected
           ? 'border-primary bg-primary font-bold text-primary-foreground'
           : 'border-border bg-background/45 text-muted-foreground'

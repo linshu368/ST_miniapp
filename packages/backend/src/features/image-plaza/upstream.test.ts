@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../../platform/config.js';
-import { generateImagePlazaImage } from './upstream.js';
+import { generateImagePlazaImage, stripUnsupportedImagePlazaPromptTags } from './upstream.js';
 
 const originalProviderConfig = { ...config.imagePlaza };
 const originalVeniceConfig = { ...config.venice };
+/** 超过过小图阈值，避免单测被 content_rejected 误伤。 */
+const validImageBytes = Buffer.alloc(5 * 1024, 7);
 
 beforeEach(() => {
   Object.assign(config.imagePlaza, {
@@ -22,12 +24,51 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('stripUnsupportedImagePlazaPromptTags', () => {
+  it('removes lora/lyco/hypernet angle-bracket tags and collapses spaces', () => {
+    expect(
+      stripUnsupportedImagePlazaPromptTags(
+        'masterpiece, <lora:shiny_nai:1> 1girl, <lyco:foo:0.5> smile <hypernet:bar:1>'
+      )
+    ).toBe('masterpiece, 1girl, smile');
+  });
+
+  it('leaves ordinary prompts unchanged', () => {
+    expect(stripUnsupportedImagePlazaPromptTags('1girl, red hair, smile')).toBe(
+      '1girl, red hair, smile'
+    );
+  });
+});
+
 describe('generateImagePlazaImage', () => {
+  it('strips LoRA tags from the outbound Venice prompt', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ id: 'request-lora', images: [validImageBytes.toString('base64')] })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await generateImagePlazaImage({
+      providerModelId: 'pixel-model',
+      prompt: 'masterpiece, <lora:shiny_nai_ilxl_goofy_remade:1> 1girl, smile',
+      aspectRatio: '2:3',
+      resolution: 'fixed',
+      sizingMode: 'pixels',
+      mode: 't2i',
+      autoOptimize: false,
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(body.prompt).toBe('masterpiece, 1girl, smile');
+  });
+
   it('uses controlled pixel dimensions for pixel-sized generation models', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
-        Response.json({ id: 'request-1', images: [Buffer.from([1, 2, 3]).toString('base64')] })
+        Response.json({ id: 'request-1', images: [validImageBytes.toString('base64')] })
       );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -60,7 +101,7 @@ describe('generateImagePlazaImage', () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
-        Response.json({ id: 'request-2', images: [Buffer.from([1]).toString('base64')] })
+        Response.json({ id: 'request-2', images: [validImageBytes.toString('base64')] })
       );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -80,7 +121,7 @@ describe('generateImagePlazaImage', () => {
   });
 
   it('uses the Venice edit body and reads its binary response', async () => {
-    const bytes = Uint8Array.from([1, 2, 3, 4]);
+    const bytes = Buffer.alloc(5 * 1024, 4);
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(bytes, {
         status: 200,
@@ -115,6 +156,59 @@ describe('generateImagePlazaImage', () => {
     expect(body).not.toHaveProperty('enhance_prompt');
     expect(result).toMatchObject({ mimeType: 'image/png', providerRequestId: 'edit-request' });
     expect(result.bytes).toEqual(Buffer.from(bytes));
+  });
+
+  it('rejects content-violation headers before settlement', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ id: 'viol', images: [validImageBytes.toString('base64')] }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'x-venice-is-content-violation': 'true',
+          },
+        })
+      )
+    );
+
+    await expect(
+      generateImagePlazaImage({
+        providerModelId: 'model',
+        prompt: 'portrait',
+        aspectRatio: '1:1',
+        resolution: '1K',
+        sizingMode: 'aspect_ratio',
+        mode: 't2i',
+      })
+    ).rejects.toMatchObject({
+      code: 'image_plaza_provider_content_rejected',
+      outcomeUnknown: false,
+    });
+  });
+
+  it('rejects suspiciously small provider images', async () => {
+    const tiny = Buffer.alloc(1908, 0);
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json({ id: 'tiny', images: [tiny.toString('base64')] }))
+    );
+
+    await expect(
+      generateImagePlazaImage({
+        providerModelId: 'model',
+        prompt: 'portrait',
+        aspectRatio: '1:1',
+        resolution: '1K',
+        sizingMode: 'aspect_ratio',
+        mode: 't2i',
+      })
+    ).rejects.toMatchObject({
+      code: 'image_plaza_provider_content_rejected',
+      outcomeUnknown: false,
+    });
   });
 
   it('marks unreadable successful responses as an unknown provider outcome', async () => {

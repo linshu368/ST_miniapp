@@ -1,5 +1,6 @@
 'use client';
 
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
@@ -63,6 +64,7 @@ export default function PaymentPendingPage() {
     : '/profile/recharge';
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = usePaymentOrderQuery(orderId);
+  usePageReady('/profile/recharge/:id', data !== undefined);
   const { data: plansData } = usePaymentPlansQuery();
   const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const order = data?.order;

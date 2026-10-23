@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { discardPendingAction, startPendingAction } from '@/lib/perf/action-tracker';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import {
   Copy,
@@ -12,25 +14,36 @@ import {
   Sparkles,
   WandSparkles,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  IMAGE_PLAZA_FEED_STALE_TIME_MS,
   imagePlazaKeys,
   useCreateImagePlazaConversationMutation,
   useImagePlazaFeedQuery,
   useSetImagePlazaLikeMutation,
 } from '@/lib/api/image-plaza';
 import type { GetImagePlazaFeedData, ImagePlazaWork, ImagePlazaFeedSort } from '@miniapp/shared';
+import { ImagePlazaHistorySheet } from '@/components/image-plaza/image-plaza-history-sheet';
+import {
+  clearImagePlazaReturn,
+  readImagePlazaReturn,
+  restoreImagePlazaReturn,
+  saveImagePlazaReturn,
+} from '@/lib/image-plaza-return';
 
 export default function CreatePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [tag, setTag] = useState('all');
+  const [returnSnapshot] = useState(() => readImagePlazaReturn());
+  const restoring = useRef(returnSnapshot !== null);
+  const [search, setSearch] = useState(returnSnapshot?.search ?? '');
+  const [tag, setTag] = useState(returnSnapshot?.tag ?? 'all');
   const [tags, setTags] = useState<GetImagePlazaFeedData['tags']>([{ id: 'all', label: '全部' }]);
-  const [sort, setSort] = useState<ImagePlazaFeedSort>('recommended');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sort, setSort] = useState<ImagePlazaFeedSort>(returnSnapshot?.sort ?? 'recommended');
+  const [debouncedSearch, setDebouncedSearch] = useState(returnSnapshot?.search ?? '');
   const feed = useImagePlazaFeedQuery(debouncedSearch, tag, sort);
+  usePageReady('/create', feed.data !== undefined);
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
   const createConversation = useCreateImagePlazaConversationMutation();
   const sentinel = useRef<HTMLDivElement | null>(null);
@@ -38,6 +51,25 @@ export default function CreatePage() {
   const [pullDistance, setPullDistance] = useState(0);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [pendingSourceWorkId, setPendingSourceWorkId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!returnSnapshot) return;
+    clearImagePlazaReturn();
+    const cancelRestore = () => {
+      restoring.current = false;
+    };
+    // Weak networks must not cause a delayed jump after the user has resumed browsing.
+    const timer = window.setTimeout(cancelRestore, 2000);
+    window.addEventListener('pointerdown', cancelRestore, { passive: true });
+    window.addEventListener('wheel', cancelRestore, { passive: true });
+    window.addEventListener('keydown', cancelRestore);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('pointerdown', cancelRestore);
+      window.removeEventListener('wheel', cancelRestore);
+      window.removeEventListener('keydown', cancelRestore);
+    };
+  }, [returnSnapshot]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 300);
@@ -95,11 +127,36 @@ export default function CreatePage() {
   // 行优先分列：1 2 / 3 4，避免 CSS columns 的竖向填充（1 3 / 2 4）
   const feedColumns = useMemo(() => splitIntoColumns(items, 2), [items]);
 
+  useLayoutEffect(() => {
+    if (
+      !returnSnapshot ||
+      !restoring.current ||
+      !feed.data ||
+      feed.isFetching ||
+      feed.paginationInvalidated
+    )
+      return;
+    // The feed resets expired pagination in a passive effect; wait for its fresh first page
+    // instead of restoring against cached cards that are about to disappear.
+    if (Date.now() - feed.dataUpdatedAt > IMAGE_PLAZA_FEED_STALE_TIME_MS) return;
+    restoreImagePlazaReturn(returnSnapshot);
+    restoring.current = false;
+  }, [returnSnapshot, feed.data, feed.dataUpdatedAt, feed.isFetching, feed.paginationInvalidated]);
+
+  const saveReturn = (workId?: string) => saveImagePlazaReturn({ search, tag, sort }, workId);
+
   const startStudio = (sourceWorkId?: string) => {
+    saveReturn(sourceWorkId);
     setPendingSourceWorkId(sourceWorkId ?? 'new');
+    startPendingAction('create_conversation');
     createConversation.mutate(sourceWorkId ? { source_work_id: sourceWorkId } : {}, {
       onSuccess: ({ conversation }) => router.push(`/create/studio/${conversation.id}`),
-      onError: () => setPendingSourceWorkId(null),
+      onError: () => {
+        // 失败也算有了反馈（恢复按钮状态），不再计为「点了没反应」。
+        discardPendingAction('create_conversation');
+        clearImagePlazaReturn();
+        setPendingSourceWorkId(null);
+      },
     });
   };
 
@@ -151,27 +208,33 @@ export default function CreatePage() {
           {isPullRefreshing ? '正在刷新' : pullDistance >= 64 ? '松开刷新' : '下拉刷新'}
         </div>
       ) : null}
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-3">
+      <header
+        data-image-plaza-header
+        className="sticky top-0 z-30 border-b border-border/60 bg-background/90 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur-xl"
+      >
+        <div className="flex items-center justify-between gap-2 min-[360px]:gap-3">
           <div>
             <p className="text-[10px] font-bold uppercase leading-3 tracking-[0.22em] text-primary/70">
               Discover
             </p>
-            <h1 className="text-xl font-black leading-7 tracking-tight">图片广场</h1>
+            <h1 className="whitespace-nowrap text-[18px] font-black leading-7 tracking-tight min-[360px]:text-xl">
+              影像广场
+            </h1>
           </div>
           <div className="flex items-center gap-2">
+            <ImagePlazaHistorySheet beforeNavigate={() => saveReturn()} />
             <button
               type="button"
               onClick={() => startStudio()}
               disabled={createConversation.isPending}
-              className="inline-flex h-10 items-center gap-1.5 rounded-full bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-60 sm:px-4"
+              className="inline-flex h-10 items-center gap-1 whitespace-nowrap rounded-full bg-primary px-2 text-xs font-bold text-primary-foreground disabled:opacity-60 min-[360px]:gap-1.5 min-[360px]:px-3 sm:px-4"
             >
               {createConversation.isPending ? (
                 <LoaderCircle className="size-4 animate-spin" />
               ) : (
                 <Sparkles className="size-4" />
               )}
-              去创作
+              生成图片
             </button>
           </div>
         </div>
@@ -182,7 +245,7 @@ export default function CreatePage() {
             onChange={(event) => setSearch(event.target.value)}
             placeholder="搜索作品灵感、图片内容"
             className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            aria-label="按作品灵感、内容搜索图片广场"
+            aria-label="按作品灵感、内容搜索影像广场"
           />
         </label>
         <div className="mt-1 space-y-1">
@@ -247,7 +310,7 @@ export default function CreatePage() {
           <EmptyState
             icon={<WandSparkles />}
             title={search || tag !== 'all' ? '没有找到对应作品' : '还没有公开作品'}
-            action={search || tag !== 'all' ? '查看全部' : '创作第一张'}
+            action={search || tag !== 'all' ? '查看全部' : '生成第一张'}
             onAction={() => {
               if (search || tag !== 'all') {
                 setSearch('');
@@ -271,6 +334,7 @@ export default function CreatePage() {
                     useSamePending={pendingSourceWorkId === work.id}
                     interactionDisabled={createConversation.isPending}
                     onPrefetch={() => router.prefetch(`/create/work/${work.id}`)}
+                    onOpen={() => saveReturn(work.id)}
                     onUseSame={() => startStudio(work.id)}
                   />
                 ))}
@@ -308,6 +372,7 @@ function PlazaCard(props: {
   useSamePending: boolean;
   interactionDisabled: boolean;
   onPrefetch: () => void;
+  onOpen: () => void;
   onUseSame: () => void;
 }) {
   const like = useSetImagePlazaLikeMutation(props.work.id);
@@ -325,7 +390,10 @@ function PlazaCard(props: {
   }, [props.work.image_url]);
 
   return (
-    <article className="group relative overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70">
+    <article
+      data-image-work-id={props.work.id}
+      className="group relative overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70"
+    >
       {like.isError ? (
         <p
           role="alert"
@@ -340,6 +408,7 @@ function PlazaCard(props: {
         onPointerEnter={props.onPrefetch}
         onFocus={props.onPrefetch}
         onTouchStart={props.onPrefetch}
+        onClick={props.onOpen}
         className="block"
       >
         <div className="relative w-full overflow-hidden bg-muted/50" style={{ aspectRatio }}>

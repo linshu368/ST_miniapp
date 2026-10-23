@@ -1,20 +1,57 @@
 'use client';
 
 import { Copy, Download, LoaderCircle, RefreshCcw, Share2 } from 'lucide-react';
+import { useRef, useState } from 'react';
 import type { ImagePlazaArtifact } from '@miniapp/shared';
+import { requestTelegramFileDownload } from '@/lib/telegram/hooks';
 
 interface StudioArtifactCardProps {
   artifact: ImagePlazaArtifact;
   prompt: string;
   rewardBadge: string | null;
   sharing?: boolean;
+  regenerating: boolean;
+  regenerateDisabled: boolean;
   onRefresh: (prompt: string) => void;
   onShare: (artifact: ImagePlazaArtifact) => void;
   onNotice: (message: string) => void;
+  onLoad?: () => void;
 }
 
 export function StudioArtifactCard(props: StudioArtifactCardProps) {
   const sharing = props.sharing === true;
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState('');
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  const saveImage = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveFeedback('');
+    setShowOriginal(false);
+    try {
+      const extension =
+        new URL(props.artifact.image_url).pathname.match(/\.(png|jpe?g|webp)$/i)?.[1] ?? 'png';
+      const requested = await requestTelegramFileDownload(
+        props.artifact.image_url,
+        `mijing-image-${props.artifact.id}.${extension}`
+      );
+      if (requested) {
+        setSaveFeedback('已发起保存，请在客户端确认。');
+      } else {
+        setSaveFeedback('当前环境请打开原图后保存。');
+        setShowOriginal(true);
+      }
+    } catch {
+      setSaveFeedback('保存未能发起，请重试，或打开原图保存。');
+      setShowOriginal(true);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
 
   const copyPrompt = async () => {
     try {
@@ -33,8 +70,10 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
           alt="生成结果"
           width={props.artifact.width}
           height={props.artifact.height}
+          loading="lazy"
           decoding="async"
           className={`max-h-full w-full object-contain transition ${sharing ? 'opacity-40' : ''}`}
+          onLoad={props.onLoad}
         />
         {sharing ? (
           <div
@@ -47,18 +86,29 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
           </div>
         ) : null}
       </div>
-      <div className="mt-3 flex justify-end gap-2.5">
-        <ArtifactButton label="重新生成" onClick={() => props.onRefresh(props.prompt)}>
-          <RefreshCcw />
-        </ArtifactButton>
+      <button
+        type="button"
+        disabled={props.regenerateDisabled}
+        onClick={() => props.onRefresh(props.prompt)}
+        className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-muted-foreground disabled:opacity-50"
+      >
+        {props.regenerating ? (
+          <LoaderCircle className="size-4 animate-spin" aria-hidden />
+        ) : (
+          <RefreshCcw className="size-4" aria-hidden />
+        )}
+        {props.regenerating ? '正在提交…' : '按当前设置再生成'}
+      </button>
+      <div className="mt-2 grid grid-cols-3 gap-2">
         <ArtifactButton label="复制提示词" onClick={() => void copyPrompt()}>
           <Copy />
         </ArtifactButton>
         <ArtifactButton
-          label="下载图片"
-          onClick={() => window.open(props.artifact.image_url, '_blank', 'noopener,noreferrer')}
+          label={saving ? '正在保存' : '保存图片'}
+          disabled={saving}
+          onClick={() => void saveImage()}
         >
-          <Download />
+          {saving ? <LoaderCircle className="animate-spin" /> : <Download />}
         </ArtifactButton>
         <div className="relative">
           <ArtifactButton
@@ -76,6 +126,21 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
           ) : null}
         </div>
       </div>
+      {saveFeedback ? (
+        <p role="status" className="mt-2 text-xs leading-5 text-muted-foreground">
+          {saveFeedback}
+          {showOriginal ? (
+            <a
+              href={props.artifact.image_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-1 inline-flex min-h-10 items-center font-semibold text-primary underline underline-offset-2"
+            >
+              打开原图保存
+            </a>
+          ) : null}
+        </p>
+      ) : null}
     </article>
   );
 }
@@ -93,13 +158,14 @@ function ArtifactButton(props: {
       aria-label={props.label}
       disabled={props.disabled}
       onClick={props.onClick}
-      className={`grid size-12 place-items-center rounded-2xl border text-muted-foreground shadow-sm transition active:scale-95 disabled:pointer-events-none disabled:opacity-60 [&_svg]:size-5 ${
+      className={`flex min-h-12 w-full flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 text-[10px] text-muted-foreground shadow-sm transition active:scale-95 disabled:pointer-events-none disabled:opacity-60 [&_svg]:size-4 ${
         props.accent
           ? 'border-primary/50 bg-primary/5 text-primary'
           : 'border-border bg-card hover:text-foreground'
       }`}
     >
       {props.children}
+      <span>{props.label}</span>
     </button>
   );
 }

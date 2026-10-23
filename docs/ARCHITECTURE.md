@@ -24,7 +24,7 @@
 
 ## 1. 架构铁律（违反即拦截）
 
-离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出复用既有 `experience.import_image_plaza_seed_work` 初始化目标作品，不迁移测试用户/点赞/账务；图片实体必须独立迁移。该工具不改变运行时边界，不自动执行生产 SQL。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
+离线数据运维补充：2026-10-19 的 Civitai seed TEST 导出复用既有 `experience.import_image_plaza_seed_work` 初始化目标作品，不迁移测试用户/点赞/账务；图片实体必须独立迁移。2026-10-20 新增离线 Storage 工具，固定 TEST → 本地 SHA-256 暂存 → production 仅新增上传/回读校验，有限并发且不覆盖冲突对象。该工具不改变运行时边界，不自动执行生产 SQL；实际完成状态以任务/report 为准。操作方法见 [seed 迁移说明](../ops/image-plaza-seed-migration.md)。
 
 1. **对外数据形状先定义在 `packages/shared/`**，再写 handler。backend 不得在包内私定对外类型。
 2. **每条路由注册上方必须有 `@frontend-ready: true|false — 原因`**，半成品要写出带业务含义的原因。
@@ -33,7 +33,7 @@
 5. **前端不在组件里 fetch**：服务端数据统一走 `frontend/src/lib/api/` 的 React Query hooks；跨组件状态用 Zustand，局部状态用 `useState`。
 6. **生成与计费只有一个出口**：任何要调聊天 LLM 的路径都必须走 `backend/src/features/generation/`（**含实扣**：`settle.ts` 与 `sync-job.ts` 两条结算路径也都在这个模块里）。禁止在别处另起一套"转发 + 扣费 + 落库"，否则计费口径必然漂移。刻意例外包括语音写稿（`features/voice/`）：不同供应商、非流式、抽取任务、按次计费，理由写在 `voice-draft.ts` 与 `voice/billing.ts` 头注释里。 图片广场作品提示词翻译和标签分类也是独立的非流式辅助任务：统一位于 `generation/image-plaza-prompt-translate.ts` 与 `generation/image-plaza-tagging.ts`，不生成聊天回复、不读写聊天历史，也不进入用户聊天计费。legacy guard 仅按文件豁免这两个适配器及既有打标端点测试，不放开目录。
    同类纪律还有三条，一并由 CI 的 legacy guard 拦（见 §7.5）：`experience.chat_history` 只由 `ConversationHistoryRepository` 读写；支付到账只由 `PaymentSettlement.settlePaidOrder` 入账；OpenRouter 用量统计只由 `generation/openrouter-metadata.ts` 读取。
-   **星尘发放（注册 / 签到 / 许愿 / 运营赠送 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**，且六个发奖 RPC 的「钱包 upsert + `bonus_credits` 加值 + `wallet_ledger` 记账」都收口在唯一入口 **`billing.grant_bonus_credits`**（`20260911_billing_grant_bonus_credits.sql`）；业务判定（配置、去重、上限、通知、审计）留在各 RPC。应用层只调 RPC、不做手动余额加减。CI 由 legacy guard `wallet-bonus-grant` 拦新迁移里再出现 `bonus_credits = bonus_credits + …`（见 §7.5）。充值入账（动 `main_credits` 与支付字段）是另一条已收口的路径，不走这个入口。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
+   **现行应用的星尘发放（注册 / 签到 / 运营赠送 / 邀请 / 社群）只发生在数据库 `SECURITY DEFINER` RPC 内**，且对应发奖 RPC 的「钱包 upsert + `bonus_credits` 加值 + `wallet_ledger` 记账」都收口在唯一入口 **`billing.grant_bonus_credits`**（`20260911_billing_grant_bonus_credits.sql`）；业务判定（配置、去重、上限、通知、审计）留在各 RPC。应用层只调 RPC、不做手动余额加减。CI 由 legacy guard `wallet-bonus-grant` 拦新迁移里再出现 `bonus_credits = bonus_credits + …`（见 §7.5）。充值入账（动 `main_credits` 与支付字段）是另一条已收口的路径，不走这个入口。发奖 RPC 的挂点：邀请「聊天轮数」在 `generation/settle.ts` 结算成功后触发，「首次付费」在 `PaymentSettlement.settlePaidOrder` 入账后触发（`lib/invite-rewards.ts`），社群入群在 `routes/community.ts`（webhook 自动 + 既有成员手动校验）。
 7. **`runtime_config` 只有一个读取入口**：`backend/src/platform/runtime-config.ts`（表在 `app_core.runtime_config`）。模型目录、定价、平台规则模板都从这里取，不允许并行实现第二套读法。
 8. **数据库按八个归属域划分，新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`miniapp_analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
    - `users.total_round` / `miniapp_user_settings.total_round` 由 experience 链路回写；
@@ -74,7 +74,7 @@
         │   routes/voice.ts  语音消息生成（features/voice，开关控计费）      │
         │   routes/images.ts 图片描述/异步出图（DB 租约 worker，默认关闭）   │
         │                                                                   │
-        │  平台业务：characters / favorites / wallet / payment / wishes /   │
+        │  平台业务：characters / favorites / wallet / payment /          │
         │            settings / models / notifications / support            │
         │  运营与增长：/api/growth/miniapp-entry ·                           │
         │             /api/telegram/webhook · invite/* · community/*        │
@@ -89,7 +89,7 @@
 │  ├ experience    会话/chat_history/ │ │ 只在 backend │ └──────────────────┘
 │  │               语音元数据          │ └──────────────┘
 │  ├ billing       钱包/订单/计费/额度 │
-│  ├ miniapp_features 收藏/签到/许愿/  │      ⑤ Telegram Bot webhook
+│  ├ miniapp_features 收藏/签到/通知/  │      ⑤ Telegram Bot webhook
 │  │               通知/排序分         │      → /api/telegram/webhook
 │  ├ cs_platform   旧回访/客服（已停用）│
 │  ├ miniapp_traffic  渠道归因         │  Railway 另有支付任务；development 另有提醒 Cron：
@@ -119,16 +119,16 @@
 
 ### 3.1 契约层
 
-`shared/src/api/` 包含 `envelope`（统一响应包络）、`characters`、`favorites`、**`conversations`**（含 SSE）、**`text-postprocess`**（草稿、发布、版本快照与诊断）、**`voice`**、**`images`**（配置、中文描述、attempt 与会话聚合）、`models`、`settings`、`wallet`、`payment`（含 `PaymentSettlementSource`）、`wishes`、`notifications`、`support`、`growth`（仅入口归因）、`invite`（裂变邀请）、`community`（官方社群奖励）、`health`、`lobby-pinned-characters`、`lobby-ranking-params`、`word-count-tiers`。
+`shared/src/api/` 包含 `envelope`（统一响应包络）、`characters`、`favorites`、**`conversations`**（含 SSE）、**`text-postprocess`**（草稿、发布、版本快照与诊断）、**`voice`**、**`images`**（配置、中文描述、attempt 与会话聚合）、`models`、`settings`、`wallet`、`payment`（含 `PaymentSettlementSource`）、`notifications`、`support`、`growth`（仅入口归因）、`invite`（裂变邀请）、`community`（官方社群奖励）、`health`、`lobby-pinned-characters`、`lobby-ranking-params`、`word-count-tiers`。
 
 > ST 时代的 `chats` / `st-session` / `simulation` 契约已随 ST 清理删除。曾计划的独立 `api-contract` 包不建 ❌，职责留在 `shared/api`。
-> `db-types` 包（Supabase schema 镜像）已随 ST 清理整包删除 ❌；`batch-lab` 内部调试包已退场 ❌，当前 `packages/` 有 6 个包。
+> `db-types` 包（Supabase schema 镜像）已随 ST 清理整包删除 ❌；`batch-lab` 内部调试包已退场 ❌，当前 `packages/` 有 5 个包。
 
 ### 3.2 应用层
 
 | 包               | 职责                                                                                                                                                                                                     | dev 端口 | 部署                    |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------- |
-| `frontend`       | Next.js 14 App Router：大厅 / 会话页（自研聊天 UI）/ 充值 / 许愿池 / 消息中心；React Query + Zustand；Telegram Mini App SDK                                                                              | 3000     | Vercel                  |
+| `frontend`       | Next.js 14 App Router：大厅 / 会话页（自研聊天 UI）/ 充值 / 消息中心；React Query + Zustand；Telegram Mini App SDK                                                                                       | 3000     | Vercel                  |
 | `backend`        | Fastify 5：对话 REST + SSE、prompt 引擎、生成与计费出口、语音生成、平台业务 REST、客服代理 / 归因 / Bot webhook                                                                                          | 3001     | Railway（容器内 :8080） |
 | `admin`          | 运营后台：运营配置（17 个 managed key，含模型目录 / 平台规则 / 大厅置顶与排序参数 / 邀请规则与邀请中心）、角色卡、公告、发布历史、回访星尘赠送、邀请海报上传与邀请明细查询。Vite + React + AntD + Refine | 3003     | Vercel                  |
 | `reply-renderer` | Frontend/Admin 共用的安全回复渲染：Markdown、受限 HTML/CSS、状态折叠与可信 choice；不读 API/数据库、不编译 source。React 源码包                                                                          | —        | 随消费者构建            |
@@ -351,7 +351,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 | `app_core`          | 跨模块根数据     | `users` / `miniapp_user_settings` / `characters` / `runtime_config` / `text_postprocess_versions`                                                                                                                                                                                                                                                                                                            |
 | `experience`        | 核心互动内容     | `chat_sessions` / `chat_history` / `chat_message_audio` / `chat_message_images`（图片 attempt 与租约）/ `image_plaza_*` 会话、报价、attempt、artifact 与公开作品 / 视图 `current_chat_history`；Venice 一对一调用明细表已存在（TEST/Production 的 20260929 文件未记账漂移不可重跑）；OpenRouter 明细表 TEST/Production 四份 migration 已于 2026-10-16 T5 核验记账且 checksum 一致，主表清退仍待独立实施/验收 |
 | `billing`           | 钱               | `payment_orders` / `wallet_ledger` / `user_wallets` / `llm_usage_charges` / `llm_usage_charge_dedup` / `character_free_chat_quotas` / `vip_memberships` / `vip_purchase_grants` / `feature_free_trials` / `image_plaza_share_rewards` / `wallet_refunds` / `_decisions`                                                                                                                                      |
-| `miniapp_features`  | 产品功能状态     | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `wish_roles` / `notifications` / `notification_reads` / `image_plaza_likes` / `community_reward_claims` / `telegram_community_update_receipts`（108）                                                                                                                                                                                |
+| `miniapp_features`  | 产品功能状态     | `character_favorites` / `character_ranking_scores` / `daily_checkins` / `notifications` / `notification_reads` / `image_plaza_likes` / `community_reward_claims` / `telegram_community_update_receipts`（108）；`wish_roles` 仅保留历史数据，无应用层消费者                                                                                                                                                  |
 | `cs_platform`       | 旧客服（已停用） | 旧 CS 回访画像与会话、`support_conversations` / `support_messages` 历史；客服已迁到独立仓库 `linshu368/ST_cs_platform`（库里 `cs` schema），本表只读保留                                                                                                                                                                                                                                                     |
 | `admin`             | 运营管理         | 运营台账号、文本后处理草稿 / 发布请求 / 审计及其他运营配置过程事实                                                                                                                                                                                                                                                                                                                                           |
 | `miniapp_traffic`   | 渠道归因         | `botlinks` + 裂变邀请三表 `invite_codes` / `invite_relations` / `invite_reward_logs`（105，acquisition 域，名称不改）                                                                                                                                                                                                                                                                                        |
@@ -390,30 +390,30 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 
 ### 5.3 数据真相归属
 
-| 数据                 | 权威源                                                                                         | 备注                                                                   |
-| -------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| 用户身份             | `app_core.users`                                                                               | TG 身份 + 归因字段，身份一律用 `tg_id`（`st_handle` 退场中，见 §10.2） |
-| 角色卡元数据         | `app_core.characters`（Prisma）                                                                | 大厅展示 + 引擎取数；`raw_card` 保留原始 JSON                          |
-| 角色卡资源           | Supabase Storage `character-assets`                                                            | PNG / 头像；前端只读                                                   |
-| **会话**             | **`experience.chat_sessions`**                                                                 | 置顶 / 标题 / 窗口起点 / 统计缓存                                      |
-| **对话内容与轮次**   | **`experience.chat_history`**                                                                  | 上下文 / 计费 / 审计三用；ST 存量行 `session_id` 为 NULL               |
-| 回复后处理版本快照   | `app_core.text_postprocess_versions` + `runtime_config` 正式指针                               | source/artifact 不可变；旧消息按自身版本展示，不按最新版本重解释       |
-| 回复后处理运营过程   | `admin` 草稿 / 发布请求 / 审计对象                                                             | Admin 是唯一权威写入入口；发布事务原子切换 runtime 指针                |
-| 语音消息             | `experience.chat_message_audio` + Storage `miniapp-chat-voice`                                 | 每条 assistant 回复的 TTS 产物元数据                                   |
-| 图片消息             | `experience.chat_message_images` + Storage `miniapp-chat-images`                               | 每条 assistant 回复的图片 attempts、current 与内部任务状态             |
-| 图片广场作品         | `experience.image_plaza_works` / `image_plaza_artifacts` + Storage `image-plaza`               | generated 与 seed 共用公开投影；source 字段仅内部可见                  |
-| 图片广场本地点赞     | `miniapp_features.image_plaza_likes`                                                           | 唯一决定公开 `like_count`，与来源热度隔离                              |
-| 用户生成配置         | `app_core.miniapp_user_settings`                                                               | `selected_model_id` + 三个 `pref_*` + 语音偏好；用户级生效             |
-| 钱包 / 订单 / 签到   | `billing.user_wallets` / `payment_orders` / `wallet_ledger`、`miniapp_features.daily_checkins` | `payment_orders.settled_by` 记录入账路径（103）                        |
-| VIP 资格与免费体验   | `billing.vip_memberships` / `vip_purchase_grants` / `feature_free_trials`                      | 权益配置在 `runtime_config`；订单快照和已消费次数不随配置回滚改写      |
-| LLM 计费明细         | `billing.llm_usage_charges`（+ `_dedup` 幂等墓碑）                                             | 每用户保留最近 100 条完整行，更早压缩进 dedup                          |
-| 免费额度             | `billing.character_free_chat_quotas`                                                           | 用户 × 角色计轮                                                        |
-| 收藏 / 许愿 / 排序分 | `miniapp_features.character_favorites` / `wish_roles` / `character_ranking_scores`             | 排序分由 lobby 定时任务从 `chat_history` 聚合重算（074）               |
-| 消息中心             | `miniapp_features.notifications` / `notification_reads`                                        | —                                                                      |
-| 平台运行时配置       | `app_core.runtime_config`（+ Upstash Redis 缓存）                                              | 模型目录、定价、平台规则三件套、充值套餐、大厅置顶与排序参数等         |
-| 渠道归因             | `miniapp_traffic.*`                                                                            | Bot `/start` 与 miniapp 进入上报                                       |
+| 数据               | 权威源                                                                                         | 备注                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 用户身份           | `app_core.users`                                                                               | TG 身份 + 归因字段，身份一律用 `tg_id`（`st_handle` 退场中，见 §10.2） |
+| 角色卡元数据       | `app_core.characters`（Prisma）                                                                | 大厅展示 + 引擎取数；`raw_card` 保留原始 JSON                          |
+| 角色卡资源         | Supabase Storage `character-assets`                                                            | PNG / 头像；前端只读                                                   |
+| **会话**           | **`experience.chat_sessions`**                                                                 | 置顶 / 标题 / 窗口起点 / 统计缓存                                      |
+| **对话内容与轮次** | **`experience.chat_history`**                                                                  | 上下文 / 计费 / 审计三用；ST 存量行 `session_id` 为 NULL               |
+| 回复后处理版本快照 | `app_core.text_postprocess_versions` + `runtime_config` 正式指针                               | source/artifact 不可变；旧消息按自身版本展示，不按最新版本重解释       |
+| 回复后处理运营过程 | `admin` 草稿 / 发布请求 / 审计对象                                                             | Admin 是唯一权威写入入口；发布事务原子切换 runtime 指针                |
+| 语音消息           | `experience.chat_message_audio` + Storage `miniapp-chat-voice`                                 | 每条 assistant 回复的 TTS 产物元数据                                   |
+| 图片消息           | `experience.chat_message_images` + Storage `miniapp-chat-images`                               | 每条 assistant 回复的图片 attempts、current 与内部任务状态             |
+| 图片广场作品       | `experience.image_plaza_works` / `image_plaza_artifacts` + Storage `image-plaza`               | generated 与 seed 共用公开投影；source 字段仅内部可见                  |
+| 图片广场本地点赞   | `miniapp_features.image_plaza_likes`                                                           | 唯一决定公开 `like_count`，与来源热度隔离                              |
+| 用户生成配置       | `app_core.miniapp_user_settings`                                                               | `selected_model_id` + 三个 `pref_*` + 语音偏好；用户级生效             |
+| 钱包 / 订单 / 签到 | `billing.user_wallets` / `payment_orders` / `wallet_ledger`、`miniapp_features.daily_checkins` | `payment_orders.settled_by` 记录入账路径（103）                        |
+| VIP 资格与免费体验 | `billing.vip_memberships` / `vip_purchase_grants` / `feature_free_trials`                      | 权益配置在 `runtime_config`；订单快照和已消费次数不随配置回滚改写      |
+| LLM 计费明细       | `billing.llm_usage_charges`（+ `_dedup` 幂等墓碑）                                             | 每用户保留最近 100 条完整行，更早压缩进 dedup                          |
+| 免费额度           | `billing.character_free_chat_quotas`                                                           | 用户 × 角色计轮                                                        |
+| 收藏 / 排序分      | `miniapp_features.character_favorites` / `character_ranking_scores`                            | 排序分由 lobby 定时任务从 `chat_history` 聚合重算（074）               |
+| 消息中心           | `miniapp_features.notifications` / `notification_reads`                                        | —                                                                      |
+| 平台运行时配置     | `app_core.runtime_config`                                                                      | 模型目录、定价、平台规则三件套、充值套餐、大厅置顶与排序参数等         |
+| 渠道归因           | `miniapp_traffic.*`                                                                            | Bot `/start` 与 miniapp 进入上报                                       |
 
-**Prisma vs supabase-js 边界**：`schema.prisma` 只声明 `app_core` / `miniapp_features` / `billing` 三个 schema 共 11 个 model（用户、角色卡、runtime_config、签到、许愿、订单、钱包、流水、计费）；`experience`、`cs_platform`、`admin`、`miniapp_traffic`、`miniapp_analytics` 以及所有 RPC 走 supabase-js **按域客户端**（`lib/supabase.ts` 的 `getDomainDb(域)`）或 raw SQL 全限定名。统一 `.schema('miniapp')` 的旧写法已废弃。
+**Prisma vs supabase-js 边界**：`schema.prisma` 只声明 `app_core` / `miniapp_features` / `billing` 三个 schema 共 10 个 model（用户、角色卡、runtime_config、签到、订单、钱包、流水、计费）；`wish_roles` 历史表保留，但不再由 Prisma 映射；`experience`、`cs_platform`、`admin`、`miniapp_traffic`、`miniapp_analytics` 以及所有 RPC 走 supabase-js **按域客户端**（`lib/supabase.ts` 的 `getDomainDb(域)`）或 raw SQL 全限定名。统一 `.schema('miniapp')` 的旧写法已废弃。
 
 ---
 
@@ -434,7 +434,6 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 | `wallet.ts`               | `/api/wallet/balance` · `/spending` · `/free-quota/:characterId` · `/checkin`                                                                                      | `X-Init-Data`                    |
 | `payment.ts`              | `/api/payment/plans` · `/orders*` · `/return` · `/webhook/zqpay`                                                                                                   | RSA 回调验签                     |
 | `vip.ts`                  | `GET /api/vip/status` · `POST /api/vip/entry-viewed`                                                                                                               | `X-Init-Data`                    |
-| `wishes.ts`               | `/api/wishes/status` · `POST /api/wishes` · `/:id/complete`                                                                                                        | `X-Init-Data`                    |
 | `notifications.ts`        | `/api/notifications` · `/unread-count` · `/:id` · `/read`（已读必须带消息 id）                                                                                     | `X-Init-Data`                    |
 | `support.ts`              | `/api/support/conversation` · `/messages` · `/unread` · `/read`                                                                                                    | `X-Init-Data`                    |
 | `growth.ts`               | `POST /api/growth/miniapp-entry`（089 之后仅剩入口归因；渠道链接管理与 click 重定向已下线）                                                                        | `X-Init-Data`                    |
@@ -463,19 +462,19 @@ frontend 自有 Route Handler：`GET /api/lobby-characters`（白名单 sort 参
 - 用户生成配置有编辑界面：模型档位在 `ChatTopBar` 的引擎胶囊里，由 `ChatModelSwitcher` 展开；工具箱不再放模型入口。角色回复图片通过消息操作行与独立 Sheet 交互。VIP 详情在 `/vip`，和星尘套餐在充值页互斥选择。
 - 服务端数据一律 React Query，封装在 `src/lib/api/`；`client.ts` 是唯一 REST 客户端。
 - 跨组件状态 Zustand：仅 `user-profile-store`（会话列表走 React Query，不进 store）。
-- 表单 React Hook Form + Zod；UI 用 Tailwind + shadcn/ui。
+- UI 用 Tailwind + shadcn/ui；表单按当前业务复杂度使用受控组件或本地状态。
 
 ### 7.2 后端目录
 
 ```
 packages/backend/src/
 ├── app.ts / server.ts      # Fastify 组装与启动（含进程内定时任务）
-├── instrumentation.ts      # Sentry 初始化
+├── instrumentation.ts      # Sentry 初始化（trace 采样 0.2，/health 不采）
 ├── middleware/auth.ts      # requireTelegramAuth
 ├── routes/                 # 路由（见 §6）
 ├── features/               # conversations / engine / generation / voice / image /
 │                           # billing / lobby / payment / community
-├── infrastructure/         # repositories / payment 网关 / redis
+├── infrastructure/         # repositories / payment 网关
 ├── platform/               # config, runtime-config, model-tiers, openrouter-models
 ├── lib/                    # supabase(getDomainDb), user, ranking job, voice/image storage,
 │                           # logger, sentry, notifications…
@@ -555,7 +554,9 @@ packages/backend/src/
 
 **支付入账的四条路径**（唯一出口 `features/payment/usecases/PaymentSettlement.settlePaidOrder`，幂等靠 `credits_added`，先到者写 `payment_orders.settled_by`）：`webhook`（网关异步回调）→ `return`（同步回跳）→ `query`（订单页轮询时对账）→ `cron`（上述两个 Railway 任务兜底）。四路兜底的由来见历史文档 `git show 7541a54^:docs/payment-missing-credits-remediation.md`（生产曾因 cron 未部署漏账）。
 
-**CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / **legacy guard** / 测试 / Docker 构建，矩阵仅 backend）、`build-and-push.yml`（GHCR 镜像：backend 跟 `dev` 推送；frontend 仅 `staging-*` tag）、`db-migrate.yml`（手动迁移）、`pr-review.yml`、`railway-pr-env.yml`（PR 临时环境）。生产不走 GHCR，Railway 直接从 GitHub `main` 构建。
+**体验监控**（Sentry org `wangqiao` / project `st-miniapp`，前后端共用，靠 `service` 标签区分）：p95/p99 来自 Sentry Metrics（全量，不受 trace 采样影响），"卡了"以 warning 事件表达并自带 Replay。前端 `src/lib/perf/` 记录请求耗时与超时（`apiClient` 默认 20 秒超时，图片/语音生成等长耗时接口例外）、页面可用耗时与 4 秒卡住（大厅/聊天列表/会话页/充值）、三个核心按钮 2.5 秒无反馈、资源加载失败；后端 `lib/perf-metrics.ts` 记录每路由耗时（对话/语音/图片生成单独 `kind=generation`）、Prisma 操作耗时（连接池超时标 `pool_timeout`）、事件循环延迟。采样：trace 0.2、Replay 会话 0.05、Replay 报错 1.0。指标清单、看板与排查流程见 `.trellis/tasks/10-21-sentry-ux-monitoring/dashboard-and-runbook.md`。阈值均为初值，待基线校准。
+
+**CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / **legacy guard** / 测试 / Docker 构建，矩阵仅 backend）、`db-migrate.yml`（手动迁移）、`pr-review.yml`、`railway-pr-env.yml`（PR 临时环境）。Vercel 和 Railway 都直接从 GitHub commit 构建；仓库不再发布 GHCR 镜像。
 
 > 运维遗留（需人工处理）：Railway production 控制台的 `nginx-pro` / `st-bundle-pro` / 卷 `st-data-pro` 与两侧 `ST_*` 变量待手动删除（见 `ops/railway/README.md`）；废弃的 `pr-276` 环境仍挂着一条 `branch=main` 的 trigger；`Dockerfile.frontend` 仍是隐式 pnpm 取包写法（backend 已在 PR #295 修复构建卡死）。
 
@@ -593,7 +594,7 @@ packages/backend/src/
 | VIP 会员、策略、折扣计费、媒体免费次数与到期提醒（TEST 真机已验收；Production 未开通）    | `routes/vip.ts`、`features/vip/`、`features/payment/`、`features/generation/`、Admin `VipStrategyView`、`20260921`–`20260924` VIP migrations |
 | Schema 划分一阶段（八域物理布局，test + 生产）                                            | 097~099、`getDomainDb`、Prisma 多 schema                                                                                                     |
 | 数据库集成测试                                                                            | `*.integration.test.ts`                                                                                                                      |
-| 大厅 / 收藏 / 钱包 / 签到 / 许愿 / 消息中心 / 站内客服                                    | `routes/*` + `frontend/(main)/*`                                                                                                             |
+| 大厅 / 收藏 / 钱包 / 签到 / 消息中心 / 站内客服                                           | `routes/*` + `frontend/(main)/*`                                                                                                             |
 | 运营后台（managed 配置 / 回复富文本工作台 / 角色卡 / 公告 / 发布历史 / 回访赠送）         | `packages/admin` + backend admin 通路                                                                                                        |
 
 ### 10.2 待办
@@ -630,7 +631,6 @@ packages/backend/src/
 | `REPLICATE_TOKEN` / `REPLICATE_BASE` / `Z_MODEL`                                   | Grok 失败后的 Replicate Z 图片降级通道                               |
 | `IMAGE_GENERATION_TIMEOUT_MS` / `IMAGE_DOWNLOAD_TIMEOUT_MS`                        | 图片 provider 与下载超时                                             |
 | `IMAGE_WORKER_ENABLED` / `IMAGE_WORKER_INTERVAL_MS` / `IMAGE_WORKER_LEASE_SECONDS` | 图片数据库任务 worker 与租约控制                                     |
-| `UPSTASH_REDIS_REST_URL` / `_TOKEN`                                                | 运行时配置缓存                                                       |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `BOT_INTERNAL_SECRET`           | InitData 验签、webhook 与 Bot 内部端点鉴权                           |
 | `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                     | 官方社群 Bot：成员校验 `getChatMember` 与 community-webhook 密钥派生 |
 | `CS_SERVICE_URL` / `CS_SERVICE_SECRET`                                             | 独立客服服务地址和共享密钥（Bot 转发与 `/api/support/*` 代理）       |
@@ -655,11 +655,11 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 
 **现行入口（当前 checkout 即可读）：**
 
-| 文档                                   | 内容                                                                       |
-| -------------------------------------- | -------------------------------------------------------------------------- |
-| 本文件                                 | 架构铁律、包边界、八域、迁移与验证；发布前运维见 `docs/重构实施方案.md` R4 |
-| `docs/重构实施方案.md`                 | 2026-09 降复杂度重构进度（不是第二套架构权威）                             |
-| `packages/shared/migrations/README.md` | 迁移执行通道、命名、账本（操作备忘）                                       |
+| 文档                                   | 内容                                 |
+| -------------------------------------- | ------------------------------------ |
+| 本文件                                 | 架构铁律、包边界、八域、迁移与验证   |
+| `ops/railway/README.md`                | Railway 部署拓扑与运维流程           |
+| `packages/shared/migrations/README.md` | 迁移执行通道、命名、账本（操作备忘） |
 
 各包 `CLAUDE.md` 已删除，后端/前端硬规则以本文铁律为准；后续模块上下文放到 spec，不要再在各包下恢复一份。
 
@@ -682,3 +682,13 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 新增历史处置SQL在同一事务内规范化OR受控诊断、仅补NULL厂商原名事实并清父表旧JSON。非白名单key、referer/外部用户/嵌套response及错误自由文本明确丢弃、不归档；类型/长度/非负数/整数范围、provider与ID验证，父表及专表JSON指纹CAS保护变化，最多2000候选且预算前不解TOAST。正文、业务finish_reason、计费快照/金额/charge/dedup/quota不写；Venice仅在既有明细事实保全后清父表冗余诊断，不改变mapper/表。
 
 主表DROP文件在两库未执行，T10修正原过宽账务守卫：以schema账本checksum+applied_at定义引入快照前历史，明确终态账单/持久dedup/失败未扣/旧pending分类。旧pending保留账单和专表ID、不伪造已结算；未知成功记录、新契约漏快照、身份/状态冲突、旧字段关联reserved继续停止。健康专表调用不因清理要求中断。账务跨域仅只读；历史归档表、后台补扣worker与通用搬运层均未新增。
+
+### 首 token 兜底与业务体验数据（2026-10-23）
+
+自研 send/regenerate 仍统一进入 generation/execute：冻结原型号计费/权益、预留同一个 charge ID，然后在内部等待首发内容 token；型号等待默认 4 秒，超时只派发一次运营配置的 OpenRouter 兜底型号（默认 DeepSeek V4.1 Flash 1017，思考沿用型号默认）。进入兜底后首发只作有界观察，不得重回交付或进入旧 provider 账务同步。交付选择 RPC 与 provider 身份绑定、实际路由快照更新在同一事务内，原报价字段不变。
+
+`experience.chat_generation_requests/attempts` 拥有 revision/尝试事实，`miniapp_analytics.chat_first_token_facts/report` 仅派生投影。前端通过独立的真实可见正文 DOM 接缝报告用户总首 token；供应商 latency 和后端分段另外存。前后端共用目录中的全局上限（初始 6 秒），兜底不重置预算；超时率目标初始 1%，只供人工观察。原有整轮生命周期保护不变。
+
+Admin 在“运营配置 → 兜底配置”集中编辑兜底型号、每型号等待与全局上限/目标，复用模型目录的同一草稿/发布/恢复通路。每轮冻结兜底型号，prepare RPC 从请求快照读取，分析事实与报表保留该型号；不新增配置key或secret。客户端只能经鉴权和精确身份校验 API 回报。应用与两份基础迁移已通过 #461 生产发布，Telegram 真机验收尚未完成。
+
+Grafana 通过 `20261023_grafana_first_token_reader.sql` 正式迁移为既有登录角色授予 NOLOGIN reader 会员关系，只读新事实/报表及父表三列，正文与写权限不开放；先 TEST 后 production。独立业务看板默认最近24h、全部有请求型号，主图只使用客户端实际显示总首token秒数、兜底触发率、前台已知结果超时率，并同时展示样本与覆盖率。供应商/后端耗时保留在原始事实中供排障，不进入该业务看板。本期无 AI、自动调参或定时任务。详见 [首 token 运行说明](first-token-fallback.md)。

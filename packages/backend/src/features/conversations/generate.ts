@@ -12,9 +12,23 @@
  * 所以响应头推迟到 generation 的 onStreamOpen（上游已 2xx）才写。
  */
 
+import { randomUUID } from 'node:crypto';
+import {
+  fetchGenerationDataForSettlement,
+  buildGenerationMetadata,
+} from '../generation/openrouter-metadata.js';
+import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
+import { GenerationObservationRepository } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { GenerationCleanupPendingError } from '../generation/types.js';
 import type { SseTapResult } from '../generation/upstream.js';
-import { diagnoseRichReplyProtocol, type ChatMessageStatus } from '@miniapp/shared';
+import {
+  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
+  DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
+  FIRST_TOKEN_FALLBACK_MODEL_ID,
+  diagnoseRichReplyProtocol,
+  type ChatMessageStatus,
+} from '@miniapp/shared';
 import { buildPrompt, fetchPlatformInstructions, type EngineCharacter } from '../engine/index.js';
 import type { InstructionSlotModes } from '../engine/types.js';
 import {
@@ -24,8 +38,6 @@ import {
   type GenerationStatus,
 } from '../generation/index.js';
 import { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
-import { VeniceChatHistoryRepository } from '../../infrastructure/repositories/VeniceChatHistoryRepository.js';
-import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositories/OpenRouterChatHistoryRepository.js';
 import { TextPostprocessRepository } from '../text-postprocess/repository.js';
 import type { ChatSessionRow } from '../../infrastructure/repositories/ChatSessionRepository.js';
 import {
@@ -61,6 +73,8 @@ export interface RunConversationTurnInput {
   log: RequestLogger;
   /** Route entry time: ownership/config preparation shares one budget. */
   receivedAt?: number;
+  receivedMonotonicAt?: number;
+  firstTokenDeadlineMs?: number;
   /** Caller correlation, persisted for safe pre-start cancellation matching. */
   requestId?: string;
 }
@@ -68,8 +82,7 @@ export interface RunConversationTurnInput {
 let historyRepository: ConversationHistoryRepository | null = null;
 let characterRepository: CharacterCardRepository | null = null;
 let userSettingsRepository: MiniappUserSettingsRepository | null = null;
-let veniceHistoryRepository: VeniceChatHistoryRepository | null = null;
-let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
+const generationObservations = () => new GenerationObservationRepository();
 
 function historyRecords(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
@@ -79,9 +92,6 @@ function characters(): CharacterCardRepository {
 }
 function userSettings(): MiniappUserSettingsRepository {
   return (userSettingsRepository ??= new MiniappUserSettingsRepository());
-}
-function openRouterHistory(): OpenRouterChatHistoryRepository {
-  return (openRouterHistoryRepository ??= new OpenRouterChatHistoryRepository());
 }
 
 export function toMessageStatus(status: GenerationStatus): SettledMessageStatus {
@@ -115,10 +125,13 @@ export async function runConversationTurn(
   const { session, mode, sink, log } = input;
   const userId = session.user_id;
   const turnStartedAt = input.receivedAt ?? Date.now();
-  const preparationRemainingMs = 20_000 - (Date.now() - turnStartedAt);
-  if (preparationRemainingMs <= 0)
-    throw new DOMException('Conversation preparation timeout', 'TimeoutError');
-  const preparationSignal = AbortSignal.timeout(preparationRemainingMs);
+  const requestStartedAt =
+    input.receivedMonotonicAt ?? performance.now() - (Date.now() - turnStartedAt);
+  const preparationRemainingMs =
+    (input.firstTokenDeadlineMs ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS) -
+    (performance.now() - requestStartedAt);
+  if (preparationRemainingMs <= 0) throw new FirstTokenDeadlineError();
+  const preparationSignal = AbortSignal.timeout(Math.ceil(preparationRemainingMs));
 
   // ── 取数 ──────────────────────────────────────────────────────────────────
   // 六个读之间互不依赖，串行发会把一轮生成的启动时延叠成六个 RTT。
@@ -161,7 +174,48 @@ export async function runConversationTurn(
     '已使用持久化的平台规则槽位模式'
   );
 
+  const policy = {
+    fallbackModelId: FIRST_TOKEN_FALLBACK_MODEL_ID,
+    timeoutMs: DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
+    deadlineMs: DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+    timeoutRateTarget: DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
+    catalogVersion: 0,
+    ...model.firstTokenPolicy,
+    ...(input.firstTokenDeadlineMs ? { deadlineMs: input.firstTokenDeadlineMs } : {}),
+  };
+  model.firstTokenPolicy = policy;
+  const observations = generationObservations();
+  const primaryAttemptId = randomUUID();
+  const clientRequestId = input.requestId ?? randomUUID();
+  const observationInput = {
+    historyId: turn.historyId,
+    requestId: clientRequestId,
+    primaryAttemptId,
+    requestedModelId: model.modelId,
+    provider: model.provider,
+    model: model.providerModelId,
+    receivedAt: new Date(turnStartedAt).toISOString(),
+    timeoutMs: policy.timeoutMs,
+    deadlineMs: policy.deadlineMs,
+    timeoutRateTarget: policy.timeoutRateTarget,
+    fallbackModelId: policy.fallbackModelId,
+    catalogVersion: policy.catalogVersion,
+    mode: mode.kind,
+  };
+  const enrichedObserverIds = new Set<string>();
+  let fallbackPrepared = false;
+  let observationBegun = false;
+  let emitted = false;
+  const observationError = (err: unknown) =>
+    log.sys.warn(
+      { err, event: 'conversation.first_token.observation_failed', historyId: turn.historyId },
+      '首 token 观测未写入'
+    );
   const controller = new AbortController();
+  const firstTokenTimer = setTimeout(
+    () => controller.abort(new FirstTokenDeadlineError()),
+    Math.max(1, policy.deadlineMs - (performance.now() - requestStartedAt))
+  );
   const timeout = setTimeout(
     () => controller.abort(),
     Math.max(1, 110_000 - (Date.now() - turnStartedAt))
@@ -191,8 +245,15 @@ export async function runConversationTurn(
   try {
     if (input.requestId)
       await historyRecords().setPendingRequestId(turn.historyId, input.requestId);
+    await observations.begin(observationInput);
+    observationBegun = true;
+    controller.signal.throwIfAborted();
     // ── 组 prompt ─────────────────────────────────────────────────────────────
-    const context = await historyRecords().getContextBeforeTurn(session.id, turn.turnIndex);
+    const context = await historyRecords().getContextBeforeTurn(
+      session.id,
+      turn.turnIndex,
+      turn.contextWindowStartTurn
+    );
     const history = buildEngineHistory(context.messages, context.openingMessage ?? card.first_mes);
 
     const prompt = buildPrompt({
@@ -231,6 +292,40 @@ export async function runConversationTurn(
       sessionId: session.id,
       historyId: turn.historyId,
       stream: true,
+      firstToken: {
+        primaryAttemptId,
+        requestStartedAt,
+        store: {
+          prepareFallback: async (attempt, triggeredMs) => {
+            fallbackPrepared = true;
+            await observations.prepareFallback(turn.historyId, attempt, triggeredMs);
+          },
+          observe: async (attempt) => {
+            await observations.observe(turn.historyId, attempt);
+            // The discarded primary stops at its first token; read only bounded provider metadata.
+            if (
+              fallbackPrepared &&
+              attempt.role === 'primary' &&
+              attempt.provider === 'openrouter' &&
+              attempt.generation_id &&
+              attempt.end_reason &&
+              !enrichedObserverIds.has(attempt.generation_id)
+            ) {
+              enrichedObserverIds.add(attempt.generation_id);
+              void fetchGenerationDataForSettlement(attempt.generation_id)
+                .then(async (data) => {
+                  if (data)
+                    await observations.enrichGeneration(
+                      attempt.generation_id!,
+                      buildGenerationMetadata(data)
+                    );
+                })
+                .catch(observationError);
+            }
+          },
+          selectDelivery: (attempt) => observations.selectDelivery(turn.historyId, attempt),
+        },
+      },
       signal: controller.signal,
       // Anthropic prompt cache 的 cache_control 断点，配合双水位线泄洪制造稳定前缀
       promptCaching: true,
@@ -241,21 +336,8 @@ export async function runConversationTurn(
       {
         onBeforeDispatch: async (snapshot) => {
           controller.signal.throwIfAborted();
-          await historyRecords().saveBillingSnapshot(turn.historyId, snapshot);
-          if (model.provider === 'openrouter')
-            await openRouterHistory().ensurePlaceholder(turn.historyId);
-          else
-            await (veniceHistoryRepository ??= new VeniceChatHistoryRepository()).ensurePlaceholder(
-              turn.historyId
-            );
+          await observations.begin({ ...observationInput, snapshot });
           controller.signal.throwIfAborted();
-        },
-        onGenerationId: async (generationId) => {
-          if (model.provider === 'openrouter')
-            await openRouterHistory().ensureGenerationId(turn.historyId, generationId);
-          else
-            await (veniceHistoryRepository ??=
-              new VeniceChatHistoryRepository()).ensureGenerationId(turn.historyId, generationId);
         },
         onBeforeReserve: async (chargeId) => {
           controller.signal.throwIfAborted();
@@ -288,11 +370,29 @@ export async function runConversationTurn(
           return normalizePersistedOutcome(observed, row.status, row.llm_finish_reason);
         },
         onStreamOpen: emitStart,
-        onDelta: (text) => sink.send({ type: 'delta', text }),
+        onDelta: (text) => {
+          if (!emitted && performance.now() - requestStartedAt >= policy.deadlineMs)
+            controller.abort(new FirstTokenDeadlineError());
+          controller.signal.throwIfAborted();
+          sink.send({ type: 'delta', text });
+          if (!emitted && text.trim()) {
+            emitted = true;
+            clearTimeout(firstTokenTimer);
+            void observations
+              .markServer(turn.historyId, {
+                first_token_emitted_ms: performance.now() - requestStartedAt,
+              })
+              .catch(observationError);
+          }
+        },
       },
       log
     );
 
+    if (result.status === 'insufficient_balance' || result.denial === 'vip_required')
+      await observations
+        .markServer(turn.historyId, { billing_rejected: true })
+        .catch(observationError);
     const current = await historyRecords().requireTurnById(turn.historyId);
     const persisted = await historyRecords().finalizeTurn({
       historyId: turn.historyId,
@@ -366,6 +466,14 @@ export async function runConversationTurn(
 
     return { kind: 'streamed', status };
   } catch (err) {
+    if (
+      observationBegun &&
+      (err instanceof FirstTokenDeadlineError ||
+        controller.signal.reason instanceof FirstTokenDeadlineError)
+    )
+      await observations
+        .markServer(turn.historyId, { first_token_timeout: true })
+        .catch(observationError);
     // Prompt/history/precheck failures happen after startTurn and must release the
     // persisted session too. CAS leaves a concurrent cancellation/completion intact.
     if (err instanceof GenerationCleanupPendingError) {
@@ -395,8 +503,11 @@ export async function runConversationTurn(
             ? 'timeout'
             : null,
     });
+    if (controller.signal.reason instanceof FirstTokenDeadlineError)
+      throw new FirstTokenDeadlineError();
     throw err;
   } finally {
+    clearTimeout(firstTokenTimer);
     stopped = true;
     clearTimeout(timeout);
     if (pollTimer) clearTimeout(pollTimer);
@@ -461,6 +572,8 @@ interface StartedTurn {
   historyId: string;
   revision: number;
   userInput: string;
+  /** 开轮 RPC 在同一事务里算出的窗口起点，组上下文时直接用，不再回读会话 */
+  contextWindowStartTurn: number;
   postprocessVersion: number;
   slotModes: InstructionSlotModes;
 }
@@ -487,6 +600,7 @@ async function startTurn(
       historyId: started.historyId,
       revision: started.revision,
       userInput: started.userContent,
+      contextWindowStartTurn: started.contextWindowStartTurn,
       postprocessVersion: started.postprocessVersion,
       slotModes: started.slotModes,
     };
@@ -504,6 +618,7 @@ async function startTurn(
     historyId: started.historyId,
     revision: started.revision,
     userInput: started.userContent,
+    contextWindowStartTurn: started.contextWindowStartTurn,
     postprocessVersion: started.postprocessVersion,
     slotModes: started.slotModes,
   };

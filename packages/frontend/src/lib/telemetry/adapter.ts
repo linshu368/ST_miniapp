@@ -174,7 +174,12 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
     }
   }
 
-  async function init(telegramUserId: string): Promise<boolean> {
+  /**
+   * `beforeLoad` 让 SDK 下载给首屏让路；它放在 initPromise 内部而不是调用方外层，
+   * 这样 `whenReady()` 从一开始就等待同一个 promise，而不是在推迟期间直接判定未就绪。
+   * 调用方必须保证 `beforeLoad` 有界（见 afterFirstScreen 的硬上限）。
+   */
+  async function init(telegramUserId: string, beforeLoad?: () => Promise<void>): Promise<boolean> {
     if (disabled) return false;
     if (initPromise) return initPromise;
 
@@ -190,6 +195,8 @@ export function createPostHogAdapter(deps: PostHogAdapterDeps = {}) {
         reportHealth('replay_sdk_init_failed', config.failureCode);
         return false;
       }
+
+      if (beforeLoad) await beforeLoad().catch(() => undefined);
 
       try {
         const mod = await withTimeout(loadSdk(), loadSdkTimeoutMs);

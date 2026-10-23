@@ -1,6 +1,10 @@
+import type { RoleplaySource } from './roleplay-navigation';
+
 interface ChatEntryOptions {
   /** 继续某个已有会话 */
   sessionId?: string;
+  /** Only known module origins are carried through chat and payment return URLs. */
+  source?: RoleplaySource;
 }
 
 /**
@@ -8,10 +12,11 @@ interface ChatEntryOptions {
  */
 export function chatEntryPath(characterId: string, options: ChatEntryOptions = {}): string {
   const id = encodeURIComponent(characterId);
-  const search = options.sessionId
-    ? `?${new URLSearchParams({ session: options.sessionId }).toString()}`
-    : '';
-  return `/chat/${id}${search}`;
+  const params = new URLSearchParams();
+  if (options.sessionId) params.set('session', options.sessionId);
+  if (options.source) params.set('from', options.source);
+  const search = params.toString();
+  return `/chat/${id}${search ? `?${search}` : ''}`;
 }
 
 /**

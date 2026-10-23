@@ -53,6 +53,8 @@ export interface StreamTurnOptions {
   /** 已按帧攒批的增量文本，不是累积全文 */
   onDelta: (text: string) => void;
   onDone: (event: ConversationStreamDoneEvent) => void;
+  onDispatched?: () => void;
+  onFirstDeltaReceived?: () => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -181,6 +183,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
   const initData = getRawInitData();
   if (initData) headers.set(INIT_DATA_HEADER, initData);
 
+  options.onDispatched?.();
   const response = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers,
@@ -214,6 +217,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
         onStart(event);
         return;
       case 'delta':
+        if (event.text.trim()) options.onFirstDeltaReceived?.();
         batcher.push(event.text);
         return;
       case 'done':

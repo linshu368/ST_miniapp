@@ -1,5 +1,7 @@
 'use client';
 
+import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, ChevronLeft, ImagePlus, Loader2, SendHorizontal, X } from 'lucide-react';
@@ -24,6 +26,7 @@ export default function SupportPage() {
   useTelegramBackButton(goBack);
 
   const query = useSupportConversationQuery();
+  usePageReady('/profile/support', query.data !== undefined);
   const send = useSendSupportMessageMutation();
   const markRead = useMarkSupportReadMutation();
   const [draft, setDraft] = useState('');
@@ -70,10 +73,12 @@ export default function SupportPage() {
   };
 
   const submit = (body: string, clientMsgId: string, attached?: PreparedSupportImage) => {
+    const action = startAction('support_send_message');
     setPending((current) => [
       ...current.filter((item) => item.clientMsgId !== clientMsgId),
       { clientMsgId, body, image: attached, status: 'sending' },
     ]);
+    feedbackAfterPaint(action);
     send.mutate(
       {
         body,

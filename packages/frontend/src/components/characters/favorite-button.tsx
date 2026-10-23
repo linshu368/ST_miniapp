@@ -14,9 +14,11 @@ interface FavoriteButtonProps {
 }
 
 const CONTAINER_STYLES: Record<FavoriteButtonVariant, string> = {
-  // 大厅卡面右下角：半透明底 + 模糊，压在渐变遮罩之上仍然可辨。
+  // 大厅卡面右下角：半透明黑底，压在渐变遮罩之上仍然可辨。
+  // 不用 backdrop-blur：大厅每张卡一个，几十个实时模糊层会让切 tab 和滚动掉帧；
+  // 这里本来就压在 black/90 的底部渐变上，模糊几乎看不出差别。
   // 卡面变体压在角色图上，底色保持中性黑罩：图片颜色不可控，套主题色反而会脏。
-  card: 'h-9 w-9 rounded-full bg-black/45 backdrop-blur-md ring-1 ring-inset ring-white/15 hover:bg-black/60',
+  card: 'h-9 w-9 rounded-full bg-black/60 ring-1 ring-inset ring-white/15 hover:bg-black/75',
   sheet: 'h-12 w-12 rounded-2xl border border-border bg-card hover:bg-secondary',
   header: 'h-9 w-9 rounded-full hover:bg-secondary',
 };
@@ -32,12 +34,14 @@ const ICON_STYLES: Record<FavoriteButtonVariant, string> = {
  * 收藏状态统一来自 useFavoriteToggle，任一处切换其余入口同步。
  */
 export function FavoriteButton({ characterId, variant = 'card', className }: FavoriteButtonProps) {
-  const { favorited, pending, toggle } = useFavoriteToggle(characterId);
+  const { favorited, pending, error, toggle } = useFavoriteToggle(characterId);
 
   return (
     <button
       type="button"
-      disabled={!characterId}
+      disabled={!characterId || pending}
+      aria-busy={pending}
+      aria-describedby={error ? 'favorite-feedback-notice' : undefined}
       aria-label={favorited ? '取消收藏' : '收藏角色卡'}
       aria-pressed={favorited}
       // 卡面上心形与卡片进入动作相邻，必须吃掉事件避免顺带进入角色。

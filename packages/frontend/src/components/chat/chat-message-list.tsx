@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ArrowDown, Loader2 } from 'lucide-react';
 import type { ChatMessage } from '@miniapp/shared';
 import type { ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 
+import type { FirstTokenIdentity } from '@/lib/perf/first-token-observation';
 import { cn } from '@/lib/utils';
 import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { ChatMessageBubble, ChatTypingBubble } from './chat-message-bubble';
@@ -17,6 +18,8 @@ const STICK_TO_BOTTOM_THRESHOLD_PX = 120;
 interface ChatMessageListProps {
   /** 已按 turn_index 升序，包含正在流式写入的那条 */
   messages: ChatMessage[];
+  firstTokenObservation?: FirstTokenIdentity | null;
+  onFirstTokenDisplayed?: (identity: FirstTokenIdentity, at: number) => void;
   characterName: string;
   characterAvatarUrl: string | null;
   userAvatarUrl: string | null;
@@ -41,6 +44,8 @@ interface ChatMessageListProps {
 
 export function ChatMessageList({
   messages,
+  firstTokenObservation,
+  onFirstTokenDisplayed,
   characterName,
   characterAvatarUrl,
   userAvatarUrl,
@@ -60,24 +65,49 @@ export function ChatMessageList({
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  const [showLatestJump, setShowLatestJump] = useState(false);
+  const [hasUnseenReply, setHasUnseenReply] = useState(false);
 
   const handleScroll = useCallback(() => {
     const node = scrollRef.current;
     if (!node) return;
     const distanceToBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-    stickToBottomRef.current = distanceToBottom <= STICK_TO_BOTTOM_THRESHOLD_PX;
+    const atBottom = distanceToBottom <= STICK_TO_BOTTOM_THRESHOLD_PX;
+    stickToBottomRef.current = atBottom;
+    setShowLatestJump(!atBottom);
+    if (atBottom) setHasUnseenReply(false);
   }, []);
 
   const last = messages.at(-1);
   // 流式期间正文长度每帧都在变，把它放进依赖里才能跟着往下滚
   const tail = `${last?.id ?? ''}:${last?.content.length ?? 0}:${awaitingFirstToken}`;
+  const assistantUpdate =
+    last?.role === 'assistant'
+      ? `${last.id}:${last.revision}:${last.content.length}:${last.status}`
+      : null;
+  const previousAssistantUpdate = useRef(assistantUpdate);
 
   useEffect(() => {
-    if (!stickToBottomRef.current) return;
+    const replyChanged =
+      assistantUpdate !== null && assistantUpdate !== previousAssistantUpdate.current;
+    previousAssistantUpdate.current = assistantUpdate;
+    if (!stickToBottomRef.current) {
+      if (replyChanged) setHasUnseenReply(true);
+      return;
+    }
     const node = scrollRef.current;
     if (!node) return;
     node.scrollTop = node.scrollHeight;
-  }, [tail]);
+  }, [tail, assistantUpdate]);
+
+  const returnToLatest = () => {
+    const node = scrollRef.current;
+    if (!node) return;
+    stickToBottomRef.current = true;
+    setShowLatestJump(false);
+    setHasUnseenReply(false);
+    node.scrollTo({ top: node.scrollHeight, behavior: 'auto' });
+  };
 
   /**
    * 键盘弹起会让消息区变矮，浏览器保留 scrollTop，最新那条就被推到折线以下。
@@ -96,59 +126,77 @@ export function ChatMessageList({
 
   // 行间不留 gap：每条消息自带上下留白，行距由行内 padding 决定（对齐原版 #chat）
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className={cn(
-        'chat-scroll-area flex-1 overflow-y-auto overscroll-contain pb-2 pt-3',
-        PH_CHAT_REPLAY_VISIBLE_CLASS
-      )}
-    >
-      {hasMore ? (
-        <div className="flex justify-center pb-2 pt-1">
-          <button
-            type="button"
-            onClick={onLoadEarlier}
-            disabled={loadingEarlier}
-            className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-50"
-          >
-            {loadingEarlier ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-            {loadingEarlier ? '加载中' : '查看更早的消息'}
-          </button>
-        </div>
-      ) : null}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className={cn(
+          'chat-scroll-area min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 pt-3',
+          PH_CHAT_REPLAY_VISIBLE_CLASS
+        )}
+      >
+        {hasMore ? (
+          <div className="flex justify-center pb-2 pt-1">
+            <button
+              type="button"
+              onClick={onLoadEarlier}
+              disabled={loadingEarlier}
+              className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+            >
+              {loadingEarlier ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+              {loadingEarlier ? '加载中' : '查看更早的消息'}
+            </button>
+          </div>
+        ) : null}
 
-      {messages.map((message) => (
-        <ChatMessageBubble
-          key={`${message.id}:${message.revision}`}
-          message={message}
-          characterName={characterName}
-          characterAvatarUrl={characterAvatarUrl}
-          userAvatarUrl={userAvatarUrl}
-          streaming={message.id === streamingMessageId || message.status === 'streaming'}
-          stalled={replyStalled && message.id === last?.id && message.status === 'streaming'}
-          quotaExhaustedNotice={
-            quotaExhaustedNotice?.messageId === message.id ? quotaExhaustedNotice.text : undefined
-          }
-          footer={renderFooter?.(message)}
-          replyPlan={message.role === 'assistant' ? replyPlanFor?.(message) : undefined}
-          displayName={displayName}
-          choiceDisabled={choiceDisabledFor?.(message) !== false}
-          onChoice={
-            onChoice && message.role === 'assistant'
-              ? (choice) => onChoice(message, choice)
-              : undefined
-          }
-          detailsDefaultOpen={detailsDefaultOpen}
-        />
-      ))}
+        {messages.map((message) => (
+          <ChatMessageBubble
+            key={`${message.id}:${message.revision}`}
+            message={message}
+            onFirstTokenDisplayed={
+              firstTokenObservation?.assistantMessageId === message.id &&
+              firstTokenObservation.revision === message.revision
+                ? (at) => onFirstTokenDisplayed?.(firstTokenObservation, at)
+                : undefined
+            }
+            characterName={characterName}
+            characterAvatarUrl={characterAvatarUrl}
+            userAvatarUrl={userAvatarUrl}
+            streaming={message.id === streamingMessageId || message.status === 'streaming'}
+            stalled={replyStalled && message.id === last?.id && message.status === 'streaming'}
+            quotaExhaustedNotice={
+              quotaExhaustedNotice?.messageId === message.id ? quotaExhaustedNotice.text : undefined
+            }
+            footer={renderFooter?.(message)}
+            replyPlan={message.role === 'assistant' ? replyPlanFor?.(message) : undefined}
+            displayName={displayName}
+            choiceDisabled={choiceDisabledFor?.(message) !== false}
+            onChoice={
+              onChoice && message.role === 'assistant'
+                ? (choice) => onChoice(message, choice)
+                : undefined
+            }
+            detailsDefaultOpen={detailsDefaultOpen}
+          />
+        ))}
 
-      {awaitingFirstToken ? (
-        <ChatTypingBubble
-          characterName={characterName}
-          characterAvatarUrl={characterAvatarUrl}
-          stalled={replyStalled}
-        />
+        {awaitingFirstToken ? (
+          <ChatTypingBubble
+            characterName={characterName}
+            characterAvatarUrl={characterAvatarUrl}
+            stalled={replyStalled}
+          />
+        ) : null}
+      </div>
+      {showLatestJump ? (
+        <button
+          type="button"
+          onClick={returnToLatest}
+          className="absolute bottom-3 right-3 z-10 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-primary/30 bg-card/95 px-4 text-xs font-medium text-primary shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ArrowDown className="size-3.5" aria-hidden />
+          {hasUnseenReply ? '有新回复 · 回到最新' : '回到最新'}
+        </button>
       ) : null}
     </div>
   );

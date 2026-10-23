@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, X } from 'lucide-react';
+import { Heart, Search, X } from 'lucide-react';
 
 import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
 
@@ -15,7 +15,18 @@ import {
   useLobbyLatestBadgeQuery,
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
+import { useAfterFirstScreen } from '@/lib/after-first-screen';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { useFavoriteIdsQuery } from '@/lib/api/favorites';
+import { useConversationsQuery } from '@/lib/api/conversations';
+import {
+  readRoleplayDiscovery,
+  rememberRoleplayDiscovery,
+  rememberRoleplayScroll,
+  restoreRoleplayScroll,
+} from '@/lib/roleplay-navigation';
+import { discardPendingAction, startPendingAction } from '@/lib/perf/action-tracker';
+import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import {
   clearLobbyReturnSnapshot,
   readLobbyReturnSnapshot,
@@ -25,13 +36,25 @@ import {
 
 import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
+import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
+import { RecentConversationCard } from '@/components/roleplay/recent-conversation-card';
 
-const FIRST_SCREEN_IMAGE_COUNT = 8;
+// 移动端两列首屏实际可见约 4–6 张；高优先级给多了会和 LCP 图抢带宽。
+const FIRST_SCREEN_IMAGE_COUNT = 6;
 
 const LOBBY_TABS: ReadonlyArray<{ value: LobbySort; label: string }> = [
   { value: 'recommended', label: '推荐' },
   { value: 'latest', label: '最新' },
 ];
+
+// 首帧只挂这么多张卡，其余滚动到接近底部时再分批补齐：每张卡带图片、收藏订阅和金框，
+// 一次挂几十张会让底部 tab 切回大厅时主线程被占满、转场掉帧。
+const INITIAL_RENDER_COUNT = 10;
+const RENDER_BATCH_SIZE = 10;
+// 哨兵提前多远触发下一批；留足一屏以上，用户正常滚动时不会看到空白。
+const RENDER_MORE_ROOT_MARGIN = '400px';
+// 返回大厅时锚点之后额外挂的卡数：两列约 4 行再留余量，其余随滚动补齐。
+const RESTORE_TAIL_COUNT = 12;
 
 const RESTORE_DEADLINE_MS = 1600;
 const NEIGHBOR_WINDOW = 4;
@@ -88,20 +111,47 @@ function neighborIds(ids: string[], anchorId: string): string[] {
 
 export function CharacterGallery() {
   const router = useRouter();
+  const [savedDiscovery] = useState(readRoleplayDiscovery);
+  const favoriteIds = useFavoriteIdsQuery();
+  const history = useConversationsQuery(undefined);
+  // message_count 不计虚拟开场白；只标记已确认的用户对话，未命中不代表从未聊过。
+  const experiencedIds = useMemo(
+    () =>
+      new Set(
+        (history.data?.sessions ?? [])
+          .filter((item) => item.message_count > 0)
+          .map((item) => item.character_id)
+      ),
+    [history.data?.sessions]
+  );
   const [restoreSnapshot] = useState<LobbyReturnSnapshot | null>(() => readLobbyReturnSnapshot());
   const [isRestoring, setIsRestoring] = useState(() => restoreSnapshot !== null);
-  const [sort, setSort] = useState<LobbySort>(restoreSnapshot?.sort ?? DEFAULT_LOBBY_SORT);
-  const { data, isLoading, isError } = useCharactersQuery(sort, {
+  const [sort, setSort] = useState<LobbySort>(
+    restoreSnapshot?.sort ?? savedDiscovery.sort ?? DEFAULT_LOBBY_SORT
+  );
+  const { data, isLoading, isError, isFetching } = useCharactersQuery(sort, {
     skipMountRefetch: isRestoring,
   });
-  const [query, setQuery] = useState(restoreSnapshot?.query ?? '');
+  // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
+  const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined);
+  usePageReady('/', data !== undefined, lobbyFresh);
+  const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
+  const [favoritesOnly, setFavoritesOnly] = useState(
+    restoreSnapshot?.favoritesOnly ?? savedDiscovery.favoritesOnly
+  );
+  const generalScrollRestored = useRef(false);
+  useEffect(() => {
+    rememberRoleplayDiscovery({ sort, query, favoritesOnly });
+  }, [sort, query, favoritesOnly]);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
   const restoredAnchorIdRef = useRef<string | null>(null);
   const restoreCalibrationUsedRef = useRef(false);
 
-  const latestBadge = useLobbyLatestBadgeQuery();
+  // New 角标不在首屏关键路径上，冷启动时让给列表与首屏图片。
+  const firstScreenDone = useAfterFirstScreen();
+  const latestBadge = useLobbyLatestBadgeQuery({ enabled: firstScreenDone });
   const { mutate: markLatestSeen } = useMarkLobbyLatestSeenMutation();
   const markedLatestRef = useRef(false);
   // 点「最新」当场收起，不等标记已看的请求回来；点推荐、搜索、卡片都不影响。
@@ -120,6 +170,28 @@ export function CharacterGallery() {
   }, [previewId, router]);
 
   const characters = useMemo(() => data?.characters ?? [], [data?.characters]);
+
+  // 弹层用列表里已有的摘要即时打开，详情接口只补开场白。
+  const previewSummary = useMemo(
+    () => (previewId ? characters.find((c) => c.id === previewId) : undefined),
+    [characters, previewId]
+  );
+
+  // 引用必须稳定，CharacterCard 的 memo 才有意义：打开弹层不再重渲染整页卡片。
+  const handleSelectCharacter = useCallback(
+    (id: string) => {
+      if (!enteringId) setPreviewId(id);
+    },
+    [enteringId]
+  );
+
+  // 弹层盖住大厅期间暂停底下所有金框流光（弹层自己的金框不受影响，见 globals.css）。
+  useEffect(() => {
+    if (!previewId) return;
+    const root = document.documentElement;
+    root.classList.add('featured-paused');
+    return () => root.classList.remove('featured-paused');
+  }, [previewId]);
   const firstScreenCharacters = useMemo(
     () => characters.slice(0, FIRST_SCREEN_IMAGE_COUNT),
     [characters]
@@ -169,13 +241,79 @@ export function CharacterGallery() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return characters;
-    return characters
+    const ids = new Set(favoriteIds.data?.character_ids ?? []);
+    const source = favoritesOnly
+      ? characters.filter((character) => ids.has(character.id))
+      : characters;
+    if (!q) return source;
+    return source
       .map((c) => ({ c, s: scoreMatch(c, q) }))
       .filter(({ s }) => s > 0)
       .sort((a, b) => b.s - a.s)
       .map(({ c }) => c);
-  }, [characters, query]);
+  }, [characters, query, favoritesOnly, favoriteIds.data]);
+
+  useLayoutEffect(() => {
+    if (
+      generalScrollRestored.current ||
+      restoreSnapshot ||
+      !data ||
+      (favoritesOnly && favoriteIds.isPending)
+    )
+      return;
+    generalScrollRestored.current = true;
+    restoreRoleplayScroll('/');
+  }, [data, restoreSnapshot, favoritesOnly, favoriteIds.isPending]);
+
+  const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_COUNT);
+  // 从详情返回靠锚点卡片还原滚动位置：锚点及其之前的卡必须已挂载，之后只需再多挂约一屏。
+  // 不能整表一次挂全：整页在 invisible 状态下同步挂几十上百张卡，返回时就是“闪一下再卡一下”。
+  // 该值只依赖挂载时持有的快照，恢复结束后不会回落，避免已显示的卡被卸载。
+  const restoreFloor = useMemo(() => {
+    if (!restoreSnapshot) return 0;
+    const candidateIds = [
+      restoreSnapshot.anchorCharacterId,
+      ...restoreSnapshot.neighborCharacterIds,
+    ];
+    for (const id of candidateIds) {
+      const index = filtered.findIndex((c) => c.id === id);
+      if (index >= 0) return index + RESTORE_TAIL_COUNT;
+    }
+    // 锚点和邻居都不在当前列表里（数据已变）：走 scrollY 兜底，需要足够高度，只能全量。
+    return filtered.length > 0 ? Number.POSITIVE_INFINITY : 0;
+  }, [filtered, restoreSnapshot]);
+  const effectiveLimit = Math.max(renderLimit, restoreFloor);
+  // 搜索时结果通常很少且用户在等结果，直接全量，不让命中的卡被分批延迟。
+  const renderAll = query.trim() !== '';
+  const visibleCharacters = useMemo(
+    () => (renderAll ? filtered : filtered.slice(0, effectiveLimit)),
+    [filtered, renderAll, effectiveLimit]
+  );
+
+  // 按滚动位置补齐，而不是在空闲帧定时补：定时补会在路由 transition 渲染让出主线程的间隙里
+  // 触发默认优先级的 setState，同步挂一批卡并打断导航，表现为底部 tab 高亮已变但页面不跳转。
+  // 哨兵只在用户接近列表底部时才触发；每批挂完 effectiveLimit 变化会重建观察器，
+  // 哨兵仍在范围内就继续补，直到它被推到范围之外。
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const hasMoreToRender = !renderAll && effectiveLimit < filtered.length;
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!hasMoreToRender || !node) return;
+    const grow = () => setRenderLimit((limit) => Math.max(limit, restoreFloor) + RENDER_BATCH_SIZE);
+    if (typeof IntersectionObserver === 'undefined') {
+      // 极老的 WebView 没有观察器：退回一次性全量，保证列表完整。
+      setRenderLimit(Number.POSITIVE_INFINITY);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) grow();
+      },
+      { rootMargin: RENDER_MORE_ROOT_MARGIN }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMoreToRender, effectiveLimit, restoreFloor]);
 
   const finishRestore = useCallback(() => {
     clearLobbyReturnSnapshot();
@@ -242,6 +380,7 @@ export function CharacterGallery() {
       saveLobbyReturnSnapshot({
         sort,
         query,
+        favoritesOnly,
         anchorCharacterId: characterId,
         neighborCharacterIds: neighborIds(loadedCharacterIds, characterId),
         loadedCharacterIds,
@@ -250,7 +389,7 @@ export function CharacterGallery() {
         viewportWidth: window.innerWidth,
       });
     },
-    [filtered, query, sort]
+    [filtered, query, sort, favoritesOnly]
   );
 
   const handleImageSettled = useCallback(
@@ -332,7 +471,7 @@ export function CharacterGallery() {
       )}
     >
       {LOBBY_TABS.map((tab) => {
-        const active = sort === tab.value;
+        const active = !favoritesOnly && sort === tab.value;
         return (
           <button
             key={tab.value}
@@ -341,6 +480,7 @@ export function CharacterGallery() {
             aria-selected={active}
             onClick={() => {
               if (sort !== tab.value) cancelRestore();
+              setFavoritesOnly(false);
               setSort(tab.value);
             }}
             className={cn(
@@ -364,13 +504,34 @@ export function CharacterGallery() {
           </button>
         );
       })}
+      <button
+        type="button"
+        role="tab"
+        aria-selected={favoritesOnly}
+        onClick={() => {
+          cancelRestore();
+          setFavoritesOnly(true);
+        }}
+        className={cn(
+          'flex min-h-10 items-center gap-1.5 rounded-full border px-4 py-1.5 text-[13px] transition-colors',
+          favoritesOnly
+            ? 'border-primary/30 bg-primary/10 text-primary'
+            : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
+        )}
+      >
+        <Heart className="size-3.5" aria-hidden />
+        已收藏
+      </button>
     </div>
   );
 
   const listHeader = (
     <>
-      {searchBar}
-      {sortTabs}
+      <RoleplayHeader active="discover">
+        {searchBar}
+        {sortTabs}
+      </RoleplayHeader>
+      <RecentConversationCard />
     </>
   );
 
@@ -431,16 +592,35 @@ export function CharacterGallery() {
   return (
     <>
       {listHeader}
-      {filtered.length === 0 ? (
+      {favoritesOnly && favoriteIds.isPending ? (
+        <p className="px-4 py-10 text-center text-sm text-muted-foreground" role="status">
+          正在读取收藏…
+        </p>
+      ) : favoritesOnly && favoriteIds.isError ? (
+        <div className="px-4 py-10 text-center">
+          <p className="text-sm text-muted-foreground">收藏暂时没加载出来</p>
+          <button
+            type="button"
+            onClick={() => void favoriteIds.refetch()}
+            className="mt-3 min-h-10 rounded-full bg-secondary px-5 text-sm"
+          >
+            重新加载
+          </button>
+        </div>
+      ) : filtered.length === 0 ? (
         <div
           className={cn(
             'mx-auto flex max-w-screen-xl flex-col items-center gap-2 px-4 py-10 sm:px-6 lg:px-8',
             hiddenWhileRestoring
           )}
         >
-          <p className="text-center text-[13px] text-muted-foreground">没有匹配「{query}」的角色</p>
+          <p className="text-center text-[13px] text-muted-foreground">
+            {favoritesOnly && !query.trim() ? '还没有收藏的角色' : `没有匹配「${query}」的角色`}
+          </p>
           <p className="text-center text-[11px] text-muted-foreground/80">
-            可以先去「创作」页浏览图片灵感，或开始一轮新的图片创作。
+            {favoritesOnly
+              ? '遇到喜欢的角色，点一下心形就能留在这里。'
+              : '换个名字或标签试试，也可以看看推荐角色。'}
           </p>
         </div>
       ) : (
@@ -450,22 +630,26 @@ export function CharacterGallery() {
             hiddenWhileRestoring
           )}
         >
-          {filtered.map((c, index) => (
+          {visibleCharacters.map((c, index) => (
             <CharacterCard
               key={c.id}
               character={c}
+              experienced={experiencedIds.has(c.id)}
               priority={index < FIRST_SCREEN_IMAGE_COUNT}
               onImageSettled={handleImageSettled}
-              onSelect={() => {
-                if (!enteringId) setPreviewId(c.id);
-              }}
+              onSelect={handleSelectCharacter}
             />
           ))}
         </div>
       )}
+      {/* 渲染哨兵放在网格外：恢复滚动期间网格带 invisible，哨兵不受影响。 */}
+      {hasMoreToRender ? (
+        <div ref={loadMoreRef} aria-hidden="true" className="h-px w-full" />
+      ) : null}
 
       <CharacterDetailSheet
         characterId={previewId}
+        summary={previewSummary}
         entering={enteringId !== null}
         onClose={() => {
           if (enteringId) {
@@ -473,6 +657,8 @@ export function CharacterGallery() {
             setEnteringId(null);
             setPreviewId(null);
             clearLobbyReturnSnapshot();
+            // 用户主动取消进入，不是卡住；不清掉的话 2.5 秒后看门狗会补发一条假的 action_stall。
+            discardPendingAction('select_character');
             // 当前本来就在大厅，直接 replace('/') 可能被 Next.js 当成同路由而忽略。
             // 唯一查询参数会启动一笔新的 SPA 导航，并让 App Router 放弃在途角色导航，
             // 同时保留 query cache 与 Telegram SDK。
@@ -481,12 +667,14 @@ export function CharacterGallery() {
           }
           setPreviewId(null);
         }}
-        onEnter={(id) => {
+        onEnter={(id, sessionId) => {
           if (enteringRef.current) return;
           enteringRef.current = true;
           captureReturnSnapshot(id);
           setEnteringId(id);
-          router.push(chatEntryPath(id));
+          startPendingAction('select_character');
+          rememberRoleplayScroll('/');
+          router.push(chatEntryPath(id, { sessionId, source: 'discover' }));
         }}
       />
     </>

@@ -64,7 +64,7 @@
   （唯一 REST/SSE 客户端门面，对应前端铁律「不在组件里 fetch」）
 
 > **明确不进固定块**：`features/generation/execute.ts` 等实现体、各 Repository、
-> 路由 handler 本体、全部 UI 组件、支付/钱包/CS/许愿/运营后台等业务实现。
+> 路由 handler 本体、全部 UI 组件、支付/钱包/CS/社群/运营后台等业务实现。
 > 它们靠「被 diff 触达 → 变量块」或「ARCHITECTURE.md 描述」覆盖。
 
 > **ST 相关一律不进固定块**：`bridge-protocol`、`st-extension`、`sync-engine`、

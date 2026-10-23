@@ -14,6 +14,13 @@ const syncMocks = vi.hoisted(() => ({
   readGenerationData: vi.fn().mockResolvedValue(null),
   recordBillingOutcome: vi.fn(),
   fetchGenerationData: vi.fn(),
+  enrichGeneration: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
+  GenerationObservationRepository: class {
+    enrichGeneration = syncMocks.enrichGeneration;
+  },
 }));
 
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({

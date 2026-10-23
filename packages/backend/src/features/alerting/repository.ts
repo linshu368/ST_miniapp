@@ -97,8 +97,10 @@ export class PrismaAlertPersistence implements AlertPersistence {
     transition: AlertTransition,
     card: SafeAlertCard
   ): Promise<string | null> {
-    // 恢复只更新事故，便于下次再次告警；飞书只发告警和升级。
-    if (input.notify === false || transition === 'recovered') return null;
+    // 要不要发"已恢复"是域相关的策略（支付不发，体验/Sentry 要发），
+    // 这里不替域名做决定，统一写进 outbox，由 delivery-worker 的
+    // feishuNotificationSuppressed 按域裁决。
+    if (input.notify === false) return null;
     const key = notificationKey(input.evaluation, transition);
     await this.insertOutbox(tx, incidentId, key, transition, card);
     return key;

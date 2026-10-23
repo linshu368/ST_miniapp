@@ -12,7 +12,7 @@
 - `ChatMessageList` 管滚动、加载旧消息与消息渲染；`ChatMessageBubble`/`ChatMarkdown` 负责安全展示，Markdown 必须经 DOMPurify，禁止不受控 HTML。
 - `ChatComposer` 处理输入、8000 字上限、发送/禁用和软键盘布局；共享布局计算留在 `composer-layout.ts`。
 - `ChatSessionDrawer` + `session-row-actions.tsx` 统一会话选择、改名、置顶、删除确认；不可逆删除必须确认。
-- `ChatTopBar` 在角色名下展示当前引擎胶囊，`ChatModelSwitcher` 从这里展开；`ChatToolsSheet` 不再包含模型入口。生成偏好和语音设置仍只消费对应 API hooks。
+- `ChatTopBar` 在角色名下展示当前引擎胶囊，`ChatModelSwitcher` 从这里展开；`ChatToolsSheet` 提供新对话、语音和图片设置，不再包含模型或生成偏好入口。`ChatReplyPreferences` 在输入框上方统一回复长度、模块开关和自定义偏好；动态长度档位与用户级配置仍只消费 generation-config API hooks，字段级保存与回滚不互相覆盖。展开内容可独立滚动。
 - `ChatMessageVoiceFooter`/相关语音组件处理音频状态；页面二级路由承载自定义生成，避免主消息气泡过载。
 - `ChatSplash`、typing bubble 和 disabled controls 表达加载/流式状态，不以 toast 代替关键页面状态。
 
@@ -37,3 +37,13 @@ SSE 流消息是临时客户端状态：`start` 建占位，`delta` 追加增量
 - 加载、空、错误、离线/重试、提交中、成功/终态全部设计；mutation pending 禁止重复点击。
 - 所有用户输入表单使用 RHF + Zod；若聊天这种高频受控输入因交互模型例外，必须使用明确长度/trim 校验和测试，不能扩散为普通表单惯例。
 - 尊重 safe-area、visual viewport 与软键盘；动画遵循 `prefers-reduced-motion`。不得通过 `user-scalable=no` 之外的新增手段进一步妨碍可访问缩放，修改 viewport 需单独评审。
+
+## 输入与连续操作
+
+- `useMemoryDraft` / `memory-draft-store` 仅持有有限生命周期的客户端文字草稿；用户/模块/session隔离，空字符串也有编辑版本，不将文本落盘或送入事件。
+- 聊天IME组合输入期间不可提交；影像Enter用于换行，Ctrl/Cmd+Enter提交。异步提交完成只清理原身份、原编辑版本的输入；从历史再生成不清新草稿。
+- `ImagePlazaHistorySheet`复用既有历史query；`FavoriteFeedbackNotice`独立于路由及卡片显示收藏错误，不引入通用通知框架。
+
+## 键盘压缩空间回归
+
+聊天输入与展开偏好应共享页面的 visualViewport 高度预算，且仅可视高度变化、没有新增输入时也必须重新约束 textarea；保留发送与偏好收起入口，长内容独立滚动。影像参考图/描述可以内滚，设置/生成操作条不得随输入内容被裁切。虚拟尺寸测试与真实手机键盘实测需分别记录，不能混称通过。

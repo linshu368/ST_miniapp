@@ -22,9 +22,24 @@ import {
   deletePlazaImage,
   downloadPlazaImage,
   signPlazaImagePath,
+  signSharedWorkImagePath,
   uploadPlazaImage,
   type PlazaMimeType,
 } from './storage.js';
+
+/** 结算响应未知与已确认未扣款必须分开，worker 才不会误删成果或误报成功。 */
+export class ImagePlazaSettlementError extends Error {
+  readonly outcomeUnknown: boolean;
+
+  constructor(
+    readonly code: 'image_plaza_settlement_outcome_unknown' | 'image_plaza_insufficient_balance',
+    options?: ErrorOptions
+  ) {
+    super(code, options);
+    this.name = 'ImagePlazaSettlementError';
+    this.outcomeUnknown = code === 'image_plaza_settlement_outcome_unknown';
+  }
+}
 
 export interface ImagePlazaWorkerAttempt {
   id: string;
@@ -785,29 +800,45 @@ export class ImagePlazaRepository {
       .update({ status: 'storing', updated_at: new Date().toISOString() })
       .eq('id', input.attempt.id)
       .eq('status', 'generating');
-    const { data, error } = await this.billing.rpc('settle_image_plaza_generation', {
-      p_attempt_id: input.attempt.id,
-      p_user_id: input.attempt.userId,
-      p_artifacts: [
-        {
-          position: 0,
-          storage_path: stored.storagePath,
-          mime_type: stored.mimeType,
-          byte_size: stored.byteSize,
-          width: stored.width,
-          height: stored.height,
-        },
-      ],
-    });
-    const status =
-      data && typeof data === 'object'
-        ? String((data as Record<string, unknown>).status ?? '')
-        : '';
-    if (error || !['settled', 'already_settled'].includes(status)) {
-      await deletePlazaImage(stored.storagePath).catch(() => undefined);
-      if (status === 'insufficient_balance') return;
-      throw new Error(`image plaza settle failed: ${error?.message ?? status}`);
+    let result: { data: unknown; error: unknown };
+    try {
+      result = await this.billing.rpc('settle_image_plaza_generation', {
+        p_attempt_id: input.attempt.id,
+        p_user_id: input.attempt.userId,
+        p_artifacts: [
+          {
+            position: 0,
+            storage_path: stored.storagePath,
+            mime_type: stored.mimeType,
+            byte_size: stored.byteSize,
+            width: stored.width,
+            height: stored.height,
+          },
+        ],
+      });
+    } catch (cause) {
+      throw new ImagePlazaSettlementError('image_plaza_settlement_outcome_unknown', { cause });
     }
+    // RPC 可能已经提交后才丢失响应。error 优先于任何 data，未知时保图且不重投。
+    if (result.error) {
+      throw new ImagePlazaSettlementError('image_plaza_settlement_outcome_unknown', {
+        cause: result.error,
+      });
+    }
+    const status =
+      result.data && typeof result.data === 'object'
+        ? String((result.data as Record<string, unknown>).status ?? '')
+        : '';
+    if (status === 'settled' || status === 'already_settled') return;
+    if (status === 'insufficient_balance') {
+      try {
+        await deletePlazaImage(stored.storagePath);
+      } catch (cause) {
+        throw new ImagePlazaSettlementError('image_plaza_insufficient_balance', { cause });
+      }
+      throw new ImagePlazaSettlementError('image_plaza_insufficient_balance');
+    }
+    throw new ImagePlazaSettlementError('image_plaza_settlement_outcome_unknown');
   }
 
   private async hydrateWorks(
@@ -837,31 +868,26 @@ export class ImagePlazaRepository {
       (artifactData ?? []).map((row) => [String(row.id), row as ArtifactRow])
     );
     const liked = new Set((likeData ?? []).map((row) => String(row.work_id)));
-    return Promise.all(
+    // 一页 20 张图逐个 await 签名会串行付 20 次 HTTP 往返；命中缓存后这些调用不再
+    // 出网，未命中时也应当并发。只对已发布作品图这样做——签名是只读、无顺序依赖的。
+    const works = await Promise.all(
       rows.map(async (row) => {
         const artifact = artifacts.get(row.artifact_id);
         const snapshot = ImagePlazaSnapshotSchema.safeParse(row.snapshot);
         if (!artifact || !snapshot.success) throw new Error('image_plaza_work_shape_invalid');
         const publishedAt = new Date(row.published_at);
         if (Number.isNaN(publishedAt.getTime())) throw new Error('image_plaza_work_shape_invalid');
-        let referenceImageUrl: string | null = null;
-        if (options.includeReferences !== false && snapshot.data.reference_artifact_id) {
-          const { data: reference } = await this.experience
-            .from('image_plaza_reference_assets')
-            .select('storage_path')
-            .eq('id', snapshot.data.reference_artifact_id)
-            .maybeSingle();
-          if (reference?.storage_path)
-            referenceImageUrl = await signPlazaImagePath(String(reference.storage_path));
-        }
+        const [imageUrl, referenceImageUrl] = await Promise.all([
+          signSharedWorkImagePath(
+            artifact.storage_path,
+            options.feedImages ? { width: 720, quality: 72 } : undefined
+          ),
+          this.resolveReferenceImageUrl(snapshot.data.reference_artifact_id, options),
+        ]);
         return {
           id: row.id,
           title: row.title,
-          image_url: await signPlazaImagePath(
-            artifact.storage_path,
-            900,
-            options.feedImages ? { width: 720, quality: 72 } : undefined
-          ),
+          image_url: imageUrl,
           reference_image_url: referenceImageUrl,
           model_id: row.model_id,
           model_name: row.model_name,
@@ -875,6 +901,27 @@ export class ImagePlazaRepository {
         };
       })
     );
+    return works;
+  }
+
+  /**
+   * 参考图属于未公开资产，仍用 15 分钟签名，不进作品图缓存。
+   *
+   * feed 明确传 `includeReferences: false`，所以这里的 DB 读取只在详情页发生；
+   * 提出成方法是为了能让它在 `Promise.all` 里与作品图签名并行，而不是串行等待。
+   */
+  private async resolveReferenceImageUrl(
+    referenceArtifactId: string | null | undefined,
+    options: { includeReferences?: boolean }
+  ): Promise<string | null> {
+    if (options.includeReferences === false || !referenceArtifactId) return null;
+    const { data: reference } = await this.experience
+      .from('image_plaza_reference_assets')
+      .select('storage_path')
+      .eq('id', referenceArtifactId)
+      .maybeSingle();
+    if (!reference?.storage_path) return null;
+    return signPlazaImagePath(String(reference.storage_path));
   }
 
   private async hydrateConversation(row: ConversationRow): Promise<ImagePlazaConversation> {

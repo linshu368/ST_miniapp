@@ -5,17 +5,21 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
-last_verified_at: 2026-10-13
+last_verified_task: .trellis/tasks/10-23-experience-continuity/
+last_verified_at: 2026-10-23
 ---
 
 # 用户会话、语音与图片界面
 
 ## 职责与边界
 
-负责会话列表、流式聊天、重生成、模型/生成偏好、语音、角色回复图片交互展示，以及图片生成用户侧 PostHog 事件。不拥有 PostHog SDK 初始化、后端图片生成或支付结算。
+负责会话列表、流式聊天、重生成、模型/回复偏好（长度、回复模块、自定义要求）、语音、角色回复图片交互展示，以及图片生成用户侧 PostHog 事件。不拥有 PostHog SDK 初始化、后端图片生成或支付结算。
 
 ## 当前状态
+
+`/chats` 现在是角色模块内部的「对话」栏目，全局导航为「角色 / 影像 / 我的」。发现与对话使用固定顶部栏目；角色收藏迁入发现的已收藏筛选，对话列表保留跨角色历史、置顶、重命名和删除确认，管理操作收进各行菜单并提供请求中/失败反馈。
+
+角色详情按角色查历史，明确区分继续已有会话、显式新对话与首次开始；读取失败显示重试，不默认创建。`chatEntryPath` 仅携带 `from=discover|conversations`，旧链接和非法来源回退发现；会话创建、切换及 returnTo 保留来源，聊天顶部、Telegram BackButton 和 Splash 退出共同回来源栏目。语音和充值继续复用含会话身份的 returnTo；失效会话清理旧创建结果后沿既有重建路径恢复。
 
 文字回复等待 8 秒保留提示；本地或服务端 streaming 均展示“取消本次回复”，终态确认后在最新未成功回复下显示“重新生成”，复用原输入。客户端读流/取消/刷新均有限等待；旧请求身份隔离、消息去重防止切会话或取消后旧状态覆盖新回复。Telegram/移动设备验收仍未执行。
 
@@ -23,13 +27,17 @@ last_verified_at: 2026-10-13
 
 ## 入口与调用者
 
-用户从 `/chats` 和 `/chat/[characterId]` 进入。
+用户从角色模块的 `/` 发现、详情或接着聊，以及 `/chats` 对话列表进入 `/chat/[characterId]`；`/chats` 原有链接继续有效，不再是独立全局底栏入口。
 
 ## 涉及文件
 
 | 路径                                                           | 职责                                            |
 | -------------------------------------------------------------- | ----------------------------------------------- |
 | `packages/frontend/src/app/chat/[characterId]/page.tsx`        | 会话页、图片 footer 接线、`chat_image` 充值来源 |
+| `packages/frontend/src/app/(main)/chats/page.tsx`              | 模块内对话列表与管理菜单                        |
+| `packages/frontend/src/components/roleplay/`                   | 固定模块栏目与接着聊卡片                        |
+| `packages/frontend/src/lib/chat-entry.ts`                      | 会话入口与语音路径构造                          |
+| `packages/frontend/src/lib/roleplay-navigation.ts`             | 有限来源、最后栏目和位置恢复                    |
 | `packages/frontend/src/components/chat/`                       | 聊天组件                                        |
 | `packages/frontend/src/components/chat/chat-message-image.tsx` | 图片面板、结果卡、预览与图片事件调用            |
 | `packages/frontend/src/lib/image-generation/telemetry.ts`      | 图片生成前端事件 helper 与去重                  |
@@ -57,21 +65,33 @@ last_verified_at: 2026-10-13
 
 ## 已知缺口与待核验项
 
+角色模块本轮仅做本地界面与交互预览，`/tmp` 示例服务不进入产品提交，也不能作为真实 Backend、计费、Telegram WebView 或生产数据验收证据。新增导航的真实环境联调与原有移动端验收仍需单独执行。
+
 图片 runtime 开关默认关闭；图 1~9、Telegram 长按保存、safe area/软键盘、PostHog Preview 真机事件和真实后端联调仍待 test 环境人工验收。
 
 ## 关联模块
 
 `frontend.infrastructure.client-ui-foundation`、`backend.business.conversation-generation`、`shared.business.conversation-contracts`。
 
-## 图片创作广场 V2（2026-10-12）
+## 影像广场（图片创作广场 V2，2026-10-12）
 
-图片创作广场使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。`/create/wish` 原流程保留，当前不提供可见入口。
+影像广场当前已实现图片生成，使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。
 
 提示词手工输入与快照复用统一受 Shared 的 2000 字上限约束；“用同款”恢复初始作品快照，并保留种子作品 `auto_optimize=false`，避免再次改写原始提示词。真实移动端与 test 数据链路仍需人工验收。
 
 ## 变更记录
 
+- 2026-10-23：任务 `10-23-roleplay-module-navigation` 将历史会话移入角色模块「对话」，收藏归入发现，统一有限来源及顶部/Telegram/Splash 返回；影像广场保持独立生成链路。
+
 - 2026-10-13：任务 `10-10-image-plaza-v2` 补充 2000 字提示词上限和种子作品“用同款”快照恢复规则。
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）写入图片生成 UI PostHog 安全事件 helper 与 chat_image 付费墙来源；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
-- 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除许愿池残余说明并清理无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+
+## 轻量连续性改进（2026-10-23）
+
+聊天与影像使用用户/模块/会话隔离的纯内存草稿，最多64条、2小时过期；不持久化或上报正文，不自动发送。空草稿优先于服务端快照；旧提交按身份、文本与编辑版本条件清空，A→B→A也不被误清。普通失败恢复仍绑定原会话；明确失效重建时只沿该恢复路径交接文本。
+
+中文输入法确认候选不触发聊天发送；影像描述Enter换行，Ctrl/Cmd+Enter生成。对话列表上翻不强拉回最新，提供轻量返回最新/有新回复提示；角色内历史展示单行消息摘要，查询失败与成功空记录分开，有缓存时保留记录。
+
+影像广场「我的生成」与工作室共用历史Sheet，只在打开时读取既有查询；浏览往返仅保存筛选、锚点及滚动标量，不存作品DTO/游标。历史再生成明确使用当前设置且保留composer草稿；失败刷新只查状态，不重新提交付费任务。画幅采用中文和形状示意，删除无实际选项的风格占位；保存沿既有Telegram下载能力，普通浏览器准确提示打开原图保存。真实报价、余额、幂等及后端契约不变。

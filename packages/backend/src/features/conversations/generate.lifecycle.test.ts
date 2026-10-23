@@ -17,6 +17,15 @@ const mocks = vi.hoisted(() => ({
   ensurePlaceholder: vi.fn(),
   saveSnapshot: vi.fn(),
 }));
+vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
+  GenerationObservationRepository: class {
+    begin = vi.fn();
+    observe = vi.fn();
+    prepareFallback = vi.fn();
+    selectDelivery = vi.fn();
+    markServer = vi.fn().mockResolvedValue(undefined);
+  },
+}));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
   ConversationHistoryRepository: class {
     setPendingRequestId = mocks.pendingRequest;
@@ -126,7 +135,7 @@ describe('turn lifecycle recovery', () => {
         ...input({ kind: 'send', content: 'original' }),
         receivedAt: Date.now() - 20_001,
       })
-    ).rejects.toMatchObject({ name: 'TimeoutError' });
+    ).rejects.toMatchObject({ name: 'FirstTokenDeadlineError' });
     expect(mocks.start).not.toHaveBeenCalled();
     expect(mocks.recover).not.toHaveBeenCalled();
   });
@@ -198,7 +207,7 @@ describe('turn lifecycle recovery', () => {
     expect(mocks.execute.mock.calls[0]?.[0]).not.toHaveProperty('request_id');
   });
 
-  it('idempotently creates the OpenRouter metadata placeholder once a generation ID is known', async () => {
+  it('persists attempt intent before dispatch and leaves provider binding to delivery selection', async () => {
     mocks.execute.mockResolvedValue({
       status: 'stream_interrupted',
       content: 'reply',
@@ -213,10 +222,11 @@ describe('turn lifecycle recovery', () => {
 
     const hooks = mocks.execute.mock.calls[0]?.[1];
     await hooks.onBeforeDispatch({ provider: 'openrouter' });
-    await hooks.onGenerationId('generation-1');
-    expect(mocks.saveSnapshot).toHaveBeenCalledWith('reply', { provider: 'openrouter' });
-    expect(mocks.ensurePlaceholder).toHaveBeenCalledWith('reply');
-    expect(mocks.ensureGenerationId).toHaveBeenCalledWith('reply', 'generation-1');
+    expect(hooks.onGenerationId).toBeUndefined();
+    expect(mocks.saveSnapshot).not.toHaveBeenCalled();
+    expect(mocks.ensurePlaceholder).not.toHaveBeenCalled();
+    expect(mocks.ensureGenerationId).not.toHaveBeenCalled();
+    expect(mocks.execute.mock.calls[0]?.[0].firstToken.store.selectDelivery).toBeTypeOf('function');
     expect(mocks.finalize.mock.calls.every(([value]) => !('generationId' in value))).toBe(true);
   });
 

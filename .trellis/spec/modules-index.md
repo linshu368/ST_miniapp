@@ -11,7 +11,7 @@
 
 - [角色卡、大厅与收藏](backend/app/modules/business/character-lobby.md) — `backend.business.character-lobby` · `business` · `active`
 - [会话与生成](backend/app/modules/business/conversation-generation.md) — `backend.business.conversation-generation` · `business` · `active`
-- [许愿、社区、消息与客服](backend/app/modules/business/engagement-support.md) — `backend.business.engagement-support` · `business` · `active`
+- [社区、消息与客服](backend/app/modules/business/engagement-support.md) — `backend.business.engagement-support` · `business` · `active`
 - [角色回复语音](backend/app/modules/business/voice-message.md) — `backend.business.voice-message` · `business` · `active`
 - [钱包、签到与充值支付](backend/app/modules/business/wallet-payment.md) — `backend.business.wallet-payment` · `business` · `active`
 - [运行时、鉴权与数据访问基建](backend/app/modules/infrastructure/runtime-data-security.md) — `backend.infrastructure.runtime-data-security` · `infrastructure` · `active`
@@ -24,7 +24,7 @@
 
 ## frontend
 
-- [大厅角色发现与收藏](frontend/app/modules/business/character-lobby.md) — `frontend.business.character-lobby` · `business` · `active`
+- [角色模块发现与收藏](frontend/app/modules/business/character-lobby.md) — `frontend.business.character-lobby` · `business` · `active`
 - [用户会话、语音与图片界面](frontend/app/modules/business/conversation-ui.md) — `frontend.business.conversation-ui` · `business` · `active`
 - [个人互动、通知与客服](frontend/app/modules/business/engagement-support.md) — `frontend.business.engagement-support` · `business` · `active`
 - [钱包、签到与充值](frontend/app/modules/business/wallet-payment.md) — `frontend.business.wallet-payment` · `business` · `active`

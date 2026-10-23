@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -61,10 +63,12 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const telegramUserId = useMemo(readTelegramUserId, []);
   const wallet = useWalletBalanceQuery();
+  usePageReady('/profile', wallet.data !== undefined);
   const credits = wallet.data?.total_credits ?? wallet.data?.credits;
   const bonusCredits = wallet.data?.bonus_credits;
-  const unread = useNotificationUnreadCountQuery();
-  const supportUnread = useSupportUnreadQuery();
+  // BottomNav 同屏常驻并负责轮询，这里只订阅缓存，避免同一端点两个 interval 各打一份。
+  const unread = useNotificationUnreadCountQuery({ poll: false });
+  const supportUnread = useSupportUnreadQuery({ poll: false });
   const displayName = useUserProfileStore((s) => s.displayName);
   const photoUrl = useUserProfileStore((s) => s.photoUrl);
   const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
@@ -151,11 +155,17 @@ export default function ProfilePage() {
   };
 
   const claimDailyCheckin = async () => {
+    const action = startAction('daily_checkin');
     try {
+      // 反馈必须等签到真正到账、状态同步完再给，不能在请求发出那一刻就算数——
+      // 否则测的只是「点击有没有反应」，不是「签到到底有没有成功、花了多久」。
       const data = await claimCheckin.mutateAsync();
       setCheckinToast(checkinRewardLines(data.checkin));
+      feedbackAfterPaint(action);
     } catch {
       // Mutation state already carries the error; keep the click handler quiet.
+      // 但看门狗必须在这清掉，否则 2.5 秒后还会补发一条过期的 action_stall。
+      action.feedback();
     }
   };
 

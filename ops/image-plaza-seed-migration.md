@@ -1,6 +1,25 @@
 # Civitai seed：TEST 数据导出与生产初始化
 
+## 2026-10-20 当前 Storage 执行入口
+
+用户已授权独立 Storage 阶段；以下历史“未复制”和 S3 候选步骤不表示本轮进度。当前目录为 `G:\JobLib\ST_miniapp\ops\exports\civitai-1792484619774`，使用 `G:\JobLib\ST_miniapp\scripts\migrate-image-plaza-storage.mjs` 从本地 backend `.env` 读取固定 TEST/PROD 配置，无通用配置 fallback。MCP 仅核对生产项目与 catalog；实际文件通过 Storage API 下载到本地后上传，并逐项回读 SHA-256/大小/MIME。运行状态以暂存目录 receipt/report 为准，未完成全量时不能视为 Storage 已验收。SQL 未执行。
+
+```powershell
+node "G:\JobLib\ST_miniapp\scripts\migrate-image-plaza-storage.mjs" --execute --canary --concurrency 6 --system-proxy
+node "G:\JobLib\ST_miniapp\scripts\migrate-image-plaza-storage.mjs" --execute --concurrency 6 --system-proxy
+```
+
+仅在本机确已配置可信 loopback 系统代理时使用 `--system-proxy`；当前 Node 24 支持原生环境代理。默认 6 路、最大 8 路；429/永久错误停止新任务，不覆盖/删除现有对象，不建立 bucket，不执行 SQL。单请求 120 秒、有限退避最多三次，上传结果不明先回读确认。保留 `storage-staging` 原图及 sidecar，重跑会核验本地 hash 和生产内容，不重复下载已有合格 TEST 副本。锁异常残留时先确认记录 PID 已退出再人工处理，不同时启动多个迁移进程。
+
+新图片/日志已恢复 Git ignore；三个历史导出文件已被既有提交跟踪，与原文“整体被忽略”冲突，不能以新 ignore 消除历史。未经授权不改写历史；本轮不提交任何导出、图片或凭据。
+
+2026-10-20 22:33 北京时间恢复记录：本机受限目录 `G:\JobLib\ST_miniapp\ops\exports\civitai-1792484619774\storage-staging` 中的 `resume-with-monitor.ps1` 包装原脚本，使用带时间戳的续跑日志，保持历史日志；独立监控每 30 秒检查子进程，退出时核对本轮最终报告并弹窗，日志 10 分钟无增长也弹窗。通知写入 `monitor-alerts.log`，进程信息见 `monitor-state.json`。该临时操作脚本及状态均 Git 忽略，不属于应用部署。弹窗测试已通过；仅本机开机、登录且监控仍运行时有效，未接入 Telegram/聊天推送，不提供重启后守护或自动恢复。迁移每 30 秒输出心跳，所以日志增长不能代替 completed/bytes 推进检查；完整验收仍以最终报告为准。
+
 ## 本次交付和边界
+
+2026-10-21 02:14:08 北京时间，Storage 本批累计验收完成：`G:\JobLib\ST_miniapp\ops\exports\civitai-1792484619774\storage-staging\full-report.json` 为 success=true、8032/8032、failed=0、16637199531 字节。模式 cumulative_receipts：7195 项沿用历史回读验收、835 项本轮新增并回读、2 项本轮已有对象回读通过；不表示本轮重新远端验证全部对象。监控确认 exit_code=0、成功通知已触发、锁已释放。SQL 未执行，签名访问/业务端验收仍需独立完成；本地副本与证据继续保留。
+
+2026-10-21 用户批准仅补传：原迁移命令追加 `--resume-verified`，或本机监控脚本追加 `-ResumeVerified`。该选项保留本地 hash 校验，但对匹配清单且有合法生产验收 receipt 的对象不再远端回读；报告以 `prior_verified` 单列历史完成数，`verification_mode=cumulative_receipts` 表示累计验收，不表示本轮重新检查全部远端对象。未验收项仍使用无覆盖上传和生产回读 SHA-256/大小/MIME 校验。默认不带该选项仍全量复核。仅在本批记录可信且接受远端对象验收后变化不可检测的限制下使用；不得用该模式授权 SQL。
 
 2026-10-19 只读 TEST（`zoqelpfhurwehlvypryl`）成功导出 8,032 个有效作品及对应图片元数据，软删除作品 0 个。图片总字节 16,637,199,531（约 15.49 GiB）。**没有写入 TEST/Production，没有复制图片，也没有验证生产结构。**
 

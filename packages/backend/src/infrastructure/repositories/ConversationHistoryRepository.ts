@@ -28,6 +28,29 @@ const CURRENT_TURN_COLUMNS =
   'id,user_id,model,user_input,assistant_reply,history,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata';
 const TURN_COLUMNS = `${CURRENT_TURN_COLUMNS},llm_billing_snapshot,llm_billing_settled_at`;
 
+// history 是每轮完整 prompt 快照，随轮次线性变长（TOAST 大户）。读路径只需要 request_id（在 [0]）
+// 和开场白（在 [0] 或 [1]，取决于有无 system 段），所以只取前两个元素，避免每次读历史都把
+// 整个快照经 PostgREST 传回。注意这只省传输与反序列化；jsonb 无法切片，库侧仍会 detoast。
+const CURRENT_TURN_HEAD_COLUMNS = CURRENT_TURN_COLUMNS.replace(
+  ',history,',
+  ',history_head:history->0,history_next:history->1,'
+);
+
+type HeadProjectedRow = Omit<ConversationHistoryRow, 'history'> & {
+  history?: unknown[];
+  history_head?: unknown;
+  history_next?: unknown;
+};
+
+/** 把窄投影还原成 history 的前两个元素；未带别名列（旧投影/测试替身）时原样返回。 */
+function restoreHistoryHead(row: HeadProjectedRow): ConversationHistoryRow {
+  const { history_head: head, history_next: next, ...rest } = row;
+  if (head === undefined && next === undefined) {
+    return { ...rest, history: rest.history ?? [] };
+  }
+  return { ...rest, history: [head, next].filter((item) => item !== null && item !== undefined) };
+}
+
 export interface ConversationHistoryRow {
   id: string;
   user_id: string;
@@ -75,6 +98,7 @@ export interface LlmBillingSnapshot {
   vip_active?: boolean;
   vip_valid_until?: string | null;
   model_tier?: string | null;
+  vip_discount_config_version?: number | null;
 }
 
 export interface ChatHistorySyncRow {
@@ -510,45 +534,49 @@ export class ConversationHistoryRepository {
    * 返回 current turn 之前、窗口起点之后的当前版本上下文。
    * 开场白始终从 turn 1 的 prompt 快照提取，不随泄洪丢掉。
    * listMessages 不加这个过滤。
+   *
+   * knownWindowStartTurn：开轮 RPC 刚返回的窗口起点。调用方有就传，省掉一次 chat_sessions 读；
+   * 没有（如生图按已存在的轮次组上下文）时仍回读会话。
    */
-  async getContextBeforeTurn(sessionId: string, turnIndex: number): Promise<ConversationContext> {
-    const windowStartTurn = await this.readWindowStartTurn(sessionId);
+  async getContextBeforeTurn(
+    sessionId: string,
+    turnIndex: number,
+    knownWindowStartTurn?: number
+  ): Promise<ConversationContext> {
+    const windowStartTurn =
+      knownWindowStartTurn === undefined
+        ? await this.readWindowStartTurn(sessionId)
+        : readWindowStart(knownWindowStartTurn);
 
-    const windowQuery = this.db
+    const base = this.db
       .from('current_chat_history')
-      .select(CURRENT_TURN_COLUMNS)
-      .eq('session_id', sessionId)
-      .gte('turn_index', windowStartTurn)
-      .lt('turn_index', turnIndex)
+      .select(CURRENT_TURN_HEAD_COLUMNS)
+      .eq('session_id', sessionId);
+
+    // 已泄洪时窗口不含 turn 1，但开场白要从 turn 1 的 prompt 快照取。
+    // 用一条 OR 查询同时取回两者，而不是并发两次 GET：同一 session 连续打两次
+    // current_chat_history 正是 ST-MINIAPP-2G（Consecutive HTTP）报的问题。
+    const filtered =
+      windowStartTurn <= 1
+        ? base.gte('turn_index', windowStartTurn).lt('turn_index', turnIndex)
+        : base.or(
+            `turn_index.eq.1,and(turn_index.gte.${windowStartTurn},turn_index.lt.${turnIndex})`
+          );
+
+    const { data, error } = await filtered
       .order('turn_index', { ascending: true })
       .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`读取会话上下文失败：${error.message}`);
 
+    const rows = ((data ?? []) as unknown as HeadProjectedRow[]).map(restoreHistoryHead);
     if (windowStartTurn <= 1) {
-      const { data, error } = await windowQuery;
-      if (error) throw new Error(`读取会话上下文失败：${error.message}`);
-      return assembleConversationContext({
-        windowStartTurn,
-        windowRows: (data ?? []) as ConversationHistoryRow[],
-      });
+      return assembleConversationContext({ windowStartTurn, windowRows: rows });
     }
-
-    const [windowResult, openingResult] = await Promise.all([
-      windowQuery,
-      this.db
-        .from('current_chat_history')
-        .select('history')
-        .eq('session_id', sessionId)
-        .eq('turn_index', 1)
-        .abortSignal(AbortSignal.timeout(5_000))
-        .maybeSingle(),
-    ]);
-    if (windowResult.error) throw new Error(`读取会话上下文失败：${windowResult.error.message}`);
-    if (openingResult.error) throw new Error(`读取开场白快照失败：${openingResult.error.message}`);
 
     return assembleConversationContext({
       windowStartTurn,
-      windowRows: (windowResult.data ?? []) as ConversationHistoryRow[],
-      openingHistory: (openingResult.data as { history?: unknown[] } | null)?.history,
+      windowRows: rows.filter((row) => row.turn_index >= windowStartTurn),
+      openingHistory: rows.find((row) => row.turn_index === 1)?.history,
     });
   }
 
@@ -577,14 +605,14 @@ export class ConversationHistoryRepository {
   ): Promise<ConversationHistoryRow | null> {
     const { data, error } = await this.db
       .from('current_chat_history')
-      .select(CURRENT_TURN_COLUMNS)
+      .select(CURRENT_TURN_HEAD_COLUMNS)
       .eq('id', historyId)
       .eq('session_id', sessionId)
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
 
     if (error) throw new Error(`查询对话轮次失败：${error.message}`);
-    return (data as ConversationHistoryRow | null) ?? null;
+    return data ? restoreHistoryHead(data as unknown as HeadProjectedRow) : null;
   }
 
   async listMessages(
@@ -597,7 +625,7 @@ export class ConversationHistoryRepository {
 
     let query = this.db
       .from('current_chat_history')
-      .select(CURRENT_TURN_COLUMNS)
+      .select(CURRENT_TURN_HEAD_COLUMNS)
       .eq('session_id', sessionId)
       .not('turn_index', 'is', null);
     if (typeof options.beforeTurnIndex === 'number') {
@@ -609,7 +637,7 @@ export class ConversationHistoryRepository {
       .limit(turnLimit + 1);
     if (error) throw new Error(`查询会话消息失败：${error.message}`);
 
-    const latest = (data ?? []) as ConversationHistoryRow[];
+    const latest = ((data ?? []) as unknown as HeadProjectedRow[]).map(restoreHistoryHead);
     const hasMore = latest.length > turnLimit;
     const page = latest.slice(0, turnLimit).reverse();
     const persistedOpening = extractOpeningMessage(
