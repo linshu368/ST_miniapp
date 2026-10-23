@@ -13,7 +13,7 @@ last_verified_at: 2026-09-08
 
 ## 职责与边界
 
-承载许愿、官方社区、邀请、消息中心和站内客服 UI。
+承载官方社区、邀请、消息中心和站内客服 UI。
 
 ## 当前状态
 
@@ -37,7 +37,7 @@ last_verified_at: 2026-09-08
 
 ## 数据、契约与外部依赖
 
-消费 wishes/community/notifications/support 契约。
+消费 community/invite/notifications/support 契约。
 
 ## 关键节点与约束
 
@@ -54,3 +54,7 @@ Telegram 社区跳转与真实成员校验需真机验证。
 ## 关联模块
 
 `backend.business.engagement-support`、`shared.business.engagement-support-contracts`。
+
+## 变更记录
+
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已退场许愿池的模块事实并保留其余互动能力边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。

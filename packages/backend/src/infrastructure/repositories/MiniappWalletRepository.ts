@@ -521,7 +521,8 @@ export class MiniappWalletRepository {
       .from('wallet_ledger')
       .select('reference_id,amount,metadata,created_at')
       .eq('user_id', userId)
-      .eq('reference_type', 'image_generation')
+      // 角色配图与影像广场使用各自的结算命名空间，都需进入图片消费明细。
+      .in('reference_type', ['image_generation', 'image_plaza_generation'])
       .order('created_at', { ascending: false })
       .limit(100);
     if (imageError) throw new Error(`查询图片消费明细失败：${imageError.message}`);

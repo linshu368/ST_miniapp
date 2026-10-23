@@ -29,8 +29,6 @@ export interface MessageVoiceState {
   onGenerate: () => void;
   /** 「自定义本次语音」页的地址；会话还没落库时为 null，此时入口不出现 */
   customHref: string | null;
-  /** 入口旁价格文案（voice_price_label），前端只读不写死 */
-  priceLabel: string;
   /** 已发布的语音免费体验上限，用于格式化本次 attempt 快照。 */
   freeTrialLimit: number | null;
   /** 失败提示文案，按 error_code 选用（来自 voice config hints） */
@@ -162,13 +160,7 @@ function SpokenTextPanel({ text, customHref }: { text: string; customHref: strin
   );
 }
 
-function VoiceAction({
-  voice,
-  submitting,
-  onGenerate,
-  priceLabel,
-  freeTrialLimit,
-}: MessageVoiceState) {
+function VoiceAction({ voice, submitting, onGenerate }: MessageVoiceState) {
   const generating = submitting || voice?.status === 'pending';
 
   if (generating) {
@@ -182,8 +174,6 @@ function VoiceAction({
 
   // ready 态由 ChatMessageVoiceFooter 直接渲染语音条，走不到这里
   const isRetry = voice?.status === 'failed';
-  const actionPriceLabel =
-    isRetry && voice ? formatMediaAttemptBillingLabel(voice, freeTrialLimit) : priceLabel;
   return (
     <button
       type="button"
@@ -194,11 +184,6 @@ function VoiceAction({
         <AudioLines className="h-3.5 w-3.5" aria-hidden />
         {isRetry ? '重试语音' : '生成语音'}
       </span>
-      {actionPriceLabel ? (
-        <span className="max-w-[12rem] whitespace-normal text-left text-[10px] leading-snug text-primary/80">
-          {actionPriceLabel}
-        </span>
-      ) : null}
     </button>
   );
 }

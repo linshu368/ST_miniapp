@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-11-package-spec-module-sync/
-last_verified_at: 2026-09-11
+last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_at: 2026-10-13
 ---
 
 # 钱包、签到与充值支付
@@ -55,7 +55,13 @@ Backend payment/wallet tests、对账脚本和 test 支付 smoke。
 
 `frontend.business.wallet-payment`、`shared.business.wallet-payment-contracts`、`database.business.billing-payment`。
 
+## 图片创作广场 V2（2026-10-12）
+
+图片广场按有效报价快照结算，只有图片转存成功后才由数据库 RPC 原子扣减钱包；同一 attempt 重放不得重复扣费。首次分享按实扣星尘乘运行时比例返还，artifact 唯一约束和 reward ledger 保证并发幂等。
+
+`20261013_image_plaza_seed_catalog.sql` 前向重建分享 RPC，使首次分享奖励只经 `billing.grant_bonus_credits` 发放并拒绝种子 artifact 进入用户分享返利链；真实数据库升级和并发验证仍待明确 test 目标。
+
 ## 变更记录
 
-- 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。
-- 2026-09-23：任务 `Admin VIP media configuration`（`.trellis/tasks/archive/2026-09/09-23-admin-vip-media-config/`）Admin ?? VIP ??????????????????/????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。
+- 2026-10-13：任务 `10-10-image-plaza-v2` 收敛分享奖励写入口并隔离种子作品。
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。

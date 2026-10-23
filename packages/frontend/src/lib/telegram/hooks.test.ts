@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { openExternalUrl, openPaymentUrl, openTelegramCommunity } from './hooks';
+import {
+  openExternalUrl,
+  openPaymentUrl,
+  openTelegramCommunity,
+  requestTelegramFileDownload,
+} from './hooks';
 
 const openLink = vi.fn();
 const isAvailable = vi.fn(() => true);
 const openTelegramLink = vi.fn();
 const telegramLinkAvailable = vi.fn(() => true);
+const downloadFile = vi.fn<(url: string, fileName: string) => Promise<void>>();
+const downloadAvailable = vi.fn(() => true);
 
 vi.mock('@telegram-apps/sdk-react', () => ({
   backButton: {
@@ -15,6 +22,9 @@ vi.mock('@telegram-apps/sdk-react', () => ({
     onClick: vi.fn(),
     hide: vi.fn(),
   },
+  downloadFile: Object.assign((url: string, fileName: string) => downloadFile(url, fileName), {
+    isAvailable: () => downloadAvailable(),
+  }),
   hapticFeedback: {},
   isTMA: () => true,
   openLink: Object.assign((url: string) => openLink(url), { isAvailable: () => isAvailable() }),
@@ -35,6 +45,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   isAvailable.mockReturnValue(true);
   telegramLinkAvailable.mockReturnValue(true);
+  downloadAvailable.mockReturnValue(true);
+  downloadFile.mockResolvedValue();
 });
 
 describe('openTelegramCommunity', () => {
@@ -104,6 +116,57 @@ describe('openPaymentUrl', () => {
     openPaymentUrl('weixin://dl/business/?ticket=test');
 
     expect(assign).toHaveBeenCalledWith('weixin://dl/business/?ticket=test');
+    expect(openLink).not.toHaveBeenCalled();
+  });
+});
+
+describe('requestTelegramFileDownload', () => {
+  const url = 'https://images.example.test/generated.webp';
+  const fileName = 'mijing-image-preview.webp';
+
+  it('returns false without a browser and does not invoke the native bridge', async () => {
+    vi.stubGlobal('window', undefined);
+    await expect(requestTelegramFileDownload(url, fileName)).resolves.toBe(false);
+    expect(downloadAvailable).not.toHaveBeenCalled();
+    expect(downloadFile).not.toHaveBeenCalled();
+  });
+
+  it('returns false without navigating when the download bridge is unavailable', async () => {
+    const { assign } = stubWindow();
+    downloadAvailable.mockReturnValue(false);
+    await expect(requestTelegramFileDownload(url, fileName)).resolves.toBe(false);
+    expect(downloadFile).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+    expect(openLink).not.toHaveBeenCalled();
+  });
+
+  it('waits for the SDK callback before confirming that the save request was accepted', async () => {
+    const { assign } = stubWindow();
+    let accept!: () => void;
+    downloadFile.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        accept = resolve;
+      })
+    );
+    const settled = vi.fn();
+    const request = requestTelegramFileDownload(url, fileName);
+    void request.then(settled);
+    expect(downloadFile).toHaveBeenCalledExactlyOnceWith(url, fileName);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    accept();
+    await expect(request).resolves.toBe(true);
+    expect(settled).toHaveBeenCalledWith(true);
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('preserves native rejection so the caller can show its retry and original-image fallback', async () => {
+    const { assign } = stubWindow();
+    const error = new Error('preview download rejected');
+    downloadFile.mockRejectedValueOnce(error);
+    await expect(requestTelegramFileDownload(url, fileName)).rejects.toBe(error);
+    expect(downloadFile).toHaveBeenCalledExactlyOnceWith(url, fileName);
+    expect(assign).not.toHaveBeenCalled();
     expect(openLink).not.toHaveBeenCalled();
   });
 });

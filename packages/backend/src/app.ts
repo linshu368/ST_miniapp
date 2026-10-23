@@ -11,8 +11,6 @@ import paymentRoutes from './routes/payment.js';
 import walletRoutes from './routes/wallet.js';
 import vipRoutes from './routes/vip.js';
 import settingsRoutes from './routes/settings.js';
-import wishRoutes from './routes/wishes.js';
-import csPlatformRoutes from './routes/cs-platform.js';
 import modelsRoutes from './routes/models.js';
 import conversationRoutes from './routes/conversations.js';
 import voiceRoutes from './routes/voice.js';
@@ -25,15 +23,22 @@ import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import notificationRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import telemetryRoutes from './routes/telemetry.js';
+import alertRoutes from './routes/alerts.js';
 import textPostprocessRoutes from './routes/text-postprocess.js';
+import imagePlazaRoutes from './routes/image-plaza.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
 import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
+import {
+  startImagePlazaGenerationJob,
+  stopImagePlazaGenerationJob,
+} from './features/image-plaza/job.js';
 import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
 } from './lib/lobby-ranking-refresh-job.js';
 import { bindRequestSentryContext } from './lib/sentry.js';
+import { registerRequestPerf, startRuntimeMetrics } from './lib/perf-metrics.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -47,9 +52,13 @@ export async function buildApp() {
     },
   });
 
-  app.addHook('onRequest', async (request) => {
+  app.addHook('onRequest', async (request, reply) => {
     bindRequestSentryContext(request);
+    // 让前端 http.client span 能拿到 DNS/连接/首字节拆分，用来区分慢在网络还是后端。
+    // 该头只允许单个 origin，所以只对配置的前端域名开放。
+    if (config.frontendUrl) reply.header('Timing-Allow-Origin', config.frontendUrl);
   });
+  registerRequestPerf(app);
 
   await app.register(cors, {
     origin: (origin, callback) => {
@@ -59,7 +68,7 @@ export async function buildApp() {
       }
 
       if (
-        [config.frontendUrl, config.csPlatformUrl, config.adminPlatformUrl].some(
+        [config.frontendUrl, config.adminPlatformUrl].some(
           (allowedOrigin) => allowedOrigin.length > 0 && allowedOrigin === origin
         )
       ) {
@@ -85,6 +94,10 @@ export async function buildApp() {
       callback(new Error('Not allowed by CORS'), false);
     },
     credentials: true,
+    // 前端(Vercel)到后端(Railway)是跨源请求，且带自定义头 X-Init-Data 必触发预检。
+    // 不设置时浏览器默认仅缓存 5s，导致几乎每个 API 请求前都多一次 OPTIONS 往返。
+    // 取 600s：Chromium 对 Max-Age 的上限就是 7200s，600s 在改 CORS 配置后仍能较快生效。
+    maxAge: 600,
     allowedHeaders: [
       'Content-Type',
       'Authorization',
@@ -112,8 +125,6 @@ export async function buildApp() {
   await app.register(walletRoutes);
   await app.register(vipRoutes);
   await app.register(settingsRoutes);
-  await app.register(wishRoutes);
-  await app.register(csPlatformRoutes);
   await app.register(modelsRoutes);
   await app.register(conversationRoutes);
   await app.register(voiceRoutes);
@@ -126,7 +137,9 @@ export async function buildApp() {
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
   await app.register(telemetryRoutes);
+  await app.register(alertRoutes);
   await app.register(textPostprocessRoutes);
+  await app.register(imagePlazaRoutes);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],
@@ -156,11 +169,16 @@ export async function buildApp() {
   }
 
   startChatImageGenerationJob(app.log);
+  startImagePlazaGenerationJob(app.log);
+
+  const stopRuntimeMetrics = startRuntimeMetrics();
 
   app.addHook('onClose', async () => {
+    stopRuntimeMetrics();
     stopChatHistorySyncJob();
     stopLobbyRankingRefreshJob();
     stopChatImageGenerationJob();
+    stopImagePlazaGenerationJob();
     shutdownTextPostprocessValidation();
   });
 

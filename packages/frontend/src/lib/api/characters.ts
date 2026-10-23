@@ -10,12 +10,19 @@ import type {
   LobbySort,
 } from '@miniapp/shared';
 
+import { createRequestId, timedFetch } from '@/lib/perf/request-timing';
+
 import { apiClient } from './client';
 import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== 纯 fetch 函数（私有，不导出给业务）====
 async function fetchCharacters(sort: LobbySort): Promise<GetCharactersData> {
-  const response = await fetch(`/api/lobby-characters?sort=${sort}`, { cache: 'no-store' });
+  // 大厅经 Vercel 同源代理转发，多一跳（含函数冷启动），必须和直连后端的请求一样被计时。
+  const response = await timedFetch(
+    `/api/lobby-characters?sort=${sort}`,
+    { cache: 'no-store' },
+    { requestId: createRequestId() }
+  );
   const json = (await response.json().catch(() => null)) as ApiResponse<GetCharactersData> | null;
   if (!response.ok || !json?.success) {
     throw new Error(json && !json.success ? json.error.message : `API error: ${response.status}`);
@@ -65,11 +72,32 @@ function readPersistedCharacters(sort: LobbySort): GetCharactersData | undefined
   }
 }
 
+const pendingPersist = new Map<LobbySort, GetCharactersData>();
+let persistScheduled = false;
+
+function flushPersistedCharacters(): void {
+  persistScheduled = false;
+  for (const [sort, data] of pendingPersist) {
+    try {
+      window.localStorage.setItem(cacheKey(sort), JSON.stringify({ savedAt: Date.now(), data }));
+    } catch {
+      // 隐私模式或 quota 满时只使用 React Query 内存缓存。
+    }
+  }
+  pendingPersist.clear();
+}
+
+// 整表 stringify + 同步写 localStorage 是主线程长任务；放在响应回调里会和列表渲染、
+// tab 切换动画挤在同一帧（Sentry 里 Response.json.then 长帧 p50 约 190ms）。
+// 推迟到空闲帧，同一 sort 的多次响应只写最后一份。
 function persistCharacters(sort: LobbySort, data: GetCharactersData): void {
-  try {
-    window.localStorage.setItem(cacheKey(sort), JSON.stringify({ savedAt: Date.now(), data }));
-  } catch {
-    // 隐私模式或 quota 满时只使用 React Query 内存缓存。
+  pendingPersist.set(sort, data);
+  if (persistScheduled) return;
+  persistScheduled = true;
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(flushPersistedCharacters, { timeout: 3000 });
+  } else {
+    window.setTimeout(flushPersistedCharacters, 500);
   }
 }
 
@@ -95,14 +123,16 @@ export function useCharactersQuery(
  * 首页「最新」入口的 New 提醒。判定在服务端，所以离开首页再回来不会重复提示。
  * 不做轮询：上新是运营的低频动作，进页面和切回前台各拉一次就够，也避免和 ST 启动抢资源。
  */
-export function useLobbyLatestBadgeQuery() {
+export function useLobbyLatestBadgeQuery({ enabled = true }: { enabled?: boolean } = {}) {
   const query = useQuery<LobbyLatestBadgeData>({
     queryKey: characterKeys.latestBadge(),
     queryFn: () => apiClient<LobbyLatestBadgeData>('/api/characters/latest-badge'),
+    enabled,
     staleTime: 0,
     refetchOnMount: 'always',
   });
-  useRefetchOnForeground(query.refetch);
+  // refetch() 不受 enabled 约束，推迟期间切回前台也不能提前发。
+  useRefetchOnForeground(query.refetch, enabled);
   return query;
 }
 
@@ -121,10 +151,13 @@ export function useMarkLobbyLatestSeenMutation() {
   });
 }
 
-export function useCharacterQuery(id: string | undefined) {
+/**
+ * `enabled: false` 供只在兜底时才需要详情的调用方使用（如 /chats 历史行先用大厅摘要）。
+ */
+export function useCharacterQuery(id: string | undefined, options: { enabled?: boolean } = {}) {
   return useQuery<GetCharacterByIdData>({
     queryKey: id ? characterKeys.detail(id) : characterKeys.all,
-    enabled: !!id,
+    enabled: !!id && options.enabled !== false,
     queryFn: async () => {
       if (!id) throw new Error('character id is required');
       return fetchCharacterById(id);

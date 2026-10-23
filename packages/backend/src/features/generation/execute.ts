@@ -35,6 +35,11 @@ import {
   type SseTapResult,
 } from './upstream.js';
 import { applyPromptCaching, type UpstreamMessage } from './prompt-caching.js';
+import {
+  forwardWithFirstTokenFallback,
+  FirstTokenDeadlineError,
+  type TransportModel,
+} from './first-token-fallback.js';
 import { GenerationCleanupPendingError } from './types.js';
 import type {
   GenerationHooks,
@@ -116,7 +121,7 @@ export async function execute(
     ? AbortSignal.any([request.signal, AbortSignal.timeout(GENERATION_TIMEOUT_MS)])
     : AbortSignal.timeout(GENERATION_TIMEOUT_MS);
   const chargeId = randomUUID();
-  const [pricing, billing, vipStrategy] = await withAbort(
+  const [pricing, selectedBilling, vipStrategy] = await withAbort(
     Promise.all([
       getPricingConfig(),
       getModelBillingContext({
@@ -128,6 +133,7 @@ export async function execute(
     signal
   );
 
+  let billing = selectedBilling;
   const finish = (result: GenerationResult): GenerationResult => {
     hooks?.onDone?.(result);
     return result;
@@ -207,7 +213,9 @@ export async function execute(
       }
     }
 
-    const saveHistory: SaveHistory = createHistoryWriter({ request, billing, plan, log });
+    // The quote and quota remain tied to the selected model; only transport identity changes.
+    const saveHistory: SaveHistory = (outcome) =>
+      createHistoryWriter({ request, billing, plan, log })(outcome);
 
     // 模块内部已把读取 / 解析失败降级为「无规则」，这里拿到 null 就当没配置。
     const providerPreferences =
@@ -233,18 +241,77 @@ export async function execute(
       hooks?.onError?.(err);
       return finish(failed());
     }
+    await hooks?.onBeforeDispatch?.({
+      ...plan.snapshot,
+      billing_mode: 'fixed_tier',
+      provider: billing.provider,
+      provider_model_id: billing.providerModelId,
+    });
+    signal.throwIfAborted();
     let upstreamRes: Response;
     const upstreamStartedAt = Date.now();
     try {
-      upstreamRes = await forwardToUpstream({
-        url: upstream.url,
-        method: 'POST',
-        body: JSON.stringify(buildUpstreamBody(request, providerPreferences)),
-        signal,
-        apiKey: upstream.apiKey,
-        provider: billing.provider,
-      });
+      const forward = async (
+        model: TransportModel,
+        attemptSignal: AbortSignal,
+        onDispatch?: () => void
+      ): Promise<Response> => {
+        const route = resolveProviderUpstream(model.provider);
+        if (!route.apiKey) throw new Error(`Missing key for ${model.provider}`);
+        const preferences =
+          model.provider === 'openrouter'
+            ? model.providerModelId === request.model.providerModelId &&
+              model.provider === request.model.provider
+              ? providerPreferences
+              : await getProviderPreferencesForModel(model.providerModelId)
+            : null;
+        const actualRequest = {
+          ...request,
+          model: { ...request.model, ...model, openRouterModelId: model.providerModelId },
+        };
+        attemptSignal.throwIfAborted();
+        onDispatch?.();
+        return forwardToUpstream({
+          url: route.url,
+          method: 'POST',
+          body: JSON.stringify(buildUpstreamBody(actualRequest, preferences)),
+          signal: attemptSignal,
+          apiKey: route.apiKey,
+          provider: model.provider,
+        });
+      };
+      if (request.firstToken && request.model.firstTokenPolicy && request.stream) {
+        const elapsed = performance.now() - request.firstToken.requestStartedAt;
+        const delivered = await forwardWithFirstTokenFallback({
+          primary: request.model,
+          fallbackModelId: request.model.firstTokenPolicy.fallbackModelId,
+          primaryAttemptId: request.firstToken.primaryAttemptId,
+          timeoutMs: request.model.firstTokenPolicy.timeoutMs,
+          remainingFirstTokenMs: request.model.firstTokenPolicy.deadlineMs - elapsed,
+          remainingObservationMs: 110_000 - elapsed,
+          requestStartedAt: request.firstToken.requestStartedAt,
+          signal,
+          store: request.firstToken.store,
+          forward,
+          onObservationError: (err) =>
+            log.sys.warn(
+              { err, event: 'llm.attempt.observation_failed', historyId: request.historyId },
+              '模型调用观测写入失败'
+            ),
+        });
+        billing = {
+          ...selectedBilling,
+          provider: delivered.model.provider,
+          providerModelId: delivered.model.providerModelId,
+        };
+        upstreamRes = delivered.response;
+      } else upstreamRes = await forward(request.model, signal);
     } catch (err) {
+      if (
+        err instanceof FirstTokenDeadlineError ||
+        signal.reason instanceof FirstTokenDeadlineError
+      )
+        throw new FirstTokenDeadlineError();
       // 连不上上游时 ST 链路也不落 chat_history（没有 upstream_status 可记），这里保持一致
       await releaseReservation();
       log.sys.error(
@@ -288,10 +355,16 @@ export async function execute(
       return finish(failed({ upstreamStatus: upstreamRes.status }));
     }
 
-    // 过了这一行就不会再有 HTTP 状态码级别的失败，调用方可以安全地写出响应头。
-    hooks?.onStreamOpen?.();
-
     const headerGenerationId = upstreamRes.headers.get('x-generation-id');
+    if (headerGenerationId && !request.firstToken) {
+      try {
+        await hooks?.onGenerationId?.(headerGenerationId);
+      } catch (err) {
+        await upstreamRes.body?.cancel().catch(() => undefined);
+        throw err;
+      }
+    }
+    hooks?.onStreamOpen?.();
 
     if (!request.stream) {
       return finish(
@@ -366,6 +439,7 @@ export async function execute(
     let firstTokenSeen = false;
     const tap = createSseTap({
       generationId: headerGenerationId,
+      onGenerationId: request.firstToken ? undefined : hooks?.onGenerationId,
       onDelta: (delta) => {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
@@ -449,6 +523,7 @@ function createHistoryWriter(input: {
   return (outcome) => {
     settleGeneration(
       {
+        first_token_observation: Boolean(request.firstToken),
         user_id: request.userId,
         model: billing.openRouterModelId,
         provider: billing.provider,
@@ -635,6 +710,48 @@ async function consumeNonStream(input: {
       modelOpenRouterId: billing.openRouterModelId,
       upstreamStatus: upstreamRes.status,
     };
+  }
+
+  if (generationId && generationId !== input.headerGenerationId) {
+    try {
+      await hooks?.onGenerationId?.(generationId);
+    } catch (err) {
+      // The complete body has already been read. Preserve it even when identity
+      // storage fails; the local failure must not erase an observed response.
+      const release = async () => {
+        await reservation.finalize(false);
+      };
+      await release();
+      const observed: SseTapResult = {
+        completed: false,
+        content: assistantReply ?? '',
+        deltaCount: assistantReply ? 1 : 0,
+        generationId,
+        finishReason: 'error',
+        usage,
+        responseMetadata,
+      };
+      const outcome = hooks?.onBeforeSettle
+        ? await hooks.onBeforeSettle(observed, release)
+        : observed;
+      saveHistory({
+        assistant_reply: outcome.content || null,
+        status: 'stream_interrupted',
+        upstream_status: null,
+        generation_id: generationId,
+        finish_reason: outcome.finishReason,
+      });
+      hooks?.onError?.(toError(err));
+      return {
+        status: 'stream_interrupted',
+        content: outcome.content,
+        generationId,
+        finishReason: outcome.finishReason,
+        chargeId,
+        modelId: billing.modelId,
+        modelOpenRouterId: billing.openRouterModelId,
+      };
+    }
   }
 
   const hasContent = typeof assistantReply === 'string' && assistantReply.trim().length > 0;

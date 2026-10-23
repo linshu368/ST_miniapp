@@ -20,8 +20,19 @@ const mocks = vi.hoisted(() => ({
   getGenerationConfig: vi.fn(),
   getDisplayName: vi.fn(),
   fetchWindow: vi.fn(),
+  readSnapshots: vi.fn(),
+  saveRichReplyMetadata: vi.fn(),
 }));
 
+vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
+  GenerationObservationRepository: class {
+    begin = vi.fn();
+    observe = vi.fn();
+    prepareFallback = vi.fn();
+    selectDelivery = vi.fn();
+    markServer = vi.fn().mockResolvedValue(undefined);
+  },
+}));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
   ConversationHistoryRepository: class {
     startTurn = mocks.startTurn;
@@ -31,6 +42,7 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     setPromptHistory = mocks.setPromptHistory;
     finalizeTurn = mocks.finalizeTurn;
     requireTurnById = mocks.requireTurnById;
+    saveRichReplyMetadata = mocks.saveRichReplyMetadata;
   },
 }));
 
@@ -50,6 +62,12 @@ vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', ()
 vi.mock('../generation/index.js', () => ({
   execute: mocks.execute,
   resolveModelForUser: mocks.resolveModel,
+}));
+
+vi.mock('../text-postprocess/repository.js', () => ({
+  TextPostprocessRepository: class {
+    readSnapshots = mocks.readSnapshots;
+  },
 }));
 
 vi.mock('../engine/index.js', () => ({
@@ -158,6 +176,8 @@ describe('runConversationTurn postprocess binding', () => {
       }
     );
     mocks.finalizeTurn.mockResolvedValue({ status: 'success', llm_finish_reason: 'stop' });
+    mocks.readSnapshots.mockResolvedValue({ found: [{ artifact: {} }], unavailable_versions: [] });
+    mocks.saveRichReplyMetadata.mockResolvedValue(undefined);
     mocks.requireTurnById.mockResolvedValue({ llm_finish_reason: null });
     mocks.setPromptHistory.mockResolvedValue(undefined);
     mocks.recoverStaleStreaming.mockResolvedValue(undefined);
@@ -171,6 +191,7 @@ describe('runConversationTurn postprocess binding', () => {
       userContent: 'raw-user',
       contextWindowStartTurn: 1,
       postprocessVersion: 4,
+      slotModes: { choice: 'full', status: 'full', memory: 'full' },
     });
     const events = sink();
     await runConversationTurn({
@@ -203,6 +224,10 @@ describe('runConversationTurn postprocess binding', () => {
       expect.objectContaining({ content: 'model-raw-reply' })
     );
     expect(JSON.stringify(mocks.setPromptHistory.mock.calls)).not.toContain('SECRET_TEMPLATE');
+    expect(mocks.saveRichReplyMetadata).toHaveBeenCalledWith(
+      'history',
+      expect.objectContaining({ rich_reply_mode: 'full', rich_reply_result: 'failed' })
+    );
   });
 
   it('does not call the model when the database cannot bind a current version', async () => {
@@ -230,6 +255,7 @@ describe('runConversationTurn postprocess binding', () => {
       userContent: 'stored-user',
       contextWindowStartTurn: 1,
       postprocessVersion: 4,
+      slotModes: { choice: 'full', status: 'full', memory: 'full' },
     });
     await runConversationTurn({
       session: SESSION,

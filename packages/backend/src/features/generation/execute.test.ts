@@ -1,6 +1,9 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { config } from '../../platform/config.js';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
+
+const originalVeniceConfig = { ...config.venice };
 
 const pricing = {
   version: 7,
@@ -180,9 +183,12 @@ beforeEach(() => {
   vi.mocked(settleGeneration).mockClear();
   // CI 无真实密钥；多供应商合并后缺 key 会提前 upstream_error，单测自备占位值。
   vi.stubEnv('LLM_API_KEY', 'test-llm-key');
+  // Venice 单测 stub 全局 fetch；清空本地代理避免走 undici ProxyAgent
+  Object.assign(config.venice, { ...originalVeniceConfig, httpsProxy: '' });
 });
 
 afterEach(() => {
+  Object.assign(config.venice, originalVeniceConfig);
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -623,5 +629,161 @@ describe('cancellation, deadlines and billing arbitration', () => {
     const fetchMock = stubUpstream(sseResponse([]));
     await expect(execute(request(), undefined, fakeLogger())).rejects.toThrow('生成额度收口待恢复');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('pre-dispatch recovery persistence', () => {
+  it('stops before upstream and releases quota when recovery facts cannot persist', async () => {
+    quotaState.granted = true;
+    quotaState.finalize.mockResolvedValue({ status: 'released' });
+    const upstream = stubUpstream(sseResponse([DELTA('reply'), 'data: [DONE]\n\n']));
+    const { execute } = await import('./execute.js');
+    await expect(
+      execute(
+        request(),
+        {
+          onBeforeDispatch: async () => {
+            throw new Error('snapshot storage failed');
+          },
+        },
+        fakeLogger()
+      )
+    ).rejects.toThrow('snapshot storage failed');
+    expect(upstream).not.toHaveBeenCalled();
+    expect(quotaState.finalize).toHaveBeenCalledWith(false);
+  });
+});
+
+it('preserves a fully read non-stream response when ID persistence fails', async () => {
+  stubUpstream(
+    new Response(
+      JSON.stringify({
+        id: 'body-id',
+        choices: [{ message: { content: 'received full reply' }, finish_reason: 'stop' }],
+      })
+    )
+  );
+  const onBeforeSettle = vi.fn(async (value: import('./upstream.js').SseTapResult) => value);
+  const result = await execute(
+    request({ stream: false }),
+    {
+      onGenerationId: async () => {
+        throw new Error('ID storage failed');
+      },
+      onBeforeSettle,
+    },
+    fakeLogger()
+  );
+  expect(result).toMatchObject({ status: 'stream_interrupted', content: 'received full reply' });
+  expect(onBeforeSettle).toHaveBeenCalledWith(
+    expect.objectContaining({ content: 'received full reply', completed: false }),
+    expect.any(Function)
+  );
+  expect(savedHistory().at(-1)).toMatchObject({
+    assistant_reply: 'received full reply',
+    status: 'stream_interrupted',
+  });
+});
+
+describe('fixed fallback preserves one selected-model quote', () => {
+  it.each([
+    { provider: 'openrouter' as const, free: false },
+    { provider: 'venice' as const, free: false },
+    { provider: 'openrouter' as const, free: true },
+    { provider: 'venice' as const, free: true },
+  ])('routes $provider (free=$free) with one charge/quota identity', async ({ provider, free }) => {
+    billingContext = { ...defaultBillingContext, provider, isFree: free };
+    if (provider === 'venice') vi.stubEnv('VENICE_API_KEY', 'test-venice-key');
+    quotaState.granted = free;
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        bodies.push(body);
+        const fallback = bodies.length === 2;
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const timer = setTimeout(
+              () => {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ id: fallback ? 'fallback-id' : 'primary-id', choices: [{ delta: { content: fallback ? '兜底' : '首发' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+                  )
+                );
+                controller.close();
+              },
+              fallback ? 5 : 100
+            );
+            init.signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                controller.error(init.signal?.reason);
+              },
+              { once: true }
+            );
+          },
+        });
+        return new Response(stream);
+      })
+    );
+    const beforeReserve = vi.fn(),
+      beforeDispatch = vi.fn(),
+      selectDelivery = vi.fn(async () => {});
+    const deltas: string[] = [];
+    const req = request({ promptCaching: true });
+    req.model.firstTokenPolicy = {
+      fallbackModelId: 'vendor/operator-flash',
+      timeoutMs: 30,
+      deadlineMs: 500,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    req.firstToken = {
+      primaryAttemptId: 'attempt-primary',
+      requestStartedAt: performance.now(),
+      store: {
+        prepareFallback: vi.fn(async () => {}),
+        observe: vi.fn(async () => {}),
+        selectDelivery,
+      },
+    };
+    const result = await execute(
+      req,
+      {
+        onBeforeReserve: beforeReserve,
+        onBeforeDispatch: beforeDispatch,
+        onDelta: (text) => deltas.push(text),
+      },
+      fakeLogger()
+    );
+    expect(result.status).toBe('success');
+    expect(deltas).toEqual(['兜底']);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]?.model).toBe('vendor/operator-flash');
+    expect(bodies[1]).not.toHaveProperty('venice_parameters');
+    expect(JSON.stringify(bodies[1]?.messages)).not.toContain('cache_control');
+    expect(beforeReserve).toHaveBeenCalledOnce();
+    expect(beforeDispatch).toHaveBeenCalledOnce();
+    expect(selectDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'fallback', generation_id: 'fallback-id' })
+    );
+    if (free) expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(true);
+    else expect(quotaState.finalize).not.toHaveBeenCalled();
+    expect(savedHistory()).toHaveLength(1);
+    const entry = savedHistory()[0]!;
+    expect(entry).toMatchObject({
+      provider: 'openrouter',
+      provider_model_id: 'vendor/operator-flash',
+      model_id: defaultBillingContext.modelId,
+      model_display_name: defaultBillingContext.modelDisplayName,
+      fixed_deduction: free ? 0 : 48,
+    });
+    expect(entry.charge_id).toBe(beforeReserve.mock.calls[0]?.[0]);
+    // Let the bounded primary observer finish; it must never emit or settle a second reply.
+    await new Promise((r) => setTimeout(r, 115));
+    expect(savedHistory()).toHaveLength(1);
+    expect(deltas).toEqual(['兜底']);
   });
 });

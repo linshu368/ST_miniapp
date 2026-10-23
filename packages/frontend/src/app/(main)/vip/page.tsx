@@ -1,5 +1,6 @@
 'use client';
 
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -39,6 +40,7 @@ import {
 } from '@/lib/payment/flow-telemetry';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import { cn } from '@/lib/utils';
+import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { paymentTypeLabel } from '@/lib/utils/payment';
 import {
   checkoutButtonLabel,
@@ -55,6 +57,7 @@ export default function VipPage() {
   const { impact, notification, whisper } = useHaptic();
   const plansQuery = usePaymentPlansQuery();
   const vipQuery = useVipStatusQuery();
+  usePageReady('/vip', plansQuery.data !== undefined && vipQuery.data !== undefined);
   const createOrder = useCreatePaymentOrderMutation();
   const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -155,11 +158,15 @@ export default function VipPage() {
     submitLock.current = true;
     impact('light');
     setCheckoutError(null);
+    // 反馈 = 按钮进入「处理中」状态被绘制出来；下单接口耗时由请求指标覆盖。
+    const submitAction = startAction('vip_create_order');
     try {
-      const result = await createOrder.mutateAsync({
+      const creating = createOrder.mutateAsync({
         plan_id: selection.id,
         payment_type: paymentType,
       });
+      feedbackAfterPaint(submitAction);
+      const result = await creating;
       capturePaymentOrderCreated({
         planId: selection.id,
         paymentType,

@@ -11,6 +11,10 @@
  */
 
 import {
+  DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
+  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
+  FIRST_TOKEN_FALLBACK_MODEL_ID,
   resolveEffectiveSelectedModelId,
   resolveEnabledCatalogModel,
   type LlmModelProvider,
@@ -115,6 +119,16 @@ export async function resolveModelForUser(userId: string): Promise<ResolvedModel
     openRouterModelId: selection.openRouterModelId,
     tier: billing.modelTier,
     isFree: billing.isFree,
+    firstTokenPolicy: {
+      fallbackModelId: snapshot.catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID,
+      timeoutMs:
+        resolveEnabledCatalogModel(snapshot.catalog, selection.modelId).first_token_timeout_ms ??
+        DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
+      deadlineMs: snapshot.catalog.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+      timeoutRateTarget:
+        snapshot.catalog.first_token_timeout_rate_target ?? DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET,
+      catalogVersion: snapshot.version,
+    },
     entitlement: {
       active: entitlement.active,
       validUntil: entitlement.valid_until,

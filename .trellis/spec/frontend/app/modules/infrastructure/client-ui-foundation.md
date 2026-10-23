@@ -5,8 +5,8 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/09-17-image-generation-posthog-plan/
-last_verified_at: 2026-09-18
+last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_at: 2026-10-12
 ---
 
 # API、Telegram 与 UI 基建
@@ -59,7 +59,11 @@ Telegram WebView 差异需持续人工回归；打开 Production PostHog 是独�
 
 `frontend.business.conversation-ui`、`frontend.business.wallet-payment`、`backend.infrastructure.runtime-data-security`。
 
+## 图片创作广场 V2（2026-10-12）
+
+图片广场的配置、瀑布流、会话、报价、生成、点赞与分享均通过统一 API client 和 React Query 缓存；Studio 与作品详情属于隐藏底栏的沉浸式路由，私有对象只消费后端签发的短期 URL。
+
 ## 变更记录
 
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）记录图片业务事件复用现有 replay lifecycle 与 shared schema；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
-- 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）移除已删除的 Mock 与表单脚手架事实并同步当前前端基础设施边界；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。

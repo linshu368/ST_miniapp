@@ -59,6 +59,8 @@ import {
 import { openCreatedPayment } from '@/lib/payment/open-created-payment';
 import { clearCheckoutConfirmation } from '@/lib/payment/open-storage';
 import { paymentTypeLabel, safePaymentReturnTo } from '@/lib/utils/payment';
+import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useHaptic, useTelegramBackButton } from '@/lib/telegram';
 import {
   checkoutButtonLabel,
@@ -85,6 +87,7 @@ function RechargePageContent() {
   useTelegramBackButton(goBack);
 
   const { data, isLoading, isError, refetch } = usePaymentPlansQuery();
+  usePageReady('/profile/recharge', data !== undefined);
   const vipStatus = useVipStatusQuery();
   const createOrder = useCreatePaymentOrderMutation();
   const { mutate: confirmCheckout } = useCheckoutConfirmationMutation();
@@ -195,11 +198,15 @@ function RechargePageContent() {
     submitLock.current = true;
     impact('light');
     setCheckoutError(null);
+    // 反馈 = 按钮进入「处理中」状态被绘制出来；下单接口本身的耗时由请求指标覆盖。
+    const submitAction = startAction('recharge_create_order');
     try {
-      const result = await createOrder.mutateAsync({
+      const creating = createOrder.mutateAsync({
         plan_id: selection.id,
         payment_type: paymentType,
       });
+      feedbackAfterPaint(submitAction);
+      const result = await creating;
       capturePaymentOrderCreated({
         planId: selection.id,
         paymentType,

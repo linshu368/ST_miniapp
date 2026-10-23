@@ -17,17 +17,17 @@ const databaseConfig = createDatabaseConfig({
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
-  csPlatformUrl: process.env.CS_PLATFORM_URL || 'https://st-cs-platform.vercel.app',
   adminPlatformUrl: process.env.ADMIN_PLATFORM_URL || 'https://st-admin-platform.vercel.app',
   nodeEnv,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   botInternalSecret: process.env.BOT_INTERNAL_SECRET || '',
   telegramCommunityBotToken: process.env.TELEGRAM_COMMUNITY_BOT_TOKEN || '',
-  // CS 必须使用当前数据库环境对应的 MiniApp Bot；否则同一 tg_id 对另一 Bot 会 chat not found。
-  csTelegramBotToken: process.env.TELEGRAM_BOT_TOKEN || process.env.CS_TELEGRAM_BOT_TOKEN || '',
-  csAdminToken: process.env.CS_ADMIN_TOKEN || '',
-  csTelegramWebhookSecret: process.env.CS_TELEGRAM_WEBHOOK_SECRET || '',
+  // 独立客服服务（linshu368/ST_cs_platform）：Bot 私聊消息转发过去、/api/support/* 代理过去。
+  csService: {
+    url: (process.env.CS_SERVICE_URL || '').replace(/\/$/, ''),
+    secret: process.env.CS_SERVICE_SECRET || '',
+  },
 
   // ── 数据库环境隔离 ────────────────────────────────────────────────────────
   database: {
@@ -84,6 +84,26 @@ export const config = {
     workerLeaseSeconds: parseInt(process.env.IMAGE_WORKER_LEASE_SECONDS || '180', 10),
   },
 
+  // Venice 出站可选代理：仅本地开发填写 VENICE_HTTPS_PROXY；Railway/生产留空直连。
+  venice: {
+    httpsProxy: process.env.VENICE_HTTPS_PROXY?.trim() || '',
+  },
+
+  // 图片广场使用独立 Venice 图片链路；密钥只从服务端环境读取。
+  // 分享自动打标复用同一组 VENICE_*，默认模型 deepseek-v4-1-flash（可用 IMAGE_PLAZA_TAGGING_MODEL 覆盖）。
+  imagePlaza: {
+    apiKey: process.env.VENICE_API_KEY || '',
+    baseUrl:
+      process.env.VENICE_API_BASE_URL ||
+      process.env.VENICE_API_BASE ||
+      'https://api.venice.ai/api/v1',
+    taggingModel: process.env.IMAGE_PLAZA_TAGGING_MODEL?.trim() || 'deepseek-v4-1-flash',
+    timeoutMs: parseInt(process.env.IMAGE_PLAZA_TIMEOUT_MS || '180000', 10),
+    workerEnabled: process.env.IMAGE_PLAZA_WORKER_ENABLED !== 'false',
+    workerIntervalMs: parseInt(process.env.IMAGE_PLAZA_WORKER_INTERVAL_MS || '3000', 10),
+    workerLeaseSeconds: parseInt(process.env.IMAGE_PLAZA_WORKER_LEASE_SECONDS || '240', 10),
+  },
+
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────
   payment: {
     enabled: process.env.PAYMENT_ENABLED === 'true',
@@ -107,5 +127,9 @@ export const config = {
   // Webhook 是部署 secret；是否发送、重试和限流属于 runtime_config.alerting，默认关闭。
   alerting: {
     feishuWebhookUrl: process.env.FEISHU_ALERT_WEBHOOK_URL || '',
+    // Sentry → 后端 webhook 的共享密钥；为空时该入口一律 401（安全默认）。
+    sentryWebhookSecret: process.env.SENTRY_ALERT_WEBHOOK_SECRET || '',
+    // Sentry Internal Integration 的 Client Secret，用于校验 sentry-hook-signature。
+    sentryClientSecret: process.env.SENTRY_CLIENT_SECRET || '',
   },
 } as const;

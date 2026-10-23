@@ -82,3 +82,90 @@
 3. foundation 完整收口后，继续并完成 data-samples；来源角色保持 NOLOGIN，真实诊断/连接必须另行授权且失败立即撤 URI/NOLOGIN。
 4. 后续严格按 `backend-execution → postprocessing → frontend-workbench → history-export → integration-spec → parent` 顺序推进，每个子任务完成、验证、module/spec、提交与归档后才 start 下一个。
 5. 当前未提交范围：foundation module payload/生成索引、data-samples task log、`source-query.ts` 与测试，以及本 journal 记录；未 commit/push。
+
+---
+
+## Session 3: fix_request_speed 分支 — Sentry 两条生产卡顿样本排查 + 剩余优化点汇总
+
+**Date**: 2026-10-22
+**Task**: 10-21-production-request-performance（步骤 9/10）
+**Package**: frontend
+**Branch**: `fix_request_speed`
+
+### Summary
+
+按 `E:/desk/1.txt` 排查两条 Sentry 生产卡顿样本（`select_character` 10.25s、`/create` 页 8s 等待）。先合并 `origin/dev`+`origin/main`（分支落后 340+ 提交），解决 9 个文件冲突后用 Sentry trace 定位：多个互不相关接口在同一毫秒集体卡住 7–8s 又集体恢复，根因是 Android Telegram Mini App WebView 切后台导致的网络/定时器冻结，不是任何单一端点的 bug。进一步发现 `page-tracker.ts` 已有的切后台暂停机制在 `action-tracker.ts` 里缺失，导致后台时长被错误计入 `action_stall`/`action.feedback.duration`，已按同款模式修复并补测试。随后盘点了 `10-21-production-request-performance` 任务下散落在多个 commit 里的已实施批次与仍是纯设计的批次，写入 `implement.md` 步骤 10，供明天接续。
+
+### Main Changes
+
+- 合并 `origin/dev`（`6d4c4ba5`）+ `origin/main`（`83b61800`）到 `fix_request_speed`，9 个文件冲突均按"保留两侧真实修复"解决。
+- `packages/frontend/src/lib/perf/action-tracker.ts`：移植 `page-tracker.ts` 的 `bindVisibility`/`hiddenMs`/`elapsed()` 到 `ActiveAction`，看门狗切后台暂停、回前台按剩余时间续计时，上报时长扣除后台停留。
+- `packages/frontend/src/lib/perf/action-tracker.test.ts`：新增 3 条回归（后台不触发看门狗、`feedback.duration` 扣除后台时长、后台期间 discard 不产生上报）。
+- `.trellis/tasks/10-21-production-request-performance/implement.md`：步骤 9 写入完整证据链（trace ID、根因、修复、验证）；步骤 10 汇总全任务剩余优化点（已实施待核对的 8 个批次、仍纯设计的 10 个批次、本次新发现的 5 个待决策项）。
+
+### Git Commits
+
+- `ff42181b` fix(monitoring): pause action-tracker watchdog while the tab is backgrounded
+
+### Testing
+
+- [OK] frontend `tsc --noEmit` 0 error；`eslint` 0 error（仅既有 `<img>` 告警，与本次改动无关）。
+- [OK] frontend `vitest run`：45 files / 286 tests 全过（含新增 3 条）。
+- [OK] backend `vitest run`：94 files / 749 tests 全过（本次会话未改 backend 代码，核对既有改动未回归）。
+- [NOT RUN] 真机/弱网人工验证（Android TG 冷热路由、取消/重试）——环境不可用，留给明天或专门排期。
+- [NOT RUN] frontend `build`——本机 `packages/frontend/node_modules/next/dist` 缺失（依赖安装损坏，先于本次改动已存在），需 `pnpm install` 后补跑。
+
+### Status
+
+[OK] **本次排查与修复已完成并提交**；任务整体（`10-21-production-request-performance`）仍 `in_progress`，大量子批次待继续。
+
+### Next Steps
+
+详见 `implement.md` 步骤 10.4（已写入文档，明天直接读取即可）：
+
+1. 先处理文档/代码状态不同步问题：`implement.md` 顶部状态行与 `task.md` 批次表未反映已合入的 8 个 commit（`888b616b`/`668754c6`/`cf26c65a`/`8cfdd335`/`2ee36edb`/`a2a4fe2a`/`ff42181b` 等），且 `design.md` §7 的 G1 审核门禁在 `task.json`/`task.md` 仍标 `Blocked`，与"大量批次已被其他开发者直接合入主分支"的事实冲突——需要和用户对齐是补办审核还是更新状态记录。
+2. 按 `implement.md` 10.1 表格补齐「发布后对照」「人工回归」「本地 build/test 补跑」，优先级：步骤 8 的 frontend `build`（依赖损坏，原因明确）> 步骤 1b 的 `8min` statement_timeout 实测 > 其余人工回归项。
+3. 真机/弱网验证（`1.txt` 的核心要求、`router.prefetch` 实际行为）需要先确认是否有可用环境；没有则向用户说明限制。
+4. chat 页配置请求 staleTime 调优：已查明 `models`/`generation-config` 已有合理 staleTime，`voice`/`images` 的 `staleTime:0` 是代码注释写明的有意设计（额度实时性），非遗漏——建议直接汇报结论，确认是否移出任务范围。
+5. `design.md` §3 推荐顺序中仍是纯设计的批次（P0-A 起）需要先过 G1 才能开始写代码；若治理问题导致 G1 被认定事实失效，需先和用户对齐新机制。
+6. 未提交范围：无（本次改动已全部提交，工作区干净，除 Windows 残留的空 `nul` 文件无关紧要）。
+
+---
+
+## Session 4: fix_request_speed 分支 — Sentry 复采，确认连接池事故已消除
+
+**Date**: 2026-10-23
+**Task**: 10-21-production-request-performance（步骤 11）
+**Package**: backend（只读排查，未改代码）
+**Branch**: `fix_request_speed`
+
+### Summary
+
+用户要求用 Sentry 生产数据继续找慢路径、降低 p75/p95。按 `sentry.release` 分组复采后确认：`prisma:engine:connection` 的长耗时全部集中在旧 release；`origin/main` 的 `111dda8a`（#451）记录了根因是 Railway 的 `PROD_DATABASE_URL` 被改成直连 5432 + `connection_limit=1`。最新 release 上已无 >500ms 的连接 span，`GET /api/characters/:id` 的 p95 从 7d 窗口的 10s 降到 190ms。因此不做连接池调大/预热/keep-alive。唯一仍偏慢的是 `GET /api/v1/conversations/:id`（p75 424ms），耗时集中在 Supabase REST 读 `current_chat_history` 视图；用户选择不改代码，仅记录结论。
+
+### Main Changes
+
+- `.trellis/tasks/10-21-production-request-performance/implement.md`：新增步骤 11（release 对照表、最新 release 各接口延迟、`conversations/:id` 子 span 分解与视图执行计划推断、方案 A/B/C 与用户决策、对步骤 10 的修正）。
+- 未改任何产品代码、配置、migration 或数据库。
+
+### Git Commits
+
+- 无（仅文档改动，未提交）。
+
+### Testing
+
+- [NOT RUN] typecheck / vitest：本次无代码改动。
+- [OK] Sentry `search_traces`（production，24h，按 release / transaction / span 聚合）。
+- [OK] Supabase MCP 只读：`pg_views` / `pg_indexes` / `pg_class` 元数据与 `EXPLAIN`（占位 UUID，未执行查询、未读业务行）。
+- [GAP] 未跑 `EXPLAIN ANALYZE`，"`current_chat_history` 随会话长度变慢"仍是推断，未用真实长会话实测。
+
+### Status
+
+[OK] **本次排查完成**；任务整体仍 `in_progress`。
+
+### Next Steps
+
+1. 7d 后用同口径（按 release 分组）再复采 `prisma:engine:connection` 与端点 p75/p95，样本量更大后再关闭连接池相关条目。
+2. 评估 `PROD_DATABASE_URL` 等仅存在于 Railway 控制台的变量是否需要定期核对/告警（参见 `ops/railway/README.md` 新增小节）。
+3. 若要处理 `conversations/:id`：先补真实长会话的 `EXPLAIN ANALYZE` 和按会话轮次分层的耗时，再在 `ConversationHistoryRepository.listMessages` 两步查（方案 A）与 DB 侧改造（方案 B，需 migration）之间选择。
+4. `implement.md` 步骤 10.3.5 的文档/状态同步治理问题仍未处理。

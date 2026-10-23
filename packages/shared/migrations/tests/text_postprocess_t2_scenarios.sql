@@ -693,3 +693,62 @@ BEGIN
   RETURN 'ok';
 END;
 $fn$;
+
+
+-- Local recovery-config contract checks: no business rows, snapshots or secrets.
+DO $recovery_config$
+DECLARE
+  v_card jsonb := '{"recover_at_eof":true,"title":"标题","subtitle":"{count}","fallback_title":"内容","fallback_subtitle":"格式异常"}'::jsonb;
+  v_recovery jsonb;
+  v_source jsonb;
+  v_artifact jsonb;
+  v_bad jsonb;
+BEGIN
+  v_recovery := jsonb_build_object('unwrap_code_fences', true,
+    'bracket_pairs', '[{"open":"【","close":"】"}]'::jsonb,
+    'tag_aliases', '{"choices":["选项"],"choice":["选"],"status":[],"memory":[]}'::jsonb,
+    'choices', v_card, 'status', v_card, 'memory', v_card);
+  v_source := jsonb_build_object('schema_version',1,'policy_version',1,'rules','[]'::jsonb,'rich_reply',v_recovery);
+  v_artifact := jsonb_build_object('schema_version',1,'policy_version',1,'rules','[]'::jsonb,
+    'rich_reply_protocol',jsonb_build_object('version',3,'enabled',true,'recovery',v_recovery));
+  PERFORM admin.validate_text_postprocess_source(v_source, 'draft');
+  PERFORM admin.validate_text_postprocess_source(v_source, 'publish');
+  PERFORM admin.validate_text_postprocess_source(v_source, 'rollback');
+  PERFORM admin.validate_text_postprocess_artifact(v_source, v_artifact);
+  PERFORM admin.validate_text_postprocess_artifact(v_source - 'rich_reply',
+    jsonb_set(v_artifact, '{rich_reply_protocol}', '{"version":2,"enabled":true}'::jsonb));
+  PERFORM admin.validate_text_postprocess_artifact(v_source - 'rich_reply',
+    jsonb_set(v_artifact, '{rich_reply_protocol}', '{"version":1,"enabled":true}'::jsonb));
+  FOR v_bad IN SELECT value FROM jsonb_array_elements(jsonb_build_array(
+    jsonb_set(v_source, '{rich_reply}', 'null'::jsonb),
+    jsonb_set(v_source, '{rich_reply,unexpected}', 'true'::jsonb),
+    jsonb_set(v_source, '{rich_reply,choices,recover_at_eof}', '"true"'::jsonb),
+    jsonb_set(v_source, '{rich_reply,choices,title}', to_jsonb(repeat('x',81))),
+    jsonb_set(v_source, '{rich_reply,tag_aliases,choice}', '["status"]'::jsonb),
+    jsonb_set(v_source, '{rich_reply,tag_aliases,choice}', '["选项"]'::jsonb),
+    jsonb_set(v_source, '{rich_reply,bracket_pairs}', '[{"open":"["}]'::jsonb)
+  )) LOOP
+    BEGIN
+      PERFORM admin.validate_text_postprocess_source(v_bad, 'publish');
+      RAISE EXCEPTION 'recovery source regression: invalid settings accepted';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+  END LOOP;
+  FOR v_bad IN SELECT value FROM jsonb_array_elements(jsonb_build_array(
+    jsonb_set(v_artifact, '{rich_reply_protocol,version}', '2'::jsonb),
+    jsonb_set(v_artifact, '{rich_reply_protocol,recovery,choices,title}', '"different"'::jsonb),
+    v_artifact #- '{rich_reply_protocol,recovery}',
+    jsonb_set(v_artifact, '{rich_reply_protocol,unknown}', 'true'::jsonb)
+  )) LOOP
+    BEGIN
+      PERFORM admin.validate_text_postprocess_artifact(v_source, v_bad);
+      RAISE EXCEPTION 'recovery artifact regression: unbound settings accepted';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+  END LOOP;
+  IF has_function_privilege('anon', 'admin.validate_text_postprocess_source(jsonb,text)', 'EXECUTE')
+    OR has_function_privilege('service_role', 'admin.validate_text_postprocess_artifact(jsonb,jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'private validator ACL regression';
+  END IF;
+END;
+$recovery_config$;

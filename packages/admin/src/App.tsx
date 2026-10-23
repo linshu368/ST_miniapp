@@ -76,16 +76,19 @@ import { TextPostprocessView } from './components/TextPostprocessView';
 import {
   configMenuKey,
   IMAGE_GENERATION_CONFIG_KEYS,
+  IMAGE_PLAZA_CONFIG_KEYS,
   PLATFORM_INSTRUCTION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
   isInviteProgramConfigKey,
   isImageGenerationConfigKey,
+  isImagePlazaConfigKey,
   isPlatformInstructionConfigKey,
   resolveAdminMenuSelection,
   sidebarManagedConfigKeys,
   type AdminViewKey,
   type InviteProgramTabKey,
   type ImageGenerationConfigKey,
+  type ImagePlazaConfigKey,
   type PlatformInstructionConfigKey,
 } from './lib/adminNavigation';
 import {
@@ -460,6 +463,9 @@ function AdminWorkspace(props: {
   const [inviteTab, setInviteTab] = useState<InviteProgramTabKey>(INVITE_PROGRAM_CONFIG_KEYS[0]);
   const [imageConfigTab, setImageConfigTab] = useState<ImageGenerationConfigKey>(
     IMAGE_GENERATION_CONFIG_KEYS[0]
+  );
+  const [imagePlazaTab, setImagePlazaTab] = useState<ImagePlazaConfigKey>(
+    IMAGE_PLAZA_CONFIG_KEYS[0]
   );
   const [platformInstructionTab, setPlatformInstructionTab] =
     useState<PlatformInstructionConfigKey>(PLATFORM_INSTRUCTION_CONFIG_KEYS[0]);
@@ -867,7 +873,7 @@ function AdminWorkspace(props: {
   // 「运营配置」视图与「裂变邀请管理」的三个 config tab 共用，避免另造一套编辑状态机。
   const configEditorCard = (
     <Card
-      title={configMetadata[selectedKey].label}
+      title={view === 'fallback_config' ? '兜底配置' : configMetadata[selectedKey].label}
       extra={
         <Space>
           <Tag>正式版本 {currentConfig?.version ?? 0}</Tag>
@@ -901,7 +907,9 @@ function AdminWorkspace(props: {
       }
     >
       <Typography.Paragraph type="secondary">
-        {configMetadata[selectedKey].description}
+        {view === 'fallback_config'
+          ? '统一管理兜底模型与首 token 等待参数。发布后对新请求生效。'
+          : configMetadata[selectedKey].description}
       </Typography.Paragraph>
       {!canWrite ? (
         <Alert
@@ -916,7 +924,9 @@ function AdminWorkspace(props: {
         />
       ) : null}
       <ConfigValueEditor
+        key={`${props.environment}:${selectedKey}`}
         configKey={selectedKey}
+        modelCatalogSection={view === 'fallback_config' ? 'fallback' : 'models'}
         value={workingValue}
         onChange={setWorkingValue}
         disabled={!canWrite}
@@ -1057,6 +1067,13 @@ function AdminWorkspace(props: {
                     : imageConfigTab;
                 setImageConfigTab(nextTab);
                 setSelectedKey(nextTab);
+              } else if (selection.view === 'image_plaza') {
+                const nextTab =
+                  selection.configKey && isImagePlazaConfigKey(selection.configKey)
+                    ? selection.configKey
+                    : imagePlazaTab;
+                setImagePlazaTab(nextTab);
+                setSelectedKey(nextTab);
               } else if (selection.view === 'platform_instructions') {
                 const nextTab =
                   selection.configKey && isPlatformInstructionConfigKey(selection.configKey)
@@ -1079,9 +1096,11 @@ function AdminWorkspace(props: {
                   key: configMenuKey(key),
                   label: configMetadata[key].label,
                 })),
+                { key: 'fallback_config', label: '兜底配置' },
                 { key: 'outreach_credit_grant', label: '回访星尘赠送' },
                 { key: 'invite_program', label: '裂变邀请管理' },
                 { key: 'image_generation_config', label: '图片生成配置' },
+                { key: 'image_plaza', label: '图片广场' },
                 { key: 'platform_instructions', label: '平台规则' },
                 { key: 'vip_strategy', label: 'VIP策略' },
                 { key: 'text_postprocess', label: '回复富文本规则' },
@@ -1215,6 +1234,28 @@ function AdminWorkspace(props: {
               </Card>
               {configEditorCard}
             </Space>
+          ) : view === 'image_plaza' ? (
+            <Space direction="vertical" size="middle" className="editor-stack">
+              <Card title="图片广场">
+                <Typography.Paragraph type="secondary">
+                  模型、首次分享弹窗、内容标签均复用现有草稿 → 发布 →
+                  回滚链路；未发布草稿不会影响用户端。
+                </Typography.Paragraph>
+                <Tabs
+                  activeKey={imagePlazaTab}
+                  items={IMAGE_PLAZA_CONFIG_KEYS.map((key) => ({
+                    key,
+                    label: configMetadata[key].label,
+                  }))}
+                  onChange={(key) => {
+                    const nextKey = key as ImagePlazaConfigKey;
+                    setImagePlazaTab(nextKey);
+                    setSelectedKey(nextKey);
+                  }}
+                />
+              </Card>
+              {configEditorCard}
+            </Space>
           ) : view === 'platform_instructions' ? (
             <Space direction="vertical" size="middle" className="editor-stack">
               <Card title="平台规则">
@@ -1237,7 +1278,7 @@ function AdminWorkspace(props: {
               </Card>
               {configEditorCard}
             </Space>
-          ) : view === 'configs' ? (
+          ) : view === 'configs' || view === 'fallback_config' ? (
             configEditorCard
           ) : (
             <Card title="发布历史">

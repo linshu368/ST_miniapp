@@ -17,5 +17,7 @@ export interface ReplyRendererProps {
   onChoice?: (choice: ReplyChoicePayload) => void;
   /** 稳定消息身份。details 展开状态和 CSS scope 都挂在它上面。 */
   messageKey?: string;
+  /** 仅影响首次挂载时指定规则内 details 的初始展开状态。 */
+  detailsDefaultOpen?: Readonly<Record<string, boolean>>;
   className?: string;
 }

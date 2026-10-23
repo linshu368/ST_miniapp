@@ -17,8 +17,6 @@
 | `conversations.ts`           | 会话/消息 DTO                                                                                                                                                      |
 | `text-postprocess.ts`        | 后处理 source/artifact、Admin 草稿/发布/回滚/request lookup、版本批次与诊断                                                                                        |
 | `voice.ts`                   | 语音生成请求、状态和计费响应                                                                                                                                       |
-| `wishes.ts`                  | 心愿功能                                                                                                                                                           |
-| `cs-platform.ts`             | Telegram 回访后台 DTO                                                                                                                                              |
 | `growth.ts`                  | 增长/裂变公共模型                                                                                                                                                  |
 | `invite.ts`                  | 邀请关系和奖励                                                                                                                                                     |
 | `community.ts`               | 官方社群状态与奖励                                                                                                                                                 |

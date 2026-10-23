@@ -14,6 +14,7 @@
 import { Transform } from 'node:stream';
 import { LLM_PROVIDER_CAPABILITIES, type LlmModelProvider } from '@miniapp/shared';
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
+import { veniceFetch } from '../../platform/venice-http.js';
 
 const LLM_UPSTREAM_URL = getLlmProviderRuntimeConfig('openrouter').baseUrl;
 
@@ -60,6 +61,16 @@ export async function forwardToUpstream(input: {
     forwardHeaders['X-Title'] = 'ST_miniAPP';
   }
 
+  // Venice 本地可走 VENICE_HTTPS_PROXY；OpenRouter 等其它上游保持直连。
+  if (provider === 'venice') {
+    return await veniceFetch(input.url, {
+      method: input.method,
+      headers: forwardHeaders,
+      body: input.body,
+      signal: input.signal,
+      duplex: 'half',
+    });
+  }
   return await fetch(input.url, {
     method: input.method,
     headers: forwardHeaders,
@@ -98,6 +109,7 @@ export function createSseTap(options: {
   /** 上游响应头已带 x-generation-id 时的初值 */
   generationId?: string | null;
   onDelta?: (delta: string) => void;
+  onGenerationId?: (generationId: string) => Promise<void>;
   onEnd: (result: SseTapResult) => void | Promise<void>;
 }): SseTap {
   let generationId = options.generationId ?? null;
@@ -118,28 +130,34 @@ export function createSseTap(options: {
     responseMetadata,
   });
 
-  const consumeDataLine = (line: string) => {
+  const consumeDataLine = async (line: string): Promise<void> => {
+    let json: Record<string, unknown>;
     try {
-      const json = JSON.parse(line.slice(6));
-      if (!generationId && typeof json?.id === 'string') {
-        generationId = json.id;
-      }
-      if (json?.usage && typeof json.usage === 'object' && !Array.isArray(json.usage)) {
-        usage = json.usage as Record<string, unknown>;
-      }
-      responseMetadata = { ...responseMetadata, ...boundedResponseMetadata(json) };
-      const choice = json?.choices?.[0];
-      const delta = choice?.delta?.content;
-      if (typeof delta === 'string') {
-        replyChunks.push(delta);
-        options.onDelta?.(delta);
-      }
-      if (typeof choice?.finish_reason === 'string') {
-        finishReason = choice.finish_reason;
-      }
+      json = JSON.parse(line.slice(6)) as Record<string, unknown>;
     } catch {
-      // non-JSON data line or incomplete JSON, skip
+      return;
     }
+    if (!json || typeof json !== 'object') return;
+    const firstId =
+      !generationId && typeof json.id === 'string' && json.id.length > 0 ? json.id : null;
+    if (firstId) generationId = firstId;
+    if (json.usage && typeof json.usage === 'object' && !Array.isArray(json.usage)) {
+      usage = json.usage as Record<string, unknown>;
+    }
+    responseMetadata = { ...responseMetadata, ...boundedResponseMetadata(json) };
+    const choices = json.choices as
+      | Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>
+      | undefined;
+    const choice = choices?.[0];
+    const delta = choice?.delta?.content;
+    if (typeof delta === 'string') {
+      replyChunks.push(delta);
+    }
+    if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
+    // Snapshot received text before I/O, so cleanup retains it even if identity storage fails.
+    // A database failure is not malformed SSE: propagate it through pipeline cleanup.
+    if (firstId) await options.onGenerationId?.(firstId);
+    if (!tap.destroyed && typeof delta === 'string') options.onDelta?.(delta);
   };
 
   const tap = new Transform({
@@ -149,31 +167,29 @@ export function createSseTap(options: {
       // 保留最后一行（可能不完整），其余行处理
       sseBuffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (line.trim() === 'data: [DONE]') {
-          streamCompleted = true;
-          continue;
+      void (async () => {
+        for (const line of lines) {
+          if (tap.destroyed) break;
+          if (line.trim() === 'data: [DONE]') {
+            streamCompleted = true;
+          } else if (line.startsWith('data: ')) {
+            await consumeDataLine(line);
+          }
         }
-        if (!line.startsWith('data: ')) continue;
-        consumeDataLine(line);
-      }
-
-      callback(null, chunk);
+      })().then(
+        () => callback(null, chunk),
+        (err: Error) => callback(err)
+      );
     },
     flush(callback) {
-      // 处理 buffer 中剩余的最后一行
-      if (sseBuffer.trim() === 'data: [DONE]') {
-        streamCompleted = true;
-      } else if (sseBuffer.startsWith('data: ')) {
-        consumeDataLine(sseBuffer);
-      }
-
-      Promise.resolve()
-        .then(() => options.onEnd(snapshot()))
-        .then(
-          () => callback(),
-          (err: unknown) => callback(err instanceof Error ? err : new Error(String(err)))
-        );
+      void (async () => {
+        if (sseBuffer.trim() === 'data: [DONE]') streamCompleted = true;
+        else if (sseBuffer.startsWith('data: ')) await consumeDataLine(sseBuffer);
+        await options.onEnd(snapshot());
+      })().then(
+        () => callback(),
+        (err: Error) => callback(err)
+      );
     },
   });
 

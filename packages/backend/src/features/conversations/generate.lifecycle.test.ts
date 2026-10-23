@@ -13,10 +13,23 @@ const mocks = vi.hoisted(() => ({
   finalize: vi.fn(),
   find: vi.fn(),
   execute: vi.fn(),
+  ensureGenerationId: vi.fn(),
+  ensurePlaceholder: vi.fn(),
+  saveSnapshot: vi.fn(),
+}));
+vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
+  GenerationObservationRepository: class {
+    begin = vi.fn();
+    observe = vi.fn();
+    prepareFallback = vi.fn();
+    selectDelivery = vi.fn();
+    markServer = vi.fn().mockResolvedValue(undefined);
+  },
 }));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
   ConversationHistoryRepository: class {
     setPendingRequestId = mocks.pendingRequest;
+    saveBillingSnapshot = mocks.saveSnapshot;
     recoverStaleStreaming = mocks.recover;
     startTurn = mocks.start;
     startRegeneration = mocks.regenerate;
@@ -24,6 +37,12 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     setPromptHistory = mocks.prompt;
     finalizeTurn = mocks.finalize;
     requireTurnById = mocks.find;
+  },
+}));
+vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
+  OpenRouterChatHistoryRepository: class {
+    ensureGenerationId = mocks.ensureGenerationId;
+    ensurePlaceholder = mocks.ensurePlaceholder;
   },
 }));
 vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
@@ -51,6 +70,7 @@ vi.mock('../generation/index.js', () => ({
   execute: mocks.execute,
   resolveModelForUser: async () => ({
     modelId: 'model',
+    provider: 'openrouter',
     openRouterModelId: 'model',
     isFree: false,
     tier: 'light',
@@ -105,6 +125,7 @@ beforeEach(() => {
     generationId: null,
     chargeId: null,
   });
+  mocks.ensureGenerationId.mockResolvedValue(undefined);
 });
 
 describe('turn lifecycle recovery', () => {
@@ -114,7 +135,7 @@ describe('turn lifecycle recovery', () => {
         ...input({ kind: 'send', content: 'original' }),
         receivedAt: Date.now() - 20_001,
       })
-    ).rejects.toMatchObject({ name: 'TimeoutError' });
+    ).rejects.toMatchObject({ name: 'FirstTokenDeadlineError' });
     expect(mocks.start).not.toHaveBeenCalled();
     expect(mocks.recover).not.toHaveBeenCalled();
   });
@@ -184,6 +205,29 @@ describe('turn lifecycle recovery', () => {
     expect(mocks.prompt).toHaveBeenCalledWith('reply', [], requestId);
     expect(mocks.execute.mock.calls[0]?.[0].messages).toEqual([]);
     expect(mocks.execute.mock.calls[0]?.[0]).not.toHaveProperty('request_id');
+  });
+
+  it('persists attempt intent before dispatch and leaves provider binding to delivery selection', async () => {
+    mocks.execute.mockResolvedValue({
+      status: 'stream_interrupted',
+      content: 'reply',
+      finishReason: 'stop',
+      generationId: 'generation-1',
+      chargeId: 'charge-1',
+    });
+    mocks.find.mockResolvedValue({ status: 'stream_interrupted', llm_finish_reason: 'stop' });
+    mocks.finalize.mockResolvedValue({ status: 'stream_interrupted', llm_finish_reason: 'stop' });
+
+    await runConversationTurn(input({ kind: 'send', content: 'original' }));
+
+    const hooks = mocks.execute.mock.calls[0]?.[1];
+    await hooks.onBeforeDispatch({ provider: 'openrouter' });
+    expect(hooks.onGenerationId).toBeUndefined();
+    expect(mocks.saveSnapshot).not.toHaveBeenCalled();
+    expect(mocks.ensurePlaceholder).not.toHaveBeenCalled();
+    expect(mocks.ensureGenerationId).not.toHaveBeenCalled();
+    expect(mocks.execute.mock.calls[0]?.[0].firstToken.store.selectDelivery).toBeTypeOf('function');
+    expect(mocks.finalize.mock.calls.every(([value]) => !('generationId' in value))).toBe(true);
   });
 
   it('failed pending-identity storage terminally closes the new turn without generating', async () => {

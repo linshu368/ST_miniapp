@@ -840,14 +840,25 @@ export function scopeProbeSelector(selector: CssSelector): string {
   return `.tp-scope ${serializeSelector(selector)}`;
 }
 
-export function serializeScopedCss(rules: CssRule[], scopeClass: string): string {
+/**
+ * `scopeCombinator: 'child'` 只给「正文」规则使用：它的 scope 挂在整条回复根节点上，
+ * 用直接子级选择器才能只命中普通段落，不波及卡片内部的段落。
+ */
+export type CssScopeCombinator = 'descendant' | 'child';
+
+export function serializeScopedCss(
+  rules: CssRule[],
+  scopeClass: string,
+  scopeCombinator: CssScopeCombinator = 'descendant'
+): string {
   if (!TEXT_POSTPROCESS_CLASS_TOKEN.test(scopeClass)) {
     throw new Error('Invalid text postprocess scope class.');
   }
-  return rules.map((rule) => serializeRule(rule, scopeClass)).join('\n');
+  const prefix = scopeCombinator === 'child' ? `.${scopeClass} > ` : `.${scopeClass} `;
+  return rules.map((rule) => serializeRule(rule, prefix)).join('\n');
 }
 
-function serializeRule(rule: CssRule, scopeClass: string): string {
+function serializeRule(rule: CssRule, scopePrefix: string): string {
   if (rule.type === 'media') {
     const condition = rule.conditions
       .map((item) =>
@@ -856,11 +867,11 @@ function serializeRule(rule: CssRule, scopeClass: string): string {
           : `(prefers-color-scheme: ${item.scheme})`
       )
       .join(' and ');
-    const body = rule.rules.map((style) => serializeRule(style, scopeClass)).join('\n');
+    const body = rule.rules.map((style) => serializeRule(style, scopePrefix)).join('\n');
     return `@media ${condition} {\n${body}\n}`;
   }
   const selectors = rule.selectors
-    .map((selector) => `.${scopeClass} ${serializeSelector(selector)}`)
+    .map((selector) => `${scopePrefix}${serializeSelector(selector)}`)
     .join(', ');
   const declarations = rule.declarations
     .map((declaration) => `${declaration.property}: ${serializeTokens(declaration.tokens)};`)

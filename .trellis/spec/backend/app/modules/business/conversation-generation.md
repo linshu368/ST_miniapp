@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/09-28-rich-text-process/
-last_verified_at: 2026-09-30
+last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_at: 2026-10-13
 ---
 
 # 会话与生成
@@ -42,6 +42,8 @@ AI 回复后处理版本由数据库 current-postprocess RPC 在开轮事务内�
 
 ## 数据、契约与外部依赖
 
+OpenRouter mapper、计费读取和回捞仓储统一使用专表的厂商原名字段；`llm_generation_id`、`llm_generation_data` 为明确保留的例外。主表 `recordBillingOutcome` 显式接收金额、结算时间和业务结束原因，禁止复用并修改 OpenRouter 元数据对象承载计费列。`usage_cache` 可缺失，不作为元数据完整性的必需条件。Venice 的 mapper/repository 不参与本次命名调整。原名代码需先执行 `20261016_openrouter_original_metadata_fields.sql`；远端未执行前不能部署。
+
 消费 shared conversations/images/telemetry 契约、experience 会话与图片 attempt、OpenRouter、DeepSeek、Grok/Liaobots、Replicate Z、Supabase Storage 和服务端 PostHog capture。
 
 ## 关键节点与约束
@@ -54,13 +56,26 @@ AI 回复后处理版本由数据库 current-postprocess RPC 在开轮事务内�
 
 ## 已知缺口与待核验项
 
+本地已实现主表调用字段清退：正常读写为显式业务投影，finalizeTurn 不接收调用 ID，上游前 await 快照/专表占位、首次 ID 持久化；已接收 SSE/非流式正文在 metadata 失败时仍保留。五路恢复消费对应专表身份/已存事实，业务取消/超时与计费归属保持。未部署，真实环境验收见任务 T8 报告。
+
 角色卡更多人设字段和自建预设格式仍待后续任务；图片真实 DeepSeek/Grok、Storage、重启/并发、PostHog Preview 事件与发布观测仍待 test 环境验收。
 
 ## 关联模块
 
 `frontend.business.conversation-ui`、`backend.infrastructure.runtime-data-security`、`shared.business.conversation-contracts`、`database.business.conversation-storage`。
 
+## 图片创作广场 V2（2026-10-12）
+
+`features/image-plaza` 是图片创作广场的独立任务域，不复用聊天 `features/image` attempt。链路为报价快照 → 幂等受理 → worker 租约 → Venice 单次写调用（明确超时、不自动重试）→ 私有 Storage → 原子结算；上游结果不确定时进入 `failed_unknown` 且不扣费。
+
+审核后的 Civitai 初始数据通过独立离线导入器进入公开作品，不伪造用户、会话或生成 attempt。导入保留最多 2000 字原始提示词与模型映射，超限行隔离且不截断；apply 必须同时提供逐条审核清单、明确 test/production 目标、原图存储确认和有限批次，生产还需额外确认。
+
+Feed/config 始终返回启用标签目录；点击业务标签按标签中文 label 在 `snapshot.prompt_zh` 字面包含筛选，「全部」不限制标签。`image_plaza_tags_feature_enabled` 只控制分享时空 tags 的自动打标。
+
 ## 变更记录
 
+- 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 解耦标签展示与自动打标，feed 标签筛选改为 `prompt_zh` 中文包含匹配。
+- 2026-10-13：任务 `10-10-image-plaza-v2` 增加经审核初始作品的离线导入路径与 apply 门禁。
+
 - 2026-09-18：任务 `图片生成 PostHog 接入规划`（`.trellis/tasks/archive/2026-09/09-17-image-generation-posthog-plan/`）写入图片描述/受理/worker 终态 PostHog observer；commit：`7ab4a18ac4924d9a23d35dfc6f4f75be0401c9fe`。
-- 2026-09-23：任务 `Fix live free quota refresh in chat`（`.trellis/tasks/archive/2026-09/09-23-fix-chat-free-quota-refresh/`）??????????????????????????????????；commit：`5413afeaae67e9ef168831ec050d3b8514df33dd`。
+- 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。

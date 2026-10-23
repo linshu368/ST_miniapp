@@ -41,6 +41,7 @@ export interface ComposeInput {
   interactive: boolean;
   onChoice?: (choice: ReplyChoicePayload) => void;
   openStore: Map<string, boolean>;
+  detailsDefaultOpen?: Readonly<Record<string, boolean>>;
   createNonce?: () => string;
 }
 
@@ -128,6 +129,7 @@ function buildMarkdown(
   if (!html && slots.length > 0) return { ok: false, reason: 'MARKDOWN_UNAVAILABLE' };
   const root = parseMarkdownDocument(html);
   if (!root) return { ok: false, reason: 'MARKDOWN_UNAVAILABLE' };
+  separateRootBlockSlots(root, slots);
   const used = new Map<string, number>();
   const nodes = renderNodeList(root.childNodes, root, slots, used, input);
   for (const slot of slots) {
@@ -142,6 +144,66 @@ function buildMarkdown(
       nodes
     ),
   };
+}
+
+/** Split only top-level prose paragraphs after Markdown has identified code and list contexts. */
+function separateRootBlockSlots(root: HTMLElement, slots: DisplaySlot[]): void {
+  const blockTokens = slots.filter((slot) => slot.placement === 'block').map((slot) => slot.token);
+  if (blockTokens.length === 0) return;
+  for (const child of Array.from(root.children)) {
+    if (child.tagName.toLowerCase() !== 'p') continue;
+    const paragraph = child as HTMLParagraphElement;
+    if (
+      !Array.from(paragraph.childNodes).some(
+        (node) =>
+          node.nodeType === Node.TEXT_NODE &&
+          blockTokens.some((token) => node.textContent?.includes(token))
+      )
+    ) {
+      continue;
+    }
+    const document = root.ownerDocument;
+    const replacement = document.createDocumentFragment();
+    let current = document.createElement('p');
+    const flush = (): void => {
+      while (
+        current.lastChild?.nodeName.toLowerCase() === 'br' ||
+        (current.lastChild?.nodeType === Node.TEXT_NODE && !current.lastChild.textContent?.trim())
+      ) {
+        current.lastChild.remove();
+      }
+      if (current.textContent?.trim()) replacement.appendChild(current);
+      current = document.createElement('p');
+    };
+    for (const node of Array.from(paragraph.childNodes)) {
+      if (node.nodeType !== Node.TEXT_NODE) {
+        if (node.nodeName.toLowerCase() !== 'br' || current.textContent?.trim())
+          current.appendChild(node);
+        continue;
+      }
+      const value = node.textContent ?? '';
+      let cursor = 0;
+      while (cursor < value.length) {
+        const next = blockTokens
+          .map((token) => ({ token, index: value.indexOf(token, cursor) }))
+          .filter((match) => match.index >= 0)
+          .sort((left, right) => left.index - right.index)[0];
+        if (!next) {
+          current.appendChild(document.createTextNode(value.slice(cursor)));
+          break;
+        }
+        if (next.index > cursor)
+          current.appendChild(document.createTextNode(value.slice(cursor, next.index)));
+        flush();
+        const isolated = document.createElement('p');
+        isolated.textContent = next.token;
+        replacement.appendChild(isolated);
+        cursor = next.index + next.token.length;
+      }
+    }
+    flush();
+    paragraph.replaceWith(replacement);
+  }
 }
 
 function renderNodeList(
@@ -274,6 +336,7 @@ function renderSlot(
     interactive: input.interactive,
     onChoice: input.onChoice,
     openStore: input.openStore,
+    detailsDefaultOpen: input.detailsDefaultOpen,
   });
   return createElement(
     placement === 'block' ? 'div' : 'span',

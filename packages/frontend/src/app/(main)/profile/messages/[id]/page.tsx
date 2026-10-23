@@ -1,5 +1,6 @@
 'use client';
 
+import { usePageReady } from '@/lib/perf/page-ready';
 import { useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ChevronLeft, Loader2, RefreshCw } from 'lucide-react';
@@ -26,6 +27,8 @@ export default function NotificationDetailPage() {
   const goBack = useCallback(() => router.push('/profile/messages'), [router]);
   useTelegramBackButton(goBack);
   const detail = useNotificationDetailQuery(id);
+  // 通知不存在也算「页面给出了结论」，不该继续计为卡住。
+  usePageReady('/profile/messages/:id', detail.data !== undefined || detail.isError);
   const vip = useVipStatusQuery();
   const notification = detail.data?.notification;
   const showRenew = notification ? supportsVipRenewal(notification) : false;

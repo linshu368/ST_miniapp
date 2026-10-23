@@ -20,6 +20,9 @@ import {
   DEFAULT_RECHARGE_PAGE_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
+  ImagePlazaModelCatalogSchema,
+  ImagePlazaShareTipConfigSchema,
+  ImagePlazaTagConfigSchema,
   LlmPricingConfigSchema,
   MAX_FEATURE_FREE_TRIAL_LIMIT,
   ModelCatalogSchema,
@@ -41,6 +44,7 @@ import {
   DEFAULT_INVITE_CENTER_CONFIG,
   DEFAULT_INVITE_REWARD_RULES,
   EditableModelCatalogSchema,
+  EditableImagePlazaTagConfigSchema,
   ImageTextModelConfigSchema,
   type InviteCenterConfig,
   type InviteRewardRulesConfig,
@@ -50,9 +54,15 @@ import {
 import type { CharacterCard } from '../lib/adminApi';
 import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
 import { InviteRewardRulesEditor } from './InviteRewardRulesEditor';
+import {
+  ImagePlazaModelCatalogEditor,
+  ImagePlazaShareTipEditor,
+  ImagePlazaTagsEditor,
+} from './ImagePlazaConfigEditors';
 import { LobbyPinnedCharactersEditor } from './LobbyPinnedCharactersEditor';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
+import { FallbackConfigEditor } from './FallbackConfigEditor';
 import { PaymentPromptDialogConfigEditor } from './PaymentPromptDialogConfigEditor';
 import { ProviderRoutingConfigEditor } from './ProviderRoutingConfigEditor';
 import { RechargePageConfigEditor } from './RechargePageConfigEditor';
@@ -232,6 +242,7 @@ function ImageTextModelConfigEditor(props: {
 
 export function ConfigValueEditor(props: {
   configKey: ManagedConfigKey;
+  modelCatalogSection?: 'models' | 'fallback';
   value: unknown;
   onChange: (value: unknown) => void;
   disabled?: boolean;
@@ -265,6 +276,68 @@ export function ConfigValueEditor(props: {
         stale: props.providerDirectories.openrouter.stale,
       }
     : null;
+
+  if (props.configKey === 'image_plaza_model_catalog') {
+    const parsed = ImagePlazaModelCatalogSchema.safeParse(props.value);
+    const fallback = ImagePlazaModelCatalogSchema.parse(
+      configMetadata.image_plaza_model_catalog.defaultValue
+    );
+    return (
+      <ImagePlazaModelCatalogEditor
+        value={parsed.success ? parsed.data : fallback}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'image_plaza_share_tip') {
+    const parsed = ImagePlazaShareTipConfigSchema.safeParse(props.value);
+    const fallback = ImagePlazaShareTipConfigSchema.parse(
+      configMetadata.image_plaza_share_tip.defaultValue
+    );
+    return (
+      <ImagePlazaShareTipEditor
+        value={parsed.success ? parsed.data : fallback}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.configKey === 'image_plaza_tags_feature_enabled') {
+    const enabled = props.value === true;
+    return (
+      <Space align="center" size="middle">
+        <Switch
+          checked={enabled}
+          disabled={props.disabled}
+          onChange={(next) => props.onChange(next)}
+        />
+        <div>
+          <Typography.Text strong>
+            {enabled ? '分享自动打标已开启' : '分享自动打标已关闭'}
+          </Typography.Text>
+          <br />
+          <Typography.Text type="secondary">
+            仅控制分享时空标签时是否调用模型自动打标；广场仍展示标签，并按提示词中文译文筛选。
+          </Typography.Text>
+        </div>
+      </Space>
+    );
+  }
+
+  if (props.configKey === 'image_plaza_tags') {
+    const parsed = EditableImagePlazaTagConfigSchema.safeParse(props.value);
+    const fallback = ImagePlazaTagConfigSchema.parse(configMetadata.image_plaza_tags.defaultValue);
+    return (
+      <ImagePlazaTagsEditor
+        value={parsed.success ? parsed.data : fallback}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
 
   if (props.configKey === 'image_text_model_config') {
     const record =
@@ -801,16 +874,28 @@ export function ConfigValueEditor(props: {
           message="当前模型目录尚未填写完整；内容会保留在页面，补全必填项后自动保存草稿。"
         />
       ) : null}
-      <ModelCatalogEditor
-        value={modelCatalog}
-        onChange={props.onChange}
-        disabled={props.disabled}
-        providerDirectories={props.providerDirectories}
-        publishedModelIds={props.publishedModelIds}
-        syncLoading={props.syncLoading}
-        syncError={props.syncError}
-        onRefreshProvider={props.onRefreshProvider}
-      />
+      {props.modelCatalogSection === 'fallback' ? (
+        <FallbackConfigEditor
+          value={modelCatalog}
+          onChange={props.onChange}
+          disabled={props.disabled}
+          directory={props.providerDirectories.openrouter}
+          loading={props.syncLoading.openrouter}
+          error={props.syncError.openrouter}
+          onRefresh={() => props.onRefreshProvider('openrouter')}
+        />
+      ) : (
+        <ModelCatalogEditor
+          value={modelCatalog}
+          onChange={props.onChange}
+          disabled={props.disabled}
+          providerDirectories={props.providerDirectories}
+          publishedModelIds={props.publishedModelIds}
+          syncLoading={props.syncLoading}
+          syncError={props.syncError}
+          onRefreshProvider={props.onRefreshProvider}
+        />
+      )}
     </Space>
   );
 }

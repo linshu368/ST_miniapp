@@ -14,9 +14,9 @@ const SLOW_HINT_MS = 6500;
 /** 长尾兜底：不让用户永远只看一条进度条 */
 const STALL_HINT_MS = 45000;
 /** 退场动画时长，与 CSS splash-exit 保持一致 */
-const EXIT_MS = 720;
+const EXIT_MS = 180;
 /** ready 后先拉满进度，再让整屏退场 */
-const READY_FILL_MS = 240;
+const READY_FILL_MS = 80;
 
 type Phase = 'showing' | 'exiting' | 'gone';
 
@@ -62,20 +62,16 @@ function buildStars(id: string, count: number): Star[] {
   }));
 }
 
-/**
- * 进入 Chat 前的开屏动画（T1）。
- * 全屏覆盖在 ST iframe（z-10）与 ChatHeader（z-20）之上，
- * 在桥接 ready + 角色切换完成（ready=true）且最短停留时间已到后，
- * 以"镜头推进"式的放大淡出收场，然后自行卸载。
- * 如果 ST/桥接/角色切换没有完成，则持续展示本动画，不露出 ST 原生加载画面。
- */
+/** 等待会话就绪时保留退出/重试；快速就绪直接进入，避免连续试卡反复等待退场。 */
 export function ChatSplash({
+  backHref = '/',
   characterId,
   ready,
   error,
   onRetry,
   onVisible,
 }: {
+  backHref?: '/' | '/chats';
   characterId: string;
   ready: boolean;
   error?: string | null;
@@ -92,7 +88,7 @@ export function ChatSplash({
    * 这类二级页返回，会话和消息都还在 React Query 缓存里。这时候再放一遍开屏，
    * 用户看到的就是凭空弹出来的「正在进入」，所以直接跳到 gone。
    *
-   * 用 ref 锁住挂载时的值：ready 随后转 true 是正常的首次进入，那一次必须走完整入场。
+   * 挂载时已就绪直接进入；随后很快就绪也只等真实数据，不强制播放完整动画。
    */
   const skipIntro = useRef(ready).current;
 
@@ -116,7 +112,7 @@ export function ChatSplash({
   }, [avatarUrl]);
 
   useEffect(() => {
-    if (skipIntro) return;
+    if (skipIntro || phase !== 'showing') return;
     const startedAt = performance.now();
     const revealTimer = setTimeout(() => setProgressVisible(true), PROGRESS_REVEAL_MS);
     const slowHintTimer = setTimeout(() => setShowSlowHint(true), SLOW_HINT_MS);
@@ -133,14 +129,18 @@ export function ChatSplash({
       clearTimeout(slowHintTimer);
       clearTimeout(stallHintTimer);
     };
-  }, [skipIntro]);
+  }, [skipIntro, phase]);
 
   useEffect(() => {
     if (phase !== 'showing' || !ready) return;
+    if (!progressVisible || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setPhase('gone');
+      return;
+    }
     setProgress(100);
     const timer = setTimeout(() => setPhase('exiting'), READY_FILL_MS);
     return () => clearTimeout(timer);
-  }, [phase, ready]);
+  }, [phase, ready, progressVisible]);
 
   useEffect(() => {
     if (phase !== 'exiting') return;
@@ -169,12 +169,12 @@ export function ChatSplash({
   const returnToLobby = () => {
     if (returning) return;
     setReturning(true);
-    router.replace('/');
+    router.replace(backHref, { scroll: false });
 
     // 极端情况下客户端路由被长时间占用，给 replace 一个短窗口后用原生导航兜底。
     window.setTimeout(() => {
       if (window.location.pathname.startsWith('/chat/')) {
-        window.location.replace('/');
+        window.location.replace(backHref);
       }
     }, 1200);
   };
@@ -185,7 +185,7 @@ export function ChatSplash({
       aria-busy={!ready}
       className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden bg-background px-5 py-5 text-foreground"
       style={{
-        // 开屏盖在 ST iframe 之上，ST 注入的样式会串进来，这里显式钉住前景色。
+        // 等待层显式使用应用主题，避免图片背景影响文字对比度。
         color: 'hsl(var(--foreground))',
         colorScheme: 'dark',
         animation:
@@ -199,7 +199,7 @@ export function ChatSplash({
           type="button"
           onClick={returnToLobby}
           disabled={returning}
-          aria-label="取消进入并返回大厅"
+          aria-label="取消进入并返回角色"
           className="absolute right-4 z-20 flex size-10 items-center justify-center rounded-full border border-border bg-card text-xl font-light text-muted-foreground transition hover:border-primary/30 hover:bg-secondary active:scale-95 disabled:opacity-50"
           style={{ top: 'calc(env(safe-area-inset-top) + 1rem)' }}
         >
@@ -270,7 +270,7 @@ export function ChatSplash({
               style={{ animation: 'splash-fade-up 0.4s ease-out both' }}
             >
               <p className="text-[12px] leading-relaxed text-muted-foreground">
-                {error ?? '连接时间比预期更久。可以继续等待，或返回大厅重新进入。'}
+                {error ?? '连接时间比预期更久。可以继续等待，或返回角色重新进入。'}
               </p>
               <div className="mt-3 flex justify-center gap-2">
                 {error && onRetry && (
@@ -289,7 +289,7 @@ export function ChatSplash({
                   disabled={returning}
                   className="min-h-10 rounded-full border border-border px-5 py-2 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-55"
                 >
-                  {returning ? '正在返回…' : '返回大厅'}
+                  {returning ? '正在返回…' : '返回角色'}
                 </button>
               </div>
             </div>

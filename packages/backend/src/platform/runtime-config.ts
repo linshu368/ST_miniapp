@@ -39,6 +39,7 @@ export interface RuntimeConfigEntry {
 }
 
 const SELECT_COLUMNS = 'key,value,text_value,version';
+const HOT_READ_TIMEOUT_MS = 5_000;
 
 function toEntry(row: {
   value: unknown;
@@ -101,12 +102,20 @@ export async function fetchRuntimeConfigEntry(
 /**
  * 一次取多个 key，缺失的 key 不出现在返回的 Map 里。
  * 热路径上要同时读三个平台规则 key，逐个查会多两个往返。
+ *
+ * 默认 5s 上限：这是几乎每个生成/计费请求都会走的读，失败时本就返回空 Map 由调用方兜底，
+ * 快速失败远好于跟着 PostgREST 挂死一起等几十秒。
  */
 export async function fetchRuntimeConfigEntries(
-  keys: readonly string[]
+  keys: readonly string[],
+  signal: AbortSignal = AbortSignal.timeout(HOT_READ_TIMEOUT_MS)
 ): Promise<Map<string, RuntimeConfigEntry>> {
   const db = getDomainDb('app_core');
-  const { data, error } = await db.from('runtime_config').select(SELECT_COLUMNS).in('key', keys);
+  const { data, error } = await db
+    .from('runtime_config')
+    .select(SELECT_COLUMNS)
+    .in('key', keys)
+    .abortSignal(signal);
 
   if (error) {
     console.error(`[runtime-config] Failed to fetch ${keys.join(' / ')}:`, error);

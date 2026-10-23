@@ -130,7 +130,9 @@ describe('createSseTap', () => {
 
   it('流被销毁导致 flush 不触发时，snapshot 仍能取到已累积的内容', async () => {
     const tap = createSseTap({ onEnd: () => undefined });
-    tap.write(Buffer.from(DELTA_A));
+    await new Promise<void>((resolve, reject) =>
+      tap.write(Buffer.from(DELTA_A), (err) => (err ? reject(err) : resolve()))
+    );
     tap.read();
     expect(tap.snapshot()).toMatchObject({ completed: false, content: '你好', deltaCount: 1 });
   });
@@ -139,5 +141,58 @@ describe('createSseTap', () => {
 describe('resolveUpstreamUrl', () => {
   it('拼在 LLM_UPSTREAM_URL 之后', () => {
     expect(resolveUpstreamUrl('/chat/completions')).toMatch(/\/chat\/completions$/);
+  });
+});
+
+describe('durable call identity before streaming', () => {
+  it('awaits ID persistence before the first delta, once per response', async () => {
+    const events: string[] = [];
+    let unblock!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const tap = createSseTap({
+      onGenerationId: async () => {
+        events.push('persist');
+        await pending;
+      },
+      onDelta: (text) => events.push(text),
+      onEnd: () => undefined,
+    });
+    const stream = pipeline(
+      Readable.from([DELTA_A, DELTA_B, 'data: [DONE]\n\n']),
+      tap,
+      async (source) => {
+        for await (const _chunk of source) {
+          /* drain */
+        }
+      }
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(events).toEqual(['persist']);
+    unblock();
+    await stream;
+    expect(events).toEqual(['persist', '你好', '，世界']);
+  });
+
+  it('does not swallow a persistence failure or lose earlier observed reply text', async () => {
+    const first = sseChunk({ choices: [{ delta: { content: 'already delivered' } }] });
+    const delta = vi.fn();
+    const tap = createSseTap({
+      onGenerationId: async () => {
+        throw new Error('ID storage failed');
+      },
+      onDelta: delta,
+      onEnd: vi.fn(),
+    });
+    await expect(
+      pipeline(Readable.from([first, DELTA_A]), tap, async (source) => {
+        for await (const _chunk of source) {
+          /* drain */
+        }
+      })
+    ).rejects.toThrow('ID storage failed');
+    expect(tap.snapshot()).toMatchObject({ content: 'already delivered你好', completed: false });
+    expect(delta).toHaveBeenCalledExactlyOnceWith('already delivered');
   });
 });

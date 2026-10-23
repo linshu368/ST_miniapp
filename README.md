@@ -1,8 +1,10 @@
 # ST_miniapp
 
-ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、两个内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。
+ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音、增长运营和客服能力构建的 pnpm monorepo。仓库包含面向用户的 Next.js 前端、Fastify API、内部运营 SPA、共享契约/迁移包，以及由 Frontend 和 Admin 共用的回复渲染包。客服平台已拆到独立仓库 [`linshu368/ST_cs_platform`](https://github.com/linshu368/ST_cs_platform)，本仓库只保留 Bot 消息转发和 `/api/support/*` 代理。
 
-> 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；生产运维入口见 [`ops/README.md`](ops/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
+> 深层架构、数据流和路由清单见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；Railway 生产运维见 [`ops/railway/README.md`](ops/railway/README.md)。本文负责新成员入门、依赖关系、环境、命令和交付约定。
+
+> 图片广场 Admin 保存草稿触发 `config_drafts_config_key_check` 的兼容修复：新增 `20261016_reconcile_image_plaza_managed_config_keys.sql`，保留现有白名单并恢复四个图片广场 key，不改正式配置。尚待 TEST workflow 单文件执行及保存/发布验收；详见迁移目录 README，Production 另行审批。
 
 ## 0. 运行环境
 
@@ -24,7 +26,7 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 2. prisma generate 必须做一次。CI 也会跑；漏了的话 backend 启动会找不到 @prisma/client 生成物。
 3. 不要在本地对共享测试库执行 Prisma migrate / 乱跑 packages/shared/migrations/\*.sql。迁移由 GitHub Actions「Database Migration」手动触发，见 packages/shared/migrations/README.md
 4. copy backend env.example文件 根据railway配置本地env配置，DEV_AUTH_BYPASS强制为1不然本地浏览器不适配
-5. 配置frontend env.local文件 配置NEXT_PUBLIC_API_URL 指向本地服务地址，NEXT_PUBLIC_USE_MOCK强制为0
+5. 配置 frontend `.env.local` 文件，使 `NEXT_PUBLIC_API_URL` 指向本地 Backend。
 
 ### 1.2 feature开发步骤
 
@@ -38,20 +40,18 @@ ST_miniapp 是围绕 Telegram MiniApp、AI 角色聊天、钱包/支付、语音
 
 ```text
 packages/frontend    ─┐
-packages/admin       ─┼──> packages/reply-renderer ──> packages/shared
-packages/backend     ─┼──────────────────────────────> packages/shared
-packages/cs-platform ─┘
+packages/admin       ─┴──> packages/reply-renderer ──> packages/shared
+packages/backend     ───────────────────────────────> packages/shared
 
 ```
 
-`pnpm-workspace.yaml` 只包含 `packages/*`。四个应用包可以依赖 `@miniapp/shared`，但彼此不得直接 import；跨应用通信使用 HTTP。Shared 不依赖应用包。
+`pnpm-workspace.yaml` 只包含 `packages/*`。三个应用包可以依赖 `@miniapp/shared`，但彼此不得直接 import；跨应用通信使用 HTTP。Shared 不依赖应用包。
 
 | 目录                      | 包名/形态                                | 主要职责                                                         | 默认开发端口 |
 | ------------------------- | ---------------------------------------- | ---------------------------------------------------------------- | ------------ |
 | `packages/frontend`       | `@miniapp/frontend` / Next.js 14         | Telegram MiniApp 用户界面、聊天、钱包、支付、语音、社区等        | 3000         |
-| `packages/backend`        | `@miniapp/backend` / Fastify 5           | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服      | 3001         |
+| `packages/backend`        | `@miniapp/backend` / Fastify 5           | API、鉴权、生成/计费、Supabase/Prisma、支付、Telegram、客服代理  | 3001         |
 | `packages/admin`          | `@miniapp/admin` / Vite React            | 配置、模型、角色卡、公告、裂变和运营赠送                         | 3003         |
-| `packages/cs-platform`    | `@miniapp/cs-platform` / Vite React      | Telegram 回访与 MiniApp 客服工作台                               | 3002         |
 | `packages/shared`         | `@miniapp/shared` / TS 源码包            | API DTO、Zod schema、文本后处理编译/执行纯工具和 SQL migrations  | -            |
 | `packages/reply-renderer` | `@miniapp/reply-renderer` / React 源码包 | Frontend/Admin 共用的安全 Markdown、受限 HTML/CSS 和可信交互渲染 | -            |
 
@@ -59,10 +59,9 @@ Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产�
 
 ## 3. 技术栈
 
-- **Frontend**：Next.js 14、React 18、TypeScript、TanStack React Query、Zustand、React Hook Form、Zod、Radix UI、Tailwind CSS、Telegram SDK、Sentry。
+- **Frontend**：Next.js 14、React 18、TypeScript、TanStack React Query、Zustand、Radix UI、Tailwind CSS、Telegram SDK、Sentry。
 - **Backend**：Node.js、Fastify 5、TypeScript/tsx、Prisma、Supabase JS、Pino、Vitest、Sentry、WebSocket。
 - **Admin**：Vite、React 18、Ant Design 6、Refine、Supabase JS、Zod、dnd-kit、Vitest。
-- **CS Platform**：Vite、React 18、TanStack React Query、原生 CSS；当前无自动测试脚本。
 - **Reply Renderer**：React 18 peer dependency、Showdown、DOMPurify、隔离 Worker、Vitest/jsdom。
 - **Shared/Database**：TypeScript + Zod + parse5 + css-tree + Vitest；PostgreSQL/Supabase migrations 位于 `packages/shared/migrations/`。
 
@@ -72,17 +71,14 @@ Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产�
 corepack enable
 pnpm install --frozen-lockfile
 
-# 用户端与 API（根 dev/dev:all 当前都只启动这两个包）
+# 用户端与 API
 pnpm dev
 
 # 分别启动
 pnpm dev:frontend
 pnpm dev:backend
 pnpm dev:admin
-pnpm dev:cs-platform
 ```
-
-注意：`pnpm dev:all` 当前与 `pnpm dev` 相同，只启动 Frontend 与 Backend；Admin 和 CS Platform 需要分别启动。
 
 常用检查：
 
@@ -100,11 +96,11 @@ pnpm --filter @miniapp/reply-renderer test
 
 pnpm --filter @miniapp/frontend build
 pnpm --filter @miniapp/admin build
-pnpm --filter @miniapp/cs-platform build
 pnpm --filter @miniapp/reply-renderer typecheck
-```
 
-CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记录人工回归。
+# 图片广场初始数据（默认只读 dry-run）
+pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
+```
 
 ## 5. 环境变量
 
@@ -112,23 +108,23 @@ CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记�
 
 ### Backend 主要变量组
 
-| 类别            | 变量                                                                                                                                                                    | 说明                                                                     |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Runtime/CORS    | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `CS_PLATFORM_URL`, `ADMIN_PLATFORM_URL`                                                                                             | 服务环境、端口和允许来源                                                 |
-| 数据库选择      | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                                                                          | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作 |
-| Telegram        | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                                  | Bot、webhook 和内部调用鉴权                                              |
-| CS              | `CS_ADMIN_TOKEN`, `CS_TELEGRAM_WEBHOOK_SECRET`                                                                                                                          | CS 请求头和 webhook 鉴权                                                 |
-| LLM             | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                | 生成上游与默认模型                                                       |
-| Voice           | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                               | 语音文案与 TTS；关键 key 缺失时语音不可用                                |
-| Payment         | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL` | 支付开关、商户和签名/回调                                                |
-| Cache/Telemetry | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                             | Redis、Sentry 和日志                                                     |
-| Feature/asset   | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`                                                     | 资源和运行开关                                                           |
+| 类别          | 变量                                                                                                                                                                    | 说明                                                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Runtime/CORS  | `NODE_ENV`, `PORT`, `FRONTEND_URL`, `ADMIN_PLATFORM_URL`                                                                                                                | 服务环境、端口和允许来源                                                                                        |
+| 数据库选择    | `DATABASE_ENV`, `TEST_*`, `PROD_*`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`                                                                                          | 测试/生产项目、连接与 service role；`ALLOW_PROD_DATABASE` 仅紧急人工操作                                        |
+| Telegram      | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_INTERNAL_SECRET`, `TELEGRAM_COMMUNITY_BOT_TOKEN`                                                                  | Bot、webhook 和内部调用鉴权                                                                                     |
+| CS 服务       | `CS_SERVICE_URL`, `CS_SERVICE_SECRET`                                                                                                                                   | 独立客服服务（ST_cs_platform）地址和共享密钥；Bot 转发与 `/api/support/*` 代理使用，`CS_SERVICE_ENABLED` 已废弃 |
+| LLM           | `LLM_UPSTREAM_URL`, `LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_DEFAULT_MODEL`                                                                                                | 生成上游与默认模型                                                                                              |
+| Voice         | `DEEPSEEK_*`, `MINIMAX_*`                                                                                                                                               | 语音文案与 TTS；关键 key 缺失时语音不可用                                                                       |
+| Payment       | `PAYMENT_ENABLED`, `PAYMENT_BASE_URL`, `PAYMENT_MERCHANT_ID`, `PAYMENT_MERCHANT_PRIVATE_KEY`, `PAYMENT_PLATFORM_PUBLIC_KEY`, `PAYMENT_NOTIFY_URL`, `PAYMENT_RETURN_URL` | 支付开关、商户和签名/回调                                                                                       |
+| Telemetry     | `SENTRY_*`, `LOG_LEVEL`, `LOG_PRETTY`                                                                                                                                   | Sentry 和日志                                                                                                   |
+| Feature/asset | `DEFAULT_USER_AVATAR_URL`, `CHARACTER_STORAGE_BUCKET`, `CHAT_HISTORY_SYNC_ENABLED`, `LOBBY_RANKING_REFRESH_ENABLED`                                                     | 资源和运行开关                                                                                                  |
 
 开发 bypass（如 `MOCK_AUTH`、`DEV_AUTH_BYPASS`）禁止在 production 启用。
 
 ### Frontend
 
-主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_USE_MOCK`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
+主要包括 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_DEFAULT_USER_AVATAR_URL`、`NEXT_PUBLIC_SENTRY_DSN`、`NEXT_PUBLIC_SENTRY_ENVIRONMENT`。仓库当前有本地 `.env.local`，不得把其中值复制到文档或日志；新增变量应补安全的 example 模板。
 
 ### Admin
 
@@ -140,10 +136,6 @@ CS Platform 当前没有 `test` script；变更需至少 typecheck/build 并记�
 anon key 是浏览器公开配置，但仍应按环境隔离；service-role 绝不能放入 Admin。
 
 Admin Vercel Preview 在构建期固定 API 映射：普通 branch Preview 与 `dev -> main` 发布 PR 必须配置 HTTPS 的 `VITE_ADMIN_TEST_API_URL`；目标分支为 `dev` 的功能 PR 固定使用 `https://stminiapp-pr-<PR号>.up.railway.app`。构建会拒绝缺失或非 HTTPS 的稳定 TEST 映射；PR Railway workflow 同时验证后端健康和 Admin 代理的 Vercel CORS 预检。
-
-### CS Platform
-
-`VITE_API_URL`、`VITE_CS_TEST_API_URL`、`VITE_CS_PROD_API_URL` 控制回访默认 API 和 MiniApp 客服环境。当前没有 `.env.example`，部署时必须显式核对，后续新增/修改变量应同步补模板。
 
 ## 6. Supabase 与数据库迁移
 
@@ -161,14 +153,24 @@ pnpm supabase:link:test
 - 测试库与生产库不保证同构。数据库结构参考必须标注环境、时间和证据，不能拿 migration 当实库快照。
 - 详细规则见 [Supabase spec](.trellis/spec/database/supabase/index.md)。
 
+OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 11 个厂商原名字段（`usage_cache` 可缺失，0 保留），`llm_generation_id`/`llm_generation_data` 保持现名。本地 Backend 已停止读写主表 12 个调用列；正常对话读取显式业务投影，上游前保存快照/对应 provider 占位，首次 ID 持久化后再转发该 chunk；已收到正文不会因 metadata 写失败清空。主表业务 `llm_finish_reason`、正文/历史和计费事实继续保留，Venice 从自己的明细提供 ID，mapper/表结构不变。
+
+发布顺序为无旧依赖 Backend → 所有共享库旧 writer 退出/窗口覆盖 → catch-up 与 provider 视图 → 独立 contract。2026-10-16 新增 `20261016_openrouter_chat_history_drop_legacy_aliases.sql`，仅删除 OpenRouter 专表 11 个重复 `llm_*` 别名，保留 11 个原名字段、`llm_generation_id`/`llm_generation_data`、FK/唯一/权限；NULL metadata 可正常待回捞。专表 contract 可先于主表 12 列 DROP，但两者各有门禁，主表未知旧 JSON/历史治理守卫不会被绕过。TEST catch-up/views 已记账，不重跑；PR430 已合并，dev 已部署 f15fb73d，PR425 等共享旧消费者须独立核对。隔离 PG17/PostgREST 真删两处列不等于真实 TEST/Production 验收；文件/顺序/恢复与剩余历史门禁见 [发布清单](.trellis/tasks/10-15-openrouter-history-extract/production-release-checklist.md)。
+
 文本后处理快照的版本外键需要 `postgres` 执行 `SELECT FOR KEY SHARE`。`20260929_fix_text_postprocess_snapshot_fk_lock.sql` 仅授予 owner `UPDATE(version)` 以满足行锁检查，同时恢复 API 角色最小权限；快照仍由 `ENABLE ALWAYS` 触发器禁止直接修改。账本 `applied` 不代替权限、开轮/重生成及回复回读验收，新迁移仍须逐环境手工执行。
 
 新发送和重生成通过数据库 current-postprocess RPC，在既有开轮事务内读取 `app_core.runtime_config` 的正式指针、校验对应不可变 artifact 快照并写入 `chat_history.postprocess_version`。开轮成功必返回非空版本；配置缺失、协议错版、快照不可用或新 RPC 未部署时拒绝开轮且不调用 LLM，不再因 Backend 冷启动生成永久无版本消息。旧显式 wrapper 的 `NULL=不绑定` 兼容语义保留，旧消息不回填；应用发布顺序为 migration → Backend。
+
+图片广场必须依次手动验证并执行 `20261012_image_plaza_v2.sql`、`20261013_image_plaza_seed_catalog.sql`、`20261013_image_plaza_seed_large_assets.sql` 后才能运行初始数据 apply。`image-plaza:seed` 默认只做工作簿 dry-run；真实写入还要求审核 manifest、明确 `--target test|production`、`--limit 1..500`、原图存储确认，Production 另需显式确认。普通图片保持 20 MiB，已审核 seed 原图允许至 50 MiB；来源权利/内容/元数据审核、test canary 或容量门禁未完成时不得导入。test 导入结果见任务 `10-10-image-plaza-v2`。
+
+图片广场 TEST seed 迁移另见 [离线 SQL 导出与 Storage 迁移方法](ops/image-plaza-seed-migration.md)：不随部署执行；2026-10-20 已授权独立 Storage 本地暂存/并发上传/回读校验阶段，进度以任务和受限 report 为准，尚未执行生产 SQL。新增数据文件不得入 Git；已发现三个历史导出被跟踪，恢复 ignore 不代表清除了历史。
 
 ### AI 回复后处理
 
 - `packages/shared/src/api/text-postprocess.ts` 定义草稿、发布、回滚、版本批次和诊断契约；`packages/shared/src/rich-reply-protocol.ts` 是模型富回复协议的唯一事实源，`packages/shared/src/text-postprocess/` 负责确定性编译、固定模块解析与分段处理，不执行网络或数据库 IO。
 - Admin「回复富文本规则」使用独立草稿、发布版本和历史恢复流程。保存不切换正式版本；发布/回滚使用 CAS 与 `request_id`，结果未知先查询请求结果，禁止盲目重试写操作。
+- 同页「解析与兜底」可启用版本化 `rich_reply` 配置：三模块 EOF 收口、标题/副标题与降级文案、标签别名/括号对、协议外层围栏兼容。新配置允许至少一个完整有效选项点击，损坏残余以文字展示；副标题 `{count}` 使用实际选项数。无配置的历史快照沿用 v1/v2 行为。
+- 发布前先逐环境执行 `20261015_rich_reply_recovery_config.sql`，再部署支持协议 artifact v3 的 Backend、Frontend 与 Admin，最后在 Admin 启用、保存、发布。旧客户端不支持 v3，会回退原文；需要回退应用时先发布不含 `rich_reply` 的旧 source。此迁移仅扩展既有 Admin validator，无新表/数据回填，不代表 TEST/Production 已执行。
 - 已发布的 source 与 compiled artifact 作为 `app_core.text_postprocess_versions` 不可变快照原子保存；`app_core.runtime_config.miniapp_text_postprocess_config` 只保存当前正式指针。
 - 每条 assistant 消息绑定自己的 `postprocess_version`。Frontend 按版本批量读取 artifact；缺失、非法、旧消息 `NULL` 或 Worker 失败时只展示完整原始 Markdown，不在客户端编译 source，也不选择最新版本替代。
 - 流式阶段继续显示安全 Markdown；服务端终态后才挂载共用 `ReplyRenderer`。可信 choice 只在最新完整回复上调用正常发送链路，并有同步防双击。
@@ -176,13 +178,12 @@ pnpm supabase:link:test
 
 ## 7. 部署拓扑
 
-| 单元        | 平台/配置                                                     | 注意事项                                                                  |
-| ----------- | ------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Frontend    | Vercel（仓库内无包级 `vercel.json`）                          | 依赖 Vercel 项目 Root Directory/框架设置，发布前核对变量与 backend URL    |
-| Admin       | Vercel，`packages/admin/vercel.json` 或根 `vercel.admin.json` | 哪份生效取决于 Root Directory，不会自动合并                               |
-| CS Platform | Vercel，`packages/cs-platform/vercel.json`                    | 静态 SPA rewrite；Preview 不应默认写生产                                  |
-| Backend     | Railway / backend Docker 配置                                 | Railway IaC 与变量流程见 [`ops/railway/README.md`](ops/railway/README.md) |
-| Supabase    | 托管 PostgreSQL/PostgREST/Auth/Storage                        | migration 与应用部署分离，禁止随应用发布自动执行生产迁移                  |
+| 单元     | 平台/配置                                                     | 注意事项                                                                  |
+| -------- | ------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Frontend | Vercel（仓库内无包级 `vercel.json`）                          | 依赖 Vercel 项目 Root Directory/框架设置，发布前核对变量与 backend URL    |
+| Admin    | Vercel，`packages/admin/vercel.json` 或根 `vercel.admin.json` | 哪份生效取决于 Root Directory，不会自动合并                               |
+| Backend  | Railway / backend Docker 配置                                 | Railway IaC 与变量流程见 [`ops/railway/README.md`](ops/railway/README.md) |
+| Supabase | 托管 PostgreSQL/PostgREST/Auth/Storage                        | migration 与应用部署分离，禁止随应用发布自动执行生产迁移                  |
 
 每次部署记录目标环境、commit、变量变更、数据库前置条件、smoke test 和回滚目标。不要因为测试部署成功就自动修改生产。
 
@@ -190,7 +191,7 @@ pnpm supabase:link:test
 
 - TypeScript strict，禁止新增 `any`；外部未知数据从 `unknown` 开始校验。
 - 外部 HTTP/SSE 契约先定义于 `packages/shared/src/api/*`；客户端不得消费数据库 row。
-- 应用包之间不互相 import。Frontend 服务端数据走 `src/lib/api` React Query hooks；Admin/CS 使用各自统一 API helper。
+- 应用包之间不互相 import。Frontend 服务端数据走 `src/lib/api` React Query hooks；Admin 使用统一 API helper。
 - Backend route 保留 `@frontend-ready` 注释；LLM 生成/计费走 `features/generation`；运行时配置走 `platform/runtime-config.ts`。
 - 服务日志使用 Pino，原始错误记录 `{ err }`；只记录 allowlist 请求字段、结果摘要、耗时和链路，不记录 token/密钥/完整敏感正文。
 - 设计优先复用稳定能力和最小充分实现。可靠性基于真实故障模型；重试有限且只用于安全操作，关键写入评估幂等、并发和补偿。
@@ -215,11 +216,16 @@ pnpm supabase:link:test
 ## 11. 文档入口
 
 - [系统架构](docs/ARCHITECTURE.md)
-- [运维总览](ops/README.md)
+- [首 token 兜底、数据口径与人工观察](docs/first-token-fallback.md)
+- [Grafana 用户首 token 业务看板](docs/grafana/chat-first-token.json)：用户实际显示耗时、每型号兜底触发率与超时率；读取授权通过 `20261023_grafana_first_token_reader.sql` 正式迁移。
+- [Railway 运维](ops/railway/README.md)
 - [后端日志与可观测性](.trellis/spec/backend/app/data-reliability-and-security.md)
 - [数据库域与归属](docs/ARCHITECTURE.md#51-数据库八域布局099-之后test-与生产一致)
 - [Trellis 工作流](.trellis/workflow.md)
 - [Admin spec](.trellis/spec/admin/app/index.md)
-- [CS Platform spec](.trellis/spec/cs-platform/app/index.md)
 - [Shared spec](.trellis/spec/shared/contracts/index.md)
 - [Supabase spec](.trellis/spec/database/supabase/index.md)
+
+### OpenRouter 历史诊断清退补充
+
+T10 新增 `20261016_openrouter_history_disposition.sql`，先按现有mapper白名单保全类型化调用事实/受控诊断，丢弃其余历史诊断并清父表旧JSON；不改正文/业务终态/账单/额度。已有OR诊断同样规范化，Venice明细不写。更新尚未在两库执行的主表DROP：依赖处置成功账本，将引入snapshot前的旧终态/dedup/失败/pending明确分类，保留旧pending和原幂等键，不以settled_at为空误判或补写假结算。现代未知/冲突/未收口旧字段仍拒绝。TEST先处置、验证后再DROP；超过2000候选拒绝，Production另审批次，不重跑已记账文件。用户已明确忽略作废PR425。详见任务发布清单与T10报告，代码声明不代表已在远端处置。

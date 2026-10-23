@@ -6,8 +6,19 @@ import { readAlertingRuntimeConfig, type AlertingRuntimeConfig } from './runtime
 import type { SafeAlertCard } from './safe-card.js';
 import { backoffMs } from './semantics.js';
 
-/** P1 与恢复通知关闭；已注释的旧 P0 即使还在队列里也不再发送。 */
+/**
+ * 支付域的 P1 与恢复通知关闭；已注释的旧 P0 即使还在队列里也不再发送。
+ * 体验监控（domain=experience）不走这套抑制：卡顿/卡住本就是 P1，压掉等于不告警。
+ * Sentry 转发来的告警同样不走：它们是用户侧已经在发生的事实，
+ * 而且 5xx 比例这类规则天然就是 P1；压掉会让整套体验监控形同不存在。
+ */
 function feishuNotificationSuppressed(card: SafeAlertCard): boolean {
+  const fingerprint = card.incident_fingerprint;
+  const isExperience = typeof fingerprint === 'string' && fingerprint.includes(':experience:');
+  const isFromSentry = typeof fingerprint === 'string' && fingerprint.includes(':sentry:');
+  // 体验/Sentry 域连恢复都要发——用户会记得自己遇到过卡顿，没有恢复通知
+  // 等于没人知道这事已经处理完了。之前这里写反了，恢复反而被当头两项之一压掉。
+  if (isExperience || isFromSentry) return false;
   if (card.transition === 'recovered' || card.severity === 'P1') return true;
   return (
     typeof card.incident_fingerprint === 'string' &&

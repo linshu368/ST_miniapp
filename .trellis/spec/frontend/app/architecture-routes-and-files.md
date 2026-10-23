@@ -11,29 +11,31 @@
 
 ## App Router 页面
 
-| 路由                                                                | 文件与职责                                                     |
-| ------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `/`                                                                 | `(main)/page.tsx`，大厅；角色 gallery                          |
-| `/chats`                                                            | `(main)/chats/page.tsx`，历史会话/收藏 tab                     |
-| `/create`                                                           | 创作入口；`/create/wish` 提交和跟踪许愿                        |
-| `/profile`                                                          | 我的页、余额/签到、VIP 入口、设置、社区入口                    |
-| `/vip`                                                              | VIP 权益、周/月套餐与开通或续费                                |
-| `/profile/recharge`                                                 | 星尘与 VIP 套餐互斥选择和下单；`/[orderId]` 支付等待/轮询/回跳 |
-| `/profile/orders` / `/profile/spending`                             | 订单分页与消费流水                                             |
-| `/profile/messages` / `/profile/messages/[id]` / `/profile/support` | 通知列表、单条详情与站内客服                                   |
-| `/profile/invite`                                                   | 邀请中心、统计与分享                                           |
-| `/chat/[characterId]`                                               | 自研聊天主页面；会话选择、历史分页、SSE 发送/重生成、工具/语音 |
-| `/chat/[characterId]/voice/[messageId]`                             | 指定消息的自定义语音二级页                                     |
-| `/api/lobby-characters`                                             | Next route handler；大厅角色代理/缓存边界，带就近测试          |
+| 路由                                                                | 文件与职责                                                          |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `/`                                                                 | `(main)/page.tsx`，角色模块「发现」；角色 gallery、收藏筛选与接着聊 |
+| `/chats`                                                            | `(main)/chats/page.tsx`，角色模块「对话」；跨角色历史与会话管理     |
+| `/create`                                                           | 影像广场入口；当前已实现图片生成链路                                |
+| `/profile`                                                          | 我的页、余额/签到、VIP 入口、设置、社区入口                         |
+| `/vip`                                                              | VIP 权益、周/月套餐与开通或续费                                     |
+| `/profile/recharge`                                                 | 星尘与 VIP 套餐互斥选择和下单；`/[orderId]` 支付等待/轮询/回跳      |
+| `/profile/orders` / `/profile/spending`                             | 订单分页与消费流水                                                  |
+| `/profile/messages` / `/profile/messages/[id]` / `/profile/support` | 通知列表、单条详情与站内客服                                        |
+| `/profile/invite`                                                   | 邀请中心、统计与分享                                                |
+| `/chat/[characterId]`                                               | 自研聊天主页面；会话选择、历史分页、SSE 发送/重生成、工具/语音      |
+| `/chat/[characterId]/voice/[messageId]`                             | 指定消息的自定义语音二级页                                          |
+| `/api/lobby-characters`                                             | Next route handler；大厅角色代理/缓存边界，带就近测试               |
 
-`(main)/layout.tsx` 负责主区底部导航可见性；聊天页在主布局外，避免底栏干扰沉浸交互。页面组件负责组装和路由状态，不复制 API client、数据转换或通用 UI。
+`(main)/layout.tsx` 负责主区底部导航可见性。当前全局导航为「角色 / 影像 / 我的」；`/` 和 `/chats` 同属角色模块，顶部固定「发现 / 对话」栏目，发现页的搜索与推荐/最新/已收藏筛选也随顶部固定。角色入口记住当前浏览器会话中的最后栏目与滚动位置，已有 `/chats` 链接继续有效。聊天页在主布局外，避免底栏干扰沉浸交互。页面组件负责组装和路由状态，不复制 API client、数据转换或通用 UI。
 
 ## 目录职责
 
-- `components/characters/`：大厅角色卡、画廊、详情 Sheet、收藏按钮、精选框。
+- `components/characters/`：角色发现卡片、画廊、详情 Sheet、收藏按钮、精选框；角色详情区分继续已有会话与显式新对话。
+- `components/roleplay/`：模块固定顶部栏目与接着聊卡片；接着聊卡片在普通内容区滚动，不占固定顶部。
 - `components/chat/`：聊天顶栏、消息列表/气泡/Markdown、终态 `ReplyRenderer` 接线、composer、重生成、会话抽屉/行操作、模型/生成/语音设置、工具 Sheet、splash 和布局/展示纯函数。
 - `components/payment/`：套餐卡等支付表现组件；不直接下单。
 - `components/profile/`：个人中心复用 UI（当前社区 Sheet）。
+- `lib/roleplay-navigation.ts`：有限角色来源、最后栏目、发现条件与滚动标量；`lib/chat-entry.ts` 统一会话入口，`from=discover|conversations` 在新建/切换会话及语音、充值回流 URL 中保留；顶部、Telegram 返回与 Splash 退出统一回来源栏目。
 - `components/nav/`：BottomNav 及未读提示；`components/ui/`：项目内 shadcn/Radix primitives；`icons.tsx`：支付图标；`examples/` 不作为生产业务入口。
 - `lib/api/`：唯一网络/React Query 层，含文本后处理版本批次读取；`stores/`：跨组件持久客户端状态；`lib/telegram/`：SDK、initData、launch URL、用户；`lib/sentry/`：监控；`lib/utils/`：纯格式化/映射；`hooks/` 与 `use-visual-viewport-height.ts`：浏览器交互 hooks；`lib/telemetry/`：受控 PostHog adapter 与根 Providers 上的 replay lifecycle owner；`lib/payment/`：付费墙 continuation、`pay_url` 短 TTL sessionStorage、外部支付 pending 与回流观察（不得把 `pay_url` 放进 router query）。
 - `@miniapp/reply-renderer`：Frontend/Admin 共用 React 展示边界；只接收 artifact/原文/消息身份/可信回调，不拥有 API、React Query、草稿或发布状态。

@@ -15,6 +15,17 @@ import { config } from '../platform/config.js';
 
 let _client: SupabaseClient | null = null;
 
+/**
+ * PostgREST 请求的全局兜底超时（每次 HTTP 尝试）。
+ *
+ * 生产上 PostgREST 偶发挂死时，没带 abortSignal 的查询会一直等到网关约 300s 才失败
+ * （Sentry：users / runtime_config 的 p50 达 30–60s）。合法的慢请求实测最长约 29s，
+ * authenticator 的 statement_timeout 是 120s，所以 30s 之后基本只剩挂死。
+ * 这是兜底而非预算：热路径仍应自带更短的 abortSignal，两者取先到者。
+ * 注意中止只是客户端放弃等待，服务端的写入可能已经提交——非幂等写入照旧依赖各自的恢复/对账。
+ */
+const POSTGREST_TIMEOUT_MS = 30_000;
+
 export function getSupabaseClient(): SupabaseClient {
   if (_client) return _client;
 
@@ -31,6 +42,9 @@ export function getSupabaseClient(): SupabaseClient {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
+    },
+    db: {
+      timeout: POSTGREST_TIMEOUT_MS,
     },
     realtime: {
       transport: WebSocket as never,

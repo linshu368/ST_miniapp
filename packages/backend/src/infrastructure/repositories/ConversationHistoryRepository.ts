@@ -6,8 +6,8 @@
 // 一轮生成会分三段写同一行，三段的列集合基本不重叠，所以谁先落地都不会覆盖对方：
 //   1. startTurn / startRegeneration  开轮 RPC 建行：身份与轮次列 + status='streaming'
 //   2. setPromptHistory → finalizeTurn 请求内同步收口：prompt 快照 + 用户可见终态
-//   3. saveBillingSnapshot / recordBillingOutcome / applyGenerationMetadata
-//      异步补齐：请求时定价快照、扣费额、结算完成时间、OpenRouter 用量元数据
+//   3. saveBillingSnapshot / recordBillingOutcome
+//      异步补齐：请求时定价快照、扣费额与结算完成时间；OpenRouter 用量元数据在其一对一表
 // 唯一共享的列是 llm_finish_reason：第 2 段写 SSE tap 观测值，第 3 段仅在真的从
 // OpenRouter 取到更权威的值时才覆盖（它要等用量统计，必然晚于第 2 段）。
 // 第 3 段的实现见 features/generation/settle.ts 与 features/generation/sync-job.ts。
@@ -23,6 +23,34 @@ import type { InstructionSlotModes } from '../../features/engine/types.js';
 
 export const STREAMING_STALE_SECONDS = 120;
 
+// Explicit projections keep retiring call columns out of normal chat reads before DROP.
+const CURRENT_TURN_COLUMNS =
+  'id,user_id,model,user_input,assistant_reply,history,character_id,status,upstream_status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata';
+const TURN_COLUMNS = `${CURRENT_TURN_COLUMNS},llm_billing_snapshot,llm_billing_settled_at`;
+
+// history 是每轮完整 prompt 快照，随轮次线性变长（TOAST 大户）。读路径只需要 request_id（在 [0]）
+// 和开场白（在 [0] 或 [1]，取决于有无 system 段），所以只取前两个元素，避免每次读历史都把
+// 整个快照经 PostgREST 传回。注意这只省传输与反序列化；jsonb 无法切片，库侧仍会 detoast。
+const CURRENT_TURN_HEAD_COLUMNS = CURRENT_TURN_COLUMNS.replace(
+  ',history,',
+  ',history_head:history->0,history_next:history->1,'
+);
+
+type HeadProjectedRow = Omit<ConversationHistoryRow, 'history'> & {
+  history?: unknown[];
+  history_head?: unknown;
+  history_next?: unknown;
+};
+
+/** 把窄投影还原成 history 的前两个元素；未带别名列（旧投影/测试替身）时原样返回。 */
+function restoreHistoryHead(row: HeadProjectedRow): ConversationHistoryRow {
+  const { history_head: head, history_next: next, ...rest } = row;
+  if (head === undefined && next === undefined) {
+    return { ...rest, history: rest.history ?? [] };
+  }
+  return { ...rest, history: [head, next].filter((item) => item !== null && item !== undefined) };
+}
+
 export interface ConversationHistoryRow {
   id: string;
   user_id: string;
@@ -36,7 +64,6 @@ export interface ConversationHistoryRow {
   deduction_rate: number | null;
   created_at: string;
   llm_finish_reason: string | null;
-  llm_generation_id: string | null;
   llm_charge_id: string | null;
   llm_billing_snapshot: LlmBillingSnapshot | null;
   llm_billing_settled_at: string | null;
@@ -45,6 +72,7 @@ export interface ConversationHistoryRow {
   revision: number;
   /** 迁移未执行时视图没有这一列。缺失按 null，不用当前配置顶上。 */
   postprocess_version?: number | null;
+  rich_reply_metadata?: unknown;
 }
 
 /** 请求时定价快照。回捞按此重建 charge，不重新定价。 */
@@ -70,13 +98,16 @@ export interface LlmBillingSnapshot {
   vip_active?: boolean;
   vip_valid_until?: string | null;
   model_tier?: string | null;
+  vip_discount_config_version?: number | null;
 }
 
 export interface ChatHistorySyncRow {
   id: string;
   user_id: string;
   model: string;
-  llm_generation_id: string | null;
+  generationId: string | null;
+  callProvider: LlmModelProvider | null;
+  session_id?: string;
   llm_finish_reason: string | null;
   llm_charge_id: string | null;
   assistant_reply: string | null;
@@ -174,6 +205,23 @@ export class ConversationHistoryRepository {
     await this.setPromptHistory(historyId, [], requestId);
   }
 
+  async saveRichReplyMetadata(
+    historyId: string,
+    metadata: {
+      rich_reply_mode: 'full' | 'concise';
+      rich_reply_result: 'exact' | 'recovered' | 'failed';
+      rich_reply_issues: string[];
+    }
+  ): Promise<void> {
+    const { error } = await this.db
+      .from('chat_history')
+      .update({ rich_reply_metadata: metadata })
+      .eq('id', historyId)
+      .eq('status', 'success')
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`写入富文本协议诊断失败：${error.message}`);
+  }
+
   async setPromptHistory(
     historyId: string,
     history: GenerationMessage[],
@@ -192,9 +240,8 @@ export class ConversationHistoryRepository {
   }
 
   /**
-   * 请求内同步收口：写用户可见终态与本轮已知的 LLM 标识。
-   * 故意不碰计费金额与 OpenRouter 用量元数据，那些归 recordBillingOutcome /
-   * applyGenerationMetadata，避免两个写入方抢同一列。
+   * 请求内同步收口：写正文与用户可见终态，调用身份只留在 provider 明细。
+   * 计费金额归 recordBillingOutcome，OpenRouter 元数据归专表，避免两个写入方抢同一列。
    */
   async finalizeTurn(input: {
     historyId: string;
@@ -202,7 +249,6 @@ export class ConversationHistoryRepository {
     status: GenerationStatus;
     finishReason?: string | null;
     upstreamStatus?: number | null;
-    generationId?: string | null;
     chargeId?: string | null;
   }): Promise<ConversationHistoryRow> {
     let query = this.db
@@ -212,7 +258,6 @@ export class ConversationHistoryRepository {
         status: input.status,
         upstream_status: input.upstreamStatus ?? null,
         llm_finish_reason: input.finishReason ?? null,
-        ...(input.generationId !== undefined ? { llm_generation_id: input.generationId } : {}),
         ...(input.chargeId !== undefined ? { llm_charge_id: input.chargeId } : {}),
       })
       .eq('id', input.historyId)
@@ -220,7 +265,7 @@ export class ConversationHistoryRepository {
     // Cancellation first claims the reason while keeping the session busy until quota release.
     query = query.is('llm_finish_reason', null);
     const { data, error } = await query
-      .select('*')
+      .select(TURN_COLUMNS)
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
     if (error) throw new Error(`收口对话轮次失败：${error.message}`);
@@ -240,13 +285,12 @@ export class ConversationHistoryRepository {
           status: input.status,
           llm_finish_reason: current.llm_finish_reason,
           upstream_status: input.upstreamStatus ?? null,
-          ...(input.generationId !== undefined ? { llm_generation_id: input.generationId } : {}),
           ...(input.chargeId !== undefined ? { llm_charge_id: input.chargeId } : {}),
         })
         .eq('id', input.historyId)
         .eq('status', 'streaming')
         .eq('llm_finish_reason', current.llm_finish_reason)
-        .select('*')
+        .select(TURN_COLUMNS)
         .abortSignal(AbortSignal.timeout(5_000))
         .maybeSingle();
       if (claimed.error) throw new Error(`收口已取消对话失败：${claimed.error.message}`);
@@ -273,7 +317,7 @@ export class ConversationHistoryRepository {
   async requireTurnById(historyId: string): Promise<ConversationHistoryRow> {
     const { data, error } = await this.db
       .from('chat_history')
-      .select('*')
+      .select(TURN_COLUMNS)
       .eq('id', historyId)
       .abortSignal(AbortSignal.timeout(5_000))
       .single();
@@ -305,7 +349,7 @@ export class ConversationHistoryRepository {
     const cutoff = new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString();
     const { data, error } = await this.db
       .from('chat_history')
-      .select('*')
+      .select(TURN_COLUMNS)
       .eq('session_id', sessionId)
       .eq('status', 'streaming')
       .lt('created_at', cutoff)
@@ -339,27 +383,31 @@ export class ConversationHistoryRepository {
   }
 
   /**
-   * 生成终态结算：实扣金额 + OpenRouter 用量元数据 + 结算完成时间。
-   * 由 features/generation/settle.ts 调用。
-   * metadata 的键由 generation/openrouter-metadata.ts 统一构造，这里不做字段映射。
+   * 生成终态结算：实扣金额、计费意图与结算完成时间。
+   * 由 features/generation/settle.ts 与 sync-job.ts 调用。
+   * OpenRouter 元数据由专用 repository 写入；这里仅接受仍属主表的计费字段。
    * billingSettledAt 有值才表示扣费行、额度收口、金额回写都齐；不要用元数据是否齐全代替。
    */
   async recordBillingOutcome(input: {
     historyId: string;
-    deductionRate: number;
-    metadata: Record<string, unknown>;
+    deductionRate?: number;
+    intendedDeduction?: number;
+    finishReason?: string | null;
     billingSettledAt?: string;
   }): Promise<void> {
     const { error } = await this.db
       .from('chat_history')
       .update({
-        deduction_rate: input.deductionRate,
-        ...withoutFinishReason(input.metadata),
+        ...(input.deductionRate !== undefined ? { deduction_rate: input.deductionRate } : {}),
+        ...(input.intendedDeduction !== undefined
+          ? { llm_intended_deduction: input.intendedDeduction }
+          : {}),
         ...(input.billingSettledAt ? { llm_billing_settled_at: input.billingSettledAt } : {}),
       })
-      .eq('id', input.historyId);
+      .eq('id', input.historyId)
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`回写生成计费结果失败：${error.message}`);
-    await this.applySuccessfulFinishReason(input.historyId, input.metadata);
+    await this.applySuccessfulFinishReason(input.historyId, input.finishReason);
   }
 
   /**
@@ -370,115 +418,165 @@ export class ConversationHistoryRepository {
     const { error } = await this.db
       .from('chat_history')
       .update({ llm_billing_snapshot: snapshot })
-      .eq('id', historyId);
+      .eq('id', historyId)
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`回写计费快照失败：${error.message}`);
   }
 
-  /**
-   * 回捞任务的元数据补齐：覆盖 llm_* 用量字段与（若已结算）扣费额、结算完成时间。
-   * 由 features/generation/sync-job.ts 调用。
-   */
-  async applyGenerationMetadata(
-    historyId: string,
-    metadata: Record<string, unknown>,
-    billingSettledAt?: string
-  ): Promise<void> {
-    const { error } = await this.db
+  /** Each provider gets its own budget so incomplete metadata cannot hide completed-call billing. */
+  async listRowsPendingBilling(input: {
+    since: string;
+    limit: number;
+    provider: LlmModelProvider;
+  }): Promise<ChatHistorySyncRow[]> {
+    const table =
+      input.provider === 'openrouter' ? 'openrouter_chat_history' : 'venice_chat_history';
+    const other =
+      table === 'openrouter_chat_history' ? 'venice_chat_history' : 'openrouter_chat_history';
+    const { data, error } = await this.db
       .from('chat_history')
-      .update({
-        ...withoutFinishReason(metadata),
-        ...(billingSettledAt ? { llm_billing_settled_at: billingSettledAt } : {}),
-      })
-      .eq('id', historyId);
-    if (error) throw new Error(`补齐 LLM 元数据失败：${error.message}`);
-    await this.applySuccessfulFinishReason(historyId, metadata);
-  }
-
-  private async applySuccessfulFinishReason(
-    historyId: string,
-    metadata: Record<string, unknown>
-  ): Promise<void> {
-    if (typeof metadata.llm_finish_reason !== 'string') return;
-    const { error } = await this.db
-      .from('chat_history')
-      .update({ llm_finish_reason: metadata.llm_finish_reason })
-      .eq('id', historyId)
-      .eq('status', 'success')
+      .select(
+        `id,user_id,model,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,${table}!inner(llm_generation_id),${other}!left(llm_generation_id)`
+      )
+      .not(`${table}.llm_generation_id`, 'is', null)
+      .not('llm_billing_snapshot', 'is', null)
+      .is('llm_billing_settled_at', null)
+      .neq('status', 'streaming')
+      .gte('created_at', input.since)
+      .order('created_at', { ascending: true })
+      .limit(input.limit)
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error(`补齐生成完成原因失败：${error.message}`);
+    if (error) throw new Error('扫描未完成计费的对话失败', { cause: error });
+    return (data ?? []).map((row) => mapProviderSyncRow(row, table));
   }
 
-  /**
-   * 回捞任务的扫描口：24h 内有 generation_id，且用量字段不全或结算未完成的行。
-   * 结算未完成 = 已有请求时快照但还没有 llm_billing_settled_at。
-   * 没有快照的存量行仍只按用量字段不全扫描，避免把 24h 内已结清的历史行整批拖进来。
-   */
-  async listRowsMissingGenerationData(input: {
+  /** Missing identities remain observable after removing the legacy parent ID. */
+  async listRowsMissingProviderIdentity(input: {
     since: string;
     limit: number;
   }): Promise<ChatHistorySyncRow[]> {
     const { data, error } = await this.db
       .from('chat_history')
       .select(
-        'id, user_id, model, llm_generation_id, llm_finish_reason, llm_charge_id, assistant_reply, status, llm_billing_snapshot'
+        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,openrouter_chat_history!left(llm_generation_id),venice_chat_history!left(llm_generation_id),or_presence:openrouter_chat_history!left(chat_history_id),venice_presence:venice_chat_history!left(chat_history_id)'
       )
-      .not('llm_generation_id', 'is', null)
+      .not('openrouter_chat_history.llm_generation_id', 'is', null)
+      .not('venice_chat_history.llm_generation_id', 'is', null)
+      .is('openrouter_chat_history', null)
+      .is('venice_chat_history', null)
+      .not('llm_billing_snapshot', 'is', null)
+      .is('llm_billing_settled_at', null)
       .gte('created_at', input.since)
-      // llm_usage_cache 不参与判定：OpenRouter 从不返回 usage_cache，把它算进来会让窗口内
-      // 每一行都恒为「不完整」，被反复重新拉取直到滚出 24h。
-      .or(
-        'llm_generation_data.is.null,llm_usage.is.null,llm_latency.is.null,llm_generation_time.is.null,llm_finish_reason.is.null,and(llm_billing_snapshot.not.is.null,llm_billing_settled_at.is.null)'
-      )
-      .order('created_at', { ascending: false })
-      .limit(input.limit);
+      .lt('created_at', new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString())
+      .order('created_at', { ascending: true })
+      .limit(input.limit)
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error('扫描缺失调用身份的对话失败', { cause: error });
+    return (data ?? []).map((row) => {
+      const provider = row.llm_billing_snapshot?.provider;
+      const conflict =
+        (row.or_presence && row.venice_presence) ||
+        (row.or_presence && provider !== 'openrouter') ||
+        (row.venice_presence && provider !== 'venice');
+      return {
+        ...row,
+        generationId: null,
+        callProvider: conflict
+          ? null
+          : provider === 'openrouter'
+            ? 'openrouter'
+            : provider === 'venice'
+              ? 'venice'
+              : null,
+      };
+    }) as ChatHistorySyncRow[];
+  }
 
-    if (error) throw new Error(`扫描待补齐的对话轮次失败：${error.message}`);
-    return (data ?? []) as ChatHistorySyncRow[];
+  /** A restarted execution owner must not leave a durable quota/session reservation busy. */
+  async listStaleStreaming(input: { since: string; limit: number }): Promise<ChatHistorySyncRow[]> {
+    const { data, error } = await this.db
+      .from('chat_history')
+      .select(
+        'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot'
+      )
+      .eq('status', 'streaming')
+      .gte('created_at', input.since)
+      .lt('created_at', new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString())
+      .order('created_at', { ascending: true })
+      .limit(input.limit)
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error('扫描超时对话失败', { cause: error });
+    return (data ?? []).map((row) => ({
+      ...row,
+      generationId: null,
+      callProvider: null,
+    })) as ChatHistorySyncRow[];
+  }
+
+  private async applySuccessfulFinishReason(
+    historyId: string,
+    finishReason: string | null | undefined
+  ): Promise<void> {
+    if (typeof finishReason !== 'string') return;
+    const { error } = await this.db
+      .from('chat_history')
+      .update({ llm_finish_reason: finishReason })
+      .eq('id', historyId)
+      .eq('status', 'success')
+      .or(
+        'llm_finish_reason.is.null,and(llm_finish_reason.neq.cancelled,llm_finish_reason.neq.timeout)'
+      )
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`补齐生成完成原因失败：${error.message}`);
   }
 
   /**
    * 返回 current turn 之前、窗口起点之后的当前版本上下文。
    * 开场白始终从 turn 1 的 prompt 快照提取，不随泄洪丢掉。
    * listMessages 不加这个过滤。
+   *
+   * knownWindowStartTurn：开轮 RPC 刚返回的窗口起点。调用方有就传，省掉一次 chat_sessions 读；
+   * 没有（如生图按已存在的轮次组上下文）时仍回读会话。
    */
-  async getContextBeforeTurn(sessionId: string, turnIndex: number): Promise<ConversationContext> {
-    const windowStartTurn = await this.readWindowStartTurn(sessionId);
+  async getContextBeforeTurn(
+    sessionId: string,
+    turnIndex: number,
+    knownWindowStartTurn?: number
+  ): Promise<ConversationContext> {
+    const windowStartTurn =
+      knownWindowStartTurn === undefined
+        ? await this.readWindowStartTurn(sessionId)
+        : readWindowStart(knownWindowStartTurn);
 
-    const windowQuery = this.db
+    const base = this.db
       .from('current_chat_history')
-      .select('*')
-      .eq('session_id', sessionId)
-      .gte('turn_index', windowStartTurn)
-      .lt('turn_index', turnIndex)
+      .select(CURRENT_TURN_HEAD_COLUMNS)
+      .eq('session_id', sessionId);
+
+    // 已泄洪时窗口不含 turn 1，但开场白要从 turn 1 的 prompt 快照取。
+    // 用一条 OR 查询同时取回两者，而不是并发两次 GET：同一 session 连续打两次
+    // current_chat_history 正是 ST-MINIAPP-2G（Consecutive HTTP）报的问题。
+    const filtered =
+      windowStartTurn <= 1
+        ? base.gte('turn_index', windowStartTurn).lt('turn_index', turnIndex)
+        : base.or(
+            `turn_index.eq.1,and(turn_index.gte.${windowStartTurn},turn_index.lt.${turnIndex})`
+          );
+
+    const { data, error } = await filtered
       .order('turn_index', { ascending: true })
       .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`读取会话上下文失败：${error.message}`);
 
+    const rows = ((data ?? []) as unknown as HeadProjectedRow[]).map(restoreHistoryHead);
     if (windowStartTurn <= 1) {
-      const { data, error } = await windowQuery;
-      if (error) throw new Error(`读取会话上下文失败：${error.message}`);
-      return assembleConversationContext({
-        windowStartTurn,
-        windowRows: (data ?? []) as ConversationHistoryRow[],
-      });
+      return assembleConversationContext({ windowStartTurn, windowRows: rows });
     }
-
-    const [windowResult, openingResult] = await Promise.all([
-      windowQuery,
-      this.db
-        .from('current_chat_history')
-        .select('history')
-        .eq('session_id', sessionId)
-        .eq('turn_index', 1)
-        .abortSignal(AbortSignal.timeout(5_000))
-        .maybeSingle(),
-    ]);
-    if (windowResult.error) throw new Error(`读取会话上下文失败：${windowResult.error.message}`);
-    if (openingResult.error) throw new Error(`读取开场白快照失败：${openingResult.error.message}`);
 
     return assembleConversationContext({
       windowStartTurn,
-      windowRows: (windowResult.data ?? []) as ConversationHistoryRow[],
-      openingHistory: (openingResult.data as { history?: unknown[] } | null)?.history,
+      windowRows: rows.filter((row) => row.turn_index >= windowStartTurn),
+      openingHistory: rows.find((row) => row.turn_index === 1)?.history,
     });
   }
 
@@ -507,14 +605,14 @@ export class ConversationHistoryRepository {
   ): Promise<ConversationHistoryRow | null> {
     const { data, error } = await this.db
       .from('current_chat_history')
-      .select('*')
+      .select(CURRENT_TURN_HEAD_COLUMNS)
       .eq('id', historyId)
       .eq('session_id', sessionId)
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
 
     if (error) throw new Error(`查询对话轮次失败：${error.message}`);
-    return (data as ConversationHistoryRow | null) ?? null;
+    return data ? restoreHistoryHead(data as unknown as HeadProjectedRow) : null;
   }
 
   async listMessages(
@@ -527,7 +625,7 @@ export class ConversationHistoryRepository {
 
     let query = this.db
       .from('current_chat_history')
-      .select('*')
+      .select(CURRENT_TURN_HEAD_COLUMNS)
       .eq('session_id', sessionId)
       .not('turn_index', 'is', null);
     if (typeof options.beforeTurnIndex === 'number') {
@@ -539,7 +637,7 @@ export class ConversationHistoryRepository {
       .limit(turnLimit + 1);
     if (error) throw new Error(`查询会话消息失败：${error.message}`);
 
-    const latest = (data ?? []) as ConversationHistoryRow[];
+    const latest = ((data ?? []) as unknown as HeadProjectedRow[]).map(restoreHistoryHead);
     const hasMore = latest.length > turnLimit;
     const page = latest.slice(0, turnLimit).reverse();
     const persistedOpening = extractOpeningMessage(
@@ -728,11 +826,6 @@ export function clampLimit(value: number | undefined, fallback: number, max: num
   return Math.min(Math.floor(value), max);
 }
 
-function withoutFinishReason(metadata: Record<string, unknown>): Record<string, unknown> {
-  const { llm_finish_reason: _finishReason, ...rest } = metadata;
-  return rest;
-}
-
 export function withStoredRequestId(
   history: GenerationMessage[],
   requestId?: string
@@ -747,4 +840,23 @@ function extractRequestId(history: unknown[]): string | undefined {
   if (!first || typeof first !== 'object') return undefined;
   const requestId = (first as { request_id?: unknown }).request_id;
   return typeof requestId === 'string' ? requestId : undefined;
+}
+
+function mapProviderSyncRow(
+  value: unknown,
+  table: 'openrouter_chat_history' | 'venice_chat_history'
+): ChatHistorySyncRow {
+  const row = value as Omit<ChatHistorySyncRow, 'generationId' | 'callProvider'> & {
+    openrouter_chat_history?: { llm_generation_id: string | null };
+    venice_chat_history?: { llm_generation_id: string | null };
+  };
+  const provider = table === 'openrouter_chat_history' ? 'openrouter' : 'venice';
+  const conflict =
+    !!(row.openrouter_chat_history && row.venice_chat_history) ||
+    !!(row.llm_billing_snapshot?.provider && row.llm_billing_snapshot.provider !== provider);
+  return {
+    ...row,
+    generationId: row[table]?.llm_generation_id ?? null,
+    callProvider: conflict ? null : provider,
+  };
 }

@@ -1,12 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { INVITE_START_PARAM_PREFIX } from '@miniapp/shared';
 
+import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedback-notice';
+
+import { LobbyShellSkeleton } from '@/components/characters/lobby-shell-skeleton';
+import { afterFirstScreen } from '@/lib/after-first-screen';
 import { getQueryClient } from '@/lib/api/query-client';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { bindInvite } from '@/lib/api/invite';
@@ -16,6 +20,7 @@ import {
   attachPaymentReturnObserver,
   detachPaymentReturnObserver,
 } from '@/lib/payment/return-observer';
+import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
 import { loadSessionReplay, setTelegramUser } from '@/lib/sentry/client';
 import { initReplayTelemetry, ReplayLifecycleOwner } from '@/lib/telemetry';
 import { getRawInitData } from '@/lib/telegram/auth';
@@ -27,15 +32,25 @@ import { useUserProfileStore } from '@/stores/user-profile-store';
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
+  // 只有大厅有对应骨架；其他路由就绪前仍然留空，避免闪一下不相干的布局。
+  const pathname = usePathname();
+  const [showQueryDevtools, setShowQueryDevtools] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
 
   useEffect(() => {
+    // 调试浮标会挡住手机预览的发送按钮，开发时显式用 ?devtools=1 开启。
+    setShowQueryDevtools(
+      process.env.NODE_ENV === 'development' &&
+        new URLSearchParams(window.location.search).get('devtools') === '1'
+    );
     initTelegramSdk();
     const telegramUser = parseTelegramUser(getRawInitData());
     setTelegramUser(telegramUser.id);
     stripSensitiveTelegramLaunchParamsFromLocation();
-    void loadSessionReplay();
-    void initReplayTelemetry(telegramUser.id);
+    // 两套录屏 SDK 都是动态 chunk + 持续 DOM 采集，冷启动时会和首屏图片、列表请求抢带宽与主线程；
+    // 等首屏结束（有 4s 硬上限）再加载。采样率不变，只是首屏几秒不在录。
+    void afterFirstScreen().then(() => loadSessionReplay());
+    void initReplayTelemetry(telegramUser.id, afterFirstScreen);
     // initTelegramSdk 是同步副作用,initData 在它跑完后立即可读;
     // hydrate 把 telegram first_name + localStorage 覆盖合成 displayName
     hydrateUserProfile();
@@ -49,8 +64,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {telegramReady ? <InviteBindReporter /> : null}
       {telegramReady ? <UserSettingsHydrator /> : null}
       {telegramReady ? <ReplayLifecycleOwner /> : null}
-      {telegramReady ? children : null}
-      {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}
+      {telegramReady ? <PagePerfTracker /> : null}
+      {telegramReady ? children : pathname === '/' ? <LobbyShellSkeleton /> : null}
+      {telegramReady ? <FavoriteFeedbackNotice /> : null}
+      {showQueryDevtools ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );
 }

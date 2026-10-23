@@ -1,4 +1,5 @@
 import {
+  FIRST_TOKEN_FALLBACK_MODEL_ID,
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_FEATURE_FREE_TRIAL_LIMIT,
@@ -20,6 +21,9 @@ import {
   FreeQuotaExhaustedDialogConfigSchema,
   LlmPricingConfigSchema,
   LlmProviderRoutingConfigSchema,
+  ImagePlazaModelCatalogSchema,
+  ImagePlazaShareTipConfigSchema,
+  ImagePlazaTagConfigSchema,
   LobbyPinnedCharactersSchema,
   LobbyRankingParamsSchema,
   MediaFeatureFreeTrialLimitSchema,
@@ -77,6 +81,10 @@ export const managedConfigKeys = [
   'image_description_failed_hint',
   'image_generation_failed_hint',
   'image_failed_unknown_hint',
+  'image_plaza_model_catalog',
+  'image_plaza_share_tip',
+  'image_plaza_tags',
+  'image_plaza_tags_feature_enabled',
   'media_feature_free_trial_limit',
   ...VIP_STRATEGY_CONFIG_KEYS,
 ] as const;
@@ -131,6 +139,7 @@ const EditableModelCatalogModelSchema = z.preprocess(
     display_name: z.string(),
     tagline: z.string(),
     is_free: z.boolean(),
+    first_token_timeout_ms: z.number().default(4000),
     enabled: z.boolean(),
     sort_order: z.number().int().nonnegative(),
   })
@@ -146,9 +155,22 @@ const EditableModelCatalogTierSchema = z.object({
 });
 
 export const EditableModelCatalogSchema = z.object({
+  fallback_model_id: z.string().default(FIRST_TOKEN_FALLBACK_MODEL_ID),
+  first_token_deadline_ms: z.number().default(6000),
+  first_token_timeout_rate_target: z.number().default(0.01),
   default_model_id: z.string(),
   tiers: z.array(EditableModelCatalogTierSchema),
 });
+
+// 仅验证编辑结构，允许清空、重复 ID 等中间态；保存仍使用 shared 的严格 schema。
+export const EditableImagePlazaTagConfigSchema = z.array(
+  z.object({
+    id: z.string(),
+    label: z.string(),
+    enabled: z.boolean(),
+    sort_order: z.number(),
+  })
+);
 
 /**
  * 裂变邀请三个 config 的 zod 口径与 105 迁移的 DB 校验函数
@@ -318,6 +340,10 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_description_failed_hint: z.string().trim().min(1).max(200),
   image_generation_failed_hint: z.string().trim().min(1).max(200),
   image_failed_unknown_hint: z.string().trim().min(1).max(200),
+  image_plaza_model_catalog: ImagePlazaModelCatalogSchema,
+  image_plaza_share_tip: ImagePlazaShareTipConfigSchema,
+  image_plaza_tags: ImagePlazaTagConfigSchema,
+  image_plaza_tags_feature_enabled: z.boolean(),
   media_feature_free_trial_limit: MediaFeatureFreeTrialLimitSchema,
   vip_purchase_enabled: VipFeatureSwitchSchema,
   vip_reminders_enabled: VipFeatureSwitchSchema,
@@ -437,7 +463,7 @@ export const configMetadata: Record<
   choice_rules: {
     label: '选项规则',
     description:
-      '选项槽位的内容详略和关闭文案；机器标签格式由系统固定协议统一注入，三个阶段可独立发布与回滚。',
+      '选项槽位的完整、简洁和关闭文案；机器标签格式由系统固定协议统一注入，三种模式可独立发布与回滚。',
     defaultValue: {
       on_first_two_turns:
         '本轮需要输出选项。提供三条具体且有区分度的下一步输入建议，不替用户决定行动，也不预演选择结果；严格遵守系统固定富文本协议。',
@@ -449,7 +475,7 @@ export const configMetadata: Record<
   status_rules: {
     label: '状态栏规则',
     description:
-      '状态栏槽位的内容详略和关闭文案；机器标签格式由系统固定协议统一注入，三个阶段可独立发布与回滚。',
+      '状态栏槽位的完整、简洁和关闭文案；机器标签格式由系统固定协议统一注入，三种模式可独立发布与回滚。',
     defaultValue: {
       on_first_two_turns:
         '本轮需要输出状态栏。完整记录本轮结束时值得持续追踪的状态，不要空面板或复述剧情；严格遵守系统固定富文本协议。',
@@ -461,7 +487,7 @@ export const configMetadata: Record<
   memory_rules: {
     label: '记忆区规则',
     description:
-      '记忆区槽位的内容详略和关闭文案；机器标签格式由系统固定协议统一注入，三个阶段可独立发布与回滚。',
+      '记忆区槽位的完整、简洁和关闭文案；机器标签格式由系统固定协议统一注入，三种模式可独立发布与回滚。',
     defaultValue: {
       on_first_two_turns:
         '本轮需要输出记忆区。完整更新工作记忆、历史档案和里程碑中的已发生事实，保持时间线连续，既有事实不得擅自改写；严格遵守系统固定富文本协议。',
@@ -583,6 +609,106 @@ export const configMetadata: Record<
     label: '图片模糊失败提示',
     description: '外部平台结果未知、禁止自动重试时展示的提示。',
     defaultValue: '外部平台没有确认成功，本次不消耗星尘。',
+  },
+  image_plaza_model_catalog: {
+    label: '模型管理',
+    description: '管理图片广场模型、能力、画幅和各分辨率上架星尘价；用户端只读取已发布版本。',
+    defaultValue: {
+      default_model_id: 'seedream-v5-pro',
+      models: [
+        ['qwen-image-3', 'Qwen Image 3', 60],
+        ['qwen-image-3-pro', 'Qwen Image 3 Pro', 80],
+        ['seedream-v5-pro', 'Seedream V5 Pro', 90],
+        ['krea-2-turbo', 'Krea 2 Turbo', 60],
+        ['lustify-v8', 'Lustify v8', 20],
+        ['seedream-v5-lite', 'Seedream V5 Lite', 80],
+        ['chroma', 'Chroma', 20],
+        ['lustify-sdxl', 'Lustify SDXL', 20],
+        ['anime-wai', 'Anime (WAI)', 20],
+        ['venice-sd35', 'Venice SD35', 20],
+      ].map(([id, name, credits], sortOrder) => ({
+        id,
+        provider_model_id: id === 'anime-wai' ? 'wai-Illustrious' : id,
+        edit_provider_model_id:
+          {
+            'qwen-image-3': 'qwen-image-3-edit',
+            'qwen-image-3-pro': 'qwen-image-3-pro-edit',
+            'seedream-v5-pro': 'seedream-v5-pro-edit',
+            'seedream-v5-lite': 'seedream-v5-lite-edit',
+          }[String(id)] ?? null,
+        sizing_mode: [
+          'qwen-image-3',
+          'qwen-image-3-pro',
+          'seedream-v5-pro',
+          'krea-2-turbo',
+        ].includes(String(id))
+          ? 'resolution'
+          : id === 'seedream-v5-lite'
+            ? 'aspect_ratio'
+            : 'pixels',
+        name,
+        description: '适合多种图片创作场景',
+        supports_i2i: [
+          'qwen-image-3',
+          'qwen-image-3-pro',
+          'seedream-v5-pro',
+          'seedream-v5-lite',
+        ].includes(String(id)),
+        supports_edit: [
+          'qwen-image-3',
+          'qwen-image-3-pro',
+          'seedream-v5-pro',
+          'seedream-v5-lite',
+        ].includes(String(id)),
+        aspect_ratios: ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'],
+        resolutions: [
+          {
+            id: [
+              'lustify-v8',
+              'seedream-v5-lite',
+              'chroma',
+              'lustify-sdxl',
+              'anime-wai',
+              'venice-sd35',
+            ].includes(String(id))
+              ? 'fixed'
+              : '1K',
+            label: '标准',
+            credits,
+          },
+        ],
+        enabled: true,
+        sort_order: sortOrder,
+        internal_tags: [],
+      })),
+    },
+  },
+  image_plaza_share_tip: {
+    label: '弹窗配置',
+    description:
+      '配置首次分享确认弹窗的中部文案与开关；顶图始终使用用户作品。仅支持 {rate} 与 {model}。',
+    defaultValue: {
+      enabled: true,
+      title: '分享返还 {rate}',
+      description: '让更多人看到你的 {model} 作品。',
+      reference_note: '如使用参考图，参考图也会同时公开。',
+      button_label: '分享至广场',
+    },
+  },
+  image_plaza_tags: {
+    label: '内容标签',
+    description: '管理广场筛选标签；“全部”为系统固定项，删除标签不会删除历史作品。',
+    defaultValue: [
+      { id: 'portrait', label: '人像', enabled: true, sort_order: 0 },
+      { id: 'anime', label: '动漫', enabled: true, sort_order: 1 },
+      { id: 'poster', label: '海报', enabled: true, sort_order: 2 },
+    ],
+  },
+  image_plaza_tags_feature_enabled: {
+    label: '分享自动打标开关',
+    description:
+      '仅控制分享时空标签时是否调用模型自动打标；关闭后广场仍展示业务标签并按提示词中文译文筛选。标签目录可继续编辑。',
+    defaultValue: true,
   },
   media_feature_free_trial_limit: {
     label: '媒体免费轮次次数',

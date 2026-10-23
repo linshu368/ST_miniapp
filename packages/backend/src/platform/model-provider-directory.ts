@@ -9,6 +9,7 @@ import {
 } from '@miniapp/shared';
 import { OpenRouterModelsClient, openRouterModelsClient } from './openrouter-models.js';
 import { getLlmProviderRuntimeConfig } from './runtime-config.js';
+import { veniceFetch } from './venice-http.js';
 
 const DEFAULT_CACHE_TTL_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -141,7 +142,7 @@ export class VeniceProviderDirectoryClient {
     this.apiKey = options.apiKey ?? runtime.apiKey;
     this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? veniceFetch;
     this.now = options.now ?? Date.now;
   }
 

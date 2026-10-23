@@ -21,10 +21,24 @@ pnpm --filter @miniapp/admin build
 - 发布和回滚带 CAS 前提与 `request_id`。超时或结果未知时先使用“请求恢复”读取权威结果，不自动重试 mutation。
 - 历史回滚创建新版本，不修改旧快照；System Instructions 仍由独立配置入口管理。
 - 预览编译/执行在可终止 Worker 中完成；流式模拟阶段显示原文，完整或重置终态才运行 renderer。
+- 「正文」规则（编号 `body`）只控制样式：正则和模板不执行，样式以 `.作用域 > p` 作用于整条回复的普通段落，不影响卡片内部；停用后不输出样式，也不进入 v1 兼容皮肤。已有环境需通过「+ 新建 → 正文」添加后保存并发布。
 - source/正文、token、session 和完整错误响应不得进入日志。Preview 操作前必须确认环境；Production 写操作需要独立授权。
+
+## 图片广场定价与标签
+
+- 模型页支持统一汇率、加价倍率、每元星尘数和实时公式预览；按各模型各档位本次填写的 USD 标准价重算，向上补整十。
+- 标准价随模型目录保存草稿，刷新/重新打开后从草稿或已发布目录回填；旧目录没有标准价时保持空白。统一参数仍仅属于当前编辑器，离开或重新加载后恢复默认值。任一档位（含下架模型）缺失有效标准价时禁止批量重算，不部分覆盖。
+- 单档/批量重算只更新上架价草稿，允许随后手工调整；仍需保存草稿并发布才生效，不回改历史订单，也不改变钱包兑换配置。
+- 标签 ID 编辑使用独立 UI 行标识；编辑中允许暂时清空或重复，保存/发布仍由 shared 严格校验。
+
+人工回归：连续输入标签 ID、中文名称、清空后重填、删除中间行再编辑；确认焦点和其他行内容保持。填写全部标准价后批量重算，缺失一项时确认按钮禁用；检查标准价保存后刷新回填、清空后保存、历史恢复、环境隔离、viewer 只读、窄屏换行及保存/发布区分。填写标准价不自动改变上架价；未保存的输入不会保留。
 
 ## 部署与验证
 
 Vercel 配置可能来自包内 `vercel.json` 或根 `vercel.admin.json`，取决于项目 Root Directory，两者不会自动合并。发布前核对环境变量作用域、API/CORS、SPA rewrite 和 Node 版本。普通 branch Preview 与 `dev -> main` 发布 PR 使用 `VITE_ADMIN_TEST_API_URL` 指向稳定 TEST；目标分支为 `dev` 的功能 PR 自动绑定 `stminiapp-pr-<PR号>`。稳定 TEST 映射缺失或不是 HTTPS 时，Preview 构建会失败，避免发布登录后才报网络错误的页面。
 
 适用门禁是 Admin typecheck/test/build、`pnpm lint:imports` 和 `git diff --check`。涉及 shared 契约或 `reply-renderer` 时，追加 shared/renderer 测试与所有消费者 typecheck。发布后在目标环境验证登录、环境标识、草稿保存、明确发布、历史恢复、错误保留和只读 viewer；TEST 结果不能代替 Production 验收。
+
+## 首 token 兜底配置
+
+“运营配置 → 兜底配置”统一管理 OpenRouter 兜底型号、各型号首发等待、全局首 token 上限与超时率目标，默认 DeepSeek V4.1 Flash / 4秒 / 6秒 / 1%。使用现有 key，与模型目录共用同一份草稿、发布历史和回滚；自动保存草稿不会直接生效。发布时包含同一草稿的模型目录改动；viewer沿用只读权限。使用与发布顺序见 [运行说明](../../docs/first-token-fallback.md)。

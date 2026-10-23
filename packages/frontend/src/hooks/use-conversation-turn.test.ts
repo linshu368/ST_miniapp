@@ -62,6 +62,7 @@ vi.mock('@/lib/api/conversation-stream', async (importOriginal) => ({
 vi.mock('@/lib/api/conversations', () => ({
   conversationKeys: { detail: (id: string) => ['conversations', 'detail', id] },
   fetchConversationDetail: runtime.fetchDetail,
+  reportConversationFirstToken: vi.fn().mockResolvedValue(undefined),
   useCancelConversationTurnMutation: () => ({ mutateAsync: runtime.cancel }),
 }));
 vi.mock('@/lib/api/free-quota', () => ({
@@ -75,6 +76,7 @@ vi.mock('@/lib/telemetry', () => ({
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal('window', { setTimeout, clearTimeout });
+  vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
   runtime.slots = [];
   runtime.index = 0;
   runtime.effects = [];

@@ -3,9 +3,11 @@ import { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey } from '@miniapp/sh
 
 export type AdminViewKey =
   | 'configs'
+  | 'fallback_config'
   | 'outreach_credit_grant'
   | 'invite_program'
   | 'image_generation_config'
+  | 'image_plaza'
   | 'platform_instructions'
   | 'vip_strategy'
   | 'text_postprocess'
@@ -47,6 +49,18 @@ export const IMAGE_GENERATION_CONFIG_KEYS = [
 ] as const satisfies readonly ManagedConfigKey[];
 export type ImageGenerationConfigKey = (typeof IMAGE_GENERATION_CONFIG_KEYS)[number];
 
+export const IMAGE_PLAZA_CONFIG_KEYS = [
+  'image_plaza_model_catalog',
+  'image_plaza_share_tip',
+  'image_plaza_tags',
+  // 'image_plaza_tags_feature_enabled',
+] as const satisfies readonly ManagedConfigKey[];
+export type ImagePlazaConfigKey = (typeof IMAGE_PLAZA_CONFIG_KEYS)[number];
+
+export function isImagePlazaConfigKey(key: ManagedConfigKey): key is ImagePlazaConfigKey {
+  return (IMAGE_PLAZA_CONFIG_KEYS as readonly string[]).includes(key);
+}
+
 /** One workspace, four independently versioned managed-config keys. */
 export const PLATFORM_INSTRUCTION_CONFIG_KEYS = [
   'choice_rules',
@@ -82,6 +96,7 @@ export const sidebarManagedConfigKeys: readonly ManagedConfigKey[] = managedConf
   (key) =>
     !isInviteProgramConfigKey(key) &&
     !isImageGenerationConfigKey(key) &&
+    !isImagePlazaConfigKey(key) &&
     !isPlatformInstructionConfigKey(key) &&
     !isVipStrategyConfigKey(key) &&
     key !== LEGACY_MEDIA_FREE_TRIAL_LIMIT_KEY
@@ -97,6 +112,7 @@ export function resolveAdminMenuSelection(key: string): {
   view: AdminViewKey;
   configKey?: ManagedConfigKey;
 } {
+  if (key === 'fallback_config') return { view: 'fallback_config', configKey: 'llm_model_catalog' };
   if (key.startsWith(CONFIG_PREFIX)) {
     const configKey = key.slice(CONFIG_PREFIX.length) as ManagedConfigKey;
     if (managedConfigKeys.includes(configKey)) {
@@ -105,6 +121,7 @@ export function resolveAdminMenuSelection(key: string): {
       if (isImageGenerationConfigKey(configKey)) {
         return { view: 'image_generation_config', configKey };
       }
+      if (isImagePlazaConfigKey(configKey)) return { view: 'image_plaza', configKey };
       if (isPlatformInstructionConfigKey(configKey)) {
         return { view: 'platform_instructions', configKey };
       }
@@ -116,6 +133,7 @@ export function resolveAdminMenuSelection(key: string): {
     key === 'outreach_credit_grant' ||
     key === 'invite_program' ||
     key === 'image_generation_config' ||
+    key === 'image_plaza' ||
     key === 'platform_instructions' ||
     key === 'vip_strategy' ||
     key === 'text_postprocess' ||

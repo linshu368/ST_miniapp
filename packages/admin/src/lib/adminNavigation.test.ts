@@ -26,6 +26,12 @@ describe('admin navigation', () => {
     });
   });
 
+  it('opens the fallback screen against the existing model catalog draft', () => {
+    expect(resolveAdminMenuSelection('fallback_config')).toEqual({
+      view: 'fallback_config',
+      configKey: 'llm_model_catalog',
+    });
+  });
   it('opens the outreach grant page, which sits under 运营配置 but is not a managed config', () => {
     expect(resolveAdminMenuSelection('outreach_credit_grant')).toEqual({
       view: 'outreach_credit_grant',

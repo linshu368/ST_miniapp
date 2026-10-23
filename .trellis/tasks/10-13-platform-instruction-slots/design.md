@@ -30,6 +30,12 @@
 
 ## 3. Activation window and persistence
 
+> 当前实现说明（2026-10-14）：本节记录最初的用户级两次额度设计，已被
+> `20261013_session_scoped_instruction_slot_modes.sql` 和
+> `20261014_rich_reply_dynamic_mode.sql` 前向取代。现行真相是每会话第 1～3 轮 full；
+> 第 4 轮起仅当前一轮最新 revision 的诊断为 `exact` 时 concise，其他诊断或缺失时 full。
+> 旧计数字段只保留作回滚兼容，不再参与运行时选择。
+
 简单使用 `turn_index <= 2` 不符合“从点击生效开始”；仅用进程内计数会在重启/多副本下漂移；仅用异步 `total_round` 会在快速下一轮和并发会话下超发完整文案。
 
 建议把每个逻辑轮最终采用的槽位模式持久化到 `experience.chat_history`，并把每槽位剩余完整规则次数放在 `app_core.miniapp_user_settings`：
