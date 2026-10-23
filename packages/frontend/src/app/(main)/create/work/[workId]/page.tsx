@@ -3,7 +3,8 @@
 import { usePageReady } from '@/lib/perf/page-ready';
 import { ArrowLeft, Heart, LoaderCircle, RotateCcw, WandSparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useTelegramBackButton } from '@/lib/telegram';
 import { ApiClientError } from '@/lib/api/client';
 import {
   useCreateImagePlazaConversationMutation,
@@ -18,6 +19,8 @@ export default function ImagePlazaWorkPage() {
 
 function ImagePlazaWorkDetail({ workId }: { workId: string }) {
   const router = useRouter();
+  const returnToGallery = useCallback(() => router.push('/create', { scroll: false }), [router]);
+  useTelegramBackButton(returnToGallery);
   const query = useImagePlazaWorkQuery(workId);
   usePageReady('/create/work/:id', query.data !== undefined);
   const like = useSetImagePlazaLikeMutation(workId);
@@ -78,8 +81,8 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border/60 bg-background/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
         <button
           type="button"
-          onClick={() => router.back()}
-          aria-label="返回"
+          onClick={returnToGallery}
+          aria-label="返回影像广场"
           className="grid size-10 place-items-center rounded-full bg-card ring-1 ring-border"
         >
           <ArrowLeft className="size-5" />
@@ -206,9 +209,19 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
 }
 
 function PageMessage({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   return (
     <main className="grid min-h-screen place-items-center bg-background text-sm font-bold text-muted-foreground">
-      {children}
+      <div className="flex flex-col items-center px-5 text-center">
+        {children}
+        <button
+          type="button"
+          onClick={() => router.push('/create', { scroll: false })}
+          className="mt-5 min-h-10 rounded-full border border-border px-4 text-xs text-foreground"
+        >
+          返回影像广场
+        </button>
+      </div>
     </main>
   );
 }

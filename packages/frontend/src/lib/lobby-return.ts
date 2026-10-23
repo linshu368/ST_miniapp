@@ -13,6 +13,7 @@ export interface LobbyReturnSnapshot {
   version: 1;
   documentToken: string;
   createdAt: number;
+  favoritesOnly?: boolean;
   sort: LobbySort;
   query: string;
   anchorCharacterId: string;
@@ -24,6 +25,7 @@ export interface LobbyReturnSnapshot {
 }
 
 export interface LobbyReturnSnapshotInput {
+  favoritesOnly?: boolean;
   sort: LobbySort;
   query: string;
   anchorCharacterId: string;
@@ -85,6 +87,7 @@ function validateSnapshot(value: unknown): LobbyReturnSnapshot | null {
     version: SNAPSHOT_VERSION,
     documentToken: token,
     createdAt,
+    favoritesOnly: candidate.favoritesOnly === true,
     sort: candidate.sort,
     query: candidate.query,
     anchorCharacterId: candidate.anchorCharacterId,

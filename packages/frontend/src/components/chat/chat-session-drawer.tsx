@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, MessageSquare, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Loader2, MessageSquare, Pencil, Pin, PinOff, RefreshCw, Trash2 } from 'lucide-react';
 import type { ChatSession } from '@miniapp/shared';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -53,30 +53,50 @@ export function ChatSessionDrawer({
           </div>
 
           <div className="flex-1 space-y-1 overflow-y-auto p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
-            {query.isLoading ? (
-              <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
+            {query.isError ? (
+              <div className="mx-1 mb-2 rounded-2xl border border-destructive/25 bg-destructive/5 px-3 py-3">
+                <p className="text-xs text-muted-foreground" role="alert">
+                  {sessions.length > 0
+                    ? '暂时没能刷新，已保留之前的对话记录。'
+                    : '对话记录没能加载出来，请重试。'}
+                </p>
+                <button
+                  type="button"
+                  disabled={query.isFetching}
+                  onClick={() => void query.refetch()}
+                  className="mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-xs text-primary hover:bg-primary/10 disabled:opacity-50"
+                >
+                  <RefreshCw className="size-3.5" aria-hidden />
+                  {query.isFetching ? '重试中…' : '重新加载'}
+                </button>
+              </div>
+            ) : null}
+            {query.isLoading && sessions.length === 0 ? (
+              <div
+                className="flex items-center justify-center py-8 text-xs text-muted-foreground"
+                role="status"
+              >
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
                 加载中
               </div>
-            ) : sessions.length === 0 ? (
+            ) : !query.isError && sessions.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-1 py-8 text-xs text-muted-foreground">
                 <MessageSquare className="h-6 w-6 opacity-40" aria-hidden />
                 <span>暂无对话记录</span>
               </div>
-            ) : (
-              sessions.map((session) => (
-                <SessionRow
-                  key={session.id}
-                  session={session}
-                  characterName={characterName}
-                  active={session.id === activeSessionId}
-                  onOpen={() => {
-                    onSelect(session.id);
-                    onOpenChange(false);
-                  }}
-                />
-              ))
-            )}
+            ) : null}
+            {sessions.map((session) => (
+              <SessionRow
+                key={session.id}
+                session={session}
+                characterName={characterName}
+                active={session.id === activeSessionId}
+                onOpen={() => {
+                  onSelect(session.id);
+                  onOpenChange(false);
+                }}
+              />
+            ))}
           </div>
         </div>
       </SheetContent>
@@ -130,6 +150,9 @@ function SessionRow({
               </span>
             </span>
             <span className="mt-1 block truncate text-xs text-muted-foreground">
+              {session.last_message_preview || '继续这段对话'}
+            </span>
+            <span className="mt-1 block text-[10px] text-muted-foreground/75">
               {formatSessionMeta(session)}
             </span>
           </button>
@@ -149,6 +172,11 @@ function SessionRow({
         </div>
       )}
 
+      {actions.error ? (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          {actions.error}
+        </p>
+      ) : null}
       {actions.confirmingDelete ? (
         <SessionDeleteConfirm actions={actions} density="compact" />
       ) : null}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, X } from 'lucide-react';
+import { Heart, Search, X } from 'lucide-react';
 
 import { DEFAULT_LOBBY_SORT, type LobbySort } from '@miniapp/shared';
 
@@ -16,6 +16,14 @@ import {
   useMarkLobbyLatestSeenMutation,
 } from '@/lib/api/characters';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { useFavoriteIdsQuery } from '@/lib/api/favorites';
+import { useConversationsQuery } from '@/lib/api/conversations';
+import {
+  readRoleplayDiscovery,
+  rememberRoleplayDiscovery,
+  rememberRoleplayScroll,
+  restoreRoleplayScroll,
+} from '@/lib/roleplay-navigation';
 import { startPendingAction } from '@/lib/perf/action-tracker';
 import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import {
@@ -27,6 +35,8 @@ import {
 
 import { CharacterCard, lobbyImageUrl } from './character-card';
 import { CharacterDetailSheet } from './character-detail-sheet';
+import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
+import { RecentConversationCard } from '@/components/roleplay/recent-conversation-card';
 
 const FIRST_SCREEN_IMAGE_COUNT = 8;
 
@@ -90,16 +100,38 @@ function neighborIds(ids: string[], anchorId: string): string[] {
 
 export function CharacterGallery() {
   const router = useRouter();
+  const [savedDiscovery] = useState(readRoleplayDiscovery);
+  const favoriteIds = useFavoriteIdsQuery();
+  const history = useConversationsQuery(undefined);
+  // message_count 不计虚拟开场白；只标记已确认的用户对话，未命中不代表从未聊过。
+  const experiencedIds = useMemo(
+    () =>
+      new Set(
+        (history.data?.sessions ?? [])
+          .filter((item) => item.message_count > 0)
+          .map((item) => item.character_id)
+      ),
+    [history.data?.sessions]
+  );
   const [restoreSnapshot] = useState<LobbyReturnSnapshot | null>(() => readLobbyReturnSnapshot());
   const [isRestoring, setIsRestoring] = useState(() => restoreSnapshot !== null);
-  const [sort, setSort] = useState<LobbySort>(restoreSnapshot?.sort ?? DEFAULT_LOBBY_SORT);
+  const [sort, setSort] = useState<LobbySort>(
+    restoreSnapshot?.sort ?? savedDiscovery.sort ?? DEFAULT_LOBBY_SORT
+  );
   const { data, isLoading, isError, isFetching } = useCharactersQuery(sort, {
     skipMountRefetch: isRestoring,
   });
   // 大厅有本地缓存秒开：content 记用户看到列表的时刻，fresh 记最新列表到达的时刻，两者分开才看得出后端慢。
   const lobbyFresh = useFreshAfterFetch(isFetching, data !== undefined);
   usePageReady('/', data !== undefined, lobbyFresh);
-  const [query, setQuery] = useState(restoreSnapshot?.query ?? '');
+  const [query, setQuery] = useState(restoreSnapshot?.query ?? savedDiscovery.query);
+  const [favoritesOnly, setFavoritesOnly] = useState(
+    restoreSnapshot?.favoritesOnly ?? savedDiscovery.favoritesOnly
+  );
+  const generalScrollRestored = useRef(false);
+  useEffect(() => {
+    rememberRoleplayDiscovery({ sort, query, favoritesOnly });
+  }, [sort, query, favoritesOnly]);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const enteringRef = useRef(false);
@@ -174,13 +206,29 @@ export function CharacterGallery() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return characters;
-    return characters
+    const ids = new Set(favoriteIds.data?.character_ids ?? []);
+    const source = favoritesOnly
+      ? characters.filter((character) => ids.has(character.id))
+      : characters;
+    if (!q) return source;
+    return source
       .map((c) => ({ c, s: scoreMatch(c, q) }))
       .filter(({ s }) => s > 0)
       .sort((a, b) => b.s - a.s)
       .map(({ c }) => c);
-  }, [characters, query]);
+  }, [characters, query, favoritesOnly, favoriteIds.data]);
+
+  useLayoutEffect(() => {
+    if (
+      generalScrollRestored.current ||
+      restoreSnapshot ||
+      !data ||
+      (favoritesOnly && favoriteIds.isPending)
+    )
+      return;
+    generalScrollRestored.current = true;
+    restoreRoleplayScroll('/');
+  }, [data, restoreSnapshot, favoritesOnly, favoriteIds.isPending]);
 
   const finishRestore = useCallback(() => {
     clearLobbyReturnSnapshot();
@@ -247,6 +295,7 @@ export function CharacterGallery() {
       saveLobbyReturnSnapshot({
         sort,
         query,
+        favoritesOnly,
         anchorCharacterId: characterId,
         neighborCharacterIds: neighborIds(loadedCharacterIds, characterId),
         loadedCharacterIds,
@@ -255,7 +304,7 @@ export function CharacterGallery() {
         viewportWidth: window.innerWidth,
       });
     },
-    [filtered, query, sort]
+    [filtered, query, sort, favoritesOnly]
   );
 
   const handleImageSettled = useCallback(
@@ -337,7 +386,7 @@ export function CharacterGallery() {
       )}
     >
       {LOBBY_TABS.map((tab) => {
-        const active = sort === tab.value;
+        const active = !favoritesOnly && sort === tab.value;
         return (
           <button
             key={tab.value}
@@ -346,6 +395,7 @@ export function CharacterGallery() {
             aria-selected={active}
             onClick={() => {
               if (sort !== tab.value) cancelRestore();
+              setFavoritesOnly(false);
               setSort(tab.value);
             }}
             className={cn(
@@ -369,13 +419,34 @@ export function CharacterGallery() {
           </button>
         );
       })}
+      <button
+        type="button"
+        role="tab"
+        aria-selected={favoritesOnly}
+        onClick={() => {
+          cancelRestore();
+          setFavoritesOnly(true);
+        }}
+        className={cn(
+          'flex min-h-10 items-center gap-1.5 rounded-full border px-4 py-1.5 text-[13px] transition-colors',
+          favoritesOnly
+            ? 'border-primary/30 bg-primary/10 text-primary'
+            : 'border-transparent text-muted-foreground hover:bg-card hover:text-foreground'
+        )}
+      >
+        <Heart className="size-3.5" aria-hidden />
+        已收藏
+      </button>
     </div>
   );
 
   const listHeader = (
     <>
-      {searchBar}
-      {sortTabs}
+      <RoleplayHeader active="discover">
+        {searchBar}
+        {sortTabs}
+      </RoleplayHeader>
+      <RecentConversationCard />
     </>
   );
 
@@ -436,16 +507,35 @@ export function CharacterGallery() {
   return (
     <>
       {listHeader}
-      {filtered.length === 0 ? (
+      {favoritesOnly && favoriteIds.isPending ? (
+        <p className="px-4 py-10 text-center text-sm text-muted-foreground" role="status">
+          正在读取收藏…
+        </p>
+      ) : favoritesOnly && favoriteIds.isError ? (
+        <div className="px-4 py-10 text-center">
+          <p className="text-sm text-muted-foreground">收藏暂时没加载出来</p>
+          <button
+            type="button"
+            onClick={() => void favoriteIds.refetch()}
+            className="mt-3 min-h-10 rounded-full bg-secondary px-5 text-sm"
+          >
+            重新加载
+          </button>
+        </div>
+      ) : filtered.length === 0 ? (
         <div
           className={cn(
             'mx-auto flex max-w-screen-xl flex-col items-center gap-2 px-4 py-10 sm:px-6 lg:px-8',
             hiddenWhileRestoring
           )}
         >
-          <p className="text-center text-[13px] text-muted-foreground">没有匹配「{query}」的角色</p>
+          <p className="text-center text-[13px] text-muted-foreground">
+            {favoritesOnly && !query.trim() ? '还没有收藏的角色' : `没有匹配「${query}」的角色`}
+          </p>
           <p className="text-center text-[11px] text-muted-foreground/80">
-            可以先去「创作」页浏览图片灵感，或开始一轮新的图片创作。
+            {favoritesOnly
+              ? '遇到喜欢的角色，点一下心形就能留在这里。'
+              : '换个名字或标签试试，也可以看看推荐角色。'}
           </p>
         </div>
       ) : (
@@ -459,6 +549,7 @@ export function CharacterGallery() {
             <CharacterCard
               key={c.id}
               character={c}
+              experienced={experiencedIds.has(c.id)}
               priority={index < FIRST_SCREEN_IMAGE_COUNT}
               onImageSettled={handleImageSettled}
               onSelect={() => {
@@ -486,13 +577,14 @@ export function CharacterGallery() {
           }
           setPreviewId(null);
         }}
-        onEnter={(id) => {
+        onEnter={(id, sessionId) => {
           if (enteringRef.current) return;
           enteringRef.current = true;
           captureReturnSnapshot(id);
           setEnteringId(id);
           startPendingAction('select_character');
-          router.push(chatEntryPath(id));
+          rememberRoleplayScroll('/');
+          router.push(chatEntryPath(id, { sessionId, source: 'discover' }));
         }}
       />
     </>

@@ -7,6 +7,8 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { INVITE_START_PARAM_PREFIX } from '@miniapp/shared';
 
+import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedback-notice';
+
 import { getQueryClient } from '@/lib/api/query-client';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { bindInvite } from '@/lib/api/invite';
@@ -28,9 +30,15 @@ import { useUserProfileStore } from '@/stores/user-profile-store';
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
   const [telegramReady, setTelegramReady] = useState(false);
+  const [showQueryDevtools, setShowQueryDevtools] = useState(false);
   const hydrateUserProfile = useUserProfileStore((s) => s.hydrate);
 
   useEffect(() => {
+    // 调试浮标会挡住手机预览的发送按钮，开发时显式用 ?devtools=1 开启。
+    setShowQueryDevtools(
+      process.env.NODE_ENV === 'development' &&
+        new URLSearchParams(window.location.search).get('devtools') === '1'
+    );
     initTelegramSdk();
     const telegramUser = parseTelegramUser(getRawInitData());
     setTelegramUser(telegramUser.id);
@@ -52,7 +60,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {telegramReady ? <ReplayLifecycleOwner /> : null}
       {telegramReady ? <PagePerfTracker /> : null}
       {telegramReady ? children : null}
-      {process.env.NODE_ENV === 'development' ? <ReactQueryDevtools initialIsOpen={false} /> : null}
+      {telegramReady ? <FavoriteFeedbackNotice /> : null}
+      {showQueryDevtools ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );
 }

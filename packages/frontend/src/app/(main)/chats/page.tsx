@@ -1,93 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef } from 'react';
 import Link from 'next/link';
-import {
-  ChevronRight,
-  Heart,
-  MessageCircle,
-  Pencil,
-  Pin,
-  PinOff,
-  RefreshCw,
-  Trash2,
-} from 'lucide-react';
-
+import { Ellipsis, MessageCircle, Pencil, Pin, PinOff, RefreshCw, Trash2 } from 'lucide-react';
 import type { ChatSession } from '@miniapp/shared';
 
-import { cn } from '@/lib/utils';
-import { useCharacterQuery } from '@/lib/api/characters';
-import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
 import {
-  SessionActionButton,
   SessionDeleteConfirm,
   SessionRenameField,
   useSessionRowActions,
 } from '@/components/chat/session-row-actions';
-import { useFavoritesQuery } from '@/lib/api/favorites';
-import { FavoriteButton } from '@/components/characters/favorite-button';
 import { lobbyImageUrl } from '@/components/characters/character-card';
-import { FeaturedFrame } from '@/components/characters/featured-frame';
+import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
+import { useCharacterQuery } from '@/lib/api/characters';
+import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { usePageReady } from '@/lib/perf/page-ready';
-
-type ChatsTab = 'history' | 'favorites';
-
-const TABS: { key: ChatsTab; label: string }[] = [
-  { key: 'history', label: '历史聊天记录' },
-  { key: 'favorites', label: '收藏角色卡' },
-];
-
-const TAB_COPY: Record<ChatsTab, { title: string; description: string }> = {
-  history: {
-    title: '历史聊天',
-    description: '继续最近与角色的对话，上下文会完整保留。',
-  },
-  favorites: {
-    title: '收藏角色卡',
-    description: '你收藏的角色都在这里，点开即可继续聊天。',
-  },
-};
+import {
+  rememberRoleplayScroll,
+  rememberRoleplayView,
+  restoreRoleplayScroll,
+} from '@/lib/roleplay-navigation';
+import { cn } from '@/lib/utils';
 
 export default function ChatsPage() {
-  const [tab, setTab] = useState<ChatsTab>('history');
-
   return (
-    <main className="min-h-dvh bg-background px-4 pb-8 pt-[calc(1.5rem+env(safe-area-inset-top))] text-foreground">
-      <header className="mx-auto mb-4 max-w-2xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Messages</p>
-        <h1 className="mt-1 text-2xl font-bold">{TAB_COPY[tab].title}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{TAB_COPY[tab].description}</p>
-      </header>
-
-      <div
-        className="mx-auto mb-5 flex max-w-2xl gap-1 rounded-full border border-border bg-card p-1"
-        role="tablist"
-        aria-label="对话与收藏"
-      >
-        {TABS.map((item) => {
-          const active = item.key === tab;
-          return (
-            <button
-              key={item.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(item.key)}
-              className={cn(
-                'flex-1 rounded-full px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98]',
-                active
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {tab === 'history' ? <ConversationHistoryList /> : <FavoritesList />}
+    <main className="min-h-dvh bg-background pb-8 text-foreground">
+      <RoleplayHeader active="conversations" />
+      <ConversationHistoryList />
     </main>
   );
 }
@@ -96,15 +36,20 @@ function ConversationHistoryList() {
   const { data, isLoading, isError, refetch } = useConversationsQuery(undefined);
   usePageReady('/chats', data !== undefined);
   const sessions = data?.sessions ?? [];
+  const restored = useRef(false);
+
+  useEffect(() => {
+    if (!data || restored.current) return;
+    restored.current = true;
+    restoreRoleplayScroll('/chats');
+  }, [data]);
 
   return (
-    <section className="mx-auto max-w-2xl space-y-2">
+    <section aria-label="对话记录" className="mx-auto w-full max-w-2xl space-y-2 px-4 pt-1">
+      <p className="pb-2 text-xs text-muted-foreground">继续你的故事，也可以在这里管理对话。</p>
       {isLoading && sessions.length === 0 ? <HistoryHint>正在读取历史对话…</HistoryHint> : null}
-
       {isError ? <HistoryError onRetry={() => void refetch()} /> : null}
-
       {!isLoading && !isError && sessions.length === 0 ? <HistoryEmpty /> : null}
-
       {sessions.map((session) => (
         <ConversationHistoryRow key={session.id} session={session} />
       ))}
@@ -112,151 +57,154 @@ function ConversationHistoryList() {
   );
 }
 
-/**
- * 会话列表只带 character_id。逐行取角色卡只为头像；
- * 主标题走 session.title（缺省时退到角色名），展示时统一截到 7 字。
- *
- * 整行是进入聊天的链接，操作按钮浮在它上层单独响应，避免 Link 里嵌 button。
- */
 function ConversationHistoryRow({ session }: { session: ChatSession }) {
   const { data } = useCharacterQuery(session.character_id);
   const character = data?.character;
   const actions = useSessionRowActions(session);
-
+  const menuRef = useRef<HTMLDetailsElement>(null);
   const avatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
-  // 回落到角色名而不是摘要：这里跨角色，先看是谁；摘要已经占了第二行，标题再放一遍是重复。
-  // 角色内抽屉的口径不同（那边回落到摘要），因为那边每行都是同一个角色。
   const name = resolveSessionTitle(session.title, character?.name ?? '对话');
+
+  const act = (action: () => void) => {
+    if (menuRef.current) menuRef.current.open = false;
+    action();
+  };
 
   if (actions.editing) {
     return (
-      <div className="rounded-3xl border border-primary/30 bg-card p-3.5">
+      <article className="rounded-3xl border border-primary/30 bg-card p-3.5">
         <SessionRenameField actions={actions} />
-      </div>
+        {actions.error ? (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            {actions.error}
+          </p>
+        ) : null}
+      </article>
     );
   }
 
   return (
-    <div
+    <article
       className={cn(
-        'relative rounded-3xl border bg-card p-3.5 shadow-lg shadow-black/10 transition',
+        'rounded-3xl border bg-card p-3.5 shadow-lg shadow-black/10 transition-colors',
         session.pinned_at ? 'border-primary/30' : 'border-border'
       )}
+      aria-busy={actions.pending}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1">
         <Link
-          href={chatEntryPath(session.character_id, { sessionId: session.id })}
+          href={chatEntryPath(session.character_id, {
+            sessionId: session.id,
+            source: 'conversations',
+          })}
           prefetch={false}
+          onClick={() => {
+            rememberRoleplayView('/chats');
+            rememberRoleplayScroll('/chats');
+          }}
           aria-label={`继续与 ${name} 的对话`}
-          className="absolute inset-0 rounded-3xl"
-        />
-        <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt=""
-              loading="lazy"
-              className="h-full w-full object-cover object-top"
-            />
-          ) : (
-            <span className="flex h-full w-full items-center justify-center text-primary">
-              <MessageCircle className="h-5 w-5" />
-            </span>
-          )}
-        </span>
-
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-3">
-            <span className="flex min-w-0 flex-1 items-center gap-1">
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-secondary text-primary">
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarUrl}
+                alt=""
+                loading="lazy"
+                className="size-full object-cover object-top"
+              />
+            ) : (
+              <MessageCircle className="size-5" aria-hidden />
+            )}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex min-w-0 items-center gap-1">
               {session.pinned_at ? (
                 <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="已置顶" />
               ) : null}
-              <span className="truncate font-semibold">{name}</span>
+              <span className="truncate text-sm font-semibold">{name}</span>
             </span>
-            <time className="shrink-0 text-[11px] text-muted-foreground">
-              {formatActivityTime(session.last_message_at ?? session.created_at)}
-            </time>
+            <span className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+              <span className="truncate">{character?.name ?? '角色对话'}</span>
+              <time className="shrink-0">
+                {formatActivityTime(session.last_message_at ?? session.created_at)}
+              </time>
+            </span>
+            <span className="mt-1 block truncate text-xs text-muted-foreground">
+              {session.last_message_preview || '暂无消息摘要'}
+            </span>
           </span>
-          <span className="mt-1 block truncate text-sm text-muted-foreground">
-            {session.last_message_preview || '暂无消息摘要'}
-          </span>
-        </span>
+        </Link>
 
-        <span className="relative z-10 flex shrink-0 items-center">
-          <SessionActionButton
-            label={session.pinned_at ? '取消置顶' : '置顶'}
-            onClick={actions.togglePin}
+        <details
+          ref={menuRef}
+          className="relative shrink-0"
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget))
+              event.currentTarget.open = false;
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || !event.currentTarget.open) return;
+            event.preventDefault();
+            event.currentTarget.open = false;
+            event.currentTarget.querySelector('summary')?.focus();
+          }}
+        >
+          <summary
+            aria-label={`管理对话：${name}`}
+            className="flex size-11 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
           >
-            {session.pinned_at ? <PinOff aria-hidden /> : <Pin aria-hidden />}
-          </SessionActionButton>
-          <SessionActionButton label="重命名" onClick={actions.startRename}>
-            <Pencil aria-hidden />
-          </SessionActionButton>
-          <SessionActionButton label="删除" onClick={actions.toggleDeleteConfirm}>
-            <Trash2 aria-hidden />
-          </SessionActionButton>
-        </span>
+            <Ellipsis className="size-5" aria-hidden />
+          </summary>
+          <div className="absolute right-0 top-12 z-20 min-w-40 rounded-2xl border border-border bg-card p-1.5 shadow-xl">
+            <button
+              type="button"
+              disabled={actions.pending}
+              onClick={() => act(actions.togglePin)}
+              className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-xs hover:bg-secondary disabled:opacity-50"
+            >
+              {session.pinned_at ? (
+                <PinOff className="size-4" aria-hidden />
+              ) : (
+                <Pin className="size-4" aria-hidden />
+              )}
+              {session.pinned_at ? '取消置顶' : '置顶'}
+            </button>
+            <button
+              type="button"
+              disabled={actions.pending}
+              onClick={() => act(actions.startRename)}
+              className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-xs hover:bg-secondary disabled:opacity-50"
+            >
+              <Pencil className="size-4" aria-hidden />
+              重命名
+            </button>
+            <button
+              type="button"
+              disabled={actions.pending}
+              onClick={() => act(actions.toggleDeleteConfirm)}
+              className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-xs text-destructive hover:bg-secondary disabled:opacity-50"
+            >
+              <Trash2 className="size-4" aria-hidden />
+              删除
+            </button>
+          </div>
+        </details>
       </div>
 
-      {/* 整行是个覆盖层链接，确认条要浮在它上面才点得到 */}
-      {actions.confirmingDelete ? (
-        <SessionDeleteConfirm actions={actions} className="relative z-10" />
+      {actions.confirmingDelete ? <SessionDeleteConfirm actions={actions} /> : null}
+      {actions.pending ? (
+        <p role="status" className="mt-2 text-xs text-muted-foreground">
+          正在保存…
+        </p>
       ) : null}
-    </div>
-  );
-}
-
-function HistoryRow({
-  href,
-  avatarUrl,
-  name,
-  timestamp,
-  preview,
-  onClick,
-}: {
-  href: string;
-  avatarUrl: string | null;
-  name: string;
-  timestamp: string;
-  preview: string | null;
-  onClick?: () => void;
-}) {
-  return (
-    <Link
-      href={href}
-      prefetch={false}
-      onClick={onClick}
-      className="flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary active:scale-[0.99]"
-    >
-      <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
-        {avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarUrl}
-            alt=""
-            loading="lazy"
-            className="h-full w-full object-cover object-top"
-          />
-        ) : (
-          <span className="flex h-full w-full items-center justify-center text-primary">
-            <MessageCircle className="h-5 w-5" />
-          </span>
-        )}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center justify-between gap-3">
-          <span className="truncate font-semibold">{name}</span>
-          <time className="shrink-0 text-[11px] text-muted-foreground">
-            {formatActivityTime(timestamp)}
-          </time>
-        </span>
-        <span className="mt-1 block truncate text-sm text-muted-foreground">
-          {preview || '暂无消息摘要'}
-        </span>
-      </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/70" />
-    </Link>
+      {actions.error ? (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          {actions.error}
+        </p>
+      ) : null}
+    </article>
   );
 }
 
@@ -271,13 +219,13 @@ function HistoryHint({ children }: { children: React.ReactNode }) {
 function HistoryError({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="rounded-3xl border border-destructive/30 bg-destructive/10 p-5">
-      <p className="text-sm text-destructive">历史聊天加载失败，请稍后重试。</p>
+      <p className="text-sm text-destructive">历史对话加载失败，请稍后重试。</p>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition active:scale-95"
+        className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition active:scale-95"
       >
-        <RefreshCw className="h-4 w-4" />
+        <RefreshCw className="size-4" aria-hidden />
         重试
       </button>
     </div>
@@ -287,113 +235,17 @@ function HistoryError({ onRetry }: { onRetry: () => void }) {
 function HistoryEmpty() {
   return (
     <div className="rounded-3xl border border-border bg-card p-8 text-center">
-      <MessageCircle className="mx-auto h-9 w-9 text-primary" />
-      <h2 className="mt-3 font-semibold">还没有有效对话</h2>
-      <p className="mt-1 text-sm text-muted-foreground">与角色至少发送一句消息后会显示在这里。</p>
+      <MessageCircle className="mx-auto size-9 text-primary" aria-hidden />
+      <h2 className="mt-3 font-semibold">还没有对话</h2>
+      <p className="mt-1 text-sm text-muted-foreground">选一个喜欢的角色，开始你的第一段故事。</p>
       <Link
         href="/"
-        className="mt-4 inline-flex rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition active:scale-95"
+        onClick={() => rememberRoleplayView('/')}
+        className="mt-4 inline-flex min-h-11 items-center rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition active:scale-95"
       >
-        去选择角色
+        去发现角色
       </Link>
     </div>
-  );
-}
-
-function FavoritesList() {
-  const { data, isLoading, isError, refetch } = useFavoritesQuery();
-  const characters = data?.characters ?? [];
-
-  if (isLoading && characters.length === 0) {
-    return (
-      <section className="mx-auto max-w-2xl space-y-2">
-        <div className="rounded-3xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-          正在读取收藏…
-        </div>
-      </section>
-    );
-  }
-
-  if (isError) {
-    return (
-      <section className="mx-auto max-w-2xl">
-        <div className="rounded-3xl border border-destructive/30 bg-destructive/10 p-5">
-          <p className="text-sm text-destructive">收藏列表加载失败，请稍后重试。</p>
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition active:scale-95"
-          >
-            <RefreshCw className="h-4 w-4" />
-            重试
-          </button>
-        </div>
-      </section>
-    );
-  }
-
-  if (characters.length === 0) {
-    return (
-      <section className="mx-auto max-w-2xl">
-        <div className="rounded-3xl border border-border bg-card p-8 text-center">
-          <Heart className="mx-auto h-9 w-9 text-rose" />
-          <h2 className="mt-3 font-semibold">还没有收藏角色卡</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            在首页或角色详情里点心形，收藏的角色就会出现在这里。
-          </p>
-          <Link
-            href="/"
-            className="mt-4 inline-flex rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition active:scale-95"
-          >
-            去首页浏览角色
-          </Link>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="mx-auto max-w-2xl space-y-2">
-      {characters.map((character) => (
-        // 整行可点进入聊天，心形浮在上层单独响应，避免 Link 里嵌 button。
-        <FeaturedFrame
-          key={character.id}
-          featured={character.is_featured}
-          className="rounded-[26px]"
-        >
-          <div className="relative flex items-center gap-3 rounded-3xl border border-border bg-card p-3.5 shadow-lg shadow-black/10 transition hover:border-primary/30 hover:bg-secondary">
-            <Link
-              href={chatEntryPath(character.id)}
-              prefetch={false}
-              aria-label={`进入 ${character.name} 的聊天`}
-              className="absolute inset-0 rounded-3xl"
-            />
-            <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-secondary">
-              {character.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={lobbyImageUrl(character.avatar_url)}
-                  alt=""
-                  loading="lazy"
-                  className="h-full w-full object-cover object-top"
-                />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-rose">
-                  <Heart className="h-5 w-5" />
-                </span>
-              )}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold">{character.name}</span>
-              <span className="mt-1 block truncate text-sm text-muted-foreground">
-                {character.description?.trim() || '暂无角色简介'}
-              </span>
-            </span>
-            <FavoriteButton characterId={character.id} variant="header" className="relative z-10" />
-          </div>
-        </FeaturedFrame>
-      ))}
-    </section>
   );
 }
 

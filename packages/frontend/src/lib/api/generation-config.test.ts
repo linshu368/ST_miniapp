@@ -66,4 +66,48 @@ describe('generation config optimistic cache updates', () => {
       word_count_tiers: { layout: { columns: 4 } },
     });
   });
+
+  it('keeps concurrent module and custom preferences when the length response arrives', () => {
+    const lengthRequest = { pref_word_count: '500-800' };
+    const afterLengthChange = mergeGenerationConfigPatch(cached, lengthRequest);
+    const afterModuleChanges = mergeGenerationConfigPatch(afterLengthChange, {
+      pref_show_status: false,
+      pref_show_memory: false,
+    });
+    const current = mergeGenerationConfigPatch(afterModuleChanges, {
+      pref_custom_instructions: '保持克制，少用修辞',
+    });
+    // The length request started before the other preferences, so its response
+    // still carries their old server values.
+    const lengthResponse: PatchGenerationConfigData = {
+      config: { ...cached.config, pref_word_count: '500-800' },
+      word_count_tiers: cached.word_count_tiers,
+    };
+
+    expect(mergeGenerationConfigResponse(current, lengthResponse, lengthRequest).config).toEqual({
+      ...cached.config,
+      pref_word_count: '500-800',
+      pref_show_status: false,
+      pref_show_memory: false,
+      pref_custom_instructions: '保持克制，少用修辞',
+    });
+  });
+
+  it('rolls back only a failed length save after other preferences change', () => {
+    const lengthRequest = { pref_word_count: '500-800' };
+    const afterLengthChange = mergeGenerationConfigPatch(cached, lengthRequest);
+    const current = mergeGenerationConfigPatch(afterLengthChange, {
+      pref_show_options: false,
+      pref_show_status: false,
+      pref_custom_instructions: '多一些对话，少一些旁白',
+    });
+
+    expect(rollbackGenerationConfigPatch(current, lengthRequest, cached.config).config).toEqual({
+      ...cached.config,
+      pref_word_count: '300-500',
+      pref_show_options: false,
+      pref_show_status: false,
+      pref_custom_instructions: '多一些对话，少一些旁白',
+    });
+  });
 });

@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PH_CHAT_REPLAY_VISIBLE_CLASS } from '@/lib/telemetry/masking';
 import { ChatReplyPreferences } from './chat-reply-preferences';
-import { shouldExpandComposer } from './composer-layout';
+import { isComposerSubmitKey, shouldExpandComposer } from './composer-layout';
 import type { ReplyDetailsDefaultOpen } from './reply-preference-display';
 
 /** 与后端 routes/conversations.ts 的 MAX_USER_INPUT_LENGTH 对齐，前端先拦一道 */
@@ -44,6 +44,7 @@ export function ChatComposer({
   onDetailsDefaultOpenChange,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const compositionActiveRef = useRef(false);
   const [expanded, setExpanded] = useState(false);
 
   // 输入框跟着内容长高，上限半屏——再高就把消息区挤没了。
@@ -114,8 +115,25 @@ export function ChatComposer({
           ref={textareaRef}
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onCompositionStart={() => {
+            compositionActiveRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            compositionActiveRef.current = false;
+          }}
           onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.shiftKey) return;
+            if (
+              !isComposerSubmitKey(
+                {
+                  key: event.key,
+                  shiftKey: event.shiftKey,
+                  isComposing: event.nativeEvent.isComposing,
+                  keyCode: event.nativeEvent.keyCode,
+                },
+                compositionActiveRef.current
+              )
+            )
+              return;
             event.preventDefault();
             send();
           }}

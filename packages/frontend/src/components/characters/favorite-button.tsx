@@ -32,12 +32,14 @@ const ICON_STYLES: Record<FavoriteButtonVariant, string> = {
  * 收藏状态统一来自 useFavoriteToggle，任一处切换其余入口同步。
  */
 export function FavoriteButton({ characterId, variant = 'card', className }: FavoriteButtonProps) {
-  const { favorited, pending, toggle } = useFavoriteToggle(characterId);
+  const { favorited, pending, error, toggle } = useFavoriteToggle(characterId);
 
   return (
     <button
       type="button"
-      disabled={!characterId}
+      disabled={!characterId || pending}
+      aria-busy={pending}
+      aria-describedby={error ? 'favorite-feedback-notice' : undefined}
       aria-label={favorited ? '取消收藏' : '收藏角色卡'}
       aria-pressed={favorited}
       // 卡面上心形与卡片进入动作相邻，必须吃掉事件避免顺带进入角色。

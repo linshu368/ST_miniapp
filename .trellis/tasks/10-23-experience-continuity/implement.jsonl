@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "frontend constraints"}
+{"file": ".trellis/spec/frontend/app/pages-components-and-ui.md", "reason": "UI and a11y"}
+{"file": ".trellis/spec/frontend/app/api-dataflow-and-state.md", "reason": "query and draft ownership"}
+{"file": ".trellis/spec/frontend/app/modules/business/character-lobby.md", "reason": "roleplay return flow"}
+{"file": ".trellis/spec/frontend/app/modules/business/conversation-ui.md", "reason": "chat and image-plaza flow"}
+{"file": ".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md", "reason": "ephemeral UI and Telegram"}
+{"file": ".trellis/tasks/10-23-experience-continuity/prd.md", "reason": "approved scope"}
+{"file": ".trellis/tasks/10-23-experience-continuity/design.md", "reason": "reliability and recovery design"}
+{"file": ".trellis/tasks/10-23-experience-continuity/implement.md", "reason": "ownership and acceptance"}
