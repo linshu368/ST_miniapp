@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { FIRST_TOKEN_FALLBACK_MODEL_ID, type LlmModelProvider } from '@miniapp/shared';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
+import { createLeadingThinkingSplitter, readExposedReasoning } from './upstream.js';
 
 export interface TransportModel {
   provider: LlmModelProvider;
@@ -29,6 +30,8 @@ interface Peeked {
 
 export async function forwardWithFirstTokenFallback(input: {
   primary: TransportModel;
+  /** Only reasoning actually enabled for browser display may stop the visible-token deadline. */
+  thinkingEnabled?: boolean;
   fallbackModelId?: string;
   primaryAttemptId: string;
   timeoutMs: number;
@@ -128,6 +131,16 @@ export async function forwardWithFirstTokenFallback(input: {
       const decoder = new TextDecoder();
       let buffer = '';
       let bytes = 0;
+      let hasVisibleToken = false;
+      const splitter = createLeadingThinkingSplitter({
+        onContent: (text) => {
+          if (text.trim()) hasVisibleToken = true;
+        },
+        onReasoning: (text) => {
+          if (input.thinkingEnabled !== false && readExposedReasoning({ reasoning: text }).trim())
+            hasVisibleToken = true;
+        },
+      });
       while (true) {
         const item = await reader.read();
         signal.throwIfAborted();
@@ -138,33 +151,38 @@ export async function forwardWithFirstTokenFallback(input: {
           chunks.push(item.value);
           bytes += item.value.byteLength;
         }
-        // Bound a provider that emits endless headers/reasoning without visible content.
+        // Bound a provider that emits endless controls or undisplayed reasoning.
         if (bytes > 2 * 1024 * 1024) throw new Error('First-token prelude exceeded limit');
         buffer += item.done
           ? decoder.decode() + '\n'
           : decoder.decode(item.value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
-        let hasContent = false;
         let identityObserved = false;
         for (const raw of lines) {
           const line = raw.trimEnd();
           if (!line.startsWith('data:') || line.slice(5).trim() === '[DONE]') continue;
-          let value: { id?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
+          let value: Record<string, unknown>;
           try {
             value = JSON.parse(line.slice(5).trim()) as typeof value;
           } catch {
             continue;
           }
+          if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
           if (!observation.generation_id && typeof value.id === 'string') {
             observation.generation_id = value.id;
             identityObserved = true;
           }
-          const text = value.choices?.[0]?.delta?.content;
-          if (typeof text === 'string' && text.trim().length > 0) hasContent = true;
+          const choice = Array.isArray(value.choices) ? value.choices[0] : null;
+          const delta = choice && typeof choice === 'object' ? choice.delta : null;
+          if (!delta || typeof delta !== 'object' || Array.isArray(delta)) continue;
+          if (input.thinkingEnabled !== false && readExposedReasoning(delta).trim())
+            hasVisibleToken = true;
+          if (typeof delta.content === 'string') splitter.push(delta.content);
         }
         if (identityObserved) record();
-        if (!hasContent) {
+        if (item.done) splitter.finish();
+        if (!hasVisibleToken) {
           if (item.done) break;
           continue;
         }
