@@ -101,6 +101,23 @@ describe('AlertDeliveryWorker', () => {
     expect(sink.deliver).not.toHaveBeenCalled();
   });
 
+  it('calls Feishu for a Sentry-origin recovery card', async () => {
+    state.row = {
+      id: 1n,
+      notification_key: 'production:errors:sentry:metric:metric-999998:recovered:x',
+      payload: {
+        severity: 'P0',
+        transition: 'recovered',
+        incident_fingerprint: 'production:errors:sentry:metric:metric-999998',
+      },
+      attempt_count: 1,
+    };
+    const sink = { deliver: vi.fn().mockResolvedValue({ kind: 'succeeded' }) };
+    const worker = new AlertDeliveryWorker(sink as never, log, async () => config);
+    await expect(worker.deliverOne()).resolves.toBe('sent');
+    expect(sink.deliver).toHaveBeenCalledTimes(1);
+  });
+
   it('does not claim or call Feishu while notifications are disabled', async () => {
     const sink = { deliver: vi.fn() };
     const worker = new AlertDeliveryWorker(sink as never, log, async () => ({

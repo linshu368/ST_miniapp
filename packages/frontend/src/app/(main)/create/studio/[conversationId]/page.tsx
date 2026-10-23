@@ -1,6 +1,8 @@
 'use client';
 
+import * as Sentry from '@sentry/nextjs';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
+import { getMetricDimensions } from '@/lib/perf/env-tags';
 import {
   ArrowLeft,
   Check,
@@ -77,6 +79,25 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
   const localUrl = useRef<string | null>(null);
   const referenceFile = useRef<File | null>(null);
   const sending = useRef(false);
+  // 从点击生成到图片真正解码展示出来的耗时；只算最新这一次生成，图片 onLoad 消费后清掉。
+  const genStartedAt = useRef<number | null>(null);
+  const genReported = useRef(false);
+  const reportArtifactVisible = () => {
+    if (genReported.current || genStartedAt.current === null) return;
+    genReported.current = true;
+    try {
+      Sentry.metrics.distribution(
+        'image.display.duration',
+        performance.now() - genStartedAt.current,
+        {
+          unit: 'millisecond',
+          attributes: getMetricDimensions(),
+        }
+      );
+    } catch {
+      // 监控自身失败不能影响页面。
+    }
+  };
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [referenceStatus, setReferenceStatus] = useState<
     'idle' | 'reading' | 'uploading' | 'ready' | 'error'
@@ -202,6 +223,8 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     const clearSubmittedDraft = clearIfUnchanged;
     // 反馈 = 提交被受理、界面进入生成中；真正出图是后台任务，耗时另由请求指标覆盖。
     const action = startAction('image_generate');
+    genStartedAt.current = performance.now();
+    genReported.current = false;
     try {
       const actualMode: ImagePlazaMode = referenceArtifactId ? mode : 't2i';
       const freshQuote = await quote.mutateAsync({
@@ -229,6 +252,8 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       scrollToLatest();
       feedbackAfterPaint(action);
     } catch (error) {
+      // 提交阶段就失败了，不会再有图片加载，清掉起点避免被后面某张无关图片的 onLoad 冒领。
+      genStartedAt.current = null;
       // 失败也算有了反馈（出现了错误提示），不该再算成「点了没反应」。
       action.feedback();
       showNotice(error instanceof Error ? error.message : '提交失败，请重试');
@@ -494,6 +519,11 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                       onShare={requestShare}
                       onNotice={showNotice}
                       sharingArtifactId={share.isPending && shareArtifact ? shareArtifact.id : null}
+                      onArtifactVisible={
+                        messageIndex === data.messages.length - 1
+                          ? reportArtifactVisible
+                          : undefined
+                      }
                       rewardBadge={
                         rewardBadgeVisible &&
                         !config.data.has_completed_first_share &&
@@ -807,6 +837,7 @@ function AttemptCard(props: {
   rewardBadge: string | null;
   regenerating: boolean;
   regenerateDisabled: boolean;
+  onArtifactVisible?: () => void;
 }) {
   const attempt = props.attempt;
   if (attempt.status === 'pending' || attempt.status === 'generating')
@@ -847,7 +878,7 @@ function AttemptCard(props: {
     );
   return (
     <div className="grid gap-5 sm:grid-cols-2">
-      {attempt.artifacts.map((artifact) => (
+      {attempt.artifacts.map((artifact, index) => (
         <StudioArtifactCard
           key={artifact.id}
           artifact={artifact}
@@ -859,6 +890,7 @@ function AttemptCard(props: {
           onRefresh={props.onRefresh}
           onShare={props.onShare}
           onNotice={props.onNotice}
+          onLoad={index === 0 ? props.onArtifactVisible : undefined}
         />
       ))}
     </div>

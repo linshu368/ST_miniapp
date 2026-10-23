@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import * as Sentry from '@sentry/nextjs';
 import {
   DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   type ChatMessage,
@@ -39,6 +40,7 @@ import {
   requiredCreditsFromError,
 } from '@/lib/recharge-redirect';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
+import { getMetricDimensions } from '@/lib/perf/env-tags';
 import { getReplayLifecycle } from '@/lib/telemetry';
 import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 
@@ -46,6 +48,26 @@ const REPLY_STALLED_NOTICE_MS = 8_000;
 export const CANCEL_DISCOVERY_DEADLINE_MS = 30_000;
 const FREE_QUOTA_REFRESH_DELAYS_MS = [0, 300, 900] as const;
 const log = createLogger('conversation-turn');
+
+/**
+ * 端到端体验耗时：点击发送 → 首字 / 完整回复出现在聊天区域。
+ * 和 action_stall 的区别——那个只测「UI 有没有反馈」，这个测真实等待时长，
+ * 用来回答「聊天到底快不快」而不是「按钮卡没卡」。
+ */
+function reportChatLatency(
+  metric: 'chat.first_token.duration' | 'chat.full_reply.duration',
+  durationMs: number,
+  attributes: { character_id: string; outcome?: 'ok' | 'failed' | 'error' }
+): void {
+  try {
+    Sentry.metrics.distribution(metric, durationMs, {
+      unit: 'millisecond',
+      attributes: { ...attributes, ...getMetricDimensions() },
+    });
+  } catch (error) {
+    log.warn(`${metric} report failed`, error);
+  }
+}
 
 interface UseConversationTurnOptions {
   characterId: string;
@@ -570,6 +592,7 @@ export function useConversationTurn({
 
       let assistantMessageId: string | null = null;
       let settledStatus: ChatMessageStatus | null = null;
+      let firstTokenReported = false;
 
       try {
         await streamConversationTurn({
@@ -596,6 +619,12 @@ export function useConversationTurn({
           },
           onDelta: (text) => {
             if (!isCurrent()) return;
+            if (input.mode === 'send' && !firstTokenReported) {
+              firstTokenReported = true;
+              reportChatLatency('chat.first_token.duration', Date.now() - turnMeta.startedAt, {
+                character_id: characterId,
+              });
+            }
             setStreaming((current) => (current ? appendStreamText(current, text) : current));
           },
           onDone: (event) => {
@@ -620,6 +649,12 @@ export function useConversationTurn({
         } else {
           captureTurnLifecycleEvent(sessionId, characterId, turnMeta, { type: 'completed' });
         }
+        if (input.mode === 'send') {
+          reportChatLatency('chat.full_reply.duration', Date.now() - turnMeta.startedAt, {
+            character_id: characterId,
+            outcome: settledStatus && settledStatus !== 'complete' ? 'failed' : 'ok',
+          });
+        }
         await refreshQuotaAndBalance(quotaBefore, assistantMessageId, isCurrent);
       } catch (error) {
         if (!isCurrent()) return;
@@ -629,6 +664,12 @@ export function useConversationTurn({
             type: 'failed',
             failureKind: classifyChatTurnFailure(error),
           });
+          if (input.mode === 'send') {
+            reportChatLatency('chat.full_reply.duration', Date.now() - turnMeta.startedAt, {
+              character_id: characterId,
+              outcome: 'error',
+            });
+          }
         }
         await handleTurnFailure(error, input, isCurrent);
       } finally {
