@@ -233,12 +233,12 @@ describe('applyLlmCharge', () => {
     expect(finalizePending).not.toHaveBeenCalled();
   });
 
-  it('routes display name to the observed model when upstream switched providers', async () => {
+  it('preserves the quoted display name while recording the delivered model', async () => {
     await applyLlmCharge(command({ observedModel: 'openai/gpt-5' }));
 
     expect(lastCharge()).toMatchObject({
       modelOpenRouterId: 'openai/gpt-5',
-      modelDisplayName: 'openai/gpt-5',
+      modelDisplayName: 'Claude Sonnet 4.5',
     });
   });
 

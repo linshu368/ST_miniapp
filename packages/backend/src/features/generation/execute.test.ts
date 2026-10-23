@@ -684,3 +684,106 @@ it('preserves a fully read non-stream response when ID persistence fails', async
     status: 'stream_interrupted',
   });
 });
+
+describe('fixed fallback preserves one selected-model quote', () => {
+  it.each([
+    { provider: 'openrouter' as const, free: false },
+    { provider: 'venice' as const, free: false },
+    { provider: 'openrouter' as const, free: true },
+    { provider: 'venice' as const, free: true },
+  ])('routes $provider (free=$free) with one charge/quota identity', async ({ provider, free }) => {
+    billingContext = { ...defaultBillingContext, provider, isFree: free };
+    if (provider === 'venice') vi.stubEnv('VENICE_API_KEY', 'test-venice-key');
+    quotaState.granted = free;
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        bodies.push(body);
+        const fallback = bodies.length === 2;
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const timer = setTimeout(
+              () => {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ id: fallback ? 'fallback-id' : 'primary-id', choices: [{ delta: { content: fallback ? '兜底' : '首发' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+                  )
+                );
+                controller.close();
+              },
+              fallback ? 5 : 100
+            );
+            init.signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                controller.error(init.signal?.reason);
+              },
+              { once: true }
+            );
+          },
+        });
+        return new Response(stream);
+      })
+    );
+    const beforeReserve = vi.fn(),
+      beforeDispatch = vi.fn(),
+      selectDelivery = vi.fn(async () => {});
+    const deltas: string[] = [];
+    const req = request({ promptCaching: true });
+    req.model.firstTokenPolicy = {
+      fallbackModelId: 'vendor/operator-flash',
+      timeoutMs: 30,
+      deadlineMs: 500,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    req.firstToken = {
+      primaryAttemptId: 'attempt-primary',
+      requestStartedAt: performance.now(),
+      store: {
+        prepareFallback: vi.fn(async () => {}),
+        observe: vi.fn(async () => {}),
+        selectDelivery,
+      },
+    };
+    const result = await execute(
+      req,
+      {
+        onBeforeReserve: beforeReserve,
+        onBeforeDispatch: beforeDispatch,
+        onDelta: (text) => deltas.push(text),
+      },
+      fakeLogger()
+    );
+    expect(result.status).toBe('success');
+    expect(deltas).toEqual(['兜底']);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]?.model).toBe('vendor/operator-flash');
+    expect(bodies[1]).not.toHaveProperty('venice_parameters');
+    expect(JSON.stringify(bodies[1]?.messages)).not.toContain('cache_control');
+    expect(beforeReserve).toHaveBeenCalledOnce();
+    expect(beforeDispatch).toHaveBeenCalledOnce();
+    expect(selectDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'fallback', generation_id: 'fallback-id' })
+    );
+    if (free) expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(true);
+    else expect(quotaState.finalize).not.toHaveBeenCalled();
+    expect(savedHistory()).toHaveLength(1);
+    const entry = savedHistory()[0]!;
+    expect(entry).toMatchObject({
+      provider: 'openrouter',
+      provider_model_id: 'vendor/operator-flash',
+      model_id: defaultBillingContext.modelId,
+      model_display_name: defaultBillingContext.modelDisplayName,
+      fixed_deduction: free ? 0 : 48,
+    });
+    expect(entry.charge_id).toBe(beforeReserve.mock.calls[0]?.[0]);
+    // Let the bounded primary observer finish; it must never emit or settle a second reply.
+    await new Promise((r) => setTimeout(r, 115));
+    expect(savedHistory()).toHaveLength(1);
+    expect(deltas).toEqual(['兜底']);
+  });
+});

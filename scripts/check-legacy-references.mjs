@@ -103,6 +103,8 @@ const RULES = [
       'packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts',
       // 集成测试直连库造数据、断言与清理，不经业务链路
       'packages/backend/src/infrastructure/repositories/conversations.integration.test.ts',
+      // Local disposable PG/PostgREST fixtures only; no application writer or remote database.
+      'packages/backend/src/infrastructure/repositories/GenerationObservationRepository.integration.test.ts',
     ],
   },
   {

@@ -84,6 +84,7 @@ function normalizeCatalog(value: unknown): ModelCatalog | null {
     .sort((a, b) => a.sort_order - b.sort_order || a.tier.localeCompare(b.tier));
 
   const normalized = {
+    ...parsed.data,
     default_model_id: parsed.data.default_model_id,
     tiers,
   };

@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ChatMessage } from '@miniapp/shared';
 import { ReplyRenderer, type ReplyChoicePayload } from '@miniapp/reply-renderer';
 
+import { observeFirstVisibleToken } from '@/lib/perf/first-token-observation';
 import { cn } from '@/lib/utils';
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 import { CHAT_MARKDOWN_CLASS, ChatMarkdown } from './chat-markdown';
@@ -51,6 +52,7 @@ const HEADER_TITLE_CLASS =
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
+  onFirstTokenDisplayed?: (at: number) => void;
   /** 角色名，显示在 AI 消息正文上方 */
   characterName: string;
   characterAvatarUrl: string | null;
@@ -73,6 +75,7 @@ interface ChatMessageBubbleProps {
 
 export function ChatMessageBubble({
   message,
+  onFirstTokenDisplayed,
   characterName,
   characterAvatarUrl,
   userAvatarUrl,
@@ -111,6 +114,7 @@ export function ChatMessageBubble({
             {message.content ? (
               <AssistantReplyBody
                 message={message}
+                onFirstTokenDisplayed={onFirstTokenDisplayed}
                 plan={replyPlan ?? { kind: 'original' }}
                 streaming={Boolean(streaming)}
                 displayName={displayName}
@@ -174,6 +178,7 @@ export function ChatTypingBubble({
 
 function AssistantReplyBody({
   message,
+  onFirstTokenDisplayed,
   plan,
   streaming,
   displayName,
@@ -182,6 +187,7 @@ function AssistantReplyBody({
   detailsDefaultOpen,
 }: {
   message: ChatMessage;
+  onFirstTokenDisplayed?: (at: number) => void;
   plan: AssistantBodyPlan;
   streaming: boolean;
   displayName?: string;
@@ -190,6 +196,15 @@ function AssistantReplyBody({
   detailsDefaultOpen?: Readonly<Record<string, boolean>>;
 }) {
   const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const displayCallback = useRef(onFirstTokenDisplayed);
+  displayCallback.current = onFirstTokenDisplayed;
+  const observingDisplay = Boolean(onFirstTokenDisplayed);
+  useEffect(() => {
+    // A new delta creates new callbacks every frame. Keep the observer alive so its
+    // paint opportunity is not repeatedly cancelled by a continuous token stream.
+    if (node && observingDisplay)
+      return observeFirstVisibleToken(node, (at) => displayCallback.current?.(at));
+  }, [node, observingDisplay, message.id, message.revision]);
   const onScreen = useStayOnScreen(node, plan.kind === 'renderer');
   // 流式增量必须保留原来的稳定 Markdown DOM；逐片重跑 Worker 会让已出现正文
   // 在 pending/applied 之间整棵替换。终态再一次性挂 renderer，交互也只此时开放。
