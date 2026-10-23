@@ -22,6 +22,7 @@ export * from './api/lobby-pinned-characters';
 export * from './api/wallet';
 export * from './api/feature-free-trials';
 export * from './api/conversations';
+export * from './api/generation-observations';
 export * from './api/voice';
 export * from './api/images';
 export * from './api/image-plaza';

@@ -98,6 +98,7 @@ export interface LlmBillingSnapshot {
   vip_active?: boolean;
   vip_valid_until?: string | null;
   model_tier?: string | null;
+  vip_discount_config_version?: number | null;
 }
 
 export interface ChatHistorySyncRow {

@@ -38,3 +38,7 @@ pnpm --filter @miniapp/admin build
 Vercel 配置可能来自包内 `vercel.json` 或根 `vercel.admin.json`，取决于项目 Root Directory，两者不会自动合并。发布前核对环境变量作用域、API/CORS、SPA rewrite 和 Node 版本。普通 branch Preview 与 `dev -> main` 发布 PR 使用 `VITE_ADMIN_TEST_API_URL` 指向稳定 TEST；目标分支为 `dev` 的功能 PR 自动绑定 `stminiapp-pr-<PR号>`。稳定 TEST 映射缺失或不是 HTTPS 时，Preview 构建会失败，避免发布登录后才报网络错误的页面。
 
 适用门禁是 Admin typecheck/test/build、`pnpm lint:imports` 和 `git diff --check`。涉及 shared 契约或 `reply-renderer` 时，追加 shared/renderer 测试与所有消费者 typecheck。发布后在目标环境验证登录、环境标识、草稿保存、明确发布、历史恢复、错误保留和只读 viewer；TEST 结果不能代替 Production 验收。
+
+## 首 token 兜底配置
+
+“运营配置 → 兜底配置”统一管理 OpenRouter 兜底型号、各型号首发等待、全局首 token 上限与超时率目标，默认 DeepSeek V4.1 Flash / 4秒 / 6秒 / 1%。使用现有 key，与模型目录共用同一份草稿、发布历史和回滚；自动保存草稿不会直接生效。发布时包含同一草稿的模型目录改动；viewer沿用只读权限。使用与发布顺序见 [运行说明](../../docs/first-token-fallback.md)。

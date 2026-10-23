@@ -216,6 +216,8 @@ OpenRouter 调用事实由 `experience.openrouter_chat_history` 保存，消费 
 ## 11. 文档入口
 
 - [系统架构](docs/ARCHITECTURE.md)
+- [首 token 兜底、数据口径与人工观察](docs/first-token-fallback.md)
+- [Grafana 用户首 token 业务看板](docs/grafana/chat-first-token.json)：用户实际显示耗时、每型号兜底触发率与超时率；读取授权通过 `20261023_grafana_first_token_reader.sql` 正式迁移。
 - [Railway 运维](ops/railway/README.md)
 - [后端日志与可观测性](.trellis/spec/backend/app/data-reliability-and-security.md)
 - [数据库域与归属](docs/ARCHITECTURE.md#51-数据库八域布局099-之后test-与生产一致)
