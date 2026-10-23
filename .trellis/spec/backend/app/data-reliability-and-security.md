@@ -195,3 +195,7 @@ Good：五路（两个 provider pending、missing identity、metadata、stale）
 ### 7. Wrong vs Correct
 
 Wrong：finalizeTurn 写 parent.llm_generation_id，detail 写失败靠主表补救。Correct：上游前持久化意图/专表占位，首 ID 写专表并读回不确定结果，finalizeTurn 只维护主表正文与业务终态；失去调用键时明确收口或停止审计。
+
+## 图片生成结算结果未知
+
+存图后结算 RPC 可能已提交但响应丢失；返回 error、Promise reject 或无法确认状态时不得直接删除成果，应保图并传递结果未知，不重发 Provider/扣费。仅明确余额不足等已确认未扣款分支允许清理。后续失败标记必须保留处理中状态条件，不能覆盖原子结算已落下的 ready。消费查询需同时覆盖 image_generation 与 image_plaza_generation，余额缓存应在新 ready 后失效，不能把202受理视作已扣款。虚拟回归只证明应用边界行为，不代替数据库事务或真实扣款验收。

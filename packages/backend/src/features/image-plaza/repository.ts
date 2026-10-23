@@ -26,6 +26,20 @@ import {
   type PlazaMimeType,
 } from './storage.js';
 
+/** 结算响应未知与已确认未扣款必须分开，worker 才不会误删成果或误报成功。 */
+export class ImagePlazaSettlementError extends Error {
+  readonly outcomeUnknown: boolean;
+
+  constructor(
+    readonly code: 'image_plaza_settlement_outcome_unknown' | 'image_plaza_insufficient_balance',
+    options?: ErrorOptions
+  ) {
+    super(code, options);
+    this.name = 'ImagePlazaSettlementError';
+    this.outcomeUnknown = code === 'image_plaza_settlement_outcome_unknown';
+  }
+}
+
 export interface ImagePlazaWorkerAttempt {
   id: string;
   userId: string;
@@ -785,29 +799,45 @@ export class ImagePlazaRepository {
       .update({ status: 'storing', updated_at: new Date().toISOString() })
       .eq('id', input.attempt.id)
       .eq('status', 'generating');
-    const { data, error } = await this.billing.rpc('settle_image_plaza_generation', {
-      p_attempt_id: input.attempt.id,
-      p_user_id: input.attempt.userId,
-      p_artifacts: [
-        {
-          position: 0,
-          storage_path: stored.storagePath,
-          mime_type: stored.mimeType,
-          byte_size: stored.byteSize,
-          width: stored.width,
-          height: stored.height,
-        },
-      ],
-    });
-    const status =
-      data && typeof data === 'object'
-        ? String((data as Record<string, unknown>).status ?? '')
-        : '';
-    if (error || !['settled', 'already_settled'].includes(status)) {
-      await deletePlazaImage(stored.storagePath).catch(() => undefined);
-      if (status === 'insufficient_balance') return;
-      throw new Error(`image plaza settle failed: ${error?.message ?? status}`);
+    let result: { data: unknown; error: unknown };
+    try {
+      result = await this.billing.rpc('settle_image_plaza_generation', {
+        p_attempt_id: input.attempt.id,
+        p_user_id: input.attempt.userId,
+        p_artifacts: [
+          {
+            position: 0,
+            storage_path: stored.storagePath,
+            mime_type: stored.mimeType,
+            byte_size: stored.byteSize,
+            width: stored.width,
+            height: stored.height,
+          },
+        ],
+      });
+    } catch (cause) {
+      throw new ImagePlazaSettlementError('image_plaza_settlement_outcome_unknown', { cause });
     }
+    // RPC 可能已经提交后才丢失响应。error 优先于任何 data，未知时保图且不重投。
+    if (result.error) {
+      throw new ImagePlazaSettlementError('image_plaza_settlement_outcome_unknown', {
+        cause: result.error,
+      });
+    }
+    const status =
+      result.data && typeof result.data === 'object'
+        ? String((result.data as Record<string, unknown>).status ?? '')
+        : '';
+    if (status === 'settled' || status === 'already_settled') return;
+    if (status === 'insufficient_balance') {
+      try {
+        await deletePlazaImage(stored.storagePath);
+      } catch (cause) {
+        throw new ImagePlazaSettlementError('image_plaza_insufficient_balance', { cause });
+      }
+      throw new ImagePlazaSettlementError('image_plaza_insufficient_balance');
+    }
+    throw new ImagePlazaSettlementError('image_plaza_settlement_outcome_unknown');
   }
 
   private async hydrateWorks(

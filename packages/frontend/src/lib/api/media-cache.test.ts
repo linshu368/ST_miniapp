@@ -1,14 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient, type FetchQueryOptions } from '@tanstack/react-query';
+import { QueryClient, type FetchQueryOptions, type MutationOptions } from '@tanstack/react-query';
 import type {
   GetSessionVoiceData,
   GetSessionImagesData,
   MessageVoice,
   MessageImageAttempt,
+  GetImagePlazaConversationData,
+  ImagePlazaAttempt,
+  ImagePlazaQuoteData,
+  ImagePlazaQuoteRequest,
+  SubmitImagePlazaAttemptData,
+  SubmitImagePlazaAttemptRequest,
+  ShareImagePlazaWorkData,
+  ShareImagePlazaWorkRequest,
 } from '@miniapp/shared';
 import { apiClient } from './client';
 import { useSessionVoiceQuery, useGenerateVoiceMutation, voiceKeys } from './voice';
 import { useSessionImagesQuery, useCreateMessageImageMutation, imageKeys } from './images';
+import {
+  imagePlazaKeys,
+  useImagePlazaConversationQuery,
+  useImagePlazaQuoteMutation,
+  useSubmitImagePlazaAttemptMutation,
+  useShareImagePlazaMutation,
+} from './image-plaza';
 
 const hooks = vi.hoisted(() => ({ query: vi.fn(), mutation: vi.fn(), client: vi.fn() }));
 vi.mock('@tanstack/react-query', async (original) => ({
@@ -17,7 +32,7 @@ vi.mock('@tanstack/react-query', async (original) => ({
   useMutation: hooks.mutation,
   useQueryClient: hooks.client,
 }));
-vi.mock('./client', () => ({ apiClient: vi.fn() }));
+vi.mock('./client', () => ({ apiClient: vi.fn(), ApiClientError: class extends Error {} }));
 vi.mock('./payment', () => ({ paymentKeys: { wallet: () => ['wallet'] } }));
 
 const voice = (status: MessageVoice['status']): MessageVoice => ({
@@ -74,7 +89,9 @@ const imageData = (status: MessageImageAttempt['status']): GetSessionImagesData 
 let client: QueryClient;
 beforeEach(() => {
   vi.clearAllMocks();
-  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   hooks.client.mockReturnValue(client);
   client.setQueryData(voiceKeys.config, { next: 'cached' });
   client.setQueryData(imageKeys.config, { next: 'cached' });
@@ -158,5 +175,321 @@ describe('media settlement cache refresh', () => {
     const imageMutation = hooks.mutation.mock.calls[1]![0] as { onError: () => void };
     imageMutation.onError();
     expect(client.getQueryState(imageKeys.config)?.isInvalidated).toBe(true);
+  });
+});
+
+const plazaConversationId = '11111111-1111-4111-8111-111111111111';
+const plazaAttemptId = '22222222-2222-4222-8222-222222222222';
+const plazaQuoteId = '33333333-3333-4333-8333-333333333333';
+const plazaArtifactId = '44444444-4444-4444-8444-444444444444';
+const plazaSnapshot = {
+  prompt: '一枚白色陶瓷杯',
+  model_id: 'preview-model',
+  aspect_ratio: '1:1' as const,
+  resolution: '1K' as const,
+  reasoning: false,
+  auto_optimize: true,
+  reference_artifact_id: null,
+  mode: 't2i' as const,
+  style: 'None' as const,
+};
+function plazaAttempt(status: ImagePlazaAttempt['status'], id = plazaAttemptId): ImagePlazaAttempt {
+  return {
+    id,
+    conversation_id: plazaConversationId,
+    status,
+    quote_credits: 10,
+    error_code: status === 'failed' || status === 'failed_unknown' ? 'preview_failure' : null,
+    artifacts:
+      status === 'ready'
+        ? [
+            {
+              id: plazaArtifactId,
+              image_url: 'https://images.example.test/generated.webp',
+              width: 512,
+              height: 512,
+            },
+          ]
+        : [],
+    created_at: '2026-10-23T00:00:00Z',
+    updated_at: '2026-10-23T00:00:01Z',
+  };
+}
+function plazaData(...attempts: ImagePlazaAttempt[]): GetImagePlazaConversationData {
+  return {
+    conversation: {
+      id: plazaConversationId,
+      title: 'Virtual generation',
+      snapshot: plazaSnapshot,
+      messages: attempts.map((item) => ({
+        id: item.id,
+        role: 'assistant',
+        content: item.status === 'ready' ? '生成完成' : '生成中',
+        attempt: item,
+        created_at: item.created_at,
+      })),
+      created_at: '2026-10-23T00:00:00Z',
+      updated_at: '2026-10-23T00:00:01Z',
+    },
+  };
+}
+function usePlazaQueryOptions() {
+  useImagePlazaConversationQuery(plazaConversationId);
+  return hooks.query.mock.lastCall![0] as FetchQueryOptions<GetImagePlazaConversationData>;
+}
+function shareData(reward: number): ShareImagePlazaWorkData {
+  return {
+    work: {
+      id: '55555555-5555-4555-8555-555555555555',
+      title: 'Virtual artwork',
+      image_url: 'https://images.example.test/generated.webp',
+      reference_image_url: null,
+      model_id: plazaSnapshot.model_id,
+      model_name: 'Preview model',
+      width: 512,
+      height: 512,
+      tags: [],
+      liked: false,
+      like_count: 0,
+      published_at: '2026-10-23T00:00:02Z',
+      snapshot: plazaSnapshot,
+    },
+    reward_credits: reward,
+    already_shared: reward === 0,
+    has_completed_first_share: true,
+  };
+}
+
+describe('image plaza settlement cache refresh', () => {
+  it('uses real quote and submit paths and quoted fields without refreshing the wallet at acceptance', async () => {
+    const quoted: ImagePlazaQuoteData = {
+      quote_id: plazaQuoteId,
+      model_id: plazaSnapshot.model_id,
+      aspect_ratio: '1:1',
+      resolution: '1K',
+      credits: 10,
+      expires_at: '2026-10-23T00:05:00Z',
+    };
+    const quoteBody: ImagePlazaQuoteRequest = {
+      model_id: plazaSnapshot.model_id,
+      aspect_ratio: '1:1',
+      resolution: '1K',
+      mode: 't2i',
+    };
+    vi.mocked(apiClient)
+      .mockResolvedValueOnce(quoted)
+      .mockResolvedValueOnce({
+        attempt: plazaAttempt('pending'),
+      });
+    useImagePlazaQuoteMutation();
+    const quoteOptions = hooks.mutation.mock.lastCall![0] as MutationOptions<
+      ImagePlazaQuoteData,
+      Error,
+      ImagePlazaQuoteRequest
+    >;
+    const received = await client.getMutationCache().build(client, quoteOptions).execute(quoteBody);
+    const submitBody: SubmitImagePlazaAttemptRequest = {
+      ...quoteBody,
+      prompt: plazaSnapshot.prompt,
+      reasoning: false,
+      auto_optimize: true,
+      reference_artifact_id: null,
+      quote_id: received.quote_id,
+      idempotency_key: '66666666-6666-4666-8666-666666666666',
+    };
+    client.setQueryData(imagePlazaKeys.conversation(plazaConversationId), plazaData());
+    useSubmitImagePlazaAttemptMutation(plazaConversationId);
+    const submitOptions = hooks.mutation.mock.lastCall![0] as MutationOptions<
+      SubmitImagePlazaAttemptData,
+      Error,
+      SubmitImagePlazaAttemptRequest
+    >;
+    const accepted = await client
+      .getMutationCache()
+      .build(client, submitOptions)
+      .execute(submitBody);
+    expect(accepted.attempt.status).toBe('pending');
+    expect(apiClient).toHaveBeenNthCalledWith(1, '/api/image-plaza/quotes', {
+      method: 'POST',
+      body: JSON.stringify(quoteBody),
+    });
+    expect(apiClient).toHaveBeenNthCalledWith(
+      2,
+      `/api/image-plaza/conversations/${plazaConversationId}/attempts`,
+      {
+        method: 'POST',
+        body: JSON.stringify(submitBody),
+      }
+    );
+    expect(apiClient).toHaveBeenCalledTimes(2);
+    expect(
+      client.getQueryState(imagePlazaKeys.conversation(plazaConversationId))?.isInvalidated
+    ).toBe(true);
+    expect(client.getQueryState(['wallet'])?.isInvalidated).toBe(false);
+  });
+
+  it.each(['pending', 'generating', 'failed', 'failed_unknown'] as const)(
+    'does not refresh the wallet on %s or repeat any submission while reading status',
+    async (status) => {
+      client.setQueryData(
+        imagePlazaKeys.conversation(plazaConversationId),
+        plazaData(plazaAttempt('pending'))
+      );
+      const options = usePlazaQueryOptions();
+      vi.mocked(apiClient).mockResolvedValue(plazaData(plazaAttempt(status)));
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
+      await client.fetchQuery(options);
+      await client.fetchQuery(options);
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(client.getQueryState(['wallet'])?.isInvalidated).toBe(false);
+      expect(apiClient).toHaveBeenCalledTimes(2);
+      for (const call of vi.mocked(apiClient).mock.calls) {
+        expect(call).toEqual([`/api/image-plaza/conversations/${plazaConversationId}`]);
+      }
+    }
+  );
+
+  it('refreshes wallet and its spending child once when generation first becomes ready', async () => {
+    client.setQueryData(['wallet', 'spending'], { items: [] });
+    client.setQueryData(
+      imagePlazaKeys.conversation(plazaConversationId),
+      plazaData(plazaAttempt('generating'))
+    );
+    const options = usePlazaQueryOptions();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    vi.mocked(apiClient).mockResolvedValue(plazaData(plazaAttempt('ready')));
+    await client.fetchQuery(options);
+    expect(client.getQueryState(['wallet'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['wallet', 'spending'])?.isInvalidated).toBe(true);
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: ['wallet'] });
+    await client.fetchQuery(options);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(client.getQueryState(imageKeys.config)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(voiceKeys.config)?.isInvalidated).toBe(false);
+  });
+
+  it('detects completion after query recreation over the cache left when leaving the page', async () => {
+    const previousOptions = usePlazaQueryOptions();
+    vi.mocked(apiClient).mockResolvedValueOnce(plazaData(plazaAttempt('pending')));
+    await client.fetchQuery(previousOptions);
+    expect(client.getQueryState(['wallet'])?.isInvalidated).toBe(false);
+    // The component is gone; only QueryClient survives navigation, with its pending snapshot.
+    const returnedOptions = usePlazaQueryOptions();
+    vi.mocked(apiClient).mockResolvedValue(plazaData(plazaAttempt('ready')));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    await client.fetchQuery(returnedOptions);
+    await client.fetchQuery(returnedOptions);
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: ['wallet'] });
+  });
+
+  it('refreshes on the first uncached ready read but not identical historical results', async () => {
+    const options = usePlazaQueryOptions();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    vi.mocked(apiClient).mockResolvedValue(plazaData(plazaAttempt('ready')));
+    await client.fetchQuery(options);
+    await client.fetchQuery(usePlazaQueryOptions());
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: ['wallet'] });
+  });
+
+  it('ignores an old ready task during pending polls and batches newly completed tasks', async () => {
+    const old = plazaAttempt('ready');
+    const secondId = '77777777-7777-4777-8777-777777777777';
+    const thirdId = '88888888-8888-4888-8888-888888888888';
+    client.setQueryData(imagePlazaKeys.conversation(plazaConversationId), plazaData(old));
+    const options = usePlazaQueryOptions();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    vi.mocked(apiClient).mockResolvedValueOnce(plazaData(old, plazaAttempt('pending', secondId)));
+    await client.fetchQuery(options);
+    expect(invalidate).not.toHaveBeenCalled();
+    vi.mocked(apiClient).mockResolvedValue(
+      plazaData(old, plazaAttempt('ready', secondId), plazaAttempt('ready', thirdId))
+    );
+    await client.fetchQuery(options);
+    await client.fetchQuery(options);
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: ['wallet'] });
+  });
+
+  it('preserves cached tasks and does not refresh the wallet when a status read fails', async () => {
+    const before = plazaData(plazaAttempt('generating'));
+    client.setQueryData(imagePlazaKeys.conversation(plazaConversationId), before);
+    const options = usePlazaQueryOptions();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    vi.mocked(apiClient).mockRejectedValueOnce(new Error('preview offline'));
+    await expect(client.fetchQuery(options)).rejects.toThrow('preview offline');
+    expect(client.getQueryData(imagePlazaKeys.conversation(plazaConversationId))).toEqual(before);
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(apiClient).toHaveBeenCalledExactlyOnceWith(
+      `/api/image-plaza/conversations/${plazaConversationId}`
+    );
+  });
+
+  it('keeps failed submissions single-shot and leaves the wallet cache unchanged', async () => {
+    vi.mocked(apiClient).mockRejectedValueOnce(new Error('preview timeout'));
+    useSubmitImagePlazaAttemptMutation(plazaConversationId);
+    const options = hooks.mutation.mock.lastCall![0] as MutationOptions<
+      SubmitImagePlazaAttemptData,
+      Error,
+      SubmitImagePlazaAttemptRequest
+    >;
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    await expect(
+      client
+        .getMutationCache()
+        .build(client, options)
+        .execute({
+          ...plazaSnapshot,
+          quote_id: plazaQuoteId,
+          idempotency_key: '99999999-9999-4999-8999-999999999999',
+        })
+    ).rejects.toThrow('preview timeout');
+    expect(apiClient).toHaveBeenCalledTimes(1);
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it.each([10, 0])(
+    'refreshes the wallet along with plaza caches after a successful share with reward %s',
+    async (reward) => {
+      client.setQueryData(imagePlazaKeys.config(), { enabled: true });
+      client.setQueryData(imagePlazaKeys.feed('', 'all'), { pages: [], pageParams: [] });
+      vi.mocked(apiClient).mockResolvedValueOnce(shareData(reward));
+      useShareImagePlazaMutation();
+      const options = hooks.mutation.mock.lastCall![0] as MutationOptions<
+        ShareImagePlazaWorkData,
+        Error,
+        ShareImagePlazaWorkRequest
+      >;
+      const body: ShareImagePlazaWorkRequest = {
+        artifact_id: plazaArtifactId,
+        title: 'Virtual artwork',
+        tags: [],
+      };
+      await client.getMutationCache().build(client, options).execute(body);
+      expect(apiClient).toHaveBeenCalledExactlyOnceWith('/api/image-plaza/share', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      expect(client.getQueryState(['wallet'])?.isInvalidated).toBe(true);
+      expect(client.getQueryState(imagePlazaKeys.config())?.isInvalidated).toBe(true);
+      expect(client.getQueryState(imagePlazaKeys.feed('', 'all'))?.isInvalidated).toBe(true);
+    }
+  );
+
+  it('does not claim a wallet change after sharing fails', async () => {
+    vi.mocked(apiClient).mockRejectedValueOnce(new Error('preview share rejected'));
+    useShareImagePlazaMutation();
+    const options = hooks.mutation.mock.lastCall![0] as MutationOptions<
+      ShareImagePlazaWorkData,
+      Error,
+      ShareImagePlazaWorkRequest
+    >;
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    await expect(
+      client.getMutationCache().build(client, options).execute({
+        artifact_id: plazaArtifactId,
+        title: 'Virtual artwork',
+        tags: [],
+      })
+    ).rejects.toThrow('preview share rejected');
+    expect(invalidate).not.toHaveBeenCalled();
   });
 });
