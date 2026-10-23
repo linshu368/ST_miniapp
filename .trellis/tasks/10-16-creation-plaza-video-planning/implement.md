@@ -1,91 +1,77 @@
-# 执行计划（待审核，不启动实施）
+# 执行计划（待审核；任务保持 planning）
 
-任务目录：`D:/codeReposity/wq/ST_miniapp/.trellis/tasks/10-16-creation-plaza-video-planning`。
+参考：design.md（§ 编号）、prd.md（R 编号）、task.md（任务 ID）。
 
-## 1. 开工门禁
+## 0. 开工门禁
 
-- PRD/design 经审核，task.json 仍为 planning；只有另行授权实施后才允许 task.py start 和产品代码。
-- 五项产品决策已确认：分类 OR 且有计数、视频总共 0～1 张且用途按模型映射、同会话按轮选择媒体、调用前余额检查且成功扣费、返利与首次资格跨媒体共用。审核计数范围/刷新细则、混合会话旧客户端投影、无图/单图能力与首帧图/参考图/垫图映射和最终余额竞争的恢复设计；不重复要求确认已明确的产品方向。
-- 供应商已确定为 Venice；核验六模型账户访问、参数组合、价格、异步幂等/查询、输出格式和 poster；缺资料的模型不上架。确认自动优化默认开、Venice 系统提示词与 safe_mode 默认关的真实端点映射与生效证据，不复制图片/聊天字段冒充视频支持。
-- Excel 全量导入是交付范围：本地已统计 5,097 条，来源和摘要见 design §10。功能完成后才导入，先核验候选垫图格式、15 条缺译文、授权 manifest、媒体容量及目标环境；供应商确认不代替 G2 技术验证或 G3 实施授权。
-- 风险评估：涉及计费、并发、契约和迁移，实施阶段必须补充针对性回归测试；该计划批准后才创建测试文件，本轮不创建。
-- 分派子任务前补充 implement.jsonl/check.jsonl，列出实际相关 spec 和研究证据。本轮不派子代理、不伪造已审核状态。
-- 当前任务元数据 base_branch 为 main，README 要求 feature 基于最新 origin/dev、PR base 为 dev；实施前核实并通过任务命令更新，不在规划中擅自切分支/拉取/重写用户提交。
+- [ ] PRD/design 审核通过，ADR（design §2.1）通过架构评审。
+- [x] B-MODEL-1 → D8：Seedance 2.0 R2V 映射到 `seedance-2-0-reference-to-video-basic`。
+- [x] B-OPT-1 → D9：视频关闭自动优化提示词。
+- [x] B-FFMPEG-1 → D10：安装 ffmpeg。P3 里记录镜像体积和构建耗时的前后对比。
+- [x] B-ENV-1 → D12：先在 test 执行。每次执行前在记录里核对连接目标，并采集结构快照（只读，不读业务行）。
+- [x] B-SEED-2 → D14：视频提示词不设字数上限，图片不变。
+- [ ] B-SEED-1：种子转存授权与 bucket 实际配额已确认。流程已定（D13）：P6 先跑体积估算脚本（对 5,097 条 HEAD 求和），人工看过报告后带 `--confirm-size <报告 hash>` 才能继续 dry-run。
+- [ ] 基于最新 `origin/dev` 开 feature 分支，PR 目标为 dev。不在规划阶段切换分支。
+- [ ] 测试文件范围：本任务涉及计费、并发、契约、迁移，规划确认**需要**回归测试，清单见 §3。审核批准后才创建测试文件。
 
-## 2. 分阶段交付
+## 1. 分阶段交付
 
-### P0：供应商和性能基线
+### P0 证据与基线（T1）
+- 用 Venice test key 对 6 个模型的 t2v/i2v/r2v 各调用 1 次 quote，整理成价格矩阵草案。
+- 每个模型做 1 次 queue canary，实测以下内容：
+  - 耗时；
+  - 返回的是 `download_url` 还是 mp4；
+  - 输出编码，以及能否被 ffprobe 解析；
+  - 拒审路径。
+- 在 Telegram iOS/Android 上测图片广场冷/热启动基线，每种 ≥20 次。
 
-形成六模型证据矩阵，完成明确授权后的 test canary；记录无图/单图支持、必填性及用途映射、提交超时、查询限流、输出 URL TTL、Range、编码、封面与字节大小。多图请求在本地边界拒绝，不为验证多图调用供应商；至少要求两图的模式不开放。用同一设备/网络测当前图片广场冷/热缓存基线，核对原型和四张截图，保留样式 token。没有可用可靠封面的模型暂不上架。
+### P1 契约（T2）
+- `shared/src/api/video-plaza.ts`，以及 `image-plaza.ts` 的兼容扩展（design §4）。
+- 运行 `pnpm --filter @miniapp/shared test` 和 `pnpm -r typecheck`。
 
-### P1：契约与迁移设计
+### P2 迁移（T3）
+- 写 M1、M2、M3 及对应回滚脚本，并做 preflight/postflight 断言（design §2）。
+- 后端加入 `plazaDb()` 双读探测；`DOMAIN_SCHEMAS` 加入 media_plaza；准备 PostgREST 暴露 SQL。
+- 在 test 逐个文件执行，执行前后各记录一次 shape、权限、锁耗时。执行完 M1 立即跑图片回归。
 
-先在 `D:/codeReposity/wq/ST_miniapp/packages/shared/src/api/` 定义逐轮媒体判别联合、facets 计数、quote/submit/status/playback、可选单个 input_asset_id、模型用途映射快照和配置 schema，再修改消费者。前后端统一拒绝多图及客户端伪造角色，报价绑定资产与实际用途。设计稿先完成对象归属和 RPC 输入/权限评审；只向 `D:/codeReposity/wq/ST_miniapp/packages/shared/migrations/` 新增迁移，禁止改历史文件。共用消息扩展轮次媒体/幂等身份，不给会话加固定类型约束；前向迁移兼容扩展既有图片受理/分享函数，与视频共同维护跨媒体幂等及首次事实，保留旧图片行为和签名。
+### P3 后端视频链路（T4）
+- 编写 `video-catalog.ts`、`video-upstream.ts`、`video-repository.ts`、`video-job.ts`、`video-media.ts`。视频不做提示词优化（D9）。
+- Dockerfile 运行层（`node:20-bookworm-slim`）在现有 apt 命令里加 `ffmpeg`，并加构建期断言 `ffmpeg -version && ffprobe -version`。`video-media.ts` 在启动时探测二进制；缺失时报 error 日志，并隐藏视频模型。
+- 本地开发（Windows）需要 ffmpeg 在 PATH 中，或者通过 `FFMPEG_PATH`/`FFPROBE_PATH` 指定（经 `platform/config.ts` 读取），写入 README。
+- 补齐路由和 `@frontend-ready: false` 注释，同步 config.ts 环境变量。
+- 先用 mock 上游验证失败路径，再接真实 canary。
 
-迁移按内容对象 → 账务及受限 RPC → 配置发布校验/默认关闭拆分，逐文件记录前后 shape、锁耗时、索引计划、权限/RLS、关键读写、兼容检查和停止点。引用经验域实体的跨域对象通过受限 RPC 校验与软引用，不随意扩增跨域 FK。test 成功后仍须独立批准 production。不要通过 MCP 执行迁移或查询业务行。
+### P4 读层、分享、Admin（T5、T6）
+- feed 支持 media/tags 筛选，新增 tag-counts 接口，详情支持视频，会话增加 `include_video`。
+- 视频分享 RPC 接入。
+- Admin 新增视频目录编辑器，标签增加 media_types，参考价代理。
 
-### P2：视频任务和计费
+### P5 前端（T7）
+- 按 design §5 落地：广场、详情、工作室，以及 4 个新组件。
+- 新增 `video_generate` 埋点。
 
-以 generation 为编排入口，复用现有 worker/钱包模式，新增视频状态机和持久恢复。优先证明受理/派发前余额不足时零上游调用、查询失败关闭、幂等重放、提交未知窗口、租约 fencing、存储成功/结算超时、最终余额竞争，再接真实供应商。首次分享与返利共享账户事实/配置，验证图片和视频并发分享的锁顺序与唯一奖励。SDK/媒体探测/存储能力不足时重新评审，不未经确认加依赖。
+### P6 种子导入（T8）
+- 第一步：`estimate-video-plaza-seed-size.ts`（D13）对原表 5,097 条 `Video URL` 发 HEAD（并发 10），输出总字节数、按模型小计、失败清单，写成 `video-seed-size-report.json`。人工看过报告、确认 bucket 配额够用（关闭 B-SEED-1）之后，才带 `--confirm-size <报告 hash>` 进入下一步。
+- `video-seed-import.ts` 与对应脚本：dry-run → manifest → test 小批 → test 全量 → 对账。production 单独审批（D12）。
+- 输入两份文件：原表 `--input civitai_venice_nsfw_videos.xlsx`，翻译包 `--translations 翻译包/video.xlsx`。按 design §7 的 URL 路径对照写入 `prompt_zh`。
+- 提示词不设上限（D14），`prompt`/`prompt_zh` 原样写入 TEXT 列。
+- dry-run 预期（2026-10-24 实测基线）：命中 5,082 条，不一致 0 条，「已剔除」15 条（`excluded_by_translation_pack`），孤儿 0 条。实际数字偏离基线时停下核查。
 
-### P3：统一读层和 Admin
+### P7 验证、文档、灰度（T9、T10）
+- 跑完 §2 的命令和 §3 的场景。
+- 同步更新以下文档：
+  - README（迁移顺序、seed 命令）
+  - `docs/ARCHITECTURE.md`（九域、路由、worker）
+  - spec：schema 规范、backend/frontend 模块
+- production 按 design §10 执行。
 
-实现服务端 UNION feed、分类计数聚合、复合身份、游标与筛选校验；计数独立懒加载，复用相同过滤谓词。共用会话按轮 hydrate 图片/视频，旧接口只投影图片，不按固定会话类型拆历史；图片生成仍走原 repository，但共用消息受理和首次分享协议需兼容扩展。Admin 视频目录加入现有草稿、发布、回滚和 runtime-config；shared 与数据库发布校验同步，返利目录/首次状态不复制。
-
-### P4：Frontend
-
-接统一 API hooks；增加媒体筛选、带作品计数的分类弹窗、混合卡片、对话框每次生成类型选择、视频表单、单个可选图片槽位和点击播放详情。图片用途按模型显示为首帧图/参考图/垫图，不提供角色自由选择或多图排序；支持替换/移除/重试，必填图缺失及不兼容输入阻止提交。类型切换保留同一会话及两类草稿，绑定提交时快照；统一轮询两类活动任务。余额不足保留输入并提示充值，不自动再次生成；任一媒体分享成功刷新共同首次状态与钱包。沿用现有 Dialog/Sheet/视觉 token；表单 RHF+Zod。新增视频按需 UI，不把大播放器依赖放进列表首包。保留图片缓存预填和用同款语义，状态轮询与历史分页分离。
-
-### P5：验证与灰度
-
-完成下列矩阵和图片回归；同步 `D:/codeReposity/wq/ST_miniapp/README.md`、`D:/codeReposity/wq/ST_miniapp/docs/ARCHITECTURE.md` 及受影响 spec，说明环境、发布顺序和回退。生产先关闭入口部署兼容代码，再按已批准模型/受控用户放量。异常先停止新受理，不停止未完成任务对账。
-
-### P6：视频初始作品全量导入
-
-功能和 P5 验证完成后，按 design §10 实现独立视频 seed parser/importer，复用既有 xlsx 与图片审批/dry-run/限流模式，不直接调用图片五列 parser。先在 P1 的内容对象设计中纳入 seed/generated 分支、来源唯一键、批次与来源元数据；seed 无 attempt/扣款也合法，但公开前必须审核及媒体就绪，奖励路径拒绝 seed。
-
-本地 dry-run 核对七列/文件摘要/六模型计数/缺译文/候选垫图解析；实现阶段将真实新增的 dry-run 命令和重跑命令补入下方命令清单，本轮不虚构已有视频导入脚本。不提交原表或敏感明细。审批后小批 test 验证转存、播放、断点恢复、重跑无副作用；production 另行确认，容量达标才有界分批导入全部 5,097 条。失败清单逐条修复，未解决不能报告全量完成；按批次可下架，清理须检查引用，不触碰用户作品、互动和账本。导入不调用视频生成或隐式付费翻译。
-
-## 3. 验证矩阵
-
-| 层 / 场景      | 自动/人工证据                                                                                         | 通过标准                                                                         |
-| -------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Shared         | 新旧 DTO、媒体判别、未知枚举、参数组合、输入上限、quote 绑定                                          | 旧图片 payload 保持可解析，非法参数在边界拒绝                                    |
-| Feed           | 图片/视频/全部与搜索、全选/空选/重叠分类、未译文、种子、非法游标、目录变更                            | 服务端统一排序分页；静态数据无重漏；动态点赞去重和刷新符合约定                   |
-| Auth / storage | 他人资产、私有产物、下架作品、越权播放签名、伪 MIME、超大流、重定向/SSRF                              | 无未授权媒体泄露，无无界下载，错误日志无敏感 URL                                 |
-| Worker         | 双副本抢占、租约到期、各持久节点 crash、提交未知、查询 429/5xx/超时、任务 deadline                    | 不重复上游写调用，有限重试，恢复可解释，无无期限 busy-loop                       |
-| Billing        | 重复受理、同键异参、并发消费、重复结算、扣款成功响应丢失、余额不足                                    | 最多一次扣款；结算未知保留产物；ready 必须有可证明结算                           |
-| Share          | 图片先分享/视频先分享、跨媒体并发首次分享、重复分享、非本人产物、seed、已退款产物                     | 共用首次事实与比例；旧图片已完成不重领首次资格；逐作品返利不被误改为仅首分享奖励 |
-| Admin          | 全禁用、无效默认模型、不支持组合、缺价格、篡改能力、发布失败/回滚                                     | 错误配置不能生效；旧图片目录不变；目录版本与报价一致                             |
-| Frontend       | 无图/单图、第二张拒绝、替换/移除后的旧上传回包、上传失败、切模型、重复点击、断网恢复、离页返回        | 最多一图且用途可见；无静默丢输入/重复提交；活动任务回查；空/错/加载状态完整      |
-| Playback       | iOS/Android Telegram 与浏览器，点击、暂停、seek、Range、URL 过期、隐藏页面                            | 不自动播放；未播放视频流量为零；重签有限；隐藏暂停                               |
-| 图片回归       | t2i/i2i/edit、1K/2K/fixed、quote 过期、翻译、用同款、seed auto_optimize=false、点赞/分享/返利、旧会话 | 原有业务与价格不变；历史和 seed 不丢失                                           |
-| Consumer       | 钱包流水视频类型、Admin、Frontend、CS、reply-renderer 的类型和构建                                    | shared 出口兼容，不引入包间直接依赖                                              |
-| Migration      | test 前后 shape/RLS/grants、RPC 重放、锁超时、容量、索引 EXPLAIN、关开关演练                          | 未授权角色拒绝执行；测试与生产证据分开；失败停在当前文件                         |
-| 性能           | 冷/热、首屏/详情/工作室、列表视频请求数、长历史、失败重试压力                                         | 达到 design 中经审核预算；图片 p95 回退不超过批准值                              |
-
-## 4. 实施阶段可执行命令
-
-### 本次决策新增的强制回归场景
-
-- 分类：A+B 重叠作品取消 A 后仍可因 B 显示；各类计数覆盖全库可见匹配而非当前页，验证媒体/关键词切换、全选/空选、重叠、下架、目录版本和 TTL；失败显示未知/重试，不用 0；慢计数不阻塞列表。
-- 会话：同 ID 完成图片→视频→图片，包含任务乱序完成、刷新/分页、切类型后旧任务回包；同幂等键跨媒体冲突，旧图片 API 只投影图片且原会话不丢失。
-- 输入：0～1 张上限贯穿 UI/Shared/服务端；无图 t2v、单图实际用途与快照往返保持；第二张/伪造多图或角色、必填图缺失、不支持组合均在调用供应商前拒绝。批量选图不静默截断，替换/移除后的旧上传回包不覆盖草稿，上传失败可重试且未完成不可提交；切类型/模型不静默丢图，重新显示用途并使报价失效。用同款最多一张且经授权/用途验证，种子多候选仅为元数据，不自动批量带入。
-- 余额：受理时不足、受理足够但派发前不足、预检查询失败都验证 provider submit 为 0；402 充值提示保留草稿；成功后扣一次；合法重放不能因余额已变而重扣或新调用；预检后并发消费导致结算不足不能透支。
-- 分享：存量首次字段保留，视频先分享后图片读取已完成；图片先分享视频读取已完成；两类并发只写一个首次事实，返回状态一致，重复调用不重复奖励，原图片返利金额/条件不变。
-
-### 命令清单
-
-追加强制回归：Venice 三项默认值在首次打开、配置缺省、发布/回滚、提交快照和请求映射一致；不支持参数不得假成功，旧图片行为不变。种子覆盖七列解析、15 条缺译文、901 条候选垫图不误认首帧、未知模型、失效链接、超大媒体、授权缺失、DB 响应丢失、批次中断/续跑、同源重复/变更、对象引用保护；最终 5,097 条全量对账、六模型计数一致、零生成/扣费/返利/首次资格修改，外部热度不伪造本地点赞。
-
-工作目录固定为 `D:/codeReposity/wq/ST_miniapp`，Node >=22、pnpm 9。以下是未来实施验证清单，不代表本轮执行成功：
+## 2. 命令
 
 ```sh
 pnpm --filter @miniapp/shared test
 pnpm --filter @miniapp/backend test
 pnpm --filter @miniapp/frontend test
 pnpm --filter @miniapp/admin test
-pnpm --filter @miniapp/reply-renderer test
 pnpm -r typecheck
 pnpm --filter @miniapp/frontend lint
 pnpm lint:imports
@@ -93,11 +79,42 @@ pnpm lint:legacy
 pnpm lint:migrations
 pnpm --filter @miniapp/frontend build
 pnpm --filter @miniapp/admin build
-pnpm --filter @miniapp/cs-platform build
+docker build -f ops/docker/Dockerfile.backend .   # 验证 ffmpeg 已安装
+pnpm --filter @miniapp/backend video-plaza:estimate-size -- --input <原表xlsx> --report video-seed-size-report.json   # P6 第一步，体积估算
+pnpm --filter @miniapp/backend video-plaza:seed -- --input <原表xlsx> --translations <翻译包video.xlsx> --target test --confirm-size <报告hash>   # dry-run（P6 新增脚本），没有 --confirm-size 时拒绝执行
+pnpm --filter @miniapp/backend video-plaza:reconcile                        # dry-run（P3 新增脚本）
 ```
 
-backend/shared/reply-renderer 无独立 build script；CS 无 test script，不虚构命令。相关既有覆盖包括 backend 的 image-plaza config、repository.list-works、tagging、upstream 测试；它们不等于视频恢复/计费测试。真实环境集成测试必须先确认目标和权限，不能把含付费上游或 DB 写入的检查当普通单元测试自动运行。
+backend、shared 没有 build script，不要虚构。真实上游调用和 DB 写入只能在明确授权的 test 环境手动执行，不放进单元测试。
 
-## 5. 本轮验证范围
+## 3. 验证场景（含失败路径）
 
-只修改规划 Markdown；验证文档完整性、占位残留、路径和脚本存在、JSON task 状态、git diff 和格式。不运行 build/typecheck/产品测试，因为没有产品代码或契约变更；不能以文档检查代替未来功能与数据库验收。未调用上游、未播放真实视频、未连接数据库，性能预算和模型能力仍未实测。
+| 领域 | 场景 | 通过标准 | 自动/人工 |
+| --- | --- | --- | --- |
+| 迁移 M1 | preflight 发现残留引用；锁超时；回滚演练；迁移后图片全链路 | 发现残留或锁超时即中止；回滚后结构与迁移前一致；图片回归全部通过 | 人工 + SQL 断言 |
+| 契约 | 旧客户端不传 media/tags；旧 tag 配置不含 media_types；未知 status | 旧 payload 仍可解析；非法值在边界被拒绝 | shared 测试 |
+| feed | media×sort×search×tags 组合；多标签 OR；切换 media 后游标作废；计数失败 | 无重复、无遗漏；计数显示“—”而不是 0 | backend 测试 + 人工 |
+| 计费 | 重复提交同一个幂等键；并发两单只够一单；reserve 响应丢失；重复 refund | 最多扣一次、退一次；不透支 | backend 测试（mock RPC）+ test DB 手动 |
+| worker | queue 超时（结果未知）；429/503 退避；进程在 submitting 或 storing 时崩溃；双副本抢同一任务；超过 deadline | 不重复调用 queue；租约 fencing 生效；状态可解释 | backend 测试 |
+| 审核 | queue 返回 422；retrieve 返回 422 `provider_content_policy` | 状态为 moderation_rejected，退款 1 次，前端显示专用文案，Sentry 记录事件 | 测试 + canary |
+| 存储 | 伪造 MIME；超过 200MiB；ffmpeg 失败；签名过期后重新签名；越权访问 playback | 拒绝或降级处理；不泄露 URL | 测试 + 人工 |
+| complete | 转存成功后才调用；complete 失败 | 失败只记日志，不影响 ready | 测试 |
+| 分享 | 图片先分享再分享视频；反过来；两者并发；重复分享；分享已退款的视频 | 首次分享奖励只发一次；不重复返利；已退款的拒绝 | test DB |
+| Admin | 价格矩阵缺项；默认模型被禁用；`required_reference` 配了 t2v；发布后回滚 | 无法发布；回滚后生效 | admin 测试 |
+| 前端 | 模型不支持图片时禁用附图；必须附图却没附；切换模型参数被重置；402 时草稿保留；离页后返回；轮询退避；页面隐藏时暂停 | 无静默丢图；无重复提交 | 人工（Telegram 双端） |
+| 播放 | 点击播放、暂停、拖动；签名过期；列表页 mp4 请求数 | 拖动可用；列表 mp4 请求数为 0 | 人工 |
+| seed | 6 列解析；重复 id；未知模型；URL 失效；超大文件；断点续跑；重跑；翻译包缺行、字段不一致、孤儿行；xlsx hash 变化；超长 prompt（25,279 字）；HEAD 超时/404/无 Content-Length；缺 `--confirm-size`；报告 hash 与确认时不符 | 四类计数之和为 5,097；已剔除 ≥15；导入作品 `prompt_zh` 全部非空且不截断；xlsx/报告 hash 变化时拒绝执行；缺 `--confirm-size` 时在估算步骤后停止；超长 prompt 正常导入、不归为待修复；重跑无副作用；不产生扣费或返利 | 脚本 + 人工 |
+| 自动优化关闭 | 视频提交请求带 `auto_optimize`；从图片切到视频 | 返回 400；视频设置里没有该开关；图片 auto_optimize 行为不变 | shared 测试 + 人工 |
+| ffmpeg | 镜像内二进制缺失；损坏 mp4；抽帧超时 | 构建期断言失败；缺失时隐藏视频模型；损坏或超时时用占位封面并告警 | docker build + 测试 |
+| 性能 | feed p95、工作室首屏、图片回归 | 达到 PRD R8 预算 | 人工 20 次采样 |
+| 监控 | 各终态都上报事件；metrics 只用低基数 tag | Sentry 看板可见 | 人工 |
+
+## 4. 本轮（规划）验证
+
+只修改任务目录下的文档。检查内容：
+
+- R1–R8 和 2.1–2.8 每一项都能映射到 design 和 task；
+- JSON 能被正常解析；
+- 引用的路径都存在。
+
+产品命令不运行，原因是本轮没有产品代码变更。
