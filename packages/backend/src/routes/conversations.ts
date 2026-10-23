@@ -375,6 +375,9 @@ export default async function conversationRoutes(app: FastifyInstance) {
       }
 
       const body = (request.body ?? {}) as Partial<SendMessageRequest>;
+      if (body.thinking_enabled !== undefined && typeof body.thinking_enabled !== 'boolean') {
+        return reply.status(400).send(fail('BAD_REQUEST', '思考开关无效'));
+      }
       if (!isValidConversationRequestId(body.request_id)) {
         return reply.status(400).send(fail('BAD_REQUEST', '请求 ID 无效'));
       }
@@ -393,6 +396,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         sessionId,
         mode: { kind: 'send', content },
         requestId: body.request_id,
+        thinkingEnabled: body.thinking_enabled ?? false,
         tgUser: request.user,
         baseLog: request.log,
       });
@@ -412,6 +416,9 @@ export default async function conversationRoutes(app: FastifyInstance) {
       }
 
       const body = (request.body ?? {}) as Partial<RegenerateRequest>;
+      if (body.thinking_enabled !== undefined && typeof body.thinking_enabled !== 'boolean') {
+        return reply.status(400).send(fail('BAD_REQUEST', '思考开关无效'));
+      }
       if (!isValidConversationRequestId(body.request_id)) {
         return reply.status(400).send(fail('BAD_REQUEST', '请求 ID 无效'));
       }
@@ -420,6 +427,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         sessionId,
         mode: { kind: 'regenerate' },
         requestId: body.request_id,
+        thinkingEnabled: body.thinking_enabled ?? false,
         tgUser: request.user,
         baseLog: request.log,
       });
@@ -434,6 +442,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
     tgUser: TelegramUser;
     baseLog: FastifyBaseLogger;
     requestId?: string;
+    thinkingEnabled: boolean;
   }): Promise<undefined> {
     const { reply, sessionId, mode, tgUser, baseLog } = input;
     const log = requestLogger(baseLog, 'conversations');
@@ -474,6 +483,7 @@ export default async function conversationRoutes(app: FastifyInstance) {
         receivedMonotonicAt,
         firstTokenDeadlineMs,
         requestId: input.requestId,
+        thinkingEnabled: input.thinkingEnabled,
       });
       finishTurn(reply, outcome);
       return undefined;

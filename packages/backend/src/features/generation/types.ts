@@ -64,6 +64,8 @@ export interface GenerationRequest {
    */
   historyId?: string | null;
   stream: boolean;
+  /** Defaults on; exposed reasoning is progress and never saved as reply content. */
+  thinkingEnabled?: boolean;
   /** Explicit user cancellation and the conversation deadline; disconnects do not abort. */
   signal?: AbortSignal;
   /**
@@ -101,6 +103,7 @@ export interface GenerationHooks {
   onStreamOpen?: () => void;
   onFirstToken?: () => void;
   onDelta?: (text: string) => void;
+  onReasoningDelta?: (text: string) => void;
   onError?: (error: Error) => void;
   onDone?: (result: GenerationResult) => void;
 }
