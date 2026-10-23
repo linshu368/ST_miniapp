@@ -5,7 +5,7 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_task: .trellis/tasks/10-23-dialogue-preference/
 last_verified_at: 2026-10-13
 ---
 
@@ -92,3 +92,7 @@ Good：reasoning进度后delta正文，正文开始自动收起。Base：非推�
 Wrong：`{type:'delta',text:reasoning}`。Correct：`{type:'reasoning',text}` 单独消费，正文/后续prompt/历史不变。
 
 首字统一口径：开启深度思考时，真实思考文本首字与正文首字等效，满足原首字放行/截止/观测；关闭只算正文。等待提示、thinking标题、密文占位不计；只有思考无有效正文仍不得扣费。
+
+## 2026-10-23 可运营回复风格
+
+reply-style-options定义内部目录与公开metadata两个strictschema；公开仅id/name/description。两套用户偏好DTO增加optional pref_reply_styles布尔map，PATCH是部分map赋值。id为style-前缀、目录最多24项、偏好最多64键；旧响应缺失兼容。标记与规则不是公开用户数据。

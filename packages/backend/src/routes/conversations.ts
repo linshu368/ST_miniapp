@@ -14,6 +14,7 @@ import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from 'fastify';
 import { FirstTokenDeadlineError } from '../features/generation/first-token-fallback.js';
 import { GenerationObservationRepository } from '../infrastructure/repositories/GenerationObservationRepository.js';
 import { fetchModelCatalogSnapshot } from '../platform/model-tiers.js';
+import { fetchPublicReplyStyleOptions } from '../features/conversations/reply-style-options.js';
 import {
   DEFAULT_FIRST_TOKEN_DEADLINE_MS,
   ReportFirstTokenRequestSchema,
@@ -503,14 +504,17 @@ export default async function conversationRoutes(app: FastifyInstance) {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
 
       const dbUser = await getOrCreateDbUser(request.user);
-      const [config, platform] = await Promise.all([
+      const [config, platform, reply_style_options] = await Promise.all([
         settings.getGenerationConfig(dbUser.id),
         fetchPlatformInstructions(),
+        fetchPublicReplyStyleOptions(),
       ]);
       const word_count_tiers = toPublicWordCountTiersFromEngine(
         platform.instructions.wordCountTiers
       );
-      return reply.send(ok<GetGenerationConfigData>({ config, word_count_tiers }));
+      return reply.send(
+        ok<GetGenerationConfigData>({ config, word_count_tiers, reply_style_options })
+      );
     }
   );
 
@@ -535,12 +539,13 @@ export default async function conversationRoutes(app: FastifyInstance) {
       }
       const body: PatchGenerationConfigRequest = parsed.data;
 
-      // 只透传五个 pref_* 字段：display_name / avatar_url 归 /api/users/settings
+      // 仅透传生成偏好：display_name / avatar_url 归 /api/users/settings。
       const patch: PatchUserSettingsRequest = {};
       if ('pref_word_count' in body) patch.pref_word_count = body.pref_word_count;
       if ('pref_show_options' in body) patch.pref_show_options = body.pref_show_options;
       if ('pref_show_status' in body) patch.pref_show_status = body.pref_show_status;
       if ('pref_show_memory' in body) patch.pref_show_memory = body.pref_show_memory;
+      if ('pref_reply_styles' in body) patch.pref_reply_styles = body.pref_reply_styles;
       if ('pref_custom_instructions' in body) {
         patch.pref_custom_instructions = body.pref_custom_instructions;
       }
@@ -553,14 +558,17 @@ export default async function conversationRoutes(app: FastifyInstance) {
         return reply.status(400).send(fail('BAD_REQUEST', message));
       }
 
-      const [config, platform] = await Promise.all([
+      const [config, platform, reply_style_options] = await Promise.all([
         settings.getGenerationConfig(dbUser.id),
         fetchPlatformInstructions(),
+        fetchPublicReplyStyleOptions(),
       ]);
       const word_count_tiers = toPublicWordCountTiersFromEngine(
         platform.instructions.wordCountTiers
       );
-      return reply.send(ok<PatchGenerationConfigData>({ config, word_count_tiers }));
+      return reply.send(
+        ok<PatchGenerationConfigData>({ config, word_count_tiers, reply_style_options })
+      );
     }
   );
 }

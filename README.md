@@ -57,6 +57,8 @@ packages/backend     ───────────────────�
 
 Shared 的 `main`/`types` 直接指向 `src/index.ts`，没有独立 build 产物；修改公开出口会直接影响所有消费者。
 
+回复风格可在 Admin“平台规则 → 回复风格”维护，用户端按已发布目录动态展示独立开关。运营自填标记/规则仅存储，不参与本轮模型指令组装。`20261023_reply_style_options.sql` 提供目录managed-key和原子偏好映射；发布顺序为迁移 → Backend/Admin → Frontend。
+
 ## 3. 技术栈
 
 - **Frontend**：Next.js 14、React 18、TypeScript、TanStack React Query、Zustand、Radix UI、Tailwind CSS、Telegram SDK、Sentry。

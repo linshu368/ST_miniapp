@@ -5,7 +5,7 @@ scope: admin
 category: business
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/10-10-image-plaza-v2/
+last_verified_task: .trellis/tasks/10-23-dialogue-preference/
 last_verified_at: 2026-10-12
 ---
 
@@ -69,3 +69,7 @@ Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型�
 
 - 2026-10-15：任务 `10-15-image-plaza-tag-prompt-filter` 将标签功能开关文案改为仅控制分享自动打标。
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除无法恢复的乱码变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
+
+## 2026-10-23 可运营回复风格
+
+平台规则菜单包含“主体与模块规则”和独立“回复风格”。reply_style_options为受控JSON目录，复用草稿/发布/历史/回滚、权限/环境；选项可增删改排序/启停，英文marker/rules运营自填可空，手机预览独立多开。编辑中空行保留，保存严格校验；脏离开确认、保存禁编辑/重复写，未保存不能误发布旧草稿。

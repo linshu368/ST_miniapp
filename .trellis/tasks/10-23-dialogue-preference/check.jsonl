@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/10-23-dialogue-preference/prd.md","reason":"Authorized safe scope and acceptance"}
+{"file":".trellis/tasks/10-23-dialogue-preference/design.md","reason":"Empty slot, optional marker, no dev or release"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"Preserve managed keys and CHECK expressions"}
+{"file":".trellis/spec/frontend/app/pages-components-and-ui.md","reason":"Mobile scrolling and field rollback"}
