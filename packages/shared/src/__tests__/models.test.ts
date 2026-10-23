@@ -72,7 +72,7 @@ const validCatalog = {
 describe('ModelCatalogSchema', () => {
   it('defaults legacy models and validates manual first-token budgets', () => {
     const parsed = ModelCatalogSchema.parse(validCatalog);
-    expect(parsed.fallback_model_id).toBe('deepseek/deepseek-v4.1-flash');
+    expect(parsed.fallback_model_id).toBe('deepseek/deepseek-v4.1-flash-1017');
     expect(parsed.first_token_deadline_ms).toBe(6000);
     expect(parsed.first_token_timeout_rate_target).toBe(0.01);
     expect(parsed.tiers[0]?.models[0]?.first_token_timeout_ms).toBe(4000);

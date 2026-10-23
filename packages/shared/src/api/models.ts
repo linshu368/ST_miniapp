@@ -12,7 +12,7 @@ import {
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 4_000;
 export const DEFAULT_FIRST_TOKEN_DEADLINE_MS = 6_000;
 export const DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET = 0.01;
-export const FIRST_TOKEN_FALLBACK_MODEL_ID = 'deepseek/deepseek-v4.1-flash';
+export const FIRST_TOKEN_FALLBACK_MODEL_ID = 'deepseek/deepseek-v4.1-flash-1017';
 export const FIRST_TOKEN_RETRY_MESSAGE = '这次响应有点慢，请重试。';
 const FirstTokenDurationSchema = z.number().int().positive().max(110_000);
 
