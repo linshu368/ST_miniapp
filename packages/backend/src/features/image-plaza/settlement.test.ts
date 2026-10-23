@@ -86,7 +86,8 @@ const attempt: ImagePlazaWorkerAttempt = {
   autoOptimize: false,
   referenceArtifactId: null,
 };
-const bytes = Buffer.from('virtual-image-bytes');
+/** 大于上游过小图阈值，避免 worker 在结算前误判 content_rejected。 */
+const bytes = Buffer.alloc(5 * 1024, 9);
 const stored: StoredPlazaImage = {
   storagePath: `image-plaza/${attempt.userId}/attempts/${attempt.id}/0.webp`,
   mimeType: 'image/webp',
@@ -292,6 +293,27 @@ describe('image plaza worker orchestration', () => {
       expect(log.info).not.toHaveBeenCalled();
     }
   );
+  it('does not settle or charge when Venice marks a content violation', async () => {
+    mocks.venice.mockResolvedValue(
+      new Response(JSON.stringify({ id: 'viol', images: [bytes.toString('base64')] }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'x-venice-is-content-violation': 'true',
+        },
+      })
+    );
+    await runWorker();
+    expect(mocks.venice).toHaveBeenCalledTimes(1);
+    expect(markFailed).toHaveBeenCalledExactlyOnceWith(
+      attempt.id,
+      'image_plaza_provider_content_rejected',
+      false
+    );
+    expect(mocks.status).toBe('failed');
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it('does not settle when worker storage fails after provider success', async () => {
     mocks.upload.mockRejectedValue(new Error('virtual storage failed'));
     await runWorker();
