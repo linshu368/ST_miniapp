@@ -129,6 +129,61 @@ beforeEach(() => {
 });
 
 describe('turn lifecycle recovery', () => {
+  it.each(['send', 'regenerate'] as const)(
+    'explicit thinking on for %s emits progress without changing saved content',
+    async (kind) => {
+      const turnInput = {
+        ...input(kind === 'send' ? { kind, content: 'original' } : { kind }),
+        thinkingEnabled: true,
+      };
+      await runConversationTurn(turnInput);
+      const [request, hooks] = mocks.execute.mock.calls[0]!;
+      expect(request.thinkingEnabled).toBe(true);
+      hooks.onStreamOpen();
+      hooks.onReasoningDelta('provider progress');
+      hooks.onDelta('answer');
+      expect(turnInput.sink.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'start',
+          thinking_enabled: true,
+        })
+      );
+      expect(turnInput.sink.send).toHaveBeenCalledWith({
+        type: 'reasoning',
+        text: 'provider progress',
+      });
+      expect(
+        mocks.finalize.mock.calls.every(
+          ([value]) => !JSON.stringify(value).includes('provider progress')
+        )
+      ).toBe(true);
+    }
+  );
+
+  it.each(['send', 'regenerate'] as const)(
+    'explicit off is respected for %s, including unexpected reasoning hooks',
+    async (kind) => {
+      const turnInput = {
+        ...input(kind === 'send' ? { kind, content: 'original' } : { kind }),
+        thinkingEnabled: false,
+      };
+      await runConversationTurn(turnInput);
+      const [request, hooks] = mocks.execute.mock.calls[0]!;
+      expect(request.thinkingEnabled).toBe(false);
+      hooks.onStreamOpen();
+      hooks.onReasoningDelta('do not expose');
+      expect(turnInput.sink.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'start',
+          thinking_enabled: false,
+        })
+      );
+      expect(turnInput.sink.send).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'reasoning' })
+      );
+    }
+  );
+
   it('expired route ownership preparation never opens a late turn', async () => {
     await expect(
       runConversationTurn({

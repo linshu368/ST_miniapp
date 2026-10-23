@@ -1,0 +1,36 @@
+{
+  "id": "chat-thinking",
+  "name": "chat-thinking",
+  "title": "角色对话思考开关与流式展示",
+  "description": "默认开启角色思考；OpenRouter与Venice分别适配，流式低对比可折叠展示，不变计费与上下文。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "shared,backend,frontend",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-23",
+  "completedAt": null,
+  "branch": "feat/chat-thinking",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "实现完成，默认开启、两平台通用开关/思考流分流、thinking与Atom深度思考胶囊（无问号）。后端801/shared169/前端350测试通过；全消费者类型、前端lint/导入/格式通过；移动端虚拟验收和独立审查通过。最终生产构建通过，已恢复本地3102预览。仅本地分支，未提交/推送/上线，未修改dev。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "backend.business.conversation-generation",
+        "shared.business.conversation-contracts"
+      ]
+    }
+  }
+}

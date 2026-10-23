@@ -95,3 +95,35 @@ last_verified_at: 2026-10-23
 中文输入法确认候选不触发聊天发送；影像描述Enter换行，Ctrl/Cmd+Enter生成。对话列表上翻不强拉回最新，提供轻量返回最新/有新回复提示；角色内历史展示单行消息摘要，查询失败与成功空记录分开，有缓存时保留记录。
 
 影像广场「我的生成」与工作室共用历史Sheet，只在打开时读取既有查询；浏览往返仅保存筛选、锚点及滚动标量，不存作品DTO/游标。历史再生成明确使用当前设置且保留composer草稿；失败刷新只查状态，不重新提交付费任务。画幅采用中文和形状示意，删除无实际选项的风格占位；保存沿既有Telegram下载能力，普通浏览器准确提示打开原图保存。真实报价、余额、幂等及后端契约不变。
+
+## Scenario: 移动端思考进度与折叠（2026-10-23）
+
+### 1. Scope / Trigger
+
+输入区提供思考开关，等待过程可见且不抢角色正文重心。
+
+### 2. Signatures
+
+`ChatComposer.thinkingEnabled/onThinkingEnabledChange`、`StreamTurnOptions.thinkingEnabled/onReasoning`、`useConversationTurn.thinkingByMessage`、`ChatThinking`。
+
+### 3. Contracts
+
+默认on，用户级设备存储只存bool，生成中锁定当次值。独立reasoning事件不进入ChatMessage.content/cache；仅当前页面按session/id/revision保留最近12条、每条64Ki字符；切会话清空，离页/刷新不持久化。消息标题为`thinking`；输入区使用Atom原子轨道图标+“深度思考”胶囊，无问号/说明弹窗，aria-pressed和开关操作名称保留。真实思考到达展开，正文开始/终态自动收起一次，手动重新展开后不被正文delta抢状态。纯转义文字/低对比度/160px内部滚动，PostHog/Sentry遮罩，无思考则“正在准备回复”。
+
+### 4. Validation & Error Matrix
+
+未知/非法思考帧跳过且不记录payload；思考先于首正文flush、终态前flush。实际思考重置idle/8秒停滞提示，但不延长绝对deadline。旧请求/取消确认后的思考不得写当前消息；存储失败降级本页默认。关闭请求与重生成一致。
+
+### 5. Good / Base / Bad Cases
+
+Good：淡色展开思考→正文自动收起→用户展开查看。Base：没有公开思考就直接正文。Bad：每片正文都强制收起，或思考增长时把翻历史的用户拉回底部。
+
+### 6. Tests Required
+
+现有SSE/hook测试加序列与迟到/取消/开关快照；chat-thinking纯逻辑验证bool存储、隔离/容量、单次自动折叠。320/375/390px、虚拟键盘压缩高度、重生成/取消本地演示检查；不冒称真实手机或模型验收。
+
+### 7. Wrong vs Correct
+
+Wrong：思考与正文合并后传给ReplyRenderer/语音/图片。Correct：`thinkingByMessage`单独展示，原正文渲染与操作不变。
+
+首字统一口径：开启深度思考时，真实思考文本首字与正文首字等效，满足原首字放行/截止/观测；关闭只算正文。等待提示、thinking标题、密文占位不计；只有思考无有效正文仍不得扣费。

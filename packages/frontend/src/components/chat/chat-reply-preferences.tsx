@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import type { PatchGenerationConfigRequest } from '@miniapp/shared';
 
@@ -34,6 +34,7 @@ interface ChatReplyPreferencesProps {
   maxContentHeight: number;
   detailsDefaultOpen: ReplyDetailsDefaultOpen;
   onDetailsDefaultOpenChange: (value: ReplyDetailsDefaultOpen) => void;
+  thinkingControl?: ReactNode;
 }
 
 /** 输入框上方的轻量偏好抽屉；模型规则仍只经 generation-config 写入。 */
@@ -41,6 +42,7 @@ export function ChatReplyPreferences({
   maxContentHeight,
   detailsDefaultOpen,
   onDetailsDefaultOpenChange,
+  thinkingControl,
 }: ChatReplyPreferencesProps) {
   const query = useGenerationConfigQuery();
   const patch = usePatchGenerationConfigMutation({
@@ -137,60 +139,63 @@ export function ChatReplyPreferences({
       )}
       aria-label="回复偏好"
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => {
-          if (suppressClick.current) {
-            suppressClick.current = false;
-            return;
-          }
-          changeOpen(!open);
-        }}
-        onPointerDown={(event) => {
-          pointerStartY.current = event.clientY;
-        }}
-        onPointerUp={(event) => {
-          const start = pointerStartY.current;
-          pointerStartY.current = null;
-          if (start === null) return;
-          const distance = event.clientY - start;
-          if (distance <= -20) {
-            suppressClick.current = true;
-            changeOpen(true);
-          }
-          if (distance >= 20) {
-            suppressClick.current = true;
-            changeOpen(false);
-          }
-        }}
-        onPointerCancel={() => {
-          pointerStartY.current = null;
-        }}
-        className="relative grid min-h-9 w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 pb-1 pt-2 text-left touch-pan-x"
-      >
-        <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
-        <span className="text-[11px] font-semibold text-foreground">回复偏好</span>
-        <span
-          className={cn(
-            'pointer-events-none min-w-0 truncate text-[10px] font-medium text-primary',
-            !guideVisible && 'invisible'
-          )}
-          aria-hidden={!guideVisible}
+      <div className="flex min-w-0 shrink-0 items-center gap-1">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => {
+            if (suppressClick.current) {
+              suppressClick.current = false;
+              return;
+            }
+            changeOpen(!open);
+          }}
+          onPointerDown={(event) => {
+            pointerStartY.current = event.clientY;
+          }}
+          onPointerUp={(event) => {
+            const start = pointerStartY.current;
+            pointerStartY.current = null;
+            if (start === null) return;
+            const distance = event.clientY - start;
+            if (distance <= -20) {
+              suppressClick.current = true;
+              changeOpen(true);
+            }
+            if (distance >= 20) {
+              suppressClick.current = true;
+              changeOpen(false);
+            }
+          }}
+          onPointerCancel={() => {
+            pointerStartY.current = null;
+          }}
+          className="relative grid min-h-10 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1.5 px-2.5 pb-1 pt-2 text-left touch-pan-x"
         >
-          调整回复长度与内容
-        </span>
-        <span className="justify-self-end whitespace-nowrap text-[10px] text-muted-foreground">
-          {enabledSlotLabels.join(' · ')}
-        </span>
-        <ChevronDown
-          className={cn(
-            'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
-            open && 'rotate-180'
-          )}
-          aria-hidden
-        />
-      </button>
+          <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
+          <span className="text-[11px] font-semibold text-foreground">回复偏好</span>
+          <span
+            className={cn(
+              'pointer-events-none min-w-0 truncate text-[10px] font-medium text-primary',
+              !guideVisible && 'invisible'
+            )}
+            aria-hidden={!guideVisible}
+          >
+            调整回复长度与内容
+          </span>
+          <span className="hidden justify-self-end whitespace-nowrap text-[10px] text-muted-foreground min-[430px]:inline">
+            {enabledSlotLabels.join(' · ')}
+          </span>
+          <ChevronDown
+            className={cn(
+              'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
+              open && 'rotate-180'
+            )}
+            aria-hidden
+          />
+        </button>
+        {thinkingControl}
+      </div>
 
       {open ? (
         <div
