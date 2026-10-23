@@ -24,6 +24,7 @@ import type {
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
+import { useRefetchOnForeground } from './use-refetch-on-foreground';
 
 // ==== Query Keys ====
 export const paymentKeys = {
@@ -176,11 +177,13 @@ export function useWalletSpendingQuery() {
 }
 
 export function useDailyCheckinQuery() {
-  return useQuery<GetDailyCheckinData>({
+  const query = useQuery<GetDailyCheckinData>({
     queryKey: paymentKeys.checkin(),
     queryFn: fetchDailyCheckin,
     staleTime: 30_000,
   });
+  useRefetchOnForeground(query.refetch);
+  return query;
 }
 
 export function useDailyCheckinMutation() {
@@ -189,6 +192,17 @@ export function useDailyCheckinMutation() {
     mutationFn: postDailyCheckin,
     onSuccess: (data) => {
       qc.setQueryData<GetWalletBalanceData>(paymentKeys.wallet(), data.wallet);
+      // 先用已到账结果收起领取入口，不必等待后续读取才能显示已签到。
+      qc.setQueryData<GetDailyCheckinData>(paymentKeys.checkin(), {
+        checkin: {
+          can_claim: false,
+          last_claimed_at: data.checkin.claimed_at,
+          next_claim_at: data.checkin.next_claim_at,
+          reward_credits: data.checkin.reward_credits,
+          base_reward_credits: data.checkin.base_reward_credits,
+          vip_reward_credits: data.checkin.vip_reward_credits,
+        },
+      });
       void qc.invalidateQueries({ queryKey: paymentKeys.checkin() });
     },
   });
