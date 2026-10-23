@@ -22,5 +22,14 @@ interface FeaturedFrameProps {
 export function FeaturedFrame({ featured, className, children }: FeaturedFrameProps) {
   if (!featured) return <>{children}</>;
 
-  return <div className={cn('featured-character-frame p-[2px]', className)}>{children}</div>;
+  // 流光层单独成一个绝对定位的元素，只用 transform 位移：
+  // 旧实现动画 background-position，每帧都要重绘，前八张同时在动时滚动和弹层动画都会掉帧。
+  return (
+    <div className={cn('featured-character-frame p-[2px]', className)}>
+      <span aria-hidden="true" className="featured-character-frame__clip">
+        <span className="featured-character-frame__flow" />
+      </span>
+      {children}
+    </div>
+  );
 }

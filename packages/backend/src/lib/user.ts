@@ -1,6 +1,14 @@
 import { getDomainDb } from './supabase.js';
 import type { TelegramUser } from '../middleware/auth.js';
 
+/**
+ * 几乎每个已登录接口都先走这里，PostgREST 挂死时它曾拖到约 300s（Sentry GET users p50 58s）。
+ * 这里只给按 tg_id 的读加 5s 上限：读失败直接抛错，路由返回 5xx，前端可以重试。
+ * 插入/更新只受全局 30s 兜底约束：客户端放弃时服务端可能已经提交，
+ * 但下次请求会按 tg_id 回读到这条记录（tg_id 唯一），所以重试不会产生重复用户。
+ */
+const USER_READ_TIMEOUT_MS = 5_000;
+
 export interface MiniappDbUser {
   id: string;
   tg_id: string;
@@ -48,6 +56,7 @@ export async function getOrCreateMiniappUserByTgId(
     .from('users')
     .select('*')
     .eq('tg_id', tgId)
+    .abortSignal(AbortSignal.timeout(USER_READ_TIMEOUT_MS))
     .maybeSingle();
 
   if (readErr) {
@@ -84,6 +93,7 @@ export async function getOrCreateMiniappUserByTgId(
     .from('users')
     .select('*')
     .eq('tg_id', tgId)
+    .abortSignal(AbortSignal.timeout(USER_READ_TIMEOUT_MS))
     .maybeSingle();
 
   if (raceReadErr) {

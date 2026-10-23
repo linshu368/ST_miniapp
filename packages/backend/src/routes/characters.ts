@@ -13,6 +13,7 @@ import { loadCharacterRankingScores } from '../features/lobby/ranking-stats.js';
 import { applyPinnedOnly, buildRecommendedOrder } from '../features/lobby/recommended-ranking.js';
 import { resolveLobbyFeaturedIds } from '../features/lobby/featured.js';
 import { resolveLobbyPinnedCharacters } from '../features/lobby/pinned-characters.js';
+import { loadLobbyFeaturedIdSet } from '../features/lobby/featured-snapshot.js';
 import { hasNewLobbyCharacters } from '../lib/lobby-latest-badge.js';
 import { MiniappUserSettingsRepository } from '../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -160,30 +161,29 @@ export default async function characterRoutes(app: FastifyInstance) {
   app.get('/api/characters/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    // 金框判定必须与大厅同源：大厅是「运营固定位 + 排序分主池」，这里若还按 sort_order 前八算，
-    // 同一张卡会出现在列表有金框、点进详情没有。
-    const [character, lobbyIds, snapshot, pinned] = await Promise.all([
+    // 金框判定必须与大厅同源，走共享快照（2s + single-flight）。原来每个请求都现拉一遍
+    // 全量在架 id，与 findFirst 并行各占一条 Prisma 连接，池紧张时把等待放大一倍。
+    // select 只取契约字段，不拖 raw_card 等大 JSON。
+    const [character, featuredIds] = await Promise.all([
       prisma.character.findFirst({
         where: { id, enabled: true, archived_at: null },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          avatar_url: true,
+          tags: true,
+          creator: true,
+          first_mes: true,
+          creator_notes: true,
+        },
       }),
-      prisma.character.findMany({
-        where: { enabled: true, archived_at: null },
-        orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
-        select: { id: true },
-      }),
-      loadCharacterRankingScores(),
-      resolveLobbyPinnedCharacters(request.log),
+      loadLobbyFeaturedIdSet(request.log),
     ]);
 
     if (!character) {
       return reply.status(404).send(fail('NOT_FOUND', 'Character not found'));
     }
-
-    const featuredIds = resolveLobbyFeaturedIds({
-      operatorOrdered: lobbyIds,
-      snapshot,
-      pinnedIds: pinned.characterIds,
-    });
 
     const characterDetail: CharacterDetail = {
       id: character.id,

@@ -1,0 +1,550 @@
+# 执行计划与验证门禁
+
+状态（2026-10-23 更正）：**代码已写入 `fix_request_speed`，但 8 个提交均不在 `origin/main`：未合并、未部署、生产效果未测。** G1 仅做了追溯技术审核（`design.md` §7.1），用户决策项未签批。下文各步骤的「已实施」均指「代码已写、本地检查通过」，不代表上线或达标。原状态：**步骤 1 实施中**（2026-10-22 起，依据 design.md §8.5 的 E20/E21 修订顺序）。1c 的 image_plaza 图片缓存已实施；步骤 2（P1-N-DETAIL）、步骤 4（favorites）与 P1-L-N1 方案 A 已实施；P1-C（PostgREST 有界等待）与 P1-S-HTTP（上下文单查询）已实施；步骤 7 轮询收敛第一刀（前端去重，不合并端点）已实施。前端首屏仍为文档阶段。
+
+## 步骤 1（进行中）：排序刷新 job 移出 API 共享连接池
+
+**依据**：design.md §8.5.3（雪崩触发器）、§8.5.5（顺序修订）、§8.5.6（容量实测）。
+
+**问题**：`lobby-ranking-refresh-job.ts` 的 `prisma.$transaction` 持有共享池（`connection_limit=10`）中的 1 条连接约 2 分钟，与副本接流叠加后把池打穿，单个窗口产生数千条 10s（= `pool_timeout`）超时。
+
+**选型（已否决一个方案）**：
+
+- ❌ 复用 `postgres-advisory-lease.ts` 的 `pg.Client`：`RankingDbClient` 依赖 Prisma 的 `$queryRaw` **模板字面量**标签语法，换成 `pg` 要把 `ranking-stats.ts` 里全部聚合 SQL 重写为 `$1/$2` 占位符——改动面与回归风险远超收益。
+- ✅ **新建一个仅供该 job 使用、指向 `DIRECT_URL` 的独立 `PrismaClient`**（`connection_limit=1`）：`ranking-stats.ts` 的 SQL 与类型**零改动**，只替换传入的客户端；2 分钟占用移出共享额度。
+
+**为何 `DIRECT_URL` 在此安全**：job 用的是 `pg_try_advisory_xact_lock`（xact 级，随事务自动释放），不依赖 session 保持，绕过 pooler 不改变锁语义（§8.5.4 已澄清）。直连额度占用为每副本 1 条，3 副本共 3 条，`max_connections=60` 下余量充足（§8.5.6）。
+
+**附带修正**：`TRANSACTION_MAX_WAIT_MS = 15s` > `pool_timeout = 10s`，导致 `maxWait` 永不生效（§8.5.3）。专用池只有 1 条连接且无竞争者，`maxWait` 下调。
+
+**失败路径要求**：`DIRECT_URL` 缺失/直连失败时，job 必须**跳过本轮并告警**，不得静默回退到共享池（否则等于没改）；每轮结束必须释放连接，不得常驻 idle（§8.5.6 已见 `cs_runtime_v1` idle 22.6h 的反例）。
+
+**验收**：主指标 `span.description:"prisma:engine:connection" span.duration:>9000` 的 7d count，基线 **7,395**；辅以「`prisma:client:transaction` 长事务窗口内不再伴随详情接口 10s 尖峰」。**不**以端点 p95 作为主判据（§8.4）。
+
+### 1b（2026-10-22 追加）：job 被库侧 `statement_timeout` 掐断，刷新已停摆
+
+**证据（生产 `wbtsfzozlmurljvglhpn`，MCP 只读）**：
+
+- `statement_timeout = 120000`，来源是 `/etc/postgresql-custom/platform-defaults.conf`，属于平台默认值。连接角色 `postgres` 在 `pg_db_role_setting` 里没有覆盖，所以 job 实际受 120s 限制。
+- E20 的聚合 span p95 正好是 **120.0s**，事务 max 是 129.1s，与被掐断的表现吻合。
+- `miniapp_features.character_ranking_scores` 共 547 行，`computed_at` 全部相同，最后一次写入是 **2026-10-20 16:22 +08**。采集时已过去约 47h。按每 24h 一次、每次部署再补一次的节奏，这段时间每一轮都失败并回滚了。
+- 代码里的 `TRANSACTION_TIMEOUT_MS = 10min` 实际不会起作用：库侧在 120s 就已取消语句。
+
+**结论**：单靠迁到专用连接不够。它只解决「挤占 API 池」，不解决「job 自身跑不完」。
+
+**修复**：事务第一条语句执行 `SELECT set_config('statement_timeout', '480000', true)`，放在 advisory lock 之前。第三个参数 `true` 等价于 `SET LOCAL`，只作用于本事务，提交或回滚后自动还原。新增 `STATEMENT_TIMEOUT_MS = 8min`，它必须小于 `TRANSACTION_TIMEOUT_MS = 10min`，这样日志里才能看到 Postgres 原始的 `canceling statement due to statement timeout`，而不是 Prisma 的事务超时。
+
+- 不用 `$executeRawUnsafe('SET LOCAL …')`：需要拼接字符串，而且 Prisma 处理非 DML 语句的返回不稳定。`set_config` 返回行集，可以走参数化的 `$queryRaw`。
+- 不用连接串 `options=-c statement_timeout=…`：没有验证 Prisma 是否支持这个 URL 参数，而且它会作用于整条连接。
+- 不用 `ALTER ROLE postgres SET statement_timeout`：这会影响 Dashboard、迁移等所有 `postgres` 会话。
+- 已在生产只读验证 `set_config(...,true)`：事务内 `current_setting('statement_timeout')` 为 `8min`。
+
+**慢的根因（记录在此，本步不修）**：
+
+- `chat_history` 的 heap 是 617 MB，TOAST 22 GB，约 35.2 万行。`last_autovacuum` 和 `last_vacuum` 都是 **null**，`relallvisible / relpages = 52%`，dead tuples 约 4.9 万。
+- EXPLAIN 显示两条聚合都走 `idx_chat_history_character_user_created_at` 的 Index Only Scan，总成本约 7 万，正常应在几秒内完成。但可见性映射只覆盖一半，约一半的行要回 heap 做随机读。再加上 `shared_buffers` 只有 256 MB（`work_mem` 3.5 MB，`max_parallel_workers_per_gather` 1），I/O 成了瓶颈。
+- D30 的 `COUNT(DISTINCT (session_id, turn_index))` 用到的列不在该索引里，必须回表。
+- **建议的人工运维动作**：低峰时由人工在 SQL Editor 执行 `VACUUM (ANALYZE) experience.chat_history;`，不由代码或 MCP 执行。预期可见性映射接近 100%，Index Only Scan 不再大量回表。该操作不阻塞读写，但 I/O 较重。执行后复查 `relallvisible` 和 job 的 `durationMs`。
+- 8min 是否足够**尚未实测**。没有在生产跑 `EXPLAIN ANALYZE`，因为它会真实执行几分钟的重查询。以发布后第一轮 `lobby_ranking.completed.durationMs` 为准。
+
+**发布后核对（1b）**：
+
+1. 部署约 30s 后，日志里应出现 `lobby_ranking.completed`，而不是 `lobby_ranking.failed` 或 `skipped_no_direct_url`。
+2. `SELECT max(computed_at) FROM miniapp_features.character_ranking_scores;` 的结果应晚于部署时间。
+3. 如果仍然 `failed`，且错误是 statement timeout（此时上限已是 8min），先执行上面的 VACUUM，不要继续调大超时。
+
+**回滚**：回退 `lobby-ranking-refresh-job.ts` 即可。`set_config` 是事务级设置，不会残留，也没有 schema 改动。
+
+### 1c（2026-10-22 追加）：image_plaza 图片广场的图片读取缓存
+
+**问题**：广场 feed 每页 20 张图，改前是 20 次串行 `storage.createSignedUrl`，且每次返回的 `?token=` 都不同。
+
+**为什么缓存必须做在「URL 稳定性」上而不是单纯加内存缓存**（Supabase 官方 Smart CDN 文档）：
+
+- Smart CDN 把**完整 URL 含 `token`** 当缓存键。「每次请求都重新签」= 每次都 cache miss，永远回源。
+- 「复用同一个签名 URL」= 后续请求走 CDN 与浏览器缓存。
+- token 过期与 CDN 缓存时长相互独立：边缘缓存仍会继续命中该 URL，直到缓存时长到期。切断访问要删对象，不能只靠 token 过期。
+- 套餐已确认是 `pro` / `tier_payg`，Smart CDN 自动启用，无需额外开关。
+
+**改动**：
+
+- `storage.ts` 新增进程内签名缓存（`Map`，上限 2000 条，提前 5 分钟失效）。缓存键含 `path + expiresIn + transform`，因为 transform 会改变产物，缩略图与原图必须分开。
+- 已发布作品图（`image_plaza_works` 分享产生，本就公开）改用 `signSharedWorkImagePath`，TTL 从 15 分钟提到 **24 小时**，让 URL 在用户整个浏览周期内稳定。
+- 未公开资产保守处理：studio 产物图、参考图仍走 `signPlazaImagePath` 的 **15 分钟**，避免提前泄露与内存堆积一次性链接。
+- `hydrateWorks` 从串行 `await` 改成 `Promise.all`，并把参考图查询抽成 `resolveReferenceImageUrl` 与之并行；feed 命中缓存时不再出网。
+- `createSignedUrl` 不支持 `abortSignal`，用 `withTimeout` 赛跑兜 10s，避免上游卡住拖死整页。
+- 前端：studio 产物卡与作品详情页补 `loading="lazy"`，与 feed 卡片的既有写法一致。
+
+**为什么不做公开桶**：这样 CDN 命中率最高、也最省签名成本，但 `image-plaza` 桶里混着未公开的生成产物与参考图；改为公开桶会把这些图一并暴露，且路径可枚举。收益小于风险，否决。
+
+**为什么不做批量签名 `createSignedUrls`**：该接口**不支持 `transform`**，而 feed 依赖 720px 变换；换掉会把每张卡片的全尺寸原图推给小程序端，流量反而更大。
+
+**为什么缓存放在进程内而不是 Redis**：目的不是省那一次 HTTP 调用，而是让 URL 稳定。多副本各自缓存不影响 CDN 命中——每个副本产出的 URL 都指向同一对象，只要自身在 TTL 内稳定即可。
+
+**发布后核对（1c）**：
+
+1. 打开广场 feed，同一页**二次进入**时图片应瞬时出现（浏览器缓存命中）。
+2. 连续刷新 feed，响应里同一 `artifact` 的 `image_url` 应逐字节相同（缓存生效）；隔 24 小时以上才会变。
+3. Supabase Dashboard 的 Storage 出网流量应明显下降。
+4. studio 生成的新产物仍是 15 分钟签名，属预期。
+
+**已知边界**：
+
+- 撤销分享/删除作品后，已发出的 24 小时签名 URL 在 token 有效期内仍可访问。这是私链分享固有性质；如需立即切断，应删除 Storage 对象（文档明确 token 过期不等于撤销）。
+- 进程重启后缓存清空，只是重新签一次，不影响正确性。
+
+**回滚**：回退 `storage.ts` / `repository.ts` / 两个前端文件即可。无 migration，无持久状态。
+
+## 步骤 2 / 4 / P1-L-N1（2026-10-22 已实施）：详情、收藏、/chats 请求收敛
+
+**依据**：design.md §2.4、§2.5、§8.2、§8.5.5。
+
+**后端：共享金框快照 `features/lobby/featured-snapshot.ts`（新）**
+
+- `loadLobbyFeaturedIdSet(log)`：运营序全量 id + 排序分 + 固定位 → `resolveLobbyFeaturedIds`（与大厅同源）。
+- **2026-10-23 决策修订：TTL 由 60s 改为 2s。** 保留 single-flight（过期瞬间的并发请求只查一次）。
+- 刷新失败：沿用上次成功结果（`lastGood`，含已过期的）；没有则返回空集（少显示金框，不让详情失败）。失败结果不记入 `lastGood`。日志 `lobby_featured.snapshot_failed`，带 `{ err, durationMs, hasStale }`。
+
+**`GET /api/characters/:id`（P1-N-DETAIL）**
+
+- 每请求全量 `findMany({ select: { id } })` 改走共享快照。**TTL 缩到 2s 后命中率明显低于 60s**：2s 内的请求共用一次查询，低流量时仍几乎每次请求都现查全量 id（连接数不再是「降为 1 条」）；降幅无法事先估算，以发布后 Sentry 对照为准。
+- `findFirst` 收窄 `select` 为契约用到的 8 个字段，不再拖 `raw_card` 等大 JSON。
+- 可见性过滤 `enabled / archived_at` 不变；响应结构不变。
+
+**`GET /api/favorites`（步骤 4，P1-L-TAIL）**
+
+- 摘要改为 `id in (收藏 ids)` 且保留可见性过滤，不再为了金框把整个大厅摘要拉一遍。
+- 金框改用同一快照；收藏时间倒序与竞态兜底（`flatMap` 跳过缺失）不变。
+
+**前端 `/chats`（P1-L-N1 方案 A，零契约）**
+
+- 历史行先从大厅摘要（`useCharactersQuery(DEFAULT_LOBBY_SORT, { skipMountRefetch: true })`，通常命中 localStorage）取头像和名字。
+- 只有大厅里查不到的卡（下架）或大厅读取失败时，才启用 `useCharacterQuery`。大厅仍在加载时不发详情，避免冷启动退化回 N 个请求。
+- `useCharacterQuery` 增加可选 `{ enabled }`，其他 3 个调用方行为不变。
+- 遵守设计约束：不把 `CharacterSummary` 写进 `characterKeys.detail`（缺 greeting，会污染聊天页）。
+
+**不做（本批）**：大厅列表 `/api/characters` 不接快照（它本来就拉全量摘要，现算即可）；方案 B（会话内嵌角色摘要）需改 shared 契约，另批。
+
+**已知边界**：
+
+- 金框的运营序部分最多晚 2s；排序分与固定位仍各自带既有的 60s 内存缓存（本任务未改动），所以金框判定相对这两项数据最多晚 60s，与改前一致，没有新增陈旧窗。
+- 快照只用于详情和收藏；大厅列表 `/api/characters` 不走它，所以这个 TTL 不影响大厅列表的加载速度。
+- `/chats` 的头像来自大厅本地快照，运营改头像后最多到用户下次进大厅才更新；`/chats` 只做展示，进入聊天页仍走详情接口。
+
+**验证（已运行）**：backend `tsc --noEmit` 0、vitest 91 文件 / 723 用例全过；frontend `tsc --noEmit` 0、eslint 0；prettier、`git diff --check` 通过。未新建测试文件。
+
+**人工回归**：
+
+1. 同一张卡在大厅、详情 sheet、收藏页的金框一致。
+2. 下架一张已收藏/有会话的卡：收藏页不再出现；`/chats` 该行回退到详情请求，404 时显示占位头像和 `session.title`。
+3. `/chats` 打开时 Network 中 `GET /api/characters/:id` 数量 ≈ 不在大厅里的角色数（正常为 0）。
+4. 清空 localStorage 后进 `/chats`：先发 1 次大厅列表，之后不发详情。
+
+**发布后对照（Sentry，同 E19 窗口）**：`/api/characters/:id` 的 `prisma:engine:connection` count 与 `span.duration:>9000` count 下降；ST-MINIAPP-1Y 事件下降；favorites 的 10s 命中数下降。
+
+**回滚**：回退 `featured-snapshot.ts`、`routes/characters.ts`、`routes/favorites.ts`、`frontend/src/lib/api/characters.ts`、`chats/page.tsx`。无 migration、无契约变更、无持久状态。
+
+## P1-C / P1-S-HTTP（2026-10-22 已实施）：PostgREST 有界等待 + 生成上下文单查询
+
+**证据（生产 `wbtsfzozlmurljvglhpn`，Sentry 30d `http.client` `/rest/v1/*`；MCP 只读 catalog）**：
+
+- 超过 290s 的 span：`users` 99 次、`runtime_config` 8 次，几乎都是 `internal_error`。这说明 PostgREST 挂死后一直等到网关约 300s 才断开。
+- 3–100s 区间里，`users` p50 58.5s、`runtime_config` p50 30.5s。而 `current_chat_history` / `chat_history` 的 p50 都正好 ≈5,000ms，说明它们已有的 5s `abortSignal` 起了作用。
+- 10–29s 之间仍有合法的慢请求（最长约 29.1s 的 `rpc/list_character_favorites`，状态 ok）。
+- `authenticator` 的 `statement_timeout=120s`，`service_role` 没有单独设置。
+
+**改动**：
+
+| 文件                                                 | 改动                                                                                                                                           | 理由                                                                                                                                  |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/supabase.ts`                                    | `createClient` 加 `db.timeout = 30s`                                                                                                           | 全局兜底，只砍挂死。按每次 HTTP 尝试计，和调用方自己的 `abortSignal` 取先到者。30s 高于实测最长的合法请求（29s）                      |
+| `lib/user.ts`                                        | 按 `tg_id` 的两处读加 5s `abortSignal`                                                                                                         | 几乎所有已登录接口都先走这里。读失败就抛错返回 5xx，前端可以重试。insert/update 只受 30s 兜底：`tg_id` 唯一，重试时会回读到已提交的行 |
+| `platform/runtime-config.ts`                         | `fetchRuntimeConfigEntries` 默认 5s signal（可传入覆盖）                                                                                       | 读失败本来就返回空 Map，由各调用方用缓存或默认值兜底，行为不变，只是更快失败                                                          |
+| `ConversationHistoryRepository.getContextBeforeTurn` | 已泄洪时用一条 `or(turn_index.eq.1, and(gte,lt))` 查询代替原来并发的 2 次 GET，在内存里拆出窗口行和开场白；新增可选参数 `knownWindowStartTurn` | 消除 ST-MINIAPP-2G。未泄洪时查询和原来一致                                                                                            |
+| `features/conversations/generate.ts`                 | 把开轮 RPC 返回的 `contextWindowStartTurn` 传给上面的新参数                                                                                    | 去掉一次 `chat_sessions` 读。生图路由不传，仍按原方式回读                                                                             |
+
+**`contextWindowStartTurn` 的可信性核对**：生产 catalog 显示，最内层的 `experience.start_chat_history_turn` 和 `start_chat_history_regeneration` 都返回 `context_window_start_turn`。两层包装函数用 `v_started || ...` 透传，所以 `mapStartedTurn` 读到的是同一事务里泄洪之后的窗口起点，与回读 `chat_sessions` 等价。字段缺失时 `readWindowStart` 回落为 1，最坏情况是不截断上下文，不会丢开场白。
+
+**边界**：
+
+- 中止只是客户端放弃等待，不会撤销服务端 SQL。非幂等 RPC（计费、结算）在 30s 兜底后可能出现“客户端报错、服务端已提交”，这时仍靠既有的对账和恢复路径处理。这类 RPC 的 p95 远小于 30s，命中概率很低。
+- supabase-js 的 GET 自带最多 3 次重试，只针对网络错误和 520/503，**不包括 abort**。所以 5s signal 下最坏仍是 5s，不会被重试放大。
+- 不改 Prisma 池参数，不改 `statement_timeout`。
+
+**人工回归**：
+
+1. 新用户首次打开 miniapp：用户记录正常创建，`miniapp_entered_at` 正确写入。
+2. 超过泄洪阈值（`max_context_turns`）的会话发送消息：回复里仍保留开场白语境，后端日志 `current_chat_history` 每轮 1 次 GET。
+3. 未泄洪的会话发送、重生成、生图：行为不变。
+
+**发布后对照（Sentry）**：`/rest/v1/users` 和 `runtime_config` 的 `span.duration:>290000` 应降到 0，p50 应 ≤5s；ST-MINIAPP-2G 事件应下降；`chat_sessions` GET 次数应约等于生图次数。
+
+**回滚**：回退以上 5 个文件即可。无 migration、无契约变更、无持久状态。只想撤掉全局兜底时，单独删掉 `db.timeout` 即可。
+
+## 步骤 7 轮询收敛（2026-10-22 已实施，第一刀：只改前端，不合并端点）
+
+**证据（Sentry 7d，`is_transaction:true`）**：
+
+| 端点                                      | count  | p50   | p95   |
+| ----------------------------------------- | ------ | ----- | ----- |
+| `GET /api/wallet/free-quota/:characterId` | 69,292 | 30ms  | 271ms |
+| `GET /api/support/unread`                 | 14,991 | 101ms | 587ms |
+| `GET /api/notifications/unread-count`     | 13,568 | 112ms | 375ms |
+
+**源码核对（`@tanstack/query-core` 5.99.2）**：
+
+- 两个未读 hook 各有 2 个读者：`BottomNav`（`(main)/layout.tsx` 常驻；在隐藏路由上只是 `return null`，hooks 仍在运行）和 `/profile` 页。
+- 每个 observer 都有自己的 `setInterval`（`queryObserver.#updateRefetchInterval`），同一个 key 不会合并。停在 `/profile` 时，两个 interval 相位不同，所以每个端点每 20s 发 2 次。
+- `useRefetchOnForeground` 调的是 `refetch()`，默认 `cancelRefetch: true`（`query.fetch`：有数据时先 cancel 再重发）。`apiClient` 不接 `signal`，被取消的 HTTP 仍会发出。所以每次切回前台，每个端点会发 N 次（N = 读者数）。
+
+**改动**：
+
+| 文件                                              | 改动                                                                                          |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `lib/api/use-refetch-on-foreground.ts`            | 改为 `refetch({ cancelRefetch: false })`，后到的调用复用进行中的请求；增加可选 `enabled`      |
+| `lib/api/notifications.ts` / `lib/api/support.ts` | 未读 hook 增加 `{ poll?: boolean }`，默认 `true`；`false` 时不起 interval，也不注册回前台刷新 |
+| `app/(main)/profile/page.tsx`                     | 两个未读读者传 `{ poll: false }`，由 `BottomNav` 统一轮询                                     |
+
+**为什么不合并为汇总端点**：每次请求的成本主要在鉴权和用户解析（p50 ≈100ms），合并能省一半请求，但需要新的 shared 契约，还要在后端同时调用 cs 服务和 DB，两者的失败域会耦合（客服服务慢会拖住公告红点）。本刀只去掉前端的重复请求，红点延迟不变，零契约。是否合并以发布后的 count 为准再定。
+
+**free-quota 本批不改**：它是 count 最高的端点，但 p50 只有 30ms，来源是聊天页挂载、每轮结束后 `refreshQuotaAndBalance` 的最多 3 次重读（0/300/900ms）以及取消后的 invalidate。减少它会影响「免费轮次用尽」提示的准确性，另行评估。
+
+**边界**：
+
+- `/profile` 的红点仍在进页时刷新一次（`refetchOnMount: 'always'` 保留），之后依赖 `BottomNav` 的 interval。`/profile` 不在 `HIDDEN_PREFIXES` 中，二者始终同屏。
+- `/profile/messages` 的列表 `useNotificationsQuery` 不变（只有它一个读者）。
+- `useLobbyLatestBadgeQuery` 只有一个读者，只受益于 `cancelRefetch: false`，行为不变。
+
+**验证（已运行）**：frontend `tsc --noEmit` 退出码 0；改动文件 eslint 退出码 0；vitest 41 个文件全过；prettier `--check` 退出码 0（先 `--write` 修了 2 个文件的格式）；`git diff --check` 退出码 0。未新建测试文件。
+
+**人工回归**：
+
+1. 停在 `/profile` 60s：Network 中每个未读端点约 3 次（改前约 6 次）。
+2. 切到后台再切回：每个未读端点各 1 次。
+3. 后台推送一条客服回复或公告：`/profile` 入口红点与底部导航红点同时亮起，延迟 ≤20s。
+4. 在 `/profile/support` 读完回复后返回 `/profile`：红点消失（mutation 直接写缓存，不依赖轮询）。
+
+**发布后对照（Sentry，同窗口 7d）**：`/api/support/unread` 与 `/api/notifications/unread-count` 的 count 下降；p50 不变。
+
+**回滚**：回退上述 4 个前端文件。无契约、无后端改动。
+
+---
+
+以下为原文档阶段记录（2026-10-21 Sentry 采样重排）。
+
+主文档：`docs/production-request-performance-plan.md`（E18 = Sentry 证据）。
+
+## 本轮交付
+
+1. 只读规范/源码/依赖/版本/历史记录，标明证据等级。
+2. 写规划及主文档，记录拓扑文档与源码差异，不擅改生产事实。
+3. **纳入 Sentry MCP 生产 traces/issues 归纳**，映射到 L/N/S/C 与批次表。
+4. 验证引用、无占位/秘密、JSON、Prettier、diff 和产品文件未改。
+5. 保持 planning 等待审核，不运行 task start、commit 或 push。
+
+本轮仅 Markdown/任务元数据，无受影响应用包；不新增测试、不启动服务/模型。应用 typecheck/test/build 本轮不运行，也不声称通过。后续代码实施必须运行适用检查。
+
+## 设计交付（本轮，仍不实施）
+
+详细优化设计见同目录 `design.md`（2026-10-21 源码回读锁定）。主文档 §9 为入口摘要。
+
+设计已锁定的首选改法：
+
+- P1-L-N1 → 大厅摘要补头像（方案 A）；会话内嵌摘要为方案 B
+- P1-N-DETAIL → `loadLobbyFeaturedIdSet` 60s 快照 + 详情收窄 select
+- P1-L-TAIL → favorites `id in`；列表 single-flight；badge 依赖 P1-C abort
+- P1-S-HTTP → `getContextBeforeTurn` 单次 OR 查询
+- P1-C → supabase `db.timeout` + 热路径 signal；Prisma 池另维
+
+## 后续顺序（需批准；与 design.md §3 一致）
+
+1. **P0-A** 固化 E18 对照 + 分段日志字段审核
+2. **P0-B**∥**P0-C** 有界等待 + 容量表（含 PostgREST）
+3. **P1-L-N1** 前端（可最先合入）
+4. **P1-N-DETAIL** + featured 快照（后端最大杠杆）
+5. **P1-L-TAIL** favorites 收窄 / 列表 single-flight
+6. **P1-S-HTTP** 合并 history 查询
+7. **P1-C** 超时/池参数（一次一维）
+8. **P1-A / P1-B / P1-N / P1-S**
+9. **P2 / P2-X**
+
+每批：TEST 故障注入 → consumers → Preview/Telegram → 批准生产灰度；**改后用同一 Sentry 查询窗口对照 E18**；分别验收四主线，不把改快动画当作接口提速，不把 LLM 变短写成产品收益。`design.md` §7 门禁未勾选不得开始写产品代码。
+
+## 测试范围审核
+
+不在本轮创建测试文件。后续优先扩展现有测试；取消、额度、快照、advisory lease 清理属高风险，审核回归方案后实现，不能只测 happy path。
+
+重点既有测试：
+
+- `packages/frontend/src/lib/api/conversation-stream.test.ts`
+- `packages/backend/src/features/conversations/generate.lifecycle.test.ts`
+- `packages/backend/src/features/generation/execute.test.ts`
+- `packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.cancel.test.ts`
+- `packages/backend/src/lib/postgres-advisory-lease.test.ts`
+
+Sentry 驱动批次建议追加的人工/回归焦点（实施时再审是否落测试文件）：
+
+- P1-L-N1：`/chats` 打开时 characters HTTP 次数上限与缓存命中。
+- P1-L-TAIL / P1-N-DETAIL：列表/详情失败与超时出口；可见性不变。
+- P1-S-HTTP：单轮 messages 对 `current_chat_history` 调用次数；计费/取消不变。
+
+## 后续代码验证命令
+
+integration 脚本须另行确认 TEST 目标及写入授权，不随下列本地验证自动执行：
+
+```text
+pnpm --filter @miniapp/shared test
+pnpm --filter @miniapp/backend typecheck
+pnpm --filter @miniapp/backend test
+pnpm --filter @miniapp/frontend typecheck
+pnpm --filter @miniapp/frontend test
+pnpm --filter @miniapp/frontend lint
+pnpm --filter @miniapp/frontend build
+pnpm -r typecheck
+pnpm -r --if-present build
+pnpm lint:legacy
+git diff --check
+```
+
+跨包/部署变更跑全消费者 typecheck 和适用 build；契约变更先 shared 测试。记录退出码与失败项，不把既有失败算通过。
+
+生产对照（只读）：复跑 E18 同查询（http.server p95、pageload p95、Supabase >5s、三 Issue 事件量）。
+
+## 人工与失败路径
+
+- 大厅冷/热缓存、推荐/最新、返回定位、过期卡、空列表、离页/断网、headers/body 挂起、重试；**p50 正常但偶发 60s**。
+- `/chats` N+1：列表项多时请求风暴、缓存命中后应收敛。
+- 入口详情冷/热与预取未命中、新建/继续历史、POST 回填后请求次数、快速连点/离页、创建结果未知、非本人/已删会话、ready 后动画与 reduced motion、多端生成/streaming 恢复。
+- AI 权限失败、同轮版本与读次数、预留不足/结果未知、取消/完成竞态、无正文/断流/缺 done、无重复扣款/额度泄漏；**区分 prepare vs provider vs consecutive history HTTP**。
+- AI 首字后慢流、delta 已到但绘制慢、末正文后终态慢；相同模型与输入输出规模下记录正文完整性、流中停顿和终态时长。
+- TEST 小池饱和、长事务、两副本 job、聚合失败/空结果、锁未获取、unlock 失败仍 close；区分停止等待与底层停止执行；**PostgREST 超时打满**。
+- 连接建立半失败、work/cleanup 回调抛错、滚动发布重叠；同步检查其他 API 成功率与 p95，撤去负载后无需重启恢复；重试/排队不得持续放大。
+- 真实模型/Telegram 批准后使用专用账户，明确环境和费用，不导出消息正文。
+
+## 停止与回滚
+
+权限/计费/取消异常立即停止。主文档候选性能阈值经审核后使用，结合失败率/样本量。回滚当前小批次代码或安全系统内旧参数；不关闭结算恢复，不回写账务，不把停止 timer 当终止在途事务。必要的新 migration 另审，附恢复方案。
+
+## 步骤 8 前端首屏：拆解与候选（待审核，未改代码）
+
+采集：2026-10-22，Sentry 生产 `span.op:pageload`，近 7 天，只读；本地 `pnpm --filter @miniapp/frontend build`（Next 14.2.35）。
+
+### 8.1 指标口径
+
+`pageload` 的 `span.duration`（`/` p75 7,404ms）要等页面内所有子 span 结束才收尾，包括懒加载图片和轮询请求，**不等于用户体感**。预算改用 Web Vitals：
+
+| 路由       | 样本  | TTFB p75 | FCP p75 | LCP p75 | pageload p75 |
+| ---------- | ----- | -------- | ------- | ------- | ------------ |
+| `/`        | 1,523 | 1,361ms  | 2,800ms | 4,297ms | 7,404ms      |
+| `/create`  | 6     | 1,004ms  | 1,883ms | 2,880ms | 7,578ms      |
+| `/chats`   | 5     | 3,085ms  | 3,897ms | 7,167ms | 7,304ms      |
+| `/profile` | 19    | 260ms    | 922ms   | 1,427ms | 3,071ms      |
+
+`/create`、`/chats` 样本过少，不能据此定预算，只看 `/`。
+
+### 8.2 `/` 的时间去向
+
+| 段              | 证据                                                                                                                                      | 结论                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| TTFB ≈1.36s     | `/` 是静态预渲染（○）；`browser.request` p75 447ms                                                                                        | 主要是 Telegram WebView 到 Vercel 的网络与连接建立，代码侧几乎不可控 |
+| TTFB→FCP ≈1.44s | `providers.tsx` 在 `useEffect` 设 `telegramReady` 之前**不渲染 children**，SSR HTML 是空壳                                                | FCP 必须等 JS 下载 + hydrate + effect；首屏 JS 217kB（共享 173kB）   |
+| FCP→LCP ≈1.5s   | LCP 元素多数是大厅卡片 `img`（358+69+63+40…）；其次是卡片标题 `h3`（147，LCP p75 5,629ms）                                                | 图片路径与列表数据路径各占一块                                       |
+| 图片            | `resource.img` 74,474 次 ≈ **每次 pageload 49 张**；p50 611ms、p75 1,539ms；全部来自 Supabase `render/image`                              | 首屏 8 张 `fetchPriority=high` preload 与其余懒加载图同时抢带宽      |
+| 列表数据        | `/api/lobby-characters` p50 869ms、p75 1,492ms；浏览器→Vercel Route Handler→Railway 两跳，且 `no-store`                                   | `h3` 成为 LCP 时说明当时无 localStorage 快照，首屏卡片要等这一跳     |
+| 并发请求        | 同屏还有 `latest-badge`、`support/unread`、`notifications/unread-count`、`favorites/ids`、`users/settings`，p50 均约 1s                   | 与首屏图片、列表争用连接和主线程                                     |
+| JS 资源         | `resource.script` p50 69ms；5.8s 级的长尾集中在少量发布切换时刻（`dpl` 不同，count 2–3）                                                  | 不是主瓶颈，暂不做拆包                                               |
+| 遥测            | `instrumentation-client.ts`：`tracesSampleRate`、`replaysSessionSampleRate` 均为 1.0；PostHog `/s/` p50 1,015ms；`ui.long-task` p50 126ms | 全量录屏占 CPU 与上行，是可量化的成本，但属于产品/运营决策           |
+
+### 8.3 候选改动（按收益/风险排序）
+
+| #   | 改动                                                                                                          | 预期                                 | 风险 / 需决策                                                                           |
+| --- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
+| F1  | 首屏高优先级图片从 8 张降到首屏实际可见数（移动端 2 列约 4–6 张），其余保持 lazy                              | LCP 图片独享带宽；不增请求           | 低。桌面宽屏首屏多于 6 张时，后几张稍晚                                                 |
+| F2  | `telegramReady` 之前先渲染不依赖 initData 的静态骨架（大厅标题栏 + 卡片占位），children 仍等 ready            | FCP 前移，接近 TTFB + CSS            | 中低。不得让任何发请求的组件提前挂载                                                    |
+| F3  | `/api/lobby-characters` 改为短 CDN 缓存（如 `s-maxage=15, stale-while-revalidate=60`），浏览器端仍 `no-store` | 冷启动列表从 ~0.9s 降到 CDN 命中时延 | **需决策**：现有注释要求每次挂载都对齐数据库，以便下架/重排立即生效；引入 ≤15s 陈旧窗口 |
+| F4  | 首屏期间延后 `latest-badge`、`favorites/ids` 等非首屏请求（等首屏图片 settle 或 idle）                        | 减少首屏争用                         | 中。角标晚出现约 1s                                                                     |
+| F5  | 调低 Sentry `replaysSessionSampleRate`（保留 `replaysOnErrorSampleRate=1.0`）                                 | 降 CPU 与上行                        | **需决策**：影响排障可见性与 PostHog/Sentry 用量                                        |
+
+拒绝：引入 `next/image`（Supabase render 已做缩放，换成 Vercel 优化会多一跳并产生费用）；拆包/动态导入（JS 证据不支持）；SSR 大厅数据（与 Telegram initData 与 localStorage 快照模型冲突，改动面过大）。
+
+### 8.4 预算候选（审核后生效）
+
+`/` p75：FCP ≤ 2.0s，LCP ≤ 3.0s（发布后 7 天、样本 ≥ 1,000 时判定）。TTFB 不设代码预算，只记录。
+
+### 8.5 验证与回滚
+
+- 本地：`pnpm --filter @miniapp/frontend typecheck`、`lint`、`test`、`build`，记录 First Load JS 不增长。
+- 人工：冷启动（清 localStorage）与热启动、推荐/最新切换、返回定位恢复、断网、Telegram 内与浏览器内。
+- 生产对照：复跑 8.1 / 8.2 的同一组查询，对比 FCP、LCP、LCP 元素分布、每次 pageload 图片数。
+- 回滚：每个 F 项独立提交，单独 revert；F3 回滚即恢复 `no-store`。
+
+### 8.6 已实施（F1 / F8 / F2 / F4，2026-10-22）
+
+共用信号 `src/lib/after-first-screen.ts`：`load` 之后第一个空闲帧（idle timeout 2s）算首屏结束，硬上限 4s；每个页面生命周期只结算一次，之后的 SPA 导航立即放行。
+
+- **F1**：`FIRST_SCREEN_IMAGE_COUNT` 8 → 6。preload 和 `fetchPriority=high` 一起收紧。
+- **F8**：Sentry `replayIntegration` 和 PostHog SDK 都等首屏结束再加载，采样率不变。PostHog 的推迟放在 adapter `init` 的 `initPromise` 内部（`beforeLoad`），所以 `whenReady()` 在推迟期间会等这个 promise，不会误判为未配置。代价：首屏最多约 4s 不在录。
+- **F2**：`telegramReady` 之前，`/` 渲染纯静态的 `LobbyShellSkeleton`（不发请求、不读 initData），其他路由仍然留空。
+- **F4**：大厅 `latest-badge` 和 BottomNav 的 `notifications/unread-count`、`support/unread` 加 `enabled`，等首屏结束再请求；推迟期间切回前台也不补发。`/profile` 自己的读者不受影响。`favorites/ids` **没有**推迟：它决定首屏卡片的心形状态，推迟会出现空心→实心的闪烁。`users/settings` 也没动，它属于 Providers 的 hydrate。
+
+验证：frontend `typecheck`、`lint`（0 error）、`test` 41 files / 256 tests 通过。`build` 当时没能执行，原因是本机 `packages/frontend/node_modules/next/dist` 缺失（依赖安装损坏，和改动无关）。
+
+**2026-10-23 补跑**：`pnpm install --frozen-lockfile` 无变化，`next/dist` 已存在，`build` 通过；`/` 预渲染 HTML 含骨架（`aria-label="加载中"`）。First Load JS（`/` 221 kB，shared 185 kB）**无改动前基线，增长与否未验证**。frontend vitest 现为 45 files / 286 tests 全过（首次并行运行曾偶发 1 个文件失败，原因未查明）。
+
+### 步骤 8（2026-10-22）：CORS 预检缓存 + 读路径 history 窄投影
+
+- **CORS**：`app.ts` 的 cors 配置加 `maxAge: 600`。Vercel→Railway 跨域且带自定义头 `X-Init-Data`，每个请求都会预检；不设置时浏览器只缓存 5s。
+- **history 窄投影**：`ConversationHistoryRepository` 的读路径（`getContextBeforeTurn` / `findCurrentTurnById` / `listMessages`）改用 `CURRENT_TURN_HEAD_COLUMNS`，用 PostgREST 别名 `history_head:history->0,history_next:history->1` 只取 history 前两个元素，`restoreHistoryHead` 还原成 `history` 数组。消费者只用 `[0].request_id` 与开场白（[0] 或 [1]），契约不变。写路径（`TURN_COLUMNS`、finalize/require/recover）保持不变。
+- **局限**：jsonb 无法切片，库侧仍会 detoast，只省传输/反序列化；根治需 `chat_history.history` 列级瘦身（见 ARCHITECTURE 待办「chat_history 列级瘦身」）。
+- **验证**：backend `typecheck` 通过；vitest 因本机依赖损坏（`@jridgewell/sourcemap-codec` 缺失）无法运行，需 `pnpm install` 后补跑 `ConversationHistoryRepository.cancel.test.ts`、`features/conversations`；`history->0` 别名投影需在 TEST 环境真实请求一次确认 PostgREST 返回形状（含开场白、request_id 取消定位）。
+- **未做**：前端聊天页配置请求的 staleTime/去重。
+
+### 步骤 9（2026-10-22，排查 E:/desk/1.txt 两个生产卡顿样本）
+
+**背景**：发布版本 `a106cc689fb2202cc6041a0217d0712f3aa8ada5`（PR #444/#446，Sentry 体验埋点）上线当晚 20:16 左右（北京时间），Sentry Metrics 记录到两条样本：`action.feedback.duration`（`select_character`，10,249ms，`stalled=true`）与 `page.ready.duration`（`/create`，8,746ms），均为 Android Telegram Mini App、4G 标签。
+
+**前置阻塞**：排查前发现本地 `fix_request_speed` 分支落后 `origin/main` 约 340+ 提交，`1.txt` 引用的 `lib/perf/page-tracker.ts`、`lib/perf/action-tracker.ts` 等文件在本地分支不存在。先 `git merge origin/dev`（6d4c4ba5）+ `git merge origin/main`（83b61800），解决 9 个文件冲突（均为"保留两侧真实修复"原则，无丢弃任何一侧逻辑），三包 `typecheck` 与现有相关 vitest 全部通过后才继续排查。
+
+**证据（Sentry trace，只读查询，未改动生产）**：
+
+- `select_character` 样本：Trace `9b8c0d4e811a48d594c00e2ce037eddf` 在 Sentry 侧查无 span（该指标关联 ID 当时就没有可读瀑布，与 1.txt 描述一致）。已确认 `action.feedback.duration` 只在 `completePendingAction`（真正路由切到 `/chat/:id`）时才打点，被 `discardPendingAction` 丢弃的动作不会产生这条记录——即这次 10.249s 代表路由切换确实等待了约 10 秒，不是"取消重进"被误记的假阳性。
+- `/create` 慢请求样本：Trace `e3bfc3116bf9498194926392ca87cf5a`。精确时间戳显示浏览器发起 `GET /api/image-plaza/feed` 在 `t=386.98s`，Railway 后端直到 `t=394.375s` 才开始处理（约 7.39s 纯空档），后端处理本身只用 624ms。该 span 状态为 `cancelled`（Sentry 自动埋点状态）。
+- 关键佐证（第二条同类慢样本，Trace `49141fdbecab42f9b76586eb3475e731`，同日更早时间）：**四个完全独立的接口**（`image-plaza/feed`、`notifications/unread-count`、`support/unread`、`users/settings`）在同一毫秒发出，全部卡住 7.3~8.0s，几乎同时恢复。四个接口互不调用、后端代码互不相关，不可能是某个端点自身的 bug。
+- 更大范围检索（`span.op:http.client span.description:*railway* span.duration:>5000`，14d）显示同类"整批请求/资源同时卡住 20~30 秒后一起恢复"的模式反复出现在不同时间、不同资源类型（JS chunk、图片、API），且全部关联 `os.name:Android`、`browser.name:Telegram`。
+- 结论：两个样本的根因一致——**Android Telegram Mini App WebView 切后台（或系统级网络/定时器冻结）期间，浏览器侧所有挂起的请求与定时器被整体冻结，回到前台后集体"解冻"**，不是 `image-plaza/feed` 这个端点或 `select_character` 这个动作本身的代码问题。`1.txt` 建议方向「同时核对切后台…该动作计时的后台处理口径需要与页面计时一起检查」命中要害。
+
+**根因 bug（已确认并修复）**：`page-tracker.ts` 早就有 `bindVisibility`/`hiddenMs`（切后台暂停看门狗、回前台按剩余时间续计时，`page_stall`/`page.ready.duration` 都已扣除后台时长），但 `action-tracker.ts`（管 `select_character`/`send_message`/`image_generate` 等全部 `TrackedAction`）**完全没有同款机制**：2.5 秒看门狗在后台期间继续计时，`action.feedback.duration` 的耗时计算也没有扣除后台停留时长。这会把「用户把 App 晾在后台几秒到几十秒」直接污染成「点击卡了 N 秒」，既产生假阳性 `action_stall` 告警，也让 `action.feedback.duration` 的 p95/p99 虚高，掩盖真实的卡顿信号。
+
+**修复**（`packages/frontend/src/lib/perf/action-tracker.ts`）：把 `page-tracker.ts` 已验证过的口径对齐过来——`startAction` 内部改用按 action 维护的 `ActiveAction`（`hiddenMs`/`hiddenSince`），监听 `visibilitychange`：切后台时清掉看门狗定时器并记录 `hiddenSince`；回前台时把隐藏时长累加进 `hiddenMs`，按剩余时间重新武装看门狗。`action.feedback.duration` 的计算也改为 `elapsed()`（已扣除 `hiddenMs`）。不引入新概念、不新建文件，只是把已有、已测试过的模式套用到遗漏的模块，属于最小充分修复。
+
+**回归测试**（`action-tracker.test.ts`，属于安全/监控数据正确性的高风险缺陷修复，已按规则补充）：新增 3 个用例，复用 `page-tracker.test.ts` 的 `fakeDocument`/`setVisibility` 模式——切后台期间看门狗不触发、回前台按剩余时间续计时；`feedback.duration` 扣除后台停留；后台期间 `discard()` 不产生任何上报。
+
+**验证**：`pnpm --filter @miniapp/frontend typecheck`（0 error）、`pnpm --filter @miniapp/frontend lint`（0 error，仅既有 `<img>` 告警与本次改动无关）、`pnpm --filter @miniapp/frontend vitest run`：45 files / 286 tests 全部通过（含新增 3 条）。
+
+**仍待做（超出本次只读排查+最小修复范围，需要后续任务跟进）**：
+
+1. `/create` 页面慢请求目前只证实「浏览器到 Railway 之间的整批冻结」，尚未实测验证 Android TG 内冷/热路由对比、弱网场景、退出/取消/重试（`1.txt` 要求的人工验证项）——需要真机或可控弱网环境，本次会话无法执行。
+2. `select_character` 侧的 `router.prefetch` 是否真正发出/完成、RSC 与 JS chunk 加载耗时拆解，仍需要结合 1 的真机验证一起做，本次未发现独立于"后台冻结"之外的额外瓶颈。
+3. 该修复只解决"监控数据被切后台污染"这一个确定的 bug；不代表「控制了全部偶发卡顿」——如实际体感卡顿频率仍高，需要另开任务评估是否要在前台恢复时对关键在途请求做一次主动重试/超时收敛（当前 `apiClient` 的 20s 默认超时在该场景下可能仍然偏长）。
+
+## 步骤 10（2026-10-22 收尾，本次会话结束时）：剩余优化点汇总，供明天接续
+
+本节不改代码，只盘点截至 `ff42181b` 的任务全貌——哪些已经落地待发布后核对、哪些仍停在纯设计未授权实施、哪些是本次新发现待决策——避免明天凭记忆重新梳理。来源：本文档步骤 1–9、`design.md`、`task.md`、git log（`fix_request_speed` 分支）。
+
+### 10.1 已实施、等待「发布后对照」或「人工回归」确认的批次
+
+这些代码已合入 `fix_request_speed`（commit 见括号），本地 typecheck/test 已过，但生产灰度观察、真机人工项、或本地 `build` 尚未全部跑完，**不能视为已验证收尾**：
+
+| 批次                                                  | commit                        | 已做                                                                                                                                       | 还缺什么                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 步骤 1（排序 job 移出共享池）                         | `888b616b`                    | `DIRECT_URL` 专用 `PrismaClient`（`connection_limit=1`），job 失败即跳过不回退共享池                                                       | 发布后核对 3 项（§步骤1b 末尾）：日志应见 `lobby_ranking.completed`、`character_ranking_scores.computed_at` 晚于部署时间、若仍 `failed` 先人工 `VACUUM` 不再调大超时                                                                                                               |
+| 步骤 1b（库侧 statement_timeout 掐断）                | 同上                          | 事务内 `SET LOCAL statement_timeout=8min`                                                                                                  | `8min` 是否够**未实测**（未跑 `EXPLAIN ANALYZE`），需以发布后第一轮 `durationMs` 为准；`chat_history` 表 `VACUUM (ANALYZE)` 仍是待执行的人工运维动作，不由代码触发                                                                                                                 |
+| 步骤 1c（image_plaza 签名缓存）                       | `668754c6`                    | 进程内签名缓存 + 已发布作品图 TTL 15min→24h + `hydrateWorks` 并发化                                                                        | 发布后核对 4 项：二次进入瞬时出图、同一 artifact 的 `image_url` 多次请求逐字节相同、Storage 出网流量下降、studio 新产物仍 15min                                                                                                                                                    |
+| 步骤 2/4/P1-L-N1（详情/收藏/`/chats` 请求收敛）       | `668754c6`                    | `loadLobbyFeaturedIdSet` 2s TTL + single-flight（2026-10-23 由 60s 改 2s，未提交）；详情 `select` 收窄；favorites `id in`；`/chats` 方案 A | 4 项人工回归（§步骤2/4 末尾）未在真实环境跑：金框跨页一致性、下架卡占位、`/chats` 详情请求数、清空 localStorage 冷启动路径                                                                                                                                                         |
+| P1-C / P1-S-HTTP（PostgREST 有界等待 + 上下文单查询） | `cf26c65a`                    | `db.timeout=30s`；`getOrCreateDbUser`/`fetchRuntimeConfigEntries` 5s signal；`getContextBeforeTurn` 合并为单次 OR 查询                     | 3 项人工回归（新用户创建、泄洪会话开场白保留、未泄洪行为不变）+ 发布后 Sentry 对照（`users`/`runtime_config` 的 `span.duration:>290000` 应降到 0）                                                                                                                                 |
+| 步骤 7（轮询收敛第一刀）                              | `8cfdd335`（CORS 提交内一并） | `refetch({cancelRefetch:false})`；未读 hook 加 `{poll}`；`/profile` 两个读者停止自轮询                                                     | 4 项人工回归（停留 60s 请求计数、切后台/前台各 1 次、客服/公告红点延迟 ≤20s、已读后红点消失）+ 发布后 count 对照                                                                                                                                                                   |
+| 步骤 8 F1/F2/F4/F8（前端首屏）                        | `2ee36edb`                    | 首屏图片 8→6；Sentry replay/PostHog 延后到首屏结束；`/` 的 `telegramReady` 前骨架；latest-badge/未读角标延后                               | **本地 `build` 未能执行**（`packages/frontend/node_modules/next/dist` 缺失，依赖安装损坏，与改动无关）——需要先 `pnpm install` 补跑 `build`，确认预渲染 HTML 含骨架、First Load JS 未增长，再做人工冷/热启动回归                                                                    |
+| 步骤 8（CORS 预检缓存 + history 窄投影）              | `8cfdd335`                    | `app.ts` 加 `maxAge:600`；`ConversationHistoryRepository` 读路径改 `history->0/1` 别名投影                                                 | 本机当时 vitest 因依赖损坏（`@jridgewell/sourcemap-codec` 缺失）**未跑**，需要补跑 `ConversationHistoryRepository.cancel.test.ts` 与 `features/conversations`；`history->0` 别名投影需在 TEST 环境真实请求一次，确认 PostgREST 返回形状（含开场白、`request_id` 取消定位）未被破坏 |
+| 本次步骤 9（action-tracker 切后台污染修复）           | `ff42181b`                    | `ActiveAction` 加 `bindVisibility`/`hiddenMs`，看门狗与上报口径对齐 `page-tracker.ts`                                                      | 真机验证项见上方「仍待做」1–3                                                                                                                                                                                                                                                      |
+
+> 共同待办：这些批次散落在 8 个不同 commit 里（`whc` 与 `linshu368` 两人并行推进），`implement.md` 顶部状态行（第 3 行）与 `task.md`/`design.md` 的批次表**均未随代码更新勾掉对应批次**——下面 10.3 单独列为治理问题。
+
+### 10.2 仍停留在纯设计、未授权写代码的批次
+
+按 `design.md` §3 推荐顺序，以下批次在 `task.md`/`design.md` 中仍是 `Todo`，且 git log 中找不到对应代码改动：
+
+| 批次           | 设计内容（design.md 锚点）                                                                                                                                                                 | 依赖/门禁            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
+| P0-A           | 固化 E18 对照表 + 分段日志字段（`phase=list\|detail\|featured\|ranking`）                                                                                                                  | G1                   |
+| P0-B           | 大厅浏览器侧 15s 总预算 + Next 代理更短 deadline + 失败可重试 UI                                                                                                                           | P0-A                 |
+| P0-C           | 全服务连接容量表（含 PostgREST ≈300s）；**E21 已更正**不调大 `connection_limit`，池参数调整降级为观察项                                                                                    | P0-A                 |
+| P1-A           | 请求内规则/设置/模型目录同轮复用；验收用 `backend_prepare_ms`/`context_http_count`，不用 messages 总 p95                                                                                   | G1、P0-A             |
+| P1-B           | 排名缓存刷新合并为显式 single-flight（注：`ranking-stats.ts` 当前仅有 60s TTL 缓存，**没有**像 `featured-snapshot.ts` 那样的 `inflight` 锁；过期瞬间的并发大厅请求仍可能触发多次聚合查询） | P0-A、运营审核陈旧窗 |
+| P1-N（其余项） | 开屏 240ms+720ms 定时器与创建 freshness；design.md 建议等 P1-N-DETAIL/P1-L-N1 有进展后再动，避免把入口卡顿全推给动画                                                                       | P0-A、交互方案审核   |
+| P1-S           | 首字之外的流速/绘制/终态定点优化；仅在证明非 provider 瓶颈后动手                                                                                                                           | P0-A                 |
+| 前端首屏 F3    | `/api/lobby-characters` 短 CDN 缓存（`s-maxage=15`）——**需决策**：与「每次挂载都对齐数据库，下架/重排立即生效」的现有注释冲突                                                              | 产品决策             |
+| 前端首屏 F5    | 调低 `replaysSessionSampleRate`——**需决策**：影响排障可见性                                                                                                                                | 产品决策             |
+| P2 / P2-X      | 有证据的 SQL/索引优化；webhook/miniapp-entry 慢（旁路，不阻塞四主线）                                                                                                                      | 核心批次收口后另审   |
+
+### 10.3 本次新发现、尚未决策的跟进项（步骤 9 遗留）
+
+1. **真机/弱网人工验证缺口**：`1.txt` 要求的 Android TG 冷/热路由对比、弱网场景、取消/重试流程，本会话环境无法执行，需要真机或可控弱网环境排期。
+2. **`select_character` 的 `router.prefetch` 实际行为未证实**：是否真正发出、RSC/JS chunk 耗时占比，仍需结合 1 的真机抓包一起做。
+3. **前台恢复时的主动收敛策略未决策**：若真机验证后发现体感卡顿频率仍高，需要另开任务评估「前台恢复时对关键在途请求做一次主动重试/超时收敛」，并重新评估 `apiClient` 20s 默认超时在此场景下是否偏长。**这是否立项是决策项，不是本次隐含授权的实施项。**
+4. **chat 页配置请求的 staleTime/gcTime 调优（步骤 8 "未做"项的延续）**：核实现状——`voice/config`（`staleTime:0`）、`images/config`（`staleTime:0`，均标注"含用户实时额度，重进页面需重新确认"，为有意设计）、`models/config`（`staleTime:MODEL_CATALOG_STALE_TIME_MS=5min`，已有缓存策略）、`generation-config`（`staleTime:5min`，已有）。**结论**：四个请求中两个（models/generation-config）已有合理 staleTime，另两个（voice/images）的 `staleTime:0` 是代码注释里写明的有意选择（额度实时性），并非遗漏。是否仍要在此基础上去重/合并请求次数，还是该项已不构成性能问题、可从任务范围移除，**需与用户确认**后再决定是否继续排期。
+5. **文档与代码进度不同步**（治理问题，建议明天第一件事处理）：`implement.md` 第 3 行状态描述、`task.md` 的批次状态列（仍全部是 `Todo`/`in_progress` 的粗粒度标记）均未反映 10.1 列出的 8 个已合入 commit。`design.md` §7 审核门禁 5 项（G1 等）在 `task.md` 中仍是 `Blocked`，但大量「需要 G1 批准才能实施」的批次实际上已经被其他开发者（`whc`）直接写代码合入主分支——这与"未勾选不得 `task start` 写产品代码"的门禁声明存在事实冲突，需要向用户说明并决定：是现在补办 G1 审核、还是认定该门禁已被后续分支事实上绕过而需要更新 `task.json.status`/`task.md` 反映真实进度。
+
+### 10.4 明天建议的处理顺序
+
+1. 先处理 10.3.5 的文档/状态同步问题——不先理清"哪些已经合入主干"，容易在后续排查中重复劳动或误判未做。
+2. 按 10.1 表格逐项补跑「发布后对照」「人工回归」「本地 build/test 补跑」三类验证缺口，优先级：步骤 8 的 `build` 补跑（阻塞最久、原因明确是依赖损坏）> 步骤 1b 的 `8min` 超时实测 > 其余人工回归项。
+3. 10.3.1–10.3.3（真机验证相关）需要先确认是否有真机/弱网环境可用；若没有，向用户同步该限制并讨论是否接受"仅代码层面已修复、生产效果需等真实用户反馈"作为阶段性结论。
+4. 10.3.4（chat 配置 staleTime）已有明确结论（多数非遗漏），建议直接向用户汇报结论并确认是否从任务范围移除，而非继续排查。
+5. 10.2 的纯设计批次（P0-A 起）仍需 G1 审核放行，按 `design.md` §3 顺序推进；若 10.3.5 的治理问题导致 G1 被认定为事实失效，需要先和用户对齐新的审核/放行机制再继续。
+
+## 步骤 11（2026-10-23：Sentry 复采，验证连接池事故已消除；不改代码）
+
+口径：Sentry org `wangqiao` / project `st-miniapp` / `environment:production` / 近 24h；按 `sentry.release` 分组对照。采样率与被丢弃事件未审计，长尾仍可能偏差。本步骤**未改任何代码、配置或数据库**。
+
+### 11.1 根因更正：连接池排队来自运维配置，不来自代码
+
+`origin/main` 的 `111dda8a`（#451）记录：Railway 控制台里的 `PROD_DATABASE_URL`（不受版本控制）曾被改成直连 5432 + `connection_limit=1`，整个服务同一时刻只有 1 个请求能碰数据库。这与 Sentry 现象吻合，也**部分推翻**步骤 1/E19 里"长事务 + 瞬时扇出"是主因的判断：旧判断解释不了持续性的大面积排队。已验证可用的值为 `:6543/<db>?pgbouncer=true&connection_limit=10&pool_timeout=10`（见 `ops/railway/README.md` 新增小节）。
+
+### 11.2 release 对照（`prisma:engine:connection` span）
+
+| release            | 24h span 数 | p50    | p75    | p95    | 说明                                       |
+| ------------------ | ----------- | ------ | ------ | ------ | ------------------------------------------ |
+| `769dbe02`         | 410         | ≈11.9s | ≈12.0s | ≈12.0s | 全部卡在 `pool_timeout` 附近，即池排队超时 |
+| `6326a0b1`         | 3,675       | 94ms   | 550ms  | 1.56s  | 池参数仍异常的时期                         |
+| `66a617f8`         | 1,625       | 2.9ms  | 23ms   | 71ms   | 仅 10 个 span >500ms，最大 ≈2.0s           |
+| `111dda8a`（最新） | 2,165       | 3.1ms  | 23ms   | 121ms  | **无 >500ms 的 span**                      |
+
+结论：此前把 `/api/characters*` 的 ≈1.56s 常数簇当成"冷连接固定开销"的猜测**不成立**，它属于池配置异常时期；最新 release 上已不存在。因此**不做**连接池调大、启动 `$connect` 预热、keep-alive 探活——没有证据支持，也违反"最小充分方案"。
+
+### 11.3 最新 release `111dda8a` 的接口延迟（`http.server` 事务，24h）
+
+| 接口                                      | 请求数 | p50   | p75   | p95   |
+| ----------------------------------------- | ------ | ----- | ----- | ----- |
+| `GET /api/characters/:id`                 | 735    | 47ms  | 79ms  | 190ms |
+| `GET /api/notifications/unread-count`     | 505    | 86ms  | 107ms | 157ms |
+| `GET /api/support/unread`                 | 500    | 108ms | 151ms | 201ms |
+| `GET /api/v1/conversations/:id`           | 455    | 248ms | 424ms | 770ms |
+| `GET /api/characters/latest-badge`        | 250    | 59ms  | 81ms  | 121ms |
+| `GET /api/characters`                     | 145    | 60ms  | 96ms  | 255ms |
+| `POST /api/v1/conversations/:id/messages` | 350    | 23.8s | 32.5s | 52.5s |
+
+对照 7d 窗口：`GET /api/characters/:id` p95 由 10,057ms 降到 190ms。注意两个窗口样本量与时段不同，只能说明量级变化，不能当严格 A/B。
+
+`POST .../messages` 是 LLM 流式生成，耗时由上游模型决定，**不应与普通接口放在一起看全局 p95**。最新 release 的全局 p95≈21s 主要由它拉高；评估"整体 p75/p95"时应排除该事务或单独看。
+
+### 11.4 仍然偏慢：`GET /api/v1/conversations/:id`
+
+子 span 分解（24h，455 次）：
+
+| span                                                                                | p50     | p75     | max      |
+| ----------------------------------------------------------------------------------- | ------- | ------- | -------- |
+| Supabase REST `GET .../rest/v1/current_chat_history`                                | 111ms   | 277ms   | 1.41s    |
+| `chat_history` / `miniapp_user_settings` / `chat_sessions` / `users` / `characters` | 21–28ms | 31–35ms | 85–403ms |
+
+耗时集中在 `current_chat_history` 这一次读取。TEST 无关，下面全部取自生产库（项目 `wbtsfzozlmurljvglhpn`）的**只读**结构采集，未读业务行：
+
+- 视图 `experience.current_chat_history` = `SELECT DISTINCT ON (h.session_id, h.turn_index) … FROM chat_history h LEFT JOIN openrouter_chat_history o LEFT JOIN venice_chat_history v WHERE … ORDER BY h.session_id, h.turn_index, h.revision DESC`。
+- `EXPLAIN`（占位 UUID，未执行）显示 `Limit → Sort → Unique → Nested Loop Left Join`，`LIMIT` 位于 `Sort`/`Unique` 之上；`chat_history` 走 `idx_chat_history_session_current`，每行再各做两次主键索引 join。推断为：翻页时需先处理该会话全部（或范围内全部）轮次再取最近一页，会话越长越慢。
+- 规模：`chat_history` 约 35.4 万行 / 22GB，`openrouter_chat_history` 约 33.7 万行 / 270MB，`venice_chat_history` 约 2.5k 行。
+
+**验证缺口**：占位 UUID 的计划代价只有几十，不代表真实长会话；未跑 `EXPLAIN ANALYZE`，也未按会话长度分层统计 p75。上面"随会话长度线性变慢"是推断，不是实测。
+
+候选方案（本步骤**未实施**）：
+
+- A. 仅改 `ConversationHistoryRepository.listMessages`：先用轻量列确定本页 `turn_index` 范围，再按范围读 `current_chat_history`。无 migration；需保持 `hasMore`、重生成多版本（`revision`）、开场白补齐语义不变。
+- B. 新增 DB 函数或改视图使 `LIMIT` 下推。效果最彻底，但需要 migration、八域归属评估、TEST 先验证与回滚说明。
+- C. 暂不处理（p75 424ms / p95 770ms 可接受）。
+
+**决策（用户，2026-10-23）：选 C**，不改代码，本步骤收尾。若后续要做 A/B，须先补真实长会话的 `EXPLAIN ANALYZE` 与按会话轮次分层的耗时统计。
+
+### 11.5 对步骤 10 的修正与遗留
+
+- 10.2 里 P0-C"全服务连接容量表"的结论需补一句：近期事故的直接原因是 `PROD_DATABASE_URL` 被改错，**需要的是配置变更留痕与核对，不是调池参数**；`ops/railway/README.md` 已有核对步骤。
+- 步骤 1/1b/1c 等批次的"发布后核对"仍按 10.1 表格执行，本步骤数据只覆盖 `prisma:engine:connection` 与端点延迟，**没有**核对 `lobby_ranking.completed`、`image_url` 缓存等项。
+- 未做：24h 内最新 release 样本量仍偏小（`/api/characters` 仅 145 次），建议 7d 后用同口径再复采一次，再决定是否关闭任务的连接池相关条目。
+- 本步骤命令：Sentry `search_traces`（按 release 聚合 `prisma:engine:connection`、`http.server` 事务、`conversations/:id` 子 span）；Supabase MCP `execute_sql` 仅 `pg_views`/`pg_indexes`/`pg_class` 元数据与 `EXPLAIN`。

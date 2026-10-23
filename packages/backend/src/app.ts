@@ -94,6 +94,10 @@ export async function buildApp() {
       callback(new Error('Not allowed by CORS'), false);
     },
     credentials: true,
+    // 前端(Vercel)到后端(Railway)是跨源请求，且带自定义头 X-Init-Data 必触发预检。
+    // 不设置时浏览器默认仅缓存 5s，导致几乎每个 API 请求前都多一次 OPTIONS 往返。
+    // 取 600s：Chromium 对 Max-Age 的上限就是 7200s，600s 在改 CORS 配置后仍能较快生效。
+    maxAge: 600,
     allowedHeaders: [
       'Content-Type',
       'Authorization',

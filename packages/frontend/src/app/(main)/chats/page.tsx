@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { Ellipsis, MessageCircle, Pencil, Pin, PinOff, RefreshCw, Trash2 } from 'lucide-react';
-import type { ChatSession } from '@miniapp/shared';
+
+import { DEFAULT_LOBBY_SORT } from '@miniapp/shared';
+import type { CharacterSummary, ChatSession } from '@miniapp/shared';
 
 import {
   SessionDeleteConfirm,
@@ -12,7 +14,7 @@ import {
 } from '@/components/chat/session-row-actions';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
-import { useCharacterQuery } from '@/lib/api/characters';
+import { useCharacterQuery, useCharactersQuery } from '@/lib/api/characters';
 import { resolveSessionTitle, useConversationsQuery } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
 import { usePageReady } from '@/lib/perf/page-ready';
@@ -32,10 +34,27 @@ export default function ChatsPage() {
   );
 }
 
+type LobbySummaryLookup =
+  | { status: 'pending' }
+  | { status: 'ready'; byId: ReadonlyMap<string, CharacterSummary> }
+  | { status: 'unavailable' };
+
 function ConversationHistoryList() {
   const { data, isLoading, isError, refetch } = useConversationsQuery(undefined);
   usePageReady('/chats', data !== undefined);
   const sessions = data?.sessions ?? [];
+  // 历史行只要头像和名字。原来每行各拉一次详情，20 行就是 20 个请求（Sentry ST-MINIAPP-1Y）。
+  // 先查大厅摘要（通常已在 localStorage），只有查不到的卡（下架、或大厅读失败）才回退到详情。
+  // 不重拉：这里只借头像，大厅自己进页面时会对齐数据库。
+  const lobby = useCharactersQuery(DEFAULT_LOBBY_SORT, { skipMountRefetch: true });
+  const lobbyCharacters = lobby.data?.characters;
+  const lookup = useMemo<LobbySummaryLookup>(() => {
+    if (lobbyCharacters) {
+      return { status: 'ready', byId: new Map(lobbyCharacters.map((c) => [c.id, c])) };
+    }
+    return lobby.isError ? { status: 'unavailable' } : { status: 'pending' };
+  }, [lobbyCharacters, lobby.isError]);
+
   const restored = useRef(false);
 
   useEffect(() => {
@@ -51,15 +70,30 @@ function ConversationHistoryList() {
       {isError ? <HistoryError onRetry={() => void refetch()} /> : null}
       {!isLoading && !isError && sessions.length === 0 ? <HistoryEmpty /> : null}
       {sessions.map((session) => (
-        <ConversationHistoryRow key={session.id} session={session} />
+        <ConversationHistoryRow key={session.id} session={session} lookup={lookup} />
       ))}
     </section>
   );
 }
 
-function ConversationHistoryRow({ session }: { session: ChatSession }) {
-  const { data } = useCharacterQuery(session.character_id);
-  const character = data?.character;
+/**
+ * 会话列表只带 character_id。取角色卡只为头像；
+ * 主标题走 session.title（缺省时退到角色名），展示时统一截到 7 字。
+ *
+ * 整行是进入聊天的链接，操作按钮浮在它上层单独响应，避免 Link 里嵌 button。
+ */
+function ConversationHistoryRow({
+  session,
+  lookup,
+}: {
+  session: ChatSession;
+  lookup: LobbySummaryLookup;
+}) {
+  const summary = lookup.status === 'ready' ? lookup.byId.get(session.character_id) : undefined;
+  // 大厅摘要还在读时先不发详情，否则冷启动又退化成 N 个请求。
+  const needsDetail = lookup.status !== 'pending' && !summary;
+  const { data } = useCharacterQuery(session.character_id, { enabled: needsDetail });
+  const character = summary ?? data?.character;
   const actions = useSessionRowActions(session);
   const menuRef = useRef<HTMLDetailsElement>(null);
   const avatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;

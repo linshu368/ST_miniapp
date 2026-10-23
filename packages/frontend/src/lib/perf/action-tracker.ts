@@ -50,42 +50,115 @@ function safely(stage: string, fn: () => void): void {
   }
 }
 
-export function startAction(name: TrackedAction): ActionHandle {
-  const startedAt = performance.now();
-  let settled = false;
-  let stalled = false;
+/**
+ * 切后台期间的等待不算用户体感卡顿：Android TG WebView 切后台会冻结网络/定时器，
+ * 一批毫不相关的请求会在回到前台时同时"解冻"（已在生产 trace 中证实），
+ * 这段时间不计入看门狗阈值，也不计入 action.feedback.duration，否则会把系统冻结误记成卡顿。
+ * 与 page-tracker.ts 的 bindVisibility/hiddenMs 是同一套口径。
+ */
+interface ActiveAction {
+  name: TrackedAction;
+  startedAt: number;
+  hiddenMs: number;
+  hiddenSince: number | null;
+  settled: boolean;
+  stalled: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+}
 
-  const timer = setTimeout(() => {
-    stalled = true;
-    safely('action_stall', () => {
-      Sentry.withScope((scope) => {
-        scope.setLevel('warning');
-        scope.setFingerprint(['action_stall', name]);
-        scope.setTags({ perf_event: 'action_stall', action: name, ...getNetworkTags() });
-        scope.setContext('action_stall', { waitedMs: Math.round(performance.now() - startedAt) });
-        Sentry.captureMessage('action_stall');
+const active = new Set<ActiveAction>();
+let visibilityBound = false;
+
+function elapsed(action: ActiveAction, now: number): number {
+  const hidden = action.hiddenMs + (action.hiddenSince !== null ? now - action.hiddenSince : 0);
+  return Math.max(0, now - action.startedAt - hidden);
+}
+
+function bindVisibility(): void {
+  if (visibilityBound || typeof document === 'undefined') return;
+  visibilityBound = true;
+  document.addEventListener('visibilitychange', () => {
+    const now = performance.now();
+    if (document.visibilityState === 'hidden') {
+      for (const action of active) {
+        action.hiddenSince = now;
+        if (action.timer) {
+          clearTimeout(action.timer);
+          action.timer = null;
+        }
+      }
+    } else {
+      for (const action of active) {
+        if (action.hiddenSince === null) continue;
+        action.hiddenMs += now - action.hiddenSince;
+        action.hiddenSince = null;
+        if (!action.settled) armStallTimer(action);
+      }
+    }
+  });
+}
+
+function armStallTimer(action: ActiveAction): void {
+  const remaining = Math.max(0, ACTION_STALL_MS - elapsed(action, performance.now()));
+  action.timer = setTimeout(() => raiseStall(action), remaining);
+}
+
+function raiseStall(action: ActiveAction): void {
+  action.stalled = true;
+  safely('action_stall', () => {
+    Sentry.withScope((scope) => {
+      scope.setLevel('warning');
+      scope.setFingerprint(['action_stall', action.name]);
+      scope.setTags({ perf_event: 'action_stall', action: action.name, ...getNetworkTags() });
+      scope.setContext('action_stall', {
+        waitedMs: Math.round(elapsed(action, performance.now())),
       });
+      Sentry.captureMessage('action_stall');
     });
-  }, ACTION_STALL_MS);
+  });
+}
+
+export function startAction(name: TrackedAction): ActionHandle {
+  bindVisibility();
+  const now = performance.now();
+  const action: ActiveAction = {
+    name,
+    startedAt: now,
+    hiddenMs: 0,
+    hiddenSince: typeof document !== 'undefined' && document.hidden ? now : null,
+    settled: false,
+    stalled: false,
+    timer: null,
+  };
+  active.add(action);
+  if (!action.hiddenSince) {
+    action.timer = setTimeout(() => raiseStall(action), ACTION_STALL_MS);
+  }
 
   const handle: ActionHandle = {
     feedback: () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
+      if (action.settled) return;
+      action.settled = true;
+      if (action.timer) clearTimeout(action.timer);
+      active.delete(action);
       if (pending.get(name) === handle) pending.delete(name);
       safely('action_feedback', () => {
-        // 即使已经判定过卡住，迟到的反馈也要记录，用来看实际等了多久。
-        Sentry.metrics.distribution('action.feedback.duration', performance.now() - startedAt, {
-          unit: 'millisecond',
-          attributes: { action: name, stalled: String(stalled), ...getMetricDimensions() },
-        });
+        // 即使已经判定过卡住，迟到的反馈也要记录，用来看实际等了多久；后台时长已排除在外。
+        Sentry.metrics.distribution(
+          'action.feedback.duration',
+          elapsed(action, performance.now()),
+          {
+            unit: 'millisecond',
+            attributes: { action: name, stalled: String(action.stalled), ...getMetricDimensions() },
+          }
+        );
       });
     },
     discard: () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
+      if (action.settled) return;
+      action.settled = true;
+      if (action.timer) clearTimeout(action.timer);
+      active.delete(action);
       if (pending.get(name) === handle) pending.delete(name);
     },
   };
