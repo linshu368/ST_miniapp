@@ -223,6 +223,33 @@ Railway 控制台手动创建并逐项对齐：
 密钥类变量只在控制台（或 IaC secret）注入，**不写进 `.railway/railway.ts`**，仓库内
 模板只给占位与说明。
 
+## ⚠️ `PROD_DATABASE_URL` 连接池配置（2026-10 事故记录）
+
+这个值**只存在于 Railway 控制台**，不受版本控制，改错了也不会报错、不会出现在任何
+代码 diff 里——2026-10 期间曾被悄悄改成直连 5432 + `connection_limit=1`（整个
+`stminiapp` 服务任意时刻只能有 1 个请求在碰数据库），导致反复出现"大规模卡顿/堵塞"，
+查不到是谁、什么时候改的，因为它根本不在 git 历史里。
+
+**已验证可用的正确值**（见 `ops/env/backend.env.production.example` 同名变量注释）：
+
+```
+postgresql://...@<host>:6543/<db>?pgbouncer=true&connection_limit=10&pool_timeout=10
+```
+
+- 端口必须是 `6543`（Supavisor transaction-mode pooler），不是 `5432`（直连，session
+  模式、不支持多路复用）。
+- `pgbouncer=true`：告诉 Prisma 这是经过 pooler 的连接，调整协议行为。
+- `connection_limit=10`：Prisma 自己进程内维护的连接数上限；缺省值偏大，会和
+  Supavisor 共享池抢位，在生产库 `max_connections=60`（曾观测到已用 51）下很容易
+  把池榨干。
+- `pool_timeout=10`（秒）：排队等连接超过这个时间就报错而不是无限挂起；没有这个参数，
+  池耗尽时请求会一直卡住、前端表现为"无限转圈"而不是报错。
+
+改这个值之前，先用 `railway variables --kv | grep '^PROD_DATABASE_URL='` 确认当前值，
+改完同样方式核对，并把变更和理由记在这里（哪怕只是一行），避免下一次又是"查不到是谁
+改的、什么时候改的"。**不要在终端里直接打印完整 URL**（含密码）；只替换 query string
+部分可以用脚本做正则替换，不经手输出密码本身。
+
 ## 自动部署流程
 
 1. development 与 production 的四个服务分别连接 `dev` 与 `main`。

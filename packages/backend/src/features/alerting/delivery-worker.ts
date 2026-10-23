@@ -16,7 +16,9 @@ function feishuNotificationSuppressed(card: SafeAlertCard): boolean {
   const fingerprint = card.incident_fingerprint;
   const isExperience = typeof fingerprint === 'string' && fingerprint.includes(':experience:');
   const isFromSentry = typeof fingerprint === 'string' && fingerprint.includes(':sentry:');
-  if (isExperience || isFromSentry) return card.transition === 'recovered';
+  // 体验/Sentry 域连恢复都要发——用户会记得自己遇到过卡顿，没有恢复通知
+  // 等于没人知道这事已经处理完了。之前这里写反了，恢复反而被当头两项之一压掉。
+  if (isExperience || isFromSentry) return false;
   if (card.transition === 'recovered' || card.severity === 'P1') return true;
   return (
     typeof card.incident_fingerprint === 'string' &&

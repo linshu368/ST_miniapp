@@ -21,6 +21,8 @@ import {
 type Density = 'compact' | 'comfortable';
 
 export interface SessionRowActions {
+  pending: boolean;
+  error: string | null;
   editing: boolean;
   draft: string;
   setDraft: (value: string) => void;
@@ -41,11 +43,18 @@ export function useSessionRowActions(session: ChatSession): SessionRowActions {
   const [draft, setDraft] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  const pending = update.isPending || remove.isPending;
+  const failure = update.error ?? remove.error;
   return {
+    pending,
+    error: failure ? (failure instanceof Error ? failure.message : '操作未完成，请重试') : null,
     editing,
     draft,
     setDraft,
     startRename: () => {
+      if (pending) return;
+      update.reset();
+      remove.reset();
       setConfirmingDelete(false);
       setDraft(session.title ?? '');
       setEditing(true);
@@ -53,17 +62,28 @@ export function useSessionRowActions(session: ChatSession): SessionRowActions {
     cancelRename: () => setEditing(false),
     commitRename: () => {
       const next = draft.trim();
-      setEditing(false);
+      if (pending) return;
       // 清空即恢复为当前角色名，契约上就是传 null
-      update.mutate({ sessionId: session.id, title: next.length > 0 ? next : null });
+      update.mutate(
+        { sessionId: session.id, title: next.length > 0 ? next : null },
+        { onSuccess: () => setEditing(false) }
+      );
     },
-    togglePin: () => update.mutate({ sessionId: session.id, pinned: !session.pinned_at }),
+    togglePin: () => {
+      if (!pending) update.mutate({ sessionId: session.id, pinned: !session.pinned_at });
+    },
     confirmingDelete,
-    toggleDeleteConfirm: () => setConfirmingDelete((current) => !current),
+    toggleDeleteConfirm: () => {
+      if (!pending) {
+        update.reset();
+        remove.reset();
+        setConfirmingDelete((current) => !current);
+      }
+    },
     cancelDelete: () => setConfirmingDelete(false),
     confirmDelete: () => {
-      setConfirmingDelete(false);
-      remove.mutate(session.id);
+      if (pending) return;
+      remove.mutate(session.id, { onSuccess: () => setConfirmingDelete(false) });
     },
   };
 }
@@ -72,10 +92,12 @@ export function SessionActionButton({
   label,
   onClick,
   density = 'comfortable',
+  disabled = false,
   children,
 }: {
   label: string;
   onClick: () => void;
+  disabled?: boolean;
   density?: Density;
   children: React.ReactNode;
 }) {
@@ -83,6 +105,7 @@ export function SessionActionButton({
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-label={label}
       className={cn(
         'flex shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground [&_svg]:shrink-0',
@@ -104,6 +127,7 @@ export function SessionRenameField({
   return (
     <div className="flex items-center gap-2">
       <input
+        disabled={actions.pending}
         value={actions.draft}
         onChange={(event) => actions.setDraft(event.target.value)}
         onKeyDown={(event) => {
@@ -121,10 +145,20 @@ export function SessionRenameField({
             : 'rounded-xl px-3 py-2 text-sm'
         )}
       />
-      <SessionActionButton label="保存" onClick={actions.commitRename} density={density}>
+      <SessionActionButton
+        label="保存"
+        disabled={actions.pending}
+        onClick={actions.commitRename}
+        density={density}
+      >
         <Check aria-hidden />
       </SessionActionButton>
-      <SessionActionButton label="取消" onClick={actions.cancelRename} density={density}>
+      <SessionActionButton
+        label="取消"
+        disabled={actions.pending}
+        onClick={actions.cancelRename}
+        density={density}
+      >
         <X aria-hidden />
       </SessionActionButton>
     </div>
@@ -157,6 +191,7 @@ export function SessionDeleteConfirm({
       <span className="flex items-center gap-2">
         <button
           type="button"
+          disabled={actions.pending}
           onClick={actions.cancelDelete}
           className={cn(
             'rounded-full text-muted-foreground hover:bg-secondary',
@@ -167,13 +202,14 @@ export function SessionDeleteConfirm({
         </button>
         <button
           type="button"
+          disabled={actions.pending}
           onClick={actions.confirmDelete}
           className={cn(
             'rounded-full bg-destructive font-semibold text-destructive-foreground',
             compact ? 'px-2.5 py-1 text-[11px]' : 'px-3 py-1.5 text-xs'
           )}
         >
-          删除
+          {actions.pending ? '删除中…' : '删除'}
         </button>
       </span>
     </div>

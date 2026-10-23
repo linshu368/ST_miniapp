@@ -1,32 +1,22 @@
 'use client';
 
 import { useEffect, useState, type ComponentType } from 'react';
-import {
-  ChevronLeft,
-  ImageIcon,
-  MessagesSquare,
-  Mic,
-  SlidersHorizontal,
-  WandSparkles,
-} from 'lucide-react';
+import { ChevronLeft, ImageIcon, MessagesSquare, Mic, WandSparkles } from 'lucide-react';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import { ChatGenerationSettings } from './chat-generation-settings';
 import { ToolRow } from './chat-tool-row';
 import { ChatVoicePicker, ChatVoiceSettings } from './chat-voice-settings';
 
 type ToolsTab = 'chat' | 'voice' | 'image';
 /** null = 停在一级页；非空时整个抽屉换成对应的二级页，带返回 */
-type ToolsPanel = 'generation' | 'voice' | null;
+type ToolsPanel = 'voice' | null;
 
 const PANEL_TITLES: Record<Exclude<ToolsPanel, null>, string> = {
-  generation: '生成偏好',
   voice: '默认声音',
 };
 
 const PANEL_DESCRIPTIONS: Record<Exclude<ToolsPanel, null>, string> = {
-  generation: '调整回复长度',
   voice: '选择角色说话的声音',
 };
 
@@ -80,7 +70,7 @@ export function ChatToolsSheet({ onCreateConversation, creating }: ChatToolsShee
             <>
               <SheetTitle className="text-[16px] font-bold text-foreground">工具箱</SheetTitle>
               <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
-                语音、图片和生成偏好
+                新对话、语音和图片设置
               </SheetDescription>
 
               <div className="my-4 flex gap-1 rounded-full bg-muted p-1">
@@ -114,12 +104,6 @@ export function ChatToolsSheet({ onCreateConversation, creating }: ChatToolsShee
                       onCreateConversation();
                     }}
                   />
-                  <ToolRow
-                    icon={SlidersHorizontal}
-                    title="生成偏好"
-                    hint="调整角色回复的篇幅"
-                    onClick={() => setPanel('generation')}
-                  />
                 </div>
               ) : tab === 'voice' ? (
                 <ChatVoiceSettings onOpenVoicePicker={() => setPanel('voice')} />
@@ -150,12 +134,8 @@ export function ChatToolsSheet({ onCreateConversation, creating }: ChatToolsShee
               </div>
               <SheetDescription className="sr-only">{PANEL_DESCRIPTIONS[panel]}</SheetDescription>
 
-              {panel === 'voice' ? (
-                // 选完音色回一级页，而不是关掉整个抽屉：用户接着可能要调倍速
-                <ChatVoicePicker onPicked={() => setPanel(null)} />
-              ) : (
-                <ChatGenerationSettings />
-              )}
+              {/* 选完音色回一级页，方便继续调整倍速。 */}
+              <ChatVoicePicker onPicked={() => setPanel(null)} />
             </>
           )}
         </SheetContent>

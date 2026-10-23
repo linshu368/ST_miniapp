@@ -16,3 +16,17 @@ export function shouldExpandComposer(
   if (currentlyExpanded) return value.length > 12 || scrollHeight > 54;
   return value.length > 24 || scrollHeight > 54;
 }
+
+/** Enter confirms an IME candidate before it can submit a chat message. */
+export function isComposerSubmitKey(
+  event: { key: string; shiftKey: boolean; isComposing: boolean; keyCode?: number },
+  compositionActive: boolean
+): boolean {
+  return (
+    event.key === 'Enter' &&
+    !event.shiftKey &&
+    !event.isComposing &&
+    !compositionActive &&
+    event.keyCode !== 229
+  );
+}
