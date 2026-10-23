@@ -161,7 +161,7 @@ export default async function characterRoutes(app: FastifyInstance) {
   app.get('/api/characters/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    // 金框判定必须与大厅同源，走共享快照（60s + single-flight）。原来每个请求都现拉一遍
+    // 金框判定必须与大厅同源，走共享快照（2s + single-flight）。原来每个请求都现拉一遍
     // 全量在架 id，与 findFirst 并行各占一条 Prisma 连接，池紧张时把等待放大一倍。
     // select 只取契约字段，不拖 raw_card 等大 JSON。
     const [character, featuredIds] = await Promise.all([
