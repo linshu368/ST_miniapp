@@ -9,6 +9,13 @@ import {
   type WalletContractResult,
 } from './wallet.js';
 
+export const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 4_000;
+export const DEFAULT_FIRST_TOKEN_DEADLINE_MS = 6_000;
+export const DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET = 0.01;
+export const FIRST_TOKEN_FALLBACK_MODEL_ID = 'deepseek/deepseek-v4.1-flash';
+export const FIRST_TOKEN_RETRY_MESSAGE = '这次响应有点慢，请重试。';
+const FirstTokenDurationSchema = z.number().int().positive().max(110_000);
+
 export const ModelCatalogTierKeySchema = z.enum(['light', 'standard', 'premium']);
 export const LlmModelProviderSchema = z.enum(['openrouter', 'venice']);
 export const LLM_MODEL_PROVIDER_LABELS: Record<z.infer<typeof LlmModelProviderSchema>, string> = {
@@ -73,6 +80,7 @@ export const ModelCatalogModelSchema = z.object({
   tagline: z.string().trim().min(1).max(40),
   /** Whether this model receives the per-character free chat quota. */
   is_free: z.boolean(),
+  first_token_timeout_ms: FirstTokenDurationSchema.default(DEFAULT_FIRST_TOKEN_TIMEOUT_MS),
   enabled: z.boolean(),
   sort_order: z.number().int().nonnegative(),
 });
@@ -89,6 +97,22 @@ export const ModelCatalogTierSchema = z.object({
 export const ModelCatalogSchema = z
   .object({
     default_model_id: z.string().trim().min(1),
+    fallback_model_id: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .regex(
+        /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/,
+        '请输入有效的 OpenRouter 模型 ID'
+      )
+      .default(FIRST_TOKEN_FALLBACK_MODEL_ID),
+    first_token_deadline_ms: FirstTokenDurationSchema.default(DEFAULT_FIRST_TOKEN_DEADLINE_MS),
+    first_token_timeout_rate_target: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(DEFAULT_FIRST_TOKEN_TIMEOUT_RATE_TARGET),
     tiers: z.array(ModelCatalogTierSchema).min(1),
   })
   .superRefine((catalog, ctx) => {
@@ -102,6 +126,16 @@ export const ModelCatalogSchema = z
     }
 
     const models = catalog.tiers.flatMap((tier) => tier.models);
+    for (const [tierIndex, tier] of catalog.tiers.entries()) {
+      for (const [modelIndex, model] of tier.models.entries()) {
+        if (model.first_token_timeout_ms >= catalog.first_token_deadline_ms)
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tiers', tierIndex, 'models', modelIndex, 'first_token_timeout_ms'],
+            message: '首发等待必须短于全局首 token 上限',
+          });
+      }
+    }
     const modelIds = models.map((model) => model.id);
     const uniqueModelIds = new Set(modelIds);
 
@@ -156,11 +190,28 @@ export const ModelCatalogSchema = z
 
 export type ModelCatalogTierKey = z.infer<typeof ModelCatalogTierKeySchema>;
 export type LlmModelProvider = z.infer<typeof LlmModelProviderSchema>;
-export type ModelCatalogModel = z.infer<typeof ModelCatalogModelSchema>;
-export type ModelCatalogTier = z.infer<typeof ModelCatalogTierSchema>;
-export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
+// Additive fields stay optional at typed legacy call sites; parsing always supplies defaults.
+export type ModelCatalogModel = Omit<
+  z.infer<typeof ModelCatalogModelSchema>,
+  'first_token_timeout_ms'
+> & {
+  first_token_timeout_ms?: number;
+};
+export type ModelCatalogTier = Omit<z.infer<typeof ModelCatalogTierSchema>, 'models'> & {
+  models: ModelCatalogModel[];
+};
+export type ModelCatalog = Omit<
+  z.infer<typeof ModelCatalogSchema>,
+  'tiers' | 'first_token_deadline_ms' | 'first_token_timeout_rate_target' | 'fallback_model_id'
+> & {
+  tiers: ModelCatalogTier[];
+  fallback_model_id?: string;
+  first_token_deadline_ms?: number;
+  first_token_timeout_rate_target?: number;
+};
 
 export const PublicModelCatalogModelSchema = ModelCatalogModelSchema.omit({
+  first_token_timeout_ms: true,
   provider: true,
   provider_model_id: true,
   openrouter_model_id: true,
@@ -184,6 +235,7 @@ export const PublicModelCatalogTierSchema = z.object({
 });
 
 export const PublicModelCatalogSchema = z.object({
+  first_token_deadline_ms: FirstTokenDurationSchema.optional(),
   default_model_id: z.string().trim().min(1),
   tiers: z.array(PublicModelCatalogTierSchema),
 });
@@ -278,6 +330,7 @@ export function resolveRuntimeCatalogModel(
 
 export function toPublicModelCatalog(catalog: ModelCatalog): PublicModelCatalog {
   return PublicModelCatalogSchema.parse({
+    first_token_deadline_ms: catalog.first_token_deadline_ms ?? DEFAULT_FIRST_TOKEN_DEADLINE_MS,
     default_model_id: catalog.default_model_id,
     tiers: catalog.tiers
       .map((tier) => ({

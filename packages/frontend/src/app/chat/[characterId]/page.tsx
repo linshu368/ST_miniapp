@@ -166,6 +166,8 @@ export default function SelfHostedChatPage() {
 
   const {
     abort,
+    firstTokenObservation,
+    onFirstTokenDisplayed,
     canRegenerate,
     cancelling,
     generating,
@@ -180,6 +182,7 @@ export default function SelfHostedChatPage() {
     streaming,
   } = useConversationTurn({
     characterId,
+    firstTokenDeadlineMs: modelCatalogQuery.data?.catalog.first_token_deadline_ms,
     characterName: character?.name,
     sessionId: activeSessionId,
     selectedModelId,
@@ -400,6 +403,8 @@ export default function SelfHostedChatPage() {
       <ChatMessageList
         key={activeSessionId ?? 'pending'}
         messages={messages}
+        firstTokenObservation={firstTokenObservation}
+        onFirstTokenDisplayed={onFirstTokenDisplayed}
         characterName={character?.name ?? ''}
         characterAvatarUrl={characterAvatarUrl}
         userAvatarUrl={userAvatarUrl}

@@ -873,7 +873,7 @@ function AdminWorkspace(props: {
   // 「运营配置」视图与「裂变邀请管理」的三个 config tab 共用，避免另造一套编辑状态机。
   const configEditorCard = (
     <Card
-      title={configMetadata[selectedKey].label}
+      title={view === 'fallback_config' ? '兜底配置' : configMetadata[selectedKey].label}
       extra={
         <Space>
           <Tag>正式版本 {currentConfig?.version ?? 0}</Tag>
@@ -907,7 +907,9 @@ function AdminWorkspace(props: {
       }
     >
       <Typography.Paragraph type="secondary">
-        {configMetadata[selectedKey].description}
+        {view === 'fallback_config'
+          ? '统一管理兜底模型与首 token 等待参数。发布后对新请求生效。'
+          : configMetadata[selectedKey].description}
       </Typography.Paragraph>
       {!canWrite ? (
         <Alert
@@ -924,6 +926,7 @@ function AdminWorkspace(props: {
       <ConfigValueEditor
         key={`${props.environment}:${selectedKey}`}
         configKey={selectedKey}
+        modelCatalogSection={view === 'fallback_config' ? 'fallback' : 'models'}
         value={workingValue}
         onChange={setWorkingValue}
         disabled={!canWrite}
@@ -1093,6 +1096,7 @@ function AdminWorkspace(props: {
                   key: configMenuKey(key),
                   label: configMetadata[key].label,
                 })),
+                { key: 'fallback_config', label: '兜底配置' },
                 { key: 'outreach_credit_grant', label: '回访星尘赠送' },
                 { key: 'invite_program', label: '裂变邀请管理' },
                 { key: 'image_generation_config', label: '图片生成配置' },
@@ -1274,7 +1278,7 @@ function AdminWorkspace(props: {
               </Card>
               {configEditorCard}
             </Space>
-          ) : view === 'configs' ? (
+          ) : view === 'configs' || view === 'fallback_config' ? (
             configEditorCard
           ) : (
             <Card title="发布历史">
