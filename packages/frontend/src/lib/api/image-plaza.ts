@@ -44,6 +44,8 @@ export const imagePlazaKeys = {
   attempt: (id: string) => [...imagePlazaKeys.all, 'attempt', id] as const,
 };
 
+export const IMAGE_PLAZA_FEED_STALE_TIME_MS = 60_000;
+
 export function useImagePlazaConfigQuery() {
   return useQuery({
     queryKey: imagePlazaKeys.config(),
@@ -78,7 +80,7 @@ export function useImagePlazaFeedQuery(
       });
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
-    staleTime: 60_000,
+    staleTime: IMAGE_PLAZA_FEED_STALE_TIME_MS,
     // A different filter/order must never display or continue the previous cursor chain.
     retry: (count, error) => count < 1 && !(error instanceof ApiClientError && error.status < 500),
     refetchOnMount: false,
@@ -90,7 +92,7 @@ export function useImagePlazaFeedQuery(
     const state = client.getQueryState(key);
     if (
       state?.isInvalidated ||
-      (state?.dataUpdatedAt && Date.now() - state.dataUpdatedAt > 60_000)
+      (state?.dataUpdatedAt && Date.now() - state.dataUpdatedAt > IMAGE_PLAZA_FEED_STALE_TIME_MS)
     ) {
       void client.resetQueries({ queryKey: key, exact: true });
     }

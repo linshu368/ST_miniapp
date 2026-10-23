@@ -5,13 +5,22 @@ import { useSearchParams } from 'next/navigation';
 
 import { useConversationQuery, useCreateConversationMutation } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
+import {
+  resolveRoleplaySource,
+  roleplayReturnPath,
+  type RoleplaySource,
+} from '@/lib/roleplay-navigation';
 import { getReplayLifecycle, useReplayLifecycle, type ReplayLifecycleState } from '@/lib/telemetry';
 
-function replaceChatUrl(characterId: string, sessionId: string | null): void {
+function replaceChatUrl(
+  characterId: string,
+  sessionId: string | null,
+  source: RoleplaySource
+): void {
   window.history.replaceState(
     null,
     '',
-    sessionId ? chatEntryPath(characterId, { sessionId }) : chatEntryPath(characterId)
+    chatEntryPath(characterId, { sessionId: sessionId ?? undefined, source })
   );
 }
 
@@ -21,10 +30,13 @@ function replaceChatUrl(characterId: string, sessionId: string | null): void {
  */
 export function useChatSession(characterId: string) {
   const searchParams = useSearchParams();
+  const source = resolveRoleplaySource(searchParams.get('from'));
+  const backHref = roleplayReturnPath(source);
   const [sessionId, setSessionId] = useState<string | null>(() => searchParams.get('session'));
   const [entryAttempt, setEntryAttempt] = useState(0);
 
   const createConversation = useCreateConversationMutation();
+  const resetCreatedConversation = createConversation.reset;
   const createdSessionId = createConversation.data?.session.id ?? null;
   const activeSessionId = sessionId ?? createdSessionId;
   const conversationQuery = useConversationQuery(activeSessionId ?? undefined);
@@ -32,9 +44,9 @@ export function useChatSession(characterId: string) {
   const returnTo = useMemo(
     () =>
       activeSessionId
-        ? chatEntryPath(characterId, { sessionId: activeSessionId })
-        : chatEntryPath(characterId),
-    [characterId, activeSessionId]
+        ? chatEntryPath(characterId, { sessionId: activeSessionId, source })
+        : chatEntryPath(characterId, { source }),
+    [characterId, activeSessionId, source]
   );
 
   /**
@@ -50,7 +62,7 @@ export function useChatSession(characterId: string) {
     createConversation.mutate(characterId, {
       onSuccess: (data) => {
         setSessionId(data.session.id);
-        replaceChatUrl(characterId, data.session.id);
+        replaceChatUrl(characterId, data.session.id, source);
       },
       onSettled: () => {
         creatingRef.current = false;
@@ -62,13 +74,13 @@ export function useChatSession(characterId: string) {
     };
     // createConversation 每次渲染都是新引用，只在这几项变化时重跑
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characterId, activeSessionId, entryAttempt]);
+  }, [characterId, activeSessionId, entryAttempt, source]);
 
   useEffect(() => {
     if (sessionId || !createdSessionId) return;
     setSessionId(createdSessionId);
-    replaceChatUrl(characterId, createdSessionId);
-  }, [characterId, createdSessionId, sessionId]);
+    replaceChatUrl(characterId, createdSessionId, source);
+  }, [characterId, createdSessionId, sessionId, source]);
 
   // 会话被删或不属于当前用户：URL 里的 id 已经没用了，清掉让上面的分支重建一个
   const detailErrorCode =
@@ -76,9 +88,10 @@ export function useChatSession(characterId: string) {
       ? (conversationQuery.error as { code?: string }).code
       : undefined;
   const abandonSession = useCallback(() => {
+    resetCreatedConversation();
     setSessionId(null);
-    replaceChatUrl(characterId, null);
-  }, [characterId]);
+    replaceChatUrl(characterId, null, source);
+  }, [characterId, source, resetCreatedConversation]);
 
   useEffect(() => {
     if (detailErrorCode !== 'session_not_found' && detailErrorCode !== 'NOT_FOUND') return;
@@ -89,17 +102,17 @@ export function useChatSession(characterId: string) {
     createConversation.mutate(characterId, {
       onSuccess: (data) => {
         setSessionId(data.session.id);
-        replaceChatUrl(characterId, data.session.id);
+        replaceChatUrl(characterId, data.session.id, source);
       },
     });
-  }, [characterId, createConversation]);
+  }, [characterId, source, createConversation]);
 
   const selectSession = useCallback(
     (nextSessionId: string) => {
       setSessionId(nextSessionId);
-      replaceChatUrl(characterId, nextSessionId);
+      replaceChatUrl(characterId, nextSessionId, source);
     },
-    [characterId]
+    [characterId, source]
   );
 
   const retryEntry = useCallback(() => {
@@ -110,13 +123,16 @@ export function useChatSession(characterId: string) {
 
   const entryError = createConversation.isError
     ? '对话创建失败，请重试'
-    : conversationQuery.isError && !detailErrorCode
+    : conversationQuery.isError &&
+        detailErrorCode !== 'session_not_found' &&
+        detailErrorCode !== 'NOT_FOUND'
       ? '对话加载失败，请重试'
       : null;
 
   const ready = Boolean(activeSessionId) && conversationQuery.isSuccess;
 
   return {
+    backHref,
     activeSessionId,
     abandonSession,
     conversationQuery,

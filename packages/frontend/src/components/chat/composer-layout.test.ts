@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shouldExpandComposer } from './composer-layout';
+import { isComposerSubmitKey, shouldExpandComposer } from './composer-layout';
 
 /**
  * 用例与原版 st-extension/tests/message-presentation.test.ts 里的同名分组逐条对齐。
@@ -22,5 +22,22 @@ describe('shouldExpandComposer', () => {
     expect(shouldExpandComposer(middle, 48, true)).toBe(true);
 
     expect(shouldExpandComposer('已清空', 48, true)).toBe(false);
+  });
+});
+
+describe('isComposerSubmitKey', () => {
+  const enter = { key: 'Enter', shiftKey: false, isComposing: false, keyCode: 13 };
+
+  it('does not send when Enter confirms a Chinese input candidate', () => {
+    expect(isComposerSubmitKey({ ...enter, isComposing: true }, false)).toBe(false);
+    expect(isComposerSubmitKey(enter, true)).toBe(false);
+    // Some WebViews report the final candidate key after compositionend.
+    expect(isComposerSubmitKey({ ...enter, keyCode: 229 }, false)).toBe(false);
+  });
+
+  it('keeps regular Enter submission and Shift+Enter line breaks', () => {
+    expect(isComposerSubmitKey(enter, false)).toBe(true);
+    expect(isComposerSubmitKey({ ...enter, shiftKey: true }, false)).toBe(false);
+    expect(isComposerSubmitKey({ ...enter, key: 'a', keyCode: 65 }, false)).toBe(false);
   });
 });

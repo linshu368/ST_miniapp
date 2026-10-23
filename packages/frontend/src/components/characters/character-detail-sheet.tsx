@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, Quote, Sparkles, X } from 'lucide-react';
 
 import { useCharacterQuery } from '@/lib/api/characters';
+import { useConversationsQuery } from '@/lib/api/conversations';
+import type { ChatSession } from '@miniapp/shared';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
 import { FavoriteButton } from './favorite-button';
@@ -17,7 +19,7 @@ const DISMISS_THRESHOLD_Y = 90; // 下滑超过该值即关闭
 interface CharacterDetailSheetProps {
   characterId: string | null;
   onClose: () => void;
-  onEnter: (characterId: string) => void;
+  onEnter: (characterId: string, sessionId?: string) => void;
   entering?: boolean;
 }
 
@@ -30,6 +32,12 @@ export function CharacterDetailSheet({
 }: CharacterDetailSheetProps) {
   const { data, isLoading } = useCharacterQuery(characterId ?? undefined);
   const character = data?.character;
+  const history = useConversationsQuery(characterId ?? undefined, Boolean(characterId));
+  const lastSession = history.data?.sessions
+    .filter((session) => session.message_count > 0)
+    .reduce<
+      ChatSession | undefined
+    >((latest, item) => (!latest || Date.parse(item.last_message_at ?? item.created_at) > Date.parse(latest.last_message_at ?? latest.created_at) ? item : latest), undefined);
 
   // ── 动画状态 ──────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
@@ -241,23 +249,43 @@ export function CharacterDetailSheet({
               className="shrink-0 border-t border-border bg-popover/95 px-5 py-3 backdrop-blur-md"
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
             >
+              {history.isError ? (
+                <p role="alert" className="mb-2 text-xs text-destructive">
+                  对话记录未加载，重试后再继续。
+                </p>
+              ) : null}
               <div className="flex items-center gap-3">
                 <FavoriteButton characterId={character?.id} variant="sheet" />
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => (lastSession && character ? onEnter(character.id) : onClose())}
+                  disabled={entering || history.isPending}
                   className="h-12 shrink-0 rounded-2xl border border-border bg-card px-5 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-secondary active:scale-[0.98]"
                 >
-                  {entering ? '取消进入' : '先看看别的'}
+                  {lastSession ? '新对话' : '先看看别的'}
                 </button>
                 <button
                   type="button"
-                  disabled={!character || entering}
-                  onClick={() => character && onEnter(character.id)}
+                  disabled={!character || entering || history.isPending}
+                  onClick={() => {
+                    if (history.isError) {
+                      void history.refetch();
+                      return;
+                    }
+                    if (character && history.isSuccess) onEnter(character.id, lastSession?.id);
+                  }}
                   className="relative flex h-12 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-2xl bg-gradient-to-r from-primary to-rose text-[15px] font-semibold text-primary-foreground shadow-lg shadow-[0_10px_30px_hsl(var(--glow)/0.3)] transition-all active:scale-[0.98] disabled:opacity-70"
                 >
                   <Sparkles className={`h-4 w-4 ${entering ? 'animate-spin' : ''}`} />
-                  {entering ? '正在进入…' : '进入角色'}
+                  {entering
+                    ? '正在进入…'
+                    : history.isPending
+                      ? '读取对话中…'
+                      : history.isError
+                        ? '重新加载'
+                        : lastSession
+                          ? '继续对话'
+                          : '开始对话'}
                   {entering && (
                     <span className="absolute inset-x-3 bottom-1 h-1 overflow-hidden rounded-full bg-black/20">
                       <span
