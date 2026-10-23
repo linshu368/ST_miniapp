@@ -1,6 +1,6 @@
 # 首 token 兜底与人工观察
 
-本期为自研会话的发送、重新生成增加可配置的单一兜底及体验数据。尚未执行远端迁移、上线或导入正式 Grafana；没有 AI 判断、定时调参、惩罚公式或自动改配置。
+本期为自研会话的发送、重新生成增加可配置的单一兜底及体验数据。应用与两份基础迁移已完成生产发布；Grafana按下述只读迁移与独立看板接入。没有 AI 判断、定时调参、惩罚公式或自动改配置。
 
 ## 运行规则
 
@@ -81,7 +81,7 @@ ORDER BY request_received_at, chat_history_id;
 ## 数据库、Grafana 与上线顺序
 
 1. 先审查、手动应用 `packages/shared/migrations/20261023_chat_first_token_fallback.sql` 到 TEST，按照仓库 migration ledger 流程记录。它添加事实表/RPC、analytics view/report 及模型配置校验；不删历史列、不回填业务数据。随后单独应用 `20261023_chat_first_token_fallback_config.sql`，使 begin/prepare RPC 与分析报表支持受理时冻结的可配置兜底型号；保持既有函数签名、权限与数据。
-2. 新增表及 RPC 默认只允许 service_role，经后端 API 写入；客户端角色没有直写权限。Grafana 用单独只读角色；可审查 `scripts/sql/grant-first-token-metrics-reader.sql`，再把已确认的 Grafana 登录角色加入该 NOLOGIN 角色。不能用 service_role key 给 Grafana。不要猜当前 datasource 的 DB role。
+2. 新增表及 RPC 默认只允许 service_role，经后端 API 写入；客户端角色没有直写权限。Grafana 用单独只读角色；通过正式 workflow 先TEST后production执行 `20261023_grafana_first_token_reader.sql`。它为既有 `grafana_cloud` 角色授予可继承的 NOLOGIN reader 会员关系，拒绝异常角色属性或既有正文权限。仅能读事实、报表和父表id/status/llm_finish_reason，不能读对话正文或写报告。旧手工脚本仅保留参考，线上使用版本化迁移；不能用 service_role key 给 Grafana。
 3. 通过 TEST Backend 验证新 RPC 可被 PostgREST 正确发现，发布后端；再发布前端、Admin。两份迁移与新后端部署完成前，不发布非默认兜底型号。旧前端不会上报显示数据，会如实记 missing；新前端需要新接口。数据库迁移必须先于新后端。
 4. 导入 `docs/grafana/chat-first-token.json`，选择 TEST PostgreSQL datasource，选择一个型号，核对窗界、单位、150 门槛和覆盖率。没有改线上现有 dashboard。
 5. TEST 验收真实 OpenRouter/Venice、Telegram WebView、网络慢/后台/取消和一次扣费，再单独批准生产迁移、配置发布和应用上线。本地 mock 不证明固定 fallback 型号在真实账号上的可用性。
@@ -89,3 +89,14 @@ ORDER BY request_received_at, chat_history_id;
 回滚应用时保留新增表和事实；旧后端不会使用它们。回滚前先等待活跃生成结束，避免中断预留/交付事务；不要删除历史观察数据。回滚配置前仍须满足型号等待小于全局上限。
 
 本地回归：`bash scripts/test-first-token-fallback-local.sh` 使用一次性 PG17 容器、实际新迁移和既有钱包/VIP/额度 SQL，并自动清理；不读取应用 env，不连远端，也不调用付费模型。
+
+## 直接查看业务看板
+
+新增看板“05｜用户首 token 与兜底体验”，绑定现有生产PostgreSQL数据源 `ST TelegramBot Supabase`（uid `fg1oltvmm56v4b`），不改其密码或旧看板。默认北京时间过去24小时，5分钟刷新，可选全部或部分型号。总览只列该时间内有有效请求的型号。
+
+- 用户总首token=P50/P90/P95的客户端实际显示时间，单位秒，包含首发等待与兜底全过程；只取前台observed样本，不筛整条回复成功，也不用后端/供应商数值补齐。
+- 兜底触发率=触发兜底请求/全部有效请求，触发后失败也计入；已看到样本中兜底占比另列，分母为前台已看到样本。
+- 前台已知结果超时率=前台timed_out/(前台observed+timed_out)。缺报、后台和其他未观测不算成功，同时显示回报覆盖率、可判定占比和样本数；没有该项样本显示“—”，不补0。
+- 下方人工对照保留同型号各配置版本/等待参数组；不平均各组百分比或P90，不进行自动调整。
+
+应用迁移后，以真实Grafana数据源执行所有面板并检查浏览器显示。撤销新读取权限可执行受审核的 `REVOKE first_token_metrics_reader FROM grafana_cloud`；保留事实数据和旧看板。
